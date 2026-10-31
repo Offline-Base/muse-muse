@@ -51,8 +51,21 @@ export interface BridgeCondensed {
 const MAX_TEXT = 240;
 /** At most this many announced keys are carried between polls, as in muse-log.ts. Past it, a key is announced once per poll. */
 const MAX_ANNOUNCED = 32;
+/** A carried key or model name is cut to this. The agent can write to this log, so neither is trusted to be short. */
+const MAX_KEY = 200;
+/** At most this many models are tallied. Past it, a new model's calls count as "unknown", which has no price. */
+const MAX_MODELS = 16;
 /** At most this many open items are carried between polls. Past it the oldest go, and their next update shows again. */
 const MAX_SHOWN = 200;
+/**
+ * An open agent message or reasoning line shows at most this many characters until it finishes, when its whole text
+ * shows. Every poll's state is written to the workflow's event log, so these must stay small.
+ */
+const MAX_OPEN_TEXT = 8000;
+/** A carried line past this many characters (a long goal, a todo list, a workflow's children) keeps only its text. */
+const MAX_SHOWN_LINE = 16_000;
+/** Past this many characters in all, the oldest open items go, as past MAX_SHOWN. */
+const MAX_SHOWN_TOTAL = 256_000;
 /** How much of the host's stderr is kept for an exit that needs it. */
 const MAX_STDERR = 4000;
 /** An owner's note shows whole, up to this many characters. */
@@ -83,6 +96,11 @@ function arr(v: unknown): unknown[] {
 
 function cut(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
+}
+
+/** Cuts to exactly MAX_OPEN_TEXT, so cutting a line again after more text arrives gives the same line. */
+function openText(text: string): string {
+  return text.length > MAX_OPEN_TEXT ? `${text.slice(0, MAX_OPEN_TEXT - 1)}…` : text;
 }
 
 function firstLine(text: unknown): string {
@@ -553,7 +571,8 @@ export function condenseBridgeLines(lines: readonly string[], state: BridgeConde
   const announced = arr(state.announced).filter((a): a is string => typeof a === "string");
   const seen = new Set(announced);
   /** True the first time a key is seen in this run. */
-  const announce = (key: string) => {
+  const announce = (name: string) => {
+    const key = name.slice(0, MAX_KEY);
     if (seen.has(key)) return false;
     seen.add(key);
     if (announced.length < MAX_ANNOUNCED) announced.push(key);
@@ -625,13 +644,13 @@ export function condenseBridgeLines(lines: readonly string[], state: BridgeConde
         const prior = known(id);
         const text = str(it.text) || texts.get(id) || (prior?.kind === "say" ? prior.text : "");
         texts.set(id, text);
-        if (text.trim()) put({ kind: "say", itemId: id, text }, done);
+        if (text.trim()) put({ kind: "say", itemId: id, text: done ? text : openText(text) }, done);
         else if (done) finished.add(id);
         return;
       }
       case "reasoning": {
         const summary = arr(it.summary).map(str).filter((s) => s.trim()).join("\n\n").trim();
-        if (summary) put({ kind: "reasoning", itemId: id, text: summary }, done);
+        if (summary) put({ kind: "reasoning", itemId: id, text: done ? summary : openText(summary) }, done);
         else if (done) finished.add(id);
         return;
       }
@@ -690,7 +709,7 @@ export function condenseBridgeLines(lines: readonly string[], state: BridgeConde
     const text = (texts.get(id) ?? (prior?.kind === "say" ? prior.text : "")) + p.delta;
     texts.set(id, text);
     kinds.set(id, "agentMessage");
-    if (text.trim()) put({ kind: "say", itemId: id, text });
+    if (text.trim()) put({ kind: "say", itemId: id, text: openText(text) });
   };
 
   const note = (method: string, p: Record<string, unknown>) => {
@@ -720,7 +739,8 @@ export function condenseBridgeLines(lines: readonly string[], state: BridgeConde
         return;
       }
       case "session/tokenUsage": {
-        const model = str(p.modelId) || "unknown";
+        const id = str(p.modelId).slice(0, MAX_KEY) || "unknown";
+        const model = tokens.has(id) || tokens.size < MAX_MODELS ? id : "unknown";
         const u = obj(p.usage);
         const t = tokens.get(model) ?? { calls: 0, input: 0, cached: 0, output: 0 };
         t.calls++;
@@ -812,13 +832,16 @@ export function condenseBridgeLines(lines: readonly string[], state: BridgeConde
     const same = shown.get(l.itemId) === json;
     // Re-added at the end, so the open items that went longest without news are the first to go past the cap.
     shown.delete(l.itemId);
-    if (!finished.has(l.itemId)) shown.set(l.itemId, json);
+    if (!finished.has(l.itemId)) shown.set(l.itemId, json.length <= MAX_SHOWN_LINE ? json : JSON.stringify({ kind: l.kind, itemId: l.itemId, text: cut(l.text, MAX_TEXT) }));
     return !same;
   });
   for (const id of finished) shown.delete(id);
-  for (const id of shown.keys()) {
-    if (shown.size <= MAX_SHOWN) break;
+  let total = 0;
+  for (const json of shown.values()) total += json.length;
+  for (const [id, json] of shown) {
+    if (shown.size <= MAX_SHOWN && total <= MAX_SHOWN_TOTAL) break;
     shown.delete(id);
+    total -= json.length;
   }
 
   const next: BridgeCondenseState = { shown: Object.fromEntries(shown), announced };

@@ -528,6 +528,54 @@ describe("kinds the spike didn't produce", () => {
     ]);
   });
 
+  it("keeps its state small however long the open items are", () => {
+    const huge = "x".repeat(900_000);
+    let state = emptyBridgeState();
+    for (let i = 0; i < 100; i++) {
+      state = condenseBridgeLines(
+        toLines([
+          itemNote("item/updated", { itemId: `m${i}`, kind: "agentMessage", status: "inProgress", text: huge }),
+          itemNote("item/updated", { itemId: `r${i}`, kind: "reasoning", status: "inProgress", summary: [huge] }),
+          note("session/goalChanged", { goal: { objective: huge, status: "active" } }),
+          itemNote("item/updated", { itemId: `h${i}`, kind: "hookRun", status: "inProgress", hookKey: `${huge}${i}` }),
+          note("session/tokenUsage", { modelId: `${huge}${i}`, promptTokens: 1, usage: { outputTokens: 1 } }),
+        ]),
+        state,
+      ).state;
+    }
+    const size = JSON.stringify(state).length;
+    assert.ok(size < 300_000, `${size} characters`);
+    assert.ok(Object.keys(state.tokens!).length <= 17, "a model name can't grow the state either");
+  });
+
+  it("cuts an open message's line and shows the whole text when it finishes", () => {
+    const long = "a".repeat(9000);
+    const started = condenseBridgeLines(toLines([itemNote("item/updated", { itemId: "m1", kind: "agentMessage", status: "inProgress", text: long })]));
+    const open = started.lines[0]!;
+    assert.equal(open.text.length, 8000);
+    assert.ok(open.text.endsWith("…"));
+    // More text past the cut changes nothing the build room shows, so no line goes out.
+    const more = condenseBridgeLines(toLines([note("item/delta", { itemId: "m1", delta: "bbb" })]), started.state);
+    assert.deepEqual(more.lines, []);
+    const done = condenseBridgeLines(toLines([itemNote("item/completed", { itemId: "m1", kind: "agentMessage", status: "completed", text: `${long}bbb` })]), more.state);
+    assert.equal(done.lines[0]!.text, `${long}bbb`);
+    assert.deepEqual(done.state.shown, {});
+  });
+
+  it("still knows a short open message whose deltas span polls", () => {
+    const first = condenseBridgeLines(toLines([note("item/delta", { itemId: "m1", delta: "Hello" })]));
+    const second = condenseBridgeLines(toLines([note("item/delta", { itemId: "m1", delta: " there" })]), first.state);
+    assert.equal(second.lines[0]!.text, "Hello there");
+  });
+
+  it("drops the oldest open items once the state is too big in all, and shows them again at their next update", () => {
+    const line = (i: number) => itemNote("item/updated", { itemId: `m${i}`, kind: "agentMessage", status: "inProgress", text: "y".repeat(8000) });
+    const { state } = condenseBridgeLines(toLines(Array.from({ length: 60 }, (_, i) => line(i))));
+    const kept = Object.keys(state.shown);
+    assert.ok(kept.length < 60 && kept.includes("m59") && !kept.includes("m0"), `${kept.length} kept`);
+    assert.equal(condenseBridgeLines(toLines([line(0)]), state).lines.length, 1);
+  });
+
   it("skips torn, foreign and unknown lines", () => {
     const good = JSON.stringify(note("session/todoListChanged", { items: [{ text: "Write the page", status: "completed" }, { text: "Test it", status: "inProgress" }] }));
     const raw = ["", "not json", good.slice(0, 30), '{"foo":1}', '{"kind":"other"}', "[1,2]", "null", good];
