@@ -23,11 +23,27 @@ On the laptop, from the repo root:
 ```sh
 echo 'RELAY_URL=https://muse-privacy-relay.<your-subdomain>.workers.dev' >> .env
 uv run python -m base.connector.relay_client register --name "Laptop"   # once; writes BASE_HOME/relay.json
-uv run python -m base                                                   # terminal 1: approval page and connector
-uv run python -m base.connector.relay_client run                        # terminal 2: stays connected
+echo 'DEVICE_ONLY=1' >> .env                                            # every model on this device
+scripts/start.sh                                                        # starts the models, the page and the relay client
 ```
 
+Then open `http://127.0.0.1:8787/setup`, say who you're protecting and finish the checklist, including turning off training under Data controls in Muse. To start everything at login, run `scripts/install_login.sh` once (`--remove` undoes it). Keep the laptop plugged in: on battery the local model runs about 12 times slower.
+
 On a Jetson the same steps run as services; see "Jetson Orin Nano" in the [README](../README.md#jetson-orin-nano-8gb).
+
+### Plugging in your own model
+
+To use a tuned, quantized Muse Glimmer instead of LFM3-VL-2B for answers and routing:
+
+```sh
+uv run python -m scripts.plug_in_model /path/to/model.gguf --check   # checks the file, changes nothing
+uv run python -m scripts.plug_in_model /path/to/model.gguf           # sets the model's lines in .env
+scripts/start.sh                                                     # restart: one copy of your model, plus LFM for scans and search
+uv run python -m scripts.device_smoke --name my_model                # Muse's tools, 24 essays, private-value checks
+uv run python -m scripts.compare_modes --name my_model               # each router mode on 200 invented items
+```
+
+Then pick the best mode on the Dreaming page. `uv run python -m scripts.plug_in_model --undo` puts `.env` back. Nothing is downloaded, and your other `.env` lines stay as they are.
 
 ## 3. Add the connector in the Muse app
 

@@ -20,6 +20,8 @@ Read docs/CONTRACTS.md before writing or changing any module. It is the shared i
 - Glimmer prompting: put `Reasoning strength: low` (or medium/high/xhigh) in the system prompt; on llama-server use `chat_template_kwargs.reasoning_strength`. Reasoning counts against max_tokens, so give at least 1500. OpenRouter accepts `reasoning: {"effort": "low"}`, `response_format` json_schema (strict) and tools.
 - Muse Spark 1.3: POST https://api.meta.ai/v1/chat/completions, `Authorization: Bearer $META_API_KEY`, model `muse-spark-1.3`, `reasoning_effort` in minimal|low|medium|high|xhigh|max (no "none"), strict json_schema works, usage has `completion_tokens_details.reasoning_tokens`. Limits seen: 3000 requests and 4M tokens per minute.
 
+- Oct 30, Ethan's call: "use Liquid for now, ignore Glimmer." `DEVICE_ONLY=1` is set in .env, so LFM3-VL-2B on this laptop answers every step, the router included, and no model off the device can be reached. This overrides the Oct 27 "cloud only" and the Oct 29 Jetson fallback. Eval numbers measured with Glimmer on OpenRouter do not describe this setup; use eval/reports/device_only_lfm.md and eval/reports/compliance*.md. No Glimmer download without asking. docs/COMPLIANCE_PLAN.md has the plan and its status.
+
 ## Devices
 - BASE_DEVICE selects laptop or jetson. Never hardcode a device, URL, hostname or path to one machine.
 - The Mac is a managed work laptop: never bind anything on it to 0.0.0.0, scan the network, or start Tailscale. Servers on the laptop bind 127.0.0.1. The laptop reaches the Jetson by dialing out (base/heavy/worker.py); the Jetson never connects in to the laptop.

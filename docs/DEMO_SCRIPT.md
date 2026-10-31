@@ -2,15 +2,24 @@
 
 About two and a half minutes, and never over three: other participants report a 3-minute limit, so confirm it in the signed-in participant guide. Every project is scored on Impact 30%, Use of Meta AI Tooling 25%, Demo 25% (which names "the quality of the demo video") and Technical Depth & Execution 20% ([RUBRIC.md](RUBRIC.md)). Demo (25%) covers the live demo and the video together, and the video is most of what judges see, so it has to show who this helps and what Meta's models do here, not only the measured results it ends on. Scenes follow the build plan. Every number said or shown must come from [eval/reports/final.md](../eval/reports/final.md); do not round it into something the report does not say. The only exceptions are the two survey figures in scene 2:10, which are other people's numbers (see the note under the scenes).
 
-## Say which Glimmer graded
+## Say which model ran
 
-The plan's video has Glimmer grading on the device. As of Oct 27 every run so far used Glimmer on OpenRouter (development mode, invented data only). Before recording, pick one and say it on screen:
+As of Oct 30 the device runs Liquid's LFM3-VL-2B for every step (`DEVICE_ONLY=1`), and the user's policy makes the sharing decision. Older sections of this script mention Glimmer: use the first row unless Glimmer is running on the device. Pick one and say it on screen:
 
 | If you record with | Caption for scenes 0:45 to 1:25 |
 |---|---|
+| `DEVICE_ONLY=1` (today's setup) | "Liquid's LFM3-VL-2B on this laptop. No model is reached off this device." |
 | `GLIMMER_BACKEND=llama_server` on the laptop (Q4_K_M) | "Muse Glimmer Q4_K_M grading on this laptop." |
 | A Jetson with the laptop worker | "Jetson Orin Nano, 1-bit Glimmer, grading handed to the laptop's 4-bit Glimmer." |
 | `GLIMMER_BACKEND=openrouter` (today's only tested mode) | "Development mode: Glimmer on OpenRouter, invented students only. On a real class it runs on the device." |
+
+## The privacy scene (add it to the video)
+
+1. On Controls, turn on FERPA, and point out that the Always approve and opt-out controls are now locked.
+2. In Muse, ask for something with a place, a date and an organization. Show the tags that come back.
+3. Ask for something about three students. Show it kept on the device, with the plain reason.
+4. Open History, then Receipt: what was removed, the checks, "On this device only".
+5. Say the limits out loud: Muse sees whatever you type into it, which is what Prepare a question is for, and a toggle does not make anyone compliant.
 
 ## Before recording
 

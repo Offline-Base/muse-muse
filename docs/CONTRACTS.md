@@ -49,6 +49,8 @@ Muse (cloud VM) --MCP over HTTPS--> relay (Cloudflare Worker) <--WebSocket diale
 
 `assert_synthetic(settings, folder)` raises `CloudBackendRefused` when the backend is a cloud endpoint and neither the folder nor a parent of it up to and including `settings.workspace_root` has a `.synthetic` file (`synthetic_marked(folder, root)`). A marker above the workspace root never counts, and a folder outside the root is refused. The index, the agent and egress call it before any document text can reach a cloud model.
 
+`DEVICE_ONLY=1` (Settings.device_only): every model is on this device, and `guard.Redaction.name_shapes` tags capitalized words shaped like a name as `[Person N]` with no model, unless a folder sends real names or a never-redact word covers them. `PRIMARY_MODEL` defaults to lfm, and LFM3-VL-2B on the checker's llama-server answers every step, the router included, whatever `GLIMMER_BACKEND` says. `PRIMARY_MODEL=glimmer` is allowed only with `GLIMMER_BACKEND=llama_server` on loopback addresses. The Jetson gateway settings and the Meta API key are dropped, so no remote client can be built. When the model is down there is no fallback: the checks fail and results are held.
+
 ## Types (`base/types.py`)
 
 - `Person(name, first, last, nicknames=(), role="student", student_id=None)`; `Roster(teacher, students: tuple[Person, ...], school=None)`; `Roster.people()` yields teacher then students. Frozen; `load_roster` returns tuples.
@@ -103,7 +105,38 @@ Muse (cloud VM) --MCP over HTTPS--> relay (Cloudflare Worker) <--WebSocket diale
 - Egress: `release(..., sources=())` sets the redaction for that release (a context variable), and the decision row keeps `sources` (column added on open), so `resolve` after the user's OK checks with the same controls. The connector passes the listed documents (list_documents), the picked passages (search_documents), `AskRunner.sources` (ask_device) and the job folder (run_private_task); a job whose sources are unknown after a restart tags everything.
 - `hidden_folders`: `DocumentIndex(controls=...)` skips every file in them, and `resolve` raises `FileNotFoundError` for a hidden folder, so list, read, search, passages, ask_device and tasks all lose them.
 
+## How learned rules are used (`base/router.py`, `routing_mode`)
+
+With `DEVICE_ONLY=1` the Dreaming page (POST `/api/learning`, `Controls.learning`) or `DREAMING_BACKEND` and `ROUTER_TRUST` pick one mode:
+
+| Mode | Env | What decides |
+|---|---|---|
+| rules | `DREAMING_BACKEND=rules` (the default) | A rule the user taught, else the policy. No model call. |
+| tighten | `prompt`, `ROUTER_TRUST=tighten` | That decision, or the model's when it is stricter. |
+| decide | `prompt`, `ROUTER_TRUST=decide` | The model, with the rules in its prompt, under the floors. |
+| local_lora | `local_lora` | As decide, with the adapter at `BASE_HOME/adapters/router.gguf`. Needs `PRIMARY_MODEL=glimmer`. Training one on the device is not built, on Ethan's Oct 30 instruction not to test Glimmer fine-tuning yet. |
+
+A compliance toggle sets `RouteInput.strict`, which turns decide and local_lora into tighten without the adapter. `DREAMING_BACKEND=lora` is refused with `DEVICE_ONLY=1`, because its training examples leave the device. A device-only Glimmer uses one llama-server for answers and routing.
+
+## Compliance toggles (`base/compliance.py`)
+
+- `Controls.profiles` holds keys from `compliance.PROFILES`: `ferpa`, `coppa`, `state_student`, `hipaa`, `part2`, `glba`, `pci`, `tax`, `legal`, `hr`, `gdpr`, `ccpa`, `cui`, `cjis` and `export`. Several can be on; the strictest rule wins. A toggle needs `DEVICE_ONLY=1`: `/api/controls` and `/api/setup` answer 400 without it, and if one is set anyway, egress keeps every result on the device (floor `compliance:cloud`). A broken controls file reads as every toggle on.
+- Tagging: `guard.Redaction.extra_kinds` adds `place`, `date`, `detail`, `record`, `url` and `ip`, plus `age` (over 89) under HIPAA. `guard.leaks` checks the same kinds. The name pass uses `llm_details`, which also finds places and organizations. Default output does not change when no toggle is on.
+- Locks: while a toggle is on, `Controls.redaction` ignores identifier opt-outs, never-redact words and names-off folders (the file keeps them), and egress ignores Always approve. `/api/auto-approve` answers 409 for on.
+- Holds, after the router and again on a summary (`compliance.check`), first match wins: a `local_only` toggle (`cui`, `cjis`, `export`) refuses every result (floor `compliance:local_only`); a toggle's `keep_words` refuse (`compliance:sensitive`); fewer than `SMALL_GROUP_MIN` (10) people refuses (`compliance:small_group`); a source that is an image gives ask_user (`compliance:scan`); `ask_words` give ask_user (`compliance:ask_word`); `ask_all` gives ask_user (`compliance:ask_all`). Keywords are checked on the raw text as well, since one can sit inside a tag.
+- `/ask` answers a question with the device's model only (`ask_runner`, no egress), showing real names on the page. It is how a `local_only` user gets answers.
+- Retention (`base/retention.py`, docs/RETENTION.md): `retention_days` (90 under COPPA and GDPR), run at most hourly from the release path.
+- No page may say "compliant". Each profile's `limit` is shown next to its toggle.
+
+## Receipts and warnings
+
+- Each decision row has `receipt` (JSON, column added on open): `removed` (kind to count), `checks`, `floors`, `decided_by`, `model`, `toggles`, `device_only`, `destination`, `request_had_private_detail` (kinds) and `sha256` of the outgoing text. Never a value. Shown on History and exported by GET `/api/audit.csv`, which holds no request or result text.
+- When Muse's own request holds a name, identifier or always-redact word, the result ends with `egress.RAW_REQUEST_NOTE` and the audit log gets `private_detail_in_request`. Tags in a request do not count.
+- `/setup` (first visit with `DEVICE_ONLY=1`) sets the toggles by group and shows the checklist; `/prepare` tags a question on the device for the user to paste into Muse, and stores nothing but the tag map's new entries.
+
 ## Router (`base/router.py`)
+
+With `DEVICE_ONLY=1` and LFM, no model decides: a rule the user taught, else the first matching policy rule, gives the decision (`source="rule"`). Practice defaults only count as floors, never as permission to share. The model only labels who a request is for. More floors apply there: a `sensitive_record`, a request for contact details (floor `contact`) and a request that picks out one person by what makes them unique (floor `narrowed`) are refused, and a request that names a destination outside the class gives ask_user (floor `outside_class`) unless a rule the user taught shares results like this. A router that could not decide (`source="fallback"`) is never answered by Always approve.
 
 - `Router(settings, llm, policy, rules_text=None, adapter=None)`, `decide(inp, *, synthetic=False) -> RouteDecision`. `rules_text=None` re-reads `settings.paths.router_prompt` on every call.
 - Rule path, no model call: `document_list` with a `person` hit (the name pass found someone the roster does not know) asks the user; otherwise `document_list` and `dreaming_report` share tagged; a policy rule marked `pre_approved` (matched on request, kind and topics) when nothing is blocked. Otherwise one strict-JSON call (`ROUTE_SCHEMA`, reasoning low, 1500 tokens) with the system prompt, the learned rules and the RouteInput (hit kinds only, real values scrubbed, text cut at 1500 characters).

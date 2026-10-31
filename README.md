@@ -4,6 +4,8 @@ Muse can already reach your files through connectors, but whatever it reads land
 
 Built solo for the Meta Global AI Developer Hackathon, startup track, under the theme Build for Your World. An independent project, not made or endorsed by Meta. Every person, essay and record in this repo is invented.
 
+**Status, Oct 30.** The default setup is now device-only (`DEVICE_ONLY=1`): Liquid's LFM3-VL-2B on the laptop does every model step, your policy file decides what is shared, and no model is reached off the laptop. There are toggles for FERPA, COPPA and HIPAA workflows, a setup page, a receipt for each result and one-command start. On 200 invented items the rules were not written against, there were [0 leaks of names or identifiers, 73.5% agreement with the expected decision and 90 approval requests](eval/reports/device_only_unseen_200.md); 2 results were shared that should have waited or stayed on the device. Grading and nightly learning have not been measured on this model. The plan and its limits are in [docs/COMPLIANCE_PLAN.md](docs/COMPLIANCE_PLAN.md). A toggle does not make anyone compliant, and whatever you type into Muse reaches Meta before the device sees it. Everything below this paragraph that mentions Glimmer describes the earlier setup.
+
 **Status, Oct 28.** The whole path runs and is tested on a laptop. The relay is deployed on Cloudflare, and on Oct 27 a script playing Muse paired with the laptop through it, listed the six tools and called list_documents, which returned the 24 essays as 24 tags, with none of the tag map's 25 names in what left the device. Every Glimmer number so far came from Muse Glimmer on OpenRouter with invented data (a development mode). The final runs were measured after the guard fix for names the model finds, on one code state; the request-label check and the grading comparisons come from earlier runs on Oct 27 ([final.md](eval/reports/final.md), sections 8 and 9). Glimmer on the device, the Jetson and the Muse app itself have not been run yet; [docs/HANDOFF.md](docs/HANDOFF.md) lists what waits on what.
 
 ## Who it's for
@@ -61,6 +63,19 @@ Parts of this exist elsewhere; [docs/PRIOR_WORK.md](docs/PRIOR_WORK.md#related-w
 ## Setup
 
 You need macOS or Linux, [uv](https://docs.astral.sh/uv/), and for the relay Node 22 and a Cloudflare account.
+
+### Laptop, device-only (the default setup)
+
+Every model runs on the laptop. You need llama.cpp b11960 or newer, the LFM3-VL-2B GGUF and projector in `models/`, and for search the EmbeddingGemma 2 GGUF.
+
+```sh
+git clone https://github.com/Offline-Base/muse-privacy.git && cd muse-privacy
+uv sync
+cp .env.example .env                 # then set DEVICE_ONLY=1, PRIMARY_MODEL=lfm and CHECKER_SERVER_BIN
+scripts/start.sh                     # models, approval page and relay client; Ctrl-C stops all
+open http://127.0.0.1:8787/setup     # say who you're protecting and finish the checklist
+scripts/install_login.sh             # optional: start at login
+```
 
 ### Laptop, cloud mode (development, invented data only)
 
@@ -130,6 +145,8 @@ Where each one runs:
 | Model | Where | What it does |
 |---|---|---|
 | Muse, the app and its Secure VM | Meta's cloud | Plans the work with tags, calls the connector, runs the scheduled dreaming jobs. Gets only tags and tagged or summarized results; the documents stay on the device. |
+| Liquid LFM3-VL-2B, Q4_K_M | The laptop, llama-server | Today's default: the name check, request labels, search passages, summaries, answers and scans. It does not decide what is shared; the user's policy does. |
+| EmbeddingGemma 2, Q8_0 | The laptop, llama-server | Search |
 | Muse Glimmer 30B, `meta/muse-glimmer-30b` on OpenRouter | OpenRouter (development only) | Every model step today, on invented data. The device refuses any folder without a `.synthetic` marker in this mode. |
 | Muse Glimmer, Meta's Q4_K_M GGUF (`Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf`) | The laptop, llama-server | Grading, the name pass, summaries and the privacy router (Glimmer is its own router; its small assistant model is a speculative-decoding drafter, not a chat model). |
 | Muse Glimmer i1-IQ1_S (6.5 GB, `mradermacher/Muse-Glimmer-30B-i1-GGUF`) | The Jetson Orin Nano 8GB, llama-server | Lookups, tagging and routing on the board; grading goes to the laptop's Q4_K_M when its worker is connected. |
@@ -137,7 +154,7 @@ Where each one runs:
 
 ## Numbers
 
-All on OpenRouter's Glimmer with invented data. Each links to the report, which starts with the command that made it; raw rows are next to each report under `raw/`. The summary with every source is [eval/reports/final.md](eval/reports/final.md).
+The device-only numbers are in the status above. The numbers in this section are earlier ones, all on OpenRouter's Glimmer with invented data. Each links to the report, which starts with the command that made it; raw rows are next to each report under `raw/`. The summary with every source is [eval/reports/final.md](eval/reports/final.md).
 
 | What | Number | Report |
 |---|---|---|

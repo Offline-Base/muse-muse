@@ -2,17 +2,19 @@
 
 Written Oct 30, 2026, after the Oct 29 build session (local LFM models, hybrid search, PDF reading, always-approve, ask_device, privacy controls, the approval page restyle). What we recommend doing next, in order. Submission is due Nov 4 at 9 PM ET; we submit by noon.
 
+For device-only mode, the FERPA, COPPA and HIPAA toggles and the dated schedule, follow docs/COMPLIANCE_PLAN.md. It takes priority where the two overlap.
+
 ## What changed on Oct 29, and why it matters
 
 - Every model step but the privacy router now runs on Liquid's LFM3-VL-2B on the laptop (`PRIMARY_MODEL=lfm`), with LFM3-1.7B on Ethan's Jetson (through the Offline Base gateway) as the fallback. The router stays on Muse Glimmer (OpenRouter), because the 2B model shared results that Glimmer asks about first.
 - Search ranks ~800-character passages by keyword (BM25) and meaning (EmbeddingGemma 2 on the laptop), and the local model rewrites queries. ask_device is a second way to ask: the device's model splits a request into parts, keeps searching, and returns one finished answer with quotes it checked against the passages.
 - The approval page has Always approve and a Controls tab (what gets redacted, which folders Muse can see).
 
-The eval numbers in eval/reports were measured with Glimmer for every step. They do not describe the current default. Do not quote them for the LFM setup.
+Most eval numbers in eval/reports were measured with Glimmer for every step. They do not describe the current default. For the device-only setup use eval/reports/device_only_unseen_200.md, device_only_final.md and compliance*.md.
 
 ## Before submitting (by Nov 4, noon)
 
-1. **Decide the model story.** The rubric gives 25% to "Use of Meta AI Tooling". Today only the router uses a Meta model. Options, best first:
+1. **Decide the model story.** Oct 30: Ethan chose Liquid for now, so no Meta model runs on the device, and the Meta tooling is the Muse app, Spark's invented data and the earlier Glimmer measurements. The rubric gives 25% to "Use of Meta AI Tooling", so this is the weaker story for that criterion, and the Official Rules require building with Meta AI products. Revisit before submitting. Options, best first:
    - Run Glimmer on the device for the reasoning steps (grading, the ask_device answer and combine), with LFM for tagging, search and scans. Needs the laptop to hold Glimmer Q4_K_M (17 GB) in memory; check RAM first.
    - Keep LFM first and present Glimmer as the privacy router, the judge of what leaves. Honest, but the weaker tooling story.
    - Go back to Glimmer everywhere (`PRIMARY_MODEL=glimmer`). The measured numbers then hold again.
