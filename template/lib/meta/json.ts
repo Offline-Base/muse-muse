@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import type { Response, ResponseInput } from "openai/resources/responses/responses";
 import { z } from "zod";
-import { metaClient, type RequestLike } from "./client";
+import { metaClient, testModelFor, type RequestLike } from "./client";
 import { plainDeep } from "./text";
 
 export type JsonReasoningEffort = "minimal" | "low" | "medium" | "high";
@@ -82,6 +82,7 @@ export async function respondJson<T>(opts: RespondJsonOptions<T>): Promise<T> {
     let res: Response;
     try {
       res = await client.responses.create({
+        // metaClient makes this swap too. This covers a client passed in, which may not.
         model: testModelFor(opts.model ?? "muse-wonder-1.0"),
         instructions: instructionsFor(current, opts.instructions, plain),
         input,
@@ -129,18 +130,6 @@ export async function respondJson<T>(opts: RespondJsonOptions<T>): Promise<T> {
     ];
   }
   throw new RespondJsonError(`The model's JSON did not match "${opts.schemaName}" after a retry.`, lastIssues, lastRaw);
-}
-
-/** The only model TEST_MODEL may name. */
-const TEST_MODEL = "muse-spark-1.3-contributor";
-
-/**
- * The model a call runs on. Muse Wonder, unless this is a test build whose calls go straight to Meta: then the Muse
- * Muse platform writes TEST_MODEL=muse-spark-1.3-contributor into .env.local, the same swap the gateway makes for every
- * other test build. Any other value is ignored. A live product never has it, since .env files are never deployed.
- */
-function testModelFor(model: "muse-wonder-1.0"): string {
-  return process.env.TEST_MODEL?.trim() === TEST_MODEL ? TEST_MODEL : model;
 }
 
 /** Every call asks for copy without em dashes, so plain() on the reply is only a fallback. */

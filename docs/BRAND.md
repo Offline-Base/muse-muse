@@ -542,10 +542,11 @@ sizes, so these are ours (O):
 | Hero | 48 px centered | 28 px, 30 px from 720, left; `.hero.center` only for a chat start | judgeShot's two-line h1 rule, and most products aren't chat |
 
 **Also fixed: test calls on a local platform.** A local platform's products call Meta directly and skipped the gateway's
-`TEST_MODEL` swap. In that mode only, `envLocal` writes `TEST_MODEL` into the product's `.env.local` and the template's
-`respondJson` runs a Muse Wonder call on Spark 1.3 Contributor when it names exactly that. Production doesn't change.
-Only `respondJson`: a product that calls `metaClient` itself still runs Muse Wonder on a local test build, as the trial
-below found.
+`TEST_MODEL` swap. In that mode only, `envLocal` writes `TEST_MODEL` into the product's `.env.local`, and when it names
+exactly Spark 1.3 Contributor the template's `metaClient` sends every JSON request whose `model` is `muse-wonder-1.0` on
+that model instead, on any endpoint, streaming or not (`respondJson` makes the same swap for a client passed to it).
+Production doesn't change. At first only `respondJson` swapped, so a product calling `metaClient` itself still ran Muse
+Wonder on a local test build, as the trial below found; the client-level swap closes that.
 
 **Tried in two real builds (Oct 31).** A chore rota tool and a fridge recipe helper, on a local platform with the flag
 on, a test snapshot and `TEST_MODEL`: both went live with the judge passing, for $0.10 of recorded Meta spend and

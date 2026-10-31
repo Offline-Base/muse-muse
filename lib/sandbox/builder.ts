@@ -260,8 +260,8 @@ async function ensureTime(sandbox: Sandbox, needMs: number): Promise<void> {
 
 /**
  * The product's .env.local. A product calling Meta directly skips the gateway, and with it the gateway's TEST_MODEL swap
- * of a build's Muse Wonder calls, so on those runs TEST_MODEL goes in the file too and the template's respondJson makes
- * the swap itself. Through the gateway the file never names it.
+ * of a build's Muse Wonder calls, so on those runs TEST_MODEL goes in the file too and the template's metaClient (and
+ * respondJson) makes the swap itself. Through the gateway the file never names it.
  */
 function envLocal(sandboxName: string, gatewayUrl: string, token: string): string {
   const direct = productsCallMetaDirectly();

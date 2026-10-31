@@ -59,6 +59,11 @@ preview) the gateway swaps a build token's Wonder calls, so this is local runs o
 make `metaClient` (or the direct-call path) swap a Wonder model to `TEST_MODEL` the way `respondJson` does, or point the
 skill and AGENTS.md at `respondJson` for text replies too. Not changed here: it's template logic outside the look.
 
+**Fixed after the trial.** `metaClient` now makes the swap itself: with `TEST_MODEL=muse-spark-1.3-contributor` it hands
+the OpenAI SDK a fetch that rewrites a JSON body's `model` from exactly `muse-wonder-1.0` to Contributor, on every
+endpoint, and leaves other models and non-JSON bodies alone. Without `TEST_MODEL` the client is the same as before.
+Tests in `template/scripts/__tests__/test-model.test.mjs`.
+
 ## Old look against new
 
 Each product was also served with its two overlay imports swapped back (Inter and Montserrat, then `globals.css` only),
