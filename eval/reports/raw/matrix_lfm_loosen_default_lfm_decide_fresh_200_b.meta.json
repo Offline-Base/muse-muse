@@ -1,0 +1,15 @@
+{
+  "commit": "6ac46bc",
+  "config": "lfm_decide",
+  "env": {
+    "DREAMING_BACKEND": "prompt",
+    "ROUTER_TRUST": "decide"
+  },
+  "set": "eval/fresh_200_b.jsonl",
+  "items": 200,
+  "ids_sha256": "9b3530914f60aa56",
+  "router": "lfm3-vl-2b at port 8083",
+  "reasoning": "low",
+  "max_tokens": 1500,
+  "glimmer_sha256": null
+}
