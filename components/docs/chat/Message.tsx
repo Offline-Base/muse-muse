@@ -15,7 +15,8 @@ export function UserMessage({ parts }: { parts: readonly ChatPart[] }) {
 /**
  * The assistant's reply. While it runs, each step shows as a working step and its words stream in below, with
  * "Thinking..." whenever it waits on the model. Once done, its steps fold into "Show thinking", which unfolds them
- * right here (the sidebar has no room for a second panel), and the demo's pictures and the answer stay below.
+ * right here (the sidebar has no room for a second panel), and the demo's pictures and the answer stay below. A reply
+ * that ended before a word, as Stop can leave it, keeps its steps in view instead.
  */
 export function Reply({ parts, live }: { parts: readonly ChatPart[]; live: boolean }) {
   const view = replyView(parts, live);

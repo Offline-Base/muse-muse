@@ -42,6 +42,15 @@ describe("a finished reply", () => {
     assert.deepEqual(replyView([answer], false), { folded: [], shown: [answer], waiting: false });
     assert.deepEqual(replyView([], false), { folded: [], shown: [], waiting: false });
   });
+
+  it("keeps the steps in view when it ended before a word, so a step cut short by Stop still shows", () => {
+    assert.deepEqual(replyView([stopped], false), { folded: [], shown: [stopped], waiting: false });
+    assert.deepEqual(replyView([searched, pictures, stopped], false), {
+      folded: [],
+      shown: [searched, pictures, stopped],
+      waiting: false,
+    });
+  });
 });
 
 describe("the reader's message", () => {

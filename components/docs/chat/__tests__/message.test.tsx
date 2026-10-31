@@ -54,4 +54,10 @@ describe("docs assistant messages", () => {
   it("has no Show thinking for a reply that took no steps", () => {
     assert.doesNotMatch(render(Reply, { parts: [answer], live: false }), /chat-thinking/);
   });
+
+  it("keeps a reply that was stopped before its words unfolded, so the stopped step shows", () => {
+    const html = render(Reply, { parts: [searched, failed], live: false });
+    assert.doesNotMatch(html, /chat-thinking/);
+    assert.match(html, /<div class="chat-step is-failed">[\s\S]*?<p class="chat-step-title">Ran the demo<\/p>[\s\S]*?<p class="chat-step-desc">Stopped\.<\/p>/);
+  });
 });

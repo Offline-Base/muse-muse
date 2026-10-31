@@ -8,9 +8,12 @@ import type { ChatPart } from "@/lib/docs/client/assistant";
 export type ToolPart = Extract<ChatPart, { kind: "tool" }>;
 
 export interface ReplyView {
-  /** The steps folded behind "Show thinking": every one once the reply is done, none while it runs. */
+  /** The steps folded behind "Show thinking": every one once the reply is done with words, none before that. */
   folded: ToolPart[];
-  /** What shows, in order: while the reply runs, every part as it comes; once done, what it made and its answer. */
+  /**
+   * What shows, in order: while the reply runs, every part as it comes; once done, what it made and its answer. A reply
+   * that ended before a word, such as one stopped mid-step, shows every part, so the reader sees where it ended.
+   */
   shown: ChatPart[];
   /** Running and waiting on the model, not on a step or on its words: a "Thinking..." step shows last. */
   waiting: boolean;
@@ -18,6 +21,7 @@ export interface ReplyView {
 
 export function replyView(parts: readonly ChatPart[], live: boolean): ReplyView {
   if (!live) {
+    if (!parts.some((p) => p.kind === "text")) return { folded: [], shown: [...parts], waiting: false };
     return {
       folded: parts.filter((p): p is ToolPart => p.kind === "tool"),
       shown: parts.filter((p) => p.kind !== "tool"),
