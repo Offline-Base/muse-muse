@@ -6,6 +6,19 @@
     "slug": "muse-hackathon"
   },
   "builds": {
+    "production-android": {
+      "id": "a7995d6c-bea3-45a6-8ccb-53c24242c315",
+      "profile": "production-android",
+      "platform": "android",
+      "appId": "ai.musemuse.app",
+      "sdk": "58.0.0",
+      "runtime": "exposdk:58.0.0",
+      "channel": "production",
+      "artifactUrl": "https://expo.dev/artifacts/eas/11Xgu25-2oboA2AWOWrRwKaoehfJRsllzHeLzyFRxvE.apk",
+      "sourceCommit": "3e223ea",
+      "createdAt": "2026-10-31T08:32:38.301Z",
+      "expiresAt": "2026-11-14T08:32:38.354Z"
+    },
     "lab-android": {
       "id": "b26dd58c-dd6e-407c-a755-ebafa0854dad",
       "profile": "lab-android",

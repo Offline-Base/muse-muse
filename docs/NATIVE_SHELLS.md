@@ -60,11 +60,11 @@ Product B. Per-product APKs don't have this problem, since each one opens one pr
 not what the page said, and a report only counts after the page has loaded and the scroll has had its time. A page can
 still claim a text length, so the lab's pixel check is the proof of that one.
 
-**Per-product APKs: check before the first one ships.** `updates.enabled` is false only when `MUSE_PRODUCT_URL` is set at
-build time, but the design repacks these from the production template, which is built without it. An update replaces the
-config that `settings.js` reads, so if a repacked APK keeps updates on, the next `eas update --channel production` would
-clear its `productUrl` and it would become the generic list. Spike S6 passes only if the repacked manifest has
-`expo.modules.updates.ENABLED` false. If repack-app doesn't set that, the packager must.
+**Per-product APKs.** `updates.enabled` is false only when `MUSE_PRODUCT_URL` is set at build time, but these are repacked from
+the production template, which is built without it. An update replaces the config that `settings.js` reads, so a repacked APK
+with updates on would turn into the generic list at the next `eas update --channel production`. So the packager sets
+`expo.modules.updates.ENABLED` false, removes the update URL, and refuses to upload an APK whose manifest reads otherwise
+(`docs/NATIVE_PACKAGER.md`).
 
 **Why the React Native files are JavaScript.** The repo's root `tsc` reads every `**/*.ts`, and this project's packages
 aren't installed at the root. So anything that imports React Native or Expo is `.js`, checked by the shell's own
@@ -101,8 +101,8 @@ real glasses ship.
 
 ## Desktop shell
 
-- **Config:** `resources/muse-product.json` outside the asar: `{ "name", "url", "shellVersion" }`. The packager rewrites
-  this file for each product. The URL must be https, or http on the machine itself.
+- **Config:** `resources/muse-product.json` outside the asar: `{ "name", "url", "shellVersion" }`. The packager
+  (`docs/NATIVE_PACKAGER.md`) rewrites this file for each product. The URL must be https, or http on the machine itself.
 - **Fuses:** RunAsNode, NodeOptions and NodeCliInspect off. OnlyLoadAppFromAsar on.
 - **Signing:** a Mac build must be ad hoc signed (`mac.identity: "-"`). Flipping fuses breaks the old signature, and macOS
   kills the app at launch with exit 137.
