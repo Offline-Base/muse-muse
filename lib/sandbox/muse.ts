@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { q } from "@/lib/sandbox/shell";
 
 /**
@@ -47,6 +48,17 @@ const RUNNER_EXEC_FLAGS = ["--image"] as const;
  * take is known.
  */
 export const SERVE_SETTINGS: readonly string[] = ['tools.web_search.mode="off"'];
+
+/**
+ * `-c` setting for every round, on both engines: the model's reminder agents run on that model. Meta's catalog
+ * (GET /muse-code/models) gives muse-wonder-1.0 `background_agent_model: "muse-spark-1.3"`, which this platform never
+ * uses, and a settings catalog row with the same model, provider and profile overrides just that field (Oct 31,
+ * docs/spikes/serve-2026-10-31). It also keeps parseSessionUsage's prices right, which charge reminders at the round's
+ * model. The value must be the model itself: `muse serve` turns a contributor id here back into muse-spark-1.3.
+ */
+export function backgroundModelSetting(model: BuildModel): string {
+  return `model_catalog=${JSON.stringify([{ model_id: model, provider_id: "meta", profile_id: "tbh", background_agent_model: model }])}`;
+}
 
 /**
  * argv for `muse exec`, after the binary name. --yolo skips Muse Code's own bubblewrap sandbox, which can't run in the
@@ -148,4 +160,18 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function isSessionId(id: string): boolean {
   return UUID.test(id);
+}
+
+/**
+ * A new build's Muse Code session id, a UUIDv7. `muse serve` refuses any other version on session/start ("expected
+ * UUIDv7", Oct 31), while `muse exec --session-id` takes any UUID and each engine resumes the other's sessions, so one
+ * kind of id serves both. A product made before this has a v4 id: a session that exists resumes whatever its id.
+ */
+export function newSessionId(now: number = Date.now()): string {
+  const bytes = randomBytes(16);
+  bytes.writeUIntBE(now, 0, 6);
+  bytes[6] = (bytes[6]! & 0x0f) | 0x70;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }

@@ -37,7 +37,7 @@ import { pollDeploy, projectNameFor, startDeployFromSandbox, type DeployPoll } f
 import * as sandbox from "@/lib/sandbox/builder";
 import type { MuseEngine } from "@/lib/sandbox/bridge-protocol";
 import type { BridgeCondenseState } from "@/lib/sandbox/msp-log";
-import type { BuildModel } from "@/lib/sandbox/muse";
+import { newSessionId, type BuildModel } from "@/lib/sandbox/muse";
 import { ownersLabel } from "@/lib/sandbox/muse-log";
 import {
   TERMINAL_STATUSES,
@@ -406,7 +406,7 @@ export interface SandboxRef {
 
 /**
  * Mints the build token and provisions the sandbox in one step, so the plaintext token stays inside it. Also fixes
- * the Muse Code session id (a fresh UUID, reused on retry).
+ * the Muse Code session id (a fresh UUIDv7, reused on retry).
  */
 export async function provisionStep(input: {
   buildId: string;
@@ -443,7 +443,7 @@ export async function provisionStep(input: {
     buildToken: token,
     gatewayUrl: env.gatewayUrl,
   });
-  const sessionId = build.museSessionId ?? randomUUID();
+  const sessionId = build.museSessionId ?? newSessionId();
   await db().batch([
     db().update(schema.builds).set({ sandboxName, museSessionId: sessionId }).where(eq(schema.builds.id, input.buildId)),
     db()

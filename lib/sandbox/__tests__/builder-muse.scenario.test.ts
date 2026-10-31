@@ -15,6 +15,7 @@ import path from "node:path";
 import { after, before, beforeEach, describe, it, mock } from "node:test";
 import { BRIDGE_SCRIPT, bridgeConfigPath, type BridgeConfig, type MuseCommandEnvelope } from "@/lib/sandbox/bridge-protocol";
 import { BRIDGE_SOURCE } from "@/lib/sandbox/bridge-source";
+import { backgroundModelSetting } from "@/lib/sandbox/muse";
 import { HOOKS_DIR, MUSE_FULL_MARKER, NOTES_DIR } from "@/lib/sandbox/muse-config";
 import { condenseMuseLines, highlightsFrom } from "@/lib/sandbox/muse-log";
 
@@ -134,7 +135,9 @@ describe("startMuse", { skip: canMock ? false : "needs --experimental-test-modul
     const script = runner("muse-r0");
     assert.match(script, /^cmd=\('muse' 'exec' '--json' '--yolo' '--session-id' '0f8fad5b-d9cb-469f-a165-70867728950e' '--prompt-file' 'brief\.md'/m);
     assert.match(script, /\[ -f 'inspo\/bird\.png' \] && cmd\+=\(--image 'inspo\/bird\.png'\)/);
-    assert.ok(!script.includes("--config") && !script.includes("skills enable") && !script.includes("MUSEMUSE_BUILD_MCP_TOKEN"));
+    assert.ok(!script.includes("agents.execution_capacity") && !script.includes("skills enable") && !script.includes("MUSEMUSE_BUILD_MCP_TOKEN"));
+    // The one setting a plain run gets: its reminder agents stay on its own model.
+    assert.ok(script.includes(`cmd+=('--config' '${backgroundModelSetting("muse-wonder-1.0")}')`), script);
     assert.deepEqual(Object.keys(files).sort(), [
       "/vercel/musemuse/run/by-id/cmd-1",
       "/vercel/musemuse/run/muse-r0.cmd",
@@ -192,7 +195,7 @@ describe("startMuse", { skip: canMock ? false : "needs --experimental-test-modul
     assert.match(clear.script, /^rm -f -- '\/vercel\/musemuse\/run\/muse-full'$/m);
     assert.equal(spawnSync("bash", ["-n", "-c", clear.script]).status, 0);
     const script = runner("muse-r1");
-    assert.ok(!script.includes("--config") && !script.includes("skills enable") && !script.includes("MUSEMUSE_BUILD_MCP_TOKEN"), "the round runs as it would without the flag");
+    assert.ok(!script.includes("agents.execution_capacity") && !script.includes("skills enable") && !script.includes("MUSEMUSE_BUILD_MCP_TOKEN"), "the round runs as it would without the flag");
     // Cleared once: a later start runs nothing extra.
     commands = [];
     await start({ round: 2 });
@@ -242,7 +245,7 @@ describe("startMuse", { skip: canMock ? false : "needs --experimental-test-modul
       images: ["/vercel/app/.muse-fix/round-2-1.png"],
       goal: "Build Bird Finder.",
       // muse serve has no --disable-web-tools, so web search goes off with its setting, with or without MUSE_FULL.
-      settings: ['tools.web_search.mode="off"'],
+      settings: ['tools.web_search.mode="off"', backgroundModelSetting("muse-wonder-1.0")],
       disableRequestUserInput: true,
       logPath: "/vercel/musemuse/logs/muse-r2.msp.jsonl",
       mailboxDir: "/vercel/musemuse/mailbox/r2",
@@ -262,7 +265,8 @@ describe("startMuse", { skip: canMock ? false : "needs --experimental-test-modul
     const config = JSON.parse(files[bridgeConfigPath(0)]!) as BridgeConfig;
     assert.equal(config.settings[0], 'tools.web_search.mode="off"');
     assert.equal(config.settings[1], "agents.execution_capacity=6");
-    assert.equal(config.settings.length, 4);
+    assert.equal(config.settings[4], backgroundModelSetting("muse-wonder-1.0"));
+    assert.equal(config.settings.length, 5);
     assert.match(runner("muse-r0"), /^muse skills enable bundled:workflow-authoring/m);
   });
 

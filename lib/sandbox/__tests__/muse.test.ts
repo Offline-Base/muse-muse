@@ -10,10 +10,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, it } from "node:test";
 import {
+  backgroundModelSetting,
   execFlags,
   flagsMissingFromHelp,
   helpLists,
+  isSessionId,
   museExecArgs,
+  newSessionId,
   OPTIONAL_EXEC_FLAGS,
   optionalConfigPrelude,
   optionalFlagsPrelude,
@@ -110,6 +113,31 @@ describe("the session bridge's settings", () => {
       assert.match(key!, /^[A-Za-z_][A-Za-z0-9_.]*$/);
       assert.doesNotThrow(() => JSON.parse(rest.join("=")), setting);
     }
+  });
+});
+
+describe("the reminder agents' model", () => {
+  it("is a settings catalog row that names the round's model as its own background model", () => {
+    const setting = backgroundModelSetting("muse-wonder-1.0");
+    assert.ok(setting.startsWith("model_catalog=["), setting);
+    assert.deepEqual(JSON.parse(setting.slice("model_catalog=".length)), [
+      { model_id: "muse-wonder-1.0", provider_id: "meta", profile_id: "tbh", background_agent_model: "muse-wonder-1.0" },
+    ]);
+    assert.ok(!setting.includes("muse-spark-1.3"));
+  });
+});
+
+describe("a new session id", () => {
+  it("is a UUIDv7 with the time first, as session/start on muse serve requires, and passes isSessionId", () => {
+    const at = Date.UTC(2026, 9, 31, 7, 3, 4);
+    const id = newSessionId(at);
+    assert.match(id, /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    assert.ok(isSessionId(id));
+    assert.equal(parseInt(id.replace(/-/g, "").slice(0, 12), 16), at);
+  });
+
+  it("differs every time", () => {
+    assert.notEqual(newSessionId(1000), newSessionId(1000));
   });
 });
 

@@ -41,6 +41,7 @@ import {
   type SessionUsage,
 } from "@/lib/sandbox/muse-log";
 import {
+  backgroundModelSetting,
   type BuildModel,
   DEFAULT_MAX_MODEL_STEPS,
   DEFAULT_REASONING_EFFORT,
@@ -705,7 +706,8 @@ async function startExec(sandbox: Sandbox, run: MuseRunSpec): Promise<{ cmdId: s
     `[ -s ${q(logPath)} ] && mv ${q(logPath)} ${q(`${LOG_DIR}/${run.tag}`)}.$(date +%s).jsonl`,
     // A persistent product sandbox keeps the Muse Code it was made with, which may not have these yet.
     optionalFlagsPrelude(),
-    ...(run.full ? [optionalConfigPrelude(museSettings(env.museAgentCapacity), CHECKED_MUSE_VERSION), WORKFLOW_SKILL_PRELUDE] : []),
+    optionalConfigPrelude([...(run.full ? museSettings(env.museAgentCapacity) : []), backgroundModelSetting(run.model)], CHECKED_MUSE_VERSION),
+    ...(run.full ? [WORKFLOW_SKILL_PRELUDE] : []),
     ...run.images.map((img) => `[ -f ${q(img)} ] && cmd+=(--image ${q(img)})`),
     "true",
   ].join("\n");
@@ -810,7 +812,7 @@ async function startBridge(sandbox: Sandbox, run: MuseRunSpec): Promise<{ cmdId:
     images: run.images.map((img) => `${PRODUCT_DIR}/${img}`),
     goal: run.goal?.trim() || null,
     // Every round turns web search off, as exec's --disable-web-tools does; MUSE_FULL adds its own settings.
-    settings: [...SERVE_SETTINGS, ...(run.full ? museSettings(env.museAgentCapacity) : [])],
+    settings: [...SERVE_SETTINGS, ...(run.full ? museSettings(env.museAgentCapacity) : []), backgroundModelSetting(run.model)],
     disableRequestUserInput: true,
     logPath: paths.log,
     mailboxDir: paths.mailbox,
