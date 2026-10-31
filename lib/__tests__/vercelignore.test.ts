@@ -23,4 +23,10 @@ describe(".vercelignore", () => {
     assert.ok(ignored.includes("native/releases.json"));
     assert.ok(ignored.some((file) => file.startsWith("native/lab/")));
   });
+
+  it("keeps the spike recordings out of the functions, and only those docs", () => {
+    assert.ok(ignored.includes("docs/spikes/serve-2026-10-31/README.md"));
+    assert.deepEqual(ignored.filter((file) => file.startsWith("docs/") && !file.startsWith("docs/spikes/")), []);
+    assert.deepEqual(ignored.filter((file) => file.endsWith("/spikes") || file.includes("/docs/spikes/")), []);
+  });
 });
