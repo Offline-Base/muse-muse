@@ -923,6 +923,18 @@ because the sidebar showed a real account.
   platform host only) and port 9e09de8's preview platform URL and bypass-secret getter, then a review focused on the
   secret never reaching a sandbox, log or other host.
 
+### 19:44 Owner: anyone should be able to fine-tune
+
+- Today the lab is admin-only to start datasets and jobs; production runs in guest mode, so "anyone" means any visitor,
+  and every job rents a Lambda GPU on the owner's account.
+- Plan: build it behind a PUBLIC_TRAINING switch (off means exactly today's behavior), with a visitor identity without
+  sign-in, per-visitor and site-wide limits, a queue for the one GPU slot, the visitor's own job pages, the policy check
+  on dataset tasks, and no automatic publishing of visitors' models to the owner's Hugging Face account. Design running
+  now (branch tg-open-train); the build starts when a heavy slot frees.
+- The fine-tune session's final model is stage-b-r30b (picked 19:14): BF16, greedy, 29.0% of 2,500 2026 facts (base 18.4%
+  at Q4), admits not knowing 86% (base 15%), makes something up 12% (base 74%). Its Q4_K_M is on writer-1 (16.9 GB); the
+  1-bit IQ1_S is due about 20:25, scored about 21:05. Nothing goes through the laptop.
+
 ## Gaps
 
 What this record doesn't confirm:
