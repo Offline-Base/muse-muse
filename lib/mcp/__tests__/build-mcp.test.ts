@@ -97,7 +97,7 @@ describe("the build MCP endpoint", () => {
     for (const t of tools) assert.equal(t.annotations?.readOnlyHint, t.name !== "build_note", t.name);
     assert.equal(tools.find((t) => t.name === "build_note")!.annotations?.destructiveHint, false);
     const words = JSON.stringify(tools);
-    assert.ok(!words.includes("—"), "no em dashes");
+    assert.ok(!words.includes("\u2014"), "no em dashes");
   });
 
   it("searches the docs and reads a page, or one section of it", async () => {
@@ -125,7 +125,7 @@ describe("the build MCP endpoint", () => {
 
   it("adds a plain note to the build room, until the build has finished or has its fill", async () => {
     const deps = fakeDeps();
-    const ok = await callTool(deps, "build_note", { text: "Upload screen works — next: the results\nlist." });
+    const ok = await callTool(deps, "build_note", { text: "Upload screen works \u2014 next: the results\nlist." });
     assert.equal(ok.isError, undefined);
     assert.deepEqual(deps.notes, ["Upload screen works, next: the results list."]);
     await callTool(deps, "build_note", { text: "Second." });

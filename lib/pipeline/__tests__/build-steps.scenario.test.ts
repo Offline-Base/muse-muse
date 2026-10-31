@@ -377,7 +377,7 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
         "Muse Code runs this round on its session host, so its owner can steer it. It has 1 agent slot, every reminder and the platform's hooks and build tools.",
       );
       assert.equal(steps.museRunLine({ engine: "exec", notice: "The bridge didn't start." }, false, 6), "The bridge didn't start.");
-      for (const line of [steps.museRunLine({ engine: "serve", buildMcp: true }, true, 6)]) assert.ok(!line?.includes("—"));
+      for (const line of [steps.museRunLine({ engine: "serve", buildMcp: true }, true, 6)]) assert.ok(!line?.includes("\u2014"));
     });
   });
 

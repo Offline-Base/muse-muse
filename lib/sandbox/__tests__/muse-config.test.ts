@@ -122,7 +122,7 @@ describe("hooks.json", () => {
     const offline = museConfigFiles({ mcpUrl: null });
     assert.ok(offline.remove.includes("/vercel/app/.mcp.json"));
     assert.ok(!offline.write.some((f) => f.path.endsWith(".mcp.json")));
-    for (const f of withMcp.write) assert.ok(!f.content.includes("—"), `${f.path} has an em dash`);
+    for (const f of withMcp.write) assert.ok(!f.content.includes("\u2014"), `${f.path} has an em dash`);
   });
 });
 
@@ -269,6 +269,6 @@ describe("the event logger hook", () => {
   });
 
   it("has no em dashes in any script", () => {
-    for (const [name, source] of Object.entries(HOOK_SCRIPTS)) assert.ok(!source.includes("—"), name);
+    for (const [name, source] of Object.entries(HOOK_SCRIPTS)) assert.ok(!source.includes("\u2014"), name);
   });
 });

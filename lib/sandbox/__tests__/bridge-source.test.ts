@@ -23,5 +23,5 @@ it("imports only node: built-ins up front, and the pinned SDK only when it runs 
 });
 
 it("has no em dashes in what it writes", () => {
-  assert.ok(!BRIDGE_SOURCE.includes("—"));
+  assert.ok(!BRIDGE_SOURCE.includes("\u2014"));
 });
