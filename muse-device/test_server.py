@@ -152,6 +152,10 @@ class TrainingTests(unittest.TestCase):
             self.addCleanup(patcher.stop)
         os.makedirs(server.MODEL_DIR)
         open(os.path.join(server.MODEL_DIR, f"{server.DEFAULT_BASE}-Q4_K_M.gguf"), "w").close()
+        # So a download's address check needs no network.
+        addresses = mock.patch.object(server, "addresses_of", return_value={"93.184.216.34"})
+        addresses.start()
+        self.addCleanup(addresses.stop)
         memory = mock.patch.object(server, "meminfo_gib", return_value=4.4)
         self.memory = memory.start()
         self.addCleanup(memory.stop)
@@ -474,6 +478,42 @@ class TrainingTests(unittest.TestCase):
             # Replacing it doesn't count what's there.
             self.assertFalse(call("save_dataset", name="data", examples=[EXAMPLE])[0])
         self.assertEqual(os.path.getsize(os.path.join(server.DATASET_DIR, "data.jsonl")), size)
+
+    def test_install_model_refuses_this_board_and_its_network(self):
+        for address in ("127.0.0.1", "10.0.0.5", "192.168.1.1", "169.254.169.254", "::1", "fe80::1"):
+            with self.subTest(address=address), mock.patch.object(server, "addresses_of", return_value={address}):
+                error, reply = self.install()
+                self.assertTrue(error)
+                self.assertIn("public address", reply)
+        self.assertNotIn("new.gguf", server.model_files())
+
+    def test_a_redirect_cannot_reach_this_board_or_its_network(self):
+        handler = server.HttpsOnlyRedirect()
+        request = server.urllib.request.Request("https://models.example/x.gguf")
+        with mock.patch.object(server, "addresses_of", return_value={"127.0.0.1"}), self.assertRaises(server.ToolError):
+            handler.redirect_request(request, None, 302, "Found", {}, "https://internal.example:8766/x.gguf")
+
+    def test_a_failed_download_does_not_say_how_it_failed(self):
+        # The difference between "connection refused" and a TLS error would tell a caller which ports are open.
+        for failure in (server.urllib.error.URLError("[Errno 61] Connection refused"), server.urllib.error.URLError("WRONG_VERSION_NUMBER")):
+            with self.subTest(failure=failure), mock.patch.object(server.DOWNLOADS, "open", side_effect=failure):
+                error, reply = call("install_model", url="https://models.example/new.gguf", name="new.gguf")
+                self.assertTrue(error)
+                self.assertEqual(reply, server.DOWNLOAD_FAILED)
+        with mock.patch.object(server, "addresses_of", side_effect=OSError("Name or service not known")):
+            self.assertEqual(self.install()[1], server.DOWNLOAD_FAILED)
+
+    def test_errors_say_home_rather_than_the_home_folder(self):
+        with mock.patch.dict(os.environ, {"HOME": self.home}):
+            self.save()
+            error, reply = call("train_model", name="run1", dataset="data", base="nope")
+            self.assertTrue(error)
+            self.assertNotIn(self.home, reply)
+            self.assertIn("~/train/models", reply)
+            with mock.patch.object(server.shutil, "disk_usage", side_effect=OSError(f"No such file: {self.home}/x")):
+                error, reply = call("list_models")
+            self.assertTrue(error)
+            self.assertEqual(reply, "list_models failed: No such file: ~/x")
 
     def test_a_redirect_must_stay_https(self):
         handler = server.HttpsOnlyRedirect()

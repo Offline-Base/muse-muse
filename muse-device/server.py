@@ -20,6 +20,7 @@ import base64
 import contextlib
 import glob
 import hmac
+import ipaddress
 import json
 import math
 import os
@@ -32,6 +33,8 @@ import subprocess
 import tempfile
 import threading
 import time
+import urllib.error
+import urllib.parse
 import urllib.request
 import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -327,10 +330,31 @@ def list_models(_args):
     )
 
 
+# One message however it fails: telling a refused connection from a TLS error would show a caller which ports are open.
+DOWNLOAD_FAILED = "The download failed. Check that the URL works from a public network."
+
+
+def addresses_of(host):
+    return {info[4][0] for info in socket.getaddrinfo(host, 443)}
+
+
+def refuse_private_host(url):
+    """Downloads are for public files, not this board's own services or its network. A name that changes its address
+    between this check and the download isn't caught."""
+    try:
+        addresses = addresses_of(urllib.parse.urlsplit(url).hostname)
+    except (OSError, ValueError, UnicodeError) as err:
+        print(f"install_model: couldn't resolve a host: {err!r}", flush=True)
+        raise ToolError(DOWNLOAD_FAILED)
+    if not all(ipaddress.ip_address(address).is_global for address in addresses):
+        raise ToolError("url must be at a public address, not on this board or its network.")
+
+
 class HttpsOnlyRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         if not newurl.startswith("https://"):
             raise ToolError("That URL redirects to one that isn't https.")
+        refuse_private_host(newurl)
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
@@ -343,10 +367,14 @@ def install_model(args):
         raise ToolError("url must be an https URL.")
     if not isinstance(name, str) or not MODEL_NAME.fullmatch(name):
         raise ToolError("name must be a file name ending in .gguf, with only letters, digits, dots, dashes and underscores.")
+    refuse_private_host(url)
     if not install_lock.acquire(blocking=False):
         raise ToolError("Another download is running on this board. Try again when it's done.")
     try:
         return download_model(url, name)
+    except urllib.error.URLError as err:
+        print(f"install_model: {err!r}", flush=True)
+        raise ToolError(DOWNLOAD_FAILED)
     finally:
         install_lock.release()
 
@@ -913,6 +941,11 @@ EXEC_TOOL = (
 )
 
 
+def without_home(text):
+    """An error doesn't need to say whose home folder this runs in."""
+    return text.replace(os.path.expanduser("~"), "~")
+
+
 def handle_rpc(method, params):
     if method == "initialize":
         requested = params.get("protocolVersion")
@@ -933,9 +966,9 @@ def handle_rpc(method, params):
         try:
             return tool[0](params.get("arguments") or {})
         except ToolError as err:
-            return {"content": [{"type": "text", "text": str(err)}], "isError": True}
+            return {"content": [{"type": "text", "text": without_home(str(err))}], "isError": True}
         except (OSError, subprocess.SubprocessError) as err:
-            return {"content": [{"type": "text", "text": f"{params.get('name')} failed: {err}"}], "isError": True}
+            return {"content": [{"type": "text", "text": without_home(f"{params.get('name')} failed: {err}")}], "isError": True}
     raise NotImplementedError(method)
 
 
