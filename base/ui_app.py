@@ -19,12 +19,15 @@ import dataclasses
 import hashlib
 import hmac
 import html
+import io
 import ipaddress
 import json
 import logging
 import os
 import re
 import secrets
+import shutil
+import subprocess
 import threading
 import time
 from collections.abc import AsyncIterator, Iterable, Mapping
@@ -38,10 +41,13 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from base import events
+from base import events, guard
 from base.approvals import AutoApprove
+from base.compliance import GROUPS, NOT_FOR, PROFILES, local_only
 from base.config import REPO_ROOT
 from base.controls import KIND_LABELS, TOP, Controls, ControlStore
+from base.flow import flow_html
+from base.router import LEARNING_MODES, routing_mode
 from base.types import default_share_form
 
 log = logging.getLogger(__name__)
@@ -53,7 +59,7 @@ TEMPLATES_DIR = UI_DIR / "templates"
 def _asset_version() -> str:
     """A short hash of the stylesheet and script, so a browser never keeps an old copy."""
     h = hashlib.sha256()
-    for name in ("app.css", "app.js"):
+    for name in ("app.css", "app.js", "flow.css", "flow.js"):
         try:
             h.update((UI_DIR / "static" / name).read_bytes())
         except OSError:
@@ -126,12 +132,20 @@ ICONS = {
     'M2.5 8H5M2.5 12H5M15 8h2.5M15 12h2.5"/>',
     "pairing": '<circle cx="6.75" cy="10" r="3.25"/><path d="M10 10h7.5M15 10v2.5M17.5 10v2"/>',
     "controls": '<path d="M4 6h12M4 14h12"/><circle cx="8" cy="6" r="2"/><circle cx="12.5" cy="14" r="2"/>',
+    "ask": '<path d="M4 4h12v9H9l-4 3v-3H4z"/>',
+    "how": '<circle cx="4.5" cy="10" r="2"/><circle cx="15.5" cy="5" r="2"/><circle cx="15.5" cy="15" r="2"/><path d="M6.5 10h2.5l4.6-4.4M9 10l4.6 4.4"/>',
+    "prepare": '<path d="M4 5h12M4 10h12M4 15h7"/>',
+    "setup": '<path d="M5 10l3 3 7-7"/><rect x="2.5" y="2.5" width="15" height="15" rx="3"/>',
 }
 NAV = [
     ("approvals", "/", "Approvals"),
+    ("how", "/how", "How it works"),
     ("history", "/history", "History"),
     ("dreaming", "/dreaming", "Dreaming"),
     ("controls", "/controls", "Controls"),
+    ("ask", "/ask", "Ask on this device"),
+    ("prepare", "/prepare", "Prepare a question"),
+    ("setup", "/setup", "Setup"),
     ("device", "/device", "Device"),
     ("pairing", "/pair", "Pairing"),
 ]
@@ -608,6 +622,45 @@ def approval_card(row: Any, request_topics: Mapping[str, str] | None = None) -> 
     )
 
 
+KIND_WORDS = {
+    "student": "student names", "teacher": "teacher names", "person": "other names", "phone": "phone numbers",
+    "email": "email addresses", "ssn": "Social Security numbers", "card": "card numbers", "otp": "one-time codes",
+    "student_id": "student IDs", "address": "street addresses", "dob": "dates of birth", "term": "your always-redact words",
+    "place": "places", "date": "dates", "age": "ages over 89", "detail": "organizations and other details",
+    "record": "record numbers", "url": "links", "ip": "IP addresses",
+}  # fmt: skip
+
+
+def _receipt(value: Any) -> dict[str, Any]:
+    try:
+        data = json.loads(value) if value else {}
+    except (TypeError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def receipt_html(value: Any) -> str:
+    """A decision's receipt: kinds and counts, the checks, where it goes. Never a value."""
+    r = _receipt(value)
+    if not r:
+        return ""
+    removed = r.get("removed") or {}
+    words = ", ".join(f"{n} {KIND_WORDS.get(k, k)}" for k, n in sorted(removed.items())) or "nothing"
+    toggles = ", ".join(str(t).upper() for t in r.get("toggles") or []) or "none"
+    lines = [
+        ("Removed", words),
+        ("Checks", ", ".join(r.get("checks") or [])),
+        ("Models", "On this device only" if r.get("device_only") else "Includes a model off this device"),
+        ("Toggles", toggles),
+        ("Goes to", r.get("destination") or ""),
+        ("Fingerprint", (r.get("sha256") or "")[:16]),
+    ]
+    if r.get("request_had_private_detail"):
+        lines.append(("Warning", "Muse's request held a private detail, so Muse had already seen it."))
+    rows = "".join(f"<dt>{esc(k)}</dt><dd>{esc(v)}</dd>" for k, v in lines)
+    return f'<details class="peek"><summary>Receipt</summary><dl class="receipt">{rows}</dl></details>'
+
+
 def history_row(row: Any) -> str:
     r = public_row(row)
     rid = str(r["id"])
@@ -628,6 +681,7 @@ def history_row(row: Any) -> str:
                 '<details class="peek"><summary>What would leave</summary>'
                 f'<pre class="tagged small">{highlight_tags(r["tagged_text"])}</pre></details>'
             )
+        request_html += receipt_html(_val(row, "receipt"))
         action_html = (
             f'<form class="js-delete" method="post" action="/api/history/{esc(quote(rid, safe=""))}/delete">'
             '<button class="btn secondary danger small" type="submit">Delete this decision</button></form>'
@@ -860,7 +914,9 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
         light = events.last() if live else events.Event("idle")
         device = "Jetson" if settings.device == "jetson" else "Laptop"
         backend = "Glimmer via OpenRouter" if settings.is_cloud_backend else "Glimmer on this device"
-        if getattr(settings, "primary_model", "glimmer") == "lfm":
+        if getattr(settings, "device_only", False):
+            backend = ("LFM3-VL-2B" if settings.primary_model == "lfm" else "Glimmer") + " on this device only"
+        elif getattr(settings, "primary_model", "glimmer") == "lfm":
             backend = f"LFM3-VL-2B on this device, then {'LFM3-1.7B on your Jetson' if getattr(settings, 'has_jetson_lfm', False) else backend}"
         body = render(
             "layout.html",
@@ -880,18 +936,23 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
 
     # ------------------------------------------------------------ pages
 
-    @app.get("/", response_class=HTMLResponse)
-    def approvals_page(request: Request) -> HTMLResponse:
+    @app.get("/", response_class=HTMLResponse, response_model=None)
+    def approvals_page(request: Request) -> Response:
+        if getattr(settings, "device_only", False) and not _read_setup(settings).get("chosen"):
+            return RedirectResponse("/setup", status_code=303)  # the first visit
         rows = pending_rows()
         topics = _request_topics(services)
-        on = auto.on
+        locked = bool(controls.get().profiles)
+        on = auto.on and not locked
         content = render(
             "approvals.html",
             cards_html="".join(approval_card(r, topics) for r in rows),
             empty_hidden="" if not rows else "hidden",
             auto_state="on" if on else "off",
             auto_note=(
-                "Results that would wait for your OK go to Muse right away. Names stay tags, and "
+                "Off while a privacy toggle is on, so you see each result that needs your OK."
+                if locked
+                else "Results that would wait for your OK go to Muse right away. Names stay tags, and "
                 "never-share topics are still kept here."
                 if on
                 else "Turn it on to share every result that would wait for your OK, without asking. "
@@ -900,6 +961,7 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
             auto_next="false" if on else "true",
             auto_button="Turn off" if on else "Turn on",
             auto_class="secondary" if on else "primary",
+            auto_disabled="disabled" if locked else "",
         )
         return page(request, "approvals", "Approvals", content)
 
@@ -974,6 +1036,7 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
             ) + "</section>"
         content = render(
             "dreaming.html",
+            learning_html=learning_html(settings, controls.get()),
             report_html=report_html,
             chart_html=chart_html,
             nights_html=nights_table(nights_path),
@@ -986,14 +1049,17 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
         facts = [
             ("Device", "Jetson" if settings.device == "jetson" else "Laptop"),
             (
-                "Glimmer runs",
+                "Models run",
                 "On OpenRouter, for invented data only" if settings.is_cloud_backend else "On this device with llama-server",
             ),
             ("Answer model", _model_label(settings, settings.answer_model)),
             ("Router model", settings.router_model),
             (
                 "Dreaming",
-                "LoRA adapter, trained in the cloud" if settings.dreaming_backend == "lora" else "Rules rewritten each night",
+                {
+                    "lora": "LoRA adapter, trained in the cloud",
+                    "local_lora": "Rules rewritten each night, and a fine-tuned adapter",
+                }.get(settings.dreaming_backend, "Rules rewritten each night"),
             ),
             ("Light", f"{LIGHT_LABELS.get(light.state, light.state)} since {_when(light.ts)}"),
             (
@@ -1083,9 +1149,12 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
     @app.get("/controls", response_class=HTMLResponse)
     def controls_page(request: Request, saved: str = "") -> HTMLResponse:
         c = controls.get()
+        lock = " disabled" if c.profiles else ""
+        device_only = getattr(settings, "device_only", False)
+        profiles = toggles_html(c.profiles, device_only)
         kinds = "".join(
             f'    <div class="glance-row"><div class="glance-label">{esc(label)}</div><div class="glance-value">'
-            f'<label class="switch"><input type="checkbox" name="tag_{k}" value="1"{" checked" if c.tag_kinds.get(k, True) else ""}>'
+            f'<label class="switch"><input type="checkbox" name="tag_{k}" value="1"{lock}{" checked" if c.tag_kinds.get(k, True) else ""}>'
             " Tagged</label></div></div>\n"
             for k, label in KIND_LABELS.items()
         )
@@ -1099,10 +1168,14 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
                 f'    <div class="glance-row cols3"><div class="glance-label">{shown}'
                 f'<input type="hidden" name="folder_{i}" value="{esc(name)}"></div>'
                 f'<label class="switch"><input type="checkbox" name="see_{i}" value="1"{see} aria-label="Muse can see {esc(label)}"></label>'
-                f'<label class="switch"><input type="checkbox" name="names_{i}" value="1"{names} aria-label="Send real names from {esc(label)}"></label></div>\n'
+                f'<label class="switch"><input type="checkbox" name="names_{i}" value="1"{names}{lock} aria-label="Send real names from {esc(label)}"></label></div>\n'
             )
         content = render(
             "controls.html",
+            profiles_html=profiles,
+            profile_note="" if device_only else "These need every model on this device. Set DEVICE_ONLY=1 first.",
+            lock_note="Locked while a toggle is on. Your own settings come back when it goes off." if c.profiles else "",
+            never_lock=lock,
             kinds_html=kinds,
             always="\n".join(c.always_redact),
             never="\n".join(c.never_redact),
@@ -1119,6 +1192,7 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
     async def api_controls_save(request: Request) -> Any:
         """Save the Controls page (a form) or a JSON body shaped like GET /api/controls' "controls"."""
         data = await _read_body(request)
+        old = controls.get()
         if _is_form(request):
             folders = {k: v for k, v in data.items() if k.startswith("folder_")}
             names = [v for k, v in folders.items() if data.get(f"names_{k[7:]}")]
@@ -1130,15 +1204,35 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
                     "never_redact": str(data.get("never_redact") or "").splitlines(),
                     "names_off_folders": names,
                     "hidden_folders": hidden,
+                    "profiles": [k for k in PROFILES if data.get(f"profile_{k}")],
                 }
             )
+            if old.profiles:  # locked fields post nothing: what the user set before stays
+                new.tag_kinds, new.never_redact, new.names_off_folders = old.tag_kinds, old.never_redact, old.names_off_folders
         else:
             new = Controls.from_dict(data.get("controls") if isinstance(data.get("controls"), dict) else data)
+        if new.profiles and not getattr(settings, "device_only", False):
+            raise HTTPException(400, "The privacy toggles need every model on this device (DEVICE_ONLY=1).")
         controls.save(new)
         log.info("privacy controls saved")
         if _is_form(request):
             return RedirectResponse("/controls?saved=1", status_code=303)
         return {"ok": True, "controls": dataclasses.asdict(new)}
+
+    @app.post("/api/learning")
+    async def api_learning(request: Request) -> Any:
+        """Choose how dreaming's rules are used. Like every POST here: this device's page only."""
+        choice = str((await _read_body(request)).get("learning") or "")
+        if choice not in LEARNING_MODES:
+            raise HTTPException(400, "Choose rules, tighten, decide or local_lora.")
+        problem = learning_problem(settings, choice)
+        if problem:
+            raise HTTPException(409, problem)
+        controls.save(dataclasses.replace(controls.get(), learning=choice))
+        log.info("learning mode set to %s", choice)
+        if _is_form(request):
+            return RedirectResponse("/dreaming", status_code=303)
+        return {"ok": True, "learning": choice}
 
     @app.post("/api/auto-approve")
     async def api_auto_approve(request: Request) -> Any:
@@ -1146,11 +1240,147 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
         on = _truthy((await _read_body(request)).get("on"))
         if on is None:
             raise HTTPException(400, "Say on: true or false.")
+        if on and controls.get().profiles:
+            raise HTTPException(409, "Always approve stays off while a privacy toggle is on.")
         auto.set(on)
         log.info("always-approve mode turned %s", "on" if on else "off")
         if _is_form(request):
             return RedirectResponse("/", status_code=303)
         return {"ok": True, "auto_approve": on}
+
+    def setup_checks() -> list[tuple[str, bool, str]]:
+        c = controls.get()
+        filevault = _filevault_on()
+        checker = getattr(services, "checker_llm", None)
+        try:
+            model_up = bool(checker and checker.health(1))
+        except Exception:
+            model_up = False
+        return [
+            ("Every model on this device", bool(getattr(settings, "device_only", False)), "Set DEVICE_ONLY=1 in .env and restart."),
+            ("The local model is running", model_up, "Run scripts/start.sh."),
+            ("This device is linked to Muse", (settings.home / "relay.json").is_file(), "Follow docs/MUSE_SETUP.md, then see Pairing."),
+            ("Disk encryption is on", filevault is not False, "Turn on FileVault in System Settings."),
+            ("Muse training is off", setup_flag("muse_training_off"), "In Muse, open Settings, then Data controls, and turn it off, then tick the box below. We can't read this setting."),
+            ("Who you're protecting is set", setup_flag("chosen") or bool(c.profiles), "Choose above and save. Leave them all off if it's just you."),
+        ]
+
+    def setup_flag(name: str) -> bool:
+        return bool(_read_setup(settings).get(name))
+
+    @app.get("/setup", response_class=HTMLResponse)
+    def setup_page(request: Request, saved: str = "") -> HTMLResponse:
+        c = controls.get()
+        checks = "".join(
+            f'    <div class="glance-row"><div class="glance-label">{esc(label)}</div><div class="glance-value">'
+            + ("<span class=\"state-on\">Done</span>" if ok else f'<span class="state-off">To do.</span> {esc(fix)}')
+            + "</div></div>\n"
+            for label, ok, fix in setup_checks()
+        )
+        content = render(
+            "setup.html",
+            checks_html=checks,
+            toggles_html=toggles_html(c.profiles, bool(getattr(settings, "device_only", False))),
+            training_checked=" checked" if setup_flag("muse_training_off") else "",
+            toggles=", ".join(p.upper() for p in c.profiles) or "none",
+            saved="Saved." if saved else "",
+        )
+        return page(request, "setup", "Setup", content)
+
+    @app.post("/api/setup")
+    async def api_setup(request: Request) -> Any:
+        data = await _read_body(request)
+        state = _read_setup(settings)
+        state["muse_training_off"] = bool(data.get("muse_training_off"))
+        profiles = [k for k in PROFILES if data.get(f"profile_{k}")]
+        if profiles and not getattr(settings, "device_only", False):
+            raise HTTPException(400, "The privacy toggles need every model on this device (DEVICE_ONLY=1).")
+        state["chosen"] = True
+        controls.save(dataclasses.replace(controls.get(), profiles=profiles))
+        _write_setup(settings, state)
+        if _is_form(request):
+            return RedirectResponse("/setup?saved=1", status_code=303)
+        return {"ok": True}
+
+    @app.get("/how", response_class=HTMLResponse)
+    def how_page(request: Request) -> HTMLResponse:
+        """The animated diagram, with this device's real settings in its boxes and its live light."""
+        c = controls.get()
+        live = authorized(request)
+        facts = flow_facts(services, settings, c, len(pending_rows()) if live else 0)
+        light = events.last().state if live else "idle"
+        diagram = flow_html(facts, links=FLOW_LINKS, live=live, light=light, muse_off=local_only(c.profiles))
+        content = render("how.html", flow_html=diagram, asset_v=asset_v)
+        return page(request, "how", "How it works", content)
+
+    @app.get("/ask", response_class=HTMLResponse)
+    def ask_page(request: Request, job: str = "") -> HTMLResponse:
+        """A question answered on this device only. The answer has real names and never goes to Muse."""
+        result, refresh = "", ""
+        row = services.jobs.get(job) if job and getattr(services, "jobs", None) else None
+        if row is not None:
+            if row["status"] in ("queued", "running"):
+                refresh = '<meta http-equiv="refresh" content="3">'
+                result = '<div class="card empty-card">The device is working on it. This page updates by itself.</div>'
+            elif row["status"] == "failed":
+                result = '<div class="card empty-card">The device could not answer that. Check that the local model is running.</div>'
+            else:
+                result = f'<h2 class="section">Answer</h2><pre class="tagged">{esc(row["raw_result"] or "")}</pre>'
+        return page(request, "ask", "Ask on this device", render("ask.html", refresh_html=refresh, result_html=result))
+
+    @app.post("/ask")
+    async def ask_post(request: Request) -> Any:
+        question = str((await _read_body(request)).get("question") or "").strip()[:PREPARE_LIMIT]
+        runner = getattr(services, "ask_runner", None)
+        if not question:
+            return RedirectResponse("/ask", status_code=303)
+        if runner is None:
+            raise HTTPException(409, "The local model is not set up on this device.")
+        try:
+            job_id = runner.start(question, "asked on this device", None)
+        except Exception as exc:
+            if type(exc).__name__ == "AskBusy":
+                raise HTTPException(409, str(exc)) from None
+            raise
+        return RedirectResponse(f"/ask?job={quote(str(job_id), safe='')}", status_code=303)
+
+    @app.get("/prepare", response_class=HTMLResponse)
+    def prepare_page(request: Request) -> HTMLResponse:
+        return page(request, "prepare", "Prepare a question", render("prepare.html", original="", result_html="", note=""))
+
+    @app.post("/prepare", response_class=HTMLResponse)
+    async def prepare_post(request: Request) -> HTMLResponse:
+        """Tag a question for the user to paste into Muse. The text is never stored or logged."""
+        original = str((await _read_body(request)).get("text") or "")[:PREPARE_LIMIT]
+        tagged, note = prepare_text(services, controls, original)
+        result = (
+            '<div class="codebox"><label class="codebox-label" for="prepared">copy this into Muse</label>'
+            f'<textarea id="prepared" readonly rows="6">{esc(tagged)}</textarea></div>'
+            if tagged
+            else ""
+        )
+        return page(request, "prepare", "Prepare a question", render("prepare.html", original=original, result_html=result, note=note))
+
+    @app.get("/api/audit.csv")
+    def api_audit() -> Response:
+        """Every decision's receipt as CSV: kinds, counts and checks, never a request or a result."""
+        out = io.StringIO()
+        writer = csv.writer(out)
+        writer.writerow(
+            ["id", "when", "tool", "kind", "router", "outcome", "decided_by", "removed", "floors", "toggles",
+             "device_only", "destination", "private_detail_in_request", "sha256"]
+        )  # fmt: skip
+        for row in store.history(limit=AUDIT_LIMIT):
+            r = _receipt(row.get("receipt"))
+            removed = ";".join(f"{k}={n}" for k, n in sorted((r.get("removed") or {}).items()))
+            writer.writerow(
+                [row["id"], _when(row["ts"]), row["tool"], row["result_kind"], row["router_decision"], row["status"],
+                 r.get("decided_by", row["router_source"]), removed, ";".join(r.get("floors") or []),
+                 ";".join(r.get("toggles") or []), r.get("device_only", ""), r.get("destination", ""),
+                 ";".join(r.get("request_had_private_detail") or []), r.get("sha256", "")]
+            )  # fmt: skip
+        headers = {"content-disposition": 'attachment; filename="muse-privacy-audit.csv"'}
+        return Response(out.getvalue(), media_type="text/csv", headers=headers)
 
     @app.post("/api/history/{approval_id}/delete")
     async def api_delete(approval_id: str, request: Request) -> Any:
@@ -1191,7 +1421,9 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
             "primary_model": settings.checker_model if getattr(settings, "primary_model", "glimmer") == "lfm" else None,
             "light": {"state": light.state, "detail": light.detail, "ts": light.ts},
             "pending": len(pending_rows()),
-            "auto_approve": auto.on,
+            "auto_approve": auto.on and not controls.get().profiles,
+            "device_only": getattr(settings, "device_only", False),
+            "profiles": controls.get().profiles,
             "heavy_queue": settings.heavy_queue,
             "login_required": login_required,
         }
@@ -1243,8 +1475,165 @@ def _include_heavy(app: FastAPI, services: Any) -> bool:
     return True
 
 
+LEARNING_TEXT = {
+    "rules": ("Rules in code", "Your policy and what you've taught decide, and no model does. The same input always gets the same answer."),
+    "tighten": ("Prompt, stricter only", "The local model also reads your rules, and it can make a decision stricter but never looser."),
+    "decide": ("Prompt, model decides", "The local model decides using your rules, inside the safety checks. A privacy toggle turns this back to stricter only."),
+    "local_lora": ("Local fine-tune", "The model decides with a fine-tuned adapter, inside the safety checks. Needs Glimmer on this device and an adapter."),
+}
+
+
+def toggles_html(on: Iterable[str], enabled: bool = True) -> str:
+    """Every privacy toggle by group, each with what it does and what it can't do."""
+    out = []
+    for group in GROUPS:
+        out.append(f'  <h3 class="toggle-group">{esc(group)}</h3>\n  <div class="glance">\n')
+        for p in PROFILES.values():
+            if p.group != group:
+                continue
+            checked = " checked" if p.key in on else ""
+            state = "" if enabled else " disabled"
+            out.append(
+                f'    <div class="glance-row top"><div class="glance-label"><label class="switch">'
+                f'<input type="checkbox" name="profile_{p.key}" value="1"{checked}{state}> {esc(p.label)}</label></div>'
+                f'<div class="glance-value">{esc(p.does)}<span class="hint">{esc(p.limit)}</span></div></div>\n'
+            )
+        out.append("  </div>\n")
+    out.append(f'  <p class="section-lede">{esc(NOT_FOR)}</p>\n')
+    return "".join(out)
+
+
+FLOW_LINKS = {
+    "files": "/controls", "model": "/device", "tagging": "/controls", "rules": "/controls", "check": "/history",
+    "you": "/ask", "kept": "/history", "approvals": "/", "muse": "/setup",
+}  # fmt: skip
+
+
+def flow_facts(services: Any, settings: Any, c: Any, pending: int) -> dict[str, str]:
+    """One line per box of the How it works diagram, from this device's own settings. Counts and
+    names of settings only: never a file name or anything from a document."""
+    try:
+        count = len(services.index._files(Path(settings.workspace_root)))
+        files = f"{count} {'file' if count == 1 else 'files'} Muse can see. They never leave."
+    except Exception:
+        files = "Read only on this device. They never leave."
+    if getattr(settings, "device_only", False):
+        model = ("LFM3-VL-2B" if settings.primary_model == "lfm" else "Muse Glimmer") + " on this device, no fallback"
+        mode = LEARNING_TEXT[routing_mode(settings, c.learning)][0]
+    elif settings.is_cloud_backend:
+        model = "Glimmer on OpenRouter, for invented data only"
+        mode = "The router model, with your rules"
+    else:
+        model = "Glimmer on this device"
+        mode = "The router model, with your rules"
+    labels = [PROFILES[k].label for k in c.profiles]
+    toggles = ", ".join(labels[:3]) + (f" and {len(labels) - 3} more" if len(labels) > 3 else "") if labels else "none"
+    linked = (Path(settings.home) / "relay.json").is_file()
+    if local_only(c.profiles):
+        muse = "Off. Your toggles keep everything on this device."
+    else:
+        muse = "Gets tags only, through the relay" + ("" if linked else ". Not linked yet.")
+    return {
+        "files": files,
+        "model": model,
+        "tagging": "Names and identifiers become tags" + (", plus places, dates and more" if c.profiles else ""),
+        "rules": f"{mode}. Toggles: {toggles}.",
+        "check": "Looks again for anything private",
+        "you": "Ask on this device: answers never leave",
+        "kept": "Stays here, with a reason",
+        "approvals": f"{pending} waiting for you" if pending else "Nothing waiting",
+        "muse": muse,
+    }
+
+
+def learning_problem(settings: Any, choice: str) -> str:
+    """Why a learning mode can't be chosen on this device, or ""."""
+    if not getattr(settings, "device_only", False):
+        return "These choices need every model on this device (DEVICE_ONLY=1)."
+    if choice == "local_lora":
+        if settings.primary_model == "lfm" or settings.dreaming_backend != "local_lora":
+            return "Local fine-tune needs Glimmer on this device and DREAMING_BACKEND=local_lora."
+        if not (settings.paths.adapters / "router.gguf").is_file():
+            return "No adapter yet. Training one on this device isn't available yet."
+    return ""
+
+
+def learning_html(settings: Any, controls: Any) -> str:
+    """The Dreaming page's choice of how rules are used, or "" when not device-only."""
+    if not getattr(settings, "device_only", False):
+        return ""
+    current = routing_mode(settings, controls.learning)
+    rows = []
+    for key, (label, note) in LEARNING_TEXT.items():
+        problem = learning_problem(settings, key)
+        checked = " checked" if key == current else ""
+        disabled = " disabled" if problem else ""
+        hint = f'<span class="hint">{esc(problem)}</span>' if problem else ""
+        rows.append(
+            f'<div class="glance-row"><label class="switch"><input type="radio" name="learning" value="{key}"{checked}{disabled}> {esc(label)}</label>'
+            f'<div class="glance-value">{esc(note)}{hint}</div></div>'
+        )
+    return (
+        '<form method="post" action="/api/learning" class="controls"><h2 class="section">How your rules are used</h2>'
+        f'<div class="glance">{"".join(rows)}</div>'
+        '<div class="save-row"><button class="btn primary" type="submit">Save</button></div></form>'
+    )
+
+
+PREPARE_LIMIT = 4000
+AUDIT_LIMIT = 100000
+def _read_setup(settings: Any) -> dict[str, Any]:
+    try:
+        data = json.loads((Path(settings.home) / "setup.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write_setup(settings: Any, state: Mapping[str, Any]) -> None:
+    path = Path(settings.home) / "setup.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(dict(state)) + "\n", encoding="utf-8")
+    os.chmod(path, 0o600)
+
+
+def _filevault_on() -> bool | None:
+    """Whether FileVault is on, or None where it can't be known (not a Mac)."""
+    tool = shutil.which("fdesetup")
+    if tool is None:
+        return None
+    try:
+        out = subprocess.run([tool, "status"], capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return "FileVault is On" in out
+
+
+def prepare_text(services: Any, controls: Any, text: str) -> tuple[str, str]:
+    """(the question with names and identifiers tagged, a note for the page)."""
+    if not text.strip():
+        return "", ""
+    redaction = controls.get().redaction(name_shapes=bool(getattr(services.settings, "device_only", False)))
+    kw = {"redaction": redaction} if redaction is not None else {}
+    checker = getattr(services, "checker_llm", None) or getattr(services, "answer_llm", None)
+    names = getattr(checker, "llm_names", None)
+    try:
+        if not callable(names) or getattr(checker, "is_cloud", True):
+            raise RuntimeError("no local name check")
+        result = guard.tag(text, services.roster, services.tagmap, llm_names=names, **kw)
+        note = "Copy this into Muse. Muse uses the tags, and this device swaps them back when it searches."
+    except Exception as exc:
+        log.warning("prepare could not run the name check: %s", type(exc).__name__)
+        result = guard.tag(text, services.roster, services.tagmap, **kw)
+        note = "The local model is not running, so only names on your roster and identifiers were tagged. Check the text before you paste it."
+    return result.text, note
+
+
 def _model_label(settings: Any, glimmer: str) -> str:
     """A model on the Device page: LFM3-VL-2B first with PRIMARY_MODEL=lfm, then Glimmer."""
+    if getattr(settings, "device_only", False):
+        model = settings.checker_model if settings.primary_model == "lfm" else glimmer
+        return f"{model} on this device, with no fallback"
     if getattr(settings, "primary_model", "glimmer") == "lfm":
         backup = settings.jetson_lfm_model + " on your Jetson" if getattr(settings, "has_jetson_lfm", False) else glimmer
         return f"{settings.checker_model} on this device, then {backup} if it fails"

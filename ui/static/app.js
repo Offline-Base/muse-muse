@@ -18,6 +18,8 @@
     light.dataset.state = state;
     var label = document.getElementById("light-label");
     if (label) label.textContent = LABELS[state];
+    // The How it works diagram (flow.js) shows the same state.
+    document.dispatchEvent(new CustomEvent("muse:light", { detail: state }));
   }
 
   function listen() {

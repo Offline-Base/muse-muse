@@ -478,3 +478,10 @@ td { padding: 16px 24px; }
 .btn, .chip, td .btn { white-space: nowrap; }
 .table-wrap td, .table-wrap th { padding: 16px 18px; }
 .table-wrap td:last-child { width: 1%; }
+
+/* Receipts in History */
+.receipt { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 8px 0 0; font-size: 13px; }
+.receipt dt { color: var(--text-2); }
+.receipt dd { margin: 0; overflow-wrap: anywhere; }
+.glance-value .hint { display: block; margin-top: 6px; color: var(--text-2); font-size: 14px; }
+.toggle-group { margin: 22px 0 10px; font-size: 15px; font-weight: 600; color: var(--text); }

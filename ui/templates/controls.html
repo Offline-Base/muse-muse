@@ -5,8 +5,12 @@
 <form method="post" action="/api/controls" class="controls">
   <input type="hidden" name="form" value="controls">
 
+  <h2 class="section">Privacy toggles</h2>
+  <p class="section-lede">Stricter handling for regulated data. Several can be on, and the strictest rule wins. These reduce risk, but they don't make you compliant: your organization still decides whether Muse may be used. $profile_note</p>
+$profiles_html
+
   <h2 class="section">What gets redacted</h2>
-  <p class="section-lede">Names are swapped for tags like <code>[Student A]</code> unless a folder below sends real names. Untick a type to send it as written.</p>
+  <p class="section-lede">Names are swapped for tags like <code>[Student A]</code> unless a folder below sends real names. Untick a type to send it as written. $lock_note</p>
   <div class="glance">
     <div class="glance-row"><div class="glance-label">Names</div><div class="glance-value">Tagged, like <code>[Student A]</code> or <code>[Person 1]</code></div></div>
 $kinds_html
@@ -22,7 +26,7 @@ $kinds_html
     </div>
     <div class="glance-row top">
       <div class="glance-label">Never redact<span class="hint">Left as written even if the name check flags it, for example a public place or a book title.</span></div>
-      <div class="glance-value"><div class="codebox"><label class="codebox-label" for="never_redact">one per line</label><textarea id="never_redact" name="never_redact" rows="4" spellcheck="false">$never</textarea></div></div>
+      <div class="glance-value"><div class="codebox"><label class="codebox-label" for="never_redact">one per line</label><textarea id="never_redact" name="never_redact"$never_lock rows="4" spellcheck="false">$never</textarea></div></div>
     </div>
   </div>
 
