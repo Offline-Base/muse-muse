@@ -27,8 +27,10 @@ Run 3 is the one that covers the stage end to end:
 
 ## Other checks
 
-- **The plugin.** A zip from the real route passes `claude plugin validate` on Claude Code 2.1.314. It warns that a directory
-  submission would need a privacy policy URL. It has not been loaded in a Claude session or used to call a tool.
+- **The plugin.** The unpacked plugin from the real route passes `claude plugin validate` on Claude Code 2.1.314. A directory
+  listing would also need a README, a LICENSE or license field, an icon and a privacy policy URL. The validator doesn't take the
+  zip itself, but `claude --plugin-dir <file>.zip` loads it, which `claude plugin list` confirmed. It has not been used to call
+  a tool in a Claude session.
 - **A fork right after a stop.** A persistent sandbox was forked from a product, a file was written, it was stopped, and it was
   forked again at once. `stop()` returned after about 5 s with the status `stopped`, and the second fork had the file. So
   starting the stage right after `cleanup` sees the finished build. This is one small sandbox, not a big product.
