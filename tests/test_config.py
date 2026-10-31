@@ -69,8 +69,8 @@ def test_env_example_loads_as_a_dotenv():
     """Copying .env.example to .env must give working settings."""
     example = read_dotenv(Path(__file__).resolve().parent.parent / ".env.example")
     s = load_settings({**example, "BASE_HOME": "/tmp/base-example-home"})
-    assert s.device == "laptop" and s.glimmer_backend == "openrouter"
-    assert s.dreaming_backend == "prompt"
+    assert s.device == "laptop" and s.device_only and s.primary_model == "lfm" and s.checker_backend == "lfm"
+    assert s.dreaming_backend == "rules"  # the policy decides, as the reports measure
 
 
 def test_marker_above_the_workspace_root_does_not_count(tmp_path):

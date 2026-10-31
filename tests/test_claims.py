@@ -79,6 +79,8 @@ CLAUSE_BREAK = re.compile(r"[,;:]|\s(?:and|but|so|while|because|then|which|or)\s
 # already says. Add to this only after reading the sentence, and only if it is true today.
 REVIEWED = frozenset(
     {
+        "cp .env.example .env # then set DEVICE_ONLY=0, CHECKER_BACKEND=glimmer and OPENROUTER_API_KEY",
+        "LFM3-VL-2B, Liquid's model and not Meta's, does the model steps on the device until the tuned Glimmer lands.",
         "Other entries in this hackathon also put Glimmer redaction in front of Meta's models, through the Meta Model API rather than the Muse app.",
         "Glimmer runs on OpenRouter, so the device reads only folders marked .synthetic, such as demo/.",
         "### Laptop with your own Glimmer file (not run or measured yet)",
@@ -317,9 +319,8 @@ def test_the_readme_device_only_steps_load_on_a_clean_clone(monkeypatch, tmp_pat
     readme = raw_doc("README.md")
     steps = readme.split("### Laptop, device-only")[1].split("\n### ")[0]
     told = re.search(r"cp \.env\.example \.env\s+# then set (.*)", steps).group(1)
-    changes = dict(re.findall(r"\b([A-Z_]+)=(\w+)", told))
-    assert "CHECKER_SERVER_BIN" in told
-    settings = clean_clone_settings(monkeypatch, tmp_path, changes | {"CHECKER_SERVER_BIN": "/x/llama-server"})
+    assert told.strip() == "CHECKER_SERVER_BIN"
+    settings = clean_clone_settings(monkeypatch, tmp_path, {"CHECKER_SERVER_BIN": "/x/llama-server"})
     assert settings.device_only and settings.primary_model == "lfm" and settings.checker_backend == "lfm"
     assert not settings.is_cloud_backend
 
@@ -327,7 +328,7 @@ def test_the_readme_device_only_steps_load_on_a_clean_clone(monkeypatch, tmp_pat
 def test_the_muse_setup_device_only_steps_load_on_a_clean_clone(monkeypatch, tmp_path):
     section = raw_doc("docs/MUSE_SETUP.md").split("## 2. Connect the device to the relay")[1].split("\n## ")[0]
     changes = dict(re.findall(r"echo '([A-Z_]+)=([^']*)'\s*>> \.env", section))
-    assert changes.get("DEVICE_ONLY") == "1"
+    assert "DEVICE_ONLY" not in changes  # the example file sets it
     settings = clean_clone_settings(monkeypatch, tmp_path, changes)
     assert settings.device_only and settings.primary_model == "lfm" and settings.checker_backend == "lfm"
     assert not settings.is_cloud_backend

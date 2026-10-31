@@ -503,7 +503,8 @@ def _ts_number(ts: Any) -> float | None:
 # What Always approve still leaves for the user (approvals.AUTO_APPROVE_SKIPS, and the router's refusals).
 AUTO_STILL_ASKS = (
     "Names stay tags and never-share topics are still kept here. You still see results with an identifier, "
-    "an ask-first topic, a never-share topic in Muse's request or a destination outside the class."
+    "an ask-first topic, a never-share topic in Muse's request, a destination outside the class or a "
+    "group number with someone left out."
 )
 
 

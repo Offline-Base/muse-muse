@@ -386,6 +386,7 @@ def write_outputs(
         f"| Model | {settings.router_model} |",
         f"| Dreaming backend | {settings.dreaming_backend} |",
         f"| Router changes (ROUTER_LOOSEN) | {', '.join(sorted(getattr(settings, 'router_loosen', ()) or ())) or 'none'} |",
+        "| Waiting-card cap (MAX_PENDING) | off in this simulated run: its cards stay unanswered on purpose |",
         f"| Date | {datetime.now().strftime('%Y-%m-%d %H:%M')} |",
         f"| Day items | {items} (holdout excluded) |",
         f"| Holdout items | {holdout} |",

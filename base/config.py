@@ -140,6 +140,9 @@ class Settings:
     # Router changes that ask less often (ROUTER_LOOSEN, a comma list of ROUTER_LOOSEN_CHOICES, "all"
     # or "none"): lists and result_words unless set, class_of only when asked for. See base/router.py.
     router_loosen: frozenset[str] = frozenset({"lists", "result_words"})
+    # Approval cards that may wait at once; past it a new ask is refused until the user clears some.
+    # 0 is no cap (eval harnesses: run_eval.prepare_home, where cards stay unanswered on purpose).
+    max_pending: int = 20
     light_serial: str | None = None
     # A certificate and key for the approval port (the Jetson on a home network). With both set
     # the page and the /heavy routes are served over TLS and the session cookie is Secure.
@@ -343,6 +346,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         dreaming_backend=dreaming,  # type: ignore[arg-type]
         router_trust=trust,  # type: ignore[arg-type]
         router_loosen=loosen,
+        max_pending=int(get("MAX_PENDING", "20")),
         light_serial=get("LIGHT_SERIAL") or None,
         approval_tls_cert=Path(get("APPROVAL_TLS_CERT")).expanduser() if get("APPROVAL_TLS_CERT") else None,
         approval_tls_key=Path(get("APPROVAL_TLS_KEY")).expanduser() if get("APPROVAL_TLS_KEY") else None,

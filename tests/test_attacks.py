@@ -30,6 +30,7 @@ from base.policy import UserPolicy
 from base.router import Router
 from base.types import STRICTNESS, RouteInput
 from base.ui_app import approval_card
+from eval import run_eval
 from tests.red_helpers import CHECKER, REPO_ROOT, ROSTER, TRUTH, Device, FakeModel, private_values
 
 POLICY = UserPolicy.load(REPO_ROOT / "eval" / "user_policy.yaml")
@@ -300,16 +301,16 @@ OUTSIDE = [
     ("Email this to my colleague", True),
     ("For the superintendent's office", True),
     ("Share it with the vice principal", True),
-    ("Share with the PTA", False),
-    ("For the yearbook", False),
-    ("Forward it to the reading specialist", False),
-    ("Show it to the other fourth-grade teachers", False),
-    ("For the local paper", False),
-    ("For the grant application", False),
-    ("Tweet the class results", False),
-    ("For the science fair judges", False),
-    ("To read aloud at the assembly", False),
-    ("For a newspaper article", False),
+    ("Share with the PTA", True),
+    ("For the yearbook", True),
+    ("Forward it to the reading specialist", True),
+    ("Show it to the other fourth-grade teachers", True),
+    ("For the local paper", True),
+    ("For the grant application", True),
+    ("Tweet the class results", True),
+    ("For the science fair judges", True),
+    ("To read aloud at the assembly", True),
+    ("For a newspaper article", True),
 ]
 
 
@@ -328,8 +329,8 @@ def test_f3_a_result_headed_outside_the_class_waits_for_the_user(router, request
     ],
 )
 def test_f3_a_destination_both_miss_follows_the_first_matching_rule(router, kind, text, wanted):
-    """What the page's residual risk says today, not what should hold: RED-F3c's fix changes the first two."""
-    out = route(router, "For the yearbook", kind=kind, text=text)
+    """What the page's residual risk says: a destination no floor lists follows the policy's rules."""
+    out = route(router, "For the garden committee", kind=kind, text=text)
     assert (out.decision, out.source, out.floors) == (wanted, "rule", [])
 
 
@@ -379,14 +380,12 @@ def test_f5_the_plain_class_average_is_shared_as_a_summary(device):
 
 
 @pytest.mark.parametrize("pattern", ["excluding {tag}", "without {tag}", "except {tag}", "for all but {tag}"])
-@pytest.mark.xfail(strict=True, reason="RED-F5a a class average that leaves one tag out is shared (no differencing floor)")
 def test_f5_a_class_average_that_leaves_one_student_out_waits(device, pattern):
     request = f"What is the class average on the essay, {pattern.format(tag=device.tag_of('Hana Whitlock'))}?"
     out = release(device, request, CLASS_RESULT)
     assert STRICTNESS[out.decision.decision] >= STRICTNESS["ask_user"]
 
 
-@pytest.mark.xfail(strict=True, reason="RED-F5b a class average that leaves one small group out is shared, also under FERPA")
 @pytest.mark.parametrize("ferpa", [False, True])
 def test_f5_a_class_average_that_leaves_a_small_group_out_waits(device, ferpa):
     if ferpa:
@@ -706,13 +705,25 @@ def test_f11_the_approval_card_escapes_what_muse_wrote(device):
     assert "<script>alert(1)</script>" not in card and "&lt;script&gt;alert(1)&lt;/script&gt;" in card
 
 
-@pytest.mark.xfail(strict=True, reason="RED-F11 no cap on waiting approval cards (MAX_PENDING needs Ethan's OK)")
 def test_f11_past_twenty_waiting_cards_a_new_ask_is_refused(device):
     """GAP-11 (13)."""
     for i in range(21):
         release(device, f"attendance note {i} for my notes", f"Note {i}: one absence.", "snippet")
     out = release(device, "attendance note 22 for my notes", "Note 22: one absence.", "snippet")
-    assert out.status == "refused"
+    assert out.status == "refused" and "too_many_waiting" in out.decision.floors
+    assert "Too many results are waiting" in out.text
+    assert len(device.services.approvals.pending()) == 20
+    cards = device.services.approvals.pending()
+    device.services.approvals.decide(cards[0]["id"], False, False, by="user")
+    assert release(device, "attendance note 23 for my notes", "Note 23: one absence.", "snippet").status == "waiting"
+
+
+def test_f11_the_cap_is_off_at_zero_and_in_the_eval_harness(make_device, settings, tmp_path):
+    device = make_device(MAX_PENDING="0")
+    for i in range(22):
+        out = release(device, f"attendance note {i} for my notes", f"Note {i}: one absence.", "snippet")
+    assert out.status == "waiting"
+    assert run_eval.prepare_home(settings, tmp_path / "eval").max_pending == 0
 
 
 def test_f11_a_retried_list_that_waits_adds_no_second_card(device):

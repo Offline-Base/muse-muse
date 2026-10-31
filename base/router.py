@@ -87,6 +87,7 @@ POLICY_REASON = "Your rule {id} says results like this stay on the device."
 DIGITS_REASON = "Contains a long number that could be an identifier."
 REQUEST_TOPIC_REASON = "The request mentions a topic you never share, so you decide."
 OUTSIDE_REASON = "The request says this is going outside the class, so you decide."
+LEFT_OUT_REASON = "This number leaves someone out, so comparing answers could show theirs. You decide."
 TAUGHT_LIST_REASON = "You said to share document lists like this without asking."
 
 # With DEVICE_ONLY=1 and LFM the user's policy decides, not the model. In a test on Oct 29 the 2B
@@ -96,13 +97,21 @@ TAUGHT_LIST_REASON = "You said to share document lists like this without asking.
 _OUTSIDE = re.compile(
     r"\b(?:famil(?:y|ies)|parents?|guardians?|newsletters?|principal|district|superintendent|counselor|"
     r"club|board|staff|colleagues?|another teacher|website|social media|post(?:ed|ing)? (?:it|this|on)|"
-    r"publish|press|flyer|send (?:it |this )?to|email (?:it |this )?to|"
+    r"publish|press|flyer|send (?:it |this )?to|email (?:it |this )?to|forward (?:it |this )?to|"
+    r"pta|pto|yearbook|specialists?|judges|(?:at|for) the assembly|school assembly|tweet(?:s|ed|ing)?|"
+    r"grant (?:application|proposal|report)|newspapers?|(?:local|school|town|city) paper|other (?:[\w-]+ )?teachers|"
     r"send(?:ing)? (?:it |this |them )?home|sent home|take (?:it |this )?home|(?:letter|note|report) home)\b",
     re.IGNORECASE,
 )
 _CLASS_LEVEL = re.compile(
     r"\b(?:average|mean|median|range|distribution|how many|counts?|percent(?:age)?|most common|most often|"
     r"across the class|the class(?:'s)?|summari[sz]e)\b",
+    re.IGNORECASE,
+)
+# A group number with one person or small group left out: two answers subtract to that one's number.
+_LEFT_OUT = re.compile(
+    r"\b(?:excluding|excludes?|without|except(?: for)?|all but|apart from|aside from|other than|not counting|"
+    r"leaving out|leave out|minus)\s+(?:\[(?:Student [A-Z]{1,3}|Person \d+)\]|the (?:\[[^\]]+\]|[\w-]+) (?:group|table|team|pod)\b)",
     re.IGNORECASE,
 )
 _WHOLE_TEXT = re.compile(r"\b(?:full|whole|entire|complete|word for word|verbatim)\b", re.IGNORECASE)
@@ -443,8 +452,15 @@ class Router:
             return "refuse", [*floors, "contact"], CONTACT_REASON, "contact"
         if _NARROWED.search(inp.request or ""):
             return "refuse", [*floors, "narrowed"], NARROWED_REASON, "narrowed"
+        request = inp.request or ""
+        if (
+            STRICTNESS[floor] < STRICTNESS["ask_user"]  # no rule you taught lifts this: it is about the subtraction
+            and _LEFT_OUT.search(request)
+            and (inp.result_kind == "class_aggregate" or _CLASS_LEVEL.search(request))
+        ):
+            return "ask_user", [*floors, "left_out"], LEFT_OUT_REASON, "left_out"
         taught = _taught_by_user(learned) and learned.decision in ("share_tagged", "share_summary")
-        if not taught and STRICTNESS[floor] < STRICTNESS["ask_user"] and _OUTSIDE.search(inp.request or ""):
+        if not taught and STRICTNESS[floor] < STRICTNESS["ask_user"] and _OUTSIDE.search(request):
             return "ask_user", [*floors, "outside_class"], OUTSIDE_REASON, "outside_class"
         return floor, floors, reason, code
 

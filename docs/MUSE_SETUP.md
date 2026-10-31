@@ -23,8 +23,6 @@ On the laptop, from the repo root:
 ```sh
 echo 'RELAY_URL=https://muse-privacy-relay.<your-subdomain>.workers.dev' >> .env
 uv run python -m base.connector.relay_client register --name "Laptop"   # once; writes BASE_HOME/relay.json
-echo 'DEVICE_ONLY=1' >> .env                                            # every model on this device
-echo 'CHECKER_BACKEND=lfm' >> .env                                      # the example file sets a different one
 scripts/start.sh                                                        # starts the models, the page and the relay client
 ```
 

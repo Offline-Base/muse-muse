@@ -125,7 +125,9 @@ def load_items(path: str | Path) -> list[dict]:
 
 def prepare_home(settings, home: str | Path, rules_path: str | Path | None = None):
     """Settings pointed at `home`, with `rules_path` copied in as the router's learned rules."""
-    s = replace(settings, home=Path(home))
+    # max_pending=0: these runs leave cards unanswered on purpose, and a cap would turn later asks
+    # into refusals that say nothing about the router.
+    s = replace(settings, home=Path(home), max_pending=0)
     s.ensure_home()
     if rules_path is not None:
         shutil.copyfile(rules_path, s.paths.router_prompt)

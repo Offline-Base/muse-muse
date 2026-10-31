@@ -15,7 +15,7 @@ import logging
 import re
 from collections.abc import Mapping, Sequence
 from contextvars import ContextVar
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
 from base import compliance, regions, retention
@@ -67,7 +67,9 @@ NO_TOPIC_PASS = frozenset({"document_list", "dreaming_report"})
 
 # What Muse is told when a result is kept. Fixed strings only: the router's own reason is model
 # text that could repeat what the result says, so it stays on the approval page.
+TOO_MANY_WAITING = "Too many results are waiting for your OK, so this one was not added."
 KEPT_REASONS = (
+    ("too_many_waiting", "Too many results are waiting for the user's OK. Ask them to clear some on the device, then ask again."),
     ("compliance:cloud", "Your privacy toggles need every model on this device."),
     ("compliance:local_only", "A privacy toggle keeps everything on this device."),
     ("compliance:sensitive", "It has a kind of detail your privacy toggles keep on this device."),
@@ -402,6 +404,13 @@ class Egress:
     ) -> Released:
         """Record the row and give the outcome for the router's decision."""
         s = self.services
+        if route.decision == "ask_user" and self._cards_full(route, profiles):
+            # Too many cards are waiting: nothing is added to a page the user is not keeping up
+            # with. It is recorded like any refusal, so dreaming does not learn from it.
+            self._audit("egress", "too_many_waiting")
+            route = replace(route, decision="refuse", reason=TOO_MANY_WAITING, floors=[*route.floors, "too_many_waiting"], code="too_many_waiting")
+            row = {**row, "router_decision": "refuse", "router_reason": TOO_MANY_WAITING}
+            row["receipt"] = {**row["receipt"], "floors": route.floors, "code": route.code}
         if route.decision == "ask_user":
             approval_id = s.approvals.create_pending(**row)
             if self._auto_approve() and route.source != "fallback" and not profiles:
@@ -410,7 +419,7 @@ class Egress:
                 # could not decide, nothing has judged this result, so the user still looks. A
                 # compliance toggle turns it off too, and so does a floor that needs a person
                 # (approvals.AUTO_APPROVE_SKIPS: a never-share topic in the request, ask first,
-                # an identifier, a result going outside the class).
+                # an identifier, a result going outside the class, a number with someone left out).
                 if not needs_a_person(route.floors):
                     s.approvals.decide(approval_id, approve=True, remember=False, by="auto_approve")
                     self._audit("egress", "auto_approved")
@@ -421,6 +430,16 @@ class Egress:
         if route.decision == "refuse":
             return self._finish("refused", refusal_text(route.floors), None, route, tagged)
         return self._finish("shared", outgoing, None, route, tagged, detail=job_id or tool)
+
+    def _cards_full(self, route: RouteDecision, profiles: Sequence[str]) -> bool:
+        """Whether this ask would wait on a page already at the cap. Always approve answers it at
+        once when it can, so that card never waits."""
+        s = self.services
+        cap = getattr(getattr(s, "settings", None), "max_pending", 0)
+        if not cap or len(s.approvals.pending()) < cap:
+            return False
+        auto = self._auto_approve() and route.source != "fallback" and not profiles and not needs_a_person(route.floors)
+        return not auto
 
     def _receipt(
         self, tagged: TagResult, route: RouteDecision, outgoing: str, profiles: Sequence[str], raw_kinds: Sequence[str],

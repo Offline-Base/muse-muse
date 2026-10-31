@@ -4,7 +4,7 @@ Muse can already reach your files through connectors, but whatever it reads land
 
 Built solo for the Meta Global AI Developer Hackathon, startup track, under the theme Build for Your World. An independent project, not made or endorsed by Meta. Every person, essay and record in this repo is invented.
 
-**Status, Oct 31.** The default setup is device-only (`DEVICE_ONLY=1`): Liquid's LFM3-VL-2B on the laptop does every model step, your policy file decides what is shared (`ROUTER_LOOSEN=lists,result_words` is the default), and no model is reached off the laptop. On 200 invented items (`fresh_200_b`) there were [0 leaks of names or identifiers, 81.5% agreement with the expected decision (163 of 200) and 75 approval requests, 28 of them needless](eval/reports/default_loosen_fresh_200_b.md); 2 results were shared that should have been asked about, and 4 were refused that should not have been. That is a development set, because the router fixes came from ask causes seen on sets like it. The sealed set has not been scored, so there is no unseen number for this default yet.
+**Status, Oct 31.** The setup this repo ships is device-only (`.env.example` sets `DEVICE_ONLY=1`): Liquid's LFM3-VL-2B on the laptop does every model step, your policy file decides what is shared (`ROUTER_LOOSEN=lists,result_words` is the default), and no model is reached off the laptop. On 200 invented items (`fresh_200_b`) there were [0 leaks of names or identifiers, 81.5% agreement with the expected decision (163 of 200) and 75 approval requests, 28 of them needless](eval/reports/default_loosen_fresh_200_b.md); 2 results were shared that should have been asked about, and 4 were refused that should not have been. That is a development set, because the router fixes came from ask causes seen on sets like it. The sealed set has not been scored, so there is no unseen number for this default yet.
 
 **What has not happened yet.** Glimmer has not been measured on the device. A tuned Glimmer at about 1.6-bit (IQ1_S) is planned and has not landed. Every Glimmer number in this README is from Glimmer on OpenRouter with invented data, a development mode that is not part of today's setup. The persona study has not run, so it has no results; anything from it will be labeled simulated, and there are no real users. Grading quality has not been measured on LFM3-VL-2B, only that the job runs and how long it takes.
 
@@ -68,14 +68,14 @@ Parts of this exist elsewhere; [docs/PRIOR_WORK.md](docs/PRIOR_WORK.md#related-w
 
 You need macOS or Linux, [uv](https://docs.astral.sh/uv/), and for the relay Node 22 and a Cloudflare account.
 
-### Laptop, device-only (the default setup)
+### Laptop, device-only (what `.env.example` sets)
 
 Every model runs on the laptop. You need llama.cpp b11960 or newer, the LFM3-VL-2B GGUF and projector in `models/`, and for search the EmbeddingGemma 2 GGUF.
 
 ```sh
 git clone https://github.com/Offline-Base/muse-privacy.git && cd muse-privacy
 uv sync
-cp .env.example .env                 # then set DEVICE_ONLY=1, PRIMARY_MODEL=lfm, CHECKER_BACKEND=lfm and CHECKER_SERVER_BIN
+cp .env.example .env                 # then set CHECKER_SERVER_BIN
 scripts/start.sh                     # models, approval page and relay client; Ctrl-C stops all
 open http://127.0.0.1:8787/setup     # say who you're protecting and finish the checklist
 scripts/install_login.sh             # optional: start at login
@@ -88,14 +88,14 @@ Glimmer runs on OpenRouter, so the device reads only folders marked `.synthetic`
 ```sh
 git clone https://github.com/Offline-Base/muse-privacy.git && cd muse-privacy
 uv sync
-cp .env.example .env                 # then set OPENROUTER_API_KEY in .env
+cp .env.example .env                 # then set DEVICE_ONLY=0, CHECKER_BACKEND=glimmer and OPENROUTER_API_KEY
 uv run pytest -q                     # unit tests; every model and API is mocked
 uv run python -m base                # approval page http://127.0.0.1:8787, connector on 127.0.0.1:8790
 ```
 
 ### Laptop with your own Glimmer file (not run or measured yet)
 
-Not run yet: it needs about 20 GB of free disk. Use llama.cpp b10353 or newer. To swap a tuned file in beside the default setup instead, see "Plugging in your own model" in [docs/MUSE_SETUP.md](docs/MUSE_SETUP.md#plugging-in-your-own-model).
+Not run yet: it needs about 20 GB of free disk. Use llama.cpp b10353 or newer. To swap a tuned file in beside the device-only setup instead, see "Plugging in your own model" in [docs/MUSE_SETUP.md](docs/MUSE_SETUP.md#plugging-in-your-own-model).
 
 ```sh
 git clone https://github.com/Offline-Base/muse-privacy.git && cd muse-privacy && uv sync && cp .env.example .env
@@ -137,7 +137,7 @@ To hand grading to the laptop, print the worker token on the board with `j base.
 
 ## What Meta's models do here
 
-Today's device-only setup uses the Muse app and Muse Spark. LFM3-VL-2B, Liquid's model and not Meta's, does the model steps on the device. Glimmer's numbers below are earlier ones, on OpenRouter with invented data.
+The device-only app connects to the Muse app. Muse Spark wrote the invented eval data. LFM3-VL-2B, Liquid's model and not Meta's, does the model steps on the device until the tuned Glimmer lands. Glimmer's numbers below are earlier ones, on OpenRouter with invented data.
 
 - **Muse plans over tags it cannot resolve.** Muse runs the job through eight tools and works only with tagged or summarized text: it asks for a grading job and gets back a tagged per-student table, not the essays. So far the reports have a script in Muse's place; in the [scene rehearsal](eval/reports/muse_app/rehearsal_2026-10-31.md), 0 of 18 tool outputs held a private value.
 - **Muse is set up to drive the device's learning.** Two scheduled Muse jobs are meant to start dreaming at 2 AM and ask for a one-sentence report at 8 AM (no report from the app yet; the rehearsal's script makes the same two calls). Each night the device rebuilds its rules from the teacher's answers and keeps them only if they pass a holdout with zero leaks. On the device, before today's router default, five simulated nights left accuracy on 100 unseen items at 74.0% and approval requests at 44 ([nights_device_rules/nights.md](eval/reports/nights_device_rules/nights.md)), so learning has not shown a gain on this model. In the earlier Glimmer simulation on OpenRouter, approval requests fell from 10 to 6 a day, and accuracy on 100 items no step had seen rose from 72% to 81%; the cost was that ask first fell from 100% to 68%, with 8 snippets she wanted to see shared tagged ([final/nights.md](eval/reports/final/nights.md)).
