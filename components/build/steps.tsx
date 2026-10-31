@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import type { SourceItem, StepItem, StepMedia, StepState, StepsEnd } from "@/components/chat";
 import { groupLog, type AgentNode, type LogGroup, type Note, type OpenQuestion, type RailState, type RailStep, type RoomState, type Segment, type WatcherRun } from "@/components/build/derive";
 import { GoalCard, Thinking, TodoList, statusWords, steerMeta } from "@/components/build/session";
-import { BriefBody, CheckBody, groupSummary, museUsageText, segmentMeta } from "@/components/build/turns";
+import { BriefBody, CheckBody, VERIFY_LABEL, groupSummary, museUsageText, segmentMeta } from "@/components/build/turns";
 import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { InspirationView } from "@/components/view-types";
 import { modelLabel, plural, truncate } from "@/lib/format";
@@ -78,6 +78,12 @@ const statusState = (status: string): StepState => {
 /** Something left running when its round ended didn't keep working. */
 const settled = (state: StepState, live: boolean): StepState => (state === "running" && !live ? "done" : state);
 
+/** A status in words, which agrees with settled(). */
+function statusSaid(status: string, live: boolean): string {
+  const words = statusWords(status);
+  return words.tone === "building" && !live ? "Ended" : words.label;
+}
+
 function noteRow(n: Note): StepItem {
   return { id: `note:${n.id}`, title: n.text, state: n.kind === "error" ? "failed" : "done" };
 }
@@ -101,7 +107,7 @@ function itemRow(it: ActivityItem, id: string, live: boolean): StepItem {
         id,
         kind: "subagent",
         title: it.text,
-        description: statusWords(it.status).label,
+        description: statusSaid(it.status, live),
         state: failed ? "failed" : settled(statusState(it.status), live),
       };
     default:
@@ -122,7 +128,7 @@ function activityRows(items: ActivityItem[], id: string, live: boolean, newest: 
 }
 
 function workflowRow(g: Extract<LogGroup, { type: "workflow" }>, id: string, live: boolean): StepItem {
-  const said = statusWords(g.status).label;
+  const said = statusSaid(g.status, live);
   return {
     id,
     kind: "workflow",
@@ -132,7 +138,7 @@ function workflowRow(g: Extract<LogGroup, { type: "workflow" }>, id: string, liv
     children: g.children.map((c, i) => ({
       id: `${id}/${i}`,
       title: c.label,
-      description: statusWords(c.status).label,
+      description: statusSaid(c.status, live),
       state: settled(statusState(c.status), live),
     })),
   };
@@ -166,7 +172,7 @@ function logRows(seg: MuseSegment, live: boolean, listsAgents: boolean): StepIte
 }
 
 function agentRow(n: AgentNode, live: boolean): StepItem {
-  const said = statusWords(n.status).label;
+  const said = statusSaid(n.status, live);
   const where = n.phase ? `Phase: ${n.phase}` : n.path;
   return {
     id: `agent:${n.id}`,
@@ -277,7 +283,7 @@ function segmentRow(seg: Segment, opts: { live: boolean; failed: boolean; isRefi
   switch (seg.type) {
     case "brief": {
       const declined = seg.brief.verdict === "no" || Boolean(seg.brief.refusal);
-      const description = seg.brief.refusal ?? (seg.brief.tagline ? seg.brief.tagline : undefined);
+      const description = [seg.brief.refusal ?? (seg.brief.tagline || null), ...segmentMeta(seg)].filter(Boolean).join(" · ");
       return {
         id: seg.key,
         title: declined ? "Declined" : "Wrote the brief",
@@ -291,22 +297,28 @@ function segmentRow(seg: Segment, opts: { live: boolean; failed: boolean; isRefi
       return roundRow(seg, { live: opts.live, failed: opts.failed, isRefine: opts.isRefine, newest: seg.key === opts.newestRound });
     case "check":
       return checkRow(seg, opts.live);
-    case "record":
+    case "record": {
+      const description = segmentMeta(seg).join(" · ");
       return {
         id: seg.key,
         title: "Recorded the demo",
+        ...(description ? { description } : {}),
         state: "done",
         ...(seg.posterUrl ? { media: { kind: "video" as const, src: seg.posterUrl, alt: "Recorded demo", href: seg.url } } : { body: <a href={seg.url} target="_blank" rel="noopener noreferrer">Open the demo</a> }),
         children: seg.notes.map(noteRow),
       };
-    case "deploy":
+    }
+    case "deploy": {
+      const description = segmentMeta(seg).join(" · ");
       return {
         id: seg.key,
         title: "Deployed",
+        ...(description ? { description } : {}),
         body: <p>Live at <a href={seg.url} target="_blank" rel="noopener noreferrer">{seg.url.replace(/^https?:\/\//, "")}<span className="sr-only"> (opens in a new tab)</span></a></p>,
         state: "done",
         children: seg.notes.map(noteRow),
       };
+    }
   }
 }
 
@@ -439,7 +451,7 @@ function checkLine(seg: CheckSegment): ConvoItem | null {
   if (!seg.verify && !seg.judge) return null;
   const tryWord = seg.index === 0 ? "" : `, try ${seg.index + 1}`;
   if (!failed) return { type: "step", key: seg.key, title: seg.judge ? `Checks passed${tryWord}` : `Checks ran${tryWord}`, state: "done" };
-  const steps = (seg.verify?.summary.steps ?? []).filter((s) => !s.ok).map((s) => s.name);
+  const steps = (seg.verify?.summary.steps ?? []).filter((s) => !s.ok).map((s) => VERIFY_LABEL[s.name] ?? s.name);
   const said = [...steps, ...(seg.judge?.pass === false ? seg.judge.reasons.slice(0, 1) : [])].join(", ");
   return { type: "step", key: seg.key, title: `Checks found problems${tryWord}`, ...(said ? { description: truncate(said, 200) } : {}), state: "failed" };
 }

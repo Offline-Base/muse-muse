@@ -217,7 +217,7 @@ export function museUsageText(seg: Extract<Segment, { type: "muse" }>): string |
 
 // ---------- Checks ----------
 
-const VERIFY_LABEL: Record<string, string> = {
+export const VERIFY_LABEL: Record<string, string> = {
   typecheck: "Typecheck",
   build: "Production build",
   start: "Server starts",

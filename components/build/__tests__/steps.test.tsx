@@ -74,6 +74,8 @@ function page(name: FixtureName, over: Record<string, unknown> = {}) {
 
 const titles = (rows: readonly StepItem[]) => rows.map((r) => r.title);
 
+const everyRow = (rows: readonly StepItem[]): StepItem[] => rows.flatMap((r) => [r, ...everyRow(r.children ?? [])]);
+
 function noEmDash(html: string) {
   assert.equal(html.includes(String.fromCharCode(0x2014)), false, "no em dash");
 }
@@ -111,6 +113,32 @@ describe("the steps list", () => {
     ]) {
       assert.ok(html.includes(piece), piece);
     }
+    // What a closed fold holds renders once it's opened.
+    assert.ok(everyRow(rowsOf("running")).some((r) => r.title === "verify observer ran"));
+  });
+
+  it("gives the brief, the demo and the deploy their time and cost", () => {
+    const events = [...FIXTURES.finished.events];
+    const costAfter = (type: string, addedUsd: number) => {
+      const i = events.findIndex((e) => e.type === type);
+      events.splice(i + 1, 0, { type: "cost", totalUsd: addedUsd, addedUsd, what: type, id: events[i]!.id, at: events[i]!.at });
+    };
+    costAfter("recording", 0.03);
+    costAfter("deploy", 0.04);
+    const room = roomOf("finished", events);
+    const rows = steps.roomSteps({ room, rail: derive.railStates(room, "build"), isRefine: false });
+    const row = (id: string) => rows.find((r) => r.id.startsWith(id))!;
+    assert.match(row("brief").description!, /· 10 s · \$0\.02 est\.$/);
+    assert.ok(row("brief").description!.startsWith(FIXTURES.finished.events.flatMap((e) => (e.type === "brief" ? [e.brief.tagline] : []))[0]!), "the tagline still leads");
+    assert.match(row("record").description!, /^10 s · \$0\.03 est\.$/);
+    assert.match(row("deploy").description!, /^10 s · \$0\.04 est\.$/);
+  });
+
+  it("says nothing is still running once its round has ended", () => {
+    const said = (rows: readonly StepItem[]) => everyRow(rows).flatMap((r) => (r.description ? [r.description] : []));
+    assert.ok(said(rowsOf("finished")).every((d) => !/\bRunning\b/.test(d)), "a shipped build");
+    assert.ok(said(rowsOf("finished")).some((d) => /^Ended\b/.test(d)));
+    assert.ok(said(rowsOf("running")).some((d) => /^Running\b/.test(d)), "a running build still says so");
   });
 
   it("gives each round its costs and counts", () => {
@@ -274,7 +302,7 @@ describe("the conversation", () => {
     ]);
     const lines = items.flatMap((i) => (i.type === "step" ? [i] : []));
     assert.deepEqual(lines.map((l) => [l.title, l.state]), [["Checks found problems", "failed"], ["Checks found problems, try 2", "failed"]]);
-    assert.equal(lines[0]?.description, "build, start");
+    assert.equal(lines[0]?.description, "Production build, Server starts");
     assert.equal(lines[1]?.description, "The upload button does nothing.");
   });
 
