@@ -1,6 +1,7 @@
 import type { Brief } from "@/lib/brief/schema";
 import { briefCaps } from "@/lib/caps/brief-fields";
 import type { CapId } from "@/lib/caps/ids";
+import { RUNTIME_RENDER } from "@/lib/caps/runtime/render";
 
 /**
  * Each cap's part of the prompts Muse Code gets (docs/CAPABILITIES.md, 2.6). One line per cap, in plan order; the text
@@ -16,7 +17,9 @@ export interface CapRenderEntry {
   markdown?(brief: Brief): string[];
 }
 
-export const CAP_RENDER: Partial<Record<CapId, CapRenderEntry>> = {};
+export const CAP_RENDER: Partial<Record<CapId, CapRenderEntry>> = {
+  runtime: RUNTIME_RENDER,
+};
 
 function rendered(brief: Brief): Array<[CapId, CapRenderEntry]> {
   return briefCaps(brief).flatMap((id) => (CAP_RENDER[id] ? [[id, CAP_RENDER[id]] as [CapId, CapRenderEntry]] : []));

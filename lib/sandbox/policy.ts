@@ -1,5 +1,6 @@
 import { createHmac } from "node:crypto";
 import type { NetworkPolicy, NetworkPolicyRule } from "@vercel/sandbox";
+import { CAP_HOST_BLOCKED_BODY, CAP_HOST_METHODS } from "@/lib/caps/hosts";
 
 /**
  * Network policy for a builder sandbox, in @vercel/sandbox's NetworkPolicy shape
@@ -89,8 +90,23 @@ export function builderNetworkPolicy(opts: BuilderPolicyOptions): NetworkPolicy 
   if (opts.blobUploads) for (const host of BLOB_UPLOAD_HOSTS) allow[host] = [];
   for (const host of opts.extraHosts ?? []) allow[host] = [];
   // A cap host never replaces a rule above: api.meta.ai keeps its brokered routes whatever a cap lists.
-  for (const host of opts.capHosts ?? []) allow[host] ??= [];
+  for (const host of opts.capHosts ?? []) allow[host] ??= capHostRules(host);
   return { allow };
+}
+
+/**
+ * The rules for a cap host (lib/caps/hosts.ts). One listed in CAP_HOST_METHODS takes only those methods, in the shape
+ * api.meta.ai's rules have: a match that passes, then the firewall's own 403 for everything else. The passing rule pins
+ * the Host header to the allowed host, as Vercel's firewall docs advise, so a request can't be fronted to another site
+ * behind the same CDN. Any other cap host is allowed with no rules.
+ */
+export function capHostRules(host: string): NetworkPolicyRule[] {
+  const methods = CAP_HOST_METHODS[host];
+  if (!methods?.length) return [];
+  return [
+    { match: { method: [...methods] }, transform: [{ headers: { Host: host } }] },
+    { response: { statusCode: 403, body: CAP_HOST_BLOCKED_BODY, contentType: "text/plain" } },
+  ];
 }
 
 /**
