@@ -247,7 +247,9 @@ anything new in that state.
 Three cards of real examples, starting 16 to 20 px under the composer: radius 18 px, aspect ratio 0.86, full-bleed
 photo, a scrim `linear-gradient(180deg, transparent 45%, rgba(0,0,0,.68))`, caption 14 / 500 white at the bottom left
 (E, with M's button type). Three across from 560 px, one per row under it at 16:9. "Use my camera" and the tag stay,
-since they work. There's no separate text line in the card: the example's description becomes its `title`.
+since they work. From 560 px there's no separate text line in the card: the example's description becomes its
+`title`, which screen readers read once, as the card's description. Phones have no tooltips, so under 560 px it shows
+as a second caption line, 13 / 18, over a deeper scrim, `transparent 25%` to `rgba(0,0,0,.74)` (O).
 
 ### Sidebar (`.sidebar`, `.nav-link`, `Brand.tsx`, `AccountMenu.tsx`)
 

@@ -4078,7 +4078,10 @@ a.dash-card:hover {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
-/* The description is the card's tooltip, and still part of its name for a screen reader. */
+/*
+ * The description is the card's tooltip (its title, which screen readers read as its description), so from 560 px it
+ * stays out of sight. Phones have no tooltips, so there it's a second caption line, on a deeper scrim.
+ */
 .ex-text {
   position: absolute;
   width: 1px;
@@ -4086,6 +4089,26 @@ a.dash-card:hover {
   overflow: hidden;
   clip: rect(0 0 0 0);
   white-space: nowrap;
+}
+
+@media (max-width: 559.98px) {
+  .ex-text {
+    position: static;
+    display: block;
+    width: auto;
+    height: auto;
+    margin-top: 2px;
+    overflow: visible;
+    clip: auto;
+    white-space: normal;
+    font-size: 13px;
+    line-height: 18px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+
+  .ex-media::after {
+    background: linear-gradient(180deg, transparent 25%, rgba(0, 0, 0, 0.74));
+  }
 }
 
 /* The build setup: facts, not controls, folded under the examples. */

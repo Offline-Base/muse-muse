@@ -569,7 +569,12 @@ export function Composer({
                 ) : null}
                 <span className="ex-body">
                   <span className="ex-title">{ex.label}</span>
-                  {ex.text ? <span className="ex-text">{ex.text}</span> : null}
+                  {/* The title gives screen readers the description once; this line shows it on phones, which have no tooltips. */}
+                  {ex.text ? (
+                    <span className="ex-text" aria-hidden="true">
+                      {ex.text}
+                    </span>
+                  ) : null}
                 </span>
               </button>
               {ex.image && canUseCamera ? (
