@@ -192,13 +192,49 @@ def result_topics(tagged_text: str) -> list[str]:
     return out
 
 
-# A contact detail, or one person picked out by what makes them unique: refused, not asked.
+# A contact detail, or one person picked out by what makes them unique: refused, not asked. These
+# hold with no model. The wordings that use a tag need that tag, so "email for the parents' night"
+# or "who do I email about the budget" pass, and "an email for [Student A]'s mom" is a draft.
+# RED-F1b tags a capitalized first word the guard does not know, so "Email for" can arrive as
+# "[Person 1] for" and "Exactly one" as "[Person 1] one": _FIRST_WORD stands in where that matters.
+_TAG = r"\[(?:Student [A-Z]{1,3}|Person \d+)\]"
+_FIRST_WORD = r"\[Person \d+\]"
+_KIN = r"(?:mom|mum|mother|dad|father|parents?|guardians?|family|grandma|grandpa|grandmother|grandfather|aunt|uncle)"
+_REACH = r"(?:phone|cell|mobile|number|e-?mail)"
 _CONTACT = re.compile(
     r"\b(?:(?:home|family|parent|guardian|emergency)\s+(?:contact|phone|number)|contact\s+(?:card|info|information|details)|"
-    r"how\s+to\s+reach|where\s+\S+(?:\s+\S+)?\s+lives?|home\s+address|delivered\s+to)\b",
+    r"how\s+to\s+reach|where\s+\S+(?:\s+\S+)?\s+lives?|home\s+address|delivered\s+to)\b"
+    rf"|(?<!\ban\s)(?<!\bthis\s)(?:\b{_REACH}s?|{_FIRST_WORD})\s+(?:for|of)\s+{_TAG}['’]s\s+{_KIN}\b"
+    rf"|{_TAG}['’]s\s+{_KIN}(?:['’]s?)?\s+(?:\w+\s+)?{_REACH}s?\b"
+    rf"|\b(?:what|which)\s+number\b[^.?!]{{0,20}}\b(?:call|text|dial)\b[^.?!]{{0,20}}{_TAG}"
+    rf"|\bwho\s+(?:do|should|can)\s+(?:i|we)\s+(?:call|text|phone|e-?mail|contact)\s+(?:about|for|regarding)\s+{_TAG}"
+    rf"|\bin\s+touch\s+with\s+(?:the\s+{_KIN}\s+of\s+)?{_TAG}"
+    rf"|\bwhere\s+(?:\S+\s+)?{_TAG}(?:['’]s\s+\w+)?\s+lives?\b"
+    rf"|(?:\b(?:mailing|street)|{_FIRST_WORD})\s+address\s+(?:of|for)\s+{_TAG}|{_TAG}['’]s\s+(?:mailing|street)\s+address\b"
+    rf"|\b(?:which|what)\s+(?:street|road|neighbou?rhood)\b[^.?!]{{0,30}}{_TAG}",
     re.IGNORECASE,
 )
-_NARROWED = re.compile(r"\b(?:the only (?:\w+ )?(?:student|kid|child|one|person|patient)|only (?:one|student) who)\b", re.IGNORECASE)
+_ONE = r"(?:student|kid|child|pupil|learner|girl|boy|person|patient)"
+_GRADER = r"(?:\d+(?:st|nd|rd|th)|first|second|third|fourth|fifth|sixth)[- ]grader"
+_NARROWED = re.compile(
+    rf"\bthe only (?:\w+ )?(?:{_ONE}|one|{_GRADER})\b"
+    r"|\bonly (?:one|student) who\b"
+    rf"|\bthe (?:one|single|lone|sole) {_ONE}\b"
+    # "Only one student per table" is a plan; going on to "that student" makes it a pointer.
+    rf"|(?:\b(?:just|only|exactly)|{_FIRST_WORD}) one {_ONE}\b[^.?!]*\bthat (?:{_ONE}|one|essay)\b"
+    # "The boy who cried wolf" is a story; asking how he scored, or whose essay it is, is not.
+    r"|\bthe (?:girl|boy) (?:who|whose|with)\b[^.?!]*\b(?:how|what) did (?:he|she)\b"
+    rf"|\bbelongs? to the {_ONE} (?:who|whose|with)\b"
+    rf"|\bthe new {_ONE} (?:from|who|with)\b"  # "a welcome note for the new student" is fine
+    rf"|\b(?:which|what|the) {_ONE} (?:is|was) unique\b"  # "every student is unique" is fine
+    rf"|\b{_ONE} (?:nobody|no one) else\b"
+    rf"|\b{_ONE} who is the exception\b",
+    re.IGNORECASE,
+)
+# In a class summary these point at one student too: a summary has no reason to describe one.
+_SUMMARY_NARROWED = re.compile(
+    rf"\b(?:just|only|exactly) one {_ONE}\b|\b(?:the|one) {_ONE} (?:who|whose|with)\b", re.IGNORECASE
+)
 # What the excerpts and grades rule must not pick up from a stray word like "essay" or "writing".
 _ASK_WORDS = re.compile(r"\b(?:absen\w+|attendance|tard\w+|seat(?:s|ing)?|sits?|reading groups?|lunch|behaviou?r)\b", re.IGNORECASE)
 CONTACT_REASON = "This asks for someone's contact details, so it stays on the device."
@@ -225,6 +261,11 @@ IDENTIFIER_WORDS = {
     "address": "a street address",
     "dob": "a date of birth",
 }
+
+
+def singles_out(sentence: str) -> bool:
+    """Whether a summary sentence points at one student by description, with no name or tag to catch."""
+    return bool(_NARROWED.search(sentence or "") or _SUMMARY_NARROWED.search(sentence or ""))
 
 
 def _scrub(text: str, secrets: list[str]) -> str:

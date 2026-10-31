@@ -187,6 +187,29 @@ def test_larger_groups_are_not(text):
     assert not compliance.describes_small_group(text)
 
 
+@pytest.mark.parametrize(
+    "request_text",
+    ["Average of the 3 students in reading group B", "the three kids at table 2", "3 students in group B", "Average of 3 students"],
+)
+def test_a_small_group_named_only_in_the_request_is_held(request_text):
+    assert compliance.request_names_small_group(request_text)
+    assert compliance.check("The group averaged 9.5 points.", [], ["ferpa"], request=request_text)[1] == "compliance:small_group"
+    assert compliance.check("The group averaged 9.5 points.", [], [], request=request_text) is None
+
+
+@pytest.mark.parametrize(
+    "request_text",
+    [
+        "What is the class average on the essay?", "How many students are in group B?", "Pick 3 students to present",
+        "Show 2 student essays as examples", "the 3 student essays you found", "Group the class into tables of 4 students",
+        "the 24 students in the class", "Average of the 24 students", "The 3 lowest rubric rows", "",
+    ],
+)
+def test_a_request_that_names_no_small_group_is_not_held(request_text):
+    assert not compliance.request_names_small_group(request_text)
+    assert compliance.check("The class improved.", [], ["ferpa"], request=request_text) is None
+
+
 def test_check_is_quiet_without_a_toggle():
     assert compliance.check("Three students missed it.", ["a.png"], []) is None
     assert compliance.check("Three students missed it.", [], ["ferpa"])[0] == "refuse"
