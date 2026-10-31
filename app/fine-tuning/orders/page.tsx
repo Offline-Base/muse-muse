@@ -4,6 +4,7 @@ import { connection } from "next/server";
 import { OrdersQueue } from "@/components/drive/OrdersQueue";
 import { Icon } from "@/components/icons";
 import { EmptyCard, NotConnected, PageHeader } from "@/components/ui";
+import { isPreview } from "@/lib/db/url";
 import { cardPriceLine, priceLine, toAdminRow, usd } from "@/lib/drive/logic";
 import { listOrders, purgeDriveOrders } from "@/lib/drive/store";
 import { env } from "@/lib/env";
@@ -25,6 +26,7 @@ function checkoutLine(): string {
   if (env.driveCheckout) {
     return `New orders are paid by card on Stripe (${env.stripeLive ? "live: real cards are charged" : "test mode"}) at ${usd(env.drivePriceCents ?? 0)}.`;
   }
+  if (isPreview()) return "New orders are invoiced by email: card payments are off on previews, since Stripe's webhook settles them on production.";
   const missing = [
     env.stripeSecretKey ? null : "STRIPE_SECRET_KEY",
     env.stripeWebhookSecret ? null : "STRIPE_WEBHOOK_SECRET",

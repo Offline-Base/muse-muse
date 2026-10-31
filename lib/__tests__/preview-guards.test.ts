@@ -1,7 +1,8 @@
 /**
  * What a Vercel preview never does, now that it has a database of its own (README.md, Preview database): publish a
  * product, since a publish goes into production's Vercel project for that name and gives it a token production's
- * gateway doesn't know. Production and local runs are as before. Every value here is made up.
+ * gateway doesn't know, or use Stripe, whose webhook settles on production. Production and local runs are as before.
+ * The card routes on a preview are in lib/drive/__tests__/checkout.test.ts. Every value here is made up.
  *
  *   npx tsx --test lib/__tests__/preview-guards.test.ts
  */
@@ -9,7 +10,17 @@ import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import { env, PUBLISH_OFF_ON_PREVIEW } from "@/lib/env";
 
-const NAMES = ["VERCEL_ENV", "VERCEL_TOKEN", "PLATFORM_URL", "VERCEL_PROJECT_PRODUCTION_URL", "VERCEL_URL"] as const;
+const NAMES = [
+  "VERCEL_ENV",
+  "VERCEL_TOKEN",
+  "PLATFORM_URL",
+  "VERCEL_PROJECT_PRODUCTION_URL",
+  "VERCEL_URL",
+  "DRIVE_ENABLED",
+  "STRIPE_SECRET_KEY",
+  "STRIPE_WEBHOOK_SECRET",
+  "DRIVE_PRICE_CENTS",
+] as const;
 type Name = (typeof NAMES)[number];
 const saved = Object.fromEntries(NAMES.map((n) => [n, process.env[n]]));
 
@@ -49,5 +60,29 @@ describe("publishing on a preview", () => {
   it("reads as a clause and carries no em dash", () => {
     assert.match(PUBLISH_OFF_ON_PREVIEW, /^it's a Vercel preview, /);
     assert.ok(!PUBLISH_OFF_ON_PREVIEW.includes(String.fromCharCode(0x2014)));
+  });
+});
+
+describe("Stripe on a preview", () => {
+  const stripe = {
+    DRIVE_ENABLED: "1",
+    STRIPE_SECRET_KEY: "sk_test_0000000000fakekeyfortests",
+    STRIPE_WEBHOOK_SECRET: "whsec_fakewebhooksecretfortests",
+    DRIVE_PRICE_CENTS: "5900",
+  };
+
+  it("has no key on a preview, so card checkout is off there", () => {
+    set({ ...stripe, VERCEL_ENV: "preview" });
+    assert.equal(env.stripeSecretKey, null);
+    assert.equal(env.driveCheckout, false);
+    assert.equal(env.stripeLive, false);
+  });
+
+  it("keeps the key and card checkout in production and on local runs", () => {
+    for (const VERCEL_ENV of ["production", undefined]) {
+      set({ ...stripe, ...(VERCEL_ENV ? { VERCEL_ENV } : {}) });
+      assert.equal(env.stripeSecretKey, stripe.STRIPE_SECRET_KEY);
+      assert.equal(env.driveCheckout, true);
+    }
   });
 });

@@ -562,8 +562,13 @@ export const env = {
   /**
    * STRIPE_SECRET_KEY: the Stripe key drive orders are paid with (sk_ or rk_, test or live), or null. Server only: never
    * in a reply, a header or a log. A restricted key needs Checkout Sessions and Refunds write access.
+   *
+   * Always null on a Vercel preview (README.md, Preview database), so a preview takes no card payments, settles no
+   * session and refunds nothing. Stripe's webhook is production's: it would ignore a preview's own order after charging
+   * the card, and a preview's copy of a production order names that order and its real payment.
    */
   get stripeSecretKey(): string | null {
+    if (isPreview()) return null;
     const key = process.env.STRIPE_SECRET_KEY?.trim() ?? "";
     return /^(sk|rk)_(test|live)_[A-Za-z0-9]{8,}$/.test(key) ? key : null;
   },
