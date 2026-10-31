@@ -108,6 +108,8 @@ Script error, logged so it is not repeated: the review 2 script matched verdicts
 
 **04:05** The clean clone (no .env, single branch) found 1 failure out of 3334: `test_the_committed_splits_match_their_manifest_and_touch_no_used_item` counted any scored unseen row as used, and the persona smoke had scored the study's unseen items, as every real study run will. It would have failed in the worktree too; only two test files were run before that commit. The test now holds the sim sets to reports outside `eval/reports/sim/` and holds fresh_200_c to every report, so the invariant that matters is stated directly: nothing has scored fresh_200_c. The smoke's unseen rows are disclosed in PLAN.md; nobody read them. From here the full suite runs before every commit that adds reports.
 
+**04:15** Clean clone at the head, no .env, single branch: 3334 passed, 6 skipped, 64 xfailed; ruff clean; all 3 manifests current; secrets scan over every file and all history on the branch: 0 findings (`eval/reports/secrets_scan.md`). Pushed `ethan/score-build` to `main`.
+
 ## Open items
 
 - Ethan: what the fine-tune trained on (decides sealing fresh_200_c or the templated set); restart window to move the live app to this code; Always approve is on in the live app.
