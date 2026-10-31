@@ -115,8 +115,7 @@ Measured on Oct 31. The Mac zip is well over the design's estimate, so these are
 ## The Android key
 
 The sandbox signs with `@expo/repack-app`'s public debug key, using v2 alone, because it runs `apksigner` and that also aligns the
-zip. That key
-is public, so anyone could sign an update to a product's app with it. So when `NATIVE_APK_KEYSTORE_B64` is set, the platform
+zip. That key is public, so anyone could sign an update to a product's app with it. So when `NATIVE_APK_KEYSTORE_B64` is set, the platform
 downloads the APK from an `unsigned/` path, replaces the signature in `lib/native/apk-sign.ts`, checks it and uploads it to the
 real path. Without the key the APK is offered as it is, and `signedWith` says `debug`. It installs, but keep it for tests.
 

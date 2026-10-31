@@ -93,15 +93,33 @@ with a throwaway key: it read the file, signed it, checked it and stored it, and
 - **During that checkpoint one selftest exited 0 in 4 s with no `selftest.json`,** and another did so earlier. The next run on the same
   build exited 1 with a report. The lab must treat exit 0 with no report as a failed check.
 
+## After the review
+
+The review's fixes, checked on a refreshed snapshot with real packages named `Résumé Builder`, `product.zip` and `Aux.ai`:
+
+- **Signature:** APKs have no `META-INF` signature files, and `aapt2` reads minSdk 24. With the real `apksigner verify
+  --min-sdk-version 24`, the debug APK and the ones `apk-sign.ts` re-signed with RSA and EC keys all verify with v2 alone and show
+  the right certificate. `keytool -printcert -jarfile` says "Not a signed jar file", so no debug certificate is left. With
+  `--min-sdk-version 21` it says "Missing META-INF/MANIFEST.MF", which is expected: no shell goes below 24.
+- **`assets/app.config`** holds the product's URL and real name, and `checkApk` now refuses an APK without that URL.
+- **Polling real sandbox states:** running gives `running`, stopped gives "stopped before it finished", and deleted gives "gone".
+- **Names:** `product.zip` makes all its packages, `Aux.ai` becomes a `Muse App` folder, and `Résumé Builder` has `Resume Builder`
+  inside the bundle.
+- **Tiles,** rendered with the snapshot's fonts and looked at: Latin, Greek, Cyrillic, Arabic and Hebrew draw their letter, and
+  Japanese, Hindi and Korean names get "M".
+
+**Still not run:** `head`, the streamed hash and the rest of the Blob path have only run against fakes, because this laptop has no
+Blob credential. Installing on a phone and launching on Windows are still not run either, and no device has yet taken a v2-only APK.
+
 ## Cost
 
-About $1 of the $2 cap at worst, counting every sandbox as busy for its whole life, and including the first run's. $0 at Meta. All
-sandboxes are deleted. One snapshot is kept, at about $0.25 a month.
+About $1.25 of the $2 cap at worst, counting every sandbox as busy for its whole life, and including the first run's, the review's
+and the fixes' checks. $0 at Meta. All sandboxes are deleted. One snapshot is kept, at about $0.25 a month.
 
 ## Running it again
 
-The snapshot this made is `snap_blpNiEqxnLrX76c1SfQVl85bJEtc`, on the muse-muse project, from the shells at 3e223ea. It has no expiry. Nothing has set it as
-`PACKAGER_SNAPSHOT_ID`.
+The snapshot this made is `snap_VcblDXLuhpigJ8ZeukmR38j2PupJ`, on the muse-muse project, from the shells at 3e223ea, with the
+code from the review below. It has no expiry. Nothing has set it as `PACKAGER_SNAPSHOT_ID`.
 
 ```sh
 PACKAGER_SNAPSHOT_ID=... npx tsx --env-file-if-exists=.env.local scripts/native/package-product.ts \
