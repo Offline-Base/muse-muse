@@ -38,6 +38,11 @@ as `Authorization: Bearer <token>`:
 - **The job token** is issued at claim. It covers that job's heartbeat, upload, selftest and finish, and nothing else. Store
   its sha256 in `native_jobs.token_hash`, and let it expire 15 minutes after `deadline_at`.
 
+**A job token only works while its run owns the job.** A job the sweep re-queued can still have an old run out there, so the
+heartbeat, upload, selftest and finish routes all require `status = 'claimed'` and a matching `token_hash` in the same `WHERE`
+clause, and answer 410 otherwise. The sweep clears `token_hash` when it re-queues. Without this, an old run's finish could close
+a queued job while its retry is claiming it.
+
 ### POST /api/native/agent/claim
 
 Lab token. Sent every 10 s.
@@ -90,6 +95,9 @@ WHERE id = (SELECT id FROM native_jobs WHERE lane=$lane AND status='queued' AND 
 
 The token only exists in plaintext for this one response, so generate it before the statement and return it beside the row.
 
+Clear the job's stored selftest report in the same step, since a retry keeps its job id and selftest token. The agent also
+ignores a report dated before its launch, as a second guard, so keep the shell's `at` as it was sent.
+
 ### POST /api/native/agent/jobs/{id}/heartbeat
 
 Job token. Sent every 15 s, and once at the start.
@@ -104,10 +112,10 @@ Job token. Sent every 15 s, and once at the start.
 | Status | Meaning |
 |---|---|
 | 200 | `{ "cancel": false }`. With `true`, the agent stops the job and finishes it with code `canceled` |
-| 401, 404, 410 | The agent takes it as a cancel |
+| 401, 404, 410 | The agent takes it as a cancel. See "A job token only works while its run owns the job" |
 | Anything else, or no answer | The agent keeps going and tries again in 15 s |
 
-Update `heartbeat_at`. The sweep fails any job silent for 90 s and re-queues it once.
+Update `heartbeat_at`. The sweep fails any job silent for 90 s, re-queues it once, and clears its `token_hash`.
 
 ### POST /api/native/agent/jobs/{id}/upload
 
@@ -118,7 +126,7 @@ Job token. Called once near the end of a job, for all its files at once.
 ```
 
 Answer `{ "uploads": [<slot>, ...] }` with one slot per file you accept. A file with no slot is skipped with a warning, and
-the job still finishes. Accept these names only, up to these sizes:
+the job still finishes. A 410 loses the files the same way. Accept these names only, up to these sizes:
 
 | Name | Role | Type | Limit |
 |---|---|---|---|
@@ -169,8 +177,9 @@ agent PUTs the bytes there and expects `{ "url", "pathname" }` back. Nothing but
 ### POST /api/native/agent/jobs/{id}/selftest
 
 Job token. Body `{}`. Answers `{ "report": <report> }` with what the shell posted to `/api/native/selftest` for this job, or
-`{ "report": null }` if it hasn't posted yet. The agent polls this for up to 25 s when the report doesn't reach it any other
-way, which is the normal case on iOS (see "What the shells do").
+`{ "report": null }` if it hasn't posted yet. A 410 reads as no report. The agent polls this until 70 s after launch when the
+report doesn't reach it any other way, which is the normal case on iOS (see "What the shells do"). That's long enough for the
+report the shell's own 60 s watchdog sends for a page that hangs.
 
 Selftest tokens are the HMAC tokens from `lib/native/lab-token.ts`. They have to name the job, so that this route can find
 the report.
@@ -182,7 +191,7 @@ Job token. The agent retries up to 6 times.
 ```jsonc
 {
   "outcome": "passed",           // passed, failed or lab_error
-  "informational": false,        // true for glasses_sim: never blocks shipping
+  "informational": false,        // true for glasses_sim, on a lab_error too: never blocks shipping
   "summary": "Checked on an Android emulator (Pixel 7, Android 15): opened in 2.1 s.", // for the build room
   "device": { "name": "Pixel 7", "os": "15" },
   "checks": [{ "id": "loaded", "ok": true, "detail": "The page answered with HTTP 200." }], // ok: null is only a note
@@ -243,7 +252,7 @@ and the apps. A job that fails finishes with `invalid_input`. Fields common to e
   "recordSeconds": 15,            // 6 to 25, default 15. Phone kinds
   "shots": 2,                     // 1 to 4, default 2
   "selftest": { "token": "...", "platformUrl": "https://muse-muse.vercel.app" }, // lab shells only. platformUrl is optional
-  "device": { "name": "Pixel 7" }, // optional. Shown in the caption
+  "device": { "name": "Pixel 7" }, // optional. Only shown in the caption: it doesn't pick the simulator or emulator
   "app": { }                      // see below
 }
 ```
@@ -284,6 +293,9 @@ ad hoc app is expected.
   pixels, and adds a note saying so. Use the lab APK with the product's URL for a full check.
 - **`glasses_sim` is informational.** It passes when the page loads in 60 s, the mock glasses connect, the main button shows
   up, and a result appears in 120 s. Its `informational: true` means it never blocks shipping or hides a download.
+  The design also asks for no `window.onerror`, which isn't checked yet: the autopilot's checkpoints don't carry page errors, so
+  a product that throws an uncaught error and still shows a result passes. The shell has the list in `internal.pageErrors()`,
+  and could add it to the `result` checkpoint.
 
 ## What the shells do
 
@@ -300,7 +312,7 @@ Checked against `native/shell-mobile` and `native/shell-desktop` on the `tg-shel
 1. `Documents/selftest.json` (iOS only). **The shell doesn't write this yet.**
 2. A `MUSE_SELFTEST <json>` line in the device log. Android's logcat gets this in release builds. Logcat cuts lines at about
    4 KB, so the shell should keep the line under 3.5 KB by trimming `errors`.
-3. The platform's copy, through the selftest route above.
+3. The platform's copy, through the selftest route above. It only counts if its `at` is after this launch.
 
 iOS release builds drop `console.log` below the error level, so on iOS only 1 and 3 will work. Adding this to `report` in
 `ProductScreen.js` makes iOS independent of the network:
@@ -321,8 +333,9 @@ its signature check means something.
 
 **Glasses.** The lab copies media into the shell's `Documents`: `mock-feed.mov`, `mock-photo.jpg` and `mock-question.wav`
 (the shell doesn't read the last one yet). It launches the app, waits 2 s, and sends
-`musemuse://check?url=...&mock=1&run=autopilot`. If no checkpoint shows up in 15 s, it launches again with `-museUrl`,
-`-museMock 1` and `-museRun autopilot`, and adds a warning, because the system may hold a link back to ask for permission.
+`musemuse://check?url=...&mock=1&run=autopilot`. If no checkpoint shows up in 60 s, it launches again with `-museUrl`,
+`-museMock 1` and `-museRun autopilot`, adds a warning, and counts the load limit from that launch, because the system may hold
+a link back to ask for permission. The wait is that long because the first checkpoint only comes once the page has loaded.
 
 The autopilot writes `Documents/autopilot.jsonl`, one `{ step, ok, detail, at }` per line, with the steps `start`, `connect`
 (detail is the mode), `primary`, `result`, `timeout` and `error`. It has no checkpoint for the capture itself, so that's
@@ -414,7 +427,16 @@ An on-demand `t3.large` running Windows Server 2022, 60 GB, with shutdown behavi
    Task starts the agent in that session, with no RDP attached (spike S4).
 
 The agent stops the box after 20 idle minutes. Starting it again is the platform's job: `ec2:StartInstances`, then wait up to 6
-minutes for a claim call. **`windows.ps1` hasn't run yet.** No machine here has PowerShell, so only its contents are tested.
+minutes for a claim call. The idle clock runs whatever the platform answers, so a box that gets 401s or 404s, because the routes
+or the flags aren't live yet, still stops itself. If the `shutdown` command fails, the agent stays up and tries again each minute.
+
+**`windows.ps1` hasn't run yet.** No machine here has PowerShell, so only its contents are tested. Check these on the first box:
+
+| Check | How |
+|---|---|
+| The box signs in and the agent starts | `agent.log` shows a claim call, with no RDP attached (spike S4) |
+| The idle stop works | The box stops after 20 idle minutes. Check `agent.log` for `idle shutdown failed` |
+| A restart leaves one agent | `restart-agent`, then `tasklist /fi "imagename eq node.exe"` shows one `node.exe`. `schtasks /End` only stops the PowerShell wrapper, so the restart also ends the pid in `data\agent.pid` with `taskkill` |
 
 ## Running it against a local platform
 
@@ -444,7 +466,9 @@ MUSE_LAB_ROOT=/tmp/lab MUSE_LAB_KINDS=desktop_mac node native/lab/agent.mjs
   joins its arguments on the device, so those go through `shQuote`.
 - **Tokens stay out of logs and uploads.** The logger and the uploaded `log.txt` and `report.json` hide them by value and by
   shape. Tests check both.
-- **Product content stays in sandboxed renderers,** on a non-admin user. Captions never carry product text.
+- **Product content stays in sandboxed renderers.** Captions never carry product text. On Windows, the agent runs as the
+  standard user `musemuse`. **On the Mac it runs as `ec2-user`, who has passwordless sudo,** and `setup/mac.sh` relies on that.
+  So a renderer or simulator escape on the Mac can reach root. Only the sandbox stands in the way there.
 - **Downloads** come only from Blob or the platform, with no redirects, and are checked against their sha256.
 - **Target URLs** must be public https, which keeps the box's metadata service (`169.254.169.254`) and anything local out of
   reach of a job.
