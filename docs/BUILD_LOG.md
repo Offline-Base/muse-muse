@@ -106,6 +106,8 @@ Script error, logged so it is not repeated: the review 2 script matched verdicts
 
 **03:50** History rewritten locally before the push, over 92ee1a7..ethan/score-build (43 commits, 25 got new hashes): the private address in that one lane commit became a documentation-range address, and two commit messages were reworded. The final tree is byte-identical to before, the range adds no private address, and no message names the old wording. Old hashes in commit messages, this log and the reports were mapped to the new ones (51 places in 25 files), so every hash cited here resolves. The old commits stay only in local lane branches and a local backup ref, none of which are pushed.
 
+**04:05** The clean clone (no .env, single branch) found 1 failure out of 3334: `test_the_committed_splits_match_their_manifest_and_touch_no_used_item` counted any scored unseen row as used, and the persona smoke had scored the study's unseen items, as every real study run will. It would have failed in the worktree too; only two test files were run before that commit. The test now holds the sim sets to reports outside `eval/reports/sim/` and holds fresh_200_c to every report, so the invariant that matters is stated directly: nothing has scored fresh_200_c. The smoke's unseen rows are disclosed in PLAN.md; nobody read them. From here the full suite runs before every commit that adds reports.
+
 ## Open items
 
 - Ethan: what the fine-tune trained on (decides sealing fresh_200_c or the templated set); restart window to move the live app to this code; Always approve is on in the live app.

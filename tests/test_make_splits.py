@@ -8,6 +8,7 @@ from collections import Counter
 import pytest
 
 from base.config import REPO_ROOT
+from eval import run_eval
 from scripts import make_splits as ms
 
 DECISIONS = ms.DECISIONS
@@ -104,8 +105,14 @@ def test_the_committed_splits_match_their_manifest_and_touch_no_used_item():
     assert manifest["status"] == "UNSEALED" and manifest["seed"] == ms.SEED
     split_ids = [i["id"] for name in manifest["files"] for _l, i in ms.read_lines(out / name)]
     assert len(split_ids) == len(set(split_ids))
-    used = {str(i["id"]) for p in [*ms.SETS, *ms.used_files()] for _l, i in ms.read_lines(p) if "id" in i}
+    # The simulation scores its own sets (eval/reports/sim), and nothing may ever score fresh_200_c.
+    sim_reports = run_eval.REPORTS_DIR / "sim"
+    scored = ms.used_files()
+    before = [p for p in scored if not p.is_relative_to(sim_reports)]
+    used = {str(i["id"]) for p in [*ms.SETS, *before] for _l, i in ms.read_lines(p) if "id" in i}
     assert not used & set(split_ids)
+    sealed = {i["id"] for _l, i in ms.read_lines(out / "fresh_200_c.jsonl")}
+    assert not sealed & {str(i["id"]) for p in scored for _l, i in ms.read_lines(p) if "id" in i}
     texts = {h for p in ms.SETS for _l, i in ms.read_lines(p) for h in ms.item_hashes(i)}
     assert not any(ms.item_hashes(i) & texts for name in manifest["files"] for _l, i in ms.read_lines(out / name))
     holdout = Counter(i["expected"] for _l, i in ms.read_lines(out / "sim_holdout.jsonl"))
