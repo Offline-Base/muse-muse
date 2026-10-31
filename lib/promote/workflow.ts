@@ -2,13 +2,16 @@
  * The durable workflow that publishes a product imported from a local run (app/api/admin/import-product) the way a
  * live build publishes one, with this site's own env:
  *
- *   publishImportedProduct: note in the build room -> startDeployStep (mints the live token, deploys the product's
- *                           sandbox with GATEWAY_URL and that token) -> poll until READY -> save the link -> deploy
- *                           event -> hibernate the sandbox unless a build is using it
+ *   publishImportedProduct: startDeployStep (mints the live token, deploys the product's sandbox with GATEWAY_URL and
+ *                           that token) -> poll until READY -> save the link -> deploy event -> hibernate the sandbox
+ *                           unless a build is using it; or, when it can't publish, hibernate and then say why
  *
  * The deploy steps are the build workflow's own (lib/pipeline/build-steps.ts), so an imported product gets the same
- * project, env and token rules. A deploy that fails or runs past its cap leaves the product live in the gallery without
- * a link, with the reason in its build room. Start it with start() from "workflow/api". Never call it directly.
+ * project, env and token rules. The route claims the publish before it starts this, with the line in the build room
+ * that says it is publishing (lib/promote/store.ts claimPublish). A deploy that fails or runs past its cap leaves the
+ * product live in the gallery without a link, with the reason in its build room. That line is the run's last write,
+ * since it ends the claim and lets the product be published again. Start it with start() from "workflow/api". Never
+ * call it directly.
  */
 import { sleep } from "workflow";
 import { emitStep, pollDeployStep, startDeployStep } from "@/lib/pipeline/build-steps";
@@ -35,8 +38,8 @@ export async function publishImportedProduct(input: PublishImportInput): Promise
   "use workflow";
   const { productId, buildId, sandboxName } = input;
   let liveUrl: string | null = null;
+  let failure: string | null = null;
   try {
-    await emitStep(buildId, { type: "log", text: "Imported from a local run. Publishing it to its own link now." });
     const deploy = await startDeployStep({ buildId, productId, sandboxName });
     const capMs = stepTimeoutMs("deploy");
     const startedAt = Date.now();
@@ -55,8 +58,10 @@ export async function publishImportedProduct(input: PublishImportInput): Promise
     liveUrl = url;
     await emitStep(buildId, { type: "deploy", url });
   } catch (err) {
-    if (!liveUrl) await importFailedStep({ buildId, productId, message: failureMessage("deploy", err) });
+    if (!liveUrl) failure = failureMessage("deploy", err);
   }
   await hibernateIdleStep({ productId, sandboxName });
+  // After the sandbox is asleep, so a publish started once this line is there never has its sandbox stopped under it.
+  if (failure) await importFailedStep({ buildId, productId, message: failure });
   return { liveUrl };
 }

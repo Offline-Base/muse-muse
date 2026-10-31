@@ -10,6 +10,7 @@ import { emit } from "@/lib/events";
 import { revokeLiveTokensExcept, revokeTokens } from "@/lib/gateway/tokens";
 import { runningBuildsFor } from "@/lib/pipeline/records";
 import { stepRetries } from "@/lib/pipeline/steps";
+import { publishFailedLine } from "@/lib/promote/store";
 import { hibernate } from "@/lib/sandbox/builder";
 
 /**
@@ -33,7 +34,8 @@ importLiveStep.maxRetries = stepRetries("register");
 
 /**
  * Tells the build room why the product has no link of its own. Unless something else published it meanwhile, no
- * deployment uses its live tokens, so they are revoked, as failStep does for a product that never shipped.
+ * deployment uses its live tokens, so they are revoked, as failStep does for a product that never shipped. The line
+ * goes last: it ends the publish's claim (lib/promote/store.ts claimPublish), so the product may be published again.
  */
 export async function importFailedStep(input: { buildId: string; productId: string; message: string }): Promise<void> {
   "use step";
@@ -43,10 +45,7 @@ export async function importFailedStep(input: { buildId: string; productId: stri
     .where(eq(schema.products.id, input.productId))
     .limit(1);
   if (!row?.liveUrl) await revokeTokens(input.productId, "live");
-  await emit(input.buildId, {
-    type: "log",
-    text: `Publishing the imported product didn't finish, so it stays in the gallery without a link of its own. ${input.message}`,
-  });
+  await emit(input.buildId, { type: "log", text: publishFailedLine(input.message) });
 }
 importFailedStep.maxRetries = stepRetries("register");
 

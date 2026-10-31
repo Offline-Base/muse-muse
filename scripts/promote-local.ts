@@ -6,22 +6,26 @@
  *     --to URL          the live site (default https://muse-muse.vercel.app)
  *     --files DIR       where the local run stored its files (default .data/files)
  *     --store-id ID     the live site's Blob store (default store_8A701wVtiqVp1x3e)
+ *     --republish       publish again a product the live site has with no link of its own, once its last try ended
  *     --dry-run         read everything and say what would be uploaded and sent, with no network calls at all
  *
  * It copies the PGlite folder first and reads the copy, since the dev server may hold the original. For each slug it
  * reads the product, every build of it with their events, and the muses they were built from, and skips a product
- * that isn't live or whose latest build isn't, saying why. Each file the rows point at
- * (http://localhost:<port>/api/files/<key>) goes from <files>/data/<key>, with the content type in <files>/types/<key>,
- * to the live store at the same pathname, so paths with a build id in them stay right, and the rows are rewritten to
- * the new links. A bundle that still points at this machine is never sent. POST /api/admin/import-product on the live
- * site saves the rows under its guest account and starts publishing; this script then waits up to 10 minutes for each
- * product's live link and prints what happened. A product the live site already has is reported, with nothing
- * uploaded or sent again.
+ * that isn't live or whose latest build isn't, saying why. The live site checks the bundle first
+ * (POST /api/admin/import-product?check=1), so nothing is uploaded for a product it would refuse. Then each file the
+ * rows point at (http://localhost:<port>/api/files/<key>) goes from <files>/data/<key>, with the content type in
+ * <files>/types/<key>, to the live store at the same pathname, so paths with a build id in them stay right, and the
+ * rows are rewritten to the new links. A bundle that still points at this machine is never sent. POST
+ * /api/admin/import-product on the live site saves the rows under its guest account and starts publishing; this
+ * script then waits up to 10 minutes for each product's live link and prints what happened. A product the live site
+ * already has is reported, with nothing uploaded or sent again, unless it has no link of its own yet and --republish
+ * is passed: then the live site publishes it again, once its last try has ended.
  *
  * Needs AUTOMATION_SECRET (the live site's), and VERCEL_OIDC_TOKEN (vercel env pull, good for 12 hours) for the
  * uploads, which sign in to the store --store-id names the way lib/storage.ts blobAuth() does on Vercel. Neither is
  * ever printed. A dry run needs neither.
  */
+import { realpathSync } from "node:fs";
 import { cp, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -51,20 +55,24 @@ const DEFAULT_STORE = "store_8A701wVtiqVp1x3e";
 const POLL_MS = 15_000;
 const WAIT_MS = 10 * 60_000;
 const UPLOADS_AT_ONCE = 4;
-const USAGE = "Usage: npx tsx --env-file=.env.local scripts/promote-local.ts --db <pglite folder> --slug a,b [--to URL] [--files DIR] [--store-id ID] [--dry-run]";
+const USAGE =
+  "Usage: npx tsx --env-file=.env.local scripts/promote-local.ts --db <pglite folder> --slug a,b [--to URL] [--files DIR] [--store-id ID] [--republish] [--dry-run]";
+/** Flags that take no value. */
+const SWITCHES = new Set(["dry-run", "republish"]);
 
-type LocalDb = PgliteDatabase<typeof schema>;
+export type LocalDb = PgliteDatabase<typeof schema>;
 
-interface Options {
+export interface Options {
   db: string;
   slugs: string[];
   to: string;
   files: string;
   storeId: string;
+  republish: boolean;
   dryRun: boolean;
 }
 
-interface Row {
+export interface Row {
   slug: string;
   status: "imported" | "already" | "dry run" | "skipped" | "failed";
   /** Files uploaded, or that a dry run would upload. */
@@ -84,13 +92,13 @@ interface LocalFile {
   size: number;
 }
 
-function options(argv: string[]): Options {
+export function options(argv: string[]): Options {
   const values = new Map<string, string>();
   for (let i = 0; i < argv.length; i++) {
-    const m = /^--(db|slug|to|files|store-id|dry-run)(?:=(.*))?$/.exec(argv[i]!);
+    const m = /^--(db|slug|to|files|store-id|republish|dry-run)(?:=(.*))?$/.exec(argv[i]!);
     if (!m) throw new Error(`Unknown argument ${argv[i]}.\n${USAGE}`);
     const name = m[1]!;
-    if (name === "dry-run") {
+    if (SWITCHES.has(name)) {
       values.set(name, "");
       continue;
     }
@@ -113,7 +121,15 @@ function options(argv: string[]): Options {
   if (to.protocol !== "https:") throw new Error(`--to must be an https URL, like ${DEFAULT_TO}.`);
   const storeId = values.get("store-id") ?? DEFAULT_STORE;
   if (!/^store_[A-Za-z0-9]+$/.test(storeId)) throw new Error(`--store-id must be a Blob store id, like ${DEFAULT_STORE}.`);
-  return { db, slugs: [...new Set(slugs)], to: to.origin, files: values.get("files") ?? LOCAL_FILES_DIR, storeId, dryRun: values.has("dry-run") };
+  return {
+    db,
+    slugs: [...new Set(slugs)],
+    to: to.origin,
+    files: values.get("files") ?? LOCAL_FILES_DIR,
+    storeId,
+    republish: values.has("republish"),
+    dryRun: values.has("dry-run"),
+  };
 }
 
 /**
@@ -160,7 +176,7 @@ async function readRows(local: LocalDb, slug: string): Promise<LocalRows | null>
 }
 
 /** The live site's view of a product, or null when it doesn't have one with this id. */
-async function liveProduct(to: string, productId: string): Promise<{ liveUrl: string | null } | null> {
+async function liveProduct(to: string, productId: string): Promise<{ status: string; liveUrl: string | null } | null> {
   const res = await fetch(`${to}/api/admin/import-product?productId=${productId}`, { headers: automation() });
   if (res.status === 404) {
     const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
@@ -168,7 +184,34 @@ async function liveProduct(to: string, productId: string): Promise<{ liveUrl: st
     throw new Error(`${to} has no /api/admin/import-product. Deploy the branch with it first.`);
   }
   if (!res.ok) throw new Error(`${to} answered ${res.status} when asked about the product: ${(await res.text()).slice(0, 200)}`);
-  return (await res.json()) as { liveUrl: string | null };
+  return (await res.json()) as { status: string; liveUrl: string | null };
+}
+
+/** The live site's answer to a bundle. */
+interface Answer {
+  ok: boolean;
+  status: number;
+  reply: Record<string, unknown> | null;
+}
+
+/** POSTs the bundle to the live site's import route: to check it, to import it, or to import it and publish it again. */
+async function send(to: string, bundle: ImportBundle, mode: "check" | "import" | "republish"): Promise<Answer> {
+  const res = await fetch(`${to}/api/admin/import-product${mode === "import" ? "" : `?${mode}=1`}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...automation() },
+    body: JSON.stringify(bundle),
+  });
+  const reply = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+  return { ok: res.ok && reply !== null, status: res.status, reply };
+}
+
+/** What the live site said when it didn't take a bundle: its status and error, with the field or slug and the reason. */
+function said({ status, reply }: Answer): string {
+  const where = reply?.field ?? reply?.slug;
+  const detail = reply
+    ? `${String(reply.error ?? "")}${where ? ` (${String(where)})` : ""}${reply.reason ? `: ${String(reply.reason)}` : ""}`
+    : "";
+  return `the live site answered ${status}${detail ? `: ${detail}` : ""}`;
 }
 
 /** Runs `fn` on every item, `limit` at a time. After one fails, no new item starts. */
@@ -191,7 +234,7 @@ function relink(bundle: ImportBundle, keys: Map<string, string>, linkFor: (key: 
   return rewriteLocalUrls(bundle, new Map([...keys].map(([url, key]) => [url, linkFor(key)])));
 }
 
-async function promote(local: LocalDb, slug: string, opts: Options): Promise<Row> {
+export async function promote(local: LocalDb, slug: string, opts: Options): Promise<Row> {
   const row = (status: Row["status"], note: string, extra: Partial<Row> = {}): Row => ({ slug, status, files: 0, bytes: 0, link: null, note, ...extra });
   const rows = await readRows(local, slug);
   if (!rows) return row("skipped", "no product has this slug");
@@ -228,8 +271,24 @@ async function promote(local: LocalDb, slug: string, opts: Options): Promise<Row
     );
   }
 
+  const waitFor = { productId: bundle.product.id, buildId: bundle.product.latestBuildId };
   const there = await liveProduct(opts.to, bundle.product.id);
-  if (there) return row("already", there.liveUrl ? "nothing uploaded or sent again" : "it's there without a link of its own yet", { link: there.liveUrl });
+  if (there) {
+    // Its files went up before it was imported, so nothing is uploaded again.
+    if (there.liveUrl) return row("already", "nothing uploaded or sent again", { link: there.liveUrl });
+    if (there.status !== "live") return row("already", `it is ${there.status} on the live site, so it isn't published again`);
+    if (!opts.republish) return row("already", "it's there without a link of its own yet; --republish publishes it again");
+    const again = await send(opts.to, planned, "republish");
+    if (again.ok && again.reply?.publishing === true) return row("already", "publishing it again", { waitFor });
+    if (again.status === 409 && again.reply?.error === "publish_running") return row("already", "the live site is publishing it now", { waitFor });
+    if (again.ok) return row("already", "the live site didn't publish it again");
+    return row("failed", said(again));
+  }
+
+  // Asked before any file is uploaded, so a bundle the live site refuses leaves nothing in its store.
+  const check = await send(opts.to, planned, "check");
+  if (!check.ok) return row(check.status >= 500 ? "failed" : "skipped", `nothing uploaded: ${said(check)}`);
+  if (check.reply?.status === "already") return row("already", "the live site has it already");
 
   const links = new Map<string, string>();
   await eachAtOnce([...files.values()], UPLOADS_AT_ONCE, async (f) => {
@@ -241,19 +300,13 @@ async function promote(local: LocalDb, slug: string, opts: Options): Promise<Row
   const leftover = whyNotSend(out);
   if (leftover) return row("failed", `the files were uploaded, but the rows weren't sent: ${leftover}`, counts);
 
-  const res = await fetch(`${opts.to}/api/admin/import-product`, {
-    method: "POST",
-    headers: { "content-type": "application/json", ...automation() },
-    body: JSON.stringify(out),
-  });
-  const reply = (await res.json().catch(() => null)) as Record<string, unknown> | null;
-  if ((res.status === 200 || res.status === 201) && reply) {
-    if (reply.status === "already") return row("already", "the live site had it already", counts);
-    if (reply.publishing !== true) return row("imported", "saved, but the live site couldn't start publishing it (its logs say why)", counts);
-    return row("imported", "publishing", { ...counts, waitFor: { productId: bundle.product.id, buildId: bundle.product.latestBuildId } });
+  const res = await send(opts.to, out, "import");
+  if (!res.ok) return row("failed", said(res), counts);
+  if (res.reply?.status === "already") return row("already", "the live site had it already", counts);
+  if (res.reply?.publishing !== true) {
+    return row("imported", "saved, but the live site couldn't start publishing it (its logs say why); --republish tries again", counts);
   }
-  const said = reply ? `${String(reply.error ?? "")}${reply.field ? ` (${String(reply.field)})` : ""}${reply.reason ? `: ${String(reply.reason)}` : ""}` : "";
-  return row("failed", `the live site answered ${res.status}${said ? `: ${said}` : ""}`, counts);
+  return row("imported", "publishing", { ...counts, waitFor });
 }
 
 /** Polls every product the live site is publishing until it has a link, for up to 10 minutes in all. */
@@ -325,7 +378,18 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
-  console.error(err instanceof Error ? err.message : err);
-  process.exit(1);
-});
+/** True when node was started with this file, and not when a test imports promote() from it. */
+function startedAsScript(): boolean {
+  try {
+    return realpathSync(process.argv[1] ?? "") === realpathSync(import.meta.filename);
+  } catch {
+    return false;
+  }
+}
+
+if (startedAsScript()) {
+  main().catch((err) => {
+    console.error(err instanceof Error ? err.message : err);
+    process.exit(1);
+  });
+}
