@@ -35,6 +35,7 @@ CREATE TABLE "native_jobs" (
 	"status" text DEFAULT 'queued' NOT NULL,
 	"input" jsonb NOT NULL,
 	"result" jsonb,
+	"selftest" jsonb,
 	"token_hash" text,
 	"attempts" integer DEFAULT 0 NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,

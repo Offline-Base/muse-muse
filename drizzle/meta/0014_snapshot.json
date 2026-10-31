@@ -1,5 +1,5 @@
 {
-  "id": "7a758b00-bf67-4a18-886b-cfb67c117c83",
+  "id": "f17d7c89-5537-4348-81f4-ff0a35e00e55",
   "prevId": "d48e1ae4-aa5e-41eb-bffc-f88d9c975ea2",
   "version": "7",
   "dialect": "postgresql",
@@ -1276,6 +1276,12 @@
         },
         "result": {
           "name": "result",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "selftest": {
+          "name": "selftest",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false

@@ -29,6 +29,7 @@ import type {
   NativePlan,
   NativeRunStatus,
   NativeRunSummary,
+  NativeSelftestReport,
   NativeSpendKind,
 } from "@/lib/native/types";
 import type { ToolFixtures, ToolPrincipal } from "@/lib/tools/ids";
@@ -549,6 +550,7 @@ export const nativeJobs = pgTable(
     status: text("status").$type<NativeJobStatus>().notNull().default("queued"),
     input: jsonb("input").$type<NativeJobInput>().notNull(),
     result: jsonb("result").$type<NativeJobResult>(),
+    selftest: jsonb("selftest").$type<NativeSelftestReport>(),
     tokenHash: text("token_hash"),
     attempts: integer("attempts").notNull().default(0),
     createdAt: createdAt(),

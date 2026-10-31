@@ -10,18 +10,21 @@ export type { NativeEventBody, NativeItemState, NativeOrigin, NativeItemView, Na
 export const NATIVE_LANES = ["mac", "windows"] as const;
 export type NativeLane = (typeof NATIVE_LANES)[number];
 
-/** What a lab box can be asked to do, as native/lab/jobs names them. */
-export const NATIVE_JOB_KINDS = ["ios_sim", "android_emu", "desktop_mac", "desktop_windows", "glasses_sim", "shell_release"] as const;
+/** What a lab box can be asked to do, as native/lab/jobs names them. Shell releases aren't jobs: scripts and EAS make them. */
+export const NATIVE_JOB_KINDS = ["ios_sim", "android_emu", "desktop_mac", "desktop_windows", "glasses_sim"] as const;
 export type NativeJobKind = (typeof NATIVE_JOB_KINDS)[number];
 
-/** The lane each job kind runs on. shell_release is whichever box builds that shell, so its job row says. */
-export const JOB_KIND_LANE: Record<Exclude<NativeJobKind, "shell_release">, NativeLane> = {
+/** The lane each job kind runs on. */
+export const JOB_KIND_LANE: Record<NativeJobKind, NativeLane> = {
   ios_sim: "mac",
   android_emu: "mac",
   desktop_mac: "mac",
   desktop_windows: "windows",
   glasses_sim: "mac",
 };
+
+/** native_jobs.priority. Higher runs first: the claim orders by priority DESC. */
+export const NATIVE_JOB_PRIORITY = { agent: 30, ship: 20, backfill: 10 } as const;
 
 export const NATIVE_JOB_STATUSES = ["queued", "claimed", "done", "failed", "expired", "canceled"] as const;
 export type NativeJobStatus = (typeof NATIVE_JOB_STATUSES)[number];
@@ -85,6 +88,12 @@ export interface NativeJobResult {
   summary: string;
   [field: string]: unknown;
 }
+
+/**
+ * native_jobs.selftest: what the shell posted to /api/native/selftest for this job, kept as it was sent, since the agent
+ * compares its `at` with the launch. The claim clears it, because a retry keeps its job id.
+ */
+export type NativeSelftestReport = Record<string, unknown>;
 
 /** native_labs.state: what a box last said about itself. */
 export interface NativeLabState {

@@ -65,6 +65,10 @@ Migrations run in this order, and `lib/db/__tests__/migrations.test.ts` checks t
 - **`native_runs`** has a partial unique index on `(build_id, origin)` for `ship` and `refine`, which makes starting a run
   after shipping safe to repeat. `agent` and `owner` may start any number. `build_id` is required, since events go to that
   build's log.
+- **`native_jobs.priority`**: higher runs first, since the claim orders by `priority DESC`. Use `NATIVE_JOB_PRIORITY`: agent
+  30, ship 20, backfill 10.
+- **`native_jobs.selftest`** holds what the shell posted to `/api/native/selftest`, as it was sent. The claim sets
+  `selftest = null` in the same statement, since a retry keeps its job id.
 - **`native_artifacts.check`** is the column `check_result`, because `check` is a reserved word in SQL.
 - **`native_budget`** has no rows yet. The ledger inserts each lane with `onConflictDoNothing`. Lanes are in
   `NATIVE_BUDGET_LANES`, with `total` as the cap over the others.

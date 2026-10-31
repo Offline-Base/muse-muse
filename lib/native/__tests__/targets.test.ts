@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import { TARGETS, type Brief } from "@/lib/brief/schema";
 import { env } from "@/lib/env";
 import { applyTargets, briefTargets, hasNativeWork, parseNativeTargets, TARGET_GUIDE, validateTargets } from "@/lib/native/targets";
-import { JOB_KIND_LANE, NATIVE_JOB_KINDS, NATIVE_LANES } from "@/lib/native/types";
+import { JOB_KIND_LANE, NATIVE_JOB_KINDS, NATIVE_JOB_PRIORITY, NATIVE_LANES } from "@/lib/native/types";
 import { BRIEF } from "@/lib/promote/__tests__/fixtures";
 
 describe("briefTargets", () => {
@@ -152,9 +152,12 @@ describe("the contract's lists", () => {
     assert.doesNotMatch(Object.values(TARGET_GUIDE).join(" "), /\bExa\b/);
   });
 
-  it("gives every job kind but shell_release a lane", () => {
-    for (const kind of NATIVE_JOB_KINDS) {
-      if (kind !== "shell_release") assert.ok(NATIVE_LANES.includes(JOB_KIND_LANE[kind]), kind);
-    }
+  it("gives every job kind a lane", () => {
+    for (const kind of NATIVE_JOB_KINDS) assert.ok(NATIVE_LANES.includes(JOB_KIND_LANE[kind]), kind);
+  });
+
+  it("runs someone waiting mid-build first, then ship checks, then backfills", () => {
+    assert.ok(NATIVE_JOB_PRIORITY.agent > NATIVE_JOB_PRIORITY.ship);
+    assert.ok(NATIVE_JOB_PRIORITY.ship > NATIVE_JOB_PRIORITY.backfill);
   });
 });

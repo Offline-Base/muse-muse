@@ -15,6 +15,7 @@ import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import * as schema from "@/lib/db/schema";
+import { NATIVE_JOB_PRIORITY } from "@/lib/native/types";
 
 const FOLDER = join(import.meta.dirname, "../../../drizzle");
 
@@ -170,6 +171,23 @@ describe("a fresh database", () => {
     await db.insert(schema.nativeLabs).values({ lane: "mac", tokenHash: "a".repeat(64), state: { slots: 1 } });
     await assert.rejects(async () => db.insert(schema.nativeLabs).values({ lane: "mac", tokenHash: "b".repeat(64) }), "one row per lane");
   });
+
+  it("claims the highest priority first, and a claim clears a retried job's selftest report", async () => {
+    const [run] = await db.select().from(schema.nativeRuns).limit(1);
+    const job = { runId: run!.id, buildId, productId, lane: "windows" as const, kind: "desktop_windows" as const, input: { v: 1 as const, limitSeconds: 300 }, expiresAt: new Date(Date.now() + 6 * 3_600_000) };
+    const [backfill] = await db.insert(schema.nativeJobs).values({ ...job, priority: NATIVE_JOB_PRIORITY.backfill }).returning();
+    const [agent] = await db.insert(schema.nativeJobs).values({ ...job, priority: NATIVE_JOB_PRIORITY.agent, selftest: { at: "2026-11-01T12:00:00.000Z", ok: true } }).returning();
+    assert.equal(backfill!.selftest, null);
+    assert.deepEqual(agent!.selftest, { at: "2026-11-01T12:00:00.000Z", ok: true });
+    const claimed = await db.execute(
+      sql`UPDATE native_jobs SET status = 'claimed', selftest = NULL
+          WHERE id = (SELECT id FROM native_jobs WHERE lane = 'windows' AND status = 'queued' AND expires_at > now()
+                      ORDER BY priority DESC, created_at FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING id, selftest`,
+    );
+    const row = (claimed as unknown as { rows: Array<{ id: string; selftest: unknown }> }).rows[0]!;
+    assert.equal(row.id, agent!.id, "the older backfill waits");
+    assert.equal(row.selftest, null);
+  });
 });
 
 describe("a database already at 0012", () => {
@@ -208,6 +226,7 @@ describe("a database already at 0012", () => {
     assert.equal(usage!.inputTokens, 120);
     assert.equal(usage!.units, 0);
     assert.ok((await columns(client, "native_jobs")).has("token_hash"));
+    assert.ok((await columns(client, "native_jobs")).has("selftest"));
 
     const units = (await columns(client, "usage")).get("units");
     assert.equal(units?.nullable, false);
