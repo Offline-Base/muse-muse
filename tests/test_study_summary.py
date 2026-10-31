@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import csv
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml
 
 from scripts import study_summary as ss
+from tests import sim_rows
 from tests.sim_rows import NOFIX, PLANNED, night_rows, write_full_study, write_raw, write_run
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -179,7 +182,7 @@ def test_a_stopped_run_with_no_files_is_still_a_reported_run(tmp_path):
     code, out = summarize(study, "--allow-missing")
     text = (out / "summary.md").read_text()
     assert code == 0 and "| Planned runs that ran | 1 of 24 |" in text
-    assert "| strict_teacher | seed 101 | stopped | 0 |" in text
+    assert "| strict_teacher | seed 101 | stopped | - | - | - | - | - | - | - |" in text
 
 
 def test_a_rerun_is_reported_beside_the_stopped_run_and_gives_the_seed_its_number(tmp_path):
@@ -349,4 +352,401 @@ def test_the_chart_keeps_two_measures_off_one_axis_and_says_simulated(tmp_path):
     assert "Simulated persona study" in text and "Simulated users, invented items" in text
     assert "24 simulated runs read" in text
     assert png.read_bytes().startswith(b"\x89PNG")
-    assert b"Simulated" in png.read_bytes()  # in its metadata; the same figure draws the visible title
+    assert png.with_suffix(".svg") == svg  # the same figure: test_sim_honesty judges the PNG by this SVG
+
+
+LEAK_NOTE = "Stopped (simulated run): night 4. Reason: 1 leak on the holdout.\n"
+ERROR_NOTE = "Stopped (simulated run): night 2. Reason: model errors on two nights.\n"
+
+
+def stop_only(study: Path, persona: str, seed: int, note: str, folder: str | None = None) -> Path:
+    """A stopped run the documented way: simulate_nights writes at the end, so only stopped.md is there."""
+    path = study / persona / (folder or f"seed-{seed}")
+    path.mkdir(parents=True)
+    (path / "stopped.md").write_text(note)
+    return path
+
+
+def edit_unseen(folder: Path, label: str, **cells: str) -> None:
+    """Change cells of one row of nights.md's Unseen test table, by column name."""
+    path = folder / "nights.md"
+    lines = path.read_text().splitlines()
+    at = next(i for i, line in enumerate(lines) if line.startswith("| Router | Items "))
+    head = [c.strip() for c in lines[at].split("|")]
+    for i, line in enumerate(lines):
+        if line.startswith(f"| {label}"):
+            parts = line.split("|")
+            for name, value in cells.items():
+                parts[head.index(name.replace("_", " "))] = f" {value} "
+            lines[i] = "|".join(parts)
+    path.write_text("\n".join(lines) + "\n")
+
+
+def drop_columns(folder: Path, *names: str) -> None:
+    path = folder / "nights.csv"
+    with path.open(newline="") as f:
+        rows = list(csv.DictReader(f))
+    head = [k for k in rows[0] if k not in names]
+    with path.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=head, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def row_for(lines: list[str], start: str) -> list[str]:
+    return [c.strip() for c in next(line for line in lines if line.startswith(start)).split("|")]
+
+
+def test_a_run_stopped_for_a_leak_with_only_its_note_is_never_read_as_clean(tmp_path):
+    s = seeds("strict_teacher")
+    stop_only(tmp_path, "strict_teacher", s[0], LEAK_NOTE)
+    write_run(tmp_path, "strict_teacher", s[0], folder=f"seed-{s[0]}-rerun")
+    write_run(tmp_path, "strict_teacher", s[1])
+    write_run(tmp_path, "strict_teacher", s[2])
+    runs = ss.read_study(tmp_path)
+    w, why = ss.reading(runs, "strict_teacher")
+    assert w == "not cut" and f"leaks above 0 in seed {s[0]}" in why
+    assert "the only reason the plan allows" in why  # a re-run after a leak is not allowed
+    assert f"seed {s[1]}: ran after a leak in seed {s[0]}" in why
+
+    stopped = row_for(ss.every_run_table(runs), f"| strict_teacher | seed {s[0]} | stopped")
+    assert stopped[4:11] == [
+        "-",
+        "-",
+        "-",
+        "at least 1",
+        "-",
+        "-",
+        "-",
+    ]  # nights, unneeded x 2, then the safety cells
+    reading_row = row_for(ss.reading_table(runs), "| strict_teacher | 3 of 3")
+    assert reading_row[6] == "at least 1 (seeds read in full: 0)" and reading_row[10] == "not cut"
+    assert "No simulated run was stopped" not in "\n".join(ss.stop_section(runs))
+    assert "starts a new study" in "\n".join(ss.stop_section(runs))
+    differences = "\n".join(ss.deviation_section(runs))
+    assert "None found" not in differences and "the only reason the plan allows" in differences
+
+    png, svg = ss.write_chart(runs, tmp_path / "out")
+    assert png.is_file() and "leaks at least 1" in svg.read_text()
+
+
+def test_the_careful_section_never_says_zero_for_a_try_with_no_rows(tmp_path):
+    stop_only(tmp_path, "strict_teacher", 101, LEAK_NOTE)
+    runs = ss.read_study(tmp_path)
+    text = "\n".join(ss.careful_section(runs))
+    assert "strict_teacher: not to be said. Not known for seed 101" in text
+    assert "strict_teacher: 0 on every" not in text
+    assert ss.reading(runs, "strict_teacher")[0] == "no result"
+
+
+def test_a_try_stopped_for_model_errors_with_its_rerun_is_what_the_plan_expects(tmp_path):
+    s = seeds("strict_teacher")
+    stop_only(tmp_path, "strict_teacher", s[0], ERROR_NOTE)
+    write_run(tmp_path, "strict_teacher", s[0], folder=f"seed-{s[0]}-rerun")
+    write_run(tmp_path, "strict_teacher", s[1])
+    write_run(tmp_path, "strict_teacher", s[2])
+    runs = ss.read_study(tmp_path)
+    w, why = ss.reading(runs, "strict_teacher")
+    assert w == "cut" and f"The stopped try of seed {s[0]} wrote no counts" in why
+    assert (
+        row_for(ss.reading_table(runs), "| strict_teacher | 3 of 3")[6]
+        == "at least 0 (seeds read in full: 0)"
+    )
+    assert row_for(ss.every_run_table(runs), f"| strict_teacher | seed {s[0]} | stopped")[7] == "-"
+    assert "strict_teacher: not to be said." in "\n".join(ss.careful_section(runs))
+
+
+def test_a_stop_note_with_no_reason_blocks_cut(tmp_path):
+    s = seeds("strict_teacher")
+    stop_only(tmp_path, "strict_teacher", s[0], "Stopped (simulated run): night 2.\n")
+    write_run(tmp_path, "strict_teacher", s[0], folder=f"seed-{s[0]}-rerun")
+    write_run(tmp_path, "strict_teacher", s[1])
+    write_run(tmp_path, "strict_teacher", s[2])
+    w, why = ss.reading(ss.read_study(tmp_path), "strict_teacher")
+    assert w == "not cut" and "names no reason the plan gives" in why
+
+
+@pytest.mark.parametrize(
+    ("note", "cause", "leaks"),
+    [
+        (LEAK_NOTE, "leak", 1),
+        ("Stopped (simulated run): night 4. Reason: 3 day leaks.", "leak", 3),
+        ("Stopped: a leak.", "leak", 1),
+        (ERROR_NOTE, "model errors", 0),
+        ("Reason: 0 leaks, more than 10% of the holdout errored.", "model errors", 0),
+        ("Stopped (simulated run): night 2.", "unknown", 0),
+        ("", "unknown", 0),
+    ],
+)
+def test_the_stop_reason_is_read(note, cause, leaks):
+    assert ss.stop_cause(note) == cause and ss.stop_leaks(note) == leaks
+
+
+@pytest.mark.parametrize("name", ["seed-101-first", "seed-101-rerun2", "seed-101-rerun-2", "old"])
+def test_a_folder_the_plan_does_not_name_is_listed_counted_and_blocks_cut(tmp_path, name):
+    folder = write_run(
+        tmp_path, "strict_teacher", 101, folder=name, rows=night_rows(4, holdout_leak_at=2), nights=4
+    )
+    (folder / "stopped.md").write_text("Stopped (simulated run): night 2. Reason: 1 leak.\n")
+    for seed in seeds("strict_teacher"):
+        write_run(tmp_path, "strict_teacher", seed)
+    runs = ss.read_study(tmp_path)
+    w, why = ss.reading(runs, "strict_teacher")
+    assert w == "not cut" and name in why and f"leaks above 0 in folder {name}" in why
+    assert f"folder {name}" in "\n".join(ss.every_run_table(runs))
+    assert f"the folder {name} is not seed-N or seed-N-rerun" in "\n".join(ss.deviation_section(runs))
+    assert "1 leak" in "\n".join(ss.stop_section(runs))
+    assert ss.counted(runs, "strict_teacher")[101].folder.name == "seed-101"
+
+
+def test_an_empty_stray_folder_still_blocks_cut(tmp_path):
+    for seed in seeds("strict_teacher"):
+        write_run(tmp_path, "strict_teacher", seed)
+    (tmp_path / "strict_teacher" / "seed-101-first").mkdir()
+    assert word(ss.read_study(tmp_path), "strict_teacher") == "not cut"
+
+
+def test_a_stray_folder_does_not_stand_in_for_a_missing_planned_run(tmp_path, capsys):
+    study = tmp_path / "study"
+    write_run(study, "strict_teacher", 101, folder="seed-101-first")
+    code, out = summarize(study)
+    assert code == 2 and not out.exists() and "24 planned runs are missing" in capsys.readouterr().out
+
+
+def test_a_seed_outside_the_plan_blocks_cut_and_its_counts_count(tmp_path):
+    for seed in seeds("strict_teacher"):
+        write_run(tmp_path, "strict_teacher", seed)
+    write_run(tmp_path, "strict_teacher", 999, rows=night_rows(10, holdout_leak_at=2))
+    w, why = ss.reading(ss.read_study(tmp_path), "strict_teacher")
+    assert w == "not cut" and "leaks above 0 in seed 999" in why
+
+
+def test_a_rerun_of_a_run_that_was_not_stopped_is_listed_and_blocks_cut(tmp_path):
+    for seed in seeds("strict_teacher"):
+        write_run(tmp_path, "strict_teacher", seed)
+    write_run(tmp_path, "strict_teacher", 101, folder="seed-101-rerun")
+    w, why = ss.reading(ss.read_study(tmp_path), "strict_teacher")
+    assert w == "not cut" and "the first run was not stopped for model errors" in why
+
+
+@pytest.mark.parametrize(
+    ("cells", "expected"),
+    [
+        ({"Items": "50"}, "cover 100 and 50 items"),
+        ({"Errors_or_fallbacks": "1"}, "have 0 and 1 errors or fallbacks"),
+        ({"Items": "-"}, "cover 100 and - items"),
+        ({"Errors_or_fallbacks": "-"}, "have 0 and - errors or fallbacks"),
+    ],
+)
+def test_metric_1_needs_the_same_items_and_no_errors_or_the_seed_gets_no_number(tmp_path, cells, expected):
+    s = seeds("strict_teacher")
+    for seed in s:
+        write_run(tmp_path, "strict_teacher", seed)
+    edit_unseen(tmp_path / "strict_teacher" / f"seed-{s[0]}", "After the last night", **cells)
+    runs = ss.read_study(tmp_path)
+    run = ss.counted(runs, "strict_teacher")[s[0]]
+    assert not run.paired and not run.fell
+    w, why = ss.reading(runs, "strict_teacher")
+    assert w == "too few seeds" and expected in why
+    assert expected in "\n".join(ss.deviation_section(runs))
+    assert expected in ss._run_row(run)
+    assert "| strict_teacher | 2 of 3 |" in "\n".join(ss.reading_table(runs))
+
+
+def test_a_fall_that_comes_from_errors_in_every_seed_gives_no_reading(tmp_path):
+    for seed in seeds("strict_teacher"):
+        write_run(tmp_path, "strict_teacher", seed)
+        edit_unseen(
+            tmp_path / "strict_teacher" / f"seed-{seed}",
+            "After the last night",
+            Items="50",
+            Errors_or_fallbacks="50",
+        )
+    assert word(ss.read_study(tmp_path), "strict_teacher") == "no result"
+
+
+def test_empty_folders_are_missing_runs_not_runs_that_ran(tmp_path, capsys):
+    study = tmp_path / "study"
+    for persona, seed in ss.planned_runs():
+        (study / persona / f"seed-{seed}").mkdir(parents=True)
+    code, out = summarize(study)
+    assert code == 2 and not out.exists() and "nothing to report" in capsys.readouterr().out
+    code, out = summarize(study, "--allow-missing")
+    assert code == 2 and not out.exists()
+
+
+def test_an_empty_folder_fails_the_missing_run_gate_beside_real_runs(tmp_path, capsys):
+    study = tmp_path / "study"
+    write_full_study(study)
+    empty = study / "strict_teacher" / "seed-101"
+    for path in sorted(empty.rglob("*"), reverse=True):
+        path.unlink() if path.is_file() else path.rmdir()
+    code, out = summarize(study)
+    assert code == 2 and not out.exists() and "1 planned runs are missing" in capsys.readouterr().out
+    code, out = summarize(study, "--allow-missing")
+    text = (out / "summary.md").read_text()
+    assert (
+        code == 0
+        and "| Planned runs that ran | 23 of 24 |" in text
+        and "23 simulated runs read" in (out / "chart.svg").read_text()
+    )
+    assert "| strict_teacher | seed 101 | no nights.csv or stopped.md, counted as missing |" in text
+    assert "strict_teacher: 0 on every day, night and unseen scoring of the 2 runs read." in text
+
+
+@pytest.mark.parametrize(
+    ("kw", "expected"),
+    [
+        ({"rows": night_rows(12), "nights": 12}, "ran 12 nights, the plan says 10"),
+        (
+            {"loosen": ("lists",)},
+            "Router changes (ROUTER_LOOSEN) is lists, the plan says lists, result_words",
+        ),
+    ],
+)
+def test_a_run_outside_the_plan_gives_no_number_and_no_cut(tmp_path, kw, expected):
+    for seed in seeds("strict_teacher"):
+        write_run(tmp_path, "strict_teacher", seed, **kw)
+    runs = ss.read_study(tmp_path)
+    w, why = ss.reading(runs, "strict_teacher")
+    assert w == "no result" and expected in why
+    assert not any(r.paired for r in runs)
+
+
+def test_a_missing_field_is_a_difference_and_gives_no_number(tmp_path):
+    folder = write_run(tmp_path, "strict_teacher", 101)
+    path = folder / "nights.md"
+    path.write_text(
+        "".join(line for line in path.read_text().splitlines(True) if not line.startswith("| Model |"))
+    )
+    run = ss.read_run("strict_teacher", 101, folder)
+    assert "Model is not recorded, the plan says lfm3-vl-2b" in ss.deviations(run) and not run.paired
+
+
+def test_the_header_comes_from_the_runs_own_files(tmp_path, monkeypatch):
+    study = tmp_path / "study"
+    write_full_study(study)
+    code, out = summarize(study)
+    cell = (out / "summary.md").read_text()
+    assert code == 0 and "Model lfm3-vl-2b; Dreaming backend rules, as the plan fixes" in cell
+    assert "nothing here is about Glimmer" in cell
+
+    def glimmer(loosen=("lists", "result_words")):
+        return SimpleNamespace(
+            device="laptop", glimmer_backend="openrouter", router_model="meta/muse-glimmer-30b",
+            dreaming_backend="glimmer", router_loosen=loosen,
+        )  # fmt: skip
+
+    monkeypatch.setattr(sim_rows, "settings", glimmer)
+    other = tmp_path / "other"
+    write_full_study(other)
+    code = ss.main(["--study", str(other), "--out", str(tmp_path / "other_out"), "--commit", "abc1234"])
+    text = (tmp_path / "other_out" / "summary.md").read_text()
+    assert code == 0 and "Model meta/muse-glimmer-30b" in text and "Not what the plan fixes" in text
+    assert "nothing here is about Glimmer" not in text
+    assert "| strict_teacher | 0 of 3 |" in text
+    assert "| cut |" not in text and "\ncut\n" not in (tmp_path / "other_out" / "chart.svg").read_text()
+
+
+def test_receipt_mismatches_in_a_stopped_try_block_cut(tmp_path):
+    s = seeds("strict_teacher")
+    first = write_run(tmp_path, "strict_teacher", s[0], rows=night_rows(2), nights=2, receipts=3)
+    (first / "stopped.md").write_text(ERROR_NOTE)
+    write_run(tmp_path, "strict_teacher", s[0], folder=f"seed-{s[0]}-rerun")
+    write_run(tmp_path, "strict_teacher", s[1])
+    write_run(tmp_path, "strict_teacher", s[2])
+    runs = ss.read_study(tmp_path)
+    w, why = ss.reading(runs, "strict_teacher")
+    assert w == "not cut" and f"receipt mismatches above 0 in seed {s[0]}" in why
+    assert row_for(ss.reading_table(runs), "| strict_teacher | 3 of 3")[9] == "3 (seeds: 0 to 3)"
+
+
+SAFETY_COLUMNS = (
+    "leaks",
+    "day_leaks",
+    "missed_asks",
+    "day_missed_asks",
+    "refuse_shared",
+    "day_refuse_shared",
+)
+
+
+def test_safety_counts_that_cannot_be_read_block_cut_and_print_as_a_dash(tmp_path):
+    for seed in seeds("strict_teacher"):
+        folder = write_run(tmp_path, "strict_teacher", seed)
+        drop_columns(folder, *SAFETY_COLUMNS)
+        for label in ("Night 0", "After the last night"):
+            edit_unseen(folder, label, Leaks="-", Missed_asks="-", Refusals_shared="-")
+    runs = ss.read_study(tmp_path)
+    w, why = ss.reading(runs, "strict_teacher")
+    assert w == "not cut" and "leaks, missed asks, refusals shared not known in seed 101" in why
+    table = ss.reading_table(runs)
+    assert row_for(table, "| strict_teacher | 3 of 3")[6:9] == ["-", "-", "-"]
+    assert row_for(ss.every_run_table(runs), "| strict_teacher | seed 101 |")[7:10] == ["-", "-", "-"]
+    assert "strict_teacher: not to be said. Not known for seed 101" in "\n".join(ss.careful_section(runs))
+
+
+@pytest.mark.parametrize("column", SAFETY_COLUMNS)
+def test_one_blank_safety_cell_on_one_night_is_enough_to_block_cut(tmp_path, column):
+    for seed in seeds("strict_teacher"):
+        write_run(tmp_path, "strict_teacher", seed)
+    path = tmp_path / "strict_teacher" / "seed-101" / "nights.csv"
+    with path.open(newline="") as f:
+        rows = list(csv.DictReader(f))
+    rows[5][column] = "n/a"
+    with path.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+    assert word(ss.read_study(tmp_path), "strict_teacher") == "not cut"
+
+
+def test_a_night_missing_from_nights_csv_is_not_read_as_clean(tmp_path):
+    for seed in seeds("strict_teacher"):
+        write_run(tmp_path, "strict_teacher", seed)
+    write_run(tmp_path, "strict_teacher", 101, rows=[r for r in night_rows(10) if r["night"] != 5])
+    runs = ss.read_study(tmp_path)
+    assert word(runs, "strict_teacher") == "too few seeds"
+    assert "nights.csv has no row for night 5" in "\n".join(ss.deviation_section(runs))
+
+
+def test_a_real_night_zero_with_no_day_columns_is_not_unknown(tmp_path):
+    run = ss.read_run("strict_teacher", 101, write_run(tmp_path, "strict_teacher", 101))
+    assert run.rows[0]["day_leaks"] == "" and ss.safety_counts(run)["unknown"] == set()
+
+
+def test_the_stop_section_says_when_it_could_not_check_for_model_errors(tmp_path):
+    folder = write_run(tmp_path, "strict_teacher", 101)
+    run = ss.read_run("strict_teacher", 101, folder)
+    text = "\n".join(ss.stop_section([run]))
+    assert "two nights of model errors" not in text and "no run's files show a leak." in text
+    assert "Could not check for model errors, no raw rows: strict_teacher seed 101 (night 1, 2, 3" in text
+    assert "A run writes no raw rows for night 0" in text
+    good = {"id": "x", "decision": "ask_user", "fallback": False}
+    for night in range(1, 11):
+        write_raw(folder, f"night-{night}-current.jsonl", [good])
+    text = "\n".join(ss.stop_section([run]))
+    assert (
+        "no run's files show a leak or two nights of model errors." in text and "Could not check" not in text
+    )
+    assert "A run writes no raw rows for night 0" in text
+    write_raw(folder, "night-4-current.jsonl", [])
+    assert "(night 4)" in "\n".join(ss.stop_section([run]))
+
+
+def test_the_summary_gives_metrics_5_and_6_per_day_and_per_night_and_a_range_beside_each_safety_sum(tmp_path):
+    s = seeds("strict_teacher")
+    write_run(tmp_path, "strict_teacher", s[0], rows=night_rows(10, unneeded=(9, 0)))
+    write_run(tmp_path, "strict_teacher", s[1], unseen_kw={"missed": 2})
+    write_run(tmp_path, "strict_teacher", s[2])
+    runs = ss.read_study(tmp_path)
+    lines = ss.secondary_section(runs)
+    head = row_for(lines, "| Simulated persona | Run | Day 1 ")
+    assert head[3:13] == [f"Day {n}" for n in range(1, 11)]
+    assert row_for(lines, f"| strict_teacher | seed {s[0]} | 9 | 8 | 7 ")[12] == "0"
+    assert (
+        "Holdout accuracy per night (simulated):" in lines
+        and "Holdout agreement per night (simulated):" in lines
+    )
+    assert sum(line.startswith("| Simulated persona | Run | Night 0 | Night 1 ") for line in lines) == 2
+    assert row_for(ss.reading_table(runs), "| strict_teacher | 3 of 3")[7] == "2 (seeds: 0 to 2)"

@@ -5,7 +5,9 @@
 
 Reads <study>/<persona>/seed-*/nights.csv for the 7 planned personas (not eval/reports/sim/smoke, and
 not the fix ablation, which is another configuration) and the assumptions file. With no finished
-run it reports nothing and writes nothing. It says how many of the 21 planned runs it used.
+run it reports nothing and writes nothing. It says how many of the 21 planned runs it used, and names
+every folder it left out and why: a run with a stopped.md, one without all its nights, or a folder
+whose name is not seed-N or seed-N-rerun.
 
 For each run, unneeded asks per simulated item are taken over the first 3 and the last 3 days
 (`first_and_last_days`). For each of the 3 x 3 x 3 assumed values of seconds per card, results per
@@ -130,23 +132,40 @@ def read_rates(path: Path, persona: str, seed: int, window: int) -> Rates | None
 
 
 def read_study(study: Path, window: int) -> tuple[list[Rates], list[str]]:
-    """The usable runs, and the planned ones that gave no rate (only planned seeds of the 7 personas)."""
+    """The usable runs, and every folder left out with why (only planned seeds of the 7 personas).
+    A run with a stopped.md never gives a rate, however many nights its nights.csv has."""
     rates, skipped = [], []
     for persona in PLANNED:
+        folders = [
+            f for f in sorted((study / persona).glob("*")) if f.is_dir() and not f.name.startswith(".")
+        ]
+        skipped += [
+            f"{persona} {f.name} (its name is not seed-N or seed-N-rerun)"
+            for f in folders
+            if not SEED_DIR.match(f.name)
+        ]
         for seed in seeds_for(persona):
-            folders = [
-                f for f in sorted((study / persona).glob(f"seed-{seed}*"))
-                if (m := SEED_DIR.match(f.name)) and int(m.group(1)) == seed
-            ]  # fmt: skip
-            got = [
-                r
-                for f in folders
-                if (f / "nights.csv").is_file() and (r := read_rates(f / "nights.csv", persona, seed, window))
-            ]
-            if got:
-                rates.append(got[0])
-            elif folders:
-                skipped.append(f"{persona} seed {seed}")
+            used = False
+            for folder in folders:
+                m = SEED_DIR.match(folder.name)
+                if not m or int(m.group(1)) != seed:
+                    continue
+                name = f"{persona} seed {seed}" + (" re-run" if m.group(2) else "")
+                rate = None
+                if (folder / "stopped.md").is_file():
+                    why = "stopped"
+                elif not (folder / "nights.csv").is_file():
+                    why = "no nights.csv"
+                else:
+                    rate = read_rates(folder / "nights.csv", persona, seed, window)
+                    why = "without all its nights"
+                if rate is None:
+                    skipped.append(f"{name} ({why})")
+                elif used:
+                    skipped.append(f"{name} (the seed already has a run)")
+                else:
+                    rates.append(rate)
+                    used = True
     return rates, skipped
 
 
@@ -180,7 +199,7 @@ def render(rates: list[Rates], skipped: list[str], assumptions: dict, *, command
         f"Command: `{command}`",
         "",
         f"Simulated runs used: {len(rates)} of {planned} planned."
-        + (f" Without all their nights, so left out: {'; '.join(skipped)}." if skipped else ""),
+        + (f" Left out: {'; '.join(skipped)}." if skipped else ""),
         "",
         "This does not show that anyone saves this time. The personas are policy files with seeded habits, the items are "
         "invented, and it assumes every card takes the same time, that a rate seen over simulated days holds all year, and "

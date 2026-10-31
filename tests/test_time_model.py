@@ -168,13 +168,51 @@ def test_the_author_slot_is_empty_until_filled_and_stays_out_of_the_simulated_nu
     assert text.split(hours_table)[1].split(after)[0] == empty.split(hours_table)[1].split(after)[0]
 
 
-def test_a_stopped_or_short_run_gives_no_rate_and_is_named(tmp_path):
+def test_a_short_run_gives_no_rate_and_is_named(tmp_path):
     study = tmp_path / "study"
     write_run(study, "strict_teacher", 101, rows=night_rows(4), nights=4)
     write_run(study, "strict_teacher", 1101)
     rates, skipped = tm.read_study(study, 3)
     assert [r.seed for r in rates] == [1101]
-    assert skipped == ["strict_teacher seed 101"]
+    assert skipped == ["strict_teacher seed 101 (without all its nights)"]
+
+
+def test_a_stopped_run_with_all_its_nights_gives_no_rate_and_is_named(tmp_path):
+    study = tmp_path / "study"
+    folder = write_run(study, "strict_teacher", 101)
+    (folder / "stopped.md").write_text("Stopped (simulated run): night 10. Reason: 1 leak on the holdout.\n")
+    write_run(study, "strict_teacher", 1101)
+    rates, skipped = tm.read_study(study, 3)
+    assert [r.seed for r in rates] == [1101]
+    assert skipped == ["strict_teacher seed 101 (stopped)"]
+    code, out = run_tool(study)
+    assert (
+        code == 0
+        and "Simulated runs used: 1 of 21 planned. Left out: strict_teacher seed 101 (stopped)."
+        in out.read_text()
+    )
+
+
+def test_a_rerun_gives_the_rate_and_the_stopped_try_is_still_named(tmp_path):
+    first = write_run(tmp_path, "strict_teacher", 101, rows=night_rows(2), nights=2)
+    (first / "stopped.md").write_text(
+        "Stopped (simulated run): night 2. Reason: model errors on two nights.\n"
+    )
+    write_run(tmp_path, "strict_teacher", 101, folder="seed-101-rerun")
+    rates, skipped = tm.read_study(tmp_path, 3)
+    assert [r.seed for r in rates] == [101]
+    assert skipped == ["strict_teacher seed 101 (stopped)"]
+
+
+def test_a_folder_the_plan_does_not_name_is_named_and_gives_no_rate(tmp_path):
+    write_run(tmp_path, "strict_teacher", 101, folder="seed-101-first")
+    (tmp_path / "strict_teacher" / "seed-1101").mkdir()
+    rates, skipped = tm.read_study(tmp_path, 3)
+    assert rates == []
+    assert skipped == [
+        "strict_teacher seed-101-first (its name is not seed-N or seed-N-rerun)",
+        "strict_teacher seed 1101 (no nights.csv)",
+    ]
 
 
 def test_the_fix_ablation_and_unplanned_seeds_are_left_out(tmp_path):

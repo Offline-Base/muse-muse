@@ -6,7 +6,6 @@ Run on the folders as committed, so a study output that forgets its label fails 
 from __future__ import annotations
 
 import re
-import struct
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -39,28 +38,26 @@ def em_dashes(folder: Path) -> list[str]:
 
 
 def visible_text(path: Path) -> str:
-    """What a reader sees in a summary or chart: a markdown file's text, an SVG's <text> elements, and
-    for a PNG (whose pixels cannot be read here) its text chunks, from the figure that drew the SVG."""
+    """What a reader sees in a summary or SVG chart: a markdown file's text, an SVG's <text> elements.
+    A PNG's pixels cannot be read here and its metadata is not what a reader sees (results_without_label)."""
     if path.suffix == ".svg":
         tree = ElementTree.fromstring(path.read_text())
         return " ".join(el.text or "" for el in tree.iter() if el.tag.endswith("}text") or el.tag.endswith("}tspan"))
-    if path.suffix == ".png":
-        data, at, chunks = path.read_bytes(), 8, []
-        while at < len(data):
-            size, kind = struct.unpack(">I4s", data[at : at + 8])
-            if kind == b"tEXt":
-                chunks.append(data[at + 8 : at + 8 + size].decode("latin-1"))
-            at += 12 + size
-        return " ".join(chunks)
     return path.read_text()
 
 
 def results_without_label(folder: Path) -> list[str]:
-    """Summaries, time models and charts, at any depth, whose visible text never says "simulated"."""
-    return [
-        str(p.relative_to(folder)) for p in files(folder)
-        if p.name in RESULT_FILES and "simulated" not in visible_text(p).lower()
-    ]  # fmt: skip
+    """Summaries, time models and charts, at any depth, whose visible text never says "simulated". A
+    chart.png is judged by the chart.svg of the same figure (write_chart saves both), so a PNG with no
+    SVG beside it fails: nothing here could show what it draws."""
+    out = []
+    for p in files(folder):
+        if p.name not in RESULT_FILES:
+            continue
+        drawn = p.with_suffix(".svg") if p.suffix == ".png" else p
+        if not drawn.is_file() or "simulated" not in visible_text(drawn).lower():
+            out.append(str(p.relative_to(folder)))
+    return out
 
 
 def test_every_persona_and_sim_report_file_says_simulated():
@@ -75,7 +72,7 @@ def test_the_study_summary_and_chart_say_simulated_and_pass_the_checks(tmp_path)
     study = tmp_path / "study"
     write_full_study(study)
     assert study_summary.main(["--study", str(study), "--commit", "abc1234"]) == 0
-    for path in (study / "summary.md", study / "chart.png", study / "chart.svg"):
+    for path in (study / "summary.md", study / "chart.svg"):
         assert "simulated" in visible_text(path).lower() and "invented" in visible_text(path).lower(), path.name
     assert results_without_label(study) == []
     assert unlabeled(study) == [] and em_dashes(study) == []
@@ -108,15 +105,24 @@ def test_a_summary_or_chart_without_the_word_fails(tmp_path):
     fig.savefig(tmp_path / "chart.png")
     assert sorted(results_without_label(tmp_path)) == ["chart.png", "chart.svg"]
 
-    # A label only in the SVG's metadata is not text a reader sees, so it still fails.
+    # A label only in the metadata is not text a reader sees, so both still fail.
     with rc_context({"svg.fonttype": "none"}):
         fig.savefig(tmp_path / "chart.svg", metadata={"Title": "simulated"})
     fig.savefig(tmp_path / "chart.png", metadata={"Description": "simulated"})
-    assert results_without_label(tmp_path) == ["chart.svg"]
+    assert sorted(results_without_label(tmp_path)) == ["chart.png", "chart.svg"]
     fig.text(0.1, 0.2, "Simulated users")
     with rc_context({"svg.fonttype": "none"}):
         fig.savefig(tmp_path / "chart.svg")
+    fig.savefig(tmp_path / "chart.png")
     assert results_without_label(tmp_path) == []
+
+
+def test_a_chart_png_with_no_svg_beside_it_fails_whatever_its_metadata_says(tmp_path):
+    fig = Figure()
+    FigureCanvasAgg(fig)
+    fig.text(0.1, 0.5, "Unneeded asks per night")
+    fig.savefig(tmp_path / "chart.png", metadata={"Description": "simulated"})
+    assert results_without_label(tmp_path) == ["chart.png"]
 
 
 def test_the_check_catches_a_file_without_the_label(tmp_path):
