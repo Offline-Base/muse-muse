@@ -5,24 +5,29 @@ import { Icon, type IconName } from "@/components/icons";
 
 /**
  * A button that opens a small popover of links or buttons (the disclosure pattern). Closes on outside click, on
- * Escape (returning focus to the button) and when a link inside is followed.
+ * Escape (returning focus to the button, and leaving a dialog around it open) and when a link inside is followed.
  */
 export function Menu({
   text,
   label,
   icon,
+  iconSize = 18,
   children,
   align = "end",
   disabled,
   buttonClassName = "btn",
+  closeOnSelect = false,
 }: {
   text?: string;
   label: string;
   icon?: IconName;
+  iconSize?: number;
   children: ReactNode;
   align?: "start" | "end";
   disabled?: boolean;
   buttonClassName?: string;
+  /** Also closes when a button inside is pressed, and puts focus back on the menu's button. */
+  closeOnSelect?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
@@ -36,6 +41,7 @@ export function Menu({
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        e.preventDefault();
         setOpen(false);
         button.current?.focus();
       }
@@ -61,7 +67,7 @@ export function Menu({
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
       >
-        {icon ? <Icon name={icon} size={18} /> : null}
+        {icon ? <Icon name={icon} size={iconSize} /> : null}
         {text ? <span>{text}</span> : null}
         {text ? <Icon name="chevronDown" size={16} className="btn-chevron" /> : null}
       </button>
@@ -70,7 +76,12 @@ export function Menu({
         className={`menu menu-${align}`}
         hidden={!open}
         onClick={(e) => {
-          if ((e.target as HTMLElement).closest("a")) setOpen(false);
+          const target = e.target as HTMLElement;
+          if (target.closest("a")) setOpen(false);
+          else if (closeOnSelect && target.closest("button")) {
+            setOpen(false);
+            button.current?.focus();
+          }
         }}
       >
         {children}
