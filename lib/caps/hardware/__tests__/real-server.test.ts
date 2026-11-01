@@ -48,7 +48,7 @@ describe("against the real muse-device server", { skip: !canMock ? "needs --expe
     writeFileSync(join(home, ".muse-device/token"), TOKEN, { mode: 0o600 });
     const port = await freePort();
     url = `http://127.0.0.1:${port}/mcp`;
-    child = spawn("python3", [new URL("../../../../muse-device/server.py", import.meta.url).pathname, "--port", String(port)], { env: { PATH: process.env.PATH ?? "", HOME: home }, stdio: "ignore" });
+    child = spawn("python3", [new URL("../../../../muse-device/server.py", import.meta.url).pathname, "--port", String(port)], { env: { PATH: process.env.PATH ?? "", HOME: home } as unknown as NodeJS.ProcessEnv, stdio: "ignore" });
     for (let i = 0; i < 50; i++) {
       const up = await fetch(url, { method: "POST" }).then(() => true, () => false);
       if (up) break;
