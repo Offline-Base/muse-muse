@@ -1390,6 +1390,23 @@ GPU time (Unsloth's mapper doesn't know the repo). That fix was read from the in
 2026.10.9, so only a real glimmer-quantize job proves it. Still to do after a deploy: the r30b dry run (about $0.13) and
 one real run (about $2). Wave 3 told.
 
+### 01:05 main at e7b8d8e deployed
+
+Starters under the composer, the r30b base, the plan card code (PLAN_ART off) and the asked-for look went live on
+www.musemuse.dev, after the owner's "push". The live page shows `.starter-pill`.
+
+### 03:16 Owner rows leak on wave 3's branch: fix ready, not merged
+
+Wave 3 reported, from a code read, that an admin could publish a "train on my data" adapter by launching glimmer-publish
+directly. Read and confirmed for chat-mode owner rows on tg-cap-int and tg-cap-gpu; decision-mode jobs were already
+refused. It isn't on main, since the check came in with ad3dabf. An adapter job on a product's dataset with publish not 0
+could auto-publish the same way. Nothing was run against the Hub.
+
+Fix: 609026e on tg-owner-rows-publish, cut from tg-cap-int at 0fb6119. One check (ownerRowsProblem) now gates Publish,
+launch, the runner's upload plan and the publishing claim. tsc clean; 1,091 of 1,091 pass across lib/train, lib/caps/gpu
+and the other suites that mock the store. Full root suite and next build not run. Removing the launch, upload plan or
+claim gate each fails the new test. Wave 3 was asked to cherry-pick it before tg-cap-int merges, and told r30b is on main.
+
 ## Gaps
 
 What this record doesn't confirm:
