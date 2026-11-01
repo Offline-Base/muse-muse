@@ -8,6 +8,8 @@
  *   DATABASE_URL=pglite:<copy> npx tsx scripts/dev/tune-harness.ts bundle <datasetId> <outDir> <paramsJson> <maxMinutes>
  *   DATABASE_URL=pglite:<copy> npx tsx scripts/dev/tune-harness.ts ingest <bundleDir> <meta.json>
  *
+ * A run that reported "failed", or stopped with no "done", is recorded as failed and isn't judged; ingest then exits 1.
+ *
  * Never point it at the site's own folder: two PGlites on one folder corrupt it. Made-up data only.
  */
 import { randomBytes, randomUUID } from "node:crypto";
@@ -90,6 +92,7 @@ async function ingest(dir: string, metaPath: string) {
   const store = await import("@/lib/train/store");
   const { judgePlanStep, judgeStep, saveEvalSummaryStep } = await import("@/lib/train/judge");
   const { evalVerdict } = await import("@/lib/train/tune/verdict");
+  const { harnessOutcome } = await import("@/lib/train/harness-outcome");
   const meta = JSON.parse(readFileSync(metaPath, "utf8")) as {
     instanceId: string;
     instanceType: string;
@@ -125,7 +128,12 @@ async function ingest(dir: string, metaPath: string) {
       await store.applyCallback(job.id, body, when);
     }
   }
-  await store.finishJob(job.id, { status: "succeeded", reason: "Harness run: the GPU's segment ended.", terminatedAt: when });
+  const outcome = harnessOutcome(lines);
+  await store.finishJob(job.id, { status: outcome.status, reason: outcome.reason, terminatedAt: when });
+  if (outcome.status === "failed") {
+    console.log(JSON.stringify({ jobId: job.id, status: "failed", evals, reason: outcome.reason }, null, 1));
+    throw new Error(`The harness run failed: ${outcome.reason}`);
+  }
   const { indexes, task } = await judgePlanStep(job.id);
   const judged: Awaited<ReturnType<typeof judgeStep>>[] = [];
   for (let i = 0; i < indexes.length; i += 4) {
