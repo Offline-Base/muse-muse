@@ -1566,3 +1566,11 @@ What this record doesn't confirm:
   - TUNE_RESEARCH added to .env.example.
 - Run: tsc, and the rule test files for research, bases, base, auto-publish, datasets and hub-cards. Not run: the full suite, next build, a browser, any call to Meta, Lambda or a GPU. Read from the Hub's public API only.
 - Not proven: no Llama path has run on a GPU, no research run has called Meta, costs are estimates.
+
+## Nov 1: verified agent recipe, VERIFY_AGENTS off (branch tg-verify-recipe, unmerged)
+
+- New `recipe-verified-agent`, for an agent whose answer someone acts on. It reaches a build through `extraFilesFor`, with no snapshot. Ideas only from Meta's Agents 102 session: the workshop has no license, and no code, text or tool names came from it.
+- The gate: code checks each quote and signs a receipt, a separate model call reviews claims and quotes and signs the draft, and a `superRefine` on `output` refuses anything without valid receipts. `needs_person` needs a read receipt for every source.
+- Checked before building, by reading `run.ts` and one local schema probe: `superRefine` on a union converts under `toStrictSchema`. The kit allows only one refused submit, and a second ends the run as failed `no_answer`. So `review_draft` runs the code checks first, where refusals don't use up that retry. `LocalToolContext` has the request but no run id, so the review call isn't counted in the run's limits, and receipts aren't tied to a run. Search and page reader text never reaches a local tool, so web text can't be quote-checked.
+- Decision: offered only with `AGENTS_ENABLED` as well as `RECIPES_ENABLED` and `VERIFY_AGENTS`, since it builds on the agent kit.
+- Run: `verified-agent`, `skills`, `recipes` and `flags-off` test files, 27 pass, and tsc filtered to these files. Not run: the full suite, next build, a browser, any Meta call. No product has been built with it yet.

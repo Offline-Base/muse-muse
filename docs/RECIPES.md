@@ -7,6 +7,7 @@ Skills the platform writes into a product at provision, so a build can use a pat
 | `RECIPES_ENABLED` | off | The brief writer may pick recipes, and builds get their skills |
 | `AGENT_LONG_RUNS` | off | Long recipes may be picked, with the `agent-long` marker and its run limits (80 turns, 120 built-in tool calls, $15) |
 | `AGENT_LONG_DAILY_USD` | 25 | A long product's daily budget, in place of the normal $10 ceiling |
+| `VERIFY_AGENTS` | off | `recipe-verified-agent` may be picked: receipts for quotes checked by code, a separate model review, and a gate on the answer. It also needs `RECIPES_ENABLED` and `AGENTS_ENABLED`, since it builds on the agent kit. No first build has run it yet |
 
 A stored pick whose flag went off counts as never picked.
 

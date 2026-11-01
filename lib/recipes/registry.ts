@@ -20,6 +20,8 @@ export interface Recipe {
   needs?: CapId;
   /** Models the recipe always calls, added to the product's tokens even if the writer left one out of capabilities. */
   models?: readonly string[];
+  /** Needs VERIFY_AGENTS, and the agent target whose kit it builds on. */
+  verifyAgents?: boolean;
 }
 
 export const RECIPES: readonly Recipe[] = [
@@ -85,6 +87,13 @@ export const RECIPES: readonly Recipe[] = [
     longRun: true,
     models: ["muse-wonder-1.0", "sam-3.1"],
   },
+  {
+    id: "recipe-verified-agent",
+    oneLine: "An agent whose answer someone will act on: code checks each quote against the source it read, a separate model call reviews the claims, the answer can't finish without passing, and it stops to ask a person when evidence is missing. Not for a quick lookup.",
+    limit: "A pass means the quotes are in the sources and a model read the claims as backed by them, not that the answer is true. Web pages seen only through search can't be checked by code.",
+    longRun: false,
+    verifyAgents: true,
+  },
 ];
 
 /** The sample note for docs/RECIPES.md and the tests: what a person types to get the case agent. */
@@ -100,11 +109,11 @@ const SKILLS = (generated as { skills: Record<string, { files: RecipeFile[] } | 
 
 /**
  * The recipes a new brief may pick, with these caps served: none with RECIPES_ENABLED off, no long ones with
- * AGENT_LONG_RUNS off, and none whose skill isn't in generated.json yet.
+ * AGENT_LONG_RUNS off, no verified agent without VERIFY_AGENTS and AGENTS_ENABLED, and none whose skill isn't in generated.json yet.
  */
 export function availableRecipes(caps: readonly CapId[] = env.servedCaps): Recipe[] {
   if (!env.recipesEnabled) return [];
-  return RECIPES.filter((r) => SKILLS[r.id] && (!r.longRun || env.agentLongRuns) && (!r.needs || caps.includes(r.needs)));
+  return RECIPES.filter((r) => SKILLS[r.id] && (!r.longRun || env.agentLongRuns) && (!r.needs || caps.includes(r.needs)) && (!r.verifyAgents || (env.verifyAgents && env.agentsEnabled)));
 }
 
 /**
@@ -164,6 +173,9 @@ export function recipesWriterRules(caps: readonly CapId[]): string {
     lines.push(
       "- With recipe-case-agent, capabilities list muse-wonder-1.0 and sam-3.1, and fixtures include two image fixtures: one made-up name signed by hand in dark ink on plain white paper, and the same name signed in a visibly different hand. Neither shows a real name, firm or seal.",
     );
+  }
+  if (available.some((r) => r.id === "recipe-verified-agent")) {
+    lines.push("- With recipe-verified-agent, targets include agent, and agent is written. Pick it only when someone will act on the answer and the product holds the source text.");
   }
   return lines.join("\n");
 }
