@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { Icon, type IconName } from "@/components/icons";
 import { CALL_DAYS, type HostedModelView, type TunedModelView } from "@/components/models/catalog";
-import { GLIMMER_NAME } from "@/components/train/results";
+import { SparkOpenChip } from "@/components/train/SparkOpenNote";
+import { GLIMMER_NAME, R30B_NAME } from "@/components/train/results";
 import { ExternalLink } from "@/components/ui";
 import { groupThousands } from "@/lib/format";
+import { BUILT_WITH_SPARK_OPEN, R30B_URL, USAGE_POINTS } from "@/lib/train/base";
 
 /* The parts of /models: server components with no client code, so only the text they render reaches the browser. */
 
@@ -71,6 +73,12 @@ export function GlimmerCard() {
         policy. It isn&apos;t on Meta&apos;s Model API, so Muse Muse&apos;s lab runs it on rented GPUs to tune it and to
         run live demos. A product can pick it for local or offline use, through a server someone hosts.
       </p>
+      <p className="muted">
+        New fine-tunes start from Muse Muse&apos;s 2026-knowledge Glimmer,{" "}
+        <ExternalLink href={R30B_URL}>OfflineBase/Glimmer-30B-2026-Knowledge</ExternalLink>, and so do the live demos.
+        Muse Spark Open wrote part of its training data, so it and every model tuned from it are {BUILT_WITH_SPARK_OPEN},
+        under the Muse Model License. {USAGE_POINTS.join(" ")}
+      </p>
       <div className="row-actions">
         <Link className="btn btn-outline btn-sm" href="/docs/muse-glimmer">
           Glimmer docs
@@ -103,10 +111,16 @@ export function TunedModelsTable({ models }: { models: TunedModelView[] }) {
                 <Link href={`/fine-tuning/${m.id}`} className="row-title">
                   {m.title}
                 </Link>
-                <span className="row-sub muted">{GLIMMER_NAME}, tuned</span>
+                <span className="row-sub muted">{m.sparkOpen ? R30B_NAME : GLIMMER_NAME}, tuned</span>
+                {m.sparkOpen ? (
+                  <span className="row-sub">
+                    <SparkOpenChip />
+                  </span>
+                ) : null}
               </td>
               <td className="train-nowrap">
                 Tuned won <strong>{m.tunedWins}</strong> of {m.items}
+                {m.sparkOpen ? <span className="row-sub muted">against the 2026 Glimmer it started from</span> : null}
               </td>
               <td>
                 {m.hubUrl || m.gguf ? (

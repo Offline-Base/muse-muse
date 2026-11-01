@@ -1385,11 +1385,15 @@ export function hubViewOf(data: unknown): HubView | null {
 /** The builds a local files job can make, smallest first (QUANT_LEVELS, as QUANT_KL_MAX lists them). */
 export const BUILD_LEVELS = Object.keys(QUANT_KL_MAX) as QuantLevel[];
 
-/** Settings labels for the params the platform writes onto a local files job itself (quantParams), which no field lists. */
+/**
+ * Settings labels for the params the platform writes onto a job itself, which no field lists: a local files job's
+ * (quantParams), and the base a glimmer-lora or local files job's GPU loads (BASE_MODEL_PARAM, lib/train/base.ts).
+ */
 export const WRITTEN_PARAM_LABELS: ReadonlyMap<string, string> = new Map([
   ["levels", "Builds"],
   ["slug", "Name in the files"],
   ["trainChannel", "Adapter trained with trainChannel"],
+  ["baseModel", "Base model"],
 ]);
 
 /** The raw metrics of the job's last "done" event, or null when it has none. */

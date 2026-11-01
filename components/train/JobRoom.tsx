@@ -11,6 +11,7 @@ import { HubCard } from "@/components/train/HubCard";
 import { JobPanel } from "@/components/train/JobPanel";
 import { AdapterLiveDemo, type JobLiveDemo } from "@/components/train/LiveDemo";
 import { MakeLocalFiles, QuantFilesCard } from "@/components/train/LocalFiles";
+import { SparkOpenNote } from "@/components/train/SparkOpenNote";
 import {
   decisionState,
   doneMetrics,
@@ -32,6 +33,7 @@ import {
   writerName,
 } from "@/components/train/format";
 import { dateTimeUtc, duration, relativeTime, usd } from "@/lib/format";
+import { isSparkOpenDerivative } from "@/lib/train/base";
 import { isDecisionSummary } from "@/lib/train/models";
 import { isTrainTerminal, type RecipeView, type TrainEventView, type TrainJobView } from "@/lib/train/types";
 
@@ -135,6 +137,8 @@ export function JobRoom(props: JobRoomProps) {
   const evals = evalState(job, rows, now);
   // A decide job is scored, not judged: scoreDecisionStep runs once its GPU is gone.
   const decide = isDecideJob(job);
+  // A model trained from r30b, or files merged into it, is a Derivative of Muse Spark Open (lib/train/base.ts).
+  const sparkOpen = isSparkOpenDerivative({ params: job.params });
   const sent = useMemo(() => events.some((e) => e.payload?.type === "decide"), [events]);
   const decision = decide ? decisionState(job, now, sent) : null;
   // Judging and scoring start once the GPU is gone, so the page keeps polling for them after the job settles.
@@ -292,6 +296,7 @@ export function JobRoom(props: JobRoomProps) {
               </time>
             </p>
           </header>
+          {sparkOpen ? <SparkOpenNote compact={job.recipe !== "glimmer-lora"} /> : null}
 
           <p className="mobile-status" aria-hidden>
             <span className={`pill-dot dot-${job.status}`} />
@@ -361,6 +366,7 @@ export function JobRoom(props: JobRoomProps) {
               model={tunedModelName(job.recipe)}
               writer={props.dataset ? writerName(props.dataset) : null}
               judge={judgeName(job)}
+              sparkOpen={sparkOpen}
             />
           )}
           <div ref={end} className="convo-end" />

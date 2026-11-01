@@ -26,6 +26,7 @@ import {
   type QuantState,
 } from "@/components/train/format";
 import { ExternalLink } from "@/components/ui";
+import { BUILT_WITH_SPARK_OPEN } from "@/lib/train/base";
 import type { HubView, TrainEventView, TrainJobView } from "@/lib/train/types";
 
 /** How often the cards look again while something moves, and for how long at most. */
@@ -154,6 +155,15 @@ export function MakeLocalFiles({ jobId, maxActive, dailyUsd }: MakeLocalFilesPro
             <div>
               <dt>Template</dt>
               <dd>Stock apps need the repo&apos;s tuned.jinja: this adapter was trained before trainChannel.</dd>
+            </div>
+          ) : null}
+          {files.sparkOpen ? (
+            <div>
+              <dt>License</dt>
+              <dd>
+                <strong>{BUILT_WITH_SPARK_OPEN}.</strong> Merged into the 2026 Glimmer, so the repo and every drive of these
+                files ship MUSE_MODEL_LICENSE.md, USAGE_POLICY.md and NOTICE beside LICENSE.
+              </dd>
             </div>
           ) : null}
         </dl>

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Icon, type IconName } from "@/components/icons";
 import { WRITER_NAME, datasetCountsText, percentText, scoreText, twoPlaces } from "@/components/train/format";
+import { SparkOpenChip } from "@/components/train/SparkOpenNote";
 import { GLIMMER_NAME, minutesText, type ResultView } from "@/components/train/results";
 import { dateTimeUtc, modelLabel, relativeTime, truncate, usd } from "@/lib/format";
 import { UNRECORDED_MODEL } from "@/lib/train/models";
@@ -109,15 +110,24 @@ export function ResultsTable({ results, caption }: { results: ResultView[]; capt
                     ) : null}
                   </span>
                 </td>
-                <td className="train-nowrap">{r.model}</td>
+                <td className="train-nowrap">
+                  {r.model}
+                  {r.sparkOpen ? (
+                    <span className="row-sub">
+                      <SparkOpenChip />
+                    </span>
+                  ) : null}
+                </td>
                 <td className="train-nowrap">
                   Tuned won <strong>{s.tunedWins}</strong> of {s.items}
                   <span className="row-sub muted">
-                    Base won {s.baseWins}, {s.ties === 1 ? "1 tie" : `${s.ties} ties`}
+                    {r.sparkOpen ? "The 2026 Glimmer it started from won " : "Base won "}
+                    {s.baseWins}, {s.ties === 1 ? "1 tie" : `${s.ties} ties`}
                   </span>
                 </td>
                 <td className="train-nowrap">
-                  Base {scoreText(s.avgBaseScore)} · Tuned <strong>{scoreText(s.avgTunedScore)}</strong>
+                  {r.sparkOpen ? "r30b " : "Base "}
+                  {scoreText(s.avgBaseScore)} · Tuned <strong>{scoreText(s.avgTunedScore)}</strong>
                   <span className="row-sub muted">out of 10</span>
                 </td>
                 <td className="train-nowrap">{r.gpu}</td>
@@ -150,7 +160,14 @@ function DecisionRow({ r }: { r: ResultView }) {
           {r.hub ? <span className="chip">On Hugging Face</span> : null}
         </span>
       </td>
-      <td className="train-nowrap">{r.model}</td>
+      <td className="train-nowrap">
+        {r.model}
+        {r.sparkOpen ? (
+          <span className="row-sub">
+            <SparkOpenChip />
+          </span>
+        ) : null}
+      </td>
       <td>
         {d.tuned ? "Tuned" : "Base"} right on <strong>{main.accuracy.right}</strong> of {d.items} ({percentText(main.accuracy.rate)})
         <span className="row-sub muted">

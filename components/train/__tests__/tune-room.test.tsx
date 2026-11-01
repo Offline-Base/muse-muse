@@ -200,6 +200,16 @@ describe("the fine-tune room", { skip: canMock ? false : "needs --experimental-t
       assert.ok(html.indexOf('id="eval-results"') < html.indexOf('class="tune-where"'), "the results come first");
     });
 
+    it("says Built with Muse Spark Open for a run trained from r30b, before its results, and compares with the 2026 Glimmer", () => {
+      const ready = ROOM_FIXTURES.ready.view;
+      const job = { ...ready.job!, params: { ...ready.job!.params, baseModel: "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit" } };
+      const html = room("ready", { initial: { ...ready, job } });
+      const built = html.indexOf("<strong>Built with Muse Spark Open.</strong>");
+      assert.ok(built > 0 && built < html.indexOf('id="eval-results"'), "with the verdict, before the results");
+      assert.match(html, /<th scope="col">2026 Glimmer \(r30b\)<\/th>/);
+      assert.doesNotMatch(room("ready"), /Built with Muse Spark Open/, "a run from before the switch");
+    });
+
     it("says it didn't pass once, in the verdict's own words", () => {
       const html = room("readyNotPassed");
       assert.match(html, /<span>Tuned won 6 of 20 kept-aside prompts \(4\.9 vs 6\.2\)\. That isn&#x27;t clearly better than base, so it didn&#x27;t pass\.<\/span>/);

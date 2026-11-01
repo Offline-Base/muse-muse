@@ -84,7 +84,9 @@ describe("a decision model's Try it live box", () => {
     assert.match(html, /<h2 id="[^"]+">Try it live<\/h2>/);
     assert.match(html, /class="pill pill-live">.*Live<\/span>/);
     assert.match(html, /23 minutes left/);
-    assert.match(html, /Base Muse Glimmer 30B and this decision model each pick one label for it on the same GPU/);
+    assert.match(html, /Muse Glimmer 30B with 2026 knowledge, on its own, and this decision model each pick one label for it on the same GPU/);
+    // The demo's GPU loads r30b, so the box says what the Muse Model License asks (lib/train/base.ts).
+    assert.match(html, /<p class="muted small lab-try-built"><strong>Built with Muse Spark Open\.<\/strong> For people 18 and over only\. Its answers are written by a model\. Never present them as written by a person\. It can make up answers/);
     assert.match(html, /<span class="train-label">The question<\/span><span>Which team should handle this support ticket\?<\/span>/);
     assert.deepEqual([...html.matchAll(/<li class="chip[^"]*">([^<]+)<\/li>/g)].map((m) => m[1]), ["Billing", "Shipping", "Account", "Returns", "None of the listed options matches"]);
     assert.match(html, /<label class="train-label" for="([^"]+)">Your input<\/label><textarea id="\1"/);

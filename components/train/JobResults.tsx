@@ -6,6 +6,7 @@ import { DecisionResults } from "@/components/train/DecisionResults";
 import { EvalResults } from "@/components/train/EvalResults";
 import { TryLiveCard } from "@/components/train/LiveDemo";
 import { LongText } from "@/components/train/LongText";
+import { SparkOpenNote } from "@/components/train/SparkOpenNote";
 import { judgeName, tunedModelName, writerName, type DecideTryModel, type EvalRow } from "@/components/train/format";
 import { minutesText, type PublicLiveDemo, type ResultView } from "@/components/train/results";
 import { ExternalLink, PageHeader } from "@/components/ui";
@@ -71,6 +72,8 @@ export function JobResults({ result: r, rows, dataset, live = null, serverNow, a
         }
       />
 
+      {/* The Muse Model License's line, prominently, for a model trained from r30b (lib/train/base.ts). */}
+      {r.sparkOpen ? <SparkOpenNote /> : null}
       {aside}
       {live && decideTry ? (
         <DecideTryCard adapterJobId={r.id} demo={live} model={decideTry} serverNow={serverNow ?? Date.now()} />
@@ -158,6 +161,7 @@ export function JobResults({ result: r, rows, dataset, live = null, serverNow, a
           model={tunedModelName(r.recipe)}
           writer={dataset ? writerName(dataset) : null}
           judge={judge}
+          sparkOpen={r.sparkOpen}
         />
       )}
     </div>
