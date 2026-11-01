@@ -338,6 +338,7 @@ describe("toJobView", () => {
     serveEndpoint: null,
     hub: null,
     judgeModel: null,
+    productId: null,
   };
 
   it("uses ISO dates and a live cost estimate while running", () => {
@@ -827,6 +828,7 @@ describe("live demo", () => {
       serveEndpoint: serveJob().serveEndpoint,
       hub: null,
       judgeModel: null,
+      productId: null,
     };
     const view = toJobView(base, after(10 * MIN));
     assert.deepEqual(view.serving, { startedAt: after(8 * MIN).toISOString(), endsAt: after(38 * MIN).toISOString() });

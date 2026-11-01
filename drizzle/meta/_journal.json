@@ -162,6 +162,13 @@
       "when": 1793432030646,
       "tag": "0024_code",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1793432090646,
+      "tag": "0025_gpu",
+      "breakpoints": true
     }
   ]
 }

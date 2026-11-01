@@ -54,7 +54,7 @@ const database = (client: PGlite) => drizzle({ client, schema });
  * Wave 3's migrations, in the agreed order (docs/CAPABILITIES.md, section 4), after General's 0017 (0016 is retired).
  * Each wave 3 unit appends its tag here. Their journal times follow the contract's rule.
  */
-const WAVE3_TAGS = ["0018_trust", "0019_engine", "0020_data", "0021_files", "0022_connect", "0024_code"];
+const WAVE3_TAGS = ["0018_trust", "0019_engine", "0020_data", "0021_files", "0022_connect", "0024_code", "0025_gpu"];
 const tagNumber = (tag: string) => Number(tag.slice(0, 4));
 
 /** A copy of the migrations that stops at `lastIdx`, as a database that hasn't had the newer ones would have seen. */
@@ -545,6 +545,40 @@ describe("a database already at 0012", () => {
     assert.equal((await columns(client, "exec_runs")).get("language")?.nullable, true);
     await client.exec(`delete from products where id = '${productId}'`);
     assert.equal((await typed.select().from(schema.execRuns)).length, 0);
+    await client.close();
+  });
+
+  it("0025_gpu: a database at 0024 keeps its training jobs with no product, and gets glimmer_windows, one open at a time", async () => {
+    const dir = folderThrough(24);
+    dirs.push(dir);
+    const client = new PGlite();
+    const db = drizzle({ client });
+    await migrate(db, { migrationsFolder: dir });
+    assert.equal((await columns(client, "glimmer_windows")).size, 0);
+    const [userId, productId, jobId] = [randomUUID(), randomUUID(), randomUUID()];
+    await client.exec(`
+      insert into users (id, email) values ('${userId}', 'old@example.com');
+      insert into products (id, slug, name, owner_id, status) values ('${productId}', 'old-one', 'Old One', '${userId}', 'live');
+      insert into training_jobs (id, recipe, title, params, instance_type, region, price_cents_per_hour, max_minutes, max_usd, instance_name)
+        values ('${jobId}', 'glimmer-lora', 'Old job', '{}', 'gpu', 'r', 100, 60, 5, 'n');
+    `);
+    await migrate(db, { migrationsFolder: FOLDER });
+    const typed = database(client);
+    const [job] = await typed.select().from(schema.trainingJobs);
+    assert.equal(job!.title, "Old job");
+    assert.equal(job!.productId, null);
+    assert.equal((await columns(client, "training_jobs")).get("product_id")?.nullable, true);
+    const at = new Date();
+    const open = { startsAt: at, endsAt: at, capUsd: 3, adapterJobId: jobId };
+    const [first] = await typed.insert(schema.glimmerWindows).values(open).returning();
+    assert.equal(first!.status, "open");
+    assert.equal(first!.costUsd, null);
+    assert.equal(first!.sparkOpen, false);
+    await assert.rejects(() => typed.insert(schema.glimmerWindows).values(open));
+    await typed.insert(schema.glimmerWindows).values({ ...open, status: "closed" });
+    await typed.update(schema.trainingJobs).set({ productId });
+    await client.exec(`delete from products where id = '${productId}'`);
+    assert.equal((await typed.select().from(schema.trainingJobs))[0]!.productId, null, "a job outlives its product");
     await client.close();
   });
 

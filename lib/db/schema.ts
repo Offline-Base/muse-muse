@@ -243,7 +243,7 @@ export const usage = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     // 0022_connect (unit 5) adds "fetch", "vault" and "sends" to the type only: the column is text, so no SQL changes.
     // Wave 3, unit 9: "exec" and "browse" are the code cap's sandboxes. A type change only, no migration.
-    source: text("source").$type<"gateway" | "muse_code" | "platform" | "docs" | "tools" | "fetch" | "vault" | "sends" | "exec" | "browse">().notNull(),
+    source: text("source").$type<"gateway" | "muse_code" | "platform" | "docs" | "tools" | "fetch" | "vault" | "sends" | "exec" | "browse" | "glimmer">().notNull(),
     productId: uuid("product_id").references(() => products.id),
     buildId: uuid("build_id").references(() => builds.id),
     tokenId: uuid("token_id").references(() => gatewayTokens.id),
@@ -364,8 +364,17 @@ export const trainingJobs = pgTable(
      * yet for a job that isn't judged (judgeModelOf in lib/train/models.ts).
      */
     judgeModel: text("judge_model"),
+    /**
+     * The product this job trained a model for (0025_gpu, docs/CAPABILITIES.md, section 17): "Train on my data" and a
+     * build's own model. Null for the lab's own jobs. Filled from a run's tune-product row (lib/caps/gpu/own-model.ts).
+     */
+    productId: uuid("product_id").references(() => products.id, { onDelete: "set null" }),
   },
-  (t) => [index("training_jobs_status_idx").on(t.status), index("training_jobs_created_idx").on(t.createdAt)],
+  (t) => [
+    index("training_jobs_status_idx").on(t.status),
+    index("training_jobs_created_idx").on(t.createdAt),
+    index("training_jobs_product_idx").on(t.productId, t.createdAt),
+  ],
 );
 
 /** Append-only log for a training job's page. */
@@ -1021,4 +1030,37 @@ export const execRuns = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("exec_runs_product_idx").on(t.productId, t.namespace, t.createdAt)],
+);
+
+// ---------- Wave 3, 0025_gpu (unit 11) ----------
+
+/**
+ * A demo window of the shared Muse Glimmer endpoint (docs/CAPABILITIES.md, section 17): a glimmer-serve job (`serve_job_id`,
+ * lib/train/launch.ts) with this row saying products may reach it. "open" lets products in until `ends_at`; "closing" means
+ * the GPU has been asked to stop and still counts at `cap_usd`; "closed" has its real `cost_usd`; "failed" never got a GPU.
+ * `cap_usd` is what was reserved as a `glimmer` usage row (`reservation_id`) when it opened, and settled when it closed.
+ * `spark_open` is whether its adapter is a Derivative of Muse Spark Open, read once at opening. At most one is open.
+ */
+export const glimmerWindows = pgTable(
+  "glimmer_windows",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    createdBy: uuid("created_by").references(() => users.id),
+    capUsd: real("cap_usd").notNull(),
+    status: text("status").$type<"open" | "closing" | "closed" | "failed">().notNull().default("open"),
+    costUsd: real("cost_usd"),
+    adapterJobId: uuid("adapter_job_id")
+      .notNull()
+      .references(() => trainingJobs.id),
+    serveJobId: uuid("serve_job_id").references(() => trainingJobs.id),
+    sparkOpen: boolean("spark_open").notNull().default(false),
+    reservationId: uuid("reservation_id"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("glimmer_windows_one_open").on(t.status).where(sql`${t.status} = 'open'`),
+    index("glimmer_windows_created_idx").on(t.createdAt),
+  ],
 );
