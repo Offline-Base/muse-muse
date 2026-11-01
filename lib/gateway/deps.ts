@@ -1,6 +1,8 @@
 import { findSessionGatewayToken } from "@/lib/caps/code/musecode/gateway";
 import { familySpendToday } from "@/lib/caps/code/musecode/store";
 import { isSessionToken } from "@/lib/caps/code/musecode/token";
+import { jobCallOf } from "@/lib/caps/jobs/budget";
+import { jobCallDeps } from "@/lib/caps/jobs/deps";
 import { liveCaptionDeps } from "@/lib/caps/live/caption-deps";
 import { env, testModel } from "@/lib/env";
 import type { GatewayDeps } from "@/lib/gateway/handler";
@@ -33,6 +35,8 @@ export function gatewayDeps(defer: GatewayDeps["defer"]): GatewayDeps {
     fitOutputToBudget: env.engineFitOutput,
     // Wave 3, unit 1 (docs/CAPABILITIES.md, section 7): only with their flags on, so the deps are today's without them.
     ...trustDeps(),
+    // Wave 3, unit 6 (docs/CAPABILITIES.md, section 12): only while the jobs cap is served.
+    ...jobDeps(),
     // Wave 3, unit 7 (docs/CAPABILITIES.md, section 13): only while the live cap is served.
     ...liveDeps(),
     hitRateLimits,
@@ -51,6 +55,13 @@ export function gatewayDeps(defer: GatewayDeps["defer"]): GatewayDeps {
     gatewayUrl: env.gatewayUrl,
     defer,
   };
+}
+
+/** A job's model calls, only while the jobs cap is served. */
+function jobDeps(): Pick<GatewayDeps, "jobCall"> {
+  if (!env.servedCaps.includes("jobs")) return {};
+  const deps = jobCallDeps();
+  return { jobCall: (req, token, now) => jobCallOf(req, { productId: token.productId, scope: token.scope, buildId: (token as { buildId?: string | null }).buildId ?? null }, deps, now) };
 }
 
 /** Near-live captions' part of the gateway, only while the live cap is served. */

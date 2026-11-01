@@ -18,6 +18,10 @@ export type CapShip = (input: CapShipInput) => Promise<string | null>;
 
 /** Each entry loads its module when it runs, so the build steps' imports stay as they were for products without caps. */
 export const CAP_SHIP: Partial<Record<CapId, CapShip>> = {
+  jobs: async (input) => {
+    const { shipJobs, sandboxJobsDeps } = await import("@/lib/caps/jobs/ship");
+    return shipJobs(input, sandboxJobsDeps(input.sandboxName));
+  },
   extension: async (input) => {
     const { sandboxShipDeps, shipExtension } = await import("@/lib/caps/extension/ship");
     return shipExtension(input, sandboxShipDeps(input.sandboxName));

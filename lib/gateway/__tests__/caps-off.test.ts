@@ -9,6 +9,7 @@ import { describe, it } from "node:test";
 import { CAPS_PROOF_PER_MINUTE, handleCapsProof, type CapsProofDeps } from "@/lib/caps/proof";
 import { CAP_FLAG, CAP_IDS } from "@/lib/caps/ids";
 import { handleFetch, handleSend, handleVault, type ConnectDeps } from "@/lib/caps/connect/handler";
+import { handleHook, handleJobs, type HookDeps, type JobsDeps } from "@/lib/caps/jobs/handler";
 import { handleLive, type LiveDeps } from "@/lib/caps/live/handler";
 import { handleData, handleIdentityUser, handleIdentityUserLink, handleIdentityUserTest, type DataDeps } from "@/lib/caps/data/handler";
 import { handlePasskey, type PasskeyDeps } from "@/lib/caps/data/passkeys";
@@ -118,6 +119,16 @@ const liveOff = (): LiveDeps => ({
   buildPreviewOrigin: untouched<LiveDeps["buildPreviewOrigin"]>("buildPreviewOrigin"),
 });
 
+/** The jobs cap's deps with the real flags and everything else failing the test if it's touched. */
+const jobsOff = (): JobsDeps =>
+  new Proxy({ servedCaps: () => env.servedCaps, webhooksOn: () => env.jobsWebhooks } as unknown as JobsDeps, {
+    get: (t, k) => (k in t ? t[k as keyof JobsDeps] : untouched(String(k))),
+  });
+const hooksOff = (): HookDeps =>
+  new Proxy({ servedCaps: () => env.servedCaps, webhooksOn: () => env.jobsWebhooks } as unknown as HookDeps, {
+    get: (t, k) => (k in t ? t[k as keyof HookDeps] : untouched(String(k))),
+  });
+
 const ROUTES: Array<{ path: string; call(req: Request): Promise<Response> }> = [
   // Unit 3: saved data, its sign-in, and the platform's passkey routes.
   { path: "data", call: (req) => handleData(req, [], dataOff()) },
@@ -144,6 +155,13 @@ const ROUTES: Array<{ path: string; call(req: Request): Promise<Response> }> = [
   { path: "vault/call", call: (req) => handleVault(req, ["call"], connectOff()) },
   { path: "vault/github", call: (req) => handleVault(new Request(req.url, { method: req.method === "GET" ? "DELETE" : "POST", headers: req.headers }), ["github"], connectOff()) },
   { path: "send", call: (req) => handleSend(req, connectOff()) },
+  // Unit 6: background jobs and the webhooks that start them.
+  { path: "jobs/verify", call: (req) => handleJobs(new Request(req.url, { method: "POST", headers: req.headers }), ["verify"], jobsOff()) },
+  { path: "jobs/checkpoint", call: (req) => handleJobs(new Request(req.url, { method: "POST", headers: req.headers }), ["checkpoint"], jobsOff()) },
+  { path: "jobs/enqueue", call: (req) => handleJobs(new Request(req.url, { method: "POST", headers: req.headers }), ["enqueue"], jobsOff()) },
+  { path: "jobs/notify", call: (req) => handleJobs(new Request(req.url, { method: "POST", headers: req.headers }), ["notify"], jobsOff()) },
+  { path: "jobs/test-fire", call: (req) => handleJobs(new Request(req.url, { method: "POST", headers: req.headers }), ["test-fire"], jobsOff()) },
+  { path: "hooks/p1/digest", call: (req) => handleHook(new Request(req.url, { method: "POST", headers: req.headers }), ["p1", "digest"], hooksOff()) },
   // Unit 9: running code on the platform, and opening a page the person typed.
   { path: "exec", call: (req) => handleExec(req, codeOff()) },
   { path: "browse", call: (req) => handleBrowse(req, codeOff()) },

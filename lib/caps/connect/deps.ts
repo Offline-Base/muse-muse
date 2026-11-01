@@ -5,6 +5,7 @@ import { liveBrief } from "@/lib/caps/data/store";
 import { buildBrief, capProduct, capToken } from "@/lib/caps/store";
 import { env } from "@/lib/env";
 import { hitRateLimits, reserveCounter } from "@/lib/gateway/store";
+import { holdJobSend } from "@/lib/caps/jobs/held";
 import { parseKeyring } from "@/lib/secrets/box";
 import { recordUsage } from "@/lib/usage";
 
@@ -55,5 +56,7 @@ export function connectDeps(): ConnectDeps {
     },
     fetch: (input, init) => fetch(input, init),
     userAgent: `MuseMuse/1.0 (+${env.platformUrl}; products built on Muse Muse)`,
+    // Unit 6: only while the jobs cap is served. Otherwise a job is refused here like anyone who isn't the owner.
+    ...(env.servedCaps.includes("jobs") ? { holdSend: holdJobSend } : {}),
   };
 }

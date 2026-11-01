@@ -4,6 +4,7 @@ import { connection } from "next/server";
 import { MiniBars } from "@/components/charts/MiniBars";
 import { ConnectCard } from "@/components/dashboard/ConnectCard";
 import { Icon } from "@/components/icons";
+import { OwnerNotices } from "@/components/jobs/OwnerNotices";
 import { NotConnected } from "@/components/ui";
 import { env } from "@/lib/env";
 import { compact, groupThousands, usd } from "@/lib/format";
@@ -46,6 +47,8 @@ export default async function DashboardPage({
 
   return (
     <div className="page dash">
+      {/* Wave 3, unit 6: renders and reads nothing while the jobs cap is off. */}
+      <OwnerNotices />
       <ConnectCard products={connect} unpublished={shipped.length - published.length} publishOff={env.publishOffReason} />
 
       <nav className="range" aria-label="Date range">

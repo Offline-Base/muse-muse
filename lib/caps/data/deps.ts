@@ -4,6 +4,8 @@ import type { PasskeyDeps } from "@/lib/caps/data/passkeys";
 import { dataStore, liveBrief } from "@/lib/caps/data/store";
 import { createEndUser, findPasskey, productForSignIn, usePasskey } from "@/lib/caps/data/users";
 import { collectionRules, narrowCollectionRules } from "@/lib/caps/data/types";
+import { withJobWrites } from "@/lib/caps/jobs/rules";
+import { noteRunWrote } from "@/lib/caps/jobs/store";
 import { buildBrief, capProduct, capToken, productSlug } from "@/lib/caps/store";
 import { env } from "@/lib/env";
 import { acquireInFlight, hitRateLimits, releaseInFlight, reserveCounter } from "@/lib/gateway/store";
@@ -29,11 +31,18 @@ export function dataDeps(): DataDeps {
       // A build follows its own brief. A live product follows the brief it shipped with, which the platform wrote, and
       // its manifest (which the product wrote) can only narrow that: never add a collection, change a scope or widen
       // who writes, whatever verify said (docs/CAPABILITIES.md, 9a).
-      if (token.scope === "build") return token.buildId ? collectionRules(dataBlock((await buildBrief(token.buildId)) as object | null)) : null;
-      return narrowCollectionRules(collectionRules(dataBlock((await liveBrief(token.productId)) as object | null)), collectionRules((product.manifest as { data?: unknown } | null)?.data));
+      if (token.scope === "build") {
+        if (!token.buildId) return null;
+        const brief = (await buildBrief(token.buildId)) as object | null;
+        return withJobWrites(collectionRules(dataBlock(brief)), brief);
+      }
+      const shipped = (await liveBrief(token.productId)) as object | null;
+      return narrowCollectionRules(withJobWrites(collectionRules(dataBlock(shipped)), shipped), collectionRules((product.manifest as { data?: unknown } | null)?.data));
     },
     platformUrl: env.platformUrl,
     productSlug,
+    // Unit 6: the record of what a job saved. Only while the jobs cap is served.
+    ...(env.servedCaps.includes("jobs") ? { jobWrote: noteRunWrote } : {}),
   };
 }
 

@@ -7,6 +7,7 @@ import type { CapId } from "@/lib/caps/ids";
 import { EXTENSION_WRITER_RULES, ExtensionBriefBlock } from "@/lib/caps/extension/brief";
 import { FilesBriefBlock, filesWriterBlock, filesWriterRules } from "@/lib/caps/files/brief";
 import { GAMES_WRITER_RULES, GamesBriefBlock } from "@/lib/caps/games/brief";
+import { JobsBriefBlock, jobsWriterBlock, jobsWriterRules } from "@/lib/caps/jobs/brief";
 import { LiveBriefBlock, liveWriterRules } from "@/lib/caps/live/brief";
 import { MediaBriefBlock, mediaWriterRules } from "@/lib/caps/media/brief";
 import { mediaPartsOn } from "@/lib/caps/media/catalog";
@@ -25,6 +26,7 @@ export const CAP_BRIEF_FIELDS = {
   data: DataBriefBlock,
   files: FilesBriefBlock,
   connect: ConnectBriefBlock,
+  jobs: JobsBriefBlock,
   live: LiveBriefBlock,
   media: MediaBriefBlock,
   code: CodeBriefBlock,
@@ -52,6 +54,8 @@ export const CAP_WRITER_RULES: Partial<Record<CapId, readonly string[] | (() => 
   files: () => filesWriterRules(),
   // Unit 5: they follow CONNECT_VAULT and CONNECT_SENDS.
   connect: () => connectWriterRules(connectOptions()),
+  // Unit 6: they name webhooks only while JOBS_WEBHOOKS is on.
+  jobs: () => jobsWriterRules(),
   // Unit 7: they name updates only while LIVE_UPDATES is on.
   live: () => liveWriterRules(),
   // Unit 8: the media cap names only the parts whose flags are on, read when the instructions are built.
@@ -85,6 +89,8 @@ const CAP_WRITER_BRIEF_FIELDS: Partial<Record<CapId, { stored: z.ZodTypeAny; wri
   files: { stored: FilesBriefBlock, writer: () => filesWriterBlock() },
   // Unit 5: only allowlisted ids, and no keys or sends while their switches are off.
   connect: { stored: ConnectBriefBlock, writer: () => connectWriterBlock(connectOptions()) },
+  // Unit 6: no webhooks while JOBS_WEBHOOKS is off.
+  jobs: { stored: JobsBriefBlock, writer: () => jobsWriterBlock() },
   // Unit 9: with CODE_EXEC off, no exec runtime.
   code: { stored: CodeBriefBlock, writer: () => codeWriterBlock() },
 };

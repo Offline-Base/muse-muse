@@ -43,6 +43,8 @@ export interface DataDeps extends CapGateDeps {
   /** Public {PLATFORM_URL}, for the sign-in link. */
   platformUrl: string;
   productSlug(productId: string): Promise<string | null>;
+  /** Unit 6: counts a row a job saved on its run. Unset while the jobs cap isn't served. */
+  jobWrote?(runId: string): Promise<void>;
 }
 
 const isBuild = (token: CapToken) => token.scope === "build";
@@ -66,10 +68,17 @@ function ownerKeyFor(scope: DataScope, caller: CapCaller, productId: string): { 
     case "owner":
       // One owner space per product, whoever holds the pass: the owner, or an admin acting as the owner, sees the same
       // items. A build's are in its own namespace anyway.
-      return caller.owner ? { key: subjectKey("owner", productId, OWNER_SPACE) } : capError("sign_in_required", "Only the product's owner can use these items. Open it as the owner from Muse Muse.");
+      // Unit 6: a job works for the product's owner, so it reads the owner's items too. Its writes have their own rule.
+      return caller.owner || caller.job ? { key: subjectKey("owner", productId, OWNER_SPACE) } : capError("sign_in_required", "Only the product's owner can use these items. Open it as the owner from Muse Muse.");
     case "user":
       return caller.user ? { key: subjectKey("user", productId, caller.user) } : capError("sign_in_required", "Sign in to use these items.");
   }
+}
+
+/** Unit 6: a job writes only to collections marked for it (docs/CAPABILITIES.md, section 12). Null for anyone else. */
+function jobWriteRefusal(rule: DataCollectionRule | null, caller: CapCaller): Response | null {
+  if (!caller.job || rule?.jobWrites) return null;
+  return capError("cap_not_allowed", "A background job can save only to the collections the brief names for its results.");
 }
 
 /** Who may change a shared collection, and whether this caller is one of them. */
@@ -187,7 +196,8 @@ function createRoute(deps: DataDeps, collection: string): CapRoute<{ target: Tar
       if (extra) return extra;
       const t = await target(stage, deps, collection, new URL(stage.req.url).searchParams.get("scope") ?? undefined);
       if (t instanceof Response) return t;
-      if (t.scope === "shared") {
+      { const refused = jobWriteRefusal(t.rule, stage.caller); if (refused) return refused; }
+      if (t.scope === "shared" && !stage.caller.job) {
         const refused = sharedWriteRefusal(t.rule, stage.caller);
         if (refused) return refused;
       }
@@ -200,6 +210,7 @@ function createRoute(deps: DataDeps, collection: string): CapRoute<{ target: Tar
       const limits = writeLimits(ctx, ctx.args.target.scope, deps.quotas());
       const result = await deps.store.create(rowKey(ctx, newDocId()), ctx.args.data, ctx.args.bytes, limits);
       if (!result.ok) return refusalFor(result.reason, limits);
+      if (ctx.caller.job) await deps.jobWrote?.(ctx.caller.job);
       const { data: _data, ...doc } = result.doc;
       return docAnswer(doc, 201);
     },
@@ -222,7 +233,8 @@ function docRoute(deps: DataDeps, collection: string, docId: string, method: "GE
       }
       const t = await target(stage, deps, collection, new URL(stage.req.url).searchParams.get("scope") ?? undefined);
       if (t instanceof Response) return t;
-      if (method !== "GET" && t.scope === "shared") {
+      if (method !== "GET") { const refused = jobWriteRefusal(t.rule, stage.caller); if (refused) return refused; }
+      if (method !== "GET" && t.scope === "shared" && !stage.caller.job) {
         const refused = sharedWriteRefusal(t.rule, stage.caller);
         if (refused) return refused;
       }
@@ -243,6 +255,7 @@ function docRoute(deps: DataDeps, collection: string, docId: string, method: "GE
       if (method === "DELETE") return Response.json({ deleted: await deps.store.remove(key) }, { headers: { "cache-control": "no-store" } });
       const limits = writeLimits(ctx, ctx.args.target.scope, deps.quotas());
       const result = await deps.store.put(key, ctx.args.data, ctx.args.bytes!, ctx.args.ifVersion, limits);
+      if (result.ok && ctx.caller.job) await deps.jobWrote?.(ctx.caller.job);
       if (!result.ok) return refusalFor(result.reason, limits);
       const { data: _data, ...doc } = result.doc;
       return docAnswer(doc);

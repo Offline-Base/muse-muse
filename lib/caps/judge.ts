@@ -7,6 +7,7 @@ import { extensionJudgeNote } from "@/lib/caps/extension/judge";
 import { filesJudgeNote } from "@/lib/caps/files/judge";
 import { gamesJudgeNote } from "@/lib/caps/games/judge";
 import type { CapId } from "@/lib/caps/ids";
+import { jobsJudgeNote } from "@/lib/caps/jobs/judge";
 import { liveJudgeNote } from "@/lib/caps/live/judge";
 import { mediaJudgeNote } from "@/lib/caps/media/judge";
 import type { CapProof, VerifySummary } from "@/lib/types";
@@ -20,6 +21,7 @@ export const CAP_JUDGE: Partial<Record<CapId, (brief: Brief) => string>> = {
   data: dataJudgeNote,
   files: filesJudgeNote,
   connect: connectJudgeNote,
+  jobs: jobsJudgeNote,
   live: liveJudgeNote,
   media: mediaJudgeNote,
   code: codeJudgeNote,

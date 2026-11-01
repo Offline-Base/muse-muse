@@ -18,7 +18,7 @@ const input = (brief: Brief) => ({ buildId: "b1", productId: "p1", sandboxName: 
 
 describe("caps with a step after deploy", () => {
   it("are listed once, purely, and each has its step", () => {
-    assert.deepEqual([...CAPS_SHIPPING], ["extension"]);
+    assert.deepEqual([...CAPS_SHIPPING], ["jobs", "extension"]);
     assert.deepEqual(Object.keys(CAP_SHIP), [...CAPS_SHIPPING]);
     assert.ok(CAPS_SHIPPING.every((id) => (CAP_IDS as readonly string[]).includes(id)));
   });

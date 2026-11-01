@@ -2,6 +2,7 @@ import type { Brief } from "@/lib/brief/schema";
 import { briefCaps } from "@/lib/caps/brief-fields";
 import { codeBlock, codePartsOff } from "@/lib/caps/code/brief";
 import { type CapId, isCapId } from "@/lib/caps/ids";
+import { jobsBlock } from "@/lib/caps/jobs/brief";
 import { liveBlock } from "@/lib/caps/live/brief";
 import { capOverlaysNeeded } from "@/lib/caps/overlays";
 import { env } from "@/lib/env";
@@ -85,6 +86,7 @@ export function capsForBuild<T extends Brief>(brief: T, opts: CapsForBuildOption
     const served = opts.served ?? env.servedCaps;
     const dropped: CapDrop[] = caps.filter((c) => !served.includes(c)).map((cap) => ({ cap, reason: "off" }));
     partsOff(brief, dropped);
+    jobsOff(brief, dropped);
     liveOff(brief, dropped);
     return { brief: withoutCaps(brief, dropped.map((d) => d.cap)), dropped };
   }
@@ -92,6 +94,7 @@ export function capsForBuild<T extends Brief>(brief: T, opts: CapsForBuildOption
   const enabled = opts.enabled ?? env.enabledCaps;
   const dropped: CapDrop[] = caps.filter((c) => !enabled.includes(c)).map((cap) => ({ cap, reason: onSite.includes(cap) ? "snapshot" : "off" }));
   partsOff(brief, dropped);
+  jobsOff(brief, dropped);
   liveOff(brief, dropped);
   return { brief: withoutCaps(brief, dropped.map((d) => d.cap)), dropped };
 }
@@ -110,6 +113,14 @@ function partsOff(brief: Brief, dropped: CapDrop[]): void {
   else if (off.length) console.info(`[caps] code: this build goes without ${off.map((p) => (p === "exec" ? "running code on the server" : p === "museCode" ? "Muse Code sessions" : "opening pages")).join(" and ")}: switched off.`);
 }
 // ---------- end Wave 3, unit 9 ----------
+
+// ---------- Wave 3, unit 6 (docs/CAPABILITIES.md, 12a): a jobs block with only webhooks, while JOBS_WEBHOOKS is off ----------
+function jobsOff(brief: Brief, dropped: CapDrop[]): void {
+  const record = brief as { jobs?: unknown };
+  if (record.jobs === null || record.jobs === undefined || dropped.some((d) => d.cap === "jobs")) return;
+  if (jobsBlock(withoutCaps(brief, dropped.map((d) => d.cap))) === null) dropped.push({ cap: "jobs", reason: "off" });
+}
+// ---------- end Wave 3, unit 6 ----------
 
 // ---------- Wave 3, unit 7 (docs/CAPABILITIES.md, 13a): a live block with nothing left ----------
 /**

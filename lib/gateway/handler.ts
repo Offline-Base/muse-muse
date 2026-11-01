@@ -1,3 +1,4 @@
+import type { JobCall } from "@/lib/caps/jobs/budget";
 import { liveChunkOf, spendLiveSeconds, type LiveCaptionDeps } from "@/lib/caps/live/captions";
 import { AsrInputError, asrJsonToForm } from "@/lib/gateway/asr";
 import { gatewayError } from "@/lib/gateway/errors";
@@ -59,6 +60,8 @@ export interface GatewayDeps extends RunCounters {
   trustCheck?(token: GatewayToken): Promise<Response | null>;
   /** Wave 3, unit 1: TRUST_SPARK_TO_WONDER. A live token's muse-spark-1.3 calls run on Muse Wonder, not Contributor. */
   sparkToWonder?: boolean;
+  /** Wave 3, unit 6: the job a call runs for (lib/caps/jobs/budget.ts). Unset while the jobs cap isn't served, so x-musemuse-job means nothing. */
+  jobCall?(req: Request, token: GatewayToken, now: Date): Promise<JobCall | Response | null>;
   /** Wave 3, unit 7: near-live captions (lib/caps/live/captions.ts). Unset while the live cap isn't served, so x-musemuse-live means nothing. */
   liveCaptions?: LiveCaptionDeps;
   /** Increments each key's counter for the window and returns the new counts, keyed like the input. */
@@ -277,6 +280,11 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
   { const refused = liveChunk && deps.liveCaptions ? await spendLiveSeconds(req, token, liveChunk, deps.liveCaptions, deps, now) : null; if (refused) return refused; }
   // ---------- end Wave 3, unit 7 ----------
 
+  // ---------- Wave 3, unit 6: a job's calls share its run's dollars (docs/CAPABILITIES.md, section 12). Nothing without deps.jobCall ----------
+  const jobCall = deps.jobCall && endpoint !== "files" ? await deps.jobCall(req, token, now) : null;
+  if (jobCall instanceof Response) return jobCall;
+  // ---------- end Wave 3, unit 6 ----------
+
   // At most this many calls per token run at once, so a burst can't all pass the budget check before any of them is
   // metered. The slot is given back once the call is metered (or right away when nothing is forwarded).
   const inFlightLimit = hasAgentMarker(token.allowedModels) ? AGENT_LIMITS.perTokenInFlight : DEFAULT_LIMITS.perTokenInFlight;
@@ -297,21 +305,26 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
   const mostSearches = builtInToolCap(token);
   let metering: Promise<void> | null = null;
   try {
-    if (runId && runLimits) {
+    const heldRun = jobCall ? { id: jobCall.runId, limits: jobCall.limits, tokenId: jobCall.counterKey, at: jobCall.windowAt } : runId && runLimits ? { id: runId, limits: runLimits, tokenId: token.id, at: now } : null;
+    if (heldRun) {
       const asked = parsed;
       const toolCalls = asked.kind === "json" && Array.isArray(asked.json.tools) && asked.json.tools.some(isBuiltInTool) ? Number(asked.json.max_tool_calls) : 0;
       const withCalls = (calls: number): ParsedRequest =>
         asked.kind === "json" && calls < toolCalls ? { ...asked, json: { ...asked.json, max_tool_calls: calls } } : asked;
       const bodyBytes = body.byteLength;
       const held = await holdRun(deps, {
-        tokenId: token.id,
-        runId,
-        limits: runLimits,
+        tokenId: heldRun.tokenId,
+        runId: heldRun.id,
+        limits: heldRun.limits,
         toolCalls,
         usd: (calls) => estimateCost(endpoint, withCalls(calls), bodyBytes, mostSearches),
-        now,
+        now: heldRun.at,
       });
-      if (!held.ok) return held.response;
+      if (!held.ok) {
+        // Wave 3, unit 6: a job over its dollars is over. An agent run isn't: it may start another.
+        if (jobCall) await jobCall.refused(estimateCost(endpoint, asked, bodyBytes, mostSearches)).catch((err) => console.error("[gateway] stopping a job run failed:", err));
+        return held.response;
+      }
       runHold = held.hold;
       if (held.toolCalls < toolCalls) {
         parsed = withCalls(held.toolCalls);
@@ -320,7 +333,7 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
       }
     }
     if (rewritten && parsed.kind === "json") body = new TextEncoder().encode(JSON.stringify(parsed.json));
-    const result = await forward(req, endpoint, token, parsed, body, contentType, deps, startedAt, { notes, runHold, mostSearches });
+    const result = await forward(req, endpoint, token, parsed, body, contentType, deps, startedAt, { notes, runHold, mostSearches, jobCall });
     metering = result.metering;
     return result.response;
   } finally {
@@ -351,7 +364,7 @@ async function forward(
   contentType: string | null,
   deps: GatewayDeps,
   startedAt: number,
-  call: { notes: readonly string[]; runHold: RunHold | null; mostSearches: number },
+  call: { notes: readonly string[]; runHold: RunHold | null; mostSearches: number; jobCall?: JobCall | null },
 ): Promise<{ response: Response; metering: Promise<void> | null }> {
   const done = (response: Response) => ({ response, metering: null });
   const model = parsed.model;
@@ -501,6 +514,8 @@ async function forward(
       const rest = reservation ? items.slice(1) : items;
       if (rest.length) await deps.recordUsage(ctx, rest);
       if (runHold) await settleRun(deps, runHold, { toolCalls: builtInCalls, usd: items.reduce((n, i) => n + i.costUsd, 0) });
+      // Wave 3, unit 6: what the job's run and the day's job dollars have spent.
+      if (call.jobCall) await call.jobCall.spent(items.reduce((n, i) => n + i.costUsd, 0));
     })
     .catch((err) => console.error(`[gateway] recording usage for ${endpoint} failed:`, err));
 

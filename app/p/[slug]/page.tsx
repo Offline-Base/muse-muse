@@ -14,6 +14,7 @@ import { extensionSlots } from "@/components/product/ExtensionPanel";
 import { extensionZipReady } from "@/lib/caps/extension/store";
 import { museCodeOwnerLink } from "@/lib/caps/code/musecode/owner-link";
 import { runtimeOutputSlots } from "@/components/product/RuntimeOutputPanels";
+import { JobsPanel } from "@/components/jobs/JobsPanel";
 import { AddClip, RemoveClip } from "@/components/product/OwnerClips";
 import { StatusControl } from "@/components/product/StatusControl";
 import { EmptyCard, ExternalLink, NotConnected, StatusPill } from "@/components/ui";
@@ -193,6 +194,9 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
         {shipped ? (
           <GetItPanel slots={{ ...native.slots, ...(env.productOutputs ? productOutputSlots({ product, origin, events, now }) : {}), ...(env.runtimeOutputs ? runtimeOutputSlots({ product, origin, isOwner }) : {}), ...(env.enabledCaps.includes("extension") ? extensionSlots({ product, origin, brief, ready: extensionReady }) : {}) }} initial={native.initial} />
         ) : null}
+
+        {/* Wave 3, unit 6: renders and reads nothing while the jobs cap is off. */}
+        {shipped ? <JobsPanel productId={product.id} slug={product.slug} brief={brief} isOwner={isOwner} viewerIsOwner={Boolean(user && !user.openAccess && user.id === product.ownerId)} /> : null}
 
         <section className="card section-card" aria-labelledby="muse-title">
           <h2 id="muse-title">The muse</h2>
