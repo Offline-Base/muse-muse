@@ -8,8 +8,9 @@ export interface UsageContext {
    * gateway's calls to Composio (docs/AGENT_TOOLS.md). "fetch", "vault" and "sends" are the connect cap's $0 rows with
    * units (docs/CAPABILITIES.md, 2.4 and section 11). "exec" and "browse" are the code cap's sandboxes (unit 9). "glimmer" is the shared Glimmer endpoint
    * (unit 11): a demo window's GPU money, and $0 rows with units for each request.
+   * "hosted" is a tuned model on a provider the platform pays for (lib/train/host): an endpoint's reservation, and rows with tokens at $0 for each answer.
    */
-  source: "gateway" | "muse_code" | "platform" | "docs" | "tools" | "fetch" | "vault" | "sends" | "exec" | "browse" | "code_session" | "glimmer";
+  source: "gateway" | "muse_code" | "platform" | "docs" | "tools" | "fetch" | "vault" | "sends" | "exec" | "browse" | "code_session" | "glimmer" | "hosted";
   endpoint: string;
   productId?: string | null;
   buildId?: string | null;

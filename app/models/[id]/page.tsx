@@ -9,7 +9,11 @@ import { toResultView, type ResultView } from "@/components/train/results";
 import { SparkOpenChip, SparkOpenNote } from "@/components/train/SparkOpenNote";
 import { TrainStatusPill } from "@/components/train/TrainStatusPill";
 import { ExternalLink, NotConnected, PageHeader } from "@/components/ui";
+import { RunIt } from "@/components/models/RunIt";
 import { linkedLocalFiles } from "@/components/vibe/RunLocallyLink";
+import { env } from "@/lib/env";
+import { loadHostView } from "@/lib/train/host/page";
+import { mayDeploy } from "@/lib/train/host/limits";
 import { usd } from "@/lib/format";
 import { safeQuery } from "@/lib/queries";
 import { ADAPTER_RECIPE } from "@/lib/train/logic";
@@ -68,6 +72,8 @@ export default async function ModelVersionsPage({ params }: { params: Promise<{ 
   }
   if (!loaded.data) notFound();
   const { current, versions, others, canTrain } = loaded.data;
+  // Flag off: nothing is read, and the page is today's. Only someone who may deploy sees it, since using it spends money.
+  const hosting = env.hostTuned && mayDeploy(user, env.hostTunedOpen) ? await safeQuery(() => loadHostView(current.id)) : null;
 
   return (
     <div className="page">
@@ -156,6 +162,8 @@ export default async function ModelVersionsPage({ params }: { params: Promise<{ 
           </table>
         </div>
       </section>
+
+      {hosting?.ok && hosting.data ? <RunIt modelId={current.id} initial={hosting.data} /> : null}
 
       {others.length ? (
         <section className="section" aria-labelledby="others-title">

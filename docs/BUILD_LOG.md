@@ -1604,3 +1604,14 @@ What this record doesn't confirm:
 - Every `CAP_READY` line is false on this head, so no capability is served whatever its flag says. Set anyway: `MUSE_CODE_ENABLED`, `CODE_ENABLED`, `NATIVE_EXTENSION`. They do nothing until the lines change. CAP_READY was not changed here.
 - `NATIVE_TARGETS` keeps only phone and desktop; vr, glasses and agent use their own switches, which are on.
 - Ran once: `lib/outputs/__tests__/prove.test.ts`, `lib/pipeline/__tests__/prove-steps.test.ts`, `prove.scenario.test.ts`, `build-steps.scenario.test.ts`. 133 tests, 133 passed, 0 failed. These were the ones `tg-verify` left unrun. They use fakes: no real Prove it run, no build, no Meta and no sandbox.
+
+## Nov 1: Run it on a hosted GPU, HOST_TUNED off (branch tg-host-tuned, unmerged)
+
+- Built from `tg-prove` at 62e9eb0, in `~/mm-wt/host-tuned`: the Run it section on `/models/{id}`, adapters for Fireworks, Modal, Baseten and Lambda (`lib/train/host`), a chat box, `POST /api/gateway/hosted/v1/chat/completions`, `/api/cron/host-sweep`, migration `0030_host_tuned`.
+- Decision (owner): the platform deploys and pays, replacing the bring-your-own-account plan, and Lambda is a fourth option. This is the owner's exception to the no-Fireworks rule, for this feature only.
+- Decision: an endpoint reserves what its allowed time would cost, and that time is cut to fit what's left of the budget, so it can't outspend its reservation. A $8/h Fireworks run gets 187 minutes under $25. Rolling top-ups would hold less money, but a missed top-up would then be a way to overspend.
+- Decision: Modal and Baseten deploy with their CLIs in a short-lived Vercel Sandbox, since neither has a usable deploy path from a server function. Keys are passed only as that command's env, and output is scrubbed.
+- Decision: Fireworks refuses r30b adapters and regex target modules. Modal and Baseten refuse a plain Glimmer adapter, which has no pinned full-weights commit. Lambda stays r30b only, by `adapterProblem`.
+- Decision: the chat box is shown only to someone allowed to deploy, since each question can wake a paid GPU and resets the idle clock.
+- Run: `lib/train/host/__tests__` limits 21, adapters 27, service 31, all pass on fakes. `tsc` filtered to touched paths, clean. `lib/db/__tests__/migrations.test.ts` and `migration-order.test.ts`: 32 pass, 2 fail. Both failures stop at 0028 and 0029, which that test doesn't list, and neither names `0030_host_tuned`. They weren't compared against a clean `tg-prove`.
+- Not run: any provider, GPU, paid call, sandbox, Hugging Face call, the page in a browser (so no screenshot), the routes, the migration against a real site, the full suite, next build. Spend $0.
