@@ -15,6 +15,7 @@ import {
 } from "@/components/train/format";
 import { groupThousands, plural } from "@/lib/format";
 import type { DecisionSideSummary, DecisionSummary } from "@/lib/decide/types";
+import { baseLabel } from "@/lib/train/base";
 
 /*
  * A decide job's results (docs/DECISION_MODELS.md "The results page"): the strip, per label scores, the confusion
@@ -38,20 +39,23 @@ export interface DecisionResultsProps {
   trainRows?: number | null;
   /** Admins only: the test rows the model missed, with their inputs. */
   wrong?: WrongAnswers | null;
+  /** True for a job trained on r30b (isSparkOpenDerivative): its base side is the 2026 Glimmer it started from. */
+  sparkOpen?: boolean;
 }
 
-type Side = { name: string; key: "tuned" | "base"; s: DecisionSideSummary };
+/** `name` starts a label ("Base Glimmer", "2026 Glimmer (r30b)"); `inLine` names it mid-line ("tuned", "r30b"). */
+type Side = { name: string; inLine: string; key: "tuned" | "base"; s: DecisionSideSummary };
 
-/** A side as a sentence names it mid-line: "tuned", "base Glimmer". */
-const inLine = (side: Side) => (side.key === "tuned" ? "tuned" : "base Glimmer");
+/** What the base side is called mid-line: r30b for a job trained on it, else base Glimmer. */
+const baseInLine = (sparkOpen: boolean) => (sparkOpen ? "r30b" : "base Glimmer");
 
-function sidesOf(summary: DecisionSummary): Side[] {
-  const base: Side = { name: "Base Glimmer", key: "base", s: summary.base };
-  return summary.tuned ? [{ name: "Tuned", key: "tuned", s: summary.tuned }, base] : [base];
+function sidesOf(summary: DecisionSummary, sparkOpen: boolean): Side[] {
+  const base: Side = { name: baseLabel(sparkOpen), inLine: baseInLine(sparkOpen), key: "base", s: summary.base };
+  return summary.tuned ? [{ name: "Tuned", inLine: "tuned", key: "tuned", s: summary.tuned }, base] : [base];
 }
 
-export function DecisionResults({ summary: s, succeeded = true, trainRows = null, wrong = null }: DecisionResultsProps) {
-  const sides = sidesOf(s);
+export function DecisionResults({ summary: s, succeeded = true, trainRows = null, wrong = null, sparkOpen = false }: DecisionResultsProps) {
+  const sides = sidesOf(s, sparkOpen);
   return (
     <section className="train-eval decide-results" id="decision-results" aria-labelledby="decide-results-title">
       <div className="train-log-head">
@@ -61,13 +65,13 @@ export function DecisionResults({ summary: s, succeeded = true, trainRows = null
         </span>
       </div>
       <p className="sr-only">{decisionSummaryText(s)}</p>
-      <Strip summary={s} sides={sides} succeeded={succeeded} trainRows={trainRows} />
+      <Strip summary={s} sides={sides} succeeded={succeeded} trainRows={trainRows} sparkOpen={sparkOpen} />
       <PerLabel summary={s} sides={sides} />
       <Confusion summary={s} sides={sides} />
       <Reliability summary={s} sides={sides} />
       <Baselines summary={s} sides={sides} />
-      <Health summary={s} sides={sides} />
-      {wrong ? <WrongList summary={s} wrong={wrong} /> : null}
+      <Health summary={s} sides={sides} sparkOpen={sparkOpen} />
+      {wrong ? <WrongList summary={s} wrong={wrong} sparkOpen={sparkOpen} /> : null}
     </section>
   );
 }
@@ -81,13 +85,17 @@ export function DecisionStatus({
   succeeded,
   trainRows = null,
   wrong = null,
+  sparkOpen = false,
 }: {
   state: DecisionState;
   succeeded: boolean;
   trainRows?: number | null;
   wrong?: WrongAnswers | null;
+  sparkOpen?: boolean;
 }) {
-  if (state.state === "scored") return <DecisionResults summary={state.summary} succeeded={succeeded} trainRows={trainRows} wrong={wrong} />;
+  if (state.state === "scored") {
+    return <DecisionResults summary={state.summary} succeeded={succeeded} trainRows={trainRows} wrong={wrong} sparkOpen={sparkOpen} />;
+  }
   return (
     <section className="train-eval decide-results" id="decision-results" aria-labelledby="decide-results-title">
       <div className="train-log-head">
@@ -96,7 +104,7 @@ export function DecisionStatus({
       <div aria-live="polite">
         {state.state === "running" ? (
           <p className="muted small">
-            The GPU scores base Glimmer on the dev and test rows, trains, then scores the tuned model on the same rows. The
+            The GPU scores {sparkOpen ? "the 2026 Glimmer it starts from" : "base Glimmer"} on the dev and test rows, trains, then scores the tuned model on the same rows. The
             numbers show here once its GPU shuts down.
           </p>
         ) : state.state === "scoring" ? (
@@ -113,9 +121,21 @@ export function DecisionStatus({
   );
 }
 
-function Strip({ summary: s, sides, succeeded, trainRows }: { summary: DecisionSummary; sides: Side[]; succeeded: boolean; trainRows: number | null }) {
+function Strip({
+  summary: s,
+  sides,
+  succeeded,
+  trainRows,
+  sparkOpen,
+}: {
+  summary: DecisionSummary;
+  sides: Side[];
+  succeeded: boolean;
+  trainRows: number | null;
+  sparkOpen: boolean;
+}) {
   const main = sides[0]!;
-  const notes = decisionNotes(s, { trainRows, succeeded });
+  const notes = decisionNotes(s, { trainRows, succeeded, sparkOpen });
   return (
     <div className="card totals decide-strip">
       <div className="decide-tiles">
@@ -123,7 +143,7 @@ function Strip({ summary: s, sides, succeeded, trainRows }: { summary: DecisionS
           <div className="decide-tile" key={side.key}>
             <p className="decide-tile-label">
               <span className={`decide-swatch decide-swatch-${side.key}`} aria-hidden />
-              {side.key === "tuned" ? "Tuned accuracy" : "Base Glimmer accuracy"}
+              {side.name} accuracy
             </p>
             <p className="stat-num">{percentText(side.s.accuracy.rate)}</p>
             <p className="stat-sub">
@@ -136,7 +156,7 @@ function Strip({ summary: s, sides, succeeded, trainRows }: { summary: DecisionS
           <p className="decide-tile-label">Macro F1</p>
           <p className="stat-num">{twoPlaces(main.s.macroF1)}</p>
           <p className="stat-sub">
-            {s.tuned ? `base ${twoPlaces(s.base.macroF1)} · ` : ""}each label counts the same
+            {s.tuned ? `${sparkOpen ? "r30b" : "base"} ${twoPlaces(s.base.macroF1)} · ` : ""}each label counts the same
           </p>
         </div>
         <div className="decide-tile">
@@ -147,7 +167,7 @@ function Strip({ summary: s, sides, succeeded, trainRows }: { summary: DecisionS
           </p>
         </div>
       </div>
-      <p className="train-eval-sub">{decisionHeadline(s)}</p>
+      <p className="train-eval-sub">{decisionHeadline(s, sparkOpen)}</p>
       <p className="muted small">{calibrationText(main.s, s.devRows)}</p>
       <ul className="decide-notes">
         {notes.map((n) => (
@@ -173,12 +193,12 @@ function PerLabel({ summary: s, sides }: { summary: DecisionSummary; sides: Side
         <h3 id="decide-labels-title" className="decide-h3">
           Per label
         </h3>
-        <span className="muted small">{other ? "Tuned · base Glimmer" : "Base Glimmer"}</span>
+        <span className="muted small">{other ? `Tuned · ${other.inLine}` : main.name}</span>
       </div>
       <div className="table-wrap">
         <table className="data decide-table">
           <caption className="sr-only">
-            Precision, recall and F1 for each label on the test rows{other ? ", tuned then base Glimmer" : ""}
+            Precision, recall and F1 for each label on the test rows{other ? `, tuned then ${other.inLine}` : ""}
           </caption>
           <thead>
             <tr>
@@ -275,7 +295,7 @@ function Confusion({ summary: s, sides }: { summary: DecisionSummary; sides: Sid
       <Matrix summary={s} side={main!} />
       {other ? (
         <details className="decide-more">
-          <summary>Base Glimmer&apos;s matrix</summary>
+          <summary>{other.name}&apos;s matrix</summary>
           <Matrix summary={s} side={other} />
         </details>
       ) : null}
@@ -361,7 +381,7 @@ function Reliability({ summary: s, sides }: { summary: DecisionSummary; sides: S
           {sides.map((side, i) => (
             <span key={side.key}>
               {i ? "; " : ""}
-              {inLine(side)} {eceText(side.s.ece.withT)} with T, {eceText(side.s.ece.raw)} before
+              {side.inLine} {eceText(side.s.ece.withT)} with T, {eceText(side.s.ece.raw)} before
             </span>
           ))}
           .
@@ -410,7 +430,7 @@ function Baselines({ summary: s, sides }: { summary: DecisionSummary; sides: Sid
   const commonest = labelName(s.labels, s.baselines.commonest.id);
   const rows: Array<{ name: string; note: string; rate: DecisionSideSummary["accuracy"] }> = [
     ...sides.map((side) => ({
-      name: side.key === "tuned" ? "Tuned" : "Base Glimmer",
+      name: side.name,
       note: side.key === "tuned" ? "the trained adapter" : "zero-shot, same prompts",
       rate: side.s.accuracy,
     })),
@@ -462,8 +482,8 @@ function Baselines({ summary: s, sides }: { summary: DecisionSummary; sides: Sid
   );
 }
 
-function Health({ summary: s, sides }: { summary: DecisionSummary; sides: Side[] }) {
-  const each = (f: (x: DecisionSideSummary) => string) => sides.map((side) => `${inLine(side)} ${f(side.s)}`).join(" · ");
+function Health({ summary: s, sides, sparkOpen }: { summary: DecisionSummary; sides: Side[]; sparkOpen: boolean }) {
+  const each = (f: (x: DecisionSideSummary) => string) => sides.map((side) => `${side.inLine} ${f(side.s)}`).join(" · ");
   return (
     <section className="section" aria-labelledby="decide-health-title">
       <div className="section-head">
@@ -504,7 +524,7 @@ function Health({ summary: s, sides }: { summary: DecisionSummary; sides: Side[]
         </dl>
         <p className="muted small">
           Letter mass is the share of the first answer token&apos;s probability that lands on the shown letters; near 1 the
-          model answers in the format. Base Glimmer sometimes starts with a word instead of a letter, so its letter mass is
+          model answers in the format. {sparkOpen ? "The untuned 2026 Glimmer" : "Base Glimmer"} sometimes starts with a word instead of a letter, so its letter mass is
           lower and this first-token read understates what a prompted base model could do.
         </p>
       </div>
@@ -512,7 +532,7 @@ function Health({ summary: s, sides }: { summary: DecisionSummary; sides: Side[]
   );
 }
 
-function WrongList({ summary: s, wrong }: { summary: DecisionSummary; wrong: WrongAnswers }) {
+function WrongList({ summary: s, wrong, sparkOpen }: { summary: DecisionSummary; wrong: WrongAnswers; sparkOpen: boolean }) {
   const tuned = wrong.model === "tuned";
   return (
     <section className="section" aria-labelledby="decide-wrong-title">
@@ -535,7 +555,7 @@ function WrongList({ summary: s, wrong }: { summary: DecisionSummary; wrong: Wro
                 <th scope="col">Input</th>
                 <th scope="col">Right label</th>
                 <th scope="col">{tuned ? "Tuned picked" : "Base picked"}</th>
-                {tuned ? <th scope="col">Base Glimmer</th> : null}
+                {tuned ? <th scope="col">{baseLabel(sparkOpen)}</th> : null}
               </tr>
             </thead>
             <tbody>

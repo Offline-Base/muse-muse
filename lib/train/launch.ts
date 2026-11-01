@@ -9,6 +9,7 @@
  */
 import { start } from "workflow/api";
 import { env } from "@/lib/env";
+import { BASE_MODEL_PARAM, LAB_BASE_MODEL } from "@/lib/train/base";
 import { decideRunSize, isDecideMode } from "@/lib/train/decision-datasets";
 import { gpuOptions, lambdaConfigured, limitCeilings, sweepOffReason, sweepRunning } from "@/lib/train/gate";
 import { quantParams } from "@/lib/train/hub-cards";
@@ -54,7 +55,7 @@ import {
   trainingSpendToday,
 } from "@/lib/train/store";
 import { callbackOrigin } from "@/lib/train/userdata";
-import type { Recipe, RecipeId } from "@/lib/train/types";
+import { PUBLISH_RECIPE, type Recipe, type RecipeId } from "@/lib/train/types";
 import { trainJob } from "@/lib/train/workflow";
 
 const TITLE_MAX = 200;
@@ -146,7 +147,10 @@ async function adapterRegion(
   for (const field of recipe.params) {
     if (field.kind !== "adapter" || params[field.key] === undefined) continue;
     const source = await getAdapterSource(String(params[field.key]));
-    const problem = adapterProblem(source?.job ?? null, source?.metrics ?? null, { decide: isServeRecipe(recipe.id) });
+    const problem = adapterProblem(source?.job ?? null, source?.metrics ?? null, {
+      decide: isServeRecipe(recipe.id),
+      uploadOnly: recipe.id === PUBLISH_RECIPE,
+    });
     if (problem || !source) return { ok: false, error: `${field.label}: ${problem ?? "that job doesn't exist."}` };
     return { ok: true, region: source.job.region, adapterJobId: source.job.id, trainChannel: trainChannelOf(source.job.params) };
   }
@@ -242,6 +246,9 @@ export async function launchJobRequest(input: LaunchRequest, caller: LaunchCalle
   const title = typeof input.title === "string" && input.title.trim() ? input.title.trim().slice(0, TITLE_MAX) : recipe.title;
   const params = validateParams(recipe, input.params);
   if (!params.ok) return refuse(400, params.error);
+  // A job that makes a model records the base its GPU loads (lib/train/base.ts), so its pages know a Muse Spark Open
+  // Derivative before any metrics arrive. Not a recipe field, so validateParams refuses it from a caller.
+  if (recipe.id === ADAPTER_RECIPE || isQuantRecipe(recipe.id)) params.value[BASE_MODEL_PARAM] = LAB_BASE_MODEL;
   // A serve job's minutes are stored whole (serveMinutes rounds down), so the limits, the page's end time, the proxy's
   // cutoff and the GPU, which reads the same param from job.json, all count the same minutes.
   if (isServeRecipe(recipe.id)) params.value[SERVE_MINUTES_PARAM] = serveMinutes(params.value);

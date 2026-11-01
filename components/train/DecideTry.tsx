@@ -19,11 +19,12 @@ import { askDecideDemo } from "@/components/train/tryLive";
 import { NONE_OPTION } from "@/lib/decide/format";
 import type { DecideTryAnswer, DecideTryPick } from "@/lib/decide/types";
 import { duration, groupThousands, plural } from "@/lib/format";
+import { BUILT_WITH_SPARK_OPEN, USAGE_POINTS } from "@/lib/train/base";
 import { SERVE_BOOT_MINUTES } from "@/lib/train/logic";
 
 /**
  * A decision model's Try it live box (docs/DECISION_MODELS.md "On the lab's GPU"): on its result page, and on its admin
- * job page, while a glimmer-serve job serves it. One input, and base Glimmer's and the tuned model's picks side by side
+ * job page, while a glimmer-serve job serves it. One input, and r30b's (the demo's base) and the tuned model's picks side by side
  * from the same GPU, each with every label's probability. It talks only to POST /api/lab/{id}/decide, never to the GPU,
  * and replaces the chat box for a decision model, which answers one letter and never chats.
  */
@@ -97,7 +98,7 @@ export function DecideTryCard({ adapterJobId, demo, model, serverNow, serveJobId
   const tone = live ? "live" : over ? "neutral" : "building";
   const label = live ? "Live" : over ? "Ended" : "Starting";
   const lead = live
-    ? "Type one input, written the way the dataset's rows are. Base Muse Glimmer 30B and this decision model each pick one label for it on the same GPU, with how sure each one is."
+    ? "Type one input, written the way the dataset's rows are. Muse Glimmer 30B with 2026 knowledge, on its own, and this decision model each pick one label for it on the same GPU, with how sure each one is."
     : over
       ? "This live demo has ended, and its GPU shuts down like every other job's."
       : `A live demo is starting. The GPU boots and loads the model, which takes up to about ${SERVE_BOOT_MINUTES} minutes, then this box opens for ${plural(demo.minutes, "minute")}.`;
@@ -115,6 +116,10 @@ export function DecideTryCard({ adapterJobId, demo, model, serverNow, serveJobId
       </div>
       <p className="lab-try-lead" aria-live="polite">
         {lead}
+      </p>
+      {/* The demo's GPU loads r30b (glimmer-serve's MODEL), a Derivative of Muse Spark Open (lib/train/base.ts). */}
+      <p className="muted small lab-try-built">
+        <strong>{BUILT_WITH_SPARK_OPEN}.</strong> {USAGE_POINTS.join(" ")}
       </p>
       <div className="lab-decide-ask">
         <p className="lab-decide-question">
@@ -159,7 +164,7 @@ export function DecideTryCard({ adapterJobId, demo, model, serverNow, serveJobId
             <span>{busy ? "Deciding" : "Decide"}</span>
           </button>
           <span className={busy ? "muted small" : "sr-only"} role="status">
-            {busy ? "Base and tuned Glimmer are deciding." : answer ? "Both picks are in, below." : ""}
+            {busy ? "The 2026 Glimmer and the tuned model are deciding." : answer ? "Both picks are in, below." : ""}
           </span>
         </div>
         {error ? (
@@ -191,7 +196,7 @@ export function DecideAnswers({ answer, idBase }: { answer: Decided; idBase: str
         <p className="train-text lab-decide-input">{answer.input}</p>
       </div>
       <div className="lab-try-pair">
-        <DecidePick id={`${idBase}-base`} title="Base Glimmer" pick={answer.base} />
+        <DecidePick id={`${idBase}-base`} title="2026 Glimmer (r30b)" pick={answer.base} />
         <DecidePick id={`${idBase}-tuned`} title="Decision model" pick={answer.tuned} tuned />
       </div>
       <p className="muted small">Both decided in {duration(answer.ms)} on the demo&apos;s GPU.</p>

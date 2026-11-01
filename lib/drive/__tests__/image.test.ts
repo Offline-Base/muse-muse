@@ -21,6 +21,7 @@ import {
   buildDriveImage,
   buildForText,
   changesText,
+  DERIVATIVE_DRIVE_FILES,
   DRIVE_SOURCE_DIR,
   launcherTable,
   listFiles,
@@ -33,6 +34,7 @@ import {
   type ImageManifest,
   type ImageModel,
 } from "../image";
+import { DERIVATIVE_FILES } from "@/lib/train/licenses";
 import { DRIVE_IMAGE_VERSION } from "../logic";
 import { fakeExtract, fakeFetch, ggufBytes, imageModel, MIT, sha, smallModel, TEST_META, TEST_PIN } from "./fixtures";
 
@@ -213,6 +215,35 @@ describe("the drive image", () => {
     assert.match(text, /quantized to Q3_K_M, Q4_K_M, Q6_K with llama\.cpp/);
     assert.match(text, /release b11669 \(0\.7\.0\), unchanged/);
     assert.match(text, /wasn't made, reviewed or endorsed by Meta/);
+  });
+
+  it("ships a Derivative of Muse Spark Open with the Muse Model License and r30b's NOTICE, and says Built with Muse Spark Open", async () => {
+    const { outDir, manifest } = await build({ ...imageModel(), sparkOpen: true });
+    const read = (rel: string) => fs.readFile(path.join(outDir, rel), "utf8");
+    for (const d of DERIVATIVE_DRIVE_FILES) {
+      const f = DERIVATIVE_FILES.find((x) => x.path === d.from)!;
+      assert.equal(await read(d.path), f.text, d.path);
+      const source = manifest.sources.find((x) => x.path === d.path)!;
+      assert.equal(source.sha256, f.sha256);
+      assert.match(source.url, /^https:\/\/huggingface\.co\/[^/]+\/[^/]+\/raw\/[0-9a-f]{40}\/(MUSE_MODEL_LICENSE\.md|NOTICE)$/, "the same bytes as the GGUF repo at the files' commit");
+    }
+    // The Usage Policy and Apache 2.0 already on every drive are r30b's own bytes too.
+    for (const name of ["LICENSE", "USAGE_POLICY.md"]) {
+      assert.ok(META_FILES.some((m) => m.sha256 === DERIVATIVE_FILES.find((f) => f.path === name)!.sha256), name);
+    }
+    const start = await read("Start Here.html");
+    assert.match(start, /<\/p><p><strong>Built with Muse Spark Open\.<\/strong> For people 18 and over only\. Its answers are written by a model\. Never present them as written by a person\./);
+    assert.match(await read("README.txt"), /^.+, on a Muse Muse flash drive\r\n\r\nBuilt with Muse Spark Open\. For people 18 and over only\./);
+    const changes = await read("licenses/CHANGES.md");
+    assert.match(changes, /fine-tuned it with 2026 knowledge as OfflineBase\/Glimmer-30B-2026-Knowledge/);
+    assert.match(changes, /merged into OfflineBase\/Glimmer-30B-2026-Knowledge's bf16 weights/);
+    assert.match(changes, /Built with Muse Spark Open\. Muse Spark Open wrote part of/);
+    for (const rel of ["Start Here.html", "README.txt", "licenses/CHANGES.md"]) assert.ok(!(await read(rel)).includes(EM_DASH), rel);
+
+    const plain = await build();
+    const files = await listFiles(plain.outDir);
+    assert.ok(!files.includes("licenses/MUSE_MODEL_LICENSE.md") && !files.includes("licenses/NOTICE"), "plain Glimmer files as before");
+    assert.doesNotMatch(await fs.readFile(path.join(plain.outDir, "Start Here.html"), "utf8"), /Spark Open/);
   });
 
   it("gives the Windows files CRLF and plain ASCII, as cmd.exe needs", async () => {

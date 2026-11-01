@@ -125,7 +125,7 @@ export type PlanDraft = z.infer<typeof DraftSchema>;
 export const DEFAULT_TUNE_REFUSAL = "Muse Muse can't train a model for this.";
 
 export function planInstructions(): string {
-  return `You plan a fine-tuning run on Muse Muse. A person describes what a small model should do, sometimes with a few of their own examples. Muse Wonder will write about 200 examples of the task, Muse Glimmer 30B trains on them on one GPU, and the tuned model is scored against the base on prompts kept aside.
+  return `You plan a fine-tuning run on Muse Muse. A person describes what a small model should do, sometimes with a few of their own examples. Muse Wonder will write about 200 examples of the task, Muse Glimmer 30B with 2026 knowledge trains on them on one GPU, and the tuned model is scored against the 2026 Glimmer it started from on prompts kept aside.
 
 Decide first
 - refuse is true when the task involves ${REFUSE_WHEN}, or when it would train on real people's private details (names with contact details, health, money or school records). Teaching a model to talk about a public topic is fine.

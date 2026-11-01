@@ -189,6 +189,17 @@ describe("run it on your computer", { skip: canMock ? false : "needs --experimen
       assert.deepEqual(calls.sort(), ["getLiveDemo", "getResultJob", "listResultEvents", "localFilesFor"]);
     });
 
+    it("says Built with Muse Spark Open for files merged into r30b, under the title, and nothing of it for plain Glimmer", async () => {
+      files = { ...run2Files(), sparkOpen: true };
+      const html = await openRun();
+      clean(html);
+      assert.match(html, /the tuned Muse Glimmer 30B with 2026 knowledge, in three builds/);
+      assert.match(html, /<aside class="card section-card spark-open-note" aria-label="Built with Muse Spark Open"><p><strong>Built with Muse Spark Open\.<\/strong>/);
+      assert.match(html, /<li>For people 18 and over only\.<\/li>/);
+      files = run2Files();
+      assert.doesNotMatch(await openRun(), /Spark Open/);
+    });
+
     it("with run 2's public files: the sizes, the least it needs, the picker, the verdict waiting, and every build", async () => {
       files = run2Files();
       const html = await openRun();

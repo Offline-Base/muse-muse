@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Icon } from "@/components/icons";
 import { TryLiveCard } from "@/components/train/LiveDemo";
+import { SparkOpenNote } from "@/components/train/SparkOpenNote";
 import type { PublicLiveDemo } from "@/components/train/results";
 import { EmptyCard, ExternalLink, PageHeader } from "@/components/ui";
 import type { HelloExample } from "@/components/vibe/AppGuide";
@@ -136,8 +137,8 @@ export function RunLocally({ jobId, title, files, showPrivate, hello, live, driv
         title="Run it on your computer"
         subtitle={
           usable && min
-            ? `${title}, the tuned Muse Glimmer 30B, in ${buildsText(usable.files)}. It needs ${needsAtLeast(min)}.`
-            : `${title}, the tuned Muse Glimmer 30B.`
+            ? `${title}, the tuned Muse Glimmer 30B${files?.sparkOpen ? " with 2026 knowledge" : ""}, in ${buildsText(usable.files)}. It needs ${needsAtLeast(min)}.`
+            : `${title}, the tuned Muse Glimmer 30B${files?.sparkOpen ? " with 2026 knowledge" : ""}.`
         }
         actions={
           <Link className="btn btn-outline" href={modelHref}>
@@ -146,6 +147,9 @@ export function RunLocally({ jobId, title, files, showPrivate, hello, live, driv
           </Link>
         }
       />
+
+      {/* The Muse Model License's line, for files merged into r30b (lib/train/base.ts). Its repo and drives carry the files. */}
+      {files?.sparkOpen ? <SparkOpenNote /> : null}
 
       <div className="vibe-note">
         {usable && min ? (

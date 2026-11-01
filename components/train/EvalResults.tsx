@@ -21,13 +21,26 @@ export interface EvalResultsProps {
    */
   writer: string | null;
   judge: string;
+  /**
+   * True for a job trained from r30b (isSparkOpenDerivative, lib/train/base.ts): the copy compares the tuned model with
+   * the 2026 Glimmer it started from. Base Glimmer otherwise.
+   */
+  sparkOpen?: boolean;
+}
+
+/** How the copy names the model a job started from: in a sentence, as a column, and before a score. */
+function baseWords(model: string, sparkOpen: boolean) {
+  return sparkOpen
+    ? { inLine: "the 2026 Glimmer it started from", column: "2026 Glimmer (r30b)", short: "r30b" }
+    : { inLine: "base", column: `Base ${model}`, short: "Base" };
 }
 
 /**
  * The job page's eval results: a summary strip once the job's judge has judged the held-out prompts ("Judging..."
  * until then), and every item with the reference, the base and the tuned answer and the verdict. Long text folds.
  */
-export function EvalResults({ state, rows, model, writer, judge }: EvalResultsProps) {
+export function EvalResults({ state, rows, model, writer, judge, sparkOpen = false }: EvalResultsProps) {
+  const base = baseWords(model, sparkOpen);
   if (state.state === "none") return null;
   return (
     <section className="train-eval" id="eval-results" aria-labelledby="train-eval-title">
@@ -36,28 +49,30 @@ export function EvalResults({ state, rows, model, writer, judge }: EvalResultsPr
         {rows.length ? <span className="muted small">{rows.length} held-out prompts</span> : null}
       </div>
       <div aria-live="polite">
-        <EvalStatus state={state} model={model} writer={writer} judge={judge} />
+        <EvalStatus state={state} model={model} writer={writer} judge={judge} base={base} />
       </div>
-      {rows.length ? <EvalTable rows={rows} model={model} writer={writer} judging={state.state === "judging"} /> : null}
+      {rows.length ? <EvalTable rows={rows} model={model} writer={writer} judging={state.state === "judging"} base={base} /> : null}
     </section>
   );
 }
 
-function EvalStatus({ state, model, writer, judge }: { state: EvalState; model: string; writer: string | null; judge: string }) {
+type BaseWords = ReturnType<typeof baseWords>;
+
+function EvalStatus({ state, model, writer, judge, base }: { state: EvalState; model: string; writer: string | null; judge: string; base: BaseWords }) {
   switch (state.state) {
     case "judged": {
       const s = state.summary;
       return (
         <div className="card totals train-eval-strip">
           <p className="totals-big">
-            Tuned {model} beat base on{" "}
+            Tuned {model} beat {base.inLine} on{" "}
             <strong>
               {s.tunedWins} of {s.items}
             </strong>
-            , base won <strong>{s.baseWins}</strong>, ties <strong>{s.ties}</strong>
+            , {base.short === "Base" ? "base" : base.short} won <strong>{s.baseWins}</strong>, ties <strong>{s.ties}</strong>
           </p>
           <p className="train-eval-sub">
-            Average score base <strong>{scoreText(s.avgBaseScore)}</strong>, tuned{" "}
+            Average score {base.short === "Base" ? "base" : base.short} <strong>{scoreText(s.avgBaseScore)}</strong>, tuned{" "}
             <strong>{scoreText(s.avgTunedScore)}</strong>, judged by {judge}.
           </p>
           <p className="muted small">
@@ -90,13 +105,13 @@ function EvalStatus({ state, model, writer, judge }: { state: EvalState; model: 
   }
 }
 
-function EvalTable({ rows, model, writer, judging }: { rows: EvalRow[]; model: string; writer: string | null; judging: boolean }) {
+function EvalTable({ rows, model, writer, judging, base }: { rows: EvalRow[]; model: string; writer: string | null; judging: boolean; base: BaseWords }) {
   return (
     <div className="table-wrap">
       <table className="data train-eval-table">
         <caption className="sr-only">
-          Each held-out prompt with {writer ? `${writer}'s reference` : "the reference"}, the base and the tuned{" "}
-          {model}&apos;s answers, and the verdict
+          Each held-out prompt with {writer ? `${writer}'s reference` : "the reference"}, {base.short === "Base" ? "the base" : base.inLine}{" "}
+          and the tuned {model}&apos;s answers, and the verdict
         </caption>
         <colgroup>
           <col className="train-eval-col-text" />
@@ -107,7 +122,7 @@ function EvalTable({ rows, model, writer, judging }: { rows: EvalRow[]; model: s
         <thead>
           <tr>
             <th scope="col">{writer ? `${writer} reference` : "Reference"}</th>
-            <th scope="col">Base {model}</th>
+            <th scope="col">{base.column}</th>
             <th scope="col">Tuned {model}</th>
             <th scope="col">Verdict</th>
           </tr>
@@ -137,7 +152,7 @@ function EvalTable({ rows, model, writer, judging }: { rows: EvalRow[]; model: s
                     <div className="train-verdict">
                       <span className={`pill pill-${verdictTone(j.better)}`}>{verdictLabel(j.better)}</span>
                       <p className="train-scores">
-                        Base {j.baseScore} · Tuned {j.tunedScore}
+                        {base.short} {j.baseScore} · Tuned {j.tunedScore}
                       </p>
                       {j.note ? <p className="train-note">{j.note}</p> : null}
                     </div>

@@ -255,7 +255,7 @@ describe("starting training for a run", { skip: canMock ? false : "needs --exper
       assert.equal(more.length, 0);
       assert.equal(job!.recipe, "glimmer-lora");
       assert.equal(job!.title, "a made-up bakery's counter helper");
-      assert.deepEqual(job!.params, { datasetId: id, dryRun: 0, maxSteps: 300, loraRank: 16, learningRate: 0.0002, studentPrompt: "short", publish: 0 });
+      assert.deepEqual(job!.params, { datasetId: id, dryRun: 0, maxSteps: 300, loraRank: 16, learningRate: 0.0002, studentPrompt: "short", publish: 0, baseModel: "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit" });
       assert.deepEqual([job!.instanceType, job!.region, job!.maxMinutes, job!.maxUsd, job!.createdBy], ["gpu_1x_a100_sxm4", "us-east-1", 90, 5, admin]);
       assert.deepEqual(started.map((s) => s.fn), ["trainJob"], "the job's own workflow");
       assert.equal(job!.workflowRunId, "wrun-1");

@@ -33,7 +33,8 @@ export const GET = route(async (req: Request) => {
  * recipe that keeps the model cache prefers a region that already has it. A glimmer-quantize job also needs its switch,
  * a judged adapter and, to publish, a published one, one at a time per adapter (quantSetup, 503 quant_off or hub_off,
  * 400, 409 adapter_not_published or quant_running with {quantJobId}), and the platform writes its levels, slug and
- * trainChannel params itself. A run
+ * trainChannel params itself. A glimmer-lora or glimmer-quantize job also gets the baseModel param, the base its GPU
+ * loads (LAB_BASE_MODEL, lib/train/base.ts). A run
  * that can't fit its limits on the GPU it gets (runEstimate: seconds a step for that GPU plus a fixed overhead, larger
  * in a region without the cache) is refused with a 400 that says so, with {estimateMinutes, usableMinutes}, before
  * anything is created. 400 bad input, 409 too_many_active (TRAIN_MAX_ACTIVE), 502

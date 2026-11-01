@@ -39,7 +39,7 @@ import {
 const hasPython = spawnSync("python3", ["--version"], { stdio: "ignore" }).status === 0;
 const JOB_ID = "test-job";
 const REPO = "muse-test/muse-glimmer-30b-briefs-lora-test-job";
-const MODEL = "unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit";
+const MODEL = /^MODEL = "([^"]+)"$/m.exec(GLIMMER_PY)![1]!;
 const REVISION = /^MODEL_REVISION = "([0-9a-f]{40})"$/m.exec(GLIMMER_PY)![1]!;
 const ADAPTER_JOB = "83d71f74-d84b-40bf-925a-cd36c90b6de5";
 
