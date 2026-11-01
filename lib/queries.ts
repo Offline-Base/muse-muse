@@ -102,6 +102,7 @@ function toBuildView(b: BuildRow): BuildView {
 
 function toProductView(p: ProductRow): ProductView {
   return {
+    sourcePublic: p.sourcePublic,
     id: p.id,
     slug: p.slug,
     name: p.name,

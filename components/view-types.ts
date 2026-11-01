@@ -28,6 +28,8 @@ export interface BuildView {
 
 export interface ProductView {
   id: string;
+  /** Anyone may read its Code page. */
+  sourcePublic?: boolean;
   slug: string;
   name: string;
   tagline: string;
