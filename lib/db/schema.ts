@@ -241,7 +241,8 @@ export const usage = pgTable(
   "usage",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    source: text("source").$type<"gateway" | "muse_code" | "platform" | "docs" | "tools">().notNull(),
+    // 0022_connect (unit 5) adds "fetch", "vault" and "sends" to the type only: the column is text, so no SQL changes.
+    source: text("source").$type<"gateway" | "muse_code" | "platform" | "docs" | "tools" | "fetch" | "vault" | "sends">().notNull(),
     productId: uuid("product_id").references(() => products.id),
     buildId: uuid("build_id").references(() => builds.id),
     tokenId: uuid("token_id").references(() => gatewayTokens.id),

@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { CAPS_PROOF_PER_MINUTE, handleCapsProof, type CapsProofDeps } from "@/lib/caps/proof";
 import { CAP_FLAG, CAP_IDS } from "@/lib/caps/ids";
+import { handleFetch, handleSend, handleVault, type ConnectDeps } from "@/lib/caps/connect/handler";
 import { handleData, handleIdentityUser, handleIdentityUserLink, handleIdentityUserTest, type DataDeps } from "@/lib/caps/data/handler";
 import { handlePasskey, type PasskeyDeps } from "@/lib/caps/data/passkeys";
 import { handleAsset, type AssetsDeps } from "@/lib/caps/media/assets";
@@ -35,6 +36,24 @@ const dataOff = (): DataDeps => ({
   productSlug: untouched<DataDeps["productSlug"]>("productSlug"),
 });
 
+/** Unit 5's deps with the real flags and every other dependency failing the test if it's touched. */
+const connectOff = (): ConnectDeps => ({
+  servedCaps: () => env.servedCaps,
+  vaultOn: () => env.connectVault,
+  sendsOn: () => env.connectSends,
+  findToken: untouched<ConnectDeps["findToken"]>("findToken"),
+  product: untouched<ConnectDeps["product"]>("product"),
+  adminEmails: [],
+  hitRateLimits: untouched<ConnectDeps["hitRateLimits"]>("hitRateLimits"),
+  reserveCounter: untouched<ConnectDeps["reserveCounter"]>("reserveCounter"),
+  recordUsage: untouched<ConnectDeps["recordUsage"]>("recordUsage"),
+  store: new Proxy({} as ConnectDeps["store"], { get: (_t, k) => untouched(`store.${String(k)}`) }),
+  keyring: untouched<ConnectDeps["keyring"]>("keyring"),
+  rules: untouched<ConnectDeps["rules"]>("rules"),
+  fetch: untouched<ConnectDeps["fetch"]>("fetch"),
+  userAgent: "test",
+});
+
 const ROUTES: Array<{ path: string; call(req: Request): Promise<Response> }> = [
   // Unit 3: saved data, its sign-in, and the platform's passkey routes.
   { path: "data", call: (req) => handleData(req, [], dataOff()) },
@@ -44,6 +63,12 @@ const ROUTES: Array<{ path: string; call(req: Request): Promise<Response> }> = [
   { path: "identity/user", call: (req) => handleIdentityUser(req, dataOff()) },
   { path: "identity/user/test", call: (req) => handleIdentityUserTest(req, dataOff()) },
   { path: "identity/user/link", call: (req) => handleIdentityUserLink(req, dataOff()) },
+  // Unit 5: public APIs, the key vault and its calls, and sends.
+  { path: "fetch", call: (req) => handleFetch(req, connectOff()) },
+  { path: "vault", call: (req) => handleVault(req, [], connectOff()) },
+  { path: "vault/call", call: (req) => handleVault(req, ["call"], connectOff()) },
+  { path: "vault/github", call: (req) => handleVault(new Request(req.url, { method: req.method === "GET" ? "DELETE" : "POST", headers: req.headers }), ["github"], connectOff()) },
+  { path: "send", call: (req) => handleSend(req, connectOff()) },
   // Unit 2: what the gateway saw for a build's namespace.
   {
     path: "caps/proof",
@@ -171,5 +196,33 @@ describe("/caps/proof with a cap on", () => {
     const res = await handleCapsProof(get("Bearer x"), failing);
     assert.equal(res.status, 502);
     assert.equal(((await res.json()) as { error: { code: string } }).error.code, "cap_failed");
+  });
+});
+
+describe("unit 5's routes with the connect cap served but CONNECT_VAULT and CONNECT_SENDS off", () => {
+  it("/vault, /vault/call and /send answer 404 and touch nothing, and sends stay off on production without the owner's switch", async () => {
+    const on: ConnectDeps = { ...connectOff(), servedCaps: () => ["connect"], vaultOn: () => false, sendsOn: () => false };
+    const post = (path: string) => new Request(`https://platform.example/api/gateway/${path}`, { method: "POST", headers: { authorization: "Bearer mm_live_x" }, body: "{}" });
+    for (const res of [await handleVault(post("vault"), [], on), await handleVault(post("vault/call"), ["call"], on), await handleSend(post("send"), on)]) {
+      assert.equal(res.status, 404);
+      assert.equal(((await res.json()) as { error: { code: string } }).error.code, "unknown_endpoint");
+    }
+    const saved = { ...process.env };
+    try {
+      Object.assign(process.env, { CONNECT_VAULT: "1", CONNECT_SENDS: "1", VERCEL_ENV: "production" });
+      delete process.env.CONNECT_SENDS_PRODUCTION;
+      assert.equal(env.connectSends, false, "off on production");
+      process.env.VERCEL_ENV = "preview";
+      assert.equal(env.connectSends, true, "on elsewhere");
+      delete process.env.CONNECT_VAULT;
+      assert.equal(env.connectSends, false, "sends need the vault");
+      Object.assign(process.env, { CONNECT_VAULT: "1", VERCEL_ENV: "production", CONNECT_SENDS_PRODUCTION: "1" });
+      assert.equal(env.connectSends, true, "the owner's switch");
+    } finally {
+      for (const k of ["CONNECT_VAULT", "CONNECT_SENDS", "CONNECT_SENDS_PRODUCTION", "VERCEL_ENV"]) {
+        if (saved[k] === undefined) delete process.env[k];
+        else process.env[k] = saved[k];
+      }
+    }
   });
 });

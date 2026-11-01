@@ -1,5 +1,6 @@
 import { TARGETS, type TargetId } from "@/lib/brief/schema";
 import { CAP_FLAG, CAP_IDS, CAP_NEEDS_BUILDER, CAP_READY, type CapId } from "@/lib/caps/ids";
+import { connectMoreToolsOn, connectSendsOn, connectVaultOn } from "@/lib/caps/connect/flags";
 import { dataSignInOn } from "@/lib/caps/data/types";
 import { mediaPartsFromEnv, type MediaPartId } from "@/lib/caps/media/parts";
 import { capOverlaysNeeded } from "@/lib/caps/overlays";
@@ -836,6 +837,37 @@ export const env = {
   /** Writes one product may make in a UTC day, live namespace. */
   get dataDailyWrites(): number {
     return number("DATA_DAILY_WRITES", 5_000);
+  },
+
+  // ---------- Wave 3, unit 5: connect (docs/CAPABILITIES.md) ----------
+
+  /**
+   * CONNECT_MORE_TOOLS: more read-only tools through the tool gateway, owners only (decision 17). Nothing reads it yet:
+   * the tools need `npm run tools:sync` against Composio first (docs/CAPABILITIES.md, 11a).
+   */
+  get connectMoreTools(): boolean {
+    return connectMoreToolsOn();
+  },
+  /**
+   * CONNECT_VAULT: the per-product key vault and brokered calls ({GATEWAY_URL}/vault). It also needs CONNECT_VAULT_KEY;
+   * without one the vault answers caps_paused. CONNECT_ENABLED, the cap's own flag, is read through enabledCaps above.
+   */
+  get connectVault(): boolean {
+    return connectVaultOn();
+  },
+  /**
+   * CONNECT_VAULT_KEY: 32 bytes in base64, or a ring "v1:<key>,v2:<key>" (lib/secrets/box.ts). Platform only: it never
+   * goes into a build or a product.
+   */
+  get connectVaultKey(): string | null {
+    return optional("CONNECT_VAULT_KEY");
+  },
+  /**
+   * CONNECT_SENDS: messages sent with the builder's own key, one confirmation each ({GATEWAY_URL}/send). Needs the vault.
+   * On production it also needs CONNECT_SENDS_PRODUCTION, the owner's switch (decision 8), which stays off.
+   */
+  get connectSends(): boolean {
+    return connectSendsOn();
   },
 
   // ---------- Wave 3, unit 8: media (docs/CAPABILITIES.md) ----------

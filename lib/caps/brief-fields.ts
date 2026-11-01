@@ -1,4 +1,6 @@
 import type { z } from "zod";
+import { ConnectBriefBlock, connectWriterBlock, connectWriterRules } from "@/lib/caps/connect/brief";
+import { connectOptions } from "@/lib/caps/connect/flags";
 import { DataBriefBlock, dataWriterBlock, dataWriterRules } from "@/lib/caps/data/brief";
 import type { CapId } from "@/lib/caps/ids";
 import { EXTENSION_WRITER_RULES, ExtensionBriefBlock } from "@/lib/caps/extension/brief";
@@ -18,6 +20,7 @@ import { RUNTIME_WRITER_RULES, RuntimeBriefBlock } from "@/lib/caps/runtime/brie
  */
 export const CAP_BRIEF_FIELDS = {
   data: DataBriefBlock,
+  connect: ConnectBriefBlock,
   media: MediaBriefBlock,
   runtime: RuntimeBriefBlock,
   extension: ExtensionBriefBlock,
@@ -39,6 +42,8 @@ export function briefCaps(brief: object): CapId[] {
 export const CAP_WRITER_RULES: Partial<Record<CapId, readonly string[] | (() => readonly string[])>> = {
   // Unit 3: they follow DATA_SIGN_IN.
   data: () => dataWriterRules(),
+  // Unit 5: they follow CONNECT_VAULT and CONNECT_SENDS.
+  connect: () => connectWriterRules(connectOptions()),
   // Unit 8: the media cap names only the parts whose flags are on, read when the instructions are built.
   media: () => mediaWriterRules(mediaPartsOn()),
   runtime: RUNTIME_WRITER_RULES,
@@ -64,6 +69,8 @@ export function capsWriterRules(enabled: readonly CapId[]): string {
 const CAP_WRITER_BRIEF_FIELDS: Partial<Record<CapId, { stored: z.ZodTypeAny; writer: () => z.ZodTypeAny }>> = {
   // Unit 3: with DATA_SIGN_IN off, no user collections and no sign-in.
   data: { stored: DataBriefBlock, writer: () => dataWriterBlock() },
+  // Unit 5: only allowlisted ids, and no keys or sends while their switches are off.
+  connect: { stored: ConnectBriefBlock, writer: () => connectWriterBlock(connectOptions()) },
 };
 
 /** The block the brief writer answers in for a cap (newBriefSchemaFor), or undefined when it has none. */

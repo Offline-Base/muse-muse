@@ -1,0 +1,115 @@
+{
+  "query": [
+    {
+      "recorded": "2026-10-31",
+      "from": "/fdsnws/event/1/query?format=geojson&starttime=2026-10-24&endtime=2026-10-31&minmagnitude=5.5&limit=3&orderby=time",
+      "note": "trimmed",
+      "status": 200,
+      "data": {
+        "type": "FeatureCollection",
+        "metadata": {
+          "title": "USGS Earthquakes"
+        },
+        "features": [
+          {
+            "type": "Feature",
+            "properties": {
+              "mag": 6.2,
+              "place": "43 km ESE of Port-Olry, Vanuatu",
+              "time": 1793310404786,
+              "url": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000tu4f",
+              "title": "M 6.2 - 43 km ESE of Port-Olry, Vanuatu",
+              "tsunami": 0
+            },
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                167.4523,
+                -15.1891,
+                142.833
+              ]
+            },
+            "id": "us7000tu4f"
+          },
+          {
+            "type": "Feature",
+            "properties": {
+              "mag": 6.4,
+              "place": "southeast of Easter Island",
+              "time": 1793260190928,
+              "url": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000ttxz",
+              "title": "M 6.4 - southeast of Easter Island",
+              "tsunami": 0
+            },
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                -98.0489,
+                -36.4058,
+                10
+              ]
+            },
+            "id": "us7000ttxz"
+          },
+          {
+            "type": "Feature",
+            "properties": {
+              "mag": 5.7,
+              "place": "82 km NE of Kiunga, Papua New Guinea",
+              "time": 1793244402275,
+              "url": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000ttw5",
+              "title": "M 5.7 - 82 km NE of Kiunga, Papua New Guinea",
+              "tsunami": 0
+            },
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                141.9018,
+                -5.6991,
+                10
+              ]
+            },
+            "id": "us7000ttw5"
+          }
+        ]
+      }
+    }
+  ],
+  "feed": [
+    {
+      "recorded": "2026-10-31",
+      "from": "/earthquakes/feed/v1.0/summary/significant_week.geojson",
+      "note": "trimmed",
+      "status": 200,
+      "data": {
+        "type": "FeatureCollection",
+        "metadata": {
+          "title": "USGS Significant Earthquakes, Past Week",
+          "count": 1
+        },
+        "features": [
+          {
+            "type": "Feature",
+            "properties": {
+              "mag": 6.4,
+              "place": "southeast of Easter Island",
+              "time": 1793260190928,
+              "url": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000ttxz",
+              "title": "M 6.4 - southeast of Easter Island",
+              "tsunami": 0
+            },
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                -98.0489,
+                -36.4058,
+                10
+              ]
+            },
+            "id": "us7000ttxz"
+          }
+        ]
+      }
+    }
+  ]
+}

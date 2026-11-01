@@ -1,0 +1,82 @@
+{
+  "summary": [
+    {
+      "recorded": "2026-10-31",
+      "from": "/api/rest_v1/page/summary/Honey_bee",
+      "note": "trimmed",
+      "status": 200,
+      "data": {
+        "type": "standard",
+        "title": "Honey bee",
+        "displaytitle": "<span lang=\"en\" dir=\"ltr\"><span class=\"mw-page-title-main\">Honey bee</span></span>",
+        "description": "Colonial flying insect",
+        "extract": "A honey bee is a eusocial flying insect from the genus Apis of the largest bee family, Apidae. Honey bees are known for their creation of perennial nests within cavities containing hexagonal cells made of secreted wax, their large colony sizes, and their routine regurgitation of digested carbohydrates as surplus food storage in the form of honey, the lattermost of which distinguishes their hives as a prized foraging target of many mellivorous animals including honey badgers, bears and human hunter-gatherers.",
+        "thumbnail": {
+          "source": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/11/The_Lone_Pollinator.jpg/330px-The_Lone_Pollinator.jpg?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail",
+          "width": 330,
+          "height": 220
+        },
+        "content_urls": {
+          "desktop": {
+            "page": "https://en.wikipedia.org/wiki/Honey_bee"
+          }
+        },
+        "lang": "en",
+        "timestamp": "2026-10-29T11:51:45Z"
+      }
+    }
+  ],
+  "search": [
+    {
+      "recorded": "2026-10-31",
+      "from": "/w/rest.php/v1/search/page?q=honey+bee&limit=3",
+      "status": 200,
+      "data": {
+        "pages": [
+          {
+            "id": 58261,
+            "key": "Honey_bee",
+            "title": "Honey bee",
+            "excerpt": "A <span class=\"searchmatch\">honey</span> <span class=\"searchmatch\">bee</span> (also spelled honeybee) is a eusocial flying insect from the genus Apis of the largest <span class=\"searchmatch\">bee</span> family, Apidae. <span class=\"searchmatch\">Honey</span> <span class=\"searchmatch\">bees</span> are known for their",
+            "description": "Colonial flying insect",
+            "thumbnail": {
+              "mimetype": "image/jpeg",
+              "width": 60,
+              "height": 40,
+              "duration": null,
+              "url": "//thumb.wikimedia.org/wikipedia/commons/thumb/1/11/The_Lone_Pollinator.jpg/60px-The_Lone_Pollinator.jpg?utm_source=en.wikipedia.org&utm_campaign=rest&utm_content=thumbnail"
+            }
+          },
+          {
+            "id": 161804,
+            "key": "Africanized_bee",
+            "title": "Africanized bee",
+            "excerpt": "Africanized <span class=\"searchmatch\">bee</span>, also known as the Africanized <span class=\"searchmatch\">honey</span> <span class=\"searchmatch\">bee</span> (AHB) and colloquially as the &quot;killer <span class=\"searchmatch\">bee</span>&quot;, is a hybrid of the western <span class=\"searchmatch\">honey</span> <span class=\"searchmatch\">bee</span> (Apis mellifera)",
+            "description": "Hybrid species of bee",
+            "thumbnail": {
+              "mimetype": "image/jpeg",
+              "width": 60,
+              "height": 40,
+              "duration": null,
+              "url": "//thumb.wikimedia.org/wikipedia/commons/thumb/b/b6/Swarm_of_Africanized_honey_bees.jpg/60px-Swarm_of_Africanized_honey_bees.jpg?utm_source=en.wikipedia.org&utm_campaign=rest&utm_content=thumbnail"
+            }
+          },
+          {
+            "id": 18214141,
+            "key": "Western_honey_bee",
+            "title": "Western honey bee",
+            "excerpt": "The western <span class=\"searchmatch\">honey</span> <span class=\"searchmatch\">bee</span> (Apis mellifera) is the most common of the 7–12 species of <span class=\"searchmatch\">honey</span> <span class=\"searchmatch\">bees</span> worldwide. The genus name Apis is Latin for &#039;<span class=\"searchmatch\">bee</span>&#039;, and mellifera",
+            "description": "Species of honey bee",
+            "thumbnail": {
+              "mimetype": "image/jpeg",
+              "width": 60,
+              "height": 50,
+              "duration": null,
+              "url": "//thumb.wikimedia.org/wikipedia/commons/thumb/4/4d/Apis_mellifera_Western_honey_bee.jpg/60px-Apis_mellifera_Western_honey_bee.jpg?utm_source=en.wikipedia.org&utm_campaign=rest&utm_content=thumbnail"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
