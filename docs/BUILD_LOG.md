@@ -1665,11 +1665,10 @@ All on localhost:3023, TEST_MODEL, made-up data. Costs are what each build's log
 - Tests: package-run 4 pass, local-gadget 3 pass. tsc shows nothing in the touched files. workflow.scenario can't load here: 57 cancelled on the workflow package's FatalError export, and the same load error shows on tg-verify without these changes.
 - Spend: $0.28 Meta as recorded, about $0.03 Composio by estimate, sandbox time unmeasured.
 
-## Nov 1: a tuned model on the lab's Android emulator, SIM_TUNE (branch tg-sim-tune, unmerged)
+## Nov 1: repeat-until-good tuning loop (TUNE_LOOP, off), branch tg-tune-loop
 
-Code and fakes only. No lab job, GPU, build or paid call ran, and the flag is off.
+Written with targeted tests only. Nothing has run for real: no writer, GPU, judge or workflow runtime, and nothing was spent.
 
-- Added a `gguf_emu` lab kind, `SimTuneCard` on the model page, and `POST/GET /api/train/jobs/{id}/sim-tune`. No migration.
-- Found: the smallest local file of any tuned model today is 13.68 GB (Q3_K_M of 30B). The emulator has 4 GB of RAM and 8 GB of disk, and a job is capped at 900 s. So every current model gets a plain "too big" refusal.
-- Decision: refuse rather than run a stand-in model and call it the tuned one.
-- Decision: jobs hang off one hidden disabled product to avoid a migration.
+- A person sets a target score and a spend cap on a judged run. Each round aims a new dataset at the last verdict's weak prompts, merges it with the last round's rows, trains a new adapter from the base with the source job's settings, is judged on the same kept-aside prompts, and stops at the target, the cap or the round limit. /fine-tuning/loops/{id} shows every round.
+- Decision: the kept-aside prompts split in two. The writer sees weak prompts from the working half only, and the target is checked on the sealed half, or the score would climb from the writer copying the test. The split runs in pairs because the judge shows the base first on even indexes.
+- Decision: no migration. The loop's record is rate_limits rows, as a run's marks are; a round's datasets have ids made from the loop's. Publish is 0 for every round. A product's run or a decision run can't loop.
