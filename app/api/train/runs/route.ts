@@ -3,6 +3,7 @@ import { env } from "@/lib/env";
 import { adjustCounter, reserveCounter } from "@/lib/gateway/store";
 import { errorJson, readJson, route } from "@/lib/http";
 import { spendPaused } from "@/lib/quota";
+import { buildForTune } from "@/lib/train/tune/build-source";
 import { tuneCaller, tuneExamplesMax } from "@/lib/train/tune/caller";
 import { askedExamples, askedSteps, maxStepsFor, planCost, planSettings, verifyPlan } from "@/lib/train/tune/plan";
 import { startTuneRun, TuneStartError } from "@/lib/train/tune/start";
@@ -20,6 +21,9 @@ import type { TrainPlanBody } from "@/lib/train/tune/types";
  *
  * A build plan (B, source {kind: "build"}) starts like a task plan, keeps its product with the run, and is one a product
  * a day (429 product_daily with {retryAfterSeconds}, counted in startTuneRun), on top of every other cap.
+ *
+ * A build plan is checked again at Start: 404 not_found with TUNE_FROM_BUILDS off, 404 build_not_found, 409
+ * build_not_ready when the build no longer offers its own model.
  *
  * 400 bad input or plan_expired, 403 plan_invalid (tampered, or another caller's), 409 already_started, 429
  * product_daily, 503 meta_not_configured or paused, 500 start_failed.
@@ -47,6 +51,15 @@ export const POST = route(async (req: Request) => {
   if (!steps.ok) return errorJson(400, steps.error);
   const settings = planSettings(sized.examples, limitCeilings(), steps.value);
   const plan: TrainPlanBody = { ...check.plan, settings, cost: planCost(settings) };
+
+  // A build plan starts only while TUNE_FROM_BUILDS is on and the build still offers its own model: the plan's token
+  // lasts two hours, and the flag or the build may have changed since it was signed.
+  if (plan.source.kind === "build") {
+    if (!env.tuneFromBuilds) return errorJson(404, "not_found");
+    const build = await buildForTune(plan.source.buildId);
+    if (!build || build.productId !== plan.source.productId) return errorJson(404, "build_not_found");
+    if (!build.offers) return errorJson(409, "build_not_ready");
+  }
 
   if (plan.source.kind === "task" || plan.source.kind === "build") {
     if (!process.env.MODEL_API_KEY) return errorJson(503, "meta_not_configured");

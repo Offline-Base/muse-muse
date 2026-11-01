@@ -968,7 +968,8 @@ from the brief (`ownModelNote`: the need, the product and its tagline, who uses 
 `/fine-tuning/new?fromBuild=<buildId>`, which says which product it's for. `POST /api/train/plan {fromBuildId}` checks
 the build (`buildForTune` in `lib/train/tune/build-source.ts`: 404 `build_not_found`, 403 `not_owner`, 409
 `build_not_ready`) and signs the plan with source `{kind: "build", buildId, productId}`. Start (`POST /api/train/runs`)
-starts it as a task plan, and `startTuneRun` keeps the product with the run. A product gets one run a day (UTC)
+checks both again, since the plan's token lasts two hours (404 `not_found` with the flag off, 404 `build_not_found`, 409
+`build_not_ready`), then starts it as a task plan, and `startTuneRun` keeps the product with the run. A product gets one run a day (UTC)
 whoever starts it, the build room or unit 11's "Train on my data": `startTuneRun` counts it whenever it has a product
 and something starts (a new dataset, or `tuneRun` on an existing one), on a `tune-product-day:<productId>` counter kept
 under the day's end, gives it back when that start fails, and throws 429 `product_daily` with `{retryAfterSeconds}`.

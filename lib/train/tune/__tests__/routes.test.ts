@@ -484,6 +484,22 @@ describe("tune routes", { skip: canMock ? false : "needs --experimental-test-mod
       assert.equal(counters[`tune-product-day:${PRODUCT_ID}`], 0);
     });
 
+    it("checks a build plan again at Start: the flag still on, and the build still offering its own model", async () => {
+      process.env.TUNE_FROM_BUILDS = "1";
+      const plan = await draftOne({ fromBuildId: BUILD_ID });
+      process.env.TUNE_FROM_BUILDS = "0";
+      const off = await runsRoute(req("/api/train/runs", { plan }));
+      assert.deepEqual([off.status, await off.json()], [404, { error: "not_found" }]);
+      process.env.TUNE_FROM_BUILDS = "1";
+      builds[BUILD_ID]!.offers = false;
+      const notReady = await runsRoute(req("/api/train/runs", { plan }));
+      assert.deepEqual([notReady.status, await notReady.json()], [409, { error: "build_not_ready" }]);
+      assert.equal(called("createDataset").length, 0);
+      assert.equal(counters[`tune-run:${plan.token as string}`] ?? 0, 0, "the plan may still start");
+      builds[BUILD_ID]!.offers = true;
+      assert.equal((await runsRoute(req("/api/train/runs", { plan }))).status, 201);
+    });
+
     it("refuses a build plan past the spend cap, as a task plan", async () => {
       process.env.TUNE_FROM_BUILDS = "1";
       const plan = await draftOne({ fromBuildId: BUILD_ID });
