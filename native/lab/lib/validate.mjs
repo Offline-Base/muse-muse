@@ -2,13 +2,14 @@
 // or a tampered job, and the job finishes as failed with code invalid_input. Everything is pure. The rules are strict
 // because the values end up as arguments to simctl, adb and the apps under test.
 
-export const KINDS = ["ios_sim", "android_emu", "desktop_mac", "desktop_windows", "glasses_sim"];
+export const KINDS = ["ios_sim", "android_emu", "desktop_mac", "desktop_windows", "glasses_sim", "gguf_emu"];
 
 export const LANE_OF = {
   ios_sim: "mac",
   android_emu: "mac",
   desktop_mac: "mac",
   glasses_sim: "mac",
+  gguf_emu: "mac",
   desktop_windows: "windows",
 };
 
@@ -17,6 +18,7 @@ export const RESOURCE_OF = {
   ios_sim: "simulator",
   glasses_sim: "simulator",
   android_emu: "emulator",
+  gguf_emu: "emulator",
   desktop_mac: "desktop",
   desktop_windows: "desktop",
 };
@@ -200,9 +202,45 @@ function checkMedia(input, opts) {
   return out;
 }
 
+const HUB_REPO = /^[A-Za-z0-9][A-Za-z0-9._-]{0,95}\/[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/;
+const HUB_COMMIT = /^[a-f0-9]{40}$/;
+const GGUF_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}\.gguf$/;
+const PROMPT_ID = /^[a-z0-9-]{1,40}$/;
+const GGUF_MAX_BYTES = 64 * 1024 ** 3;
+
+/** A tuned model's emulator run has no app and no page: only a public file on the Hub and the prompts to send it. */
+function checkGgufInput(input) {
+  const gguf = input.gguf;
+  if (!isObject(gguf)) fail("input.gguf is required.");
+  if (typeof gguf.repo !== "string" || !HUB_REPO.test(gguf.repo)) fail("input.gguf.repo isn't valid.");
+  if (typeof gguf.commit !== "string" || !HUB_COMMIT.test(gguf.commit)) fail("input.gguf.commit must be 40 hex characters.");
+  if (typeof gguf.name !== "string" || !GGUF_NAME.test(gguf.name) || gguf.name.includes("..")) fail("input.gguf.name isn't valid.");
+  if (typeof gguf.sha256 !== "string" || !SHA256.test(gguf.sha256)) fail("input.gguf.sha256 must be 64 hex characters.");
+  if (!Number.isInteger(gguf.bytes) || gguf.bytes <= 0 || gguf.bytes > GGUF_MAX_BYTES) fail("input.gguf.bytes isn't valid.");
+  if (!Array.isArray(input.prompts) || input.prompts.length < 1 || input.prompts.length > 10) fail("input.prompts must hold 1 to 10 prompts.");
+  const prompts = input.prompts.map((p) => {
+    if (!isObject(p) || typeof p.id !== "string" || !PROMPT_ID.test(p.id)) fail("A prompt's id isn't valid.");
+    if (typeof p.text !== "string" || p.text.length < 1 || p.text.length > 2000) fail("A prompt's text isn't valid.");
+    return { id: p.id, text: p.text };
+  });
+  if (typeof input.systemLine !== "string" || input.systemLine.length > 4000) fail("input.systemLine isn't valid.");
+  return {
+    v: 1,
+    limitSeconds: bounded(input.limitSeconds, "input.limitSeconds", LIMITS.limitSeconds),
+    gguf: { repo: gguf.repo, commit: gguf.commit, name: gguf.name, sha256: gguf.sha256, bytes: gguf.bytes },
+    prompts,
+    systemLine: input.systemLine,
+    maxTokens: bounded(input.maxTokens, "input.maxTokens", { min: 8, max: 1024, fallback: 256 }),
+    device: checkDevice(input),
+    // execute.mjs reads these on every kind.
+    selftest: null,
+  };
+}
+
 function checkInput(kind, input, opts) {
   if (!isObject(input)) fail("input is required.");
   if (input.v !== 1) fail("input.v must be 1.");
+  if (kind === "gguf_emu") return checkGgufInput(input);
   const out = {
     v: 1,
     limitSeconds: bounded(input.limitSeconds, "input.limitSeconds", LIMITS.limitSeconds),

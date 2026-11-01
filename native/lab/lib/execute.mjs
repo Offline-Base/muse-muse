@@ -10,6 +10,7 @@ import { RUNNERS } from "../jobs/index.mjs";
 import { uploadThroughSlot } from "./blob.mjs";
 import { labFailureSummary, summaryFor } from "./caption.mjs";
 import { downloadFile } from "./download.mjs";
+import { downloadHubFile } from "./hub-download.mjs";
 import { LabError } from "./errors.mjs";
 import { run, sleep as sleepFor, start } from "./proc.mjs";
 import { findFfmpeg } from "./tools.mjs";
@@ -127,6 +128,7 @@ export function resultBody({ job, config, result, artifacts, warnings, durationM
     agentVersion: config.version,
     artifacts,
     error: null,
+    ...(result.simTune ? { simTune: result.simTune } : {}),
   };
 }
 
@@ -252,6 +254,8 @@ export async function executeJob(raw, deps) {
     throwIfAborted: () => {
       if (signal.aborted) throw new LabError(String(signal.reason), ABORT_MESSAGES[signal.reason] ?? "The job was stopped.");
     },
+    fetch: doFetch,
+    downloadHub: (spec) => downloadHubFile(spec, { cacheDir: path.join(config.dataDir, "cache"), tempDir: dir, fetch: doFetch, signal }),
     download: (spec) =>
       downloadFile(spec, {
         cacheDir: path.join(config.dataDir, "cache"),

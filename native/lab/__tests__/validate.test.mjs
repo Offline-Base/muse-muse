@@ -12,7 +12,8 @@ describe("validateJob", () => {
       const result = check(makeJob(kind), LANE_OF[kind]);
       assert.equal(result.ok, true, result.error);
       assert.equal(result.job.kind, kind);
-      assert.equal(result.job.input.target.origin, "https://demo-product.vercel.app");
+      // A tuned model's emulator run has no page to open.
+      if (kind !== "gguf_emu") assert.equal(result.job.input.target.origin, "https://demo-product.vercel.app");
     });
   }
 

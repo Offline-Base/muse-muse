@@ -25,6 +25,7 @@ const JOB_KINDS: Record<NativeJobKind, { target: TargetId; download: NativeDownl
   desktop_mac: { target: "desktop", download: "mac", label: "Mac in the device lab", os: "macOS", simulated: false },
   desktop_windows: { target: "desktop", download: "windows", label: "Windows in the device lab", os: "Windows", simulated: false },
   glasses_sim: { target: "glasses", download: null, label: "iPhone simulator with Meta's mock glasses", os: "iOS", simulated: true },
+  gguf_emu: { target: "phone", download: null, label: "Android emulator", os: "Android", simulated: true },
 };
 
 /** A run older than this is stuck, whatever its row says. The workflow gives up on a run after 60 minutes. */

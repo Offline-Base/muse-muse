@@ -11,7 +11,10 @@ import type { DecideScoreItem, DecisionSpec } from "@/lib/decide/types";
  * Hub, for an adapter its own job didn't upload (docs/TRAINING.md "Hugging Face Hub"). "glimmer-quantize" merges one
  * judged adapter into the base and makes its GGUF files in three sizes (docs/TRAINING.md "Local files").
  */
-export type RecipeId = "smoke" | "glimmer-lora" | "glimmer-serve" | "glimmer-publish" | "glimmer-quantize";
+export type RecipeId = "smoke" | "glimmer-lora" | "glimmer-serve" | "glimmer-publish" | "glimmer-quantize" | "rl-grpo";
+
+/** Reinforcement learning with TRL GRPO on made-up arithmetic (TUNE_RL; lib/train/recipes/rl.ts). */
+export const RL_RECIPE = "rl-grpo" satisfies RecipeId;
 
 /**
  * The recipe that uploads a trained adapter's files to the Hugging Face Hub from the model cache, and nothing else. The

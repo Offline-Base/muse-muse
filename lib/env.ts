@@ -357,6 +357,21 @@ export const env = {
   get quantEnabled(): boolean {
     return ["1", "true", "yes", "on"].includes((process.env.QUANT_ENABLED ?? "").trim().toLowerCase());
   },
+  /**
+   * SIM_TUNE: admins can run a tuned model's smallest GGUF on the lab's Android emulator (docs/TRAINING.md "Emulator
+   * runs"). Also needs NATIVE_LAB. Off when unset.
+   */
+  get simTune(): boolean {
+    return flag("SIM_TUNE");
+  },
+  /**
+   * SIM_TUNE_MAX_GGUF_MB: the largest file an emulator run may load. The default fits the 4 GB of RAM setup/mac.sh gives
+   * mm_pixel. Raise it only after giving the emulator more. The runner still checks the device's real RAM and disk.
+   */
+  get simTuneMaxBytes(): number {
+    const mb = Number((process.env.SIM_TUNE_MAX_GGUF_MB ?? "").trim());
+    return (Number.isFinite(mb) && mb > 0 ? mb : 3072) * 1024 * 1024;
+  },
   /** HF_ENDPOINT, https://huggingface.co by default, with no trailing slash. Tests point it at a fake Hub. */
   get hfEndpoint(): string {
     return (process.env.HF_ENDPOINT?.trim() || "https://huggingface.co").replace(/\/+$/, "");
@@ -389,6 +404,13 @@ export const env = {
    */
   get tuneComposer(): boolean {
     return flag("TUNE_COMPOSER");
+  },
+  /**
+   * TUNE_LOOP: "1", "true", "yes" or "on" lets admins run a repeat-until-good tuning loop on a judged run
+   * (docs/TRAINING.md "Tuning loop"). Off by default: its routes and page answer 404 and the run room shows nothing new.
+   */
+  get tuneLoop(): boolean {
+    return flag("TUNE_LOOP");
   },
   /**
    * TUNE_RESEARCH: "1", "true", "yes" or "on" lets admins research data for a fine-tune (lib/train/research). Off by
@@ -441,6 +463,14 @@ export const env = {
    */
   get tuneAnyBase(): boolean {
     return flag("TUNE_ANY_BASE");
+  },
+
+  /**
+   * TUNE_RL: admins may start the rl-grpo recipe, GRPO on made-up arithmetic (docs/TRAINING.md "rl-grpo recipe"). Off: the
+   * recipe isn't offered and a request for it is refused.
+   */
+  get tuneRl(): boolean {
+    return flag("TUNE_RL");
   },
 
   // ---------- Anyone can fine-tune (General; lib/train/public, open-train.md) ----------

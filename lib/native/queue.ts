@@ -75,6 +75,7 @@ const KIND_LABELS: Record<NativeJobKind, { device: string; target: TargetId }> =
   desktop_mac: { device: "a Mac", target: "desktop" },
   desktop_windows: { device: "Windows", target: "desktop" },
   glasses_sim: { device: "an iPhone simulator with simulated glasses", target: "glasses" },
+  gguf_emu: { device: "an Android emulator", target: "phone" },
 };
 const LANE_LABELS: Record<NativeLane, string> = { mac: "Mac", windows: "Windows" };
 

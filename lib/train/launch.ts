@@ -58,7 +58,7 @@ import {
   trainingSpendToday,
 } from "@/lib/train/store";
 import { callbackOrigin } from "@/lib/train/userdata";
-import { PUBLISH_RECIPE, type Recipe, type RecipeId } from "@/lib/train/types";
+import { PUBLISH_RECIPE, RL_RECIPE, type Recipe, type RecipeId } from "@/lib/train/types";
 import { trainJob } from "@/lib/train/workflow";
 
 const TITLE_MAX = 200;
@@ -249,6 +249,7 @@ async function dailyCap(jobMaxUsd: number): Promise<LaunchRefusal> {
 export async function launchJobRequest(input: LaunchRequest, caller: LaunchCaller): Promise<LaunchResult> {
   const recipe = recipeById(typeof input.recipe === "string" ? input.recipe : null);
   if (!recipe) return refuse(400, "Pick a recipe.");
+  if (recipe.id === RL_RECIPE && !env.tuneRl) return refuse(400, "Pick a recipe.");
   if (input.title !== undefined && input.title !== null && typeof input.title !== "string") {
     return refuse(400, "title must be text.");
   }
@@ -257,7 +258,7 @@ export async function launchJobRequest(input: LaunchRequest, caller: LaunchCalle
   if (!params.ok) return refuse(400, params.error);
   // A job that makes a model records the base its GPU loads (lib/train/base.ts), so its pages know a Muse Spark Open
   // Derivative before any metrics arrive. Not a recipe field, so validateParams refuses it from a caller.
-  if (recipe.id === ADAPTER_RECIPE || isQuantRecipe(recipe.id)) params.value[BASE_MODEL_PARAM] = LAB_BASE_MODEL;
+  if (recipe.id === ADAPTER_RECIPE || recipe.id === RL_RECIPE || isQuantRecipe(recipe.id)) params.value[BASE_MODEL_PARAM] = LAB_BASE_MODEL;
   // Another Meta base (docs/TRAINING.md "Any Meta base"): checked against the Hub here, every time, and pinned, and only
   // what that check returned goes in the job's params. Off with TUNE_ANY_BASE, a base is refused.
   let baseGpus: string[] | null = null;
