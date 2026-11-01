@@ -17,6 +17,7 @@ import type { DecideJson, DecisionSideSummary, DecisionSpec, DecisionSummary, Wi
 import { plural } from "@/lib/format";
 import { BUILT_WITH_SPARK_OPEN, isSparkOpenDerivative, R30B_REPO, R30B_URL, USAGE_POINTS } from "@/lib/train/base";
 import { QUANT_LEVELS, type LocalFile, type LocalFiles, type QuantLevel } from "@/lib/train/local-files";
+import { SPARK_STANDIN } from "@/lib/meta/spark";
 import { isDecisionSummary, modelName, recordedModel, UNRECORDED_MODEL, writerModelOf } from "@/lib/train/models";
 import {
   datasetSystemPrompt,
@@ -555,6 +556,8 @@ export interface CardExample {
 export interface CardFacts {
   modelRepo: string;
   datasetRepo: string;
+  /** Spark 1.3 Contributor wrote the dataset, so its repo stays private (keepDatasetPrivate) and the card doesn't link it. */
+  datasetPrivate?: boolean;
   job: {
     id: string;
     title: string;
@@ -816,7 +819,7 @@ function dataSection(f: CardFacts): string {
   return [
     "## Data",
     "",
-    `Trained on [${f.datasetRepo}](${hubLink(f.datasetRepo, "dataset")}): ${d.trainCount} training conversations and ${d.evalCount} held-out prompts that ${writerName(d)} wrote through Meta's Model API for the dataset "${mdCell(d.title)}", prompts and answers both, for ${money(d.costUsd)}. The held-out prompts were never trained on, and prompts that share most of their words with one were kept out of training too.`,
+    `Trained on ${f.datasetPrivate ? "a private dataset" : `[${f.datasetRepo}](${hubLink(f.datasetRepo, "dataset")})`}: ${d.trainCount} training conversations and ${d.evalCount} held-out prompts that ${writerName(d)} wrote through Meta's Model API for the dataset "${mdCell(d.title)}", prompts and answers both, for ${money(d.costUsd)}. The held-out prompts were never trained on, and prompts that share most of their words with one were kept out of training too.`,
   ].join("\n");
 }
 
@@ -852,7 +855,9 @@ function licenseSection(f: CardFacts): string {
       ? derivativeLicense("this adapter", "this LoRA adapter, trained as described above.")
       : `Apache 2.0, the license of the base model: the full text is in \`LICENSE\`, as [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN}) ships it. The change from the base model is this LoRA adapter, trained as described above. Use it under the base model's [Usage Policy](${HUB_SITE}/${GLIMMER_ORIGIN}/blob/main/USAGE_POLICY.md), which says Muse Glimmer "is not intended for individuals under the age of 18".`,
     "",
-    `The training data is ${writer}'s output through Meta's Model API, published under Meta's terms for that API rather than an open license: see its \`${DATASET_LICENSE_PATH}\`.`,
+    f.datasetPrivate
+      ? `The training data is ${writer}'s output through Meta's Model API, under Meta's terms for that API. It is kept private and isn't published.`
+      : `The training data is ${writer}'s output through Meta's Model API, published under Meta's terms for that API rather than an open license: see its \`${DATASET_LICENSE_PATH}\`.`,
     "",
     `Not an official Meta product. Meta made ${made}; it didn't make, review or endorse this adapter. The model's name only says what the adapter is for.`,
   ].join("\n");
@@ -864,7 +869,7 @@ function provenanceSection(f: CardFacts): string {
     "",
     `- Made by [Muse Muse](${MUSE_MUSE_SITE}), job \`${f.job.id}\` ("${mdCell(f.job.title)}")${f.job.finishedAt ? `, finished ${f.job.finishedAt.slice(0, 10)}` : ""}.`,
     `- The run's public page, with every eval item: ${labPageUrl(f.job.id)}`,
-    `- The training data: [${f.datasetRepo}](${hubLink(f.datasetRepo, "dataset")})`,
+    f.datasetPrivate ? "- The training data is kept private." : `- The training data: [${f.datasetRepo}](${hubLink(f.datasetRepo, "dataset")})`,
     "- `muse_muse_run.json` has the run's records: its settings, metrics, eval summary and items.",
   ].join("\n");
 }
@@ -885,8 +890,7 @@ export function modelCard(f: CardFacts): string {
     ...(english ? ["language:", "- en"] : []),
     "tags:",
     ...["lora", "peft", "unsloth", "trl", "sft", "muse-muse", ...(derived ? ["built-with-muse-spark-open"] : [])].map((t) => `- ${t}`),
-    "datasets:",
-    `- ${f.datasetRepo}`,
+    ...(f.datasetPrivate ? [] : ["datasets:", `- ${f.datasetRepo}`]),
     "model-index:",
     `- name: ${name}`,
     "  results:",
@@ -895,7 +899,7 @@ export function modelCard(f: CardFacts): string {
     `      name: ${derived ? "Blind pairwise vs the 2026 Glimmer it started from" : "Blind pairwise vs base"}`,
     "    dataset:",
     `      name: ${y(`${clean(f.dataset.title)} held-out prompts`)}`,
-    `      type: ${f.datasetRepo}`,
+    `      type: ${f.datasetPrivate ? "held-out-prompts" : f.datasetRepo}`,
     "      split: eval",
     "    metrics:",
     `    - name: ${derived ? "Judge win rate vs the 2026 Glimmer it started from" : "Judge win rate vs base"}`,
@@ -1198,7 +1202,7 @@ export function runRecord(
       trainCount: f.dataset.trainCount,
       evalCount: f.dataset.evalCount,
       costUsd: f.dataset.costUsd,
-      repo: f.datasetRepo,
+      repo: f.datasetPrivate ? null : f.datasetRepo,
       writer: writerModelOf(f.dataset),
     },
     eval: {
@@ -1280,6 +1284,11 @@ export function hubJobProblem(job: Pick<TrainJobRow, "recipe" | "status" | "para
   if (!job.terminatedAt || !job.evalSummary) return "It isn't judged yet, and its card needs the results.";
   if (note) return `It wasn't judged (${note.replace(/[.]+$/, "")}), so its card would have no results.`;
   return null;
+}
+
+/** True when Spark 1.3 Contributor wrote a dataset: the model may go to the Hub, its dataset repo stays private. */
+export function keepDatasetPrivate(dataset: { writerModel?: string | null }): boolean {
+  return dataset.writerModel === SPARK_STANDIN;
 }
 
 /**

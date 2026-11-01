@@ -2,19 +2,22 @@
  * Training a run's examples (docs/TRAINING.md "Fine-tune like a build", "Starting training"): the examples check and
  * the launch, shared by the tuneRun workflow's steps (./run-steps.ts) and POST /api/train/runs/{id}/start. The launch
  * goes through launchJob (lib/train/launch.ts), so it passes every check a job from the full form passes, with the
- * run's own settings and publish 0.
+ * run's own settings, and publish 0 unless the run was started to upload by itself (./auto-publish.ts).
  */
 import { spendPaused } from "@/lib/quota";
+import { env } from "@/lib/env";
 import { limitCeilings } from "@/lib/train/gate";
 import { launchJob, type LaunchRefusal } from "@/lib/train/launch";
 import { ADAPTER_RECIPE } from "@/lib/train/logic";
 import { datasetPage, getDataset, requestStop } from "@/lib/train/store";
+import { autoPublishOk } from "@/lib/train/tune/auto-publish";
 import { CHECK_CODES, type CheckCode, type TuneWaitReason } from "@/lib/train/tune/marks";
 import { contentFindings } from "@/lib/train/tune/examples";
 import {
   latestTuneJob,
   markCode,
   readRunMarks,
+  readRunProduct,
   recordRunEnded,
   recordRunHeartbeat,
   releaseLaunchClaim,
@@ -93,7 +96,7 @@ export interface RunLaunchInput {
  * (that job is the answer). Waits, rather than launching, while the platform's Meta spend cap is reached (scoring
  * needs it), while another launcher holds the run's claim, and for every launch refusal that passes on its own
  * (waitReasonFor). The job is glimmer-lora with the run's settings: its dataset, steps, LoRA rank, learning rate, the
- * short student prompt and publish 0, on the A100 SXM4 first, with the run's limits. Records the heartbeat for a wait
+ * short student prompt and publish 0 (1 only when autoPublishOk still says so), on the A100 SXM4 first, with the run's limits. Records the heartbeat for a wait
  * and the ending for a refusal.
  */
 export async function launchForRun(input: RunLaunchInput): Promise<RunLaunch> {
@@ -120,6 +123,9 @@ export async function launchForRun(input: RunLaunchInput): Promise<RunLaunch> {
     // Stopped while this launcher waited for the claim.
     if ((await readRunMarks(datasetId, now)).stopped) return { kind: "stopped" };
     const s = planSettings(dataset.requested, limitCeilings(), input.steps);
+    const uploads =
+      marks.autoPublish === true &&
+      autoPublishOk({ flag: env.tuneAutoPublish, hubOff: env.hubOffReason, asked: true, dataset, runProductId: (await readRunProduct(datasetId))?.productId ?? null });
     const launched = await launchJob(
       {
         recipe: ADAPTER_RECIPE,
@@ -130,7 +136,7 @@ export async function launchForRun(input: RunLaunchInput): Promise<RunLaunch> {
           loraRank: s.loraRank,
           learningRate: s.learningRate,
           studentPrompt: s.studentPrompt,
-          publish: s.publish,
+          publish: uploads ? 1 : s.publish,
         },
         instanceType: s.gpu,
         maxMinutes: s.maxMinutes,

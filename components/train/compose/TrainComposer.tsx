@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useState } from "react";
 import { PlanViewCard } from "@/components/build/PlanCard";
+import { UPLOAD_STAYS_TEXT, uploadPlanText, type UploadVisibility } from "@/lib/train/tune/auto-publish";
 import { TitleChip, UserBubble, WorkingStep } from "@/components/chat";
 import { Composer, writeComposerDraft, type ComposerCopy, type Example } from "@/components/composer/Composer";
 import { SetupPanel, type SetupRow } from "@/components/composer/SetupPanel";
@@ -139,7 +140,10 @@ export function TrainComposer({
   defaultExamples,
   ceilings,
   fromBuild = null,
+  autoUpload = null,
 }: {
+  /** How this run's model uploads by itself (TUNE_AUTO_PUBLISH), or null when it doesn't. */
+  autoUpload?: UploadVisibility | null;
   defaultExamples: number;
   ceilings: { maxMinutes: number; maxUsd: number };
   /** The build its own model is planned for (the build room's "Its own model"), or null. */
@@ -149,6 +153,7 @@ export function TrainComposer({
   const [phase, setPhase] = useState<Phase>({ at: "compose" });
   const [examples, setExamples] = useState(defaultExamples);
   const [steps, setSteps] = useState(TUNE_STEPS);
+  const [upload, setUpload] = useState(true);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
 
@@ -224,7 +229,7 @@ export function TrainComposer({
       const res = await fetch("/api/train/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ plan, settings: { examples, steps } }),
+        body: JSON.stringify({ plan, settings: { examples, steps, ...(autoUpload && !upload ? { autoPublish: false } : {}) } }),
       });
       const data = (await res.json().catch(() => null)) as { runId?: string; href?: string } | null;
       if (res.status === 201 && data?.runId && data.href) {
@@ -294,6 +299,9 @@ export function TrainComposer({
           onExamples={setExamples}
           steps={steps}
           onSteps={setSteps}
+          autoUpload={autoUpload}
+          upload={upload}
+          onUpload={setUpload}
           ceilings={ceilings}
           starting={starting}
           startError={startError}
@@ -316,6 +324,9 @@ export function PlanStep({
   onExamples,
   steps = TUNE_STEPS,
   onSteps = () => {},
+  autoUpload = null,
+  upload = true,
+  onUpload = () => {},
   ceilings,
   starting,
   startError,
@@ -329,6 +340,10 @@ export function PlanStep({
   /** Advanced's training steps, which the card prices and times. */
   steps?: number;
   onSteps?: (n: number) => void;
+  autoUpload?: UploadVisibility | null;
+  /** Advanced's upload choice for this run. */
+  upload?: boolean;
+  onUpload?: (on: boolean) => void;
   ceilings: { maxMinutes: number; maxUsd: number };
   starting: boolean;
   startError: string | null;
@@ -340,7 +355,9 @@ export function PlanStep({
   const stepsMax = maxStepsFor(planSettings(examples, ceilings));
   const stepsGood = stepsOk(steps, stepsMax);
   const shown = phase.at === "plan" ? { ...phase.plan, settings: planSettings(examples, ceilings, stepsGood ? steps : TUNE_STEPS) } : null;
-  const shownView = shown ? planViewFromTrainPlan({ ...shown, cost: planCost(shown.settings) }) : null;
+  const canUpload = Boolean(autoUpload && shown && shown.examples.used === 0 && shown.source.kind !== "build");
+  const uploadText = !autoUpload || !shown ? null : !canUpload ? UPLOAD_STAYS_TEXT : upload ? uploadPlanText(autoUpload) : "It stays on Muse Muse. Publish on its page uploads it later if you want.";
+  const shownView = shown ? planViewFromTrainPlan({ ...shown, cost: planCost(shown.settings) }, uploadText) : null;
   const countOk = examplesOk(examples);
   return (
     <div className="room chat-split tune-room" data-settled="true">
@@ -441,6 +458,11 @@ export function PlanStep({
                             : `Pick ${TUNE_MIN_STEPS} to ${stepsMax} steps: more don't fit in the run's ${shown.settings.maxMinutes}-minute limit.`}
                         </span>
                       </div>
+                      {canUpload ? (
+                        <label className="train-help">
+                          <input type="checkbox" checked={upload} onChange={(e) => onUpload(e.target.checked)} disabled={starting} /> Upload to Hugging Face when it is judged
+                        </label>
+                      ) : null}
                       <p className="muted small">
                         To change the GPU or the limits, use the full form once the examples are ready, or{" "}
                         <Link href="/fine-tuning#new-dataset">make the dataset on the full form</Link> now.

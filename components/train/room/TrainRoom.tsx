@@ -187,6 +187,7 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
                 key={view.hold?.reason ?? ""}
                 start={view.next.start}
                 fullForm={admin ? view.next.fullForm : null}
+                autoUpload={view.next.autoUpload === true}
                 hold={view.hold}
                 onStarted={refresh}
               />
@@ -282,11 +283,13 @@ export function startTrainingErrorText(status: number, body: unknown): string {
 export function StartTraining({
   start,
   fullForm,
+  autoUpload = false,
   hold,
   onStarted,
 }: {
   start: string;
   fullForm: string | null;
+  autoUpload?: boolean;
   hold: TuneRunView["hold"];
   onStarted: () => Promise<void> | void;
 }) {
@@ -339,7 +342,7 @@ export function StartTraining({
         </button>
       </div>
       <p className="muted small">
-        {GLIMMER_NAME} LoRA with the plan&apos;s settings, on one GPU with its time and dollar limits, kept on Muse Muse (publish is off).
+        {GLIMMER_NAME} LoRA with the plan&apos;s settings, on one GPU with its time and dollar limits, {autoUpload ? "uploaded to Hugging Face by itself once it is judged." : "kept on Muse Muse (publish is off)."}
         {fullForm ? (
           <>
             {" "}

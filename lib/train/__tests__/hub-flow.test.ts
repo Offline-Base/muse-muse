@@ -799,6 +799,35 @@ describe("publishing to the Hugging Face Hub", { skip: canMock ? false : "needs 
       assert.equal((await hubOf(second))!.storyBy, "template");
     });
 
+    it("publishes a model Spark 1.3 Contributor's dataset trained, with that dataset repo private and unlinked", async () => {
+      process.env.HF_PUBLIC = "1";
+      await testDb.update(realSchema.trainingDatasets).set({ writerModel: "muse-spark-1.3-contributor" }).where(eq(realSchema.trainingDatasets.id, DATASET_ID));
+      const jobId = await uploadedJudgedJob();
+      assert.deepEqual(await wf.publishToHub({ jobId }), { published: true });
+      const hub = (await hubOf(jobId))!;
+      assert.deepEqual([hub.status, hub.public, hub.datasetUrl], ["published", true, null]);
+      assert.equal(fake.repo("model", hub.modelRepo!)!.private, false);
+      assert.equal(fake.repo("dataset", hub.datasetRepo!)!.private, true);
+      const card = fake.repo("model", hub.modelRepo!)!.files.get("README.md")!.content!.toString();
+      assert.match(card, /Spark 1\.3 Contributor/);
+      assert.ok(!card.includes(hub.datasetRepo!), "the model card doesn't name the private repo");
+    });
+
+    it("keeps a run that uploads by itself private while HF_PUBLIC is unset", async () => {
+      delete process.env.HF_PUBLIC;
+      const { saveRunAutoPublish } = await import("@/lib/train/tune/run-store");
+      await saveRunAutoPublish(DATASET_ID, true);
+      try {
+        const jobId = await uploadedJudgedJob();
+        await wf.publishToHub({ jobId });
+        const hub = (await hubOf(jobId))!;
+        assert.deepEqual([hub.status, hub.public], ["published", false]);
+        assert.equal(fake.repo("model", hub.modelRepo!)!.private, true);
+      } finally {
+        await saveRunAutoPublish(DATASET_ID, false);
+      }
+    });
+
     it("keeps the repos private with HF_PUBLIC=0, and then the public pages get no links", async () => {
       process.env.HF_PUBLIC = "0";
       const jobId = await uploadedJudgedJob();
@@ -1051,6 +1080,16 @@ describe("publishing to the Hugging Face Hub", { skip: canMock ? false : "needs 
       const res = await req(job);
       assert.equal(res.status, 409);
       assert.match(((await res.json()) as { reason: string }).reason, /private rows/);
+    });
+
+    it("never publishes a job whose task quotes a person's own rows", async () => {
+      const { foldExamples } = await import("@/lib/train/tune/examples");
+      const { task } = foldExamples("Answer bakery questions in two warm sentences", [{ prompt: "Open Sunday?", answer: "Yes, until noon." }], 2000);
+      const quoted = await store.createDataset({ title: "Rows", task, requested: 20, writerModel: "muse-wonder-1.0" });
+      const job = await makeJob({ params: { datasetId: quoted.id, dryRun: 0, publish: 1 } });
+      await judged(job);
+      const res = await req(job);
+      assert.equal(res.status, 409);
     });
 
     it("keeps a product owner's private rows off the Hub on every other route too", async () => {

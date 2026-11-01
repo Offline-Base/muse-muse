@@ -57,7 +57,7 @@ export function howItsMade(s: Pick<TuneSettings, "examples">, c: Pick<TrainPlanC
   ];
 }
 
-export function planViewFromTrainPlan(p: Pick<TrainPlanBody, "name" | "tagline" | "samples" | "examples" | "settings" | "cost">): PlanView {
+export function planViewFromTrainPlan(p: Pick<TrainPlanBody, "name" | "tagline" | "samples" | "examples" | "settings" | "cost">, upload?: string | null): PlanView {
   const sample = p.samples.find((s) => s.trim());
   return {
     name: roleTitle(p.name),
@@ -65,6 +65,7 @@ export function planViewFromTrainPlan(p: Pick<TrainPlanBody, "name" | "tagline" 
     sections: [
       { heading: "How it's made", steps: howItsMade(p.settings, p.cost, p.examples.used, p.examples.given) },
       ...(sample ? [{ heading: "It might be asked", text: `"${sample.trim()}"` }] : []),
+      ...(upload ? [{ heading: "Where it goes", text: upload }] : []),
       { heading: "What it costs", text: `${planCostText(p.cost)} ${upperFirst(roughMinutes(p.cost.minutes))} in all.` },
     ],
   };
