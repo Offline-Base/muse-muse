@@ -80,8 +80,12 @@ export const CAPS_DIR = `${WORK_DIR}/caps`;
 export const ACTIVE_CAPS_FILE = `${CAPS_DIR}/active.json`;
 /** The product's copy (in PRODUCT_DIR), which verify, Playwright and the tests read. Put back before every verify and demo. */
 export const CAPS_FILE = "musemuse.caps.json";
+// ---------- Wave 3, unit 3: each overlay's own marker (docs/CAPABILITIES.md, 2.4a) ----------
+/** An overlay's deps.json in CAPS_DIR: there only when the snapshot (or a local copy) installed that overlay. */
+export const capOverlayMarker = (overlay: string) => `${CAPS_DIR}/${overlay}/deps.json`;
+// ---------- end Wave 3, unit 3 ----------
 /** The overlay every product with a cap gets. Its deps.json marks a sandbox whose snapshot has the cap overlays. */
-export const CORE_CAPS_MARKER = `${CAPS_DIR}/core/deps.json`;
+export const CORE_CAPS_MARKER = capOverlayMarker("core");
 /**
  * The gateway's address and this build's token for the caps check, root-owned and read-only, written at provision and
  * on every change. verify's caps step reads it instead of the product's .env.local, which product code can edit.

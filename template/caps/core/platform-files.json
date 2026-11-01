@@ -3,5 +3,8 @@
   "scripts/caps-check.mjs",
   "tests/caps/index.ts",
   "app/api/musemuse/health/route.ts",
-  ".agents/skills/muse-caps/SKILL.md"
+  ".agents/skills/muse-caps/SKILL.md",
+  "lib/platform/user.ts",
+  "app/api/musemuse/user/route.ts",
+  "app/api/musemuse/user-sign-out/route.ts"
 ]

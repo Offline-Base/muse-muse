@@ -150,7 +150,8 @@ export function catalogSummary(caps: readonly CapId[] = env.enabledCaps): string
   const gadgets = env.gadgetsEnabled;
   const agents = env.agentsEnabled;
   const personal = agents && env.composioPersonalEnabled;
-  const key = `${gadgets}|${agents}|${personal}|${caps.join(",")}`;
+  // Wave 3, unit 3: the data cap's block follows DATA_SIGN_IN, so it is part of the key only while data is on.
+  const key = `${gadgets}|${agents}|${personal}|${caps.join(",")}${caps.includes("data") ? `|${env.dataSignIn}` : ""}`;
   const hit = cached.get(key);
   if (hit) return hit;
   const run = howProductsRun(caps, { gadgets, agents });

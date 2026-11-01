@@ -218,6 +218,8 @@ describe("the bundle and the tables", () => {
       "userId", "workflowRunId", "museRound", "stopRequested",
       // Wave 3, unit 2 (0019_engine): the live check belongs to the site that ran it (docs/CAPABILITIES.md, section 4).
       "liveCheck",
+      // Wave 3, unit 3 (0020_data): which caps a build went without was the site's own decision, from its flags and snapshot.
+      "capsDropped",
     ],
   };
 

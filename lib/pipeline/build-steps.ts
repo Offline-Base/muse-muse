@@ -49,6 +49,9 @@ import { liveCheck } from "@/lib/engine/live-check";
 import { briefMilestones, type MilestoneState, type RoundPlanRecord } from "@/lib/engine/milestones";
 import { renderMilestonePrompt } from "@/lib/engine/prompts";
 // ---------- end Wave 3, unit 2 ----------
+// ---------- Wave 3, unit 3: cap readiness (docs/CAPABILITIES.md, 2.4a) ----------
+import { capDropLine, capsForBuild, readCapDrops, withoutCaps, type CapDrop } from "@/lib/caps/ready";
+// ---------- end Wave 3, unit 3 ----------
 import { pollDeploy, projectNameFor, startDeployFromSandbox, type DeployPoll } from "@/lib/publish/vercel";
 import { briefTargets } from "@/lib/native/targets";
 import { demoNoteFor } from "@/lib/sandbox/artifacts";
@@ -83,7 +86,34 @@ const BUILD_TOKEN_TTL_HOURS = 6;
 async function loadBuild(buildId: string) {
   const [build] = await db().select().from(schema.builds).where(eq(schema.builds.id, buildId)).limit(1);
   if (!build) throw new FatalError(`Build ${buildId} was not found.`);
-  return build;
+  return workingBuild(build);
+}
+
+/**
+ * Wave 3, unit 3 (docs/CAPABILITIES.md, 2.4a): a build row with `brief` as the build's working copy, whose cap blocks
+ * this build can't have are null (capsForBuild), the decision saved at provision when there is one. `storedBrief` is
+ * the brief as stored, which keeps every block, and `capDrops` what the working copy left out. A brief with no cap
+ * blocks is the same object, so a build without caps reads exactly what it did.
+ */
+function workingBuild<B extends { brief: Brief | null; kind: string; capsDropped: unknown }>(row: B): B & { storedBrief: Brief | null; capDrops: CapDrop[] } {
+  if (!row.brief) return { ...row, storedBrief: row.brief, capDrops: [] };
+  const { brief, dropped } = capsForBuild(row.brief, { kind: row.kind === "refine" ? "refine" : "build", decided: readCapDrops(row.capsDropped) });
+  return { ...row, brief, storedBrief: row.brief, capDrops: dropped };
+}
+
+/**
+ * Wave 3, unit 3: saves the caps a build goes without, once, and says so in the build log, one plain line each. Nothing
+ * for a brief with no cap blocks, and nothing again on a retry once the decision is saved.
+ */
+async function decideCaps(build: { id: string; storedBrief: Brief | null; capsDropped: unknown; capDrops: CapDrop[] }, extra: CapDrop[] = []): Promise<void> {
+  const before = readCapDrops(build.capsDropped);
+  if (!build.storedBrief || (!before && !briefCaps(build.storedBrief).length)) return;
+  const all = [...(before ?? build.capDrops)];
+  for (const d of extra) if (!all.some((a) => a.cap === d.cap)) all.push(d);
+  const fresh = all.filter((d) => !before?.some((b) => b.cap === d.cap));
+  if (before && !fresh.length) return;
+  await db().update(schema.builds).set({ capsDropped: all }).where(eq(schema.builds.id, build.id));
+  for (const d of fresh) await emit(build.id, { type: "log", text: capDropLine(d) });
 }
 
 async function loadInspiration(inspirationId: string) {
@@ -526,28 +556,32 @@ export async function provisionStep(input: {
 }): Promise<SandboxRef> {
   "use step";
   const build = await loadBuild(input.buildId);
+  // Wave 3, unit 3: the caps this build goes without are decided here, once, before anything reads them (2.4a).
+  await decideCaps(build);
   const brief = requireBrief(build);
   const inspiration = await loadInspiration(build.inspirationId);
   const look = lookNote();
   // Wave 3, unit 1: the trust overlay, for every new build while a trust product flag is on. Null with them off.
   const trust = trustOverlayStep(brief, input.slug);
-  const promptMarkdown = renderBuildPrompt(brief, {
-    inspoFiles: inspiration.references.map((r) => r.fileName),
-    fixtures: input.fixtures.map((f) => ({ fileName: f.fileName, description: f.description, fromUserSample: f.fromUserSample })),
-    maxModelSteps: MAX_MODEL_STEPS,
-    rebuildOf: rebuildTargetFor(build.rebuildOf),
-    ...sessionNotes(),
-    ...(verifyBudgetFor(brief) ? { verifyBudget: true } : {}),
-    // Only when the round plan briefStep saved chains milestones, which is what the workflow runs.
-    ...(build.roundPlan?.milestones?.length ? { milestones: briefMilestones(brief) } : {}),
-    ...(trust ? { trust: true } : {}),
-    ...look,
-  });
+  const promptFor = (b: Brief) =>
+    renderBuildPrompt(b, {
+      inspoFiles: inspiration.references.map((r) => r.fileName),
+      fixtures: input.fixtures.map((f) => ({ fileName: f.fileName, description: f.description, fromUserSample: f.fromUserSample })),
+      maxModelSteps: MAX_MODEL_STEPS,
+      rebuildOf: rebuildTargetFor(build.rebuildOf),
+      ...sessionNotes(),
+      ...(verifyBudgetFor(b) ? { verifyBudget: true } : {}),
+      // Only when the round plan briefStep saved chains milestones, which is what the workflow runs.
+      ...(build.roundPlan?.milestones?.length ? { milestones: briefMilestones(b) } : {}),
+      ...(trust ? { trust: true } : {}),
+      ...look,
+    });
+  const promptMarkdown = promptFor(brief);
   const allowedModels = allowedModelsFor(brief);
   // A brief with cap blocks gets its overlays, its extra env and hosts, and a build token tied to this build, whose
   // rows and files live in the build namespace b:<buildId> (docs/CAPABILITIES.md, 2.3). One without gets today's sandbox.
   const caps = capsFileFor(brief);
-  const { token } = await mintToken({
+  const { id: tokenId, token } = await mintToken({
     productId: input.productId,
     scope: "build",
     allowedModels,
@@ -555,6 +589,17 @@ export async function provisionStep(input: {
     ttlHours: BUILD_TOKEN_TTL_HOURS,
     ...(caps ? { buildId: input.buildId } : {}),
   });
+  // Wave 3, unit 3: the backstop (2.4a). On the live site, a cap whose overlay the snapshot turns out not to have is
+  // dropped before the sandbox gets anything: saved and logged like the others, off the token, out of the prompt.
+  let kept = brief;
+  const dropCaps = async (drop: string[]) => {
+    const extra = drop.filter((c): c is CapDrop["cap"] => briefCaps(kept).includes(c as CapDrop["cap"])).map((cap) => ({ cap, reason: "snapshot" as const }));
+    await decideCaps({ ...build, capsDropped: [...build.capDrops] }, extra);
+    kept = withoutCaps(kept, extra.map((d) => d.cap));
+    await db().update(schema.gatewayTokens).set({ allowedModels: allowedModelsFor(kept) }).where(eq(schema.gatewayTokens.id, tokenId));
+    const left = capsFileFor(kept);
+    return { promptMarkdown: promptFor(kept), ...(left ? { caps: left, capEnv: capBuildEnv(kept), capHosts: capBuildHosts(left.caps) } : {}) };
+  };
   const { sandboxName } = await sandbox.provisionSandbox({
     buildId: input.buildId,
     productId: input.productId,
@@ -567,12 +612,12 @@ export async function provisionStep(input: {
     ...look,
     ...extraFilesFor(brief),
     targets: briefTargets(brief),
-    ...(caps ? { caps, capEnv: capBuildEnv(brief), capHosts: capBuildHosts(caps.caps) } : {}),
+    ...(caps ? { caps, capEnv: capBuildEnv(brief), capHosts: capBuildHosts(caps.caps), dropCaps } : {}),
     ...(trust ? { trust } : {}),
   });
   // A local run's sandbox can't reach the gateway, so a cap check that needs the gateway's record can't pass there. Say
   // so once, at the start, instead of letting each check fail with no reason (docs/CAPABILITIES.md, 8a).
-  if (caps && publicHost(env.platformUrl) === null) {
+  if (capsFileFor(kept) && publicHost(env.platformUrl) === null) {
     await emit(input.buildId, { type: "log", text: CAPS_LOCAL_RUN_NOTE });
   }
   const sessionId = build.museSessionId ?? newSessionId();
@@ -887,7 +932,7 @@ export async function judgeStep(input: {
   "use step";
   const build = await loadBuild(input.buildId);
   // Refine rows get the product's brief in loadRefineStep. Older ones fall back to the first build's, as deploy does.
-  const brief = build.brief ?? (await latestBrief(input.productId));
+  const brief = build.brief ?? (await latestWorkingBrief(input.productId));
   if (!brief) throw new FatalError("This build has no brief yet.");
   const ctx: UsageContext & { buildId: string } = {
     source: "platform",
@@ -1033,7 +1078,7 @@ export async function liveCheckStep(input: { buildId: string; sandboxName: strin
   let result: { ok: boolean; at: string; url: string; reason?: string };
   try {
     const build = await loadBuild(input.buildId);
-    const brief = build.brief ?? (build.productId ? await latestBrief(build.productId) : null);
+    const brief = build.brief ?? (build.productId ? await latestWorkingBrief(build.productId) : null);
     const manifest = await sandbox.readManifest(input.sandboxName).catch(() => null);
     const actions = (manifest?.actions ?? []).map((a) => a.name).filter((n): n is string => typeof n === "string" && /^[a-z][a-z0-9_]*$/.test(n));
     const capPaths = capsLivePaths(brief);
@@ -1091,7 +1136,7 @@ export async function demoSpecStep(input: {
   "use step";
   const build = await loadBuild(input.buildId);
   const product = await loadProduct(input.productId);
-  const brief = build.brief ?? (await latestBrief(input.productId));
+  const brief = build.brief ?? (await latestWorkingBrief(input.productId));
   const models = brief ? brief.capabilities.map((c) => c.model) : (product.manifest?.models ?? []).map((m) => m.id);
   await sandbox.writeDemoSpec(input.sandboxName, {
     title: input.title,
@@ -1144,7 +1189,7 @@ export async function startDeployStep(input: {
   "use step";
   const build = await loadBuild(input.buildId);
   const product = await loadProduct(input.productId);
-  const brief = build.brief ?? (await latestBrief(input.productId));
+  const brief = build.brief ?? (await latestWorkingBrief(input.productId));
   const allowed = brief ? allowedModelsFor(brief) : await liveModels(input.productId);
   const live = await mintToken({
     productId: input.productId,
@@ -1176,6 +1221,15 @@ export async function startDeployStep(input: {
   return { projectId: started.projectId, deploymentId: started.deploymentId, liveTokenId: live.id };
 }
 startDeployStep.maxRetries = stepRetries("deploy");
+
+/**
+ * Wave 3, unit 3: latestBrief as a refinement's working copy (capsForBuild, 2.4a): a cap switched off since is null.
+ * A product with no cap blocks gets the same brief.
+ */
+async function latestWorkingBrief(productId: string): Promise<Brief | null> {
+  const brief = await latestBrief(productId);
+  return brief ? capsForBuild(brief, { kind: "refine" }).brief : null;
+}
 
 /** The brief of the product's first build, for refinements (loadRefineStep copies it; older refine rows have none). */
 async function latestBrief(productId: string): Promise<Brief | null> {
@@ -1344,14 +1398,16 @@ export async function loadRefineStep(buildId: string): Promise<RefineContext> {
     .limit(1);
   // The session resumes on the model that started it, never on today's default: a Spark session never goes to Wonder.
   const model = refineBuildModel(previous?.buildModel);
-  const brief = build.brief ?? (await latestBrief(product.id));
+  // Wave 3, unit 3: the row gets the brief as stored, every cap block kept; the plan uses the working copy (2.4a).
+  const stored = build.storedBrief ?? (await latestBrief(product.id));
+  const brief = stored ? capsForBuild(stored, { kind: "refine" }).brief : null;
   await db()
     .update(schema.builds)
     .set({
       sandboxName: product.sandboxName,
       museSessionId: product.museSessionId,
       buildModel: model,
-      ...(brief ? { brief } : {}),
+      ...(stored ? { brief: stored } : {}),
       // A change's tests see the same tool samples as the first build's.
       ...(previous?.toolFixtures ? { toolFixtures: previous.toolFixtures } : {}),
     })
@@ -1381,8 +1437,10 @@ export async function reopenStep(input: {
 }): Promise<{ promptFile: string; images: string[] }> {
   "use step";
   const build = await loadBuild(input.buildId);
+  // Wave 3, unit 3: a change goes without a cap switched off since the product was built, said once (2.4a).
+  await decideCaps(build);
   const inspiration = await loadInspiration(build.inspirationId);
-  const brief = build.brief ?? (await latestBrief(input.productId));
+  const brief = build.brief ?? (await latestWorkingBrief(input.productId));
   const allowedModels = brief ? allowedModelsFor(brief) : await liveModels(input.productId);
   // A product with caps gets a token tied to this build, as at provision, so a change works in the build namespace
   // b:<buildId> and never on the product's live rows (docs/CAPABILITIES.md, 2.3). One without gets today's token.

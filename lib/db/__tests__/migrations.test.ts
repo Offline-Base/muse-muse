@@ -42,7 +42,7 @@ const database = (client: PGlite) => drizzle({ client, schema });
  * Wave 3's migrations, in the agreed order (docs/CAPABILITIES.md, section 4), after General's 0017 (0016 is retired).
  * Each wave 3 unit appends its tag here. Their journal times follow the contract's rule.
  */
-const WAVE3_TAGS = ["0018_trust", "0019_engine"];
+const WAVE3_TAGS = ["0018_trust", "0019_engine", "0020_data"];
 const tagNumber = (tag: string) => Number(tag.slice(0, 4));
 
 /** A copy of the migrations that stops at `lastIdx`, as a database that hasn't had the newer ones would have seen. */
@@ -383,6 +383,53 @@ describe("a database already at 0012", () => {
     assert.equal(row!.writerModel, "muse-wonder-1.0");
     const kind = (await columns(client, "training_datasets")).get("kind");
     assert.equal(kind?.nullable, false);
+    await client.close();
+  });
+
+  it("0020_data: a database at 0019 keeps its builds, which read null for caps_dropped, and gets the data tables", async () => {
+    const dir = folderThrough(19);
+    dirs.push(dir);
+    const client = new PGlite();
+    const db = drizzle({ client });
+    await migrate(db, { migrationsFolder: dir });
+    assert.ok(!(await columns(client, "builds")).has("caps_dropped"));
+    assert.equal((await columns(client, "product_rows")).size, 0);
+    const [userId, museId, productId, buildId] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+    await client.exec(`
+      insert into users (id, email) values ('${userId}', 'old@example.com');
+      insert into inspirations (id, user_id, note) values ('${museId}', '${userId}', 'An old muse');
+      insert into products (id, slug, name, owner_id, status) values ('${productId}', 'old-one', 'Old One', '${userId}', 'live');
+      insert into builds (id, inspiration_id, user_id, product_id, status) values ('${buildId}', '${museId}', '${userId}', '${productId}', 'live');
+    `);
+    await migrate(db, { migrationsFolder: FOLDER });
+    const typed = database(client);
+    const [build] = await typed.select().from(schema.builds);
+    assert.equal(build!.status, "live");
+    assert.equal(build!.capsDropped, null);
+    assert.equal((await columns(client, "builds")).get("caps_dropped")?.nullable, true);
+    for (const t of ["end_users", "end_user_passkeys", "product_rows", "product_data_counts"]) assert.ok((await columns(client, t)).size > 0, t);
+    // Two shared rows (no owner_key) still clash on one doc id: the key is NULLS NOT DISTINCT.
+    const row = { productId, namespace: "live", collection: "items", scope: "shared" as const, docId: "a", data: { n: 1 }, bytes: 7 };
+    const [first] = await typed.insert(schema.productRows).values(row).returning();
+    await assert.rejects(async () => typed.insert(schema.productRows).values(row));
+    const [second] = await typed.insert(schema.productRows).values({ ...row, docId: "b" }).returning();
+    assert.equal(first!.version, 1);
+    assert.equal(first!.deletedAt, null);
+    assert.ok(second!.seq > first!.seq, "seq comes from the sequence, in write order");
+    // A passkey's public key comes back as the bytes that went in.
+    const [person] = await typed.insert(schema.endUsers).values({ displayName: "Ana" }).returning();
+    const key = Buffer.from([0x30, 0x59, 0x00, 0xff, 0x5c, 0x78]);
+    await typed.insert(schema.endUserPasskeys).values({ endUserId: person!.id, credentialId: "cred-1", publicKey: key });
+    const [passkey] = await typed.select().from(schema.endUserPasskeys);
+    assert.ok(Buffer.isBuffer(passkey!.publicKey));
+    assert.deepEqual([...passkey!.publicKey], [...key]);
+    assert.equal(passkey!.counter, 0);
+    assert.deepEqual(passkey!.transports, []);
+    // Removing the product removes its rows and counts with it (decision 13).
+    await typed.insert(schema.productDataCounts).values({ productId, namespace: "live", rows: 2, bytes: 14 });
+    await client.exec(`delete from builds; delete from products where id = '${productId}'`);
+    assert.equal((await typed.select().from(schema.productRows)).length, 0);
+    assert.equal((await typed.select().from(schema.productDataCounts)).length, 0);
     await client.close();
   });
 

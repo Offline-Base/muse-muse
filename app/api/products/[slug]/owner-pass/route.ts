@@ -9,7 +9,9 @@ import { mintOwnerCode, ownerSubject } from "@/lib/tools/principal";
 export const runtime = "nodejs";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
-  if (!env.agentsEnabled || !env.composioPersonalEnabled) return Response.json({ error: "Owner access isn't on here." }, { status: 503 });
+  // Wave 3, unit 3: a product that saves data has owner items too, so the pass also works while the data cap is served.
+  const ownerPassOn = (env.agentsEnabled && env.composioPersonalEnabled) || env.servedCaps.includes("data");
+  if (!ownerPassOn) return Response.json({ error: "Owner access isn't on here." }, { status: 503 });
   let user;
   try {
     user = await requireUser();

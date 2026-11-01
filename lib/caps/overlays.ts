@@ -15,6 +15,20 @@ export const CAP_OVERLAY_PICK: Partial<Record<CapId, (brief: Brief) => string[]>
   games: (brief) => ["games", ENGINE_OVERLAY[((brief as { games?: GamesBrief | null }).games ?? { engine: "phaser" }).engine]],
 };
 
+// ---------- Wave 3, unit 3: cap readiness (docs/CAPABILITIES.md, 2.4a) ----------
+
+/**
+ * Every overlay a cap can need, for one that registers a pick above: games needs both games-phaser and games-babylon,
+ * since a brief may pick either. A cap without an entry needs the overlay named by its own id.
+ */
+export const CAP_OVERLAYS_ALL: Partial<Record<CapId, readonly string[]>> = {};
+
+/** What a builder snapshot must have for this cap to be ready: core, then the cap's own overlays. */
+export function capOverlaysNeeded(id: CapId): string[] {
+  return [CORE_OVERLAY, ...(CAP_OVERLAYS_ALL[id] ?? [id])];
+}
+// ---------- end Wave 3, unit 3 ----------
+
 /** The file a product with caps carries (musemuse.caps.json), which verify, Playwright and the tests read. */
 export interface CapsFile {
   caps: CapId[];

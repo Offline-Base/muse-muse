@@ -48,6 +48,8 @@ export function toolsDeps(): ToolsDeps {
     ...(trust ? { trustCheck: (token: Parameters<NonNullable<ToolsDeps["trustCheck"]>>[0]) => trustCheck(token, trust) } : {}),
     agentsEnabled: env.agentsEnabled,
     personalEnabled: env.composioPersonalEnabled,
+    // Wave 3, unit 3: the owner pass for products that save data. False with the data cap off.
+    ownerPassForCaps: env.servedCaps.includes("data"),
     findToken,
     productStatus: productStatusById,
     productInfo,

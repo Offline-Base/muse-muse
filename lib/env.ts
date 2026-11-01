@@ -1,10 +1,13 @@
 import { TARGETS, type TargetId } from "@/lib/brief/schema";
 import { CAP_FLAG, CAP_IDS, CAP_NEEDS_BUILDER, CAP_READY, type CapId } from "@/lib/caps/ids";
+import { dataSignInOn } from "@/lib/caps/data/types";
+import { capOverlaysNeeded } from "@/lib/caps/overlays";
 import { databaseChoice, isPreview, previewHasOwnDatabase } from "@/lib/db/url";
 import { DRIVE_CARD_TERMS_VERSION, DRIVE_TERMS_DEFAULT_VERSION } from "@/lib/drive/terms";
 import { parseNativeTargets } from "@/lib/native/targets";
 import type { MuseEngine } from "@/lib/sandbox/bridge-protocol";
 import { agentCapacity } from "@/lib/sandbox/agent-capacity";
+import { snapshotCapOverlays } from "@/lib/sandbox/snapshots";
 import { type PlatformBypass, publicHost } from "@/lib/sandbox/policy";
 import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
 import { parseGeoCountries } from "@/lib/trust/geo";
@@ -780,9 +783,55 @@ export const env = {
    * signed-in builder stay off until TRUST_SIGNED_IN_CAPS (unit 1) is on. Empty means every brief is as it is today.
    */
   get enabledCaps(): CapId[] {
+    // ---------- Wave 3, unit 3: and only caps whose overlays the builder snapshot has (2.4a) ----------
+    // capsOnSite is the rule above this line was: ready, switched on, and on production a signed-in builder's. The
+    // snapshot is read only when some cap passes that, so with every flag off nothing new is read or logged.
+    const onSite = env.capsOnSite;
+    if (!onSite.length) return onSite;
+    const snapshot = env.snapshotCaps;
+    return snapshot === null ? onSite : onSite.filter((c) => capOverlaysNeeded(c).every((o) => snapshot.includes(o)));
+    // ---------- end Wave 3, unit 3 ----------
+  },
+
+  // ---------- Wave 3, unit 3: data (docs/CAPABILITIES.md) ----------
+
+  /**
+   * The caps the site serves: ready (CAP_READY) and switched on. Their gateway routes answer (the cap gate's check 1),
+   * whatever the builder snapshot has, so a live product never breaks when the snapshot changes.
+   */
+  get servedCaps(): CapId[] {
+    return CAP_IDS.filter((c) => CAP_READY[c] && flag(CAP_FLAG[c]));
+  },
+  /** servedCaps, less those that need a signed-in builder on production while TRUST_SIGNED_IN_CAPS is off (2.1). */
+  get capsOnSite(): CapId[] {
     const production = process.env.VERCEL_ENV === "production";
     const signedIn = flag("TRUST_SIGNED_IN_CAPS");
-    return CAP_IDS.filter((c) => CAP_READY[c] && flag(CAP_FLAG[c]) && (!production || signedIn || !CAP_NEEDS_BUILDER[c]));
+    return env.servedCaps.filter((c) => !production || signedIn || !CAP_NEEDS_BUILDER[c]);
+  },
+  /**
+   * The cap overlays in the builder snapshot (2.4a): on Vercel, lib/sandbox/snapshots.json's entry for
+   * BUILDER_SNAPSHOT_ID, or [] with one warning when it has none. Null locally, where provisioning copies any missing
+   * overlay from this checkout's template/caps.
+   */
+  get snapshotCaps(): string[] | null {
+    if (!process.env.VERCEL) return null;
+    return snapshotCapOverlays(process.env.BUILDER_SNAPSHOT_ID || undefined);
+  },
+  /** DATA_SIGN_IN: products with a data block may sign people in with a passkey through Muse Muse (/u/sign-in). */
+  get dataSignIn(): boolean {
+    return dataSignInOn();
+  },
+  /** The most rows one product keeps in its live namespace. */
+  get dataProductRows(): number {
+    return number("DATA_PRODUCT_ROWS", 10_000);
+  },
+  /** The most one product's live rows may add up to, in MB. */
+  get dataProductMb(): number {
+    return number("DATA_PRODUCT_MB", 50);
+  },
+  /** Writes one product may make in a UTC day, live namespace. */
+  get dataDailyWrites(): number {
+    return number("DATA_DAILY_WRITES", 5_000);
   },
 
   // ---------- Wave 3, unit 10: runtime (docs/CAPABILITIES.md) ----------

@@ -1,4 +1,6 @@
+import { clearBuildNamespace, sweepData } from "@/lib/caps/data/store";
 import type { CapId } from "@/lib/caps/ids";
+import { env } from "@/lib/env";
 
 /**
  * Cleanup for what caps store (docs/CAPABILITIES.md, 2.9). Every unit that stores anything adds one entry to
@@ -18,7 +20,20 @@ export interface CapCleanup {
   sweep?(now: Date): Promise<number>;
 }
 
-export const CAP_CLEANUPS: CapCleanup[] = [];
+export const CAP_CLEANUPS: CapCleanup[] = [
+  // Unit 3: a build's test rows go when it ends; deleted rows and crashed builds' rows in the hourly sweep. Only while
+  // the data cap is served, so with its flag off nothing is read and the cron's answer is today's. A product turned off
+  // keeps its rows: they go when the product is deleted (decision 13).
+  {
+    cap: "data",
+    get buildEnded() {
+      return env.servedCaps.includes("data") ? clearBuildNamespace : undefined;
+    },
+    get sweep() {
+      return env.servedCaps.includes("data") ? sweepData : undefined;
+    },
+  },
+];
 
 const registered: CapCleanup[] = [];
 
