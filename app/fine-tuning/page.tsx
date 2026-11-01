@@ -236,7 +236,7 @@ export default async function FineTuningPage({
         )}
       </section>
 
-      <NewDatasetCard blocked={blocked} contributorWriter={contributorWriterOn()} />
+      <NewDatasetCard blocked={blocked} contributorWriter={contributorWriterOn()} researchMaxUsd={env.tuneResearch ? env.tuneResearchMaxUsd : null} />
       <NewDecisionCard />
     </div>
   );

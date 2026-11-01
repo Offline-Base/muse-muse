@@ -1512,3 +1512,9 @@ What this record doesn't confirm:
 - No total of the Vercel Sandbox bill for Oct 31. All Sandbox figures are worst-case ledgers or agent estimates, not
   invoices.
 - Lambda and AWS totals for Oct 31 from the fine-tune session are partial snapshots, not a day total.
+
+## Nov 1: data research for fine-tunes (branch tg-tune-research, unmerged)
+
+- Built `TUNE_RESEARCH` (off): durable workflow on Muse Wonder with Meta's web_search only, a report whose sources can only point at the search's own links, picks as writer notes, and import of license-clear rows with the PII scan. Docs: TRAINING.md "Data research".
+- Decision: migration 0029 (additive), since a report needs a durable row. Any personal data the scan finds refuses the whole source, the strict reading of "sources with personal data are not importable".
+- Measured: only the rule tests (lib/train/research/__tests__/research.test.ts). No call to Meta or a real source has run, so the cost estimate is unmeasured.

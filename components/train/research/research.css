@@ -1,0 +1,39 @@
+.research-report,
+.research-sources,
+.research-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.research-sources,
+.research-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.research-source {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+
+.research-source h3 {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.research-examples {
+  padding-left: 20px;
+}
+
+.research-source-foot,
+.research-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}

@@ -14,6 +14,7 @@ import {
 } from "@/components/train/format";
 import { groupThousands, modelLabel, usd } from "@/lib/format";
 import { SPARK_STANDIN } from "@/lib/meta/spark";
+import { researchEstimate } from "@/lib/train/research/estimate";
 import { DATASET_MAX_COUNT, DATASET_MIN_COUNT, DATASET_TASK_MAX, DATASET_TASK_MIN } from "@/lib/train/logic";
 
 export interface NewDatasetCardProps {
@@ -24,6 +25,8 @@ export interface NewDatasetCardProps {
   blocked?: string | null;
   /** Offer Spark 1.3 Contributor as the writer (contributorWriterOn), for made-up tasks, and start with it selected. */
   contributorWriter?: boolean;
+  /** TUNE_RESEARCH on: offer data research for the task, with the run's spend cap. Off, the card is as it was. */
+  researchMaxUsd?: number | null;
 }
 
 /** Examples the card starts with. */
@@ -39,7 +42,7 @@ const TASK_PLACEHOLDER =
  * The New dataset card on /fine-tuning: a task description, an optional name and how many examples to write, with a
  * cost estimate. Start posts to /api/train/datasets and opens the new dataset's page, where it fills in as it is written.
  */
-export function NewDatasetCard({ blocked = null, contributorWriter = false }: NewDatasetCardProps) {
+export function NewDatasetCard({ blocked = null, contributorWriter = false, researchMaxUsd = null }: NewDatasetCardProps) {
   const router = useRouter();
   const id = useId();
   const [title, setTitle] = useState("");
@@ -112,6 +115,37 @@ export function NewDatasetCard({ blocked = null, contributorWriter = false }: Ne
     }
   }
 
+  async function research() {
+    if (busy || blockedText || researchMaxUsd === null) return;
+    if (taskLength < DATASET_TASK_MIN || taskLength > DATASET_TASK_MAX) {
+      const problem = taskLength < DATASET_TASK_MIN ? `Describe the task in at least ${DATASET_TASK_MIN} characters.` : `Keep the task under ${groupThousands(DATASET_TASK_MAX)} characters.`;
+      setInvalid({ task: problem });
+      setError("Fix the task, then find data for it.");
+      return;
+    }
+    const { low, high } = researchEstimate();
+    if (!window.confirm(`Have Muse Wonder search the web for data that would help this fine-tune? It costs about ${usd(low)} to ${usd(high)} on Meta's API (an estimate), and stops before ${usd(researchMaxUsd)}.`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/train/research", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ task: task.trim() }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { href?: unknown };
+      if (!res.ok || typeof data.href !== "string") {
+        setError(res.status === 429 ? "That's the most research for this hour. Try again later." : datasetStartErrorText(res.status, data));
+        setBusy(false);
+        return;
+      }
+      router.push(data.href);
+    } catch {
+      setError("Couldn't reach Muse Muse. Check your connection and try again.");
+      setBusy(false);
+    }
+  }
+
   const fieldProps = (key: string, helpId: string) => ({
     "aria-invalid": invalid[key] ? true : undefined,
     "aria-describedby": [helpId, invalid[key] ? `${id}-${key}-err` : null].filter(Boolean).join(" "),
@@ -129,6 +163,12 @@ export function NewDatasetCard({ blocked = null, contributorWriter = false }: Ne
         <h2 id={`${id}-title`}>New dataset</h2>
         <p className="muted small">
           {WRITER_NAME} writes realistic prompts for the task and answers them. Jobs train on the answers.
+          {researchMaxUsd !== null ? (
+            <>
+              {" "}
+              <a href="/fine-tuning/research">Past data research</a>
+            </>
+          ) : null}
         </p>
       </div>
 
@@ -238,6 +278,12 @@ export function NewDatasetCard({ blocked = null, contributorWriter = false }: Ne
           <p className="train-cost" id={`${id}-cost`} aria-live="polite">
             {blockedText ?? datasetCostHint(countNum, writerModel)}
           </p>
+          {researchMaxUsd !== null ? (
+            <button type="button" className="btn btn-outline" onClick={research} disabled={busy || Boolean(blockedText)}>
+              <Icon name="search" size={16} />
+              <span>Find data first</span>
+            </button>
+          ) : null}
           <button
             type="submit"
             className="btn btn-primary"

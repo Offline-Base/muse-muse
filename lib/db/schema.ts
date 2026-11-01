@@ -1,3 +1,4 @@
+import type { ResearchFinding, ResearchImport, ResearchSource } from "@/lib/train/research/types";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -419,6 +420,34 @@ export const trainingEvents = pgTable(
 );
 
 /**
+ * One data research run for a fine-tune (lib/train/research, docs/TRAINING.md "Data research"): what the admin described,
+ * the sub-questions and the searches' findings as they came in, then the ranked sources. Admin only. Migration 0029.
+ */
+export const trainingResearch = pgTable(
+  "training_research",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    task: text("task").notNull(),
+    status: text("status").$type<"running" | "ready" | "failed">().notNull().default("running"),
+    questions: jsonb("questions").$type<string[]>().notNull().default([]),
+    findings: jsonb("findings").$type<ResearchFinding[]>().notNull().default([]),
+    sources: jsonb("sources").$type<ResearchSource[]>().notNull().default([]),
+    imports: jsonb("imports").$type<ResearchImport[]>().notNull().default([]),
+    /** Why the searches ended early, or what the report left out. */
+    note: text("note"),
+    error: text("error"),
+    costUsd: real("cost_usd").notNull().default(0),
+    /** The run's spend cap when it started. */
+    maxUsd: real("max_usd").notNull(),
+    workflowRunId: text("workflow_run_id"),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: createdAt(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [index("training_research_created_idx").on(t.createdAt)],
+);
+
+/**
  * Training data a Muse model (writer_model) writes from a task description (lib/train/datasets.ts): prompts, then
  * answers, with 10% held out for eval. While it is "generating", answered examples are appended to `train`; the eval
  * items are moved out when it turns "ready". A GPU job reads it in pages with its job token (GET
@@ -452,6 +481,12 @@ export const trainingDatasets = pgTable(
      * "public" for Muse Decide's public mix (PERSON_WRITER and PUBLIC_WRITER there).
      */
     writerModel: text("writer_model"),
+    /**
+     * Notes from the sources an admin picked in a data research report (lib/train/research, TUNE_RESEARCH), which the
+     * writer reads as background. Null on every other dataset. Migration 0029. Not part of the task, so they never
+     * reach a training example's system message or a model card.
+     */
+    grounding: text("grounding"),
     // ---------- 0017_decision_datasets (decision models) ----------
     /**
      * "chat" (written by a Muse model, rows in train and eval) or "decision" (docs/DECISION_MODELS.md: a person's
