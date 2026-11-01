@@ -31,7 +31,8 @@ export const POST = route(async (req: Request) => {
   if (row.health?.stopped) return errorJson(409, "stopped");
   if (!boardKeyring()) return errorJson(503, "key_missing");
   const key = robotNonceKey(request.nonce);
-  if (((await hitRateLimits([key], now))[key] ?? 1) > 1) return errorJson(409, "already_used");
+  // One row for this request whenever it's confirmed: the window is its expiry, not the moment.
+  if (((await hitRateLimits([key], new Date(request.expMs)))[key] ?? 1) > 1) return errorJson(409, "already_used");
   const board = await openLinkedBoard(row);
   if (!board) return errorJson(503, "gadget_offline");
   try {

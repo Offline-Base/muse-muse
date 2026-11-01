@@ -3040,7 +3040,7 @@ jsonb (filled by a probe that really calls the model and records JSON-schema sup
 `allow_plain_http` boolean default false, `health` jsonb (last status, failures, median latency), `created_at`,
 `last_seen_at`, `revoked_at`. `product_boards`: `product_id` primary, `board_id` (references `devices`), `visitors` boolean
 default false, `created_at`. Unit 13 uses `kind = muse_device` rows. Pairing (8-character one-time code plus a 6-digit check
-number on both screens, then SPKI pinning) is offline's and lands after Nov 4; until then, admins register boards by URL
+number on both screens, then SPKI pinning) was offline's for after Nov 4, and came forward on Nov 1 behind GADGET_CONNECT (docs/GADGETS.md); until then, admins register boards by URL
 and token as below, and offline's branch keeps a copy of the same shape so the two don't drift.
 
 **Routes.**

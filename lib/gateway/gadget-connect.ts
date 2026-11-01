@@ -59,7 +59,7 @@ export interface BuildCall {
   productId: string;
   now: Date;
   /** True the first time this approval's nonce is used. */
-  spend(nonce: string): Promise<boolean>;
+  spend(nonce: string, exp: Date): Promise<boolean>;
 }
 
 /** A build: everything simulated, and labeled so. */
@@ -80,7 +80,7 @@ export async function simulatedCall(call: BuildCall): Promise<Response> {
   const scope = { productId: call.productId, subject: "build", slug: "robot_action", args: { action, args: actionArgs } };
   const approved = typeof call.approval === "string" ? checkApproval(call.approval, scope, call.now) : null;
   if (!approved) return text({ ok: false, code: "needs_confirmation", approval: { id: mintApproval(scope, call.now), ...robotActionLines(action, actionArgs) } }, true);
-  if (!(await call.spend(approved.nonce))) return text({ ok: false, code: "needs_confirmation", approval: { id: mintApproval(scope, call.now), ...robotActionLines(action, actionArgs) }, stale: true }, true);
+  if (!(await call.spend(approved.nonce, approved.exp))) return text({ ok: false, code: "needs_confirmation", approval: { id: mintApproval(scope, call.now), ...robotActionLines(action, actionArgs) }, stale: true }, true);
   const done = sim.act(action, actionArgs);
   return typeof done === "string" ? text({ ok: false, code: "stopped", message: done }, true) : text({ ok: true, status: done }, true);
 }

@@ -1537,6 +1537,9 @@ def main():
     options = parser.parse_args()
     if options.command == "pair":
         return print_pairing_code()
+    # A paired site's token opens every tool here, and it should never open a shell.
+    if options.tls and options.allow_exec:
+        raise SystemExit("--allow-exec and --tls don't go together: a paired site could then run any command on this board.")
     if options.allow_exec:
         TOOLS["run_command"] = EXEC_TOOL
     serve(options.host, options.port, options.tls)

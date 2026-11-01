@@ -373,6 +373,15 @@ describe("the board routes", { skip: canMock ? false : "needs --experimental-tes
       assert.equal((await productBoard.POST(json("/api/products/corner/board", "POST", { boardId: id }), slug("corner"))).status, 403, "not their product either");
     });
 
+    it("a confirmed request spends on one row, however far apart the tries are", async () => {
+      const { hitRateLimits } = await import("@/lib/gateway/store");
+      const exp = new Date(Date.now() + 600_000);
+      const key = "robot-confirm:test-nonce";
+      assert.equal((await hitRateLimits([key], exp))[key], 1);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      assert.equal((await hitRateLimits([key], exp))[key], 2, "the second is seen as a replay");
+    });
+
     it("a stop saved on the platform survives a health note", async () => {
       process.env.GADGET_CONNECT = "1";
       const { id } = (await (await register()).json()) as { id: string };

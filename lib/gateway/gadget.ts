@@ -284,7 +284,8 @@ async function connectCall(req: Request, token: GadgetToken, tool: ConnectTool, 
       tokenId: token.id,
       productId: token.productId,
       now,
-      spend: async (nonce) => ((await deps.hitRateLimits([`tool-approval:${nonce}`], now))[`tool-approval:${nonce}`] ?? 1) <= 1,
+      // The window is the approval's expiry, so every try counts on one row.
+      spend: async (nonce, exp) => ((await deps.hitRateLimits([`tool-approval:${nonce}`], exp))[`tool-approval:${nonce}`] ?? 1) <= 1,
     });
   }
   if (tool !== "hard_stop") {
