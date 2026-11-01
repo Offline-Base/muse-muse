@@ -11,7 +11,11 @@ export interface CapEnvEntry {
   deploy?(brief: Brief, liveToken: string): Record<string, string>;
 }
 
-export const CAP_ENV: Partial<Record<CapId, CapEnvEntry>> = {};
+export const CAP_ENV: Partial<Record<CapId, CapEnvEntry>> = {
+  // A build's server runs the product's Python functions on the build machine (template/caps/runtime). On Vercel the
+  // same helper calls the deployment's own /api/py routes, so the deploy needs nothing.
+  runtime: { build: () => ({ MUSEMUSE_PYTHON: "local", MUSEMUSE_PYTHON_NOTES: "1" }) },
+};
 
 const KEY = /^[A-Z][A-Z0-9_]*$/;
 

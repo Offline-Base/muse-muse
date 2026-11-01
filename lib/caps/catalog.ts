@@ -1,4 +1,5 @@
 import type { CapId } from "@/lib/caps/ids";
+import { RUNTIME_CATALOG } from "@/lib/caps/runtime/catalog";
 
 /**
  * What the brief writer's catalog says about each cap (docs/CAPABILITIES.md, 2.6). One line per cap, in plan order; the
@@ -10,7 +11,9 @@ export interface CapCatalogEntry {
   block: string;
 }
 
-export const CAP_CATALOG: Partial<Record<CapId, CapCatalogEntry>> = {};
+export const CAP_CATALOG: Partial<Record<CapId, CapCatalogEntry>> = {
+  runtime: RUNTIME_CATALOG,
+};
 
 /** The enabled caps with a catalog entry, in plan order. */
 function entries(enabled: readonly CapId[]): Array<[CapId, CapCatalogEntry]> {

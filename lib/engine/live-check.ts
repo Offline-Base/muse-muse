@@ -7,6 +7,8 @@
  *    it, so no product code runs, and a missing route answers 404.
  * 3. A product with platform services also answers GET /api/musemuse/health with {"ok":true} (the core overlay's route),
  *    which says the deploy env reached it, without showing any value.
+ * 4. Each route a cap adds (CAP_LIVE_PATHS in lib/caps/live.ts) answers GET with {"ok":true}, such as the runtime cap's
+ *    Python health function. None for a product without them.
  */
 
 export interface LiveCheckResult {
@@ -23,6 +25,8 @@ export interface LiveCheckInput {
   actions: string[];
   /** True when the product has the core overlay's health route. */
   health: boolean;
+  /** Routes its caps add, each loaded after the health route (lib/caps/live.ts). */
+  capPaths?: ReadonlyArray<{ path: string; what: string }>;
   fetch?: typeof fetch;
   /** Tries for the page, for a deployment that is still warming up. */
   attempts?: number;
@@ -121,5 +125,20 @@ export async function liveCheck(input: LiveCheckInput): Promise<LiveCheckResult>
       return fail(`its health check gave ${why(err, timeoutMs)}`);
     }
   }
+
+  // ---------- Wave 3, unit 10: routes the caps add (lib/caps/live.ts). None for a product without them ----------
+  for (const extra of input.capPaths ?? []) {
+    try {
+      const res = await get(f, `${base}${extra.path}`, { method: "GET" }, timeoutMs);
+      const json = (await res.json().catch(() => null)) as { ok?: unknown } | null;
+      const ok = res.status === 200 && json?.ok === true;
+      checks.push({ path: extra.path, ok, status: res.status });
+      if (!ok) return fail(`${extra.what} (${extra.path} answered HTTP ${res.status})`);
+    } catch (err) {
+      checks.push({ path: extra.path, ok: false, status: null });
+      return fail(`${extra.what} (${extra.path} gave ${why(err, timeoutMs)})`);
+    }
+  }
+  // ---------- end Wave 3, unit 10 ----------
   return { ok: true, url: base, at, checks };
 }

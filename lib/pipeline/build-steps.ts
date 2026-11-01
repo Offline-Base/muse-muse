@@ -40,6 +40,7 @@ import { briefCaps } from "@/lib/caps/brief-fields";
 import { capsBuildEnded } from "@/lib/caps/cleanup";
 import { capBuildEnv, capDeployEnv } from "@/lib/caps/env";
 import { capBuildHosts } from "@/lib/caps/hosts";
+import { capsLivePaths } from "@/lib/caps/live";
 import { capsProofText } from "@/lib/caps/judge";
 import { narrowCapMarkers } from "@/lib/caps/manifest";
 import { capsFileFor } from "@/lib/caps/overlays";
@@ -1005,7 +1006,8 @@ export async function liveCheckStep(input: { buildId: string; sandboxName: strin
     const brief = build.brief ?? (build.productId ? await latestBrief(build.productId) : null);
     const manifest = await sandbox.readManifest(input.sandboxName).catch(() => null);
     const actions = (manifest?.actions ?? []).map((a) => a.name).filter((n): n is string => typeof n === "string" && /^[a-z][a-z0-9_]*$/.test(n));
-    const checked = await liveCheck({ url: input.url, actions, health: Boolean(brief && capsFileFor(brief)) });
+    const capPaths = capsLivePaths(brief);
+    const checked = await liveCheck({ url: input.url, actions, health: Boolean(brief && capsFileFor(brief)), ...(capPaths.length ? { capPaths } : {}) });
     result = { ok: checked.ok, at: checked.at, url: checked.url, ...(checked.reason ? { reason: checked.reason } : {}) };
   } catch (err) {
     result = { ok: false, at: new Date().toISOString(), url: input.url, reason: `the check couldn't run (${String((err as Error)?.message ?? err).slice(0, 120)})` };

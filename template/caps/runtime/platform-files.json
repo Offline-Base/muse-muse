@@ -1,0 +1,10 @@
+[
+  "lib/platform/python.ts",
+  "scripts/py-local.mjs",
+  "api/py/musemuse_health.py",
+  "vercel.json",
+  ".python-version",
+  "tests/caps/runtime.ts",
+  "scripts/caps/runtime.mjs",
+  ".agents/skills/muse-python/SKILL.md"
+]

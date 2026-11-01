@@ -12,15 +12,16 @@ import { renderToString } from "react-dom/server";
 import { GET_IT_SLOTS, GetItPanel, type GetItSlots } from "@/components/product/GetItPanel";
 import { QrCode } from "@/components/product/QrCode";
 import { TARGETS } from "@/lib/brief/schema";
-import { PRODUCT_OUTPUTS } from "@/lib/native/targets";
+import { PRODUCT_OUTPUTS, RUNTIME_OUTPUTS } from "@/lib/native/targets";
 import { qrMatrix } from "@/lib/qr";
 
 const render = (slots: GetItSlots) => renderToString(createElement(GetItPanel, { slots })).replace(/<!-- -->/g, "");
 
 describe("GetItPanel", () => {
-  it("has a slot for every target and every product output, and no others", () => {
-    assert.deepEqual([...GET_IT_SLOTS], [...TARGETS, ...PRODUCT_OUTPUTS]);
+  it("has a slot for every target, every product output and every runtime output (wave 3, unit 10), and no others", () => {
+    assert.deepEqual([...GET_IT_SLOTS], [...TARGETS, ...PRODUCT_OUTPUTS, ...RUNTIME_OUTPUTS]);
     assert.deepEqual([...PRODUCT_OUTPUTS], ["mcp", "cli", "skill", "claude_plugin", "chatgpt"]);
+    assert.deepEqual([...RUNTIME_OUTPUTS], ["vscode", "github_action", "self_host"]);
   });
 
   it("renders nothing at all when no slot has content", () => {
@@ -47,9 +48,10 @@ describe("GetItPanel", () => {
 
   it("is on the product page, only for a shipped product, with the output tabs only while their flag is on", () => {
     const page = readFileSync(path.join(process.cwd(), "app/p/[slug]/page.tsx"), "utf8");
+    // Wave 3, unit 10: the runtime outputs' tabs, only while RUNTIME_OUTPUTS is on.
     assert.match(
       page,
-      /\{shipped \? \(\s*<GetItPanel slots=\{\{ \.\.\.native\.slots, \.\.\.\(env\.productOutputs \? productOutputSlots\(.*\) : \{\}\) \}\} initial=\{native\.initial\} \/>\s*\) : null\}/,
+      /\{shipped \? \(\s*<GetItPanel slots=\{\{ \.\.\.native\.slots, \.\.\.\(env\.productOutputs \? productOutputSlots\([^)]*\) : \{\}\), \.\.\.\(env\.runtimeOutputs \? runtimeOutputSlots\([^)]*\) : \{\}\) \}\} initial=\{native\.initial\} \/>\s*\) : null\}/,
     );
   });
 

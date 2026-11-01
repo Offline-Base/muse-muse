@@ -24,6 +24,7 @@ const FLAGS = [
   "ENGINE_CHECK_ON_TIMEOUT", "ENGINE_ROUND_SCALING", "ENGINE_ROUND_MAX_MINUTES", "ENGINE_MILESTONES", "ENGINE_LIVE_SMOKE", "ENGINE_EXACT_LOGIC", "ENGINE_FIT_OUTPUT",
   "TRUST_SIGNED_IN_CAPS",
   ...CAP_IDS.map((id) => CAP_FLAG[id]),
+  "RUNTIME_OUTPUTS",
 ];
 
 beforeEach(() => {
@@ -75,6 +76,9 @@ describe("with every wave 3 flag off", () => {
   it("no cap stores anything, so cleanup and the cron's sweep do nothing", async () => {
     assert.equal(CAP_CLEANUPS.length, 0);
     assert.equal(await sweepCaps(), null);
-    assert.deepEqual(Object.keys(CAP_BRIEF_FIELDS), []);
+    // A registered brief block (unit 10's runtime) is an optional field of the stored brief only: a brief without it has
+    // no caps, so nothing above changes for it.
+    assert.deepEqual(briefCaps(BRIEF), []);
+    for (const key of Object.keys(CAP_BRIEF_FIELDS)) assert.ok(!(key in BRIEF), key);
   });
 });

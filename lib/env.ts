@@ -734,6 +734,18 @@ export const env = {
     return CAP_IDS.filter((c) => CAP_READY[c] && flag(CAP_FLAG[c]) && (!production || signedIn || !CAP_NEEDS_BUILDER[c]));
   },
 
+  // ---------- Wave 3, unit 10: runtime (docs/CAPABILITIES.md) ----------
+
+  /**
+   * RUNTIME_OUTPUTS: a live product also offers a VS Code extension and a GitHub Action made from its musemuse.json, and
+   * its owner can download a self-host kit made from its live source (lib/outputs/{vscode,github-action,selfhost}.ts).
+   * Off: /p/<slug>/get/{vscode,github-action,selfhost}.zip answer 404 and the Get it panel has no such tabs.
+   * RUNTIME_ENABLED, the Python functions, is CAP_FLAG.runtime, read through enabledCaps above.
+   */
+  get runtimeOutputs(): boolean {
+    return flag("RUNTIME_OUTPUTS");
+  },
+
   // ---------- Wave 3, unit 12: drive export (docs/CAPABILITIES.md) ----------
 
   /**
