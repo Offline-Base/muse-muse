@@ -1407,3 +1407,63 @@ export const hostedEndpoints = pgTable(
     index("hosted_endpoints_owner_token_idx").on(t.ownerTokenHash),
   ],
 );
+
+/**
+ * One run of the board loop (docs/BOARD_LOOP.md, BOARD_LOOP): a judged model going to one board, stage by stage. `stages` and
+ * `data` are the plain shapes in lib/board-loop/logic.ts, and hold no address or token. One loop at a time per kind of
+ * board, since a board holds one model: the partial unique index holds that under a race.
+ */
+export const boardLoops = pgTable(
+  "board_loops",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    adapterJobId: uuid("adapter_job_id")
+      .notNull()
+      .references(() => trainingJobs.id),
+    target: text("target").$type<import("@/lib/board-loop/driver").BoardKind>().notNull(),
+    status: text("status").$type<import("@/lib/board-loop/logic").LoopStatus>().notNull().default("running"),
+    stages: jsonb("stages").$type<import("@/lib/board-loop/logic").LoopStages>().notNull(),
+    data: jsonb("data").$type<import("@/lib/board-loop/logic").LoopData>().notNull(),
+    tryOpen: boolean("try_open").notNull().default(false),
+    stopRequested: boolean("stop_requested").notNull().default(false),
+    workflowRunId: text("workflow_run_id"),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("board_loops_one_active").on(t.target).where(sql`${t.status} in ('running', 'serving')`),
+    index("board_loops_adapter_idx").on(t.adapterJobId, t.createdAt),
+  ],
+);
+
+/**
+ * A visitor's turn on a loop's try page (lib/board-loop/try.ts). `visitor` is the SHA-256 of a random cookie, never the cookie.
+ * The prompt goes once the turn ends. One turn running per loop and one open per visitor, both held by partial unique indexes.
+ */
+export const boardTryTurns = pgTable(
+  "board_try_turns",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    loopId: uuid("loop_id")
+      .notNull()
+      .references(() => boardLoops.id, { onDelete: "cascade" }),
+    visitor: text("visitor").notNull(),
+    status: text("status").$type<"queued" | "running" | "done" | "failed" | "expired">().notNull().default("queued"),
+    prompt: text("prompt"),
+    answer: text("answer"),
+    tokens: integer("tokens"),
+    tokensPerSecond: real("tokens_per_second"),
+    ms: integer("ms"),
+    error: text("error"),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("board_try_one_running").on(t.loopId).where(sql`${t.status} = 'running'`),
+    uniqueIndex("board_try_one_open").on(t.loopId, t.visitor).where(sql`${t.status} in ('queued', 'running')`),
+    index("board_try_queue_idx").on(t.loopId, t.status, t.createdAt),
+  ],
+);

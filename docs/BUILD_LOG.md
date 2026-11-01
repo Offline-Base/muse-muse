@@ -1721,3 +1721,23 @@ scripts/dev/tune-harness.ts, on a Lambda gpu_1x_a10 named prove-tune-1, us-east-
 - Measured on Contributor with made-up data, flags as on production: a FULL_BUILDS brief with the look (8 requirements, scope check ran) and a full judge read with one image both returned valid replies. Spend about $0.002. The first attempt got a 401 from the key in ~/muse-muse/.env.local, so that key looks stale.
 - Tests: targeted suites pass. flags-off-surface was already failing on main on stale mocks; with those fixed its provision and deploy goldens match, and steps.json still differs on a timeout this branch doesn't touch. No golden file changed.
 - Not run: a whole build on production settings, a sandbox, the notice in a browser, whether Contributor's judge is as strict as Muse Wonder's.
+
+## Nov 1, 2026: The board loop, on the simulated board (`tg-board-loop`, flag `BOARD_LOOP`, off)
+
+**Built.** One start button on a judged model; seven stages with status and cost; `BoardDriver` with simulated, fleet and board MCP drivers; a fixed test set; a Demo Studio clip; a queued try page at `/try-board/<id>`; migration `0031_board_loop`. `docs/BOARD_LOOP.md`, `docs/JETSON_TODO.md`.
+
+**Decision: the simulated board answers the control plane's API**, so the fleet driver's real code runs against it, instead of a second code path that would prove nothing about the fleet. Its answers still say canned, and it never executes what it's sent.
+
+**Decision: a real board's try page is admins only until `BOARD_TRY_PUBLIC`.** Prompts would reach a tuned model with no content check of their own, which is the owner's call.
+
+**Run, simulated, local.** `next dev` on port 3041, PGlite, `OPEN_ACCESS=admin`, a made-up judged job (its $1.30 is a seeded number), the real workflow runtime and the real `scripts/sim-board.mjs`. Spend: $0. No GPU, no model and no board.
+
+- All seven stages ended in about 40 seconds, `gguf` skipped as designed, most of the time in the clip. Test set: 5 of 5, 19.6 tokens a second (set by `SIM_BOARD_TPS=20`), peak 54 MB (the process's own). These numbers say nothing about a Jetson.
+- Clip: H.264, 1920x1080, 26.5 s, 4.4 MB, served with a 206. Its title, captions and outro say Simulated board. Frames: `docs/log/shots/board-loop-clip-frames.jpg`.
+- Browser (Playwright): the button on the tune's page started a run; two visitors queued as 1 and 2 and both got answers; the sixth turn in an hour was refused, "You've had your 5 turns this hour"; no sideways scroll at 390 px; killing the process showed the offline page with no restart; Stop closed the page and the next run took the slot. Shots: `board-loop-room.jpg`, `board-loop-try-done-390.jpg`, `board-loop-try-offline.jpg`.
+
+**Fixed on the way.** The workflow bundle rejected a module-level deps object: moved inside the step. An exception in a stage would have stranded a loop holding its board's slot: it now fails the loop, and only an offline board waits. Stop waited for a tick, which never comes after the workflow's hard stop: the route now stops the board itself, and doesn't start a dead simulated board to do it. A doubled "Simulated board." label on the banner.
+
+**Tests.** `lib/board-loop/__tests__`: `loop-sim` and `fleet`, 25 of 25; `store`, 3 of 3, including every route a 404 with the flag off. `tsc --noEmit` clean. `lib/db` migration tests run.
+
+**Not run.** Any real board or fleet (`fleet.ts` has seen only the simulated process and fakes; `device-mcp.ts` no run at all, and no test of its own), a real IQ1_S, a Preview, `next build`, the full suite. The start route's real-board quantize branch has no test. On Vercel the simulated board needs `BOARD_SIM_URL` and the clip is skipped.

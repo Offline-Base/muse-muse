@@ -390,6 +390,19 @@ export const env = {
   get quantTargets(): boolean {
     return flag("QUANT_TARGETS");
   },
+  /** The board loop: tune, GGUF, board, serve, test, demo, try page (docs/BOARD_LOOP.md). Off by default. */
+  get boardLoop(): boolean {
+    return flag("BOARD_LOOP");
+  },
+  /** Which board the loop reaches: "simulated" (the default), "fleet" or "device". */
+  get boardLoopTarget(): "simulated" | "fleet" | "device" {
+    const target = process.env.BOARD_LOOP_TARGET?.trim();
+    return target === "fleet" || target === "device" ? target : "simulated";
+  },
+  /** Visitors may use a real board's try page. The simulated board's canned text needs no such switch; admins always can. */
+  get boardTryPublic(): boolean {
+    return flag("BOARD_TRY_PUBLIC");
+  },
   /**
    * SIM_TUNE: admins can run a tuned model's smallest GGUF on the lab's Android emulator (docs/TRAINING.md "Emulator
    * runs"). Also needs NATIVE_LAB. Off when unset.
