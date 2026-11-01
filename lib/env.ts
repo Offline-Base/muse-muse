@@ -403,7 +403,7 @@ export const env = {
 
   // ---------- What every product comes with, and proving it works (docs/PRODUCT_OUTPUTS.md) ----------
 
-  /** PRODUCT_OUTPUTS: products offer a CLI, a skill file and a Claude plugin, and show how to connect each. */
+  /** PRODUCT_OUTPUTS: products offer a CLI, a skill file, a Claude plugin and Muse gadget commands, and show how to connect each. */
   get productOutputs(): boolean {
     return flag("PRODUCT_OUTPUTS");
   },

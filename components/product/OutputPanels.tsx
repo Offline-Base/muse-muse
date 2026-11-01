@@ -3,6 +3,7 @@ import { CopyField } from "@/components/CopyButton";
 import type { GetItSlots } from "@/components/product/GetItPanel";
 import type { ProductView } from "@/components/view-types";
 import { plural } from "@/lib/format";
+import { GADGET_SDK_URL, gadgetFileName, gadgetFolder, gadgetPack } from "@/lib/outputs/gadget";
 import { cliFileName, outputLinks, pluginFileName, publicActions } from "@/lib/outputs/generate";
 import { settleProveView } from "@/lib/outputs/labels";
 import { condenseProveEvents, type ProveItemView } from "@/lib/types";
@@ -82,6 +83,7 @@ export function productOutputSlots(input: {
   const { slug } = product;
   const names = actions.map((a) => a.name).join(", ");
   const example = actions[0]!.name;
+  const gadget = gadgetPack(product);
 
   return {
     mcp: (
@@ -174,5 +176,36 @@ export function productOutputSlots(input: {
         </p>
       </Panel>
     ),
+    gadget: gadget.commands.length ? (
+      <Panel item={proof("gadget")}>
+        <p>
+          Commands for a Muse gadget you set up yourself, so your Muse can use this product from the gadget and your Muse chat. It has{" "}
+          {plural(gadget.commands.length, "command")}: {gadget.commands.map((c) => c.name).join(", ")}.
+        </p>
+        <CopyField value={`curl -fsSL ${links.gadget} -o ${gadgetFileName(slug)}`} label="Download command" />
+        <ol>
+          <li>
+            Set up <a href={GADGET_SDK_URL}>Meta&apos;s Linux Gadget SDK</a> with your own Muse account and SDK token. Install it with <code>--run-as</code> an account
+            that can&apos;t use sudo.
+          </li>
+          <li>
+            On the gadget: <code>unzip {gadgetFileName(slug)} &amp;&amp; cd {gadgetFolder(slug)}</code>, then read <code>install.sh</code>.
+          </li>
+          <li>
+            Run <code>sudo bash install.sh</code>. It adds the commands and restarts the gadget&apos;s service.
+          </li>
+          <li>Ask your Muse for what you want done, or name a command, such as {gadget.commands[0]!.name}.</li>
+        </ol>
+        <p>
+          <a href={links.gadget} download={gadgetFileName(slug)}>
+            Download {gadgetFileName(slug)}
+          </a>
+        </p>
+        <p className="muted small">
+          Each command sends its inputs to {product.liveUrl}. Muse Muse never asks for your SDK token and doesn&apos;t pair or install anything for you. Meta&apos;s terms
+          allow personal, non-commercial use only: never in a gadget that is sold, or given away as a promotion or reward. To remove it: <code>sudo bash uninstall.sh</code>.
+        </p>
+      </Panel>
+    ) : null,
   };
 }

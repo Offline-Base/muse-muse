@@ -18,6 +18,7 @@ const LABELS: Record<GetItSlotId, string> = {
   skill: "Skill",
   claude_plugin: "Claude",
   chatgpt: "ChatGPT",
+  gadget: "Muse gadget",
 };
 
 export const GET_IT_SLOTS: readonly GetItSlotId[] = [...TARGETS, ...PRODUCT_OUTPUTS];

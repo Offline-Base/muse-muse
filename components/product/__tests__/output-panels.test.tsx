@@ -30,11 +30,39 @@ const slots = (over: Partial<typeof product> = {}, events: Array<{ type: string;
 describe("the Get it panel's output slots", () => {
   it("has a slot for each output, pointing at this site", () => {
     const filled = slots();
-    assert.deepEqual(Object.keys(filled).sort(), ["chatgpt", "claude_plugin", "cli", "mcp", "skill"]);
+    assert.deepEqual(Object.keys(filled).sort(), ["chatgpt", "claude_plugin", "cli", "gadget", "mcp", "skill"]);
     assert.match(html(filled.mcp), /https:\/\/site\.example\/api\/mcp\/scale-my-recipe/);
     assert.match(html(filled.cli), /https:\/\/site\.example\/p\/scale-my-recipe\/get\/cli/);
     assert.match(html(filled.skill), /https:\/\/site\.example\/p\/scale-my-recipe\/get\/skill/);
     assert.match(html(filled.claude_plugin), /scale-my-recipe-claude-plugin\.zip/);
+    assert.match(html(filled.gadget), /https:\/\/site\.example\/p\/scale-my-recipe\/get\/gadget/);
+  });
+
+  it("gives honest gadget steps: the person's own SDK and token, where data goes and Meta's terms", () => {
+    const body = html(slots().gadget);
+    assert.match(body, /It has 1 command: scale_my_recipe\.scale_recipe\./);
+    assert.doesNotMatch(body, /read_my_mail/);
+    assert.match(body, /download="scale-my-recipe-muse-gadget\.zip"/);
+    assert.match(body, /github\.com\/facebookincubator\/muse-gadget-sdk/);
+    assert.match(body, /your own Muse account and SDK token/);
+    assert.match(body, /--run-as/);
+    assert.match(body, /<code>sudo bash install\.sh<\/code>/);
+    assert.match(body, /Each command sends its inputs to https:\/\/scale\.vercel\.app\./);
+    assert.match(body, /never asks for your SDK token/);
+    assert.match(body, /personal, non-commercial use only/);
+    assert.match(body, /promotion or reward/);
+    assert.doesNotMatch(body, /\u2014/);
+  });
+
+  it("shows the gadget check's result under its tab", () => {
+    const body = html(
+      slots({}, [
+        { type: "prove", runId: "r", origin: "ship", item: "stage", state: "done", title: "Tested", at } as never,
+        { type: "prove", runId: "r", origin: "ship", item: "gadget", state: "done", title: "Muse gadget commands: 1 command check out", at } as never,
+      ]).gadget,
+    );
+    assert.match(body, /Tested/);
+    assert.match(body, /1 command check out/);
   });
 
   it("leaves out an action only the owner may use", () => {
