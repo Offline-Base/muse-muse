@@ -783,7 +783,10 @@ export const env = {
   get enabledCaps(): CapId[] {
     const production = process.env.VERCEL_ENV === "production";
     const signedIn = flag("TRUST_SIGNED_IN_CAPS");
-    return CAP_IDS.filter((c) => CAP_READY[c] && flag(CAP_FLAG[c]) && (!production || signedIn || !CAP_NEEDS_BUILDER[c]));
+    // Unit 8: media is on only with at least one of its parts on (MEDIA_SPEECH and the rest), so MEDIA_ENABLED alone
+    // behaves exactly like MEDIA_ENABLED off.
+    const partsOn = (c: CapId) => c !== "media" || mediaPartsFromEnv().length > 0;
+    return CAP_IDS.filter((c) => CAP_READY[c] && flag(CAP_FLAG[c]) && partsOn(c) && (!production || signedIn || !CAP_NEEDS_BUILDER[c]));
   },
 
   // ---------- Wave 3, unit 8: media (docs/CAPABILITIES.md) ----------

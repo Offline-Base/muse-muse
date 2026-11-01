@@ -264,13 +264,29 @@ describe("GET {GATEWAY_URL}/assets/<sha256>", () => {
     assert.equal(res.headers.get("access-control-allow-origin"), "*");
     assert.equal(res.headers.get("cross-origin-resource-policy"), "cross-origin");
     assert.equal(res.headers.get("x-content-sha256"), SHA);
-    assert.match(res.headers.get("cache-control")!, /max-age=86400/);
-    assert.deepEqual(keys, ["assets:ip:203.0.113.9"]);
+    assert.equal(res.headers.get("cache-control"), "public, max-age=3600", "an hour, so a switched-off cap stops redirecting soon");
+    assert.deepEqual(keys, [`assets:ip:203.0.113.9:${SHA.slice(0, 16)}`]);
     hits = ASSETS_PER_MINUTE;
     const limited = await handleAsset(get(), SHA, deps());
     assert.equal(limited.status, 429);
     assert.equal(limited.headers.get("access-control-allow-origin"), "*");
     hits = 0;
+  });
+
+  it("counts each file on its own, so 30 page loads of a 5-file model from one school address all get through", async () => {
+    const files = ["1", "2", "3", "4", "5"].map((d) => asset({ sha256: d.repeat(64), mirror: `https://store.public.blob.vercel-storage.com/assets/${d.repeat(64)}` }));
+    const counts = new Map<string, number>();
+    const counting = deps({ assets: files, hitRateLimits: async (k) => Object.fromEntries(k.map((x) => [x, counts.set(x, (counts.get(x) ?? 0) + 1).get(x)!])) });
+    const statuses: number[] = [];
+    for (let load = 0; load < 30; load++) {
+      for (const f of files) statuses.push((await handleAsset(new Request(`https://platform.example/api/gateway/assets/${f.sha256}`, { headers: { "x-real-ip": "198.51.100.7" } }), f.sha256, counting)).status);
+    }
+    assert.equal(statuses.length, 150);
+    assert.ok(statuses.every((s) => s === 302), "150 requests a minute, 30 of each file, none refused");
+    assert.equal(counts.size, 5);
+    // The limit still holds for one file.
+    for (let i = 0; i < ASSETS_PER_MINUTE; i++) await handleAsset(new Request(`https://platform.example/api/gateway/assets/${files[0]!.sha256}`, { headers: { "x-real-ip": "198.51.100.7" } }), files[0]!.sha256, counting);
+    assert.equal((await handleAsset(new Request(`https://platform.example/api/gateway/assets/${files[0]!.sha256}`, { headers: { "x-real-ip": "198.51.100.7" } }), files[0]!.sha256, counting)).status, 429);
   });
 
   it("serves only hashes on the list, of a cap that is on", async () => {

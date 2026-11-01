@@ -8,7 +8,7 @@ import { gatewayError } from "@/lib/gateway/errors";
 /**
  * GET {GATEWAY_URL}/assets/<sha256> (docs/CAPABILITIES.md, section 14): a vetted large file (wasm, model weights) a
  * product's page loads, from the Blob mirror. Public and immutable, since a sha256 names exactly one file: no token, any
- * origin may read it, 120 a minute per address. Only files in lib/caps/assets.json are served, and only while a cap that
+ * origin may read it, 120 a minute per address for each file. Only files in lib/caps/assets.json are served, and only while a cap that
  * lists them is on; with none on the route answers 404 unknown_endpoint and touches nothing.
  *
  * On Vercel it redirects to the file's Blob URL (filled in by scripts/caps/mirror-assets.ts), so the bytes never pass
@@ -97,7 +97,9 @@ export async function handleAsset(req: Request, sha256: string, deps: AssetsDeps
   const asset = SHA.test(sha256) ? assets.find((a) => a.sha256 === sha256 && enabled.includes(a.cap)) : undefined;
   if (!asset) return refuse(404, "not_found_error", "asset_not_found", "No such file on the gateway's list.");
   const now = deps.now?.() ?? new Date();
-  const key = `assets:ip:${clientKey(req)}`;
+  // Counted per file: one page load fetches several files (the speech model is five), so a classroom behind one school
+  // address uses one count of each file per student, not five of one shared count.
+  const key = `assets:ip:${clientKey(req)}:${asset.sha256.slice(0, 16)}`;
   const counts = await deps.hitRateLimits([key], new Date(Math.floor(now.getTime() / 60_000) * 60_000));
   if ((counts[key] ?? 0) > ASSETS_PER_MINUTE) {
     return gatewayError(429, "rate_limit_error", "rate_limited", `Too many file requests: the limit is ${ASSETS_PER_MINUTE} a minute.`, { headers: { ...CORS, "retry-after": "60" } });
@@ -110,6 +112,7 @@ export async function handleAsset(req: Request, sha256: string, deps: AssetsDeps
     return new Response(Readable.toWeb(createReadStream(local)) as ReadableStream, { status: 200, headers: common });
   }
   if (!asset.mirror) return refuse(503, "server_error", "asset_unavailable", "This file isn't on the gateway's mirror yet.");
-  // The redirect is cached for a day, not a year: the mirror's address could move, the bytes never do.
-  return new Response(null, { status: 302, headers: { ...headers, location: asset.mirror, "cache-control": "public, max-age=86400" } });
+  // The redirect is cached for an hour, not a year: the mirror's address could move and the cap can be switched off,
+  // while the bytes never change (the page keeps them in its own cache after the first load anyway).
+  return new Response(null, { status: 302, headers: { ...headers, location: asset.mirror, "cache-control": "public, max-age=3600" } });
 }
