@@ -270,6 +270,15 @@ describe("flash drive pages", { skip: canMock ? false : "needs --experimental-te
       assert.doesNotMatch(html, /Questions\? Write to/, "no address until DRIVE_CONTACT_EMAIL names one");
     });
 
+    it("says Built with Muse Spark Open for files merged into r30b, and nothing of it for plain Glimmer files", async () => {
+      assert.doesNotMatch(await open(), /Spark Open/);
+      files = localFiles({ sparkOpen: true });
+      const html = await open();
+      clean(html);
+      assert.match(html, /<li><strong>Built with Muse Spark Open\.<\/strong> It was tuned from Muse Muse&#x27;s 2026-knowledge Glimmer, so the Muse\s+Model License applies, and the drive carries it\. For people 18 and over only\./);
+      files = localFiles();
+    });
+
     it("names where to write once DRIVE_CONTACT_EMAIL is set", async () => {
       process.env.DRIVE_CONTACT_EMAIL = "drives@example.com";
       try {

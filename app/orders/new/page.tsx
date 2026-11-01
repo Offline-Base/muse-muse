@@ -10,6 +10,7 @@ import { cardPriceLine, driveProblem, gb, minimumSpecText, priceLine, usd } from
 import { DRIVE_CARD_TERMS, DRIVE_TERMS } from "@/lib/drive/terms";
 import { env } from "@/lib/env";
 import { isUuid, safeQuery } from "@/lib/queries";
+import { BUILT_WITH_SPARK_OPEN, USAGE_POINTS } from "@/lib/train/base";
 import { localFilesFor } from "@/lib/train/local-files-server";
 import { getResultJob } from "@/lib/train/store";
 import { minimumSpec } from "@/lib/vibe/device";
@@ -105,6 +106,12 @@ export default async function NewDriveOrderPage({ searchParams }: { searchParams
             <li>We write the drive, check every file on it, and ship it within 2 business days after you pay.</li>
             <li>US addresses only for now.</li>
             <li>Fine-tuned from Meta&apos;s Muse Glimmer 30B (Apache 2.0). Not made, reviewed or endorsed by Meta.</li>
+            {files.sparkOpen ? (
+              <li>
+                <strong>{BUILT_WITH_SPARK_OPEN}.</strong> It was tuned from Muse Muse&apos;s 2026-knowledge Glimmer, so the Muse
+                Model License applies, and the drive carries it. {USAGE_POINTS.join(" ")}
+              </li>
+            ) : null}
             {env.driveContactEmail ? (
               <li>
                 Questions? Write to <a href={`mailto:${env.driveContactEmail}`}>{env.driveContactEmail}</a>.
