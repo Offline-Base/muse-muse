@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
-import { ProductCard } from "@/components/product/ProductCard";
-import { EmptyCard, NotConnected, PageHeader } from "@/components/ui";
+import { ComposerDock } from "@/components/gallery/ComposerDock";
+import "@/components/gallery/gallery.css";
+import { Presets } from "@/components/gallery/Presets";
+import { ProductBrowser } from "@/components/gallery/ProductBrowser";
+import { EmptyCard, NotConnected } from "@/components/ui";
+import { GALLERY_PRESETS } from "@/lib/gallery/presets";
 import { listShippedProducts, safeQuery } from "@/lib/queries";
 
 export const metadata: Metadata = { title: "Gallery" };
@@ -10,11 +14,9 @@ export default async function Gallery() {
   await connection();
   const result = await safeQuery(() => listShippedProducts(60));
   return (
-    <div className="page">
-      <PageHeader
-        title="Gallery"
-        subtitle="Every product Muse Muse shipped, with the muse it came from, the models it uses and its recorded demo."
-      />
+    <div className="page gx-page">
+      <h1 className="sr-only">Gallery</h1>
+      <Presets presets={GALLERY_PRESETS} />
       {!result.ok ? (
         <NotConnected reason={result.reason} what="the gallery" />
       ) : result.data.length === 0 ? (
@@ -22,12 +24,9 @@ export default async function Gallery() {
           <p>Products show up here once they pass their checks and go live.</p>
         </EmptyCard>
       ) : (
-        <div className="grid-cards">
-          {result.data.map((p) => (
-            <ProductCard key={p.slug} p={p} />
-          ))}
-        </div>
+        <ProductBrowser products={result.data} />
       )}
+      <ComposerDock />
     </div>
   );
 }

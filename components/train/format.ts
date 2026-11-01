@@ -862,11 +862,11 @@ const PER_EXAMPLE = {
 };
 
 /** What writing `count` examples might cost on Meta's API at WRITER_MODEL's prices (lib/meta/pricing.ts), in USD. */
-export function datasetCostRange(count: number): { low: number; high: number } {
+export function datasetCostRange(count: number, model: string = WRITER_MODEL): { low: number; high: number } {
   const n = Math.max(0, Math.floor(Number(count) || 0));
   return {
-    low: Math.floor(tokenCost(WRITER_MODEL, PER_EXAMPLE.low) * n * 100) / 100,
-    high: Math.ceil(tokenCost(WRITER_MODEL, PER_EXAMPLE.high) * n * 100) / 100,
+    low: Math.floor(tokenCost(model, PER_EXAMPLE.low) * n * 100) / 100,
+    high: Math.ceil(tokenCost(model, PER_EXAMPLE.high) * n * 100) / 100,
   };
 }
 
@@ -894,10 +894,10 @@ export function datasetCountOk(count: number): boolean {
 }
 
 /** The New dataset card's cost line. */
-export function datasetCostHint(count: number): string {
+export function datasetCostHint(count: number, model: string = WRITER_MODEL): string {
   if (!datasetCountOk(count)) return `Pick ${DATASET_MIN_COUNT} to ${groupThousands(DATASET_MAX_COUNT)} examples to see the cost.`;
-  const { low, high } = datasetCostRange(count);
-  return `About ${usd(low)} to ${usd(high)} on Meta's API at ${WRITER_NAME}'s prices, and ${roughMinutes(datasetMinutes(count))} to write. About ${evalHoldoutCount(count)} are held out to judge the tuned model.`;
+  const { low, high } = datasetCostRange(count, model);
+  return `About ${usd(low)} to ${usd(high)} on Meta's API at ${modelLabel(model)}'s prices, and ${roughMinutes(datasetMinutes(count))} to write. About ${evalHoldoutCount(count)} are held out to judge the tuned model.`;
 }
 
 /** Why datasets can't start on this deployment: no MODEL_API_KEY. */

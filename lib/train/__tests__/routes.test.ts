@@ -599,7 +599,7 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
       const [jobId, body, max] = called("recordEvalEvent")[0]!.args as [string, Record<string, unknown>, number];
       assert.equal(jobId, JOB_ID);
       assert.deepEqual(body, cb);
-      assert.equal(max, 60);
+      assert.equal(max, 120);
       assert.equal(called("recordEvent").length, 0, "logged through recordEvalEvent only");
     });
 
@@ -611,11 +611,11 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
       assert.equal(called("recordEvalEvent").length, 0);
     });
 
-    it("answers 409 eval_limit past 60 items, and 204 for a retried one", async () => {
+    it("answers 409 eval_limit past 120 items, and 204 for a retried one", async () => {
       evalResult = "limit";
       const over = await events(post("events", evalBody()), ctx);
       assert.equal(over.status, 409);
-      assert.deepEqual(await over.json(), { error: "eval_limit", max: 60 });
+      assert.deepEqual(await over.json(), { error: "eval_limit", max: 120 });
       evalResult = "duplicate";
       assert.equal((await events(post("events", evalBody()), ctx)).status, 204);
     });
@@ -875,6 +875,26 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
         body: JSON.stringify(body),
       });
     const task = "Explain Python error messages to beginners, with a fix.";
+
+    it("lets Spark 1.3 Contributor write only where it's on and the task is said to be made up", async () => {
+      const task = "Answer made-up questions for a pretend bakery in two warm sentences";
+      const before = called("createDataset").length;
+      delete process.env.TRAIN_CONTRIBUTOR_WRITER;
+      const off = await createDatasetRoute(datasetReq({ task, count: 1000, writer: "contributor", madeUp: true }));
+      assert.equal(off.status, 400);
+      process.env.TRAIN_CONTRIBUTOR_WRITER = "1";
+      try {
+        const unconfirmed = await createDatasetRoute(datasetReq({ task, count: 1000, writer: "contributor" }));
+        assert.equal(unconfirmed.status, 400);
+        assert.match(((await unconfirmed.json()) as { error: string }).error, /made-up/);
+        assert.equal((await createDatasetRoute(datasetReq({ task, count: 1000, writer: "muse-spark-1.3", madeUp: true }))).status, 400);
+        assert.equal(called("createDataset").length, before, "nothing saved on a refusal");
+        assert.equal((await createDatasetRoute(datasetReq({ task, count: 1000, writer: "contributor", madeUp: true }))).status, 201);
+        assert.equal((called("createDataset")[before]!.args[0] as { writerModel: string }).writerModel, "muse-spark-1.3-contributor");
+      } finally {
+        delete process.env.TRAIN_CONTRIBUTOR_WRITER;
+      }
+    });
 
     it("saves a generating dataset with Muse Wonder as its writer and starts its workflow once", async () => {
       const res = await createDatasetRoute(datasetReq({ task, count: "150" }));

@@ -61,7 +61,7 @@ BODY_LIMIT = 15000
 ARTIFACT_KINDS = ("adapter", "checkpoint", "metrics", "log", "other")
 # Eval callbacks: each text field is cut to this many characters, and a job sends at most EVAL_MAX of them.
 EVAL_FIELD_LIMIT = 3500
-EVAL_MAX = 60
+EVAL_MAX = 120
 EVAL_FIELDS = ("prompt", "reference", "base", "tuned")
 # A "serving" callback's certSha256: the SHA-256 of the certificate's DER bytes, in lowercase hex.
 CERT_SHA256_CHARS = 64

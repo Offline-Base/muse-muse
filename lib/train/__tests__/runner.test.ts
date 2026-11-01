@@ -3785,12 +3785,12 @@ describe("runner.py against a fake platform", { skip: hasPython ? false : "pytho
     assert.match(String((events().at(-1) as { error: string }).error), /HTTP 302 to GET \/dataset$/m);
   });
 
-  it("posts eval items with each field cut to 3,500 characters, at most 60 a job", async () => {
+  it("posts eval items with each field cut to 3,500 characters, at most 120 a job", async () => {
     const recipe = [
       "def run(ctx):",
       "    ok = ctx.eval(0, 'p' * 5000, 'r', 'b' * 10, 't' * 3500)",
       "    sent = 1",
-      "    for i in range(1, 70):",
+      "    for i in range(1, 130):",
       "        if ctx.eval(i, 'p', 'r', 'b', 't'):",
       "            sent += 1",
       "    big = ctx.eval(99, 'é' * 3500, 'é' * 3500, 'é' * 3500, 'é' * 3500)",
@@ -3800,10 +3800,10 @@ describe("runner.py against a fake platform", { skip: hasPython ? false : "pytho
     const r = await runJob(recipe, {});
     assert.equal(r.code, 0, r.output.replaceAll(r.token, "[token]"));
     const evs = events().filter((e) => e.type === "eval") as Array<{ index: number; prompt: string; reference: string; base: string; tuned: string }>;
-    assert.equal(evs.length, 60);
+    assert.equal(evs.length, 120);
     assert.deepEqual(evs[0], { type: "eval", index: 0, prompt: "p".repeat(3500), reference: "r", base: "b".repeat(10), tuned: "t".repeat(3500) });
-    assert.deepEqual(evs.map((e) => e.index), [...Array(60).keys()]);
-    assert.deepEqual((events().at(-1) as { metrics: unknown }).metrics, { first: "yes", sent: 60, big: "no" });
+    assert.deepEqual(evs.map((e) => e.index), [...Array(120).keys()]);
+    assert.deepEqual((events().at(-1) as { metrics: unknown }).metrics, { first: "yes", sent: 120, big: "no" });
     for (const h of hits.filter((x) => x.path.endsWith("/events"))) assert.ok(h.body.length <= 16 * 1024);
   });
 

@@ -400,12 +400,14 @@ describe("dataset params", () => {
 });
 
 describe("eval holdout", () => {
-  it("holds out 10%, at least 8 and at most 40, and always leaves 8 to train on", () => {
+  it("holds out 10%, at least 8 and at most 100, and always leaves 8 to train on", () => {
     assert.equal(evalHoldoutCount(16), 8);
     assert.equal(evalHoldoutCount(20), 8);
     assert.equal(evalHoldoutCount(100), 10);
     assert.equal(evalHoldoutCount(250), 25);
-    assert.equal(evalHoldoutCount(1000), 40);
+    assert.equal(evalHoldoutCount(400), 40);
+    assert.equal(evalHoldoutCount(1000), 100);
+    assert.equal(evalHoldoutCount(3000), 100, "the most a job holds out");
     assert.equal(evalHoldoutCount(12), 4, "never under 8 for training");
     assert.equal(evalHoldoutCount(5), 0);
   });

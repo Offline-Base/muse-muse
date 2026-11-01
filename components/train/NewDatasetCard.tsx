@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useId, useState, type FormEvent } from "react";
 import { Icon } from "@/components/icons";
 import {
+  WRITER_MODEL,
   WRITER_NAME,
   datasetBlockedText,
   datasetCostHint,
@@ -11,7 +12,8 @@ import {
   datasetCountOk,
   datasetStartErrorText,
 } from "@/components/train/format";
-import { groupThousands, usd } from "@/lib/format";
+import { groupThousands, modelLabel, usd } from "@/lib/format";
+import { SPARK_STANDIN } from "@/lib/meta/spark";
 import { DATASET_MAX_COUNT, DATASET_MIN_COUNT, DATASET_TASK_MAX, DATASET_TASK_MIN } from "@/lib/train/logic";
 
 export interface NewDatasetCardProps {
@@ -20,6 +22,8 @@ export interface NewDatasetCardProps {
    * platform's daily spend cap), or null. The card blocks Start with a sentence, as the New job card does.
    */
   blocked?: string | null;
+  /** Offer Spark 1.3 Contributor as the writer (contributorWriterOn), for made-up tasks. */
+  contributorWriter?: boolean;
 }
 
 /** Examples the card starts with. */
@@ -35,12 +39,15 @@ const TASK_PLACEHOLDER =
  * The New dataset card on /fine-tuning: a task description, an optional name and how many examples to write, with a
  * cost estimate. Start posts to /api/train/datasets and opens the new dataset's page, where it fills in as it is written.
  */
-export function NewDatasetCard({ blocked = null }: NewDatasetCardProps) {
+export function NewDatasetCard({ blocked = null, contributorWriter = false }: NewDatasetCardProps) {
   const router = useRouter();
   const id = useId();
   const [title, setTitle] = useState("");
   const [task, setTask] = useState("");
   const [count, setCount] = useState(String(DEFAULT_DATASET_COUNT));
+  const [useContributor, setUseContributor] = useState(false);
+  const [madeUp, setMadeUp] = useState(false);
+  const writerModel = useContributor ? SPARK_STANDIN : WRITER_MODEL;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [invalid, setInvalid] = useState<Record<string, string>>({});
@@ -68,8 +75,12 @@ export function NewDatasetCard({ blocked = null }: NewDatasetCardProps) {
       setError("Fix the fields marked above, then start the dataset.");
       return;
     }
-    const { low, high } = datasetCostRange(countNum);
-    if (!window.confirm(`Have ${WRITER_NAME} write ${countNum} examples? It costs about ${usd(low)} to ${usd(high)} on Meta's API.`)) {
+    if (useContributor && !madeUp) {
+      setError("Confirm the task is made up, or switch back to Muse Wonder.");
+      return;
+    }
+    const { low, high } = datasetCostRange(countNum, writerModel);
+    if (!window.confirm(`Have ${modelLabel(writerModel)} write ${countNum} examples? It costs about ${usd(low)} to ${usd(high)} on Meta's API.`)) {
       return;
     }
 
@@ -79,7 +90,7 @@ export function NewDatasetCard({ blocked = null }: NewDatasetCardProps) {
       const res = await fetch("/api/train/datasets", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...(title.trim() ? { title: title.trim() } : {}), task: task.trim(), count: countNum }),
+        body: JSON.stringify({ ...(title.trim() ? { title: title.trim() } : {}), task: task.trim(), count: countNum, ...(useContributor ? { writer: "contributor", madeUp } : {}) }),
       });
       const data: unknown = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -200,9 +211,32 @@ export function NewDatasetCard({ blocked = null }: NewDatasetCardProps) {
           </div>
         </div>
 
+        {contributorWriter ? (
+          <div className="train-field">
+            <label className="train-label" htmlFor={`${id}-writer`}>
+              Written by
+            </label>
+            <select
+              id={`${id}-writer`}
+              className="train-input"
+              value={useContributor ? "contributor" : "wonder"}
+              onChange={(e) => setUseContributor(e.target.value === "contributor")}
+              disabled={busy}
+            >
+              <option value="wonder">{WRITER_NAME}</option>
+              <option value="contributor">{modelLabel(SPARK_STANDIN)}, made-up tasks only</option>
+            </select>
+            {useContributor ? (
+              <label className="train-help">
+                <input type="checkbox" checked={madeUp} onChange={(e) => setMadeUp(e.target.checked)} disabled={busy} /> This task is made up, with no real people&apos;s or private information. Meta may train on everything sent to this model.
+              </label>
+            ) : null}
+          </div>
+        ) : null}
+
         <div className="train-foot">
           <p className="train-cost" id={`${id}-cost`} aria-live="polite">
-            {blockedText ?? datasetCostHint(countNum)}
+            {blockedText ?? datasetCostHint(countNum, writerModel)}
           </p>
           <button
             type="submit"

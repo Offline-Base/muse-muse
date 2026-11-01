@@ -91,6 +91,15 @@ export function testModel(): typeof SPARK_STANDIN | null {
   return process.env.VERCEL_ENV === "production" ? null : SPARK_STANDIN;
 }
 
+/**
+ * Whether an admin may have Spark 1.3 Contributor write a fine-tuning dataset. Meta's terms (6.2) bar sensitive, confidential or
+ * personal information on that tier and Meta may train on it, so it takes TRAIN_CONTRIBUTOR_WRITER=1 on production, an admin,
+ * and a statement that the task is made up. Anywhere TEST_MODEL is on, it's on already.
+ */
+export function contributorWriterOn(): boolean {
+  return process.env.TRAIN_CONTRIBUTOR_WRITER?.trim() === "1" || testModel() !== null;
+}
+
 /** A model id from the environment, or the fallback. Muse Spark 1.3 becomes Spark 1.3 Contributor, with one warning. */
 function model(name: string, fallback: string): string {
   const test = testModel();

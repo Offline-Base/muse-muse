@@ -1463,6 +1463,14 @@ no company name on the page, since the no-Offline-Base rule hasn't been lifted. 
 8 skipped; tsc clean; next build exit 0 with privacy/ present and with it moved away, which is what Vercel sees. No sideways
 scroll at 1440 or 390, no console errors. Shots: docs/log/shots/2026-11-01/private-*.png.
 
+### 12:19 Sidebar History, and Gallery, Media and Demos in the Muse app's layouts, on tg-history, not pushed
+
+The owner sent Meta's sidebar, Artifacts, Media, Vibes and Scheduled screens. History lists builds on the left; a guest sees only what their browser opened, since guests share one account. Gallery has Presets and Products; Media has Presets and Creations; Demos is the video wall. Left out with nothing real behind them: Favorites, likes, the model pill, voice, and Scheduled while jobs is off. Checks: 6377 tests, 6369 pass, 0 fail, 8 skipped; tsc clean; next build exit 0. Browser on made-up products: search, filters, presets and the floating box fill Make; no sideways scroll at 390; no page errors. The Media shot predates the fixed preset titles. PR #5 was squash-merged, so privacy's 135 commits aren't in main's history; tg-privacy-main on GitHub still has them.
+
+### 12:28 Fine-tuning: 100 tests, and Contributor as an opt-in dataset writer, on tg-history, not pushed
+
+The owner asked for 100 tests, 1,000 generated examples, and Spark Contributor if permissible. 1,000 examples was already the limit, though never confirmed with a real run in this log. Tests: holdout cap 40 to 100, so 1,000 examples hold out 100; job, recipe and runner caps 60 to 120, which would otherwise have cut it silently. Contributor: Meta's terms 6.2 as read in the Oct 28 review bar sensitive, confidential or personal information and Meta may train on it, so it needs TRAIN_CONTRIBUTOR_WRITER=1 (off), an admin, and a made-up statement; judging stays on Wonder. Estimate for 1,000 examples by the page's formula: $15.40 to $33.80 on Wonder, about $0.17 to $0.36 on Contributor, at a Contributor price the catalog lists from 1.2 and marks to verify. Not a legal opinion; 10.1(ix) on training competing models applies to any writer. Checks: 6378 tests, 6370 pass, 0 fail, 8 skipped; tsc clean. No real run: a 100-test run's GPU time is unmeasured, and the 20-minute overhead was set for 40 tests.
+
 ## Gaps
 
 What this record doesn't confirm:
