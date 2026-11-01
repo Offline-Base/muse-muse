@@ -4,12 +4,13 @@ The design for turning Muse Glimmer 30B into decision models inside Muse Muse: a
 labeled examples, and one general engine, **Muse Decide**, that picks from options given at run time. Written Oct 31,
 2026 for the owner's two asks that day: "I'd also want to be able to fine tune and create muse glimmer into a decision
 model from within muse muse", and, with github.com/sinanuozdemir/ai-experiments/tree/main/experiments/scion, "bring it
-into how it could be done here". Built so far: D0 to D5 of the build plan (`lib/decide/types.ts`,
+into how it could be done here". Built so far: D0 to D6 of the build plan (`lib/decide/types.ts`,
 `lib/decide/format.ts`, the scoring in `lib/train/logic.ts`, decision datasets: migration 0017,
 `lib/train/decision-datasets.ts`, the datasets routes and the decision pages of the job dataset route, decide mode
 on the GPU: `GLIMMER_PY`, `ctx.decide` in the runner, the recipe's params, the run estimate and the decide callbacks,
-and after the run: `scoreDecisionStep` in place of judging, the summary saved, and decision models kept off the Hub
-and out of local files). Nothing has run on a real GPU yet (D8 waits for the owner). Branch `tg-decide`, worktree
+after the run: `scoreDecisionStep` in place of judging, the summary saved, and decision models kept off the Hub
+and out of local files, and the pages: the New decision dataset card, the dataset page, the mode and estimate on the
+New job card, `DecisionResults` and the Lab results line). Nothing has run on a real GPU yet (D8 waits for the owner). Branch `tg-decide`, worktree
 `~/mm-wt/decide`.
 
 This settles what `~/mm-wt/_plan/decision-models.md` left open and replaces one thing in it: the model answers with one
@@ -370,7 +371,7 @@ As built (D3):
   `sampleTrain` and `sampleEval` are empty.
 - `writer_model` is "person" (`PERSON_WRITER` in `lib/train/models.ts`), "public" for Muse Decide's mix
   (`PUBLIC_WRITER`); `modelName` names them "The person who uploaded it" and "Public datasets", and `isModelWriter` is
-  false for both. The pages' own `writerName` in `components/train/format.ts` still shows the raw value until D6.
+  false for both. The pages' `writerName` (`components/train/format.ts`) names them the same way since D6.
 
 ### Migration
 
@@ -492,8 +493,8 @@ As built (D4):
   whose index the job hasn't logged for that part (dev and test indexes are apart); "duplicate" when there are none,
   "limit" when they would take the job past 8,000 (nothing is logged then). `decideScores(jobId)` reads them back as
   `{dev, test}` in the order sent, for D5's `scoreDecisionStep`.
-- The job page's event log shows a decide event with no text until D6 gives it a line (`eventLine` in
-  `components/train/format.ts`).
+- The job page's event log reads a decide event as "Scores: 100 test items scored, base and tuned." (`eventLine` in
+  `components/train/format.ts`, D6), and folds back-to-back ones into one row with the count of items.
 
 ### Scoring (logic.ts)
 
@@ -593,6 +594,72 @@ The free comparison is the word-overlap stand-in, computed in TypeScript.
 
 The Datasets table and dataset page show a decision dataset's labels and rows per split; the New job card shows the
 mode, epochs and the run estimate for the GPU.
+
+As built (D6), all of it server-rendered in tests with made-up tickets and checked once in a browser on a local dev
+server (below):
+
+- **`DecisionResults`** (`components/train/DecisionResults.tsx`, no hooks, so the public page renders it on the server
+  and the admin job page in the browser): the strip (tuned and base accuracy with their rows and Wilson intervals,
+  macro F1, calibration error with T and before it, the headline sentence, the calibration sentence, and notes: what
+  the tuned model was trained on, unscored rows, labels under 10 test rows, the group rule for more than 4 labels, and
+  "It can be wrong: check anything that matters."), per label precision, recall, F1 and support (tuned, then base),
+  the tuned confusion matrix with base's behind a `<details>` toggle, the reliability chart, the baselines (both
+  models, always the commonest label, the word-overlap stand-in, all on the same rows) and health (letter mass, the
+  `none` rate, the decline check, too-long renderings, unscored rows, prompts per row, with base Glimmer's caveat).
+  A score-only job shows base alone. The sentences are in `components/train/format.ts` (`decisionHeadline`,
+  `calibrationText`, `decisionNotes`, `decisionSummaryText`).
+- **The reliability chart** is inline SVG: the bins that hold rows as dots (mean confidence across, share right up)
+  joined by a line per model, against the dashed diagonal, with a legend, a `<title>` on every dot for hover, and the
+  bins as a table behind a toggle. The summary keeps only the bins with T (`reliability`), so the chart plots those and
+  the caption gives ECE before and with T; raw bins would need a new summary field. The two series' colors
+  (`--decide-tuned` and `--decide-base` in `app/globals.css`, light and dark) pass the dataviz palette validator on
+  the card surface in both modes.
+- **Wrong answers, admins only.** The admin job page reads the job's scores (`decideScores`) and its dataset's dev and
+  test rows, lays them out with `decisionScoringInput`, and `decisionRowPicks` (new in `lib/train/logic.ts`) picks
+  each scored test row the way `summarizeDecisions` does, so the misses listed are exactly the misses behind the
+  accuracy (a test checks the counts). `wrongAnswers` lists the tuned model's misses (base's for a score-only job),
+  the most confident first, at most 100, each with its input, the right label, the pick with its confidence after T
+  and base's pick. When the scores arrive while the page is open, it refreshes once to get them. The public result
+  page never reads scores or rows, and the pages test proves no input reaches it.
+- **The admin job page** of a decide job shows the results in place of judged eval results: a line while the GPU runs,
+  "Scoring..." once it is gone (polling, as for judging, for up to 20 minutes), or the saved note. A job that didn't
+  succeed and sent no scores says so and doesn't poll. The panel's line reads "Tuned right on 41 of 48". Make local
+  files is hidden, and the Hugging Face card says why a decision model isn't published (`hubJobBlock` mirrors
+  `hubJobProblem`).
+- **The public result page and the Lab results line.** `toResultView` maps a decision summary field by field into
+  `ResultView.decision` (numbers and label names only), and the results table's row reads "Tuned right on 41 of 48
+  (85%)" with macro F1 for base and tuned. `RESULT_SETTINGS` adds mode, epochs and score only. The Lab intro says
+  decision models are scored instead of judged.
+- **The New decision dataset card** (`components/train/NewDecisionCard.tsx`, on `/fine-tuning#new-decision-dataset`):
+  the question, a name, 2 to 12 labels with descriptions (add and remove), and the rows pasted or read from a file, CSV
+  or JSONL by the first line. While typing it shows what the rows hold, read with the route's own parsers (rows per
+  label, unknown labels, unreadable lines). Save posts `{kind: "decision", ...}`; a 400 lists every problem with its
+  line, and a 201 shows the report (rows kept, rows per label and split, merged rows, warnings) with Train on it and
+  Open the dataset. It needs no Meta key and says it costs nothing.
+- **The dataset page** of a decision dataset: the question, the labels with their descriptions and rows per split,
+  how the split works, the 5-to-1 warning and the labels under 10 test rows, and for admins the first 5 train rows of
+  each label. Anyone else sees the labels and counts only: the Lab read (`readyDatasetColumns`) now selects `kind`
+  and the spec without its seed (`decision - 'seed'`), never a row. The datasets tables say "168 train · 24 dev · 48
+  test", and the writer is "The person who uploaded it".
+- **The New job card**: a mode select (Chat or Decide) for glimmer-lora. Each mode shows only its params (`paramShown`:
+  `epochs` and `scoreOnly` in decide, `maxSteps` and `studentPrompt` in chat; Publish to Hugging Face and Why this
+  model are hidden in decide mode, where publish is always 0) and only its datasets (decision datasets in decide
+  mode, chat ones otherwise). Chat mode leaves the mode param out, so a chat job's params are as before. A decision
+  dataset (Train on it, `?dataset=`) starts the card in decide mode. The estimate is `runTimeHint` with
+  `decideRunSize` of the picked dataset: "Training on 336 renderings (11 steps of 32) and scoring 120 prompts before
+  and after on Auto (up to 1x A100 SXM4 (40 GB)): about 23 minutes in a region with the model cache, about 48 without
+  it ...". The adapter select no longer offers decide adapters (`listAdapterOptions` leaves out decide mode jobs),
+  which `adapterProblem` refuses anyway.
+- **Tests:** `components/train/__tests__/decision.test.tsx` (28: helpers, wrong answers against the summary, every
+  card and page piece, chat mode unchanged), 7 new cases in `pages.test.tsx` (public pages show no input and make no
+  admin read; admins get the wrong answers and sample rows), and store tests for the Lab read and the adapter list.
+  `components/train/__tests__/decision-fixture.ts` makes a scored made-up job from the ticket fixture.
+- **The browser check** (Oct 31): `scripts/dev/decide-fixtures.ts` fills a fresh PGlite (made-up tickets and made-up
+  scores, scored by the real `scoreDecisionStep`), then `next dev --webpack` on port 3013 (Turbopack can't resolve
+  `next` through the symlinked `node_modules`) as an admin (`OPEN_ACCESS=admin`, `ADMIN_EMAILS=local-admin`, a name
+  that isn't an email) and then as the guest. Every new page was captured at 1440 light, 1440 dark and 390 with a
+  throwaway headless Chromium; the upload card was filled, refused (an unknown label, with its line) and saved through
+  the real route. No page scrolled sideways. Nothing reached Lambda, Meta, the Hub or Neon.
 
 ### Publishing, local files and the other adapter paths
 
@@ -952,7 +1019,7 @@ route reads the dataset for it and refuses a run that can't fit with "Training o
 prompts before and after on 1x A100 SXM4 (40 GB) needs about 43 minutes (12 of training, 11 of scoring, plus about 20
 for booting and loading the model), ...". Trained renderings stop at 2,000 steps of 32, as on the GPU. The table's
 first three rows are tests (`lib/train/__tests__/decide-mode.test.ts`). The New job card shows no estimate for decide
-mode until D6 hands it the dataset's size. Prices: A100 SXM4 $1.99 an hour, H100 PCIe $3.29, H100 SXM5 $4.29
+mode until D6 hands it the dataset's size; since D6 it does (`runTimeHint` with `decideRunSize`). Prices: A100 SXM4 $1.99 an hour, H100 PCIe $3.29, H100 SXM5 $4.29
 (`docs/VIBE_TUNING.md`, fact 16); a job is billed from launch to termination, every started minute in full.
 
 | Run | GPU | Estimate | Cost |
@@ -1046,7 +1113,7 @@ sessions.
 | D3 (done) | Datasets: migration, schema, parse and validate CSV or JSONL, splits, `DecisionSpec`, the datasets route, the dataset route's `dev` part and renderings, the page cap, `writer_model` "person" | `drizzle/0017_decision_datasets.sql`, `drizzle/meta/`, `lib/db/schema.ts` (shared), `lib/train/decision-datasets.ts`, `lib/train/store.ts` (shared), `lib/train/models.ts`, `app/api/train/datasets/route.ts`, `app/api/train/jobs/[id]/dataset/route.ts`, tests in `store.test.ts`, `routes.test.ts`, `decision-datasets.test.ts` | 4 | yes (PGlite) |
 | D4 (done) | GPU: decide mode in `GLIMMER_PY` (params, scoring, batch, `scoreOnly`, dry run), `ctx.decide` in the runner, the recipe's params, `validateParams`, `runEstimate`, the events route and `recordDecideEvent`, the callback types | `lib/train/recipes/glimmer.ts` (shared), `lib/train/recipes/runner.ts` (shared), `lib/train/recipes/index.ts`, `lib/train/logic.ts`, `lib/train/types.ts` (shared), `lib/train/store.ts`, `app/api/train/jobs/[id]/events/route.ts`, `lib/train/__tests__/runner.test.ts` (fake torch logits, the fake platform serving decision pages) | 5 | yes (Python) |
 | D5 (done) | After the run: `scoreDecisionStep` in place of judging, the summary saved, `publish` 0 by default for decide, `quantProblem` refusing decide adapters for now | `lib/train/workflow.ts` (shared), `lib/train/decide-steps.ts`, `lib/train/hub-cards.ts` (`publishOff`, `hubJobProblem`), `lib/train/logic.ts`, `lib/train/models.ts`, `lib/train/decision-datasets.ts`, `app/api/train/jobs/route.ts`, `workflow.scenario.test.ts`, `steps.test.ts`, `store.test.ts`, `hub-flow.test.ts` | 3 | yes (PGlite) |
-| D6 | Pages: the New decision dataset card, the dataset page, the mode on the New job card with its estimate, `DecisionResults` (strip, per label, confusion, reliability SVG, baselines, health, wrong answers for admins), the Lab results line | `components/train/NewDecisionCard.tsx`, `DatasetDetail.tsx`, `NewJobCard.tsx`, `DecisionResults.tsx`, `results.ts`, `format.ts`, `app/fine-tuning/...`, `components/train/__tests__/decision.test.tsx`; one browser check on the local site | 5 | yes (browser) |
+| D6 (done) | Pages: the New decision dataset card, the dataset page, the mode on the New job card with its estimate, `DecisionResults` (strip, per label, confusion, reliability SVG, baselines, health, wrong answers for admins), the Lab results line | `components/train/NewDecisionCard.tsx`, `DatasetDetail.tsx`, `NewJobCard.tsx`, `DecisionResults.tsx`, `results.ts`, `format.ts`, `app/fine-tuning/...`, `components/train/__tests__/decision.test.tsx`; one browser check on the local site | 5 | yes (browser) |
 | D7 | Serving: `/decide` on the demo GPU, `askDecide`, the try box, `{GATEWAY_URL}/decide` with the permission, limits, stand-in and `decide_offline`, the template helper and `isDecideOffline` | `lib/train/recipes/serve.ts` (shared), `lib/train/serve.ts`, `app/api/lab/[id]/decide/route.ts`, `lib/gateway/decide.ts`, `app/api/gateway/decide/route.ts`, `template/lib/meta/decide.ts`, tests in `runner.test.ts`, `lab-try.test.ts`, `lib/gateway/__tests__/decide.test.ts` | 4 | yes (TLS with openssl) |
 | D8 | Real runs: `dryRun: 1` on a real GPU, then the one real run (below); record times and rates, then set the estimate's constants from them | no code beyond constants; results in this doc | 2, plus GPU time | no |
 | D9 | Docs: `docs/TRAINING.md` decide sections, this file's status, the decision card section in `hub-cards.ts` if time allows | `docs/TRAINING.md`, `docs/DECISION_MODELS.md`, `lib/train/hub-cards.ts` | 2 | no |

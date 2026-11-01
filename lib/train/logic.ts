@@ -1528,3 +1528,44 @@ export function summarizeDecisions(input: DecisionScoringInput): DecisionSummary
     },
   };
 }
+
+/** One scored test row as the admin results page shows it: the pick of each side, with its confidence after T. */
+export interface DecisionRowPick {
+  /** The row in the dataset's test split, 0 on. */
+  row: number;
+  /** The row's right label id. */
+  label: string;
+  /** The pick's label id (null for `none`) and its confidence after the side's T, as serving would answer. */
+  base: { pick: string | null; confidence: number };
+  /** Null when the job scored no tuned model (scoreOnly, or a failed tuned pass). */
+  tuned: { pick: string | null; confidence: number } | null;
+}
+
+/**
+ * Each scored test row's picks, base and tuned, for the wrong answers on an admin's results page. The rows are the ones
+ * summarizeDecisions counts (every rendering of the row usable on every side the job scored, decline renderings left
+ * out), and the picks are made the same way (combined, picked before T), so the misses listed here are exactly the
+ * misses behind the accuracy. `T` is each side's fitted T from the summary, for the confidence shown.
+ */
+export function decisionRowPicks(input: DecisionScoringInput, T: { base: number; tuned: number | null }): DecisionRowPick[] {
+  const { labels, test } = input;
+  const scores = firstScores(test.scores);
+  const hasTuned = test.items.some((it) => sideLogprobs(scores.get(it.index), "tuned", it.labelIds.length) !== null);
+  const out: DecisionRowPick[] = [];
+  for (const [row, items] of itemsByRow(test.items, test.rows.length, false)) {
+    const base = scoredRow(items, scores, "base");
+    const tuned = hasTuned ? scoredRow(items, scores, "tuned") : null;
+    if (!base || (hasTuned && !tuned)) continue;
+    const side = (scored: ScoredRow, t: number) => {
+      const d = temperedDecision(labels, scored.combined, t > 0 && Number.isFinite(t) ? t : 1);
+      return { pick: d.id, confidence: d.confidence };
+    };
+    out.push({
+      row,
+      label: test.rows[row]!.label,
+      base: side(base, T.base),
+      tuned: tuned ? side(tuned, T.tuned ?? 1) : null,
+    });
+  }
+  return out;
+}

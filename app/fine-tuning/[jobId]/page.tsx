@@ -2,18 +2,31 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { DriveOffer } from "@/components/drive/DriveOffer";
+import type { WrongAnswers } from "@/components/train/DecisionResults";
 import { JobResults } from "@/components/train/JobResults";
 import { JobRoom } from "@/components/train/JobRoom";
 import type { JobLiveDemo } from "@/components/train/LiveDemo";
-import { NOT_PUBLIC_TEXT, evalRows, keepEvents, sweepOffText, toRecipeView } from "@/components/train/format";
+import {
+  NOT_PUBLIC_TEXT,
+  evalRows,
+  isDecideJob,
+  keepEvents,
+  sweepOffText,
+  toRecipeView,
+  wrongAnswers,
+} from "@/components/train/format";
 import { hasResults, toPublicLiveDemo, toResultView } from "@/components/train/results";
 import { EmptyCard, NotConnected } from "@/components/ui";
 import { RunLocallyLink, linkedLocalFiles } from "@/components/vibe/RunLocallyLink";
 import { env } from "@/lib/env";
 import { safeQuery } from "@/lib/queries";
-import { ADAPTER_RECIPE, adapterProblem, toJobView } from "@/lib/train/logic";
+import { decisionScoringInput, rowsInOrder } from "@/lib/train/decision-datasets";
+import { ADAPTER_RECIPE, adapterProblem, decisionRowPicks, toJobView } from "@/lib/train/logic";
+import { isDecisionSummary } from "@/lib/train/models";
 import { recipeById } from "@/lib/train/recipes";
 import {
+  decideScores,
+  decisionSplitRows,
   getAdapterSource,
   getDataset,
   getJob,
@@ -58,6 +71,41 @@ async function jobDataset(row: TrainJobRow, recipe: Recipe | null): Promise<{ id
   if (typeof value !== "string") return null;
   const d = await getDataset(value);
   return d ? { id: d.id, title: d.title, writerModel: d.writerModel ?? null } : null;
+}
+
+/** The test rows a decide job's admin page lists as wrong answers, at most. Each holds its input, up to 3,000 characters. */
+const WRONG_SHOWN = 100;
+
+/**
+ * A decide job's extras for its admin page (docs/DECISION_MODELS.md "The results page"): its dataset's train rows, and
+ * once it is scored, the test rows the model missed with their inputs, from the GPU's scores and the dataset's dev and
+ * test rows laid out as scoring laid them out (decisionRowPicks). Admins only: the public page never reads them. A
+ * problem reading them is logged and leaves the wrong answers out, so the numbers still show.
+ */
+async function decisionExtras(row: TrainJobRow): Promise<{ trainRows: number | null; wrong: WrongAnswers | null }> {
+  const datasetId = typeof row.params?.datasetId === "string" ? row.params.datasetId : null;
+  let trainRows: number | null = null;
+  try {
+    const dataset = datasetId ? await getDataset(datasetId) : null;
+    const spec = dataset?.kind === "decision" ? dataset.decision : null;
+    trainRows = spec ? spec.split.train : null;
+    const summary = row.evalSummary;
+    if (!spec || !datasetId || !isDecisionSummary(summary) || summary.items === 0) return { trainRows, wrong: null };
+    const [dev, test, scores] = await Promise.all([
+      decisionSplitRows(datasetId, "dev"),
+      decisionSplitRows(datasetId, "test"),
+      decideScores(row.id),
+    ]);
+    const devRows = dev ? rowsInOrder(dev) : null;
+    const testRows = test ? rowsInOrder(test) : null;
+    if (!devRows || !testRows) return { trainRows, wrong: null };
+    const input = decisionScoringInput(spec, { dev: devRows, test: testRows }, scores);
+    const picks = decisionRowPicks(input, { base: summary.base.T, tuned: summary.tuned?.T ?? null });
+    return { trainRows, wrong: wrongAnswers(picks, testRows, WRONG_SHOWN) };
+  } catch (err) {
+    console.error("[fine-tuning] wrong answers:", err instanceof Error ? err.message : err);
+    return { trainRows, wrong: null };
+  }
 }
 
 /** The trained job a glimmer-serve job's adapter param names, by id and title, or null. */
@@ -140,7 +188,9 @@ async function resultPage(jobId: string) {
     return {
       result: view,
       rows: evalRows(events),
-      dataset: dataset ? { id: dataset.id, title: dataset.title, writerModel: dataset.writerModel ?? null } : null,
+      dataset: dataset
+        ? { id: dataset.id, title: dataset.title, writerModel: dataset.writerModel ?? null, trainCount: dataset.trainCount }
+        : null,
       live: toPublicLiveDemo(live),
       local,
     };
@@ -173,14 +223,15 @@ export default async function FineTuningJobPage({ params }: { params: Promise<{ 
     const row = await getJob(jobId);
     if (!row) return null;
     const recipe = recipeById(row.recipe);
-    const [events, dataset, adapter, liveDemo] = await Promise.all([
+    const [events, dataset, adapter, liveDemo, decision] = await Promise.all([
       allEvents(row.id),
       jobDataset(row, recipe),
       servedAdapter(row, recipe),
       adapterLiveDemo(row, now),
+      isDecideJob(row) ? decisionExtras(row) : Promise.resolve(null),
     ]);
     const { kept, dropped } = keepEvents(events, EVENTS_KEPT);
-    return { job: toJobView(row, now), events: kept, droppedEvents: dropped, dataset, adapter, liveDemo };
+    return { job: toJobView(row, now), events: kept, droppedEvents: dropped, dataset, adapter, liveDemo, decision };
   });
   if (!result.ok) {
     return (
@@ -209,6 +260,7 @@ export default async function FineTuningJobPage({ params }: { params: Promise<{ 
       dataset={result.data.dataset}
       adapter={result.data.adapter}
       liveDemo={result.data.liveDemo}
+      decision={result.data.decision}
       hub={
         result.data.job.recipe === ADAPTER_RECIPE
           ? { offReason: env.hubOffReason, maxActive: env.trainMaxActive, dailyUsd: env.trainDailyUsd }

@@ -10,13 +10,17 @@ import {
   autoGpu,
   autoTimeGpu,
   datasetOptionText,
+  datasetsForMode,
   errorCode,
+  formMode,
   gpuErrorText,
   gpuRowText,
   gpuRows,
   limitBounds,
   limitDefaults,
   maxCostUsd,
+  MODE_LABELS,
+  paramShown,
   pricePerHour,
   runTimeHint,
   serveTimeHint,
@@ -25,7 +29,18 @@ import {
   type GpuRow,
 } from "@/components/train/format";
 import { usd } from "@/lib/format";
-import { isServeRecipe, MIN_MAX_MINUTES, MIN_MAX_USD, recipeDefaults, SERVE_MINUTES_PARAM } from "@/lib/train/logic";
+import { decideRunSize } from "@/lib/train/decision-datasets";
+import {
+  CHAT_MODE,
+  DECIDE_MODE,
+  isServeRecipe,
+  MIN_MAX_MINUTES,
+  MIN_MAX_USD,
+  MODE_PARAM,
+  recipeDefaults,
+  SERVE_MINUTES_PARAM,
+  type JobMode,
+} from "@/lib/train/logic";
 import type { AdapterOption, DatasetView, GpuOption, RecipeParamField, RecipeView, TrainLimits } from "@/lib/train/types";
 
 export interface NewJobCardProps {
@@ -81,19 +96,23 @@ function gpuOptionsFrom(data: unknown): GpuOption[] {
 }
 
 /**
- * The form's starting values: each param's default, for a dataset param `prefer` when it is ready, else the newest ready
- * one, and for an adapter param the newest trained adapter.
+ * The form's starting values in `mode`: each param's default, for a dataset param `prefer` when it is ready and fits
+ * the mode, else the newest ready one that does (decision datasets in decide mode, chat ones otherwise), for an adapter
+ * param the newest trained adapter, and the mode param itself.
  */
 function paramDefaults(
   recipe: RecipeView | undefined,
   ready: DatasetView[],
   adapters: AdapterOption[],
   prefer?: string | null,
+  mode: JobMode = CHAT_MODE,
 ): Record<string, string> {
   const out: Record<string, string> = {};
+  const fits = datasetsForMode(ready, mode);
   for (const f of recipe?.params ?? []) {
-    if (f.kind === "dataset") out[f.key] = (prefer && ready.some((d) => d.id === prefer) ? prefer : ready[0]?.id) ?? "";
+    if (f.kind === "dataset") out[f.key] = (prefer && fits.some((d) => d.id === prefer) ? prefer : fits[0]?.id) ?? "";
     else if (f.kind === "adapter") out[f.key] = adapters[0]?.jobId ?? "";
+    else if (f.key === MODE_PARAM && f.choices) out[f.key] = mode;
     else out[f.key] = f.default === undefined ? "" : String(f.default);
   }
   return out;
@@ -101,6 +120,8 @@ function paramDefaults(
 
 const takesDataset = (r: RecipeView | undefined) => Boolean(r?.params.some((f) => f.kind === "dataset"));
 const takesAdapter = (r: RecipeView | undefined) => Boolean(r?.params.some((f) => f.kind === "adapter"));
+/** A recipe with a mode select (glimmer-lora): chat, or decide on a decision dataset. */
+const takesMode = (r: RecipeView | undefined) => Boolean(r?.params.some((f) => f.key === MODE_PARAM && f.choices));
 
 /**
  * The limits a job of this recipe gets when it asks for none, under the ceilings. A glimmer-serve job's follow its
@@ -110,12 +131,18 @@ function startLimits(recipe: RecipeView, values: Record<string, string>, ceiling
   return limitDefaults(recipeDefaults(recipe, paramsBody(recipe.params, values)), ceilings);
 }
 
-/** Form values as POST /api/train/jobs takes them. Blank params are left out so the recipe's default applies. */
+/**
+ * Form values as POST /api/train/jobs takes them. Blank params are left out so the recipe's default applies, and so are
+ * the params the form's mode doesn't use (paramShown). Chat mode leaves the mode param out too, so a chat job's
+ * params are what they were before decide mode existed.
+ */
 function paramsBody(fields: RecipeParamField[], values: Record<string, string>): Record<string, string | number> {
   const out: Record<string, string | number> = {};
+  const mode = formMode(values);
   for (const f of fields) {
     const raw = (values[f.key] ?? "").trim();
-    if (!raw) continue;
+    if (!raw || !paramShown(f, mode)) continue;
+    if (f.key === MODE_PARAM && mode === CHAT_MODE) continue;
     const n = Number(raw);
     out[f.key] = f.kind === "number" && Number.isFinite(n) ? n : raw;
   }
@@ -144,6 +171,9 @@ export function NewJobCard({
     () => (initialDatasetId ? recipes.find(takesDataset)?.id : undefined) ?? recipes[0]?.id ?? "",
   );
   const recipe = recipes.find((r) => r.id === recipeId) ?? recipes[0];
+  // A decision dataset to start with starts the card in decide mode.
+  const initialMode: JobMode =
+    takesMode(recipe) && (datasets ?? []).some((d) => d.id === initialDatasetId && d.kind === "decision") ? DECIDE_MODE : CHAT_MODE;
   // An admin may ask for up to the platform ceilings; the form starts at the recipe's defaults under them.
   const bounds = useMemo(() => limitBounds(ceilings), [ceilings]);
 
@@ -156,8 +186,12 @@ export function NewJobCard({
 
   const [title, setTitle] = useState("");
   const [params, setParams] = useState<Record<string, string>>(() =>
-    paramDefaults(recipe, ready, trained, initialDatasetId),
+    paramDefaults(recipe, ready, trained, initialDatasetId, initialMode),
   );
+  const mode: JobMode = takesMode(recipe) ? formMode(params) : CHAT_MODE;
+  const readyForMode = useMemo(() => datasetsForMode(ready, mode), [ready, mode]);
+  const writingForMode = useMemo(() => datasetsForMode(writing, mode), [writing, mode]);
+  const shownParams = (recipe?.params ?? []).filter((f) => paramShown(f, mode));
   const start0 = useMemo(
     () => (recipe ? startLimits(recipe, params, ceilings) : { maxMinutes: MIN_MAX_MINUTES, maxUsd: MIN_MAX_USD }),
     [recipe, params, ceilings],
@@ -211,14 +245,14 @@ export function NewJobCard({
 
   // A dataset that turns ready while the card is open fills an empty dataset field.
   useEffect(() => {
-    const first = ready[0]?.id;
+    const first = readyForMode[0]?.id;
     const keys = (recipe?.params ?? []).filter((f) => f.kind === "dataset").map((f) => f.key);
     if (!first || !keys.length) return;
     setParams((p) => {
       const empty = keys.filter((k) => !p[k]);
       return empty.length ? { ...p, ...Object.fromEntries(empty.map((k) => [k, first])) } : p;
     });
-  }, [ready, recipe]);
+  }, [readyForMode, recipe]);
 
   // A refresh can take a picked GPU's capacity away. Go back to Auto and say so, rather than launch something else.
   useEffect(() => {
@@ -239,6 +273,19 @@ export function NewJobCard({
     setParams(values);
     setGpu("");
     setGpuNote(null);
+    setMinutes(String(b.maxMinutes));
+    setDollars(b.maxUsd.toFixed(2));
+    setInvalid({});
+    setError(null);
+  }
+
+  /** Switches chat and decide mode: the params start over at that mode's defaults, with a dataset that fits it. */
+  function pickMode(next: string) {
+    if (!recipe) return;
+    const m: JobMode = next === DECIDE_MODE ? DECIDE_MODE : CHAT_MODE;
+    const values = paramDefaults(recipe, ready, trained, null, m);
+    const b = startLimits(recipe, values, ceilings);
+    setParams(values);
     setMinutes(String(b.maxMinutes));
     setDollars(b.maxUsd.toFixed(2));
     setInvalid({});
@@ -274,12 +321,16 @@ export function NewJobCard({
       ? (timeRows.find((r) => r.instanceType === gpu) ?? null)
       : autoTimeGpu(recipe, timeRows, usesCache);
   const serving = Boolean(recipe && isServeRecipe(recipe.id));
+  // A decide job's estimate comes from its dataset: the renderings it trains on and the prompts it scores.
+  const datasetKey = recipe?.params.find((f) => f.kind === "dataset")?.key;
+  const spec = mode === DECIDE_MODE && datasetKey ? (readyForMode.find((d) => d.id === params[datasetKey])?.decision ?? null) : null;
+  const decideSize = useMemo(() => (spec ? decideRunSize(spec, params) : null), [spec, params]);
   // A demo's time on the GPU is its minutes plus the boot, so the priciest GPU it may get leaves it the least.
   const runHint = !recipe
     ? null
     : serving
       ? serveTimeHint(recipe, params, costRow, limits, !gpu)
-      : runTimeHint(recipe, params, timeRow, limits, !gpu && usesCache);
+      : runTimeHint(recipe, params, timeRow, limits, !gpu && usesCache, decideSize);
 
   /** Sets a param; a demo's minutes also move the limits to what that many minutes need. */
   function setParam(key: string, value: string) {
@@ -297,10 +348,12 @@ export function NewJobCard({
     ? NOT_PUBLIC_TEXT
     : sweepOff
       ? sweepOffText(sweepOff)
-      : needsDataset && !ready.length
+      : needsDataset && !readyForMode.length
         ? datasets === null
           ? "Couldn't load the datasets, so this recipe can't start. Reload the page to try again."
-          : "This recipe trains on a dataset, and none is ready yet. Make one under Datasets first."
+          : mode === DECIDE_MODE
+            ? "Decide mode trains on a decision dataset, and there isn't one yet. Make one under New decision dataset first."
+            : "This recipe trains on a dataset, and none is ready yet. Make one under Datasets first."
         : needsAdapter && !trained.length
           ? adapters === null
             ? "Couldn't load the trained adapters, so this recipe can't start. Reload the page to try again."
@@ -321,13 +374,14 @@ export function NewJobCard({
     if (!Number.isFinite(dollarsNum) || dollarsNum < MIN_MAX_USD || dollarsNum > bounds.maxUsd + 1e-9) {
       out.dollars = `Enter an amount from ${usd(MIN_MAX_USD)} to ${usd(bounds.maxUsd)}.`;
     }
-    for (const f of recipe?.params ?? []) {
+    for (const f of shownParams) {
       const raw = (params[f.key] ?? "").trim();
       if (f.kind === "dataset") {
         if (!raw) {
           if (f.required) out[`p:${f.key}`] = "Pick a dataset. Make one under Datasets if none is ready.";
-        } else if (!ready.some((d) => d.id === raw)) {
-          out[`p:${f.key}`] = "That dataset isn't ready. Pick another one.";
+        } else if (!readyForMode.some((d) => d.id === raw)) {
+          out[`p:${f.key}`] =
+            mode === DECIDE_MODE ? "Decide mode trains on a decision dataset. Pick one of those." : "That dataset isn't ready. Pick another one.";
         }
         continue;
       }
@@ -343,9 +397,14 @@ export function NewJobCard({
         if (f.required && f.default === undefined) out[`p:${f.key}`] = `${f.label} is required.`;
         continue;
       }
+      if (f.choices && !f.choices.includes(raw.toLowerCase())) {
+        out[`p:${f.key}`] = `${f.label} must be ${f.choices.join(" or ")}.`;
+        continue;
+      }
       if (f.kind === "number") {
         const n = Number(raw);
         if (!Number.isFinite(n)) out[`p:${f.key}`] = `${f.label} must be a number.`;
+        else if (f.whole && !Number.isInteger(n)) out[`p:${f.key}`] = `${f.label} must be a whole number.`;
         else if (f.min !== undefined && n < f.min) out[`p:${f.key}`] = `${f.label} must be at least ${f.min}.`;
         else if (f.max !== undefined && n > f.max) out[`p:${f.key}`] = `${f.label} must be at most ${f.max}.`;
       } else if (f.kind === "url" && !/^https:\/\/[^\s/]+/i.test(raw)) {
@@ -501,9 +560,40 @@ export function NewJobCard({
             <p className="train-help">Shown in the jobs list.</p>
           </div>
 
-          {recipe.params.map((f) => {
+          {shownParams.map((f) => {
             const key = `p:${f.key}`;
             const inputId = `${id}-param-${f.key}`;
+            if (f.choices) {
+              const helpId = `${inputId}-help`;
+              const isMode = f.key === MODE_PARAM;
+              return (
+                <div className="train-field" key={f.key}>
+                  <label className="train-label" htmlFor={inputId}>
+                    {f.label}
+                  </label>
+                  <select
+                    id={inputId}
+                    className="train-select"
+                    value={(params[f.key] ?? "").trim().toLowerCase() || f.choices[0]}
+                    onChange={(e) => (isMode ? pickMode(e.target.value) : setParam(f.key, e.target.value))}
+                    disabled={busy}
+                    {...fieldProps(key, helpId)}
+                  >
+                    {f.choices.map((c) => (
+                      <option key={c} value={c}>
+                        {isMode && (c === CHAT_MODE || c === DECIDE_MODE) ? MODE_LABELS[c] : c}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="train-help" id={helpId}>
+                    {isMode && mode === DECIDE_MODE
+                      ? "Trains Glimmer to answer with one label's letter, then scores base and tuned Glimmer on the dataset's held-out test rows: no judge and no Meta call. A decision model stays on Muse Muse: Publish to Hugging Face is off in decide mode, and a person's rows are never published."
+                      : f.help}
+                  </p>
+                  {fieldError(key)}
+                </div>
+              );
+            }
             if (f.kind === "dataset") {
               const helpId = `${inputId}-help`;
               return (
@@ -517,30 +607,44 @@ export function NewJobCard({
                     value={params[f.key] ?? ""}
                     onChange={(e) => setParams((p) => ({ ...p, [f.key]: e.target.value }))}
                     required={Boolean(f.required)}
-                    disabled={busy || !ready.length}
+                    disabled={busy || !readyForMode.length}
                     {...fieldProps(key, helpId)}
                   >
-                    {ready.length ? null : (
-                      <option value="">{datasets === null ? "Couldn't load datasets" : "No dataset is ready yet"}</option>
+                    {readyForMode.length ? null : (
+                      <option value="">
+                        {datasets === null
+                          ? "Couldn't load datasets"
+                          : mode === DECIDE_MODE
+                            ? "No decision dataset yet"
+                            : "No dataset is ready yet"}
+                      </option>
                     )}
-                    {ready.map((d) => (
+                    {readyForMode.map((d) => (
                       <option key={d.id} value={d.id}>
                         {datasetOptionText(d)}
                       </option>
                     ))}
-                    {writing.map((d) => (
+                    {writingForMode.map((d) => (
                       <option key={d.id} value={d.id} disabled>
                         {datasetOptionText(d)}
                       </option>
                     ))}
                   </select>
                   <p className="train-help" id={helpId}>
-                    {ready.length ? (
-                      f.help
+                    {readyForMode.length ? (
+                      mode === DECIDE_MODE ? (
+                        "A decision dataset. It trains on the train rows; the dev rows set its confidence and the test rows score base and tuned Glimmer."
+                      ) : (
+                        f.help
+                      )
+                    ) : mode === DECIDE_MODE ? (
+                      <>
+                        None yet. <a href="#new-decision-dataset">Make a decision dataset</a> from your own labeled rows first.
+                      </>
                     ) : (
                       <>
                         None is ready yet. <a href="#new-dataset">Make a dataset</a>
-                        {writing.length ? ", or wait for the one being written to finish." : " first."}
+                        {writingForMode.length ? ", or wait for the one being written to finish." : " first."}
                       </>
                     )}
                   </p>

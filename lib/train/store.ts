@@ -11,10 +11,12 @@ import {
   ADAPTER_RECIPE,
   capEventBody,
   DECIDE_ITEMS_MAX,
+  DECIDE_MODE,
   EVALS_MAX,
   estimateCostUsd,
   evalSplit,
   instanceNameFor,
+  MODE_PARAM,
   SERVE_ADAPTER_PARAM,
   SERVE_RECIPE,
   toLiveDemoView,
@@ -1293,10 +1295,23 @@ const readyDatasetColumns = {
   finishedAt: datasets.finishedAt,
   /** The model that wrote it (null: Muse Spark 1.3, written before the writer was recorded). */
   writerModel: datasets.writerModel,
+  /** "decision" for a person's labeled rows (docs/DECISION_MODELS.md), else "chat". */
+  kind: datasets.kind,
+  /**
+   * A decision dataset's definition as the read-only page shows it: the question, the labels and the rows per split,
+   * without its seed. Never its rows, which stay in decision_rows: a person's inputs may be private. Null for chat.
+   */
+  decision: sql<Omit<DecisionSpec, "seed"> | null>`(${datasets.decision} - 'seed')`,
 };
 
-/** A ready dataset as the Lab results read it: no examples, note, author or workflow run. */
-export type ReadyDatasetRow = Pick<DatasetHead, keyof typeof readyDatasetColumns>;
+/**
+ * A ready dataset as the Lab results read it: no examples, rows, note, author or workflow run. `kind` and `decision`
+ * are optional so a row from before decision datasets still reads as chat.
+ */
+export type ReadyDatasetRow = Pick<DatasetHead, Exclude<keyof typeof readyDatasetColumns, "kind" | "decision">> & {
+  kind?: DatasetHead["kind"];
+  decision?: Omit<DecisionSpec, "seed"> | null;
+};
 
 /** Ready datasets, newest first. */
 export async function listReadyDatasets(limit = 50): Promise<ReadyDatasetRow[]> {
@@ -1373,6 +1388,9 @@ export async function listAdapterOptions(limit = 50): Promise<AdapterOption[]> {
         notDryRun(),
         sql`${metrics}->>'cache_used' = 'yes'`,
         sql`rtrim(${metrics}->>'adapter_dir', '/') like '%/models/' || ${jobs.id}::text`,
+        // A decision model's adapter answers with one letter: adapterProblem refuses it for the chat demo, publishing
+        // and local files until their decide versions exist (docs/DECISION_MODELS.md), so it isn't offered either.
+        sql`coalesce(${jobs.params}->>${MODE_PARAM}, '') <> ${DECIDE_MODE}`,
       ),
     )
     .orderBy(desc(jobs.createdAt))

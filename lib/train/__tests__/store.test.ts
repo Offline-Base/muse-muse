@@ -629,7 +629,14 @@ describe("training store", { skip: canMock ? false : "needs --experimental-test-
       assert.deepEqual(stored!.train, [], "train and eval stay empty, so no chat reader changes");
       assert.deepEqual(stored!.eval, []);
       assert.deepEqual((await store.datasetPage(ds.id, "train", 0, 10))!.items, []);
-      assert.equal((await store.getReadyDataset(ds.id))!.title, "Ticket router");
+      const ready = (await store.getReadyDataset(ds.id))!;
+      assert.equal(ready.title, "Ticket router");
+      assert.equal(ready.kind, "decision");
+      const { seed, ...withoutSeed } = spec;
+      assert.ok(seed);
+      assert.deepEqual(ready.decision, withoutSeed, "the Lab read leaves the seed out, and never selects a row");
+      assert.equal("decisionRows" in ready, false);
+      assert.deepEqual((await store.listReadyDatasets()).map((d) => [d.id, d.kind]), [[ds.id, "decision"]]);
     });
 
     it("refuses rows that don't match the spec's counts", async () => {
@@ -700,6 +707,10 @@ describe("training store", { skip: canMock ? false : "needs --experimental-test-
 
     it("reads a chat dataset as kind chat with no decision rows", async () => {
       const chat = await store.createDataset({ title: "t", task: "Explain Python errors.", requested: 20, writerModel: "muse-wonder-1.0" });
+      await testDb.update(realSchema.trainingDatasets).set({ status: "ready" }).where(eq(realSchema.trainingDatasets.id, chat.id));
+      const ready = (await store.getReadyDataset(chat.id))!;
+      assert.equal(ready.kind, "chat");
+      assert.equal(ready.decision, null);
       assert.equal(chat.kind, "chat");
       assert.equal(chat.decision, null);
       assert.equal(await store.decisionSplitRows(chat.id, "train"), null);
@@ -888,6 +899,9 @@ describe("training store", { skip: canMock ? false : "needs --experimental-test-
       const failed = await lora({ status: "failed" });
       await done(failed.id, onCache(failed.id));
       await lora(); // succeeded, but no done event logged
+      // A decision model's adapter answers with one letter, so the chat demo never offers it (docs/DECISION_MODELS.md).
+      const decide = await lora({ params: { datasetId: "1b2c3d4e-0000-4000-8000-000000000002", mode: "decide", epochs: 2, publish: 0 } });
+      await done(decide.id, onCache(decide.id));
 
       const options = await store.listAdapterOptions();
       assert.deepEqual(options.map((o) => o.jobId), [good.id]);

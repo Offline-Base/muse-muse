@@ -2,9 +2,18 @@ import Link from "next/link";
 import { Icon } from "@/components/icons";
 import { DatasetStatusPill } from "@/components/train/DatasetStatusPill";
 import { LongText } from "@/components/train/LongText";
-import { WRITER_NAME, isDatasetStalled, itemNumber, writerName } from "@/components/train/format";
+import {
+  SMALL_LABEL_ROWS,
+  WRITER_NAME,
+  decisionCountsText,
+  isDatasetStalled,
+  itemNumber,
+  writerName,
+} from "@/components/train/format";
 import { PageHeader } from "@/components/ui";
-import { dateTimeUtc, duration, elapsedMs, plural, usd } from "@/lib/format";
+import type { DecisionRow, DecisionSpec } from "@/lib/decide/types";
+import { NONE_OPTION } from "@/lib/decide/format";
+import { dateTimeUtc, duration, elapsedMs, groupThousands, plural, usd } from "@/lib/format";
 import type { DatasetView, EvalExample, TrainExample } from "@/lib/train/types";
 
 export interface DatasetDetailProps {
@@ -18,6 +27,11 @@ export interface DatasetDetailProps {
   now: number;
   /** The Lab results' view for non-admins: no "Train on it" and no note. */
   readOnly?: boolean;
+  /**
+   * A decision dataset's sample rows, the first few train rows of each label by label id. Admins only: the read-only
+   * page never gets a person's inputs.
+   */
+  sampleRows?: Record<string, DecisionRow[]> | null;
 }
 
 /**
@@ -25,7 +39,12 @@ export interface DatasetDetailProps {
  * since every example shares it) and the eval prompts with the reference answers. The writer is named from the
  * dataset's record (writerName: Muse Spark 1.3 for one made before the writer was recorded).
  */
-export function DatasetDetail({ dataset: d, sampleTrain, sampleEval, written, now, readOnly = false }: DatasetDetailProps) {
+export function DatasetDetail(props: DatasetDetailProps) {
+  if (props.dataset.kind === "decision" && props.dataset.decision) return <DecisionDatasetDetail {...props} spec={props.dataset.decision} />;
+  return <ChatDatasetDetail {...props} />;
+}
+
+function ChatDatasetDetail({ dataset: d, sampleTrain, sampleEval, written, now, readOnly = false }: DatasetDetailProps) {
   const writer = writerName(d);
   const ready = d.status === "ready";
   const generating = d.status === "generating";
@@ -201,6 +220,168 @@ export function DatasetDetail({ dataset: d, sampleTrain, sampleEval, written, no
           </p>
         ) : null}
       </section>
+    </div>
+  );
+}
+
+/**
+ * A decision dataset's page (docs/DECISION_MODELS.md "The dataset"): the question, the labels with their rows per
+ * split, how the rows were split, and for admins a few train rows of each label. Nothing was generated or spent.
+ */
+function DecisionDatasetDetail({
+  dataset: d,
+  spec,
+  readOnly = false,
+  sampleRows = null,
+}: DatasetDetailProps & { spec: DecisionSpec }) {
+  const small = spec.labels.filter((l) => (spec.perLabel[l.id]?.test ?? 0) < SMALL_LABEL_ROWS);
+  const counts = spec.labels.map((l) => spec.perLabel[l.id] ?? { train: 0, dev: 0, test: 0 });
+  const totals = counts.map((c) => c.train + c.dev + c.test);
+  const most = Math.max(0, ...totals);
+  const least = Math.min(...totals);
+  return (
+    <div className="page">
+      <PageHeader
+        title={d.title}
+        subtitle={
+          <>
+            Decision dataset · {spec.source === "person" ? "uploaded" : "built from public datasets"}{" "}
+            <time dateTime={d.createdAt}>{dateTimeUtc(d.createdAt)}</time>
+          </>
+        }
+        actions={
+          <>
+            <Link className="btn btn-outline" href="/fine-tuning#datasets">
+              <Icon name="chevronLeft" size={18} />
+              All datasets
+            </Link>
+            {d.status === "ready" && !readOnly ? (
+              <Link className="btn btn-primary" href={`/fine-tuning?dataset=${d.id}#new-job`}>
+                <Icon name="play" size={16} />
+                Train on it
+              </Link>
+            ) : null}
+          </>
+        }
+      />
+
+      <section className="card totals" aria-label="Dataset status">
+        <div className="train-ds-status">
+          <DatasetStatusPill status={d.status} stalled={false} />
+          <p className="totals-big">
+            <strong>{plural(spec.labels.length, "label")}</strong> · {decisionCountsText(spec)}
+          </p>
+        </div>
+        <p className="muted small">
+          {readOnly
+            ? "A person's labeled examples for a decision model. Their inputs stay private: this page shows only the labels and how many rows each has."
+            : "Ready to train in decide mode. Nothing was generated and nothing was spent: these are the uploaded rows, checked and split once."}
+        </p>
+      </section>
+
+      <section className="card section-card" aria-labelledby="ds-question">
+        <h2 id="ds-question">Question</h2>
+        <p className="train-text">{spec.question}</p>
+        <p className="muted small">
+          Every prompt asks this about one input, with the labels as lettered options and &quot;{NONE_OPTION}&quot; last.
+          The model answers with one letter.
+        </p>
+      </section>
+
+      <section className="section" aria-labelledby="ds-labels">
+        <div className="section-head">
+          <h2 id="ds-labels">Labels</h2>
+          <span className="muted small">Rows per split</span>
+        </div>
+        <div className="table-wrap">
+          <table className="data decide-table">
+            <caption className="sr-only">Each label with its description and its rows in train, dev and test</caption>
+            <thead>
+              <tr>
+                <th scope="col">Label</th>
+                <th scope="col" className="num">
+                  Train
+                </th>
+                <th scope="col" className="num">
+                  Dev
+                </th>
+                <th scope="col" className="num">
+                  Test
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {spec.labels.map((l, i) => (
+                <tr key={l.id}>
+                  <th scope="row">
+                    {l.name}
+                    {l.description ? <span className="row-sub muted">{l.description}</span> : null}
+                  </th>
+                  <td className="num">{groupThousands(counts[i]!.train)}</td>
+                  <td className="num">{groupThousands(counts[i]!.dev)}</td>
+                  <td className="num">{groupThousands(counts[i]!.test)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="muted small">
+          Test rows (a fifth of each label, at least 5) were held out first and are never trained on: both models are
+          scored on them once. Dev rows (a tenth, at least 3) only set how confident the answers say they are. The rest
+          train, and near-repeats always land in the same split.
+        </p>
+        {least > 0 && most > 5 * least ? (
+          <div className="callout train-callout-warn" role="note">
+            <Icon name="alert" size={18} />
+            <p>
+              The largest label has more than 5 times the rows of the smallest. Training repeats the smaller labels&apos;
+              rows up to 3 to 1, and macro F1 on the results shows how the small ones do.
+            </p>
+          </div>
+        ) : null}
+        {small.length ? (
+          <p className="muted small">
+            {small.map((l) => l.name).join(", ")} {small.length === 1 ? "has" : "have"} under {SMALL_LABEL_ROWS} test rows,
+            so one row moves {small.length === 1 ? "its" : "their"} scores by 10 points or more.
+          </p>
+        ) : null}
+      </section>
+
+      {!readOnly ? (
+        <section className="section" aria-labelledby="ds-rows">
+          <div className="section-head">
+            <h2 id="ds-rows">Sample rows</h2>
+            <span className="muted small">The first train rows of each label · admins only</span>
+          </div>
+          {sampleRows && spec.labels.some((l) => sampleRows[l.id]?.length) ? (
+            <div className="table-wrap">
+              <table className="data decide-table decide-rows">
+                <caption className="sr-only">The first train rows of each label</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Input</th>
+                    <th scope="col">Label</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {spec.labels.flatMap((l) =>
+                    (sampleRows[l.id] ?? []).map((r, i) => (
+                      <tr key={`${l.id}-${i}`}>
+                        <td>
+                          <LongText text={r.input} />
+                        </td>
+                        <td className="train-nowrap">{l.name}</td>
+                      </tr>
+                    )),
+                  )}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="muted">No sample rows.</p>
+          )}
+        </section>
+      ) : null}
     </div>
   );
 }

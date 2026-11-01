@@ -13,6 +13,7 @@ import { after, before, beforeEach, describe, it, mock } from "node:test";
 import { createElement, type ReactNode } from "react";
 import type { SessionUser } from "@/lib/auth";
 import type { TrainEventView } from "@/lib/train/types";
+import { ticketDecision } from "./decision-fixture";
 
 const canMock = typeof (mock as { module?: unknown }).module === "function";
 const at = (path: string) => new URL(path, import.meta.url).href;
@@ -40,6 +41,14 @@ const SECRET_TEXT = /i-0a1b2c3d4e5f6789|203\.0\.113\.9|mm-train-|us-secret-1|has
 const CONTROLS = /<form|<button[^>]*type="submit"|Stop job|Try stop again|Shut down GPU|New job|New dataset|Train on it|href="#new-job"|href="#new-dataset"/;
 
 const summary = { items: 2, tunedWins: 1, baseWins: 0, ties: 1, avgBaseScore: 4.5, avgTunedScore: 7.5, judgeCostUsd: 0.004 };
+
+/**
+ * A scored decide job of a person's decision dataset (made-up tickets): the job row, and the dataset row as the
+ * database holds it, its split rows included, as a store that leaked them would answer.
+ */
+const tickets = ticketDecision();
+const decideParams = { datasetId: DS, mode: "decide", epochs: 2, learningRate: 0.0002, loraRank: 16, scoreOnly: 0, dryRun: 0, publish: 0 };
+const ticketInputs = [...tickets.rows.train, ...tickets.rows.dev, ...tickets.rows.test].map((r) => r.input);
 
 /** A glimmer-lora job row as the database holds it, every column filled. */
 function jobRow(over: Record<string, unknown> = {}) {
@@ -132,6 +141,9 @@ let liveDemoFails = false;
 let adapterSource: { job: Record<string, unknown>; metrics: Record<string, unknown> | null } | null = null;
 let lastSweep: Date | null = null;
 let calls: string[] = [];
+/** A decision dataset's split rows (DS) and its decide job's scores (JOB), for the decision page tests. */
+let decisionRows: { train: Array<{ input: string; label: string }>; dev: Array<{ input: string; label: string }>; test: Array<{ input: string; label: string }> } | null = null;
+let decideSent: { dev: unknown[]; test: unknown[] } = { dev: [], test: [] };
 const savedEnv = { ...process.env };
 
 const sample = {
@@ -185,10 +197,18 @@ const fakeStore = {
   trainingSpendToday: fake("trainingSpendToday", () => 0),
   lastSweepOkAt: fake("lastSweepOkAt", () => lastSweep),
   verifyJobToken: fake("verifyJobToken", () => false),
+  // A decide job's scores and a decision dataset's rows: the admin pages' wrong answers and sample rows only.
+  decideScores: fake("decideScores", (id: string) => (id === JOB ? decideSent : { dev: [], test: [] })),
+  decisionSplitRows: fake("decisionSplitRows", (id: string, part: "train" | "dev" | "test", indexes?: number[]) => {
+    const rows = id === DS ? decisionRows?.[part] : undefined;
+    if (!rows) return null;
+    const wanted = indexes ?? rows.map((_, i) => i);
+    return { total: rows.length, rows: new Map(wanted.filter((i) => i >= 0 && i < rows.length).map((i) => [i, rows[i]!])) };
+  }),
 };
 
 /** Reads that only the admin pages may make. */
-const ADMIN_READS = ["getJob", "listEvents", "getDataset", "listJobs", "listDatasets", "datasetProgress", "activeJobCount", "trainingSpendToday", "lastSweepOkAt", "getAdapterSource", "listAdapterOptions"];
+const ADMIN_READS = ["getJob", "listEvents", "getDataset", "listJobs", "listDatasets", "datasetProgress", "activeJobCount", "trainingSpendToday", "lastSweepOkAt", "getAdapterSource", "listAdapterOptions", "decideScores", "decisionSplitRows"];
 
 type Page = (props: { params?: Promise<Record<string, string>>; searchParams?: Promise<Record<string, string>> }) => Promise<ReactNode>;
 let render: (node: ReactNode) => string;
@@ -212,6 +232,26 @@ async function openDataset(id = DS): Promise<string> {
 function clean(html: string) {
   assert.equal(html.includes(String.fromCharCode(0x2014)), false, "no em dash");
   assert.doesNotMatch(html, SECRET_TEXT);
+}
+
+/** Makes JOB the scored decide job and DS its decision dataset, rows and all. */
+function useTickets() {
+  job = jobRow({ title: "Ticket router LoRA", params: decideParams, evalSummary: tickets.summary, judgeModel: null, instanceType: "gpu_1x_a100_sxm4" });
+  dataset = datasetRow({
+    title: "Ticket router",
+    task: tickets.spec.question,
+    kind: "decision",
+    decision: tickets.spec,
+    decisionRows: tickets.rows,
+    writerModel: "person",
+    requested: 240,
+    trainCount: 168,
+    evalCount: 48,
+    costUsd: 0,
+    error: null,
+  });
+  decisionRows = tickets.rows;
+  decideSent = tickets.sent;
 }
 
 describe("fine-tuning pages", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
@@ -264,6 +304,8 @@ describe("fine-tuning pages", { skip: canMock ? false : "needs --experimental-te
     adapterSource = null;
     lastSweep = null;
     calls = [];
+    decisionRows = null;
+    decideSent = { dev: [], test: [] };
   });
 
   describe("for non-admins", () => {
@@ -440,6 +482,43 @@ describe("fine-tuning pages", { skip: canMock ? false : "needs --experimental-te
       assert.equal(calls.some((c) => ADMIN_READS.includes(c)), false);
     });
 
+    it("/fine-tuning/{id} of a decide job shows its scores, never an input, and reads no rows or scores", async () => {
+      useTickets();
+      const html = await openJob();
+      clean(html);
+      assert.match(html, /<h2 id="decide-results-title">Decision results<\/h2>/);
+      assert.match(html, /The tuned model was right on 41 of 48 held-out examples \(85%\); base Glimmer was right on 32 \(67%\)\./);
+      assert.match(html, /No judge and no model call/);
+      assert.match(html, /<dt>Mode<\/dt><dd>decide<\/dd>/);
+      assert.doesNotMatch(html, /Wrong answers|judged by|Tuned Glimmer beat base/);
+      for (const input of ticketInputs) assert.equal(html.includes(input), false, "a person's inputs never reach the public page");
+      assert.equal(calls.some((c) => ADMIN_READS.includes(c)), false);
+    });
+
+    it("/fine-tuning lists a decide job with its accuracy, and its dataset with its splits", async () => {
+      useTickets();
+      const html = await openList();
+      clean(html);
+      assert.match(html, /Tuned right on <strong>41<\/strong> of 48 \(85%\)/);
+      assert.match(html, /168 train · 24 dev · 48 test/);
+      assert.match(html, /Decision models are scored instead of judged/);
+    });
+
+    it("/fine-tuning/datasets/{id} of a decision dataset shows its labels and counts, never a row", async () => {
+      useTickets();
+      const html = await openDataset();
+      clean(html);
+      assert.match(html, /<h1>Ticket router<\/h1>/);
+      assert.match(html, /Which team should handle this support ticket\?/);
+      assert.match(html, /Charges, refunds and invoices/);
+      assert.match(html, /Their inputs stay private/);
+      for (const input of ticketInputs) assert.equal(html.includes(input), false);
+      assert.doesNotMatch(html, CONTROLS);
+      assert.doesNotMatch(html, /page-fixture-seed/, "never the seed");
+      assert.equal(calls.includes("datasetPage"), false);
+      assert.equal(calls.some((c) => ADMIN_READS.includes(c)), false);
+    });
+
     for (const status of ["generating", "failed"]) {
       it(`/fine-tuning/datasets/{id} is a 404 for a dataset that is ${status}, even if the store answered it`, async () => {
         dataset = datasetRow({ status });
@@ -563,6 +642,48 @@ describe("fine-tuning pages", { skip: canMock ? false : "needs --experimental-te
       assert.doesNotMatch(html, /c2VjcmV0/, "never the small files");
       job = jobRow({ recipe: "smoke", title: "Smoke test", params: {}, evalSummary: null });
       assert.doesNotMatch(await openJob(), /<h2[^>]*>Hugging Face<\/h2>/, "only Muse Glimmer LoRA jobs publish");
+    });
+
+    it("/fine-tuning/{id} of a decide job lists the test rows it got wrong, with their inputs", async () => {
+      useTickets();
+      const html = await openJob();
+      assert.equal(html.includes(String.fromCharCode(0x2014)), false, "no em dash");
+      assert.match(html, /Wrong answers<\/h3><span class="muted small">Admins only<\/span>/);
+      assert.equal(html.match(/% sure<\/span>/g)?.length, 7);
+      const missed = tickets.rows.test.filter((r) => html.includes(r.input));
+      assert.equal(missed.length, 7, "the misses' inputs, and no other row's");
+      assert.match(html, /trained on 168 of this dataset&#x27;s examples/);
+      assert.ok(calls.includes("decideScores") && calls.includes("decisionSplitRows"));
+    });
+
+    it("/fine-tuning/{id} of a decide job still shows its numbers when its rows can't be read", async () => {
+      useTickets();
+      decisionRows = null;
+      const html = await openJob();
+      assert.match(html, /Decision results/);
+      assert.doesNotMatch(html, /Wrong answers/);
+    });
+
+    it("/fine-tuning/datasets/{id} of a decision dataset shows an admin a few rows of each label", async () => {
+      useTickets();
+      const html = await openDataset();
+      assert.equal(html.includes(String.fromCharCode(0x2014)), false, "no em dash");
+      assert.match(html, /Sample rows/);
+      assert.match(html, /Train on it/);
+      for (const l of tickets.spec.labels) {
+        const first = tickets.rows.train.find((r) => r.label === l.id)!;
+        assert.ok(html.includes(first.input), l.name);
+      }
+      assert.equal(html.includes(tickets.rows.test[0]!.input), false, "never a test row");
+      assert.ok(calls.includes("decisionSplitRows"));
+      assert.equal(calls.includes("datasetPage"), false);
+    });
+
+    it("/fine-tuning offers the New decision dataset card and starts the New job card on ?dataset=", async () => {
+      useTickets();
+      const html = render(await listPage({ searchParams: Promise.resolve({ dataset: DS }) }));
+      assert.match(html, /id="new-decision-dataset"/);
+      assert.match(html, /<option value="decide" selected="">/);
     });
 
     it("/fine-tuning/datasets/{id} keeps Train on it", async () => {

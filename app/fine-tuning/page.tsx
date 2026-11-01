@@ -7,6 +7,7 @@ import { DatasetsTable } from "@/components/train/DatasetsTable";
 import { JobsTable } from "@/components/train/JobsTable";
 import { LabIntro, ReadyDatasetsTable, ResultsTable } from "@/components/train/LabResults";
 import { NewDatasetCard } from "@/components/train/NewDatasetCard";
+import { NewDecisionCard } from "@/components/train/NewDecisionCard";
 import { NewJobCard } from "@/components/train/NewJobCard";
 import { RefreshWhileActive } from "@/components/train/RefreshWhileActive";
 import { WRITER_NAME, cacheCostText, isDatasetStalled, toRecipeView } from "@/components/train/format";
@@ -141,6 +142,10 @@ export default async function FineTuningPage({
               <Icon name="plus" size={18} />
               New dataset
             </a>
+            <a className="btn btn-outline" href="#new-decision-dataset">
+              <Icon name="plus" size={18} />
+              Decision dataset
+            </a>
             <a className="btn btn-primary" href="#new-job">
               <Icon name="plus" size={18} />
               New job
@@ -181,6 +186,8 @@ export default async function FineTuningPage({
       <ResultsSection results={results} admin />
 
       <NewJobCard
+        // A new ?dataset= (Train on it, from this page's own cards) starts the card over with that dataset.
+        key={initialDatasetId ?? ""}
         // A glimmer-publish job starts from its adapter job's Hugging Face card (Publish), which keeps track of it.
         recipes={recipes.filter((r) => r.id !== PUBLISH_RECIPE)}
         ceilings={ceilings}
@@ -208,7 +215,7 @@ export default async function FineTuningPage({
           <EmptyCard icon="file" title="No datasets yet">
             <p>
               Describe a task below and {WRITER_NAME} writes training examples for it, with some held out to judge the
-              tuned model.
+              tuned model. Or upload your own labeled rows as a decision dataset.
             </p>
           </EmptyCard>
         ) : (
@@ -222,6 +229,7 @@ export default async function FineTuningPage({
       </section>
 
       <NewDatasetCard blocked={blocked} />
+      <NewDecisionCard />
     </div>
   );
 }

@@ -2,15 +2,21 @@ import type { IconName } from "@/components/icons";
 import { bytes, dayLabel, elapsedMs, groupThousands, modelLabel, plural, truncate, usd, type Tone } from "@/lib/format";
 import { tokenCost } from "@/lib/meta/pricing";
 import type { LocalFiles, QuantLevel } from "@/lib/train/local-files";
-import { judgeModelOf, writerModelOf } from "@/lib/train/models";
+import type { DecisionRow, DecisionSpec, DecisionSummary, WilsonRate } from "@/lib/decide/types";
+import { NONE_OPTION } from "@/lib/decide/format";
+import { isDecisionSummary, judgeModelOf, modelName, writerModelOf } from "@/lib/train/models";
 import {
+  CHAT_MODE,
   clampLimits,
   DATASET_MAX_COUNT,
+  DECIDE_MODE,
   DATASET_MIN_COUNT,
   estimateCostUsd,
   evalHoldoutCount,
   isServeRecipe,
+  jobMode,
   MIN_MAX_MINUTES,
+  MODE_PARAM,
   MIN_MAX_USD,
   QUANT_CHANNEL_MIN,
   QUANT_KL_MAX,
@@ -24,6 +30,9 @@ import {
   serveMinutes,
   unjudgedNote,
   usableMinutes,
+  type DecideRunSize,
+  type DecisionRowPick,
+  type JobMode,
 } from "@/lib/train/logic";
 import {
   HUB_WHY_MAX,
@@ -36,6 +45,7 @@ import {
   type HubStatus,
   type HubView,
   type Recipe,
+  type RecipeParamField,
   type RecipeView,
   type TrainEventBody,
   type TrainEventView,
@@ -217,6 +227,7 @@ export interface RunHint {
  * How long the run takes on `gpu` with these params, in a region with the model cache and without it, and whether that
  * fits the job's limits: the estimate the jobs route checks (runEstimate in lib/train/logic.ts), which refuses a run
  * that can't fit. `auto` says the GPU is Auto's slowest pick. Null for a recipe without an estimate, a dry run or no GPU.
+ * A decide mode job needs `decide`, what its dataset makes it run (decideRunSize), and is null without it.
  */
 export function runTimeHint(
   recipe: Pick<RecipeView, "id">,
@@ -224,13 +235,15 @@ export function runTimeHint(
   gpu: GpuRow | null,
   limits: TrainLimits,
   auto = false,
+  decide: DecideRunSize | null = null,
 ): RunHint | null {
   if (!gpu) return null;
-  const warm = runEstimate(recipe.id, params, gpu.instanceType, true);
-  const cold = runEstimate(recipe.id, params, gpu.instanceType, false);
+  const warm = runEstimate(recipe.id, params, gpu.instanceType, true, decide);
+  const cold = runEstimate(recipe.id, params, gpu.instanceType, false, decide);
   if (!warm || !cold) return null;
   const usable = usableMinutes(limits, gpu.priceCentsPerHour);
   const on = auto ? `on Auto (up to ${gpu.label})` : `on ${gpu.label}`;
+  if (warm.what === "decide") return decideTimeHint(warm, cold, on, usable, limits);
   if (warm.what === "quantize") {
     // It always runs in its adapter's region, which holds the model cache.
     const lead = `Making the local files ${on}: about ${warm.minutes} minutes, for the merge, the conversion, three sizes and their checks, and the upload.`;
@@ -251,6 +264,42 @@ export function runTimeHint(
   }
   return {
     text: `${lead} The job's limits stop it after ${limit}, so it would be refused. Lower the training steps, raise the time or dollar limit, or pick a faster GPU.`,
+    warn: true,
+  };
+}
+
+/**
+ * runTimeHint for a decide mode job: its training renderings and steps, the prompts each model scores, how long that
+ * takes with the model cache and without, and whether the job's limits cover it, as the jobs route checks it.
+ */
+function decideTimeHint(
+  warm: NonNullable<ReturnType<typeof runEstimate>>,
+  cold: NonNullable<ReturnType<typeof runEstimate>>,
+  on: string,
+  usable: number,
+  limits: TrainLimits,
+): RunHint {
+  const scored = groupThousands(warm.scored ?? 0);
+  const work = warm.scoreOnly
+    ? `Scoring ${scored} prompts with base Glimmer ${on}, with nothing trained`
+    : `Training on ${groupThousands(warm.renderings ?? 0)} renderings (${plural(warm.steps, "step")} of 32) and scoring ${scored} prompts before and after ${on}`;
+  const parts = warm.scoreOnly
+    ? `${warm.scoreMinutes} of scoring`
+    : `${warm.trainMinutes} of training and ${warm.scoreMinutes} of scoring`;
+  const lead =
+    `${work}: about ${warm.minutes} minutes in a region with the model cache, about ${cold.minutes} without it ` +
+    `(${parts}, plus ${warm.overheadMinutes} or ${cold.overheadMinutes} to boot and load the model). ` +
+    "The rates are estimates until a real run measures them.";
+  if (cold.minutes <= usable) return { text: lead, warn: false };
+  const limit = usable < limits.maxMinutes ? `${usable} minutes (the dollar limit runs out first)` : `${usable} minutes`;
+  if (warm.minutes <= usable) {
+    return {
+      text: `${lead} The job's limits stop it after ${limit}, so it is refused if it lands in a region without the cache. Raise the limits or lower the epochs to be sure.`,
+      warn: true,
+    };
+  }
+  return {
+    text: `${lead} The job's limits stop it after ${limit}, so it would be refused. Lower the epochs, raise the time or dollar limit, or pick a faster GPU.`,
     warn: true,
   };
 }
@@ -596,6 +645,15 @@ export function eventLine(body: TrainEventBody, jobId?: string): EventLine {
         tone: "ok",
       };
     }
+    case "decide": {
+      const items = Array.isArray(body.items) ? body.items : [];
+      const tuned = items.some((i) => Array.isArray(i?.tuned));
+      return {
+        icon: "chart",
+        lead: "Scores",
+        text: `${plural(items.length, `${body.part === "dev" ? "dev" : "test"} item`)} scored, ${tuned ? "base and tuned" : "base only"}.`,
+      };
+    }
     case "judgement":
       return {
         icon: "check",
@@ -608,8 +666,8 @@ export function eventLine(body: TrainEventBody, jobId?: string): EventLine {
 }
 
 /** Event types the log folds when they come back to back. */
-export type FoldType = "heartbeat" | "progress" | "eval" | "judgement";
-const FOLDED: readonly string[] = ["heartbeat", "progress", "eval", "judgement"] satisfies FoldType[];
+export type FoldType = "heartbeat" | "progress" | "eval" | "judgement" | "decide";
+const FOLDED: readonly string[] = ["heartbeat", "progress", "eval", "judgement", "decide"] satisfies FoldType[];
 
 /** One row of the log: a single event, or a run of heartbeats, progress reports, eval items or judgements folded together. */
 export type LogItem =
@@ -713,7 +771,8 @@ export function keepEvents(events: TrainEventView[], max: number): { kept: Train
 
 function isEvalEvent(e: TrainEventView): boolean {
   const type = e.payload?.type ?? e.type;
-  return type === "eval" || type === "judgement";
+  // A decide job's scores are kept too: at most 80 events, and the job page counts them.
+  return type === "eval" || type === "judgement" || type === "decide";
 }
 
 // ---------- Datasets ----------
@@ -746,16 +805,22 @@ export function isDatasetStalled(d: Pick<DatasetView, "status" | "createdAt">, n
  * is what the store's datasetProgress counts), and what was asked for when it failed before the split.
  */
 export function datasetCountsText(
-  d: Pick<DatasetView, "status" | "requested" | "trainCount" | "evalCount">,
+  d: Pick<DatasetView, "status" | "requested" | "trainCount" | "evalCount" | "kind" | "decision">,
   written: number | null = null,
 ): string {
+  if (d.kind === "decision" && d.decision) return decisionCountsText(d.decision);
   if (d.status === "generating") return written ? `${written} of ${d.requested} answered` : `Writing prompts for ${d.requested}`;
   if (d.status === "failed" && !d.trainCount && !d.evalCount) return `${d.requested} asked for`;
   return `${d.trainCount} train · ${d.evalCount} eval`;
 }
 
 /** An option in the New job card's dataset select: "Bakery helper · 270 train, 30 eval". */
-export function datasetOptionText(d: Pick<DatasetView, "title" | "status" | "trainCount" | "evalCount">): string {
+export function datasetOptionText(
+  d: Pick<DatasetView, "title" | "status" | "trainCount" | "evalCount" | "kind" | "decision">,
+): string {
+  if (d.kind === "decision" && d.decision) {
+    return `${d.title} · ${plural(d.decision.labels.length, "label")}, ${d.decision.split.train} train, ${d.decision.split.test} test`;
+  }
   if (d.status !== "ready") return `${d.title} · ${d.status === "generating" ? "still writing" : "failed"}`;
   return `${d.title} · ${d.trainCount} train, ${d.evalCount} eval`;
 }
@@ -769,9 +834,12 @@ export function datasetOptionText(d: Pick<DatasetView, "title" | "status" | "tra
 export const WRITER_MODEL = "muse-wonder-1.0";
 export const WRITER_NAME = modelLabel(WRITER_MODEL);
 
-/** The model that wrote a dataset, from its record (writerModelOf): "Muse Wonder", or "Muse Spark 1.3" when it has none. */
+/**
+ * The model that wrote a dataset, from its record (writerModelOf): "Muse Wonder", or "Muse Spark 1.3" when it has none.
+ * A decision dataset's writer isn't a model: "The person who uploaded it" (modelName).
+ */
 export function writerName(dataset: { writerModel?: string | null } | null | undefined): string {
-  return modelLabel(writerModelOf(dataset));
+  return modelName(writerModelOf(dataset));
 }
 
 /**
@@ -1074,7 +1142,10 @@ export function adapterOptionText(
   a: Pick<AdapterOption, "title" | "datasetTitle" | "region" | "finishedAt" | "evalSummary">,
 ): string {
   const parts = [a.title];
-  if (a.evalSummary && unjudgedNote(a.evalSummary) === null) {
+  if (isDecisionSummary(a.evalSummary) && a.evalSummary.items > 0) {
+    const side = a.evalSummary.tuned ?? a.evalSummary.base;
+    parts.push(`${a.evalSummary.tuned ? "tuned" : "base"} right on ${side.accuracy.right} of ${side.accuracy.total}`);
+  } else if (a.evalSummary && unjudgedNote(a.evalSummary) === null) {
     parts.push(`tuned won ${a.evalSummary.tunedWins} of ${a.evalSummary.items}`);
   }
   if (a.finishedAt) parts.push(dayLabel(a.finishedAt));
@@ -1190,6 +1261,9 @@ type HubJob = Pick<TrainJobView, "recipe" | "status" | "params" | "terminatedAt"
  */
 export function hubJobBlock(job: HubJob): string | null {
   if (job.recipe !== "glimmer-lora") return "Only Muse Glimmer LoRA jobs are published to Hugging Face.";
+  if (jobMode(job.params) === DECIDE_MODE) {
+    return "It is a decision model, and publishing one (the adapter alone, with a decision card, never the person's rows) isn't built yet.";
+  }
   if (Number(job.params?.dryRun) >= 1) return "This was a dry run, so its adapter is a stand-in and isn't published.";
   if (!isTrainTerminal(job.status)) return `It publishes once the job succeeds and ${judgeName(job)} has judged it.`;
   if (job.status !== "succeeded") return "This job didn't succeed, so it has no adapter to publish.";
@@ -1526,4 +1600,255 @@ export function makeFilesBlock(state: QuantState | null): string | null {
   if (state.quantOff || state.hubOff || state.problem) return makeFilesText(state);
   if (state.latest && !isTrainTerminal(state.latest.status)) return "A local files job of this adapter is running.";
   return null;
+}
+
+// ---------- Decision models (docs/DECISION_MODELS.md) ----------
+
+/** True for a Muse Glimmer LoRA job in decide mode: one trained, or scored, as a decision model. */
+export function isDecideJob(job: { recipe: string; params?: Record<string, unknown> | null }): boolean {
+  return job.recipe === "glimmer-lora" && jobMode(job.params) === DECIDE_MODE;
+}
+
+/** A decision dataset's rows per split: "280 train · 40 dev · 80 test". */
+export function decisionCountsText(spec: Pick<DecisionSpec, "split">): string {
+  return `${groupThousands(spec.split.train)} train · ${groupThousands(spec.split.dev)} dev · ${groupThousands(spec.split.test)} test`;
+}
+
+/** A share as a whole percent: "89%". */
+export function percentText(rate: number): string {
+  return `${Math.round(Math.max(0, Math.min(1, Number.isFinite(rate) ? rate : 0)) * 100)}%`;
+}
+
+/** A Wilson interval as the pages say it: "81% to 94%". */
+export function intervalText(r: WilsonRate): string {
+  return `${percentText(r.low)} to ${percentText(r.high)}`;
+}
+
+/** "right on 71 of 80 held-out examples (89%)". */
+export function rightText(r: WilsonRate): string {
+  return `right on ${groupThousands(r.right)} of ${groupThousands(r.total)} held-out ${r.total === 1 ? "example" : "examples"} (${percentText(r.rate)})`;
+}
+
+/** Precision, recall, F1 and letter mass with two decimals: "0.87". */
+export function twoPlaces(x: number): string {
+  return (Number.isFinite(x) ? x : 0).toFixed(2);
+}
+
+/** An expected calibration error as a percent with one decimal: "3.4%". */
+export function eceText(x: number): string {
+  return `${((Number.isFinite(x) ? x : 0) * 100).toFixed(1)}%`;
+}
+
+/** What the New job card's mode select calls each mode. */
+export const MODE_LABELS: Readonly<Record<JobMode, string>> = {
+  [CHAT_MODE]: "Chat: learn a chat dataset's answers",
+  [DECIDE_MODE]: "Decide: pick one label for each input",
+};
+
+/**
+ * Params decide mode doesn't use: Publish to Hugging Face, which is always 0 there (a person's rows are never
+ * published, and publishing a decision model on its own isn't built), and the Hub card's story.
+ */
+const DECIDE_HIDDEN: ReadonlySet<string> = new Set(["publish", "why"]);
+
+/** Whether the New job card shows a recipe param in `mode`: not when the field is for another mode only. */
+export function paramShown(f: Pick<RecipeParamField, "key" | "modes">, mode: JobMode): boolean {
+  if (f.modes && !f.modes.includes(mode)) return false;
+  return !(mode === DECIDE_MODE && DECIDE_HIDDEN.has(f.key));
+}
+
+/** The mode a form's params ask for: "decide" when its mode param says so, else "chat". */
+export function formMode(values: Record<string, string | undefined>): JobMode {
+  return (values[MODE_PARAM] ?? "").trim().toLowerCase() === DECIDE_MODE ? DECIDE_MODE : CHAT_MODE;
+}
+
+/** The datasets a mode trains on: decision datasets in decide mode, chat datasets otherwise (datasetModeProblem). */
+export function datasetsForMode<T extends Pick<DatasetView, "kind">>(datasets: readonly T[], mode: JobMode): T[] {
+  return datasets.filter((d) => (d.kind === "decision") === (mode === DECIDE_MODE));
+}
+
+/** A label's name by id, or the `none` option's text for null. */
+export function labelName(labels: ReadonlyArray<{ id: string; name: string }>, id: string | null): string {
+  if (id === null) return NONE_OPTION;
+  return labels.find((l) => l.id === id)?.name ?? id;
+}
+
+/** Where a decide job's numbers stand on its admin page. */
+export type DecisionState =
+  /** The GPU is still scoring and training: the numbers come after it shuts down. */
+  | { state: "running" }
+  /** The job ended and scoreDecisionStep hasn't saved its summary yet. */
+  | { state: "scoring" }
+  | { state: "scored"; summary: DecisionSummary }
+  /** No numbers, and why: from the saved note, or because nothing came. A summary with no scored row is kept. */
+  | { state: "unscored"; reason: string; summary: DecisionSummary | null };
+
+/**
+ * Where a decide job's numbers stand, from its own state only: its eval summary (scoreDecisionStep saves one after
+ * any ending, with a note when it couldn't score), its status and when it ended. `sent` says whether its log holds
+ * any "decide" event: a job that didn't succeed and sent none has nothing to score, so nothing is saved for it.
+ */
+export function decisionState(
+  job: Pick<TrainJobView, "status" | "evalSummary" | "finishedAt" | "terminatedAt">,
+  now: number,
+  sent: boolean,
+): DecisionState {
+  const s = job.evalSummary;
+  if (isDecisionSummary(s)) {
+    if (s.items > 0) return { state: "scored", summary: s };
+    return { state: "unscored", reason: s.note ?? "No held-out row could be scored.", summary: s };
+  }
+  const note = unjudgedNote(s);
+  if (s && note) return { state: "unscored", reason: note, summary: null };
+  if (!isTrainTerminal(job.status)) return { state: "running" };
+  if (job.status !== "succeeded" && !sent) {
+    return { state: "unscored", reason: "The job ended before its GPU sent any scores, so there is nothing to score.", summary: null };
+  }
+  const ended = Date.parse(job.terminatedAt ?? job.finishedAt ?? "");
+  if (Number.isFinite(ended) && now - ended > JUDGE_WAIT_MS) {
+    return { state: "unscored", reason: "Scoring didn't finish, so there are no numbers yet.", summary: null };
+  }
+  return { state: "scoring" };
+}
+
+/** The results strip's sentence: what each model got right on the held-out test rows. */
+export function decisionHeadline(s: DecisionSummary): string {
+  const base = s.base.accuracy;
+  if (!s.tuned) return `Base Glimmer was ${rightText(base)}, with nothing trained.`;
+  return `The tuned model was ${rightText(s.tuned.accuracy)}; base Glimmer was right on ${groupThousands(base.right)} (${percentText(base.rate)}).`;
+}
+
+/** The results in one sentence, for screen readers and tests. */
+export function decisionSummaryText(s: DecisionSummary): string {
+  const side = (name: string, x: DecisionSummary["base"]) =>
+    `${name} ${percentText(x.accuracy.rate)} (${intervalText(x.accuracy)}), macro F1 ${twoPlaces(x.macroF1)}`;
+  const sides = s.tuned ? `${side("tuned", s.tuned)}; ${side("base", s.base)}` : side("base", s.base);
+  return `Accuracy on ${groupThousands(s.items)} held-out rows: ${sides}. Scored with no judge. It can be wrong.`;
+}
+
+/** How confident a side's answers are, honestly: calibrated on dev rows, or the model's own probability. */
+export function calibrationText(side: DecisionSummary["base"], devRows: number): string {
+  if (!side.calibrated) {
+    return "Fewer than 20 dev rows were scored, so confidence is the model's own probability, not calibrated.";
+  }
+  return (
+    `Confidence is calibrated on ${groupThousands(devRows)} dev rows (T = ${side.T.toFixed(2)}): an answer at 90% was ` +
+    "right about 9 times in 10 on rows like those, which is only as good as the test rows show."
+  );
+}
+
+/** The labels with fewer test rows than this get a note: one row moves their scores by 10 points or more. */
+export const SMALL_LABEL_ROWS = 10;
+
+/** The plain sentences under the strip: what the numbers rest on and where they are weak. */
+export function decisionNotes(s: DecisionSummary, opts: { trainRows?: number | null; succeeded?: boolean } = {}): string[] {
+  const out: string[] = [];
+  if (opts.succeeded === false) out.push("The job didn't succeed, so these are only the scores its GPU sent before it stopped.");
+  if (s.tuned && opts.trainRows) {
+    out.push(
+      `The tuned model is a small LoRA adapter on Muse Glimmer 30B, trained on ${groupThousands(opts.trainRows)} of this ` +
+        "dataset's examples. The test rows were held out before training, and both models were scored on the same ones.",
+    );
+  }
+  if (s.unscoredRows > 0) {
+    out.push(
+      `${groupThousands(s.unscoredRows)} of the ${groupThousands(s.testRows)} test rows had no usable score (too long, or not sent), so every number leaves them out.`,
+    );
+  }
+  const small = (s.tuned ?? s.base).perLabel.filter((l) => l.support < SMALL_LABEL_ROWS);
+  if (small.length) {
+    const names = small.map((l) => l.name);
+    const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+    out.push(`${list} ${small.length === 1 ? "has" : "have"} under ${SMALL_LABEL_ROWS} test rows, so one row moves ${small.length === 1 ? "its" : "their"} scores by 10 points or more.`);
+  }
+  if (s.groups > 1) {
+    out.push(
+      `With more than 4 labels, each row is asked as ${s.groups} prompts and the answers are combined by a fixed rule, so how well confidence is calibrated is only what the test rows show.`,
+    );
+  }
+  out.push("It can be wrong: check anything that matters.");
+  return out;
+}
+
+/** One test row the model missed, as an admin's results page lists it. Never on the public page. */
+export interface WrongAnswer {
+  /** The row in the test split, 0 on. */
+  row: number;
+  input: string;
+  /** The right label's id. */
+  label: string;
+  /** What the listed model picked (null for `none`) and its confidence after T. */
+  pick: string | null;
+  confidence: number;
+  /** Base Glimmer's pick on the same row, when the list is the tuned model's. */
+  base?: { pick: string | null; right: boolean };
+}
+
+/**
+ * The test rows the model missed: the tuned model's misses, or base Glimmer's for a job that scored only the base,
+ * the most confident first, at most `max` of them. `rows` is the test split in order. The picks come from
+ * decisionRowPicks, the same rows and picks behind the accuracy.
+ */
+export function wrongAnswers(
+  picks: readonly DecisionRowPick[],
+  rows: readonly DecisionRow[],
+  max: number,
+): { model: "tuned" | "base"; total: number; shown: WrongAnswer[] } {
+  const model = picks.some((p) => p.tuned) ? "tuned" : "base";
+  const missed = picks.flatMap((p): WrongAnswer[] => {
+    const side = model === "tuned" ? p.tuned : p.base;
+    if (!side || side.pick === p.label) return [];
+    const input = rows[p.row]?.input ?? "";
+    return [
+      {
+        row: p.row,
+        input,
+        label: p.label,
+        pick: side.pick,
+        confidence: side.confidence,
+        ...(model === "tuned" ? { base: { pick: p.base.pick, right: p.base.pick === p.label } } : {}),
+      },
+    ];
+  });
+  missed.sort((a, b) => b.confidence - a.confidence || a.row - b.row);
+  return { model, total: missed.length, shown: missed.slice(0, Math.max(0, max)) };
+}
+
+/** A reliability bin with rows, placed for the chart: x its mean confidence, y its accuracy, both 0 to 1. */
+export interface ReliabilityPoint {
+  x: number;
+  y: number;
+  rows: number;
+  from: number;
+  to: number;
+}
+
+/** The bins that hold rows, in order, as chart points. */
+export function reliabilityPoints(bins: ReadonlyArray<{ from: number; to: number; rows: number; accuracy: number; confidence: number }>): ReliabilityPoint[] {
+  const clamp = (v: number) => Math.max(0, Math.min(1, Number.isFinite(v) ? v : 0));
+  return bins.filter((b) => b.rows > 0).map((b) => ({ x: clamp(b.confidence), y: clamp(b.accuracy), rows: b.rows, from: b.from, to: b.to }));
+}
+
+/**
+ * Why a decision upload was refused, from POST /api/train/datasets' 400 {error, problems}: the sentence and each
+ * problem, whose message already names its line ("Line 14 ..." for CSV and JSONL, "Row 3 ..." for JSON rows). Other
+ * statuses read as one line.
+ */
+export function decisionUploadErrorText(status: number, body: unknown): { error: string; problems: string[] } {
+  if (status === 400) {
+    const list = (body as { problems?: unknown } | null)?.problems;
+    const problems = Array.isArray(list)
+      ? list.flatMap((p: unknown) => {
+          const message = (p as { message?: unknown } | null)?.message;
+          return typeof message === "string" && message.trim() ? [message.trim()] : [];
+        })
+      : [];
+    const error = field(body, "error");
+    return { error: error && !isCode(error) ? error : "Check the fields and try again.", problems };
+  }
+  if (status === 401) return { error: "Sign in as an admin to make datasets.", problems: [] };
+  if (status === 403) return { error: "Only admins can make datasets.", problems: [] };
+  if (status === 413) return { error: "That upload is over 4 MB. Split it, or send fewer rows (3,000 at most).", problems: [] };
+  const code = errorCode(body);
+  return { error: `Couldn't save the dataset${code && isCode(code) ? ` (${code})` : ""}. Try again in a moment.`, problems: [] };
 }

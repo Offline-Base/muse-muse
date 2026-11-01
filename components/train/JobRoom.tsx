@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/components/icons";
+import { DecisionStatus, type WrongAnswers } from "@/components/train/DecisionResults";
 import { EvalResults } from "@/components/train/EvalResults";
 import { EventLog } from "@/components/train/EventLog";
 import { HubCard } from "@/components/train/HubCard";
@@ -10,11 +12,13 @@ import { JobPanel } from "@/components/train/JobPanel";
 import { AdapterLiveDemo, type JobLiveDemo } from "@/components/train/LiveDemo";
 import { MakeLocalFiles, QuantFilesCard } from "@/components/train/LocalFiles";
 import {
+  decisionState,
   doneMetrics,
   errorHeadline,
   evalRows,
   evalState,
   gpuName,
+  isDecideJob,
   isSettled,
   jobElapsedMs,
   jobWorkingText,
@@ -28,6 +32,7 @@ import {
   writerName,
 } from "@/components/train/format";
 import { dateTimeUtc, duration, relativeTime, usd } from "@/lib/format";
+import { isDecisionSummary } from "@/lib/train/models";
 import { isTrainTerminal, type RecipeView, type TrainEventView, type TrainJobView } from "@/lib/train/types";
 
 export interface JobRoomProps {
@@ -54,6 +59,11 @@ export interface JobRoomProps {
    * TRAIN_MAX_ACTIVE and TRAIN_DAILY_USD for the upload job's refusals. Null for every other recipe.
    */
   hub?: { offReason: string | null; maxActive: number; dailyUsd: number } | null;
+  /**
+   * A decide job's extras from the server (docs/DECISION_MODELS.md "The results page"): its dataset's train rows, and
+   * once it is scored, the test rows the model missed with their inputs, which only admins see. Null for other jobs.
+   */
+  decision?: { trainRows: number | null; wrong: WrongAnswers | null } | null;
   serverNow: number;
 }
 
@@ -123,9 +133,23 @@ export function JobRoom(props: JobRoomProps) {
   const now = useNow(props.serverNow, ticking);
   const rows = useMemo(() => evalRows(events), [events]);
   const evals = evalState(job, rows, now);
-  // Judging starts once the GPU is gone, so the page keeps polling for verdicts after the job settles.
-  const judging = evals.state === "judging";
+  // A decide job is scored, not judged: scoreDecisionStep runs once its GPU is gone.
+  const decide = isDecideJob(job);
+  const sent = useMemo(() => events.some((e) => e.payload?.type === "decide"), [events]);
+  const decision = decide ? decisionState(job, now, sent) : null;
+  // Judging and scoring start once the GPU is gone, so the page keeps polling for them after the job settles.
+  const judging = decide ? decision?.state === "scoring" : evals.state === "judging";
   const polling = !settled || judging;
+  // The wrong answers come from the server: once the scores arrive by polling, ask it for them once. A page that loaded
+  // with the scores already has them, or the server couldn't read them, and asking again wouldn't help.
+  const router = useRouter();
+  const askedForWrong = useRef(isDecisionSummary(props.job.evalSummary));
+  const scoredHere = decision?.state === "scored" && !props.decision?.wrong;
+  useEffect(() => {
+    if (!scoredHere || askedForWrong.current) return;
+    askedForWrong.current = true;
+    router.refresh();
+  }, [scoredHere, router]);
   useEffect(() => setTicking(polling), [polling]);
   const elapsed = jobElapsedMs(job, now);
   const cost = liveCostUsd(job, now);
@@ -319,17 +343,26 @@ export function JobRoom(props: JobRoomProps) {
           {props.hub ? (
             <HubCard job={job} offReason={props.hub.offReason} maxActive={props.hub.maxActive} dailyUsd={props.hub.dailyUsd} />
           ) : null}
-          {props.hub && job.recipe === "glimmer-lora" && job.status === "succeeded" ? (
+          {props.hub && job.recipe === "glimmer-lora" && job.status === "succeeded" && !decide ? (
             <MakeLocalFiles jobId={jobId} maxActive={props.hub.maxActive} dailyUsd={props.hub.dailyUsd} />
           ) : null}
           {job.recipe === "glimmer-quantize" ? <QuantFilesCard job={job} events={events} /> : null}
-          <EvalResults
-            state={evals}
-            rows={rows}
-            model={tunedModelName(job.recipe)}
-            writer={props.dataset ? writerName(props.dataset) : null}
-            judge={judgeName(job)}
-          />
+          {decision ? (
+            <DecisionStatus
+              state={decision}
+              succeeded={job.status === "succeeded"}
+              trainRows={props.decision?.trainRows ?? null}
+              wrong={props.decision?.wrong ?? null}
+            />
+          ) : (
+            <EvalResults
+              state={evals}
+              rows={rows}
+              model={tunedModelName(job.recipe)}
+              writer={props.dataset ? writerName(props.dataset) : null}
+              judge={judgeName(job)}
+            />
+          )}
           <div ref={end} className="convo-end" />
         </div>
       </div>
