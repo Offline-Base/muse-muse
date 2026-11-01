@@ -1,1 +1,25 @@
-{}
+{
+  "snap_6VHCNtYcvSoeLpd4uOYI0IQ1kUOj": {
+    "createdAt": "2026-11-01T20:37:31.552Z",
+    "templateHash": "67472a74d60e",
+    "capOverlays": [
+      "code",
+      "connect",
+      "core",
+      "data",
+      "extension",
+      "files",
+      "games",
+      "games-babylon",
+      "games-phaser",
+      "gpu",
+      "hardware",
+      "jobs",
+      "live",
+      "media",
+      "musecode",
+      "runtime",
+      "trust"
+    ]
+  }
+}
