@@ -16,6 +16,7 @@ describe("the code cap's rows", { skip: canMock ? false : "needs --experimental-
   let client: import("@electric-sql/pglite").PGlite;
   let testDb: TestDb;
   let store: typeof import("../store");
+  let codeCleanup: typeof import("../cleanup");
   let cleanup: typeof import("../../cleanup");
   let productId = "";
   let buildId = "";
@@ -30,6 +31,7 @@ describe("the code cap's rows", { skip: canMock ? false : "needs --experimental-
     await migrate(testDb, { migrationsFolder: new URL("../../../../drizzle", import.meta.url).pathname });
     mock.module(new URL("../../../db/client.ts", import.meta.url).href, { namedExports: { db: () => testDb, schema: realSchema } });
     store = await import("../store");
+    codeCleanup = await import("../cleanup");
     cleanup = await import("../../cleanup");
     const [user] = await testDb.insert(realSchema.users).values({ email: "maker@example.com" }).returning();
     const [muse] = await testDb.insert(realSchema.inspirations).values({ userId: user!.id }).returning();
@@ -65,7 +67,7 @@ describe("the code cap's rows", { skip: canMock ? false : "needs --experimental-
 
   it("clears a build's rows when it ends, sweeps a crashed build's after two days, and keeps live rows", async () => {
     const now = new Date();
-    const old = new Date(now.getTime() - store.CODE_BUILD_ROWS_MAX_AGE_MS - 60_000);
+    const old = new Date(now.getTime() - codeCleanup.CODE_BUILD_ROWS_MAX_AGE_MS - 60_000);
     await testDb.insert(realSchema.execRuns).values([row(`b:${buildId}`), row(`b:${otherBuild}`, old), row(`b:${otherBuild}`), row("live", old)]);
     const before = process.env.CODE_ENABLED;
     try {
@@ -76,8 +78,8 @@ describe("the code cap's rows", { skip: canMock ? false : "needs --experimental-
       if (before === undefined) delete process.env.CODE_ENABLED;
       else process.env.CODE_ENABLED = before;
     }
-    await store.clearCodeBuildRuns(buildId);
-    assert.equal(await store.sweepCodeBuildRuns(now), 1);
+    await codeCleanup.clearCodeBuildRuns(buildId);
+    assert.equal(await codeCleanup.sweepCodeBuildRuns(now), 1);
     const left = (await testDb.select().from(realSchema.execRuns)).map((r) => r.namespace).sort();
     assert.deepEqual(left, [`b:${otherBuild}`, "live"]);
   });

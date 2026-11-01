@@ -1,4 +1,4 @@
-import { clearCodeBuildRuns, sweepCodeBuildRuns } from "@/lib/caps/code/store";
+import { clearCodeBuildRuns, sweepCodeBuildRuns } from "@/lib/caps/code/cleanup";
 import { clearBuildNamespace, sweepData } from "@/lib/caps/data/store";
 import type { CapId } from "@/lib/caps/ids";
 import { env } from "@/lib/env";
