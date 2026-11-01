@@ -15,7 +15,8 @@
  *   hubModelStep    the model repo the plan made: the adapter's LFS objects checked with the LFS batch (one the Hub
  *                   doesn't store fails publishing, so Publish uploads it again), then one commit of those objects by
  *                   oid, the small files (each checked config read again, adapter_config.json normalized), the model
- *                   card, the base model's LICENSE and muse_muse_run.json.
+ *                   card, the base model's LICENSE (and for a Derivative of Muse
+ *                   Spark Open its MUSE_MODEL_LICENSE.md, USAGE_POLICY.md and NOTICE) and muse_muse_run.json.
  *   hubFinishStep   the dataset card and both repos' visibility (see there), then the state "published", with the
  *                   visibility the Hub reports.
  *   hubFailStep     the state "failed" with a plain reason, when a step ran out of retries and the run still holds its
@@ -33,6 +34,7 @@ import { modelLabel } from "@/lib/format";
 import { metaPlatform } from "@/lib/meta/platform";
 import { fromResponsesUsage } from "@/lib/meta/pricing";
 import { spendPaused } from "@/lib/quota";
+import { isSparkOpenDerivative, LAB_MERGE_BASE, recordedBase } from "@/lib/train/base";
 import {
   commit,
   createRepo,
@@ -100,6 +102,7 @@ import {
   type GgufFacts,
   type StoryFacts,
 } from "@/lib/train/hub-cards";
+import { DERIVATIVE_FILES } from "@/lib/train/licenses";
 import { ADAPTER_RECIPE, effectiveWhy, hubBusy, trainChannelOf, type DoneMetrics, type TrainJobRow } from "@/lib/train/logic";
 import { recipeById } from "@/lib/train/recipes";
 import { GLIMMER_PY } from "@/lib/train/recipes/glimmer";
@@ -268,9 +271,12 @@ async function ggufLinkOf(job: TrainJobRow, adapterPublic: boolean, known?: { re
  * publishing now).
  */
 async function cardFactsOf(job: TrainJobRow, hub: HubState, dataset: DatasetRow, adapterPublic: boolean, gguf?: { repo: string; public: boolean }) {
-  const template = glimmerTemplate(GLIMMER_PY);
   const source = await fromDb(() => getAdapterSource(job.id));
   const metrics = source?.metrics ?? {};
+  // The recipe's template and settings, with the base the job recorded (lib/train/base.ts): r30b for a job since the
+  // switch, plain Glimmer for one from before it, whose card is still about the model it trained on.
+  const base = recordedBase({ params: job.params, metrics });
+  const template = { ...glimmerTemplate(GLIMMER_PY), model: base.model, revision: base.revision ?? glimmerTemplate(GLIMMER_PY).revision };
   const events = await fromDb(() => listResultEvents(job.id));
   const items = runItems(events);
   const first = await fromDb(() => datasetPage(dataset.id, "train", 0, 1));
@@ -326,6 +332,7 @@ async function cardFactsOf(job: TrainJobRow, hub: HubState, dataset: DatasetRow,
     why: effectiveWhy(hub, job.params),
     story: hub.story ?? templateStory(storyFactsOf(job, hub, dataset)),
     gguf: await ggufLinkOf(job, adapterPublic, gguf),
+    sparkOpen: isSparkOpenDerivative({ params: job.params, metrics, adapterBase: template.model }),
   };
   return { facts, items, modelRepo, datasetRepo };
 }
@@ -334,6 +341,15 @@ async function cardFactsOf(job: TrainJobRow, hub: HubState, dataset: DatasetRow,
 interface PlatformFile {
   path: string;
   content: Buffer;
+}
+
+/**
+ * What a Derivative of Muse Spark Open's repo ships beside its LICENSE (lib/train/base.ts): MUSE_MODEL_LICENSE.md,
+ * USAGE_POLICY.md and NOTICE, r30b's own bytes from lib/train/licenses. Nothing for a plain Glimmer model.
+ */
+function derivativeFiles(sparkOpen: boolean): PlatformFile[] {
+  if (!sparkOpen) return [];
+  return DERIVATIVE_FILES.filter((f) => f.path !== "LICENSE").map((f) => ({ path: f.path, content: Buffer.from(f.text, "utf8") }));
 }
 
 /**
@@ -682,6 +698,7 @@ export async function hubModelStep(jobId: string, claim: string): Promise<{ repo
   const files: PlatformFile[] = [
     { path: "README.md", content: Buffer.from(modelCard(facts), "utf8") },
     { path: "LICENSE", content: Buffer.from(license, "utf8") },
+    ...derivativeFiles(facts.sparkOpen === true),
     { path: "muse_muse_run.json", content: Buffer.from(`${JSON.stringify(runRecord(facts, items, hub.storyBy ?? "template", hub.storyModel ?? null), null, 2)}\n`, "utf8") },
     ...small,
   ];
@@ -858,10 +875,12 @@ async function ggufFactsOf(job: TrainJobRow, hub: HubState, adapter: TrainJobRow
   if (role !== expected) {
     throw new FatalError(`The files were checked under the system message ${JSON.stringify(role)}, but the adapter trained under ${JSON.stringify(expected)}.`);
   }
-  const template = glimmerTemplate(GLIMMER_PY);
+  const trainedOn = recordedBase({ params: adapter.params, metrics: trained });
   const config = adapterConfig(adapter.hub!);
-  const revision = typeof config?.revision === "string" && /^[0-9a-f]{40}$/.test(config.revision) ? config.revision : template.revision;
+  const revision =
+    typeof config?.revision === "string" && /^[0-9a-f]{40}$/.test(config.revision) ? config.revision : (trainedOn.revision ?? glimmerTemplate(GLIMMER_PY).revision);
   const recipe = recipeById(job.recipe);
+  const sparkOpen = isSparkOpenDerivative({ params: job.params, metrics, adapterBase: trainedOn.model });
   const start = (job.launchedAt ?? job.createdAt).getTime();
   const end = (job.terminatedAt ?? job.finishedAt ?? job.createdAt).getTime();
   const small = Object.entries(hub.small ?? {})
@@ -890,8 +909,9 @@ async function ggufFactsOf(job: TrainJobRow, hub: HubState, adapter: TrainJobRow
     agreement: agreeTotal ? { same: num(metrics.agreement) ?? 0, total: agreeTotal } : null,
     tensors: num(metrics.tensors),
     llamacpp: { tag: typeof metrics.llamacpp === "string" ? metrics.llamacpp : "unknown", commit: typeof metrics.llamacpp_commit === "string" ? metrics.llamacpp_commit : null },
-    mergeBase: { repo: typeof metrics.merge_base === "string" ? metrics.merge_base : "unsloth/Muse-Glimmer-30B", revision: mergeRevision },
-    adapterBase: { model: template.model, revision },
+    mergeBase: { repo: typeof metrics.merge_base === "string" ? metrics.merge_base : sparkOpen ? LAB_MERGE_BASE : "unsloth/Muse-Glimmer-30B", revision: mergeRevision },
+    adapterBase: { model: trainedOn.model, revision },
+    sparkOpen,
     small,
     job: {
       gpuLabel: recipe?.gpus.find((g) => g.instanceType === job.instanceType)?.label ?? job.instanceType,
@@ -943,6 +963,7 @@ export async function hubGgufStep(jobId: string, claim: string): Promise<{ repo:
   const files: PlatformFile[] = [
     { path: "README.md", content: Buffer.from(ggufCard(facts), "utf8") },
     { path: "LICENSE", content: Buffer.from(license, "utf8") },
+    ...derivativeFiles(facts.sparkOpen === true),
     { path: "muse_muse_quant.json", content: Buffer.from(`${JSON.stringify(quantRecord(facts), null, 2)}\n`, "utf8") },
     ...small,
   ];

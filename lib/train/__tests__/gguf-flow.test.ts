@@ -27,6 +27,7 @@ import { after, before, beforeEach, describe, it, mock } from "node:test";
 import { eq } from "drizzle-orm";
 import * as realSchema from "@/lib/db/schema";
 import type { HubState, TrainEventBody } from "../types";
+import { DERIVATIVE_FILES } from "../licenses";
 import { startFakeHub, type FakeHub } from "./fake-hub";
 
 /** Test values, not real secrets. */
@@ -98,7 +99,7 @@ const ctx = (id: string): Ctx => ({ params: Promise.resolve({ id }) });
 function adapterFolder(): Map<string, Buffer> {
   return new Map([
     ["adapter_model.safetensors", randomBytes(40 * 1024)],
-    ["adapter_config.json", Buffer.from(JSON.stringify({ base_model_name_or_path: "unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit", r: 16, revision: "ecedda395d4d099b477d135a9a573eedaa5a7aad" }, null, 2))],
+    ["adapter_config.json", Buffer.from(JSON.stringify({ base_model_name_or_path: "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit", r: 16, revision: "6f12bf5288dd4d83374e1d6cab3b6b80da258eb1" }, null, 2))],
     ["tokenizer_config.json", Buffer.from(JSON.stringify({ bos_token: "<|begin_of_text|>" }))],
   ]);
 }
@@ -200,7 +201,7 @@ const log = (jobId: string, payload: TrainEventBody) => testDb.insert(realSchema
 
 /** A glimmer-lora job judged, its adapter on the region's cache, and published on the fake Hub (public by default). */
 async function publishedAdapter(over: Record<string, string | number> = {}): Promise<string> {
-  const jobId = await makeJob("glimmer-lora", { datasetId: DATASET_ID, maxSteps: 120, learningRate: 0.0002, loraRank: 16, studentPrompt: "short", dryRun: 0, publish: 1, ...over }, TOKEN);
+  const jobId = await makeJob("glimmer-lora", { datasetId: DATASET_ID, maxSteps: 120, learningRate: 0.0002, loraRank: 16, studentPrompt: "short", dryRun: 0, publish: 1, baseModel: "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit", ...over }, TOKEN);
   const up = await gpuUpload(jobId, TOKEN, adapterFolder());
   assert.equal(up.done, 204, JSON.stringify(up.body));
   await log(jobId, { type: "eval", index: 0, prompt: "Held out 0", reference: "Reference 0", base: "I can't.", tuned: "**Name:** Pier Gull Counter" });
@@ -224,7 +225,7 @@ const quantParams = (adapterJobId: string, over: Record<string, string | number>
 
 /** The done metrics QUANT_PY reports for a folder whose builds all passed. */
 function quantMetrics(folder: Map<string, Buffer>, over: Record<string, string | number> = {}): Record<string, string | number> {
-  const m: Record<string, string | number> = { checks_passed: "yes", hub_uploaded: "yes", system: ROLE, train_channel: 0, channel_final: 2, channel_total: 2, agreement: 2, agreement_total: 2, tensors: 1436, llamacpp: "b11669", llamacpp_commit: "620d2225cc436ab0b001e3200e590e3b286ef9ab", merge_base: "unsloth/Muse-Glimmer-30B", merge_base_revision: "c".repeat(40) };
+  const m: Record<string, string | number> = { checks_passed: "yes", hub_uploaded: "yes", system: ROLE, train_channel: 0, channel_final: 2, channel_total: 2, agreement: 2, agreement_total: 2, tensors: 1436, llamacpp: "b11669", llamacpp_commit: "620d2225cc436ab0b001e3200e590e3b286ef9ab", merge_base: "OfflineBase/Glimmer-30B-2026-Knowledge", merge_base_revision: "c".repeat(40) };
   for (const [name, bytes] of folder) {
     const level = /-(Q3_K_M|Q4_K_M|Q6_K)\.gguf$/.exec(name)?.[1];
     if (!level) continue;
@@ -465,6 +466,10 @@ describe("local files: a judged adapter's GGUF repo", { skip: canMock ? false : 
       const adapterId = await publishedAdapter();
       const adapterRepo = (await hubOf(adapterId))!.modelRepo!;
       const adapterCommits = fake.repo("model", adapterRepo)!.commits.length;
+      // The adapter trained on r30b, so its own repo is a Derivative's too: the license files beside LICENSE, and the card.
+      const adapterFiles = fake.repo("model", adapterRepo)!.files;
+      for (const f of DERIVATIVE_FILES.filter((x) => x.path !== "LICENSE")) assert.equal(adapterFiles.get(f.path)!.content!.toString("utf8"), f.text, `the adapter's ${f.path}`);
+      assert.match(adapterFiles.get("README.md")!.content!.toString(), /\nlicense: other\nlicense_name: apache-2.0-and-muse-model-license\n[\s\S]*\*\*Built with Muse Spark Open\.\*\* This adapter/);
       const folder = ggufFolder();
       const jobId = await uploadedQuant(adapterId, folder);
       assert.deepEqual(await wf.publishToHub({ jobId }), { published: true });
@@ -479,7 +484,10 @@ describe("local files: a judged adapter's GGUF repo", { skip: canMock ? false : 
       assert.deepEqual([...gguf.files.keys()].sort(), [
         ".gitattributes",
         "LICENSE",
+        "MUSE_MODEL_LICENSE.md",
+        "NOTICE",
         "README.md",
+        "USAGE_POLICY.md",
         "muse-glimmer-30b-brief-writer-Q3_K_M.gguf",
         "muse-glimmer-30b-brief-writer-Q4_K_M.gguf",
         "muse-glimmer-30b-brief-writer-Q6_K.gguf",
@@ -493,7 +501,10 @@ describe("local files: a judged adapter's GGUF repo", { skip: canMock ? false : 
         else assert.ok(gguf.files.get(name)!.content!.equals(bytes), name);
       }
       const card = gguf.files.get("README.md")!.content!.toString();
-      assert.match(card, /^---\nbase_model: meta-models\/Muse-Glimmer-30B\nbase_model_relation: finetune\n/);
+      // A Derivative of Muse Spark Open (lib/train/base.ts): merged into r30b, with its license files beside LICENSE.
+      assert.match(card, /^---\nbase_model: OfflineBase\/Glimmer-30B-2026-Knowledge\nbase_model_relation: finetune\npipeline_tag: text-generation\nlicense: other\nlicense_name: apache-2.0-and-muse-model-license\nlicense_link: MUSE_MODEL_LICENSE.md\n/);
+      assert.ok(card.includes("**Built with Muse Spark Open.** This model was trained from"));
+      for (const f of DERIVATIVE_FILES.filter((x) => x.path !== "LICENSE")) assert.equal(gguf.files.get(f.path)!.content!.toString("utf8"), f.text, f.path);
       assert.ok(card.includes(`GGUF files of [${adapterRepo}](https://huggingface.co/${adapterRepo})`));
       assert.ok(card.includes(`- muse-org/muse-muse-brief-writer-1b2c3d4e`), "the dataset repo the adapter's run published");
       assert.ok(card.includes("gave a final answer to 2 of 2 held-out prompts"));
@@ -705,7 +716,7 @@ describe("local files: a judged adapter's GGUF repo", { skip: canMock ? false : 
       assert.equal(out.status, 202, JSON.stringify(out.body));
       const job = (await store.getJob(String(out.body.quantJobId)))!;
       assert.equal(job.recipe, "glimmer-quantize");
-      assert.deepEqual(job.params, { adapterJobId: adapterId, publish: 1, levels: "Q3_K_M,Q4_K_M,Q6_K", slug: "brief-writer", trainChannel: 0 });
+      assert.deepEqual(job.params, { adapterJobId: adapterId, publish: 1, baseModel: "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit", levels: "Q3_K_M,Q4_K_M,Q6_K", slug: "brief-writer", trainChannel: 0 });
       assert.deepEqual([job.region, job.instanceType, job.maxMinutes, job.maxUsd], ["us-east-1", "gpu_1x_a100_sxm4", 110, 3.7]);
       assert.equal(job.title, "Local files: Brief writer LoRA");
       assert.deepEqual(started.map((s) => s.fn), ["trainJob"]);

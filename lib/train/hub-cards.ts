@@ -15,6 +15,7 @@ import { noEmDashes, slugify } from "@/lib/brief/normalize";
 import { decideJson, GLIMMER_REASONING, GLIMMER_TEMPLATE, LABELS_PER_PROMPT, labelGroups, NONE_OPTION, NONE_SHARE } from "@/lib/decide/format";
 import type { DecideJson, DecisionSideSummary, DecisionSpec, DecisionSummary, WilsonRate } from "@/lib/decide/types";
 import { plural } from "@/lib/format";
+import { BUILT_WITH_SPARK_OPEN, isSparkOpenDerivative, R30B_REPO, R30B_URL, USAGE_POINTS } from "@/lib/train/base";
 import { QUANT_LEVELS, type LocalFile, type LocalFiles, type QuantLevel } from "@/lib/train/local-files";
 import { isDecisionSummary, modelName, recordedModel, UNRECORDED_MODEL, writerModelOf } from "@/lib/train/models";
 import {
@@ -68,6 +69,45 @@ export const SLUG_MAX = 40;
 export const STORY_WORDS_MAX = 115;
 /** The longest a story may be in characters, whatever its words. */
 const STORY_CHARS_MAX = 1000;
+/**
+ * The license_name a Derivative of Muse Spark Open's card declares (lib/train/base.ts), r30b's own: Apache 2.0 for the
+ * weights Meta licensed, and the Muse Model License, whose text the repo ships as DERIVATIVE_LICENSE_LINK.
+ */
+export const DERIVATIVE_LICENSE_NAME = "apache-2.0-and-muse-model-license";
+export const DERIVATIVE_LICENSE_LINK = "MUSE_MODEL_LICENSE.md";
+
+/** A card's license front matter: Apache 2.0, or for a Derivative Apache 2.0 and the Muse Model License. */
+function licenseFront(sparkOpen: boolean | undefined): string[] {
+  return sparkOpen ? ["license: other", `license_name: ${DERIVATIVE_LICENSE_NAME}`, `license_link: ${DERIVATIVE_LICENSE_LINK}`] : ["license: apache-2.0"];
+}
+
+/** r30b as a card links it. */
+const R30B_LINK = `[${R30B_REPO}](${R30B_URL})`;
+
+/**
+ * The block under a Derivative's title, as the Muse Model License asks: "Built with Muse Spark Open", prominently, why,
+ * and the Usage Policy's points. `what` names the repo's model ("This adapter").
+ */
+export function builtWithBlock(what: string): string {
+  return [
+    `**${BUILT_WITH_SPARK_OPEN}.** ${what} was trained from ${R30B_LINK}, Muse Muse's Muse Glimmer 30B with 2026 knowledge, and Muse Spark Open wrote part of that model's training data. So it is a Derivative of Muse Spark Open under the Muse Model License (\`${DERIVATIVE_LICENSE_LINK}\`), and its Usage Policy applies:`,
+    "",
+    ...USAGE_POINTS.map((p) => `- ${p}`),
+  ].join("\n");
+}
+
+/**
+ * A Derivative's license paragraphs: Apache 2.0 for Meta's weights and the change, the Muse Model License, both Usage
+ * Policies, and the files the repo ships them in. `what` names the repo's model mid-sentence ("this adapter"), and
+ * `change` says what it changed from r30b.
+ */
+function derivativeLicense(what: string, change: string): string {
+  return [
+    `Apache 2.0 and the Muse Model License. Muse Glimmer 30B is Meta's, under Apache 2.0: the full text is in \`LICENSE\`, as [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN}) ships it. ${R30B_LINK} is Muse Muse's fine-tune of it, and \`NOTICE\` is that model's notice of what was changed. The change from it here: ${change}`,
+    "",
+    `Muse Spark Open wrote part of ${R30B_REPO}'s training data, so ${what} is a Derivative under the Muse Model License, in \`${DERIVATIVE_LICENSE_LINK}\` with the Muse Spark Open Usage Policy as its Exhibit A. Anything that uses it must show "${BUILT_WITH_SPARK_OPEN}" and follow that policy and the Muse Glimmer Usage Policy (\`USAGE_POLICY.md\`): it isn't for anyone under 18, its outputs must never be presented as written by a person, and its users must be told its known dangers, such as made-up answers and going along with false premises. Offering it to others as a model service needs a separate agreement with Meta once revenue passes $20 million in 12 months (section 3 of the license).`,
+  ].join("\n");
+}
 /** An answer in the card's example is cut to this many characters (the run's record keeps it whole). */
 const EXAMPLE_CHARS_MAX = 2000;
 
@@ -548,6 +588,22 @@ export interface CardFacts {
    * private adapter. "How to use it" then points local apps to it. Null or absent otherwise.
    */
   gguf?: { repo: string } | null;
+  /**
+   * True for a Derivative of Muse Spark Open (isSparkOpenDerivative, lib/train/base.ts): an adapter trained on r30b.
+   * Its card then carries "Built with Muse Spark Open", the Usage Policy's points and the Muse Model License, and
+   * compares it with the 2026 Glimmer it started from. Absent or false for an adapter on plain Glimmer.
+   */
+  sparkOpen?: boolean;
+}
+
+/** True when the card's facts are a Derivative's: the flag, or a base that is one of r30b's builds. */
+export function cardSparkOpen(f: Pick<CardFacts, "sparkOpen" | "template">): boolean {
+  return f.sparkOpen === true || isSparkOpenDerivative({ adapterBase: f.template.model });
+}
+
+/** The model a tuned one is compared with, mid-sentence: "the base model", or r30b for a Derivative. */
+function baseInLine(derived: boolean): string {
+  return derived ? "the 2026 Glimmer it started from" : "the base model";
 }
 
 /** A repo's page on the public Hub (HUB_SITE). */
@@ -557,10 +613,11 @@ const hubLink = (id: string, kind: "model" | "dataset") => `${HUB_SITE}${kind ==
  * The card's own sentence after the story: the dataset's counts and the eval's result, from the records, so no number
  * in "Why this exists" comes from a model.
  */
-export function resultText(f: Pick<CardFacts, "summary" | "dataset" | "judgeModel">): string {
+export function resultText(f: Pick<CardFacts, "summary" | "dataset" | "judgeModel"> & Partial<Pick<CardFacts, "sparkOpen" | "template">>): string {
   const s = f.summary;
   const d = f.dataset;
-  return `${writerName(d)} wrote the dataset's ${d.trainCount + d.evalCount} examples: ${d.trainCount} to train on and ${d.evalCount} held out. On ${s.items} held-out prompts, judged blind by ${modelName(judgeId(f))}, the tuned model was ${wins(s)}, with an average score of ${score(s.avgTunedScore)} out of 10 against ${score(s.avgBaseScore)} for the base model.`;
+  const derived = f.template ? cardSparkOpen({ sparkOpen: f.sparkOpen, template: f.template }) : f.sparkOpen === true;
+  return `${writerName(d)} wrote the dataset's ${d.trainCount + d.evalCount} examples: ${d.trainCount} to train on and ${d.evalCount} held out. On ${s.items} held-out prompts, judged blind by ${modelName(judgeId(f))}, the tuned model was ${wins(s)}, with an average score of ${score(s.avgTunedScore)} out of 10 against ${score(s.avgBaseScore)} for ${baseInLine(derived)}.`;
 }
 
 /** The card's "Why this exists": a line saying whose story it is (`lead`, the dataset card's), the admin's reason, the story, then the records' result. */
@@ -584,12 +641,13 @@ function resultsSection(f: CardFacts): string {
   const writer = writerModelOf(f.dataset);
   // "its own reference answer" only when the judge wrote the dataset too.
   const reference = judge === writer ? `${modelName(writer)}'s own reference answer` : `${modelName(writer)}'s reference answer`;
+  const derived = cardSparkOpen(f);
   const out = [
     "## Results",
     "",
-    `Both models answered the dataset's ${s.items} held-out prompts, none of which were trained on. ${modelName(judge)} (\`${judge}\`) judged each pair blind: it saw the answers as A and B, the base model's first on even items and second on odd ones, scored each from 1 to 10 against ${reference}, and said which was better.`,
+    `Both models answered the dataset's ${s.items} held-out prompts, none of which were trained on. ${modelName(judge)} (\`${judge}\`) judged each pair blind: it saw the answers as A and B, ${derived ? "the 2026 Glimmer's" : "the base model's"} first on even items and second on odd ones, scored each from 1 to 10 against ${reference}, and said which was better.`,
     "",
-    `| | Base ${GLIMMER_NAME} | Tuned (this adapter) |`,
+    `| | ${derived ? "The 2026 Glimmer it started from (r30b)" : `Base ${GLIMMER_NAME}`} | Tuned (this adapter) |`,
     "|---|---|---|",
     `| Better on | ${s.baseWins} of ${s.items} | ${s.tunedWins} of ${s.items} |`,
     `| Average score (1 to 10) | ${score(s.avgBaseScore)} | ${score(s.avgTunedScore)} |`,
@@ -608,13 +666,13 @@ function resultsSection(f: CardFacts): string {
       "### An example",
       "",
       // The note names the answers as the judge saw them, A and B: judgeStep put the base model's first on even items.
-      `Held-out item ${e.index + 1}, where the judge saw the base model's answer as ${e.index % 2 === 0 ? "A" : "B"}. It scored the base model ${e.baseScore} and the tuned model ${e.tunedScore}: "${mdText(e.note)}"`,
+      `Held-out item ${e.index + 1}, where the judge saw ${derived ? "the 2026 Glimmer's" : "the base model's"} answer as ${e.index % 2 === 0 ? "A" : "B"}. It scored ${baseInLine(derived)} ${e.baseScore} and the tuned model ${e.tunedScore}: "${mdText(e.note)}"`,
       "",
       "The prompt:",
       "",
       fenced(cut(e.prompt), "text"),
       "",
-      `Base ${GLIMMER_NAME}:`,
+      derived ? "The 2026 Glimmer it started from:" : `Base ${GLIMMER_NAME}:`,
       "",
       fenced(cut(e.base), "text"),
       "",
@@ -634,7 +692,12 @@ function trainingSection(f: CardFacts): string {
   const steps = metric("steps", m);
   const maxSteps = metric("max_steps", m) ?? j.maxSteps;
   const rows: Array<[string, string]> = [
-    ["Base model", `[${t.model}](${HUB_SITE}/${t.model}) at revision \`${f.revision}\`, the 4-bit (bitsandbytes) quantization of [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN})`],
+    [
+      "Base model",
+      cardSparkOpen(f)
+        ? `[${t.model}](${HUB_SITE}/${t.model}) at revision \`${f.revision}\`, the 4-bit (bitsandbytes) quantization of ${R30B_LINK}: Muse Muse's fine-tune of [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN}) with 2026 knowledge`
+        : `[${t.model}](${HUB_SITE}/${t.model}) at revision \`${f.revision}\`, the 4-bit (bitsandbytes) quantization of [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN})`,
+    ],
     ["Method", "QLoRA with Unsloth and TRL's SFTTrainer: LoRA on the language model's attention and MLP layers, the vision layers frozen, trained only on the answers (train_on_responses_only)"],
   ];
   if (j.loraRank !== null) rows.push(["LoRA rank", `${j.loraRank} (alpha ${j.loraRank}, dropout ${t.loraDropout})`]);
@@ -773,7 +836,9 @@ function limitsSection(f: CardFacts): string {
     f.job.studentPrompt === "full"
       ? "- Both models answered under the dataset's whole task prompt, so the base model's scores show how well it follows those instructions untrained."
       : "- The base model answered without the dataset's task prompt, under the same one-line system message as the tuned model, so its scores show what training taught, not how well the base follows instructions.",
-    `- It inherits the base model's limits and its Usage Policy: see [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN}). Check what it writes before you rely on it.`,
+    cardSparkOpen(f)
+      ? `- It inherits the limits of ${R30B_LINK} and of [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN}), and their Usage Policies: it can make up answers and go along with false premises. Check what it writes before you rely on it.`
+      : `- It inherits the base model's limits and its Usage Policy: see [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN}). Check what it writes before you rely on it.`,
   ].join("\n");
 }
 
@@ -783,7 +848,9 @@ function licenseSection(f: CardFacts): string {
   return [
     "## License",
     "",
-    `Apache 2.0, the license of the base model: the full text is in \`LICENSE\`, as [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN}) ships it. The change from the base model is this LoRA adapter, trained as described above. Use it under the base model's [Usage Policy](${HUB_SITE}/${GLIMMER_ORIGIN}/blob/main/USAGE_POLICY.md), which says Muse Glimmer "is not intended for individuals under the age of 18".`,
+    cardSparkOpen(f)
+      ? derivativeLicense("this adapter", "this LoRA adapter, trained as described above.")
+      : `Apache 2.0, the license of the base model: the full text is in \`LICENSE\`, as [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN}) ships it. The change from the base model is this LoRA adapter, trained as described above. Use it under the base model's [Usage Policy](${HUB_SITE}/${GLIMMER_ORIGIN}/blob/main/USAGE_POLICY.md), which says Muse Glimmer "is not intended for individuals under the age of 18".`,
     "",
     `The training data is ${writer}'s output through Meta's Model API, published under Meta's terms for that API rather than an open license: see its \`${DATASET_LICENSE_PATH}\`.`,
     "",
@@ -805,6 +872,7 @@ function provenanceSection(f: CardFacts): string {
 /** The model repo's README.md: YAML front matter the Hub's validator takes, then the sections in the order above. */
 export function modelCard(f: CardFacts): string {
   const s = f.summary;
+  const derived = cardSparkOpen(f);
   const [, name] = f.modelRepo.split("/");
   const english = looksEnglish(f.dataset.title, f.dataset.task);
   const front = [
@@ -813,10 +881,10 @@ export function modelCard(f: CardFacts): string {
     "base_model_relation: adapter",
     "library_name: peft",
     "pipeline_tag: text-generation",
-    "license: apache-2.0",
+    ...licenseFront(derived),
     ...(english ? ["language:", "- en"] : []),
     "tags:",
-    ...["lora", "peft", "unsloth", "trl", "sft", "muse-muse"].map((t) => `- ${t}`),
+    ...["lora", "peft", "unsloth", "trl", "sft", "muse-muse", ...(derived ? ["built-with-muse-spark-open"] : [])].map((t) => `- ${t}`),
     "datasets:",
     `- ${f.datasetRepo}`,
     "model-index:",
@@ -824,19 +892,19 @@ export function modelCard(f: CardFacts): string {
     "  results:",
     "  - task:",
     "      type: text-generation",
-    "      name: Blind pairwise vs base",
+    `      name: ${derived ? "Blind pairwise vs the 2026 Glimmer it started from" : "Blind pairwise vs base"}`,
     "    dataset:",
     `      name: ${y(`${clean(f.dataset.title)} held-out prompts`)}`,
     `      type: ${f.datasetRepo}`,
     "      split: eval",
     "    metrics:",
-    "    - name: Judge win rate vs base",
+    `    - name: ${derived ? "Judge win rate vs the 2026 Glimmer it started from" : "Judge win rate vs base"}`,
     "      type: win_rate",
     `      value: ${s.items > 0 ? Math.round((s.tunedWins / s.items) * 10_000) / 10_000 : 0}`,
     "    - name: Average judge score, tuned (1 to 10)",
     "      type: judge_score",
     `      value: ${Math.round(s.avgTunedScore * 100) / 100}`,
-    "    - name: Average judge score, base (1 to 10)",
+    `    - name: ${derived ? "Average judge score, the 2026 Glimmer it started from (1 to 10)" : "Average judge score, base (1 to 10)"}`,
     "      type: judge_score",
     `      value: ${Math.round(s.avgBaseScore * 100) / 100}`,
     "    source:",
@@ -845,7 +913,7 @@ export function modelCard(f: CardFacts): string {
     "---",
   ];
   const writer = writerName(f.dataset);
-  const lead = `A LoRA adapter for ${GLIMMER_NAME} (\`${f.template.model}\`) that learned one task from ${writer}: ${taskSentence(f.dataset.task)}. Made with [Muse Muse](${MUSE_MUSE_SITE}). Not an official Meta product.`;
+  const lead = `A LoRA adapter for ${GLIMMER_NAME}${derived ? " with 2026 knowledge" : ""} (\`${f.template.model}\`) that learned one task from ${writer}: ${taskSentence(f.dataset.task)}. Made with [Muse Muse](${MUSE_MUSE_SITE}). Not an official Meta product.`;
   const does = [
     "## What it does",
     "",
@@ -864,6 +932,7 @@ export function modelCard(f: CardFacts): string {
     "",
     lead,
     "",
+    ...(derived ? [builtWithBlock("This adapter"), ""] : []),
     whySection(f),
     "",
     does,
@@ -1551,6 +1620,7 @@ export function localFilesOf(source: QuantSource): LocalFiles | null {
     needsTunedTemplate: trainChannelOf(job.params) === 0,
     title: source.datasetTitle ?? job.title,
     slug,
+    sparkOpen: isSparkOpenDerivative({ params: job.params, metrics }),
   };
 }
 
@@ -1563,6 +1633,11 @@ export interface GgufBuild extends LocalFile {
 
 /** Everything the GGUF card says, from the records: the quantize job and its metrics, the adapter's job and hub state, the dataset. */
 export interface GgufFacts {
+  /**
+   * True for a Derivative of Muse Spark Open (isSparkOpenDerivative, lib/train/base.ts): files merged into r30b. Absent
+   * or false for files of plain Glimmer, unless the merge base or the adapter's base is one of r30b's repos.
+   */
+  sparkOpen?: boolean;
   repo: string;
   /** The slug the repo and its files are named with, which Ollama's name for the model is too. */
   slug: string;
@@ -1691,26 +1766,32 @@ function ggufRunSection(f: GgufFacts): string {
   ].join("\n");
 }
 
+/** True when a GGUF repo's facts are a Derivative's: the flag, or a merge base or adapter base that is one of r30b's. */
+export function ggufSparkOpen(f: Pick<GgufFacts, "sparkOpen" | "mergeBase" | "adapterBase">): boolean {
+  return f.sparkOpen === true || isSparkOpenDerivative({ metrics: { merge_base: f.mergeBase.repo }, adapterBase: f.adapterBase.model });
+}
+
 /** The GGUF repo's README.md: YAML front matter the Hub's validator takes, then the sections in the design's order. */
 export function ggufCard(f: GgufFacts): string {
   const [, name] = f.repo.split("/");
   const english = looksEnglish(f.dataset.title, f.dataset.task);
+  const derived = ggufSparkOpen(f);
   const front = [
     "---",
-    `base_model: ${GLIMMER_ORIGIN}`,
+    `base_model: ${derived ? R30B_REPO : GLIMMER_ORIGIN}`,
     "base_model_relation: finetune",
     "pipeline_tag: text-generation",
-    "license: apache-2.0",
+    ...licenseFront(derived),
     ...(english ? ["language:", "- en"] : []),
     "tags:",
-    ...["gguf", "llama.cpp", "muse-muse", "lora-merged"].map((t) => `- ${t}`),
+    ...["gguf", "llama.cpp", "muse-muse", "lora-merged", ...(derived ? ["built-with-muse-spark-open"] : [])].map((t) => `- ${t}`),
     ...(f.datasetRepo ? ["datasets:", `- ${f.datasetRepo}`] : []),
     "---",
   ];
   const adapter = `[${f.adapterRepo}](${hubLink(f.adapterRepo, "model")})`;
   const sizes = f.builds.map((b) => b.level).join(", ");
   // The task can be model-written (a vibe run's), so its Markdown shows as the characters it is.
-  const lead = `GGUF files of ${adapter}, a LoRA adapter that taught ${GLIMMER_NAME} one task from ${writerName(f.dataset)}: ${mdText(taskSentence(f.dataset.task))}. The adapter is merged into Meta's 16-bit base and quantized to ${plural(f.builds.length, "size")} (${sizes}) for llama.cpp, LM Studio and Ollama. Its eval is on [the run's public page](${labPageUrl(f.adapterJobId)}). Made with [Muse Muse](${MUSE_MUSE_SITE}). Not an official Meta product.`;
+  const lead = `GGUF files of ${adapter}, a LoRA adapter that taught ${GLIMMER_NAME}${derived ? " with 2026 knowledge" : ""} one task from ${writerName(f.dataset)}: ${mdText(taskSentence(f.dataset.task))}. The adapter is merged into ${derived ? `the 16-bit weights of ${R30B_LINK}` : "Meta's 16-bit base"} and quantized to ${plural(f.builds.length, "size")} (${sizes}) for llama.cpp, LM Studio and Ollama. Its eval is on [the run's public page](${labPageUrl(f.adapterJobId)}). Made with [Muse Muse](${MUSE_MUSE_SITE}). Not an official Meta product.`;
   const which = [
     "## Which file for my computer",
     "",
@@ -1760,7 +1841,7 @@ export function ggufCard(f: GgufFacts): string {
     "",
     `- The adapter: ${adapter}${f.adapterCommit ? ` at commit \`${f.adapterCommit}\`` : ""}, trained on [${f.adapterBase.model}](${HUB_SITE}/${f.adapterBase.model}) at revision \`${f.adapterBase.revision}\`.`,
     // The shards' SHA-256 is claimed only with the revision the job checked them at (merge_base_revision).
-    `- The merge: Unsloth's \`save_pretrained_merged\` with \`merged_16bit\`, which merges the adapter into the 16-bit base tensor by tensor in fp32. The base: [${f.mergeBase.repo}](${HUB_SITE}/${f.mergeBase.repo})${f.mergeBase.revision ? ` at revision \`${f.mergeBase.revision}\`, whose two safetensors shards have the same SHA-256 as [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN})'s` : ""}.${f.tensors !== null ? ` The merged model has the base's ${f.tensors.toLocaleString("en-US")} tensor names and shapes.` : ""}`,
+    `- The merge: Unsloth's \`save_pretrained_merged\` with \`merged_16bit\`, which merges the adapter into the 16-bit base tensor by tensor in fp32. The base: [${f.mergeBase.repo}](${HUB_SITE}/${f.mergeBase.repo})${f.mergeBase.revision ? (derived ? ` at revision \`${f.mergeBase.revision}\`, whose 13 safetensors shards have the SHA-256 the recipe pins for it` : ` at revision \`${f.mergeBase.revision}\`, whose two safetensors shards have the same SHA-256 as [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN})'s`) : ""}.${f.tensors !== null ? ` The merged model has the base's ${f.tensors.toLocaleString("en-US")} tensor names and shapes.` : ""}`,
     `- The template: Meta's \`chat_template.jinja\` and tokenizer files from ${GLIMMER_ORIGIN} at revision \`${META_REVISION}\`, so every file carries Meta's current template.`,
     `- llama.cpp \`${f.llamacpp.tag}\`${f.llamacpp.commit ? ` (commit \`${f.llamacpp.commit}\`)` : ""}, its release's own builds, each checked against its SHA-256. No importance matrix: the sizes are llama.cpp's standard K-quants.`,
     `- On ${f.job.gpuLabel} on Lambda: ${f.job.gpuMinutes} minutes from launch to shutdown, ${money(f.job.costUsd)}.`,
@@ -1792,12 +1873,16 @@ export function ggufCard(f: GgufFacts): string {
     `- These files are the adapter merged into the base, so they do what it learned, no more: see ${adapter} for its eval and its limits.`,
     "- Quantizing changes the answers a little. How close each build stays is measured above, on this model's own held-out prompts.",
     `- Text only. The vision projector isn't included; Meta's projector in [${GLIMMER_ORIGIN}-GGUF](${HUB_SITE}/${GLIMMER_ORIGIN}-GGUF) should load beside these files with llama.cpp's \`--mmproj\`, but it hasn't been tried with this model.`,
-    `- It inherits the base model's limits and its Usage Policy: see [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN}). Check what it writes before you rely on it.`,
+    derived
+      ? `- It inherits the limits of ${R30B_LINK} and of [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN}), and their Usage Policies: it can make up answers and go along with false premises. Check what it writes before you rely on it.`
+      : `- It inherits the base model's limits and its Usage Policy: see [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN}). Check what it writes before you rely on it.`,
   ].join("\n");
   const license = [
     "## License",
     "",
-    `Apache 2.0, the license of the base model: the full text is in \`LICENSE\`, as [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN}) ships it. The changes from the base model: the LoRA adapter above merged in, then the whole model quantized to GGUF. Use it under the base model's [Usage Policy](${HUB_SITE}/${GLIMMER_ORIGIN}/blob/main/USAGE_POLICY.md), which says Muse Glimmer "is not intended for individuals under the age of 18".`,
+    derived
+      ? derivativeLicense("these files", "the LoRA adapter above merged in, then the whole model quantized to GGUF.")
+      : `Apache 2.0, the license of the base model: the full text is in \`LICENSE\`, as [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN}) ships it. The changes from the base model: the LoRA adapter above merged in, then the whole model quantized to GGUF. Use it under the base model's [Usage Policy](${HUB_SITE}/${GLIMMER_ORIGIN}/blob/main/USAGE_POLICY.md), which says Muse Glimmer "is not intended for individuals under the age of 18".`,
     "",
     `Not an official Meta product. Meta made ${GLIMMER_NAME}; it didn't make, review or endorse these files.`,
   ].join("\n");
@@ -1816,6 +1901,7 @@ export function ggufCard(f: GgufFacts): string {
     "",
     lead,
     "",
+    ...(derived ? [builtWithBlock("This model"), ""] : []),
     which,
     "",
     ggufRunSection(f),
