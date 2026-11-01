@@ -13,6 +13,7 @@ import { RlResults } from "@/components/train/RlResults";
 import { isRlCardMetric, isRlJob, rlResults } from "@/lib/train/rl";
 import { AdapterLiveDemo, type JobLiveDemo } from "@/components/train/LiveDemo";
 import { MakeLocalFiles, QuantFilesCard } from "@/components/train/LocalFiles";
+import { SimTuneCard } from "@/components/train/SimTune";
 import { SparkOpenNote } from "@/components/train/SparkOpenNote";
 import {
   decisionState,
@@ -367,6 +368,7 @@ export function JobRoom(props: JobRoomProps) {
           {props.hub && job.recipe === "glimmer-lora" && job.status === "succeeded" && !decide ? (
             <MakeLocalFiles jobId={jobId} maxActive={props.hub.maxActive} dailyUsd={props.hub.dailyUsd} />
           ) : null}
+          {props.hub && job.recipe === "glimmer-lora" && job.status === "succeeded" && !decide ? <SimTuneCard jobId={jobId} /> : null}
           {job.recipe === "glimmer-quantize" ? <QuantFilesCard job={job} events={events} /> : null}
           {decision ? (
             <DecisionStatus

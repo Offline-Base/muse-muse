@@ -87,6 +87,11 @@ export interface RunLaunchInput {
   callerId: string;
   /** The run's training steps (TUNE_STEPS unless Advanced changed them). */
   steps: number;
+  /**
+   * A tuning loop's round: the source job's own settings and this round's dollar limit, in place of the run's defaults
+   * (lib/train/tune/loop-steps.ts). Publish stays whatever these params say, and every launch check still applies.
+   */
+  job?: { params: Record<string, string | number>; instanceType: string; maxMinutes: number; maxUsd: number };
   now?: Date;
 }
 
@@ -130,7 +135,7 @@ export async function launchForRun(input: RunLaunchInput): Promise<RunLaunch> {
       {
         recipe: ADAPTER_RECIPE,
         title: dataset.title,
-        params: {
+        params: input.job?.params ?? {
           datasetId,
           maxSteps: s.steps,
           loraRank: s.loraRank,
@@ -138,9 +143,9 @@ export async function launchForRun(input: RunLaunchInput): Promise<RunLaunch> {
           studentPrompt: s.studentPrompt,
           publish: uploads ? 1 : s.publish,
         },
-        instanceType: s.gpu,
-        maxMinutes: s.maxMinutes,
-        maxUsd: s.maxUsd,
+        instanceType: input.job?.instanceType ?? s.gpu,
+        maxMinutes: input.job?.maxMinutes ?? s.maxMinutes,
+        maxUsd: input.job?.maxUsd ?? s.maxUsd,
         ...(marks.base ? { base: marks.base, baseGpuAuto: true } : {}),
       },
       { userId: input.callerId },
