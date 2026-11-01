@@ -44,8 +44,8 @@ const RESERVED = new Set([16]);
  * that ran a migration above a gap would skip the gap's migration for good: no branch with a gap goes near a shared
  * database. With MIGRATIONS_FOR=main (the merge to main, or any shared database) a gap fails outright.
  */
-// 23 is held for a unit still to land; 25 and 26 are units 11 and 13, 27 is General's (replications): 0028_code_sessions sits above them (wave3.md).
-const PENDING_WAVE3 = new Set([23, 25, 26, 27]);
+// 25 and 26 are units 11 and 13, 27 is General's (replications): 0028_code_sessions sits above them (wave3.md).
+const PENDING_WAVE3 = new Set([25, 26, 27]);
 const pendingWave3 = (i: number) => PENDING_WAVE3.has(i);
 const snapshot = (idx: number) => JSON.parse(readFileSync(join(FOLDER, `meta/${String(idx).padStart(4, "0")}_snapshot.json`), "utf8"));
 
@@ -55,7 +55,7 @@ const database = (client: PGlite) => drizzle({ client, schema });
  * Wave 3's migrations, in the agreed order (docs/CAPABILITIES.md, section 4), after General's 0017 (0016 is retired).
  * Each wave 3 unit appends its tag here. Their journal times follow the contract's rule.
  */
-const WAVE3_TAGS = ["0018_trust", "0019_engine", "0020_data", "0021_files", "0022_connect", "0024_code", "0028_code_sessions"];
+const WAVE3_TAGS = ["0018_trust", "0019_engine", "0020_data", "0021_files", "0022_connect", "0023_jobs", "0024_code", "0028_code_sessions"];
 const tagNumber = (tag: string) => Number(tag.slice(0, 4));
 
 /** A copy of the migrations that stops at `lastIdx`, as a database that hasn't had the newer ones would have seen. */
@@ -520,6 +520,46 @@ describe("a database already at 0012", () => {
     assert.equal((await typed.select().from(schema.productSecrets)).length, 0);
     assert.equal((await typed.select().from(schema.productSends)).length, 0);
     assert.equal((await typed.select().from(schema.publicFetchCache)).length, 1);
+    await client.close();
+  });
+
+  it("0023_jobs: a database at 0022 keeps its products, with no owner visit yet, and gets the jobs tables, which go with the product", async () => {
+    const dir = folderThrough(22);
+    dirs.push(dir);
+    const client = new PGlite();
+    const db = drizzle({ client });
+    await migrate(db, { migrationsFolder: dir });
+    assert.equal((await columns(client, "job_runs")).size, 0);
+    const [userId, productId] = [randomUUID(), randomUUID()];
+    await client.exec(`
+      insert into users (id, email) values ('${userId}', 'old@example.com');
+      insert into products (id, slug, name, owner_id, status) values ('${productId}', 'old-one', 'Old One', '${userId}', 'live');
+    `);
+    await migrate(db, { migrationsFolder: FOLDER });
+    const typed = database(client);
+    const [kept] = await typed.select().from(schema.products);
+    assert.equal(kept!.slug, "old-one");
+    assert.equal(kept!.ownerSeenAt, null);
+    const [s] = await typed.insert(schema.productSchedules).values({ productId, name: "digest", everyMinutes: 60, nextRunAt: new Date() }).returning();
+    assert.equal(s!.tz, "UTC");
+    assert.equal(s!.pausedAt, null);
+    await assert.rejects(async () => typed.insert(schema.productSchedules).values({ productId, name: "digest", everyMinutes: 60, nextRunAt: new Date() }));
+    const [r] = await typed.insert(schema.jobRuns).values({ productId, scheduleId: s!.id, name: "digest", trigger: "schedule", budgetUsd: 0.1 }).returning();
+    assert.deepEqual([r!.status, r!.namespace, r!.tick, r!.attempt, r!.costUsd, r!.rowsWritten], ["queued", "live", 0, 0, 0, 0]);
+    // One unfinished run per schedule; a finished one doesn't count.
+    await assert.rejects(async () => typed.insert(schema.jobRuns).values({ productId, scheduleId: s!.id, name: "digest", trigger: "schedule", budgetUsd: 0.1 }));
+    await client.exec(`update job_runs set status = 'done'`);
+    await typed.insert(schema.jobRuns).values({ productId, scheduleId: s!.id, name: "digest", trigger: "schedule", budgetUsd: 0.1 });
+    // One active hook per name and namespace; a revoked one doesn't count.
+    const hook = { productId, name: "log", secretHash: "h" };
+    await typed.insert(schema.productWebhooks).values(hook);
+    await assert.rejects(async () => typed.insert(schema.productWebhooks).values(hook));
+    await typed.insert(schema.productWebhooks).values({ ...hook, namespace: "b:x" });
+    await client.exec(`update product_webhooks set revoked_at = now()`);
+    await typed.insert(schema.productWebhooks).values(hook);
+    await typed.insert(schema.ownerNotices).values({ productId, kind: "job", title: "Hello" });
+    await client.exec(`delete from products where id = '${productId}'`);
+    for (const t of [schema.productSchedules, schema.jobRuns, schema.productWebhooks, schema.ownerNotices]) assert.equal((await typed.select().from(t)).length, 0);
     await client.close();
   });
 

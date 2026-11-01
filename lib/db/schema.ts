@@ -131,6 +131,8 @@ export const products = pgTable(
     takedownReason: text("takedown_reason"),
     /** 0018_trust: the status the takedown replaced with "disabled", which undoing it puts back. Null when it isn't down. */
     statusBeforeTakedown: text("status_before_takedown").$type<ProductStatus>(),
+    /** 0023_jobs (unit 6): when the owner last opened the product's page or got an owner pass. Schedules pause after JOBS_PAUSE_DAYS without one. */
+    ownerSeenAt: timestamp("owner_seen_at", { withTimezone: true }),
   },
   (t) => [index("products_owner_idx").on(t.ownerId), index("products_rebuild_idx").on(t.rebuildOf)],
 );
@@ -1085,4 +1087,113 @@ export const codeSessions = pgTable(
     index("code_sessions_token_idx").on(t.tokenId),
     index("code_sessions_parent_idx").on(t.parentTokenId),
   ],
+);
+
+// ---------- Wave 3, 0023_jobs (unit 6) ----------
+
+/**
+ * A product's schedules (JOBS_ENABLED, docs/CAPABILITIES.md, section 12), from its manifest and brief at deploy. Every
+ * `every_minutes` is at least 15. `at_minute` is minutes after local midnight in `tz`, the time a slot lines up with.
+ * `pause_reason` is `owner_away` or `product_off`: a visit from the owner lifts both.
+ */
+export const productSchedules = pgTable(
+  "product_schedules",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    everyMinutes: integer("every_minutes").notNull(),
+    atMinute: integer("at_minute"),
+    tz: text("tz").notNull().default("UTC"),
+    nextRunAt: timestamp("next_run_at", { withTimezone: true }).notNull(),
+    lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+    pausedAt: timestamp("paused_at", { withTimezone: true }),
+    pauseReason: text("pause_reason").$type<"owner_away" | "product_off">(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("product_schedules_name_idx").on(t.productId, t.name), index("product_schedules_due_idx").on(t.nextRunAt).where(sql`${t.pausedAt} is null`)],
+);
+
+/**
+ * A product's webhooks. Only the sha256 of the secret is kept: it shows once. `namespace` is `live`, or `b:<buildId>` for
+ * a build's test hook, deleted when it ends. One active hook per name.
+ */
+export const productWebhooks = pgTable(
+  "product_webhooks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    namespace: text("namespace").notNull().default("live"),
+    name: text("name").notNull(),
+    secretHash: text("secret_hash").notNull(),
+    createdAt: createdAt(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [uniqueIndex("product_webhooks_active_idx").on(t.productId, t.namespace, t.name).where(sql`${t.revokedAt} is null`)],
+);
+
+/**
+ * One background run across its ticks. `status` is `queued`, `running`, `done`, `failed`, `budget` (stopped at its
+ * dollars) or `cancelled`. `namespace` is `live`, or `b:<buildId>` for a test-fired run the cron never touches. A schedule
+ * has at most one unfinished run. `rows_written` counts rows the gateway saved for this run: the fixed check reads it, and
+ * product code can't write it.
+ */
+export const jobRuns = pgTable(
+  "job_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    scheduleId: uuid("schedule_id").references(() => productSchedules.id, { onDelete: "set null" }),
+    webhookId: uuid("webhook_id").references(() => productWebhooks.id, { onDelete: "set null" }),
+    name: text("name").notNull(),
+    trigger: text("trigger").$type<"schedule" | "webhook" | "enqueue" | "test">().notNull(),
+    namespace: text("namespace").notNull().default("live"),
+    status: text("status").$type<"queued" | "running" | "done" | "failed" | "budget" | "cancelled">().notNull().default("queued"),
+    attempt: integer("attempt").notNull().default(0),
+    tick: integer("tick").notNull().default(0),
+    checkpoint: jsonb("checkpoint"),
+    input: jsonb("input"),
+    budgetUsd: real("budget_usd").notNull(),
+    costUsd: real("cost_usd").notNull().default(0),
+    rowsWritten: integer("rows_written").notNull().default(0),
+    error: text("error"),
+    createdAt: createdAt(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("job_runs_status_idx").on(t.status, t.createdAt),
+    index("job_runs_product_idx").on(t.productId, t.namespace, t.createdAt),
+    uniqueIndex("job_runs_active_schedule_idx").on(t.scheduleId).where(sql`${t.status} in ('queued', 'running')`),
+  ],
+);
+
+/**
+ * What a product's background work tells its owner, shown on the dashboard. `kind` is `job` (notifyOwner), `job_failed`,
+ * `schedule_paused` or `send_held`. A held send keeps the whole message in `payload` until the owner confirms or dismisses
+ * it (`resolved_at`). `namespace` is `live`, or `b:<buildId>` for a build's, deleted when it ends and never shown.
+ */
+export const ownerNotices = pgTable(
+  "owner_notices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    namespace: text("namespace").notNull().default("live"),
+    kind: text("kind").$type<"job" | "job_failed" | "schedule_paused" | "send_held">().notNull(),
+    title: text("title").notNull(),
+    body: text("body").notNull().default(""),
+    payload: jsonb("payload"),
+    createdAt: createdAt(),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (t) => [index("owner_notices_product_idx").on(t.productId, t.namespace, t.readAt, t.createdAt)],
 );
