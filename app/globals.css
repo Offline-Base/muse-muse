@@ -6410,3 +6410,89 @@ div.md.md-plain {
   gap: 8px;
 }
 
+
+/* ---------- Models and Gadgets (/models, /gadgets) ---------- */
+
+.models-name .chips {
+  margin-top: 6px;
+}
+
+.models-sub {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 22px;
+}
+
+/*
+ * On phones the two tables keep room for each column and scroll in their box, as .train-eval-table does. Positioned, so
+ * an ExternalLink's absolute sr-only text stays inside the scroll box instead of widening the page.
+ */
+.models-hosted,
+.models-tuned {
+  position: relative;
+}
+
+.models-hosted {
+  min-width: 720px;
+}
+
+.models-tuned {
+  min-width: 540px;
+}
+
+.gadgets-status {
+  border-top: 0;
+}
+
+.gadgets-status > div:last-child {
+  border-bottom: 0;
+}
+
+.gadgets-status dt {
+  color: var(--fg);
+}
+
+.gadgets-status dd {
+  flex: none;
+}
+
+/* Boards on hand: the owner's pictures as given, straight on the card, with no tile or border of their own. */
+.gadgets-boards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  align-items: stretch;
+}
+
+.gadgets-board {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.gadgets-board-art {
+  display: block;
+  width: 100%;
+  max-width: 220px;
+  height: auto;
+  aspect-ratio: 564 / 640;
+  margin: 0 auto;
+  border-radius: 18px;
+  object-fit: contain;
+}
+
+.gadgets-board-text {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.gadgets-board-text h3 {
+  color: var(--fg);
+}

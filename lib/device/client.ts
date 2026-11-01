@@ -28,14 +28,17 @@ function safeAddress(url: string): boolean {
   return protocol === "https:" || (protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(hostname));
 }
 
-/** The board's address and token, or null when either is missing or the address would expose the token. */
-export function deviceConfig(): DeviceConfig | null {
+/**
+ * The board's address and token, or null when either is missing or the address would expose the token. `quiet` skips the
+ * log for an unsafe address, for a public page that only says whether a board is set up and would log on every visit.
+ */
+export function deviceConfig({ quiet = false }: { quiet?: boolean } = {}): DeviceConfig | null {
   const url = process.env.DEVICE_MCP_URL?.trim();
   // Trimmed: a pasted token often ends in a line break, which no header takes.
   const token = process.env.DEVICE_MCP_TOKEN?.trim();
   if (!url || !token) return null;
   if (!safeAddress(url)) {
-    console.error("[device] DEVICE_MCP_URL isn't https, so the board stays off.");
+    if (!quiet) console.error("[device] DEVICE_MCP_URL isn't https, so the board stays off.");
     return null;
   }
   return { url, token };

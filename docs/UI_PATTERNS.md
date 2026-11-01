@@ -33,7 +33,7 @@ Since Oct 31 the platform's colors, type and control sizes come from `docs/BRAND
 |---|---|
 | 1 | Dashboard (`/dashboard`) |
 | 2 | Make (`/`), Builds (`/builds`, the signed-in user's builds), Rebuilds (`/rebuilds`), Gallery (`/gallery`) |
-| 3 | Usage (`/usage`) |
+| 3 | Usage (`/usage`), Models (`/models`), Fine-tuning (`/fine-tuning`), Gadgets (`/gadgets`, also lit on `/device`). Models follows Usage as in Meta's group, Fine-tuning sits next to the models it makes, and Gadgets, the hardware, comes last |
 | 4 | How it works (`/how-it-works`), Model API docs ↗ (`https://dev.meta.ai/docs/overview`) |
 | Bottom | Signed-in chip with initials and email, and a ⋯ menu with Sign out. Signed out: a plain "Sign in" button. With sign-in off (`OPEN_ACCESS`): the shared account ("Guest", or the admin's email), "Admin, sign-in off" or "Builder, sign-in off", and Sign in in place of Sign out |
 

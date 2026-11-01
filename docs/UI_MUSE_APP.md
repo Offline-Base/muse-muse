@@ -166,7 +166,10 @@ Built on Oct 31 in `components/build`. `steps.tsx` maps a build onto the kit (`r
   room's link before. **More** opens the build details (`BuildDetails.tsx`).
 - **The main column** has the person's turn as a bubble. A running round shows its current step inline with the working
   icon, and folds into "Show thinking" when it ends. "Show thinking" opens the steps panel, at the fix round if it's one.
-  The round's output is the media card: the live preview while the build runs (an iframe with the same sandbox attributes
+  Once the brief is written, the plan card (`PlanCard.tsx`) sits under the current step, as in the owner's Oct 31
+  screenshot, and above the media card: the mascot for the build's state beside the plan's name, tagline, who it's for
+  and how it works. It stays under the latest step as rounds are added, so the mascot is always next to what the build is
+  doing, and heads the output. A declined brief or a change has no card. The round's output is the media card: the live preview while the build runs (an iframe with the same sandbox attributes
   as before), then the demo video, its poster, or the checks' last screenshot. The final message is plain text under it.
 - **The steps panel** replaces the "Build details" panel. It starts open beside a running build from 1100 px, and closed
   on a finished build or a narrower window. Below 1100 px it covers the conversation from the right, and on phones it's
@@ -201,7 +204,7 @@ Nothing the old room showed is gone. This is where each piece is now.
 | Connector URL and how to add it | More menu |
 | The person's muse, references, rebuild tag, "From the docs page" | Bubble with 40 px thumbnails, tag above, fold below. File names are in the Sources tab |
 | Notes from before any turn | A "Getting ready" step |
-| Brief turn | A step, with the whole brief in a "Read the brief" fold. A declined brief also shows in the conversation |
+| Brief turn | A step, with the whole brief in a "Read the brief" fold. In the conversation, the plan card (`PlanCard.tsx`): the mascot for the build's state beside the plan's name, tagline, who it's for and how it works, linking to that fold. A declined brief shows its own message there instead, with no card |
 | Muse Code turn title and its time, usage and cost | The round's step and its description |
 | Time and cost of the brief, checks, demo and deploy | Each one's step, in its description |
 | Goal card, with status and progress | On the round's step, in the panel |

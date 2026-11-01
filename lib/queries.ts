@@ -910,3 +910,18 @@ export async function getUsage(f: UsageFilters): Promise<UsageData> {
 function sum(values: number[]): number {
   return values.reduce((s, v) => s + v, 0);
 }
+
+/**
+ * Calls per model in the usage records since `since`, for /models. One grouped count, bounded on the indexed `at`
+ * column, so it stays cheap as the usage records grow. Rows with no model (tool calls) are left out.
+ */
+export async function modelCallCounts(since: Date): Promise<Record<string, number>> {
+  const u = schema.usage;
+  const rows = await db()
+    .select({ model: u.model, calls: sql<number>`count(*)::int` })
+    .from(u)
+    .where(and(gte(u.at, since), isNotNull(u.model)))
+    .groupBy(u.model)
+    .limit(100);
+  return Object.fromEntries(rows.flatMap((r) => (r.model ? [[r.model, num(r.calls)] as const] : [])));
+}

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { BuildRoom } from "@/components/build/BuildRoom";
+import "@/components/build/plan-card.css";
 import { NotConnected } from "@/components/ui";
 import { env } from "@/lib/env";
 import { canActAsOwner } from "@/lib/auth";

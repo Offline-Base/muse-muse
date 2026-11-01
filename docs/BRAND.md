@@ -341,7 +341,7 @@ No source covers these, since the live page has no dashboards. Apply the tokens 
 | Copy on a response | Could be real, but no answer in a build needs it yet | The Share button copies the link |
 | Pin, Rename, Delete chat | No such actions on a build | The More menu's real actions |
 | Toast "Link copied" | Share already says it on its own button | That button |
-| Mascot character | The owner's mascot lands later, in `WorkingIcon` | The working icon |
+| Mascot character in `WorkingIcon` | The owner's mascot lands there later. Since Oct 31 its three pictures (`public/muse/muse-present.jpg`, `muse-building.jpg`, `muse-shield.jpg`) show in the build room's plan card | The working icon |
 | Designer names, font history, design philosophy | Unverified. Not used | Nothing |
 
 ## Differences from the spec

@@ -72,7 +72,7 @@ export function UserTurn({
 
 // ---------- Brief ----------
 
-const VERDICT: Record<Brief["verdict"], { label: string; tone: string }> = {
+export const VERDICT: Record<Brief["verdict"], { label: string; tone: string }> = {
   yes: { label: "Can build", tone: "live" },
   partly: { label: "Can build part of it", tone: "partial" },
   no: { label: "Can't build this", tone: "failed" },

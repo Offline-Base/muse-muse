@@ -934,6 +934,13 @@ because the sidebar showed a real account.
 - The fine-tune session's final model is stage-b-r30b (picked 19:14): BF16, greedy, 29.0% of 2,500 2026 facts (base 18.4%
   at Q4), admits not knowing 86% (base 15%), makes something up 12% (base 74%). Its Q4_K_M is on writer-1 (16.9 GB); the
   1-bit IQ1_S is due about 20:25, scored about 21:05. Nothing goes through the laptop.
+  **Corrected 20:33 (the fine-tune session):** the 86% and 12% came from the 120-question dev set, which overstates
+  honesty because its training rows came from the same writer. Held-out numbers (190-question honesty test, BF16, greedy,
+  blind hand audit by two graders): r30b honest 44.7% (95% interval 38 to 52), made up 55.3%; after-cutoff questions 67%
+  honest, unknowables 67%, false premises 20%. Base: honest 26.3% (21 to 33), made up 70%; after-cutoff 24%, unknowables
+  43%, false premises 22%. Paired on the same questions r30b beats base, p = 0.0001. In plain words: much better than
+  base at saying a question is after its cutoff or unknowable, no better at catching false premises (it still goes along
+  with about 80% of them). No page or card in this repo quoted 86%.
 
 ### 19:46 Owner: Gadgets and Models tabs in the sidebar
 
@@ -970,6 +977,104 @@ because the sidebar showed a real account.
   tuned-model-options branch only (no deploy; main unchanged).
 - Owner steps (README, Preview database): Neon branch "preview" with an empty database "preview"; PREVIEW_DATABASE_URL
   for Preview; Protection Bypass for Automation. Then vercel.json's main-only rule can let previews build again.
+
+### 20:08 Glimmer alignment with Meta's docs, and training providers: designs done
+
+- tg-train-align 429c659 (wf_a24c3785-97a): docs/GLIMMER_ALIGNMENT.md (48 rows against Meta's post-training,
+  quantization, deploy and hardware pages, each with our file:line, a status and a fix) and docs/TRAIN_BACKENDS.md (a
+  TrainBackend seam plus Lambda, Modal, Baseten and Fireworks). An independent check found 20 problems (5 that changed a
+  plan: Modal GPU Sandboxes can be preempted, trainChannel 1 isn't built yet, the next free migration is 0028, the GPU
+  order, Modal's 3x CPU and memory rate); all 20 fixed.
+- Findings: the core recipe sits inside Meta's ranges (QLoRA on attention and MLP, LR 2e-4, rank 16, answer-only loss,
+  Meta's template, bf16 merge, llama.cpp). Three gaps: training on final answers only can suppress reasoning (Meta warns;
+  the knowledge run measured it), cards say temperature 0 (Meta says don't decode greedily), and final-channel models use
+  extra stops and a custom template. Fixed defaults should base steps on dataset size (1 to 2 epochs).
+- Providers: Lambda is the only live one for Nov 4. Modal can run our recipe unchanged in a GPU Sandbox (about $2.10/h
+  for an A100, plus CPU and memory), with a relaunch for preemption; Baseten runs it on H100 or H200 (about $6.50/h);
+  Fireworks can't run our recipe and its terms rule out model-written datasets. Smoke tests: Modal about $2.30, Baseten
+  about $1.10, Fireworks export test $2.50 to $4.50 (none run).
+
+### 20:24 Owner: fine-tuning as simple as a build; builds that train, use gadgets and run tuned Glimmer
+
+- The owner: a new fine-tuning job should look and work about as simply as a regular Muse Muse build, and Muse Muse
+  itself should be able to start a fine-tuning job, connect to gadgets, and run a hosted Muse Glimmer (the one being
+  fine-tuned) in what it builds.
+- Overlaps: wave 3's unit 11 (gpu: a shared Glimmer endpoint behind the gateway, per-product training after ship), unit
+  13 (hardware: board tools and registry), the anyone-can-fine-tune design (_plan/open-train.md), tg-train-align's
+  providers, and tg-decide's decision models. A read-only design pass reconciles them before any build; the split with
+  wave 3 gets agreed first.
+- Wave 3 (20:27): unit 11's train trigger and Glimmer request shape are on hold, unbuilt, written only in its
+  docs/CAPABILITIES.md section 17 (`{GATEWAY_URL}/glimmer/v1/chat/completions` in OpenAI's shape, demo windows,
+  `POST /api/products/<slug>/train`, migration 0025). Its gpu unit starts around 4 AM and builds on General's contract
+  if it's in wave3.md by then. Open question: who serves a tuned model outside a demo window.
+
+### 20:31 Gadgets and Models tabs landed on tuned-model-options (aee5943)
+
+- wf_5e1ee206-43e built tg-nav-tabs: sidebar rows Usage, Models, Fine-tuning, Gadgets (cube and chip icons; /device
+  lights Gadgets, /devices lights nothing), /models (Meta's hosted models with uses, prices and 30-day call counts;
+  Glimmer; the lab's tuned models, linking only what's public; where each kind runs) and /gadgets (what a gadget is, the
+  three tools, status words only, products using one, the admins' /device link). Review: 1 medium, 6 low, all fixed but
+  an optional SQL filter (a claim of a board that wasn't set up; promises nothing backs; tests for the new count and a
+  database that doesn't answer; docs; the kit's StatusPill; a log line on every visit). A 390 px sideways scroll on
+  /models, found in its screenshots, was fixed too. Full suite at 0578b07: 4,458 tests, 4,450 pass, 0 fail, 8 skipped.
+- General then added (c0c6b52) the owner's three pictures on /gadgets, under "Boards on hand": Jetson Orin Nano 8 GB
+  (6), Raspberry Pi 5 (2), Coral board (2), each shown as given (no tile, no cutout), with facts from PLATFORM_PLAN.md
+  and HANDOFF_HUSSAM.md and no addresses or live status. Also wave 3's two marked slots: components/gadgets/BoardsSlot.tsx
+  (unit 13) and components/models/OwnModelsSlot.tsx (unit 11, renders nothing today). After the merge: tsc exit 0, the
+  related tests 112/112.
+- Checked on the local site (port 3020): no sideways scroll at a true 390 px viewport, dark mode shows the pictures'
+  white backgrounds as rounded blocks. Desktop shots are cropped above the account chip.
+  ![Gadgets, desktop](log/shots/2026-10-31/tabs-gadgets-1440-light.png)
+  ![Gadgets, dark](log/shots/2026-10-31/tabs-gadgets-1440-dark.png)
+  ![Gadgets, phone](log/shots/2026-10-31/tabs-gadgets-390-light.png)
+  ![Models, desktop](log/shots/2026-10-31/tabs-models-1440-light.png)
+
+### 20:33 r30b's 1-bit file is ready; the owner wants the dataset and models open-sourced
+
+- From the fine-tune session: r30b IQ1_S on writer-1 (glimmer-stage-b-r30b-IQ1_S.gguf, 6,526,418,912 bytes, sha256
+  6fbd323c...a7e561), scored about 21:05. r30b Q4_K_M: 28.8% of the 2,500 2026 facts, old facts 40/40, 49 tok/s on an A100.
+  Offline mode uses the IQ1_S once it's scored (on the AWS Mac, never the owner's laptop).
+- The owner asked that session to open-source the dataset and models: Hugging Face under the OfflineBase account,
+  private first, public after the license and personal-data reviews; code later. It will tell General before anything
+  goes public, so /models can link to it then. Hub cards stay that session's, with the owner's OK for anything public.
+
+### 20:44 Plan card landed on tuned-model-options (7e4a8ef), with no grey tile
+
+- wf_352ae383-888 built tg-plan-card: the mascot at the left of the chat (present while the plan is new, building while
+  Muse Code works, the shield pair once live or partial; back to present on failed or stopped; no card for a declined
+  brief or a change to a product), the plan's name, tagline, who it's for and how it works at the right, and "Read the
+  full brief" opening the Steps panel at the brief. Review: 1 medium (hard-coded stage colors), 4 low or nits, all fixed;
+  placement under the current step kept, as in the owner's screenshot. Full suite at 62d8b8d: 4,383 tests, 4,375 pass, 0
+  fail.
+- Then the owner's "no grey tile" (c2bf120): no stage color, border or blend behind the mascot; the pictures as given,
+  with rounded corners. The --media-stage token that only the stage used is removed. After the merge: tsc exit 0, build
+  room, plan card, nav, gadgets and models tests 156/156. Checked on the local site:
+  ![Plan card, no tile](log/shots/2026-10-31/plan-card-no-tile-1440.png)
+
+### 20:45 Fine-tune like a build: design done
+
+- Read-only design (_plan/train-like-build.md; contract pasted into wave 3's plan). A new fine-tune starts from one box
+  ("What should your model do?"), optional examples as a file, then a plan card with the mascot and one Start, then a room
+  with steps: writing examples, checking, training on a GPU, scoring base against tuned, ready, try it live, publish.
+  Settings move under Advanced. No migration: the run is the dataset row, and a tuneRun workflow drives it.
+- Builds: once a build that picked Muse Glimmer is live, its room offers "Its own model" (plan it, one click by the
+  owner, never automatic; Live never waits). The product keeps answering with Muse Wonder until its own model passes the
+  eval and a serving window is open.
+- Hosted tuned Glimmer: products call wave 3's gateway route; General supplies the chat backend on the demo GPU with
+  Meta's sampling (1.0, 0.95, 64; never stop on <|eom|> except final-only adapters). Outside a window nobody serves it.
+- Gadgets: Glimmer 30B doesn't fit an 8 GB Jetson; the room says so and points admins to training a small model on the
+  board. Estimates: about $11.80 a run at most (examples $3.10 to $6.80 on Wonder, unmeasured; GPU up to $5). Test budget
+  proposed: $8. Units U1, U2, U4, U5 start now; launching jobs and the chat route wait for tg-decide's D7.
+
+### 20:50 Meta's Muse Gadget SDK read
+
+- Owner: "see if anything here is valuable ... we are cool custom building too". Notes in _plan/gadget-sdk.md. Gadgets
+  pair to one person's Muse account with that person's SDK token (personal, non-commercial, at most 50 devices, no
+  promotions or rewards, other distribution needs Meta's written permission). The Linux SDK takes custom commands from
+  JSON files in /etc/musegadget/commands.d, and a device can post text and pictures into its owner's Muse chat.
+- Useful: the owner's Pi 5 as a real gadget (already planned); a new "Muse gadget commands" product output so a person's
+  own gadget can use a Muse Muse product; muse-device boards as gadgets (Hussam's call); ESP32 custom hardware with
+  browser flashing after Nov 4. Muse Muse still never holds anyone's gadget token.
 
 ## Gaps
 
