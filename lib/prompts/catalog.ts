@@ -56,7 +56,7 @@ const FACTS: Record<string, string[]> = {
   ],
   "muse-voice-transcribe-1.0": [
     "Speech to text from a recorded file. Only mono 16-bit WAV at 16 or 24 kHz is accepted, so the product converts recordings in the browser first (the template has a helper).",
-    "Returns one plain transcript: no speaker labels and no word timestamps. Products transcribe recorded files, not live streams.",
+    "Returns a transcript. With mode DIARIZATION it also returns turns with anonymous speaker labels and timings, not yet checked through the gateway, so a product must still work with one plain block of text. Products transcribe recorded files, not live streams.",
   ],
 };
 
@@ -185,7 +185,7 @@ export function catalogSummary(caps: readonly CapId[] = env.enabledCaps): string
     capsWorkaround(caps, "video") ?? "- Video generation: a short image sequence from muse-image-1.0.",
     "- Embeddings: put the documents in Muse Wonder's 1M-token context (fine for small document sets).",
     "- Realtime voice conversation: record, transcribe, then reply in text.",
-    "- Speaker labels in transcripts: none. Ask the user to label turns, or treat the transcript as one voice.",
+    "- Named speakers in transcripts: mode DIARIZATION gives anonymous labels (A, B), not yet checked through the gateway. Ask the user to name them, and keep one plain transcript as the fallback.",
     "",
     "How products run:",
     run?.first ?? "- One Next.js app on Vercel with its own link. No database and no user accounts: anything saved stays in the user's browser (localStorage).",
@@ -193,6 +193,7 @@ export function catalogSummary(caps: readonly CapId[] = env.enabledCaps): string
     run?.third ??
       `- Products reach only Meta's models${gadgets ? ", and a connected gadget when the brief picks muse-gadget" : ""}${agents ? ", and the agent tools below when the brief picks the agent target" : ""}. No other services or API keys: no WhatsApp, SMS, email, payments, maps, social networks or scraping other sites. When a muse needs one, build the web version and make that a limit.`,
     "- Each product has a small daily model budget, so one run should cost cents, not dollars.",
+    ...(availableRecipes(caps).length ? ["- Any Muse Wonder product may call web_search directly, with no agent target. Live replies carry no citation annotations, so footnotes come from the search results, and an answer with no sources says so."] : []),
     ...(agents ? agentToolsBlock(personal) : []),
     // Wave 3 (docs/CAPABILITIES.md, 2.6): each enabled cap's block follows the agent block. None with no caps on.
     ...capsCatalogBlocks(caps),

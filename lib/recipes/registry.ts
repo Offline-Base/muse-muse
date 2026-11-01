@@ -25,57 +25,57 @@ export interface Recipe {
 export const RECIPES: readonly Recipe[] = [
   {
     id: "recipe-api",
-    oneLine: "Responses API patterns: the Files API for long documents, structured output, tool calling, long context.",
-    limit: "Documents and tools stay within the gateway's limits, and one run stays within the product's daily budget.",
+    oneLine: "Model API patterns: the Files API for long documents, streaming, tool calling, caching, reasoning, long context, retries, and web search with footnotes.",
+    limit: "Long documents are read at a practical size per call, footnotes list what a search returned, and one run stays within the product's daily budget.",
     longRun: false,
   },
   {
     id: "recipe-agent-patterns",
-    oneLine: "Hand-written agent loops in TypeScript: tool calling, memory across turns, planner and worker splits, a reviewer step, for a few turns per run.",
-    limit: "A run has at most a few turns, and closing the page ends it.",
+    oneLine: "Short agent patterns in TypeScript: validated find-and-replace edits, a triage copilot with memory on the page, side chats off a main conversation, and a downloadable repo-agent kit the person runs with their own key.",
+    limit: "A run has a few turns and works on what the person brings. The product never writes to GitHub or anyone's repository.",
     longRun: false,
   },
   {
     id: "recipe-code-sessions",
-    oneLine: "A product that starts Muse Code sessions on behalf of its owner, through the code service.",
-    limit: "Only the product's owner can start a session, and a session has its own time and dollar limits.",
+    oneLine: "Coding tasks run by Muse Code from a product: fix failing tests, a staged migration, a screenshot bug fix, chained sessions, small fan-outs, an audit ledger.",
+    limit: "Only the product's owner can start a session. Each has at most $1 and 15 minutes, works on small uploaded projects, and can't reach remote URLs.",
     longRun: false,
     needs: "code",
   },
   {
     id: "recipe-visual-reports",
-    oneLine: "A model writes a structured report and the page draws it: charts, tables, timelines, printable pages.",
-    limit: "Numbers come from what the person gave. The model's reading of them can be wrong.",
+    oneLine: "A chart explainer with its numbers checked, research into slides with sources, a polished page checked by screenshots at desktop size, and clickable points placed on a photo.",
+    limit: "Numbers read from images can be wrong. It explains and never advises, and points on a photo are approximate.",
     longRun: false,
   },
   {
     id: "recipe-games",
-    oneLine: "A playable browser game with a model as narrator, opponent or level maker, including drawn sprites and scenes.",
-    limit: "Model turns take seconds, so play is turn based or paced around them.",
+    oneLine: "A 3D browser game with three.js, with its rules written first, built in one pass or in rounds, and tested by holding keys.",
+    limit: "Simple shapes only, with no downloaded models, and one player.",
     longRun: false,
   },
   {
     id: "recipe-image",
-    oneLine: "Advanced Muse Image patterns: consistent characters, editing one region found with SAM, combining several images, image sets.",
-    limit: "Text inside generated images can come out wrong, and size sets only the aspect ratio.",
+    oneLine: "Muse Image conversations: editing a person's photo in turns, generation grounded by search, a consistent series from anchor images, and careful region edits.",
+    limit: "Text inside images can come out wrong, size sets only the aspect ratio, and search-grounded images are illustrations.",
     longRun: false,
   },
   {
     id: "recipe-voice",
-    oneLine: "Transcript products: speaker labels, keywords, long recordings in pieces, meeting notes and captions from a recording.",
-    limit: "It works on recorded files, not live speech, and speaker labels can be wrong.",
+    oneLine: "Recorded speech with speaker labels, keywords and language hints, push-to-talk voice chess on the page, and a see-and-ask page using a phone's camera.",
+    limit: "It works on recordings of at most 10 minutes or 32 MB, not a live microphone. Speaker labels are anonymous and can be wrong or missing, and it doesn't control other apps.",
     longRun: false,
   },
   {
     id: "recipe-sam-media",
-    oneLine: "SAM 3.1 media patterns: cutouts, stickers, animated WebP and GIF, captions and tracked effects on a video, drawn in the product's own code.",
-    limit: "Outputs are made in the browser or on the server within the 4.5 MB request limit, so clips stay short.",
+    oneLine: "SAM 3.1 video patterns: masks over clips, transparent animated sticker packs, and speech bubble captions that follow each speaker, drawn in the browser.",
+    limit: "Clips stay short. Stickers are one object per pack, and captions export as WebM recorded in real time, not H.264 MP4.",
     longRun: false,
   },
   {
     id: "recipe-simulated-loops",
-    oneLine: "A long multi-turn loop that runs in stretches from the open page, with a saved record: for work the cookbook does with background agents or long sessions, as a labeled stand-in.",
-    limit: "Closing the tab pauses a run, and the run is saved in this browser only. A run costs dollars, not cents.",
+    oneLine: "A long model loop on a labeled simulation, run in stretches from the open page: computer use on a simulated screen, fixing a bundled project, a role-based team board, a simulated robot arm, an approval gate with a ledger, staged command approvals.",
+    limit: "It acts only on a simulation and does not control your computer. Closing the tab pauses a run, and the run is saved in this browser only. A run costs dollars, not cents.",
     longRun: true,
   },
   {
@@ -152,6 +152,9 @@ export function recipesWriterRules(caps: readonly CapId[]): string {
     "- Agent loops are written in TypeScript, even when the note points at a Python repo.",
     "- When the original needs something a hosted product can't do, the product is a stand-in: verdict is \"partly\" and a limit names it as a stand-in in plain words for its users.",
   ];
+  lines.push(
+    "- Some cookbook recipes can't be products: contained execution with bubblewrap and immutable guardrails (04/04, 04/05) can't run in a hosted product, so say so in limits, and scheduled loops (04/09) need the jobs service from the catalog. MCP security tooling that probes other people's systems (04/11) is refused.",
+  );
   if (available.some((r) => r.longRun)) {
     lines.push(
       `- A long recipe (${available.filter((r) => r.longRun).map((r) => r.id).join(", ")}) is the exception to one run costing cents: it has its own daily budget, and estimatedCostPerRunUsd and costNotes count its turns honestly, in dollars. complexity is "complex". Don't add the agent target for one: it writes its own loop.`,

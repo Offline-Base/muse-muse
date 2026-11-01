@@ -117,7 +117,7 @@ test("per-image, per-frame and per-second models", () => {
     0.18,
   );
   const asrJson = estimateCost("asr/transcribe", jsonReq({ model: "muse-voice-transcribe-1.0", audioUrl: "x" }), 100);
-  assert.ok(asrJson > 0.09 && asrJson < 0.1, String(asrJson));
+  assert.ok(asrJson > 0.05 && asrJson < 0.06, String(asrJson));
 
   assert.equal(estimateCost("files", { kind: "raw", model: null }, 4_000_000), 0);
 });

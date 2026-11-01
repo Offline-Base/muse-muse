@@ -1478,6 +1478,17 @@ The owner asked for 100 tests, 1,000 generated examples, and Spark Contributor i
 
 The owner chose private code with a per-owner Make public, TUNE_AUTO_PUBLISH on and HF_PUBLIC unset. The switch is set on production, but HF_TOKEN and HF_NAMESPACE aren't listed there by name, so uploads stay off until they are. next build exit 0 with privacy/ moved away; no real run of the migration, restore or upload.
 
+### 13:04 Nine cookbook skills and small gaps, on tg-agent-cookbook, not pushed
+
+Nine skills in `lib/recipes/skills/`, behind RECIPES_ENABLED: api, agent patterns, code sessions, visual reports, games, image, voice, SAM media, simulated loops. Nothing has run in a real build, so every skill is unproven until the owner's test build.
+
+- Helpers: `sticker.ts`, `webp-anim.ts`, `gif.ts` and `captions.ts` from the docs media demos, and `cu-sim.ts` from the docs computer-use demo, without its docs-only `minesShell` re-export.
+- Decision: computer use defaults to function tools on Muse Wonder. Our docs record Wonder answering 400 `Unsupported tool type 'computer'`, so the native tool gets one try on TEST_MODEL.
+- Decision: the speaker-label correction in `lib/prompts/catalog.ts` has no flag, as planned, so golden changed. Without RECIPES_ENABLED, the template's `transcribeFile` still can't send a mode.
+- Fix: `asrAudioMaxBytes` goes from 60 MB to 32 MB, which narrows what a product may send through audioUrl, and lowers the reservation for such a call from about $0.09 to about $0.05. `estimate.test.ts` updated.
+- No change: the long-context lift. `liveTokenDailyBudgetFor` already lifts a budget by the brief's estimate, up to $10.
+- Not done: goal and effort on POST /code/sessions. `lib/caps/**` belongs to wave 3, and the item has no value until the code cap is proven.
+
 ### 13:01 Recipes plumbing, RECIPES_ENABLED off, on tg-agent-legal, not pushed
 
 First step of the plan to build the legal agent workshop and the cookbook. `lib/recipes/`: a registry, skills in `lib/recipes/skills/`, `lib/recipes/generated.json` from `scripts/recipes-gen.mjs`, so skills reach a build through extraFilesFor with no snapshot. Stored brief field `recipes`; the writer's schema gets it only while recipes are available, so the flags-off schema stays the same object. Decision: a pick whose flag went off counts as never picked, so the skill, the prompt lines and the marker go away together. Checks: the new test file and flags-off.test.ts, 11 pass. No real build yet.
