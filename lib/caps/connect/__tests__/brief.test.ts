@@ -20,6 +20,7 @@ import { capsFileFor } from "@/lib/caps/overlays";
 import { capsRefineLines } from "@/lib/caps/render";
 import { env } from "@/lib/env";
 import { allowedModelsFor } from "@/lib/pipeline/logic";
+import { catalogSummary } from "@/lib/prompts/catalog";
 import { newBoxKey } from "@/lib/secrets/box";
 import { BRIEF } from "@/lib/promote/__tests__/fixtures";
 
@@ -90,6 +91,18 @@ describe("with the connect cap on", () => {
     process.env.VERCEL_ENV = "production";
     assert.match(capsWriterRules(["connect"]), /connect\.sends: \[\]/, "sends stay off on production (decision 8)");
     assert.doesNotMatch(capsCatalogBlocks(["connect"]).join("\n"), /confirms that one message/);
+  });
+
+  it("gives a fresh catalog in the same process when the vault or sends go on or off", () => {
+    ready.connect = true;
+    process.env.CONNECT_ENABLED = "1";
+    assert.doesNotMatch(catalogSummary(["connect"]), /owner's own key|confirms that one message/);
+    vaultAndSendsOn();
+    assert.match(catalogSummary(["connect"]), /confirms that one message/);
+    assert.match(catalogSummary(["connect"]), /owner's own key/);
+    delete process.env.CONNECT_SENDS;
+    assert.doesNotMatch(catalogSummary(["connect"]), /confirms that one message/);
+    assert.match(catalogSummary(["connect"]), /owner's own key/);
   });
 
   it("names every API, path and credit in the catalog, and no em dash anywhere the writer reads", () => {
