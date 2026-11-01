@@ -11,6 +11,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { DecideSplitCounts, DecisionSpec, DecisionSummary } from "@/lib/decide/types";
+import { LAB_BASE_MODEL } from "@/lib/train/base";
 import { checkDecisionUpload, decideRunSize, decisionPartSize, isDecideMode } from "@/lib/train/decision-datasets";
 import { hubJobProblem, publishOff } from "@/lib/train/hub-cards";
 import {
@@ -250,7 +251,7 @@ describe("after a decide run: no judge, no publishing, no local files", () => {
     const problem = "that job trained a decision model, and its local files need a decision check (Q4_K_M's picks against the adapter's) that isn't built yet.";
     assert.equal(quantProblem(job, { student_prompt: "short" }), problem);
     assert.equal(quantProblem({ ...job, terminatedAt: null, evalSummary: null }, null), problem, "before the judged check");
-    assert.equal(quantProblem({ ...job, params: { datasetId: DS, studentPrompt: "short" } }, { student_prompt: "short" }), null, "a chat adapter as before");
+    assert.equal(quantProblem({ ...job, params: { datasetId: DS, studentPrompt: "short" } }, { student_prompt: "short", base_model: LAB_BASE_MODEL }), null, "a chat adapter as before");
   });
 
   it("names no judge for a scored decision summary, and Muse Spark 1.3 for a judged one from before the record", () => {

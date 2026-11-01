@@ -27,6 +27,7 @@ import type {
   ReliabilityBin,
   WilsonRate,
 } from "@/lib/decide/types";
+import { isSparkOpenDerivative } from "@/lib/train/base";
 import type { LambdaInstance } from "@/lib/train/lambda";
 import type { QuantLevel } from "@/lib/train/local-files";
 import { judgeModelOf, storyModelOf, writerModelOf } from "@/lib/train/models";
@@ -1165,6 +1166,9 @@ export function trainChannelOf(params: Record<string, string | number> | null | 
  * A decision model's adapter (decide mode) is refused for now, whatever adapterProblem says: QUANT_PY's checks are a
  * chat model's (a final answer under a stock app's prompt), and the decision check its files need, Q4_K_M's picks
  * against the adapter's on the test renderings, isn't built (docs/DECISION_MODELS.md, "Local files").
+ *
+ * So is an adapter trained on plain Glimmer, before the switch to r30b (lib/train/base.ts): QUANT_PY merges into r30b's
+ * 16-bit weights, which that adapter never trained on, so its files would be a model nobody evaluated.
  */
 export function quantProblem(
   job: Pick<TrainJobRow, "params" | "terminatedAt" | "evalSummary">,
@@ -1181,6 +1185,9 @@ export function quantProblem(
   const prompt = asRun === undefined || asRun === null ? "full" : String(asRun).trim().toLowerCase() || "short";
   if (prompt !== "short") {
     return "that adapter trained under its dataset's whole task prompt, and local files need the one-line system message of the short student prompt.";
+  }
+  if (!isSparkOpenDerivative({ params: job.params, metrics })) {
+    return "that adapter trained on plain Muse Glimmer, and local files now merge into the 2026 Glimmer (r30b), which it never trained on.";
   }
   return null;
 }

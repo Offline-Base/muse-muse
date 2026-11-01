@@ -1512,6 +1512,8 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
       datasetRows = { [DATASET_ID]: decision };
       assert.equal((await ask({ mode: "decide", publish: 1 })).status, 400, "a person's rows are never published");
       assert.equal((await ask({ mode: "decide", maxSteps: 300 })).status, 400, "decide mode's steps come from its epochs");
+      const chosen = await ask({ mode: "decide", baseModel: "unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit" });
+      assert.deepEqual([chosen.status, await errorOf(chosen)], [400, "Unknown parameter: baseModel."], "the platform writes the base, never a caller");
       assert.equal(created() + called("listInstanceTypes").length, 0, "before asking Lambda or creating anything");
 
       const res = await ask({ mode: "decide", epochs: 3 });
@@ -1526,6 +1528,7 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
         scoreOnly: 0,
         dryRun: 0,
         publish: 0,
+        baseModel: "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit",
       });
     });
 

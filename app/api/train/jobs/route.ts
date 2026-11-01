@@ -2,6 +2,7 @@ import { start } from "workflow/api";
 import { requireAdminOrAutomation } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { errorJson, readJson, route } from "@/lib/http";
+import { BASE_MODEL_PARAM, LAB_BASE_MODEL } from "@/lib/train/base";
 import { decideRunSize, isDecideMode } from "@/lib/train/decision-datasets";
 import { quantParams } from "@/lib/train/hub-cards";
 import { cacheRegions, LambdaApiError, listInstanceTypes, pickGpu, type LambdaInstanceType } from "@/lib/train/lambda";
@@ -194,7 +195,8 @@ export const GET = route(async (req: Request) => {
  * recipe that keeps the model cache prefers a region that already has it. A glimmer-quantize job also needs its switch,
  * a judged adapter and, to publish, a published one, one at a time per adapter (quantSetup, 503 quant_off or hub_off,
  * 400, 409 adapter_not_published or quant_running with {quantJobId}), and the platform writes its levels, slug and
- * trainChannel params itself. A run
+ * trainChannel params itself. A glimmer-lora or glimmer-quantize job also gets the baseModel param, the base its GPU
+ * loads (LAB_BASE_MODEL, lib/train/base.ts). A run
  * that can't fit its limits on the GPU it gets (runEstimate: seconds a step for that GPU plus a fixed overhead, larger
  * in a region without the cache) is refused with a 400 that says so, with {estimateMinutes, usableMinutes}, before
  * anything is created. 400 bad input, 409 too_many_active (TRAIN_MAX_ACTIVE), 502
@@ -216,6 +218,9 @@ export const POST = route(async (req: Request) => {
   const title = typeof body.title === "string" && body.title.trim() ? body.title.trim().slice(0, TITLE_MAX) : recipe.title;
   const params = validateParams(recipe, body.params);
   if (!params.ok) return errorJson(400, params.error);
+  // A job that makes a model records the base its GPU loads (lib/train/base.ts), so its pages know a Muse Spark Open
+  // Derivative before any metrics arrive. Not a recipe field, so validateParams refuses it from a caller.
+  if (recipe.id === ADAPTER_RECIPE || isQuantRecipe(recipe.id)) params.value[BASE_MODEL_PARAM] = LAB_BASE_MODEL;
   // A serve job's minutes are stored whole (serveMinutes rounds down), so the limits, the page's end time, the proxy's
   // cutoff and the GPU, which reads the same param from job.json, all count the same minutes.
   if (isServeRecipe(recipe.id)) params.value[SERVE_MINUTES_PARAM] = serveMinutes(params.value);

@@ -380,7 +380,7 @@ class FakeModel:
     def save_pretrained_merged(self, save_directory, tokenizer, save_method="merged_16bit"):
         assert save_method == "merged_16bit", save_method
         hf = os.environ["HF_HOME"]
-        cached = os.path.join(hf, "hub", "models--unsloth--Muse-Glimmer-30B-unsloth-bnb-4bit")
+        cached = os.path.join(hf, "hub", "models--OfflineBase--Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit")
         with open(os.environ["FAKE_LOG"], "a") as f:
             f.write(json.dumps({"tool": "merge", "hf_home": hf, "linked": os.path.islink(cached), "adapter": self.adapter}) + "\n")
         mode = os.environ.get("FAKE_MERGE", "good")
@@ -388,8 +388,8 @@ class FakeModel:
         os.makedirs(save_directory, exist_ok=True)
         if mode == "cache":
             # Copied from an HF cache under HF_HOME: snapshot links to blobs named by their SHA-256.
-            snap = os.path.join(hf, "hub", "models--unsloth--Muse-Glimmer-30B", "snapshots", "c" * 40)
-            blobs = os.path.join(hf, "hub", "models--unsloth--Muse-Glimmer-30B", "blobs")
+            snap = os.path.join(hf, "hub", "models--OfflineBase--Glimmer-30B-2026-Knowledge", "snapshots", "c" * 40)
+            blobs = os.path.join(hf, "hub", "models--OfflineBase--Glimmer-30B-2026-Knowledge", "blobs")
             os.makedirs(snap, exist_ok=True)
             os.makedirs(blobs, exist_ok=True)
             for name, sha in shards:
@@ -416,7 +416,7 @@ class FakeModel:
 class FastModel:
     @staticmethod
     def from_pretrained(model_name, revision=None, max_seq_length=None):
-        assert model_name == "unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit" and revision, (model_name, revision)
+        assert model_name == "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit" and revision, (model_name, revision)
         return FakeModel(), FakeTokenizer()
 `,
   "fakes/mods/peft/__init__.py": String.raw`class PeftModel:
@@ -829,9 +829,9 @@ ctx = fresh(env={"FAKE_MERGE": "lora"})
 raises(lambda: q.run(ctx), "still has an adapter's or a 4-bit model's tensors")
 assert not [e for e in logged() if e["tool"] == "convert"]
 ctx = fresh(env={"FAKE_MERGE": "badshard"})
-raises(lambda: q.run(ctx), "isn't Meta's shard")
+raises(lambda: q.run(ctx), "isn't OfflineBase/Glimmer-30B-2026-Knowledge's shard")
 # A merge that left no record of its shards in either place can't be checked, so nothing of it is published.
-raises(lambda: q.run(fresh(env={"FAKE_MERGE": "norecord"})), "left no record of which unsloth/Muse-Glimmer-30B shards it downloaded")
+raises(lambda: q.run(fresh(env={"FAKE_MERGE": "norecord"})), "left no record of which OfflineBase/Glimmer-30B-2026-Knowledge shards it downloaded")
 assert not [e for e in logged() if e["tool"] == "convert"]
 # Shards Unsloth copied from an HF cache under HF_HOME are checked there instead.
 assert q.run(fresh(env={"FAKE_MERGE": "cache"}))["merge_base_revision"] == "c" * 40

@@ -44,9 +44,15 @@ import threading
 import time
 import urllib.request
 
-MODEL = "unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit"
-# The model's commit on the Hugging Face hub (main on 2026-10-27), so every job loads the same weights.
-MODEL_REVISION = "ecedda395d4d099b477d135a9a573eedaa5a7aad"
+# The base every new job trains on (owner, Oct 31 2026: "Switch outright to r30b"): Muse Muse's 2026-knowledge Glimmer,
+# OfflineBase/Glimmer-30B-2026-Knowledge, quantized to nf4 the way unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit is (same 5
+# shard names, 3,516 tensors, dtypes, shapes and quantization_config; checked by the training session on Oct 31). Part
+# of its training data was written by Muse Spark Open, so every adapter trained on it is a Derivative under the Muse
+# Model License (lib/train/base.ts). Change MODEL and MODEL_REVISION together: weights_cached keys on both. Jobs before
+# the switch trained on unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit at ecedda395d4d099b477d135a9a573eedaa5a7aad.
+MODEL = "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit"
+# The model's commit on the Hugging Face hub (public, no token), so every job loads the same weights.
+MODEL_REVISION = "6f12bf5288dd4d83374e1d6cab3b6b80da258eb1"
 # The Conversational notebook's install cell as uv pip installs, pinned to what it resolved to on 2026-10-27 for
 # Python 3.12 on x86_64 Linux. Changing any line makes a new venv.
 INSTALL = (
@@ -1006,6 +1012,9 @@ def finish(ctx, p, result, evals, train, adapter_dir, cache_used):
     metrics["student_prompt"] = p.get("student_prompt", "full")
     metrics["student_system"] = p.get("student_system", "none")
     metrics["adapter_dir"] = adapter_dir
+    # The base this adapter trained on, so the platform can tell a Muse Spark Open Derivative (lib/train/base.ts).
+    metrics["base_model"] = MODEL
+    metrics["base_revision"] = MODEL_REVISION
     if not result.get("adapter"):
         raise RuntimeError(
             "Training didn't finish (the child " + ended + "), so no adapter was saved. The base model had answered all "
@@ -1241,6 +1250,8 @@ def decide_finish(ctx, p, result, items, train, adapter_dir, cache_used, contrac
         "dev_items": sum(1 for item in items if item["part"] == "dev"),
         "test_items": sum(1 for item in items if item["part"] == "test"),
         "decide_items": sent,
+        "base_model": MODEL,
+        "base_revision": MODEL_REVISION,
     })
     decide_health(metrics, "base_", base)
     decide_health(metrics, "", tuned if tuned_ok else base)

@@ -226,8 +226,8 @@ describe("python sources", { skip: hasPython ? false : "python3 is missing" }, (
 
   it("keeps glimmer's install pins, model and ATEM markers as Unsloth's guide and notebook have them", () => {
     for (const pin of [
-      '"unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit"',
-      'MODEL_REVISION = "ecedda395d4d099b477d135a9a573eedaa5a7aad"',
+      '"OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit"',
+      'MODEL_REVISION = "6f12bf5288dd4d83374e1d6cab3b6b80da258eb1"',
       "torch==2.11.0+cu128 torchvision==0.26.0+cu128 torchaudio==2.11.0+cu128 xformers==0.0.35 --index-url https://download.pytorch.org/whl/cu128",
       '"unsloth==2026.10.9 unsloth_zoo==2026.10.9 ',
       '"--no-deps torchao==0.18.0"',
@@ -988,7 +988,7 @@ assert [line for line in ctx.logs if line.startswith("Removing the venv")] == [
   it("removes Hugging Face download locks nobody took for an hour, and nothing else", async () => {
     await glimmerTest(String.raw`
 hf = os.path.join(BASE, "hf")
-locks = os.path.join(hf, "hub", ".locks", "models--unsloth--Muse-Glimmer-30B-unsloth-bnb-4bit")
+locks = os.path.join(hf, "hub", ".locks", "models--OfflineBase--Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit")
 os.makedirs(locks)
 for name in ("stale.lock", "fresh.lock", "old.incomplete"):
     open(os.path.join(locks, name), "w").close()
@@ -3601,6 +3601,7 @@ def run(ctx):
       assert.equal(done.metrics.student_system, `You are ${title}.`);
       assert.equal(done.metrics.cached_weights, "no");
       assert.equal(done.metrics.dry_run, "yes");
+      assert.deepEqual([done.metrics.base_model, done.metrics.base_revision], ["OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit", "6f12bf5288dd4d83374e1d6cab3b6b80da258eb1"], "the base it trained on, r30b");
       assert.equal(done.metrics.cache_used, "yes");
       assert.equal(done.metrics.adapter_uploaded, "no", "the fake platform has no storage");
       assert.equal(done.metrics.adapter_dir, path.join(cache, "models", JOB_ID));
@@ -3726,6 +3727,7 @@ def run(ctx):
       assert.equal(done.metrics.train_renderings, renderings);
       assert.equal(done.metrics.decide_items, scores.dev.length + scores.test.length);
       assert.equal(done.metrics.dry_run, "yes");
+      assert.equal(done.metrics.base_model, "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit");
       assert.equal(done.metrics.decide_json, "yes");
       assert.equal(done.metrics.adapter_dir, path.join(cache, "models", JOB_ID));
       assert.equal(done.metrics.hub_skip_reason, "a dry run's adapter is a stand-in", "and publish is 0 in decide mode anyway");

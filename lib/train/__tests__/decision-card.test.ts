@@ -161,7 +161,7 @@ describe("decisionCard", () => {
       front,
       [
         "---",
-        "base_model: unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit",
+        "base_model: OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit",
         "base_model_relation: adapter",
         "library_name: peft",
         "pipeline_tag: text-generation",
@@ -246,7 +246,7 @@ describe("decisionCard", () => {
   });
 
   it("states the training settings from the records and GLIMMER_PY", () => {
-    assert.ok(card.includes(`| Base model | [unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit](https://huggingface.co/unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit) at revision \`${template.revision}\``));
+    assert.ok(card.includes(`| Base model | [OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit](https://huggingface.co/OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit) at revision \`${template.revision}\``));
     assert.ok(card.includes("| Steps | 11, batch 16 with gradient accumulation 2 (32 renderings a step, grouped by length) |"));
     const ungrouped = cards.decisionCard({ ...f, metrics: { ...f.metrics, group_by_length: "no" } });
     assert.ok(ungrouped.includes("| Steps | 11, batch 16 with gradient accumulation 2 (32 renderings a step) |"), "a run that couldn't group says so");
