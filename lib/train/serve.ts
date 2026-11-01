@@ -22,11 +22,12 @@ export const ANSWER_TEXT_MAX = 8000;
 
 /**
  * How long the TCP connect and the TLS handshake may take before the server counts as unreachable, and how long the
- * proxy waits for both answers (the GPU writes up to 400 new tokens for each), and how long it waits for a decision
- * model's scores (two forward passes of at most 3 prompts, well under 2 s on the GPU). Tests shorten these; nothing
- * else should change them.
+ * proxy waits for both answers (the GPU writes up to 400 new tokens for each), how long it waits for a decision
+ * model's scores (two forward passes of at most 3 prompts, well under 2 s on the GPU), and how long a product's chat
+ * answer may take with the wait for the GPU's slot (the GPU gives it CHAT_ANSWER_SECONDS; under DEMO_SLOT_MS, so a slot
+ * never outlives its call). Tests shorten these; nothing else should change them.
  */
-export const serveTiming = { connectMs: 10_000, answerMs: 120_000, decideMs: 30_000 };
+export const serveTiming = { connectMs: 10_000, answerMs: 120_000, decideMs: 30_000, chatMs: 150_000 };
 
 /**
  * The serving key of a glimmer-serve job: HMAC-SHA256 with GATEWAY_TOKEN_PEPPER of "serve:<job id>:<token hash>", in
@@ -76,8 +77,9 @@ function messageOf(err: unknown): string {
  * POSTs `body` to the demo server over TLS pinned to `target.certSha256` and returns its status and text. The TLS
  * connection is made first, with no CA check, and the peer certificate's SHA-256 fingerprint is compared with the
  * pinned one; only when they match is the HTTP request (with its Authorization header) written to that connection.
- * The whole call ends after `timeoutMs`, the connect and handshake after serveTiming.connectMs. Never follows a
- * redirect and never reads more than ANSWER_BYTES_MAX.
+ * The whole call ends after `timeoutMs`, the connect and handshake after serveTiming.connectMs, and at once when
+ * `signal` aborts (a timeout: the caller stopped waiting). Never follows a redirect and never reads more than
+ * ANSWER_BYTES_MAX.
  */
 export function pinnedPost(
   target: ServeTarget,
@@ -85,24 +87,29 @@ export function pinnedPost(
   headers: Record<string, string>,
   body: string,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<{ status: number; text: string }> {
   const pinned = certFingerprint(target.certSha256);
   if (!pinned) return Promise.reject(new ServeError("pin_mismatch", "No certificate fingerprint to pin, so nothing was sent."));
   if (!isIP(target.ip) || !Number.isInteger(target.port) || target.port < 1 || target.port > 65535) {
     return Promise.reject(new ServeError("unreachable", "The demo server has no usable address."));
   }
+  if (signal?.aborted) return Promise.reject(new ServeError("timeout", "The caller stopped waiting."));
   return new Promise((resolve, reject) => {
     let settled = false;
     let socket: TLSSocket | null = null;
+    const onAbort = () => finish(new ServeError("timeout", "The caller stopped waiting."));
     const finish = (err: ServeError | null, value?: { status: number; text: string }) => {
       if (settled) return;
       settled = true;
       clearTimeout(overall);
       clearTimeout(connecting);
+      signal?.removeEventListener("abort", onAbort);
       socket?.destroy();
       if (err) reject(err);
       else resolve(value!);
     };
+    signal?.addEventListener("abort", onAbort, { once: true });
     const overall = setTimeout(
       () => finish(new ServeError("timeout", `The demo server didn't answer within ${Math.round(timeoutMs / 1000)} s.`)),
       timeoutMs,
@@ -252,4 +259,65 @@ export async function askDecide(
   }
   const took = typeof d.ms === "number" && Number.isFinite(d.ms) && d.ms >= 0 ? Math.round(d.ms) : 0;
   return { base, tuned, baseMass: massRow(d.baseMass, items), tunedMass: massRow(d.tunedMass, items), ms: took };
+}
+
+/** The most of a chat answer's text the platform passes on: 4,096 new tokens are far shorter. */
+export const CHAT_TEXT_MAX = 64_000;
+
+/** A product's chat answer from a serve job's /v1/chat/completions (lib/train/glimmer-serving.ts). */
+export interface ChatAnswer {
+  text: string;
+  finish: "stop" | "length";
+  usage: { input: number; output: number };
+  ms: number;
+}
+
+/** n when it is a whole number from 0, else 0 (usage is a health number, never a reason to drop an answer). */
+function count(n: unknown): number {
+  return typeof n === "number" && Number.isInteger(n) && n >= 0 ? n : 0;
+}
+
+/**
+ * Sends one chat request (glimmerChatBody in lib/train/glimmer-serving.ts) to a serve job's POST /v1/chat/completions
+ * with the serving key, pinned to the job's certificate, as askLive does. Returns the first choice's text (cut to
+ * CHAT_TEXT_MAX), its finish reason, the token counts and the GPU's ms. Throws ServeError: busy for 409, 423 or 429,
+ * stopping for 503, bad_prompt for 400, 413 or 422 (a prompt over 4,096 tokens is 422), refused for any other error
+ * status (501 chat_unavailable included), bad_answer for an answer that isn't a chat completion with text and a finish
+ * reason of "stop" or "length", and as pinnedPost does.
+ */
+export async function askChat(
+  target: ServeTarget,
+  key: string,
+  body: Record<string, unknown>,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<ChatAnswer> {
+  const { status, text } = await pinnedPost(
+    target,
+    "/v1/chat/completions",
+    { authorization: `Bearer ${key}`, "content-type": "application/json", accept: "application/json" },
+    JSON.stringify(body),
+    timeoutMs,
+    signal,
+  );
+  if (status === 409 || status === 423 || status === 429) throw new ServeError("busy", "Muse Glimmer's GPU is answering another request.", status);
+  if (status === 503) throw new ServeError("stopping", "Muse Glimmer's serving window is closing.", status);
+  if (status === 400 || status === 413 || status === 422) throw new ServeError("bad_prompt", `Muse Glimmer's server refused the request (HTTP ${status}).`, status);
+  if (status < 200 || status >= 300) throw new ServeError("refused", `Muse Glimmer's server answered HTTP ${status}.`, status);
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new ServeError("bad_answer", "Muse Glimmer's answer isn't JSON.", status);
+  }
+  const d = (data ?? {}) as { choices?: unknown; usage?: unknown; ms?: unknown };
+  const first = Array.isArray(d.choices) ? (d.choices[0] as { message?: { content?: unknown }; finish_reason?: unknown } | undefined) : undefined;
+  const content = first?.message?.content;
+  const finish = first?.finish_reason;
+  if (typeof content !== "string" || (finish !== "stop" && finish !== "length")) {
+    throw new ServeError("bad_answer", "Muse Glimmer's answer isn't a chat completion with text.", status);
+  }
+  const usage = (d.usage ?? {}) as { prompt_tokens?: unknown; completion_tokens?: unknown };
+  const took = typeof d.ms === "number" && Number.isFinite(d.ms) && d.ms >= 0 ? Math.round(d.ms) : 0;
+  return { text: content.slice(0, CHAT_TEXT_MAX), finish, usage: { input: count(usage.prompt_tokens), output: count(usage.completion_tokens) }, ms: took };
 }

@@ -20,6 +20,7 @@ import {
   SERVE_ADAPTER_PARAM,
   SERVE_RECIPE,
   toLiveDemoView,
+  trainChannelOf,
   usableEndpoint,
   type DatasetHead,
   type DoneMetrics,
@@ -1578,6 +1579,53 @@ export async function liveDecisionServeTarget(now: Date = new Date()): Promise<S
     if (!row.tokenHash || toLiveDemoView(row, now)?.state !== "live") continue;
     const endpoint = usableEndpoint(row.serveEndpoint);
     if (endpoint) return { jobId: row.id, tokenHash: row.tokenHash, ip: endpoint.ip, port: endpoint.port, certSha256: endpoint.certSha256 };
+  }
+  return null;
+}
+
+/** A chat adapter's live serve job, for products' chat (lib/train/glimmer-serving.ts): its adapter and trainChannel too. */
+export interface ChatServeTargetRow extends ServeTargetRow {
+  /** The adapter the job serves (its tuned model answers for it; base Glimmer is the same GPU with the adapter off). */
+  adapterJobId: string;
+  /** The trainChannel the serve job was launched with (its params, which its GPU reads too): 0 when it has none. */
+  trainChannel: 0 | 1;
+}
+
+/**
+ * For products' chat at a serve job's POST /v1/chat/completions: the demo server of the newest live serve job of a chat
+ * adapter, the one `adapterJobId` names, or for null any chat adapter's (base Glimmer, the adapter off, from the same
+ * 4-bit base). Live as for liveServeTarget: running, nobody asked it to stop, a token, a usable endpoint and serving
+ * time left. A decision model's server answers /decide only, so it never counts. Null when none is live.
+ */
+export async function liveChatServeTarget(adapterJobId: string | null, now: Date = new Date()): Promise<ChatServeTargetRow | null> {
+  if (adapterJobId !== null && !isUuid(adapterJobId)) return null;
+  const rows = await db()
+    .select()
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.recipe, SERVE_RECIPE),
+        eq(jobs.status, "running"),
+        eq(jobs.stopRequested, false),
+        adapterJobId === null ? undefined : sql`${jobs.params}->>${SERVE_ADAPTER_PARAM} = ${adapterJobId.toLowerCase()}`,
+        sql`exists (select 1 from training_jobs a where a.id::text = ${jobs.params}->>${SERVE_ADAPTER_PARAM} and a.recipe = ${ADAPTER_RECIPE} and coalesce(a.params->>${MODE_PARAM}, '') <> ${DECIDE_MODE})`,
+      ),
+    )
+    .orderBy(desc(jobs.createdAt))
+    .limit(10);
+  for (const row of rows) {
+    if (!row.tokenHash || toLiveDemoView(row, now)?.state !== "live") continue;
+    const endpoint = usableEndpoint(row.serveEndpoint);
+    if (!endpoint) continue;
+    return {
+      jobId: row.id,
+      tokenHash: row.tokenHash,
+      ip: endpoint.ip,
+      port: endpoint.port,
+      certSha256: endpoint.certSha256,
+      adapterJobId: String(row.params?.[SERVE_ADAPTER_PARAM] ?? "").toLowerCase(),
+      trainChannel: trainChannelOf(row.params),
+    };
   }
   return null;
 }
