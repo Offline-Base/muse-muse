@@ -1076,15 +1076,15 @@ build hasn't run (see "Not proven yet"). With every flag off the brief goldens, 
 unit 3's routes) and the template's `caps-off` and `playwright-off` pass unchanged, with `DATA_SIGN_IN`,
 `DATA_PRODUCT_ROWS`, `DATA_PRODUCT_MB` and `DATA_DAILY_WRITES` added to their lists.
 
-**Migration 0020_data** at journal index 18, `when` by section 4's rule, snapshot `meta/0018_snapshot.json` chained on
-0019's. As planned, plus: the sequence `product_rows_seq` (`seq` defaults to it and every write takes the next one, deletes
+**Migration 0020_data** at journal index 20 (18 on the unit branch, renumbered at integration 3), `when` by section 4's
+rule, snapshot `meta/0020_snapshot.json` chained on 0019's. As planned, plus: the sequence `product_rows_seq` (`seq` defaults to it and every write takes the next one, deletes
 too, so unit 7 can stream deletes); `product_rows`' key is a `UNIQUE NULLS NOT DISTINCT` constraint, since shared rows have
 no `owner_key` and two of them must still clash on one doc id; an index on `(product_id, namespace, owner_key)` for each
 person's count; `public_key` is SPKI DER in `bytea`; rows and counts cascade with the product (decision 13); and
 `builds.caps_dropped` (jsonb, null), the readiness decision below. The migrations test checks a database at 0019 keeps
 its builds (null `caps_dropped`), the NULLS NOT DISTINCT key, `seq` order, the bytea round trip and the cascade. The
-promote bundle leaves `caps_dropped` out on purpose. Merge blocker, as for 0018 and 0019: General's 0016 and 0017 land
-first, then this renumbers by section 4.
+promote bundle leaves `caps_dropped` out on purpose. 0016 is retired and General's 0017 has landed, so nothing waits
+on a lower number.
 
 **The gate** (`lib/caps/gate.ts`): `runCapGate(req, deps, route)` runs `CAP_CHECKS` in order for a `CapRoute` (cap, its
 own switch, token scopes, `allow`, `args`, `limits` by minute or UTC day, `inFlight`, `quota`, `spend`, `work`). Check 1
@@ -2243,13 +2243,14 @@ Phaser game.
 - Oct 31 (integration 2, tg-cap-int with trust): the local PGlite skip check runs in `runMigrations`' local path
   (`lib/db/migrate.ts`), since the preview database moved `scripts/migrate.ts`'s logic there. It returns trust's message
   and exit 1 instead of migrating; Neon paths are unchanged. Section 4's 0018 row names `products.status_before_takedown`.
-
-
 - Nov 1 (unit 3): section 9a added. 0020 also adds `product_rows_seq` and `builds.caps_dropped` (the 2.4a decision,
   saved once at provision); the brief's collections gain `writes` (owner, signed_in, anyone); a third sign-in route,
   `/identity/user/link`; the sign-in code carries the name; made-up people's sessions are `ut1` and work only with their
   build's token; the gate's check 1 reads `env.servedCaps` and check 4 applies always; the owner pass also works while the
   data cap is served (two marked lines in tg-tools' owner-pass route and `handleOwnerExchange`); unit 2's
   `env.enabledCaps`, `applyCaps`, `paths.ts`, `setup.ts`, the snapshot script and `build-steps.ts` get marked edits for 2.4a.
+- Nov 1 (integration 3, tg-cap-int with data): 0020_data sits at journal index 20 with `meta/0020_snapshot.json`
+  (tg-cap-int's 0019 plus the unit's changes). `CAP_OVERLAYS_ALL.games` lists `games`, `games-phaser` and
+  `games-babylon`, so a snapshot must hold all three for games to be ready. Registries take data before extension and games.
 
 - Oct 31: first version (unit 0).
