@@ -909,5 +909,8 @@ export const codeSessions = pgTable(
     index("code_sessions_product_idx").on(t.productId, t.status),
     index("code_sessions_status_idx").on(t.status, t.endsAt),
     index("code_sessions_namespace_idx").on(t.namespace, t.createdAt),
+    // Every model call of a session looks it up by its token, and a product's spend reads its sessions' tokens.
+    index("code_sessions_token_idx").on(t.tokenId),
+    index("code_sessions_parent_idx").on(t.parentTokenId),
   ],
 );

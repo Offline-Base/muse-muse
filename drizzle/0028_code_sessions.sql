@@ -36,4 +36,6 @@ ALTER TABLE "code_sessions" ADD CONSTRAINT "code_sessions_token_id_gateway_token
 ALTER TABLE "code_sessions" ADD CONSTRAINT "code_sessions_parent_token_id_gateway_tokens_id_fk" FOREIGN KEY ("parent_token_id") REFERENCES "public"."gateway_tokens"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "code_sessions_product_idx" ON "code_sessions" USING btree ("product_id","status");--> statement-breakpoint
 CREATE INDEX "code_sessions_status_idx" ON "code_sessions" USING btree ("status","ends_at");--> statement-breakpoint
-CREATE INDEX "code_sessions_namespace_idx" ON "code_sessions" USING btree ("namespace","created_at");
+CREATE INDEX "code_sessions_namespace_idx" ON "code_sessions" USING btree ("namespace","created_at");--> statement-breakpoint
+CREATE INDEX "code_sessions_token_idx" ON "code_sessions" USING btree ("token_id");--> statement-breakpoint
+CREATE INDEX "code_sessions_parent_idx" ON "code_sessions" USING btree ("parent_token_id");

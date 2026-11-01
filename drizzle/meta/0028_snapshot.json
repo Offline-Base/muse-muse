@@ -761,6 +761,36 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "code_sessions_token_idx": {
+          "name": "code_sessions_token_idx",
+          "columns": [
+            {
+              "expression": "token_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "code_sessions_parent_idx": {
+          "name": "code_sessions_parent_idx",
+          "columns": [
+            {
+              "expression": "parent_token_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
