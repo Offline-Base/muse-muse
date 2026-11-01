@@ -8,6 +8,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { CAPS_PROOF_PER_MINUTE, handleCapsProof, type CapsProofDeps } from "@/lib/caps/proof";
 import { CAP_FLAG, CAP_IDS } from "@/lib/caps/ids";
+import { handleData, handleIdentityUser, handleIdentityUserLink, handleIdentityUserTest, type DataDeps } from "@/lib/caps/data/handler";
+import { handlePasskey, type PasskeyDeps } from "@/lib/caps/data/passkeys";
 import { env } from "@/lib/env";
 
 /** A dependency that fails the test if anything calls it. */
@@ -16,7 +18,31 @@ const untouched = <T extends (...args: never[]) => unknown>(name: string) =>
     throw new Error(`${name} was called with its flag off`);
   }) as unknown as T;
 
+/** Unit 3's deps with the real flags and every other dependency failing the test if it's touched. */
+const dataOff = (): DataDeps => ({
+  servedCaps: () => env.servedCaps,
+  signInOn: () => env.dataSignIn,
+  findToken: untouched<DataDeps["findToken"]>("findToken"),
+  product: untouched<DataDeps["product"]>("product"),
+  adminEmails: [],
+  hitRateLimits: untouched<DataDeps["hitRateLimits"]>("hitRateLimits"),
+  reserveCounter: untouched<DataDeps["reserveCounter"]>("reserveCounter"),
+  store: new Proxy({} as DataDeps["store"], { get: (_t, k) => untouched(`store.${String(k)}`) }),
+  quotas: untouched<DataDeps["quotas"]>("quotas"),
+  rules: untouched<DataDeps["rules"]>("rules"),
+  platformUrl: "https://platform.example",
+  productSlug: untouched<DataDeps["productSlug"]>("productSlug"),
+});
+
 const ROUTES: Array<{ path: string; call(req: Request): Promise<Response> }> = [
+  // Unit 3: saved data, its sign-in, and the platform's passkey routes.
+  { path: "data", call: (req) => handleData(req, [], dataOff()) },
+  { path: "data/items", call: (req) => handleData(req, ["items"], dataOff()) },
+  { path: "data/items/query", call: (req) => handleData(req, ["items", "query"], dataOff()) },
+  { path: "data/items/a1", call: (req) => handleData(req, ["items", "a1"], dataOff()) },
+  { path: "identity/user", call: (req) => handleIdentityUser(req, dataOff()) },
+  { path: "identity/user/test", call: (req) => handleIdentityUserTest(req, dataOff()) },
+  { path: "identity/user/link", call: (req) => handleIdentityUserLink(req, dataOff()) },
   // Unit 2: what the gateway saw for a build's namespace.
   {
     path: "caps/proof",
@@ -50,6 +76,21 @@ describe("wave 3 gateway routes with every flag off", () => {
       }
     });
   }
+});
+
+describe("unit 3's routes with the data cap served but DATA_SIGN_IN off", () => {
+  it("the sign-in routes and the platform's passkey routes answer 404 and touch nothing", async () => {
+    const on: DataDeps = { ...dataOff(), servedCaps: () => ["data"], signInOn: () => false };
+    for (const call of [handleIdentityUser, handleIdentityUserTest, handleIdentityUserLink]) {
+      const res = await call(new Request("https://platform.example/api/gateway/identity/user", { method: "POST", headers: { authorization: "Bearer mm_live_x" }, body: "{}" }), on);
+      assert.equal(res.status, 404);
+    }
+    const passkeys = { enabled: () => false } as unknown as PasskeyDeps;
+    for (const [kind, step] of [["register", "options"], ["register", "verify"], ["login", "options"], ["login", "verify"]] as const) {
+      const res = await handlePasskey(new Request(`https://platform.example/api/u/passkey/${kind}/${step}`, { method: "POST", body: "{}" }), kind, step, passkeys);
+      assert.equal(res.status, 404, `${kind}/${step}`);
+    }
+  });
 });
 
 describe("/caps/proof with a cap on", () => {
