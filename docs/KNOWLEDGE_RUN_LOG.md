@@ -1328,6 +1328,17 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
 - 12:10 AM: cards: the Pending section is gone and Limitations gives all three mixes' loop counts. The cards also link
   the dataset in their metadata and under Training data. New heads: merged 63ba2feb, -GGUF fa448b78, -LoRA 386f4081,
   -unsloth-bnb-4bit 5993072a. All four match the local copies when fetched without a token.
+- 12:25 AM: token count of the public dataset, with the r30b tokenizer on writer-1 (CPU, nice). The files came from the
+  Hub without a token; the temp copy was removed after.
+  - Text only, all 649,133 rows: 46,692,158 tokens.
+  - In chat format: 71,948,804 tokens for the 595,225 message rows, and about 74.8M with the other rows' text added.
+  - Text tokens by split:
+    - news-derived 17.9M
+    - public-sources 16.7M
+    - spark 9.7M
+    - model-outputs 2.2M
+    - evals 129K
+    - noncommercial 55K
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
