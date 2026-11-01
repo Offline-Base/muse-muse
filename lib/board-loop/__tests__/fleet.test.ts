@@ -7,7 +7,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { aliasFor, BoardBusyError, BoardOfflineError, type BoardFile } from "@/lib/board-loop/driver";
-import { fleetBoard, installCommand, serveCommand } from "@/lib/board-loop/fleet";
+import { deviceMcpBoard } from "@/lib/board-loop/device-mcp";
+import { fleetBoard, installCommand, safeBoardUrl, serveCommand, stopCommand } from "@/lib/board-loop/fleet";
+import { DeviceRefusedError } from "@/lib/device/train";
 import { testPassed, newData } from "@/lib/board-loop/logic";
 
 const SHA = "a".repeat(64);
@@ -25,10 +27,33 @@ function fake(routes: (url: string, init: RequestInit) => Response | Promise<Res
 }
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers });
 
+describe("the board MCP driver, against a fake caller", () => {
+  const device = { url: "https://board.example.com/mcp", token: "made-up" };
+  const replying = (reply: object, isError = false) =>
+    (async () => ({ content: [{ type: "text", text: JSON.stringify(reply) }], isError })) as unknown as Parameters<typeof deviceMcpBoard>[1];
+
+  it("takes a download only with the checksum it expected", async () => {
+    assert.equal(await deviceMcpBoard(device, replying({ installed: FILE.name, sha256: SHA })).install(FILE), "done");
+    await assert.rejects(deviceMcpBoard(device, replying({ installed: FILE.name, sha256: "b".repeat(64) })).install(FILE), /wrong checksum/);
+    await assert.rejects(deviceMcpBoard(device, replying({ installed: FILE.name })).install(FILE), /wrong checksum/);
+    await assert.rejects(deviceMcpBoard(device, replying({})).install({ ...FILE, sha256: null }), /needs an address and a checksum/);
+  });
+
+  it("keeps a board's refusal apart from a board that can't be reached", async () => {
+    await assert.rejects(deviceMcpBoard(device, replying({ no: 1 }, true)).install(FILE), DeviceRefusedError);
+    const gone = (async () => {
+      throw new Error("ECONNREFUSED");
+    }) as unknown as Parameters<typeof deviceMcpBoard>[1];
+    await assert.rejects(deviceMcpBoard(device, gone).install(FILE), BoardOfflineError);
+    assert.equal((await deviceMcpBoard(device, gone).status()).online, false);
+  });
+});
+
 describe("the fleet driver", () => {
   it("downloads to a partial name and checks the checksum twice before it counts", () => {
     const c = installCommand(FILE);
-    assert.equal(c.match(/sha256sum -c -/g)?.length, 2);
+    assert.equal(c.match(/sha256sum -c -/g)?.length, 3, "a file already there, and the download twice");
+    assert.ok(c.indexOf(`  /opt/jetson-gguf/models/${FILE.name}'`) < c.indexOf("curl"), "the file already there is checked first");
     assert.ok(c.indexOf("drop_caches") > c.indexOf("sha256sum"));
     assert.ok(c.indexOf("mv ") > c.lastIndexOf("sha256sum"));
     assert.match(c, /mm-board-install/);
@@ -38,6 +63,44 @@ describe("the fleet driver", () => {
     assert.throws(() => installCommand({ ...FILE, name: "x'; reboot #.gguf" }));
     assert.throws(() => installCommand({ ...FILE, sha256: "$(reboot)" }));
     assert.throws(() => installCommand({ ...FILE, url: "https://evil.example.com/x.gguf" }));
+  });
+
+  it("never sends a real file without a checksum and an address; only the simulated stand-in goes without", () => {
+    assert.throws(() => installCommand({ ...FILE, sha256: null }));
+    assert.throws(() => serveCommand({ ...FILE, url: null }, "https://fleet.example.com/admin"));
+    assert.doesNotThrow(() => installCommand({ ...FILE, url: null, sha256: null, standIn: true }));
+  });
+
+  it("only sends a token to https or this machine", () => {
+    assert.equal(safeBoardUrl("https://fleet.example.com/admin"), true);
+    assert.equal(safeBoardUrl("http://127.0.0.1:9/admin"), true);
+    assert.equal(safeBoardUrl("http://fleet.example.com/admin"), false);
+    assert.equal(safeBoardUrl("not a url"), false);
+  });
+
+  it("stops in its own unit, since --undo restarts the agent, and ends a serve still going first", () => {
+    const c = stopCommand("https://fleet.example.com/admin");
+    assert.match(c, /systemd-run --unit=mm-board-stop --collect bash \/run\/mm-gguf-serve\.sh --undo/);
+    assert.ok(c.indexOf("systemctl stop mm-board-serve") < c.indexOf("--undo"));
+    assert.doesNotMatch(c, /\/tmp\/|\| bash/);
+  });
+
+  it("leaves maintenance only once the board says the model left", async () => {
+    let loaded: string[] = [FILE.alias];
+    const fleet = () =>
+      fake((url, init) => {
+        if (url.endsWith("/api/nodes")) return json([{ ...NODE, maintenance: true, loaded_models: loaded }]);
+        if (url.endsWith("/actions")) return json({ id: "jb_1", status: "running", tasks: [] });
+        return json({ ...NODE, method: init.method });
+      });
+    const stuck = fleet();
+    await assert.rejects(fleetBoard(config, "fleet", stuck.doFetch, 30).stop(FILE.alias), BoardOfflineError);
+    assert.ok(!stuck.calls.some((c) => c.init.method === "PATCH"), "still in maintenance");
+    loaded = [];
+    const gone = fleet();
+    await fleetBoard(config, "fleet", gone.doFetch, 30).stop(FILE.alias);
+    const patch = gone.calls.find((c) => c.init.method === "PATCH");
+    assert.equal(JSON.parse(patch!.init.body as string).maintenance, false);
   });
 
   it("serves under systemd-run with one chat and a short context, as fleet.md says", () => {

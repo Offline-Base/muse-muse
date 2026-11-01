@@ -177,6 +177,37 @@ describe("the board loop on the simulated board", () => {
     assert.deepEqual((await board.status()).loadedModels, []);
   });
 
+  it("leaves the board's old job alone when the loop ends before its serve began", async () => {
+    let stops = 0;
+    const spying = async () => {
+      const board = await startSimBoard();
+      return { ...board, stop: async (alias: string) => void (stops += 1, await board.stop(alias)) };
+    };
+    process.env.SIM_BOARD_FAIL = "install";
+    const failed = makeRow();
+    const deps = tickDeps(failed, { board: spying });
+    await runUntil(failed, deps, (r) => r.status !== "running");
+    assert.equal(failed.status, "failed");
+    assert.equal(failed.stages.send.status, "failed");
+    assert.equal(stops, 0, "a failed send never reached the old model");
+    const stopped = makeRow();
+    const quiet = tickDeps(stopped, { board: spying });
+    await runUntil(stopped, quiet, (r) => r.stages.send.status === "running");
+    stopped.stopRequested = true;
+    await tickLoop(stopped.id, quiet);
+    assert.equal(stopped.status, "stopped");
+    assert.equal(stops, 0, "nor did a Stop during the send");
+  });
+
+  it("says plainly that Stop leaves a GPU job it started running", async () => {
+    const row = makeRow();
+    row.data.quantJobId = "33333333-3333-4333-8333-333333333333";
+    row.stages.tune.status = "done";
+    row.stopRequested = true;
+    await tickLoop(row.id, tickDeps(row));
+    assert.match(row.stages.gguf.detail!, /keeps going/);
+  });
+
   it("an adapter's real local file never reaches the simulated board: no address, only a name", async () => {
     const row = await serving(makeRow(), {
       localFiles: async () => ({ adapterJobId: "a", quantJobId: "q", repo: "OfflineBase/x", commit: "c", public: true, files: [], systemLine: "s", needsTunedTemplate: false, title: "t", slug: "s", lowBit: { level: "IQ1_S", name: "muse-glimmer-30b-x-IQ1_S.gguf", bytes: 7e9, sha256: "a".repeat(64) } }),
@@ -259,6 +290,13 @@ describe("the board loop on the simulated board", () => {
       assert.ok(failed?.status === "failed" && /offline/.test(failed.message));
       assert.equal(mem.counters.get(`board-try:v:${mem.turns.get(queued)!.loopId}:a`), 0, "the turn was given back");
       assert.equal(await runningSimBoard(), null, "nothing restarted it");
+    });
+
+    it("a poll stops a turn in line once the page closes to its visitor, and looks like no turn", async () => {
+      const { deps, join, mem } = await openPage();
+      const id = tid(await join("a"));
+      assert.equal(await pollTurn({ turnId: id, visitor: "a", ip: "ip-1" }, { ...deps, mayUse: async () => false }), null);
+      assert.equal(mem.turns.get(id)!.status, "queued", "it never ran");
     });
 
     it("closes with the page", async () => {

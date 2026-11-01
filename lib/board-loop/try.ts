@@ -98,6 +98,8 @@ export interface TryDeps {
   /** The running board, or null when it's offline. Never starts one. */
   board(loop: LoopRow): Promise<BoardDriver | null>;
   now(): Date;
+  /** Who may use this loop's page now. A poll asks again, so a page that closes to visitors stops a turn already in line. */
+  mayUse?(loop: LoopRow): Promise<boolean>;
 }
 
 /** Joins the queue, or says why not. Asking again while a turn is open returns that turn and costs nothing. */
@@ -141,11 +143,12 @@ export async function joinQueue(input: { loopId: string; visitor: string; ip: st
 }
 
 /** A visitor's poll: their own turn's state, and if it's at the front with the board free, it runs here. */
-export async function pollTurn(input: { turnId: string; visitor: string; ip: string }, { store, board, now }: TryDeps): Promise<TurnView | null> {
+export async function pollTurn(input: { turnId: string; visitor: string; ip: string }, { store, board, now, mayUse }: TryDeps): Promise<TurnView | null> {
   const first = await store.turn(input.turnId);
   // Someone else's turn looks the same as no turn.
   if (!first || first.visitor !== input.visitor) return null;
   const loop = await store.loop(first.loopId);
+  if (loop && mayUse && !(await mayUse(loop))) return null;
   const simulated = loop?.target === "simulated";
   const at = now();
   await store.sweep(first.loopId, at);

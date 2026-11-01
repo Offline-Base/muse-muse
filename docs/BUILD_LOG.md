@@ -1740,4 +1740,23 @@ scripts/dev/tune-harness.ts, on a Lambda gpu_1x_a10 named prove-tune-1, us-east-
 
 **Tests.** `lib/board-loop/__tests__`: `loop-sim` and `fleet`, 25 of 25; `store`, 3 of 3, including every route a 404 with the flag off. `tsc --noEmit` clean. `lib/db` migrations and migration-order pass after adding 0031 to the agreed list. `no-direct-database` fails on `scripts/dev/tune-harness.ts`, a file this branch does not touch.
 
-**Not run.** Any real board or fleet (`fleet.ts` has seen only the simulated process and fakes; `device-mcp.ts` no run at all, and no test of its own), a real IQ1_S, a Preview, `next build`, the full suite. The start route's real-board quantize branch has no test. On Vercel the simulated board needs `BOARD_SIM_URL` and the clip is skipped.
+**Not run (at that commit).** Any real board or fleet (`fleet.ts` has seen only the simulated process and fakes; `device-mcp.ts` no run at all, and no test of its own), a real IQ1_S, a Preview, `next build`, the full suite. The start route's real-board quantize branch has no test. On Vercel the simulated board needs `BOARD_SIM_URL` and the clip is skipped.
+
+## Nov 1, 2026: Independent review of the board loop, and fixes (`tg-board-loop`)
+
+Spend: $0. No board, GPU or model. Every fix is in code a real board would run, and none of it has run on one.
+
+- **A failed send, or Stop before serving, would have ended a real board's old job.** `endBoard` ran `gguf-serve.sh --undo` whenever a file was named. It now runs only once this loop's serve began.
+- **A real file with no checksum went through unchecked**, and a file already on the board was trusted by name. Real files now need a checksum and address, and a file already there is checked and removed on a mismatch.
+- **The board MCP driver had no checksum check at all.** `install_model` now reports the hash it already computed (one key, in `muse-device/CHANGES_FOR_HUSSAM.md`), and the driver refuses a mismatch or a missing one.
+- **`--undo` ran inside the agent's own job**, though it restarts the agent, and maintenance never came off after Stop. It now runs under `systemd-run`, after ending any serve still going, and maintenance comes off only once the board says the model left. The scripts moved from `/tmp` to `/run`.
+- **A turn in line kept running on a real board** after its page closed to that visitor: a poll now asks again.
+- **The clip recorder got the whole environment, secrets included.** It now gets a short list. Rerun for real on a made-up row: it recorded, rendered and stored a clip.
+- `BOARD_SIM_URL` could send its token over plain http. It now needs https or this machine.
+- A failed workflow start left a row holding the board's slot. It now fails the row.
+- A refusal from the board was recognised by class name, which minifying breaks. Now `instanceof`.
+- Stop leaves a local files job running under its own caps. Not changed, but the stage now says so.
+
+**Tests.** `loop-sim` and `fleet` 34 of 34, `store` 3 of 3 (now with the start route's flag-off 404), `muse-device` `test_server -k install` 6 of 6, `tsc` no errors in board-loop files. New tests cover the board MCP driver against a fake caller only.
+
+**Not run.** A real board, fleet or MCP server, so `installCommand`, `serveCommand` and `stopCommand` have never executed, and `--undo`'s timing under the 40 second wait is a guess. The start route's real-board quantize branch, `BOARD_SIM_URL` against a real host, a Preview, `next build`, the full suite.

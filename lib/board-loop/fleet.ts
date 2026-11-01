@@ -58,6 +58,12 @@ const ASK_MS = 180_000;
 const INSTALL_TIMEOUT_S = 90 * 60;
 const SERVE_TIMEOUT_S = 15 * 60;
 
+/** Root's own, unlike /tmp, where any local user could plant the script a root unit is about to run. */
+const SCRIPT_PATH = "/run/mm-gguf-serve.sh";
+/** How long Stop waits for the board to say the model left, before it leaves maintenance. Under the stop route's limit. */
+const STOP_WAIT_MS = 40_000;
+const STOP_POLL_MS = 1_000;
+
 const q = (text: string) => `'${text.replace(/'/g, `'\\''`)}'`;
 
 /** A file's name and address become one shell command on a board, so nothing odd gets that far. */
@@ -65,21 +71,26 @@ function checkFile(file: BoardFile): void {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*\.gguf$/.test(file.name)) throw new Error("That file name can't go to a board.");
   if (file.sha256 !== null && !/^[0-9a-f]{64}$/.test(file.sha256)) throw new Error("That file's checksum isn't a checksum.");
   if (file.url !== null && !file.url.startsWith("https://huggingface.co/")) throw new Error("A board only downloads from Hugging Face.");
+  // Only the simulated board's stand-in, which fetches nothing, goes without these.
+  if (!file.standIn && (!file.url || !file.sha256)) throw new Error("A real file needs an address and a checksum before it can go to a board.");
 }
 
 /**
  * Downloads under its own unit, to a .part name that gguf-serve.sh won't take for the file, and checks the checksum twice,
- * the second time after dropping the page cache: jetson-02's SD card corrupted downloads (fleet.md, "LFM3-1.7B").
+ * the second time after dropping the page cache: jetson-02's SD card corrupted downloads (fleet.md, "LFM3-1.7B"). A file
+ * already there gets checked too, since gguf-serve.sh takes any file with that name, and goes if it doesn't match.
  */
 export function installCommand(file: BoardFile): string {
   checkFile(file);
   const path = `${MODEL_DIR}/${file.name}`;
-  const check = file.sha256 ? `echo ${q(`${file.sha256}  ${path}.part`)} | sha256sum -c -` : "true";
+  const checkOf = (at: string) => (file.sha256 ? `echo ${q(`${file.sha256}  ${at}`)} | sha256sum -c -` : "true");
+  const check = checkOf(`${path}.part`);
   const url = file.url ? q(file.url) : "''";
   return [
     `# mm-board-install`,
     `set -euo pipefail`,
     `mkdir -p ${q(MODEL_DIR)}`,
+    `if [ -s ${q(path)} ] && ! ${checkOf(path)}; then rm -f ${q(path)}; fi`,
     `if [ ! -s ${q(path)} ]; then`,
     `  curl -fL --retry 3 --retry-delay 5 -o ${q(`${path}.part`)} ${url}`,
     `  ${check}`,
@@ -95,20 +106,33 @@ export function serveCommand(file: BoardFile, serverUrl: string): string {
   checkFile(file);
   return [
     `# mm-board-serve`,
-    `curl -fsSL ${q(`${serverUrl}/gguf-serve.sh`)} -o /tmp/mm-gguf-serve.sh`,
+    `curl -fsSL ${q(`${serverUrl}/gguf-serve.sh`)} -o ${SCRIPT_PATH}`,
     [
-      `systemd-run --unit=mm-board-serve --collect bash /tmp/mm-gguf-serve.sh --server ${q(serverUrl)} --release ${FLEET_LLAMA_RELEASE}`,
+      `systemd-run --unit=mm-board-serve --collect bash ${SCRIPT_PATH} --server ${q(serverUrl)} --release ${FLEET_LLAMA_RELEASE}`,
       `--model-url ${q(file.url ?? `file://${MODEL_DIR}/${file.name}`)} --mmproj-url ''`,
       `--alias ${q(file.alias)} --thinking off --parallel ${SERVE_PARALLEL} --ctx-per-chat ${SERVE_CONTEXT}`,
     ].join(" "),
   ].join("\n");
 }
 
+/** Under systemd-run for the same reason: --undo restarts the agent too. Ends a serve still going first, so the two can't race. */
 export function stopCommand(serverUrl: string): string {
-  return [`# mm-board-stop`, `curl -fsSL ${q(`${serverUrl}/gguf-serve.sh`)} | bash -s -- --undo`].join("\n");
+  return [
+    `# mm-board-stop`,
+    `systemctl stop mm-board-serve 2>/dev/null || true`,
+    `curl -fsSL ${q(`${serverUrl}/gguf-serve.sh`)} -o ${SCRIPT_PATH}`,
+    `systemd-run --unit=mm-board-stop --collect bash ${SCRIPT_PATH} --undo`,
+  ].join("\n");
 }
 
-export function fleetBoard(config: FleetConfig, kind: BoardKind = "fleet", doFetch: typeof fetch = fetch): BoardDriver {
+/** Whether a token may be sent to this address: https, or plain http only to this machine. */
+export function safeBoardUrl(url: string): boolean {
+  if (!URL.canParse(url)) return false;
+  const { protocol, hostname } = new URL(url);
+  return protocol === "https:" || (protocol === "http:" && ["localhost", "127.0.0.1"].includes(hostname));
+}
+
+export function fleetBoard(config: FleetConfig, kind: BoardKind = "fleet", doFetch: typeof fetch = fetch, stopWaitMs: number = STOP_WAIT_MS): BoardDriver {
   const base = config.url.replace(/\/+$/, "");
 
   async function call(path: string, init: RequestInit = {}): Promise<Response> {
@@ -201,8 +225,16 @@ export function fleetBoard(config: FleetConfig, kind: BoardKind = "fleet", doFet
     async ask(input) {
       return askFleet(call, (await nodeOrThrow()).id, input);
     },
-    async stop() {
+    /** Maintenance comes off only once the board says the model left. Otherwise it stays on, and this throws to say so. */
+    async stop(alias) {
       await exec(stopCommand(base), SERVE_TIMEOUT_S);
+      const until = Date.now() + stopWaitMs;
+      while (Date.now() < until) {
+        await new Promise((resolve) => setTimeout(resolve, Math.min(STOP_POLL_MS, stopWaitMs)));
+        const node = await findNode().catch(() => null);
+        if (node?.status === "online" && !(node.loaded_models ?? []).includes(alias)) return setMaintenance(false);
+      }
+      throw new BoardOfflineError("The board didn't confirm the stop, so it stays in maintenance.");
     },
   };
 }

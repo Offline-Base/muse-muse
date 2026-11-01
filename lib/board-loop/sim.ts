@@ -9,7 +9,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { BoardOfflineError, type BoardDriver } from "@/lib/board-loop/driver";
-import { fleetBoard } from "@/lib/board-loop/fleet";
+import { fleetBoard, safeBoardUrl } from "@/lib/board-loop/fleet";
 
 const NODE = "simulated-board";
 const START_WAIT_MS = 5_000;
@@ -71,7 +71,7 @@ const driverFor = (url: string, token: string): BoardDriver => fleetBoard({ url:
 function remoteDriver(): BoardDriver | null {
   const url = process.env.BOARD_SIM_URL?.trim();
   const token = process.env.BOARD_SIM_TOKEN?.trim();
-  return url && token ? driverFor(url.replace(/\/+$/, ""), token) : null;
+  return url && token && safeBoardUrl(url) ? driverFor(url.replace(/\/+$/, ""), token) : null;
 }
 
 /** The running simulated board, or null: the try page reads this, so a dead board shows as offline and doesn't restart. */

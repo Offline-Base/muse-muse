@@ -10,7 +10,7 @@ The `offline-fleet` MCP connection fails today (endpoint not found at www.offlin
 
 - Owner: make a personal token (`jpt_`) with the **admin** role on the console's Connect page, since `exec` needs admin. Set `BOARD_FLEET_URL` (https, with `/admin`), `BOARD_FLEET_TOKEN` and `BOARD_FLEET_NODE` on the machine or Preview running the loop. Fix or re-add the MCP entry too.
 - Run: `GET /api/nodes` with the token, then a harmless `exec` such as `uname -a` from `POST /api/nodes/{id}/actions`.
-- **Pass:** the board is `online`, not in maintenance, has `metrics.mem` and `metrics.temps_c`, and `exec` returns exit code 0. Also confirm the agent's `exec` runs as root, since `installCommand` writes under `/opt` and `/proc/sys/vm/drop_caches`, and `gguf-serve.sh` needs root. If not, change those commands first.
+- **Pass:** the board is `online`, not in maintenance, has `metrics.mem` and `metrics.temps_c`, and `exec` returns exit code 0. Also confirm the agent's `exec` runs as root, since `installCommand` writes under `/opt` and `/proc/sys/vm/drop_caches`, the serve and stop commands write to `/run`, and `gguf-serve.sh` needs root. If not, change those commands first.
 
 ## 2. A real one-bit file
 

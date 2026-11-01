@@ -47,7 +47,15 @@ export const POST = route(async (req: Request) => {
     await saveLoop(row);
   }
 
-  const { runId } = await start(boardLoop, [{ loopId: row.id }]);
-  await setLoopRun(row.id, runId);
+  try {
+    const { runId } = await start(boardLoop, [{ loopId: row.id }]);
+    await setLoopRun(row.id, runId);
+  } catch (err) {
+    // Left as running, this row would hold the board's one slot with nothing driving it.
+    row.stages.tune = { ...row.stages.tune, status: "failed", detail: "The run didn't start.", finishedAt: new Date().toISOString() };
+    row.status = "failed";
+    await saveLoop(row);
+    throw err;
+  }
   return Response.json({ id: row.id }, { status: 202, headers: { "cache-control": "no-store" } });
 });

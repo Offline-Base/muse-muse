@@ -4,7 +4,7 @@
  * small Llama. Never run against a real board yet (docs/JETSON_TODO.md).
  */
 import { callDeviceTool, type DeviceConfig } from "@/lib/device/client";
-import { boardText } from "@/lib/device/train";
+import { boardText, DeviceRefusedError } from "@/lib/device/train";
 import { BoardOfflineError, type BoardDriver, type BoardFile, type BoardMetrics, type BoardStatus } from "@/lib/board-loop/driver";
 
 const SERVE_CONTEXT = 2048;
@@ -16,7 +16,7 @@ async function reach<T>(work: () => Promise<T>): Promise<T> {
   try {
     return await work();
   } catch (err) {
-    if (err instanceof Error && err.constructor.name === "DeviceRefusedError") throw err;
+    if (err instanceof DeviceRefusedError) throw err;
     throw new BoardOfflineError("The board can't be reached.");
   }
 }
@@ -49,8 +49,10 @@ export function deviceMcpBoard(config: DeviceConfig, call: Caller = callDeviceTo
       };
     },
     async install(file: BoardFile) {
-      if (!file.url) throw new Error("This board needs a real file to download.");
-      await tool("install_model", { url: file.url, name: file.name });
+      if (!file.url || !file.sha256) throw new Error("A real file needs an address and a checksum before it can go to a board.");
+      // The board hashes what it downloaded (muse-device/server.py), so a file that doesn't match never gets served.
+      const { sha256 } = await tool<{ sha256?: string }>("install_model", { url: file.url, name: file.name });
+      if (sha256 !== file.sha256) throw new Error(`${file.name} reached the board with the wrong checksum, or the board didn't report one. It wasn't served. Remove it from the board before trying again.`);
       return finished;
     },
     async serve(file: BoardFile) {

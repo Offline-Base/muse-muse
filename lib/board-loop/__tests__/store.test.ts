@@ -67,6 +67,7 @@ describe("the board loop's rows", { skip: canMock ? false : "needs --experimenta
     const { POST: stop } = await import("@/app/api/board-loop/[id]/stop/route");
     const { GET: page, POST: join } = await import("@/app/api/board-loop/[id]/try/route");
     const { POST: poll } = await import("@/app/api/board-loop/turns/[turnId]/route");
-    for (const res of await Promise.all([view(req("GET"), ctx), stop(req("POST"), ctx), page(req("GET"), ctx), join(req("POST"), ctx), poll(req("POST"), ctx)])) assert.equal(res.status, 404);
+    const { POST: begin } = await import("@/app/api/board-loop/route");
+    for (const res of await Promise.all([begin(req("POST")), view(req("GET"), ctx), stop(req("POST"), ctx), page(req("GET"), ctx), join(req("POST"), ctx), poll(req("POST"), ctx)])) assert.equal(res.status, 404);
   });
 });

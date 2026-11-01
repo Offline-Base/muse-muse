@@ -126,7 +126,8 @@ export async function recordClipHere(row: LoopRow, toolsDir: string | undefined 
         }),
       ),
     ]);
-    const env = { ...process.env, PROVE_SCENE: path.join(dir, "scene.json"), PROVE_SCENE_URL: `file://${dir}/scene.html` };
+    // Only what the recorder needs: this process holds the platform's secrets.
+    const env = { PATH: process.env.PATH, HOME: process.env.HOME, TMPDIR: process.env.TMPDIR, LANG: process.env.LANG, PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH, PROVE_SCENE: path.join(dir, "scene.json"), PROVE_SCENE_URL: `file://${dir}/scene.html` } as unknown as NodeJS.ProcessEnv;
     const recorded = await run(path.join(dir, "node_modules/.bin/playwright"), ["test", "--config", PROVE_CONFIG, "--project=studio", "--workers=1"], dir, env, RECORD_MS);
     if (recorded.code !== 0) return { skipped: `No clip: the recording failed. ${recorded.tail.slice(-160)}` };
     let rendered = await run(process.execPath, ["scripts/demo-studio.mjs", "--spec", "studio.json"], dir, env, RENDER_MS);

@@ -86,13 +86,18 @@ function finish(row: LoopRow, stage: StageId, now: Date, status: "done" | "skipp
   if (costUsd !== undefined) s.costUsd = costUsd;
 }
 
+/**
+ * Takes this loop's model off the board. Only once its serve began: before that the board still has its old job, and a real
+ * board's stop would end that instead (gguf-serve.sh --undo).
+ */
 async function endBoard(row: LoopRow, deps: TickDeps): Promise<void> {
   const alias = row.data.file?.alias;
-  if (!alias) return;
+  if (!alias || row.stages.serve.status === "waiting") return;
   try {
     await (await deps.board(row.target)).stop(alias);
   } catch (err) {
     console.warn("[board-loop] stopping the board:", err instanceof Error ? err.message : err);
+    if (row.target !== "simulated") row.stages.serve.detail = "The board didn't confirm the stop. Check it before using it again.";
   }
 }
 
@@ -119,7 +124,9 @@ export async function tickLoop(id: string, deps: TickDeps): Promise<TickResult> 
   if (row.stopRequested) {
     await endBoard(row, deps);
     const on = currentStage(row.stages);
-    if (on) finish(row, on, now, "skipped", "Stopped.");
+    // Stop ends the loop, not a GPU job it started: that has its own caps and its own page.
+    const gpuGoing = on === "gguf" && row.data.quantJobId !== null;
+    if (on) finish(row, on, now, "skipped", gpuGoing ? "Stopped. The local files job this started keeps going until it ends or reaches its own limits: stop it on its own page." : "Stopped.");
     row.status = "stopped";
     row.tryOpen = false;
     await deps.save(row);

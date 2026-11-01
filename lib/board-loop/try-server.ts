@@ -13,7 +13,7 @@ export const TRY_COOKIE = "mm_board_try";
 const COOKIE_DAYS = 7;
 const COOKIE_RE = /^[A-Za-z0-9_-]{32}$/;
 
-export const tryDeps: TryDeps = { store: tryStore, board: (loop) => tryBoard(loop.target), now: () => new Date() };
+export const tryDeps: TryDeps = { store: tryStore, board: (loop) => tryBoard(loop.target), now: () => new Date(), mayUse: mayTry };
 
 /** The visitor's hash and IP key, and the cookie to set when they're new. The database only ever sees the hash. */
 export function tryVisitor(req: Request): { visitor: string; ip: string; setCookie: string | null } {
