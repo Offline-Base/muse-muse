@@ -29,7 +29,8 @@ import type {
 } from "@/lib/decide/types";
 import { BASE_MODEL_PARAM, familyOfRepo, isSparkOpenDerivative } from "@/lib/train/base";
 import type { LambdaInstance } from "@/lib/train/lambda";
-import type { QuantLevel } from "@/lib/train/local-files";
+import { LOW_BIT_LEVEL, type BuildLevel, type QuantLevel } from "@/lib/train/local-files";
+import { quantBaseForAdapter, quantBaseOf } from "@/lib/train/quant-targets";
 import { judgeModelOf, storyModelOf, writerModelOf } from "@/lib/train/models";
 import {
   HUB_WHY_MAX,
@@ -873,6 +874,13 @@ function decideEstimate(params: Record<string, string | number | undefined>, siz
  */
 export const QUANT_MINUTES = 90;
 export const QUANT_CACHED_MINUTES = 80;
+/** What one-bit Glimmer adds: the importance matrix, its quantize, its KL and its own answer check. An estimate. */
+export const QUANT_LOW_BIT_MINUTES = 30;
+/** A small base's whole job: a 6 GB merge base and one build. An estimate until the first real run. */
+export const QUANT_SMALL_MINUTES = 45;
+/** The limits of a job that makes the one-bit build: its estimate, room, and $1.99 an hour on an A100 SXM4. */
+export const QUANT_LOW_BIT_MAX_MINUTES = 150;
+export const QUANT_LOW_BIT_MAX_USD = 5.0;
 
 /** How fast a new base's weights are counted as downloading: 100 MB a second. An estimate. */
 const BASE_DOWNLOAD_BYTES_PER_MINUTE = 6_000_000_000;
@@ -891,7 +899,9 @@ export function runEstimate(
   decide?: DecideRunSize | null,
 ): RunEstimate | null {
   if (recipe === QUANT_RECIPE) {
-    const minutes = cached ? QUANT_CACHED_MINUTES : QUANT_MINUTES;
+    const full = cached ? QUANT_CACHED_MINUTES : QUANT_MINUTES;
+    const lowBit = String(params.levels ?? "").includes(LOW_BIT_LEVEL) ? QUANT_LOW_BIT_MINUTES : 0;
+    const minutes = quantBaseOf(params) ? QUANT_SMALL_MINUTES : full + lowBit;
     return { steps: 0, secondsPerStep: 0, trainMinutes: 0, overheadMinutes: minutes, minutes, cached, what: "quantize" };
   }
   if (recipe !== "glimmer-lora") return null;
@@ -1029,6 +1039,9 @@ export function recipeDefaults(
   recipe: Pick<Recipe, "id" | "defaultMaxMinutes" | "defaultMaxUsd">,
   params: Record<string, string | number | undefined>,
 ): Pick<Recipe, "defaultMaxMinutes" | "defaultMaxUsd"> {
+  if (recipe.id === QUANT_RECIPE && String(params.levels ?? "").includes(LOW_BIT_LEVEL)) {
+    return { defaultMaxMinutes: QUANT_LOW_BIT_MAX_MINUTES, defaultMaxUsd: QUANT_LOW_BIT_MAX_USD };
+  }
   if (!isServeRecipe(recipe.id)) return { defaultMaxMinutes: recipe.defaultMaxMinutes, defaultMaxUsd: recipe.defaultMaxUsd };
   const minutes = serveMinutes(params) + SERVE_BOOT_MINUTES;
   return { defaultMaxMinutes: minutes, defaultMaxUsd: Math.ceil(((minutes + 1) * SERVE_SIZING_CENTS_PER_HOUR) / 60) / 100 };
@@ -1066,7 +1079,7 @@ export type DoneMetrics = Record<string, string | number>;
 export function adapterProblem(
   job: Pick<TrainJobRow, "id" | "recipe" | "status" | "params"> | null,
   metrics: DoneMetrics | null,
-  opts: { decide?: boolean; uploadOnly?: boolean } = {},
+  opts: { decide?: boolean; uploadOnly?: boolean; smallQuantBase?: boolean } = {},
 ): string | null {
   if (!job) return "that job doesn't exist.";
   if (job.recipe !== ADAPTER_RECIPE) return "that job isn't a Muse Glimmer LoRA job, so it has no adapter to serve.";
@@ -1087,7 +1100,9 @@ export function adapterProblem(
   // Serve and quantize jobs load the recipe's MODEL, which is r30b since the switch (lib/train/base.ts). A LoRA trained on
   // plain Glimmer has the same shapes, so it would load without error and answer as a model nobody evaluated. A
   // glimmer-publish job (opts.uploadOnly) loads no base: it sends the files as they are, under the base their job recorded.
-  if (!opts.uploadOnly && !isSparkOpenDerivative({ params: job.params, metrics })) {
+  // opts.smallQuantBase: a local files job that merges into the adapter's own small base, not r30b (QUANT_TARGETS).
+  const ownBase = opts.smallQuantBase && quantBaseForAdapter(job.params);
+  if (!opts.uploadOnly && !ownBase && !isSparkOpenDerivative({ params: job.params, metrics })) {
     if (familyOfRepo(job.params?.[BASE_MODEL_PARAM])?.startsWith("llama")) return "that adapter trained on Llama, and these jobs only load the 2026 Glimmer (r30b).";
     return "that adapter trained on plain Muse Glimmer, and the lab's GPUs now load the 2026 Glimmer (r30b), which it never trained on.";
   }
@@ -1163,6 +1178,19 @@ export function isQuantRecipe(recipe: RecipeId | string | null | undefined): boo
 export const QUANT_KL_MAX: Readonly<Record<QuantLevel, number>> = { Q3_K_M: 0.08, Q4_K_M: 0.03, Q6_K: 0.005 };
 
 /**
+ * The one-bit build's KL limit: none. The one real IQ1_S measured 1.183 (Nov 1, docs/log/quant-run-2026-11-01), from an
+ * adapter trained on an older base with text it didn't train on, which can't set a limit. The job records its KL and the
+ * answer check on the file itself decides. Set this and LOW_BIT_KL_MAX in QUANT_PY together, from an r30b tune's number.
+ */
+export const LOW_BIT_KL_MAX: number | null = null;
+
+/** A build's KL limit, or null when none has been measured: the one-bit build's, and every build of a small base. */
+export function quantKlLimit(level: BuildLevel, params?: Readonly<Record<string, unknown>> | null): number | null {
+  if (quantBaseOf(params)) return null;
+  return level === LOW_BIT_LEVEL ? LOW_BIT_KL_MAX : QUANT_KL_MAX[level];
+}
+
+/**
  * The share of held-out prompts Q4_K_M must answer with a final answer, under the prompt a stock app sends, or nothing
  * is published. QUANT_PY has the same number.
  */
@@ -1188,10 +1216,13 @@ export function trainChannelOf(params: Record<string, string | number> | null | 
  *
  * So is an adapter trained on plain Glimmer, before the switch to r30b (lib/train/base.ts): QUANT_PY merges into r30b's
  * 16-bit weights, which that adapter never trained on, so its files would be a model nobody evaluated.
+ *
+ * With opts.targets (QUANT_TARGETS), an adapter on a small base (QUANT_BASES) merges into that base instead.
  */
 export function quantProblem(
   job: Pick<TrainJobRow, "params" | "terminatedAt" | "evalSummary">,
   metrics: DoneMetrics | null,
+  opts: { targets?: boolean } = {},
 ): string | null {
   if (jobMode(job.params) === DECIDE_MODE) {
     return "that job trained a decision model, and its local files need a decision check (Q4_K_M's picks against the adapter's) that isn't built yet.";
@@ -1205,8 +1236,12 @@ export function quantProblem(
   if (prompt !== "short") {
     return "that adapter trained under its dataset's whole task prompt, and local files need the one-line system message of the short student prompt.";
   }
+  if (opts.targets && quantBaseForAdapter(job.params)) {
+    return typeof job.params?.baseRevision === "string" ? null : "that adapter's base has no pinned commit on record, so its merge couldn't be held to it.";
+  }
   if (!isSparkOpenDerivative({ params: job.params, metrics })) {
     if (familyOfRepo(job.params?.[BASE_MODEL_PARAM])?.startsWith("llama")) {
+      if (opts.targets) return "that adapter trained on another Llama, and local files only merge into the 2026 Glimmer (r30b) or Llama 3.2 3B from unsloth/Llama-3.2-3B-Instruct-bnb-4bit.";
       return "that adapter trained on Llama, and local files only merge into the 2026 Glimmer (r30b): its merge base and its checks are that model's.";
     }
     return "that adapter trained on plain Muse Glimmer, and local files now merge into the 2026 Glimmer (r30b), which it never trained on.";

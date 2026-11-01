@@ -107,7 +107,11 @@ def read_examples(path):
 def encode(tokenizer, messages):
     """(input_ids, labels) for one conversation, training only on its last answer. Thinking is off, as ask_model answers."""
     prompt = tokenizer.apply_chat_template(messages[:-1], tokenize=False, add_generation_prompt=True, enable_thinking=False)
-    answer = messages[-1]["content"] + "<|im_end|>\n"
+    # The answer as the model's own template ends it, since each family has its own end-of-turn text. Llama's date line is in both renders.
+    whole = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False, enable_thinking=False)
+    if not whole.startswith(prompt):
+        raise ValueError("This model's chat template doesn't render an answer after its prompt, so training can't tell them apart.")
+    answer = whole[len(prompt):]
     prompt_ids = tokenizer(prompt, add_special_tokens=False)["input_ids"]
     answer_ids = tokenizer(answer, add_special_tokens=False)["input_ids"]
     return prompt_ids + answer_ids, [-100] * len(prompt_ids) + answer_ids

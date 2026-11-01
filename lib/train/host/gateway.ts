@@ -6,6 +6,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { derivativeNote } from "@/lib/caps/gpu/general";
+import { dayWindow } from "@/lib/docs/proxy/limits";
 import { gatewayError, type GatewayErrorType } from "@/lib/gateway/errors";
 import { parseBearer } from "@/lib/gateway/extract";
 import { chatMessagesProblem, glimmerStops, type ChatMessage } from "@/lib/train/glimmer-serving";
@@ -120,8 +121,8 @@ export async function handleHostedChat(req: Request, deps: HostedGatewayDeps): P
     const minute = new Date(Math.floor(now.getTime() / 60_000) * 60_000);
     const perMinute = await deps.hitRateLimits([limiter], minute);
     if ((perMinute[limiter] ?? 0) > HOSTED_LIMITS.perTokenPerMinute) return gatewayError(429, "rate_limit_error", "rate_limited", `The limit is ${HOSTED_LIMITS.perTokenPerMinute} questions a minute.`, { headers: { "retry-after": "60" } });
-    const day = new Date(now);
-    day.setUTCHours(0, 0, 0, 0);
+    // The end of the day, not its start: the hourly prune deletes windows that began over an hour ago.
+    const day = dayWindow(now);
     const dayKey = `hosted:endpoint:${endpoint.id}`;
     const perDay = await deps.hitRateLimits([dayKey], day);
     if ((perDay[dayKey] ?? 0) > HOSTED_LIMITS.perEndpointPerDay) return gatewayError(429, "rate_limit_error", "rate_limited", `This endpoint has used its ${HOSTED_LIMITS.perEndpointPerDay} answers for today.`, { retry: false });

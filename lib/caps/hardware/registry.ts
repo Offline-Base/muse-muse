@@ -39,7 +39,7 @@ const defaultDeps: RegisterDeps = {
 };
 
 /** A board's describe_device always lists cameras and microphones (muse-device/server.py), whatever is attached. */
-function looksLikeMuseDevice(result: DeviceToolResult): boolean {
+export function looksLikeMuseDevice(result: DeviceToolResult): boolean {
   if (result.isError) return false;
   const text = (result.content as Array<{ type?: string; text?: string }>).find((c) => c.type === "text")?.text;
   try {

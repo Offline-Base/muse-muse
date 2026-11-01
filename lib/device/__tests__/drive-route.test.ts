@@ -44,8 +44,8 @@ const BASE = Buffer.from("GGUF base");
 const BOARD_SOURCE = {
   run: "support-coach",
   adapter: { name: "support-coach.gguf", bytes: ADAPTER.length, sha256: sha(ADAPTER) },
-  bases: [{ name: "Qwen3.5-0.8B-Q4_K_M.gguf", level: "Q4_K_M", bytes: BASE.length, sha256: sha(BASE), source: null }],
-  config: { base: "Qwen3.5-0.8B", dataset: "support-coach", steps: 60, rank: 8, lr: 0.0002, max_length: 512 },
+  bases: [{ name: "Llama-3.2-1B-Instruct-Q4_K_M.gguf", level: "Q4_K_M", bytes: BASE.length, sha256: sha(BASE), source: null }],
+  config: { base: "Llama-3.2-1B-Instruct", dataset: "support-coach", steps: 60, rank: 8, lr: 0.0002, max_length: 512 },
   status: { examples: 49, skipped: 0, loss: 0.41, seconds: 812, peak_gpu_gib: 1.91 },
   base_revision: "23c69c53358a07516b5827588b3fdb12ae78fd65",
   system: "You are the support coach.",
@@ -83,15 +83,15 @@ describe("/api/device/drive", { skip: typeof mock.module !== "function" }, () =>
   before(async () => {
     tmp = await fs.mkdtemp(path.join(os.tmpdir(), "drive-route-"));
     const realKit = await import("@/lib/drive/kit");
-    const qwen = "Apache License\nCopyright 2026 Alibaba Cloud\n";
+    const llama = "LLAMA 3.2 COMMUNITY LICENSE AGREEMENT\n";
     const collected = await realKit.collectKit({
       cacheDir: tmp,
-      fetchImpl: fakeFetch({ "https://hub.test/qwen/LICENSE": qwen }),
+      fetchImpl: fakeFetch({ "https://hub.test/llama/LICENSE": llama }),
       extract: fakeExtract,
       pin: TEST_PIN,
       metaFiles: TEST_META,
-      qwenFiles: [{ path: "licenses/Apache-2.0.txt", url: "https://hub.test/qwen/LICENSE", sha256: sha(qwen) }],
-      families: ["glimmer", "qwen"],
+      llamaFiles: [{ path: "licenses/LLAMA_3.2_LICENSE.txt", url: "https://hub.test/llama/LICENSE", sha256: sha(llama) }],
+      families: ["glimmer", "llama"],
     });
     const uploaded: DriveKit = { ...collected.kit, baseUrl: "https://kit.test/drive-kit/" };
     mock.module(at("../../drive/kit.ts"), { namedExports: { ...realKit, loadKit: async () => kit } });
@@ -112,7 +112,7 @@ describe("/api/device/drive", { skip: typeof mock.module !== "function" }, () =>
           if (boardDown) throw new Error(`fetch failed for ${URL_VALUE} with ${TOKEN_VALUE}`);
           calls.push({ name, args });
           if (replies[name]) return replies[name];
-          if (name === "drive_status") return text({ drives: [DRIVE], export: current, runs: [{ run: "support-coach", base: "Qwen3.5-0.8B", adapter: "support-coach.gguf" }] });
+          if (name === "drive_status") return text({ drives: [DRIVE], export: current, runs: [{ run: "support-coach", base: "Llama-3.2-1B-Instruct", adapter: "support-coach.gguf" }] });
           if (name === "export_source") return text(BOARD_SOURCE);
           if (name === "export_model") return text({ export: (args.plan as { export?: string })?.export ?? args.export, state: args.wait_for_drive ? "waiting_for_drive" : "checking" });
           if (name === "stop_export") return text({ export: args.export ?? "exp_000000000001", state: "stopped" });

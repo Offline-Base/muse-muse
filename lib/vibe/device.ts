@@ -531,7 +531,7 @@ const MEASURED: ReadonlyArray<{ mac: boolean; device: string; label: string; tps
 export const isGlimmerFile = (file: Pick<LocalFile, "name">) => file.name.startsWith("muse-glimmer-");
 
 function measuredText(p: DeviceProfile, file: Pick<LocalFile, "level" | "name">): string | null {
-  // Only a Glimmer Q4_K_M: a board's Qwen3.5-0.8B Q4_K_M on a drive (docs/DRIVE_EXPORT.md) mustn't claim Glimmer's speed.
+  // Only a Glimmer Q4_K_M: a board's Llama 3.2 1B Q4_K_M on a drive (docs/DRIVE_EXPORT.md) mustn't claim Glimmer's speed.
   if (file.level !== "Q4_K_M" || !isGlimmerFile(file)) return null;
   const m = MEASURED.find((x) => (x.mac ? p.kind === "mac" && p.chip === x.device : isPc(p.kind) && p.gpu?.model === x.device));
   if (!m) return null;
@@ -581,6 +581,8 @@ function noVerdict(title: string, why: string): Verdict {
 }
 
 const NOT_HERE = noVerdict("Won't run here", "Phones, tablets and Chromebooks can't run a 30B model.");
+// A small base's file (QUANT_TARGETS) might: nothing has tried, and this guide has no steps for them.
+const NOT_HERE_SMALL = noVerdict("Not on this device yet", "This guide has no steps for phones, tablets and Chromebooks, and this model hasn't been run on one.");
 
 /** The least RAM that runs a build on the processor alone, with room left for the system and its apps. */
 function cpuRamGb(file: LocalFile): number | null {
@@ -618,7 +620,7 @@ function tooSmall(p: DeviceProfile, file: LocalFile, what: string): Verdict {
  */
 export function rateBuild(p: DeviceProfile, file: LocalFile, smallest: LocalFile | null = file): Verdict | null {
   if (!profileReady(p) || !p.kind) return null;
-  if (cantRunHere(p.kind)) return NOT_HERE;
+  if (cantRunHere(p.kind)) return isGlimmerFile(file) ? NOT_HERE : NOT_HERE_SMALL;
   const memory = p.memoryGb ?? 0;
   const need = needGb(file);
   const base = { file, needGb: need, measured: measuredText(p, file), lessTested: false, tryLive: false };
@@ -703,7 +705,7 @@ export function rateBuilds(p: DeviceProfile, files: readonly LocalFile[]): Verdi
  */
 export function pickBuild(p: DeviceProfile, files: readonly LocalFile[]): Verdict | null {
   if (!profileReady(p)) return null;
-  if (cantRunHere(p.kind)) return NOT_HERE;
+  if (cantRunHere(p.kind)) return files.length && !files.some(isGlimmerFile) ? NOT_HERE_SMALL : NOT_HERE;
   const rated = rateBuilds(p, files) ?? [];
   const gpu = rated.filter((v) => v.where === "gpu");
   if (gpu.length) return gpu[gpu.length - 1];

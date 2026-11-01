@@ -1739,6 +1739,15 @@ Direct runs with native/lab/tools/check.mjs and its local stand-in, from origin/
 - Found: nothing stops a build at a dollar amount. The $40 budget for this job isn't enforced by code; only the wall and DAILY_SPEND_CAP_USD=150 limit it.
 - Result of both builds: pending. A real brief is all this proves so far.
 
+## Nov 1, 2026: quantize code for device targets (tg-quant-targets)
+
+- Decision (owner): quantize inside fine-tuning. Jetsons get one-bit Muse Glimmer, other devices a small Llama. No Qwen.
+- Added behind `QUANT_TARGETS`, off: Llama 3.2 3B adapters merge into their own base and make Q4_K_M; r30b adapters also make IQ1_S; `deviceModelTarget` in `lib/train/quant-targets.ts`. Removed Qwen from Where it runs.
+- Research from primary sources: llama.cpp b11669 requires an importance matrix for IQ1_S (`tensor_requires_imatrix`) and lists 1.56 bpw. Pinned Llama hashes checked against the Hub at commit 006f5dcd.
+- Fixed from the stopped agent's work: `write_calibration` iterated the row dicts instead of their messages, so any IQ1_S job would have crashed in the merge child.
+- Decision: no KL limit for IQ1_S or Llama yet, since none is measured. KL is recorded, and the answer check on the file decides. Set `LOW_BIT_KL_MAX` from the next agent's GPU run.
+- Tests: targeted only, with fake tools. No GPU, no real llama.cpp, no board, no spend. Simulated, not proven.
+
 ## Nov 1: every build on Contributor behind BUILDS_ON_CONTRIBUTOR (branch tg-contributor-builds, flag off)
 
 - Why: the owner decided builds run on muse-spark-1.3-contributor with the UI kit, on production too, though Meta may train on that tier and its terms (6.2) bar sensitive, confidential or personal information there.
@@ -1750,6 +1759,191 @@ Direct runs with native/lab/tools/check.mjs and its local stand-in, from origin/
 - Measured on Contributor with made-up data, flags as on production: a FULL_BUILDS brief with the look (8 requirements, scope check ran) and a full judge read with one image both returned valid replies. Spend about $0.002. The first attempt got a 401 from the key in ~/muse-muse/.env.local, so that key looks stale.
 - Tests: targeted suites pass. flags-off-surface was already failing on main on stale mocks; with those fixed its provision and deploy goldens match, and steps.json still differs on a timeout this branch doesn't touch. No golden file changed.
 - Not run: a whole build on production settings, a sandbox, the notice in a browser, whether Contributor's judge is as strict as Muse Wonder's.
+
+## Nov 1, 2026: The board loop, on the simulated board (`tg-board-loop`, flag `BOARD_LOOP`, off)
+
+**Built.** One start button on a judged model; seven stages with status and cost; `BoardDriver` with simulated, fleet and board MCP drivers; a fixed test set; a Demo Studio clip; a queued try page at `/try-board/<id>`; migration `0031_board_loop`. `docs/BOARD_LOOP.md`, `docs/JETSON_TODO.md`.
+
+**Decision: the simulated board answers the control plane's API**, so the fleet driver's real code runs against it, instead of a second code path that would prove nothing about the fleet. Its answers still say canned, and it never executes what it's sent.
+
+**Decision: a real board's try page is admins only until `BOARD_TRY_PUBLIC`.** Prompts would reach a tuned model with no content check of their own, which is the owner's call.
+
+**Run, simulated, local.** `next dev` on port 3041, PGlite, `OPEN_ACCESS=admin`, a made-up judged job (its $1.30 is a seeded number), the real workflow runtime and the real `scripts/sim-board.mjs`. Spend: $0. No GPU, no model and no board.
+
+- All seven stages ended in about 40 seconds, `gguf` skipped as designed, most of the time in the clip. Test set: 5 of 5, 19.6 tokens a second (set by `SIM_BOARD_TPS=20`), peak 54 MB (the process's own). These numbers say nothing about a Jetson.
+- Clip: H.264, 1920x1080, 26.5 s, 4.4 MB, served with a 206. Its title, captions and outro say Simulated board. Frames: `docs/log/shots/board-loop-clip-frames.jpg`.
+- Browser (Playwright): the button on the tune's page started a run; two visitors queued as 1 and 2 and both got answers; the sixth turn in an hour was refused, "You've had your 5 turns this hour"; no sideways scroll at 390 px; killing the process showed the offline page with no restart; Stop closed the page and the next run took the slot. Shots: `board-loop-room.jpg`, `board-loop-try-done-390.jpg`, `board-loop-try-offline.jpg`.
+
+**Fixed on the way.** The workflow bundle rejected a module-level deps object: moved inside the step. An exception in a stage would have stranded a loop holding its board's slot: it now fails the loop, and only an offline board waits. Stop waited for a tick, which never comes after the workflow's hard stop: the route now stops the board itself, and doesn't start a dead simulated board to do it. A doubled "Simulated board." label on the banner.
+
+**Tests.** `lib/board-loop/__tests__`: `loop-sim` and `fleet`, 25 of 25; `store`, 3 of 3, including every route a 404 with the flag off. `tsc --noEmit` clean. `lib/db` migrations and migration-order pass after adding 0031 to the agreed list. `no-direct-database` fails on `scripts/dev/tune-harness.ts`, a file this branch does not touch.
+
+**Not run (at that commit).** Any real board or fleet (`fleet.ts` has seen only the simulated process and fakes; `device-mcp.ts` no run at all, and no test of its own), a real IQ1_S, a Preview, `next build`, the full suite. The start route's real-board quantize branch has no test. On Vercel the simulated board needs `BOARD_SIM_URL` and the clip is skipped.
+
+## Nov 1, 2026: Independent review of the board loop, and fixes (`tg-board-loop`)
+
+Spend: $0. No board, GPU or model. Every fix is in code a real board would run, and none of it has run on one.
+
+- **A failed send, or Stop before serving, would have ended a real board's old job.** `endBoard` ran `gguf-serve.sh --undo` whenever a file was named. It now runs only once this loop's serve began.
+- **A real file with no checksum went through unchecked**, and a file already on the board was trusted by name. Real files now need a checksum and address, and a file already there is checked and removed on a mismatch.
+- **The board MCP driver had no checksum check at all.** `install_model` now reports the hash it already computed (one key, in `muse-device/CHANGES_FOR_HUSSAM.md`), and the driver refuses a mismatch or a missing one.
+- **`--undo` ran inside the agent's own job**, though it restarts the agent, and maintenance never came off after Stop. It now runs under `systemd-run`, after ending any serve still going, and maintenance comes off only once the board says the model left. The scripts moved from `/tmp` to `/run`.
+- **A turn in line kept running on a real board** after its page closed to that visitor: a poll now asks again.
+- **The clip recorder got the whole environment, secrets included.** It now gets a short list. Rerun for real on a made-up row: it recorded, rendered and stored a clip.
+- `BOARD_SIM_URL` could send its token over plain http. It now needs https or this machine.
+- A failed workflow start left a row holding the board's slot. It now fails the row.
+- A refusal from the board was recognised by class name, which minifying breaks. Now `instanceof`.
+- Stop leaves a local files job running under its own caps. Not changed, but the stage now says so.
+
+**Tests.** `loop-sim` and `fleet` 34 of 34, `store` 3 of 3 (now with the start route's flag-off 404), `muse-device` `test_server -k install` 6 of 6, `tsc` no errors in board-loop files. New tests cover the board MCP driver against a fake caller only.
+
+**Not run.** A real board, fleet or MCP server, so `installCommand`, `serveCommand` and `stopCommand` have never executed, and `--undo`'s timing under the 40 second wait is a guess. The start route's real-board quantize branch, `BOARD_SIM_URL` against a real host, a Preview, `next build`, the full suite.
+
+## Nov 1, 2026: real quantize run on a rented A10 (tg-quant-targets)
+
+- Ran: real `RUNNER_PY` and `QUANT_PY` via `scripts/dev/quant-harness.ts`, a stand-in for the platform on the GPU, publish 0, made-up data, nothing uploaded. Machines device-loop-1 (about 6 minutes, Ubuntu 22.04) and device-loop-2 (Ubuntu 24.04). Both terminated. Results in `docs/log/quant-run-2026-11-01`.
+- Spend: about 1.5 hours of A10 at $1.29 an hour, about $2 by Lambda's list price, not read from an invoice. Limit was $15.
+- Llama 3.2 3B adapter e1b00ffa: job passed. Q4_K_M 2,019,377,312 bytes, KL 0.0349, 100 of 100 final answers, template check passed. Agreement with the adapter's eval answers 0 of 100 on the first 200 characters, though 20 of 20 sampled keep the trained format (base 0 of 100). 162.3 tokens a second on the A10. On 6 x86 threads under a memory limit, about 23 tokens a second and 2.84 GB resident, under both 8 GiB and 4 GiB.
+- One-bit r30b, base, cached file glimmer-stage-b-r30b-IQ1_S.gguf made on b11970, run on b11669: under 8 GiB and 7 GiB, no swap, CPU only, 6 pinned threads, cold page cache. No out-of-memory event. 7.28 to 7.42 GB resident with mmap, 6.96 to 7.01 GB with `-lm none`. 2.34 to 2.46 tokens a second, about 5 s to the first token. Answers: 2 of 5 fine under a final-channel prompt, 1 of 5 under a stock prompt. Not demo quality. x86 under a limit isn't a Jetson.
+- One-bit recipe path: adapter 83d71f74 from an older base, as a pipeline test only, with text it didn't train on. Matrix and IQ1_S made on the A10 (6,526,418,944 bytes). KL 1.1827, same top token 52.3%. 19 of 30 final answers, so it was left out. Q4_K_M KL 0.0416, over its 0.03 limit, so the job ended with nothing passed. The gates worked. Whether a true r30b tune passes is unknown.
+- Fixed, each seen failing for real: glibc 2.38 on the default image (now `lambda-stack-24-04` for quantize jobs); Unsloth's save refusing the base's forwarded method; shard hashes under the new hub blob layout; r30b's 4-bit build not fitting 24 GB; `-ngl 999` on imatrix; Meta's tokenizer config in the converter (a vocab-only conversion then hashed the same as the knowledge run's GGUF); a 500 from llama-server's parser on a cut-off answer.
+- Decision: `LOW_BIT_KL_MAX` stays null. One measurement from a mismatched adapter can't set a gate.
+- Decision: `QUANT_KL_MAX.Q4_K_M` stays 0.03 for now, and flagged. Two real values on made-up text are 0.035 (Llama, which has no limit) and 0.042, so a real r30b job may lose its Q4_K_M. Needs an r30b tune's number.
+- Not run: launch through the platform, https callbacks, Hub publish, a real board, the full suite, next build.
+
+## Nov 1, 2026: independent review of tg-quant-targets
+
+- Read the whole diff against origin/main, not the report. Checked: guest spend (routes are admin or automation; callers can't send quantBase, since validateParams refuses unknown params), limits (recipeDefaults runs after the platform writes levels), sha256 pins, shell quoting, secrets in the log folder, em dashes, Offline Base and Qwen in new copy. No issue in those.
+- Fixed: a Llama file with the flag on reached public pages as Muse Glimmer. The run-locally page called it "the tuned Muse Glimmer 30B" with Glimmer's under-18 line and "can't run a 30B model". Its Ollama steps used Glimmer's renderer and parser. It now names Llama and its license, with a Llama Modelfile and a note that its app steps are untried.
+- Fixed: a Llama file could be ordered or exported on a drive, whose words and license files say Muse Glimmer under Apache 2.0. `driveProblem` and the lab export now refuse it. Drives for Llama need their own license files first.
+- Fixed: the public GGUF card and record printed the raw IQ1_S problem, which can quote a rendered prompt or a tool's output. They now say its own checks didn't pass, and the job's page keeps the detail.
+- Added a test that only glimmer-quantize launches with QUANT_IMAGE_FAMILY in steps.ts. Removed an unused constant and updated stale docs.
+- Tests: tsc clean, 200 targeted tests pass (fakes). Not run: any page in a browser, the Llama Modelfile in Ollama, the full suite, next build. No spend.
+
+## Nov 1, 2026: try and one-click export (tg-try-export, flags TRY_TUNED and EXPORT_TUNED, off)
+
+- Built: a public Try box on `/models/{id}` with the tuned and base models side by side, wake-up states, per-visitor limits and a note on the data; installers for Mac, Windows, Linux and Jetson with an Ollama path, using `deviceModelTarget`.
+- Decision: a visitor may wake a sleeping model, since the owner chose to cover hosting, inside its own limits: 1 wake per visitor, 2 per model, 4 in all, and $10 a day taken atomically before any provider call. Never Lambda, and the owner token is dropped.
+- Fix before it shipped: day counters at the start of the day would have reset within the hour, because the hourly prune deletes windows that began over an hour ago. They now use `dayWindow`, with a test.
+- Found, not changed: `HOSTED_LIMITS.perEndpointPerDay` in `lib/train/host/gateway.ts` counts at the start of the day, so the same prune resets it.
+- Measured: the generated Mac script on `ggml-org/tiny-llamas` `stories260K.gguf`, real b11669 from its pinned release, 16 tokens, exit 0. A changed sha256 deleted the download and exited 1. A second run downloaded nothing. The Linux script's pinned tarball and model passed their checks, with the OS name stubbed; its program was not run here.
+- Blocked: real paid hosting (needs a real admin sign-in, and provider keys held only in Vercel). A PowerShell syntax check was denied by the permission check, so the Windows script has not been parsed or run.
+- Spend: $0. No Muse Glimmer file ran. Targeted tests only; no `next build`, no browser view.
+
+## Nov 1, 2026: independent review of tg-try-export, fixes
+
+- Merged origin/tg-quant-targets, for the measured figures in `fit`. The pinned llama.cpp digests were compared with GitHub's own release listing and match.
+- Fixed: someone already refused a wake or an answer still used up the model's allowance, so one address could lock a model for everyone that day. The visitor is now counted first and alone.
+- Fixed: a full set of live slots or a model shutting down cost a visitor their one wake with nothing started. Both are read before any counter, and the box says when every GPU is in use.
+- Fixed: hosting's refusal words reached visitors, with dollar amounts, setting names and "stop one first". Visitors now get their own words.
+- Fixed: a wake's stop time left the 5-minute sweep able to bill past what it took from the day's budget. It now stops 5 minutes early.
+- Fixed: a tune on Llama was labeled "base Glimmer" in the Try box. A model title could send terminal control codes from a script. A system message ending in a quote broke its Modelfile. A computer with no sha256 tool downloaded everything before refusing. Try POST answered 403 instead of 404 with the flags off when cross-site. The box could send a chat opening with an answer.
+- Fixed: `HOSTED_LIMITS.perEndpointPerDay` counted from the start of the day, so the hourly prune reset it. It now uses `dayWindow`.
+- Copy: the export rows said nothing about Windows never having run. Each row and script now says how far that script has run. The docs no longer say the owner chose guest wakes: that reading still needs confirming.
+- Spend: $0. Targeted tests and tsc only. Nothing new ran on a real provider, Windows PC, Linux PC or board.
+## Nov 1: export to GitHub behind GITHUB_EXPORT (branch tg-github-export, unmerged)
+
+- Built: Connect GitHub, Export to GitHub, Push new version and Disconnect on the Code page, a generic connected-account store keyed by provider, and pushing with no git program. docs/GITHUB_EXPORT.md has the map, what the owner must create, and the Hugging Face estimate.
+- Decision: a guest's connection belongs to a random per-browser cookie, stored as a hash, because guests share one user row. A signed-in person's belongs to their account.
+- Decision: wrote objects, packs and receive-pack in plain Node, because a Vercel function can't rely on a git program.
+- Decision: OAuth App with `repo`, the narrowest scope that can make a private repo. It is broad, so pushes only go to repos this site made. A GitHub App is the narrower option, not built, and flagged for the owner.
+- Tested: push.realgit.test 8 of 8, real pushes to bare repos behind `git http-backend` with fsck on. routes.test 17 of 17 on PGlite with the pretend GitHub. Changing the binding so guests use the shared user id fails 5 of those, including the guest test, so the test does catch it.
+- Local run, made-up data, pretend GitHub, `next dev` with OPEN_ACCESS=guest, two curl cookie jars: A connected and exported, giving two commits with `.env.local` left out and a clean `git fsck --strict`. B saw Connect GitHub, got not_connected on push, and disconnecting from B left A connected. No token in cookie jars or the server log. Headless Chrome followed the sign-in redirects and rendered both states: docs/log/shots/github-export-connect.png and github-export-connected.png.
+- Found on that run: with stored files unreadable, a first export answered push_failed and left the repo empty rather than pushing a short version. The same run's Code page answered 500, from the existing file view, unrelated to this work and not changed.
+- Not run: real GitHub (no repo was created and no OAuth App exists), a click on the Export button in a browser (the extension wasn't connected, so the export went through curl), a Preview, `next build`, the full test suite. Typecheck shows only an existing error in lib/train/tune/__tests__/loop.test.ts. Spend $0.
+
+## Nov 1: independent review of tg-github-export, four fixes
+
+- Fixed: anyone could burn the site's 120 pushes an hour with made-up `mm_connect` cookies, because the counters ran before the connection check. The check now comes first.
+- Fixed: `.github/workflows/` files left out and named in the commit message. They could run on a person's account from someone else's public source, and GitHub is expected to refuse the push without the `workflow` scope (not seen on real GitHub).
+- Fixed: a grant was left live when the account lookup or save failed, or when a different account replaced the connection. Those are ended now, best effort.
+- Fixed: a just-made repo isn't looked up before its first push, so a lagging read can't drop the record and leave the name taken. Whether real GitHub lags here is not known.
+- Found, not changed: tg-board-loop also holds migration number 0031 (`0031_board_loop.sql`). Whichever lands second must renumber, journal and snapshot too.
+- Tested: routes.test and push.realgit.test, pretend GitHub with real git underneath. Real GitHub still not run. Spend $0.
+## Nov 1: Gadget connect, flag off (branch tg-gadget-connect, unmerged)
+
+Local site on port 3036, not 3031: another stream's site (github-export) already held 3031, and 3032 was taken too. Database `pglite:.data/gc`, in a throwaway worktree `~/mm-wt/gadget-run` that also set `CAP_READY.hardware` true, used snapshot `snap_XXT4qDZEWLQ6xL8RgAvqd38c2kdM` from tg-caps-ready, and had a test-only route to mint a live token (a local site can't publish). None of those three are on this branch. Made-up accounts and data. Models: TEST_MODEL only. No model ran on this laptop: the simulated board's "model" is a fixed rule.
+
+- **Decision: Qwen is gone from everything that can pick or run a model.** Board training and board drive exports now use `unsloth/Llama-3.2-1B-Instruct` at a pinned revision, with Meta's Llama 3.2 license and policy on the drive, pinned from `meta-llama/llama-models`. `train_model` refuses any base not named `Llama-3.[123]-...`. Also dropped the `qwen3.5-4b` student profile. Left on purpose: history (build logs, claim checks, research files), a citation in `privacy/docs/SCORE_PLAN.md`, a NanoQuant comment, and news-sampling terms in `scripts/knowledge`, which pick no model.
+- **Fix: `train.py` hardcoded another model's end-of-turn text.** A Llama run would have trained on the wrong stop. The answer's end now comes from the model's own template. Found in FLEET_TRAINING.md, once the merge brought it in.
+- **Decision: guests can't pair.** Every guest has one user id, so every ownership check would pass for all of them. On production's guest mode, a visitor signs in first. `linkedBoardRow` also refuses guest-owned rows.
+- **Decision: a live product can't confirm its own robot action.** The yes happens on `/gadgets/confirm` under the owner's session. The drive tools' card pattern would have let product code confirm for itself.
+- **Fix, found by the real run: a confirmed action could be replayed.** The spent-nonce counter's window was the moment, so each try had its own row, and the second confirm moved the pump again (soil 46 to 70). The window is now the request's expiry. Rerun: first 200, replay 409.
+- **Fix, found by a real build: the local stand-in was overwritten.** verify restores platform files from the overlay, so a build couldn't see the new helpers. The simulated board now goes in the overlay on a local run only, and the check that needs a gateway says "not checked" there.
+- **Seen working, real TLS, real route, simulated board** (`muse-device/sim_board.py`, which runs the real `server.py`): both screens showed the same check number (841005). Bob couldn't use Alice's ticket (410). No confirmation 400, wrong code 401, used code 401. Bob saw none of Alice's boards, and couldn't stop, clear or link them. Jetson kind gave Muse Glimmer one bit, Pi kind gave Llama 3.2 3B. Through `POST /api/gateway/gadget` with a live token: no link 503, visitor 503, owner got the board's answer, board off 503 with the message, board back 200. Robot: not on the list 400, over the limit 400, a visitor's action 503, a made-up approval changed nothing, Bob's confirm 410, no session 401, cross-site 403, Alice's confirm moved it, hard stop held, Bob's clear 404, Alice's clear 200.
+- **Seen in a real browser:** the pair form on `/gadgets`, with the Pair button off until the numbers are confirmed, then paired, hard stop and clear. `docs/log/shots/gadget-connect-*.png`.
+- **Gateway calls from a sandbox weren't exercised:** a local build's sandbox can't reach this machine, as the task warned. Sandbox to simulator, and live token to board, were each run separately.
+- **A real test build, "Greenhouse Buddy", on TEST_MODEL, $0.035, build 38caf59f.** Typecheck, next build, start, console, 6 smoke tests and the manifest passed, and the judge passed on the first round. It calls `askBoard`, `robotStatus`, `requestRobotAction` and `hardStop`. The demo shows the advice from the simulator, a confirm card with the limit, and a hard stop. Earlier builds taught the fixes above. One stopped for a bad OIDC read of mine at setup. One showed verify overwriting the stand-in. One passed everything but the gateway-record check, and its builder refused to fake that.
+- **Weak spot seen in the demo:** the builder stripped `[simulated ...]` from the answer, and the card says "Answered by Muse Glimmer, one bit, on your board", while a fixed rule wrote it. Readings were labeled and that card wasn't. The prompt and skill now say to label it on the card. No build has rerun with that wording, and it's advice to the builder, not an enforced check.
+- Could not drive the product by hand: the sandbox stops when a local build ends (410), and during fix rounds its preview didn't respond to clicks. The evidence is its smoke tests, the judge and the demo video.
+- Spend: about $0.13 on TEST_MODEL across four builds ($0.001, $0.04 stopped by a site restart, $0.05, $0.035), Vercel Sandbox time extra. No GPU. Local site and simulated boards stopped, throwaway worktree removed.
+- Tests, run on touched code: `pairing`, `gadget-connect`, `routes`, `local-gadget`, `plan` and `brief` 99 pass; board, registry, store and gadgets-page tests 93 pass before the last edits; `test_pairing` 10, `test_server` 86 and `test_drive` pass. No full suite and no `next build` of the platform. `tsc` is clean after merging main.
+
+## Nov 1, 17:46: independent review of tg-gadget-connect
+
+Read the diff against main without relying on the branch's report. No paid GPU or endpoint in this code, no spend in the review, no secrets reaching browsers or logs found, flag-off paths unchanged apart from the guest-owned-row refusal and the merged health note. Both Llama license hashes and the model revision were checked against their sources.
+
+Fixed, tests only, no build and no rerun on a board or simulated board:
+
+- Pair, finish, remove and link took same-site requests, so a product on a nearby domain could use the owner's Lax cookie. Refused with GADGET_CONNECT on.
+- /gadgets/confirm could be framed. Now `frame-ancestors 'none'` and X-Frame-Options. The header wasn't seen in a running site.
+- The builder dropped the `[simulated ...]` prefix in the real run because `target` still credited Muse Glimmer, and an older line told it never to show "simulated". `target` now says no model ran, and the line has an exception.
+- A real board's `target` named the model picked for its kind, even if another was running. It now uses the name from /v1/models when that differs. The name is a file name only, so no board folders are stored.
+- A board's reply had no size limit: 32 MB now, answers cut at 16,000 characters. Asks are limited to 12 a minute per product.
+- A hard stop the board refused was reported as reached. A stop on a board with no robot could never be cleared, so it's refused.
+- Copy no longer says a board "runs" or "fits" a model that hasn't been measured, or that board answers suit private data: messages pass through the product's server and Muse Muse.
+
+Left for the owner: non-Meta student profiles in scripts/knowledge/aws/job/train_student.py, and WhereItRuns saying a Jetson can't run Muse Glimmer, which tg-quant-targets rewrites. `simulated` is what a board says about itself at pairing.
+## Nov 1: the story, STORY_PAGES off (branch tg-story, unmerged)
+
+- Added docs/STORY.md (frontier claim, alignment and privacy paragraphs, 3-minute video outline), `/offline` (new, not in the sidebar; flag added in review, see below), `lib/story/flow.ts` (each step's mark), and with STORY_PAGES a longer `/private` and a frontier section on `/how-it-works`. With the flag off both existing pages render as before.
+- Decision: the claim reads "is built so", since the chain has not run as one. Marks: harness for data, tuning and judging, simulated for own hardware, not run for the small file and for an app on its tuned model.
+- Decision: the owner's rule stands, so /private doesn't name the company, and a test checks that.
+- Decision: the flag is read at build time, since both pages are static. Turning it on takes a deploy.
+- Facts read only from ~/jetson-infra (README, docs/fleet.md), ~/BaseDrive-production (production-log.csv; it has logs, no docs) and ~/base-drive/README.md. No board touched.
+- Run: components/story/__tests__/story.test.tsx and components/private/__tests__/private-page.test.tsx, 13 pass, including numbers held to the logs and reports. tsc filtered to touched paths, clean. Pages seen on a local dev site, port 3031, flag on, 1280 and 390 wide, 200, no sideways scroll, no page errors, the company's name absent from /private.
+  ![/offline with its marks](log/shots/2026-11-01/story-offline-1280.png)
+  ![/private with STORY_PAGES](log/shots/2026-11-01/story-private-1280.png)
+- Not run: the full suite, next build, flag-off pages in a browser (tests only for /private), a Preview. Spend $0.
+
+## Nov 1: independent review of the story, fixes (branch tg-story, unmerged)
+
+- Fixed: `/offline` was public with no flag, against the rule that new behaviour stays off by default. It now answers 404 unless STORY_PAGES is on, so it deploys with the other two story pages.
+- Fixed: `/offline` used the callout and list styles from private.css without loading them. It loads them now.
+- Fixed: "Nothing on a board listens on the local network" was too broad. docs/fleet.md serves the console at jetson-05.local:8080 on the LAN. The line now covers only the model server and the fleet agent.
+- Fixed: the privacy paragraph left out the 65.0% holdout result. The relay row now says the relay is not end-to-end encrypted, as the threat model does. The video line now explains the amber harness mark.
+- Run: story and private page tests, 15 pass. tsc filtered to touched paths, clean. Local dev site, port 3031, HTTP only: flag off /offline 404, /private and /how-it-works 200 without the story sections; flag on all three 200 with them; the company's name absent from /private both ways.
+- Not run: browser views after these fixes, so the two screenshots above predate them. The full suite, next build, a Preview. Spend $0.
+
+## Nov 1, 2026: device loop integration branch (tg-device-loop-int)
+
+**Merged** tg-quant-targets, tg-try-export, tg-board-loop, tg-github-export, tg-gadget-connect and tg-story onto main at cd314a7d. `0031_board_loop` keeps its number and connected accounts becomes `0032_connected_accounts`, one second newer in the journal, with a fresh snapshot. Both read before any deploy: new tables and indexes only, so additive. `docs/JETSON_TODO.md` is now one list in three parts. `targetForBoardKind` calls `deviceModelTarget`. `lib/story/flow.ts` now marks the small file step as harness, from the Nov 1 quantize run.
+
+**Fixes the merge needed.** A union resolve dropped `);` in `lib/db/schema.ts` (tsc caught it). `tune-room.test.tsx` still asserted the old Where it runs text, which tg-gadget-connect's own run had not caught.
+
+**Blocked: the Preview.** A permission check denied `vercel deploy` for this branch, labeling it a production deploy, and it was not retried. Nothing ran on Vercel and the owner's main database was not touched, so `0031` and `0032` have not run there. Both migrate cleanly on a fresh local PGlite.
+
+**Checked instead, on a local `next dev` (port 3055) with its own PGlite, made-up rows and all flags on. Not a Preview, and not `next build`.** Screenshots are in `docs/log/shots/device-int/`.
+
+- The two tuned models are made-up rows, and their files are made-up rows: no GGUF exists behind them. Pages, the device table and the download rules are what this shows.
+- Export: a Llama tune gets Mac, Windows and Linux scripts and a 409 for Jetson, and an r30b tune the reverse. The scripts were downloaded, not run.
+- Simulated board loop: one POST went to serving in under 20 seconds, through the real workflow runtime. The clip was skipped with its reason, since no tools folder was set. Numbers are canned text, labeled simulated.
+- Try page: two visitors queued 1 and 2, both got canned answers, and another visitor reading a turn got 404.
+- Pairing with `muse-device/sim_board.py` over real TLS: the check number matched on both sides, an open-access visitor got 403, a signed-in made-up account paired, and the target came out as Muse Glimmer, one bit, through `deviceModelTarget`. `ask_board` was not rerun on the merge.
+- GitHub with no OAuth app: start redirects to `?github=off`, the Code page says it isn't set up and keeps Download source, and an export POST gets 503 `not_set_up`.
+- `/offline`, `/private`, `/how-it-works` and the rest answered 200, with no sideways scroll at 1280 and 390.
+
+**What the Preview needs beyond the requested switches:** `HOST_TUNED`, or Try answers 404. `HARDWARE_BOARD_KEY`, a real session, and a board reachable from Vercel for pairing, since `OPEN_ACCESS=admin` visitors are refused on purpose. `BOARD_SIM_URL` and `BOARD_SIM_TOKEN` for the loop, or it fails at the send stage's limit.
+## Nov 1, 2026: device loop branch merged with current main, PR opened
+
+**Merged** origin/main at edccdd26 into tg-device-loop-int. The only conflict was this log, and both sides are kept. `lib/caps/ids.ts`, `docs/PROVE_RESULTS.md` and `docs/SUBMISSION.md` stay as main has them.
+
+**Fix.** `lib/caps/hardware/__tests__/real-server.test.ts` was cancelled on the merge because its auth mock lacked `GUEST_EMAIL`, `isCrossSite` and `requireUser`, which tg-gadget-connect's code imports. Its own run had not rerun this file. The mock now has them, and the test passes against the real `muse-device/server.py`.
+
+**Checks.** tsc is clean on the merge. Story, migrations, flags-off, tune-room and hardware tests: 151 of 153 passed. One cancelled is the file above, which then passed alone. The other is `no-direct-database`, which fails on `scripts/dev/tune-harness.ts`. That file has the same lines on main, and this branch does not change it, so it was left for the cleanup stream.
+
+**Checked.** The Lambda instance list has no machines at all, so no `device-loop-*`. Nothing listens on 3031 or 3055. Spend $0. Not run: next build, the full suite, a Preview.
+
 ## Nov 1: capabilities marked ready, first real data and Muse Code builds on a Preview (branch tg-caps-ready)
 
 - Audit: data, files, connect, jobs, live, media, code, runtime, hardware and games each have routes or an overlay, checks and tests, so CAP_READY is on for all ten. Ready only means the code is finished. Every flag stays off, so production is unchanged. Only data has passed a whole real build, and code has passed its session check in one. The other eight are built and tested with fakes only.
@@ -1792,3 +1986,7 @@ All made-up data. Code: tg-caps-ready fa692f3e, builder snapshot snap_XXT4qDZEWL
 - Blocked: automatic packaging. packageProductStep runs after deploy, so a Preview never reaches it, even with PACKAGER_SNAPSHOT_ID set. Setting it is needed but not enough. It isn't in Preview's project env; snap_VcblDXLuhpigJ8ZeukmR38j2PupJ from the Oct 31 spike exists and is the candidate. Also, requestedTargets came back empty on a Preview with targets sent.
 - Blocked: Composio inside a product. COMPOSIO_API_KEY isn't in the Preview env list.
 - Spend: Meta about $24.13 in total over these builds. GPU and AWS none.
+
+## Nov 1, evening: local production build of PR #30
+
+`npx next build` on tg-device-loop-int finished with exit 0, run on the laptop with no DATABASE_URL, so no migration ran. This shows the merged branch compiles and bundles. It does not cover Vercel, the main database or the migrations, because the Preview deploy is still denied. The full test suite was not run on this branch. Spend: $0.

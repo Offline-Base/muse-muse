@@ -17,7 +17,14 @@ export const boardToolsUsable = (): boolean => boardToolsOn() && gadgetOwnerChec
  * check there's no verified owner on a linked board, so they stay off for builds as well. Fails closed.
  */
 export const driveToolsUsable = (): boolean => on("DRIVE_EXPORT_PRODUCTS") && gadgetOwnerCheckOn();
-/** HARDWARE_BOARD_REGISTRY: /api/boards, linking a board to a product, and the board list on /gadgets and /device. */
-export const boardRegistryOn = (): boolean => on("HARDWARE_BOARD_REGISTRY");
+/**
+ * GADGET_CONNECT (docs/GADGETS.md): a signed-in person pairs their own board, its products run the model on it, and a simulated
+ * board takes confirmed robot actions. Needs the owner check to reach anything, and HARDWARE_BOARD_KEY to save a board.
+ */
+export const gadgetConnectOn = (): boolean => on("GADGET_CONNECT");
+/** What a product may be built with and served: pairing means nothing unless the gateway checks who owns the board. Fails closed. */
+export const gadgetConnectUsable = (): boolean => gadgetConnectOn() && gadgetOwnerCheckOn() && boardToolsOn();
+/** HARDWARE_BOARD_REGISTRY: /api/boards, linking a board to a product, and the board list on /gadgets and /device. GADGET_CONNECT needs them too. */
+export const boardRegistryOn = (): boolean => on("HARDWARE_BOARD_REGISTRY") || gadgetConnectOn();
 /** HARDWARE_GADGET_OWNER_CHECK: a live token reaches only the board its product's owner linked. */
 export const gadgetOwnerCheckOn = (): boolean => on("HARDWARE_GADGET_OWNER_CHECK");

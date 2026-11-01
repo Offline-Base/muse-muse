@@ -296,7 +296,7 @@ Runtime, GPU, drive and hardware:
 23. Decision 11: the license reading and when windows open. The Nov 3 filming window is about $1.50 for 30 minutes. A window and a
     training run block each other (TRAIN_MAX_ACTIVE 1).
 24. Drive: deploying to jetson-02 (Hussam or a fleet job), the $3.70 quantize run, uploading the 120 MB kit, the session cookie in the
-    owner's script, drives given to other people, board exports carrying Qwen's license, and plugging in a real stick.
+    owner's script, drives given to other people, board exports carrying the Llama license, and plugging in a real stick.
 25. Hardware: HARDWARE_BOARD_KEY before the registry, the owner check on before DEVICE_MCP_URL reaches production, Hussam deploying
     muse-device 0.5.0. Once the check is on, every live gadget product needs a link.
 26. Muse Code: a third try if both of a build's real tasks fail, and rewording "deleted after 15 minutes", since the zip and steps

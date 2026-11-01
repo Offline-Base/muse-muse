@@ -7,7 +7,9 @@ import { EmptyCard, ExternalLink, PageHeader } from "@/components/ui";
 import type { HelloExample } from "@/components/vibe/AppGuide";
 import { hubRepoUrl, isRepoId, toPageFiles } from "@/components/vibe/apps";
 import { LocalGuide } from "@/components/vibe/LocalGuide";
+import { licenseDuties } from "@/lib/train/base";
 import type { LocalFiles } from "@/lib/train/local-files";
+import { quantBaseOf } from "@/lib/train/quant-targets";
 import { GLIMMER_ORIGIN, HUB_SITE } from "@/lib/train/hub-cards";
 import { buildMinimum, buildsText, gbText, minimumSpec, needGb, type MinimumSpec } from "@/lib/vibe/device";
 
@@ -130,6 +132,10 @@ export function RunLocally({ jobId, title, files, showPrivate, hello, live, driv
   const usable = usableFiles(files, showPrivate);
   const min = usable ? minimumSpec(usable.files) : null;
   const notPublic = Boolean(files && files.repo && files.files.length && !files.public);
+  // A small base's files (QUANT_TARGETS) aren't Muse Glimmer, and its license and policy are Llama's.
+  const small = quantBaseOf({ quantBase: files?.quantBase ?? undefined });
+  const duties = small ? licenseDuties({ adapterBase: small.model }) : null;
+  const modelWords = small ? `the tuned ${small.label}` : `the tuned Muse Glimmer 30B${files?.sparkOpen ? " with 2026 knowledge" : ""}`;
 
   return (
     <div className="page vibe-run">
@@ -137,8 +143,8 @@ export function RunLocally({ jobId, title, files, showPrivate, hello, live, driv
         title="Run it on your computer"
         subtitle={
           usable && min
-            ? `${title}, the tuned Muse Glimmer 30B${files?.sparkOpen ? " with 2026 knowledge" : ""}, in ${buildsText(usable.files)}. It needs ${needsAtLeast(min)}.`
-            : `${title}, the tuned Muse Glimmer 30B${files?.sparkOpen ? " with 2026 knowledge" : ""}.`
+            ? `${title}, ${modelWords}, in ${buildsText(usable.files)}. It needs ${needsAtLeast(min)}.`
+            : `${title}, ${modelWords}.`
         }
         actions={
           <Link className="btn btn-outline" href={modelHref}>
@@ -157,16 +163,22 @@ export function RunLocally({ jobId, title, files, showPrivate, hello, live, driv
             <Icon name="monitor" size={16} />
             <span>
               It runs on a Mac with Apple silicon and {min.macGb} GB or more, or on a PC with a {min.vramGb} GB graphics
-              card{min.ramGb ? `, or slowly with ${min.ramGb} GB of RAM` : ""}. Phones, tablets and Chromebooks can&apos;t run it.
+              card{min.ramGb ? `, or slowly with ${min.ramGb} GB of RAM` : ""}. {small ? "It hasn't been run on a phone or tablet yet." : "Phones, tablets and Chromebooks can't run it."}
             </span>
           </p>
         ) : null}
         <p>
           <Icon name="info" size={16} />
-          <span>
-            Meta&apos;s Usage Policy says Muse Glimmer 30B &quot;is not intended for individuals under the age of 18&quot;.{" "}
-            <ExternalLink href={USAGE_POLICY_URL}>The Usage Policy</ExternalLink>
-          </span>
+          {duties ? (
+            <span>
+              <strong>{duties.line}.</strong> {duties.license} Its repo carries both.
+            </span>
+          ) : (
+            <span>
+              Meta&apos;s Usage Policy says Muse Glimmer 30B &quot;is not intended for individuals under the age of 18&quot;.{" "}
+              <ExternalLink href={USAGE_POLICY_URL}>The Usage Policy</ExternalLink>
+            </span>
+          )}
         </p>
       </div>
 

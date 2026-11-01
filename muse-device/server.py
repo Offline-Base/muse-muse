@@ -9,6 +9,11 @@ It speaks MCP over streamable HTTP at POST /mcp and requires a bearer token.
 The token is read from ~/.muse-device/token, created on first start with mode 600.
 It binds to loopback by default. Reach it through an SSH forward or a tunnel, not an open port.
 
+To pair it with someone's own Muse Muse account, start it with --tls, which makes a self-signed certificate on first start, then
+run "server.py pair" on the board. It prints a one-time code and a check number, and the person types the code into Muse Muse and
+compares the number. Each pairing gets its own token, and only its hash stays here. /v1/models and /v1/chat/completions pass a
+paired site's calls to the model start_model has running.
+
 The drive tools need setup-drive.sh to have run once and drive.py beside this file. An export runs as drive.py's own process, as a
 training run does, and keeps its state in ~/drive-export/<export>/.
 
@@ -33,6 +38,7 @@ import secrets
 import shutil
 import signal
 import socket
+import ssl
 import subprocess
 import tempfile
 import threading
@@ -50,7 +56,7 @@ except ImportError:
     # Copied without drive.py: every other tool answers as before, and the drive tools aren't offered.
     drive = None
 
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26"]
 MAX_BODY_BYTES = 1024 * 1024
 MAX_OUTPUT_BYTES = 64 * 1024
@@ -59,6 +65,18 @@ MODEL_DIR = os.path.expanduser("~/models")
 MODEL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\.gguf")
 # A GGUF's quantization as llama.cpp names it at the end of a file: Q4_K_M, Q8_0, IQ1_S, F16, BF16, F32.
 QUANT_LEVEL = re.compile(r"(I?Q[0-9][A-Za-z0-9_]{0,12}|F16|BF16|F32)")
+# Pairing (docs/GADGETS.md). The code's alphabet leaves out 0, O, 1 and I, so it can be read off a screen.
+PAIR_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+PAIR_CODE_CHARS = 8
+PAIR_VALID_S = 600
+PAIR_MAX_TRIES = 5
+PAIR_MAX_TOKENS = 8
+STATE_DIR = os.path.expanduser("~/.muse-device")
+PAIR_FILE = os.path.join(STATE_DIR, "pairing.json")
+PAIRED_TOKENS_FILE = os.path.join(STATE_DIR, "paired-tokens.json")
+TLS_CERT_FILE = os.path.join(STATE_DIR, "tls-cert.pem")
+TLS_KEY_FILE = os.path.join(STATE_DIR, "tls-key.pem")
+TLS_DAYS = 3650
 # On loopback only, like this server. The fleet's own model service uses its own port and is left alone.
 MODEL_PORT = 8766
 MODEL_START_TIMEOUT_S = 120
@@ -88,7 +106,9 @@ BASE_DIR = os.path.join(TRAIN_DIR, "models")
 DATASET_DIR = os.path.join(TRAIN_DIR, "datasets")
 RUN_DIR = os.path.join(TRAIN_DIR, "runs")
 TRAIN_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
-DEFAULT_BASE = "Qwen3.5-0.8B"
+DEFAULT_BASE = "Llama-3.2-1B-Instruct"
+# Meta models only: a board trains small Llama 3 text models, and nothing else.
+BOARD_BASE_NAME = re.compile(r"Llama-3\.[123]-[A-Za-z0-9._-]+")
 # What setup-train.sh's LLAMA_CPP_TAG puts in ~/train/llama.cpp, which turns a run's adapter into its GGUF. A drive names it.
 CONVERTER_NAME = "llama.cpp b11970 convert_lora_to_gguf.py, f32"
 ACTIVE_STATES = ("loading", "training", "converting")
@@ -480,7 +500,7 @@ def download_model(url, name):
         if os.path.exists(part):
             os.remove(part)
     remember_source(path, url, digest.hexdigest())
-    return text_result(json.dumps({"installed": name, "gib": round(os.path.getsize(path) / 2**30, 3)}))
+    return text_result(json.dumps({"installed": name, "gib": round(os.path.getsize(path) / 2**30, 3), "sha256": digest.hexdigest()}))
 
 
 def remember_source(path, url, sha256):
@@ -740,6 +760,8 @@ def train_model(args):
     name = name_arg(args, "name")
     dataset = name_arg(args, "dataset")
     base = name_arg(args, "base", DEFAULT_BASE)
+    if not BOARD_BASE_NAME.fullmatch(base):
+        raise ToolError(f"A board trains only small Meta models, such as {DEFAULT_BASE}, not {base}.")
     steps = int_arg(args, "steps", 60, 1, 5000)
     rank = int_arg(args, "rank", 8, 1, 64)
     max_length = int_arg(args, "max_length", 512, 64, 4096)
@@ -1234,9 +1256,85 @@ def handle_rpc(method, params):
     raise NotImplementedError(method)
 
 
+def certificate_spki_sha256(cert_path):
+    """The SHA-256 of a certificate's public key, which is what a paired site pins. lib/caps/hardware/pinned.ts computes the same."""
+    public = subprocess.run(["openssl", "x509", "-in", cert_path, "-pubkey", "-noout"], capture_output=True, check=True, timeout=15).stdout
+    der = subprocess.run(["openssl", "pkey", "-pubin", "-outform", "DER"], input=public, capture_output=True, check=True, timeout=15).stdout
+    return hashlib.sha256(der).hexdigest()
+
+
+def pair_check_number(spki):
+    """Six digits both screens show. If they differ, someone is in the middle. lib/caps/hardware/pinned.ts computes the same."""
+    return f"{int(hashlib.sha256(f'muse-pair-check:{spki}'.encode()).hexdigest()[:12], 16) % 1000000:06d}"
+
+
+def ensure_certificate():
+    """Makes this board's self-signed certificate once. Its key stays mode 600 and never leaves the board."""
+    os.makedirs(STATE_DIR, mode=0o700, exist_ok=True)
+    if not (os.path.exists(TLS_CERT_FILE) and os.path.exists(TLS_KEY_FILE)):
+        old = os.umask(0o077)
+        try:
+            subprocess.run(["openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes", "-keyout", TLS_KEY_FILE,
+                            "-out", TLS_CERT_FILE, "-days", str(TLS_DAYS), "-subj", "/CN=muse-device"], capture_output=True, check=True, timeout=30)
+        finally:
+            os.umask(old)
+    return TLS_CERT_FILE, TLS_KEY_FILE
+
+
+def write_private_json(path, value):
+    os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+    fd, part = tempfile.mkstemp(dir=os.path.dirname(path))
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(value, f)
+        os.replace(part, path)
+    finally:
+        if os.path.exists(part):
+            os.remove(part)
+
+
+pair_lock = threading.Lock()
+
+
+def start_pairing():
+    """A new one-time code, replacing any earlier one. Only its hash is kept. Returns the code."""
+    code = "".join(secrets.choice(PAIR_ALPHABET) for _ in range(PAIR_CODE_CHARS))
+    write_private_json(PAIR_FILE, {"hash": hashlib.sha256(code.encode()).hexdigest(), "expires": time.time() + PAIR_VALID_S, "tries": 0})
+    return code
+
+
+def redeem_pair_code(code):
+    """A new token for the right code, or None. A wrong code counts, the fifth burns it, and a used one is gone."""
+    with pair_lock:
+        state = read_json(PAIR_FILE)
+        if not state or time.time() > state.get("expires", 0) or state.get("tries", 0) >= PAIR_MAX_TRIES:
+            return None
+        if not isinstance(code, str) or not hmac.compare_digest(hashlib.sha256(code.encode()).hexdigest(), state.get("hash", "")):
+            state["tries"] = state.get("tries", 0) + 1
+            write_private_json(PAIR_FILE, state)
+            return None
+        os.remove(PAIR_FILE)
+        token = secrets.token_urlsafe(32)
+        hashes = (read_json(PAIRED_TOKENS_FILE) or [])[-(PAIR_MAX_TOKENS - 1):]
+        write_private_json(PAIRED_TOKENS_FILE, hashes + [hashlib.sha256(token.encode()).hexdigest()])
+        return token
+
+
+def paired_token_ok(token):
+    digest = hashlib.sha256(token.encode()).hexdigest()
+    return any(hmac.compare_digest(digest, known) for known in read_json(PAIRED_TOKENS_FILE) or [])
+
+
+def unpair_token(token):
+    digest = hashlib.sha256(token.encode()).hexdigest()
+    with pair_lock:
+        write_private_json(PAIRED_TOKENS_FILE, [known for known in read_json(PAIRED_TOKENS_FILE) or [] if known != digest])
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = f"muse-device/{VERSION}"
     token = ""
+    pairing = False
     # For each read and write on the connection, so a tool that takes minutes isn't cut off by it.
     timeout = REQUEST_TIMEOUT_S
 
@@ -1257,9 +1355,76 @@ class Handler(BaseHTTPRequestHandler):
 
     def authorized(self):
         sent = self.headers.get("Authorization", "")
-        return bool(self.token) and hmac.compare_digest(sent.encode(), f"Bearer {self.token}".encode())
+        if bool(self.token) and hmac.compare_digest(sent.encode(), f"Bearer {self.token}".encode()):
+            return True
+        return self.pairing and sent.startswith("Bearer ") and paired_token_ok(sent[len("Bearer "):])
+
+    def read_small_json(self):
+        """The body as a JSON object, or None after refusing it."""
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = 0
+        if not 0 < length <= MAX_BODY_BYTES:
+            self.reply(413, {"error": "body is empty or too large"})
+            return None
+        try:
+            body = json.loads(self.rfile.read(length))
+        except ValueError:
+            body = None
+        if not isinstance(body, dict):
+            self.reply(400, {"error": "expected a JSON object"})
+            return None
+        return body
+
+    def pass_to_model(self, method, body=None):
+        """Hands a paired site's call to the model start_model has running, on loopback. Logs no bodies: log_message has only the status."""
+        request = urllib.request.Request(f"http://127.0.0.1:{MODEL_PORT}{self.path}", data=body, method=method, headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(request, timeout=MODEL_ANSWER_TIMEOUT_S) as res:
+                data = res.read(MAX_BODY_BYTES)
+                status = res.status
+        except urllib.error.HTTPError as err:
+            data, status = err.read(MAX_BODY_BYTES), err.code
+        except OSError:
+            return self.reply(503, {"error": "no_model_running"})
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def route_paired(self, method):
+        """/pair, /unpair and /v1/*, once pairing is on. True when it answered."""
+        if not self.pairing or self.path not in ("/pair", "/unpair", "/v1/models", "/v1/chat/completions"):
+            return False
+        if self.headers.get("Origin"):
+            self.reply(403, {"error": "browser requests are refused"})
+            return True
+        if self.path == "/pair" and method == "POST":
+            body = self.read_small_json()
+            if body is not None:
+                token = redeem_pair_code(body.get("code"))
+                self.reply(200, {"token": token}) if token else self.reply(401, {"error": "wrong_or_expired_code"})
+            return True
+        if not self.authorized():
+            self.reply(401, {"error": "unauthorized"})
+        elif self.path == "/unpair" and method == "POST":
+            unpair_token(self.headers.get("Authorization", "")[len("Bearer "):])
+            self.reply(200, {"ok": True})
+        elif self.path == "/v1/models" and method == "GET":
+            self.pass_to_model("GET")
+        elif self.path == "/v1/chat/completions" and method == "POST":
+            body = self.read_small_json()
+            if body is not None:
+                self.pass_to_model("POST", json.dumps(body).encode())
+        else:
+            self.reply(405, {"error": "method not allowed"})
+        return True
 
     def do_GET(self):
+        if self.route_paired("GET"):
+            return
         # This server sends nothing unprompted, so it offers no event stream.
         self.send_response(405)
         self.send_header("Allow", "POST")
@@ -1269,6 +1434,8 @@ class Handler(BaseHTTPRequestHandler):
     do_DELETE = do_GET
 
     def do_POST(self):
+        if self.route_paired("POST"):
+            return
         if self.path != "/mcp":
             return self.reply(404, {"error": "not found"})
         # Browsers send Origin and server-to-server clients don't, so a web page can't reach this through a tunnel or forward.
@@ -1340,17 +1507,42 @@ def load_token():
     return token
 
 
+def serve(host, port, use_tls):
+    """Serves until stopped. With TLS, this board's own certificate, and pairing is on."""
+    Handler.token = load_token()
+    Handler.pairing = use_tls
+    server = BoardServer((host, port), Handler)
+    if use_tls:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(*ensure_certificate())
+        server.socket = context.wrap_socket(server.socket, server_side=True, do_handshake_on_connect=False)
+    print(f"muse-device {VERSION} on {host}:{port}{' with TLS' if use_tls else ''}, tools: {', '.join(TOOLS)}", flush=True)
+    server.serve_forever()
+
+
+def print_pairing_code():
+    code = start_pairing()
+    cert, _key = ensure_certificate()
+    print(f"Pairing code: {code}\nCheck number: {pair_check_number(certificate_spki_sha256(cert))}\n"
+          f"Type the code into Muse Muse within {PAIR_VALID_S // 60} minutes, and check that it shows the same check number.", flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("command", nargs="?", choices=["pair"], help="pair: print a one-time pairing code")
+    parser.add_argument("--tls", action="store_true", help="serve https with this board's own certificate, and turn pairing on")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--allow-exec", action="store_true", help="also offer run_command, which runs any shell command")
     options = parser.parse_args()
+    if options.command == "pair":
+        return print_pairing_code()
+    # A paired site's token opens every tool here, and it should never open a shell.
+    if options.tls and options.allow_exec:
+        raise SystemExit("--allow-exec and --tls don't go together: a paired site could then run any command on this board.")
     if options.allow_exec:
         TOOLS["run_command"] = EXEC_TOOL
-    Handler.token = load_token()
-    print(f"muse-device {VERSION} on {options.host}:{options.port}, tools: {', '.join(TOOLS)}", flush=True)
-    BoardServer((options.host, options.port), Handler).serve_forever()
+    serve(options.host, options.port, options.tls)
 
 
 if __name__ == "__main__":

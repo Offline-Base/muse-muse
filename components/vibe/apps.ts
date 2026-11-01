@@ -1,5 +1,6 @@
-import { ggufModelfile, ggufOllamaName } from "@/lib/train/hub-cards";
+import { ggufModelfile, ggufOllamaName, ggufStops } from "@/lib/train/hub-cards";
 import type { LocalFile, LocalFiles, QuantLevel } from "@/lib/train/local-files";
+import { quantBaseOfFileName } from "@/lib/train/quant-targets";
 import type { DiagnosticsOs } from "@/lib/vibe/troubleshoot";
 
 /**
@@ -154,11 +155,17 @@ export function ollamaName(slug: string): string {
  * The Modelfile for the build being set up, the GGUF card's own (ggufModelfile in lib/train/hub-cards.ts): Ollama's
  * Glimmer renderer and parser for a model trained with trainChannel, or for one trained before it the TEMPLATE that
  * opens the final channel and its stops; the system message exactly, temperature 0 and an 8K context. Its first line is
- * the file this page downloads, whichever build that is. None for a name the Hub wouldn't allow, or a system message
- * that would end Ollama's quotes.
+ * the file this page downloads, whichever build that is. A small base's file (QUANT_TARGETS) gets no Glimmer renderer:
+ * Ollama reads the template in the file, with that base's stops. None for a name the Hub wouldn't allow, or a system
+ * message that would end Ollama's quotes.
  */
 export function modelfile(file: LocalFile, systemLine: string, needsTunedTemplate: boolean): string | null {
   if (!isGgufName(file.name) || systemLine.includes('"""')) return null;
+  const small = quantBaseOfFileName(file.name);
+  if (small) {
+    const stops = ggufStops(1, { quantBase: small.name });
+    return [`FROM ./${file.name}`, `SYSTEM """${systemLine}"""`, "PARAMETER temperature 0", "PARAMETER num_ctx 8192", ...stops.map((stop) => `PARAMETER stop ${stop}`)].join("\n");
+  }
   return ggufModelfile(file.name, systemLine, needsTunedTemplate ? 0 : 1);
 }
 

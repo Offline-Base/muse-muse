@@ -3040,7 +3040,7 @@ jsonb (filled by a probe that really calls the model and records JSON-schema sup
 `allow_plain_http` boolean default false, `health` jsonb (last status, failures, median latency), `created_at`,
 `last_seen_at`, `revoked_at`. `product_boards`: `product_id` primary, `board_id` (references `devices`), `visitors` boolean
 default false, `created_at`. Unit 13 uses `kind = muse_device` rows. Pairing (8-character one-time code plus a 6-digit check
-number on both screens, then SPKI pinning) is offline's and lands after Nov 4; until then, admins register boards by URL
+number on both screens, then SPKI pinning) was offline's for after Nov 4, and came forward on Nov 1 behind GADGET_CONNECT (docs/GADGETS.md); until then, admins register boards by URL
 and token as below, and offline's branch keeps a copy of the same shape so the two don't drift.
 
 **Routes.**
@@ -3409,8 +3409,8 @@ Build to these defaults. Only the items marked **owner** wait for the owner, and
 15. The live check makes no model call: it loads the page and a health route. It costs $0.
 16. Board registry: admins only for now.
 17. Extra read-only Composio tools: owners only until zero data retention is settled.
-18. Drive export: board exports of Qwen fine-tunes are allowed (the owner asked for "fine tuned on the jetson") and carry
-    Qwen's license, labeled clearly. The stage 2 Glimmer GGUF may go only onto the owner's own stick. **Owner:** the deploy to
+18. Drive export: board exports of Llama 3.2 1B fine-tunes are allowed (the owner asked for "fine tuned on the jetson", and on
+    Nov 1 for Meta models only) and carry the Llama 3.2 license, labeled clearly. The stage 2 Glimmer GGUF may go only onto the owner's own stick. **Owner:** the deploy to
     a board (Hussam, or a fleet job they approve), the $3.70 quantize run (asked when the code is ready), and drives given
     to other people.
 

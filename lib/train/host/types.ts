@@ -65,6 +65,10 @@ export interface HostChatInput {
   maxTokens?: number;
   stop: string[];
   signal?: AbortSignal;
+  /** "base": the same GPU answers without the adapter, for a side-by-side try. Left out, the tuned model answers. */
+  variant?: "tuned" | "base";
+  /** What vLLM on Modal calls the base: the repo it was started with. Read from the job on the server, never from a request. */
+  baseRepo?: string | null;
 }
 
 export type HostChatReply = Omit<GlimmerChatReply, "ms">;
@@ -79,7 +83,8 @@ export interface HostDeployInput {
   minutes: number;
   /** A provider with its own job limits: what was reserved. */
   capUsd?: number;
-  callerId: string;
+  /** Null for a visitor's wake on the public Try box (lib/train/host/try.ts), which has no account. */
+  callerId: string | null;
 }
 
 /** One provider. Each stays small: everything about limits and money lives in service.ts. */

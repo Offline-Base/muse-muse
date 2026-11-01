@@ -56,7 +56,7 @@ const database = (client: PGlite) => drizzle({ client, schema });
  */
 const WAVE3_TAGS = ["0018_trust", "0019_engine", "0020_data", "0021_files", "0022_connect", "0023_jobs", "0024_code", "0025_gpu", "0026_hardware", "0027_code_sessions", "0028_versions"];
 /** After wave 3: made by drizzle-kit on its own clock, so their times only have to go up, which a test below checks. */
-const AFTER_WAVE3_TAGS = ["0029_tune_research", "0030_host_tuned"];
+const AFTER_WAVE3_TAGS = ["0029_tune_research", "0030_host_tuned", "0031_board_loop", "0032_connected_accounts"];
 /**
  * 0028 is the one migration not in drizzle-kit's order: it adds products.source_public last, where drizzle-kit puts it
  * before the foreign keys. Nothing in the file depends on that column, so the order changes nothing, and databases have

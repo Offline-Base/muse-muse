@@ -357,14 +357,14 @@ describe("the fine-tune room", { skip: canMock ? false : "needs --experimental-t
     it("says Muse Glimmer 30B doesn't fit an 8 GB Jetson, and that the board trains a small model that isn't Glimmer", () => {
       const html = where();
       assert.match(html, /<strong>Not on a Jetson Orin Nano\.<\/strong> Muse Glimmer 30B needs more memory than the board&#x27;s 8 GB\./);
-      assert.match(html, /<strong>Train a small model on your board instead:<\/strong> a small open model \(Qwen3\.5 0\.8B\) on the same\s+examples, on the board&#x27;s GPU\. It isn&#x27;t Muse Glimmer\./);
+      assert.match(html, /<strong>Train a small model on your board instead:<\/strong> Llama 3\.2 1B, Meta&#x27;s small model, on the same\s+examples, on the board&#x27;s GPU\. It isn&#x27;t Muse Glimmer, and this hasn&#x27;t been measured on a board yet\./);
       assert.match(html, /<strong>On a computer with 24 GB of memory or more,<\/strong> from its local files \(GGUF, for LM Studio, llama\.cpp\s+and Ollama\)\./);
       assert.match(html, /<strong>Here, in its live demo\.<\/strong> One GPU serves it for a set time, 30 minutes unless\s+you pick another\./);
       assert.equal(html.includes(EM_DASH), false);
     });
 
     it("links the board for admins only", () => {
-      assert.match(where(), /It isn&#x27;t Muse Glimmer\. <a href="\/device">Open the board<\/a>/);
+      assert.match(where(), /this hasn&#x27;t been measured on a board yet\. <a href="\/device">Open the board<\/a>/);
       assert.doesNotMatch(where({ admin: false }), /\/device/);
     });
 

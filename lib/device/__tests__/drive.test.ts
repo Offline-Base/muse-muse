@@ -21,8 +21,8 @@ const text = (value: unknown, isError = false): DeviceToolResult => ({ content: 
 const SOURCE = {
   run: "support-coach",
   adapter: { name: "support-coach.gguf", bytes: 21_000_000, sha256: "a".repeat(64) },
-  bases: [{ name: "Qwen3.5-0.8B-Q4_K_M.gguf", level: "Q4_K_M", bytes: 532_000_000, sha256: "b".repeat(64), source: null }],
-  config: { base: "Qwen3.5-0.8B", dataset: "support-coach", steps: 60, rank: 8, lr: 0.0002, max_length: 512 },
+  bases: [{ name: "Llama-3.2-1B-Instruct-Q4_K_M.gguf", level: "Q4_K_M", bytes: 532_000_000, sha256: "b".repeat(64), source: null }],
+  config: { base: "Llama-3.2-1B-Instruct", dataset: "support-coach", steps: 60, rank: 8, lr: 0.0002, max_length: 512 },
   status: { examples: 49, skipped: 0, loss: 0.41, seconds: 812, peak_gpu_gib: 1.91 },
   base_revision: null,
   system: null,
@@ -128,7 +128,7 @@ describe("drive export, from the platform's side", () => {
     const kit = (await loadKit())!;
     await assert.rejects(
       buildExport({ kind: "board", run: "x" }, await deps({ ...kit, baseUrl: "https://kit.test/drive-kit/" }, { ...SOURCE, config: { ...SOURCE.config, base: "Llama-9B" } })),
-      (err: unknown) => err instanceof ExportSourceMissing && /only has licenses for Qwen3\.5-0\.8B/.test(err.message),
+      (err: unknown) => err instanceof ExportSourceMissing && /only has licenses for Llama-3\.2-1B-Instruct/.test(err.message),
     );
   });
 

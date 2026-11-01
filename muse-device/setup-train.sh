@@ -1,6 +1,7 @@
 #!/bin/bash
-# Sets up on-device training (train.py): PyTorch with CUDA 13 in ~/train/venv and one small model in ~/train/models.
-# About 4.8 GB for the venv and 1.6 GB for the model. Tested on a Jetson Orin Nano on JetPack 7, where PyTorch's ordinary
+# Sets up on-device training (train.py): PyTorch with CUDA 13 in ~/train/venv and Llama 3.2 1B in ~/train/models. Training this
+# model on a Jetson hasn't been measured: PyTorch's setup was tested on an Orin Nano with an earlier model, and this one is larger.
+# About 4.8 GB for the venv and 2.5 GB for the model. Tested on a Jetson Orin Nano on JetPack 7, where PyTorch's ordinary
 # arm64 CUDA build sees the GPU. Also llama.cpp's converter scripts in ~/train/llama.cpp, a few MB, to turn adapters into GGUFs.
 # It doesn't install a GGUF of the model, which start_model needs under a trained adapter: train_model refuses until there is one.
 #
@@ -10,15 +11,15 @@ set -euo pipefail
 UV_VERSION=0.13.1
 UV_SHA256=9041c73c99fdc5892cf128140beb354eca9231d502068cc36e6cb53a8e59ad14
 # The venv and the model, plus uv's cache while it installs them.
-NEEDED_GIB=7
-# Every package, pinned with its hashes: transformers reads this model through its own qwen3_5 classes, and peft follows it.
+NEEDED_GIB=8
+# Every package, pinned with its hashes: transformers reads this model through its own Llama classes, and peft follows it.
 LOCK="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/requirements-train.lock"
 if [ ! -f "$LOCK" ]; then
   echo "Copy requirements-train.lock to this board, beside this script." >&2
   exit 1
 fi
-MODEL=unsloth/Qwen3.5-0.8B
-MODEL_REVISION=23c69c53358a07516b5827588b3fdb12ae78fd65
+MODEL=unsloth/Llama-3.2-1B-Instruct
+MODEL_REVISION=5a8abab4a5d6f164389b1079fb721cfab8d7126c
 LLAMA_CPP_TAG=b11970
 LLAMA_CPP_SHA256=d9062cf018a783af728bcaf404a9d384629558d6e8208b004f5be294413028d8
 

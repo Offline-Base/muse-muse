@@ -7214,3 +7214,20 @@ div.md.md-plain {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+
+/* The board loop (docs/BOARD_LOOP.md) */
+.board-loop { display: flex; flex-direction: column; gap: 16px; }
+.board-banner { margin: 0; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; }
+.board-banner-sim { background: color-mix(in srgb, #d97706 14%, var(--surface)); border-color: color-mix(in srgb, #d97706 45%, var(--surface)); }
+.board-stages { list-style: none; margin: 0 0 12px; padding: 0; }
+.board-stages li { display: grid; grid-template-columns: minmax(0, 1fr) auto 90px; gap: 4px 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--panel-line); }
+.board-stage-name { font-weight: 600; }
+.board-stage-cost { text-align: right; color: var(--muted); font-size: 14px; }
+.board-stage-detail { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
+.board-total, .board-limits { color: var(--muted); font-size: 14px; }
+.board-notice { margin: 0; }
+.board-table-wrap { overflow-x: auto; }
+.board-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.board-table th, .board-table td { padding: 8px; text-align: left; vertical-align: top; border-top: 1px solid var(--panel-line); }
+.board-video { width: 100%; border-radius: 10px; background: #000; }
+.board-loop textarea { width: 100%; margin: 6px 0; }

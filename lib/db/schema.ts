@@ -1313,6 +1313,8 @@ export interface DeviceHealth {
   failures: number;
   checkedAt: string;
   latencyMs?: number;
+  /** GADGET_CONNECT: the hard stop is on. Only the owner clears it. */
+  stopped?: boolean;
 }
 
 /**
@@ -1406,4 +1408,119 @@ export const hostedEndpoints = pgTable(
     index("hosted_endpoints_created_idx").on(t.createdAt),
     index("hosted_endpoints_owner_token_idx").on(t.ownerTokenHash),
   ],
+);
+
+/**
+ * One run of the board loop (docs/BOARD_LOOP.md, BOARD_LOOP): a judged model going to one board, stage by stage. `stages` and
+ * `data` are the plain shapes in lib/board-loop/logic.ts, and hold no address or token. One loop at a time per kind of
+ * board, since a board holds one model: the partial unique index holds that under a race.
+ */
+export const boardLoops = pgTable(
+  "board_loops",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    adapterJobId: uuid("adapter_job_id")
+      .notNull()
+      .references(() => trainingJobs.id),
+    target: text("target").$type<import("@/lib/board-loop/driver").BoardKind>().notNull(),
+    status: text("status").$type<import("@/lib/board-loop/logic").LoopStatus>().notNull().default("running"),
+    stages: jsonb("stages").$type<import("@/lib/board-loop/logic").LoopStages>().notNull(),
+    data: jsonb("data").$type<import("@/lib/board-loop/logic").LoopData>().notNull(),
+    tryOpen: boolean("try_open").notNull().default(false),
+    stopRequested: boolean("stop_requested").notNull().default(false),
+    workflowRunId: text("workflow_run_id"),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("board_loops_one_active").on(t.target).where(sql`${t.status} in ('running', 'serving')`),
+    index("board_loops_adapter_idx").on(t.adapterJobId, t.createdAt),
+  ],
+);
+
+/**
+ * A visitor's turn on a loop's try page (lib/board-loop/try.ts). `visitor` is the SHA-256 of a random cookie, never the cookie.
+ * The prompt goes once the turn ends. One turn running per loop and one open per visitor, both held by partial unique indexes.
+ */
+export const boardTryTurns = pgTable(
+  "board_try_turns",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    loopId: uuid("loop_id")
+      .notNull()
+      .references(() => boardLoops.id, { onDelete: "cascade" }),
+    visitor: text("visitor").notNull(),
+    status: text("status").$type<"queued" | "running" | "done" | "failed" | "expired">().notNull().default("queued"),
+    prompt: text("prompt"),
+    answer: text("answer"),
+    tokens: integer("tokens"),
+    tokensPerSecond: real("tokens_per_second"),
+    ms: integer("ms"),
+    error: text("error"),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("board_try_one_running").on(t.loopId).where(sql`${t.status} = 'running'`),
+    uniqueIndex("board_try_one_open").on(t.loopId, t.visitor).where(sql`${t.status} in ('queued', 'running')`),
+    index("board_try_queue_idx").on(t.loopId, t.status, t.createdAt),
+  ],
+);
+
+// ---------- 0032_connected_accounts (docs/GITHUB_EXPORT.md) ----------
+
+/**
+ * Accounts people connect from outside (GitHub now, Hugging Face later), keyed by provider. `owner_kind` is "user", with the
+ * user's id, or "browser", with the hash of a guest's per-browser cookie, since guests all share one user row. The token is
+ * sealed with CONNECTED_ACCOUNTS_KEY and its bytes are wiped when `revoked_at` is set.
+ */
+export const connectedAccounts = pgTable(
+  "connected_accounts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    provider: text("provider").$type<"github">().notNull(),
+    ownerKind: text("owner_kind").$type<"user" | "browser">().notNull(),
+    ownerKey: text("owner_key").notNull(),
+    externalId: text("external_id").notNull(),
+    externalLogin: text("external_login").notNull(),
+    scopes: text("scopes").notNull().default(""),
+    ciphertext: bytea("ciphertext").notNull(),
+    iv: bytea("iv").notNull(),
+    tag: bytea("tag").notNull(),
+    keyVersion: integer("key_version").notNull(),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [uniqueIndex("connected_accounts_active_idx").on(t.provider, t.ownerKind, t.ownerKey).where(sql`${t.revokedAt} is null`)],
+);
+
+/**
+ * The outside repo one owner exported a product to. A push only ever goes to a repo named here, which this platform made,
+ * so a connection can't be used to write to anything else the account can reach. `last_commit_sha` is null until the first
+ * push lands.
+ */
+export const codeExports = pgTable(
+  "code_exports",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    provider: text("provider").$type<"github">().notNull(),
+    ownerKind: text("owner_kind").$type<"user" | "browser">().notNull(),
+    ownerKey: text("owner_key").notNull(),
+    externalId: text("external_id").notNull(),
+    repoFullName: text("repo_full_name").notNull(),
+    branch: text("branch").notNull(),
+    isPrivate: boolean("is_private").notNull(),
+    lastCommitSha: text("last_commit_sha"),
+    lastVersionNumber: integer("last_version_number"),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("code_exports_owner_idx").on(t.productId, t.provider, t.ownerKind, t.ownerKey)],
 );

@@ -2,7 +2,7 @@
  * The drive kit (docs/DRIVE_EXPORT.md, "The drive plan"): the files every drive of an image version shares, whatever the
  * model. That is llama.cpp's server and the libraries it loads for macOS arm64, Windows Vulkan and Windows CPU, each with
  * llama.cpp's MIT license, LLVM's OpenMP license beside the Windows builds, and the base model's license by family:
- * Meta's Apache 2.0 text and Usage Policy for Muse Glimmer, Qwen's Apache 2.0 text for the board's Qwen3.5-0.8B.
+ * Meta's Apache 2.0 text and Usage Policy for Muse Glimmer, the Llama 3.2 license and policy for the board's Llama 3.2 1B.
  *
  * collectKit downloads each pinned file once, checks its sha256, unpacks the archives and keeps one copy of every file
  * under <cache>/kit/<sha256>. The bench writes its drives from there (lib/drive/image.ts). scripts/drive-kit.ts lists the
@@ -18,12 +18,12 @@ import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
 import { DRIVE_IMAGE_VERSION } from "@/lib/drive/logic";
-import { keepFromArchive, META_FILES, QWEN_FILES, RUNTIME_PIN, runtimeUrl, type ImageManifest, type PinnedText, type RuntimePin } from "@/lib/drive/layout";
+import { keepFromArchive, META_FILES, LLAMA_FILES, RUNTIME_PIN, runtimeUrl, type ImageManifest, type PinnedText, type RuntimePin } from "@/lib/drive/layout";
 
 const run = promisify(execFile);
 
 /** Whose license a kit file is. "common" goes on every drive; the others only beside a model of that family. */
-export type BaseFamily = "glimmer" | "qwen";
+export type BaseFamily = "glimmer" | "llama";
 export type KitFamily = "common" | BaseFamily;
 
 export interface KitFile {
@@ -129,7 +129,7 @@ export interface KitOptions {
   extract?: Extract;
   pin?: RuntimePin;
   metaFiles?: ReadonlyArray<PinnedText>;
-  qwenFiles?: ReadonlyArray<PinnedText>;
+  llamaFiles?: ReadonlyArray<PinnedText>;
   /** The license families to bring besides the runtime. The bench needs only Glimmer's. */
   families?: readonly BaseFamily[];
   log?: (line: string) => void;
@@ -212,7 +212,7 @@ export async function collectKit(opts: KitOptions): Promise<CollectedKit> {
   }
 
   // Each family's license text, verbatim, from its repo at the pinned commit.
-  const pinned: Record<BaseFamily, ReadonlyArray<PinnedText>> = { glimmer: opts.metaFiles ?? META_FILES, qwen: opts.qwenFiles ?? QWEN_FILES };
+  const pinned: Record<BaseFamily, ReadonlyArray<PinnedText>> = { glimmer: opts.metaFiles ?? META_FILES, llama: opts.llamaFiles ?? LLAMA_FILES };
   for (const family of families) {
     for (const m of pinned[family]) {
       const cached = path.join(opts.cacheDir, family === "glimmer" ? "meta" : family, m.sha256);

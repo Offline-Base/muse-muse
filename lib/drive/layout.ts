@@ -87,18 +87,23 @@ export const DERIVATIVE_DRIVE_FILES: ReadonlyArray<{ path: string; from: string 
   { path: "licenses/NOTICE", from: "NOTICE" },
 ];
 
-/** The revision of unsloth/Qwen3.5-0.8B that muse-device/setup-train.sh downloads for board training. */
-export const QWEN_BASE = { repo: "unsloth/Qwen3.5-0.8B", revision: "23c69c53358a07516b5827588b3fdb12ae78fd65" } as const;
+/** The revision of unsloth/Llama-3.2-1B-Instruct that muse-device/setup-train.sh downloads for board training. */
+export const LLAMA_BOARD_BASE = { repo: "unsloth/Llama-3.2-1B-Instruct", revision: "5a8abab4a5d6f164389b1079fb721cfab8d7126c" } as const;
 
-/**
- * Qwen's Apache 2.0 text for board fine-tunes, from the base repo at the revision the board trains on. Its git blob id
- * (f938136e) matched that revision's tree on Oct 31, and the sha256 is of the same bytes ("Copyright 2026 Alibaba Cloud").
- */
-export const QWEN_FILES: ReadonlyArray<PinnedText> = [
+/** Meta's commit of meta-llama/llama-models the two texts below were read from on Nov 1, 2026. The Hub repos above hold no license file. */
+const LLAMA_MODELS_COMMIT = "0e0b8c519242d5833d8c11bffc1232b77ad7f301";
+
+/** The Llama 3.2 Community License and Acceptable Use Policy, for board fine-tunes. The license's section 1.b.i asks for a copy on every drive. */
+export const LLAMA_FILES: ReadonlyArray<PinnedText> = [
   {
-    path: "licenses/Apache-2.0.txt",
-    url: `https://huggingface.co/${QWEN_BASE.repo}/raw/${QWEN_BASE.revision}/LICENSE`,
-    sha256: "bbedc3fda3305820b977265f01b8619d87570a6739de3a5582c3464840f1e57a",
+    path: "licenses/LLAMA_3.2_LICENSE.txt",
+    url: `https://raw.githubusercontent.com/meta-llama/llama-models/${LLAMA_MODELS_COMMIT}/models/llama3_2/LICENSE`,
+    sha256: "8cc15535a8a34b41888f644b339a1a9eb428af793a4f5e24df58a3e5b1487d74",
+  },
+  {
+    path: "licenses/LLAMA_3.2_USE_POLICY.md",
+    url: `https://raw.githubusercontent.com/meta-llama/llama-models/${LLAMA_MODELS_COMMIT}/models/llama3_2/USE_POLICY.md`,
+    sha256: "40e2777d7faa6beaf98400654170f414d8ab29b921b5163ad4ea0a1d39894201",
   },
 ];
 

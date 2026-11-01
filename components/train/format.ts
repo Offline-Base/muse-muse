@@ -1,7 +1,7 @@
 import type { IconName } from "@/components/icons";
 import { bytes, dayLabel, elapsedMs, groupThousands, modelLabel, plural, truncate, usd, type Tone } from "@/lib/format";
 import { tokenCost } from "@/lib/meta/pricing";
-import type { LocalFiles, QuantLevel } from "@/lib/train/local-files";
+import { BUILD_LEVELS as ALL_BUILD_LEVELS, LOW_BIT_LEVEL, type BuildLevel, type LocalFiles } from "@/lib/train/local-files";
 import type { DecideTryAnswer, DecideTryPick, DecisionRow, DecisionSpec, DecisionSummary, WilsonRate } from "@/lib/decide/types";
 import { NONE_OPTION } from "@/lib/decide/format";
 import { isDecisionSummary, judgeModelOf, modelName, writerModelOf } from "@/lib/train/models";
@@ -19,7 +19,7 @@ import {
   MODE_PARAM,
   MIN_MAX_USD,
   QUANT_CHANNEL_MIN,
-  QUANT_KL_MAX,
+  quantKlLimit,
   recipeDefaults,
   runEstimate,
   SERVE_BOOT_MINUTES,
@@ -1384,8 +1384,8 @@ export function hubViewOf(data: unknown): HubView | null {
 
 // ---------- Local files (docs/TRAINING.md "Local files") ----------
 
-/** The builds a local files job can make, smallest first (QUANT_LEVELS, as QUANT_KL_MAX lists them). */
-export const BUILD_LEVELS = Object.keys(QUANT_KL_MAX) as QuantLevel[];
+/** The builds a local files job can make, smallest first. */
+export const BUILD_LEVELS = ALL_BUILD_LEVELS;
 
 /**
  * Settings labels for the params the platform writes onto a job itself, which no field lists: a local files job's
@@ -1396,6 +1396,9 @@ export const WRITTEN_PARAM_LABELS: ReadonlyMap<string, string> = new Map([
   ["slug", "Name in the files"],
   ["trainChannel", "Adapter trained with trainChannel"],
   ["baseModel", "Base model"],
+  ["baseRevision", "Base model's commit"],
+  ["baseFamily", "Base model's family"],
+  ["quantBase", "Merged into its own base"],
 ]);
 
 /** The raw metrics of the job's last "done" event, or null when it has none. */
@@ -1409,10 +1412,11 @@ export function doneMetricsOf(events: TrainEventView[]): Record<string, string |
 
 /** One build of a local files job, as its card shows it. `passed` is null while it wasn't measured. */
 export interface QuantRow {
-  level: QuantLevel;
+  level: BuildLevel;
   bytes: number | null;
   klMean: number | null;
-  klMax: number;
+  /** Null when no limit has been measured for this build (quantKlLimit). */
+  klMax: number | null;
   topTokenPct: number | null;
   passed: boolean | null;
 }
@@ -1431,7 +1435,7 @@ export function quantRows(params: Record<string, string | number> | null | undef
       level,
       bytes: metricNumber(metrics?.[`${key}_bytes`]),
       klMean: metricNumber(metrics?.[`${key}_kl_mean`]),
-      klMax: QUANT_KL_MAX[level],
+      klMax: quantKlLimit(level, params),
       topTokenPct: metricNumber(metrics?.[`${key}_top_token_pct`]),
       passed: passed === "yes" ? true : passed === "no" ? false : null,
     };
@@ -1452,11 +1456,25 @@ export function quantRowText(r: QuantRow): string {
   return [
     r.passed === null ? "Not checked yet" : r.passed ? "Passed" : "Left out",
     r.bytes === null ? null : buildSize(r.bytes),
-    r.klMean === null ? null : `mean KL ${r.klMean.toFixed(4)}, limit ${r.klMax.toFixed(4)}`,
+    r.klMean === null ? null : `mean KL ${r.klMean.toFixed(4)}, ${r.klMax === null ? "no limit yet" : `limit ${r.klMax.toFixed(4)}`}`,
     r.topTokenPct === null ? null : `top token the same ${r.topTokenPct.toFixed(1)}%`,
   ]
     .filter(Boolean)
     .join(" · ");
+}
+
+/** The one-bit build's own answer check as one sentence, what kept it out, or null when none was tried. */
+export function quantLowBitText(metrics: Record<string, string | number> | null): string | null {
+  const key = LOW_BIT_LEVEL.toLowerCase();
+  const problem = metrics?.[`${key}_problem`];
+  if (typeof problem === "string" && problem) return `${LOW_BIT_LEVEL} isn't published: ${problem}.`;
+  const final = metricNumber(metrics?.[`${key}_final`]);
+  const total = metricNumber(metrics?.[`${key}_final_total`]);
+  if (final === null || total === null) return null;
+  const same = metricNumber(metrics?.[`${key}_agreement`]);
+  const agreeTotal = metricNumber(metrics?.[`${key}_agreement_total`]);
+  const agree = same !== null && agreeTotal ? `, and ${same} of ${agreeTotal} start like the adapter's own answers` : "";
+  return `${LOW_BIT_LEVEL} gave a final answer to ${final} of ${total} held-out prompts${agree}. Expect much weaker answers than the larger builds.`;
 }
 
 /** The channel check as one sentence, from a local files job's metrics, or null before it ran. */
@@ -1538,6 +1556,17 @@ export interface QuantState {
   problem: string | null;
   latest: QuantJobSummary | null;
   files: LocalFiles | null;
+  /** QUANT_TARGETS is on, so the card shows which device gets which file and one-bit Glimmer's cost. */
+  targets?: boolean;
+  /** The small base's name when this adapter merges into its own base. */
+  smallBase?: string | null;
+}
+
+/** What Make local files will cost, as the card and its confirm say it. Every figure here is an estimate until a real run. */
+export function makeFilesCostText(state: QuantState | null): string {
+  if (state?.smallBase) return `about 45 minutes on one GPU and about $1.50: the merge into ${state.smallBase}, one size, its checks and the upload, by estimate`;
+  if (state?.targets) return "about 110 minutes on one GPU and about $3.70: the merge, the conversion, three sizes and one-bit Glimmer, their checks and the upload, by estimate";
+  return "about 80 minutes on one GPU and about $2.50: the merge, the conversion, three sizes, their checks and the upload";
 }
 
 /** The answer of GET /api/train/jobs/{id}/quantize, or null when it isn't one. */
@@ -1547,7 +1576,7 @@ export function quantStateOf(data: unknown): QuantState | null {
   const text = (v: unknown) => (typeof v === "string" && v.trim() ? v : null);
   const latest = d.latest && typeof d.latest === "object" && typeof (d.latest as { id?: unknown }).id === "string" ? (d.latest as QuantJobSummary) : null;
   const files = d.files && typeof d.files === "object" && Array.isArray((d.files as { files?: unknown }).files) ? (d.files as LocalFiles) : null;
-  return { quantOff: text(d.quantOff), hubOff: text(d.hubOff), problem: text(d.problem), latest, files };
+  return { quantOff: text(d.quantOff), hubOff: text(d.hubOff), problem: text(d.problem), latest, files, ...(d.targets === true ? { targets: true, smallBase: text(d.smallBase) } : {}) };
 }
 
 /** The hub view of the job whose files the card shows, when it is the newest job: whether they wait or failed to publish. */

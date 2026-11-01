@@ -47,9 +47,9 @@ Waiting on the owner (details at the end): the go for each paid step, an AWS dai
 |---|---|---|
 | Muse Wonder and Muse Spark 1.x through Meta's Model API | Never | Model API Terms 10.1(ix) (updated Oct 9, 2026) bar using Outputs to train or fine-tune any model that competes with Meta's, and systematically collecting Outputs to build training datasets. "Competing" isn't defined. 10.1(x) also bars approximating Meta's models through systematic querying. |
 | Muse Glimmer 30B, self-hosted | Default | Apache 2.0, and its usage policy doesn't ban distillation. |
-| Gemma 4, Qwen3.8-27B, Qwen3.5 and 3.6, DeepSeek V4 and V4.1-Flash, GLM-5.2 | Yes, if needed | Plain Apache 2.0 or MIT, checked on each model's page. |
+| Gemma 4, DeepSeek V4 and V4.1-Flash, GLM-5.2 | Yes, if needed | Plain Apache 2.0 or MIT, checked on each model's page. |
 | Muse Spark Open | Only in the `spark` split | The Muse Model License doesn't ban training other models, and Meta claims no ownership of outputs. But a model trained on its outputs is a Derivative: it must show "Built with Muse Spark Open" (in the UI, docs, website or settings), ship the license and usage policy with every copy, follow the usage policy, and, past $20M of model-as-a-service revenue in 12 months, needs an agreement with Meta. |
-| GLM-5.3, Qwen3.8-Max and Flash-Next, Kimi K3, MiniMax M3.1, Mistral Medium 3.5, Gemma 3, Llama | No | Custom licenses with revenue triggers, naming rules or output-derivative clauses. |
+| GLM-5.3, Kimi K3, MiniMax M3.1, Mistral Medium 3.5, Gemma 3, Llama | No | Custom licenses with revenue triggers, naming rules or output-derivative clauses. |
 
 ### Sources
 
@@ -286,7 +286,7 @@ What the check found:
 - Glimmer 30B's smallest community files are 4.85 to 7.06 GB, which is really 1.4 to 2.0 bits per weight. A similar dense 27B model scores about 42% on MMLU at that size (IQ1_S), against 71% at 4 bits; random guessing gets 25%. Not usable.
 
 The plan:
-1. Pick a 3B to 4B student with a permissive license that llama.cpp runs: Gemma 4 E4B (Apache 2.0), Qwen3.5-4B (Apache 2.0), Granite 4.2 3B (Apache 2.0) or Nemotron 3.5 Bolt E4B (OpenMDW; already 13 to 15 tokens a second on our boards). Not Liquid's LFM models (their license limits use above $10M of revenue) or Llama 3.2.
+1. Pick a 3B to 4B student with a permissive license that llama.cpp runs: Gemma 4 E4B (Apache 2.0), Granite 4.2 3B (Apache 2.0) or Nemotron 3.5 Bolt E4B (OpenMDW; already 13 to 15 tokens a second on our boards). Not Liquid's LFM models (their license limits use above $10M of revenue) or Llama 3.2.
 2. Train it on the dataset's open lineage (documents, synthetic text, Q&A) plus tuned Glimmer's answers to the same questions. That Glimmer must have no Spark-written training data, so the student stays permissive. A 4B QLoRA fits on Lambda's A10s.
 3. Quantize to Q4_K_M (about 2.5 to 3 GB) and test on one board through the fleet's normal deploy path, with the owner's OK. Record RAM, tokens a second, fact accuracy and power, at 512 to 2,048 tokens of context.
 4. For the record only, measure Glimmer 30B at Q4_K_M, IQ2_M, IQ1_M and Q1_0 on a cloud GPU.

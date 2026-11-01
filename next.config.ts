@@ -15,6 +15,8 @@ const DOCS_MARKDOWN = ["./content/meta-docs/pages/**/*.md"];
 const GEO_REWRITES = trustGeoRewrites(process.env);
 
 const nextConfig: NextConfig = {
+  // The owner's yes to a robot action: a product must not be able to frame it and steer the click.
+  headers: async () => [{ source: "/gadgets/confirm", headers: [{ key: "Content-Security-Policy", value: "frame-ancestors 'none'" }, { key: "X-Frame-Options", value: "DENY" }] }],
   serverExternalPackages: ["@electric-sql/pglite", "@composio/core"],
   devIndicators: false,
   // Muse Privacy's files never ship with the site. .vercelignore keeps them out on Vercel; this keeps them out of any other
@@ -33,7 +35,7 @@ const nextConfig: NextConfig = {
 
 // Compiles "use workflow" and "use step" (lib/pipeline/workflow.ts, lib/pipeline/build-steps.ts, lib/pipeline/prove.ts,
 // lib/pipeline/prove-steps.ts, lib/pipeline/prove-start.ts, lib/promote/workflow.ts,
-// lib/promote/steps.ts, lib/train/workflow.ts, lib/train/steps.ts, lib/train/judge.ts, lib/train/hub-steps.ts, and
+// lib/promote/steps.ts, lib/board-loop/workflow.ts, lib/board-loop/steps.ts, lib/train/workflow.ts, lib/train/steps.ts, lib/train/judge.ts, lib/train/hub-steps.ts, and
 // lib/train/datasets.ts, which holds both). Workflows are found through the start() calls in app/api/inspirations,
 // app/api/builds/[buildId]/messages, app/api/rebuilds, app/api/admin/import-product, app/api/train/jobs,
 // app/api/train/jobs/[id]/publish, app/api/train/datasets and app/api/cron/prove-nightly.

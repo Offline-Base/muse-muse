@@ -1,4 +1,5 @@
 import type { Brief } from "@/lib/brief/schema";
+import { gadgetConnectUsable } from "@/lib/caps/hardware/flags";
 import { hardwareBlock, type HardwareLink } from "@/lib/caps/hardware/brief";
 import { SHOW_TEXT_MAX_CHARS, SHOW_TEXT_PER_MINUTE } from "@/lib/caps/hardware/limits";
 import type { CapRenderEntry } from "@/lib/caps/render";
@@ -50,7 +51,13 @@ export const HARDWARE_RENDER: CapRenderEntry = {
             "- It exports this product's own tuned model and nothing else. The drive has to be plugged in first, since an export from a product never waits for one. It never erases: when it answers `needs_erase`, show its message, which sends the person to their board's page.",
           ]
         : []),
-      "- During the build nothing real is connected. A simulated port stands in for the browser links, and the gateway's simulated board answers the board tools, with `simulated: true`. Don't show the word \"simulated\": the live product gets the real device.",
+      ...(hw.boardTools && gadgetConnectUsable()
+        ? [
+            "- The model on the owner's board: `askBoard` or `askBoardOrMessage` in `lib/platform/board.ts`. Server only, with the request passed in. Show which model answered (`target`), and that it's working, since a small board can take over a minute. When the reply says `simulated: true`, say on that same card that the answer is simulated, not from a model. When the board is off, show the message and keep the rest of the product working.",
+            "- A robot, only if the brief asks: `robotStatus`, `requestRobotAction` and `hardStop` in `lib/platform/board.ts`. Only the actions in `ROBOT_ACTIONS` exist. Each is confirmed by the owner: never call `requestRobotAction` with an `approval` except from the person's own click on a card, and live, send them to `confirmUrl`. Put a hard stop button on every screen where something can move, and label readings from `simulated: true` as simulated.",
+          ]
+        : []),
+      "- During the build nothing real is connected. A simulated port stands in for the browser links, and the gateway's simulated board answers the board tools, with `simulated: true`. Don't show the word \"simulated\": the live product gets the real device." + (hw.boardTools && gadgetConnectUsable() ? " The one exception is the board's model and robot, above, where `simulated: true` has to show." : ""),
       ...(links.length ? ["- Smoke test, one link session: call `useFakeDevices(page, { reply })` before `page.goto`, then `checkDeviceLink(page, { link, connect, exchange, shows, shot })` from `tests/caps/hardware.ts`. It checks that the simulated port got the bytes the product sent, and that the product showed the reply."] : []),
       ...(hw.driveExport ? ["- Smoke test, drive export: `checkDriveExport(page, { start, confirm, shows, shot })` from `tests/caps/hardware.ts`, once. The gateway's own record must show the confirmed export reached the simulated board."] : []),
       ...(hw.boardTools ? ["- Smoke test, board tools: `checkBoardTool(page, { run, shows, shot })` from `tests/caps/hardware.ts`, once. The gateway's own record must show the call reached the simulated board. Keep to one call of each tool."] : []),

@@ -117,6 +117,7 @@ export function freeSlot(open: readonly Pick<HostEndpoint, "slot">[], maxLive: n
 /**
  * Who may start, stop and talk to endpoints. Admins, until HOST_TUNED_OPEN widens it to signed-in people. Nobody without a
  * session of their own: not the shared guest, and not OPEN_ACCESS=admin's stand-in admin, since this spends real money.
+ * The one exception is the public Try box's own, smaller limits (lib/train/host/try.ts), which don't go through this.
  */
 export function mayDeploy(user: { isAdmin: boolean; openAccess?: boolean } | null, open: boolean): boolean {
   if (!user) return false;

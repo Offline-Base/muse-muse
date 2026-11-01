@@ -384,6 +384,26 @@ export const env = {
     return ["1", "true", "yes", "on"].includes((process.env.QUANT_ENABLED ?? "").trim().toLowerCase());
   },
   /**
+   * QUANT_TARGETS: local files for small bases and one-bit Muse Glimmer, and the device targets (lib/train/quant-targets.ts,
+   * docs/TRAINING.md "Device targets"). Off when unset: quantizing stays r30b's three builds, and Llama adapters are refused.
+   */
+  get quantTargets(): boolean {
+    return flag("QUANT_TARGETS");
+  },
+  /** The board loop: tune, GGUF, board, serve, test, demo, try page (docs/BOARD_LOOP.md). Off by default. */
+  get boardLoop(): boolean {
+    return flag("BOARD_LOOP");
+  },
+  /** Which board the loop reaches: "simulated" (the default), "fleet" or "device". */
+  get boardLoopTarget(): "simulated" | "fleet" | "device" {
+    const target = process.env.BOARD_LOOP_TARGET?.trim();
+    return target === "fleet" || target === "device" ? target : "simulated";
+  },
+  /** Visitors may use a real board's try page. The simulated board's canned text needs no such switch; admins always can. */
+  get boardTryPublic(): boolean {
+    return flag("BOARD_TRY_PUBLIC");
+  },
+  /**
    * SIM_TUNE: admins can run a tuned model's smallest GGUF on the lab's Android emulator (docs/TRAINING.md "Emulator
    * runs"). Also needs NATIVE_LAB. Off when unset.
    */
@@ -432,6 +452,14 @@ export const env = {
     return flag("TUNE_COMPOSER");
   },
   /**
+   * STORY_PAGES: "1", "true", "yes" or "on" shows /offline, the clearer /private and the frontier section on
+   * /how-it-works (docs/STORY.md). Off: /offline answers 404 and the other two are as they were.
+   * All three are static, so this is read at build time and a change takes a deploy.
+   */
+  get storyPages(): boolean {
+    return flag("STORY_PAGES");
+  },
+  /**
    * TUNE_LOOP: "1", "true", "yes" or "on" lets admins run a repeat-until-good tuning loop on a judged run
    * (docs/TRAINING.md "Tuning loop"). Off by default: its routes and page answer 404 and the run room shows nothing new.
    */
@@ -474,6 +502,23 @@ export const env = {
    */
   get guestEdits(): boolean {
     return flag("GUEST_EDITS");
+  },
+  /**
+   * GITHUB_EXPORT: "1", "true", "yes" or "on" shows Connect GitHub and Export to GitHub on a product's Code page
+   * (docs/GITHUB_EXPORT.md). Off by default: no button, no reads, and the routes answer 404.
+   */
+  get githubExport(): boolean {
+    return flag("GITHUB_EXPORT");
+  },
+  get githubClientId() {
+    return process.env.GITHUB_OAUTH_CLIENT_ID?.trim() || undefined;
+  },
+  get githubClientSecret() {
+    return process.env.GITHUB_OAUTH_CLIENT_SECRET?.trim() || undefined;
+  },
+  /** Seals connected accounts' tokens (lib/connected/store.ts): 32 bytes of base64, or a v1:,v2: ring. */
+  get connectedAccountsKey() {
+    return process.env.CONNECTED_ACCOUNTS_KEY?.trim() || undefined;
   },
   /**
    * TUNE_AUTO_PUBLISH: an admin's tune run uploads its model to Hugging Face by itself once it succeeds and is judged
@@ -1381,6 +1426,27 @@ export const env = {
     return number("HOST_TUNED_MAX_MINUTES", 240);
   },
 
+  /** TRY_TUNED: anyone may chat with a tuned model on its public page, and wake it within the limits below. Also needs HOST_TUNED. */
+  get tryTuned(): boolean {
+    return flag("TRY_TUNED");
+  },
+  /** TRY_TUNED_DAILY_USD: the most visitors' wakes may promise per UTC day, 10 by default. Held to HOST_TUNED_DAILY_USD. 0 stops wakes. */
+  get tryTunedDailyUsd(): number {
+    return dollars("TRY_TUNED_DAILY_USD", 10);
+  },
+  /** TRY_TUNED_WAKES_PER_DAY: visitors' wakes per UTC day across every model, 4 by default. 0 stops wakes. */
+  get tryTunedWakesPerDay(): number {
+    return wholeCount("TRY_TUNED_WAKES_PER_DAY", 4);
+  },
+  /** TRY_TUNED_MINUTES: the longest a visitor's wake runs, 60 by default. Held to HOST_TUNED_MAX_MINUTES. */
+  get tryTunedMinutes(): number {
+    return number("TRY_TUNED_MINUTES", 60);
+  },
+  /** EXPORT_TUNED: one-click installers on a tuned model's public page, and their route. Off: the route answers 404. */
+  get exportTuned(): boolean {
+    return flag("EXPORT_TUNED");
+  },
+
   // ---------- Wave 3, unit 12: drive export (docs/CAPABILITIES.md) ----------
 
   /**
@@ -1414,7 +1480,11 @@ export const env = {
   },
   /** HARDWARE_BOARD_REGISTRY: /api/boards, linking a board to a product, and the board lists on /device and /gadgets. Admins only (decision 16). */
   get hardwareBoardRegistry(): boolean {
-    return flag("HARDWARE_BOARD_REGISTRY");
+    return flag("HARDWARE_BOARD_REGISTRY") || flag("GADGET_CONNECT");
+  },
+  /** GADGET_CONNECT (lib/caps/hardware/flags.ts): pair your own board, inference on it, and a simulated robot. Off by default. */
+  get gadgetConnect(): boolean {
+    return flag("GADGET_CONNECT");
   },
   /**
    * HARDWARE_GADGET_OWNER_CHECK: a live token reaches only the board its product's owner linked, and a visitor only when

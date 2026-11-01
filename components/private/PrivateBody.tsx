@@ -3,6 +3,7 @@ import { Icon, type IconName } from "@/components/icons";
 import { Replay } from "@/components/private/Replay";
 import { PageHeader } from "@/components/ui";
 import { PRIVATE_NUMBERS } from "@/lib/private/replay";
+import { PrivateStory, PrivateStoryNumbers, PrivateStoryHelps } from "@/components/private/PrivateStory";
 
 type Card = { icon: IconName; title: string; text: string };
 
@@ -33,7 +34,8 @@ const NOT_DONE: string[] = [
   "It runs on a laptop. The Jetson path is designed and tested in simulation, not run on a board in this setup.",
 ];
 
-export function PrivateBody() {
+/** With `story` (STORY_PAGES), the page opens with what it protects, from whom, and a before and after. */
+export function PrivateBody({ story = false }: { story?: boolean }) {
   const { fresh, tasks, rehearsal } = PRIVATE_NUMBERS;
   return (
     <div className="page how-page">
@@ -46,6 +48,8 @@ export function PrivateBody() {
         A connector for Muse, not a hosted service: it runs on hardware you own, and nothing on this site can reach your files. It hasn&apos;t
         been tried with real users yet, and this page says what has and hasn&apos;t been measured.
       </p>
+
+      {story ? <PrivateStory /> : null}
 
       <h2 className="how-heading">See one run</h2>
       <Replay />
@@ -88,12 +92,16 @@ export function PrivateBody() {
         repository.
       </p>
 
+      {story ? <PrivateStoryNumbers /> : null}
+
       <h2 className="how-heading">Who it&apos;s for</h2>
       <ul className="pv-list">
         {WHO.map((line) => (
           <li key={line}>{line}</li>
         ))}
       </ul>
+
+      {story ? <PrivateStoryHelps /> : null}
 
       <h2 className="how-heading">What isn&apos;t done yet</h2>
       <ul className="pv-list">
