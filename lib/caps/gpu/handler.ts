@@ -109,6 +109,7 @@ async function readCall(req: Request): Promise<GlimmerCall | Response> {
   if (problem) return bad("invalid_arguments", problem);
   const rawMax = body.max_completion_tokens ?? body.max_tokens;
   if (rawMax !== undefined && rawMax !== null && (!Number.isInteger(rawMax) || (rawMax as number) < 1)) return bad("invalid_arguments", "max_tokens must be a whole number from 1.");
+  if (body.stop !== undefined && body.stop !== null && typeof body.stop !== "string" && !Array.isArray(body.stop)) return bad("invalid_arguments", "stop must be text or a list of text.");
   const stop = glimmerStops(body.stop === null ? undefined : (body.stop as string | string[] | undefined));
   if (stop === null) return bad("invalid_arguments", "Send at most 4 stops, each of up to 64 characters.");
   const messages = (body.messages as ChatMessage[]).map((m) => ({ role: m.role, content: m.content }));
@@ -131,13 +132,19 @@ function completion(model: string, text: string, finish: "stop" | "length", toke
   );
 }
 
-async function limited(req: Request, token: CapToken, deps: GlimmerDeps, now: Date): Promise<Response | null> {
+/**
+ * A product's answers today. Counted only just before an answer: askGlimmer tries the gateway first on every question, so a
+ * closed window's calls would otherwise use up the allowance and leave a product on Muse Wonder for a whole demo window.
+ */
+async function overDay(token: CapToken, deps: GlimmerDeps, now: Date): Promise<Response | null> {
   const dayKey = `glimmer:product:${token.productId}`;
   const day = await deps.hitRateLimits([dayKey], dayWindow(now));
-  if ((day[dayKey] ?? 0) > GLIMMER_LIMITS.perProductPerDay) {
-    const retry = Math.max(1, Math.ceil((dayWindow(now).getTime() - now.getTime()) / 1000));
-    return gatewayError(429, "rate_limit_error", "rate_limited", `This product has used its ${GLIMMER_LIMITS.perProductPerDay} Muse Glimmer answers for today.`, { headers: { "retry-after": String(retry) }, retry: false });
-  }
+  if ((day[dayKey] ?? 0) <= GLIMMER_LIMITS.perProductPerDay) return null;
+  const retry = Math.max(1, Math.ceil((dayWindow(now).getTime() - now.getTime()) / 1000));
+  return gatewayError(429, "rate_limit_error", "rate_limited", `This product has used its ${GLIMMER_LIMITS.perProductPerDay} Muse Glimmer answers for today.`, { headers: { "retry-after": String(retry) }, retry: false });
+}
+
+async function overIpMinute(req: Request, token: CapToken, deps: GlimmerDeps, now: Date): Promise<Response | null> {
   const ip = clientIpKey(req.headers.get(CLIENT_IP_HEADER));
   if (!ip) return null;
   const minute = new Date(Math.floor(now.getTime() / 60_000) * 60_000);
@@ -179,7 +186,7 @@ export async function handleGlimmerChat(req: Request, deps: GlimmerDeps): Promis
       return gatewayError(403, "permission_error", "glimmer_not_allowed", "This product's brief doesn't use the hosted Muse Glimmer.", { retry: false });
     }
     const now = deps.now?.() ?? new Date();
-    const over = await limited(req, token, deps, now);
+    const over = await overIpMinute(req, token, deps, now);
     if (over) return over;
     const call = await readCall(req);
     if (call instanceof Response) return call;
@@ -190,6 +197,8 @@ export async function handleGlimmerChat(req: Request, deps: GlimmerDeps): Promis
         await meter(deps, token, GLIMMER_CLOSED_USAGE);
         return closed(CLOSED);
       }
+      const spent = await overDay(token, deps, now);
+      if (spent) return spent;
       await meter(deps, token, GLIMMER_CANNED_USAGE);
       const words = cannedGlimmerReply({ model: call.model, messages: call.messages });
       return completion(call.model, words, "stop", { input: 0, output: 0 }, { simulated: true }, null, now);
@@ -219,6 +228,8 @@ export async function handleGlimmerChat(req: Request, deps: GlimmerDeps): Promis
     }
     const backend = await deps.backend(window.adapterJobId, now);
     if (!backend) return closed(CLOSED);
+    const spent = await overDay(token, deps, now);
+    if (spent) return spent;
     const got = await backend.chat({ messages: call.messages, adapter, maxTokens: call.maxTokens, stop: call.stop, signal: req.signal });
     await meter(deps, token, call.own ? "muse-glimmer-own" : GLIMMER_BRIEF_MODEL);
     return completion(call.model, got.text, got.finish, got.usage, {}, derivativeNote(window.sparkOpen), now);

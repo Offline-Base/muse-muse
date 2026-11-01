@@ -285,3 +285,42 @@ describe("a live token", () => {
     assert.equal((await handleGlimmerChat(call(undefined, {}, "GET"), deps())).status, 405);
   });
 });
+
+describe("what a closed window costs a product", () => {
+  it("nothing of its day: 201 closed calls still leave an open window answering", async () => {
+    const closedNow = deps({ openWindow: async () => null });
+    for (let i = 0; i < 201; i++) assert.equal(await code(await handleGlimmerChat(call(), closedNow)), "glimmer_closed");
+    assert.equal(counts["glimmer:product:p1"] ?? 0, 0);
+    assert.equal((await handleGlimmerChat(call(), deps())).status, 200);
+  });
+
+  it("a GPU still starting, or no own model, doesn't count either", async () => {
+    await handleGlimmerChat(call(), deps({ startingFor: async () => 30 }));
+    await handleGlimmerChat(call({ model: "own", messages: [{ role: "user", content: "hi" }] }), deps({ ownModel: async () => null }));
+    assert.equal(counts["glimmer:product:p1"] ?? 0, 0);
+  });
+
+  it("the day still holds for answers, and for a build's sample replies", async () => {
+    counts["glimmer:product:p1"] = GLIMMER_LIMITS.perProductPerDay;
+    assert.equal((await handleGlimmerChat(call(), deps())).status, 429);
+    assert.equal(chats.length, 0);
+    counts["glimmer:product:p1"] = GLIMMER_LIMITS.perProductPerDay;
+    assert.equal((await handleGlimmerChat(call(), deps({ findToken: buildToken }))).status, 429);
+  });
+
+  it("the minute's limit per IP still comes first", async () => {
+    counts["glimmer:ip:p1:203.0.113.9"] = GLIMMER_LIMITS.perIpPerMinute;
+    const res = await handleGlimmerChat(call(undefined, { "x-musemuse-client-ip": "203.0.113.9" }), deps({ openWindow: async () => assert.fail("read the window") }));
+    assert.equal(res.status, 429);
+  });
+});
+
+describe("a stop that isn't text", () => {
+  for (const stop of [5, {}, true]) {
+    it(`${JSON.stringify(stop)} is the caller's mistake: 400, not 502`, async () => {
+      const res = await handleGlimmerChat(call({ model: "muse-glimmer", messages: [{ role: "user", content: "hi" }], stop }), deps());
+      assert.equal(res.status, 400);
+      assert.equal(await code(res), "invalid_arguments");
+    });
+  }
+});
