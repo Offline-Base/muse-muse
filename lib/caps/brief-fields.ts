@@ -1,6 +1,7 @@
 import type { z } from "zod";
 import { ConnectBriefBlock, connectWriterBlock, connectWriterRules } from "@/lib/caps/connect/brief";
 import { connectOptions } from "@/lib/caps/connect/flags";
+import { PLATFORM_WRITER_RULES, PlatformBriefBlock } from "@/lib/caps/platform/brief";
 import { CodeBriefBlock, codeWriterBlock, codeWriterRules } from "@/lib/caps/code/brief";
 import { DataBriefBlock, dataWriterBlock, dataWriterRules } from "@/lib/caps/data/brief";
 import type { CapId } from "@/lib/caps/ids";
@@ -35,6 +36,7 @@ export const CAP_BRIEF_FIELDS = {
   hardware: StoredHardwareBlock,
   extension: ExtensionBriefBlock,
   games: GamesBriefBlock,
+  platform: PlatformBriefBlock,
 } as const satisfies Partial<Record<CapId, z.ZodTypeAny>>;
 
 export type CapBriefKey = keyof typeof CAP_BRIEF_FIELDS;
@@ -69,6 +71,7 @@ export const CAP_WRITER_RULES: Partial<Record<CapId, readonly string[] | (() => 
   hardware: () => hardwareWriterRules(),
   extension: EXTENSION_WRITER_RULES,
   games: GAMES_WRITER_RULES,
+  platform: PLATFORM_WRITER_RULES,
 };
 
 /** The writer's rules for the enabled caps, as a section for its instructions. Empty when none has rules. */

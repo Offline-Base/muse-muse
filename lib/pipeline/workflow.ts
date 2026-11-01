@@ -26,6 +26,9 @@ import { env } from "@/lib/env";
 import {
   briefStep,
   capsShipStep,
+  chainReadStep,
+  chainReopenStep,
+  chainSaveStep,
   cleanupStep,
   collectVerifyStep,
   createProductStep,
@@ -79,7 +82,8 @@ import { restoreFilesStep, restoreOutcomeStep } from "@/lib/pipeline/restore-ste
 import { packageProductStep } from "@/lib/pipeline/package-step";
 import { startProveStep } from "@/lib/pipeline/prove-start";
 import { provePlanStep } from "@/lib/pipeline/prove-steps";
-import { capWithinWall, fullRoundCap, JUDGE_RESERVE_MS, stepTimeoutMs, type RoundPlan } from "@/lib/pipeline/steps";
+import { chainChecksNeedSession, chainEndLine, chainNext, type ChainPosition } from "@/lib/chain/plan";
+import { capWithinWall, fullChecksReserveMs, fullRoundCap, JUDGE_RESERVE_MS, stepTimeoutMs, type RoundPlan } from "@/lib/pipeline/steps";
 import { MUSE_EXIT, REFINE_ROUND_STRIDE, type BuildModel } from "@/lib/sandbox/muse";
 import { TERMINAL_STATUSES, type BuildStatus } from "@/lib/types";
 
@@ -121,11 +125,14 @@ interface Ctx {
    * Without it every round runs on today's caps (STEPS) and no wall applies.
    */
   plan?: RoundPlan;
-  /** When the workflow started, for the plan's wall. */
+  /** When the workflow started, for the plan's wall. In a chain, when this session started. */
   startedAt?: number;
+  /** CHAINED_BUILDS: where the chain is. */
+  chain?: ChainPosition;
 }
 
 /** What the build room says when a round that hit its cap goes on to the checks (ENGINE_CHECK_ON_TIMEOUT). */
+const CHAIN_LOG_ROUND = "Muse Code was stopped at its time limit. The next session finishes this milestone.";
 const CHECKING_AFTER_CAP = "Muse Code was stopped at its time limit. Checking what it built.";
 
 /** The cap for a kind of round: the plan's when there is one, else today's. */
@@ -270,7 +277,10 @@ const LAST_ROUND_VERIFY_ENV = { MUSEMUSE_SCREEN_CHECK: "warn" };
 
 async function runVerify(ctx: Ctx, round: number, lastRound: boolean): Promise<VerifyResult> {
   const capMs = capFor(ctx, "verify");
-  const task = await runTask(ctx.sandboxName, "verify", capMs, lastRound ? LAST_ROUND_VERIFY_ENV : undefined);
+  // A chain's verify has longer than verify.mjs's usual 25 minutes for the requirements, inside the plan's cap.
+  const chainEnv = ctx.chain ? { MUSEMUSE_REQUIREMENTS_MS: String(Math.max(60_000, capMs - 5 * 60_000)) } : null;
+  const taskEnv = lastRound || chainEnv ? { ...(lastRound ? LAST_ROUND_VERIFY_ENV : {}), ...chainEnv } : undefined;
+  const task = await runTask(ctx.sandboxName, "verify", capMs, taskEnv);
   if (task.timedOut) return verifyTimedOutStep({ buildId: ctx.buildId, round, minutes: Math.round(capMs / 60_000) });
   return collectVerifyStep({
     buildId: ctx.buildId,
@@ -314,7 +324,8 @@ interface Checks {
  * plan, a fix round that wouldn't fit before the build's wall isn't started, and the verify before it counts as the last.
  */
 async function checkAndFix(ctx: Ctx, track: Track, kind: "build" | "refine", offset = 0): Promise<Checks> {
-  const rounds = Math.min(maxFixRounds(), REFINE_ROUND_STRIDE - 1 - offset);
+  // A chain's rounds run past the stride on purpose (docs/CHAINED_BUILDS.md). startMuse keeps an earlier round's log.
+  const rounds = ctx.chain ? maxFixRounds() : Math.min(maxFixRounds(), REFINE_ROUND_STRIDE - 1 - offset);
   for (let fix = 0; ; ) {
     const round = offset + fix;
     track.stage = "verify";
@@ -332,6 +343,12 @@ async function checkAndFix(ctx: Ctx, track: Track, kind: "build" | "refine", off
     const fixCap = roomForFix ? capInWall(ctx, capFor(ctx, "fix"), verifyMs + JUDGE_RESERVE_MS) : null;
     if (fixCap === null) {
       await emitStep(ctx.buildId, { type: "log", text: "The build is near its time limit, so no more fix rounds run." });
+      return { passed, steps: verify.steps, fixes: fix, judge: judged };
+    }
+
+    // A chain's total holds here too: no fix round once it's spent.
+    if (ctx.chain && ctx.plan?.chain && (await chainReadStep(ctx.buildId)).costUsd >= ctx.plan.chain.totalUsd) {
+      await emitStep(ctx.buildId, { type: "log", text: `The chain reached its $${ctx.plan.chain.totalUsd} spending cap, so no more fix rounds run.` });
       return { passed, steps: verify.steps, fixes: fix, judge: judged };
     }
 
@@ -390,6 +407,64 @@ async function runMilestones(ctx: Ctx, track: Track, list: Array<{ title: string
     if (run.stopped) throw stoppedByOwner("build");
     if (run.timedOut) await emitStep(ctx.buildId, { type: "log", text: CHECKING_AFTER_CAP });
   }
+  return of - 1;
+}
+
+/** Saves this session in the repo and starts the next, on the same sandbox. The owner's Stop still holds between them. */
+async function rotateSession(ctx: Ctx): Promise<void> {
+  const position = ctx.chain!;
+  await chainSaveStep({ buildId: ctx.buildId, sandboxName: ctx.sandboxName, session: position.session });
+  const { costUsd, stopRequested } = await chainReadStep(ctx.buildId);
+  if (stopRequested) throw stoppedByOwner("build");
+  const session = position.session + 1;
+  const { sessionId } = await chainReopenStep({ buildId: ctx.buildId, productId: ctx.productId, sandboxName: ctx.sandboxName, session });
+  const now = Date.now();
+  ctx.sessionId = sessionId;
+  ctx.startedAt = now;
+  ctx.chain = { ...position, session, sessionStartedAt: now, sessionStartUsd: costUsd };
+}
+
+/**
+ * CHAINED_BUILDS (docs/CHAINED_BUILDS.md). Like runMilestones, but a milestone that won't fit in this session starts the
+ * next one instead of being skipped, and only the chain's own limits end it early. Round numbers keep counting up across
+ * sessions. Returns the round of the last milestone that ran.
+ */
+async function runChain(ctx: Ctx, track: Track, list: Array<{ title: string }>): Promise<number> {
+  const of = list.length;
+  const plan = ctx.plan!;
+  const limits = plan.chain!;
+  let fresh: number | undefined;
+  for (let n = 2; n <= of; n++) {
+    track.stage = "verify";
+    await setStatusStep(ctx.buildId, "verifying", { step: "verify", message: `Checking milestone ${n - 1} of ${of}` });
+    const verify = await runVerify(ctx, n - 2, false);
+    await milestoneStep(ctx.buildId, { index: n - 1, of, title: list[n - 2]!.title, state: verify.passed ? "passed" : "failed" });
+    let read = await chainReadStep(ctx.buildId);
+    if (read.stopRequested) throw stoppedByOwner("build");
+    let next = chainNext({ limits, position: ctx.chain!, costUsd: read.costUsd, verifyMs: plan.verifyMs, now: Date.now() });
+    if (next.action === "rotate") {
+      await rotateSession(ctx);
+      fresh = ctx.chain!.session;
+      read = await chainReadStep(ctx.buildId);
+      next = chainNext({ limits, position: ctx.chain!, costUsd: read.costUsd, verifyMs: plan.verifyMs, now: Date.now() });
+    }
+    if (next.action !== "round") {
+      for (let k = n; k <= of; k++) await milestoneStep(ctx.buildId, { index: k, of, title: list[k - 1]!.title, state: "skipped" });
+      await emitStep(ctx.buildId, { type: "log", text: chainEndLine(next.action === "end" ? next.reason : "sessions", limits, n, of) });
+      return n - 2;
+    }
+    const prompt = await writeMilestonePromptStep({ buildId: ctx.buildId, sandboxName: ctx.sandboxName, index: n, of, verifiedRound: n - 2, ...(fresh ? { newSession: fresh } : {}) });
+    fresh = undefined;
+    await assertSpendOk();
+    track.stage = "build";
+    await setStatusStep(ctx.buildId, "building", { step: "build", message: `Milestone ${n} of ${of}, session ${ctx.chain!.session}` });
+    await milestoneStep(ctx.buildId, { index: n, of, title: list[n - 1]!.title, state: "building" });
+    const run = await runMuse(ctx, { promptFile: prompt.promptFile, images: [], round: n - 1, capMs: next.capMs });
+    if (run.stopped) throw stoppedByOwner("build");
+    if (run.timedOut) await emitStep(ctx.buildId, { type: "log", text: CHAIN_LOG_ROUND });
+  }
+  // The checks and fix rounds get a session with room for them.
+  if (chainChecksNeedSession({ limits, position: ctx.chain!, reserveMs: fullChecksReserveMs(plan), now: Date.now() })) await rotateSession(ctx);
   return of - 1;
 }
 
@@ -659,6 +734,7 @@ export async function buildProduct(input: BuildProductInput): Promise<BuildProdu
       model: brief.model,
       roundBase: 0,
       ...(brief.plan ? { plan: brief.plan, startedAt } : {}),
+      ...(brief.plan?.chain ? { chain: { session: 1, chainStartedAt: startedAt, sessionStartedAt: startedAt, sessionStartUsd: 0 } } : {}),
     };
     const milestones = brief.plan?.milestones ?? [];
 
@@ -666,7 +742,7 @@ export async function buildProduct(input: BuildProductInput): Promise<BuildProdu
     await setStatusStep(buildId, "building", { step: "build" });
     await assertSpendOk();
     if (milestones.length > 1) await milestoneStep(buildId, { index: 1, of: milestones.length, title: milestones[0]!.title, state: "building" });
-    const firstCap = (ctx.plan?.full ? fullRoundCap({ plan: ctx.plan, startedAt, now: Date.now(), milestonesLeft: Math.max(1, milestones.length) }) : null) ?? capFor(ctx, "build");
+    const firstCap = (ctx.plan?.full && !ctx.chain ? fullRoundCap({ plan: ctx.plan, startedAt, now: Date.now(), milestonesLeft: Math.max(1, milestones.length) }) : null) ?? capFor(ctx, "build");
     const built = await runMuse(ctx, { promptFile: "brief.md", images: box.images, round: 0, capMs: firstCap });
     if (built.stopped) throw stoppedByOwner("build");
     if (built.timedOut) {
@@ -679,7 +755,7 @@ export async function buildProduct(input: BuildProductInput): Promise<BuildProdu
         await emitStep(buildId, { type: "log", text: "Muse Code ended with an error. Checking what it wrote." });
       }
     }
-    const offset = milestones.length > 1 ? await runMilestones(ctx, track, milestones) : 0;
+    const offset = milestones.length > 1 ? await (ctx.chain ? runChain(ctx, track, milestones) : runMilestones(ctx, track, milestones)) : 0;
 
     track.stage = "preview";
     await setStatusStep(buildId, "previewing", { step: "preview" });

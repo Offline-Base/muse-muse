@@ -1,4 +1,6 @@
 import { findSessionGatewayToken } from "@/lib/caps/code/musecode/gateway";
+import { findPowerKey, isPowerKey } from "@/lib/caps/platform/gateway";
+import { sessionSpendUsd } from "@/lib/caps/code/musecode/store";
 import { familySpendToday } from "@/lib/caps/code/musecode/store";
 import { isSessionToken } from "@/lib/caps/code/musecode/token";
 import { jobCallOf } from "@/lib/caps/jobs/budget";
@@ -30,6 +32,8 @@ export function gatewayDeps(defer: GatewayDeps["defer"]): GatewayDeps {
     tokenSpendToday,
     // Wave 3, unit 9 (docs/CAPABILITIES.md, 15b): only while MUSE_CODE_ENABLED is on, so the deps are today's without it.
     ...museCodeDeps(),
+    // Platform powers (docs/PLATFORM_POWERS.md): only while the cap is served. Last, so it wraps the lookup above.
+    ...powerKeyDeps(),
     platformSpendToday,
     dailySpendCapUsd: env.dailySpendCapUsd,
     fitOutputToBudget: env.engineFitOutput,
@@ -77,6 +81,13 @@ function trustDeps(): Pick<GatewayDeps, "trustCheck" | "sparkToWonder"> {
     ...(trust ? { trustCheck: (token: Parameters<NonNullable<GatewayDeps["trustCheck"]>>[0]) => trustCheck(token, trust) } : {}),
     ...(env.trustSparkToWonder ? { sparkToWonder: true } : {}),
   };
+}
+
+/** Metered keys (scope power_key) have their own lookup, and otherwise the lookup is as it was. */
+function powerKeyDeps(): Pick<GatewayDeps, "findToken"> | Record<string, never> {
+  if (!env.servedCaps.includes("platform")) return {};
+  const before = museCodeDeps().findToken ?? findToken;
+  return { findToken: (raw) => (isPowerKey(raw) ? findPowerKey(raw, { total: sessionSpendUsd, today: tokenSpendToday }) : before(raw)) };
 }
 
 /**

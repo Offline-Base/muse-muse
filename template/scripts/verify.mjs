@@ -260,7 +260,7 @@ async function main() {
       const smokeStarted = Date.now();
       const res = await run(BIN("playwright"), ["test", "--project=smoke", "--forbid-only"], {
         // One test per requirement can run longer than the usual few.
-        timeoutMs: REQUIREMENTS ? 1_500_000 : 900_000,
+        timeoutMs: REQUIREMENTS ? Number(process.env.MUSEMUSE_REQUIREMENTS_MS) || 1_500_000 : 900_000,
         env: { MUSEMUSE_PORT: String(port), CI: "1" },
       });
       const counts = ["passed", "failed", "flaky", "skipped"]

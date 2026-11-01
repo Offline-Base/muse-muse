@@ -12,6 +12,7 @@ import { engineBudgetLines, milestoneBuildLines } from "@/lib/engine/prompts";
 import { jobsBlock } from "@/lib/caps/jobs/brief";
 import { JOBS_BUDGET_LINE } from "@/lib/caps/jobs/render";
 // ---------- end Wave 3 hooks ----------
+import { CHAIN_BUILD_LINES } from "@/lib/chain/plan";
 import { FULL_COST_LINE, FULL_DONE_LINE, FULL_FIX_SHOTS, FULL_FLOW_LINE, FULL_GOAL_LINE, FULL_SCOPE_LINE, fullBuildLines } from "@/lib/full/prompts";
 import { briefRequirements, fullMilestones } from "@/lib/full/requirements";
 import type { JudgeVerdict, RebuildTarget, VerifySummary } from "@/lib/types";
@@ -350,7 +351,7 @@ export function renderBuildPrompt(
     "",
     "Then stop.",
   );
-  if (full && brief.verdict !== "no") out.push(...fullBuildLines(briefRequirements(brief), fullMilestones(brief)));
+  if (full && brief.verdict !== "no") out.push(...fullBuildLines(briefRequirements(brief), fullMilestones(brief)), ...(brief.chained === true ? CHAIN_BUILD_LINES : []));
   // ---------- Wave 3, unit 2: milestones (empty for a brief without them) ----------
   if (brief.verdict !== "no" && !full) out.push(...milestoneBuildLines({ milestones: opts.milestones ?? null }));
   // ---------- end Wave 3, unit 2 ----------
