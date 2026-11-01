@@ -5,9 +5,10 @@ import type { ModelUsage } from "@/lib/types";
 export interface UsageContext {
   /**
    * "docs" is the live docs demos (lib/docs/proxy), which run on the platform's key with no product. "tools" is the tool
-   * gateway's calls to Composio (docs/AGENT_TOOLS.md). "exec" and "browse" are the code cap's sandboxes (unit 9).
+   * gateway's calls to Composio (docs/AGENT_TOOLS.md). "fetch", "vault" and "sends" are the connect cap's $0 rows with
+   * units (docs/CAPABILITIES.md, 2.4 and section 11). "exec" and "browse" are the code cap's sandboxes (unit 9).
    */
-  source: "gateway" | "muse_code" | "platform" | "docs" | "tools" | "exec" | "browse";
+  source: "gateway" | "muse_code" | "platform" | "docs" | "tools" | "fetch" | "vault" | "sends" | "exec" | "browse";
   endpoint: string;
   productId?: string | null;
   buildId?: string | null;

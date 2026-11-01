@@ -1,0 +1,130 @@
+{
+  "nws": {
+    "label": "US weather from the National Weather Service",
+    "base": "https://api.weather.gov",
+    "terms": "https://www.weather.gov/documentation/services-web-api",
+    "termsRead": "2026-10-31: open data, free to use for any purpose; a User-Agent is required; rate limits exist but aren't published.",
+    "license": "US government open data",
+    "attribution": "Weather from the National Weather Service",
+    "headers": { "accept": "application/geo+json" },
+    "perMinute": 60,
+    "paths": [
+      {
+        "id": "points",
+        "path": "/points/{lat},{lon}",
+        "does": "The forecast office and grid square for a US place, by latitude and longitude (4 decimals at most). Its properties.forecast link is the forecast path.",
+        "params": { "lat": "^-?\\d{1,2}(\\.\\d{1,4})?$", "lon": "^-?\\d{1,3}(\\.\\d{1,4})?$" },
+        "cacheSeconds": 86400
+      },
+      {
+        "id": "forecast",
+        "path": "/gridpoints/{office}/{x},{y}/forecast",
+        "does": "The 7-day forecast for a grid square, in 12-hour periods.",
+        "params": { "office": "^[A-Z]{3}$", "x": "^\\d{1,3}$", "y": "^\\d{1,3}$" },
+        "query": { "units": "^(us|si)$" },
+        "cacheSeconds": 900
+      },
+      {
+        "id": "forecast_hourly",
+        "path": "/gridpoints/{office}/{x},{y}/forecast/hourly",
+        "does": "The hourly forecast for a grid square.",
+        "params": { "office": "^[A-Z]{3}$", "x": "^\\d{1,3}$", "y": "^\\d{1,3}$" },
+        "query": { "units": "^(us|si)$" },
+        "cacheSeconds": 900
+      },
+      {
+        "id": "alerts",
+        "path": "/alerts/active",
+        "does": "Active weather alerts for a state (area=KS) or a point (point=38.89,-77.03).",
+        "query": { "area": "^[A-Z]{2}$", "point": "^-?\\d{1,2}(\\.\\d{1,4})?,-?\\d{1,3}(\\.\\d{1,4})?$" },
+        "cacheSeconds": 300
+      }
+    ]
+  },
+  "wikipedia": {
+    "label": "Wikipedia article summaries and search (English)",
+    "base": "https://en.wikipedia.org",
+    "terms": "https://www.mediawiki.org/wiki/API:Etiquette",
+    "termsRead": "2026-10-31: no key; an informative User-Agent with contact is required; no hard read limit, requests in series, cache what can be reused. Text is CC BY-SA 4.0, so a product shows where it came from.",
+    "license": "Text under CC BY-SA 4.0",
+    "attribution": "From Wikipedia, under CC BY-SA 4.0, with a link to the article",
+    "perMinute": 120,
+    "paths": [
+      {
+        "id": "summary",
+        "path": "/api/rest_v1/page/summary/{title}",
+        "does": "One article's title, short description, first paragraph (extract), thumbnail and link (content_urls.desktop.page). Title with underscores for spaces.",
+        "params": { "title": "^[^/?#\\\\]{1,200}$" },
+        "cacheSeconds": 3600
+      },
+      {
+        "id": "search",
+        "path": "/w/rest.php/v1/search/page",
+        "does": "Articles matching words (q), up to 20 (limit), each with its key, title and excerpt.",
+        "query": { "q": "^.{1,200}$", "limit": "^([1-9]|1\\d|20)$" },
+        "required": ["q"],
+        "cacheSeconds": 3600
+      }
+    ]
+  },
+  "openlibrary": {
+    "label": "Open Library book search and records",
+    "base": "https://openlibrary.org",
+    "terms": "https://openlibrary.org/developers/api",
+    "termsRead": "2026-10-31: no key; identify the app in the User-Agent; 3 requests a second when identified; no bulk downloads (the gateway's cache and daily cap keep products far from that).",
+    "license": "Open Library data",
+    "attribution": "Book data from Open Library",
+    "perMinute": 120,
+    "paths": [
+      {
+        "id": "search",
+        "path": "/search.json",
+        "does": "Books matching q, title or author, up to 20 a page (limit, page). Pass fields (key,title,author_name,first_publish_year,cover_i) to keep the answer small. A cover is https://covers.openlibrary.org/b/id/<cover_i>-M.jpg.",
+        "query": { "q": "^.{1,200}$", "title": "^.{1,200}$", "author": "^.{1,200}$", "limit": "^([1-9]|1\\d|20)$", "page": "^([1-9]|[1-4]\\d|50)$", "fields": "^[a-z_,]{1,200}$" },
+        "cacheSeconds": 86400
+      },
+      {
+        "id": "work",
+        "path": "/works/{id}.json",
+        "does": "One work's record by its key, like OL27482W: title, description, subjects.",
+        "params": { "id": "^OL\\d{1,10}W$" },
+        "cacheSeconds": 86400
+      }
+    ]
+  },
+  "usgs": {
+    "label": "Earthquakes from the US Geological Survey",
+    "base": "https://earthquake.usgs.gov",
+    "terms": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+    "termsRead": "2026-10-31: USGS data is US public domain; credit is asked for (\"U.S. Geological Survey\").",
+    "license": "US public domain",
+    "attribution": "Earthquake data: U.S. Geological Survey",
+    "perMinute": 120,
+    "paths": [
+      {
+        "id": "query",
+        "path": "/fdsnws/event/1/query",
+        "does": "Earthquakes as GeoJSON features (properties.mag, place, time, url), by dates (starttime, endtime as YYYY-MM-DD), minmagnitude, a circle (latitude, longitude, maxradiuskm), limit up to 100 and orderby.",
+        "query": {
+          "starttime": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2})?)?$",
+          "endtime": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2})?)?$",
+          "minmagnitude": "^\\d(\\.\\d)?$",
+          "latitude": "^-?\\d{1,2}(\\.\\d{1,4})?$",
+          "longitude": "^-?\\d{1,3}(\\.\\d{1,4})?$",
+          "maxradiuskm": "^\\d{1,5}$",
+          "limit": "^([1-9]\\d?|100)$",
+          "orderby": "^(time|time-asc|magnitude|magnitude-asc)$"
+        },
+        "fixed": { "format": "geojson" },
+        "cacheSeconds": 300
+      },
+      {
+        "id": "feed",
+        "path": "/earthquakes/feed/v1.0/summary/{feed}.geojson",
+        "does": "A ready-made list: significant, 4.5, 2.5, 1.0 or all, over the past hour, day, week or month (like significant_week).",
+        "params": { "feed": "^(significant|4\\.5|2\\.5|1\\.0|all)_(hour|day|week|month)$" },
+        "cacheSeconds": 300
+      }
+    ]
+  }
+}

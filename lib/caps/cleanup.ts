@@ -1,3 +1,4 @@
+import { clearConnectBuild, sweepConnect } from "@/lib/caps/connect/store";
 import { clearCodeBuildRuns, sweepCodeBuildRuns } from "@/lib/caps/code/cleanup";
 import { clearBuildNamespace, sweepData } from "@/lib/caps/data/store";
 import type { CapId } from "@/lib/caps/ids";
@@ -32,6 +33,18 @@ export const CAP_CLEANUPS: CapCleanup[] = [
     },
     get sweep() {
       return env.servedCaps.includes("data") ? sweepData : undefined;
+    },
+  },
+  // Unit 5: a build's test keys and simulated sends go when it ends; expired cache rows, keys revoked a day ago and
+  // crashed builds' test keys in the hourly sweep. Only while the connect cap is served. A product turned off keeps its
+  // keys (the gate refuses its calls anyway); they go with the product (decision 13).
+  {
+    cap: "connect",
+    get buildEnded() {
+      return env.servedCaps.includes("connect") ? clearConnectBuild : undefined;
+    },
+    get sweep() {
+      return env.servedCaps.includes("connect") ? sweepConnect : undefined;
     },
   },
   // Unit 9: a build's exec_runs rows (counts only, never code or output) go when it ends, and crashed builds' after two

@@ -1,5 +1,6 @@
 import type { Brief } from "@/lib/brief/schema";
 import { briefCaps } from "@/lib/caps/brief-fields";
+import { connectJudgeNote } from "@/lib/caps/connect/judge";
 import { codeJudgeNote } from "@/lib/caps/code/judge";
 import { dataJudgeNote } from "@/lib/caps/data/judge";
 import { extensionJudgeNote } from "@/lib/caps/extension/judge";
@@ -15,6 +16,7 @@ import type { CapProof, VerifySummary } from "@/lib/types";
  */
 export const CAP_JUDGE: Partial<Record<CapId, (brief: Brief) => string>> = {
   data: dataJudgeNote,
+  connect: connectJudgeNote,
   media: mediaJudgeNote,
   code: codeJudgeNote,
   extension: extensionJudgeNote,

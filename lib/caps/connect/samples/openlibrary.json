@@ -1,0 +1,76 @@
+{
+  "search": [
+    {
+      "recorded": "2026-10-31",
+      "from": "/search.json?q=the+hobbit&limit=3&fields=key,title,author_name,first_publish_year,cover_i",
+      "status": 200,
+      "data": {
+        "numFound": 461,
+        "start": 0,
+        "numFoundExact": true,
+        "num_found": 461,
+        "documentation_url": "https://openlibrary.org/dev/docs/api/search",
+        "q": "the hobbit",
+        "offset": null,
+        "docs": [
+          {
+            "author_name": [
+              "J.R.R. Tolkien"
+            ],
+            "cover_i": 14627509,
+            "first_publish_year": 1937,
+            "key": "/works/OL27482W",
+            "title": "The Hobbit"
+          },
+          {
+            "author_name": [
+              "Charles Dixon",
+              "Sean Deming",
+              "J.R.R. Tolkien"
+            ],
+            "cover_i": 8406766,
+            "first_publish_year": 1990,
+            "key": "/works/OL219602W",
+            "title": "The Hobbit"
+          },
+          {
+            "author_name": [
+              "J.R.R. Tolkien"
+            ],
+            "cover_i": 255844,
+            "first_publish_year": 1979,
+            "key": "/works/OL14926019W",
+            "title": "The Hobbit & The Lord of the Rings [collection/set]"
+          }
+        ]
+      }
+    }
+  ],
+  "work": [
+    {
+      "recorded": "2026-10-31",
+      "from": "/works/OL27482W.json",
+      "note": "trimmed",
+      "status": 200,
+      "data": {
+        "key": "/works/OL27482W",
+        "title": "The Hobbit",
+        "description": "The Hobbit is a tale of high adventure, undertaken by a company of dwarves in search of dragon-guarded gold. A reluctant partner in this perilous quest is Bilbo Baggins, a comfort-loving unambitious hobbit, who surprises even himself by his resourcefulness and skill as a burglar.\r\n\r\nEncounters with trolls, goblins, dwarves, elves, and giant spiders, conversations with the dragon, Smaug, and a rather unwilling presence at the Battle of Five Armies are just some of the adventures that befall Bilbo.\r\n\r\nBilbo Baggins has taken his place among the ranks of the immortals of children’s fiction. Written by Professor Tolkien for his children, The Hobbit met with instant critical acclaim when published.",
+        "subjects": [
+          "Fantasy",
+          "Arkenstone",
+          "Battle of Five Armies",
+          "invisibility",
+          "thrushes",
+          "eagles",
+          "hobbits",
+          "wizards"
+        ],
+        "first_publish_date": "January 1938",
+        "covers": [
+          14627509
+        ]
+      }
+    }
+  ]
+}
