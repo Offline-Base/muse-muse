@@ -1,4 +1,6 @@
 import type { CapId } from "@/lib/caps/ids";
+import { EXTENSION_CATALOG } from "@/lib/caps/extension/catalog";
+import { GAMES_CATALOG } from "@/lib/caps/games/catalog";
 import { RUNTIME_CATALOG } from "@/lib/caps/runtime/catalog";
 
 /**
@@ -13,6 +15,8 @@ export interface CapCatalogEntry {
 
 export const CAP_CATALOG: Partial<Record<CapId, CapCatalogEntry>> = {
   runtime: RUNTIME_CATALOG,
+  extension: EXTENSION_CATALOG,
+  games: GAMES_CATALOG,
 };
 
 /** The enabled caps with a catalog entry, in plan order. */

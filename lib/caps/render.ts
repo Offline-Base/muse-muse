@@ -1,6 +1,8 @@
 import type { Brief } from "@/lib/brief/schema";
 import { briefCaps } from "@/lib/caps/brief-fields";
 import type { CapId } from "@/lib/caps/ids";
+import { EXTENSION_RENDER } from "@/lib/caps/extension/render";
+import { GAMES_RENDER } from "@/lib/caps/games/render";
 import { RUNTIME_RENDER } from "@/lib/caps/runtime/render";
 
 /**
@@ -19,6 +21,8 @@ export interface CapRenderEntry {
 
 export const CAP_RENDER: Partial<Record<CapId, CapRenderEntry>> = {
   runtime: RUNTIME_RENDER,
+  extension: EXTENSION_RENDER,
+  games: GAMES_RENDER,
 };
 
 function rendered(brief: Brief): Array<[CapId, CapRenderEntry]> {
