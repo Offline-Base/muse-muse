@@ -1463,19 +1463,37 @@ the manifest keys it allows (refusing `host_permissions`, `content_scripts`, `co
 `web_accessible_resources`, `externally_connectable`, `key` and others by name), only the four permissions and only
 those brief.md's `- Permissions:` line lists, Manifest V3 with a module service worker, and a file scan (no `eval`,
 `new Function`, `import()`, `importScripts`, inline scripts or `on*=` handlers, scripts or styles from other sites,
-frames, `chrome.scripting`, bare imports, and no `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource` or `sendBeacon`
-outside `platform.js`). The scan reads text, so it catches plain cases; the browser's policy below is the real guard.
+frames, `chrome.scripting`, `chrome.tabs.captureVisibleTab` and the capture APIs, bare imports, and no `fetch`,
+`XMLHttpRequest`, `WebSocket`, `EventSource` or `sendBeacon` outside `platform.js`). The scan reads text, so it catches
+plain cases; the browser's policy below is the real guard for the network. Nothing but the scan stops a screenshot of
+the visible tab, which `activeTab` allows, so the copy's "can't read pages" rests on it. Paths: plain names, no segment
+starting with `.` or `_` (Chrome keeps `_` names), and, on both sides (`pathClashes`), no two names that differ only in
+capital letters, no name that is the platform's `manifest.json` or `config.js` in other letters, and no folder named like
+a file. The sandbox's disk tells case apart, but macOS and Windows disks don't, and there `MANIFEST.JSON` replaced the
+platform's manifest on unzip (the review's probe).
 
 **Extension, the policy.** The platform writes the manifest's `host_permissions` (the product's own origin only) and
-`content_security_policy.extension_pages`: `script-src 'self'; object-src 'self'; connect-src <origin>; frame-src 'none';
-base-uri 'none'`. Measured in Chromium 143: Chrome accepts it, and a `fetch` to another origin fails from the popup and
-from the service worker, while the product's own action answers.
+`content_security_policy.extension_pages`: `default-src 'self'; script-src 'self'; object-src 'self'; img-src 'self'
+data: blob: <origin>; connect-src <origin>; frame-src 'none'; form-action 'none'; base-uri 'none'`. Measured in Chromium
+143: Chrome accepts it, a `fetch` to another origin fails from the popup and from the service worker, while the product's
+own action answers, and an image, a CSS background and a font from another origin never reach it (with the earlier
+policy, which had no `default-src`, all three did). A policy can't stop navigation (`chrome.tabs.create`,
+`window.open`), which opens a page the person sees.
 
 **Extension, the checks.** Fixed (`scripts/caps/extension.mjs`): `manifest` (the packer's rules on the product's files
 as they are), `loaded` and `popup` (the platform builds the extension pointed at a closed port, loads it into its own
 Chromium with `--load-extension`, waits for the service worker and opens the popup, which must render with no script
-error and no product behind it), and `action` (from the test's record: `expectExtensionAction` saw the popup call one of
-the product's actions and get JSON). The test goes in `tests/extension.spec.ts`, not the smoke spec: the extension runs
+error and no product behind it), and `action`. Compiling needs TypeScript and loading needs Playwright, and the only
+copies in a build are the product's. So the checker runs the CAPS_DIR packer (`check --root`) and loader
+(`scripts/caps/extension-load.mjs`) as child processes and reads only their exit code and last JSON line: nothing from
+the product's node_modules runs in the caps check's process, so it can't change another cap's checks (the review's
+probe did, with a TypeScript shim). A product that rewrote its own TypeScript or Playwright can still fake its own
+`manifest`, `loaded` and `popup`; what ships doesn't rest on them, since the platform checks the bundle again and writes
+the manifest itself. In a platform build, a `brief.md` with no `- Permissions:` line allows none (a test folder allows all
+four). Editing the line can still widen what verify allows, while the zip ships with the stored brief's permissions and
+says what it left out; closing that needs the platform to write the permissions into CAPS_DIR at provision.
+`action` is from the test's record: `expectExtensionAction` saw the popup call one of the product's actions and got
+JSON. The test goes in `tests/extension.spec.ts`, not the smoke spec: the extension runs
 in a browser of its own, which the demo video can't show, and the demo runs only `tests/smoke.spec.ts`. No
 `scripts/caps/extension.browser.json`: the helper launches its own persistent context. Extensions need Chromium's full
 headless mode (`channel: "chromium"`); Playwright's headless shell never starts the service worker (measured).
@@ -1488,15 +1506,19 @@ the platform's packer from `CAPS_DIR` in the sandbox (`bundle`), then the platfo
 (`lib/caps/extension/{manifest,scan,package}.ts`), keeps only the permissions the brief lists (saying which it left
 out), writes its own manifest and `config.js` for the live origin, zips it and saves it at
 `extensions/<productId>/latest.zip` (`putBlobAt`, replaced on each ship, the public store like the platform's other
-files). A refinement packages it again. Any failure is one build room line, and the product is live either way.
+files). A refinement packages it again. When packaging fails, an older zip is taken down (`removeExtensionZip`), since it
+came from older files. Any failure is one build room line (`runCapsShipStep` in `lib/caps/ship-run.ts` says so even when
+the brief can't be read), and the product is live either way.
 
 **Extension, the download.** `GET /p/<slug>/get/extension` (`lib/caps/extension/download.ts`): with the cap off it
 answers exactly what `/p/[slug]/get/[kind]` answered this path before (checked against `answerDownload` in a test), and
 touches nothing. On: a shipped product whose newest brief has an extension and whose zip exists gets a 302 to the zip
-as a download; 20 an hour per address and 2,000 a day for the site, as the native downloads; HEAD isn't counted.
+as a download, with `v=<when it was saved>` so a browser that kept an older zip (Blob allows a month) fetches the new one;
+20 an hour per address and 2,000 a day for the site, as the native downloads; HEAD isn't counted.
 `CAP_OUTPUTS = ["extension"]` in `lib/native/targets.ts` and an "Extension" tab in the Get it panel
 (`components/product/ExtensionPanel.tsx`): the link, the Load unpacked steps, that it's in no store, and what each
-permission lets it do, in plain words.
+permission lets it do, in plain words. The page asks whether the zip is there (`extensionZipReady`, only with the flag
+on, for a live brief with an extension); when it isn't, the tab says it isn't ready yet instead of linking to a 404.
 
 **Games.** Overlays `games` (shared: `tests/caps/games.ts`, `scripts/caps/games.mjs`, `lib/platform/assets3d.ts`, skill
 `muse-games`), `games-phaser` (`phaser` 4.2.1, `components/game/PhaserGame.tsx`, `lib/platform/phaser-assets.ts`,
@@ -1507,9 +1529,11 @@ permission lets it do, in plain words.
 Babylon 9.29.0, Oct 1). No `games.browser.json`: Playwright 1.64 adds `--enable-unsafe-swiftshader` to every Chromium
 launch, so WebGL works in the smoke, demo and studio runs alike. `expectGameResponds(page, { key, shots })` reads canvas
 screenshots in Node (a small PNG reader, so the game's page is never touched): `canvas` passes when it shows 3 or more
-colors with some spread, `key-press` when at least 0.2% of it changes after the key, and it says when the canvas also
-changes with no key. Fixed checks: `engine` (exact version in package.json and node_modules, and imported by the
-product's code), `no-cdn` (no engine, decoder, model or script URL from another site), `notices` (the notice file, and
+colors with some spread, `key-press` when at least 0.2% of it changes after the key. It also watches two idle windows as
+long as the key press: when the canvas changes on its own, the key press must change at least twice the most it did plus
+0.2%, so a canvas that animates by itself and ignores keys fails (the review's probe passed before). Fixed checks:
+`engine` (exact version in package.json and node_modules, and imported by the product's code; the CAPS_DIR copy reads
+which engine from `CAPS_DIR/active.json`, never the product's `musemuse.caps.json`), `no-cdn` (no engine, decoder, model or script URL from another site), `notices` (the notice file, and
 a link to it from the page), then `canvas` and `key-press` from the record.
 
 **3D models, against General's GLB pipeline.** tg-3d's helpers aren't fixed yet (7f826bb is the spike), so these are
@@ -1550,7 +1574,7 @@ template's tsconfig against `@types/chrome` 0.3.5, Phaser 4.2.1 and Babylon 9.29
 blocks), `lib/pipeline/__tests__/workflow.scenario.test.ts` (the fake step, a mock for `lib/caps/ship.ts`, three
 scenarios, and the flags-off sum), `lib/brief/normalize.ts` (marked block), the registries in `lib/caps/`,
 `lib/local-files.ts` (`extensions`), `lib/native/targets.ts` (`CAP_OUTPUTS`), `components/product/GetItPanel.tsx`
-(the slot), `app/p/[slug]/page.tsx` (one line), `components/product/__tests__/get-it.test.tsx` (two assertions) and
+(the slot), `app/p/[slug]/page.tsx` (the slot, and the zip lookup behind the flag), `components/product/__tests__/get-it.test.tsx` (two assertions) and
 `.env.example` (its block). No golden file changed; the flags-off tests pick up the two caps through `CAP_IDS` and
 `CAP_BRIEF_FIELDS`. No `muse-device/` changes.
 
@@ -1732,6 +1756,11 @@ Phaser game.
   the extension's test is `tests/extension.spec.ts`; a generic after-deploy hook (`lib/caps/ship.ts`, marked blocks in
   `workflow.ts` and `build-steps.ts`); `CAP_OUTPUTS` in `lib/native/targets.ts` for the Get it slot; the bridge flags
   wait until the bridge is built.
+- Oct 31 (unit 14, review fixes): 20a updated. Path clash rules on both sides; the extension policy adds `default-src`,
+  `img-src` and `form-action`; the scan refuses page capture; the extension checker runs the packer and a new loader
+  (`scripts/caps/extension-load.mjs`) as child processes; `key-press` must beat idle drift; the games checker reads
+  `CAPS_DIR/active.json`; the download link is versioned, a failed repackage takes the old zip down, and the Get it tab
+  says when there's no zip; `runCapsShipStep` always leaves a line.
 - Oct 31 (integration 1, tg-cap-int with the UI brand): build on these shapes. `judgeInstructions(brief, { museAppLook })`
   starts from the look's house style, then the target notes, then `capsJudgeNotes(brief)`. Provisioning applies the
   muse-app look, then a brief's targets, then its caps; every overlay sits in `TARGETS_DIR` through `installTargets`
