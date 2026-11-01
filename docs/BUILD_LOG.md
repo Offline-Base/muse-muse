@@ -1880,3 +1880,19 @@ Left for the owner: non-Meta student profiles in scripts/knowledge/aws/job/train
 ## Nov 1, 2026: device loop integration branch (tg-device-loop-int)
 
 **Merged** tg-quant-targets, tg-try-export, tg-board-loop, tg-github-export, tg-gadget-connect and tg-story onto main at cd314a7d. `0031_board_loop` keeps its number and connected accounts becomes `0032_connected_accounts`, one second newer in the journal, with a fresh snapshot. Both read before any deploy: new tables and indexes only, so additive. `docs/JETSON_TODO.md` is now one list in three parts. `targetForBoardKind` calls `deviceModelTarget`. `lib/story/flow.ts` now marks the small file step as harness, from the Nov 1 quantize run.
+
+**Fixes the merge needed.** A union resolve dropped `);` in `lib/db/schema.ts` (tsc caught it). `tune-room.test.tsx` still asserted the old Where it runs text, which tg-gadget-connect's own run had not caught.
+
+**Blocked: the Preview.** A permission check denied `vercel deploy` for this branch, labeling it a production deploy, and it was not retried. Nothing ran on Vercel and the owner's main database was not touched, so `0031` and `0032` have not run there. Both migrate cleanly on a fresh local PGlite.
+
+**Checked instead, on a local `next dev` (port 3055) with its own PGlite, made-up rows and all flags on. Not a Preview, and not `next build`.** Screenshots are in `docs/log/shots/device-int/`.
+
+- The two tuned models are made-up rows, and their files are made-up rows: no GGUF exists behind them. Pages, the device table and the download rules are what this shows.
+- Export: a Llama tune gets Mac, Windows and Linux scripts and a 409 for Jetson, and an r30b tune the reverse. The scripts were downloaded, not run.
+- Simulated board loop: one POST went to serving in under 20 seconds, through the real workflow runtime. The clip was skipped with its reason, since no tools folder was set. Numbers are canned text, labeled simulated.
+- Try page: two visitors queued 1 and 2, both got canned answers, and another visitor reading a turn got 404.
+- Pairing with `muse-device/sim_board.py` over real TLS: the check number matched on both sides, an open-access visitor got 403, a signed-in made-up account paired, and the target came out as Muse Glimmer, one bit, through `deviceModelTarget`. `ask_board` was not rerun on the merge.
+- GitHub with no OAuth app: start redirects to `?github=off`, the Code page says it isn't set up and keeps Download source, and an export POST gets 503 `not_set_up`.
+- `/offline`, `/private`, `/how-it-works` and the rest answered 200, with no sideways scroll at 1280 and 390.
+
+**What the Preview needs beyond the requested switches:** `HOST_TUNED`, or Try answers 404. `HARDWARE_BOARD_KEY`, a real session, and a board reachable from Vercel for pairing, since `OPEN_ACCESS=admin` visitors are refused on purpose. `BOARD_SIM_URL` and `BOARD_SIM_TOKEN` for the loop, or it fails at the send stage's limit.
