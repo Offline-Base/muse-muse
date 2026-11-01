@@ -2063,6 +2063,12 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "status_before_takedown": {
+          "name": "status_before_takedown",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {

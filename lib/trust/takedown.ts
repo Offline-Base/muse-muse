@@ -11,7 +11,7 @@ import type { ProductStatus } from "@/lib/types";
  * - A takedown sets products.taken_down_at and the reason, turns the product off (status "disabled", the kill switch the
  *   gateway, its MCP connector and the gallery already honor), revokes its live tokens at exactly taken_down_at, hides
  *   its page, and removes its public link from its Vercel project. Undoing it gives back only the tokens revoked at that
- *   moment, the status its latest build shipped with, and the link.
+ *   moment, the exact status it had before (kept in products.status_before_takedown), and the link.
  * - A ban sets users.banned_at and refuses sign-in and builds, then takes down each of their products at the same
  *   moment, so lifting the ban undoes exactly those takedowns and none an admin made for another reason.
  */
@@ -22,6 +22,8 @@ export interface TakedownProduct {
   ownerId: string;
   status: ProductStatus;
   takenDownAt: Date | null;
+  /** The status the takedown replaced, or null when it isn't down. */
+  statusBeforeTakedown: ProductStatus | null;
   vercelProjectId: string | null;
   liveUrl: string | null;
 }
@@ -30,7 +32,10 @@ export interface TakedownDeps {
   now(): Date;
   findProduct(slug: string): Promise<TakedownProduct | null>;
   productsOf(userId: string): Promise<TakedownProduct[]>;
-  /** Sets taken_down_at, the reason and status "disabled" when it isn't taken down already. False when it was. */
+  /**
+   * Sets taken_down_at, the reason and status "disabled", keeping the status it replaces in status_before_takedown, when
+   * it isn't taken down already. False when it was.
+   */
   markTakenDown(productId: string, at: Date, reason: string): Promise<boolean>;
   /** Clears the takedown and sets the status back. */
   clearTakedown(productId: string, status: ProductStatus): Promise<void>;
@@ -38,8 +43,8 @@ export interface TakedownDeps {
   revokeLiveTokens(productId: string, at: Date): Promise<number>;
   /** Un-revokes the live tokens revoked at exactly `at` that haven't expired. Returns how many. */
   restoreLiveTokens(productId: string, at: Date): Promise<number>;
-  /** The status the product's latest build shipped with. */
-  shippedStatus(productId: string): Promise<ProductStatus | null>;
+  /** The status of the product's latest build (a BuildStatus), for a product that was still building when taken down. */
+  shippedStatus(productId: string): Promise<string | null>;
   /** Removes or puts back the product's public link on Vercel. Null when publishing is off here. */
   alias: { remove(projectId: string, host: string): Promise<void>; restore(projectId: string, host: string): Promise<void> } | null;
   /** Each cap pauses what it runs for the product (lib/caps/cleanup.ts). */
@@ -87,12 +92,26 @@ async function takeDown(p: TakedownProduct, at: Date, reason: string, deps: Take
   return { slug: p.slug, takenDownAt: at.toISOString(), tokens, link: await linkStep(p, deps, "remove") };
 }
 
+/**
+ * The status undoing a takedown puts back: exactly the one the takedown replaced, so a failed product stays failed and
+ * one an admin had turned off stays off. A product that was still building then gets what its latest build ended as
+ * (registerStep keeps a disabled product disabled, so the takedown hid it), and one still building stays "building".
+ * With nothing to go on (a row from before status_before_takedown), it stays off for an admin to turn on.
+ */
+export function statusAfterUndo(before: ProductStatus | null, latestBuild: string | null): ProductStatus {
+  if (before && before !== "building") return before;
+  if (latestBuild === "live" || latestBuild === "partial" || latestBuild === "failed") return latestBuild;
+  if (latestBuild === "refused") return "failed";
+  if (latestBuild) return "building";
+  return before ?? "disabled";
+}
+
 async function undo(p: TakedownProduct, deps: TakedownDeps): Promise<TakedownResult | null> {
   if (!p.takenDownAt) return null;
   const at = p.takenDownAt;
   const tokens = await deps.restoreLiveTokens(p.id, at);
-  const shipped = await deps.shippedStatus(p.id);
-  await deps.clearTakedown(p.id, shipped === "live" || shipped === "partial" ? shipped : "live");
+  const latest = p.statusBeforeTakedown && p.statusBeforeTakedown !== "building" ? null : await deps.shippedStatus(p.id);
+  await deps.clearTakedown(p.id, statusAfterUndo(p.statusBeforeTakedown, latest));
   return { slug: p.slug, takenDownAt: at.toISOString(), tokens, link: await linkStep(p, deps, "restore") };
 }
 
@@ -167,6 +186,7 @@ const PRODUCT_COLUMNS = {
   ownerId: schema.products.ownerId,
   status: schema.products.status,
   takenDownAt: schema.products.takenDownAt,
+  statusBeforeTakedown: schema.products.statusBeforeTakedown,
   vercelProjectId: schema.products.vercelProjectId,
   liveUrl: schema.products.liveUrl,
 };
@@ -182,13 +202,17 @@ export function dbTakedownDeps(alias: TakedownDeps["alias"]): BanDeps {
     async markTakenDown(productId, at, reason) {
       const rows = await db()
         .update(schema.products)
-        .set({ takenDownAt: at, takedownReason: reason, status: "disabled", updatedAt: at })
+        // Postgres reads the right-hand side from the row before the update, so this keeps the status being replaced.
+        .set({ takenDownAt: at, takedownReason: reason, statusBeforeTakedown: sql<ProductStatus>`${schema.products.status}`, status: "disabled", updatedAt: at })
         .where(and(eq(schema.products.id, productId), isNull(schema.products.takenDownAt)))
         .returning({ id: schema.products.id });
       return rows.length > 0;
     },
     async clearTakedown(productId, status) {
-      await db().update(schema.products).set({ takenDownAt: null, takedownReason: null, status, updatedAt: new Date() }).where(eq(schema.products.id, productId));
+      await db()
+        .update(schema.products)
+        .set({ takenDownAt: null, takedownReason: null, statusBeforeTakedown: null, status, updatedAt: new Date() })
+        .where(eq(schema.products.id, productId));
     },
     async revokeLiveTokens(productId, at) {
       const rows = await db()
@@ -220,14 +244,14 @@ export function dbTakedownDeps(alias: TakedownDeps["alias"]): BanDeps {
         .innerJoin(schema.builds, eq(schema.builds.id, schema.products.latestBuildId))
         .where(eq(schema.products.id, productId))
         .limit(1);
-      if (row) return row.status as ProductStatus;
+      if (row) return row.status;
       const [latest] = await db()
         .select({ status: schema.builds.status })
         .from(schema.builds)
         .where(eq(schema.builds.productId, productId))
         .orderBy(desc(schema.builds.startedAt))
         .limit(1);
-      return (latest?.status as ProductStatus | undefined) ?? null;
+      return latest?.status ?? null;
     },
     alias,
     productOff: async (productId) => {

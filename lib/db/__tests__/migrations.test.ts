@@ -303,6 +303,7 @@ describe("a database already at 0012", () => {
     assert.equal(product!.status, "live");
     assert.equal(product!.takenDownAt, null);
     assert.equal(product!.takedownReason, null);
+    assert.equal(product!.statusBeforeTakedown, null);
     for (const c of ["adult_confirmed_at", "terms_version", "terms_accepted_at", "banned_at", "ban_reason"]) {
       assert.equal((await columns(client, "users")).get(c)?.nullable, true, c);
     }

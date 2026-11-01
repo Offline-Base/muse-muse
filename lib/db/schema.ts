@@ -120,6 +120,8 @@ export const products = pgTable(
      */
     takenDownAt: timestamp("taken_down_at", { withTimezone: true }),
     takedownReason: text("takedown_reason"),
+    /** 0018_trust: the status the takedown replaced with "disabled", which undoing it puts back. Null when it isn't down. */
+    statusBeforeTakedown: text("status_before_takedown").$type<ProductStatus>(),
   },
   (t) => [index("products_owner_idx").on(t.ownerId), index("products_rebuild_idx").on(t.rebuildOf)],
 );

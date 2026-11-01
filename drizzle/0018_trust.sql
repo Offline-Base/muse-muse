@@ -13,6 +13,7 @@ CREATE TABLE "abuse_reports" (
 --> statement-breakpoint
 ALTER TABLE "products" ADD COLUMN "taken_down_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "products" ADD COLUMN "takedown_reason" text;--> statement-breakpoint
+ALTER TABLE "products" ADD COLUMN "status_before_takedown" text;--> statement-breakpoint
 ALTER TABLE "users" ADD COLUMN "adult_confirmed_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "users" ADD COLUMN "terms_version" text;--> statement-breakpoint
 ALTER TABLE "users" ADD COLUMN "terms_accepted_at" timestamp with time zone;--> statement-breakpoint

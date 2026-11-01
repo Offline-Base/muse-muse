@@ -211,7 +211,7 @@ describe("the bundle and the tables", () => {
     products: [
       "ownerId", "vercelProjectId", "liveUrl",
       // Wave 3, unit 1 (0018_trust): a takedown belongs to the site that made it (docs/CAPABILITIES.md, section 4).
-      "takenDownAt", "takedownReason",
+      "takenDownAt", "takedownReason", "statusBeforeTakedown",
     ],
     // The guest account again; IMPORTED_RUN marks the run; a finished build has no round running and no Stop to heed.
     builds: [

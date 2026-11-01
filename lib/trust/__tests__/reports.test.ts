@@ -12,6 +12,7 @@ import { after, afterEach, before, describe, it, mock } from "node:test";
 import { eq } from "drizzle-orm";
 import * as realSchema from "@/lib/db/schema";
 import { fileReport, parseReport, reporterKey, REPORT_LIMITS, type ReportDeps } from "@/lib/trust/reports";
+import type { ProductStatus } from "@/lib/types";
 
 const canMock = typeof (mock as { module?: unknown }).module === "function";
 type TestDb = import("drizzle-orm/pglite").PgliteDatabase<typeof realSchema>;
@@ -171,12 +172,40 @@ describe("on a database", { skip: canMock ? false : "needs --experimental-test-m
     assert.equal(undone.result.tokens, 1, "only the token the takedown revoked comes back");
     assert.equal(undone.result.link, "restored");
     const restored = await row(product.id);
-    assert.equal(restored.status, "partial", "the status its latest build shipped with");
+    assert.equal(restored.status, "live", "exactly the status it had before");
+    assert.equal(restored.statusBeforeTakedown, null);
     assert.equal(restored.takenDownAt, null);
     const back = await tokens(product.id);
     assert.equal(back.filter((t) => !t.revokedAt).length, 1);
     assert.equal(back.filter((t) => t.revokedAt?.toISOString() === "2026-10-01T00:00:00.000Z").length, 1, "an older revocation stays");
     assert.ok(await queries.getProductPage(product.slug));
+  });
+
+  it("undo puts back exactly the status a takedown replaced: failed stays failed, turned off stays off", async () => {
+    process.env.TRUST_REPORTS = "1";
+    const owner = await maker();
+    const cases: Array<[ProductStatus, string, ProductStatus, string]> = [
+      ["failed", "failed", "failed", "a failed product"],
+      ["disabled", "live", "disabled", "one an admin had turned off with the kill switch"],
+      ["partial", "partial", "partial", "a partly working one"],
+      ["building", "partial", "partial", "one still building then: what its build ended as"],
+      ["building", "fixing", "building", "one whose build is still running"],
+    ];
+    for (const [before, buildStatus, expected, what] of cases) {
+      const { product, buildId } = await shipped(owner);
+      await testDb.update(realSchema.products).set({ status: before }).where(eq(realSchema.products.id, product.id));
+      await testDb.update(realSchema.builds).set({ status: buildStatus as never }).where(eq(realSchema.builds.id, buildId));
+      await takedown.takedownProduct(product.slug, "Spam.", deps());
+      const down = await row(product.id);
+      assert.equal(down.status, "disabled", what);
+      assert.equal(down.statusBeforeTakedown, before, what);
+      await takedown.undoTakedown(product.slug, deps());
+      const back = await row(product.id);
+      assert.equal(back.status, expected, what);
+      assert.equal(back.statusBeforeTakedown, null, what);
+      const inGallery = (await queries.listShippedProducts()).some((c) => c.slug === product.slug);
+      assert.equal(inGallery, expected === "live" || expected === "partial", `${what}: gallery`);
+    }
   });
 
   it("a takedown still holds when its link can't be removed, and says why", async () => {
