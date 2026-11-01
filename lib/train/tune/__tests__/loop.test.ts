@@ -108,7 +108,7 @@ describe("budget", () => {
 describe("next move", () => {
   const good = roundScore(Array.from({ length: 16 }, (_, i) => j(i, 9)), 8);
   const low = roundScore(Array.from({ length: 16 }, (_, i) => j(i, 5)), 8);
-  const m = { stopped: false, finished: 1, maxRounds: 3, jobStatus: "succeeded", score: low, weakCount: 3, fits: true };
+  const m = { stopped: false, finished: 1, maxRounds: 3, jobStatus: "succeeded" as string | null, score: low, weakCount: 3, fits: true };
   const code = (over: Partial<typeof m>) => {
     const r = nextMove({ ...m, ...over });
     return r.kind === "stop" ? r.code : "go";
