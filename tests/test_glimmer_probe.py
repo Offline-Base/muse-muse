@@ -123,7 +123,7 @@ def test_reasoning_off_sends_no_reasoning_at_all(tmp_path):
     assert "chat_template_kwargs" not in body
     assert "reasoning strength" not in body["messages"][0]["content"].lower()
     assert body["messages"][0]["content"] == "Decide."
-    assert body["stop"] == ["<|eot|>"]
+    assert body["stop"] == ["<|eot|>", "<|end_of_text|>"]
     llm.close()
     on = gp.LocalLLM(replace(settings, glimmer_reasoning="on"), "router")
     with_reasoning = on.build_body([{"role": "user", "content": "x"}], reasoning="high")

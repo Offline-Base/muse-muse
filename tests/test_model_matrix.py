@@ -211,7 +211,7 @@ def test_a_report_says_where_it_ran_and_that_reasoning_was_off(environ, tmp_path
                        {**environ, "GLIMMER_REASONING": "off"})  # fmt: skip
     assert code in (0, 2)
     body = json.loads(side.calls.last.request.content)
-    assert "chat_template_kwargs" not in body and body["stop"] == ["<|eot|>"]
+    assert "chat_template_kwargs" not in body and body["stop"] == ["<|eot|>", "<|end_of_text|>"]
     md = (out / "matrix_unit.md").read_text()
     assert "| Device | A100 GPU, not a target device, DEVICE_ONLY=1 for every config |" in md
     assert "| Router call | reasoning off, 1500 tokens" in md
@@ -459,3 +459,15 @@ def test_the_shipped_rows_have_glimmer_write_as_the_app_does(monkeypatch):
         assert s.router.llm == router, name
         assert isinstance(s.checker_llm, LabelsFrom) is labels, name
     assert mm.CONFIGS["glimmer_decide"].answers == "lfm"  # the registered rows leave summaries on LFM
+
+
+def test_replies_cut_off_at_the_token_cap_are_counted():
+    # A repetition loop runs to the cap; the report counts finish_reason "length" per config.
+    def report(reasons):
+        r = run_eval.EvalReport(name="x")
+        r.rows = [{"finish_reason": f} if f else {} for f in reasons]
+        return r
+
+    lines = mm.cutoff_lines({"policy_lfm": report([None, None]), "glimmer_decide": report(["stop", "length", "length", None])})
+    assert "| glimmer_decide | 3 | 2 |" in lines and "| policy_lfm | 0 | 0 |" in lines
+    assert mm.cutoff_lines({"policy_lfm": report([None])}) == []

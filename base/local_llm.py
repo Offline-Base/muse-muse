@@ -44,6 +44,9 @@ ROLES = ("answer", "router", "checker", "jetson")
 # The model card's recommended sampling for LFM3-VL-2B.
 CHECKER_SAMPLING = {"temperature": 0.1, "top_p": 1.0, "top_k": 50, "min_p": 0.0, "repeat_penalty": 1.1}
 GLIMMER_END = "<|eot|>"
+# With reasoning off the reply stops at either end token, as Meta's notes and the training session
+# say; never at <|eom|>, which ends a tool step, not the answer.
+GLIMMER_STOPS = [GLIMMER_END, "<|end_of_text|>"]
 _THINK = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
 _TO_SELF = re.compile(r"(?:<\|start\|>)?\s*assistant to=self\b")
 _TO_USER = re.compile(r"(?:<\|start\|>)?\s*assistant to=user(?:<\|message\|>)?")
@@ -389,7 +392,7 @@ class LocalLLM:
                     ) from None
                 body["lora"] = [{"id": lora_id, "scale": 1.0}]
         if self.reasoning_off:
-            body["stop"] = [GLIMMER_END]  # without it the reply is 200 with markup in the content
+            body["stop"] = list(GLIMMER_STOPS)  # without it the reply is 200 with markup in the content
         if json_schema is not None:
             body["response_format"] = response_format(json_schema)
         if tools:

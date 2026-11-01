@@ -514,6 +514,22 @@ def summary_lines(reports: dict[str, run_eval.EvalReport]) -> list[str]:
     return lines
 
 
+def cutoff_lines(reports: dict[str, run_eval.EvalReport]) -> list[str]:
+    """Router replies cut off at the token cap (finish_reason "length"), when any row reports one.
+
+    An IQ1_S file can fall into a repetition loop and run to the cap (the training session saw 10
+    of 60 replies do it on stage-b-r30's IQ1_S, Oct 31); such a reply also shows as a fallback.
+    """
+    if not any(row.get("finish_reason") for r in reports.values() for row in r.rows):
+        return []
+    lines = ["", "Router replies cut off at the token cap (finish_reason length; a repetition loop looks like this):",
+             "", "| Config | Router replies with a finish reason | Cut off at the cap |", "|---|---|---|"]  # fmt: skip
+    for name, r in reports.items():
+        reasons = [row.get("finish_reason") for row in r.rows if row.get("finish_reason")]
+        lines.append(f"| {name} | {len(reasons)} | {sum(1 for f in reasons if f == 'length')} |")
+    return lines
+
+
 def fixed_broke_lines(reports: dict[str, run_eval.EvalReport], baseline: str) -> list[str]:
     base = reports.get(baseline)
     if base is None or len(reports) < 2:
@@ -565,6 +581,7 @@ def render(opts: argparse.Namespace, configs: list[Config], results: dict[str, d
     for set_label, reports in results.items():
         lines += ["", f"## {set_label}", "", *set_table(reports, opts.baseline), *fixed_broke_lines(reports, opts.baseline)]
         lines += summary_lines(reports)
+        lines += cutoff_lines(reports)
         kept = {n: sum("summary" in (row.get("floors") or []) for row in r.rows) for n, r in reports.items()}
         if kept.get("keywords"):
             lines += ["", f"keywords: {kept['keywords']} item(s) needed a summary, which no model writes in that row, "
