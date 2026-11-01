@@ -1623,3 +1623,14 @@ All on localhost:3023, TEST_MODEL, made-up data. Costs are what each build's log
 - Gateway check on a scratch database with the real route and the template's real client: build token got the simulated photo and WAV, live token with no board got 503 gadget_offline and isGadgetOffline true, a token without the option got 403 gadget_not_allowed. A real board not run.
 - Tests: package-run 4 pass, local-gadget 3 pass. tsc shows nothing in the touched files. workflow.scenario can't load here: 57 cancelled on the workflow package's FatalError export, and the same load error shows on tg-verify without these changes.
 - Spend: $0.28 Meta as recorded, about $0.03 Composio by estimate, sandbox time unmeasured.
+
+## Nov 1: full builds behind FULL_BUILDS (branch tg-full-builds, unmerged)
+
+- Why: the owner said builds look like one page. The audit found the writer is told to write small, nothing compares the brief with the note, and tests and judge cover one path.
+- Built: a numbered requirements list, a separate scope check that sends a shrunken brief back, code-made milestones sharing the wall, one test per requirement with a reload check for saved data, a judge read of each requirement, Live blocked by any unmet one, and a checklist in the build room and on the product page. docs/FULL_BUILDS.md has the map.
+- Decision: wall 120 minutes under the flag (`FULL_BUILD_WALL_MINUTES`, 90 to 150). Reasoned from the caps, not from a run.
+- Decision: no `CAP_READY` line changed. Data and the others are fake-tested only, and data needs a public `PLATFORM_URL` for its real build. So full builds save to the browser for now and name accounts as a part they can't do.
+- Decision: the skill, `components/AppNav.tsx` and `musemuse.requirements.json` go in as extra files, so they need no new snapshot. The product-ui and AGENTS.md wording changes do need one.
+- Decision: a scope check that can't run keeps the brief and says so in the build room, rather than stopping the build. The judge still holds the product to the requirements it has.
+- Tests: fakes only. Touched-code files 146 of 147 pass; the one is render.test, which needs the mocks flag. workflow.scenario 56 of 58, with the same 2 failures as tg-prove without this work, and the new full-plan scenario passes. lib/promote 81 of 82, the same failure as tg-prove. flags-off goldens unchanged, with one test's list of stored-only fields extended. build-steps.scenario can't load here or on tg-prove (`collectDeployFiles` export), so the new step code has not run in a test.
+- Not run: a real build, a real scope check or judge call, a sandbox, the browser view of the checklist, a real Playwright run of the requirements step. Spend $0.

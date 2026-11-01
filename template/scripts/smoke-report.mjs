@@ -235,8 +235,61 @@ export function judgeShotNotes(fileNames, read) {
 // ---------- Platform services (docs/CAPABILITIES.md, 2.8). Nothing here applies to a product without musemuse.caps.json ----------
 
 /** verify's steps, in order. A product with platform services gets a caps step after smoke. */
-export function verifyStepNames(capsActive) {
-  return ["typecheck", "build", "start", "console", "smoke", ...(capsActive ? ["caps"] : []), "manifest"];
+export function verifyStepNames(capsActive, requirementsActive = false) {
+  return ["typecheck", "build", "start", "console", "smoke", ...(capsActive ? ["caps"] : []), ...(requirementsActive ? ["requirements"] : []), "manifest"];
+}
+
+/** musemuse.requirements.json's list ({ id, savesData }), or null for a product without one, which verifies as before. */
+export function readRequirementsFile(readText) {
+  const text = readText("musemuse.requirements.json");
+  if (text === null) return null;
+  try {
+    const list = JSON.parse(text)?.requirements;
+    return Array.isArray(list) ? list.filter((r) => typeof r?.id === "string" && /^R[1-9][0-9]*$/.test(r.id)).map((r) => ({ id: r.id, savesData: r.savesData === true })) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** The id a requirement test's title starts with ("R3: edit a trip"), or null. */
+function requirementIdOf(title) {
+  return /^(R[1-9][0-9]*)\b/.exec(String(title ?? ""))?.[1] ?? null;
+}
+
+const testPassed = (t) => t.status === "expected" || t.status === "flaky" || t.status === "passed";
+
+/** The source of a test with this id: from its title to the next test in the file. */
+function requirementTestBody(source, id) {
+  const at = source.search(new RegExp(`test\\s*\\(\\s*[\`'"]${id}\\b`));
+  if (at < 0) return null;
+  const next = source.slice(at + 1).search(/\btest\s*\(/);
+  return next < 0 ? source.slice(at) : source.slice(at, at + 1 + next);
+}
+
+/**
+ * What each requirement's own test did: one result per requirement. A requirement with no test, or any test of it that
+ * failed, isn't met. One that saves data must call reload() in its own test's body.
+ */
+export function requirementResults(report, requirements, readSpec, { project = "smoke" } = {}) {
+  const tests = reportTests(report, project);
+  return requirements.map(({ id, savesData }) => {
+    const own = tests.filter((t) => requirementIdOf(t.title) === id);
+    if (!own.length) return { id, ok: false, detail: "No test is titled with this id." };
+    const bad = own.find((t) => !testPassed(t));
+    if (bad) return { id, ok: false, detail: `"${bad.title}" did not pass.` };
+    if (savesData) {
+      const body = own.map((t) => requirementTestBody(readSpec(t.file) ?? "", id)).find(Boolean);
+      if (!body || !/\.reload\s*\(/.test(body)) return { id, ok: false, detail: "It saves data, but its test never reloads the page to see that it stayed." };
+    }
+    return { id, ok: true };
+  });
+}
+
+/** True when the only tests that failed are these requirements' own, so everything else about the product still ran. */
+export function onlyRequirementTestsFailed(report, requirements, { project = "smoke" } = {}) {
+  const ids = new Set(requirements.map((r) => r.id));
+  const failed = reportTests(report, project).filter((t) => t.status !== "skipped" && !testPassed(t));
+  return failed.length > 0 && failed.every((t) => ids.has(requirementIdOf(t.title)));
 }
 
 /** musemuse.caps.json as { caps, overlays }, or null when the product has none (or it isn't valid). */

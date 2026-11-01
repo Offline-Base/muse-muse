@@ -12,6 +12,8 @@ import { engineBudgetLines, milestoneBuildLines } from "@/lib/engine/prompts";
 import { jobsBlock } from "@/lib/caps/jobs/brief";
 import { JOBS_BUDGET_LINE } from "@/lib/caps/jobs/render";
 // ---------- end Wave 3 hooks ----------
+import { FULL_COST_LINE, FULL_DONE_LINE, FULL_FIX_SHOTS, FULL_FLOW_LINE, FULL_GOAL_LINE, FULL_SCOPE_LINE, fullBuildLines } from "@/lib/full/prompts";
+import { briefRequirements, fullMilestones } from "@/lib/full/requirements";
 import type { JudgeVerdict, RebuildTarget, VerifySummary } from "@/lib/types";
 
 /**
@@ -166,14 +168,15 @@ function extensionKind(fileName: string): string {
  * "Done means", written as one objective with its test oracle, so the goal and verify observers keep the agent going
  * until each part is really done. At most 1,000 characters.
  */
-export function goalObjective(brief: Pick<Brief, "name" | "slug">): string {
+export function goalObjective(brief: Pick<Brief, "name" | "slug">, opts: { fullBuild?: boolean } = {}): string {
   const name = brief.name.replace(/\s+/g, " ").trim().slice(0, 120);
   return [
     `Build ${name} (slug ${brief.slug}) as brief.md describes, in this workspace.`,
-    "The goal is complete only when all three hold:",
+    `The goal is complete only when all ${opts.fullBuild ? "four" : "three"} hold:`,
     "1. `npm run verify` exits 0 (run it and read its output; don't assume).",
     "2. `musemuse.json` is filled in from the brief and valid against `musemuse.schema.json`.",
     "3. `BUILD_NOTES.md` says what you built, what you took from the inspo, which Meta models it calls and where, its limits, and anything from the brief you couldn't do.",
+    ...(opts.fullBuild ? [FULL_GOAL_LINE] : []),
   ].join("\n");
 }
 
@@ -326,9 +329,12 @@ export function renderBuildPrompt(
     // ---------- end Wave 3, unit 1 ----------
     /** The skills to read first (recipeNotes). */
     recipes?: RecipeNotes;
+    /** FULL_BUILDS: build from the brief's requirements. Never set with the flag off, whatever the stored brief holds. */
+    fullBuild?: boolean;
   } & SessionNotes &
     LookNote,
 ): string {
+  const full = opts.fullBuild === true && briefRequirements(brief).length > 0;
   const out: string[] = [];
   out.push(
     "# Build this product",
@@ -340,13 +346,15 @@ export function renderBuildPrompt(
     "1. `npm run verify` exits 0.",
     "2. `musemuse.json` is filled in from this brief and valid against `musemuse.schema.json`.",
     "3. `BUILD_NOTES.md` says what you built, what you took from the inspo, which Meta models it calls and where, its limits, and anything from the brief you couldn't do.",
+    ...(full ? [FULL_DONE_LINE] : []),
     "",
     "Then stop.",
   );
+  if (full && brief.verdict !== "no") out.push(...fullBuildLines(briefRequirements(brief), fullMilestones(brief)));
   // ---------- Wave 3, unit 2: milestones (empty for a brief without them) ----------
-  if (brief.verdict !== "no") out.push(...milestoneBuildLines({ milestones: opts.milestones ?? null }));
+  if (brief.verdict !== "no" && !full) out.push(...milestoneBuildLines({ milestones: opts.milestones ?? null }));
   // ---------- end Wave 3, unit 2 ----------
-  const session = sessionLines(opts, "build", brief.complexity === "complex");
+  const session = sessionLines(opts, "build", brief.complexity === "complex").map((l) => (full ? l.replace("all three parts", "all four parts") : l));
   if (session.length) out.push("", "## While you work", "", bullets(session));
   out.push(
     "",
@@ -359,7 +367,7 @@ export function renderBuildPrompt(
     `- Complexity: ${brief.complexity}`,
   );
   if (brief.verdict === "partly") {
-    out.push("- Scope: the models can make the core of this, not all of it. Build the core well and show the limits below in the UI.");
+    out.push(full ? FULL_SCOPE_LINE : "- Scope: the models can make the core of this, not all of it. Build the core well and show the limits below in the UI.");
   }
   if (brief.verdict === "no") {
     out.push("", `This muse was refused. ${sentence(brief.refusal ?? "It can't be built with the listed models")} Don't build it. Write the reason in BUILD_NOTES.md and stop.`);
@@ -372,7 +380,7 @@ export function renderBuildPrompt(
     "",
     "## Primary flow",
     "",
-    "Build this first and make it work end to end with the files in `fixtures/`. Extra screens come after that, if at all.",
+    full ? FULL_FLOW_LINE : "Build this first and make it work end to end with the files in `fixtures/`. Extra screens come after that, if at all.",
     "",
     ...brief.primaryFlow.map((step, i) => `${i + 1}. ${step}`),
     "",
@@ -432,7 +440,9 @@ export function renderBuildPrompt(
     `About ${money(brief.estimatedCostPerRunUsd)} per run (estimate). ${brief.costNotes}`.trim(),
     brief.agent && briefTargets(brief).includes("agent")
       ? "Put this number in `musemuse.json` as `estimatedCostPerRunUsd`. Keep all the tests to at most 3 agent runs, each with `maxTurns` 3 or 4."
-      : "Put this number in `musemuse.json` as `estimatedCostPerRunUsd`, and keep the smoke test under 5 model calls.",
+      : full
+        ? FULL_COST_LINE
+        : "Put this number in `musemuse.json` as `estimatedCostPerRunUsd`, and keep the smoke test under 5 model calls.",
   );
 
   out.push("", "## Inspiration", "", brief.inspiration.summary);
@@ -526,6 +536,7 @@ const STEP_LABELS: Record<string, string> = {
   start: "Start (the built app on port 3100, `/` must return 200)",
   console: "Console (no errors in the browser console on `/`)",
   smoke: "Smoke test (`tests/smoke.spec.ts`)",
+  requirements: "Requirements (one passing test per requirement in `tests/requirements.spec.ts`, as `.agents/skills/full-product/SKILL.md` says)",
   // ---------- Wave 3, unit 2: platform services' fixed checks (only products with musemuse.caps.json have this step) ----------
   caps: "Platform services (`scripts/caps-check.mjs`: what the smoke test recorded with `tests/caps` and what the gateway saw)",
   // ---------- end Wave 3, unit 2 ----------
@@ -540,6 +551,8 @@ export function renderFixPrompt(
     round: number;
     /** The judge's screenshots as attached to this run with --image, as paths in the product, in order. */
     screenshots?: string[];
+    /** FULL_BUILDS: this build holds one screenshot per requirement. */
+    fullBuild?: boolean;
   } & SessionNotes &
     LookNote,
 ): string {
@@ -608,7 +621,9 @@ export function renderFixPrompt(
     if (judge.mismatches.length) out.push("", "Mismatches with the brief:", "", bullets(judge.mismatches));
     out.push(
       "",
-      "Change the product so the screens show what the brief promises. The last screenshot must show the finished result, with no error, invalid field, spinner or empty state anywhere on it. Keep saving 2 to 4 numbered screenshots as the verify skill says.",
+      input.fullBuild
+        ? FULL_FIX_SHOTS
+        : "Change the product so the screens show what the brief promises. The last screenshot must show the finished result, with no error, invalid field, spinner or empty state anywhere on it. Keep saving 2 to 4 numbered screenshots as the verify skill says.",
     );
   }
   return out.join("\n") + "\n";
@@ -700,6 +715,8 @@ export function briefToMarkdown(brief: Brief): string {
     );
   }
 
+  const reqs = briefRequirements(brief);
+  if (reqs.length) out.push("", "## What it must do", "", bullets(reqs.map((r) => `**${r.id}**: ${r.text}${r.canDo ? "" : ` (can't be done: ${r.cantDoWhy ?? "not possible yet"})`}`)));
   out.push("", "## How it works", "", ...brief.primaryFlow.map((s, i) => `${i + 1}. ${s}`));
   if (brief.screens.length) out.push("", "## Screens", "", bullets(brief.screens.map((s) => `**${s.name}**: ${s.purpose}`)));
 

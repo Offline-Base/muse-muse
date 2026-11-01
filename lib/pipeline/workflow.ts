@@ -79,7 +79,7 @@ import { restoreFilesStep, restoreOutcomeStep } from "@/lib/pipeline/restore-ste
 import { packageProductStep } from "@/lib/pipeline/package-step";
 import { startProveStep } from "@/lib/pipeline/prove-start";
 import { provePlanStep } from "@/lib/pipeline/prove-steps";
-import { capWithinWall, JUDGE_RESERVE_MS, stepTimeoutMs, type RoundPlan } from "@/lib/pipeline/steps";
+import { capWithinWall, fullRoundCap, JUDGE_RESERVE_MS, stepTimeoutMs, type RoundPlan } from "@/lib/pipeline/steps";
 import { MUSE_EXIT, REFINE_ROUND_STRIDE, type BuildModel } from "@/lib/sandbox/muse";
 import { TERMINAL_STATUSES, type BuildStatus } from "@/lib/types";
 
@@ -370,7 +370,9 @@ async function runMilestones(ctx: Ctx, track: Track, list: Array<{ title: string
     await setStatusStep(ctx.buildId, "verifying", { step: "verify", message: `Checking milestone ${n - 1} of ${of}` });
     const verify = await runVerify(ctx, n - 2, false);
     await milestoneStep(ctx.buildId, { index: n - 1, of, title: list[n - 2]!.title, state: verify.passed ? "passed" : "failed" });
-    const cap = capInWall(ctx, capFor(ctx, "build"), 2 * verifyMs);
+    const cap = ctx.plan?.full
+      ? fullRoundCap({ plan: ctx.plan, startedAt: ctx.startedAt ?? Date.now(), now: Date.now(), milestonesLeft: of - n + 1 })
+      : capInWall(ctx, capFor(ctx, "build"), 2 * verifyMs);
     if (cap === null) {
       for (let k = n; k <= of; k++) await milestoneStep(ctx.buildId, { index: k, of, title: list[k - 1]!.title, state: "skipped" });
       await emitStep(ctx.buildId, {
@@ -546,17 +548,19 @@ async function finish(
   failedMessage: string,
 ): Promise<Ending> {
   const decided = decideOutcome({ kind, passed: checks.passed, steps: checks.steps, judge: checks.judge });
-  if (decided === "failed") throw new BuildStop(failedMessage);
+  // FULL_BUILDS: the final word names every requirement still not met.
+  const unmet = checks.judge?.unmet?.length ? ` Not met: ${checks.judge.unmet.join(" ")}` : "";
+  if (decided === "failed") throw new BuildStop(`${failedMessage}${unmet}`);
   const { liveUrl, outcome, liveFailure } = await ship(ctx, track, { ...product, outcome: decided });
   return {
     status: outcome,
     message: !liveUrl
-      ? `Finished as ${outcome} without publishing to its own link.`
+      ? `Finished as ${outcome} without publishing to its own link.${unmet}`
       : liveFailure
         ? `Shipped as partial at ${liveUrl}. It passed on the build machine, but failed on its live link: ${liveFailure}`
         : outcome === "live"
           ? `Live at ${liveUrl}`
-          : `Shipped as partial at ${liveUrl}. It runs and passes its tests, but the screenshot judge found parts of the brief it doesn't do yet.`,
+          : `Shipped as partial at ${liveUrl}. It runs and passes its tests, but the screenshot judge found parts of the brief it doesn't do yet.${unmet}`,
   };
 }
 
@@ -662,12 +666,12 @@ export async function buildProduct(input: BuildProductInput): Promise<BuildProdu
     await setStatusStep(buildId, "building", { step: "build" });
     await assertSpendOk();
     if (milestones.length > 1) await milestoneStep(buildId, { index: 1, of: milestones.length, title: milestones[0]!.title, state: "building" });
-    const firstCap = capFor(ctx, "build");
+    const firstCap = (ctx.plan?.full ? fullRoundCap({ plan: ctx.plan, startedAt, now: Date.now(), milestonesLeft: Math.max(1, milestones.length) }) : null) ?? capFor(ctx, "build");
     const built = await runMuse(ctx, { promptFile: "brief.md", images: box.images, round: 0, capMs: firstCap });
     if (built.stopped) throw stoppedByOwner("build");
     if (built.timedOut) {
       // A first round stopped at its cap is checked like a fix round (ENGINE_CHECK_ON_TIMEOUT): it may have built enough.
-      if (!env.engineCheckOnTimeout) throw new BuildStop(`Muse Code ran past its ${Math.round(firstCap / 60_000)}-minute limit and was stopped.`);
+      if (!env.engineCheckOnTimeout && !ctx.plan?.full) throw new BuildStop(`Muse Code ran past its ${Math.round(firstCap / 60_000)}-minute limit and was stopped.`);
       await emitStep(buildId, { type: "log", text: CHECKING_AFTER_CAP });
     } else {
       if (built.exitCode === MUSE_EXIT.usage) throw new BuildStop("Muse Code refused its command line, so nothing was built.");

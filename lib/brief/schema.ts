@@ -2,6 +2,7 @@ import { z } from "zod";
 import { CAP_BRIEF_FIELDS, writerBriefField } from "@/lib/caps/brief-fields";
 import type { CapId } from "@/lib/caps/ids";
 import { MilestonesSchema } from "@/lib/engine/milestones";
+import { FULL_LIMITS, RequirementsSchema, ScopeRecordSchema } from "@/lib/full/requirements";
 import { PERSONAL_TOOL_IDS, PUBLIC_TOOL_IDS } from "@/lib/tools/ids";
 
 /**
@@ -122,6 +123,11 @@ export const BriefSchema = BriefFields.extend({
    */
   recipes: z.array(z.string()).max(MAX_RECIPES).nullable().optional(),
   ...wave3StoredFields(),
+  // FULL_BUILDS (docs/FULL_BUILDS.md): a stored brief may run past the writer's usual limits, and carries its requirements.
+  primaryFlow: z.array(z.string().min(1)).min(1).max(FULL_LIMITS.primaryFlow),
+  screens: z.array(z.object({ name: z.string(), purpose: z.string() })).max(FULL_LIMITS.screens),
+  requirements: RequirementsSchema.nullable().optional(),
+  scopeCheck: ScopeRecordSchema.nullable().optional(),
 });
 
 /**
@@ -178,6 +184,8 @@ export function newBriefSchemaFor(opts: {
   milestones?: boolean;
   museAppLook?: boolean;
   recipes?: readonly string[];
+  /** FULL_BUILDS: requires requirements, and raises the flow and screen limits. */
+  fullBuilds?: boolean;
 }): z.ZodType<Brief> {
   const base = opts.gadgets ? NewBriefSchema : NewBriefSchemaNoGadget;
   const look = opts.museAppLook ? { askedLook: z.string().max(ASKED_LOOK_MAX).nullable() } : {};
@@ -190,6 +198,11 @@ export function newBriefSchemaFor(opts: {
   }
   if (opts.milestones) extra.milestones = MilestonesSchema.nullable();
   if (opts.recipes?.length) extra.recipes = z.array(z.enum(opts.recipes as [string, ...string[]])).max(MAX_RECIPES).nullable();
+  if (opts.fullBuilds) {
+    extra.requirements = RequirementsSchema;
+    extra.primaryFlow = z.array(z.string().min(1)).min(1).max(FULL_LIMITS.primaryFlow);
+    extra.screens = z.array(z.object({ name: z.string(), purpose: z.string() })).max(FULL_LIMITS.screens);
+  }
   if (ids.length === 1 && !Object.keys(extra).length && !opts.museAppLook) return base;
   const shape: Record<string, z.ZodTypeAny> = {};
   if (ids.length > 1) {

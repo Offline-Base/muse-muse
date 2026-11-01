@@ -48,7 +48,7 @@ The inspo shows what to make. It is not material to copy.
 
 ## The product
 
-- Build the brief's primary flow first and make it work end to end with the files in `fixtures/`. Extra screens come after that, if at all.
+- Build the brief's primary flow first and make it work end to end with the files in `fixtures/`. Then build every other screen the brief lists.
 - Follow `.agents/skills/meta-ui` for the look: the Meta design language, with Facebook's colors, Inter and Montserrat type, flat white cards and one blue-to-violet gradient that only marks AI. Follow `.agents/skills/product-ui` for layout, inputs, states and model output. Set `metadata.title` in `app/layout.tsx` to the product's name. Meta blue is the only signature color. Never use Meta logos, wordmarks, marks or names in a way that suggests Meta made it.
 - Build every screen from the template's parts, listed in the meta-ui skill's Parts table: the classes in `app/globals.css` and the components in `components/` (AppBar, FilePicker, Segmented, Skeleton, Composer, ModelChip, Icon, Markdown). Never ship a bare `<input type="file">`, an unstyled button, a browser-blue link or an emoji as an icon.
 - Keep the footer component. It says "Built with Muse Muse. Not an official Meta product."

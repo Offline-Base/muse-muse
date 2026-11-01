@@ -1673,6 +1673,8 @@ export async function collectVerifyResult(input: {
   outputTail: string;
   /** Tests only: skip Blob uploads and return sandbox:// paths instead of URLs. */
   skipUpload?: boolean;
+  /** FULL_BUILDS: more than MAX_SCREENSHOTS, since each requirement has its own. */
+  maxScreenshots?: number;
 }): Promise<{ summary: VerifySummary; screenshots: Screenshot[] }> {
   const sandbox = await openSandbox(input.sandboxName);
   const stdout = await tailText(sandbox, `${LOG_DIR}/verify.out`, 64 * 1024);
@@ -1682,7 +1684,8 @@ export async function collectVerifyResult(input: {
   const judgeDir = `${PRODUCT_DIR}/test-results/judge`;
   const all = await listFiles(sandbox, judgeDir, "*.png");
   // The first one and the last ones, so the judge's final screen is the one verify's final screen check read.
-  const names = all.length > MAX_SCREENSHOTS ? [all[0], ...all.slice(1 - MAX_SCREENSHOTS)] : all;
+  const most = input.maxScreenshots ?? MAX_SCREENSHOTS;
+  const names = all.length > most ? [all[0], ...all.slice(1 - most)] : all;
   // judgeShot's VR branch leaves "xr":true next to its pictures, and the judge should know what kind of picture it sees.
   const inVR = await sh(sandbox, `cd ${q(judgeDir)} 2>/dev/null && grep -l '"xr":true' *.checked 2>/dev/null || true`);
   const vrViews = new Set(inVR.stdout.split("\n").map((l) => l.trim().replace(/\.checked$/, ".png")));
