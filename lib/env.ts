@@ -598,6 +598,10 @@ export const env = {
   get proveIt(): boolean {
     return flag("PRODUCT_OUTPUTS") && flag("PROVE_IT");
   },
+  /** VERIFY_AGENTS: the "What was checked" panel and the judge's agent rules. The agent claims check also needs PROVE_IT. */
+  get verifyAgents(): boolean {
+    return flag("VERIFY_AGENTS");
+  },
   /** What one Prove it run may spend at Meta, in USD, charged to its build. */
   get proveItCapUsd(): number {
     return dollars("PROVE_IT_CAP_USD", 1.5);

@@ -7,6 +7,7 @@ import { CopyButton, CopyField } from "@/components/CopyButton";
 import { Icon } from "@/components/icons";
 import { KIND_ICON } from "@/components/composer/AttachmentChip";
 import "@/components/product/get-it.css";
+import { CheckedPanel } from "@/components/product/CheckedPanel";
 import { GetItPanel } from "@/components/product/GetItPanel";
 import { nativeSlots } from "@/components/product/NativeSlots";
 import { productOutputSlots } from "@/components/product/OutputPanels";
@@ -207,6 +208,11 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
 
         {shipped ? (
           <GetItPanel slots={{ ...native.slots, ...(env.productOutputs ? productOutputSlots({ product, origin, events, now }) : {}), ...(env.runtimeOutputs ? runtimeOutputSlots({ product, origin, isOwner }) : {}), ...(env.enabledCaps.includes("extension") ? extensionSlots({ product, origin, brief, ready: extensionReady }) : {}) }} initial={native.initial} />
+        ) : null}
+
+        {/* VERIFY_AGENTS: not in the tree while it's off. */}
+        {env.verifyAgents && latestBuild && (shipped || product.status === "failed") ? (
+          <CheckedPanel events={events} status={product.status} hasActions={exposedActions.length > 0} isAgent={briefTargets(brief).includes("agent")} isOwner={isOwner} now={now} />
         ) : null}
 
         {/* Wave 3, unit 11: nothing unless GPU_TRAIN_ON_DATA and TUNE_COMPOSER are on, for the signed-in owner, not an admin. */}

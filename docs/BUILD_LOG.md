@@ -1574,3 +1574,10 @@ What this record doesn't confirm:
 - Checked before building, by reading `run.ts` and one local schema probe: `superRefine` on a union converts under `toStrictSchema`. The kit allows only one refused submit, and a second ends the run as failed `no_answer`. So `review_draft` runs the code checks first, where refusals don't use up that retry. `LocalToolContext` has the request but no run id, so the review call isn't counted in the run's limits, and receipts aren't tied to a run. Search and page reader text never reaches a local tool, so web text can't be quote-checked.
 - Decision: offered only with `AGENTS_ENABLED` as well as `RECIPES_ENABLED` and `VERIFY_AGENTS`, since it builds on the agent kit.
 - Run: `verified-agent`, `skills`, `recipes` and `flags-off` test files, 27 pass, and tsc filtered to these files. Not run: the full suite, next build, a browser, any Meta call. No product has been built with it yet.
+## Nov 1: VERIFY_AGENTS platform part (branch tg-verify-platform, unmerged)
+
+- Built, flag off: the "What was checked" panel from the build's events, code's results and agent rules for the judge, and an `agent_claims` Prove it item that grades the reply of a call the run already makes, so it adds no spend.
+- Decision: the recipe's claims block isn't graded. Part A has no commit and no test build has proven its reply shape, so a reply with `claims` reads "weren't graded" and never passes. The quote-in-file check and `prove-check-agent.mjs` wait for that proof. Part A's gate said part B should wait too. The panel and the kit-shape tier don't read that shape, so they went ahead. Today no reply can reach a passing state.
+- Decision: the gateway comparison is dropped. Usage rows record `tools/execute` with no tool name and no run.
+- Found: the page already loads a build's verify, judge and prove events, and a refinement's build has its own, so no query changed. `condenseProveEvents` keeps only the newest run, so the panel splits ship and nightly first.
+- Run: tsc and the rule test files named in the commit. Not run: the full suite, next build, a browser, any real Prove it run, Meta or a sandbox.
