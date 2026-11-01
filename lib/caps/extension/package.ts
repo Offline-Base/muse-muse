@@ -7,7 +7,7 @@ import {
   finalManifest,
   isExtensionPath,
 } from "@/lib/caps/extension/manifest";
-import { RESERVED_FILES, scanExtensionFiles } from "@/lib/caps/extension/scan";
+import { pathClashes, RESERVED_FILES, scanExtensionFiles } from "@/lib/caps/extension/scan";
 import { makeZip } from "@/lib/outputs/zip";
 
 /**
@@ -66,6 +66,9 @@ export function readBundle(raw: unknown): Map<string, Buffer> {
     files.set(p, content);
   }
   if (bytes > EXTENSION_LIMITS.bytes) problems.push(`its files are over ${EXTENSION_LIMITS.bytes / 1024 / 1024} MB together`);
+  // Names that would land on the platform's manifest.json or config.js, or on each other, once unzipped on a disk that
+  // ignores capital letters (macOS, Windows). The zip itself is case-sensitive, so this is the only place to stop them.
+  problems.push(...pathClashes([...files.keys()]));
   if (problems.length) throw new ExtensionPackError(problems);
   return files;
 }

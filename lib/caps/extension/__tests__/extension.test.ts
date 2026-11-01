@@ -6,7 +6,7 @@
  *   npx tsx --test lib/caps/extension/__tests__/extension.test.ts
  */
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, it } from "node:test";
@@ -27,7 +27,7 @@ import { answerExtensionDownload, type ExtensionDownloadDeps } from "@/lib/caps/
 import { checkProductManifest, extensionCsp, extensionOrigin, finalManifest, isExtensionPath, MANIFEST_KEYS } from "@/lib/caps/extension/manifest";
 import { ExtensionPackError, packageExtension, type ExtensionBundle } from "@/lib/caps/extension/package";
 import { extensionFileName, extensionZipPath } from "@/lib/caps/extension/paths";
-import { scanExtensionFiles } from "@/lib/caps/extension/scan";
+import { pathClashes, scanExtensionFiles } from "@/lib/caps/extension/scan";
 import { BUNDLE_FILE, PACKER, shipExtension, type ExtensionShipDeps } from "@/lib/caps/extension/ship";
 import { capBuildHosts } from "@/lib/caps/hosts";
 import { capsJudgeNotes } from "@/lib/caps/judge";
@@ -46,7 +46,8 @@ const render = { inspoFiles: [], fixtures: [], maxModelSteps: 40 };
 const ORIGIN = "https://page-notes.vercel.app";
 
 /** The overlay's packer, for the parity checks and the rendered brief's permissions line. */
-const PACK = await import(pathToFileURL(path.join(import.meta.dirname, "../../../../template/caps/extension/files/scripts/extension-pack.mjs")).href);
+const PACKER_FILE = path.join(import.meta.dirname, "../../../../template/caps/extension/files/scripts/extension-pack.mjs");
+const PACK = await import(pathToFileURL(PACKER_FILE).href);
 
 const MANIFEST = {
   manifest_version: 3,
@@ -144,8 +145,32 @@ describe("the build prompt", () => {
       assert.deepEqual(PACK.briefPermissions(dir), []);
       writeFileSync(path.join(dir, "brief.md"), "# No extension here\n");
       assert.deepEqual(PACK.briefPermissions(dir), [...EXTENSION_PERMISSIONS], "a folder without the section allows all four");
+      assert.deepEqual(PACK.briefPermissions(dir, { strict: true }), [], "a platform build without the line allows none");
+      rmSync(path.join(dir, "brief.md"));
+      assert.deepEqual(PACK.briefPermissions(dir, { strict: true }), []);
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("reads a missing line as no permissions when the packer is the platform's copy in CAPS_DIR", async () => {
+    const caps = mkdtempSync(path.join(tmpdir(), "mm-ext-capsdir-"));
+    try {
+      const scripts = path.join(caps, "extension", "files", "scripts");
+      mkdirSync(scripts, { recursive: true });
+      copyFileSync(PACKER_FILE, path.join(scripts, "extension-pack.mjs"));
+      writeFileSync(path.join(caps, "active.json"), JSON.stringify({ caps: ["extension"], overlays: ["core", "extension"] }));
+      const copy = await import(pathToFileURL(path.join(scripts, "extension-pack.mjs")).href);
+      assert.equal(copy.inPlatformCapsDir(), true);
+      assert.equal(PACK.inPlatformCapsDir(), false);
+      const product = path.join(caps, "product");
+      mkdirSync(product);
+      writeFileSync(path.join(product, "brief.md"), "# The line was taken out\n");
+      assert.deepEqual(copy.briefPermissions(product), []);
+      writeFileSync(path.join(product, "brief.md"), renderBuildPrompt(WITH, render));
+      assert.deepEqual(copy.briefPermissions(product), ["activeTab", "storage"]);
+    } finally {
+      rmSync(caps, { recursive: true, force: true });
     }
   });
 
@@ -211,7 +236,7 @@ describe("the manifest generator", () => {
     const out = finalManifest(fields, ORIGIN);
     assert.deepEqual(out.host_permissions, [`${ORIGIN}/*`]);
     assert.deepEqual(out.permissions, ["activeTab", "storage"]);
-    assert.equal((out.content_security_policy as { extension_pages: string }).extension_pages, `script-src 'self'; object-src 'self'; connect-src ${ORIGIN}; frame-src 'none'; base-uri 'none'`);
+    assert.equal((out.content_security_policy as { extension_pages: string }).extension_pages, `default-src 'self'; script-src 'self'; object-src 'self'; img-src 'self' data: blob: ${ORIGIN}; connect-src ${ORIGIN}; frame-src 'none'; form-action 'none'; base-uri 'none'`);
     assert.equal(extensionCsp(ORIGIN), PACK.extensionCsp(ORIGIN));
   });
 
@@ -242,6 +267,9 @@ describe("the file scan", () => {
       [{ "popup.js": 'import { x } from "./missing.js";' }, /missing\.js, which isn't in the extension/],
       [{ "popup.js": 'import { x } from "./platform";' }, /\.js ending/],
       [{ "popup.js": "chrome.scripting.executeScript({});" }, /chrome\.scripting/],
+      [{ "popup.js": "const shot = await chrome.tabs.captureVisibleTab();" }, /captureVisibleTab, which takes a picture of the page/],
+      [{ "background.js": "chrome.tabCapture.capture({});\nexport {};" }, /tabCapture, desktopCapture, pageCapture/],
+      [{ "popup.js": "chrome.pageCapture.saveAsMHTML({ tabId: 1 });" }, /tabCapture, desktopCapture, pageCapture/],
       [{ "popup.html": "<script>alert(1)</script>" }, /inline script/],
       [{ "popup.html": '<script type="module" src="https://cdn.example/x.js"></script>' }, /loads a script from https/],
       [{ "popup.html": '<script src="./popup.js"></script>' }, /without type="module"/],
@@ -259,7 +287,10 @@ describe("the file scan", () => {
   it("doesn't fire on comments, and allows fetch only in platform.js", () => {
     assert.deepEqual(scanExtensionFiles(asMap({ ...FILES, "popup.js": `${FILES["popup.js"]}// fetch("x") and eval("y") in a comment\n/* import("z") */\n` })), []);
     assert.ok(isExtensionPath("icons/icon-128.png"));
-    for (const bad of ["../x.js", "/abs.js", ".hidden.js", "a//b.js", "run.sh", "a\\b.js"]) assert.equal(isExtensionPath(bad), false, bad);
+    for (const bad of ["../x.js", "/abs.js", ".hidden.js", "a//b.js", "run.sh", "a\\b.js", "_metadata/x.json", "_x.js", "icons/_a.png"]) {
+      assert.equal(isExtensionPath(bad), false, bad);
+      assert.equal(PACK.isExtensionPath(bad), false, `packer: ${bad}`);
+    }
   });
 });
 
@@ -310,6 +341,33 @@ describe("packaging for the live link", () => {
     assert.throws(() => packageExtension({ musemuse_extension: 1, files: [{ path: "../x.js", base64: "" }] }, { origin: ORIGIN, permissions: [] }), ExtensionPackError);
     assert.throws(() => packageExtension(bundleOf({ ...FILES, "popup.html": FILES["popup.html"]!.replace("./popup.js", "./gone.js") }), { origin: ORIGIN, permissions: ["activeTab", "storage"] }), /gone\.js/);
     assert.throws(() => packageExtension({ files: [] }, { origin: ORIGIN, permissions: [] }), /isn't an extension bundle/);
+  });
+
+  it("refuses names that would land on the platform's files, or on each other, once unzipped on a Mac or Windows disk", () => {
+    const broad = JSON.stringify({ ...MANIFEST, host_permissions: ["<all_urls>"], content_scripts: [{ matches: ["<all_urls>"], js: ["popup.js"] }] });
+    const cases: Array<[Record<string, string>, RegExp]> = [
+      [{ "MANIFEST.JSON": broad }, /^MANIFEST\.JSON would replace the platform's manifest\.json on a Mac or Windows disk/],
+      [{ "Manifest.json": broad }, /^Manifest\.json would replace the platform's manifest\.json/],
+      [{ "CONFIG.js": 'export const PRODUCT_ORIGIN = "https://elsewhere.example";\n' }, /^CONFIG\.js would replace the platform's config\.js/],
+      [{ "Config.js": "export {};\n" }, /^Config\.js would replace the platform's config\.js/],
+      [{ "Popup.js": "export {};\n" }, /^Popup\.js and popup\.js differ only in capital letters/],
+      [{ "config.js/x.js": "export {};\n" }, /^config\.js\/x\.js is in a folder named like the file config\.js/],
+      [{ "Manifest.JSON/x.js": "export {};\n" }, /is in a folder named like the file manifest\.json/],
+      [{ "popup.html/x.js": "export {};\n" }, /is in a folder named like the file popup\.html/],
+    ];
+    for (const [over, want] of cases) {
+      assert.throws(
+        () => packageExtension(bundleOf({ ...FILES, ...over }), { origin: ORIGIN, permissions: ["activeTab", "storage"] }),
+        (err: unknown) => err instanceof ExtensionPackError && err.problems.some((p) => want.test(p)),
+        JSON.stringify(Object.keys(over)),
+      );
+    }
+    assert.throws(() => packageExtension(bundleOf({ ...FILES, "_metadata/verified_contents.json": "[]" }), { origin: ORIGIN, permissions: ["activeTab", "storage"] }), /isn't a file an extension may ship/);
+    // The build's packer runs the same rules.
+    for (const paths of [Object.keys(FILES), [...Object.keys(FILES), "MANIFEST.JSON", "CONFIG.js"], ["a.js", "A.js", "a.js/b.js", "config.js/c.js", "icons/i.png", "Icons/i.png"]]) {
+      assert.deepEqual(PACK.pathClashes(paths), pathClashes(paths), JSON.stringify(paths));
+    }
+    assert.deepEqual(pathClashes(Object.keys(FILES)), []);
   });
 
   it("keeps the zip at the extensions prefix, under a name people recognize", () => {

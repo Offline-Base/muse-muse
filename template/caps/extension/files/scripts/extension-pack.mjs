@@ -46,7 +46,8 @@ const VERSION = /^(0|[1-9]\d{0,4})(\.(0|[1-9]\d{0,4})){0,3}$/;
 
 export function isExtensionPath(p) {
   if (typeof p !== "string" || !p || p.length > 120) return false;
-  if (!/^[A-Za-z0-9_][A-Za-z0-9._-]*(\/[A-Za-z0-9_][A-Za-z0-9._-]*)*$/.test(p)) return false;
+  // No segment starts with "." or "_": Chrome keeps "_" names for itself and won't load an extension with one.
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*(\/[A-Za-z0-9][A-Za-z0-9._-]*)*$/.test(p)) return false;
   if (p.split("/").some((s) => s === "." || s === ".." || s.startsWith("."))) return false;
   return FILE_TYPES.some((t) => p.toLowerCase().endsWith(t));
 }
@@ -210,7 +211,7 @@ export function extensionOrigin(url, { allowLoopback = false } = {}) {
   return u.origin;
 }
 
-export const extensionCsp = (origin) => `script-src 'self'; object-src 'self'; connect-src ${origin}; frame-src 'none'; base-uri 'none'`;
+export const extensionCsp = (origin) => `default-src 'self'; script-src 'self'; object-src 'self'; img-src 'self' data: blob: ${origin}; connect-src ${origin}; frame-src 'none'; form-action 'none'; base-uri 'none'`;
 
 export function finalManifest(product, origin) {
   const { permissions, ...rest } = product;
@@ -238,7 +239,41 @@ const CODE_RULES = [
   [/\bchrome\s*\.\s*scripting\b/, "uses chrome.scripting, which changes pages. The extension may only read the current page's address and title"],
   [/\bchrome\s*\.\s*tabs\s*\.\s*executeScript\b/, "uses chrome.tabs.executeScript, which changes pages"],
   [/\bchrome\s*\.\s*debugger\b/, "uses chrome.debugger"],
+  [/\bcaptureVisibleTab\b/, "uses chrome.tabs.captureVisibleTab, which takes a picture of the page. The extension may only read the current page's address and title"],
+  [/\bchrome\s*\.\s*(?:tabCapture|desktopCapture|pageCapture)\b/, "records or saves what's on a page or screen (tabCapture, desktopCapture, pageCapture)"],
 ];
+
+/** The same rules as lib/caps/extension/scan.ts's pathClashes: names that land on another file on a disk that ignores case. */
+export function pathClashes(paths) {
+  const problems = [];
+  const seen = new Map();
+  for (const name of RESERVED_FILES) seen.set(name, name);
+  for (const p of paths) {
+    const lower = p.toLowerCase();
+    const other = seen.get(lower);
+    if (p === "manifest.json") continue;
+    if (other !== undefined && other !== p) {
+      problems.push(
+        RESERVED_FILES.includes(other)
+          ? `${p} would replace the platform's ${other} on a Mac or Windows disk, which ignores capital letters. Give it another name`
+          : `${p} and ${other} differ only in capital letters, so they'd be one file on a Mac or Windows disk. Give one another name`,
+      );
+      continue;
+    }
+    seen.set(lower, p);
+  }
+  for (const p of paths) {
+    const parts = p.split("/");
+    for (let i = 1; i < parts.length; i++) {
+      const file = seen.get(parts.slice(0, i).join("/").toLowerCase());
+      if (file !== undefined) {
+        problems.push(`${p} is in a folder named like the file ${file}. Give the folder another name`);
+        break;
+      }
+    }
+  }
+  return problems;
+}
 const NETWORK_RULES = [
   [/\bfetch\s*\(/, "fetch()"],
   [/\bXMLHttpRequest\b/, "XMLHttpRequest"],
@@ -374,6 +409,10 @@ export function compileExtension({ root }) {
     const source = readFileSync(path.join(dir, rel));
     if (rel.endsWith(".ts")) {
       const out = `${rel.slice(0, -3)}.js`;
+      if (!isExtensionPath(out)) {
+        problems.push(`extension/${rel} isn't a file an extension may ship (${FILE_TYPES.join(", ")}, plain names)`);
+        continue;
+      }
       if (entries.some((e) => e.path === out)) {
         problems.push(`extension/${rel} and extension/${out} are both there. Keep only the .ts file`);
         continue;
@@ -406,24 +445,36 @@ export function compileExtension({ root }) {
     bytes += content.length;
   }
   if (bytes > LIMITS.bytes) problems.push(`extension/ is over ${LIMITS.bytes / 1024 / 1024} MB`);
+  // This disk tells capital letters apart, but people unzip on Mac and Windows disks that don't.
+  problems.push(...pathClashes([...files.keys()]).map((p) => `extension/${p}`));
   problems.push(...scanExtensionFiles(files));
   return { files, problems };
 }
 
 /**
- * The permissions brief.md's "Browser extension" section lists, which the platform packages with. All four when brief.md
- * has no such line, as in a test folder.
+ * True when this file is the platform's read-only copy in a build sandbox (CAPS_DIR/extension/files/scripts), next to
+ * the platform's record of the product's caps, rather than a copy in a product folder.
  */
-export function briefPermissions(root) {
+export function inPlatformCapsDir(here = HERE) {
+  return path.basename(path.resolve(here, "../..")) === "extension" && existsSync(path.join(path.resolve(here, "../../.."), "active.json"));
+}
+
+/**
+ * The permissions brief.md's "Browser extension" section lists, which the platform packages with. When brief.md has no
+ * such line: all four in a test folder, and none in a platform build (`strict`), where the platform wrote the line and
+ * only an edit can have taken it out. The platform packages from the stored brief, never from brief.md.
+ */
+export function briefPermissions(root, { strict = inPlatformCapsDir() } = {}) {
+  const missing = strict ? [] : ALLOWED_PERMISSIONS;
   let text = "";
   try {
     text = readFileSync(path.join(root, "brief.md"), "utf8");
   } catch {
-    return ALLOWED_PERMISSIONS;
+    return missing;
   }
   const section = text.split(/^### Browser extension\s*$/m)[1];
   const line = section?.split(/^#{2,3} /m)[0]?.match(/^- Permissions: (.*)$/m)?.[1];
-  if (line === undefined) return ALLOWED_PERMISSIONS;
+  if (line === undefined) return missing;
   return ALLOWED_PERMISSIONS.filter((p) => new RegExp(`\`${p}\``).test(line));
 }
 
@@ -501,8 +552,8 @@ if (isMain()) {
     } else if (command === "check") {
       const { problems } = checkExtension({ root });
       say(problems);
-      process.stdout.write(`${JSON.stringify({ ok: !problems.length, problems })}\n`);
-      process.exit(problems.length ? 1 : 0);
+      // On the last line, after anything else written to stdout, and flushed before exiting: the caps check reads it.
+      process.stdout.write(`\n${JSON.stringify({ ok: !problems.length, problems })}\n`, () => process.exit(problems.length ? 1 : 0));
     } else if (command === "bundle") {
       const out = arg("--out", null);
       if (!out) throw new Error("bundle needs --out <file.json>");

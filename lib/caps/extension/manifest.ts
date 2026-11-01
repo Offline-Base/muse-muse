@@ -55,7 +55,8 @@ export const EXTENSION_LIMITS = { files: 100, bytes: 4 * 1024 * 1024, fileBytes:
 /** A path inside the extension: plain names, forward slashes, no `..`, a type it may ship. */
 export function isExtensionPath(p: unknown): p is string {
   if (typeof p !== "string" || !p || p.length > 120) return false;
-  if (!/^[A-Za-z0-9_][A-Za-z0-9._-]*(\/[A-Za-z0-9_][A-Za-z0-9._-]*)*$/.test(p)) return false;
+  // No segment starts with "." or "_": Chrome keeps "_" names for itself and won't load an extension with one.
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*(\/[A-Za-z0-9][A-Za-z0-9._-]*)*$/.test(p)) return false;
   if (p.split("/").some((s) => s === "." || s === ".." || s.startsWith("."))) return false;
   return EXTENSION_FILE_TYPES.some((t) => p.toLowerCase().endsWith(t));
 }
@@ -269,11 +270,14 @@ export function extensionOrigin(url: string, opts: { allowLoopback?: boolean } =
 }
 
 /**
- * The content security policy for the extension's pages and its service worker: scripts only from the extension itself
- * (Manifest V3 bars remote code anyway), and network calls only to the product's own link.
+ * The content security policy for the extension's pages and its service worker: scripts, styles, fonts, media and
+ * images only from the extension itself (images also from data: and blob: links it makes and from the product's own
+ * link), network calls only to the product's own link, no frames and no form posts. So an image or a style can't carry page data to another site
+ * either. Manifest V3 bars remote code anyway. A policy can't stop navigation (chrome.tabs.create, window.open), which
+ * opens a page the person sees.
  */
 export function extensionCsp(origin: string): string {
-  return `script-src 'self'; object-src 'self'; connect-src ${origin}; frame-src 'none'; base-uri 'none'`;
+  return `default-src 'self'; script-src 'self'; object-src 'self'; img-src 'self' data: blob: ${origin}; connect-src ${origin}; frame-src 'none'; form-action 'none'; base-uri 'none'`;
 }
 
 /** The manifest the platform ships: the product's checked fields, its one host permission and its policy. */

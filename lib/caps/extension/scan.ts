@@ -27,7 +27,47 @@ const CODE_RULES: Array<[RegExp, string]> = [
   [/\bchrome\s*\.\s*scripting\b/, "uses chrome.scripting, which changes pages. The extension may only read the current page's address and title"],
   [/\bchrome\s*\.\s*tabs\s*\.\s*executeScript\b/, "uses chrome.tabs.executeScript, which changes pages"],
   [/\bchrome\s*\.\s*debugger\b/, "uses chrome.debugger"],
+  [/\bcaptureVisibleTab\b/, "uses chrome.tabs.captureVisibleTab, which takes a picture of the page. The extension may only read the current page's address and title"],
+  [/\bchrome\s*\.\s*(?:tabCapture|desktopCapture|pageCapture)\b/, "records or saves what's on a page or screen (tabCapture, desktopCapture, pageCapture)"],
 ];
+
+/**
+ * Paths that would land on another file when someone unzips the extension on a Mac or Windows disk, which ignores
+ * capital letters: two names that differ only in case, a name that is the platform's manifest.json or config.js in
+ * other letters, and a folder named like a file (config.js/x.js). Chrome also keeps names that start with "_" for
+ * itself; isExtensionPath refuses those. `paths` are the extension's files without the platform's config.js.
+ */
+export function pathClashes(paths: readonly string[]): string[] {
+  const problems: string[] = [];
+  const seen = new Map<string, string>();
+  for (const name of RESERVED_FILES) seen.set(name, name);
+  for (const p of paths) {
+    const lower = p.toLowerCase();
+    const other = seen.get(lower);
+    if (p === "manifest.json") continue;
+    if (other !== undefined && other !== p) {
+      problems.push(
+        (RESERVED_FILES as readonly string[]).includes(other)
+          ? `${p} would replace the platform's ${other} on a Mac or Windows disk, which ignores capital letters. Give it another name`
+          : `${p} and ${other} differ only in capital letters, so they'd be one file on a Mac or Windows disk. Give one another name`,
+      );
+      continue;
+    }
+    seen.set(lower, p);
+  }
+  for (const p of paths) {
+    const parts = p.split("/");
+    for (let i = 1; i < parts.length; i++) {
+      const dir = parts.slice(0, i).join("/");
+      const file = seen.get(dir.toLowerCase());
+      if (file !== undefined) {
+        problems.push(`${p} is in a folder named like the file ${file}. Give the folder another name`);
+        break;
+      }
+    }
+  }
+  return problems;
+}
 
 const NETWORK_RULES: Array<[RegExp, string]> = [
   [/\bfetch\s*\(/, "fetch()"],

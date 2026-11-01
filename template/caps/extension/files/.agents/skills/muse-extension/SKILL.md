@@ -36,7 +36,9 @@ Everything lives in `extension/`, outside the Next.js app:
 
 - Reach the network only with `productAction(name, input)` from `platform.ts`. It POSTs JSON to the product's own
   `/api/actions/<name>` and returns the JSON reply, or throws `ProductError` with a message to show as it is. The
-  extension's content security policy allows only the product's own link, so any other address fails in the browser.
+  extension's content security policy allows only the product's own link, so any other address fails in the browser:
+  calls, images, styles and fonts alike. Ship images, styles and fonts in the extension folder, or use `data:` and
+  `blob:` images it makes, or images from the product's own link.
 - Read the current page's address and title with `currentPage()` (the `activeTab` permission). Chrome shares them only
   after the person clicks the extension. The extension can't read or change what's on a page.
 - Get selected text from a right-click item (`contextMenus`): in `background.ts`, `chrome.contextMenus.create({ id,
@@ -45,7 +47,9 @@ Everything lives in `extension/`, outside the Next.js app:
 - Keep a panel open beside the page (`sidePanel`): `side_panel.default_path` in the manifest, and the same page code as
   a popup.
 - No `eval`, no `new Function`, no `import()` at run time, no inline scripts or `onclick=` attributes (Manifest V3 runs
-  none), no scripts, styles or fonts from other sites, no frames. Verify's `manifest` check refuses each one by name.
+  none), no scripts, styles or fonts from other sites, no frames, no pictures or recordings of the page or screen
+  (`chrome.tabs.captureVisibleTab`, `tabCapture`, `desktopCapture`, `pageCapture`). Verify's `manifest` check refuses
+  each one by name.
 
 ## The look and the words
 

