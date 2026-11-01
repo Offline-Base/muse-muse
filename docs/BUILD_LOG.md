@@ -1174,6 +1174,16 @@ because the sidebar showed a real account.
 - Local site restarted (22:00) with the decision models and the composer merged and a 3 GB memory cap: the old dev
   server had grown to about 7.7 GB, mostly swapped (flagged by another session).
 
+### 22:16 r30b's 16-bit weights public; same tensors as base Glimmer (checked)
+
+- From the fine-tune session: OfflineBase/Glimmer-30B-2026-Knowledge (merged 16-bit, c06e38cc), -GGUF (3d3c48cd) and
+  -LoRA (de38afa9) are public and ungated, with the 13 shard sha256s (_plan/r30b-base.md). The 4-bit training copy is
+  in its load and LoRA checks.
+- General checked the merged repo by reading only each shard's header: 1,436 tensors, and the names-and-shapes digest
+  equals quantize.ts's BASE_TENSORS_SHA256 (526660e0...) exactly, so the recipe's merge checks hold on r30b unchanged.
+- Plan once the 4-bit repo is public: switch MODEL on a branch, one dry run (about $0.13), one real run on an existing
+  made-up dataset (about $1.60 to $2.10), inside the owner's $8 test budget. General launches them.
+
 ## Gaps
 
 What this record doesn't confirm:
