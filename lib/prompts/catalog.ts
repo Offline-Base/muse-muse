@@ -8,6 +8,7 @@ import { connectOptions } from "@/lib/caps/connect/flags";
 import type { CapId } from "@/lib/caps/ids";
 import { env } from "@/lib/env";
 import { RETIRED_SPARK } from "@/lib/meta/spark";
+import { availableRecipes, recipesCatalogLines } from "@/lib/recipes/registry";
 import { RUN_LIMITS } from "@/lib/gateway/runs";
 import { WEB_SEARCH_USD_PER_QUERY } from "@/lib/meta/pricing";
 import toolCatalog from "@/lib/tools/composio/catalog.json";
@@ -162,7 +163,7 @@ export function catalogSummary(caps: readonly CapId[] = env.enabledCaps): string
   // Wave 3, unit 9: the code cap's block names only its parts that are on, so they are part of the key while code is on.
   // Wave 3, unit 13: the hardware cap's block names board tools only while they are on.
   const gpuOn = env.gpuGlimmerForBuilds;
-  const key = `${gadgets}|${agents}|${personal}|${caps.join(",")}${gpuOn ? "|gpu" : ""}${caps.includes("data") ? `|${env.dataSignIn}` : ""}${caps.includes("live") ? `|live:${env.liveUpdates}` : ""}${caps.includes("media") ? `|${env.mediaParts.join(",")}` : ""}${connectKey}${caps.includes("code") ? `|code:${codePartsKey()}` : ""}${caps.includes("hardware") ? `|board:${env.hardwareBoardToolsUsable}` : ""}${caps.includes("hardware") && env.driveToolsUsable ? "|drive" : ""}`;
+  const key = `${gadgets}|${agents}|${personal}|${caps.join(",")}${gpuOn ? "|gpu" : ""}${caps.includes("data") ? `|${env.dataSignIn}` : ""}${caps.includes("live") ? `|live:${env.liveUpdates}` : ""}${caps.includes("media") ? `|${env.mediaParts.join(",")}` : ""}${connectKey}${caps.includes("code") ? `|code:${codePartsKey()}` : ""}${caps.includes("hardware") ? `|board:${env.hardwareBoardToolsUsable}` : ""}${caps.includes("hardware") && env.driveToolsUsable ? "|drive" : ""}${recipesCatalogLines(caps).length ? `|recipes:${availableRecipes(caps).map((r) => r.id).join(",")}` : ""}`;
   const hit = cached.get(key);
   if (hit) return hit;
   const run = howProductsRun(caps, { gadgets, agents });
@@ -195,6 +196,7 @@ export function catalogSummary(caps: readonly CapId[] = env.enabledCaps): string
     ...(agents ? agentToolsBlock(personal) : []),
     // Wave 3 (docs/CAPABILITIES.md, 2.6): each enabled cap's block follows the agent block. None with no caps on.
     ...capsCatalogBlocks(caps),
+    ...recipesCatalogLines(caps),
   ].join("\n");
   cached.set(key, summary);
   return summary;

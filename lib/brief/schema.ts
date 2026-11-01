@@ -81,6 +81,9 @@ const targetPicks = (ids: readonly [TargetId, ...TargetId[]]) =>
 /** Most tools one agent may use (docs/AGENT_TOOLS.md). Fewer is better: each one is more for the model to read. */
 export const MAX_AGENT_TOOLS = 6;
 
+/** Most recipes one brief may pick. */
+export const MAX_RECIPES = 3;
+
 /** The longest askedLook a brief may carry. */
 export const ASKED_LOOK_MAX = 400;
 /** A live agent's run stops at 10 turns (RUN_LIMITS in lib/gateway/runs.ts), so a plan for more could never finish. */
@@ -113,6 +116,11 @@ export const BriefSchema = BriefFields.extend({
    * Unset or null, the product follows the muse-app UI guidelines as they are.
    */
   askedLook: z.string().max(ASKED_LOOK_MAX).nullable().optional(),
+  /**
+   * Skills from lib/recipes this product's build reads (docs/RECIPES.md). Plain strings, since a recipe can leave the
+   * registry after a brief was stored: an id no longer known counts as never picked (pickedRecipes).
+   */
+  recipes: z.array(z.string()).max(MAX_RECIPES).nullable().optional(),
   ...wave3StoredFields(),
 });
 
@@ -159,7 +167,8 @@ export const NewBriefSchemaNoGadget = BriefFields.extend({
  * limited to web and those. With the agent target it also requires `agent`, which is null for a product that isn't one,
  * limited to the public tools unless personal tools are on (COMPOSIO_PERSONAL_ENABLED). With MUSE_APP_LOOK it also
  * requires `askedLook`, null unless the person asked for a look. Each enabled cap with a registered block, and milestones
- * when ENGINE_MILESTONES is on, add a required but nullable field, since Meta's strict output needs every property.
+ * when ENGINE_MILESTONES is on, add a required but nullable field, since Meta's strict output needs every property. So do
+ * `recipes`, limited to these ids, when there are any (availableRecipes).
  */
 export function newBriefSchemaFor(opts: {
   gadgets: boolean;
@@ -168,6 +177,7 @@ export function newBriefSchemaFor(opts: {
   caps?: readonly CapId[];
   milestones?: boolean;
   museAppLook?: boolean;
+  recipes?: readonly string[];
 }): z.ZodType<Brief> {
   const base = opts.gadgets ? NewBriefSchema : NewBriefSchemaNoGadget;
   const look = opts.museAppLook ? { askedLook: z.string().max(ASKED_LOOK_MAX).nullable() } : {};
@@ -179,6 +189,7 @@ export function newBriefSchemaFor(opts: {
     if (block) extra[cap] = block.nullable();
   }
   if (opts.milestones) extra.milestones = MilestonesSchema.nullable();
+  if (opts.recipes?.length) extra.recipes = z.array(z.enum(opts.recipes as [string, ...string[]])).max(MAX_RECIPES).nullable();
   if (ids.length === 1 && !Object.keys(extra).length && !opts.museAppLook) return base;
   const shape: Record<string, z.ZodTypeAny> = {};
   if (ids.length > 1) {

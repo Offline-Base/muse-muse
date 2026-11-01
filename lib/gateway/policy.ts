@@ -65,6 +65,17 @@ export function hasAgentMarker(allowedModels: readonly string[]): boolean {
 }
 
 /**
+ * The allowedModels entry that marks a product whose brief picked a long-run recipe (lib/recipes). Not a model either, and
+ * separate from the agent marker: these products write their own loop, so they get no catalog tools, only the long run
+ * limits (RUN_LIMITS.longAgent).
+ */
+export const AGENT_LONG_MARKER = "agent-long";
+
+export function hasLongAgentMarker(allowedModels: readonly string[]): boolean {
+  return allowedModels.includes(AGENT_LONG_MARKER);
+}
+
+/**
  * Built-in tool calls (web searches, tool search) one Responses call may make. Meta has no maximum of its own
  * (tool-calling, "max_tool_calls limits built-in tools only"), and each search is billed and adds input.
  */

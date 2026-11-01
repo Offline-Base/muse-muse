@@ -17,14 +17,16 @@ import { prepareFixtures, writeBrief, type PreparedFixture } from "@/lib/brief/w
 import { db, schema } from "@/lib/db/client";
 import { env } from "@/lib/env";
 import { addBuildCost, emit, setBuildStatus } from "@/lib/events";
-import { buildTokenBudgetFor, liveTokenDailyBudgetFor } from "@/lib/gateway/policy";
+import { buildTokenBudgetFor } from "@/lib/gateway/policy";
 import { mintToken, revokeLiveTokensExcept, revokeTokens } from "@/lib/gateway/tokens";
 import { judgeBuild, pickScreenshots } from "@/lib/judge";
 import { nativeExtraFiles } from "@/lib/native/template-files";
+import { recipeExtraFiles, recipeNotes } from "@/lib/recipes/registry";
 import { prepareToolFixtures } from "@/lib/tools/fixtures";
 import { rebuildTargetFor } from "@/lib/pipeline/catalog";
 import {
   allowedModelsFor,
+  liveDailyBudgetFor,
   museImagePaths,
   nextFreeSlug,
   normalizeSlug,
@@ -540,7 +542,7 @@ export interface SandboxRef {
 
 /** The files this brief's targets add, as a field that isn't there at all for a web-only brief. */
 function extraFilesFor(brief: Brief | null): { extraFiles?: Array<{ path: string; content: string }> } {
-  const extraFiles = nativeExtraFiles(brief);
+  const extraFiles = [...nativeExtraFiles(brief), ...recipeExtraFiles(brief)];
   return extraFiles.length ? { extraFiles } : {};
 }
 
@@ -578,6 +580,7 @@ export async function provisionStep(input: {
       // Only when the round plan briefStep saved chains milestones, which is what the workflow runs.
       ...(build.roundPlan?.milestones?.length ? { milestones: briefMilestones(b) } : {}),
       ...(trust ? { trust: true } : {}),
+      recipes: recipeNotes(b),
       ...look,
     });
   const promptMarkdown = promptFor(brief);
@@ -1209,7 +1212,7 @@ export async function startDeployStep(input: {
     // caps the manifest isn't read here, as before.
     allowedModels: brief && briefCaps(brief).length ? narrowCapMarkers(allowed, await sandbox.readManifest(input.sandboxName).catch(() => null)) : allowed,
     // Room for about 20 runs a day at the brief's estimate (Muse Wonder runs cost more than Spark's did).
-    dailyBudgetUsd: liveTokenDailyBudgetFor(brief?.estimatedCostPerRunUsd),
+    dailyBudgetUsd: liveDailyBudgetFor(brief),
   });
   const started = await startDeployFromSandbox({
     sandboxName: input.sandboxName,
@@ -1500,6 +1503,7 @@ export async function reopenStep(input: {
       fileName: r.fileName,
       describes: `${/^[aeiou]/.test(r.kind) ? "An" : "A"} ${r.kind === "pdf" ? "PDF" : r.kind} the user attached with this change (inspo/${r.fileName}).`,
     })),
+    recipes: recipeNotes(brief),
     ...sessionNotes(),
     ...lookNote(),
   });
