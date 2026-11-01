@@ -1,0 +1,127 @@
+/*
+ * The new fine-tune composer and a run's room (components/train/compose/TrainComposer.tsx, components/train/room). They
+ * reuse the Make page's layout, the build room's conversation and the plan card (components/build/plan-card.css), so
+ * only what those don't have is here. Every class is new, so no other page changes. Tokens only (docs/BRAND.md).
+ */
+
+/* The composer stays mounted under the room, so Change it finds the note and the files. .play sets display. */
+.play.tune-compose[hidden] {
+  display: none;
+}
+
+/* The line under the box: what a run does, how long and what it can cost. */
+.tune-intro-note {
+  max-width: var(--composer-w);
+  margin: 16px auto 0;
+  font-size: 14px;
+  line-height: 20px;
+  text-align: center;
+}
+
+.tune-compose .composer-wrap .examples {
+  justify-content: center;
+}
+
+/* Start, Change it and the Advanced fold, under the plan's summary. */
+.tune-plan-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.tune-plan-actions .row-actions {
+  margin: 0;
+}
+
+.tune-advanced {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  line-height: 20px;
+}
+
+.tune-advanced > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  color: var(--chat-muted);
+  font-size: 14px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.tune-advanced > summary::-webkit-details-marker {
+  display: none;
+}
+
+.tune-advanced > summary svg {
+  transition: transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.tune-advanced[open] > summary svg {
+  transform: rotate(180deg);
+}
+
+.tune-advanced[open] > summary {
+  margin-bottom: 12px;
+}
+
+.tune-advanced .field {
+  max-width: 420px;
+}
+
+.tune-advanced .field input {
+  width: 140px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* "Ready. Tuned won 18 of 20 ...", with its check or alert. */
+.tune-verdict {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.tune-verdict svg {
+  flex: none;
+  margin-top: 4px;
+  color: var(--chat-muted);
+}
+
+.tune-where {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 20px;
+  border-radius: 22px;
+  background: var(--surface-2);
+}
+
+.tune-where h3 {
+  color: var(--fg);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 22px;
+}
+
+.tune-where ul {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding-left: 20px;
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.tune-where strong {
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tune-advanced > summary svg {
+    transition: none;
+  }
+}
