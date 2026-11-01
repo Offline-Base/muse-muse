@@ -1241,6 +1241,33 @@ export const env = {
     return flag("GPU_TRAIN_ON_DATA");
   },
 
+  // ---------- Hosting a tuned model on a provider the platform pays for (lib/train/host) ----------
+
+  /** HOST_TUNED: the Run it section on a tuned model's page and its routes. Off: they answer 404, and the sweep only stops what still runs. */
+  get hostTuned(): boolean {
+    return flag("HOST_TUNED");
+  },
+  /** HOST_TUNED_OPEN: signed-in people may deploy too. Off, only admins. The shared guest account never may. */
+  get hostTunedOpen(): boolean {
+    return flag("HOST_TUNED_OPEN");
+  },
+  /** HOST_TUNED_DAILY_USD: the most hosted endpoints may cost per UTC day across every provider, 25 by default. 0 stops them all. */
+  get hostTunedDailyUsd(): number {
+    return dollars("HOST_TUNED_DAILY_USD", 25);
+  },
+  /** HOST_TUNED_MAX_LIVE: endpoints running at once, 2 by default. 0 stops them all. */
+  get hostTunedMaxLive(): number {
+    return wholeCount("HOST_TUNED_MAX_LIVE", 2);
+  },
+  /** HOST_TUNED_IDLE_MINUTES: an endpoint nobody has used for this long stops, 15 by default. */
+  get hostTunedIdleMinutes(): number {
+    return number("HOST_TUNED_IDLE_MINUTES", 15);
+  },
+  /** HOST_TUNED_MAX_MINUTES: the longest any endpoint runs, used or not, 240 by default. */
+  get hostTunedMaxMinutes(): number {
+    return number("HOST_TUNED_MAX_MINUTES", 240);
+  },
+
   // ---------- Wave 3, unit 12: drive export (docs/CAPABILITIES.md) ----------
 
   /**
