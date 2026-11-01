@@ -1305,6 +1305,29 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   - Pushed private, verified (big files on the Hub, small files against writer-1), then public: revision 6f12bf52.
   - Sent Muse Muse General the repo, revision, shard sha256s and checks.
   - Resumed the paused GPU jobs. Merged card links the 4-bit repo and the Unsloth snippet uses it (77422cbb).
+- 11:40 PM: shrink bench (shrink-r30b) finished, exit 0. iq2-out-q2 (an extra, not kept): 7.32 GB, 17.0% (102/600),
+  old facts 39/40, 60.9 tok/s, about the same as iq2-io-lowest, so it isn't published.
+- 11:42 PM: loop checks (60 prompts, greedy / sampled) on the last two mixes: iq2-io-lowest 0 / 1 (facts 39 and 40 of
+  40), iq1s-out-q4 9 / 9 (38 and 32 of 40). Stock IQ2_XXS is 0 / 0 and IQ1_S 9 / 10. Sent the iq2-io-lowest count to
+  Muse Privacy, which logged it (their e42a20f).
+- 11:45 PM to 12:10 AM: dataset released (owner, 10:42 PM: "Publish all, with disclosure").
+  - dataset-finalize-all (wf_600d5536-149):
+    - dropped the 3,686 unchecked news rows from news-derived/stage1;
+    - relabeled 36,407 Dolly-derived rows as CC BY-SA 3.0;
+    - added MUSE_MODEL_LICENSE.md and USAGE_POLICY.md (byte-identical to docs/model-licenses/stage-b-r30b);
+    - pointed takedown requests to the dataset's Community tab;
+    - rebuilt the card with the dual-license disclosure.
+  - 649,133 rows, 33 files, 105,910,827 bytes. The independent verifier recounted everything in code: all checks passed,
+    with 0 emails, phone numbers, keys, tokens or machine paths.
+  - Its only blocker was approval, which it couldn't see: the owner's answer came in chat, not in the task text.
+  - The Hub refused the first commit because a dataset card's `license_link` must be an https URL. Changed that one card
+    line.
+  - Pushed private as OfflineBase/Glimmer-30B-2026-Knowledge-Data (33/33 files match), then public at revision
+    9cefd1bf, checked without a token. make_public.py now takes datasets too.
+  - The Hub's dataset viewer was still indexing.
+- 12:10 AM: cards: the Pending section is gone and Limitations gives all three mixes' loop counts. The cards also link
+  the dataset in their metadata and under Training data. New heads: merged 63ba2feb, -GGUF fa448b78, -LoRA 386f4081,
+  -unsloth-bnb-4bit 5993072a. All four match the local copies when fetched without a token.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
