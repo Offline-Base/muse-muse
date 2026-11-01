@@ -48,8 +48,6 @@
   --chart-6: #b99af0;
   --glass: rgba(255, 255, 255, 0.76);
   --code-bg: #f3f4f5;
-  /* Behind a picture with a white background, such as the mascot in the plan card. It stays light in dark mode. */
-  --media-stage: #f3f4f5;
   --scrim: rgba(0, 0, 0, 0.5);
   --overlay: rgba(0, 0, 0, 0.1);
   --shadow-glass: inset 0 1px 0 rgba(255, 255, 255, 0.64), 0 0 2px rgba(0, 0, 0, 0.02), 0 0 6px rgba(0, 0, 0, 0.03), 0 6px 30px rgba(0, 0, 0, 0.07);
@@ -142,7 +140,6 @@
     --chart-6: #b9a0f3;
     --glass: rgba(56, 56, 56, 0.8);
     --code-bg: #1f1f20;
-    --media-stage: #dcdddf;
     --overlay: rgba(255, 255, 255, 0.06);
     --shadow-glass: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 2px rgba(0, 0, 0, 0.02), 0 0 6px rgba(0, 0, 0, 0.03), 0 6px 30px rgba(0, 0, 0, 0.07);
     --shadow-pop: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 12px rgba(0, 0, 0, 0.04), 0 12px 60px rgba(0, 0, 0, 0.12);
@@ -205,7 +202,6 @@
   --chart-6: #b9a0f3;
   --glass: rgba(56, 56, 56, 0.8);
   --code-bg: #1f1f20;
-  --media-stage: #dcdddf;
   --overlay: rgba(255, 255, 255, 0.06);
   --shadow-glass: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 2px rgba(0, 0, 0, 0.02), 0 0 6px rgba(0, 0, 0, 0.03), 0 6px 30px rgba(0, 0, 0, 0.07);
   --shadow-pop: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 12px rgba(0, 0, 0, 0.04), 0 12px 60px rgba(0, 0, 0, 0.12);

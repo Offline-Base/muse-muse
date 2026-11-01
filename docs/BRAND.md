@@ -86,7 +86,6 @@ under `@media (prefers-color-scheme: dark)` and `:root[data-theme="dark"]`. Chan
 | `--bad`, `--bad-soft` | `#c01f37`, `#fde8e8` | `#fa4758`, `#dc262626` | M | |
 | `--chart-1` to `--chart-6` | as they are | as they are | O | No source. Unchanged |
 | Code block fill | `#f3f4f5` | `#1f1f20` | M | |
-| `--media-stage` (new) | `#f3f4f5` | `#dcdddf` | O | Behind a picture with a white background, which is multiplied onto it: the mascot in the build room's plan card. It stays light in dark, a little dimmer, since a dark stage would darken the picture |
 | Scrim on media | `rgba(0,0,0,.5)` | same | M | |
 | Dialog overlay | `rgba(0,0,0,.1)` | `rgba(255,255,255,.06)` | M | |
 

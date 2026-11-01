@@ -1,11 +1,10 @@
 /*
- * The plan card in the build room's conversation (components/build/PlanCard.tsx): the Muse mascot on its own light stage
- * at the left, the plan's summary at the right. All classes are new, so a room without a card looks as it did.
+ * The plan card in the build room's conversation (components/build/PlanCard.tsx): the Muse mascot at the left, the
+ * plan's summary at the right. All classes are new, so a room without a card looks as it did.
  *
- * The mascot pictures have white backgrounds. They're multiplied onto the stage (--media-stage in app/globals.css), so
- * their white becomes the stage's color and the card reads as one rounded tile with the media card's radius and a
- * hairline. In dark mode the stage stays light, a little dimmer, so it reads as a lit card on the page rather than a
- * white rectangle, and the mascot keeps its own colors.
+ * Owner, Oct 31: no grey tile or border behind the mascot. The pictures are shown exactly as given, white background
+ * included, straight on the page with the media card's rounded corners. In dark mode that white shows as a rounded
+ * picture on the dark page.
  */
 
 .room-plan {
@@ -31,20 +30,16 @@
   position: relative;
   aspect-ratio: 564 / 640;
   overflow: hidden;
-  border: 1px solid var(--line);
   border-radius: 18px;
-  background: var(--media-stage);
-  isolation: isolate;
 }
 
-/* The pictures crossfade among themselves, then the stack as a whole is multiplied onto the stage. */
+/* The pictures crossfade among themselves. */
 .plan-card-stack {
   position: absolute;
   inset: 0;
-  mix-blend-mode: multiply;
 }
 
-/* The outgoing picture stays under the incoming one until it has faded in, so the swap never dips to the stage. */
+/* The outgoing picture stays under the incoming one until it has faded in, so the swap never dips to the page. */
 .plan-card-stack > img {
   position: absolute;
   inset: 0;
