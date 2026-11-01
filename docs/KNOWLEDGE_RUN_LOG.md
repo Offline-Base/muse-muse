@@ -1001,6 +1001,17 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   Owner: "muse privacy is non commercial so go on", so the non-commercial terms stand and there's no clean retrain. Both
   sessions asked for the license texts as files (Muse Privacy can't link repos under the OfflineBase account). They get
   local paths and sha256s once model-release-prep has fetched and checked them.
+- 9:50 PM: owner: "People can re train and stuff, can you just give it a free reign license, idc". The non-commercial
+  terms are dropped. Our modifications go out under Apache 2.0, with the 1,437 NC/ND/no-reuse and 615 court-record
+  examples disclosed in the card only (owner accepts the risk). These conditions can't be waived and stay:
+  - the Muse Model License: ship it and the Usage Policy, show "Built with Muse Spark Open", follow the Usage Policy
+    (18+, no human-authorship claims), and the $20M Model-as-a-Service clause;
+  - the dataset's per-source terms: Wikipedia and Dolly share-alike, NC sources stay NC, and news-derived rows carry no
+    grant from us.
+  model-release-prep is left to finish. Its LICENSE-NONCOMMERCIAL.md and license_name will be replaced by hand and
+  rechecked before upload. Stage 2 is also a Derivative (it continues stage 1's adapter and contains the Spark Open
+  anchors), so Muse Muse General was told its files carry the same duties, and it asked for the license files in S3 next
+  to each GGUF.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
