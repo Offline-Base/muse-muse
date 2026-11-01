@@ -9,6 +9,7 @@ import { EvalResults } from "@/components/train/EvalResults";
 import { HubCard } from "@/components/train/HubCard";
 import { AdapterLiveDemo, type JobLiveDemo } from "@/components/train/LiveDemo";
 import { MakeLocalFiles } from "@/components/train/LocalFiles";
+import { SimTuneCard } from "@/components/train/SimTune";
 import { SparkOpenNote } from "@/components/train/SparkOpenNote";
 import { evalState, judgeName, tunedModelName, writerName } from "@/components/train/format";
 import { GLIMMER_NAME, R30B_NAME } from "@/components/train/results";
@@ -216,6 +217,7 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
               {job && liveDemo ? <AdapterLiveDemo jobId={job.id} live={liveDemo} serverNow={serverNow} /> : null}
               {job && admin && hub ? <HubCard job={job} offReason={hub.offReason} maxActive={hub.maxActive} dailyUsd={hub.dailyUsd} /> : null}
               {job && admin && hub && trained ? <MakeLocalFiles jobId={job.id} maxActive={hub.maxActive} dailyUsd={hub.dailyUsd} /> : null}
+              {job && admin && hub && trained ? <SimTuneCard jobId={job.id} /> : null}
               <WhereItRuns jobHref={jobHref} demoHere={Boolean(liveDemo)} localFilesHere={Boolean(admin && hub && trained)} admin={admin} />
               {jobHref ? <JobLink href={jobHref} /> : null}
               <p className="room-meta">{usd(view.costSoFarUsd)} in all</p>
