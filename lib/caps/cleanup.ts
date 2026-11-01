@@ -2,7 +2,6 @@ import { clearConnectBuild, sweepConnect } from "@/lib/caps/connect/cleanup";
 import { clearCodeBuildRuns, sweepCodeBuildRuns } from "@/lib/caps/code/cleanup";
 import { clearBuildNamespace, sweepData } from "@/lib/caps/data/store";
 import { filesBuildEnded, filesProductOff, filesSweep } from "@/lib/caps/files/cleanup";
-import { sweepGlimmerWindows } from "@/lib/caps/gpu/sweep";
 import type { CapId } from "@/lib/caps/ids";
 import { env } from "@/lib/env";
 
@@ -81,7 +80,8 @@ export const CAP_CLEANUPS: CapCleanup[] = [
   {
     cap: "gpu",
     get sweep() {
-      return env.gpuGlimmerShared ? sweepGlimmerWindows : undefined;
+      // Imported only here: it reaches lib/train/launch and its workflow, which the build's steps must not bundle.
+      return env.gpuGlimmerShared ? (now: Date) => import("@/lib/caps/gpu/sweep").then((m) => m.sweepGlimmerWindows(now)) : undefined;
     },
   },
 ];

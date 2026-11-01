@@ -108,6 +108,7 @@ describe("the gpu unit's rows", { skip: canMock ? false : "needs --experimental-
     const [build] = await testDb.insert(realSchema.builds).values({ inspirationId: muse!.id, userId, productId }).returning();
     const row = (model: string) => ({ source: "glimmer" as const, endpoint: "/glimmer/v1/chat/completions", productId, buildId: build!.id, model, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, units: 1, costUsd: 0 });
     await testDb.insert(realSchema.usage).values([row("glimmer-canned"), row("glimmer-canned"), row("glimmer-closed")]);
-    assert.deepEqual(await store.glimmerBuildCounts(build!.id), { "glimmer-canned": 2, "glimmer-closed": 1 });
+    const { glimmerBuildCounts } = await import("../proof");
+    assert.deepEqual(await glimmerBuildCounts(build!.id), { "glimmer-canned": 2, "glimmer-closed": 1 });
   });
 });

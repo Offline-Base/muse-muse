@@ -101,14 +101,3 @@ export async function ownerRowsOf(productId: string, collections: readonly strin
     .orderBy(rows.seq)
     .limit(limit);
 }
-
-/** How many answers a build's tests got, and how many asked for a closed window: the gateway's own record. */
-export async function glimmerBuildCounts(buildId: string): Promise<Record<string, number>> {
-  const usage = schema.usage;
-  const rows = await db()
-    .select({ model: usage.model, count: sql<number>`count(*)` })
-    .from(usage)
-    .where(and(eq(usage.buildId, buildId), eq(usage.source, "glimmer")))
-    .groupBy(usage.model);
-  return Object.fromEntries(rows.map((r) => [r.model ?? "", Number(r.count)]));
-}
