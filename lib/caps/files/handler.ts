@@ -615,17 +615,19 @@ function datasetFileRoute(deps: FilesDeps, id: string, name: string): CapRoute<{
         "x-dataset-license": dataset.license.spdx,
         "cache-control": "private, max-age=3600",
       };
-      if (isBuild(ctx.token)) await deps.store.recordDatasetRead({ productId: ctx.token.productId, namespace: ctx.namespace }, dataset.id, file.name);
+      // A build's read goes in the gateway's record (/caps/proof), once it is really served.
+      const served = async (res: Response) => {
+        if (isBuild(ctx.token) && ctx.req.method === "GET") await deps.store.recordDatasetRead({ productId: ctx.token.productId, namespace: ctx.namespace }, dataset.id, file.name);
+        return res;
+      };
       const local = deps.localDatasetPath?.(dataset.id, file.name) ?? null;
-      if (local) {
-        if (existsSync(local) && statSync(local).size === file.bytes) {
-          const common = { ...headers, "content-type": file.contentType, "content-length": String(file.bytes) };
-          if (ctx.req.method === "HEAD") return new Response(null, { status: 200, headers: common });
-          return new Response(Readable.toWeb(createReadStream(local)) as ReadableStream, { status: 200, headers: common });
-        }
+      if (local && existsSync(local) && statSync(local).size === file.bytes) {
+        const common = { ...headers, "content-type": file.contentType, "content-length": String(file.bytes) };
+        if (ctx.req.method === "HEAD") return new Response(null, { status: 200, headers: common });
+        return served(new Response(Readable.toWeb(createReadStream(local)) as ReadableStream, { status: 200, headers: common }));
       }
       if (!file.mirror) return gatewayError(503, "server_error", "dataset_unavailable", "This dataset isn't on the gateway's mirror yet.", { retry: false });
-      return new Response(null, { status: 302, headers: { ...headers, location: file.mirror } });
+      return served(new Response(null, { status: 302, headers: { ...headers, location: file.mirror } }));
     },
   };
 }

@@ -417,6 +417,9 @@ describe("files on a database", { skip: canMock ? false : "needs --experimental-
     assert.equal((await call("datasets", "GET", "../etc")).code, "unknown_endpoint");
     assert.equal((await call("datasets", "GET", "", { deps: deps(live(), { datasetsOn: () => false }) })).code, "unknown_endpoint");
     assert.equal((await testDb.select().from(realSchema.productDatasetReads)).length, 0, "a live product's reads aren't recorded");
+    const unmirrored = deps(buildTok(), { localDatasetPath: () => null });
+    assert.equal((await call("datasets", "GET", "penguins/penguins.csv", { deps: unmirrored })).code, "dataset_unavailable");
+    assert.equal((await testDb.select().from(realSchema.productDatasetReads)).length, 0, "a read that wasn't served isn't recorded");
     await call("datasets", "GET", "penguins/penguins.csv", { deps: deps(buildTok()) });
     const [rec] = await testDb.select().from(realSchema.productDatasetReads);
     assert.equal(rec!.namespace, `b:${buildId}`);

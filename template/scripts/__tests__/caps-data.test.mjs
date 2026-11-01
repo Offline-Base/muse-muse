@@ -32,7 +32,8 @@ describe("the overlay's files", () => {
     const others = [
       ...walk(TEMPLATE).filter((f) => !f.startsWith("targets/") && !f.startsWith("caps/")),
       ...readdirSync(path.join(TEMPLATE, "targets")).flatMap((t) => walk(path.join(TEMPLATE, "targets", t, "files"))),
-      ...readdirSync(path.join(TEMPLATE, "caps")).filter((c) => c !== "data").flatMap((c) => walk(path.join(TEMPLATE, "caps", c, "files"))),
+      // Wave 3, unit 4: files ships this overlay's owner route as an exact copy (caps-files.test.mjs checks the bytes).
+      ...readdirSync(path.join(TEMPLATE, "caps")).filter((c) => c !== "data").flatMap((c) => walk(path.join(TEMPLATE, "caps", c, "files")).filter((f) => !(c === "files" && f === "app/api/musemuse/owner/route.ts"))),
     ];
     assert.deepEqual(own.filter((f) => others.includes(f)), []);
   });
