@@ -1519,6 +1519,128 @@ Code: Meta terms 1, 3.1, 6.2 and 10.1(i), the binary kept out of result zips (wo
 matches dropped, 50 MB), visitors off until the owner decides. The Acceptable Use Policy bars malware and unauthorized
 scanning, and we answer for what we run. Needs a signed-in builder.
 
+### 15a. As built (tg-cap-code, Nov 1)
+
+Built on `tg-cap-int` (f2f4db9). Pyodide, QuickJS, `/exec` and `/browse` only. Muse Code sessions are General's
+(tg-musecode), so the `muse_code` target, `template/targets/muse_code/`, the `code_session` scope and its lines in
+`lib/gateway/{tokens,policy,estimate,handler}.ts` aren't here, and neither is `MUSE_CODE_ENABLED` or `MUSE_CODE_VISITORS`.
+Every flag is off by default, and `CAP_READY.code` stays false until a real test build passes.
+
+**Flags** (unit 9's block in `lib/env.ts` and `.env.example`). `CODE_ENABLED` is the writer and the cap, served through
+`env.servedCaps`. `CODE_EXEC` and `CODE_BROWSE` are each route's own switch (`CapRoute.enabled`). `CODE_EXEC_VISITORS`
+lets visitors and signed-in end users run `/exec`, never `/browse`. `CODE_EXEC_DAILY_USD` is 3 and
+`CODE_BROWSE_DAILY_USD` is 2, and 0 pauses either one (`caps_paused`). `CODE_EXEC_SNAPSHOT_ID` is optional: without it
+each run starts from Vercel's own image.
+
+**Who may (decision 10).** The product's owner (a verified `os1` pass) and a build's own tests, from any browser. Anyone
+else gets 403 `sign_in_required`. The gate's check 4 refuses a product made by the shared guest or a banned builder.
+
+**`POST {GATEWAY_URL}/exec`** (`lib/caps/code/{exec,handler}.ts`, `app/api/gateway/exec/route.ts`).
+- Each run gets a fresh, non-persistent sandbox. The firewall is `"deny-all"` (`execPolicy()`), the env is empty, and it
+  has 1 vCPU and a 60 s sandbox timeout.
+- The run is one bash line: `timeout -s KILL 15`, with stdout and stderr each through `head -c 65537`, and
+  `ulimit -f 65536` and `ulimit -u 256`. Code, stdin and the run script are written as files, never put in a command
+  line. Files are plain names (no folders, not `main.py` or `main.mjs`), as `{name, text}` or `{name, base64}`.
+- The reply is `{status: ok|error|timeout, exitCode, stdout, stderr, truncated, ms}`.
+- Limits:
+  - 10 a minute per token.
+  - Live: 200 a day per product, and 20 a day per person, keyed by subject key.
+  - A build: 5 runs in all, through `reserveCounter`, kept for two days.
+  - At once: 2 per product (the gate's slot) and 4 across the platform (a second slot, `exec:all`, taken in `work`).
+- Money: the reservation is the worst case, 15 s plus 30 s to start and stop, at 1 vCPU, at Vercel Sandbox's posted
+  price as read Oct 31 ($0.128 per vCPU-hour plus 2 GB at $0.0106 per GB-hour; `lib/caps/code/limits.ts`). It settles
+  at the sandbox's measured wall time as `usage` source `exec` with model `sandbox:exec` and 1 unit.
+- A sandbox that won't start answers 502 `cap_failed`, is recorded as `failed`, and still settles the time it took.
+
+**`POST {GATEWAY_URL}/browse`** (`lib/caps/code/browse.ts`).
+- What it refuses:
+  - Any address that isn't in `input`, compared the way the tool gateway compares (`urlsInInput`). An email address in
+    `input` names no site.
+  - IP literals, private names (`isPublicHttpUrl`), ports other than 80 and 443, user names or passwords in the
+    address, and schemes other than http and https.
+  - On a live token, a host that resolves to any private address (`resolvesToPublic`). This is checked before a sandbox
+    starts.
+- Actions: at most 5 `click`, `type` or `wait` steps. A `type` into a password, one-time code or card field is refused
+  twice: by its selector up front, and in the page by the field's type, name, id and autocomplete.
+- The sandbox starts from `BUILDER_SNAPSHOT_ID`, which has Chromium and Playwright, with 2 vCPUs. Its firewall is
+  `browsePolicy(host)`: only that host, and every private range denied. The script and its arguments go in as files.
+- A page that ends up on another host is refused after it loads.
+- The reply is `{url, title, text (20,000 characters), screenshot}`. **Changed from the table above:** the screenshot
+  comes back in the reply as a JPEG data URL of at most 400 KB, not on Blob for 24 hours. That means no public Blob
+  copy of a third party's page (decision 14 leans private), and no sweep.
+- Limits: 5 a day per person, 50 per product, 2 at once across the platform, and 20 recorded pages per build.
+- Money: settled like exec, as `usage` source `browse` with model `sandbox:browse`.
+- A build gets one of three recorded sample pages (`lib/caps/code/pages/`), or its own `cap:code:browse` fixtures. The
+  page is picked by hash of the address and steps, comes back with `simulated: true` and an SVG screenshot, and needs
+  no lookup or sandbox. Each sample's text ends with its marker, `mm-sample-page-<n>`.
+
+**The launcher (stand-in).** General's shared `lib/sandbox/session.ts` doesn't exist on tuned-model-options or in
+`~/mm-wt/musecode` yet. So `lib/caps/code/session.ts` is the smallest launcher behind two calls, `launchSession(spec)` and
+`stopSession(sandbox)`, with the `CodeSession` interface. The handlers only get a launcher through `CodeDeps.launch`.
+When General's lands, this file becomes a thin adapter over it, and nothing else changes.
+
+**Migration 0024_code** (journal idx 24, `meta/0024_snapshot.json` chained to 0020's, `when` 1793432030646).
+- `exec_runs` has `id`, `product_id` (cascade), `namespace` (`live` or `b:<buildId>`, in place of the table's
+  `build_id`), `kind`, `principal`, `subject_key`, `language`, `status` (ok, error, timeout, failed, simulated), `ms`,
+  `cost_usd` and `created_at`, with an index on product, namespace and time.
+- No code, input, output or address is kept.
+- The migrations test allows the wave 3 numbers not merged yet (21 to 23) to be gaps.
+- `usage.source` gains `exec` and `browse`. That is a type change only, with no SQL.
+
+**Proof and checks.**
+- `CAP_PROOF.code` (`codeProof`) counts `exec`, `execOk` and `browse` (ok or simulated) in the build namespace since
+  `since`. It also adds `brief:<part>` for what the build's own brief asked for.
+- `scripts/caps/code.mjs` takes what to require from those keys, not from the product.
+  - `in-page`: the smoke test's `expectInPageRun` ran.
+  - `exec-output`: `expectExecOutput` ran and the gateway saw a run finish.
+  - `browse-page`: `expectBrowsePage` ran and the gateway handed out a page.
+  - With no gateway record, everything fails.
+- The fixture (`codeFixture`) prints `mm-fixture <sum of 0..n-1> <n squared>` for an `n` picked each run, so its output
+  can't be written into the product ahead of time.
+- The judge note says pages opened in this test are samples.
+
+**Template overlay `code`.**
+- Browser helpers, in client components:
+  - `lib/platform/code-run.ts`: the shared `CodeRun` type, the 64 KB cap, and `noteRun`, which counts in-page runs in
+    `window.__musemuseCode` for the smoke test.
+  - `lib/platform/pyodide.ts`: Pyodide 314.0.7 in a module worker, loaded from the product's own
+    `app/api/musemuse/pyodide/[file]/route.ts`. That route serves only Pyodide's five files, each by literal path. A
+    run past its limit (10 s by default, 30 at most) ends the worker. Each run gets a fresh globals dict, and stdin is
+    handed over once.
+  - `lib/platform/quickjs.ts`: `quickjs-emscripten-core` 0.32.0 with the singlefile browser variant. Only `console` and
+    `INPUT`, 64 MB, a 3 s deadline, and the pending jobs run.
+- Server helpers, in routes and server actions: `lib/platform/exec.ts` (`runOnServer`, `CapError`, `codeCall`) and
+  `lib/platform/browse.ts` (`openPage`). Both forward the identity headers, as `data()` does.
+- Also: `components/platform/CodeOutput.tsx`, the `muse-code-run` skill, `tests/caps/code.ts` and
+  `scripts/caps/code.mjs`. All of them are platform files.
+- Shared-file edit for unit 2: in `template/scripts/__tests__/caps-step.test.mjs`, the static-segment rule now lets a
+  dynamic segment come last under a static one (`pyodide/[file]`, whose file names have dots). One marked line.
+
+**Measured.**
+- Unit: `lib/caps/code/__tests__/code.test.ts`, 30 of 30.
+- Template: `caps-code.test.mjs`, 16 of 16. The Pyodide worker and the QuickJS glue ran against stand-in engines,
+  and the server helpers against a fake gateway.
+- Goldens: the flags-off goldens hold, with unit 9's flags added. The caps-off gateway test has `/exec` and `/browse`,
+  plus a "served but CODE_EXEC and CODE_BROWSE off" case.
+- Full suite: 4,484 tests with 0 failures before the caps-step edit. Template: 513 of 513 after it. `tsc` is clean.
+
+**Not proven yet.**
+- No sandbox has run: `.env.local`'s Vercel OIDC token expired about 74 hours ago, and using the account token instead
+  was refused by the permission check. Untested for real:
+  - bash, `timeout`, `head` and `date +%s%3N` on Vercel's image.
+  - Whether `python3` and `node` are both on the default image.
+  - That `"deny-all"` blocks everything.
+  - The browse script's Playwright path in the builder snapshot (`createRequire("/vercel/app/package.json")`).
+- Pyodide and QuickJS themselves have never run here. The packages aren't installed, and running a downloaded copy was
+  refused. Their APIs were read from their type definitions only.
+- Whether Vercel's file tracing ships Pyodide's files with the route is unknown.
+- No real test build has run (section 22): local runs can't reach the gateway (8a), and the preview database isn't
+  ready for builds.
+- So `CAP_READY.code` stays false.
+
+**For the owner.** Decision 10 holds: `CODE_EXEC_VISITORS` stays off. Pyodide is MPL-2.0, and QuickJS and
+quickjs-emscripten are MIT.
+
 ## 16. Unit 10: runtime (H)
 
 **Scope.** Python functions in products, with PyPI open in the build firewall; a self-host kit output; VS Code extension and
@@ -2252,5 +2374,9 @@ Phaser game.
 - Nov 1 (integration 3, tg-cap-int with data): 0020_data sits at journal index 20 with `meta/0020_snapshot.json`
   (tg-cap-int's 0019 plus the unit's changes). `CAP_OVERLAYS_ALL.games` lists `games`, `games-phaser` and
   `games-babylon`, so a snapshot must hold all three for games to be ready. Registries take data before extension and games.
+- Nov 1 (unit 9): section 15a added. No Muse Code sessions (General's), so no `code_session` lines in the gateway files and
+  no `MUSE_CODE_*` flags. The browse screenshot is a data URL in the reply, not Blob, so no `caps/browse/` prefix and no
+  sweep. `exec_runs` has `namespace` instead of `build_id`. The launcher is a stand-in in `lib/caps/code/session.ts`. In
+  unit 2's `caps-step.test.mjs`, the static-segment rule allows a final dynamic segment (one marked line).
 
 - Oct 31: first version (unit 0).

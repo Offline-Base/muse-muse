@@ -245,7 +245,9 @@ describe("cap overlays (template/caps)", () => {
     for (const o of overlays) {
       const platform = new Set(JSON.parse(readFileSync(path.join(CAPS, o, "platform-files.json"), "utf8")));
       for (const f of filesOf(path.join(CAPS, o, "files"))) {
-        if (f.startsWith("app/api/")) assert.match(f, /^app\/api\/musemuse\/[a-z0-9-]+(\/[a-z0-9-]+)*\/route\.ts$/, `${o}: ${f}`);
+        // Wave 3, unit 9: a dynamic segment may come last, under a static one (code's pyodide/[file], whose file names have
+        // dots), since the static segment already keeps it apart from the agent kit's catch-all.
+        if (f.startsWith("app/api/")) assert.match(f, /^app\/api\/musemuse\/[a-z0-9-]+(\/[a-z0-9-]+)*(\/\[[a-z]+\])?\/route\.ts$/, `${o}: ${f}`);
         if (/^(lib\/platform\/|tests\/caps\/|scripts\/caps)/.test(f)) assert.ok(platform.has(f), `${o}: ${f} must be in platform-files.json`);
       }
     }
