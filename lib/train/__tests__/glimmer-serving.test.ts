@@ -353,7 +353,8 @@ describe("glimmer-serving", { skip: canMock ? false : "needs --experimental-test
 
   describe("liveChatServeTarget", () => {
     const t0 = new Date("2026-11-03T18:00:00.000Z");
-    const serveRow = (over: Partial<typeof realSchema.trainingJobs.$inferInsert> = {}) => ({
+    type JobInsert = typeof realSchema.trainingJobs.$inferInsert;
+    const serveRow = (over: Partial<JobInsert> = {}): JobInsert => ({
       recipe: "glimmer-serve",
       title: "Try tuned Glimmer live",
       status: "running",
@@ -373,7 +374,7 @@ describe("glimmer-serving", { skip: canMock ? false : "needs --experimental-test
 
     beforeEach(async () => {
       await testDb.delete(realSchema.trainingJobs);
-      const adapter = { recipe: "glimmer-lora", title: "Bakery LoRA", status: "succeeded", instanceType: "gpu_1x_a100_sxm4", instanceName: "mm-train-lora", region: "us-east-1", priceCentsPerHour: 129, maxMinutes: 90, maxUsd: 5 };
+      const adapter = { recipe: "glimmer-lora" as const, title: "Bakery LoRA", status: "succeeded" as const, instanceType: "gpu_1x_a100_sxm4", instanceName: "mm-train-lora", region: "us-east-1", priceCentsPerHour: 129, maxMinutes: 90, maxUsd: 5 };
       await testDb.insert(realSchema.trainingJobs).values([
         { ...adapter, id: ADAPTER, params: { datasetId: "dddddddd-0000-4000-8000-0000000000aa", maxSteps: 120 } },
         { ...adapter, id: DECIDER, params: { datasetId: "dddddddd-0000-4000-8000-0000000000bb", mode: "decide" } },
