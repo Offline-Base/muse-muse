@@ -1578,6 +1578,26 @@ message. Judge: "Glimmer's answers in this test are samples."
 and shared rows, never visitor or user rows. Meta's open-model license and Acceptable Use Policy pass down to every product.
 Reuse existing tuned models before any new GPU run.
 
+**Who may train (owner, Oct 31 21:15; agreed with General).**
+- Hosted Glimmer runs in demo windows only: one 30-minute window on Nov 3, plus any window an admin opens, under
+  `GPU_GLIMMER_DAILY_USD` $15.
+- Visitors can fine-tune from day one at General's `/fine-tuning`, behind `PUBLIC_TRAINING`. They need no sign-in: the
+  platform's builder sign-in needs the shared access code (decision 3), which visitors don't have.
+- A visitor's identity is General's signed `mm_trainer` cookie.
+  - A signed-in builder (`builderTier` gives admin or builder) trains as their user id instead. Runs made under their
+    cookie move to that id when they sign in.
+  - A banned user (a session with `bannedAt`) is refused.
+- Visitor limits:
+  - one run a day per trainer, and also per IP, since a cookie can be cleared
+  - 60 minutes or $4 a run
+  - $15 a day across all visitors
+  - nothing published without an admin
+- Visitors train on the lab's ready datasets or their own rows, never on Wonder-written data.
+- This is not a trust exception: GPUs aren't a cap, and trust leaves the GPU tier check to this unit (section 7).
+- A product's own training stays with the product's signed-in builder. That covers `POST /api/products/<slug>/train`, and
+  a brief that asks for its own tuned model under General's `TUNE_FROM_BUILDS`.
+- The guest writer rule (`GUEST_WRITER_RULE`) is unchanged.
+
 ## 18. Unit 12: drive export (owner ask)
 
 The detailed design is `docs/DRIVE_EXPORT.md` (committed 62a5a06). This section only fixes how it meets the rest of
