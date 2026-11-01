@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { DocsNav } from "@/components/shell/DocsNav";
+import { History } from "@/components/shell/History";
 import { NavLinks } from "@/components/shell/NavLinks";
 import { isDocsPath } from "@/components/shell/nav";
 import type { LocalNavSection } from "@/lib/docs/pages";
@@ -13,5 +14,11 @@ import type { LocalNavSection } from "@/lib/docs/pages";
  */
 export function ShellNav({ docsNav, onNavigate }: { docsNav: LocalNavSection[]; onNavigate?: () => void }) {
   const pathname = usePathname() ?? "/";
-  return isDocsPath(pathname) ? <DocsNav nav={docsNav} onNavigate={onNavigate} /> : <NavLinks onNavigate={onNavigate} />;
+  if (isDocsPath(pathname)) return <DocsNav nav={docsNav} onNavigate={onNavigate} />;
+  return (
+    <>
+      <NavLinks onNavigate={onNavigate} />
+      <History onNavigate={onNavigate} />
+    </>
+  );
 }

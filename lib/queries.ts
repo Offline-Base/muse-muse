@@ -256,6 +256,20 @@ async function productBuilds(productId: string, limit: number): Promise<BuildSum
 
 // ---------- My builds ----------
 
+/** These builds of one account, newest first: a shared guest's History, which is only what their browser opened. */
+export async function listBuildsByIds(userId: string, ids: string[]): Promise<BuildSummary[]> {
+  if (ids.length === 0) return [];
+  const rows = await db()
+    .select(summaryColumns)
+    .from(schema.builds)
+    .leftJoin(schema.products, eq(schema.builds.productId, schema.products.id))
+    .leftJoin(schema.inspirations, eq(schema.builds.inspirationId, schema.inspirations.id))
+    .where(and(eq(schema.builds.userId, userId), inArray(schema.builds.id, ids)))
+    .orderBy(desc(schema.builds.startedAt))
+    .limit(ids.length);
+  return rows.map(toSummary);
+}
+
 export async function listUserBuilds(userId: string, limit = 100): Promise<BuildSummary[]> {
   const rows = await db()
     .select(summaryColumns)
