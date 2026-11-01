@@ -44,7 +44,7 @@ import {
   setInstanceIp,
   setStatus,
 } from "@/lib/train/store";
-import { isTrainTerminal, type Recipe, type TrainCheck, type TrainStatus } from "@/lib/train/types";
+import { QUANT_IMAGE_FAMILY, QUANT_RECIPE, isTrainTerminal, type Recipe, type TrainCheck, type TrainStatus } from "@/lib/train/types";
 import { buildUserData, callbackOrigin, deadlineEpochFor } from "@/lib/train/userdata";
 
 /** The SSH key every launch uses. Its private key stays on the owner's Mac, for debugging; the platform never uses SSH. */
@@ -395,6 +395,7 @@ export async function launchStep(jobId: string): Promise<LaunchResult> {
       ],
       ...(cache ? { fileSystemNames: [cache.name] } : {}),
       ...(firewall ? { firewallRulesetIds: [firewall.id] } : {}),
+      ...(job.recipe === QUANT_RECIPE ? { imageFamily: QUANT_IMAGE_FAMILY } : {}),
     });
   } catch (err) {
     // Step errors are kept in the run's log and become the job's error, so the token and key are blanked out of them.

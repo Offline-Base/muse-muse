@@ -1722,13 +1722,15 @@ scripts/dev/tune-harness.ts, on a Lambda gpu_1x_a10 named prove-tune-1, us-east-
 - Tests: targeted suites pass. flags-off-surface was already failing on main on stale mocks; with those fixed its provision and deploy goldens match, and steps.json still differs on a timeout this branch doesn't touch. No golden file changed.
 - Not run: a whole build on production settings, a sandbox, the notice in a browser, whether Contributor's judge is as strict as Muse Wonder's.
 
-## Nov 1, 2026: try and one-click export (tg-try-export, flags TRY_TUNED and EXPORT_TUNED, off)
+## Nov 1, 2026: real quantize run on a rented A10 (tg-quant-targets)
 
-- Built: a public Try box on `/models/{id}` with the tuned and base models side by side, wake-up states, per-visitor limits and a note on the data; installers for Mac, Windows, Linux and Jetson with an Ollama path, using `deviceModelTarget`.
-- Decision: a visitor may wake a sleeping model, since the owner chose to cover hosting, inside its own limits: 1 wake per visitor, 2 per model, 4 in all, and $10 a day taken atomically before any provider call. Never Lambda, and the owner token is dropped.
-- Fix before it shipped: day counters at the start of the day would have reset within the hour, because the hourly prune deletes windows that began over an hour ago. They now use `dayWindow`, with a test.
-- Found, not changed: `HOSTED_LIMITS.perEndpointPerDay` in `lib/train/host/gateway.ts` counts at the start of the day, so the same prune resets it.
-- Measured: the generated Mac script on `ggml-org/tiny-llamas` `stories260K.gguf`, real b11669 from its pinned release, 16 tokens, exit 0. A changed sha256 deleted the download and exited 1. A second run downloaded nothing. The Linux script's pinned tarball and model passed their checks, with the OS name stubbed; its program was not run here.
-- Blocked: real paid hosting (needs a real admin sign-in, and provider keys held only in Vercel). A PowerShell syntax check was denied by the permission check, so the Windows script has not been parsed or run.
-- Spend: $0. No Muse Glimmer file ran. Targeted tests only; no `next build`, no browser view.
+- Ran: real `RUNNER_PY` and `QUANT_PY` via `scripts/dev/quant-harness.ts`, a stand-in for the platform on the GPU, publish 0, made-up data, nothing uploaded. Machines device-loop-1 (about 6 minutes, Ubuntu 22.04) and device-loop-2 (Ubuntu 24.04). Both terminated. Results in `docs/log/quant-run-2026-11-01`.
+- Spend: about 1.5 hours of A10 at $1.29 an hour, about $2 by Lambda's list price, not read from an invoice. Limit was $15.
+- Llama 3.2 3B adapter e1b00ffa: job passed. Q4_K_M 2,019,377,312 bytes, KL 0.0349, 100 of 100 final answers, template check passed. Agreement with the adapter's eval answers 0 of 100 on the first 200 characters, though 20 of 20 sampled keep the trained format (base 0 of 100). 162.3 tokens a second on the A10. On 6 x86 threads under a memory limit, about 23 tokens a second and 2.84 GB resident, under both 8 GiB and 4 GiB.
+- One-bit r30b, base, cached file glimmer-stage-b-r30b-IQ1_S.gguf made on b11970, run on b11669: under 8 GiB and 7 GiB, no swap, CPU only, 6 pinned threads, cold page cache. No out-of-memory event. 7.28 to 7.42 GB resident with mmap, 6.96 to 7.01 GB with `-lm none`. 2.34 to 2.46 tokens a second, about 5 s to the first token. Answers: 2 of 5 fine under a final-channel prompt, 1 of 5 under a stock prompt. Not demo quality. x86 under a limit isn't a Jetson.
+- One-bit recipe path: adapter 83d71f74 from an older base, as a pipeline test only, with text it didn't train on. Matrix and IQ1_S made on the A10 (6,526,418,944 bytes). KL 1.1827, same top token 52.3%. 19 of 30 final answers, so it was left out. Q4_K_M KL 0.0416, over its 0.03 limit, so the job ended with nothing passed. The gates worked. Whether a true r30b tune passes is unknown.
+- Fixed, each seen failing for real: glibc 2.38 on the default image (now `lambda-stack-24-04` for quantize jobs); Unsloth's save refusing the base's forwarded method; shard hashes under the new hub blob layout; r30b's 4-bit build not fitting 24 GB; `-ngl 999` on imatrix; Meta's tokenizer config in the converter (a vocab-only conversion then hashed the same as the knowledge run's GGUF); a 500 from llama-server's parser on a cut-off answer.
+- Decision: `LOW_BIT_KL_MAX` stays null. One measurement from a mismatched adapter can't set a gate.
+- Decision: `QUANT_KL_MAX.Q4_K_M` stays 0.03 for now, and flagged. Two real values on made-up text are 0.035 (Llama, which has no limit) and 0.042, so a real r30b job may lose its Q4_K_M. Needs an r30b tune's number.
+- Not run: launch through the platform, https callbacks, Hub publish, a real board, the full suite, next build.
 

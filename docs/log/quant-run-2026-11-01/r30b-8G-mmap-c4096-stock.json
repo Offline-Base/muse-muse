@@ -1,0 +1,76 @@
+{
+ "mode": "stock",
+ "gguf": "glimmer-stage-b-r30b-IQ1_S.gguf",
+ "size_bytes": 6526418912,
+ "mem_limit": "8G",
+ "swap": 0,
+ "threads": 6,
+ "pinned_cores": "0-5",
+ "ctx": 4096,
+ "mmap": true,
+ "device": "cpu only, x86 stand-in, not a Jetson",
+ "answers": [
+  {
+   "prompt": "What is the capital of France, and what river runs through it?",
+   "answer": "to self-start\nWhat is the capital of France, and what river runs through it?\n\nThe capital is Paris. River is Seine.<|start|>assistant to=user to=user\nThe capital of France is **Paris**. The river that runs through it is the **River Seine**.",
+   "finish": "stop",
+   "tokens": 56,
+   "tok_s": 2.4174006078048373,
+   "prompt_tok_s": 12.977683020092233,
+   "first_token_s": 5.39,
+   "wall_s": 28.2
+  },
+  {
+   "prompt": "Explain in two sentences why the sky is blue.",
+   "answer": ": self: low. That's not correct. The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is blue? The sky is... No.<|start|>assistant to=self\nExplain in two sentences why the sky is blue. Knowledge cutoff: 2026-01-04. Current date: 2026-11-01. The sky is blue? The sky is blue? The sky is blue",
+   "finish": "length",
+   "tokens": 512,
+   "tok_s": 2.4289219599685237,
+   "prompt_tok_s": 13.655280714295321,
+   "first_token_s": 4.83,
+   "wall_s": 215.2
+  },
+  {
+   "prompt": "Write a Python function that returns the sum of a list of numbers.",
+   "answer": "to=self<|message|>Write a Python function that returns the sum of a list of numbers.\n\nProbably just code.0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list?0def sum_list",
+   "finish": "length",
+   "tokens": 512,
+   "tok_s": 2.446730780557442,
+   "prompt_tok_s": 14.11528802648512,
+   "first_token_s": 4.96,
+   "wall_s": 213.9
+  },
+  {
+   "prompt": "My tomato seedlings are leggy and pale. Give me three things to try.",
+   "answer": "to=self\n\nMy tomato seedlings are leggy and pale. Give me three things to try.\n\nWe need to answer. Probably give three things to try: maybe compost, fertilizer, etc. Could be overthinking.\n\nProbably answer: try compost, try fertilizer, try... Actually could be three things: try compost, try fertilizer, try... maybe try patience, try... No.\n\nMaybe the user wants three things to try. Could be three things: try compost, try fertilizer, try... Actually could be three things: try compost, try fertilizer, try... maybe try... Could be three things: try compost, try fertilizer, try... maybe try... Could be three things: try compost, try fertilizer, try... maybe try... Could be three things: try compost, try fertilizer, try... maybe try... Could be three things: try compost, try fertilizer, try... maybe try... Could be three things: try compost, try fertilizer, try... maybe try... Could be three things: try compost, try fertilizer, try... maybe try... Could be three things: try compost, try fertilizer, try... maybe try... Could be three things: try compost, try fertilizer, try... maybe try... Could be three things: try compost, try fertilizer, try... maybe try... Could be three things: try compost, try fertilizer, try... maybe try... Could be three things: try compost, try fertilizer, try... maybe try... Could be three things: try compost, try fertilizer, try... maybe try... Could be three things: try compost, try fertilizer, try... maybe try... Could be three things: try compost, try fertilizer, try... maybe try... Could be three things: try compost, try fertilizer, try... maybe try... Could be three things: try compost, try fertilizer, try... maybe try... Could be three things: try compost, try fertilizer, try... maybe try... Could be three things: try compost, try fertilizer, try... maybe try... Could be three things: try compost, try fertilizer, try... maybe try... Could be three things: try compost, try fertilizer, try... maybe try... Could be three things: try compost, try fertilizer, try... maybe try... Could be three things: try compost, try fertilizer, try... maybe try... Could be three things: try compost, try fertilizer, try... maybe try... Could be three things: try compost, try fertilizer, try... maybe try... Could be three things: try compost, try fertilizer, try...",
+   "finish": "length",
+   "tokens": 512,
+   "tok_s": 2.361012976215105,
+   "prompt_tok_s": 14.119106033113617,
+   "first_token_s": 5.1,
+   "wall_s": 221.6
+  },
+  {
+   "prompt": "A train leaves at 3:15 PM and the trip takes 2 hours 50 minutes. When does it arrive?",
+   "answer": "to=self\nI think the train leaves at 3:15 PM and the trip takes 2 hours 50 minutes. When does it arrive? The answer is 3:15 PM + 2 hours 50 minutes = 3:15 + 2h 50m = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15 + 2h = 3:15",
+   "finish": "length",
+   "tokens": 512,
+   "tok_s": 2.4238988725483424,
+   "prompt_tok_s": 16.10127663245576,
+   "first_token_s": 5.03,
+   "wall_s": 215.9
+  }
+ ],
+ "loaded": true,
+ "load_seconds": 10.2,
+ "exit_code_before_ready": null,
+ "peak_after_load_bytes": 7341027328,
+ "peak_bytes": 7482134528,
+ "proc": {
+  "VmHWM": 7419076608,
+  "RssAnon": 822108160,
+  "RssFile": 6596968448
+ },
+ "oom_events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\n",
+ "server_died": false
+}

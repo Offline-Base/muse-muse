@@ -301,6 +301,12 @@ describe("launchInstance", () => {
     });
   });
 
+  it("asks for an image family only when one is named", async () => {
+    serve(() => Response.json({ data: { instance_ids: ["0920582c7ff041399e34823a0be62549"] } }));
+    await launchInstance({ ...input, imageFamily: "lambda-stack-24-04" });
+    assert.deepEqual((calls[0].body as { image?: unknown }).image, { family: "lambda-stack-24-04" });
+  });
+
   it("refuses input Lambda would reject without sending anything", async () => {
     serve(() => Response.json({ data: { instance_ids: ["x"] } }));
     for (const bad of [

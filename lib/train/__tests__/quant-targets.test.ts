@@ -22,10 +22,10 @@ describe("deviceModelTarget", () => {
   });
 
   it("keeps the memory visible and never claims a device has run a file", () => {
-    assert.match(deviceModelTarget("jetson_orin_nano").fit, /Not run on a real board yet.*6\.53 GB.*7\.7 GB by estimate.*8 GB shared/);
+    assert.match(deviceModelTarget("jetson_orin_nano").fit, /Not run on a real board yet.*x86.*6\.53 GB.*7\.3 GB.*2\.4 tokens.*8 GB is shared/);
     assert.equal(deviceModelTarget("jetson_orin_nano").provenOnDevice, false);
     assert.equal(deviceModelTarget("mac").provenOnDevice, false);
-    assert.ok(LOW_BIT_FACTS.runGbEstimate < LOW_BIT_FACTS.boardGb);
+    assert.ok(LOW_BIT_FACTS.runGbMeasured < LOW_BIT_FACTS.boardGb);
   });
 
   it("finds a small base by the adapter's exact repo, and ignores names not on its list", () => {
