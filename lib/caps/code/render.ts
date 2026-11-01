@@ -5,7 +5,7 @@ import type { CapRenderEntry } from "@/lib/caps/render";
 
 /**
  * The code cap's part of the prompts (docs/CAPABILITIES.md, 2.6 and section 15). Its text names the platform files in
- * template/caps/code: lib/platform/{pyodide,quickjs,exec,browse}.ts, components/platform/CodeOutput.tsx,
+ * template/caps/code: lib/platform/{code-run,pyodide,quickjs,exec,browse}.ts, components/platform/CodeOutput.tsx,
  * app/api/musemuse/pyodide/[file]/route.ts, tests/caps/code.ts and the muse-code-run skill.
  */
 
@@ -67,7 +67,7 @@ export const CODE_RENDER: CapRenderEntry = {
         ". Each records its check and takes its judge screenshot. Assert structure, never a sample page's words.",
     );
     if (block.browse) lines.push("- `template/AGENTS.md` says the product reaches only Meta's models and the gateway. For this brief the gateway also opens the page the person typed, for the owner only.");
-    lines.push("- `lib/platform/pyodide.ts`, `lib/platform/quickjs.ts`, `lib/platform/exec.ts`, `lib/platform/browse.ts`, `components/platform/CodeOutput.tsx`, `app/api/musemuse/pyodide/[file]/route.ts` and `tests/caps/code.ts` are platform files. Leave them as they are.");
+    lines.push("- `lib/platform/code-run.ts`, `lib/platform/pyodide.ts`, `lib/platform/quickjs.ts`, `lib/platform/exec.ts`, `lib/platform/browse.ts`, `components/platform/CodeOutput.tsx`, `app/api/musemuse/pyodide/[file]/route.ts` and `tests/caps/code.ts` are platform files. Leave them as they are.");
     return lines;
   },
   refine(brief) {
