@@ -34,7 +34,8 @@
  *        tokens by default for a final-only answer, 4,096 for one that reasons, never more than 4,096, within
  *        CHAT_ANSWER_SECONDS. One request at a time, through the same lock as /generate (409 busy). 400 bad_json,
  *        unknown_model, bad_messages, bad_sampling, bad_max_tokens, bad_stop or stream_unsupported, 413 too_large, 422
- *        too_long (a prompt over 4,096 tokens), 503 stopping, 501 chat_unavailable, 500 generation_failed.
+ *        too_long (a prompt over 4,096 tokens), 503 stopping (also with less than CHAT_ANSWER_SECONDS left before the
+ *        window ends, so the drain at shutdown never cuts an answer off), 501 chat_unavailable, 500 generation_failed.
  *   GET /health -> 200 {ok, busy, model, adapterJobId, served}, and mode "decide" for a decision model.
  *   401 {error: "unauthorized"} without the key, 404 {error: "not_found"} for any other path.
  *
@@ -135,8 +136,6 @@ MIN_SERVE_START_SECONDS = 600
 MIN_LOAD_SECONDS = 300
 # With less than this left once the model is loaded, the child doesn't start the server.
 MIN_SERVING_SECONDS = 60
-# At shutdown, how long the server waits for an answer in progress: a whole answer's budget, and a little more.
-DRAIN_SECONDS = SERVE_ANSWER_SECONDS + 15
 # How often the serving child writes an "alive" event, so the runner's stall watch sees output and heartbeats go on.
 ALIVE_SECONDS = 60
 # How often the serving loop looks at the clock and the stop file.
@@ -203,6 +202,10 @@ SERVE_CONTEXT_TOKENS = CHAT_PROMPT_TOKENS_MAX + CHAT_MAX_TOKENS_CAP
 # One chat answer's time on the GPU (CHAT_ANSWER_SECONDS in lib/train/glimmer-serving.ts), so it ends inside the
 # platform's wait (serveTiming.chatMs) less its connect time. Past it the answer stops where it is, finish "length".
 CHAT_ANSWER_SECONDS = 135
+# At shutdown, how long the server waits for an answer in progress: the longest answer's budget (a chat answer's), and
+# a little more, inside SERVE_MARGIN_SECONDS. A chat answer isn't started with less than its budget left before the
+# window ends (503 stopping), so at the window's end only a /generate or /decide answer can still be running.
+DRAIN_SECONDS = max(SERVE_ANSWER_SECONDS, CHAT_ANSWER_SECONDS) + 15
 CHAT_MESSAGES_MAX = 64
 CHAT_CHARS_MAX = 32000
 CHAT_STOPS_MAX = 4
@@ -1235,12 +1238,14 @@ class ServeHandler(http.server.BaseHTTPRequestHandler):
     def answer_chat(self, raw):
         """POST /v1/chat/completions on a chat adapter's server: one chat_request answered by base Glimmer or the tuned
         model (make_chatter), one request at a time on the GPU, as /generate is, in OpenAI's chat completion shape.
-        400 for a body chat_request refuses (or bad_json), 413 too_large, 422 too_long, 409 busy, 503 stopping, 501
+        400 for a body chat_request refuses (or bad_json), 413 too_large, 422 too_long, 409 busy, 503 stopping (or too
+        little of the window left for a whole answer), 501
         chat_unavailable when the route couldn't be set up, 500 generation_failed (counting toward FAILS_TO_STOP)."""
         state = self.server.state
         if state.chatter is None:
             return self.reply(501, {"error": "chat_unavailable"})
-        if state.stopping.is_set():
+        # An answer that couldn't finish before the window ends isn't started: the drain would have to cut it off.
+        if state.stopping.is_set() or time.time() + CHAT_ANSWER_SECONDS > state.until:
             return self.reply(503, {"error": "stopping"})
         try:
             body = json.loads(raw.decode("utf-8"))

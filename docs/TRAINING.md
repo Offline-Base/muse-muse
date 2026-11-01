@@ -626,7 +626,7 @@ end: its minutes after it came up, or ctx.deadline - 180 s when that is first ->
   - `POST /v1/chat/completions` (a chat adapter's server only; a decision model's answers 404): products' chat in OpenAI's chat shape, below.
   - 401 `unauthorized` without the key, on every route; 404 for any other path.
 - Once it listens, the child emits "serving" and the recipe posts `ctx.serving(port, certSha256, model, adapterJobId)`. When the platform doesn't take it, it is sent again with each "alive" event, 5 times in all, then the server stops (nobody could reach it) and the job fails. The child writes an "alive" event every minute, so the 20-minute stall watch never holds back the heartbeats while it waits for prompts; each answer becomes a progress message ("Serving live: N answered").
-- It stops at whichever comes first, `ctx.deadline` less 180 s (`SERVE_MARGIN_SECONDS`, equal to `SERVE_STOP_MARGIN_SECONDS` in logic.ts) or its minutes after it started serving: the listener closes, an answer in progress gets up to 115 s to finish (`DRAIN_SECONDS`, a whole answer's budget and 15 s), and the child writes its result (`peak_vram_gb` null when torch.cuda itself fails) and exits. `run(ctx)` returns `adapter_job_id`, `served`, `busy_refused`, `unauthorized`, `bad_requests`, `errors`, `serve_minutes`, `load_seconds`, `max_new_tokens`, `system`, `gpu`, `peak_vram_gb`, `cached_weights`, `cached_venv` and a summary. A child that ends before serving fails the job with its last lines (and, from a reused venv with a `ModuleNotFoundError` before its imports, marks that venv broken as glimmer-lora does); one that ends while serving fails it with how many it answered.
+- It stops at whichever comes first, `ctx.deadline` less 180 s (`SERVE_MARGIN_SECONDS`, equal to `SERVE_STOP_MARGIN_SECONDS` in logic.ts) or its minutes after it started serving: the listener closes, an answer in progress gets up to 150 s to finish (`DRAIN_SECONDS`, the longest answer's budget, a chat answer's 135 s, and 15 s), and the child writes its result (`peak_vram_gb` null when torch.cuda itself fails) and exits. `run(ctx)` returns `adapter_job_id`, `served`, `busy_refused`, `unauthorized`, `bad_requests`, `errors`, `serve_minutes`, `load_seconds`, `max_new_tokens`, `system`, `gpu`, `peak_vram_gb`, `cached_weights`, `cached_venv` and a summary. A child that ends before serving fails the job with its last lines (and, from a reused venv with a `ModuleNotFoundError` before its imports, marks that venv broken as glimmer-lora does); one that ends while serving fails it with how many it answered.
 
 ### The platform side
 
@@ -665,7 +665,8 @@ and `runner.test.ts` keeps them equal.
   when the messages have no system message. Sampling sent must be Meta's (400 `bad_sampling`). One request at a time,
   through the same lock as `/generate` (409 `busy`), within `CHAT_ANSWER_SECONDS` (135). 400 `bad_json`, `unknown_model`,
   `bad_messages`, `bad_max_tokens`, `bad_stop` or `stream_unsupported`, 413 `too_large` (or over 256 KB), 422 `too_long`,
-  503 `stopping`, 501 `chat_unavailable` (the route couldn't be set up; the log says why and `/generate` still serves), 500
+  503 `stopping` (also with less than `CHAT_ANSWER_SECONDS` left before the window ends, so the drain at shutdown never
+  cuts a chat answer off), 501 `chat_unavailable` (the route couldn't be set up; the log says why and `/generate` still serves), 500
   `generation_failed`.
 - The platform: `askChat` in `lib/train/serve.ts` (pinned TLS and the serving key, as `askLive`; `serveTiming.chatMs`
   150 s, under the 3-minute slot window); `liveChatServeTarget(adapterJobId | null, now)` in the store (a chat adapter's

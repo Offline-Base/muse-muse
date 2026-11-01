@@ -3186,7 +3186,8 @@ def replies(prompt, tuned):
 fakes = install_chat_fakes(replies)
 s.MIN_SERVING_SECONDS = 0
 s.STOP_POLL_SECONDS = 0.05
-cfg, thread, errors = start_child()
+# A chat answer needs its whole budget (CHAT_ANSWER_SECONDS) left in the window, so the window here is 10 minutes.
+cfg, thread, errors = start_child(stop_by=time.time() + 600)
 port = wait_for(serving_event, what="the serving event")["port"]
 assert not any(e["kind"] == "log" and "is off" in e.get("text", "") for e in EVENTS), EVENTS
 model, tok = fakes["model"], fakes["tokenizer"]
@@ -3302,11 +3303,21 @@ assert https_call(port, "POST", "/generate", {"prompt": "second"})[:2] == (409, 
 release.set()
 slow.join(30)
 assert results["slow"][0] == 200, results
+
+# With less than a whole chat answer's budget left before the window ends, a chat isn't started (the drain at shutdown
+# would cut it off), and nothing reaches the GPU; /generate, shorter, still answers.
+calls_before = len(model.calls)
+s.CHAT_ANSWER_SECONDS = 10 ** 6
+assert chat(port, good) == (503, {"error": "stopping"})
+assert len(model.calls) == calls_before
+s.CHAT_ANSWER_SECONDS = 135
+assert https_call(port, "POST", "/generate", {"prompt": "count gulls"})[0] == 200
+assert g.DRAIN_SECONDS == max(g.SERVE_ANSWER_SECONDS, g.CHAT_ANSWER_SECONDS) + 15 < g.SERVE_MARGIN_SECONDS
 stop_child(cfg, thread)
 assert not errors, errors
 
 # A trainChannel 1 adapter's tuned model reasons first, as base Glimmer does, and stops at Meta's ids only.
-cfg, thread, errors = start_child(train_channel=1)
+cfg, thread, errors = start_child(train_channel=1, stop_by=time.time() + 600)
 port = wait_for(serving_event, what="the serving event")["port"]
 status, body = chat(port, {"model": ADAPTER, "messages": gulls})
 assert body["choices"][0]["message"]["content"] == "a second message", body
@@ -3318,7 +3329,7 @@ assert not errors, errors
 
 # A tokenizer whose end ids aren't Meta's: no chat route (501), and the room's Try it live still serves.
 fakes = install_chat_fakes(replies, ids={"<|end_of_text|>": 1, "<|eot|>": 4, "<|eom|>": 5, "<|start|>": 2})
-cfg, thread, errors = start_child()
+cfg, thread, errors = start_child(stop_by=time.time() + 600)
 port = wait_for(serving_event, what="the serving event")["port"]
 assert any(e["kind"] == "log" and e["text"].startswith("Products' chat at /v1/chat/completions is off on this server: RuntimeError: The tokenizer's <|end_of_text|> and <|eot|> are [1, 4], not Meta's [200001, 200008]") for e in EVENTS), EVENTS
 assert chat(port, good) == (501, {"error": "chat_unavailable"})
@@ -3336,7 +3347,7 @@ assert not errors, errors
 install_chat_fakes(lambda prompt, tuned: ("Tuned says " + prompt + "<|eot|>") if tuned else (" to=self<|message|>Hmm.<|eom|><|start|>assistant to=user<|message|>Base says " + prompt + "<|eot|>"))
 s.MIN_SERVING_SECONDS = 0
 s.STOP_POLL_SECONDS = 0.05
-cfg, config_path = child_config(tempfile.mkdtemp(dir=ROOT))
+cfg, config_path = child_config(tempfile.mkdtemp(dir=ROOT), stop_by=time.time() + 600)
 
 
 def show(kind, **fields):
