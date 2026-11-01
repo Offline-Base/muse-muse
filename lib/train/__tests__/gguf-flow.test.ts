@@ -747,6 +747,8 @@ describe("local files: a judged adapter's GGUF repo", { skip: canMock ? false : 
       assert.deepEqual([unjudged.status, unjudged.body.error], [400, "Adapter: that job isn't judged yet, so its local files would have no results to stand on."]);
       await testDb.update(realSchema.trainingJobs).set({ evalSummary: { items: 2, tunedWins: 2, baseWins: 0, ties: 0, avgBaseScore: 2.5, avgTunedScore: 8.5, judgeCostUsd: 0.01 }, params: { datasetId: DATASET_ID, studentPrompt: "full", dryRun: 0, publish: 1 } }).where(eq(realSchema.trainingJobs.id, adapterId));
       await log(adapterId, { type: "done", metrics: { student_prompt: "full", cache_used: "yes", adapter_dir: `/lambda/nfs/x/models/${adapterId}` } });
+      assert.match(String((await press(adapterId)).body.error), /trained on plain Muse Glimmer/, "no base recorded: an adapter from before the switch");
+      await log(adapterId, { type: "done", metrics: { student_prompt: "full", cache_used: "yes", adapter_dir: `/lambda/nfs/x/models/${adapterId}`, base_model: "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit" } });
       assert.match(String((await press(adapterId)).body.error), /whole task prompt/);
       assert.equal((await press("8f1d2c3b-0000-4000-8000-00000000dead")).status, 404);
       assert.deepEqual(started, [], "no GPU started");
