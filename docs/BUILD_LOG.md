@@ -1124,7 +1124,7 @@ because the sidebar showed a real account.
   Policy (18+, never presented as human-written), and its $20M API clause. Files in S3: LICENSE, MUSE_MODEL_LICENSE.md,
   USAGE_POLICY.md, NOTICE. Wave 3 told.
 
-### 21:33 Wave 3: r30b's license duties in the drive export (tg-cap-int e556f68)
+### 21:36 Wave 3: r30b's license duties in the drive export (tg-cap-int e556f68)
 
 - Defaults to r30b IQ1_S only; stage 2 or any other file must be named in full with its own honesty numbers. Any
   knowledge-run file (r30b, stage-b, stage 2, knowledge) is refused without the duties. The drive carries
