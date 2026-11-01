@@ -50,7 +50,7 @@ describe("checkTrainingTask", () => {
     assert.ok(call.instructions.includes(REFUSE_WHEN));
     assert.match(call.instructions, /real people's data/);
     assert.match(call.instructions, /one narrow skill/);
-    assert.doesNotMatch(call.instructions, /—/, "no em dashes");
+    assert.doesNotMatch(call.instructions, /\u2014/, "no em dashes");
     const text = JSON.stringify(call.content);
     assert.match(text, /made-up bakery/);
     assert.match(text, /Open Sunday\?/);
@@ -214,6 +214,6 @@ describe("the fixed rules", () => {
     assert.equal(long.length, DATASET_TASK_MAX);
     assert.ok(long.endsWith(C.VISITOR_TASK_RULES));
     assert.match(C.VISITOR_TASK_RULES, /personal details/);
-    assert.doesNotMatch(C.VISITOR_TASK_RULES, /—/);
+    assert.doesNotMatch(C.VISITOR_TASK_RULES, /\u2014/);
   });
 });
