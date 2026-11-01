@@ -44,6 +44,13 @@ export interface GatewayDeps extends RunCounters {
   dailySpendCapUsd: number;
   /** Wave 3, unit 2: ENGINE_FIT_OUTPUT. A call over the budget left runs with a lower max_output_tokens (fitOutputToBudget). */
   fitOutputToBudget?: boolean;
+  /**
+   * Wave 3, unit 1: the trust check (lib/trust/gateway.ts) for a taken-down product, a banned owner and the builder's
+   * daily dollars. Unset while TRUST_REPORTS and TRUST_SIGNED_IN_CAPS are off, so nothing is read.
+   */
+  trustCheck?(token: GatewayToken): Promise<Response | null>;
+  /** Wave 3, unit 1: TRUST_SPARK_TO_WONDER. A live token's muse-spark-1.3 calls run on Muse Wonder, not Contributor. */
+  sparkToWonder?: boolean;
   /** Increments each key's counter for the window and returns the new counts, keyed like the input. */
   hitRateLimits(keys: string[], windowStart: Date): Promise<Record<string, number>>;
   /** Takes one of `limit` slots for the key atomically. Returns the handle releaseInFlight needs, or null when full. */
@@ -139,6 +146,8 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
       retry: false,
     });
   }
+  // ---------- Wave 3, unit 1: trust (docs/CAPABILITIES.md, section 7). No check is wired with its flags off ----------
+  { const refused = deps.trustCheck ? await deps.trustCheck(token) : null; if (refused) return refused; }
 
   const tooLarge = () =>
     gatewayError(
@@ -190,15 +199,20 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
     }
   }
 
+  const notes: string[] = [];
   // Muse Spark 1.3 is never used: a product built to call it is served by Spark 1.3 Contributor (lib/meta/spark.ts),
   // and metered at that model's price.
   if (model === RETIRED_SPARK && parsed.kind === "json") {
-    parsed = { ...parsed, json: { ...parsed.json, model: SPARK_STANDIN }, model: SPARK_STANDIN };
-    model = SPARK_STANDIN;
+    // ---------- Wave 3, unit 1: TRUST_SPARK_TO_WONDER. A live product's calls run on Muse Wonder, at its price, since
+    // Meta may train on Contributor (terms 6.2). Build tokens keep Contributor. Off: Contributor for every token ----------
+    const standIn = deps.sparkToWonder === true && token.scope === "live" ? "muse-wonder-1.0" : SPARK_STANDIN;
+    if (standIn !== SPARK_STANDIN) notes.push(`Ran on ${standIn}: ${RETIRED_SPARK} is retired.`);
+    // ---------- end Wave 3, unit 1 ----------
+    parsed = { ...parsed, json: { ...parsed.json, model: standIn }, model: standIn };
+    model = standIn;
     rewritten = true;
   }
 
-  const notes: string[] = [];
   // Test builds only: a build's own product tests run on the cheap model, whatever the product's code asks for. The
   // product still names Muse Wonder, so it runs on Muse Wonder once it's live.
   const testRun = token.scope === "build" && Boolean(deps.buildTestModel);

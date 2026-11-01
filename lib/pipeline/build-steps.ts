@@ -68,6 +68,8 @@ import {
   type Screenshot,
   type VerifySummary,
 } from "@/lib/types";
+import { trustOverlayFor, type TrustOverlay } from "@/lib/trust/overlay";
+import { briefTierFor } from "@/lib/trust/tiers";
 import { platformSpendToday, recordUsage, type UsageContext } from "@/lib/usage";
 
 /** Muse Code's step budget per run. */
@@ -340,17 +342,40 @@ function verifyBudgetFor(brief: Brief): boolean {
   return briefCaps(brief).length > 0 || (env.engineMilestones && briefMilestones(brief).length > 0) || env.engineRoundScaling || env.engineCheckOnTimeout;
 }
 
+/**
+ * Wave 3, unit 1 (docs/CAPABILITIES.md, section 7): the trust overlay's two files for a new product, from its brief and
+ * the trust flags as the build starts, or null while TRUST_AGE_GATE, TRUST_LEGAL_PAGES, TRUST_GEO_BLOCK and
+ * TRUST_REPORTS are all off.
+ */
+function trustOverlayStep(brief: Brief, slug: string): TrustOverlay | null {
+  if (!env.trustProductOverlay) return null;
+  return trustOverlayFor(brief, {
+    slug,
+    platformUrl: env.platformUrl,
+    flags: {
+      ageGate: env.trustAgeGate,
+      legalPages: env.trustLegalPages,
+      geoBlock: env.trustGeoBlock,
+      geoCountries: env.trustGeoCountries,
+      reports: env.trustReports,
+    },
+  });
+}
+
 /** Writes the brief with the brief model (env.briefModel) and saves it. A retry after the brief was saved reuses it. */
 export async function briefStep(buildId: string): Promise<BriefSummary> {
   "use step";
   const build = await loadBuild(buildId);
   if (build.brief) return summarize(build.brief);
   const inspiration = await loadInspiration(build.inspirationId);
+  // Wave 3, unit 1: who is building (TRUST_SIGNED_IN_CAPS). Undefined, and nothing read, with the flag off.
+  const builder = await briefTierFor(build.userId);
   const result = await writeBrief({
     note: inspiration.note,
     references: inspiration.references,
     rebuildOf: rebuildTargetFor(build.rebuildOf),
     requestedTargets: build.requestedTargets,
+    ...(builder ? { builder } : {}),
   }).catch(async (err: unknown) => {
     // A brief that failed both attempts still cost something. Record it before the step retries.
     if (err instanceof StructuredOutputError) await chargeBrief(buildId, err.usage);
@@ -503,6 +528,8 @@ export async function provisionStep(input: {
   const brief = requireBrief(build);
   const inspiration = await loadInspiration(build.inspirationId);
   const look = lookNote();
+  // Wave 3, unit 1: the trust overlay, for every new build while a trust product flag is on. Null with them off.
+  const trust = trustOverlayStep(brief, input.slug);
   const promptMarkdown = renderBuildPrompt(brief, {
     inspoFiles: inspiration.references.map((r) => r.fileName),
     fixtures: input.fixtures.map((f) => ({ fileName: f.fileName, description: f.description, fromUserSample: f.fromUserSample })),
@@ -512,6 +539,7 @@ export async function provisionStep(input: {
     ...(verifyBudgetFor(brief) ? { verifyBudget: true } : {}),
     // Only when the round plan briefStep saved chains milestones, which is what the workflow runs.
     ...(build.roundPlan?.milestones?.length ? { milestones: briefMilestones(brief) } : {}),
+    ...(trust ? { trust: true } : {}),
     ...look,
   });
   const allowedModels = allowedModelsFor(brief);
@@ -539,6 +567,7 @@ export async function provisionStep(input: {
     ...extraFilesFor(brief),
     targets: briefTargets(brief),
     ...(caps ? { caps, capEnv: capBuildEnv(brief), capHosts: capBuildHosts(caps.caps) } : {}),
+    ...(trust ? { trust } : {}),
   });
   // A local run's sandbox can't reach the gateway, so a cap check that needs the gateway's record can't pass there. Say
   // so once, at the start, instead of letting each check fail with no reason (docs/CAPABILITIES.md, 8a).
@@ -1115,6 +1144,13 @@ export async function startDeployStep(input: {
     productName: product.name,
     env: { GATEWAY_URL: env.gatewayUrl, PRODUCT_TOKEN: live.token, ...(brief ? capDeployEnv(brief, live.token) : {}) },
     projectId: product.vercelProjectId,
+  }).catch(async (err: unknown) => {
+    // Wave 3, unit 1: a deploy refused before any deployment was made (files too big, DeployFilesTooBigError) never
+    // retries, so nothing will ever use the token minted for it. Revoke it. Other errors retry the step, which mints anew.
+    if (err instanceof FatalError) {
+      await db().update(schema.gatewayTokens).set({ revokedAt: new Date() }).where(eq(schema.gatewayTokens.id, live.id));
+    }
+    throw err;
   });
   await db()
     .update(schema.products)

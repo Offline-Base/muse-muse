@@ -32,10 +32,10 @@ if (arg.startsWith("snap_")) {
 
 try {
   let t = Date.now();
-  const { files, skipped } = await collectDeployFiles(sandboxName);
+  const { files } = await collectDeployFiles(sandboxName);
   const bytes = files.reduce((n, f) => n + f.size, 0);
   const leaked = files.filter((f) => /(^|\/)(node_modules|\.next|test-results|playwright-report|inspo|\.git)\//.test(f.file) || /(^|\/)\.env/.test(f.file));
-  console.log(`collectDeployFiles: ${files.length} files, ${bytes} bytes, ${skipped.length} skipped, ${leaked.length} excluded paths leaked, ${s(t)}`);
+  console.log(`collectDeployFiles: ${files.length} files, ${bytes} bytes, ${leaked.length} excluded paths leaked, ${s(t)}`);
   console.log(files.map((f) => `  ${f.sha.slice(0, 10)} ${String(f.size).padStart(7)} ${f.file}`).join("\n"));
 
   if (!process.env.VERCEL_TOKEN) {

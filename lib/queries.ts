@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNotNull, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { headers } from "next/headers";
 import { unstable_rethrow } from "next/navigation";
 import resources from "@/catalog/meta-resources.json";
@@ -303,7 +303,13 @@ export async function listShippedProducts(limit = 60): Promise<ProductCardView[]
     .from(schema.products)
     .leftJoin(schema.builds, eq(schema.products.latestBuildId, schema.builds.id))
     .leftJoin(schema.inspirations, eq(schema.products.inspirationId, schema.inspirations.id))
-    .where(inArray(schema.products.status, ["live", "partial"]))
+    // Wave 3, unit 1 (TRUST_REPORTS): a taken-down product is "disabled" as well, and its card stays gone even if an
+    // admin turns it back on with the kill switch before undoing the takedown. The query is today's with the flag off.
+    .where(
+      env.trustReports
+        ? and(inArray(schema.products.status, ["live", "partial"]), isNull(schema.products.takenDownAt))
+        : inArray(schema.products.status, ["live", "partial"]),
+    )
     .orderBy(desc(schema.products.updatedAt))
     .limit(limit);
   const briefs = await latestBriefs(rows.filter((r) => !r.brief).map((r) => r.product.id));
@@ -350,7 +356,8 @@ export async function getProductPage(slug: string): Promise<ProductPageData | nu
   if (!/^[a-z0-9-]{1,80}$/.test(slug)) return null;
   const d = db();
   const [p] = await d.select().from(schema.products).where(eq(schema.products.slug, slug)).limit(1);
-  if (!p) return null;
+  // Wave 3, unit 1: a product an admin took down (TRUST_REPORTS) has no page until the takedown is undone.
+  if (!p || p.takenDownAt) return null;
 
   const [latestRows, inspirationRows, history, runRows] = await Promise.all([
     p.latestBuildId

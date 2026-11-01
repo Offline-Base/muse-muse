@@ -3,6 +3,8 @@ import { Brand } from "@/components/shell/Brand";
 import { DISCLAIMER } from "@/components/shell/disclaimer";
 import { DOCS_NAV } from "@/components/shell/docs-nav";
 import { ShellNav } from "@/components/shell/ShellNav";
+import { TrustLinks } from "@/components/trust/TrustLinks";
+import { env } from "@/lib/env";
 
 export { DISCLAIMER };
 
@@ -17,6 +19,7 @@ export function Sidebar({ user }: { user: AccountUser | null }) {
       <ShellNav docsNav={DOCS_NAV} />
       <div className="sidebar-foot">
         <p className="disclaimer">{DISCLAIMER}</p>
+        {env.trustLegalPages ? <TrustLinks /> : null}
         <AccountMenu user={user} />
       </div>
     </aside>

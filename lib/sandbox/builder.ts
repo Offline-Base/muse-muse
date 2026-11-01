@@ -81,6 +81,7 @@ import {
   PRISTINE_DIR,
   PRODUCT_DIR,
   RUN_DIR,
+  CAPS_DIR,
   CAPS_VERIFY_MARKER,
   CORE_CAPS_MARKER,
   TARGET_OVERLAYS,
@@ -90,6 +91,16 @@ import {
 import { builderNetworkPolicy, placeholderKey, publicHost, SNAPSHOT_POLICY } from "@/lib/sandbox/policy";
 import { q, readBytes, sh, tailText, writeRunner } from "@/lib/sandbox/shell";
 import { applyLookScript, LOOK_CSS, MUSE_APP_OVERLAY, OVERLAYS_DIR, withLookColors } from "@/lib/sandbox/look";
+import {
+  applyTrustScript,
+  TRUST_FILES,
+  TRUST_OVERLAY,
+  TRUST_RECORD_DIR,
+  trustFileText,
+  trustRecordScript,
+  withTrustEnv,
+  type TrustOverlay,
+} from "@/lib/trust/overlay";
 import {
   type BuilderInfo,
   installCaps,
@@ -433,6 +444,9 @@ export interface ProvisionInput {
   capEnv?: string;
   /** Hosts the caps' build may reach (capBuildHosts). */
   capHosts?: string[];
+  // ---------- Wave 3, unit 1: the trust overlay (docs/CAPABILITIES.md, section 7). Absent with the trust flags off ----------
+  /** musemuse.trust.json and musemuse.privacy.json for this product: applied after the caps, with MUSEMUSE_BUILD=1. */
+  trust?: TrustOverlay;
 }
 
 /** Makes the folders these files go in and returns them as writes, with their paths inside the product. */
@@ -508,6 +522,28 @@ async function writeCapsGateway(sandbox: Sandbox, gatewayUrl: string, buildToken
   const from = `${RUN_DIR}/caps-gateway.json`;
   await sandbox.writeFiles([{ path: from, content: capsGatewayText(record) }]);
   await sh(sandbox, capsGatewayScript(from), { sudo: true });
+}
+
+/**
+ * Puts the trust overlay into a new product (lib/trust/overlay.ts): its two records root-owned and read-only, then its
+ * files and a commit, right after the caps and before the user's files. A snapshot made with template/caps has the
+ * overlay. In one from before it, a local run copies template/caps in from this checkout, as applyCaps does; the live
+ * site can't, so it needs a new snapshot.
+ */
+async function applyTrust(sandbox: Sandbox, trust: TrustOverlay): Promise<void> {
+  const ok = async (cmd: string) => (await sh(sandbox, cmd, { allowFail: true })).exitCode === 0;
+  if (!(await ok(`[ -f ${q(`${CAPS_DIR}/${TRUST_OVERLAY}/platform-files.json`)} ]`))) {
+    if (process.env.VERCEL) throw new Error("This builder snapshot doesn't have the trust overlay. Make a new one with npm run snapshot before turning a trust flag on.");
+    const dir = LOCAL_TEMPLATE_DIR();
+    const files = await readCapFiles(dir);
+    if (!files.length) throw new Error(`This builder snapshot doesn't have the trust overlay, and there's no ${dir}/caps here to add it from.`);
+    await installCaps(sandbox, files, () => {});
+  }
+  const from = `${RUN_DIR}/trust`;
+  await makeDirs(sandbox, [from]);
+  await sandbox.writeFiles(TRUST_FILES.map((f) => ({ path: `${from}/${f}`, content: trustFileText(f === "musemuse.trust.json" ? trust.trust : trust.privacy) })));
+  await sh(sandbox, trustRecordScript(from), { sudo: true });
+  await sh(sandbox, applyTrustScript(), { cwd: PRODUCT_DIR, timeoutMs: 2 * MIN });
 }
 
 /** .env.local as envLocal writes it, then the caps' lines (capBuildEnv). The same text without caps. */
@@ -609,6 +645,9 @@ export async function provisionSandbox(input: ProvisionInput): Promise<{ sandbox
   // commit holds platform files only (docs/CAPABILITIES.md, 2.5). Nothing for a brief with no cap blocks ----------
   if (input.caps) await applyCaps(sandbox, name, input.caps);
   // ---------- end Wave 3, unit 2 ----------
+  // ---------- Wave 3, unit 1: the trust overlay, after the caps. Nothing with the trust flags off ----------
+  if (input.trust) await applyTrust(sandbox, input.trust);
+  // ---------- end Wave 3, unit 1 ----------
 
   await makeDirs(sandbox, [`${PRODUCT_DIR}/inspo`, `${PRODUCT_DIR}/fixtures`, LOG_DIR, RUN_DIR, `${RUN_DIR}/by-id`, OUT_DIR]);
   const downloaded = await download([
@@ -619,7 +658,7 @@ export async function provisionSandbox(input: ProvisionInput): Promise<{ sandbox
     ...downloaded,
     ...(await productWrites(sandbox, input.museAppLook ? withLookColors(input.extraFiles ?? []) : (input.extraFiles ?? []))),
     { path: `${PRODUCT_DIR}/brief.md`, content: input.promptMarkdown },
-    { path: `${PRODUCT_DIR}/.env.local`, content: withCapEnv(envLocal(name, input.gatewayUrl, input.buildToken), input.capEnv) },
+    { path: `${PRODUCT_DIR}/.env.local`, content: withCapEnv(envLocal(name, input.gatewayUrl, input.buildToken), withTrustEnv(input.capEnv, Boolean(input.trust))) },
   ]);
   if (input.caps) await writeCapsGateway(sandbox, input.gatewayUrl, input.buildToken);
   return { sandboxName: name };
@@ -654,10 +693,13 @@ export async function reopenSandbox(input: {
   const present = await Promise.all((input.extraFiles ?? []).map((f) => sandbox.readFileToBuffer({ path: productPath(f.path) }).catch(() => null)));
   const missing = (input.extraFiles ?? []).filter((_, i) => !present[i]);
   const look = missing.length > 0 && Boolean(await sandbox.readFileToBuffer({ path: productPath(LOOK_CSS) }).catch(() => null));
+  // Wave 3, unit 1: a product built with the trust overlay keeps its age gate off for this change's tests, whatever the
+  // flags say now. Its record is only there when it was built with one.
+  const trusted = Boolean(await sandbox.readFileToBuffer({ path: `${TRUST_RECORD_DIR}/${TRUST_FILES[0]}` }).catch(() => null));
   await writeBatched(sandbox, [
     ...downloaded,
     ...(await productWrites(sandbox, look ? withLookColors(missing) : missing)),
-    { path: `${PRODUCT_DIR}/.env.local`, content: withCapEnv(envLocal(input.sandboxName, input.gatewayUrl, input.buildToken), input.capEnv) },
+    { path: `${PRODUCT_DIR}/.env.local`, content: withCapEnv(envLocal(input.sandboxName, input.gatewayUrl, input.buildToken), withTrustEnv(input.capEnv, trusted)) },
   ]);
   if (input.caps) await writeCapsGateway(sandbox, input.gatewayUrl, input.buildToken);
 }

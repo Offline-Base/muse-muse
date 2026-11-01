@@ -77,6 +77,11 @@ export interface ToolsDeps extends RunCounters, SessionStore {
   lookupHost(host: string): Promise<string[]>;
   /** TOOL_LIMITS.sessionTimeoutMs, unless a test shortens it. */
   sessionTimeoutMs?: number;
+  /**
+   * Wave 3, unit 1: the gateway's trust check (lib/trust/gateway.ts): a taken-down product or a banned owner's, and the
+   * builder's daily dollars, which tool calls spend too. Unset while TRUST_REPORTS and TRUST_SIGNED_IN_CAPS are off.
+   */
+  trustCheck?(token: GatewayToken): Promise<Response | null>;
   now?(): Date;
 }
 
@@ -151,6 +156,8 @@ async function withToken(req: Request, deps: ToolsDeps, next: (token: GatewayTok
   if (!status || status === "disabled" || status === "failed") {
     return gatewayError(403, "permission_error", "product_disabled", "This product is turned off on Muse Muse.", { retry: false });
   }
+  // ---------- Wave 3, unit 1: trust (docs/CAPABILITIES.md, section 7). No check is wired with its flags off ----------
+  { const refused = deps.trustCheck ? await deps.trustCheck(token) : null; if (refused) return refused; }
   return next(token);
 }
 

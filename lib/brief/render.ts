@@ -6,6 +6,7 @@ import { briefTargets, isOwnerToolsOnly } from "@/lib/native/targets";
 import { isToolId, PERSONAL_TOOL_IDS, toolLabel } from "@/lib/tools/ids";
 // ---------- Wave 3 hooks (docs/CAPABILITIES.md, 2.6), unit 2 ----------
 import { capsBuildLines, capsMarkdown, capsRefineLines } from "@/lib/caps/render";
+import { trustBuildLines } from "@/lib/trust/prompt";
 import type { Milestone } from "@/lib/engine/milestones";
 import { engineBudgetLines, milestoneBuildLines } from "@/lib/engine/prompts";
 // ---------- end Wave 3 hooks ----------
@@ -280,6 +281,10 @@ export function renderBuildPrompt(
      */
     milestones?: Milestone[] | null;
     // ---------- end Wave 3, unit 2 ----------
+    // ---------- Wave 3, unit 1 ----------
+    /** The product got the trust overlay (a trust product flag was on): the Trust pages section. */
+    trust?: boolean;
+    // ---------- end Wave 3, unit 1 ----------
   } & SessionNotes &
     LookNote,
 ): string {
@@ -348,6 +353,9 @@ export function renderBuildPrompt(
   // ---------- Wave 3, unit 2: platform services, right after the agent (empty for a brief with no cap blocks) ----------
   out.push(...capsBuildLines(brief));
   // ---------- end Wave 3, unit 2 ----------
+  // ---------- Wave 3, unit 1: the trust overlay's pages (empty without it) ----------
+  out.push(...trustBuildLines(opts.trust));
+  // ---------- end Wave 3, unit 1 ----------
 
   out.push(
     "",

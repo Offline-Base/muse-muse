@@ -21,6 +21,7 @@ import {
   TARGETS_DIR,
 } from "@/lib/sandbox/paths";
 import { restoreLookFilesScript } from "@/lib/sandbox/look";
+import { restoreTrustFilesScript } from "@/lib/trust/overlay";
 import { q } from "@/lib/sandbox/shell";
 
 export type SandboxTask = "verify" | "demo";
@@ -320,6 +321,8 @@ export function taskScript(task: SandboxTask, outPath: string, opts: TaskPaths =
     restoreLookFilesScript(opts.targetsDir),
     // Beside the targets' restore. Does nothing in a sandbox without caps (no ACTIVE_CAPS_FILE), which is every product today.
     restoreCapFilesScript(opts.capsDir),
+    // Wave 3, unit 1: the trust overlay's files and records. Does nothing in a product built without it.
+    restoreTrustFilesScript(opts.capsDir),
     ...(task === "demo"
       ? [freeProductPortsScript(), demoScript(outPath, opts)]
       : [`{ ${TASK_COMMANDS[task]} 2>&3 | tee ${q(outPath)}; } 3>&1`]),

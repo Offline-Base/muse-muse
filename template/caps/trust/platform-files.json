@@ -1,0 +1,11 @@
+[
+  "proxy.ts",
+  "lib/platform/trust.ts",
+  "components/Footer.tsx",
+  "app/(musemuse)/privacy/page.tsx",
+  "app/(musemuse)/terms/page.tsx",
+  "app/(musemuse)/age/page.tsx",
+  "app/api/musemuse/age/route.ts",
+  "tests/musemuse-trust.spec.ts",
+  ".agents/skills/muse-trust/SKILL.md"
+]
