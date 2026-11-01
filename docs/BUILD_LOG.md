@@ -1231,7 +1231,7 @@ because the sidebar showed a real account.
   the branch only.
   ![Muse gadget tab](log/shots/2026-10-31/gadget-tab-1440.png)
 
-### 23:04 Shipped to production: main 2146ae0 (owner: "commit all of that to main and deploy")
+### 23:03 Shipped to production: main 2146ae0 (owner: "commit all of that to main and deploy")
 
 - main fast-forwarded 6f311e5 to 2146ae0 (110 commits): Gadgets and Models tabs, the plan card, decision models with
   migration 0017 (three columns with defaults on training_datasets), fine-tune like a build stage 1, the Muse gadget
