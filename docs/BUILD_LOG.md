@@ -1231,6 +1231,18 @@ because the sidebar showed a real account.
   the branch only.
   ![Muse gadget tab](log/shots/2026-10-31/gadget-tab-1440.png)
 
+### 23:04 Shipped to production: main 2146ae0 (owner: "commit all of that to main and deploy")
+
+- main fast-forwarded 6f311e5 to 2146ae0 (110 commits): Gadgets and Models tabs, the plan card, decision models with
+  migration 0017 (three columns with defaults on training_datasets), fine-tune like a build stage 1, the Muse gadget
+  output, and the build log. Key scan of the diff: clean. Every new capability is behind a flag that's off in
+  production, so visitors see the new sidebar rows and pages; /fine-tuning/new answers 404 until TUNE_COMPOSER is on.
+- Deployment dpl_GqDHvz4yTdTygbcScSfNenNT6Rdk, Ready (the build ran the migration). Rollback: dpl_DBQAd4HcEcX5aj4dpCcNzDsjEfXw
+  (6f311e5). Smoke check on musemuse.dev: /, /models, /gadgets (Boards on hand with the pictures), /fine-tuning, /gallery,
+  /how-it-works 200; /fine-tuning/new 404 as intended.
+- Found: the fine-tune session's `knowledge` branch builds Vercel previews on each push (22:54, 23:01), since it lacks
+  the main-only rule. Asked that session to add it; General doesn't push to `knowledge`.
+
 ## Gaps
 
 What this record doesn't confirm:
