@@ -85,16 +85,34 @@ describe("the gadget pack's names", () => {
   });
 
   it("keeps the SDK's reserved prefixes, digits first and odd characters out of the prefix", () => {
-    for (const reserved of ["system", "file", "device", "link"]) assert.equal(gadgetPrefix(reserved), `mm_${reserved}`);
+    for (const reserved of ["system", "file", "device", "link"]) assert.match(gadgetPrefix(reserved), new RegExp(`^mm_${reserved}_[0-9a-f]{6}$`));
     assert.equal(gadgetPrefix("systems"), "systems");
-    assert.equal(gadgetPrefix("2048"), "mm_2048");
-    assert.equal(gadgetPrefix("2048-game"), "mm_2048_game");
-    assert.equal(gadgetPrefix("--"), "mm");
+    assert.match(gadgetPrefix("2048"), /^mm_2048_[0-9a-f]{6}$/);
+    assert.match(gadgetPrefix("2048-game"), /^mm_2048_game_[0-9a-f]{6}$/);
+    assert.match(gadgetPrefix("--"), /^mm_[0-9a-f]{6}$/);
+    assert.equal(gadgetPrefix("mm"), "mm");
     for (const slug of ["system", "file", "device", "link", "linker", "a-b-c", "x"]) {
       const name = gadgetPack({ ...product(), slug }).commands[0]!.name;
       assert.match(name, GADGET_NAME_RE);
       assert.ok(!GADGET_RESERVED_PREFIXES.some((r) => name.startsWith(r)), name);
     }
+  });
+
+  it("never gives two slugs the same prefix, so one pack can't replace another's", () => {
+    const pairs = [
+      ["system", "mm-system"],
+      ["2048", "mm-2048"],
+      ["1abc", "mm-1abc"],
+      ["link", "mm-link"],
+      ["mm-system", "mm-mm-system"],
+    ];
+    for (const [a, b] of pairs) assert.notEqual(gadgetPrefix(a!), gadgetPrefix(b!), `${a} and ${b}`);
+    // A plain slug can't take the form a changed one gets.
+    const changed = gadgetPrefix("system");
+    assert.notEqual(gadgetPrefix(changed.replace(/_/g, "-")), changed);
+    assert.ok(gadgetPrefix(changed.replace(/_/g, "-")).startsWith("mm_mm_system_"));
+    const many = ["system", "mm-system", "2048", "mm-2048", "shelf-counter", "shelf-counter-2", "a", "mm", "mm-a", "file", "files"];
+    assert.equal(new Set(many.map(gadgetPrefix)).size, many.length);
   });
 
   it("cuts a long slug, keeping two that start alike apart", () => {
@@ -226,6 +244,8 @@ describe("the gadget pack's zip", () => {
     assert.match(readme, /personal, non-commercial use/);
     assert.match(readme, /sold, advertised or listed, or given away in connection with a promotion, incentive or reward/);
     assert.match(readme, /never asks for your SDK token/);
+    assert.match(readme, /Each command stops after 30 s .*ends with a timeout on the gadget/);
+    assert.match(readme, /a summary and not legal advice/);
     assert.match(readme, /Not an official Meta product/);
     assert.doesNotMatch(readme, /—/);
   });
@@ -396,6 +416,8 @@ describe("install.sh and uninstall.sh", () => {
     stub("id", '[ "$1" = "-u" ] && echo 0 || command id "$@"');
     stub("chown", `echo "chown $*" >> '${calls}'`);
     stub("systemctl", `echo "systemctl $*" >> '${calls}'`);
+    // Folders made here are the tester's, so stat says root owns them unless a test says otherwise.
+    stub("stat", 'echo "${STAT_UID:-0}"');
     mkdirSync(path.join(root(), "opt/musegadget"), { recursive: true });
     // The SDK's token, which nothing here may read or change.
     mkdirSync(path.join(root(), "var/lib/musegadget"), { recursive: true });
@@ -423,6 +445,7 @@ describe("install.sh and uninstall.sh", () => {
     assert.equal(mode(path.join(libDir(), "runner.cjs")), "755");
     assert.equal(readlinkSync(path.join(libDir(), "node")), process.execPath);
     assert.equal(readFileSync(path.join(libDir(), "commands.txt"), "utf8"), "shelf_counter.count_cans\nshelf_counter.add_can\n");
+    assert.equal(readFileSync(path.join(libDir(), "pack.txt"), "utf8"), "shelf-counter\n");
     assert.deepEqual(JSON.parse(readFileSync(path.join(cmdDir(), "shelf_counter.count_cans.json"), "utf8")), JSON.parse(readFileSync(path.join(pack, "commands.d/shelf_counter.count_cans.json"), "utf8")));
     assert.match(log(), new RegExp(`chown -- 0:0 ${path.join(cmdDir(), "shelf_counter.count_cans.json")}\\.tmp`));
     assert.match(log(), /chown -- 0:0 .*runner\.cjs\.tmp/);
@@ -455,6 +478,32 @@ describe("install.sh and uninstall.sh", () => {
     assert.equal(open.code, 1);
     assert.match(open.err, /can be written by others/);
     assert.deepEqual(readdirSync(cmdDir()), []);
+    rmSync(work, { recursive: true, force: true });
+  });
+
+  it("refuses a commands folder root doesn't own, as the SDK would", () => {
+    mkdirSync(cmdDir(), { recursive: true });
+    chmodSync(cmdDir(), 0o755);
+    const r = sh("install.sh", args(), { STAT_UID: "1000" });
+    assert.equal(r.code, 1);
+    assert.match(r.err, /isn't owned by root.*sudo chown root:root/);
+    assert.deepEqual(readdirSync(cmdDir()), []);
+    rmSync(work, { recursive: true, force: true });
+  });
+
+  it("won't install over, or uninstall, another product's pack with the same names", () => {
+    assert.equal(sh("install.sh", args()).code, 0);
+    writeFileSync(path.join(libDir(), "pack.txt"), "another-product\n");
+    writeFileSync(path.join(libDir(), "runner.cjs"), "// another product's runner\n");
+    const again = sh("install.sh", args());
+    assert.equal(again.code, 1);
+    assert.match(again.err, /belongs to another product's pack \(another-product\)/);
+    assert.equal(readFileSync(path.join(libDir(), "runner.cjs"), "utf8"), "// another product's runner\n");
+    const gone = sh("uninstall.sh", ["--root", root()]);
+    assert.equal(gone.code, 1);
+    assert.match(gone.err, /another product's pack \(another-product\), so nothing was removed/);
+    assert.ok(existsSync(libDir()));
+    assert.deepEqual(readdirSync(cmdDir()).sort(), ["shelf_counter.add_can.json", "shelf_counter.count_cans.json"]);
     rmSync(work, { recursive: true, force: true });
   });
 

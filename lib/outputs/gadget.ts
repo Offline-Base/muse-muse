@@ -16,7 +16,11 @@ import { makeZip, type ZipEntry } from "@/lib/outputs/zip";
 export const GADGET_SDK_URL = "https://github.com/facebookincubator/muse-gadget-sdk/blob/main/linux/README.md";
 export const GADGET_SDK_TERMS_URL = "https://gadgets.muse.ai/sdk-terms";
 
-// The SDK's rules for a custom command, from its README ("Add your own commands").
+// The SDK's rules for a custom command, read Oct 31, 2026 from its README ("Add your own commands": names are lowercase
+// words joined by dots, the reserved prefixes, the six types, the 30 s default and the 256 KiB total) and from its command
+// loader, linux/src/musegadget/commands.py (the exact name pattern, 64 characters, the allowed keys, {type, description},
+// timeout_ms from 1 to 600000, the 5 s grace and 64 KiB a file). The loader's limits aren't documented and may change, so
+// check them again when the SDK updates. Nothing here is copied from it.
 export const GADGET_PARAM_TYPES = ["string", "integer", "number", "boolean", "object", "array"] as const;
 export type GadgetParamType = (typeof GADGET_PARAM_TYPES)[number];
 export const GADGET_RESERVED_PREFIXES = ["system.", "file.", "device.", "link."] as const;
@@ -103,15 +107,19 @@ function cutWord(w: string, max: number): string {
 }
 
 /**
- * The first word of every command in a product's pack, from its slug: `shelf-counter` is `shelf_counter`. A slug the SDK
- * keeps for itself (system, file, device, link) or that starts with a digit gets `mm_`, and a long one is cut and given a
- * hash of the slug, so two long slugs that start alike stay apart.
+ * The first word of every command in a product's pack, from its slug: `shelf-counter` is `shelf_counter`. Two products
+ * must never share one, or one pack would replace the other's runner and commands. So the plain form is kept only when it
+ * starts with a letter, isn't one the SDK keeps for itself (system, file, device, link), doesn't start with `mm_` and fits
+ * in 32 characters. Every other slug becomes `mm_<slug, cut>_<hash of the slug>`. Plain forms never start with `mm_` and
+ * changed ones always do, so the two can't meet, and changed ones differ by their slug's hash.
  */
 export function gadgetPrefix(slug: string): string {
-  let p = word(slug, "mm");
-  if (GADGET_RESERVED_PREFIXES.some((r) => `${p}.`.startsWith(r))) p = `mm_${p}`;
-  if (p.length > MAX_PREFIX) p = `${cutWord(p, MAX_PREFIX - 7)}_${shortHash(slug)}`;
-  return p;
+  const plain = slug.toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "");
+  const keep =
+    /^[a-z]/.test(plain) && !plain.startsWith("mm_") && plain.length <= MAX_PREFIX && !GADGET_RESERVED_PREFIXES.some((r) => `${plain}.`.startsWith(r));
+  if (keep) return plain;
+  const core = plain ? `_${cutWord(plain, MAX_PREFIX - 3 - 7)}` : "";
+  return `mm${core}_${shortHash(slug)}`;
 }
 
 /** How long the gadget lets a command run: the action's own `timeoutMs` when its manifest has one, within the SDK's limits. */
@@ -256,14 +264,29 @@ export function gadgetRunnerSource(pack: GadgetPack, liveUrl: string): string {
   return `${GADGET_RUNNER_SOURCE.slice(0, start)}${json}${GADGET_RUNNER_SOURCE.slice(end)}`;
 }
 
-/** install.sh or uninstall.sh with the pack's names in. Those are all [a-z0-9_.], and quoted all the same. */
-function script(source: string, pack: GadgetPack): string {
+/**
+ * install.sh or uninstall.sh with the pack's names in, and the slug, which they keep in pack.txt so a pack never replaces
+ * another product's. Those are all [a-z0-9_.-], and quoted all the same.
+ */
+function script(source: string, pack: GadgetPack, slug: string): string {
   const names = pack.commands.map((c) => c.name);
-  if (!/^[a-z][a-z0-9_]*$/.test(pack.prefix) || !names.every((n) => GADGET_NAME_RE.test(n))) throw new Error("A gadget name isn't what the scripts expect.");
-  return source.replace("__MUSE_GADGET_PREFIX__", () => shellQuote(pack.prefix)).replace("__MUSE_GADGET_COMMANDS__", () => names.map(shellQuote).join(" "));
+  if (!/^[a-z][a-z0-9_]*$/.test(pack.prefix) || !/^[a-z0-9-]+$/.test(slug) || !names.every((n) => GADGET_NAME_RE.test(n))) throw new Error("A gadget name isn't what the scripts expect.");
+  return source
+    .replace("__MUSE_GADGET_PREFIX__", () => shellQuote(pack.prefix))
+    .replace("__MUSE_GADGET_SLUG__", () => shellQuote(slug))
+    .replace("__MUSE_GADGET_COMMANDS__", () => names.map(shellQuote).join(" "));
 }
 
 const seconds = (ms: number) => `${Math.round(ms / 1000)} s`;
+
+/** How long the pack's commands wait, in words: "30 s", or "10 to 120 s" when they differ. */
+export function gadgetWait(pack: Pick<GadgetPack, "commands">): string {
+  const all = pack.commands.map((c) => c.spec.timeout_ms);
+  if (!all.length) return seconds(GADGET_DEFAULT_TIMEOUT_MS);
+  const low = Math.min(...all);
+  const high = Math.max(...all);
+  return low === high ? seconds(low) : `${Math.round(low / 1000)} to ${seconds(high)}`;
+}
 
 /** The pack's README: what it does, what it needs, where data goes and the terms that matter. */
 export function gadgetReadme(product: OutputProduct, pack: GadgetPack): string {
@@ -285,6 +308,8 @@ export function gadgetReadme(product: OutputProduct, pack: GadgetPack): string {
     `such as "run ${first}".`,
     "",
     `It has ${pack.commands.length} command${pack.commands.length === 1 ? "" : "s"}: ${names}.`,
+    "",
+    `Each command stops after ${gadgetWait(pack)} (the gadget's limit for it, listed under "The commands"), so an action that takes longer ends with a timeout on the gadget, though it may still work from the product's page or its CLI.`,
     "",
     "## What you need",
     "",
@@ -317,7 +342,7 @@ export function gadgetReadme(product: OutputProduct, pack: GadgetPack): string {
     "",
     "## Meta's terms",
     "",
-    `Read Meta's Gadget SDK Terms yourself (${GADGET_SDK_TERMS_URL}). The points that matter here:`,
+    `Read Meta's Gadget SDK Terms yourself (${GADGET_SDK_TERMS_URL}). The points that matter here, as a summary and not legal advice:`,
     "",
     "- Your SDK token is for your own personal, non-commercial use with your own Muse account.",
     "- Don't put these commands or the SDK in a gadget that is sold, advertised or listed, or given away in connection with a promotion, incentive or reward.",
@@ -349,8 +374,8 @@ export function gadgetEntries(product: OutputProduct): ZipEntry[] {
   const folder = gadgetFolder(product.slug);
   return [
     { path: `${folder}/README.md`, content: gadgetReadme(product, pack) },
-    { path: `${folder}/install.sh`, content: script(GADGET_INSTALL_SOURCE, pack) },
-    { path: `${folder}/uninstall.sh`, content: script(GADGET_UNINSTALL_SOURCE, pack) },
+    { path: `${folder}/install.sh`, content: script(GADGET_INSTALL_SOURCE, pack, product.slug) },
+    { path: `${folder}/uninstall.sh`, content: script(GADGET_UNINSTALL_SOURCE, pack, product.slug) },
     { path: `${folder}/runner.cjs`, content: gadgetRunnerSource(pack, product.liveUrl ?? "") },
     ...pack.commands.map((c) => ({ path: `${folder}/commands.d/${c.name}.json`, content: commandFile(c) })),
   ];

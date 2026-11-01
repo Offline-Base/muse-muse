@@ -11,6 +11,7 @@
 set -euo pipefail
 
 PREFIX=__MUSE_GADGET_PREFIX__
+SLUG=__MUSE_GADGET_SLUG__
 COMMANDS=(__MUSE_GADGET_COMMANDS__)
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -75,7 +76,7 @@ run() {
 }
 
 NAME_RE='^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$'
-[[ "$PREFIX" =~ ^[a-z][a-z0-9_]*$ ]] || fail "This pack's name is damaged. Download it again."
+[[ "$PREFIX" =~ ^[a-z][a-z0-9_]*$ && "$SLUG" =~ ^[a-z0-9-]+$ ]] || fail "This pack's name is damaged. Download it again."
 for name in "${COMMANDS[@]}"; do
   [[ "$name" =~ $NAME_RE && "$name" == "$PREFIX."* ]] || fail "This pack's command list is damaged. Download it again."
 done
@@ -113,6 +114,15 @@ esac
 [ ! -L "$LIB_DIR" ] || fail "$LIB_DIR is a link. Remove it and run this again."
 if [ -d "$CMD_DIR" ] && [ -n "$(find "$CMD_DIR" -maxdepth 0 \( -perm -020 -o -perm -002 \))" ]; then
   fail "$CMD_DIR can be written by others, so the gadget would refuse every command in it. Fix it with: sudo chmod 755 $CMD_DIR"
+fi
+owner_of() { stat -c %u -- "$1" 2>/dev/null || stat -f %u -- "$1"; }
+if [ -d "$CMD_DIR" ] && [ "$(owner_of "$CMD_DIR")" != 0 ]; then
+  fail "$CMD_DIR isn't owned by root, so the gadget would refuse every command in it. Fix it with: sudo chown root:root $CMD_DIR"
+fi
+# Another product's pack with the same names would be replaced, so stop. Each pack writes its slug in pack.txt.
+if [ -f "$LIB_DIR/pack.txt" ]; then
+  other="$(head -n 1 -- "$LIB_DIR/pack.txt" | tr -cd 'a-z0-9-')"
+  [ "$other" = "$SLUG" ] || fail "$LIB_DIR belongs to another product's pack ($other). Remove that one with its uninstall.sh first."
 fi
 for name in "${COMMANDS[@]}"; do
   src="$HERE/commands.d/$name.json"
@@ -153,14 +163,21 @@ run ln -sfn -- "$NODE_BIN" "$LIB_DIR/node"
 for name in "${COMMANDS[@]}"; do
   put "$HERE/commands.d/$name.json" "$CMD_DIR/$name.json" 0644
 done
-if [ "$DRY_RUN" = 1 ]; then
-  say "would write: $LIB_DIR/commands.txt"
-else
-  printf '%s\n' "${COMMANDS[@]}" >"$LIB_DIR/commands.txt.tmp"
-  chown -- 0:0 "$LIB_DIR/commands.txt.tmp"
-  chmod -- 0644 "$LIB_DIR/commands.txt.tmp"
-  mv -f -- "$LIB_DIR/commands.txt.tmp" "$LIB_DIR/commands.txt"
-fi
+# What this pack is and added, for an upgrade and for uninstall.sh.
+note() {
+  local dest="$1"
+  shift
+  if [ "$DRY_RUN" = 1 ]; then
+    say "would write: $dest"
+  else
+    printf '%s\n' "$@" >"$dest.tmp"
+    chown -- 0:0 "$dest.tmp"
+    chmod -- 0644 "$dest.tmp"
+    mv -f -- "$dest.tmp" "$dest"
+  fi
+}
+note "$LIB_DIR/commands.txt" "${COMMANDS[@]}"
+note "$LIB_DIR/pack.txt" "$SLUG"
 
 if [ "$DRY_RUN" = 1 ]; then
   [ "$RESTART" = 1 ] && run systemctl restart musegadget

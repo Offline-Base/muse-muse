@@ -196,7 +196,7 @@ describe("planChecks", () => {
     assert.deepEqual(tight.calls.map((c) => c.name), ["a"]);
     assert.equal(tight.gadgetCall, null);
     assert.equal(plan(manifest([action({ name: "w", ...CHANGES_THINGS })])).gadgetCall, null);
-    assert.equal(planChecks({ product: { ...product(manifest([action()])), slug: "system" }, origin: "https://site.example", dir: "/w", capUsd: 1.5, estimatedCostPerRunUsd: 0.01, fetchable: true }).gadgetPrefix, "mm_system");
+    assert.match(planChecks({ product: { ...product(manifest([action()])), slug: "system" }, origin: "https://site.example", dir: "/w", capUsd: 1.5, estimatedCostPerRunUsd: 0.01, fetchable: true }).gadgetPrefix, /^mm_system_[0-9a-f]{6}$/);
   });
 });
 

@@ -3,7 +3,7 @@ import { CopyField } from "@/components/CopyButton";
 import type { GetItSlots } from "@/components/product/GetItPanel";
 import type { ProductView } from "@/components/view-types";
 import { plural } from "@/lib/format";
-import { GADGET_SDK_URL, gadgetFileName, gadgetFolder, gadgetPack } from "@/lib/outputs/gadget";
+import { GADGET_SDK_TERMS_URL, GADGET_SDK_URL, gadgetFileName, gadgetFolder, gadgetPack, gadgetWait } from "@/lib/outputs/gadget";
 import { cliFileName, outputLinks, pluginFileName, publicActions } from "@/lib/outputs/generate";
 import { settleProveView } from "@/lib/outputs/labels";
 import { condenseProveEvents, type ProveItemView } from "@/lib/types";
@@ -185,9 +185,10 @@ export function productOutputSlots(input: {
         <CopyField value={`curl -fsSL ${links.gadget} -o ${gadgetFileName(slug)}`} label="Download command" />
         <ol>
           <li>
-            Set up <a href={GADGET_SDK_URL}>Meta&apos;s Linux Gadget SDK</a> with your own Muse account and SDK token. Install it with <code>--run-as</code> an account
-            that can&apos;t use sudo.
+            Set up <a href={GADGET_SDK_URL}>Meta&apos;s Linux Gadget SDK</a> with your own Muse account and SDK token. We recommend installing it with{" "}
+            <code>--run-as</code> an account that can&apos;t use sudo.
           </li>
+          <li>The gadget needs Node.js 18 or newer, such as <code>sudo apt install nodejs</code>.</li>
           <li>
             On the gadget: <code>unzip {gadgetFileName(slug)} &amp;&amp; cd {gadgetFolder(slug)}</code>, then read <code>install.sh</code>.
           </li>
@@ -202,8 +203,10 @@ export function productOutputSlots(input: {
           </a>
         </p>
         <p className="muted small">
-          Each command sends its inputs to {product.liveUrl}. Muse Muse never asks for your SDK token and doesn&apos;t pair or install anything for you. Meta&apos;s terms
-          allow personal, non-commercial use only: never in a gadget that is sold, or given away as a promotion or reward. To remove it: <code>sudo bash uninstall.sh</code>.
+          Each command sends its inputs to {product.liveUrl} and stops after {gadgetWait(gadget)}, so a slower action ends with a timeout. Muse Muse never asks for your
+          SDK token and doesn&apos;t pair or install anything for you. Your SDK token is for your own personal, non-commercial use under{" "}
+          <a href={GADGET_SDK_TERMS_URL}>Meta&apos;s Gadget SDK Terms</a>: don&apos;t use it in a gadget that is sold, advertised or listed, or given away as a promotion or
+          reward. To remove it: <code>sudo bash uninstall.sh</code>.
         </p>
       </Panel>
     ) : null,

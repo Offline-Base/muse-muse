@@ -9,6 +9,7 @@
 set -euo pipefail
 
 PREFIX=__MUSE_GADGET_PREFIX__
+SLUG=__MUSE_GADGET_SLUG__
 COMMANDS=(__MUSE_GADGET_COMMANDS__)
 
 ROOT=""
@@ -64,7 +65,7 @@ run() {
 }
 
 NAME_RE='^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$'
-[[ "$PREFIX" =~ ^[a-z][a-z0-9_]*$ ]] || fail "This pack's name is damaged. Download it again."
+[[ "$PREFIX" =~ ^[a-z][a-z0-9_]*$ && "$SLUG" =~ ^[a-z0-9-]+$ ]] || fail "This pack's name is damaged. Download it again."
 
 if [ "$DRY_RUN" != 1 ] && [ "$(id -u)" != 0 ]; then
   fail "Run it with sudo: sudo bash uninstall.sh"
@@ -72,6 +73,12 @@ fi
 
 CMD_DIR="$ROOT/etc/musegadget/commands.d"
 LIB_DIR="$ROOT/usr/local/lib/$PREFIX-gadget"
+
+# Another product's pack with the same names stays as it is.
+if [ -f "$LIB_DIR/pack.txt" ]; then
+  other="$(head -n 1 -- "$LIB_DIR/pack.txt" | tr -cd 'a-z0-9-')"
+  [ "$other" = "$SLUG" ] || fail "$LIB_DIR belongs to another product's pack ($other), so nothing was removed. Use that pack's uninstall.sh."
+fi
 
 # This version's commands, and any an earlier version added.
 names=("${COMMANDS[@]}")

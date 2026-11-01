@@ -45,12 +45,13 @@ describe("the Get it panel's output slots", () => {
     assert.match(body, /download="scale-my-recipe-muse-gadget\.zip"/);
     assert.match(body, /github\.com\/facebookincubator\/muse-gadget-sdk/);
     assert.match(body, /your own Muse account and SDK token/);
-    assert.match(body, /--run-as/);
+    assert.match(body, /We recommend installing it with <code>--run-as<\/code>/);
+    assert.match(body, /Node\.js 18 or newer/);
     assert.match(body, /<code>sudo bash install\.sh<\/code>/);
-    assert.match(body, /Each command sends its inputs to https:\/\/scale\.vercel\.app\./);
+    assert.match(body, /Each command sends its inputs to https:\/\/scale\.vercel\.app and stops after 30 s, so a slower action ends with a timeout\./);
     assert.match(body, /never asks for your SDK token/);
-    assert.match(body, /personal, non-commercial use only/);
-    assert.match(body, /promotion or reward/);
+    assert.match(body, /your own personal, non-commercial use under <a href="https:\/\/gadgets\.muse\.ai\/sdk-terms">Meta&#x27;s Gadget SDK Terms<\/a>/);
+    assert.match(body, /sold, advertised or listed, or given away as a promotion or reward/);
     assert.doesNotMatch(body, /\u2014/);
   });
 
