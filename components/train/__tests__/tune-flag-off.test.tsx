@@ -236,7 +236,7 @@ describe("with TUNE_COMPOSER off", { skip: canMock ? false : "needs --experiment
     // Real pages, not error cards: what the hashes stand for.
     assert.match(html["/fine-tuning: admin"]!, /New job[\s\S]*New dataset/);
     assert.match(html["/fine-tuning: guest"]!, /Lab results/);
-    assert.match(html["build room: running"]!, /class="plan-card" data-art="building"/);
+    assert.match(html["build room: running"]!, /class="plan-card plan-card-wrap" data-art="building"/);
     assert.match(html["composer: Make page"]!, /aria-label="Make it"/);
     if (process.env.TUNE_GOLDEN_WRITE === "1") {
       writeFileSync(FIXTURE, `${JSON.stringify(off, null, 2)}\n`);

@@ -38,4 +38,9 @@ export interface LocalFiles {
   /** The model's title and slug, as its Hub repos name it. */
   title: string;
   slug: string;
+  /**
+   * True for a Derivative of Muse Spark Open (lib/train/base.ts: files merged into r30b). Pages that offer the files
+   * then show "Built with Muse Spark Open" and the Usage Policy's points, and a drive ships its license files.
+   */
+  sparkOpen?: boolean;
 }

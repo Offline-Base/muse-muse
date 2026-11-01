@@ -9,12 +9,14 @@ import { EvalResults } from "@/components/train/EvalResults";
 import { HubCard } from "@/components/train/HubCard";
 import { AdapterLiveDemo, type JobLiveDemo } from "@/components/train/LiveDemo";
 import { MakeLocalFiles } from "@/components/train/LocalFiles";
+import { SparkOpenNote } from "@/components/train/SparkOpenNote";
 import { evalState, judgeName, tunedModelName, writerName } from "@/components/train/format";
-import { GLIMMER_NAME } from "@/components/train/results";
+import { GLIMMER_NAME, R30B_NAME } from "@/components/train/results";
 import { planViewFromRun, roleTitle } from "@/components/train/room/plan";
 import { tuneArt, tuneCurrentStep, tuneRunning, tuneSteps, tuneStepsEnd } from "@/components/train/room/steps";
 import { WhereItRuns } from "@/components/train/room/WhereItRuns";
 import { usd } from "@/lib/format";
+import { isSparkOpenDerivative } from "@/lib/train/base";
 import { endedText } from "@/lib/train/tune/marks";
 import type { TuneRunView } from "@/lib/train/tune/types";
 
@@ -133,9 +135,11 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
   const jobHref = view.next?.kind === "job" ? view.next.href : null;
   const scored = job ? evalState(job, view.evals, now) : null;
   const trained = job?.status === "succeeded";
+  // A run trained from r30b is a Derivative of Muse Spark Open (lib/train/base.ts). Before its job exists, it will be.
+  const sparkOpen = job ? isSparkOpenDerivative({ params: job.params }) : true;
   const sources: SourceItem[] = [
     { id: "writer", title: writerName(view.dataset), detail: "Wrote the examples", kind: "model" },
-    { id: "glimmer", title: GLIMMER_NAME, detail: "The model it tunes", kind: "model" },
+    { id: "glimmer", title: sparkOpen ? R30B_NAME : GLIMMER_NAME, detail: "The model it tunes", kind: "model" },
   ];
   const togglePanel = () => setPanelOpen((o) => !o);
 
@@ -197,8 +201,16 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
                 {/* The verdict's words say whether it passed (runVerdict), so only a pass gets "Ready." before them. */}
                 <span>{view.verdict ? `${view.verdict.passed ? "Ready. " : ""}${view.verdict.words}` : "Not scored."}</span>
               </p>
+              {job && sparkOpen ? <SparkOpenNote /> : null}
               {job && scored ? (
-                <EvalResults state={scored} rows={view.evals} model={tunedModelName(job.recipe)} writer={writerName(view.dataset)} judge={judgeName(job)} />
+                <EvalResults
+                  state={scored}
+                  rows={view.evals}
+                  model={tunedModelName(job.recipe)}
+                  writer={writerName(view.dataset)}
+                  judge={judgeName(job)}
+                  sparkOpen={sparkOpen}
+                />
               ) : null}
               {job && liveDemo ? <AdapterLiveDemo jobId={job.id} live={liveDemo} serverNow={serverNow} /> : null}
               {job && admin && hub ? <HubCard job={job} offReason={hub.offReason} maxActive={hub.maxActive} dailyUsd={hub.dailyUsd} /> : null}

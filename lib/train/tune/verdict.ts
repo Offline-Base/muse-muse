@@ -37,9 +37,10 @@ function isDecision(s: EvalSummary | DecisionSummary): s is DecisionSummary {
 /**
  * Passed or not, with one sentence that says why. A decision summary is read by its test rows' accuracy (base.accuracy
  * and tuned.accuracy, right of total), never by its EvalSummary fields: tunedWins and baseWins there count the rows one
- * got right and the other wrong, and its scores are 0.
+ * got right and the other wrong, and its scores are 0. `sparkOpen` (a job trained on r30b, isSparkOpenDerivative) names
+ * the model it is compared with r30b, the 2026 Glimmer it started from; otherwise it is base Glimmer, as "base".
  */
-export function evalVerdict(s: EvalSummary | DecisionSummary): TuneVerdict {
+export function evalVerdict(s: EvalSummary | DecisionSummary, sparkOpen = false): TuneVerdict {
   if (isDecision(s)) {
     const base = s.base?.accuracy;
     const tuned = s.tuned?.accuracy;
@@ -49,8 +50,9 @@ export function evalVerdict(s: EvalSummary | DecisionSummary): TuneVerdict {
     const baseRate = base.right / base.total;
     const margin = wilsonHalfWidth(tuned.right, tuned.total);
     const passed = tuned.total >= VERDICT_MIN_ITEMS && tunedRate - baseRate > margin;
-    const words = `Tuned got ${tuned.right} of ${tuned.total} test rows right (${pct(tunedRate)}), base ${base.right} of ${base.total} (${pct(baseRate)}).`;
-    return { passed, words: passed ? words : `${words} That isn't clearly better, so it didn't pass.` };
+    const words = `Tuned got ${tuned.right} of ${tuned.total} test rows right (${pct(tunedRate)}), ${sparkOpen ? "r30b" : "base"} ${base.right} of ${base.total} (${pct(baseRate)}).`;
+    const than = sparkOpen ? " than the 2026 Glimmer it started from" : "";
+    return { passed, words: passed ? words : `${words} That isn't clearly better${than}, so it didn't pass.` };
   }
   const items = Math.max(0, Math.floor(s.items));
   if (items === 0) return { passed: false, words: "Nothing was judged, so it hasn't passed." };
@@ -59,5 +61,6 @@ export function evalVerdict(s: EvalSummary | DecisionSummary): TuneVerdict {
   if (items < VERDICT_MIN_ITEMS) return { passed: false, words: `${words} That's too few to tell, so it didn't pass.` };
   const passed =
     s.tunedWins > s.baseWins && s.tunedWins >= items / 2 && s.avgTunedScore >= s.avgBaseScore + VERDICT_SCORE_MARGIN;
-  return { passed, words: passed ? words : `${words} That isn't clearly better than base, so it didn't pass.` };
+  const than = sparkOpen ? "the 2026 Glimmer it started from" : "base";
+  return { passed, words: passed ? words : `${words} That isn't clearly better than ${than}, so it didn't pass.` };
 }

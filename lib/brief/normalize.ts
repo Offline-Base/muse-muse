@@ -1,4 +1,4 @@
-import { MAX_AGENT_STEPS, MAX_AGENT_TOOLS, type Brief } from "@/lib/brief/schema";
+import { ASKED_LOOK_MAX, MAX_AGENT_STEPS, MAX_AGENT_TOOLS, type Brief } from "@/lib/brief/schema";
 import { normalizeConnectBlock } from "@/lib/caps/connect/brief";
 import { connectOptions } from "@/lib/caps/connect/flags";
 import { normalizeDataBlock } from "@/lib/caps/data/brief";
@@ -81,6 +81,8 @@ export function normalizeRawBrief(raw: unknown, references: Reference[]): unknow
   b.slug = slugify(slugSource) || "product";
 
   if (b.verdict !== "no") b.refusal = null;
+  // askedLook (MUSE_APP_LOOK): an empty ask is no ask, and a long one is cut to the schema's limit.
+  if (typeof b.askedLook === "string") b.askedLook = b.askedLook.trim() ? clamp(b.askedLook.trim(), ASKED_LOOK_MAX) : null;
   if (Array.isArray(b.primaryFlow)) b.primaryFlow = b.primaryFlow.filter((s) => typeof s !== "string" || s).slice(0, 8);
   if (Array.isArray(b.screens)) b.screens = b.screens.slice(0, 5);
   for (const a of asArray(b.actions)) if (typeof a.name === "string") a.name = snakeCase(a.name);

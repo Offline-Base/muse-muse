@@ -195,6 +195,8 @@ export type BuildEventBody =
   | { type: "verify"; round: number; summary: VerifySummary; screenshots: Screenshot[] }
   | { type: "judge"; round: number; verdict: JudgeVerdict }
   | { type: "recording"; url: string; posterUrl?: string | null }
+  /** PLAN_ART: the plan card's own picture, the mascot doing something that fits this build (lib/pipeline/plan-art.ts). */
+  | { type: "plan_art"; url: string }
   | { type: "deploy"; url: string }
   | { type: "cost"; totalUsd: number; addedUsd: number; what: string }
   | { type: "log"; text: string }

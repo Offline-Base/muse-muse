@@ -217,7 +217,9 @@ describe("the new fine-tune pages", { skip: canMock ? false : "needs --experimen
       assert.match(html, /accept="\.csv,\.jsonl,\.json,\.txt,\.tsv,/);
       assert.match(html, /aria-label="Plan it"/);
       assert.match(html, /<span class="examples-label">Try<\/span>[\s\S]*Bakery helper[\s\S]*Ticket sorter[\s\S]*Plant care coach/);
-      assert.match(html, /Muse Wonder writes about 200 examples, Muse Glimmer 30B trains on one GPU, and the tuned model is\s+scored against the base\. About an hour, up to about \$12\.\d\d in all\s+\(the GPU is a hard limit; Meta&#x27;s part is an estimate\)\./);
+      assert.match(html, /Muse Wonder writes about 200 examples, Muse Glimmer 30B with 2026 knowledge trains on one GPU, and the tuned model is\s+scored against the 2026 Glimmer it started from\. About an hour, up to about\s*\$12\.\d\d in all \(the GPU is a hard limit; Meta&#x27;s part is an estimate\)\./);
+      assert.match(html, /New fine-tunes start\s+from <a href="https:\/\/huggingface\.co\/OfflineBase\/Glimmer-30B-2026-Knowledge"[^>]*>Muse Muse&#x27;s 2026-knowledge Glimmer<svg[\s\S]*?<\/a>, so every tuned model is\s*Built with Muse Spark Open\./);
+      assert.match(html, /<dt>Model<\/dt><dd><span>Muse Glimmer 30B with 2026 knowledge<\/span>/);
       assert.match(html, /<span>Training setup<\/span>/);
       assert.match(html, /<dt>Training steps<\/dt><dd><span>120<\/span>/);
       assert.match(html, /<dt>Publish<\/dt><dd><span>Off<\/span>/);
@@ -336,7 +338,8 @@ describe("the new fine-tune pages", { skip: canMock ? false : "needs --experimen
       });
       assert.equal(pv.name, "A plant care coach");
       assert.equal(pv.sections[0]!.steps![0], "Muse Wonder writes 200 examples in the style of your 24, and keeps 20 aside to score it.");
-      assert.equal(pv.sections[0]!.steps![2], "Muse Glimmer 30B trains on one GPU, about 45 minutes.");
+      assert.equal(pv.sections[0]!.steps![2], "Muse Glimmer 30B with 2026 knowledge, Muse Muse's own (huggingface.co/OfflineBase/Glimmer-30B-2026-Knowledge), trains on one GPU, about 45 minutes.");
+      assert.equal(pv.sections[0]!.steps![3], "The 2026 Glimmer it started from and the tuned model answer the 20 kept-aside prompts, and Muse Wonder scores both.");
       assert.equal(pv.sections[1]!.text, '"My fern is going brown, help?"');
       assert.match(pv.sections[2]!.text!, /hasn't been measured yet\. About an hour in all\.$/);
       assert.match(pv.sections[2]!.text!, /^Up to about \$12\.\d\d: examples \$3\.08 to \$6\.76, the GPU up to \$5\.00 \(a hard limit\), scoring \$0\.\d\d to \$0\.\d\d\. The examples and the scoring are estimates/);

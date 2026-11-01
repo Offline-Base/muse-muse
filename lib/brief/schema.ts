@@ -80,6 +80,9 @@ const targetPicks = (ids: readonly [TargetId, ...TargetId[]]) =>
 
 /** Most tools one agent may use (docs/AGENT_TOOLS.md). Fewer is better: each one is more for the model to read. */
 export const MAX_AGENT_TOOLS = 6;
+
+/** The longest askedLook a brief may carry. */
+export const ASKED_LOOK_MAX = 400;
 /** A live agent's run stops at 10 turns (RUN_LIMITS in lib/gateway/runs.ts), so a plan for more could never finish. */
 export const MAX_AGENT_STEPS = 10;
 
@@ -105,6 +108,11 @@ const agentFields = (toolIds: z.ZodType<string>) =>
 export const BriefSchema = BriefFields.extend({
   targets: targetPicks(TARGETS).optional(),
   agent: agentFields(z.string().min(1)).nullable().optional(),
+  /**
+   * The look the person asked for in their own words, or null (MUSE_APP_LOOK, docs/BRAND.md "Unless the person asks").
+   * Unset or null, the product follows the muse-app UI guidelines as they are.
+   */
+  askedLook: z.string().max(ASKED_LOOK_MAX).nullable().optional(),
   ...wave3StoredFields(),
 });
 
@@ -146,12 +154,12 @@ export const NewBriefSchemaNoGadget = BriefFields.extend({
 });
 
 /**
- * The schema the brief writer answers in for these flags. With no targets, no caps and no milestones it is exactly
- * NewBriefSchema or NewBriefSchemaNoGadget, the same objects. With targets it also requires `targets`, limited to web
- * and those. With the agent target it also requires `agent`, which is null for a product that isn't one, limited to the
- * public tools unless personal tools are on (COMPOSIO_PERSONAL_ENABLED). Each enabled cap with a registered block, and
- * milestones when ENGINE_MILESTONES is on, add a required but nullable field, since Meta's strict output needs every
- * property.
+ * The schema the brief writer answers in for these flags. With no targets, no caps, no milestones and no MUSE_APP_LOOK
+ * it is exactly NewBriefSchema or NewBriefSchemaNoGadget, the same objects. With targets it also requires `targets`,
+ * limited to web and those. With the agent target it also requires `agent`, which is null for a product that isn't one,
+ * limited to the public tools unless personal tools are on (COMPOSIO_PERSONAL_ENABLED). With MUSE_APP_LOOK it also
+ * requires `askedLook`, null unless the person asked for a look. Each enabled cap with a registered block, and milestones
+ * when ENGINE_MILESTONES is on, add a required but nullable field, since Meta's strict output needs every property.
  */
 export function newBriefSchemaFor(opts: {
   gadgets: boolean;
@@ -159,8 +167,10 @@ export function newBriefSchemaFor(opts: {
   personalTools?: boolean;
   caps?: readonly CapId[];
   milestones?: boolean;
+  museAppLook?: boolean;
 }): z.ZodType<Brief> {
   const base = opts.gadgets ? NewBriefSchema : NewBriefSchemaNoGadget;
+  const look = opts.museAppLook ? { askedLook: z.string().max(ASKED_LOOK_MAX).nullable() } : {};
   const ids = TARGETS.filter((t) => t === "web" || opts.targets.includes(t));
   const extra: Record<string, z.ZodTypeAny> = {};
   for (const cap of opts.caps ?? []) {
@@ -169,7 +179,7 @@ export function newBriefSchemaFor(opts: {
     if (block) extra[cap] = block.nullable();
   }
   if (opts.milestones) extra.milestones = MilestonesSchema.nullable();
-  if (ids.length === 1 && !Object.keys(extra).length) return base;
+  if (ids.length === 1 && !Object.keys(extra).length && !opts.museAppLook) return base;
   const shape: Record<string, z.ZodTypeAny> = {};
   if (ids.length > 1) {
     shape.targets = targetPicks(ids as [TargetId, ...TargetId[]]).min(1);
@@ -178,7 +188,7 @@ export function newBriefSchemaFor(opts: {
       shape.agent = agentFields(z.enum(tools)).nullable();
     }
   }
-  return base.extend({ ...shape, ...extra }) as unknown as z.ZodType<Brief>;
+  return base.extend({ ...shape, ...look, ...extra }) as unknown as z.ZodType<Brief>;
 }
 
 export type ProductModelId = (typeof PRODUCT_MODELS)[number];

@@ -244,8 +244,6 @@ export function BuildRoom(props: BuildRoomProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   // Whether the steps list follows the newest line. A panel opening beside a running build starts at the end.
   const panelPinned = useRef(true);
-  // The plan card's link opens the brief's fold as well as scrolling to it.
-  const unfoldStep = useRef(false);
   const showSteps = (step: string | null = null, follow = false) => {
     panelPinned.current = follow;
     setPanelTab("steps");
@@ -256,8 +254,6 @@ export function BuildRoom(props: BuildRoomProps) {
     if (!focusStep || !panelOpen) return;
     const row = panelRef.current?.querySelector(`[data-step="${CSS.escape(focusStep)}"]`);
     const body = row?.closest<HTMLElement>(".chat-panel-body");
-    if (unfoldStep.current) row?.querySelector<HTMLDetailsElement>("details.room-fold")?.setAttribute("open", "");
-    unfoldStep.current = false;
     if (row && body) body.scrollTop += row.getBoundingClientRect().top - body.getBoundingClientRect().top - 8;
     setFocusStep(null);
   }, [focusStep, panelOpen]);
@@ -348,7 +344,7 @@ export function BuildRoom(props: BuildRoomProps) {
   const answer = useMemo(() => finalWords(room), [room]);
   const current = useMemo(() => currentStep(room), [room]);
   const plan = useMemo(() => planCardState(room), [room]);
-  preloadPlanArt(room.status, isRefineBuild);
+  preloadPlanArt(room.status, isRefineBuild, room.planArtUrl);
   // The clock only matters to a Prove it run, so a build without one doesn't redraw its list each tick.
   const proveNow = events.some((e) => e.type === "prove") ? now : 0;
   const proveSteps = useMemo(() => proveRows(events, proveNow), [events, proveNow]);
@@ -437,19 +433,10 @@ export function BuildRoom(props: BuildRoomProps) {
             </li>
           ) : null}
 
-          {/* The plan once the brief is written, under what the build is doing. The whole brief is in the steps. */}
+          {/* The plan once the brief is written, under what the build is doing: the whole brief, once in the conversation. */}
           {plan ? (
             <li className="room-plan">
-              <PlanCard
-                brief={plan.brief}
-                art={plan.art}
-                running={!room.terminal}
-                panelId={PANEL_ID}
-                onReadBrief={() => {
-                  unfoldStep.current = true;
-                  showSteps(plan.step);
-                }}
-              />
+              <PlanCard brief={plan.brief} art={plan.art} running={!room.terminal} artUrl={room.planArtUrl} />
             </li>
           ) : null}
 

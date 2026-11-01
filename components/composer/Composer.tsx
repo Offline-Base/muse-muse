@@ -6,6 +6,7 @@ import { Icon } from "@/components/icons";
 import { Menu } from "@/components/Menu";
 import { CameraCapture, useCameraSupported } from "@/components/camera/CameraCapture";
 import { AttachmentChip, type Attachment } from "@/components/composer/AttachmentChip";
+import { Starters, type StarterTab } from "@/components/composer/Starters";
 import { TargetPill } from "@/components/composer/TargetPill";
 import { VoiceInputButton } from "@/components/voice/VoiceInputButton";
 import {
@@ -43,6 +44,11 @@ interface Props {
   layout?: "playground";
   /** The heading over plain examples. */
   examplesLabel?: string;
+  /**
+   * With layout "playground": Meta AI-style starters under the composer (category pills over a grid of ideas or a strip
+   * of photo examples) in place of the examples' photo cards.
+   */
+  starters?: StarterTab[];
   /** Added after the note when it's sent, for a muse started from a page that has something to say (docs pages). */
   context?: string;
   /** Sent as the note when the box is empty. Only with `context`: it lets the reader send without typing. */
@@ -131,6 +137,7 @@ export function Composer({
   floating,
   layout,
   examplesLabel = "Try a muse",
+  starters,
   context,
   blankNote,
   draftId,
@@ -607,7 +614,19 @@ export function Composer({
           <span>{error}</span>
         </p>
       ) : null}
-      {playground && examples?.length ? (
+      {playground && starters?.length ? (
+        <Starters
+          tabs={starters}
+          disabled={submitting}
+          loadingLabel={loadingExample}
+          onIdea={(text) => {
+            setNote(text);
+            textarea.current?.focus();
+          }}
+          onPhoto={(ex) => void applyExample(ex)}
+        />
+      ) : null}
+      {playground && !starters?.length && examples?.length ? (
         <ul className="ex-grid" aria-label="Examples">
           {examples.map((ex) => (
             <li key={ex.label}>

@@ -555,7 +555,7 @@ describe("fine-tuning pages", { skip: canMock ? false : "needs --experimental-te
     });
 
     it("/fine-tuning/{id} offers Start a live demo for a trained adapter, held while the sweep can't run", async () => {
-      adapterSource = { job: jobRow(), metrics: { cache_used: "yes", adapter_dir: `/lambda/nfs/muse-muse-cache-us-east-1/models/${JOB}` } };
+      adapterSource = { job: jobRow(), metrics: { cache_used: "yes", adapter_dir: `/lambda/nfs/muse-muse-cache-us-east-1/models/${JOB}`, base_model: "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit" } };
       const html = await openJob();
       assert.match(html, /<h2[^>]*>Live demo<\/h2>/);
       assert.match(html, /Anyone with this page&#x27;s link can then type an app idea/);
@@ -574,7 +574,7 @@ describe("fine-tuning pages", { skip: canMock ? false : "needs --experimental-te
       process.env.CRON_SECRET = "test-cron";
       process.env.VERCEL_ENV = "production";
       lastSweep = new Date();
-      adapterSource = { job: jobRow(), metrics: { cache_used: "yes", adapter_dir: `/lambda/nfs/muse-muse-cache-us-east-1/models/${JOB}/` } };
+      adapterSource = { job: jobRow(), metrics: { cache_used: "yes", adapter_dir: `/lambda/nfs/muse-muse-cache-us-east-1/models/${JOB}/`, base_model: "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit" } };
       try {
         const html = await openJob();
         assert.match(html, /Start a live demo/);
@@ -591,6 +591,9 @@ describe("fine-tuning pages", { skip: canMock ? false : "needs --experimental-te
       adapterSource = { job: jobRow(), metrics: { cache_used: "no", adapter_dir: "/home/ubuntu/work/adapter" } };
       const html = await openJob();
       assert.doesNotMatch(html, /Live demo|Try it live|Start a live demo/);
+      // On the cache, but trained on plain Glimmer before the switch: the demo GPU loads r30b, so no demo is offered.
+      adapterSource = { job: jobRow(), metrics: { cache_used: "yes", adapter_dir: `/lambda/nfs/muse-muse-cache-us-east-1/models/${JOB}` } };
+      assert.doesNotMatch(await openJob(), /Start a live demo/);
       job = jobRow({ status: "failed" });
       adapterSource = { job, metrics: { cache_used: "yes", adapter_dir: `/x/models/${JOB}` } };
       calls = [];

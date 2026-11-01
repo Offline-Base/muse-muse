@@ -47,10 +47,17 @@ describe("with MUSE_APP_LOOK on", () => {
     }
   });
 
-  it("changes only the build, fix and change prompts and the judge, and only where they name the look", () => {
+  it("changes only the brief writer, the build, fix and change prompts and the judge, and only where they name the look", () => {
     const surface = flagsOffSurface();
     const moved = Object.keys(surface).filter((name) => surface[name] !== golden(name));
-    assert.deepEqual(moved.sort(), ["build-prompt.txt", "fix-prompt.txt", "judge-instructions.txt", "refine-prompt.txt"]);
+    assert.deepEqual(moved.sort(), ["brief-instructions.txt", "build-prompt.txt", "fix-prompt.txt", "judge-instructions.txt", "refine-prompt.txt"]);
+    // The brief writer: its borrow line names the muse-app look, and askedLook follows it (asked-look.test.ts).
+    const brief = changed(golden("brief-instructions.txt"), surface["brief-instructions.txt"]);
+    assert.equal(brief.removed.length, 1);
+    assert.match(brief.removed[0], /^- borrow .*Montserrat/);
+    assert.equal(brief.added.length, 2);
+    assert.match(brief.added[0], /^- borrow .*Muse Muse's own app look/);
+    assert.match(brief.added[1], /^- askedLook is null unless/);
     for (const name of ["build-prompt.txt", "fix-prompt.txt", "refine-prompt.txt"]) {
       const { added, removed } = changed(golden(name), surface[name]);
       assert.ok(added.length > 0 && added.length === removed.length, `${name}: one line for one line`);

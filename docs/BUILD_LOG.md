@@ -1301,6 +1301,95 @@ because the sidebar showed a real account.
   @ 6f12bf52: drop-in for Unsloth's, two training steps on the recipe's own versions). The switch is building on tg-r30b
   (wf_e569a503-ff8): MODEL and the merge base, the Muse Spark Open duties on every new lab model, wording.
 
+### 23:50 Owner: choose the base, a Spark helper, finish the build
+
+- "you have my full ok. I want people to be able to choose from fine tuning the updated muse glimmer or the original or
+  one of the llama models, i also want them to be able to use muse spark to help them with that. Also i need you to
+  finish the rest of the build". Answers: the helper runs on Muse Spark 1.3 (an exception to tonight's rule, for this
+  helper only); the Llama option is Llama 3.2 3B Instruct. r30b stays the default base.
+- The deploy of stage 2 and the visitor core (push to main) was refused by the permission check; it waits for the owner
+  to allow it. The queue for the rest is in _plan/finish.md.
+
+### 23:54 Decision models D8 started on production (made-up data)
+
+- With the owner's full OK: a made-up 4-label decision dataset (a shop's support inbox: Billing, Shipping, Returns,
+  Account; 400 rows read, 390 kept, 10 near-duplicates merged) and the dry run job 3aa04a3a on an A100 SXM4 (max 45
+  minutes, $2). Then a score-only run (about $0.70) and one real run (about $0.83, max $5), then a 10-minute window.
+
+## Nov 1
+
+### 00:08 Decision models D8: score-only passed, real run started
+
+- Score-only job cd3c5cb3 on the made-up shop inbox (390 rows) succeeded for $0.2985, under the $0.70 estimate.
+- The one real decide run, f6761680, is queued (estimate about $0.83, cap $5). A 10-minute serving window follows it.
+
+### 00:06 Muse Code in products handed back to wave 3
+
+Wave 3 builds it on its code cap (tg-cap-musecode, migration 0028_code_sessions at idx 28, behind MUSE_CODE_ENABLED and
+MUSE_CODE_VISITORS, both off). Nothing from the spike was kept past 23525cb. Its secret scan (the literal values of the
+platform keys, read in memory, never printed) carries over to session logs and transcripts. Wave 3 paused it while two of
+mine ran. I told them at 00:09 they could resume, once plan-art finished.
+
+### 00:15 Owner: builds follow the UI guidelines unless the person asks otherwise (tg-own-look, e34e429, 01f3680)
+
+With MUSE_APP_LOOK on, the brief writer fills a new `askedLook` field only from the person's own words. The build prompt
+then sets that look through the muse-app tokens and keeps the rest of the muse-app-ui skill, and the judge expects it.
+A screenshot alone, or a real product's look, never counts as an ask. The brief writer's look line now describes the
+muse-app look instead of the old Montserrat one. With no ask, or the flag off, every prompt and schema is unchanged. See
+docs/BRAND.md, "Unless the person asks". Tests: 106 across the brief, judge and look files.
+
+### 00:16 Plan card picture landed (tg-plan-art, d32021f)
+
+- One Muse Image picture of the mascot per build, made beside the build. It falls back to the stock mascot on failure,
+  refusal or timeout. Metered as platform spend, behind PLAN_ART (off, now in .env.example).
+- The text wraps beside and under the picture at 520 px of column or wider, and the full plan is written out in the
+  card.
+- Review fixes: a shipped build waits at most 15 s for the picture and a failed one not at all; a picture that fails to
+  load falls back to the stock mascot; the event stream drops plan pictures with the flag off; the Models heading
+  starts under the picture.
+- The fine-tune room's card is unchanged. Its two tests now compare against the new card, and the build room and plan
+  card fingerprints were re-recorded (only those entries moved).
+- The workflow's screenshots use a hand-made stand-in picture.
+- Full suite on the merged branch: 5096 tests, 5088 pass, 0 fail, 8 skipped; tsc clean.
+
+
+### 00:20 Plan card pictures: three real Muse Image calls
+
+The branch's own prompt and request body, sent to /v1/images/edits with the mascot as the reference, for three made-up
+briefs (a math tutor, a bakery order sheet, a plant care coach). All three returned a 1024x1280 JPEG in 9.7 to 13.8 s,
+about $0.03 in all. The mascot stays the same plush character and holds a prop that fits each request, on white.
+PLAN_ART stays off until the owner wants it on. ![The three pictures](log/shots/2026-11-01/plan-art-real-trio.jpg)
+
+### 00:22 Deployed to production (main 5a5d057)
+
+Owner: "push to main, you have full permission". 64 commits, no key-like strings, no new migrations: fine-tune stage 2,
+the visitor core, the plan card, builds following the UI guidelines unless asked. Vercel shows Ready on
+www.musemuse.dev. All new flags stay off.
+
+### 00:32 Decision models D8: the real run succeeded
+
+Real run f6761680 succeeded for $0.4975, under the $0.83 estimate. The 10-minute serving window is still to do.
+
+### 00:43 Make page: Meta AI-style starters under the composer (tg-starters, b34ea82)
+
+Owner, with two Meta AI screenshots: "rather than the 3 examples offered, make it more similar to the meta ai ui
+underneath". Now category pills (Discover, For school, For work, From a photo) over a 3x2 grid of icon and label ideas
+or a strip of five photos. An idea fills the composer and never sends. Two new photos (fridge, plant) came from Muse
+Image, about $0.02. The cards lose their tag and camera button; the + menu still has Take a photo. Checked in a browser:
+no sideways page scroll at 390 px, an idea fills the note, arrow keys move the tabs. Full suite: 5107 tests, 5099 pass,
+0 fail, 8 skipped; tsc clean. Not deployed yet: the push to main needs the owner's OK. Shots:
+docs/log/shots/2026-11-01/starters-*.png.
+
+### 00:59 r30b switch landed on tuned-model-options (eedcef7), not deployed
+
+New fine-tunes train on r30b, and every lab model trained on it carries the Muse Model License duties (one rule,
+isSparkOpenDerivative). Four merge conflicts with stage 2: the jobs route's two r30b changes moved into lib/train/launch.ts,
+and two tests were updated for the other branch's work. Full suite: 5138 tests, 5130 pass, 0 fail, 8 skipped; tsc and the
+workflow compile check clean. Review fixes include the first local files merge, which would have failed after paying for
+GPU time (Unsloth's mapper doesn't know the repo). That fix was read from the installed Unsloth 2026.8.16, not the pinned
+2026.10.9, so only a real glimmer-quantize job proves it. Still to do after a deploy: the r30b dry run (about $0.13) and
+one real run (about $2). Wave 3 told.
+
 ## Gaps
 
 What this record doesn't confirm:

@@ -78,19 +78,51 @@ export const VERDICT: Record<Brief["verdict"], { label: string; tone: string }> 
   no: { label: "Can't build this", tone: "failed" },
 };
 
-export function BriefBody({ brief }: { brief: Brief }) {
+/** What a brief's inputs and outputs are, in a word. */
+const MEDIA_LABEL: Record<Brief["inputs"][number]["kind"] | Brief["outputs"][number]["kind"], string> = {
+  text: "Text",
+  image: "Image",
+  video: "Video",
+  audio: "Audio",
+  pdf: "PDF",
+  overlay: "Overlay",
+  json: "JSON",
+  file: "File",
+};
+
+const filled = (list: readonly string[]) => list.map((s) => s.trim()).filter(Boolean);
+
+/**
+ * The whole brief: who it's for, how it works, the screens, what goes in and comes out, the models and why, the limits,
+ * what it takes from the inspo and the cost per run. A part with nothing in it is left out, heading and all. The steps
+ * panel's "Read the brief" shows it with its name and verdict on top; the plan card (PlanCard.tsx) shows it under its
+ * own name and tagline, so it passes `title={false}`. A declined brief shows its reason instead.
+ */
+export function BriefBody({ brief, title = true }: { brief: Brief; title?: boolean }) {
   const verdict = VERDICT[brief.verdict];
   const declined = brief.verdict === "no" || Boolean(brief.refusal);
+  const user = brief.user.trim();
+  const flow = filled(brief.primaryFlow);
+  const screens = brief.screens.filter((s) => s.name.trim() || s.purpose.trim());
+  const limits = filled(brief.limits);
+  const borrow = filled(brief.inspiration.borrow);
+  const dontCopy = filled(brief.inspiration.dontCopy);
+  const inspo = brief.inspiration.summary.trim();
+  const costNotes = brief.costNotes.trim();
   return (
     <div className="rich">
-      <p className="lead">
-        <strong>{brief.name}</strong>
-        <span className={`pill pill-${declined ? "failed" : verdict.tone}`}>
-          <span className="pill-dot" aria-hidden />
-          {brief.refusal ? "Declined" : verdict.label}
-        </span>
-      </p>
-      {brief.tagline ? <p className="muted">{brief.tagline}</p> : null}
+      {title ? (
+        <>
+          <p className="lead">
+            <strong>{brief.name}</strong>
+            <span className={`pill pill-${declined ? "failed" : verdict.tone}`}>
+              <span className="pill-dot" aria-hidden />
+              {brief.refusal ? "Declined" : verdict.label}
+            </span>
+          </p>
+          {brief.tagline ? <p className="muted">{brief.tagline}</p> : null}
+        </>
+      ) : null}
       {declined ? (
         <>
           <div className="callout callout-bad" role="note">
@@ -110,84 +142,127 @@ export function BriefBody({ brief }: { brief: Brief }) {
         </>
       ) : (
         <>
-          <h3>Who it&apos;s for</h3>
-          <p>{brief.user}</p>
-          <h3>How it works</h3>
-          <ol>
-            {brief.primaryFlow.map((s, i) => (
-              <li key={i}>{s}</li>
-            ))}
-          </ol>
-          {brief.screens.length ? (
+          {user ? (
+            <>
+              <h3>Who it&apos;s for</h3>
+              <p>{user}</p>
+            </>
+          ) : null}
+          {flow.length ? (
+            <>
+              <h3>How it works</h3>
+              <ol>
+                {flow.map((s, i) => (
+                  <li key={i}>{s}</li>
+                ))}
+              </ol>
+            </>
+          ) : null}
+          {screens.length ? (
             <>
               <h3>Screens</h3>
               <ul>
-                {brief.screens.map((s) => (
-                  <li key={s.name}>
+                {screens.map((s, i) => (
+                  <li key={`${s.name}-${i}`}>
                     <strong>{s.name}.</strong> {s.purpose}
                   </li>
                 ))}
               </ul>
             </>
           ) : null}
-          <h3>Models</h3>
-          <div className="table-wrap">
-            <table className="data">
-              <thead>
-                <tr>
-                  <th scope="col">Model</th>
-                  <th scope="col">Used for</th>
-                  <th scope="col">Why</th>
-                </tr>
-              </thead>
-              <tbody>
-                {brief.capabilities.map((c, i) => (
-                  <tr key={`${c.model}-${i}`}>
-                    <td>
-                      <strong>{modelLabel(c.model)}</strong>
-                    </td>
-                    <td>{c.need}</td>
-                    <td>{c.why}</td>
-                  </tr>
+          {brief.inputs.length ? (
+            <>
+              <h3>What goes in</h3>
+              <ul>
+                {brief.inputs.map((x, i) => (
+                  <li key={i}>
+                    <strong>{MEDIA_LABEL[x.kind] ?? x.kind}</strong>
+                    {x.required ? "" : " (optional)"}
+                    {x.notes.trim() ? `: ${x.notes.trim()}` : null}
+                  </li>
                 ))}
-              </tbody>
-            </table>
-          </div>
-          {brief.limits.length ? (
+              </ul>
+            </>
+          ) : null}
+          {brief.outputs.length ? (
+            <>
+              <h3>What comes out</h3>
+              <ul>
+                {brief.outputs.map((x, i) => (
+                  <li key={i}>
+                    <strong>{MEDIA_LABEL[x.kind] ?? x.kind}</strong>
+                    {x.notes.trim() ? `: ${x.notes.trim()}` : null}
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+          {brief.capabilities.length ? (
+            <>
+              <h3>Models</h3>
+              <div className="table-wrap">
+                <table className="data">
+                  <thead>
+                    <tr>
+                      <th scope="col">Model</th>
+                      <th scope="col">Used for</th>
+                      <th scope="col">Why</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {brief.capabilities.map((c, i) => (
+                      <tr key={`${c.model}-${i}`}>
+                        <td>
+                          <strong>{modelLabel(c.model)}</strong>
+                        </td>
+                        <td>{c.need}</td>
+                        <td>{c.why}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : null}
+          {limits.length ? (
             <>
               <h3>Limits</h3>
               <ul>
-                {brief.limits.map((l) => (
+                {limits.map((l) => (
                   <li key={l}>{l}</li>
                 ))}
               </ul>
             </>
           ) : null}
-          <h3>From your inspo</h3>
-          <p>{brief.inspiration.summary}</p>
-          {brief.inspiration.borrow.length || brief.inspiration.dontCopy.length ? (
+          {inspo || borrow.length || dontCopy.length ? <h3>From your inspo</h3> : null}
+          {inspo ? <p>{inspo}</p> : null}
+          {borrow.length || dontCopy.length ? (
             <div className="two-col">
-              <div>
-                <h4>Takes</h4>
-                <ul>
-                  {brief.inspiration.borrow.map((b) => (
-                    <li key={b}>{b}</li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <h4>Leaves out</h4>
-                <ul>
-                  {brief.inspiration.dontCopy.map((b) => (
-                    <li key={b}>{b}</li>
-                  ))}
-                </ul>
-              </div>
+              {borrow.length ? (
+                <div>
+                  <h4>Takes</h4>
+                  <ul>
+                    {borrow.map((b) => (
+                      <li key={b}>{b}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {dontCopy.length ? (
+                <div>
+                  <h4>Leaves out</h4>
+                  <ul>
+                    {dontCopy.map((b) => (
+                      <li key={b}>{b}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
             </div>
           ) : null}
           <p>
             <strong>Cost per run:</strong> about {usd(brief.estimatedCostPerRunUsd)} (est.).{" "}
-            {brief.costNotes ? <span className="muted">{brief.costNotes}</span> : null}
+            {costNotes ? <span className="muted">{costNotes}</span> : null}
           </p>
         </>
       )}

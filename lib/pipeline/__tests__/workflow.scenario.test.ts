@@ -56,6 +56,8 @@ interface Scenario {
   plan?: { buildMs: number; fixMs: number; verifyMs: number; wallMs: number | null; milestones: Array<{ title: string }> };
   /** How far each named step moves the fake clock (Date.now), for the build's wall. Unset, time stands still. */
   advance?: Partial<Record<"previewStep" | "collectVerifyStep" | "judgeStep", number>>;
+  /** PLAN_ART's step: settles once the build registers ("late"), never ("hangs"), throws, or answers at once (the default). */
+  art?: "late" | "hangs" | "throws";
 }
 
 /** The fake clock the workflow reads with Date.now while a scenario sets `advance`. */
@@ -66,6 +68,10 @@ function tick(step: "previewStep" | "collectVerifyStep" | "judgeStep") {
 
 let scenario: Scenario = {};
 let calls: Call[] = [];
+/** Lets a "late" plan picture finish, from registerStep. */
+let releaseArt: (() => void) | null = null;
+/** Every sleep() the workflow asked for, in order. */
+let slept: unknown[] = [];
 let verifyRuns = 0;
 let musePolled = 0;
 let polledTotal = 0;
@@ -213,7 +219,10 @@ const fakeSteps = {
     const state = scenario.deployState ?? "READY";
     return { state, url: "https://musemuse-shelf-scout.vercel.app", errorMessage: state === "ERROR" ? "Build failed" : undefined };
   },
-  registerStep: async (input: unknown) => record("registerStep", input),
+  registerStep: async (input: unknown) => {
+    record("registerStep", input);
+    releaseArt?.();
+  },
   refineCheckStep: async (buildId: string) => {
     record("refineCheckStep", buildId);
     return { refusal: scenario.refineRefusal ?? null };
@@ -257,7 +266,7 @@ function currentVerify() {
 const canMock = typeof (mock as { module?: unknown }).module === "function";
 let wf: typeof import("../workflow");
 
-const savedEnv = { MUSE_ENGINE: process.env.MUSE_ENGINE, MUSE_FULL: process.env.MUSE_FULL };
+const savedEnv = { MUSE_ENGINE: process.env.MUSE_ENGINE, MUSE_FULL: process.env.MUSE_FULL, PLAN_ART: process.env.PLAN_ART };
 
 function reset(next: Scenario) {
   scenario = next;
@@ -266,6 +275,8 @@ function reset(next: Scenario) {
   musePolled = 0;
   polledTotal = 0;
   museRuns = 0;
+  releaseArt = null;
+  slept = [];
   if (next.steering) process.env.MUSE_ENGINE = "serve";
   else delete process.env.MUSE_ENGINE;
   delete process.env.MUSE_FULL;
@@ -291,9 +302,27 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
         },
       },
     });
-    mock.module("workflow", { namedExports: { sleep: async () => undefined } });
+    mock.module(new URL("../plan-art-step.ts", import.meta.url).href, {
+      namedExports: {
+        planArtStep: async (buildId: string) => {
+          record("planArtStep", buildId);
+          if (scenario.art === "throws") throw new Error("Muse Image is down");
+          if (scenario.art === "late") await new Promise<void>((resolve) => (releaseArt = resolve));
+          if (scenario.art === "hangs") await new Promise<void>(() => undefined);
+          record("planArtStep:done", buildId);
+          return "https://blob.example/fixtures/b1/plan-art.jpg";
+        },
+      },
+    });
     // Wave 3, unit 14: whether an enabled cap has a step after deploy, by scenario.
     mock.module(new URL("../../caps/ship.ts", import.meta.url).href, { namedExports: { CAPS_SHIPPING: ["extension"], capsShipping: () => scenario.capsShipping ?? false } });
+    mock.module("workflow", {
+      namedExports: {
+        sleep: async (d: unknown) => {
+          slept.push(d);
+        },
+      },
+    });
     wf = await import("../workflow");
   });
 
@@ -365,6 +394,81 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
         reset({ head: { kind: "refine", status: "queued", productId: "p1" } });
         assert.deepEqual(await wf.refineProduct({ buildId: "r1" }), { status: "live" });
         assert.deepEqual(order().slice(-3), ["provePlanStep", "status:live", "startProveStep"]);
+      }));
+  });
+
+  describe("the plan card's picture (PLAN_ART)", () => {
+    const withArt = async (fn: () => Promise<void>) => {
+      process.env.PLAN_ART = "1";
+      try {
+        await fn();
+      } finally {
+        delete process.env.PLAN_ART;
+      }
+    };
+    const steps = () => calls.map((c) => (c.step === "setStatusStep" ? `status:${c.args[1] as string}` : c.step));
+
+    it("takes no step with the flag off", async () => {
+      delete process.env.PLAN_ART;
+      reset({});
+      assert.deepEqual(await wf.buildProduct({ buildId: "b1" }), { status: "live" });
+      assert.equal(named("planArtStep").length, 0);
+    });
+
+    it("starts once the brief says yes, and the build goes on beside it without waiting", () =>
+      withArt(async () => {
+        reset({ art: "late" });
+        assert.deepEqual(await wf.buildProduct({ buildId: "b1" }), { status: "live" });
+        const order = steps();
+        assert.deepEqual(named("planArtStep").map((c) => c.args), [["b1"]]);
+        assert.ok(order.indexOf("briefStep") < order.indexOf("planArtStep"));
+        assert.ok(order.indexOf("planArtStep") < order.indexOf("createProductStep"));
+        // Still out while the product, sandbox, Muse Code, checks, demo and deploy all ran.
+        for (const s of ["createProductStep", "provisionStep", "startMuseStep", "collectVerifyStep", "finishDemoStep", "registerStep"]) {
+          assert.ok(order.indexOf(s) < order.indexOf("planArtStep:done"), s);
+        }
+        // In before the final status, while the room's stream is still open.
+        assert.ok(order.indexOf("planArtStep:done") < order.indexOf("cleanupStep"));
+        assert.ok(order.indexOf("planArtStep:done") < order.indexOf("status:live"));
+      }));
+
+    it("never fails the build when it throws", () =>
+      withArt(async () => {
+        reset({ art: "throws" });
+        assert.deepEqual(await wf.buildProduct({ buildId: "b1" }), { status: "live" });
+        assert.equal(named("planArtStep").length, 1);
+        assert.equal(named("failStep").length, 0);
+        assert.equal(statuses().at(-1), "live");
+      }));
+
+    it("holds a shipped build's end for at most 15 s when the picture never comes back", () =>
+      withArt(async () => {
+        reset({ art: "hangs" });
+        assert.deepEqual(await wf.buildProduct({ buildId: "b1" }), { status: "live" });
+        assert.equal(named("planArtStep").length, 1);
+        assert.equal(named("planArtStep:done").length, 0);
+        assert.equal(slept.at(-1), 15_000);
+        assert.equal(statuses().at(-1), "live");
+        assert.equal(named("cleanupStep").length, 1);
+      }));
+
+    it("doesn't hold a failed build's end at all", () =>
+      withArt(async () => {
+        reset({ art: "hangs", provisionThrows: new Error("no sandbox") });
+        assert.deepEqual(await wf.buildProduct({ buildId: "b1" }), { status: "failed" });
+        assert.equal(named("planArtStep:done").length, 0);
+        assert.ok(!slept.includes(15_000));
+        assert.equal(named("failStep").length, 1);
+      }));
+
+    it("makes no picture for a declined brief or a change", () =>
+      withArt(async () => {
+        reset({ verdict: "no" });
+        assert.deepEqual(await wf.buildProduct({ buildId: "b1" }), { status: "refused" });
+        assert.equal(named("planArtStep").length, 0);
+        reset({ head: { kind: "refine", status: "queued", productId: "prod-1" } });
+        await wf.refineProduct({ buildId: "r1" });
+        assert.equal(named("planArtStep").length, 0);
       }));
   });
 

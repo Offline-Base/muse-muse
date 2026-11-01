@@ -6,6 +6,7 @@
  */
 import type { DriveRuntime } from "@/lib/drive/logic";
 import type { DriveFile, DriveModel } from "@/lib/drive/types";
+import { BUILT_WITH_SPARK_OPEN, R30B_REPO, USAGE_POINTS } from "@/lib/train/base";
 import { MUSE_MUSE_SITE } from "@/lib/train/hub-cards";
 import { QUANT_LEVELS, type LocalFile, type QuantLevel } from "@/lib/train/local-files";
 import { MAC_MEMORY_SIZES, PC_MEMORY_SIZES, VRAM_SIZES, pickBuild, type DeviceProfile } from "@/lib/vibe/device";
@@ -75,6 +76,15 @@ export const META_FILES: ReadonlyArray<PinnedText> = [
     url: "https://huggingface.co/meta-models/Muse-Glimmer-30B-GGUF/raw/b44f1072cf75e918a1b82a3a17b45c4389b076e7/USAGE_POLICY.md",
     sha256: "98a14dab9fd97de1666dc8589d399efab1e7fc3ba4e6230d037d6637ba9481d3",
   },
+];
+
+/**
+ * What a Derivative's drive adds to META_FILES (whose Apache 2.0 and Usage Policy are the same bytes as r30b's): the Muse
+ * Model License and r30b's NOTICE, from lib/train/licenses.
+ */
+export const DERIVATIVE_DRIVE_FILES: ReadonlyArray<{ path: string; from: string }> = [
+  { path: "licenses/MUSE_MODEL_LICENSE.md", from: "MUSE_MODEL_LICENSE.md" },
+  { path: "licenses/NOTICE", from: "NOTICE" },
 ];
 
 /** The revision of unsloth/Qwen3.5-0.8B that muse-device/setup-train.sh downloads for board training. */
@@ -214,14 +224,20 @@ export const crlf = (s: string) => s.replace(/\r?\n/g, "\r\n");
 /** CHANGES.md, as Apache 2.0 section 4(b) asks: what was changed in Meta's work. */
 export function changesText(model: ImageModel, pin: RuntimePin): string {
   const levels = model.files.map((f) => f.level).join(", ");
+  const steps = model.sparkOpen
+    ? [
+        `- Muse Muse fine-tuned it with 2026 knowledge as ${R30B_REPO} (licenses/NOTICE says how).`,
+        `- Then fine-tuned that with a LoRA adapter (training job ${model.adapterJobId}).`,
+        `- The adapter was merged into ${R30B_REPO}'s bf16 weights.`,
+      ]
+    : [`- Muse Muse fine-tuned it with a LoRA adapter (training job ${model.adapterJobId}).`, "- The adapter was merged into Meta's bf16 weights."];
   return [
     "# Changes",
     "",
     "This drive holds a modified version of Meta's Muse Glimmer 30B, which Meta licenses under the Apache License 2.0",
     "(licenses/Apache-2.0.txt). As section 4(b) of that license asks, this is what was changed:",
     "",
-    `- Muse Muse fine-tuned it with a LoRA adapter (training job ${model.adapterJobId}).`,
-    "- The adapter was merged into Meta's bf16 weights.",
+    ...steps,
     `- The merged model was converted to GGUF and quantized to ${levels} with llama.cpp (job ${model.quantJobId}).`,
     `- The files are the ones in https://huggingface.co/${model.repo} at commit ${model.commit}.`,
     "",
@@ -229,8 +245,24 @@ export function changesText(model: ImageModel, pin: RuntimePin): string {
     "the server and the libraries it loads are on the drive.",
     "",
     "Muse Glimmer is Meta's model. This fine-tune wasn't made, reviewed or endorsed by Meta.",
+    ...(model.sparkOpen
+      ? [
+          "",
+          `${BUILT_WITH_SPARK_OPEN}. Muse Spark Open wrote part of ${R30B_REPO}'s training data, so this model is a`,
+          "Derivative under the Muse Model License (licenses/MUSE_MODEL_LICENSE.md, with its Usage Policy as Exhibit A).",
+        ]
+      : []),
     "",
   ].join("\n");
+}
+
+/** The pages' "Built with Muse Spark Open" for a Derivative's drive, or nothing: Start Here.html's, then README.txt's. */
+export function sparkOpenText(model: Pick<ImageModel, "sparkOpen">): { html: string; text: string } {
+  if (!model.sparkOpen) return { html: "", text: "" };
+  return {
+    html: `<p><strong>${BUILT_WITH_SPARK_OPEN}.</strong> ${escapeHtml(USAGE_POINTS.join(" "))} The Muse Model License is in <span class="file">licenses/MUSE_MODEL_LICENSE.md</span>.</p>`,
+    text: `\n${BUILT_WITH_SPARK_OPEN}. ${USAGE_POINTS.join(" ")}\nThe Muse Model License is in licenses/MUSE_MODEL_LICENSE.md.\n`,
+  };
 }
 
 /** The model's public page, which the drive names for Try it live and its eval. */

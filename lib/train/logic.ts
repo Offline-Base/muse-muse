@@ -27,6 +27,7 @@ import type {
   ReliabilityBin,
   WilsonRate,
 } from "@/lib/decide/types";
+import { isSparkOpenDerivative } from "@/lib/train/base";
 import type { LambdaInstance } from "@/lib/train/lambda";
 import type { QuantLevel } from "@/lib/train/local-files";
 import { judgeModelOf, storyModelOf, writerModelOf } from "@/lib/train/models";
@@ -1046,7 +1047,9 @@ export type DoneMetrics = Record<string, string | number>;
  * Why a job's adapter can't be served, as the jobs route answers it (400 after the param's label), or null when it
  * can: a glimmer-lora job that succeeded, wasn't a dry run (whose adapter is a stand-in), and whose done metrics say it
  * saved the adapter on the cache filesystem (cache_used "yes" and adapter_dir ending in models/<its id>), so a serve
- * job in its region finds it at <cache>/models/<id>/.
+ * job in its region finds it at <cache>/models/<id>/. Its job must also have trained on r30b (isSparkOpenDerivative),
+ * since every serve and quantize job now loads r30b's weights, unless `opts.uploadOnly` says the caller only uploads it
+ * (glimmer-publish), so an adapter from before the switch can still be published as what it is.
  *
  * A decision model's adapter (decide mode) is refused unless `opts.decide` says the caller serves it as one: a
  * glimmer-serve job, whose demo server sees the adapter's decide.json and answers POST /decide instead of /generate
@@ -1056,7 +1059,7 @@ export type DoneMetrics = Record<string, string | number>;
 export function adapterProblem(
   job: Pick<TrainJobRow, "id" | "recipe" | "status" | "params"> | null,
   metrics: DoneMetrics | null,
-  opts: { decide?: boolean } = {},
+  opts: { decide?: boolean; uploadOnly?: boolean } = {},
 ): string | null {
   if (!job) return "that job doesn't exist.";
   if (job.recipe !== ADAPTER_RECIPE) return "that job isn't a Muse Glimmer LoRA job, so it has no adapter to serve.";
@@ -1073,6 +1076,12 @@ export function adapterProblem(
   const dir = typeof metrics?.adapter_dir === "string" ? metrics.adapter_dir.replace(/\/+$/, "") : "";
   if (metrics?.cache_used !== "yes" || !dir.endsWith(`/models/${job.id}`)) {
     return "that job's adapter isn't on a model cache filesystem, so a GPU can't load it.";
+  }
+  // Serve and quantize jobs load the recipe's MODEL, which is r30b since the switch (lib/train/base.ts). A LoRA trained on
+  // plain Glimmer has the same shapes, so it would load without error and answer as a model nobody evaluated. A
+  // glimmer-publish job (opts.uploadOnly) loads no base: it sends the files as they are, under the base their job recorded.
+  if (!opts.uploadOnly && !isSparkOpenDerivative({ params: job.params, metrics })) {
+    return "that adapter trained on plain Muse Glimmer, and the lab's GPUs now load the 2026 Glimmer (r30b), which it never trained on.";
   }
   return null;
 }
@@ -1168,6 +1177,9 @@ export function trainChannelOf(params: Record<string, string | number> | null | 
  * A decision model's adapter (decide mode) is refused for now, whatever adapterProblem says: QUANT_PY's checks are a
  * chat model's (a final answer under a stock app's prompt), and the decision check its files need, Q4_K_M's picks
  * against the adapter's on the test renderings, isn't built (docs/DECISION_MODELS.md, "Local files").
+ *
+ * So is an adapter trained on plain Glimmer, before the switch to r30b (lib/train/base.ts): QUANT_PY merges into r30b's
+ * 16-bit weights, which that adapter never trained on, so its files would be a model nobody evaluated.
  */
 export function quantProblem(
   job: Pick<TrainJobRow, "params" | "terminatedAt" | "evalSummary">,
@@ -1184,6 +1196,9 @@ export function quantProblem(
   const prompt = asRun === undefined || asRun === null ? "full" : String(asRun).trim().toLowerCase() || "short";
   if (prompt !== "short") {
     return "that adapter trained under its dataset's whole task prompt, and local files need the one-line system message of the short student prompt.";
+  }
+  if (!isSparkOpenDerivative({ params: job.params, metrics })) {
+    return "that adapter trained on plain Muse Glimmer, and local files now merge into the 2026 Glimmer (r30b), which it never trained on.";
   }
   return null;
 }

@@ -1,5 +1,6 @@
 import { gpuName, hubHref } from "@/components/train/format";
 import type { DecisionSideSummary, DecisionSpec, DecisionSummary, LabelScore, ReliabilityBin, WilsonRate } from "@/lib/decide/types";
+import { isSparkOpenDerivative } from "@/lib/train/base";
 import { isDecisionSummary, recordedModel, writerModelOf } from "@/lib/train/models";
 import type { ReadyDatasetRow, ResultJobRow } from "@/lib/train/store";
 import type { DatasetView, EvalSummary, LiveDemoView, PublicHubLinks, RecipeView } from "@/lib/train/types";
@@ -12,6 +13,8 @@ import type { DatasetView, EvalSummary, LiveDemoView, PublicHubLinks, RecipeView
 
 /** The model glimmer-lora tunes, as the results name it in full. */
 export const GLIMMER_NAME = "Muse Glimmer 30B";
+/** What glimmer-lora tunes since the switch to r30b (lib/train/base.ts), as the results name it in full. */
+export const R30B_NAME = "Muse Glimmer 30B with 2026 knowledge";
 
 /** Job params the results show, in order, with the label used when the recipe has no field for one. Nothing else. */
 export const RESULT_SETTINGS: ReadonlyArray<{ key: string; label: string }> = [
@@ -38,8 +41,13 @@ export interface ResultView {
   /** The recipe id, such as "glimmer-lora". */
   recipe: string;
   recipeTitle: string;
-  /** The model that was tuned: "Muse Glimmer 30B". */
+  /** The model that was tuned: "Muse Glimmer 30B", or R30B_NAME for a job trained from r30b. */
   model: string;
+  /**
+   * True for a Derivative of Muse Spark Open (isSparkOpenDerivative on its params, lib/train/base.ts): its pages show
+   * "Built with Muse Spark Open" and the Usage Policy's points, and compare it with the 2026 Glimmer it started from.
+   */
+  sparkOpen: boolean;
   gpu: string;
   /** GPU time from launch to shutdown, every started minute counted, as Lambda bills it. */
   gpuMinutes: number;
@@ -182,12 +190,14 @@ export function toResultView(row: ResultJobRow, recipe: Pick<RecipeView, "title"
   const end = row.terminatedAt.getTime();
   const datasetKey = recipe?.params.find((f) => f.kind === "dataset")?.key ?? "datasetId";
   const dataset = row.params?.[datasetKey];
+  const sparkOpen = isSparkOpenDerivative({ params: row.params });
   return {
     id: row.id,
     title: row.title,
     recipe: row.recipe,
     recipeTitle: recipe?.title ?? row.recipe,
-    model: row.recipe === "glimmer-lora" ? GLIMMER_NAME : (recipe?.title ?? row.recipe),
+    model: row.recipe === "glimmer-lora" ? (sparkOpen ? R30B_NAME : GLIMMER_NAME) : (recipe?.title ?? row.recipe),
+    sparkOpen,
     gpu: gpuName(recipe, row.instanceType),
     gpuMinutes: Math.max(0, Math.ceil((end - start) / 60_000)),
     costUsd: row.costUsd,

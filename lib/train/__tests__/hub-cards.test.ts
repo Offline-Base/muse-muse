@@ -15,6 +15,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import { PLAIN_GLIMMER_MODEL, PLAIN_GLIMMER_REVISION, USAGE_POINTS } from "../base";
 import * as cards from "../hub-cards";
 import { effectiveWhy, hubBusy, toHubView } from "../logic";
 import { GLIMMER_PY } from "../recipes/glimmer";
@@ -23,7 +24,10 @@ import type { HubState, TrainEventView } from "../types";
 const EM_DASH = String.fromCharCode(0x2014);
 const JOB = "83d71f74-d84b-40bf-925a-cd36c90b6de5";
 const DS = "17c76f2c-1c4a-4335-b01f-ae55a655a881";
-const template = cards.glimmerTemplate(GLIMMER_PY);
+/** The recipe's template, on r30b since the switch (lib/train/base.ts). */
+const recipeTemplate = cards.glimmerTemplate(GLIMMER_PY);
+/** Most cards below are a plain Glimmer adapter's, from before the switch: the hub steps give its card the base it recorded. */
+const template = { ...recipeTemplate, model: PLAIN_GLIMMER_MODEL, revision: PLAIN_GLIMMER_REVISION };
 const summary = { items: 40, tunedWins: 40, baseWins: 0, ties: 0, avgBaseScore: 1.95, avgTunedScore: 8.88, judgeCostUsd: 0.150405 };
 
 function facts(over: Partial<cards.CardFacts> = {}): cards.CardFacts {
@@ -167,8 +171,9 @@ describe("repo names", () => {
 
 describe("the glimmer-lora recipe's template", () => {
   it("is read from GLIMMER_PY: the model, its pinned revision, the final channel and the trainer", () => {
-    assert.equal(template.model, "unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit");
-    assert.match(template.revision, /^[0-9a-f]{40}$/);
+    const template = recipeTemplate;
+    assert.equal(template.model, "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit");
+    assert.equal(template.revision, "6f12bf5288dd4d83374e1d6cab3b6b80da258eb1");
     assert.ok(GLIMMER_PY.includes(`MODEL_REVISION = "${template.revision}"`));
     assert.equal(template.reasoning, "low");
     assert.equal(template.generationPrompt, "<|start|>assistant");
@@ -307,6 +312,55 @@ describe("the story", () => {
     assert.match(result(0, 1), /better on 7 of 8, and 1 tied, with an average score of 7\.25 out of 10 against 6\.5 for the base model\.$/);
     assert.match(result(2, 0), /better on 6 of 8, and the base model on 2, with/);
     assert.match(result(2, 1), /better on 5 of 8, the base model on 2, and 1 tied, with/);
+  });
+});
+
+describe("a Derivative of Muse Spark Open's model card (an adapter on r30b)", () => {
+  const derived = () => cards.modelCard(facts({ template: recipeTemplate, revision: recipeTemplate.revision }));
+
+  it("declares Apache 2.0 and the Muse Model License, and says Built with Muse Spark Open under the title", () => {
+    const card = derived();
+    assert.ok(
+      card.startsWith(
+        "---\nbase_model: OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit\nbase_model_relation: adapter\nlibrary_name: peft\npipeline_tag: text-generation\nlicense: other\nlicense_name: apache-2.0-and-muse-model-license\nlicense_link: MUSE_MODEL_LICENSE.md\n",
+      ),
+    );
+    assert.ok(card.includes("- built-with-muse-spark-open\n"));
+    const built = card.indexOf("**Built with Muse Spark Open.** This adapter was trained from [OfflineBase/Glimmer-30B-2026-Knowledge](https://huggingface.co/OfflineBase/Glimmer-30B-2026-Knowledge)");
+    assert.ok(built > card.indexOf("\n# ") && built < card.indexOf("## Why this exists"), "prominently, right under the title");
+    for (const point of USAGE_POINTS) assert.ok(card.includes(`- ${point}`), point);
+    assert.ok(card.includes("A LoRA adapter for Muse Glimmer 30B with 2026 knowledge (`OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit`)"));
+    assert.ok(!card.includes(EM_DASH));
+  });
+
+  it("compares it with the 2026 Glimmer it started from, never 'base Glimmer'", () => {
+    const card = derived();
+    assert.ok(card.includes("| | The 2026 Glimmer it started from (r30b) | Tuned (this adapter) |"));
+    assert.ok(card.includes("with an average score of 8.88 out of 10 against 1.95 for the 2026 Glimmer it started from."));
+    assert.ok(card.includes("The 2026 Glimmer it started from:\n"));
+    assert.ok(card.includes("name: Judge win rate vs the 2026 Glimmer it started from"));
+    assert.ok(!card.includes("Base Muse Glimmer 30B"));
+    assert.ok(
+      card.includes(
+        "| Base model | [OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit](https://huggingface.co/OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit) at revision `6f12bf5288dd4d83374e1d6cab3b6b80da258eb1`, the 4-bit (bitsandbytes) quantization of [OfflineBase/Glimmer-30B-2026-Knowledge](https://huggingface.co/OfflineBase/Glimmer-30B-2026-Knowledge): Muse Muse's fine-tune of [meta-models/Muse-Glimmer-30B](https://huggingface.co/meta-models/Muse-Glimmer-30B) with 2026 knowledge |",
+      ),
+    );
+  });
+
+  it("states both licenses, the files they ship in, the Usage Policy's duties and the $20 million clause", () => {
+    const license = derived().split("## License\n")[1]!.split("## Provenance")[0]!.trimStart();
+    for (const file of ["`LICENSE`", "`MUSE_MODEL_LICENSE.md`", "`USAGE_POLICY.md`", "`NOTICE`"]) assert.ok(license.includes(file), file);
+    assert.match(license, /^Apache 2\.0 and the Muse Model License\./);
+    assert.match(license, /must show "Built with Muse Spark Open"/);
+    assert.match(license, /isn't for anyone under 18, its outputs must never be presented as written by a person/);
+    assert.match(license, /made-up answers and going along with false premises/);
+    assert.match(license, /\$20 million in 12 months/);
+    assert.match(license, /Not an official Meta product/);
+  });
+
+  it("follows the flag too, for a card whose template names another base", () => {
+    assert.ok(cards.modelCard(facts({ sparkOpen: true })).includes("**Built with Muse Spark Open.**"));
+    assert.ok(!cards.modelCard(facts()).includes("Muse Spark Open"), "a plain Glimmer adapter's card is as it was");
   });
 });
 

@@ -19,6 +19,7 @@ import {
 import { toPublicLiveDemo, type PublicLiveDemo } from "@/components/train/results";
 import { askLiveDemo, startLiveDemo } from "@/components/train/tryLive";
 import { duration, groupThousands, plural, usd } from "@/lib/format";
+import { BUILT_WITH_SPARK_OPEN, USAGE_POINTS } from "@/lib/train/base";
 import { SERVE_BOOT_MINUTES, SERVE_MINUTES_DEFAULT } from "@/lib/train/logic";
 import type { LiveDemoView, TrainLimits, TryLiveAnswer } from "@/lib/train/types";
 
@@ -103,7 +104,7 @@ export function TryLiveCard({ adapterJobId, demo, serverNow, serveJobId = null }
   const tone = live ? "live" : over ? "neutral" : "building";
   const label = live ? "Live" : over ? "Ended" : "Starting";
   const lead = live
-    ? "Type an app idea. Muse Glimmer 30B answers it twice on the same GPU, once as the base model and once with this job's adapter, so you can compare them side by side."
+    ? "Type an app idea. Muse Glimmer 30B with 2026 knowledge answers it twice on the same GPU, once on its own and once with this job's adapter, so you can compare them side by side."
     : over
       ? "This live demo has ended, and its GPU shuts down like every other job's."
       : `A live demo is starting. The GPU boots and loads the model, which takes up to about ${SERVE_BOOT_MINUTES} minutes, then this box opens for ${plural(demo.minutes, "minute")}.`;
@@ -121,6 +122,10 @@ export function TryLiveCard({ adapterJobId, demo, serverNow, serveJobId = null }
       </div>
       <p className="lab-try-lead" aria-live="polite">
         {lead}
+      </p>
+      {/* The demo's GPU loads r30b (glimmer-serve's MODEL), a Derivative of Muse Spark Open (lib/train/base.ts). */}
+      <p className="muted small lab-try-built">
+        <strong>{BUILT_WITH_SPARK_OPEN}.</strong> {USAGE_POINTS.join(" ")}
       </p>
 
       <form className="lab-try-form" onSubmit={ask} noValidate>
@@ -153,7 +158,7 @@ export function TryLiveCard({ adapterJobId, demo, serverNow, serveJobId = null }
           </button>
           <span className={busy ? "muted small" : "sr-only"} role="status">
             {busy
-              ? "Base and tuned Glimmer are answering. This can take up to 2 minutes."
+              ? "The 2026 Glimmer and the tuned one are answering. This can take up to 2 minutes."
               : answer
                 ? "Both answers are in, below."
                 : ""}
@@ -187,7 +192,7 @@ export function LiveAnswers({ answer, idBase }: { answer: Answered; idBase: stri
         <p className="train-text">{answer.prompt}</p>
       </div>
       <div className="lab-try-pair">
-        <LiveAnswer id={`${idBase}-base`} title="Base Glimmer" text={answer.base} />
+        <LiveAnswer id={`${idBase}-base`} title="2026 Glimmer (r30b)" text={answer.base} />
         <LiveAnswer id={`${idBase}-tuned`} title="Tuned Glimmer" text={answer.tuned} tuned />
       </div>
       <p className="muted small">Both answered in {duration(answer.ms)} on the demo&apos;s GPU.</p>
@@ -282,8 +287,8 @@ export function StartLiveDemo({
         Serve this adapter on one GPU for a set time.{" "}
         {publicPage
           ? decide
-            ? "Anyone with this page's link can then type an input and see base Glimmer and this decision model each pick a label for it, with no sign-in."
-            : "Anyone with this page's link can then type an app idea and see base and tuned Glimmer answer it side by side, with no sign-in."
+            ? "Anyone with this page's link can then type an input and see the 2026 Glimmer it started from and this decision model each pick a label for it, with no sign-in."
+            : "Anyone with this page's link can then type an app idea and see the 2026 Glimmer it started from and the tuned model answer it side by side, with no sign-in."
           : decide
             ? "This job isn't scored yet, so its public result page doesn't exist and only admins can try the demo here."
             : "This job isn't judged yet, so its public result page doesn't exist and only admins can try the demo here."}

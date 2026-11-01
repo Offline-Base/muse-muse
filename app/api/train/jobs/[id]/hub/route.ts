@@ -2,12 +2,12 @@ import { createHash } from "node:crypto";
 import { env } from "@/lib/env";
 import { hitRateLimits } from "@/lib/gateway/store";
 import { errorJson, HttpError, readJson, route } from "@/lib/http";
+import { recordedBase } from "@/lib/train/base";
 import { createRepo, HubApiError, lfsBatch, preupload, redact, type HubRepo, type LfsAction } from "@/lib/train/hub";
 import {
   configProblem,
   ggufRepoName,
   ggufSmallProblem,
-  glimmerTemplate,
   hubJobProblem,
   hubMaxBytes,
   hubNameProblem,
@@ -21,7 +21,6 @@ import {
   withPlan,
 } from "@/lib/train/hub-cards";
 import { ADAPTER_RECIPE, hubBusy, trainChannelOf, type TrainJobRow } from "@/lib/train/logic";
-import { GLIMMER_PY } from "@/lib/train/recipes/glimmer";
 import { getAdapterSource, getDataset, getJob, recordEvent, updateHub } from "@/lib/train/store";
 import {
   HUB_CHECKED_NAMES,
@@ -62,8 +61,6 @@ const ERROR_MAX = 300;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SHA256_RE = /^[0-9a-f]{64}$/;
 const BASE64_RE = /^[A-Za-z0-9+/]*={0,2}$/;
-/** The base model an adapter must be for: the glimmer-lora recipe's own MODEL. */
-const BASE_MODEL = glimmerTemplate(GLIMMER_PY).model;
 
 /** A base64 string's bytes, or null when it isn't base64. */
 function base64(text: unknown): Buffer | null {
@@ -275,8 +272,11 @@ async function plan(caller: TrainJobRow, target: TrainJobRow, body: Record<strin
   } else {
     if (!parsed.files.some((f) => f.path === "adapter_model.safetensors")) return skip(null, "The folder has no adapter_model.safetensors.");
     if (!parsed.small.has("adapter_config.json")) return skip(null, "adapter_config.json isn't in the plan's small files.");
+    // The base the adapter must be for: the one its job recorded (lib/train/base.ts), r30b for every job since the
+    // switch, plain Glimmer for one from before it.
+    const base = recordedBase(target).model;
     for (const [path, bytes] of parsed.small) {
-      const problem = HUB_CHECKED_NAMES.includes(path) ? configProblem(path, bytes, BASE_MODEL) : null;
+      const problem = HUB_CHECKED_NAMES.includes(path) ? configProblem(path, bytes, base) : null;
       if (problem) return skip(target.id, `The adapter isn't published: ${problem}.`, "failed");
     }
     const datasetId = typeof target.params?.datasetId === "string" ? target.params.datasetId : "";

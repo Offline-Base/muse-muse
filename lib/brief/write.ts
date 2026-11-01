@@ -72,11 +72,11 @@ export async function writeBrief(input: BriefInput): Promise<BriefResult> {
 
   const result = await respondStructured({
     model,
-    instructions: briefInstructions(writer),
+    instructions: briefInstructions({ ...writer, museAppLook: env.museAppLook }),
     content,
     sources: prepared.sources,
-    // With no targets, caps or milestones this is NewBriefSchema or NewBriefSchemaNoGadget, as it always was.
-    schema: newBriefSchemaFor({ gadgets: env.gadgetsEnabled, targets: enabled, personalTools, caps, milestones: env.engineMilestones }),
+    // With no targets, caps, milestones or MUSE_APP_LOOK this is NewBriefSchema or NewBriefSchemaNoGadget, as it always was.
+    schema: newBriefSchemaFor({ gadgets: env.gadgetsEnabled, targets: enabled, personalTools, caps, milestones: env.engineMilestones, museAppLook: env.museAppLook }),
     schemaName: "muse_brief",
     effort: "medium",
     normalize: (raw) => normalizeRawBrief(raw, references),

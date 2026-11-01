@@ -67,7 +67,8 @@ describe("Try it live", () => {
     assert.match(html, /<h2 id="[^"]+">Try it live<\/h2>/);
     assert.match(html, /class="pill pill-live"><span class="pill-dot" aria-hidden="true"><\/span>Live<\/span>/);
     assert.match(html, /<span class="muted small lab-try-left">23 minutes left<\/span>/);
-    assert.match(html, /once as the base model and once with this job&#x27;s adapter/);
+    assert.match(html, /Muse Glimmer 30B with 2026 knowledge answers it twice on the same GPU, once on its own and once with this job&#x27;s adapter/);
+    assert.match(html, /<strong>Built with Muse Spark Open\.<\/strong> For people 18 and over only\./, "the demo runs r30b, a Derivative of Muse Spark Open");
     assert.match(html, /<label class="train-label" for="([^"]+)">Your app idea<\/label><textarea id="\1"/);
     assert.match(html, /maxLength="600"/);
     assert.match(html, /placeholder="A menu board for my bakery that updates from a photo of today&#x27;s chalkboard, with prices and allergens\."/);
@@ -116,7 +117,7 @@ describe("Try it live", () => {
     assert.match(html, /<h3 class="train-role">Your idea<\/h3><p class="train-text">&lt;script&gt;alert\(1\)&lt;\/script&gt; a bakery app<\/p>/);
     assert.match(
       html,
-      /<section class="lab-try-answer" aria-labelledby="t-base"><h3 class="train-role" id="t-base">Base Glimmer<\/h3><div class="md train-text"><p><span>click<\/span><br\/>I can&#x27;t see any photo\.<\/p><\/div>/,
+      /<section class="lab-try-answer" aria-labelledby="t-base"><h3 class="train-role" id="t-base">2026 Glimmer \(r30b\)<\/h3><div class="md train-text"><p><span>click<\/span><br\/>I can&#x27;t see any photo\.<\/p><\/div>/,
     );
     assert.match(
       html,
@@ -159,7 +160,7 @@ describe("Start a live demo", () => {
     const html = render(StartLiveDemo, props);
     clean(html);
     assert.match(html, /<h2 id="[^"]+">Live demo<\/h2>/);
-    assert.match(html, /Anyone with this page&#x27;s link can then type an app idea and see base and tuned Glimmer answer it side by side, with no sign-in\./);
+    assert.match(html, /Anyone with this page&#x27;s link can then type an app idea and see the 2026 Glimmer it started from and the tuned model answer it side by side, with no sign-in\./);
     assert.match(html, /<label class="train-label" for="([^"]+)">Minutes live<\/label><select id="\1"/);
     for (const m of [10, 15, 20, 45, 60, 90]) assert.match(html, new RegExp(`<option value="${m}">${m} minutes</option>`));
     assert.match(html, /<option value="30" selected="">30 minutes<\/option>/);

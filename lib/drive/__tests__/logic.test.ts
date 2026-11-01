@@ -16,6 +16,7 @@ import {
   canMove,
   cookieValue,
   DEFAULT_PRICE_LINE,
+  driveModelOf,
   driveProblem,
   filesForBuild,
   gb,
@@ -270,6 +271,11 @@ describe("the request", () => {
 });
 
 describe("which models may be ordered", () => {
+  it("saves with the order whether its files are a Derivative of Muse Spark Open, so the drive ships its licenses", () => {
+    assert.equal(driveModelOf(localFiles({ sparkOpen: true })).sparkOpen, true);
+    assert.ok(!("sparkOpen" in driveModelOf(localFiles())), "an order of plain Glimmer files is saved as before");
+  });
+
   it("needs orders on, a public results page, a public GGUF repo at a commit, and a build that passed", () => {
     const ok = { enabled: true, judged: true, files: localFiles() };
     assert.equal(driveProblem(ok), null);

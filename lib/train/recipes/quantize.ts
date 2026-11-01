@@ -18,7 +18,7 @@
  *   3. The merge, in a child on glimmer's venv: the 4-bit base and the adapter, then Unsloth's save_pretrained_merged
  *      with merged_16bit, which downloads the 16-bit base to local disk (never the cache) and merges tensor by tensor
  *      in fp32. Then the merged folder must have the base's 1,436 tensor names and shapes, its 16-bit base must be
- *      Meta's shards by their SHA-256, and Meta's template and tokenizer files go into it.
+ *      MERGE_BASE's shards by their SHA-256, and Meta's template and tokenizer files go into it.
  *   4. convert_hf_to_gguf.py to BF16, llama-quantize to Q8_0 (the closeness reference, never published) and to each
  *      build, each intermediate deleted as soon as nothing needs it.
  *   5. The file checks: each file's architecture, tensor count and embedded template; the closeness of each build to
@@ -123,15 +123,35 @@ TUNED_EDITS = (
 TUNED_TEMPLATE = "tuned.jinja"
 TUNED_TEMPLATE_SHA256 = "ee7766876b1317a7b95caec088aca7905399ce8b7117745921643e931b476b13"
 
-# The 16-bit base Unsloth merges into, and its two shards by the SHA-256 the Hub gives them: the same as Meta's own
-# (both repos' trees, 2026-10-28).
-MERGE_BASE = "unsloth/Muse-Glimmer-30B"
+# The 16-bit base Unsloth merges into: MERGE_BASE is the merged BF16 of Muse Muse's 2026-knowledge Glimmer (r30b), the
+# repo MODEL is the nf4 quantization of. Unsloth's merged_16bit reads the base from the model's config._name_or_path
+# through its own name mapper, which knows only its own repos: MODEL's name would come back unchanged, as an nf4 base,
+# and the merge would refuse it. So merge_child_main points _name_or_path at MERGE_BASE before saving. Unsloth takes no
+# revision for that download and fetches MERGE_BASE's main, so the check below holds the shards to their SHA-256, not to
+# a commit; a merge that fetched anything else leaves no record of these 13 shards and fails, and nothing is published.
+# BASE_SHARDS are its 13 shards by the SHA-256 the Hub gives them at MERGE_BASE_REVISION (the training session's list,
+# Oct 31 2026), which nothing downloads by: it records where the list came from. The weights were the same at e2b33cce,
+# its main after that, and base_shards_problem records whichever commit the merge downloaded.
+MERGE_BASE = "OfflineBase/Glimmer-30B-2026-Knowledge"
+MERGE_BASE_REVISION = "c06e38ccbb512f350e5c383944f1bbfb96f14248"
 BASE_SHARDS = (
-    ("model-00001-of-00002.safetensors", "8eef61530e1283642c77ce2e6721feb5c6f348fa055c00e90f2844a136372694"),
-    ("model-00002-of-00002.safetensors", "b58cc2144ba1ba1af4420f67f4ca3ced7f09298510b80464cc75018a0be14381"),
+    ("model-00001-of-00013.safetensors", "8741fd4122ec9b66592a9b93b69406081fbaea062fc4e1dfd6eefa03266e7750"),
+    ("model-00002-of-00013.safetensors", "5bccadafbdc50e2edcf9c6312843e832a60216f26e12555ba4276555c410fcc6"),
+    ("model-00003-of-00013.safetensors", "7307b08d0e0f171fcd24d78cdbcdb4936877038dadbcbcb61e68e58ec8edfb6c"),
+    ("model-00004-of-00013.safetensors", "0130118dad489d83f0c07acb5d0792f7494c7f3d1a6f7410204ec265d7ac36ad"),
+    ("model-00005-of-00013.safetensors", "1783e68c69e1be51b25d370b3198da59399e944015e20211295ec1a91bee9108"),
+    ("model-00006-of-00013.safetensors", "9ccd6e302c31d28c63c2e984c05004abbc48afcb7290691e987604cc506f00e7"),
+    ("model-00007-of-00013.safetensors", "62664e3c24be5477888ac4cbbd1f0e3711b2828e68d0570499222a9e8c7e64cb"),
+    ("model-00008-of-00013.safetensors", "b648ffd3f084152556d95c5354f32060d7572cf69e093b1decdf6c4765f836b5"),
+    ("model-00009-of-00013.safetensors", "163fc9f9271f471d179905b9ce1559d3fa473195541061c2c333cec43ef9adac"),
+    ("model-00010-of-00013.safetensors", "fc679e0c03dd806b6c5d546ba54319cdd948fe5a871e3f750069731a165efedd"),
+    ("model-00011-of-00013.safetensors", "3c9797afa45d8b06c03d455f4f26143851bcc644c392c75b1d73d4633bfcf1be"),
+    ("model-00012-of-00013.safetensors", "7fe46ae2be34ff2c3f490a913e05c100d5a1d8dd88818ca630f798374014ba78"),
+    ("model-00013-of-00013.safetensors", "910398ccd9b33dbf354589e7dcbff5019c9d97eca10dba20ad712f2730a20991"),
 )
 # Meta's checkpoint has 1,436 tensors, and this is the sha256 of their sorted "name:shape" lines (a shape as 6656x202048),
-# from its two shards' safetensors headers. The merged folder must have the same.
+# from its two shards' safetensors headers. MERGE_BASE has the same names and shapes (read from its 13 shards' headers on
+# Oct 31 2026), and the merged folder must have them too.
 BASE_TENSORS = 1436
 BASE_TENSORS_SHA256 = "526660e0862cf74a8f319a2b9040d4dfdd79fa2f91760f41130c7e3c137694d4"
 # The text model's GGUF: its architecture, and its tensor count, as ggml-org's conversion of the same base revision logged.
@@ -523,23 +543,23 @@ def cached_shards(hf_home):
 
 
 def base_shards_problem(merged_dir, hf_home):
-    """(revision, problem): the commit of MERGE_BASE whose 16-bit shards the merge used, and why they aren't Meta's
-    weights, or None. Unsloth downloads them with snapshot_download(local_dir=merged_dir), which records each one's
+    """(revision, problem): the commit of MERGE_BASE whose 16-bit shards the merge used, and why they aren't
+    BASE_SHARDS, or None. Unsloth downloads them with snapshot_download(local_dir=merged_dir), which records each one's
     commit and SHA-256 beside it (downloaded_shards), or copies them from an HF cache under hf_home (cached_shards).
-    Each must have BASE_SHARDS' SHA-256, and both one commit. Unsloth asks for whatever MERGE_BASE's main is, so a base
-    that changed upstream fails here. No record in either place fails too: the files are published as Meta's base with
-    the adapter folded in, and the card says the shards are Meta's only because this check passed."""
+    Each must have BASE_SHARDS' SHA-256, and all one commit. Unsloth asks for whatever MERGE_BASE's main is, so a base
+    that changed upstream fails here. No record in either place fails too: the files are published as MERGE_BASE with
+    the adapter folded in, and the card names its shards only because this check passed."""
     found = downloaded_shards(merged_dir)
     if len(found) != len(BASE_SHARDS):
         found = cached_shards(hf_home)
     if len(found) != len(BASE_SHARDS):
         return None, (
             "The merge left no record of which " + MERGE_BASE + " shards it downloaded, so its 16-bit base can't be checked"
-            " against " + META_REPO + "'s, and nothing is published"
+            " against its pinned SHA-256, and nothing is published"
         )
     for name, sha in BASE_SHARDS:
         if found[name][1] != sha:
-            return None, "The 16-bit base's " + name + " isn't Meta's shard: its SHA-256 is " + found[name][1][:16]
+            return None, "The 16-bit base's " + name + " isn't " + MERGE_BASE + "'s shard: its SHA-256 is " + found[name][1][:16]
     revisions = sorted({commit for commit, _sha in found.values()})
     if len(revisions) != 1 or not re.match(r"^[0-9a-f]{40}$", revisions[0]):
         return None, "The 16-bit base's shards don't come from one commit of " + MERGE_BASE + ": " + ", ".join(r[:12] for r in revisions)
@@ -968,6 +988,7 @@ def run(ctx):
         {
             "model": MODEL,
             "revision": MODEL_REVISION,
+            "merge_base": MERGE_BASE,
             "max_seq_length": MAX_SEQ_LENGTH,
             "adapter_dir": adapter_dir,
             "adapter_job_id": adapter_job_id,
@@ -986,7 +1007,7 @@ def run(ctx):
     if problem:
         raise RuntimeError(problem)
     metrics["merge_base"] = MERGE_BASE
-    # Only ever a commit whose shards matched Meta's: the card says the base is Meta's shards only with it.
+    # Only ever a commit whose shards matched BASE_SHARDS: the card names the base's shards only with it.
     metrics["merge_base_revision"] = revision
     metrics["tensors"] = BASE_TENSORS
     install_meta_files(merged, meta)
@@ -1164,7 +1185,10 @@ def merge_child_main(config_path):
 
         patch_saving_functions(model, vision=True)
         save = model.save_pretrained_merged
-    emit("phase", message="Merging the adapter into the 16-bit base")
+    # Unsloth finds the 16-bit base from the config's _name_or_path (see MERGE_BASE): name r30b's BF16 repo, not the
+    # nf4 build that was loaded.
+    model.config._name_or_path = cfg["merge_base"]
+    emit("phase", message="Merging the adapter into the 16-bit base " + cfg["merge_base"])
     save(cfg["merged_dir"], tokenizer, save_method="merged_16bit")
     result["merged"] = True
     write_result(cfg["result_path"], result)

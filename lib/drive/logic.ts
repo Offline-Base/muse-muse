@@ -310,6 +310,7 @@ export function driveModelOf(files: LocalFiles): DriveModel {
     systemLine: files.systemLine,
     needsTunedTemplate: files.needsTunedTemplate,
     quantJobId: files.quantJobId,
+    ...(files.sparkOpen ? { sparkOpen: true } : {}),
   };
 }
 

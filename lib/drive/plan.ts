@@ -24,6 +24,7 @@ import {
   changesText,
   contactText,
   crlf,
+  DERIVATIVE_DRIVE_FILES,
   escapeHtml,
   fill,
   launcherTable,
@@ -31,12 +32,14 @@ import {
   QWEN_BASE,
   sha256Sums,
   sortedBuilds,
+  sparkOpenText,
   type ImageManifest,
   type ImageModel,
   type RuntimePin,
 } from "@/lib/drive/layout";
 import { minimumSpecText } from "@/lib/drive/logic";
 import { MUSE_MUSE_SITE } from "@/lib/train/hub-cards";
+import { DERIVATIVE_FILES } from "@/lib/train/licenses";
 import type { LocalFile } from "@/lib/train/local-files";
 import { minimumSpec } from "@/lib/vibe/device";
 
@@ -174,6 +177,11 @@ export interface PlanModel {
   /** Where the card and tuned.jinja came from, after the kit's sources. */
   sources: ImageManifest["sources"];
   words: DriveWords;
+  /**
+   * True for an order's files merged into r30b (lib/train/base.ts): the drive carries DERIVATIVE_DRIVE_FILES from
+   * lib/train/licenses, and its pages say "Built with Muse Spark Open" with the Usage Policy's points.
+   */
+  sparkOpen?: boolean;
   /** Set for a Derivative of Muse Spark Open (the knowledge run's models): its license duties, which exportPlan checks. */
   derivative?: SparkDerivative;
 }
@@ -416,10 +424,15 @@ export function orderModel(model: ImageModel, card: string, tuned: string | null
     tuned,
     changes: changesText(model, pin),
     sources: [
+      // A Derivative's license and r30b's notice: the GGUF repo at the files' commit carries the same bytes (lib/train/hub-steps.ts).
+      ...(model.sparkOpen
+        ? DERIVATIVE_DRIVE_FILES.map((d) => ({ path: d.path, url: raw(d.from), sha256: DERIVATIVE_FILES.find((f) => f.path === d.from)!.sha256 }))
+        : []),
       { path: "MODEL_CARD.md", url: raw("README.md"), sha256: sha(card) },
       ...(tuned === null ? [] : [{ path: "model/tuned.jinja", url: raw("tuned.jinja"), sha256: sha(tuned) }]),
     ],
     words: orderWords(model, contact),
+    ...(model.sparkOpen ? { sparkOpen: true } : {}),
   };
 }
 
@@ -444,6 +457,9 @@ export function planDriveImage(model: PlanModel, kit: DriveKit, templates: Drive
   const add = (rel: string, text: string, exec = false) => files.push(textFile(rel, text, exec));
 
   add("MODEL_CARD.md", model.card);
+  if (model.sparkOpen) {
+    for (const d of DERIVATIVE_DRIVE_FILES) add(d.path, DERIVATIVE_FILES.find((f) => f.path === d.from)!.text);
+  }
   if (model.tuned !== null) add("model/tuned.jinja", model.tuned);
 
   // What the launchers read, and the chat's preset settings (llama-server --ui-config-file).
@@ -490,6 +506,7 @@ export function planDriveImage(model: PlanModel, kit: DriveKit, templates: Drive
     ABOUT_MORE_HTML: words.aboutMoreHtml,
     RUNTIME: runtime,
     IMAGE_VERSION: kit.imageVersion,
+    SPARK_OPEN_HTML: sparkOpenText(model).html,
   };
   const adapter = model.adapter !== null;
   add("Start Here.html", fill(templates["Start Here.html"], values));
@@ -498,6 +515,7 @@ export function planDriveImage(model: PlanModel, kit: DriveKit, templates: Drive
     crlf(
       fill(templates["README.txt"], {
         TITLE: model.title,
+        SPARK_OPEN_TEXT: sparkOpenText(model).text,
         MIN_SPEC: spec,
         RUNTIME: runtime,
         PAGE_TEXT: words.readmePage,

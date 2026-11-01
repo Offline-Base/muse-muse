@@ -228,6 +228,16 @@ describe("the fine-tune room", { skip: canMock ? false : "needs --experimental-t
       assert.ok(html.indexOf('id="eval-results"') < html.indexOf('class="tune-where"'), "the results come first");
     });
 
+    it("says Built with Muse Spark Open for a run trained from r30b, before its results, and compares with the 2026 Glimmer", () => {
+      const ready = ROOM_FIXTURES.ready.view;
+      const job = { ...ready.job!, params: { ...ready.job!.params, baseModel: "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit" } };
+      const html = room("ready", { initial: { ...ready, job } });
+      const built = html.indexOf("<strong>Built with Muse Spark Open.</strong>");
+      assert.ok(built > 0 && built < html.indexOf('id="eval-results"'), "with the verdict, before the results");
+      assert.match(html, /<th scope="col">2026 Glimmer \(r30b\)<\/th>/);
+      assert.doesNotMatch(room("ready"), /Built with Muse Spark Open/, "a run from before the switch");
+    });
+
     it("says it didn't pass once, in the verdict's own words", () => {
       const html = room("readyNotPassed");
       assert.match(html, /<span>Tuned won 6 of 20 kept-aside prompts \(4\.9 vs 6\.2\)\. That isn&#x27;t clearly better than base, so it didn&#x27;t pass\.<\/span>/);
@@ -328,7 +338,7 @@ describe("the fine-tune room", { skip: canMock ? false : "needs --experimental-t
       const html = planStep({ at: "plan", note: "n", files: [], plan: plan() }, { steps: 300 });
       assert.match(html, /<label for="[^"]+">Training steps<\/label><input id="[^"]+" type="number" inputMode="numeric" min="10" max="350" step="10" value="300"/);
       assert.match(html, /Each step trains on 4 examples\. About an hour on the GPU, within its 90-minute limit\./);
-      assert.match(html, /<li>Muse Glimmer 30B trains on one GPU, about an hour\.<\/li>/, "the card's how it's made follows the steps");
+      assert.match(html, /<li>[^<]*huggingface\.co\/OfflineBase\/Glimmer-30B-2026-Knowledge\), trains on one GPU, about an hour\.<\/li>/, "the card's how it's made follows the steps");
       const tooMany = planStep({ at: "plan", note: "n", files: [], plan: plan() }, { steps: 400 });
       assert.match(tooMany, /Pick 10 to 350 steps: more don&#x27;t fit in the run&#x27;s 90-minute limit\./);
       assert.match(tooMany, /<button type="button" class="btn btn-primary" disabled="" aria-busy="false">Start<\/button>/);
@@ -379,18 +389,24 @@ describe("the fine-tune room", { skip: canMock ? false : "needs --experimental-t
       ];
     };
 
-    it("draws a brief exactly as PlanCard does, for every brief and state the build room passes", async () => {
+    it("is the card PlanCard draws, which adds the whole brief under it and wraps it beside the picture", async () => {
+      // tg-plan-art: the build room's card writes out the whole brief (BriefBody) and wraps it beside the picture; the
+      // fine-tune room keeps PlanView's own sections on the plain grid. They share the card, art and head.
       const PlanCard = card.PlanCard as ComponentType<never>;
       const PlanViewCard = card.PlanViewCard as ComponentType<never>;
+      const { BriefBody } = await import("@/components/build/turns");
       for (const [name, brief] of await variants()) {
         for (const art of ["present", "building", "shield"] as const) {
           for (const running of [true, false]) {
-            const readBrief = () => {};
-            const a = render(PlanCard, { brief, art, running, panelId: "p", onReadBrief: readBrief });
-            const more = createElement("button", { type: "button", className: "link-btn room-steps-link", "aria-controls": "p", onClick: readBrief }, "Read the full brief", createElement((await import("@/components/icons")).Icon, { name: "chevronRight", size: 16 }));
-            const b = render(PlanViewCard, { view: card.planViewFromBrief(brief), art, running, more });
-            assert.equal(a, b, `${name}, ${art}, running ${running}`);
-            assert.equal(render(PlanCard, { brief, art, running }), render(PlanViewCard, { view: card.planViewFromBrief(brief), art, running }), `${name} without the link`);
+            const view = { ...card.planViewFromBrief(brief), sections: [] };
+            const body = createElement(BriefBody as ComponentType<never>, { brief, title: false } as never);
+            assert.equal(
+              render(PlanCard, { brief, art, running }),
+              render(PlanViewCard, { view, art, running, wrap: true, body }),
+              `${name}, ${art}, running ${running}`,
+            );
+            const room = render(PlanViewCard, { view: card.planViewFromBrief(brief), art, running });
+            assert.match(room, new RegExp(`class="plan-card" data-art="${art}"`), `${name}: the fine-tune room's card doesn't wrap`);
           }
         }
       }

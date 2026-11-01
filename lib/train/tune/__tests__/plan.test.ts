@@ -226,6 +226,11 @@ describe("the signed plan", () => {
 });
 
 describe("drafting", () => {
+  it("tells the planner the run starts from the 2026 Glimmer", () => {
+    assert.match(plan.planInstructions(), /Muse Glimmer 30B with 2026 knowledge trains on them/);
+    assert.match(plan.planInstructions(), /scored against the 2026 Glimmer it started from/);
+  });
+
   type Call = { model: string; instructions: string; text: string; schemaName: string };
   function fake(data: Record<string, unknown>, calls: Call[]): DraftDeps {
     return {
@@ -371,6 +376,15 @@ describe("the verdict", () => {
     assert.equal(verdict.evalVerdict(d(80, 60)).passed, true);
     assert.equal(verdict.evalVerdict(d(80, 75)).passed, false);
     assert.match(verdict.evalVerdict(d(80, 75)).words, /isn't clearly better/);
+    assert.equal(
+      verdict.evalVerdict(d(80, 75), true).words,
+      "Tuned got 80 of 100 test rows right (80%), r30b 75 of 100 (75%). That isn't clearly better than the 2026 Glimmer it started from, so it didn't pass.",
+    );
+    assert.equal(
+      verdict.evalVerdict(summary({ avgTunedScore: 4.0 }), true).words,
+      "Tuned won 18 of 20 kept-aside prompts (4.0 vs 3.1). That isn't clearly better than the 2026 Glimmer it started from, so it didn't pass.",
+    );
+    assert.match(verdict.evalVerdict(summary({ avgTunedScore: 4.0 })).words, /better than base, so/, "an old job keeps base");
     assert.equal(verdict.evalVerdict({ ...d(80, 60), tuned: null }).passed, false);
     assert.equal(verdict.evalVerdict(d(7, 0, 7)).passed, false, "under 8 test rows");
     // Its EvalSummary fields would pass the chat rule's counts, but a decision run is never read by them.

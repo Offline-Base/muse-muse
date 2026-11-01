@@ -57,6 +57,7 @@ async function main(): Promise<void> {
     systemLine: lf.systemLine,
     needsTunedTemplate: lf.needsTunedTemplate,
     quantJobId: lf.quantJobId,
+    ...(lf.sparkOpen ? { sparkOpen: true } : {}),
     adapterJobId: lf.adapterJobId,
     repo: lf.repo,
     commit: lf.commit,

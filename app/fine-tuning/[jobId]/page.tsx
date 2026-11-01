@@ -24,6 +24,7 @@ import { RunLocallyLink, linkedLocalFiles } from "@/components/vibe/RunLocallyLi
 import { env } from "@/lib/env";
 import { safeQuery } from "@/lib/queries";
 import { decisionScoringInput, rowsInOrder } from "@/lib/train/decision-datasets";
+import { isSparkOpenDerivative } from "@/lib/train/base";
 import { ADAPTER_RECIPE, adapterProblem, decisionRowPicks, toJobView } from "@/lib/train/logic";
 import { isDecisionSummary } from "@/lib/train/models";
 import { recipeById } from "@/lib/train/recipes";
@@ -150,7 +151,7 @@ async function startBlock(now: Date): Promise<string | null> {
 async function decideTryOf(row: { params: Record<string, unknown> | null; evalSummary: unknown }): Promise<DecideTryModel | null> {
   const datasetId = typeof row.params?.datasetId === "string" ? row.params.datasetId : null;
   const dataset = datasetId ? await getDataset(datasetId) : null;
-  return dataset?.kind === "decision" ? decideTryModel(dataset.decision, row.evalSummary) : null;
+  return dataset?.kind === "decision" ? decideTryModel(dataset.decision, row.evalSummary, isSparkOpenDerivative({ params: row.params })) : null;
 }
 
 /**
@@ -207,7 +208,8 @@ async function resultPage(jobId: string) {
     // A decision model's live demo picks labels: its box needs the dataset's question and labels (never its rows), so
     // without them it shows no box at all rather than the chat one.
     const decide = row ? isDecideJob(row) : false;
-    const decideTry = decide && dataset?.kind === "decision" ? decideTryModel(dataset.decision, row?.evalSummary) : null;
+    const decideTry =
+      decide && dataset?.kind === "decision" ? decideTryModel(dataset.decision, row?.evalSummary, isSparkOpenDerivative({ params: row?.params })) : null;
     return {
       result: view,
       rows: evalRows(events),

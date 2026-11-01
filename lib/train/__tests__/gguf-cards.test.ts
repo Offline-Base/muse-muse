@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
+import { LAB_BASE_MODEL, LAB_BASE_REVISION, LAB_MERGE_BASE, USAGE_POINTS } from "../base";
 import * as cards from "../hub-cards";
 import { QUANT_LEVELS } from "../local-files";
 import { QUANT_KL_MAX, quantProblem, runEstimate, runFitProblem, trainChannelOf } from "../logic";
@@ -215,7 +216,10 @@ describe("a GGUF repo's state and gate", () => {
       needsTunedTemplate: true,
       title: "Muse Muse's brief writer",
       slug: "brief-writer",
+      sparkOpen: false,
     });
+    assert.equal(cards.localFilesOf({ job: { ...job, params: { ...job.params, baseModel: LAB_BASE_MODEL } }, metrics, datasetTitle: null, adapterPublic: true })!.sparkOpen, true, "files merged into r30b");
+    assert.equal(cards.localFilesOf({ job, metrics: { ...metrics, merge_base: LAB_MERGE_BASE }, datasetTitle: null, adapterPublic: true })!.sparkOpen, true, "or recorded so");
     const hub: HubState = {
       status: "published",
       modelRepo: "muse-org/muse-glimmer-30b-brief-writer-gguf-83d71f74",
@@ -251,8 +255,13 @@ describe("the run's estimate and the adapter's checks", () => {
 
   it("makes files only from a judged adapter trained under the short student prompt", () => {
     const judged = { terminatedAt: new Date(), evalSummary: { items: 40, tunedWins: 40, baseWins: 0, ties: 0, avgBaseScore: 1.95, avgTunedScore: 8.88, judgeCostUsd: 0.15 } };
-    assert.equal(quantProblem({ ...judged, params: { studentPrompt: "short" } }, { student_prompt: "short" }), null);
-    assert.equal(quantProblem({ ...judged, params: { studentPrompt: "Short " } }, null), null);
+    assert.equal(quantProblem({ ...judged, params: { studentPrompt: "short", baseModel: LAB_BASE_MODEL } }, { student_prompt: "short" }), null);
+    assert.equal(quantProblem({ ...judged, params: { studentPrompt: "Short " } }, { base_model: LAB_BASE_MODEL }), null, "or its metrics say r30b");
+    assert.match(
+      quantProblem({ ...judged, params: { studentPrompt: "short" } }, { student_prompt: "short" }) ?? "",
+      /trained on plain Muse Glimmer, and local files now merge into the 2026 Glimmer \(r30b\)/,
+      "an adapter from before the switch would merge into weights it never trained on",
+    );
     assert.match(quantProblem({ ...judged, params: {} }, null) ?? "", /whole task prompt/, "a job from before the param trained under it");
     assert.match(quantProblem({ ...judged, params: {} }, { student_prompt: "full" }) ?? "", /whole task prompt/);
     assert.match(quantProblem({ ...judged, terminatedAt: null, params: {} }, null) ?? "", /isn't judged yet/);
@@ -383,6 +392,43 @@ describe("the GGUF card", () => {
     assert.deepEqual(record.template, { from: "meta-models/Muse-Glimmer-30B", revision: cards.META_REVISION, sha256: cards.META_TEMPLATE_SHA256, tuned: cards.TUNED_TEMPLATE_SHA256 });
     assert.equal(record.system, "You are Muse Muse's brief writer.\n\nReasoning strength: low.");
     assert.ok(!/lambda\/nfs|blob\.vercel|instance|"ip"/.test(text), text);
+  });
+});
+
+describe("a Derivative of Muse Spark Open's GGUF card (files merged into r30b)", () => {
+  const derived = (over: Partial<cards.GgufFacts> = {}) =>
+    cards.ggufCard(
+      facts({
+        mergeBase: { repo: LAB_MERGE_BASE, revision: "e2b33cce".padEnd(40, "0") },
+        adapterBase: { model: LAB_BASE_MODEL, revision: LAB_BASE_REVISION },
+        ...over,
+      }),
+    );
+
+  it("names r30b as its base, both licenses, and Built with Muse Spark Open under the title", () => {
+    const card = derived();
+    assert.ok(
+      card.startsWith(
+        "---\nbase_model: OfflineBase/Glimmer-30B-2026-Knowledge\nbase_model_relation: finetune\npipeline_tag: text-generation\nlicense: other\nlicense_name: apache-2.0-and-muse-model-license\nlicense_link: MUSE_MODEL_LICENSE.md\n",
+      ),
+    );
+    const built = card.indexOf("**Built with Muse Spark Open.** This model was trained from");
+    assert.ok(built > 0 && built < card.indexOf("## Which file for my computer"));
+    for (const point of USAGE_POINTS) assert.ok(card.includes(`- ${point}`), point);
+    assert.ok(card.includes("merged into the 16-bit weights of [OfflineBase/Glimmer-30B-2026-Knowledge](https://huggingface.co/OfflineBase/Glimmer-30B-2026-Knowledge)"));
+    assert.ok(card.includes("whose 13 safetensors shards have the SHA-256 the recipe pins for it"));
+    assert.ok(!card.includes("two safetensors shards"));
+    const license = card.split("## License\n")[1]!;
+    for (const file of ["`LICENSE`", "`MUSE_MODEL_LICENSE.md`", "`USAGE_POLICY.md`", "`NOTICE`"]) assert.ok(license.includes(file), file);
+    assert.ok(!card.includes(String.fromCharCode(0x2014)));
+  });
+
+  it("is a Derivative by the flag, the merge base or the adapter's base, and a plain Glimmer card is as it was", () => {
+    assert.equal(cards.ggufSparkOpen(facts()), false);
+    assert.equal(cards.ggufSparkOpen(facts({ sparkOpen: true })), true);
+    assert.equal(cards.ggufSparkOpen(facts({ mergeBase: { repo: LAB_MERGE_BASE, revision: null } })), true);
+    assert.equal(cards.ggufSparkOpen(facts({ adapterBase: { model: LAB_BASE_MODEL, revision: LAB_BASE_REVISION } })), true);
+    assert.ok(!cards.ggufCard(facts()).includes("Muse Spark Open"));
   });
 });
 

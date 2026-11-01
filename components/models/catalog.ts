@@ -119,6 +119,8 @@ export interface TunedModelView {
   hubUrl: string | null;
   /** Its GGUF files, once their repo and the adapter are both public. */
   gguf: { repoUrl: string; runHref: string } | null;
+  /** True for a model trained from r30b, a Derivative of Muse Spark Open (ResultView.sparkOpen, lib/train/base.ts). */
+  sparkOpen: boolean;
 }
 
 /** The judged glimmer-lora jobs, in the order given. Other recipes' results aren't models. */
@@ -135,6 +137,7 @@ export function tunedModelViews(results: ResultView[], localFiles: Map<string, L
         items: r.summary.items,
         hubUrl: r.hub?.modelUrl ?? null,
         gguf: linkable ? { repoUrl: hubRepoUrl(files.repo as string), runHref: `/fine-tuning/${r.id}/run` } : null,
+        sparkOpen: r.sparkOpen === true,
       };
     });
 }

@@ -28,7 +28,7 @@ const trained = () =>
     terminatedAt: new Date("2026-11-01T13:05:00.000Z"),
     evalSummary: { items: 20, tunedWins: 18, baseWins: 1, ties: 1, avgBaseScore: 3.1, avgTunedScore: 8.4, judgeCostUsd: 0.25 },
   } as Partial<TrainJobRow>);
-const servable = { cache_used: "yes", adapter_dir: `/lambda/nfs/cache/models/${JOB_ID}` };
+const servable = { cache_used: "yes", adapter_dir: `/lambda/nfs/cache/models/${JOB_ID}`, base_model: "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit" };
 
 describe("a run's live demo", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
   let live: typeof import("@/app/fine-tuning/runs/live");

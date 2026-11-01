@@ -351,6 +351,29 @@ describe("DecisionResults", () => {
     assert.match(html, /have under 10 test rows/);
   });
 
+  it("names an r30b job's base the 2026 Glimmer it started from, everywhere a side is named", () => {
+    const s = tickets.summary;
+    const wrong = fmt.wrongAnswers(logic.decisionRowPicks(tickets.input, { base: s.base.T, tuned: s.tuned!.T }), tickets.rows.test, 100);
+    const html = render(C.DecisionResults, { summary: s, trainRows: 168, wrong, sparkOpen: true });
+    clean(html);
+    assert.doesNotMatch(html, /base Glimmer|Base Glimmer/, "no side of an r30b job is called base Glimmer");
+    assert.match(html, /2026 Glimmer \(r30b\) accuracy<\/p><p class="stat-num">67%<\/p>/);
+    assert.match(html, /<p class="stat-sub">r30b 0\.69 · each label counts the same/);
+    assert.match(html, /The tuned model was right on 41 of 48 held-out examples \(85%\); the 2026 Glimmer it started from was right on 32 \(67%\)\./);
+    assert.match(html, /a small LoRA adapter on Muse Glimmer 30B with 2026 knowledge \(r30b\), trained on 168/);
+    assert.match(html, /<summary>2026 Glimmer \(r30b\)&#x27;s matrix<\/summary>/);
+    assert.match(html, /<span class="muted small">Tuned · r30b<\/span>/);
+    assert.match(html, /<dd>tuned 0\.98, 0\.98 · r30b 0\.80, 0\.80<\/dd>/);
+    assert.match(html, /<th scope="col">2026 Glimmer \(r30b\)<\/th>/);
+    assert.match(html, /The untuned 2026 Glimmer sometimes starts with a word/);
+    assert.match(render(C.DecisionStatus, { state: { state: "running" }, succeeded: false, sparkOpen: true }), /scores the 2026 Glimmer it starts from on the dev and test rows/);
+    assert.match(render(C.DecisionStatus, { state: { state: "scored", summary: s }, succeeded: true, sparkOpen: true }), /2026 Glimmer \(r30b\) accuracy/);
+    assert.equal(fmt.decisionHeadline(baseOnly.summary, true), "The 2026 Glimmer (r30b) was right on 16 of 24 held-out examples (67%), with nothing trained.");
+    const old = render(C.DecisionResults, { summary: s, trainRows: 168 });
+    assert.match(old, /Base Glimmer accuracy/, "an old job keeps base Glimmer");
+    assert.doesNotMatch(old, /r30b|2026 Glimmer/);
+  });
+
   it("lists the wrong answers with their inputs only when the admin page passes them", () => {
     const s = tickets.summary;
     const wrong = fmt.wrongAnswers(logic.decisionRowPicks(tickets.input, { base: s.base.T, tuned: s.tuned!.T }), tickets.rows.test, 100);
@@ -447,6 +470,21 @@ describe("the public result page and the Lab results line", () => {
     assert.match(html, /trained on 168 of this dataset/);
     assert.doesNotMatch(html, /Wrong answers|judged by|Muse Wonder/);
     for (const r of [...tickets.rows.test, ...tickets.rows.train]) assert.equal(html.includes(r.input), false);
+  });
+
+  it("names the 2026 Glimmer an r30b decide job started from on the result page and in the results table", () => {
+    const row = resultRow({ params: { ...resultRow().params, baseModel: "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit" } });
+    const view = results.toResultView(row as never, recipes.find((r) => r.id === "glimmer-lora")!)!;
+    assert.equal(view.sparkOpen, true);
+    const page = render(C.JobResults, { result: view, rows: [], dataset: { id: DS, title: "Ticket router", writerModel: "person", trainCount: 168 } });
+    clean(page);
+    assert.match(page, /Built with Muse Spark Open/);
+    assert.match(page, /the 2026 Glimmer it started from was right on 32 \(67%\)/);
+    assert.doesNotMatch(page, /Base Glimmer accuracy/);
+    const table = render(C.ResultsTable, { results: [view], caption: "Results" });
+    clean(table);
+    assert.match(table, /<span class="row-sub muted">The 2026 Glimmer it started from right on 32 \(67%\)<\/span>/);
+    assert.match(table, /Macro F1 r30b 0\.69 · tuned <strong>0\.86<\/strong>/);
   });
 
   it("puts a decide job's accuracy and macro F1 in the results table", () => {

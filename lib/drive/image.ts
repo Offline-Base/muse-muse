@@ -2,7 +2,9 @@
  * The drive's image (docs/VIBE_TUNING.md, Feature 6, "What goes on the drive"): every file on the stick but the model
  * files, for one model. It is put together from the model's local files (localFilesFor, or an order's saved copy of
  * them), the launchers and pages in drive/, one pinned llama.cpp build for macOS arm64 and Windows x64, Meta's license
- * and Usage Policy (verbatim, pinned), the GGUF repo's model card at the files' commit, and CHANGES.md. Every download
+ * and Usage Policy (verbatim, pinned), the GGUF repo's model card at the files' commit, and CHANGES.md. Files merged into
+ * r30b, a Derivative of Muse Spark Open (lib/train/base.ts), also get the Muse Model License and r30b's NOTICE from
+ * lib/train/licenses, and the pages say "Built with Muse Spark Open" with the Usage Policy's points. Every download
  * is checked against its pinned sha256 before it is used, and the launchers never download anything themselves.
  * scripts/drive-image.ts and scripts/drive-bench.ts call it; lib/drive/__tests__/image.test.ts fakes its downloads.
  *
@@ -21,6 +23,7 @@ export {
   buildForText,
   changesText,
   contactText,
+  DERIVATIVE_DRIVE_FILES,
   launcherTable,
   META_FILES,
   modelPageUrl,
@@ -28,6 +31,7 @@ export {
   RUNTIME_PIN,
   runtimeUrl,
   sha256Sums,
+  sparkOpenText,
   type ImageManifest,
   type ImageModel,
   type RuntimePin,

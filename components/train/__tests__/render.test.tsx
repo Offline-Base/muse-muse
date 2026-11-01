@@ -323,6 +323,18 @@ function glimmerRoom(job: TrainJobView, list: TrainEventView[], serverNow = t0 +
 }
 
 describe("eval results on the job page", () => {
+  it("says Built with Muse Spark Open on a job trained from r30b, and compares it with the 2026 Glimmer it started from", () => {
+    const job = { ...glimmerJob, params: { ...glimmerJob.params, baseModel: "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit" } };
+    const html = glimmerRoom(job, [...events.slice(0, 4), ...evalEvents]);
+    clean(html);
+    const built = html.indexOf("<strong>Built with Muse Spark Open.</strong> This model was trained from");
+    assert.ok(built > html.indexOf("</header>") && built < html.indexOf("Event log"), "under the job's title");
+    assert.match(html, /<li>For people 18 and over only\.<\/li>/);
+    assert.match(html, /<th scope="col">Muse Spark 1\.3 reference<\/th><th scope="col">2026 Glimmer \(r30b\)<\/th><th scope="col">Tuned Glimmer<\/th>/);
+    assert.match(html, /<dt>Base model<\/dt><dd>OfflineBase\/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit<\/dd>/, "the param the platform wrote, labeled");
+    assert.doesNotMatch(glimmerRoom(glimmerJob, events.slice(0, 4)), /Spark Open/, "a job from before the switch");
+  });
+
   it("shows eval items as they arrive while the job runs, folded in the log", () => {
     const html = glimmerRoom(glimmerJob, [...events.slice(0, 4), ...evalEvents]);
     clean(html);
@@ -639,6 +651,7 @@ describe("Lab results", () => {
       "recipe",
       "recipeTitle",
       "settings",
+      "sparkOpen",
       "summary",
       "title",
     ]);
@@ -740,6 +753,26 @@ describe("Lab results", () => {
     assert.match(html, /href="\/fine-tuning\/datasets\/1b2c3d4e-0000-4000-8000-000000000002">Bakery helper/);
     assert.doesNotMatch(html, SECRET_TEXT);
     assert.doesNotMatch(html, /<button|<form|Stop|Shut down|Event log|Instance|Region|IP<|Dry run|dryRun|adapter\.tar|\/api\/train/);
+  });
+
+  it("shows a job trained from r30b as Built with Muse Spark Open, against the 2026 Glimmer it started from", () => {
+    const params = { datasetId: DS, maxSteps: 120, baseModel: "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit" };
+    const r = view({ params })!;
+    assert.deepEqual([r.sparkOpen, r.model], [true, "Muse Glimmer 30B with 2026 knowledge"]);
+    assert.equal(view()!.sparkOpen, false, "a job from before the switch records no base");
+    const html = render(JobResults, { result: r, rows: evalRowsOf([...evalEvents, ...judgements]), dataset: { id: DS, title: "Bakery helper" } });
+    clean(html);
+    const built = html.indexOf('<aside class="card section-card spark-open-note" aria-label="Built with Muse Spark Open"><p><strong>Built with Muse Spark Open.</strong>');
+    assert.ok(built > html.indexOf("<h1>Bakery LoRA</h1>") && built < html.indexOf("The run</h2>"), "prominently, under the title");
+    assert.match(html, /was trained from <a href="https:\/\/huggingface\.co\/OfflineBase\/Glimmer-30B-2026-Knowledge"[^>]*>Muse Muse&#x27;s 2026-knowledge Glimmer/);
+    assert.match(html, /<li>For people 18 and over only\.<\/li><li>Its answers are written by a model\. Never present them as written by a person\.<\/li><li>It can make up answers, and it can go along with a false premise in a question\./);
+    assert.match(html, /Tuned Glimmer beat the 2026 Glimmer it started from on <strong>1 of 2<\/strong>, r30b won <strong>0<\/strong>/);
+    assert.match(html, /<th scope="col">2026 Glimmer \(r30b\)<\/th><th scope="col">Tuned Glimmer<\/th>/);
+    assert.doesNotMatch(html, /Base Glimmer|beat base/);
+    const table = render(ResultsTable, { results: [r, view()!], caption: "Results" });
+    assert.equal([...table.matchAll(/<span class="chip">Built with Muse Spark Open<\/span>/g)].length, 1, "only the r30b row");
+    assert.match(table, /The 2026 Glimmer it started from won 0/);
+    assert.match(table, /Base won 0/);
   });
 
   it("keeps model text as plain text: no markup and no links from it", () => {

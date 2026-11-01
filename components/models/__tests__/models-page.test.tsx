@@ -93,7 +93,9 @@ describe("tuned models", () => {
       items: 2,
       hubUrl: "https://huggingface.co/mm/bakery",
       gguf: { repoUrl: "https://huggingface.co/mm/bakery-gguf", runHref: `/fine-tuning/${JOB}/run` },
+      sparkOpen: false,
     });
+    assert.equal(tunedModelViews([result({ sparkOpen: true })], new Map())[0].sparkOpen, true, "a model trained from r30b");
     assert.equal(tunedModelViews([result()], new Map([[JOB, files({ public: false })]]))[0].gguf, null);
     assert.equal(tunedModelViews([result()], new Map([[JOB, files({ adapterJobId: PRIVATE_JOB })]]))[0].gguf, null);
     assert.equal(tunedModelViews([result()], new Map([[JOB, files({ files: [] })]]))[0].gguf, null);
@@ -274,6 +276,22 @@ describe("/models", { skip: canMock ? false : "needs --experimental-test-module-
     assert.doesNotMatch(html, /Still running|Dry run|Smoke test/);
     // GGUF files are looked up only for the model public on the Hub.
     assert.deepEqual(calls.filter((c) => c === "latestQuantSource"), ["latestQuantSource"]);
+  });
+
+  it("says new fine-tunes start from the 2026 Glimmer, and marks a model tuned from it Built with Muse Spark Open", async () => {
+    let html = render(await page());
+    clean(html);
+    assert.match(html, /New fine-tunes start from Muse Muse&#x27;s 2026-knowledge Glimmer,/);
+    assert.match(html, /href="https:\/\/huggingface\.co\/OfflineBase\/Glimmer-30B-2026-Knowledge"[^>]*>OfflineBase\/Glimmer-30B-2026-Knowledge<svg/);
+    assert.match(html, /are Built with Muse Spark Open, under the Muse Model License\. For people 18 and over only\./);
+    assert.doesNotMatch(html, /<span class="chip">Built with Muse Spark Open<\/span>/, "the jobs from before the switch trained on plain Glimmer");
+    jobs = jobs.map((j) => (j.id === JOB ? { ...j, params: { ...(j.params as object), baseModel: "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit" } } : j));
+    html = render(await page());
+    const bakery = html.slice(html.indexOf("Bakery LoRA")).split("</tr>")[0];
+    assert.match(bakery, /Muse Glimmer 30B with 2026 knowledge, tuned/);
+    assert.match(bakery, /<span class="chip">Built with Muse Spark Open<\/span>/);
+    assert.match(bakery, /against the 2026 Glimmer it started from/);
+    assert.doesNotMatch(html.slice(html.indexOf("Florist LoRA")).split("</tr>")[0], /Spark Open/);
   });
 
   it("leaves the GGUF links out while the adapter isn't public", async () => {
