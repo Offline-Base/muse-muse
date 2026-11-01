@@ -61,7 +61,7 @@ const ROUTES: Array<{ path: string; call(req: Request): Promise<Response> }> = [
     path: "assets/407375255d220d8ddf81e9a06d4100f80f870f8446e77d4f20951d2a4c08a156",
     call: (req) =>
       handleAsset(req, "407375255d220d8ddf81e9a06d4100f80f870f8446e77d4f20951d2a4c08a156", {
-        enabledCaps: () => env.enabledCaps,
+        enabledCaps: () => env.servedCaps,
         hitRateLimits: untouched<AssetsDeps["hitRateLimits"]>("hitRateLimits"),
         localPath: untouched<NonNullable<AssetsDeps["localPath"]>>("localPath"),
       }),
