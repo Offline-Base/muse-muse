@@ -14,6 +14,7 @@ import { handlePasskey, type PasskeyDeps } from "@/lib/caps/data/passkeys";
 import { handleAsset, type AssetsDeps } from "@/lib/caps/media/assets";
 import { handleDatasets, handleFiles, handleSearch, type FilesDeps } from "@/lib/caps/files/handler";
 import { handleBrowse, handleExec, type CodeDeps } from "@/lib/caps/code/handler";
+import { handleGlimmerChat, type GlimmerDeps } from "@/lib/caps/gpu/handler";
 import { env } from "@/lib/env";
 
 /** A dependency that fails the test if anything calls it. */
@@ -96,6 +97,22 @@ const codeOff = (): CodeDeps => ({
   lookupHost: untouched<CodeDeps["lookupHost"]>("lookupHost"),
 });
 
+/** Unit 11's deps with the real flag and every other dependency failing the test if it's touched. */
+const glimmerOff = (): GlimmerDeps => ({
+  on: () => env.gpuGlimmerShared,
+  paused: untouched<GlimmerDeps["paused"]>("paused"),
+  allProducts: untouched<GlimmerDeps["allProducts"]>("allProducts"),
+  adminEmails: [],
+  findToken: untouched<GlimmerDeps["findToken"]>("findToken"),
+  product: untouched<GlimmerDeps["product"]>("product"),
+  hitRateLimits: untouched<GlimmerDeps["hitRateLimits"]>("hitRateLimits"),
+  openWindow: untouched<GlimmerDeps["openWindow"]>("openWindow"),
+  ownModel: untouched<GlimmerDeps["ownModel"]>("ownModel"),
+  startingFor: untouched<GlimmerDeps["startingFor"]>("startingFor"),
+  backend: untouched<GlimmerDeps["backend"]>("backend"),
+  recordUsage: untouched<GlimmerDeps["recordUsage"]>("recordUsage"),
+});
+
 const ROUTES: Array<{ path: string; call(req: Request): Promise<Response> }> = [
   // Unit 3: saved data, its sign-in, and the platform's passkey routes.
   { path: "data", call: (req) => handleData(req, [], dataOff()) },
@@ -125,6 +142,8 @@ const ROUTES: Array<{ path: string; call(req: Request): Promise<Response> }> = [
   // Unit 9: running code on the platform, and opening a page the person typed.
   { path: "exec", call: (req) => handleExec(req, codeOff()) },
   { path: "browse", call: (req) => handleBrowse(req, codeOff()) },
+  // Unit 11: the shared Glimmer endpoint.
+  { path: "glimmer/v1/chat/completions", call: (req) => handleGlimmerChat(req, glimmerOff()) },
   // Unit 2: what the gateway saw for a build's namespace.
   {
     path: "caps/proof",
@@ -151,6 +170,7 @@ const ROUTES: Array<{ path: string; call(req: Request): Promise<Response> }> = [
 
 describe("wave 3 gateway routes with every flag off", () => {
   for (const flag of CAP_IDS.map((id) => CAP_FLAG[id])) delete process.env[flag];
+  delete process.env.GPU_GLIMMER_SHARED;
 
   for (const route of ROUTES) {
     it(`/${route.path} answers 404 unknown_endpoint, whatever the method and token`, async () => {

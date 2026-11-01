@@ -2,6 +2,7 @@ import { clearConnectBuild, sweepConnect } from "@/lib/caps/connect/cleanup";
 import { clearCodeBuildRuns, sweepCodeBuildRuns } from "@/lib/caps/code/cleanup";
 import { clearBuildNamespace, sweepData } from "@/lib/caps/data/store";
 import { filesBuildEnded, filesProductOff, filesSweep } from "@/lib/caps/files/cleanup";
+import { sweepGlimmerWindows } from "@/lib/caps/gpu/sweep";
 import type { CapId } from "@/lib/caps/ids";
 import { env } from "@/lib/env";
 
@@ -12,7 +13,8 @@ import { env } from "@/lib/env";
  * hours from builds that crashed.
  */
 export interface CapCleanup {
-  cap: CapId;
+  /** Wave 3, unit 11: "gpu" isn't a cap, but its demo windows settle in the same sweep. */
+  cap: CapId | "gpu";
   buildEnded?(buildId: string): Promise<void>;
   /**
    * The product was turned off (an admin's switch, which can be turned back on) or taken down (unit 1). Pause and revoke
@@ -72,6 +74,14 @@ export const CAP_CLEANUPS: CapCleanup[] = [
     },
     get sweep() {
       return env.servedCaps.includes("code") ? sweepCodeBuildRuns : undefined;
+    },
+  },
+  // Unit 11: a demo window past its end stops its GPU, and one whose GPU is down settles its reservation. Only while the
+  // shared endpoint is on. A window that outlives the flag still has its job's own deadline, and settles when it's back on.
+  {
+    cap: "gpu",
+    get sweep() {
+      return env.gpuGlimmerShared ? sweepGlimmerWindows : undefined;
     },
   },
 ];
