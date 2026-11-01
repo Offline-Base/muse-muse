@@ -520,3 +520,11 @@ The stray worktree under ~/muse-muse/.claude/worktrees stays for now: the harnes
 Review wf_b2d9f00b-b66: 12 reported, 9 survived, 8 fixed in c879d96, each with a test that fails without it (hardware cap off now stops the tools, board words filtered, another export's file name hidden, earlier models keep fresh links, owner told how to get the pass, /gadgets wording, simulated wording, a 40-second plan deadline). Left for the owner: a "train on my data" model can't reach a drive, since it's never published and the drive path only takes Hub files. 0fb6119 makes the skill say so and stops the card's model menu sticking on "Loading". Same gap on board tools when the cap is off: predates this, not changed. Told General about a possible admin path that publishes private rows (read from code, not run).
 
 Checks at 0fb6119: .test.ts 5570, 5562 pass, 0 fail, 8 skipped. .test.tsx 794/794. Template 702, 700 pass, 0 fail, 2 skipped. tsc clean. next build exit 0, largest trace 83 MB. Not re-run: muse-device (no Python changed in this merge's drive tools; last run 147, 144 pass, 0 fail). Spend: $0. Every CAP_READY stays false. No real board or stick.
+
+## tg-cap-int: owner-rows fix picked, migration gap closed (Nov 1, 03:35)
+
+98cd04c: General's 609026e, one owner-rows check on all four routes to the Hub (a reviewer's read-only finding, confirmed by General). Chat-mode owner rows only, and only on wave 3 branches, never on main. 4dbce8c: 0028_code_sessions moved to 0027_code_sessions, agreed with General, since no 0027 was ever written. Replication takes 0028 if it's built. Migration tests 29/29, and also with MIGRATIONS_FOR=main.
+
+Correction: the status page's "98 commits" are on a local main that was never pushed. GitHub's main (e7b8d8e) is fully in tg-cap-int. Those commits stay out unless the owner says otherwise.
+
+Checks at 4dbce8c: .test.ts 5571, 5563 pass, 0 fail, 8 skipped. .test.tsx 794/794. Template 702, 700 pass, 0 fail, 2 skipped. tsc clean. next build exit 0, largest trace 83 MB. Spend: $0.

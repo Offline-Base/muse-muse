@@ -26,7 +26,7 @@ docs/DRIVE_EXPORT.md, wave3-log.md.
   needs a file or a browser that isn't set up here. So in this run those three did not run. Earlier unit runs did them.
 - muse-device's test_drive_loop.py was not run. It has never run: it needs Linux as root.
 - No model call, sandbox, Blob, Vercel or Composio call in this run. Spend $0.
-- No next build, as the rules say. No wave 3 branch has ever had one.
+- No next build in this run. The first came later the same night and found one real bug (see the log). It now passes.
 
 Goldens: the 11 brief goldens match tuned-model-options exactly. The 7 goldens in lib/caps/__tests__/golden are new files and
 their tests pass. The log's last check that these goldens equal the code without wave 3 was at the UI brand merge (Oct 31,
@@ -41,8 +41,7 @@ Section 22 asks for one real test build per capability. Almost none ran, all for
    by the permission classifier (Credential Materialization). No unit worked around it.
 3. The builder snapshot doesn't hold template/caps yet. General's next snapshot (Nov 2 morning) comes after tg-cap-int merges.
    A manifest entry in lib/sandbox/snapshots.json follows it.
-4. A platform dev server doesn't serve from a worktree with a symlinked node_modules. So nothing on the platform side was seen in
-   a browser.
+4. Cleared Nov 1: a worktree with a cloned node_modules serves. /gadgets, /models, /terms and the /device card have been seen.
 
 ## Per unit
 
@@ -235,15 +234,14 @@ Section 22 asks for one real test build per capability. Almost none ran, all for
 
 Meta in all: about $1.61 to $2.81 of $30. The test builds still to come have nearly all their unit budgets left.
 
-## Before tg-cap-int can go to main
+## Before tg-cap-int can go to main (updated Nov 1, 03:35, head 4dbce8c)
 
-- Migration 0027 (General's replications) isn't on tg-cap-int. 0028 is. PENDING_WAVE3 names it. Drizzle skips an older migration, so 0027
-  must land before 0028 reaches a shared database, or be renumbered.
-- Local main has 98 commits tg-cap-int lacks: 116 files, mostly scripts and docs, no migrations. tuned-model-options is fully in
-  (0 commits behind).
+- The migration chain has no gap: 0018 to 0027, and the migration tests pass with MIGRATIONS_FOR=main. 0028_code_sessions became 0027.
+- GitHub's main (e7b8d8e) is fully in tg-cap-int. A local main has 98 commits GitHub lacks. They stay out unless the owner says otherwise.
+- next build passes locally with flags off. Vercel's own build is untested.
 - Six crons will exist in vercel.json. musecode-sweep and jobs are new. Both routes answer skipped with their parts off (read in the code; never fired on Vercel).
 - wave3-log.md and docs/BUILD_LOG_WAVE3.md should move into docs/BUILD_LOG.md at the merge.
-- Every push to main goes to the owner first.
+- Every push to main goes to the owner first. Real test builds should come first.
 
 ## Owner decisions still open
 
