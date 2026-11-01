@@ -62,6 +62,12 @@ export interface DriveModel {
   systemLine: string;
   needsTunedTemplate: boolean;
   quantJobId: string;
+  /**
+   * True for files merged into r30b, a Derivative of Muse Spark Open (lib/train/base.ts): the drive then says "Built
+   * with Muse Spark Open" with the Usage Policy's points and ships the Muse Model License and r30b's NOTICE. Absent on
+   * an order of plain Glimmer files, saved before it existed.
+   */
+  sparkOpen?: boolean;
 }
 
 /**

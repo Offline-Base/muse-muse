@@ -1,5 +1,5 @@
 {{TITLE}}, on a Muse Muse flash drive
-
+{{SPARK_OPEN_TEXT}}
 Open "Start Here.html" in your browser first. It works offline.
 
 Everything on this drive runs on your computer. Nothing is downloaded, and nothing
