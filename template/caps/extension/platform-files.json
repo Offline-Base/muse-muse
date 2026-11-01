@@ -1,0 +1,8 @@
+[
+  "extension/platform.ts",
+  "extension/config.d.ts",
+  "scripts/extension-pack.mjs",
+  "scripts/caps/extension.mjs",
+  "tests/caps/extension.ts",
+  ".agents/skills/muse-extension/SKILL.md"
+]
