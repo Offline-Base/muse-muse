@@ -5,8 +5,9 @@
  */
 import type { PlanView } from "@/components/build/PlanCard";
 import { roughMinutes, WRITER_NAME } from "@/components/train/format";
-import { GLIMMER_NAME } from "@/components/train/results";
+import { R30B_NAME } from "@/components/train/results";
 import { usd } from "@/lib/format";
+import { R30B_REPO } from "@/lib/train/base";
 import { evalHoldoutCount } from "@/lib/train/logic";
 import { planMaxUsd } from "@/lib/train/tune/cost";
 import type { TrainPlanBody, TrainPlanCost, TuneRunView, TuneSettings } from "@/lib/train/tune/types";
@@ -50,8 +51,8 @@ export function howItsMade(s: Pick<TuneSettings, "examples">, c: Pick<TrainPlanC
   return [
     `${WRITER_NAME} writes ${s.examples} examples${styleOf(used, given)}, and keeps ${kept} aside to score it.`,
     "A quick check that there are enough to train on and to score with.",
-    `${GLIMMER_NAME} trains on one GPU, ${roughMinutes(c.trainMinutes)}.`,
-    `Base and tuned answer the ${kept} kept-aside prompts, and ${WRITER_NAME} scores both.`,
+    `${R30B_NAME}, Muse Muse's own (huggingface.co/${R30B_REPO}), trains on one GPU, ${roughMinutes(c.trainMinutes)}.`,
+    `The 2026 Glimmer it started from and the tuned model answer the ${kept} kept-aside prompts, and ${WRITER_NAME} scores both.`,
     "Try it live, then publish it if you like.",
   ];
 }

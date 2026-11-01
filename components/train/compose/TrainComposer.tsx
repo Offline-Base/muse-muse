@@ -9,10 +9,12 @@ import { Composer, writeComposerDraft, type ComposerCopy, type Example } from "@
 import { SetupPanel, type SetupRow } from "@/components/composer/SetupPanel";
 import { Icon } from "@/components/icons";
 import { errorCode, roughMinutes, WRITER_NAME } from "@/components/train/format";
-import { GLIMMER_NAME } from "@/components/train/results";
+import { R30B_NAME } from "@/components/train/results";
 import { planCostText, planViewFromTrainPlan, upperFirst } from "@/components/train/room/plan";
 import { KEPT_PLAN_KEY } from "@/components/train/room/TrainRoom";
+import { ExternalLink } from "@/components/ui";
 import { usd } from "@/lib/format";
+import { BUILT_WITH_SPARK_OPEN, R30B_URL } from "@/lib/train/base";
 import { NOTE_MAX, NOTE_MIN, planCost, planMaxUsd, planSettings, TUNE_MAX_EXAMPLES, TUNE_MIN_EXAMPLES } from "@/lib/train/tune/cost";
 import { EXAMPLE_ACCEPT, EXAMPLE_FILE_MAX_BYTES, EXAMPLE_ROWS_MAX, parseExamples, planRows, splitNote } from "@/lib/train/tune/examples";
 import type { ExampleRow, TrainPlan } from "@/lib/train/tune/types";
@@ -138,12 +140,12 @@ export function TrainComposer({ defaultExamples, ceilings }: { defaultExamples: 
   const defaults = useMemo(() => planSettings(defaultExamples, ceilings), [defaultExamples, ceilings]);
   const defaultCost = useMemo(() => planCost(defaults), [defaults]);
   const rows: SetupRow[] = [
-    ["Model", GLIMMER_NAME, "A LoRA adapter on the 4-bit base"],
+    ["Model", R30B_NAME, "Muse Muse's own Glimmer; a LoRA adapter on its 4-bit build"],
     ["Examples", `About ${defaults.examples}`, `${WRITER_NAME} writes them, and keeps some aside to score it`],
     ["Training steps", String(defaults.steps), `LoRA rank ${defaults.loraRank}, learning rate ${defaults.learningRate}`],
     ["GPU", "1x A100 SXM4 (40 GB)", "Another Muse Glimmer GPU when it isn't free"],
     ["Limits", `Up to ${defaults.maxMinutes} minutes and ${usd(defaults.maxUsd)}`, "The GPU always shuts down at either"],
-    ["Scoring", "On", `${WRITER_NAME} judges base against tuned on the kept-aside prompts`],
+    ["Scoring", "On", `${WRITER_NAME} judges the 2026 Glimmer it started from against the tuned model on the kept-aside prompts`],
     ["Publish", "Off", "Publish to Hugging Face later, from the job's page"],
   ];
 
@@ -242,9 +244,11 @@ export function TrainComposer({ defaultExamples, ceilings }: { defaultExamples: 
             copy={COPY}
           />
           <p className="tune-intro-note muted">
-            {WRITER_NAME} writes about {defaults.examples} examples, {GLIMMER_NAME} trains on one GPU, and the tuned model is
-            scored against the base. {upperFirst(roughMinutes(defaultCost.minutes))}, up to about {usd(planMaxUsd(defaultCost))} in all
-            (the GPU is a hard limit; Meta&apos;s part is an estimate).
+            {WRITER_NAME} writes about {defaults.examples} examples, {R30B_NAME} trains on one GPU, and the tuned model is
+            scored against the 2026 Glimmer it started from. {upperFirst(roughMinutes(defaultCost.minutes))}, up to about{" "}
+            {usd(planMaxUsd(defaultCost))} in all (the GPU is a hard limit; Meta&apos;s part is an estimate). New fine-tunes start
+            from <ExternalLink href={R30B_URL}>Muse Muse&apos;s 2026-knowledge Glimmer</ExternalLink>, so every tuned model is{" "}
+            {BUILT_WITH_SPARK_OPEN}.
           </p>
         </div>
         <SetupPanel title="Training setup" rows={rows} note="Set by the platform for every run. Advanced on the plan changes the examples." />

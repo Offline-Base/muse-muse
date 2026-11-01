@@ -68,7 +68,7 @@ function trainingText(v: TuneRunView): string {
 function scoringText(v: TuneRunView): string {
   if (v.verdict) return v.verdict.words;
   const judged = v.evals.filter((r) => r.judgement).length;
-  return v.evals.length ? `Judged ${judged} of ${v.evals.length} kept-aside prompts` : "Base and tuned answer the kept-aside prompts";
+  return v.evals.length ? `Judged ${judged} of ${v.evals.length} kept-aside prompts` : "The 2026 Glimmer and the tuned model answer the kept-aside prompts";
 }
 
 /** The steps panel's rows. */
