@@ -1665,10 +1665,17 @@ All on localhost:3023, TEST_MODEL, made-up data. Costs are what each build's log
 - Tests: package-run 4 pass, local-gadget 3 pass. tsc shows nothing in the touched files. workflow.scenario can't load here: 57 cancelled on the workflow package's FatalError export, and the same load error shows on tg-verify without these changes.
 - Spend: $0.28 Meta as recorded, about $0.03 Composio by estimate, sandbox time unmeasured.
 
-## Nov 1: reinforcement learning recipe (branch tg-rl, flag TUNE_RL off, unmerged)
+## Nov 1: a real fine-tune on a rented GPU, through the test harness (branch tg-prove, unmerged)
 
-- Added recipe rl-grpo: TRL GRPO on a LoRA of r30b, made-up arithmetic, reward checked by code. The job page shows reward over time and 40 held-out problems before and after. No migration, no judge, nothing published.
-- Decision: r30b rather than a small Llama, because its pinned commit, venv and cache already exist. It may be slow per step, since GRPO samples many answers on a 30B model.
-- Decision: results travel as done metrics, not eval items, so the paid judge never runs.
-- Read trl 0.22.2's wheel source for GRPOTrainer and GRPOConfig. Not imported or run.
-- Tests: rl.test.ts and rl-results.test.tsx on fakes. Nothing has run for real: no GPU, no real TRL, no Unsloth, no browser, no build. Spend $0.
+scripts/dev/tune-harness.ts, on a Lambda gpu_1x_a10 named prove-tune-1, us-east-1, $1.29 an hour. The site has no public address, so POST /api/train/jobs answers platform_not_public and the harness replaces launch and callbacks. Made-up data only.
+
+- Dataset: Zubrelian moss guide, an invented hobby, 900 train and 100 kept-aside rows, $0.22 on muse-spark-1.3-contributor. No kept-aside prompt appears in the training rows.
+- Base model: unsloth/Llama-3.2-3B-Instruct-bnb-4bit (revision bb1d317a), a small picked base, not Muse Glimmer. So this proves the recipe's flow and scoring, not Glimmer's size, time, cost or quality.
+- Run: job e1b00ffa, LoRA r=16, 450 steps. 20:02:34Z to 20:20 UTC, about 18 minutes: base answers 414 s, training 404 s. Loss 3.49 at the start, 1.53 at the end. Peak VRAM 3.61 GB. No unfinished answers. Adapter 92.6 MB.
+- Judge: ingested through the harness into a PGlite copy, not .data/prove. Muse Wonder judged 100 of 100 blind, $1.54.
+- Verdict: passed. Tuned won 95 of 100, base 5, 0 ties. Average score 6.67 tuned, 2.55 base. Copy's job id 544ae82e.
+- Checked by hand: no tuned answer is copied verbatim from training, none are repeated, none are empty. Average length 140 words tuned, 231 base, 138 reference. Tuned takes on the diagnosis, steps and Dusk note shape and the invented words; base writes generic gardening advice. Tuned's facts still often differ from the reference (a different diagnosis on the two read), which fits 6.67 and not higher. The domain is invented, so base starts knowing nothing, which makes this an easy test.
+- Spend: GPU $1.80 at most for the whole rental, 18:59:36Z to terminated by 20:23Z, about 84 minutes, of which this run was about $0.39. Judge $1.54.
+- Terminated through the Lambda API at 20:21Z, before judging, once the copied files' hashes matched, since judging needs no GPU. The instance list shows none left.
+- Not proven: launch, callbacks over https, the workflow, the sweep, Hub upload (publish 0, adapter_uploaded no), a real Glimmer run. The harness also marks every ingested job succeeded, whatever the GPU reported, so read the events for a failure; this run had none.
+- Results outside the repo, in the session scratchpad, so they go when it is cleared: run2-out (events, logs, adapter), run2-verdict.json.
