@@ -680,6 +680,13 @@ export const env = {
   get trustSparkToWonder(): boolean {
     return flag("TRUST_SPARK_TO_WONDER");
   },
+  /**
+   * TRUST_DEPLOY_TOTAL_MB: the most one product deployment's files may add up to, in MB (lib/publish/vercel.ts). 100 by
+   * default, Vercel's Hobby number for uploaded source files; raise it on a Pro team (1 GB there). Bigger fails by name.
+   */
+  get trustDeployTotalMb(): number {
+    return number("TRUST_DEPLOY_TOTAL_MB", 100);
+  },
   /** True while any trust flag a product carries is on, so new builds get the trust overlay (template/caps/trust). */
   get trustProductOverlay(): boolean {
     return env.trustAgeGate || env.trustLegalPages || env.trustGeoBlock || env.trustReports;

@@ -16,22 +16,42 @@ import { q, sh } from "@/lib/sandbox/shell";
 
 const API = "https://api.vercel.com";
 /**
- * The biggest source file a deployment takes: Vercel's limit for files uploaded to an API or CLI deployment is 100 MB on
- * Hobby and 1 GB on Pro (vercel.com/docs/limits, "Static file uploads", read Oct 31, 2026), so the lower one holds on
- * any plan. A file over it fails the deploy by name (DeployFilesTooBigError). Before wave 3 the limit here was 10 MB
- * and bigger files were left out without a word, which broke products with wasm or model files (unit 1, decision 1).
+ * The biggest source file a deployment takes. Vercel's limits page says "the maximum size of the source files that can
+ * be uploaded is limited to 100 MB for Hobby and 1 GB for Pro" (vercel.com/docs/limits, read Oct 31, 2026), which may
+ * mean each file or all of them together, so the platform holds both to the lower number: no file over this, and no
+ * more than deployTotalLimitBytes() in all. A product over either fails the deploy by name (DeployFilesTooBigError).
+ * Before wave 3 the limit here was 10 MB and bigger files were left out without a word, which broke products with wasm
+ * or model files (unit 1, decision 1). One real API deploy has to confirm the reading (docs/CAPABILITIES.md, 7a).
  */
 export const MAX_FILE_BYTES = 100 * 1024 * 1024;
 
-/** A product with files Vercel won't take. Fatal: retrying the step can't make them smaller. */
+/**
+ * The most one deployment's files may add up to: TRUST_DEPLOY_TOTAL_MB, 100 by default (Vercel's Hobby number above).
+ * It also bounds memory, since the deploy step holds every file at once. Raise it on a Pro team.
+ */
+export function deployTotalLimitBytes(): number {
+  return env.trustDeployTotalMb * 1024 * 1024;
+}
+
+const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`;
+
+/**
+ * A product with files Vercel won't take: one over MAX_FILE_BYTES, or all of them over deployTotalLimitBytes() (then
+ * `total` is set and `files` lists the biggest first). Fatal: retrying the step can't make them smaller.
+ */
 export class DeployFilesTooBigError extends FatalError {
-  constructor(readonly files: ReadonlyArray<{ file: string; size: number }>) {
-    const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`;
+  constructor(
+    readonly files: ReadonlyArray<{ file: string; size: number }>,
+    readonly total: { bytes: number; limit: number } | null = null,
+  ) {
     const list = files.slice(0, 5).map((f) => `${f.file} (${mb(f.size)})`).join(", ");
     const more = files.length > 5 ? ` and ${files.length - 5} more` : "";
     super(
-      `The product has ${files.length === 1 ? "a file" : "files"} over Vercel's ${mb(MAX_FILE_BYTES)} limit for one file, so it wasn't deployed: ${list}${more}. ` +
-        "Load big files from a public URL at run time, or split them.",
+      total
+        ? `The product's files add up to ${mb(total.bytes)}, over the ${mb(total.limit)} one deployment takes, so it wasn't deployed. The biggest: ${list}${more}. ` +
+            "Load big files from a public URL at run time, or make them smaller."
+        : `The product has ${files.length === 1 ? "a file" : "files"} over Vercel's ${mb(MAX_FILE_BYTES)} limit for one file, so it wasn't deployed: ${list}${more}. ` +
+            "Load big files from a public URL at run time, or split them.",
     );
   }
 }
@@ -119,8 +139,8 @@ export interface DeployFile {
 
 /**
  * Runs in the sandbox with Node: walks PRODUCT_DIR, skips excluded dirs, env files and symlinks, lists files over
- * MAX_FILE_BYTES as `skipped` (startDeployFromSandbox fails the deploy naming them), and writes every kept file into
- * one blob plus an index, so the platform reads the whole tree in one request.
+ * MAX_FILE_BYTES as `skipped` (collectDeployFiles fails the deploy naming them), and writes every kept file into one
+ * blob plus an index, so the platform reads the whole tree in one request.
  */
 export const COLLECT_SCRIPT = `
 const fs = require("node:fs");
@@ -159,23 +179,27 @@ console.log(JSON.stringify({ count: index.length, bytes: index.reduce((s, f) => 
 /**
  * Reads the deployable source out of a product sandbox. Each file's SHA-1 is checked after the transfer. In a sandbox
  * that has the platform's Muse Code config (MUSE_FULL_MARKER), .mcp.json is the platform's, so it goes first: the next
- * start writes it again. A product's own .mcp.json still deploys with MUSE_FULL off.
+ * start writes it again. A product's own .mcp.json still deploys with MUSE_FULL off. The index is read first, so a
+ * product with a file over MAX_FILE_BYTES, or more than deployTotalLimitBytes() in all, fails by name
+ * (DeployFilesTooBigError) before its files are read into memory.
  */
-export async function collectDeployFiles(
-  sandboxName: string,
-): Promise<{ files: Array<DeployFile & { content: Buffer }>; skipped: Array<{ file: string; size: number }> }> {
+export async function collectDeployFiles(sandboxName: string): Promise<{ files: Array<DeployFile & { content: Buffer }> }> {
   const sandbox = await Sandbox.get({ name: sandboxName, resume: true });
   const outDir = `${OUT_DIR}/deploy`;
   const script = `${RUN_DIR}/collect-deploy.cjs`;
   await sandbox.writeFiles([{ path: script, content: COLLECT_SCRIPT }]);
   const collect = `rm -rf ${q(outDir)} && node ${q(script)} ${[PRODUCT_DIR, outDir, String(MAX_FILE_BYTES), ...DEPLOY_EXCLUDE_DIRS].map(q).join(" ")}`;
   await sh(sandbox, `if [ -f ${q(MUSE_FULL_MARKER)} ]; then rm -f -- ${q(`${PRODUCT_DIR}/${MCP_FILE}`)}; fi\n${collect}`, { timeoutMs: 50_000 });
-  const [indexBuf, blob] = await Promise.all([
-    sandbox.readFileToBuffer({ path: `${outDir}/files.json` }),
-    sandbox.readFileToBuffer({ path: `${outDir}/files.bin` }),
-  ]);
-  if (!indexBuf || !blob) throw new Error("Could not read the collected files from the sandbox");
+  const indexBuf = await sandbox.readFileToBuffer({ path: `${outDir}/files.json` });
+  if (!indexBuf) throw new Error("Could not read the collected files from the sandbox");
   const index = JSON.parse(indexBuf.toString("utf8")) as { files: DeployFile[]; skipped: Array<{ file: string; size: number }> };
+  // Every file deploys, or the deploy fails naming the ones that can't: never a product with files silently missing.
+  if (index.skipped.length) throw new DeployFilesTooBigError(index.skipped);
+  const bytes = index.files.reduce((sum, f) => sum + f.size, 0);
+  const limit = deployTotalLimitBytes();
+  if (bytes > limit) throw new DeployFilesTooBigError([...index.files].sort((a, b) => b.size - a.size), { bytes, limit });
+  const blob = await sandbox.readFileToBuffer({ path: `${outDir}/files.bin` });
+  if (!blob) throw new Error("Could not read the collected files from the sandbox");
 
   let at = 0;
   const files = index.files.map((f) => {
@@ -186,7 +210,7 @@ export async function collectDeployFiles(
     return { ...f, content };
   });
   if (at !== blob.length) throw new Error(`Collected ${blob.length} bytes but the index lists ${at}`);
-  return { files, skipped: index.skipped };
+  return { files };
 }
 
 async function uploadFiles(files: Array<DeployFile & { content: Buffer }>, only?: Set<string>): Promise<void> {
@@ -206,7 +230,8 @@ async function uploadFiles(files: Array<DeployFile & { content: Buffer }>, only?
           "x-vercel-digest": f.sha,
           "Content-Length": String(f.size),
         },
-        body: new Uint8Array(f.content),
+        // A view of the collected blob, not a copy: up to 8 uploads run at once, and a file may be 100 MB.
+        body: new Uint8Array(f.content.buffer as ArrayBuffer, f.content.byteOffset, f.content.byteLength),
       });
       if (!res.ok) throw new VercelApiError(res.status, null, await res.json().catch(() => null), `upload ${f.file}`);
     }
@@ -273,9 +298,8 @@ export async function startDeployFromSandbox(
   input: StartDeployInput,
 ): Promise<{ projectId: string; deploymentId: string; url: string }> {
   const name = projectNameFor(input.slug);
-  const [{ files, skipped }, project] = await Promise.all([collectDeployFiles(input.sandboxName), getOrCreateProject(name, input.projectId)]);
-  // Every file deploys, or the deploy fails naming the ones that can't: never a product with files silently missing.
-  if (skipped.length) throw new DeployFilesTooBigError(skipped);
+  // collectDeployFiles fails the deploy by name when a file, or all of them together, is too big (DeployFilesTooBigError).
+  const [{ files }, project] = await Promise.all([collectDeployFiles(input.sandboxName), getOrCreateProject(name, input.projectId)]);
   if (!files.some((f) => f.file === "package.json")) throw new Error("The product has no package.json to deploy");
   await configureProject(project, input.env);
 
