@@ -9,6 +9,8 @@ import { EvalResults } from "@/components/train/EvalResults";
 import { EventLog } from "@/components/train/EventLog";
 import { HubCard } from "@/components/train/HubCard";
 import { JobPanel } from "@/components/train/JobPanel";
+import { RlResults } from "@/components/train/RlResults";
+import { isRlCardMetric, isRlJob, rlResults } from "@/lib/train/rl";
 import { AdapterLiveDemo, type JobLiveDemo } from "@/components/train/LiveDemo";
 import { MakeLocalFiles, QuantFilesCard } from "@/components/train/LocalFiles";
 import { SparkOpenNote } from "@/components/train/SparkOpenNote";
@@ -374,6 +376,8 @@ export function JobRoom(props: JobRoomProps) {
               wrong={props.decision?.wrong ?? null}
               sparkOpen={sparkOpen}
             />
+          ) : isRlJob(job) ? (
+            <RlResults results={rlResults(events)} running={!terminal} />
           ) : (
             <EvalResults
               state={evals}
@@ -421,7 +425,7 @@ function JobResult({
   ].join(" · ");
 
   if (job.status === "succeeded") {
-    const metrics = doneMetrics(events);
+    const metrics = isRlJob(job) ? doneMetrics(events).filter(([k]) => !isRlCardMetric(k)) : doneMetrics(events);
     return (
       <section className="turn turn-ok" aria-labelledby="train-result">
         <h2 className="turn-head" id="train-result">

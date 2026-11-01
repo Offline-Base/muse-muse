@@ -18,7 +18,7 @@ import { plural, usd } from "@/lib/format";
 import { safeQuery, type QueryResult } from "@/lib/queries";
 import { spendPaused } from "@/lib/quota";
 import { toDatasetView, toJobView } from "@/lib/train/logic";
-import { RECIPES } from "@/lib/train/recipes";
+import { offeredRecipes, RECIPES } from "@/lib/train/recipes";
 import {
   activeJobCount,
   datasetProgress,
@@ -121,7 +121,7 @@ export default async function FineTuningPage({
     // Decision models' adapters too: the New job card offers them to glimmer-serve only (adaptersFor).
     safeQuery(() => listAdapterOptions(50, { decide: true })),
   ]);
-  const recipes = RECIPES.map(toRecipeView);
+  const recipes = offeredRecipes().map(toRecipeView);
   // The model cache bills every month on its own, outside every limit on this page.
   const cacheNote = cacheCostText(recipes);
   const ceilings = { maxMinutes: env.trainJobMaxMinutes, maxUsd: env.trainJobMaxUsd };

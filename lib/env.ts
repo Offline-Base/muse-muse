@@ -443,6 +443,14 @@ export const env = {
     return flag("TUNE_ANY_BASE");
   },
 
+  /**
+   * TUNE_RL: admins may start the rl-grpo recipe, GRPO on made-up arithmetic (docs/TRAINING.md "rl-grpo recipe"). Off: the
+   * recipe isn't offered and a request for it is refused.
+   */
+  get tuneRl(): boolean {
+    return flag("TUNE_RL");
+  },
+
   // ---------- Anyone can fine-tune (General; lib/train/public, open-train.md) ----------
 
   /**

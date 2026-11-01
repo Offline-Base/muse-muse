@@ -4,7 +4,7 @@
  * app/api/train/shared.ts), launchJob in ./launch.ts and the tuneRun workflow's steps, so none of them reach into app/.
  */
 import { env } from "@/lib/env";
-import { RECIPES } from "@/lib/train/recipes";
+import { offeredRecipes } from "@/lib/train/recipes";
 import type { LambdaInstanceType } from "@/lib/train/lambda";
 import type { GpuOption, Recipe, RecipeView } from "@/lib/train/types";
 
@@ -55,7 +55,7 @@ export function recipeView(recipe: Recipe): RecipeView {
  * The GPU types the given recipes can use, in recipe order, with Lambda's price and the regions that have capacity
  * right now. A type Lambda doesn't list shows the recipe's label, no price and no regions.
  */
-export function gpuOptions(types: LambdaInstanceType[], recipes: Recipe[] = RECIPES): GpuOption[] {
+export function gpuOptions(types: LambdaInstanceType[], recipes: Recipe[] = offeredRecipes()): GpuOption[] {
   const byName = new Map(types.map((t) => [t.name, t]));
   const options = new Map<string, GpuOption>();
   for (const recipe of recipes) {

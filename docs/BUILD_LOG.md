@@ -1664,3 +1664,11 @@ All on localhost:3023, TEST_MODEL, made-up data. Costs are what each build's log
 - Gateway check on a scratch database with the real route and the template's real client: build token got the simulated photo and WAV, live token with no board got 503 gadget_offline and isGadgetOffline true, a token without the option got 403 gadget_not_allowed. A real board not run.
 - Tests: package-run 4 pass, local-gadget 3 pass. tsc shows nothing in the touched files. workflow.scenario can't load here: 57 cancelled on the workflow package's FatalError export, and the same load error shows on tg-verify without these changes.
 - Spend: $0.28 Meta as recorded, about $0.03 Composio by estimate, sandbox time unmeasured.
+
+## Nov 1: reinforcement learning recipe (branch tg-rl, flag TUNE_RL off, unmerged)
+
+- Added recipe rl-grpo: TRL GRPO on a LoRA of r30b, made-up arithmetic, reward checked by code. The job page shows reward over time and 40 held-out problems before and after. No migration, no judge, nothing published.
+- Decision: r30b rather than a small Llama, because its pinned commit, venv and cache already exist. It may be slow per step, since GRPO samples many answers on a 30B model.
+- Decision: results travel as done metrics, not eval items, so the paid judge never runs.
+- Read trl 0.22.2's wheel source for GRPOTrainer and GRPOConfig. Not imported or run.
+- Tests: rl.test.ts and rl-results.test.tsx on fakes. Nothing has run for real: no GPU, no real TRL, no Unsloth, no browser, no build. Spend $0.
