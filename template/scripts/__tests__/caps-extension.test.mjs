@@ -7,7 +7,7 @@
 //   npx tsx --test template/scripts/__tests__/caps-extension.test.mjs
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -105,6 +105,50 @@ describe("the packer", { skip: hasModules ? false : "needs template/node_modules
 
 describe("the extension checker (scripts/caps/extension.mjs)", { skip: hasModules ? false : "needs template/node_modules (TypeScript)" }, async () => {
   const { check } = await import(pathToFileURL(path.join(CAPS, "extension/files/scripts/caps/extension.mjs")).href);
+
+  test("runs the product's TypeScript only in a process of its own, so a product shim can't change another cap's result", async () => {
+    // The platform's read-only copy, as CAPS_DIR is in a build, with a product that has an extension and a game.
+    const work = mkdtempSync(path.join(tmpdir(), "mm-extension-apart-"));
+    dirs.push(work);
+    const capsDir = path.join(work, "caps");
+    cpSync(CAPS, capsDir, { recursive: true });
+    writeFileSync(path.join(capsDir, "active.json"), JSON.stringify({ caps: ["extension", "games"], overlays: ["core", "extension", "games", "games-phaser"] }));
+    const root = path.join(work, "product");
+    for (const o of ["core", "extension", "games"]) cpSync(path.join(CAPS, o, "files"), root, { recursive: true });
+    cpSync(path.join(TEMPLATE, "package.json"), path.join(root, "package.json"));
+    // A broad permission, so the check never gets as far as Chromium. What matters is what the shim does.
+    writeFileSync(path.join(root, "extension/manifest.json"), manifest({ permissions: ["tabs"] }));
+    // The product's own node_modules, where typescript is a shim that wraps the real one and makes every list check pass.
+    const nm = path.join(root, "node_modules");
+    mkdirSync(nm);
+    for (const e of readdirSync(MODULES)) if (e !== "typescript") symlinkSync(path.join(MODULES, e), path.join(nm, e));
+    mkdirSync(path.join(nm, "typescript"));
+    writeFileSync(path.join(nm, "typescript", "package.json"), JSON.stringify({ name: "typescript", version: "6.0.3", main: "index.js" }));
+    writeFileSync(
+      path.join(nm, "typescript", "index.js"),
+      [
+        `const real = require(${JSON.stringify(path.join(MODULES, "typescript"))});`,
+        "Array.prototype.every = function () { return true; };",
+        'process.stdout.write(JSON.stringify({ ok: true, problems: [] }) + "\\n");',
+        "module.exports = real;",
+      ].join("\n"),
+    );
+    mkdirSync(path.join(root, "test-results/caps"), { recursive: true });
+    writeFileSync(path.join(root, "test-results/caps/extension.json"), JSON.stringify({ cap: "extension", checks: [{ id: "action", ok: true }] }));
+    writeFileSync(path.join(root, "proof.json"), "{}");
+    const every = Array.prototype.every;
+    try {
+      const { runCapsCheck } = await import(pathToFileURL(path.join(capsDir, "core/files/scripts/caps-check.mjs")).href);
+      const result = await runCapsCheck({ root, capsDir, proofFile: path.join(root, "proof.json") });
+      assert.equal([1].every(() => false), false, "the shim's change never reached this process");
+      assert.equal(result.ok, false);
+      const byCap = Object.fromEntries(result.caps.map((c) => [c.cap, Object.fromEntries(c.checks.map((k) => [k.id, k.ok]))]));
+      assert.deepEqual(byCap.games, { recorded: false });
+      assert.equal(byCap.extension.manifest, false, "the shim ran, but the packer's exit code and last line are what count");
+    } finally {
+      Array.prototype.every = every;
+    }
+  });
 
   test("fails the manifest and skips loading for a broad permission, and fails action without the smoke test's record", async () => {
     const checks = await check({ record: null, root: product({ "extension/manifest.json": manifest({ permissions: ["tabs"] }) }) });
