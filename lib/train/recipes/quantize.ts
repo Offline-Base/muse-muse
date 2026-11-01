@@ -51,6 +51,7 @@ import re
 import signal
 import socket
 import subprocess
+import types
 import urllib.error
 
 JOB_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -1391,12 +1392,11 @@ def merge_child_main(config_path):
     write_result(cfg["result_path"], result)
     # Unsloth's own 16-bit merge: it downloads the 16-bit base and folds the adapter into it tensor by tensor in fp32.
     # Never the 4-bit merge, and never PEFT's merge of the 4-bit model itself, which would bake its rounding in.
-    save = getattr(model, "save_pretrained_merged", None)
-    if save is None:
-        from unsloth.save import patch_saving_functions
+    # Bound to the PeftModel itself: its own attribute forwards to the base's method, which refuses a model with LoRA layers
+    # (seen on the pinned Unsloth, Nov 1 2026: "the save method was called on the base model").
+    from unsloth.save import unsloth_generic_save_pretrained_merged
 
-        patch_saving_functions(model, vision=not family)
-        save = model.save_pretrained_merged
+    save = types.MethodType(unsloth_generic_save_pretrained_merged, model)
     # Unsloth finds the 16-bit base from the config's _name_or_path (see MERGE_BASE): name r30b's BF16 repo, not the
     # nf4 build that was loaded.
     model.config._name_or_path = cfg["merge_base"]

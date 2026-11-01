@@ -481,6 +481,9 @@ class FastModel:
         assert model_name == "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit" and revision, (model_name, revision)
         return FakeModel(), FakeTokenizer()
 `,
+  "fakes/mods/unsloth/save.py": String.raw`def unsloth_generic_save_pretrained_merged(self, save_directory, tokenizer, save_method="merged_16bit"):
+    return self.save_pretrained_merged(save_directory, tokenizer, save_method=save_method)
+`,
   "fakes/mods/peft/__init__.py": String.raw`class PeftModel:
     @staticmethod
     def from_pretrained(model, path, is_trainable=True):

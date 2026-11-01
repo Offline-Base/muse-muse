@@ -320,7 +320,7 @@ function launchProblem(input: Parameters<typeof launchInstance>[0]): string | nu
 }
 
 /**
- * Launches one instance with the default Lambda Stack image and returns its id. Billing starts here. A 429 is
+ * Launches one instance with the default Lambda Stack image, or the image family a recipe needs, and returns its id. Billing starts here. A 429 is
  * retried once; a 5xx is not, because the instance may exist anyway: callers look it up by name before launching again.
  * `fileSystemNames` are mounted at their default mount points; they must be in the instance's region. So must
  * `firewallRulesetIds` (sent as firewall_rulesets only when non-empty): only a glimmer-serve job gets one, which opens
@@ -335,6 +335,7 @@ export async function launchInstance(input: {
   tags: Array<{ key: string; value: string }>;
   fileSystemNames?: string[];
   firewallRulesetIds?: string[];
+  imageFamily?: string;
 }): Promise<string> {
   const problem = launchProblem(input);
   if (problem) throw new LambdaApiError(400, "invalid-input", `Not sent to Lambda: ${problem}`);
@@ -348,6 +349,7 @@ export async function launchInstance(input: {
       tags: input.tags,
       ...(input.fileSystemNames?.length ? { file_system_names: input.fileSystemNames } : {}),
       ...(input.firewallRulesetIds?.length ? { firewall_rulesets: input.firewallRulesetIds.map((id) => ({ id })) } : {}),
+      ...(input.imageFamily ? { image: { family: input.imageFamily } } : {}),
     },
     retryOn: "rate-limit",
   });
