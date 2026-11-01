@@ -1390,6 +1390,16 @@ GPU time (Unsloth's mapper doesn't know the repo). That fix was read from the in
 2026.10.9, so only a real glimmer-quantize job proves it. Still to do after a deploy: the r30b dry run (about $0.13) and
 one real run (about $2). Wave 3 told.
 
+### Wave 3 sync on tg-cap-sync2
+
+Not merged into tg-cap-int; the coordinator does that. Merged tuned-model-options e7b8d8e
+(14aa5b1) and tg-cap-musecode e29cebf (926aa16). 0028_code_sessions stays at idx 28, with its snapshot rebuilt on this
+branch's 0024 plus its one table. General's r30b drive handling moved into wave 3's split: lib/drive/layout.ts and
+lib/drive/plan.ts. Fix (01e2e5c): a lab model trained on r30b now exports as a Derivative of Muse Spark Open, license and
+NOTICE inline, no measured numbers. Measured: 5,049 .test.ts (5,041 pass, 8 skipped, 0 failed), 748 .test.tsx (all pass),
+597 template (595 pass, 2 skipped), 141 muse-device (5 skipped, 0 failed), tsc clean. An old lab model's plan and a board
+Qwen plan hash the same under the code at 48b2cfe and now, on one stand-in kit. No real drive was written.
+
 ## Gaps
 
 What this record doesn't confirm:
