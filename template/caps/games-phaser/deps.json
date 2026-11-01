@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "phaser": "4.2.1"
+  },
+  "devDependencies": {}
+}
