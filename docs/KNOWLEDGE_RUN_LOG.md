@@ -1249,6 +1249,16 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   - Base on the same test: probes 90 / 94 / 95, dev honest 27 / 19 / 19.
   - Cards updated, and the "tool calls" and "system line" pending items are closed: merged 61ac54ee, -GGUF 99daabe1,
     -LoRA 659e5bd1.
+- 11:25 PM: serving-cost workflow (wf_41ed0d4f-de9) finished. Its checker re-read every price page. Full answer in
+  docs/knowledge/SERVING_COST.md.
+  - No provider sells this model per token. Fireworks dropped serverless Glimmer on Sep 25, and LoRAs never ran on its
+    serverless. So serving means GPU time.
+  - Always on: Lambda A100 40GB, Q4_K_M, $1.99/h ($1,452.70 for 730 h), $5.36 per 1M output tokens at our measured
+    llama.cpp speed.
+  - Demo: Modal A100 40GB at $2.10/h, scales to zero.
+  - Production: vLLM. Base Glimmer did 1,135 tok/s on an A100 40GB at 4-bit, so about $0.49 per 1M; this needs a 4-bit
+    or FP8 build of the merged model.
+  - Fireworks dedicated H100: $8/h.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
