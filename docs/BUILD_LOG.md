@@ -971,6 +971,22 @@ because the sidebar showed a real account.
 - Owner steps (README, Preview database): Neon branch "preview" with an empty database "preview"; PREVIEW_DATABASE_URL
   for Preview; Protection Bypass for Automation. Then vercel.json's main-only rule can let previews build again.
 
+### 20:08 Glimmer alignment with Meta's docs, and training providers: designs done
+
+- tg-train-align 429c659 (wf_a24c3785-97a): docs/GLIMMER_ALIGNMENT.md (48 rows against Meta's post-training,
+  quantization, deploy and hardware pages, each with our file:line, a status and a fix) and docs/TRAIN_BACKENDS.md (a
+  TrainBackend seam plus Lambda, Modal, Baseten and Fireworks). An independent check found 20 problems (5 that changed a
+  plan: Modal GPU Sandboxes can be preempted, trainChannel 1 isn't built yet, the next free migration is 0028, the GPU
+  order, Modal's 3x CPU and memory rate); all 20 fixed.
+- Findings: the core recipe sits inside Meta's ranges (QLoRA on attention and MLP, LR 2e-4, rank 16, answer-only loss,
+  Meta's template, bf16 merge, llama.cpp). Three gaps: training on final answers only can suppress reasoning (Meta warns;
+  the knowledge run measured it), cards say temperature 0 (Meta says don't decode greedily), and final-channel models use
+  extra stops and a custom template. Fixed defaults should base steps on dataset size (1 to 2 epochs).
+- Providers: Lambda is the only live one for Nov 4. Modal can run our recipe unchanged in a GPU Sandbox (about $2.10/h
+  for an A100, plus CPU and memory), with a relaunch for preemption; Baseten runs it on H100 or H200 (about $6.50/h);
+  Fireworks can't run our recipe and its terms rule out model-written datasets. Smoke tests: Modal about $2.30, Baseten
+  about $1.10, Fireworks export test $2.50 to $4.50 (none run).
+
 ## Gaps
 
 What this record doesn't confirm:
