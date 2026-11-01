@@ -373,7 +373,7 @@ Muse Code design's `code_sessions` table belongs to the Muse Muse General sessio
 
 | No. | Tag | Unit | Adds | Journal `when` |
 |---|---|---|---|---|
-| 0018 | `0018_trust` | 1 | `users.adult_confirmed_at`, `users.terms_version`, `users.terms_accepted_at`, `users.banned_at`, `users.ban_reason`; `products.taken_down_at`, `products.takedown_reason`; table `abuse_reports` | 1793431670646 |
+| 0018 | `0018_trust` | 1 | `users.adult_confirmed_at`, `users.terms_version`, `users.terms_accepted_at`, `users.banned_at`, `users.ban_reason`; `products.taken_down_at`, `products.takedown_reason`, `products.status_before_takedown`; table `abuse_reports` | 1793431670646 |
 | 0019 | `0019_engine` | 2 | `gateway_tokens.build_id` (uuid, references builds, indexed); `builds.round_plan` (jsonb); `builds.live_check` (jsonb) | 1793431730646 |
 | 0020 | `0020_data` | 3 | tables `end_users`, `end_user_passkeys`, `product_rows`, `product_data_counts` | 1793431790646 |
 | 0021 | `0021_files` | 4 | tables `product_files`, `product_search_docs` | 1793431850646 |
@@ -1869,6 +1869,9 @@ Phaser game.
   `trust` to the prompt and the sandbox; `startDeployStep` revokes its live token on a `FatalError`), `lib/prompts/brief.ts`
   (`briefInstructions(opts)`), `lib/prompts/catalog.ts` (`catalogSummary(caps)`), `lib/brief/render.ts` (the Trust pages
   section after the caps) and `lib/brief/write.ts` (`BriefInput.builder`).
+- Oct 31 (integration 2, tg-cap-int with trust): the local PGlite skip check runs in `runMigrations`' local path
+  (`lib/db/migrate.ts`), since the preview database moved `scripts/migrate.ts`'s logic there. It returns trust's message
+  and exit 1 instead of migrating; Neon paths are unchanged. Section 4's 0018 row names `products.status_before_takedown`.
 
 
 - Oct 31: first version (unit 0).
