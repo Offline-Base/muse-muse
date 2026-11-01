@@ -116,6 +116,12 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
               <span>Build room</span>
             </Link>
           ) : null}
+          {latestBuild ? (
+            <Link className="btn" href={`/p/${product.slug}/code`}>
+              <Icon name="code" size={18} />
+              <span>Code</span>
+            </Link>
+          ) : null}
           {isOwner && shipped && refineHref ? (
             <Link className="btn btn-primary" href={refineHref}>
               <Icon name="sparkle" size={18} />
