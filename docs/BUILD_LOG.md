@@ -1474,6 +1474,10 @@ The owner asked for 100 tests, 1,000 generated examples, and Spark Contributor i
 - Auto upload built on tg-v-hub behind TUNE_AUTO_PUBLISH (off). An admin's tune run uploads through the existing Hub path once judged, private until HF_PUBLIC is set to public. A task quoting a person's rows is now refused for manual Publish too, using the fold heading rather than the planned has_person_rows column, so no migration. A Contributor dataset's repo stays private. Tests: auto-publish.test.ts and hub-flow.test.ts passed, with the Hub faked. tsc, a real upload and the screens were not run.
 - Merged tg-v-code, tg-v-edit, tg-v-hub and tg-v-modelv into tg-versions (Nov 1, not pushed or deployed). Conflicts: the product page's buttons, and two new flags in lib/env.ts. tsc clean once on the merge, before the review's fixes; 24 of 24 new tests passed. Review of the diff against tg-history fixed: the /builds caption calling the shared guest account's builds "Your builds", raw codes such as daily_limit shown by Restore, the Code page's h1 using a class with no rule, and Hugging Face tokens with digits missing the secret check. Not run: full suite, next build, a browser, a real restore, a real upload, migration 0028.
 
+### 13:01 Code private by default, auto upload switched on, PR for tg-versions
+
+The owner chose private code with a per-owner Make public, TUNE_AUTO_PUBLISH on and HF_PUBLIC unset. The switch is set on production, but HF_TOKEN and HF_NAMESPACE aren't listed there by name, so uploads stay off until they are. next build exit 0 with privacy/ moved away; no real run of the migration, restore or upload.
+
 ## Gaps
 
 What this record doesn't confirm:
