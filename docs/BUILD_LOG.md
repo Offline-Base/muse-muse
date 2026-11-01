@@ -1117,7 +1117,7 @@ because the sidebar showed a real account.
   fails closed on any knowledge-run file without the license files, which the training session is putting next to each
   model in S3.
 
-### 21:30 Owner drops the non-commercial terms for the knowledge-run models
+### 21:29 Owner drops the non-commercial terms for the knowledge-run models
 
 - Now Apache 2.0 for our modifications ("free reign license"); no non-commercial file. The Muse Model License conditions
   still apply to r30b and stage 2: ship MUSE_MODEL_LICENSE.md and USAGE_POLICY.md, "Built with Muse Spark Open", the Usage
