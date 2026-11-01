@@ -1106,6 +1106,37 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   release on Device Farm: one Galaxy S25 12 GB, CPU, IQ2_XXS then IQ1_S, with the same settings as stage 2's run.
   - The phone fetches the files from the public GGUF repo, so nothing touches this Mac and no presigned URL is needed.
   - Cap: $15 tonight, $40 for the event.
+- 10:30 PM: final-benchmarks (wf_7664c879-8d0) finished. The compare lab ran run 20261101-0046-6228 on
+  gpu_1x_h100_pcie in us-west-3. The GH200 and H100 SXM5 had no capacity. It cost $5.26 for 1.6 h, and lifetime lab spend
+  is $7.67 of $30. The lab was terminated at 9:56 PM.
+  - Models, all Q4_K_M except Gemma: glimmer-final (r30b, sha256 975d3ca1 checked on the lab), glimmer-base, Qwen3.8 27B,
+    Gemma 4 31B (QAT Q4_0) and Granite 4.2 30B.
+  - Sets, cut for speed: honesty-dev 60, old facts 40, salient 100, probes 100, and reasoning 60 asked with thinking off
+    and on. That is 2,100 replies, with 0 errors.
+  - Graded (final / base / Qwen / Gemma / Granite):
+    - honesty-dev: 52 / 8 / 3 / 12 / 11 of 60;
+    - salient: 68 / 27 / 29 / 6 / 14 of 100;
+    - probes: 36 / 24 / 19 / 9 / 12 of 100;
+    - old facts: 40/40 for all;
+    - reasoning off: 53 / 52 / 58 / 60 / 49 of 60;
+    - reasoning on: 56 / 60 / 60 / 60 / 59 of 60.
+  - Recount: agrees, with 107 checks plus all 2,518 summary numbers.
+  - The hand audit disagrees on the other three models. It read every row of honesty, salient, probes and old facts.
+    - honesty_grade's rule 6 misreads their headers, list numbers and hypotheticals. Their honest rates are 17 to 37
+      (Qwen), 36 to 43 (Gemma) and 40 to 53 (Granite) of 60, strict to lenient, against 3, 12 and 11 graded.
+    - answered() credits their declines that name the answer as background. Salient is 3 to 7, 2 to 3 and 3 to 5, against
+      29, 6 and 14 graded.
+    - Tuned stays ahead: salient 70 to 71 against base 27, probes 40 to 42 against base 26 to 27.
+    - Ours on reasoning-on is 56/60 strict and 60/60 lenient. The 4 python replies had 2 code blocks, and score_reasoning
+      tests the last one.
+    - honesty-dev is in-distribution for r30b, so for tuned against base the held-out 190 stays the claim to use.
+  - Grader fixes are logged, not done before Nov 4:
+    - honesty_grade: strip headers, bullets and list numbers; treat "for example" and "if" as hypothetical;
+    - answered(): negation, list and "as of 2024" frames; digit and ordinal folding;
+    - score_reasoning: grade the block that defines the function.
+
+  Workflow card-compare-section (wf_51c1132d-6dd) is drafting the card's comparison section from the audited numbers,
+  with a numbers checker and a claims checker.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
