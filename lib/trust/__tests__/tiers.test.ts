@@ -37,10 +37,10 @@ describe("capsForBuilder", () => {
     assert.deepEqual(stateless, ["live", "media", "extension", "games"]);
   });
 
-  it("gives signed-in builders and admins everything enabled, and everyone everything with the flag off", () => {
+  it("gives signed-in builders and admins everything enabled, and everyone all but platform powers with the flag off", () => {
     assert.deepEqual(capsForBuilder("builder", all, true), all);
     assert.deepEqual(capsForBuilder("admin", all, true), all);
-    assert.deepEqual(capsForBuilder("guest", all, false), all);
+    assert.deepEqual(capsForBuilder("guest", all, false), all.filter((c) => c !== "platform"));
     assert.deepEqual(capsForBuilder("guest", [], true), []);
   });
 
