@@ -37,6 +37,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -49,7 +50,7 @@ except ImportError:
     # Copied without drive.py: every other tool answers as before, and the drive tools aren't offered.
     drive = None
 
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26"]
 MAX_BODY_BYTES = 1024 * 1024
 MAX_OUTPUT_BYTES = 64 * 1024
@@ -73,6 +74,12 @@ DATASET_MAX_BYTES = 64 * 2**20
 MODEL_LOCK_WAIT_S = 5
 # The same for a capture: callers give up on a recording of up to 30 seconds, and the queue would go on recording for nobody.
 CAPTURE_LOCK_WAIT_S = 5
+# The sensors a product may read: the kernel's temperature zones. Nothing else on the board is opened.
+THERMAL_GLOB = "/sys/devices/virtual/thermal/thermal_zone*"
+# show_text writes one line here for a display or a script on the board to read. Nothing runs because of it.
+SHOW_TEXT_FILE = os.path.expanduser("~/.muse-device/show-text.txt")
+SHOW_TEXT_MAX_CHARS = 200
+SHOW_TEXT_PER_MINUTE = 6
 TRAIN_DIR = os.path.expanduser("~/train")
 TRAIN_PYTHON = os.path.join(TRAIN_DIR, "venv", "bin", "python")
 TRAIN_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "train.py")
@@ -103,6 +110,8 @@ MODEL_OVERHEAD_GIB = 0.5
 MODEL_CONTEXT_GIB_PER_4K = 0.1
 
 capture_lock = threading.Lock()
+show_text_lock = threading.Lock()
+show_text_times = []
 # Taken before train_lock when both are needed: the board's memory holds a running model or a training run, not both.
 model_lock = threading.Lock()
 model_process = None
@@ -189,6 +198,47 @@ def describe_device(_args):
             indent=2,
         )
     )
+
+
+def read_sensor(args):
+    wanted = args.get("sensor")
+    if wanted is not None and not isinstance(wanted, str):
+        raise ToolError("sensor must be a name, from read_sensor with no arguments.")
+    sensors = []
+    for zone in sorted(glob.glob(THERMAL_GLOB)):
+        raw = read_text(os.path.join(zone, "temp"))
+        if not raw or not raw.lstrip("-").isdigit():
+            continue
+        name = read_text(os.path.join(zone, "type")) or os.path.basename(zone)
+        if wanted is None or wanted == name:
+            sensors.append({"name": name, "kind": "temperature", "value": int(raw) / 1000, "unit": "C"})
+    if not sensors:
+        raise ToolError(f"This board has no sensor called {wanted}." if wanted else "This board has no sensors it can read.")
+    return text_result(json.dumps({"sensors": sensors}))
+
+
+def plain_line(text):
+    # Control and format characters, line separators and half a surrogate pair. ZWNJ and ZWJ stay: emoji and some scripts need them.
+    return all(c in "\u200c\u200d" or unicodedata.category(c) not in ("Cc", "Cf", "Cs", "Zl", "Zp") for c in text)
+
+
+def show_text(args):
+    text = args.get("text")
+    if not isinstance(text, str) or not text.strip() or len(text) > SHOW_TEXT_MAX_CHARS:
+        raise ToolError(f"text must be 1 to {SHOW_TEXT_MAX_CHARS} characters.")
+    if not plain_line(text):
+        raise ToolError("text must be one plain line.")
+    with show_text_lock:
+        now = time.monotonic()
+        show_text_times[:] = [t for t in show_text_times if now - t < 60]
+        if len(show_text_times) >= SHOW_TEXT_PER_MINUTE:
+            raise ToolError(f"This board shows at most {SHOW_TEXT_PER_MINUTE} messages a minute. Try again in a moment.")
+        os.makedirs(os.path.dirname(SHOW_TEXT_FILE), mode=0o700, exist_ok=True)
+        with open(SHOW_TEXT_FILE + ".part", "w", encoding="utf-8") as f:
+            f.write(text + "\n")
+        os.replace(SHOW_TEXT_FILE + ".part", SHOW_TEXT_FILE)
+        show_text_times.append(now)
+    return text_result(json.dumps({"shown": text}))
 
 
 def int_arg(args, name, default, low, high):
@@ -933,6 +983,26 @@ TOOLS = {
                 "additionalProperties": False,
             },
             "annotations": READ_ONLY,
+        },
+    ),
+    "read_sensor": (
+        read_sensor,
+        {
+            "description": "Reads the board's temperature sensors. Read only. Name one sensor to read just it.",
+            "inputSchema": {"type": "object", "properties": {"sensor": {"type": "string"}}, "additionalProperties": False},
+            "annotations": READ_ONLY,
+        },
+    ),
+    "show_text": (
+        show_text,
+        {
+            "description": f"Shows one line of up to {SHOW_TEXT_MAX_CHARS} characters on the board, at most {SHOW_TEXT_PER_MINUTE} times a minute. It goes in {os.path.basename(SHOW_TEXT_FILE)} for a display or script on the board to read.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"text": {"type": "string", "minLength": 1, "maxLength": SHOW_TEXT_MAX_CHARS}},
+                "required": ["text"],
+                "additionalProperties": False,
+            },
         },
     ),
     "list_models": (

@@ -7,6 +7,7 @@ import { extensionJudgeNote } from "@/lib/caps/extension/judge";
 import { filesJudgeNote } from "@/lib/caps/files/judge";
 import { gamesJudgeNote } from "@/lib/caps/games/judge";
 import { gpuJudgeNote } from "@/lib/caps/gpu/judge";
+import { hardwareJudgeNote } from "@/lib/caps/hardware/judge";
 import type { CapId } from "@/lib/caps/ids";
 import { liveJudgeNote } from "@/lib/caps/live/judge";
 import { mediaJudgeNote } from "@/lib/caps/media/judge";
@@ -24,6 +25,7 @@ export const CAP_JUDGE: Partial<Record<CapId, (brief: Brief) => string>> = {
   live: liveJudgeNote,
   media: mediaJudgeNote,
   code: codeJudgeNote,
+  hardware: hardwareJudgeNote,
   extension: extensionJudgeNote,
   games: gamesJudgeNote,
 };

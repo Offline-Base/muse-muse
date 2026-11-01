@@ -18,6 +18,7 @@ import { handleBrowse, handleExec, type CodeDeps } from "@/lib/caps/code/handler
 import { handleCodeSessions, type MuseCodeDeps } from "@/lib/caps/code/musecode/handler";
 import { handleGlimmerChat, type GlimmerDeps } from "@/lib/caps/gpu/handler";
 import { env } from "@/lib/env";
+import { handleGadgetCall, PRODUCT_GADGET_TOOLS, type GadgetDeps } from "@/lib/gateway/gadget";
 
 /** A dependency that fails the test if anything calls it. */
 const untouched = <T extends (...args: never[]) => unknown>(name: string) =>
@@ -237,6 +238,49 @@ describe("unit 4's other methods with every flag off", () => {
       assert.equal(((await res.json()) as { error: { code: string } }).error.code, "unknown_endpoint");
     });
   }
+});
+
+describe("unit 13's routes with every flag off", () => {
+  const HARDWARE_FLAGS = ["HARDWARE_ENABLED", "HARDWARE_BOARD_TOOLS", "HARDWARE_BOARD_REGISTRY", "HARDWARE_BOARD_KEY", "HARDWARE_GADGET_OWNER_CHECK"];
+  const ID = "0b9a3c2e-1d4f-4a6b-8c7d-9e0f1a2b3c4d";
+
+  it("the registry's routes answer 404 before asking who you are", async () => {
+    for (const flag of HARDWARE_FLAGS) delete process.env[flag];
+    const boards = await import("@/app/api/boards/route");
+    const oneBoard = await import("@/app/api/boards/[id]/route");
+    const productBoard = await import("@/app/api/products/[slug]/board/route");
+    const req = (path: string, method: string) => new Request(`https://platform.example${path}`, { method, ...(method === "POST" ? { body: "{}" } : {}) });
+    const slug = { params: Promise.resolve({ slug: "demo" }) };
+    for (const res of [
+      await boards.GET(),
+      await boards.POST(req("/api/boards", "POST")),
+      await oneBoard.DELETE(req(`/api/boards/${ID}`, "DELETE"), { params: Promise.resolve({ id: ID }) }),
+      await productBoard.POST(req("/api/products/demo/board", "POST"), slug),
+      await productBoard.DELETE(req("/api/products/demo/board", "DELETE"), slug),
+    ]) {
+      assert.equal(res.status, 404);
+    }
+  });
+
+  it("/gadget stays what it was: three tools, DEVICE_MCP_URL's board, and no board tools", async () => {
+    for (const flag of HARDWARE_FLAGS) delete process.env[flag];
+    assert.equal(env.hardwareBoardTools, false);
+    assert.equal(env.hardwareBoardToolsUsable, false);
+    assert.equal(env.hardwareBoardRegistry, false);
+    assert.equal(env.hardwareGadgetOwnerCheck, false);
+    const called: string[] = [];
+    const deps: GadgetDeps = {
+      findToken: async () => ({ id: "t", productId: "p", scope: "live", allowedModels: ["muse-gadget"], dailyBudgetUsd: 3 }) as never,
+      productStatus: async () => "live",
+      hitRateLimits: async (keys) => Object.fromEntries(keys.map((k) => [k, 1])),
+      board: () => ({ listTools: async () => [], callTool: async (name) => (called.push(name), { content: [], isError: false }) }),
+    };
+    const post = (tool: string) => new Request("https://platform.example/api/gateway/gadget", { method: "POST", headers: { authorization: "Bearer x" }, body: JSON.stringify({ tool }) });
+    assert.equal((await handleGadgetCall(post("capture_image"), deps)).status, 200);
+    assert.equal((await handleGadgetCall(post("read_sensor"), deps)).status, 400);
+    assert.deepEqual(called, ["capture_image"]);
+    assert.deepEqual([...PRODUCT_GADGET_TOOLS], ["describe_device", "capture_image", "record_audio"]);
+  });
 });
 
 describe("unit 3's routes with the data cap served but DATA_SIGN_IN off", () => {

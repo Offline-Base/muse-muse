@@ -1,3 +1,5 @@
+import { linkedBoardFor } from "@/lib/caps/hardware/board";
+import { boardToolsOn, gadgetOwnerCheckOn } from "@/lib/caps/hardware/flags";
 import { callDeviceTool, deviceConfig, listDeviceTools } from "@/lib/device/client";
 import { handleGadgetCall, handleGadgetTools, type GadgetDeps } from "@/lib/gateway/gadget";
 import { hitRateLimits, productStatusById } from "@/lib/gateway/store";
@@ -9,6 +11,13 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const deps: GadgetDeps = {
+  // Wave 3, unit 13 (docs/CAPABILITIES.md, section 19). Off: every line below is as it was.
+  get linkedBoard() {
+    return gadgetOwnerCheckOn() ? linkedBoardFor : undefined;
+  },
+  get boardTools() {
+    return boardToolsOn();
+  },
   findToken,
   productStatus: productStatusById,
   hitRateLimits,

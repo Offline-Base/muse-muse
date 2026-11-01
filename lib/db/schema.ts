@@ -1136,3 +1136,70 @@ export const codeSessions = pgTable(
     index("code_sessions_parent_idx").on(t.parentTokenId),
   ],
 );
+
+// ---------- Wave 3, 0026_hardware (unit 13) ----------
+
+export type DeviceKind = "muse_device" | "inference";
+/** How the platform trusts the address. Unit 13 registers boards by URL: "public_tls" or, off Vercel, "loopback". */
+export type DeviceTrust = "loopback" | "public_tls" | "pinned_tls" | "plain_http_opt_in";
+export interface DeviceHealth {
+  status: "ok" | "unreachable";
+  failures: number;
+  checkedAt: string;
+  latencyMs?: number;
+}
+
+/**
+ * One row per board or inference endpoint, shared with offline (docs/OFFLINE.md, docs/CAPABILITIES.md section 19). Unit 13
+ * uses kind muse_device, registered by an admin with a URL and a board token. Secrets are AES-256-GCM (lib/secrets/box.ts)
+ * under HARDWARE_BOARD_KEY: `iv` and `tag` go with token_ciphertext, `url_iv` and `url_tag` with whichever URL the row
+ * has, since one IV must never seal two values.
+ */
+export const devices = pgTable(
+  "devices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerUserId: uuid("owner_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    kind: text("kind").$type<DeviceKind>().notNull(),
+    mcpUrlCiphertext: bytea("mcp_url_ciphertext"),
+    tokenCiphertext: bytea("token_ciphertext"),
+    endpointUrlCiphertext: bytea("endpoint_url_ciphertext"),
+    iv: bytea("iv"),
+    tag: bytea("tag"),
+    urlIv: bytea("url_iv"),
+    urlTag: bytea("url_tag"),
+    keyVersion: integer("key_version"),
+    /** Filled by offline's probe, which really calls each model. Empty on a muse_device row. */
+    models: jsonb("models").$type<unknown[]>().notNull().default([]),
+    lan: boolean("lan").notNull().default(false),
+    trust: text("trust").$type<DeviceTrust>().notNull(),
+    certSpkiSha256: text("cert_spki_sha256"),
+    pairCodeHash: text("pair_code_hash"),
+    pairedAt: timestamp("paired_at", { withTimezone: true }),
+    allowPlainHttp: boolean("allow_plain_http").notNull().default(false),
+    health: jsonb("health").$type<DeviceHealth>(),
+    createdAt: createdAt(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [index("devices_owner_idx").on(t.ownerUserId, t.kind)],
+);
+
+/** Which board a product reaches. One per product. `visitors` off means only the product's owner pass reaches it. */
+export const productBoards = pgTable(
+  "product_boards",
+  {
+    productId: uuid("product_id")
+      .primaryKey()
+      .references(() => products.id, { onDelete: "cascade" }),
+    boardId: uuid("board_id")
+      .notNull()
+      .references(() => devices.id, { onDelete: "cascade" }),
+    visitors: boolean("visitors").notNull().default(false),
+    createdAt: createdAt(),
+  },
+  (t) => [index("product_boards_board_idx").on(t.boardId)],
+);

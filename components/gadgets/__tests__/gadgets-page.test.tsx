@@ -208,6 +208,22 @@ describe("/gadgets", { skip: canMock ? false : "needs --experimental-test-module
     assert.doesNotMatch(html, /\b(online|is connected)\b/i);
   });
 
+  it("says what's served: the three tools, until board tools can really be used", async () => {
+    try {
+      assert.match(render(await page()), /Only the three tools above are served\./);
+      process.env.HARDWARE_BOARD_TOOLS = "1";
+      assert.match(render(await page()), /Only the three tools above are served\./, "with the owner check off they aren't offered");
+      process.env.HARDWARE_GADGET_OWNER_CHECK = "1";
+      const html = render(await page());
+      assert.doesNotMatch(html, /Only the three tools/);
+      assert.match(html, /can read a sensor and show a short line/);
+      assert.match(html, /can&#x27;t run commands on a board/);
+    } finally {
+      delete process.env.HARDWARE_BOARD_TOOLS;
+      delete process.env.HARDWARE_GADGET_OWNER_CHECK;
+    }
+  });
+
   it("gives admins the link to /device", async () => {
     viewer = admin;
     const html = render(await page());

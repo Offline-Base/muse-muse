@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
 import { DeviceAsk } from "@/components/device/DeviceAsk";
+import { DeviceBoards } from "@/components/device/DeviceBoards";
 import { DeviceDrive } from "@/components/device/DeviceDrive";
 import { DeviceTrain } from "@/components/device/DeviceTrain";
 import { EmptyCard, PageHeader } from "@/components/ui";
@@ -34,6 +35,7 @@ export default async function DevicePage({ searchParams }: { searchParams: Promi
     <div className="page">
       <PageHeader title="Device" subtitle="Ask Muse Wonder something, and it uses the board's camera, microphone and sensors to answer." />
       <DeviceAsk />
+      {env.hardwareBoardRegistry && !viewer.openAccess ? <DeviceBoards /> : null}
       <DeviceTrain driveExport={env.driveExportEnabled} />
       {env.driveExportEnabled ? <DeviceDrive initialSource={typeof sp.export === "string" && /^(board|lab):[A-Za-z0-9._:-]{1,120}$/.test(sp.export) ? sp.export : null} /> : null}
     </div>

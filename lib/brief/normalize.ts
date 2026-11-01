@@ -6,6 +6,7 @@ import { normalizeCodeBlock } from "@/lib/caps/code/brief";
 import { briefSignsIn, normalizeFilesBlock } from "@/lib/caps/files/brief";
 import { normalizeExtensionBlock } from "@/lib/caps/extension/brief";
 import { normalizeGamesBlock } from "@/lib/caps/games/brief";
+import { normalizeHardwareBlock } from "@/lib/caps/hardware/brief";
 import { normalizeLiveBlock } from "@/lib/caps/live/brief";
 import { normalizeMediaBlock } from "@/lib/caps/media/brief";
 import { mediaPartsOn } from "@/lib/caps/media/catalog";
@@ -169,6 +170,10 @@ export function normalizeRawBrief(raw: unknown, references: Reference[]): unknow
   // ---------- Wave 3, unit 10 (docs/CAPABILITIES.md, section 16): the runtime block, only when the writer sent one ----------
   if (b.runtime !== undefined && b.runtime !== null) b.runtime = normalizeRuntimeBlock(b.runtime);
   // ---------- end Wave 3, unit 10 ----------
+
+  // ---------- Wave 3, unit 13 (docs/CAPABILITIES.md, section 19): the hardware block, only when the writer sent one ----------
+  if (b.hardware !== undefined && b.hardware !== null) b.hardware = normalizeHardwareBlock(b.hardware);
+  // ---------- end Wave 3, unit 13 ----------
 
   // ---------- Wave 3, unit 14 (docs/CAPABILITIES.md, section 20): the extension and games blocks, only when sent ----------
   if (b.extension !== undefined && b.extension !== null) b.extension = normalizeExtensionBlock(b.extension);

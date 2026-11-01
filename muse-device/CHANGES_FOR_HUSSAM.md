@@ -75,3 +75,35 @@ on a Mac, as before).
    `exfat`). I wrote them from udisks2's D-Bus API and have never run them.
 4. That the service unit keeps `KillMode=process`, so an export outlives a server restart as a training run does.
 5. `sudo python3 -m unittest test_drive_loop` on the board or any Linux box, once, as the last check of a deploy.
+
+# Changes to muse-device for products' board tools
+
+Hussam, these are the changes from wave 3's hardware unit (unit 13, `docs/CAPABILITIES.md` section 19). Small, standard library
+only, in your style. Nothing here has run on a board, and nobody deployed it.
+
+What it does: a product whose owner linked a board can read the board's temperatures and show it one line of text, through the
+gateway. Both tools sit behind `HARDWARE_BOARD_TOOLS`, and `/api/device` hides them until then. The gateway checks the same limits
+before a call gets here. Never `run_command`.
+
+## Changes to `server.py`
+
+| Change | Why |
+| --- | --- |
+| `VERSION` 0.4.0 to 0.5.0 | Two new tools. |
+| Constants `THERMAL_GLOB`, `SHOW_TEXT_FILE`, `SHOW_TEXT_MAX_CHARS`, `SHOW_TEXT_PER_MINUTE`; `show_text_lock`, `show_text_times` | The tools' limits and where they read and write. |
+| New `read_sensor` (read only) | `{sensor?}`. Returns `{"sensors": [{name, kind, value, unit}]}` from `/sys/devices/virtual/thermal/thermal_zone*`, the same files `describe_device` reads for `max_temp_c`. A sensor's name only filters what's found, so it never becomes a path. |
+| New `show_text` | `{text}`: 1 to 200 characters on one line, no control or format characters, line separators or half surrogate pairs (`plain_line`, ZWNJ and ZWJ stay for emoji and some scripts), 6 a minute for the whole board, counted only after the write works. It writes the line as UTF-8 to `~/.muse-device/show-text.txt` through a `.part` file and a rename. It starts no process. |
+| `TOOLS` gains both | Same token, same refusal of browser requests, same 1 MiB body limit. |
+
+Nothing else in `server.py` changed. `run_command`, the token rules and every existing tool answer as before.
+
+## Changes to `test_server.py`
+
+`test_version_and_tools_are_offered` expects `0.5.0`, and a new `BoardToolsForProducts` class has 8 tests. `test_drive.py` expects `0.5.0`
+too, in two places. All pass on a Mac: 147 tests in the two files, 3 skipped.
+
+## What I couldn't check here, and would like you to
+
+1. That the thermal zones on a real board read as they should, and which names they have (`cpu-thermal` and so on).
+2. **What should show `show_text`'s line.** No board here has a display, so it only lands in that file. If you have a display or a
+   script for it, have it read the file. I didn't add one, since anything that runs on a product's words needs your eye.

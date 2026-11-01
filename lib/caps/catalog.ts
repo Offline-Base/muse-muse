@@ -5,6 +5,7 @@ import type { CapId } from "@/lib/caps/ids";
 import { EXTENSION_CATALOG } from "@/lib/caps/extension/catalog";
 import { FILES_CATALOG } from "@/lib/caps/files/catalog";
 import { GAMES_CATALOG } from "@/lib/caps/games/catalog";
+import { HARDWARE_CATALOG } from "@/lib/caps/hardware/catalog";
 import { LIVE_CATALOG } from "@/lib/caps/live/catalog";
 import { MEDIA_CATALOG, mediaPartsOn, mediaWorkarounds } from "@/lib/caps/media/catalog";
 import { RUNTIME_CATALOG } from "@/lib/caps/runtime/catalog";
@@ -27,6 +28,7 @@ export const CAP_CATALOG: Partial<Record<CapId, CapCatalogEntry>> = {
   media: MEDIA_CATALOG,
   code: CODE_CATALOG,
   runtime: RUNTIME_CATALOG,
+  hardware: HARDWARE_CATALOG,
   extension: EXTENSION_CATALOG,
   games: GAMES_CATALOG,
 };

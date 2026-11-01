@@ -1,6 +1,6 @@
 import { requireAdminOrAutomation } from "@/lib/auth";
 import { callDeviceTool, deviceConfig, listDeviceTools } from "@/lib/device/client";
-import { genericDeviceTool } from "@/lib/device/drive-tools";
+import { BOARD_TOOL_NAMES, genericDeviceTool } from "@/lib/device/drive-tools";
 import { badRequest, errorJson, HttpError, readJson, route } from "@/lib/http";
 
 // A photo takes a few seconds and a recording up to 30, but ask_model and install_model can wait for minutes on the board.
@@ -38,6 +38,8 @@ export const POST = route(async (req: Request) => {
   if (!config) return errorJson(503, "device_not_configured");
   const body = await readJson(req);
   if (typeof body.tool !== "string" || !body.tool) throw badRequest("Name a tool.");
+  // Wave 3, unit 13: a product's board tool while HARDWARE_BOARD_TOOLS is off.
+  if (BOARD_TOOL_NAMES.has(body.tool) && !genericDeviceTool(body.tool)) return errorJson(403, "tool_off");
   if (!genericDeviceTool(body.tool)) {
     return errorJson(403, "drive_route_only", { message: "Drive tools are used from the Flash drive card on /device, by an admin." });
   }

@@ -1,4 +1,7 @@
+import { OwnBoards } from "@/components/gadgets/OwnBoards";
 import { Icon } from "@/components/icons";
+import type { SessionUser } from "@/lib/auth";
+import { env } from "@/lib/env";
 
 /*
  * ---------- Wave 3 slot: unit 13 (hardware) ----------
@@ -6,7 +9,8 @@ import { Icon } from "@/components/icons";
  * shared devices table and a pairing link to /device (admins only). Status words only: no board addresses, tokens or
  * live calls on page load. With that flag off, this note stays as it is.
  */
-export function BoardsSlot() {
+export function BoardsSlot({ viewer = null }: { viewer?: SessionUser | null } = {}) {
+  if (env.hardwareBoardRegistry) return <OwnBoards viewer={viewer} />;
   return (
     <section className="card notice" aria-labelledby="coming-title">
       <span className="notice-icon" aria-hidden>
