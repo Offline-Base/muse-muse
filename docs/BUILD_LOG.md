@@ -1792,3 +1792,12 @@ All made-up data. Code: tg-caps-ready fa692f3e, builder snapshot snap_XXT4qDZEWL
 - Blocked: automatic packaging. packageProductStep runs after deploy, so a Preview never reaches it, even with PACKAGER_SNAPSHOT_ID set. Setting it is needed but not enough. It isn't in Preview's project env; snap_VcblDXLuhpigJ8ZeukmR38j2PupJ from the Oct 31 spike exists and is the candidate. Also, requestedTargets came back empty on a Preview with targets sent.
 - Blocked: Composio inside a product. COMPOSIO_API_KEY isn't in the Preview env list.
 - Spend: Meta about $24.13 in total over these builds. GPU and AWS none.
+## Nov 1: Preview for the caps PR on Contributor (branch tg-caps-main)
+
+- Preview https://muse-muse-5qowrscqp-ethan-6436s-projects.vercel.app (dpl_B93NHQwXDZzJqDm4tN3xKmB16g6B) on commit 06929875, READY. Snapshot snap_GbHWNK8snp0fecU1qs9kKgspR9K3, passed to this Preview only. No production deploy or env change.
+- Switches, each passed with both -e and -b. Asked for: BUILDER_SNAPSHOT_ID, TEST_MODEL=muse-spark-1.3-contributor, BUILDS_ON_CONTRIBUTOR, MUSE_APP_LOOK, FULL_BUILDS, PREVIEW_USE_MAIN_DB, OPEN_ACCESS=admin.
+- Added to match the first full-build Preview, muse-muse-4ohfoi9fy: DAILY_SPEND_CAP_USD=150, MUSE_ENGINE=serve, MUSE_FULL, RECIPES_ENABLED, AGENT_LONG_RUNS, VERIFY_AGENTS, AGENTS_ENABLED, PRODUCT_OUTPUTS, PROVE_IT, NATIVE_EXTENSION. The log didn't list them, so the names come from that deployment's env list through the Vercel API. The API gave names only. The values are my reading of the log and code, not read from that deployment.
+- Decision: none of the cap switches from the later caps Previews (DATA_ENABLED and the others) are on, and neither are ENGINE_MILESTONES or ENGINE_ROUND_SCALING, because the earlier full-build Preview didn't have them.
+- Database: the owner's main database, by the owner's choice.
+- Checked: vercel curl GET / answered 200 and shows "Admin, sign-in off". Without a Vercel login, GET / answered 302. No build started. Spend $0.
+- Not checked: that a build really runs on Contributor. That needs a build.
