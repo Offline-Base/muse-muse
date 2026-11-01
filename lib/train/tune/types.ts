@@ -9,7 +9,7 @@ import type { DatasetView, TrainJobView } from "@/lib/train/types";
 /** "chat" answers in its own words; "decision" picks one of a few labels (tg-decide's decision models). */
 export type TuneKind = "chat" | "decision";
 
-/** What a run trains with. Fixed defaults today (planSettings); Advanced v1 changes only `examples`. */
+/** What a run trains with. Fixed defaults (planSettings); Advanced changes `examples` and `steps`. */
 export interface TuneSettings {
   /** Examples Muse Wonder writes: the dataset's `requested`, 20 to 1000. */
   examples: number;
@@ -87,10 +87,21 @@ export interface ExampleRow {
 export type TuneStage = "writing" | "checking" | "waiting" | "training" | "scoring" | "ready" | "failed" | "stopped";
 
 /**
- * Why a run waits. "not_started": the examples are ready and no training job was started for them yet. Until U3's
- * tuneRun launches training on its own, that is every ready run (the room's "Ready to train" button).
+ * Why a run waits. "not_started": the examples are ready and nothing is trying to train on them (the tuneRun workflow
+ * ended or never started), so the room offers Start training. The rest are the tuneRun workflow's waiting reasons,
+ * from its heartbeat (lib/train/tune/marks.ts): it tries the launch again every 5 minutes, for up to 2 hours.
+ * "stopped": stopped before training.
  */
-export type TuneHoldReason = "not_started" | "gpu_busy" | "too_many_active" | "daily_cap" | "sweep_not_running" | "paused" | "stopped";
+export type TuneHoldReason =
+  | "not_started"
+  | "gpu_busy"
+  | "too_many_active"
+  | "daily_cap"
+  | "sweep_not_running"
+  | "paused"
+  | "lambda_unavailable"
+  | "launching"
+  | "stopped";
 
 export interface TuneVerdict {
   passed: boolean;
@@ -125,9 +136,8 @@ export interface TuneRunView {
   /** What Meta and the GPU have charged so far: the examples, the GPU and the scoring. */
   costSoFarUsd: number;
   /**
-   * The one thing the room offers next. Until U3 lands, a run whose examples are ready has no training yet, and this is
-   * the full New job form with the dataset picked (`/fine-tuning?dataset=<id>#new-job`). U3 replaces it with Start
-   * training (runs/{id}/start).
+   * The one thing the room offers next: Start training (POST `start`, runs/{id}/start) while the examples are ready
+   * and no job trains on them, with the full New job form for admins (`fullForm`); the job's page once there is one.
    */
-  next: { kind: "full_form"; href: string } | { kind: "job"; href: string } | null;
+  next: { kind: "start"; start: string; fullForm: string } | { kind: "job"; href: string } | null;
 }

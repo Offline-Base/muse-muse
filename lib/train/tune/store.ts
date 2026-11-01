@@ -3,33 +3,36 @@
  * training job made from a run's dataset, that job's eval items and judgements, and the run put together (loadTuneRun).
  * A run is its dataset row, and its job is found by params.datasetId, so there is no migration.
  */
-import { and, asc, desc, eq, or, sql } from "drizzle-orm";
+import { and, asc, eq, or } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
-import { ADAPTER_RECIPE, EVALS_MAX, type TrainJobRow } from "@/lib/train/logic";
-import { datasetProgress, getDataset, jobListColumns } from "@/lib/train/store";
+import { EVALS_MAX } from "@/lib/train/logic";
+import { datasetProgress, getDataset } from "@/lib/train/store";
+import { latestTuneJob, readRunMarks } from "@/lib/train/tune/run-store";
 import type { TuneRunView } from "@/lib/train/tune/types";
 import { tuneRunView } from "@/lib/train/tune/view";
 import type { TrainEventView } from "@/lib/train/types";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const jobs = schema.trainingJobs;
 const events = schema.trainingEvents;
 
-/**
- * The newest Muse Glimmer LoRA job trained on this dataset, without the hub state's small files, or null. A dry run
- * (dryRun 1) fakes its answers, so its scores say nothing about the model and it never counts as the run's job.
- */
-export async function latestTuneJob(datasetId: string): Promise<TrainJobRow | null> {
-  if (!UUID_RE.test(datasetId)) return null;
-  const notDry = sql`(case when ${jobs.params}->>'dryRun' ~ '^[0-9]+([.][0-9]+)?$' then (${jobs.params}->>'dryRun')::numeric else 0 end) < 1`;
-  const [row] = await db()
-    .select(jobListColumns)
-    .from(jobs)
-    .where(and(eq(jobs.recipe, ADAPTER_RECIPE), sql`${jobs.params}->>'datasetId' = ${datasetId}`, notDry))
-    .orderBy(desc(jobs.createdAt), desc(jobs.id))
-    .limit(1);
-  return (row as TrainJobRow | undefined) ?? null;
-}
+// The run's job and what it keeps in rate_limits, without the room's view, so the tuneRun workflow's steps can read
+// them (lib/train/tune/run-store.ts).
+export {
+  clearRunEnded,
+  latestTuneJob,
+  markCode,
+  markRunStopped,
+  readRunMarkRows,
+  readRunMarks,
+  recordRunEnded,
+  recordRunHeartbeat,
+  releaseLaunchClaim,
+  saveRunSteps,
+  takeLaunchClaim,
+  TUNE_KEEP_WINDOW,
+  TUNE_LAUNCH_CLAIM_MS,
+  type RunMarkRow,
+} from "@/lib/train/tune/run-store";
 
 /** A job's eval items and judgements, oldest first: EVALS_MAX of each, with room for a judgement logged twice. */
 export async function tuneEvalEvents(jobId: string): Promise<TrainEventView[]> {
@@ -45,15 +48,16 @@ export async function tuneEvalEvents(jobId: string): Promise<TrainEventView[]> {
 
 /**
  * A run as its room shows it, or null when the id names no dataset. Reads the dataset, how many examples it holds
- * while it's being written, its newest training job and that job's eval items.
+ * while it's being written, its newest training job and that job's eval items, and its marks (readRunMarks).
  */
 export async function loadTuneRun(id: string, now: Date, ceilings: { maxMinutes: number; maxUsd: number }): Promise<TuneRunView | null> {
   const dataset = await getDataset(id);
   if (!dataset) return null;
-  const [written, job] = await Promise.all([
+  const [written, job, marks] = await Promise.all([
     dataset.status === "generating" ? datasetProgress(id) : Promise.resolve(null),
     latestTuneJob(id),
+    readRunMarks(id, now),
   ]);
   const events = job ? await tuneEvalEvents(job.id) : [];
-  return tuneRunView({ dataset, written, job, events }, now, ceilings);
+  return tuneRunView({ dataset, written, job, events, marks }, now, ceilings);
 }

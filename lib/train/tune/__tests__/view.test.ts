@@ -1,6 +1,7 @@
 /**
  * A run's room from its rows (lib/train/tune/view.ts, and components/train/room/steps.ts for the chat kit): the stage at every point a run reaches, the settings
- * and cost it shows, the verdict, the one thing it offers next (the full form until U3 lands, then the job), and the
+ * and cost it shows, the verdict, the one thing it offers next (Start training with the full form for admins, then the
+ * job), why it waits (the tuneRun workflow's heartbeat, its ending, a stop: lib/train/tune/marks.ts), and the
  * same run on the chat kit's rows, working step, end row and mascot. Pure: the rows are made up here.
  *
  *   npx tsx --test lib/train/tune/__tests__/view.test.ts
@@ -9,6 +10,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { DatasetHead, TrainJobRow } from "@/lib/train/logic";
 import { TUNE_ART, tuneArt, tuneCurrentStep, tuneRunning, tuneSteps, tuneStepsEnd } from "@/components/train/room/steps";
+import { NO_MARKS, runMarks, TUNE_HEARTBEAT_FRESH_MS, waitText, type RunMarks } from "@/lib/train/tune/marks";
 import { examplesProblem, fullFormHref, tuneRunView } from "@/lib/train/tune/view";
 import type { TrainEventView } from "@/lib/train/types";
 
@@ -91,8 +93,15 @@ function evalEvents(judged: number): TrainEventView[] {
   return out;
 }
 
-const view = (d: DatasetHead, j: TrainJobRow | null = null, events: TrainEventView[] = [], written: number | null = null, now = NOW) =>
-  tuneRunView({ dataset: d, written, job: j, events }, now, CEILINGS);
+const view = (d: DatasetHead, j: TrainJobRow | null = null, events: TrainEventView[] = [], written: number | null = null, now = NOW, marks?: RunMarks) =>
+  tuneRunView({ dataset: d, written, job: j, events, marks }, now, CEILINGS);
+
+/** The tuneRun workflow's heartbeat rows, one a minute in `state` from `from` to `to` minutes before NOW. */
+function beats(state: string, from: number, to: number) {
+  const rows = [];
+  for (let m = from; m >= to; m--) rows.push({ key: `tune-run:${DS}:${state}`, windowStart: new Date(NOW.getTime() - m * 60_000), count: 1 });
+  return rows;
+}
 
 describe("a run's stage", () => {
   it("writes, with how many so far and what it cost", () => {
@@ -109,11 +118,11 @@ describe("a run's stage", () => {
     assert.equal(tuneStepsEnd(v), undefined);
   });
 
-  it("waits once its examples are ready, and offers the full New job form with the dataset picked (until U3)", () => {
+  it("waits once its examples are ready with nothing trying to train them, and offers Start training and the full form", () => {
     const v = view(ready());
     assert.equal(v.stage, "waiting");
     assert.equal(v.hold?.reason, "not_started");
-    assert.deepEqual(v.next, { kind: "full_form", href: `/fine-tuning?dataset=${DS}#new-job` });
+    assert.deepEqual(v.next, { kind: "start", start: `/api/train/runs/${DS}/start`, fullForm: `/fine-tuning?dataset=${DS}#new-job` });
     assert.equal(fullFormHref(DS), `/fine-tuning?dataset=${DS}#new-job`);
     assert.equal(tuneCurrentStep(v), null, "nothing runs while it waits on a person");
     assert.equal(tuneRunning(v), false);
@@ -208,6 +217,72 @@ describe("a run's stage", () => {
     assert.equal(stopped.stage, "stopped");
     assert.equal(tuneStepsEnd(stopped), "stopped");
     assert.equal(TUNE_ART.stopped, "present");
+  });
+
+  it("reads the run's marks: its steps, heartbeat, ending and stop, and nobody else's", () => {
+    const rows = [
+      { key: `tune-settings:${DS}:steps`, windowStart: new Date("2100-01-01T00:00:00.000Z"), count: 300 },
+      ...beats("gpu_busy", 12, 2),
+      ...beats("checking", 14, 13),
+      { key: `tune-run:other-run:paused`, windowStart: NOW, count: 1 },
+      { key: `tune-run-end:${DS}:waited_gpu_busy`, windowStart: new Date("2100-01-01T00:00:00.000Z"), count: 1 },
+    ];
+    const marks = runMarks(DS, rows);
+    assert.equal(marks.steps, 300);
+    assert.equal(marks.stopped, false);
+    assert.equal(marks.ended, "waited_gpu_busy");
+    assert.equal(marks.heartbeat?.state, "gpu_busy");
+    assert.equal(marks.heartbeat?.since.getTime(), NOW.getTime() - 12 * 60_000, "since the first minute of the same reason");
+    assert.equal(marks.heartbeat?.at.getTime(), NOW.getTime() - 2 * 60_000);
+    assert.equal(runMarks(DS, [{ key: `tune-run-stopped:${DS}`, windowStart: new Date(0), count: 1 }]).stopped, true);
+    assert.deepEqual(runMarks(DS, []), NO_MARKS);
+  });
+
+  it("checks, then waits for a GPU with the reason the workflow's heartbeat gives, and takes the run's own steps", () => {
+    const checking = view(ready(), null, [], null, NOW, runMarks(DS, beats("checking", 1, 0)));
+    assert.equal(checking.stage, "checking");
+    assert.equal(checking.hold, null);
+    assert.equal(checking.next, null, "nothing to press while it checks");
+    assert.equal(tuneRunning(checking), true);
+    assert.deepEqual(tuneSteps(checking).map((r) => [r.id, r.state]), [["plan", "done"], ["writing", "done"], ["checking", "running"]]);
+
+    const marks = runMarks(DS, [...beats("too_many_active", 20, 3), { key: `tune-settings:${DS}:steps`, windowStart: new Date("2100-01-01T00:00:00.000Z"), count: 300 }]);
+    const busy = view(ready(), null, [], null, NOW, marks);
+    assert.equal(busy.stage, "waiting");
+    assert.deepEqual(busy.hold, { reason: "too_many_active", text: waitText("too_many_active"), since: new Date(NOW.getTime() - 20 * 60_000).toISOString() });
+    assert.equal(busy.next?.kind, "start", "Start training asks again at once");
+    assert.deepEqual(tuneCurrentStep(busy), { title: "Waiting for a GPU", description: waitText("too_many_active") });
+    assert.deepEqual(tuneSteps(busy).at(-1), { id: "waiting", title: "Waiting for a GPU", description: waitText("too_many_active"), state: "running" });
+    assert.equal(busy.plan.steps, 300, "the steps the run was started with");
+    assert.ok(busy.plan.trainMinutes > view(ready()).plan.trainMinutes, "and their time");
+
+    // A heartbeat that stopped coming: nothing is trying any more, so it's Start training again.
+    const stale = view(ready(), null, [], null, new Date(NOW.getTime() + TUNE_HEARTBEAT_FRESH_MS + 4 * 60_000), marks);
+    assert.equal(stale.hold?.reason, "not_started");
+    assert.equal(tuneCurrentStep(stale), null);
+  });
+
+  it("says why training didn't start, fails a run whose examples failed the check, and stops a stopped one", () => {
+    const keep = new Date("2100-01-01T00:00:00.000Z");
+    const waited = view(ready(), null, [], null, NOW, runMarks(DS, [{ key: `tune-run-end:${DS}:waited_gpu_busy`, windowStart: keep, count: 1 }]));
+    assert.equal(waited.stage, "waiting");
+    assert.equal(waited.hold?.reason, "not_started");
+    assert.equal(waited.hold?.text, "It waited 2 hours and training didn't start. No Muse Glimmer GPU is free on Lambda right now. Start training tries again.");
+    const refused = view(ready(), null, [], null, NOW, runMarks(DS, [{ key: `tune-run-end:${DS}:lambda_not_configured`, windowStart: keep, count: 1 }]));
+    assert.match(refused.hold!.text, /^Training didn't start: Lambda isn't connected on this deployment\. Start training tries again\.$/);
+
+    const long = view(ready(), null, [], null, NOW, runMarks(DS, [{ key: `tune-run-end:${DS}:too_long`, windowStart: keep, count: 1 }]));
+    assert.equal(long.stage, "failed");
+    assert.match(long.problem!, /longer than Muse Glimmer trains on/);
+    assert.equal(long.next, null);
+    assert.equal(tuneSteps(long).at(-1)!.state, "failed");
+
+    const stopped = view(ready(), null, [], null, NOW, { ...NO_MARKS, stopped: true });
+    assert.equal(stopped.stage, "stopped");
+    assert.equal(stopped.hold?.reason, "stopped");
+    assert.equal(stopped.next, null, "nothing launches for a stopped run");
+    // A job that started before the stop is still the run's.
+    assert.equal(view(ready(), job(), [], null, NOW, { ...NO_MARKS, stopped: true }).stage, "training");
   });
 
   it("keeps every word free of em dashes", () => {

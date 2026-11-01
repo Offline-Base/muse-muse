@@ -3,13 +3,18 @@
  * way POST /api/train/datasets does. The run is that dataset, so its id is the run's id and its room is
  * /fine-tuning/runs/{id}. A plan for a dataset that already exists starts nothing new.
  *
- * Training doesn't start on its own yet: U3's tuneRun workflow (after tg-decide's D7) will poll the dataset, check the
- * examples and launch the GPU. Until then a ready run's room offers the full New job form (lib/train/tune/view.ts).
+ * Then it starts the tuneRun workflow (lib/train/tune/run.ts), which waits for the examples, checks them and launches
+ * the training job through launchJob with the run's settings and publish 0. A tuneRun that couldn't start leaves the
+ * examples writing, and the room offers Start training once they're ready (lib/train/tune/view.ts).
  */
 import { start } from "workflow/api";
 import { testModel } from "@/lib/env";
 import { DATASET_MODEL, makeDataset } from "@/lib/train/datasets";
 import { attachDatasetRun, createDataset, failDataset, getDataset } from "@/lib/train/store";
+import { TUNE_STEPS } from "@/lib/train/tune/settings";
+import { freshHeartbeat } from "@/lib/train/tune/marks";
+import { tuneRun } from "@/lib/train/tune/run";
+import { latestTuneJob, readRunMarks, saveRunSteps } from "@/lib/train/tune/run-store";
 import type { TrainPlanBody } from "@/lib/train/tune/types";
 
 /** A refusal startTuneRun's caller turns into a JSON reply with this status and code. */
@@ -28,9 +33,27 @@ export function runHref(runId: string): string {
 }
 
 /**
+ * Starts the tuneRun workflow for a run, which trains it once its examples are ready. Logged, never thrown: without
+ * it the examples are still written, and the room offers Start training once they're ready.
+ */
+export async function startTraining(datasetId: string, callerId: string, steps: number): Promise<boolean> {
+  try {
+    await start(tuneRun, [{ datasetId, callerId, steps }]);
+    return true;
+  } catch (err) {
+    console.error("[train/tune] start tuneRun", err);
+    return false;
+  }
+}
+
+/**
  * Saves the plan's dataset (its name as the title, written as a role for the short student prompt; its task; its size)
  * and starts makeDataset on it. The writer is Muse Wonder, or TEST_MODEL where that is on (never on production), so a
- * made-up test run costs a cent. `productId` is for B, the build room's own-model row, and is kept nowhere until 0025.
+ * made-up test run costs a cent. The plan's training steps are kept with the run (saveRunSteps), and tuneRun starts
+ * on it. A plan or `datasetId` for a dataset that already exists starts nothing new, except tuneRun for a chat dataset
+ * with no training job and nothing already trying to train it (no fresh heartbeat), so unit 11's "Train on my data"
+ * trains a ready dataset the same way. `productId` is for B, the build room's own-model row, and is kept nowhere until
+ * 0025.
  */
 export async function startTuneRun(i: {
   plan?: TrainPlanBody;
@@ -44,6 +67,14 @@ export async function startTuneRun(i: {
   if (source.kind === "dataset") {
     const existing = await getDataset(source.datasetId);
     if (!existing) throw new TuneStartError(404, "not_found");
+    if (existing.kind !== "decision" && existing.status !== "failed") {
+      const [job, marks] = await Promise.all([latestTuneJob(existing.id), readRunMarks(existing.id)]);
+      if (!job && !marks.stopped && !freshHeartbeat(marks, Date.now())) {
+        const steps = i.plan?.settings.steps ?? marks.steps ?? TUNE_STEPS;
+        if (i.plan) await saveRunSteps(existing.id, steps).catch((err) => console.error("[train/tune] save steps", err));
+        await startTraining(existing.id, i.callerId, steps);
+      }
+    }
     return { runId: existing.id, href: runHref(existing.id) };
   }
   const plan = i.plan!;
@@ -65,5 +96,7 @@ export async function startTuneRun(i: {
     throw new TuneStartError(500, "start_failed");
   }
   await attachDatasetRun(dataset.id, workflowRunId).catch((err) => console.error("[train/tune] attachRun", err));
+  await saveRunSteps(dataset.id, plan.settings.steps).catch((err) => console.error("[train/tune] save steps", err));
+  await startTraining(dataset.id, i.callerId, plan.settings.steps);
   return { runId: dataset.id, href: runHref(dataset.id) };
 }

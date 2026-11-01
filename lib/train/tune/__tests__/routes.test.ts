@@ -24,6 +24,8 @@ let calls: Array<{ fn: string; args: unknown[] }> = [];
 let counters: Record<string, number> = {};
 let paused = false;
 let startFails = false;
+/** Fails only the start calls it says yes to (the second is tuneRun's). */
+let startFailsWhen: () => boolean = () => false;
 let draft: Record<string, unknown> = {};
 let structuredFails = false;
 let runView: Record<string, unknown> | null = null;
@@ -131,12 +133,21 @@ describe("tune routes", { skip: canMock ? false : "needs --experimental-test-mod
         },
       },
     });
+    mock.module(at("../run-store.ts"), {
+      namedExports: {
+        latestTuneJob: async () => null,
+        readRunMarks: async () => ({ steps: null, stopped: false, ended: null, heartbeat: null }),
+        saveRunSteps: async (...args: unknown[]) => void calls.push({ fn: "saveRunSteps", args }),
+      },
+    });
+    // The tuneRun workflow is started, never run, here (lib/train/tune/__tests__/run-flow.test.ts runs it on PGlite).
+    mock.module(at("../run.ts"), { namedExports: { tuneRun: async () => ({ status: "launched" }) } });
     mock.module(at("../../datasets.ts"), { namedExports: { DATASET_MODEL: "muse-wonder-1.0", makeDataset: async () => ({ status: "ready" }) } });
     mock.module("workflow/api", {
       namedExports: {
         start: async (_wf: unknown, args: unknown[]) => {
           calls.push({ fn: "start", args });
-          if (startFails) throw new Error("queue unavailable");
+          if (startFails || startFailsWhen()) throw new Error("queue unavailable");
           return { runId: "wrun-1" };
         },
       },
@@ -165,6 +176,7 @@ describe("tune routes", { skip: canMock ? false : "needs --experimental-test-mod
     counters = {};
     paused = false;
     startFails = false;
+    startFailsWhen = () => false;
     structuredFails = false;
     runView = { id: DATASET_ID, stage: "writing" };
     draft = {
@@ -307,6 +319,32 @@ describe("tune routes", { skip: canMock ? false : "needs --experimental-test-mod
       });
       assert.deepEqual(called("start")[0]!.args, [{ datasetId: DATASET_ID }]);
       assert.deepEqual(called("attachDatasetRun")[0]!.args, [DATASET_ID, "wrun-1"]);
+      // Then the run keeps its steps and the tuneRun workflow starts on it, to train it once the examples are ready.
+      assert.deepEqual(called("saveRunSteps")[0]!.args, [DATASET_ID, 120]);
+      assert.deepEqual(called("start")[1]!.args, [{ datasetId: DATASET_ID, callerId: "admin-1", steps: 120 }]);
+      assert.equal(called("start").length, 2);
+    });
+
+    it("takes Advanced's training steps, up to as many as fit in the run's time limit", async () => {
+      const res = await runsRoute(req("/api/train/runs", { plan: await draftOne(), settings: { steps: 300 } }));
+      assert.equal(res.status, 201);
+      assert.deepEqual(called("saveRunSteps")[0]!.args, [DATASET_ID, 300]);
+      assert.equal((called("start")[1]!.args[0] as { steps: number }).steps, 300);
+      for (const steps of [5, 2000, 120.5, "200"]) {
+        const bad = await runsRoute(req("/api/train/runs", { plan: await draftOne(), settings: { steps } }));
+        assert.equal(bad.status, 400, String(steps));
+        assert.match(((await bad.json()) as { error: string }).error, /^steps must be a whole number from 10 to 350\.$/);
+      }
+      assert.equal(called("createDataset").length, 1, "a bad number starts nothing");
+    });
+
+    it("still starts the examples when the tuneRun workflow can't start", async () => {
+      const plan = await draftOne();
+      let n = 0;
+      startFailsWhen = () => ++n === 2;
+      const res = await runsRoute(req("/api/train/runs", { plan }));
+      assert.equal(res.status, 201, "the room offers Start training once the examples are ready");
+      assert.equal(called("failDataset").length, 0);
     });
 
     it("saves Muse Wonder as the writer on production", async () => {
