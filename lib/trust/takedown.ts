@@ -10,8 +10,9 @@ import type { ProductStatus } from "@/lib/types";
  *
  * - A takedown sets products.taken_down_at and the reason, turns the product off (status "disabled", the kill switch the
  *   gateway, its MCP connector and the gallery already honor), revokes its live tokens at exactly taken_down_at, hides
- *   its page, and removes its public link from its Vercel project. Undoing it gives back only the tokens revoked at that
- *   moment, the exact status it had before (kept in products.status_before_takedown), and the link.
+ *   its page, and pauses its Vercel project, so its site isn't served at any address (lib/trust/alias.ts). Undoing it
+ *   gives back only the tokens revoked at that moment, the exact status it had before (kept in
+ *   products.status_before_takedown), and the site.
  * - A ban sets users.banned_at and refuses sign-in and builds, then takes down each of their products at the same
  *   moment, so lifting the ban undoes exactly those takedowns and none an admin made for another reason.
  */
@@ -45,8 +46,16 @@ export interface TakedownDeps {
   restoreLiveTokens(productId: string, at: Date): Promise<number>;
   /** The status of the product's latest build (a BuildStatus), for a product that was still building when taken down. */
   shippedStatus(productId: string): Promise<string | null>;
-  /** Removes or puts back the product's public link on Vercel. Null when publishing is off here. */
-  alias: { remove(projectId: string, host: string): Promise<void>; restore(projectId: string, host: string): Promise<void> } | null;
+  /**
+   * The product's site on Vercel (lib/trust/alias.ts): pause and unpause its project, and remove or put back its
+   * production domain, the backup when pausing fails. Null when publishing is off here.
+   */
+  alias: {
+    pause(projectId: string): Promise<void>;
+    unpause(projectId: string): Promise<void>;
+    remove(projectId: string, host: string): Promise<void>;
+    restore(projectId: string, host: string): Promise<void>;
+  } | null;
   /** Each cap pauses what it runs for the product (lib/caps/cleanup.ts). */
   productOff(productId: string): Promise<void>;
 }
@@ -55,7 +64,11 @@ export interface TakedownResult {
   slug: string;
   takenDownAt: string;
   tokens: number;
-  /** "removed" or "restored", "none" when it has no link, "off" when publishing is off here, or why it failed. */
+  /**
+   * What happened to its site: "paused" or "unpaused"; "link removed" when pausing failed and only the production
+   * domain could be removed, with why; "none" when it was never published; "off" when publishing is off here; or
+   * "failed: <why>", when the site may still be up.
+   */
   link: string;
 }
 
@@ -68,19 +81,56 @@ function hostOf(liveUrl: string | null): string | null {
   }
 }
 
-async function linkStep(p: TakedownProduct, deps: TakedownDeps, how: "remove" | "restore"): Promise<string> {
-  const host = hostOf(p.liveUrl);
-  if (!p.vercelProjectId || !host) return "none";
+const messageOf = (err: unknown) => (err instanceof Error ? err.message : String(err)).slice(0, 200);
+
+/**
+ * Takes the product's site down: pauses its Vercel project, which stops its production deployment at every address.
+ * When that fails, removes its production domain instead, so at least its link stops. The rest of the takedown holds
+ * either way: its tokens are revoked and the gateway refuses it.
+ */
+async function siteDown(p: TakedownProduct, deps: TakedownDeps): Promise<string> {
+  if (!p.vercelProjectId) return "none";
   if (!deps.alias) return "off";
   try {
-    await deps.alias[how](p.vercelProjectId, host);
-    return how === "remove" ? "removed" : "restored";
+    await deps.alias.pause(p.vercelProjectId);
+    return "paused";
   } catch (err) {
-    // The rest of the takedown holds without it: its tokens are revoked and the gateway refuses it.
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`[trust] couldn't ${how} ${host} on its project:`, message);
-    return `failed: ${message.slice(0, 200)}`;
+    const paused = messageOf(err);
+    console.error(`[trust] couldn't pause project ${p.vercelProjectId}:`, paused);
+    const host = hostOf(p.liveUrl);
+    if (!host) return `failed: ${paused}`;
+    try {
+      await deps.alias.remove(p.vercelProjectId, host);
+      return `link removed, but pausing failed: ${paused}`;
+    } catch (err2) {
+      console.error(`[trust] couldn't remove ${host} from its project:`, messageOf(err2));
+      return `failed: ${paused}; ${messageOf(err2)}`;
+    }
   }
+}
+
+/** Puts the site back: unpauses the project, then adds the production domain back in case the takedown removed it. */
+async function siteUp(p: TakedownProduct, deps: TakedownDeps): Promise<string> {
+  if (!p.vercelProjectId) return "none";
+  if (!deps.alias) return "off";
+  const problems: string[] = [];
+  try {
+    await deps.alias.unpause(p.vercelProjectId);
+  } catch (err) {
+    problems.push(messageOf(err));
+    console.error(`[trust] couldn't unpause project ${p.vercelProjectId}:`, problems.at(-1));
+  }
+  const host = hostOf(p.liveUrl);
+  if (host) {
+    try {
+      // A domain that's still there counts as restored (productAlias.restore).
+      await deps.alias.restore(p.vercelProjectId, host);
+    } catch (err) {
+      problems.push(messageOf(err));
+      console.error(`[trust] couldn't add ${host} back to its project:`, problems.at(-1));
+    }
+  }
+  return problems.length ? `failed: ${problems.join("; ")}` : "unpaused";
 }
 
 /** Takes one product down at `at`. Null when it was already down (nothing changes). */
@@ -89,7 +139,7 @@ async function takeDown(p: TakedownProduct, at: Date, reason: string, deps: Take
   if (!(await deps.markTakenDown(p.id, at, reason))) return null;
   const tokens = await deps.revokeLiveTokens(p.id, at);
   await deps.productOff(p.id);
-  return { slug: p.slug, takenDownAt: at.toISOString(), tokens, link: await linkStep(p, deps, "remove") };
+  return { slug: p.slug, takenDownAt: at.toISOString(), tokens, link: await siteDown(p, deps) };
 }
 
 /**
@@ -112,7 +162,7 @@ async function undo(p: TakedownProduct, deps: TakedownDeps): Promise<TakedownRes
   const tokens = await deps.restoreLiveTokens(p.id, at);
   const latest = p.statusBeforeTakedown && p.statusBeforeTakedown !== "building" ? null : await deps.shippedStatus(p.id);
   await deps.clearTakedown(p.id, statusAfterUndo(p.statusBeforeTakedown, latest));
-  return { slug: p.slug, takenDownAt: at.toISOString(), tokens, link: await linkStep(p, deps, "restore") };
+  return { slug: p.slug, takenDownAt: at.toISOString(), tokens, link: await siteUp(p, deps) };
 }
 
 export const REASON_MAX_CHARS = 500;

@@ -135,20 +135,30 @@ describe("on a database", { skip: canMock ? false : "needs --experimental-test-m
     return { ...takedown.dbTakedownDeps(alias), protectedEmail: (email: string) => email === "admin@example.com" || email === "guest@musemuse.invalid" };
   }
 
-  it("a takedown hides the page and the gallery card, turns the product off, revokes its live tokens and its link", async () => {
+  /** A fake Vercel side that records each call, and fails the ones named in `failing`. */
+  function fakeSite(failing: string[] = []) {
+    const calls: string[] = [];
+    const step = (what: string) => async (id: string, host?: string) => {
+      calls.push(host ? `${what} ${id} ${host}` : `${what} ${id}`);
+      if (failing.includes(what)) throw new Error(`Vercel API ${what} failed (403)`);
+    };
+    return { calls, alias: { pause: step("pause"), unpause: step("unpause"), remove: step("remove"), restore: step("restore") } };
+  }
+
+  it("a takedown hides the page and the gallery card, turns the product off, revokes its live tokens and pauses its site", async () => {
     process.env.TRUST_REPORTS = "1";
     const owner = await maker();
     const { product } = await shipped(owner);
     assert.ok(await queries.getProductPage(product.slug));
     assert.ok((await queries.listShippedProducts()).some((c) => c.slug === product.slug));
 
-    const calls: string[] = [];
-    const alias = { remove: async (id: string, host: string) => void calls.push(`remove ${id} ${host}`), restore: async (id: string, host: string) => void calls.push(`restore ${id} ${host}`) };
+    const { calls, alias } = fakeSite();
     const done = await takedown.takedownProduct(product.slug, "Copies a real brand.", deps(alias));
     assert.ok(done.ok && done.result);
     assert.equal(done.result.tokens, 1, "only the active one");
-    assert.equal(done.result.link, "removed");
-    assert.deepEqual(calls, [`remove prj_${product.slug} musemuse-${product.slug}.vercel.app`]);
+    assert.equal(done.result.link, "paused");
+    // The whole project, so its deployment's own URL and team alias stop too, not just the one domain.
+    assert.deepEqual(calls, [`pause prj_${product.slug}`]);
 
     const after1 = await row(product.id);
     assert.equal(after1.status, "disabled");
@@ -170,7 +180,8 @@ describe("on a database", { skip: canMock ? false : "needs --experimental-test-m
     const undone = await takedown.undoTakedown(product.slug, deps(alias));
     assert.ok(undone.ok && undone.result);
     assert.equal(undone.result.tokens, 1, "only the token the takedown revoked comes back");
-    assert.equal(undone.result.link, "restored");
+    assert.equal(undone.result.link, "unpaused");
+    assert.deepEqual(calls.slice(1), [`unpause prj_${product.slug}`, `restore prj_${product.slug} musemuse-${product.slug}.vercel.app`], "and the domain, in case the backup removed it");
     const restored = await row(product.id);
     assert.equal(restored.status, "live", "exactly the status it had before");
     assert.equal(restored.statusBeforeTakedown, null);
@@ -208,13 +219,20 @@ describe("on a database", { skip: canMock ? false : "needs --experimental-test-m
     }
   });
 
-  it("a takedown still holds when its link can't be removed, and says why", async () => {
+  it("a takedown falls back to removing the domain when pausing fails, and still holds, saying why, when both fail", async () => {
     const owner = await maker();
+    const first = await shipped(owner);
+    const backup = fakeSite(["pause"]);
+    const done1 = await takedown.takedownProduct(first.product.slug, "Harmful.", deps(backup.alias));
+    assert.ok(done1.ok && done1.result);
+    assert.equal(done1.result.link, "link removed, but pausing failed: Vercel API pause failed (403)");
+    assert.deepEqual(backup.calls, [`pause prj_${first.product.slug}`, `remove prj_${first.product.slug} musemuse-${first.product.slug}.vercel.app`]);
+
     const { product } = await shipped(owner);
-    const alias = { remove: async () => { throw new Error("Vercel API removing it failed (403)"); }, restore: async () => {} };
+    const { alias } = fakeSite(["pause", "remove"]);
     const done = await takedown.takedownProduct(product.slug, "Harmful.", deps(alias));
     assert.ok(done.ok && done.result);
-    assert.match(done.result.link, /^failed: Vercel API removing it failed \(403\)/);
+    assert.match(done.result.link, /^failed: Vercel API pause failed \(403\); Vercel API remove failed \(403\)/);
     assert.equal((await row(product.id)).status, "disabled");
     const off = await takedown.takedownProduct("no-such-product", "x", deps());
     assert.equal(off.ok, false);

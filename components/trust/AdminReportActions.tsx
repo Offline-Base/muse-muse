@@ -34,6 +34,11 @@ export function AdminReportActions(props: {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
         setError(data.error && /\s/.test(data.error) ? data.error : `That didn't work (${res.status}).`);
       } else {
+        // A takedown or ban is done even when Vercel refused to pause the site. Say so, since the site may still be up.
+        const data = (await res.json().catch(() => ({}))) as { result?: { link?: string } | null; products?: Array<{ slug: string; link?: string }> };
+        const sites = [...(data.result ? [{ slug: props.slug ?? "", link: data.result.link }] : []), ...(data.products ?? [])];
+        const stuck = sites.filter((s) => s.link?.includes("failed"));
+        if (stuck.length) setError(`Done, but Vercel didn't pause ${stuck.map((s) => s.slug).join(", ")}: ${stuck[0]!.link}. Check the site by hand.`);
         router.refresh();
       }
     } catch {
