@@ -1,14 +1,14 @@
 // Platform file (Muse Muse platform services). Keep this file as it is.
 //
 // POST /api/musemuse/live-caption?session=&startMs=&endMs= with a WAV as its body: sends one piece of a person's speech
-// to Muse Voice Transcribe through the gateway, and answers {text, startMs, endMs}. useCaptions calls it. Nothing is kept.
+// to Muse Voice Transcribe through the gateway, and answers {text, startMs, endMs}. useCaptions calls it. This route keeps nothing.
 import { gatewayEnv } from "@/lib/meta/client";
 import { VOICE_MODEL } from "@/lib/meta/voice";
 import { identityHeaders, newVisitorId, visitorCookie, visitorId } from "@/lib/platform/identity";
 import { userHeaders } from "@/lib/platform/user";
 
-/** Ten seconds of 16 kHz WAV, the longest piece the gateway takes as a live chunk, with its header. */
-const MOST_BYTES = 320_100;
+/** The most the gateway takes as a live chunk: it counts ten seconds of 16 kHz WAV as this many bytes, header included. */
+const MOST_BYTES = 320_000;
 const SESSION = /^[A-Za-z0-9_-]{8,64}$/;
 
 const refuse = (error: string, status: number, code?: string, headers?: HeadersInit) => Response.json({ error, ...(code ? { code } : {}) }, { status, headers });

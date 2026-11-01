@@ -85,17 +85,17 @@ async function checkRateLimits(
   token: GatewayToken,
   deps: GatewayDeps,
   now: Date,
-  perIpPerMinute: number = DEFAULT_LIMITS.perIpRequestsPerMinute,
+  perIp: { prefix: string; limit: number } = { prefix: "ip", limit: DEFAULT_LIMITS.perIpRequestsPerMinute },
 ): Promise<Response | null> {
   const windowStart = new Date(Math.floor(now.getTime() / 60_000) * 60_000);
   const limits: Record<string, number> = { [`token:${token.id}`]: DEFAULT_LIMITS.perTokenRequestsPerMinute };
   const ip = clientIpKey(req.headers.get(CLIENT_IP_HEADER));
-  if (ip) limits[`ip:${token.productId}:${ip}`] = perIpPerMinute;
+  if (ip) limits[`${perIp.prefix}:${token.productId}:${ip}`] = perIp.limit;
   const counts = await deps.hitRateLimits(Object.keys(limits), windowStart);
   const over = Object.entries(limits).find(([key, limit]) => (counts[key] ?? 0) > limit);
   if (!over) return null;
   const retryAfter = Math.max(1, Math.ceil((windowStart.getTime() + 60_000 - now.getTime()) / 1000));
-  const who = over[0].startsWith("ip:") ? "this user" : "this product";
+  const who = over[0].startsWith(`${perIp.prefix}:`) ? "this user" : "this product";
   return gatewayError(
     429,
     "rate_limit_error",
@@ -257,10 +257,10 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
   }
 
   const now = deps.now?.() ?? new Date();
-  // ---------- Wave 3, unit 7: a live caption chunk gets 30 a minute per IP and spends caption minutes (section 13). Nothing without deps.liveCaptions ----------
+  // ---------- Wave 3, unit 7: a live caption chunk counts under its own per-IP key, 30 a minute, and spends caption minutes (section 13). Nothing without deps.liveCaptions ----------
   const liveChunk = deps.liveCaptions ? liveChunkOf(req, endpoint, parsed, token) : null;
   if (liveChunk instanceof Response) return liveChunk;
-  const limited = await checkRateLimits(req, token, deps, now, liveChunk?.perIpPerMinute);
+  const limited = await checkRateLimits(req, token, deps, now, liveChunk?.perIp);
   if (limited) return limited;
   { const refused = liveChunk && deps.liveCaptions ? await spendLiveSeconds(req, token, liveChunk, deps.liveCaptions, deps, now) : null; if (refused) return refused; }
   // ---------- end Wave 3, unit 7 ----------

@@ -3,6 +3,7 @@
  * a cap:live token, caption minutes, and nothing at all while deps.liveCaptions is unset.
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { handleGateway } from "@/lib/gateway/handler";
 import { fakeGateway, gatewayRequest, TEST_TOKEN } from "@/lib/gateway/__tests__/helpers";
@@ -42,16 +43,36 @@ const live = (g: ReturnType<typeof fakeGateway>, minutesPerDay = 10) => {
 const errorCode = async (res: Response) => ((await res.json()) as { error: { code: string } }).error.code;
 
 /** The fake's per-IP count already at `count`, so the next call is count + 1. */
-const atIpCount = (count: number) => ({ counts: { [`ip:00000000-0000-4000-8000-000000000002:${IP}`]: count } });
+const PRODUCT = "00000000-0000-4000-8000-000000000002";
+const atIpCount = (count: number) => ({ counts: { [`ip:${PRODUCT}:${IP}`]: count } });
+/** The same for a chunk's own key. */
+const atChunkCount = (count: number) => ({ counts: { [`live-ip:${PRODUCT}:${IP}`]: count } });
 
 describe("the per-IP limit on a live chunk", () => {
   it("is 30 a minute for a cap:live token that sends the header", async () => {
-    const under = live(fakeGateway({ token: LIVE_TOKEN, fetch: ok, ...atIpCount(29) }));
+    const under = live(fakeGateway({ token: LIVE_TOKEN, fetch: ok, ...atChunkCount(29) }));
     assert.equal((await send(under, chunkRequest({ [LIVE_HEADER]: SESSION }))).status, 200);
-    const over = live(fakeGateway({ token: LIVE_TOKEN, fetch: ok, ...atIpCount(30) }));
+    const over = live(fakeGateway({ token: LIVE_TOKEN, fetch: ok, ...atChunkCount(30) }));
     assert.equal((await send(over, chunkRequest({ [LIVE_HEADER]: SESSION }))).status, 429);
     assert.equal(over.upstreamCalls.length, 0);
     assert.equal(LIVE_LIMITS.asrPerIpPerMinute, 30);
+  });
+
+  it("keeps chunks and a person's other calls apart, so neither uses up the other", async () => {
+    const both = { allowedModels: ["muse-voice-transcribe-1.0", "muse-wonder-1.0", "cap:live"] };
+    const g = live(fakeGateway({ token: both, fetch: ok }));
+    const chunk = () => send(g, chunkRequest({ [LIVE_HEADER]: SESSION, [VISITOR_HEADER]: VISITOR }));
+    const call = () => handleGateway(gatewayRequest("responses", JSON.stringify({ model: "muse-wonder-1.0", input: "summarize so far" }), { "content-type": "application/json", [CLIENT_IP_HEADER]: IP }), ["responses"], g.deps);
+    for (let i = 0; i < LIVE_LIMITS.asrPerIpPerMinute; i++) assert.equal((await chunk()).status, 200, `chunk ${i}`);
+    assert.equal((await call()).status, 200, "a minute of captions leaves the person's other calls alone");
+    for (let i = 1; i < DEFAULT_LIMITS.perIpRequestsPerMinute; i++) assert.equal((await call()).status, 200, `call ${i}`);
+    const overCalls = await call();
+    assert.equal(overCalls.status, 429, "other calls keep their own 20");
+    assert.match(((await overCalls.json()) as { error: { message: string } }).error.message, /this user: the limit is 20/);
+    const overChunks = await chunk();
+    assert.equal(overChunks.status, 429, "and chunks their own 30");
+    assert.match(((await overChunks.json()) as { error: { message: string } }).error.message, /this user: the limit is 30/);
+    await g.settled();
   });
 
   it("stays 20 with the header but no cap:live, and its caption minutes aren't touched", async () => {
@@ -92,6 +113,15 @@ describe("what counts as a live chunk", () => {
     assert.equal(g.upstreamCalls.length, 0);
   });
 
+  it("takes ten full seconds and no more, the same number the product's route allows", async () => {
+    const route = readFileSync(new URL("../../../../template/caps/live/files/app/api/musemuse/live-caption/route.ts", import.meta.url), "utf8");
+    const most = Number(route.match(/const MOST_BYTES = ([\d_]+);/)![1]!.replace(/_/g, ""));
+    const g = live(fakeGateway({ token: LIVE_TOKEN, fetch: ok }));
+    assert.equal((await send(g, chunkRequest({ [LIVE_HEADER]: SESSION }, chunkForm(most)))).status, 200, "the largest piece the route lets through is a chunk");
+    assert.equal(await errorCode(await send(g, chunkRequest({ [LIVE_HEADER]: SESSION }, chunkForm(most + 1)))), "live_chunk_too_long");
+    await g.settled();
+  });
+
   it("forwards a good chunk to Meta unchanged", async () => {
     const g = live(fakeGateway({ token: LIVE_TOKEN, fetch: ok }));
     const res = await send(g, chunkRequest({ [LIVE_HEADER]: SESSION, [VISITOR_HEADER]: VISITOR }));
@@ -106,56 +136,69 @@ describe("what counts as a live chunk", () => {
 describe("caption minutes", () => {
   const visitorHeaders = { [LIVE_HEADER]: SESSION, [VISITOR_HEADER]: VISITOR };
 
-  it("count a chunk's seconds per visitor and refuse past the day's minutes, before Meta", async () => {
-    const g = live(fakeGateway({ token: LIVE_TOKEN, fetch: ok }), 1);
-    // 3 s a chunk: 20 of them fill one minute.
-    for (let i = 0; i < 20; i++) assert.equal((await send(g, chunkRequest(visitorHeaders, chunkForm(96_000)))).status, 200, `chunk ${i}`);
-    const over = await send(g, chunkRequest(visitorHeaders, chunkForm(96_000)));
+  /** Per-minute limits aren't what these test, so they never bite. g.counters is the caption minutes, and stays. */
+  const noRateLimit = (g: ReturnType<typeof fakeGateway>) => {
+    g.deps.hitRateLimits = async (keys) => Object.fromEntries(keys.map((k) => [k, 1]));
+    return g;
+  };
+  // 5.4 s with 0.4 s of overlap: 5 s of new talk. 12 fill one minute, 60 fill an address's five.
+  const FIVE_SECONDS = 172_800;
+
+  it("count only a chunk's new audio per visitor, not its overlap, and refuse past the day's minutes, before Meta", async () => {
+    const g = noRateLimit(live(fakeGateway({ token: LIVE_TOKEN, fetch: ok }), 1));
+    // A usual piece: 2.9 s with 0.4 s of overlap, so 2.5 s of new talk. 24 of them are the minute.
+    for (let i = 0; i < 24; i++) assert.equal((await send(g, chunkRequest(visitorHeaders, chunkForm(92_800)))).status, 200, `chunk ${i}`);
+    const over = await send(g, chunkRequest(visitorHeaders, chunkForm(92_800)));
     assert.equal(over.status, 429);
     const body = (await over.json()) as { error: { code: string; message: string } };
     assert.equal(body.error.code, "quota_exceeded");
-    assert.match(body.error.message, /1 minutes/);
-    assert.equal(g.upstreamCalls.length, 20);
+    assert.match(body.error.message, /1 minutes for this person/);
+    assert.equal(g.upstreamCalls.length, 24);
+    await g.settled();
+  });
+
+  it("charge at least a second, so very short pieces aren't free", async () => {
+    const g = noRateLimit(live(fakeGateway({ token: LIVE_TOKEN, fetch: ok }), 1));
+    for (let i = 0; i < 60; i++) assert.equal((await send(g, chunkRequest(visitorHeaders, chunkForm(100)))).status, 200, `chunk ${i}`);
+    assert.equal((await send(g, chunkRequest(visitorHeaders, chunkForm(100)))).status, 429);
     await g.settled();
   });
 
   it("are each visitor's own, and an address has five visitors' worth, so a new cookie doesn't give a new day forever", async () => {
-    const g = live(fakeGateway({ token: LIVE_TOKEN, fetch: ok }), 1);
-    const noOneLimit = async (visitor: string) => send(g, chunkRequest({ [LIVE_HEADER]: SESSION, [VISITOR_HEADER]: visitor }, chunkForm(320_000)));
-    // 10 s a chunk: 6 chunks a visitor, 30 an address. Rate limits aren't what's tested, so the fake's count is cleared.
-    const counters = g.counters;
+    const g = noRateLimit(live(fakeGateway({ token: LIVE_TOKEN, fetch: ok }), 1));
     let sent = 0;
+    let lastRefusal: Response | null = null;
     for (let v = 0; v < 6; v++) {
-      for (let i = 0; i < 6; i++) {
-        counters.clear();
-        const res = await noOneLimit(`visitor_${v}_aaaaaaaaaaaaaaaa`);
+      for (let i = 0; i < 13; i++) {
+        const res = await send(g, chunkRequest({ [LIVE_HEADER]: SESSION, [VISITOR_HEADER]: `visitor_${v}_aaaaaaaaaaaaaaaa` }, chunkForm(FIVE_SECONDS)));
         if (res.status === 200) sent += 1;
+        else lastRefusal = res;
       }
     }
-    assert.equal(sent, 30);
+    assert.equal(sent, 60);
+    const body = (await lastRefusal!.json()) as { error: { code: string; message: string } };
+    assert.equal(body.error.code, "quota_exceeded");
+    assert.match(body.error.message, /this network/, "an address's limit says it's shared, and doesn't blame this person");
+    assert.doesNotMatch(body.error.message, /this person/);
     await g.settled();
   });
 
   it("give the visitor's seconds back when the address is what refused", async () => {
-    const g = live(fakeGateway({ token: LIVE_TOKEN, fetch: ok }), 1);
-    for (let v = 0; v < 30; v++) {
-      g.counters.clear();
-      await send(g, chunkRequest({ [LIVE_HEADER]: SESSION, [VISITOR_HEADER]: `visitor_${v % 5}_aaaaaaaaaaaaaaaa` }, chunkForm(320_000)));
-    }
-    g.counters.clear();
-    const fresh = await send(g, chunkRequest({ [LIVE_HEADER]: SESSION, [VISITOR_HEADER]: "visitor_new_aaaaaaaaaaaaaaaa" }, chunkForm(320_000)));
-    assert.equal(fresh.status, 429);
-    const elsewhere = await send(g, chunkRequest({ [LIVE_HEADER]: SESSION, [VISITOR_HEADER]: "visitor_new_aaaaaaaaaaaaaaaa", [CLIENT_IP_HEADER]: "203.0.113.8" }, chunkForm(320_000)));
-    assert.equal(elsewhere.status, 200, "the refused chunk's seconds came back to this visitor");
+    const g = noRateLimit(live(fakeGateway({ token: LIVE_TOKEN, fetch: ok }), 1));
+    for (let v = 0; v < 60; v++) await send(g, chunkRequest({ [LIVE_HEADER]: SESSION, [VISITOR_HEADER]: `visitor_${v % 5}_aaaaaaaaaaaaaaaa` }, chunkForm(FIVE_SECONDS)));
+    const headers = { [LIVE_HEADER]: SESSION, [VISITOR_HEADER]: "visitor_new_aaaaaaaaaaaaaaaa" };
+    assert.equal((await send(g, chunkRequest(headers, chunkForm(FIVE_SECONDS)))).status, 429);
+    // The refused chunk's seconds came back, so this visitor still has all 12 elsewhere.
+    for (let i = 0; i < 12; i++) assert.equal((await send(g, chunkRequest({ ...headers, [CLIENT_IP_HEADER]: "203.0.113.8" }, chunkForm(FIVE_SECONDS)))).status, 200, `chunk ${i}`);
     await g.settled();
   });
 
   it("share one wider allowance when a call names nobody", async () => {
-    const g = live(fakeGateway({ token: LIVE_TOKEN, fetch: ok }), 1);
-    const noOne = () => new Request("https://platform.example/api/gateway/v1/asr/transcribe", { method: "POST", headers: { authorization: `Bearer ${TEST_TOKEN}`, [LIVE_HEADER]: SESSION }, body: chunkForm(320_000) });
+    const g = noRateLimit(live(fakeGateway({ token: LIVE_TOKEN, fetch: ok }), 1));
+    const noOne = () => new Request("https://platform.example/api/gateway/v1/asr/transcribe", { method: "POST", headers: { authorization: `Bearer ${TEST_TOKEN}`, [LIVE_HEADER]: SESSION }, body: chunkForm(FIVE_SECONDS) });
     let sent = 0;
-    for (let i = 0; i < 31; i++) if ((await send(g, noOne())).status === 200) sent += 1;
-    assert.equal(sent, 30);
+    for (let i = 0; i < 61; i++) if ((await send(g, noOne())).status === 200) sent += 1;
+    assert.equal(sent, 60);
     await g.settled();
   });
 

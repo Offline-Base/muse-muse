@@ -7,8 +7,9 @@ import type { ParsedRequest } from "@/lib/gateway/extract";
 /**
  * Near-live captions at the Meta gateway (docs/CAPABILITIES.md, section 13). A chunk is an ordinary
  * POST /v1/asr/transcribe, on the product's Meta budget, with x-musemuse-live naming its caption session. For a token with
- * cap:live, while the live cap is served, such a call gets a higher per-IP limit, since a chunk every 2 to 3 seconds
- * would hit the usual 20 a minute, and it counts against LIVE_CAPTION_MINUTES. lib/gateway/handler.ts calls these two
+ * cap:live, while the live cap is served, such a call counts under its own per-IP key with a higher limit, since a chunk
+ * every 2 to 3 seconds would hit the usual 20 a minute and use up that person's other calls with it. It also counts against
+ * LIVE_CAPTION_MINUTES. lib/gateway/handler.ts calls these two
  * functions from its marked lines; with the cap off its deps have no liveCaptions and neither runs, so the header means
  * nothing.
  */
@@ -17,6 +18,8 @@ export const LIVE_HEADER = "x-musemuse-live";
 const SESSION = /^[A-Za-z0-9_-]{8,64}$/;
 /** Meta takes 16 kHz or 24 kHz. Counting from bytes at 16 kHz never counts a chunk as shorter than it is. */
 const WAV_BYTES_PER_SECOND = 32_000;
+/** Each piece repeats this much of the one before, so words aren't cut. It isn't new talk, so it costs nothing. */
+const OVERLAP_TENTHS = 4;
 
 export interface LiveCaptionDeps {
   /** LIVE_CAPTION_MINUTES: audio minutes per visitor per UTC day. */
@@ -31,8 +34,9 @@ export interface LiveCaptionCounters {
 }
 
 export interface LiveChunk {
-  seconds: number;
-  perIpPerMinute: number;
+  /** What it costs of the day's caption minutes, in tenths of a second. */
+  tenths: number;
+  perIp: { prefix: string; limit: number };
 }
 
 /** The token fields used here. A build token's row also has its build. */
@@ -59,34 +63,40 @@ export function liveChunkOf(req: Request, endpoint: string, parsed: ParsedReques
   if (!audio || typeof audio === "string") return invalid("invalid_live_chunk", 'A live chunk needs its WAV in the "audio" part.');
   const seconds = Math.max(1, Math.ceil(audio.size / WAV_BYTES_PER_SECOND));
   if (seconds > LIVE_LIMITS.chunkMaxSeconds) return invalid("live_chunk_too_long", `A live chunk can be at most ${LIVE_LIMITS.chunkMaxSeconds} seconds.`);
-  return { seconds, perIpPerMinute: LIVE_LIMITS.asrPerIpPerMinute };
+  const tenths = Math.max(10, Math.ceil(audio.size / (WAV_BYTES_PER_SECOND / 10)) - OVERLAP_TENTHS);
+  return { tenths, perIp: { prefix: "live-ip", limit: LIVE_LIMITS.asrPerIpPerMinute } };
 }
 
 const nextUtcDay = (now: Date) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
 
 /** How many caption minutes each key may use today, for this caller: their own, then their address's. */
-function captionKeys(req: Request, token: LiveToken, minutes: number, now: Date): Array<{ key: string; seconds: number }> {
+function captionKeys(req: Request, token: LiveToken, minutes: number, now: Date): Array<{ key: string; tenths: number; shared: boolean }> {
   const caller = resolveCapCaller(req, { productId: token.productId, scope: token.scope, buildId: token.buildId ?? null }, now);
   const base = `live-captions:${token.scope}:${token.productId}`;
   const person = caller.visitor ? subjectKey("visitor", token.productId, caller.visitor) : caller.user ? subjectKey("user", token.productId, caller.user) : null;
-  const wider = minutes * 60 * LIVE_LIMITS.captionMinutesIpTimes;
+  const day = minutes * 600;
+  const wider = day * LIVE_LIMITS.captionMinutesIpTimes;
   return [
-    ...(person ? [{ key: `${base}:who:${person}`, seconds: minutes * 60 }] : []),
+    ...(person ? [{ key: `${base}:who:${person}`, tenths: day, shared: false }] : []),
     // With no visitor and no address (a server calling with no identity), the product shares one wider allowance.
-    ...(caller.ip ? [{ key: `${base}:ip:${caller.ip}`, seconds: wider }] : person ? [] : [{ key: `${base}:product`, seconds: wider }]),
+    ...(caller.ip ? [{ key: `${base}:ip:${caller.ip}`, tenths: wider, shared: true }] : person ? [] : [{ key: `${base}:product`, tenths: wider, shared: true }]),
   ];
 }
 
-/** Takes the chunk's seconds from today's caption minutes, or the refusal. Records a build's chunk for its proof. */
+/**
+ * Takes the chunk's new audio from today's caption minutes, or the refusal. Records a build's chunk for its proof: that
+ * count means the gateway accepted a chunk, not that Meta answered. The helper's own record is what needs real replies.
+ */
 export async function spendLiveSeconds(req: Request, token: LiveToken, chunk: LiveChunk, live: LiveCaptionDeps, counters: LiveCaptionCounters, now: Date): Promise<Response | null> {
   const day = nextUtcDay(now);
   const taken: string[] = [];
-  for (const { key, seconds } of captionKeys(req, token, live.minutesPerDay, now)) {
-    const total = await counters.reserveCounter(key, day, chunk.seconds, seconds);
+  for (const { key, tenths, shared } of captionKeys(req, token, live.minutesPerDay, now)) {
+    const total = await counters.reserveCounter(key, day, chunk.tenths, tenths);
     if (total === null) {
-      for (const back of taken) await counters.adjustCounter(back, day, -chunk.seconds);
+      for (const back of taken) await counters.adjustCounter(back, day, -chunk.tenths);
       const retry = Math.max(60, Math.ceil((day.getTime() - now.getTime()) / 1000));
-      return gatewayError(429, "insufficient_quota", "quota_exceeded", `Captions have used today's ${live.minutesPerDay} minutes for this person. They reset at 00:00 UTC.`, { retry: false, headers: { "retry-after": String(retry) } });
+      const message = shared ? "Captions have used today's minutes for this network, which everyone connected through it shares. They reset at 00:00 UTC." : `Captions have used today's ${live.minutesPerDay} minutes for this person. They reset at 00:00 UTC.`;
+      return gatewayError(429, "insufficient_quota", "quota_exceeded", message, { retry: false, headers: { "retry-after": String(retry) } });
     }
     taken.push(key);
   }
