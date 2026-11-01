@@ -175,3 +175,12 @@ describe("a brief with a connect block", () => {
     assert.equal(connectBuildBlock(WITH), WITH.connect, "with both on, the stored block as it is");
   });
 });
+
+describe("the product's privacy page", () => {
+  it("says a key passes once through the product's own server when the owner saves it", async () => {
+    const { productPrivacyFor } = await import("@/lib/trust/overlay");
+    const keeps = JSON.stringify(productPrivacyFor(WITH as never));
+    assert.match(keeps, /kept encrypted by Muse Muse/);
+    assert.match(keeps, /passes once through this app's own server, when the owner saves it/);
+  });
+});

@@ -52,7 +52,8 @@ const CAP_KEEPS: Partial<Record<CapId, string>> = {
   data: "What you save is kept on Muse Muse's servers for this app until you or its owner delete it, or the app is removed.",
   files: "Files you upload are kept on Muse Muse's storage for this app until you or its owner delete them, or the app is removed.",
   jobs: "Scheduled runs keep their results for the app's owner until they're deleted, or the app is removed.",
-  connect: "Keys the owner adds are kept encrypted and are never shown to visitors.",
+  // Unit 5 (connect): the key form posts to the app's own route, which hands the key to Muse Muse (docs/CAPABILITIES.md, 11a).
+  connect: "Keys the owner adds are kept encrypted by Muse Muse and are never shown to visitors. A key passes once through this app's own server, when the owner saves it.",
 };
 
 /** musemuse.privacy.json: which models get which inputs, and what the product keeps, from its brief. */

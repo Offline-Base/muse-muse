@@ -1384,7 +1384,9 @@ shared and doesn't. `usage.source` gains `fetch`, `vault` and `sends` in its Typ
 REST Countries was a candidate and is out: v3.1 now answers "deprecated, migrate to v5". Each path names its `{params}`
 with a pattern, its query parameters with patterns, `required` and `fixed` ones (USGS's `format=geojson`), and its cache
 time. The gateway builds the URL from the base and checked values only; a request can't name a host, add a parameter,
-or climb out with `..` or encoded slashes. Every outside call sends `MuseMuse/1.0 (+<PLATFORM_URL>; ...)`.
+or climb out with `..` or encoded slashes. A `{param}` value can't hold a slash, `?` or `#`, and can't hold a comma only
+when it sits next to a literal comma in the template (NWS's `{lat},{lon}`), so a Wikipedia title like
+`Washington,_D.C.` (or `%2C`) matches. Every outside call sends `MuseMuse/1.0 (+<PLATFORM_URL>; ...)`.
 `lib/caps/connect/services.json`: `github`, `openweathermap`, `airtable` and `notion` for brokered calls (bearer or query
 key, each with its own read-only methods and paths, `visitors` true only for OpenWeather), `resend` (email) and
 `slack_webhook` (chat, the secret is the webhook URL, held to `https://hooks.slack.com/services/`) for sends only.
@@ -1402,31 +1404,44 @@ key, each with its own read-only methods and paths, `visitors` true only for Ope
   names no one else, or with the test owner pass, as data's principal says). Names, services and dates only, never a
   value. The service must be the brief's (a key, or a send channel's service); the value is 8 to 4,096 characters with
   no spaces, and a webhook must be on its host. Sealed with `aad` `vault:<productId>:<namespace>:<name>`; saving a name
-  again replaces it; 10 keys a product. No `CONNECT_VAULT_KEY` (or a malformed one): 503 `caps_paused`.
+  again replaces it; 10 keys a product. A name is `[a-z][a-z0-9_]{0,39}` and not `call`, the brokered call's path, which
+  `DELETE /vault/<name>` could never reach. No `CONNECT_VAULT_KEY` (or a malformed one): 503 `caps_paused`.
 - `POST /vault/call {name, method, path, body?}`: the saved key's service decides what may be called; visitors only
   where the service allows them. The key is added at the last moment (bearer header or the service's query parameter,
-  any copy the request sent is dropped), `redirect: "manual"` and a redirect is refused, 15 s, 1 MB, and a key the
+  every copy the request sent is dropped, in any spelling, so `APPID` goes with `appid`), `redirect: "manual"` and a redirect is refused, 15 s, 1 MB, and a key the
   answer echoes becomes `[key hidden]`. No key saved: 200 `{ok: false, code: "needs_key"}`. A build gets
   `samples/services/<service>.json` (made up in each service's documented shape: nobody's key was used). 500 a day.
 - `POST /send {channel, to, subject?, body, from?, approval?}`: owner only, `email` or `chat` (sms, social and payment
   answer "can't send that yet"). Without a good approval it answers `needs_confirmation` with `{id, title, lines, args}`;
   the approval is tg-tools' `mintApproval`/`checkApproval` over the cleaned message, so a changed word, another owner or
-  another product fails. A live send needs the owner's key before anything is spent, then the nonce is spent once
-  (`reserveCounter`), then the day's count (10). Email goes through Resend, chat to the webhook; never retried. A build
+  another product fails. `lines` is the whole message, the way tg-tools' `approvalLines` shows a call: never cut,
+  whitespace collapsed (so a blank line can't push text out of view or start a line that looks like a field), and any
+  `\p{Cc}` or `\p{Cf}` character, such as U+202E, shown as U+FFFD. `ConfirmSend` scrolls a long one inside the card. A
+  live send needs the owner's key before anything is spent, then the day's count (10), then the nonce is spent once
+  (`reserveCounter`) right before the send; a nonce already spent gives its day slot back, and a send the day's limit
+  stops keeps its approval for later. Email goes through Resend, chat to the webhook; never retried. A build
   records a `simulated` row and answers `{status: "sent", id: "sim_...", simulated: true}`. Recipients are kept as a MAC.
 
 **Flags.** `CONNECT_ENABLED` (the cap), `CONNECT_VAULT` (keys and calls), `CONNECT_VAULT_KEY`, `CONNECT_SENDS` (needs
-the vault; on production also `CONNECT_SENDS_PRODUCTION`, decision 8), read in `lib/caps/connect/flags.ts` with no
-imports so the prompts and `lib/env.ts` share them. With the vault or sends off their routes are 404 and the writer gets
-empty lists.
+the vault; on production also `CONNECT_SENDS_PRODUCTION`, decision 8), read in `lib/caps/connect/flags.ts`, which
+imports only `lib/secrets/box.ts` (itself only `node:crypto`), so the prompts and `lib/env.ts` share them. With the vault
+or sends off their routes are 404 and the writer gets empty lists. `connectOptions()`, what the writer and a build may
+use, gives keys only with the vault on and a `CONNECT_VAULT_KEY` that parses, and sends only with that and sends on.
 
 **Brief.** `connect: {publicApis, keys: [{service, why}], sends: [{channel, why}]}`. The stored block takes every
 channel the contract names; the writer's takes only allowlisted ids, `keys` up to 3 with the vault on (else 0), and
 `sends` up to 2 of email and chat with sends on (else 0). `normalizeConnectBlock` drops unknown ids and repeats, empties
-what is off, and makes an empty block null. The catalog names every API, then the services and sends while on. The
+what is off, and makes an empty block null. A build works from `connectBuildBlock(brief)`: the stored block with keys
+dropped while `connectOptions().vault` is off and sends dropped while `.sends` is off, so a brief written while they
+were on and built or refined after they go off never asks for them. The render (build, refine, markdown), the judge
+note, `connectProof`'s brief picks (so verify's `key-saved`, `no-key-leak` and `send-confirmed`) and the gateway's
+rules for a build token all use it, and the render logs one plain `[connect]` line naming what it left out. A block
+left with nothing still gets the manifest line with empty lists, so the manifest check passes. The catalog names every API, then the services and sends while on. The
 build prompt's `### Outside services` has the tables, the helpers, the manifest line (`"connect": {publicApis, keys,
-sends}`), the sample rules and the smoke test; the judge note says samples are the product working and a key must never
-show. The third "How products run" bullet keeps unit 2's "unless a platform service below says otherwise".
+sends}`), the sample rules and the smoke test, and its `KeySettings` call is the skill's (`keys`, `returnTo`, `status`);
+the judge note says samples are the product working, a key must never show, and nothing may send before a card with the
+whole message on it and the owner's Confirm. `catalogSummary`'s cache key gains `connectOptions()` while connect is on
+(a marked unit 5 block in `lib/prompts/catalog.ts`). The third "How products run" bullet keeps unit 2's "unless a platform service below says otherwise".
 
 **Template.** `template/caps/connect`: `lib/platform/connect.ts` (`CapError`, `gatewayCall`), `fetch-public.ts`
 (`fetchPublic`; in a build it notes what it got in `test-results/caps/connect-fetched.json` for the smoke test),
@@ -1445,19 +1460,31 @@ key of the build, by its hash in the gateway's record, appears in the kept pages
 picks. Cleanup: a build's keys and sends when it ends; the sweep removes expired cache rows, keys revoked over a day ago
 and crashed builds' keys and sends after 24 hours.
 
+**Design limit: a key passes through the product's own server once.** `KeySettings` posts the owner's key to the
+product's `app/api/musemuse/connect-keys` route, a platform file, which hands it to `/vault` and redirects with a status,
+never the key. Any middleware or logging the product's own code adds sees that request body, and `no-key-leak` scans
+kept pages, built output and source, not runtime logs. So "never in product code" holds for the code Muse Code writes
+around a key, not for every byte the product's server process touches. The privacy page says so ("A key passes once
+through this app's own server, when the owner saves it"). The longer fix is a platform-hosted key form reached with a
+signed, short-lived owner ticket, so the value never reaches the product. Not built.
+
 **More read-only tools (`CONNECT_MORE_TOOLS`): not built.** Adding tools means entries in `lib/tools/catalog.source.ts`
 and `npm run tools:sync -- --check`, which reads Composio's live schemas, and this unit makes no Composio call. The flag
 exists and nothing reads it. Decision 17 holds when it is built: owners only until zero data retention is settled.
 
-**Tests.** `lib/secrets/__tests__/box.test.ts` (5), `lib/caps/connect/__tests__/connect.test.ts` (26: allowlist paths,
-parameters and climbing, cache keys, brokered calls only to their hosts, samples for every path, the fetch cache, a
+**Tests.** `lib/secrets/__tests__/box.test.ts` (5), `lib/caps/connect/__tests__/connect.test.ts` (31: allowlist paths,
+parameters and climbing, titles with a comma, every spelling of a sent key copy, cache keys, brokered calls only to their hosts, samples for every path, the fetch cache, a
 build's samples, redirects, size and type, limits; the vault's sealed round trip, owner only, no value in any answer,
 quotas, paused, revoke, build namespace; calls with the key added and hidden on echo; sends: confirmation first, one
-send per approval, changed words, another owner, recipients, channels, off, no key, 10 a day, a build's simulated send,
-Slack), `store.test.ts` (4, PGlite: the cache, keys replaced and revoked, the proof and cleanup, the sweep),
-`brief.test.ts` (6), the migrations test (0022 keeps rows), `caps-off.test.ts` (unit 5's routes, and vault and sends off
-with the cap served, and the production switch). Template: `caps-connect.test.mjs` (14: paths, platform files, schema,
-skill, the checker with the leak scan, the helpers and the keys route against a fake gateway, the product's `tsc`).
+send per approval, changed words, another owner, recipients, channels, off, no key, 10 a day, the whole message on the
+card with hidden characters marked, a day limit that doesn't burn the approval, a key named `call` refused, a build's
+simulated send, Slack), `store.test.ts` (4, PGlite: the cache, keys replaced and revoked, the proof with the flags at
+verify time and cleanup, the sweep), `brief.test.ts` (9, with the build block following the flags, the prompt's
+`KeySettings` call, the catalog cache and the privacy line), the migrations test (0022 keeps rows; 23 tests in all), `caps-off.test.ts` (unit 5's routes, and vault and sends off
+with the cap served, and the production switch). Template: `caps-connect.test.mjs` (17: paths, platform files, schema,
+skill, the checker with the leak scan, `ConfirmSend` rendered in its ask, stale, error, busy and sent states, and, with
+`template/node_modules` only, the helpers and the keys route against a fake gateway and the product's `tsc`; without it
+those 4 skip).
 Spend: $0 (no Meta, Sandbox, Vercel or Composio call; the samples came from five plain GETs to the public APIs).
 
 **Not proven yet.**
