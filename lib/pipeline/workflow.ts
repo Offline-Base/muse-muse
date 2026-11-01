@@ -74,6 +74,7 @@ import {
   type VerifyStepResult,
 } from "@/lib/pipeline/logic";
 import { planArtStep } from "@/lib/pipeline/plan-art-step";
+import { restoreFilesStep, restoreOutcomeStep } from "@/lib/pipeline/restore-steps";
 import { startProveStep } from "@/lib/pipeline/prove-start";
 import { provePlanStep } from "@/lib/pipeline/prove-steps";
 import { capWithinWall, JUDGE_RESERVE_MS, stepTimeoutMs, type RoundPlan } from "@/lib/pipeline/steps";
@@ -403,12 +404,14 @@ interface Shipped {
 async function ship(
   ctx: Ctx,
   track: Track,
-  product: { name: string; tagline: string; outcome: Exclude<Outcome, "failed"> },
+  product: { name: string; tagline: string; outcome: Exclude<Outcome, "failed">; restoredFrom?: string },
 ): Promise<Shipped> {
-  track.stage = "record";
-  await setStatusStep(ctx.buildId, "recording", { step: "record" });
   let demoVideoUrl: string | null = null;
   let demoPosterUrl: string | null = null;
+  // A restore ships code that already shipped, and keeps the demo it has.
+  if (!product.restoredFrom) {
+  track.stage = "record";
+  await setStatusStep(ctx.buildId, "recording", { step: "record" });
   try {
     // Demo Studio reads its cards and the window's URL from this spec, so it goes in before the run starts.
     await demoSpecStep({
@@ -437,6 +440,7 @@ async function ship(
       type: "log",
       text: `The demo recording was skipped. ${failureMessage("record", err)}`,
     });
+  }
   }
 
   track.stage = "deploy";
@@ -467,6 +471,7 @@ async function ship(
     buildId: ctx.buildId,
     productId: ctx.productId,
     sandboxName: ctx.sandboxName,
+    restoredFrom: product.restoredFrom ?? null,
   });
   const capMs = stepTimeoutMs("deploy");
   const startedAt = Date.now();
@@ -781,4 +786,50 @@ export async function refineProduct(input: BuildProductInput): Promise<BuildProd
   const result = await end(buildId, null, ending);
   await startProof(buildId, proof);
   return result;
+}
+
+/**
+ * Brings back an earlier version as a new build on top of the history (docs/VERSIONS.md): its saved files go in the
+ * sandbox, then deploy with a fresh token. No Muse Code and no judge, so no Meta spend: this code already shipped. A
+ * restore that fails puts the live version's files back, so the next change doesn't build on the wrong code.
+ */
+export async function restoreProduct(input: BuildProductInput & { fromBuildId: string }): Promise<BuildProductResult> {
+  "use workflow";
+  const { buildId, fromBuildId } = input;
+  const track: Track = { stage: "start" };
+  let productId: string | null = null;
+  let sandboxName: string | null = null;
+  let filesChanged = false;
+  let ending: Ending;
+  try {
+    const head = await loadBuildStep(buildId);
+    if (TERMINAL_STATUSES.includes(head.status)) return { status: head.status };
+    track.stage = "provision";
+    await setStatusStep(buildId, "provisioning", { step: "provision" });
+    const refine = await loadRefineStep(buildId);
+    productId = refine.productId;
+    sandboxName = refine.sandboxName;
+    await reopenStep({ buildId, productId, sandboxName, refineIndex: refine.refineIndex });
+    const ctx: Ctx = { buildId, productId, sandboxName, sessionId: refine.sessionId, model: refine.model, roundBase: refine.refineIndex * REFINE_ROUND_STRIDE };
+    filesChanged = true;
+    await restoreFilesStep({ buildId, productId, sandboxName, fromBuildId });
+    track.stage = "deploy";
+    const outcome = await restoreOutcomeStep(fromBuildId);
+    const { liveUrl, outcome: shipped, liveFailure } = await ship(ctx, track, { name: refine.name, tagline: refine.tagline, outcome, restoredFrom: fromBuildId });
+    ending = {
+      status: shipped,
+      message: !liveUrl ? `Restored as ${shipped} without publishing to its own link.` : liveFailure ? `Restored as partial at ${liveUrl}, but it failed on its live link: ${liveFailure}` : `Restored and live at ${liveUrl}`,
+    };
+  } catch (err) {
+    ending = { status: "failed", message: `${failureMessage(track.stage, err)} The live version was kept.` };
+    if (filesChanged && productId && sandboxName) {
+      try {
+        await restoreFilesStep({ buildId, productId, sandboxName, fromBuildId: null });
+      } catch {
+        // Nothing saved to go back to: the next change starts from the restored files.
+      }
+    }
+  }
+  if (sandboxName) await cleanup({ buildId, productId, sandboxName });
+  return end(buildId, null, ending);
 }

@@ -59,6 +59,7 @@ import { pollDeploy, projectNameFor, startDeployFromSandbox, type DeployPoll } f
 import { briefTargets } from "@/lib/native/targets";
 import { demoNoteFor } from "@/lib/sandbox/artifacts";
 import * as sandbox from "@/lib/sandbox/builder";
+import { captureVersion } from "@/lib/versions/store";
 import { publicHost } from "@/lib/sandbox/policy";
 import type { MuseEngine } from "@/lib/sandbox/bridge-protocol";
 import type { BridgeCondenseState } from "@/lib/sandbox/msp-log";
@@ -1193,6 +1194,8 @@ export async function startDeployStep(input: {
   buildId: string;
   productId: string;
   sandboxName: string;
+  /** Set by a restore: the build whose files this deploy brings back. */
+  restoredFrom?: string | null;
 }): Promise<DeployStart> {
   "use step";
   const build = await loadBuild(input.buildId);
@@ -1214,6 +1217,7 @@ export async function startDeployStep(input: {
     productName: product.name,
     env: { GATEWAY_URL: env.gatewayUrl, PRODUCT_TOKEN: live.token, ...(brief ? capDeployEnv(brief, live.token) : {}) },
     projectId: product.vercelProjectId,
+    onFiles: (files) => captureVersion({ buildId: input.buildId, productId: input.productId, files, restoredFrom: input.restoredFrom ?? null }),
   }).catch(async (err: unknown) => {
     // Wave 3, unit 1: a deploy refused before any deployment was made (files too big, DeployFilesTooBigError) never
     // retries, so nothing will ever use the token minted for it. Revoke it. Other errors retry the step, which mints anew.
@@ -1434,6 +1438,19 @@ export async function loadRefineStep(buildId: string): Promise<RefineContext> {
 }
 
 /**
+ * After a restore the files are older than what Muse Code's session remembers, so the change after it is told so.
+ */
+async function restoredNote(productId: string): Promise<string> {
+  const [row] = await db()
+    .select({ restoredFrom: schema.productVersions.restoredFrom })
+    .from(schema.products)
+    .innerJoin(schema.productVersions, eq(schema.products.latestBuildId, schema.productVersions.buildId))
+    .where(eq(schema.products.id, productId))
+    .limit(1);
+  return row?.restoredFrom ? "Note: the owner restored an earlier version since your last change, so the files are older than you remember. Read them again before you edit.\n\n" : "";
+}
+
+/**
  * Resumes the product's sandbox with a fresh build token (minted here, never returned), copies the new references
  * in, and writes refine-<n>.md. Returns the prompt file and the new image paths for --image.
  */
@@ -1478,7 +1495,7 @@ export async function reopenStep(input: {
   });
   const prompt = renderRefinePrompt({
     brief,
-    message: build.message ?? inspiration.note ?? "",
+    message: `${await restoredNote(input.productId).catch(() => "")}${build.message ?? inspiration.note ?? ""}`,
     newReferences: newReferences.map((r) => ({
       fileName: r.fileName,
       describes: `${/^[aeiou]/.test(r.kind) ? "An" : "A"} ${r.kind === "pdf" ? "PDF" : r.kind} the user attached with this change (inspo/${r.fileName}).`,
