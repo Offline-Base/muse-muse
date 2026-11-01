@@ -100,14 +100,16 @@ const CONTROL = /[\u0000-\u001f\u007f]/;
 
 function segmentRegex(path: string): { re: RegExp; names: string[] } {
   const names: string[] = [];
-  const source = path
-    .split(/(\{[a-z_]+\})/)
-    .map((part) => {
+  const parts = path.split(/(\{[a-z_]+\})/);
+  const source = parts
+    .map((part, i) => {
       const m = part.match(/^\{([a-z_]+)\}$/);
       if (!m) return part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       names.push(m[1]!);
-      // A value never holds a slash, a comma, a query or a fragment; its own pattern decides the rest.
-      return "([^/,?#]+)";
+      // A value never holds a slash, a query or a fragment; its own pattern decides the rest. Only a value next to a
+      // literal comma, like NWS's {lat},{lon}, can't hold a comma, so a Wikipedia title like Washington,_D.C. matches.
+      const byComma = Boolean(parts[i - 1]?.endsWith(",") || parts[i + 1]?.startsWith(","));
+      return byComma ? "([^/,?#]+)" : "([^/?#]+)";
     })
     .join("");
   return { re: new RegExp(`^${source}$`), names };
@@ -213,7 +215,11 @@ export function matchCall(serviceId: string, method: string, path: string): Call
   if (/%2f|%5c|%2e/i.test(url.pathname) || url.pathname.split("/").some((s) => s === ".." || s === ".")) return "path can't climb out of the API.";
   const call = service.calls.find((c) => c.method === m && callMatches(c.path, url.pathname));
   if (!call) return `${service.label} calls go only to: ${service.calls.map((c) => `${c.method} ${c.path}`).join(", ")}.`;
-  if (service.auth.type === "query") url.searchParams.delete(service.auth.param);
+  // Any copy of the key the request sent goes, in any spelling (OpenWeather's older docs say APPID).
+  if (service.auth.type === "query") {
+    const param = service.auth.param.toLowerCase();
+    for (const name of new Set([...url.searchParams.keys()])) if (name.toLowerCase() === param) url.searchParams.delete(name);
+  }
   return { service, call, method: m as "GET" | "POST", url };
 }
 
@@ -224,5 +230,8 @@ export function pickSample<T>(list: readonly T[], args: unknown): T | undefined 
   return list[hash.readUInt32BE(0) % list.length];
 }
 
-/** A key's name in the vault: lowercase letters, digits and underscores, up to 40. */
-export const KEY_NAME = /^[a-z][a-z0-9_]{0,39}$/;
+/**
+ * A key's name in the vault: lowercase letters, digits and underscores, up to 40. Not `call`, which is the brokered
+ * call's path (/vault/call), so a key by that name could never be removed with DELETE /vault/<name>.
+ */
+export const KEY_NAME = /^(?!call$)[a-z][a-z0-9_]{0,39}$/;

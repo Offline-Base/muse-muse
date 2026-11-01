@@ -177,6 +177,27 @@ describe("the allowlists", () => {
     }
   });
 
+  it("take titles with a comma, which many place articles have, and still keep NWS's {lat},{lon} apart", () => {
+    for (const path of ["/api/rest_v1/page/summary/Austin,_Texas", "/api/rest_v1/page/summary/Washington,_D.C.", "/api/rest_v1/page/summary/Washington%2C_D.C."]) {
+      const t = matchFetch({ api: "wikipedia", path });
+      assert.ok(typeof t !== "string", `${path}: ${String(t)}`);
+      assert.match(t.url, /\/page\/summary\/(Austin,_Texas|Washington,_D\.C\.)$/);
+    }
+    const spelled = [matchFetch({ api: "wikipedia", path: "/api/rest_v1/page/summary/Washington,_D.C." }), matchFetch({ api: "wikipedia", path: "/api/rest_v1/page/summary/Washington%2C_D.C." })];
+    assert.ok(spelled.every((t) => typeof t !== "string"));
+    assert.equal((spelled[0] as Exclude<ReturnType<typeof matchFetch>, string>).cacheKey, (spelled[1] as Exclude<ReturnType<typeof matchFetch>, string>).cacheKey);
+    assert.match(String(matchFetch({ api: "nws", path: "/points/38.8894,-77.0352,5" })), /lon in the path|no path like that/);
+    assert.match(String(matchFetch({ api: "nws", path: "/gridpoints/LWX/97,71,3/forecast" })), /y in the path|no path like that/);
+    assert.ok(typeof matchFetch({ api: "usgs", path: "/earthquakes/feed/v1.0/summary/4.5_week.geojson" }) !== "string");
+    assert.ok(typeof matchFetch({ api: "openlibrary", path: "/works/OL45883W.json" }) !== "string");
+  });
+
+  it("drop every copy of a query key the request sent, in any spelling", () => {
+    const q = matchCall("openweathermap", "GET", "/data/2.5/weather?q=x&appid=EVIL&APPID=evil2&AppId=evil3");
+    assert.ok(typeof q !== "string");
+    assert.equal(q.url.search, "?q=x");
+  });
+
   it("give the same cache key for the same request in any order", () => {
     const a = matchFetch({ api: "openlibrary", path: "/search.json", query: { q: "hobbit", limit: 3 } });
     const b = matchFetch({ api: "openlibrary", path: "/search.json", query: { limit: "3", q: " hobbit " } });
@@ -349,6 +370,14 @@ describe("the key vault", () => {
     assert.equal(del.status, 200);
     assert.equal((await handleVault(req("vault/github", undefined, asOwner, "DELETE"), ["github"], deps())).status, 404);
     assert.equal((await store.listKeys("p1", "live")).length, 0);
+  });
+
+  it("won't save a key named call, which DELETE /vault/<name> could never remove", async () => {
+    const res = await handleVault(req("vault", { name: "call", service: "github", value: KEY }, asOwner), [], deps());
+    assert.equal(res.status, 400);
+    assert.match((await read(res)).error!.message, /not call/);
+    assert.equal(store.keys.length, 0);
+    assert.equal((await handleVault(req("vault", { name: "call_me", service: "github", value: KEY }, asOwner), [], deps())).status, 201, "only the exact name is reserved");
   });
 
   it("keeps a build's test keys in its own namespace with a hash for the leak scan", async () => {

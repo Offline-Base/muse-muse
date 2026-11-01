@@ -316,7 +316,7 @@ function saveKeyRoute(deps: ConnectDeps): CapRoute<SaveArgs> {
       const service = Object.hasOwn(SERVICES, serviceId) ? SERVICES[serviceId]! : null;
       if (!service) return capError("invalid_arguments", "service is one of the services products can use.");
       const name = body.name === undefined || body.name === null ? service.id : body.name;
-      if (typeof name !== "string" || !KEY_NAME.test(name)) return capError("invalid_arguments", "A key's name is lowercase letters, digits and underscores, up to 40.");
+      if (typeof name !== "string" || !KEY_NAME.test(name)) return capError("invalid_arguments", "A key's name is lowercase letters, digits and underscores, up to 40, and not call.");
       if (typeof body.value !== "string") return capError("invalid_arguments", "value is the key, as text.");
       const problem = keyProblem(service, body.value);
       if (problem) return capError("invalid_arguments", problem);
