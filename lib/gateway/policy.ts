@@ -1,3 +1,4 @@
+import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
 import type { GatewayEndpoint, MetaModelId } from "@/lib/types";
 
 export const UPSTREAM_BASE_URL = "https://api.meta.ai/v1";
@@ -133,3 +134,36 @@ export const GATEWAY_CHECKS = [
   "forward",
   "meter",
 ] as const;
+
+// ---------- Wave 3, unit 9: the code_session scope (docs/CAPABILITIES.md, 15b) ----------
+
+/** A Muse Code session's own token (lib/caps/code/musecode/token.ts). */
+export const CODE_SESSION_SCOPE = "code_session";
+
+/**
+ * The models a session token can carry. Its token names exactly one (allowedModels[0]), set by the platform at the
+ * start: Muse Wonder for a person's task, muse-spark-1.3-contributor only for a build's own test sessions while
+ * TEST_MODEL names it off production (Meta may train on that tier, terms 6.2). muse-spark-1.3 is never one of them.
+ */
+export const CODE_SESSION_MODELS = ["muse-wonder-1.0", SPARK_STANDIN] as const;
+
+/**
+ * Why a session token's call is refused, or null. Checked before the model allowlist, which a session token replaces:
+ *   - only POST /v1/responses (the method is the handler's first check)
+ *   - only its one model, never another, and muse-spark-1.3 refused outright rather than served as Contributor
+ *   - Contributor only while `testModel` (TEST_MODEL, never set on production) names it
+ * Its budget and its end (stop, or its limit) are the token row's: lib/caps/code/musecode/gateway.ts.
+ */
+export function codeSessionRefusal(endpoint: GatewayEndpoint, model: string | null, token: { allowedModels: readonly string[] }, testModel: string | null): { status: number; code: string; message: string } | null {
+  if (endpoint !== "responses") return { status: 403, code: "session_scope", message: "A Muse Code session's token calls only /v1/responses." };
+  if (!model) return null;
+  const own = token.allowedModels[0];
+  if (model === RETIRED_SPARK) return { status: 404, code: "model_not_found", message: `${RETIRED_SPARK} is never used here.` };
+  if (model !== own || !(CODE_SESSION_MODELS as readonly string[]).includes(model)) {
+    return { status: 404, code: "model_not_found", message: `This session runs on ${own ?? "no model"} only.` };
+  }
+  if (model === SPARK_STANDIN && testModel !== SPARK_STANDIN) {
+    return { status: 403, code: "model_not_for_sessions", message: `${SPARK_STANDIN} runs only test sessions, with TEST_MODEL set off production.` };
+  }
+  return null;
+}

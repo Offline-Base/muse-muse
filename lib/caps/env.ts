@@ -1,5 +1,6 @@
 import type { Brief } from "@/lib/brief/schema";
 import { briefCaps } from "@/lib/caps/brief-fields";
+import { codeBlock } from "@/lib/caps/code/brief";
 import type { CapId } from "@/lib/caps/ids";
 import { mediaAssetsEnv, mediaBuildEnv } from "@/lib/caps/media/env";
 
@@ -18,6 +19,9 @@ export const CAP_ENV: Partial<Record<CapId, CapEnvEntry>> = {
   // A build's server runs the product's Python functions on the build machine (template/caps/runtime). On Vercel the
   // same helper calls the deployment's own /api/py routes, so the deploy needs nothing.
   runtime: { build: () => ({ MUSEMUSE_PYTHON: "local", MUSEMUSE_PYTHON_NOTES: "1" }) },
+  // Unit 9, 15b: a build's own server may answer Muse Code tasks from the kit's recording (replay mode), so most of its
+  // tests spend nothing. The live product never gets this, so it can't show a recording as if it were a person's task.
+  code: { build: (brief): Record<string, string> => (codeBlock(brief)?.museCode ? { MUSE_CODE_REPLAY_OK: "1" } : {}) },
 };
 
 const KEY = /^[A-Z][A-Z0-9_]*$/;

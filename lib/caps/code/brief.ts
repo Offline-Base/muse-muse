@@ -14,10 +14,12 @@ import { codePartsOn, type CodeParts } from "@/lib/caps/code/parts";
 export const CODE_RUNTIMES = ["pyodide", "quickjs", "exec"] as const;
 export type CodeRuntime = (typeof CODE_RUNTIMES)[number];
 
-export const CodeBriefBlock = z.object({
+const CodeBaseBlock = z.object({
   runtimes: z.array(z.enum(CODE_RUNTIMES)).max(CODE_RUNTIMES.length),
   browse: z.boolean(),
 });
+
+export const CodeBriefBlock = CodeBaseBlock.extend({ museCode: z.boolean().optional() });
 
 export type CodeBrief = z.infer<typeof CodeBriefBlock>;
 
@@ -31,9 +33,10 @@ export function codeRuntimesOn(parts: CodeParts = codePartsOn()): CodeRuntime[] 
  * say to leave it false while it's off, and normalizeCodeBlock makes it false). The stored block is CodeBriefBlock.
  */
 export function codeWriterBlock(parts: CodeParts = codePartsOn()): z.ZodTypeAny {
-  if (parts.exec) return CodeBriefBlock;
   const runtimes = codeRuntimesOn(parts) as [CodeRuntime, ...CodeRuntime[]];
-  return z.object({ runtimes: z.array(z.enum(runtimes)).max(runtimes.length), browse: z.boolean() });
+  const base = parts.exec ? CodeBaseBlock : z.object({ runtimes: z.array(z.enum(runtimes)).max(runtimes.length), browse: z.boolean() });
+  // Unit 9, 15b: required in the writer's answer while Muse Code is on, and absent while it's off.
+  return parts.museCode ? base.extend({ museCode: z.boolean() }) : base;
 }
 
 /**
@@ -48,14 +51,20 @@ export function codeBlock(brief: object | null | undefined, parts: CodeParts = c
   if (!parsed.success) return null;
   const runtimes = parsed.data.runtimes.filter((r) => r !== "exec" || parts.exec);
   const browse = parsed.data.browse && parts.browse;
+  const museCode = parsed.data.museCode === true && parts.museCode === true;
+  if (museCode) return { runtimes, browse, museCode };
   return runtimes.length || browse ? { runtimes, browse } : null;
 }
 
 /** The parts a stored block asks for that are switched off now, for the build log. */
-export function codePartsOff(brief: object | null | undefined, parts: CodeParts = codePartsOn()): Array<"exec" | "browse"> {
+export function codePartsOff(brief: object | null | undefined, parts: CodeParts = codePartsOn()): Array<"exec" | "browse" | "museCode"> {
   const parsed = CodeBriefBlock.safeParse((brief as { code?: unknown } | null | undefined)?.code);
   if (!parsed.success) return [];
-  return [...(parsed.data.runtimes.includes("exec") && !parts.exec ? (["exec"] as const) : []), ...(parsed.data.browse && !parts.browse ? (["browse"] as const) : [])];
+  return [
+    ...(parsed.data.runtimes.includes("exec") && !parts.exec ? (["exec"] as const) : []),
+    ...(parsed.data.browse && !parts.browse ? (["browse"] as const) : []),
+    ...(parsed.data.museCode === true && !parts.museCode ? (["museCode"] as const) : []),
+  ];
 }
 
 /**
@@ -73,7 +82,12 @@ export function normalizeCodeBlock(raw: unknown, parts: CodeParts = codePartsOn(
   }
   if (typeof b.browse === "string") b.browse = ["true", "yes", "1"].includes(b.browse.trim().toLowerCase());
   if (b.browse === true && !parts.browse) b.browse = false;
-  if (Array.isArray(b.runtimes) && !(b.runtimes as unknown[]).length && b.browse === false) return null;
+  // Unit 9, 15b: museCode as a boolean while Muse Code is on; left out entirely while it's off.
+  if ("museCode" in b) {
+    if (!parts.museCode) delete b.museCode;
+    else if (typeof b.museCode === "string") b.museCode = ["true", "yes", "1"].includes(b.museCode.trim().toLowerCase());
+  }
+  if (Array.isArray(b.runtimes) && !(b.runtimes as unknown[]).length && b.browse === false && b.museCode !== true) return null;
   return b;
 }
 
@@ -95,5 +109,11 @@ export function codeWriterRules(parts: CodeParts = codePartsOn()): readonly stri
       ? "code.browse: true only when the product opens a page whose address the person types (a page summarizer, a link checker). It opens that one site, never logs in, and only for the product's owner. Say both in limits."
       : "code.browse: always false. Opening web pages isn't available.",
     "Code never calls a model or an outside service. Model calls stay in the product's own server code, which passes results in.",
+    // ---------- Wave 3, unit 9: Muse Code sessions (15b), only while MUSE_CODE_ENABLED is on ----------
+    ...(parts.museCode
+      ? [
+          `code.museCode: true only when the product's main work is a coding agent doing a task in a workspace and handing back files (a tool that takes a CSV and writes a cleanup script, a small site or script maker). Muse Code runs each task in a private temporary workspace, at most 15 minutes and $1 a task, ${parts.museCodeVisitors ? "for anyone using the product, 3 tasks a day each" : "for the product's owner only"}. The task is sent to Meta. Say both in limits. Otherwise false. A product that only runs code a person wrote uses runtimes instead.`,
+        ]
+      : []),
   ];
 }

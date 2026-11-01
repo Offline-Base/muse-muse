@@ -1,5 +1,6 @@
 import { and, eq, gte, sql } from "drizzle-orm";
 import { codeBlock } from "@/lib/caps/code/brief";
+import { museCodeProof } from "@/lib/caps/code/musecode/store";
 import { buildNamespace } from "@/lib/caps/proof";
 import { buildBrief } from "@/lib/caps/store";
 import { db, schema } from "@/lib/db/client";
@@ -46,6 +47,11 @@ export async function codeProof(buildId: string, window: { since: Date | null })
   const block = codeBlock((await buildBrief(buildId)) as object | null);
   for (const part of block?.runtimes ?? []) out[`brief:${part}`] = 1;
   if (block?.browse) out["brief:browse"] = 1;
+  // Unit 9, 15b: Muse Code sessions the build really ran since `since`, and those that worked (files and a final text).
+  if (block?.museCode) {
+    out["brief:museCode"] = 1;
+    Object.assign(out, await museCodeProof(buildNamespace(buildId), window.since));
+  }
   return out;
 }
 

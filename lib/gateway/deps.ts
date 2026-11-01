@@ -1,3 +1,6 @@
+import { findSessionGatewayToken } from "@/lib/caps/code/musecode/gateway";
+import { familySpendToday } from "@/lib/caps/code/musecode/store";
+import { isSessionToken } from "@/lib/caps/code/musecode/token";
 import { env, testModel } from "@/lib/env";
 import type { GatewayDeps } from "@/lib/gateway/handler";
 import { UPSTREAM_BASE_URL } from "@/lib/gateway/policy";
@@ -22,6 +25,8 @@ export function gatewayDeps(defer: GatewayDeps["defer"]): GatewayDeps {
     findToken,
     productStatus: productStatusById,
     tokenSpendToday,
+    // Wave 3, unit 9 (docs/CAPABILITIES.md, 15b): only while MUSE_CODE_ENABLED is on, so the deps are today's without it.
+    ...museCodeDeps(),
     platformSpendToday,
     dailySpendCapUsd: env.dailySpendCapUsd,
     fitOutputToBudget: env.engineFitOutput,
@@ -51,5 +56,17 @@ function trustDeps(): Pick<GatewayDeps, "trustCheck" | "sparkToWonder"> {
   return {
     ...(trust ? { trustCheck: (token: Parameters<NonNullable<GatewayDeps["trustCheck"]>>[0]) => trustCheck(token, trust) } : {}),
     ...(env.trustSparkToWonder ? { sparkToWonder: true } : {}),
+  };
+}
+
+/**
+ * Muse Code sessions' tokens (scope code_session) are found by their own lookup, and a token's spend today counts the
+ * sessions it started, so they share its daily budget. findToken never returns a session token, with this on or off.
+ */
+function museCodeDeps(): Pick<GatewayDeps, "findToken" | "tokenSpendToday"> | Record<string, never> {
+  if (!env.museCodeEnabled) return {};
+  return {
+    findToken: (raw) => (isSessionToken(raw) ? findSessionGatewayToken(raw) : findToken(raw)),
+    tokenSpendToday: (tokenId) => familySpendToday(tokenId),
   };
 }

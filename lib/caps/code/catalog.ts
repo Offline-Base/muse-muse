@@ -11,6 +11,12 @@ export function codeCatalogBlock(parts: CodeParts = codePartsOn()): string {
   }
   if (parts.browse) sentences.push(`Opening a web page the person typed, one site and no logging in, is for the owner only${parts.exec && !parts.visitors ? " too" : ""}.`);
   sentences.push("Code never reaches a model or another service.");
+  // Unit 9, 15b: Muse Code sessions, only while MUSE_CODE_ENABLED is on.
+  if (parts.museCode) {
+    sentences.push(
+      `A product may also hand a person's task to Muse Code, a coding agent that works in a private temporary workspace and hands back files to download: at most 15 minutes and $1 a task, ${parts.museCodeVisitors ? "for anyone using the product, 3 tasks a day each" : "for the product's owner only"}. The task is sent to Meta.`,
+    );
+  }
   return sentences.join(" ");
 }
 

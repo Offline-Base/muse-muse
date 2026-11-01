@@ -16,7 +16,8 @@ export function fileStorageAvailable(): boolean {
 }
 
 /** The folders every stored file is under, in Blob and in .data/files (lib/storage.ts says what each holds). */
-export const STORED_PREFIXES = ["inspo", "uploads", "screens", "demos", "transcripts", "fixtures", "native", "clips", "assets", "extensions"] as const;
+// "caps" is unit 4's prefix (docs/CAPABILITIES.md, 2.10); unit 9 keeps Muse Code result zips under caps/code/ for 24 hours.
+export const STORED_PREFIXES = ["inspo", "uploads", "screens", "demos", "transcripts", "fixtures", "native", "clips", "caps", "assets", "extensions"] as const;
 export type StoredPrefix = (typeof STORED_PREFIXES)[number];
 
 export const LOCAL_FILES_DIR = ".data/files";

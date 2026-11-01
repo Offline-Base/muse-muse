@@ -14,6 +14,8 @@ import { meterReply } from "@/lib/gateway/meter";
 import {
   AGENT_LIMITS,
   CLIENT_IP_HEADER,
+  CODE_SESSION_SCOPE,
+  codeSessionRefusal,
   DEFAULT_LIMITS,
   ENDPOINT_MODELS,
   GATEWAY_ENDPOINTS,
@@ -180,13 +182,18 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
   let model = parsed.model;
   /** Set once the JSON to send differs from the request's own bytes. */
   let rewritten = false;
+  // ---------- Wave 3, unit 9: a Muse Code session's token (scope code_session, docs/CAPABILITIES.md 15b) calls only
+  // /v1/responses with its one model, in place of the allowlist below. Other tokens never reach it ----------
+  const codeSession = token.scope === CODE_SESSION_SCOPE;
+  if (codeSession) { const r = codeSessionRefusal(endpoint, model, token, deps.buildTestModel ?? null); if (r) return gatewayError(r.status, r.status === 403 ? "permission_error" : "invalid_request_error", r.code, r.message, { retry: false }); }
+  // ---------- end Wave 3, unit 9 ----------
   if (endpoint !== "files") {
     if (!model) {
       return gatewayError(400, "invalid_request_error", "missing_model", `/v1/${endpoint} needs a "model".`, {
         retry: false,
       });
     }
-    if (!modelAllowed(endpoint, model, token.allowedModels, ENDPOINT_MODELS[endpoint])) {
+    if (!codeSession && !modelAllowed(endpoint, model, token.allowedModels, ENDPOINT_MODELS[endpoint])) {
       const allowed = token.allowedModels.filter((m) => (ENDPOINT_MODELS[endpoint] as readonly string[]).includes(m));
       return gatewayError(
         404,

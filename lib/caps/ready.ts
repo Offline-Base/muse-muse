@@ -104,7 +104,7 @@ function partsOff(brief: Brief, dropped: CapDrop[]): void {
   if (record.code === null || record.code === undefined || dropped.some((d) => d.cap === "code")) return;
   const off = codePartsOff(brief);
   if (codeBlock(brief) === null) dropped.push({ cap: "code", reason: "off" });
-  else if (off.length) console.info(`[caps] code: this build goes without ${off.map((p) => (p === "exec" ? "running code on the server" : "opening pages")).join(" and ")}: switched off.`);
+  else if (off.length) console.info(`[caps] code: this build goes without ${off.map((p) => (p === "exec" ? "running code on the server" : p === "museCode" ? "Muse Code sessions" : "opening pages")).join(" and ")}: switched off.`);
 }
 // ---------- end Wave 3, unit 9 ----------
 

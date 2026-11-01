@@ -2,6 +2,7 @@ import type { Brief } from "@/lib/brief/schema";
 import { codeBlock, type CodeBrief } from "@/lib/caps/code/brief";
 import { BROWSE_LIMITS, EXEC_LIMITS, SMOKE_EXEC_RUNS } from "@/lib/caps/code/limits";
 import { codePartsOn } from "@/lib/caps/code/parts";
+import { MUSE_CODE_DISCLOSURE, MUSE_CODE_LIMITS } from "@/lib/caps/code/musecode/limits";
 import type { CapRenderEntry } from "@/lib/caps/render";
 
 /**
@@ -19,6 +20,7 @@ function asks(block: CodeBrief): string {
     ...(has(block, "quickjs") ? ["JavaScript in the visitor's browser (QuickJS)"] : []),
     ...(has(block, "exec") ? ["Python or Node on a platform sandbox with no network (`/exec`)"] : []),
     ...(block.browse ? ["opening one page whose address the person typed (`/browse`)"] : []),
+    ...(block.museCode ? ["Muse Code sessions that do a person's task in a private temporary workspace (`/code/sessions`)"] : []),
   ];
   return parts.length <= 1 ? (parts[0] ?? "") : `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;
 }
@@ -28,6 +30,8 @@ export const CODE_RENDER: CapRenderEntry = {
   build(brief: Brief) {
     const block = codeBlock(brief);
     if (!block) return [];
+    // Unit 9, 15b: a block that asks only for Muse Code gets its own lines and nothing about runtimes.
+    if (block.museCode && !block.runtimes.length && !block.browse) return museCodeLines(block);
     const lines = [
       `The brief asks for ${asks(block)}.`,
       "",
@@ -72,12 +76,15 @@ export const CODE_RENDER: CapRenderEntry = {
     );
     if (block.browse) lines.push("- `template/AGENTS.md` says the product reaches only Meta's models and the gateway. For this brief the gateway also opens the page the person typed, for the owner only.");
     lines.push("- `lib/platform/code-run.ts`, `lib/platform/pyodide.ts`, `lib/platform/quickjs.ts`, `lib/platform/exec.ts`, `lib/platform/browse.ts`, `components/platform/CodeOutput.tsx`, `public/musemuse/pyodide/` and `tests/caps/code.ts` are platform files. Leave them as they are.");
+    if (block.museCode) lines.push("", ...museCodeLines(block).slice(2));
     return lines;
   },
   refine(brief) {
     const block = codeBlock(brief);
     if (!block) return [];
-    return ["- It runs code with the platform's helpers in `lib/platform/` and shows each run with `CodeOutput` (`.agents/skills/muse-code-run/SKILL.md`)."];
+    const lines = block.runtimes.length || block.browse ? ["- It runs code with the platform's helpers in `lib/platform/` and shows each run with `CodeOutput` (`.agents/skills/muse-code-run/SKILL.md`)."] : [];
+    if (block.museCode) lines.push("- It runs Muse Code tasks with `lib/muse-code/client.ts` and shows each with `CodeRun` (`.agents/skills/muse-code-in-product/SKILL.md`).");
+    return lines;
   },
   markdown(brief) {
     const block = codeBlock(brief);
@@ -85,3 +92,29 @@ export const CODE_RENDER: CapRenderEntry = {
     return [`Runs code: ${asks(block)}.`];
   },
 };
+
+// ---------- Wave 3, unit 9: Muse Code sessions (docs/CAPABILITIES.md, 15b) ----------
+
+/** The build prompt's lines for Muse Code sessions, in the order 2.6 sets. The first two are the "asks" line and a gap. */
+export function museCodeLines(block: CodeBrief): string[] {
+  const L = MUSE_CODE_LIMITS;
+  const visitors = codePartsOn().museCodeVisitors === true;
+  return [
+    `The brief asks for ${asks(block)}.`,
+    "",
+    "- Read `.agents/skills/muse-code-in-product/SKILL.md` first. It has the client, the routes, the run screen, the replay mode and the smoke test's rules.",
+    "- The product never runs Muse Code itself. Its server calls the platform through `museCode` in `lib/muse-code/client.ts` (`start`, `events`, `steer`, `stop`, `result`, and `replay` for tests), and its pages call the product's own routes in `app/api/musemuse/muse-code/`, which hold the token and pass on who is asking. Never call the gateway from the browser.",
+    "- Show every run with `CodeRun` from `components/platform/CodeRun.tsx`: the steps as they happen, the files changed, the final answer, a Stop button, the download once it's done, and the cost so far. Put its disclosure line where the person types the task, word for word: \"" + MUSE_CODE_DISCLOSURE + "\"",
+    `- Each task runs in its own private sandbox the platform starts, with an empty workspace (plus the files the person attached), no product code and no secrets, and no way out but Muse Muse's model route and npm downloads. At most ${L.sessionMs / 60_000} minutes and $${L.sessionUsd.toFixed(2)} a task, then it stops and keeps what it made. ${L.atOncePerProduct} run at once per product.`,
+    visitors
+      ? `- Anyone using the product can start tasks, ${L.perPersonPerDay} a day each. The owner reads Meta's terms for this: keep the disclosure line exactly as written.`
+      : "- Only the product's owner can start tasks: anyone else gets `sign_in_required` (a `CapError`). Show visitors plainly that this part is the owner's.",
+    "- \"Worked\" means files: a run can end without error and make nothing, and its final answer then says why. Always show the final answer, and say plainly when no file came back.",
+    "- The result is a zip of the workspace: no links, no program files, nothing over 10 MB a file or 50 MB in all. It's kept for 24 hours. Show what was left out and why.",
+    "- An MCP action that starts a task returns at once with the run's link (`museCode.link`), never waits for the run: a task outlasts the connector's 120 seconds.",
+    `- In this build, at most ${L.buildSessions} real tasks run, ${L.buildMs / 60_000} minutes and $${L.buildUsd.toFixed(2)} in all, on the test model with made-up data only. Use replay mode (\`replay: true\`) for every test but one: it plays a recorded run and spends nothing.`,
+    "- Smoke test: use `tests/caps/muse-code.ts`. Run one real task through the product's own page with made-up data, wait for it with `expectMuseCodeRun(page)`, which checks the files and the final answer show, and replay the rest. Assert structure, never a run's words.",
+    "- `template/AGENTS.md` says the product reaches only Meta's models and the gateway. For this brief the gateway also runs Muse Code tasks in a sandbox of their own.",
+    "- `lib/muse-code/client.ts`, `lib/muse-code/replay.ts`, `lib/muse-code/sample-run.json`, `components/platform/CodeRun.tsx`, the routes in `app/api/musemuse/muse-code/` and `tests/caps/muse-code.ts` are platform files. Leave them as they are.",
+  ];
+}

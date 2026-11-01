@@ -101,3 +101,36 @@ export async function revokeExpiredBuildTokens(now: Date = new Date()): Promise<
     .returning({ id: schema.gatewayTokens.id });
   return rows.length;
 }
+
+// ---------- Wave 3, unit 9: Muse Code session tokens (docs/CAPABILITIES.md, 15b) ----------
+
+/**
+ * Stores a Muse Code session's token, made by sessionTokenFor (lib/caps/code/musecode/token.ts): scope code_session,
+ * its one model, its session's budget, dead at `expiresAt` (the session's limit) or when revoked at stop. Only the hash
+ * is stored. findToken never returns these: they are looked up by findCodeSessionToken, for /v1/responses only.
+ */
+export async function storeCodeSessionToken(opts: { token: string; productId: string; model: string; budgetUsd: number; expiresAt: Date }): Promise<{ id: string }> {
+  const [row] = await db()
+    .insert(schema.gatewayTokens)
+    .values({ productId: opts.productId, tokenHash: hashToken(opts.token), scope: "code_session", allowedModels: [opts.model], dailyBudgetUsd: opts.budgetUsd, expiresAt: opts.expiresAt })
+    .returning({ id: schema.gatewayTokens.id });
+  return { id: row.id };
+}
+
+/** An active session token's row by its plaintext, or null when unknown, revoked, expired or not a session token. */
+export async function findCodeSessionToken(token: string): Promise<GatewayTokenRow | null> {
+  if (!/^mm_cs_[A-Za-z0-9_-]{43}$/.test(token)) return null;
+  const [row] = await db()
+    .select()
+    .from(schema.gatewayTokens)
+    .where(and(eq(schema.gatewayTokens.tokenHash, hashToken(token)), eq(schema.gatewayTokens.scope, "code_session"), isNull(schema.gatewayTokens.revokedAt)))
+    .limit(1);
+  if (!row) return null;
+  if (!row.expiresAt || row.expiresAt < new Date()) return null;
+  return row;
+}
+
+/** Revokes one token now: a session's at stop. */
+export async function revokeTokenById(id: string, now: Date = new Date()): Promise<void> {
+  await db().update(schema.gatewayTokens).set({ revokedAt: now }).where(and(eq(schema.gatewayTokens.id, id), isNull(schema.gatewayTokens.revokedAt)));
+}

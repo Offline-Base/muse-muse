@@ -1,5 +1,6 @@
 import { TARGETS, type TargetId } from "@/lib/brief/schema";
 import { CAP_FLAG, CAP_IDS, CAP_NEEDS_BUILDER, CAP_READY, type CapId } from "@/lib/caps/ids";
+import { codePartsOn } from "@/lib/caps/code/parts";
 import { dataSignInOn } from "@/lib/caps/data/types";
 import { mediaPartsFromEnv, type MediaPartId } from "@/lib/caps/media/parts";
 import { capOverlaysNeeded } from "@/lib/caps/overlays";
@@ -987,6 +988,21 @@ export const env = {
   /** What /browse may spend on sandboxes across the platform per UTC day. 0 pauses it. */
   get codeBrowseDailyUsd(): number {
     return dollars("CODE_BROWSE_DAILY_USD", 2);
+  },
+  /**
+   * MUSE_CODE_ENABLED: products may run Muse Code sessions for their owner ({GATEWAY_URL}/code/sessions, the code cap's
+   * museCode part, docs/CAPABILITIES.md 15b). Each session is its own sandbox from BUILDER_SNAPSHOT_ID, $1 and 15
+   * minutes at most. Needs CODE_ENABLED and a builder snapshot with the musecode overlay. Off: the routes answer 404.
+   */
+  get museCodeEnabled(): boolean {
+    return codePartsOn().museCode === true;
+  },
+  /**
+   * MUSE_CODE_VISITORS: visitors and signed-in end users may start sessions too, 3 a day per address. Off until the owner
+   * has read Meta's terms 1, 3.1, 6.2 and 10.1(i) for this (decision 10): it is a terms decision as well as a spending one.
+   */
+  get museCodeVisitors(): boolean {
+    return codePartsOn().museCodeVisitors === true;
   },
 
   // ---------- Wave 3, unit 10: runtime (docs/CAPABILITIES.md) ----------

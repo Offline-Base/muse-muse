@@ -49,7 +49,8 @@ export function toolsDeps(): ToolsDeps {
     agentsEnabled: env.agentsEnabled,
     personalEnabled: env.composioPersonalEnabled,
     // Wave 3, unit 3: the owner pass for products that save data. False with the data cap off.
-    ownerPassForCaps: env.servedCaps.includes("data"),
+    // Unit 9 (15b): and for products that run Muse Code sessions, which are owner-only. False with MUSE_CODE_ENABLED off.
+    ownerPassForCaps: env.servedCaps.includes("data") || (env.servedCaps.includes("code") && env.museCodeEnabled),
     findToken,
     productStatus: productStatusById,
     productInfo,
