@@ -11,6 +11,7 @@ import {
   GADGET_INSTALL_SOURCE,
   GADGET_RUNNER_SOURCE,
   GADGET_UNINSTALL_SOURCE,
+  PROVE_CHECK_GADGET_SOURCE,
   PROVE_CHECK_PLUGIN_SOURCE,
   PROVE_RUNNER_SOURCE,
   PROVE_SCENE_SOURCE,
@@ -27,5 +28,6 @@ describe("the generated asset strings", () => {
     assert.equal(GADGET_RUNNER_SOURCE, read("gadget-runner.cjs"));
     assert.equal(GADGET_INSTALL_SOURCE, read("gadget-install.sh"));
     assert.equal(GADGET_UNINSTALL_SOURCE, read("gadget-uninstall.sh"));
+    assert.equal(PROVE_CHECK_GADGET_SOURCE, read("prove-check-gadget.mjs"));
   });
 });

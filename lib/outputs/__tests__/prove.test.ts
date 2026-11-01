@@ -12,8 +12,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, beforeEach, describe, it } from "node:test";
 import { proveRows } from "@/components/build/prove-rows";
-import { PROVE_CHECK_PLUGIN_SOURCE, PROVE_RUNNER_SOURCE } from "@/lib/outputs/assets-source";
+import { PROVE_CHECK_GADGET_SOURCE, PROVE_CHECK_PLUGIN_SOURCE, PROVE_RUNNER_SOURCE } from "@/lib/outputs/assets-source";
+import { gadgetEntries, gadgetZip } from "@/lib/outputs/gadget";
 import { cliSource, pluginZip, skillMarkdown, type OutputProduct } from "@/lib/outputs/generate";
+import { makeZip } from "@/lib/outputs/zip";
 import { proveStillActive, settleProveView, PROVE_STALE_MS } from "@/lib/outputs/labels";
 import {
   describeResult,
@@ -183,6 +185,19 @@ describe("planChecks", () => {
   it("has no downloads when the site can't serve them", () => {
     assert.equal(plan(manifest([action()]), 1.5, false).downloads, null);
   });
+
+  it("plans the gadget pack's check: its prefix, its download and one more call while that fits the budget", () => {
+    const spec = plan(manifest([action({ name: "a", ...READ_ONLY }), action({ name: "b", ...READ_ONLY })]));
+    assert.equal(spec.gadgetPrefix, "tip");
+    assert.equal(spec.downloads?.gadget, "https://site.example/p/tip/get/gadget");
+    assert.equal(spec.gadgetCall?.name, "a");
+    // $0.5 of budget: the CLI's call and a's fill it with $0.2 each, so the gadget gets no call and nothing else changes.
+    const tight = plan(manifest([action({ name: "a", ...READ_ONLY }), action({ name: "b", ...READ_ONLY })], 0.2), 1);
+    assert.deepEqual(tight.calls.map((c) => c.name), ["a"]);
+    assert.equal(tight.gadgetCall, null);
+    assert.equal(plan(manifest([action({ name: "w", ...CHANGES_THINGS })])).gadgetCall, null);
+    assert.equal(planChecks({ product: { ...product(manifest([action()])), slug: "system" }, origin: "https://site.example", dir: "/w", capUsd: 1.5, estimatedCostPerRunUsd: 0.01, fetchable: true }).gadgetPrefix, "mm_system");
+  });
 });
 
 const step = (caption: string, ok = true, seconds = 0.5, output = "out") => ({ caption, command: "cmd", output, ok, exitCode: ok ? 0 : 1, seconds });
@@ -205,6 +220,18 @@ describe("describeResult", () => {
     assert.equal(refused.state, "done");
     assert.equal(refused.title, "CLI: its help works, and no action was called");
     assert.equal(refused.detail, "picky refused the sample input, so no call went through.");
+  });
+
+  it("says what the gadget check did, and that no gadget was involved", () => {
+    const called = describeResult("gadget", result(true, { commands: 2, called: "a", downloaded: true }));
+    assert.equal(called.title, "Muse gadget commands: 2 commands check out, and a ran and printed JSON");
+    assert.equal(called.detail, "Checked by machine. It hasn't been installed on a real gadget by this check.");
+    const none = describeResult("gadget", result(true, { commands: 1, called: null, downloaded: false }));
+    assert.equal(none.title, "Muse gadget commands: 1 command check out");
+    assert.equal(none.detail, "No action was called through it. Checked by machine, from a file put in place directly. It hasn't been installed on a real gadget by this check.");
+    const refused = describeResult("gadget", result(true, { commands: 1, called: null, refused: "picky", downloaded: true }));
+    assert.match(refused.detail ?? "", /^picky refused the sample input/);
+    assert.equal(describeResult("gadget", result(false, { error: "FAILED x" })).title, "Muse gadget commands: didn't work");
   });
 
   it("says when one failed, or never finished", () => {
@@ -437,7 +464,7 @@ describe("the runner", () => {
   let base: string;
   let dir: string;
   /** What the fake MCP server does differently per test. */
-  let mode: { listOmits?: boolean; toolError?: boolean; actionFails?: boolean; badDownload?: boolean; helpOnlyCli?: boolean } = {};
+  let mode: { listOmits?: boolean; toolError?: boolean; actionFails?: boolean; badDownload?: boolean; helpOnlyCli?: boolean; badGadget?: boolean } = {};
   /** What each test's product has, and what its actions do. */
   let liveActions: Manifest["actions"] = [];
   let liveReply: (name: string) => { status: number; body: unknown } = () => ({ status: 200, body: { done: true } });
@@ -462,13 +489,19 @@ describe("the runner", () => {
         if (url === "/p/tip/get/cli") return void res.end(mode.helpOnlyCli ? HELP_ONLY_CLI : mode.badDownload ? "oops" : cliSource(p, base));
         if (url === "/p/tip/get/skill") return void res.end(skillMarkdown(p, base));
         if (url === "/p/tip/get/claude-plugin") return void res.end(pluginZip(p, base));
+        if (url === "/p/tip/get/gadget") return void res.end(mode.badGadget ? badGadgetZip(p) : gadgetZip(p));
+        // The CLI and the gadget's runner each say who they are.
+        const caller = /MuseMuse-Gadget/.test(req.headers["user-agent"] ?? "") ? "gadget" : "cli";
         if (liveActions.length && url.startsWith("/api/actions/")) {
           const name = url.slice("/api/actions/".length);
-          reached.push(`cli:${name}`);
+          reached.push(`${caller}:${name}`);
           const reply = liveReply(name);
           return json(reply.body, reply.status);
         }
-        if (url === "/api/actions/go") return mode.actionFails ? json({ error: "no" }, 500) : json({ done: true });
+        if (url === "/api/actions/go") {
+          reached.push(`${caller}:go:${text}`);
+          return mode.actionFails ? json({ error: "no" }, 500) : json({ done: true });
+        }
         if (url === "/api/mcp/tip") {
           const rpc = JSON.parse(text) as { id: number; method: string; params?: { name: string } };
           if (liveActions.length) {
@@ -496,6 +529,7 @@ describe("the runner", () => {
     dir = mkdtempSync(path.join(tmpdir(), "muse-prove-"));
     writeFileSync(path.join(dir, "prove-runner.mjs"), PROVE_RUNNER_SOURCE);
     writeFileSync(path.join(dir, "prove-check-plugin.mjs"), PROVE_CHECK_PLUGIN_SOURCE);
+    writeFileSync(path.join(dir, "prove-check-gadget.mjs"), PROVE_CHECK_GADGET_SOURCE);
   });
 
   after(async () => {
@@ -504,8 +538,12 @@ describe("the runner", () => {
     await new Promise((resolve) => server.close(resolve));
   });
 
-  const runIt = async () => {
-    const spec = planChecks({ product: { slug: "tip", name: "Tip", tagline: "Tips", liveUrl: base, manifest: liveActions.length ? manifest(liveActions) : m }, origin: base, dir, capUsd: 1.5, estimatedCostPerRunUsd: 0.01, fetchable: true });
+  /** A pack whose command breaks the SDK's rules: a reserved name. */
+  const badGadgetZip = (p: OutputProduct) =>
+    makeZip(gadgetEntries(p).map((e) => (e.path.includes("/commands.d/") ? { ...e, path: e.path.replace(/commands\.d\/[^/]+$/, "commands.d/system.go.json") } : e)));
+
+  const runIt = async (over: { capUsd?: number; est?: number } = {}) => {
+    const spec = planChecks({ product: { slug: "tip", name: "Tip", tagline: "Tips", liveUrl: base, manifest: liveActions.length ? manifest(liveActions) : m }, origin: base, dir, capUsd: over.capUsd ?? 1.5, estimatedCostPerRunUsd: over.est ?? 0.01, fetchable: true });
     writeFileSync(path.join(dir, "spec.json"), JSON.stringify(spec));
     await new Promise<void>((resolve, reject) => {
       execFile("node", [path.join(dir, "prove-runner.mjs"), path.join(dir, "spec.json")], { timeout: 60_000 }, (err) => (err ? reject(err) : resolve()));
@@ -526,7 +564,7 @@ describe("the runner", () => {
     mode = {};
     const results = await runIt();
     assert.ok(results.finishedAt);
-    assert.deepEqual(Object.keys(results.outputs), ["mcp", "cli", "claude_plugin", "skill"]);
+    assert.deepEqual(Object.keys(results.outputs), ["mcp", "cli", "claude_plugin", "gadget", "skill"]);
     for (const [id, r] of Object.entries(results.outputs)) assert.equal(r.ok, true, `${id}: ${JSON.stringify(r.facts)}`);
     const mcp = results.outputs.mcp!;
     assert.deepEqual(mcp.facts.listed, ["go", "photo"]);
@@ -539,7 +577,49 @@ describe("the runner", () => {
     assert.deepEqual(JSON.parse(cli.steps.at(-1)!.output), { done: true });
     const plugin = results.outputs.claude_plugin!;
     assert.match(plugin.steps.at(-1)!.output, /answers tools\/list with 2 tools/);
+    const gadget = results.outputs.gadget!;
+    assert.equal(gadget.facts.downloaded, true);
+    assert.equal(gadget.facts.commands, 2);
+    assert.equal(gadget.facts.called, "go");
+    assert.deepEqual(JSON.parse(gadget.steps.at(-1)!.output), { done: true });
+    assert.match(gadget.steps.at(-1)!.command, /printf '%s' .* \| node runner\.cjs 'go'$/);
+    assert.equal(describeResult("gadget", gadget).title, "Muse gadget commands: 2 commands check out, and go ran and printed JSON");
+    assert.match(describeResult("gadget", gadget).detail ?? "", /hasn't been installed on a real gadget/);
+    // The gadget sent the same input the CLI did, on stdin and through the runner.
+    assert.ok(reached.includes(`gadget:go:{"text":"hi"}`), reached.join(" "));
     assert.equal(results.outputs.skill!.facts.downloaded, true);
+  });
+
+  it("fails the gadget pack when a command breaks the SDK's rules, and calls nothing through it", async () => {
+    mode = { badGadget: true };
+    reached = [];
+    const gadget = (await runIt()).outputs.gadget!;
+    assert.equal(gadget.ok, false);
+    assert.match(String(gadget.facts.error), /FAILED system\.go: .*reserved prefix/);
+    assert.ok(!reached.some((r) => r.startsWith("gadget:")));
+  });
+
+  it("checks the gadget pack without a call when another wouldn't fit the budget", async () => {
+    useActions([action({ name: "go", ...READ_ONLY })]);
+    // Half of a $0.06 cap is $0.03: the CLI's call and one MCP call use it up.
+    const results = await runIt({ capUsd: 0.06, est: 0.015 });
+    assert.equal((results.outputs.mcp!.facts.called as unknown[]).length, 1);
+    const gadget = results.outputs.gadget!;
+    assert.equal(gadget.ok, true, JSON.stringify(gadget.facts));
+    assert.equal(gadget.facts.called, null);
+    assert.deepEqual(reached, ["mcp:go", "cli:go"]);
+    assert.equal(describeResult("gadget", gadget).title, "Muse gadget commands: 1 command check out");
+  });
+
+  it("keeps the gadget's pass when its only action refuses the sample, and fails it when the action breaks", async () => {
+    useActions([action({ name: "picky", ...READ_ONLY })], () => ({ status: 422, body: { error: "bad sample" } }));
+    const refused = (await runIt()).outputs.gadget!;
+    assert.equal(refused.ok, true, JSON.stringify(refused.facts));
+    assert.equal(refused.facts.refused, "picky");
+    useActions([action({ name: "broken", ...READ_ONLY })], () => ({ status: 500, body: { error: "down" } }));
+    const broken = (await runIt()).outputs.gadget!;
+    assert.equal(broken.ok, false);
+    assert.match(String(broken.facts.error), /tip\.broken ended with exit code 1\. broken failed with HTTP 500: down/);
   });
 
   it("fails the MCP server when tools/list leaves out an action", async () => {
@@ -574,7 +654,7 @@ describe("the runner", () => {
     const cli = results.outputs.cli!;
     assert.equal(cli.ok, true, JSON.stringify(cli.facts));
     assert.equal(cli.facts.called, "list");
-    assert.deepEqual(reached, ["mcp:list", "cli:list"]);
+    assert.deepEqual(reached, ["mcp:list", "cli:list", "gadget:list"]);
     assert.deepEqual(results.outputs.mcp!.facts.notCalled, [{ name: "wipe", why: "It changes things, so a test run doesn't call it." }]);
   });
 
@@ -603,7 +683,7 @@ describe("the runner", () => {
     const cli = results.outputs.cli!;
     assert.equal(cli.ok, true, JSON.stringify(cli.facts));
     assert.equal(cli.facts.called, "good");
-    assert.deepEqual(reached, ["mcp:picky", "mcp:good", "cli:good"]);
+    assert.deepEqual(reached, ["mcp:picky", "mcp:good", "cli:good", "gadget:good"]);
   });
 
   it("keeps the CLI's pass when its only action refuses the sample, and says no call went through", async () => {

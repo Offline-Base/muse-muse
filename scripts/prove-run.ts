@@ -125,7 +125,7 @@ async function main(): Promise<void> {
     writeFileSync(path.join(outDir, "results.json"), text ?? "");
     const results = parseProveResults(text);
     const passed: ProvedOutput[] = [];
-    for (const output of ["mcp", "cli", "claude_plugin"] as const) {
+    for (const output of ["mcp", "cli", "claude_plugin", "gadget"] as const) {
       const said = describeResult(output, results?.outputs[output]);
       log(`${output}: ${said.state}: ${said.title}${said.detail ? ` (${said.detail})` : ""}`);
       if (said.state === "done") passed.push(output);

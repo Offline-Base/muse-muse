@@ -21,6 +21,7 @@ const ASSETS: ReadonlyArray<{ name: string; file: string; about: string }> = [
   { name: "GADGET_RUNNER_SOURCE", file: "gadget-runner.cjs", about: "The Muse gadget pack's runner, before a product's address and actions are written into it (gadget.ts)." },
   { name: "GADGET_INSTALL_SOURCE", file: "gadget-install.sh", about: "The Muse gadget pack's install.sh, before its names are written into it." },
   { name: "GADGET_UNINSTALL_SOURCE", file: "gadget-uninstall.sh", about: "The Muse gadget pack's uninstall.sh, before its names are written into it." },
+  { name: "PROVE_CHECK_GADGET_SOURCE", file: "prove-check-gadget.mjs", about: "The machine check of the Muse gadget pack's zip." },
 ];
 
 const module = [

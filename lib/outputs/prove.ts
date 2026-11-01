@@ -4,6 +4,7 @@
  * lib/pipeline/prove.ts.
  */
 import { noEmDashes } from "@/lib/brief/normalize";
+import { gadgetFileName, gadgetPrefix, gadgetZip } from "@/lib/outputs/gadget";
 import { cliFileName, cliSource, outputLinks, pluginFileName, pluginName, pluginZip, publicActions, skillMarkdown, skillName, type OutputAction, type OutputProduct } from "@/lib/outputs/generate";
 import { OUTPUT_LABEL } from "@/lib/outputs/labels";
 import type { ProductOutput } from "@/lib/native/targets";
@@ -20,8 +21,11 @@ export const SKILL_TEST_RESERVE_USD: Record<BuildModel, number> = { "muse-wonder
 export const PROVE_MODEL: BuildModel = "muse-wonder-1.0";
 /** The model nightly re-checks run on. Never muse-spark-1.3. */
 export const NIGHTLY_MODEL: BuildModel = "muse-spark-1.3-contributor";
-/** The outputs a run tests, in order. ChatGPT is the MCP server again, and only a person with an account can test it. */
-export const PROVED_OUTPUTS = ["mcp", "cli", "claude_plugin", "skill"] as const satisfies readonly ProductOutput[];
+/**
+ * The outputs a run tests, in order. ChatGPT is the MCP server again, and only a person with an account can test it. The
+ * gadget pack is checked by machine, with no gadget.
+ */
+export const PROVED_OUTPUTS = ["mcp", "cli", "claude_plugin", "gadget", "skill"] as const satisfies readonly ProductOutput[];
 export type ProvedOutput = (typeof PROVED_OUTPUTS)[number];
 
 type Schema = Record<string, unknown>;
@@ -101,7 +105,11 @@ export interface ProveRunSpec {
   calls: ProveCall[];
   notCalled: Array<{ name: string; why: string }>;
   cliCall: ProveCall | null;
-  downloads: { cli: string; skill: string; claudePlugin: string } | null;
+  /** The first word of the gadget pack's command names. */
+  gadgetPrefix: string;
+  /** What the gadget pack's runner may call, or null when another call wouldn't fit the budget. */
+  gadgetCall: ProveCall | null;
+  downloads: { cli: string; skill: string; claudePlugin: string; gadget: string } | null;
 }
 
 /** What the manifest says about whether an action changes anything: true when it only reads, undefined when it doesn't say. */
@@ -115,7 +123,8 @@ function onlyReads(action: OutputAction): boolean | undefined {
  * read-only is called with its example or a value made from its schema. An unmarked action might change things: it needs
  * an example, the input the template's tests already run it on, and a run calls at most one of those, after the read-only
  * ones, so the CLI and the skill test pick a read-only action when there is one. All of this stays under half the cap by
- * the manifest's estimate, up to MAX_CALLS. An action that is left out says why.
+ * the manifest's estimate, up to MAX_CALLS. An action that is left out says why. The gadget pack's runner makes one more
+ * call, the way the CLI does, only while that still fits.
  */
 export function planChecks(input: {
   product: OutputProduct & { liveUrl: string };
@@ -155,6 +164,7 @@ export function planChecks(input: {
       unmarkedCalled ||= reads === undefined;
     }
   }
+  const gadgetCall = calls[0] && planned + each <= budget ? calls[0] : null;
   return {
     dir,
     slug: product.slug,
@@ -167,7 +177,9 @@ export function planChecks(input: {
     calls,
     notCalled,
     cliCall: calls[0] ?? null,
-    downloads: fetchable ? { cli: links.cli, skill: links.skill, claudePlugin: links.claudePlugin } : null,
+    gadgetPrefix: gadgetPrefix(product.slug),
+    gadgetCall,
+    downloads: fetchable ? { cli: links.cli, skill: links.skill, claudePlugin: links.claudePlugin, gadget: links.gadget } : null,
   };
 }
 
@@ -267,6 +279,17 @@ export function describeResult(output: Exclude<ProvedOutput, "skill">, result: P
     };
   }
   const fetched = facts.downloaded === true;
+  if (output === "gadget") {
+    const called = typeof facts.called === "string" ? facts.called : null;
+    const count = typeof facts.commands === "number" ? facts.commands : 0;
+    const why = typeof facts.refused === "string" ? `${facts.refused} refused the sample input, so no call went through.` : called ? null : "No action was called through it.";
+    return {
+      state: "done",
+      title: called ? `Muse gadget commands: ${plural(count, "command")} check out, and ${called} ran and printed JSON` : `Muse gadget commands: ${plural(count, "command")} check out`,
+      detail: [why, `Checked by machine${fetched ? "" : ", from a file put in place directly"}. It hasn't been installed on a real gadget by this check.`].filter(Boolean).join(" "),
+      checks,
+    };
+  }
   return {
     state: "done",
     title: "Claude plugin: its manifest and MCP address check out",
@@ -534,6 +557,7 @@ const VIDEO_TAGLINE: Record<ProvedOutput, string> = {
   cli: "Its CLI, run against the live product.",
   skill: "Its skill file, used by Muse Code against the live product.",
   claude_plugin: "Its Claude plugin, checked by machine. Not installed in Claude here.",
+  gadget: "Its Muse gadget commands, checked by machine and run against the live product. Not installed on a gadget here.",
 };
 
 /** The caption under each video in the room and the Get it panel. */
@@ -544,7 +568,7 @@ export function videoCaption(output: ProvedOutput, at: Date): string {
 /** Demo Studio's cards for one output's video. */
 export function studioSpecFor(output: ProvedOutput, input: { name: string; origin: string; slug: string; timeline: string; out: string }) {
   const links = outputLinks(input.origin, input.slug);
-  const url = { mcp: links.mcp, cli: links.cli, skill: links.skill, claude_plugin: links.claudePlugin }[output];
+  const url = { mcp: links.mcp, cli: links.cli, skill: links.skill, claude_plugin: links.claudePlugin, gadget: links.gadget }[output];
   return {
     title: noEmDashes(`${input.name}: ${OUTPUT_LABEL[output]}`).trim(),
     tagline: VIDEO_TAGLINE[output],
@@ -555,11 +579,12 @@ export function studioSpecFor(output: ProvedOutput, input: { name: string; origi
   };
 }
 
-/** The three files, where the runner looks for them, for a site that can't serve them yet (scripts/prove-run.ts). */
+/** The four files, where the runner looks for them, for a site that can't serve them yet (scripts/prove-run.ts). */
 export function generatedFilesFor(product: OutputProduct, site: string, dir: string): Array<{ path: string; content: string | Buffer }> {
   return [
     { path: `${dir}/${cliFileName(product.slug)}`, content: cliSource(product, site) },
     { path: `${dir}/SKILL.md`, content: skillMarkdown(product, site) },
     { path: `${dir}/${pluginFileName(product.slug)}`, content: pluginZip(product, site) },
+    { path: `${dir}/${gadgetFileName(product.slug)}`, content: gadgetZip(product) },
   ];
 }
