@@ -1725,3 +1725,10 @@ scripts/dev/tune-harness.ts, on a Lambda gpu_1x_a10 named prove-tune-1, us-east-
 - Tests, touched code: lib/caps .test.ts files and caps-off, 625 pass. The failures were the live test's old CAP_READY line and the media flags-off expectation, both fixed. lib/caps/code/__tests__/session.test.ts is cancelled in this run and the same on tg-full-builds, so not from this work. flags-off goldens unchanged.
 - Not run: a real build of files, connect, jobs, live, media, runtime, hardware or games. A production deploy or env change.
 
+
+## Nov 1: three fixes from the full build results
+
+- **Judge screenshots.** Full builds capped the judge at 16 shots, keeping the first and the last 15. The 21-requirement tracker (bf7a2e2e) lost its middle shots, which fits R7 and R9 staying unmet through 3 fix rounds while their tests passed. Full builds now use the chained rule: requirements plus 2, up to 48. No rerun yet.
+- **Round time.** The Wonder build b2996b46 had rounds cut at 5 to 8 minutes. With a 120-minute wall, 2 verifies at 25 minutes, 2 judges and a fix reserved 71 minutes, and 6 milestones shared the rest. The wall default is now 150 (the most allowed, clear of the 3-hour sweep) and the reserve is one verify, one judge and one fix, 43 minutes. That gives about 18 minutes a milestone before the milestone checks. No rerun yet.
+- **Sandbox previews.** Added `allowedDevOrigins: ["*.vercel.run"]` to the template, because next dev refused its socket there and buttons stayed dead. Needs a new builder snapshot.
+- **PR.** Replaces #26, whose base was squash merged: same commits replayed on main. Touched tests only: full-builds 26 pass, live brief test, tsc.

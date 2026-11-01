@@ -37,7 +37,7 @@ describe("the flag", () => {
   });
   it("holds the wall between 90 and 150, 120 by default", () => {
     delete process.env.FULL_BUILD_WALL_MINUTES;
-    assert.equal(env.fullBuildWallMinutes, 120);
+    assert.equal(env.fullBuildWallMinutes, 150);
     process.env.FULL_BUILD_WALL_MINUTES = "500";
     assert.equal(env.fullBuildWallMinutes, 150);
     delete process.env.FULL_BUILD_WALL_MINUTES;

@@ -992,7 +992,7 @@ export const env = {
   },
   /** The longest a full build may run, in minutes. Held to 90 (the engine's wall) through 150, which stays clear of the 3-hour sweep. */
   get fullBuildWallMinutes(): number {
-    return Math.min(150, Math.max(90, number("FULL_BUILD_WALL_MINUTES", 120)));
+    return Math.min(150, Math.max(90, number("FULL_BUILD_WALL_MINUTES", 150)));
   },
 
   // ---------- Chained builds (docs/CHAINED_BUILDS.md) ----------
