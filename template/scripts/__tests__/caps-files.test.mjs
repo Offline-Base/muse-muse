@@ -275,6 +275,30 @@ console.log(JSON.stringify({ text, err, cite }));
     assert.equal(bad.err, "checksum");
   });
 
+  test("every dataset() read reaches the gateway, so a later verify round's read is on its record", async () => {
+    const sha = createHash("sha256").update(csv).digest("hex");
+    const info = { id: "palmer-penguins", title: "Palmer penguins", why: "w", license: { spdx: "CC0-1.0", url: "https://creativecommons.org/publicdomain/zero/1.0/" }, source: { name: "s", url: "https://e" }, attribution: "a", files: [{ name: "penguins.csv", contentType: "text/csv", bytes: Buffer.byteLength(csv), sha256: sha, url: "x" }] };
+    seen.length = 0;
+    answer = (req) => (req.url === "/api/gateway/datasets" ? { status: 200, body: { datasets: [info] } } : { status: 200, raw: csv, type: "text/csv" });
+    // Stands in for Next's patched fetch: a cache: "force-cache" request answers from its data cache once it has a copy.
+    await run(`
+const real = globalThis.fetch;
+const cached = new Map();
+globalThis.fetch = async (url, init = {}) => {
+  if (init.cache === "force-cache" && cached.has(String(url))) return cached.get(String(url)).clone();
+  const res = await real(url, init);
+  if (init.cache === "force-cache") cached.set(String(url), res.clone());
+  return res;
+};
+const { dataset } = await import("./lib/platform/datasets.ts");
+const d = dataset(null, "palmer-penguins");
+await d.text("penguins.csv");
+await d.text("penguins.csv");
+console.log(JSON.stringify({}));
+`);
+    assert.equal(seen.filter((s) => s.url === "/api/gateway/datasets/palmer-penguins/penguins.csv").length, 2);
+  });
+
   test("uploadFile asks for a ticket, puts the bytes at its URL with its headers, then finishes, and refuses an unkept type", async () => {
     const out = await run(`
 import { uploadFile, typeOf, UploadError } from "./lib/platform/files-browser.ts";

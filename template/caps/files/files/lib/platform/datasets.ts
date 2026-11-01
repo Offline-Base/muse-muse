@@ -36,7 +36,8 @@ export function dataset(request: RequestLike | null | undefined, id: string) {
     const base = process.env.GATEWAY_URL?.replace(/\/+$/, "");
     const res = await fetch(`${base}/datasets/${id}/${file}`, {
       headers: { authorization: `Bearer ${process.env.PRODUCT_TOKEN ?? ""}` },
-      cache: "force-cache",
+      // Never Next's data cache: it would keep a copy across builds and hide a read from the gateway's record of a build.
+      cache: "no-store",
       signal: AbortSignal.timeout(60_000),
     }).catch(() => null);
     if (!res || !res.ok) throw new FilesError("unreachable", res?.status ?? 502, `The ${d.title} data couldn't be read right now. Try again in a minute.`);
