@@ -106,7 +106,7 @@ export function basetenAdapter(deps: { apiKey: () => string | undefined; hfToken
     inferenceUrl: (ref) => (ref.modelId ? `https://model-${ref.modelId}.api.baseten.co/environments/production/sync/v1` : null),
     chat(ref, input) {
       if (!ref.modelId) throw new HostError(502, "endpoint_unavailable", "This endpoint has no address yet.");
-      return openAiChat({ baseUrl: `https://model-${ref.modelId}.api.baseten.co/environments/production/sync/v1`, key: deps.apiKey() ?? "", model: "tuned", input, fetch: deps.fetch });
+      return openAiChat({ baseUrl: `https://model-${ref.modelId}.api.baseten.co/environments/production/sync/v1`, key: deps.apiKey() ?? "", model: input.variant === "base" ? "/models/base" : "tuned", input, fetch: deps.fetch });
     },
     async listOwned() {
       const res = await call("/models");

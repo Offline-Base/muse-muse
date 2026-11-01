@@ -5,7 +5,7 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { capProduct, capToken } from "@/lib/caps/store";
 import { env } from "@/lib/env";
-import { hitRateLimits, reserveSpend, settleSpend } from "@/lib/gateway/store";
+import { adjustCounter, counterValue, hitRateLimits, reserveCounter, reserveSpend, settleSpend } from "@/lib/gateway/store";
 import { hashToken } from "@/lib/gateway/tokens";
 import { limitCeilings } from "@/lib/train/gate";
 import { serveJobChatBackend } from "@/lib/train/glimmer-serving";
@@ -17,6 +17,7 @@ import { hubAdapterSource } from "@/lib/train/host/hf-files";
 import { LAMBDA_JOB_TITLE, lambdaAdapter } from "@/lib/train/host/lambda";
 import { modalAdapter } from "@/lib/train/host/modal";
 import { hostByModel, hostByOwnerTokenHash, hostRows, insertHostEndpoint, patchHostEndpoint, productOwnsModel, touchHostEndpoint } from "@/lib/train/host/store";
+import type { TryDeps } from "@/lib/train/host/try";
 import type { HostAdapter, HostProvider } from "@/lib/train/host/types";
 import { HOST_PROVIDERS } from "@/lib/train/host/types";
 import { launchJob } from "@/lib/train/launch";
@@ -108,5 +109,17 @@ export function hostDeps(): HostedGatewayDeps {
     productOwnsModel,
     hitRateLimits,
     recordUsage,
+  };
+}
+
+/** The public Try box's deps: everything hosting has, its own day's budget, and the atomic counters that hold it. */
+export function tryDeps(): TryDeps {
+  return {
+    ...hostDeps(),
+    tryOn: () => env.hostTuned && env.tryTuned,
+    tryLimits: () => ({ dailyUsd: Math.min(env.tryTunedDailyUsd, env.hostTunedDailyUsd), wakesPerDay: env.tryTunedWakesPerDay, minutes: Math.min(env.tryTunedMinutes, env.hostTunedMaxMinutes) }),
+    reserveCounter,
+    adjustCounter,
+    counterValue,
   };
 }

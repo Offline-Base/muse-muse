@@ -340,6 +340,19 @@ describe("handleHostedChat", () => {
     assert.equal((await handleHostedChat(post("mmh_good", body({ stream: true })), deps())).status, 400);
     assert.equal((await handleHostedChat(post("mmh_good", body({ tools: [] })), deps())).status, 400);
   });
+  it("its day counter sits past the hourly prune, at the end of the UTC day", async () => {
+    const windows = new Map<string, Date>();
+    const seen = deps({
+      now: () => new Date("2026-11-03T12:00:00Z"),
+      hitRateLimits: async (keys, start) => {
+        for (const k of keys) windows.set(k, start);
+        return Object.fromEntries(keys.map((k) => [k, 1]));
+      },
+    });
+    await handleHostedChat(post("mmh_good", body()), seen);
+    const day = [...windows].find(([k]) => k.startsWith("hosted:endpoint:"))?.[1];
+    assert.equal(day?.toISOString(), "2026-11-04T00:00:00.000Z");
+  });
   it("holds to the rate limit, and sends the retry time while waking", async () => {
     const limited = deps({ hitRateLimits: async (keys) => Object.fromEntries(keys.map((k) => [k, 9999])) });
     assert.equal((await handleHostedChat(post("mmh_good", body()), limited)).status, 429);

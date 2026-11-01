@@ -1388,6 +1388,27 @@ export const env = {
     return number("HOST_TUNED_MAX_MINUTES", 240);
   },
 
+  /** TRY_TUNED: anyone may chat with a tuned model on its public page, and wake it within the limits below. Also needs HOST_TUNED. */
+  get tryTuned(): boolean {
+    return flag("TRY_TUNED");
+  },
+  /** TRY_TUNED_DAILY_USD: the most visitors' wakes may promise per UTC day, 10 by default. Held to HOST_TUNED_DAILY_USD. 0 stops wakes. */
+  get tryTunedDailyUsd(): number {
+    return dollars("TRY_TUNED_DAILY_USD", 10);
+  },
+  /** TRY_TUNED_WAKES_PER_DAY: visitors' wakes per UTC day across every model, 4 by default. 0 stops wakes. */
+  get tryTunedWakesPerDay(): number {
+    return wholeCount("TRY_TUNED_WAKES_PER_DAY", 4);
+  },
+  /** TRY_TUNED_MINUTES: the longest a visitor's wake runs, 60 by default. Held to HOST_TUNED_MAX_MINUTES. */
+  get tryTunedMinutes(): number {
+    return number("TRY_TUNED_MINUTES", 60);
+  },
+  /** EXPORT_TUNED: one-click installers on a tuned model's public page, and their route. Off: the route answers 404. */
+  get exportTuned(): boolean {
+    return flag("EXPORT_TUNED");
+  },
+
   // ---------- Wave 3, unit 12: drive export (docs/CAPABILITIES.md) ----------
 
   /**

@@ -60,7 +60,7 @@ export { refusal as providerRefusal };
 
 /** Starts one. The owner token comes back here once: only its hash is kept. */
 export async function deployEndpoint(
-  input: { provider: HostProvider; facts: HostFacts; callerId: string },
+  input: { provider: HostProvider; facts: HostFacts; callerId: string | null },
   deps: HostDeps,
   now: Date = new Date(),
 ): Promise<{ endpoint: HostEndpoint; ownerToken: string }> {

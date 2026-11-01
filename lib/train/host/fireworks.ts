@@ -120,6 +120,7 @@ export function fireworksAdapter(deps: { fetch?: Fetcher; apiKey: () => string |
     },
     inferenceUrl: () => INFERENCE,
     chat(ref, input) {
+      if (input.variant === "base") throw new HostError(409, "base_unavailable", "Fireworks serves only the tuned model here, so there's no base answer to compare.");
       return openAiChat({ baseUrl: INFERENCE, key: deps.apiKey() ?? "", model: ref.model ?? "", input, fetch: deps.fetch });
     },
     async listOwned() {
