@@ -3,6 +3,7 @@
  * isn't on tg-cap-int yet. Once it lands, this file becomes re-exports of isSparkOpenDerivative, BUILT_WITH_SPARK_OPEN and
  * USAGE_POINTS, and verdictFor passes `sparkOpen` as evalVerdict's second argument. Nothing else in unit 11 changes.
  */
+import { BUILT_WITH_SPARK_OPEN, USAGE_POINTS } from "@/lib/caps/gpu/words";
 import { evalVerdict } from "@/lib/train/tune/verdict";
 import type { DecisionSummary } from "@/lib/decide/types";
 import type { TuneVerdict } from "@/lib/train/tune/types";
@@ -11,14 +12,7 @@ import type { EvalSummary } from "@/lib/train/types";
 /** The repo every build of r30b is named from (R30B_REPO there). */
 const R30B_REPO = "OfflineBase/Glimmer-30B-2026-Knowledge";
 
-export const BUILT_WITH_SPARK_OPEN = "Built with Muse Spark Open";
-
-/** What a person must be told about a Derivative (USAGE_POINTS there, from the Muse Model License's Exhibit A). */
-export const USAGE_POINTS: readonly string[] = [
-  "For people 18 and over only.",
-  "Its answers are written by a model. Never present them as written by a person.",
-  "It can make up answers, and it can go along with a false premise in a question. Check what it says before you rely on it.",
-];
+export { BUILT_WITH_SPARK_OPEN, USAGE_POINTS };
 
 const isR30b = (id: unknown) => typeof id === "string" && (id === R30B_REPO || id.startsWith(`${R30B_REPO}-`));
 

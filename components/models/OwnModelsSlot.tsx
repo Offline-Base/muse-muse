@@ -1,4 +1,4 @@
-import { BUILT_WITH_SPARK_OPEN, USAGE_POINTS } from "@/lib/caps/gpu/general";
+import { BUILT_WITH_SPARK_OPEN, USAGE_POINTS } from "@/lib/caps/gpu/words";
 import type { OwnModelsView } from "@/lib/caps/gpu/own-rows";
 import { env } from "@/lib/env";
 

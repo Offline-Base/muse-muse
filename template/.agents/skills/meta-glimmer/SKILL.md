@@ -30,7 +30,7 @@ If `GLIMMER_URL` isn't set, use Muse Wonder and say in the UI and in BUILD_NOTES
 <!-- Wave 3, unit 11: the hosted Glimmer -->
 ## When the build prompt says "Hosted Muse Glimmer"
 
-Muse Muse hosts Glimmer only during demo windows, and every other answer comes from Muse Wonder. Use the one helper. It handles the fallback, so don't write a second one.
+Muse Muse hosts Glimmer only during demo windows, and every other answer comes from Muse Wonder. Use the one helper. It handles the fallback, so don't write a second one. Never call `glimmer()` for this: it's only for an endpoint someone hosts through `GLIMMER_URL`, and it returns null here.
 
 ```ts
 import { askGlimmer } from "@/lib/meta/glimmer";

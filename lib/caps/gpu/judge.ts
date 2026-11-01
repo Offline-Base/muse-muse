@@ -6,13 +6,17 @@ export function gpuJudgeNote(brief: Partial<Brief>): string {
   return usesSharedGlimmer(brief as Brief) ? "Glimmer's answers in this test are samples, so don't judge their words. Check that an answer shows, and that the product says when Muse Wonder answered instead." : "";
 }
 
+/** What the judge is told about these lines when no cap's fixed checks come before them. They decide nothing. */
+export const GPU_PROOF_FRAME = "What the platform recorded about this build's calls to Muse Glimmer. These only say a call was made, so check the screenshots for what it showed:";
+
 /**
- * The gateway's own record of a build's Glimmer calls as fixed-check lines for the judge. GPU has no overlay, so no caps step
- * in verify reads it.
+ * The gateway's own record of a build's Glimmer calls, for the judge. Not a fixed check: nothing in verify reads it, and a
+ * call being made doesn't prove the product showed the answer or the note. So it says what was recorded, never "passed".
  */
 export function gpuProofLines(counts: Record<string, number>): string[] {
+  const seen = (n: number | undefined) => ((n ?? 0) > 0 ? "yes" : "no");
   return [
-    `- glimmer, reply: ${(counts[GLIMMER_CANNED_USAGE] ?? 0) > 0 ? "passed" : "failed"}`,
-    `- glimmer, closed-window: ${(counts[GLIMMER_CLOSED_USAGE] ?? 0) > 0 ? "passed" : "failed"}`,
+    `- gateway record, not a check of the screen: the test got a sample Glimmer reply: ${seen(counts[GLIMMER_CANNED_USAGE])}`,
+    `- gateway record, not a check of the screen: the test tried a closed window: ${seen(counts[GLIMMER_CLOSED_USAGE])}`,
   ];
 }

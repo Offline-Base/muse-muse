@@ -40,5 +40,5 @@ export function capBuildEnv(brief: Brief): string {
 
 /** Settings added to the product's Vercel env. Empty for a brief with no cap blocks. */
 export function capDeployEnv(brief: Brief, liveToken: string): Record<string, string> {
-  return Object.assign({}, ...briefCaps(brief).map((id) => checked(CAP_ENV[id]?.deploy?.(brief, liveToken) ?? {}, id)), gpuDeployEnv(brief, liveToken));
+  return Object.assign({}, ...briefCaps(brief).map((id) => checked(CAP_ENV[id]?.deploy?.(brief, liveToken) ?? {}, id)), gpuDeployEnv(brief));
 }

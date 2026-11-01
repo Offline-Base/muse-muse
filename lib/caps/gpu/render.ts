@@ -21,5 +21,5 @@ export function gpuBuildLines(brief: Brief): string[] {
 /** What a change request adds for a product on the shared endpoint. */
 export function gpuRefineLines(brief: Brief): string[] {
   if (!usesSharedGlimmer(brief)) return [];
-  return ["", "Keep every Muse Glimmer answer going through `askGlimmer` in `lib/meta/glimmer.ts`, and keep showing its `note`."];
+  return ["", "If `lib/meta/glimmer.ts` has `askGlimmer`, keep every Muse Glimmer answer going through it and keep showing its `note`. If it doesn't, this product was built before the hosted Muse Glimmer: leave its Glimmer code as it is, and it keeps answering with Muse Wonder."];
 }

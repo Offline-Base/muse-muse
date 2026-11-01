@@ -1074,14 +1074,14 @@ export const env = {
     return flag("GPU_GLIMMER_SHARED");
   },
   /**
-   * GPU_GLIMMER_SHARED, for what a new build is told and given: also needs a builder snapshot made since this unit landed,
-   * which has askGlimmer in its template. Every snapshot in lib/sandbox/snapshots.json lists `core` and was made after
-   * wave 3. Local runs use the checkout's template.
+   * GPU_GLIMMER_SHARED, for what a new build is told and given: also needs a builder snapshot made from a checkout with this
+   * unit, which has askGlimmer in its template. template/caps/gpu ships no files, only its deps.json, so a snapshot lists `gpu`
+   * in lib/sandbox/snapshots.json exactly when that's true. Local runs use the checkout's template.
    */
   get gpuGlimmerForBuilds(): boolean {
     if (!flag("GPU_GLIMMER_SHARED")) return false;
     const overlays = env.snapshotCaps;
-    return overlays === null || overlays.includes("core");
+    return overlays === null || overlays.includes("gpu");
   },
   /** GPU_GLIMMER_DAILY_USD: the most demo windows may reserve per UTC day, 15 by default. 0 pauses them. */
   get gpuGlimmerDailyUsd(): number {

@@ -42,6 +42,7 @@ import { capBuildEnv, capDeployEnv } from "@/lib/caps/env";
 import { capBuildHosts } from "@/lib/caps/hosts";
 import { capsLivePaths } from "@/lib/caps/live";
 import { usesSharedGlimmer } from "@/lib/caps/gpu/marker";
+import { GPU_PROOF_FRAME } from "@/lib/caps/gpu/judge";
 import { gpuProofText } from "@/lib/caps/gpu/proof";
 import { capsProofText } from "@/lib/caps/judge";
 import { narrowCapMarkers } from "@/lib/caps/manifest";
@@ -947,9 +948,9 @@ export async function judgeStep(input: {
   const what = input.round === 0 ? "Judge" : `Judge round ${input.round}`;
   // A product with platform services shows the judge its fixed checks' results first (docs/CAPABILITIES.md, 2.8).
   const fixedProof = briefCaps(brief).length ? capsProofText(await verifySummaryFor(input.buildId, input.round)) : null;
-  // Wave 3, unit 11: the gateway's record of a build's Glimmer calls. Null with GPU_GLIMMER_SHARED off.
+  // Wave 3, unit 11: the gateway's record of a build's Glimmer calls, which decides nothing. Null with GPU_GLIMMER_SHARED off.
   const gpuProof = await gpuProofText(brief, input.buildId);
-  const capsProof = gpuProof ? `${fixedProof ?? "Fixed checks the platform ran for this product's platform services. They are already decided, so don't judge them again. They tell you what the screenshots should show:"}\n${gpuProof}` : fixedProof;
+  const capsProof = gpuProof ? `${fixedProof ?? GPU_PROOF_FRAME}\n${gpuProof}` : fixedProof;
   const result = await judgeBuild({
     brief,
     references: await judgeReferences(build, input.productId),

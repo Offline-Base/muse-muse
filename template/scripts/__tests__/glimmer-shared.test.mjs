@@ -32,12 +32,20 @@ afterEach(() => {
   process.env = { ...saved };
 });
 
-test("GLIMMER_SHARED builds the address and key from the product's gateway env", () => {
+test("GLIMMER_SHARED leaves glimmer() null, so code calling it directly keeps falling to Muse Wonder", () => {
   assert.equal(glimmer(), null);
   process.env.GLIMMER_SHARED = "1";
-  const g = glimmer();
-  assert.equal(g.client.baseURL, "https://platform.example/api/gateway/glimmer/v1");
-  assert.equal(g.client.apiKey, "tok_made_up");
+  assert.equal(glimmer(), null);
+  process.env.GLIMMER_URL = "https://glimmer.example/v1/";
+  assert.equal(glimmer().client.baseURL, "https://glimmer.example/v1", "an endpoint someone hosts still works");
+});
+
+test("GLIMMER_SHARED sends askGlimmer through the product's gateway address and token", async () => {
+  process.env.GLIMMER_SHARED = "1";
+  fake(() => chat("ok"));
+  await askGlimmer({ messages: [{ role: "user", content: "hi" }] });
+  assert.equal(calls[0].url, "https://platform.example/api/gateway/glimmer/v1/chat/completions");
+  assert.equal(calls[0].headers.get("authorization"), "Bearer tok_made_up");
 });
 
 test("a hosted answer says who answered and carries the gateway's note", async () => {
