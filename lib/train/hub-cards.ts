@@ -2006,6 +2006,11 @@ export interface DecisionCardFacts {
   trainer: DecideTrainer;
   /** The base model's commit the adapter was trained on: adapter_config.json's revision, else the recipe's. */
   revision: string;
+  /**
+   * True when the job is a Derivative of Muse Spark Open (isSparkOpenDerivative). A template whose model is one of
+   * r30b's builds counts too (cardSparkOpen), so a card can't leave out the duties by missing the flag.
+   */
+  sparkOpen?: boolean;
 }
 
 /**
@@ -2082,12 +2087,13 @@ function decisionResultsSection(f: DecisionCardFacts): string {
   const b = s.base;
   const row = (name: string, read: (x: DecisionSideSummary) => string) => `| ${name} | ${read(b)} | ${read(t)} |`;
   const commonest = s.baselines.commonest;
+  const derived = cardSparkOpen(f);
   const out = [
     "## Results",
     "",
     `Scored, not judged: no model graded anything. Both models read the same ${countText(s.items)} held-out test rows, set aside before training and never trained on, and each pick is the label with the highest probability on the model's first answer token.`,
     "",
-    `| | Base ${GLIMMER_NAME} | Tuned (this adapter) |`,
+    `| | ${derived ? "The 2026 Glimmer it started from (r30b)" : `Base ${GLIMMER_NAME}`} | Tuned (this adapter) |`,
     "|---|---|---|",
     row("Right on", (x) => rightOf(x.accuracy)),
     row("95% interval (Wilson)", (x) => intervalOf(x.accuracy)),
@@ -2101,13 +2107,13 @@ function decisionResultsSection(f: DecisionCardFacts): string {
     ),
     row("Letter mass, median and lowest", (x) => `${places2(x.letterMass.median)} and ${places2(x.letterMass.min)}`),
     "",
-    `For scale, on the same rows: always answering the commonest training label (${personText(decisionLabelName(s, commonest.id))}) was right on ${rightOf(commonest.accuracy)}, and a word-overlap rule (not a model) on ${rightOf(s.baselines.standIn.accuracy)}. Letter mass is the share of the first token's probability that lands on the shown letters. Base ${GLIMMER_NAME} was asked the same prompts with no training; it sometimes starts with a word instead of a letter, which shows as lower letter mass, so this read understates what a prompted base model could do.`,
+    `For scale, on the same rows: always answering the commonest training label (${personText(decisionLabelName(s, commonest.id))}) was right on ${rightOf(commonest.accuracy)}, and a word-overlap rule (not a model) on ${rightOf(s.baselines.standIn.accuracy)}. Letter mass is the share of the first token's probability that lands on the shown letters. ${derived ? "The 2026 Glimmer it started from" : `Base ${GLIMMER_NAME}`} was asked the same prompts with no training; it sometimes starts with a word instead of a letter, which shows as lower letter mass, so this read understates what a prompted base model could do.`,
   ];
   out.push(
     "",
     "### Per label (tuned)",
     "",
-    "| Label | Test rows | Precision | Recall | F1 | Base F1 |",
+    `| Label | Test rows | Precision | Recall | F1 | ${derived ? "r30b F1" : "Base F1"} |`,
     "|---|---|---|---|---|---|",
     ...t.perLabel.map((l) => {
       const base = b.perLabel.find((x) => x.id === l.id);
@@ -2284,7 +2290,12 @@ function decisionTrainingSection(f: DecisionCardFacts): string {
   const tr = f.trainer;
   const j = f.job;
   const rows: Array<[string, string]> = [
-    ["Base model", `[${t.model}](${HUB_SITE}/${t.model}) at revision \`${f.revision}\`, the 4-bit (bitsandbytes) quantization of [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN})`],
+    [
+      "Base model",
+      cardSparkOpen(f)
+        ? `[${t.model}](${HUB_SITE}/${t.model}) at revision \`${f.revision}\`, the 4-bit (bitsandbytes) quantization of ${R30B_LINK}: Muse Muse's fine-tune of [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN}) with 2026 knowledge`
+        : `[${t.model}](${HUB_SITE}/${t.model}) at revision \`${f.revision}\`, the 4-bit (bitsandbytes) quantization of [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN})`,
+    ],
     ["Method", "QLoRA with Unsloth and TRL's SFTTrainer in Muse Muse's decide mode: LoRA on the language model's attention and MLP layers, the vision layers frozen, trained only on the answer's letter and the end of the turn (train_on_responses_only)"],
   ];
   if (j.loraRank !== null) rows.push(["LoRA rank", `${j.loraRank} (alpha ${j.loraRank}, dropout ${t.loraDropout})`]);
@@ -2331,7 +2342,7 @@ function decisionTrainingSection(f: DecisionCardFacts): string {
     "|---|---|",
     ...rows.map(([k, v]) => `| ${k} | ${v.replace(/\|/g, "\\|").replace(/\n/g, " ")} |`),
     "",
-    "The same GPU run scored base Glimmer on the dev and test rows first, then trained, then scored the tuned model on the same prompts. The scores went to Muse Muse, which computed every number above after the GPU was shut down, with no model call.",
+    `The same GPU run scored ${cardSparkOpen(f) ? "the 2026 Glimmer it started from" : "base Glimmer"} on the dev and test rows first, then trained, then scored the tuned model on the same prompts. The scores went to Muse Muse, which computed every number above after the GPU was shut down, with no model call.`,
   ].join("\n");
 }
 
@@ -2350,11 +2361,11 @@ function decisionLimitsSection(f: DecisionCardFacts): string {
   return [
     "## Limits",
     "",
-    `- It is a small adapter that learned one decision from ${countText(f.decision.split.train)} examples. It isn't a general improvement of ${GLIMMER_NAME}, and it answers only with a letter: as a chat model it will misbehave.`,
+    `- It is a small adapter that learned one decision from ${countText(f.decision.split.train)} examples. It isn't a general improvement of ${cardSparkOpen(f) ? R30B_REPO : GLIMMER_NAME}, and it answers only with a letter: as a chat model it will misbehave.`,
     `- The test set is small: ${countText(s.items)} rows. The intervals in Results show how far the accuracy could be off, and a row unlike the examples may be decided worse than they show.`,
     "- Its probabilities are calibrated only on rows like its dev rows. On inputs unlike its examples it is likely to be surer than it should be.",
     "- Local GGUF files for decision models aren't made yet: they need a check that the quantized model makes the adapter's picks.",
-    `- It inherits the base model's limits and its Usage Policy: see [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN}). Check what it decides before you rely on it, and don't let it decide alone about people, such as hiring, credit, housing or health.`,
+    `- It inherits the base model's limits and its Usage Policy: see ${cardSparkOpen(f) ? `${R30B_LINK} and License` : `[${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN})`}. Check what it decides before you rely on it, and don't let it decide alone about people, such as hiring, credit, housing or health.`,
   ].join("\n");
 }
 
@@ -2366,7 +2377,9 @@ function decisionLicenseSection(f: DecisionCardFacts): string {
   return [
     "## License",
     "",
-    `Apache 2.0, the license of the base model: the full text is in \`LICENSE\`, as [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN}) ships it. The change from the base model is this LoRA adapter, trained as described above. Use it under the base model's [Usage Policy](${HUB_SITE}/${GLIMMER_ORIGIN}/blob/main/USAGE_POLICY.md), which says Muse Glimmer "is not intended for individuals under the age of 18".`,
+    cardSparkOpen(f)
+      ? derivativeLicense("this decision model", "this LoRA adapter, trained in decide mode as described above.")
+      : `Apache 2.0, the license of the base model: the full text is in \`LICENSE\`, as [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN}) ships it. The change from the base model is this LoRA adapter, trained as described above. Use it under the base model's [Usage Policy](${HUB_SITE}/${GLIMMER_ORIGIN}/blob/main/USAGE_POLICY.md), which says Muse Glimmer "is not intended for individuals under the age of 18".`,
     "",
     data,
     "",
@@ -2395,19 +2408,22 @@ export function decisionCard(f: DecisionCardFacts): string {
   const [, name] = f.modelRepo.split("/");
   const d = f.decision;
   const english = looksEnglish(d.question, f.dataset.title, ...d.labels.flatMap((l) => [l.name, l.description ?? ""]));
+  const derived = cardSparkOpen(f);
   const front = [
     "---",
     `base_model: ${f.template.model}`,
     "base_model_relation: adapter",
     "library_name: peft",
     "pipeline_tag: text-generation",
-    "license: apache-2.0",
+    ...licenseFront(derived),
     ...(english ? ["language:", "- en"] : []),
     "tags:",
-    ...["lora", "peft", "unsloth", "trl", "muse-muse", "muse-decide", "decision-model", "classification"].map((t) => `- ${t}`),
+    ...["lora", "peft", "unsloth", "trl", "muse-muse", "muse-decide", "decision-model", "classification", ...(derived ? ["built-with-muse-spark-open"] : [])].map(
+      (t) => `- ${t}`,
+    ),
     "---",
   ];
-  const lead = `A decision model: a small LoRA adapter for ${GLIMMER_NAME} (\`${f.template.model}\`) trained on ${countText(d.split.train)} labeled examples to answer one question. For each input it picks one of its ${d.labels.length} labels, or "${NONE_OPTION}", with a probability for each, read from the model's first answer token. On ${countText(s.items)} held-out examples it never saw, it was right on ${countText(s.tuned.accuracy.right)} (${wholePct(s.tuned.accuracy.rate)}); base ${GLIMMER_NAME} on ${countText(s.base.accuracy.right)} (${wholePct(s.base.accuracy.rate)}). It can be wrong: check anything that matters. Made with [Muse Muse](${MUSE_MUSE_SITE}). Not an official Meta product.`;
+  const lead = `A decision model: a small LoRA adapter for ${GLIMMER_NAME}${derived ? " with 2026 knowledge" : ""} (\`${f.template.model}\`) trained on ${countText(d.split.train)} labeled examples to answer one question. For each input it picks one of its ${d.labels.length} labels, or "${NONE_OPTION}", with a probability for each, read from the model's first answer token. On ${countText(s.items)} held-out examples it never saw, it was right on ${countText(s.tuned.accuracy.right)} (${wholePct(s.tuned.accuracy.rate)}); ${derived ? "the 2026 Glimmer it started from" : `base ${GLIMMER_NAME}`} on ${countText(s.base.accuracy.right)} (${wholePct(s.base.accuracy.rate)}). It can be wrong: check anything that matters. Made with [Muse Muse](${MUSE_MUSE_SITE}). Not an official Meta product.`;
   return [
     front.join("\n"),
     "",
@@ -2415,6 +2431,7 @@ export function decisionCard(f: DecisionCardFacts): string {
     "",
     lead,
     "",
+    ...(derived ? [builtWithBlock("This decision model"), ""] : []),
     decisionWhatSection(f),
     "",
     decisionResultsSection(f),

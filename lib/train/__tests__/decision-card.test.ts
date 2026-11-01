@@ -155,6 +155,30 @@ describe("decisionCard", () => {
   const card = cards.decisionCard(f);
   const s = t.summary;
 
+  it("carries a Derivative's duties when it trained on r30b, and an old adapter's card keeps plain Glimmer's", () => {
+    assert.match(card, /^# .+\n\nA decision model: a small LoRA adapter for Muse Glimmer 30B with 2026 knowledge /m);
+    assert.ok(card.includes(cards.builtWithBlock("This decision model")), "Built with Muse Spark Open and the Usage Policy's points under the title");
+    assert.ok(card.indexOf("**Built with Muse Spark Open.**") < card.indexOf("## What it decides"), "shown prominently, before the sections");
+    assert.match(card, /18 and over/);
+    assert.match(card, /Never present them as written by a person/);
+    assert.match(card, /make up answers, and it can go along with a false premise/);
+    assert.match(card, /## License\n\nApache 2\.0 and the Muse Model License\./);
+    assert.match(card, /this decision model is a Derivative under the Muse Model License, in `MUSE_MODEL_LICENSE\.md`/);
+    assert.match(card, /\| \| The 2026 Glimmer it started from \(r30b\) \| Tuned \(this adapter\) \|/);
+    assert.match(card, /\| Label \| Test rows \| Precision \| Recall \| F1 \| r30b F1 \|/);
+    assert.match(card, /The same GPU run scored the 2026 Glimmer it started from on the dev and test rows first/);
+    assert.doesNotMatch(card, /base Glimmer|Base Muse Glimmer 30B|base Muse Glimmer 30B/);
+    assert.ok(!card.includes("\u2014"), "no em dashes");
+
+    const oldTemplate = { ...template, model: "unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit" };
+    const old = cards.decisionCard(facts(t, { template: oldTemplate, revision: "ecedda395d4d099b477d135a9a573eedaa5a7aad" }));
+    assert.match(old, /^license: apache-2\.0$/m);
+    assert.doesNotMatch(old, /Muse Spark Open|Muse Model License|r30b|2026 Glimmer|2026 knowledge/);
+    assert.match(old, /; base Muse Glimmer 30B on /);
+    assert.match(old, /\| \| Base Muse Glimmer 30B \| Tuned \(this adapter\) \|/);
+    assert.match(cards.decisionCard(facts(t, { template: oldTemplate, sparkOpen: true })), /\*\*Built with Muse Spark Open\.\*\*/, "the flag counts too");
+  });
+
   it("opens with front matter in the chat card's shape, without a dataset or model-index to cite", () => {
     const front = card.slice(0, card.indexOf("\n---\n", 4) + 5);
     assert.equal(
@@ -165,7 +189,9 @@ describe("decisionCard", () => {
         "base_model_relation: adapter",
         "library_name: peft",
         "pipeline_tag: text-generation",
-        "license: apache-2.0",
+        "license: other",
+        "license_name: apache-2.0-and-muse-model-license",
+        "license_link: MUSE_MODEL_LICENSE.md",
         "language:",
         "- en",
         "tags:",
@@ -177,6 +203,7 @@ describe("decisionCard", () => {
         "- muse-decide",
         "- decision-model",
         "- classification",
+        "- built-with-muse-spark-open",
         "---",
         "",
       ].join("\n"),
@@ -204,7 +231,7 @@ describe("decisionCard", () => {
     assert.ok(card.includes(`trained on ${t.spec.split.train} labeled examples to answer one question`));
     assert.ok(
       card.includes(
-        `On ${s.items} held-out examples it never saw, it was right on ${tuned.accuracy.right} (${pct(tuned.accuracy.rate)}); base Muse Glimmer 30B on ${s.base.accuracy.right} (${pct(s.base.accuracy.rate)}). It can be wrong: check anything that matters.`,
+        `On ${s.items} held-out examples it never saw, it was right on ${tuned.accuracy.right} (${pct(tuned.accuracy.rate)}); the 2026 Glimmer it started from on ${s.base.accuracy.right} (${pct(s.base.accuracy.rate)}). It can be wrong: check anything that matters.`,
       ),
     );
     assert.ok(card.includes(`| Right on | ${s.base.accuracy.right} of ${s.items} (${pct(s.base.accuracy.rate)}) | ${tuned.accuracy.right} of ${s.items} (${pct(tuned.accuracy.rate)}) |`));
