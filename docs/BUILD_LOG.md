@@ -1454,6 +1454,15 @@ before the docs and exclude commits; manifest check and a test bundle fine. Priv
 own history. Over Muse Muse's history it flagged 8 token and key lines, all fake test values, plus 793 IP, host and user name lines
 (the known scrub before the repo goes public, not reviewed one by one).
 
+### 11:31 /private built: Muse Privacy on the site
+
+The owner said to put it on the site. A sidebar page, not behind a flag: what it does, a click-through replay of the Oct 31
+scene rehearsal labeled recorded, the measured numbers, who it's for, what isn't done, and how to run it. It reads nothing from
+privacy/. A test checks all 18 replay steps and the numbers against their reports. No repo link until the repo is public, and
+no company name on the page, since the no-Offline-Base rule hasn't been lifted. Checks: root suite 6363 tests, 6355 pass, 0 fail,
+8 skipped; tsc clean; next build exit 0 with privacy/ present and with it moved away, which is what Vercel sees. No sideways
+scroll at 1440 or 390, no console errors. Shots: docs/log/shots/2026-11-01/private-*.png.
+
 ## Gaps
 
 What this record doesn't confirm:
