@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import { DATA_WRITER_RULES, DataBriefBlock } from "@/lib/caps/data/brief";
 import type { CapId } from "@/lib/caps/ids";
 import { RUNTIME_WRITER_RULES, RuntimeBriefBlock } from "@/lib/caps/runtime/brief";
 
@@ -12,6 +13,7 @@ import { RUNTIME_WRITER_RULES, RuntimeBriefBlock } from "@/lib/caps/runtime/brie
  * writer's schema (newBriefSchemaFor) requires the enabled caps' fields as nullable.
  */
 export const CAP_BRIEF_FIELDS = {
+  data: DataBriefBlock,
   runtime: RuntimeBriefBlock,
 } as const satisfies Partial<Record<CapId, z.ZodTypeAny>>;
 
@@ -28,6 +30,7 @@ export function briefCaps(brief: object): CapId[] {
  * and how. One line per cap, in plan order.
  */
 export const CAP_WRITER_RULES: Partial<Record<CapId, readonly string[]>> = {
+  data: DATA_WRITER_RULES,
   runtime: RUNTIME_WRITER_RULES,
 };
 

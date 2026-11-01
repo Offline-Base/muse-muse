@@ -23,6 +23,7 @@ const FLAGS = [
   // Wave 3, one line per unit, in plan order.
   "TRUST_SIGNED_IN_CAPS", "TRUST_BUILDER_DAILY_USD", "TRUST_AGE_GATE", "TRUST_LEGAL_PAGES", "TRUST_GEO_BLOCK", "TRUST_GEO_COUNTRIES", "TRUST_REPORTS", "TRUST_SPARK_TO_WONDER",
   "ENGINE_CHECK_ON_TIMEOUT", "ENGINE_ROUND_SCALING", "ENGINE_ROUND_MAX_MINUTES", "ENGINE_MILESTONES", "ENGINE_LIVE_SMOKE", "ENGINE_EXACT_LOGIC", "ENGINE_FIT_OUTPUT",
+  "DATA_SIGN_IN", "DATA_PRODUCT_ROWS", "DATA_PRODUCT_MB", "DATA_DAILY_WRITES",
   ...CAP_IDS.map((id) => CAP_FLAG[id]),
   "RUNTIME_OUTPUTS",
 ];
@@ -74,7 +75,8 @@ describe("with every wave 3 flag off", () => {
   });
 
   it("no cap stores anything, so cleanup and the cron's sweep do nothing", async () => {
-    assert.equal(CAP_CLEANUPS.length, 0);
+    // A cap that stores something has its entry (unit 3's data), and with its flag off the entry has nothing to run.
+    for (const c of CAP_CLEANUPS) assert.ok(!c.buildEnded && !c.productOff && !c.sweep, c.cap);
     assert.equal(await sweepCaps(), null);
     // A registered brief block (unit 10's runtime) is an optional field of the stored brief only: a brief without it has
     // no caps, so nothing above changes for it.

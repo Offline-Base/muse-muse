@@ -1,3 +1,4 @@
+import { DATA_CATALOG } from "@/lib/caps/data/catalog";
 import type { CapId } from "@/lib/caps/ids";
 import { RUNTIME_CATALOG } from "@/lib/caps/runtime/catalog";
 
@@ -12,6 +13,7 @@ export interface CapCatalogEntry {
 }
 
 export const CAP_CATALOG: Partial<Record<CapId, CapCatalogEntry>> = {
+  data: DATA_CATALOG,
   runtime: RUNTIME_CATALOG,
 };
 

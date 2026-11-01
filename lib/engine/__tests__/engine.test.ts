@@ -269,6 +269,12 @@ describe("the caps registries, with a fake cap plugged in", () => {
   const fields = CAP_BRIEF_FIELDS as Record<string, z.ZodTypeAny>;
   const ready = CAP_READY as Record<string, boolean>;
   const block = z.object({ scopes: z.array(z.enum(["shared", "visitor"])).min(1) });
+  // Wave 3, unit 3 registered the real data cap, so this fake one stands in for it here and the real entries come back after.
+  const real = { field: fields.data, render: CAP_RENDER.data, env: CAP_ENV.data, judge: CAP_JUDGE.data, catalog: CAP_CATALOG.data, hosts: CAP_BUILD_HOSTS.data, rules: CAP_WRITER_RULES.data };
+  const put = <T extends object>(table: T, key: keyof T, value: unknown) => {
+    if (value === undefined) delete table[key];
+    else (table as Record<keyof T, unknown>)[key] = value;
+  };
   before(() => {
     fields.data = block;
     ready.data = true;
@@ -280,17 +286,17 @@ describe("the caps registries, with a fake cap plugged in", () => {
     CAP_WRITER_RULES.data = ["Fill data only when the muse saves something for later."];
   });
   after(() => {
-    delete fields.data;
+    put(fields, "data", real.field);
     ready.data = false;
-    delete CAP_RENDER.data;
-    delete CAP_ENV.data;
-    delete CAP_JUDGE.data;
-    delete CAP_CATALOG.data;
-    delete CAP_BUILD_HOSTS.data;
-    delete CAP_WRITER_RULES.data;
+    put(CAP_RENDER, "data", real.render);
+    put(CAP_ENV, "data", real.env);
+    put(CAP_JUDGE, "data", real.judge);
+    put(CAP_CATALOG, "data", real.catalog);
+    put(CAP_BUILD_HOSTS, "data", real.hosts);
+    put(CAP_WRITER_RULES, "data", real.rules);
     delete process.env.DATA_ENABLED;
   });
-  const withData = { ...BRIEF, data: { scopes: ["shared"] } } as typeof BRIEF;
+  const withData = { ...BRIEF, data: { scopes: ["shared"] } } as unknown as typeof BRIEF;
 
   it("the brief, the token, the overlays, the env and the hosts follow its block", () => {
     assert.deepEqual(briefCaps(withData), ["data"]);

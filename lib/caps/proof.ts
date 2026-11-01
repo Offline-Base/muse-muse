@@ -1,3 +1,4 @@
+import { dataProof } from "@/lib/caps/data/store";
 import type { CapId } from "@/lib/caps/ids";
 import { gatewayError } from "@/lib/gateway/errors";
 import type { ProductStatus } from "@/lib/types";
@@ -16,7 +17,10 @@ import type { ProductStatus } from "@/lib/types";
  * `since` when it is set.
  */
 export type CapProofCounter = (buildId: string, window: { since: Date | null }) => Promise<Record<string, number>>;
-export const CAP_PROOF: Partial<Record<CapId, CapProofCounter>> = {};
+export const CAP_PROOF: Partial<Record<CapId, CapProofCounter>> = {
+  // Rows written in the build namespace since `since`, rows there by scope, writers, and the brief's collections.
+  data: dataProof,
+};
 
 /** The build namespace a build token's caps rows and files live under (docs/CAPABILITIES.md, 2.3). */
 export const buildNamespace = (buildId: string) => `b:${buildId}`;

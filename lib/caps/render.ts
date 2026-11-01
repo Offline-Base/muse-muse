@@ -1,5 +1,6 @@
 import type { Brief } from "@/lib/brief/schema";
 import { briefCaps } from "@/lib/caps/brief-fields";
+import { DATA_RENDER } from "@/lib/caps/data/render";
 import type { CapId } from "@/lib/caps/ids";
 import { RUNTIME_RENDER } from "@/lib/caps/runtime/render";
 
@@ -18,6 +19,7 @@ export interface CapRenderEntry {
 }
 
 export const CAP_RENDER: Partial<Record<CapId, CapRenderEntry>> = {
+  data: DATA_RENDER,
   runtime: RUNTIME_RENDER,
 };
 

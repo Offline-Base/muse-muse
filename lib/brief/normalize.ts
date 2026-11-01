@@ -1,4 +1,5 @@
 import { MAX_AGENT_STEPS, MAX_AGENT_TOOLS, type Brief } from "@/lib/brief/schema";
+import { normalizeDataBlock } from "@/lib/caps/data/brief";
 import { normalizeRuntimeBlock } from "@/lib/caps/runtime/brief";
 import type { RebuildTarget, Reference } from "@/lib/types";
 
@@ -129,6 +130,10 @@ export function normalizeRawBrief(raw: unknown, references: Reference[]): unknow
     b.milestones = usable.length >= 2 ? usable : null;
   }
   // ---------- end Wave 3, unit 2 ----------
+
+  // ---------- Wave 3, unit 3 (docs/CAPABILITIES.md, section 9): the data block, only when the writer sent one ----------
+  if (b.data !== undefined && b.data !== null) b.data = normalizeDataBlock(b.data);
+  // ---------- end Wave 3, unit 3 ----------
 
   // ---------- Wave 3, unit 10 (docs/CAPABILITIES.md, section 16): the runtime block, only when the writer sent one ----------
   if (b.runtime !== undefined && b.runtime !== null) b.runtime = normalizeRuntimeBlock(b.runtime);
