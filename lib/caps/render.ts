@@ -6,6 +6,7 @@ import { DATA_RENDER } from "@/lib/caps/data/render";
 import type { CapId } from "@/lib/caps/ids";
 import { EXTENSION_RENDER } from "@/lib/caps/extension/render";
 import { GAMES_RENDER } from "@/lib/caps/games/render";
+import { LIVE_RENDER } from "@/lib/caps/live/render";
 import { MEDIA_RENDER } from "@/lib/caps/media/render";
 import { RUNTIME_RENDER } from "@/lib/caps/runtime/render";
 
@@ -26,6 +27,7 @@ export interface CapRenderEntry {
 export const CAP_RENDER: Partial<Record<CapId, CapRenderEntry>> = {
   data: DATA_RENDER,
   connect: CONNECT_RENDER,
+  live: LIVE_RENDER,
   media: MEDIA_RENDER,
   code: CODE_RENDER,
   runtime: RUNTIME_RENDER,
