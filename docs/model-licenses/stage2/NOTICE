@@ -1,0 +1,26 @@
+glimmer-stage2 (knowledge stage 2, a superseded checkpoint)
+Copyright 2026 OfflineBase
+
+Built with Muse Spark Open.
+
+This product is a fine-tune of Muse Glimmer 30B (meta-models/Muse-Glimmer-30B,
+revision cec94fcfd6512f2cfe708138c32533b346ea4f69), licensed by Meta under the Apache
+License, Version 2.0 (see LICENSE).
+
+What we changed:
+- We trained LoRA weights (rank 64) on the language model's projection layers, in two
+  knowledge stages. The merged and quantized GGUF files of stage 2 include them. Stage 2
+  is superseded by stage-b-r30b (Glimmer-30B-2026-Knowledge), which is more honest.
+- We did not change the vision encoder, the tokenizer or the model configuration.
+- tuned-reasoning-off.jinja is modified from Meta's chat_template.jinja. Unless
+  allow_reasoning is set, it opens the reply to the user, with no reasoning channel and
+  no tool calls.
+
+Part of the training data was written by Muse Spark Open, so this model is a Derivative
+under the Muse Model License (see MUSE_MODEL_LICENSE.md, Exhibit A: Muse Spark Open Usage
+Policy). Use of this model must also follow the Muse Glimmer Usage Policy (USAGE_POLICY.md).
+
+Our modifications are licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This is not an official Meta release and is not endorsed by Meta. The names Muse, Muse
+Glimmer and Muse Spark appear only to say what this model is built on.
