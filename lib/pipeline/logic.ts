@@ -65,6 +65,8 @@ export const PARTIAL_REQUIRED_STEPS = ["typecheck", "build", "start", "console",
 export interface JudgeCall {
   pass: boolean;
   blocking: boolean;
+  /** FULL_BUILDS: the requirements still not met, each with its id. Set only when there are some. */
+  unmet?: string[];
 }
 
 /**

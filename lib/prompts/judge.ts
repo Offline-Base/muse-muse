@@ -3,6 +3,8 @@ import type { Brief } from "@/lib/brief/schema";
 // ---------- Wave 3, unit 2 (docs/CAPABILITIES.md, 2.6) ----------
 import { capsJudgeNotes } from "@/lib/caps/judge";
 // ---------- end Wave 3, unit 2 ----------
+import { fullJudgeNote } from "@/lib/full/prompts";
+import { buildableRequirements } from "@/lib/full/requirements";
 import { briefTargets, isOwnerToolsOnly } from "@/lib/native/targets";
 import { PERSONAL_TOOL_IDS } from "@/lib/tools/ids";
 
@@ -106,7 +108,7 @@ export function askedLookJudgeNote(asked: string): string {
  */
 export function judgeInstructions(
   brief: Pick<Brief, "targets" | "agent" | "askedLook"> & Partial<Brief>,
-  opts: { museAppLook?: boolean; verifyAgents?: boolean } = {},
+  opts: { museAppLook?: boolean; verifyAgents?: boolean; fullBuilds?: boolean } = {},
 ): string {
   const targets = briefTargets(brief);
   const asked = askedLookOf(brief, opts);
@@ -120,7 +122,8 @@ export function judgeInstructions(
   const base = opts.museAppLook ? withBothHouseStyles(JUDGE_INSTRUCTIONS) : JUDGE_INSTRUCTIONS;
   const text = notes.length ? `${base}\n\n${notes.join("\n\n")}` : base;
   // ---------- Wave 3, unit 2 (docs/CAPABILITIES.md, 2.6): each cap's note after the glasses note, empty with no cap blocks ----------
-  return text + capsJudgeNotes(brief);
+  const required = opts.fullBuilds ? buildableRequirements(brief) : [];
+  return text + capsJudgeNotes(brief) + (required.length ? `\n\n${fullJudgeNote(required)}` : "");
   // ---------- end Wave 3, unit 2 ----------
 }
 

@@ -2,6 +2,7 @@ import type { TargetId } from "@/lib/brief/schema";
 import { capsWriterRules } from "@/lib/caps/brief-fields";
 import type { CapId } from "@/lib/caps/ids";
 import { engineWriterRules } from "@/lib/engine/prompts";
+import { FULL_ACTIONS_LINE, FULL_COMPLEXITY_LINE, FULL_FLOW_LINES, FULL_LIMITS_LINE, FULL_WRITER_SECTION } from "@/lib/full/prompts";
 import { env } from "@/lib/env";
 import { targetLabel } from "@/lib/format";
 import { PERSONAL_TOOLS_GUIDE, TARGET_GUIDE, TARGET_LIMITS } from "@/lib/native/targets";
@@ -74,6 +75,8 @@ export interface BriefWriterOptions {
   builderRule?: string | null;
   /** MUSE_APP_LOOK (docs/BRAND.md, "Unless the person asks"): the muse-app look's lines in place of the meta-ui one. */
   museAppLook?: boolean;
+  /** FULL_BUILDS (docs/FULL_BUILDS.md): list every requirement, and never write small to fit. */
+  fullBuilds?: boolean;
 }
 
 /** Prompt 1 in docs/PROMPTS.md: the brief writer's instructions. */
@@ -103,16 +106,16 @@ Deciding
 
 Writing the brief
 - name is the product's own name, two to four words, at most 60 characters. Never a real product's or company's name, and never Meta, Muse or Llama. slug is the name in lowercase words joined by hyphens, at most 40 characters. tagline is one line, at most 120 characters. user says who it is for.
-- primaryFlow is one flow, written as two to six short steps the user takes, ending with the result they see.
-- screens has one to three screens (at most five), each with a purpose.
+${opts.fullBuilds ? FULL_FLOW_LINES : `- primaryFlow is one flow, written as two to six short steps the user takes, ending with the result they see.
+- screens has one to three screens (at most five), each with a purpose.`}
 - capabilities: one entry per job a model does. Use the fewest models that do the job and say why each one is needed. A product needs at least one model.
 - inputs and outputs list what the user gives and gets, with notes on format and size.
-- limits are honest and specific to this product, and they are for its users. Example: "Counts from one photo are estimates. Birds hidden behind leaves are missed." Include every workaround above the product relies on, and anything the muse asked for that the product won't do. Apart from a rebuild's fit line, never write a limit about the inspo, the sketch or screenshot it came from, the video, samples or what the product doesn't copy. The Muse Muse footer is not a limit, so leave it out.
-- complexity is "complex" only when the product chains several model calls with state, takes audio input, or does long multi-step work. "simple" is one model call on one input.
+${opts.fullBuilds ? FULL_LIMITS_LINE : `- limits are honest and specific to this product, and they are for its users. Example: "Counts from one photo are estimates. Birds hidden behind leaves are missed." Include every workaround above the product relies on, and anything the muse asked for that the product won't do. Apart from a rebuild's fit line, never write a limit about the inspo, the sketch or screenshot it came from, the video, samples or what the product doesn't copy. The Muse Muse footer is not a limit, so leave it out.`}
+${opts.fullBuilds ? FULL_COMPLEXITY_LINE : `- complexity is "complex" only when the product chains several model calls with state, takes audio input, or does long multi-step work. "simple" is one model call on one input.`}
 - estimatedCostPerRunUsd is one run of the primary flow, from the prices above, and costNotes shows the arithmetic and ends with the same total.
 - fixtures are one to three sample inputs the automated test feeds the primary flow. fromUserSample is true when one of the person's references is itself a good input of that kind (their own photo for a photo-reading tool, their PDF for a tool that reads that kind of document). When the product takes a file of the same kind the person gave, include that reference as a fixture. referenceIndex is that reference's index when fromUserSample is true, otherwise null. For an image fixture that isn't from the person, description is a picture Muse Image can draw: subject, setting, angle, light, with no logos, brands or real people. For a text fixture, description is the sample text itself, ready to paste, under 1,000 characters.
-- actions are one to three things the Muse app could call, named as snake_case verbs (count_birds). Each description says what it takes and what it returns, in plain words.
-- Never promise Meta branding. The product says it is built with Muse Muse and is not an official Meta product.${engineRules()}${opts.builderRule ? `\n- ${opts.builderRule}` : ""}${whereItRuns(env.enabledTargets)}${capsRules(caps)}${recipesWriterRules(caps)}`;
+${opts.fullBuilds ? FULL_ACTIONS_LINE : `- actions are one to three things the Muse app could call, named as snake_case verbs (count_birds). Each description says what it takes and what it returns, in plain words.`}
+- Never promise Meta branding. The product says it is built with Muse Muse and is not an official Meta product.${engineRules()}${opts.builderRule ? `\n- ${opts.builderRule}` : ""}${opts.fullBuilds ? FULL_WRITER_SECTION : ""}${whereItRuns(env.enabledTargets)}${capsRules(caps)}${recipesWriterRules(caps)}`;
 }
 
 /**

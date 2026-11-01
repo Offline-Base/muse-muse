@@ -12,6 +12,7 @@ import { normalizeLiveBlock } from "@/lib/caps/live/brief";
 import { normalizeMediaBlock } from "@/lib/caps/media/brief";
 import { mediaPartsOn } from "@/lib/caps/media/catalog";
 import { normalizeRuntimeBlock } from "@/lib/caps/runtime/brief";
+import { FULL_LIMITS, normalizeRequirements } from "@/lib/full/requirements";
 import type { RebuildTarget, Reference } from "@/lib/types";
 
 /**
@@ -74,7 +75,7 @@ function asArray(v: unknown): Loose[] {
 }
 
 /** Runs on the raw JSON before zod. Leaves anything it doesn't recognize for zod to report. */
-export function normalizeRawBrief(raw: unknown, references: Reference[]): unknown {
+export function normalizeRawBrief(raw: unknown, references: Reference[], opts: { fullBuilds?: boolean } = {}): unknown {
   if (!raw || typeof raw !== "object") return raw;
   const b = cleanStrings(raw) as Loose;
 
@@ -86,8 +87,9 @@ export function normalizeRawBrief(raw: unknown, references: Reference[]): unknow
   if (b.verdict !== "no") b.refusal = null;
   // askedLook (MUSE_APP_LOOK): an empty ask is no ask, and a long one is cut to the schema's limit.
   if (typeof b.askedLook === "string") b.askedLook = b.askedLook.trim() ? clamp(b.askedLook.trim(), ASKED_LOOK_MAX) : null;
-  if (Array.isArray(b.primaryFlow)) b.primaryFlow = b.primaryFlow.filter((s) => typeof s !== "string" || s).slice(0, 8);
-  if (Array.isArray(b.screens)) b.screens = b.screens.slice(0, 5);
+  if (Array.isArray(b.primaryFlow)) b.primaryFlow = b.primaryFlow.filter((s) => typeof s !== "string" || s).slice(0, opts.fullBuilds ? FULL_LIMITS.primaryFlow : 8);
+  if (Array.isArray(b.screens)) b.screens = b.screens.slice(0, opts.fullBuilds ? FULL_LIMITS.screens : 5);
+  if (opts.fullBuilds && b.requirements !== undefined) b.requirements = normalizeRequirements(b.requirements);
   for (const a of asArray(b.actions)) if (typeof a.name === "string") a.name = snakeCase(a.name);
   if (typeof b.estimatedCostPerRunUsd === "number") {
     b.estimatedCostPerRunUsd = Math.max(0, Math.round(b.estimatedCostPerRunUsd * 10_000) / 10_000);

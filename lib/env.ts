@@ -957,6 +957,17 @@ export const env = {
     return env.trustAgeGate || env.trustLegalPages || env.trustGeoBlock || env.trustReports;
   },
 
+  // ---------- Full builds (docs/FULL_BUILDS.md) ----------
+
+  /** FULL_BUILDS: briefs list every requirement, a separate check holds them to the note, and every requirement is tested and judged. */
+  get fullBuilds(): boolean {
+    return flag("FULL_BUILDS");
+  },
+  /** The longest a full build may run, in minutes. Held to 90 (the engine's wall) through 150, which stays clear of the 3-hour sweep. */
+  get fullBuildWallMinutes(): number {
+    return Math.min(150, Math.max(90, number("FULL_BUILD_WALL_MINUTES", 120)));
+  },
+
   // ---------- Wave 3, unit 2: engine (docs/CAPABILITIES.md) ----------
 
   /** ENGINE_CHECK_ON_TIMEOUT: a first round that hits its time cap goes on to the checks and fix rounds instead of failing. */
