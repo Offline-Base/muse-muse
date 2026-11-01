@@ -241,6 +241,45 @@ describe("connect and export", { skip: canMock ? false : "needs --experimental-t
     assert.equal((await push(bad, p.slug, { action: "push" })).status, 409);
   });
 
+  it("made-up cookies don't use up the site's hourly pushes", async () => {
+    const p = await product(await guestId());
+    const used = async () => (await testDb.select().from(realSchema.rateLimits).where(eq(realSchema.rateLimits.key, "github-export:all"))).reduce((sum, r) => sum + r.count, 0);
+    const before = await used();
+    const forger = new Browser();
+    forger.cookies.set("mm_connect", "F".repeat(43));
+    assert.equal((await push(forger, p.slug, { action: "push" })).status, 409);
+    assert.equal(await used(), before);
+  });
+
+  it("a grant it can't keep is ended: a failed lookup, and another account replacing this one", async () => {
+    const p = await product(await guestId());
+    gh.failNextUser = true;
+    const failed = await connect(new Browser(), "lookup-fails", p.slug);
+    assert.equal(failed.headers.get("location"), `/p/${p.slug}/code?github=failed`);
+    assert.ok(![...gh.tokens.values()].includes("lookup-fails"));
+
+    const b = new Browser();
+    await connect(b, "first-account", p.slug);
+    assert.ok([...gh.tokens.values()].includes("first-account"));
+    await connect(b, "second-account", p.slug);
+    assert.ok(![...gh.tokens.values()].includes("first-account"));
+    assert.ok([...gh.tokens.values()].includes("second-account"));
+
+    // The same account again keeps its grant: ending it would end the token just saved.
+    await connect(b, "second-account", p.slug);
+    assert.equal([...gh.tokens.values()].filter((l) => l === "second-account").length, 2);
+  });
+
+  it("a just-made repo isn't looked up, so a lagging read can't lose the export", async () => {
+    const p = await product(await guestId());
+    const b = new Browser();
+    await connect(b, "lag-user", p.slug);
+    gh.hideNextRepoRead = true;
+    assert.equal((await push(b, p.slug, { action: "create", name: "lagging" })).status, 200);
+    gh.hideNextRepoRead = false;
+    assert.equal(git(bare("lag-user/lagging"), "rev-list", "--count", "main").trim(), "1");
+  });
+
   it("the token is sealed, and a row moved to another owner doesn't open", async () => {
     const p = await product(await guestId());
     const alice = new Browser();

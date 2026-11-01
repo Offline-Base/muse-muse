@@ -33,7 +33,12 @@ export class TooBigToPush extends Error {}
 
 /** Git refuses any path with a part spelled .git, in any case. */
 const gitRefuses = (path: string) => path.split("/").some((p) => p.toLowerCase() === ".git");
-const pushable = (f: VersionFile) => !f.held && Boolean(f.url) && !isHiddenPath(f.path) && !gitRefuses(f.path) && f.size <= MAX_FILE_BYTES;
+/**
+ * A workflow would run on the person's GitHub account as soon as it landed, and it may come from someone else's public
+ * source. GitHub also refuses a whole push holding one unless the token has the workflow scope, which this never asks for.
+ */
+const isWorkflow = (path: string) => /^\.github\/workflows\//i.test(path);
+const pushable = (f: VersionFile) => !f.held && Boolean(f.url) && !isHiddenPath(f.path) && !gitRefuses(f.path) && !isWorkflow(f.path) && f.size <= MAX_FILE_BYTES;
 
 /** One line for the commit's title. A change request that holds a key shape isn't copied into a repo that may be public. */
 export function safeTitle(title: string): string {
@@ -45,7 +50,8 @@ function leftOutLines(v: HistoryVersion): string[] {
   const lines: string[] = [];
   for (const f of v.files) {
     if (isHiddenPath(f.path) || gitRefuses(f.path)) continue;
-    if (f.held) lines.push(`${f.path} (looks like it holds a secret)`);
+    if (isWorkflow(f.path)) lines.push(`${f.path} (GitHub workflow, add it yourself if you want it to run)`);
+    else if (f.held) lines.push(`${f.path} (looks like it holds a secret)`);
     else if (f.size > MAX_FILE_BYTES) lines.push(`${f.path} (too big for a repo)`);
   }
   return lines;

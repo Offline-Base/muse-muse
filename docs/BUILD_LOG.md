@@ -1722,3 +1722,12 @@ scripts/dev/tune-harness.ts, on a Lambda gpu_1x_a10 named prove-tune-1, us-east-
 - Local run, made-up data, pretend GitHub, `next dev` with OPEN_ACCESS=guest, two curl cookie jars: A connected and exported, giving two commits with `.env.local` left out and a clean `git fsck --strict`. B saw Connect GitHub, got not_connected on push, and disconnecting from B left A connected. No token in cookie jars or the server log. Headless Chrome followed the sign-in redirects and rendered both states: docs/log/shots/github-export-connect.png and github-export-connected.png.
 - Found on that run: with stored files unreadable, a first export answered push_failed and left the repo empty rather than pushing a short version. The same run's Code page answered 500, from the existing file view, unrelated to this work and not changed.
 - Not run: real GitHub (no repo was created and no OAuth App exists), a click on the Export button in a browser (the extension wasn't connected, so the export went through curl), a Preview, `next build`, the full test suite. Typecheck shows only an existing error in lib/train/tune/__tests__/loop.test.ts. Spend $0.
+
+## Nov 1: independent review of tg-github-export, four fixes
+
+- Fixed: anyone could burn the site's 120 pushes an hour with made-up `mm_connect` cookies, because the counters ran before the connection check. The check now comes first.
+- Fixed: `.github/workflows/` files left out and named in the commit message. They could run on a person's account from someone else's public source, and GitHub is expected to refuse the push without the `workflow` scope (not seen on real GitHub).
+- Fixed: a grant was left live when the account lookup or save failed, or when a different account replaced the connection. Those are ended now, best effort.
+- Fixed: a just-made repo isn't looked up before its first push, so a lagging read can't drop the record and leave the name taken. Whether real GitHub lags here is not known.
+- Found, not changed: tg-board-loop also holds migration number 0031 (`0031_board_loop.sql`). Whichever lands second must renumber, journal and snapshot too.
+- Tested: routes.test and push.realgit.test, pretend GitHub with real git underneath. Real GitHub still not run. Spend $0.

@@ -21,6 +21,9 @@ export interface MockGitHub {
   /** Whoever approves the next sign-in. */
   nextLogin: string;
   scope: string;
+  /** Test switches: the next GET /user fails, and the next repo read answers 404 as a lagging read might. */
+  failNextUser: boolean;
+  hideNextRepoRead: boolean;
   tokens: Map<string, string>;
   ids: Map<string, number>;
   repoPath(fullName: string): string;
@@ -47,6 +50,8 @@ export async function startMockGitHub(folder: string, port = 0): Promise<MockGit
     folder,
     nextLogin: "made-up-user",
     scope: "repo",
+    failNextUser: false,
+    hideNextRepoRead: false,
     tokens: new Map(),
     ids: new Map(),
     repoPath: (fullName) => path.join(folder, `${fullName}.git`),
@@ -136,6 +141,10 @@ export async function startMockGitHub(folder: string, port = 0): Promise<MockGit
         return json(res, 200, { access_token: token, scope: mock.scope, token_type: "bearer" });
       }
       if (p === "/user" && req.method === "GET") {
+        if (mock.failNextUser) {
+          mock.failNextUser = false;
+          return json(res, 500, { message: "mock failed" });
+        }
         const login = bearer(req);
         return login ? json(res, 200, { id: idOf(login), login }) : json(res, 401, { message: "Bad credentials" });
       }
@@ -157,6 +166,10 @@ export async function startMockGitHub(folder: string, port = 0): Promise<MockGit
       const repo = p.match(/^\/repos\/([^/]+\/[^/]+)$/);
       if (repo && req.method === "GET") {
         if (!bearer(req)) return json(res, 401, { message: "Bad credentials" });
+        if (mock.hideNextRepoRead) {
+          mock.hideNextRepoRead = false;
+          return json(res, 404, { message: "Not Found" });
+        }
         return repos.has(repo[1]!) ? json(res, 200, { full_name: repo[1] }) : json(res, 404, { message: "Not Found" });
       }
       if (/^\/applications\/[^/]+\/grant$/.test(p) && req.method === "DELETE") {

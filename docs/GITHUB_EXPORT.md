@@ -21,16 +21,16 @@ GitHub has no narrower OAuth App scope that can make a private repo, so the app 
 
 - `lib/connected/owner.ts`: who a connection belongs to. A signed-in person by account. Anyone on the shared open-access account, including admin mode, by a random httpOnly browser cookie (`mm_connect`), stored only as a hash. It's handed out only when connecting.
 - `lib/connected/store.ts`: generic store keyed by provider. Tokens sealed with `lib/secrets/box.ts`, bound to provider, owner and outside account, so a copied row doesn't open. Disconnecting wipes the sealed bytes.
-- `app/api/connect/github/{start,callback,disconnect}`: sign-in. The state is random, in a signed httpOnly cookie, single use, 10 minutes, and tied to the owner who started it. Grants without `repo` are refused and ended. Disconnect also ends GitHub's grant, and says if it couldn't.
-- `app/api/products/[slug]/github-export`: `canReadCode`, then only the caller's own connection. 12 pushes an hour per owner, 120 across the site.
+- `app/api/connect/github/{start,callback,disconnect}`: sign-in. The state is random, in a signed httpOnly cookie, single use, 10 minutes, and tied to the owner who started it. Grants without `repo` are refused and ended. Disconnect also ends GitHub's grant, and says if it couldn't. A grant that can't be saved, or an old one replaced by a different account, is ended too.
+- `app/api/products/[slug]/github-export`: `canReadCode`, then only the caller's own connection. 12 pushes an hour per owner, 120 across the site, counted only for someone with a connection, so made-up cookies can't use them up.
 - `lib/github/git.ts`: objects, packs and smart HTTP receive-pack in plain Node, because a Vercel function has no git program to rely on. Token in a header, never a URL.
 - `lib/github/history.ts`: saved versions to commits. Commit ids are repeatable, so a push whose database write was lost is recognised on retry.
 
 ## What goes in a repo
 
-The saved files of each finished version, oldest first. Every file is re-read through `readVersionFile`, so its SHA-1 and secret checks run again. Hidden paths never go. Held files and files over 50 MB are named in that commit's message. One push handles 64 MB of distinct content: older versions that don't fit are left out and counted in the first commit's message. A build still running waits for the next push.
+The saved files of each finished version, oldest first. Every file is re-read through `readVersionFile`, so its SHA-1 and secret checks run again. Hidden paths never go. Held files, files over 50 MB and anything under `.github/workflows/` are named in that commit's message. Workflows stay out because one would run on the person's account as soon as it landed, possibly from someone else's public source, and GitHub is expected to refuse a whole push holding one without the `workflow` scope (from GitHub's documented behaviour, not seen here). One push handles 64 MB of distinct content: older versions that don't fit are left out and counted in the first commit's message. A build still running waits for the next push.
 
-Known limits: files go up as `100644`, because versions don't save the executable bit. The secret check knows key shapes only, so a public repo warns first, as Make public does.
+Known limits: files go up as `100644`, because versions don't save the executable bit. A renamed or moved repo answers as a redirect, which is refused rather than followed, so pushes stop with an error until the person exports to a new repo. A version that finishes after a newer one was pushed stays out of the repo, since history only moves forward. The secret check knows key shapes only, so a public repo warns first, as Make public does.
 
 ## It never overwrites
 

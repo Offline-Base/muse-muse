@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { isCrossSite, requireUser } from "@/lib/auth";
 import { currentConnectionOwner } from "@/lib/connected/owner";
+import { findConnection } from "@/lib/connected/store";
 import { db, schema } from "@/lib/db/client";
 import { canEditProduct } from "@/lib/edit-pass";
 import { env } from "@/lib/env";
@@ -33,7 +34,8 @@ export const POST = route(async (req: Request, { params }: Ctx) => {
   const config = githubConfig();
   if (!config) return errorJson(503, "not_set_up", { message: "GitHub export isn't set up on this site. Download the source instead." });
   const owner = await currentConnectionOwner(user);
-  if (!owner) return errorJson(409, "not_connected", { message: "Connect your GitHub account first." });
+  // Before the counters: a made-up browser cookie gets past the owner check, and must not use up the site's hourly pushes.
+  if (!owner || !(await findConnection("github", owner))) return errorJson(409, "not_connected", { message: "Connect your GitHub account first." });
   if (body.action !== "create" && body.action !== "push") return errorJson(400, "action must be create or push.");
   if (body.action === "create" && !isValidRepoName(body.name)) return errorJson(400, "bad_name", { message: "A repo name is letters, numbers, dots, dashes and underscores." });
 

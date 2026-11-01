@@ -54,8 +54,9 @@ const authorOf = (c: Connection) => ({ name: c.externalLogin, email: `${c.extern
 
 export const repoUrl = (config: GitHubConfig, fullName: string) => `${config.webUrl}/${fullName}`;
 
-async function pushNew(config: GitHubConfig, row: ExportRow, connection: Connection & { token: string }, owner: ConnectionOwner): Promise<ExportResult> {
-  const state = await repoState(config, connection.token, row.repoFullName);
+async function pushNew(config: GitHubConfig, row: ExportRow, connection: Connection & { token: string }, owner: ConnectionOwner, justMade = false): Promise<ExportResult> {
+  // A repo made a moment ago isn't looked up: a read that lags would drop the record and leave its name taken.
+  const state = justMade ? "there" : await repoState(config, connection.token, row.repoFullName);
   if (state === "bad_token") {
     await revokeConnection("github", owner);
     return fail(409, "reconnect", "GitHub no longer accepts this connection. Connect your account again.");
@@ -138,7 +139,7 @@ export async function exportProduct(input: { config: GitHubConfig; owner: Connec
     .onConflictDoNothing()
     .returning();
   if (!row) return fail(409, "already_exported", `This product already has a repo, so ${made.fullName} stayed empty. You can delete it on GitHub.`);
-  return pushNew(input.config, row, connection, input.owner);
+  return pushNew(input.config, row, connection, input.owner, true);
 }
 
 /** Pushes the versions saved since the last push, or finishes an export whose first push failed. */

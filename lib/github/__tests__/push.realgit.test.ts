@@ -130,7 +130,7 @@ describe("a real push", () => {
     const nowSecret = file("late.ts", "looks fine at save");
     const big: VersionFile = { path: "huge.bin", sha: "b".repeat(40), size: 60 * 1024 * 1024, url: "mem://b" };
     const history = await buildHistory({
-      versions: [v(1, "One", [file("ok.txt", "ok\n"), held, nowSecret, big, file(".GIT/config", "x"), file(".env", "A=1"), file("sub/.git/x", "y")])],
+      versions: [v(1, "One", [file("ok.txt", "ok\n"), held, nowSecret, big, file(".GIT/config", "x"), file(".env", "A=1"), file("sub/.git/x", "y"), file(".github/workflows/run.yml", "on: push\n")])],
       parent: null,
       author,
       readFile: async (f) => (f.path === "late.ts" ? null : readFile(f)),
@@ -141,6 +141,7 @@ describe("a real push", () => {
     assert.match(body, /config\.ts \(looks like it holds a secret\)/);
     assert.match(body, /late\.ts \(looks like it holds a secret\)/);
     assert.match(body, /huge\.bin \(too big for a repo\)/);
+    assert.match(body, /\.github\/workflows\/run\.yml \(GitHub workflow/);
     assert.ok(!body.includes(".env"));
   });
 
