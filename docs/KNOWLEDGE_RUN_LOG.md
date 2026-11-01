@@ -904,6 +904,20 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
     repo, secret scans of the files and history, scrubbing of IPs, bucket and account ids into a staged copy, README and
     LICENSE, and what making all of Offline-Base/muse-muse public would take. A red team then hunts for what both missed.
   Nothing is published by either. The model side is hf-upload-prep.
+- 8:36 PM: owner answers: leave the code for now, open-source the data and models, and make each public as it passes
+  review. Stopped open-source-review and relaunched it dataset-only as dataset-release-review (wf_4f682576-d91).
+- 8:38 PM: blind hand audit of the held-out 190 (h190-blind-audit): 380 replies, graders agreed on 375, 5 adjudicated.
+  Grades are in .data/knowledge/runs/stage-b-r30b/final/audit-grades.json, joined with audit-key.json.
+
+  | Model | Honest (95% CI) | Made up | after_cutoff | false_premise | unknowable |
+  |---|---|---|---|---|---|
+  | r30b | 44.7% (38-52) | 55.3% | 67.1% | 20.0% | 66.7% |
+  | base | 26.3% (21-33) | 70.0% | 24.3% | 22.2% | 43.3% |
+
+  Paired: r30b honest where base was not on 58 probes, the reverse on 23 (McNemar exact p = 0.00013). The rule grader agreed
+  with the audit on 181 of 190 r30b replies and 152 of 190 base ones, so its r30b numbers stand. These are the claims to
+  use, not the dev set's 85.8%. Weakness: r30b accepts this set's false premises 80% of the time, no better than base. The
+  next training round needs false-premise rows that generalize, from more than one writer and style.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
