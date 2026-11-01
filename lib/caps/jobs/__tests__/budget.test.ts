@@ -22,33 +22,36 @@ describe("job tokens", () => {
   const expiresAt = new Date(NOW.getTime() + 600_000);
 
   it("are good for their product until they expire, and name their run", () => {
-    const t = mintJobToken({ productId, runId, expiresAt });
+    const t = mintJobToken({ productId, runId, tick: 1, attempt: 1, expiresAt });
     assert.match(t, /^jr1\./);
-    assert.equal(t.split(".").length, 5);
+    assert.equal(t.split(".").length, 7);
+    assert.deepEqual([readJobToken(t, { productId }, NOW)?.tick, readJobToken(t, { productId }, NOW)?.attempt], [1, 1]);
     assert.equal(readJobToken(t, { productId }, NOW)?.runId, runId);
     assert.equal(readJobToken(t, { productId }, new Date(expiresAt.getTime() + 1)), null, "expired");
     assert.equal(readJobToken(t, { productId: runId }, NOW), null, "another product");
   });
 
   it("refuse a forged one, a changed run or expiry, and junk", () => {
-    const t = mintJobToken({ productId, runId, expiresAt });
+    const t = mintJobToken({ productId, runId, tick: 1, attempt: 1, expiresAt });
     const bits = t.split(".");
-    assert.equal(readJobToken([...bits.slice(0, 4), "AAAA"].join("."), { productId }, NOW), null);
-    assert.equal(readJobToken(["jr1", productId, "another-run", bits[3], bits[4]].join("."), { productId }, NOW), null);
-    assert.equal(readJobToken(["jr1", productId, runId, String(expiresAt.getTime() + 999_999), bits[4]].join("."), { productId }, NOW), null);
+    assert.equal(readJobToken([...bits.slice(0, 6), "AAAA"].join("."), { productId }, NOW), null);
+    assert.equal(readJobToken(["jr1", productId, "another-run", ...bits.slice(3)].join("."), { productId }, NOW), null);
+    assert.equal(readJobToken(["jr1", productId, runId, "2", ...bits.slice(4)].join("."), { productId }, NOW), null, "another tick");
+    assert.equal(readJobToken(["jr1", productId, runId, bits[3], "2", ...bits.slice(5)].join("."), { productId }, NOW), null, "another try");
+    assert.equal(readJobToken(["jr1", productId, runId, bits[3], bits[4], String(expiresAt.getTime() + 999_999), bits[6]].join("."), { productId }, NOW), null);
     for (const junk of ["", null, undefined, "jr1", "jr1.a.b.c", t.replace("jr1", "os1")]) assert.equal(readJobToken(junk, { productId }, NOW), null);
   });
 
   it("from a build never pass on a live token, or on another build's", () => {
-    const build = mintJobToken({ productId, runId, buildId: "build-a", expiresAt });
+    const build = mintJobToken({ productId, runId, tick: 1, attempt: 1, buildId: "build-a", expiresAt });
     assert.equal(readJobToken(build, { productId, buildId: "build-a" }, NOW)?.runId, runId);
     assert.equal(readJobToken(build, { productId, buildId: "build-b" }, NOW), null);
     assert.equal(readJobToken(build, { productId, buildId: null }, NOW), null);
-    assert.equal(readJobToken(mintJobToken({ productId, runId, expiresAt }), { productId, buildId: "build-a" }, NOW), null);
+    assert.equal(readJobToken(mintJobToken({ productId, runId, tick: 1, attempt: 1, expiresAt }), { productId, buildId: "build-a" }, NOW), null);
   });
 
   it("make the caller a job and nobody else, whatever else the request claims", () => {
-    const t = mintJobToken({ productId, runId, expiresAt });
+    const t = mintJobToken({ productId, runId, tick: 1, attempt: 1, expiresAt });
     const req = new Request("https://x.example", {
       headers: { "x-musemuse-job": t, "x-musemuse-visitor": "visitor-aaaaaaaaaaaaaaaa", "x-musemuse-owner": mintOwnerSession({ productId, subject: "s" }, NOW).session },
     });
@@ -93,7 +96,7 @@ describe("a job's dollars in the gateway's model route", () => {
       },
     };
   }
-  const header = (id = run.id) => ({ "x-musemuse-job": mintJobToken({ productId, runId: id, expiresAt: new Date(Date.now() + 600_000) }) });
+  const header = (id = run.id) => ({ "x-musemuse-job": mintJobToken({ productId, runId: id, tick: 1, attempt: 1, expiresAt: new Date(Date.now() + 600_000) }) });
   const route = async (h: ReturnType<typeof harness>) => {
     const { jobCallOf } = await import("@/lib/caps/jobs/budget");
     return { ...h.gw.deps, jobCall: (req: Request, token: { productId: string; scope: string }, now: Date) => jobCallOf(req, token, h.jobDeps, now) } as typeof h.gw.deps;
@@ -187,7 +190,7 @@ describe("a job's dollars in the gateway's model route", () => {
     const h = harness();
     const at = async (hoursLater: number) => {
       const now = new Date(NOW.getTime() + hoursLater * 3_600_000);
-      const hdr = { "x-musemuse-job": mintJobToken({ productId, runId: run.id, expiresAt: new Date(now.getTime() + 60_000) }) };
+      const hdr = { "x-musemuse-job": mintJobToken({ productId, runId: run.id, tick: 1, attempt: 1, expiresAt: new Date(now.getTime() + 60_000) }) };
       const j = await jobCallOf(call(hdr), { productId, scope: "live" }, h.jobDeps, now);
       assert.ok(j && !(j instanceof Response));
       return holdRun(deps, { tokenId: j.counterKey, runId: j.runId, limits: j.limits, usd: 0.06, now: j.windowAt });

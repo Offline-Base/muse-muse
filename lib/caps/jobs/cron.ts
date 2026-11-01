@@ -46,7 +46,7 @@ const failedNotice = (run: { productId: string; name: string }, why: string): No
 /** One tick's call to the product. Only ever POSTs to the product's own live link, with no redirects followed. */
 async function fire(run: ClaimedRun, deps: JobsCronDeps): Promise<boolean> {
   const started = deps.now();
-  const token = mintJobToken({ productId: run.productId, runId: run.id, expiresAt: new Date(started.getTime() + JOBS_LIMITS.tokenMs) });
+  const token = mintJobToken({ productId: run.productId, runId: run.id, tick: run.tick, attempt: run.attempt, expiresAt: new Date(started.getTime() + JOBS_LIMITS.tokenMs) });
   const fail = async (why: string) => {
     if ((await deps.retryOrFail(run, why, deps.now())) === "failed") {
       await deps.addNoticeOnce(failedNotice(run, why));

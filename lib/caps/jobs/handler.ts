@@ -16,8 +16,10 @@ import {
 import { allowedCapIds } from "@/lib/caps/manifest";
 import { CAP_NEEDS_BUILDER } from "@/lib/caps/ids";
 import { JOB_NAME, JOBS_LIMITS } from "@/lib/caps/jobs/limits";
+import { JOB_HEADER } from "@/lib/caps/principal";
+import { jobNotRunning, jobRunRefusal } from "@/lib/caps/jobs/run-check";
 import type { JobRun, JobsStore } from "@/lib/caps/jobs/store";
-import { mintJobToken } from "@/lib/caps/jobs/token";
+import { mintJobToken, readJobToken } from "@/lib/caps/jobs/token";
 import { gatewayError } from "@/lib/gateway/errors";
 import { randomId } from "@/lib/tools/sign";
 import { builderTier, tierMayUseBuilderCaps } from "@/lib/trust/tiers";
@@ -48,7 +50,8 @@ export interface JobsDeps extends CapGateDeps {
 
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "no-store" } });
 const dayLimit = (key: string, limit: number, who: string): CapLimit => ({ key, limit, window: "day", who });
-const notRunning = (status: string) => gatewayError(409, "invalid_request_error", "job_not_running", `This job run is ${status}, so there is nothing to do.`, { retry: false });
+const notRunning = jobNotRunning;
+const tickOver = () => gatewayError(409, "invalid_request_error", "job_not_running", "This tick of the job is over, so nothing changed.", { retry: false });
 const jobOnly = (stage: CapStage) => (stage.caller.job ? null : capError("sign_in_required", "Only the platform's call to a job can do this. It needs the x-musemuse-job header."));
 
 /** The run a job token names, on this namespace and product. A build's runs are never a live token's. */
@@ -122,8 +125,11 @@ function checkpointRoute(deps: JobsDeps): CapRoute<CheckpointArgs> {
     async work(ctx) {
       const run = await runOf(ctx as CapContext<unknown>, deps);
       if (run instanceof Response) return run;
-      const status = await deps.store.closeTick(run.id, { state: ctx.args.state, done: ctx.args.done, error: ctx.args.error, maxTicks: JOBS_LIMITS.ticksPerRun }, ctx.now);
-      if (status === "stale") return notRunning(run.status);
+      // The tick and try this token was minted for: a late answer from an earlier one changes nothing.
+      const held = readJobToken(ctx.req.headers.get(JOB_HEADER), ctx.token, ctx.now);
+      if (!held) return capError("cap_not_allowed", "That job token isn't for this product.");
+      const status = await deps.store.closeTick(run.id, { tick: held.tick, attempt: held.attempt, state: ctx.args.state, done: ctx.args.done, error: ctx.args.error, maxTicks: JOBS_LIMITS.ticksPerRun }, ctx.now);
+      if (status === "stale") return tickOver();
       if (status === "failed" && run.namespace === "live") {
         await deps.store.addNotice({ productId: run.productId, namespace: run.namespace, kind: "job_failed", title: `Job ${run.name} failed`, body: ctx.args.error ?? `It used all of its ${JOBS_LIMITS.ticksPerRun} ticks.` });
       }
@@ -154,6 +160,8 @@ function enqueueRoute(deps: JobsDeps): CapRoute<EnqueueArgs> {
     },
     limits: (stage) => [dayLimit(`jobs-enqueue:${stage.token.buildId ?? stage.token.productId}`, JOBS_LIMITS.enqueuePerProductPerDay, "this product's background jobs")],
     async work(ctx) {
+      const ended = await jobRunRefusal(ctx, deps.store.getRun);
+      if (ended) return ended;
       if (deps.runUsd() === 0) return capError("caps_paused", "Background jobs are paused on Muse Muse today.");
       const runId = await deps.store.queueRun({ productId: ctx.token.productId, namespace: ctx.namespace, name: ctx.args.name, trigger: "enqueue", input: ctx.args.input, budgetUsd: deps.runUsd() });
       return json({ ok: true, runId, status: "queued" }, 202);
@@ -220,7 +228,7 @@ function testFireRoute(deps: JobsDeps): CapRoute<TestFireArgs> {
         return json({ hook: { url: `${deps.gatewayUrl.replace(/\/+$/, "")}/hooks/${ctx.token.productId}/${ctx.args.name}?k=${secret}&b=${ctx.token.buildId}` }, simulated: true });
       }
       const run = await deps.store.fireTest({ productId: ctx.token.productId, namespace: ctx.namespace, name: ctx.args.name, input: ctx.args.input, budgetUsd: Math.max(deps.runUsd(), 0.01) }, ctx.now);
-      const token = mintJobToken({ productId: ctx.token.productId, runId: run.id, buildId: ctx.token.buildId, expiresAt: new Date(ctx.now.getTime() + JOBS_LIMITS.tokenMs) });
+      const token = mintJobToken({ productId: ctx.token.productId, runId: run.id, tick: run.tick, attempt: run.attempt, buildId: ctx.token.buildId, expiresAt: new Date(ctx.now.getTime() + JOBS_LIMITS.tokenMs) });
       return json({ token, runId: run.id, tick: run.tick, simulated: true });
     },
   };

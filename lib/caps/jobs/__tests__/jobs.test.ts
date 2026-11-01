@@ -133,10 +133,11 @@ describe("jobs on a database", { skip: canMock ? false : "needs --experimental-t
     platformUrl: "https://platform.example",
     productSlug: async () => "digest",
     jobWrote: store.noteRunWrote,
+    jobRun: store.jobsStore.getRun,
   });
   const post = (path: string, body: unknown, headers: Record<string, string> = {}) =>
     new Request(`https://platform.example/api/gateway/${path}`, { method: "POST", headers: { authorization: "Bearer x", "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
-  const liveJob = (runId: string) => ({ "x-musemuse-job": mintJobToken({ productId, runId, expiresAt: new Date(NOW.getTime() + 600_000) }) });
+  const liveJob = (runId: string, tick = 1, attempt = 1) => ({ "x-musemuse-job": mintJobToken({ productId, runId, tick, attempt, expiresAt: new Date(NOW.getTime() + 600_000) }) });
   const owner = () => ({ "x-musemuse-owner": mintOwnerSession({ productId, subject: "owner-sub" }, NOW).session });
   const runRow = async (id: string) => (await testDb.select().from(realSchema.jobRuns).where(eq(realSchema.jobRuns.id, id)))[0]!;
   const allRuns = () => testDb.select().from(realSchema.jobRuns);
@@ -173,8 +174,8 @@ describe("jobs on a database", { skip: canMock ? false : "needs --experimental-t
       ...over,
     };
   }
-  const closes = (done: boolean, state: unknown = null) => async (_u: string, _i: RequestInit, job: { runId: string }) => {
-    const res = await handler.handleJobs(post("jobs/checkpoint", { state, done }, liveJob(job.runId)), ["checkpoint"], jobsDeps(live()));
+  const closes = (done: boolean, state: unknown = null) => async (_u: string, init: RequestInit) => {
+    const res = await handler.handleJobs(post("jobs/checkpoint", { state, done }, { "x-musemuse-job": new Headers(init.headers).get("x-musemuse-job")! }), ["checkpoint"], jobsDeps(live()));
     assert.equal(res.status, 200);
     return Response.json({ ok: true });
   };
@@ -195,7 +196,7 @@ describe("jobs on a database", { skip: canMock ? false : "needs --experimental-t
 
     it("a live token can't use a build's job token, and a build's can't reach a live run", async () => {
       const run = await runningRun();
-      const buildJob = { "x-musemuse-job": mintJobToken({ productId, runId: run.id, buildId, expiresAt: new Date(NOW.getTime() + 600_000) }) };
+      const buildJob = { "x-musemuse-job": mintJobToken({ productId, runId: run.id, tick: 1, attempt: 1, buildId, expiresAt: new Date(NOW.getTime() + 600_000) }) };
       assert.equal((await handler.handleJobs(post("jobs/verify", {}, buildJob), ["verify"], jobsDeps(live()))).status, 403, "signed for the build");
       assert.equal((await handler.handleJobs(post("jobs/verify", {}, buildJob), ["verify"], jobsDeps(buildToken()))).status, 403, "the run is in live, the token in b:");
     });
@@ -221,10 +222,22 @@ describe("jobs on a database", { skip: canMock ? false : "needs --experimental-t
       assert.equal(again.status, 409, "the tick was already closed");
 
       const last = await runningRun({ tick: JOBS_LIMITS.ticksPerRun, name: "long" });
-      const res = await handler.handleJobs(post("jobs/checkpoint", { state: { cursor: 9 }, done: false }, liveJob(last.id)), ["checkpoint"], jobsDeps(live()));
+      const res = await handler.handleJobs(post("jobs/checkpoint", { state: { cursor: 9 }, done: false }, liveJob(last.id, JOBS_LIMITS.ticksPerRun)), ["checkpoint"], jobsDeps(live()));
       assert.equal(((await res.json()) as { status: string }).status, "failed");
       assert.match((await runRow(last.id)).error ?? "", /10 ticks/);
       assert.equal((await notices()).filter((n) => n.kind === "job_failed").length, 1);
+    });
+
+    it("a late answer from an earlier tick or try can't close the tick that's going now", async () => {
+      const run = await runningRun({ tick: 2, attempt: 1, checkpoint: { cursor: 5 } });
+      const late = await handler.handleJobs(post("jobs/checkpoint", { done: true }, liveJob(run.id, 1, 1)), ["checkpoint"], jobsDeps(live()));
+      assert.equal(late.status, 409);
+      const row = await runRow(run.id);
+      assert.deepEqual([row.status, row.checkpoint], ["running", { cursor: 5 }], "nothing changed");
+      await testDb.update(realSchema.jobRuns).set({ attempt: 2 }).where(eq(realSchema.jobRuns.id, run.id));
+      assert.equal((await handler.handleJobs(post("jobs/checkpoint", { done: true }, liveJob(run.id, 2, 1)), ["checkpoint"], jobsDeps(live()))).status, 409, "an earlier try of this tick");
+      assert.equal((await handler.handleJobs(post("jobs/checkpoint", { done: true }, liveJob(run.id, 2, 2)), ["checkpoint"], jobsDeps(live()))).status, 200, "this try");
+      assert.equal((await runRow(run.id)).status, "done");
     });
 
     it("a checkpoint over 64 KB is refused and changes nothing; an error fails the run and tells the owner", async () => {
@@ -279,6 +292,46 @@ describe("jobs on a database", { skip: canMock ? false : "needs --experimental-t
       assert.deepEqual([proof.fired, proof.done, proof.resumed, proof["brief:schedule:digest"], proof["brief:webhook:log"], proof["brief:result:digests"]], [1, 1, 1, 1, 1, 1]);
       rates.set(`jobs-test-fire:${buildId}`, JOBS_LIMITS.testFiresPerBuild);
       assert.equal((await handler.handleJobs(post("jobs/test-fire", { name: "digest" }), ["test-fire"], jobsDeps(buildToken()))).status, 429);
+    });
+  });
+
+  describe("a job token after its run ended", () => {
+    const write = (hdr: Record<string, string>) => data.handleData(post("data/digests?scope=shared", { data: { text: "made up" } }, hdr), ["digests"], dataDeps(live()));
+    const read = (hdr: Record<string, string>) => data.handleData(post("data/digests/query?scope=shared", {}, hdr), ["digests", "query"], dataDeps(live()));
+
+    for (const status of ["budget", "cancelled", "done", "failed"] as const) {
+      it(`a ${status} run can't save, read, queue or draft a send`, async () => {
+        const run = await runningRun({ status });
+        const hdr = liveJob(run.id);
+        assert.equal((await write(hdr)).status, 409);
+        assert.equal((await read(hdr)).status, 409);
+        assert.equal((await runRow(run.id)).rowsWritten, 0);
+        assert.equal((await handler.handleJobs(post("jobs/enqueue", { name: "digest" }, hdr), ["enqueue"], jobsDeps(live()))).status, 409);
+        assert.equal((await allRuns()).length, 1, "nothing queued");
+        const connectDeps = { ...gate(live()), store: {} as never, vaultOn: () => true, sendsOn: () => true, keyring: () => null, rules: async () => ({ publicApis: [], keys: [{ service: "weather", why: "x" }], sends: [{ channel: "email", why: "x" }] }) as never, reserveCounter, recordUsage: async () => undefined, fetch: (async () => assert.fail("nothing goes out")) as typeof fetch, userAgent: "test", holdSend: held.holdJobSend, jobRun: store.jobsStore.getRun };
+        assert.equal((await connect.handleSend(post("send", { channel: "email", to: ["friend@example.com"], subject: "Plan", body: "Made up." }, hdr), connectDeps)).status, 409);
+        assert.equal((await notices()).length, 0, "no draft");
+      });
+    }
+
+    it("a queued run between ticks can't either, and a running one still can", async () => {
+      const run = await runningRun({ status: "queued" });
+      assert.equal((await write(liveJob(run.id))).status, 409);
+      await testDb.update(realSchema.jobRuns).set({ status: "running" }).where(eq(realSchema.jobRuns.id, run.id));
+      assert.equal((await write(liveJob(run.id))).status, 201);
+      assert.equal((await read(liveJob(run.id))).status, 200);
+    });
+
+    it("a token for a run that isn't in this product or space is refused", async () => {
+      const elsewhere = await runningRun({ namespace: `b:${buildId}` });
+      assert.equal((await write(liveJob(elsewhere.id))).status, 403);
+    });
+
+    it("with no way to read the run, a job is refused rather than trusted", async () => {
+      const run = await runningRun();
+      const { jobRun: _gone, ...noRead } = dataDeps(live());
+      const res = await data.handleData(post("data/digests?scope=shared", { data: { text: "made up" } }, liveJob(run.id)), ["digests"], noRead);
+      assert.equal(res.status, 403);
     });
   });
 
@@ -341,7 +394,7 @@ describe("jobs on a database", { skip: canMock ? false : "needs --experimental-t
       recordUsage: async () => undefined,
       fetch: (async () => assert.fail("nothing goes out")) as typeof fetch,
       userAgent: "test",
-      ...(holdSend ? { holdSend: held.holdJobSend } : {}),
+      ...(holdSend ? { holdSend: held.holdJobSend, jobRun: store.jobsStore.getRun } : {}),
     });
 
     it("become a notice with the whole message, whatever approval it claims, and nothing goes", async () => {
@@ -561,7 +614,7 @@ describe("jobs on a database", { skip: canMock ? false : "needs --experimental-t
     it("stops at the day's runs, gives back what it didn't use, and 0 pauses everything", async () => {
       for (let i = 0; i < 12; i++) await store.jobsStore.queueRun({ productId, namespace: "live", name: `job-${i}`, trigger: "enqueue", budgetUsd: 0.1 });
       const seen: string[] = [];
-      const out = await cron.runJobsCron(cronDeps(async (u, i, j) => (seen.push(u), closes(true)(u, i, j)), { dailyRuns: () => 5 }));
+      const out = await cron.runJobsCron(cronDeps(async (u, i, j) => (seen.push(u), closes(true)(u, i)), { dailyRuns: () => 5 }));
       assert.deepEqual([out.fired, out.capped], [5, true]);
       assert.equal(counters.get("jobs-runs"), 5);
       counters.clear();

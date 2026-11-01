@@ -64,8 +64,8 @@ export interface NoticeInput {
 export interface JobsStore {
   getRun(runId: string): Promise<JobRun | null>;
   queueRun(input: { productId: string; namespace: string; name: string; trigger: JobTrigger; input?: unknown; webhookId?: string | null; budgetUsd: number }): Promise<string>;
-  /** Saves a checkpoint and ends the tick. "stale" when the run isn't running any more. */
-  closeTick(runId: string, tick: { state: unknown; done: boolean; error: string | null; maxTicks: number }, now: Date): Promise<JobStatus | "stale">;
+  /** Saves a checkpoint and ends the tick. "stale" when this try of this tick isn't the one running any more. */
+  closeTick(runId: string, tick: { tick: number; attempt: number; state: unknown; done: boolean; error: string | null; maxTicks: number }, now: Date): Promise<JobStatus | "stale">;
   /** A build's fire: the queued run of this name goes on, or a new one starts. */
   fireTest(input: { productId: string; namespace: string; name: string; input: unknown; budgetUsd: number }, now: Date): Promise<JobRun>;
   addNotice(input: NoticeInput): Promise<string>;
@@ -117,8 +117,7 @@ export const jobsStore: JobsStore = {
 
   async closeTick(runId, tick, now) {
     const stillGoing = !tick.error && !tick.done;
-    const [before] = await db().select({ tick: schema.jobRuns.tick }).from(schema.jobRuns).where(eq(schema.jobRuns.id, runId)).limit(1);
-    const outOfTicks = stillGoing && (before?.tick ?? 0) >= tick.maxTicks;
+    const outOfTicks = stillGoing && tick.tick >= tick.maxTicks;
     const status: JobStatus = tick.error || outOfTicks ? "failed" : tick.done ? "done" : "queued";
     const [row] = await db()
       .update(schema.jobRuns)
@@ -129,7 +128,7 @@ export const jobsStore: JobsStore = {
         error: tick.error ?? (outOfTicks ? `It used all of its ${tick.maxTicks} ticks.` : null),
         ...(status === "queued" ? {} : { finishedAt: now }),
       })
-      .where(and(eq(schema.jobRuns.id, runId), eq(schema.jobRuns.status, "running")))
+      .where(and(eq(schema.jobRuns.id, runId), eq(schema.jobRuns.status, "running"), eq(schema.jobRuns.tick, tick.tick), eq(schema.jobRuns.attempt, tick.attempt)))
       .returning({ status: schema.jobRuns.status });
     return row?.status ?? "stale";
   },

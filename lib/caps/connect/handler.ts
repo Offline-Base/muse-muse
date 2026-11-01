@@ -1,3 +1,4 @@
+import { jobRunRefusal, type JobRunRead } from "@/lib/caps/jobs/run-check";
 import { createHash } from "node:crypto";
 import {
   KEY_NAME,
@@ -70,6 +71,8 @@ export interface ConnectDeps extends CapGateDeps {
   userAgent: string;
   /** Unit 6: a job's send becomes a notice the owner confirms later. Unset while the jobs cap isn't served. */
   holdSend?(input: { productId: string; namespace: string; send: SendArgs; lines: string[]; title: string }): Promise<string>;
+  /** Unit 6: a job's run, so a token only works while it's running. Unset while the jobs cap isn't served, and then a job is refused. */
+  jobRun?: JobRunRead;
 }
 
 const isBuild = (token: CapToken) => token.scope === "build";
@@ -392,6 +395,7 @@ function callRoute(deps: ConnectDeps): CapRoute<CallArgs> {
       if (!target.service.visitors && !stage.caller.owner) return capError("sign_in_required", `Only the product's owner can use ${target.service.label} here.`);
       // Unit 6: jobs read and notify. A write to the outside waits for a person.
       if (stage.caller.job && target.method !== "GET") return capError("cap_not_allowed", "A background job can only read from outside services. A write needs a person.");
+      { const ended = await jobRunRefusal(stage, deps.jobRun); if (ended) return ended; }
       if (target.method === "GET" && body.body !== undefined && body.body !== null) return capError("invalid_arguments", "A GET call has no body.");
       if (body.body !== undefined && body.body !== null && (typeof body.body !== "object" || Array.isArray(body.body))) return capError("invalid_arguments", "body is a JSON object.");
       return { name: body.name, target, body: body.body ?? null };
@@ -556,6 +560,7 @@ function sendRoute(deps: ConnectDeps): CapRoute<SendWork> {
       const { send } = ctx.args;
       // ---------- Wave 3, unit 6: a job's send never goes. The whole message waits for the owner (docs/CAPABILITIES.md, section 12) ----------
       if (ctx.caller.job && deps.holdSend) {
+        { const ended = await jobRunRefusal(ctx, deps.jobRun); if (ended) return ended; }
         const id = await deps.holdSend({ productId: ctx.token.productId, namespace: ctx.namespace, send, lines: confirmationLines(send), title: SEND_TITLES[send.channel] });
         return json({ ok: false, code: "held_for_owner", id, ...(isBuild(ctx.token) ? { simulated: true } : {}) });
       }

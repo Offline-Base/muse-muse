@@ -5,7 +5,7 @@ import { dataStore, liveBrief } from "@/lib/caps/data/store";
 import { createEndUser, findPasskey, productForSignIn, usePasskey } from "@/lib/caps/data/users";
 import { collectionRules, narrowCollectionRules } from "@/lib/caps/data/types";
 import { withJobWrites } from "@/lib/caps/jobs/rules";
-import { noteRunWrote } from "@/lib/caps/jobs/store";
+import { jobsStore, noteRunWrote } from "@/lib/caps/jobs/store";
 import { buildBrief, capProduct, capToken, productSlug } from "@/lib/caps/store";
 import { env } from "@/lib/env";
 import { acquireInFlight, hitRateLimits, releaseInFlight, reserveCounter } from "@/lib/gateway/store";
@@ -42,7 +42,7 @@ export function dataDeps(): DataDeps {
     platformUrl: env.platformUrl,
     productSlug,
     // Unit 6: the record of what a job saved. Only while the jobs cap is served.
-    ...(env.servedCaps.includes("jobs") ? { jobWrote: noteRunWrote } : {}),
+    ...(env.servedCaps.includes("jobs") ? { jobWrote: noteRunWrote, jobRun: jobsStore.getRun } : {}),
   };
 }
 

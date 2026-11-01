@@ -1,3 +1,4 @@
+import { jobRunRefusal, type JobRunRead } from "@/lib/caps/jobs/run-check";
 import { cleanDisplayName, isSignInBind, mintTestUserSession, mintUserSession, readUserCode, testUserSubject } from "@/lib/caps/data/identity";
 import { DATA_LIMITS, type DataQuotas } from "@/lib/caps/data/limits";
 import { isCursor, newDocId, type DataStore, type QueryOrder, type RowKey, type WriteLimits, type WriteRefusal } from "@/lib/caps/data/store";
@@ -45,6 +46,8 @@ export interface DataDeps extends CapGateDeps {
   productSlug(productId: string): Promise<string | null>;
   /** Unit 6: counts a row a job saved on its run. Unset while the jobs cap isn't served. */
   jobWrote?(runId: string): Promise<void>;
+  /** Unit 6: a job's run, so a token only works while it's running. Unset while the jobs cap isn't served, and then a job is refused. */
+  jobRun?: JobRunRead;
 }
 
 const isBuild = (token: CapToken) => token.scope === "build";
@@ -124,7 +127,8 @@ interface Target {
 }
 
 /** The collection and scope a call names (live tickets ask here too, section 13), checked against the product's list, and the caller's key in that scope. */
-export async function target(stage: CapStage, deps: Pick<DataDeps, "rules">, collection: string, scopeParam: unknown): Promise<Target | Response> {
+export async function target(stage: CapStage, deps: Pick<DataDeps, "rules" | "jobRun">, collection: string, scopeParam: unknown): Promise<Target | Response> {
+  { const ended = await jobRunRefusal(stage, deps.jobRun); if (ended) return ended; }
   if (!COLLECTION_NAME.test(collection)) return capError("invalid_arguments", "A collection's name is lowercase letters, digits and underscores, up to 32, starting with a letter.");
   if (scopeParam !== undefined && scopeParam !== null && !isDataScope(scopeParam)) return capError("invalid_arguments", "scope is shared, visitor, owner or user.");
   const rules = await deps.rules(stage.token, stage.product);

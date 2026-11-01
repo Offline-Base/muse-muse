@@ -147,6 +147,7 @@ describe("a background job, end to end", { skip }, () => {
       platformUrl: "http://platform",
       productSlug: async () => "digest",
       jobWrote: store.noteRunWrote,
+      jobRun: store.jobsStore.getRun,
     };
     const counters = new Map<string, number>();
     const fake = fakeGateway({
