@@ -1161,3 +1161,7 @@ Each row and each script says how far that script has really run (`proof` in `EX
 
 **Seen working:** the Mac script on `ggml-org/tiny-llamas` `stories260K.gguf` (1.2 MB) on an Apple silicon Mac, end to end with real llama.cpp. The Linux script's download and checks, with real pinned files and a stubbed OS name. **Simulated:** Linux and Jetson running, Ollama, the board check. **Not run:** the Windows script at all (a syntax check was denied here), any tuned file, a real Linux PC, a real board, and Ollama itself.
 
+
+## On a board
+
+`BOARD_LOOP` takes a judged model to a board with one button, and opens a queued try page. Simulated until a real board is connected: [BOARD_LOOP.md](BOARD_LOOP.md), and [JETSON_TODO.md](JETSON_TODO.md) for what to run then.

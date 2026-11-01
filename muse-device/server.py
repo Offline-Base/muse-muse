@@ -480,7 +480,7 @@ def download_model(url, name):
         if os.path.exists(part):
             os.remove(part)
     remember_source(path, url, digest.hexdigest())
-    return text_result(json.dumps({"installed": name, "gib": round(os.path.getsize(path) / 2**30, 3)}))
+    return text_result(json.dumps({"installed": name, "gib": round(os.path.getsize(path) / 2**30, 3), "sha256": digest.hexdigest()}))
 
 
 def remember_source(path, url, sha256):

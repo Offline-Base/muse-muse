@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
+import { BoardLoopSlot } from "@/components/board-loop/BoardLoopSlot";
 import { DriveExportLink } from "@/components/device/DriveExportLink";
 import { DriveOffer } from "@/components/drive/DriveOffer";
 import type { WrongAnswers } from "@/components/train/DecisionResults";
@@ -300,10 +301,12 @@ export default async function FineTuningJobPage({ params }: { params: Promise<{ 
       serverNow={now.getTime()}
     />
   );
-  return driveFiles ? (
+  const boardLoop = env.boardLoop ? <BoardLoopSlot jobId={jobId} /> : null;
+  return driveFiles || boardLoop ? (
     <>
       {room}
-      <DriveExportLink jobId={jobId} files={driveFiles} />
+      {driveFiles ? <DriveExportLink jobId={jobId} files={driveFiles} /> : null}
+      {boardLoop}
     </>
   ) : (
     room

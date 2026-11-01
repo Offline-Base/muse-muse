@@ -65,6 +65,10 @@ on a Mac, as before).
 - **Checking.** `os.sync()`, unmount (which drops the page cache for that filesystem), mount again, read every file back, and
   FAIL on a wrong, missing or extra file. Then unmount and power off.
 
+## Nov 1: `install_model` also says the file's checksum
+
+`download_model` already hashed the download. Its reply now includes `"sha256"` with that hash, one added key, so the board loop can refuse a file that doesn't match (`lib/board-loop/device-mcp.ts`). Nothing else changed.
+
 ## What I couldn't check here, and would like you to
 
 1. On `jetson-02`, read only: `grep exfat /proc/filesystems` after `modprobe exfat`, `udisksctl status`, `pkaction --version`,

@@ -1722,6 +1722,45 @@ scripts/dev/tune-harness.ts, on a Lambda gpu_1x_a10 named prove-tune-1, us-east-
 - Tests: targeted suites pass. flags-off-surface was already failing on main on stale mocks; with those fixed its provision and deploy goldens match, and steps.json still differs on a timeout this branch doesn't touch. No golden file changed.
 - Not run: a whole build on production settings, a sandbox, the notice in a browser, whether Contributor's judge is as strict as Muse Wonder's.
 
+## Nov 1, 2026: The board loop, on the simulated board (`tg-board-loop`, flag `BOARD_LOOP`, off)
+
+**Built.** One start button on a judged model; seven stages with status and cost; `BoardDriver` with simulated, fleet and board MCP drivers; a fixed test set; a Demo Studio clip; a queued try page at `/try-board/<id>`; migration `0031_board_loop`. `docs/BOARD_LOOP.md`, `docs/JETSON_TODO.md`.
+
+**Decision: the simulated board answers the control plane's API**, so the fleet driver's real code runs against it, instead of a second code path that would prove nothing about the fleet. Its answers still say canned, and it never executes what it's sent.
+
+**Decision: a real board's try page is admins only until `BOARD_TRY_PUBLIC`.** Prompts would reach a tuned model with no content check of their own, which is the owner's call.
+
+**Run, simulated, local.** `next dev` on port 3041, PGlite, `OPEN_ACCESS=admin`, a made-up judged job (its $1.30 is a seeded number), the real workflow runtime and the real `scripts/sim-board.mjs`. Spend: $0. No GPU, no model and no board.
+
+- All seven stages ended in about 40 seconds, `gguf` skipped as designed, most of the time in the clip. Test set: 5 of 5, 19.6 tokens a second (set by `SIM_BOARD_TPS=20`), peak 54 MB (the process's own). These numbers say nothing about a Jetson.
+- Clip: H.264, 1920x1080, 26.5 s, 4.4 MB, served with a 206. Its title, captions and outro say Simulated board. Frames: `docs/log/shots/board-loop-clip-frames.jpg`.
+- Browser (Playwright): the button on the tune's page started a run; two visitors queued as 1 and 2 and both got answers; the sixth turn in an hour was refused, "You've had your 5 turns this hour"; no sideways scroll at 390 px; killing the process showed the offline page with no restart; Stop closed the page and the next run took the slot. Shots: `board-loop-room.jpg`, `board-loop-try-done-390.jpg`, `board-loop-try-offline.jpg`.
+
+**Fixed on the way.** The workflow bundle rejected a module-level deps object: moved inside the step. An exception in a stage would have stranded a loop holding its board's slot: it now fails the loop, and only an offline board waits. Stop waited for a tick, which never comes after the workflow's hard stop: the route now stops the board itself, and doesn't start a dead simulated board to do it. A doubled "Simulated board." label on the banner.
+
+**Tests.** `lib/board-loop/__tests__`: `loop-sim` and `fleet`, 25 of 25; `store`, 3 of 3, including every route a 404 with the flag off. `tsc --noEmit` clean. `lib/db` migrations and migration-order pass after adding 0031 to the agreed list. `no-direct-database` fails on `scripts/dev/tune-harness.ts`, a file this branch does not touch.
+
+**Not run (at that commit).** Any real board or fleet (`fleet.ts` has seen only the simulated process and fakes; `device-mcp.ts` no run at all, and no test of its own), a real IQ1_S, a Preview, `next build`, the full suite. The start route's real-board quantize branch has no test. On Vercel the simulated board needs `BOARD_SIM_URL` and the clip is skipped.
+
+## Nov 1, 2026: Independent review of the board loop, and fixes (`tg-board-loop`)
+
+Spend: $0. No board, GPU or model. Every fix is in code a real board would run, and none of it has run on one.
+
+- **A failed send, or Stop before serving, would have ended a real board's old job.** `endBoard` ran `gguf-serve.sh --undo` whenever a file was named. It now runs only once this loop's serve began.
+- **A real file with no checksum went through unchecked**, and a file already on the board was trusted by name. Real files now need a checksum and address, and a file already there is checked and removed on a mismatch.
+- **The board MCP driver had no checksum check at all.** `install_model` now reports the hash it already computed (one key, in `muse-device/CHANGES_FOR_HUSSAM.md`), and the driver refuses a mismatch or a missing one.
+- **`--undo` ran inside the agent's own job**, though it restarts the agent, and maintenance never came off after Stop. It now runs under `systemd-run`, after ending any serve still going, and maintenance comes off only once the board says the model left. The scripts moved from `/tmp` to `/run`.
+- **A turn in line kept running on a real board** after its page closed to that visitor: a poll now asks again.
+- **The clip recorder got the whole environment, secrets included.** It now gets a short list. Rerun for real on a made-up row: it recorded, rendered and stored a clip.
+- `BOARD_SIM_URL` could send its token over plain http. It now needs https or this machine.
+- A failed workflow start left a row holding the board's slot. It now fails the row.
+- A refusal from the board was recognised by class name, which minifying breaks. Now `instanceof`.
+- Stop leaves a local files job running under its own caps. Not changed, but the stage now says so.
+
+**Tests.** `loop-sim` and `fleet` 34 of 34, `store` 3 of 3 (now with the start route's flag-off 404), `muse-device` `test_server -k install` 6 of 6, `tsc` no errors in board-loop files. New tests cover the board MCP driver against a fake caller only.
+
+**Not run.** A real board, fleet or MCP server, so `installCommand`, `serveCommand` and `stopCommand` have never executed, and `--undo`'s timing under the 40 second wait is a guess. The start route's real-board quantize branch, `BOARD_SIM_URL` against a real host, a Preview, `next build`, the full suite.
+
 ## Nov 1, 2026: real quantize run on a rented A10 (tg-quant-targets)
 
 - Ran: real `RUNNER_PY` and `QUANT_PY` via `scripts/dev/quant-harness.ts`, a stand-in for the platform on the GPU, publish 0, made-up data, nothing uploaded. Machines device-loop-1 (about 6 minutes, Ubuntu 22.04) and device-loop-2 (Ubuntu 24.04). Both terminated. Results in `docs/log/quant-run-2026-11-01`.
