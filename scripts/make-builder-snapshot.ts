@@ -11,19 +11,33 @@
  * muse-app look, with their deps warmed in npm's cache), checks those copies against template/, that those skills are off and that `muse exec --help`
  * lists every flag a build passes, then snapshots with no expiry. The builder marker records the Muse Code version.
  * Builds start from the snapshot and run with the locked-down policy in lib/sandbox/policy.ts.
- * Save the printed id as BUILDER_SNAPSHOT_ID.
+ * Save the printed id as BUILDER_SNAPSHOT_ID, and commit lib/sandbox/snapshots.json, where the script records which cap
+ * overlays the snapshot has (docs/CAPABILITIES.md, 2.4a), in the same change.
  */
 import { createHash } from "node:crypto";
+import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { Sandbox } from "@vercel/sandbox";
 import { MUSE_APP_OVERLAY } from "@/lib/sandbox/look";
 import { execFlags, flagsMissingFromHelp, SANDBOX_ENV } from "@/lib/sandbox/muse";
 import { PLATFORM_FILES, PRISTINE_DIR, TARGET_OVERLAYS, TARGETS_DIR, WORK_DIR } from "@/lib/sandbox/paths";
 import { SNAPSHOT_POLICY } from "@/lib/sandbox/policy";
-import { DISABLED_BUNDLED_SKILLS, readTargetFiles, readTemplateFiles, setupBuilder, skillsNotOff, type TemplateFile, templateHash } from "@/lib/sandbox/setup";
+import { DISABLED_BUNDLED_SKILLS, readCapFiles, readTargetFiles, readTemplateFiles, setupBuilder, skillsNotOff, type TemplateFile, templateHash } from "@/lib/sandbox/setup";
 import { q, sh } from "@/lib/sandbox/shell";
 
 const MIN = 60_000;
+
+/**
+ * Wave 3, unit 3 (docs/CAPABILITIES.md, 2.4a): adds the new snapshot to lib/sandbox/snapshots.json with the cap
+ * overlays it installed, so the live site offers only the caps this snapshot can build. Commit the file with the id.
+ */
+function recordSnapshot(id: string, info: { createdAt: string; templateHash: string; capOverlays?: string[] }): string {
+  const file = path.join(process.cwd(), "lib/sandbox/snapshots.json");
+  const manifest = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+  manifest[id] = { createdAt: info.createdAt, templateHash: info.templateHash, capOverlays: [...(info.capOverlays ?? [])].sort() };
+  writeFileSync(file, `${JSON.stringify(manifest, null, 2)}\n`);
+  return path.relative(process.cwd(), file);
+}
 
 /** Throws unless every platform file in PRISTINE_DIR matches template/ and is root-owned with no write bits. */
 async function checkPristine(sandbox: Sandbox, files: TemplateFile[]): Promise<void> {
@@ -98,7 +112,8 @@ async function main() {
 
   const files = await readTemplateFiles(path.join(process.cwd(), "template"));
   const targets = await readTargetFiles(path.join(process.cwd(), "template"));
-  console.log(`template: ${files.length} files, ${targets.length} in targets/, hash ${templateHash([...files, ...targets])}`);
+  const caps = await readCapFiles(path.join(process.cwd(), "template"));
+  console.log(`template: ${files.length} files, ${targets.length} in targets/, ${caps.length} in caps/, hash ${templateHash([...files, ...targets, ...caps])}`);
 
   let t = Date.now();
   const sandbox = await Sandbox.create({
@@ -113,8 +128,9 @@ async function main() {
   log("create sandbox", Date.now() - t, sandbox.name);
 
   let snapshotId: string | null = null;
+  let manifestFile: string | null = null;
   try {
-    const info = await setupBuilder(sandbox, files, log, targets);
+    const info = await setupBuilder(sandbox, files, log, targets, caps);
     console.log("builder:", JSON.stringify(info));
     await checkPristine(sandbox, files);
     console.log(`pristine: ${PLATFORM_FILES.join(", ")} match template/`);
@@ -129,6 +145,8 @@ async function main() {
     const snapshot = await sandbox.snapshot({ expiration: 0 });
     snapshotId = snapshot.snapshotId;
     log("snapshot", Date.now() - t, `${snapshot.snapshotId}, ${Math.round(snapshot.sizeBytes / 1e6)} MB, ${snapshot.status}`);
+    manifestFile = recordSnapshot(snapshot.snapshotId, info);
+    console.log(`caps in this snapshot: ${(info.capOverlays ?? []).join(", ") || "none"}`);
   } finally {
     // Snapshotting stops the VM. Delete the builder sandbox either way; the snapshot outlives it.
     await sandbox.stop().catch(() => {});
@@ -137,6 +155,7 @@ async function main() {
 
   console.log(`\nTotal ${((Date.now() - started) / 1000).toFixed(1)} s`);
   console.log(`BUILDER_SNAPSHOT_ID=${snapshotId}`);
+  if (manifestFile) console.log(`Commit ${manifestFile} with the BUILDER_SNAPSHOT_ID change: the live site offers only the caps this snapshot lists there.`);
 }
 
 main().catch((err) => {

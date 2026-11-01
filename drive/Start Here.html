@@ -119,7 +119,7 @@
     </section>
   </div>
   <p>The first start can take up to 10 minutes while the model loads, and the window shows the server's messages as they scroll by. Keep the window open while you chat, and close it to stop the model.</p>
-  <p>The drive doesn't run on Linux or on a Mac with an Intel chip. On those, the same files are free on <a href="https://huggingface.co/{{REPO}}">Hugging Face</a>, and the model's page is <a href="{{PAGE_URL}}">{{PAGE_URL}}</a>.</p>
+  <p>The drive doesn't run on Linux or on a Mac with an Intel chip.{{ELSEWHERE_HTML}}</p>
 
   <h2>Chat with it</h2>
   <p>The chat opens at <code>http://127.0.0.1:9931</code>, or the next free port, and only your computer can reach it. Each new chat starts with the system message the model was trained with. If one doesn't, paste this into the chat's settings as its system message:</p>
@@ -128,16 +128,13 @@
   {{TUNED_NOTE}}
 
   <h2>Check the files</h2>
-  <p>Double-click <span class="file">Verify (Mac).command</span> or <span class="file">Verify (Windows).cmd</span>. It checks every file on the drive against <span class="file">SHA256SUMS</span>, and changes nothing. The same checksums are on the model's Hugging Face page.</p>
+  <p>Double-click <span class="file">Verify (Mac).command</span> or <span class="file">Verify (Windows).cmd</span>. It checks every file on the drive against <span class="file">SHA256SUMS</span>, and changes nothing.{{CHECKSUMS_NOTE}}</p>
 
   <h2>About this drive</h2>
   <ul>
-    <li>Fine-tuned from Meta's Muse Glimmer 30B (Apache 2.0). Not made, reviewed or endorsed by Meta. <span class="file">licenses/CHANGES.md</span> says what was changed.</li>
-    <li>Meta's Usage Policy applies to how you use it, and Muse Glimmer is not intended for anyone under 18: <span class="file">licenses/USAGE_POLICY.md</span>.</li>
-    <li>The model card is <span class="file">MODEL_CARD.md</span>. The files come from <span class="file">{{REPO}}</span> at commit <span class="file">{{COMMIT_SHORT}}</span>, and <span class="file">PROVENANCE.json</span> lists where every file came from.</li>
+{{ABOUT_HTML}}
     <li>The runtime is llama.cpp {{RUNTIME}} (MIT), unchanged: <span class="file">licenses/llama.cpp-LICENSE.txt</span>.</li>
-    <li>The model's eval, and Try it live while a demo runs, are on its page: <a href="{{PAGE_URL}}">{{PAGE_URL}}</a>.</li>
-    <li>A drive that arrived broken, or a file that doesn't match its checksum? {{CONTACT_HTML}} for a replacement or a refund.</li>
+{{ABOUT_MORE_HTML}}
   </ul>
 
   <footer>Drive image {{IMAGE_VERSION}}.</footer>

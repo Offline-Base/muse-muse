@@ -17,6 +17,8 @@ interface Scenario {
   verdict?: "yes" | "partly" | "no";
   /** Polls until Muse Code finishes, per run. Infinity never finishes. */
   musePolls?: number;
+  /** Polls per run, by the run's order in the build (first run first). Falls back to musePolls. */
+  musePollsByRun?: number[];
   museExit?: number;
   /** One entry per verify run: did it pass, and which steps were ok. Last entry repeats. */
   verifies?: Array<{ passed: boolean; steps?: Record<string, boolean>; timeout?: boolean }>;
@@ -46,8 +48,22 @@ interface Scenario {
   bridge?: boolean;
   provePlanThrows?: boolean;
   proveStartThrows?: boolean;
+  /** What liveCheckStep answers (ENGINE_LIVE_SMOKE). Defaults to a pass. */
+  liveCheck?: { ok: boolean; reason?: string };
+  /** Wave 3, unit 14: an enabled cap has a step after deploy (capsShipping in lib/caps/ship.ts). Off by default. */
+  capsShipping?: boolean;
+  /** The engine's round plan briefStep and loadRefineStep return. */
+  plan?: { buildMs: number; fixMs: number; verifyMs: number; wallMs: number | null; milestones: Array<{ title: string }> };
+  /** How far each named step moves the fake clock (Date.now), for the build's wall. Unset, time stands still. */
+  advance?: Partial<Record<"previewStep" | "collectVerifyStep" | "judgeStep", number>>;
   /** PLAN_ART's step: settles once the build registers ("late"), never ("hangs"), throws, or answers at once (the default). */
   art?: "late" | "hangs" | "throws";
+}
+
+/** The fake clock the workflow reads with Date.now while a scenario sets `advance`. */
+let clock = 0;
+function tick(step: "previewStep" | "collectVerifyStep" | "judgeStep") {
+  clock += scenario.advance?.[step] ?? 0;
 }
 
 let scenario: Scenario = {};
@@ -59,6 +75,7 @@ let slept: unknown[] = [];
 let verifyRuns = 0;
 let musePolled = 0;
 let polledTotal = 0;
+let museRuns = 0;
 
 function record(step: string, ...args: unknown[]) {
   calls.push({ step, args });
@@ -93,6 +110,7 @@ const fakeSteps = {
       name: "Shelf Scout",
       tagline: "Find the book you saw",
       model: "muse-spark-1.3",
+      ...(scenario.plan ? { plan: scenario.plan } : {}),
     };
   },
   createProductStep: async (buildId: string) => {
@@ -111,6 +129,7 @@ const fakeSteps = {
   startMuseStep: async (input: { round: number }) => {
     record("startMuseStep", input);
     musePolled = 0;
+    museRuns += 1;
     return { cmdId: `cmd-${input.round}`, logPath: `/log/${input.round}`, ...(scenario.bridge ? { engine: "serve" as const } : {}) };
   },
   museRoundStep: async (buildId: string, round: number | null) => {
@@ -121,7 +140,7 @@ const fakeSteps = {
     record("pollMuseStep", input);
     musePolled += 1;
     polledTotal += 1;
-    const done = musePolled >= (scenario.musePolls ?? 2);
+    const done = musePolled >= (scenario.musePollsByRun?.[museRuns - 1] ?? scenario.musePolls ?? 2);
     const usageRecorded = Boolean(input.usageRecorded) || musePolled === scenario.usageAtPoll;
     const announced = [...(input.announced ?? []), `reminder:${musePolled}`];
     // Only the first poll reads run.usage here; the later ones say nothing.
@@ -141,6 +160,7 @@ const fakeSteps = {
   killStep: async (...args: unknown[]) => record("killStep", ...args),
   previewStep: async (...args: unknown[]) => {
     record("previewStep", ...args);
+    tick("previewStep");
     if (scenario.previewThrows) throw new Error("Preview did not answer 200 on port 3000 (last status 500).");
     return "https://sb-1.vercel.run";
   },
@@ -160,6 +180,7 @@ const fakeSteps = {
   },
   collectVerifyStep: async (input: { round: number }) => {
     record("collectVerifyStep", input);
+    tick("collectVerifyStep");
     const v = currentVerify();
     const all = Object.fromEntries(["typecheck", "build", "start", "console", "smoke", "manifest"].map((n) => [n, v.passed]));
     const steps = Object.entries(v.steps ?? all).map(([name, ok]) => ({ name, ok }));
@@ -171,6 +192,7 @@ const fakeSteps = {
   },
   judgeStep: async (input: unknown) => {
     record("judgeStep", input);
+    tick("judgeStep");
     if (scenario.judgeThrows) throw new Error('Step "judgeStep" failed after 1 retry: judge_verdict: no valid reply');
     const pass = scenario.judgePass ?? true;
     return { pass, blocking: pass ? false : (scenario.judgeBlocking ?? true) };
@@ -215,12 +237,25 @@ const fakeSteps = {
       sessionId: "sess-1",
       model: "muse-spark-1.3",
       refineIndex: 1,
+      ...(scenario.plan ? { plan: { ...scenario.plan, milestones: [] } } : {}),
     };
   },
   reopenStep: async (input: unknown) => {
     record("reopenStep", input);
     return { promptFile: "refine-1.md", images: [] };
   },
+  // Wave 3, unit 2: milestones and the live check.
+  writeMilestonePromptStep: async (input: { index: number }) => {
+    record("writeMilestonePromptStep", input);
+    return { promptFile: `milestone-${input.index}.md` };
+  },
+  milestoneStep: async (...args: unknown[]) => record("milestoneStep", ...args),
+  liveCheckStep: async (input: unknown) => {
+    record("liveCheckStep", input);
+    return scenario.liveCheck ?? { ok: true };
+  },
+  // Wave 3, unit 14: what a cap makes from the live link.
+  capsShipStep: async (input: unknown) => record("capsShipStep", input),
 };
 
 function currentVerify() {
@@ -239,6 +274,7 @@ function reset(next: Scenario) {
   verifyRuns = 0;
   musePolled = 0;
   polledTotal = 0;
+  museRuns = 0;
   releaseArt = null;
   slept = [];
   if (next.steering) process.env.MUSE_ENGINE = "serve";
@@ -278,6 +314,8 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
         },
       },
     });
+    // Wave 3, unit 14: whether an enabled cap has a step after deploy, by scenario.
+    mock.module(new URL("../../caps/ship.ts", import.meta.url).href, { namedExports: { CAPS_SHIPPING: ["extension"], capsShipping: () => scenario.capsShipping ?? false } });
     mock.module("workflow", {
       namedExports: {
         sleep: async (d: unknown) => {
@@ -931,5 +969,206 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
     assert.equal(named("previewStep").length, 0);
     assert.equal(named("cleanupStep").length, 1);
     assert.deepEqual(named("failStep")[0]!.args[0], { buildId: "r10", productId: null, message: "Stopped by you. The live version was kept." });
+  });
+});
+
+describe("engine (docs/CAPABILITIES.md, section 8)", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
+  const ENGINE = ["ENGINE_CHECK_ON_TIMEOUT", "ENGINE_ROUND_SCALING", "ENGINE_MILESTONES", "ENGINE_LIVE_SMOKE"] as const;
+  const saved = Object.fromEntries(ENGINE.map((k) => [k, process.env[k]]));
+  const flags = (on: Partial<Record<(typeof ENGINE)[number], string>>) => {
+    for (const k of ENGINE) delete process.env[k];
+    Object.assign(process.env, on);
+  };
+  const MIN = 60_000;
+  const plan = (over: Partial<NonNullable<Scenario["plan"]>> = {}) => ({ buildMs: 35 * MIN, fixMs: 15 * MIN, verifyMs: 8 * MIN, wallMs: 90 * MIN, milestones: [], ...over });
+  const logs = () => named("emitStep").map((c) => (c.args[1] as { type: string; text?: string })).filter((b) => b.type === "log").map((b) => b.text);
+  const starts = () => named("startMuseStep").map((c) => c.args[0] as { round: number; promptFile: string; capMs?: number; images: string[] });
+
+  before(async () => {
+    wf ??= await import("../workflow");
+  });
+  after(() => {
+    for (const [k, v] of Object.entries(saved)) v === undefined ? delete process.env[k] : (process.env[k] = v);
+  });
+
+  it("checks a first round that hit its cap and ships it after a fix round (ENGINE_CHECK_ON_TIMEOUT)", async () => {
+    flags({ ENGINE_CHECK_ON_TIMEOUT: "1" });
+    reset({ musePollsByRun: [Infinity, 2], verifies: [{ passed: false }, { passed: true }] });
+    assert.deepEqual(await wf.buildProduct({ buildId: "t1" }), { status: "live" });
+    assert.equal(named("killStep").length, 1, "the capped run was killed");
+    assert.ok(logs().includes("Muse Code was stopped after 25 minutes."));
+    assert.ok(logs().includes("Muse Code was stopped at its time limit. Checking what it built."));
+    assert.ok(!logs().some((t) => t?.startsWith("Muse Code ended with an error")), "a capped run isn't reported as an error");
+    assert.deepEqual(starts().map((r) => [r.round, r.promptFile]), [[0, "brief.md"], [1, "fix-1.md"]]);
+    assert.equal(named("previewStep").length, 1);
+    assert.equal(named("failStep").length, 0);
+    // No plan: the rounds keep today's caps and ask for no session time of their own.
+    assert.ok(starts().every((r) => !("capMs" in r)));
+  });
+
+  it("still fails a first round at its cap with the flag off, naming the scaled cap", async () => {
+    flags({ ENGINE_ROUND_SCALING: "1" });
+    reset({ musePolls: Infinity, plan: plan() });
+    assert.deepEqual(await wf.buildProduct({ buildId: "t2" }), { status: "failed" });
+    assert.match((named("failStep")[0]!.args[0] as { message: string }).message, /past its 35-minute limit/);
+    assert.equal(named("collectVerifyStep").length, 0);
+    assert.equal(starts()[0]!.capMs, 35 * MIN, "a scaled round asks for its session time");
+  });
+
+  it("keeps the live version when a change hits its cap, even with ENGINE_CHECK_ON_TIMEOUT", async () => {
+    // The judge sees the product's brief, not the change, so a half-made change could pass and replace what is live.
+    flags({ ENGINE_CHECK_ON_TIMEOUT: "1" });
+    reset({ head: { kind: "refine", status: "queued", productId: "prod-1" }, musePollsByRun: [Infinity], verifies: [{ passed: true }] });
+    assert.deepEqual(await wf.refineProduct({ buildId: "t3" }), { status: "failed" });
+    assert.match((named("failStep")[0]!.args[0] as { message: string }).message, /past its 25-minute limit and was stopped\. The live version was kept\./);
+    assert.equal(named("collectVerifyStep").length, 0);
+    assert.equal(named("judgeStep").length, 0);
+    assert.equal(named("registerStep").length, 0, "nothing shipped");
+    assert.ok(!logs().includes("Muse Code was stopped at its time limit. Checking what it built."));
+  });
+
+  it("builds milestones in chained rounds with strict checks between, then numbers fix rounds after them", async () => {
+    flags({ ENGINE_MILESTONES: "1" });
+    const milestones = [{ title: "Play one level" }, { title: "Level maker" }, { title: "Solver hints" }];
+    reset({ plan: plan({ milestones }), verifies: [{ passed: false }, { passed: true }, { passed: false }, { passed: true }] });
+    assert.deepEqual(await wf.buildProduct({ buildId: "t4" }), { status: "live" });
+    assert.deepEqual(starts().map((r) => [r.round, r.promptFile]), [[0, "brief.md"], [1, "milestone-2.md"], [2, "milestone-3.md"], [3, "fix-1.md"]]);
+    assert.deepEqual(named("writeMilestonePromptStep").map((c) => (c.args[0] as { index: number; verifiedRound: number; of: number })).map((m) => [m.index, m.of, m.verifiedRound]), [[2, 3, 0], [3, 3, 1]]);
+    // Milestone checks are strict and never judged; the judge sees only the checks after the last milestone.
+    const verifyEnvs = named("startTaskStep").filter((c) => c.args[1] === "verify").map((c) => c.args[2]);
+    assert.deepEqual(verifyEnvs.slice(0, 2), [undefined, undefined]);
+    assert.deepEqual(named("collectVerifyStep").map((c) => (c.args[0] as { round: number }).round), [0, 1, 2, 3]);
+    assert.deepEqual(named("judgeStep").map((c) => (c.args[0] as { round: number }).round), [3]);
+    assert.deepEqual(named("writeFixPromptStep").map((c) => c.args[0]), [{ buildId: "t4", sandboxName: "product-shelf-scout", fix: 1, verifiedRound: 2 }]);
+    const states = named("milestoneStep").map((c) => { const m = c.args[1] as { index: number; state: string }; return `${m.index}:${m.state}`; });
+    assert.deepEqual(states, ["1:building", "1:failed", "2:building", "2:passed", "3:building", "3:passed"]);
+    assert.ok(statuses().includes("verifying"));
+  });
+
+  it("keeps milestones plus fix rounds under the refinement stride", async () => {
+    flags({ ENGINE_MILESTONES: "1" });
+    process.env.MAX_FIX_ROUNDS = "9";
+    try {
+      const milestones = [{ title: "One" }, { title: "Two" }, { title: "Three" }];
+      reset({ plan: plan({ milestones, wallMs: 10_000 * MIN }), verifies: [{ passed: true }, { passed: true }, { passed: false }] });
+      assert.deepEqual(await wf.buildProduct({ buildId: "t5" }), { status: "failed" });
+      const rounds = starts().map((r) => r.round);
+      assert.equal(Math.max(...rounds), 9, "the last fix round is round 9, under REFINE_ROUND_STRIDE (10)");
+      assert.equal(named("writeFixPromptStep").length, 7);
+    } finally {
+      delete process.env.MAX_FIX_ROUNDS;
+    }
+  });
+
+  it("skips milestones and fix rounds that wouldn't fit before the build's wall, and checks what was built", async () => {
+    flags({ ENGINE_MILESTONES: "1" });
+    const milestones = [{ title: "One" }, { title: "Two" }];
+    reset({ plan: plan({ milestones, wallMs: 10 * MIN }), verifies: [{ passed: false }, { passed: false }] });
+    assert.deepEqual(await wf.buildProduct({ buildId: "t6" }), { status: "failed" });
+    assert.deepEqual(starts().map((r) => r.promptFile), ["brief.md"], "no milestone or fix round started");
+    assert.ok(logs().some((t) => t?.startsWith("The build is near its time limit, so milestone 2 of 2")));
+    assert.ok(logs().includes("The build is near its time limit, so no more fix rounds run."));
+    // With no fix round to follow, the last check ran in warn mode, as a build's last round does.
+    const verifyEnvs = named("startTaskStep").filter((c) => c.args[1] === "verify").map((c) => c.args[2]);
+    assert.deepEqual(verifyEnvs, [undefined, { MUSEMUSE_SCREEN_CHECK: "warn" }]);
+    const states = named("milestoneStep").map((c) => { const m = c.args[1] as { index: number; state: string }; return `${m.index}:${m.state}`; });
+    assert.deepEqual(states, ["1:building", "1:failed", "2:skipped", "1:failed"]);
+  });
+
+  it("never starts a fix round that no longer fits once the verify and the judge have run, so the wall holds", async () => {
+    flags({ ENGINE_ROUND_SCALING: "1" });
+    // The review's case: a 15-minute fix and an 8-minute verify, the room check near minute 66, and a verify plus a slow
+    // judge that take 12 minutes. A full fix round and its verify would end past minute 90.
+    const real = Date.now;
+    clock = real();
+    Date.now = () => clock;
+    try {
+      // The verify passes and the judge, which takes 4 minutes, fails it, so a fix round would come next.
+      reset({ plan: plan(), verifies: [{ passed: true }, { passed: true }], judgePass: false, judgeBlocking: true, advance: { previewStep: 66 * MIN, collectVerifyStep: 8 * MIN, judgeStep: 4 * MIN } });
+      assert.deepEqual(await wf.buildProduct({ buildId: "t8" }), { status: "failed" });
+      assert.deepEqual(starts().map((r) => r.promptFile), ["brief.md"], "no fix round started past the wall");
+      assert.ok(logs().includes("The build is near its time limit, so no more fix rounds run."));
+      assert.equal(named("collectVerifyStep").length, 1);
+    } finally {
+      Date.now = real;
+    }
+  });
+
+  it("starts a fix round that fits, cut to what's left before the wall after its verify", async () => {
+    flags({ ENGINE_ROUND_SCALING: "1" });
+    const real = Date.now;
+    clock = real();
+    Date.now = () => clock;
+    try {
+      reset({ plan: plan(), verifies: [{ passed: false }, { passed: true }], advance: { previewStep: 50 * MIN, collectVerifyStep: 8 * MIN } });
+      assert.deepEqual(await wf.buildProduct({ buildId: "t9" }), { status: "live" });
+      const fix = starts().find((r) => r.promptFile === "fix-1.md");
+      // At minute 58: 90 - 58 - 8 (its verify) - 3 (its judge) leaves 21, so the 15-minute cap holds.
+      assert.equal(fix?.capMs, 15 * MIN);
+    } finally {
+      Date.now = real;
+    }
+  });
+
+  it("ships as partial, saying so, when the live link fails its check (ENGINE_LIVE_SMOKE)", async () => {
+    flags({ ENGINE_LIVE_SMOKE: "1" });
+    reset({ liveCheck: { ok: false, reason: "the page answered HTTP 500" } });
+    assert.deepEqual(await wf.buildProduct({ buildId: "t7" }), { status: "partial" });
+    assert.deepEqual(named("liveCheckStep").map((c) => c.args[0]), [{ buildId: "t7", sandboxName: "product-shelf-scout", url: "https://musemuse-shelf-scout.vercel.app" }]);
+    assert.equal((named("registerStep")[0]!.args[0] as { status: string }).status, "partial");
+    const end = named("setStatusStep").at(-1)!.args[2] as { message: string };
+    assert.equal(end.message, "Shipped as partial at https://musemuse-shelf-scout.vercel.app. It passed on the build machine, but failed on its live link: the page answered HTTP 500");
+    // The check runs after the deploy and before register.
+    const order = calls.map((c) => c.step);
+    assert.ok(order.indexOf("pollDeployStep") < order.indexOf("liveCheckStep") && order.indexOf("liveCheckStep") < order.indexOf("registerStep"));
+  });
+
+  it("ships as live when the live link passes, and skips the check when publishing is off", async () => {
+    flags({ ENGINE_LIVE_SMOKE: "1" });
+    reset({});
+    assert.deepEqual(await wf.buildProduct({ buildId: "t8" }), { status: "live" });
+    assert.equal(named("liveCheckStep").length, 1);
+    reset({ publish: false });
+    assert.deepEqual(await wf.buildProduct({ buildId: "t9" }), { status: "live" });
+    assert.equal(named("liveCheckStep").length, 0);
+  });
+
+  it("takes exactly today's steps with every engine flag off", async () => {
+    flags({});
+    reset({ verifies: [{ passed: false }, { passed: true }] });
+    assert.deepEqual(await wf.buildProduct({ buildId: "t10" }), { status: "live" });
+    assert.equal(named("liveCheckStep").length + named("milestoneStep").length + named("writeMilestonePromptStep").length + named("capsShipStep").length, 0);
+    assert.ok(starts().every((r) => !("capMs" in r)));
+  });
+});
+
+describe("a cap's step after deploy (docs/CAPABILITIES.md, section 20)", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
+  before(async () => {
+    wf ??= await import("../workflow");
+  });
+
+  it("runs after the deploy and the live check and before register, with the live link, when an enabled cap ships", async () => {
+    reset({ capsShipping: true });
+    assert.deepEqual(await wf.buildProduct({ buildId: "u1" }), { status: "live" });
+    assert.deepEqual(named("capsShipStep").map((c) => c.args[0]), [
+      { buildId: "u1", productId: "prod-1", sandboxName: "product-shelf-scout", liveUrl: "https://musemuse-shelf-scout.vercel.app" },
+    ]);
+    const order = calls.map((c) => c.step);
+    assert.ok(order.indexOf("pollDeployStep") < order.indexOf("capsShipStep") && order.indexOf("capsShipStep") < order.indexOf("registerStep"));
+  });
+
+  it("isn't a step at all when no enabled cap ships, or when publishing is off", async () => {
+    reset({});
+    await wf.buildProduct({ buildId: "u2" });
+    assert.equal(named("capsShipStep").length, 0);
+    reset({ capsShipping: true, publish: false });
+    await wf.buildProduct({ buildId: "u3" });
+    assert.equal(named("capsShipStep").length, 0);
+  });
+
+  it("packages a refinement again from its live link", async () => {
+    reset({ capsShipping: true, head: { kind: "refine", status: "queued", productId: "prod-1" } });
+    assert.deepEqual(await wf.refineProduct({ buildId: "r1" }), { status: "live" });
+    assert.equal(named("capsShipStep").length, 1);
   });
 });

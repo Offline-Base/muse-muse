@@ -1,0 +1,13 @@
+[
+  "lib/platform/connect.ts",
+  "lib/platform/fetch-public.ts",
+  "lib/platform/secrets.ts",
+  "lib/platform/send.ts",
+  "components/platform/KeySettings.tsx",
+  "components/platform/ConfirmSend.tsx",
+  "app/api/musemuse/connect-keys/route.ts",
+  "app/api/musemuse/connect-send/route.ts",
+  "tests/caps/connect.ts",
+  "scripts/caps/connect.mjs",
+  ".agents/skills/muse-connect/SKILL.md"
+]

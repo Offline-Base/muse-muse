@@ -39,6 +39,13 @@ foreach ($line in (Get-Content -LiteralPath (Join-Path $Support 'model.tsv') -En
 }
 $slug = if ($model['slug']) { $model['slug'] } else { 'model' }
 $page = if ($model['page']) { $model['page'] } else { "the model's page on the Muse Muse website" }
+# >>> adapter
+# A model fine-tuned on a board is its base build with a LoRA adapter on top, as the board ran it (support\model.tsv).
+$adapter = $model['adapter']
+if ($adapter -and -not (Test-Path -LiteralPath (Join-Path $Drive "model\$adapter"))) {
+  Finish "The adapter $adapter is missing from this drive. Run Verify (Windows).cmd to check its files."
+}
+# <<< adapter
 Write-Host "$($model['title']), from a Muse Muse flash drive."
 Write-Host ''
 
@@ -168,6 +175,16 @@ if ($want -and (Test-Path -LiteralPath $copied) -and (Test-Path -LiteralPath $ma
         $from = Join-Path $Drive "model\$small"
         if (Test-Path -LiteralPath $from) { Copy-Item -LiteralPath $from -Destination (Join-Path $copy 'model') }
       }
+# >>> adapter
+      if ($adapter) {
+        # It goes with the build. A copy that doesn't match its checksum is deleted, and the drive's own is used.
+        $adapterCopy = Join-Path $copy "model\$adapter"
+        Copy-Item -LiteralPath (Join-Path $Drive "model\$adapter") -Destination $adapterCopy
+        if ((Get-FileHash -Algorithm SHA256 -LiteralPath $adapterCopy).Hash.ToLowerInvariant() -ne (Sum-Of "model/$adapter")) {
+          Remove-Item -LiteralPath $adapterCopy -Force
+        }
+      }
+# <<< adapter
       # robocopy shows how far a big copy has got. Its exit codes under 8 mean the copy worked.
       & robocopy.exe (Join-Path $Drive 'model') (Join-Path $copy 'model') $file.name /J /NJH /NJS /NDL /NC /NS | Out-Host
       if ($LASTEXITCODE -ge 8) { throw 'robocopy failed' }
@@ -214,6 +231,14 @@ function Start-Server([string]$Runtime) {
     # A model trained before it learned to open its answer itself needs the template that opens it.
     $list += @('--chat-template-file', "`"$tuned`"", '--skip-chat-parsing', '--reasoning', 'off')
   }
+# >>> adapter
+  if ($adapter) {
+    # The copy's adapter when the copy has one, else the drive's.
+    $lora = Join-Path $runDir "model\$adapter"
+    if (-not (Test-Path -LiteralPath $lora)) { $lora = Join-Path $Drive "model\$adapter" }
+    $list += @('--lora', "`"$lora`"")
+  }
+# <<< adapter
   return Start-Process -FilePath $exe -ArgumentList $list -NoNewWindow -PassThru
 }
 

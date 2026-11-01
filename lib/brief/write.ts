@@ -8,6 +8,7 @@ import { usageCost } from "@/lib/meta/pricing";
 import { applyTargets, targetProblems } from "@/lib/native/targets";
 import { briefInstructions, briefRequestText, rebuildRequestText } from "@/lib/prompts/brief";
 import { putFile } from "@/lib/storage";
+import { GUEST_WRITER_RULE, type BriefTier } from "@/lib/trust/tiers";
 import type { ModelUsage, Reference, RebuildTarget } from "@/lib/types";
 
 /**
@@ -21,6 +22,11 @@ export interface BriefInput {
   rebuildOf?: RebuildTarget | null;
   /** Where the person picked for it to run (builds.requested_targets). Empty or missing lets the writer choose. */
   requestedTargets?: readonly TargetId[] | null;
+  /**
+   * Wave 3, unit 1: who is building (briefTierFor in lib/trust/tiers.ts), set only while TRUST_SIGNED_IN_CAPS is on. Its
+   * caps replace env.enabledCaps, and a guest gets the guest rule. Missing leaves the writer as it is today.
+   */
+  builder?: BriefTier | null;
 }
 
 export interface BriefResult {
@@ -50,6 +56,8 @@ export async function writeBrief(input: BriefInput): Promise<BriefResult> {
   const model = env.briefModel;
   const enabled = env.enabledTargets;
   const personalTools = env.composioPersonalEnabled;
+  const caps = input.builder?.caps ?? env.enabledCaps;
+  const writer = input.builder ? { caps, builderRule: input.builder.guest ? GUEST_WRITER_RULE : null } : {};
   // A pick whose flag went off after it was made counts as never made.
   const requested = enabled.length ? (input.requestedTargets ?? []).filter((t) => t === "web" || enabled.includes(t)) : [];
 
@@ -64,10 +72,11 @@ export async function writeBrief(input: BriefInput): Promise<BriefResult> {
 
   const result = await respondStructured({
     model,
-    instructions: briefInstructions({ museAppLook: env.museAppLook }),
+    instructions: briefInstructions({ ...writer, museAppLook: env.museAppLook }),
     content,
     sources: prepared.sources,
-    schema: newBriefSchemaFor({ gadgets: env.gadgetsEnabled, targets: enabled, personalTools, museAppLook: env.museAppLook }),
+    // With no targets, caps, milestones or MUSE_APP_LOOK this is NewBriefSchema or NewBriefSchemaNoGadget, as it always was.
+    schema: newBriefSchemaFor({ gadgets: env.gadgetsEnabled, targets: enabled, personalTools, caps, milestones: env.engineMilestones, museAppLook: env.museAppLook }),
     schemaName: "muse_brief",
     effort: "medium",
     normalize: (raw) => normalizeRawBrief(raw, references),

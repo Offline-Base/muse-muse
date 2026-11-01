@@ -29,6 +29,7 @@ import {
   saveToolSession,
   toolsSpendToday,
 } from "@/lib/tools/store";
+import { trustCheck, trustGatewayDeps } from "@/lib/trust/gateway";
 import { platformSpendToday, recordUsage, tokenSpendToday } from "@/lib/usage";
 
 /** One client per instance, built on first use, so the SDK only loads when a live tool runs. */
@@ -41,9 +42,17 @@ function composio(): ComposioApi | null {
 
 /** The real wiring: Postgres, the platform's Composio key and the flags, read per request. */
 export function toolsDeps(): ToolsDeps {
+  // Wave 3, unit 1 (docs/CAPABILITIES.md, section 7): only with TRUST_REPORTS or TRUST_SIGNED_IN_CAPS on.
+  const trust = trustGatewayDeps();
   return {
+    ...(trust ? { trustCheck: (token: Parameters<NonNullable<ToolsDeps["trustCheck"]>>[0]) => trustCheck(token, trust) } : {}),
     agentsEnabled: env.agentsEnabled,
     personalEnabled: env.composioPersonalEnabled,
+    // Wave 3, unit 3: the owner pass for products that save data. False with the data cap off.
+    // Wave 3, unit 4: and for products that keep files, while the files cap is served.
+    // Unit 9 (15b): and for products that run Muse Code sessions, which are owner-only. False with MUSE_CODE_ENABLED off.
+    // Unit 13: and for board tools, which only the owner reaches unless the owner opens the board to visitors.
+    ownerPassForCaps: env.servedCaps.includes("data") || env.servedCaps.includes("files") || (env.servedCaps.includes("code") && env.museCodeEnabled) || (env.servedCaps.includes("hardware") && (env.hardwareBoardToolsUsable || env.driveToolsUsable)),
     findToken,
     productStatus: productStatusById,
     productInfo,

@@ -3,7 +3,8 @@
  * live build publishes one, with this site's own env:
  *
  *   publishImportedProduct: startDeployStep (mints the live token, deploys the product's sandbox with GATEWAY_URL and
- *                           that token) -> poll until READY -> save the link -> deploy event -> hibernate the sandbox
+ *                           that token) -> poll until READY -> save the link -> deploy event -> the caps' step after
+ *                           deploy, when one is enabled -> hibernate the sandbox
  *                           unless a build is using it; or, when it can't publish, hibernate and then say why
  *
  * The deploy steps are the build workflow's own (lib/pipeline/build-steps.ts), so an imported product gets the same
@@ -14,7 +15,9 @@
  * call it directly.
  */
 import { sleep } from "workflow";
-import { emitStep, pollDeployStep, startDeployStep } from "@/lib/pipeline/build-steps";
+import { capsShipping } from "@/lib/caps/ship";
+import { env } from "@/lib/env";
+import { capsShipStep, emitStep, pollDeployStep, startDeployStep } from "@/lib/pipeline/build-steps";
 import { BuildStop, failureMessage, pollTimedOut } from "@/lib/pipeline/logic";
 import { stepTimeoutMs } from "@/lib/pipeline/steps";
 import { hibernateIdleStep, importFailedStep, importLiveStep } from "@/lib/promote/steps";
@@ -57,6 +60,9 @@ export async function publishImportedProduct(input: PublishImportInput): Promise
     await importLiveStep({ productId, liveUrl: url, projectId: deploy.projectId, liveTokenId: deploy.liveTokenId });
     liveUrl = url;
     await emitStep(buildId, { type: "deploy", url });
+    // Wave 3 (docs/CAPABILITIES.md, 12a): what a cap starts from the live link, as a build's deploy does, while the sandbox
+    // is still awake. No step with every flag off. liveUrl is set, so a failure here leaves the product published.
+    if (capsShipping(env.enabledCaps)) await capsShipStep({ buildId, productId, sandboxName, liveUrl: url });
   } catch (err) {
     if (!liveUrl) failure = failureMessage("deploy", err);
   }

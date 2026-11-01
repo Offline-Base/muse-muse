@@ -42,6 +42,11 @@ export interface DecisionModel {
   tuned: DecisionSide;
   /** True when the job has a public result page (hasResults in lib/train/store.ts), so anyone may try or call it. */
   public: boolean;
+  /**
+   * Wave 3, unit 11: the product this model was privately trained for ("Train on my data"). It has no public page, and only
+   * that product's token may call it.
+   */
+  productId?: string;
   /** Rows its dataset trained on, for the wording ("trained on 168 of your examples"). */
   trainRows: number;
   /** Its scores on the held-out test rows, when it was scored: tuned's and base Glimmer's. */

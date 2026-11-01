@@ -1,0 +1,10 @@
+[
+  "getOrCreate",
+  "update: tags",
+  "update: networkPolicy",
+  "run: mkdir -p '/vercel/app/inspo' '/vercel/app/fixtures' '/vercel/musemuse/logs' '/vercel/musemuse/run' '/vercel/musemuse/run/by-id' '/vercel/musemuse/out' 2>/dev/null || { sudo -n mkdir -p '/vercel/app/inspo' '/vercel/app/fixtures' '/vercel/musemuse/logs' '/vercel/musemuse/run' '/vercel/musemuse/run/by-id' '/vercel/musemuse/out' && sudo -n chown \"$(id -un):$(id -gn)\" '/vercel/app/inspo' '/vercel/app/fixtures' '/vercel/musemuse/logs' '/vercel/musemuse/run' '/vercel/musemuse/run/by-id' '/vercel/musemuse/out'; }",
+  "write: /vercel/app/inspo/feeder.jpg (1000 bytes)",
+  "write: /vercel/app/fixtures/birds.jpg (1000 bytes)",
+  "write: /vercel/app/brief.md (21 bytes)",
+  "write: /vercel/app/.env.local (155 bytes)"
+]

@@ -7,13 +7,15 @@ import { AccountMenu, type AccountUser } from "@/components/shell/AccountMenu";
 import { Brand } from "@/components/shell/Brand";
 import { DISCLAIMER } from "@/components/shell/disclaimer";
 import { ShellNav } from "@/components/shell/ShellNav";
+import { TrustLinks } from "@/components/trust/TrustLinks";
 import type { LocalNavSection } from "@/lib/docs/pages";
 
 /**
  * Phones: a top bar with the brand and a menu button that opens the nav as a sheet (a modal <dialog>). The sheet
  * follows the sidebar's switch: the docs navigation on /docs/*, the platform's elsewhere.
  */
-export function MobileNavClient({ user, docsNav }: { user: AccountUser | null; docsNav: LocalNavSection[] }) {
+/** `legal` (TRUST_LEGAL_PAGES, wave 3 unit 1) adds the Terms and Privacy links under the disclaimer. */
+export function MobileNavClient({ user, docsNav, legal }: { user: AccountUser | null; docsNav: LocalNavSection[]; legal?: boolean }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const pathname = usePathname();
 
@@ -53,6 +55,7 @@ export function MobileNavClient({ user, docsNav }: { user: AccountUser | null; d
           <ShellNav docsNav={docsNav} onNavigate={close} />
           <div className="sheet-foot">
             <p className="disclaimer">{DISCLAIMER}</p>
+            {legal ? <TrustLinks onNavigate={close} /> : null}
             <AccountMenu user={user} />
           </div>
         </div>

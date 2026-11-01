@@ -1,0 +1,916 @@
+{
+  "plain": {
+    "files": {
+      "MODEL_CARD.md": {
+        "sha256": "197ae07294f7caa160970694e150b3b01cc10ffb95f0789b749e843778239b75",
+        "exec": false
+      },
+      "README.txt": {
+        "sha256": "00905d692e69c2328beac8a92cd9fc45ee636396b474c11aaa13e71d748053e6",
+        "exec": false
+      },
+      "Start (Mac).command": {
+        "sha256": "16e524a0a9f83a868727b2158d657bb008ce81c255e88593e0aa62811856b447",
+        "exec": true
+      },
+      "Start (Windows).cmd": {
+        "sha256": "28d8ccc5a847012551c1c4724e76b00251ff313ac0b83db2ee4a0bf6c1df193f",
+        "exec": false
+      },
+      "Start Here.html": {
+        "sha256": "a816f6ad19be79f7826558352b6e0e551ea484ac2f81ed541c5746ffc36e961b",
+        "exec": false
+      },
+      "Verify (Mac).command": {
+        "sha256": "7831d0aeca32fdaa0fece6696aaee96aadfad76101a23c2e8e712a9397e47f7a",
+        "exec": true
+      },
+      "Verify (Windows).cmd": {
+        "sha256": "6037b70ab05caa9aadab7331691cbe0e1ee82fc45239344da65314b2c23267e1",
+        "exec": false
+      },
+      "licenses/Apache-2.0.txt": {
+        "sha256": "e49065551eda5700d56256f82eac60489ebd030aeada92228346deb17c06bafe",
+        "exec": false
+      },
+      "licenses/CHANGES.md": {
+        "sha256": "a92fa35af5097c8afa5f1a3242a38e458992e303a38434f3ab479b93b5271a5a",
+        "exec": false
+      },
+      "licenses/LLVM-OpenMP-LICENSE.txt": {
+        "sha256": "e11c14c7aeeea41b3a0b5fc0ce8b6c2d6bcd5bee962641ffb3449890585816df",
+        "exec": false
+      },
+      "licenses/USAGE_POLICY.md": {
+        "sha256": "c4cc64f12c761e3426da6c002813d6c15d34a53fbe97d969ea30c665d17b1801",
+        "exec": false
+      },
+      "licenses/llama.cpp-LICENSE.txt": {
+        "sha256": "345385d159ccb31af655ce78503eeaed982d79ab82aff5ef33eac2cf8bfde252",
+        "exec": false
+      },
+      "model/system.txt": {
+        "sha256": "f1339340451313a55f45bed7357a12dded8b28f67b07da081199faca9e2d19ab",
+        "exec": false
+      },
+      "model/ui-config.json": {
+        "sha256": "6090fe6c4206fc96c363a9f32dbbe6ab4bf77b45653d7fc5cfa5170321fd32fd",
+        "exec": false
+      },
+      "runtime/macos-arm64/LICENSE": {
+        "sha256": "345385d159ccb31af655ce78503eeaed982d79ab82aff5ef33eac2cf8bfde252",
+        "exec": false
+      },
+      "runtime/macos-arm64/libggml-base.0.dylib": {
+        "sha256": "698b64336a15304e9538a0d2a48c62690530e9a3234bdbbc732945c92b603401",
+        "exec": false
+      },
+      "runtime/macos-arm64/libllama-server-impl.dylib": {
+        "sha256": "d9fb43177a1365550a2752dad6f65158727da479b795a5edd483e551fac9db79",
+        "exec": false
+      },
+      "runtime/macos-arm64/libllama.0.dylib": {
+        "sha256": "59905861755c8e8ddd087107461b05e795783574ba4b8eb8651ebfe8137095ee",
+        "exec": false
+      },
+      "runtime/macos-arm64/llama-server": {
+        "sha256": "ef426e1abb312ca6bdf5f43b2658fb1125ba0506240066bdb05b3f07712994de",
+        "exec": true
+      },
+      "runtime/windows-x64-cpu/LICENSE": {
+        "sha256": "345385d159ccb31af655ce78503eeaed982d79ab82aff5ef33eac2cf8bfde252",
+        "exec": false
+      },
+      "runtime/windows-x64-cpu/LICENSE-LLVM-OpenMP": {
+        "sha256": "e11c14c7aeeea41b3a0b5fc0ce8b6c2d6bcd5bee962641ffb3449890585816df",
+        "exec": false
+      },
+      "runtime/windows-x64-cpu/ggml-cpu-haswell.dll": {
+        "sha256": "e60057b6b68175cf94898e3e973a477d404ca42d522240dcd00e2aa76e7747fa",
+        "exec": false
+      },
+      "runtime/windows-x64-cpu/llama-server-impl.dll": {
+        "sha256": "637a0324e208cff026e8415e8a9d3b95ec9c84fba620786916fbbbf1ee6c5b92",
+        "exec": false
+      },
+      "runtime/windows-x64-cpu/llama-server.exe": {
+        "sha256": "b5812964fe0d86bdde8b8d5ff55836beacda5eecd12101b2b7211746a57d9b87",
+        "exec": false
+      },
+      "runtime/windows-x64-vulkan/LICENSE": {
+        "sha256": "345385d159ccb31af655ce78503eeaed982d79ab82aff5ef33eac2cf8bfde252",
+        "exec": false
+      },
+      "runtime/windows-x64-vulkan/LICENSE-LLVM-OpenMP": {
+        "sha256": "e11c14c7aeeea41b3a0b5fc0ce8b6c2d6bcd5bee962641ffb3449890585816df",
+        "exec": false
+      },
+      "runtime/windows-x64-vulkan/ggml-cpu-haswell.dll": {
+        "sha256": "e60057b6b68175cf94898e3e973a477d404ca42d522240dcd00e2aa76e7747fa",
+        "exec": false
+      },
+      "runtime/windows-x64-vulkan/ggml-vulkan.dll": {
+        "sha256": "e2f8805d640ef40b4357a6efb0c2d78b8849639345a06867f5e057aa1cbf2a1d",
+        "exec": false
+      },
+      "runtime/windows-x64-vulkan/llama-server-impl.dll": {
+        "sha256": "637a0324e208cff026e8415e8a9d3b95ec9c84fba620786916fbbbf1ee6c5b92",
+        "exec": false
+      },
+      "runtime/windows-x64-vulkan/llama-server.exe": {
+        "sha256": "b5812964fe0d86bdde8b8d5ff55836beacda5eecd12101b2b7211746a57d9b87",
+        "exec": false
+      },
+      "support/builds.tsv": {
+        "sha256": "f1048c6c3bc4c9c7a2ac9f39d00356ee62aea8be4a6e1cffdafb00ec270f2f0b",
+        "exec": false
+      },
+      "support/files.tsv": {
+        "sha256": "b1d4b5558d55ce5b69777cc842cceffc1792f9f0c855ff15aca1a4d0b8b4cd42",
+        "exec": false
+      },
+      "support/model.tsv": {
+        "sha256": "80a41b199ad7a3fe08e0488abe0c7e27ce0e398b768050b7ca352dce460fbccd",
+        "exec": false
+      },
+      "support/start-windows.ps1": {
+        "sha256": "653ec28fd1a40fe78809d22c524d67d0d437cd604961cb170cfda2a13fbc0f68",
+        "exec": false
+      },
+      "support/verify-windows.ps1": {
+        "sha256": "3657f8637615a047f255be15b4ac1349b48f82f52c9ef6105d165b84ae1ecc0d",
+        "exec": false
+      }
+    },
+    "sources": [
+      {
+        "path": "runtime/macos-arm64/",
+        "url": "https://github.com/ggml-org/llama.cpp/releases/download/b0001/llama-test-bin-macos-arm64.tar.gz",
+        "sha256": "9e5276fcf2fb89fdd3cec5c41648d53032188c87af04a8e76f2bd691c8ba20b4"
+      },
+      {
+        "path": "runtime/windows-x64-vulkan/",
+        "url": "https://github.com/ggml-org/llama.cpp/releases/download/b0001/llama-test-bin-win-vulkan-x64.zip",
+        "sha256": "009812131008572ad04ca011a879de5de8a04f23e2c4a8de1ea31e6212efe5b8"
+      },
+      {
+        "path": "runtime/windows-x64-cpu/",
+        "url": "https://github.com/ggml-org/llama.cpp/releases/download/b0001/llama-test-bin-win-cpu-x64.zip",
+        "sha256": "8228d2c18247363322c29b997aa2dbabb754fe1af168c7e3cdb7be82fc6c4088"
+      },
+      {
+        "path": "licenses/Apache-2.0.txt",
+        "url": "https://hub.test/meta/LICENSE",
+        "sha256": "e49065551eda5700d56256f82eac60489ebd030aeada92228346deb17c06bafe"
+      },
+      {
+        "path": "licenses/USAGE_POLICY.md",
+        "url": "https://hub.test/meta/USAGE_POLICY.md",
+        "sha256": "c4cc64f12c761e3426da6c002813d6c15d34a53fbe97d969ea30c665d17b1801"
+      },
+      {
+        "path": "MODEL_CARD.md",
+        "url": "https://huggingface.co/musemuse/muse-glimmer-30b-bakery-helper-gguf-8f1d2c3b/raw/c0ffee0000000000000000000000000000000000/README.md",
+        "sha256": "197ae07294f7caa160970694e150b3b01cc10ffb95f0789b749e843778239b75"
+      }
+    ],
+    "manifestSha256": null
+  },
+  "tuned": {
+    "files": {
+      "MODEL_CARD.md": {
+        "sha256": "197ae07294f7caa160970694e150b3b01cc10ffb95f0789b749e843778239b75",
+        "exec": false
+      },
+      "README.txt": {
+        "sha256": "00905d692e69c2328beac8a92cd9fc45ee636396b474c11aaa13e71d748053e6",
+        "exec": false
+      },
+      "Start (Mac).command": {
+        "sha256": "16e524a0a9f83a868727b2158d657bb008ce81c255e88593e0aa62811856b447",
+        "exec": true
+      },
+      "Start (Windows).cmd": {
+        "sha256": "28d8ccc5a847012551c1c4724e76b00251ff313ac0b83db2ee4a0bf6c1df193f",
+        "exec": false
+      },
+      "Start Here.html": {
+        "sha256": "78d53b1268923e378a7e8988f78b09e69bc87d18d299c4036d19a4bcb61d904a",
+        "exec": false
+      },
+      "Verify (Mac).command": {
+        "sha256": "7831d0aeca32fdaa0fece6696aaee96aadfad76101a23c2e8e712a9397e47f7a",
+        "exec": true
+      },
+      "Verify (Windows).cmd": {
+        "sha256": "6037b70ab05caa9aadab7331691cbe0e1ee82fc45239344da65314b2c23267e1",
+        "exec": false
+      },
+      "licenses/Apache-2.0.txt": {
+        "sha256": "e49065551eda5700d56256f82eac60489ebd030aeada92228346deb17c06bafe",
+        "exec": false
+      },
+      "licenses/CHANGES.md": {
+        "sha256": "a92fa35af5097c8afa5f1a3242a38e458992e303a38434f3ab479b93b5271a5a",
+        "exec": false
+      },
+      "licenses/LLVM-OpenMP-LICENSE.txt": {
+        "sha256": "e11c14c7aeeea41b3a0b5fc0ce8b6c2d6bcd5bee962641ffb3449890585816df",
+        "exec": false
+      },
+      "licenses/USAGE_POLICY.md": {
+        "sha256": "c4cc64f12c761e3426da6c002813d6c15d34a53fbe97d969ea30c665d17b1801",
+        "exec": false
+      },
+      "licenses/llama.cpp-LICENSE.txt": {
+        "sha256": "345385d159ccb31af655ce78503eeaed982d79ab82aff5ef33eac2cf8bfde252",
+        "exec": false
+      },
+      "model/system.txt": {
+        "sha256": "f1339340451313a55f45bed7357a12dded8b28f67b07da081199faca9e2d19ab",
+        "exec": false
+      },
+      "model/tuned.jinja": {
+        "sha256": "927c52f09c2091034d40fae25fd50d90637ffb42a587fb44be72c046c03bfb8e",
+        "exec": false
+      },
+      "model/ui-config.json": {
+        "sha256": "6090fe6c4206fc96c363a9f32dbbe6ab4bf77b45653d7fc5cfa5170321fd32fd",
+        "exec": false
+      },
+      "runtime/macos-arm64/LICENSE": {
+        "sha256": "345385d159ccb31af655ce78503eeaed982d79ab82aff5ef33eac2cf8bfde252",
+        "exec": false
+      },
+      "runtime/macos-arm64/libggml-base.0.dylib": {
+        "sha256": "698b64336a15304e9538a0d2a48c62690530e9a3234bdbbc732945c92b603401",
+        "exec": false
+      },
+      "runtime/macos-arm64/libllama-server-impl.dylib": {
+        "sha256": "d9fb43177a1365550a2752dad6f65158727da479b795a5edd483e551fac9db79",
+        "exec": false
+      },
+      "runtime/macos-arm64/libllama.0.dylib": {
+        "sha256": "59905861755c8e8ddd087107461b05e795783574ba4b8eb8651ebfe8137095ee",
+        "exec": false
+      },
+      "runtime/macos-arm64/llama-server": {
+        "sha256": "ef426e1abb312ca6bdf5f43b2658fb1125ba0506240066bdb05b3f07712994de",
+        "exec": true
+      },
+      "runtime/windows-x64-cpu/LICENSE": {
+        "sha256": "345385d159ccb31af655ce78503eeaed982d79ab82aff5ef33eac2cf8bfde252",
+        "exec": false
+      },
+      "runtime/windows-x64-cpu/LICENSE-LLVM-OpenMP": {
+        "sha256": "e11c14c7aeeea41b3a0b5fc0ce8b6c2d6bcd5bee962641ffb3449890585816df",
+        "exec": false
+      },
+      "runtime/windows-x64-cpu/ggml-cpu-haswell.dll": {
+        "sha256": "e60057b6b68175cf94898e3e973a477d404ca42d522240dcd00e2aa76e7747fa",
+        "exec": false
+      },
+      "runtime/windows-x64-cpu/llama-server-impl.dll": {
+        "sha256": "637a0324e208cff026e8415e8a9d3b95ec9c84fba620786916fbbbf1ee6c5b92",
+        "exec": false
+      },
+      "runtime/windows-x64-cpu/llama-server.exe": {
+        "sha256": "b5812964fe0d86bdde8b8d5ff55836beacda5eecd12101b2b7211746a57d9b87",
+        "exec": false
+      },
+      "runtime/windows-x64-vulkan/LICENSE": {
+        "sha256": "345385d159ccb31af655ce78503eeaed982d79ab82aff5ef33eac2cf8bfde252",
+        "exec": false
+      },
+      "runtime/windows-x64-vulkan/LICENSE-LLVM-OpenMP": {
+        "sha256": "e11c14c7aeeea41b3a0b5fc0ce8b6c2d6bcd5bee962641ffb3449890585816df",
+        "exec": false
+      },
+      "runtime/windows-x64-vulkan/ggml-cpu-haswell.dll": {
+        "sha256": "e60057b6b68175cf94898e3e973a477d404ca42d522240dcd00e2aa76e7747fa",
+        "exec": false
+      },
+      "runtime/windows-x64-vulkan/ggml-vulkan.dll": {
+        "sha256": "e2f8805d640ef40b4357a6efb0c2d78b8849639345a06867f5e057aa1cbf2a1d",
+        "exec": false
+      },
+      "runtime/windows-x64-vulkan/llama-server-impl.dll": {
+        "sha256": "637a0324e208cff026e8415e8a9d3b95ec9c84fba620786916fbbbf1ee6c5b92",
+        "exec": false
+      },
+      "runtime/windows-x64-vulkan/llama-server.exe": {
+        "sha256": "b5812964fe0d86bdde8b8d5ff55836beacda5eecd12101b2b7211746a57d9b87",
+        "exec": false
+      },
+      "support/builds.tsv": {
+        "sha256": "f1048c6c3bc4c9c7a2ac9f39d00356ee62aea8be4a6e1cffdafb00ec270f2f0b",
+        "exec": false
+      },
+      "support/files.tsv": {
+        "sha256": "b1d4b5558d55ce5b69777cc842cceffc1792f9f0c855ff15aca1a4d0b8b4cd42",
+        "exec": false
+      },
+      "support/model.tsv": {
+        "sha256": "80a41b199ad7a3fe08e0488abe0c7e27ce0e398b768050b7ca352dce460fbccd",
+        "exec": false
+      },
+      "support/start-windows.ps1": {
+        "sha256": "653ec28fd1a40fe78809d22c524d67d0d437cd604961cb170cfda2a13fbc0f68",
+        "exec": false
+      },
+      "support/verify-windows.ps1": {
+        "sha256": "3657f8637615a047f255be15b4ac1349b48f82f52c9ef6105d165b84ae1ecc0d",
+        "exec": false
+      }
+    },
+    "sources": [
+      {
+        "path": "runtime/macos-arm64/",
+        "url": "https://github.com/ggml-org/llama.cpp/releases/download/b0001/llama-test-bin-macos-arm64.tar.gz",
+        "sha256": "9e5276fcf2fb89fdd3cec5c41648d53032188c87af04a8e76f2bd691c8ba20b4"
+      },
+      {
+        "path": "runtime/windows-x64-vulkan/",
+        "url": "https://github.com/ggml-org/llama.cpp/releases/download/b0001/llama-test-bin-win-vulkan-x64.zip",
+        "sha256": "009812131008572ad04ca011a879de5de8a04f23e2c4a8de1ea31e6212efe5b8"
+      },
+      {
+        "path": "runtime/windows-x64-cpu/",
+        "url": "https://github.com/ggml-org/llama.cpp/releases/download/b0001/llama-test-bin-win-cpu-x64.zip",
+        "sha256": "8228d2c18247363322c29b997aa2dbabb754fe1af168c7e3cdb7be82fc6c4088"
+      },
+      {
+        "path": "licenses/Apache-2.0.txt",
+        "url": "https://hub.test/meta/LICENSE",
+        "sha256": "e49065551eda5700d56256f82eac60489ebd030aeada92228346deb17c06bafe"
+      },
+      {
+        "path": "licenses/USAGE_POLICY.md",
+        "url": "https://hub.test/meta/USAGE_POLICY.md",
+        "sha256": "c4cc64f12c761e3426da6c002813d6c15d34a53fbe97d969ea30c665d17b1801"
+      },
+      {
+        "path": "MODEL_CARD.md",
+        "url": "https://huggingface.co/musemuse/muse-glimmer-30b-bakery-helper-gguf-8f1d2c3b/raw/c0ffee0000000000000000000000000000000000/README.md",
+        "sha256": "197ae07294f7caa160970694e150b3b01cc10ffb95f0789b749e843778239b75"
+      },
+      {
+        "path": "model/tuned.jinja",
+        "url": "https://huggingface.co/musemuse/muse-glimmer-30b-bakery-helper-gguf-8f1d2c3b/raw/c0ffee0000000000000000000000000000000000/tuned.jinja",
+        "sha256": "927c52f09c2091034d40fae25fd50d90637ffb42a587fb44be72c046c03bfb8e"
+      }
+    ],
+    "manifestSha256": null
+  },
+  "escaped": {
+    "files": {
+      "MODEL_CARD.md": {
+        "sha256": "197ae07294f7caa160970694e150b3b01cc10ffb95f0789b749e843778239b75",
+        "exec": false
+      },
+      "README.txt": {
+        "sha256": "be274fd6939b87fa6eab6334bf7243a3a62162f10537c01477dac7a9a11740f6",
+        "exec": false
+      },
+      "Start (Mac).command": {
+        "sha256": "16e524a0a9f83a868727b2158d657bb008ce81c255e88593e0aa62811856b447",
+        "exec": true
+      },
+      "Start (Windows).cmd": {
+        "sha256": "28d8ccc5a847012551c1c4724e76b00251ff313ac0b83db2ee4a0bf6c1df193f",
+        "exec": false
+      },
+      "Start Here.html": {
+        "sha256": "3025b75018baac362333e173a5efa33460491c73c0106e25c11b42719f38b375",
+        "exec": false
+      },
+      "Verify (Mac).command": {
+        "sha256": "7831d0aeca32fdaa0fece6696aaee96aadfad76101a23c2e8e712a9397e47f7a",
+        "exec": true
+      },
+      "Verify (Windows).cmd": {
+        "sha256": "6037b70ab05caa9aadab7331691cbe0e1ee82fc45239344da65314b2c23267e1",
+        "exec": false
+      },
+      "licenses/Apache-2.0.txt": {
+        "sha256": "e49065551eda5700d56256f82eac60489ebd030aeada92228346deb17c06bafe",
+        "exec": false
+      },
+      "licenses/CHANGES.md": {
+        "sha256": "a92fa35af5097c8afa5f1a3242a38e458992e303a38434f3ab479b93b5271a5a",
+        "exec": false
+      },
+      "licenses/LLVM-OpenMP-LICENSE.txt": {
+        "sha256": "e11c14c7aeeea41b3a0b5fc0ce8b6c2d6bcd5bee962641ffb3449890585816df",
+        "exec": false
+      },
+      "licenses/USAGE_POLICY.md": {
+        "sha256": "c4cc64f12c761e3426da6c002813d6c15d34a53fbe97d969ea30c665d17b1801",
+        "exec": false
+      },
+      "licenses/llama.cpp-LICENSE.txt": {
+        "sha256": "345385d159ccb31af655ce78503eeaed982d79ab82aff5ef33eac2cf8bfde252",
+        "exec": false
+      },
+      "model/system.txt": {
+        "sha256": "f1339340451313a55f45bed7357a12dded8b28f67b07da081199faca9e2d19ab",
+        "exec": false
+      },
+      "model/ui-config.json": {
+        "sha256": "6090fe6c4206fc96c363a9f32dbbe6ab4bf77b45653d7fc5cfa5170321fd32fd",
+        "exec": false
+      },
+      "runtime/macos-arm64/LICENSE": {
+        "sha256": "345385d159ccb31af655ce78503eeaed982d79ab82aff5ef33eac2cf8bfde252",
+        "exec": false
+      },
+      "runtime/macos-arm64/libggml-base.0.dylib": {
+        "sha256": "698b64336a15304e9538a0d2a48c62690530e9a3234bdbbc732945c92b603401",
+        "exec": false
+      },
+      "runtime/macos-arm64/libllama-server-impl.dylib": {
+        "sha256": "d9fb43177a1365550a2752dad6f65158727da479b795a5edd483e551fac9db79",
+        "exec": false
+      },
+      "runtime/macos-arm64/libllama.0.dylib": {
+        "sha256": "59905861755c8e8ddd087107461b05e795783574ba4b8eb8651ebfe8137095ee",
+        "exec": false
+      },
+      "runtime/macos-arm64/llama-server": {
+        "sha256": "ef426e1abb312ca6bdf5f43b2658fb1125ba0506240066bdb05b3f07712994de",
+        "exec": true
+      },
+      "runtime/windows-x64-cpu/LICENSE": {
+        "sha256": "345385d159ccb31af655ce78503eeaed982d79ab82aff5ef33eac2cf8bfde252",
+        "exec": false
+      },
+      "runtime/windows-x64-cpu/LICENSE-LLVM-OpenMP": {
+        "sha256": "e11c14c7aeeea41b3a0b5fc0ce8b6c2d6bcd5bee962641ffb3449890585816df",
+        "exec": false
+      },
+      "runtime/windows-x64-cpu/ggml-cpu-haswell.dll": {
+        "sha256": "e60057b6b68175cf94898e3e973a477d404ca42d522240dcd00e2aa76e7747fa",
+        "exec": false
+      },
+      "runtime/windows-x64-cpu/llama-server-impl.dll": {
+        "sha256": "637a0324e208cff026e8415e8a9d3b95ec9c84fba620786916fbbbf1ee6c5b92",
+        "exec": false
+      },
+      "runtime/windows-x64-cpu/llama-server.exe": {
+        "sha256": "b5812964fe0d86bdde8b8d5ff55836beacda5eecd12101b2b7211746a57d9b87",
+        "exec": false
+      },
+      "runtime/windows-x64-vulkan/LICENSE": {
+        "sha256": "345385d159ccb31af655ce78503eeaed982d79ab82aff5ef33eac2cf8bfde252",
+        "exec": false
+      },
+      "runtime/windows-x64-vulkan/LICENSE-LLVM-OpenMP": {
+        "sha256": "e11c14c7aeeea41b3a0b5fc0ce8b6c2d6bcd5bee962641ffb3449890585816df",
+        "exec": false
+      },
+      "runtime/windows-x64-vulkan/ggml-cpu-haswell.dll": {
+        "sha256": "e60057b6b68175cf94898e3e973a477d404ca42d522240dcd00e2aa76e7747fa",
+        "exec": false
+      },
+      "runtime/windows-x64-vulkan/ggml-vulkan.dll": {
+        "sha256": "e2f8805d640ef40b4357a6efb0c2d78b8849639345a06867f5e057aa1cbf2a1d",
+        "exec": false
+      },
+      "runtime/windows-x64-vulkan/llama-server-impl.dll": {
+        "sha256": "637a0324e208cff026e8415e8a9d3b95ec9c84fba620786916fbbbf1ee6c5b92",
+        "exec": false
+      },
+      "runtime/windows-x64-vulkan/llama-server.exe": {
+        "sha256": "b5812964fe0d86bdde8b8d5ff55836beacda5eecd12101b2b7211746a57d9b87",
+        "exec": false
+      },
+      "support/builds.tsv": {
+        "sha256": "f1048c6c3bc4c9c7a2ac9f39d00356ee62aea8be4a6e1cffdafb00ec270f2f0b",
+        "exec": false
+      },
+      "support/files.tsv": {
+        "sha256": "b1d4b5558d55ce5b69777cc842cceffc1792f9f0c855ff15aca1a4d0b8b4cd42",
+        "exec": false
+      },
+      "support/model.tsv": {
+        "sha256": "685c412cc90db1e2aa30949d842e1f6bf24543fe140bead74819af79bead3472",
+        "exec": false
+      },
+      "support/start-windows.ps1": {
+        "sha256": "653ec28fd1a40fe78809d22c524d67d0d437cd604961cb170cfda2a13fbc0f68",
+        "exec": false
+      },
+      "support/verify-windows.ps1": {
+        "sha256": "3657f8637615a047f255be15b4ac1349b48f82f52c9ef6105d165b84ae1ecc0d",
+        "exec": false
+      }
+    },
+    "sources": [
+      {
+        "path": "runtime/macos-arm64/",
+        "url": "https://github.com/ggml-org/llama.cpp/releases/download/b0001/llama-test-bin-macos-arm64.tar.gz",
+        "sha256": "9e5276fcf2fb89fdd3cec5c41648d53032188c87af04a8e76f2bd691c8ba20b4"
+      },
+      {
+        "path": "runtime/windows-x64-vulkan/",
+        "url": "https://github.com/ggml-org/llama.cpp/releases/download/b0001/llama-test-bin-win-vulkan-x64.zip",
+        "sha256": "009812131008572ad04ca011a879de5de8a04f23e2c4a8de1ea31e6212efe5b8"
+      },
+      {
+        "path": "runtime/windows-x64-cpu/",
+        "url": "https://github.com/ggml-org/llama.cpp/releases/download/b0001/llama-test-bin-win-cpu-x64.zip",
+        "sha256": "8228d2c18247363322c29b997aa2dbabb754fe1af168c7e3cdb7be82fc6c4088"
+      },
+      {
+        "path": "licenses/Apache-2.0.txt",
+        "url": "https://hub.test/meta/LICENSE",
+        "sha256": "e49065551eda5700d56256f82eac60489ebd030aeada92228346deb17c06bafe"
+      },
+      {
+        "path": "licenses/USAGE_POLICY.md",
+        "url": "https://hub.test/meta/USAGE_POLICY.md",
+        "sha256": "c4cc64f12c761e3426da6c002813d6c15d34a53fbe97d969ea30c665d17b1801"
+      },
+      {
+        "path": "MODEL_CARD.md",
+        "url": "https://huggingface.co/musemuse/muse-glimmer-30b-bakery-helper-gguf-8f1d2c3b/raw/c0ffee0000000000000000000000000000000000/README.md",
+        "sha256": "197ae07294f7caa160970694e150b3b01cc10ffb95f0789b749e843778239b75"
+      }
+    ],
+    "manifestSha256": null
+  },
+  "contact": {
+    "files": {
+      "MODEL_CARD.md": {
+        "sha256": "197ae07294f7caa160970694e150b3b01cc10ffb95f0789b749e843778239b75",
+        "exec": false
+      },
+      "README.txt": {
+        "sha256": "99919dab12997f840d9ca1829517476bdf1fcd0e077b381b36da10f3c075710b",
+        "exec": false
+      },
+      "Start (Mac).command": {
+        "sha256": "16e524a0a9f83a868727b2158d657bb008ce81c255e88593e0aa62811856b447",
+        "exec": true
+      },
+      "Start (Windows).cmd": {
+        "sha256": "28d8ccc5a847012551c1c4724e76b00251ff313ac0b83db2ee4a0bf6c1df193f",
+        "exec": false
+      },
+      "Start Here.html": {
+        "sha256": "75e10eba72d5025dbdbbe35a42445dce131f0bba0d2677872a28c0903d83a9c3",
+        "exec": false
+      },
+      "Verify (Mac).command": {
+        "sha256": "7831d0aeca32fdaa0fece6696aaee96aadfad76101a23c2e8e712a9397e47f7a",
+        "exec": true
+      },
+      "Verify (Windows).cmd": {
+        "sha256": "6037b70ab05caa9aadab7331691cbe0e1ee82fc45239344da65314b2c23267e1",
+        "exec": false
+      },
+      "licenses/Apache-2.0.txt": {
+        "sha256": "e49065551eda5700d56256f82eac60489ebd030aeada92228346deb17c06bafe",
+        "exec": false
+      },
+      "licenses/CHANGES.md": {
+        "sha256": "a92fa35af5097c8afa5f1a3242a38e458992e303a38434f3ab479b93b5271a5a",
+        "exec": false
+      },
+      "licenses/LLVM-OpenMP-LICENSE.txt": {
+        "sha256": "e11c14c7aeeea41b3a0b5fc0ce8b6c2d6bcd5bee962641ffb3449890585816df",
+        "exec": false
+      },
+      "licenses/USAGE_POLICY.md": {
+        "sha256": "c4cc64f12c761e3426da6c002813d6c15d34a53fbe97d969ea30c665d17b1801",
+        "exec": false
+      },
+      "licenses/llama.cpp-LICENSE.txt": {
+        "sha256": "345385d159ccb31af655ce78503eeaed982d79ab82aff5ef33eac2cf8bfde252",
+        "exec": false
+      },
+      "model/system.txt": {
+        "sha256": "f1339340451313a55f45bed7357a12dded8b28f67b07da081199faca9e2d19ab",
+        "exec": false
+      },
+      "model/ui-config.json": {
+        "sha256": "6090fe6c4206fc96c363a9f32dbbe6ab4bf77b45653d7fc5cfa5170321fd32fd",
+        "exec": false
+      },
+      "runtime/macos-arm64/LICENSE": {
+        "sha256": "345385d159ccb31af655ce78503eeaed982d79ab82aff5ef33eac2cf8bfde252",
+        "exec": false
+      },
+      "runtime/macos-arm64/libggml-base.0.dylib": {
+        "sha256": "698b64336a15304e9538a0d2a48c62690530e9a3234bdbbc732945c92b603401",
+        "exec": false
+      },
+      "runtime/macos-arm64/libllama-server-impl.dylib": {
+        "sha256": "d9fb43177a1365550a2752dad6f65158727da479b795a5edd483e551fac9db79",
+        "exec": false
+      },
+      "runtime/macos-arm64/libllama.0.dylib": {
+        "sha256": "59905861755c8e8ddd087107461b05e795783574ba4b8eb8651ebfe8137095ee",
+        "exec": false
+      },
+      "runtime/macos-arm64/llama-server": {
+        "sha256": "ef426e1abb312ca6bdf5f43b2658fb1125ba0506240066bdb05b3f07712994de",
+        "exec": true
+      },
+      "runtime/windows-x64-cpu/LICENSE": {
+        "sha256": "345385d159ccb31af655ce78503eeaed982d79ab82aff5ef33eac2cf8bfde252",
+        "exec": false
+      },
+      "runtime/windows-x64-cpu/LICENSE-LLVM-OpenMP": {
+        "sha256": "e11c14c7aeeea41b3a0b5fc0ce8b6c2d6bcd5bee962641ffb3449890585816df",
+        "exec": false
+      },
+      "runtime/windows-x64-cpu/ggml-cpu-haswell.dll": {
+        "sha256": "e60057b6b68175cf94898e3e973a477d404ca42d522240dcd00e2aa76e7747fa",
+        "exec": false
+      },
+      "runtime/windows-x64-cpu/llama-server-impl.dll": {
+        "sha256": "637a0324e208cff026e8415e8a9d3b95ec9c84fba620786916fbbbf1ee6c5b92",
+        "exec": false
+      },
+      "runtime/windows-x64-cpu/llama-server.exe": {
+        "sha256": "b5812964fe0d86bdde8b8d5ff55836beacda5eecd12101b2b7211746a57d9b87",
+        "exec": false
+      },
+      "runtime/windows-x64-vulkan/LICENSE": {
+        "sha256": "345385d159ccb31af655ce78503eeaed982d79ab82aff5ef33eac2cf8bfde252",
+        "exec": false
+      },
+      "runtime/windows-x64-vulkan/LICENSE-LLVM-OpenMP": {
+        "sha256": "e11c14c7aeeea41b3a0b5fc0ce8b6c2d6bcd5bee962641ffb3449890585816df",
+        "exec": false
+      },
+      "runtime/windows-x64-vulkan/ggml-cpu-haswell.dll": {
+        "sha256": "e60057b6b68175cf94898e3e973a477d404ca42d522240dcd00e2aa76e7747fa",
+        "exec": false
+      },
+      "runtime/windows-x64-vulkan/ggml-vulkan.dll": {
+        "sha256": "e2f8805d640ef40b4357a6efb0c2d78b8849639345a06867f5e057aa1cbf2a1d",
+        "exec": false
+      },
+      "runtime/windows-x64-vulkan/llama-server-impl.dll": {
+        "sha256": "637a0324e208cff026e8415e8a9d3b95ec9c84fba620786916fbbbf1ee6c5b92",
+        "exec": false
+      },
+      "runtime/windows-x64-vulkan/llama-server.exe": {
+        "sha256": "b5812964fe0d86bdde8b8d5ff55836beacda5eecd12101b2b7211746a57d9b87",
+        "exec": false
+      },
+      "support/builds.tsv": {
+        "sha256": "f1048c6c3bc4c9c7a2ac9f39d00356ee62aea8be4a6e1cffdafb00ec270f2f0b",
+        "exec": false
+      },
+      "support/files.tsv": {
+        "sha256": "b1d4b5558d55ce5b69777cc842cceffc1792f9f0c855ff15aca1a4d0b8b4cd42",
+        "exec": false
+      },
+      "support/model.tsv": {
+        "sha256": "3bb8f30d48b3aac9a8b5785401eeb58ecb7a7fc4df87aadbbb0bd3e2346391e2",
+        "exec": false
+      },
+      "support/start-windows.ps1": {
+        "sha256": "653ec28fd1a40fe78809d22c524d67d0d437cd604961cb170cfda2a13fbc0f68",
+        "exec": false
+      },
+      "support/verify-windows.ps1": {
+        "sha256": "3657f8637615a047f255be15b4ac1349b48f82f52c9ef6105d165b84ae1ecc0d",
+        "exec": false
+      }
+    },
+    "sources": [
+      {
+        "path": "runtime/macos-arm64/",
+        "url": "https://github.com/ggml-org/llama.cpp/releases/download/b0001/llama-test-bin-macos-arm64.tar.gz",
+        "sha256": "9e5276fcf2fb89fdd3cec5c41648d53032188c87af04a8e76f2bd691c8ba20b4"
+      },
+      {
+        "path": "runtime/windows-x64-vulkan/",
+        "url": "https://github.com/ggml-org/llama.cpp/releases/download/b0001/llama-test-bin-win-vulkan-x64.zip",
+        "sha256": "009812131008572ad04ca011a879de5de8a04f23e2c4a8de1ea31e6212efe5b8"
+      },
+      {
+        "path": "runtime/windows-x64-cpu/",
+        "url": "https://github.com/ggml-org/llama.cpp/releases/download/b0001/llama-test-bin-win-cpu-x64.zip",
+        "sha256": "8228d2c18247363322c29b997aa2dbabb754fe1af168c7e3cdb7be82fc6c4088"
+      },
+      {
+        "path": "licenses/Apache-2.0.txt",
+        "url": "https://hub.test/meta/LICENSE",
+        "sha256": "e49065551eda5700d56256f82eac60489ebd030aeada92228346deb17c06bafe"
+      },
+      {
+        "path": "licenses/USAGE_POLICY.md",
+        "url": "https://hub.test/meta/USAGE_POLICY.md",
+        "sha256": "c4cc64f12c761e3426da6c002813d6c15d34a53fbe97d969ea30c665d17b1801"
+      },
+      {
+        "path": "MODEL_CARD.md",
+        "url": "https://huggingface.co/musemuse/muse-glimmer-30b-bakery-helper-gguf-8f1d2c3b/raw/c0ffee0000000000000000000000000000000000/README.md",
+        "sha256": "197ae07294f7caa160970694e150b3b01cc10ffb95f0789b749e843778239b75"
+      }
+    ],
+    "manifestSha256": null
+  },
+  "small": {
+    "files": {
+      "MODEL_CARD.md": {
+        "sha256": "197ae07294f7caa160970694e150b3b01cc10ffb95f0789b749e843778239b75",
+        "exec": false
+      },
+      "PROVENANCE.json": {
+        "sha256": "f7055bc07a138247773bcb878c5cb6f007bcc132a62a9815802d68f9e23f9a32",
+        "exec": false
+      },
+      "README.txt": {
+        "sha256": "25d991c9c566774de391dc7dede43ff8914cf6a94fc3c54ab7a904d28f5907e2",
+        "exec": false
+      },
+      "SHA256SUMS": {
+        "sha256": "eb3edfcc4091ac1d2d634bda0b53584d47248e6c94051e1de980691332d35fb0",
+        "exec": false
+      },
+      "Start (Mac).command": {
+        "sha256": "16e524a0a9f83a868727b2158d657bb008ce81c255e88593e0aa62811856b447",
+        "exec": true
+      },
+      "Start (Windows).cmd": {
+        "sha256": "28d8ccc5a847012551c1c4724e76b00251ff313ac0b83db2ee4a0bf6c1df193f",
+        "exec": false
+      },
+      "Start Here.html": {
+        "sha256": "85a66d55db4f0071117e6eb57e5ee178e92c9ecdfa7b44062b8d653c37253730",
+        "exec": false
+      },
+      "Verify (Mac).command": {
+        "sha256": "7831d0aeca32fdaa0fece6696aaee96aadfad76101a23c2e8e712a9397e47f7a",
+        "exec": true
+      },
+      "Verify (Windows).cmd": {
+        "sha256": "6037b70ab05caa9aadab7331691cbe0e1ee82fc45239344da65314b2c23267e1",
+        "exec": false
+      },
+      "licenses/Apache-2.0.txt": {
+        "sha256": "e49065551eda5700d56256f82eac60489ebd030aeada92228346deb17c06bafe",
+        "exec": false
+      },
+      "licenses/CHANGES.md": {
+        "sha256": "a92fa35af5097c8afa5f1a3242a38e458992e303a38434f3ab479b93b5271a5a",
+        "exec": false
+      },
+      "licenses/LLVM-OpenMP-LICENSE.txt": {
+        "sha256": "e11c14c7aeeea41b3a0b5fc0ce8b6c2d6bcd5bee962641ffb3449890585816df",
+        "exec": false
+      },
+      "licenses/USAGE_POLICY.md": {
+        "sha256": "c4cc64f12c761e3426da6c002813d6c15d34a53fbe97d969ea30c665d17b1801",
+        "exec": false
+      },
+      "licenses/llama.cpp-LICENSE.txt": {
+        "sha256": "345385d159ccb31af655ce78503eeaed982d79ab82aff5ef33eac2cf8bfde252",
+        "exec": false
+      },
+      "model/muse-glimmer-30b-bakery-helper-Q3_K_M.gguf": {
+        "sha256": "140de432604e5ceabceaaf5a913bfd7f401a794cf70b58f49ff25a0b9f4b6d22",
+        "exec": false
+      },
+      "model/muse-glimmer-30b-bakery-helper-Q4_K_M.gguf": {
+        "sha256": "adcfe5a97cda168cfa2fbf3442a845f69ae9b597cda82e21fe1ecb777e308097",
+        "exec": false
+      },
+      "model/muse-glimmer-30b-bakery-helper-Q6_K.gguf": {
+        "sha256": "c553efca73f268afdf342f2d06bbe15077478f963f5eac1505a125bf8b0e61f1",
+        "exec": false
+      },
+      "model/system.txt": {
+        "sha256": "f1339340451313a55f45bed7357a12dded8b28f67b07da081199faca9e2d19ab",
+        "exec": false
+      },
+      "model/ui-config.json": {
+        "sha256": "6090fe6c4206fc96c363a9f32dbbe6ab4bf77b45653d7fc5cfa5170321fd32fd",
+        "exec": false
+      },
+      "runtime/macos-arm64/LICENSE": {
+        "sha256": "345385d159ccb31af655ce78503eeaed982d79ab82aff5ef33eac2cf8bfde252",
+        "exec": false
+      },
+      "runtime/macos-arm64/libggml-base.0.dylib": {
+        "sha256": "698b64336a15304e9538a0d2a48c62690530e9a3234bdbbc732945c92b603401",
+        "exec": false
+      },
+      "runtime/macos-arm64/libllama-server-impl.dylib": {
+        "sha256": "d9fb43177a1365550a2752dad6f65158727da479b795a5edd483e551fac9db79",
+        "exec": false
+      },
+      "runtime/macos-arm64/libllama.0.dylib": {
+        "sha256": "59905861755c8e8ddd087107461b05e795783574ba4b8eb8651ebfe8137095ee",
+        "exec": false
+      },
+      "runtime/macos-arm64/llama-server": {
+        "sha256": "ef426e1abb312ca6bdf5f43b2658fb1125ba0506240066bdb05b3f07712994de",
+        "exec": true
+      },
+      "runtime/windows-x64-cpu/LICENSE": {
+        "sha256": "345385d159ccb31af655ce78503eeaed982d79ab82aff5ef33eac2cf8bfde252",
+        "exec": false
+      },
+      "runtime/windows-x64-cpu/LICENSE-LLVM-OpenMP": {
+        "sha256": "e11c14c7aeeea41b3a0b5fc0ce8b6c2d6bcd5bee962641ffb3449890585816df",
+        "exec": false
+      },
+      "runtime/windows-x64-cpu/ggml-cpu-haswell.dll": {
+        "sha256": "e60057b6b68175cf94898e3e973a477d404ca42d522240dcd00e2aa76e7747fa",
+        "exec": false
+      },
+      "runtime/windows-x64-cpu/llama-server-impl.dll": {
+        "sha256": "637a0324e208cff026e8415e8a9d3b95ec9c84fba620786916fbbbf1ee6c5b92",
+        "exec": false
+      },
+      "runtime/windows-x64-cpu/llama-server.exe": {
+        "sha256": "b5812964fe0d86bdde8b8d5ff55836beacda5eecd12101b2b7211746a57d9b87",
+        "exec": false
+      },
+      "runtime/windows-x64-vulkan/LICENSE": {
+        "sha256": "345385d159ccb31af655ce78503eeaed982d79ab82aff5ef33eac2cf8bfde252",
+        "exec": false
+      },
+      "runtime/windows-x64-vulkan/LICENSE-LLVM-OpenMP": {
+        "sha256": "e11c14c7aeeea41b3a0b5fc0ce8b6c2d6bcd5bee962641ffb3449890585816df",
+        "exec": false
+      },
+      "runtime/windows-x64-vulkan/ggml-cpu-haswell.dll": {
+        "sha256": "e60057b6b68175cf94898e3e973a477d404ca42d522240dcd00e2aa76e7747fa",
+        "exec": false
+      },
+      "runtime/windows-x64-vulkan/ggml-vulkan.dll": {
+        "sha256": "e2f8805d640ef40b4357a6efb0c2d78b8849639345a06867f5e057aa1cbf2a1d",
+        "exec": false
+      },
+      "runtime/windows-x64-vulkan/llama-server-impl.dll": {
+        "sha256": "637a0324e208cff026e8415e8a9d3b95ec9c84fba620786916fbbbf1ee6c5b92",
+        "exec": false
+      },
+      "runtime/windows-x64-vulkan/llama-server.exe": {
+        "sha256": "b5812964fe0d86bdde8b8d5ff55836beacda5eecd12101b2b7211746a57d9b87",
+        "exec": false
+      },
+      "support/builds.tsv": {
+        "sha256": "7f996e39fd832271144acb993d769c8f67314f1ebbdaa6d368719d54bf69b6bc",
+        "exec": false
+      },
+      "support/files.tsv": {
+        "sha256": "e9915bd1f7bdbce808193b5fd4b726fc42bbaa805f5b13dcefbc6490a868a211",
+        "exec": false
+      },
+      "support/model.tsv": {
+        "sha256": "80a41b199ad7a3fe08e0488abe0c7e27ce0e398b768050b7ca352dce460fbccd",
+        "exec": false
+      },
+      "support/start-windows.ps1": {
+        "sha256": "653ec28fd1a40fe78809d22c524d67d0d437cd604961cb170cfda2a13fbc0f68",
+        "exec": false
+      },
+      "support/verify-windows.ps1": {
+        "sha256": "3657f8637615a047f255be15b4ac1349b48f82f52c9ef6105d165b84ae1ecc0d",
+        "exec": false
+      }
+    },
+    "sources": [
+      {
+        "path": "runtime/macos-arm64/",
+        "url": "https://github.com/ggml-org/llama.cpp/releases/download/b0001/llama-test-bin-macos-arm64.tar.gz",
+        "sha256": "9e5276fcf2fb89fdd3cec5c41648d53032188c87af04a8e76f2bd691c8ba20b4"
+      },
+      {
+        "path": "runtime/windows-x64-vulkan/",
+        "url": "https://github.com/ggml-org/llama.cpp/releases/download/b0001/llama-test-bin-win-vulkan-x64.zip",
+        "sha256": "009812131008572ad04ca011a879de5de8a04f23e2c4a8de1ea31e6212efe5b8"
+      },
+      {
+        "path": "runtime/windows-x64-cpu/",
+        "url": "https://github.com/ggml-org/llama.cpp/releases/download/b0001/llama-test-bin-win-cpu-x64.zip",
+        "sha256": "8228d2c18247363322c29b997aa2dbabb754fe1af168c7e3cdb7be82fc6c4088"
+      },
+      {
+        "path": "licenses/Apache-2.0.txt",
+        "url": "https://hub.test/meta/LICENSE",
+        "sha256": "e49065551eda5700d56256f82eac60489ebd030aeada92228346deb17c06bafe"
+      },
+      {
+        "path": "licenses/USAGE_POLICY.md",
+        "url": "https://hub.test/meta/USAGE_POLICY.md",
+        "sha256": "c4cc64f12c761e3426da6c002813d6c15d34a53fbe97d969ea30c665d17b1801"
+      },
+      {
+        "path": "MODEL_CARD.md",
+        "url": "https://huggingface.co/musemuse/muse-glimmer-30b-bakery-helper-gguf-8f1d2c3b/raw/c0ffee0000000000000000000000000000000000/README.md",
+        "sha256": "197ae07294f7caa160970694e150b3b01cc10ffb95f0789b749e843778239b75"
+      }
+    ],
+    "manifestSha256": "eb3edfcc4091ac1d2d634bda0b53584d47248e6c94051e1de980691332d35fb0"
+  }
+}

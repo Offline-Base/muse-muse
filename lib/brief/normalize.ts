@@ -1,4 +1,17 @@
 import { ASKED_LOOK_MAX, MAX_AGENT_STEPS, MAX_AGENT_TOOLS, type Brief } from "@/lib/brief/schema";
+import { normalizeConnectBlock } from "@/lib/caps/connect/brief";
+import { connectOptions } from "@/lib/caps/connect/flags";
+import { normalizeDataBlock } from "@/lib/caps/data/brief";
+import { normalizeCodeBlock } from "@/lib/caps/code/brief";
+import { briefSignsIn, normalizeFilesBlock } from "@/lib/caps/files/brief";
+import { normalizeExtensionBlock } from "@/lib/caps/extension/brief";
+import { normalizeGamesBlock } from "@/lib/caps/games/brief";
+import { normalizeHardwareBlock } from "@/lib/caps/hardware/brief";
+import { normalizeJobsBlock } from "@/lib/caps/jobs/brief";
+import { normalizeLiveBlock } from "@/lib/caps/live/brief";
+import { normalizeMediaBlock } from "@/lib/caps/media/brief";
+import { mediaPartsOn } from "@/lib/caps/media/catalog";
+import { normalizeRuntimeBlock } from "@/lib/caps/runtime/brief";
 import type { RebuildTarget, Reference } from "@/lib/types";
 
 /**
@@ -118,6 +131,59 @@ export function normalizeRawBrief(raw: unknown, references: Reference[]): unknow
     // No tools isn't an agent. Null gets the one repair call from targetProblems, then applyTargets' web search.
     if (!tools.length) b.agent = null;
   }
+
+  // ---------- Wave 3, unit 2 (docs/CAPABILITIES.md, section 8): milestones, only when the writer sent a list ----------
+  // Clamped to the schema's limits and to 3, as name and tagline are, so an overrun doesn't fail the brief. Fewer than 2
+  // usable ones isn't a milestone build.
+  if (Array.isArray(b.milestones)) {
+    const usable = asArray(b.milestones)
+      .filter((m) => typeof m.title === "string" && m.title.trim() && typeof m.doneMeans === "string" && m.doneMeans.trim())
+      .slice(0, 3)
+      .map((m) => ({ ...m, title: clamp(m.title as string, 60), doneMeans: clamp(m.doneMeans as string, 300) }));
+    b.milestones = usable.length >= 2 ? usable : null;
+  }
+  // ---------- end Wave 3, unit 2 ----------
+
+  // ---------- Wave 3, unit 3 (docs/CAPABILITIES.md, section 9): the data block, only when the writer sent one ----------
+  if (b.data !== undefined && b.data !== null) b.data = normalizeDataBlock(b.data);
+  // ---------- end Wave 3, unit 3 ----------
+
+  // ---------- Wave 3, unit 4 (docs/CAPABILITIES.md, section 10): the files block, only when the writer sent one ----------
+  // A user scope needs a data block that signs people in, since that is how a person signs in to a product.
+  if (b.files !== undefined && b.files !== null) b.files = normalizeFilesBlock(b.files, { signIn: briefSignsIn(b) });
+  // ---------- end Wave 3, unit 4 ----------
+
+  // ---------- Wave 3, unit 5 (docs/CAPABILITIES.md, section 11): the connect block, only when the writer sent one ----------
+  if (b.connect !== undefined && b.connect !== null) b.connect = normalizeConnectBlock(b.connect, connectOptions());
+  // ---------- end Wave 3, unit 5 ----------
+
+  // ---------- Wave 3, unit 6 (docs/CAPABILITIES.md, section 12): the jobs block, after the data block it reads ----------
+  if (b.jobs !== undefined && b.jobs !== null) b.jobs = normalizeJobsBlock(b.jobs, b.data);
+  // ---------- end Wave 3, unit 6 ----------
+
+  // ---------- Wave 3, unit 7 (docs/CAPABILITIES.md, section 13): the live block, after the data block it reads ----------
+  if (b.live !== undefined && b.live !== null) b.live = normalizeLiveBlock(b.live, b.data);
+  // ---------- end Wave 3, unit 7 ----------
+
+  // ---------- Wave 3, unit 8 (docs/CAPABILITIES.md, section 14): the media block, only when the writer sent one ----------
+  if (b.media !== undefined && b.media !== null) b.media = normalizeMediaBlock(b.media, mediaPartsOn());
+  // ---------- end Wave 3, unit 8 ----------
+  // ---------- Wave 3, unit 9 (docs/CAPABILITIES.md, section 15): the code block, only when the writer sent one ----------
+  if (b.code !== undefined && b.code !== null) b.code = normalizeCodeBlock(b.code);
+  // ---------- end Wave 3, unit 9 ----------
+
+  // ---------- Wave 3, unit 10 (docs/CAPABILITIES.md, section 16): the runtime block, only when the writer sent one ----------
+  if (b.runtime !== undefined && b.runtime !== null) b.runtime = normalizeRuntimeBlock(b.runtime);
+  // ---------- end Wave 3, unit 10 ----------
+
+  // ---------- Wave 3, unit 13 (docs/CAPABILITIES.md, section 19): the hardware block, only when the writer sent one ----------
+  if (b.hardware !== undefined && b.hardware !== null) b.hardware = normalizeHardwareBlock(b.hardware);
+  // ---------- end Wave 3, unit 13 ----------
+
+  // ---------- Wave 3, unit 14 (docs/CAPABILITIES.md, section 20): the extension and games blocks, only when sent ----------
+  if (b.extension !== undefined && b.extension !== null) b.extension = normalizeExtensionBlock(b.extension);
+  if (b.games !== undefined && b.games !== null) b.games = normalizeGamesBlock(b.games, b);
+  // ---------- end Wave 3, unit 14 ----------
 
   // A sample can only come from the user when they gave a reference of that kind.
   const kinds = new Set(references.map((r) => r.kind as string));

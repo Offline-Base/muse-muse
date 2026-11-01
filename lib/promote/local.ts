@@ -107,6 +107,7 @@ export function toBundle(rows: LocalRows): ImportBundle {
       finishedAt: b.finishedAt ? b.finishedAt.toISOString() : null,
       ...(b.requestedTargets?.length ? { requestedTargets: b.requestedTargets } : {}),
       ...(b.toolFixtures && Object.keys(b.toolFixtures).length ? { toolFixtures: b.toolFixtures } : {}),
+      ...(b.roundPlan ? { roundPlan: b.roundPlan } : {}),
     })),
     events: rows.events.map((e) => ({ buildId: e.buildId, type: e.type, payload: e.payload, at: e.at.toISOString() })),
     inspiration: muse(own),

@@ -50,7 +50,7 @@ describe("the product page", { skip: canMock ? false : "needs --experimental-tes
     mock.module("next/headers", { namedExports: { headers: async () => new Headers({ "user-agent": userAgent }) } });
     mock.module("next/navigation", { namedExports: { notFound: () => { throw new Error("not found"); }, useRouter: () => ({ push() {}, refresh() {} }), usePathname: () => "/p/demo" } });
     mock.module("next/link", { defaultExport: (props: Record<string, unknown>) => createElement("a", { ...props, href: String(props.href) }) });
-    mock.module(at("../../../lib/auth.ts"), { namedExports: { canActAsOwner: () => false } });
+    mock.module(at("../../../lib/auth.ts"), { namedExports: { canActAsOwner: () => false, GUEST_EMAIL: "guest@musemuse.invalid" } });
     mock.module(at("../../../lib/queries.ts"), {
       namedExports: {
         currentUser: async () => null,

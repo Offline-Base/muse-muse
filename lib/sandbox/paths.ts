@@ -71,3 +71,27 @@ export const PRODUCT_PORTS = { first: 3100, last: 3199 } as const;
 /** Exact tool versions the snapshot installs. Keep in step with template/package.json. */
 export const PLAYWRIGHT_VERSION = "1.64.1";
 export const MUSE_INSTALL_URL = "https://dev.meta.ai/install.sh";
+
+// ---------- Wave 3, unit 2: cap overlays (docs/CAPABILITIES.md, 2.5) ----------
+
+/** template/caps in the sandbox: root-owned and read-only, one folder per overlay (files/, deps.json, platform-files.json). */
+export const CAPS_DIR = `${WORK_DIR}/caps`;
+/** Which caps and overlays this product has, root-owned, written once at provision. Restores read it. */
+export const ACTIVE_CAPS_FILE = `${CAPS_DIR}/active.json`;
+/** The product's copy (in PRODUCT_DIR), which verify, Playwright and the tests read. Put back before every verify and demo. */
+export const CAPS_FILE = "musemuse.caps.json";
+// ---------- Wave 3, unit 3: each overlay's own marker (docs/CAPABILITIES.md, 2.4a) ----------
+/** An overlay's deps.json in CAPS_DIR: there only when the snapshot (or a local copy) installed that overlay. */
+export const capOverlayMarker = (overlay: string) => `${CAPS_DIR}/${overlay}/deps.json`;
+// ---------- end Wave 3, unit 3 ----------
+/** The overlay every product with a cap gets. Its deps.json marks a sandbox whose snapshot has the cap overlays. */
+export const CORE_CAPS_MARKER = capOverlayMarker("core");
+/**
+ * The gateway's address and this build's token for the caps check, root-owned and read-only, written at provision and
+ * on every change. verify's caps step reads it instead of the product's .env.local, which product code can edit.
+ */
+export const CAPS_GATEWAY_FILE = `${CAPS_DIR}/gateway.json`;
+/** The core overlay's caps check in CAPS_DIR. template/scripts/verify.mjs runs this copy in a build sandbox. */
+export const CAPS_CHECK_SCRIPT = `${CAPS_DIR}/core/files/scripts/caps-check.mjs`;
+/** Text only a verify.mjs with the caps step has. A pristine copy without it is from before caps, so it needs a refresh. */
+export const CAPS_VERIFY_MARKER = "musemuse_caps";

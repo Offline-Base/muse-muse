@@ -1,4 +1,7 @@
 import { z } from "zod";
+import { CAP_BRIEF_FIELDS, writerBriefField } from "@/lib/caps/brief-fields";
+import type { CapId } from "@/lib/caps/ids";
+import { MilestonesSchema } from "@/lib/engine/milestones";
 import { PERSONAL_TOOL_IDS, PUBLIC_TOOL_IDS } from "@/lib/tools/ids";
 
 /**
@@ -110,7 +113,19 @@ export const BriefSchema = BriefFields.extend({
    * Unset or null, the product follows the muse-app UI guidelines as they are.
    */
   askedLook: z.string().max(ASKED_LOOK_MAX).nullable().optional(),
+  ...wave3StoredFields(),
 });
+
+/**
+ * Wave 3 (docs/CAPABILITIES.md, 2.6): every registered cap block and the engine's milestones, as optional and nullable
+ * fields of the stored brief, so briefs written before them still parse.
+ */
+function wave3StoredFields() {
+  const caps = Object.fromEntries(Object.entries(CAP_BRIEF_FIELDS).map(([key, schema]) => [key, (schema as z.ZodTypeAny).nullable().optional()])) as {
+    [K in keyof typeof CAP_BRIEF_FIELDS]: z.ZodOptional<z.ZodNullable<(typeof CAP_BRIEF_FIELDS)[K]>>;
+  };
+  return { ...caps, milestones: MilestonesSchema.nullable().optional() };
+}
 
 export type Brief = z.infer<typeof BriefSchema>;
 
@@ -139,26 +154,41 @@ export const NewBriefSchemaNoGadget = BriefFields.extend({
 });
 
 /**
- * The schema the brief writer answers in for these flags. With no targets enabled it is exactly NewBriefSchema or
- * NewBriefSchemaNoGadget, the same objects. With targets it also requires `targets`, limited to web and those. With the
- * agent target it also requires `agent`, which is null for a product that isn't one, limited to the public tools unless
- * personal tools are on (COMPOSIO_PERSONAL_ENABLED). With MUSE_APP_LOOK it also requires `askedLook`, null unless the
- * person asked for a look.
+ * The schema the brief writer answers in for these flags. With no targets, no caps, no milestones and no MUSE_APP_LOOK
+ * it is exactly NewBriefSchema or NewBriefSchemaNoGadget, the same objects. With targets it also requires `targets`,
+ * limited to web and those. With the agent target it also requires `agent`, which is null for a product that isn't one,
+ * limited to the public tools unless personal tools are on (COMPOSIO_PERSONAL_ENABLED). With MUSE_APP_LOOK it also
+ * requires `askedLook`, null unless the person asked for a look. Each enabled cap with a registered block, and milestones
+ * when ENGINE_MILESTONES is on, add a required but nullable field, since Meta's strict output needs every property.
  */
 export function newBriefSchemaFor(opts: {
   gadgets: boolean;
   targets: readonly TargetId[];
   personalTools?: boolean;
+  caps?: readonly CapId[];
+  milestones?: boolean;
   museAppLook?: boolean;
 }): z.ZodType<Brief> {
   const base = opts.gadgets ? NewBriefSchema : NewBriefSchemaNoGadget;
   const look = opts.museAppLook ? { askedLook: z.string().max(ASKED_LOOK_MAX).nullable() } : {};
   const ids = TARGETS.filter((t) => t === "web" || opts.targets.includes(t));
-  if (ids.length === 1) return opts.museAppLook ? (base.extend(look) as unknown as z.ZodType<Brief>) : base;
-  const targets = targetPicks(ids as [TargetId, ...TargetId[]]).min(1);
-  if (!ids.includes("agent")) return base.extend({ targets, ...look }) as unknown as z.ZodType<Brief>;
-  const tools = (opts.personalTools ? [...PUBLIC_TOOL_IDS, ...PERSONAL_TOOL_IDS] : PUBLIC_TOOL_IDS) as [string, ...string[]];
-  return base.extend({ targets, agent: agentFields(z.enum(tools)).nullable(), ...look }) as unknown as z.ZodType<Brief>;
+  const extra: Record<string, z.ZodTypeAny> = {};
+  for (const cap of opts.caps ?? []) {
+    // Wave 3, unit 3: a cap's writer block can differ from its stored one while a setting is off (DATA_SIGN_IN).
+    const block = writerBriefField(cap);
+    if (block) extra[cap] = block.nullable();
+  }
+  if (opts.milestones) extra.milestones = MilestonesSchema.nullable();
+  if (ids.length === 1 && !Object.keys(extra).length && !opts.museAppLook) return base;
+  const shape: Record<string, z.ZodTypeAny> = {};
+  if (ids.length > 1) {
+    shape.targets = targetPicks(ids as [TargetId, ...TargetId[]]).min(1);
+    if (ids.includes("agent")) {
+      const tools = (opts.personalTools ? [...PUBLIC_TOOL_IDS, ...PERSONAL_TOOL_IDS] : PUBLIC_TOOL_IDS) as [string, ...string[]];
+      shape.agent = agentFields(z.enum(tools)).nullable();
+    }
+  }
+  return base.extend({ ...shape, ...look, ...extra }) as unknown as z.ZodType<Brief>;
 }
 
 export type ProductModelId = (typeof PRODUCT_MODELS)[number];

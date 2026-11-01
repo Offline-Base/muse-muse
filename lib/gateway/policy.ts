@@ -1,3 +1,4 @@
+import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
 import type { GatewayEndpoint, MetaModelId } from "@/lib/types";
 
 export const UPSTREAM_BASE_URL = "https://api.meta.ai/v1";
@@ -133,3 +134,111 @@ export const GATEWAY_CHECKS = [
   "forward",
   "meter",
 ] as const;
+
+// ---------- Wave 3, unit 9: the code_session scope (docs/CAPABILITIES.md, 15b) ----------
+
+/** A Muse Code session's own token (lib/caps/code/musecode/token.ts). */
+export const CODE_SESSION_SCOPE = "code_session";
+
+/**
+ * The models a session token can carry. Its token names exactly one (allowedModels[0]), set by the platform at the
+ * start: Muse Wonder for a person's task, muse-spark-1.3-contributor only for a build's own test sessions while
+ * TEST_MODEL names it off production (Meta may train on that tier, terms 6.2). muse-spark-1.3 is never one of them.
+ */
+export const CODE_SESSION_MODELS = ["muse-wonder-1.0", SPARK_STANDIN] as const;
+
+/**
+ * Why a session token's call is refused, or null. Checked before the model allowlist, which a session token replaces:
+ *   - only POST /v1/responses (the method is the handler's first check)
+ *   - only its one model, never another, and muse-spark-1.3 refused outright rather than served as Contributor
+ *   - Contributor only while `testModel` (TEST_MODEL, never set on production) names it
+ * Its budget and its end (stop, or its limit) are the token row's: lib/caps/code/musecode/gateway.ts.
+ */
+export function codeSessionRefusal(endpoint: GatewayEndpoint, model: string | null, token: { allowedModels: readonly string[] }, testModel: string | null): { status: number; code: string; message: string } | null {
+  if (endpoint !== "responses") return { status: 403, code: "session_scope", message: "A Muse Code session's token calls only /v1/responses." };
+  if (!model) return null;
+  const own = token.allowedModels[0];
+  if (model === RETIRED_SPARK) return { status: 404, code: "model_not_found", message: `${RETIRED_SPARK} is never used here.` };
+  if (model !== own || !(CODE_SESSION_MODELS as readonly string[]).includes(model)) {
+    return { status: 404, code: "model_not_found", message: `This session runs on ${own ?? "no model"} only.` };
+  }
+  if (model === SPARK_STANDIN && testModel !== SPARK_STANDIN) {
+    return { status: 403, code: "model_not_for_sessions", message: `${SPARK_STANDIN} runs only test sessions, with TEST_MODEL set off production.` };
+  }
+  return null;
+}
+
+/** Tool types a session may send: Muse Code's own, run in its sandbox. Meta runs no tool for a session. */
+const SESSION_TOOL_TYPES = new Set(["function", "custom", "namespace"]);
+/** Part fields that make Meta fetch something, or read a file stored under the platform's key. */
+const REMOTE_FIELDS = new Set(["file_url", "image_url", "video_url", "audio_url"]);
+const MEDIA_PART = /^input_(image|file|video|audio)$/;
+const WALK_DEPTH = 64;
+
+function sessionToolProblem(tool: unknown, depth = 0): string | null {
+  if (depth > WALK_DEPTH) return "tools nested too deep";
+  const type = (tool as { type?: unknown } | null)?.type;
+  if (typeof type !== "string" || !SESSION_TOOL_TYPES.has(type)) return `the tool type ${JSON.stringify(type ?? null).slice(0, 60)}`;
+  const inner = (tool as { tools?: unknown }).tools;
+  if (type === "namespace" && Array.isArray(inner)) {
+    for (const t of inner) {
+      const problem = sessionToolProblem(t, depth + 1);
+      if (problem) return problem;
+    }
+  }
+  return null;
+}
+
+const notInline = (url: unknown): boolean => typeof url === "string" && url !== "" && !url.startsWith("data:");
+
+/** What in a body's `input` points outside it. Plain text is never read as a link: a task may talk about URLs. */
+function remoteInput(value: unknown, depth = 0): string | null {
+  if (depth > WALK_DEPTH) return "input nested too deep";
+  if (Array.isArray(value)) {
+    for (const v of value) {
+      const problem = remoteInput(v, depth + 1);
+      if (problem) return problem;
+    }
+    return null;
+  }
+  if (!value || typeof value !== "object") return null;
+  const part = value as Record<string, unknown>;
+  if (part.type === "item_reference") return "a stored item";
+  for (const [key, field] of Object.entries(part)) {
+    if (key === "file_id" && field) return "a stored file";
+    if (REMOTE_FIELDS.has(key) && notInline(field && typeof field === "object" ? (field as { url?: unknown }).url : field)) return `a remote ${key}`;
+    if (key === "url" && typeof part.type === "string" && MEDIA_PART.test(part.type) && notInline(field)) return `a remote ${part.type}`;
+    const problem = remoteInput(field, depth + 1);
+    if (problem) return problem;
+  }
+  return null;
+}
+
+/**
+ * Why a session token's body is refused, or null. The firewall is a session's only boundary, and the agent's shell can
+ * read the token and call the one route it allows, so this route must not reach anywhere else for it. So no tool Meta
+ * runs itself (web search, tool search, MCP and the like), no media by URL, and nothing stored under the platform's one
+ * key (previous responses, conversations, files, prompts). The spike saw none of these in Muse Code's bodies (a
+ * `namespace` of its own tools, `store: false`, inline text and images).
+ */
+export function codeSessionBodyRefusal(json: Record<string, unknown>): { status: number; code: string; message: string } | null {
+  const refuse = (what: string) => ({ status: 400, code: "session_body", message: `A Muse Code session can't use ${what} here: it runs with no way out of its workspace but this route.` });
+  const set = (v: unknown) => v !== undefined && v !== null && v !== false && v !== "";
+  for (const field of ["background", "previous_response_id", "conversation", "prompt"]) if (set(json[field])) return refuse(field);
+  if (json.store === true) return refuse("store");
+  if (json.tools !== undefined && json.tools !== null) {
+    if (!Array.isArray(json.tools)) return refuse("tools in that shape");
+    for (const tool of json.tools) {
+      const problem = sessionToolProblem(tool);
+      if (problem) return refuse(problem);
+    }
+  }
+  const remote = remoteInput(json.input);
+  return remote ? refuse(remote) : null;
+}
+
+/** A session's body as Meta gets it: never stored, and with no name for the person but the one the platform holds. */
+export function codeSessionBody(json: Record<string, unknown>): Record<string, unknown> {
+  const { safety_identifier: _named, user: _alsoNamed, ...rest } = json;
+  return { ...rest, store: false };
+}

@@ -12,6 +12,8 @@ import { beforeEach, describe, it } from "node:test";
 import { z } from "zod";
 import { BriefSchema, NewBriefSchema, NewBriefSchemaNoGadget, TARGETS, newBriefSchemaFor } from "@/lib/brief/schema";
 import { strictJsonSchema } from "@/lib/brief/strict-schema";
+import { CAP_BRIEF_FIELDS } from "@/lib/caps/brief-fields";
+import { CAP_FLAG, CAP_IDS } from "@/lib/caps/ids";
 import { env } from "@/lib/env";
 import { BRIEF } from "@/lib/promote/__tests__/fixtures";
 import { flagsOffSurface } from "./flags-off-surface";
@@ -28,6 +30,21 @@ const FLAGS = [
   "COMPOSIO_PERSONAL_ENABLED",
   "GADGETS_ENABLED",
   "MUSE_APP_LOOK",
+  // Wave 3 (docs/CAPABILITIES.md): one line per unit, in plan order.
+  "TRUST_SIGNED_IN_CAPS", "TRUST_BUILDER_DAILY_USD", "TRUST_AGE_GATE", "TRUST_LEGAL_PAGES", "TRUST_GEO_BLOCK", "TRUST_GEO_COUNTRIES", "TRUST_REPORTS", "TRUST_SPARK_TO_WONDER",
+  "ENGINE_CHECK_ON_TIMEOUT", "ENGINE_ROUND_SCALING", "ENGINE_MILESTONES", "ENGINE_LIVE_SMOKE", "ENGINE_EXACT_LOGIC", "ENGINE_FIT_OUTPUT",
+  "DATA_SIGN_IN", "DATA_PRODUCT_ROWS", "DATA_PRODUCT_MB", "DATA_DAILY_WRITES",
+  "FILES_SEARCH", "FILES_DATASETS", "FILES_PRODUCT_MB", "FILES_MAX_FILE_MB", "FILES_BLOB_STORE_ID",
+  "CONNECT_MORE_TOOLS", "CONNECT_VAULT", "CONNECT_VAULT_KEY", "CONNECT_SENDS", "CONNECT_SENDS_PRODUCTION",
+  "JOBS_WEBHOOKS", "JOBS_DAILY_RUNS", "JOBS_DAILY_USD", "JOBS_RUN_USD", "JOBS_PAUSE_DAYS",
+  ...CAP_IDS.map((id) => CAP_FLAG[id]),
+  "LIVE_UPDATES", "LIVE_CAPTION_MINUTES",
+  "MEDIA_SPEECH", "MEDIA_VIDEO", "MEDIA_MUSIC", "MEDIA_SAM_TILING",
+  "CODE_EXEC", "CODE_EXEC_VISITORS", "CODE_EXEC_DAILY_USD", "CODE_EXEC_SNAPSHOT_ID", "CODE_BROWSE", "CODE_BROWSE_DAILY_USD", "MUSE_CODE_ENABLED", "MUSE_CODE_VISITORS",
+  "RUNTIME_OUTPUTS",
+  "GPU_GLIMMER_SHARED", "GPU_GLIMMER_DAILY_USD", "GPU_GLIMMER_ALL_PRODUCTS", "GPU_TRAIN_ON_DATA",
+  "DRIVE_EXPORT_ENABLED", "DRIVE_EXPORT_PRODUCTS",
+  "HARDWARE_ENABLED", "HARDWARE_BOARD_TOOLS", "HARDWARE_BOARD_REGISTRY", "HARDWARE_BOARD_KEY", "HARDWARE_GADGET_OWNER_CHECK",
 ];
 
 beforeEach(() => {
@@ -67,7 +84,9 @@ describe("with every target flag off", () => {
   it("the stored schema differs from the one the writer used only by the optional targets, agent and askedLook", () => {
     const stored = strictJsonSchema(BriefSchema) as { properties: Record<string, unknown>; required: string[] };
     const written = strictJsonSchema(NewBriefSchema) as { properties: Record<string, unknown>; required: string[] };
-    assert.deepEqual(Object.keys(stored.properties).filter((k) => !(k in written.properties)), ["targets", "agent", "askedLook"]);
+    // Wave 3's optional fields, in the stored schema's order (wave3StoredFields): each cap's block, then unit 2's milestones.
+    const differsOnlyBy = ["targets", "agent", "askedLook", ...Object.keys(CAP_BRIEF_FIELDS), "milestones"];
+    assert.deepEqual(Object.keys(stored.properties).filter((k) => !(k in written.properties)), differsOnlyBy);
     assert.deepEqual(Object.keys(written.properties).filter((k) => !(k in stored.properties)), []);
   });
 });

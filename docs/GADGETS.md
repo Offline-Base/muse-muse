@@ -15,6 +15,7 @@ A gadget is an option the brief writer picks the way it picks a model. It's off 
 | Permission | `allowedModelsFor` in `lib/pipeline/logic.ts` | Keeps `muse-gadget` in the product's token `allowedModels`, the way a model's id is there. No new column or migration. |
 | Gateway | `app/api/gateway/gadget/route.ts`, `lib/gateway/gadget.ts` | `GET {GATEWAY_URL}/gadget` lists tools; `POST {tool, arguments}` calls one. Product token required. 403 `gadget_not_allowed` without the option. |
 | Tools | `PRODUCT_GADGET_TOOLS` | `describe_device`, `capture_image`, `record_audio`, the same names and arguments as `muse-device`. Never `run_command`. |
+| Drive tools | `PRODUCT_DRIVE_TOOLS` | `drive_status`, `export_to_drive`: a separate list, for a brief that asks, the owner only, and only with `DRIVE_EXPORT_PRODUCTS` and the owner check. `docs/DRIVE_EXPORT.md`, "From a product". |
 | Limits | `GADGET_LIMITS` | 30 calls a minute per product, 10 per visitor. |
 | Builds | `SIMULATED_BOARD` | Build tokens always get a simulated board: the same receipt photo and three seconds of speech every time (`lib/gateway/gadget-sim-media.ts`), so tests are steady and sandboxes never reach hardware. |
 | Live | `deviceConfig()` from `lib/device/client.ts` | Live tokens reach the board in `DEVICE_MCP_URL` and `DEVICE_MCP_TOKEN`, or get 503 `gadget_offline`. A board error is a 502 that never shows the board's address. |
@@ -32,5 +33,7 @@ Tests: `lib/gateway/__tests__/gadget.test.ts`, `lib/brief/__tests__/gadget-optio
 3. **More tools on `muse-device`.** Show something on a screen or the e-ink tablet, set a pin on the UNO Q, read a sensor. Add each one to `PRODUCT_GADGET_TOOLS`, the simulator and the skill.
 4. **Where it shows.** "Uses your gadget" on product pages, and a Make-page example that asks for hardware.
 5. **A real board end to end.** The live path is covered by unit tests with a fake board only.
+
+**Wave 3 (behind flags, `docs/CAPABILITIES.md` section 19).** `HARDWARE_GADGET_OWNER_CHECK` closes the one-board-for-everyone finding: a live token reaches only the board its product's owner linked, and only with an owner pass unless the link opens it to visitors. `HARDWARE_BOARD_REGISTRY` lets admins add their own `muse-device` boards on `/device`. `HARDWARE_BOARD_TOOLS`, with the owner check on, lets a brief ask for `read_sensor` and `show_text`, which bring no camera or microphone.
 
 Meta's Muse Gadget SDK is a separate track: a Pi 5 paired to our own Muse account, gadget skills and gadget builds (PLATFORM_PLAN.md, section 5). Muse Muse never holds anyone's Gadget SDK token.

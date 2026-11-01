@@ -1,0 +1,8 @@
+[
+  "lib/platform/data.ts",
+  "components/platform/SignIn.tsx",
+  "app/api/musemuse/owner/route.ts",
+  "tests/caps/data.ts",
+  "scripts/caps/data.mjs",
+  ".agents/skills/muse-data/SKILL.md"
+]

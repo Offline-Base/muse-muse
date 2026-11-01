@@ -1,0 +1,138 @@
+/* Wave 3, unit 1 (trust): the age box, the report form, the legal pages and the admin reports table. Tokens only
+   (docs/BRAND.md), so light and dark follow the platform. */
+
+.trust-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--fg);
+}
+
+.trust-check input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  accent-color: var(--accent);
+}
+
+.trust-radios {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.trust-radios legend {
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--fg);
+}
+
+.trust-radios label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--fg);
+}
+
+.trust-radios input {
+  flex: none;
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+
+.trust-textarea {
+  width: 100%;
+  min-height: 96px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  resize: vertical;
+}
+
+.trust-done {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--ok-soft);
+  color: var(--ok-text);
+  font-size: 14px;
+}
+
+.legal {
+  max-width: 720px;
+}
+
+.legal h1 {
+  font-size: 30px;
+  font-weight: 400;
+  line-height: 34px;
+}
+
+.legal h2 {
+  margin: 28px 0 8px;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+.legal p,
+.legal li {
+  color: var(--fg-2);
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.legal p {
+  margin: 0 0 10px;
+}
+
+.legal ul {
+  margin: 0 0 10px;
+  padding-left: 20px;
+}
+
+.legal-meta {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.trust-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.trust-table th,
+.trust-table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.trust-table th {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.trust-table-wrap {
+  overflow-x: auto;
+}
+
+.trust-detail {
+  max-width: 360px;
+  overflow-wrap: anywhere;
+  color: var(--fg-2);
+}

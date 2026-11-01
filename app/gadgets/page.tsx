@@ -27,6 +27,8 @@ export default async function GadgetsPage() {
     safeQuery(async () => gadgetProducts(await listShippedProducts(PRODUCTS_READ))),
   ]);
   const status = gadgetStatusRows({ buildsOn: env.gadgetsEnabled, boardSetUp: deviceConfig({ quiet: true }) !== null });
+  // The same test as the gadget route's, so this says the drive tools are served exactly when they are.
+  const driveServed = env.driveToolsUsable && env.servedCaps.includes("hardware");
 
   return (
     <div className="page">
@@ -61,7 +63,8 @@ export default async function GadgetsPage() {
               Every build gets a simulated board: the same receipt photo and three seconds of speech each time, so tests
               are steady and builds never reach real hardware.
             </li>
-            <li>Products can&apos;t run commands on a board. Only the three tools above are served.</li>
+            <li>Products can&apos;t run commands on a board. {env.hardwareBoardToolsUsable ? "Besides the three tools above, a product that asks for board tools can read a sensor and show a short line." : driveServed ? null : "Only the three tools above are served."}</li>
+            {driveServed ? <li>A product that asks can also put its own tuned model on a USB drive, for its owner only, on the owner&apos;s board, after they confirm it on a card. It never erases a drive.</li> : null}
             <li>A product must still work with no board, with a clear message and a way to upload instead.</li>
           </ul>
         </div>
@@ -150,7 +153,7 @@ export default async function GadgetsPage() {
         )}
       </section>
 
-      <BoardsSlot />
+      <BoardsSlot viewer={viewer} />
     </div>
   );
 }

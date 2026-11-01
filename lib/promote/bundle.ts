@@ -15,6 +15,7 @@ import { normalizeSlug, SLUG_MAX } from "@/lib/pipeline/logic";
 import { MAX_NOTE_CHARS, validateNote, validateReferences } from "@/lib/pipeline/references";
 import { publicHost } from "@/lib/sandbox/policy";
 import type { ToolFixtures } from "@/lib/tools/ids";
+import { MILESTONES_MAX, type MilestoneState, type RoundPlanRecord } from "@/lib/engine/milestones";
 import { TERMINAL_STATUSES, type BuildEventBody, type BuildStatus, type ProductClip, type Reference } from "@/lib/types";
 
 /** What the import route reads: under the 4.5 MB a Vercel Function takes in a request body. */
@@ -79,6 +80,11 @@ export interface ImportBuild {
   requestedTargets?: TargetId[];
   /** The canned tool outputs a later refinement's tests start from. */
   toolFixtures?: ToolFixtures;
+  /**
+   * Wave 3, unit 2 (0019_engine): the engine's round plan, sent when set. builds.live_check and gateway_tokens.build_id
+   * stay on the site that made them (docs/CAPABILITIES.md, section 4).
+   */
+  roundPlan?: RoundPlanRecord;
 }
 
 /** A build_events row without its local id: the live table numbers it, in the order the bundle lists them. */
@@ -310,7 +316,7 @@ export const BUILD_KEYS = [
   "startedAt",
   "finishedAt",
 ] as const;
-export const OPTIONAL_BUILD_KEYS = ["requestedTargets", "toolFixtures"] as const;
+export const OPTIONAL_BUILD_KEYS = ["requestedTargets", "toolFixtures", "roundPlan"] as const;
 const CLIP_KEYS = ["url", "posterUrl", "caption", "addedAt"] as const;
 const EVENT_KEYS = ["buildId", "type", "payload", "at"] as const;
 
@@ -339,6 +345,18 @@ function requestedTargets(v: unknown, field: string): TargetId[] {
   const check = validateTargets(list(v, field, TARGETS.length), TARGETS);
   if (!check.ok) fail(field, `${field}: ${check.error}`);
   return check.value;
+}
+
+const MILESTONE_STATES: readonly MilestoneState[] = ["planned", "building", "passed", "failed", "skipped"];
+
+function roundPlan(v: unknown, field: string): RoundPlanRecord {
+  const o = fields(v, field, ["capMinutes", "milestones"] as const);
+  const milestones = list(o.milestones, `${field}.milestones`, MILESTONES_MAX).map((m, i) => {
+    const item = fields(m, `${field}.milestones[${i}]`, ["title", "state"] as const);
+    if (!MILESTONE_STATES.includes(item.state as MilestoneState)) fail(`${field}.milestones[${i}].state`, `${field}.milestones[${i}].state isn't a milestone state.`);
+    return { title: text(item.title, `${field}.milestones[${i}].title`, 60, 1), state: item.state as MilestoneState };
+  });
+  return { capMinutes: wholeNumber(o.capMinutes, `${field}.capMinutes`, 90), milestones };
 }
 
 function product(v: unknown): ImportProduct {
@@ -411,6 +429,7 @@ function build(v: unknown, field: string): ImportBuild {
     finishedAt: maybeWhen(o.finishedAt, `${field}.finishedAt`),
     ...(o.requestedTargets === undefined ? {} : { requestedTargets: requestedTargets(o.requestedTargets, `${field}.requestedTargets`) }),
     ...(o.toolFixtures === undefined ? {} : { toolFixtures: plainObject(o.toolFixtures, `${field}.toolFixtures`) as ToolFixtures }),
+    ...(o.roundPlan === undefined ? {} : { roundPlan: roundPlan(o.roundPlan, `${field}.roundPlan`) }),
   };
 }
 

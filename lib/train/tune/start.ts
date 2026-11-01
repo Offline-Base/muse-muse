@@ -91,7 +91,7 @@ export async function startTuneRun(i: {
   datasetId?: string;
   callerId: string;
   productId?: string | null;
-}): Promise<{ runId: string; href: string }> {
+}): Promise<{ runId: string; href: string; trainingStarted?: boolean }> {
   if (!env.tuneComposer) throw new TuneStartError(404, "not_found");
   const source = i.plan?.source ?? (i.datasetId ? { kind: "dataset" as const, datasetId: i.datasetId } : null);
   if (!source) throw new TuneStartError(400, "no_plan");
@@ -103,16 +103,22 @@ export async function startTuneRun(i: {
   if (source.kind === "dataset") {
     const existing = await getDataset(source.datasetId);
     if (!existing) throw new TuneStartError(404, "not_found");
-    await keepProduct(existing.id);
     if (existing.kind !== "decision" && existing.status !== "failed") {
       const [job, marks] = await Promise.all([latestTuneJob(existing.id), readRunMarks(existing.id)]);
       if (!job && !marks.stopped && !freshHeartbeat(marks, Date.now())) {
         const steps = i.plan?.settings.steps ?? marks.steps ?? TUNE_STEPS;
+        // The day first: a refusal here leaves no row saying this run is the product's.
         const day = productId ? await takeProductDay(productId, now) : null;
+        await keepProduct(existing.id);
         if (i.plan) await saveRunSteps(existing.id, steps).catch((err) => console.error("[train/tune] save steps", err));
-        if (!(await startTraining(existing.id, i.callerId, steps))) await giveBackProductDay(day);
+        if (!(await startTraining(existing.id, i.callerId, steps))) {
+          await giveBackProductDay(day);
+          return { runId: existing.id, href: runHref(existing.id), trainingStarted: false };
+        }
+        return { runId: existing.id, href: runHref(existing.id) };
       }
     }
+    await keepProduct(existing.id);
     return { runId: existing.id, href: runHref(existing.id) };
   }
   const plan = i.plan!;

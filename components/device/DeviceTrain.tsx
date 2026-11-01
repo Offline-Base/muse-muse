@@ -33,8 +33,11 @@ function failureText(data: Failure): string {
 
 const statusUrl = (run: string | null) => `/api/device/train${run ? `?run=${encodeURIComponent(run)}` : ""}`;
 
-/** Admin only: fine-tunes a model on the board's own GPU from a platform dataset, and follows the run until it ends. */
-export function DeviceTrain() {
+/**
+ * Admin only: fine-tunes a model on the board's own GPU from a platform dataset, and follows the run until it ends. With
+ * `driveExport` (DRIVE_EXPORT_ENABLED), a finished run links to the Flash drive card with it picked.
+ */
+export function DeviceTrain({ driveExport = false }: { driveExport?: boolean }) {
   const id = useId();
   const [datasets, setDatasets] = useState<DatasetView[] | null>(null);
   const [datasetId, setDatasetId] = useState("");
@@ -217,6 +220,12 @@ export function DeviceTrain() {
           {status.skipped ? <p className="small">Left out {status.skipped} examples that were too long.</p> : null}
           {status.error ? <p className="small">{status.error}</p> : null}
           {status.adapter ? <p className="small">Adapter: {status.adapter}</p> : null}
+          {driveExport && status.state === "done" && watching?.run ? (
+            <a className="btn btn-outline btn-sm" href={`/device?export=${encodeURIComponent(`board:${watching.run}`)}`}>
+              <Icon name="download" size={16} />
+              <span>Export to a drive</span>
+            </a>
+          ) : null}
           {active ? (
             <button type="button" className="btn btn-outline" onClick={stop} disabled={stopping}>
               {stopping ? <span className="spinner" aria-hidden /> : <Icon name="close" size={16} />}

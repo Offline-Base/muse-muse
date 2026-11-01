@@ -11,7 +11,9 @@
  * Without the flag, node:test has no mock.module and this file skips.
  */
 import assert from "node:assert/strict";
-import { before, beforeEach, describe, it, mock } from "node:test";
+import { after, before, beforeEach, describe, it, mock } from "node:test";
+
+import { CAP_READY } from "@/lib/caps/ids";
 
 type Call = { step: string; arg: unknown };
 
@@ -31,6 +33,7 @@ const pipelineSteps = {
     if (named("emitStep").length + 1 === emitFailsAt) throw new Error("the database didn't answer");
     record("emitStep", { buildId, body });
   },
+  capsShipStep: async (input: unknown) => record("capsShipStep", input),
   startDeployStep: async (input: unknown) => {
     record("startDeployStep", input);
     if (deployThrows) throw deployThrows;
@@ -80,6 +83,36 @@ describe("publishing an imported product", { skip: canMock ? false : "needs --ex
     assert.deepEqual(named("emitStep").map((c) => c.arg), [{ buildId: "build-1", body: { type: "deploy", url: LIVE } }]);
     assert.deepEqual(named("hibernateIdleStep")[0]!.arg, { productId: "prod-1", sandboxName: INPUT.sandboxName });
     assert.equal(named("importFailedStep").length, 0);
+  });
+
+  describe("with a cap that has a step after deploy", () => {
+    const envKey = "JOBS_ENABLED";
+    const was = process.env[envKey];
+    const ready = CAP_READY.jobs;
+    before(() => {
+      process.env[envKey] = "1";
+      Object.assign(CAP_READY, { jobs: true });
+    });
+    after(() => {
+      if (was === undefined) delete process.env[envKey];
+      else process.env[envKey] = was;
+      Object.assign(CAP_READY, { jobs: ready });
+    });
+
+    it("runs it once the link is saved, while the sandbox is awake (a local build's schedules start here)", async () => {
+      polls = [{ state: "READY" }];
+      assert.deepEqual(await wf.publishImportedProduct(INPUT), { liveUrl: LIVE });
+      const steps = calls.map((c) => c.step);
+      assert.ok(steps.indexOf("importLiveStep") < steps.indexOf("capsShipStep"));
+      assert.ok(steps.indexOf("capsShipStep") < steps.indexOf("hibernateIdleStep"));
+      assert.deepEqual(named("capsShipStep")[0]!.arg, { buildId: "build-1", productId: "prod-1", sandboxName: INPUT.sandboxName, liveUrl: LIVE });
+    });
+
+    it("never when the deploy failed", async () => {
+      polls = [{ state: "ERROR" }];
+      await wf.publishImportedProduct(INPUT);
+      assert.equal(named("capsShipStep").length, 0);
+    });
   });
 
   it("leaves the product without a link, and the reason in its build room once the sandbox sleeps, when Vercel can't deploy it", async () => {

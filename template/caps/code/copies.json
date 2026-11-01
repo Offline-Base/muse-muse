@@ -1,0 +1,25 @@
+{
+  "about": "Files the code overlay copies out of its installed packages after npm install (applyCapsScript): Pyodide's five files, served as static files so a deploy never puts them behind a function route.",
+  "copies": [
+    [
+      "node_modules/pyodide/pyodide.mjs",
+      "public/musemuse/pyodide/pyodide.mjs"
+    ],
+    [
+      "node_modules/pyodide/pyodide.asm.mjs",
+      "public/musemuse/pyodide/pyodide.asm.mjs"
+    ],
+    [
+      "node_modules/pyodide/pyodide.asm.wasm",
+      "public/musemuse/pyodide/pyodide.asm.wasm"
+    ],
+    [
+      "node_modules/pyodide/python_stdlib.zip",
+      "public/musemuse/pyodide/python_stdlib.zip"
+    ],
+    [
+      "node_modules/pyodide/pyodide-lock.json",
+      "public/musemuse/pyodide/pyodide-lock.json"
+    ]
+  ]
+}

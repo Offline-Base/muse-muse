@@ -1,21 +1,29 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   bigserial,
   boolean,
+  customType,
   index,
   integer,
   jsonb,
+  pgSequence,
   pgTable,
   primaryKey,
   real,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import type { Brief, TargetId } from "@/lib/brief/schema";
+import type { CodeSessionDropped, CodeSessionEvent, CodeSessionFile, CodeSessionPrincipal, CodeSessionStatus } from "@/lib/caps/code/musecode/types";
+import type { DataScope } from "@/lib/caps/data/types";
+import type { CapDrop } from "@/lib/caps/ready";
 import type { DecisionRows, DecisionSpec } from "@/lib/decide/types";
 import type { DocsHoldState } from "@/lib/docs/proxy/types";
+import type { RoundPlanRecord } from "@/lib/engine/milestones";
 import type { DriveActor, DriveAddress, DriveBuild, DriveFile, DriveModel, DrivePayment, DriveStatus, VerifyResult } from "@/lib/drive/types";
 import type {
   NativeArtifactKind,
@@ -60,6 +68,15 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash"),
   dailyBuildQuota: integer("daily_build_quota").notNull().default(3),
   createdAt: createdAt(),
+  /** 0018_trust: when they said they're 18 or older (TRUST_AGE_GATE), or null. */
+  adultConfirmedAt: timestamp("adult_confirmed_at", { withTimezone: true }),
+  /** 0018_trust: the TERMS_VERSION (lib/trust/terms.ts) they accepted, or null. */
+  termsVersion: text("terms_version"),
+  /** 0018_trust: when they accepted terms_version. */
+  termsAcceptedAt: timestamp("terms_accepted_at", { withTimezone: true }),
+  /** 0018_trust: set by an admin's ban (TRUST_REPORTS). A banned builder can't sign in or build. */
+  bannedAt: timestamp("banned_at", { withTimezone: true }),
+  banReason: text("ban_reason"),
 });
 
 export const inspirations = pgTable(
@@ -106,6 +123,16 @@ export const products = pgTable(
     status: text("status").$type<ProductStatus>().notNull().default("building"),
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * 0018_trust: set by an admin's takedown (TRUST_REPORTS): its page and gallery card are hidden and its live tokens
+     * are revoked at this exact time, so undoing the takedown can give back just those. Null for every other product.
+     */
+    takenDownAt: timestamp("taken_down_at", { withTimezone: true }),
+    takedownReason: text("takedown_reason"),
+    /** 0018_trust: the status the takedown replaced with "disabled", which undoing it puts back. Null when it isn't down. */
+    statusBeforeTakedown: text("status_before_takedown").$type<ProductStatus>(),
+    /** 0023_jobs (unit 6): when the owner last opened the product's page or got an owner pass. Schedules pause after JOBS_PAUSE_DAYS without one. */
+    ownerSeenAt: timestamp("owner_seen_at", { withTimezone: true }),
   },
   (t) => [index("products_owner_idx").on(t.ownerId), index("products_rebuild_idx").on(t.rebuildOf)],
 );
@@ -144,6 +171,17 @@ export const builds = pgTable(
     requestedTargets: jsonb("requested_targets").$type<TargetId[]>(),
     /** Canned tool outputs for this build's tests, by Composio slug (docs/AGENT_TOOLS.md). Null without the agent target. */
     toolFixtures: jsonb("tool_fixtures").$type<ToolFixtures>(),
+    /** 0019_engine: the engine's round plan (docs/CAPABILITIES.md, section 8), or null for a build on today's caps. */
+    roundPlan: jsonb("round_plan").$type<RoundPlanRecord>(),
+    /** 0019_engine: what the live check found after deploy (ENGINE_LIVE_SMOKE), or null when it didn't run. */
+    liveCheck: jsonb("live_check").$type<{ ok: boolean; at: string; reason?: string; url: string }>(),
+    /**
+     * 0020_data: the caps this build's brief has blocks for but goes without, decided once at provision
+     * (capsForBuild in lib/caps/ready.ts): switched off, or not in the builder snapshot. Every later step reads its
+     * working copy of the brief through it, so a flag or snapshot change mid-build can't split the build. Null until
+     * provision, and for builds from before it, whose steps decide again.
+     */
+    capsDropped: jsonb("caps_dropped").$type<CapDrop[]>(),
     /** Everything this build spent on Meta models: brief, Muse Code, judge, smoke tests. */
     costUsd: real("cost_usd").notNull().default(0),
     error: text("error"),
@@ -182,14 +220,20 @@ export const gatewayTokens = pgTable(
       .references(() => products.id),
     /** HMAC-SHA256 of the token with GATEWAY_TOKEN_PEPPER. The token itself is never stored. */
     tokenHash: text("token_hash").notNull().unique(),
-    scope: text("scope").$type<"build" | "live">().notNull(),
+    // Wave 3, unit 9: "code_session" is a Muse Code session's own token (0027_code_sessions). A type change only.
+    scope: text("scope").$type<"build" | "live" | "code_session">().notNull(),
     allowedModels: jsonb("allowed_models").$type<string[]>().notNull(),
     dailyBudgetUsd: real("daily_budget_usd").notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     createdAt: createdAt(),
+    /**
+     * 0019_engine: the build a build token belongs to, so its caps rows and files live in the build namespace
+     * b:<buildId> (docs/CAPABILITIES.md, 2.3). Null for live tokens and for build tokens of briefs with no caps.
+     */
+    buildId: uuid("build_id").references(() => builds.id),
   },
-  (t) => [index("gateway_tokens_product_idx").on(t.productId)],
+  (t) => [index("gateway_tokens_product_idx").on(t.productId), index("gateway_tokens_build_idx").on(t.buildId)],
 );
 
 /**
@@ -201,7 +245,11 @@ export const usage = pgTable(
   "usage",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    source: text("source").$type<"gateway" | "muse_code" | "platform" | "docs" | "tools">().notNull(),
+    // 0022_connect (unit 5) adds "fetch", "vault" and "sends" to the type only: the column is text, so no SQL changes.
+    // Wave 3, unit 9: "exec" and "browse" are the code cap's sandboxes. A type change only, no migration.
+    // Wave 3, unit 9: "code_session" is a Muse Code session's sandbox time (0027). A type change only.
+    // Wave 3, unit 11: "glimmer" is the shared Glimmer endpoint (0025). A type change only.
+    source: text("source").$type<"gateway" | "muse_code" | "platform" | "docs" | "tools" | "fetch" | "vault" | "sends" | "exec" | "browse" | "code_session" | "glimmer">().notNull(),
     productId: uuid("product_id").references(() => products.id),
     buildId: uuid("build_id").references(() => builds.id),
     tokenId: uuid("token_id").references(() => gatewayTokens.id),
@@ -322,8 +370,17 @@ export const trainingJobs = pgTable(
      * yet for a job that isn't judged (judgeModelOf in lib/train/models.ts).
      */
     judgeModel: text("judge_model"),
+    /**
+     * The product this job trained a model for (0025_gpu, docs/CAPABILITIES.md, section 17): "Train on my data" and a
+     * build's own model. Null for the lab's own jobs. Filled from a run's tune-product row (lib/caps/gpu/own-model.ts).
+     */
+    productId: uuid("product_id").references(() => products.id, { onDelete: "set null" }),
   },
-  (t) => [index("training_jobs_status_idx").on(t.status), index("training_jobs_created_idx").on(t.createdAt)],
+  (t) => [
+    index("training_jobs_status_idx").on(t.status),
+    index("training_jobs_created_idx").on(t.createdAt),
+    index("training_jobs_product_idx").on(t.productId, t.createdAt),
+  ],
 );
 
 /** Append-only log for a training job's page. */
@@ -389,6 +446,13 @@ export const trainingDatasets = pgTable(
      * split is grouped by label in the labels' order (lib/train/decision-datasets.ts). {} for chat datasets.
      */
     decisionRows: jsonb("decision_rows").$type<DecisionRows | Record<string, never>>().notNull().default({}),
+    // ---------- 0025_gpu (wave 3, unit 11) ----------
+    /**
+     * Set on a dataset made from a product owner's own rows ("Train on my data"), which makes it private: it and the jobs
+     * trained on it never show on the public Lab pages. No foreign key on purpose, so it can't turn null and go public
+     * when a product is gone. Null for every other dataset.
+     */
+    productId: uuid("product_id"),
   },
   (t) => [index("training_datasets_created_idx").on(t.createdAt)],
 );
@@ -654,3 +718,599 @@ export const nativeLabs = pgTable("native_labs", {
   version: text("version"),
   instanceId: text("instance_id"),
 });
+
+// ---------- Wave 3, 0018_trust (unit 1) ----------
+
+/** Why someone reported a product (docs/CAPABILITIES.md, section 7). */
+export const REPORT_REASONS = ["illegal", "harm", "privacy", "copyright", "impersonation", "broken", "other"] as const;
+export type ReportReason = (typeof REPORT_REASONS)[number];
+export type ReportStatus = "open" | "closed" | "dismissed";
+
+/**
+ * Reports anyone can file from a product's Report link (TRUST_REPORTS). `reporter_key` is an HMAC of the reporter's IP
+ * cut to 32 characters, for rate limits and spotting repeats. The IP itself is never stored or shown. `product_id` is
+ * null when the slug matched no product.
+ */
+export const abuseReports = pgTable(
+  "abuse_reports",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id").references(() => products.id),
+    productSlug: text("product_slug").notNull(),
+    reason: text("reason").$type<ReportReason>().notNull(),
+    detail: text("detail").notNull().default(""),
+    reporterKey: text("reporter_key").notNull(),
+    status: text("status").$type<ReportStatus>().notNull().default("open"),
+    handledBy: uuid("handled_by").references(() => users.id),
+    handledAt: timestamp("handled_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("abuse_reports_status_idx").on(t.status, t.createdAt)],
+);
+
+// ---------- Wave 3, 0020_data (unit 3) ----------
+
+/**
+ * Postgres bytea, read back as a Buffer whichever driver answered (Neon sends hex text, PGlite bytes). Written as bytes:
+ * PGlite takes a Uint8Array for bytea, and Neon's driver sends a Buffer as hex text.
+ */
+const bytea = customType<{ data: Buffer; driverData: string | Uint8Array }>({
+  dataType: () => "bytea",
+  toDriver: (value) => Buffer.from(value),
+  fromDriver: (value) =>
+    typeof value === "string" ? Buffer.from(value.startsWith("\\x") ? value.slice(2) : value, value.startsWith("\\x") ? "hex" : "base64") : Buffer.from(value),
+});
+
+/**
+ * People who signed in to a product through Muse Muse with a passkey (DATA_SIGN_IN, docs/CAPABILITIES.md, section 9).
+ * No email and no password. A product never sees this id: it gets a subject made from it and its own id, so no two
+ * products can tell they have the same person.
+ */
+export const endUsers = pgTable("end_users", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  /** What the person typed, up to 40 characters. Shown to the products they sign in to. */
+  displayName: text("display_name"),
+  createdAt: createdAt(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** A passkey's public half. `credential_id` is base64url. `public_key` is SPKI DER, ready for node:crypto. */
+export const endUserPasskeys = pgTable(
+  "end_user_passkeys",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    endUserId: uuid("end_user_id")
+      .notNull()
+      .references(() => endUsers.id, { onDelete: "cascade" }),
+    credentialId: text("credential_id").notNull().unique(),
+    publicKey: bytea("public_key").notNull(),
+    /** The authenticator's signature counter. A counter that goes back means a copied key, and the sign-in is refused. */
+    counter: bigint("counter", { mode: "number" }).notNull().default(0),
+    transports: jsonb("transports").$type<string[]>().notNull().default([]),
+    createdAt: createdAt(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  },
+  (t) => [index("end_user_passkeys_user_idx").on(t.endUserId)],
+);
+
+/** Set on every write to product_rows, so live updates (unit 7) can stream a product's changes in order. */
+export const productRowsSeq = pgSequence("product_rows_seq");
+
+/**
+ * What products save through {GATEWAY_URL}/data. `namespace` is `live`, or `b:<buildId>` for a build's test rows,
+ * which are deleted when it ends. `owner_key` is the subject key of the visitor, owner or user the row belongs to
+ * (mac("caps-subject", ...), cut to 32), never a raw id, and null for shared rows. A delete only sets `deleted_at`; the
+ * hourly sweep removes the row an hour later.
+ */
+export const productRows = pgTable(
+  "product_rows",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    namespace: text("namespace").notNull(),
+    collection: text("collection").notNull(),
+    scope: text("scope").$type<DataScope>().notNull(),
+    ownerKey: text("owner_key"),
+    docId: text("doc_id").notNull(),
+    data: jsonb("data").notNull(),
+    bytes: integer("bytes").notNull(),
+    version: integer("version").notNull().default(1),
+    seq: bigint("seq", { mode: "number" })
+      .notNull()
+      .default(sql`nextval('product_rows_seq')`),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [
+    // NULLS NOT DISTINCT: shared rows have no owner_key, and two of them must still clash on the same doc id.
+    unique("product_rows_key").on(t.productId, t.namespace, t.collection, t.scope, t.ownerKey, t.docId).nullsNotDistinct(),
+    index("product_rows_seq_idx").on(t.productId, t.namespace, t.seq),
+    index("product_rows_owner_idx").on(t.productId, t.namespace, t.ownerKey),
+  ],
+);
+
+/** Rows and bytes per product and namespace, changed in the same statement as each write, so quotas need no count. */
+export const productDataCounts = pgTable(
+  "product_data_counts",
+  {
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    namespace: text("namespace").notNull(),
+    rows: integer("rows").notNull().default(0),
+    bytes: bigint("bytes", { mode: "number" }).notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.productId, t.namespace] })],
+);
+
+// ---------- Wave 3, 0021_files (unit 4) ----------
+
+/**
+ * Files products keep through {GATEWAY_URL}/files (docs/CAPABILITIES.md, section 10), with no 24-hour expiry. `namespace`
+ * is `live`, or `b:<buildId>` for a build's test files, deleted when it ends. `owner_key` is the subject key of the
+ * visitor, owner or user a private file belongs to (mac("caps-subject", ...), cut to 32), never a raw id, and null for a
+ * shared one. `blob_path` holds an unguessable suffix and never leaves the platform. A ticket makes a `pending` row; the
+ * done check reads the size and type at Blob, hashes the bytes and makes it `ready`. A delete sets `deleted_at`, removes
+ * the blob, then the row; the sweep finishes any that stopped half way. In a build's namespace the row stays as `gone`
+ * until the build ends, so the gateway's record still counts an upload its test deleted. `store` is the Blob mode the
+ * file was written in (private, public or local), so setting FILES_BLOB_STORE_ID later never strands older files.
+ * `ticket_key` is a keyed hash of the address that asked for a pending ticket, for the cap on open tickets per address;
+ * it is cleared when the file is ready.
+ */
+export const productFiles = pgTable(
+  "product_files",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    namespace: text("namespace").notNull(),
+    scope: text("scope").$type<DataScope>().notNull(),
+    ownerKey: text("owner_key"),
+    name: text("name").notNull(),
+    contentType: text("content_type").notNull(),
+    bytes: bigint("bytes", { mode: "number" }).notNull(),
+    sha256: text("sha256"),
+    blobPath: text("blob_path").notNull(),
+    store: text("store").$type<"private" | "public" | "local">().notNull().default("public"),
+    ticketKey: text("ticket_key"),
+    status: text("status").$type<"pending" | "ready" | "gone">().notNull().default("pending"),
+    createdAt: createdAt(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("product_files_list_idx").on(t.productId, t.namespace, t.scope, t.ownerKey, t.createdAt),
+    index("product_files_status_idx").on(t.productId, t.namespace, t.status),
+  ],
+);
+
+/** Postgres tsvector, written only by its generated column. */
+const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
+
+/**
+ * The product's full-text index (FILES_SEARCH). A document is split into chunks of about 4,000 characters, one row each,
+ * so a hit can say where in the text it is (`offset`, in characters from the start). `source` is what the document came
+ * from, `{fileId}` or `{collection, docId}`, and `source_key` the same as one string, so indexing a source again
+ * replaces it. `tsv` uses the `simple` configuration, which works for any language (no stemming). `added_by` is the
+ * subject key of whoever indexed it (the same as `owner_key` in a private scope), for the per-person caps and, in a
+ * shared space, so only its adder or the owner can replace it.
+ */
+export const productSearchDocs = pgTable(
+  "product_search_docs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    namespace: text("namespace").notNull(),
+    scope: text("scope").$type<DataScope>().notNull(),
+    ownerKey: text("owner_key"),
+    addedBy: text("added_by"),
+    source: jsonb("source").$type<{ fileId: string } | { collection: string; docId: string }>().notNull(),
+    sourceKey: text("source_key").notNull(),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    chunk: integer("chunk").notNull().default(0),
+    offset: integer("offset").notNull().default(0),
+    tsv: tsvector("tsv").generatedAlwaysAs(sql`to_tsvector('simple'::regconfig, coalesce("title", '') || ' ' || coalesce("body", ''))`),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("product_search_docs_tsv_idx").using("gin", t.tsv),
+    index("product_search_docs_source_idx").on(t.productId, t.namespace, t.sourceKey),
+  ],
+);
+
+/**
+ * Dataset files a build read through {GATEWAY_URL}/datasets, for the gateway's own record of the build (`/caps/proof`).
+ * Build tokens only: a live product's reads are only counted against its rate limits. Deleted when the build ends.
+ */
+export const productDatasetReads = pgTable(
+  "product_dataset_reads",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    namespace: text("namespace").notNull(),
+    datasetId: text("dataset_id").notNull(),
+    file: text("file").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("product_dataset_reads_idx").on(t.productId, t.namespace, t.createdAt)],
+);
+
+// ---------- Wave 3, 0022_connect (unit 5) ----------
+
+/**
+ * A product's key vault (CONNECT_VAULT, docs/CAPABILITIES.md, section 11): keys the product's owner brings for outside
+ * services, sealed with AES-256-GCM (lib/secrets/box.ts, CONNECT_VAULT_KEY). Only the gateway opens one, to add it to a
+ * brokered call; no route ever returns a value. `namespace` is `live`, or `b:<buildId>` for a build's made-up test keys,
+ * deleted when it ends. `created_by` is a subject key, never a raw id. One active key per name: revoking sets
+ * `revoked_at`, and the sweep removes revoked rows after a day.
+ */
+export const productSecrets = pgTable(
+  "product_secrets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    namespace: text("namespace").notNull().default("live"),
+    name: text("name").notNull(),
+    service: text("service").notNull(),
+    ciphertext: bytea("ciphertext").notNull(),
+    iv: bytea("iv").notNull(),
+    tag: bytea("tag").notNull(),
+    keyVersion: integer("key_version").notNull(),
+    /** sha256 of the value, first 16 hex characters, for a build's test keys only: verify's leak scan looks for them. */
+    testHash: text("test_hash"),
+    createdBy: text("created_by"),
+    createdAt: createdAt(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [uniqueIndex("product_secrets_active_idx").on(t.productId, t.namespace, t.name).where(sql`${t.revokedAt} is null`)],
+);
+
+/**
+ * Each confirmed send (CONNECT_SENDS): one row per send, after its approval is spent. `recipient_hash` is a MAC of the
+ * sorted recipients, never an address. `status` is `sent`, `simulated` (a build's, which never leaves the gateway) or
+ * `failed`. `approval_nonce` is unique, so one confirmation sends once.
+ */
+export const productSends = pgTable(
+  "product_sends",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    namespace: text("namespace").notNull().default("live"),
+    channel: text("channel").notNull(),
+    recipientHash: text("recipient_hash").notNull(),
+    recipients: integer("recipients").notNull().default(1),
+    approvalNonce: text("approval_nonce").notNull().unique(),
+    status: text("status").$type<"sent" | "simulated" | "failed">().notNull(),
+    providerId: text("provider_id"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("product_sends_product_idx").on(t.productId, t.namespace, t.createdAt)],
+);
+
+/**
+ * fetchPublic's cache: one row per normalized request to an allowlisted keyless API (lib/caps/connect/apis.json). Shared
+ * by every product, since the request names no one and the answer is public. The sweep removes expired rows.
+ */
+export const publicFetchCache = pgTable(
+  "public_fetch_cache",
+  {
+    key: text("key").primaryKey(),
+    api: text("api").notNull(),
+    status: integer("status").notNull(),
+    contentType: text("content_type"),
+    body: bytea("body").notNull(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [index("public_fetch_cache_expires_idx").on(t.expiresAt)],
+);
+
+// ---------- Wave 3, 0023_jobs (unit 6) ----------
+
+/**
+ * A product's schedules (JOBS_ENABLED, docs/CAPABILITIES.md, section 12), from its manifest and brief at deploy. Every
+ * `every_minutes` is at least 15. `at_minute` is minutes after local midnight in `tz`, the time a slot lines up with.
+ * `pause_reason` is `owner_away` or `product_off`: a visit from the owner lifts both.
+ */
+export const productSchedules = pgTable(
+  "product_schedules",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    everyMinutes: integer("every_minutes").notNull(),
+    atMinute: integer("at_minute"),
+    tz: text("tz").notNull().default("UTC"),
+    nextRunAt: timestamp("next_run_at", { withTimezone: true }).notNull(),
+    lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+    pausedAt: timestamp("paused_at", { withTimezone: true }),
+    pauseReason: text("pause_reason").$type<"owner_away" | "product_off">(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("product_schedules_name_idx").on(t.productId, t.name), index("product_schedules_due_idx").on(t.nextRunAt).where(sql`${t.pausedAt} is null`)],
+);
+
+/**
+ * A product's webhooks. Only the sha256 of the secret is kept: it shows once. `namespace` is `live`, or `b:<buildId>` for
+ * a build's test hook, deleted when it ends. One active hook per name.
+ */
+export const productWebhooks = pgTable(
+  "product_webhooks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    namespace: text("namespace").notNull().default("live"),
+    name: text("name").notNull(),
+    secretHash: text("secret_hash").notNull(),
+    createdAt: createdAt(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [uniqueIndex("product_webhooks_active_idx").on(t.productId, t.namespace, t.name).where(sql`${t.revokedAt} is null`)],
+);
+
+/**
+ * One background run across its ticks. `status` is `queued`, `running`, `done`, `failed`, `budget` (stopped at its
+ * dollars) or `cancelled`. `namespace` is `live`, or `b:<buildId>` for a test-fired run the cron never touches. A schedule
+ * has at most one unfinished run. `rows_written` counts rows the gateway saved for this run: the fixed check reads it, and
+ * product code can't write it.
+ */
+export const jobRuns = pgTable(
+  "job_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    scheduleId: uuid("schedule_id").references(() => productSchedules.id, { onDelete: "set null" }),
+    webhookId: uuid("webhook_id").references(() => productWebhooks.id, { onDelete: "set null" }),
+    name: text("name").notNull(),
+    trigger: text("trigger").$type<"schedule" | "webhook" | "enqueue" | "test">().notNull(),
+    namespace: text("namespace").notNull().default("live"),
+    status: text("status").$type<"queued" | "running" | "done" | "failed" | "budget" | "cancelled">().notNull().default("queued"),
+    attempt: integer("attempt").notNull().default(0),
+    tick: integer("tick").notNull().default(0),
+    checkpoint: jsonb("checkpoint"),
+    input: jsonb("input"),
+    budgetUsd: real("budget_usd").notNull(),
+    costUsd: real("cost_usd").notNull().default(0),
+    rowsWritten: integer("rows_written").notNull().default(0),
+    error: text("error"),
+    createdAt: createdAt(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("job_runs_status_idx").on(t.status, t.createdAt),
+    index("job_runs_product_idx").on(t.productId, t.namespace, t.createdAt),
+    uniqueIndex("job_runs_active_schedule_idx").on(t.scheduleId).where(sql`${t.status} in ('queued', 'running')`),
+  ],
+);
+
+/**
+ * What a product's background work tells its owner, shown on the dashboard. `kind` is `job` (notifyOwner), `job_failed`,
+ * `schedule_paused` or `send_held`. A held send keeps the whole message in `payload` until the owner confirms or dismisses
+ * it (`resolved_at`). `namespace` is `live`, or `b:<buildId>` for a build's, deleted when it ends and never shown.
+ */
+export const ownerNotices = pgTable(
+  "owner_notices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    namespace: text("namespace").notNull().default("live"),
+    kind: text("kind").$type<"job" | "job_failed" | "schedule_paused" | "send_held">().notNull(),
+    title: text("title").notNull(),
+    body: text("body").notNull().default(""),
+    payload: jsonb("payload"),
+    createdAt: createdAt(),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (t) => [index("owner_notices_product_idx").on(t.productId, t.namespace, t.readAt, t.createdAt)],
+);
+
+// ---------- Wave 3, 0024_code (unit 9) ----------
+
+/**
+ * One row per run of {GATEWAY_URL}/exec or /browse (docs/CAPABILITIES.md, section 15), for the build's proof
+ * (`/caps/proof`) and the owner's record of what ran. `namespace` is `live`, or `b:<buildId>` for a build's runs.
+ * `subject_key` is the caller's subject key (mac("caps-subject", ...), cut to 32), never a raw id, and null for a build.
+ * No code, input, output or address is kept. Money is in `usage` (sources `exec` and `browse`), as for every call.
+ */
+export const execRuns = pgTable(
+  "exec_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    namespace: text("namespace").notNull(),
+    kind: text("kind").$type<"exec" | "browse">().notNull(),
+    principal: text("principal").$type<"build" | "owner" | "user" | "visitor">().notNull(),
+    subjectKey: text("subject_key"),
+    language: text("language").$type<"python" | "node">(),
+    status: text("status").$type<"ok" | "error" | "timeout" | "failed" | "simulated">().notNull(),
+    ms: integer("ms").notNull().default(0),
+    costUsd: real("cost_usd").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [index("exec_runs_product_idx").on(t.productId, t.namespace, t.createdAt)],
+);
+
+// ---------- Wave 3, 0025_gpu (unit 11) ----------
+
+/**
+ * A demo window of the shared Muse Glimmer endpoint (docs/CAPABILITIES.md, section 17): a glimmer-serve job (`serve_job_id`,
+ * lib/train/launch.ts) with this row saying products may reach it. "open" lets products in until `ends_at`; "closing" means
+ * the GPU has been asked to stop and still counts at `cap_usd`; "closed" has its real `cost_usd`; "failed" never got a GPU.
+ * `cap_usd` is what was reserved as a `glimmer` usage row (`reservation_id`) when it opened, and settled when it closed.
+ * `spark_open` is whether its adapter is a Derivative of Muse Spark Open, read once at opening. At most one is open.
+ */
+export const glimmerWindows = pgTable(
+  "glimmer_windows",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    createdBy: uuid("created_by").references(() => users.id),
+    capUsd: real("cap_usd").notNull(),
+    status: text("status").$type<"open" | "closing" | "closed" | "failed">().notNull().default("open"),
+    costUsd: real("cost_usd"),
+    adapterJobId: uuid("adapter_job_id")
+      .notNull()
+      .references(() => trainingJobs.id),
+    serveJobId: uuid("serve_job_id").references(() => trainingJobs.id),
+    sparkOpen: boolean("spark_open").notNull().default(false),
+    reservationId: uuid("reservation_id"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("glimmer_windows_one_open").on(t.status).where(sql`${t.status} = 'open'`),
+    index("glimmer_windows_created_idx").on(t.createdAt),
+  ],
+);
+
+// ---------- Wave 3, 0027_code_sessions (unit 9) ----------
+
+/**
+ * One Muse Code session a product ran for a person or for its build's tests (docs/CAPABILITIES.md, 15b), each in its
+ * own sandbox the platform started. `namespace` is `live`, or `b:<buildId>` for a build's sessions. `token_id` is the
+ * session's own gateway token (scope code_session), revoked when it ends; `parent_token_id` the product or build token
+ * that started it, whose daily budget the session shares. `subject_key` is the caller's subject key, never a raw id.
+ *
+ * The task itself is never stored. `events` are the condensed, redacted steps a person sees, `final_text` the agent's
+ * last message (redacted), `files` and `dropped` what the result zip kept and left out, and `result_url` the zip on
+ * Blob under an unguessable name until `result_expires_at`, when the sweep deletes it. Money is in `usage` as for every
+ * call: the session token's model calls (source `gateway`) and the sandbox's time (source `code_session`).
+ */
+export const codeSessions = pgTable(
+  "code_sessions",
+  {
+    id: uuid("id").primaryKey(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    namespace: text("namespace").notNull(),
+    tokenId: uuid("token_id").references(() => gatewayTokens.id, { onDelete: "set null" }),
+    parentTokenId: uuid("parent_token_id").references(() => gatewayTokens.id, { onDelete: "set null" }),
+    principal: text("principal").$type<CodeSessionPrincipal>().notNull(),
+    subjectKey: text("subject_key"),
+    model: text("model").notNull(),
+    status: text("status").$type<CodeSessionStatus>().notNull().default("starting"),
+    reason: text("reason"),
+    sandboxName: text("sandbox_name").notNull(),
+    budgetUsd: real("budget_usd").notNull(),
+    limitMs: integer("limit_ms").notNull(),
+    /** The sandbox's time, reserved at the start and settled at the end (usage source code_session). */
+    sandboxUsageId: uuid("sandbox_usage_id"),
+    costUsd: real("cost_usd").notNull().default(0),
+    binaryHashes: jsonb("binary_hashes").$type<string[]>().notNull().default([]),
+    logOffset: integer("log_offset").notNull().default(0),
+    condense: jsonb("condense").$type<Record<string, unknown>>().notNull().default({}),
+    events: jsonb("events").$type<CodeSessionEvent[]>().notNull().default([]),
+    nextEvent: integer("next_event").notNull().default(0),
+    finalText: text("final_text"),
+    exitCode: integer("exit_code"),
+    worked: boolean("worked"),
+    files: jsonb("files").$type<CodeSessionFile[]>().notNull().default([]),
+    dropped: jsonb("dropped").$type<CodeSessionDropped[]>().notNull().default([]),
+    resultUrl: text("result_url"),
+    resultExpiresAt: timestamp("result_expires_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("code_sessions_product_idx").on(t.productId, t.status),
+    index("code_sessions_status_idx").on(t.status, t.endsAt),
+    index("code_sessions_namespace_idx").on(t.namespace, t.createdAt),
+    // Every model call of a session looks it up by its token, and a product's spend reads its sessions' tokens.
+    index("code_sessions_token_idx").on(t.tokenId),
+    index("code_sessions_parent_idx").on(t.parentTokenId),
+  ],
+);
+
+// ---------- Wave 3, 0026_hardware (unit 13) ----------
+
+export type DeviceKind = "muse_device" | "inference";
+/** How the platform trusts the address. Unit 13 registers boards by URL: "public_tls" or, off Vercel, "loopback". */
+export type DeviceTrust = "loopback" | "public_tls" | "pinned_tls" | "plain_http_opt_in";
+export interface DeviceHealth {
+  status: "ok" | "unreachable";
+  failures: number;
+  checkedAt: string;
+  latencyMs?: number;
+}
+
+/**
+ * One row per board or inference endpoint, shared with offline (docs/OFFLINE.md, docs/CAPABILITIES.md section 19). Unit 13
+ * uses kind muse_device, registered by an admin with a URL and a board token. Secrets are AES-256-GCM (lib/secrets/box.ts)
+ * under HARDWARE_BOARD_KEY: `iv` and `tag` go with token_ciphertext, `url_iv` and `url_tag` with whichever URL the row
+ * has, since one IV must never seal two values.
+ */
+export const devices = pgTable(
+  "devices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerUserId: uuid("owner_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    kind: text("kind").$type<DeviceKind>().notNull(),
+    mcpUrlCiphertext: bytea("mcp_url_ciphertext"),
+    tokenCiphertext: bytea("token_ciphertext"),
+    endpointUrlCiphertext: bytea("endpoint_url_ciphertext"),
+    iv: bytea("iv"),
+    tag: bytea("tag"),
+    urlIv: bytea("url_iv"),
+    urlTag: bytea("url_tag"),
+    keyVersion: integer("key_version"),
+    /** Filled by offline's probe, which really calls each model. Empty on a muse_device row. */
+    models: jsonb("models").$type<unknown[]>().notNull().default([]),
+    lan: boolean("lan").notNull().default(false),
+    trust: text("trust").$type<DeviceTrust>().notNull(),
+    certSpkiSha256: text("cert_spki_sha256"),
+    pairCodeHash: text("pair_code_hash"),
+    pairedAt: timestamp("paired_at", { withTimezone: true }),
+    allowPlainHttp: boolean("allow_plain_http").notNull().default(false),
+    health: jsonb("health").$type<DeviceHealth>(),
+    createdAt: createdAt(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [index("devices_owner_idx").on(t.ownerUserId, t.kind)],
+);
+
+/** Which board a product reaches. One per product. `visitors` off means only the product's owner pass reaches it. */
+export const productBoards = pgTable(
+  "product_boards",
+  {
+    productId: uuid("product_id")
+      .primaryKey()
+      .references(() => products.id, { onDelete: "cascade" }),
+    boardId: uuid("board_id")
+      .notNull()
+      .references(() => devices.id, { onDelete: "cascade" }),
+    visitors: boolean("visitors").notNull().default(false),
+    createdAt: createdAt(),
+  },
+  (t) => [index("product_boards_board_idx").on(t.boardId)],
+);

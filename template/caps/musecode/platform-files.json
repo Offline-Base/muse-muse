@@ -1,0 +1,13 @@
+[
+  ".agents/skills/muse-code-in-product/SKILL.md",
+  "app/api/musemuse/muse-code/owner/route.ts",
+  "app/api/musemuse/muse-code/result/route.ts",
+  "app/api/musemuse/muse-code/route.ts",
+  "app/api/musemuse/muse-code/steer/route.ts",
+  "app/api/musemuse/muse-code/stop/route.ts",
+  "components/platform/CodeRun.tsx",
+  "lib/muse-code/client.ts",
+  "lib/muse-code/replay.ts",
+  "lib/muse-code/sample-run.json",
+  "tests/caps/muse-code.ts"
+]

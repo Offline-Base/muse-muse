@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "about": "Vetted public datasets products can read at GET {GATEWAY_URL}/datasets/<id>/<file> (docs/CAPABILITIES.md, section 10). Every file has its size and sha256, a license that allows redistribution, and a pinned download. scripts/caps/mirror-datasets.ts checks each one and, with --apply, copies it to Blob at datasets/<id>/<file> and fills in mirror. MNIST and Fashion-MNIST join once their sha256s and licenses are verified.",
+  "datasets": [
+    {
+      "id": "palmer-penguins",
+      "title": "Palmer penguins",
+      "why": "Body measurements of 344 penguins of three species on three islands near Palmer Station, Antarctica, 2007 to 2009. One row per penguin: species, island, bill length and depth, flipper length, body mass, sex and year. Good for charts, sorting, filters and simple predictions.",
+      "license": { "spdx": "CC0-1.0", "url": "https://creativecommons.org/publicdomain/zero/1.0/" },
+      "source": { "name": "palmerpenguins (Horst, Hill and Gorman)", "url": "https://github.com/allisonhorst/palmerpenguins" },
+      "attribution": "Palmer penguins data by Dr. Kristen Gorman and Palmer Station LTER, from the palmerpenguins package by Allison Horst, Alison Hill and Kristen Gorman (CC0)",
+      "files": [
+        {
+          "name": "penguins.csv",
+          "contentType": "text/csv",
+          "bytes": 15241,
+          "sha256": "f204db2c753b0937caac3cb35258562c14f073e4bbc76be24b4c51ce22767a93",
+          "download": "https://raw.githubusercontent.com/allisonhorst/palmerpenguins/8957207b78d6ccd1b4654a9dd9c9041b657478ab/inst/extdata/penguins.csv",
+          "mirror": null
+        }
+      ]
+    }
+  ]
+}

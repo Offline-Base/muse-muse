@@ -1,0 +1,68 @@
+{
+  "note": "Made up in the shape of the provider docs. Builds get it instead of a call; no key was used.",
+  "GET /user": [
+    {
+      "status": 200,
+      "data": {
+        "login": "sample-maker",
+        "id": 1001,
+        "name": "Sample Maker",
+        "public_repos": 3,
+        "html_url": "https://example.com/sample-maker"
+      }
+    }
+  ],
+  "GET /users/**": [
+    {
+      "status": 200,
+      "data": {
+        "login": "sample-maker",
+        "id": 1001,
+        "name": "Sample Maker",
+        "public_repos": 3,
+        "followers": 12,
+        "html_url": "https://example.com/sample-maker"
+      }
+    }
+  ],
+  "GET /repos/**": [
+    {
+      "status": 200,
+      "data": {
+        "id": 2002,
+        "name": "garden-planner",
+        "full_name": "sample-maker/garden-planner",
+        "description": "A sample repository for tests.",
+        "stargazers_count": 42,
+        "open_issues_count": 3,
+        "html_url": "https://example.com/sample-maker/garden-planner",
+        "updated_at": "2026-10-30T12:00:00Z"
+      }
+    }
+  ],
+  "GET /search/**": [
+    {
+      "status": 200,
+      "data": {
+        "total_count": 2,
+        "incomplete_results": false,
+        "items": [
+          {
+            "id": 2002,
+            "full_name": "sample-maker/garden-planner",
+            "description": "A sample repository for tests.",
+            "stargazers_count": 42,
+            "html_url": "https://example.com/sample-maker/garden-planner"
+          },
+          {
+            "id": 2003,
+            "full_name": "sample-maker/tide-clock",
+            "description": "Another sample repository.",
+            "stargazers_count": 7,
+            "html_url": "https://example.com/sample-maker/tide-clock"
+          }
+        ]
+      }
+    }
+  ]
+}

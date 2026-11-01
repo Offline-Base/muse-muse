@@ -1,0 +1,83 @@
+{
+  "note": "Made up in the shape of the provider docs. Builds get it instead of a call; no key was used.",
+  "GET /data/2.5/weather": [
+    {
+      "status": 200,
+      "data": {
+        "name": "Sampleton",
+        "coord": {
+          "lat": 40.7,
+          "lon": -74
+        },
+        "weather": [
+          {
+            "id": 800,
+            "main": "Clear",
+            "description": "clear sky",
+            "icon": "01d"
+          }
+        ],
+        "main": {
+          "temp": 291.2,
+          "feels_like": 290.6,
+          "humidity": 52
+        },
+        "wind": {
+          "speed": 3.1,
+          "deg": 240
+        },
+        "dt": 1793500000
+      }
+    }
+  ],
+  "GET /data/2.5/forecast": [
+    {
+      "status": 200,
+      "data": {
+        "city": {
+          "name": "Sampleton"
+        },
+        "list": [
+          {
+            "dt": 1793510800,
+            "main": {
+              "temp": 290.1
+            },
+            "weather": [
+              {
+                "main": "Clouds",
+                "description": "few clouds"
+              }
+            ]
+          },
+          {
+            "dt": 1793521600,
+            "main": {
+              "temp": 288.4
+            },
+            "weather": [
+              {
+                "main": "Rain",
+                "description": "light rain"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "GET /geo/1.0/direct": [
+    {
+      "status": 200,
+      "data": [
+        {
+          "name": "Sampleton",
+          "lat": 40.7,
+          "lon": -74,
+          "country": "US",
+          "state": "New York"
+        }
+      ]
+    }
+  ]
+}

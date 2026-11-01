@@ -34,11 +34,32 @@ import {
   type JudgeCall,
 } from "@/lib/pipeline/logic";
 import { modelLabel } from "@/lib/format";
-import { stepRetries } from "@/lib/pipeline/steps";
+import { roundPlanFor, stepRetries, type RoundPlan } from "@/lib/pipeline/steps";
+// ---------- Wave 3, unit 2 (docs/CAPABILITIES.md, section 8) ----------
+import { briefCaps } from "@/lib/caps/brief-fields";
+import { capsBuildEnded } from "@/lib/caps/cleanup";
+import { capBuildEnv, capDeployEnv } from "@/lib/caps/env";
+import { capBuildHosts } from "@/lib/caps/hosts";
+import { capsLivePaths } from "@/lib/caps/live";
+import { usesSharedGlimmer } from "@/lib/caps/gpu/marker";
+import { GPU_PROOF_FRAME } from "@/lib/caps/gpu/judge";
+import { gpuProofText } from "@/lib/caps/gpu/proof";
+import { capsProofText } from "@/lib/caps/judge";
+import { narrowCapMarkers } from "@/lib/caps/manifest";
+import { capsFileFor } from "@/lib/caps/overlays";
+import { runCapsShipStep } from "@/lib/caps/ship-run";
+import { liveCheck } from "@/lib/engine/live-check";
+import { briefMilestones, type MilestoneState, type RoundPlanRecord } from "@/lib/engine/milestones";
+import { renderMilestonePrompt } from "@/lib/engine/prompts";
+// ---------- end Wave 3, unit 2 ----------
+// ---------- Wave 3, unit 3: cap readiness (docs/CAPABILITIES.md, 2.4a) ----------
+import { capDropLine, capsForBuild, readCapDrops, withoutCaps, type CapDrop } from "@/lib/caps/ready";
+// ---------- end Wave 3, unit 3 ----------
 import { pollDeploy, projectNameFor, startDeployFromSandbox, type DeployPoll } from "@/lib/publish/vercel";
 import { briefTargets } from "@/lib/native/targets";
 import { demoNoteFor } from "@/lib/sandbox/artifacts";
 import * as sandbox from "@/lib/sandbox/builder";
+import { publicHost } from "@/lib/sandbox/policy";
 import type { MuseEngine } from "@/lib/sandbox/bridge-protocol";
 import type { BridgeCondenseState } from "@/lib/sandbox/msp-log";
 import { newSessionId, type BuildModel } from "@/lib/sandbox/muse";
@@ -54,6 +75,8 @@ import {
   type Screenshot,
   type VerifySummary,
 } from "@/lib/types";
+import { trustOverlayFor, type TrustOverlay } from "@/lib/trust/overlay";
+import { briefTierFor } from "@/lib/trust/tiers";
 import { platformSpendToday, recordUsage, type UsageContext } from "@/lib/usage";
 
 /** Muse Code's step budget per run. */
@@ -66,7 +89,34 @@ const BUILD_TOKEN_TTL_HOURS = 6;
 async function loadBuild(buildId: string) {
   const [build] = await db().select().from(schema.builds).where(eq(schema.builds.id, buildId)).limit(1);
   if (!build) throw new FatalError(`Build ${buildId} was not found.`);
-  return build;
+  return workingBuild(build);
+}
+
+/**
+ * Wave 3, unit 3 (docs/CAPABILITIES.md, 2.4a): a build row with `brief` as the build's working copy, whose cap blocks
+ * this build can't have are null (capsForBuild), the decision saved at provision when there is one. `storedBrief` is
+ * the brief as stored, which keeps every block, and `capDrops` what the working copy left out. A brief with no cap
+ * blocks is the same object, so a build without caps reads exactly what it did.
+ */
+function workingBuild<B extends { brief: Brief | null; kind: string; capsDropped: unknown }>(row: B): B & { storedBrief: Brief | null; capDrops: CapDrop[] } {
+  if (!row.brief) return { ...row, storedBrief: row.brief, capDrops: [] };
+  const { brief, dropped } = capsForBuild(row.brief, { kind: row.kind === "refine" ? "refine" : "build", decided: readCapDrops(row.capsDropped) });
+  return { ...row, brief, storedBrief: row.brief, capDrops: dropped };
+}
+
+/**
+ * Wave 3, unit 3: saves the caps a build goes without, once, and says so in the build log, one plain line each. Nothing
+ * for a brief with no cap blocks, and nothing again on a retry once the decision is saved.
+ */
+async function decideCaps(build: { id: string; storedBrief: Brief | null; capsDropped: unknown; capDrops: CapDrop[] }, extra: CapDrop[] = []): Promise<void> {
+  const before = readCapDrops(build.capsDropped);
+  if (!build.storedBrief || (!before && !briefCaps(build.storedBrief).length)) return;
+  const all = [...(before ?? build.capDrops)];
+  for (const d of extra) if (!all.some((a) => a.cap === d.cap)) all.push(d);
+  const fresh = all.filter((d) => !before?.some((b) => b.cap === d.cap));
+  if (before && !fresh.length) return;
+  await db().update(schema.builds).set({ capsDropped: all }).where(eq(schema.builds.id, build.id));
+  for (const d of fresh) await emit(build.id, { type: "log", text: capDropLine(d) });
 }
 
 async function loadInspiration(inspirationId: string) {
@@ -265,6 +315,8 @@ export async function cleanupStep(input: {
   if (input.productId) {
     await revokeTokens(input.productId, "build").catch((err) => console.error("[cleanup] revoke", err));
   }
+  // Each cap clears this build's namespace (docs/CAPABILITIES.md, 2.9). Nothing is registered until a cap is ready.
+  await capsBuildEnded(input.buildId);
   if (input.sandboxName) {
     try {
       await sandbox.hibernate(input.sandboxName);
@@ -287,16 +339,61 @@ export interface BriefSummary {
   name: string;
   tagline: string;
   model: BuildModel;
+  /** The engine's round plan, only when ENGINE_ROUND_SCALING or ENGINE_MILESTONES gives one (enginePlan). */
+  plan?: RoundPlan;
 }
 
 function summarize(brief: Brief): BriefSummary {
+  const plan = enginePlan(brief, "build");
   return {
     verdict: brief.verdict,
     refusal: brief.refusal,
     name: brief.name,
     tagline: brief.tagline,
     model: pickBuildModel(brief.complexity, { buildModel: env.buildModel, complexBuildModel: env.complexBuildModel }),
+    ...(plan ? { plan } : {}),
   };
+}
+
+/**
+ * Round time by brief size and milestones (docs/CAPABILITIES.md, section 8). Undefined when neither flag gives one, so
+ * a build runs on today's caps. Refinements scale too but never have milestones.
+ */
+function enginePlan(brief: Brief, kind: "build" | "refine"): RoundPlan | undefined {
+  const milestones = kind === "build" && env.engineMilestones ? briefMilestones(brief).map((m) => ({ title: m.title })) : [];
+  if (!env.engineRoundScaling && !milestones.length) return undefined;
+  const size = { complexity: brief.complexity, caps: briefCaps(brief).length, screens: brief.screens.length, actions: brief.actions.length };
+  return roundPlanFor(size, milestones, { scaling: env.engineRoundScaling, maxMinutes: env.engineRoundMaxMinutes });
+}
+
+/** builds.round_plan for a plan: the first round's minutes and each milestone, planned. */
+function planRecord(plan: RoundPlan): RoundPlanRecord {
+  return { capMinutes: Math.round(plan.buildMs / 60_000), milestones: plan.milestones.map((m) => ({ title: m.title, state: "planned" })) };
+}
+
+/** brief.md says to verify at most twice a round for big builds: caps, milestones, or either round flag on. */
+function verifyBudgetFor(brief: Brief): boolean {
+  return briefCaps(brief).length > 0 || (env.engineMilestones && briefMilestones(brief).length > 0) || env.engineRoundScaling || env.engineCheckOnTimeout;
+}
+
+/**
+ * Wave 3, unit 1 (docs/CAPABILITIES.md, section 7): the trust overlay's two files for a new product, from its brief and
+ * the trust flags as the build starts, or null while TRUST_AGE_GATE, TRUST_LEGAL_PAGES, TRUST_GEO_BLOCK and
+ * TRUST_REPORTS are all off.
+ */
+function trustOverlayStep(brief: Brief, slug: string): TrustOverlay | null {
+  if (!env.trustProductOverlay) return null;
+  return trustOverlayFor(brief, {
+    slug,
+    platformUrl: env.platformUrl,
+    flags: {
+      ageGate: env.trustAgeGate,
+      legalPages: env.trustLegalPages,
+      geoBlock: env.trustGeoBlock,
+      geoCountries: env.trustGeoCountries,
+      reports: env.trustReports,
+    },
+  });
 }
 
 /** Writes the brief with the brief model (env.briefModel) and saves it. A retry after the brief was saved reuses it. */
@@ -305,11 +402,14 @@ export async function briefStep(buildId: string): Promise<BriefSummary> {
   const build = await loadBuild(buildId);
   if (build.brief) return summarize(build.brief);
   const inspiration = await loadInspiration(build.inspirationId);
+  // Wave 3, unit 1: who is building (TRUST_SIGNED_IN_CAPS). Undefined, and nothing read, with the flag off.
+  const builder = await briefTierFor(build.userId);
   const result = await writeBrief({
     note: inspiration.note,
     references: inspiration.references,
     rebuildOf: rebuildTargetFor(build.rebuildOf),
     requestedTargets: build.requestedTargets,
+    ...(builder ? { builder } : {}),
   }).catch(async (err: unknown) => {
     // A brief that failed both attempts still cost something. Record it before the step retries.
     if (err instanceof StructuredOutputError) await chargeBrief(buildId, err.usage);
@@ -319,7 +419,7 @@ export async function briefStep(buildId: string): Promise<BriefSummary> {
   const summary = summarize(result.brief);
   await db()
     .update(schema.builds)
-    .set({ brief: result.brief, buildModel: summary.model })
+    .set({ brief: result.brief, buildModel: summary.model, ...(summary.plan ? { roundPlan: planRecord(summary.plan) } : {}) })
     .where(eq(schema.builds.id, buildId));
   for (const t of result.transcripts) {
     await emit(buildId, { type: "log", text: `Voice memo ${t.index + 1}: ${t.text}` });
@@ -447,6 +547,10 @@ function extraFilesFor(brief: Brief | null): { extraFiles?: Array<{ path: string
  * Mints the build token and provisions the sandbox in one step, so the plaintext token stays inside it. Also fixes
  * the Muse Code session id (a fresh UUIDv7, reused on retry).
  */
+/** The build room's line for a product with caps on a local run (PLATFORM_URL on localhost). */
+export const CAPS_LOCAL_RUN_NOTE =
+  "This is a local run, so the build machine can't reach the gateway. Checks of what the gateway saw for the platform services will fail. Test them with a public PLATFORM_URL.";
+
 export async function provisionStep(input: {
   buildId: string;
   productId: string;
@@ -455,25 +559,50 @@ export async function provisionStep(input: {
 }): Promise<SandboxRef> {
   "use step";
   const build = await loadBuild(input.buildId);
+  // Wave 3, unit 3: the caps this build goes without are decided here, once, before anything reads them (2.4a).
+  await decideCaps(build);
   const brief = requireBrief(build);
   const inspiration = await loadInspiration(build.inspirationId);
   const look = lookNote();
-  const promptMarkdown = renderBuildPrompt(brief, {
-    inspoFiles: inspiration.references.map((r) => r.fileName),
-    fixtures: input.fixtures.map((f) => ({ fileName: f.fileName, description: f.description, fromUserSample: f.fromUserSample })),
-    maxModelSteps: MAX_MODEL_STEPS,
-    rebuildOf: rebuildTargetFor(build.rebuildOf),
-    ...sessionNotes(),
-    ...look,
-  });
+  // Wave 3, unit 1: the trust overlay, for every new build while a trust product flag is on. Null with them off.
+  const trust = trustOverlayStep(brief, input.slug);
+  const promptFor = (b: Brief) =>
+    renderBuildPrompt(b, {
+      inspoFiles: inspiration.references.map((r) => r.fileName),
+      fixtures: input.fixtures.map((f) => ({ fileName: f.fileName, description: f.description, fromUserSample: f.fromUserSample })),
+      maxModelSteps: MAX_MODEL_STEPS,
+      rebuildOf: rebuildTargetFor(build.rebuildOf),
+      ...sessionNotes(),
+      ...(verifyBudgetFor(b) ? { verifyBudget: true } : {}),
+      // Only when the round plan briefStep saved chains milestones, which is what the workflow runs.
+      ...(build.roundPlan?.milestones?.length ? { milestones: briefMilestones(b) } : {}),
+      ...(trust ? { trust: true } : {}),
+      ...look,
+    });
+  const promptMarkdown = promptFor(brief);
   const allowedModels = allowedModelsFor(brief);
-  const { token } = await mintToken({
+  // A brief with cap blocks gets its overlays, its extra env and hosts, and a build token tied to this build, whose
+  // rows and files live in the build namespace b:<buildId> (docs/CAPABILITIES.md, 2.3). One without gets today's sandbox.
+  const caps = capsFileFor(brief);
+  const { id: tokenId, token } = await mintToken({
     productId: input.productId,
     scope: "build",
     allowedModels,
     dailyBudgetUsd: buildTokenBudgetFor(),
     ttlHours: BUILD_TOKEN_TTL_HOURS,
+    ...(caps ? { buildId: input.buildId } : {}),
   });
+  // Wave 3, unit 3: the backstop (2.4a). On the live site, a cap whose overlay the snapshot turns out not to have is
+  // dropped before the sandbox gets anything: saved and logged like the others, off the token, out of the prompt.
+  let kept = brief;
+  const dropCaps = async (drop: string[]) => {
+    const extra = drop.filter((c): c is CapDrop["cap"] => briefCaps(kept).includes(c as CapDrop["cap"])).map((cap) => ({ cap, reason: "snapshot" as const }));
+    await decideCaps({ ...build, capsDropped: [...build.capDrops] }, extra);
+    kept = withoutCaps(kept, extra.map((d) => d.cap));
+    await db().update(schema.gatewayTokens).set({ allowedModels: allowedModelsFor(kept) }).where(eq(schema.gatewayTokens.id, tokenId));
+    const left = capsFileFor(kept);
+    return { promptMarkdown: promptFor(kept), ...(left ? { caps: left, capEnv: capBuildEnv(kept), capHosts: capBuildHosts(left.caps) } : usesSharedGlimmer(kept) ? { capEnv: capBuildEnv(kept) } : {}) };
+  };
   const { sandboxName } = await sandbox.provisionSandbox({
     buildId: input.buildId,
     productId: input.productId,
@@ -486,7 +615,16 @@ export async function provisionStep(input: {
     ...look,
     ...extraFilesFor(brief),
     targets: briefTargets(brief),
+    ...(caps ? { caps, capEnv: capBuildEnv(brief), capHosts: capBuildHosts(caps.caps), dropCaps } : {}),
+    // Wave 3, unit 11: the shared Glimmer endpoint's .env.local line, for a brief with no caps. Nothing with its flag off.
+    ...(!caps && usesSharedGlimmer(brief) ? { capEnv: capBuildEnv(brief) } : {}),
+    ...(trust ? { trust } : {}),
   });
+  // A local run's sandbox can't reach the gateway, so a cap check that needs the gateway's record can't pass there. Say
+  // so once, at the start, instead of letting each check fail with no reason (docs/CAPABILITIES.md, 8a).
+  if (capsFileFor(kept) && publicHost(env.platformUrl) === null) {
+    await emit(input.buildId, { type: "log", text: CAPS_LOCAL_RUN_NOTE });
+  }
   const sessionId = build.museSessionId ?? newSessionId();
   await db().batch([
     db().update(schema.builds).set({ sandboxName, museSessionId: sessionId }).where(eq(schema.builds.id, input.buildId)),
@@ -550,6 +688,8 @@ export async function startMuseStep(input: {
   round: number;
   /** The build, when the workflow has it at hand. Otherwise it is looked up when the round needs it. */
   buildId?: string;
+  /** A scaled round's cap (ENGINE_ROUND_SCALING), so the sandbox keeps enough session time for it. */
+  capMs?: number;
 }): Promise<MuseRun> {
   "use step";
   const engine = env.museEngine;
@@ -568,6 +708,7 @@ export async function startMuseStep(input: {
     engine,
     goal: build?.brief ? goalObjective(build.brief) : null,
     ...(buildId ? { buildId } : {}),
+    ...(input.capMs ? { capMs: input.capMs } : {}),
   });
   const how = museRunLine(started, full, env.museAgentCapacity);
   if (how && buildId) {
@@ -750,6 +891,10 @@ export async function collectVerifyStep(input: {
   "use step";
   const { summary, screenshots } = await sandbox.collectVerifyResult(input);
   await emit(input.buildId, { type: "verify", round: input.round, summary, screenshots });
+  // A product with platform services: each fixed check as its own line in the build room (docs/CAPABILITIES.md, 2.8).
+  for (const c of summary.caps ?? []) {
+    for (const k of c.checks) await emit(input.buildId, { type: "caps", cap: c.cap, check: k.id, ok: k.ok, ...(k.detail ? { detail: k.detail } : {}) });
+  }
   return {
     passed: summary.passed,
     steps: summary.steps.map((s) => ({ name: s.name, ok: s.ok })),
@@ -792,7 +937,7 @@ export async function judgeStep(input: {
   "use step";
   const build = await loadBuild(input.buildId);
   // Refine rows get the product's brief in loadRefineStep. Older ones fall back to the first build's, as deploy does.
-  const brief = build.brief ?? (await latestBrief(input.productId));
+  const brief = build.brief ?? (await latestWorkingBrief(input.productId));
   if (!brief) throw new FatalError("This build has no brief yet.");
   const ctx: UsageContext & { buildId: string } = {
     source: "platform",
@@ -801,10 +946,16 @@ export async function judgeStep(input: {
     productId: input.productId,
   };
   const what = input.round === 0 ? "Judge" : `Judge round ${input.round}`;
+  // A product with platform services shows the judge its fixed checks' results first (docs/CAPABILITIES.md, 2.8).
+  const fixedProof = briefCaps(brief).length ? capsProofText(await verifySummaryFor(input.buildId, input.round)) : null;
+  // Wave 3, unit 11: the gateway's record of a build's Glimmer calls, which decides nothing. Null with GPU_GLIMMER_SHARED off.
+  const gpuProof = await gpuProofText(brief, input.buildId);
+  const capsProof = gpuProof ? `${fixedProof ?? GPU_PROOF_FRAME}\n${gpuProof}` : fixedProof;
   const result = await judgeBuild({
     brief,
     references: await judgeReferences(build, input.productId),
     screenshots: input.screenshots,
+    ...(capsProof ? { capsProof } : {}),
   }).catch(async (err: unknown) => {
     // A judge call that failed both attempts still cost something.
     if (err instanceof StructuredOutputError) await charge(ctx, err.usage, what);
@@ -818,6 +969,17 @@ judgeStep.maxRetries = 1;
 
 function isVerifyEvent(p: BuildEventBody): p is Extract<BuildEventBody, { type: "verify" }> {
   return p.type === "verify";
+}
+
+/** The verify summary the build room got for a round, read back from the build's events. */
+async function verifySummaryFor(buildId: string, round: number): Promise<VerifySummary | null> {
+  const rows = await db()
+    .select({ payload: schema.buildEvents.payload })
+    .from(schema.buildEvents)
+    .where(and(eq(schema.buildEvents.buildId, buildId), eq(schema.buildEvents.type, "verify")))
+    .orderBy(desc(schema.buildEvents.id))
+    .limit(20);
+  return rows.map((r) => r.payload).filter(isVerifyEvent).find((p) => p.round === round)?.summary ?? null;
 }
 
 function isJudgeEvent(p: BuildEventBody): p is Extract<BuildEventBody, { type: "judge" }> {
@@ -874,6 +1036,91 @@ export async function writeFixPromptStep(input: {
 }
 writeFixPromptStep.maxRetries = 2;
 
+// ---------------------------------------------------------------------------------------------------------------
+// Wave 3, unit 2: milestones and the live check (docs/CAPABILITIES.md, section 8)
+
+/**
+ * Writes milestone-<index>.md from the brief's milestone and the strict verify that ran after the one before (read back
+ * from the build's events), into the product. The workflow resumes the same session with it.
+ */
+export async function writeMilestonePromptStep(input: {
+  buildId: string;
+  sandboxName: string;
+  index: number;
+  of: number;
+  verifiedRound: number;
+}): Promise<{ promptFile: string }> {
+  "use step";
+  const build = await loadBuild(input.buildId);
+  const milestone = briefMilestones(requireBrief(build))[input.index - 1];
+  if (!milestone) throw new FatalError(`This build's brief has no milestone ${input.index}.`);
+  const verify = await verifySummaryFor(input.buildId, input.verifiedRound);
+  const promptFile = `milestone-${input.index}.md`;
+  await sandbox.writeProductFile(input.sandboxName, promptFile, renderMilestonePrompt({ index: input.index, of: input.of, milestone, verify }));
+  return { promptFile };
+}
+writeMilestonePromptStep.maxRetries = 2;
+
+/** Tells the build room where a milestone is, and keeps builds.round_plan in step. */
+export async function milestoneStep(
+  buildId: string,
+  m: { index: number; of: number; title: string; state: MilestoneState },
+): Promise<void> {
+  "use step";
+  await emit(buildId, { type: "milestone", ...m });
+  const [row] = await db().select({ roundPlan: schema.builds.roundPlan }).from(schema.builds).where(eq(schema.builds.id, buildId)).limit(1);
+  const plan = row?.roundPlan;
+  if (!plan || !plan.milestones[m.index - 1]) return;
+  const milestones = plan.milestones.map((x, i) => (i === m.index - 1 ? { ...x, state: m.state } : x));
+  await db().update(schema.builds).set({ roundPlan: { ...plan, milestones } }).where(eq(schema.builds.id, buildId));
+}
+milestoneStep.maxRetries = 2;
+
+/**
+ * The live check (ENGINE_LIVE_SMOKE): loads the live link, its action routes and, for a product with platform
+ * services, its health route, with no model call. Saves the result in builds.live_check and tells the build room.
+ * Never throws: a check that can't run counts as failed, with the reason.
+ */
+export async function liveCheckStep(input: { buildId: string; sandboxName: string; url: string }): Promise<{ ok: boolean; reason?: string }> {
+  "use step";
+  let result: { ok: boolean; at: string; url: string; reason?: string };
+  try {
+    const build = await loadBuild(input.buildId);
+    const brief = build.brief ?? (build.productId ? await latestWorkingBrief(build.productId) : null);
+    const manifest = await sandbox.readManifest(input.sandboxName).catch(() => null);
+    const actions = (manifest?.actions ?? []).map((a) => a.name).filter((n): n is string => typeof n === "string" && /^[a-z][a-z0-9_]*$/.test(n));
+    const capPaths = capsLivePaths(brief);
+    const checked = await liveCheck({ url: input.url, actions, health: Boolean(brief && capsFileFor(brief)), ...(capPaths.length ? { capPaths } : {}) });
+    result = { ok: checked.ok, at: checked.at, url: checked.url, ...(checked.reason ? { reason: checked.reason } : {}) };
+  } catch (err) {
+    result = { ok: false, at: new Date().toISOString(), url: input.url, reason: `the check couldn't run (${String((err as Error)?.message ?? err).slice(0, 120)})` };
+  }
+  try {
+    await db().update(schema.builds).set({ liveCheck: result }).where(eq(schema.builds.id, input.buildId));
+    await emit(input.buildId, { type: "live_check", ok: result.ok, url: result.url, ...(result.reason ? { reason: result.reason } : {}) });
+  } catch (err) {
+    console.error("[live check] saving the result", err);
+  }
+  return { ok: result.ok, ...(result.reason ? { reason: result.reason } : {}) };
+}
+liveCheckStep.maxRetries = 1;
+
+// ---------- Wave 3, unit 14 (docs/CAPABILITIES.md, section 20): what a cap makes from the live link ----------
+/**
+ * After deploy, before register: each enabled cap in CAPS_SHIPPING that the brief has makes what it makes from the live
+ * link (the browser extension's zip), and says so in the build room. Never throws: the product is live either way.
+ */
+export async function capsShipStep(input: { buildId: string; productId: string; sandboxName: string; liveUrl: string }): Promise<void> {
+  "use step";
+  await runCapsShipStep(input, {
+    brief: async () => (await loadBuild(input.buildId)).brief ?? (await latestBrief(input.productId)),
+    emit: (text) => emit(input.buildId, { type: "log", text }),
+    enabled: env.enabledCaps,
+  });
+}
+capsShipStep.maxRetries = 1;
+// ---------- end Wave 3, unit 14 ----------
+
 /**
  * The URL a product's demo shows in its window: the live URL it already has (a refinement), else the one its first
  * deploy will get (lib/publish/vercel.ts names the project), else none, when publishing is off.
@@ -897,7 +1144,7 @@ export async function demoSpecStep(input: {
   "use step";
   const build = await loadBuild(input.buildId);
   const product = await loadProduct(input.productId);
-  const brief = build.brief ?? (await latestBrief(input.productId));
+  const brief = build.brief ?? (await latestWorkingBrief(input.productId));
   const models = brief ? brief.capabilities.map((c) => c.model) : (product.manifest?.models ?? []).map((m) => m.id);
   await sandbox.writeDemoSpec(input.sandboxName, {
     title: input.title,
@@ -950,11 +1197,14 @@ export async function startDeployStep(input: {
   "use step";
   const build = await loadBuild(input.buildId);
   const product = await loadProduct(input.productId);
-  const brief = build.brief ?? (await latestBrief(input.productId));
+  const brief = build.brief ?? (await latestWorkingBrief(input.productId));
+  const allowed = brief ? allowedModelsFor(brief) : await liveModels(input.productId);
   const live = await mintToken({
     productId: input.productId,
     scope: "live",
-    allowedModels: brief ? allowedModelsFor(brief) : await liveModels(input.productId),
+    // A product with caps: its musemuse.json may narrow them, never widen them (docs/CAPABILITIES.md, 2.3). Without
+    // caps the manifest isn't read here, as before.
+    allowedModels: brief && briefCaps(brief).length ? narrowCapMarkers(allowed, await sandbox.readManifest(input.sandboxName).catch(() => null)) : allowed,
     // Room for about 20 runs a day at the brief's estimate (Muse Wonder runs cost more than Spark's did).
     dailyBudgetUsd: liveTokenDailyBudgetFor(brief?.estimatedCostPerRunUsd),
   });
@@ -962,8 +1212,15 @@ export async function startDeployStep(input: {
     sandboxName: input.sandboxName,
     slug: product.slug,
     productName: product.name,
-    env: { GATEWAY_URL: env.gatewayUrl, PRODUCT_TOKEN: live.token },
+    env: { GATEWAY_URL: env.gatewayUrl, PRODUCT_TOKEN: live.token, ...(brief ? capDeployEnv(brief, live.token) : {}) },
     projectId: product.vercelProjectId,
+  }).catch(async (err: unknown) => {
+    // Wave 3, unit 1: a deploy refused before any deployment was made (files too big, DeployFilesTooBigError) never
+    // retries, so nothing will ever use the token minted for it. Revoke it. Other errors retry the step, which mints anew.
+    if (err instanceof FatalError) {
+      await db().update(schema.gatewayTokens).set({ revokedAt: new Date() }).where(eq(schema.gatewayTokens.id, live.id));
+    }
+    throw err;
   });
   await db()
     .update(schema.products)
@@ -972,6 +1229,15 @@ export async function startDeployStep(input: {
   return { projectId: started.projectId, deploymentId: started.deploymentId, liveTokenId: live.id };
 }
 startDeployStep.maxRetries = stepRetries("deploy");
+
+/**
+ * Wave 3, unit 3: latestBrief as a refinement's working copy (capsForBuild, 2.4a): a cap switched off since is null.
+ * A product with no cap blocks gets the same brief.
+ */
+async function latestWorkingBrief(productId: string): Promise<Brief | null> {
+  const brief = await latestBrief(productId);
+  return brief ? capsForBuild(brief, { kind: "refine" }).brief : null;
+}
 
 /** The brief of the product's first build, for refinements (loadRefineStep copies it; older refine rows have none). */
 async function latestBrief(productId: string): Promise<Brief | null> {
@@ -1079,6 +1345,8 @@ export interface RefineContext {
   model: BuildModel;
   /** 1 for the product's first refinement, 2 for the next, and so on. */
   refineIndex: number;
+  /** The engine's round plan, only with ENGINE_ROUND_SCALING. Refinements have no milestones. */
+  plan?: RoundPlan;
 }
 
 /**
@@ -1138,18 +1406,21 @@ export async function loadRefineStep(buildId: string): Promise<RefineContext> {
     .limit(1);
   // The session resumes on the model that started it, never on today's default: a Spark session never goes to Wonder.
   const model = refineBuildModel(previous?.buildModel);
-  const brief = build.brief ?? (await latestBrief(product.id));
+  // Wave 3, unit 3: the row gets the brief as stored, every cap block kept; the plan uses the working copy (2.4a).
+  const stored = build.storedBrief ?? (await latestBrief(product.id));
+  const brief = stored ? capsForBuild(stored, { kind: "refine" }).brief : null;
   await db()
     .update(schema.builds)
     .set({
       sandboxName: product.sandboxName,
       museSessionId: product.museSessionId,
       buildModel: model,
-      ...(brief ? { brief } : {}),
+      ...(stored ? { brief: stored } : {}),
       // A change's tests see the same tool samples as the first build's.
       ...(previous?.toolFixtures ? { toolFixtures: previous.toolFixtures } : {}),
     })
     .where(eq(schema.builds.id, buildId));
+  const plan = brief ? enginePlan(brief, "refine") : undefined;
   return {
     productId: product.id,
     name: product.name,
@@ -1158,6 +1429,7 @@ export async function loadRefineStep(buildId: string): Promise<RefineContext> {
     sessionId: product.museSessionId,
     model,
     refineIndex: Math.max(1, Number(n)),
+    ...(plan ? { plan } : {}),
   };
 }
 
@@ -1173,17 +1445,24 @@ export async function reopenStep(input: {
 }): Promise<{ promptFile: string; images: string[] }> {
   "use step";
   const build = await loadBuild(input.buildId);
+  // Wave 3, unit 3: a change goes without a cap switched off since the product was built, said once (2.4a).
+  await decideCaps(build);
   const inspiration = await loadInspiration(build.inspirationId);
-  const brief = build.brief ?? (await latestBrief(input.productId));
+  const brief = build.brief ?? (await latestWorkingBrief(input.productId));
   const allowedModels = brief ? allowedModelsFor(brief) : await liveModels(input.productId);
+  // A product with caps gets a token tied to this build, as at provision, so a change works in the build namespace
+  // b:<buildId> and never on the product's live rows (docs/CAPABILITIES.md, 2.3). One without gets today's token.
+  const caps = brief ? capsFileFor(brief) : null;
   const { token } = await mintToken({
     productId: input.productId,
     scope: "build",
     allowedModels,
     dailyBudgetUsd: buildTokenBudgetFor(),
     ttlHours: BUILD_TOKEN_TTL_HOURS,
+    ...(caps ? { buildId: input.buildId } : {}),
   });
   const newReferences: Reference[] = inspiration.references;
+  const capHosts = caps ? capBuildHosts(caps.caps) : [];
   await sandbox.reopenSandbox({
     sandboxName: input.sandboxName,
     productId: input.productId,
@@ -1191,6 +1470,11 @@ export async function reopenStep(input: {
     gatewayUrl: env.gatewayUrl,
     newReferences,
     ...extraFilesFor(brief),
+    // A product with caps keeps its hosts and its .env.local lines on every change, as at provision.
+    ...(capHosts.length ? { capHosts } : {}),
+    ...(caps && brief ? { capEnv: capBuildEnv(brief), caps: true } : {}),
+    // Wave 3, unit 11: as at provision.
+    ...(!caps && usesSharedGlimmer(brief) ? { capEnv: capBuildEnv(brief as Brief) } : {}),
   });
   const prompt = renderRefinePrompt({
     brief,

@@ -1,0 +1,12 @@
+## provision
+# Written by the Muse Muse platform for this build. Never commit this file.
+GATEWAY_URL=https://musemuse.example/api/gateway
+PRODUCT_TOKEN=mm_build_sample
+## reopen
+# Written by the Muse Muse platform for this build. Never commit this file.
+GATEWAY_URL=https://musemuse.example/api/gateway
+PRODUCT_TOKEN=mm_build_sample
+## local provision
+# Written by the Muse Muse platform for this build. Never commit this file.
+GATEWAY_URL=https://api.meta.ai
+PRODUCT_TOKEN=<sandbox placeholder>

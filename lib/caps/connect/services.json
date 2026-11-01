@@ -1,0 +1,74 @@
+{
+  "github": {
+    "label": "GitHub",
+    "hosts": ["api.github.com"],
+    "auth": { "type": "bearer" },
+    "headers": { "accept": "application/vnd.github+json", "x-github-api-version": "2022-11-28" },
+    "keyHint": "A fine-grained personal access token with read-only access to what the product needs.",
+    "docs": "https://docs.github.com/en/rest",
+    "calls": [
+      { "method": "GET", "path": "/user" },
+      { "method": "GET", "path": "/users/**" },
+      { "method": "GET", "path": "/repos/**" },
+      { "method": "GET", "path": "/search/**" }
+    ],
+    "visitors": false
+  },
+  "openweathermap": {
+    "label": "OpenWeather",
+    "hosts": ["api.openweathermap.org"],
+    "auth": { "type": "query", "param": "appid" },
+    "keyHint": "An OpenWeather API key.",
+    "docs": "https://openweathermap.org/api",
+    "calls": [
+      { "method": "GET", "path": "/data/2.5/weather" },
+      { "method": "GET", "path": "/data/2.5/forecast" },
+      { "method": "GET", "path": "/geo/1.0/direct" }
+    ],
+    "visitors": true
+  },
+  "airtable": {
+    "label": "Airtable",
+    "hosts": ["api.airtable.com"],
+    "auth": { "type": "bearer" },
+    "keyHint": "A personal access token with the data.records:read scope on one base.",
+    "docs": "https://airtable.com/developers/web/api/introduction",
+    "calls": [{ "method": "GET", "path": "/v0/**" }],
+    "visitors": false
+  },
+  "notion": {
+    "label": "Notion",
+    "hosts": ["api.notion.com"],
+    "auth": { "type": "bearer" },
+    "headers": { "notion-version": "2022-06-28" },
+    "keyHint": "An internal integration secret, shared with only the pages the product reads.",
+    "docs": "https://developers.notion.com/reference/intro",
+    "calls": [
+      { "method": "POST", "path": "/v1/search" },
+      { "method": "POST", "path": "/v1/databases/*/query" },
+      { "method": "GET", "path": "/v1/pages/*" },
+      { "method": "GET", "path": "/v1/blocks/*/children" }
+    ],
+    "visitors": false
+  },
+  "resend": {
+    "label": "Resend (email)",
+    "hosts": ["api.resend.com"],
+    "auth": { "type": "bearer" },
+    "keyHint": "A Resend API key with sending access, for a domain you verified there.",
+    "docs": "https://resend.com/docs/api-reference/emails/send-email",
+    "calls": [],
+    "send": "email",
+    "visitors": false
+  },
+  "slack_webhook": {
+    "label": "Slack incoming webhook",
+    "hosts": ["hooks.slack.com"],
+    "auth": { "type": "url", "prefix": "https://hooks.slack.com/services/" },
+    "keyHint": "An incoming webhook URL for one channel (https://hooks.slack.com/services/...).",
+    "docs": "https://api.slack.com/messaging/webhooks",
+    "calls": [],
+    "send": "chat",
+    "visitors": false
+  }
+}

@@ -1,6 +1,11 @@
+import { GLIMMER_CATALOG_LINE } from "@/lib/caps/gpu/catalog";
 import catalog from "@/catalog/meta-models.json";
 import { PRICES } from "@/lib/meta/pricing";
 import { PRODUCT_MODELS } from "@/lib/brief/schema";
+import { capsCatalogBlocks, capsWorkaround, howProductsRun } from "@/lib/caps/catalog";
+import { codePartsKey } from "@/lib/caps/code/parts";
+import { connectOptions } from "@/lib/caps/connect/flags";
+import type { CapId } from "@/lib/caps/ids";
 import { env } from "@/lib/env";
 import { RETIRED_SPARK } from "@/lib/meta/spark";
 import { RUN_LIMITS } from "@/lib/gateway/runs";
@@ -139,14 +144,28 @@ function agentToolsBlock(personal: boolean): string[] {
 
 const cached = new Map<string, string>();
 
-/** The catalog summary pasted into the brief writer's instructions. */
-export function catalogSummary(): string {
+/**
+ * The catalog summary pasted into the brief writer's instructions. With caps on (docs/CAPABILITIES.md, 2.6), the first
+ * and third "How products run" bullets come from howProductsRun and each cap's block follows the agent block. With none
+ * on, the text is today's, byte for byte.
+ */
+export function catalogSummary(caps: readonly CapId[] = env.enabledCaps): string {
   const gadgets = env.gadgetsEnabled;
   const agents = env.agentsEnabled;
   const personal = agents && env.composioPersonalEnabled;
-  const key = `${gadgets}|${agents}|${personal}`;
+  // Wave 3, unit 3: the data cap's block follows DATA_SIGN_IN, so it is part of the key only while data is on.
+  // Unit 8: the media cap names only its parts that are on, so they are part of the key only while media is on.
+  // Wave 3, unit 5 (connect): its block names keys and sends only while they are on, so they are part of the key only
+  // while connect is on.
+  const connectKey = caps.includes("connect") ? `|${connectOptions().vault}|${connectOptions().sends}` : "";
+  // End unit 5.
+  // Wave 3, unit 9: the code cap's block names only its parts that are on, so they are part of the key while code is on.
+  // Wave 3, unit 13: the hardware cap's block names board tools only while they are on.
+  const gpuOn = env.gpuGlimmerForBuilds;
+  const key = `${gadgets}|${agents}|${personal}|${caps.join(",")}${gpuOn ? "|gpu" : ""}${caps.includes("data") ? `|${env.dataSignIn}` : ""}${caps.includes("live") ? `|live:${env.liveUpdates}` : ""}${caps.includes("media") ? `|${env.mediaParts.join(",")}` : ""}${connectKey}${caps.includes("code") ? `|code:${codePartsKey()}` : ""}${caps.includes("hardware") ? `|board:${env.hardwareBoardToolsUsable}` : ""}${caps.includes("hardware") && env.driveToolsUsable ? "|drive" : ""}`;
   const hit = cached.get(key);
   if (hit) return hit;
+  const run = howProductsRun(caps, { gadgets, agents });
   const allowed = new Set<string>(PRODUCT_MODELS);
   // Muse Wonder first: it is the default for a product's own calls.
   const hosted = (catalog.models as CatalogModel[])
@@ -155,22 +174,27 @@ export function catalogSummary(): string {
   const summary = [
     "Models a product may call, all through the Muse Muse gateway (prices are estimates):",
     ...hosted.map(modelBlock),
-    "- muse-glimmer: open-weights model for local or offline use. Not on the Model API: it needs an endpoint someone hosts. Pick it only when the muse asks for local or offline use.",
+    // Wave 3, unit 11 (docs/CAPABILITIES.md, section 17): the shared endpoint's line while it's on.
+    gpuOn ? GLIMMER_CATALOG_LINE : "- muse-glimmer: open-weights model for local or offline use. Not on the Model API: it needs an endpoint someone hosts. Pick it only when the muse asks for local or offline use.",
     ...(gadgets ? ["- muse-gadget: a physical board connected to Muse Muse, with a camera and a microphone. The product can take a photo or record a few seconds of sound on the board, then pass it to a model, for example a counter that photographs a shelf. Pick it only when the muse asks for hardware: a device that watches, listens or reacts in the real world. It isn't a model, so pair it with the model that reads what it captures. A product must still work when no board is connected, with a clear message and a way to upload instead."] : []),
     "",
     "Not available on the Model API yet, with the workaround a product uses instead:",
-    "- Text-to-speech: the browser's built-in speech synthesis.",
-    "- Video generation: a short image sequence from muse-image-1.0.",
+    // Wave 3, unit 8 (docs/CAPABILITIES.md, section 14): the media cap replaces these two while its part is on.
+    capsWorkaround(caps, "speech") ?? "- Text-to-speech: the browser's built-in speech synthesis.",
+    capsWorkaround(caps, "video") ?? "- Video generation: a short image sequence from muse-image-1.0.",
     "- Embeddings: put the documents in Muse Wonder's 1M-token context (fine for small document sets).",
     "- Realtime voice conversation: record, transcribe, then reply in text.",
     "- Speaker labels in transcripts: none. Ask the user to label turns, or treat the transcript as one voice.",
     "",
     "How products run:",
-    "- One Next.js app on Vercel with its own link. No database and no user accounts: anything saved stays in the user's browser (localStorage).",
+    run?.first ?? "- One Next.js app on Vercel with its own link. No database and no user accounts: anything saved stays in the user's browser (localStorage).",
     "- Requests to the product's server are capped at about 4.5 MB. Larger photos, videos and recordings upload to temporary storage first and are deleted after 24 hours.",
-    `- Products reach only Meta's models${gadgets ? ", and a connected gadget when the brief picks muse-gadget" : ""}${agents ? ", and the agent tools below when the brief picks the agent target" : ""}. No other services or API keys: no WhatsApp, SMS, email, payments, maps, social networks or scraping other sites. When a muse needs one, build the web version and make that a limit.`,
+    run?.third ??
+      `- Products reach only Meta's models${gadgets ? ", and a connected gadget when the brief picks muse-gadget" : ""}${agents ? ", and the agent tools below when the brief picks the agent target" : ""}. No other services or API keys: no WhatsApp, SMS, email, payments, maps, social networks or scraping other sites. When a muse needs one, build the web version and make that a limit.`,
     "- Each product has a small daily model budget, so one run should cost cents, not dollars.",
     ...(agents ? agentToolsBlock(personal) : []),
+    // Wave 3 (docs/CAPABILITIES.md, 2.6): each enabled cap's block follows the agent block. None with no caps on.
+    ...capsCatalogBlocks(caps),
   ].join("\n");
   cached.set(key, summary);
   return summary;

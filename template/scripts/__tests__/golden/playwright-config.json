@@ -1,0 +1,76 @@
+{
+  "testDir": "tests",
+  "outputDir": "test-results/playwright",
+  "forbidOnly": true,
+  "timeout": 180000,
+  "reporter": [
+    [
+      "list"
+    ],
+    [
+      "json",
+      {
+        "outputFile": "test-results/report.json"
+      }
+    ]
+  ],
+  "use": {
+    "baseURL": "http://localhost:3100"
+  },
+  "projects": [
+    {
+      "name": "smoke",
+      "testIgnore": "re:\\.demo\\.spec\\.ts$",
+      "use": {
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      }
+    },
+    {
+      "name": "demo",
+      "testMatch": "re:(^|[\\\\/])smoke\\.spec\\.ts$",
+      "use": {
+        "viewport": {
+          "width": 1280,
+          "height": 720
+        },
+        "video": {
+          "mode": "on",
+          "size": {
+            "width": 1280,
+            "height": 720
+          }
+        },
+        "launchOptions": {
+          "slowMo": 250
+        }
+      }
+    },
+    {
+      "name": "studio",
+      "testMatch": "re:\\.demo\\.spec\\.ts$",
+      "timeout": 240000,
+      "use": {
+        "viewport": {
+          "width": 1280,
+          "height": 720
+        },
+        "deviceScaleFactor": 2,
+        "video": "off",
+        "launchOptions": {
+          "args": [
+            "--force-device-scale-factor=2"
+          ]
+        }
+      }
+    }
+  ],
+  "webServer": {
+    "command": "npx next start -p 3100",
+    "url": "http://localhost:3100",
+    "reuseExistingServer": false,
+    "timeout": 60000
+  }
+}

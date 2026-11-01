@@ -10,6 +10,13 @@ import "@/components/product/get-it.css";
 import { GetItPanel } from "@/components/product/GetItPanel";
 import { nativeSlots } from "@/components/product/NativeSlots";
 import { productOutputSlots } from "@/components/product/OutputPanels";
+import { extensionSlots } from "@/components/product/ExtensionPanel";
+import { extensionZipReady } from "@/lib/caps/extension/store";
+import { hardwareOwnerLink } from "@/lib/caps/hardware/owner-link";
+import { museCodeOwnerLink } from "@/lib/caps/code/musecode/owner-link";
+import { runtimeOutputSlots } from "@/components/product/RuntimeOutputPanels";
+import { TrainOnMyData } from "@/components/product/TrainOnMyData";
+import { JobsPanel } from "@/components/jobs/JobsPanel";
 import { AddClip, RemoveClip } from "@/components/product/OwnerClips";
 import { StatusControl } from "@/components/product/StatusControl";
 import { EmptyCard, ExternalLink, NotConnected, StatusPill } from "@/components/ui";
@@ -75,11 +82,18 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const exposedActions = connectorActions(manifest);
   const refineHref = latestBuild ? `/b/${latestBuild.id}?refine=1#refine` : null;
   const now = Date.now();
-  const frameBrief = enabledFrameBrief(brief, env.enabledTargets);
+  const frameBrief = enabledFrameBrief(brief, env.enabledTargets, env.servedCaps);
   const native = shipped
     ? await getItSlots({ productId: product.id, slug: product.slug, name: product.name, liveUrl: product.liveUrl, origin: panelLinkOrigin(origin), brief, frameBrief, isOwner, buildId: latestBuild?.id ?? null })
     : { slots: {}, clips: [], initial: undefined };
+  // Wave 3, unit 14: whether the extension's zip is there, looked up only with its flag on, for a live brief with one.
+  const extensionReady = shipped && product.liveUrl && env.enabledCaps.includes("extension") && (brief as { extension?: unknown } | null)?.extension ? await extensionZipReady(product.id) : null;
   // Only for a product that runs somewhere else too, so with every flag off the page has no trace of this.
+  const ownerLink = shipped
+    ? (museCodeOwnerLink({ isOwner, liveUrl: product.liveUrl, slug: product.slug, status: product.status, brief, served: env.servedCaps.includes("code") }) ??
+      // Wave 3, unit 13: a product with board tools needs the same way in. Null with HARDWARE_BOARD_TOOLS off.
+      hardwareOwnerLink({ isOwner, liveUrl: product.liveUrl, slug: product.slug, status: product.status, brief, served: env.servedCaps.includes("hardware") }))
+    : null;
   const canAddClips = shipped && isOwner && env.enabledTargets.length > 0 && briefTargets(brief).some((t) => t !== "web");
 
   return (
@@ -106,6 +120,20 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             <Link className="btn btn-primary" href={refineHref}>
               <Icon name="sparkle" size={18} />
               <span>Refine</span>
+            </Link>
+          ) : null}
+          {/* Wave 3, unit 9: an owner-only Muse Code product needs a way in. A plain link: each visit signs a one-time code, so it's never prefetched. */}
+          {ownerLink ? (
+            <a className="btn" href={ownerLink} target="_blank" rel="noopener">
+              <Icon name="terminal" size={18} />
+              <span>Open as owner</span>
+            </a>
+          ) : null}
+          {/* Wave 3, unit 1 (TRUST_REPORTS): anyone can report a product, as from its own footer. */}
+          {env.trustReports ? (
+            <Link className="btn" href={`/report/${product.slug}`}>
+              <Icon name="alert" size={18} />
+              <span>Report</span>
             </Link>
           ) : null}
         </div>
@@ -170,8 +198,17 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
         )}
 
         {shipped ? (
-          <GetItPanel slots={{ ...native.slots, ...(env.productOutputs ? productOutputSlots({ product, origin, events, now }) : {}) }} initial={native.initial} />
+          <GetItPanel slots={{ ...native.slots, ...(env.productOutputs ? productOutputSlots({ product, origin, events, now }) : {}), ...(env.runtimeOutputs ? runtimeOutputSlots({ product, origin, isOwner }) : {}), ...(env.enabledCaps.includes("extension") ? extensionSlots({ product, origin, brief, ready: extensionReady }) : {}) }} initial={native.initial} />
         ) : null}
+
+        {/* Wave 3, unit 11: nothing unless GPU_TRAIN_ON_DATA and TUNE_COMPOSER are on, for the signed-in owner, not an admin. */}
+        {shipped && user?.id === product.ownerId && !user?.openAccess && env.gpuTrainOnData && env.tuneComposer ? (
+          <section className="card section-card">
+            <TrainOnMyData slug={product.slug} />
+          </section>
+        ) : null}
+        {/* Wave 3, unit 6: not in the tree at all while the jobs cap is off. */}
+        {shipped && env.servedCaps.includes("jobs") ? <JobsPanel productId={product.id} slug={product.slug} brief={brief} isOwner={isOwner} viewerIsOwner={Boolean(user && !user.openAccess && user.id === product.ownerId)} /> : null}
 
         <section className="card section-card" aria-labelledby="muse-title">
           <h2 id="muse-title">The muse</h2>

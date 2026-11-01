@@ -47,6 +47,7 @@ import {
   earlierOpenServeJob,
   getAdapterSource,
   getDataset,
+  ownerRowsProblem,
   getLiveDemo,
   lastSweepOkAt,
   openQuantJob,
@@ -152,6 +153,8 @@ async function adapterRegion(
       uploadOnly: recipe.id === PUBLISH_RECIPE,
     });
     if (problem || !source) return { ok: false, error: `${field.label}: ${problem ?? "that job doesn't exist."}` };
+    const ownerRows = recipe.id === PUBLISH_RECIPE ? await ownerRowsProblem(source.job) : null;
+    if (ownerRows) return { ok: false, error: `${field.label}: ${ownerRows}` };
     return { ok: true, region: source.job.region, adapterJobId: source.job.id, trainChannel: trainChannelOf(source.job.params) };
   }
   return { ok: true, region: null, adapterJobId: null, trainChannel: 0 };

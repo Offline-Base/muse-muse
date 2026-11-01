@@ -1,11 +1,22 @@
 import { TARGETS, type TargetId } from "@/lib/brief/schema";
+import { CAP_FLAG, CAP_IDS, CAP_NEEDS_BUILDER, CAP_READY, type CapId } from "@/lib/caps/ids";
+import { codePartsOn } from "@/lib/caps/code/parts";
+import { connectMoreToolsOn, connectSendsOn, connectVaultOn } from "@/lib/caps/connect/flags";
+import { jobsWebhooksOn } from "@/lib/caps/jobs/flags";
+import { dataSignInOn } from "@/lib/caps/data/types";
+import { filesDatasetsOn, filesSearchOn } from "@/lib/caps/files/types";
+import { liveUpdatesOn } from "@/lib/caps/live/parts";
+import { mediaPartsFromEnv, type MediaPartId } from "@/lib/caps/media/parts";
+import { capOverlaysNeeded } from "@/lib/caps/overlays";
 import { databaseChoice, isPreview, previewHasOwnDatabase } from "@/lib/db/url";
 import { DRIVE_CARD_TERMS_VERSION, DRIVE_TERMS_DEFAULT_VERSION } from "@/lib/drive/terms";
 import { parseNativeTargets } from "@/lib/native/targets";
 import type { MuseEngine } from "@/lib/sandbox/bridge-protocol";
 import { agentCapacity } from "@/lib/sandbox/agent-capacity";
+import { snapshotCapOverlays } from "@/lib/sandbox/snapshots";
 import { type PlatformBypass, publicHost } from "@/lib/sandbox/policy";
 import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
+import { parseGeoCountries } from "@/lib/trust/geo";
 
 /**
  * Server environment. Getters throw a clear error when a required value is missing, so a misconfigured deploy fails
@@ -800,5 +811,417 @@ export const env = {
   /** Live docs calls one client IP may have running at once. */
   get docsIpInFlight() {
     return number("DOCS_IP_IN_FLIGHT", 4);
+  },
+
+  // ---------- Wave 3, unit 1: trust (docs/CAPABILITIES.md) ----------
+
+  /**
+   * TRUST_SIGNED_IN_CAPS: caps marked CAP_NEEDS_BUILDER (data, files, connect, jobs, code, runtime, hardware) need a
+   * signed-in builder. A guest's brief writer doesn't get them (capsForBuilder in lib/trust/tiers.ts), and each
+   * signed-in builder's products share TRUST_BUILDER_DAILY_USD a day.
+   */
+  get trustSignedInCaps(): boolean {
+    return flag("TRUST_SIGNED_IN_CAPS");
+  },
+  /** What one signed-in builder's products may spend together per UTC day, every source counted. Read only with the flag above. 0 pauses them. */
+  get trustBuilderDailyUsd(): number {
+    return dollars("TRUST_BUILDER_DAILY_USD", 5);
+  },
+  /** TRUST_AGE_GATE: 18 and over on platform sign-in and before building, and an age gate in new products. */
+  get trustAgeGate(): boolean {
+    return flag("TRUST_AGE_GATE");
+  },
+  /** TRUST_LEGAL_PAGES: /privacy and /terms on the platform, and privacy and terms pages in new products. */
+  get trustLegalPages(): boolean {
+    return flag("TRUST_LEGAL_PAGES");
+  },
+  /** TRUST_GEO_BLOCK: requests from the territories in TRUST_GEO_COUNTRIES are refused, on the platform and in new products. */
+  get trustGeoBlock(): boolean {
+    return flag("TRUST_GEO_BLOCK");
+  },
+  /** TRUST_GEO_COUNTRIES: ISO codes and region codes (UA-43), or "meta" for Meta's list (lib/trust/geo.ts). Empty blocks nothing. */
+  get trustGeoCountries(): string[] {
+    return parseGeoCountries(process.env.TRUST_GEO_COUNTRIES);
+  },
+  /** TRUST_REPORTS: the Report link on products, /admin/reports, takedown and ban. */
+  get trustReports(): boolean {
+    return flag("TRUST_REPORTS");
+  },
+  /** TRUST_SPARK_TO_WONDER: a live product's retired Spark 1.3 calls run on Muse Wonder instead of Contributor (Meta terms 6.2). */
+  get trustSparkToWonder(): boolean {
+    return flag("TRUST_SPARK_TO_WONDER");
+  },
+  /**
+   * TRUST_DEPLOY_TOTAL_MB: the most one product deployment's files may add up to, in MB (lib/publish/vercel.ts). 100 by
+   * default, Vercel's Hobby number for uploaded source files; raise it on a Pro team (1 GB there). Bigger fails by name.
+   */
+  get trustDeployTotalMb(): number {
+    return number("TRUST_DEPLOY_TOTAL_MB", 100);
+  },
+  /** True while any trust flag a product carries is on, so new builds get the trust overlay (template/caps/trust). */
+  get trustProductOverlay(): boolean {
+    return env.trustAgeGate || env.trustLegalPages || env.trustGeoBlock || env.trustReports;
+  },
+
+  // ---------- Wave 3, unit 2: engine (docs/CAPABILITIES.md) ----------
+
+  /** ENGINE_CHECK_ON_TIMEOUT: a first round that hits its time cap goes on to the checks and fix rounds instead of failing. */
+  get engineCheckOnTimeout(): boolean {
+    return flag("ENGINE_CHECK_ON_TIMEOUT");
+  },
+  /** ENGINE_ROUND_SCALING: round time grows with the brief (roundCapMs in lib/pipeline/steps.ts). */
+  get engineRoundScaling(): boolean {
+    return flag("ENGINE_ROUND_SCALING");
+  },
+  /** The longest a scaled first round may run, in minutes. Held to 25 (today's round) through 90 (the build's wall). */
+  get engineRoundMaxMinutes(): number {
+    return Math.min(90, Math.max(25, number("ENGINE_ROUND_MAX_MINUTES", 45)));
+  },
+  /** ENGINE_MILESTONES: the brief writer may split a big brief into 2 or 3 milestones, built in chained rounds. */
+  get engineMilestones(): boolean {
+    return flag("ENGINE_MILESTONES");
+  },
+  /** ENGINE_LIVE_SMOKE: after deploy, the live link is loaded (no model call) before the product is marked live. */
+  get engineLiveSmoke(): boolean {
+    return flag("ENGINE_LIVE_SMOKE");
+  },
+  /** ENGINE_EXACT_LOGIC: the brief writer says when a product's main claim needs real code (a parser, a solver), not a model. */
+  get engineExactLogic(): boolean {
+    return flag("ENGINE_EXACT_LOGIC");
+  },
+  /**
+   * ENGINE_FIT_OUTPUT: a Responses call whose max_output_tokens the token's budget can't cover runs with a lower
+   * max_output_tokens instead of being refused (fitOutputToBudget in lib/gateway/estimate.ts).
+   */
+  get engineFitOutput(): boolean {
+    return flag("ENGINE_FIT_OUTPUT");
+  },
+  /**
+   * The caps a new brief may ask for (docs/CAPABILITIES.md, 2.1): ready and switched on. On production, caps that need a
+   * signed-in builder stay off until TRUST_SIGNED_IN_CAPS (unit 1) is on. Empty means every brief is as it is today.
+   */
+  get enabledCaps(): CapId[] {
+    // ---------- Wave 3, unit 3: and only caps whose overlays the builder snapshot has (2.4a) ----------
+    // capsOnSite is the rule above this line was: ready, switched on, and on production a signed-in builder's. The
+    // snapshot is read only when some cap passes that, so with every flag off nothing new is read or logged.
+    const onSite = env.capsOnSite;
+    if (!onSite.length) return onSite;
+    const snapshot = env.snapshotCaps;
+    return snapshot === null ? onSite : onSite.filter((c) => capOverlaysNeeded(c).every((o) => snapshot.includes(o)));
+    // ---------- end Wave 3, unit 3 ----------
+  },
+
+  // ---------- Wave 3, unit 3: data (docs/CAPABILITIES.md) ----------
+
+  /**
+   * The caps the site serves: ready (CAP_READY) and switched on. Their gateway routes answer (the cap gate's check 1),
+   * whatever the builder snapshot has, so a live product never breaks when the snapshot changes.
+   */
+  get servedCaps(): CapId[] {
+    // Unit 8: media is on only with at least one of its parts on (MEDIA_SPEECH and the rest), so MEDIA_ENABLED alone
+    // behaves exactly like MEDIA_ENABLED off.
+    const partsOn = (c: CapId) => c !== "media" || mediaPartsFromEnv().length > 0;
+    return CAP_IDS.filter((c) => CAP_READY[c] && flag(CAP_FLAG[c]) && partsOn(c));
+  },
+  /** servedCaps, less those that need a signed-in builder on production while TRUST_SIGNED_IN_CAPS is off (2.1). */
+  get capsOnSite(): CapId[] {
+    const production = process.env.VERCEL_ENV === "production";
+    const signedIn = flag("TRUST_SIGNED_IN_CAPS");
+    return env.servedCaps.filter((c) => !production || signedIn || !CAP_NEEDS_BUILDER[c]);
+  },
+  /**
+   * The cap overlays in the builder snapshot (2.4a): on Vercel, lib/sandbox/snapshots.json's entry for
+   * BUILDER_SNAPSHOT_ID, or [] with one warning when it has none. Null locally, where provisioning copies any missing
+   * overlay from this checkout's template/caps.
+   */
+  get snapshotCaps(): string[] | null {
+    if (!process.env.VERCEL) return null;
+    return snapshotCapOverlays(process.env.BUILDER_SNAPSHOT_ID || undefined);
+  },
+  /** DATA_SIGN_IN: products with a data block may sign people in with a passkey through Muse Muse (/u/sign-in). */
+  get dataSignIn(): boolean {
+    return dataSignInOn();
+  },
+  /** The most rows one product keeps in its live namespace. */
+  get dataProductRows(): number {
+    return number("DATA_PRODUCT_ROWS", 10_000);
+  },
+  /** The most one product's live rows may add up to, in MB. */
+  get dataProductMb(): number {
+    return number("DATA_PRODUCT_MB", 50);
+  },
+  /** Writes one product may make in a UTC day, live namespace. */
+  get dataDailyWrites(): number {
+    return number("DATA_DAILY_WRITES", 5_000);
+  },
+
+  // ---------- Wave 3, unit 4: files and search (docs/CAPABILITIES.md) ----------
+
+  /**
+   * FILES_SEARCH: products with a files block may index text and search it ({GATEWAY_URL}/search). FILES_ENABLED, the
+   * files themselves, is CAP_FLAG.files, read through enabledCaps above, and search also needs it.
+   */
+  get filesSearch(): boolean {
+    return filesSearchOn();
+  },
+  /** FILES_DATASETS: products may read the vetted public datasets in lib/caps/files/datasets.json ({GATEWAY_URL}/datasets). */
+  get filesDatasets(): boolean {
+    return filesDatasetsOn();
+  },
+  /** What one product's live files may add up to, in MB. */
+  get filesProductMb(): number {
+    return number("FILES_PRODUCT_MB", 500);
+  },
+  /** The biggest file a product may store, in MB. */
+  get filesMaxFileMb(): number {
+    return number("FILES_MAX_FILE_MB", 25);
+  },
+  /**
+   * FILES_BLOB_STORE_ID: a private Vercel Blob store for products' files, reached with the deployment's OIDC token
+   * (decision 14). Unset: the platform's own public store with unguessable paths. A store id isn't a credential.
+   */
+  get filesBlobStoreId(): string | null {
+    return optional("FILES_BLOB_STORE_ID");
+  },
+
+  // ---------- Wave 3, unit 5: connect (docs/CAPABILITIES.md) ----------
+
+  /**
+   * CONNECT_MORE_TOOLS: more read-only tools through the tool gateway, owners only (decision 17). Nothing reads it yet:
+   * the tools need `npm run tools:sync` against Composio first (docs/CAPABILITIES.md, 11a).
+   */
+  get connectMoreTools(): boolean {
+    return connectMoreToolsOn();
+  },
+  /**
+   * CONNECT_VAULT: the per-product key vault and brokered calls ({GATEWAY_URL}/vault). It also needs CONNECT_VAULT_KEY;
+   * without one the vault answers caps_paused. CONNECT_ENABLED, the cap's own flag, is read through enabledCaps above.
+   */
+  get connectVault(): boolean {
+    return connectVaultOn();
+  },
+  /**
+   * CONNECT_VAULT_KEY: 32 bytes in base64, or a ring "v1:<key>,v2:<key>" (lib/secrets/box.ts). Platform only: it never
+   * goes into a build or a product.
+   */
+  get connectVaultKey(): string | null {
+    return optional("CONNECT_VAULT_KEY");
+  },
+  /**
+   * CONNECT_SENDS: messages sent with the builder's own key, one confirmation each ({GATEWAY_URL}/send). Needs the vault.
+   * On production it also needs CONNECT_SENDS_PRODUCTION, the owner's switch (decision 8), which stays off.
+   */
+  get connectSends(): boolean {
+    return connectSendsOn();
+  },
+
+  // ---------- Wave 3, unit 6: jobs (docs/CAPABILITIES.md) ----------
+
+  /**
+   * JOBS_WEBHOOKS: other services can start a product's jobs ({GATEWAY_URL}/hooks). JOBS_ENABLED, the cap's own flag, is
+   * read through enabledCaps above.
+   */
+  get jobsWebhooks(): boolean {
+    return jobsWebhooksOn();
+  },
+  /** JOBS_DAILY_RUNS: job ticks the cron starts in a UTC day, across all products. 0 pauses them. */
+  get jobsDailyRuns(): number {
+    return wholeCount("JOBS_DAILY_RUNS", 2000);
+  },
+  /** JOBS_DAILY_USD: what job runs may spend at Meta in a UTC day, across all products. 0 pauses them. */
+  get jobsDailyUsd(): number {
+    return dollars("JOBS_DAILY_USD", 5);
+  },
+  /** JOBS_PRODUCT_DAILY_RUNS: job ticks one product may start in a UTC day. Three 15-minute schedules take 288. */
+  get jobsProductDailyRuns(): number {
+    return wholeCount("JOBS_PRODUCT_DAILY_RUNS", 400);
+  },
+  /** JOBS_PRODUCT_DAILY_USD: what one product's job runs may spend at Meta in a UTC day. */
+  get jobsProductDailyUsd(): number {
+    return dollars("JOBS_PRODUCT_DAILY_USD", 1);
+  },
+  /** JOBS_RUN_USD: where one run stops, at most $0.50. 0 pauses new runs. */
+  get jobsRunUsd(): number {
+    return Math.min(dollars("JOBS_RUN_USD", 0.1), 0.5);
+  },
+  /** JOBS_PAUSE_DAYS: schedules pause after this many days with no visit from the owner. */
+  get jobsPauseDays(): number {
+    return number("JOBS_PAUSE_DAYS", 14);
+  },
+
+  // ---------- Wave 3, unit 7: live (docs/CAPABILITIES.md) ----------
+
+  /**
+   * LIVE_UPDATES: {GATEWAY_URL}/live, changes to a saved collection reaching every open browser. Needs the data cap served
+   * too. LIVE_ENABLED, near-live captions and the writer, is CAP_FLAG.live, read through enabledCaps above.
+   */
+  get liveUpdates(): boolean {
+    return liveUpdatesOn();
+  },
+  /** Audio minutes of captions per visitor per UTC day. */
+  get liveCaptionMinutes(): number {
+    return number("LIVE_CAPTION_MINUTES", 10);
+  },
+
+  // ---------- Wave 3, unit 8: media (docs/CAPABILITIES.md) ----------
+
+  /**
+   * The media cap's parts (lib/caps/media), each its own switch on top of MEDIA_ENABLED, which is CAP_FLAG.media, read
+   * through enabledCaps above: MEDIA_SPEECH (speech in the page), MEDIA_VIDEO (video from pictures), MEDIA_MUSIC (MIDI)
+   * and MEDIA_SAM_TILING (SAM past 16 objects, and long clips in chunks). The writer offers only the parts that are on.
+   */
+  get mediaParts(): MediaPartId[] {
+    return mediaPartsFromEnv();
+  },
+
+  // ---------- Wave 3, unit 9: code (docs/CAPABILITIES.md) ----------
+
+  /**
+   * CODE_EXEC: {GATEWAY_URL}/exec runs a product's Python or Node program in a fresh sandbox with no network. Off: the
+   * route answers 404 and touches nothing. CODE_ENABLED, Pyodide and QuickJS in the browser, is CAP_FLAG.code, read
+   * through enabledCaps above, and /exec also needs it.
+   */
+  get codeExec(): boolean {
+    return flag("CODE_EXEC");
+  },
+  /**
+   * CODE_EXEC_VISITORS: visitors and signed-in end users may run /exec too, not only the product's owner. Off until the
+   * owner has read Meta's terms 1, 3.1, 6.2 and 10.1(i) (docs/CAPABILITIES.md, decision 10). Never applies to /browse.
+   */
+  get codeExecVisitors(): boolean {
+    return flag("CODE_EXEC_VISITORS");
+  },
+  /** What /exec may spend on sandboxes across the platform per UTC day. 0 pauses it. */
+  get codeExecDailyUsd(): number {
+    return dollars("CODE_EXEC_DAILY_USD", 3);
+  },
+  /** A Vercel Sandbox snapshot with Python 3 and Node for /exec. Unset: each run starts from Vercel's own image. */
+  get codeExecSnapshotId(): string | null {
+    return optional("CODE_EXEC_SNAPSHOT_ID");
+  },
+  /**
+   * CODE_BROWSE: {GATEWAY_URL}/browse opens one page the person typed, in a sandbox that reaches only that host. It
+   * starts from BUILDER_SNAPSHOT_ID, which has Chromium. Off: the route answers 404 and touches nothing.
+   */
+  get codeBrowse(): boolean {
+    return flag("CODE_BROWSE");
+  },
+  /** What /browse may spend on sandboxes across the platform per UTC day. 0 pauses it. */
+  get codeBrowseDailyUsd(): number {
+    return dollars("CODE_BROWSE_DAILY_USD", 2);
+  },
+  /**
+   * MUSE_CODE_ENABLED: products may run Muse Code sessions for their owner ({GATEWAY_URL}/code/sessions, the code cap's
+   * museCode part, docs/CAPABILITIES.md 15b). Each session is its own sandbox from BUILDER_SNAPSHOT_ID, $1 and 15
+   * minutes at most. Needs CODE_ENABLED and a builder snapshot with the musecode overlay. Off: the routes answer 404.
+   */
+  get museCodeEnabled(): boolean {
+    return codePartsOn().museCode === true;
+  },
+  /**
+   * MUSE_CODE_VISITORS: visitors and signed-in end users may start sessions too, 3 a day per address. Off until the owner
+   * has read Meta's terms 1, 3.1, 6.2 and 10.1(i) for this (decision 10): it is a terms decision as well as a spending one.
+   */
+  get museCodeVisitors(): boolean {
+    return codePartsOn().museCodeVisitors === true;
+  },
+
+  // ---------- Wave 3, unit 10: runtime (docs/CAPABILITIES.md) ----------
+
+  /**
+   * RUNTIME_OUTPUTS: a live product also offers a VS Code extension and a GitHub Action made from its musemuse.json, and
+   * its owner can download a self-host kit made from its live source (lib/outputs/{vscode,github-action,selfhost}.ts).
+   * Off: /p/<slug>/get/{vscode,github-action,selfhost}.zip answer 404 and the Get it panel has no such tabs.
+   * RUNTIME_ENABLED, the Python functions, is CAP_FLAG.runtime, read through enabledCaps above.
+   */
+  get runtimeOutputs(): boolean {
+    return flag("RUNTIME_OUTPUTS");
+  },
+
+  // ---------- Wave 3, unit 11: gpu (docs/CAPABILITIES.md) ----------
+
+  /**
+   * GPU_GLIMMER_SHARED: products whose brief picks muse-glimmer reach a hosted Muse Glimmer at {GATEWAY_URL}/glimmer/v1
+   * during a demo window an admin opens (POST /api/admin/glimmer/windows). Off: those routes answer 404 and touch nothing,
+   * and the brief, tokens and deploy env are today's. Decision 11: stays off until the owner confirms.
+   */
+  get gpuGlimmerShared(): boolean {
+    return flag("GPU_GLIMMER_SHARED");
+  },
+  /**
+   * GPU_GLIMMER_SHARED, for what a new build is told and given: also needs a builder snapshot made from a checkout with this
+   * unit, which has askGlimmer in its template. template/caps/gpu ships no files, only its deps.json, so a snapshot lists `gpu`
+   * in lib/sandbox/snapshots.json exactly when that's true. Local runs use the checkout's template.
+   */
+  get gpuGlimmerForBuilds(): boolean {
+    if (!flag("GPU_GLIMMER_SHARED")) return false;
+    const overlays = env.snapshotCaps;
+    return overlays === null || overlays.includes("gpu");
+  },
+  /** GPU_GLIMMER_DAILY_USD: the most demo windows may reserve per UTC day, 15 by default. 0 pauses them. */
+  get gpuGlimmerDailyUsd(): number {
+    return dollars("GPU_GLIMMER_DAILY_USD", 15);
+  },
+  /**
+   * GPU_GLIMMER_ALL_PRODUCTS: signed-in builders' products may use a window too. Off, only products an admin owns may,
+   * which is the owner's open question 11 about serving Glimmer to other people's products.
+   */
+  get gpuGlimmerAllProducts(): boolean {
+    return flag("GPU_GLIMMER_ALL_PRODUCTS");
+  },
+  /**
+   * GPU_TRAIN_ON_DATA: a product's signed-in builder may train a model on their own owner rows, as an explicit action
+   * (POST /api/products/{slug}/train, decision 12). Needs TUNE_COMPOSER too. Off: the route answers 404 and touches nothing.
+   */
+  get gpuTrainOnData(): boolean {
+    return flag("GPU_TRAIN_ON_DATA");
+  },
+
+  // ---------- Wave 3, unit 12: drive export (docs/CAPABILITIES.md) ----------
+
+  /**
+   * DRIVE_EXPORT_ENABLED: the Flash drive card on /device, its links from the board's runs and lab models, and
+   * /api/device/drive (docs/DRIVE_EXPORT.md). Off: the card isn't shown and the routes answer 404, touching nothing.
+   */
+  get driveExportEnabled(): boolean {
+    return flag("DRIVE_EXPORT_ENABLED");
+  },
+  /**
+   * DRIVE_EXPORT_PRODUCTS: the product gadget tools drive_status and export_to_drive (lib/device/drive-product.ts). They
+   * also need HARDWARE_GADGET_OWNER_CHECK: see driveToolsUsable.
+   */
+  get driveExportProducts(): boolean {
+    return flag("DRIVE_EXPORT_PRODUCTS");
+  },
+  /** Both DRIVE_EXPORT_PRODUCTS and HARDWARE_GADGET_OWNER_CHECK: products may be built with the drive tools. */
+  get driveToolsUsable(): boolean {
+    return flag("DRIVE_EXPORT_PRODUCTS") && flag("HARDWARE_GADGET_OWNER_CHECK");
+  },
+
+  // ---------- Wave 3, unit 13: hardware (docs/CAPABILITIES.md) ----------
+
+  /** HARDWARE_BOARD_TOOLS: read_sensor and show_text, for products whose brief asks for them. HARDWARE_ENABLED is read through enabledCaps. */
+  get hardwareBoardTools(): boolean {
+    return flag("HARDWARE_BOARD_TOOLS");
+  },
+  /** Both HARDWARE_BOARD_TOOLS and HARDWARE_GADGET_OWNER_CHECK: products may be built with board tools. */
+  get hardwareBoardToolsUsable(): boolean {
+    return flag("HARDWARE_BOARD_TOOLS") && flag("HARDWARE_GADGET_OWNER_CHECK");
+  },
+  /** HARDWARE_BOARD_REGISTRY: /api/boards, linking a board to a product, and the board lists on /device and /gadgets. Admins only (decision 16). */
+  get hardwareBoardRegistry(): boolean {
+    return flag("HARDWARE_BOARD_REGISTRY");
+  },
+  /**
+   * HARDWARE_GADGET_OWNER_CHECK: a live token reaches only the board its product's owner linked, and a visitor only when
+   * the link says so. Off: every live product with the gadget option reaches DEVICE_MCP_URL, as before. Turn this on
+   * before DEVICE_MCP_URL reaches production.
+   */
+  get hardwareGadgetOwnerCheck(): boolean {
+    return flag("HARDWARE_GADGET_OWNER_CHECK");
+  },
+  /** HARDWARE_BOARD_KEY: 32 bytes in base64, or a ring "v1:<key>,v2:<key>" (lib/secrets/box.ts). Platform only. */
+  get hardwareBoardKey(): string | null {
+    return optional("HARDWARE_BOARD_KEY");
   },
 };

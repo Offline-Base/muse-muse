@@ -1,0 +1,2 @@
+# Python packages for api/py/, one per line, pinned as name==version (for example numpy==2.3.4).
+# After a change, run: node scripts/py-local.mjs install

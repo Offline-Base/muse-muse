@@ -676,7 +676,7 @@ export function datasetSystemPrompt(task: string): string {
  * A dataset as the admin pages show it. Dates become ISO strings. A decision dataset's view adds kind "decision" and
  * its spec; a chat dataset's has neither, and a row read without kind (from before migration 0017) is a chat dataset.
  */
-export function toDatasetView(row: Omit<DatasetHead, "kind" | "decision"> & Partial<Pick<DatasetHead, "kind" | "decision">>): DatasetView {
+export function toDatasetView(row: Omit<DatasetHead, "kind" | "decision" | "productId"> & Partial<Pick<DatasetHead, "kind" | "decision" | "productId">>): DatasetView {
   return {
     id: row.id,
     title: row.title,

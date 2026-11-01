@@ -899,6 +899,8 @@ export interface NewDataset {
   /** The model that writes it (DATASET_MODEL), saved as its writer_model. */
   writerModel: string;
   createdBy?: string | null;
+  /** Wave 3, unit 11: a product owner's own rows, which makes the dataset private. */
+  productId?: string | null;
 }
 
 /** Saves a dataset in "generating", with no examples yet, and the model that writes it. */
@@ -911,6 +913,7 @@ export async function createDataset(input: NewDataset): Promise<DatasetHead> {
       requested: input.requested,
       writerModel: input.writerModel,
       createdBy: input.createdBy ?? null,
+      ...(input.productId ? { productId: input.productId } : {}),
     })
     .returning(datasetHeadColumns);
   return row;
@@ -921,6 +924,20 @@ export async function getDataset(datasetId: string): Promise<DatasetHead | null>
   if (!isUuid(datasetId)) return null;
   const [row] = await db().select(datasetHeadColumns).from(datasets).where(eq(datasets.id, datasetId)).limit(1);
   return row ?? null;
+}
+
+/** Why a job can't go to the Hub, whichever route asked: a product owner's private rows never leave the platform. */
+export const OWNER_ROWS_REASON = "It was trained on a product owner's private rows, so it can't be published.";
+
+/**
+ * OWNER_ROWS_REASON when `job` trained on a dataset a product owns, else null. Every way to the Hub asks this: Publish,
+ * launching glimmer-publish, the runner's upload plan and the publishing claim. A read that fails throws, so nothing publishes.
+ */
+export async function ownerRowsProblem(job: { params?: unknown }): Promise<string | null> {
+  const params = job.params as Record<string, unknown> | null | undefined;
+  const datasetId = typeof params?.datasetId === "string" ? params.datasetId : null;
+  const dataset = datasetId ? await getDataset(datasetId) : null;
+  return dataset?.productId ? OWNER_ROWS_REASON : null;
 }
 
 /** The newest datasets first, without their examples. */
@@ -1122,6 +1139,8 @@ export interface NewDecisionDataset {
   /** The split rows, each split grouped by label in the labels' order, as splitDecisionRows made them. */
   rows: DecisionRows;
   createdBy?: string | null;
+  /** Wave 3, unit 11: a product owner's own rows, which makes the dataset private. */
+  productId?: string | null;
 }
 
 /**
@@ -1151,6 +1170,7 @@ export async function createDecisionDataset(input: NewDecisionDataset): Promise<
       writerModel: spec.source === "person" ? PERSON_WRITER : PUBLIC_WRITER,
       createdBy: input.createdBy ?? null,
       finishedAt: now,
+      ...(input.productId ? { productId: input.productId } : {}),
     })
     .returning(datasetHeadColumns);
   return row;
@@ -1241,7 +1261,8 @@ export type ResultJobRow = Pick<TrainJobRow, Exclude<keyof typeof resultColumns,
 
 /**
  * Jobs with results to show: succeeded, the GPU shut down, judged (an eval summary with items, so not an unjudged one)
- * and not a dry run, whose answers are fake. components/train/results.ts checks the same again (hasResults).
+ * and not a dry run, whose answers are fake. components/train/results.ts checks the same again (hasResults). Never a job
+ * trained on a product owner's private dataset (wave 3, unit 11): its eval items are that person's rows.
  */
 const hasResults = () =>
   and(
@@ -1250,6 +1271,7 @@ const hasResults = () =>
     sql`jsonb_typeof(${jobs.evalSummary}->'items') = 'number'`,
     sql`(${jobs.evalSummary}->>'items')::numeric > 0`,
     sql`(case when ${jobs.params}->>'dryRun' ~ '^[0-9]+([.][0-9]+)?$' then (${jobs.params}->>'dryRun')::numeric else 0 end) < 1`,
+    sql`not exists (select 1 from training_datasets pd where pd.id::text = ${jobs.params}->>'datasetId' and pd.product_id is not null)`,
   );
 
 /** Judged jobs, newest first. */
@@ -1315,24 +1337,24 @@ export type ReadyDatasetRow = Pick<DatasetHead, Exclude<keyof typeof readyDatase
   decision?: Omit<DecisionSpec, "seed"> | null;
 };
 
-/** Ready datasets, newest first. */
+/** Ready datasets, newest first. Never a product owner's private one (wave 3, unit 11). */
 export async function listReadyDatasets(limit = 50): Promise<ReadyDatasetRow[]> {
   const n = Math.max(1, Math.min(200, Math.floor(limit) || 50));
   return db()
     .select(readyDatasetColumns)
     .from(datasets)
-    .where(eq(datasets.status, "ready"))
+    .where(and(eq(datasets.status, "ready"), isNull(datasets.productId)))
     .orderBy(desc(datasets.createdAt))
     .limit(n);
 }
 
-/** One ready dataset, or null when the id is unknown, isn't a uuid, or it is still being written or failed. */
+/** One ready dataset, or null when the id is unknown, isn't a uuid, it is still being written or failed, or it is private. */
 export async function getReadyDataset(datasetId: string): Promise<ReadyDatasetRow | null> {
   if (!isUuid(datasetId)) return null;
   const [row] = await db()
     .select(readyDatasetColumns)
     .from(datasets)
-    .where(and(eq(datasets.id, datasetId), eq(datasets.status, "ready")))
+    .where(and(eq(datasets.id, datasetId), eq(datasets.status, "ready"), isNull(datasets.productId)))
     .limit(1);
   return row ?? null;
 }
@@ -1548,12 +1570,14 @@ export async function getDecisionModel(jobId: string): Promise<DecisionModel | n
       job: { id: jobs.id, title: jobs.title, recipe: jobs.recipe, status: jobs.status, params: jobs.params, evalSummary: jobs.evalSummary },
       spec: sql<Omit<DecisionSpec, "seed"> | null>`(select d.decision - 'seed' from training_datasets d where d.id::text = ${jobs.params}->>'datasetId' and d.kind = 'decision')`,
       public: sql<boolean>`coalesce((${hasResults()}), false)`,
+      productId: sql<string | null>`(select d.product_id from training_datasets d where d.id::text = ${jobs.params}->>'datasetId')`,
     })
     .from(jobs)
     .where(eq(jobs.id, jobId.toLowerCase()))
     .limit(1);
   if (!row) return null;
-  return decisionModelOf({ job: row.job, spec: row.spec ?? null, public: row.public === true });
+  const model = decisionModelOf({ job: row.job, spec: row.spec ?? null, public: row.public === true });
+  return model && row.productId ? { ...model, productId: row.productId } : model;
 }
 
 /**

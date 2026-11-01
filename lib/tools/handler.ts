@@ -36,7 +36,7 @@ import {
   type Principal,
 } from "@/lib/tools/principal";
 import { chargeOf, estimateToolUsd, settledToolUsd, toolUsage } from "@/lib/tools/pricing";
-import { checkApproval, mintApproval, mintConnectState, readConnectState } from "@/lib/tools/sign";
+import { cardText, checkApproval, mintApproval, mintConnectState, readConnectState } from "@/lib/tools/sign";
 import type { UsageContext } from "@/lib/usage";
 import type { ModelUsage, ProductStatus } from "@/lib/types";
 
@@ -77,6 +77,13 @@ export interface ToolsDeps extends RunCounters, SessionStore {
   lookupHost(host: string): Promise<string[]>;
   /** TOOL_LIMITS.sessionTimeoutMs, unless a test shortens it. */
   sessionTimeoutMs?: number;
+  /**
+   * Wave 3, unit 1: the gateway's trust check (lib/trust/gateway.ts): a taken-down product or a banned owner's, and the
+   * builder's daily dollars, which tool calls spend too. Unset while TRUST_REPORTS and TRUST_SIGNED_IN_CAPS are off.
+   */
+  trustCheck?(token: GatewayToken): Promise<Response | null>;
+  /** Wave 3, unit 3: the owner pass also works for products that save data (owner items), while the data cap is served. */
+  ownerPassForCaps?: boolean;
   now?(): Date;
 }
 
@@ -151,6 +158,8 @@ async function withToken(req: Request, deps: ToolsDeps, next: (token: GatewayTok
   if (!status || status === "disabled" || status === "failed") {
     return gatewayError(403, "permission_error", "product_disabled", "This product is turned off on Muse Muse.", { retry: false });
   }
+  // ---------- Wave 3, unit 1: trust (docs/CAPABILITIES.md, section 7). No check is wired with its flags off ----------
+  { const refused = deps.trustCheck ? await deps.trustCheck(token) : null; if (refused) return refused; }
   return next(token);
 }
 
@@ -243,12 +252,7 @@ const WRITE_TITLES: Readonly<Record<string, string>> = {
  * What a card shows, one line per argument, so nothing the approval covers stays out of sight. Whitespace is collapsed,
  * which also stops blank lines from pushing text out of view, and anything invisible or that reorders text is marked.
  */
-function shown(text: string): string {
-  return text
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/[\p{Cc}\p{Cf}]/gu, "\uFFFD");
-}
+const shown = cardText;
 
 function shownValue(value: unknown): string {
   if (typeof value === "string") return value;
@@ -834,7 +838,8 @@ async function handleCallback(req: Request, deps: ToolsDeps): Promise<Response> 
 export async function handleOwnerExchange(req: Request, deps: ToolsDeps): Promise<Response> {
   try {
     if (req.method !== "POST") return gatewayError(405, "invalid_request_error", "method_not_allowed", "Use POST.", { retry: false, headers: { allow: "POST" } });
-    if (!deps.agentsEnabled || !deps.personalEnabled) return paused();
+    // ---------- Wave 3, unit 3: or while the data cap is served, for owner items ----------
+    if ((!deps.agentsEnabled || !deps.personalEnabled) && !deps.ownerPassForCaps) return paused();
     return await withToken(req, deps, async (token) => {
       if (token.scope === "build") return toolError("sign_in_required", "A build has no owner. It sees a sample account instead.");
       const body = await readJson(req);

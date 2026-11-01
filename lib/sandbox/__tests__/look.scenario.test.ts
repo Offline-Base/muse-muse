@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it, mock } from "node:test";
 import { NATIVE_TEMPLATE_FILES } from "@/lib/native/template-source";
 import { BUILDER_MARKER } from "@/lib/sandbox/paths";
-import { readTargetFiles, readTemplateFiles, templateHash } from "@/lib/sandbox/setup";
+import { readCapFiles, readTargetFiles, readTemplateFiles, templateHash } from "@/lib/sandbox/setup";
 
 /** Everything the fake sandbox was asked to do, in order. */
 let events: Array<{ kind: "run"; script: string; sudo: boolean; cwd?: string } | { kind: "write"; paths: string[] }> = [];
@@ -162,7 +162,8 @@ describe("provisionSandbox and the muse-app look", { skip: canMock ? false : "ne
 
   it("warns on a local run when the snapshot's template isn't this checkout's, and stays quiet otherwise", async (t) => {
     const warn = t.mock.method(console, "warn", () => {});
-    const here = templateHash([...(await readTemplateFiles("template")), ...(await readTargetFiles("template"))]);
+    // The snapshot's own hash (setupBuilder, make-builder-snapshot.ts): the template, its targets, then its caps.
+    const here = templateHash([...(await readTemplateFiles("template")), ...(await readTargetFiles("template")), ...(await readCapFiles("template"))]);
     marker = JSON.stringify({ templateHash: "a20419febcfc" });
     await provision(true);
     assert.equal(warn.mock.callCount(), 1);
