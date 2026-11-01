@@ -13,3 +13,6 @@ next-env.d.ts
 # Throwaway probe scripts
 scripts/.tmp*
 __pycache__/
+
+# Shared test site (tg-prove): start script, its log
+.prove-*

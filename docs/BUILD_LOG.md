@@ -1595,3 +1595,12 @@ What this record doesn't confirm:
 - Run: tsc once in full plus once after a type fix. Tests: `verified-agent`, `skills`, `recipes`, `flags-off`, `checked`, `assets-source`, 42 pass, then `verified-agent` again after the type fix, 9 pass. `recipes-gen --check` passes. tsc reports 70 lines, none in touched files, all in docs, markdown and composio files, mostly modules missing from the symlinked `node_modules`.
 - Not run: the full suite, `prove.test.ts`, the prove-steps and build-steps scenario tests, next build, a browser, a real Prove it, Meta, a sandbox. No product has been built with the recipe, and the panel has never been rendered.
 - Still waiting on a test build: real claims grading and the quote-in-file check.
+
+## Nov 1: shared test site on port 3023 (branch tg-prove, unmerged)
+
+- Set up worktree `~/mm-wt/prove` from `tg-verify` 9bedcc2. The local site answers on `localhost:3023`: `/`, `/fine-tuning/new`, `/gadgets` and `/models` all 200. Database `pglite:.data/prove`. Spend $0.
+- Builder snapshot: `snap_SB9bO91OjbBU4n3Amdabfo8iY0CY` as a local override, not `snap_2y1WMExjxKPxiDyPtcPvFcMtdU20`. Both exist on Vercel (status created). SB9b is from 2146ae0 and the only template change since 566fa98 is `lib/meta/decide.ts` and its test. So it has everything the other has, with the agent, vr, glasses and muse-app overlays. Read from the build log and git, not by opening a sandbox.
+- Gaps: `lib/sandbox/snapshots.json` is `{}`, so neither snapshot is listed. Neither has `template/caps` or the newer `verify.mjs`, because both are older than wave 3. A local build copies those from the checkout; the live site could not.
+- Every `CAP_READY` line is false on this head, so no capability is served whatever its flag says. Set anyway: `MUSE_CODE_ENABLED`, `CODE_ENABLED`, `NATIVE_EXTENSION`. They do nothing until the lines change. CAP_READY was not changed here.
+- `NATIVE_TARGETS` keeps only phone and desktop; vr, glasses and agent use their own switches, which are on.
+- Ran once: `lib/outputs/__tests__/prove.test.ts`, `lib/pipeline/__tests__/prove-steps.test.ts`, `prove.scenario.test.ts`, `build-steps.scenario.test.ts`. 133 tests, 133 passed, 0 failed. These were the ones `tg-verify` left unrun. They use fakes: no real Prove it run, no build, no Meta and no sandbox.
