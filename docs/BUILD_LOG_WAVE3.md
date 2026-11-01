@@ -506,3 +506,17 @@ Then the first next build of wave 3, at f017fe0, flags off, no keys: exit 0, 390
 Flash drive card seen: log-shots/wave3-device-flash-drive.png (cropped to leave out the made-up address). Small flaw, not fixed yet: with no board, the Model menu stays on "Loading". Spend: $0.
 
 My slip: the drive tools agent was started with worktree isolation, so it works in ~/muse-muse/.claude/worktrees/agent-ad4f69864f590d3ea (branch tg-cap-drivetools-work), not ~/mm-wt/cap-drivetools. ~/muse-muse's own checkout has no tracked changes. To move and clean up when it reports.
+
+## tg-cap-drivetools: product drive tools built, under review (Nov 1, 02:55)
+
+6979056: drive_status and export_to_drive on /gadget, for the verified owner on their linked board, confirmed on a card. Off behind DRIVE_EXPORT_PRODUCTS and the owner check. The builder's run: .test.ts 5559, 5551 pass, 0 fail, 8 skipped. .test.tsx 793/793. Template 702, 700 pass, 0 fail, 2 skipped. tsc clean. It broke 19 guards one at a time and the tests caught all 19. Spend: $0. Merged tg-cap-int into it as 532dda6; not yet on tg-cap-int. An independent review workflow (wf_b2d9f00b-b66) is checking access, approvals, license duties and flags-off.
+
+Gap for the owner: "your board's page" doesn't exist for a registered board. An export in needs_erase on a linked board stays stuck, since the owner has no stop. The real test should use an exFAT stick with room.
+
+The stray worktree under ~/muse-muse/.claude/worktrees stays for now: the harness holds a lock on it, and I'm not forcing past that. It has no uncommitted work, and its commit is on tg-cap-drivetools.
+
+## tg-cap-int: drive tools merged, after an independent review (Nov 1, 03:20)
+
+Review wf_b2d9f00b-b66: 12 reported, 9 survived, 8 fixed in c879d96, each with a test that fails without it (hardware cap off now stops the tools, board words filtered, another export's file name hidden, earlier models keep fresh links, owner told how to get the pass, /gadgets wording, simulated wording, a 40-second plan deadline). Left for the owner: a "train on my data" model can't reach a drive, since it's never published and the drive path only takes Hub files. 0fb6119 makes the skill say so and stops the card's model menu sticking on "Loading". Same gap on board tools when the cap is off: predates this, not changed. Told General about a possible admin path that publishes private rows (read from code, not run).
+
+Checks at 0fb6119: .test.ts 5570, 5562 pass, 0 fail, 8 skipped. .test.tsx 794/794. Template 702, 700 pass, 0 fail, 2 skipped. tsc clean. next build exit 0, largest trace 83 MB. Not re-run: muse-device (no Python changed in this merge's drive tools; last run 147, 144 pass, 0 fail). Spend: $0. Every CAP_READY stays false. No real board or stick.
