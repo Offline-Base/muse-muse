@@ -382,11 +382,19 @@ platform itself.
 | `desktop_mac` | mac | `mac_zip` | `lab`, `product` | | 240 |
 | `desktop_windows` | windows | `windows_zip` | `lab`, `product` | `exeName` (optional) | 240 |
 | `glasses_sim` | mac | `ios_sim_app` | `glasses` | `bundleId` | 420 |
+| `gguf_emu` | mac | None: see below | | `gguf`, `prompts`, `systemLine`, `maxTokens` | 900 |
 
 - **`selftestSeconds`** (8 to 20, default 12) on the desktop kinds sets how long the frames play for. The shell itself
   records for 12 s.
 - **`glasses_sim`** also takes `scenario` (`capture-and-ask`, the default) and `media`: `{ photo: { url }, feed?: { url },
   question?: { url } }`. Without a feed, the lab makes one from the photo. It's H.265, as Meta's mock camera requires.
+
+- **`gguf_emu`** runs a tuned model on the emulator (docs/TRAINING.md "Emulator runs"). It has no `target`, `app` or `selftest`.
+  `gguf` is `{ repo, commit, name, sha256, bytes }`, a public file on the Hugging Face Hub. `lib/hub-download.mjs` follows redirects
+  only to the Hub's own hosts, sends no token, and needs the exact size and checksum. The box offers this kind only once
+  `setup/llama-android.sh` has built `llama-server`. It shares the emulator with `android_emu`, so the two never run together. Its
+  finish call adds `simTune`, which the route keeps for this kind only. The file must fit in the emulator's RAM and disk: `mm_pixel`
+  has 4 GB and 8 GB.
 
 ## Pass rules
 

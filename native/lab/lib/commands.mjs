@@ -169,6 +169,11 @@ export const adbScreencap = (serial) => adb(serial, "exec-out", "screencap", "-p
 export const adbPull = (serial, remote, local) => adb(serial, "pull", remote, local);
 export const adbRemove = (serial, remote) => adbShell(serial, ["rm", "-f", shQuote(remote)]);
 export const adbStopRecording = (serial) => adbShell(serial, ["pkill", "-INT", "screenrecord"]);
+export const adbPush = (serial, local, remote) => adb(serial, "push", local, remote);
+export const adbForward = (serial, port) => adb(serial, "forward", `tcp:${port}`, `tcp:${port}`);
+export const adbForwardRemove = (serial, port) => adb(serial, "forward", "--remove", `tcp:${port}`);
+/** A fixed command for the model runs below: only the lab's own constants go in these. */
+export const adbRaw = (serial, line) => adb(serial, "shell", line);
 export const adbProp = (serial, name) => adbShell(serial, ["getprop", shQuote(name)]);
 export const adbResolveActivity = (serial, pkg) =>
   adbShell(serial, ["cmd", "package", "resolve-activity", "--brief", "-c", "android.intent.category.LAUNCHER", shQuote(pkg)]);

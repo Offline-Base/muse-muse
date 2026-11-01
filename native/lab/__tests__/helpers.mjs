@@ -30,6 +30,9 @@ export function makeJob(kind, overrides = {}) {
       selftest: { token: SELFTEST_TOKEN, platformUrl: "https://muse-muse.vercel.app" },
       app: APPS[kind],
       ...(kind === "glasses_sim" ? { media: { photo: { url: `${BLOB}/pov.jpg` } } } : {}),
+      ...(kind === "gguf_emu"
+        ? { gguf: { repo: "a/b", commit: "b".repeat(40), name: "x.gguf", sha256: SHA, bytes: 1024 }, prompts: [{ id: "one", text: "Hi" }], systemLine: "" }
+        : {}),
       ...input,
     },
     ...rest,

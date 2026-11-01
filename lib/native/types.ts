@@ -11,7 +11,7 @@ export const NATIVE_LANES = ["mac", "windows"] as const;
 export type NativeLane = (typeof NATIVE_LANES)[number];
 
 /** What a lab box can be asked to do, as native/lab/jobs names them. Shell releases aren't jobs: scripts and EAS make them. */
-export const NATIVE_JOB_KINDS = ["ios_sim", "android_emu", "desktop_mac", "desktop_windows", "glasses_sim"] as const;
+export const NATIVE_JOB_KINDS = ["ios_sim", "android_emu", "desktop_mac", "desktop_windows", "glasses_sim", "gguf_emu"] as const;
 export type NativeJobKind = (typeof NATIVE_JOB_KINDS)[number];
 
 /** The lane each job kind runs on. */
@@ -21,6 +21,7 @@ export const JOB_KIND_LANE: Record<NativeJobKind, NativeLane> = {
   desktop_mac: "mac",
   desktop_windows: "windows",
   glasses_sim: "mac",
+  gguf_emu: "mac",
 };
 
 /** native_jobs.priority. Higher runs first: the claim orders by priority DESC. */

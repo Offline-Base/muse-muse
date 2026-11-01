@@ -3,6 +3,7 @@ import { artifactLink, artifactLinkHolds, cleanForJsonb, gone, isJobId, labGate,
 import { bearerToken } from "@/lib/native/lab-token";
 import { finishJob, ownedJob, type FinishedArtifact } from "@/lib/native/queue";
 import type { NativeJobResult } from "@/lib/native/types";
+import { SimTuneMeasured } from "@/lib/train/sim-tune";
 
 // A job's result (docs/NATIVE_LAB.md). Nothing here is trusted for money or for the gallery: the body is cut down to the
 // contract's fields at the contract's sizes, and a file is only kept if its pathname is this job's and its link really
@@ -40,6 +41,7 @@ const Finish = z.object({
   agentVersion: text(40).nullable().catch(null),
   artifacts: z.array(z.unknown()).max(16).catch([]),
   error: z.object({ code: text(40), message: text(500) }).nullable().catch(null),
+  simTune: SimTuneMeasured.nullable().catch(null).optional(),
 });
 
 const FALLBACK_SUMMARY: Record<z.infer<typeof Finish>["outcome"], string> = {
@@ -58,7 +60,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!job) return gone();
   const parsed = Finish.safeParse(await readJson(req, MAX_BODY_BYTES));
   if (!parsed.success) return Response.json({ error: "bad_request" }, { status: 400 });
-  const { artifacts: claimed, ...body } = parsed.data;
+  // Only a tuned model's emulator run keeps measurements. Any other job's are dropped.
+  const { artifacts: claimed, simTune, ...body } = parsed.data;
 
   const artifacts: FinishedArtifact[] = [];
   const dropped: string[] = [];
@@ -83,6 +86,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const result: NativeJobResult = {
     ...body,
+    ...(job.kind === "gguf_emu" && simTune ? { simTune } : {}),
     // Whether a result can block shipping comes from the job, not from the box reporting it.
     informational: job.kind === "glasses_sim",
     summary: cleanForJsonb(body.summary) || FALLBACK_SUMMARY[body.outcome],

@@ -30,6 +30,7 @@ function place(kind, device = {}) {
     case "glasses_sim":
       return `an iPhone simulator with simulated Meta glasses${inBrackets(device.name, os && `iOS ${os}`)}`;
     case "android_emu":
+    case "gguf_emu":
       return `an Android emulator${inBrackets(device.name, os && `Android ${os}`)}`;
     case "desktop_mac":
       return `a Mac in the AWS device lab${inBrackets(os && `macOS ${os}`)}`;
@@ -62,7 +63,7 @@ const seconds = (ms) => `${(ms / 1000).toFixed(1)} s`;
 export function summaryFor(kind, device, outcome) {
   const where = place(kind, device);
   if (outcome.passed) {
-    const opened = Number.isFinite(outcome.loadMs) ? `: opened in ${seconds(outcome.loadMs)}` : "";
+    const opened = Number.isFinite(outcome.loadMs) ? `: ${kind === "gguf_emu" ? "the model loaded" : "opened"} in ${seconds(outcome.loadMs)}` : "";
     return `Checked on ${where}${opened}.`;
   }
   const why = outcome.reasons?.[0];

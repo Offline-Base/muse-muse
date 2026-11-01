@@ -1664,3 +1664,12 @@ All on localhost:3023, TEST_MODEL, made-up data. Costs are what each build's log
 - Gateway check on a scratch database with the real route and the template's real client: build token got the simulated photo and WAV, live token with no board got 503 gadget_offline and isGadgetOffline true, a token without the option got 403 gadget_not_allowed. A real board not run.
 - Tests: package-run 4 pass, local-gadget 3 pass. tsc shows nothing in the touched files. workflow.scenario can't load here: 57 cancelled on the workflow package's FatalError export, and the same load error shows on tg-verify without these changes.
 - Spend: $0.28 Meta as recorded, about $0.03 Composio by estimate, sandbox time unmeasured.
+
+## Nov 1: a tuned model on the lab's Android emulator, SIM_TUNE (branch tg-sim-tune, unmerged)
+
+Code and fakes only. No lab job, GPU, build or paid call ran, and the flag is off.
+
+- Added a `gguf_emu` lab kind, `SimTuneCard` on the model page, and `POST/GET /api/train/jobs/{id}/sim-tune`. No migration.
+- Found: the smallest local file of any tuned model today is 13.68 GB (Q3_K_M of 30B). The emulator has 4 GB of RAM and 8 GB of disk, and a job is capped at 900 s. So every current model gets a plain "too big" refusal.
+- Decision: refuse rather than run a stand-in model and call it the tuned one.
+- Decision: jobs hang off one hidden disabled product to avoid a migration.
