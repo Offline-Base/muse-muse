@@ -1243,7 +1243,7 @@ because the sidebar showed a real account.
 - Found: the fine-tune session's `knowledge` branch builds Vercel previews on each push (22:54, 23:01), since it lacks
   the main-only rule. Asked that session to add it; General doesn't push to `knowledge`.
 
-### 23:08 knowledge branch no longer builds previews
+### 23:04 knowledge branch no longer builds previews
 
 - The fine-tune session added the main-only rule to `knowledge` (7a55cf2). The two previews it built (22:54, 23:01) ran
   migrate against the Preview environment's database and found nothing to apply ("migrate: up to date"; knowledge holds
