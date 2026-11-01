@@ -150,7 +150,7 @@ export default async function GadgetsPage() {
         )}
       </section>
 
-      <BoardsSlot />
+      <BoardsSlot viewer={viewer} />
     </div>
   );
 }
