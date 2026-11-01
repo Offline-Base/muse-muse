@@ -1339,6 +1339,9 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
     - model-outputs 2.2M
     - evals 129K
     - noncommercial 55K
+- 12:50 AM: dataset card: added a Size line under "What this is" and a Tokens table by config (text and chat-format
+  tokens). Pushed as 3410af1b; all 33 files still match, and the public card matches without a token. The owner also asked
+  for sample rows on the card; that edit was stopped by a safety check before it ran, so no samples are on the card.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
