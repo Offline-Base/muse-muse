@@ -1986,3 +1986,7 @@ All made-up data. Code: tg-caps-ready fa692f3e, builder snapshot snap_XXT4qDZEWL
 - Blocked: automatic packaging. packageProductStep runs after deploy, so a Preview never reaches it, even with PACKAGER_SNAPSHOT_ID set. Setting it is needed but not enough. It isn't in Preview's project env; snap_VcblDXLuhpigJ8ZeukmR38j2PupJ from the Oct 31 spike exists and is the candidate. Also, requestedTargets came back empty on a Preview with targets sent.
 - Blocked: Composio inside a product. COMPOSIO_API_KEY isn't in the Preview env list.
 - Spend: Meta about $24.13 in total over these builds. GPU and AWS none.
+
+## Nov 1, evening: local production build of PR #30
+
+`npx next build` on tg-device-loop-int finished with exit 0, run on the laptop with no DATABASE_URL, so no migration ran. This shows the merged branch compiles and bundles. It does not cover Vercel, the main database or the migrations, because the Preview deploy is still denied. The full test suite was not run on this branch. Spend: $0.
