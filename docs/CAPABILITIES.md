@@ -1349,6 +1349,132 @@ send is confirmed once by the owner (Meta's Acceptable Use Policy: no consequent
 off on production until `CONNECT_SENDS_PRODUCTION`. Builder accounts only, never Muse Muse's. Composio keeps payloads up to
 a year without zero data retention, as `docs/AGENT_TOOLS.md` says. Needs a signed-in builder.
 
+### 11a. As built (tg-cap-connect, Nov 1)
+
+Built on `tg-cap-int` (155a330). Every flag is off by default and `CAP_READY.connect` stays false: section 22's real test
+build hasn't run (see "Not proven yet"). With every flag off the brief goldens, `flags-off-surface`, `caps-off` (now
+with unit 5's routes) and the template's `caps-off` and `playwright-off` pass unchanged, with `CONNECT_MORE_TOOLS`,
+`CONNECT_VAULT`, `CONNECT_VAULT_KEY`, `CONNECT_SENDS` and `CONNECT_SENDS_PRODUCTION` added to their lists.
+
+**`lib/secrets/box.ts`** (for unit 13 too). `parseKeyring(raw)` reads one 32-byte base64 key (version 1) or a ring
+`v1:<key>,v2:<key>` whose newest version seals; a set but malformed key throws, so nothing is sealed with a weak one.
+`sealSecret(text, ring, aad)` is AES-256-GCM, a random 96-bit IV, a 128-bit tag and additional data naming where the
+secret belongs; `openSecret` throws `SecretBoxError` with no detail for a wrong key, place or byte. Nothing logs.
+Unit 13 passes its own key and its own `aad` (for example `board:<ownerId>:<boardId>`).
+
+**Migration 0022_connect** at journal index 22 (the tag rule), snapshot `meta/0022_snapshot.json` chained on 0020's,
+`when` by section 4's rule. 21 is unit 4's and isn't built, so the migrations test holds 21 in `RESERVED` until 0021
+merges: the integrator then takes 21 out, re-chains 0022's snapshot on 0021's as section 4 says, and checks drizzle's
+"newer than the newest applied" rule (0021 must reach any shared database before 0022). As planned, plus: both
+`product_secrets` and `product_sends` have `namespace` (`live` or `b:<buildId>`), so a build's test keys and sends never
+mix with live ones; `product_secrets.test_hash` (a build's test keys only, for the leak scan); `product_sends.recipients`
+(a count) and a unique `approval_nonce`; one active key per `(product_id, namespace, name)` is a partial unique index;
+`public_fetch_cache` has an `expires_at` index for the sweep. Secrets and sends cascade with the product; the cache is
+shared and doesn't. `usage.source` gains `fetch`, `vault` and `sends` in its TypeScript type only (the column is text).
+
+**Allowlists.** `lib/caps/connect/apis.json`, terms read Oct 31 and recorded in each entry's `termsRead`:
+
+| Id | Base | Paths | Terms, read Oct 31 |
+|---|---|---|---|
+| `nws` | api.weather.gov | points, forecast, hourly forecast, active alerts | open data, free for any use, User-Agent required |
+| `wikipedia` | en.wikipedia.org | REST summary, MediaWiki REST search | User-Agent with contact, requests in series, cache; text CC BY-SA 4.0, so the credit names it |
+| `openlibrary` | openlibrary.org | search, one work | identify in the User-Agent, 3 a second, no bulk downloads |
+| `usgs` | earthquake.usgs.gov | FDSN query (GeoJSON forced), summary feeds | US public domain, credit asked |
+
+REST Countries was a candidate and is out: v3.1 now answers "deprecated, migrate to v5". Each path names its `{params}`
+with a pattern, its query parameters with patterns, `required` and `fixed` ones (USGS's `format=geojson`), and its cache
+time. The gateway builds the URL from the base and checked values only; a request can't name a host, add a parameter,
+or climb out with `..` or encoded slashes. Every outside call sends `MuseMuse/1.0 (+<PLATFORM_URL>; ...)`.
+`lib/caps/connect/services.json`: `github`, `openweathermap`, `airtable` and `notion` for brokered calls (bearer or query
+key, each with its own read-only methods and paths, `visitors` true only for OpenWeather), `resend` (email) and
+`slack_webhook` (chat, the secret is the webhook URL, held to `https://hooks.slack.com/services/`) for sends only.
+
+**Routes** (`lib/caps/connect/handler.ts`, behind the cap gate; `app/api/gateway/{fetch,send}/route.ts`,
+`app/api/gateway/vault/[[...path]]/route.ts`):
+
+- `POST /fetch {api, path, query}`: any principal; the API must be the product's pick. Live: the shared cache, else one
+  call with `redirect: "manual"`, at most two redirects on the API's own origin to an allowed path, 10 s, JSON only, 1
+  MB; 2xx cached for the path's time, 404 for 60 s, nothing else cached. The API's own rate (`perMinute`, across every
+  product) counts only calls that go out. A build gets `samples/<api>.json` (recorded from the real API Oct 31,
+  trimmed) by `hash(normalized request) % n`, with `simulated: true`, and never calls out. Limits: 60 a minute a product,
+  20 an end user's IP, 2,000 a day (300 a build). A `fetch` usage row at $0 with 1 unit.
+- `GET /vault`, `POST /vault {name?, service, value}`, `DELETE /vault/<name>`: owner only (a build is the owner when it
+  names no one else, or with the test owner pass, as data's principal says). Names, services and dates only, never a
+  value. The service must be the brief's (a key, or a send channel's service); the value is 8 to 4,096 characters with
+  no spaces, and a webhook must be on its host. Sealed with `aad` `vault:<productId>:<namespace>:<name>`; saving a name
+  again replaces it; 10 keys a product. No `CONNECT_VAULT_KEY` (or a malformed one): 503 `caps_paused`.
+- `POST /vault/call {name, method, path, body?}`: the saved key's service decides what may be called; visitors only
+  where the service allows them. The key is added at the last moment (bearer header or the service's query parameter,
+  any copy the request sent is dropped), `redirect: "manual"` and a redirect is refused, 15 s, 1 MB, and a key the
+  answer echoes becomes `[key hidden]`. No key saved: 200 `{ok: false, code: "needs_key"}`. A build gets
+  `samples/services/<service>.json` (made up in each service's documented shape: nobody's key was used). 500 a day.
+- `POST /send {channel, to, subject?, body, from?, approval?}`: owner only, `email` or `chat` (sms, social and payment
+  answer "can't send that yet"). Without a good approval it answers `needs_confirmation` with `{id, title, lines, args}`;
+  the approval is tg-tools' `mintApproval`/`checkApproval` over the cleaned message, so a changed word, another owner or
+  another product fails. A live send needs the owner's key before anything is spent, then the nonce is spent once
+  (`reserveCounter`), then the day's count (10). Email goes through Resend, chat to the webhook; never retried. A build
+  records a `simulated` row and answers `{status: "sent", id: "sim_...", simulated: true}`. Recipients are kept as a MAC.
+
+**Flags.** `CONNECT_ENABLED` (the cap), `CONNECT_VAULT` (keys and calls), `CONNECT_VAULT_KEY`, `CONNECT_SENDS` (needs
+the vault; on production also `CONNECT_SENDS_PRODUCTION`, decision 8), read in `lib/caps/connect/flags.ts` with no
+imports so the prompts and `lib/env.ts` share them. With the vault or sends off their routes are 404 and the writer gets
+empty lists.
+
+**Brief.** `connect: {publicApis, keys: [{service, why}], sends: [{channel, why}]}`. The stored block takes every
+channel the contract names; the writer's takes only allowlisted ids, `keys` up to 3 with the vault on (else 0), and
+`sends` up to 2 of email and chat with sends on (else 0). `normalizeConnectBlock` drops unknown ids and repeats, empties
+what is off, and makes an empty block null. The catalog names every API, then the services and sends while on. The
+build prompt's `### Outside services` has the tables, the helpers, the manifest line (`"connect": {publicApis, keys,
+sends}`), the sample rules and the smoke test; the judge note says samples are the product working and a key must never
+show. The third "How products run" bullet keeps unit 2's "unless a platform service below says otherwise".
+
+**Template.** `template/caps/connect`: `lib/platform/connect.ts` (`CapError`, `gatewayCall`), `fetch-public.ts`
+(`fetchPublic`; in a build it notes what it got in `test-results/caps/connect-fetched.json` for the smoke test),
+`secrets.ts` (`list`, `save`, `remove`, `call`), `send.ts`, `components/platform/KeySettings.tsx` (forms, a password
+field never filled back in), `ConfirmSend.tsx` (client), the static routes `app/api/musemuse/connect-keys` and
+`connect-send`, `tests/caps/connect.ts` (`openAsOwner`, `checkFetchShown`, `saveTestKey`, `confirmSend`),
+`scripts/caps/connect.mjs` and the `muse-connect` skill. All platform files, no dependencies.
+`musemuse.schema.json` gains an optional `connect` block.
+
+**Checks** (`scripts/caps/connect.mjs`): `manifest` (musemuse.json's picks equal the brief's from the gateway's record),
+`fetch-shown` (the gateway answered this verify's fetches and the page showed text the test picked from what the server
+got), `key-saved` (a made-up `mmtest_` key saved through KeySettings and kept by the gateway), `no-key-leak` (no test
+key of the build, by its hash in the gateway's record, appears in the kept pages, `.next/static`, `.next/server`,
+`public` or the source), `send-confirmed` (the gateway recorded a simulated send and the page said "Sent (sample)").
+`CAP_PROOF.connect` counts fetches, calls, simulated sends and keys since `since`, every test key's hash, and the brief's
+picks. Cleanup: a build's keys and sends when it ends; the sweep removes expired cache rows, keys revoked over a day ago
+and crashed builds' keys and sends after 24 hours.
+
+**More read-only tools (`CONNECT_MORE_TOOLS`): not built.** Adding tools means entries in `lib/tools/catalog.source.ts`
+and `npm run tools:sync -- --check`, which reads Composio's live schemas, and this unit makes no Composio call. The flag
+exists and nothing reads it. Decision 17 holds when it is built: owners only until zero data retention is settled.
+
+**Tests.** `lib/secrets/__tests__/box.test.ts` (5), `lib/caps/connect/__tests__/connect.test.ts` (26: allowlist paths,
+parameters and climbing, cache keys, brokered calls only to their hosts, samples for every path, the fetch cache, a
+build's samples, redirects, size and type, limits; the vault's sealed round trip, owner only, no value in any answer,
+quotas, paused, revoke, build namespace; calls with the key added and hidden on echo; sends: confirmation first, one
+send per approval, changed words, another owner, recipients, channels, off, no key, 10 a day, a build's simulated send,
+Slack), `store.test.ts` (4, PGlite: the cache, keys replaced and revoked, the proof and cleanup, the sweep),
+`brief.test.ts` (6), the migrations test (0022 keeps rows), `caps-off.test.ts` (unit 5's routes, and vault and sends off
+with the cap served, and the production switch). Template: `caps-connect.test.mjs` (14: paths, platform files, schema,
+skill, the checker with the leak scan, the helpers and the keys route against a fake gateway, the product's `tsc`).
+Spend: $0 (no Meta, Sandbox, Vercel or Composio call; the samples came from five plain GETs to the public APIs).
+
+**Not proven yet.**
+- No real test build has run (section 22's weather planner). As unit 3 found, a local run's sandbox can't reach the
+  gateway, so a cap build needs a public `PLATFORM_URL` or the preview database, and a builder snapshot with
+  `template/caps/connect` and its manifest entry. `CAP_READY.connect` flips only in the merge after that build passes.
+- No live call has gone through `/fetch` from a deployed gateway, and no Resend or Slack send has gone anywhere: the
+  adapters are written from the providers' docs and tested against a fake fetch. The four services' build samples are
+  made up.
+- `checkFetchShown`, `saveTestKey` and `confirmSend` have run only as code that typechecks in a product, not in
+  Playwright.
+
+**For the owner.** Decision 8: sends stay off on production; when you allow them, name the channels (email and chat are
+built). Decision 17: the extra Composio tools aren't built. Whether the four services are the right first set. The
+trust privacy page (unit 1's file) doesn't yet say that a product can keep its owner's keys or send for them; its line
+should when either is on. Nothing in `muse-device/` changed.
+
 ## 12. Unit 6: jobs (C)
 
 **Scope.** Schedules in `musemuse.json` (15 minutes at least), a platform cron fan-out with job tokens and per-run budgets,
@@ -2386,5 +2512,9 @@ Phaser game.
   Baseline first and no reordered output; speech unlocks its AudioContext in the tap; media needs a part flag to count
   as enabled; `/assets` counts each file per address and caches its redirect an hour; ONNX Runtime's third-party
   notices ship as `public/notices/onnxruntime.txt`; the test-run SAM cap holds across reloads.
+
+- Nov 1 (unit 5): section 11a added. 0022 sits at index 22 with 21 held for unit 4; `product_secrets` and `product_sends`
+  gain `namespace`, secrets `test_hash`, sends `recipients`; REST Countries is out (deprecated); sends are email and chat only;
+  the extra Composio tools aren't built (they need a Composio sync); `usage.source` gains `fetch`, `vault`, `sends`.
 
 - Oct 31: first version (unit 0).
