@@ -1360,6 +1360,26 @@ briefs (a math tutor, a bakery order sheet, a plant care coach). All three retur
 about $0.03 in all. The mascot stays the same plush character and holds a prop that fits each request, on white.
 PLAN_ART stays off until the owner wants it on. ![The three pictures](log/shots/2026-11-01/plan-art-real-trio.jpg)
 
+### 00:22 Deployed to production (main 5a5d057)
+
+Owner: "push to main, you have full permission". 64 commits, no key-like strings, no new migrations: fine-tune stage 2,
+the visitor core, the plan card, builds following the UI guidelines unless asked. Vercel shows Ready on
+www.musemuse.dev. All new flags stay off.
+
+### 00:32 Decision models D8: the real run succeeded
+
+Real run f6761680 succeeded for $0.4975, under the $0.83 estimate. The 10-minute serving window is still to do.
+
+### 00:45 Make page: Meta AI-style starters under the composer (tg-starters, b34ea82)
+
+Owner, with two Meta AI screenshots: "rather than the 3 examples offered, make it more similar to the meta ai ui
+underneath". Now category pills (Discover, For school, For work, From a photo) over a 3x2 grid of icon and label ideas
+or a strip of five photos. An idea fills the composer and never sends. Two new photos (fridge, plant) came from Muse
+Image, about $0.02. The cards lose their tag and camera button; the + menu still has Take a photo. Checked in a browser:
+no sideways page scroll at 390 px, an idea fills the note, arrow keys move the tabs. Full suite: 5107 tests, 5099 pass,
+0 fail, 8 skipped; tsc clean. Not deployed yet: the push to main needs the owner's OK. Shots:
+docs/log/shots/2026-11-01/starters-*.png.
+
 ## Gaps
 
 What this record doesn't confirm:
