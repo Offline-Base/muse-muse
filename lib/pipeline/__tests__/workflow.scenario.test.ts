@@ -210,6 +210,9 @@ const fakeSteps = {
     record("publishOffStep");
     return scenario.publish === false ? "VERCEL_TOKEN isn't set" : null;
   },
+  saveUnpublishedVersionStep: async (input: unknown) => {
+    record("saveUnpublishedVersionStep", input);
+  },
   startDeployStep: async (input: unknown) => {
     record("startDeployStep", input);
     return { projectId: "prj_1", deploymentId: "dpl_1", liveTokenId: "tok-live" };
@@ -319,6 +322,7 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
     mock.module(new URL("../../caps/ship.ts", import.meta.url).href, { namedExports: { CAPS_SHIPPING: ["extension"], capsShipping: () => scenario.capsShipping ?? false } });
     mock.module("workflow", {
       namedExports: {
+        FatalError: class FatalError extends Error {},
         sleep: async (d: unknown) => {
           slept.push(d);
         },
@@ -336,6 +340,7 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
     assert.deepEqual(await wf.buildProduct({ buildId: "b1" }), { status: "live" });
     assert.equal(named("startDeployStep").length, 0);
     assert.equal(named("pollDeployStep").length, 0);
+    assert.equal(named("saveUnpublishedVersionStep").length, 1, "the Code page still gets this version's files");
     const reg = named("registerStep")[0]!.args[0] as { liveUrl: unknown; projectId: unknown; liveTokenId: unknown; demoVideoUrl: string; demoPosterUrl: string };
     assert.deepEqual([reg.liveUrl, reg.projectId, reg.liveTokenId], [null, null, null]);
     assert.equal(reg.demoVideoUrl, "https://x/demo.mp4");

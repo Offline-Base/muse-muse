@@ -46,6 +46,7 @@ import {
   pollTaskStep,
   previewStep,
   publishOffStep,
+  saveUnpublishedVersionStep,
   provisionStep,
   refineCheckStep,
   registerStep,
@@ -451,6 +452,7 @@ async function ship(
       type: "log",
       text: `Publishing is off for this run (${publishOff}), so the product didn't get its own link. The preview, checks and demo above ran for real.`,
     });
+    await saveUnpublishedVersionStep({ buildId: ctx.buildId, productId: ctx.productId, sandboxName: ctx.sandboxName, restoredFrom: product.restoredFrom ?? null });
     track.stage = "register";
     await setStatusStep(ctx.buildId, "deploying", { step: "register" });
     await registerStep({
