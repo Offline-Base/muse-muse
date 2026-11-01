@@ -2,7 +2,7 @@
  * Shell and files for the Prove it stage's sandbox copy (docs/PRODUCT_OUTPUTS.md). Pure string builders, so they can be
  * tested without a sandbox. The copy is thrown away after the run, so nothing written here reaches the product.
  */
-import { PROVE_CHECK_PLUGIN_SOURCE, PROVE_RUNNER_SOURCE } from "@/lib/outputs/assets-source";
+import { PROVE_CHECK_GADGET_SOURCE, PROVE_CHECK_PLUGIN_SOURCE, PROVE_RUNNER_SOURCE } from "@/lib/outputs/assets-source";
 import type { ProveRunSpec } from "@/lib/outputs/prove";
 import { DEMO_RECORDING_DIR, PRISTINE_DIR, DEMO_STUDIO_MARKER, WORK_DIR } from "@/lib/sandbox/paths";
 import { q } from "@/lib/sandbox/shell";
@@ -30,6 +30,7 @@ export function proveCheckFiles(spec: ProveRunSpec): Array<{ path: string; conte
     { path: `${PROVE_DIR}/spec.json`, content: JSON.stringify(spec) },
     { path: `${PROVE_DIR}/prove-runner.mjs`, content: PROVE_RUNNER_SOURCE },
     { path: `${PROVE_DIR}/prove-check-plugin.mjs`, content: PROVE_CHECK_PLUGIN_SOURCE },
+    { path: `${PROVE_DIR}/prove-check-gadget.mjs`, content: PROVE_CHECK_GADGET_SOURCE },
   ];
 }
 

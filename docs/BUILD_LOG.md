@@ -1155,6 +1155,152 @@ because the sidebar showed a real account.
   The recipe switches once that repo is public and one dry run passes on it (about 1 AM). Every r30b-based lab model is
   a Derivative of Muse Spark Open, so its cards and pages get "Built with Muse Spark Open" and the Usage Policy points.
 
+### 22:05 Fine-tune like a build, stage 1, landed on tuned-model-options (0a3ec6d)
+
+- wf_e1fcae3d-58a built /fine-tuning/new (one box "What should your model do?", a CSV, JSONL or pasted examples, a
+  Training setup fold), the plan route (one Muse Wonder call, a signed plan token good for 2 hours, 20 plans an hour per
+  caller), the run room at /fine-tuning/runs/<id> (the chat kit's steps, the mascot by stage, the verdict, eval results,
+  Where it runs), PlanCard generalized to PlanView, evalVerdict, and Composer and SetupPanel optional props. Behind
+  TUNE_COMPOSER, admins only; with the flag off, 11 renders match fingerprints taken before the shared edits.
+- Review: 2 medium, 4 low, all fixed. The handoff to the existing form would have published to Hugging Face despite the
+  plan's "publish off" (the room now says so; stage 2's automatic launch passes publish 0); a 64 KB body limit refused
+  normal example files; at least 40 examples; a run whose judging never finished no longer shows "Scored."
+- Landing: the flag-off fingerprints for /fine-tuning (admin and guest) re-recorded, since the decision models changed
+  that page after they were taken. Full suite on the merge: 4,852 tests, 4,843 pass, 1 fail (that fingerprint), then the
+  tune tests 47/47 after re-recording. tsc clean.
+  ![Composer](log/shots/2026-10-31/tune-composer-1440.png)
+  ![Plan card](log/shots/2026-10-31/tune-plan-1440.png)
+  ![Scored run](log/shots/2026-10-31/tune-scored-1440.png)
+- Local site restarted (22:00) with the decision models and the composer merged and a 3 GB memory cap: the old dev
+  server had grown to about 7.7 GB, mostly swapped (flagged by another session).
+
+### 22:16 r30b's 16-bit weights public; same tensors as base Glimmer (checked)
+
+- From the fine-tune session: OfflineBase/Glimmer-30B-2026-Knowledge (merged 16-bit, c06e38cc), -GGUF (3d3c48cd) and
+  -LoRA (de38afa9) are public and ungated, with the 13 shard sha256s (_plan/r30b-base.md). The 4-bit training copy is
+  in its load and LoRA checks.
+- General checked the merged repo by reading only each shard's header: 1,436 tensors, and the names-and-shapes digest
+  equals quantize.ts's BASE_TENSORS_SHA256 (526660e0...) exactly, so the recipe's merge checks hold on r30b unchanged.
+- Plan once the 4-bit repo is public: switch MODEL on a branch, one dry run (about $0.13), one real run on an existing
+  made-up dataset (about $1.60 to $2.10), inside the owner's $8 test budget. General launches them.
+### 22:16 Muse gadget commands output built on tg-gadget-out (ca384e2, 2e6bff8, 041ee67, docs in the next commit)
+
+- The owner's Oct 31 OK (`_plan/gadget-sdk.md`, item 2): a sixth product output, a zip at `/p/<slug>/get/gadget` with one
+  `/etc/musegadget/commands.d` file per public action for the person's own Muse gadget (Meta's Linux Gadget SDK), a new
+  small runner (stdin JSON in, POST to the live action, one JSON object out, the reason as one stderr line), install.sh
+  and uninstall.sh (root-owned, 0644/0755, refuse without sudo, never touch the SDK token, restart `musegadget`) and a
+  README with the data flow and Meta's terms. A new runner instead of the CLI: the gadget's stdin and stderr contract
+  differs from a terminal's, and a file root runs then holds no manifest text. A Muse gadget tab behind
+  `PRODUCT_OUTPUTS`, the native downloads' rate limits, and a Prove it check by machine with no gadget (SDK rules, bash
+  -n, a dry run under a made-up root, then the runner against the live product with the CLI's budget rule).
+- Facts taken from the SDK's README and its command loader (read only, nothing copied): name pattern
+  `[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+` up to 64 characters, `timeout_ms` 1 to 600,000, 5 s added at registration, 64 KiB a
+  file, unknown keys refused, each parameter exactly `{type, description}`, 96 KiB of output kept.
+- Not done: no real gadget, pairing or token was used, and nothing was installed on a device. Manifests have no
+  `timeoutMs` today, so every command waits the SDK's default 30 s; a slower action will time out on a gadget. Not
+  pushed or deployed.
+- Checks: tsc clean; outputs, product, native, prove, MCP and sandbox tests 847 of 847 pass.
+
+### 22:35 Muse gadget output: review fixes on tg-gadget-out (4a05250, 9ad43e4)
+
+- Review verdict: approve with minor fixes. Fixed: prefixes are now one-to-one (`system` and `mm-system` shared
+  `mm_system`, so one pack could replace another's runner and delete its commands); a changed prefix is now
+  `mm_<slug, cut>_<hash of the slug>`, and plain ones never start with `mm_`. install.sh and uninstall.sh keep the slug
+  in `pack.txt` and refuse another product's pack, and install.sh refuses a commands folder root doesn't own.
+- Prove it now checks the sample as the SDK checks a call (required fields, JSON types, an optional null left out)
+  before running the runner, fails the pack when the product took an input the gadget would refuse, and waits at most
+  130 s for the gadget call. The Get it tab says Node 18+ is needed, recommends `--run-as`, says commands stop after
+  30 s, and words Meta's terms as the token's personal, non-commercial use with a link. Code comments cite the SDK's
+  README and its command loader.
+- Kept as is: the 30 s default when a manifest has no `timeoutMs`, as the task set it; raising it to the CLI's 120 s or
+  adding `timeoutMs` to the manifest schema is the owner's call.
+- Checks: tsc clean; the whole root suite (282 files) 4,798 tests, 4,790 pass, 0 fail, 8 skipped (no MODEL_API_KEY).
+  Screenshots of the Get it panel's Muse gadget tab at 1440 light and dark and 390 light, from a local PGlite product
+  with two public actions and one owner action (left out of the pack). Not pushed or deployed.
+
+### 22:43 Muse gadget commands output landed on tuned-model-options
+
+- Merged tg-gadget-out (wf_0a28bc2a-87e). Each shipped product gets <slug>-muse-gadget.zip at /p/<slug>/get/gadget and a
+  "Muse gadget" tab in Get it, behind PRODUCT_OUTPUTS: one command file per public action for Meta's Linux Gadget SDK,
+  a small runner that POSTs to the live product, guarded install and uninstall scripts, and a README on the person's own
+  SDK, account and token and Meta's terms. Prove it checks the pack by machine (the SDK's rules, a dry install, the
+  runner on a sample input). Never run on a real gadget; Muse Muse never holds a gadget token.
+- Open for the owner: commands stop after 30 s (the SDK's default) while the CLI waits 120 s, so an action that takes 30
+  to 120 s works from the CLI but times out on a gadget.
+- Full suite after the merge: 4,896 tests, 4,888 pass, 0 fail, 8 skipped (live Meta tests). tsc clean. Pushed to
+  the branch only.
+  ![Muse gadget tab](log/shots/2026-10-31/gadget-tab-1440.png)
+
+### 23:03 Shipped to production: main 2146ae0 (owner: "commit all of that to main and deploy")
+
+- main fast-forwarded 6f311e5 to 2146ae0 (110 commits): Gadgets and Models tabs, the plan card, decision models with
+  migration 0017 (three columns with defaults on training_datasets), fine-tune like a build stage 1, the Muse gadget
+  output, and the build log. Key scan of the diff: clean. Every new capability is behind a flag that's off in
+  production, so visitors see the new sidebar rows and pages; /fine-tuning/new answers 404 until TUNE_COMPOSER is on.
+- Deployment dpl_GqDHvz4yTdTygbcScSfNenNT6Rdk, Ready (the build ran the migration). Rollback: dpl_DBQAd4HcEcX5aj4dpCcNzDsjEfXw
+  (6f311e5). Smoke check on musemuse.dev: /, /models, /gadgets (Boards on hand with the pictures), /fine-tuning, /gallery,
+  /how-it-works 200; /fine-tuning/new 404 as intended.
+- Found: the fine-tune session's `knowledge` branch builds Vercel previews on each push (22:54, 23:01), since it lacks
+  the main-only rule. Asked that session to add it; General doesn't push to `knowledge`.
+
+### 23:04 knowledge branch no longer builds previews
+
+- The fine-tune session added the main-only rule to `knowledge` (7a55cf2). The two previews it built (22:54, 23:01) ran
+  migrate against the Preview environment's database and found nothing to apply ("migrate: up to date"; knowledge holds
+  0000 to 0008 only). They stay behind Vercel's preview protection.
+
+### 23:06 Owner: every live build uses the muse-app look; new builder snapshot made
+
+- Owner: "all live builds should use that skill" (muse-app-ui, the template/targets/muse-app overlay behind
+  MUSE_APP_LOOK). New snapshot from main 2146ae0: snap_SB9bO91OjbBU4n3Amdabfo8iY0CY (2,078 MB, template hash
+  fe8058aa261c, Muse Code 1.4.14; the 65 overlay files including muse-app checked against template/targets; pristine
+  verify files match). 81.5 s of sandbox time.
+- Left for the owner in Vercel (production): BUILDER_SNAPSHOT_ID to the new id and MUSE_APP_LOOK=1, then a redeploy.
+  Then one canary build on the live site. Once a muse-app product exists, MUSE_APP_LOOK stays on (BRAND.md).
+
+### 23:24 Production redeployed with the muse-app look on; visitor training core landed
+
+- Owner set the two variables through General ("you do these"): BUILDER_SNAPSHOT_ID = snap_SB9bO91OjbBU4n3Amdabfo8iY0CY and
+  MUSE_APP_LOOK = 1 in production, then allowed the redeploy: A779wkpbtUZrQZCxkX4dNCa9LRjP, Ready in 2 minutes, same code
+  as 2146ae0. musemuse.dev /, /models, /gadgets, /fine-tuning 200. Every new live build now gets the muse-app overlay and
+  its muse-app-ui skill. A canary build on the live site is the owner's call (it becomes a real gallery product).
+- tg-open-train2 merged (1308c58), new files only plus flags and one sign-in guard line: the signed mm_trainer cookie
+  (3 new a day per IP, a hidden users row, adoption into a signed-in account), visitor limits reserved before work (1 run
+  and 1 dry run a day, 60 min, $4, 120 steps, one visitor GPU at a time, $15 a day in all; Wonder-written data refused for
+  visitors whatever PUBLIC_DATASETS says), checkTrainingTask and a PII scan (visitors only), and trainCaller. All behind
+  PUBLIC_TRAINING (off): flag off gives exactly today's callers. Review: 2 medium (the one-GPU limit was a check, not a
+  reservation; adoption trusted a bare id), 7 low, 2 info; fixed or answered. Branch full suite 4,976 tests, 4,968 pass,
+  0 fail. After the merge: tsc clean, related tests 172/172. Wiring into the routes and pages comes after stage 2 lands.
+- Owner should know: a banned user without a session cookie can still train as an ordinary cookie visitor under the
+  per-IP caps (comes with training without sign-in).
+
+### 23:28 Owner: a picture made for each plan, text wrapping under it, the full plan in the card
+
+- The owner tried a live build ("Rate Change Tutor", a rate-of-change math tutor) and asked for the plan card's mascot
+  to be a Muse image made for the request, the text to wrap beside and then under it, and the full plan written out.
+- Building on tg-plan-art (wf_c5dd441e-bba): after the brief, one Muse Image edit call ($0.01) turns the owner's mascot
+  picture into one that fits the request; stored and metered like other platform media, time-boxed, never delaying or
+  failing a build, with the stock mascot as the fallback (flag PLAN_ART, off until checked). The card floats the picture
+  with the text flowing beside and under it, and writes out the whole brief in place of the summary. Up to 10 real Muse
+  Image calls ($0.10) to tune the prompt.
+
+### 23:43 Fine-tune like a build, stage 2, landed (7b6b139); r30b switch building
+
+- wf_7f660dc4-230 on tg-tune2: launchJob (the jobs route's checks moved to lib/train/launch.ts, route replies unchanged,
+  79/79 route tests), the tuneRun workflow (a started run trains itself once its examples are ready, publish 0, retrying
+  every 5 minutes for up to 2 hours while no GPU is free or a cap is hit, with the reason shown), Start training and a
+  stop route, Advanced training steps, the New button on /fine-tuning, the build room's "Its own model" row
+  (TUNE_FROM_BUILDS; one click by the owner, one run a product a day), and the hosted Glimmer chat backend:
+  lib/train/glimmer-serving.ts (Meta's sampling 1.0, 0.95, 64 on every request; ends on Meta's two ids; never <|eom|>
+  except trainChannel 0 adapters, server side) and /v1/chat/completions on the serve job. Not run on a real GPU yet.
+- Review: 1 medium (a run stuck for good once a job failed before launching), 6 low, 1 info; fixed except the info. After
+  the merge: tsc clean, full suite 5,045 tests, 5,037 pass, 0 fail, 8 skipped.
+  ![Waiting for a GPU](log/shots/2026-10-31/tune2-waiting-1440.png)
+  ![Its own model](log/shots/2026-10-31/tune2-own-model-1440.png)
+- The fine-tune session's 4-bit r30b copy is public and verified (OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit
+  @ 6f12bf52: drop-in for Unsloth's, two training steps on the recipe's own versions). The switch is building on tg-r30b
+  (wf_e569a503-ff8): MODEL and the merge base, the Muse Spark Open duties on every new lab model, wording.
+
 ## Gaps
 
 What this record doesn't confirm:
