@@ -31,11 +31,19 @@ export interface BuilderPolicyOptions {
   /** Prove it's copy only: one live product's own host, so the outputs can be run against it. */
   extraHosts?: readonly string[];
   /**
-   * Preview deployments only: Vercel's Protection Bypass for Automation secret. The firewall adds it to every request to
-   * platformHost as x-vercel-protection-bypass, with Host pinned to platformHost, and refuses a request for a bypass
-   * cookie, so the sandbox reaches a protected Preview without ever seeing the secret or anything that does its job.
+   * Preview deployments only: Vercel's Protection Bypass for Automation secret and the one host it is for, the preview's
+   * own (env.previewBypass). When that host is platformHost, the firewall adds the secret to every request to it as
+   * x-vercel-protection-bypass, with Host pinned to it, and refuses a request for a bypass cookie, so the sandbox
+   * reaches a protected Preview without ever seeing the secret or anything that does its job. For any other
+   * platformHost the secret is left out, so it never goes to a host it isn't for.
    */
-  platformBypassSecret?: string | null;
+  platformBypass?: PlatformBypass | null;
+}
+
+/** A Protection Bypass for Automation secret, with the host it may be sent to. */
+export interface PlatformBypass {
+  host: string;
+  secret: string;
 }
 
 /** The header Vercel reads a Protection Bypass for Automation secret from. */
@@ -127,7 +135,9 @@ export function builderNetworkPolicy(opts: BuilderPolicyOptions): NetworkPolicy 
     "registry.npmjs.org": [],
   };
   if (opts.platformHost) {
-    allow[opts.platformHost] = opts.platformBypassSecret ? platformBypassRules(opts.platformHost, opts.platformBypassSecret) : [];
+    const bypass = opts.platformBypass;
+    const forThisHost = Boolean(bypass?.secret) && bypass?.host.toLowerCase() === opts.platformHost.toLowerCase();
+    allow[opts.platformHost] = bypass && forThisHost ? platformBypassRules(opts.platformHost, bypass.secret) : [];
   }
   if (opts.blobUploads) for (const host of BLOB_UPLOAD_HOSTS) allow[host] = [];
   for (const host of opts.extraHosts ?? []) allow[host] = [];

@@ -4,7 +4,7 @@ import { DRIVE_CARD_TERMS_VERSION, DRIVE_TERMS_DEFAULT_VERSION } from "@/lib/dri
 import { parseNativeTargets } from "@/lib/native/targets";
 import type { MuseEngine } from "@/lib/sandbox/bridge-protocol";
 import { agentCapacity } from "@/lib/sandbox/agent-capacity";
-import { publicHost } from "@/lib/sandbox/policy";
+import { type PlatformBypass, publicHost } from "@/lib/sandbox/policy";
 import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
 
 /**
@@ -40,6 +40,16 @@ function flag(name: string): boolean {
 /** A trimmed setting, or null when it is unset or empty. */
 function optional(name: string): string | null {
   return process.env[name]?.trim() || null;
+}
+
+/**
+ * A preview with a database of its own (lib/db/url.ts, previewHasOwnDatabase) is its own platform: its origin is its
+ * branch URL, else its deployment URL. Null on anything else, and on such a preview with neither URL.
+ */
+function previewOwnOrigin(): string | null {
+  if (!previewHasOwnDatabase()) return null;
+  const own = process.env.VERCEL_BRANCH_URL?.trim() || process.env.VERCEL_URL?.trim();
+  return own ? `https://${own}`.replace(/\/$/, "") : null;
 }
 
 /** env.publishOffReason on a Vercel preview. It reads after "because" and inside "Publishing is off for this run (...)". */
@@ -107,13 +117,18 @@ export const env = {
     return choice.url;
   },
   /**
-   * Vercel's Protection Bypass for Automation secret, on a preview only (README.md, Preview database). The build
-   * firewall adds it as the x-vercel-protection-bypass header to a sandbox's requests to this platform, so sandboxes
-   * reach a protected preview's gateway without the secret ever entering the sandbox. Null everywhere else, including
-   * production.
+   * Vercel's Protection Bypass for Automation secret (VERCEL_AUTOMATION_BYPASS_SECRET) and the one host it is for: this
+   * preview's own, when the preview is its own platform (previewOwnOrigin). README.md, Preview database. The build
+   * firewall adds it as the x-vercel-protection-bypass header to a sandbox's requests to that host only
+   * (lib/sandbox/policy.ts), so sandboxes reach a protected preview's gateway without the secret ever entering the
+   * sandbox. Null everywhere else: production, local runs, and a preview with no database of its own or with no URL of
+   * its own, whose platformUrl is another site's.
    */
-  get previewBypassSecret(): string | null {
-    return isPreview() ? optional("VERCEL_AUTOMATION_BYPASS_SECRET") : null;
+  get previewBypass(): PlatformBypass | null {
+    const secret = isPreview() ? optional("VERCEL_AUTOMATION_BYPASS_SECRET") : null;
+    const origin = secret ? previewOwnOrigin() : null;
+    const host = origin ? publicHost(origin) : null;
+    return secret && host ? { host, secret } : null;
   },
   /**
    * BLOB_READ_WRITE_TOKEN, or undefined. Blob stores connected the old way set this token. Stores connected the new way
@@ -169,10 +184,8 @@ export const env = {
    * would refuse them. Everything else, including a preview with no database, keeps the rule below.
    */
   get platformUrl() {
-    if (previewHasOwnDatabase()) {
-      const own = process.env.VERCEL_BRANCH_URL?.trim() || process.env.VERCEL_URL?.trim();
-      if (own) return `https://${own}`.replace(/\/$/, "");
-    }
+    const own = previewOwnOrigin();
+    if (own) return own;
     const explicit = process.env.PLATFORM_URL;
     if (explicit && !explicit.includes("localhost")) return explicit.replace(/\/$/, "");
     const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL;

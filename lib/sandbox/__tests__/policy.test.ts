@@ -13,6 +13,7 @@ import {
   BYPASS_COOKIE_BLOCKED_BODY,
   META_BLOCKED_BODY,
   placeholderKey,
+  type PlatformBypass,
   PROTECTION_BYPASS_HEADER,
 } from "@/lib/sandbox/policy";
 
@@ -149,9 +150,10 @@ test("only the Muse Code env carries the placeholder", () => {
 const PREVIEW_HOST = "muse-muse-git-tg-preview-db-team.vercel.app";
 const BYPASS = "bypass-secret-value-for-tests";
 
-function platformRules(platformHost = PREVIEW_HOST, platformBypassSecret: string | null = BYPASS): NetworkPolicyRule[] {
-  const policy = builderNetworkPolicy({ modelApiKey: KEY, placeholderKey: PLACEHOLDER, platformHost, blobUploads: true, platformBypassSecret });
+function platformRules(platformHost = PREVIEW_HOST, platformBypass: PlatformBypass | null = { host: PREVIEW_HOST, secret: BYPASS }): NetworkPolicyRule[] {
+  const policy = builderNetworkPolicy({ modelApiKey: KEY, placeholderKey: PLACEHOLDER, platformHost, blobUploads: true, platformBypass });
   assert.ok(typeof policy === "object" && policy.allow && !Array.isArray(policy.allow));
+  assert.ok(platformHost === PREVIEW_HOST || !JSON.stringify(policy).includes(BYPASS), "the secret goes to its own host or nowhere");
   return policy.allow[platformHost];
 }
 
@@ -214,8 +216,17 @@ test("a sandbox can't ask the platform for a bypass cookie, as a header or a que
 });
 
 test("without a bypass secret the platform host is allowed exactly as before", () => {
-  for (const secret of [undefined, null, ""]) {
-    const policy = builderNetworkPolicy({ modelApiKey: "k", placeholderKey: "p", platformHost: "muse-muse.vercel.app", platformBypassSecret: secret });
+  for (const platformBypass of [undefined, null, { host: "muse-muse.vercel.app", secret: "" }]) {
+    const policy = builderNetworkPolicy({ modelApiKey: "k", placeholderKey: "p", platformHost: "muse-muse.vercel.app", platformBypass });
     assert.deepEqual((policy as { allow: Record<string, unknown[]> }).allow["muse-muse.vercel.app"], []);
   }
+});
+
+test("the secret goes only to the host it is for, never to another platformHost", () => {
+  // Production's host on a preview without its own database, or a caller's --site in Prove it's copy.
+  for (const other of ["muse-muse.vercel.app", "some-other-site.example", `${PREVIEW_HOST}.evil.example`, `x.${PREVIEW_HOST}`]) {
+    assert.deepEqual(platformRules(other, { host: PREVIEW_HOST, secret: BYPASS }), [], other);
+    assert.equal(bypassed(firewall({ method: "GET", path: "/", headers: {} }, platformRules(other))), false, other);
+  }
+  assert.equal(platformRules(PREVIEW_HOST, { host: PREVIEW_HOST.toUpperCase(), secret: BYPASS }).length, 3, "hosts compare in any case");
 });
