@@ -53,7 +53,8 @@ export const POST = route(async (req: Request) => {
     return Response.json({ dataset: toDatasetView(dataset), report: checked.report }, { status: 201 });
   }
   if (body.kind !== undefined && body.kind !== null && body.kind !== "chat") return errorJson(400, 'kind must be "chat" or "decision".');
-  if (JSON.stringify(body).length > CHAT_BODY_MAX) return errorJson(413, "body_too_large");
+  // Bytes, as the 16 KB limit counted them before decision uploads raised the read limit: not characters.
+  if (new TextEncoder().encode(JSON.stringify(body)).length > CHAT_BODY_MAX) return errorJson(413, "body_too_large");
 
   if (typeof body.task !== "string") return errorJson(400, "Describe the task the model should learn.");
   const task = body.task.trim();

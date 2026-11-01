@@ -1039,6 +1039,10 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
       assert.equal(called("createDataset").length, 0);
       const chat = await createDatasetRoute(datasetReq({ task: "Explain Python error messages to beginners.", count: 50, note: "x".repeat(17 * 1024) }));
       assert.equal(chat.status, 413);
+      // 9,000 characters of a 2-byte letter: under 16K characters, over 16 KB of bytes.
+      const wide = await createDatasetRoute(datasetReq({ task: "Explain Python error messages to beginners.", count: 50, note: "é".repeat(9_000) }));
+      assert.equal(wide.status, 413, "the chat limit counts bytes");
+      assert.equal(called("createDataset").length, 0);
       const huge = await createDatasetRoute(datasetReq(tickets({ rows: undefined, csv: "x".repeat(4 * 1024 * 1024) })));
       assert.equal(huge.status, 413);
       const big = ticketRows().map((r, i) => ({ ...r, input: `${r.input} ${"long words here ".repeat(150)}`.slice(0, 2_900 - (i % 7)) }));
