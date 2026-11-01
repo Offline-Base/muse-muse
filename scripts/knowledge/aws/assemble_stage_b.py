@@ -47,6 +47,11 @@ Choices the mix doesn't set:
   so it may be known.
 - Everything is screened against the test, dev and held-out sets (stage_b_lib.Screen), measured questions also by passage.
 - --max-total caps the set. Short of written or measured examples, the set shrinks to keep the honest share.
+- The near-match screen includes every held-out file (Screen near_eval): both eval-probe files, the old facts, the cutoff
+  questions, salient_probes and the named controls, so a reworded test question stays out.
+- --trained-answers (trained_answer_split.py's labels) with --measured-wrong-untrained-only: measured-wrong refusal rows
+  come only from questions whose answer no stage 1 or stage 2 training answer from the same passage holds. A greedy miss
+  on a trained answer may be a fact the model half knows, and teaching refusal there costs right answers.
 
   python3 scripts/knowledge/aws/assemble_stage_b.py --mix a --measured .data/knowledge/runs/stage-b-measure/measured.jsonl \
       --out .data/knowledge/dataset/train-stage-b-a.jsonl --student-out .data/knowledge/dataset/train-stage-b-student-a.jsonl
@@ -64,6 +69,7 @@ import random
 import re
 
 from stage_b_lib import D, SHARES, Screen, named_thing, qkey, read_jsonl, topic_group, usable_aliases
+from trained_answer_split import label_key, load_labels
 from honesty_grade import CUTOFF_CUES, first_match, numbers, refuses
 from train_glimmer import CONTROL_TOKEN, STRENGTHS, SYSTEM, answered, normalize
 
@@ -227,7 +233,10 @@ def classify_measured(row):
     return "measured_wrong", None, None
 
 
-def load_measured(path, screen, writer, rng, dropped):
+def load_measured(path, screen, writer, rng, dropped, trained=None, untrained_only=False):
+    """trained: trained_answer_split.py's labels (key -> True, False or None). With untrained_only, a measured-wrong question
+    becomes a refusal row only if its answer was never in a stage 1 or stage 2 training answer from its passage; an
+    unlabelled or conflicting one is dropped too."""
     right, wrong, seen = [], [], set()
     for row in read_jsonl(path):
         q = row["question"]
@@ -239,6 +248,12 @@ def load_measured(path, screen, writer, rng, dropped):
             why = "repeat"
         if not why:
             kind, reply, why = classify_measured(row)
+        if not why and kind == "measured_wrong" and untrained_only:
+            label = trained.get(label_key(row.get("passageId") or "", q))
+            if label is None:
+                why = "wrong, no trained-answer label"
+            elif label:
+                why = "wrong, but its answer was trained"
         if why:
             dropped["measured: " + why] += 1
             continue
@@ -667,6 +682,11 @@ def main():
     ap.add_argument("--same-passage-contrast", type=float, default=0.25, help="share of the other contrast rows from the written items' passages")
     ap.add_argument("--measured-wrong-max", type=float, default=0.35, help="largest share of the honest part")
     ap.add_argument("--measured-right-max", type=float, default=0.6, help="largest share of the rest")
+    ap.add_argument("--trained-answers", help="trained_answer_split.py's labels: which questions' answers stages 1 and 2 trained")
+    ap.add_argument("--trained-rule", choices=("trained", "answer_trained"), default="trained",
+                    help="which label: the answer or an alias (trained), or the answer alone (answer_trained)")
+    ap.add_argument("--measured-wrong-untrained-only", action="store_true",
+                    help="measured-wrong refusal rows only from questions whose answer was never trained; needs --trained-answers")
     ap.add_argument("--replay-share", type=float, default=0.10, help="share of the whole set, as far as replay lasts")
     ap.add_argument("--cutoff", default="2026-10-29", help="the one cutoff date; the corpus's latest passages are from this day")
     ap.add_argument("--seed", type=int, default=20261031)
@@ -676,15 +696,18 @@ def main():
         ap.error("--honest-share must be between 0 and 1")
     if not os.path.exists(a.written):
         ap.error(f"no written file at {a.written}")
+    if a.measured_wrong_untrained_only and not a.trained_answers:
+        ap.error("--measured-wrong-untrained-only needs --trained-answers")
+    trained = load_labels(a.trained_answers, a.trained_rule) if a.trained_answers else None
     cutoff = tuple(int(x) for x in a.cutoff.split("-"))
     rng = random.Random(a.seed)
     dropped = collections.Counter()
     dev = a.dev or os.path.join(D, "stage-b-honesty-dev.jsonl")
-    screen = Screen(dev=dev if os.path.exists(dev) else None)
+    screen = Screen(dev=dev if os.path.exists(dev) else None, near_eval=True)
     pools = load_written(a.written, screen, cutoff[2], dropped)
     screened_counts = {k: len(v) for k, v in pools.items()}
     pools = limit_adds_fact(pools, parse_limits(a.max_adds_fact), rng, dropped)
-    right, wrong = load_measured(a.measured, screen, a.measured_writer, rng, dropped) if a.measured else ([], [])
+    right, wrong = load_measured(a.measured, screen, a.measured_writer, rng, dropped, trained, a.measured_wrong_untrained_only) if a.measured else ([], [])
     student = student_pairs(a.student_train)
     if a.student_out and not student:
         ap.error(f"--student-out needs {a.student_train} to tell which contrast pairs Glimmer wrote")
@@ -719,7 +742,9 @@ def main():
         rows = mix_reasoning(rows, reasoning_pool, a.reasoning_share, a.max_total, rng)
     report = {
         "mix": a.mix if a.honest_share is None else None, "honest_share_asked": honest_share, "honest_share": honest_share_of(rows),
-        "seed": a.seed, "cutoff": a.cutoff, "plan": sizes, "available": {
+        "seed": a.seed, "cutoff": a.cutoff, "plan": sizes,
+        "measured_wrong_untrained_only": a.measured_wrong_untrained_only, "trained_rule": a.trained_rule if a.trained_answers else None,
+        "available": {
             "written_after_screen": screened_counts, **{k: len(v) for k, v in pools.items()}, "measured_right": len(right), "measured_wrong": len(wrong),
             "cutoff_restated": len(cutoffs), "replay": len(replay), "contrast_seen": sum(facts.seen.values()),
             "contrast_glimmer_seen": sum(student_facts.seen.values()),

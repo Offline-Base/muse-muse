@@ -9,7 +9,9 @@ premise, bait or note that at most MAX_DF of the held-out probe questions use. I
 they count; real names as common as "Meta" don't. A real but rare name is dropped too, which costs a few items. Also out: a
 near match, at least NEAR of the content words shared with a test or dev question or a reasoning probe, like make-stage-b.ts's
 own guard. job/reasoning_probes.jsonl and job/cutoff_questions.jsonl are held out by question, and the reasoning probes by near
-match too; they're tests, but their names (Alice, Python) say nothing about a fact.
+match too; they're tests, but their names (Alice, Python) say nothing about a fact. With near_eval (Stage B sets only), every
+held-out file joins the near match as well: both eval-probe files, the 40 old facts, the cutoff questions, salient_probes and
+the named controls. A reworded salient or old-fact question with its answer is as much a leak as a reworded eval probe.
 
 The dev set stays out by whole record, as make-stage-b.ts keeps it: nothing from another passage of a dev record trains.
 
@@ -36,7 +38,8 @@ TEST = os.path.join(JOB, "honesty_probes.jsonl")
 REASONING_PROBES = os.path.join(JOB, "reasoning_probes.jsonl")
 CUTOFF_QUESTIONS = os.path.join(JOB, "cutoff_questions.jsonl")
 SALIENT_PROBES = os.path.join(JOB, "salient_probes.jsonl")
-HELD_OUT = [os.path.join(D, "eval-probes.jsonl"), os.path.join(D, "stage2-eval-probes.jsonl"), os.path.join(HERE, "forget.jsonl"), REASONING_PROBES, CUTOFF_QUESTIONS, SALIENT_PROBES]
+EVAL_PROBES = [os.path.join(D, "eval-probes.jsonl"), os.path.join(D, "stage2-eval-probes.jsonl")]
+HELD_OUT = [*EVAL_PROBES, os.path.join(HERE, "forget.jsonl"), REASONING_PROBES, CUTOFF_QUESTIONS, SALIENT_PROBES]
 PROBES = os.path.join(D, "train-stage2-probes.jsonl")
 NAMED_CONTROLS = os.path.join(D, "stage-b-named-controls.jsonl")
 MAX_DF = 25
@@ -144,20 +147,29 @@ def name_candidates(text):
 class Screen:
     """Why an item must stay out of Stage B, or None. Only counts ever leave this class."""
 
-    def __init__(self, test=TEST, held_out=None, dev=None, pool=PROBES, max_df=MAX_DF):
+    def __init__(self, test=TEST, held_out=None, dev=None, pool=PROBES, max_df=MAX_DF, near_eval=False):
+        """near_eval (Stage B sets only): every held-out file (the eval probes, old facts, cutoff questions, salient probes
+        and named controls) joins the near-match index too, so a reworded test question stays out. Stage A+ leaves it off:
+        it repeats the rows that teach the passages the probes ask about."""
         self.held = set()
         self.passages = set()
         self.near_sets = []
         self.near_index = collections.defaultdict(list)
+        self.near_eval = near_eval
         if held_out is None:
             held_out = HELD_OUT + ([NAMED_CONTROLS] if os.path.exists(NAMED_CONTROLS) else [])
+        near_paths = {REASONING_PROBES} | (set(held_out) if near_eval else set())
+        near_seen = set()
         for path in held_out:
             for p in read_jsonl(path):
-                self.held.add(qkey(p["question"]))
+                key = qkey(p["question"])
+                self.held.add(key)
                 if p.get("passageId"):
                     self.passages.add(p["passageId"])
-                if path == REASONING_PROBES:
+                if path in near_paths and key not in near_seen:
+                    near_seen.add(key)
                     self.add_near(p["question"])
+        self.near_eval_questions = len(near_seen)
         self.test = set()
         self.dev_passages = set()
         candidates = set()
@@ -203,14 +215,17 @@ class Screen:
         if key in self.held:
             return "held-out question"
         if self.near(question):
-            return "near match with a test or dev question or reasoning probe"
+            return "near match with a test, dev or held-out question" if self.near_eval else "near match with a test or dev question or reasoning probe"
         if grams(question) & self.names or (text and grams(text) & self.names):
             return "shares a distinctive test or dev name"
         return None
 
     def counts(self):
-        return {"test_and_dev_items": self.test_items, "test_and_dev_questions": len(self.test), "held_out_questions": len(self.held),
-                "held_out_passages": len(self.passages), "distinctive_names": len(self.names)}
+        out = {"test_and_dev_items": self.test_items, "test_and_dev_questions": len(self.test), "held_out_questions": len(self.held),
+               "held_out_passages": len(self.passages), "distinctive_names": len(self.names)}
+        if self.near_eval:
+            out["near_index_held_out_questions"] = self.near_eval_questions
+        return out
 
 
 def flag(path_in, path_out):
