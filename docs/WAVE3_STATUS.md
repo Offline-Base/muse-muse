@@ -5,7 +5,7 @@ docs/DRIVE_EXPORT.md, wave3-log.md.
 
 ## Update, Nov 1 evening (tg-caps-ready)
 
-CAP_READY is now on for every cap and every flag is still off in production. Data and code passed a real test build on a Preview on the test model. The other eight have not. The lines below are the 02:30 picture. See docs/BUILD_LOG.md.
+CAP_READY is now on for every cap and every flag is still off in production. Data passed a real test build on a Preview on the test model. Code passed its Muse Code session check in a real build, whose product was still in a fix round at last look. The other eight have not. The lines below are the 02:30 picture. See docs/BUILD_LOG.md.
 
 ## Where it stands
 
