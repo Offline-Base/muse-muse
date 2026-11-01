@@ -3,7 +3,6 @@ import path from "node:path";
 import { env } from "@/lib/env";
 import { SIM_AUDIO_WAV_BASE64, SIM_PHOTO_JPEG_BASE64 } from "@/lib/gateway/gadget-sim-media";
 import { publicHost } from "@/lib/sandbox/policy";
-import { hardwareBlock } from "@/lib/caps/hardware/brief";
 import { gadgetConnectUsable } from "@/lib/caps/hardware/flags";
 
 /**
@@ -115,16 +114,22 @@ export function patchBoardForLocalRun(source: string): string {
   )}`;
 }
 
-/** The files a local run's product with board tools gets while GADGET_CONNECT is on. They carry the helpers, so a test build needs no new snapshot. */
-export function localBoardFiles(brief: object | null): Array<{ path: string; content: string }> {
-  if (!gadgetConnectUsable() || !hardwareBlock(brief)?.boardTools || publicHost(env.platformUrl) !== null) return [];
-  const read = (rel: string) => readFileSync(path.join(process.cwd(), rel), "utf8");
-  const files = "template/caps/hardware/files";
-  return [
-    { path: "lib/platform/board.ts", content: patchBoardForLocalRun(read(`${files}/lib/platform/board.ts`)) },
-    { path: "lib/platform/board-errors.ts", content: read(`${files}/lib/platform/board-errors.ts`) },
-    { path: "lib/platform/board-local.ts", content: BOARD_LOCAL },
-    { path: "lib/platform/gadget-sim.ts", content: read("lib/gateway/gadget-sim.ts") },
-    { path: ".agents/skills/muse-hardware/SKILL.md", content: read(`${files}/.agents/skills/muse-hardware/SKILL.md`) },
-  ];
+/**
+ * The hardware overlay as a local run installs it while GADGET_CONNECT is on: the board helper patched for the simulator, and its two
+ * new platform files. It goes in the overlay, not the product, because verify restores platform files from there. So a local test build
+ * needs no new snapshot, but a deployed site does.
+ */
+export function localHardwareOverlay<T extends { path: string; content: Buffer | string }>(capFiles: readonly T[]): Array<{ path: string; content: Buffer | string }> {
+  const prefix = "caps/hardware/";
+  const out: Array<{ path: string; content: Buffer | string }> = capFiles.filter((f) => f.path.startsWith(prefix)).map((f) => {
+    if (f.path === `${prefix}files/lib/platform/board.ts`) return { path: f.path, content: patchBoardForLocalRun(f.content.toString()) };
+    if (f.path === `${prefix}platform-files.json`) return { path: f.path, content: JSON.stringify([...(JSON.parse(f.content.toString()) as string[]), "lib/platform/board-local.ts", "lib/platform/gadget-sim.ts"].sort(), null, 2) };
+    return { path: f.path, content: f.content };
+  });
+  out.push({ path: `${prefix}files/lib/platform/board-local.ts`, content: BOARD_LOCAL });
+  out.push({ path: `${prefix}files/lib/platform/gadget-sim.ts`, content: readFileSync(path.join(process.cwd(), "lib/gateway/gadget-sim.ts"), "utf8") });
+  return out;
 }
+
+/** True on a local run that serves board tools with GADGET_CONNECT on: the sandbox can't reach this machine's gateway. */
+export const usesLocalHardwareOverlay = (overlays: readonly string[]): boolean => !process.env.VERCEL && gadgetConnectUsable() && overlays.includes("hardware") && publicHost(env.platformUrl) === null;

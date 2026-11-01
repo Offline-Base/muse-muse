@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { noBoard, SIMULATED_BOARD } from "@/lib/gateway/gadget";
-import { LOCAL_BOARD_REPLIES, localGadgetFiles, patchGadgetForLocalRun } from "@/lib/sandbox/local-gadget";
+import { LOCAL_BOARD_REPLIES, localGadgetFiles, patchBoardForLocalRun, patchGadgetForLocalRun } from "@/lib/sandbox/local-gadget";
 
 describe("a local run's simulated board", () => {
   it("answers exactly as the gateway's simulated board does", async () => {
@@ -27,4 +27,12 @@ describe("a local run's simulated board", () => {
     assert.deepEqual(localGadgetFiles({ capabilities: [{ model: "muse-gadget" }] }), []);
     process.env.PLATFORM_URL = saved;
   });
+});
+
+it("a local run's board helper answers from the simulator for every tool that has one, and still takes the offline header", () => {
+  const source = readFileSync("template/caps/hardware/files/lib/platform/board.ts", "utf8");
+  const patched = patchBoardForLocalRun(source);
+  assert.match(patched, /const local = localBoard\(tool, args, approval\);/);
+  assert.match(patched, /x-musemuse-test-board/);
+  assert.throws(() => patchBoardForLocalRun("no such call"), /no longer has the call/);
 });

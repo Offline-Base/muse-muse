@@ -115,7 +115,8 @@ The owner decided: Meta models only, no Qwen. Nothing below has run on a board.
 | Change | Why |
 | --- | --- |
 | `DEFAULT_BASE` is `Llama-3.2-1B-Instruct`, and `train_model` refuses a base that doesn't match `Llama-3.[123]-...` | Meta models only. **Your earlier Qwen runs stay on the board but can't train further or go on a drive.** |
-| `setup-train.sh`: `MODEL` is `unsloth/Llama-3.2-1B-Instruct` at a pinned revision, 8 GB free needed, not 7 | The same flow on a Meta model. The file is 2.47 GB, so a run needs about 3.5 GiB by your overhead constant. Nobody has measured it on a board. `TARGET_MODULES` in `train.py` already matches Llama's layer names. |
+| `setup-train.sh`: `MODEL` is `unsloth/Llama-3.2-1B-Instruct` at a pinned revision, 8 GB free needed, not 7 | The same flow on a Meta model. The file is 2.47 GB, so a run needs about 3.5 GiB by your overhead constant. Nobody has measured it on a board. `TARGET_MODULES` in `train.py` already matches Llama's layer names by reading them, not by a run. |
+| `train.py`, `encode`: the answer's end comes from the model's own chat template, not a hardcoded `<|im_end|>` | Llama ends a turn with `<|eot_id|>`. Training on the old text would have taught the model the wrong stop. It refuses a template whose full render doesn't start with its prompt. |
 | `test_server.py`, `test_drive.py`: names and one new refusal check | They follow the base's name. |
 | `import ssl`, `VERSION` 0.5.0 to 0.6.0, five lines in the docstring | Pairing, below. |
 | `--tls`, and `serve()` pulled out of `main()` | Serves https with the board's own self-signed certificate (`ensure_certificate`, made with the `openssl` command once, key mode 600), and turns pairing on. **Without `--tls`, nothing changes:** none of the new routes answer. |

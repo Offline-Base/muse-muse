@@ -74,7 +74,7 @@ model.save_pretrained.side_effect = save
 if os.environ.get("STUB_SIGTERM_IN_TRAINING"):
     torch.optim.AdamW.return_value.step.side_effect = lambda: signal.raise_signal(signal.SIGTERM)
 tokenizer = transformers.AutoTokenizer.from_pretrained.return_value
-tokenizer.apply_chat_template.return_value = "prompt"
+tokenizer.apply_chat_template.side_effect = lambda messages, add_generation_prompt=False, **_: "prompt" if add_generation_prompt else "prompt" + messages[-1]["content"] + "<|end|>\n"
 tokenizer.side_effect = lambda text, **_: {"input_ids": [1] * len(text)}
 torch.cuda.get_device_properties.return_value.total_memory = 8 * 2**30
 sys.argv = sys.argv[1:]
@@ -799,6 +799,32 @@ class TrainMemoryTests(unittest.TestCase):
     def test_meminfo_is_read(self):
         with mock.patch("builtins.open", mock.mock_open(read_data="MemTotal: 8 kB\nMemAvailable:    2097152 kB\n")):
             self.assertEqual(train.available_gib(), 2.0)
+
+
+class EncodeTests(unittest.TestCase):
+    """The end of an answer comes from the model's own template, so a Llama base trains on Llama's end-of-turn token."""
+
+    class Tokenizer:
+        def __call__(self, text, add_special_tokens=False):
+            return {"input_ids": list(text)}
+
+        def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=False, enable_thinking=False):
+            head = "".join(f"<|start_header_id|>{m['role']}<|end_header_id|>{m['content']}<|eot_id|>" for m in messages)
+            return head + "<|start_header_id|>assistant<|end_header_id|>" if add_generation_prompt else head
+
+    def test_llama_ends_with_its_own_token(self):
+        messages = [{"role": "user", "content": "Hi"}, {"role": "assistant", "content": "Hello"}]
+        ids, labels = train.encode(self.Tokenizer(), messages)
+        answer = "".join(label for label in labels if label != -100)
+        self.assertEqual(answer, "Hello<|eot_id|>")
+        self.assertNotIn("im_end", "".join(ids))
+
+    def test_a_template_that_does_not_extend_its_prompt_is_refused(self):
+        class Odd(self.Tokenizer):
+            def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=False, enable_thinking=False):
+                return "A" if add_generation_prompt else "B"
+        with self.assertRaises(ValueError):
+            train.encode(Odd(), [{"role": "user", "content": "Hi"}, {"role": "assistant", "content": "Hello"}])
 
 
 class TrainScriptTests(unittest.TestCase):

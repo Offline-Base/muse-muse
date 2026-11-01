@@ -34,7 +34,7 @@ Tags, as in VIBE_TUNING.md:
   steps one board needs on all the data (our arithmetic from those step counts, before network time) [I]. Use it when
   records must stay where they are, which is offline mode's rule.
 - **Meta research.** The design uses the paper's ideas, FedBuff and Papaya (Meta AI) and Opacus (Meta, Apache-2.0).
-  Section 4 maps every piece to its source. One gap: the board trains `Qwen3.5-0.8B` today, which is not a Meta model.
+  Section 4 maps every piece to its source. The board trains Llama 3.2 1B since Nov 1 (Meta models only), not yet measured on a board.
   Llama 3.2 1B is the Meta model that fits an 8 GB board, and its license has duties (section 5).
 - **Glimmer can't train on a board.** A 4-bit Glimmer is about 20 GB [R]. Boards train a small model on the same
   decision task format; Glimmer stays on Lambda.
@@ -269,15 +269,13 @@ Looked at and left out:
   beat on-device training there [R].
 
 Not Meta, so not counted as Meta research: DP-SGD itself (Abadi et al., Google), LoRA (Microsoft), DiLoCo (Google
-DeepMind), the frozen-A idea (FFA-LoRA), Hugging Face `transformers` and `peft` (Apache-2.0), and the board's current base
-`Qwen3.5-0.8B` (Alibaba). The research stage found no Meta paper on federated LoRA for language models on edge devices.
+DeepMind), the frozen-A idea (FFA-LoRA), and Hugging Face `transformers` and `peft` (Apache-2.0). The research stage found no Meta paper on federated LoRA for language models on edge devices.
 That is a search result, not proof.
 
 ## 5. Which models
 
 | Model | Size | LoRA on one 8 GB board | License | Role |
 |---|---|---|---|---|
-| Qwen3.5-0.8B (today's base) | 0.8B | Yes: a 442-token step peaked at 1.91 GiB beside a fleet model [V] | Qwen's (not Meta) | Fallback |
 | **Llama 3.2 1B** | 1.24B | Likely, about 2.5 GB of bf16 weights; needs the fleet model stopped on that board, since about 2.9 GB is free beside Bolt [I] | Llama 3.2 Community License | **The Meta base for boards** |
 | Llama 3.2 3B | 3.2B | Only at 4 bits (torchao NF4); bitsandbytes 4-bit failed on one Orin Nano report [R] [I] | Llama 3.2 Community License | Later, after a 1B measurement |
 | MobileLLM-Pro, MobileLLM-R1 | 1.08B and smaller | Likely [I] | FAIR non-commercial | Only if the use is non-commercial |
@@ -286,8 +284,8 @@ That is a search result, not proof.
 
 **Llama 3.2's duties** [R]: ship the license, show "Built with Llama" on anything distributed, start the name of any
 distributed model trained on it with "Llama", follow the Acceptable Use Policy; services over 700M monthly users need
-Meta's permission. KNOWLEDGE_UPDATE.md left Llama 3.2 out of the student for license reasons, so this needs the owner's
-yes (decision 2).
+Meta's permission. KNOWLEDGE_UPDATE.md left Llama 3.2 out of the student for license reasons. The owner chose Meta models only
+on Nov 1, which settles decision 2.
 
 **What Glimmer can't do here:** load on a board. Its smallest working file in the knowledge run was IQ2_XXS at 7.96 GB
 [V there], against the board's 8 GiB model cap and the device rule's 70% of RAM. Splitting it over several 8 GB boards on
@@ -304,7 +302,6 @@ through llama-server's `n_probs` once converted, as DECISION_MODELS.md describes
 
 **`muse-device` (Hussam's).** What exists covers Mode A for one board. Needed changes, all his:
 
-- `train.py` hardcodes Qwen's end-of-turn text (`<|im_end|>` in `encode`) [V]. A Llama base needs it from the tokenizer.
 - `train.py` seeds 3407 on every run [V]. Run per round, every round would see the same first examples in the same order,
   so it needs a `--seed` (the coordinator sends job seed plus round).
 - `--init-adapter DIR`: start from a given adapter (the knowledge run's `KNOWLEDGE_INIT_ADAPTER` is the precedent).
@@ -352,7 +349,7 @@ change to OFFLINE.md (decision 4).
 
 **Drive export (wave 3 unit 12).** A finished adapter, from either mode, ends as `~/models/<name>.gguf` on a board, which
 is the source drive export already copies [V on tg-cap-drive]. A Llama-based export needs the Llama license file and
-"Built with Llama" next to the Qwen label planner decision 18 set.
+"Built with Llama". Both landed on Nov 1 (docs/DRIVE_EXPORT.md).
 
 **The build log.** Every fleet run, real or simulated, every board measurement and every owner decision gets an entry in
 `docs/BUILD_LOG.md`, as its header asks. Board runs record board, base, steps, seconds and peak GiB.
@@ -413,9 +410,8 @@ static card on `/device` with the spike's measured curves. Either queues after d
 
 1. **When to build.** Recommendation: commit this design and the spike now; build after decision models, and no real board
    work before Nov 4, as the owner said today.
-2. **The board's base model.** Llama 3.2 1B (Meta, with the duties in section 5) or `Qwen3.5-0.8B` (works today, not
-   Meta). Recommendation: add Llama 3.2 1B as the default base once Hussam's measured run fits, keep Qwen as the fallback,
-   and name any shared derivative "Llama-..." with "Built with Llama" shown.
+2. **The board's base model.** Settled Nov 1: Llama 3.2 1B, Meta models only. Any shared derivative is named "Llama-..." with
+   "Built with Llama" shown.
 3. **May records move between boards?** Recommendation: yes for the owner's own shared rows (pool them, Mode A); no for
    anything offline mode keeps on its device (Mode B).
 4. **Where the aggregator runs.** Recommendation: the house machine for private data, so adapters stay on the home
