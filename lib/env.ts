@@ -4,6 +4,7 @@ import { codePartsOn } from "@/lib/caps/code/parts";
 import { connectMoreToolsOn, connectSendsOn, connectVaultOn } from "@/lib/caps/connect/flags";
 import { dataSignInOn } from "@/lib/caps/data/types";
 import { filesDatasetsOn, filesSearchOn } from "@/lib/caps/files/types";
+import { liveUpdatesOn } from "@/lib/caps/live/parts";
 import { mediaPartsFromEnv, type MediaPartId } from "@/lib/caps/media/parts";
 import { capOverlaysNeeded } from "@/lib/caps/overlays";
 import { databaseChoice, isPreview, previewHasOwnDatabase } from "@/lib/db/url";
@@ -1011,6 +1012,20 @@ export const env = {
    */
   get connectSends(): boolean {
     return connectSendsOn();
+  },
+
+  // ---------- Wave 3, unit 7: live (docs/CAPABILITIES.md) ----------
+
+  /**
+   * LIVE_UPDATES: {GATEWAY_URL}/live, changes to a saved collection reaching every open browser. Needs the data cap served
+   * too. LIVE_ENABLED, near-live captions and the writer, is CAP_FLAG.live, read through enabledCaps above.
+   */
+  get liveUpdates(): boolean {
+    return liveUpdatesOn();
+  },
+  /** Audio minutes of captions per visitor per UTC day. */
+  get liveCaptionMinutes(): number {
+    return number("LIVE_CAPTION_MINUTES", 10);
   },
 
   // ---------- Wave 3, unit 8: media (docs/CAPABILITIES.md) ----------

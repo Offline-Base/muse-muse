@@ -6,6 +6,7 @@ import { normalizeCodeBlock } from "@/lib/caps/code/brief";
 import { briefSignsIn, normalizeFilesBlock } from "@/lib/caps/files/brief";
 import { normalizeExtensionBlock } from "@/lib/caps/extension/brief";
 import { normalizeGamesBlock } from "@/lib/caps/games/brief";
+import { normalizeLiveBlock } from "@/lib/caps/live/brief";
 import { normalizeMediaBlock } from "@/lib/caps/media/brief";
 import { mediaPartsOn } from "@/lib/caps/media/catalog";
 import { normalizeRuntimeBlock } from "@/lib/caps/runtime/brief";
@@ -153,6 +154,10 @@ export function normalizeRawBrief(raw: unknown, references: Reference[]): unknow
   // ---------- Wave 3, unit 5 (docs/CAPABILITIES.md, section 11): the connect block, only when the writer sent one ----------
   if (b.connect !== undefined && b.connect !== null) b.connect = normalizeConnectBlock(b.connect, connectOptions());
   // ---------- end Wave 3, unit 5 ----------
+
+  // ---------- Wave 3, unit 7 (docs/CAPABILITIES.md, section 13): the live block, after the data block it reads ----------
+  if (b.live !== undefined && b.live !== null) b.live = normalizeLiveBlock(b.live, b.data);
+  // ---------- end Wave 3, unit 7 ----------
 
   // ---------- Wave 3, unit 8 (docs/CAPABILITIES.md, section 14): the media block, only when the writer sent one ----------
   if (b.media !== undefined && b.media !== null) b.media = normalizeMediaBlock(b.media, mediaPartsOn());
