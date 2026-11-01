@@ -97,7 +97,7 @@ export function tuneSteps(v: TuneRunView): StepItem[] {
     state: short ? "failed" : v.stage === "checking" ? "running" : "done",
   });
   const held = waitingFor(v);
-  if (held) rows.push({ id: "waiting", title: "Waiting for a GPU", description: held, state: "running" });
+  if (held) rows.push({ id: "waiting", title: held.title, description: held.description, state: "running" });
   if (!v.job) return rows;
   const job = v.job;
   const ended = job.status === "succeeded" || job.status === "failed" || job.status === "stopped";
@@ -121,10 +121,18 @@ export function tuneStepsEnd(v: Pick<TuneRunView, "stage">): StepsEnd | undefine
   return undefined;
 }
 
-/** While the tuneRun workflow waits to launch (a GPU, a cap, the sweep), why; null otherwise, and when nothing is trying. */
-function waitingFor(v: Pick<TuneRunView, "stage" | "hold">): string | null {
+/** What the run waits for, as the step's title: a GPU only when the wait is about one. */
+const WAIT_TITLES: Partial<Record<NonNullable<TuneRunView["hold"]>["reason"], string>> = {
+  daily_cap: "Waiting for the daily budget",
+  paused: "Waiting for the spend cap",
+  sweep_not_running: "Waiting for the GPU check",
+  lambda_unavailable: "Waiting for Lambda",
+};
+
+/** While the tuneRun workflow waits to launch (a GPU, a cap, the sweep), what for and why; null otherwise, and when nothing is trying. */
+function waitingFor(v: Pick<TuneRunView, "stage" | "hold">): { title: string; description: string } | null {
   if (v.stage !== "waiting" || !v.hold || v.hold.reason === "not_started" || v.hold.reason === "stopped") return null;
-  return v.hold.text;
+  return { title: WAIT_TITLES[v.hold.reason] ?? "Waiting for a GPU", description: v.hold.text };
 }
 
 /**
@@ -138,8 +146,7 @@ export function tuneCurrentStep(v: TuneRunView): { title: string; description: s
     case "checking":
       return { title: "Checking the examples", description: "Making sure there are enough to train on and to score with." };
     case "waiting": {
-      const held = waitingFor(v);
-      return held ? { title: "Waiting for a GPU", description: held } : null;
+      return waitingFor(v);
     }
     case "training":
       return { title: "Training on a GPU", description: trainingText(v) };

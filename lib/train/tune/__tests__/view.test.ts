@@ -253,6 +253,18 @@ describe("a run's stage", () => {
     assert.equal(busy.next?.kind, "start", "Start training asks again at once");
     assert.deepEqual(tuneCurrentStep(busy), { title: "Waiting for a GPU", description: waitText("too_many_active") });
     assert.deepEqual(tuneSteps(busy).at(-1), { id: "waiting", title: "Waiting for a GPU", description: waitText("too_many_active"), state: "running" });
+    // The title names what it waits for: a GPU only when the wait is about one.
+    for (const [reason, title] of [
+      ["gpu_busy", "Waiting for a GPU"],
+      ["daily_cap", "Waiting for the daily budget"],
+      ["paused", "Waiting for the spend cap"],
+      ["sweep_not_running", "Waiting for the GPU check"],
+      ["lambda_unavailable", "Waiting for Lambda"],
+    ] as const) {
+      const v = view(ready(), null, [], null, NOW, runMarks(DS, beats(reason, 20, 3)));
+      assert.deepEqual(tuneCurrentStep(v), { title, description: waitText(reason) }, reason);
+      assert.equal(tuneSteps(v).at(-1)?.title, title, reason);
+    }
     assert.equal(busy.plan.steps, 300, "the steps the run was started with");
     assert.ok(busy.plan.trainMinutes > view(ready()).plan.trainMinutes, "and their time");
 
