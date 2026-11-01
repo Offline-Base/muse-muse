@@ -1,15 +1,15 @@
-import { clearFilesBuild, clearLiveFiles, productTakenDown, sweepFiles } from "@/lib/caps/files/store";
+import { clearFilesBuild, clearLiveFiles, productTakenDown, sweepFiles, type RemoveBlobs } from "@/lib/caps/files/store";
 
 /**
  * The files cap's cleanup (docs/CAPABILITIES.md, 2.9 and section 10), registered in lib/caps/cleanup.ts. Blobs go first,
  * then their rows, so a file whose blob couldn't be removed is still found by the next sweep. The Blob backend is loaded
  * only when there is something to remove, so the cleanup registry stays light for everything that imports it.
  */
-async function removeBlobs(paths: string[]): Promise<void> {
+const removeBlobs: RemoveBlobs = async (store, paths) => {
   if (!paths.length) return;
   const { filesBlob } = await import("@/lib/caps/files/blob");
-  await filesBlob.remove(paths);
-}
+  await filesBlob.remove(store, paths);
+};
 
 /** A build ended: its test files, index and dataset reads go. */
 export const filesBuildEnded = (buildId: string) => clearFilesBuild(buildId, removeBlobs);

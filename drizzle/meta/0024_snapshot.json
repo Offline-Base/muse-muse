@@ -3854,6 +3854,19 @@
           "primaryKey": false,
           "notNull": true
         },
+        "store": {
+          "name": "store",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
+        },
+        "ticket_key": {
+          "name": "ticket_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "status": {
           "name": "status",
           "type": "text",
@@ -3995,6 +4008,12 @@
         },
         "owner_key": {
           "name": "owner_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "added_by": {
+          "name": "added_by",
           "type": "text",
           "primaryKey": false,
           "notNull": false

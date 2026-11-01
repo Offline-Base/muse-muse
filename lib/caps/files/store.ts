@@ -1,13 +1,15 @@
 import { and, eq, sql, type SQL } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
+import type { FilesBlobMode } from "@/lib/caps/files/blob";
 import { FILES_LIMITS } from "@/lib/caps/files/limits";
 import { filesBlock, filesRule } from "@/lib/caps/files/brief";
 import { filesDatasetsOn, filesSearchOn, type FileScope, type SearchSource } from "@/lib/caps/files/types";
 
 /**
  * The files cap's database calls (docs/CAPABILITIES.md, section 10), kept apart from the handler so the routes' logic
- * runs in tests without a database. A ticket's quota check and its insert are one statement after a per-namespace
- * advisory lock in the same batch (one transaction on Neon), so two uploads can't both take the last of a quota.
+ * runs in tests without a database. Each quota check and its write are one statement after a per-namespace advisory lock
+ * in the same batch (one transaction on Neon), so two uploads can't both take the last of a quota. A product's totals
+ * count ready files only, at the ticket and again at done, so tickets nobody finishes never block anyone else's upload.
  */
 
 export interface FileKey {
@@ -30,6 +32,8 @@ export interface StoredFile {
   bytes: number;
   sha256: string | null;
   blobPath: string;
+  /** The Blob mode the file was written in, which every later call for it uses. */
+  store: FilesBlobMode;
   status: "pending" | "ready";
   createdAt: string;
 }
@@ -41,7 +45,21 @@ export interface FileLimits {
   subjectBytes: number | null;
 }
 
-export type TicketRefusal = "bytes" | "files" | "subject";
+export type TicketRefusal = "bytes" | "files" | "subject" | "tickets";
+
+/** Removes blobs written in one Blob mode. */
+export type RemoveBlobs = (store: FilesBlobMode, paths: string[]) => Promise<void>;
+
+/** What one document may add to an index. `replaceAny` is false only for someone other than the owner in a shared space. */
+export interface IndexCaps {
+  maxDocs: number;
+  maxBytes: number;
+  /** The adder's own caps, or null for the owner. */
+  subject: { docs: number; bytes: number } | null;
+  replaceAny: boolean;
+}
+
+export type IndexRefusal = "taken" | "docs" | "bytes" | "subject_docs" | "subject_bytes";
 
 export interface SearchChunk {
   body: string;
@@ -58,16 +76,20 @@ export interface SearchHit {
 }
 
 export interface FilesStore {
-  createPending(space: OwnerSpace, file: { id: string; name: string; contentType: string; bytes: number; blobPath: string }, limits: FileLimits): Promise<{ ok: true; file: StoredFile } | { ok: false; reason: TicketRefusal }>;
+  /** `ticketKey` is the asking address's keyed hash, or null when the call names no address. */
+  createPending(space: OwnerSpace, file: { id: string; name: string; contentType: string; bytes: number; blobPath: string; store: FilesBlobMode; ticketKey: string | null }, limits: FileLimits): Promise<{ ok: true; file: StoredFile } | { ok: false; reason: TicketRefusal }>;
   get(key: FileKey, id: string): Promise<StoredFile | null>;
-  markReady(key: FileKey, id: string, facts: { bytes: number; sha256: string }): Promise<StoredFile | null>;
+  /** Makes a pending file ready if the product's (and its person's) ready files still have room for it; null if it's gone. */
+  markReady(key: FileKey, id: string, facts: { bytes: number; sha256: string }, limits: FileLimits): Promise<{ ok: true; file: StoredFile } | { ok: false; reason: TicketRefusal } | null>;
   list(space: OwnerSpace, page: { limit: number; after: string | null }): Promise<{ items: StoredFile[]; next: string | null }>;
   /** Sets deleted_at and gives back the blob's path, or null when there is no such file. */
   beginDelete(key: FileKey, id: string): Promise<string | null>;
   /** Removes the row and its search chunks, after the blob is gone. */
   finishDelete(key: FileKey, id: string): Promise<void>;
-  indexDoc(space: OwnerSpace, doc: { source: SearchSource; sourceKey: string; title: string; chunks: SearchChunk[] }, maxDocs: number): Promise<{ ok: true } | { ok: false }>;
-  removeDoc(key: FileKey, sourceKey: string): Promise<number>;
+  /** Adds a document, or replaces the same source in the same space (another adder's only with `replaceAny`). */
+  indexDoc(space: OwnerSpace, doc: { source: SearchSource; sourceKey: string; title: string; chunks: SearchChunk[]; addedBy: string | null }, caps: IndexCaps): Promise<{ ok: true } | { ok: false; reason: IndexRefusal }>;
+  /** Removes a source's text from this space only. */
+  removeDoc(space: OwnerSpace, sourceKey: string): Promise<number>;
   query(space: OwnerSpace, q: { text: string; prefix: string | null; limit: number }): Promise<SearchHit[]>;
   recordDatasetRead(key: FileKey, datasetId: string, file: string): Promise<void>;
 }
@@ -87,6 +109,7 @@ interface RawFile {
   bytes: number | string;
   sha256: string | null;
   blob_path: string;
+  store: FilesBlobMode;
   status: "pending" | "ready";
   created_at: string;
 }
@@ -100,12 +123,13 @@ const fileOf = (r: RawFile): StoredFile => ({
   bytes: Number(r.bytes),
   sha256: r.sha256,
   blobPath: r.blob_path,
+  store: r.store,
   status: r.status,
   createdAt: r.created_at,
 });
 
 /** A file's columns, created_at with its microseconds so a page's cursor is exact. */
-const FILE_COLUMNS = sql.raw(`id, scope, owner_key, name, content_type, bytes, sha256, blob_path, status, to_char(created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at`);
+const FILE_COLUMNS = sql.raw(`id, scope, owner_key, name, content_type, bytes, sha256, blob_path, store, status, to_char(created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at`);
 
 /** A page cursor: the last item's time and id, base64url. */
 export function encodeFilesCursor(at: string, id: string): string {
@@ -124,8 +148,16 @@ export function decodeFilesCursor(cursor: string): { at: string; id: string } | 
   }
 }
 
+/** One document in an index: its scope, its person and its source. */
+const DOC_KEY = sql.raw(`scope || ':' || coalesce(owner_key, '') || ':' || source_key`);
 const ownerIs = (ownerKey: string | null): SQL => (ownerKey === null ? sql`owner_key is null` : sql`owner_key = ${ownerKey}`);
 const lockKey = (key: FileKey) => sql`select pg_advisory_xact_lock(hashtext(${`files:${key.productId}:${key.namespace}`}))`;
+const inKey = (key: FileKey) => sql`product_id = ${key.productId}::uuid and namespace = ${key.namespace}`;
+const ms = (n: number) => sql`(${n}::int * interval '1 millisecond')`;
+/** Ready files, the only ones a product's totals count. */
+const readyRow = sql`status = 'ready' and deleted_at is null`;
+/** A person's own files: ready ones, and pending ones whose ticket is still good. */
+const subjectRow = sql`deleted_at is null and (status = 'ready' or (status = 'pending' and created_at > now() - ${ms(FILES_LIMITS.ticketValidMs)}))`;
 
 /** The source of a search document as one string, so indexing it again replaces it. */
 export function sourceKeyOf(source: SearchSource): string {
@@ -137,23 +169,25 @@ export const filesStore: FilesStore = {
     const subject = space.ownerKey !== null && limits.subjectBytes !== null;
     const [, inserted] = await db().batch([
       db().execute(lockKey(space)),
-      db().execute(sql`insert into product_files (id, product_id, namespace, scope, owner_key, name, content_type, bytes, blob_path, status)
-        select ${file.id}::uuid, ${space.productId}::uuid, ${space.namespace}, ${space.scope}, ${space.ownerKey}, ${file.name}, ${file.contentType}, ${file.bytes}::bigint, ${file.blobPath}, 'pending'
-        where (select coalesce(sum(bytes), 0) from product_files where product_id = ${space.productId}::uuid and namespace = ${space.namespace} and deleted_at is null) + ${file.bytes}::bigint <= ${limits.productBytes}::bigint
-          and (select count(*) from product_files where product_id = ${space.productId}::uuid and namespace = ${space.namespace} and deleted_at is null) < ${limits.productFiles}::int
-          and (${!subject}::boolean or (select coalesce(sum(bytes), 0) from product_files where product_id = ${space.productId}::uuid and namespace = ${space.namespace} and owner_key = ${space.ownerKey ?? ""} and deleted_at is null) + ${file.bytes}::bigint <= ${limits.subjectBytes ?? 0}::bigint)
+      db().execute(sql`insert into product_files (id, product_id, namespace, scope, owner_key, name, content_type, bytes, blob_path, store, ticket_key, status)
+        select ${file.id}::uuid, ${space.productId}::uuid, ${space.namespace}, ${space.scope}, ${space.ownerKey}, ${file.name}, ${file.contentType}, ${file.bytes}::bigint, ${file.blobPath}, ${file.store}, ${file.ticketKey}, 'pending'
+        where (select coalesce(sum(bytes), 0) from product_files where ${inKey(space)} and ${readyRow}) + ${file.bytes}::bigint <= ${limits.productBytes}::bigint
+          and (select count(*) from product_files where ${inKey(space)} and ${readyRow}) < ${limits.productFiles}::int
+          and (${!subject}::boolean or (select coalesce(sum(bytes), 0) from product_files where ${inKey(space)} and owner_key = ${space.ownerKey ?? ""} and ${subjectRow}) + ${file.bytes}::bigint <= ${limits.subjectBytes ?? 0}::bigint)
+          and (${file.ticketKey === null}::boolean or (select count(*) from product_files where ${inKey(space)} and ticket_key = ${file.ticketKey ?? ""} and status = 'pending' and deleted_at is null and created_at > now() - ${ms(FILES_LIMITS.pendingMaxAgeMs)}) < ${FILES_LIMITS.pendingPerAddress}::int)
         returning ${FILE_COLUMNS}`),
     ]);
     const row = rowsOf<RawFile>(inserted)[0];
     if (row) return { ok: true, file: fileOf(row) };
     // Why not: read the totals after the fact. A refusal never wrote anything.
-    const [totals] = rowsOf<{ bytes: number | string; files: number; mine: number | string }>(
-      await db().execute(sql`select coalesce(sum(bytes), 0) as bytes, count(*)::int as files,
-          coalesce(sum(bytes) filter (where owner_key = ${space.ownerKey ?? ""}), 0) as mine
-        from product_files where product_id = ${space.productId}::uuid and namespace = ${space.namespace} and deleted_at is null`),
+    const [totals] = rowsOf<{ bytes: number | string; files: number; tickets: number }>(
+      await db().execute(sql`select coalesce(sum(bytes) filter (where ${readyRow}), 0) as bytes, (count(*) filter (where ${readyRow}))::int as files,
+          (count(*) filter (where ticket_key = ${file.ticketKey ?? ""} and status = 'pending' and deleted_at is null and created_at > now() - ${ms(FILES_LIMITS.pendingMaxAgeMs)}))::int as tickets
+        from product_files where ${inKey(space)}`),
     );
     if (Number(totals?.files ?? 0) >= limits.productFiles) return { ok: false, reason: "files" };
     if (Number(totals?.bytes ?? 0) + file.bytes > limits.productBytes) return { ok: false, reason: "bytes" };
+    if (file.ticketKey !== null && Number(totals?.tickets ?? 0) >= FILES_LIMITS.pendingPerAddress) return { ok: false, reason: "tickets" };
     return { ok: false, reason: "subject" };
   },
 
@@ -164,13 +198,27 @@ export const filesStore: FilesStore = {
     return rows[0] ? fileOf(rows[0]) : null;
   },
 
-  async markReady(key, id, facts) {
-    const rows = rowsOf<RawFile>(
-      await db().execute(sql`update product_files set status = 'ready', bytes = ${facts.bytes}, sha256 = ${facts.sha256}
-        where id = ${id}::uuid and product_id = ${key.productId}::uuid and namespace = ${key.namespace} and deleted_at is null
+  async markReady(key, id, facts, limits) {
+    const [, updated] = await db().batch([
+      db().execute(lockKey(key)),
+      db().execute(sql`update product_files f set status = 'ready', bytes = ${facts.bytes}, sha256 = ${facts.sha256}, ticket_key = null
+        where f.id = ${id}::uuid and f.product_id = ${key.productId}::uuid and f.namespace = ${key.namespace} and f.deleted_at is null
+          and (select coalesce(sum(bytes), 0) from product_files where ${inKey(key)} and ${readyRow} and id <> ${id}::uuid) + ${facts.bytes}::bigint <= ${limits.productBytes}::bigint
+          and (select count(*) from product_files where ${inKey(key)} and ${readyRow} and id <> ${id}::uuid) < ${limits.productFiles}::int
+          and (${limits.subjectBytes === null}::boolean or f.owner_key is null
+            or (select coalesce(sum(bytes), 0) from product_files where ${inKey(key)} and ${readyRow} and owner_key = f.owner_key and id <> ${id}::uuid) + ${facts.bytes}::bigint <= ${limits.subjectBytes ?? 0}::bigint)
         returning ${FILE_COLUMNS}`),
+    ]);
+    const row = rowsOf<RawFile>(updated)[0];
+    if (row) return { ok: true, file: fileOf(row) };
+    const file = await filesStore.get(key, id);
+    if (!file) return null;
+    const [totals] = rowsOf<{ bytes: number | string; files: number }>(
+      await db().execute(sql`select coalesce(sum(bytes), 0) as bytes, count(*)::int as files from product_files where ${inKey(key)} and ${readyRow} and id <> ${id}::uuid`),
     );
-    return rows[0] ? fileOf(rows[0]) : null;
+    if (Number(totals?.files ?? 0) >= limits.productFiles) return { ok: false, reason: "files" };
+    if (Number(totals?.bytes ?? 0) + facts.bytes > limits.productBytes) return { ok: false, reason: "bytes" };
+    return { ok: false, reason: "subject" };
   },
 
   async list(space, page) {
@@ -197,28 +245,66 @@ export const filesStore: FilesStore = {
   },
 
   async finishDelete(key, id) {
+    // A build's row stays as `gone` (no blob, no search text) until the build ends, so the gateway's record of the build
+    // still counts an upload its test deleted again. Every other read skips it: deleted_at is set.
+    const build = key.namespace.startsWith("b:");
     await db().batch([
       db().delete(schema.productSearchDocs).where(and(eq(schema.productSearchDocs.productId, key.productId), eq(schema.productSearchDocs.namespace, key.namespace), eq(schema.productSearchDocs.sourceKey, `file:${id}`))),
-      db().delete(schema.productFiles).where(and(eq(schema.productFiles.id, id), eq(schema.productFiles.productId, key.productId))),
+      build
+        ? db().execute(sql`update product_files set status = 'gone', deleted_at = coalesce(deleted_at, now()), ticket_key = null where id = ${id}::uuid and product_id = ${key.productId}::uuid`)
+        : db().delete(schema.productFiles).where(and(eq(schema.productFiles.id, id), eq(schema.productFiles.productId, key.productId))),
     ]);
   },
 
-  async indexDoc(space, doc, maxDocs) {
-    const values = doc.chunks.map((c, i) => sql`(${space.productId}::uuid, ${space.namespace}::text, ${space.scope}::text, ${space.ownerKey}::text, ${JSON.stringify(doc.source)}::jsonb, ${doc.sourceKey}::text, ${doc.title}::text, ${c.body}::text, ${i}::int, ${c.offset}::int)`);
-    const [, , inserted] = await db().batch([
+  async indexDoc(space, doc, caps) {
+    const values = doc.chunks.map((c, i) => sql`(${space.productId}::uuid, ${space.namespace}::text, ${space.scope}::text, ${space.ownerKey}::text, ${doc.addedBy}::text, ${JSON.stringify(doc.source)}::jsonb, ${doc.sourceKey}::text, ${doc.title}::text, ${c.body}::text, ${i}::int, ${c.offset}::int)`);
+    const bytes = doc.chunks.reduce((n, c) => n + Buffer.byteLength(c.body, "utf8"), 0);
+    const sameSource = sql`scope = ${space.scope} and ${ownerIs(space.ownerKey)} and source_key = ${doc.sourceKey}`;
+    // Rows this call may replace: the same source in the same space, and in a shared space only the caller's own unless
+    // the caller is the owner.
+    const mine = caps.replaceAny ? sql`true` : doc.addedBy ? sql`added_by = ${doc.addedBy}` : sql`false`;
+    const notOld = sql`id not in (select id from old)`;
+    const subject = caps.subject && doc.addedBy;
+    // One statement: the checks see the index as it was, without the rows being replaced, and those go only when the new
+    // ones went in. A refused replacement leaves the old text as it was.
+    const [, result] = await db().batch([
       db().execute(lockKey(space)),
-      db().execute(sql`delete from product_search_docs where product_id = ${space.productId}::uuid and namespace = ${space.namespace} and source_key = ${doc.sourceKey}`),
-      db().execute(sql`insert into product_search_docs (product_id, namespace, scope, owner_key, source, source_key, title, body, chunk, "offset")
-        select * from (values ${sql.join(values, sql`, `)}) as v(product_id, namespace, scope, owner_key, source, source_key, title, body, chunk, "offset")
-        where (select count(distinct source_key) from product_search_docs where product_id = ${space.productId}::uuid and namespace = ${space.namespace}) < ${maxDocs}
-        returning 1 as n`),
+      db().execute(sql`with old as (
+          select id from product_search_docs where ${inKey(space)} and coalesce(${sameSource} and ${mine}, false)
+        ), ins as (
+          insert into product_search_docs (product_id, namespace, scope, owner_key, added_by, source, source_key, title, body, chunk, "offset")
+          select * from (values ${sql.join(values, sql`, `)}) as v(product_id, namespace, scope, owner_key, added_by, source, source_key, title, body, chunk, "offset")
+          where not exists (select 1 from product_search_docs where ${inKey(space)} and ${sameSource} and ${notOld})
+            and (select count(distinct ${DOC_KEY}) from product_search_docs where ${inKey(space)} and ${notOld}) < ${caps.maxDocs}::int
+            and (select coalesce(sum(octet_length(body)), 0) from product_search_docs where ${inKey(space)} and ${notOld}) + ${bytes}::bigint <= ${caps.maxBytes}::bigint
+            and (${!subject}::boolean or (
+              (select count(distinct source_key) from product_search_docs where ${inKey(space)} and added_by = ${doc.addedBy ?? ""} and ${notOld}) < ${caps.subject?.docs ?? 0}::int
+              and (select coalesce(sum(octet_length(body)), 0) from product_search_docs where ${inKey(space)} and added_by = ${doc.addedBy ?? ""} and ${notOld}) + ${bytes}::bigint <= ${caps.subject?.bytes ?? 0}::bigint))
+          returning 1
+        ), del as (
+          delete from product_search_docs where id in (select id from old) and exists (select 1 from ins)
+        )
+        select count(*)::int as n from ins`),
     ]);
-    return rowsOf(inserted).length ? { ok: true } : { ok: false };
+    if (Number(rowsOf<{ n: number }>(result)[0]?.n ?? 0) > 0) return { ok: true };
+    const [why] = rowsOf<{ taken: boolean; docs: number; bytes: number | string; sdocs: number; sbytes: number | string }>(
+      await db().execute(sql`select bool_or(coalesce(${sameSource} and not (${mine}), false)) as taken,
+          count(distinct ${DOC_KEY}) filter (where not coalesce(${sameSource} and ${mine}, false))::int as docs,
+          coalesce(sum(octet_length(body)) filter (where not coalesce(${sameSource} and ${mine}, false)), 0) as bytes,
+          count(distinct source_key) filter (where added_by = ${doc.addedBy ?? ""} and not coalesce(${sameSource} and ${mine}, false))::int as sdocs,
+          coalesce(sum(octet_length(body)) filter (where added_by = ${doc.addedBy ?? ""} and not coalesce(${sameSource} and ${mine}, false)), 0) as sbytes
+        from product_search_docs where ${inKey(space)}`),
+    );
+    if (why?.taken) return { ok: false, reason: "taken" };
+    if (Number(why?.docs ?? 0) >= caps.maxDocs) return { ok: false, reason: "docs" };
+    if (Number(why?.bytes ?? 0) + bytes > caps.maxBytes) return { ok: false, reason: "bytes" };
+    if (subject && Number(why?.sdocs ?? 0) >= caps.subject!.docs) return { ok: false, reason: "subject_docs" };
+    return { ok: false, reason: "subject_bytes" };
   },
 
-  async removeDoc(key, sourceKey) {
+  async removeDoc(space, sourceKey) {
     const rows = rowsOf<{ n: number }>(
-      await db().execute(sql`with gone as (delete from product_search_docs where product_id = ${key.productId}::uuid and namespace = ${key.namespace} and source_key = ${sourceKey} returning 1)
+      await db().execute(sql`with gone as (delete from product_search_docs where ${inKey(space)} and scope = ${space.scope} and ${ownerIs(space.ownerKey)} and source_key = ${sourceKey} returning 1)
         select count(*)::int as n from gone`),
     );
     return Number(rows[0]?.n ?? 0);
@@ -280,12 +366,13 @@ export async function filesProof(buildId: string, window: { since: Date | null }
   const since = window.since ? window.since.toISOString() : null;
   const sinceIs = (column: string) => (since ? sql`${sql.raw(column)} >= ${since}::timestamptz` : sql`true`);
   const [files] = rowsOf<Record<string, number | string>>(
-    await db().execute(sql`select count(*) filter (where status = 'ready' and ${sinceIs("created_at")})::int as uploaded,
-        count(*) filter (where status = 'ready')::int as files, coalesce(sum(bytes) filter (where status = 'ready'), 0) as bytes
-      from product_files where product_id = ${productId}::uuid and namespace = ${namespace} and deleted_at is null`),
+    // uploaded counts every file made ready since `since`, even one its test deleted again (a `gone` row keeps its sha256).
+    await db().execute(sql`select count(*) filter (where sha256 is not null and ${sinceIs("created_at")})::int as uploaded,
+        count(*) filter (where ${readyRow})::int as files, coalesce(sum(bytes) filter (where ${readyRow}), 0) as bytes
+      from product_files where product_id = ${productId}::uuid and namespace = ${namespace}`),
   );
   const [docs] = rowsOf<Record<string, number | string>>(
-    await db().execute(sql`select count(distinct source_key) filter (where ${sinceIs("created_at")})::int as indexed, count(distinct source_key)::int as docs
+    await db().execute(sql`select count(distinct ${DOC_KEY}) filter (where ${sinceIs("created_at")})::int as indexed, count(distinct ${DOC_KEY})::int as docs
       from product_search_docs where product_id = ${productId}::uuid and namespace = ${namespace}`),
   );
   const reads = rowsOf<{ dataset_id: string; n: number }>(
@@ -300,40 +387,46 @@ export async function filesProof(buildId: string, window: { since: Date | null }
   return out;
 }
 
-/** Every blob path in a namespace, and the namespace's rows, removed. Blobs first: a row is the only way to find one. */
-export async function clearNamespace(productId: string, namespace: string, removeBlobs: (paths: string[]) => Promise<void>): Promise<number> {
-  const paths = await db()
-    .select({ blobPath: schema.productFiles.blobPath })
-    .from(schema.productFiles)
-    .where(and(eq(schema.productFiles.productId, productId), eq(schema.productFiles.namespace, namespace)));
-  for (let i = 0; i < paths.length; i += 500) await removeBlobs(paths.slice(i, i + 500).map((p) => p.blobPath));
+/** Removes blobs grouped by the mode each was written in. */
+async function removeByStore(rows: Array<{ blobPath: string; store: FilesBlobMode }>, removeBlobs: RemoveBlobs): Promise<void> {
+  const byStore = new Map<FilesBlobMode, string[]>();
+  for (const r of rows) byStore.set(r.store, [...(byStore.get(r.store) ?? []), r.blobPath]);
+  for (const [store, paths] of byStore) for (let i = 0; i < paths.length; i += 500) await removeBlobs(store, paths.slice(i, i + 500));
+}
+
+/** Every blob in a namespace, and the namespace's rows, removed. Blobs first: a row is the only way to find one. */
+export async function clearNamespace(productId: string, namespace: string, removeBlobs: RemoveBlobs): Promise<number> {
+  const rows = rowsOf<{ blob_path: string; store: FilesBlobMode }>(
+    await db().execute(sql`select blob_path, store from product_files where product_id = ${productId}::uuid and namespace = ${namespace} and status <> 'gone'`),
+  );
+  await removeByStore(rows.map((r) => ({ blobPath: r.blob_path, store: r.store })), removeBlobs);
   await db().batch([
     db().delete(schema.productFiles).where(and(eq(schema.productFiles.productId, productId), eq(schema.productFiles.namespace, namespace))),
     db().delete(schema.productSearchDocs).where(and(eq(schema.productSearchDocs.productId, productId), eq(schema.productSearchDocs.namespace, namespace))),
     db().delete(schema.productDatasetReads).where(and(eq(schema.productDatasetReads.productId, productId), eq(schema.productDatasetReads.namespace, namespace))),
   ]);
-  return paths.length;
+  return rows.length;
 }
 
 /** A build ended: its files, index and dataset reads go. */
-export async function clearFilesBuild(buildId: string, removeBlobs: (paths: string[]) => Promise<void>): Promise<void> {
+export async function clearFilesBuild(buildId: string, removeBlobs: RemoveBlobs): Promise<void> {
   const { productId } = await buildRow(buildId);
   if (productId) await clearNamespace(productId, `b:${buildId}`, removeBlobs);
 }
 
 /**
- * The hourly sweep: tickets never finished (pending for over two hours), deletes that stopped half way, and the
+ * The hourly sweep: tickets never finished (pending for over an hour), deletes that stopped half way, and the
  * namespaces of builds that crashed (nothing new for 24 hours). Returns how many files it removed.
  */
-export async function sweepFiles(now: Date, removeBlobs: (paths: string[]) => Promise<void>): Promise<number> {
+export async function sweepFiles(now: Date, removeBlobs: RemoveBlobs): Promise<number> {
   const stale = new Date(now.getTime() - FILES_LIMITS.pendingMaxAgeMs).toISOString();
   const dead = new Date(now.getTime() - FILES_LIMITS.buildNamespaceMaxAgeMs).toISOString();
-  const loose = rowsOf<{ id: string; product_id: string; namespace: string; blob_path: string }>(
-    await db().execute(sql`select id, product_id, namespace, blob_path from product_files
-      where deleted_at is not null or (status = 'pending' and created_at < ${stale}::timestamptz) limit 500`),
+  const loose = rowsOf<{ id: string; product_id: string; namespace: string; blob_path: string; store: FilesBlobMode }>(
+    await db().execute(sql`select id, product_id, namespace, blob_path, store from product_files
+      where (deleted_at is not null and status <> 'gone') or (status = 'pending' and deleted_at is null and created_at < ${stale}::timestamptz) limit 500`),
   );
   if (loose.length) {
-    await removeBlobs(loose.map((r) => r.blob_path));
+    await removeByStore(loose.map((r) => ({ blobPath: r.blob_path, store: r.store })), removeBlobs);
     for (const r of loose) await filesStore.finishDelete({ productId: r.product_id, namespace: r.namespace }, r.id);
   }
   let removed = loose.length;
@@ -349,7 +442,7 @@ export async function sweepFiles(now: Date, removeBlobs: (paths: string[]) => Pr
 }
 
 /** A taken-down product's live files and index go (section 10, Guards). Returns how many files. */
-export async function clearLiveFiles(productId: string, removeBlobs: (paths: string[]) => Promise<void>): Promise<number> {
+export async function clearLiveFiles(productId: string, removeBlobs: RemoveBlobs): Promise<number> {
   return clearNamespace(productId, "live", removeBlobs);
 }
 

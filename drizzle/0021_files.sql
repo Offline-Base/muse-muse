@@ -9,6 +9,8 @@ CREATE TABLE "product_files" (
 	"bytes" bigint NOT NULL,
 	"sha256" text,
 	"blob_path" text NOT NULL,
+	"store" text DEFAULT 'public' NOT NULL,
+	"ticket_key" text,
 	"status" text DEFAULT 'pending' NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"deleted_at" timestamp with time zone
@@ -20,6 +22,7 @@ CREATE TABLE "product_search_docs" (
 	"namespace" text NOT NULL,
 	"scope" text NOT NULL,
 	"owner_key" text,
+	"added_by" text,
 	"source" jsonb NOT NULL,
 	"source_key" text NOT NULL,
 	"title" text NOT NULL,

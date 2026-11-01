@@ -12,9 +12,15 @@ export const FILES_LIMITS = {
   buildFiles: 200,
   /** A file's name as the product shows it. */
   nameMax: 120,
-  /** A ticket's upload URL is good for this long. A ticket never used is swept after `pendingMaxAgeMs`. */
+  /**
+   * A ticket's upload URL is good for this long, and a person's open tickets count toward their own 50 MB for as long.
+   * A product's totals count only ready files, checked again at done, so tickets nobody uses can't block anyone's
+   * uploads. A ticket never finished is swept after `pendingMaxAgeMs`.
+   */
   ticketValidMs: 15 * 60_000,
-  pendingMaxAgeMs: 2 * 3_600_000,
+  pendingMaxAgeMs: 3_600_000,
+  /** Open tickets one address may hold in a product at once (pending, not yet swept), so unused uploads stay small. */
+  pendingPerAddress: 10,
   /** The read URL GET /files/<id> gives (a signed gateway URL) is good for this long. */
   readValidMs: 60 * 60_000,
   /** How long the redirect to a private blob is good for. Each read through the gateway signs a new one. */
@@ -26,7 +32,7 @@ export const FILES_LIMITS = {
   /** Upload tickets, per token a minute and per end user a minute. */
   ticketsPerTokenPerMinute: 30,
   ticketsPerIpPerMinute: 10,
-  /** Reads of a signed file URL, per address a minute. A page of 50 pictures loads 50. */
+  /** Reads of a signed file URL, per product and address a minute. A page of 50 pictures loads 50. */
   readsPerIpPerMinute: 300,
   pageDefault: 50,
   pageMax: 100,
@@ -34,6 +40,12 @@ export const FILES_LIMITS = {
   docMaxBytes: 1024 * 1024,
   docsPerProduct: 2_000,
   docsPerBuild: 200,
+  /** One visitor's or user's documents and text in a product's index (the owner has only the product's limits). */
+  docsPerSubject: 200,
+  textBytesPerSubject: 20 * 1024 * 1024,
+  /** All the text in a product's index, and in a build's. */
+  textBytesPerProduct: 200 * 1024 * 1024,
+  textBytesPerBuild: 20 * 1024 * 1024,
   /** A document is indexed in chunks of about this many characters, so a hit can say where in the text it is. */
   chunkChars: 4_000,
   titleMax: 200,

@@ -4,7 +4,7 @@ import { Readable } from "node:stream";
 import type { FilesBlob } from "@/lib/caps/files/blob";
 import { DATASET_FILE, DATASET_ID, findDatasetFile, publicDataset, type Dataset } from "@/lib/caps/files/datasets";
 import { FILES_LIMITS, isFileContentType, servedInline, type FilesQuotas } from "@/lib/caps/files/limits";
-import { decodeFilesCursor, sourceKeyOf, type FileLimits, type FilesStore, type OwnerSpace, type SearchChunk, type StoredFile, type TicketRefusal } from "@/lib/caps/files/store";
+import { decodeFilesCursor, sourceKeyOf, type FileLimits, type FilesStore, type IndexCaps, type IndexRefusal, type OwnerSpace, type SearchChunk, type StoredFile, type TicketRefusal } from "@/lib/caps/files/store";
 import { FILE_ID, isFileScope, type FileScope, type FilesRule, type SearchSource } from "@/lib/caps/files/types";
 import { COLLECTION_NAME, DOC_ID } from "@/lib/caps/data/types";
 import {
@@ -74,6 +74,34 @@ function ownerKeyFor(scope: FileScope, caller: CapCaller, productId: string): { 
   }
 }
 
+/** Who is adding to an index: the space's person in a private scope, else the caller's own key. */
+function adderKey(space: OwnerSpace, caller: CapCaller, productId: string): string | null {
+  if (space.ownerKey) return space.ownerKey;
+  if (caller.owner) return subjectKey("owner", productId, "product-owner");
+  if (caller.user) return subjectKey("user", productId, caller.user);
+  if (caller.visitor) return subjectKey("visitor", productId, caller.visitor);
+  return null;
+}
+
+/** What one document may add. The owner has only the product's limits; anyone else has their own too. */
+function indexCaps(token: CapToken, scope: FileScope, caller: CapCaller): IndexCaps {
+  const owner = Boolean(caller.owner) || scope === "owner";
+  return {
+    maxDocs: isBuild(token) ? FILES_LIMITS.docsPerBuild : FILES_LIMITS.docsPerProduct,
+    maxBytes: isBuild(token) ? FILES_LIMITS.textBytesPerBuild : FILES_LIMITS.textBytesPerProduct,
+    subject: owner ? null : { docs: FILES_LIMITS.docsPerSubject, bytes: FILES_LIMITS.textBytesPerSubject },
+    replaceAny: scope !== "shared" || Boolean(caller.owner),
+  };
+}
+
+const INDEX_WORDS: Record<IndexRefusal, (c: IndexCaps) => string> = {
+  taken: () => "Someone else added this text. Only the product's owner can change it.",
+  docs: (c) => `This product's index already holds ${c.maxDocs.toLocaleString("en-US")} documents, the most it can. Remove some to add more.`,
+  bytes: (c) => `This product's index already holds ${Math.round(c.maxBytes / 1024 / 1024)} MB of text, the most it can. Remove some to add more.`,
+  subject_docs: (c) => `You've added as many documents here as one person can (${c.subject?.docs ?? 0}). Remove some to add more.`,
+  subject_bytes: (c) => `You've added as much text here as one person can (${Math.round((c.subject?.bytes ?? 0) / 1024 / 1024)} MB). Remove some to add more.`,
+};
+
 /** Who may add to a shared space, and whether this caller is one of them. */
 function sharedAddRefusal(rule: FilesRule, caller: CapCaller): Response | null {
   if (caller.owner) return null;
@@ -113,6 +141,7 @@ const QUOTA_WORDS: Record<TicketRefusal, (l: FileLimits) => string> = {
   bytes: (l) => `This product has stored as much as it can (${Math.round(l.productBytes / 1024 / 1024)} MB). Delete some files to add more.`,
   files: (l) => `This product has stored as many files as it can (${l.productFiles.toLocaleString("en-US")}). Delete some to add more.`,
   subject: (l) => `You've stored as much here as one person can (${Math.round((l.subjectBytes ?? 0) / 1024 / 1024)} MB). Delete some files to add more.`,
+  tickets: () => "Too many uploads from here haven't finished. Try again in a while.",
 };
 
 function fileLimits(token: CapToken, scope: FileScope, quotas: FilesQuotas): FileLimits {
@@ -211,10 +240,13 @@ function ticketRoute(deps: FilesDeps): CapRoute<Space & { name: string; contentT
       const limits = fileLimits(ctx.token, space.scope, deps.quotas());
       const id = randomUUID();
       const blobPath = fileBlobPath(ctx.token.productId, ctx.namespace, id);
-      const created = await deps.store.createPending(space, { id, name: ctx.args.name, contentType: ctx.args.contentType, bytes: ctx.args.bytes, blobPath }, limits);
+      // The mode new files go in now. The row keeps it, so this file is always found there.
+      const store = deps.blob.mode();
+      const ticketKey = ctx.caller.ip ? mac("files-ticket", [ctx.token.productId, ctx.caller.ip]).slice(0, 32) : null;
+      const created = await deps.store.createPending(space, { id, name: ctx.args.name, contentType: ctx.args.contentType, bytes: ctx.args.bytes, blobPath, store, ticketKey }, limits);
       if (!created.ok) return capError("quota_exceeded", QUOTA_WORDS[created.reason](limits));
       const validUntil = ctx.now.getTime() + FILES_LIMITS.ticketValidMs;
-      let upload = await deps.blob.uploadTarget(blobPath, ctx.args.contentType, ctx.args.bytes, validUntil);
+      let upload = await deps.blob.uploadTarget(store, blobPath, ctx.args.contentType, ctx.args.bytes, validUntil);
       if (!upload) {
         // A local run: the gateway takes the bytes itself, at a URL it signed for this one file.
         const url = new URL(`${deps.gatewayUrl}/files/${id}/upload`);
@@ -247,7 +279,7 @@ function doneRoute(deps: FilesDeps, id: string): CapRoute<Space> {
       const file = await deps.store.get(key, id);
       if (!file || file.scope !== ctx.args.space.scope || file.ownerKey !== ctx.args.space.ownerKey) return notFound();
       if (file.status === "ready") return Response.json(fileFacts(file, deps.gatewayUrl, ctx.now, true), { headers: noStore });
-      const facts = await deps.blob.facts(file.blobPath);
+      const facts = await deps.blob.facts(file.store, file.blobPath);
       if (!facts) {
         return Response.json(
           { error: { type: "invalid_request_error", code: "not_uploaded", message: "The file hasn't arrived yet. Upload it to the ticket's URL first.", param: null } },
@@ -255,16 +287,25 @@ function doneRoute(deps: FilesDeps, id: string): CapRoute<Space> {
         );
       }
       // The presigned upload already held the type and the size to the ticket's. This is the check after the fact.
-      if (facts.bytes > file.bytes || facts.bytes < 1 || facts.contentType.split(";")[0]!.trim() !== file.contentType) {
-        await deps.blob.remove([file.blobPath]);
+      const discard = async () => {
+        await deps.blob.remove(file.store, [file.blobPath]);
         await deps.store.beginDelete(key, id);
         await deps.store.finishDelete(key, id);
+      };
+      if (facts.bytes > file.bytes || facts.bytes < 1 || facts.contentType.split(";")[0]!.trim() !== file.contentType) {
+        await discard();
         return capError("invalid_arguments", "The uploaded file isn't the size or type its ticket was for, so it was removed.");
       }
-      const sha256 = await deps.blob.sha256(file.blobPath);
-      const ready = await deps.store.markReady(key, id, { bytes: facts.bytes, sha256 });
+      const sha256 = await deps.blob.sha256(file.store, file.blobPath);
+      const limits = fileLimits(ctx.token, file.scope, deps.quotas());
+      const ready = await deps.store.markReady(key, id, { bytes: facts.bytes, sha256 }, limits);
       if (!ready) return notFound();
-      return Response.json(fileFacts(ready, deps.gatewayUrl, ctx.now, true), { headers: noStore });
+      if (!ready.ok) {
+        // A ticket holds no room: the product's totals are checked again here, so nothing goes over.
+        await discard();
+        return capError("quota_exceeded", QUOTA_WORDS[ready.reason](limits));
+      }
+      return Response.json(fileFacts(ready.file, deps.gatewayUrl, ctx.now, true), { headers: noStore });
     },
   };
 }
@@ -309,7 +350,7 @@ function fileRoute(deps: FilesDeps, id: string, method: "GET" | "DELETE"): CapRo
       if (!mine) return Response.json({ deleted: false }, { headers: noStore });
       const blobPath = await deps.store.beginDelete(key, id);
       if (!blobPath) return Response.json({ deleted: false }, { headers: noStore });
-      await deps.blob.remove([blobPath]);
+      await deps.blob.remove(file.store, [blobPath]);
       await deps.store.finishDelete(key, id);
       return Response.json({ deleted: true }, { headers: noStore });
     },
@@ -319,6 +360,9 @@ function fileRoute(deps: FilesDeps, id: string, method: "GET" | "DELETE"): CapRo
 function clientKey(req: Request): string {
   return clientIpKey(req.headers.get("x-real-ip")) ?? clientIpKey(req.headers.get("x-forwarded-for")) ?? "unknown";
 }
+
+/** Whether a product may serve or take a file: a product turned off or taken down does neither. */
+const productServes = (p: CapProduct | null) => Boolean(p) && p!.status !== "disabled" && p!.status !== "failed" && !p!.takenDownAt && !p!.ownerBannedAt;
 
 const minuteWindow = (now: Date) => new Date(Math.floor(now.getTime() / 60_000) * 60_000);
 const denied = () => gatewayError(403, "permission_error", "link_expired", "This file link has expired or isn't valid. Open the file again from the product.", { retry: false });
@@ -337,15 +381,16 @@ async function handleContent(req: Request, id: string, deps: FilesDeps): Promise
     const download = params.get("download") === "1";
     const sig = params.get("sig") ?? "";
     if (!Number.isInteger(exp) || exp <= now.getTime() || exp > now.getTime() + FILES_LIMITS.readValidMs + 60_000 || !sameMac(sig, signRead(id, exp, download))) return denied();
-    const key = `files:read:${clientKey(req)}`;
+    const file = await deps.fileById(id);
+    if (!file || file.status !== "ready") return notFound();
+    // Per product and address: a product reads its files on the server, from addresses it shares with other products.
+    const key = `files:read:${file.productId}:${clientKey(req)}`;
     const counts = await deps.hitRateLimits([key], minuteWindow(now));
     if ((counts[key] ?? 0) > FILES_LIMITS.readsPerIpPerMinute) {
       return gatewayError(429, "rate_limit_error", "rate_limited", `Too many file requests: the limit is ${FILES_LIMITS.readsPerIpPerMinute} a minute.`, { headers: { "retry-after": "60" } });
     }
-    const file = await deps.fileById(id);
-    if (!file || file.status !== "ready") return notFound();
     const product = await deps.product(file.productId);
-    if (!product || product.status === "disabled" || product.status === "failed" || product.takenDownAt || product.ownerBannedAt) return notFound("This file isn't available.");
+    if (!productServes(product)) return notFound("This file isn't available.");
     // A link made for a picture can't be turned into a page: the type decides, and anything else downloads.
     const attachment = download || !servedInline(file.contentType);
     const headers: Record<string, string> = {
@@ -354,7 +399,7 @@ async function handleContent(req: Request, id: string, deps: FilesDeps): Promise
       "content-security-policy": "sandbox; default-src 'none'",
       "cross-origin-resource-policy": "cross-origin",
     };
-    if (deps.blob.mode() === "local") {
+    if (file.store === "local") {
       const local = await deps.blob.localStream?.(file.blobPath);
       if (!local) return notFound();
       const common = {
@@ -369,7 +414,7 @@ async function handleContent(req: Request, id: string, deps: FilesDeps): Promise
       }
       return new Response(local.stream, { status: 200, headers: common });
     }
-    const location = await deps.blob.readUrl(file.blobPath, { download: attachment, validUntil: now.getTime() + FILES_LIMITS.blobReadValidMs });
+    const location = await deps.blob.readUrl(file.store, file.blobPath, { download: attachment, validUntil: now.getTime() + FILES_LIMITS.blobReadValidMs });
     if (!location) return notFound();
     return new Response(null, { status: 302, headers: { ...headers, location, "cache-control": "private, max-age=60" } });
   } catch (err) {
@@ -390,7 +435,8 @@ async function handleLocalUpload(req: Request, id: string, deps: FilesDeps): Pro
     const exp = Number(params.get("exp"));
     if (!Number.isInteger(exp) || exp <= now.getTime() || !sameMac(params.get("sig") ?? "", signUpload(id, exp))) return denied();
     const file = await deps.fileById(id);
-    if (!file || file.status !== "pending") return notFound();
+    if (!file || file.status !== "pending" || file.store !== "local") return notFound();
+    if (!productServes(await deps.product(file.productId))) return notFound("This file isn't available.");
     const type = (req.headers.get("content-type") ?? "").split(";")[0]!.trim();
     if (type !== file.contentType) return capError("invalid_arguments", "The file isn't the type its ticket was for.");
     const declared = Number(req.headers.get("content-length"));
@@ -484,9 +530,10 @@ function indexRoute(deps: FilesDeps): CapRoute<Space & { source: SearchSource; t
         title ||= file.name;
       }
       if (!title) return capError("invalid_arguments", "Give an item's text a title, which its citation shows.");
-      const max = isBuild(ctx.token) ? FILES_LIMITS.docsPerBuild : FILES_LIMITS.docsPerProduct;
-      const done = await deps.store.indexDoc(space, { source: ctx.args.source, sourceKey: sourceKeyOf(ctx.args.source), title, chunks: ctx.args.chunks }, max);
-      if (!done.ok) return capError("quota_exceeded", `This product's index already holds ${max.toLocaleString("en-US")} documents, the most it can. Remove some to add more.`);
+      const caps = indexCaps(ctx.token, space.scope, ctx.caller);
+      const addedBy = adderKey(space, ctx.caller, ctx.token.productId);
+      const done = await deps.store.indexDoc(space, { source: ctx.args.source, sourceKey: sourceKeyOf(ctx.args.source), title, chunks: ctx.args.chunks, addedBy }, caps);
+      if (!done.ok) return capError(done.reason === "taken" ? "cap_not_allowed" : "quota_exceeded", INDEX_WORDS[done.reason](caps));
       return Response.json({ indexed: true, source: ctx.args.source, chunks: ctx.args.chunks.length }, { status: 201, headers: noStore });
     },
   };
@@ -504,13 +551,14 @@ function removeRoute(deps: FilesDeps): CapRoute<Space & { source: SearchSource }
       if (extra) return extra;
       const source = sourceOf(body.source);
       if (source instanceof Response) return source;
-      const space = await spaceFor(stage, deps, body.scope, "add");
+      // In a shared space, as with its files, only the owner takes things out.
+      const space = await spaceFor(stage, deps, body.scope, "delete");
       if (space instanceof Response) return space;
       return { ...space, source };
     },
     limits: (stage) => baseLimits(stage, "search"),
     async work(ctx) {
-      const removed = await deps.store.removeDoc({ productId: ctx.token.productId, namespace: ctx.namespace }, sourceKeyOf(ctx.args.source));
+      const removed = await deps.store.removeDoc(inNamespace(ctx.args.space, ctx.namespace), sourceKeyOf(ctx.args.source));
       return Response.json({ removed: removed > 0 }, { headers: noStore });
     },
   };

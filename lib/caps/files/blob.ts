@@ -11,7 +11,10 @@ import { localFilesEnabled } from "@/lib/local-files";
 import { blobAuth, localFilePaths } from "@/lib/storage";
 
 /**
- * Where the files cap keeps bytes (docs/CAPABILITIES.md, section 10, decision 14). Three modes, picked per call:
+ * Where the files cap keeps bytes (docs/CAPABILITIES.md, section 10, decision 14). Three modes. `mode()` picks the one a
+ * new file is written in, and its row keeps it (product_files.store), so every later call for that file names the mode
+ * it was written in. Setting FILES_BLOB_STORE_ID later sends new files to the private store and leaves older ones where
+ * they are, still readable and still deletable:
  *
  *   private  FILES_BLOB_STORE_ID names a private Vercel Blob store, reached with the deployment's OIDC token. Uploads
  *            are presigned PUTs; every read goes through the gateway, which redirects to a presigned GET good for five
@@ -38,21 +41,22 @@ export interface BlobFacts {
 }
 
 export interface FilesBlob {
+  /** The mode a new file is written in. */
   mode(): FilesBlobMode;
   /** A presigned PUT for exactly `pathname`, `contentType` and at most `bytes`, or null in local mode. */
-  uploadTarget(pathname: string, contentType: string, bytes: number, validUntil: number): Promise<UploadTarget | null>;
+  uploadTarget(store: FilesBlobMode, pathname: string, contentType: string, bytes: number, validUntil: number): Promise<UploadTarget | null>;
   /** The stored size and type, or null when nothing was uploaded there. */
-  facts(pathname: string): Promise<BlobFacts | null>;
+  facts(store: FilesBlobMode, pathname: string): Promise<BlobFacts | null>;
   /** The SHA-256 of the stored bytes, read as a stream. */
-  sha256(pathname: string): Promise<string>;
+  sha256(store: FilesBlobMode, pathname: string): Promise<string>;
   /** Where a read is redirected to (private: a presigned GET; public: the blob's URL), or null in local mode. */
-  readUrl(pathname: string, opts: { download: boolean; validUntil: number }): Promise<string | null>;
+  readUrl(store: FilesBlobMode, pathname: string, opts: { download: boolean; validUntil: number }): Promise<string | null>;
   /** Local mode: the stored bytes, or null. */
   localStream?(pathname: string): Promise<{ stream: ReadableStream; bytes: number } | null>;
   /** Local mode: writes the bytes the signed upload route received. */
   writeLocal?(pathname: string, body: Buffer, contentType: string): Promise<void>;
-  /** Deletes blobs; a path that is already gone is fine. */
-  remove(pathnames: string[]): Promise<void>;
+  /** Deletes blobs, all written in `store`; a path that is already gone is fine. */
+  remove(store: FilesBlobMode, pathnames: string[]): Promise<void>;
 }
 
 /**
@@ -64,7 +68,12 @@ export const BLOB_API_VERSION = "13";
 const access = (mode: FilesBlobMode): BlobAccessType => (mode === "private" ? "private" : "public");
 
 function auth(mode: FilesBlobMode): { token?: string; storeId?: string } {
-  if (mode === "private") return { storeId: env.filesBlobStoreId! };
+  if (mode === "private") {
+    // A private file needs the store it was written to. Unsetting FILES_BLOB_STORE_ID while private files exist fails
+    // loudly here rather than looking for them in the public store.
+    if (!env.filesBlobStoreId) throw new Error("This file is in the private files store, and FILES_BLOB_STORE_ID isn't set.");
+    return { storeId: env.filesBlobStoreId };
+  }
   return blobAuth();
 }
 
@@ -78,8 +87,7 @@ export const filesBlob: FilesBlob = {
     if (env.filesBlobStoreId && process.env.VERCEL) return "private";
     return localFilesEnabled() ? "local" : "public";
   },
-  async uploadTarget(pathname, contentType, bytes, validUntil) {
-    const mode = this.mode();
+  async uploadTarget(mode, pathname, contentType, bytes, validUntil) {
     if (mode === "local") return null;
     const limits = { allowedContentTypes: [contentType], maximumSizeInBytes: bytes };
     const token = await issueSignedToken({ pathname, operations: ["put"], validUntil, ...limits, ...auth(mode) });
@@ -95,8 +103,7 @@ export const filesBlob: FilesBlob = {
       },
     };
   },
-  async facts(pathname) {
-    const mode = this.mode();
+  async facts(mode, pathname) {
     if (mode === "local") {
       const file = localPath(pathname);
       if (!existsSync(file)) return null;
@@ -111,8 +118,7 @@ export const filesBlob: FilesBlob = {
       throw err;
     }
   },
-  async sha256(pathname) {
-    const mode = this.mode();
+  async sha256(mode, pathname) {
     const hash = createHash("sha256");
     if (mode === "local") {
       await pipeline(createReadStream(localPath(pathname)), hash);
@@ -123,8 +129,7 @@ export const filesBlob: FilesBlob = {
     await pipeline(Readable.fromWeb(got.stream as WebReadableStream), hash);
     return hash.digest("hex");
   },
-  async readUrl(pathname, opts) {
-    const mode = this.mode();
+  async readUrl(mode, pathname, opts) {
     if (mode === "local") return null;
     let url: string;
     if (mode === "private") {
@@ -151,9 +156,8 @@ export const filesBlob: FilesBlob = {
     await writeFile(file, body);
     await writeFile(type, contentType);
   },
-  async remove(pathnames) {
+  async remove(mode, pathnames) {
     if (!pathnames.length) return;
-    const mode = this.mode();
     if (mode === "local") {
       for (const p of pathnames) {
         const { file, type } = localFilePaths(p);

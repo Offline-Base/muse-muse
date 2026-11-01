@@ -831,7 +831,11 @@ export const productDataCounts = pgTable(
  * visitor, owner or user a private file belongs to (mac("caps-subject", ...), cut to 32), never a raw id, and null for a
  * shared one. `blob_path` holds an unguessable suffix and never leaves the platform. A ticket makes a `pending` row; the
  * done check reads the size and type at Blob, hashes the bytes and makes it `ready`. A delete sets `deleted_at`, removes
- * the blob, then the row; the sweep finishes any that stopped half way.
+ * the blob, then the row; the sweep finishes any that stopped half way. In a build's namespace the row stays as `gone`
+ * until the build ends, so the gateway's record still counts an upload its test deleted. `store` is the Blob mode the
+ * file was written in (private, public or local), so setting FILES_BLOB_STORE_ID later never strands older files.
+ * `ticket_key` is a keyed hash of the address that asked for a pending ticket, for the cap on open tickets per address;
+ * it is cleared when the file is ready.
  */
 export const productFiles = pgTable(
   "product_files",
@@ -848,7 +852,9 @@ export const productFiles = pgTable(
     bytes: bigint("bytes", { mode: "number" }).notNull(),
     sha256: text("sha256"),
     blobPath: text("blob_path").notNull(),
-    status: text("status").$type<"pending" | "ready">().notNull().default("pending"),
+    store: text("store").$type<"private" | "public" | "local">().notNull().default("public"),
+    ticketKey: text("ticket_key"),
+    status: text("status").$type<"pending" | "ready" | "gone">().notNull().default("pending"),
     createdAt: createdAt(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
@@ -865,7 +871,9 @@ const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
  * The product's full-text index (FILES_SEARCH). A document is split into chunks of about 4,000 characters, one row each,
  * so a hit can say where in the text it is (`offset`, in characters from the start). `source` is what the document came
  * from, `{fileId}` or `{collection, docId}`, and `source_key` the same as one string, so indexing a source again
- * replaces it. `tsv` uses the `simple` configuration, which works for any language (no stemming).
+ * replaces it. `tsv` uses the `simple` configuration, which works for any language (no stemming). `added_by` is the
+ * subject key of whoever indexed it (the same as `owner_key` in a private scope), for the per-person caps and, in a
+ * shared space, so only its adder or the owner can replace it.
  */
 export const productSearchDocs = pgTable(
   "product_search_docs",
@@ -877,6 +885,7 @@ export const productSearchDocs = pgTable(
     namespace: text("namespace").notNull(),
     scope: text("scope").$type<DataScope>().notNull(),
     ownerKey: text("owner_key"),
+    addedBy: text("added_by"),
     source: jsonb("source").$type<{ fileId: string } | { collection: string; docId: string }>().notNull(),
     sourceKey: text("source_key").notNull(),
     title: text("title").notNull(),

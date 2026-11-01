@@ -11,6 +11,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, beforeEach, describe, it, mock } from "node:test";
+import { eq } from "drizzle-orm";
 import * as realSchema from "@/lib/db/schema";
 import type { CapProduct, CapToken } from "@/lib/caps/gate";
 import { BUILD_TEST_OWNER } from "@/lib/caps/principal";
@@ -28,47 +29,50 @@ type Handler = typeof import("../handler");
 type Store = typeof import("../store");
 type FilesDeps = import("../handler").FilesDeps;
 
-/** A Blob store in memory, with the mode each test asks for. */
+/** Blob stores in memory, one per mode, with the mode new files go in as each test asks. */
 function fakeBlob(mode: FilesBlobMode = "public") {
   const objects = new Map<string, { body: Buffer; contentType: string }>();
+  const at = (store: FilesBlobMode, pathname: string) => `${store}:${pathname}`;
   const removed: string[] = [];
-  const targets: Array<{ pathname: string; contentType: string; bytes: number }> = [];
+  const removedFrom: string[] = [];
+  const targets: Array<{ store: FilesBlobMode; pathname: string; contentType: string; bytes: number }> = [];
   const blob: FilesBlob & { mode(): FilesBlobMode; setMode(m: FilesBlobMode): void } = {
     mode: () => mode,
     setMode: (m) => {
       mode = m;
     },
-    async uploadTarget(pathname, contentType, bytes) {
-      if (mode === "local") return null;
-      targets.push({ pathname, contentType, bytes });
+    async uploadTarget(store, pathname, contentType, bytes) {
+      if (store === "local") return null;
+      targets.push({ store, pathname, contentType, bytes });
       return { url: `https://vercel.com/api/blob/?pathname=${encodeURIComponent(pathname)}&vercel-blob-signature=x`, method: "PUT", headers: { "x-content-type": contentType } };
     },
-    async facts(pathname) {
-      const o = objects.get(pathname);
+    async facts(store, pathname) {
+      const o = objects.get(at(store, pathname));
       return o ? { bytes: o.body.length, contentType: o.contentType } : null;
     },
-    async sha256(pathname) {
-      return createHash("sha256").update(objects.get(pathname)!.body).digest("hex");
+    async sha256(store, pathname) {
+      return createHash("sha256").update(objects.get(at(store, pathname))!.body).digest("hex");
     },
-    async readUrl(pathname, opts) {
-      if (mode === "local") return null;
-      return `https://store.public.blob.vercel-storage.com/${pathname}${opts.download ? "?download=1" : ""}`;
+    async readUrl(store, pathname, opts) {
+      if (store === "local") return null;
+      return `https://${store}.blob.vercel-storage.com/${pathname}${opts.download ? "?download=1" : ""}`;
     },
     async localStream(pathname) {
-      const o = objects.get(pathname);
+      const o = objects.get(at("local", pathname));
       return o ? { stream: new Blob([new Uint8Array(o.body)]).stream(), bytes: o.body.length } : null;
     },
     async writeLocal(pathname, body, contentType) {
-      objects.set(pathname, { body, contentType });
+      objects.set(at("local", pathname), { body, contentType });
     },
-    async remove(paths) {
+    async remove(store, paths) {
       for (const p of paths) {
-        objects.delete(p);
+        objects.delete(at(store, p));
         removed.push(p);
+        removedFrom.push(at(store, p));
       }
     },
   };
-  return { blob, objects, removed, targets, put: (pathname: string, body: Buffer | string, contentType: string) => objects.set(pathname, { body: Buffer.from(body), contentType }) };
+  return { blob, objects, removed, removedFrom, targets, has: (store: FilesBlobMode, pathname: string) => objects.has(at(store, pathname)), put: (pathname: string, body: Buffer | string, contentType: string, store: FilesBlobMode = mode) => objects.set(at(store, pathname), { body: Buffer.from(body), contentType }) };
 }
 
 describe("files on a database", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
@@ -285,7 +289,7 @@ describe("files on a database", { skip: canMock ? false : "needs --experimental-
   it("quotas: the product's bytes and files, a person's 50 MB, and a build's own smaller space", async () => {
     const h = as({ owner: true });
     const small = deps(live(), { quotas: () => ({ productBytes: 10, maxFileBytes: 25 * 1024 * 1024 }) });
-    assert.equal((await call("files", "POST", "ticket", { body: { name: "a.txt", contentType: "text/plain", bytes: 8 }, headers: h, deps: small })).status, 201);
+    await upload("a.txt", "12345678", "text/plain", h, small);
     const over = await call("files", "POST", "ticket", { body: { name: "b.txt", contentType: "text/plain", bytes: 3 }, headers: h, deps: small });
     assert.equal(over.code, "quota_exceeded");
     assert.match(over.json.error!.message, /0 MB|as much as it can/);
@@ -393,7 +397,7 @@ describe("files on a database", { skip: canMock ? false : "needs --experimental-
 
   it("the index holds at most its documents, and a build's at most 200", async () => {
     const b = deps(buildTok());
-    for (let i = 0; i < 200; i++) await store.filesStore.indexDoc({ productId, namespace: `b:${buildId}`, scope: "shared", ownerKey: null }, { source: { collection: "n", docId: `d${i}` }, sourceKey: `item:n:d${i}`, title: "t", chunks: [{ body: "word", offset: 0 }] }, 200);
+    for (let i = 0; i < 200; i++) await store.filesStore.indexDoc({ productId, namespace: `b:${buildId}`, scope: "shared", ownerKey: null }, { source: { collection: "n", docId: `d${i}` }, sourceKey: `item:n:d${i}`, title: "t", chunks: [{ body: "word", offset: 0 }], addedBy: null }, { maxDocs: 200, maxBytes: 1024 * 1024, subject: null, replaceAny: true });
     const full = await call("search", "POST", "index", { body: { source: { collection: "notes", docId: "x" }, title: "X", text: "one more" }, deps: b });
     assert.equal(full.code, "quota_exceeded");
     const again = await call("search", "POST", "index", { body: { source: { collection: "n", docId: "d3" }, title: "X", text: "replacing one is fine" }, deps: b });
@@ -479,6 +483,199 @@ describe("files on a database", { skip: canMock ? false : "needs --experimental-
     // A takedown removes the live files.
     assert.equal(await store.clearLiveFiles(productId, fake.blob.remove), 1);
     assert.equal((await testDb.select().from(realSchema.productFiles)).length, 0);
+  });
+
+  const hitsFor = async (q: string, headers: Record<string, string> = {}) => ((await call("search", "POST", "query", { body: { q }, headers })).json.hits as unknown[]).length;
+
+  it("one visitor's search text is safe from another: replacing and removing stay in the caller's own space", async () => {
+    rule = { scope: "visitor", uploads: "owner", search: true, datasets: [] };
+    const source = { collection: "notes", docId: "n1" };
+    const A = as({ visitor: VISITOR_A });
+    const B = as({ visitor: VISITOR_B });
+    assert.equal((await call("search", "POST", "index", { body: { source, title: "A", text: "alpha secret plan" }, headers: A })).status, 201);
+    assert.equal((await call("search", "POST", "index", { body: { source, title: "B", text: "bravo words" }, headers: B })).status, 201);
+    assert.equal(await hitsFor("secret", A), 1, "B indexing the same source leaves A's text");
+    assert.equal(await hitsFor("bravo", B), 1, "and B has its own");
+    const removed = await call("search", "POST", "remove", { body: { source }, headers: B });
+    assert.equal(removed.json.removed, true, "B removes B's own");
+    assert.equal(await hitsFor("secret", A), 1, "A's stays");
+    assert.equal(await hitsFor("bravo", B), 0);
+    assert.equal((await call("search", "POST", "remove", { body: { source }, headers: B })).json.removed, false, "and has nothing else to remove");
+    // A's file text, named by its file id.
+    const f = await upload("a.txt", "hello", "text/plain", A);
+    await call("search", "POST", "index", { body: { source: { fileId: f.id }, text: "zulu text" }, headers: A });
+    assert.equal((await call("search", "POST", "remove", { body: { source: { fileId: f.id } }, headers: B })).json.removed, false);
+    assert.equal(await hitsFor("zulu", A), 1);
+    assert.equal((await call("search", "POST", "index", { body: { source, title: "A2", text: "alpha renewed" }, headers: A })).status, 201, "A can replace its own");
+    assert.equal(await hitsFor("secret", A), 0);
+    assert.equal(await hitsFor("renewed", A), 1);
+    rule = { scope: "shared", uploads: "owner", search: true, datasets: ["penguins"] };
+  });
+
+  it("a shared index: only the owner removes, a visitor adds and replaces only their own text, and a refused change leaves the old text", async () => {
+    rule = { scope: "shared", uploads: "anyone", search: true, datasets: [] };
+    const owner = as({ owner: true });
+    const A = as({ visitor: VISITOR_A });
+    const B = as({ visitor: VISITOR_B });
+    const guide = { collection: "notes", docId: "guide" };
+    assert.equal((await call("search", "POST", "index", { body: { source: guide, title: "Guide", text: "owner guide" }, headers: owner })).status, 201);
+    assert.equal((await call("search", "POST", "remove", { body: { source: guide }, headers: A })).code, "sign_in_required", "only the owner takes things out");
+    const over = await call("search", "POST", "index", { body: { source: guide, title: "Mine", text: "visitor words" }, headers: B });
+    assert.equal(over.status, 403, "a visitor can't replace the owner's text");
+    assert.equal(over.code, "cap_not_allowed");
+    assert.equal(await hitsFor("guide"), 1, "the owner's text is still there");
+    assert.equal(await hitsFor("visitor"), 0);
+    const note = { collection: "notes", docId: "a-note" };
+    assert.equal((await call("search", "POST", "index", { body: { source: note, title: "Note", text: "first draft" }, headers: A })).status, 201);
+    assert.equal((await call("search", "POST", "index", { body: { source: note, title: "Note", text: "second draft" }, headers: A })).status, 201, "a visitor replaces their own");
+    assert.equal(await hitsFor("first"), 0);
+    assert.equal((await call("search", "POST", "index", { body: { source: note, title: "Note", text: "bee words" }, headers: B })).status, 403, "but not someone else's");
+    assert.equal((await call("search", "POST", "index", { body: { source: note, title: "Note", text: "owner edit" }, headers: owner })).status, 201, "the owner replaces anyone's");
+    assert.equal(await hitsFor("second"), 0);
+    assert.equal((await call("search", "POST", "remove", { body: { source: note }, headers: owner })).json.removed, true);
+    rule = { scope: "shared", uploads: "owner", search: true, datasets: ["penguins"] };
+  });
+
+  it("tickets nobody uses can't block uploads, and the product's totals are held at done", async () => {
+    rule = { scope: "shared", uploads: "anyone", search: true, datasets: [] };
+    const mb = 1024 * 1024;
+    // 500 MB of tickets from 20 made-up visitors, none of them used.
+    for (let i = 0; i < 20; i++) {
+      const spam = await call("files", "POST", "ticket", { body: { name: `s${i}.mp4`, contentType: "video/mp4", bytes: 25 * mb }, headers: as({ visitor: `visitor_spam_${String(i).padStart(10, "0")}` }) });
+      assert.equal(spam.status, 201);
+    }
+    const real = await upload("real.txt", "a real person's file", "text/plain", as({ visitor: VISITOR_A }));
+    assert.ok(real.id, "a real upload still goes through");
+    // Two tickets can both be given near the limit, but only the first to finish fits.
+    const h = as({ owner: true });
+    const small = deps(live(), { quotas: () => ({ productBytes: 10 + real.bytes, maxFileBytes: 25 * mb }) });
+    const t1 = await call("files", "POST", "ticket", { body: { name: "one.txt", contentType: "text/plain", bytes: 8 }, headers: h, deps: small });
+    const path1 = fake.targets.at(-1)!.pathname;
+    const t2 = await call("files", "POST", "ticket", { body: { name: "two.txt", contentType: "text/plain", bytes: 8 }, headers: h, deps: small });
+    const path2 = fake.targets.at(-1)!.pathname;
+    fake.put(path1, "11111111", "text/plain");
+    fake.put(path2, "22222222", "text/plain");
+    assert.equal((await call("files", "POST", `${t1.json.id}/done`, { body: {}, headers: h, deps: small })).status, 200);
+    const refused = await call("files", "POST", `${t2.json.id}/done`, { body: {}, headers: h, deps: small });
+    assert.equal(refused.code, "quota_exceeded");
+    assert.match(refused.json.error!.message, /as much as it can/);
+    assert.ok(!fake.has("public", path2), "the file that didn't fit is removed");
+    assert.equal((await call("files", "GET", String(t2.json.id), { headers: h })).status, 404);
+    rule = { scope: "shared", uploads: "owner", search: true, datasets: ["penguins"] };
+  });
+
+  it("open tickets count against one person for as long as they're good, and one address holds only so many", async () => {
+    rule = { scope: "visitor", uploads: "owner", search: true, datasets: [] };
+    const mb = 1024 * 1024;
+    const { subjectKey } = await import("@/lib/caps/principal");
+    const key = subjectKey("visitor", productId, VISITOR_A);
+    // An expired ticket for the person's whole 50 MB no longer counts, so it can't hold them up until it is swept.
+    await testDb.insert(realSchema.productFiles).values({ productId, namespace: "live", scope: "visitor", ownerKey: key, name: "old", contentType: "text/plain", bytes: 50 * mb, blobPath: "caps/files/old", createdAt: new Date(Date.now() - 16 * 60_000) });
+    assert.equal((await call("files", "POST", "ticket", { body: { name: "a.txt", contentType: "text/plain", bytes: 1 }, headers: as({ visitor: VISITOR_A }) })).status, 201);
+    // One address, over a few minutes so the per-minute limit stays out of it.
+    const ticket = (visitor: string, ip: string, minute: number) =>
+      call("files", "POST", "ticket", { body: { name: "n.txt", contentType: "text/plain", bytes: 1 }, headers: as({ visitor, ip }), deps: deps(live(), { now: () => new Date(NOW.getTime() + minute * 60_000) }) });
+    for (let i = 0; i < 10; i++) assert.equal((await ticket(`visitor_addr_${String(i).padStart(10, "0")}`, "198.51.100.7", i)).status, 201, String(i));
+    const next = await ticket("visitor_addr_more_000000", "198.51.100.7", 11);
+    assert.equal(next.code, "quota_exceeded");
+    assert.match(next.json.error!.message, /haven't finished/);
+    assert.equal((await ticket("visitor_addr_more_000000", "198.51.100.8", 12)).status, 201, "another address is fine");
+    rule = { scope: "shared", uploads: "owner", search: true, datasets: ["penguins"] };
+  });
+
+  it("the Blob mode is saved per file: setting a private store later leaves older files readable and deletable", async () => {
+    const h = as({ owner: true });
+    const old = await upload("old.png", "old-bytes", "image/png");
+    const oldPath = fake.targets.at(-1)!.pathname;
+    fake.blob.setMode("private");
+    const fresh = await upload("new.png", "new-bytes", "image/png");
+    const newPath = fake.targets.at(-1)!.pathname;
+    assert.equal(fake.targets.at(-1)!.store, "private");
+    const read = async (f: { id: string; url: string }) => (await handler.handleFiles(new Request(f.url), [f.id, "content"], deps())).headers.get("location")!;
+    assert.match(await read(old), /^https:\/\/public\./, "an older file reads from where it was written");
+    assert.match(await read(fresh), /^https:\/\/private\./);
+    // Its done check and hash look there too, for a ticket from before the change.
+    fake.blob.setMode("public");
+    const t = await call("files", "POST", "ticket", { body: { name: "mid.txt", contentType: "text/plain", bytes: 3 }, headers: h });
+    const midPath = fake.targets.at(-1)!.pathname;
+    fake.put(midPath, "mid", "text/plain");
+    fake.blob.setMode("private");
+    assert.equal((await call("files", "POST", `${t.json.id}/done`, { body: {}, headers: h })).status, 200);
+    assert.equal((await call("files", "DELETE", old.id, { headers: h })).json.deleted, true);
+    assert.deepEqual(fake.removedFrom, [`public:${oldPath}`], "the delete goes to the store that holds it");
+    assert.ok(!fake.has("public", oldPath));
+    // A takedown, mixed: each path goes to its own store.
+    await store.clearLiveFiles(productId, fake.blob.remove);
+    assert.ok(fake.removedFrom.includes(`private:${newPath}`));
+    assert.ok(fake.removedFrom.includes(`public:${midPath}`));
+  });
+
+  it("one person's index has its own cap, and a product's text has a cap in bytes; a refused replacement keeps the old text", async () => {
+    rule = { scope: "visitor", uploads: "owner", search: true, datasets: [] };
+    const { subjectKey } = await import("@/lib/caps/principal");
+    const space = { productId, namespace: "live", scope: "visitor" as const, ownerKey: subjectKey("visitor", productId, VISITOR_A) };
+    const doc = (i: number, body = "word") => ({ source: { collection: "n", docId: `d${i}` }, sourceKey: `item:n:d${i}`, title: "t", chunks: [{ body, offset: 0 }], addedBy: space.ownerKey });
+    const open = { maxDocs: 2000, maxBytes: 200 * 1024 * 1024, subject: null, replaceAny: true };
+    for (let i = 0; i < 200; i++) assert.deepEqual(await store.filesStore.indexDoc(space, doc(i), open), { ok: true });
+    const A = as({ visitor: VISITOR_A });
+    const more = await call("search", "POST", "index", { body: { source: { collection: "n", docId: "extra" }, title: "X", text: "one more" }, headers: A });
+    assert.equal(more.code, "quota_exceeded");
+    assert.match(more.json.error!.message, /one person can \(200\)/);
+    assert.equal((await call("search", "POST", "index", { body: { source: { collection: "n", docId: "d3" }, title: "X", text: "replaced" }, headers: A })).status, 201, "replacing doesn't need room");
+    assert.equal((await call("search", "POST", "index", { body: { source: { collection: "n", docId: "extra" }, title: "X", text: "mine" }, headers: as({ visitor: VISITOR_B }) })).status, 201, "another person has their own room");
+    // The caps in bytes, on the store directly, so the test doesn't write megabytes.
+    const b = (over: Partial<typeof open> & { subject?: { docs: number; bytes: number } | null }) => ({ ...open, ...over });
+    assert.deepEqual(await store.filesStore.indexDoc(space, doc(0, "x".repeat(40)), b({ maxBytes: 10 })), { ok: false, reason: "bytes" });
+    assert.deepEqual(await store.filesStore.indexDoc(space, doc(0, "y".repeat(5000)), b({ subject: { docs: 1000, bytes: 100 } })), { ok: false, reason: "subject_bytes" });
+    const kept = await testDb.select().from(realSchema.productSearchDocs).where(eq(realSchema.productSearchDocs.sourceKey, "item:n:d0"));
+    assert.deepEqual(kept.map((r) => r.body), ["word"], "the old text of d0 is still there");
+    rule = { scope: "shared", uploads: "owner", search: true, datasets: ["penguins"] };
+  });
+
+  it("signed reads are limited per product and address, so a busy product doesn't stop another on the same egress address", async () => {
+    const [other] = await testDb.insert(realSchema.products).values({ slug: "other", name: "Other", ownerId: (await testDb.select().from(realSchema.users))[0]!.id, status: "live" }).returning();
+    try {
+      const pic = await upload("a.png", "png", "image/png");
+      const [row] = await testDb.insert(realSchema.productFiles).values({ productId: other!.id, namespace: "live", scope: "shared", name: "b.png", contentType: "image/png", bytes: 3, blobPath: "caps/files/b", status: "ready" }).returning();
+      const otherUrl = handler.readUrlFor("https://musemuse.example/api/gateway", { id: row!.id, contentType: "image/png" }, NOW).url;
+      const read = (url: string, id: string) => handler.handleFiles(new Request(url, { headers: { "x-real-ip": "203.0.113.5" } }), [id, "content"], deps());
+      for (let i = 0; i < 300; i++) assert.equal((await read(pic.url, pic.id)).status, 302, String(i));
+      assert.equal((await read(pic.url, pic.id)).status, 429, "the busy product is held to its limit");
+      assert.equal((await read(otherUrl, row!.id)).status, 302, "the other product isn't");
+    } finally {
+      await testDb.delete(realSchema.products).where(eq(realSchema.products.id, other!.id));
+    }
+  });
+
+  it("a build's record still counts an upload its test deleted, and the row goes when the build ends", async () => {
+    const b = deps(buildTok());
+    const kept = await upload("t.txt", "x", "text/plain", {}, b);
+    assert.equal((await call("files", "DELETE", kept.id, { deps: b })).json.deleted, true);
+    const p = await store.filesProof(buildId, { since: new Date(Date.now() - 60_000) });
+    assert.equal(p.uploaded, 1, "the upload happened");
+    assert.equal(p.files, 0, "and the file is gone");
+    assert.equal((await call("files", "GET", kept.id, { deps: b })).status, 404);
+    assert.equal(((await call("files", "GET", "", { deps: b })).json.items as unknown[]).length, 0);
+    const removedBefore = fake.removed.length;
+    assert.equal(await store.sweepFiles(new Date(), fake.blob.remove), 0, "the sweep leaves a row with nothing left to remove");
+    assert.equal(fake.removed.length, removedBefore);
+    // A ticket refused its bytes is no upload.
+    const t = await call("files", "POST", "ticket", { body: { name: "bad.txt", contentType: "text/plain", bytes: 1 }, deps: b });
+    fake.put(fake.targets.at(-1)!.pathname, "too long", "text/plain");
+    await call("files", "POST", `${t.json.id}/done`, { body: {}, deps: b });
+    assert.equal((await store.filesProof(buildId, { since: new Date(Date.now() - 60_000) })).uploaded, 1);
+    await store.clearFilesBuild(buildId, fake.blob.remove);
+    assert.equal((await testDb.select().from(realSchema.productFiles)).length, 0);
+  });
+
+  it("a local run's upload follows the product: taken down, it takes nothing", async () => {
+    fake.blob.setMode("local");
+    const h = as({ owner: true });
+    const t = await call("files", "POST", "ticket", { body: { name: "n.txt", contentType: "text/plain", bytes: 5 }, headers: h });
+    const url = (t.json.upload as { url: string }).url;
+    const down = deps(live(), { product: async () => product({ takenDownAt: new Date() }) });
+    assert.equal((await handler.handleFiles(new Request(url, { method: "PUT", headers: { "content-type": "text/plain" }, body: "hello" }), [String(t.json.id), "upload"], down)).status, 404);
+    assert.ok(!fake.has("local", (await testDb.select().from(realSchema.productFiles))[0]!.blobPath), "no bytes were written");
   });
 
   it("a build's test owner pass makes a browser the owner, and a made-up person is a user, only on the build's token", async () => {
