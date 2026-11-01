@@ -346,6 +346,24 @@ export const env = {
     return null;
   },
 
+  // ---------- Fine-tune like a build (General; docs/TRAINING.md "Fine-tune like a build") ----------
+
+  /**
+   * TUNE_COMPOSER: "1", "true", "yes" or "on" gives admins /fine-tuning/new (one box, a plan card, Start) and the run
+   * room at /fine-tuning/runs/{id}. Off by default: both pages and POST /api/train/plan, POST /api/train/runs and GET
+   * /api/train/runs/{id} answer 404, and nothing else anywhere changes.
+   */
+  get tuneComposer(): boolean {
+    return flag("TUNE_COMPOSER");
+  },
+  /**
+   * TUNE_DEFAULT_EXAMPLES: how many examples a new run's plan has Muse Wonder write, 200 by default, held to the
+   * datasets route's 20 to 1000 (DATASET_MIN_COUNT and DATASET_MAX_COUNT in lib/train/logic.ts).
+   */
+  get tuneDefaultExamples(): number {
+    return Math.min(1000, Math.max(20, Math.floor(number("TUNE_DEFAULT_EXAMPLES", 200))));
+  },
+
   // ---------- Gadgets as a build option (docs/GADGETS.md) ----------
 
   /**
