@@ -34,6 +34,13 @@ const journal = JSON.parse(readFileSync(join(FOLDER, "meta/_journal.json"), "utf
  * than the newest applied one, so a later 0016 would be skipped. New migrations take the next free number.
  */
 const RESERVED = new Set([16]);
+/**
+ * Wave 3 numbers whose unit hasn't merged into this branch yet (docs/CAPABILITIES.md, section 4): a migration's journal
+ * idx is its tag number, so a later unit's can land with a gap below it. The merge of each lower unit fills its gap, and
+ * migrations still reach main in number order.
+ */
+const WAVE3_NUMBERS = { first: 18, last: 26 };
+const pendingWave3 = (i: number) => i >= WAVE3_NUMBERS.first && i <= WAVE3_NUMBERS.last && !journal.entries.some((e) => e.idx === i);
 const snapshot = (idx: number) => JSON.parse(readFileSync(join(FOLDER, `meta/${String(idx).padStart(4, "0")}_snapshot.json`), "utf8"));
 
 const database = (client: PGlite) => drizzle({ client, schema });
@@ -42,7 +49,7 @@ const database = (client: PGlite) => drizzle({ client, schema });
  * Wave 3's migrations, in the agreed order (docs/CAPABILITIES.md, section 4), after General's 0017 (0016 is retired).
  * Each wave 3 unit appends its tag here. Their journal times follow the contract's rule.
  */
-const WAVE3_TAGS = ["0018_trust", "0019_engine", "0020_data"];
+const WAVE3_TAGS = ["0018_trust", "0019_engine", "0020_data", "0024_code"];
 const tagNumber = (tag: string) => Number(tag.slice(0, 4));
 
 /** A copy of the migrations that stops at `lastIdx`, as a database that hasn't had the newer ones would have seen. */
@@ -66,7 +73,7 @@ async function columns(client: PGlite, table: string): Promise<Map<string, { nul
 describe("the migration folder", () => {
   it("has a journal that runs in order from 0000, each entry with its file and snapshot, skipping only a reserved number", () => {
     const last = journal.entries.at(-1)!.idx;
-    const expected = Array.from({ length: last + 1 }, (_, i) => i).filter((i) => !RESERVED.has(i) || journal.entries.some((e) => e.idx === i));
+    const expected = Array.from({ length: last + 1 }, (_, i) => i).filter((i) => (!RESERVED.has(i) && !pendingWave3(i)) || journal.entries.some((e) => e.idx === i));
     assert.deepEqual(journal.entries.map((e) => e.idx), expected);
     journal.entries.forEach((e) => {
       assert.ok(e.tag.startsWith(String(e.idx).padStart(4, "0")), e.tag);
@@ -430,6 +437,32 @@ describe("a database already at 0012", () => {
     await client.exec(`delete from builds; delete from products where id = '${productId}'`);
     assert.equal((await typed.select().from(schema.productRows)).length, 0);
     assert.equal((await typed.select().from(schema.productDataCounts)).length, 0);
+    await client.close();
+  });
+
+  it("0024_code: a database at 0020 keeps its products, and gets exec_runs, which goes with its product", async () => {
+    const dir = folderThrough(20);
+    dirs.push(dir);
+    const client = new PGlite();
+    const db = drizzle({ client });
+    await migrate(db, { migrationsFolder: dir });
+    assert.equal((await columns(client, "exec_runs")).size, 0);
+    const [userId, productId] = [randomUUID(), randomUUID()];
+    await client.exec(`
+      insert into users (id, email) values ('${userId}', 'old@example.com');
+      insert into products (id, slug, name, owner_id, status) values ('${productId}', 'old-one', 'Old One', '${userId}', 'live');
+    `);
+    await migrate(db, { migrationsFolder: FOLDER });
+    const typed = database(client);
+    const [product] = await typed.select().from(schema.products);
+    assert.equal(product!.slug, "old-one");
+    const [run] = await typed.insert(schema.execRuns).values({ productId, namespace: "live", kind: "exec", principal: "owner", language: "python", status: "ok" }).returning();
+    assert.equal(run!.ms, 0);
+    assert.equal(run!.costUsd, 0);
+    assert.equal(run!.subjectKey, null);
+    assert.equal((await columns(client, "exec_runs")).get("language")?.nullable, true);
+    await client.exec(`delete from products where id = '${productId}'`);
+    assert.equal((await typed.select().from(schema.execRuns)).length, 0);
     await client.close();
   });
 
