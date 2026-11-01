@@ -61,6 +61,7 @@ function deps(over: Partial<WindowDeps> = {}): WindowDeps {
     async stop(id) {
       stops.push(id);
     },
+    serveJobOf: async () => null,
     ...over,
   };
 }
@@ -246,5 +247,44 @@ describe("what an admin sees", () => {
     const got = await open();
     assert.ok(got.ok);
     assert.deepEqual(Object.keys(windowView(got.window)).sort(), ["adapterJobId", "capUsd", "costUsd", "endsAt", "id", "serveJobId", "startsAt", "status"].sort());
+  });
+});
+
+describe("settling when something fails", () => {
+  it("a failed settleSpend leaves the window unsettled, and the next sweep settles it", async () => {
+    const opened = await open();
+    assert.ok(opened.ok);
+    job = finished;
+    const failing = deps({ settleSpend: async () => { throw new Error("database"); } });
+    await assert.rejects(sweepWindows(NOW, failing));
+    assert.equal(rows[0]!.status, "open", "not closed with its reservation still whole");
+    assert.equal(await sweepWindows(NOW, deps()), 1);
+    assert.equal(rows[0]!.status, "closed");
+    assert.equal(reservations.get("r1")!.settled?.costUsd, 1.1);
+  });
+
+  it("a crash before attaching doesn't settle at $0 while its GPU runs: the sweep finds the job", async () => {
+    const opened = await open();
+    assert.ok(opened.ok);
+    rows[0]!.serveJobId = null;
+    job = running;
+    const later = new Date(NOW.getTime() + 6 * 60_000);
+    const asked: string[] = [];
+    const d = deps({ serveJobOf: async (a) => (asked.push(a), SERVE) });
+    await sweepWindows(later, d);
+    assert.deepEqual(asked, [ADAPTER]);
+    assert.equal(rows[0]!.serveJobId, SERVE);
+    assert.equal(rows[0]!.status, "open");
+    assert.equal(reservations.get("r1")!.settled, undefined, "still reserved");
+  });
+
+  it("with no such job it settles at $0, as before", async () => {
+    const opened = await open();
+    assert.ok(opened.ok);
+    rows[0]!.serveJobId = null;
+    job = null;
+    await sweepWindows(new Date(NOW.getTime() + 6 * 60_000), deps());
+    assert.equal(rows[0]!.status, "closed");
+    assert.equal(reservations.get("r1")!.settled?.costUsd, 0);
   });
 });

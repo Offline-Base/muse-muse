@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, desc, eq, isNull, notInArray, sql } from "drizzle-orm";
 import type { GlimmerDeps } from "@/lib/caps/gpu/handler";
 import { ownModelFor } from "@/lib/caps/gpu/own-model";
 import { attachServeJob, getGlimmerWindow, glimmerReservedToday, insertGlimmerWindow, moveGlimmerWindow, openGlimmerWindow, unsettledGlimmerWindows } from "@/lib/caps/gpu/store";
@@ -10,7 +10,8 @@ import { hitRateLimits, reserveSpend, settleSpend } from "@/lib/gateway/store";
 import { limitCeilings } from "@/lib/train/gate";
 import { serveJobChatBackend } from "@/lib/train/glimmer-serving";
 import { launchJob } from "@/lib/train/launch";
-import { SERVE_BOOT_MINUTES } from "@/lib/train/logic";
+import { SERVE_ADAPTER_PARAM, SERVE_BOOT_MINUTES, SERVE_RECIPE } from "@/lib/train/logic";
+import { TRAIN_TERMINAL } from "@/lib/train/types";
 import { getAdapterSource, getLiveDemo, requestStop } from "@/lib/train/store";
 import { platformSpendToday, recordUsage } from "@/lib/usage";
 
@@ -62,5 +63,15 @@ export function windowDeps(): WindowDeps {
       return row ?? null;
     },
     stop: requestStop,
+    async serveJobOf(adapterJobId) {
+      const jobs = schema.trainingJobs;
+      const [row] = await db()
+        .select({ id: jobs.id })
+        .from(jobs)
+        .where(and(eq(jobs.recipe, SERVE_RECIPE), sql`${jobs.params}->>${SERVE_ADAPTER_PARAM} = ${adapterJobId}`, isNull(jobs.terminatedAt), notInArray(jobs.status, [...TRAIN_TERMINAL])))
+        .orderBy(desc(jobs.createdAt))
+        .limit(1);
+      return row?.id ?? null;
+    },
   };
 }

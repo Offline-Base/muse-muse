@@ -42,6 +42,8 @@ export interface WindowDeps {
   launch(input: LaunchInput, caller: { userId: string }): Promise<LaunchResult>;
   job(id: string): Promise<WindowJob | null>;
   stop(jobId: string): Promise<unknown>;
+  /** The adapter's serve job with a GPU not yet down, or null: what a window left without its job (a crash) may have started. */
+  serveJobOf(adapterJobId: string): Promise<string | null>;
 }
 
 export type WindowRefusal = { ok: false; status: number; code: string; message: string; body?: Record<string, unknown> };
@@ -153,15 +155,16 @@ function jobDone(job: WindowJob): boolean {
   return isTrainTerminal(job.status as TrainStatus) && (Boolean(job.terminatedAt) || !job.instanceId);
 }
 
-/** The window closed at what its job really cost. Only one caller gets to settle it. */
+/**
+ * The window closed at what its job really cost. The spend first: it's the same write if two callers get here, and if it
+ * fails the window is still unsettled, so the next sweep tries again, rather than its whole reservation staying on the books.
+ */
 async function settle(window: GlimmerWindow, job: WindowJob | null, deps: WindowDeps): Promise<GlimmerWindow> {
   const costUsd = job?.costUsd ?? 0;
-  const moved = await deps.move(window.id, { status: "closed", costUsd });
-  if (!moved) return window;
   if (window.reservationId) {
     await deps.settleSpend(window.reservationId, { model: WINDOW_MODEL, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, units: 1, costUsd });
   }
-  return moved;
+  return (await deps.move(window.id, { status: "closed", costUsd })) ?? window;
 }
 
 /** Closes a window now: products lose it at once, the GPU is asked to stop, and it settles when the GPU is down. */
@@ -178,11 +181,20 @@ export async function closeWindow(id: string, deps: WindowDeps): Promise<Glimmer
 /** The hourly sweep: a window past its end stops its GPU, and a window whose GPU is down settles. Returns how many moved. */
 export async function sweepWindows(now: Date, deps: WindowDeps): Promise<number> {
   let moved = 0;
-  for (const window of await deps.unsettled()) {
+  for (const found of await deps.unsettled()) {
+    let window = found;
+    if (!window.serveJobId) {
+      // A window opened in the last moments may not have its job attached yet.
+      if (now.getTime() - window.createdAt.getTime() < 5 * 60_000) continue;
+      // A crash between starting the job and attaching it: that GPU is running, so it isn't settled at $0.
+      const orphan = await deps.serveJobOf(window.adapterJobId);
+      if (orphan) {
+        await deps.attach(window.id, orphan);
+        window = { ...window, serveJobId: orphan };
+      }
+    }
     const job = window.serveJobId ? await deps.job(window.serveJobId) : null;
     if (!job || jobDone(job)) {
-      // A window opened in the last moments may not have its job attached yet.
-      if (!window.serveJobId && now.getTime() - window.createdAt.getTime() < 5 * 60_000) continue;
       await settle(window, job, deps);
       moved += 1;
     } else if (window.status === "open" && window.endsAt.getTime() <= now.getTime()) {
