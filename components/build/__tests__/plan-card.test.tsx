@@ -131,6 +131,21 @@ describe("the mascot", () => {
     assert.doesNotMatch(live + done, /alt="[^"]+"/, "every picture is decorative");
   });
 
+  it("fetches the opening pictures while the brief is written, so the card's mascot doesn't pop in after it", () => {
+    const briefing = (kind: "build" | "refine") =>
+      page("running", {
+        build: { ...FIXTURES.running.build, kind, status: "briefing", step: "brief", previewUrl: null, costUsd: 0, message: kind === "refine" ? "Make the count bigger." : null },
+        events: stamp([{ type: "status", status: "briefing", step: "brief" }]),
+      });
+    const html = briefing("build");
+    assert.match(html, /<link rel="preload" href="\/muse\/muse-present\.jpg" as="image"\/>/);
+    assert.match(html, /<link rel="preload" href="\/muse\/muse-building\.jpg" as="image" fetchPriority="low"\/>/);
+    assert.doesNotMatch(html, /plan-card|muse-shield/, "no card until the brief is in");
+    assert.doesNotMatch(briefing("refine"), /\/muse\/muse-/, "a change checks its request in briefing too, and never gets a card");
+    // React's server render preloads the card's visible picture itself. The early fetch stops once the card is up.
+    assert.doesNotMatch(page("running"), /rel="preload"[^>]*muse-present/, "once the card is up, it loads its own pictures");
+  });
+
   it("ships the three pictures web-sized, and not the originals", () => {
     for (const name of ["present", "building", "shield"]) {
       const file = path.join(ROOT, "public/muse", `muse-${name}.jpg`);

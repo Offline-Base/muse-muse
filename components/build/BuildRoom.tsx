@@ -11,7 +11,7 @@ import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { BuildSummary, BuildView, InspirationView, ProductView, RebuildRef } from "@/components/view-types";
 import { BuildDetails } from "@/components/build/BuildDetails";
 import { deriveRoom, railStates, refineSpot } from "@/components/build/derive";
-import { PlanCard, planCardState } from "@/components/build/PlanCard";
+import { PlanCard, planCardState, preloadPlanArt } from "@/components/build/PlanCard";
 import { QuestionCard, SteerNote } from "@/components/build/session";
 import { appsLine, nativeRows } from "@/components/build/apps";
 import { proveRows } from "@/components/build/prove-rows";
@@ -345,6 +345,7 @@ export function BuildRoom(props: BuildRoomProps) {
   const answer = useMemo(() => finalWords(room), [room]);
   const current = useMemo(() => currentStep(room), [room]);
   const plan = useMemo(() => planCardState(room), [room]);
+  preloadPlanArt(room.status, isRefineBuild);
   // The clock only matters to a Prove it run, so a build without one doesn't redraw its list each tick.
   const proveNow = events.some((e) => e.type === "prove") ? now : 0;
   const proveSteps = useMemo(() => proveRows(events, proveNow), [events, proveNow]);

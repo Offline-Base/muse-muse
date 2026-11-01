@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { preload } from "react-dom";
 import type { RoomState } from "@/components/build/derive";
 import { VERDICT } from "@/components/build/turns";
 import { Icon } from "@/components/icons";
@@ -76,6 +77,17 @@ export function planCardState(room: Pick<RoomState, "status" | "segments">): { b
 }
 
 export function PlanCard({
+/**
+ * While the brief is being written, fetches the pictures the card opens with, so the mascot is there when the card fades
+ * in instead of popping in after it. Called while the room renders (react-dom's preload dedupes). A change passes
+ * through "briefing" too, for its policy check, but never gets a card, so it fetches nothing.
+ */
+export function preloadPlanArt(status: BuildStatus, isRefine: boolean): void {
+  if (isRefine || (status !== "queued" && status !== "briefing")) return;
+  preload(PLAN_ART.present, { as: "image" });
+  preload(PLAN_ART.building, { as: "image", fetchPriority: "low" });
+}
+
   brief,
   art,
   running,
