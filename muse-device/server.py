@@ -37,6 +37,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -216,22 +217,27 @@ def read_sensor(args):
     return text_result(json.dumps({"sensors": sensors}))
 
 
+def plain_line(text):
+    # Control and format characters, line separators and half a surrogate pair. ZWNJ and ZWJ stay: emoji and some scripts need them.
+    return all(c in "\u200c\u200d" or unicodedata.category(c) not in ("Cc", "Cf", "Cs", "Zl", "Zp") for c in text)
+
+
 def show_text(args):
     text = args.get("text")
     if not isinstance(text, str) or not text.strip() or len(text) > SHOW_TEXT_MAX_CHARS:
         raise ToolError(f"text must be 1 to {SHOW_TEXT_MAX_CHARS} characters.")
-    if any(ord(c) < 32 or ord(c) == 127 for c in text):
+    if not plain_line(text):
         raise ToolError("text must be one plain line.")
     with show_text_lock:
         now = time.monotonic()
         show_text_times[:] = [t for t in show_text_times if now - t < 60]
         if len(show_text_times) >= SHOW_TEXT_PER_MINUTE:
             raise ToolError(f"This board shows at most {SHOW_TEXT_PER_MINUTE} messages a minute. Try again in a moment.")
-        show_text_times.append(now)
         os.makedirs(os.path.dirname(SHOW_TEXT_FILE), mode=0o700, exist_ok=True)
-        with open(SHOW_TEXT_FILE + ".part", "w") as f:
+        with open(SHOW_TEXT_FILE + ".part", "w", encoding="utf-8") as f:
             f.write(text + "\n")
         os.replace(SHOW_TEXT_FILE + ".part", SHOW_TEXT_FILE)
+        show_text_times.append(now)
     return text_result(json.dumps({"shown": text}))
 
 

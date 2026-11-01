@@ -158,12 +158,34 @@ class BoardToolsForProducts(unittest.TestCase):
             self.assertEqual(f.read(), "Back in 5 minutes\n")
 
     def test_show_text_limits_its_size_and_shape(self):
-        for bad in ("", "   ", "x" * 201, "two\nlines", "bell\x07", None, 5):
+        for bad in ("", "   ", "x" * 201, "two\nlines", "bell\x07", "one\u2028two", "one\u2029two", "right\u202eleft", "half\ud800", None, 5):
             with self.subTest(text=bad):
                 with self.assertRaises(server.ToolError):
                     server.show_text({"text": bad})
         self.assertFalse(os.path.exists(server.SHOW_TEXT_FILE))
         server.show_text({"text": "x" * 200})
+
+    def test_show_text_keeps_words_and_emoji_in_utf8(self):
+        text = "caf\u00e9 \U0001f469\u200d\U0001f4bb"
+        real_open = open
+        encodings = []
+
+        def recording_open(path, *args, **kwargs):
+            if str(path).endswith(".part"):
+                encodings.append(kwargs.get("encoding"))
+            return real_open(path, *args, **kwargs)
+
+        with mock.patch("builtins.open", recording_open):
+            server.show_text({"text": text})
+        self.assertEqual(encodings, ["utf-8"], "whatever the board's locale is")
+        with open(server.SHOW_TEXT_FILE, encoding="utf-8") as f:
+            self.assertEqual(f.read(), text + "\n")
+
+    def test_a_show_text_that_fails_to_write_uses_no_slot(self):
+        with mock.patch.object(server.os, "replace", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                server.show_text({"text": "never shown"})
+        self.assertEqual(server.show_text_times, [])
 
     def test_show_text_allows_six_a_minute(self):
         for i in range(6):

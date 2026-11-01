@@ -92,14 +92,14 @@ before a call gets here. Never `run_command`.
 | `VERSION` 0.4.0 to 0.5.0 | Two new tools. |
 | Constants `THERMAL_GLOB`, `SHOW_TEXT_FILE`, `SHOW_TEXT_MAX_CHARS`, `SHOW_TEXT_PER_MINUTE`; `show_text_lock`, `show_text_times` | The tools' limits and where they read and write. |
 | New `read_sensor` (read only) | `{sensor?}`. Returns `{"sensors": [{name, kind, value, unit}]}` from `/sys/devices/virtual/thermal/thermal_zone*`, the same files `describe_device` reads for `max_temp_c`. A sensor's name only filters what's found, so it never becomes a path. |
-| New `show_text` | `{text}`: 1 to 200 characters on one line, no control characters, 6 a minute for the whole board. It writes the line to `~/.muse-device/show-text.txt` through a `.part` file and a rename. It starts no process. |
+| New `show_text` | `{text}`: 1 to 200 characters on one line, no control or format characters, line separators or half surrogate pairs (`plain_line`, ZWNJ and ZWJ stay for emoji and some scripts), 6 a minute for the whole board, counted only after the write works. It writes the line as UTF-8 to `~/.muse-device/show-text.txt` through a `.part` file and a rename. It starts no process. |
 | `TOOLS` gains both | Same token, same refusal of browser requests, same 1 MiB body limit. |
 
 Nothing else in `server.py` changed. `run_command`, the token rules and every existing tool answer as before.
 
 ## Changes to `test_server.py`
 
-`test_version_and_tools_are_offered` expects `0.5.0`, and a new `BoardToolsForProducts` class has 6 tests. `test_drive.py` expects `0.5.0`
+`test_version_and_tools_are_offered` expects `0.5.0`, and a new `BoardToolsForProducts` class has 8 tests. `test_drive.py` expects `0.5.0`
 too, in two places. All pass on a Mac: 145 tests in the two files, 3 skipped.
 
 ## What I couldn't check here, and would like you to
