@@ -1,8 +1,9 @@
 /**
  * Which model a board runs (the owner's decision, Nov 1): a Jetson Orin Nano gets one-bit Muse Glimmer, anything else a small Llama.
  *
- * Kept to this one function on purpose: the fine-tuning side's device-target function is being written at the same time on branch
- * tg-quant-targets. When it lands, targetForBoardKind should call it, and only this file changes.
+ * Kept to this one function on purpose: deviceModelTarget in lib/train/quant-targets.ts, on branch tg-quant-targets and not on main
+ * when this was written, decides the same thing with the same names. When it merges, targetForBoardKind should call it, and only
+ * this file changes.
  */
 export type BoardKind = "jetson_orin_nano" | "raspberry_pi" | "other";
 
@@ -11,12 +12,10 @@ export interface BoardTarget {
   id: string;
   /** In words, for the owner. */
   label: string;
-  /** On disk, from tg-quant-targets' file names. */
-  approxGb: number;
 }
 
-const ONE_BIT_GLIMMER: BoardTarget = { id: "muse-glimmer-30b-IQ1_S", label: "Muse Glimmer, one-bit", approxGb: 6.5 };
-const SMALL_LLAMA: BoardTarget = { id: "Llama-3.2-3B-Q4_K_M", label: "Llama 3.2 3B", approxGb: 1.9 };
+const ONE_BIT_GLIMMER: BoardTarget = { id: "muse-glimmer-30b-IQ1_S", label: "Muse Glimmer, one bit" };
+const SMALL_LLAMA: BoardTarget = { id: "Llama-3.2-3B-Q4_K_M", label: "Llama 3.2 3B" };
 
 export function targetForBoardKind(kind: BoardKind): BoardTarget {
   return kind === "jetson_orin_nano" ? ONE_BIT_GLIMMER : SMALL_LLAMA;

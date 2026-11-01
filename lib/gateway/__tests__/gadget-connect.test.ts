@@ -34,7 +34,7 @@ function deps(link: LinkedBoard | null, over: Partial<GadgetDeps> = {}): GadgetD
   } as GadgetDeps & { stops: string[] };
 }
 
-const facts = { target: "muse-glimmer-30b-IQ1_S", targetLabel: "Muse Glimmer, one-bit", simulated: true, robot: true, stopped: false };
+const facts = { target: "muse-glimmer-30b-IQ1_S", targetLabel: "Muse Glimmer, one bit", simulated: true, robot: true, stopped: false };
 
 function link(over: Partial<LinkedBoard> = {}, ask: (r: { model: string }) => unknown = () => ({ kind: "answer", text: "from the board" })): LinkedBoard & { asked: Array<{ model: string }>; tools: string[] } {
   const asked: Array<{ model: string }> = [];

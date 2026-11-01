@@ -60,7 +60,7 @@ describe("pairing", () => {
     assert.equal(start.checkNumber, pairCheckNumber(PIN));
     const done = await finishPairing({ ticket: start.ticket, code: "abcd2345", name: "Greenhouse", confirmed: true }, OWNER, d);
     assert.ok(done.ok, JSON.stringify(done));
-    assert.equal(done.target, "Muse Glimmer, one-bit");
+    assert.equal(done.target, "Muse Glimmer, one bit");
     const row = d.inserted[0] as { pin: string; ownerUserId: string; facts: { kind: string; target: string; simulated: boolean; robot: boolean }; url: { ciphertext: Buffer }; token: { ciphertext: Buffer } };
     assert.equal(row.pin, PIN);
     assert.equal(row.ownerUserId, OWNER);

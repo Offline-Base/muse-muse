@@ -103,4 +103,4 @@ export function simulatedAnswer(target: string, messages: ReadonlyArray<{ role: 
 }
 
 /** The model a simulated build's board runs: a build stands in for a Jetson, the owner's first target. */
-export const SIM_TARGET = { id: "muse-glimmer-30b-IQ1_S", label: "Muse Glimmer, one-bit" };
+export const SIM_TARGET = { id: "muse-glimmer-30b-IQ1_S", label: "Muse Glimmer, one bit" };
