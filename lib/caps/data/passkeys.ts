@@ -94,8 +94,11 @@ export async function handlePasskey(req: Request, kind: string, step: string, de
   }
 }
 
+/** The product slug a request names, or null for anything that isn't one. */
+const slugOf = (value: unknown): string | null => (typeof value === "string" && /^[a-z0-9-]{1,60}$/.test(value) ? value : null);
+
 async function options(kind: PasskeyState["kind"], body: Record<string, unknown>, deps: PasskeyDeps, now: Date): Promise<Response> {
-  const slug = typeof body.product === "string" && /^[a-z0-9-]{1,60}$/.test(body.product) ? body.product : null;
+  const slug = slugOf(body.product);
   const product = slug ? await deps.productForSignIn(slug) : null;
   if (!product) return refused(404, "This app doesn't take sign-ins.");
   const returnTo = safeReturnPath(body.returnTo) ?? "/";
@@ -144,7 +147,8 @@ async function verifyStep(kind: PasskeyState["kind"], body: Record<string, unkno
     return refused(400, "This sign-in was already used. Start again.");
   }
   const expected = { challenge: state.challenge, origin: deps.origin, rpId: deps.rpId };
-  const product = await deps.productForSignIn((body.product as string) ?? "").catch(() => null);
+  const slug = slugOf(body.product);
+  const product = slug ? await deps.productForSignIn(slug).catch(() => null) : null;
   // The product is the one the state names, looked up again: it must still be live and saving data.
   if (!product || product.id !== state.productId) return refused(404, "This app doesn't take sign-ins right now.");
 
