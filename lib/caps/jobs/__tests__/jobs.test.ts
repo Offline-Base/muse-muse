@@ -420,6 +420,8 @@ describe("jobs on a database", { skip: canMock ? false : "needs --experimental-t
         const connectDeps = { ...gate(live()), store: {} as never, vaultOn: () => true, sendsOn: () => true, keyring: () => null, rules: async () => ({ publicApis: [], keys: [{ service: "weather", why: "x" }], sends: [{ channel: "email", why: "x" }] }) as never, reserveCounter, recordUsage: async () => undefined, fetch: (async () => assert.fail("nothing goes out")) as typeof fetch, userAgent: "test", holdSend: held.holdJobSend, jobRun: store.jobsStore.getRun };
         assert.equal((await connect.handleSend(post("send", { channel: "email", to: ["friend@example.com"], subject: "Plan", body: "Made up." }, hdr), connectDeps)).status, 409);
         assert.equal((await notices()).length, 0, "no draft");
+        const call = await connect.handleVault(post("vault/call", { name: "openweathermap", method: "GET", path: "/data/2.5/weather" }, hdr), ["call"], { ...connectDeps, rules: async () => ({ publicApis: [], keys: [{ service: "openweathermap", why: "x" }], sends: [] }) as never, store: { sealedKey: async () => null } as never });
+        assert.equal(call.status, 409);
       });
     }
 

@@ -1716,7 +1716,7 @@ notify. Writes to the outside wait for a person. Schedules pause after 14 days w
 | `POST {GATEWAY_URL}/jobs/enqueue` `{name, input}` | `cap:jobs`, any principal | Queues a run for the next tick | 50 a day per product |
 | `POST {GATEWAY_URL}/jobs/notify` `{title, body}` | job | An owner notice in Muse Muse | 10 a day |
 | `POST {GATEWAY_URL}/hooks/<productId>/<name>?k=<secret>` | anyone with the secret | Stores the payload and queues the named job | 64 KB, 60 a minute, 1,000 a day |
-| `POST {GATEWAY_URL}/jobs/test-fire` `{name, input}` | build token only | A build job token for the test to call the product's own route | 10 per build |
+| `POST {GATEWAY_URL}/jobs/test-fire` `{name, input}` | build token only | A build job token for the test to call the product's own route | 100 per build, 30 a minute (12a) |
 | `POST /api/products/<slug>/webhooks`, `DELETE ...` | the builder | Makes a hook and shows its secret once | 2 per product |
 
 Every model call in a run carries `x-musemuse-job`, and the gateway holds and settles the run's dollars the way
@@ -1779,13 +1779,41 @@ Built on `tg-cap-int` at d44d1db. Every flag is off and `CAP_READY.jobs` stays f
 **Money.** A model call with `x-musemuse-job` holds and settles through `holdRun` and `settleRun`, keyed by product and run and pinned to one
 window past the run's 48-hour age limit, so hours, a redeploy's new token or the hourly turnover can't start its dollars over. Measured
 estimates: 2,000 output tokens on Muse Wonder is $0.042, and a call naming none counts as 8,000, $0.162, above the $0.10 default. That
-call is refused and the run goes on. Any other refusal stops the run (`budget`) and tells the owner. `JOBS_DAILY_USD` is
+call is refused and the run goes on. The run stops (`budget`) and tells the owner only as "After the review" below says. `JOBS_DAILY_USD` is
 platform-wide and is checked before each call, so it can be passed by what's already running, each within its run's dollars. The token's
 daily budget and the builder's cap (unit 1) still apply. A build's job calls count on the run but not on `JOBS_DAILY_USD`.
 
 **Who it runs for.** The cron's SQL requires status live or partial, a live link, no takedown, no ban and not the guest account. It only
 reads `live` namespace rows. A product whose owner has no visit is counted from its creation. A pause for being away or a product going
 off is lifted by the owner's visit, once the product is on.
+
+**After the review (Nov 1).** Every item has a test that failed before its fix.
+- **Test fires.** 10 a build ran out in a normal build: a smoke run repeats for Muse Code's own verify, the platform's verify and each fix round. Now
+  100 fires and 100 hook addresses a build, counted apart, and 30 a minute. The biggest brief fires 8 a run, over 4 rounds of 3 verifies. Each run keeps its
+  dollars and the build token's budget still applies. `fireJob` and `fireWebhook` fire nothing in the `demo` and `studio` projects, which replay what smoke saved.
+- **The owner away.** Past `JOBS_PAUSE_DAYS` everything stops, not only schedules: the claim skips the product, queued runs are cancelled, a job's enqueue and
+  live hooks answer 403 until a visit. An owner's enqueue still works, since their pass means they came. A build's test hook doesn't check.
+- **Fair shares.** Products take turns in the claim (every product's oldest run before anyone's second). New settings: `JOBS_PRODUCT_DAILY_RUNS` (400; three
+  15-minute schedules take 288) and `JOBS_PRODUCT_DAILY_USD` ($1). Over its ticks, a claimed run goes back unspent and the owner hears once. Over its
+  dollars, a model call gets `budget_exceeded` and the run isn't ended by it. At most 100 runs wait per product: hooks and enqueue get 429 past that.
+  **For the owner:** $1 a product is my number. A schedule making one 2,000-token call every 15 minutes costs about $4 a day and would stop at about a quarter of that.
+- **Deploys.** The ship step runs on every deploy while jobs is enabled. A brief with no jobs block deletes the product's schedules and empties its queue
+  (`clearSchedules`). That doesn't count as an owner visit, and a product that never had jobs is untouched. The import publish (`lib/promote/workflow.ts`) now runs
+  `capsShipStep` after its deploy event, sandbox still awake, so a locally built product gets its schedules. It also runs the extension's step, as a build does.
+- **Job tokens.** `jr1.<product>.<run>.<tick>.<attempt>.<exp>.<sig>`. `closeTick` matches tick and try, so a late answer gets 409 and changes nothing. Data, the vault call,
+  held sends and enqueue ask `jobRunRefusal` (`lib/caps/jobs/run-check.ts`): the run must be running, on this product, in this namespace. No way to read the run means refused.
+- **Dollars.** `holdRun` says which limit refused. A run stops only when settled spend plus $0.01 is over its limit, or after 60 model calls, with its own notice. Holds alone only
+  refuse the call. Tool-call refusals never stop a run. The skill says to make model calls one at a time.
+- **Notices.** 20 held sends a day per product (`jobs-held:`). A failing job leaves one unread notice per job. Unanswered held sends list first, and the dashboard says how
+  many more aren't shown. Held sends expire after 14 days in the sweep, losing their addresses and words, and confirming re-checks the age and that the product's rules still have that channel.
+- **Who counts as the owner.** Only the owner's own pass counts as a visit, and only the owner can answer a notice. An admin still gets a pass. A deploy still counts as a
+  visit, even an admin's refinement.
+- **Smaller.** Odd intervals round to the nearest that runs evenly from midnight (15, 20, 30 minutes; 1, 2, 3, 4, 6, 8, 12 hours; whole days, at most 30), with ties going longer. What's stored,
+  shown and written into the brief is the rounded one. NUL or broken text answers 400. A finished run drops its `input`. A queued run cancelled at 48 hours tells the owner. A brief with no `results` (only
+  possible with no usable data block, or a writer's slip) must leave a notice instead: fixed check `job-told-owner`.
+
+**Rejected or changed from the review.** The review suggested about 40 test fires: too few for the biggest brief (8 a run). It suggested one run per product per batch: turns keep the same
+fairness without leaving the other 9 slots idle for a lone product. It suggested a "more" link, but no page lists all notices, so it's a plain count.
 
 **The owner's pages.** `components/jobs/OwnerNotices` on the dashboard, `components/jobs/JobsPanel` on the product page (schedules, webhooks with
 Make, Replace and Remove, recent runs). Neither reads anything while the cap is off. Both use existing tokens and classes.
@@ -1802,6 +1830,9 @@ Make, Replace and Remove, recent runs). Neither reads anything while the cap is 
 - `template/scripts/__tests__/caps-jobs`, a 0023 case in the migrations test, `caps-off` and the flags-off lists.
 
 **Not proven.**
+- `fireJob` and `fireWebhook` have run under real Playwright only against a fake gateway and route. `checkResultShown` has never run.
+- The dashboard's "more not shown" line and the other panels have never rendered in a browser.
+- The import publish's step is tested with its steps faked. No real import has run it.
 - No real test build (section 22). As units 3 to 14 found, a local run's sandbox can't reach the gateway, and a credentialed run wasn't
   available here, so Muse Code has never written a job from this prompt, and `tests/caps/jobs.ts` and the `caps` step haven't run in a
   real verify. That's why `CAP_READY.jobs` is false. The one real call this leaves for Nov 3: a daily digest test-fired twice and a webhook
@@ -1812,8 +1843,8 @@ Make, Replace and Remove, recent runs). Neither reads anything while the cap is 
 - The owner's panels have tests for their data, not a browser screenshot.
 
 **For the owner.** Meta 10.1(i): whether runs with nobody present count as access "on behalf of" a third party (section 21). Until that's answered
-the rule stands: owner products only, visitors can't start jobs. `JOBS_WEBHOOKS` means a stranger with the address can queue up to 1,000 runs a
-day on a product, each up to `JOBS_RUN_USD`: the token's daily budget and `JOBS_DAILY_USD` are what bound that in dollars.
+the rule stands: owner products only, visitors can't start jobs. `JOBS_WEBHOOKS` means a stranger with the address can queue runs on a product, at most 100 waiting and
+`JOBS_PRODUCT_DAILY_RUNS` ticks and `JOBS_PRODUCT_DAILY_USD` a day, each run up to `JOBS_RUN_USD`. Four busy products can still use up the platform's `JOBS_DAILY_USD`.
 
 ## 13. Unit 7: live (D)
 
@@ -3242,6 +3273,8 @@ game canvas changes on a key press. Build: an extension that saves a page note t
 Phaser game.
 
 ## Changes to this contract
+
+- Nov 1 (unit 6, review fixes): section 12's test-fire limit is 100 a build and 30 a minute, with hook addresses counted apart. Section 5 gains `JOBS_PRODUCT_DAILY_RUNS` (400) and `JOBS_PRODUCT_DAILY_USD` (1). `jr1` signs its tick and try (2.2's shape changes). `lib/promote/workflow.ts` runs `capsShipStep` when a cap has one. `lib/gateway/runs.ts`'s refusal carries a `reason`.
 
 - Nov 1 (unit 7, review fixes): section 13's table: a chunk's per-IP count has its own key (`live-ip:`), the stream has `event: caught-up`, and slots of 2 per ticket and 10 per address. 13a updated: caption minutes count new audio only, `checkLiveUpdate` takes `change(first, mark)` and `shows(mark, other)`, the notice promises only what the app does.
 
