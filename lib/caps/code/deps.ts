@@ -4,7 +4,7 @@ import { launchSession } from "@/lib/caps/code/session";
 import { codeSpendToday, recordExecRun } from "@/lib/caps/code/store";
 import { capProduct, capToken } from "@/lib/caps/store";
 import { env } from "@/lib/env";
-import { acquireInFlight, hitRateLimits, releaseInFlight, reserveCounter, reserveSpend, settleSpend } from "@/lib/gateway/store";
+import { acquireInFlight, adjustCounter, hitRateLimits, releaseInFlight, reserveCounter, reserveSpend, settleSpend } from "@/lib/gateway/store";
 import { buildFixtures } from "@/lib/tools/store";
 import { builderSpendToday } from "@/lib/trust/spend";
 import { platformSpendToday, tokenSpendToday } from "@/lib/usage";
@@ -20,6 +20,7 @@ export function codeDeps(): CodeDeps {
     acquireInFlight,
     releaseInFlight,
     reserveCounter,
+    adjustCounter,
     tokenSpendToday,
     platformSpendToday,
     builderSpendToday: (userId) => builderSpendToday(userId),

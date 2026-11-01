@@ -46,6 +46,7 @@ const codeOff = (): CodeDeps => ({
   adminEmails: [],
   hitRateLimits: untouched<CodeDeps["hitRateLimits"]>("hitRateLimits"),
   reserveCounter: untouched<CodeDeps["reserveCounter"]>("reserveCounter"),
+  adjustCounter: untouched<CodeDeps["adjustCounter"]>("adjustCounter"),
   execDailyUsd: untouched<CodeDeps["execDailyUsd"]>("execDailyUsd"),
   browseDailyUsd: untouched<CodeDeps["browseDailyUsd"]>("browseDailyUsd"),
   spendToday: untouched<CodeDeps["spendToday"]>("spendToday"),

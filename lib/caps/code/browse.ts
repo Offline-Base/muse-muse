@@ -1,6 +1,7 @@
 import { isIP } from "node:net";
 import { capError } from "@/lib/caps/gate";
 import { BROWSE_LIMITS } from "@/lib/caps/code/limits";
+import { isBrowseHost } from "@/lib/caps/code/policy";
 import type { CodeSession } from "@/lib/caps/code/session";
 import { isPublicHttpUrl, urlsInInput } from "@/lib/tools/args";
 
@@ -78,10 +79,14 @@ export function readBrowseArgs(body: Record<string, unknown>): BrowseArgs | Resp
   }
   if (url.protocol !== "https:" && url.protocol !== "http:") return capError("invalid_arguments", "Only http and https pages can be opened.");
   if (url.username || url.password) return capError("invalid_arguments", "Browsing never signs in, so an address can't carry a user name or password.");
+  // A trailing dot names the same site: it goes everywhere at once (the address, the typed check, the firewall).
   const host = url.hostname.toLowerCase().replace(/\.$/, "");
   if (isIP(host.replace(/^\[|\]$/g, ""))) return capError("invalid_arguments", "Open a site by its name, not an IP address.");
+  if (host !== url.hostname) url.hostname = host;
   if (url.port && !(url.protocol === "https:" ? ["443"] : ["80"]).includes(url.port)) return capError("invalid_arguments", "Only a site's usual port can be opened.");
   if (!isPublicHttpUrl(url.href)) return capError("invalid_arguments", "That address isn't a public website.");
+  // The firewall takes plain names only, so a name it can't hold is refused here, not after a lookup.
+  if (!isBrowseHost(host)) return capError("invalid_arguments", "That site's name has characters browsing can't open. Use a name of letters, digits, dots and dashes.");
   if (!typedByPerson(url.href, body.input)) return capError("invalid_arguments", "Only a page whose address the person typed can be opened. Its address must be in input.");
   const actions: BrowseAction[] = [];
   if (body.actions !== undefined && body.actions !== null) {
@@ -180,7 +185,7 @@ export function browseOutcomeOf(raw: Buffer | null, host: string): BrowseOutcome
   }
   let finalHost = "";
   try {
-    finalHost = new URL(String(out.url)).hostname.toLowerCase();
+    finalHost = new URL(String(out.url)).hostname.toLowerCase().replace(/\.$/, "");
   } catch {
     finalHost = "";
   }

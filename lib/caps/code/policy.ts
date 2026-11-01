@@ -30,9 +30,14 @@ export const PRIVATE_CIDRS = [
 /** A host name as browse takes it: letters, digits, dots and dashes, with a dot. */
 const HOST = /^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$/;
 
+/** A host browse can put in its firewall: lower case, letters, digits, dots and dashes, with a dot, no trailing dot. */
+export function isBrowseHost(host: string): boolean {
+  return HOST.test(host);
+}
+
 /** /browse: only the one host the person typed, and no private address. */
 export function browsePolicy(host: string): NetworkPolicy {
   const h = host.toLowerCase();
-  if (!HOST.test(h)) throw new Error("browsePolicy takes a plain host name.");
+  if (!isBrowseHost(h)) throw new Error("browsePolicy takes a plain host name.");
   return { allow: [h], subnets: { deny: [...PRIVATE_CIDRS] } };
 }
