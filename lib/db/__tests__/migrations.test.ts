@@ -42,7 +42,8 @@ const RESERVED = new Set([16]);
  * that ran a migration above a gap would skip the gap's migration for good: no branch with a gap goes near a shared
  * database. With MIGRATIONS_FOR=main (the merge to main, or any shared database) a gap fails outright.
  */
-const PENDING_WAVE3 = new Set([21, 22, 23]);
+// 25 and 26 are units 11 and 13, 27 is General's (replications): 0028_code_sessions sits above them (wave3.md).
+const PENDING_WAVE3 = new Set([21, 22, 23, 25, 26, 27]);
 const pendingWave3 = (i: number) => PENDING_WAVE3.has(i);
 const snapshot = (idx: number) => JSON.parse(readFileSync(join(FOLDER, `meta/${String(idx).padStart(4, "0")}_snapshot.json`), "utf8"));
 
@@ -52,7 +53,7 @@ const database = (client: PGlite) => drizzle({ client, schema });
  * Wave 3's migrations, in the agreed order (docs/CAPABILITIES.md, section 4), after General's 0017 (0016 is retired).
  * Each wave 3 unit appends its tag here. Their journal times follow the contract's rule.
  */
-const WAVE3_TAGS = ["0018_trust", "0019_engine", "0020_data", "0024_code"];
+const WAVE3_TAGS = ["0018_trust", "0019_engine", "0020_data", "0024_code", "0028_code_sessions"];
 const tagNumber = (tag: string) => Number(tag.slice(0, 4));
 
 /** A copy of the migrations that stops at `lastIdx`, as a database that hasn't had the newer ones would have seen. */
@@ -475,6 +476,42 @@ describe("a database already at 0012", () => {
     assert.equal((await columns(client, "exec_runs")).get("language")?.nullable, true);
     await client.exec(`delete from products where id = '${productId}'`);
     assert.equal((await typed.select().from(schema.execRuns)).length, 0);
+    await client.close();
+  });
+
+  it("0028_code_sessions: a database at 0024 keeps its products and tokens, and gets code_sessions with its defaults", async () => {
+    const dir = folderThrough(24);
+    dirs.push(dir);
+    const client = new PGlite();
+    const db = drizzle({ client });
+    await migrate(db, { migrationsFolder: dir });
+    assert.equal((await columns(client, "code_sessions")).size, 0);
+    const [userId, productId, tokenId] = [randomUUID(), randomUUID(), randomUUID()];
+    await client.exec(`
+      insert into users (id, email) values ('${userId}', 'old@example.com');
+      insert into products (id, slug, name, owner_id, status) values ('${productId}', 'old-one', 'Old One', '${userId}', 'live');
+      insert into gateway_tokens (id, product_id, token_hash, scope, allowed_models, daily_budget_usd) values ('${tokenId}', '${productId}', 'h1', 'live', '[]', 3);
+    `);
+    await migrate(db, { migrationsFolder: FOLDER });
+    const typed = database(client);
+    const [product] = await typed.select().from(schema.products);
+    assert.equal(product!.slug, "old-one");
+    assert.equal((await typed.select().from(schema.gatewayTokens)).length, 1);
+    const [row] = await typed
+      .insert(schema.codeSessions)
+      .values({ id: randomUUID(), productId, namespace: "live", parentTokenId: tokenId, principal: "owner", model: "muse-wonder-1.0", sandboxName: "mm-musecode-x", budgetUsd: 1, limitMs: 900_000, endsAt: new Date() })
+      .returning();
+    assert.equal(row!.status, "starting");
+    assert.equal(row!.costUsd, 0);
+    assert.deepEqual(row!.events, []);
+    assert.deepEqual(row!.files, []);
+    assert.equal(row!.logOffset, 0);
+    assert.equal(row!.worked, null);
+    // A token that goes leaves the session's row, with the link cleared.
+    await client.exec(`delete from gateway_tokens where id = '${tokenId}'`);
+    assert.equal((await typed.select().from(schema.codeSessions))[0]!.parentTokenId, null);
+    await client.exec(`delete from products where id = '${productId}'`);
+    assert.equal((await typed.select().from(schema.codeSessions)).length, 0);
     await client.close();
   });
 

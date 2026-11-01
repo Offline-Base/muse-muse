@@ -7,7 +7,7 @@ export interface UsageContext {
    * "docs" is the live docs demos (lib/docs/proxy), which run on the platform's key with no product. "tools" is the tool
    * gateway's calls to Composio (docs/AGENT_TOOLS.md). "exec" and "browse" are the code cap's sandboxes (unit 9).
    */
-  source: "gateway" | "muse_code" | "platform" | "docs" | "tools" | "exec" | "browse";
+  source: "gateway" | "muse_code" | "platform" | "docs" | "tools" | "exec" | "browse" | "code_session";
   endpoint: string;
   productId?: string | null;
   buildId?: string | null;

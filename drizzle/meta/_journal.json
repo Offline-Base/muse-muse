@@ -148,6 +148,13 @@
       "when": 1793432030646,
       "tag": "0024_code",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1793432270646,
+      "tag": "0028_code_sessions",
+      "breakpoints": true
     }
   ]
 }

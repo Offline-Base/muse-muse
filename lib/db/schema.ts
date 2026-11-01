@@ -18,6 +18,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import type { Brief, TargetId } from "@/lib/brief/schema";
+import type { CodeSessionDropped, CodeSessionEvent, CodeSessionFile, CodeSessionPrincipal, CodeSessionStatus } from "@/lib/caps/code/musecode/types";
 import type { DataScope } from "@/lib/caps/data/types";
 import type { CapDrop } from "@/lib/caps/ready";
 import type { DecisionRows, DecisionSpec } from "@/lib/decide/types";
@@ -217,7 +218,8 @@ export const gatewayTokens = pgTable(
       .references(() => products.id),
     /** HMAC-SHA256 of the token with GATEWAY_TOKEN_PEPPER. The token itself is never stored. */
     tokenHash: text("token_hash").notNull().unique(),
-    scope: text("scope").$type<"build" | "live">().notNull(),
+    // Wave 3, unit 9: "code_session" is a Muse Code session's own token (0028_code_sessions). A type change only.
+    scope: text("scope").$type<"build" | "live" | "code_session">().notNull(),
     allowedModels: jsonb("allowed_models").$type<string[]>().notNull(),
     dailyBudgetUsd: real("daily_budget_usd").notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
@@ -242,7 +244,8 @@ export const usage = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     // Wave 3, unit 9: "exec" and "browse" are the code cap's sandboxes. A type change only, no migration.
-    source: text("source").$type<"gateway" | "muse_code" | "platform" | "docs" | "tools" | "exec" | "browse">().notNull(),
+    // Wave 3, unit 9: "code_session" is a Muse Code session's sandbox time (0028). A type change only.
+    source: text("source").$type<"gateway" | "muse_code" | "platform" | "docs" | "tools" | "exec" | "browse" | "code_session">().notNull(),
     productId: uuid("product_id").references(() => products.id),
     buildId: uuid("build_id").references(() => builds.id),
     tokenId: uuid("token_id").references(() => gatewayTokens.id),
@@ -849,4 +852,62 @@ export const execRuns = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("exec_runs_product_idx").on(t.productId, t.namespace, t.createdAt)],
+);
+
+// ---------- Wave 3, 0028_code_sessions (unit 9) ----------
+
+/**
+ * One Muse Code session a product ran for a person or for its build's tests (docs/CAPABILITIES.md, 15b), each in its
+ * own sandbox the platform started. `namespace` is `live`, or `b:<buildId>` for a build's sessions. `token_id` is the
+ * session's own gateway token (scope code_session), revoked when it ends; `parent_token_id` the product or build token
+ * that started it, whose daily budget the session shares. `subject_key` is the caller's subject key, never a raw id.
+ *
+ * The task itself is never stored. `events` are the condensed, redacted steps a person sees, `final_text` the agent's
+ * last message (redacted), `files` and `dropped` what the result zip kept and left out, and `result_url` the zip on
+ * Blob under an unguessable name until `result_expires_at`, when the sweep deletes it. Money is in `usage` as for every
+ * call: the session token's model calls (source `gateway`) and the sandbox's time (source `code_session`).
+ */
+export const codeSessions = pgTable(
+  "code_sessions",
+  {
+    id: uuid("id").primaryKey(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    namespace: text("namespace").notNull(),
+    tokenId: uuid("token_id").references(() => gatewayTokens.id, { onDelete: "set null" }),
+    parentTokenId: uuid("parent_token_id").references(() => gatewayTokens.id, { onDelete: "set null" }),
+    principal: text("principal").$type<CodeSessionPrincipal>().notNull(),
+    subjectKey: text("subject_key"),
+    model: text("model").notNull(),
+    status: text("status").$type<CodeSessionStatus>().notNull().default("starting"),
+    reason: text("reason"),
+    sandboxName: text("sandbox_name").notNull(),
+    budgetUsd: real("budget_usd").notNull(),
+    limitMs: integer("limit_ms").notNull(),
+    /** The sandbox's time, reserved at the start and settled at the end (usage source code_session). */
+    sandboxUsageId: uuid("sandbox_usage_id"),
+    costUsd: real("cost_usd").notNull().default(0),
+    binaryHashes: jsonb("binary_hashes").$type<string[]>().notNull().default([]),
+    logOffset: integer("log_offset").notNull().default(0),
+    condense: jsonb("condense").$type<Record<string, unknown>>().notNull().default({}),
+    events: jsonb("events").$type<CodeSessionEvent[]>().notNull().default([]),
+    nextEvent: integer("next_event").notNull().default(0),
+    finalText: text("final_text"),
+    exitCode: integer("exit_code"),
+    worked: boolean("worked"),
+    files: jsonb("files").$type<CodeSessionFile[]>().notNull().default([]),
+    dropped: jsonb("dropped").$type<CodeSessionDropped[]>().notNull().default([]),
+    resultUrl: text("result_url"),
+    resultExpiresAt: timestamp("result_expires_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("code_sessions_product_idx").on(t.productId, t.status),
+    index("code_sessions_status_idx").on(t.status, t.endsAt),
+    index("code_sessions_namespace_idx").on(t.namespace, t.createdAt),
+  ],
 );
