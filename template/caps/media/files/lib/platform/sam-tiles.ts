@@ -8,7 +8,7 @@
 //     most SAM_CHUNK_FRAMES frames, SAM_VIDEO_FRAMES_MAX frames in all, each with its place on the clip's timeline.
 // Tile math and merging are plain functions, so they run in Node for tests. findAll and videoChunks run in the browser.
 import { MediaError } from "./media-assets";
-import { imagesToVideo } from "./video";
+import { encodeFrames, type DrawFrame } from "./video";
 
 export const SAM_OBJECTS_PER_CALL = 16;
 export const SAM_TILES_MAX = 16;
@@ -253,7 +253,31 @@ const TILE_SIDE_MAX = 1024;
 
 /** True in a build's own test runs (NEXT_PUBLIC_MUSEMUSE_MEDIA_SMOKE in its .env.local), never on the live product. */
 export const SMOKE = process.env.NEXT_PUBLIC_MUSEMUSE_MEDIA_SMOKE === "1";
-let smokeTilesUsed = 0;
+const SMOKE_KEY = "musemuse.media.smokeTiles";
+let smokeTilesInPage = 0;
+
+/**
+ * SAM calls this browser tab has made under the platform's tests. Kept in sessionStorage, so a reload or a link to
+ * another page of the product doesn't start the count again; the page's own count when storage can't be read.
+ */
+function smokeTilesUsed(): number {
+  try {
+    const stored = Number(sessionStorage.getItem(SMOKE_KEY) ?? 0);
+    if (Number.isFinite(stored) && stored > smokeTilesInPage) smokeTilesInPage = stored;
+  } catch {
+    // Storage blocked: the page's own count is all there is.
+  }
+  return smokeTilesInPage;
+}
+
+function useSmokeTile(): void {
+  smokeTilesInPage = smokeTilesUsed() + 1;
+  try {
+    sessionStorage.setItem(SMOKE_KEY, String(smokeTilesInPage));
+  } catch {
+    // As above.
+  }
+}
 
 /**
  * Splits work so a tile that comes back full of objects gets four smaller tiles in its place, until maxTiles calls
@@ -292,8 +316,9 @@ export async function runTiles(width: number, height: number, run: (tile: Tile, 
 /** Every match for `phrase` in a photo, past SAM's 16 a call. Browser only. */
 export async function findAll(image: ImageInput, phrase: string, opts: FindAllOptions): Promise<FindAllResult> {
   if (!phrase.trim()) throw new MediaError("invalid", "Say what to look for.");
-  // Under the platform's tests the page gets SAM_TILES_SMOKE calls in all, however often it runs findAll.
-  const smokeLeft = SAM_TILES_SMOKE - smokeTilesUsed;
+  // Under the platform's tests a browser tab gets SAM_TILES_SMOKE calls in all, however often it runs findAll and
+  // however often the page is reloaded.
+  const smokeLeft = SAM_TILES_SMOKE - (SMOKE ? smokeTilesUsed() : 0);
   if (SMOKE && smokeLeft <= 0) throw new MediaError("too_large", `The test run already used its ${SAM_TILES_SMOKE} photo pieces.`);
   const maxTiles = SMOKE ? Math.min(smokeLeft, opts.maxTiles ?? SAM_TILES_MAX) : opts.maxTiles;
   const img = await loadImage(image);
@@ -310,7 +335,7 @@ export async function findAll(image: ImageInput, phrase: string, opts: FindAllOp
       canvas.height = Math.max(1, Math.round(tile.height * scale));
       ctx.drawImage(img, tile.left, tile.top, tile.width, tile.height, 0, 0, canvas.width, canvas.height);
       const url = canvas.toDataURL("image/jpeg", 0.9);
-      if (SMOKE) smokeTilesUsed++;
+      if (SMOKE) useSmokeTile();
       const boxes = await opts.segment(url, phrase.trim(), { index, width: canvas.width, height: canvas.height });
       return { tile, boxes: Array.isArray(boxes) ? boxes : [], scale };
     },
@@ -355,7 +380,23 @@ export interface VideoChunk extends ChunkPlan {
   blob: Blob;
 }
 
-/** A clip cut into SAM-sized MP4 chunks at a lower frame rate. Browser only; needs H.264 encoding. */
+/** Moves the clip to `t` seconds and waits until that frame can be drawn. */
+async function seekTo(video: HTMLVideoElement, t: number): Promise<void> {
+  if (video.readyState >= 2 && Math.abs(video.currentTime - t) < 0.0005) return;
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new MediaError("failed", "The clip stopped loading part way through.")), 15_000);
+    video.onseeked = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    video.currentTime = t;
+  });
+}
+
+/**
+ * A clip cut into SAM-sized MP4 chunks at a lower frame rate. Browser only; needs H.264 encoding. Each frame is grabbed
+ * from the clip and handed straight to the encoder, so only one frame is held at a time, however long the chunk.
+ */
 export async function videoChunks(file: Blob, opts: { sampleFps?: number; chunkFrames?: number; maxFrames?: number; maxSide?: number; onProgress?: (done: number) => void } = {}): Promise<{ chunks: VideoChunk[]; capped: boolean; costUsd: number }> {
   const url = URL.createObjectURL(file);
   const video = document.createElement("video");
@@ -373,28 +414,24 @@ export async function videoChunks(file: Blob, opts: { sampleFps?: number; chunkF
     const scale = Math.min(1, side / Math.max(video.videoWidth, video.videoHeight));
     const w = Math.max(2, Math.round((video.videoWidth * scale) / 2) * 2);
     const h = Math.max(2, Math.round((video.videoHeight * scale) / 2) * 2);
-    const total = plan.chunks.reduce((n, c) => n + c.frames, 0);
-    let grabbed = 0;
+    const bitrate = Math.round(Math.min(8_000_000, Math.max(500_000, w * h * 0.6 * plan.fps / 4)));
     const out: VideoChunk[] = [];
     for (const c of plan.chunks) {
-      const frames: HTMLCanvasElement[] = [];
-      for (let i = 0; i < c.frames; i++) {
-        const t = c.startMs / 1000 + i / plan.fps;
-        await new Promise<void>((resolve) => {
-          video.onseeked = () => resolve();
-          video.currentTime = Math.min(t, Math.max(0, video.duration - 0.001));
-        });
-        const canvas = document.createElement("canvas");
-        canvas.width = w;
-        canvas.height = h;
-        canvas.getContext("2d")!.drawImage(video, 0, 0, w, h);
-        frames.push(canvas);
-        opts.onProgress?.(++grabbed / total / 2);
-      }
-      const made = await imagesToVideo(frames, { fps: plan.fps, width: w, height: h, codec: "avc" });
-      URL.revokeObjectURL(made.url);
-      out.push({ ...c, blob: made.blob });
-      opts.onProgress?.(0.5 + out.length / plan.chunks.length / 2);
+      const frames = async function* (): AsyncIterable<DrawFrame> {
+        for (let i = 0; i < c.frames; i++) {
+          await seekTo(video, Math.min(c.startMs / 1000 + i / plan.fps, Math.max(0, video.duration - 0.001)));
+          yield { image: video, width: video.videoWidth, height: video.videoHeight };
+        }
+      };
+      const done = out.length;
+      const made = await encodeFrames(frames, c.frames, w, h, plan.fps, {
+        codec: "avc",
+        bitrate,
+        onProgress: (d) => opts.onProgress?.((done + d) / plan.chunks.length),
+      });
+      if (!made) throw new MediaError("unsupported", "This browser can't make H.264 video, which this needs. Try Chrome, Edge or Safari.");
+      out.push({ ...c, blob: new Blob([made.bytes as Uint8Array<ArrayBuffer>], { type: "video/mp4" }) });
+      opts.onProgress?.(out.length / plan.chunks.length);
     }
     return { chunks: out, capped: plan.capped, costUsd: plan.costUsd };
   } finally {

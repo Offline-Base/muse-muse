@@ -332,6 +332,22 @@ describe("the media checker (scripts/caps/media.mjs)", () => {
     writeFileSync(path.join(dir, "app", "voice.ts"), 'export const MODEL = "https://huggingface.co/x/resolve/main/model.onnx";\n');
     assert.equal(byId(await C.check({ record: rec(...Object.values(good)), root: dir }))["no-cdn"], false);
     assert.equal(byId(await C.check({ record: rec(...Object.values(good)), root: product({ link: false }) })).notices, false);
+    const noOrt = product();
+    rmSync(path.join(noOrt, "public/notices/onnxruntime.txt"));
+    const ort = (await C.check({ record: rec(...Object.values(good)), root: noOrt })).find((c) => c.id === "notices");
+    assert.equal(ort.ok, false);
+    assert.match(ort.detail, /onnxruntime\.txt is missing/);
+  });
+});
+
+describe("the open source notices (public/notices)", () => {
+  test("carry ONNX Runtime 1.30.0's third-party notices for the code built into its wasm, linked from media.txt", () => {
+    const media = readFileSync(path.join(FILES, "public/notices/media.txt"), "utf8");
+    assert.match(media, /\/notices\/onnxruntime\.txt/);
+    const ort = readFileSync(path.join(FILES, "public/notices/onnxruntime.txt"), "utf8");
+    assert.match(ort, /blob\/v1\.30\.0\/ThirdPartyNotices\.txt/);
+    for (const part of ["protocolbuffers/protobuf", "abseil-cpp", "google/flatbuffers", "Eigen", "SafeInt"]) assert.ok(ort.includes(part), part);
+    assert.ok(ort.length > 300_000, "the whole upstream file");
   });
 });
 
@@ -379,9 +395,10 @@ async function bundle(assetsUrl) {
   const entry = `
     import { imagesToVideo } from "./video.ts";
     import { midiBlob, toMidi } from "./midi.ts";
-    import { findAll } from "./sam-tiles.ts";
-    import { speak } from "./speech.ts";
-    window.Media = { imagesToVideo, midiBlob, toMidi, findAll, speak };
+    import { findAll, videoChunks } from "./sam-tiles.ts";
+    import { readMp4Info } from "./mp4.ts";
+    import { playSamples, speak } from "./speech.ts";
+    window.Media = { imagesToVideo, midiBlob, toMidi, findAll, videoChunks, readMp4Info, playSamples, speak };
   `;
   const out = await esbuild.build({
     stdin: { contents: entry, resolveDir: PLATFORM, loader: "ts" },
@@ -489,6 +506,141 @@ describe("the media helpers in Chromium", { skip: browserProblem ?? false }, () 
       await page.waitForFunction(() => document.getElementById("count-out").textContent);
       const second = await page.evaluate(() => Media.findAll(document.createElement("canvas"), "dot", { tiles: 4, segment: async () => [] }).then(() => "ran", (e) => e.message));
       assert.match(second, /already used its 4 photo pieces/);
+    } finally {
+      await close();
+    }
+  });
+
+  test("findAll's 4 test calls hold across a reload of the page", async () => {
+    const { page, close } = await open();
+    try {
+      await page.click("#count");
+      await page.waitForFunction(() => document.getElementById("count-out").textContent);
+      await page.reload();
+      const again = await page.evaluate(() => Media.findAll(document.createElement("canvas"), "dot", { tiles: 4, segment: async () => [] }).then(() => "ran", (e) => e.message));
+      assert.match(again, /already used its 4 photo pieces/);
+    } finally {
+      await close();
+    }
+  });
+
+  test("videoChunks cuts an 80 second clip into H.264 chunks of 300 and 100 frames, one frame held at a time", async () => {
+    const { page, close } = await open();
+    try {
+      const got = await page.evaluate(async () => {
+        // The clip: 120 pictures at 1.5 a second is 80 seconds, VP9 when the browser has it.
+        const pics = [];
+        for (let i = 0; i < 120; i++) {
+          const c = document.createElement("canvas"); c.width = 160; c.height = 120;
+          const x = c.getContext("2d"); x.fillStyle = "hsl(" + i * 3 + " 70% 50%)"; x.fillRect(0, 0, 160, 120);
+          x.fillStyle = "#fff"; x.fillRect((i * 7) % 140, 50, 20, 20); pics.push(c);
+        }
+        const clip = await Media.imagesToVideo(pics, { fps: 1.5, codec: "vp9" }).catch(() => Media.imagesToVideo(pics, { fps: 1.5 }));
+        const make = document.createElement.bind(document);
+        let canvases = 0;
+        document.createElement = (tag, o) => (String(tag).toLowerCase() === "canvas" && canvases++, make(tag, o));
+        try {
+          const r = await Media.videoChunks(clip.blob);
+          const infos = await Promise.all(r.chunks.map(async (c) => Media.readMp4Info(new Uint8Array(await c.blob.arrayBuffer()))));
+          return { source: clip.codec, sourceMs: clip.durationMs, chunks: r.chunks.map((c) => [c.frames, c.startMs, c.endMs]), infos: infos.map((i) => [i.codec, i.samples, i.durationMs, i.complete]), capped: r.capped, costUsd: r.costUsd, canvases };
+        } finally {
+          document.createElement = make;
+        }
+      });
+      assert.equal(got.sourceMs, 80000);
+      assert.deepEqual(got.chunks, [[300, 0, 60000], [100, 60000, 80000]]);
+      assert.deepEqual(got.infos.map((i) => i[1]), [300, 100], "each chunk's own index has its frames");
+      assert.ok(got.infos.every((i) => i[0]?.startsWith("avc1") && i[3]), JSON.stringify(got.infos));
+      assert.deepEqual(got.infos.map((i) => i[2]), [60000, 20000]);
+      assert.equal(got.capped, false);
+      assert.ok(Math.abs(got.costUsd - 0.08) < 1e-9, String(got.costUsd));
+      assert.ok(got.canvases <= 1, `${got.canvases} canvases made for 400 frames`);
+    } finally {
+      await close();
+    }
+  });
+
+  test("video: Baseline first, and an encoder that reorders frames is swapped, never written out of order", async () => {
+    // A stand-in encoder: Main and High give frames back in pairs swapped, as B-frames would; others in order.
+    const fake = `
+      window.__configured = [];
+      window.__unsupported = () => false;
+      class FakeEncoder {
+        static async isConfigSupported(c) { return { supported: !window.__unsupported(c.codec), config: c }; }
+        constructor(init) { this.init = init; this.q = []; this.state = "unconfigured"; }
+        get encodeQueueSize() { return 0; }
+        configure(c) { this.c = c; this.state = "configured"; window.__configured.push(c.codec); }
+        encode(frame, o) { this.q.push({ timestamp: frame.timestamp, duration: frame.duration, key: !!o?.keyFrame }); }
+        async flush() {
+          const order = this.q.map((_, i) => i);
+          if (/^avc1\.(4D|64)/.test(this.c.codec)) for (let i = 1; i + 1 < order.length; i += 2) [order[i], order[i + 1]] = [order[i + 1], order[i]];
+          order.forEach((n, k) => {
+            const f = this.q[n];
+            this.init.output({ byteLength: 5, copyTo: (d) => d.set([0, 0, 0, 1, n]), timestamp: f.timestamp, duration: f.duration, type: f.key ? "key" : "delta" },
+              k === 0 ? { decoderConfig: { description: new Uint8Array([1, 0x42, 0xe0, 0x1f, 0xff, 0xe1, 0, 4, 0x67, 0x42, 0xe0, 0x1f, 1, 0, 4, 0x68, 0xce, 0x3c, 0x80]) } } : undefined);
+          });
+        }
+        close() { this.state = "closed"; }
+      }
+      window.VideoEncoder = FakeEncoder;`;
+    const { page, close } = await open(js);
+    try {
+      await page.evaluate(fake);
+      const run = (unsupported, codec) =>
+        page.evaluate(async ([u, codec]) => {
+          window.__configured = [];
+          window.__unsupported = (c) => new RegExp(u).test(c);
+          const pics = Array.from({ length: 6 }, () => { const c = document.createElement("canvas"); c.width = 1280; c.height = 960; return c; });
+          try {
+            const v = await Media.imagesToVideo(pics, { fps: 2, ...(codec ? { codec } : {}) });
+            return { codec: v.codec, configured: window.__configured, frames: v.frames };
+          } catch (e) {
+            return { error: e.message, configured: window.__configured };
+          }
+        }, [unsupported, codec]);
+      // 1280x960 is past level 3.1: Baseline at level 4.0, not Main, which the old order chose.
+      const baseline = await run("^$");
+      assert.deepEqual(baseline.configured, ["avc1.42E028"]);
+      assert.equal(baseline.codec, "avc");
+      // No Baseline here: Main reorders, so the video is made with VP9 instead of being written out of order.
+      const swapped = await run("^avc1\\.42");
+      assert.deepEqual(swapped.configured, ["avc1.4D0028", "vp09.00.31.08"]);
+      assert.equal(swapped.codec, "vp9");
+      // H.264 only (as for SAM) and no Baseline: a plain error, no file.
+      const refused = await run("^avc1\\.42", "avc");
+      assert.match(refused.error, /out of order/);
+      assert.deepEqual(refused.configured, ["avc1.4D0028"]);
+    } finally {
+      await close();
+    }
+  });
+
+  test("speech: one sound context made during the tap, and a context the browser won't start falls back in time", async () => {
+    const { page, close } = await open();
+    try {
+      const made = await page.evaluate(async () => {
+        const Real = window.AudioContext;
+        let n = 0;
+        window.AudioContext = class extends Real { constructor(o) { super(o); n++; } };
+        const p = Media.speak("Hello there.");
+        const during = n;
+        await p;
+        window.AudioContext = Real;
+        return during;
+      });
+      assert.equal(made, 1, "the AudioContext exists before speak() first waits");
+      const stuck = await page.evaluate(async () => {
+        const ctx = { state: "suspended", currentTime: 0, sampleRate: 16000, resume: () => new Promise(() => {}), createBuffer: () => ({ duration: 1, getChannelData: () => new Float32Array(16000) }), createBufferSource: () => ({ connect() {}, start() {}, stop() {}, disconnect() {} }), destination: {} };
+        async function* one() { yield new Float32Array(16000).fill(0.1); }
+        const started = performance.now();
+        const out = await Promise.race([
+          Media.playSamples(one(), new AbortController(), ctx).then(() => "played", (e) => e.message),
+          new Promise((r) => setTimeout(() => r("hung"), 5000)),
+        ]);
+        return { out, ms: performance.now() - started };
+      });
+      assert.match(stuck.out, /didn't let the page play sound/);
+      assert.ok(stuck.ms < 3000, `${Math.round(stuck.ms)} ms`);
     } finally {
       await close();
     }

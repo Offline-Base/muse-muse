@@ -90,14 +90,20 @@ function draw(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
   ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
 }
 
-/** The first encoder config this browser supports for the size: H.264 levels 3.1 to 5.1, then VP9. */
-export async function pickVideoCodec(width: number, height: number, bitrate: number, fps: number, only?: "avc" | "vp9"): Promise<{ kind: "avc" | "vp9"; config: VideoEncoderConfig } | null> {
-  if (typeof VideoEncoder === "undefined") return null;
+/**
+ * Every encoder config this browser supports for the size, best first: H.264 Constrained Baseline at the level the size
+ * needs, then Main and High, then VP9. Baseline comes first because it has no B-frames, so the encoder hands frames
+ * back in the order they are shown, which is what the MP4 writer needs (it writes no reordering table).
+ */
+export async function videoCodecs(width: number, height: number, bitrate: number, fps: number, only?: "avc" | "vp9"): Promise<Array<{ kind: "avc" | "vp9"; config: VideoEncoderConfig }>> {
+  if (typeof VideoEncoder === "undefined") return [];
   const base = { width, height, bitrate, framerate: Math.max(1, fps), latencyMode: "quality" as const };
   // A level caps the frame size in 16-pixel blocks: 3.1 takes 1280x720, 4.0 takes 2048x1024, 5.1 more.
   const blocks = Math.ceil(width / 16) * Math.ceil(height / 16);
   const avc = [
     ["avc1.42E01F", 3600],
+    ["avc1.42E028", 8192],
+    ["avc1.42E033", 36864],
     ["avc1.4D0028", 8192],
     ["avc1.640028", 8192],
     ["avc1.640033", 36864],
@@ -106,11 +112,26 @@ export async function pickVideoCodec(width: number, height: number, bitrate: num
     ...avc.filter(([, max]) => blocks <= max).map(([codec]) => ({ kind: "avc" as const, config: { ...base, codec, avc: { format: "avc" as const } } })),
     ...["vp09.00.31.08", "vp09.00.40.08"].map((codec) => ({ kind: "vp9" as const, config: { ...base, codec } })),
   ];
+  const out: Array<{ kind: "avc" | "vp9"; config: VideoEncoderConfig }> = [];
   for (const t of tries.filter((x) => !only || x.kind === only)) {
     const ok = await VideoEncoder.isConfigSupported(t.config).then((r) => r.supported === true, () => false);
-    if (ok) return t;
+    if (ok) out.push(t);
   }
-  return null;
+  return out;
+}
+
+/** The first encoder config this browser supports for the size (videoCodecs' best). */
+export async function pickVideoCodec(width: number, height: number, bitrate: number, fps: number, only?: "avc" | "vp9"): Promise<{ kind: "avc" | "vp9"; config: VideoEncoderConfig } | null> {
+  return (await videoCodecs(width, height, bitrate, fps, only))[0] ?? null;
+}
+
+/** H.264 Main and High may use B-frames, which come out of the encoder in a different order than they are shown. */
+const mayReorder = (codec: string) => /^avc1\.(4D|64)/i.test(codec);
+
+/** True when each sample is shown after the one before it, the order the MP4 writer needs. */
+export function inShowOrder(samples: readonly Pick<Mp4Sample, "timestampUs">[]): boolean {
+  for (let i = 1; i < samples.length; i++) if (samples[i]!.timestampUs <= samples[i - 1]!.timestampUs) return false;
+  return true;
 }
 
 type MediaRecord = { video?: { durationMs: number; frames: number; bytes: number; codec: MadeVideo["codec"]; at: number } };
@@ -120,8 +141,23 @@ function record(entry: NonNullable<MediaRecord["video"]>) {
   w.__musemuseMedia = { ...(w.__musemuseMedia ?? {}), video: entry };
 }
 
+/** One picture to draw, with its own size. */
+export interface DrawFrame {
+  image: CanvasImageSource;
+  width: number;
+  height: number;
+}
+
+class OutOfOrder extends Error {}
+
+/**
+ * Encodes the pictures `frames()` yields, one at a time: each is drawn on one canvas and handed to the encoder before
+ * the next is asked for, so memory stays flat however long the sequence is. `frames` may be called again when an
+ * encoder has to be swapped.
+ */
 async function encodeWithWebCodecs(
-  pictures: Array<ImageBitmap | HTMLImageElement | HTMLCanvasElement | OffscreenCanvas>,
+  frames: () => AsyncIterable<DrawFrame>,
+  count: number,
   codec: { kind: "avc" | "vp9"; config: VideoEncoderConfig },
   w: number,
   h: number,
@@ -148,22 +184,57 @@ async function encodeWithWebCodecs(
   encoder.configure(codec.config);
   const frameUs = 1e6 / fps;
   const keyEvery = Math.max(1, Math.round(fps * 2));
-  for (let i = 0; i < pictures.length; i++) {
-    const [iw, ih] = sizeOf(pictures[i]!);
-    draw(ctx, pictures[i]! as CanvasImageSource, iw, ih, w, h, opts.fit ?? "contain", opts.background ?? "#000");
-    const frame = new VideoFrame(canvas, { timestamp: Math.round(i * frameUs), duration: Math.round(frameUs) });
-    encoder.encode(frame, { keyFrame: i % keyEvery === 0 });
-    frame.close();
-    // Keep the encoder's queue short, so a long sequence doesn't hold every frame in memory at once.
-    while (encoder.encodeQueueSize > 4) await new Promise((r) => setTimeout(r, 5));
-    opts.onProgress?.((i + 1) / pictures.length);
-    if (failure) break;
+  let i = 0;
+  try {
+    for await (const pic of frames()) {
+      if (i >= count) break;
+      draw(ctx, pic.image, pic.width, pic.height, w, h, opts.fit ?? "contain", opts.background ?? "#000");
+      const frame = new VideoFrame(canvas, { timestamp: Math.round(i * frameUs), duration: Math.round(frameUs) });
+      encoder.encode(frame, { keyFrame: i % keyEvery === 0 });
+      frame.close();
+      i++;
+      // Keep the encoder's queue short, so a long sequence doesn't hold every frame in memory at once.
+      while (encoder.encodeQueueSize > 4) await new Promise((r) => setTimeout(r, 5));
+      opts.onProgress?.(i / count);
+      if (failure) break;
+    }
+    await encoder.flush().catch((err) => (failure = failure ?? err));
+  } finally {
+    if (encoder.state !== "closed") encoder.close();
   }
-  await encoder.flush().catch((err) => (failure = failure ?? err));
-  encoder.close();
   if (failure) throw new MediaError("failed", "The video couldn't be made in this browser.");
-  samples.sort((a, b) => a.timestampUs - b.timestampUs);
+  // Samples stay in the order the encoder gave them (decode order). The writer has no reordering table, so an encoder
+  // that reordered frames can't be written as it is: the caller tries the next encoder.
+  if (!inShowOrder(samples)) throw new OutOfOrder();
   return muxMp4({ codec: codec.kind, width: w, height: h, description, vp9: { profile: 0, level: codec.config.codec.endsWith(".40.08") ? 40 : 31 }, samples });
+}
+
+/**
+ * Encodes with the best encoder this browser has, and with the next one that can't reorder frames when the first did.
+ * For imagesToVideo and for lib/platform/sam-tiles.ts's videoChunks, which passes frames grabbed from a clip one at a
+ * time. Null when the browser has no WebCodecs encoder for this (only: that codec).
+ */
+export async function encodeFrames(
+  frames: () => AsyncIterable<DrawFrame>,
+  count: number,
+  w: number,
+  h: number,
+  fps: number,
+  opts: VideoOptions & { bitrate: number },
+): Promise<{ bytes: Uint8Array; kind: "avc" | "vp9" } | null> {
+  const codecs = await videoCodecs(w, h, opts.bitrate, fps, opts.codec);
+  if (!codecs.length) return null;
+  let tried: string | null = null;
+  for (const c of codecs) {
+    if (tried && mayReorder(c.config.codec)) continue;
+    try {
+      return { bytes: await encodeWithWebCodecs(frames, count, c, w, h, fps, opts), kind: c.kind };
+    } catch (err) {
+      if (!(err instanceof OutOfOrder)) throw err;
+      tried = c.config.codec;
+    }
+  }
+  throw new MediaError("failed", "This browser's video encoder put the frames out of order, so the video couldn't be saved. Try Chrome or Edge.");
 }
 
 async function recordCanvas(pictures: Array<ImageBitmap | HTMLImageElement | HTMLCanvasElement | OffscreenCanvas>, w: number, h: number, fps: number, opts: VideoOptions): Promise<Blob> {
@@ -203,13 +274,18 @@ export async function imagesToVideo(frames: readonly FrameSource[], opts: VideoO
   const pictures = await Promise.all(frames.map(toBitmap));
   const [w, h] = videoSize(sizeOf(pictures[0]!), opts);
   const bitrate = opts.bitrate ?? Math.round(Math.min(8_000_000, Math.max(500_000, w * h * 0.6 * Math.min(fps, 30) / 4)));
-  const codec = opts.method === "recorder" ? null : await pickVideoCodec(w, h, bitrate, fps, opts.codec);
+  const stream = async function* (): AsyncIterable<DrawFrame> {
+    for (const p of pictures) {
+      const [iw, ih] = sizeOf(p);
+      yield { image: p as CanvasImageSource, width: iw, height: ih };
+    }
+  };
+  const made = opts.method === "recorder" ? null : await encodeFrames(stream, pictures.length, w, h, fps, { ...opts, bitrate });
   let blob: Blob;
   let kind: MadeVideo["codec"];
-  if (codec) {
-    const bytes = await encodeWithWebCodecs(pictures, codec, w, h, fps, { ...opts, bitrate });
-    blob = new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "video/mp4" });
-    kind = codec.kind;
+  if (made) {
+    blob = new Blob([made.bytes as Uint8Array<ArrayBuffer>], { type: "video/mp4" });
+    kind = made.kind;
   } else {
     if (opts.codec === "avc") throw new MediaError("unsupported", "This browser can't make H.264 video, which this needs. Try Chrome, Edge or Safari.");
     if (opts.method === "webcodecs" || opts.codec) throw new MediaError("unsupported", "This browser can't encode video with WebCodecs.");

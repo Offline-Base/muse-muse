@@ -228,6 +228,53 @@ function record(entry: NonNullable<MediaRecord["speech"]>) {
 
 let loading: Promise<SpeechModel> | null = null;
 let playing: { stop(): void } | null = null;
+let audio: AudioContext | null = null;
+
+/** How long playback waits for the browser to let the page make sound before using the browser's voice instead. */
+export const AUDIO_START_MS = 1500;
+
+/**
+ * The page's one AudioContext, made and unlocked during the tap that asked for speech: Safari and iOS let a page start
+ * sound only inside the user's gesture, and that is over once the first await (the model's download) has run. So
+ * speak() and prepareSpeech() call this first, before anything else, and playback reuses it.
+ */
+export function unlockAudio(): AudioContext | null {
+  const Ctor = typeof AudioContext !== "undefined" ? AudioContext : (globalThis as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!Ctor) return null;
+  if (!audio || audio.state === "closed") {
+    try {
+      audio = new Ctor({ sampleRate: SPEECH_SAMPLE_RATE });
+    } catch {
+      // Older Safari takes no sample rate; the pieces are resampled to the context's own rate.
+      try {
+        audio = new Ctor();
+      } catch {
+        return null;
+      }
+    }
+  }
+  if (audio.state !== "running") {
+    void audio.resume().catch(() => undefined);
+    // iOS also wants a sound started inside the gesture: one silent sample.
+    try {
+      const src = audio.createBufferSource();
+      src.buffer = audio.createBuffer(1, 1, audio.sampleRate);
+      src.connect(audio.destination);
+      src.start(0);
+    } catch {
+      // Nothing to unlock with.
+    }
+  }
+  return audio;
+}
+
+/** Resolves once the context is running, or throws when the browser hasn't let it start within AUDIO_START_MS. */
+async function audioRunning(ctx: AudioContext): Promise<void> {
+  if (ctx.state === "running") return;
+  // resume() can stay pending for good outside a gesture (Safari), so it gets a deadline.
+  await Promise.race([ctx.resume().catch(() => undefined), new Promise((r) => setTimeout(r, AUDIO_START_MS))]);
+  if ((ctx.state as string) !== "running") throw new MediaError("unsupported", "This browser didn't let the page play sound.");
+}
 
 async function loadModel(onProgress?: (p: SpeechProgress) => void): Promise<SpeechModel> {
   if (typeof WebAssembly === "undefined") throw new MediaError("unsupported", "This browser can't run the reading voice.");
@@ -254,6 +301,7 @@ async function loadModel(onProgress?: (p: SpeechProgress) => void): Promise<Spee
  * it too. It throws a MediaError when the model can't run here.
  */
 export function prepareSpeech(opts: { onProgress?: (p: SpeechProgress) => void } = {}): Promise<SpeechModel> {
+  unlockAudio();
   if (!loading) {
     loading = loadModel(opts.onProgress);
     loading.catch(() => {
@@ -270,9 +318,13 @@ export function stopSpeech(): void {
   if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
 }
 
-async function playSamples(pieces: AsyncIterable<Float32Array>, ctrl: AbortController): Promise<{ durationMs: number; samples: number }> {
-  const ctx = new AudioContext({ sampleRate: SPEECH_SAMPLE_RATE });
-  await ctx.resume().catch(() => undefined);
+/**
+ * Plays the pieces as they arrive, one after another, on `ctx` (unlockAudio's). Throws a MediaError when the browser
+ * won't let the page play sound, so speak() can use the browser's voice instead. Exported for tests.
+ */
+export async function playSamples(pieces: AsyncIterable<Float32Array>, ctrl: AbortController, ctx: AudioContext | null = unlockAudio()): Promise<{ durationMs: number; samples: number }> {
+  if (!ctx) throw new MediaError("unsupported", "This browser can't play sound from the page.");
+  await audioRunning(ctx);
   let at = ctx.currentTime + 0.05;
   let samples = 0;
   const sources: AudioBufferSourceNode[] = [];
@@ -308,7 +360,8 @@ async function playSamples(pieces: AsyncIterable<Float32Array>, ctrl: AbortContr
     });
     return { durationMs: Math.round((samples / SPEECH_SAMPLE_RATE) * 1000), samples };
   } finally {
-    void ctx.close().catch(() => undefined);
+    // The context stays open: it is the one the user's tap unlocked, and the next speak() needs it.
+    for (const s of sources) s.disconnect();
   }
 }
 
@@ -339,6 +392,8 @@ export async function speak(text: string, opts: SpeakOptions = {}): Promise<Spea
   const clean = text.trim();
   if (!clean) throw new MediaError("invalid", "There's nothing to read aloud.");
   if (clean.length > SPEECH_CHARS_MAX) throw new MediaError("too_large", `That's too long to read aloud at once: at most ${SPEECH_CHARS_MAX} characters.`);
+  // Before any await, while the tap that asked for speech still counts as the user's gesture.
+  const ctx = opts.browserOnly ? null : unlockAudio();
   stopSpeech();
   const lang = opts.lang ?? "en-US";
   let note: string | undefined;
@@ -350,7 +405,7 @@ export async function speak(text: string, opts: SpeakOptions = {}): Promise<Spea
       async function* waves() {
         for (const p of pieces) yield await synthesizeSpeech(model, p, { signal: ctrl.signal });
       }
-      const played = await playSamples(waves(), ctrl);
+      const played = await playSamples(waves(), ctrl, ctx);
       record({ by: "model", durationMs: played.durationMs, samples: played.samples, at: Date.now() });
       return { by: "model", durationMs: played.durationMs };
     } catch (err) {

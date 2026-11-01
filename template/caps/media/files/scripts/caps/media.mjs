@@ -9,7 +9,7 @@
 //   tiles   the smoke test saw findAll run on 2 to 4 tiles and merge without adding boxes (the merge itself is proven by
 //           the platform's unit tests; the build only records counts)
 // and for every product with media:
-//   notices public/notices/media.txt is there and the product links to it
+//   notices public/notices/media.txt and onnxruntime.txt are there and the product links to media.txt
 //   no-cdn  nothing in the product loads a model, wasm or script from another site
 //
 // What these rest on: video and music read the files the test saved, which a product test could replace with others it
@@ -192,9 +192,9 @@ export async function check({ record, root }) {
     const text = (f) => read(path.join(root, f))?.toString("utf8") ?? "";
     const remote = sources.filter((f) => REMOTE.some((re) => re.test(text(f))));
     checks.push({ id: "no-cdn", ok: !remote.length, detail: remote.length ? `${remote.slice(0, 3).join(", ")} load${remote.length === 1 ? "s" : ""} a model or script from another site` : "Nothing loads a model or script from another site" });
-    const has = existsSync(path.join(root, "public/notices/media.txt"));
+    const missing = ["public/notices/media.txt", "public/notices/onnxruntime.txt"].filter((f) => !existsSync(path.join(root, f)));
     const linked = sources.some((f) => !f.startsWith("public/") && text(f).includes("/notices/media.txt"));
-    checks.push({ id: "notices", ok: has && linked, detail: !has ? "public/notices/media.txt is missing" : linked ? "The open source notices are linked" : "Link \"Open source notices\" to /notices/media.txt from the page" });
+    checks.push({ id: "notices", ok: !missing.length && linked, detail: missing.length ? `${missing.join(" and ")} ${missing.length > 1 ? "are" : "is"} missing` : linked ? "The open source notices are linked" : "Link \"Open source notices\" to /notices/media.txt from the page" });
   }
   return checks;
 }

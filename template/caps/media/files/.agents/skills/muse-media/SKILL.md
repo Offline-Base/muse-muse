@@ -37,6 +37,8 @@ async function readAloud(text: string) {
   the browser has no voice at all: say so.
 - Show a Stop button while reading: `stopSpeech()`.
 - Longer text: split it into parts the user picks, each under 600 characters. Never read on page load: a tap starts it.
+- Call `speak()` (or `prepareSpeech()`) straight from the tap's handler, with no `await` before it, as above. Safari and
+  phones let a page make sound only during the tap, and speak() unlocks it first thing.
 - Limit to show once: "The reading voice is plain and English only."
 
 ## Video from pictures: `lib/platform/video.ts`

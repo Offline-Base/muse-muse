@@ -20,6 +20,8 @@ them.
 
 4. ONNX Runtime Web 1.30.0 (onnxruntime-web), files ort.wasm.bundle.min.mjs and ort-wasm-simd-threaded.wasm. MIT
    License. Copyright (c) Microsoft Corporation. https://github.com/microsoft/onnxruntime
+   The WebAssembly file has third-party code built into it (among others protobuf, BSD-3-Clause; abseil and
+   flatbuffers, Apache-2.0). Their notices are in /notices/onnxruntime.txt, next to this file.
 
 The video writer, the MIDI writer, the pitch finder and the photo tiling were written for Muse Muse.
 
