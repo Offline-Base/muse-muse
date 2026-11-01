@@ -86,7 +86,7 @@ let usageRows: Array<{ source: string; model: string; units?: number; costUsd: n
 let reply: (o: Outgoing) => Response;
 const ring = parseKeyring(newBoxKey())!;
 
-function deps(over: Partial<ConnectDeps> & { token?: CapToken; product?: CapProduct; rules?: ConnectBrief | null } = {}): ConnectDeps {
+function deps(over: Partial<Omit<ConnectDeps, "rules">> & { token?: CapToken; product?: CapProduct; rules?: ConnectBrief | null } = {}): ConnectDeps {
   const { token: t, product: p, rules, ...rest } = over;
   return {
     servedCaps: () => ["connect"],

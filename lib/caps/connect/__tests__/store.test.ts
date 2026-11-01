@@ -115,7 +115,7 @@ describe("connect on a database", { skip: canMock ? false : "needs --experimenta
   });
 
   it("records the build's sampled fetch, test key and simulated send in its record, and clears them when it ends", async () => {
-    const since = new Date(Date.now() - 1000);
+    const since = new Date(NOW.getTime() - 1000);
     const t = buildTok();
     await handler.handleFetch(post("fetch", { api: "nws", path: "/points/38.8894,-77.0352" }), deps(t));
     const canary = "mmtest_ABCDEFGHIJKLMNOPQRSTUVWX";
