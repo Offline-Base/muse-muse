@@ -1,5 +1,6 @@
 import { MAX_AGENT_STEPS, MAX_AGENT_TOOLS, type Brief } from "@/lib/brief/schema";
 import { normalizeDataBlock } from "@/lib/caps/data/brief";
+import { normalizeCodeBlock } from "@/lib/caps/code/brief";
 import { normalizeExtensionBlock } from "@/lib/caps/extension/brief";
 import { normalizeGamesBlock } from "@/lib/caps/games/brief";
 import { normalizeMediaBlock } from "@/lib/caps/media/brief";
@@ -142,6 +143,9 @@ export function normalizeRawBrief(raw: unknown, references: Reference[]): unknow
   // ---------- Wave 3, unit 8 (docs/CAPABILITIES.md, section 14): the media block, only when the writer sent one ----------
   if (b.media !== undefined && b.media !== null) b.media = normalizeMediaBlock(b.media, mediaPartsOn());
   // ---------- end Wave 3, unit 8 ----------
+  // ---------- Wave 3, unit 9 (docs/CAPABILITIES.md, section 15): the code block, only when the writer sent one ----------
+  if (b.code !== undefined && b.code !== null) b.code = normalizeCodeBlock(b.code);
+  // ---------- end Wave 3, unit 9 ----------
 
   // ---------- Wave 3, unit 10 (docs/CAPABILITIES.md, section 16): the runtime block, only when the writer sent one ----------
   if (b.runtime !== undefined && b.runtime !== null) b.runtime = normalizeRuntimeBlock(b.runtime);

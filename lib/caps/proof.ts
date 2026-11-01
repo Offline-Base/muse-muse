@@ -1,3 +1,4 @@
+import { codeProof } from "@/lib/caps/code/store";
 import { dataProof } from "@/lib/caps/data/store";
 import type { CapId } from "@/lib/caps/ids";
 import { gatewayError } from "@/lib/gateway/errors";
@@ -20,6 +21,8 @@ export type CapProofCounter = (buildId: string, window: { since: Date | null }) 
 export const CAP_PROOF: Partial<Record<CapId, CapProofCounter>> = {
   // Rows written in the build namespace since `since`, rows there by scope, writers, and the brief's collections.
   data: dataProof,
+  // Exec runs and pages opened in the build namespace since `since`, and which parts the brief asked for.
+  code: codeProof,
 };
 
 /** The build namespace a build token's caps rows and files live under (docs/CAPABILITIES.md, 2.3). */

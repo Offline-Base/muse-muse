@@ -14,6 +14,8 @@ export interface CapLivePath {
 }
 
 export const CAP_LIVE_PATHS: Partial<Record<CapId, readonly CapLivePath[]>> = {
+  // template/caps/code/files/public/musemuse/pyodide/health.json: Pyodide's folder is static and deployed with it.
+  code: [{ path: "/musemuse/pyodide/health.json", what: "Python in the browser can't load on the live link" }],
   // template/caps/runtime/files/api/py/musemuse_health.py: Vercel serves the product's Python functions beside Next.js.
   runtime: [{ path: "/api/py/musemuse_health", what: "its Python functions don't run on the live link" }],
 };

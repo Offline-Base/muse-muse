@@ -2,6 +2,7 @@ import catalog from "@/catalog/meta-models.json";
 import { PRICES } from "@/lib/meta/pricing";
 import { PRODUCT_MODELS } from "@/lib/brief/schema";
 import { capsCatalogBlocks, capsWorkaround, howProductsRun } from "@/lib/caps/catalog";
+import { codePartsKey } from "@/lib/caps/code/parts";
 import type { CapId } from "@/lib/caps/ids";
 import { env } from "@/lib/env";
 import { RETIRED_SPARK } from "@/lib/meta/spark";
@@ -152,7 +153,8 @@ export function catalogSummary(caps: readonly CapId[] = env.enabledCaps): string
   const personal = agents && env.composioPersonalEnabled;
   // Wave 3, unit 3: the data cap's block follows DATA_SIGN_IN, so it is part of the key only while data is on.
   // Unit 8: the media cap names only its parts that are on, so they are part of the key only while media is on.
-  const key = `${gadgets}|${agents}|${personal}|${caps.join(",")}${caps.includes("data") ? `|${env.dataSignIn}` : ""}${caps.includes("media") ? `|${env.mediaParts.join(",")}` : ""}`;
+  // Wave 3, unit 9: the code cap's block names only its parts that are on, so they are part of the key while code is on.
+  const key = `${gadgets}|${agents}|${personal}|${caps.join(",")}${caps.includes("data") ? `|${env.dataSignIn}` : ""}${caps.includes("media") ? `|${env.mediaParts.join(",")}` : ""}${caps.includes("code") ? `|code:${codePartsKey()}` : ""}`;
   const hit = cached.get(key);
   if (hit) return hit;
   const run = howProductsRun(caps, { gadgets, agents });

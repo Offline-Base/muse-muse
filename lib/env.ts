@@ -849,6 +849,43 @@ export const env = {
     return mediaPartsFromEnv();
   },
 
+  // ---------- Wave 3, unit 9: code (docs/CAPABILITIES.md) ----------
+
+  /**
+   * CODE_EXEC: {GATEWAY_URL}/exec runs a product's Python or Node program in a fresh sandbox with no network. Off: the
+   * route answers 404 and touches nothing. CODE_ENABLED, Pyodide and QuickJS in the browser, is CAP_FLAG.code, read
+   * through enabledCaps above, and /exec also needs it.
+   */
+  get codeExec(): boolean {
+    return flag("CODE_EXEC");
+  },
+  /**
+   * CODE_EXEC_VISITORS: visitors and signed-in end users may run /exec too, not only the product's owner. Off until the
+   * owner has read Meta's terms 1, 3.1, 6.2 and 10.1(i) (docs/CAPABILITIES.md, decision 10). Never applies to /browse.
+   */
+  get codeExecVisitors(): boolean {
+    return flag("CODE_EXEC_VISITORS");
+  },
+  /** What /exec may spend on sandboxes across the platform per UTC day. 0 pauses it. */
+  get codeExecDailyUsd(): number {
+    return dollars("CODE_EXEC_DAILY_USD", 3);
+  },
+  /** A Vercel Sandbox snapshot with Python 3 and Node for /exec. Unset: each run starts from Vercel's own image. */
+  get codeExecSnapshotId(): string | null {
+    return optional("CODE_EXEC_SNAPSHOT_ID");
+  },
+  /**
+   * CODE_BROWSE: {GATEWAY_URL}/browse opens one page the person typed, in a sandbox that reaches only that host. It
+   * starts from BUILDER_SNAPSHOT_ID, which has Chromium. Off: the route answers 404 and touches nothing.
+   */
+  get codeBrowse(): boolean {
+    return flag("CODE_BROWSE");
+  },
+  /** What /browse may spend on sandboxes across the platform per UTC day. 0 pauses it. */
+  get codeBrowseDailyUsd(): number {
+    return dollars("CODE_BROWSE_DAILY_USD", 2);
+  },
+
   // ---------- Wave 3, unit 10: runtime (docs/CAPABILITIES.md) ----------
 
   /**

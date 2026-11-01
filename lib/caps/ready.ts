@@ -1,5 +1,6 @@
 import type { Brief } from "@/lib/brief/schema";
 import { briefCaps } from "@/lib/caps/brief-fields";
+import { codeBlock, codePartsOff } from "@/lib/caps/code/brief";
 import { type CapId, isCapId } from "@/lib/caps/ids";
 import { capOverlaysNeeded } from "@/lib/caps/overlays";
 import { env } from "@/lib/env";
@@ -82,13 +83,30 @@ export function capsForBuild<T extends Brief>(brief: T, opts: CapsForBuildOption
   if (opts.kind === "refine") {
     const served = opts.served ?? env.servedCaps;
     const dropped: CapDrop[] = caps.filter((c) => !served.includes(c)).map((cap) => ({ cap, reason: "off" }));
+    partsOff(brief, dropped);
     return { brief: withoutCaps(brief, dropped.map((d) => d.cap)), dropped };
   }
   const onSite = opts.onSite ?? env.capsOnSite;
   const enabled = opts.enabled ?? env.enabledCaps;
   const dropped: CapDrop[] = caps.filter((c) => !enabled.includes(c)).map((cap) => ({ cap, reason: onSite.includes(cap) ? "snapshot" : "off" }));
+  partsOff(brief, dropped);
   return { brief: withoutCaps(brief, dropped.map((d) => d.cap)), dropped };
 }
+
+// ---------- Wave 3, unit 9 (docs/CAPABILITIES.md, 15a): code parts whose routes are off ----------
+/**
+ * A kept code block whose server parts are switched off (CODE_EXEC, CODE_BROWSE): codeBlock leaves them out of every
+ * step's text and checks, and this says so in the log once, when the decision is made. A block left with no part at all
+ * isn't a code product, so the cap is dropped as switched off.
+ */
+function partsOff(brief: Brief, dropped: CapDrop[]): void {
+  const record = brief as { code?: unknown };
+  if (record.code === null || record.code === undefined || dropped.some((d) => d.cap === "code")) return;
+  const off = codePartsOff(brief);
+  if (codeBlock(brief) === null) dropped.push({ cap: "code", reason: "off" });
+  else if (off.length) console.info(`[caps] code: this build goes without ${off.map((p) => (p === "exec" ? "running code on the server" : "opening pages")).join(" and ")}: switched off.`);
+}
+// ---------- end Wave 3, unit 9 ----------
 
 /** A saved decision read back from the database: only well-formed entries. Null stays null. */
 export function readCapDrops(value: unknown): CapDrop[] | null {

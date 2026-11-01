@@ -1,3 +1,4 @@
+import { CODE_CATALOG } from "@/lib/caps/code/catalog";
 import { DATA_CATALOG } from "@/lib/caps/data/catalog";
 import type { CapId } from "@/lib/caps/ids";
 import { EXTENSION_CATALOG } from "@/lib/caps/extension/catalog";
@@ -18,6 +19,7 @@ export interface CapCatalogEntry {
 export const CAP_CATALOG: Partial<Record<CapId, CapCatalogEntry>> = {
   data: DATA_CATALOG,
   media: MEDIA_CATALOG,
+  code: CODE_CATALOG,
   runtime: RUNTIME_CATALOG,
   extension: EXTENSION_CATALOG,
   games: GAMES_CATALOG,

@@ -241,7 +241,8 @@ export const usage = pgTable(
   "usage",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    source: text("source").$type<"gateway" | "muse_code" | "platform" | "docs" | "tools">().notNull(),
+    // Wave 3, unit 9: "exec" and "browse" are the code cap's sandboxes. A type change only, no migration.
+    source: text("source").$type<"gateway" | "muse_code" | "platform" | "docs" | "tools" | "exec" | "browse">().notNull(),
     productId: uuid("product_id").references(() => products.id),
     buildId: uuid("build_id").references(() => builds.id),
     tokenId: uuid("token_id").references(() => gatewayTokens.id),
@@ -820,4 +821,32 @@ export const productDataCounts = pgTable(
     bytes: bigint("bytes", { mode: "number" }).notNull().default(0),
   },
   (t) => [primaryKey({ columns: [t.productId, t.namespace] })],
+);
+
+// ---------- Wave 3, 0024_code (unit 9) ----------
+
+/**
+ * One row per run of {GATEWAY_URL}/exec or /browse (docs/CAPABILITIES.md, section 15), for the build's proof
+ * (`/caps/proof`) and the owner's record of what ran. `namespace` is `live`, or `b:<buildId>` for a build's runs.
+ * `subject_key` is the caller's subject key (mac("caps-subject", ...), cut to 32), never a raw id, and null for a build.
+ * No code, input, output or address is kept. Money is in `usage` (sources `exec` and `browse`), as for every call.
+ */
+export const execRuns = pgTable(
+  "exec_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    namespace: text("namespace").notNull(),
+    kind: text("kind").$type<"exec" | "browse">().notNull(),
+    principal: text("principal").$type<"build" | "owner" | "user" | "visitor">().notNull(),
+    subjectKey: text("subject_key"),
+    language: text("language").$type<"python" | "node">(),
+    status: text("status").$type<"ok" | "error" | "timeout" | "failed" | "simulated">().notNull(),
+    ms: integer("ms").notNull().default(0),
+    costUsd: real("cost_usd").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [index("exec_runs_product_idx").on(t.productId, t.namespace, t.createdAt)],
 );
