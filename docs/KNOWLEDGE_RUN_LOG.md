@@ -1176,6 +1176,16 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   - Every file matched on the Hub, and the images load without a token. The banner is staged for the bnb-4bit card.
   - Told the owner: the banner's faint background text ("...ligence Labs", "introducing the first real-time audio
     perception") looks like it came from another announcement graphic.
+- 10:42 PM: owner, on the Spark-written dataset rows: "Publish all, with disclosure". The rows written from Wikipedia
+  carry both CC BY-SA 4.0 and the Muse Model License, so they're published with that disclosed, like the news decision.
+  Stopped dataset-finalize before it changed anything; held/ was never made and out/ was untouched. Relaunched as
+  dataset-finalize-all (wf_600d5536-149). It:
+  - ships every config, with MUSE_MODEL_LICENSE.md and USAGE_POLICY.md beside the data;
+  - drops the 3,687 unchecked news rows;
+  - puts the Community tab as the contact;
+  - adds "Built with Muse Spark Open", the users' duties and the dual-license disclosure with its row count.
+
+  A verifier checks it with up to 2 fix rounds before the private upload.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
