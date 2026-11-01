@@ -171,6 +171,13 @@
       "breakpoints": true
     },
     {
+      "idx": 26,
+      "version": "7",
+      "when": 1793432150646,
+      "tag": "0026_hardware",
+      "breakpoints": true
+    },
+    {
       "idx": 28,
       "version": "7",
       "when": 1793432270646,
