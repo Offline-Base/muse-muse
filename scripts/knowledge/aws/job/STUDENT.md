@@ -177,7 +177,7 @@ run_student.sh refuses while any GPU is busy, so one job runs at a time.
    build runs beside stage 2 at the lowest CPU and disk priority, with 12 jobs, under 15 minutes on the smoke machine):
 
    ```
-   IP=163.192.200.51
+   IP=<the train box address, from Lambda>
    code_to
    k 'mkdir -p ~/k/data-student'
    kcp $D/train-student.jsonl.gz ubuntu@$IP:k/data-student/

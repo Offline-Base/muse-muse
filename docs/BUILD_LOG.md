@@ -1700,3 +1700,22 @@ scripts/dev/tune-harness.ts, on a Lambda gpu_1x_a10 named prove-tune-1, us-east-
 - Found: both briefs have verdict yes and canDo true on sign-in, while the sign-in is a local picker or profile with no real account. Limits say so, but docs/FULL_BUILDS.md expects a part it can't do to force verdict partly. Not changed.
 - Found: nothing stops a build at a dollar amount. The $40 budget for this job isn't enforced by code; only the wall and DAILY_SPEND_CAP_USD=150 limit it.
 - Result of both builds: pending. A real brief is all this proves so far.
+
+## Nov 1, 13:56 EST: device lab, read-only check (branch tg-lab-readonly)
+
+Read-only calls only, with the offlinebase profile in account 916979311153. Nothing in AWS was created, started, stopped or sent a command. No spend from this check.
+
+- Mac `i-0a5866df305e83d40` on host `h-06879f600be8541ed`: running, EC2 status checks ok, SSM Online, macOS 26.7.
+- Windows `i-066609c3dc74c9f18`: stopped since Oct 31, 19:23 UTC. It isn't registered in SSM's list while stopped, so its agent can't be checked.
+- Lab agent: not proven healthy. Its files and parameters exist, but only `MuseLab-Control status` can show the process, and sending that is not read-only. Last SSM command to the Mac: Oct 31, 20:48 UTC.
+- The queue doesn't reach the boxes. POST with no token to `/api/native/agent/claim` answers 404 JSON on muse-muse.vercel.app and on the test site, which is what those routes do with NATIVE_LAB off. The test site listens on `[::1]:3023` on the laptop, so the boxes can't reach it, and the role `musemuse-platform-native` has never been used.
+- Result: no lab check ran. iPhone simulator, Android emulator, Mac, Windows, mock glasses and Device Farm are all blocked on owner approval. The Oct 31 clips in `s3://muse-knowledge-916979311153/lab/checks/` predate this check and did not come through the queue.
+- Measured cost: the Mac host has been billing since Oct 31, 06:01 UTC, about 36.9 h at $0.65/h, about $24 so far by that rate. AWS Budgets shows `musemuse-lab` at $6.87 actual, `musemuse-device-farm` at $0.00.
+
+## Nov 1: code hygiene (branch tg-close-hygiene)
+
+- Migration test: the two failures were stale pinned lists, not a schema fault. All 13 migrations after 0017 match drizzle-kit; 0028 has the same statements in another order (source_public last), which nothing depends on, so the file stays and the test says why. 0029 and 0030 keep their real-clock journal times, which only go up. Added a 0027 upgrade test: old rows keep, source_public reads false, grounding reads null, hosted_endpoints holds one live endpoint per model. 29 tests before, 30 now, all pass. Test model and spend: none.
+- tune-harness ingest: it always called finishJob with succeeded, so a run that stopped with no done counted as a success. It now reads the outcome from the events, records failed, skips the judge and exits 1. Covered by a unit test of the outcome; no GPU run of the failing path.
+- Run logs: three rented GPU addresses removed from docs/KNOWLEDGE_RUN_LOG.md and scripts/knowledge/aws/job/STUDENT.md; the machine names and instance ids stay. Rented GPU addresses stay in five finished knowledge scripts as their config (idle_alert.py, writer_fleet.py, stage2_handoff.sh, nq_pull.sh, nq_rerun_stage2.sh), and 10.0.2.2 (emulator host) and 169.254.0.2 (sandbox link-local) aren't ours.
+- Branches compared with main by merge-base and content. Stranded and brought in: the design docs and spike READMEs that main's code and logs cite but main never had (OFFLINE, OFFLINE_HARNESS, GLIMMER_ALIGNMENT, TRAIN_BACKENDS, FLEET_TRAINING, REPLICATION; READMEs for the musecode, 3d, fleet-train and replication spikes) and the read-only lab entry above. The spikes' scripts and results stay on their branches, so those READMEs' links to them don't resolve in main. No product code was stranded.
+- Worktrees removed: sim-tune, tune-loop, rl, verify, host-tuned, each merged and clean. Branches kept.
