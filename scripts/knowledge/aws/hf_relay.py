@@ -28,8 +28,9 @@ Small files (README.md, chat template, LICENSE notices) go in that commit as bas
 for a few small files that live on writer-1, read with the probe's cat (at most 10 MB).
 
 The repo must be private. --create-private creates it private when it doesn't exist. A repo that turns out public is
-never uploaded to; one we just created and that came back public is set private first. Nothing here makes a repo
-public.
+never uploaded to, unless --allow-public is given for a repo that is already public and released (adding files to a
+release); one we just created and that came back public is set private first, with or without that flag. Nothing here
+makes a repo public.
 
 Storage URLs, and the completion URL, are never printed, logged or written to a file. Each multipart upload's done
 parts (number and ETag, no URLs) are kept in .data/hf/uploads.json so a rerun can skip them if the Hub hands back the
@@ -283,7 +284,8 @@ class Hub:
     def set_private(self, repo):
         self.json("PUT", f"/api/models/{repo}/settings", {"visibility": "private"}, ok=(200,))
 
-    def ensure_private(self, repo, create):
+    def ensure_private(self, repo, create, allow_public=False):
+        """Private, or (only with allow_public, and only for a repo that already existed) public on purpose."""
         info = self.repo_info(repo)
         created = False
         if info is None:
@@ -295,8 +297,11 @@ class Hub:
             if info is None:
                 raise RelayError(f"{repo} isn't visible after creating it")
         if info.get("private") is not True:
+            if allow_public and not created:
+                return info
             if not created:
-                raise RelayError(f"{repo} is not private; this relay only uploads to private repos")
+                raise RelayError(f"{repo} is not private; this relay only uploads to private repos "
+                                 "(pass --allow-public to add files to a released public repo)")
             log(f"{repo}: came back public; setting it private before anything is uploaded")
             self.set_private(repo)
             info = self.repo_info(repo) or {}
@@ -759,10 +764,12 @@ def _local_bytes(path):
         return f.read()
 
 
-def plan(manifest, create):
+def plan(manifest, create, allow_public=False):
     hashes = _load_json("hashes.json", {})
-    out = [f"repo {manifest['repo']} (private only), revision {manifest['revision']}",
-           f"  repo: {'create it private if missing' if create else 'must already exist'}; stop if it is public",
+    out = [f"repo {manifest['repo']} ({'private, or public with --allow-public' if allow_public else 'private only'}), "
+           f"revision {manifest['revision']}",
+           f"  repo: {'create it private if missing' if create else 'must already exist'}; "
+           f"{'may already be public (--allow-public)' if allow_public else 'stop if it is public'}",
            f"  commit message: {manifest['message']}"]
     for e in manifest["files"]:
         if "writer1" in e:
@@ -819,14 +826,16 @@ def _no_token(hub, what, data):
         raise RelayError(f"{what} holds a Hugging Face token; nothing was sent")
 
 
-def push(manifest, hub, create, remote_argv=writer1_argv, remote_root=None, **relay_kw):
+def push(manifest, hub, create, remote_argv=writer1_argv, remote_root=None, allow_public=False, **relay_kw):
     root = remote_root or REMOTE_ROOT
     repo, rev = manifest["repo"], manifest["revision"]
     _no_token(hub, "the commit message", manifest["message"] + "\n" + manifest["description"])
     for e in manifest["files"]:  # the files on this Mac are checked before anything at all goes to the Hub
         if "local" in e:
             _no_token(hub, e["path"], _local_bytes(e["local"]))
-    hub.ensure_private(repo, create)
+    info = hub.ensure_private(repo, create, allow_public)
+    if info.get("private") is not True:
+        log(f"{repo}: public, and --allow-public was given; adding files to the released repo")
     measure(manifest, remote_argv(), root)
     # samples, sizes and content for preupload
     pre, local_data = [], {}
@@ -888,7 +897,8 @@ def push(manifest, hub, create, remote_argv=writer1_argv, remote_root=None, **re
         return {"commit": None, "summary": summary, "counts": relay.counts}
     header = {"key": "header", "value": {"summary": manifest["message"], "description": manifest["description"]}}
     # the bytes in LFS storage are invisible until this commit: look again, right before it, that the repo is private
-    hub.ensure_private(repo, False)
+    # (or, with --allow-public, still the released repo it was)
+    hub.ensure_private(repo, False, allow_public)
     out = hub.commit(repo, rev, [header] + lines)
     oid = str(out.get("commitOid", ""))
     if not re.fullmatch(r"[0-9a-f]{40}", oid):
@@ -912,6 +922,9 @@ def main(argv=None):
         p = sub.add_parser(name)
         p.add_argument("manifest")
         p.add_argument("--create-private", action="store_true", help="create the repo, private, if it doesn't exist")
+        if name in ("plan", "push"):
+            p.add_argument("--allow-public", action="store_true",
+                           help="add files to a repo that is already public (a released repo); never makes one public")
         if name == "hash":
             p.add_argument("--rehash", action="store_true", help="hash again even when the cache matches")
         if name == "push":
@@ -926,7 +939,7 @@ def main(argv=None):
     try:
         manifest = load_manifest(a.manifest)
         if a.cmd == "plan":
-            print(plan(manifest, a.create_private))
+            print(plan(manifest, a.create_private, a.allow_public))
             return 0
         if a.cmd == "hash":
             measure(manifest, writer1_argv(), REMOTE_ROOT, rehash=a.rehash)
@@ -934,13 +947,14 @@ def main(argv=None):
                 if "writer1" in e:
                     print(f"{e['path']}: {e['bytes']} bytes, sha256 {e['sha256']}")
             return 0
-        print(plan(manifest, a.create_private))
+        print(plan(manifest, a.create_private, a.allow_public))
         if not a.yes:
             if not sys.stdin.isatty() or input("Upload this to Hugging Face? Type yes: ").strip() != "yes":
                 print("stopped; nothing was uploaded")
                 return 1
         hub = Hub(check_endpoint(a.endpoint), read_token())
-        res = push(manifest, hub, a.create_private, mb_per_s=a.mb_per_s, threads=max(1, a.threads))
+        res = push(manifest, hub, a.create_private, allow_public=a.allow_public, mb_per_s=a.mb_per_s,
+                   threads=max(1, a.threads))
         for path, what in res["summary"]:
             print(f"  {path}: {what}")
         c = res["counts"]

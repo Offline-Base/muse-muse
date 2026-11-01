@@ -570,6 +570,21 @@ class TestPrivacy(Base):
         self.assertEqual(self.hub.posts("objects/batch"), [])
         self.assertEqual(self.hub.puts(), [])
 
+    def test_existing_public_repo_takes_files_only_with_allow_public(self):
+        self.hub.repos["tester/open"] = {"private": False, "files": {}, "commits": []}
+        p1, d1 = self.big("glimmer-Q4.gguf", 100 * 1024)
+        self.push(self.manifest([{"path": "glimmer-Q4.gguf", "writer1": p1}], repo="tester/open"), allow_public=True)
+        self.assertFalse(self.hub.repos["tester/open"]["private"])  # visibility is never changed
+        self.assertEqual(len(self.hub.repos["tester/open"]["commits"]), 1)
+        self.assertIn("glimmer-Q4.gguf", self.files("tester/open"))
+        self.assertFalse([x for x in self.hub.log if x[1].endswith("/settings")])
+
+    def test_allow_public_still_makes_a_new_repo_private(self):
+        self.hub.public_on_create = True
+        p1, _ = self.big("glimmer-Q4.gguf", 100 * 1024)
+        self.push(self.manifest([{"path": "glimmer-Q4.gguf", "writer1": p1}]), allow_public=True)
+        self.assertTrue(self.hub.repos["tester/glimmer-test"]["private"])
+
     def test_missing_repo_without_create_is_refused(self):
         p1, _ = self.big("glimmer-Q4.gguf", 100 * 1024)
         with self.assertRaises(R.RelayError):
