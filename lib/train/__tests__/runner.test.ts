@@ -1130,6 +1130,12 @@ done = {"base": ["b0", "b1"], "tuned": ["t0", "t1"], "metrics": dict(metrics), "
 out = g.finish(ctx, p, done, evals, train, adapter, True)
 expected = "LoRA r=16 on Muse Glimmer 30B, 40 of 120 steps (stopped early to finish within the time limit), final loss 1.25, 2 eval items."
 assert out["summary"] == expected, out["summary"]
+# A picked base's summary names that base, not Glimmer.
+saved = (g.MODEL, g.TRIM_CONTENT)
+g.MODEL, g.TRIM_CONTENT = "unsloth/some-llama", True
+named = g.finish(FakeCtx("job-f2"), p, {**done, "metrics": dict(metrics)}, evals, train, adapter, True)
+assert named["summary"].startswith("LoRA r=16 on unsloth/some-llama, 40 of 120 steps"), named["summary"]
+g.MODEL, g.TRIM_CONTENT = saved
 assert ctx.evals == [[0, "b0", "t0"], [1, "b1", "t1"]]
 assert out["adapter_uploaded"] == "yes" and out["eval_items"] == 2
 
