@@ -406,9 +406,9 @@ export const env = {
     return flag("TUNE_COMPOSER");
   },
   /**
-   * STORY_PAGES: "1", "true", "yes" or "on" shows the clearer /private and the frontier and offline sections on
-   * /how-it-works (docs/STORY.md). Off: those pages are as they were. /offline itself is a new page and needs no flag.
-   * Both pages are static, so this is read at build time and a change takes a deploy.
+   * STORY_PAGES: "1", "true", "yes" or "on" shows /offline, the clearer /private and the frontier section on
+   * /how-it-works (docs/STORY.md). Off: /offline answers 404 and the other two are as they were.
+   * All three are static, so this is read at build time and a change takes a deploy.
    */
   get storyPages(): boolean {
     return flag("STORY_PAGES");

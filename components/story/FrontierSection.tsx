@@ -2,7 +2,7 @@ import Link from "next/link";
 import { FlowTable } from "@/components/story/FlowTable";
 import { FRONTIER_CLAIM, FRONTIER_LIMIT } from "@/lib/story/flow";
 
-/** The claim and its evidence. On /offline always, and on /how-it-works with STORY_PAGES. */
+/** The claim and its evidence. On /offline and /how-it-works, both with STORY_PAGES. */
 export function FrontierSection({ linkOffline = false }: { linkOffline?: boolean }) {
   return (
     <>

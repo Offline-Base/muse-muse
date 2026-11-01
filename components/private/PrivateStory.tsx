@@ -10,7 +10,7 @@ const PROTECTS: string[] = [
 const FROM_WHOM: { who: string; how: string }[] = [
   { who: "A Muse that gets too curious, or is compromised", how: "The main case: it has every tool and can word things any way it likes, and should still get only tags. Tested with hand-written attacks, and a few known gaps are still open." },
   { who: "A document with planted instructions", how: "Text in an essay that orders a top grade or the class list gets neither, in those tests." },
-  { who: "The relay in the middle", how: "It sees what Muse sees, tagged results, and keeps no bodies." },
+  { who: "The relay in the middle", how: "It sees what Muse sees, tagged results, and stores no content. It is not end-to-end encrypted." },
   { who: "A stolen laptop or a curious person at home", how: "Only partly. Files are private to your account, but nothing here adds encryption beyond your disk's own." },
 ];
 

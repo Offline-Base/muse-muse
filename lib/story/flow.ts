@@ -97,7 +97,7 @@ export const OFFLINE_BASE_FACTS: string[] = [
   "Base Drive: an offline AI kit on a flash drive, for Apple Silicon Macs and Windows PCs. The apps, runtime and model files are already on the drive, and setup is designed to work with Wi-Fi and Ethernet off. Its README says the Windows edition has not yet run on a physical PC.",
   "Drives are checked one by one: the production log records BASE-0001 to BASE-0008 each matching its file list.",
   "A fleet of Jetson Orin Nano boards, run from one console: live health and logs, jobs across boards, and one API in front of the boards' models, with keys, rate limits and usage metering.",
-  "On a board, the model server stays on the board itself, and the fleet agent dials out. Nothing on a board listens on the local network.",
+  "On a board, the model server stays on the board itself, and the fleet agent dials out, so neither one listens on the local network.",
 ];
 
 export const OFFLINE_LIMITS: string[] = [

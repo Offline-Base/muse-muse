@@ -54,6 +54,20 @@ describe("/offline", () => {
   });
 });
 
+describe("docs/STORY.md", () => {
+  const story = readFileSync("docs/STORY.md", "utf8");
+
+  it("keeps the company out of the privacy paragraph and the privacy segment", () => {
+    const paragraph = story.split("## Privacy paragraph")[1]!.split("## Three-minute video")[0]!;
+    const segment = story.split("\n").find((line) => line.startsWith("| 2:10 to 2:40"))!;
+    assert.ok(!/offline.?base/i.test(paragraph + segment));
+  });
+
+  it("gives the holdout result beside the better numbers", () => {
+    assert.ok(story.includes(`${PRIVATE_DETAIL.holdout.percent} (${PRIVATE_DETAIL.holdout.right} of ${PRIVATE_DETAIL.holdout.items})`));
+  });
+});
+
 describe("/private with STORY_PAGES", () => {
   const html = renderToStaticMarkup(<PrivateBody story />);
   const page = text(html);

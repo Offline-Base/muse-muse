@@ -1703,12 +1703,21 @@ scripts/dev/tune-harness.ts, on a Lambda gpu_1x_a10 named prove-tune-1, us-east-
 
 ## Nov 1: the story, STORY_PAGES off (branch tg-story, unmerged)
 
-- Added docs/STORY.md (frontier claim, alignment and privacy paragraphs, 3-minute video outline), `/offline` (new, public, no flag, not in the sidebar), `lib/story/flow.ts` (each step's mark), and with STORY_PAGES a longer `/private` and a frontier section on `/how-it-works`. With the flag off both existing pages render as before.
+- Added docs/STORY.md (frontier claim, alignment and privacy paragraphs, 3-minute video outline), `/offline` (new, not in the sidebar; flag added in review, see below), `lib/story/flow.ts` (each step's mark), and with STORY_PAGES a longer `/private` and a frontier section on `/how-it-works`. With the flag off both existing pages render as before.
 - Decision: the claim reads "is built so", since the chain has not run as one. Marks: harness for data, tuning and judging, simulated for own hardware, not run for the small file and for an app on its tuned model.
-- Decision: the owner's rule stands, so /private doesn't name Offline Base, and a test checks that. /offline links it as Muse Privacy.
+- Decision: the owner's rule stands, so /private doesn't name the company, and a test checks that.
 - Decision: the flag is read at build time, since both pages are static. Turning it on takes a deploy.
 - Facts read only from ~/jetson-infra (README, docs/fleet.md), ~/BaseDrive-production (production-log.csv; it has logs, no docs) and ~/base-drive/README.md. No board touched.
-- Run: components/story/__tests__/story.test.tsx and components/private/__tests__/private-page.test.tsx, 13 pass, including numbers held to the logs and reports. tsc filtered to touched paths, clean. Pages seen on a local dev site, port 3031, flag on, 1280 and 390 wide, 200, no sideways scroll, no page errors, Offline Base absent from /private.
+- Run: components/story/__tests__/story.test.tsx and components/private/__tests__/private-page.test.tsx, 13 pass, including numbers held to the logs and reports. tsc filtered to touched paths, clean. Pages seen on a local dev site, port 3031, flag on, 1280 and 390 wide, 200, no sideways scroll, no page errors, the company's name absent from /private.
   ![/offline with its marks](log/shots/2026-11-01/story-offline-1280.png)
   ![/private with STORY_PAGES](log/shots/2026-11-01/story-private-1280.png)
 - Not run: the full suite, next build, flag-off pages in a browser (tests only for /private), a Preview. Spend $0.
+
+## Nov 1: independent review of the story, fixes (branch tg-story, unmerged)
+
+- Fixed: `/offline` was public with no flag, against the rule that new behaviour stays off by default. It now answers 404 unless STORY_PAGES is on, so it deploys with the other two story pages.
+- Fixed: `/offline` used the callout and list styles from private.css without loading them. It loads them now.
+- Fixed: "Nothing on a board listens on the local network" was too broad. docs/fleet.md serves the console at jetson-05.local:8080 on the LAN. The line now covers only the model server and the fleet agent.
+- Fixed: the privacy paragraph left out the 65.0% holdout result. The relay row now says the relay is not end-to-end encrypted, as the threat model does. The video line now explains the amber harness mark.
+- Run: story and private page tests, 15 pass. tsc filtered to touched paths, clean. Local dev site, port 3031, HTTP only: flag off /offline 404, /private and /how-it-works 200 without the story sections; flag on all three 200 with them; the company's name absent from /private both ways.
+- Not run: browser views after these fixes, so the two screenshots above predate them. The full suite, next build, a Preview. Spend $0.
