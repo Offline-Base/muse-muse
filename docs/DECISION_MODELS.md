@@ -55,7 +55,10 @@ tokenizer files were read, for the D1 fixture.
 **Left,** in order:
 
 1. **D8, the real runs (waits for the owner, decision 2).** One `dryRun: 1` decide job on a real GPU (a few minutes,
-   about $0.10 to $0.30), then the one real run: a made-up 4-label set of about 400 rows on an A100 SXM4 with `maxUsd`
+   about $0.10 to $0.30). A dry run fakes the scores and loads no model, so it checks only the platform's side: the
+   pages, callbacks, decide.json and the adapter upload path. Then one `scoreOnly: 1` job on the same made-up set
+   (about $0.70), which loads Glimmer and runs the real scoring path: `logits_to_keep`, `position_ids`,
+   `UNSLOTH_RETURN_LOGITS` and the base scores, with nothing trained. Then the one real run: a made-up 4-label set of about 400 rows on an A100 SXM4 with `maxUsd`
    5, expected about $0.83. To check there: that Unsloth's Glimmer forward takes `logits_to_keep` and `position_ids`
    and returns logits with `UNSLOTH_RETURN_LOGITS` set at run time, and that `SFTConfig` takes `group_by_length`; the
    training and scoring rates, which then replace `DECIDE_TRAIN_ROWS_PER_SECOND` and `DECIDE_SCORE_PROMPTS_PER_SECOND`
@@ -492,7 +495,8 @@ serving a made-up dataset's real pages (`lib/train/__tests__/runner.test.ts`); n
   with letters from A, a repeated index, renderings that don't share one system message, and (unless `scoreOnly`) pages
   with no decide.json for that system message. `scoreOnly` never fetches `part=train`.
 - **Scoring (`score_all`):** 8 prompts a pass, left padded, `position_ids` counted from the attention mask,
-  `use_cache=False`, `logits_to_keep=1` (every position's logits, logged once, on a model that refuses the argument),
+  `use_cache=False`, `logits_to_keep=1` (on a model that refuses the argument: every position's logits, logged once,
+  and from then on one prompt a pass, so the logits stay under about 1 GB instead of about 6.6 GB for 8 long prompts),
   the last position through `log_softmax(logits.float())`, then the 10 letter ids (A to E, bare and space-led) read out
   with the top token. `UNSLOTH_RETURN_LOGITS=1` is set for each pass and put back after, so training never
   materializes logits. A letter's log-probability is the log-sum-exp of its two tokens, floored at -10,000
@@ -500,7 +504,11 @@ serving a made-up dataset's real pages (`lib/train/__tests__/runner.test.ts`); n
   whose prompt plus `<|begin_of_text|>`, the letter and `<|eot|>` would pass 2,048 tokens is skipped and counted.
 - **Training:** the renderings that fit (with `<|begin_of_text|>`, at most 2,048 tokens) train at
   `per_device_train_batch_size` 16, `gradient_accumulation_steps` 2 and `group_by_length` on, for
-  `min(2000, ceil(n / 32))` steps; `check_masking` confirms each trained span starts with its letter. The deadline
+  `min(2000, ceil(n / 32))` steps; `check_masking` confirms each trained span starts with its letter. The tokenizer pads
+  on the right for training (scoring sets left and puts it back). The `SFTConfig` is made before the base pass
+  (`decide_train_args`), so a config the installed Unsloth refuses fails before scoring is paid for; one that refuses
+  only `group_by_length` (transformers 5 dropped it) trains without it, logged, with the done metric
+  `group_by_length` "no", which the decision card reads. The deadline
   clock, the adapter save, `fix_adapter_config` and freeing the optimizer work as in chat mode.
 - **Order:** base scores (written at once), training, the adapter saved, tuned scores. The parent then sends every
   score before anything else can fail (`decide_send`): with no adapter, the base scores go and the job fails; with the

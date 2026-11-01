@@ -610,6 +610,7 @@ class SFTTrainer:
     def __init__(self, model, tokenizer, train_dataset, eval_dataset, args):
         self.model, self.args, self.callbacks = model, args, []
         tok = getattr(tokenizer, "tokenizer", tokenizer)
+        self.padding_side = getattr(tok, "padding_side", None)
         self.train_dataset = [
             {"text": row["text"], "input_ids": ([0] + tok.encode(row["text"] + tok.eos_token))[: args.max_length]}
             for row in train_dataset
@@ -1880,6 +1881,8 @@ assert model.steps == ["base", "base", "base", "save", "tuned", "tuned", "tuned"
 assert state["peft"] == 1
 args = state["trainer"].args
 assert (args.per_device_train_batch_size, args.gradient_accumulation_steps, args.group_by_length, args.max_steps) == (16, 2, True, 2)
+assert state["trainer"].padding_side == "right", "training pads on the right, whatever the base pass left"
+assert tok.padding_side == "right", "scoring puts the padding side back as it found it"
 assert state["masked"] == [[g.INSTRUCTION_PART, g.RESPONSE_PART]]
 for row, convo in zip(state["rows"], TRAIN):
     trained = [t for t, label in zip(row["input_ids"], row["labels"]) if label != -100]
@@ -1929,15 +1932,57 @@ assert result["adapter"] is False and result["tuned"] is None and result["base"]
 assert state["peft"] == 0 and state["trainer"] is None and state["model"].steps == ["base"]
 assert not os.path.exists(cfg["adapter_dir"])
 
-# A model that refuses logits_to_keep gets every position's logits, once it said so.
+# A model that refuses logits_to_keep gets every position's logits, once it said so, one prompt a pass.
 DecideModel.takes_keep = False
 state = install_decide(replies)
 cfg, error = decide_child_run(train, items[:1], score_only=True)
-DecideModel.takes_keep = True
 assert error is None, error
 assert [f["keep"] for f in state["model"].forwards] == [None]
+state = install_decide(replies)
+cfg, error = decide_child_run(train, [items[0], items[2], items[3]], score_only=True)
+DecideModel.takes_keep = True
+assert error is None, error
+assert [(f["keep"], len(f["prompts"])) for f in state["model"].forwards] == [(None, 1)] * 3, state["model"].forwards
+fell_back = g.read_result(cfg["result_path"])["base"]
+assert fell_back[0] is not None and fell_back[1] is not None and fell_back[2] is None, "same scores, NaN still left out"
 assert g.read_result(cfg["result_path"])["base"][0]["logprobs"][1] > g.read_result(cfg["result_path"])["base"][0]["logprobs"][0]
 assert any(e["kind"] == "log" and "doesn't take logits_to_keep" in e["text"] for e in EVENTS)
+
+
+# An SFTConfig that refuses group_by_length trains without it. The config is made before the base pass, so one that
+# refuses anything else fails the job before any scoring is paid for.
+class NoGroupConfig(SFTConfig):
+    def __init__(self, **kwargs):
+        if "group_by_length" in kwargs:
+            raise TypeError("SFTConfig.__init__() got an unexpected keyword argument 'group_by_length'")
+        SFTConfig.__init__(self, **kwargs)
+
+
+state = install_decide(replies)
+sys.modules["trl"].SFTConfig = NoGroupConfig
+cfg, error = decide_child_run(train, items[:1])
+assert error is None, error
+assert not hasattr(state["trainer"].args, "group_by_length") and state["trainer"].args.per_device_train_batch_size == 16
+assert g.read_result(cfg["result_path"])["metrics"]["group_by_length"] == "no"
+assert any(e["kind"] == "log" and "doesn't take group_by_length" in e["text"] for e in EVENTS), EVENTS
+
+
+class RefusingConfig:
+    def __init__(self, **kwargs):
+        raise TypeError("SFTConfig.__init__() got an unexpected keyword argument 'loss_type'")
+
+
+state = install_decide(replies)
+sys.modules["trl"].SFTConfig = RefusingConfig
+try:
+    decide_child_run(train, items[:1])
+    raise AssertionError("a refused config fails the job")
+except TypeError as e:
+    assert "loss_type" in str(e)
+assert state["model"].forwards == [], "no base pass before the config is known to work"
+state = install_decide(replies)
+cfg, error = decide_child_run(train, items[:1])
+assert error is None and g.read_result(cfg["result_path"])["metrics"]["group_by_length"] == "yes"
 
 # A tokenizer that splits a letter fails the job before anything is scored.
 state = install_decide(replies, tokenizer=FakeTokenizer())

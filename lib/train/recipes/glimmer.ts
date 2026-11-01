@@ -1790,7 +1790,10 @@ def forward_logits(model, torch, input_ids, attention_mask, positions, keep):
                 if "logits_to_keep" not in str(e):
                     raise
                 keep["last"] = False
-                emit("log", text="The model doesn't take logits_to_keep (" + str(e)[:200] + "), so every position's logits are computed")
+                emit("log", text="The model doesn't take logits_to_keep (" + str(e)[:200] + "), so every position's logits are computed, one prompt a pass")
+                # The caller sends this batch again one prompt at a time: 8 prompts of 2,048 tokens over the whole
+                # vocabulary would be about 6.6 GB of logits next to the model.
+                return None
         return model(**args).logits
 
 
@@ -1802,6 +1805,7 @@ def score_all(FastModel, model, tok, torch, prompts, items, letter_ids, label):
     logits only when asked (UNSLOTH_RETURN_LOGITS, set for the pass and put back after, so training doesn't keep them)."""
     if hasattr(FastModel, "for_inference"):
         FastModel.for_inference(model)
+    padding_side = getattr(tok, "padding_side", None)
     tok.padding_side = "left"
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
@@ -1812,13 +1816,18 @@ def score_all(FastModel, model, tok, torch, prompts, items, letter_ids, label):
     os.environ["UNSLOTH_RETURN_LOGITS"] = "1"
     keep = {"last": True}
     try:
-        for n, start in enumerate(range(0, len(todo), DECIDE_SCORE_BATCH)):
-            batch = todo[start:start + DECIDE_SCORE_BATCH]
+        every = DECIDE_PROGRESS_BATCHES * DECIDE_SCORE_BATCH
+        start = 0
+        while start < len(todo):
+            # One prompt a pass once the model computes every position's logits (forward_logits).
+            batch = todo[start:start + (DECIDE_SCORE_BATCH if keep["last"] else 1)]
             enc = tok([prompts[i] for i in batch], return_tensors="pt", padding=True)
             input_ids = enc["input_ids"].to("cuda")
             attention_mask = enc["attention_mask"].to("cuda")
             positions = (attention_mask.cumsum(-1) - 1).clamp(min=0)
             logits = forward_logits(model, torch, input_ids, attention_mask, positions, keep)
+            if logits is None:
+                continue
             shape = tuple(logits.shape)
             if len(shape) != 3 or shape[0] != len(batch) or shape[-1] <= flat[-1]:
                 raise RuntimeError("The model's forward pass gave logits of shape " + str(shape) + ", not a row of the vocabulary for each prompt")
@@ -1828,9 +1837,13 @@ def score_all(FastModel, model, tok, torch, prompts, items, letter_ids, label):
             for k, i in enumerate(batch):
                 out[i] = letter_scores(picked[k], flat, items[i]["letters"], letter_ids, tops[k])
             done = start + len(batch)
-            if (n + 1) % DECIDE_PROGRESS_BATCHES == 0 or done == len(todo):
+            if done // every != start // every or done == len(todo):
                 emit("phase", message=label + " scores: " + str(done) + " of " + str(len(todo)))
+            start = done
     finally:
+        # Put back as found: training pads its batches of 16 on the right, with no position ids from a mask.
+        if padding_side is not None:
+            tok.padding_side = padding_side
         if saved is None:
             os.environ.pop("UNSLOTH_RETURN_LOGITS", None)
         else:
@@ -1892,6 +1905,38 @@ def decide_callbacks(TrainerCallback, stop, total):
     return Progress(), Deadline()
 
 
+def decide_train_args(SFTConfig, cfg, total):
+    """Decide training's SFTConfig and whether it groups by length. It is made before the base pass, so a config this
+    Unsloth refuses fails before scoring is paid for. group_by_length only orders batches by length to pad less:
+    Unsloth's patched config took it for the knowledge run's A100 runs, but transformers 5 dropped it, so a config that
+    refuses it trains without it, logged."""
+    args = {
+        "dataset_text_field": "text",
+        "max_length": cfg["max_seq_length"],
+        "loss_type": "nll",
+        "per_device_train_batch_size": DECIDE_TRAIN_BATCH,
+        "gradient_accumulation_steps": DECIDE_GRAD_ACCUM,
+        "warmup_steps": 5,
+        "max_steps": total,
+        "learning_rate": float(cfg["learning_rate"]),
+        "logging_steps": 1,
+        "optim": "adamw_8bit",
+        "weight_decay": 0.001,
+        "lr_scheduler_type": "linear",
+        "seed": 3407,
+        "output_dir": cfg["output_dir"],
+        "save_strategy": "no",
+        "report_to": "none",
+    }
+    try:
+        return SFTConfig(group_by_length=True, **args), True
+    except TypeError as e:
+        if "group_by_length" not in str(e):
+            raise
+        emit("log", text="This SFTConfig doesn't take group_by_length (" + str(e)[:200] + "), so batches aren't grouped by length")
+        return SFTConfig(**args), False
+
+
 def decide_child(cfg):
     """The child in decide mode (docs/DECISION_MODELS.md, "The GPU side"). Loads the model and scores the dev and test
     items with the base (a fresh LoRA adds zero), writing those scores at once; then trains on the renderings, whose
@@ -1947,6 +1992,10 @@ def decide_child(cfg):
         "renderings": len(texts), "train_too_long": train_too_long, "too_long": too_long, "steps": total,
         "max_steps": total, "gpu": torch.cuda.get_device_name(0),
     }
+    train_args = None
+    if not score_only:
+        train_args, grouped = decide_train_args(SFTConfig, cfg, total)
+        metrics["group_by_length"] = "yes" if grouped else "no"
 
     began = time.time()
     result["base"] = score_all(FastModel, model, text_tokenizer, torch, prompts, items, letter_ids, "Base")
@@ -1962,6 +2011,8 @@ def decide_child(cfg):
 
     if hasattr(FastModel, "for_training"):
         FastModel.for_training(model)
+    # Batches of 16 pad on the right for training, whatever scoring left it as.
+    text_tokenizer.padding_side = "right"
     dataset = Dataset.from_list([{"text": text} for text in texts])
     # Training stops early when the clock says so, leaving time to save the adapter and score with the tuned model.
     stop = StopClock(train_stop_time(deadline, base_seconds)) if deadline else None
@@ -1971,26 +2022,7 @@ def decide_child(cfg):
         tokenizer=tokenizer,
         train_dataset=dataset,
         eval_dataset=None,
-        args=SFTConfig(
-            dataset_text_field="text",
-            max_length=cfg["max_seq_length"],
-            loss_type="nll",
-            per_device_train_batch_size=DECIDE_TRAIN_BATCH,
-            gradient_accumulation_steps=DECIDE_GRAD_ACCUM,
-            # Unsloth's patched config takes it (transformers 5 dropped it), as the knowledge run's A100 runs used it.
-            group_by_length=True,
-            warmup_steps=5,
-            max_steps=total,
-            learning_rate=float(cfg["learning_rate"]),
-            logging_steps=1,
-            optim="adamw_8bit",
-            weight_decay=0.001,
-            lr_scheduler_type="linear",
-            seed=3407,
-            output_dir=cfg["output_dir"],
-            save_strategy="no",
-            report_to="none",
-        ),
+        args=train_args,
     )
     trainer = train_on_responses_only(trainer, instruction_part=INSTRUCTION_PART, response_part=RESPONSE_PART)
     examples = [trainer.train_dataset[i] for i in range(len(trainer.train_dataset))]

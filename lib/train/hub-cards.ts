@@ -2225,7 +2225,7 @@ function decisionTrainingSection(f: DecisionCardFacts): string {
     const early = metric("stopped_early", m) === "yes" ? " (stopped early to finish within the time limit)" : "";
     rows.push([
       "Steps",
-      `${done}${maxSteps !== null && steps !== null && steps !== maxSteps ? ` of ${maxSteps}` : ""}${early}, batch ${tr.batchSize} with gradient accumulation ${tr.gradientAccumulation} (${tr.batchSize * tr.gradientAccumulation} renderings a step${tr.groupByLength ? ", grouped by length" : ""})`,
+      `${done}${maxSteps !== null && steps !== null && steps !== maxSteps ? ` of ${maxSteps}` : ""}${early}, batch ${tr.batchSize} with gradient accumulation ${tr.gradientAccumulation} (${tr.batchSize * tr.gradientAccumulation} renderings a step${tr.groupByLength && metric("group_by_length", m) !== "no" ? ", grouped by length" : ""})`,
     ]);
   }
   rows.push(["Max sequence length", String(t.maxSeqLength)]);
