@@ -43,7 +43,8 @@ const PUBLISH_GPUS: Recipe["gpus"] = [
 /**
  * GPUs for glimmer-quantize, in order: each has at least 220 GiB of RAM and 512 GiB of local disk (Lambda's specs on
  * 2026-10-28), for the merge's 60 GB of RAM and the files' disk. On the A100s, 40 GB holds the Q8_0 reference whole;
- * the A10's 24 GB splits it with the CPU and is tight for the 4-bit model, so it comes last. The A6000 and RTX 6000
+ * the A10's 24 GB splits it with the CPU and needs offloading for r30b's 4-bit model (both seen working Nov 1 2026), so it
+ * comes last. The A6000 and RTX 6000
  * have too little RAM.
  */
 const QUANT_GPUS: Recipe["gpus"] = [

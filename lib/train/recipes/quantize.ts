@@ -219,8 +219,9 @@ CALIBRATION_MIN_CHARS = 20000
 NEED_LOW_BIT_SECONDS = 25 * 60
 # The one-bit answer check: fewer prompts and tokens than Q4_K_M's, since a file that repeats itself runs to the limit.
 # The knowledge run's base IQ1_S ran to its token limit on 1,457 of 1,500 prompts, and its tuned stage 2 IQ1_S stopped on
-# its own on 50 of 50, so this tells them apart. No KL limit gates IQ1_S: nothing has measured its KL divergence yet, so
-# the job records it and the card shows it. Set this and LOW_BIT_KL_MAX in lib/train/logic.ts from a real run's number.
+# its own on 50 of 50, so this tells them apart. No KL limit gates IQ1_S: the job records it and the card shows it. One real
+# run measured 1.183 from an older base's adapter, which can't set a limit. Set this and LOW_BIT_KL_MAX in lib/train/logic.ts
+# from an r30b tune's number.
 LOW_BIT_KL_MAX = None
 LOW_BIT_CHECK_PROMPTS = 30
 LOW_BIT_MAX_TOKENS = 512
@@ -599,13 +600,17 @@ def install_meta_files(merged_dir, files):
         # A small base's tokenizer_config.json holds the same template as its chat_template.jinja, by their pinned bytes.
         if "chat_template" in json.load(f) and not QUANT_BASE:
             raise RuntimeError("Meta's tokenizer_config.json has a chat_template key, which would replace its chat_template.jinja")
-    # Meta's file names transformers 5's tokenizer class, which the converter's pinned 4.57.6 can't load (seen Nov 1 2026). The
-    # vocabulary comes from tokenizer.json and the template from chat_template.jinja, and gguf_problem checks the template.
+    # Meta's file is in transformers 5's format, which the converter's pinned 4.57.6 can't load: its tokenizer class, and a
+    # list of extra special tokens (seen Nov 1 2026). The vocabulary comes from tokenizer.json, and the template from
+    # chat_template.jinja, which gguf_problem checks. With these two changes a vocab-only conversion's tokens, types, merges,
+    # special ids and template all hashed the same as the knowledge run's r30b GGUF.
     path = os.path.join(merged_dir, "tokenizer_config.json")
     with open(path, encoding="utf-8") as f:
         config = json.load(f)
     if config.get("tokenizer_class") == "TokenizersBackend":
         config["tokenizer_class"] = "PreTrainedTokenizerFast"
+        if isinstance(config.get("extra_special_tokens"), list):
+            del config["extra_special_tokens"]
         with open(path, "w", encoding="utf-8") as f:
             json.dump(config, f, ensure_ascii=False)
 

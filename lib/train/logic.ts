@@ -1178,9 +1178,9 @@ export function isQuantRecipe(recipe: RecipeId | string | null | undefined): boo
 export const QUANT_KL_MAX: Readonly<Record<QuantLevel, number>> = { Q3_K_M: 0.08, Q4_K_M: 0.03, Q6_K: 0.005 };
 
 /**
- * The one-bit build's KL limit: none, since no IQ1_S KL divergence has been measured, and Q3_K_M's limit says nothing
- * about a file this small. Until a real run measures it, the job records its KL and the answer check on the file itself
- * decides. Set this and LOW_BIT_KL_MAX in QUANT_PY together, from a measurement.
+ * The one-bit build's KL limit: none. The one real IQ1_S measured 1.183 (Nov 1, docs/log/quant-run-2026-11-01), from an
+ * adapter trained on an older base with text it didn't train on, which can't set a limit. The job records its KL and the
+ * answer check on the file itself decides. Set this and LOW_BIT_KL_MAX in QUANT_PY together, from an r30b tune's number.
  */
 export const LOW_BIT_KL_MAX: number | null = null;
 

@@ -926,6 +926,19 @@ raises(lambda: q.run(ctx), "weren't sent to the Hugging Face Hub: Publishing to 
 `);
   });
 
+  it("makes Meta's transformers 5 tokenizer config readable by the converter", async () => {
+    await quantTest(String.raw`
+merged = os.path.join(ROOT, "merged-config")
+os.makedirs(merged)
+src = os.path.join(ROOT, "meta-config.json")
+with open(src, "w") as f:
+    json.dump({"tokenizer_class": "TokenizersBackend", "extra_special_tokens": ["<|a|>"], "bos_token": "<|b|>"}, f)
+q.install_meta_files(merged, {"tokenizer_config.json": src})
+with open(os.path.join(merged, "tokenizer_config.json")) as f:
+    assert json.load(f) == {"tokenizer_class": "PreTrainedTokenizerFast", "bos_token": "<|b|>"}
+`);
+  });
+
   it("counts an answer the token budget cut in half as unfinished, and any other 500 as a failed check", async () => {
     await quantTest(String.raw`
 class S:
