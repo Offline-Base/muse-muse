@@ -111,6 +111,69 @@ def wait_for(condition, seconds=20):
         time.sleep(0.05)
 
 
+class BoardToolsForProducts(unittest.TestCase):
+    """read_sensor and show_text: what a product may do with a board besides the camera and microphone."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir)
+        for zone, kind, temp in (("thermal_zone0", "cpu-thermal", "41500"), ("thermal_zone1", "gpu-thermal", "39000")):
+            os.mkdir(os.path.join(self.dir, zone))
+            for name, value in (("type", kind), ("temp", temp)):
+                with open(os.path.join(self.dir, zone, name), "w") as f:
+                    f.write(value + "\n")
+        patches = [
+            mock.patch.object(server, "THERMAL_GLOB", os.path.join(self.dir, "thermal_zone*")),
+            mock.patch.object(server, "SHOW_TEXT_FILE", os.path.join(self.dir, "state", "show-text.txt")),
+        ]
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+        server.show_text_times.clear()
+        self.addCleanup(server.show_text_times.clear)
+
+    def test_both_tools_are_offered_and_run_command_still_is_not(self):
+        tools = {tool["name"]: tool for tool in server.handle_rpc("tools/list", {})["tools"]}
+        self.assertTrue(tools["read_sensor"]["annotations"]["readOnlyHint"])
+        self.assertIn("show_text", tools)
+        self.assertNotIn("run_command", tools)
+
+    def test_read_sensor_reads_every_zone_or_one_by_name(self):
+        reading = json.loads(server.read_sensor({})["content"][0]["text"])
+        self.assertEqual([(s["name"], s["value"], s["unit"]) for s in reading["sensors"]], [("cpu-thermal", 41.5, "C"), ("gpu-thermal", 39.0, "C")])
+        one = json.loads(server.read_sensor({"sensor": "gpu-thermal"})["content"][0]["text"])
+        self.assertEqual([s["name"] for s in one["sensors"]], ["gpu-thermal"])
+
+    def test_read_sensor_refuses_a_name_it_does_not_have(self):
+        with self.assertRaisesRegex(server.ToolError, "no sensor called"):
+            server.read_sensor({"sensor": "../../etc/passwd"})
+        with self.assertRaisesRegex(server.ToolError, "must be a name"):
+            server.read_sensor({"sensor": 5})
+
+    def test_show_text_writes_one_line_and_runs_nothing(self):
+        with mock.patch.object(subprocess, "run", side_effect=AssertionError("show_text must run nothing")):
+            result = json.loads(server.show_text({"text": "Back in 5 minutes"})["content"][0]["text"])
+        self.assertEqual(result, {"shown": "Back in 5 minutes"})
+        with open(server.SHOW_TEXT_FILE) as f:
+            self.assertEqual(f.read(), "Back in 5 minutes\n")
+
+    def test_show_text_limits_its_size_and_shape(self):
+        for bad in ("", "   ", "x" * 201, "two\nlines", "bell\x07", None, 5):
+            with self.subTest(text=bad):
+                with self.assertRaises(server.ToolError):
+                    server.show_text({"text": bad})
+        self.assertFalse(os.path.exists(server.SHOW_TEXT_FILE))
+        server.show_text({"text": "x" * 200})
+
+    def test_show_text_allows_six_a_minute(self):
+        for i in range(6):
+            server.show_text({"text": f"line {i}"})
+        with self.assertRaisesRegex(server.ToolError, "at most 6"):
+            server.show_text({"text": "one too many"})
+        with open(server.SHOW_TEXT_FILE) as f:
+            self.assertEqual(f.read(), "line 5\n")
+
+
 class FakeDownload(io.BytesIO):
     def __init__(self, data, length=None):
         super().__init__(data)
@@ -198,7 +261,7 @@ class TrainingTests(unittest.TestCase):
         self.assertIn(words, reply)
 
     def test_version_and_tools_are_offered(self):
-        self.assertEqual(server.VERSION, "0.4.0")
+        self.assertEqual(server.VERSION, "0.5.0")
         names = [tool["name"] for tool in server.handle_rpc("tools/list", {})["tools"]]
         for name in ("save_dataset", "train_model", "training_status", "stop_training"):
             self.assertIn(name, names)
