@@ -954,6 +954,28 @@ There is no stop route yet: failing a dataset partway doesn't stop its prompt ba
 
 **The pages** (docs/UI_MUSE_APP.md, "Where it applies"). `/fine-tuning/new` is the Make page's layout with its own words: the headline, the composer with the new props (`send` in place of starting a build, `accept` and `acceptFile` for CSV, TSV, JSONL, JSON and text files up to 512 KB, `keepFilesLocal` so the rows are read in the browser and never uploaded, and `copy` for the box's words; with none of them the muse box and the change box are as they were), the Try chips, the line saying what a run does and costs, and the folded Training setup (`SetupPanel` with `rows`, `title` and `note`). Send turns it into the plan step (`PlanStep` in `components/train/compose/TrainComposer.tsx`) at once: the title chip, the person's words and files as a bubble, "Muse Wonder is drafting the plan" as the working step, then the plan card presenting with Start, Change it and Advanced, or the refusal with Change it. The box stays mounted under it, so Change it finds the note and the files as they were. The room (`components/train/room/TrainRoom.tsx`) is the build room's kit: the working step with its cost so far and Show steps while something runs, Show thinking once the run ended, the plan card with the stage's mascot (`tuneArt`), and the steps panel with the stages it reached (`tuneSteps`) and its two models under Sources. It polls `GET /api/train/runs/{id}` every 5 s while something runs and every 30 s while it waits, skipping a hidden tab's turns as JobRoom does. Its styles are `components/train/tune.css`, phone first, tokens only, every class a new `tune-` one, loaded by the two pages' layouts. Under reduced motion nothing moves: the Advanced chevron, the kit's working icon and the plan card's crossfade all stop.
 
+**A build plans its own model** (U7, `TUNE_FROM_BUILDS`, with `TUNE_COMPOSER` on too). A live or partial build whose
+brief picked `muse-glimmer` gets an "Its own model" row in its build room (`components/build/OwnModelRow.tsx`, the last
+row of the conversation, so no row before it moves), for the product's owner or an admin (`ownModelOffer` in
+`lib/train/tune/from-build.ts`, read by `app/b/[buildId]/page.tsx`). It says what the model would learn (the
+capability's `need`), that Muse Wonder writes about 200 examples, one GPU trains it and it is scored against the base,
+that the product keeps answering with Muse Wonder until its own model passes and a serving window is open, and the
+estimate, called one. Plan it (admins today; the owner is told only admins can plan yet) writes the composer's draft
+from the brief (`ownModelNote`: the need, the product and its tagline, who uses it, its steps) and opens
+`/fine-tuning/new?fromBuild=<buildId>`, which says which product it's for. `POST /api/train/plan {fromBuildId}` checks
+the build (`buildForTune` in `lib/train/tune/build-source.ts`: 404 `build_not_found`, 403 `not_owner`, 409
+`build_not_ready`) and signs the plan with source `{kind: "build", buildId, productId}`. Start (`POST /api/train/runs`)
+starts it as a task plan, once a product a day (429 `product_daily`, a `tune-product-day:<productId>` counter kept
+under the day's end), and `startTuneRun` keeps the product with the run. Nothing starts on its own and the build is
+live without waiting: there is no pipeline edit. With the flag off the build room renders byte for byte as before
+(`tune-flag-off.test.tsx`).
+
+**Where the product is kept** (no migration). `startTuneRun({productId})` (unit 11's "Train on my data"), or a build
+plan's own, writes `tune-product:<datasetId>:<productId>:<buildId or "none">` in `rate_limits` under the window that
+never starts (`saveRunProduct`, `readRunProduct`, `runsOfProduct` in `lib/train/tune/run-store.ts`). Wave 3's 0025 adds
+`training_jobs.product_id`; to fill it, take each such row's product for the run's job (`params->>'datasetId'` =
+the row's dataset id), and from then on startTuneRun can write the column too.
+
 **Tests:** `lib/train/__tests__/launch.test.ts` (`launchJob` on PGlite, its refusals the route's replies) and `lib/train/tune/__tests__/` (examples, plan, token, verdict, steps limits, view and steps with the run's marks, the routes with the model faked, the reads on PGlite, and `run-flow.test.ts`: the examples check, `launchForRun`, the `tuneRun` workflow with a fake clock and Start training, on PGlite with Lambda faked) and in `components/train/__tests__/`: `tune-pages.test.tsx` (both pages with the flag off and on, the composer's props, SetupPanel's rows), `tune-room.test.tsx` (the room at every stage from `tune-room-fixture.ts`, the plan step's phases, Where it runs, PlanView parity and the stylesheet), `tune-live.test.ts` (the room's live demo read) and `tune-flag-off.test.tsx` (the build composer, the build setup, the build room, the plan card on its own for each brief it can pass, and `/fine-tuning`, against hashes taken from the code before the edits). All data in them is made up, and nothing calls Meta.
 
 ## Flash drive orders (docs/VIBE_TUNING.md, Feature 6)
