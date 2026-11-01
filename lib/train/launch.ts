@@ -13,6 +13,7 @@ import { BASE_MODEL_PARAM, LAB_BASE_MODEL } from "@/lib/train/base";
 import { resolveBase } from "@/lib/train/base-check";
 import { askedBase, baseParams } from "@/lib/train/bases";
 import { decideRunSize, isDecideMode } from "@/lib/train/decision-datasets";
+import { budgetPassed, budgetRaceText, budgetRefusalText, holdToBudget, type GpuBudget } from "@/lib/train/gpu-budget";
 import { gpuOptions, lambdaConfigured, limitCeilings, sweepOffReason, sweepRunning } from "@/lib/train/gate";
 import { quantParams } from "@/lib/train/hub-cards";
 import { cacheRegions, LambdaApiError, listInstanceTypes, pickGpu, type LambdaInstanceType } from "@/lib/train/lambda";
@@ -51,6 +52,7 @@ import {
   getDataset,
   ownerRowsProblem,
   getLiveDemo,
+  gpuBudgetFor,
   lastSweepOkAt,
   openQuantJob,
   setStatus,
@@ -224,6 +226,21 @@ async function dailyCap(jobMaxUsd: number): Promise<LaunchRefusal> {
 }
 
 /**
+ * The gpu_limit refusal: TRAIN_USER_LIMIT_USD or TRAIN_TOTAL_LIMIT_USD could be passed. `reason` is the sentence to show,
+ * with what's left. `raced` marks a start that backed out for another at the same moment, which may fit if tried again.
+ */
+function gpuLimit(budget: GpuBudget, raced = false): LaunchRefusal {
+  return refuse(429, "gpu_limit", {
+    reason: raced ? budgetRaceText(budget) : budgetRefusalText(budget),
+    scope: budget.scope,
+    leftUsd: budget.leftUsd,
+    userLeftUsd: budget.userLeftUsd,
+    totalLeftUsd: budget.totalLeftUsd,
+    ...(raced ? { raced: true } : {}),
+  });
+}
+
+/**
  * Checks and starts one job, for POST /api/train/jobs and every caller in lib (see the file's comment). Queues the job
  * and starts the trainJob workflow, which launches the instance (with mode "decide" for a glimmer-lora job in decide
  * mode, which the workflow scores after its run instead of judging). Limits are what was asked for, capped by the
@@ -244,7 +261,10 @@ async function dailyCap(jobMaxUsd: number): Promise<LaunchRefusal> {
  * Refusals: 400 bad input, 409 too_many_active (TRAIN_MAX_ACTIVE), 502 lambda_unavailable, 503 lambda_not_configured,
  * platform_not_public, sweep_not_configured with {reason}, sweep_not_running with {lastSweepAt}, daily_cap
  * (TRAIN_DAILY_USD could be passed, counting every unfinished job at its full dollar limit) or no_capacity with
- * {options}, 500 start_failed. Two starts at once that both pass the checks: the later one backs out.
+ * {options}, 429 gpu_limit (TRAIN_USER_LIMIT_USD or TRAIN_TOTAL_LIMIT_USD, lifetime limits: what's left is under the
+ * smallest job, or too little for this one to fit), 500 start_failed. A job's dollar limit is held to what's left of
+ * both. Two starts at once that both pass the checks: each counts the other once its row is saved, and backs out when
+ * the limits would pass, so at most they both refuse, and they never both spend the same money.
  */
 export async function launchJobRequest(input: LaunchRequest, caller: LaunchCaller): Promise<LaunchResult> {
   const recipe = recipeById(typeof input.recipe === "string" ? input.recipe : null);
@@ -311,7 +331,7 @@ export async function launchJobRequest(input: LaunchRequest, caller: LaunchCalle
   if (!maxMinutes.ok) return refuse(400, maxMinutes.error);
   const maxUsd = limit(input.maxUsd, "maxUsd");
   if (!maxUsd.ok) return refuse(400, maxUsd.error);
-  const limits = clampLimits(recipeDefaults(recipe, params.value), { maxMinutes: maxMinutes.value, maxUsd: maxUsd.value }, limitCeilings());
+  let limits = clampLimits(recipeDefaults(recipe, params.value), { maxMinutes: maxMinutes.value, maxUsd: maxUsd.value }, limitCeilings());
 
   if (!lambdaConfigured()) return refuse(503, "lambda_not_configured");
   if (!callbackOrigin(env.platformUrl)) return refuse(503, "platform_not_public");
@@ -329,6 +349,12 @@ export async function launchJobRequest(input: LaunchRequest, caller: LaunchCalle
     if (running) return refuse(409, "demo_running", { serveJobId: running.serveJobId });
   }
   if ((await activeJobCount()) >= env.trainMaxActive) return refuse(409, "too_many_active", { max: env.trainMaxActive });
+  // The lifetime limits, which every Lambda GPU passes through here. The job's dollar limit comes down to what's left, so
+  // its deadline, which comes from that limit, ends it in time. The daily check below then counts the lower limit.
+  const budget = await gpuBudgetFor(caller.userId);
+  const held = holdToBudget(limits.maxUsd, budget);
+  if (!held) return gpuLimit(budget);
+  limits = { ...limits, maxUsd: held.maxUsd };
   // The new job's whole dollar limit counts, and so does every unfinished job's, so the day's spend can't pass the cap.
   if ((await trainingCommittedToday()) + limits.maxUsd > env.trainDailyUsd) return dailyCap(limits.maxUsd);
 
@@ -353,7 +379,7 @@ export async function launchJobRequest(input: LaunchRequest, caller: LaunchCalle
     const label = recipe.gpus.find((g) => g.instanceType === gpu.instanceType)?.label ?? gpu.instanceType;
     const minutes = serveMinutes(params.value);
     const problem = serveFitProblem(minutes, usable, label);
-    if (problem) return refuse(400, problem, { estimateMinutes: minutes + SERVE_BOOT_MINUTES, usableMinutes: usable });
+    if (problem) return held.held ? gpuLimit(budget) : refuse(400, problem, { estimateMinutes: minutes + SERVE_BOOT_MINUTES, usableMinutes: usable });
   }
   // A run its limits would cut off before the end pays for the GPU and saves nothing. A decide job's estimate comes from
   // what its decision dataset makes it train and score.
@@ -363,7 +389,7 @@ export async function launchJobRequest(input: LaunchRequest, caller: LaunchCalle
     const usable = usableMinutes(limits, gpu.priceCentsPerHour);
     const label = recipe.gpus.find((g) => g.instanceType === gpu.instanceType)?.label ?? gpu.instanceType;
     const problem = runFitProblem(estimate, usable, label);
-    if (problem) return refuse(400, problem, { estimateMinutes: estimate.minutes, usableMinutes: usable });
+    if (problem) return held.held ? gpuLimit(budget) : refuse(400, problem, { estimateMinutes: estimate.minutes, usableMinutes: usable });
   }
 
   const job = await createJob({
@@ -401,14 +427,17 @@ export async function launchJobRequest(input: LaunchRequest, caller: LaunchCalle
     }
   }
   // Two requests at once could both pass the checks above. The new row now counts in both, so each backs out when it
-  // sees the other, and the limits hold.
+  // sees the other, and the limits hold. Each reads after its own row is saved, so whichever saved last sees both: at
+  // worst both back out, never both go on. Counting only earlier rows would let both go on.
   const tooMany = (await activeJobCount()) > env.trainMaxActive;
-  if (tooMany || (await trainingCommittedToday()) > env.trainDailyUsd) {
+  const overBudget = budgetPassed(await gpuBudgetFor(caller.userId));
+  if (tooMany || overBudget || (await trainingCommittedToday()) > env.trainDailyUsd) {
     await setStatus(job.id, "failed", {
       message: "Another job started at the same moment.",
       set: { error: "Another job started at the same moment, so this one was not launched." },
     });
-    return tooMany ? refuse(409, "too_many_active", { max: env.trainMaxActive }) : dailyCap(limits.maxUsd);
+    if (tooMany) return refuse(409, "too_many_active", { max: env.trainMaxActive });
+    return overBudget ? gpuLimit(await gpuBudgetFor(caller.userId), true) : dailyCap(limits.maxUsd);
   }
 
   let runId: string;

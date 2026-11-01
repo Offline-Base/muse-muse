@@ -12,6 +12,15 @@ export const FULL_LIMITS = { primaryFlow: 40, screens: 30, requirements: 60 } as
 export const REQUIREMENTS_PER_MILESTONE = 4;
 /** REFINE_ROUND_STRIDE is 10, and milestones plus 3 fix rounds must stay under it. */
 export const FULL_MILESTONES_MAX = 6;
+/** CHAINED_BUILDS (docs/CHAINED_BUILDS.md): rounds run across sessions, so the stride's limit is the chain's own. */
+export const CHAIN_MILESTONES_MAX = 40;
+export const CHAIN_REQUIREMENTS_MAX = 200;
+
+/** The most requirements a brief may have here. Read as lib/env.ts reads a flag, since only zod may be imported. */
+export function requirementsMax(): number {
+  const on = (name: string) => ["1", "true", "yes", "on"].includes((process.env[name] ?? "").trim().toLowerCase());
+  return on("CHAINED_BUILDS") && on("FULL_BUILDS") ? CHAIN_REQUIREMENTS_MAX : FULL_LIMITS.requirements;
+}
 
 export const RequirementSchema = z.object({
   id: z.string().regex(/^R[1-9][0-9]*$/),
@@ -32,6 +41,8 @@ export const RequirementSchema = z.object({
 export type Requirement = z.infer<typeof RequirementSchema>;
 
 export const RequirementsSchema = z.array(RequirementSchema).min(1).max(FULL_LIMITS.requirements);
+/** What a stored brief or a chained build's writer may hold. */
+export const ChainRequirementsSchema = z.array(RequirementSchema).min(1).max(CHAIN_REQUIREMENTS_MAX);
 
 /** The independent check's record on the brief (lib/full/scope.ts). */
 export const ScopeRecordSchema = z.object({
@@ -71,7 +82,7 @@ export interface RequirementRead {
   evidence: string;
 }
 
-type WithRequirements = { requirements?: Requirement[] | null };
+type WithRequirements = { requirements?: Requirement[] | null; chained?: boolean | null };
 
 export function briefRequirements(brief: WithRequirements | null | undefined): Requirement[] {
   return Array.isArray(brief?.requirements) ? brief.requirements : [];
@@ -90,7 +101,7 @@ export function normalizeRequirements(raw: unknown): unknown {
   if (!Array.isArray(raw)) return raw;
   return raw
     .filter((r): r is Record<string, unknown> => Boolean(r) && typeof r === "object" && typeof (r as { text?: unknown }).text === "string" && Boolean(((r as { text: string }).text).trim()))
-    .slice(0, FULL_LIMITS.requirements)
+    .slice(0, requirementsMax())
     .map((r, i) => {
       const canDo = r.canDo !== false;
       const why = typeof r.cantDoWhy === "string" && r.cantDoWhy.trim() ? r.cantDoWhy.trim() : null;
@@ -171,7 +182,7 @@ export function wordsLeftOut(note: string | null, planText: string): string[] {
 export function fullMilestones(brief: WithRequirements): Array<{ title: string; doneMeans: string; requirementIds: string[] }> {
   const list = buildableRequirements(brief);
   if (!list.length) return [];
-  const count = Math.min(FULL_MILESTONES_MAX, Math.ceil(list.length / REQUIREMENTS_PER_MILESTONE));
+  const count = Math.min(brief.chained === true ? CHAIN_MILESTONES_MAX : FULL_MILESTONES_MAX, Math.ceil(list.length / REQUIREMENTS_PER_MILESTONE));
   const size = Math.ceil(list.length / count);
   const out: Array<{ title: string; doneMeans: string; requirementIds: string[] }> = [];
   for (let i = 0; i < count; i++) {

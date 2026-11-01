@@ -27,6 +27,8 @@ import {
   type TrainJobRow,
 } from "@/lib/train/logic";
 import { decisionModelOf, type DecisionModel } from "@/lib/decide/serving";
+import { env } from "@/lib/env";
+import { gpuBudget, jobHoldUsd, type GpuBudget } from "@/lib/train/gpu-budget";
 import type { DecideScoreItem, DecisionRow, DecisionRows, DecisionSpec } from "@/lib/decide/types";
 import type { QuantSource } from "@/lib/train/hub-cards";
 import { PERSON_WRITER, PUBLIC_WRITER } from "@/lib/train/models";
@@ -487,11 +489,28 @@ export async function trainingCommittedToday(now: Date = new Date()): Promise<nu
     })
     .from(jobs)
     .where(or(gte(jobs.launchedAt, startOfUtcDay(now)), holdingGpu()));
-  const total = rows.reduce((sum, r) => {
-    if (!isTrainTerminal(r.status)) return sum + Math.max(r.maxUsd, estimateCostUsd(r, now));
-    return sum + (r.terminatedAt ? r.costUsd : estimateCostUsd(r, now));
-  }, 0);
+  const total = rows.reduce((sum, r) => sum + jobHoldUsd(r, now), 0);
   return Math.round(total * 1e6) / 1e6;
+}
+
+/**
+ * Where this person and the platform stand against TRAIN_USER_LIMIT_USD and TRAIN_TOTAL_LIMIT_USD, over every job ever
+ * made (lib/train/gpu-budget.ts). One statement, so both totals come from the same moment. A plain read of a small table:
+ * no counter to keep in step, and no migration.
+ */
+export async function gpuBudgetFor(userId: string, now: Date = new Date()): Promise<GpuBudget> {
+  const rows = await db()
+    .select({
+      status: jobs.status,
+      priceCentsPerHour: jobs.priceCentsPerHour,
+      maxUsd: jobs.maxUsd,
+      launchedAt: jobs.launchedAt,
+      terminatedAt: jobs.terminatedAt,
+      costUsd: jobs.costUsd,
+      createdBy: jobs.createdBy,
+    })
+    .from(jobs);
+  return gpuBudget(rows, userId, { userUsd: env.trainUserLimitUsd, totalUsd: env.trainTotalLimitUsd }, now);
 }
 
 /**

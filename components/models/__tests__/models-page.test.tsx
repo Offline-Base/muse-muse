@@ -44,6 +44,13 @@ describe("the hosted model catalog", () => {
     assert.equal(dollars(0.0025), "$0.0025");
   });
 
+  it("stops calling Contributor tests-only while BUILDS_ON_CONTRIBUTOR is on", () => {
+    const row = hostedModelViews(null, { buildsOnContributor: true }).find((m) => m.id === "muse-spark-1.3-contributor");
+    assert.equal(row?.testOnly, false);
+    assert.match(row?.use ?? "", /builds on right now/);
+    assert.equal(hostedModelViews(null).find((m) => m.id === "muse-spark-1.3-contributor")?.testOnly, true);
+  });
+
   it("lists the models Muse Muse calls, Wonder first and Contributor last, each priced and in the catalog", () => {
     const views = hostedModelViews(null);
     assert.deepEqual(

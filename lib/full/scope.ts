@@ -2,7 +2,7 @@ import { z } from "zod";
 import { cleanStrings } from "@/lib/brief/normalize";
 import { type ContentPart, type MediaSource, textPart } from "@/lib/brief/media";
 import { respondStructured } from "@/lib/brief/structured";
-import { briefRequirements, FULL_LIMITS, type Requirement, type ScopeRecord, wordsLeftOut } from "@/lib/full/requirements";
+import { briefRequirements, FULL_LIMITS, requirementsMax, type Requirement, type ScopeRecord, wordsLeftOut } from "@/lib/full/requirements";
 import type { ModelUsage } from "@/lib/types";
 
 /**
@@ -121,7 +121,7 @@ export async function enforceScope<B extends Parameters<typeof scopePlanText>[0]
     if (!problems.length) return { brief: { ...brief, scopeCheck: { ran: true, sentBack, asks, added: [] } }, usage, failure: null };
     if (sentBack >= MAX_SEND_BACKS) {
       const list = briefRequirements(brief);
-      const room = Math.max(0, FULL_LIMITS.requirements - list.length);
+      const room = Math.max(0, requirementsMax() - list.length);
       const added: Requirement[] = uncovered.slice(0, room).map((ask, i) => ({ id: `R${list.length + i + 1}`, text: ask, kind: "asked", words: ask, savesData: false, canDo: true, cantDoWhy: null }));
       return {
         brief: { ...brief, requirements: [...list, ...added], scopeCheck: { ran: true, sentBack, asks, added: added.map((r) => r.text) } },

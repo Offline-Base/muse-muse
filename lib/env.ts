@@ -92,6 +92,21 @@ export function testModel(): typeof SPARK_STANDIN | null {
 }
 
 /**
+ * BUILDS_ON_CONTRIBUTOR: the owner's decision to run every build on Spark 1.3 Contributor, on production too, with real
+ * people's notes and files. Meta may train on that tier and its terms (6.2) bar sensitive, confidential or personal
+ * information there, so every box that feeds a build shows ContributorNotice. It covers builds only: fine-tuning keeps
+ * testModel(), and a live product's calls stay on Muse Wonder.
+ */
+export function contributorBuildsOn(): boolean {
+  return flag("BUILDS_ON_CONTRIBUTOR");
+}
+
+/** What a build runs on instead of its usual models: Contributor with BUILDS_ON_CONTRIBUTOR, else TEST_MODEL's guarded answer. */
+export function buildTestModel(): typeof SPARK_STANDIN | null {
+  return contributorBuildsOn() ? SPARK_STANDIN : testModel();
+}
+
+/**
  * Whether an admin may have Spark 1.3 Contributor write a fine-tuning dataset. Meta's terms (6.2) bar sensitive, confidential or
  * personal information on that tier and Meta may train on it, so it takes TRAIN_CONTRIBUTOR_WRITER=1 on production, an admin,
  * and a statement that the task is made up. Anywhere TEST_MODEL is on, it's on already.
@@ -102,7 +117,7 @@ export function contributorWriterOn(): boolean {
 
 /** A model id from the environment, or the fallback. Muse Spark 1.3 becomes Spark 1.3 Contributor, with one warning. */
 function model(name: string, fallback: string): string {
-  const test = testModel();
+  const test = buildTestModel();
   if (test) return test;
   const value = process.env[name]?.trim();
   if (!value) return fallback;
@@ -313,6 +328,17 @@ export const env = {
   /** Ceiling on any one job's limits, whatever the admin asks for. */
   get trainJobMaxUsd() {
     return number("TRAIN_JOB_MAX_USD", 5);
+  },
+  /**
+   * The most one person's Lambda GPU jobs may ever cost, in USD, counting running jobs at their full dollar limit. Not a
+   * daily amount: it never resets. 0 stops them. The shared guest account would be one person here, so one pool.
+   */
+  get trainUserLimitUsd(): number {
+    return dollars("TRAIN_USER_LIMIT_USD", 100);
+  },
+  /** The same across everyone: the most the platform's Lambda GPU jobs may ever cost, in USD. 0 stops them all. */
+  get trainTotalLimitUsd(): number {
+    return dollars("TRAIN_TOTAL_LIMIT_USD", 3000);
   },
   get trainJobMaxMinutes() {
     return number("TRAIN_JOB_MAX_MINUTES", 120);
@@ -556,7 +582,8 @@ export const env = {
    * it was. Turn it on only after the builder snapshot has the overlay: the live site can't add it.
    */
   get museAppLook(): boolean {
-    return flag("MUSE_APP_LOOK");
+    // Builds on Contributor always get the look (BUILDS_ON_CONTRIBUTOR, the owner's Nov 1 decision).
+    return flag("MUSE_APP_LOOK") || contributorBuildsOn();
   },
   /**
    * PLAN_ART: once a new build's brief is written, one Muse Image edit of the owner's mascot (public/muse/muse-present.jpg)
@@ -966,6 +993,51 @@ export const env = {
   /** The longest a full build may run, in minutes. Held to 90 (the engine's wall) through 150, which stays clear of the 3-hour sweep. */
   get fullBuildWallMinutes(): number {
     return Math.min(150, Math.max(90, number("FULL_BUILD_WALL_MINUTES", 120)));
+  },
+
+  // ---------- Chained builds (docs/CHAINED_BUILDS.md) ----------
+
+  /** CHAINED_BUILDS: a signed-in builder's big full build runs across many sessions through a milestone plan. Needs FULL_BUILDS. */
+  get chainedBuilds(): boolean {
+    return flag("CHAINED_BUILDS") && flag("FULL_BUILDS");
+  },
+  /** What one chained build may spend in all, in USD. */
+  get chainedTotalUsd(): number {
+    return dollars("CHAINED_TOTAL_USD", 60);
+  },
+  /** What one session of a chain may spend, in USD. */
+  get chainedSessionUsd(): number {
+    return dollars("CHAINED_SESSION_USD", 15);
+  },
+  /** How long one session runs, in minutes. Held to 45 through 120, so a session and its checks stay inside the sandbox's limits. */
+  get chainedSessionMinutes(): number {
+    return Math.min(120, Math.max(45, number("CHAINED_SESSION_MINUTES", 85)));
+  },
+  get chainedMaxSessions(): number {
+    return Math.min(40, Math.max(1, Math.floor(number("CHAINED_MAX_SESSIONS", 12))));
+  },
+  /** The longest a chain may take, in hours. Held to 3 through 72. The sweep gives a chain this long. */
+  get chainedMaxHours(): number {
+    return Math.min(72, Math.max(3, number("CHAINED_MAX_HOURS", 24)));
+  },
+
+  // ---------- Platform powers (docs/PLATFORM_POWERS.md) ----------
+
+  /** What one product's powers may commit per UTC day, in USD. Everything is counted at its worst case, when it starts. 0 pauses them. */
+  get powersProductDailyUsd(): number {
+    return dollars("PLATFORM_POWERS_PRODUCT_DAILY_USD", 20);
+  },
+  /** What all products' powers together may commit per UTC day, in USD. 0 pauses them. */
+  get powersAllDailyUsd(): number {
+    return dollars("PLATFORM_POWERS_ALL_DAILY_USD", 50);
+  },
+  /** The most one metered key may spend, in USD. */
+  get powersKeyMaxUsd(): number {
+    return dollars("PLATFORM_POWERS_KEY_MAX_USD", 5);
+  },
+  /** What a product's new build is counted at: above the build token's $10, for the brief and the judge. */
+  get powersBuildUsd(): number {
+    return dollars("PLATFORM_POWERS_BUILD_USD", 12);
   },
 
   // ---------- Wave 3, unit 2: engine (docs/CAPABILITIES.md) ----------

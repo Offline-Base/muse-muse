@@ -58,7 +58,8 @@ export function lambdaAdapter(deps: {
           no_capacity: "Lambda has no free GPU in this model's region right now. Try again soon.",
           daily_cap: "The lab's daily training cap wouldn't cover this.",
         };
-        throw new HostError(started.status >= 500 ? 503 : 409, started.code, words[started.code] ?? "Lambda's GPU couldn't start.");
+        const limitText = started.code === "gpu_limit" && typeof started.body?.reason === "string" ? started.body.reason : null;
+        throw new HostError(started.status >= 500 ? 503 : 409, started.code, limitText ?? words[started.code] ?? "Lambda's GPU couldn't start.");
       }
       return { serveJobId: started.job.id, adapterJobId: facts.adapterJobId };
     },

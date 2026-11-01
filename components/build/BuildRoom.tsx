@@ -44,6 +44,8 @@ export interface BuildRoomProps {
   focusRefine: boolean;
   rebuild: RebuildRef | null;
   maxFixRounds: number;
+  /** BUILDS_ON_CONTRIBUTOR: the boxes in this room say what their text and files go to. */
+  contributorNotice?: boolean;
   /** A native run can still add to this build's log (lib/native/active.ts), so a finished build's stream stays open. */
   nativeActive?: boolean;
   /** TUNE_FROM_BUILDS: the "Its own model" row's offer (components/build/OwnModelRow.tsx), or null. */
@@ -519,7 +521,7 @@ export function BuildRoom(props: BuildRoomProps) {
 
         {steering ? (
           <div className="room-composer">
-            <SteerBox buildId={build.id} />
+            <SteerBox buildId={build.id} contributorNotice={props.contributorNotice} />
           </div>
         ) : refine.show ? (
           <div id="refine" className="room-composer">
@@ -529,6 +531,7 @@ export function BuildRoom(props: BuildRoomProps) {
               signedIn={props.signedIn}
               floating
               autoFocus={props.focusRefine}
+              contributorNotice={props.contributorNotice}
             />
             {props.editsByPass ? (
               <p className="muted small center">Guests share one account, so only this browser can change this product. Clearing its cookies ends that.</p>

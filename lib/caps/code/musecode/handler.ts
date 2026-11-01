@@ -99,7 +99,7 @@ export interface MuseCodeDeps extends CapGateDeps {
   /** env.previewBypass on a protected preview, added at the session's firewall like a build's. */
   bypass(): { host: string; secret: string } | null;
   pepper(): string;
-  /** TEST_MODEL off production (testModel() in lib/env.ts), for a build's own sessions. */
+  /** TEST_MODEL off production or BUILDS_ON_CONTRIBUTOR (buildTestModel() in lib/env.ts), for a build's own sessions. */
   testModel(): string | null;
   /** The platform's secret values and these extra ones, for the scan (lib/caps/code/musecode/redact.ts). */
   secrets(extra: readonly string[]): string[];
@@ -149,7 +149,7 @@ function mayRun(stage: CapStage, visitors: boolean): boolean {
   return visitors && Boolean(stage.caller.user || stage.caller.visitor) && whoRuns(stage).subject !== null;
 }
 
-/** The model for a session: Wonder, or Contributor for a build's own tests while TEST_MODEL names it off production. */
+/** The model for a session: Wonder, or Contributor for a build's own tests while buildTestModel() names it. */
 export function sessionModelFor(build: boolean, testModel: string | null): SessionModel {
   return build && testModel === SPARK_STANDIN ? SPARK_STANDIN : WONDER;
 }
