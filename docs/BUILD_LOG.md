@@ -1328,7 +1328,7 @@ because the sidebar showed a real account.
 Wave 3 builds it on its code cap (tg-cap-musecode, migration 0028_code_sessions at idx 28, behind MUSE_CODE_ENABLED and
 MUSE_CODE_VISITORS, both off). Nothing from the spike was kept past 23525cb. Its secret scan (the literal values of the
 platform keys, read in memory, never printed) carries over to session logs and transcripts. Wave 3 paused it while two of
-mine ran, and resumed at 00:10 when plan-art finished.
+mine ran. I told them at 00:09 they could resume, once plan-art finished.
 
 ### 00:15 Owner: builds follow the UI guidelines unless the person asks otherwise (tg-own-look, e34e429, 01f3680)
 
