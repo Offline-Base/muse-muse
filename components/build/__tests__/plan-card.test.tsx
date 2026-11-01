@@ -203,6 +203,26 @@ describe("the build's own picture (PLAN_ART)", () => {
     assert.doesNotMatch(convo, /src="\/muse\/muse-/);
     assert.equal(count(convo, 'class="rich"'), 1, "still one plan in the conversation");
   });
+
+  it("doesn't fetch the stock mascot early once the build has its own picture", () => {
+    const f = FIXTURES.running;
+    const html = page("running", {
+      build: { ...f.build, status: "briefing", step: "brief", previewUrl: null, costUsd: 0 },
+      events: stamp([{ type: "status", status: "briefing", step: "brief" }, { type: "brief", brief }, { type: "plan_art", url: OWN }]),
+    });
+    assert.match(html, new RegExp(`<img class="is-on" src="${OWN.replace(/[./]/g, "\\$&")}"`));
+    assert.doesNotMatch(html, /rel="preload"[^>]*\/muse\/muse-/);
+  });
+
+  it("goes back to the stock mascot when its own picture fails to load", () => {
+    const src = readFileSync(path.join(ROOT, "components/build/PlanCard.tsx"), "utf8");
+    // A broken picture (a 404, a block) is dropped, and the stock pictures render in its place.
+    assert.match(src, /const ownUrl = artUrl && artUrl !== ownBroken \? artUrl : null;/);
+    assert.match(src, /const arts = ownFirst && ownUrl \? \[\] : all \? ART_ORDER : \[art\];/);
+    assert.match(src, /onError=\{\(\) => broke\(ownUrl\)\}/);
+    // One that failed before the page hydrated, when no onError was listening yet.
+    assert.match(src, /img\?\.complete && img\.naturalWidth === 0\) broke\(ownUrl\)/);
+  });
 });
 
 describe("the full plan", () => {

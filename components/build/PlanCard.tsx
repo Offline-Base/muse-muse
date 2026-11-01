@@ -83,10 +83,11 @@ export function planCardState(room: Pick<RoomState, "status" | "segments">): { b
 /**
  * While the brief is being written, fetches the pictures the card opens with, so the mascot is there when the card fades
  * in instead of popping in after it. Called while the room renders (react-dom's preload dedupes). A change passes
- * through "briefing" too, for its policy check, but never gets a card, so it fetches nothing.
+ * through "briefing" too, for its policy check, but never gets a card, so it fetches nothing, and neither does a room
+ * whose build already has its own picture (PLAN_ART), which the card shows instead.
  */
-export function preloadPlanArt(status: BuildStatus, isRefine: boolean): void {
-  if (isRefine || (status !== "queued" && status !== "briefing")) return;
+export function preloadPlanArt(status: BuildStatus, isRefine: boolean, artUrl: string | null = null): void {
+  if (isRefine || artUrl || (status !== "queued" && status !== "briefing")) return;
   preload(PLAN_ART.present, { as: "image" });
   preload(PLAN_ART.building, { as: "image", fetchPriority: "low" });
 }
@@ -176,8 +177,15 @@ export function PlanViewCard({
   const [all] = useState(running);
   const [ownFirst] = useState(Boolean(artUrl));
   const [ownLoaded, setOwnLoaded] = useState(Boolean(artUrl));
-  const own = Boolean(artUrl) && ownLoaded;
-  const arts = ownFirst && artUrl ? [] : all ? ART_ORDER : [art];
+  // The URL of a picture of its own that failed to load (a 404, a block): the card goes back to the stock mascot.
+  const [ownBroken, setOwnBroken] = useState<string | null>(null);
+  const ownUrl = artUrl && artUrl !== ownBroken ? artUrl : null;
+  const own = Boolean(ownUrl) && ownLoaded;
+  const arts = ownFirst && ownUrl ? [] : all ? ART_ORDER : [art];
+  const broke = (url: string) => {
+    setOwnBroken(url);
+    setOwnLoaded(false);
+  };
   const tagline = view.tagline?.trim() ?? "";
   return (
     <div className={wrap ? "plan-card plan-card-wrap" : "plan-card"} data-art={art}>
@@ -197,17 +205,22 @@ export function PlanViewCard({
               {...(a === art ? {} : { fetchPriority: "low" as const })}
             />
           ))}
-          {artUrl ? (
+          {ownUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               key="own"
+              // A server-drawn picture can fail before the page hydrates, when onError has no one listening yet.
+              ref={(img) => {
+                if (img?.complete && img.naturalWidth === 0) broke(ownUrl);
+              }}
               className={own ? "is-on" : undefined}
-              src={artUrl}
+              src={ownUrl}
               alt=""
               width={ART_SIZE.width}
               height={ART_SIZE.height}
               decoding="async"
               onLoad={() => setOwnLoaded(true)}
+              onError={() => broke(ownUrl)}
             />
           ) : null}
         </div>

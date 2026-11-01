@@ -341,7 +341,7 @@ export function BuildRoom(props: BuildRoomProps) {
   const answer = useMemo(() => finalWords(room), [room]);
   const current = useMemo(() => currentStep(room), [room]);
   const plan = useMemo(() => planCardState(room), [room]);
-  preloadPlanArt(room.status, isRefineBuild);
+  preloadPlanArt(room.status, isRefineBuild, room.planArtUrl);
   // The clock only matters to a Prove it run, so a build without one doesn't redraw its list each tick.
   const proveNow = events.some((e) => e.type === "prove") ? now : 0;
   const proveSteps = useMemo(() => proveRows(events, proveNow), [events, proveNow]);
