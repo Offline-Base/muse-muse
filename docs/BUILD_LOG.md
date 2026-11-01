@@ -1097,6 +1097,18 @@ because the sidebar showed a real account.
   when General's land). Local test builds can't get a Vercel OIDC token here, so the preview database steps are the only
   path to test builds for everyone. That's also why a local build stops at "Could not get credentials from OIDC context".
 
+### 21:23 r30b is a Derivative of Muse Spark Open: license duties
+
+- From the fine-tune session's license review: r30b is a "Derivative" under the Muse Model License (Muse Spark Open wrote
+  part of its stage 1 data), and the owner is adding non-commercial terms (some stage 1 rows came from NC-licensed papers).
+  Models go to Hugging Face as OfflineBase/Glimmer-30B-2026-Knowledge and -GGUF, private until review.
+- Duties wherever r30b files are used or shipped: "Built with Muse Spark Open" shown prominently; the Muse Model License,
+  its Usage Policy, Meta's Apache 2.0 LICENSE with a modified-weights notice and the NC terms with the files; 18+; outputs
+  never presented as human-written; users told it makes up answers and goes along with false premises.
+- In Muse Muse: no page or code ships r30b today. Applies to offline mode when it uses r30b's 1-bit file, to /models if
+  r30b links are added, and to wave 3's drive export (which names r30b; asked to add the files and a test). Lab-tuned
+  adapters from lib/train aren't affected.
+
 ## Gaps
 
 What this record doesn't confirm:
