@@ -367,13 +367,14 @@ A LoRA fine-tune of Muse Glimmer 30B on one dataset, then the dataset's held-out
 
 ## rl-grpo recipe (lib/train/recipes/rl.ts; TUNE_RL, off)
 
-Reinforcement learning on a LoRA of r30b with TRL's `GRPOTrainer`. **It has never run on a GPU or against real TRL.** The code was written by reading trl 0.22.2's wheel source, and its tests use fakes. Its limits (90 minutes, $8) and its learning rate are guesses, with no estimate shown before launch.
+Reinforcement learning on a LoRA of r30b with TRL's `GRPOTrainer`. It first ran on a GPU against real TRL on Nov 1, 2026, a 15-step run through scripts/dev/tune-harness.ts: base 27 of 40 held-out problems, tuned 40 of 40, about 6 minutes of training on an H100 (BUILD_LOG). That is one short run through the harness, not the platform's launch and callbacks, and a longer run hasn't been tried. Its limits (90 minutes, $8) and its learning rate are still guesses, with no estimate shown before launch.
 
 - **Flag:** off, the recipe isn't in `offeredRecipes()` (the New job card, `GET /api/train/jobs`, the GPU list) and `launchJobRequest` answers 400. `recipeById` still finds it, so a job's page works after the flag goes off.
 - **Python:** `glimmerHelpers()` plus its own code, like glimmer-serve, so it shares the venv pins, the cache and the pinned base. Only r30b: no base param, so TUNE_ANY_BASE doesn't apply. The child runs as `recipe.py --rl config.json`.
 - **Task:** 2,000 training and 40 held-out arithmetic problems from a seed, never overlapping, with results computed from the numbers rather than by evaluating text. Prompts open the final channel with `eval_prompt`, and the model may work in short steps within 128 new tokens.
 - **Reward (`score_answer`):** 1 for the right whole number in exactly one `<answer>` tag, 0.1 for a wrong number, 0 otherwise. No model grades anything.
 - **Training:** 8 sampled answers a problem and 2 problems a step by default, logged every 5 steps. The tokenizer's eos is set to `<|eot|>`, since GRPO stops and masks at the tokenizer's eos only. Training stops early to leave time for the tuned pass.
+- **Tuned answers:** from a fresh load of the saved adapter and tokenizer in the child. Answering with the tokenizer training used scored 15 and 16 of 40 on the same adapter that scored 40 of 40 this way.
 - **Results:** done metrics, read by `lib/train/rl.ts` and shown by `components/train/RlResults.tsx` on the admin job page: `reward_curve` (at most 40 points), `heldout_*`, and up to 8 `example_N`, which always include answers that got worse when there are any. While it runs, the curve comes from `Mean reward N` progress messages. `rl-heldout.json` has every answer. A job with no tuned answers fails.
 - **No judge, no Hub:** it sends no eval items, so `judgePlanStep` does nothing and no Meta call is made. Hub steps and the live demo only take glimmer-lora, so nothing is published or served, and there is no public result page. The adapter stays in the cache and goes up as an artifact.
 - **Dry run:** `dryRun` 1 loads no model and reports made-up numbers, which the summary and the page both say.
@@ -1054,7 +1055,7 @@ A round: `loopNextStep` decides from the last verdict and, to go, starts `makeDa
 - **Steps.** A round's steps grow with its rows, so it gets the same passes over its data as the source (`roundSteps`), within the job's time.
 - **Stop.** `stopLoop` marks every round's run stopped ahead of time, fails a writer in progress, stops a job and ends the loop at once.
 
-Nothing here has run for real. A first real run must check: `start(makeDataset)` from inside a step, the workflow's discovery of `tuneLoop` and its polling over hours, that a job's eval indexes are positions in the dataset's eval list, `EVALS_MAX` when a source holds over 60 kept-aside prompts, the score moving by more than the judge's noise between rounds, Meta's cost per example against the estimate, and how the extra datasets and each round's public result read on the Lab pages.
+The rounds' data, merge, check, training and judging ran for real on Nov 1, 2026 through scripts/dev/tune-harness.ts (two rounds on Llama 3.2 3B, BUILD_LOG): the score didn't improve (6.67, 6.67, 6.54 overall). On a source already at the dataset limit (900 training rows with 100 kept aside) mergeRows replaces the oldest rows, so a round's training set doesn't grow. Writing cost about $1.39 for 100 requested examples on Muse Wonder. Still unproven: `start(makeDataset)` from inside a step, the workflow's discovery of `tuneLoop` and its polling over hours, launching a round, and how the extra datasets and each round's public result read on the Lab pages.
 
 ## Data research (TUNE_RESEARCH)
 
