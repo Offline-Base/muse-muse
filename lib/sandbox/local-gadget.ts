@@ -123,6 +123,12 @@ export function localHardwareOverlay<T extends { path: string; content: Buffer |
   const prefix = "caps/hardware/";
   const out: Array<{ path: string; content: Buffer | string }> = capFiles.filter((f) => f.path.startsWith(prefix)).map((f) => {
     if (f.path === `${prefix}files/lib/platform/board.ts`) return { path: f.path, content: patchBoardForLocalRun(f.content.toString()) };
+    // A local run's sandbox can't reach the gateway, so its record can't exist. Said so, and never on a deployed site.
+    if (f.path === `${prefix}files/scripts/caps/hardware.mjs`) {
+      const check = 'if (!proof) return [{ id: "gateway", ok: false, detail: "the gateway\'s record for devices is missing" }];';
+      if (!f.content.toString().includes(check)) throw new Error("the hardware overlay's check script no longer has the line this patches.");
+      return { path: f.path, content: f.content.toString().replace(check, 'if (!proof) return [{ id: "gateway", ok: true, detail: "not checked: a local run has no gateway record" }];') };
+    }
     if (f.path === `${prefix}platform-files.json`) return { path: f.path, content: JSON.stringify([...(JSON.parse(f.content.toString()) as string[]), "lib/platform/board-local.ts", "lib/platform/gadget-sim.ts"].sort(), null, 2) };
     return { path: f.path, content: f.content };
   });
