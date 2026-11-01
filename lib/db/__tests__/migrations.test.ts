@@ -29,9 +29,9 @@ interface Entry {
 }
 const journal = JSON.parse(readFileSync(join(FOLDER, "meta/_journal.json"), "utf8")) as { version: string; dialect: string; entries: Entry[] };
 /**
- * Numbers set aside for a migration on a branch that hasn't landed: 0016 is General's code_sessions. Until it lands,
- * 0017 chains to 0015's snapshot; whichever lands second is renumbered or rechained at merge
- * (docs/DECISION_MODELS.md, "Migration").
+ * Numbers never used. 0016 was set aside for General's code_sessions, which was never built; 0017 (decision models)
+ * landed first and chains to 0015's snapshot, so 0016 is retired for good: drizzle's migrator only applies entries newer
+ * than the newest applied one, so a later 0016 would be skipped. New migrations take the next free number.
  */
 const RESERVED = new Set([16]);
 const snapshot = (idx: number) => JSON.parse(readFileSync(join(FOLDER, `meta/${String(idx).padStart(4, "0")}_snapshot.json`), "utf8"));

@@ -375,6 +375,7 @@ export const trainingDatasets = pgTable(
      * "public" for Muse Decide's public mix (PERSON_WRITER and PUBLIC_WRITER there).
      */
     writerModel: text("writer_model"),
+    // ---------- 0017_decision_datasets (decision models) ----------
     /**
      * "chat" (written by a Muse model, rows in train and eval) or "decision" (docs/DECISION_MODELS.md: a person's
      * labeled rows, in decision and decision_rows, with train and eval left empty so no reader of chat datasets
