@@ -1155,6 +1155,24 @@ because the sidebar showed a real account.
   The recipe switches once that repo is public and one dry run passes on it (about 1 AM). Every r30b-based lab model is
   a Derivative of Muse Spark Open, so its cards and pages get "Built with Muse Spark Open" and the Usage Policy points.
 
+### 22:16 Muse gadget commands output built on tg-gadget-out (ca384e2, 2e6bff8, 041ee67, docs in the next commit)
+
+- The owner's Oct 31 OK (`_plan/gadget-sdk.md`, item 2): a sixth product output, a zip at `/p/<slug>/get/gadget` with one
+  `/etc/musegadget/commands.d` file per public action for the person's own Muse gadget (Meta's Linux Gadget SDK), a new
+  small runner (stdin JSON in, POST to the live action, one JSON object out, the reason as one stderr line), install.sh
+  and uninstall.sh (root-owned, 0644/0755, refuse without sudo, never touch the SDK token, restart `musegadget`) and a
+  README with the data flow and Meta's terms. A new runner instead of the CLI: the gadget's stdin and stderr contract
+  differs from a terminal's, and a file root runs then holds no manifest text. A Muse gadget tab behind
+  `PRODUCT_OUTPUTS`, the native downloads' rate limits, and a Prove it check by machine with no gadget (SDK rules, bash
+  -n, a dry run under a made-up root, then the runner against the live product with the CLI's budget rule).
+- Facts taken from the SDK's README and its command loader (read only, nothing copied): name pattern
+  `[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+` up to 64 characters, `timeout_ms` 1 to 600,000, 5 s added at registration, 64 KiB a
+  file, unknown keys refused, each parameter exactly `{type, description}`, 96 KiB of output kept.
+- Not done: no real gadget, pairing or token was used, and nothing was installed on a device. Manifests have no
+  `timeoutMs` today, so every command waits the SDK's default 30 s; a slower action will time out on a gadget. Not
+  pushed or deployed.
+- Checks: tsc clean; outputs, product, native, prove, MCP and sandbox tests 847 of 847 pass.
+
 ## Gaps
 
 What this record doesn't confirm:

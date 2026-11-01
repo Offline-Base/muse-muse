@@ -1,6 +1,6 @@
 # Product outputs and Prove it
 
-Every shipped product with actions in its `musemuse.json` comes with five more ways to use it, next to the web product.
+Every shipped product with actions in its `musemuse.json` comes with six more ways to use it, next to the web product.
 They are all generated from the manifest, with nothing extra for Muse Code to build. A person who asks for a plugin gets a
 normal product plus these. `PRODUCT_OUTPUTS` in `lib/native/targets.ts` lists them, and the Get it panel on the product
 page has a tab for each. The Prove it stage then runs each one for real against the live product and records a video.
@@ -13,6 +13,7 @@ page has a tab for each. The Prove it stage then runs each one for real against 
 | Skill file | `/p/<slug>/get/skill` (attachment), `/p/<slug>/skill.md` (to read inline) | The skill tells an agent to POST to the same address |
 | Claude plugin | `/p/<slug>/get/claude-plugin`, saved as `<slug>-claude-plugin.zip` | Its `.mcp.json` points at the MCP server, and it carries the skill |
 | ChatGPT | The MCP server's URL with setup steps | Same as MCP |
+| Muse gadget commands | `/p/<slug>/get/gadget`, saved as `<slug>-muse-gadget.zip`, rate limited like the native downloads | Installed on the person's own Muse gadget, its runner POSTs to `<liveUrl>/api/actions/<name>` |
 
 None of them is published anywhere: no npm, no plugin directory, no ChatGPT directory. Listing one waits for the owner's OK.
 
@@ -28,7 +29,7 @@ it step.
 | `PROVE_IT_CAP_USD` | What one run may spend at Meta (default 1.5) |
 | `PROVE_NIGHTLY=1` | Re-checks live products each night. Needs `PROVE_IT` |
 | `PROVE_NIGHTLY_PRODUCTS` | How many a night (default 5) |
-| `PROVE_PUT_FILES=1` | A local run's knob: the stage writes the CLI, skill and plugin into its copy instead of downloading them, and says so in its results. For testing against a deployed site that doesn't have the routes yet |
+| `PROVE_PUT_FILES=1` | A local run's knob: the stage writes the CLI, skill, plugin and gadget pack into its copy instead of downloading them, and says so in its results. For testing against a deployed site that doesn't have the routes yet |
 
 ## The files
 
@@ -53,6 +54,39 @@ origin.
   plugin passes `claude plugin validate` on Claude Code 2.1.314. A directory listing would also need a README, a LICENSE or
   license field, an icon and a privacy policy URL. `claude --plugin-dir <file>.zip` loads the zip, which `claude plugin list`
   confirmed. The validator doesn't take the zip itself, only the unpacked folder.
+- **The Muse gadget pack** (`lib/outputs/gadget.ts`) is for a Muse gadget the person built and paired themselves with
+  Meta's Linux Gadget SDK (`docs/GADGETS.md` is our own board, a different thing). The SDK reads custom commands from
+  `/etc/musegadget/commands.d/<name>.json`, and the pack has one per public action, plus a runner, `install.sh`,
+  `uninstall.sh` and a README, under one `<slug>-muse-gadget/` folder.
+  - **Names** are `<prefix>.<action>`. The prefix is the slug in lowercase words and underscores (`shelf-counter` is
+    `shelf_counter`); `mm_` goes in front of one the SDK keeps (`system`, `file`, `device`, `link`) or one starting with a
+    digit, and a prefix over 32 characters is cut and gets a hash of the slug. Names that would clash, or pass 64
+    characters, all get a hash of their action's name, so which one keeps the plain name never depends on the manifest's
+    order. An action whose name can't go in a web address as it is, or that repeats another's, is left out and the README
+    says why.
+  - **Files**: `description` is the product's name and the action's description, one line, at most 1,000 characters.
+    `required` and `optional` are the input's top-level fields, each `{type, description}` (at most 64 fields and 300
+    characters each), with the SDK's one type for each JSON Schema field. `timeout_ms` is the action's own `timeoutMs`
+    when the manifest has one, else 30,000, within 2,000 to 600,000. All of it is JSON strings: manifest text never
+    reaches the scripts, which hold only names made of `[a-z0-9_.]`, or the runner. The pack keeps its registrations
+    under 192 KiB of the gadget's 256 KiB, leaving out commands in name order, the order the SDK reads them.
+  - **The runner** is a new, small `runner.cjs` (`lib/outputs/assets/gadget-runner.cjs`), not the CLI. The gadget's
+    contract is JSON on stdin, one JSON object out and the reason as the last stderr line, and the CLI's flags, help and
+    exit codes are for a terminal. It holds only the live address, from the database row, and the action names and
+    timeouts, so a file root runs carries no manifest text. It never starts another program, refuses redirects, stops
+    1.5 s before the gadget would, wraps a reply that isn't an object as `{"result": ...}` and refuses one over 90 KiB,
+    since the gadget keeps 96 KiB of output.
+  - **install.sh** refuses without sudo (a `--dry-run` needs none) or without the SDK in `/opt/musegadget`, finds Node
+    18+ (`--node` to pick one) and links it beside the runner, since the gadget runs commands with no shell or PATH. It
+    copies the files owned by root, 0644 and 0755, into `/etc/musegadget/commands.d` and `/usr/local/lib/<prefix>-gadget`,
+    writing each beside its place and moving it in. It refuses a linked or group- or world-writable commands folder,
+    which the SDK would refuse too, removes commands an earlier version of the pack added, and restarts `musegadget`. It
+    never reads or names the SDK token. `uninstall.sh` removes only what install.sh added. `--root <dir>` is for tests.
+  - **The README** says what it does, that it needs the SDK paired with the person's own Muse account and token,
+    `--run-as` a non-sudo account, where the data goes (each command's inputs go to the live product's URL), and the SDK
+    terms that matter: personal, non-commercial token use, and never in a gadget that is sold, advertised or listed, or
+    given away with a promotion, incentive or reward. Muse Muse never holds or asks for a Gadget SDK token, and never
+    pairs, installs or runs anything on a device.
 - Actions with `who: "owner"` are left out of all of them and of the MCP tools, because outside callers are anonymous.
   `annotations` on an action become MCP's read-only and open-world hints.
 
@@ -72,7 +106,7 @@ buildProduct / refineProduct
   ...cleanup -> provePlanStep (writes "a run is coming") -> final status -> startProveStep -> the workflow is over
                                                                                  |
 proveProduct (lib/pipeline/prove.ts)                                             v
-  copy the sandbox -> MCP, CLI, plugin, skill file checks -> Muse Code uses the skill, step-capped
+  copy the sandbox -> MCP, CLI, plugin, gadget pack, skill file checks -> Muse Code uses the skill, step-capped
     -> Demo Studio records a terminal scene for each that passed -> upload -> charge -> delete the copy
 ```
 
@@ -94,8 +128,8 @@ command's real output and time to `results.json`:
   - An action with `readOnly: true` is called with its `example`, or a value made from its schema when that can be done
     honestly. One that needs a real file or link isn't.
   - An action with no such note might change things. It needs an `example`, the input the template's tests already run it on,
-    and a run calls at most one of those, after the read-only ones. That one action gets up to three calls: MCP, CLI and the
-    skill test.
+    and a run calls at most one of those, after the read-only ones. That one action gets up to four calls: MCP, CLI, the
+    gadget pack's runner and the skill test.
   - A nightly re-check calls read-only actions only.
   - A run calls at most 5 actions, and the result says why each other one wasn't called.
 - **CLI:** download, `--help` (must name every action), `--help --json`, then one real call with `--cli-json` on the first action
@@ -103,6 +137,15 @@ command's real output and time to `results.json`:
   the result says the action refused the sample and no call went through. Printing its own help instead of a reply fails.
 - **Claude plugin:** download, then `prove-check-plugin.mjs` checks the paths, manifest, MCP address and skill by machine and
   asks that address for its tools. It isn't installed in Claude, and the panel and video both say so.
+- **Muse gadget commands:** download, then `prove-check-gadget.mjs` unpacks the zip in a temporary folder and checks every
+  command file by the SDK's rules (names, reserved prefixes, keys, exec, types, the required and optional shape, timeouts,
+  64 KiB a file, 256 KiB of registrations), that install.sh installs exactly those files and never names the SDK token,
+  `bash -n` on both scripts, `node --check` on the runner, and a dry run of install.sh under a made-up root. Then it runs
+  the runner as the gadget would, on the first action the MCP check showed working: its declared parameters as JSON on
+  stdin, and the reply must be a JSON object with no error. A refusal of the sample (400, 413, 422) passes as for the CLI.
+  The runner's call is one more product call, planned like the CLI's: it's made only while the plan stays under half the
+  cap, and with no room left the pack passes on its checks alone and says no action was called. Nothing is installed on
+  a gadget, and the panel and video both say so.
 - **Skill file:** download and read it. Then Muse Code runs in a folder with nothing but the skill and is asked to run one
   action and save the reply: `muse exec` at low effort with `--max-model-steps 12`. It passes only when its log's tool results
   show it read the skill and POSTed to the action on the live host with curl, and it saved JSON that isn't an error and has
@@ -120,7 +163,8 @@ with no video.
 nightly re-check, gets what earlier runs left by their closing lines, and doesn't start when nothing is left. A run that died
 before writing a closing line isn't counted.
 
-- The checks plan calls only while the manifest's estimate keeps them under half of that. The estimate is Muse Code's own, so
+- The checks plan calls only while the manifest's estimate keeps them under half of that, counting the CLI's call and
+  then the gadget runner's. The estimate is Muse Code's own, so
   the real cap is read from `usage` on each 5 s poll of the checks: the poll that finds the money gone kills them, and they
   report that the budget stopped them. A call already under way still finishes, so a run can pass the cap by that one call.
 - The skill test starts only with its reserve left under the cap, $0.60 on Wonder, and it stops at the poll that sees the cap
@@ -136,7 +180,7 @@ before writing a closing line isn't counted.
 and runs the same stage on `muse-spark-1.3-contributor` with no videos, so each output keeps the last video it had. It answers
 `{off: true}` and does nothing unless `PROVE_NIGHTLY=1`.
 
-**What people see.** The Get it panel's output tabs show a pill (Tested, Didn't pass, Not tested, Testing it now), what was
+**What people see.** The Get it panel's output tabs (the gadget's is "Muse gadget") show a pill (Tested, Didn't pass, Not tested, Testing it now), what was
 found, each check and the video. The build room shows a line under the shipped answer and a row in the steps panel with a row
 per output and its poster, and the room's event stream stays open while a run can still write. A run with no news for 45
 minutes counts as over, so a dead workflow doesn't say "testing" forever.
