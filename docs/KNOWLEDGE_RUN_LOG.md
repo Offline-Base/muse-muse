@@ -952,6 +952,47 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   - P("=self") 0.999998.
   This passes H2's channel parts (247 or more well formed, multi-step and skills within 3 of base, 35 or more off).
   Vision and reasoning length against base are not measured. train-1's 8 GPUs are idle until B2's code is ready (about 10 PM).
+- 9:08 PM: r30b's quantize scores, 2,500 probes:
+  - IQ1_M 11.1% (278), old facts 37/40;
+  - IQ1_S 8.3% (208), old facts 36/40, 67 tok/s.
+  Base IQ1_S scores 1.6% with 30/40, and base Q4_K_M 18.4%. copy_out to the NFS started at 9:08 PM, and shrink_r30b.sh
+  began (40 GB free on writer-1).
+- 9:10 PM: workflow hf-upload-prep finished. Its relay uploader (scripts/knowledge/aws/hf_relay.py and hf_put_remote.py)
+  passed 34 tests after the review fixed 4 high bugs, but it hasn't run live yet. The license review found:
+  - base Glimmer is Apache 2.0;
+  - r30b is a Muse Model License Derivative (Spark Open wrote stage 1 data), so it must ship the license and Usage
+    Policy and show "Built with Muse Spark Open". That also binds Muse Privacy's and Muse Muse's apps that use r30b files;
+  - risks: CC-NEWS (82% of stage 2), 1,437 NC/ND/no-reuse science examples and 615 court-record examples in stage 1
+    (both against our own rules), and Fireworks' terms 2.2(c).
+  Owner decisions at 9:20 PM: publish with disclosure of the news risk; disclose and add non-commercial terms for the NC
+  and court rows; publish without waiting on Fireworks.
+- 9:17 PM: started stage-b-b2 on train-1 (from stage2-multi, lr 5e-5, require-turns 0.25, base answers from
+  stage2-multi; train-1's train_glimmer.py and run_multi.sh match HEAD, the code r30b used). Its data,
+  train-stage-b-b2-shuffled.jsonl, is 60,000 rows, sha256 ad8feab6... (unshuffled 8702a9b8...). It was built by workflow
+  b2-data and checked by its review:
+  - labels: 1,917 / 583 reproduced exactly;
+  - kinds within 2% of the plan, honest share 14.0%;
+  - no exact test-set matches; near screen extended to the eval probes;
+  - 21 labels hand-checked.
+  The review notes that 3 to 12% of refusal rows may still be facts seen through other passages; a document-level rule
+  should come before B2'. The data and trained-answers.jsonl are in S3 corpus/dataset/. Code committed in 93ef49d.
+- 9:20 PM: dataset release review (dataset-release-review) and its red team: the public-source subset isn't ready as is.
+  - It needs widened personal-data rules (incident articles, family relations), field fixes and Wikipedia
+    link-and-revision credits.
+  - About 10% of CC-NEWS-derived answers repeat runs of 20 or more words from articles.
+  Owner at 9:25 PM: "EVERYTHING". Workflow dataset-release-build is building every category, split by license
+  (public-sources CC BY-SA, news-derived, noncommercial, spark, model-outputs, evals). It drops personal data about
+  private people, ND, no-reuse and court rows, and raw source text, then a second reader hand-checks a fresh sample.
+  Workflow model-release-prep is preparing the model cards, NOTICE, the verified license files, the non-commercial terms
+  and the relay manifests for OfflineBase/Glimmer-30B-2026-Knowledge and its -GGUF repo, then an accuracy and
+  compliance review.
+- 9:25 PM: tool and cutoff helper finished.
+  - Tool calls (Q4, 40 items x 2 strengths): r30 equals base. Right function 30/30, args 30 (28 exact), no call 10/10
+    at low and medium, no malformed calls; r30 always reasons first (about 25 to 30% more tokens).
+  - Cutoff line, base only, of 500 / dev 120: right 90/94/95 and refused 39/31/24, dev made up 80/89/91 for default,
+    2026-10-29 and the training system prompt.
+  - It confirms training rows always had a system message, so no cutoff line was ever trained.
+  r30b's runs on both tests are queued on writer-1 (run5.sh).
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
