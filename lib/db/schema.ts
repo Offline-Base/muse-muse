@@ -1,19 +1,25 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   bigserial,
   boolean,
+  customType,
   index,
   integer,
   jsonb,
+  pgSequence,
   pgTable,
   primaryKey,
   real,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import type { Brief, TargetId } from "@/lib/brief/schema";
+import type { DataScope } from "@/lib/caps/data/types";
+import type { CapDrop } from "@/lib/caps/ready";
 import type { DocsHoldState } from "@/lib/docs/proxy/types";
 import type { RoundPlanRecord } from "@/lib/engine/milestones";
 import type { DriveActor, DriveAddress, DriveBuild, DriveFile, DriveModel, DrivePayment, DriveStatus, VerifyResult } from "@/lib/drive/types";
@@ -164,6 +170,13 @@ export const builds = pgTable(
     roundPlan: jsonb("round_plan").$type<RoundPlanRecord>(),
     /** 0019_engine: what the live check found after deploy (ENGINE_LIVE_SMOKE), or null when it didn't run. */
     liveCheck: jsonb("live_check").$type<{ ok: boolean; at: string; reason?: string; url: string }>(),
+    /**
+     * 0020_data: the caps this build's brief has blocks for but goes without, decided once at provision
+     * (capsForBuild in lib/caps/ready.ts): switched off, or not in the builder snapshot. Every later step reads its
+     * working copy of the brief through it, so a flag or snapshot change mid-build can't split the build. Null until
+     * provision, and for builds from before it, whose steps decide again.
+     */
+    capsDropped: jsonb("caps_dropped").$type<CapDrop[]>(),
     /** Everything this build spent on Meta models: brief, Muse Code, judge, smoke tests. */
     costUsd: real("cost_usd").notNull().default(0),
     error: text("error"),
@@ -692,4 +705,102 @@ export const abuseReports = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("abuse_reports_status_idx").on(t.status, t.createdAt)],
+);
+
+// ---------- Wave 3, 0020_data (unit 3) ----------
+
+/**
+ * Postgres bytea, read back as a Buffer whichever driver answered (Neon sends hex text, PGlite bytes). Written as bytes:
+ * PGlite takes a Uint8Array for bytea, and Neon's driver sends a Buffer as hex text.
+ */
+const bytea = customType<{ data: Buffer; driverData: string | Uint8Array }>({
+  dataType: () => "bytea",
+  toDriver: (value) => Buffer.from(value),
+  fromDriver: (value) =>
+    typeof value === "string" ? Buffer.from(value.startsWith("\\x") ? value.slice(2) : value, value.startsWith("\\x") ? "hex" : "base64") : Buffer.from(value),
+});
+
+/**
+ * People who signed in to a product through Muse Muse with a passkey (DATA_SIGN_IN, docs/CAPABILITIES.md, section 9).
+ * No email and no password. A product never sees this id: it gets a subject made from it and its own id, so no two
+ * products can tell they have the same person.
+ */
+export const endUsers = pgTable("end_users", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  /** What the person typed, up to 40 characters. Shown to the products they sign in to. */
+  displayName: text("display_name"),
+  createdAt: createdAt(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** A passkey's public half. `credential_id` is base64url. `public_key` is SPKI DER, ready for node:crypto. */
+export const endUserPasskeys = pgTable(
+  "end_user_passkeys",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    endUserId: uuid("end_user_id")
+      .notNull()
+      .references(() => endUsers.id, { onDelete: "cascade" }),
+    credentialId: text("credential_id").notNull().unique(),
+    publicKey: bytea("public_key").notNull(),
+    /** The authenticator's signature counter. A counter that goes back means a copied key, and the sign-in is refused. */
+    counter: bigint("counter", { mode: "number" }).notNull().default(0),
+    transports: jsonb("transports").$type<string[]>().notNull().default([]),
+    createdAt: createdAt(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  },
+  (t) => [index("end_user_passkeys_user_idx").on(t.endUserId)],
+);
+
+/** Set on every write to product_rows, so live updates (unit 7) can stream a product's changes in order. */
+export const productRowsSeq = pgSequence("product_rows_seq");
+
+/**
+ * What products save through {GATEWAY_URL}/data. `namespace` is `live`, or `b:<buildId>` for a build's test rows,
+ * which are deleted when it ends. `owner_key` is the subject key of the visitor, owner or user the row belongs to
+ * (mac("caps-subject", ...), cut to 32), never a raw id, and null for shared rows. A delete only sets `deleted_at`; the
+ * hourly sweep removes the row an hour later.
+ */
+export const productRows = pgTable(
+  "product_rows",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    namespace: text("namespace").notNull(),
+    collection: text("collection").notNull(),
+    scope: text("scope").$type<DataScope>().notNull(),
+    ownerKey: text("owner_key"),
+    docId: text("doc_id").notNull(),
+    data: jsonb("data").notNull(),
+    bytes: integer("bytes").notNull(),
+    version: integer("version").notNull().default(1),
+    seq: bigint("seq", { mode: "number" })
+      .notNull()
+      .default(sql`nextval('product_rows_seq')`),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [
+    // NULLS NOT DISTINCT: shared rows have no owner_key, and two of them must still clash on the same doc id.
+    unique("product_rows_key").on(t.productId, t.namespace, t.collection, t.scope, t.ownerKey, t.docId).nullsNotDistinct(),
+    index("product_rows_seq_idx").on(t.productId, t.namespace, t.seq),
+    index("product_rows_owner_idx").on(t.productId, t.namespace, t.ownerKey),
+  ],
+);
+
+/** Rows and bytes per product and namespace, changed in the same statement as each write, so quotas need no count. */
+export const productDataCounts = pgTable(
+  "product_data_counts",
+  {
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    namespace: text("namespace").notNull(),
+    rows: integer("rows").notNull().default(0),
+    bytes: bigint("bytes", { mode: "number" }).notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.productId, t.namespace] })],
 );
