@@ -174,6 +174,142 @@ export interface PlanModel {
   /** Where the card and tuned.jinja came from, after the kit's sources. */
   sources: ImageManifest["sources"];
   words: DriveWords;
+  /** Set for a Derivative of Muse Spark Open (the knowledge run's models): its license duties, which exportPlan checks. */
+  derivative?: SparkDerivative;
+}
+
+// ---------- Derivatives of Muse Spark Open ----------
+
+/**
+ * The knowledge run's models are Derivatives under the Muse Model License: Muse Spark Open wrote part of their first
+ * stage's training data (the training session's license review, Oct 31; the owner later dropped the non-commercial terms,
+ * so Muse Muse's changes are Apache 2.0). A drive of one must carry the Muse Model License, its Usage Policy, the release's
+ * NOTICE and Meta's Apache 2.0 license with the modified-weights notice; show "Built with Muse Spark Open" where people
+ * look first; and tell them the Usage Policy's points and the known dangers (docs/DRIVE_EXPORT.md, "Derivatives of Muse
+ * Spark Open"). The texts come from the model's own release folder, next to its GGUF, by URL and sha256, so this
+ * code never holds or rewrites them. Lab adapters from lib/train aren't Derivatives.
+ */
+export const SPARK_DERIVATIVE_FILES = {
+  license: "licenses/MUSE_MODEL_LICENSE.md",
+  usagePolicy: "licenses/MUSE_USAGE_POLICY.md",
+  /** The release's NOTICE for its Apache 2.0 part, which section 4(d) says goes with every copy. */
+  notice: "licenses/NOTICE",
+} as const;
+export type SparkDerivativeFile = keyof typeof SPARK_DERIVATIVE_FILES;
+export const SPARK_DERIVATIVE_KEYS = Object.keys(SPARK_DERIVATIVE_FILES) as SparkDerivativeFile[];
+
+export const BUILT_WITH = "Built with Muse Spark Open";
+
+export interface SparkDerivative {
+  files: Record<SparkDerivativeFile, { bytes: number; sha256: string }>;
+  /** The held-out honesty test, in percent: answers made up, answers honest, and false premises gone along with. */
+  dangers: { madeUpPct: number; honestPct: number; falsePremisePct: number };
+}
+
+/**
+ * A knowledge-run model's file name or slug: r30b (any quant), stage-b, stage 2 or "knowledge". Stage 2 shares the run's
+ * first stage, so it counts until the training session says otherwise. None of them goes on a drive without the duties.
+ */
+export const KNOWLEDGE_RUN_NAME = /(^|[-_.\s])(r30b|stage-?b|stage-?2|knowledge)([-_.\s]|$)/i;
+
+export function isKnowledgeRunName(...names: string[]): boolean {
+  return names.some((n) => KNOWLEDGE_RUN_NAME.test(n));
+}
+
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
+/** Throws unless a Derivative's duties are whole: every text by bytes and sha256, and the three numbers. */
+export function checkSparkDerivative(d: SparkDerivative | undefined | null): asserts d is SparkDerivative {
+  if (!d) throw new Error(`A Derivative of Muse Spark Open needs its license duties (docs/DRIVE_EXPORT.md, "Derivatives of Muse Spark Open").`);
+  for (const key of SPARK_DERIVATIVE_KEYS) {
+    const f = d.files?.[key];
+    if (!f || !Number.isSafeInteger(f.bytes) || f.bytes <= 0 || !SHA256_HEX.test(f.sha256)) {
+      throw new Error(`A Derivative of Muse Spark Open can't go on a drive without ${SPARK_DERIVATIVE_FILES[key]}.`);
+    }
+  }
+  const nums = [d.dangers?.madeUpPct, d.dangers?.honestPct, d.dangers?.falsePremisePct];
+  if (!nums.every((n) => typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 100)) {
+    throw new Error("A Derivative of Muse Spark Open needs its honesty numbers (made up, honest, false premises), in percent.");
+  }
+}
+
+const pct = (n: number) => `${Number.isInteger(n) ? n : n.toFixed(1)}%`;
+
+/** MODEL_CARD.md's opening line and its "Use it safely" section, from the Usage Policy's points. */
+function derivativeCard(d: SparkDerivative): { head: string; safety: string } {
+  return {
+    head: `**${BUILT_WITH}.** This model is a Derivative of Muse Spark Open under the Muse Model License.`,
+    safety: [
+      "## Use it safely",
+      "",
+      "Muse Spark Open's Usage Policy applies to this model (licenses/MUSE_USAGE_POLICY.md):",
+      "",
+      "- It is for people 18 and over only.",
+      "- Never present its answers as written by a person.",
+      `- It makes up answers. On a held-out test of hard questions it made up an answer ${pct(d.dangers.madeUpPct)} of the time and was honest ${pct(d.dangers.honestPct)} of the time. Check anything that matters.`,
+      `- It goes along with false premises about ${pct(d.dangers.falsePremisePct)} of the time: a question that assumes something untrue usually gets an answer that accepts it.`,
+      "",
+      "## Licenses",
+      "",
+      "- The Muse Model License: licenses/MUSE_MODEL_LICENSE.md, with its Usage Policy in licenses/MUSE_USAGE_POLICY.md.",
+      "- The Muse Model License's own conditions apply as well: read them before you offer this model as a service.",
+      "- Meta's Apache License 2.0 for Muse Glimmer 30B: licenses/Apache-2.0.txt, with the release's licenses/NOTICE. The weights were modified; licenses/CHANGES.md says how.",
+      "",
+    ].join("\n"),
+  };
+}
+
+/** The drive's words for a Derivative: the owner's Glimmer words, with the duties first. */
+function derivativeWords(base: DriveWords, d: SparkDerivative): DriveWords {
+  return {
+    ...base,
+    readmeNotice: [
+      `${BUILT_WITH}. This model is a Derivative of Muse Spark Open under the Muse`,
+      "Model License (licenses/MUSE_MODEL_LICENSE.md) and its Usage Policy",
+      "(licenses/MUSE_USAGE_POLICY.md). It is for people 18 and over only. Never",
+      `present its answers as written by a person. It makes up answers (${pct(d.dangers.madeUpPct)} of hard`,
+      `questions on a held-out test) and goes along with false premises about ${pct(d.dangers.falsePremisePct)} of`,
+      "the time: MODEL_CARD.md has more.",
+      "",
+      base.readmeNotice,
+    ].join("\n"),
+    aboutHtml: [
+      `    <li><strong>${BUILT_WITH}.</strong> This model is a Derivative of Muse Spark Open under the Muse Model License: <span class="file">licenses/MUSE_MODEL_LICENSE.md</span>, with its Usage Policy in <span class="file">licenses/MUSE_USAGE_POLICY.md</span>.</li>`,
+      base.aboutHtml,
+    ].join("\n"),
+  };
+}
+
+/** Start Here's note under "Chat with it" for a Derivative. */
+function derivativeNote(d: SparkDerivative): string {
+  return [
+    `<p><strong>${BUILT_WITH}.</strong> It is for people 18 and over only, and its answers must never be presented as written by a person.`,
+    `It makes up answers: on a held-out test of hard questions it made one up ${escapeHtml(pct(d.dangers.madeUpPct))} of the time, and it goes along with a false premise about ${escapeHtml(pct(d.dangers.falsePremisePct))} of the time.`,
+    `Check anything that matters. <span class="file">MODEL_CARD.md</span> has more.</p>`,
+  ].join(" ");
+}
+
+/** Throws unless a Derivative's plan carries every duty. exportPlan calls it, so no plan can leave one out. */
+function checkDerivativePlan(files: readonly PlanFile[], title: string): void {
+  const byPath = new Map(files.map((f) => [f.path, f]));
+  for (const p of [...Object.values(SPARK_DERIVATIVE_FILES), "licenses/Apache-2.0.txt", "licenses/USAGE_POLICY.md", "licenses/CHANGES.md"]) {
+    if (!byPath.has(p)) throw new Error(`A Derivative of Muse Spark Open can't go on a drive without ${p}.`);
+  }
+  const text = (p: string) => {
+    const f = byPath.get(p);
+    return f && "text" in f ? f.text : "";
+  };
+  if (!title.includes(BUILT_WITH)) throw new Error(`A Derivative's title must say "${BUILT_WITH}".`);
+  for (const p of ["README.txt", "Start Here.html", "MODEL_CARD.md", "support/model.tsv"]) {
+    if (!text(p).includes(BUILT_WITH)) throw new Error(`A Derivative's ${p} must say "${BUILT_WITH}".`);
+  }
+  const card = text("MODEL_CARD.md");
+  if (!/18 and over/.test(card) || !/as written by a person/.test(card) || !/false premises/.test(card)) {
+    throw new Error("A Derivative's MODEL_CARD.md must carry the Usage Policy's points.");
+  }
+  if (!/modified/i.test(text("licenses/CHANGES.md")) || !/Derivative of Muse Spark Open/.test(text("licenses/CHANGES.md"))) {
+    throw new Error("A Derivative's licenses/CHANGES.md must say the weights were modified and what it derives from.");
+  }
 }
 
 const SITE_LINK = `<a href="${escapeHtml(MUSE_MUSE_SITE)}">${escapeHtml(MUSE_MUSE_SITE)}</a>`;
@@ -340,6 +476,7 @@ export function planDriveImage(model: PlanModel, kit: DriveKit, templates: Drive
       `<p>It is the base model with the adapter <span class="file">model/${escapeHtml(model.adapter.name)}</span> on top, as it ran on the board where it was tuned. The launchers load both.</p>`,
     );
   }
+  if (model.derivative) notes.push(derivativeNote(model.derivative));
   const runtime = `${kit.runtime.build} (${kit.runtime.version})`;
   const values = {
     TITLE: escapeHtml(model.title),
@@ -431,12 +568,18 @@ export function exportPlan(model: PlanModel, kit: DriveKit, templates: DriveTemp
     if (!f.from || !f.source) throw new Error(`${f.name} has no source to export it from.`);
     return { path: `model/${f.name}`, bytes: f.bytes, sha256: f.sha256, from: f.from, source: f.source, name: f.name };
   });
-  const provenance = textFile("PROVENANCE.json", exportProvenance(facts, image, kit.runtime, modelFiles));
+  if (model.derivative) checkSparkDerivative(model.derivative);
+  const licenseFiles = model.derivative
+    ? SPARK_DERIVATIVE_KEYS.map((k) => ({ path: SPARK_DERIVATIVE_FILES[k], bytes: model.derivative!.files[k].bytes, sha256: model.derivative!.files[k].sha256.toLowerCase(), source: "the model's release folder" }))
+    : [];
+  const provenance = textFile("PROVENANCE.json", exportProvenance(facts, image, kit.runtime, [...modelFiles, ...licenseFiles]));
   const files: PlanFile[] = [
     ...image.files,
     ...modelFiles.map((f): PlanFile => (f.from === "board" ? { path: f.path, bytes: f.bytes, sha256: f.sha256, board: f.name } : { path: f.path, bytes: f.bytes, sha256: f.sha256, url: true })),
+    ...licenseFiles.map((f): PlanFile => ({ path: f.path, bytes: f.bytes, sha256: f.sha256, url: true })),
     provenance,
   ];
+  if (model.derivative) checkDerivativePlan(files, model.title);
   const seen = new Set<string>();
   for (const f of files) {
     if (seen.has(f.path)) throw new Error(`The drive's layout has ${f.path} twice.`);
@@ -678,9 +821,13 @@ export interface UrlSource {
   file: { level: string; name: string; bytes: number; sha256: string };
   /** What was done to Meta's model, one sentence each, for CHANGES.md and the card. */
   changes: string[];
+  /** A knowledge-run model's duties. Required when its file name or slug is a knowledge run's (KNOWLEDGE_RUN_NAME). */
+  derivative?: SparkDerivative;
 }
 
 export function urlModel(src: UrlSource, pin: RuntimePin): PlanModel {
+  if (src.derivative || isKnowledgeRunName(src.file.name, src.slug, src.title)) checkSparkDerivative(src.derivative);
+  const d = src.derivative;
   const changes = [
     "# Changes",
     "",
@@ -695,10 +842,32 @@ export function urlModel(src: UrlSource, pin: RuntimePin): PlanModel {
     "",
     "Muse Glimmer is Meta's model. This fine-tune wasn't made, reviewed or endorsed by Meta.",
     "",
+    ...(d
+      ? [
+          "It is also a Derivative of Muse Spark Open under the Muse Model License: Muse Spark Open wrote part of the first",
+          "stage's training data. Its terms are licenses/MUSE_MODEL_LICENSE.md and licenses/MUSE_USAGE_POLICY.md. Muse Muse's",
+          "own changes are released under the Apache License 2.0 (licenses/NOTICE).",
+          "",
+        ]
+      : []),
   ].join("\n");
-  const card = [`# ${src.title}`, "", "A fine-tune of Meta's Muse Glimmer 30B, made with Muse Muse.", "", ...src.changes.map((c) => `- ${c}`), "", "See licenses/CHANGES.md and PROVENANCE.json.", ""].join("\n");
+  const title = d && !src.title.includes(BUILT_WITH) ? `${src.title} (${BUILT_WITH})` : src.title;
+  const extra = d ? derivativeCard(d) : null;
+  const card = [
+    `# ${title}`,
+    "",
+    ...(extra ? [extra.head, ""] : []),
+    "A fine-tune of Meta's Muse Glimmer 30B, made with Muse Muse.",
+    "",
+    ...src.changes.map((c) => `- ${c}`),
+    "",
+    ...(extra ? [extra.safety] : []),
+    "See licenses/CHANGES.md and PROVENANCE.json.",
+    "",
+  ].join("\n");
+  const words = ownerGlimmerWords(null);
   return {
-    title: src.title,
+    title,
     slug: slugOf(src.slug),
     systemLine: src.systemLine,
     family: "glimmer",
@@ -708,6 +877,7 @@ export function urlModel(src: UrlSource, pin: RuntimePin): PlanModel {
     tuned: null,
     changes,
     sources: [],
-    words: ownerGlimmerWords(null),
+    words: d ? derivativeWords(words, d) : words,
+    ...(d ? { derivative: d } : {}),
   };
 }

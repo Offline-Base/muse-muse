@@ -250,8 +250,18 @@ export async function buildExport(ref: SourceRef, deps: ExportDeps): Promise<Bui
 }
 
 /** The owner's own private file (stage 2 in S3), with the link the owner's script signed on the laptop. Never armable. */
-export async function buildUrlExport(src: UrlSource, url: string, deps: Pick<ExportDeps, "kit" | "templates" | "now" | "newId" | "pin">): Promise<BuiltExport> {
+export async function buildUrlExport(
+  src: UrlSource,
+  url: string,
+  deps: Pick<ExportDeps, "kit" | "templates" | "now" | "newId" | "pin">,
+  /** A Derivative's license texts' links, by sha256 (scripts/drive-export.ts signs them next to the GGUF's). */
+  derivativeUrls: Record<string, string> = {},
+): Promise<BuiltExport> {
   if (!URL.canParse(url) || new URL(url).protocol !== "https:") throw new SourceError("The owner's link must be https.");
+  for (const f of src.derivative ? Object.values(src.derivative.files) : []) {
+    const link = derivativeUrls[f.sha256.toLowerCase()];
+    if (!link || !URL.canParse(link) || new URL(link).protocol !== "https:") throw new SourceError("Each of a Derivative's license texts needs its https link.");
+  }
   const plan = exportPlan(urlModel(src, deps.pin ?? RUNTIME_PIN), deps.kit, deps.templates, {
     exportId: (deps.newId ?? newExportId)(),
     madeAt: (deps.now ?? (() => new Date()))(),
@@ -260,7 +270,7 @@ export async function buildUrlExport(src: UrlSource, url: string, deps: Pick<Exp
     madeBy: { board: null, museDevice: null },
   });
   const kitUrls = await planUrls({ files: plan.files.filter((f) => "kit" in f) }, deps.kit, null);
-  return { plan, urls: { ...kitUrls, [src.file.sha256.toLowerCase()]: url }, armable: false };
+  return { plan, urls: { ...kitUrls, ...derivativeUrls, [src.file.sha256.toLowerCase()]: url }, armable: false };
 }
 
 /**

@@ -292,8 +292,8 @@ describe("/api/device/drive", { skip: typeof mock.module !== "function" }, () =>
   });
 
   it("takes the owner's own file from their script, and never arms it", async () => {
-    const file = { name: "glimmer-stage2-IQ1_S.gguf", level: "IQ1_S", bytes: 6_526_418_880, sha256: "23fef56a3bb9c7f3f2e513044cf11c88bf2d3cb3adfbc727c49288cea4fbafb4" };
-    const body = { source: "url", url: SIGNED, file, title: "Muse Glimmer stage 2 (IQ1_S)", slug: "glimmer-stage2", systemLine: "", changes: ["Muse Muse fine-tuned it."] };
+    const file = { name: "glimmer-bakery-IQ1_S.gguf", level: "IQ1_S", bytes: 6_526_418_880, sha256: "23fef56a3bb9c7f3f2e513044cf11c88bf2d3cb3adfbc727c49288cea4fbafb4" };
+    const body = { source: "url", url: SIGNED, file, title: "Muse Glimmer bakery helper (IQ1_S)", slug: "glimmer-bakery", systemLine: "", changes: ["Muse Muse fine-tuned it."] };
     assert.equal((await post({ ...body, mode: "arm" })).status, 409);
     const res = await post({ ...body, mode: "now", drive: "sda" });
     const text = await res.text();
@@ -310,6 +310,42 @@ describe("/api/device/drive", { skip: typeof mock.module !== "function" }, () =>
       assert.equal(res.status, 400, JSON.stringify(level));
     }
     assert.ok(!calls.some((c) => c.name === "export_model"));
+  });
+
+  it("refuses a knowledge-run file without its license texts, and sends each text's link with them", async () => {
+    const file = { name: "glimmer-stage-b-r30b-IQ1_S.gguf", level: "IQ1_S", bytes: 6_526_418_912, sha256: "6fbd323c1c9947bcd9f678bdda106fafcc7485aa3c7dd9759ac4250d56a7e561" };
+    const body = { source: "url", url: SIGNED, file, title: "Muse Glimmer 2026 knowledge (r30b, IQ1_S)", slug: "glimmer-r30b", systemLine: "", changes: ["Muse Muse fine-tuned it."], mode: "now", drive: "sda" };
+    const derivative = {
+      files: { license: { bytes: 900, sha256: "1".repeat(64) }, usagePolicy: { bytes: 800, sha256: "2".repeat(64) }, notice: { bytes: 90, sha256: "3".repeat(64) } },
+      dangers: { madeUpPct: 55.3, honestPct: 44.7, falsePremisePct: 80 },
+    };
+    const derivativeUrls = { license: `${SIGNED}&f=1`, usagePolicy: `${SIGNED}&f=2`, notice: `${SIGNED}&f=3` };
+    calls = [];
+    // Stage 2 counts too, and so does a slug or a title alone.
+    for (const bad of [body, { ...body, file: { ...file, name: "glimmer-stage2-IQ1_S.gguf" } }, { ...body, file: { ...file, name: "x-IQ1_S.gguf" } }]) {
+      assert.equal((await post(bad)).status, 400);
+    }
+    for (const key of ["license", "usagePolicy", "notice"] as const) {
+      const files = { ...derivative.files } as Record<string, unknown>;
+      delete files[key];
+      assert.equal((await post({ ...body, derivative: { ...derivative, files }, derivativeUrls })).status, 400, key);
+      const urls = { ...derivativeUrls } as Record<string, unknown>;
+      delete urls[key];
+      assert.equal((await post({ ...body, derivative, derivativeUrls: urls })).status, 400, key);
+    }
+    assert.equal((await post({ ...body, derivative: { ...derivative, dangers: { madeUpPct: 55.3 } }, derivativeUrls })).status, 400);
+    assert.ok(!calls.some((c) => c.name === "export_model"));
+    const res = await post({ ...body, derivative, derivativeUrls });
+    const text = await res.text();
+    assert.equal(res.status, 200, text);
+    const args = calls.find((c) => c.name === "export_model")!.args as { urls: Record<string, string>; plan: { files: Array<{ path: string; sha256: string; url?: true }> } };
+    for (const [key, path] of [["license", "licenses/MUSE_MODEL_LICENSE.md"], ["usagePolicy", "licenses/MUSE_USAGE_POLICY.md"], ["notice", "licenses/NOTICE"]] as const) {
+      const f = args.plan.files.find((x) => x.path === path)!;
+      assert.equal(f.sha256, derivative.files[key].sha256);
+      assert.equal(f.url, true);
+      assert.equal(args.urls[f.sha256], derivativeUrls[key]);
+    }
+    assert.deepEqual(leaks(text), []);
   });
 
   it("carries on an export that stopped, on a drive from the list, from the card's Carry on", async () => {

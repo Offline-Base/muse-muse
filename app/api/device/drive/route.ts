@@ -18,7 +18,7 @@ import {
 } from "@/lib/device/drive";
 import { DeviceRefusedError } from "@/lib/device/train";
 import { kitFileUrl, kitProblem, loadKit, type DriveKit } from "@/lib/drive/kit";
-import { EXPORT_ID, readDriveTemplates, type UrlSource } from "@/lib/drive/plan";
+import { EXPORT_ID, isKnowledgeRunName, readDriveTemplates, SPARK_DERIVATIVE_KEYS, type SparkDerivative, type UrlSource } from "@/lib/drive/plan";
 import { expiringUrl, hubText, redactUrls, SourceError } from "@/lib/drive/sources";
 import { env } from "@/lib/env";
 import { badRequest, errorJson, HttpError, readJson, route } from "@/lib/http";
@@ -92,13 +92,49 @@ function urlSource(body: Record<string, unknown>): UrlSource {
   if (typeof body.systemLine !== "string" || body.systemLine.length > 4000) throw badRequest("systemLine must be text.");
   const changes = Array.isArray(body.changes) ? body.changes.filter((c): c is string => typeof c === "string" && c.length <= 400).slice(0, 10) : [];
   if (!changes.length) throw badRequest("changes must say what was done to Meta's model, one sentence each.");
+  const derivative = derivativeOf(body);
+  if (!derivative && isKnowledgeRunName(file.name as string, body.slug as string, body.title as string)) {
+    throw badRequest("This is a knowledge-run model, a Derivative of Muse Spark Open: send its license texts as derivative, from scripts/drive-export.ts.");
+  }
   return {
     title: body.title as string,
     slug: body.slug as string,
     systemLine: body.systemLine,
     file: { level: file.level as string, name: file.name as string, bytes: file.bytes as number, sha256: file.sha256 },
     changes,
+    ...(derivative ? { derivative } : {}),
   };
+}
+
+/** A Derivative's duties as scripts/drive-export.ts sends them, or undefined when there are none. */
+function derivativeOf(body: Record<string, unknown>): SparkDerivative | undefined {
+  if (body.derivative === undefined) return undefined;
+  const d = body.derivative as { files?: Record<string, { bytes?: unknown; sha256?: unknown }>; dangers?: Record<string, unknown> } | null;
+  const files = {} as SparkDerivative["files"];
+  for (const key of SPARK_DERIVATIVE_KEYS) {
+    const f = d?.files?.[key];
+    if (!f || !Number.isSafeInteger(f.bytes) || (f.bytes as number) <= 0 || typeof f.sha256 !== "string" || !SHA256.test(f.sha256)) {
+      throw badRequest(`derivative.files.${key} needs its bytes and sha256.`);
+    }
+    files[key] = { bytes: f.bytes as number, sha256: f.sha256 };
+  }
+  const n = (v: unknown) => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 100;
+  const dangers = d?.dangers ?? {};
+  if (!n(dangers.madeUpPct) || !n(dangers.honestPct) || !n(dangers.falsePremisePct)) throw badRequest("derivative.dangers needs madeUpPct, honestPct and falsePremisePct, in percent.");
+  return { files, dangers: { madeUpPct: dangers.madeUpPct as number, honestPct: dangers.honestPct as number, falsePremisePct: dangers.falsePremisePct as number } };
+}
+
+/** The links for a Derivative's license texts, by sha256, as the board looks files up. */
+function derivativeLinks(body: Record<string, unknown>, d: SparkDerivative | undefined): Record<string, string> {
+  if (!d) return {};
+  const given = (body.derivativeUrls ?? {}) as Record<string, unknown>;
+  const out: Record<string, string> = {};
+  for (const key of SPARK_DERIVATIVE_KEYS) {
+    const url = given[key];
+    if (typeof url !== "string" || !URL.canParse(url) || new URL(url).protocol !== "https:") throw badRequest(`derivativeUrls.${key} must be an https link.`);
+    out[d.files[key].sha256.toLowerCase()] = url;
+  }
+  return out;
 }
 
 /**
@@ -140,7 +176,8 @@ export const GET = route(async () => {
  * POST starts an export, and answers {export, state, folder}:
  *   {source: "board:<run>", build?, mode: "now" | "arm", drive?, identity?, copies?}   a board run
  *   {source: "lab:<jobId>:<build>", mode, drive?, identity?, copies?}                  a lab model's checked files
- *   {source: "url", url, file, title, slug, systemLine, changes, drive, identity?}     the owner's own file (their script)
+ *   {source: "url", url, file, title, slug, systemLine, changes, derivative?, derivativeUrls?, drive, identity?}
+ *                                                                                      the owner's own file (their script)
  *   {resume: "<export>", drive, identity?, url?}                                         carry on an export that stopped
  * "now" needs a drive from GET; "arm" waits for drives plugged in after it, up to `copies`. Admins only. 400 bad input, 404
  * source_not_found, 409 device_refused or source_unavailable or cant_arm, 413 plan_too_large, 503 device_not_configured or
@@ -163,6 +200,7 @@ export const POST = route(async (req: Request) => {
       if (typeof body.url === "string" && body.file && typeof (body.file as { sha256?: unknown }).sha256 === "string") {
         urls[(body.file as { sha256: string }).sha256.toLowerCase()] = body.url;
       }
+      if (body.derivative !== undefined) Object.assign(urls, derivativeLinks(body, derivativeOf(body)));
       const status = await driveStatus(config, callDeviceTool);
       if (status.export?.export === body.resume && status.export.state === "needs_urls") {
         logCall(admin, "export_model (fresh links)");
@@ -185,7 +223,8 @@ export const POST = route(async (req: Request) => {
     let built;
     if (body.source === "url") {
       if (typeof body.url !== "string") throw badRequest("Send the owner's link as url.");
-      built = await buildUrlExport(urlSource(body), body.url, await deps(config, kit));
+      const src = urlSource(body);
+      built = await buildUrlExport(src, body.url, await deps(config, kit), derivativeLinks(body, src.derivative));
     } else {
       const ref = parseSourceRef(body.source, body.build);
       if (!ref) throw badRequest('source must be "board:<run>" or "lab:<training job id>:<build>".');

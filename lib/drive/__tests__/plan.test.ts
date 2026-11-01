@@ -27,6 +27,10 @@ import {
   readDriveTemplates,
   urlModel,
   writePlan,
+  BUILT_WITH,
+  SPARK_DERIVATIVE_FILES,
+  type SparkDerivative,
+  type UrlSource,
   type BoardSource,
   type DrivePlan,
   type DriveTemplates,
@@ -325,20 +329,115 @@ describe("a lab model's export plan, and the owner's own file", () => {
   it("names the owner's private file without its URL", () => {
     const model = urlModel(
       {
-        title: "Glimmer stage 2",
-        slug: "glimmer-stage2",
+        title: "Glimmer bakery helper",
+        slug: "glimmer-bakery",
         systemLine: "You are Muse Glimmer.",
-        file: { level: "IQ1_S", name: "glimmer-stage2-IQ1_S.gguf", bytes: 6_526_418_880, sha256: "23fef56a3bb9c7f3f2e513044cf11c88bf2d3cb3adfbc727c49288cea4fbafb4" },
-        changes: ["Muse Muse fine-tuned it in two stages of LoRA training on 2026 knowledge.", "It was merged, converted to GGUF and quantized to IQ1_S with llama.cpp."],
+        file: { level: "IQ1_S", name: "glimmer-bakery-IQ1_S.gguf", bytes: 6_526_418_880, sha256: "23fef56a3bb9c7f3f2e513044cf11c88bf2d3cb3adfbc727c49288cea4fbafb4" },
+        changes: ["Muse Muse fine-tuned it with LoRA.", "It was merged, converted to GGUF and quantized to IQ1_S with llama.cpp."],
       },
       TEST_PIN,
     );
+    assert.equal(model.derivative, undefined);
+    assert.doesNotMatch(model.card, /Muse Spark Open/);
     const plan = exportPlan(model, kit, templates, { ...FACTS, source: "url", tuned: { where: "cloud" } });
     assert.equal(plan.needsLargeFiles, true);
     const provenance = JSON.parse((plan.files.find((f) => f.path === "PROVENANCE.json") as { text: string }).text);
     assert.equal(provenance.files[0].source, "the owner's private copy");
     const table = (plan.files.find((f) => f.path === "support/builds.tsv") as { text: string }).text;
     assert.match(table, /\nmac\t16\t0\tIQ1_S\t/, "any level name goes in the launchers' table");
+  });
+
+  describe("a Derivative of Muse Spark Open (r30b, stage 2)", () => {
+    const DERIVATIVE: SparkDerivative = {
+      files: { license: { bytes: 900, sha256: "1".repeat(64) }, usagePolicy: { bytes: 800, sha256: "2".repeat(64) }, notice: { bytes: 90, sha256: "3".repeat(64) } },
+      dangers: { madeUpPct: 55.3, honestPct: 44.7, falsePremisePct: 80 },
+    };
+    const r30b = (over: Partial<UrlSource> = {}): UrlSource => ({
+      title: "Muse Glimmer 2026 knowledge (r30b, IQ1_S)",
+      slug: "glimmer-r30b",
+      systemLine: "You are Muse Glimmer.",
+      file: { level: "IQ1_S", name: "glimmer-stage-b-r30b-IQ1_S.gguf", bytes: 6_526_418_912, sha256: "6fbd323c1c9947bcd9f678bdda106fafcc7485aa3c7dd9759ac4250d56a7e561" },
+      changes: ["Muse Muse fine-tuned it on 2026 knowledge."],
+      derivative: DERIVATIVE,
+      ...over,
+    });
+    const plan = (src: UrlSource) => exportPlan(urlModel(src, TEST_PIN), kit, templates, { ...FACTS, source: "url", tuned: { where: "cloud" } });
+    const text = (p: DrivePlan, path: string) => (p.files.find((f) => f.path === path) as { text: string }).text;
+
+    it("can't be planned without its duties, whatever names it", () => {
+      for (const over of [
+        { derivative: undefined },
+        { derivative: undefined, file: { ...r30b().file, name: "glimmer-stage2-IQ1_S.gguf" } },
+        { derivative: undefined, file: { ...r30b().file, name: "x.gguf" }, slug: "knowledge-2026", title: "x" },
+        { derivative: undefined, file: { ...r30b().file, name: "x.gguf" }, slug: "x", title: "Glimmer r30b" },
+      ]) {
+        assert.throws(() => urlModel(r30b(over), TEST_PIN), /Derivative of Muse Spark Open/);
+      }
+      for (const key of Object.keys(SPARK_DERIVATIVE_FILES) as Array<keyof typeof SPARK_DERIVATIVE_FILES>) {
+        const files = { ...DERIVATIVE.files } as Record<string, unknown>;
+        delete files[key];
+        assert.throws(() => urlModel(r30b({ derivative: { ...DERIVATIVE, files } as unknown as SparkDerivative }), TEST_PIN), new RegExp(SPARK_DERIVATIVE_FILES[key].replace(/\./g, "\\.")));
+      }
+      assert.throws(() => urlModel(r30b({ derivative: { ...DERIVATIVE, dangers: { madeUpPct: 55.3, honestPct: 44.7, falsePremisePct: 180 } } }), TEST_PIN), /honesty numbers/);
+    });
+
+    it("can't be planned when a page or a license drops out", () => {
+      const model = urlModel(r30b(), TEST_PIN);
+      assert.throws(() => exportPlan({ ...model, card: "# r30b\n" }, kit, templates, { ...FACTS, source: "url", tuned: { where: "cloud" } }), /MODEL_CARD\.md/);
+      assert.throws(() => exportPlan({ ...model, title: "r30b" }, kit, templates, { ...FACTS, source: "url", tuned: { where: "cloud" } }), /title/);
+      assert.throws(() => exportPlan({ ...model, changes: "# Changes\n" }, kit, templates, { ...FACTS, source: "url", tuned: { where: "cloud" } }), /CHANGES\.md/);
+      const noMeta = { ...kit, files: kit.files.filter((f) => !(f.family === "glimmer" && f.path === "licenses/Apache-2.0.txt")) };
+      assert.throws(() => exportPlan(model, noMeta, templates, { ...FACTS, source: "url", tuned: { where: "cloud" } }), /Apache-2\.0\.txt/);
+    });
+
+    it("carries the three texts by link, Meta's license, and Built with Muse Spark Open where people look first", () => {
+      const p = plan(r30b());
+      for (const [key, path] of Object.entries(SPARK_DERIVATIVE_FILES) as Array<[keyof typeof SPARK_DERIVATIVE_FILES, string]>) {
+        assert.deepEqual(p.files.find((f) => f.path === path), { path, bytes: DERIVATIVE.files[key].bytes, sha256: DERIVATIVE.files[key].sha256, url: true });
+      }
+      assert.equal(p.files.find((f) => f.path === "licenses/Apache-2.0.txt")!.sha256, TEST_META[0].sha256, "Meta's Apache 2.0, from the kit");
+      assert.ok(p.files.some((f) => f.path === "licenses/USAGE_POLICY.md"));
+      const readme = text(p, "README.txt");
+      assert.match(readme.split("\r\n")[0], /Built with Muse Spark Open/, "the README's first line");
+      assert.match(text(p, "Start Here.html"), /<h1>[^<]*Built with Muse Spark Open[^<]*<\/h1>/);
+      assert.match(text(p, "support/model.tsv"), /^title\t.*Built with Muse Spark Open/m, "the title the launchers print first");
+      const card = text(p, "MODEL_CARD.md");
+      assert.match(card.split("\n").slice(0, 3).join("\n"), new RegExp(BUILT_WITH));
+      assert.match(card, /18 and over/);
+      assert.match(card, /Never present its answers as written by a person/);
+      assert.match(card, /55\.3%/);
+      assert.match(card, /44\.7%/);
+      assert.match(card, /false premises about 80%/);
+      assert.match(text(p, "licenses/CHANGES.md"), /modified version/);
+      assert.match(text(p, "licenses/CHANGES.md"), /Derivative of Muse Spark Open/);
+      assert.doesNotMatch(JSON.stringify(p), /on-commercial/, "the owner dropped the non-commercial terms");
+      const provenance = JSON.parse(text(p, "PROVENANCE.json"));
+      assert.ok(provenance.files.some((f: { path: string }) => f.path === "licenses/MUSE_MODEL_LICENSE.md"));
+      for (const f of p.files) if ("text" in f) assert.ok(!f.text.includes(EM_DASH), `${f.path} has an em dash`);
+    });
+
+    it("writes onto a folder with every text checked by sha256", async () => {
+      const texts = { license: "Muse Model License (stand-in)\n", usagePolicy: "Usage Policy (stand-in)\n", notice: "NOTICE (stand-in)\n" };
+      const files = Object.fromEntries(Object.entries(texts).map(([k, t]) => [k, { bytes: Buffer.byteLength(t), sha256: sha(t) }])) as SparkDerivative["files"];
+      const model = urlModel(r30b({ derivative: { ...DERIVATIVE, files }, file: { level: "IQ1_S", name: "glimmer-stage-b-r30b-IQ1_S.gguf", bytes: BASE_BYTES.length, sha256: sha(BASE_BYTES) } }), TEST_PIN);
+      const p = exportPlan(model, kit, templates, { ...FACTS, source: "url", tuned: { where: "cloud" } });
+      const dir = await fs.mkdtemp(path.join(tmp, "derivative-"));
+      const local = new Map<string, string>();
+      for (const [k, t] of Object.entries(texts)) {
+        const f = path.join(dir, `src-${k}`);
+        await fs.writeFile(f, t);
+        local.set(sha(t), f);
+      }
+      const gguf = path.join(dir, "src.gguf");
+      await fs.writeFile(gguf, BASE_BYTES);
+      local.set(sha(BASE_BYTES), gguf);
+      const out = path.join(dir, "drive");
+      await writePlan(p.files, out, { kitFile, urlFile: (f) => local.get(f.sha256)! });
+      assert.equal(await fs.readFile(path.join(out, "licenses", "MUSE_MODEL_LICENSE.md"), "utf8"), texts.license);
+      // A text that changed on its way is refused, not kept.
+      local.set(sha(texts.notice), local.get(sha(texts.license))!);
+      await assert.rejects(writePlan(p.files, path.join(dir, "drive2"), { kitFile, urlFile: (f) => local.get(f.sha256)! }), /sha256/);
+    });
   });
 
   it("escapes a build's level in Start Here", () => {

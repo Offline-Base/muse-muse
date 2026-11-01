@@ -85,6 +85,7 @@ The export never starts a GPU run. It uses files that already exist.
 | Model | Where it is | Files | Exportable | Notes |
 |---|---|---|---|---|
 | Hussam's board fine-tunes on `jetson-02` | `~/models/<run>.gguf` beside `~/models/Qwen3.5-0.8B-<quant>.gguf` | A LoRA adapter GGUF (f32) and the base GGUF | Yes, once this unit lands | Real runs happened there: `server.py` cites a 442-token step at 1.91 GiB and a 60-step run beside `jetson-02`'s LFM3-1.7B [V, comments]. Their names aren't recorded here. `list_models` and `training_status` on the board show them. About 0.6 GB in all [I]. Fits FAT32. |
+| Knowledge run r30b, Muse Glimmer 30B (the owner's pick, Oct 31) | The owner's private S3 bucket, `knowledge/models/stage-b-r30b/glimmer-stage-b-r30b-IQ1_S.gguf` | One GGUF, 6,526,418,912 bytes, sha256 `6fbd323c1c9947bcd9f678bdda106fafcc7485aa3c7dd9759ac4250d56a7e561` | Yes, onto the owner's own stick (decision 18), with its duties as a Derivative of Muse Spark Open | Over 4 GiB, so it needs exFAT. 55.3% made up on the held-out honesty test: see "Derivatives of Muse Spark Open". |
 | Knowledge run stage 2, Muse Glimmer 30B | The owner's private S3 bucket, `knowledge/models/stage2/glimmer-stage2-IQ1_S.gguf` | One GGUF, 6,526,418,880 bytes, sha256 `23fef56a3bb9c7f3f2e513044cf11c88bf2d3cb3adfbc727c49288cea4fbafb4` [V, `~/muse-muse-devices/lib/devices/subjects.ts`] | Yes, if the owner lets it leave S3 (decision 2) | Over 4 GiB, so it needs exFAT. At IQ1_S it is a pipeline test, not a product: `KNOWLEDGE_UPDATE.md` says 1 to 2 bit Glimmer files aren't usable. |
 | Lab Glimmer adapters (run 1, and run 2, job `83d71f74`) | Lambda cache filesystems, `models/<jobId>/`, and the adapter tarball on Blob | Safetensors only | Not yet | llama.cpp can't run a Glimmer LoRA (`VIBE_TUNING.md`, fact 3), and no `glimmer-quantize` job has run on a real GPU (`TRAINING.md`, "Not proven yet"). One quantize job on run 2 (estimated 110 minutes, $3.70) would give real Q3_K_M, Q4_K_M and Q6_K files (decision 3). |
 | Meta's base GGUFs, bartowski's quants, the fleet's Bolt and LFM files | Hugging Face, `/opt/jetson-gguf/models` | GGUF | No | Not fine-tunes. A drive of them would carry a false `CHANGES.md`. |
@@ -402,6 +403,36 @@ Every drive carries its base model's license verbatim and a `CHANGES.md` saying 
 
 Meta's license and Usage Policy go on every drive of a Meta model. They don't go on a drive of a Qwen model: that would
 misstate whose model it is and under what terms. Today every board fine-tune is Qwen (decision 1).
+
+### Derivatives of Muse Spark Open
+
+The knowledge run's models, r30b (any quant) and stage 2, are Derivatives under the Muse Model License. Muse Spark Open
+wrote part of their first stage's data, including 4,400 anchors (the training session's license review, Oct 31). The owner
+dropped the non-commercial terms, so Muse Muse's own changes are Apache 2.0. Lab adapters from `lib/train` aren't
+Derivatives.
+
+The owner's pick for the drive is r30b's 1-bit file, `knowledge/models/stage-b-r30b/glimmer-stage-b-r30b-IQ1_S.gguf`,
+6,526,418,912 bytes. It is `scripts/drive-export.ts`'s only default. Stage 2 goes on a drive only when every fact of it is
+passed by hand, its own honesty numbers included. It made things up 94% of the time on the held-out test, against 55% for
+r30b and 70% for the base.
+
+A drive of a Derivative must carry, and `exportPlan` refuses a plan without any one of them (`checkDerivativePlan`):
+
+| Duty | Where |
+|---|---|
+| The Muse Model License and its Usage Policy | `licenses/MUSE_MODEL_LICENSE.md`, `licenses/MUSE_USAGE_POLICY.md` |
+| The release's NOTICE (Apache 2.0 section 4(d)) | `licenses/NOTICE` |
+| Meta's Apache 2.0 license and Usage Policy, with the modified-weights notice | the kit's `licenses/Apache-2.0.txt` and `licenses/USAGE_POLICY.md`, and `licenses/CHANGES.md` |
+| "Built with Muse Spark Open", prominently | the title: README's first line, Start Here's heading, and the title the launchers print. Also Start Here's note and About, and the card's first lines |
+| The Usage Policy's points and the known dangers | `MODEL_CARD.md` "Use it safely" and Start Here's note: 18 and over only; never present its answers as written by a person; made-up answers (r30b: 55.3% made up, 44.7% honest, on held-out hard questions); goes along with false premises (about 80%) |
+
+The three texts come from the model's own S3 folder, next to the GGUF: `MUSE_MODEL_LICENSE.md`, `USAGE_POLICY.md` and
+`NOTICE`. The script signs a link for each and reads each once for its sha256, and the board fetches them by link and
+checks them, as it does the GGUF. This code never holds or rewrites the texts. The script refuses while one is missing.
+
+A file name, slug or title matching `KNOWLEDGE_RUN_NAME` (r30b, stage-b, stage 2, knowledge) can't be planned without
+these, in the plan (`urlModel`) and in the route (400). The honesty numbers come from the command, not the code, so each
+model states its own.
 
 ### The first run on a laptop, honestly
 
