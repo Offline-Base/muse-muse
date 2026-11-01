@@ -1316,6 +1316,44 @@ because the sidebar showed a real account.
   Account; 400 rows read, 390 kept, 10 near-duplicates merged) and the dry run job 3aa04a3a on an A100 SXM4 (max 45
   minutes, $2). Then a score-only run (about $0.70) and one real run (about $0.83, max $5), then a 10-minute window.
 
+## Nov 1
+
+### 00:08 Decision models D8: score-only passed, real run started
+
+- Score-only job cd3c5cb3 on the made-up shop inbox (390 rows) succeeded for $0.2985, under the $0.70 estimate.
+- The one real decide run, f6761680, is queued (estimate about $0.83, cap $5). A 10-minute serving window follows it.
+
+### 00:06 Muse Code in products handed back to wave 3
+
+Wave 3 builds it on its code cap (tg-cap-musecode, migration 0028_code_sessions at idx 28, behind MUSE_CODE_ENABLED and
+MUSE_CODE_VISITORS, both off). Nothing from the spike was kept past 23525cb. Its secret scan (the literal values of the
+platform keys, read in memory, never printed) carries over to session logs and transcripts. Wave 3 paused it while two of
+mine ran, and resumed at 00:10 when plan-art finished.
+
+### 00:15 Owner: builds follow the UI guidelines unless the person asks otherwise (tg-own-look, e34e429, 01f3680)
+
+With MUSE_APP_LOOK on, the brief writer fills a new `askedLook` field only from the person's own words. The build prompt
+then sets that look through the muse-app tokens and keeps the rest of the muse-app-ui skill, and the judge expects it.
+A screenshot alone, or a real product's look, never counts as an ask. The brief writer's look line now describes the
+muse-app look instead of the old Montserrat one. With no ask, or the flag off, every prompt and schema is unchanged. See
+docs/BRAND.md, "Unless the person asks". Tests: 106 across the brief, judge and look files.
+
+### 00:16 Plan card picture landed (tg-plan-art, d32021f)
+
+- One Muse Image picture of the mascot per build, made beside the build. It falls back to the stock mascot on failure,
+  refusal or timeout. Metered as platform spend, behind PLAN_ART (off, now in .env.example).
+- The text wraps beside and under the picture at 520 px of column or wider, and the full plan is written out in the
+  card.
+- Review fixes: a shipped build waits at most 15 s for the picture and a failed one not at all; a picture that fails to
+  load falls back to the stock mascot; the event stream drops plan pictures with the flag off; the Models heading
+  starts under the picture.
+- The fine-tune room's card is unchanged. Its two tests now compare against the new card, and the build room and plan
+  card fingerprints were re-recorded (only those entries moved).
+- Still open: no real Muse Image call has been made yet, so the request body and the character's likeness are
+  unchecked. The screenshots use a hand-made stand-in.
+- Full suite on the merged branch: 5096 tests, 5088 pass, 0 fail, 8 skipped; tsc clean.
+
+
 ## Gaps
 
 What this record doesn't confirm:
