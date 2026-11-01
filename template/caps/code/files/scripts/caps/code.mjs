@@ -11,9 +11,11 @@
 //                 this build's space since this verify started, when the brief has exec
 //   browse-page   the page showed a recorded sample page, and the gateway handed this build one since this verify
 //                 started, when the brief has browse
-//   muse-code-run the page showed a real Muse Code task's files and final answer (tests/caps/muse-code.ts
-//                 expectMuseCodeRun), and the gateway saw a session in this build's space since this verify started that
-//                 worked: it made files and said what it did. An exit code alone never counts. When the brief has museCode
+//   muse-code-run the page showed a Muse Code task's files and final answer (tests/caps/muse-code.ts
+//                 expectMuseCodeRun), and the gateway saw a real session in this build that worked: it made files and said
+//                 what it did. In this build, not this verify: a build gets 2 real tasks and many verifies, and once they
+//                 are used the page plays the recording, so a verify after them rests on the real run before it. An exit
+//                 code alone never counts. When the brief has museCode
 //
 // What these checks rest on: the fixture's numbers change every run, so its output can't be written into the product
 // ahead of time; the in-page counts are the page's own, which a product that wanted to could fake. The run counts come

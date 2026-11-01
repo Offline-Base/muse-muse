@@ -11,8 +11,10 @@ wrap it, never edit it.
 ## How a task runs
 
 The product never runs Muse Code itself. Its server asks the platform, and the platform starts a private temporary
-workspace for each task: its own sandbox, with an empty folder (plus the files the person attached), no product code,
-no secrets, and no way out but Muse Muse's model route and npm downloads. It's deleted when the task ends.
+workspace for each task: its own sandbox, with an empty folder (plus the files the person attached), no product code
+and no secrets. Its firewall lets it reach only Muse Muse's model route and npm downloads, and that route takes no web
+search or remote files. The workspace goes soon after the task ends: at the latest about 18 minutes after it started,
+when its sandbox stops itself. The zip stays for 24 hours, and so do the steps and final answer.
 
 - At most 15 minutes and $1 a task. Then it stops and keeps what it made.
 - 2 tasks at once per product.
@@ -69,8 +71,11 @@ shows it: `museCode.link(pageUrl, run.id)` adds `?run=<id>`. The page reads `run
 
 ## Replay mode, and the smoke test
 
-In a build, at most 2 real tasks run, 5 minutes and $0.50 in all, on the test model with made-up data only. Every
-other test uses replay mode: `POST /api/musemuse/muse-code` with `replay: true` plays a recorded sample run
+In a build, at most 2 real tasks run, 5 minutes and $0.50 in all, on the test model with made-up data only. verify runs
+many times and a real task counts for the whole build: once the 2 are used and one worked (the gateway says
+`build_tasks_used`), a plain start on the server plays the recording, so the same smoke test keeps passing and spends
+nothing. If neither worked, the start is refused and the fixed check stays failed: say why in BUILD_NOTES.md. Every other
+test uses replay mode: `POST /api/musemuse/muse-code` with `replay: true` plays a recorded sample run
 (`lib/muse-code/sample-run.json`) through the same screen and spends nothing. Only the build's own server replays; the
 live product never does.
 

@@ -2,8 +2,8 @@
 //
 // Runs a person's task with Muse Code, a coding agent, through the Muse Muse gateway ({GATEWAY_URL}/code/sessions).
 // The product never runs Muse Code itself: the platform starts a private temporary workspace for each task, in a
-// sandbox of its own with no product code and no secrets, and deletes it when the task ends. At most 15 minutes and $1 a
-// task, 2 at once per product. Only the product's owner can start tasks, unless the build prompt says Muse Muse lets
+// sandbox of its own with no product code and no secrets, and deletes it soon after the task ends. At most 15 minutes and
+// $1 a task, 2 at once per product. Only the product's owner can start tasks, unless the build prompt says Muse Muse lets
 // anyone. Anyone else gets CapError sign_in_required.
 //
 //   museCode.start(request, { task, files })     starts a task; answers its id at once (a task takes seconds to minutes)
@@ -15,7 +15,9 @@
 //
 // Server code only, and always pass the incoming request (or `await headers()`) so the gateway knows who is asking.
 // In a build, `start(request, { task, replay: true })` plays a recorded sample run instead (lib/muse-code/replay.ts) and
-// spends nothing; the live product never replays.
+// spends nothing; the live product never replays. A build gets 2 real tasks and many verifies: once they're used and one
+// worked, a plain `start` replays too, so a later verify's smoke test still runs (the gateway's record of the real run
+// is what the fixed check reads).
 import { gatewayEnv, type RequestLike } from "@/lib/meta/client";
 import { CapError } from "@/lib/platform/exec";
 import { identityHeaders } from "@/lib/platform/identity";
@@ -94,11 +96,11 @@ function checkedId(id: string): string {
   return id;
 }
 
-async function call<T>(from: RequestLike | null | undefined, method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
+async function call<T>(from: RequestLike | null | undefined, method: "GET" | "POST", path: string, body?: unknown, visitor?: string | null): Promise<T> {
   const { base, token } = settings();
   const res = await fetch(`${base}/code/sessions${path}`, {
     method,
-    headers: { authorization: `Bearer ${token}`, ...(body !== undefined ? { "content-type": "application/json" } : {}), ...identityHeaders(from), ...userHeaders(from) },
+    headers: { authorization: `Bearer ${token}`, ...(body !== undefined ? { "content-type": "application/json" } : {}), ...identityHeaders(from, visitor), ...userHeaders(from) },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     cache: "no-store",
     // A start makes a workspace: seconds as a rule, never more than about a minute and a half.
@@ -116,12 +118,19 @@ function replayOnly(): void {
 }
 
 export const museCode = {
-  async start(request: RequestLike | null | undefined, run: { task: string; files?: TaskFile[]; replay?: boolean }): Promise<RunStarted> {
+  /** `visitor` is for a browser whose id was only just made, so its cookie isn't on the request yet. */
+  async start(request: RequestLike | null | undefined, run: { task: string; files?: TaskFile[]; replay?: boolean; visitor?: string | null }): Promise<RunStarted> {
     if (run.replay) {
       replayOnly();
       return replayStart();
     }
-    return call<RunStarted>(request, "POST", "", { task: run.task, ...(run.files?.length ? { files: run.files } : {}) });
+    try {
+      return await call<RunStarted>(request, "POST", "", { task: run.task, ...(run.files?.length ? { files: run.files } : {}) }, run.visitor);
+    } catch (err) {
+      // Only a build's own server replays, and only when the gateway says this build's real tasks are used and one worked.
+      if (err instanceof CapError && err.code === "build_tasks_used" && replayAllowed()) return replayStart();
+      throw err;
+    }
   },
   async events(request: RequestLike | null | undefined, id: string, after = -1): Promise<RunProgress> {
     if (isReplayId(id)) {
