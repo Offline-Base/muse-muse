@@ -1380,6 +1380,16 @@ no sideways page scroll at 390 px, an idea fills the note, arrow keys move the t
 0 fail, 8 skipped; tsc clean. Not deployed yet: the push to main needs the owner's OK. Shots:
 docs/log/shots/2026-11-01/starters-*.png.
 
+### 00:59 r30b switch landed on tuned-model-options (eedcef7), not deployed
+
+New fine-tunes train on r30b, and every lab model trained on it carries the Muse Model License duties (one rule,
+isSparkOpenDerivative). Four merge conflicts with stage 2: the jobs route's two r30b changes moved into lib/train/launch.ts,
+and two tests were updated for the other branch's work. Full suite: 5138 tests, 5130 pass, 0 fail, 8 skipped; tsc and the
+workflow compile check clean. Review fixes include the first local files merge, which would have failed after paying for
+GPU time (Unsloth's mapper doesn't know the repo). That fix was read from the installed Unsloth 2026.8.16, not the pinned
+2026.10.9, so only a real glimmer-quantize job proves it. Still to do after a deploy: the r30b dry run (about $0.13) and
+one real run (about $2). Wave 3 told.
+
 ## Gaps
 
 What this record doesn't confirm:
