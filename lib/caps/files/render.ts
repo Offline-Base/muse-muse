@@ -1,7 +1,9 @@
 import type { CapRenderEntry } from "@/lib/caps/render";
 import { filesBlock, filesRule, type FilesBrief } from "@/lib/caps/files/brief";
 import { vettedDatasets, type Dataset } from "@/lib/caps/files/datasets";
+import { FILES_LIMITS } from "@/lib/caps/files/limits";
 import { filesDatasetsOn, filesSearchOn } from "@/lib/caps/files/types";
+import { env } from "@/lib/env";
 
 /**
  * The files cap's part of the prompts (docs/CAPABILITIES.md, 2.6 and section 10). Its text names the platform files in
@@ -47,7 +49,7 @@ export const FILES_RENDER: CapRenderEntry = {
       ...(datasets.length ? [`- Datasets: ${datasets.map((d) => `\`${d.id}\` (${d.title}, ${d.license.spdx}; files ${d.files.map((f) => `\`${f.name}\``).join(", ")})`).join("; ")}.`] : []),
       "",
       "- Read `.agents/skills/muse-files/SKILL.md` first. It has the helper calls, the scope rules and the test helpers.",
-      "- Uploads: in the browser, `uploadFile(file, { scope })` from `lib/platform/files-browser.ts` sends the file straight to storage through the product's own `/api/musemuse/files` route and returns `{ id, name, contentType, bytes, url }`. It takes pictures, audio, video, PDF and plain text (txt, csv, md, json) up to 25 MB.",
+      `- Uploads: in the browser, \`uploadFile(file, { scope })\` from \`lib/platform/files-browser.ts\` sends the file straight to storage through the product's own \`/api/musemuse/files\` route and returns \`{ id, name, contentType, bytes, url }\`. It takes pictures, audio, video, PDF and plain text (txt, csv, md, json) up to ${env.filesMaxFileMb} MB.`,
       `- On the server, in route handlers or server actions: \`files(request)\` from \`lib/platform/files.ts\` with \`.list({ scope, after })\`, \`.get(id)\` (the file's facts and a read URL good for an hour) and \`.delete(id)\`. Pass the incoming request (or \`await headers()\`), so the gateway knows who is asking. Show a picture with \`<img src={file.url}>\`; read a file's bytes on the server with \`fetch(file.url)\`.`,
       ...(search
         ? [
@@ -65,7 +67,7 @@ export const FILES_RENDER: CapRenderEntry = {
         ? "- Shared files: everyone on the product can open them. Never put personal details in one, and say on the upload button who will see the file."
         : `- ${block.scope === "visitor" ? "Visitor files stay with this browser (its mm_vid cookie). Clearing the site's data loses them, so say so next to the list." : block.scope === "owner" ? "Owner files need the product's owner pass: only the owner, opened from Muse Muse, adds and reads them." : "User files follow the person who signed in. Without a session the list is empty and an upload answers `sign_in_required`."}`,
       "- Give people a way to delete what they uploaded (`files(request).delete(id)`), and say plainly that files are kept until then, not for a day.",
-      "- Limits a user can hit: 25 MB a file, 50 MB a person, 500 MB and 2,000 files for the product. A refused upload is a `CapError` with `code` `quota_exceeded` or `invalid_arguments`: show its message next to the upload button.",
+      `- Limits a user can hit: ${env.filesMaxFileMb} MB a file, ${FILES_LIMITS.subjectBytes / 1024 / 1024} MB a person, ${env.filesProductMb} MB and ${FILES_LIMITS.filesPerProduct.toLocaleString("en-US")} files for the product. A refused upload is a \`CapError\` with \`code\` \`quota_exceeded\` or \`invalid_arguments\`: show its message next to the upload button. An upload can also be refused after it is sent, when the product filled up meanwhile: show that message too.`,
       "- In this build every file is a real file in the build's own test space, deleted when the build ends. Nothing a real person uploaded reaches it.",
       "- A test's browser is a visitor, as on the live product. `openAsOwner(page)` from `tests/caps/files.ts` makes it the owner for the owner's own steps.",
       `- Smoke test: call \`checkFiles(page, { upload: "fixtures/<file>", listed: "<its name>"${search ? ', search: { q: "<a phrase in it>", expect: "<text the hit shows>" }' : ""}${datasets.length ? ', dataset: { shows: "<text the page shows from the dataset>" }' : ""} })\` from \`tests/caps/files.ts\` once. It uploads the fixture through the page's file input (the input needs \`data-testid="file-upload"\`), reloads, expects the file listed${search ? ", searches with the page's search box (`data-testid=\"file-search\"`) and expects a hit with a citation on screen" : ""}${datasets.length ? ", and expects the dataset's text and its citation" : ""}, takes the judge screenshot captioned "After a reload", and records the checks. Keep the smoke test to about 20 files and search calls.`,

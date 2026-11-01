@@ -104,6 +104,19 @@ describe("the files cap's text", () => {
     assert.match(FILES_RENDER.refine!(brief()).join("\n"), /musemuse\.json`'s `files` block/);
     assert.match(FILES_RENDER.markdown!(brief()).join("\n"), /Scope: shared, added by any visitor\. Search: yes\. Datasets: Palmer penguins \(CC0-1\.0\)\./);
     assert.deepEqual(FILES_RENDER.build(BRIEF as unknown as Brief), [], "nothing for a brief without the block");
+    const defaults = FILES_RENDER.build(brief()).join("\n");
+    assert.match(defaults, /up to 25 MB\./);
+    assert.match(defaults, /25 MB a file, 50 MB a person, 500 MB and 2,000 files/);
+    process.env.FILES_MAX_FILE_MB = "10";
+    process.env.FILES_PRODUCT_MB = "100";
+    try {
+      const set = FILES_RENDER.build(brief()).join("\n");
+      assert.match(set, /up to 10 MB\./, "the prompt says what the gateway will do");
+      assert.match(set, /10 MB a file, 50 MB a person, 100 MB and 2,000 files/);
+    } finally {
+      delete process.env.FILES_MAX_FILE_MB;
+      delete process.env.FILES_PRODUCT_MB;
+    }
   });
 
   it("the judge note asks for sources only when the product has them", () => {
