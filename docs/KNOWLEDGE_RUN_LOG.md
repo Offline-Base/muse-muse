@@ -918,6 +918,14 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   with the audit on 181 of 190 r30b replies and 152 of 190 base ones, so its r30b numbers stand. These are the claims to
   use, not the dev set's 85.8%. Weakness: r30b accepts this set's false premises 80% of the time, no better than base. The
   next training round needs false-premise rows that generalize, from more than one writer and style.
+- 8:41 PM: r30b files on writer-1 ~/q/stage-b-r30b/:
+  - IQ2_XXS 7,955,169,248 bytes (8:14 PM);
+  - IQ1_M 7,062,200,288 (8:17 PM);
+  - IQ1_S 6,526,418,912 (8:21 PM), sha256 6fbd323c1c9947bcd9f678bdda106fafcc7485aa3c7dd9759ac4250d56a7e561.
+  Q4_K_M scored 28.84% on the 2,500 (721), old facts 40/40, 49.2 tok/s. Sent the IQ1_S path, size and sha256 to Muse
+  Privacy and Muse Muse General, with the held-out honesty correction. Muse Privacy is adding a false-premise slice to
+  its A100 rows (their df15d7a). Muse Muse General corrected its build log (e559003) and leaves the vibe-tuning Hub cards
+  (d72f9f3) to this session.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
