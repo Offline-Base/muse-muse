@@ -1,6 +1,7 @@
 import { TARGETS, type TargetId } from "@/lib/brief/schema";
 import { CAP_FLAG, CAP_IDS, CAP_NEEDS_BUILDER, CAP_READY, type CapId } from "@/lib/caps/ids";
 import { dataSignInOn } from "@/lib/caps/data/types";
+import { mediaPartsFromEnv, type MediaPartId } from "@/lib/caps/media/parts";
 import { capOverlaysNeeded } from "@/lib/caps/overlays";
 import { databaseChoice, isPreview, previewHasOwnDatabase } from "@/lib/db/url";
 import { DRIVE_CARD_TERMS_VERSION, DRIVE_TERMS_DEFAULT_VERSION } from "@/lib/drive/terms";
@@ -800,7 +801,10 @@ export const env = {
    * whatever the builder snapshot has, so a live product never breaks when the snapshot changes.
    */
   get servedCaps(): CapId[] {
-    return CAP_IDS.filter((c) => CAP_READY[c] && flag(CAP_FLAG[c]));
+    // Unit 8: media is on only with at least one of its parts on (MEDIA_SPEECH and the rest), so MEDIA_ENABLED alone
+    // behaves exactly like MEDIA_ENABLED off.
+    const partsOn = (c: CapId) => c !== "media" || mediaPartsFromEnv().length > 0;
+    return CAP_IDS.filter((c) => CAP_READY[c] && flag(CAP_FLAG[c]) && partsOn(c));
   },
   /** servedCaps, less those that need a signed-in builder on production while TRUST_SIGNED_IN_CAPS is off (2.1). */
   get capsOnSite(): CapId[] {
@@ -832,6 +836,17 @@ export const env = {
   /** Writes one product may make in a UTC day, live namespace. */
   get dataDailyWrites(): number {
     return number("DATA_DAILY_WRITES", 5_000);
+  },
+
+  // ---------- Wave 3, unit 8: media (docs/CAPABILITIES.md) ----------
+
+  /**
+   * The media cap's parts (lib/caps/media), each its own switch on top of MEDIA_ENABLED, which is CAP_FLAG.media, read
+   * through enabledCaps above: MEDIA_SPEECH (speech in the page), MEDIA_VIDEO (video from pictures), MEDIA_MUSIC (MIDI)
+   * and MEDIA_SAM_TILING (SAM past 16 objects, and long clips in chunks). The writer offers only the parts that are on.
+   */
+  get mediaParts(): MediaPartId[] {
+    return mediaPartsFromEnv();
   },
 
   // ---------- Wave 3, unit 10: runtime (docs/CAPABILITIES.md) ----------

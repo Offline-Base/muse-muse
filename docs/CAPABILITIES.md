@@ -1472,6 +1472,132 @@ most 4 SAM tiles.
 bundles GPL codecs. Both go to the owner (section 21). SAM costs per frame with a minimum, so tiles and chunks are capped
 and shown as a limit. Large files depend on unit 1's deploy fix or the assets route.
 
+### 14a. As built (tg-cap-media, Nov 1)
+
+Built on `tg-cap-int` at ead9ff0. Every flag is off, `CAP_READY.media` stays false, and there is no migration.
+
+**Brief** (changed from the plan, by this unit). `media: { why (up to 200), speech, video, music, samTiling } | null`.
+`why` was added, as the other caps have one. Each part has its own flag on top of `MEDIA_ENABLED` (`env.mediaParts`):
+the writer's rules and the catalog name only the parts that are on (registry entries read when the text is built; the
+catalog's cache key gains the parts), and `normalizeRawBrief` sets a part whose flag is off to false and makes a block
+with no part left null. MEDIA_ENABLED with no part flag on is the same as MEDIA_ENABLED off: `env.enabledCaps` leaves
+media out (one marked line in unit 2's getter), so the writer gets no media field, rules or catalog block, the build
+no media env, and `/assets` answers 404. Build prompt `### Media in the browser` in 2.6's order, with a `- Media parts:` line the checker
+reads. Catalog: while `speech` or `video` is on, its "Not available on the Model API yet" line is replaced through a new
+registry, `CAP_WORKAROUNDS` in `lib/caps/catalog.ts`, and one marked edit in `lib/prompts/catalog.ts`.
+
+**Licenses (decision 7).** No non-commercial model, no GPL code, no ffmpeg.
+
+| Part | What | License |
+|---|---|---|
+| Speech model | microsoft/speecht5_tts, as Xenova/speecht5_tts 1723781b, int8 `encoder_model_quantized.onnx` (88.4 MB) and `decoder_model_merged_quantized.onnx` (71.1 MB) | MIT (Microsoft) |
+| Vocoder | microsoft/speecht5_hifigan, as Xenova/speecht5_hifigan cf980c36, `model_quantized.onnx` (18.3 MB) | MIT (Microsoft) |
+| Voice | x-vector `cmu_us_slt_arctic-wav-arctic_a0508` from Matthijs/cmu-arctic-xvectors 5c1297a9 (2 KB, inlined), from the CMU ARCTIC databases | MIT; CMU ARCTIC is free for any use |
+| Runtime | onnxruntime-web 1.30.0 (Sep 14), `ort.wasm.bundle.min.mjs` and `ort-wasm-simd-threaded.wasm` (14.2 MB) | MIT (Microsoft) |
+| Video, MIDI, pitch, tiles | written for Muse Muse: an MP4 writer, a MIDI writer and reader, YIN pitch finding, tiling and merging | ours |
+
+Not Meta's: Meta's open speech models (MMS-TTS and the like) are CC-BY-NC, so decision 7 rules them out. Turned down:
+Kokoro-82M (Apache 2.0 weights) because `kokoro-js` needs the `phonemizer` package, which is labeled Apache 2.0 but
+bundles eSpeak NG (GPL-3.0) compiled to wasm (read from the package); ffmpeg.wasm (GPL core); `mp4-muxer` (MIT but
+deprecated) and `mediabunny` (MPL-2.0), replaced by our own MP4 writer. The product ships `public/notices/media.txt`
+with these and the MIT text, and the checker requires a link to it. The wasm has third-party code built into it
+(protobuf, BSD-3-Clause; abseil and flatbuffers, Apache-2.0; and others), and the npm package ships no notices file,
+so `public/notices/onnxruntime.txt` carries ONNX Runtime's own `ThirdPartyNotices.txt` from the v1.30.0 tag (sha256
+143764b9..., whole and unchanged but for one separator line of two long dashes, written as two hyphens). It covers every
+ONNX Runtime build, so it lists more than the wasm uses. `media.txt` points to it.
+
+**Assets route.** `GET {GATEWAY_URL}/assets/<sha256>` (`lib/caps/media/assets.ts`, `app/api/gateway/assets/[sha256]`):
+404 `unknown_endpoint` touching nothing unless a cap that lists files is on; only hashes in `lib/caps/assets.json` whose
+cap is on (else 404 `asset_not_found`); GET, HEAD and OPTIONS; 120 a minute per address for each file (`x-real-ip`,
+then `x-forwarded-for`), so one page load counts once against each file and a class of up to 120 behind one school
+address gets through; `Access-Control-Allow-Origin: *`, `Cross-Origin-Resource-Policy: cross-origin`. On Vercel a 302
+to the Blob mirror, cached an hour: after the cap is switched off, a browser can still follow a cached redirect to the
+public file for up to that hour (and a page that loaded the files keeps them in its own Cache Storage). On a local run it streams `.data/files/data/assets/<sha256>` when its size matches;
+503 `asset_unavailable` when not mirrored. The list is checked at load: sha256, size, https source, a license from a
+permissive list (MIT, Apache-2.0, BSD, ISC, MPL-2.0, CC0-1.0), each hash once. `scripts/caps/mirror-assets.ts` checks
+every source (npm tarballs read in place) and with `--apply` uploads to Blob at `assets/<sha256>` and writes the URLs
+into the list as `mirror`, or writes the local copies. `STORED_PREFIXES` gains `assets`. Unit 9 adds Pyodide's files
+to the same list with `cap: "code"`.
+
+**Build env and firewall.** A media brief's `.env.local` gets `NEXT_PUBLIC_MUSEMUSE_ASSETS_URL` (the gateway's
+`/assets`) and `NEXT_PUBLIC_MUSEMUSE_MEDIA_SMOKE=1`; the deploy gets the first only. `CAP_BUILD_HOSTS.media` is the
+mirror's Blob host, GET only (`CAP_HOST_METHODS`), so the test browser can follow the redirect; it is empty until the
+files are mirrored, so today it adds nothing.
+
+**Overlay `media`** (all platform files, no packages): `lib/platform/media-assets.ts` (`fetchAsset`: size and sha256
+checked before use, kept in Cache Storage, `MediaError`), `speech.ts` (`speak`, `prepareSpeech`, `stopSpeech`; the
+runtime is imported from a Blob URL of its checked bytes, one thread, no special headers; falls back to
+`speechSynthesis` with a one-line note; tokenizer matches SpeechT5's own; one AudioContext, made and unlocked inside
+the tap before the first await and reused, and when the browser hasn't let it run within 1.5 s playback throws and
+the browser's voice reads instead, so a stuck `resume()` on Safari can't hang `speak()` or record silent audio as
+read), `video.ts` (`imagesToVideo`: WebCodecs H.264
+when the browser has it, else VP9, then `mp4.ts`; MediaRecorder in real time without WebCodecs. H.264 Constrained
+Baseline comes first at every level, since it has no B-frames; samples keep the encoder's order, and an encoder that
+hands frames back out of show order (Main or High with B-frames) is swapped for the next one that can't reorder, or
+the call fails in plain words, since the writer has no `ctts`. `encodeFrames` takes frames one at a time), `mp4.ts` (`muxMp4`,
+`readMp4Info`, index before data), `midi.ts` (`toMidi`, `parseMidi`, `playNotes`, `notesFromAudio`, `noteName`),
+`sam-tiles.ts` (`tileGrid`, `mergeTileBoxes`, `runTiles`, `findAll`, `planVideoChunks`, `videoChunks`), `sam-boxes.ts`
+(`samBoxes(request, tile, phrase)` on the server through `metaClient`), `public/notices/media.txt`,
+`tests/caps/media.ts` (`expectVideoPlays`, `expectMidi`, `expectSpeech`, `expectTiles`, each saving the file it checked to
+`test-results/caps/media/`), `scripts/caps/media.mjs`, skill `muse-media`.
+
+**SAM and the daily budget.** A product's daily budget is at least $3 (`lib/gateway/policy.ts`). `findAll` starts with
+4 tiles and splits a tile that comes back with 16 objects into 4 more only while calls are left, at most 16 a photo
+(about $0.04); a full tile it can't split marks the count `capped` ("at least"). Seams: overlapping tiles (15%), and
+boxes merge by IoU 0.5, by a piece cut at its tile's inner edge lying mostly inside another box, or by two pieces cut on
+facing sides of a seam and lined up along it. `videoChunks` keeps 5 frames a second, chunks of at most 300 frames and
+900 in all (about $0.18 a run, each chunk billed at least 50 frames), H.264 only since SAM rejects VP9. It seeks the
+clip and hands each frame straight to the encoder, so one frame is held at a time (not 300 canvases), and it doesn't
+go through `imagesToVideo`'s 120-picture cap. In a build's test run `findAll` holds a browser tab to 4 SAM calls in
+all, kept in `sessionStorage` so a reload or another page of the product doesn't reset it. A new test page (a new
+Playwright context) starts at 0 again, and the checker reads the last `findAll`'s count, so "at most 4" bounds each
+test page, not the whole run.
+
+**Checks.** Fixed (`scripts/caps/media.mjs`), for the parts brief.md lists: `video` (the test saw the `<video>` play with
+a duration over 0, and the saved MP4's own index has a duration and frames), `music` (the saved file starts with `MThd`
+and has note-ons, read from its bytes), `speech` (speak answered with audio from the model or the browser's voice),
+`tiles` (2 to 4 tiles, merged count at most the raw count); and `no-cdn` and `notices` (`media.txt` and
+`onnxruntime.txt` present, and a link to `media.txt`). Judge note: "Video and audio made
+in the browser may look and sound plain in this test", plus the "at least" line with tiling.
+
+**Measured** (Nov 1, this laptop, no sandbox, no model API call, $0). Speech in Node on onnxruntime-web, one thread:
+int8 3.7 s for 3.2 s of audio; the 4-bit files took 13.4 s for 4.8 s, so int8 was kept. In Playwright's Chromium:
+opening the model 0.4 s, 1.9 s to make 1.95 s of audio; a first `speak()` 4.7 s including the 192 MB download from a
+local server and playback, the second 1.9 s with nothing downloaded. Ten 320x240 frames at 5 a second: H.264 MP4 of
+15,050 bytes (VP9 20,115), 2.0 s, plays in `<video>`, and ffprobe reads 10 frames and 2.0 s. Template tests: 24 pass
+(the real-model one with `MEDIA_TEST_ASSETS_DIR`). After the review fixes (Nov 1): 28 pass and 1 skipped (the real-model
+one) in Playwright's Chromium, including `videoChunks` on an 80 s clip (H.264 chunks of 300 and 100 frames whose own
+indexes agree, one canvas made for 400 frames) and a stand-in encoder that reorders frames. Nobody has listened to the voice: the samples have speech-like
+loudness over time, not a check that the words are clear.
+
+**Not proven.**
+
+- No real test build (section 22's slideshow-to-video maker, hummed melody to MIDI, crowd counter). A local run's sandbox
+  can't reach the local gateway (8a), so the speech model can't load there; a credentialed run or a public
+  `PLATFORM_URL` is needed. Spend so far: Meta $0, Vercel Sandbox $0.
+- The files aren't mirrored: mirroring writes to the Blob store, which is the owner's call. Until then `/assets` answers
+  503 and speech uses the browser's voice. The Blob mirror's CORS headers on the redirected response are untested.
+- The build sandbox's Linux Chromium: whether it has an H.264 encoder (else VP9, which plays, but `videoChunks` throws)
+  and any system voice (else, with no mirrored model, `expectSpeech` fails).
+- `samBoxes` against the real SAM API, and `findAll`'s merge on real photos: unit tests with made-up boxes only.
+- `next build` of a product with the overlay (the runtime's `import()` of a Blob URL carries `webpackIgnore` and
+  `turbopackIgnore`), Safari and Firefox, phones, memory on a phone for a 190 MB model.
+
+**Shared files this unit touched**, each small: the registries in `lib/caps/` (media lines, `CAP_WORKAROUNDS`, the
+media hosts), `lib/env.ts` (its block, and one marked line in unit 2's `enabledCaps` getter), `.env.example`, `lib/brief/normalize.ts` and `lib/prompts/catalog.ts` (marked
+blocks), `lib/local-files.ts` (`assets`), `lib/storage.ts` (a comment), `lib/brief/__tests__/flags-off.test.ts` (the part
+flags) and `lib/gateway/__tests__/caps-off.test.ts` (the route). No golden changed. No `muse-device/` changes.
+
+**For the owner.** (1) The speech model choice and its licenses above (decision 7's reading). (2) Mirroring about 192 MB
+to the Blob store (`scripts/caps/mirror-assets.ts --apply`), which also opens that Blob host, GET only, to media builds.
+That opens the whole store host, not just `assets/`: a media build could GET any public blob on it, and some sit at
+fixed, guessable paths (`extensions/<productId>/...` from `putBlobAt`, `native/...`). Those are public on the internet
+already, and `blobUploads` builds reach `*.blob.vercel-storage.com` with no rules today, but the names are not all
+unguessable. Pinning the rule to the `/assets/` path needs a path match in `capHostRules` (`lib/sandbox/policy.ts`,
+General's file), so the coordinator asks General. This entry in `lib/caps/hosts.ts` also needs General's OK, since
+section 3 says only unit 10 adds hosts there.
+(3) The three test builds, on a credentialed run, within $1.50 Meta and $0.75 Sandbox.
+
 ## 15. Unit 9: code (G)
 
 **Scope.** Pyodide and QuickJS in the browser; `{GATEWAY_URL}/exec` in a no-network sandbox with short limits; browser
@@ -2252,5 +2378,13 @@ Phaser game.
 - Nov 1 (integration 3, tg-cap-int with data): 0020_data sits at journal index 20 with `meta/0020_snapshot.json`
   (tg-cap-int's 0019 plus the unit's changes). `CAP_OVERLAYS_ALL.games` lists `games`, `games-phaser` and
   `games-babylon`, so a snapshot must hold all three for games to be ready. Registries take data before extension and games.
+
+- Nov 1 (unit 8): section 14a added. The media block gains `why`; each part is gated by its own flag; `CAP_WORKAROUNDS`
+  replaces the catalog's speech and video lines; `CAP_BUILD_HOSTS.media` is the Blob mirror's host, GET only, once
+  mirrored; speech is SpeechT5 (MIT), video is WebCodecs with our own MP4 writer (no ffmpeg).
+- Nov 1 (unit 8, review fixes): `videoChunks` streams frames into the encoder (no 120-picture cap, flat memory); H.264
+  Baseline first and no reordered output; speech unlocks its AudioContext in the tap; media needs a part flag to count
+  as enabled; `/assets` counts each file per address and caches its redirect an hour; ONNX Runtime's third-party
+  notices ship as `public/notices/onnxruntime.txt`; the test-run SAM cap holds across reloads.
 
 - Oct 31: first version (unit 0).

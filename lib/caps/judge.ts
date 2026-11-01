@@ -4,6 +4,7 @@ import { dataJudgeNote } from "@/lib/caps/data/judge";
 import { extensionJudgeNote } from "@/lib/caps/extension/judge";
 import { gamesJudgeNote } from "@/lib/caps/games/judge";
 import type { CapId } from "@/lib/caps/ids";
+import { mediaJudgeNote } from "@/lib/caps/media/judge";
 import type { CapProof, VerifySummary } from "@/lib/types";
 
 /**
@@ -13,6 +14,7 @@ import type { CapProof, VerifySummary } from "@/lib/types";
  */
 export const CAP_JUDGE: Partial<Record<CapId, (brief: Brief) => string>> = {
   data: dataJudgeNote,
+  media: mediaJudgeNote,
   extension: extensionJudgeNote,
   games: gamesJudgeNote,
 };

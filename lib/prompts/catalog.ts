@@ -1,7 +1,7 @@
 import catalog from "@/catalog/meta-models.json";
 import { PRICES } from "@/lib/meta/pricing";
 import { PRODUCT_MODELS } from "@/lib/brief/schema";
-import { capsCatalogBlocks, howProductsRun } from "@/lib/caps/catalog";
+import { capsCatalogBlocks, capsWorkaround, howProductsRun } from "@/lib/caps/catalog";
 import type { CapId } from "@/lib/caps/ids";
 import { env } from "@/lib/env";
 import { RETIRED_SPARK } from "@/lib/meta/spark";
@@ -151,7 +151,8 @@ export function catalogSummary(caps: readonly CapId[] = env.enabledCaps): string
   const agents = env.agentsEnabled;
   const personal = agents && env.composioPersonalEnabled;
   // Wave 3, unit 3: the data cap's block follows DATA_SIGN_IN, so it is part of the key only while data is on.
-  const key = `${gadgets}|${agents}|${personal}|${caps.join(",")}${caps.includes("data") ? `|${env.dataSignIn}` : ""}`;
+  // Unit 8: the media cap names only its parts that are on, so they are part of the key only while media is on.
+  const key = `${gadgets}|${agents}|${personal}|${caps.join(",")}${caps.includes("data") ? `|${env.dataSignIn}` : ""}${caps.includes("media") ? `|${env.mediaParts.join(",")}` : ""}`;
   const hit = cached.get(key);
   if (hit) return hit;
   const run = howProductsRun(caps, { gadgets, agents });
@@ -167,8 +168,9 @@ export function catalogSummary(caps: readonly CapId[] = env.enabledCaps): string
     ...(gadgets ? ["- muse-gadget: a physical board connected to Muse Muse, with a camera and a microphone. The product can take a photo or record a few seconds of sound on the board, then pass it to a model, for example a counter that photographs a shelf. Pick it only when the muse asks for hardware: a device that watches, listens or reacts in the real world. It isn't a model, so pair it with the model that reads what it captures. A product must still work when no board is connected, with a clear message and a way to upload instead."] : []),
     "",
     "Not available on the Model API yet, with the workaround a product uses instead:",
-    "- Text-to-speech: the browser's built-in speech synthesis.",
-    "- Video generation: a short image sequence from muse-image-1.0.",
+    // Wave 3, unit 8 (docs/CAPABILITIES.md, section 14): the media cap replaces these two while its part is on.
+    capsWorkaround(caps, "speech") ?? "- Text-to-speech: the browser's built-in speech synthesis.",
+    capsWorkaround(caps, "video") ?? "- Video generation: a short image sequence from muse-image-1.0.",
     "- Embeddings: put the documents in Muse Wonder's 1M-token context (fine for small document sets).",
     "- Realtime voice conversation: record, transcribe, then reply in text.",
     "- Speaker labels in transcripts: none. Ask the user to label turns, or treat the transcript as one voice.",

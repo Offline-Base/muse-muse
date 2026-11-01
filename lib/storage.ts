@@ -18,6 +18,7 @@ import { isSafeFileKey, LOCAL_FILES_DIR, localFileKey, localFilesEnabled, localF
  *   fixtures/<buildId>/...    sample inputs the platform made for a build (Muse Image pictures, text files). Kept.
  *   native/...                shell templates, per-product packages and lab results (docs/NATIVE.md, "Blob").
  *   clips/<productId>/...     clips of a product on a real device that its owner uploaded. Kept.
+ *   assets/<sha256>           vetted large files products' pages load (lib/caps/assets.json, scripts/caps/mirror-assets.ts). Kept.
  *
  * Local runs keep the same paths in .data/files instead (lib/local-files.ts).
  */

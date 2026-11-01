@@ -3,6 +3,8 @@ import { DataBriefBlock, dataWriterBlock, dataWriterRules } from "@/lib/caps/dat
 import type { CapId } from "@/lib/caps/ids";
 import { EXTENSION_WRITER_RULES, ExtensionBriefBlock } from "@/lib/caps/extension/brief";
 import { GAMES_WRITER_RULES, GamesBriefBlock } from "@/lib/caps/games/brief";
+import { MediaBriefBlock, mediaWriterRules } from "@/lib/caps/media/brief";
+import { mediaPartsOn } from "@/lib/caps/media/catalog";
 import { RUNTIME_WRITER_RULES, RuntimeBriefBlock } from "@/lib/caps/runtime/brief";
 
 /**
@@ -16,6 +18,7 @@ import { RUNTIME_WRITER_RULES, RuntimeBriefBlock } from "@/lib/caps/runtime/brie
  */
 export const CAP_BRIEF_FIELDS = {
   data: DataBriefBlock,
+  media: MediaBriefBlock,
   runtime: RuntimeBriefBlock,
   extension: ExtensionBriefBlock,
   games: GamesBriefBlock,
@@ -36,6 +39,8 @@ export function briefCaps(brief: object): CapId[] {
 export const CAP_WRITER_RULES: Partial<Record<CapId, readonly string[] | (() => readonly string[])>> = {
   // Unit 3: they follow DATA_SIGN_IN.
   data: () => dataWriterRules(),
+  // Unit 8: the media cap names only the parts whose flags are on, read when the instructions are built.
+  media: () => mediaWriterRules(mediaPartsOn()),
   runtime: RUNTIME_WRITER_RULES,
   extension: EXTENSION_WRITER_RULES,
   games: GAMES_WRITER_RULES,
