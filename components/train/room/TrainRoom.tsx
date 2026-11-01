@@ -59,6 +59,8 @@ export interface TrainRoomProps {
   /** Admins only: the Hugging Face card's and Local files' setup, as on the job's page. */
   hub?: { offReason: string | null; maxActive: number; dailyUsd: number } | null;
   serverNow: number;
+  /** QUANT_TARGETS, for Where it runs. */
+  quantTargets?: boolean;
 }
 
 /**
@@ -68,7 +70,7 @@ export interface TrainRoomProps {
  * the verdict with the eval results, the live demo, the Hugging Face card and Where it runs, or why it stopped. The
  * steps panel lists the stages it reached. Polls GET /api/train/runs/{id} every 5 s while something runs.
  */
-export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverNow }: TrainRoomProps) {
+export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverNow, quantTargets = false }: TrainRoomProps) {
   const [view, setView] = useState(initial);
   // A refresh of the page (Start a live demo does one) brings a newer run: take it.
   const [given, setGiven] = useState(initial);
@@ -218,7 +220,7 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
               {job && admin && hub ? <HubCard job={job} offReason={hub.offReason} maxActive={hub.maxActive} dailyUsd={hub.dailyUsd} /> : null}
               {job && admin && hub && trained ? <MakeLocalFiles jobId={job.id} maxActive={hub.maxActive} dailyUsd={hub.dailyUsd} /> : null}
               {job && admin && hub && trained ? <SimTuneCard jobId={job.id} /> : null}
-              <WhereItRuns jobHref={jobHref} demoHere={Boolean(liveDemo)} localFilesHere={Boolean(admin && hub && trained)} admin={admin} />
+              <WhereItRuns jobHref={jobHref} demoHere={Boolean(liveDemo)} localFilesHere={Boolean(admin && hub && trained)} admin={admin} quantTargets={quantTargets} />
               {jobHref ? <JobLink href={jobHref} /> : null}
               <p className="room-meta">{usd(view.costSoFarUsd)} in all</p>
             </li>

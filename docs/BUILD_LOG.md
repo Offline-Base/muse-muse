@@ -1701,6 +1701,15 @@ scripts/dev/tune-harness.ts, on a Lambda gpu_1x_a10 named prove-tune-1, us-east-
 - Found: nothing stops a build at a dollar amount. The $40 budget for this job isn't enforced by code; only the wall and DAILY_SPEND_CAP_USD=150 limit it.
 - Result of both builds: pending. A real brief is all this proves so far.
 
+## Nov 1, 2026: quantize code for device targets (tg-quant-targets)
+
+- Decision (owner): quantize inside fine-tuning. Jetsons get one-bit Muse Glimmer, other devices a small Llama. No Qwen.
+- Added behind `QUANT_TARGETS`, off: Llama 3.2 3B adapters merge into their own base and make Q4_K_M; r30b adapters also make IQ1_S; `deviceModelTarget` in `lib/train/quant-targets.ts`. Removed Qwen from Where it runs.
+- Research from primary sources: llama.cpp b11669 requires an importance matrix for IQ1_S (`tensor_requires_imatrix`) and lists 1.56 bpw. Pinned Llama hashes checked against the Hub at commit 006f5dcd.
+- Fixed from the stopped agent's work: `write_calibration` iterated the row dicts instead of their messages, so any IQ1_S job would have crashed in the merge child.
+- Decision: no KL limit for IQ1_S or Llama yet, since none is measured. KL is recorded, and the answer check on the file decides. Set `LOW_BIT_KL_MAX` from the next agent's GPU run.
+- Tests: targeted only, with fake tools. No GPU, no real llama.cpp, no board, no spend. Simulated, not proven.
+
 ## Nov 1: every build on Contributor behind BUILDS_ON_CONTRIBUTOR (branch tg-contributor-builds, flag off)
 
 - Why: the owner decided builds run on muse-spark-1.3-contributor with the UI kit, on production too, though Meta may train on that tier and its terms (6.2) bar sensitive, confidential or personal information there.
@@ -1712,3 +1721,24 @@ scripts/dev/tune-harness.ts, on a Lambda gpu_1x_a10 named prove-tune-1, us-east-
 - Measured on Contributor with made-up data, flags as on production: a FULL_BUILDS brief with the look (8 requirements, scope check ran) and a full judge read with one image both returned valid replies. Spend about $0.002. The first attempt got a 401 from the key in ~/muse-muse/.env.local, so that key looks stale.
 - Tests: targeted suites pass. flags-off-surface was already failing on main on stale mocks; with those fixed its provision and deploy goldens match, and steps.json still differs on a timeout this branch doesn't touch. No golden file changed.
 - Not run: a whole build on production settings, a sandbox, the notice in a browser, whether Contributor's judge is as strict as Muse Wonder's.
+
+## Nov 1, 2026: real quantize run on a rented A10 (tg-quant-targets)
+
+- Ran: real `RUNNER_PY` and `QUANT_PY` via `scripts/dev/quant-harness.ts`, a stand-in for the platform on the GPU, publish 0, made-up data, nothing uploaded. Machines device-loop-1 (about 6 minutes, Ubuntu 22.04) and device-loop-2 (Ubuntu 24.04). Both terminated. Results in `docs/log/quant-run-2026-11-01`.
+- Spend: about 1.5 hours of A10 at $1.29 an hour, about $2 by Lambda's list price, not read from an invoice. Limit was $15.
+- Llama 3.2 3B adapter e1b00ffa: job passed. Q4_K_M 2,019,377,312 bytes, KL 0.0349, 100 of 100 final answers, template check passed. Agreement with the adapter's eval answers 0 of 100 on the first 200 characters, though 20 of 20 sampled keep the trained format (base 0 of 100). 162.3 tokens a second on the A10. On 6 x86 threads under a memory limit, about 23 tokens a second and 2.84 GB resident, under both 8 GiB and 4 GiB.
+- One-bit r30b, base, cached file glimmer-stage-b-r30b-IQ1_S.gguf made on b11970, run on b11669: under 8 GiB and 7 GiB, no swap, CPU only, 6 pinned threads, cold page cache. No out-of-memory event. 7.28 to 7.42 GB resident with mmap, 6.96 to 7.01 GB with `-lm none`. 2.34 to 2.46 tokens a second, about 5 s to the first token. Answers: 2 of 5 fine under a final-channel prompt, 1 of 5 under a stock prompt. Not demo quality. x86 under a limit isn't a Jetson.
+- One-bit recipe path: adapter 83d71f74 from an older base, as a pipeline test only, with text it didn't train on. Matrix and IQ1_S made on the A10 (6,526,418,944 bytes). KL 1.1827, same top token 52.3%. 19 of 30 final answers, so it was left out. Q4_K_M KL 0.0416, over its 0.03 limit, so the job ended with nothing passed. The gates worked. Whether a true r30b tune passes is unknown.
+- Fixed, each seen failing for real: glibc 2.38 on the default image (now `lambda-stack-24-04` for quantize jobs); Unsloth's save refusing the base's forwarded method; shard hashes under the new hub blob layout; r30b's 4-bit build not fitting 24 GB; `-ngl 999` on imatrix; Meta's tokenizer config in the converter (a vocab-only conversion then hashed the same as the knowledge run's GGUF); a 500 from llama-server's parser on a cut-off answer.
+- Decision: `LOW_BIT_KL_MAX` stays null. One measurement from a mismatched adapter can't set a gate.
+- Decision: `QUANT_KL_MAX.Q4_K_M` stays 0.03 for now, and flagged. Two real values on made-up text are 0.035 (Llama, which has no limit) and 0.042, so a real r30b job may lose its Q4_K_M. Needs an r30b tune's number.
+- Not run: launch through the platform, https callbacks, Hub publish, a real board, the full suite, next build.
+
+## Nov 1, 2026: independent review of tg-quant-targets
+
+- Read the whole diff against origin/main, not the report. Checked: guest spend (routes are admin or automation; callers can't send quantBase, since validateParams refuses unknown params), limits (recipeDefaults runs after the platform writes levels), sha256 pins, shell quoting, secrets in the log folder, em dashes, Offline Base and Qwen in new copy. No issue in those.
+- Fixed: a Llama file with the flag on reached public pages as Muse Glimmer. The run-locally page called it "the tuned Muse Glimmer 30B" with Glimmer's under-18 line and "can't run a 30B model". Its Ollama steps used Glimmer's renderer and parser. It now names Llama and its license, with a Llama Modelfile and a note that its app steps are untried.
+- Fixed: a Llama file could be ordered or exported on a drive, whose words and license files say Muse Glimmer under Apache 2.0. `driveProblem` and the lab export now refuse it. Drives for Llama need their own license files first.
+- Fixed: the public GGUF card and record printed the raw IQ1_S problem, which can quote a rendered prompt or a tool's output. They now say its own checks didn't pass, and the job's page keeps the detail.
+- Added a test that only glimmer-quantize launches with QUANT_IMAGE_FAMILY in steps.ts. Removed an unused constant and updated stale docs.
+- Tests: tsc clean, 200 targeted tests pass (fakes). Not run: any page in a browser, the Llama Modelfile in Ollama, the full suite, next build. No spend.

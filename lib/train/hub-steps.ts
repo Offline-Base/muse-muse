@@ -34,6 +34,8 @@ import { modelLabel } from "@/lib/format";
 import { metaPlatform } from "@/lib/meta/platform";
 import { fromResponsesUsage } from "@/lib/meta/pricing";
 import { spendPaused } from "@/lib/quota";
+import { LOW_BIT_LEVEL } from "@/lib/train/local-files";
+import { quantBaseOf } from "@/lib/train/quant-targets";
 import { BASE_MODEL_PARAM, isSparkOpenDerivative, LAB_MERGE_BASE, licenseDuties, recordedBase } from "@/lib/train/base";
 import { llamaLicenseFiles } from "@/lib/train/base-check";
 import {
@@ -891,7 +893,7 @@ async function ggufFactsOf(job: TrainJobRow, hub: HubState, adapter: TrainJobRow
   const trained: DoneMetrics = (await fromDb(() => getAdapterSource(adapter.id)))?.metrics ?? {};
   const slug = job.params?.slug;
   if (!validSlug(slug)) throw new FatalError("The job's slug isn't one a repo name takes.");
-  const { builds, leftOut } = ggufBuilds(slug, quantLevels(job.params), metrics);
+  const { builds, leftOut } = ggufBuilds(slug, quantLevels(job.params), metrics, job.params);
   if (!builds.length) throw new FatalError("No build of the job passed its checks.");
   const role = typeof metrics.system === "string" ? metrics.system.trim() : "";
   const ran = typeof trained.student_system === "string" ? trained.student_system.trim() : "";
@@ -929,6 +931,18 @@ async function ggufFactsOf(job: TrainJobRow, hub: HubState, adapter: TrainJobRow
     trainChannel: trainChannelOf(job.params),
     builds,
     leftOut,
+    params: job.params,
+    lowBit: quantLevels(job.params).includes(LOW_BIT_LEVEL)
+      ? {
+          final: num(metrics.iq1_s_final),
+          total: num(metrics.iq1_s_final_total),
+          agree: num(metrics.iq1_s_agreement),
+          agreeTotal: num(metrics.iq1_s_agreement_total),
+          // The card is public, and the raw problem can quote a rendered prompt or a tool's output: the job's page keeps those.
+          problem: typeof metrics.iq1_s_problem === "string" ? "its own checks didn't pass" : null,
+          calibrationChars: num(metrics.calibration_chars),
+        }
+      : null,
     channel: { final: num(metrics.channel_final) ?? 0, total: num(metrics.channel_total) ?? 0 },
     agreement: agreeTotal ? { same: num(metrics.agreement) ?? 0, total: agreeTotal } : null,
     tensors: num(metrics.tensors),
@@ -961,7 +975,11 @@ export async function hubGgufStep(jobId: string, claim: string): Promise<{ repo:
   if (!ggufUploaded(hub, job.params)) throw new FatalError(GGUF_NOT_UPLOADED);
   const facts = await ggufFactsOf(job, hub, adapter, dataset);
   const repo: HubRepo = { type: "model", id: facts.repo };
-  await fromHub(() => createRepo(repo, { license: "apache-2.0" }));
+  const smallBase = quantBaseOf(job.params);
+  // A small base's files ship its Llama license and use policy, or don't ship.
+  const llama = smallBase ? await llamaLicenseFiles(smallBase.model) : null;
+  if (typeof llama === "string") throw new FatalError(`The local files aren't published: ${llama}`);
+  await fromHub(() => createRepo(repo, llama ? {} : { license: "apache-2.0" }));
   const shared = (await fromDb(() => publishedGgufJobs(adapter.id))).some((g) => g.repo === repo.id && g.jobId !== job.id);
   if ((!ggufOpen(adapter) || (!hub.publishedAt && !shared)) && (await fromHub(() => repoVisibility(repo))) === "public") {
     await fromHub(() => setVisibility(repo, "private"));
@@ -978,15 +996,16 @@ export async function hubGgufStep(jobId: string, claim: string): Promise<{ repo:
   for (const [path, b64] of Object.entries(hub.small ?? {})) {
     if (hubNameProblem(job, path)) continue;
     const bytes = Buffer.from(b64, "base64");
-    const problem = ggufSmallProblem(path, bytes, sha256Hex(bytes), { role: facts.role, trainChannel: facts.trainChannel });
+    const problem = ggufSmallProblem(path, bytes, sha256Hex(bytes), { role: facts.role, trainChannel: facts.trainChannel, params: job.params });
     if (problem) throw new FatalError(`The local files aren't published: ${problem}.`);
     small.push({ path, content: bytes });
   }
-  const license = await fromHub(() => fetchPublicText(rawUrl({ type: "model", id: GLIMMER_ORIGIN }, "LICENSE")));
-  if (!/apache license/i.test(license)) throw new FatalError(`The base model's LICENSE at ${GLIMMER_ORIGIN} isn't the Apache License any more.`);
+  const license = llama ? llama.license : await fromHub(() => fetchPublicText(rawUrl({ type: "model", id: GLIMMER_ORIGIN }, "LICENSE")));
+  if (!llama && !/apache license/i.test(license)) throw new FatalError(`The base model's LICENSE at ${GLIMMER_ORIGIN} isn't the Apache License any more.`);
   const files: PlatformFile[] = [
     { path: "README.md", content: Buffer.from(ggufCard(facts), "utf8") },
     { path: "LICENSE", content: Buffer.from(license, "utf8") },
+    ...(llama ? [{ path: "USE_POLICY.md", content: Buffer.from(llama.policy, "utf8") }] : []),
     ...derivativeFiles(facts.sparkOpen === true),
     { path: "muse_muse_quant.json", content: Buffer.from(`${JSON.stringify(quantRecord(facts), null, 2)}\n`, "utf8") },
     ...small,

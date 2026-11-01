@@ -27,6 +27,7 @@ import {
 import { Command, PasteBlock } from "@/components/vibe/Command";
 import { Stuck } from "@/components/vibe/Stuck";
 import type { LocalFile, LocalFiles } from "@/lib/train/local-files";
+import { quantBaseOfFileName } from "@/lib/train/quant-targets";
 import { TUNED_TEMPLATE } from "@/lib/train/tuned-template";
 import { APP_NAMES, diskNeedGb, gbText, pickApps, type AppId, type DeviceKind } from "@/lib/vibe/device";
 import { LLAMACPP_MIN_BUILD, OLLAMA_MIN_VERSION, type DiagnosticsOs, type StepId } from "@/lib/vibe/troubleshoot";
@@ -462,6 +463,8 @@ const STEPS: Record<AppId, (ctx: Ctx) => GuideStep[]> = {
 
 /** A note above an app's steps: what isn't checked, or why another app suits this model better. */
 function noteFor(app: AppId, ctx: Ctx): ReactNode {
+  const small = quantBaseOfFileName(ctx.file.name);
+  if (small) return <p className="vibe-callout">These steps haven&apos;t been tried with a {small.label} file yet. It has only run in llama.cpp on a test machine.</p>;
   if (app === "ollama" && ctx.kind === "mac-intel") {
     return <p className="vibe-callout">On an Intel Mac, Ollama runs only on the processor: expect a token a second or two, with 32 GB of memory or more.</p>;
   }

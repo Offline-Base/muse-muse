@@ -13,12 +13,14 @@ import {
   hubPill,
   hubViewOf,
   makeFilesBlock,
+  makeFilesCostText,
   makeFilesPill,
   makeFilesPublishing,
   makeFilesText,
   publishErrorText,
   quantAgreementText,
   quantChannelText,
+  quantLowBitText,
   quantRows,
   quantRowText,
   quantStateOf,
@@ -27,6 +29,7 @@ import {
 } from "@/components/train/format";
 import { ExternalLink } from "@/components/ui";
 import { BUILT_WITH_SPARK_OPEN } from "@/lib/train/base";
+import { DEVICE_TARGET_KINDS, deviceModelTarget, fileForDevice } from "@/lib/train/quant-targets";
 import type { HubView, TrainEventView, TrainJobView } from "@/lib/train/types";
 
 /** How often the cards look again while something moves, and for how long at most. */
@@ -99,7 +102,7 @@ export function MakeLocalFiles({ jobId, maxActive, dailyUsd }: MakeLocalFilesPro
 
   async function make() {
     if (block || busy || publishingNow) return;
-    const ask = `${again ? "Make this adapter's local files again?" : "Make this adapter's local files?"} A GPU on Lambda merges it into the 16-bit base, makes the GGUF builds, checks them and publishes the ones that pass to their own repo on Hugging Face, public when the adapter is: about 80 minutes and about $2.50, under the usual limits.`;
+    const ask = `${again ? "Make this adapter's local files again?" : "Make this adapter's local files?"} A GPU on Lambda merges it into the 16-bit base, makes the GGUF builds, checks them and publishes the ones that pass to their own repo on Hugging Face, public when the adapter is: ${makeFilesCostText(state)}, under the usual limits.`;
     if (!window.confirm(ask)) return;
     setBusy(true);
     setError(null);
@@ -168,6 +171,25 @@ export function MakeLocalFiles({ jobId, maxActive, dailyUsd }: MakeLocalFilesPro
           ) : null}
         </dl>
       ) : null}
+      {state?.targets ? (
+        <div>
+          <h3>Which device gets which file</h3>
+          <dl className="kv">
+            {DEVICE_TARGET_KINDS.map(({ kind, label }) => {
+              const target = deviceModelTarget(kind);
+              const file = fileForDevice(kind, files);
+              return (
+                <div key={kind}>
+                  <dt>{label}</dt>
+                  <dd>
+                    {target.label}, {target.level}: {file ? <code>{file.name}</code> : "this adapter hasn't made that file"}. {target.fit}
+                  </dd>
+                </div>
+              );
+            })}
+          </dl>
+        </div>
+      ) : null}
       {state?.latest ? (
         <p className="muted small">
           <Link href={`/fine-tuning/${state.latest.id}`}>Open the {running ? "job making them" : "last local files job"}</Link> for its GPU, log
@@ -191,7 +213,7 @@ export function MakeLocalFiles({ jobId, maxActive, dailyUsd }: MakeLocalFilesPro
             </button>
           </div>
           <p className="muted small" id={`${id}-note`}>
-            About 80 minutes on one GPU and about $2.50: the merge, the conversion, three sizes, their checks and the upload.
+            {`${makeFilesCostText(state)[0]!.toUpperCase()}${makeFilesCostText(state).slice(1)}.`}
           </p>
         </>
       ) : null}
@@ -280,6 +302,7 @@ export function QuantFilesCard({ job, events }: QuantFilesCardProps) {
   const repoHref = hubHref(hub?.modelUrl);
   const channel = quantChannelText(metrics);
   const agreement = quantAgreementText(metrics);
+  const lowBit = quantLowBitText(metrics);
 
   async function publish() {
     if (!control || busy || !window.confirm(control.confirm)) return;
@@ -339,6 +362,7 @@ export function QuantFilesCard({ job, events }: QuantFilesCardProps) {
       ) : null}
       {channel ? <p className="muted small">{channel}</p> : null}
       {agreement ? <p className="muted small">{agreement}</p> : null}
+      {lowBit ? <p className="muted small">{lowBit}</p> : null}
 
       {control ? (
         <div className="lab-try-foot">

@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 /**
  * The run-locally page, /fine-tuning/{jobId}/run, and its link on the model's public page, with the viewer, the store
  * and localFilesFor faked: run 2's files as glimmer-quantize will make them (./fixtures.ts), or none, which is what
@@ -230,6 +231,17 @@ describe("run it on your computer", { skip: canMock ? false : "needs --experimen
       const html = await openRun();
       assert.match(html, /<p class="subtitle">Muse Muse brief writer, the tuned Muse Glimmer 30B/);
       assert.doesNotMatch(html, /Brief writer LoRA/);
+    });
+
+    it("names Llama and its license, not Muse Glimmer's, for a small base's files", async () => {
+      files = run2Files({ quantBase: "llama-3.2-3b", files: [{ level: "Q4_K_M", name: "Llama-3.2-3B-brief-writer-Q4_K_M.gguf", bytes: 2_019_377_312, sha256: "a".repeat(64) }] });
+      const { renderToString } = await import("react-dom/server");
+      const page = (await runPage({ params: Promise.resolve({ jobId: RUN2_JOB }) })) as ReactElement;
+      const html = renderToString(page).replace(/<!-- -->/g, "");
+      assert.match(html, /the tuned Llama 3\.2 3B/);
+      assert.match(html, /Built with Llama\./);
+      assert.match(html, /The Llama 3\.2 Community License/);
+      assert.doesNotMatch(html, /not intended for individuals under the age of 18|tuned Muse Glimmer|can&#x27;t run it/);
     });
 
     it("sends the browser only the builds, the repo, the system message exactly and held-out prompt 0", async () => {

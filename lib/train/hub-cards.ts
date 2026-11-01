@@ -16,7 +16,8 @@ import { decideJson, GLIMMER_REASONING, GLIMMER_TEMPLATE, LABELS_PER_PROMPT, lab
 import type { DecideJson, DecisionSideSummary, DecisionSpec, DecisionSummary, WilsonRate } from "@/lib/decide/types";
 import { plural } from "@/lib/format";
 import { BUILT_WITH_SPARK_OPEN, isSparkOpenDerivative, licenseDuties, R30B_REPO, R30B_URL, USAGE_POINTS } from "@/lib/train/base";
-import { QUANT_LEVELS, type LocalFile, type LocalFiles, type QuantLevel } from "@/lib/train/local-files";
+import { BUILD_LEVELS, LOW_BIT_LEVEL, QUANT_LEVELS, type BuildLevel, type LocalFile, type LocalFiles, type LowBitFile, type QuantLevel } from "@/lib/train/local-files";
+import { LOW_BIT_FACTS, quantBaseForAdapter, quantBaseOf } from "@/lib/train/quant-targets";
 import { SPARK_STANDIN } from "@/lib/meta/spark";
 import { isDecisionSummary, modelName, PUBLIC_WRITER, recordedModel, UNRECORDED_MODEL, writerModelOf } from "@/lib/train/models";
 import {
@@ -25,7 +26,7 @@ import {
   jobMode,
   NEAR_DUPLICATE_JACCARD,
   QUANT_CHANNEL_MIN,
-  QUANT_KL_MAX,
+  quantKlLimit,
   trainChannelOf,
   unjudgedNote,
   type DoneMetrics,
@@ -1437,6 +1438,12 @@ export const GGUF_PICKED_FOR: Readonly<Record<QuantLevel, string>> = {
   Q6_K: "A Mac with 48 GB or more, or a graphics card with 32 GB",
 };
 
+/** Who a build is for. The one-bit build's words say what isn't proven (lib/train/quant-targets.ts). */
+function pickedFor(level: BuildLevel): string {
+  if (level !== LOW_BIT_LEVEL) return GGUF_PICKED_FOR[level];
+  return `A Jetson Orin Nano's ${LOW_BIT_FACTS.boardGb} GB, shared with the operating system, if it fits: not run on a real board yet`;
+}
+
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 /** True for a slug as repo names use it: lowercase letters and digits with single dashes, at most SLUG_MAX. */
@@ -1459,25 +1466,25 @@ export function ggufSlug(adapterModelRepo: string | null | undefined, datasetTit
  * The GGUF repo's name: "muse-glimmer-30b-<slug>-gguf-<first 8 characters of the adapter's training job id>", so it sits
  * next to the adapter's "-lora-" repo of the same run.
  */
-export function ggufRepoName(slug: string, adapterJobId: string): string {
-  return `muse-glimmer-30b-${slug}-gguf-${adapterJobId.slice(0, 8).toLowerCase()}`;
+export function ggufRepoName(slug: string, adapterJobId: string, params?: Record<string, string | number> | null): string {
+  return `${quantBaseOf(params)?.fileStem ?? "muse-glimmer-30b-"}${slug}-gguf-${adapterJobId.slice(0, 8).toLowerCase()}`;
 }
 
 /** A build's file name, "muse-glimmer-30b-<slug>-<LEVEL>.gguf": every local app picks a file by the level in its name. */
-export function ggufFileName(slug: string, level: QuantLevel): string {
-  return `muse-glimmer-30b-${slug}-${level}.gguf`;
+export function ggufFileName(slug: string, level: BuildLevel, params?: Record<string, string | number> | null): string {
+  return `${quantBaseOf(params)?.fileStem ?? "muse-glimmer-30b-"}${slug}-${level}.gguf`;
 }
 
-/** The builds a glimmer-quantize job's levels param names, in QUANT_LEVELS order. A level not on that list never counts. */
-export function quantLevels(params: Record<string, string | number> | null | undefined): QuantLevel[] {
+/** The builds a glimmer-quantize job's levels param names, smallest first. A level not on BUILD_LEVELS never counts. */
+export function quantLevels(params: Record<string, string | number> | null | undefined): BuildLevel[] {
   const asked = String(params?.levels ?? "")
     .split(",")
     .map((s) => s.trim());
-  return QUANT_LEVELS.filter((level) => asked.includes(level));
+  return BUILD_LEVELS.filter((level) => asked.includes(level));
 }
 
 /** A level's prefix in a glimmer-quantize job's done metrics: "q4_k_m" for Q4_K_M. */
-export function levelKey(level: QuantLevel): string {
+export function levelKey(level: BuildLevel): string {
   return level.toLowerCase();
 }
 
@@ -1485,13 +1492,29 @@ export function levelKey(level: QuantLevel): string {
  * The params the platform writes on a glimmer-quantize job, on top of the admin's adapterJobId and publish, so no caller
  * chooses them: the builds (QUANT_LEVELS), the slug its adapter's repos are named with (ggufSlug) and whether the
  * adapter trained with trainChannel.
+ *
+ * With opts.targets (QUANT_TARGETS): an adapter on r30b also gets the one-bit build, and one on a small base gets that
+ * base's builds and its pinned base. trainChannel 1 says its files need no tuned.jinja, which is Glimmer's alone.
  */
 export function quantParams(
   adapter: Pick<TrainJobRow, "id" | "params" | "hub">,
   datasetTitle: string,
-): { levels: string; slug: string; trainChannel: 0 | 1 } {
+  opts: { targets?: boolean } = {},
+): { levels: string; slug: string; trainChannel: 0 | 1 } & Record<string, string | number> {
+  const small = opts.targets ? quantBaseForAdapter(adapter.params) : null;
+  if (small) {
+    return {
+      levels: small.levels.join(","),
+      slug: ggufSlug(adapter.hub?.modelRepo, datasetTitle, adapter.id),
+      trainChannel: 1,
+      quantBase: small.name,
+      baseFamily: small.family,
+      baseModel: small.model,
+      baseRevision: String(adapter.params?.baseRevision ?? ""),
+    };
+  }
   return {
-    levels: QUANT_LEVELS.join(","),
+    levels: (opts.targets ? BUILD_LEVELS : QUANT_LEVELS).join(","),
     slug: ggufSlug(adapter.hub?.modelRepo, datasetTitle, adapter.id),
     trainChannel: trainChannelOf(adapter.params),
   };
@@ -1506,7 +1529,7 @@ export function hubNameProblem(job: Pick<TrainJobRow, "recipe" | "params">, path
   if (job.recipe !== QUANT_RECIPE) return hubFileProblem(path);
   if (HUB_GGUF_SMALL_NAMES.includes(path)) return null;
   const slug = job.params?.slug;
-  if (validSlug(slug) && quantLevels(job.params).some((level) => ggufFileName(slug, level) === path)) return null;
+  if (validSlug(slug) && quantLevels(job.params).some((level) => ggufFileName(slug, level, job.params) === path)) return null;
   return "only the builds' GGUF files and their system, params and tuned.jinja are published";
 }
 
@@ -1516,18 +1539,21 @@ export function hubMaxBytes(job: Pick<TrainJobRow, "recipe">, path: string): num
 }
 
 /** The GGUF repo's system file, and the system message to paste in a local app: the role line, a blank line, low reasoning. */
-export function ggufSystemLine(role: string): string {
+export function ggufSystemLine(role: string, params?: Record<string, string | number> | null): string {
+  // Only Glimmer's template reads a reasoning line. A small base's files get the role as it trained.
+  if (quantBaseOf(params)) return role;
   return `${role}\n\n${GGUF_REASONING_LINE}`;
 }
 
 /** The stops a local app needs: tuned.jinja opens the final channel, so a message that ends or a new one ends the answer. */
-export function ggufStops(trainChannel: 0 | 1): string[] {
+export function ggufStops(trainChannel: 0 | 1, params?: Record<string, string | number> | null): string[] {
+  if (quantBaseOf(params)) return ["<|eot_id|>", "<|eom_id|>", "<|end_of_text|>"];
   return trainChannel === 1 ? ["<|eot|>", "<|end_of_text|>"] : ["<|eot|>", "<|eom|>", "<|end_of_text|>", "<|start|>"];
 }
 
 /** Ollama's params file for the GGUF repo: greedy as the eval answered, an 8K context, and the stops. QUANT_PY writes the same. */
-export function ggufParams(trainChannel: 0 | 1): string {
-  return `${JSON.stringify({ temperature: 0, num_ctx: 8192, stop: ggufStops(trainChannel) }, null, 2)}\n`;
+export function ggufParams(trainChannel: 0 | 1, params?: Record<string, string | number> | null): string {
+  return `${JSON.stringify({ temperature: 0, num_ctx: 8192, stop: ggufStops(trainChannel, params) }, null, 2)}\n`;
 }
 
 /**
@@ -1568,9 +1594,9 @@ export function ggufOllamaName(slug: string): string {
  * line the adapter trained with (ggufSystemLine), params Ollama's for its channel (ggufParams), and tuned.jinja, only
  * for an adapter trained before trainChannel, the pinned TUNED_TEMPLATE_SHA256. `sha256` is the bytes' SHA-256.
  */
-export function ggufSmallProblem(path: string, bytes: Buffer, sha256: string, expect: { role: string; trainChannel: 0 | 1 }): string | null {
-  if (path === "system") return bytes.toString("utf8") === ggufSystemLine(expect.role) ? null : "its system file isn't the system message the adapter trained with";
-  if (path === "params") return bytes.toString("utf8") === ggufParams(expect.trainChannel) ? null : "its params file isn't the one for this model";
+export function ggufSmallProblem(path: string, bytes: Buffer, sha256: string, expect: { role: string; trainChannel: 0 | 1; params?: Record<string, string | number> | null }): string | null {
+  if (path === "system") return bytes.toString("utf8") === ggufSystemLine(expect.role, expect.params) ? null : "its system file isn't the system message the adapter trained with";
+  if (path === "params") return bytes.toString("utf8") === ggufParams(expect.trainChannel, expect.params) ? null : "its params file isn't the one for this model";
   if (path === "tuned.jinja") {
     if (expect.trainChannel === 1) return "it has a tuned.jinja, which an adapter trained with trainChannel doesn't need";
     return sha256 === TUNED_TEMPLATE_SHA256 ? null : "its tuned.jinja isn't Meta's template with the final channel opened";
@@ -1655,7 +1681,7 @@ export function localFilesOf(source: QuantSource): LocalFiles | null {
   for (const level of QUANT_LEVELS) {
     const key = levelKey(level);
     if (metrics?.[`${key}_passed`] !== "yes") continue;
-    const name = ggufFileName(slug, level);
+    const name = ggufFileName(slug, level, job.params);
     const bytes = Number(metrics[`${key}_bytes`]);
     const sha256 = String(metrics[`${key}_sha256`] ?? "");
     if (!(bytes > 0) || !SHA256_HEX.test(sha256)) continue;
@@ -1663,6 +1689,7 @@ export function localFilesOf(source: QuantSource): LocalFiles | null {
     files.push({ level, name, bytes, sha256 });
   }
   if (!files.length) return null;
+  const lowBit = lowBitFileOf(slug, metrics, published ? onHub : null, job.params);
   const ran = typeof metrics?.system === "string" ? metrics.system.trim() : "";
   const role = ran.startsWith("You are ") ? ran : studentSystem(source.datasetTitle);
   return {
@@ -1672,16 +1699,31 @@ export function localFilesOf(source: QuantSource): LocalFiles | null {
     commit: published ? (hub!.modelCommit ?? null) : null,
     public: published && hub!.public === true && source.adapterPublic,
     files,
-    systemLine: ggufSystemLine(role),
+    systemLine: ggufSystemLine(role, job.params),
     needsTunedTemplate: trainChannelOf(job.params) === 0,
     title: source.datasetTitle ?? job.title,
     slug,
     sparkOpen: isSparkOpenDerivative({ params: job.params, metrics }),
+    ...(lowBit ? { lowBit } : {}),
+    ...(quantBaseOf(job.params) ? { quantBase: quantBaseOf(job.params)!.name } : {}),
   };
 }
 
+/** The one-bit build, when the job made one, it passed, and a published repo holds it as those bytes. */
+function lowBitFileOf(slug: string, metrics: DoneMetrics | null, onHub: Map<string, string> | null, params: Record<string, string | number> | null | undefined): LowBitFile | null {
+  const key = levelKey(LOW_BIT_LEVEL);
+  if (metrics?.[`${key}_passed`] !== "yes") return null;
+  const name = ggufFileName(slug, LOW_BIT_LEVEL, params);
+  const bytes = Number(metrics[`${key}_bytes`]);
+  const sha256 = String(metrics[`${key}_sha256`] ?? "");
+  if (!(bytes > 0) || !SHA256_HEX.test(sha256)) return null;
+  if (onHub && onHub.get(name) !== sha256) return null;
+  return { level: LOW_BIT_LEVEL, name, bytes, sha256 };
+}
+
 /** One build of a GGUF repo, as its card shows it: the file, and how close it measured to the merged model's Q8_0. */
-export interface GgufBuild extends LocalFile {
+export interface GgufBuild extends Omit<LocalFile, "level"> {
+  level: BuildLevel;
   klMean: number | null;
   klP99: number | null;
   topTokenPct: number | null;
@@ -1709,7 +1751,11 @@ export interface GgufFacts {
   trainChannel: 0 | 1;
   /** The builds that passed, smallest first, and the ones that didn't with what they measured. */
   builds: GgufBuild[];
-  leftOut: Array<{ level: QuantLevel; klMean: number | null }>;
+  leftOut: Array<{ level: BuildLevel; klMean: number | null }>;
+  /** The job's quantBase param, for a small base's card. */
+  params?: Record<string, string | number> | null;
+  /** What the one-bit build's own checks measured, when the job tried one. */
+  lowBit?: { final: number | null; total: number | null; agree: number | null; agreeTotal: number | null; problem: string | null; calibrationChars: number | null } | null;
   channel: { final: number; total: number };
   agreement: { same: number; total: number } | null;
   /** The base model files and template checks, as the job measured them. */
@@ -1729,11 +1775,12 @@ const numberOr = (v: unknown): number | null =>
 /** The builds of a glimmer-quantize job's metrics, in QUANT_LEVELS order: those it passed (with the files) and those it left out. */
 export function ggufBuilds(
   slug: string,
-  levels: QuantLevel[],
+  levels: BuildLevel[],
   metrics: DoneMetrics,
-): { builds: GgufBuild[]; leftOut: Array<{ level: QuantLevel; klMean: number | null }> } {
+  params?: Record<string, string | number> | null,
+): { builds: GgufBuild[]; leftOut: Array<{ level: BuildLevel; klMean: number | null }> } {
   const builds: GgufBuild[] = [];
-  const leftOut: Array<{ level: QuantLevel; klMean: number | null }> = [];
+  const leftOut: Array<{ level: BuildLevel; klMean: number | null }> = [];
   for (const level of levels) {
     const key = levelKey(level);
     const klMean = numberOr(metrics[`${key}_kl_mean`]);
@@ -1742,7 +1789,7 @@ export function ggufBuilds(
     if (metrics[`${key}_passed`] === "yes" && bytes !== null && bytes > 0 && SHA256_HEX.test(sha256)) {
       builds.push({
         level,
-        name: ggufFileName(slug, level),
+        name: ggufFileName(slug, level, params),
         bytes,
         sha256,
         klMean,
@@ -1767,6 +1814,7 @@ export function runMemoryGb(bytes: number): number {
 }
 
 const kl = (v: number | null) => (v === null ? "not measured" : v.toFixed(4));
+const klLimitText = (level: BuildLevel, params?: GgufFacts["params"]) => quantKlLimit(level, params)?.toFixed(4) ?? "none yet";
 
 /** The build a command shows: Q4_K_M when it passed (llama.cpp's own default), else the first that did. */
 function defaultBuild(f: GgufFacts): GgufBuild {
@@ -1827,8 +1875,78 @@ export function ggufSparkOpen(f: Pick<GgufFacts, "sparkOpen" | "mergeBase" | "ad
   return f.sparkOpen === true || isSparkOpenDerivative({ metrics: { merge_base: f.mergeBase.repo }, adapterBase: f.adapterBase.model });
 }
 
+/** A small base's GGUF card: its license duties first, what was measured, and how to run it. Glimmer's sections don't apply. */
+function smallGgufCard(f: GgufFacts): string {
+  const [, name] = f.repo.split("/");
+  const base = quantBaseOf(f.params)!;
+  const duties = licenseDuties({ adapterBase: base.model });
+  const b = f.builds.find((x) => x.level === "Q4_K_M") ?? f.builds[0]!;
+  const front = [
+    "---",
+    `base_model: ${base.mergeBase}`,
+    "base_model_relation: finetune",
+    "pipeline_tag: text-generation",
+    "license: other",
+    "license_name: llama-community-license",
+    "license_link: LICENSE",
+    "tags:",
+    ...["gguf", "llama.cpp", "llama", "built-with-llama", "muse-muse", "lora-merged"].map((t) => `- ${t}`),
+    ...(f.datasetRepo ? ["datasets:", `- ${f.datasetRepo}`] : []),
+    "---",
+  ];
+  const body = [
+    `# ${name}`,
+    "",
+    `**${duties.line}.** GGUF files of [${f.adapterRepo}](${hubLink(f.adapterRepo, "model")}), a LoRA adapter merged into [${base.mergeBase}](${HUB_SITE}/${base.mergeBase}): ${mdText(taskSentence(f.dataset.task))}.`,
+    "",
+    "## Run it",
+    "",
+    fenced(`llama serve -hf ${f.repo}:${b.level} -c 8192 -np 1`, "sh"),
+    "",
+    "Use this system message exactly, and temperature 0:",
+    "",
+    fenced(clean(ggufSystemLine(f.role, f.params)), "text"),
+    "",
+    "## What was measured",
+    "",
+    "| Build | File | Size | Mean KL divergence from Q8_0 | Top token the same |",
+    "|---|---|---|---|---|",
+    ...f.builds.map((x) => `| ${x.level} | \`${x.name}\` | ${gigabytes(x.bytes)} | ${kl(x.klMean)} | ${x.topTokenPct === null ? "not measured" : `${x.topTokenPct.toFixed(1)}%`} |`),
+    "",
+    `No KL limit applies yet, since no build of this base had been measured before this one. The answer check decides: ${b.level} gave a final answer to ${f.channel.final} of ${f.channel.total} held-out prompts, and the template it renders matched training's.`,
+    "",
+    `Files and SHA-256: ${f.builds.map((x) => `\`${x.name}\` \`${x.sha256}\``).join(", ")}. Made with llama.cpp \`${f.llamacpp.tag}\` on ${f.job.gpuLabel}, ${f.job.gpuMinutes} minutes, ${money(f.job.costUsd)}.`,
+    "",
+    "## License",
+    "",
+    `${duties.license} The full texts are in \`LICENSE\` and \`USE_POLICY.md\`.`,
+    "",
+    ...duties.points.map((p) => `- ${p}`),
+    "",
+  ];
+  return noEmDashes([...front, "", ...body].join("\n"));
+}
+
+/** The one-bit build's honest section: what its own checks found, and what no one has seen yet. Empty when none was asked for. */
+function lowBitSection(f: GgufFacts): string[] {
+  if (!f.lowBit) return [];
+  const l = f.lowBit;
+  return [
+    "",
+    `## The one-bit file (${LOW_BIT_LEVEL})`,
+    "",
+    `Expect much weaker answers than the larger builds. On our 2026-knowledge model, this level recalled ${LOW_BIT_FACTS.recallOneBitPct}% of new-knowledge probes where Q4_K_M recalled ${LOW_BIT_FACTS.recallFourBitPct}%. It has no KL limit yet: its KL above is recorded, not judged.`,
+    "",
+    l.final !== null && l.total !== null ? `Its own check on this model: ${l.final} of ${l.total} held-out prompts got a final answer${l.agree !== null && l.agreeTotal ? `, and ${l.agree} of ${l.agreeTotal} start like the adapter's own answers` : ""}.` : "Its own answer check didn't run.",
+    ...(l.problem ? ["", `It isn't published: ${mdText(l.problem)}.`] : []),
+    "",
+    `For a Jetson Orin Nano: not run on a real board yet. Running it takes about the file plus ${GGUF_RUN_EXTRA_GB} GB by estimate, of the board's ${LOW_BIT_FACTS.boardGb} GB shared with the operating system, so it may not fit.`,
+  ];
+}
+
 /** The GGUF repo's README.md: YAML front matter the Hub's validator takes, then the sections in the design's order. */
 export function ggufCard(f: GgufFacts): string {
+  if (quantBaseOf(f.params)) return smallGgufCard(f);
   const [, name] = f.repo.split("/");
   const english = looksEnglish(f.dataset.title, f.dataset.task);
   const derived = ggufSparkOpen(f);
@@ -1853,7 +1971,7 @@ export function ggufCard(f: GgufFacts): string {
     "",
     "| Build | File | Size | Memory to run, 8K context | Picked for |",
     "|---|---|---|---|---|",
-    ...f.builds.map((b) => `| ${b.level} | \`${b.name}\` | ${gigabytes(b.bytes)} | about ${runMemoryGb(b.bytes)} GB | ${GGUF_PICKED_FOR[b.level]} |`),
+    ...f.builds.map((b) => `| ${b.level} | \`${b.name}\` | ${gigabytes(b.bytes)} | about ${runMemoryGb(b.bytes)} GB | ${pickedFor(b.level)} |`),
     "",
     `Memory to run is the file plus about ${GGUF_RUN_EXTRA_GB} GB: a small KV cache at 8K context and the buffers. A Mac lends its GPU about two thirds of its memory up to 36 GB, and three quarters above. The [run-it-on-your-computer page](${MUSE_MUSE_SITE}/fine-tuning/${f.adapterJobId}/run) picks a build for your device, in your browser.`,
   ].join("\n");
@@ -1876,10 +1994,10 @@ export function ggufCard(f: GgufFacts): string {
     "|---|---|---|---|---|",
     ...f.builds.map(
       (b) =>
-        `| ${b.level} | ${kl(b.klMean)} | ${QUANT_KL_MAX[b.level].toFixed(4)} | ${kl(b.klP99)} | ${b.topTokenPct === null ? "not measured" : `${b.topTokenPct.toFixed(1)}%`} |`,
+        `| ${b.level} | ${kl(b.klMean)} | ${klLimitText(b.level, f.params)} | ${kl(b.klP99)} | ${b.topTokenPct === null ? "not measured" : `${b.topTokenPct.toFixed(1)}%`} |`,
     ),
     ...(f.leftOut.length
-      ? ["", ...f.leftOut.map((l) => `${l.level} isn't published: its mean KL divergence was ${kl(l.klMean)}, over its limit of ${QUANT_KL_MAX[l.level].toFixed(4)}.`)]
+      ? ["", ...f.leftOut.filter((l) => l.level !== LOW_BIT_LEVEL).map((l) => `${l.level} isn't published: its mean KL divergence was ${kl(l.klMean)}, over its limit of ${klLimitText(l.level, f.params)}.`)]
       : []),
     "",
     `The answer check: Q4_K_M, under the prompt a stock app sends (${f.trainChannel === 0 ? "`tuned.jinja`" : "the template in the file, with the Glimmer parser on"} and reasoning strength low), gave a final answer to ${f.channel.final} of ${f.channel.total} held-out prompts, greedy, up to 1,024 new tokens each. The files are published only when at least ${Math.round(QUANT_CHANNEL_MIN * 100)}% do.`,
@@ -1899,7 +2017,11 @@ export function ggufCard(f: GgufFacts): string {
     // The shards' SHA-256 is claimed only with the revision the job checked them at (merge_base_revision).
     `- The merge: Unsloth's \`save_pretrained_merged\` with \`merged_16bit\`, which merges the adapter into the 16-bit base tensor by tensor in fp32. The base: [${f.mergeBase.repo}](${HUB_SITE}/${f.mergeBase.repo})${f.mergeBase.revision ? (derived ? ` at revision \`${f.mergeBase.revision}\`, whose 13 safetensors shards have the SHA-256 the recipe pins for it` : ` at revision \`${f.mergeBase.revision}\`, whose two safetensors shards have the same SHA-256 as [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN})'s`) : ""}.${f.tensors !== null ? ` The merged model has the base's ${f.tensors.toLocaleString("en-US")} tensor names and shapes.` : ""}`,
     `- The template: Meta's \`chat_template.jinja\` and tokenizer files from ${GLIMMER_ORIGIN} at revision \`${META_REVISION}\`, so every file carries Meta's current template.`,
-    `- llama.cpp \`${f.llamacpp.tag}\`${f.llamacpp.commit ? ` (commit \`${f.llamacpp.commit}\`)` : ""}, its release's own builds, each checked against its SHA-256. No importance matrix: the sizes are llama.cpp's standard K-quants.`,
+    `- llama.cpp \`${f.llamacpp.tag}\`${f.llamacpp.commit ? ` (commit \`${f.llamacpp.commit}\`)` : ""}, its release's own builds, each checked against its SHA-256. ${
+      f.lowBit
+        ? `The K-quant sizes use no importance matrix. ${LOW_BIT_LEVEL} needs one, so it was made on Q8_0 from this adapter's training conversations, never the held-out ones${f.lowBit.calibrationChars ? ` (${f.lowBit.calibrationChars.toLocaleString("en-US")} characters)` : ""}.`
+        : "No importance matrix: the sizes are llama.cpp's standard K-quants."
+    }`,
     `- On ${f.job.gpuLabel} on Lambda: ${f.job.gpuMinutes} minutes from launch to shutdown, ${money(f.job.costUsd)}.`,
     "",
     fenced(
@@ -1907,8 +2029,12 @@ export function ggufCard(f: GgufFacts): string {
         "python convert_hf_to_gguf.py merged --outtype bf16 --outfile bf16.gguf",
         "llama-quantize bf16.gguf Q8_0.gguf Q8_0",
         ...[...f.builds.map((b) => b.level), ...f.leftOut.map((l) => l.level)]
-          .sort((a, b) => QUANT_LEVELS.indexOf(a) - QUANT_LEVELS.indexOf(b))
-          .map((level) => `llama-quantize bf16.gguf ${level}.gguf ${level}`),
+          .sort((a, b) => BUILD_LEVELS.indexOf(a) - BUILD_LEVELS.indexOf(b))
+          .flatMap((level) =>
+            level === LOW_BIT_LEVEL
+              ? ["llama-imatrix -m Q8_0.gguf -f calibration.txt -o imatrix.gguf --parse-special --no-ppl --output-format gguf", `llama-quantize --imatrix imatrix.gguf bf16.gguf ${level}.gguf ${level}`]
+              : [`llama-quantize bf16.gguf ${level}.gguf ${level}`],
+          ),
       ].join("\n"),
       "sh",
     ),
@@ -1965,6 +2091,7 @@ export function ggufCard(f: GgufFacts): string {
     prompt,
     "",
     close,
+    ...lowBitSection(f),
     "",
     made,
     "",
@@ -1993,12 +2120,15 @@ export function quantRecord(f: GgufFacts): Record<string, unknown> {
     },
     adapter: { jobId: f.adapterJobId, repo: f.adapterRepo, commit: f.adapterCommit, page: labPageUrl(f.adapterJobId), base: f.adapterBase },
     merge: { method: "unsloth save_pretrained_merged merged_16bit", base: f.mergeBase, tensors: f.tensors },
-    template: { from: GLIMMER_ORIGIN, revision: META_REVISION, sha256: META_TEMPLATE_SHA256, tuned: f.trainChannel === 0 ? TUNED_TEMPLATE_SHA256 : null },
+    template: quantBaseOf(f.params)
+      ? { from: f.mergeBase.repo, revision: f.mergeBase.revision, sha256: null, tuned: null }
+      : { from: GLIMMER_ORIGIN, revision: META_REVISION, sha256: META_TEMPLATE_SHA256, tuned: f.trainChannel === 0 ? TUNED_TEMPLATE_SHA256 : null },
     llamacpp: f.llamacpp,
-    system: ggufSystemLine(f.role),
+    system: ggufSystemLine(f.role, f.params),
     trainChannel: f.trainChannel,
-    builds: f.builds.map((b) => ({ level: b.level, file: b.name, bytes: b.bytes, sha256: b.sha256, klMean: b.klMean, klP99: b.klP99, topTokenPct: b.topTokenPct, klMax: QUANT_KL_MAX[b.level] })),
-    leftOut: f.leftOut.map((l) => ({ level: l.level, klMean: l.klMean, klMax: QUANT_KL_MAX[l.level] })),
+    ...(f.lowBit ? { lowBit: f.lowBit } : {}),
+    builds: f.builds.map((b) => ({ level: b.level, file: b.name, bytes: b.bytes, sha256: b.sha256, klMean: b.klMean, klP99: b.klP99, topTokenPct: b.topTokenPct, klMax: quantKlLimit(b.level, f.params) })),
+    leftOut: f.leftOut.map((l) => ({ level: l.level, klMean: l.klMean, klMax: quantKlLimit(l.level, f.params) })),
     checks: { template: "passed", channel: f.channel, channelMin: QUANT_CHANNEL_MIN, agreement: f.agreement },
     files: f.small,
   };
