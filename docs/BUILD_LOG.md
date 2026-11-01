@@ -987,6 +987,16 @@ because the sidebar showed a real account.
   Fireworks can't run our recipe and its terms rule out model-written datasets. Smoke tests: Modal about $2.30, Baseten
   about $1.10, Fireworks export test $2.50 to $4.50 (none run).
 
+### 20:24 Owner: fine-tuning as simple as a build; builds that train, use gadgets and run tuned Glimmer
+
+- The owner: a new fine-tuning job should look and work about as simply as a regular Muse Muse build, and Muse Muse
+  itself should be able to start a fine-tuning job, connect to gadgets, and run a hosted Muse Glimmer (the one being
+  fine-tuned) in what it builds.
+- Overlaps: wave 3's unit 11 (gpu: a shared Glimmer endpoint behind the gateway, per-product training after ship), unit
+  13 (hardware: board tools and registry), the anyone-can-fine-tune design (_plan/open-train.md), tg-train-align's
+  providers, and tg-decide's decision models. A read-only design pass reconciles them before any build; the split with
+  wave 3 gets agreed first.
+
 ## Gaps
 
 What this record doesn't confirm:
