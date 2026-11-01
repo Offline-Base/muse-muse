@@ -74,6 +74,8 @@ A board does only this for a product, and never runs commands. Its camera and mi
 
 Only when the brief says `driveExport`. The product's owner puts the product's own tuned model on a USB drive plugged into their own board. Server only: route handlers, with the request passed in. Only the owner ever gets through. Visitors never do, even on a board its owner opened to visitors, so show this only to the owner, and give everyone else the rest of the product.
 
+A model from "Train on my data" can't go on a drive today: it stays private, so it has no files a board can fetch, and `exportToDrive` answers `own_model_not_ready`. Show that sentence as it is, and never promise an export for such a model.
+
 To tell who the owner is, see whether `driveStatus` answers. Don't check for a cookie: the build's simulated owner has no cookie, so the button would be missing in the smoke test.
 
 The owner gets their pass from `Open as owner` on the product's Muse Muse page, which opens the product in its own tab. Inside the frame on that page the pass isn't sent, so the board looks offline there. When `isBoardOffline(err)` is true, say "If you own this product, use Open as owner on its Muse Muse page."

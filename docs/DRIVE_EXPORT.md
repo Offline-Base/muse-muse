@@ -543,7 +543,7 @@ admin card's and isn't needed. With any of it off, `/gadget` answers as it did.
 **Not exportable today: a "train on my data" model.** Its dataset has a `product_id`, so the publish route refuses it, so its adapter
 is never published, so no GGUF of it reaches the Hub, and `export_to_drive` answers 409 `own_model_not_ready`. Only a model trained
 from a build plan can get through, after an admin publishes and quantizes it. Whether such a model should get a private source for its
-files, or the promise above should change, is an owner's decision and is still open. The skill and the writer rule don't say this yet.
+files, or the promise above should change, is an owner's decision and is still open. The skill says so, and tells the product to show the refusal as it is.
 
 **Who may call them.** The product's owner only, with the owner principal (`x-musemuse-owner`, `docs/AGENT_TOOLS.md`), on the board
 linked to the product, which `linkedBoardRow` requires to be the owner's. A link's `visitors` switch counts for nothing here.

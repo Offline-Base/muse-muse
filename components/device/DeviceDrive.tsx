@@ -161,7 +161,7 @@ export function DeviceDrive({ initialSource = null }: { initialSource?: string |
         Model
       </label>
       <select id={`${id}-model`} className="train-select" value={source} onChange={(event) => setSource(event.target.value)} disabled={!reply || active}>
-        <option value="">{reply ? (sources.length ? "Choose a model" : "No finished runs on this board yet") : "Loading"}</option>
+        <option value="">{reply ? (sources.length ? "Choose a model" : "No finished runs on this board yet") : message ? "No models to show" : "Loading"}</option>
         {sources.map((s) => (
           <option key={s.value} value={s.value}>
             {s.label}
