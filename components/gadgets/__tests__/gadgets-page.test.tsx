@@ -150,6 +150,7 @@ describe("/gadgets", { skip: canMock ? false : "needs --experimental-test-module
     assert.match(html, /Every build gets a simulated board/);
     assert.match(html, /Gadgets for new builds.*?>Off</s);
     assert.match(html, /Live board.*?>Not set up</s);
+    assert.match(html, /<span class="pill pill-neutral"><span class="pill-dot" aria-hidden="true"><\/span>Not set up<\/span>/);
     assert.doesNotMatch(html, /href="\/device"/);
     assert.match(html, /No products use a gadget yet/);
     assert.match(html, /Planned: connect your own board/);
@@ -165,6 +166,7 @@ describe("/gadgets", { skip: canMock ? false : "needs --experimental-test-module
     clean(html);
     assert.match(html, /Gadgets for new builds.*?>On</s);
     assert.match(html, /Live board.*?>Set up</s);
+    assert.match(html, /Live board.*?<span class="pill pill-live"><span class="pill-dot" aria-hidden="true"><\/span>Set up<\/span>/s);
     assert.match(html, /This page doesn&#x27;t contact it/);
     assert.doesNotMatch(html, /\b(online|is connected)\b/i);
   });

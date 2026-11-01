@@ -4,7 +4,7 @@ import { connection } from "next/server";
 import { GADGET_TOOLS, gadgetProducts, gadgetStatusRows } from "@/components/gadgets/info";
 import { Icon } from "@/components/icons";
 import { ProductCard } from "@/components/product/ProductCard";
-import { EmptyCard, NotConnected, PageHeader } from "@/components/ui";
+import { EmptyCard, NotConnected, PageHeader, StatusPill } from "@/components/ui";
 import { deviceConfig } from "@/lib/device/client";
 import { env } from "@/lib/env";
 import { listShippedProducts, safeQuery } from "@/lib/queries";
@@ -79,10 +79,7 @@ export default async function GadgetsPage() {
                   <span className="row-sub muted">{row.note}</span>
                 </dt>
                 <dd>
-                  <span className={`pill ${row.on ? "pill-live" : "pill-neutral"}`}>
-                    <span className="pill-dot" aria-hidden />
-                    {row.value}
-                  </span>
+                  <StatusPill status={row.on ? "live" : "disabled"} label={row.value} />
                 </dd>
               </div>
             ))}
