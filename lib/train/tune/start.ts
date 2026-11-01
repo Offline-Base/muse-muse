@@ -15,7 +15,8 @@ import { attachDatasetRun, createDataset, failDataset, getDataset } from "@/lib/
 import { TUNE_STEPS } from "@/lib/train/tune/settings";
 import { freshHeartbeat } from "@/lib/train/tune/marks";
 import { tuneRun } from "@/lib/train/tune/run";
-import { latestTuneJob, readRunMarks, saveRunProduct, saveRunSteps } from "@/lib/train/tune/run-store";
+import { autoPublishOk } from "@/lib/train/tune/auto-publish";
+import { latestTuneJob, readRunMarks, saveRunAutoPublish, saveRunProduct, saveRunSteps } from "@/lib/train/tune/run-store";
 import type { TrainPlanBody } from "@/lib/train/tune/types";
 
 /** A refusal startTuneRun's caller turns into a JSON reply with this status and code. */
@@ -91,6 +92,8 @@ export async function startTuneRun(i: {
   datasetId?: string;
   callerId: string;
   productId?: string | null;
+  /** An admin's run with Advanced's upload left on. Only POST /api/train/runs passes it; anything else stays at publish 0. */
+  autoPublish?: boolean;
 }): Promise<{ runId: string; href: string; trainingStarted?: boolean }> {
   if (!env.tuneComposer) throw new TuneStartError(404, "not_found");
   const source = i.plan?.source ?? (i.datasetId ? { kind: "dataset" as const, datasetId: i.datasetId } : null);
@@ -100,6 +103,8 @@ export async function startTuneRun(i: {
   const buildId = source.kind === "build" ? source.buildId : null;
   const keepProduct = (runId: string) =>
     productId ? saveRunProduct(runId, productId, buildId).catch((err) => console.error("[train/tune] save product", err)) : Promise.resolve();
+  const uploads = (dataset: { kind?: string | null; productId?: string | null; task?: string | null }) =>
+    autoPublishOk({ flag: env.tuneAutoPublish, hubOff: env.hubOffReason, asked: i.autoPublish === true, dataset, runProductId: productId });
   if (source.kind === "dataset") {
     const existing = await getDataset(source.datasetId);
     if (!existing) throw new TuneStartError(404, "not_found");
@@ -107,6 +112,13 @@ export async function startTuneRun(i: {
       const [job, marks] = await Promise.all([latestTuneJob(existing.id), readRunMarks(existing.id)]);
       if (!job && !marks.stopped && !freshHeartbeat(marks, Date.now())) {
         const steps = i.plan?.settings.steps ?? marks.steps ?? TUNE_STEPS;
+        // Not ignored on failure: an older mark left in place would upload a run Advanced turned off.
+        if (i.plan && env.tuneAutoPublish) {
+          await saveRunAutoPublish(existing.id, uploads(existing)).catch((err) => {
+            console.error("[train/tune] save auto publish", err);
+            throw new TuneStartError(500, "start_failed");
+          });
+        }
         // The day first: a refusal here leaves no row saying this run is the product's.
         const day = productId ? await takeProductDay(productId, now) : null;
         await keepProduct(existing.id);
@@ -150,6 +162,9 @@ export async function startTuneRun(i: {
   await attachDatasetRun(dataset.id, workflowRunId).catch((err) => console.error("[train/tune] attachRun", err));
   await keepProduct(dataset.id);
   await saveRunSteps(dataset.id, plan.settings.steps).catch((err) => console.error("[train/tune] save steps", err));
+  if (uploads({ task: plan.task, productId })) {
+    await saveRunAutoPublish(dataset.id, true).catch((err) => console.error("[train/tune] save auto publish", err));
+  }
   await startTraining(dataset.id, i.callerId, plan.settings.steps);
   return { runId: dataset.id, href: runHref(dataset.id) };
 }

@@ -1471,6 +1471,8 @@ The owner sent Meta's sidebar, Artifacts, Media, Vibes and Scheduled screens. Hi
 
 The owner asked for 100 tests, 1,000 generated examples, and Spark Contributor if permissible. 1,000 examples was already the limit, though never confirmed with a real run in this log. Tests: holdout cap 40 to 100, so 1,000 examples hold out 100; job, recipe and runner caps 60 to 120, which would otherwise have cut it silently. Contributor: Meta's terms 6.2 as read in the Oct 28 review bar sensitive, confidential or personal information and Meta may train on it, so it needs TRAIN_CONTRIBUTOR_WRITER=1 (off), an admin, and a made-up statement; judging stays on Wonder. Estimate for 1,000 examples by the page's formula: $15.40 to $33.80 on Wonder, about $0.17 to $0.36 on Contributor, at a Contributor price the catalog lists from 1.2 and marks to verify. Not a legal opinion; 10.1(ix) on training competing models applies to any writer. Checks: 6378 tests, 6370 pass, 0 fail, 8 skipped; tsc clean. No real run: a 100-test run's GPU time is unmeasured, and the 20-minute overhead was set for 40 tests.
 
+- Auto upload built on tg-v-hub behind TUNE_AUTO_PUBLISH (off). An admin's tune run uploads through the existing Hub path once judged, private until HF_PUBLIC is set to public. A task quoting a person's rows is now refused for manual Publish too, using the fold heading rather than the planned has_person_rows column, so no migration. A Contributor dataset's repo stays private. Tests: auto-publish.test.ts and hub-flow.test.ts passed, with the Hub faked. tsc, a real upload and the screens were not run.
+
 ## Gaps
 
 What this record doesn't confirm:

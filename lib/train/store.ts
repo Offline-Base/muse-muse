@@ -30,6 +30,7 @@ import { decisionModelOf, type DecisionModel } from "@/lib/decide/serving";
 import type { DecideScoreItem, DecisionRow, DecisionRows, DecisionSpec } from "@/lib/decide/types";
 import type { QuantSource } from "@/lib/train/hub-cards";
 import { PERSON_WRITER, PUBLIC_WRITER } from "@/lib/train/models";
+import { taskHoldsPersonRows } from "@/lib/train/tune/auto-publish";
 import {
   isTrainTerminal,
   QUANT_RECIPE,
@@ -930,14 +931,14 @@ export async function getDataset(datasetId: string): Promise<DatasetHead | null>
 export const OWNER_ROWS_REASON = "It was trained on a product owner's private rows, so it can't be published.";
 
 /**
- * OWNER_ROWS_REASON when `job` trained on a dataset a product owns, else null. Every way to the Hub asks this: Publish,
+ * OWNER_ROWS_REASON when `job` trained on a dataset a product owns or whose task quotes a person's own rows, else null. Every way to the Hub asks this: Publish,
  * launching glimmer-publish, the runner's upload plan and the publishing claim. A read that fails throws, so nothing publishes.
  */
 export async function ownerRowsProblem(job: { params?: unknown }): Promise<string | null> {
   const params = job.params as Record<string, unknown> | null | undefined;
   const datasetId = typeof params?.datasetId === "string" ? params.datasetId : null;
   const dataset = datasetId ? await getDataset(datasetId) : null;
-  return dataset?.productId ? OWNER_ROWS_REASON : null;
+  return dataset?.productId || taskHoldsPersonRows(dataset?.task) ? OWNER_ROWS_REASON : null;
 }
 
 /** The newest datasets first, without their examples. */

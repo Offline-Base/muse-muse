@@ -346,6 +346,10 @@ export const env = {
     const v = (process.env.HF_PUBLIC ?? "").trim().toLowerCase();
     return v === "" || ["1", "true", "yes", "on"].includes(v);
   },
+  /** True when HF_PUBLIC is set at all. Auto uploads stay private until it says public (hubFinishStep). */
+  get hfPublicSet(): boolean {
+    return (process.env.HF_PUBLIC ?? "").trim() !== "";
+  },
   /**
    * QUANT_ENABLED: "1", "true", "yes" or "on" (any case) lets admins start glimmer-quantize jobs, which make a judged
    * adapter's GGUF files (docs/TRAINING.md "Local files"). Off when unset or anything else.
@@ -410,6 +414,13 @@ export const env = {
    */
   get guestEdits(): boolean {
     return flag("GUEST_EDITS");
+  },
+  /**
+   * TUNE_AUTO_PUBLISH: an admin's tune run uploads its model to Hugging Face by itself once it succeeds and is judged
+   * (docs/TRAINING.md "Auto upload"). Off by default: runs stay at publish 0 until someone presses Publish.
+   */
+  get tuneAutoPublish(): boolean {
+    return flag("TUNE_AUTO_PUBLISH");
   },
 
   // ---------- Anyone can fine-tune (General; lib/train/public, open-train.md) ----------

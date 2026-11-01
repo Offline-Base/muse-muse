@@ -155,7 +155,7 @@ export function tuneRunView(rows: RunRows, now: Date, ceilings: { maxMinutes: nu
     next: job
       ? { kind: "job", href: `/fine-tuning/${job.id}` }
       : stage === "waiting"
-        ? { kind: "start", start: startHref(dataset.id), fullForm: fullFormHref(dataset.id) }
+        ? { kind: "start", start: startHref(dataset.id), fullForm: fullFormHref(dataset.id), ...(marks.autoPublish ? { autoUpload: true } : {}) }
         : null,
   };
 }

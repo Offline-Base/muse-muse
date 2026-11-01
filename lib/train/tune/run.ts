@@ -5,7 +5,7 @@
  *
  *   tuneRun: check the run's dataset every 30 s until it is ready (or failed, gone, stopped, or still writing after
  *            6 hours) -> check the examples (checkExamplesStep: enough to train on and to score with, lengths, the
- *            content seam) -> launch training (launchRunStep: launchJob with the run's settings and publish 0), and
+ *            content seam) -> launch training (launchRunStep: launchJob with the run's settings; publish 0 unless the run uploads by itself), and
  *            while the GPU is busy or a cap is hit, try again every 5 minutes for up to 2 hours, the waiting reason
  *            kept as the run's heartbeat. Never launches for a run that was stopped.
  *

@@ -59,6 +59,7 @@ const heartbeatKey = (id: string, state: string) => `tune-run:${id}:${state}`;
 const endKey = (id: string, code: string) => `tune-run-end:${id}:${code}`;
 const stoppedKey = (id: string) => `tune-run-stopped:${id}`;
 const stepsKey = (id: string) => `tune-settings:${id}:steps`;
+const autoPublishKey = (id: string) => `tune-settings:${id}:auto-publish`;
 const claimKey = (id: string) => `tune-launch:${id}`;
 const productPrefix = (id: string) => `tune-product:${id}:`;
 
@@ -105,6 +106,27 @@ export async function saveRunSteps(datasetId: string, steps: number): Promise<vo
     .onConflictDoUpdate({ target: [limits.key, limits.windowStart], set: { count } });
 }
 
+/** Keeps whether the run uploads by itself. No row, or 0, means it doesn't, so a write that failed fails closed. */
+export async function saveRunAutoPublish(datasetId: string, on: boolean): Promise<void> {
+  if (!UUID_RE.test(datasetId)) return;
+  const count = on ? 1 : 0;
+  await db()
+    .insert(limits)
+    .values({ key: autoPublishKey(datasetId), windowStart: TUNE_KEEP_WINDOW, count })
+    .onConflictDoUpdate({ target: [limits.key, limits.windowStart], set: { count } });
+}
+
+/** True when the run was started to upload by itself. */
+export async function readRunAutoPublish(datasetId: string): Promise<boolean> {
+  if (!UUID_RE.test(datasetId)) return false;
+  const [row] = await db()
+    .select({ count: limits.count })
+    .from(limits)
+    .where(and(eq(limits.key, autoPublishKey(datasetId)), eq(limits.windowStart, TUNE_KEEP_WINDOW)))
+    .limit(1);
+  return (row?.count ?? 0) > 0;
+}
+
 /** One rate_limits row of a run's marks. */
 export interface RunMarkRow {
   key: string;
@@ -123,7 +145,7 @@ export async function readRunMarkRows(datasetId: string, now: Date = new Date())
       or(
         and(like(limits.key, `tune-run:${datasetId}:%`), gte(limits.windowStart, hourAgo), lt(limits.windowStart, TUNE_KEEP_WINDOW)),
         and(
-          or(like(limits.key, `tune-run-end:${datasetId}:%`), eq(limits.key, stoppedKey(datasetId)), eq(limits.key, stepsKey(datasetId))),
+          or(like(limits.key, `tune-run-end:${datasetId}:%`), eq(limits.key, stoppedKey(datasetId)), eq(limits.key, stepsKey(datasetId)), eq(limits.key, autoPublishKey(datasetId))),
           eq(limits.windowStart, TUNE_KEEP_WINDOW),
         ),
       ),
