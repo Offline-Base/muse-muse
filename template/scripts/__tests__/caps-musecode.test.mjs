@@ -74,6 +74,30 @@ describe("the overlay's files", () => {
   });
 });
 
+describe("the helpers and the words", () => {
+  const helper = () => readFileSync(path.join(KIT, "tests/caps/muse-code.ts"), "utf8");
+  const skill = () => readFileSync(path.join(KIT, ".agents/skills/muse-code-in-product/SKILL.md"), "utf8");
+  const client = () => readFileSync(path.join(KIT, "lib/muse-code/client.ts"), "utf8");
+
+  test("expectMuseCodeRun gives the test the time it waits, and takes a replay only as the build's fallback", () => {
+    const text = helper();
+    assert.match(text, /test\.setTimeout\(/);
+    assert.match(text, /import \{ expect, test, type Page \}/);
+    assert.match(text, /data-musecode-replay/);
+    assert.doesNotMatch(text, /toHaveAttribute\("data-musecode-replay", "false"\)/, "a fallback replay must not fail the check by itself");
+  });
+
+  test("says what really happens: when the workspace goes, how long the files and steps stay, and what the firewall allows", () => {
+    for (const text of [skill(), client()]) assert.doesNotMatch(text, /deleted when the task ends|deletes it when the task ends/);
+    const s = skill();
+    assert.doesNotMatch(s, /no way out but/);
+    assert.match(s, /24 hours/);
+    assert.match(s, /about 18 minutes/);
+    assert.match(s, /build_tasks_used|used, and one worked/);
+    assert.ok(s.includes("Runs Muse Code in a private temporary workspace. It's deleted after 15 minutes, and your task is sent to Meta."), "the required line is word for word");
+  });
+});
+
 describe("the fixed check", () => {
   const checker = () => import(pathToFileURL(path.join(CODE, "scripts/caps/code.mjs")).href);
   const record = { checks: [{ id: "muse-code-run", ok: true, detail: "A real Muse Code task ran and its files and final answer show" }] };
@@ -88,6 +112,15 @@ describe("the fixed check", () => {
     const noRun = await one(record, { museCode: 0, museCodeWorked: 0 });
     assert.match(noRun.detail, /no real Muse Code task/);
     assert.equal((await one({ checks: [] }, { museCode: 1, museCodeWorked: 1 })).ok, false, "a replay records nothing");
+  });
+
+  test("takes a run from earlier in the build, while the page replayed: the gateway's count decides", async () => {
+    const { check } = await checker();
+    const replayed = { checks: [{ id: "muse-code-run", ok: true, detail: "The build's real Muse Code tasks are used and one worked; this run replayed the recording" }] };
+    const one = async (proof) => (await check({ record: replayed, proof: { "brief:museCode": 1, ...proof } })).find((c) => c.id === "muse-code-run");
+    assert.equal((await one({ museCode: 2, museCodeWorked: 1 })).ok, true);
+    assert.equal((await one({ museCode: 2, museCodeWorked: 0 })).ok, false, "a replay can't stand in for a real run that never worked");
+    assert.match(readFileSync(path.join(CODE, "scripts/caps/code.mjs"), "utf8"), /in this build/);
   });
 
   test("asks for nothing when the brief has no Muse Code", async () => {
@@ -285,6 +318,40 @@ console.log(JSON.stringify({ ok: [ok.status, ok.headers.get("location"), ok.head
     assert.match(out.ok[2], /HttpOnly/);
     assert.deepEqual(out.none, [303, null]);
     assert.deepEqual(seen[0].body, { code: "abc" });
+  });
+
+  test("in a build whose real tasks are used and one worked, a start replays instead of failing the build; never on live", async () => {
+    seen.length = 0;
+    answer = () => ({ status: 429, body: { error: { code: "build_tasks_used", message: "This build's real Muse Code tasks are used, and one worked." } } });
+    const code = `
+import { CapError, museCode } from "./lib/muse-code/client.ts";
+try { console.log(JSON.stringify(await museCode.start(null, { task: "x" }))); } catch (e) { console.log(JSON.stringify({ refused: e instanceof CapError ? e.code : "other" })); }
+`;
+    const out = await run(code, { MUSE_CODE_REPLAY_OK: "1" });
+    assert.equal(out.replay, true);
+    assert.match(out.id, /^replay_/);
+    assert.equal(seen.length, 1, "it asked the gateway first");
+    assert.deepEqual(await run(code), { refused: "build_tasks_used" }, "a live product never replays");
+    answer = () => ({ status: 429, body: { error: { code: "rate_limited", message: "no" } } });
+    assert.deepEqual(await run(code, { MUSE_CODE_REPLAY_OK: "1" }), { refused: "rate_limited" }, "with no real run that worked, it stays a refusal");
+  });
+
+  test("a first-time visitor gets a visitor id with a start the gateway took, sent on the same call", async () => {
+    seen.length = 0;
+    answer = () => ({ status: 201, body: { id: ID, status: "running" } });
+    const code = (cookie) => `
+import { POST } from "./app/api/musemuse/muse-code/route.ts";
+const res = await POST(new Request("http://localhost/api/musemuse/muse-code", { method: "POST", headers: { "content-type": "application/json"${cookie ? `, cookie: ${JSON.stringify(cookie)}` : ""} }, body: JSON.stringify({ task: "x" }) }));
+console.log(JSON.stringify({ status: res.status, cookie: res.headers.get("set-cookie") }));
+`;
+    const first = await run(code(""));
+    assert.equal(first.status, 201);
+    assert.match(first.cookie ?? "", /^mm_vid=[A-Za-z0-9_-]{16,64}; .*HttpOnly/);
+    assert.equal(first.cookie.split(";")[0].split("=")[1], seen[0].headers["x-musemuse-visitor"], "the gateway heard the same id");
+    assert.equal((await run(code(COOKIES))).cookie, null, "one who has an id keeps it");
+    assert.equal((await run(code("mm_owner=os1.p.s.9999999999999.sig_sig_sig_sig"))).cookie, null, "the owner needs none");
+    answer = () => ({ status: 403, body: { error: { code: "sign_in_required", message: "Only the owner." } } });
+    assert.equal((await run(code(""))).cookie, null, "a refused start sets nothing");
   });
 
   test("the run screen renders its status, an empty step list and a Stop button, and the disclosure word for word", async () => {

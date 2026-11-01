@@ -8,6 +8,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, describe, it, mock } from "node:test";
+import { eq } from "drizzle-orm";
 import * as realSchema from "@/lib/db/schema";
 
 const canMock = typeof (mock as { module?: unknown }).module === "function";
@@ -118,7 +119,7 @@ describe("Muse Code sessions' rows", { skip: canMock ? false : "needs --experime
   it("totals a build's sessions: a running one counts its whole budget and time, and one that never started counts nothing", async () => {
     const ns = `b:${randomUUID()}`;
     const now = new Date();
-    assert.deepEqual(await store.codeSessionStore.buildTotals(ns, now), { sessions: 0, ms: 0, usd: 0 });
+    assert.deepEqual(await store.codeSessionStore.buildTotals(ns, now), { sessions: 0, ms: 0, usd: 0, worked: 0 });
     const done = await session({ namespace: ns, budget: 0.5, endsAt: new Date(now.getTime() + 300_000) });
     await spend(done.tokenId, 0.1);
     await store.codeSessionStore.update(done.id, { status: "completed", startedAt: new Date(now.getTime() - 60_000), endedAt: now });
@@ -135,21 +136,48 @@ describe("Muse Code sessions' rows", { skip: canMock ? false : "needs --experime
     await store.codeSessionStore.insert({ id: failed, productId, namespace: ns, parentTokenId: parentId, principal: "build", subjectKey: null, model: "muse-wonder-1.0", sandboxName: "x", budgetUsd: 0.1, limitMs: 1, endsAt: now });
     await store.codeSessionStore.update(failed, { status: "failed" });
     assert.equal((await store.codeSessionStore.buildTotals(ns, now)).sessions, 2);
-    const proof = await store.museCodeProof(ns, null);
+    const proof = await store.museCodeProof(ns);
     assert.equal(proof.museCode, 2);
     assert.equal(proof.museCodeWorked, 0);
     await store.codeSessionStore.update(done.id, { worked: true });
-    assert.equal((await store.museCodeProof(ns, null)).museCodeWorked, 1);
-    assert.equal((await store.museCodeProof(ns, new Date(Date.now() + 60_000))).museCode, 0);
+    assert.equal((await store.museCodeProof(ns)).museCodeWorked, 1);
+    assert.equal((await store.codeSessionStore.buildTotals(ns, now)).worked, 1, "what a third start asks");
   });
 
-  it("finds overdue sessions, sandbox names held, expired zips and a build's zips, and clears them", async () => {
+  it("proves a build's real run for all its verifies: a run from an earlier verify still counts", async () => {
+    const ns = `b:${randomUUID()}`;
+    const earlier = await session({ namespace: ns, budget: 0.1 });
+    await store.codeSessionStore.update(earlier.id, { status: "completed", worked: true, endedAt: new Date() });
+    await testDb.update(realSchema.codeSessions).set({ createdAt: new Date(Date.now() - 3_600_000) }).where(eq(realSchema.codeSessions.id, earlier.id));
+    assert.deepEqual(await store.museCodeProof(ns), { museCode: 1, museCodeWorked: 1 });
+  });
+
+  it("clears a session's steps and final text past 24 hours, and keeps its row, counts and cost", async () => {
+    const now = new Date();
+    const old = await session();
+    const fresh = await session();
+    const still = await session();
+    const text = { events: [{ n: 0, kind: "say", text: "It read people.csv" }], finalText: "The answer quotes a person's file", condense: { announced: ["x"] }, files: [{ path: "people.csv", bytes: 3 }], dropped: [{ path: "x", why: "y" }], reason: "Muse Code finished.", costUsd: 0.25, worked: true };
+    await store.codeSessionStore.update(old.id, { status: "completed", endedAt: new Date(now.getTime() - 25 * 3_600_000), ...text });
+    await store.codeSessionStore.update(fresh.id, { status: "completed", endedAt: new Date(now.getTime() - 3_600_000), ...text });
+    await store.codeSessionStore.update(still.id, { ...text });
+    assert.ok((await store.clearOldSessionText(new Date(now.getTime() - 24 * 3_600_000))) >= 1);
+    const cleared = (await store.codeSessionStore.get(old.id))!;
+    assert.deepEqual([cleared.events, cleared.finalText, cleared.condense, cleared.files, cleared.dropped, cleared.reason], [[], null, {}, [], [], null]);
+    assert.equal(cleared.costUsd, 0.25);
+    assert.equal(cleared.worked, true);
+    assert.equal(cleared.tokenId, old.tokenId, "the day's spend still finds its token");
+    assert.equal((await store.codeSessionStore.get(fresh.id))!.finalText, text.finalText);
+    assert.equal((await store.codeSessionStore.get(still.id))!.finalText, text.finalText, "a running session is never cleared");
+  });
+
+  it("finds active sessions, sandbox names held, expired zips and a build's zips, and clears them", async () => {
     const now = new Date();
     const overdue = await session({ endsAt: new Date(now.getTime() - 120_000) });
-    assert.ok((await store.overdueSessions(now)).some((r) => r.id === overdue.id));
+    assert.ok((await store.activeSessionsWhere({})).some((r) => r.id === overdue.id));
     assert.ok((await store.activeSandboxNames()).has(`mm-${overdue.id}`));
     await store.codeSessionStore.update(overdue.id, { status: "expired", resultUrl: "https://b/x.zip", resultExpiresAt: new Date(now.getTime() - 1) });
-    assert.ok(!(await store.overdueSessions(now)).some((r) => r.id === overdue.id));
+    assert.ok(!(await store.activeSessionsWhere({})).some((r) => r.id === overdue.id));
     assert.ok((await store.expiredResults(now)).some((r) => r.id === overdue.id));
     await store.clearResult(overdue.id);
     assert.ok(!(await store.expiredResults(now)).some((r) => r.id === overdue.id));

@@ -23,16 +23,18 @@ import { capBuildEnv, capDeployEnv } from "@/lib/caps/env";
 import { CAP_OVERLAY_PICK, capOverlaysNeeded } from "@/lib/caps/overlays";
 import { BRIEF } from "@/lib/promote/__tests__/fixtures";
 import type { CapProduct, CapToken } from "@/lib/caps/gate";
-import { finishSession, handleCodeSessions, isUploadUrl, readStartArgs, sessionModelFor, type CodeSessionRow, type CodeSessionStore, type MuseCodeDeps, type NewCodeSession } from "@/lib/caps/code/musecode/handler";
+import { advanceSession, finishSession, handleCodeSessions, isUploadUrl, readStartArgs, sessionModelFor, type CodeSessionRow, type CodeSessionStore, type MuseCodeDeps, type NewCodeSession } from "@/lib/caps/code/musecode/handler";
 import { sessionLeftUsd } from "@/lib/caps/code/musecode/gateway";
 import { MUSE_CODE_DISCLOSURE, MUSE_CODE_LIMITS } from "@/lib/caps/code/musecode/limits";
 import { REDACTED, redactBytes, redactText, redactValue, secretValues } from "@/lib/caps/code/musecode/redact";
 import { cleanResultPath, crc32, readTar, resultFromTar } from "@/lib/caps/code/musecode/result";
 import { binaryHashesFrom, killScript, mailboxFile, packScript, prepareScript, runnerScript, SESSION_PATHS, SESSION_WORKSPACE, sessionBridgeConfig, sessionPrompt, sessionSettings } from "@/lib/caps/code/musecode/sandbox";
-import { sweepMuseCode, type SweepDeps } from "@/lib/caps/code/musecode/sweep";
+import { endBuildSessions, sweepActiveMuseCode, sweepMuseCode, type SweepDeps } from "@/lib/caps/code/musecode/sweep";
 import { isSessionToken, sessionTokenFor } from "@/lib/caps/code/musecode/token";
 import { SESSION_GATEWAY_PATH, sessionPolicy } from "@/lib/caps/code/policy";
-import type { LongSession, SessionSpec } from "@/lib/caps/code/session";
+import { cappedOutput, openSessionWith, type LongSession, type SessionSpec } from "@/lib/caps/code/session";
+import { museCodeOwnerLink } from "@/lib/caps/code/musecode/owner-link";
+import { trustCheck } from "@/lib/trust/gateway";
 import { codeSessionRefusal } from "@/lib/gateway/policy";
 import { handleGateway } from "@/lib/gateway/handler";
 import { estimateCost } from "@/lib/gateway/estimate";
@@ -387,8 +389,8 @@ function memoryStore(): CodeSessionStore & { rows: Map<string, CodeSessionRow> }
       return { product: active.filter((r) => r.productId === productId).length, all: active.length };
     },
     async buildTotals(namespace) {
-      const real = [...rows.values()].filter((r) => r.namespace === namespace && r.startedAt);
-      return { sessions: real.length, ms: real.reduce((n, r) => n + r.limitMs, 0), usd: real.reduce((n, r) => n + r.costUsd, 0) };
+      const real = [...rows.values()].filter((r) => r.namespace === namespace && (r.startedAt || r.status === "starting"));
+      return { sessions: real.length, ms: real.reduce((n, r) => n + r.limitMs, 0), usd: real.reduce((n, r) => n + (r.costUsd || r.budgetUsd), 0), worked: real.filter((r) => r.worked).length };
     },
   };
 }
@@ -404,18 +406,21 @@ interface Seen {
   reserved: number[];
   settled: unknown[];
   put: Buffer[];
+  /** Each command's maxOutputBytes, by the start of its script. */
+  runOpts: Array<{ script: string; maxOutputBytes?: number }>;
 }
 
 /** A sandbox that answers the platform's scripts as a real one would, with a log and a workspace tar the test sets. */
-function fakeSandbox(seen: Seen, box: { log: string; tar: Buffer | null }): LongSession {
+function fakeSandbox(seen: Seen, box: { log: string; tar: Buffer | null; files?: Record<string, string> }): LongSession {
   return {
     name: "mm-musecode-test",
     async writeFiles(list) {
       seen.wrote.push(...list);
     },
-    async run(_cmd, args) {
+    async run(_cmd, args, opts) {
       const script = args[1] ?? "";
       seen.ran.push(script.slice(0, 40));
+      seen.runOpts.push({ script, maxOutputBytes: opts.maxOutputBytes });
       if (script.includes("sha256sum")) return { exitCode: 0, stdout: `binary-sha256 ${BIN_SHA}\nsdk-ready\n`, stderr: "" };
       if (script.includes("tar --format")) return { exitCode: 0, stdout: box.tar ? "packed\n" : "", stderr: "" };
       return { exitCode: 0, stdout: "", stderr: "" };
@@ -430,7 +435,8 @@ function fakeSandbox(seen: Seen, box: { log: string; tar: Buffer | null }): Long
     async readPart(p, offset, max) {
       if (p === SESSION_PATHS.log) return Buffer.from(box.log).subarray(offset, offset + max);
       if (p === SESSION_PATHS.tar) return box.tar ? box.tar.subarray(offset, offset + max) : null;
-      return null;
+      const other = box.files?.[p];
+      return other === undefined ? null : Buffer.from(other).subarray(offset, offset + max);
     },
     async stop() {
       seen.stopped += 1;
@@ -438,10 +444,10 @@ function fakeSandbox(seen: Seen, box: { log: string; tar: Buffer | null }): Long
   };
 }
 
-function deps(over: Partial<MuseCodeDeps> & { tok?: CapToken; brief?: boolean; box?: { log: string; tar: Buffer | null }; spent?: number; secretSource?: Record<string, string> } = {}) {
-  const seen: Seen = { launched: [], wrote: [], detached: [], ran: [], stopped: 0, tokens: [], revoked: [], reserved: [], settled: [], put: [] };
+function deps(over: Partial<MuseCodeDeps> & { tok?: CapToken; brief?: boolean; box?: { log: string; tar: Buffer | null; files?: Record<string, string> }; spent?: number; secretSource?: Record<string, string> } = {}) {
+  const seen: Seen = { launched: [], wrote: [], detached: [], ran: [], stopped: 0, tokens: [], revoked: [], reserved: [], settled: [], put: [], runOpts: [] };
   const store = memoryStore();
-  const box = over.box ?? { log: "", tar: null };
+  const box: { log: string; tar: Buffer | null; files?: Record<string, string> } = over.box ?? { log: "", tar: null };
   let alive = true;
   const d: MuseCodeDeps = {
     servedCaps: () => ["code"],
@@ -618,7 +624,7 @@ describe("starting a session", () => {
     // The first used its 5 minutes: nothing is left for a second.
     assert.equal(await errorCode(await start(b.d, undefined, {})), "budget_exceeded");
     const two = deps({ tok: token({ scope: "build", buildId: BUILD, dailyBudgetUsd: 10 }) });
-    two.d.sessions.buildTotals = async () => ({ sessions: 2, ms: 60_000, usd: 0.01 });
+    two.d.sessions.buildTotals = async () => ({ sessions: 2, ms: 60_000, usd: 0.01, worked: 0 });
     assert.equal(await errorCode(await start(two.d, undefined, {})), "rate_limited");
   });
 
@@ -738,8 +744,7 @@ describe("the sweep", () => {
     const deleted: string[] = [];
     const s: SweepDeps = {
       deps: f.d,
-      overdue: async () => [structuredClone(row)],
-      active: async () => [],
+      active: async () => [structuredClone(row)],
       heldNames: async () => new Set([row.sandboxName]),
       runningNames: async () => [row.sandboxName, "mm-musecode-orphan"],
       stopByName: async (name) => (stopped.push(name), true),
@@ -752,10 +757,11 @@ describe("the sweep", () => {
       deleteSession: async () => undefined,
       deleteBuildSessions: async () => undefined,
       buildResultUrls: async () => [],
+      clearOldText: async () => 0,
     };
     const n = await sweepMuseCode(NOW, s);
     assert.equal(n, 3);
-    assert.equal(f.store.rows.get(id)!.status, "expired");
+    assert.equal(f.store.rows.get(id)!.status, "stopped", "its sandbox was still up, so it kept what it made");
     assert.deepEqual(stopped, ["mm-musecode-orphan"]);
     assert.equal(deleted.length, 1);
   });
@@ -766,6 +772,571 @@ describe("the sweep", () => {
     const row = f.store.rows.get(id)!;
     await Promise.all([finishSession(structuredClone(row), { status: "stopped", reason: "a" }, f.d, NOW), finishSession(structuredClone(row), { status: "expired", reason: "b" }, f.d, NOW)]);
     assert.ok(["stopped", "expired"].includes(f.store.rows.get(id)!.status));
+  });
+});
+
+describe("the review's fixes: the gateway", () => {
+  const sessionToken = (over: Record<string, unknown> = {}) => ({ scope: "code_session" as const, allowedModels: ["muse-wonder-1.0"], dailyBudgetUsd: 1, ...over });
+  const J = { "content-type": "application/json" };
+  const TURN = { model: "muse-wonder-1.0", input: "x".repeat(120_000), max_output_tokens: 128_000, stream: false };
+  const OK = async () => Response.json({ usage: { input_tokens: 10, output_tokens: 10 } });
+  const sent = (g: { upstreamCalls: Array<{ init?: RequestInit }> }) => JSON.parse(new TextDecoder().decode(g.upstreamCalls[0]!.init!.body as Uint8Array));
+  const call = (g: { deps: Parameters<typeof handleGateway>[2] }, body: unknown, headers: Record<string, string> = {}) => handleGateway(gatewayRequest("responses", json(body), { ...J, ...headers }), ["responses"], g.deps);
+
+  it("caps every session call's output at the estimate's ceiling, even when the estimate fits, so $1 is a real ceiling", async () => {
+    const g = fakeGateway({ token: sessionToken(), fetch: OK });
+    assert.equal((await call(g, TURN)).status, 200);
+    await g.settled();
+    assert.equal(sent(g).max_output_tokens, 32_000, "128,000 would be $2.56 of output on a $1 session");
+    const noAsk = fakeGateway({ token: sessionToken(), fetch: OK });
+    const { max_output_tokens: _gone, ...bare } = TURN;
+    await call(noAsk, bare);
+    await noAsk.settled();
+    assert.equal(sent(noAsk).max_output_tokens, 8_000, "what the estimate assumed");
+    const small = fakeGateway({ token: sessionToken(), fetch: OK });
+    await call(small, { ...TURN, max_output_tokens: 500 });
+    await small.settled();
+    assert.equal(sent(small).max_output_tokens, 500, "a smaller ask stays");
+    const structured = fakeGateway({ token: sessionToken(), fetch: OK });
+    await call(structured, { ...TURN, text: { format: { type: "json_schema" } } });
+    await structured.settled();
+    assert.equal(sent(structured).max_output_tokens, 32_000, "a structured reply isn't fitted, but has the same ceiling");
+    const late = fakeGateway({ token: sessionToken(), tokenSpend: 0.8, fetch: OK });
+    await call(late, TURN);
+    await late.settled();
+    assert.ok(sent(late).max_output_tokens < 32_000, "at $0.80 spent it is fitted lower still");
+    // The billed worst case now fits the reservation: output at the ceiling plus the input it counted.
+    const worst = 32_000 * (20 / 1e6) + 30_000 * (4 / 1e6);
+    assert.ok(worst <= 1, String(worst));
+    const live = fakeGateway({ token: { allowedModels: ["muse-wonder-1.0"], dailyBudgetUsd: 3 }, fetch: OK });
+    await call(live, TURN);
+    await live.settled();
+    assert.equal(sent(live).max_output_tokens, 128_000, "a product's own calls are as they were");
+  });
+
+  it("keeps the whole reservation for a session's stream cut off midway, rather than billing 1,000 input tokens", async () => {
+    const cut = async () => new Response('event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"hi"}\n\n', { headers: { "content-type": "text/event-stream" } });
+    const g = fakeGateway({ token: sessionToken(), fetch: cut });
+    await (await call(g, { ...TURN, stream: true })).text();
+    await g.settled();
+    assert.ok(g.usage[0]!.items[0]!.costUsd > 0.7, `kept about $0.76, got ${g.usage[0]!.items[0]!.costUsd}`);
+    const live = fakeGateway({ token: { allowedModels: ["muse-wonder-1.0"], dailyBudgetUsd: 3 }, fetch: cut });
+    await (await call(live, { ...TURN, stream: true })).text();
+    await live.settled();
+    assert.ok(live.usage[0]!.items[0]!.costUsd < 0.1, "a product's own calls are metered as they were");
+  });
+
+  const part = (p: unknown) => ({ input: [{ role: "user", content: [p] }] });
+  const REFUSED: Array<[string, Record<string, unknown>]> = [
+    ["web search", { tools: [{ type: "web_search" }] }],
+    ["web search preview", { tools: [{ type: "web_search_preview" }] }],
+    ["tool search", { tools: [{ type: "tool_search" }] }],
+    ["an MCP server", { tools: [{ type: "mcp", server_url: "https://attacker.example" }] }],
+    ["web search inside a namespace", { tools: [{ type: "namespace", name: "x", tools: [{ type: "web_search" }] }] }],
+    ["a remote file", part({ type: "input_file", file_url: "https://attacker.example/x?data=secret" })],
+    ["a remote image", part({ type: "input_image", image_url: "https://attacker.example/y.png" })],
+    ["a remote image object", part({ type: "image_url", image_url: { url: "http://attacker.example/y.png" } })],
+    ["a remote video", part({ type: "input_video", video_url: "https://attacker.example/v.mp4" })],
+    ["a stored file", part({ type: "input_file", file_id: "file_someone_elses" })],
+    ["a remote image in a tool's output", { input: [{ type: "function_call_output", call_id: "c", output: [{ type: "input_image", image_url: "https://attacker.example/z" }] }] }],
+    ["a stored item", { input: [{ type: "item_reference", id: "msg_1" }] }],
+    ["background", { background: true }],
+    ["previous_response_id", { previous_response_id: "resp_someone_elses" }],
+    ["conversation", { conversation: "conv_1" }],
+    ["store", { store: true }],
+    ["a stored prompt", { prompt: { id: "pmpt_1" } }],
+  ];
+  for (const [name, extra] of REFUSED) {
+    it(`refuses ${name} on a session token, and sends nothing upstream`, async () => {
+      const g = fakeGateway({ token: sessionToken(), fetch: OK });
+      const res = await call(g, { model: "muse-wonder-1.0", input: "hi", max_output_tokens: 100, ...extra });
+      assert.equal(res.status, 400);
+      assert.equal(await errorCode(res), "session_body");
+      assert.equal(g.upstreamCalls.length, 0);
+    });
+  }
+
+  it("takes Muse Code's own body: a namespace of its tools, URLs as text, inline images, and store false", async () => {
+    const g = fakeGateway({ token: sessionToken(), fetch: OK });
+    const res = await call(g, {
+      model: "muse-wonder-1.0",
+      max_output_tokens: 128_000,
+      store: false,
+      stream: false,
+      include: ["reasoning.encrypted_content"],
+      reasoning: { effort: "medium" },
+      prompt_cache_key: "k",
+      instructions: "See https://example.com/docs.",
+      tools: [{ type: "namespace", name: "muse", tools: [{ type: "function", name: "shell" }, { type: "custom", name: "patch" }] }],
+      input: [
+        { role: "user", content: [{ type: "input_text", text: "Fetch https://example.com/a.csv and file_url: https://b" }, { type: "input_image", image_url: "data:image/png;base64,AAAA" }] },
+        { type: "function_call_output", call_id: "c", output: "curl https://example.com failed" },
+        { type: "reasoning", encrypted_content: "abc" },
+      ],
+    });
+    assert.equal(res.status, 200);
+    await g.settled();
+    assert.equal(sent(g).store, false);
+    const omitted = fakeGateway({ token: sessionToken(), fetch: OK });
+    assert.equal((await call(omitted, { model: "muse-wonder-1.0", input: "hi", max_output_tokens: 100 })).status, 200);
+    await omitted.settled();
+    assert.equal(sent(omitted).store, false, "a body that doesn't say is never stored");
+    const live = fakeGateway({ token: { allowedModels: ["muse-wonder-1.0"], dailyBudgetUsd: 3 }, fetch: OK });
+    assert.equal((await call(live, { model: "muse-wonder-1.0", input: "hi", tools: [{ type: "web_search" }], max_output_tokens: 100 })).status, 200, "a product's own token is as it was");
+  });
+
+  it("derives a session's safety identifier from its stored subject, whatever the VM's body or headers say", async () => {
+    const ids: string[] = [];
+    for (const [subject, extra, headers] of [
+      ["person-a", {}, {}],
+      ["person-a", { safety_identifier: "someone-else", user: "someone-else" }, { [VISITOR_HEADER]: "visitor_chosen_by_the_vm" }],
+      ["person-b", {}, {}],
+    ] as const) {
+      const g = fakeGateway({ token: sessionToken({ sessionSubject: subject }), fetch: OK });
+      await call(g, { model: "muse-wonder-1.0", input: "hi", max_output_tokens: 100, ...extra }, headers);
+      await g.settled();
+      ids.push(sent(g).safety_identifier);
+      assert.equal(sent(g).user, undefined);
+    }
+    assert.equal(ids[0], ids[1]);
+    assert.notEqual(ids[0], ids[2]);
+  });
+
+  it("holds a builder's daily cap on a session's calls, as on a live product's", async () => {
+    const trust = { productTrust: async () => ({ takenDownAt: null, ownerId: "u", ownerEmail: "maker@example.com", ownerIsAdmin: false, ownerBannedAt: null }), builderSpendToday: async () => 999, signedInCaps: true, builderDailyUsd: 10, adminEmails: [] };
+    assert.equal((await trustCheck({ productId: "p1", scope: "code_session" as never }, trust))?.status, 429);
+    assert.equal(await trustCheck({ productId: "p1", scope: "build" }, trust), null, "a build's own budget holds a build");
+    assert.equal(await trustCheck({ productId: "p1", scope: "code_session" as never }, { ...trust, signedInCaps: false }), null);
+  });
+});
+
+describe("the review's fixes: a session", () => {
+  async function running(over: Parameters<typeof deps>[0] = {}) {
+    const f = deps(over);
+    const { id } = (await (await start(f.d)).json()) as { id: string };
+    return { ...f, id };
+  }
+  const events = (f: { d: MuseCodeDeps }, id: string, d: MuseCodeDeps = f.d) => handleCodeSessions(req("GET", `/${id}/events`, undefined, ownerHeaders()), [id, "events"], d);
+  const quiet = async <T,>(run: () => Promise<T>): Promise<{ out: T; logged: string }> => {
+    const keep = console.error;
+    let logged = "";
+    console.error = (...args: unknown[]) => void (logged += `${args.join(" ")}\n`);
+    try {
+      return { out: await run(), logged };
+    } finally {
+      console.error = keep;
+    }
+  };
+
+  it("doesn't end a healthy session when the Sandbox API fails once: the next poll carries on", async () => {
+    const f = await running();
+    const seenOpen = { fail: true };
+    const real = f.d.open;
+    f.d.open = async (name, opts) => {
+      if (seenOpen.fail) throw new Error("502 from the Sandbox API");
+      return real(name, opts);
+    };
+    const res = (await (await events(f, f.id)).json()) as { status: string };
+    assert.equal(res.status, "running");
+    assert.deepEqual(f.seen.revoked, [], "its token lives");
+    assert.equal(f.store.rows.get(f.id)!.status, "running");
+    seenOpen.fail = false;
+    f.box.log = exitLog("Wrote out.txt.");
+    f.box.tar = tar([{ name: "out.txt", data: "x" }]);
+    const back = (await (await events(f, f.id)).json()) as { status: string; worked: boolean };
+    assert.equal(back.status, "completed");
+    assert.equal(back.worked, true);
+  });
+
+  it("closes with no sandbox only once the sandbox's own timeout has passed", async () => {
+    const f = await running();
+    f.d.open = async () => {
+      throw new Error("502 from the Sandbox API");
+    };
+    const atLimit = { ...f.d, now: () => new Date(NOW.getTime() + 16 * 60_000) };
+    assert.equal(((await (await events(f, f.id, atLimit)).json()) as { status: string }).status, "running", "inside the grace it may still come back");
+    const past = { ...f.d, now: () => new Date(NOW.getTime() + 19 * 60_000) };
+    assert.equal(((await (await events(f, f.id, past)).json()) as { status: string }).status, "expired");
+  });
+
+  it("a stop when the Sandbox API fails kills the token, keeps the session open and says to try again", async () => {
+    const f = await running();
+    f.d.open = async () => {
+      throw new Error("502 from the Sandbox API");
+    };
+    const res = await handleCodeSessions(req("POST", `/${f.id}/stop`, {}, ownerHeaders()), [f.id, "stop"], f.d);
+    assert.equal(res.status, 429);
+    assert.deepEqual(f.seen.revoked, ["st-1"]);
+    assert.equal(f.store.rows.get(f.id)!.status, "running");
+  });
+
+  it("a stop kills the token even while the session is busy with another poll", async () => {
+    const f = await running();
+    f.d.acquireInFlight = async () => null;
+    const res = await handleCodeSessions(req("POST", `/${f.id}/stop`, {}, ownerHeaders()), [f.id, "stop"], f.d);
+    assert.equal(res.status, 429);
+    assert.deepEqual(f.seen.revoked, ["st-1"]);
+  });
+
+  it("opens a sandbox as gone only for not found or stopped, and passes any other failure on", async () => {
+    const apiError = (status: number) => Object.assign(new Error(`HTTP ${status}`), { response: { status } });
+    const fake = (status: string) => ({ status }) as never;
+    assert.equal(await openSessionWith(async () => Promise.reject(apiError(404)))("n"), null);
+    assert.equal(await openSessionWith(async () => Promise.reject(apiError(410)))("n"), null);
+    await assert.rejects(openSessionWith(async () => Promise.reject(apiError(502)))("n"), /502/);
+    await assert.rejects(openSessionWith(async () => Promise.reject(new Error("socket hang up")))("n"), /hang up/);
+    for (const s of ["stopped", "stopping", "failed", "aborted"]) assert.equal(await openSessionWith(async () => fake(s))("n"), null, s);
+    assert.ok(await openSessionWith(async () => fake("running"))("n"));
+  });
+
+  it("counts a build's limits inside the admission slot, so two starts can't each take the build's whole $0.50", async () => {
+    const f = deps({ tok: token({ scope: "build", buildId: BUILD, dailyBudgetUsd: 10 }) });
+    let held = false;
+    f.d.acquireInFlight = async () => {
+      if (held) return null;
+      held = true;
+      return NOW;
+    };
+    f.d.releaseInFlight = async () => {
+      held = false;
+    };
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    f.d.fetchFile = async () => {
+      await gate;
+      return Buffer.from("x");
+    };
+    const slow = start(f.d, { task: "t", files: [{ name: "a.csv", url: "https://abc.public.blob.vercel-storage.com/uploads/a.csv" }] }, {});
+    await new Promise((r) => setTimeout(r, 20));
+    const fast = await start(f.d, { task: "t" }, {});
+    assert.equal(fast.status, 201);
+    release();
+    const late = await slow;
+    assert.equal(late.status, 429);
+    const total = [...f.store.rows.values()].reduce((n, r) => n + r.budgetUsd, 0);
+    assert.equal(total, 0.5);
+    assert.equal(f.store.rows.size, 1);
+  });
+
+  it("scans the exit reason before it's stored or shown, and logs a sweep's failure only through the scan", async () => {
+    const f = await running();
+    const minted = sessionTokenFor(f.id, PEPPER);
+    const row = f.store.rows.get(f.id)!;
+    await finishSession(structuredClone(row), { status: "failed", reason: `Muse Code stopped: auth failed for Bearer ${minted}, key ${FAKE_SECRETS.MODEL_API_KEY}.` }, f.d, NOW, null);
+    const stored = f.store.rows.get(f.id)!;
+    assert.ok(!JSON.stringify(stored).includes(minted));
+    assert.ok(!stored.reason!.includes(FAKE_SECRETS.MODEL_API_KEY));
+    assert.ok(stored.reason!.includes(REDACTED));
+    const s = sweepFakes(f.d, { expired: async () => [{ id: "z", url: "https://x/z.zip" }], deleteResult: async () => Promise.reject(new Error(`Blob refused ${FAKE_SECRETS.BLOB_READ_WRITE_TOKEN}`)) });
+    const { logged } = await quiet(() => sweepMuseCode(NOW, s));
+    assert.ok(logged.includes("zip delete failed") && !logged.includes(FAKE_SECRETS.BLOB_READ_WRITE_TOKEN), logged);
+  });
+
+  it("leaves a secret out of the result's names: the file list, what was dropped, and the zip", () => {
+    const secret = FAKE_SECRETS.MODEL_API_KEY;
+    const r = resultFromTar(tar([{ name: `${secret}.txt`, data: "hi" }, { name: "keep.txt", data: "ok" }, { name: `${secret}-link`, type: "2", link: "/etc/passwd" }, { name: `../${secret}`, data: "no" }]), { binaryHashes: [], secrets: [secret] });
+    assert.deepEqual(r.files.map((x) => x.path), ["keep.txt"]);
+    assert.deepEqual(Object.keys(unzip(r.zip!)), ["keep.txt"]);
+    assert.ok(!JSON.stringify(r.dropped).includes(secret), JSON.stringify(r.dropped));
+    assert.ok(r.dropped.some((d) => /name held a secret/.test(d.why)));
+    const longName = `${"a".repeat(190)}${secret}`;
+    const cut = resultFromTar(tar([{ name: `../${longName}`, data: "no" }]), { binaryHashes: [], secrets: [secret] });
+    assert.ok(!JSON.stringify(cut.dropped).includes(secret.slice(0, 8)), "cutting a long name can't leave half a secret");
+  });
+
+  it("notices a killed bridge from the runner's exit file, says so, and frees the slot", async () => {
+    const f = await running();
+    const minted = sessionTokenFor(f.id, PEPPER);
+    f.box.log = `${JSON.stringify({ t: 1, kind: "bridge", event: "started", sessionId: "s" })}\n`;
+    f.box.tar = tar([{ name: "half.js", data: "x" }]);
+    assert.equal(((await (await events(f, f.id)).json()) as { status: string }).status, "running", "no exit file yet");
+    f.box.files = { [SESSION_PATHS.exit]: "137\n", [SESSION_PATHS.err]: `killed near ${minted}` };
+    const { out, logged } = await quiet(() => events(f, f.id));
+    const body = (await out.json()) as { status: string; reason: string; worked: boolean };
+    assert.equal(body.status, "failed");
+    assert.match(body.reason, /stopped unexpectedly/);
+    assert.equal(body.worked, false);
+    assert.equal(f.store.rows.get(f.id)!.exitCode, 137);
+    assert.deepEqual(f.store.rows.get(f.id)!.files.map((x) => x.path), ["half.js"], "keeps what it made");
+    assert.ok(logged.includes("killed near") && !logged.includes(minted), "the bridge's own words go to the log, scanned");
+    assert.equal((await f.store.countActive("p1", NOW)).product, 0);
+  });
+
+  it("a bridge that exited normally still ends by its log's record, and a log not read to its end waits", async () => {
+    const f = await running();
+    f.box.files = { [SESSION_PATHS.exit]: "0\n" };
+    f.box.log = exitLog("Wrote it.");
+    f.box.tar = tar([{ name: "a.js", data: "x" }]);
+    const body = (await (await events(f, f.id)).json()) as { status: string };
+    assert.equal(body.status, "completed");
+    const g = await running();
+    g.box.files = { [SESSION_PATHS.exit]: "1\n" };
+    g.box.log = "x".repeat(MUSE_CODE_LIMITS.pollLogBytes + 10);
+    assert.equal(((await (await events(g, g.id)).json()) as { status: string }).status, "running", "there's more log to read first");
+  });
+
+  it("caps what it reads of a command's output once the agent has run, and what cappedOutput keeps", async () => {
+    const f = await running();
+    f.box.log = exitLog("Done.");
+    f.box.tar = tar([{ name: "a.js", data: "x" }]);
+    f.seen.runOpts.length = 0;
+    await events(f, f.id);
+    assert.ok(f.seen.runOpts.length >= 2);
+    for (const r of f.seen.runOpts) assert.ok(r.maxOutputBytes && r.maxOutputBytes <= 64 * 1024, r.script.slice(0, 40));
+    let read = 0;
+    const flood = {
+      async *logs() {
+        for (;;) {
+          read += 1;
+          yield { stream: "stdout" as const, data: "x".repeat(1024) };
+        }
+      },
+    };
+    const out = await cappedOutput(flood, 4096);
+    assert.ok(out.stdout.length <= 4096);
+    assert.ok(read <= 6, "it stops reading at the cap");
+  });
+
+  it("settles the sandbox's reservation and kills the token when a stop lands during the start", async () => {
+    const f = deps();
+    const store = f.store;
+    const update = store.update.bind(store);
+    store.update = async (id, patch, whileStatus) => {
+      if (whileStatus?.includes("starting") && patch.status === "running") {
+        await update(id, { status: "stopped" });
+        return false;
+      }
+      return update(id, patch, whileStatus);
+    };
+    const res = await start(f.d);
+    assert.equal(res.status, 400);
+    assert.equal(f.seen.settled.length, 1, "the worst-case row doesn't stay on today's cap");
+    assert.deepEqual(f.seen.revoked, ["st-1"]);
+    assert.equal(f.seen.stopped, 1);
+  });
+
+  it("three verifies in a row: two real tasks, then the build is told to replay, once one has worked", async () => {
+    const f = deps({ tok: token({ scope: "build", buildId: BUILD, dailyBudgetUsd: 10 }), testModel: () => "muse-spark-1.3-contributor" });
+    f.d.sessions.buildTotals = async (ns) => {
+      const real = [...f.store.rows.values()].filter((r) => r.namespace === ns && r.startedAt);
+      return { sessions: real.length, ms: real.length * 1_000, usd: real.length * 0.01, worked: real.filter((r) => r.worked).length };
+    };
+    for (let verify = 1; verify <= 2; verify++) {
+      const res = await start(f.d, { task: "t" }, {});
+      assert.equal(res.status, 201, `verify ${verify}`);
+      const { id } = (await res.json()) as { id: string };
+      f.box.log = exitLog("Wrote a.js.");
+      f.box.tar = tar([{ name: "a.js", data: "x" }]);
+      await handleCodeSessions(req("GET", `/${id}/events`), [id, "events"], f.d);
+      assert.equal(f.store.rows.get(id)!.worked, true);
+    }
+    const third = await start(f.d, { task: "t" }, {});
+    assert.equal(third.status, 429);
+    assert.equal(await errorCode(third), "build_tasks_used");
+    assert.equal(f.seen.launched.length, 2, "no third sandbox");
+  });
+
+  it("with no real task that worked, a build's third start is a plain refusal, so its check stays honest", async () => {
+    const f = deps({ tok: token({ scope: "build", buildId: BUILD, dailyBudgetUsd: 10 }) });
+    f.d.sessions.buildTotals = async () => ({ sessions: 2, ms: 2_000, usd: 0.02, worked: 0 });
+    assert.equal(await errorCode(await start(f.d, { task: "t" }, {})), "rate_limited");
+    f.d.sessions.buildTotals = async () => ({ sessions: 1, ms: 299_000, usd: 0.02, worked: 1 });
+    assert.equal(await errorCode(await start(f.d, { task: "t" }, {})), "build_tasks_used", "out of time, with one that worked");
+  });
+
+  function sweepFakes(d: MuseCodeDeps, over: Partial<SweepDeps> = {}): SweepDeps {
+    return {
+      deps: d,
+      active: async () => [],
+      heldNames: async () => new Set<string>(),
+      runningNames: async () => [],
+      stopByName: async () => true,
+      expired: async () => [],
+      deleteResult: async () => undefined,
+      clearResult: async () => undefined,
+      oldBuildResults: async () => [],
+      deleteSession: async () => undefined,
+      deleteBuildSessions: async () => undefined,
+      buildResultUrls: async () => [],
+      clearOldText: async () => 0,
+      ...over,
+    };
+  }
+
+  it("finishes a session nobody is following, soon after its bridge exits, with its files", async () => {
+    const f = await running();
+    f.box.log = exitLog("Wrote out.txt.");
+    f.box.tar = tar([{ name: "out.txt", data: "x" }]);
+    const n = await sweepActiveMuseCode(NOW, sweepFakes(f.d, { active: async () => [structuredClone(f.store.rows.get(f.id)!)] }));
+    assert.equal(n, 1);
+    const row = f.store.rows.get(f.id)!;
+    assert.equal(row.status, "completed");
+    assert.equal(row.worked, true);
+    assert.ok(row.resultUrl);
+    assert.deepEqual(f.seen.revoked, ["st-1"], "its token dies then, not at its limit");
+    const other = await running();
+    assert.equal(await sweepActiveMuseCode(NOW, sweepFakes(other.d, { active: async () => [structuredClone(other.store.rows.get(other.id)!)] })), 0, "one still working is left alone");
+    assert.equal(other.store.rows.get(other.id)!.status, "running");
+  });
+
+  it("has a cron often enough to catch a session at its limit while its sandbox is up, and it reads nothing with the part off", async () => {
+    const crons = (JSON.parse(readFileSync(new URL("../../../../vercel.json", import.meta.url), "utf8")) as { crons: Array<{ path: string; schedule: string }> }).crons;
+    const cron = crons.find((c) => c.path === "/api/cron/musecode-sweep");
+    assert.equal(cron?.schedule, "*/2 * * * *");
+    assert.ok(2 * 60_000 < MUSE_CODE_LIMITS.sandboxGraceMs);
+    const keep = { CRON_SECRET: process.env.CRON_SECRET, MUSE_CODE_ENABLED: process.env.MUSE_CODE_ENABLED };
+    process.env.CRON_SECRET = "cron-secret-for-the-test";
+    delete process.env.MUSE_CODE_ENABLED;
+    try {
+      const { GET } = await import("../../../../app/api/cron/musecode-sweep/route");
+      const ask = (auth?: string) => GET(new Request("https://p.example/api/cron/musecode-sweep", auth ? { headers: { authorization: auth } } : {}));
+      assert.equal((await ask()).status, 401);
+      const off = await ask("Bearer cron-secret-for-the-test");
+      assert.equal(off.status, 200);
+      assert.deepEqual(await off.json(), { ok: true, skipped: "Muse Code is off" });
+    } finally {
+      for (const [k, v] of Object.entries(keep)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
+
+  it("advances under the row as it is now, not the stale one it was handed", async () => {
+    const f = await running();
+    const stale = structuredClone(f.store.rows.get(f.id)!);
+    f.box.log = exitLog("Done.");
+    f.box.tar = tar([{ name: "a.js", data: "x" }]);
+    await advanceSession(stale, f.d, NOW);
+    assert.equal(f.store.rows.get(f.id)!.status, "completed");
+  });
+
+  it("clears a zip's URL only after its delete worked, so a failed one is tried again", async () => {
+    const f = deps();
+    const cleared: string[] = [];
+    const removed: string[] = [];
+    const s = sweepFakes(f.d, {
+      expired: async () => [{ id: "bad", url: "https://x/bad.zip" }, { id: "good", url: "https://x/good.zip" }],
+      oldBuildResults: async () => [{ id: "oldbad", url: "https://x/bad.zip", namespace: "b:1" }, { id: "oldgood", url: "https://x/good.zip", namespace: "b:2" }, { id: "nozip", url: null, namespace: "b:3" }],
+      deleteResult: async (url) => {
+        if (url.includes("bad")) throw new Error("Blob 500");
+      },
+      clearResult: async (id) => void cleared.push(id),
+      deleteSession: async (id) => void removed.push(id),
+    });
+    await quiet(() => sweepMuseCode(NOW, s));
+    assert.deepEqual(cleared, ["good"]);
+    assert.deepEqual(removed, ["oldgood", "nozip"]);
+  });
+
+  it("keeps a build's rows when one of its zips couldn't be deleted, so the sweep can try again", async () => {
+    const f = deps();
+    let wiped = 0;
+    const s = sweepFakes(f.d, { buildResultUrls: async () => ["https://x/a.zip"], deleteResult: async () => Promise.reject(new Error("Blob 500")), deleteBuildSessions: async () => void wiped++ });
+    await quiet(() => endBuildSessions(BUILD, s));
+    assert.equal(wiped, 0);
+    const fine = sweepFakes(f.d, { buildResultUrls: async () => ["https://x/a.zip"], deleteBuildSessions: async () => void wiped++ });
+    await endBuildSessions(BUILD, fine);
+    assert.equal(wiped, 1);
+  });
+
+  it("clears steps and final text past 24 hours in every sweep", async () => {
+    const f = deps();
+    const before: Date[] = [];
+    await sweepMuseCode(NOW, sweepFakes(f.d, { clearOldText: async (d) => (before.push(d), 2) }));
+    assert.equal(before[0]!.getTime(), NOW.getTime() - 24 * 3_600_000);
+  });
+
+  it("lists running sandboxes before it reads which are held, so a session starting between them isn't stopped", async () => {
+    const f = deps();
+    const stopped: string[] = [];
+    let launched = false;
+    const s = sweepFakes(f.d, {
+      runningNames: async () => (launched ? ["new"] : []),
+      heldNames: async () => {
+        launched = true;
+        return new Set(["new"]);
+      },
+      stopByName: async (name) => (stopped.push(name), true),
+    });
+    await sweepMuseCode(NOW, s);
+    assert.deepEqual(stopped, []);
+    const order: string[] = [];
+    await sweepMuseCode(NOW, sweepFakes(f.d, { runningNames: async () => (order.push("running"), []), heldNames: async () => (order.push("held"), new Set()) }));
+    assert.deepEqual(order, ["running", "held"]);
+  });
+
+  it("with the part off, still deletes zips and closes rows, and asks Vercel for nothing", async () => {
+    const f = await running();
+    let listed = 0;
+    let deleted = 0;
+    const s = sweepFakes(f.d, {
+      active: async () => [structuredClone(f.store.rows.get(f.id)!)],
+      runningNames: async () => (listed++, []),
+      expired: async () => [{ id: "z", url: "https://x/z.zip" }],
+      deleteResult: async () => void deleted++,
+    });
+    f.box.log = exitLog("Done.");
+    await sweepMuseCode(NOW, s, { orphans: false });
+    assert.equal(listed, 0);
+    assert.equal(deleted, 1);
+    assert.equal(f.store.rows.get(f.id)!.status, "completed");
+  });
+
+  it("gives the owner a link to the pass only for a live Muse Code product with the part on", () => {
+    const on = { isOwner: true, liveUrl: "https://p.example", slug: "cleaner", status: "live", brief: { code: { runtimes: [], browse: false, museCode: true } }, served: true };
+    const parts = { exec: false, browse: false, visitors: false, museCode: true };
+    assert.equal(museCodeOwnerLink(on, parts), "/api/products/cleaner/owner-pass");
+    assert.equal(museCodeOwnerLink({ ...on, isOwner: false }, parts), null);
+    assert.equal(museCodeOwnerLink({ ...on, liveUrl: null }, parts), null);
+    assert.equal(museCodeOwnerLink({ ...on, status: "disabled" }, parts), null);
+    assert.equal(museCodeOwnerLink({ ...on, served: false }, parts), null);
+    assert.equal(museCodeOwnerLink({ ...on, brief: { code: { runtimes: ["quickjs"], browse: false } } }, parts), null);
+    assert.equal(museCodeOwnerLink(on, { exec: false, browse: false, visitors: false }), null, "part off");
+    const page = readFileSync(new URL("../../../../app/p/[slug]/page.tsx", import.meta.url).pathname.replaceAll("%5B", "[").replaceAll("%5D", "]"), "utf8");
+    assert.match(page, /museCodeOwnerLink\(/);
+    assert.match(page, /Open as owner/);
+  });
+});
+
+describe("the review's fixes: the result's names and sizes", () => {
+  it("refuses names with a drive, control characters or direction marks, and left-out folders in any case", () => {
+    for (const bad of ["C:/Windows/evil.txt", "a\nb.txt", "a\u0007b", "x/\u202Etxt.exe", "x/\u2066y", ".GIT/config", "NODE_MODULES/a.js", "a/.Muse/s", "file.txt:stream", "a/.venv/bin/x", "__pycache__/a.pyc"]) {
+      assert.equal(cleanResultPath(bad), null, JSON.stringify(bad));
+    }
+    assert.equal(cleanResultPath("Notes/plan v2 (final).md"), "Notes/plan v2 (final).md");
+    assert.equal(cleanResultPath("données/été.csv"), "données/été.csv");
+    const r = resultFromTar(tar([{ name: ".GIT/config", data: "x" }, { name: "ok.txt", data: "y" }]), { binaryHashes: [], secrets: [] });
+    assert.deepEqual(r.dropped, [], "a left-out folder is skipped quietly in any case");
+  });
+
+  it("says when the read's cap cut files off, and lists files the pack skipped for size", () => {
+    const whole = tar([{ name: "a.txt", data: "x".repeat(600) }, { name: "b.txt", data: "y".repeat(600) }]);
+    const cut = resultFromTar(whole.subarray(0, 512 + 512), { binaryHashes: [], secrets: [], cut: true });
+    assert.ok(cut.dropped.some((d) => /Other files were left out/.test(d.why)), JSON.stringify(cut.dropped));
+    const secret = FAKE_SECRETS.MODEL_API_KEY;
+    const r = resultFromTar(whole, { binaryHashes: [], secrets: [secret], skipped: ["./data/big.bin", `./${secret}.bin`, "../outside", "./node_modules/x"] });
+    assert.deepEqual(r.dropped.filter((d) => /bigger than/.test(d.why)).map((d) => d.path), ["data/big.bin", `${REDACTED}.bin`]);
+    assert.ok(!JSON.stringify(r.dropped).includes(secret));
+  });
+
+  it("skips big files before the tar, by a list the platform reads back: pack script run for real with a stand-in tar", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "mm-pack-"));
+    dirs.push(dir);
+    const ws = path.join(dir, "ws");
+    execFileSync("mkdir", ["-p", path.join(ws, "node_modules"), path.join(dir, "bin"), path.join(dir, "s")]);
+    writeFileSync(path.join(ws, "small.txt"), "x");
+    execFileSync("truncate", ["-s", "11M", path.join(ws, "big.bin")]);
+    execFileSync("truncate", ["-s", "11M", path.join(ws, "node_modules", "skipme.bin")]);
+    const shim = path.join(dir, "bin", "tar");
+    writeFileSync(shim, `#!/bin/bash\necho "$@" > ${dir}/args\n: > ${dir}/s/result.tar\n`, { mode: 0o755 });
+    const script = packScript().replaceAll(SESSION_WORKSPACE, ws).replaceAll(SESSION_PATHS.tar, `${dir}/s/result.tar`).replaceAll(SESSION_PATHS.skipped, `${dir}/s/skipped`);
+    const out = execFileSync("bash", ["-c", script], { env: { ...process.env, PATH: `${dir}/bin:${process.env.PATH}` }, encoding: "utf8" });
+    assert.match(out, /packed/);
+    assert.equal(readFileSync(`${dir}/s/skipped`, "utf8"), "./big.bin\n");
+    const args = readFileSync(`${dir}/args`, "utf8");
+    assert.match(args, /--no-wildcards --exclude-from=/);
+    assert.ok(args.indexOf("--exclude=node_modules") < args.indexOf("--no-wildcards"), "the folder names stay plain patterns");
   });
 });
 
