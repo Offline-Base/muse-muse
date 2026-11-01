@@ -119,6 +119,15 @@ describe("import upload route", { skip: canMock ? false : "needs --experimental-
     assert.equal(issued.length, 0, "nothing was signed");
   });
 
+  it("never takes a vetted dataset, the 3D set or a file a product keeps", async () => {
+    for (const bad of ["datasets/palmer-penguins/penguins.csv", "3d/manifest.json", "caps/files/p1/live/a-b"]) {
+      assert.equal((await POST(post(event(bad)))).status, 400, bad);
+    }
+    assert.equal(issued.length, 0, "nothing was signed");
+    const res = await POST(post(event("secrets/x.png")));
+    assert.doesNotMatch(((await res.json()) as { error: string }).error, /datasets\/|3d\//, "and the refusal doesn't offer them");
+  });
+
   it("answers only admins and automation, and never another site", async () => {
     assert.equal((await POST(post(event("demos/x.mp4"), {}))).status, 403);
     assert.equal((await POST(post(event("demos/x.mp4"), { authorization: "Bearer wrong" }))).status, 403);
