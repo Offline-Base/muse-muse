@@ -1091,14 +1091,23 @@ next UTC midnight, so the hourly prune keeps it).
 
 **Who is asking** (`lib/caps/principal.ts`): `resolveCapCaller` wraps tg-tools' `resolvePrincipal` and returns every
 claim at once (`owner`, `user`, `visitor`, `job`, `ip`) with `kind` the strongest. A build is the owner (subject
-"build"), and its tests' visitor cookies and made-up people count too, so a second browser is told apart from the
-first. A user is `us1` on a live token and only `ut1` (a made-up person of that same build) on a build token, so a real
+"build") only for a call that names no one else (`seed`, the build's own server calls) or that sends the test owner
+pass `ot1.build-test-owner` (`openAsOwner(page)`, build tokens only; on a live token it is no pass). A call with a
+visitor id or a made-up person is that person, as on the live product, so a shared collection's write rule is tested
+in the build too (review, Oct 31: before, every build call was the owner, and a build passed while the live product
+refused visitors). A user is `us1` on a live token and only `ut1` (a made-up person of that same build) on a build token, so a real
 person's session never reaches a build. Unit 6's `job` is a marked block. `subjectKey` is as 2.2.
 
 **Data routes** (`lib/caps/data/handler.ts`, `app/api/gateway/data/[[...path]]`): as the table above, with these
-choices. A collection's rules (scope, and `writes` for shared ones) come from the build's own brief for a build token
-and from the shipped manifest's `data` block for a live one; a collection that isn't listed is `cap_not_allowed`, and a
-`?scope=` that isn't the collection's too. Shared writes: `owner` (the default), `signed_in` (a user session), or
+choices. A collection's rules (scope, and `writes` for shared ones) come from the build's own brief for a build token.
+For a live one they come from the brief the product shipped with (`liveBrief`: the build `products.latest_build_id`
+names, which registerStep sets with the manifest, else the newest first build's), narrowed by the shipped manifest's
+`data` block: the manifest can drop a collection or make a shared one's writers fewer (owner < signed_in < anyone),
+never add one, change a scope or widen who writes (`narrowCollectionRules`). A live token with no list at all is
+`cap_not_allowed` for every collection. So a partial build whose caps step failed can't widen anything. A collection
+that isn't listed is `cap_not_allowed`, and a `?scope=` that isn't the collection's too. Owner rows are one space per
+product (subject `product-owner`), whoever holds the pass, so an admin acting as the owner sees the owner's items. A
+query's `after` that isn't a cursor a page gave is 400 `invalid_arguments`, never page one again. Shared writes: `owner` (the default), `signed_in` (a user session), or
 `anyone` (a visitor id or a user); the contract's "writes": "anyone" plus `signed_in`, for a list signed-in people share.
 POST makes a UUID id; PUT replaces or makes one with the id given (a person's settings item, `put("me")`), and a revived
 deleted id keeps counting versions, so an old `ifVersion` still conflicts (409 `version_conflict`). DELETE is soft and
@@ -1107,15 +1116,24 @@ fields (strings, numbers, booleans, null) as jsonb containment, `order` newest (
 100, an exact keyset cursor (microsecond times). Every write is one batch: make sure the count row exists, lock it,
 then one statement writes the row and changes the count only if the product's rows and bytes, the person's rows and
 the collection count allow; a refusal reads why afterward. Limits a minute: 120 calls per token, 60 per end user's IP;
-5,000 live writes a product a day; anyone-writes 30 a minute per IP and 500 a day per person. Quotas as the contract
-says; owner rows count toward the product only. `GET /data` (owner or build) lists collections with counts.
+5,000 live writes a product a day; anyone-writes 30 a minute per IP and 500 a day per person. These counters count
+the call before the store decides, so a write refused for a quota or `version_conflict`, and a retry, still uses one
+(kept: the gate counts before work for every cap; a client that retries a 409 in a loop spends the day's writes).
+Shared rows have no writer key, so in a collection anyone or signed-in people write, any of them can change or delete
+what others added; the writer rules, the catalog, the build prompt and the skill say so (a writer key needs a column,
+left for later). Quotas as the contract says; owner rows count toward the product only. `GET /data` (owner or build) lists collections with counts.
 
 **Sign-in.** Three gateway routes, all under `DATA_SIGN_IN` too: `POST /identity/user {code}` (live tokens only, 10 a
-minute per IP, the code's nonce spent once), `POST /identity/user/test {name}` (build tokens only, 20 a build; the same
-name in the same build is the same person) and one more, `POST /identity/user/link {returnTo}`, which gives the
-platform's `/u/sign-in?product=<slug>&returnTo=` link: a product doesn't know its own slug. The code carries the name the
-person typed, base64url, since the exchange can't look it up from a pairwise subject: `uc1.<product>.<subject>.<name>.
-<nonce>.<exp>.<sig>`. Made-up people's sessions are `ut1.<product>.<build>.<subject>.<exp>.<sig>`, 12 hours.
+minute per IP, the code's nonce spent once, and only with the `bind` from the cookie of the browser that started the
+sign-in), `POST /identity/user/test {name}` (build tokens only, 20 a build; the same
+name in the same build is the same person) and one more, `POST /identity/user/link {returnTo, bind}`, which gives the
+platform's `/u/sign-in?product=<slug>&returnTo=&bind=` link: a product doesn't know its own slug. Login CSRF (review,
+Oct 31): the product's `GET /api/musemuse/user` with no code puts a random `bind` in a 10-minute HttpOnly, SameSite=Lax
+`mm_signin` cookie on `/api/musemuse/user` and sends it to the link; `/u/sign-in` 404s without one, passes it to the
+passkey options, the `pk1` state carries it, and the code carries it. The code branch sends the cookie's value with the
+code, the gateway refuses a mismatch, and the cookie is cleared either way. So a code someone else started signs no
+browser in. The code carries the name the person typed, base64url, since the exchange can't look it up from a pairwise
+subject: `uc1.<product>.<subject>.<name>.<bind>.<nonce>.<exp>.<sig>`. Made-up people's sessions are `ut1.<product>.<build>.<subject>.<exp>.<sig>`, 12 hours.
 On the platform: `/u/sign-in` (design tokens and the report page's classes only) and `POST
 /api/u/passkey/{register,login}/{options,verify}`, same origin only (Origin and Sec-Fetch-Site), 10 a minute per IP
 (an HMAC of it). The ceremony's state is signed (`pk1`), so nothing is stored until a passkey is verified, and its
@@ -1146,9 +1164,11 @@ live token) and `user-sign-out`. All platform files. `musemuse.schema.json` gain
 shared item seen, the private one not, the same made-up person's item after signing in, and the judge screenshot
 `09-second-browser`.
 
-**Checks** (`scripts/caps/data.mjs`): `manifest` (musemuse.json's collections and scopes equal the brief's, which come from
-the gateway's record, `brief:<name>:<scope>`), `writes` (the gateway saw saves since this verify started),
-`second-browser` (a shared collection), `visitor-private` (a visitor or user collection), `user-follows` (a user
+**Checks** (`scripts/caps/data.mjs`): `manifest` (musemuse.json's collections, scopes and shared writers equal the
+brief's, which come from the gateway's record, `brief:<name>:<scope>`, or `brief:<name>:shared:<writes>`; a manifest
+with no `writes` for a shared collection means owner), `writes` (the gateway saw saves since this verify started),
+`second-browser` (a shared collection), `visitor-private` (a visitor or user collection; the helper waits for the
+network to settle, then for the shared item or the `loaded` text before it looks, and refuses to pass with neither), `user-follows` (a user
 collection, and the gateway saw a signed-in person write). `CAP_PROOF.data` counts the build namespace: writes since,
 rows by scope, distinct visitors and users who wrote, and the brief's collections from the build's own row. The smoke
 test's 20-call rule is in the prompt and the skill, not a fixed check.
@@ -1156,7 +1176,11 @@ test's 20-call rule is in the prompt and the skill, not a fixed check.
 **Cleanup.** `CAP_CLEANUPS` has data's entry with getters: while the data cap isn't served it has nothing to run, so the
 cron's answer and every cleanup are today's. Served: a build's namespace goes when it ends; the sweep removes rows
 deleted over an hour ago and every build namespace with nothing written for 24 hours. A product turned off keeps its
-rows; they go with the product (cascade). If the flag is turned off mid-build, that build's rows wait for the next sweep
+rows. `product_rows` and `product_data_counts` cascade on a product's delete, but nothing on the platform deletes a
+product today (disable and takedown change its status only), so live rows, visitor and user rows included, are kept
+until an admin deletes the product's row by hand. Owners can't delete other people's private rows (the owner view is
+read-only), `end_users` and their passkeys have no delete path, and `deleteMine` covers one product's rows. Decision 13
+isn't met yet: listed for the owner below. If the flag is turned off mid-build, that build's rows wait for the next sweep
 with it on.
 
 **Cap readiness** (2.4a, written here). `lib/sandbox/snapshots.json` starts `{}`. `make-builder-snapshot` adds
@@ -1168,7 +1192,8 @@ read only when some cap passes the flags, so with every flag off nothing new is 
 working copy. It is decided once, at provision (and at a change's reopen), and saved in `builds.caps_dropped`, so a
 flag or snapshot change mid-build can't split one build's steps; `loadBuild` and the refinement's brief read through it,
 and the stored brief keeps its blocks (`storedBrief`, which `loadRefineStep` copies). A refinement drops a cap only when
-it is switched off, since its sandbox already has the overlay. Each drop is one build log line ("This build goes
+it is switched off (not in `servedCaps`, whatever production's signed-in-builder rule says, since the gate serves on
+`servedCaps` too), since its sandbox already has the overlay. Each drop is one build log line ("This build goes
 without saved data: the builder snapshot doesn't have it yet." or "...: it is switched off."). The backstop:
 `applyCaps` checks `capOverlayMarker` for every overlay (and `CAPS_VERIFY_MARKER`, which counts as core missing). On
 Vercel, `provisionSandbox` checks before the egress lock and before anything is applied, and calls the step's `dropCaps`,
@@ -1203,8 +1228,16 @@ template 469 of 469; tsc clean. Spend: $0 (no Meta, Sandbox or Vercel call).
 - `checkSecondBrowser` and `signInAs` have run in tests only as code that typechecks, not in Playwright.
 
 **For the owner.** Whether end users may sign in to products at all (`DATA_SIGN_IN`), and the privacy page's line for it
-(unit 1's drafts say what data products keep, not how sign-in works). Decision 13 holds: rows go with the product,
-people delete their own with `deleteMine`, requests come through the report link. Nothing in `muse-device/` changed.
+(unit 1's drafts say what data products keep, not how sign-in works). With `DATA_SIGN_IN` off the writer gets no user
+scope, no `signed_in` writers and `signIn` fixed to none (its schema, rules and catalog; `normalizeDataBlock` maps user
+to visitor and signed_in to owner). Decision 13 isn't met yet: nothing deletes a product, owners can't delete others'
+private rows, and end users' passkeys can't be deleted. Pick one: a product-delete path (admin or owner) that removes
+its rows and counts, a retention sweep for products taken down or disabled for N days, or privacy text that says rows
+are kept until Muse Muse deletes them on request through the report link. Unit 1's privacy line ("until you or its
+owner delete it, or the app is removed", `lib/trust/overlay.ts`) is then worded to match; it's unit 1's file, so it is
+unchanged here. People delete their own with `deleteMine`, requests come through the report link. A refinement keeps
+a cap the gate serves (`servedCaps`), so on production with `TRUST_SIGNED_IN_CAPS` off a change to a product that saves
+data keeps saving it. Nothing in `muse-device/` changed.
 
 ## 10. Unit 4: files and search (F)
 
