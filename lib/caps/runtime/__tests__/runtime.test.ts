@@ -92,6 +92,28 @@ describe("the build prompt", () => {
     }
     assert.ok(!lines.includes("—"));
     assert.ok(renderBuildPrompt(WITH, render).includes("### Python functions"));
+  });
+
+  it("says what is true of the Python endpoints: public, with the deployment's settings, guarded, and never reading text as code", () => {
+    const lines = capsBuildLines(WITH).join("\n");
+    for (const want of [
+      "`/api/py/<name>` is a public address, and on a deployment the function runs with the product's settings in its environment",
+      "The guard clears them and refuses calls that don't come from `callPython`",
+      "Each function still checks every field it uses",
+      "`sympify` or `parse_expr`",
+      "Verify's `safe` check",
+      "node scripts/py-local.mjs new <name>",
+      "a call never installs",
+      "only an input of 64 KB or less is kept to run again",
+      "Vercel's 500 MB for one Python function",
+      "refuses to open `.env` files",
+    ]) {
+      assert.ok(lines.includes(want), want);
+    }
+    assert.ok(!lines.includes("It holds no key or token"), "the old claim is gone");
+    const rules = capsWriterRules(["runtime"]);
+    assert.match(rules, /inside Vercel's 500 MB for one Python function/);
+    assert.match(rules, /Python never reads a person's text as code/);
     assert.ok(!renderBuildPrompt(BRIEF, render).includes("Python"));
   });
 

@@ -6,14 +6,20 @@
 //
 //   node scripts/py-local.mjs doctor              which Python runs here, and the functions it finds
 //   node scripts/py-local.mjs install             installs requirements.txt (PyPI, wheels only) outside the product
+//   node scripts/py-local.mjs new <name>          writes api/py/<name>.py with the platform's guard and a do_POST to fill in
 //   node scripts/py-local.mjs call <name>         runs one function: JSON body on stdin, its reply on stdout
-//   node scripts/py-local.mjs serve [--port N]    serves /api/py/<name> on 127.0.0.1 (3199 by default) for next dev
+//   node scripts/py-local.mjs serve [--port N]    installs, then serves /api/py/<name> on 127.0.0.1 (3199) for next dev
 //
 // Packages go in ~/.cache/musemuse/python/<python>-<hash of requirements.txt>, never in the product folder, so they are
-// never deployed. Vercel installs requirements.txt itself.
+// never deployed. Vercel installs requirements.txt itself. Only `install` and `serve` install: a call never does, so a
+// call that times out never leaves pip running. A call with packages that aren't installed fails at once and says so.
+//
+// What this runner does and doesn't keep from a function: it gets none of the server's env, and the runner refuses to
+// open any .env file. That stops ordinary code reading the product's settings on the build machine. It is not a
+// sandbox: Python runs as the same user, with the product's folder open to it.
 import { spawn, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { createHash, createHmac, randomBytes } from "node:crypto";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -33,9 +39,87 @@ export const WEB_FRAMEWORKS = ["flask", "fastapi", "django", "starlette", "quart
 
 const normalize = (name) => name.toLowerCase().replace(/[-_.]+/g, "-");
 
+/**
+ * The header callPython sends with every call to a deployed function, and how its value is made from the product's
+ * PRODUCT_TOKEN. GUARD (below) makes a function refuse a call without it, so /api/py/<name> answers only the product's
+ * own server, after its action has checked the input. lib/platform/python.ts makes the same value.
+ */
+export const KEY_HEADER = "X-MuseMuse-Python";
+export const pythonKey = (token) => createHmac("sha256", String(token)).update("musemuse-python-v1").digest("hex");
+
+/**
+ * The guard every function starts with, as `node scripts/py-local.mjs new <name>` writes it and the muse-python skill
+ * shows it. Verify's `guard` check runs each function with a stand-in token and expects it to clear the settings, to
+ * answer 403 without the header and to answer with it.
+ */
+export const GUARD = `import hashlib
+import hmac
+import json
+import os
+from http.server import BaseHTTPRequestHandler
+
+
+# Muse Muse guard. Keep it first and as it is. On a deployment every function gets the product's settings, and anyone
+# can call /api/py/<name>. This clears the settings before any other code here runs, and refuses every call that
+# doesn't come from the product's own server (callPython sends the header).
+def _musemuse_key():
+    token = os.environ.pop("PRODUCT_TOKEN", "")
+    for name in ("GATEWAY_URL", "VERCEL_OIDC_TOKEN"):
+        os.environ.pop(name, None)
+    return hmac.new(token.encode(), b"musemuse-python-v1", hashlib.sha256).hexdigest() if token else ""
+
+
+_MUSEMUSE_KEY = _musemuse_key()
+
+
+class MuseMuseGuard(BaseHTTPRequestHandler):
+    def parse_request(self):
+        if not super().parse_request():
+            return False
+        if _MUSEMUSE_KEY and not hmac.compare_digest(self.headers.get("${KEY_HEADER}", ""), _MUSEMUSE_KEY):
+            self.close_connection = True
+            self.send_response(403)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"error": "This function answers only its own product."}')
+            return False
+        return True
+
+    def log_message(self, format, *args):
+        pass
+# End of the Muse Muse guard.
+`;
+
+/** What `new <name>` writes: the guard, then a handler to fill in. */
+export function functionScaffold(name) {
+  return `${GUARD}
+
+class handler(MuseMuseGuard):
+    def do_POST(self):
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            data = json.loads(self.rfile.read(length) or b"null")
+            if not isinstance(data, dict):
+                raise ValueError("send a JSON object")
+            # Check every field you use here: anything can arrive, not only what the action sends.
+            result = {"ok": True}
+            self.reply(200, result)
+        except (KeyError, TypeError, ValueError) as err:
+            self.reply(400, {"error": f"That input doesn't work for ${name}: {err}"})
+
+    def reply(self, status, body):
+        data = json.dumps(body).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+`;
+}
+
 /** Runs one handler class the way an HTTP server would, through a socket made of buffers. Standard library only. */
 const DRIVER = String.raw`
-import sys, os, io, json, base64, importlib.util, http.client
+import sys, os, io, ast, json, base64, importlib.util, http.client
 from http.server import BaseHTTPRequestHandler
 
 root, file, packages, mode = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
@@ -50,26 +134,79 @@ def out(result):
     real_stdout.write(json.dumps(result))
     real_stdout.flush()
 
+# The product's settings files stay closed to its functions on this machine. Not a sandbox: it stops ordinary code.
+def refuse_settings(event, args):
+    if event == "open" and args and isinstance(args[0], (str, bytes, os.PathLike)):
+        if os.path.basename(os.fsdecode(args[0])).startswith(".env"):
+            raise PermissionError("a Python function can't open the product's settings files")
+sys.addaudithook(refuse_settings)
+
+# Calls that read text as code, or load objects from bytes, or start programs. A visitor's text must never reach them.
+EVAL_NAMES = {"eval", "exec", "compile", "__import__", "sympify", "parse_expr"}
+EVAL_ATTRS = {"sympify", "parse_expr", "eval", "query", "read_pickle", "unsafe_load", "full_load"}
+RISKY_MODULES = {"pickle", "marshal", "dill", "cloudpickle", "shelve", "joblib", "subprocess", "ctypes", "numexpr"}
+
+def unsafe_calls(path):
+    try:
+        with open(path, "rb") as f:
+            tree = ast.parse(f.read(), path)
+    except SyntaxError as err:
+        return []
+    found = []
+    def add(node, what):
+        found.append("line %d: %s" % (getattr(node, "lineno", 0), what))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                if a.name.split(".")[0] in RISKY_MODULES:
+                    add(node, "imports %s" % a.name)
+        elif isinstance(node, ast.ImportFrom):
+            if (node.module or "").split(".")[0] in RISKY_MODULES:
+                add(node, "imports from %s" % node.module)
+            for a in node.names:
+                if a.name in ("sympify", "parse_expr"):
+                    add(node, "imports %s" % a.name)
+        elif isinstance(node, ast.Call):
+            f = node.func
+            if isinstance(f, ast.Name) and f.id in EVAL_NAMES:
+                add(node, "calls %s()" % f.id)
+            elif isinstance(f, ast.Attribute):
+                owner = f.value.id if isinstance(f.value, ast.Name) else ""
+                if f.attr in EVAL_ATTRS:
+                    add(node, "calls .%s()" % f.attr)
+                elif owner == "os" and (f.attr in ("system", "popen") or f.attr.startswith(("exec", "spawn", "posix_spawn"))):
+                    add(node, "calls os.%s()" % f.attr)
+                elif owner == "yaml" and f.attr == "load":
+                    add(node, "calls yaml.load()")
+            for kw in node.keywords:
+                if kw.arg == "allow_pickle" and isinstance(kw.value, ast.Constant) and kw.value.value is True:
+                    add(node, "loads with allow_pickle=True")
+    return found
+
+key = os.environ.pop("MUSEMUSE_PY_KEY", "")
+watched = [k for k in ("PRODUCT_TOKEN", "GATEWAY_URL") if k in os.environ]
+unsafe = unsafe_calls(file) if mode == "load" else []
 try:
     spec = importlib.util.spec_from_file_location("musemuse_py_function", file)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 except BaseException as err:
-    out({"loaded": False, "error": "%s: %s" % (type(err).__name__, err)})
+    out({"loaded": False, "error": "%s: %s" % (type(err).__name__, err), "unsafe": unsafe})
     sys.exit(0)
 
 handler = getattr(module, "handler", None)
 if not (isinstance(handler, type) and issubclass(handler, BaseHTTPRequestHandler)):
-    out({"loaded": False, "error": "it has no class handler(BaseHTTPRequestHandler)"})
+    out({"loaded": False, "error": "it has no class handler(BaseHTTPRequestHandler)", "unsafe": unsafe})
     sys.exit(0)
 if mode == "load":
-    out({"loaded": True})
+    out({"loaded": True, "unsafe": unsafe, "envCleared": (not any(k in os.environ for k in watched)) if watched else None})
     sys.exit(0)
 
 method = os.environ.get("MUSEMUSE_PY_METHOD", "POST")
 url_path = os.environ.get("MUSEMUSE_PY_PATH", "/")
 body = sys.stdin.buffer.read()
-head = "%s %s HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n" % (method, url_path, len(body))
+extra = ("${KEY_HEADER}: %s\r\n" % key) if key else ""
+head = "%s %s HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: %d\r\n%sConnection: close\r\n\r\n" % (method, url_path, len(body), extra)
 
 class Connection:
     def __init__(self, data):
@@ -130,7 +267,10 @@ except BaseException as err:
     out({"loaded": True, "status": 500, "error": "its reply isn't HTTP: %s" % err})
 `;
 
-/** Bootstraps pip from its own wheel on PyPI when this Python has none, checking the wheel's sha256. */
+/**
+ * Bootstraps pip from its own wheel on PyPI when this Python has none. The sha256 it checks comes from the same PyPI
+ * reply as the wheel's address, so it catches a broken download, not a PyPI that lies.
+ */
 const PIP_BOOTSTRAP = String.raw`
 import sys, json, hashlib, urllib.request
 dest = sys.argv[1]
@@ -226,9 +366,33 @@ function caBundle(env) {
   return null;
 }
 
+const DONE = ".musemuse-done";
+
+/** True when this requirements.txt is installed for this Python, or there is nothing to install. */
+export function isInstalled(root, python, env = process.env) {
+  const dir = packagesDir(root, python, env);
+  return !dir || existsSync(path.join(dir, DONE));
+}
+
+/** The bytes in a folder, every file counted once, links not followed. */
+export function folderBytes(dir) {
+  let total = 0;
+  const walk = (d) => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walk(p);
+      else total += lstatSync(p).size;
+    }
+  };
+  if (existsSync(dir)) walk(dir);
+  return total;
+}
+
 /**
  * Installs requirements.txt for this Python, wheels only, from PyPI only, outside the product folder. Bootstraps pip
  * from its PyPI wheel when this Python has none. Does nothing when it is already installed or there are no packages.
+ * pip writes into a folder of its own, which is renamed into place only when it finished, so a reader never sees a
+ * half-installed folder and two installs at once never write into the same one.
  */
 export function install(root, { env = process.env, force = false, log = () => {} } = {}) {
   const python = findPython({ env, root });
@@ -237,10 +401,10 @@ export function install(root, { env = process.env, force = false, log = () => {}
   if (!req.ok) throw new PythonRunError("bad_requirements", `requirements.txt: ${req.problems.join("; ")}`);
   const dir = packagesDir(root, python, env);
   if (!dir) return { python, dir: null, installed: 0 };
-  const done = path.join(dir, ".musemuse-done");
+  const done = path.join(dir, DONE);
   if (!force && existsSync(done)) return { python, dir, installed: req.packages.length, cached: true };
-  rmSync(dir, { recursive: true, force: true });
-  mkdirSync(dir, { recursive: true });
+  const work = `${dir}.tmp-${process.pid}-${randomBytes(4).toString("hex")}`;
+  mkdirSync(work, { recursive: true });
   let pip = [python.bin, "-m", "pip"];
   if (spawnSync(python.bin, ["-I", "-m", "pip", "--version"], { encoding: "utf8" }).status !== 0) {
     const wheel = path.join(cacheRoot(env), "_pip", "pip.whl");
@@ -263,7 +427,7 @@ export function install(root, { env = process.env, force = false, log = () => {}
     "https://pypi.org/simple",
     "--only-binary=:all:",
     "--target",
-    dir,
+    work,
     ...(cert ? ["--cert", cert] : []),
     "-r",
     path.join(root, "requirements.txt"),
@@ -271,19 +435,37 @@ export function install(root, { env = process.env, force = false, log = () => {}
   log(`installing ${req.packages.map((p) => p.line).join(", ")} for Python ${python.version}`);
   const res = spawnSync(pip[0], args, { encoding: "utf8", timeout: 600_000, env: { ...env, PYTHONDONTWRITEBYTECODE: "1" } });
   if (res.status !== 0) {
-    rmSync(dir, { recursive: true, force: true });
-    const why = (res.stderr || res.stdout).trim().split("\n").filter((l) => /error|could not|no matching/i.test(l)).slice(-2).join(" ") || "pip failed";
+    rmSync(work, { recursive: true, force: true });
+    const why = (res.stderr || res.stdout || "").trim().split("\n").filter((l) => /error|could not|no matching/i.test(l)).slice(-2).join(" ") || (res.error ? res.error.message : "pip failed");
     throw new PythonRunError("install_failed", `The packages didn't install for Python ${python.version}: ${why.slice(0, 400)}`);
   }
-  writeFileSync(done, `${req.packages.map((p) => p.line).join("\n")}\n`);
+  writeFileSync(path.join(work, DONE), `${req.packages.map((p) => p.line).join("\n")}\n`);
+  if (existsSync(dir)) {
+    // Another install finished first, or this one was forced, or an older runner left a half-made folder.
+    if (!force && existsSync(done)) {
+      rmSync(work, { recursive: true, force: true });
+      return { python, dir, installed: req.packages.length, cached: true };
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+  try {
+    renameSync(work, dir);
+  } catch (err) {
+    rmSync(work, { recursive: true, force: true });
+    if (!existsSync(done)) throw new PythonRunError("install_failed", `The packages installed but couldn't be put in place: ${err.message}`);
+  }
   return { python, dir, installed: req.packages.length, cached: false };
 }
 
 /**
  * Runs one function once. `body` is the request body (a Buffer or string). Resolves with {status, contentType, body} or
- * {status: 500, error}. Rejects with PythonRunError for a missing function, no Python, a timeout or a reply too big.
+ * {status: 500, error}; with `loadOnly`, {loaded, error?, unsafe, envCleared}. Rejects with PythonRunError for a missing
+ * function, no Python, packages that aren't installed (it never installs them), a timeout or a reply too big.
+ *
+ * Python gets none of `env`: only PATH, HOME and the runner's own values. `pythonEnv` adds values for the checks (a
+ * stand-in token for the guard check) and `key` sends the guard's header the way callPython does on a deployment.
  */
-export function runFunction({ root, name, body = "", method = "POST", query = "", timeoutMs = DEFAULT_TIMEOUT_MS, env = process.env, loadOnly = false }) {
+export function runFunction({ root, name, body = "", method = "POST", query = "", timeoutMs = DEFAULT_TIMEOUT_MS, env = process.env, loadOnly = false, pythonEnv = {}, key = "" }) {
   return new Promise((resolve, reject) => {
     if (!FUNCTION_NAME.test(name)) return reject(new PythonRunError("unknown_function", `"${String(name).slice(0, 40)}" isn't a function name.`));
     const file = path.join(root, FUNCTIONS_DIR, `${name}.py`);
@@ -295,13 +477,24 @@ export function runFunction({ root, name, body = "", method = "POST", query = ""
     let dir = null;
     try {
       dir = packagesDir(root, python, env);
-      if (dir && !existsSync(path.join(dir, ".musemuse-done"))) dir = install(root, { env }).dir;
     } catch (err) {
       return reject(err);
     }
+    if (dir && !existsSync(path.join(dir, DONE))) {
+      return reject(new PythonRunError("not_installed", "The packages in requirements.txt aren't installed on this machine: run node scripts/py-local.mjs install."));
+    }
     const child = spawn(python.bin, ["-I", "-B", "-c", DRIVER, root, file, dir ?? "", loadOnly ? "load" : "run"], {
       cwd: root,
-      env: { PATH: env.PATH ?? "", HOME: env.HOME ?? os.homedir(), LANG: "C.UTF-8", PYTHONDONTWRITEBYTECODE: "1", MUSEMUSE_PY_METHOD: method, MUSEMUSE_PY_PATH: `/${FUNCTIONS_DIR}/${name}${query ? `?${query}` : ""}` },
+      env: {
+        ...pythonEnv,
+        PATH: env.PATH ?? "",
+        HOME: env.HOME ?? os.homedir(),
+        LANG: "C.UTF-8",
+        PYTHONDONTWRITEBYTECODE: "1",
+        MUSEMUSE_PY_METHOD: method,
+        MUSEMUSE_PY_PATH: `/${FUNCTIONS_DIR}/${name}${query ? `?${query}` : ""}`,
+        ...(key ? { MUSEMUSE_PY_KEY: key } : {}),
+      },
       stdio: ["pipe", "pipe", "pipe"],
     });
     const out = [];
@@ -408,6 +601,13 @@ if (isMain()) {
     } else if (command === "install") {
       const r = install(root, { force: process.argv.includes("--force"), log: (l) => process.stderr.write(`${l}\n`) });
       process.stdout.write(r.dir ? `Installed ${r.installed} package(s) for Python ${r.python.version}${r.cached ? " (already there)" : ""}.\n` : "No packages to install: requirements.txt lists none.\n");
+    } else if (command === "new") {
+      if (!name || !FUNCTION_NAME.test(name) || name === HEALTH_FUNCTION) fail("Usage: node scripts/py-local.mjs new <name>, with a snake_case name", 2);
+      const file = path.join(root, FUNCTIONS_DIR, `${name}.py`);
+      if (existsSync(file)) fail(`${FUNCTIONS_DIR}/${name}.py is already there.`);
+      mkdirSync(path.dirname(file), { recursive: true });
+      writeFileSync(file, functionScaffold(name));
+      process.stdout.write(`Wrote ${FUNCTIONS_DIR}/${name}.py. Fill in do_POST below the guard.\n`);
     } else if (command === "call") {
       if (!name) fail("Usage: node scripts/py-local.mjs call <name> < input.json", 2);
       const r = await runFunction({ root, name, body: await readStdin(), method: arg("--method") ?? "POST" });
@@ -421,14 +621,17 @@ if (isMain()) {
       }
     } else if (command === "serve") {
       const port = Number(arg("--port") ?? 3199);
+      // Installed once here, before the first request, never inside one.
+      install(root, { log: (l) => process.stderr.write(`${l}\n`) });
       await serve(root, { port });
       process.stderr.write(`Python functions on http://127.0.0.1:${port}/api/py/<name>. Set MUSEMUSE_PYTHON_URL=http://127.0.0.1:${port} for next dev.\n`);
     } else {
-      fail("Usage: node scripts/py-local.mjs doctor | install | call <name> | serve [--port N]", 2);
+      fail("Usage: node scripts/py-local.mjs doctor | install | new <name> | call <name> | serve [--port N]", 2);
     }
   } catch (err) {
     if (process.argv.includes("--json-result") && command === "call") {
-      process.stdout.write(`${JSON.stringify({ status: err.code === "unknown_function" ? 404 : err.code === "too_large" ? 413 : err.code === "timeout" ? 504 : 502, error: err.message })}\n`);
+      const status = { unknown_function: 404, too_large: 413, timeout: 504, not_installed: 503 }[err.code] ?? 502;
+      process.stdout.write(`${JSON.stringify({ status, error: err.message })}\n`);
     } else fail(err.message);
   }
 }

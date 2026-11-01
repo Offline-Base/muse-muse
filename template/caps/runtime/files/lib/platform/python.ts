@@ -6,9 +6,14 @@
 // - With MUSEMUSE_PYTHON_URL set it calls that address instead (for example scripts/py-local.mjs serve).
 // - Anywhere else, and in every build (MUSEMUSE_PYTHON=local), it runs the file on this machine with
 //   scripts/py-local.mjs. In a build only (MUSEMUSE_PYTHON_NOTES=1, which the platform writes into the build's
-//   .env.local), each call is also noted in test-results/caps/runtime-calls.jsonl, so verify's checks can run the same
-//   function again on the same input. A deployed or self-hosted product never notes anything.
+//   .env.local), each call that answered is also noted in test-results/caps/runtime-calls.jsonl, so verify's checks
+//   can run the same function again on the same input. A deployed or self-hosted product never notes anything.
+//
+// /api/py/<name> is a public address on a deployment, and the function there runs with the deployment's settings. So
+// over HTTP every call carries the X-MuseMuse-Python header, made from PRODUCT_TOKEN, and each function's guard (the
+// muse-python skill) refuses a call without it. That keeps a visitor from skipping the action's checks.
 import { spawn } from "node:child_process";
+import { createHash, createHmac } from "node:crypto";
 import { appendFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 
@@ -36,8 +41,31 @@ const MAX_BODY_BYTES = Math.floor(4.5 * 1024 * 1024);
 /** A little over the function's own 10 seconds (vercel.json), so its answer, not ours, says when it ran out. */
 const TIMEOUT_MS = 12_000;
 const CALL_LOG = path.join("test-results", "caps", "runtime-calls.jsonl");
-/** The checks run a logged call again, so only inputs this small are noted in full. */
-const LOG_MAX_INPUT_BYTES = 64 * 1024;
+/**
+ * Every call that answered is noted, whatever its size. Only an input up to this size is kept in the note, so the
+ * checks can run the call again; a bigger one (an image, say) is noted by its size and sha256 only.
+ */
+export const LOG_MAX_INPUT_BYTES = 64 * 1024;
+const KEY_HEADER = "X-MuseMuse-Python";
+
+/** The guard's header value for this deployment (scripts/py-local.mjs makes the same one). Empty without a token. */
+export function pythonKey(token: string | undefined): string {
+  return token ? createHmac("sha256", token).update("musemuse-python-v1").digest("hex") : "";
+}
+
+type Shape = string | Shape[] | { [key: string]: Shape };
+
+/** A JSON value's shape, as scripts/caps/runtime.mjs reads it: types, sorted keys and each array's first item. */
+export function shapeOf(value: unknown, depth = 0): Shape {
+  if (depth > 6) return "deep";
+  if (value === null) return "null";
+  if (Array.isArray(value)) return value.length ? [shapeOf(value[0], depth + 1)] : [];
+  if (typeof value === "object") {
+    const o = value as Record<string, unknown>;
+    return Object.fromEntries(Object.keys(o).sort().map((k) => [k, shapeOf(o[k], depth + 1)]));
+  }
+  return typeof value;
+}
 
 function headerReader(from: PythonRequest): HeaderReader {
   return "get" in from && typeof from.get === "function" ? (from as HeaderReader) : (from as { headers: HeaderReader }).headers;
@@ -98,7 +126,10 @@ function runLocal(name: string, body: string): Promise<{ status: number; text: s
       } catch {
         return reject(new CapError("python_failed", 502, `The ${name} function stopped without an answer.`));
       }
-      if (r.error) return reject(new CapError(r.status === 404 ? "unknown_function" : r.status === 504 ? "python_timeout" : "python_failed", r.status === 404 ? 500 : (r.status ?? 502), `The ${name} function failed: ${r.error.slice(0, 300)}`));
+      if (r.error) {
+        const code = r.status === 404 ? "unknown_function" : r.status === 504 ? "python_timeout" : r.status === 503 ? "python_not_installed" : "python_failed";
+        return reject(new CapError(code, r.status === 404 ? 500 : (r.status ?? 502), `The ${name} function failed: ${r.error.slice(0, 300)}`));
+      }
       resolve({ status: r.status ?? 500, text: Buffer.from(r.body ?? "", "base64").toString("utf8") });
     });
     child.stdin.on("error", () => {});
@@ -107,10 +138,21 @@ function runLocal(name: string, body: string): Promise<{ status: number; text: s
 }
 
 function noteCall(name: string, input: string, output: unknown): void {
-  if (process.env.MUSEMUSE_PYTHON_NOTES !== "1" || Buffer.byteLength(input) > LOG_MAX_INPUT_BYTES) return;
+  if (process.env.MUSEMUSE_PYTHON_NOTES !== "1") return;
   try {
+    const bytes = Buffer.byteLength(input);
+    const kept = bytes <= LOG_MAX_INPUT_BYTES;
+    const note = {
+      name,
+      bytes,
+      sha256: createHash("sha256").update(input).digest("hex"),
+      kept,
+      ...(kept ? { input: JSON.parse(input) as unknown } : {}),
+      shape: shapeOf(output),
+      at: new Date().toISOString(),
+    };
     mkdirSync(path.dirname(CALL_LOG), { recursive: true });
-    appendFileSync(CALL_LOG, `${JSON.stringify({ name, input: JSON.parse(input), output, at: new Date().toISOString() })}\n`);
+    appendFileSync(CALL_LOG, `${JSON.stringify(note)}\n`);
   } catch {
     // A note the checks can't read only fails the checks, never the call.
   }
@@ -132,11 +174,12 @@ export async function callPython<T = unknown>(request: PythonRequest, name: stri
     return reply;
   }
   const base = at.base ?? ownOrigin(request);
+  const key = pythonKey(process.env.PRODUCT_TOKEN);
   let res: Response;
   try {
     res = await fetch(`${base}/api/py/${name}`, {
       method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json" },
+      headers: { "content-type": "application/json", accept: "application/json", ...(key ? { [KEY_HEADER]: key } : {}) },
       body,
       signal: AbortSignal.timeout(TIMEOUT_MS),
       cache: "no-store",

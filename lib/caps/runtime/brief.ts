@@ -88,6 +88,7 @@ export function normalizeRuntimeBlock(raw: unknown): unknown {
 export const RUNTIME_WRITER_RULES: readonly string[] = [
   "runtime: fill it only when the product's main work needs Python's own libraries, such as numbers and tables (numpy, pandas), statistics and curve fitting (scipy), symbolic math (sympy) or image processing (pillow), that TypeScript can't do as well. Otherwise null.",
   "runtime.functions: one entry per Python function, at most 4. Each takes JSON from one of the product's actions and returns JSON, in under 10 seconds. Name each in snake_case for what it computes, and say in does what goes in and what comes out.",
-  "runtime.packages: PyPI names only, no versions, at most 8, and an empty list when the standard library is enough. Never a web framework (Flask, FastAPI, Django or the like).",
+  "runtime.packages: PyPI names only, no versions, at most 8, and an empty list when the standard library is enough. Never a web framework (Flask, FastAPI, Django or the like). As few as the work needs: every function deploys with all of them inside Vercel's 500 MB for one Python function, so numpy with one or two more, never torch or tensorflow.",
   "Python never calls a model or an outside service. Model calls stay in the product's TypeScript, so an action that needs both calls the model in TypeScript and the Python function for the computing.",
+  "Python never reads a person's text as code. For a formula a person types, say in does that it takes the formula as a parsed tree of numbers, names and operators, not as text.",
 ];

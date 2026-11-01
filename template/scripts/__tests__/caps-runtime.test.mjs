@@ -4,7 +4,9 @@
 //   npx tsx --test template/scripts/__tests__/caps-runtime.test.mjs
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, truncateSync, writeFileSync } from "node:fs";
+import http from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, test } from "node:test";
@@ -41,11 +43,11 @@ function product(functions = {}, requirements = null) {
 
 const env = (dir) => ({ ...process.env, MUSEMUSE_PY_CACHE: path.join(dir, ".py-cache") });
 
-const SUM = `import json
-from http.server import BaseHTTPRequestHandler
+/** The overlay's own runner, for its exports (the guard every function starts with, the header's value). */
+const PY = await import(pathToFileURL(path.join(FILES, "scripts/py-local.mjs")).href);
 
-
-class handler(BaseHTTPRequestHandler):
+const HANDLER = `
+class handler(MuseMuseGuard):
     def do_POST(self):
         length = int(self.headers.get("Content-Length") or 0)
         data = json.loads(self.rfile.read(length) or b"null")
@@ -59,6 +61,10 @@ class handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 `;
+/** A function as the skill writes one: the guard, then its handler. */
+const SUM = `${PY.GUARD}\n${HANDLER}`;
+/** The same function without the guard, as one written before it or with it taken out. */
+const UNGUARDED = `import json\nfrom http.server import BaseHTTPRequestHandler\n${HANDLER.replace("handler(MuseMuseGuard)", "handler(BaseHTTPRequestHandler)")}`;
 
 function call(dir, name, input, extra = []) {
   return spawnSync(process.execPath, [path.join(dir, "scripts/py-local.mjs"), "call", name, ...extra], { input: typeof input === "string" ? input : JSON.stringify(input), encoding: "utf8", env: env(dir), cwd: dir });
@@ -128,7 +134,7 @@ describe("the local runner", { skip: needsPython }, () => {
   });
 
   test("gives a function none of the server's settings, so it can't read a token", () => {
-    const dir = product({ envdump: SUM.replace('body, status = json.dumps({"total"', 'import os\n            body, status = json.dumps({"keys": sorted(k for k in os.environ if k in ("PRODUCT_TOKEN", "GATEWAY_URL", "MODEL_API_KEY")), "total"') });
+    const dir = product({ envdump: UNGUARDED.replace('body, status = json.dumps({"total"', 'import os\n            body, status = json.dumps({"keys": sorted(k for k in os.environ if k in ("PRODUCT_TOKEN", "GATEWAY_URL", "MODEL_API_KEY")), "total"') });
     const res = spawnSync(process.execPath, [path.join(dir, "scripts/py-local.mjs"), "call", "envdump"], {
       input: JSON.stringify({ values: [1] }),
       encoding: "utf8",
@@ -143,6 +149,115 @@ describe("the local runner", { skip: needsPython }, () => {
     const dir = product({ slow: "import time\nfrom http.server import BaseHTTPRequestHandler\n\nclass handler(BaseHTTPRequestHandler):\n    def do_POST(self):\n        time.sleep(30)\n" });
     const py = await import(pathToFileURL(path.join(dir, "scripts/py-local.mjs")).href);
     await assert.rejects(py.runFunction({ root: dir, name: "slow", body: "{}", timeoutMs: 1500, env: env(dir) }), (err) => err.code === "timeout");
+  });
+
+  test("refuses to let a function open the product's .env files on this machine", () => {
+    const peek = UNGUARDED.replace(
+      'body, status = json.dumps({"total"',
+      'try:\n                seen = open(".env.local").read()\n            except PermissionError as err:\n                seen = "refused: %s" % err\n            body, status = json.dumps({"seen": seen, "total"',
+    );
+    const dir = product({ peek });
+    writeFileSync(path.join(dir, ".env.local"), "PRODUCT_TOKEN=mm_build_aaaaaaaaaaaaaaaaaaaaaaaa\n");
+    writeFileSync(path.join(dir, "notes.txt"), "a product file\n");
+    const res = call(dir, "peek", { values: [1] });
+    assert.equal(res.status, 0, res.stderr);
+    const seen = JSON.parse(res.stdout).seen;
+    assert.ok(!seen.includes("mm_build_"), seen);
+    assert.match(seen, /^refused: a Python function can't open the product's settings files$/);
+  });
+
+  test("runs the guard: with a deployment's settings, a call without callPython's header gets 403 and one with it answers", async () => {
+    const dir = product({ sum_values: SUM });
+    const py = await import(pathToFileURL(path.join(dir, "scripts/py-local.mjs")).href);
+    const pythonEnv = { PRODUCT_TOKEN: "mm_live_standin_for_this_test_only", GATEWAY_URL: "https://gateway.invalid" };
+    const body = JSON.stringify({ values: [1, 2] });
+    const stranger = await py.runFunction({ root: dir, name: "sum_values", body, env: env(dir), pythonEnv });
+    assert.equal(stranger.status, 403);
+    assert.deepEqual(JSON.parse(stranger.body.toString("utf8")), { error: "This function answers only its own product." });
+    const wrong = await py.runFunction({ root: dir, name: "sum_values", body, env: env(dir), pythonEnv, key: py.pythonKey("another token") });
+    assert.equal(wrong.status, 403);
+    const own = await py.runFunction({ root: dir, name: "sum_values", body, env: env(dir), pythonEnv, key: py.pythonKey(pythonEnv.PRODUCT_TOKEN) });
+    assert.equal(own.status, 200);
+    assert.deepEqual(JSON.parse(own.body.toString("utf8")).total, 3);
+    const loaded = await py.runFunction({ root: dir, name: "sum_values", loadOnly: true, env: env(dir), pythonEnv });
+    assert.equal(loaded.envCleared, true);
+    // On the build machine there are no settings, so there is nothing to guard and every call answers.
+    assert.equal((await py.runFunction({ root: dir, name: "sum_values", body, env: env(dir) })).status, 200);
+  });
+
+  /** A python3 that runs the real one, except that `-m pip` is a stand-in which logs and fakes an install. */
+  function fakePython(dir, { fail = false } = {}) {
+    const real = spawnSync("sh", ["-c", `command -v ${hasPythonBin}`], { encoding: "utf8" }).stdout.trim();
+    const bin = path.join(dir, "fakepython");
+    writeFileSync(
+      bin,
+      `#!/bin/sh
+for a in "$@"; do [ "$a" = "pip" ] && ispip=1; done
+if [ -n "$ispip" ]; then
+  echo "$*" >> "$FAKE_PIP_LOG"
+  case " $* " in *" --version "*) exit 0;; esac
+  [ -e "$FAKE_FINAL_DIR" ] && echo "the final folder existed while pip ran" >> "$FAKE_PIP_LOG"
+  ${fail ? "exit 1" : ""}
+  prev=""; for a in "$@"; do [ "$prev" = "--target" ] && target="$a"; prev="$a"; done
+  mkdir -p "$target/fakepkg" && echo "VALUE = 7" > "$target/fakepkg/__init__.py"
+  exit 0
+fi
+exec "${real}" "$@"
+`,
+    );
+    chmodSync(bin, 0o755);
+    return bin;
+  }
+
+  test("never installs from a call: one with packages that aren't installed fails at once and says to run install", async () => {
+    const dir = product({ sum_values: SUM }, "fakepkg==1.0.0\n");
+    const log = path.join(dir, "pip.log");
+    const e = { ...env(dir), MUSEMUSE_PYTHON_BIN: fakePython(dir), FAKE_PIP_LOG: log, FAKE_FINAL_DIR: path.join(dir, "none") };
+    const py = await import(pathToFileURL(path.join(dir, "scripts/py-local.mjs")).href);
+    await assert.rejects(py.runFunction({ root: dir, name: "sum_values", body: "{}", env: e }), (err) => err.code === "not_installed" && /run node scripts\/py-local\.mjs install/.test(err.message));
+    const cli = spawnSync(process.execPath, [path.join(dir, "scripts/py-local.mjs"), "call", "sum_values", "--json-result"], { input: "{}", encoding: "utf8", env: e, cwd: dir });
+    assert.equal(JSON.parse(cli.stdout).status, 503);
+    assert.ok(!existsSync(log), "pip never ran");
+  });
+
+  test("installs into a folder of its own and renames it into place, and leaves nothing behind when pip fails", async () => {
+    const dir = product({ uses_pkg: SUM.replace("import json\n", "import json\nimport fakepkg\n").replace('"total": sum(data["values"])', '"total": fakepkg.VALUE') }, "fakepkg==1.0.0\n");
+    const py = await import(pathToFileURL(path.join(dir, "scripts/py-local.mjs")).href);
+    const log = path.join(dir, "pip.log");
+    const e = { ...env(dir), MUSEMUSE_PYTHON_BIN: fakePython(dir), FAKE_PIP_LOG: log };
+    const final = py.packagesDir(dir, py.findPython({ env: e, root: dir }), e);
+    e.FAKE_FINAL_DIR = final;
+    const r = py.install(dir, { env: e });
+    assert.equal(r.cached, false);
+    assert.equal(r.dir, final);
+    assert.ok(existsSync(path.join(final, ".musemuse-done")));
+    assert.ok(!readFileSync(log, "utf8").includes("the final folder existed"), readFileSync(log, "utf8"));
+    assert.deepEqual(readdirSync(path.dirname(final)).filter((n) => n.includes(".tmp-")), []);
+    assert.equal(py.install(dir, { env: e }).cached, true);
+    const ran = await py.runFunction({ root: dir, name: "uses_pkg", body: JSON.stringify({ values: [1] }), env: e });
+    assert.equal(JSON.parse(ran.body.toString("utf8")).total, 7);
+
+    const failing = product({ sum_values: SUM }, "otherpkg==2.0.0\n");
+    const f = { ...env(failing), MUSEMUSE_PYTHON_BIN: fakePython(failing, { fail: true }), FAKE_PIP_LOG: path.join(failing, "pip.log") };
+    const fdir = py.packagesDir(failing, py.findPython({ env: f, root: failing }), f);
+    f.FAKE_FINAL_DIR = fdir;
+    assert.throws(() => py.install(failing, { env: f }), (err) => err.code === "install_failed");
+    assert.ok(!existsSync(fdir));
+    assert.deepEqual(readdirSync(path.dirname(fdir)).filter((n) => n.includes(".tmp-")), []);
+  });
+
+  test("writes a new function with the guard, which passes the guard check, and the skill shows the same guard", async () => {
+    const dir = product();
+    const res = spawnSync(process.execPath, [path.join(dir, "scripts/py-local.mjs"), "new", "fit_line"], { encoding: "utf8", env: env(dir), cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.ok(readFileSync(path.join(dir, "api/py/fit_line.py"), "utf8").startsWith(PY.GUARD));
+    assert.notEqual(spawnSync(process.execPath, [path.join(dir, "scripts/py-local.mjs"), "new", "fit_line"], { encoding: "utf8", env: env(dir), cwd: dir }).status, 0, "never over an existing file");
+    const checks = await import(pathToFileURL(path.join(dir, "scripts/caps/runtime.mjs")).href);
+    const guard = (await checks.check({ record: null, root: dir, env: env(dir) })).find((c) => c.id === "guard");
+    assert.equal(guard.ok, true, guard.detail);
+    const skill = readFileSync(path.join(FILES, ".agents/skills/muse-python/SKILL.md"), "utf8");
+    assert.ok(skill.includes(PY.GUARD), "the skill's guard is the runner's, byte for byte");
+    for (const want of ["That\naddress is public", "never reads text from the input as code", "sympify", "64 KB", "500 MB", "node scripts/py-local.mjs new <name>"]) assert.ok(skill.includes(want), want);
   });
 
   test("reads requirements.txt the way the checks need", async () => {
@@ -169,12 +284,80 @@ describe("the fixed checks", { skip: needsPython }, () => {
   const record = { cap: "runtime", checks: [{ id: "python-action", ok: true, detail: "sum answered through the Python function sum_values" }] };
   const byId = (checks) => Object.fromEntries(checks.map((c) => [c.id, c]));
 
+  const SUM_SHAPE = { items: [{ n: "number" }], total: "number" };
+
   test("pass when the smoke test ran an action through Python and the platform gets the same shape again", async () => {
     const dir = product({ sum_values: SUM });
-    logCall(dir, { name: "sum_values", input: { values: [1, 2] }, output: { total: 3, items: [{ n: 1 }, { n: 2 }] } });
+    logCall(dir, { name: "sum_values", bytes: 18, sha256: "x", kept: true, input: { values: [1, 2] }, shape: SUM_SHAPE });
     const checks = await (await checker(dir)).check({ record, root: dir, env: env(dir) });
-    assert.deepEqual(checks.map((c) => c.id), ["python", "requirements", "functions", "health", "python-action", "rerun"]);
+    assert.deepEqual(checks.map((c) => c.id), ["python", "requirements", "size", "functions", "safe", "guard", "health", "python-action", "rerun"]);
     for (const c of checks) assert.equal(c.ok, true, `${c.id}: ${c.detail}`);
+  });
+
+  test("pass rerun with a plain detail when every noted call was too big to keep, and still fail with no note at all", async () => {
+    const dir = product({ sum_values: SUM });
+    logCall(dir, { name: "sum_values", bytes: 100_000, sha256: "x", kept: false, shape: SUM_SHAPE });
+    const checks = byId(await (await checker(dir)).check({ record, root: dir, env: env(dir) }));
+    assert.equal(checks.rerun.ok, true, checks.rerun.detail);
+    assert.match(checks.rerun.detail, /every call to sum_values was over 64 KB, too big to keep, so none ran again/);
+    logCall(dir, { name: "sum_values", bytes: 18, sha256: "y", kept: true, input: { values: [1, 2] }, shape: SUM_SHAPE });
+    const both = byId(await (await checker(dir)).check({ record, root: dir, env: env(dir) }));
+    assert.equal(both.rerun.ok, true, both.rerun.detail);
+    assert.match(both.rerun.detail, /ran sum_values again/);
+  });
+
+  test("fail a function without the guard: it keeps the settings and answers a call without callPython's header", async () => {
+    const dir = product({ sum_values: SUM, open_door: UNGUARDED });
+    const guard = byId(await (await checker(dir)).check({ record, root: dir, env: env(dir) })).guard;
+    assert.equal(guard.ok, false);
+    assert.match(guard.detail, /open_door keeps the product's settings when it loads/);
+    assert.match(guard.detail, /open_door answered HTTP 400 to a call without callPython's header/);
+    assert.ok(!/sum_values/.test(guard.detail), guard.detail);
+    // A guard that refuses even the product's own server fails too.
+    const shut = product({ shut: SUM.replace("hmac.compare_digest(", "True or hmac.compare_digest(") });
+    assert.match(byId(await (await checker(shut)).check({ record, root: shut, env: env(shut) })).guard.detail, /shut refused callPython's own header/);
+  });
+
+  test("fail a function that reads text as code, loads pickles or starts programs", async () => {
+    const risky = SUM.replace("import json\n", "import json\nimport pickle\nfrom sympy import sympify\n").replace(
+      'body, status = json.dumps({"total"',
+      'expr = sympify(data.get("expr", "1"))\n            eval("1")\n            data.get("df") and data["df"].query("a > 1")\n            body, status = json.dumps({"total"',
+    );
+    const dir = product({ sum_values: SUM, risky });
+    const safe = byId(await (await checker(dir)).check({ record, root: dir, env: env(dir) })).safe;
+    assert.equal(safe.ok, false);
+    for (const want of ["risky.py line", "imports pickle", "imports sympify", "calls sympify()", "calls eval()", "calls .query()"]) assert.ok(safe.detail.includes(want), `${want} in ${safe.detail}`);
+    // re.compile and a word in a comment or a string are fine.
+    const fine = product({ sum_values: SUM.replace("import json\n", 'import json\nimport re\nPATTERN = re.compile("x")  # never eval( here\nNOTE = "eval(x)"\n') });
+    assert.equal(byId(await (await checker(fine)).check({ record, root: fine, env: env(fine) })).safe.ok, true);
+  });
+
+  test("read the call log before any of the product's Python runs, so a function can't plant a call", async () => {
+    const planted = SUM.replace(
+      "\n\nclass handler(MuseMuseGuard):",
+      `\n_log = os.path.join("test-results", "caps", "runtime-calls.jsonl")\nos.makedirs(os.path.dirname(_log), exist_ok=True)\nwith open(_log, "a") as _f:\n    _f.write(json.dumps({"name": "planted", "kept": True, "input": {"values": [1]}, "shape": ${JSON.stringify(SUM_SHAPE)}}) + "\\n")\n\n\nclass handler(MuseMuseGuard):`,
+    );
+    const dir = product({ planted });
+    const checks = byId(await (await checker(dir)).check({ record, root: dir, env: env(dir) }));
+    assert.ok(existsSync(path.join(dir, "test-results/caps/runtime-calls.jsonl")), "the function did write its line");
+    assert.equal(checks.rerun.ok, false, checks.rerun.detail);
+    assert.match(checks.rerun.detail, /no Python call was noted/);
+  });
+
+  test("fail when the installed packages take too much of Vercel's 500 MB", async () => {
+    const dir = product({ sum_values: SUM }, "fakepkg==1.0.0\n");
+    const py = await import(pathToFileURL(path.join(dir, "scripts/py-local.mjs")).href);
+    const installed = py.packagesDir(dir, py.findPython({ env: env(dir), root: dir }), env(dir));
+    mkdirSync(installed, { recursive: true });
+    writeFileSync(path.join(installed, ".musemuse-done"), "fakepkg==1.0.0\n");
+    const big = path.join(installed, "big.bin");
+    writeFileSync(big, "");
+    truncateSync(big, 460 * 1024 * 1024); // sparse: no disk used
+    const size = byId(await (await checker(dir)).check({ record, root: dir, env: env(dir) })).size;
+    assert.equal(size.ok, false);
+    assert.match(size.detail, /the packages take 460 MB, too close to the 500 MB Vercel allows a Python function/);
+    truncateSync(big, 1024 * 1024);
+    assert.equal(byId(await (await checker(dir)).check({ record, root: dir, env: env(dir) })).size.ok, true);
   });
 
   test("fail without the smoke test's record, without a noted call, or with a reply of another shape", async () => {
@@ -183,6 +366,7 @@ describe("the fixed checks", { skip: needsPython }, () => {
     assert.equal(checks["python-action"].ok, false);
     assert.equal(checks.rerun.ok, false);
     assert.match(checks.rerun.detail, /no Python call was noted/);
+    // A note in the older form, with the whole reply, still reads.
     logCall(dir, { name: "sum_values", input: { values: [1] }, output: { total: 1, items: [], extra: "faked" } });
     checks = byId(await (await checker(dir)).check({ record, root: dir, env: env(dir) }));
     assert.equal(checks.rerun.ok, false);
@@ -229,17 +413,58 @@ try { await callPython(new Request("http://localhost:3100/"), "../x", {}); } cat
 console.log(JSON.stringify(out));
 `;
 
-  test("runs the function on this machine in a build, and notes each call for the checks", () => {
+  test("runs the function on this machine in a build, and notes each call that answered for the checks, whatever its size", async () => {
     const dir = product({ sum_values: SUM });
-    const res = run(dir, SCRIPT, { MUSEMUSE_PYTHON: "local", MUSEMUSE_PYTHON_NOTES: "1", VERCEL: "" });
+    const big = { values: [4], pad: "x".repeat(100_000) };
+    const res = run(dir, `${SCRIPT}console.log(JSON.stringify(await callPython(new Request("http://localhost:3100/"), "sum_values", ${JSON.stringify(big)})));\n`, { MUSEMUSE_PYTHON: "local", MUSEMUSE_PYTHON_NOTES: "1", VERCEL: "" });
     assert.equal(res.status, 0, res.stderr);
-    const out = JSON.parse(res.stdout.trim().split("\n").at(-1));
+    const lines = res.stdout.trim().split("\n");
+    const out = JSON.parse(lines.at(-2));
     assert.deepEqual(out.sum, { total: 5, items: [{ n: 2 }, { n: 3 }] });
     assert.deepEqual(out.bad, ["python_failed", 400, "Send a list of values."]);
     assert.equal(out.name, "unknown_function");
+    assert.deepEqual(JSON.parse(lines.at(-1)), { total: 4, items: [{ n: 4 }] });
     const log = readFileSync(path.join(dir, "test-results/caps/runtime-calls.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
-    assert.equal(log.length, 1, "only calls that answered are noted");
-    assert.deepEqual([log[0].name, log[0].input, log[0].output], ["sum_values", { values: [2, 3] }, { total: 5, items: [{ n: 2 }, { n: 3 }] }]);
+    assert.equal(log.length, 2, "both calls that answered are noted, the one over 64 KB too");
+    const { shapeOf } = await import(pathToFileURL(path.join(FILES, "scripts/caps/runtime.mjs")).href);
+    assert.deepEqual([log[0].name, log[0].kept, log[0].input, log[0].shape], ["sum_values", true, { values: [2, 3] }, shapeOf({ total: 5, items: [{ n: 2 }] })]);
+    const bigBody = JSON.stringify(big);
+    assert.deepEqual([log[1].name, log[1].kept, "input" in log[1], log[1].bytes], ["sum_values", false, false, Buffer.byteLength(bigBody)]);
+    assert.equal(log[1].sha256, createHash("sha256").update(bigBody).digest("hex"));
+    assert.deepEqual(log[1].shape, shapeOf({ total: 4, items: [{ n: 4 }] }));
+    // And the checks count it: the big call alone still makes rerun pass, with a plain detail.
+    const checks = await import(pathToFileURL(path.join(dir, "scripts/caps/runtime.mjs")).href);
+    writeFileSync(path.join(dir, "test-results/caps/runtime-calls.jsonl"), `${JSON.stringify(log[1])}\n`);
+    const rerun = (await checks.check({ record: null, root: dir, env: env(dir) })).find((c) => c.id === "rerun");
+    assert.equal(rerun.ok, true, rerun.detail);
+  });
+
+  test("sends the guard's header, made from PRODUCT_TOKEN, on every call over HTTP, and none without a token", async () => {
+    const dir = product({ sum_values: SUM });
+    const seen = [];
+    const server = http.createServer((req, res) => {
+      seen.push(req.headers["x-musemuse-python"] ?? null);
+      req.resume();
+      req.on("end", () => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ total: 1, items: [] })));
+    });
+    await new Promise((r) => server.listen(0, "127.0.0.1", r));
+    try {
+      const file = path.join(dir, "call.mts");
+      writeFileSync(file, 'import { callPython } from "./lib/platform/python.ts";\nconsole.log(JSON.stringify(await callPython(new Request("http://localhost:3100/"), "sum_values", { values: [1] })));\n');
+      const go = (extra) =>
+        new Promise((resolve) => {
+          const child = spawn(process.execPath, ["--import", tsx, file], { cwd: dir, env: { ...env(dir), MUSEMUSE_PYTHON: "", PRODUCT_TOKEN: "", MUSEMUSE_PYTHON_URL: `http://127.0.0.1:${server.address().port}`, ...extra } });
+          let stderr = "";
+          child.stderr.on("data", (c) => (stderr += c));
+          child.on("close", (status) => resolve({ status, stderr }));
+        });
+      const token = "mm_live_standin_for_this_test_only";
+      assert.equal((await go({ PRODUCT_TOKEN: token })).status, 0);
+      assert.equal((await go({})).status, 0);
+      assert.deepEqual(seen, [PY.pythonKey(token), null]);
+    } finally {
+      server.close();
+    }
   });
 
   test("notes nothing outside a build, even when it runs the function on this machine", () => {

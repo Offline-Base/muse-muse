@@ -1,8 +1,9 @@
 // Platform file (Muse Muse platform services). Don't edit: use these helpers in tests/smoke.spec.ts.
 //
 // expectPythonAction calls one of the product's actions through its route and checks that a Python function ran for it:
-// the build's server notes every Python call in test-results/caps/runtime-calls.jsonl (lib/platform/python.ts). It
-// records the check for verify's caps step, which then runs that function again on the same input.
+// the build's server notes every Python call that answered in test-results/caps/runtime-calls.jsonl, whatever its size
+// (lib/platform/python.ts). It records the check for verify's caps step, which then runs that function again on the
+// same input when the input was small enough to keep (64 KB).
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { expect, type APIRequestContext } from "@playwright/test";
@@ -10,15 +11,25 @@ import { recordCapCheck } from "./index";
 
 const CALL_LOG = path.join(process.cwd(), "test-results", "caps", "runtime-calls.jsonl");
 
+/** One noted call: its input only when it was kept (64 KB or less), and always its size, sha256 and reply's shape. */
+export interface PythonCall {
+  name: string;
+  bytes: number;
+  sha256: string;
+  kept: boolean;
+  input?: unknown;
+  shape: unknown;
+}
+
 /** The Python calls the build's server has noted so far in this run. */
-export function pythonCalls(): Array<{ name: string; input: unknown; output: unknown }> {
+export function pythonCalls(): PythonCall[] {
   if (!existsSync(CALL_LOG)) return [];
   return readFileSync(CALL_LOG, "utf8")
     .split("\n")
     .filter(Boolean)
     .flatMap((line) => {
       try {
-        return [JSON.parse(line) as { name: string; input: unknown; output: unknown }];
+        return [JSON.parse(line) as PythonCall];
       } catch {
         return [];
       }
