@@ -320,11 +320,11 @@ describe("{GATEWAY_URL}/decide", () => {
 
   it("counts refused calls too, and looks up no model once a token is over its minute", async () => {
     const looked: string[] = [];
-    const refused = fake({ findModel: async (id) => void looked.push(id) ?? null });
+    const refused = fake({ findModel: async (id) => (looked.push(id), null) });
     assert.equal((await handleDecide(post(LIVE, { state: STATE, model: "no-such-model" }), refused.deps)).status, 404);
     assert.equal((await handleDecide(post(LIVE, "not json"), refused.deps)).status, 400);
     assert.equal(refused.rateKeys.length, 2, "both refused calls counted");
-    const over = fake({ counts: { "decide:token:tok-live": DECIDE_LIMITS.perTokenPerMinute + 1 }, findModel: async (id) => void looked.push(id) ?? null });
+    const over = fake({ counts: { "decide:token:tok-live": DECIDE_LIMITS.perTokenPerMinute + 1 }, findModel: async (id) => (looked.push(id), null) });
     assert.equal((await handleDecide(post(LIVE, { state: STATE, model: "no-such-model" }), over.deps)).status, 429);
     assert.deepEqual(looked, ["no-such-model"], "the over-limit call never reached findModel");
   });
@@ -371,7 +371,7 @@ describe("the lab's serving windows as a DecideBackend (lib/train/decide-window.
     assert.deepEqual(sentTarget, { ip: target.ip, port: 8443, certSha256: target.certSha256 });
     assert.equal(key, `key:${target.jobId}:hash`);
     assert.deepEqual(items, input(MODEL_ID).prompts.map((p, i) => ({ messages: p.messages, letters: input(MODEL_ID).letters[i] })));
-    assert.equal(timeout, 30_000);
+    assert.ok(typeof timeout === "number" && timeout <= 30_000 && timeout > 29_000, String(timeout));
     assert.deepEqual(w.log, [`target ${MODEL_ID}`, `take ${target.jobId}`, `release ${target.jobId}`]);
 
     const base = windows();
@@ -383,6 +383,17 @@ describe("the lab's serving windows as a DecideBackend (lib/train/decide-window.
     const waited = windows({ slots: [null, null, new Date(0)] });
     await (await waited.backends(MODEL_ID))!.score(input(MODEL_ID));
     assert.equal(waited.log.filter((l) => l.startsWith("take")).length, 3);
+    const left = waited.asked[0]![3] as number;
+    assert.ok(left <= 30_000 - 35, `the slot wait comes off the GPU call's time (${left} ms left)`);
+    const gaveUp = windows();
+    const ac = new AbortController();
+    ac.abort();
+    await assert.rejects(
+      (await gaveUp.backends(MODEL_ID))!.score({ ...input(MODEL_ID), signal: ac.signal }),
+      (err: unknown) => err instanceof DecideBackendError && err.code === "timeout",
+    );
+    assert.equal(gaveUp.asked.length, 0, "no GPU call once the gateway stopped waiting");
+    assert.deepEqual(gaveUp.log.slice(1), [`take ${target.jobId}`, `release ${target.jobId}`], "and the slot goes back at once");
     const held = windows({ slots: [] });
     await assert.rejects((await held.backends(MODEL_ID))!.score(input(MODEL_ID)), (err: unknown) => err instanceof DecideBackendError && err.code === "busy");
     assert.equal(held.asked.length, 0);

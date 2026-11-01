@@ -62,13 +62,22 @@ export function windowBackends(deps: WindowDeps): (adapter: string | null) => Pr
     if (!target) return null;
     return {
       async score(input) {
+        const began = Date.now();
         const window = await waitForSlot(deps, target.jobId, input.signal);
-        if (!window) throw new DecideBackendError("busy", "The decision model's GPU stayed on another request.");
+        if (!window) {
+          if (input.signal?.aborted) throw new DecideBackendError("timeout", "The caller stopped waiting.");
+          throw new DecideBackendError("busy", "The decision model's GPU stayed on another request.");
+        }
         try {
+          // The slot wait counts against the call's time, so the GPU call ends by the time the gateway gives up on it
+          // and the window's one slot (the Try it live box's too) is never held past that.
+          const left = serveTiming.decideMs - (Date.now() - began);
+          if (input.signal?.aborted || left <= 0) throw new DecideBackendError("timeout", "The caller stopped waiting.");
           const items: DecideServeItem[] = input.prompts.map((p, i) => ({ messages: p.messages, letters: [...(input.letters[i] ?? [])] }));
-          const got = await ask({ ip: target.ip, port: target.port, certSha256: target.certSha256 }, keyFor(target.jobId, target.tokenHash), items, serveTiming.decideMs);
+          const got = await ask({ ip: target.ip, port: target.port, certSha256: target.certSha256 }, keyFor(target.jobId, target.tokenHash), items, left);
           return { logprobs: input.adapter ? got.tuned : got.base, ms: got.ms };
         } catch (err) {
+          if (err instanceof DecideBackendError) throw err;
           if (err instanceof ServeError) {
             if (err.code === "busy") throw new DecideBackendError("busy", err.message);
             if (err.code === "stopping") throw new DecideBackendError("offline", err.message);
