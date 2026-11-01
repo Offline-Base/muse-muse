@@ -4,14 +4,17 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { NetworkPolicyMatcher, NetworkPolicyRule } from "@vercel/sandbox";
+import type { NetworkPolicyKeyValueMatcher, NetworkPolicyMatcher, NetworkPolicyRule } from "@vercel/sandbox";
 import { museEnv, SANDBOX_ENV } from "@/lib/sandbox/muse";
 import {
   BLOB_UPLOAD_HOSTS,
   BROKERED_META_ROUTES,
   builderNetworkPolicy,
+  BYPASS_COOKIE_BLOCKED_BODY,
   META_BLOCKED_BODY,
   placeholderKey,
+  type PlatformBypass,
+  PROTECTION_BYPASS_HEADER,
 } from "@/lib/sandbox/policy";
 
 const KEY = "sk-meta-real-key-0123456789";
@@ -36,22 +39,28 @@ function matches(m: NetworkPolicyMatcher | undefined, value: string): boolean {
 
 /**
  * The firewall's documented semantics: rules run in order, the first whose match fits wins, and a request no rule
- * claims is forwarded unchanged.
+ * claims is forwarded unchanged. A transform sets its headers over the client's, whatever case the client used.
  */
-type Req = { method: string; path: string; headers: Record<string, string> };
+type Req = { method: string; path: string; headers: Record<string, string>; query?: Record<string, string> };
 type Outcome = { blocked: number } | { headers: Record<string, string> };
 
-function firewall(req: Req): Outcome {
-  for (const rule of metaRules()) {
+function entriesMatch(matchers: NetworkPolicyKeyValueMatcher[] | undefined, entries: Record<string, string>): boolean {
+  return (matchers ?? []).every((h) => Object.entries(entries).some(([k, v]) => matches(h.key, k) && matches(h.value, v)));
+}
+
+function transformed(headers: Record<string, string>, set: Record<string, string>): Record<string, string> {
+  const names = new Set(Object.keys(set).map((k) => k.toLowerCase()));
+  return { ...Object.fromEntries(Object.entries(headers).filter(([k]) => !names.has(k.toLowerCase()))), ...set };
+}
+
+function firewall(req: Req, rules: NetworkPolicyRule[] = metaRules()): Outcome {
+  for (const rule of rules) {
     const m = rule.match;
     if (m?.method && !m.method.includes(req.method)) continue;
     if (m?.path && !matches(m.path, req.path)) continue;
-    const headerOk = (m?.headers ?? []).every((h) =>
-      Object.entries(req.headers).some(([k, v]) => matches(h.key, k) && matches(h.value, v)),
-    );
-    if (!headerOk) continue;
+    if (!entriesMatch(m?.headers, req.headers) || !entriesMatch(m?.queryString, req.query ?? {})) continue;
     if (rule.response) return { blocked: rule.response.statusCode };
-    if (rule.transform) return { headers: Object.assign({}, req.headers, ...rule.transform.map((t) => t.headers ?? {})) };
+    if (rule.transform) return { headers: rule.transform.reduce((h, t) => transformed(h, t.headers ?? {}), req.headers) };
     return { headers: req.headers };
   }
   return { headers: req.headers };
@@ -136,4 +145,88 @@ test("placeholders are stable per sandbox, differ between sandboxes and reveal n
 test("only the Muse Code env carries the placeholder", () => {
   assert.equal("META_API_KEY" in SANDBOX_ENV, false);
   assert.deepEqual(museEnv(PLACEHOLDER), { MUSE_NO_AUTO_UPDATE: "1", MUSE_LOGIN: "0", META_API_KEY: PLACEHOLDER });
+});
+
+const PREVIEW_HOST = "muse-muse-git-tg-preview-db-team.vercel.app";
+const BYPASS = "bypass-secret-value-for-tests";
+
+function platformRules(platformHost = PREVIEW_HOST, platformBypass: PlatformBypass | null = { host: PREVIEW_HOST, secret: BYPASS }): NetworkPolicyRule[] {
+  const policy = builderNetworkPolicy({ modelApiKey: KEY, placeholderKey: PLACEHOLDER, platformHost, blobUploads: true, platformBypass });
+  assert.ok(typeof policy === "object" && policy.allow && !Array.isArray(policy.allow));
+  assert.ok(platformHost === PREVIEW_HOST || !JSON.stringify(policy).includes(BYPASS), "the secret goes to its own host or nowhere");
+  return policy.allow[platformHost];
+}
+
+const bypassed = (r: Outcome) => "headers" in r && Object.values(r.headers).some((v) => v.includes(BYPASS));
+const hostOf = (r: Outcome) => ("headers" in r ? Object.entries(r.headers).filter(([k]) => k.toLowerCase() === "host").map(([, v]) => v) : []);
+
+test("on a preview, requests to the platform carry the protection bypass header, added by the firewall", () => {
+  const gateway = { method: "POST", path: "/api/gateway/v1/responses", headers: { Host: PREVIEW_HOST, Authorization: "Bearer mm_build_x" } };
+  const out = firewall(gateway, platformRules());
+  assert.ok("headers" in out);
+  assert.equal(out.headers[PROTECTION_BYPASS_HEADER], BYPASS);
+  assert.equal(out.headers.Authorization, "Bearer mm_build_x", "the build token goes through as sent");
+  assert.deepEqual(hostOf(out), [PREVIEW_HOST]);
+  const query = firewall({ method: "GET", path: "/api/build-mcp", headers: {}, query: { model: "muse-spark-1.3-contributor", q: "a%20b" } }, platformRules());
+  assert.ok(bypassed(query), "ordinary query strings, encoded values included, still get through");
+});
+
+test("the bypass rule pins Host to the platform, so domain fronting can't carry the secret to another site", () => {
+  const fronted: Record<string, string>[] = [{ Host: "attacker-project.vercel.app" }, { host: "attacker-project.vercel.app" }, { HOST: "evil.example" }, {}];
+  for (const headers of fronted) {
+    const out = firewall({ method: "GET", path: "/", headers }, platformRules());
+    assert.ok(bypassed(out), JSON.stringify(headers));
+    assert.deepEqual(hostOf(out), [PREVIEW_HOST], JSON.stringify(headers));
+  }
+  // Whatever rule adds the secret also sets Host to the platform's host.
+  for (const rule of platformRules()) {
+    for (const t of rule.transform ?? []) {
+      if (t.headers?.[PROTECTION_BYPASS_HEADER] !== undefined) assert.equal(t.headers.Host, PREVIEW_HOST);
+    }
+  }
+});
+
+test("a sandbox can't ask the platform for a bypass cookie, as a header or a query parameter, in any spelling", () => {
+  const asks: Req[] = [
+    { method: "GET", path: "/", headers: { "x-vercel-set-bypass-cookie": "true" } },
+    { method: "GET", path: "/", headers: { "X-Vercel-Set-Bypass-Cookie": "samesitenone" } },
+    { method: "POST", path: "/api/gateway/v1/responses", headers: { "X-VERCEL-SET-BYPASS-COOKIE": "" } },
+    { method: "GET", path: "/", headers: {}, query: { "x-vercel-set-bypass-cookie": "true" } },
+    { method: "GET", path: "/", headers: {}, query: { "X-Vercel-Set-Bypass-Cookie": "samesitenone" } },
+    { method: "GET", path: "/", headers: {}, query: { "x-vercel-set-bypass%2Dcookie": "true" } },
+    { method: "GET", path: "/", headers: {}, query: { "%78-vercel-set-bypass-cookie": "true" } },
+    { method: "GET", path: "/", headers: {}, query: { model: "x", "x-vercel-set-bypass-cookie": "1" } },
+  ];
+  for (const req of asks) {
+    const out = firewall(req, platformRules());
+    assert.deepEqual(out, { blocked: 403 }, JSON.stringify(req));
+    assert.equal(bypassed(out), false);
+  }
+  // The refusals come first and the secret's rule is last with no match, so nothing skips the refusals or the pin.
+  const rules = platformRules();
+  assert.equal(rules.length, 3);
+  for (const rule of rules.slice(0, -1)) {
+    assert.ok(rule.match && rule.response, "a refusal");
+    assert.deepEqual(rule.response, { statusCode: 403, body: BYPASS_COOKIE_BLOCKED_BODY, contentType: "text/plain" });
+  }
+  const last = rules[rules.length - 1];
+  assert.equal(last.match, undefined);
+  assert.ok(last.transform);
+  for (const rule of rules.slice(0, -1)) assert.ok(!JSON.stringify(rule).includes(BYPASS), "the secret is in no matcher or body");
+});
+
+test("without a bypass secret the platform host is allowed exactly as before", () => {
+  for (const platformBypass of [undefined, null, { host: "muse-muse.vercel.app", secret: "" }]) {
+    const policy = builderNetworkPolicy({ modelApiKey: "k", placeholderKey: "p", platformHost: "muse-muse.vercel.app", platformBypass });
+    assert.deepEqual((policy as { allow: Record<string, unknown[]> }).allow["muse-muse.vercel.app"], []);
+  }
+});
+
+test("the secret goes only to the host it is for, never to another platformHost", () => {
+  // Production's host on a preview without its own database, or a caller's --site in Prove it's copy.
+  for (const other of ["muse-muse.vercel.app", "some-other-site.example", `${PREVIEW_HOST}.evil.example`, `x.${PREVIEW_HOST}`]) {
+    assert.deepEqual(platformRules(other, { host: PREVIEW_HOST, secret: BYPASS }), [], other);
+    assert.equal(bypassed(firewall({ method: "GET", path: "/", headers: {} }, platformRules(other))), false, other);
+  }
+  assert.equal(platformRules(PREVIEW_HOST, { host: PREVIEW_HOST.toUpperCase(), secret: BYPASS }).length, 3, "hosts compare in any case");
 });

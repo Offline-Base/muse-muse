@@ -244,6 +244,7 @@ function lockedPolicy(sandboxName: string) {
     platformHost: publicHost(env.platformUrl),
     blobUploads: true,
     directProducts: productsCallMetaDirectly(),
+    platformBypass: env.previewBypass,
   });
 }
 
@@ -637,6 +638,8 @@ export async function forkForProve(sandboxName: string, hosts: { liveHost: strin
       placeholderKey: sandboxPlaceholder(name),
       platformHost: hosts.platformHost,
       extraHosts: [hosts.liveHost],
+      // Only when platformHost is the preview's own host: a caller's other site (prove-run.ts --site) gets no secret.
+      platformBypass: env.previewBypass,
     }),
     tags: { app: "musemuse", role: "prove", source: sandboxName.slice(0, 60) },
   });

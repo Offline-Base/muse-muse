@@ -1,9 +1,10 @@
 import { TARGETS, type TargetId } from "@/lib/brief/schema";
+import { databaseChoice, isPreview, previewHasOwnDatabase } from "@/lib/db/url";
 import { DRIVE_CARD_TERMS_VERSION, DRIVE_TERMS_DEFAULT_VERSION } from "@/lib/drive/terms";
 import { parseNativeTargets } from "@/lib/native/targets";
 import type { MuseEngine } from "@/lib/sandbox/bridge-protocol";
 import { agentCapacity } from "@/lib/sandbox/agent-capacity";
-import { publicHost } from "@/lib/sandbox/policy";
+import { type PlatformBypass, publicHost } from "@/lib/sandbox/policy";
 import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
 
 /**
@@ -40,6 +41,19 @@ function flag(name: string): boolean {
 function optional(name: string): string | null {
   return process.env[name]?.trim() || null;
 }
+
+/**
+ * A preview with a database of its own (lib/db/url.ts, previewHasOwnDatabase) is its own platform: its origin is its
+ * branch URL, else its deployment URL. Null on anything else, and on such a preview with neither URL.
+ */
+function previewOwnOrigin(): string | null {
+  if (!previewHasOwnDatabase()) return null;
+  const own = process.env.VERCEL_BRANCH_URL?.trim() || process.env.VERCEL_URL?.trim();
+  return own ? `https://${own}`.replace(/\/$/, "") : null;
+}
+
+/** env.publishOffReason on a Vercel preview. It reads after "because" and inside "Publishing is off for this run (...)". */
+export const PUBLISH_OFF_ON_PREVIEW = "it's a Vercel preview, and a product published here would deploy into production's Vercel projects";
 
 /** Muse Wonder, Meta's strongest model, is every platform role's default (docs/DESIGN.md, Model routing). */
 export const DEFAULT_PLATFORM_MODEL = "muse-wonder-1.0";
@@ -93,8 +107,28 @@ export const env = {
   get complexBuildModel() {
     return model("COMPLEX_BUILD_MODEL", DEFAULT_PLATFORM_MODEL);
   },
+  /**
+   * DATABASE_URL, or on a Vercel preview PREVIEW_DATABASE_URL (lib/db/url.ts). Throws when this deployment has no
+   * database: DATABASE_URL unset, or a preview without a database of its own (it never falls back to production's).
+   */
   get databaseUrl() {
-    return required("DATABASE_URL");
+    const choice = databaseChoice();
+    if (choice.url === null) throw new Error(choice.message);
+    return choice.url;
+  },
+  /**
+   * Vercel's Protection Bypass for Automation secret (VERCEL_AUTOMATION_BYPASS_SECRET) and the one host it is for: this
+   * preview's own, when the preview is its own platform (previewOwnOrigin). README.md, Preview database. The build
+   * firewall adds it as the x-vercel-protection-bypass header to a sandbox's requests to that host only
+   * (lib/sandbox/policy.ts), so sandboxes reach a protected preview's gateway without the secret ever entering the
+   * sandbox. Null everywhere else: production, local runs, and a preview with no database of its own or with no URL of
+   * its own, whose platformUrl is another site's.
+   */
+  get previewBypass(): PlatformBypass | null {
+    const secret = isPreview() ? optional("VERCEL_AUTOMATION_BYPASS_SECRET") : null;
+    const origin = secret ? previewOwnOrigin() : null;
+    const host = origin ? publicHost(origin) : null;
+    return secret && host ? { host, secret } : null;
   },
   /**
    * BLOB_READ_WRITE_TOKEN, or undefined. Blob stores connected the old way set this token. Stores connected the new way
@@ -126,9 +160,13 @@ export const env = {
   },
   /**
    * Why products aren't published to their own link here, or null when they are. A local run never publishes, even
-   * with VERCEL_TOKEN set: the product would call this machine's gateway (GATEWAY_URL), which Vercel can't reach.
+   * with VERCEL_TOKEN set: the product would call this machine's gateway (GATEWAY_URL), which Vercel can't reach. A
+   * Vercel preview never publishes either (README.md, Preview database): its products live in the preview's own
+   * database, but a publish goes into the Vercel project musemuse-<slug> (or the one a row copied from production
+   * names), which is production's live product, and would give it a token production's gateway doesn't know.
    */
   get publishOffReason(): string | null {
+    if (isPreview()) return PUBLISH_OFF_ON_PREVIEW;
     if (!process.env.VERCEL_TOKEN) return "VERCEL_TOKEN isn't set";
     if (!publicHost(env.platformUrl)) return "it's a local run, and a published product couldn't reach this machine's gateway";
     return null;
@@ -139,8 +177,15 @@ export const env = {
   get builderSnapshotId() {
     return process.env.BUILDER_SNAPSHOT_ID || undefined;
   },
-  /** Public origin of this platform, with no trailing slash. Products reach the gateway here. */
+  /**
+   * Public origin of this platform, with no trailing slash. Products and build sandboxes reach the gateway here. A
+   * preview with a database of its own (lib/db/url.ts, previewHasOwnDatabase) is its own platform, at its branch URL
+   * or else its deployment URL: its builds and gateway tokens live only in that database, so production's gateway
+   * would refuse them. Everything else, including a preview with no database, keeps the rule below.
+   */
   get platformUrl() {
+    const own = previewOwnOrigin();
+    if (own) return own;
     const explicit = process.env.PLATFORM_URL;
     if (explicit && !explicit.includes("localhost")) return explicit.replace(/\/$/, "");
     const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL;
@@ -548,8 +593,13 @@ export const env = {
   /**
    * STRIPE_SECRET_KEY: the Stripe key drive orders are paid with (sk_ or rk_, test or live), or null. Server only: never
    * in a reply, a header or a log. A restricted key needs Checkout Sessions and Refunds write access.
+   *
+   * Always null on a Vercel preview (README.md, Preview database), so a preview takes no card payments, settles no
+   * session and refunds nothing. Stripe's webhook is production's: it would ignore a preview's own order after charging
+   * the card, and a preview's copy of a production order names that order and its real payment.
    */
   get stripeSecretKey(): string | null {
+    if (isPreview()) return null;
     const key = process.env.STRIPE_SECRET_KEY?.trim() ?? "";
     return /^(sk|rk)_(test|live)_[A-Za-z0-9]{8,}$/.test(key) ? key : null;
   },

@@ -422,6 +422,37 @@ describe("card checkout", { skip: canMock ? false : "needs --experimental-test-m
     assert.equal(after.note, checkout.REFUND_FAILED_NOTE);
   });
 
+  it("takes no card payment on a preview: new orders are invoiced, and copied card orders never reach Stripe", async () => {
+    // Orders made before the switch stand for the rows a preview's database could copy from production.
+    const waiting = await order();
+    const paid = await order({ name: "Grace Hopper" });
+    await checkoutRoute(post(`/api/drive/orders/${paid.id}/checkout`, {}, { cookie: paid.cookie }), ctx(paid.id));
+    const sessionId = (await row(paid.id)).checkoutSessionId!;
+    await webhookRoute(paidEvent(sessionId, "pi_000000000008paid"));
+    assert.equal((await row(paid.id)).status, "paid");
+    const stripeBefore = stripeCalls.length;
+
+    process.env.VERCEL_ENV = "preview";
+    try {
+      const fresh = await order({ termsVersion: DRIVE_TERMS_DEFAULT_VERSION });
+      assert.equal(fresh.res.status, 201);
+      assert.equal(fresh.json.payment, "invoice");
+      const res = await checkoutRoute(post(`/api/drive/orders/${waiting.id}/checkout`, {}, { cookie: waiting.cookie }), ctx(waiting.id));
+      assert.equal(res.status, 503);
+      assert.deepEqual(await res.json(), { error: "checkout_off" });
+      assert.equal((await webhookRoute(paidEvent(sessionId, "pi_000000000008paid"))).status, 503);
+      assert.equal((await checkout.settleReturn(await row(waiting.id), sessionId)).status, "requested");
+      const cancelled = await cancelRoute(post(`/api/drive/orders/${paid.id}/cancel`, {}, { cookie: paid.cookie }), ctx(paid.id));
+      assert.equal(cancelled.status, 200);
+      const after = await row(paid.id);
+      assert.equal(after.status, "cancelled");
+      assert.equal(after.refundRef, null, "a preview never refunds the real payment a copied order names");
+      assert.equal(stripeCalls.length, stripeBefore, "nothing reached Stripe from the preview");
+    } finally {
+      delete process.env.VERCEL_ENV;
+    }
+  });
+
   it("never lets an admin invoice a card order or mark it paid by hand", async () => {
     const o = await order();
     viewer = admin;
