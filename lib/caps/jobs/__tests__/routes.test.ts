@@ -10,6 +10,7 @@ import { after, before, beforeEach, describe, it, mock } from "node:test";
 import { eq } from "drizzle-orm";
 import * as realSchema from "@/lib/db/schema";
 import { CAP_READY } from "@/lib/caps/ids";
+import { JOBS_LIMITS } from "@/lib/caps/jobs/limits";
 import { newBoxKey } from "@/lib/secrets/box";
 import { mintOwnerSession } from "@/lib/tools/principal";
 
@@ -25,6 +26,7 @@ describe("the jobs cap's platform routes", { skip: canMock ? false : "needs --ex
   let hooks: typeof import("@/app/api/products/[slug]/webhooks/route");
   let notice: typeof import("@/app/api/products/[slug]/notices/[id]/route");
   let cronRoute: typeof import("@/app/api/cron/jobs/route");
+  let ownerPass: typeof import("@/app/api/products/[slug]/owner-pass/route");
   let store: typeof import("../store");
   let held: typeof import("../held");
   let connectDeps: typeof import("@/lib/caps/connect/deps");
@@ -72,6 +74,7 @@ describe("the jobs cap's platform routes", { skip: canMock ? false : "needs --ex
     hooks = await import("@/app/api/products/[slug]/webhooks/route");
     notice = await import("@/app/api/products/[slug]/notices/[id]/route");
     cronRoute = await import("@/app/api/cron/jobs/route");
+    ownerPass = await import("@/app/api/products/[slug]/owner-pass/route");
     store = await import("../store");
     held = await import("../held");
     connectDeps = await import("@/lib/caps/connect/deps");
@@ -209,11 +212,59 @@ describe("the jobs cap's platform routes", { skip: canMock ? false : "needs --ex
       assert.equal(resend.length, 0);
     });
 
+    it("an admin can't answer for the owner", async () => {
+      await saveKey();
+      const id = await holdOne();
+      viewer = { id: "99999999-9999-4999-8999-999999999999", isAdmin: true };
+      assert.equal((await notice.POST(answer("confirm"), noticeCtx(id))).status, 403);
+      assert.equal((await notice.POST(answer("dismiss"), noticeCtx(id))).status, 403);
+      viewer = { id: ownerId };
+      assert.equal(resend.length, 0);
+    });
+
+    it("a draft past its time, or for a channel the product no longer sends on, can't be confirmed", async () => {
+      await saveKey();
+      const old = await holdOne();
+      await testDb.update(realSchema.ownerNotices).set({ createdAt: new Date(Date.now() - JOBS_LIMITS.heldKeepMs - 1000) }).where(eq(realSchema.ownerNotices.id, old));
+      assert.equal((await notice.POST(answer("confirm"), noticeCtx(old))).status, 409);
+      const id = await holdOne();
+      await testDb.update(realSchema.builds).set({ brief: { ...BRIEF, connect: { publicApis: [], keys: [], sends: [] } } as never });
+      const res = await notice.POST(answer("confirm"), noticeCtx(id));
+      assert.equal(res.status, 409);
+      assert.match(((await res.json()) as { error: string }).error, /doesn't send/);
+      assert.equal(resend.length, 0);
+      assert.deepEqual(await (await notice.POST(answer("dismiss"), noticeCtx(id))).json(), { ok: true, sent: false }, "it can still be dismissed");
+    });
+
     it("a plain notice is cleared with read, and can't be confirmed", async () => {
       const id = await store.jobsStore.addNotice({ productId, namespace: "live", kind: "job", title: "Ready", body: "" });
       assert.equal((await notice.POST(answer("confirm"), noticeCtx(id))).status, 400);
       assert.equal((await notice.POST(answer("read"), noticeCtx(id))).status, 200);
       assert.equal((await store.listNotices(ownerId)).length, 0);
+    });
+  });
+
+  describe("the owner pass", () => {
+    const ask = () => ownerPass.GET(new Request("https://platform.example/api/products/digest/owner-pass"), { params: Promise.resolve({ slug: "digest" }) });
+    const seen = async () => (await testDb.select().from(realSchema.products))[0]!.ownerSeenAt;
+    const was = process.env.DATA_ENABLED;
+    before(() => {
+      process.env.DATA_ENABLED = "1";
+      Object.assign(CAP_READY, { data: true });
+    });
+    after(() => {
+      if (was === undefined) delete process.env.DATA_ENABLED;
+      else process.env.DATA_ENABLED = was;
+    });
+
+    it("counts as a visit for the owner, and not for an admin", async () => {
+      await testDb.update(realSchema.products).set({ ownerSeenAt: null });
+      viewer = { id: "99999999-9999-4999-8999-999999999999", isAdmin: true };
+      assert.equal((await ask()).status, 303, "an admin still gets the pass");
+      assert.equal(await seen(), null);
+      viewer = { id: ownerId };
+      assert.equal((await ask()).status, 303);
+      assert.ok(await seen());
     });
   });
 

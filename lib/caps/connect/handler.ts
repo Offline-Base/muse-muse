@@ -1,3 +1,4 @@
+import { JOBS_LIMITS } from "@/lib/caps/jobs/limits";
 import { jobRunRefusal, type JobRunRead } from "@/lib/caps/jobs/run-check";
 import { createHash } from "node:crypto";
 import {
@@ -555,7 +556,11 @@ function sendRoute(deps: ConnectDeps): CapRoute<SendWork> {
       if (!(rules?.sends ?? []).some((s) => s.channel === send.channel)) return capError("cap_not_allowed", `This product wasn't built to send ${send.channel === "chat" ? "chat messages" : "email"}.`);
       return { send, approval: (body.approval as string | undefined) ?? null };
     },
-    limits: (stage) => [minuteLimit(`send:token:${stage.token.id}`, CONNECT_LIMITS.sendsPerTokenPerMinute, "this product")],
+    limits: (stage) => [
+      minuteLimit(`send:token:${stage.token.id}`, CONNECT_LIMITS.sendsPerTokenPerMinute, "this product"),
+      // Unit 6: a job's drafts wait on the owner's page, so a flood can't hide the ones that matter.
+      ...(stage.caller.job ? [dayLimit(`jobs-held:${stage.token.buildId ?? stage.token.productId}`, JOBS_LIMITS.heldPerProductPerDay, "this product's drafted messages")] : []),
+    ],
     async work(ctx) {
       const { send } = ctx.args;
       // ---------- Wave 3, unit 6: a job's send never goes. The whole message waits for the owner (docs/CAPABILITIES.md, section 12) ----------

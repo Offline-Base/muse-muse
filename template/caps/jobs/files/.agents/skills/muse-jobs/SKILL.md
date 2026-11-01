@@ -51,6 +51,8 @@ export const POST = jobHandler<unknown, { after: string | null }>("digest", asyn
   other. A refused call throws an error with code `run_limit`. Catch it and ask for fewer tokens, or save what you have and
   finish. Once the dollars are really gone, or after 60 model calls, the run ends and the owner hears.
 - A schedule skips its slot while its last run is still going.
+- A tick can run twice: if the platform can't tell it finished, it tries that tick once more. Write saves so that a second
+  go does no harm, for example by checking for today's row first.
 - A thrown error ends the run. The owner gets one notice with your error's first line, so write it in plain words, with no
   secrets or personal details.
 - Schedules stop after 14 days with no visit from the owner, until the owner visits again. Say so on a settings or about
@@ -62,7 +64,8 @@ export const POST = jobHandler<unknown, { after: string | null }>("digest", asyn
   reads a visitor's or a signed-in person's own items.
 - **Save**: only to the collections in brief.md's results line. Mark each one `"jobWrites": true` in `musemuse.json`'s data
   block. Anything else is refused. Show the newest result on a screen, with a heading like "Last digest".
-- **Tell the owner**: `notifyOwner(job, { title, body })`, at most 10 a day. It shows in Muse Muse.
+- **Tell the owner**: `notifyOwner(job, { title, body })`, at most 10 a day. It shows in Muse Muse. With no results line in
+  brief.md, a job must do this: it's the only sign it ran.
 - **Send**: never by itself. `send(job.request, { ... })`, if this product sends at all, answers `{ status: "held" }`: the
   owner reads the whole message and confirms it later in Muse Muse. So never say a job sent something: say it drafted it.
 - It can't write to any other outside service, and it can read only the services visitors may use.

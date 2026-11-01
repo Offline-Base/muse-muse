@@ -335,6 +335,75 @@ describe("jobs on a database", { skip: canMock ? false : "needs --experimental-t
     });
   });
 
+  describe("a flood of failures", () => {
+    it("leaves one unread notice per job, from a failing tick or a stopped run", async () => {
+      for (let i = 0; i < 5; i++) {
+        const run = await runningRun({ name: "flaky" });
+        assert.equal((await handler.handleJobs(post("jobs/checkpoint", { done: true, error: "It broke." }, liveJob(run.id)), ["checkpoint"], jobsDeps(live()))).status, 200);
+      }
+      assert.equal((await notices()).filter((n) => n.kind === "job_failed").length, 1);
+    });
+  });
+
+  describe("text Postgres can't keep", () => {
+    const sha = async (s: string) => (await import("node:crypto")).createHash("sha256").update(s).digest("hex");
+    const hook = (body: string) => new Request(`https://platform.example/api/gateway/hooks/${productId}/log?k=s`, { method: "POST", body });
+    it("a hook payload with a NUL, or broken text, is a plain 400", async () => {
+      await store.saveWebhook(productId, "log", await sha("s"), NOW);
+      for (const body of ['{"a":"x\\u0000y"}', '{"a\\u0000":1}', "plain\u0000words", '{"a":"\\ud800"}']) {
+        assert.equal((await handler.handleHook(hook(body), [productId, "log"], hookDeps())).status, 400, body);
+      }
+      assert.equal((await allRuns()).length, 0);
+      assert.equal((await handler.handleHook(hook('{"a":"a backslash \\\\u0000 is only text"}'), [productId, "log"], hookDeps())).status, 202);
+    });
+    it("a checkpoint, an enqueue and a notice with a NUL are refused, and the run goes on", async () => {
+      const run = await runningRun();
+      const body = (o: string) => new Request("https://platform.example/api/gateway/jobs/x", { method: "POST", headers: { authorization: "Bearer x", "content-type": "application/json", ...liveJob(run.id) }, body: o });
+      assert.equal((await handler.handleJobs(body('{"state":{"a":"\\u0000"},"done":false}'), ["checkpoint"], jobsDeps(live()))).status, 400);
+      assert.equal((await runRow(run.id)).status, "running");
+      assert.equal((await handler.handleJobs(body('{"done":true,"error":"x\\u0000"}'), ["checkpoint"], jobsDeps(live()))).status, 400);
+      assert.equal((await handler.handleJobs(body('{"name":"digest","input":{"a":"\\u0000"}}'), ["enqueue"], jobsDeps(live()))).status, 400);
+      assert.equal((await handler.handleJobs(body('{"title":"x\\u0000"}'), ["notify"], jobsDeps(live()))).status, 400);
+    });
+  });
+
+  describe("what's kept", () => {
+    it("a run's input goes when it finishes, however it finishes", async () => {
+      const closed = await runningRun({ input: { payload: "made up" } });
+      await handler.handleJobs(post("jobs/checkpoint", { done: true }, liveJob(closed.id)), ["checkpoint"], jobsDeps(live()));
+      assert.equal((await runRow(closed.id)).input, null);
+      const next = await runningRun({ input: { payload: "made up" }, name: "second" });
+      await handler.handleJobs(post("jobs/checkpoint", { state: { a: 1 }, done: false }, liveJob(next.id)), ["checkpoint"], jobsDeps(live()));
+      assert.deepEqual((await runRow(next.id)).input, { payload: "made up" }, "a run still going keeps it");
+      const stopped = await runningRun({ input: { payload: "made up" }, name: "third" });
+      await store.stopRunForBudget(stopped.id, NOW);
+      assert.equal((await runRow(stopped.id)).input, null);
+      const tried = await runningRun({ input: { payload: "made up" }, name: "fourth", attempt: JOBS_LIMITS.maxAttempts });
+      await store.retryOrFail({ id: tried.id, productId, name: "fourth", tick: 1, attempt: JOBS_LIMITS.maxAttempts, liveUrl: "x" }, "no", NOW);
+      assert.equal((await runRow(tried.id)).input, null);
+    });
+
+    it("a run cancelled for waiting too long tells the owner once", async () => {
+      await testDb.insert(realSchema.jobRuns).values([1, 2].map((i) => ({ productId, name: "old", trigger: "enqueue" as const, budgetUsd: 0.1, input: { i }, createdAt: new Date(NOW.getTime() - JOBS_LIMITS.runMaxAgeMs - 1000) })));
+      await store.claimQueued(10, NOW);
+      assert.deepEqual((await notices()).map((n) => n.title), ["A queued job waited too long"]);
+      assert.equal((await allRuns())[0]!.input, null);
+    });
+
+    it("an unanswered held send expires: its address and words go, and the owner is told", async () => {
+      const id = await held.holdJobSend({ productId, namespace: "live", send: { channel: "email", to: ["friend@example.com"], subject: "Plan", body: "Made-up words.", from: null }, lines: ["To: friend@example.com"], title: "Send this email?" });
+      const fresh = new Date(Date.now() + JOBS_LIMITS.heldKeepMs - 60_000);
+      await cleanup.sweepJobs(fresh);
+      assert.equal((await notices())[0]!.kind, "send_held", "not yet");
+      await cleanup.sweepJobs(new Date(Date.now() + JOBS_LIMITS.heldKeepMs + 60_000));
+      const [n] = await notices();
+      assert.deepEqual([n!.id, n!.kind, n!.payload], [id, "job", null]);
+      assert.doesNotMatch(`${n!.title} ${n!.body}`, /friend@example|Made-up/);
+      assert.ok(n!.resolvedAt, "it can't be answered");
+      assert.equal(await store.claimNotice(id, NOW), false);
+    });
+  });
+
   describe("a job token after its run ended", () => {
     const write = (hdr: Record<string, string>) => data.handleData(post("data/digests?scope=shared", { data: { text: "made up" } }, hdr), ["digests"], dataDeps(live()));
     const read = (hdr: Record<string, string>) => data.handleData(post("data/digests/query?scope=shared", {}, hdr), ["digests", "query"], dataDeps(live()));
@@ -448,6 +517,23 @@ describe("jobs on a database", { skip: canMock ? false : "needs --experimental-t
       assert.match(n!.body, /To: friend@example\.com/);
       assert.match(n!.body, /Message: Made-up words\./);
       assert.equal((n!.payload as { send: { body: string } }).send.body, "Made-up words.");
+    });
+
+    it("stop at a day's limit per product", async () => {
+      const run = await runningRun();
+      rates.set(`jobs-held:${productId}`, JOBS_LIMITS.heldPerProductPerDay);
+      assert.equal((await connect.handleSend(post("send", sendBody, liveJob(run.id)), connectDeps(live(), true))).status, 429);
+      assert.equal((await notices()).length, 0);
+    });
+
+    it("stay at the top of the owner's list however many failures come after, and the rest is counted", async () => {
+      const run = await runningRun();
+      await connect.handleSend(post("send", sendBody, liveJob(run.id)), connectDeps(live(), true));
+      for (let i = 0; i < 25; i++) await store.jobsStore.addNotice({ productId, namespace: "live", kind: "job", title: `Made up ${i}`, body: "" });
+      const list = await store.listNotices(ownerId);
+      assert.equal(list.length, 20);
+      assert.equal(list[0]!.kind, "send_held");
+      assert.equal(await store.countNotices(ownerId), 26);
     });
 
     it("are refused like anyone but the owner while the jobs cap is off", async () => {

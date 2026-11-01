@@ -24,6 +24,10 @@ export const JOBS_LIMITS = {
   /** Runs one product can have waiting. Hooks and enqueue are refused past this until some have run. */
   queuedPerProduct: 100,
   notifyPerProductPerDay: 10,
+  /** Messages jobs may draft for the owner in a day. */
+  heldPerProductPerDay: 20,
+  /** A draft nobody answers is dropped after this, with its addresses and words. */
+  heldKeepMs: 14 * 24 * 3_600_000,
   noticeTitleMax: 120,
   noticeBodyMax: 2_000,
   hookBodyMaxBytes: 64 * 1024,
@@ -52,6 +56,18 @@ export const JOBS_LIMITS = {
   buildNamespaceMaxAgeMs: 24 * 3_600_000,
   revokedKeepMs: 24 * 3_600_000,
 } as const;
+
+const UNSTORABLE = /\0|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+
+/** False for a NUL or a broken surrogate anywhere in a value, keys included: Postgres text and jsonb refuse them. */
+export function storableText(value: unknown): boolean {
+  let ok = true;
+  JSON.stringify(value, (key, v) => {
+    if (UNSTORABLE.test(key) || (typeof v === "string" && UNSTORABLE.test(v))) ok = false;
+    return v;
+  });
+  return ok;
+}
 
 /** A job's name, which is also its route: app/api/jobs/<name>/route.ts. */
 export const JOB_NAME = /^[a-z][a-z0-9-]{0,39}$/;

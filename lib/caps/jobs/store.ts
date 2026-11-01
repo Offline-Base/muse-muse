@@ -69,6 +69,8 @@ export interface JobsStore {
   /** A build's fire: the queued run of this name goes on, or a new one starts. */
   fireTest(input: { productId: string; namespace: string; name: string; input: unknown; budgetUsd: number }, now: Date): Promise<JobRun>;
   addNotice(input: NoticeInput): Promise<string>;
+  /** One notice per title while unread, so a job failing again and again doesn't push the rest off the owner's page. */
+  addNoticeOnce(input: NoticeInput): Promise<void>;
   /** True when the owner hasn't visited in `days`, counted from when the product was made if they never have. */
   ownerAway(productId: string, days: number, now: Date): Promise<boolean>;
   /** Runs waiting in this space, up to JOBS_LIMITS.queuedPerProduct. */
@@ -133,7 +135,7 @@ export const jobsStore: JobsStore = {
         attempt: 0,
         checkpoint: (tick.state ?? null) as never,
         error: tick.error ?? (outOfTicks ? `It used all of its ${tick.maxTicks} ticks.` : null),
-        ...(status === "queued" ? {} : { finishedAt: now }),
+        ...(status === "queued" ? {} : { finishedAt: now, input: null as never }),
       })
       .where(and(eq(schema.jobRuns.id, runId), eq(schema.jobRuns.status, "running"), eq(schema.jobRuns.tick, tick.tick), eq(schema.jobRuns.attempt, tick.attempt)))
       .returning({ status: schema.jobRuns.status });
@@ -169,6 +171,8 @@ export const jobsStore: JobsStore = {
       .returning({ id: schema.ownerNotices.id });
     return row!.id;
   },
+
+  addNoticeOnce: (input) => addNoticeOnce(input),
 
   async ownerAway(productId, days, now) {
     const cutoff = new Date(now.getTime() - days * 86_400_000);
@@ -239,7 +243,7 @@ export async function addRunCost(runId: string, usd: number): Promise<void> {
 export async function stopRunForBudget(runId: string, now: Date, why = "It reached its dollar limit."): Promise<boolean> {
   const rows = await db()
     .update(schema.jobRuns)
-    .set({ status: "budget", error: why, finishedAt: now })
+    .set({ status: "budget", error: why, finishedAt: now, input: null as never })
     .where(and(eq(schema.jobRuns.id, runId), inArray(schema.jobRuns.status, ["running", "queued"])))
     .returning({ id: schema.jobRuns.id });
   return rows.length > 0;
@@ -331,7 +335,7 @@ export async function expireStale(now: Date): Promise<Array<{ id: string; produc
     .where(and(eq(schema.jobRuns.status, "running"), eq(schema.jobRuns.namespace, "live"), lt(schema.jobRuns.startedAt, cutoff), lt(schema.jobRuns.attempt, JOBS_LIMITS.maxAttempts)));
   return db()
     .update(schema.jobRuns)
-    .set({ status: "failed", error: "It didn't finish in time.", finishedAt: now })
+    .set({ status: "failed", error: "It didn't finish in time.", finishedAt: now, input: null as never })
     .where(and(eq(schema.jobRuns.status, "running"), eq(schema.jobRuns.namespace, "live"), lt(schema.jobRuns.startedAt, cutoff)))
     .returning({ id: schema.jobRuns.id, productId: schema.jobRuns.productId, name: schema.jobRuns.name });
 }
@@ -391,7 +395,7 @@ export async function retryOrFail(run: ClaimedRun, error: string, now: Date): Pr
   const last = run.attempt >= JOBS_LIMITS.maxAttempts;
   const [row] = await db()
     .update(schema.jobRuns)
-    .set(last ? { status: "failed", error, finishedAt: now } : { status: "queued", error })
+    .set(last ? { status: "failed", error, finishedAt: now, input: null as never } : { status: "queued", error })
     .where(and(eq(schema.jobRuns.id, run.id), eq(schema.jobRuns.status, "running"), eq(schema.jobRuns.attempt, run.attempt), eq(schema.jobRuns.tick, run.tick)))
     .returning({ status: schema.jobRuns.status });
   return (row?.status as "queued" | "failed" | undefined) ?? "stale";
@@ -448,7 +452,7 @@ export async function clearSchedules(productId: string, now: Date): Promise<stri
 async function cancelQueued(productId: string, error: string, now: Date, names?: string[]): Promise<void> {
   await db()
     .update(schema.jobRuns)
-    .set({ status: "cancelled", error, finishedAt: now })
+    .set({ status: "cancelled", error, finishedAt: now, input: null as never })
     .where(and(eq(schema.jobRuns.productId, productId), eq(schema.jobRuns.namespace, "live"), eq(schema.jobRuns.status, "queued"), names ? inArray(schema.jobRuns.name, names) : undefined));
 }
 
@@ -529,7 +533,7 @@ export interface NoticeRow {
   resolvedAt: Date | null;
 }
 
-/** A person's unread notices across the products they own. */
+/** A person's unread notices across the products they own: messages waiting on their answer first, then newest first. */
 export async function listNotices(ownerId: string, limit = 20): Promise<NoticeRow[]> {
   return db()
     .select({
@@ -547,14 +551,24 @@ export async function listNotices(ownerId: string, limit = 20): Promise<NoticeRo
     .from(schema.ownerNotices)
     .innerJoin(schema.products, eq(schema.products.id, schema.ownerNotices.productId))
     .where(and(eq(schema.products.ownerId, ownerId), eq(schema.ownerNotices.namespace, "live"), isNull(schema.ownerNotices.readAt)))
-    .orderBy(desc(schema.ownerNotices.createdAt))
+    .orderBy(desc(sql`(${schema.ownerNotices.kind} = 'send_held' and ${schema.ownerNotices.resolvedAt} is null)`), desc(schema.ownerNotices.createdAt))
     .limit(limit);
 }
 
-export async function noticeOf(productId: string, id: string): Promise<{ id: string; kind: NoticeKind; payload: unknown; resolvedAt: Date | null } | null> {
+/** How many unread notices a person has in all, for the line under a list that stops at its limit. */
+export async function countNotices(ownerId: string): Promise<number> {
+  const [row] = await db()
+    .select({ count: sql<number>`count(*)::int` })
+    .from(schema.ownerNotices)
+    .innerJoin(schema.products, eq(schema.products.id, schema.ownerNotices.productId))
+    .where(and(eq(schema.products.ownerId, ownerId), eq(schema.ownerNotices.namespace, "live"), isNull(schema.ownerNotices.readAt)));
+  return Number(row?.count ?? 0);
+}
+
+export async function noticeOf(productId: string, id: string): Promise<{ id: string; kind: NoticeKind; payload: unknown; resolvedAt: Date | null; createdAt: Date } | null> {
   if (!UUID.test(id)) return null;
   const [row] = await db()
-    .select({ id: schema.ownerNotices.id, kind: schema.ownerNotices.kind, payload: schema.ownerNotices.payload, resolvedAt: schema.ownerNotices.resolvedAt })
+    .select({ id: schema.ownerNotices.id, kind: schema.ownerNotices.kind, payload: schema.ownerNotices.payload, resolvedAt: schema.ownerNotices.resolvedAt, createdAt: schema.ownerNotices.createdAt })
     .from(schema.ownerNotices)
     .where(and(eq(schema.ownerNotices.id, id), eq(schema.ownerNotices.productId, productId), eq(schema.ownerNotices.namespace, "live")))
     .limit(1);

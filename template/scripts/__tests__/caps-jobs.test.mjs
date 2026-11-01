@@ -53,7 +53,7 @@ describe("the overlay's files", () => {
 
   test("the skill names every helper and every limit, and nothing has an em dash", () => {
     const skill = readFileSync(path.join(JOBS, ".agents/skills/muse-jobs/SKILL.md"), "utf8");
-    for (const name of ["jobHandler", "checkpoint(", "notifyOwner", "enqueue(", "fireJob", "fireWebhook", "checkResultShown", "jobWrites", "run_limit", "sign_in_required", "switched_off", "64 KB", "10 ticks", "14 days", "15 minutes", "held"]) assert.ok(skill.includes(name), name);
+    for (const name of ["jobHandler", "checkpoint(", "notifyOwner", "enqueue(", "fireJob", "fireWebhook", "checkResultShown", "jobWrites", "run_limit", "sign_in_required", "switched_off", "64 KB", "10 ticks", "14 days", "15 minutes", "held", "twice", "one at a time"]) assert.ok(skill.includes(name), name);
     for (const f of walk(JOBS)) assert.ok(!readFileSync(path.join(JOBS, f), "utf8").includes("—"), f);
   });
 });
@@ -97,10 +97,11 @@ describe("the fixed checks (scripts/caps/jobs.mjs)", () => {
     assert.deepEqual(await failed({ root: root({ ...manifest, data: { collections: [{ name: "digests", scope: "shared" }] } }) }), ["manifest"]);
   });
 
-  test("a brief with no results or webhooks doesn't ask for them", async () => {
-    const small = { done: 1, "brief:schedule:digest": 1 };
-    const out = await checker.check({ record: { checks: [{ id: "job-fired", ok: true }] }, proof: small, root: root({ jobs: { schedules: [{ name: "digest", every: "1 hour" }], webhooks: [] } }) });
-    assert.deepEqual(out.map((c) => [c.id, c.ok]), [["manifest", true], ["job-ran", true]]);
+  test("a brief with no results or webhooks doesn't ask for them, but its job has to tell the owner something", async () => {
+    const small = { done: 1, notices: 1, "brief:schedule:digest": 1 };
+    const check = (p) => checker.check({ record: { checks: [{ id: "job-fired", ok: true }] }, proof: p, root: root({ jobs: { schedules: [{ name: "digest", every: "1 hour" }], webhooks: [] } }) });
+    assert.deepEqual((await check(small)).map((c) => [c.id, c.ok]), [["manifest", true], ["job-ran", true], ["job-told-owner", true]]);
+    assert.deepEqual((await check({ ...small, notices: 0 })).map((c) => [c.id, c.ok]), [["manifest", true], ["job-ran", true], ["job-told-owner", false]]);
   });
 });
 
@@ -307,12 +308,9 @@ try { await jobs.enqueue(new Headers(), { name: "digest" }); say({ refused: fals
       if (e.url.startsWith("/api/jobs/")) return { status: 200, body: { ok: true, status: "done", tick: 1 } };
       return { status: 404, body: {} };
     };
-    writeFileSync(path.join(dir, "pw.jobs.config.mts"), `import { defineConfig } from "@playwright/test";\nexport default defineConfig({ testDir: "tests/pw", outputDir: "test-results/pw", use: { baseURL: ${JSON.stringify(base.replace(/\/gw$/, ""))} }, projects: [{ name: "smoke" }, { name: "demo" }] });\n`);
-    mkdirSync(path.join(dir, "tests/pw/caps"), { recursive: true });
-    cpSync(path.join(dir, "tests/caps"), path.join(dir, "tests/pw/caps"), { recursive: true });
-    cpSync(path.join(dir, "tests/judge-shot.ts"), path.join(dir, "tests/pw/judge-shot.ts"));
+    writeFileSync(path.join(dir, "pw.jobs.config.mts"), `import { defineConfig } from "@playwright/test";\nexport default defineConfig({ testDir: "tests", testMatch: /jobs-pw\\.spec\\.ts$/, outputDir: "test-results/pw", use: { baseURL: ${JSON.stringify(base.replace(/\/gw$/, ""))} }, projects: [{ name: "smoke" }, { name: "demo" }] });\n`);
     writeFileSync(
-      path.join(dir, "tests/pw/smoke.spec.ts"),
+      path.join(dir, "tests/jobs-pw.spec.ts"),
       `import { expect, test } from "@playwright/test";\nimport { fireJob, fireWebhook } from "./caps/jobs";\ntest("jobs", async ({ request }) => {\n  const first = await fireJob(request, "digest");\n  expect(first.status).toBe("done");\n  expect((await fireWebhook(request, "log", { event: "sample" })).status).toBe("done");\n});\n`,
     );
     // Async: the fake gateway answers from this process.

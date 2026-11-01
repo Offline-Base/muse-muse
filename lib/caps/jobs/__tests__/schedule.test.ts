@@ -22,7 +22,7 @@ describe("parseEvery", () => {
     assert.equal(parseEvery("1 minute")?.everyMinutes, 15);
     assert.equal(parseEvery("every 5 minutes")?.everyMinutes, 15);
     assert.equal(parseEvery("14 minutes")?.everyMinutes, 15);
-    assert.equal(parseEvery("16 minutes")?.everyMinutes, 16);
+    assert.equal(parseEvery("16 minutes")?.everyMinutes, 15, "and just over goes to the nearest that runs evenly");
   });
 
   it("refuses what isn't a schedule, a time that doesn't exist and an unknown time zone", () => {
@@ -83,6 +83,33 @@ describe("nextRunAfter", () => {
       for (let i = 0; i < 40; i++) {
         const next = nextRunAfter(every(words), at);
         assert.ok(next > at, `${words} from ${at.toISOString()}`);
+        at = next;
+      }
+    }
+  });
+
+  it("rounds an interval to one that runs as it says, so the words and the runs agree", () => {
+    const every = (w: string) => { const e = parseEvery(w)!; return [e.everyMinutes, everyWords(e)]; };
+    assert.deepEqual(every("36 hours"), [2880, "2 days"]);
+    assert.deepEqual(every("23 hours"), [1440, "1 day"]);
+    assert.deepEqual(every("7 hours"), [480, "8 hours"]);
+    assert.deepEqual(every("5 hours"), [360, "6 hours"]);
+    assert.deepEqual(every("45 minutes"), [60, "1 hour"]);
+    assert.deepEqual(every("90 minutes"), [120, "2 hours"]);
+    assert.deepEqual(every("5 weeks"), [43_200, "30 days"]);
+    assert.deepEqual(every("6 hours"), [360, "6 hours"], "one that already works stays");
+    assert.deepEqual(every("1 week"), [10_080, "1 week"]);
+    assert.deepEqual(every("15 minutes"), [15, "15 minutes"]);
+    assert.deepEqual(every("1 minute"), [15, "15 minutes"]);
+  });
+
+  it("every gap between slots is the interval it says, across a plain day", () => {
+    for (const words of ["15 minutes", "20 minutes", "30 minutes", "1 hour", "2 hours", "3 hours", "4 hours", "6 hours", "8 hours", "12 hours", "7 hours", "23 hours"]) {
+      const e = parseEvery(words)!;
+      let at = new Date("2026-03-10T00:00:00Z");
+      for (let i = 0; i < 12; i++) {
+        const next = nextRunAfter(e, at);
+        if (i > 0) assert.equal(next.getTime() - at.getTime(), e.everyMinutes * 60_000, `${words}, step ${i}`);
         at = next;
       }
     }

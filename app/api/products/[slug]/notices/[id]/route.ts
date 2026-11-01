@@ -1,7 +1,9 @@
 import { eq } from "drizzle-orm";
-import { AuthError, canActAsOwner, requireUser } from "@/lib/auth";
+import { AuthError, requireUser } from "@/lib/auth";
 import type { SendArgs } from "@/lib/caps/connect/handler";
+import { JOBS_LIMITS } from "@/lib/caps/jobs/limits";
 import { claimNotice, markNoticeRead, noticeOf, releaseNotice } from "@/lib/caps/jobs/store";
+import { capProduct } from "@/lib/caps/store";
 import { db, schema } from "@/lib/db/client";
 import { env } from "@/lib/env";
 
@@ -23,7 +25,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   const { slug, id } = await params;
   const [product] = await db().select({ id: schema.products.id, ownerId: schema.products.ownerId, status: schema.products.status, takenDownAt: schema.products.takenDownAt }).from(schema.products).where(eq(schema.products.slug, slug)).limit(1);
   if (!product) return off();
-  if (!canActAsOwner(user, product.ownerId)) return Response.json({ error: "Only the product's owner can do this." }, { status: 403 });
+  // The owner's own answer: an admin who can act as the owner elsewhere can't send on their key from here.
+  if (user.openAccess || user.id !== product.ownerId) return Response.json({ error: "Only the product's owner can do this." }, { status: 403 });
   const notice = await noticeOf(product.id, id);
   if (!notice) return off();
   const action = ((await req.json().catch(() => null)) as { action?: unknown } | null)?.action;
@@ -41,8 +44,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   if (product.status === "disabled" || product.takenDownAt) return Response.json({ error: "This product is turned off, so it can't send." }, { status: 409 });
   const send = (notice.payload as { send?: SendArgs } | null)?.send;
   if (!send) return Response.json({ error: "This message can't be read any more." }, { status: 409 });
+  if (now.getTime() - notice.createdAt.getTime() > JOBS_LIMITS.heldKeepMs) return Response.json({ error: "This draft is too old to send. Dismiss it, and let the job draft a new one." }, { status: 409 });
+  const [{ deliverHeldSend }, { connectDeps, liveConnectRules }] = await Promise.all([import("@/lib/caps/connect/handler"), import("@/lib/caps/connect/deps")]);
+  // A refinement may have taken this channel away since the job drafted it.
+  const rules = await liveConnectRules(product.id, (await capProduct(product.id))?.manifest ?? null);
+  if (!(rules?.sends ?? []).some((s) => s.channel === send.channel)) return Response.json({ error: "This product doesn't send that kind of message any more, so this draft can't go. Dismiss it." }, { status: 409 });
   if (!(await claimNotice(notice.id, now))) return Response.json({ error: "This one was already answered." }, { status: 409 });
-  const [{ deliverHeldSend }, { connectDeps }] = await Promise.all([import("@/lib/caps/connect/handler"), import("@/lib/caps/connect/deps")]);
   const result = await deliverHeldSend({ productId: product.id, send, nonce: notice.id, now }, connectDeps()).catch(() => ({ ok: false as const, code: "failed" as const, message: "It may not have gone. Check before sending it again.", mayHaveGone: true }));
   if (result.ok) return Response.json({ ok: true, sent: true });
   // Nothing went, so the owner can try again. A send that may have gone stays answered, so it can't go twice.

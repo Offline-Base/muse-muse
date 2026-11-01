@@ -5,7 +5,9 @@
 //                 marked jobWrites (the brief's lists come from the gateway's record of this build)
 //   job-ran       the gateway recorded a test-fired run as done in this verify, and the smoke test fired it
 //   job-wrote     the gateway saved a row for a job, when the brief names a results collection
-//   result-shown  the smoke test saw a job's result on a screen
+//   result-shown  the smoke test saw a job's result on a screen, the same
+//   job-told-owner  with no results collection (a brief with no data block has nowhere to save), a job has to leave the
+//                 owner a notice, or nothing would show that it did anything
 //   webhook-run   a sample payload led to a finished run, for a brief with a webhook
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -57,6 +59,11 @@ export async function check({ record, proof, root }) {
     out.push({ id: "job-wrote", ok: rows > 0, detail: rows > 0 ? `the gateway saved ${rows} row${rows === 1 ? "" : "s"} for finished job runs` : "no finished job run saved a row to its results collection" });
     const shown = recorded(record, "result-shown");
     out.push({ id: "result-shown", ok: shown?.ok === true, detail: shown?.detail ?? "the smoke test didn't run checkResultShown" });
+  }
+
+  if (brief && !brief.results.length) {
+    const told = Number(proof?.notices ?? 0);
+    out.push({ id: "job-told-owner", ok: told > 0, detail: told > 0 ? "a job left the owner a notice" : "this brief saves no results, so a job has to call notifyOwner, and none did" });
   }
 
   if (!brief || brief.webhooks.length) {

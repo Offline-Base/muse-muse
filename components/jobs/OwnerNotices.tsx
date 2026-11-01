@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { NoticeActions } from "@/components/jobs/NoticeActions";
-import { listNotices } from "@/lib/caps/jobs/store";
+import { countNotices, listNotices } from "@/lib/caps/jobs/store";
 import { env } from "@/lib/env";
 import { relativeTime } from "@/lib/format";
 import { currentUser } from "@/lib/queries";
@@ -19,6 +19,7 @@ export async function OwnerNotices() {
     return [];
   });
   if (!notices.length) return null;
+  const more = (await countNotices(user.id).catch(() => notices.length)) - notices.length;
   const now = Date.now();
   return (
     <section className="dash-card owner-notices" aria-label="From your background jobs">
@@ -37,6 +38,7 @@ export async function OwnerNotices() {
           </li>
         ))}
       </ul>
+      {more > 0 ? <p className="muted small">{more} more not shown. Answer or clear these to see the rest.</p> : null}
       <style>{`
         .owner-notices { margin-block-end: 16px; }
         .owner-notice-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }

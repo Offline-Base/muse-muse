@@ -3,7 +3,7 @@ import { dataBlock } from "@/lib/caps/data/brief";
 import { COLLECTION_NAME } from "@/lib/caps/data/types";
 import { jobsWebhooksOn } from "@/lib/caps/jobs/flags";
 import { JOB_NAME } from "@/lib/caps/jobs/limits";
-import { parseEvery } from "@/lib/caps/jobs/schedule";
+import { everyWords, parseEvery } from "@/lib/caps/jobs/schedule";
 
 /**
  * The jobs cap's brief block (docs/CAPABILITIES.md, section 12): the schedules a product runs, the webhooks that start
@@ -81,8 +81,10 @@ export function normalizeJobsBlock(raw: unknown, data: unknown, webhooks: boolea
     .flatMap((s) => {
       const r = (s ?? {}) as Record<string, unknown>;
       const n = slug(r.name);
-      if (!fresh(n) || !parseEvery(r.every)) return [];
-      return [{ name: n, every: clip(String(r.every).trim(), 60), does: text(r.does, n) }];
+      const every = parseEvery(r.every);
+      if (!fresh(n) || !every) return [];
+      // In the words of what really runs, so the prompt, the brief and the owner's panel all say the same.
+      return [{ name: n, every: everyWords(every), does: text(r.does, n) }];
     })
     .slice(0, MAX_SCHEDULES);
   b.webhooks = webhooks

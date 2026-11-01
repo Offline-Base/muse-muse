@@ -8,7 +8,9 @@ import { JOBS_LIMITS } from "@/lib/caps/jobs/limits";
  * The slots of a day are local midnight plus `atMinute`, then every `everyMinutes`, in the schedule's time zone, so
  * "1 day at 07:30" stays at 07:30 on the clock across a daylight saving change. A time that doesn't exist that day (the
  * spring gap) runs that much later on the new clock. A time that happens twice runs the first time. Anything rarer than a day
- * counts whole days from the epoch in that time zone, so a run's slot never drifts.
+ * counts whole days from the epoch in that time zone, so a run's slot never drifts. An interval that wouldn't run as it
+ * says ("7 hours" can't hang off midnight evenly) is rounded to the nearest that does, and the rounded one is what's stored
+ * and shown.
  */
 export interface Every {
   everyMinutes: number;
@@ -18,6 +20,15 @@ export interface Every {
 
 const UNIT_MINUTES: Record<string, number> = { minute: 1, hour: 60, day: 1440, week: 10_080 };
 const EVERY = /^(?:every\s+)?(\d{1,5})?\s*(minute|hour|day|week)s?(?:\s+at\s+(\d{1,2}):(\d{2}))?(?:\s+([A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)*))?$/i;
+
+/** The shorter-than-a-day intervals whose slots fall evenly from midnight. */
+const WITHIN_A_DAY = [15, 20, 30, 60, 120, 180, 240, 360, 480, 720, 1440];
+
+/** The nearest interval that runs as it says: one of WITHIN_A_DAY, or whole days. A tie takes the longer, which costs less. */
+function runnableMinutes(minutes: number): number {
+  if (minutes >= 1440) return Math.min(JOBS_LIMITS.maxEveryMinutes, Math.max(1, Math.round(minutes / 1440)) * 1440);
+  return WITHIN_A_DAY.reduce((best, m) => (Math.abs(m - minutes) <= Math.abs(best - minutes) ? m : best));
+}
 
 /** True for a time zone this runtime knows. */
 export function validTimeZone(tz: string): boolean {
@@ -30,7 +41,8 @@ export function validTimeZone(tz: string): boolean {
 }
 
 /**
- * The schedule a string says, or null when it isn't one. Below 15 minutes it comes back as 15, the floor. "daily",
+ * The schedule a string says, or null when it isn't one. Below 15 minutes it comes back as 15, the floor, and an odd interval
+ * as the nearest that runs evenly. "daily",
  * "hourly" and "weekly" are understood. An unknown time zone is refused rather than quietly run in UTC.
  */
 export function parseEvery(raw: unknown): Every | null {
@@ -54,7 +66,7 @@ export function parseEvery(raw: unknown): Every | null {
   }
   const tz = m[5] ?? "UTC";
   if (!validTimeZone(tz)) return null;
-  return { everyMinutes: Math.min(JOBS_LIMITS.maxEveryMinutes, Math.max(JOBS_LIMITS.minEveryMinutes, minutes)), atMinute, tz };
+  return { everyMinutes: runnableMinutes(Math.max(JOBS_LIMITS.minEveryMinutes, minutes)), atMinute, tz };
 }
 
 /** A schedule in the same words parseEvery reads, for a prompt or a page. */

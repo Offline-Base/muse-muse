@@ -15,7 +15,7 @@ import {
 } from "@/lib/caps/gate";
 import { allowedCapIds } from "@/lib/caps/manifest";
 import { CAP_NEEDS_BUILDER } from "@/lib/caps/ids";
-import { JOB_NAME, JOBS_LIMITS } from "@/lib/caps/jobs/limits";
+import { JOB_NAME, JOBS_LIMITS, storableText } from "@/lib/caps/jobs/limits";
 import { JOB_HEADER } from "@/lib/caps/principal";
 import { jobNotRunning, jobRunRefusal } from "@/lib/caps/jobs/run-check";
 import type { JobRun, JobsStore } from "@/lib/caps/jobs/store";
@@ -55,6 +55,7 @@ const dayLimit = (key: string, limit: number, who: string): CapLimit => ({ key, 
 const notRunning = jobNotRunning;
 const ownerAwayRefusal = () => capError("cap_not_allowed", "This product's background jobs are paused until its owner visits it on Muse Muse.");
 const queueFull = () => capError("rate_limited", `This product has ${JOBS_LIMITS.queuedPerProduct} background jobs waiting already. Try again later.`, { "retry-after": "300" });
+const unstorable = () => capError("invalid_arguments", "That has a NUL character or broken text in it, which can't be saved.");
 const tickOver = () => gatewayError(409, "invalid_request_error", "job_not_running", "This tick of the job is over, so nothing changed.", { retry: false });
 const jobOnly = (stage: CapStage) => (stage.caller.job ? null : capError("sign_in_required", "Only the platform's call to a job can do this. It needs the x-musemuse-job header."));
 
@@ -121,6 +122,7 @@ function checkpointRoute(deps: JobsDeps): CapRoute<CheckpointArgs> {
       if (body instanceof Response) return body;
       const extra = unknownKeys(body, ["state", "done", "error"]);
       if (extra) return extra;
+      if (!storableText(body.state) || !storableText(body.error)) return unstorable();
       if (body.state !== undefined && Buffer.byteLength(JSON.stringify(body.state)) > JOBS_LIMITS.checkpointMaxBytes) return capError("invalid_arguments", "A checkpoint holds at most 64 KB. Save big things with data() and keep their ids here.");
       if (typeof body.done !== "boolean") return capError("invalid_arguments", "done is true when the run has finished, or false for the next tick to go on.");
       if (body.error !== undefined && body.error !== null && typeof body.error !== "string") return capError("invalid_arguments", "error is one line of plain text.");
@@ -135,7 +137,7 @@ function checkpointRoute(deps: JobsDeps): CapRoute<CheckpointArgs> {
       const status = await deps.store.closeTick(run.id, { tick: held.tick, attempt: held.attempt, state: ctx.args.state, done: ctx.args.done, error: ctx.args.error, maxTicks: JOBS_LIMITS.ticksPerRun }, ctx.now);
       if (status === "stale") return tickOver();
       if (status === "failed" && run.namespace === "live") {
-        await deps.store.addNotice({ productId: run.productId, namespace: run.namespace, kind: "job_failed", title: `Job ${run.name} failed`, body: ctx.args.error ?? `It used all of its ${JOBS_LIMITS.ticksPerRun} ticks.` });
+        await deps.store.addNoticeOnce({ productId: run.productId, namespace: run.namespace, kind: "job_failed", title: `Job ${run.name} failed`, body: ctx.args.error ?? `It used all of its ${JOBS_LIMITS.ticksPerRun} ticks.` });
       }
       return json({ ok: true, status, tick: run.tick });
     },
@@ -159,6 +161,7 @@ function enqueueRoute(deps: JobsDeps): CapRoute<EnqueueArgs> {
       const extra = unknownKeys(body, ["name", "input"]);
       if (extra) return extra;
       if (typeof body.name !== "string" || !JOB_NAME.test(body.name)) return capError("invalid_arguments", "name is the job's route: lowercase letters, digits and dashes.");
+      if (!storableText(body.input)) return unstorable();
       if (body.input !== undefined && Buffer.byteLength(JSON.stringify(body.input)) > JOBS_LIMITS.inputMaxBytes) return capError("invalid_arguments", "A job's input holds at most 64 KB.");
       return { name: body.name, input: body.input ?? null };
     },
@@ -193,6 +196,7 @@ function notifyRoute(deps: JobsDeps): CapRoute<NotifyArgs> {
       if (body instanceof Response) return body;
       const extra = unknownKeys(body, ["title", "body"]);
       if (extra) return extra;
+      if (!storableText(body.title) || !storableText(body.body)) return unstorable();
       if (typeof body.title !== "string" || !line(body.title, JOBS_LIMITS.noticeTitleMax)) return capError("invalid_arguments", "A notice needs a title.");
       if (body.body !== undefined && typeof body.body !== "string") return capError("invalid_arguments", "A notice's body is text.");
       return { title: line(body.title, JOBS_LIMITS.noticeTitleMax), body: typeof body.body === "string" ? body.body.trim().slice(0, JOBS_LIMITS.noticeBodyMax) : "" };
@@ -223,6 +227,7 @@ function testFireRoute(deps: JobsDeps): CapRoute<TestFireArgs> {
       const extra = unknownKeys(body, ["name", "input", "hook"]);
       if (extra) return extra;
       if (typeof body.name !== "string" || !JOB_NAME.test(body.name)) return capError("invalid_arguments", "name is the job's route: lowercase letters, digits and dashes.");
+      if (!storableText(body.input)) return unstorable();
       if (body.input !== undefined && Buffer.byteLength(JSON.stringify(body.input)) > JOBS_LIMITS.inputMaxBytes) return capError("invalid_arguments", "A job's input holds at most 64 KB.");
       return { name: body.name, input: body.input ?? null, hook: body.hook === true };
     },
@@ -321,6 +326,7 @@ export async function handleHook(req: Request, path: readonly string[], deps: Ho
     } catch {
       // Not JSON: the job gets the text.
     }
+    if (!storableText(payload)) return unstorable();
     if (deps.runUsd() === 0) return capError("caps_paused", "Background jobs are paused on Muse Muse today.");
     await deps.store.queueRun({ productId, namespace: hook.namespace, name, trigger: "webhook", webhookId: hook.id, input: { payload, receivedAt: now.toISOString() }, budgetUsd: Math.max(deps.runUsd(), 0.01) });
     return json({ ok: true, queued: true }, 202);
