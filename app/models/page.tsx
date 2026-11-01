@@ -7,6 +7,7 @@ import { toRecipeView } from "@/components/train/format";
 import { toResultView, type ResultView } from "@/components/train/results";
 import { EmptyCard, NotConnected, PageHeader } from "@/components/ui";
 import { linkedLocalFiles } from "@/components/vibe/RunLocallyLink";
+import { contributorBuildsOn } from "@/lib/env";
 import { modelCallCounts, safeQuery } from "@/lib/queries";
 import { ADAPTER_RECIPE } from "@/lib/train/logic";
 import { recipeById } from "@/lib/train/recipes";
@@ -41,7 +42,7 @@ export default async function ModelsPage() {
   await connection();
   const since = new Date(Date.now() - CALL_DAYS * 86_400_000);
   const [calls, tuned] = await Promise.all([safeQuery(() => modelCallCounts(since)), safeQuery(loadTuned)]);
-  const hosted = hostedModelViews(calls.ok ? calls.data : null);
+  const hosted = hostedModelViews(calls.ok ? calls.data : null, { buildsOnContributor: contributorBuildsOn() });
 
   return (
     <div className="page">

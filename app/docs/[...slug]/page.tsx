@@ -12,6 +12,7 @@ import { demoFor } from "@/lib/docs/demos";
 import { loadDocsDoc, renderBlocks, renderInlines } from "@/lib/docs/markdown-react";
 import { swapEmDashes, syncedDate } from "@/lib/docs/markdown-text";
 import { DOCS_PAGES, DOCS_SOURCE, docsPage } from "@/lib/docs/pages";
+import { contributorBuildsOn } from "@/lib/env";
 import { currentUser } from "@/lib/queries";
 
 // Every mirrored page and nothing else: an unknown slug is a 404 (docs/DOCS_MIRROR.md, "Routes"). The page calls
@@ -89,7 +90,7 @@ export default async function DocsPage({ params }: Props) {
       <TryItLive slug={slug} title={demo?.title} blurb={demo?.blurb}>
         {Demo ? <Demo {...demo.props} slug={slug} /> : undefined}
       </TryItLive>
-      <BuildWithThis spec={demo?.agentPrompt ?? null} signedIn={Boolean(user)} />
+      <BuildWithThis spec={demo?.agentPrompt ?? null} signedIn={Boolean(user)} contributorNotice={contributorBuildsOn()} />
     </DocsPageProvider>
   );
 }

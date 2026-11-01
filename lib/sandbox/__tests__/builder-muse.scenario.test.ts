@@ -152,6 +152,20 @@ describe("startMuse", { skip: canMock ? false : "needs --experimental-test-modul
     );
   });
 
+  it("turns reminders off on any round on Contributor, and with BUILDS_ON_CONTRIBUTOR, so none can reach muse-spark-1.3", async () => {
+    const off = (script: string) => script.includes("'runtime_capabilities=") && script.includes('reminder:skill-reminder":{"enabled":false}');
+    await start({ buildId: BUILD, model: "muse-spark-1.3-contributor" });
+    assert.ok(off(runner("muse-r0")), "a change to a Contributor product, with the flag off");
+    delete files["/vercel/musemuse/run/muse-r0.sh"];
+    process.env.BUILDS_ON_CONTRIBUTOR = "1";
+    try {
+      await start({ buildId: BUILD, round: 1 });
+      assert.ok(off(runner("muse-r1")));
+    } finally {
+      delete process.env.BUILDS_ON_CONTRIBUTOR;
+    }
+  });
+
   it("gives exec the platform's settings, hooks and build MCP under MUSE_FULL", async () => {
     process.env.MUSE_FULL = "1";
     process.env.MUSE_AGENT_CAPACITY = "8";

@@ -154,7 +154,7 @@ export const CODE_SESSION_SCOPE = "code_session";
 /**
  * The models a session token can carry. Its token names exactly one (allowedModels[0]), set by the platform at the
  * start: Muse Wonder for a person's task, muse-spark-1.3-contributor only for a build's own test sessions while
- * TEST_MODEL names it off production (Meta may train on that tier, terms 6.2). muse-spark-1.3 is never one of them.
+ * TEST_MODEL names it off production or BUILDS_ON_CONTRIBUTOR is on (Meta may train on that tier, terms 6.2). muse-spark-1.3 is never one of them.
  */
 export const CODE_SESSION_MODELS = ["muse-wonder-1.0", SPARK_STANDIN] as const;
 
@@ -162,7 +162,7 @@ export const CODE_SESSION_MODELS = ["muse-wonder-1.0", SPARK_STANDIN] as const;
  * Why a session token's call is refused, or null. Checked before the model allowlist, which a session token replaces:
  *   - only POST /v1/responses (the method is the handler's first check)
  *   - only its one model, never another, and muse-spark-1.3 refused outright rather than served as Contributor
- *   - Contributor only while `testModel` (TEST_MODEL, never set on production) names it
+ *   - Contributor only while `testModel` (buildTestModel in lib/env.ts) names it
  * Its budget and its end (stop, or its limit) are the token row's: lib/caps/code/musecode/gateway.ts.
  */
 export function codeSessionRefusal(endpoint: GatewayEndpoint, model: string | null, token: { allowedModels: readonly string[] }, testModel: string | null): { status: number; code: string; message: string } | null {

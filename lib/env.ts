@@ -92,6 +92,21 @@ export function testModel(): typeof SPARK_STANDIN | null {
 }
 
 /**
+ * BUILDS_ON_CONTRIBUTOR: the owner's decision to run every build on Spark 1.3 Contributor, on production too, with real
+ * people's notes and files. Meta may train on that tier and its terms (6.2) bar sensitive, confidential or personal
+ * information there, so every box that feeds a build shows ContributorNotice. It covers builds only: fine-tuning keeps
+ * testModel(), and a live product's calls stay on Muse Wonder.
+ */
+export function contributorBuildsOn(): boolean {
+  return flag("BUILDS_ON_CONTRIBUTOR");
+}
+
+/** What a build runs on instead of its usual models: Contributor with BUILDS_ON_CONTRIBUTOR, else TEST_MODEL's guarded answer. */
+export function buildTestModel(): typeof SPARK_STANDIN | null {
+  return contributorBuildsOn() ? SPARK_STANDIN : testModel();
+}
+
+/**
  * Whether an admin may have Spark 1.3 Contributor write a fine-tuning dataset. Meta's terms (6.2) bar sensitive, confidential or
  * personal information on that tier and Meta may train on it, so it takes TRAIN_CONTRIBUTOR_WRITER=1 on production, an admin,
  * and a statement that the task is made up. Anywhere TEST_MODEL is on, it's on already.
@@ -102,7 +117,7 @@ export function contributorWriterOn(): boolean {
 
 /** A model id from the environment, or the fallback. Muse Spark 1.3 becomes Spark 1.3 Contributor, with one warning. */
 function model(name: string, fallback: string): string {
-  const test = testModel();
+  const test = buildTestModel();
   if (test) return test;
   const value = process.env[name]?.trim();
   if (!value) return fallback;
@@ -556,7 +571,8 @@ export const env = {
    * it was. Turn it on only after the builder snapshot has the overlay: the live site can't add it.
    */
   get museAppLook(): boolean {
-    return flag("MUSE_APP_LOOK");
+    // Builds on Contributor always get the look (BUILDS_ON_CONTRIBUTOR, the owner's Nov 1 decision).
+    return flag("MUSE_APP_LOOK") || contributorBuildsOn();
   },
   /**
    * PLAN_ART: once a new build's brief is written, one Muse Image edit of the owner's mascot (public/muse/muse-present.jpg)

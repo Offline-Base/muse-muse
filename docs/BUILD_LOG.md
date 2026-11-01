@@ -1700,3 +1700,15 @@ scripts/dev/tune-harness.ts, on a Lambda gpu_1x_a10 named prove-tune-1, us-east-
 - Found: both briefs have verdict yes and canDo true on sign-in, while the sign-in is a local picker or profile with no real account. Limits say so, but docs/FULL_BUILDS.md expects a part it can't do to force verdict partly. Not changed.
 - Found: nothing stops a build at a dollar amount. The $40 budget for this job isn't enforced by code; only the wall and DAILY_SPEND_CAP_USD=150 limit it.
 - Result of both builds: pending. A real brief is all this proves so far.
+
+## Nov 1: every build on Contributor behind BUILDS_ON_CONTRIBUTOR (branch tg-contributor-builds, flag off)
+
+- Why: the owner decided builds run on muse-spark-1.3-contributor with the UI kit, on production too, though Meta may train on that tier and its terms (6.2) bar sensitive, confidential or personal information there.
+- Built: `buildTestModel()` in lib/env.ts feeds the brief, build, judge, gateway swap and Muse Code sessions. The flag also turns MUSE_APP_LOOK on and moves the Prove it skill test. A notice sits on the Make, docs and build room boxes. The Privacy and Models pages say so while it's on.
+- Decision: `testModel()` keeps its production guard. Fine-tuning reads it directly (dataset writer, plans, research, content check), so a shared switch would have moved all of that too and opened `contributorWriterOn` on production.
+- Decision: live products stay on Muse Wonder. The live token path is unchanged, and .env files never deploy.
+- Decision: reminders are off on any round on Contributor, by model as well as by flag, because `muse serve` turns a Contributor id for them back into muse-spark-1.3. A change to a Contributor-built product stays on Contributor after the flag goes off. This is the one change with the flag off: such rounds and nightly skill tests lose reminders.
+- Decision: a notice, not detection of personal data. The change check in lib/brief/policy.ts stays a policy check.
+- Measured on Contributor with made-up data, flags as on production: a FULL_BUILDS brief with the look (8 requirements, scope check ran) and a full judge read with one image both returned valid replies. Spend about $0.002. The first attempt got a 401 from the key in ~/muse-muse/.env.local, so that key looks stale.
+- Tests: targeted suites pass. flags-off-surface was already failing on main on stale mocks; with those fixed its provision and deploy goldens match, and steps.json still differs on a timeout this branch doesn't touch. No golden file changed.
+- Not run: a whole build on production settings, a sandbox, the notice in a browser, whether Contributor's judge is as strict as Muse Wonder's.

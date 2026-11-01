@@ -5,7 +5,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { and, eq, gte, inArray, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
-import { env } from "@/lib/env";
+import { contributorBuildsOn, env } from "@/lib/env";
 import { addBuildCost, emit } from "@/lib/events";
 import { failureMessage } from "@/lib/pipeline/logic";
 import { charge } from "@/lib/pipeline/build-steps";
@@ -194,7 +194,8 @@ export async function proveOpenStep(input: { buildId: string; runId: string; ori
       liveUrl: row.liveUrl,
       site,
       capUsd,
-      model: origin === "nightly" ? NIGHTLY_MODEL : PROVE_MODEL,
+      // With BUILDS_ON_CONTRIBUTOR a build's skill test is one of its own test calls, so it runs there too.
+      model: origin === "nightly" || contributorBuildsOn() ? NIGHTLY_MODEL : PROVE_MODEL,
       record: origin !== "nightly",
       since: new Date().toISOString(),
     };

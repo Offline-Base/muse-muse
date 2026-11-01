@@ -81,11 +81,14 @@ export const TERMS_SECTIONS: readonly LegalSection[] = [
  * lib/pipeline/logic.ts), whatever the flags say. Until TRUST_SPARK_TO_WONDER is on, those products' own calls run there
  * too (lib/gateway/handler.ts), so what their visitors type goes there.
  */
-function contributorSection(sparkToWonder: boolean): LegalSection {
+function contributorSection(sparkToWonder: boolean, buildsOnContributor: boolean): LegalSection {
   return {
     heading: "A lower-cost Meta model",
     paragraphs: ["Some work runs on Muse Spark 1.3 Contributor, a lower-cost Meta model that Meta may use to improve its models:"],
     bullets: [
+      ...(buildsOnContributor
+        ? ["Every build right now. Your note, the files you add, your change requests and answers, and the product's code and test runs go to this model, so don't include personal, sensitive or confidential information. Once a product is live, its own calls run on Muse Wonder."]
+        : []),
       "Test builds the Muse Muse team runs. They use made-up data only.",
       "Changes to a product first built on Muse Spark 1.3. A change carries on with the model that built the product, so your change request and the product's code go to this model.",
       ...(sparkToWonder ? [] : ["Products first built on Muse Spark 1.3 also run on it, so what people type into those products, and the files they add, go to this model."]),
@@ -93,9 +96,9 @@ function contributorSection(sparkToWonder: boolean): LegalSection {
   };
 }
 
-/** The platform's Privacy page, which says what TRUST_SPARK_TO_WONDER does to the model tier Meta may train on. */
-export function privacySections(opts: { sparkToWonder: boolean }): readonly LegalSection[] {
-  return PRIVACY_BASE.flatMap((s) => (s === CONTRIBUTOR_SLOT ? [contributorSection(opts.sparkToWonder)] : [s]));
+/** The platform's Privacy page, which says what TRUST_SPARK_TO_WONDER and BUILDS_ON_CONTRIBUTOR do to the model tier Meta may train on. */
+export function privacySections(opts: { sparkToWonder: boolean; buildsOnContributor?: boolean }): readonly LegalSection[] {
+  return PRIVACY_BASE.flatMap((s) => (s === CONTRIBUTOR_SLOT ? [contributorSection(opts.sparkToWonder, opts.buildsOnContributor === true)] : [s]));
 }
 
 /** Where the Contributor section goes in the Privacy page. */
