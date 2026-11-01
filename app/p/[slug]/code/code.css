@@ -37,3 +37,9 @@
   .code-grid, .code-files { grid-template-columns: minmax(0, 1fr); }
   .code-commits, .code-tree { max-height: 280px; }
 }
+.code-github { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.code-github p { margin: 0; }
+.code-github-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
+.code-github-form label { display: flex; flex-direction: column; gap: 4px; }
+.code-github-form input:not([type="checkbox"]) { min-height: 36px; padding: 0 8px; max-width: 100%; }
+.code-github-form .code-github-check { flex-direction: row; align-items: center; min-height: 36px; }

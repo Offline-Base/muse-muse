@@ -1407,3 +1407,58 @@ export const hostedEndpoints = pgTable(
     index("hosted_endpoints_owner_token_idx").on(t.ownerTokenHash),
   ],
 );
+
+// ---------- 0031_connected_accounts (docs/GITHUB_EXPORT.md) ----------
+
+/**
+ * Accounts people connect from outside (GitHub now, Hugging Face later), keyed by provider. `owner_kind` is "user", with the
+ * user's id, or "browser", with the hash of a guest's per-browser cookie, since guests all share one user row. The token is
+ * sealed with CONNECTED_ACCOUNTS_KEY and its bytes are wiped when `revoked_at` is set.
+ */
+export const connectedAccounts = pgTable(
+  "connected_accounts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    provider: text("provider").$type<"github">().notNull(),
+    ownerKind: text("owner_kind").$type<"user" | "browser">().notNull(),
+    ownerKey: text("owner_key").notNull(),
+    externalId: text("external_id").notNull(),
+    externalLogin: text("external_login").notNull(),
+    scopes: text("scopes").notNull().default(""),
+    ciphertext: bytea("ciphertext").notNull(),
+    iv: bytea("iv").notNull(),
+    tag: bytea("tag").notNull(),
+    keyVersion: integer("key_version").notNull(),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [uniqueIndex("connected_accounts_active_idx").on(t.provider, t.ownerKind, t.ownerKey).where(sql`${t.revokedAt} is null`)],
+);
+
+/**
+ * The outside repo one owner exported a product to. A push only ever goes to a repo named here, which this platform made,
+ * so a connection can't be used to write to anything else the account can reach. `last_commit_sha` is null until the first
+ * push lands.
+ */
+export const codeExports = pgTable(
+  "code_exports",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    provider: text("provider").$type<"github">().notNull(),
+    ownerKind: text("owner_kind").$type<"user" | "browser">().notNull(),
+    ownerKey: text("owner_key").notNull(),
+    externalId: text("external_id").notNull(),
+    repoFullName: text("repo_full_name").notNull(),
+    branch: text("branch").notNull(),
+    isPrivate: boolean("is_private").notNull(),
+    lastCommitSha: text("last_commit_sha"),
+    lastVersionNumber: integer("last_version_number"),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("code_exports_owner_idx").on(t.productId, t.provider, t.ownerKind, t.ownerKey)],
+);

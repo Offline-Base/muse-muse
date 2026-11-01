@@ -211,6 +211,13 @@
       "when": 1793561872868,
       "tag": "0030_host_tuned",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1793566925692,
+      "tag": "0031_connected_accounts",
+      "breakpoints": true
     }
   ]
 }
