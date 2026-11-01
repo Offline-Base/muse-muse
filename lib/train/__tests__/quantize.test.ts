@@ -370,15 +370,22 @@ def safetensors(path, tensors):
         f.write(len(header).to_bytes(8, "little") + header)
 
 
+class FakeConfig:
+    _name_or_path = "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit"
+
+
 class FakeModel:
     def __init__(self):
         self.adapter = None
+        self.config = FakeConfig()
 
     def merge_and_unload(self):
         raise AssertionError("the 4-bit model is never merged in place")
 
     def save_pretrained_merged(self, save_directory, tokenizer, save_method="merged_16bit"):
         assert save_method == "merged_16bit", save_method
+        # Unsloth resolves the 16-bit base from config._name_or_path; an nf4 name there would be refused.
+        assert self.config._name_or_path == "OfflineBase/Glimmer-30B-2026-Knowledge", self.config._name_or_path
         hf = os.environ["HF_HOME"]
         cached = os.path.join(hf, "hub", "models--OfflineBase--Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit")
         with open(os.environ["FAKE_LOG"], "a") as f:

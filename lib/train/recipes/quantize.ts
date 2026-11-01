@@ -124,11 +124,14 @@ TUNED_TEMPLATE = "tuned.jinja"
 TUNED_TEMPLATE_SHA256 = "ee7766876b1317a7b95caec088aca7905399ce8b7117745921643e931b476b13"
 
 # The 16-bit base Unsloth merges into: MERGE_BASE is the merged BF16 of Muse Muse's 2026-knowledge Glimmer (r30b), the
-# repo MODEL is the nf4 quantization of. Unsloth finds it from MODEL's name (dropping "-unsloth-bnb-4bit") and downloads
-# its main, so the check below holds the shards to their SHA-256, not to a commit; a merge that fetched anything else
-# leaves no record of these 13 shards and fails, and nothing is published. BASE_SHARDS are its 13 shards by the
-# SHA-256 the Hub gives them at MERGE_BASE_REVISION (the training session's list, Oct 31 2026); the weights were the
-# same at e2b33cce, its main after that, and base_shards_problem records whichever commit the merge downloaded.
+# repo MODEL is the nf4 quantization of. Unsloth's merged_16bit reads the base from the model's config._name_or_path
+# through its own name mapper, which knows only its own repos: MODEL's name would come back unchanged, as an nf4 base,
+# and the merge would refuse it. So merge_child_main points _name_or_path at MERGE_BASE before saving. Unsloth takes no
+# revision for that download and fetches MERGE_BASE's main, so the check below holds the shards to their SHA-256, not to
+# a commit; a merge that fetched anything else leaves no record of these 13 shards and fails, and nothing is published.
+# BASE_SHARDS are its 13 shards by the SHA-256 the Hub gives them at MERGE_BASE_REVISION (the training session's list,
+# Oct 31 2026), which nothing downloads by: it records where the list came from. The weights were the same at e2b33cce,
+# its main after that, and base_shards_problem records whichever commit the merge downloaded.
 MERGE_BASE = "OfflineBase/Glimmer-30B-2026-Knowledge"
 MERGE_BASE_REVISION = "c06e38ccbb512f350e5c383944f1bbfb96f14248"
 BASE_SHARDS = (
@@ -543,7 +546,7 @@ def base_shards_problem(merged_dir, hf_home):
     """(revision, problem): the commit of MERGE_BASE whose 16-bit shards the merge used, and why they aren't
     BASE_SHARDS, or None. Unsloth downloads them with snapshot_download(local_dir=merged_dir), which records each one's
     commit and SHA-256 beside it (downloaded_shards), or copies them from an HF cache under hf_home (cached_shards).
-    Each must have BASE_SHARDS' SHA-256, and both one commit. Unsloth asks for whatever MERGE_BASE's main is, so a base
+    Each must have BASE_SHARDS' SHA-256, and all one commit. Unsloth asks for whatever MERGE_BASE's main is, so a base
     that changed upstream fails here. No record in either place fails too: the files are published as MERGE_BASE with
     the adapter folded in, and the card names its shards only because this check passed."""
     found = downloaded_shards(merged_dir)
@@ -985,6 +988,7 @@ def run(ctx):
         {
             "model": MODEL,
             "revision": MODEL_REVISION,
+            "merge_base": MERGE_BASE,
             "max_seq_length": MAX_SEQ_LENGTH,
             "adapter_dir": adapter_dir,
             "adapter_job_id": adapter_job_id,
@@ -1181,7 +1185,10 @@ def merge_child_main(config_path):
 
         patch_saving_functions(model, vision=True)
         save = model.save_pretrained_merged
-    emit("phase", message="Merging the adapter into the 16-bit base")
+    # Unsloth finds the 16-bit base from the config's _name_or_path (see MERGE_BASE): name r30b's BF16 repo, not the
+    # nf4 build that was loaded.
+    model.config._name_or_path = cfg["merge_base"]
+    emit("phase", message="Merging the adapter into the 16-bit base " + cfg["merge_base"])
     save(cfg["merged_dir"], tokenizer, save_method="merged_16bit")
     result["merged"] = True
     write_result(cfg["result_path"], result)
