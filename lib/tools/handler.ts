@@ -82,6 +82,8 @@ export interface ToolsDeps extends RunCounters, SessionStore {
    * builder's daily dollars, which tool calls spend too. Unset while TRUST_REPORTS and TRUST_SIGNED_IN_CAPS are off.
    */
   trustCheck?(token: GatewayToken): Promise<Response | null>;
+  /** Wave 3, unit 3: the owner pass also works for products that save data (owner items), while the data cap is served. */
+  ownerPassForCaps?: boolean;
   now?(): Date;
 }
 
@@ -841,7 +843,8 @@ async function handleCallback(req: Request, deps: ToolsDeps): Promise<Response> 
 export async function handleOwnerExchange(req: Request, deps: ToolsDeps): Promise<Response> {
   try {
     if (req.method !== "POST") return gatewayError(405, "invalid_request_error", "method_not_allowed", "Use POST.", { retry: false, headers: { allow: "POST" } });
-    if (!deps.agentsEnabled || !deps.personalEnabled) return paused();
+    // ---------- Wave 3, unit 3: or while the data cap is served, for owner items ----------
+    if ((!deps.agentsEnabled || !deps.personalEnabled) && !deps.ownerPassForCaps) return paused();
     return await withToken(req, deps, async (token) => {
       if (token.scope === "build") return toolError("sign_in_required", "A build has no owner. It sees a sample account instead.");
       const body = await readJson(req);

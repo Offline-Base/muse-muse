@@ -1,6 +1,8 @@
 import { dataBlock } from "@/lib/caps/data/brief";
 import type { DataDeps } from "@/lib/caps/data/handler";
+import type { PasskeyDeps } from "@/lib/caps/data/passkeys";
 import { dataStore } from "@/lib/caps/data/store";
+import { createEndUser, findPasskey, productForSignIn, usePasskey } from "@/lib/caps/data/users";
 import { collectionRules } from "@/lib/caps/data/types";
 import { buildBrief, capProduct, capToken, productSlug } from "@/lib/caps/store";
 import { env } from "@/lib/env";
@@ -30,5 +32,21 @@ export function dataDeps(): DataDeps {
     },
     platformUrl: env.platformUrl,
     productSlug,
+  };
+}
+
+/** The passkey routes' wiring. The relying party is the platform's own host. */
+export function passkeyDeps(): PasskeyDeps {
+  const platform = new URL(env.platformUrl);
+  return {
+    enabled: () => env.servedCaps.includes("data") && env.dataSignIn,
+    origin: platform.origin,
+    rpId: platform.hostname,
+    productForSignIn,
+    reserveCounter,
+    hitRateLimits,
+    createEndUser,
+    findPasskey,
+    usePasskey,
   };
 }
