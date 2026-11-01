@@ -993,6 +993,14 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
     2026-10-29 and the training system prompt.
   - It confirms training rows always had a system message, so no cutoff line was ever trained.
   r30b's runs on both tests are queued on writer-1 (run5.sh).
+- 9:40 PM: told Muse Privacy and Muse Muse General about the Muse Model License duties for apps using r30b files.
+  Muse Privacy flagged conflicts for the owner:
+  - its families case covers ages 13 and up (the Usage Policy says 18+);
+  - its feedback files and drafts carry no AI label;
+  - the startup track.
+  Owner: "muse privacy is non commercial so go on", so the non-commercial terms stand and there's no clean retrain. Both
+  sessions asked for the license texts as files (Muse Privacy can't link repos under the OfflineBase account). They get
+  local paths and sha256s once model-release-prep has fetched and checked them.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
