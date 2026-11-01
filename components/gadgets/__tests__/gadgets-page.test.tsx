@@ -152,7 +152,9 @@ describe("/gadgets", { skip: canMock ? false : "needs --experimental-test-module
     assert.match(html, /Live board.*?>Not set up</s);
     assert.doesNotMatch(html, /href="\/device"/);
     assert.match(html, /No products use a gadget yet/);
-    assert.match(html, /Coming: connect your own board/);
+    assert.match(html, /Planned: connect your own board/);
+    assert.match(html, /Connecting your own board is planned\./);
+    assert.doesNotMatch(html, /has set up|being built|\bComing\b/, "no board claimed while none is set up, and no promises");
     assert.doesNotMatch(html, /\b(20\d\d|Nov|November|Dec)\b/, "no promised dates");
     assert.deepEqual(reads, ["listShippedProducts(60)"]);
   });

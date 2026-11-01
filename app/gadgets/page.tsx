@@ -126,10 +126,10 @@ export default async function GadgetsPage() {
           <Icon name="plug" />
         </span>
         <div>
-          <h2 id="coming-title">Coming: connect your own board</h2>
+          <h2 id="coming-title">Planned: connect your own board</h2>
           <p className="muted">
-            Today every live product with the option shares the one board Muse Muse has set up. A way to connect your
-            own board is being built.
+            Today, live products with the option can only use a board Muse Muse sets up. Connecting your own board is
+            planned.
           </p>
         </div>
       </section>
