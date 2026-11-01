@@ -35,10 +35,10 @@ export const HARDWARE_RENDER: CapRenderEntry = {
         : []),
       ...(hw.boardTools
         ? [
-            "- Board tools: `readSensor` and `showText` in `lib/platform/board.ts`. Server only: call them from a route handler and pass the incoming request, so the owner's pass travels with it.",
+            "- Board tools: `readSensor` and `showText` in `lib/platform/board.ts`. Server only: call them from a route handler and always pass the incoming request, so the owner's pass travels with it. The build's simulated board doesn't check this, and a live board refuses the owner without it.",
             `- \`showText\` takes up to ${SHOW_TEXT_MAX_CHARS} characters, ${SHOW_TEXT_PER_MINUTE} times a minute. A board does nothing else for a product and never runs commands.`,
-            "- Live, a board reaches this product only after its owner links one, and only the owner until they open it to visitors. Otherwise the helpers throw, and `isBoardOffline(err)` is true: show a plain message, and keep the rest of the product working.",
-            "- `Open as owner` on the product's Muse Muse page lands on `/api/musemuse/board/owner`, which sets the owner's pass.",
+            "- Live, a board reaches this product only after its owner links one, and only the owner until they open it to visitors. Otherwise the helpers throw: show `boardMessage(err)`, and keep the rest of the product working.",
+            "- `Open as owner` on the product's Muse Muse page lands on `/api/musemuse/board/owner` in its own tab, which sets the owner's pass. The pass isn't sent inside the frame on that page, so when a board is offline, also say how the owner gets in.",
           ]
         : []),
       "- During the build nothing real is connected. A simulated port stands in for the browser links, and the gateway's simulated board answers the board tools, with `simulated: true`. Don't show the word \"simulated\": the live product gets the real device.",

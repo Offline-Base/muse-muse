@@ -1,10 +1,11 @@
 [
-  "lib/platform/hardware.ts",
-  "lib/platform/board.ts",
-  "components/platform/ConnectDevice.tsx",
+  ".agents/skills/muse-hardware/SKILL.md",
   "app/api/musemuse/board/owner/route.ts",
-  "tests/caps/hardware.ts",
-  "tests/caps/hardware-fake.ts",
+  "components/platform/ConnectDevice.tsx",
+  "lib/platform/board-errors.ts",
+  "lib/platform/board.ts",
+  "lib/platform/hardware.ts",
   "scripts/caps/hardware.mjs",
-  ".agents/skills/muse-hardware/SKILL.md"
+  "tests/caps/hardware-fake.ts",
+  "tests/caps/hardware.ts"
 ]

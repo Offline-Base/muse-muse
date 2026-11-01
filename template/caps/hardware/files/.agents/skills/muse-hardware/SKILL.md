@@ -41,20 +41,34 @@ export function Thermometer() {
 - `connectSerial`, `connectUsb` and `connectBluetooth` are in `lib/platform/hardware.ts`. All three give the same `DeviceLink`: `send`, `onData`, `onLine`, `close`.
 - A device picker opens only from a click. Don't connect on page load.
 - They work in Chrome and Edge on a computer or Android, not in Safari or on iPhone. `ConnectDevice` says so by itself. Keep the rest of the page working there, and say it on the page too.
+- If another site frames the product and doesn't allow devices, `ConnectDevice` says to open it in its own tab, with a link. If you call `connectSerial` yourself, show `err.message` from `HardwareError`.
 - `connectUsb` needs `filters` with the device's vendor id. `connectBluetooth` needs the service's UUID and the characteristics to use. Prefer serial when the device offers it: most do.
 
 ## Board tools
 
-Only when the brief says `boardTools`. Server only: a route handler, with the request passed in.
+Only when the brief says `boardTools`. Server only: a route handler, with the request passed in. Every helper needs it, and without it a live board refuses the owner, though the build's simulated board doesn't notice.
 
 ```ts
-import { readSensor, showText, isBoardOffline } from "@/lib/platform/board";
+import { boardMessage, readSensor, showText } from "@/lib/platform/board";
 
-const { sensors } = await readSensor({ request }); // [{ name, kind, value, unit }]
-await showText("Back in 5 minutes", { request });  // up to 200 characters, 6 a minute
+export async function GET(request: Request) {
+  try {
+    const { sensors } = await readSensor({ request }); // [{ name, kind, value, unit }]
+    await showText("Back in 5 minutes", { request });  // up to 200 characters, 6 a minute
+    return Response.json({ sensors });
+  } catch (err) {
+    const message = boardMessage(err);
+    if (message) return Response.json({ message }, { status: 503 });
+    throw err;
+  }
+}
 ```
 
-Live, the board's owner has to link a board to this product, and only the owner reaches it until they open it to visitors. Anything else throws, and `isBoardOffline(err)` is true: show "The board isn't available right now" and keep going. A board does nothing else for a product and never runs commands.
+Live, the board's owner has to link a board to this product, and only the owner reaches it until they open it to visitors. Anything else throws. `boardMessage(err)` gives the line to show for every way a board can say no: no board for this person, too many calls, no such sensor. `isBoardOffline(err)` is true for the first of those. Keep the rest of the product working.
+
+The owner gets their pass from `Open as owner` on the product's Muse Muse page, which opens the product in its own tab. Inside the frame on that page the pass isn't sent, so the board looks offline there. When a board is offline, say "If you own this product, use Open as owner on its Muse Muse page."
+
+A board does only this for a product, and never runs commands. Its camera and microphone need the brief to list `muse-gadget` too. Then, where the owner should reach them, use `boardPhoto({ request })` and `boardSound({ seconds, request })` from `lib/platform/board.ts` rather than `takePhoto` and `recordSound`, which don't send the owner's pass.
 
 ## During the build
 

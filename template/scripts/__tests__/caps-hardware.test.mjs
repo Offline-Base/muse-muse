@@ -3,7 +3,7 @@
 // checks. lib/platform/board.ts imports "@/lib/meta/client", which only a product folder resolves, so it runs in a real build. Run from the repo root:
 //   npx tsx --test template/scripts/__tests__/caps-hardware.test.mjs
 import assert from "node:assert/strict";
-import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, beforeEach, describe, test } from "node:test";
@@ -60,6 +60,91 @@ describe("the overlay's files", () => {
     assert.match(board, /identityHeaders\(request\)/);
     assert.doesNotMatch(board, /run_command/);
   });
+
+  test("the helpers need the request: leaving it out fails the build, since the simulated board wouldn't notice", () => {
+    const board = readFileSync(path.join(OVERLAY, "lib/platform/board.ts"), "utf8");
+    assert.match(board, /type WithRequest = \{ request: RequestLike \| null \}/);
+    for (const signature of [/readSensor\(opts: \{ sensor\?: string \} & WithRequest\)/, /showText\(text: string, opts: WithRequest\)/, /boardPhoto\(opts: WithRequest\)/, /boardSound\(opts: \{ seconds\?: number \} & WithRequest\)/]) assert.match(board, signature);
+    assert.doesNotMatch(board, /request\?: RequestLike/);
+    const skill = readFileSync(path.join(OVERLAY, ".agents/skills/muse-hardware/SKILL.md"), "utf8");
+    assert.match(skill, /without it a live board refuses the owner/);
+    assert.match(skill, /boardMessage\(err\)/);
+    assert.match(skill, /boardPhoto\(\{ request \}\)/);
+    assert.match(skill, /Open as owner/);
+  });
+});
+
+describe("a board's answers, through the real helpers with a fake gateway", () => {
+  let dir;
+  let board;
+  const realFetch = globalThis.fetch;
+  const asked = [];
+  let answer;
+
+  before(async () => {
+    dir = mkdtempSync(path.join(tmpdir(), "mm-hardware-board-"));
+    writeFileSync(path.join(dir, "client.mjs"), 'export const gatewayEnv = () => ({ baseURL: "https://gateway.example/v1", apiKey: "made-up" });\n');
+    writeFileSync(path.join(dir, "identity.mjs"), 'export const identityHeaders = (request) => (request ? { "x-owner": request.pass } : {});\n');
+    cpSync(path.join(OVERLAY, "lib/platform/board-errors.ts"), path.join(dir, "board-errors.ts"));
+    const source = readFileSync(path.join(OVERLAY, "lib/platform/board.ts"), "utf8")
+      .replace('"@/lib/meta/client"', '"./client.mjs"')
+      .replace('"@/lib/platform/board-errors"', '"./board-errors.ts"')
+      .replace('"@/lib/platform/identity"', '"./identity.mjs"');
+    writeFileSync(path.join(dir, "board.ts"), source);
+    board = await import(pathToFileURL(path.join(dir, "board.ts")).href);
+    globalThis.fetch = async (url, init) => {
+      asked.push({ url, headers: init.headers, body: JSON.parse(init.body) });
+      return new Response(JSON.stringify(answer.body), { status: answer.status ?? 200 });
+    };
+  });
+  after(() => {
+    globalThis.fetch = realFetch;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const request = { pass: "owners-pass" };
+  const fails = async (status, code) => {
+    answer = { status, body: { error: { code, message: "words" } } };
+    return board.readSensor({ request }).then(() => assert.fail("it should throw"), (err) => err);
+  };
+
+  test("readSensor and showText send the tool, its arguments and the owner's pass", async () => {
+    answer = { body: { content: [{ type: "text", text: '{"sensors":[{"name":"cpu"}]}' }], simulated: false } };
+    assert.deepEqual((await board.readSensor({ sensor: "cpu", request })).sensors, [{ name: "cpu" }]);
+    const sent = asked.at(-1);
+    assert.equal(sent.url, "https://gateway.example/gadget");
+    assert.deepEqual(sent.body, { tool: "read_sensor", arguments: { sensor: "cpu" } });
+    assert.equal(sent.headers["x-owner"], "owners-pass");
+  });
+
+  test("boardPhoto and boardSound send the owner's pass too, which takePhoto doesn't", async () => {
+    answer = { body: { content: [{ type: "image", data: "AAAA", mimeType: "image/jpeg" }], simulated: true } };
+    assert.deepEqual(await board.boardPhoto({ request }), { dataUrl: "data:image/jpeg;base64,AAAA", simulated: true });
+    assert.equal(asked.at(-1).body.tool, "capture_image");
+    assert.equal(asked.at(-1).headers["x-owner"], "owners-pass");
+    answer = { body: { content: [{ type: "text", text: "{}" }, { type: "audio", data: "BBBB", mimeType: "audio/wav" }], simulated: false } };
+    assert.equal((await board.boardSound({ seconds: 99, request })).dataUrl, "data:audio/wav;base64,BBBB");
+    assert.deepEqual(asked.at(-1).body, { tool: "record_audio", arguments: { seconds: 30 } });
+    answer = { body: { content: [{ type: "text", text: "{}" }] } };
+    await assert.rejects(board.boardPhoto({ request }), (err) => err.code === "board_tool_error");
+  });
+
+  test("every way a board says no has a line to show", async () => {
+    const offline = await fails(503, "gadget_offline");
+    assert.equal(board.isBoardOffline(offline), true);
+    assert.match(board.boardMessage(offline), /isn't available/);
+    assert.match(board.boardMessage(await fails(502, "gadget_unavailable")), /isn't available/);
+    const limited = await fails(429, "rate_limited");
+    assert.equal(board.isBoardOffline(limited), false);
+    assert.match(board.boardMessage(limited), /too many requests/);
+    answer = { body: { isError: true, content: [{ type: "text", text: "This board has no sensors it can read." }] } };
+    const noSensors = await board.readSensor({ request }).catch((err) => err);
+    assert.equal(noSensors.code, "board_tool_error");
+    assert.equal(board.isBoardOffline(noSensors), false);
+    assert.match(board.boardMessage(noSensors), /couldn't do that/);
+    assert.match(board.boardMessage(await fails(500, "something_new")), /didn't answer/);
+    assert.equal(board.boardMessage(new Error("a bug")), null, "a bug isn't a board's no");
+  });
 });
 
 describe("where the browser can't", () => {
@@ -68,6 +153,23 @@ describe("where the browser can't", () => {
     for (const [kind, connect] of [["serial", () => hardware.connectSerial()], ["usb", () => hardware.connectUsb({ filters: [] })], ["bluetooth", () => hardware.connectBluetooth({ service: "s" })]]) {
       assert.equal(hardware.linkSupported(kind), false);
       await assert.rejects(connect(), (err) => err.code === "unsupported" && /Chrome or Edge/.test(err.message) && /iPhone/.test(err.message));
+    }
+  });
+  test("refused inside a frame, it says to open its own tab, and only there", async () => {
+    Object.defineProperty(navigator, "serial", { value: { requestPort: async () => { throw new DOMException("internal words", "SecurityError"); } }, configurable: true });
+    const realWindow = globalThis.window;
+    try {
+      globalThis.window = { self: {}, top: {} };
+      await assert.rejects(hardware.connectSerial(), (err) => err.code === "framed" && err.message === hardware.FRAMED_MESSAGE && /own tab/.test(err.message));
+      const same = {};
+      globalThis.window = { self: same, top: same };
+      await assert.rejects(hardware.connectSerial(), (err) => err.code === "failed" && /https/.test(err.message));
+      Object.defineProperty(navigator, "serial", { value: { requestPort: async () => { throw new DOMException("internal words", "NotAllowedError"); } }, configurable: true });
+      globalThis.window = { self: {}, top: {} };
+      await assert.rejects(hardware.connectSerial(), (err) => err.code === "failed", "a missing click isn't the frame's fault");
+    } finally {
+      if (realWindow === undefined) delete globalThis.window;
+      else globalThis.window = realWindow;
     }
   });
   test("the picker being closed is 'cancelled', and a browser's own words never show", async () => {
@@ -156,6 +258,58 @@ const browser = playwright
     })
   : null;
 after(() => browser?.close());
+
+describe("device links in a cross-origin frame, in Chromium", { skip: browserProblem ?? false }, () => {
+  // The frame's two origins are real ones on this machine, so it's truly cross-origin, and both are secure contexts. The
+  // allow values are read from lib/product-frame.ts's output in lib/__tests__/product-frame.test.ts.
+  const SANDBOX = "allow-scripts allow-same-origin allow-forms allow-popups allow-downloads";
+  let server;
+  let port;
+  const PRODUCT = `<!doctype html><title>product</title><button id=go>Connect</button><p id=out></p><script>
+    document.getElementById("go").onclick = () => navigator.serial.requestPort().then(() => "picked", (e) => e.name).then((r) => { document.getElementById("out").textContent = r; });
+  </script>`;
+
+  before(async () => {
+    const { createServer } = await import("node:http");
+    server = createServer((req, res) => {
+      res.setHeader("content-type", "text/html");
+      if (req.url === "/product") return res.end(PRODUCT);
+      const allow = new URL(req.url, "http://x").searchParams.get("allow");
+      res.end(`<!doctype html><title>page</title><iframe id=f src="http://localhost:${port}/product" sandbox="${SANDBOX}" allow="${allow}"></iframe>`);
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    port = server.address().port;
+  });
+  after(() => server?.close());
+
+  async function connectIn(allow) {
+    const page = await browser.newPage();
+    try {
+      await page.goto(`http://127.0.0.1:${port}/?allow=${encodeURIComponent(allow)}`);
+      const frame = page.frameLocator("#f");
+      const allowed = await page.frames()[1].evaluate(() => ["serial", "usb", "bluetooth"].filter((f) => document.featurePolicy?.allowsFeature(f)));
+      await frame.locator("#go").click();
+      // The picker has no one to answer it in a test browser, so only a refusal is expected to finish.
+      const refused = await frame.locator("#out").textContent({ timeout: 1500 }).then((t) => t || null, () => null);
+      await page.waitForTimeout(500);
+      return { allowed, result: refused || (await frame.locator("#out").textContent()) };
+    } finally {
+      await page.close();
+    }
+  }
+
+  test("without the allow values a device picker is refused, the way plainError's framed message expects", async () => {
+    const { allowed, result } = await connectIn("clipboard-write; fullscreen");
+    assert.deepEqual(allowed, []);
+    assert.equal(result, "SecurityError");
+  });
+
+  test("with them it isn't refused for being in a frame", async () => {
+    const { allowed, result } = await connectIn("clipboard-write; fullscreen; serial; usb; bluetooth");
+    assert.deepEqual(allowed, ["serial", "usb", "bluetooth"]);
+    assert.notEqual(result, "SecurityError");
+  });
+});
 
 describe("checkDeviceLink in Chromium", { skip: browserProblem ?? false }, () => {
   let dir;
