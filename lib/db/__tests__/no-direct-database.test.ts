@@ -29,6 +29,7 @@ const HELPER_READ = new RegExp(String.raw`\b(?:required|optional|flag|number|dol
  */
 const MAY_READ: Record<string, string> = {
   "lib/db/url.ts": "the helper itself",
+  "scripts/dev/decide-fixtures.ts": "accepts only DATABASE_URL=pglite:<folder> (localDbDir), and throws otherwise",
   "scripts/dev/native-fixtures.ts": "accepts only DATABASE_URL=pglite:<folder> (localDbDir), and throws otherwise",
   "scripts/dev/room-fixtures.ts": "accepts only DATABASE_URL=pglite:<folder> (localDbDir), and throws otherwise",
   "scripts/dev/ui-smoke.tsx": "unsets DATABASE_URL to render pages with no database, then puts it back",

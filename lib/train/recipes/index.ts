@@ -1,4 +1,8 @@
+import { DECIDE_EPOCHS_DEFAULT, DECIDE_EPOCHS_MAX, DECIDE_EPOCHS_MIN } from "@/lib/train/decision-datasets";
 import {
+  CHAT_MODE,
+  DECIDE_MODE,
+  MODE_PARAM,
   recipeDefaults,
   SERVE_ADAPTER_PARAM,
   SERVE_BOOT_MINUTES,
@@ -72,7 +76,7 @@ export const RECIPES: Recipe[] = [
     id: "glimmer-lora",
     title: "Muse Glimmer LoRA",
     description:
-      "Fine-tunes Muse Glimmer 30B (4-bit) with a LoRA adapter on one of your datasets, following Unsloth's guide, then answers the held-out prompts with the base and the tuned model so they can be compared. Both answer directly, with no reasoning, as the tuned one was trained, and by default under a one-line system message rather than the dataset's task prompt, so the comparison shows what training taught. The model and its Python packages are cached on a Lambda filesystem in the region, so later jobs start faster.",
+      "Fine-tunes Muse Glimmer 30B (4-bit) with a LoRA adapter on one of your datasets, following Unsloth's guide, then answers the held-out prompts with the base and the tuned model so they can be compared. Both answer directly, with no reasoning, as the tuned one was trained, and by default under a one-line system message rather than the dataset's task prompt, so the comparison shows what training taught. The model and its Python packages are cached on a Lambda filesystem in the region, so later jobs start faster. In decide mode it trains on a decision dataset instead: each answer is one option's letter, both models are scored on the held-out test rows under the dataset's own system message, and nothing is judged.",
     // Unsloth supports arm64 only through a from-source Docker build, so gpu_1x_gh200 (Grace, arm64) is left out.
     gpus: GLIMMER_GPUS,
     defaultMaxMinutes: 150,
@@ -87,13 +91,32 @@ export const RECIPES: Recipe[] = [
         help: "A ready dataset. It trains on the train part; the eval part (up to 40 held-out prompts) is answered before and after.",
       },
       {
+        key: MODE_PARAM,
+        label: "Mode",
+        kind: "text",
+        choices: [CHAT_MODE, DECIDE_MODE],
+        help: "chat (the default) or decide. chat trains on a chat dataset's conversations. decide trains Glimmer into a decision model on a decision dataset's labeled rows: it answers with one option's letter, and base and tuned Glimmer are scored on the held-out test rows, so the results say how often each was right there. It can still be wrong.",
+      },
+      {
         key: "maxSteps",
         label: "Training steps",
         kind: "number",
         default: 120,
         min: 10,
         max: 2000,
+        modes: [CHAT_MODE],
         help: "Optimizer steps of 4 conversations each (batch 1, gradient accumulation 4).",
+      },
+      {
+        key: "epochs",
+        label: "Epochs",
+        kind: "number",
+        default: DECIDE_EPOCHS_DEFAULT,
+        min: DECIDE_EPOCHS_MIN,
+        max: DECIDE_EPOCHS_MAX,
+        whole: true,
+        modes: [DECIDE_MODE],
+        help: "Decide mode only, in place of training steps: passes over the training rows, each with a new option order. Smaller labels get extra copies, up to 3 to 1. Steps of 32 renderings (batch 16, gradient accumulation 2).",
       },
       {
         key: "learningRate",
@@ -118,7 +141,19 @@ export const RECIPES: Recipe[] = [
         label: "Student prompt",
         kind: "text",
         default: "short",
+        modes: [CHAT_MODE],
         help: 'short or full. short: training and both models\' answers use one line, "You are" and the dataset\'s name (name it as a role, such as "Muse Muse\'s brief writer"), so the scores measure what training taught. full: the dataset\'s whole task prompt, as its writer saw it, so they measure how well each model follows instructions.',
+      },
+      {
+        key: "scoreOnly",
+        label: "Score only",
+        kind: "number",
+        default: 0,
+        min: 0,
+        max: 1,
+        whole: true,
+        modes: [DECIDE_MODE],
+        help: "Decide mode only. 1 scores base Glimmer on the dev and test rows and trains nothing, so no adapter is saved: the zero-shot numbers on their own.",
       },
       {
         key: "dryRun",
@@ -127,7 +162,7 @@ export const RECIPES: Recipe[] = [
         default: 0,
         min: 0,
         max: 1,
-        help: "1 skips the install, the model and the training and fakes the answers: a cheap check of the dataset, eval and judging loop on a real GPU.",
+        help: "1 skips the install, the model and the training and fakes the answers: a cheap check of the dataset, eval and judging loop on a real GPU. In decide mode it fakes the scores and the adapter instead, a check of the pages, the score callbacks and scoring; it loads no model.",
       },
       {
         key: "publish",
@@ -150,7 +185,7 @@ export const RECIPES: Recipe[] = [
   {
     id: "glimmer-serve",
     title: "Try tuned Glimmer live",
-    description: `Serves one trained Muse Glimmer LoRA adapter for a set number of minutes, so anyone on its job's public result page can type an app idea and get the base and the tuned model's answers side by side, from the same GPU. It runs in the adapter's region with that model cache mounted, loads the 4-bit base and the adapter, answers over HTTPS pinned to a certificate it makes at start, and then shuts down like any other job. The time limit is the minutes plus ${SERVE_BOOT_MINUTES} to boot and load.`,
+    description: `Serves one trained Muse Glimmer LoRA adapter for a set number of minutes, so anyone on its job's public result page can type an app idea and get the base and the tuned model's answers side by side, from the same GPU. It runs in the adapter's region with that model cache mounted, loads the 4-bit base and the adapter, answers over HTTPS pinned to a certificate it makes at start, and then shuts down like any other job. A decision model's adapter is served as one: the page's box takes an input, and base Glimmer and the tuned model each pick a label for it. The time limit is the minutes plus ${SERVE_BOOT_MINUTES} to boot and load.`,
     // The GPUs glimmer-lora trains on, so every adapter fits.
     gpus: GLIMMER_GPUS,
     defaultMaxMinutes: SERVE_DEFAULTS.defaultMaxMinutes,

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Icon, type IconName } from "@/components/icons";
-import { WRITER_NAME, datasetCountsText, scoreText } from "@/components/train/format";
+import { WRITER_NAME, datasetCountsText, percentText, scoreText, twoPlaces } from "@/components/train/format";
 import { GLIMMER_NAME, minutesText, type ResultView } from "@/components/train/results";
 import { dateTimeUtc, modelLabel, relativeTime, truncate, usd } from "@/lib/format";
 import { UNRECORDED_MODEL } from "@/lib/train/models";
@@ -43,7 +43,9 @@ export function LabIntro() {
         <p className="hero-card-desc">
           Muse Muse fine-tunes Meta&apos;s open models on GPUs: {WRITER_NAME} writes a training set, {GLIMMER_NAME} learns
           it, and {WRITER_NAME} judges base against tuned on held-out prompts. {modelLabel(UNRECORDED_MODEL)} wrote and
-          judged the runs before Oct 29, 2026, and each result&apos;s page names the models that did its work.
+          judged the runs before Oct 29, 2026, and each result&apos;s page names the models that did its work. Decision
+          models are scored instead of judged: {GLIMMER_NAME} learns to pick one label from a person&apos;s labeled
+          examples, and base and tuned are checked on rows held out before training, with no judge.
         </p>
         <ol className="how">
           {STEPS.map((s, i) => (
@@ -90,6 +92,7 @@ export function ResultsTable({ results, caption }: { results: ResultView[]; capt
         <tbody>
           {results.map((r) => {
             const s = r.summary;
+            if (r.decision) return <DecisionRow key={r.id} r={r} />;
             return (
               <tr key={r.id}>
                 <td>
@@ -126,6 +129,43 @@ export function ResultsTable({ results, caption }: { results: ResultView[]; capt
         </tbody>
       </table>
     </div>
+  );
+}
+
+/**
+ * A decide job's row in the results table: how often each model was right on the held-out test rows, and macro F1,
+ * where a judged job has its wins and average scores.
+ */
+function DecisionRow({ r }: { r: ResultView }) {
+  const d = r.decision!;
+  const main = d.tuned ?? d.base;
+  return (
+    <tr>
+      <td>
+        <Link href={`/fine-tuning/${r.id}`} className="row-title">
+          {r.title}
+        </Link>
+        <span className="row-sub muted">
+          {r.recipeTitle} · decision model{" "}
+          {r.hub ? <span className="chip">On Hugging Face</span> : null}
+        </span>
+      </td>
+      <td className="train-nowrap">{r.model}</td>
+      <td>
+        {d.tuned ? "Tuned" : "Base"} right on <strong>{main.accuracy.right}</strong> of {d.items} ({percentText(main.accuracy.rate)})
+        <span className="row-sub muted">
+          {d.tuned ? `Base right on ${d.base.accuracy.right} (${percentText(d.base.accuracy.rate)})` : "Score only, nothing trained"}
+        </span>
+      </td>
+      <td>
+        Macro F1 {d.tuned ? `base ${twoPlaces(d.base.macroF1)} · tuned ` : ""}
+        <strong>{twoPlaces(main.macroF1)}</strong>
+        <span className="row-sub muted">held-out rows, no judge</span>
+      </td>
+      <td className="train-nowrap">{r.gpu}</td>
+      <td className="num">{minutesText(r.gpuMinutes)}</td>
+      <td className="num">{usd(r.costUsd)}</td>
+    </tr>
   );
 }
 

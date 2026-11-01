@@ -5,6 +5,8 @@
  *   trainJob: launch (idempotent; save the instance if the database didn't take it) -> check every 30 s until
  *             decideCheck says terminate, or maxMinutes + 15 minutes pass -> terminate
  *             -> for a job that succeeded with eval items: judge them, 4 at a time, then save the eval summary
+ *                (a decide job, input mode "decide", is scored instead, after any ending: scoreDecisionStep in
+ *                ./decide-steps.ts, docs/DECISION_MODELS.md "Scoring")
  *             -> publish to the Hugging Face Hub: a judged glimmer-lora job whose adapter files are on the Hub, the
  *                adapter job a glimmer-publish job uploaded for once that job succeeded, or a glimmer-quantize job's
  *                own GGUF repo once it succeeded
@@ -18,6 +20,8 @@
  *
  * Judging starts only once terminate has returned, so it never keeps an instance billing, and nothing it does can
  * change the job's status: a judge step that fails is skipped, and a failure of the whole judging is swallowed.
+ * Scoring a decide job follows the same rules. It calls no model, so it costs nothing, and it runs whatever the ending,
+ * since the GPU sends its base scores before anything else can fail.
  * Publishing comes after judging, under the same rules: it never throws and never touches the job's status, and a
  * step that runs out of retries leaves the job's hub state "failed" with the reason, for Publish to try again.
  *
@@ -25,6 +29,7 @@
  * directly.
  */
 import { sleep } from "workflow";
+import { scoreDecisionStep } from "@/lib/train/decide-steps";
 import {
   hubDatasetStep,
   hubFailStep,
@@ -36,12 +41,17 @@ import {
   hubStoryStep,
 } from "@/lib/train/hub-steps";
 import { judgePlanStep, judgeStep, saveEvalSummaryStep } from "@/lib/train/judge";
-import { POLL_MS, type JudgedItem } from "@/lib/train/logic";
+import { DECIDE_MODE, POLL_MS, type JobMode, type JudgedItem } from "@/lib/train/logic";
 import { abandonStep, checkStep, launchStep, saveLaunchStep, terminateStep, type TrainEnding } from "@/lib/train/steps";
 import type { TrainCheck, TrainStatus } from "@/lib/train/types";
 
 export interface TrainJobInput {
   jobId: string;
+  /**
+   * "decide" for a glimmer-lora job in decide mode, which the jobs route sets: it is scored after its run
+   * (scoreDecisionStep), never judged. Left out for every other job, so a chat job's run is as it was.
+   */
+  mode?: JobMode;
 }
 
 export interface TrainJobResult {
@@ -113,6 +123,18 @@ async function judge(jobId: string): Promise<void> {
     await saveEvalSummaryStep(jobId, judged, plan.indexes.length);
   } catch {
     // Judging is an extra: the instance is already terminated and the job's status is settled.
+  }
+}
+
+/**
+ * Scores a decide job from its GPU's own log-probabilities and saves the eval summary (scoreDecisionStep: no judge, no
+ * Meta call). Never throws.
+ */
+async function scoreDecisions(jobId: string): Promise<void> {
+  try {
+    await scoreDecisionStep(jobId);
+  } catch {
+    // Like judging, an extra: the instance is already terminated and the job's status is settled.
   }
 }
 
@@ -204,7 +226,8 @@ export async function trainJob(input: TrainJobInput): Promise<TrainJobResult> {
   } finally {
     status = await terminate(jobId, ending, instanceId);
   }
-  if (status === "succeeded") await judge(jobId);
+  if (input.mode === DECIDE_MODE) await scoreDecisions(jobId);
+  else if (status === "succeeded") await judge(jobId);
   await publish(jobId, status);
   return { status };
 }

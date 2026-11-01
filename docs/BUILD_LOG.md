@@ -1066,7 +1066,7 @@ because the sidebar showed a real account.
   board. Estimates: about $11.80 a run at most (examples $3.10 to $6.80 on Wonder, unmeasured; GPU up to $5). Test budget
   proposed: $8. Units U1, U2, U4, U5 start now; launching jobs and the chat route wait for tg-decide's D7.
 
-### 20:50 Meta's Muse Gadget SDK read
+### 20:48 Meta's Muse Gadget SDK read
 
 - Owner: "see if anything here is valuable ... we are cool custom building too". Notes in _plan/gadget-sdk.md. Gadgets
   pair to one person's Muse account with that person's SDK token (personal, non-commercial, at most 50 devices, no
@@ -1075,6 +1075,85 @@ because the sidebar showed a real account.
 - Useful: the owner's Pi 5 as a real gadget (already planned); a new "Muse gadget commands" product output so a person's
   own gadget can use a Muse Muse product; muse-device boards as gadgets (Hussam's call); ESP32 custom hardware with
   browser flashing after Nov 4. Muse Muse still never holds anyone's gadget token.
+
+### 20:51 Fine-tune like a build: first units building (tg-tune, wf_e1fcae3d-58a)
+
+- The composer (/fine-tuning/new), the plan route with a signed plan token, the run room (/fine-tuning/runs/<id>) with
+  steps and the mascot, PlanCard generalized to PlanView, the eval verdict and "Where it runs", behind TUNE_COMPOSER (off
+  means nothing changes). Admins only until the visitor work lands. When a run's examples are ready, the room hands off
+  to the existing training form until launching is automated after tg-decide's D7. No Meta calls, no spend; review, fix
+  and screenshots follow.
+
+### 21:15 Owner answers: demo windows, $8 tests, visitors from day one, gadget commands
+
+- Hosted tuned Glimmer for products: demo windows only (off by default; one 30-minute window Nov 3 for filming plus any
+  an admin opens; $15 a day cap). Outside a window products answer with Muse Wonder and say so.
+- Test budget for this work: up to $8.
+- Visitors can fine-tune from day one: 1 run a day each, 60 minutes or $4 per run, a $15 daily total, nothing published
+  without an admin. They train on the lab's ready datasets or their own rows, not on Wonder-written data (Meta terms
+  10.1(ix), not asked, so it stays off). Being squared with wave 3's sign-in rule (GPU work needs a signed-in builder).
+- Build the "Muse gadget commands" output now (queued for the next free heavy slot).
+- Wave 3 notes: its 0018 and 0019 drizzle snapshot files share names with General's 0016 and 0017 (renumber on their side
+  when General's land). Local test builds can't get a Vercel OIDC token here, so the preview database steps are the only
+  path to test builds for everyone. That's also why a local build stops at "Could not get credentials from OIDC context".
+
+### 21:23 r30b is a Derivative of Muse Spark Open: license duties
+
+- From the fine-tune session's license review: r30b is a "Derivative" under the Muse Model License (Muse Spark Open wrote
+  part of its stage 1 data), and the owner is adding non-commercial terms (some stage 1 rows came from NC-licensed papers).
+  Models go to Hugging Face as OfflineBase/Glimmer-30B-2026-Knowledge and -GGUF, private until review.
+- Duties wherever r30b files are used or shipped: "Built with Muse Spark Open" shown prominently; the Muse Model License,
+  its Usage Policy, Meta's Apache 2.0 LICENSE with a modified-weights notice and the NC terms with the files; 18+; outputs
+  never presented as human-written; users told it makes up answers and goes along with false premises.
+- In Muse Muse: no page or code ships r30b today. Applies to offline mode when it uses r30b's 1-bit file, to /models if
+  r30b links are added, and to wave 3's drive export (which names r30b; asked to add the files and a test). Lab-tuned
+  adapters from lib/train aren't affected.
+
+### 21:28 Owner: r30b's 1-bit file is the default for the drive export and offline mode
+
+- The training session confirmed stage 2's 1-bit file is also a Derivative of Muse Spark Open (it trained on stage 1's
+  adapter and data) and made things up 94% of the time on the held-out honesty test (r30b 55%, base 70%). The drive
+  export defaulted to it. The owner chose r30b IQ1_S (6.53 GB) as the default; wave 3 is switching unit 12's default and
+  fails closed on any knowledge-run file without the license files, which the training session is putting next to each
+  model in S3.
+
+### 21:29 Owner drops the non-commercial terms for the knowledge-run models
+
+- Now Apache 2.0 for our modifications ("free reign license"); no non-commercial file. The Muse Model License conditions
+  still apply to r30b and stage 2: ship MUSE_MODEL_LICENSE.md and USAGE_POLICY.md, "Built with Muse Spark Open", the Usage
+  Policy (18+, never presented as human-written), and its $20M API clause. Files in S3: LICENSE, MUSE_MODEL_LICENSE.md,
+  USAGE_POLICY.md, NOTICE. Wave 3 told.
+
+### 21:36 Wave 3: r30b's license duties in the drive export (tg-cap-int e556f68)
+
+- Defaults to r30b IQ1_S only; stage 2 or any other file must be named in full with its own honesty numbers. Any
+  knowledge-run file (r30b, stage-b, stage 2, knowledge) is refused without the duties. The drive carries
+  MUSE_MODEL_LICENSE.md, the Usage Policy and NOTICE from the model's own S3 folder (sha256-checked, never held by the
+  code), "Built with Muse Spark Open" in every title, a "Use it safely" section (18+, never presented as human-written,
+  made-up answers, false premises, read the license before offering it as a service), and the Derivative line in
+  CHANGES.md. Lab adapters unaffected. Wave 3's checks: 4,085 tests, 4,077 pass, 0 fail; template 455/455; tsc clean.
+  The export works once the training session's license files are in S3; no code change needed.
+
+### 21:51 Decision models landed on tuned-model-options (88ac98e, 94324ca)
+
+- wf_50b3b2f5-c82 built D3 to D7 and D9 on tg-decide: decision datasets (a person's labeled rows, CSV or JSONL, split
+  once with the test rows held out and near-duplicates kept together; migration 0017), decide mode on the GPU,
+  deterministic scoring in place of judging, the decision pages and results, models served at /decide with a Try it live
+  box, {GATEWAY_URL}/decide and the template's decide(), and the docs. The review found 11 issues; 10 fixed (among them
+  the calibration sentence now says only what the records hold, the gateway's rate limits run before any lookup, a
+  gateway timeout frees the GPU slot), 1 rejected with reasons. D8, the real GPU runs (dry run, a $0.70 score-only run,
+  one real run), waits for the owner.
+- Landing: globals.css conflict resolved (both sides' blocks kept). 0016 (code_sessions, never built) is retired for good,
+  since 0017 landed first and the migrator would skip a later 0016. The schema marker for 0017 added; the decide fixture
+  added to the preview database guard's allowed list (it takes only a local PGlite folder). Full suite after landing:
+  4,754 tests, 4,746 pass, 0 fail, 8 skipped (live Meta tests). Pushed to the branch only.
+
+### 21:49 Owner: every new fine-tune trains on r30b
+
+- "Switch outright to r30b": plain Glimmer is no longer offered as a base. The training session is making a 4-bit copy
+  (OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit) and publishing the repos tonight, public, no token needed.
+  The recipe switches once that repo is public and one dry run passes on it (about 1 AM). Every r30b-based lab model is
+  a Derivative of Muse Spark Open, so its cards and pages get "Built with Muse Spark Open" and the Usage Policy points.
 
 ## Gaps
 

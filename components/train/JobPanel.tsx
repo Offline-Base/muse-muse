@@ -8,6 +8,7 @@ import { TrainStatusPill } from "@/components/train/TrainStatusPill";
 import {
   artifactHref,
   gpuName,
+  isDecideJob,
   pricePerHour,
   progressText,
   servingText,
@@ -17,6 +18,7 @@ import {
 } from "@/components/train/format";
 import { bytes, dateTimeUtc, duration, relativeTime, usd } from "@/lib/format";
 import { isServeRecipe, unjudgedNote } from "@/lib/train/logic";
+import { isDecisionSummary } from "@/lib/train/models";
 import { isTrainTerminal, type RecipeView, type TrainJobView } from "@/lib/train/types";
 
 export interface JobPanelProps {
@@ -63,6 +65,7 @@ export function JobPanel({ job, recipe, dataset = null, adapter = null, now, ela
   const step = typeof p?.step === "number" ? p.step : null;
   const params = Object.entries(job.params ?? {});
   const control = stopControl(job);
+  const decide = isDecideJob(job);
 
   return (
     <aside className="panel" aria-label="Job details">
@@ -214,12 +217,18 @@ export function JobPanel({ job, recipe, dataset = null, adapter = null, now, ela
           ) : null}
           {job.evalSummary ? (
             <div>
-              <dt>Eval</dt>
+              <dt>{decide ? "Scores" : "Eval"}</dt>
               <dd>
-                <a href="#eval-results">
-                  {unjudgedNote(job.evalSummary) === null
-                    ? `Tuned won ${job.evalSummary.tunedWins} of ${job.evalSummary.items}`
-                    : "Not judged"}
+                <a href={decide ? "#decision-results" : "#eval-results"}>
+                  {isDecisionSummary(job.evalSummary)
+                    ? job.evalSummary.items > 0
+                      ? `${job.evalSummary.tuned ? "Tuned" : "Base"} right on ${(job.evalSummary.tuned ?? job.evalSummary.base).accuracy.right} of ${job.evalSummary.items}`
+                      : "Not scored"
+                    : unjudgedNote(job.evalSummary) === null
+                      ? `Tuned won ${job.evalSummary.tunedWins} of ${job.evalSummary.items}`
+                      : decide
+                        ? "Not scored"
+                        : "Not judged"}
                 </a>
               </dd>
             </div>

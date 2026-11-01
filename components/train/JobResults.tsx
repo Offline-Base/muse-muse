@@ -1,10 +1,12 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Icon } from "@/components/icons";
+import { DecideTryCard } from "@/components/train/DecideTry";
+import { DecisionResults } from "@/components/train/DecisionResults";
 import { EvalResults } from "@/components/train/EvalResults";
 import { TryLiveCard } from "@/components/train/LiveDemo";
 import { LongText } from "@/components/train/LongText";
-import { judgeName, tunedModelName, writerName, type EvalRow } from "@/components/train/format";
+import { judgeName, tunedModelName, writerName, type DecideTryModel, type EvalRow } from "@/components/train/format";
 import { minutesText, type PublicLiveDemo, type ResultView } from "@/components/train/results";
 import { ExternalLink, PageHeader } from "@/components/ui";
 import { dateTimeUtc, usd } from "@/lib/format";
@@ -17,13 +19,18 @@ export interface JobResultsProps {
    * The dataset it trained on, when that dataset is ready, with the model that wrote it (its writerModel: absent or null
    * means Muse Spark 1.3).
    */
-  dataset: { id: string; title: string; writerModel?: string | null } | null;
+  dataset: { id: string; title: string; writerModel?: string | null; trainCount?: number } | null;
   /** A live demo of its adapter while one is starting or serving (the Try it live box), else nothing. */
   live?: PublicLiveDemo | null;
   /** The server's clock when the page rendered, for the live demo's countdown. */
   serverNow?: number;
   /** What the page shows right under the model's title, such as "Run it on your computer" once it has local files. */
   aside?: ReactNode;
+  /**
+   * For a decision model (docs/DECISION_MODELS.md, D7): its question, labels and scores, so its live demo shows the box
+   * that picks a label instead of the chat box. Label names and numbers only, never a row.
+   */
+  decideTry?: DecideTryModel | null;
 }
 
 /**
@@ -31,9 +38,10 @@ export interface JobResultsProps {
  * results, read-only. A server component, so nothing but this text reaches the browser: no instance, IP, region, log,
  * error or Stop. While a live demo of its adapter runs, the Try it live box comes first; it gets only PublicLiveDemo.
  * Once the job is published to the Hugging Face Hub, an "On Hugging Face" chip and the two repos' links show; before
- * that, nothing about the Hub does.
+ * that, nothing about the Hub does. A decide job shows its scores instead (DecisionResults): numbers and label names
+ * only, never an input or a wrong answer.
  */
-export function JobResults({ result: r, rows, dataset, live = null, serverNow, aside = null }: JobResultsProps) {
+export function JobResults({ result: r, rows, dataset, live = null, serverNow, aside = null, decideTry = null }: JobResultsProps) {
   const judge = judgeName(r);
   const long = r.settings.filter((s) => s.key === "studentPrompt");
   const short = r.settings.filter((s) => s.key !== "studentPrompt");
@@ -64,7 +72,11 @@ export function JobResults({ result: r, rows, dataset, live = null, serverNow, a
       />
 
       {aside}
-      {live ? <TryLiveCard adapterJobId={r.id} demo={live} serverNow={serverNow ?? Date.now()} /> : null}
+      {live && decideTry ? (
+        <DecideTryCard adapterJobId={r.id} demo={live} model={decideTry} serverNow={serverNow ?? Date.now()} />
+      ) : live ? (
+        <TryLiveCard adapterJobId={r.id} demo={live} serverNow={serverNow ?? Date.now()} />
+      ) : null}
 
       <section className="card section-card" aria-labelledby="run-title">
         <h2 id="run-title">The run</h2>
@@ -124,19 +136,30 @@ export function JobResults({ result: r, rows, dataset, live = null, serverNow, a
             <LongText text={s.value} />
           </div>
         ))}
-        <p className="muted small">
-          Both models answered each held-out prompt. {judge} saw the two answers in random order, without knowing which
-          model wrote which.
-        </p>
+        {r.decision ? (
+          <p className="muted small">
+            Both models were scored on the same held-out test rows by reading how much probability each gave every
+            option&apos;s letter. No judge and no model call: the scores are counted, not graded.
+          </p>
+        ) : (
+          <p className="muted small">
+            Both models answered each held-out prompt. {judge} saw the two answers in random order, without knowing which
+            model wrote which.
+          </p>
+        )}
       </section>
 
-      <EvalResults
-        state={{ state: "judged", summary: r.summary }}
-        rows={rows}
-        model={tunedModelName(r.recipe)}
-        writer={dataset ? writerName(dataset) : null}
-        judge={judge}
-      />
+      {r.decision ? (
+        <DecisionResults summary={r.decision} trainRows={dataset?.trainCount ?? null} />
+      ) : (
+        <EvalResults
+          state={{ state: "judged", summary: r.summary }}
+          rows={rows}
+          model={tunedModelName(r.recipe)}
+          writer={dataset ? writerName(dataset) : null}
+          judge={judge}
+        />
+      )}
     </div>
   );
 }

@@ -157,7 +157,7 @@ describe("scripts/migrate.ts", () => {
     const run = migrateScript({ DATABASE_URL: `pglite:${folder}` });
     assert.equal(run.status, 1);
     assert.equal(run.out, "");
-    assert.match(run.err, /already ran a newer migration than 0018_trust, so drizzle would skip it/);
+    assert.match(run.err, /already ran a newer migration than 0017_decision_datasets, 0018_trust, so drizzle would skip them/);
     const client = new PGlite(folder);
     try {
       const { rows } = await client.query<{ n: number }>(

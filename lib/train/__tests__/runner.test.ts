@@ -2,7 +2,11 @@
  * Compiles every Python string with python3 -m py_compile, then runs runner.py for real against a local HTTP server
  * standing in for the platform (and for the Vercel Blob API): the smoke recipe with allowNoGpu, a failing recipe,
  * uploads through the simple and multipart Blob protocols, dataset paging, eval callbacks, the cache folder, the event
- * pipe, the stall watch, the deadline, and the glimmer-lora recipe with dryRun. The glimmer recipe's own logic (the
+ * pipe, the stall watch, the deadline, and the glimmer-lora recipe with dryRun, in chat mode and in decide mode (the
+ * fake platform serving a made-up decision dataset's real pages, the decide callbacks it gets back, which the platform's
+ * own scoring reads, and decide.json next to the adapter). Decide mode's child runs on fake Unsloth with fake torch
+ * logits: the platform's prompts, log_softmax in float32, letters bare and space-led, the floor for a letter with no
+ * probability, renderings too long dropped, training on letters, scoreOnly. The glimmer recipe's own logic (the
  * venv build lock and race, the pinned uv, the deadline, partial results, the base model's revision in
  * adapter_config.json, the step that sends the adapter to the Hugging Face Hub) runs under python3 with a fake ctx;
  * ctx.hub_upload itself is in hub-upload.test.ts. Skipped
@@ -13,19 +17,42 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, request, type IncomingHttpHeaders, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, beforeEach, describe, it } from "node:test";
 import { connect } from "node:tls";
-import { SERVE_MINUTES_DEFAULT, SERVE_MINUTES_MAX, SERVE_MINUTES_MIN, SERVE_STOP_MARGIN_SECONDS } from "@/lib/train/logic";
+import { DECIDE_FORMAT, DECIDE_LETTERS, DECIDE_MAX_TOKENS, decideJson, decisionItems, glimmerPrompt, logprobsProblem } from "@/lib/decide/format";
+import type { DecideItem, DecideScoreItem, DecisionRows, DecisionSpec } from "@/lib/decide/types";
+import {
+  checkDecisionUpload,
+  DECIDE_EPOCHS_DEFAULT,
+  DECIDE_EPOCHS_MAX,
+  DECIDE_EPOCHS_MIN,
+  decideEpochs,
+  decisionPage,
+  decisionPartSize,
+} from "@/lib/train/decision-datasets";
+import {
+  DECIDE_CALLBACK_ITEMS_MAX,
+  DECIDE_ITEMS_MAX,
+  DECIDE_STEP_ROWS,
+  DECIDE_STEPS_MAX,
+  SERVE_MINUTES_DEFAULT,
+  SERVE_MINUTES_MAX,
+  SERVE_MINUTES_MIN,
+  SERVE_STOP_MARGIN_SECONDS,
+  summarizeDecisions,
+} from "@/lib/train/logic";
 import { RECIPES, recipeById } from "@/lib/train/recipes";
-import { SERVE_PORT, TRAIN_UPLOAD_TYPES } from "@/lib/train/types";
+import { SERVE_PORT, TRAIN_UPLOAD_TYPES, type TrainExample } from "@/lib/train/types";
+import { TICKET_LABELS, TICKET_QUESTION, ticketRows } from "./decision-fixture";
 import { GLIMMER_PY } from "@/lib/train/recipes/glimmer";
 import { RUNNER_PY } from "@/lib/train/recipes/runner";
-import { glimmerHelpers, SERVE_ANSWER_SECONDS, SERVE_MAX_NEW_TOKENS, SERVE_PROMPT_MAX, SERVE_PY } from "@/lib/train/recipes/serve";
+import { DECIDE_SERVE_ITEMS_MAX, glimmerHelpers, SERVE_ANSWER_SECONDS, SERVE_MAX_NEW_TOKENS, SERVE_PROMPT_MAX, SERVE_PY } from "@/lib/train/recipes/serve";
+import { serveItems, serveRenderings } from "@/lib/decide/serving";
 import { serveTiming } from "@/lib/train/serve";
 import { SMOKE_PY } from "@/lib/train/recipes/smoke";
 
@@ -245,6 +272,8 @@ describe("python sources", { skip: hasPython ? false : "python3 is missing" }, (
       ["SERVE_MINUTES_MAX", SERVE_MINUTES_MAX],
       // The platform's serveEndsAt expects the server to stop this long before the deadline.
       ["SERVE_MARGIN_SECONDS", SERVE_STOP_MARGIN_SECONDS],
+      // A decision model's /decide takes one prompt per group of its labels: 12 labels make 3.
+      ["DECIDE_SERVE_ITEMS_MAX", DECIDE_SERVE_ITEMS_MAX],
     ] as const) {
       assert.ok(SERVE_PY.includes(`\n${name} = ${value}\n`), `${name} = ${value}`);
     }
@@ -274,6 +303,32 @@ describe("python sources", { skip: hasPython ? false : "python3 is missing" }, (
     const tuple = /^UPLOAD_TYPES = \(\n([\s\S]*?)\n\)$/m.exec(RUNNER_PY)?.[1] ?? "";
     const types = [...tuple.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
     assert.deepEqual(types, [...TRAIN_UPLOAD_TYPES]);
+  });
+
+  it("keeps decide mode's numbers the same on the GPU and the platform", () => {
+    const value = (source: string, name: string) => new RegExp(`^${name} = (.+)$`, "m").exec(source)?.[1];
+    assert.equal(Number(value(RUNNER_PY, "DECIDE_ITEMS_MAX")), DECIDE_ITEMS_MAX);
+    assert.equal(Number(value(RUNNER_PY, "DECIDE_CALLBACK_ITEMS")), DECIDE_CALLBACK_ITEMS_MAX);
+    assert.ok(Number(value(RUNNER_PY, "DECIDE_BODY_LIMIT")) < 64 * 1024, "under the events route's 64 KB");
+    assert.equal(value(RUNNER_PY, "DECIDE_LOGPROB_FLOOR"), value(GLIMMER_PY, "DECIDE_LOGPROB_FLOOR"));
+    assert.equal(value(RUNNER_PY, "DATASET_PARTS"), '("train", "eval", "dev")');
+    assert.equal(Number(value(GLIMMER_PY, "DECIDE_TRAIN_BATCH")) * Number(value(GLIMMER_PY, "DECIDE_GRAD_ACCUM")), DECIDE_STEP_ROWS);
+    assert.equal(Number(value(GLIMMER_PY, "DECIDE_STEPS_MAX")), DECIDE_STEPS_MAX);
+    assert.equal(Number(value(GLIMMER_PY, "DECIDE_EPOCHS_DEFAULT")), DECIDE_EPOCHS_DEFAULT);
+    assert.equal(Number(value(GLIMMER_PY, "DECIDE_EPOCHS_MIN")), DECIDE_EPOCHS_MIN);
+    assert.equal(Number(value(GLIMMER_PY, "DECIDE_EPOCHS_MAX")), DECIDE_EPOCHS_MAX);
+    assert.equal(Number(value(GLIMMER_PY, "MAX_SEQ_LENGTH")), DECIDE_MAX_TOKENS);
+    assert.equal(value(GLIMMER_PY, "DECIDE_FORMAT"), JSON.stringify(DECIDE_FORMAT));
+    assert.equal(value(GLIMMER_PY, "DECIDE_LETTERS"), `(${DECIDE_LETTERS.map((l) => JSON.stringify(l)).join(", ")})`);
+
+    // The recipe's decide params, and chat's own fields kept to chat mode.
+    const lora = recipeById("glimmer-lora")!;
+    const field = (key: string) => lora.params.find((f) => f.key === key);
+    assert.deepEqual(field("mode")?.choices, ["chat", "decide"]);
+    assert.equal(field("mode")?.default, undefined, "a chat job's params stay as they were");
+    assert.deepEqual([field("epochs")?.default, field("epochs")?.min, field("epochs")?.max, field("epochs")?.modes], [2, 1, 4, ["decide"]]);
+    assert.deepEqual([field("scoreOnly")?.default, field("scoreOnly")?.max, field("scoreOnly")?.modes], [0, 1, ["decide"]]);
+    assert.deepEqual([field("maxSteps")?.modes, field("studentPrompt")?.modes], [["chat"], ["chat"]]);
   });
 });
 
@@ -320,8 +375,12 @@ class FakeCtx:
         self.evals = []
         self.uploads = []
         self.on_run = None
-        self.data = {"train": [], "eval": []}
+        self.data = {"train": [], "eval": [], "dev": []}
         self.dataset_title = None
+        # A decision dataset's kind and decide.json, as the runner keeps them from its pages, and the decide callbacks.
+        self.dataset_kind = None
+        self.dataset_decide = None
+        self.decides = []
         # What hub_upload answers (or raises, for an exception), the calls it got, and the order of the GPU's sends.
         self.hub_answer = {"uploaded": 1, "skipped": None, "failed": [], "repo": "muse-test/muse-glimmer-30b-briefs-lora-" + job_id, "files": 3, "bytes": 10}
         self.hub_calls = []
@@ -347,6 +406,11 @@ class FakeCtx:
         self.evals.append([index, base, tuned])
         self.order.append("eval")
         return True
+
+    def decide(self, part, items):
+        self.decides.append([part, [dict(item) for item in items]])
+        self.order.append("decide")
+        return len(items)
 
     def upload(self, path, name, kind="other"):
         self.uploads.append([name, kind])
@@ -461,7 +525,7 @@ class FakeTokenizer:
         self.eos_token_id = SPECIALS.index(self.eos_token)
         self.padding_side = "right"
 
-    def encode(self, text):
+    def encode(self, text, add_special_tokens=False):
         ids, i = [], 0
         while i < len(text):
             special = next((k for k, s in enumerate(SPECIALS) if text.startswith(s, i)), None)
@@ -546,6 +610,7 @@ class SFTTrainer:
     def __init__(self, model, tokenizer, train_dataset, eval_dataset, args):
         self.model, self.args, self.callbacks = model, args, []
         tok = getattr(tokenizer, "tokenizer", tokenizer)
+        self.padding_side = getattr(tok, "padding_side", None)
         self.train_dataset = [
             {"text": row["text"], "input_ids": ([0] + tok.encode(row["text"] + tok.eos_token))[: args.max_length]}
             for row in train_dataset
@@ -568,20 +633,22 @@ class SFTTrainer:
         return types.SimpleNamespace(metrics={"train_runtime": 1.5}, training_loss=0.5)
 
 
-def install_fakes(replies, tokenizer=None, shift=0, marker_prefix=""):
+def install_fakes(replies, tokenizer=None, shift=0, marker_prefix="", model=None):
     """Fake unsloth, torch, datasets, transformers and trl in sys.modules. Its train_on_responses_only trains on the
     tokens after each response marker up to the next instruction marker, as Unsloth's does; shift starts each span that
-    many tokens late, and marker_prefix changes the marker it looks for (one tokenized differently on its own)."""
-    state = {"tokenizer": tokenizer or FakeTokenizer(), "model": None, "masked": [], "rows": None}
+    many tokens late, and marker_prefix changes the marker it looks for (one tokenized differently on its own). model is
+    the fake model's class (FakeModel by default); state counts get_peft_model calls and keeps the trainer."""
+    state = {"tokenizer": tokenizer or FakeTokenizer(), "model": None, "masked": [], "rows": None, "peft": 0, "trainer": None}
 
     class FastModel:
         @staticmethod
         def from_pretrained(model_name, revision=None, max_seq_length=None):
-            state["model"] = FakeModel(state["tokenizer"], replies)
+            state["model"] = (model or FakeModel)(state["tokenizer"], replies)
             return state["model"], state["tokenizer"]
 
         @staticmethod
         def get_peft_model(model, **kwargs):
+            state["peft"] += 1
             return model
 
         @staticmethod
@@ -597,6 +664,7 @@ def install_fakes(replies, tokenizer=None, shift=0, marker_prefix=""):
         q, a = tok.encode(instruction_part), tok.encode(marker_prefix + response_part)
         state["masked"].append([instruction_part, response_part])
         state["rows"] = trainer.train_dataset
+        state["trainer"] = trainer
         for row in trainer.train_dataset:
             ids, labels, j = row["input_ids"], [-100] * len(row["input_ids"]), 0
             while j < len(ids):
@@ -1378,6 +1446,550 @@ assert any(t.startswith("The base model's revision couldn't be written into adap
 assert g.hub_config_fixes({"revision": "abc", "base_model_name_or_path": g.MODEL}, g.MODEL_REVISION, g.MODEL) == {}
 fixes = g.hub_config_fixes({"revision": "", "base_model_name_or_path": "/lambda/nfs/cache/hf/snapshots/x"}, g.MODEL_REVISION, g.MODEL)
 assert fixes == {"revision": g.MODEL_REVISION, "base_model_name_or_path": g.MODEL}, fixes
+`);
+  });
+});
+
+/**
+ * Python for the decide mode tests, after FAKE_GLIMMER: a tensor of nested lists with the few operations scoring uses
+ * (and its dtype, so a test sees log_softmax run in float32), a fake torch.log_softmax, Glimmer's tokenizer as far as
+ * decide needs it (each capital letter one token bare and space-led), and a model whose forward pass gives logits over
+ * a small vocabulary from replies(prompt, tuned), a dict of token text to logit with every other token at 0.
+ */
+const DECIDE_FAKES = String.raw`import base64, math
+
+SPACE_LETTERS = [" " + letter for letter in g.DECIDE_LETTERS]
+# Covers the letters (1065 to 1069) and lowercase words such as "x" (1120).
+VOCAB = 1200
+SOFTMAX = []
+SYSTEM_D = "You make one decision at a time."
+
+
+class FakeTensor:
+    def __init__(self, data, dtype="bfloat16"):
+        self.data, self.dtype = data, dtype
+
+    @property
+    def shape(self):
+        dims, d = [], self.data
+        while isinstance(d, list):
+            dims.append(len(d))
+            d = d[0] if d else None
+        return tuple(dims)
+
+    def to(self, device):
+        return self
+
+    def float(self):
+        return FakeTensor(self.data, "float32")
+
+    def tolist(self):
+        return [list(row) if isinstance(row, list) else row for row in self.data]
+
+    def cumsum(self, dim):
+        assert dim == -1
+        out = []
+        for row in self.data:
+            acc, r = 0, []
+            for v in row:
+                acc += v
+                r.append(acc)
+            out.append(r)
+        return FakeTensor(out, self.dtype)
+
+    def __sub__(self, n):
+        return FakeTensor([[v - n for v in row] for row in self.data], self.dtype)
+
+    def clamp(self, min=None):
+        return FakeTensor([[max(v, min) for v in row] for row in self.data], self.dtype)
+
+    def __getitem__(self, key):
+        assert key[0] == slice(None), key
+        if len(key) == 3:
+            assert key[1] == -1 and key[2] == slice(None), key
+            return FakeTensor([plane[-1] for plane in self.data], self.dtype)
+        return FakeTensor([[row[c] for c in key[1]] for row in self.data], self.dtype)
+
+    def argmax(self, dim=-1):
+        assert dim == -1
+        best = lambda row: max(range(len(row)), key=lambda c: -math.inf if math.isnan(row[c]) else row[c])
+        return FakeTensor([best(row) for row in self.data], "int64")
+
+
+def fake_log_softmax(t, dim=-1):
+    SOFTMAX.append(t.dtype)
+    assert dim == -1 and t.dtype == "float32", "log_softmax runs in float32, not " + t.dtype
+    out = []
+    for row in t.data:
+        finite = [v for v in row if v != -math.inf and not math.isnan(v)]
+        top = max(finite)
+        lse = top + math.log(sum(math.exp(v - top) for v in finite))
+        out.append([v - lse for v in row])
+    return FakeTensor(out, "float32")
+
+
+class DecideTokenizer(FakeTokenizer):
+    """FakeTokenizer with " A" to " E" one token each (ids 900 to 904), as Glimmer's tokenizer has them, and a batch's
+    ids and mask as FakeTensors."""
+
+    def encode(self, text, add_special_tokens=False):
+        ids, i = [], 0
+        while i < len(text):
+            special = next((k for k, s in enumerate(SPECIALS) if text.startswith(s, i)), None)
+            spaced = next((k for k, s in enumerate(SPACE_LETTERS) if text.startswith(s, i)), None)
+            if special is not None:
+                ids.append(special)
+                i += len(SPECIALS[special])
+            elif spaced is not None:
+                ids.append(900 + spaced)
+                i += 2
+            else:
+                ids.append(1000 + ord(text[i]))
+                i += 1
+        return ids
+
+    def decode(self, ids, skip_special_tokens=False):
+        return "".join(SPACE_LETTERS[t - 900] if 900 <= t < 905 else FakeTokenizer.decode(self, [t], skip_special_tokens) for t in ids)
+
+    def __call__(self, texts, return_tensors=None, padding=False):
+        enc = FakeTokenizer.__call__(self, texts, return_tensors, padding)
+        return {k: FakeTensor([list(r) for r in v], "int64") for k, v in enc.items()}
+
+
+class DecideModel(FakeModel):
+    """Logits at the last position (every position's without logits_to_keep) from replies(prompt, tuned). Each forward
+    pass, and the save, go into steps; takes_keep False makes it refuse logits_to_keep, as an older model would."""
+
+    takes_keep = True
+
+    def __init__(self, tokenizer, replies):
+        FakeModel.__init__(self, tokenizer, replies)
+        self.steps, self.forwards = [], []
+
+    def __call__(self, input_ids, attention_mask, position_ids, use_cache, **kwargs):
+        if "logits_to_keep" in kwargs and not self.takes_keep:
+            raise TypeError("forward() got an unexpected keyword argument 'logits_to_keep'")
+        keep = kwargs.get("logits_to_keep")
+        prompts = [self.tok.decode([t for t, m in zip(row, mask) if m]) for row, mask in zip(input_ids.data, attention_mask.data)]
+        self.steps.append("tuned" if self.tuned else "base")
+        self.forwards.append({
+            "tuned": self.tuned, "env": os.environ.get("UNSLOTH_RETURN_LOGITS"), "positions": position_ids.data,
+            "mask": attention_mask.data, "keep": keep, "use_cache": use_cache, "prompts": prompts,
+        })
+        planes = []
+        for row, prompt in zip(input_ids.data, prompts):
+            last = [0.0] * VOCAB
+            for text, value in self.replies(prompt, self.tuned).items():
+                ids = self.tok.encode(text)
+                assert len(ids) == 1, text
+                last[ids[0]] = value
+            planes.append([[0.0] * VOCAB for _ in range((1 if keep == 1 else len(row)) - 1)] + [last])
+        return types.SimpleNamespace(logits=FakeTensor(planes, "bfloat16"))
+
+    def save_pretrained(self, path):
+        self.steps.append("save")
+        FakeModel.save_pretrained(self, path)
+
+
+def install_decide(replies, tokenizer=None):
+    """install_fakes with DecideTokenizer, DecideModel and torch.log_softmax."""
+    state = install_fakes(replies, tokenizer=tokenizer or DecideTokenizer(), model=DecideModel)
+    sys.modules["torch"].log_softmax = fake_log_softmax
+    del SOFTMAX[:]
+    return state
+
+
+def expected_logprobs(logits, letters, tok):
+    """What one prompt's scores should be, from its logits ({token text: value}, every other token of VOCAB at 0): each
+    letter's bare and space-led probabilities summed, as a log, or the floor for none."""
+    row = [0.0] * VOCAB
+    for text, value in logits.items():
+        row[tok.encode(text)[0]] = value
+    finite = [v for v in row if v != -math.inf]
+    top = max(finite)
+    lse = top + math.log(sum(math.exp(v - top) for v in finite))
+    out = []
+    for letter in letters:
+        p = sum(math.exp(row[tok.encode(t)[0]] - lse) for t in (letter, " " + letter))
+        out.append(math.log(p) if p > 0 else g.DECIDE_LOGPROB_FLOOR)
+    return out
+
+
+def task_item(part, index, state, letters=("A", "B", "C")):
+    """A decision item as the platform pages it, with made-up options: the task twice under SYSTEM_D."""
+    options = [{"letter": letter, "option": "Option " + letter} for letter in letters]
+    task = json.dumps({"state": state, "question": "Which option fits?", "options": options}, separators=(",", ":"))
+    user = task + "\n\nHere is the same task again:\n\n" + task
+    return {"part": part, "index": index, "row": index, "group": 0, "messages": [{"role": "system", "content": SYSTEM_D}, {"role": "user", "content": user}], "letters": list(letters)}
+
+
+def train_row(state, letter):
+    item = task_item("train", 0, state)
+    return {"messages": item["messages"] + [{"role": "assistant", "content": letter}]}
+
+
+def decide_child_run(train_rows, items, score_only=False):
+    """g.child_main on a decide config for these rows and items, in a folder of its own: (cfg, the RuntimeError's text
+    or None)."""
+    work = tempfile.mkdtemp(dir=ROOT)
+    cfg = {
+        "model": g.MODEL, "revision": g.MODEL_REVISION, "max_seq_length": g.MAX_SEQ_LENGTH, "max_steps": 120,
+        "learning_rate": 0.0002, "lora_rank": 8, "system": items[0]["messages"][0]["content"], "deadline": time.time() + 3600,
+        "train_path": os.path.join(work, "train.jsonl"), "eval_path": os.path.join(work, "items.jsonl"),
+        "result_path": os.path.join(work, "result.json"), "adapter_dir": os.path.join(work, "adapter"),
+        "output_dir": os.path.join(work, "outputs"), "mode": "decide", "score_only": score_only,
+    }
+    g.write_jsonl(cfg["train_path"], train_rows)
+    g.write_jsonl(cfg["eval_path"], items)
+    path = os.path.join(work, "config.json")
+    with open(path, "w") as f:
+        json.dump(cfg, f)
+    del EVENTS[:]
+    try:
+        g.child_main(path)
+    except RuntimeError as e:
+        return cfg, str(e)
+    return cfg, None
+
+
+def close(a, b, tol=1e-9):
+    return len(a) == len(b) and all(abs(x - y) <= tol for x, y in zip(a, b))
+`;
+
+/** Python that reads a JSON value the test hands in, as base64 so no quoting can break the Python. */
+function pyJson(value: unknown): string {
+  return `json.loads(base64.b64decode("${Buffer.from(JSON.stringify(value)).toString("base64")}").decode("utf-8"))`;
+}
+
+/** A made-up 4-label decision dataset (decision-fixture.ts), checked and split as the datasets route does it. */
+function ticketDataset(counts: number[], seed: string): { spec: DecisionSpec; rows: DecisionRows } {
+  const checked = checkDecisionUpload({ question: TICKET_QUESTION, labels: TICKET_LABELS, rows: ticketRows(counts) }, seed);
+  assert.ok(checked.ok);
+  return { spec: checked.spec, rows: checked.rows };
+}
+
+const byIndex = (list: DecisionRows["train"]) => new Map(list.map((r, i) => [i, r]));
+
+/** Every page of each part, as GET .../dataset serves a decide job at these epochs, decide.json on each. */
+function decisionPages(spec: DecisionSpec, rows: DecisionRows, epochs: number, title = "Ticket router") {
+  const contract = decideJson({ question: spec.question, labels: spec.labels, T: 1 });
+  const out: Record<string, Array<{ items: unknown[]; nextPage: number | null; title?: string; kind?: string; total?: number; decideJson?: unknown }>> = {};
+  for (const [part, split] of [["train", "train"], ["dev", "dev"], ["eval", "test"]] as const) {
+    out[part] = [];
+    for (let page = 0; ; page++) {
+      const p = decisionPage(spec, split, epochs, page, byIndex(rows[split]));
+      out[part].push({ kind: "decision", items: p.items, nextPage: p.nextPage, total: p.total, title, decideJson: contract });
+      if (p.nextPage === null) break;
+    }
+  }
+  return out;
+}
+
+describe("glimmer decide mode", { skip: hasPython ? false : "python3 is missing", timeout: 180_000 }, () => {
+  it("reads decide mode's params as the platform does: epochs, scoreOnly, and publish kept at 0", async () => {
+    const asked: Array<Record<string, unknown>> = [{}, { epochs: null }, { epochs: 1 }, { epochs: 4 }, { epochs: 0 }, { epochs: 5 }, { epochs: 2.5 }, { epochs: "3" }, { epochs: " 4 " }, { epochs: "" }, { epochs: "x" }, { epochs: true }, { epochs: 1e300 }];
+    const table = asked.map((params) => [params, decideEpochs(params)]);
+    await glimmerTest(String.raw`import base64
+for params, want in ${pyJson(table)}:
+    assert g.decide_epochs(params) == want, (params, g.decide_epochs(params), want)
+
+chat = g.read_params({"datasetId": "ds"})
+assert chat["mode"] == "chat" and "epochs" not in chat and "score_only" not in chat and chat["publish"] is True
+p = g.read_params({"datasetId": "ds", "mode": " Decide ", "epochs": 3})
+assert p["mode"] == "decide" and p["epochs"] == 3 and p["score_only"] is False and p["publish"] is False, p
+assert g.read_params({"datasetId": "ds", "mode": "decide", "scoreOnly": 1})["score_only"] is True
+assert g.read_params({"datasetId": "ds", "mode": "decide", "publish": "0"})["publish"] is False
+for params, text in (
+    ({"datasetId": "ds", "mode": "train"}, 'mode must be chat or decide, not "train"'),
+    ({"datasetId": "ds", "mode": "decide", "publish": 1}, "publish must be 0 in decide mode"),
+):
+    try:
+        g.read_params(params)
+        raise AssertionError("no ValueError for " + json.dumps(params))
+    except ValueError as e:
+        assert str(e).startswith(text), str(e)
+
+assert [g.decide_steps(n) for n in (0, 1, 32, 33, 64, 65, 64000, 100000)] == [1, 1, 1, 2, 2, 3, 2000, 2000]
+`);
+  });
+
+  it("scores from the first token: bare and space-led letters summed, the floor for none, nothing for NaN", async () => {
+    await glimmerTest(String.raw`${FAKE_GLIMMER}
+${DECIDE_FAKES}
+tok = DecideTokenizer()
+ids = g.letter_token_ids(tok)
+assert ids == {"A": [1065, 900], "B": [1066, 901], "C": [1067, 902], "D": [1068, 903], "E": [1069, 904]}, ids
+error = raises(lambda: g.letter_token_ids(FakeTokenizer()), 'The tokenizer makes " A" 2 tokens, not one')
+
+
+class SameSpace(FakeTokenizer):
+    def encode(self, text, add_special_tokens=False):
+        return FakeTokenizer.encode(self, text.strip())
+
+
+assert g.letter_token_ids(SameSpace())["B"] == [1066], "one id when both are the same token"
+
+assert abs(g.log_sum_exp([math.log(0.25), math.log(0.5)]) - math.log(0.75)) < 1e-12
+assert g.log_sum_exp([-math.inf, -math.inf]) == -math.inf
+flat = sorted(t for v in ids.values() for t in v)
+row = {t: -math.inf for t in flat}
+row.update({1065: math.log(0.4), 900: math.log(0.1), 1066: math.log(0.2), 1067: math.log(0.05)})
+scored = g.letter_scores([row[t] for t in flat], flat, ["A", "B", "C", "D"], ids, 1065)
+assert close(scored["logprobs"][:3], [math.log(0.5), math.log(0.2), math.log(0.05)]), scored
+assert scored["logprobs"][3] == g.DECIDE_LOGPROB_FLOOR, "a letter with no probability is the floor, which JSON carries"
+assert abs(scored["mass"] - 0.75) < 1e-12 and scored["top"] is True
+assert g.letter_scores([row[t] for t in flat], flat, ["A", "B"], ids, 5)["top"] is False, "the top token was a word"
+assert g.letter_scores([row[t] for t in flat], flat, ["A", "B"], ids, 1067)["top"] is False, "C isn't shown"
+row[1066] = float("nan")
+assert g.letter_scores([row[t] for t in flat], flat, ["A", "B"], ids, 1065) is None
+row[1066] = math.inf
+assert g.letter_scores([row[t] for t in flat], flat, ["A", "B"], ids, 1065) is None
+
+# A dry run's stand-ins: deterministic, different per model, some probability on the letters and never more than all.
+item = task_item("test", 3, "my parcel never came")
+a, b = g.fake_logprobs("base", item), g.fake_logprobs("base", item)
+assert a == b and a != g.fake_logprobs("tuned", item) and a != g.fake_logprobs("base", task_item("test", 4, "my parcel never came"))
+assert 0.6 <= a["mass"] <= 0.99 + 1e-9 and abs(sum(math.exp(l) for l in a["logprobs"]) - a["mass"]) < 1e-12
+assert len(a["logprobs"]) == 3
+`);
+  });
+
+  it("takes only decision items from the pages, and fails clearly on anything else", async () => {
+    await glimmerTest(String.raw`${FAKE_GLIMMER}
+${DECIDE_FAKES}
+page = [dict(task_item("dev", i, "s" + str(i)), part=None) for i in range(3)]
+items = g.decide_items(page, "dev")
+assert [i["part"] for i in items] == ["dev"] * 3 and [i["index"] for i in items] == [0, 1, 2]
+assert items[0]["messages"] == task_item("dev", 0, "s0")["messages"] and items[0]["letters"] == ["A", "B", "C"]
+bad = (
+    [page[0], page[0]],
+    [dict(page[0], letters=["B", "A"])],
+    [dict(page[0], letters=["A"])],
+    [dict(page[0], index=True)],
+    [dict(page[0], messages=page[0]["messages"] + [{"role": "assistant", "content": "A"}])],
+    [dict(page[0], messages=[page[0]["messages"][1], page[0]["messages"][0]])],
+    ["not an item"],
+)
+for case in bad:
+    raises(lambda: g.decide_items(case, "test"), "of the test part isn't a decision item")
+`);
+  });
+
+  it("sends every score before anything can fail, writes decide.json next to the adapter, and never publishes", async () => {
+    await glimmerTest(String.raw`${FAKE_GLIMMER}
+${DECIDE_FAKES}
+items = [task_item("dev", 0, "a"), task_item("test", 0, "b"), task_item("test", 1, "c")]
+score = lambda m: {"logprobs": [math.log(m * 0.5), math.log(m * 0.3), math.log(m * 0.2)], "mass": m, "top": True}
+contract = {"format": g.DECIDE_FORMAT, "system": SYSTEM_D, "question": "Which option fits?", "T": 1}
+train = [{"messages": []}] * 100
+done = {"base": [score(0.9), None, score(0.8)], "tuned": [score(0.99), None, score(0.95)], "metrics": {"steps": 4, "max_steps": 4, "renderings": 100, "train_loss_final": 0.5, "too_long": 1}, "adapter": True}
+p = g.read_params({"datasetId": "ds", "mode": "decide", "epochs": 3, "loraRank": 16})
+
+
+def finished(job, result, params=None):
+    adapter = os.path.join(BASE, "models", job)
+    os.makedirs(adapter, exist_ok=True)
+    ctx = FakeCtx(job)
+    return ctx, adapter, lambda: g.decide_finish(ctx, params or p, json.loads(json.dumps(result)), items, train, adapter, True, contract)
+
+
+ctx, adapter, call = finished("job-d", done)
+out = call()
+assert ctx.order == ["decide", "decide", "upload"], ctx.order
+dev, test = ctx.decides
+assert dev[0] == "dev" and test[0] == "test" and [i["index"] for i in test[1]] == [1], "the item with no base score isn't sent"
+assert dev[1] == [{"index": 0, "base": score(0.9)["logprobs"], "tuned": score(0.99)["logprobs"], "baseMass": 0.9, "tunedMass": 0.99}], dev
+with open(os.path.join(adapter, "decide.json")) as f:
+    assert json.load(f) == contract
+assert out["decide_json"] == "yes" and out["adapter_dir"] == adapter and out["adapter_uploaded"] == "yes"
+assert out["hub_uploaded"] == "no" and out["hub_skip_reason"] == "publish is 0 for this job" and ctx.hub_calls == []
+assert out["mode"] == "decide" and out["epochs"] == 3 and out["score_only"] == "no" and out["decide_items"] == 2
+assert out["dev_items"] == 1 and out["test_items"] == 2 and out["too_long"] == 1 and out["train_renderings"] == 100
+assert out["letter_mass_median"] == 0.97 and out["letter_mass_min"] == 0.95 and out["base_letter_mass_min"] == 0.8
+assert out["top_letter_share"] == 1 and "eval_items" not in out and ctx.evals == []
+assert out["summary"] == "Decide mode: LoRA r=16 on Muse Glimmer 30B, 100 renderings in 4 steps, final loss 0.5, 2 decision items scored before and after training.", out["summary"]
+
+# Score only: the base scores go, and nothing else: no adapter, no decide.json, no upload.
+ctx, adapter, call = finished("job-s", dict(done, tuned=None, adapter=False), g.read_params({"datasetId": "ds", "mode": "decide", "scoreOnly": 1}))
+out = call()
+assert ctx.order == ["decide", "decide"] and all(i["tuned"] is None and i["tunedMass"] is None for _, sent in ctx.decides for i in sent)
+assert "adapter_dir" not in out and not os.path.exists(os.path.join(adapter, "decide.json")) and ctx.uploads == []
+assert out["summary"] == "Score only: base Muse Glimmer 30B scored 2 decision items, and nothing trained.", out["summary"]
+assert out["letter_mass_median"] == out["base_letter_mass_median"] == 0.85
+
+# Training that didn't finish: the base scores are sent, then the job fails.
+ctx, adapter, call = finished("job-n", dict(done, tuned=None, adapter=False, ended="timed out", tail="step 3 of 4"))
+error = raises(call, "Training didn't finish (the child timed out), so no adapter was saved. The base model's scores for 2 decision items were sent.")
+assert "step 3 of 4" in error and ctx.order == ["decide", "decide"] and ctx.uploads == []
+
+# A tuned pass that failed: the base scores, the adapter and its decide.json are kept, then the job fails.
+ctx, adapter, call = finished("job-t", dict(done, tuned=None, tuned_error="OutOfMemoryError: CUDA out of memory"))
+raises(call, "The adapter was saved (uploaded), but the tuned model's scores failed (OutOfMemoryError: CUDA out of memory), so only the base model's 2 were sent")
+assert ctx.order == ["decide", "decide", "upload"] and os.path.exists(os.path.join(adapter, "decide.json"))
+
+ctx, adapter, call = finished("job-x", dict(done, base=[score(0.9)]))
+raises(call, "The base model scored 1 of 3 decision items")
+assert ctx.order == []
+`);
+  });
+
+  it("scores real renderings on fake Unsloth: float32 log_softmax, left padding, the full vocabulary, then trains on letters", async () => {
+    const { spec, rows } = ticketDataset([24, 20, 20, 20], "child-seed");
+    const items = [
+      ...decisionPage(spec, "dev", 1, 0, byIndex(rows.dev)).items.slice(0, 6).map((it) => ({ part: "dev", ...it })),
+      ...decisionPage(spec, "test", 1, 0, byIndex(rows.test)).items.slice(0, 11).map((it) => ({ part: "test", ...it })),
+    ] as Array<DecideItem & { part: string }>;
+    const train = (decisionPage(spec, "train", 1, 0, byIndex(rows.train)).items as TrainExample[]).slice(0, 40);
+    const prompts = items.map((it) => glimmerPrompt(it.messages, { bos: true }));
+    await glimmerTest(String.raw`${FAKE_GLIMMER}
+${DECIDE_FAKES}
+ITEMS = ${pyJson(items)}
+TRAIN = ${pyJson(train)}
+PROMPTS = ${pyJson(prompts)}
+BASE = {"A": 3.0, " A": 1.0, "B": 2.0, "C": 0.5, "x": 4.0}
+TUNED = {"B": 9.0, " B": 2.0}
+state = install_decide(lambda prompt, tuned: TUNED if tuned else BASE)
+assert "UNSLOTH_RETURN_LOGITS" not in os.environ
+cfg, error = decide_child_run(TRAIN, ITEMS)
+assert error is None, error
+model, tok = state["model"], state["tokenizer"]
+result = g.read_result(cfg["result_path"])
+assert result["mode"] == "decide" and result["adapter"] is True
+
+# The prompts are the platform's own (glimmerPrompt in lib/decide/format.ts), with the final channel open.
+seen = [p for f in model.forwards if not f["tuned"] for p in f["prompts"]]
+assert seen == PROMPTS, "the child renders what the platform renders"
+for kind, logits in (("base", BASE), ("tuned", TUNED)):
+    for item, s in zip(ITEMS, result[kind]):
+        want = expected_logprobs(logits, item["letters"], tok)
+        assert close(s["logprobs"], want), (kind, s["logprobs"], want)
+        assert abs(s["mass"] - sum(math.exp(l) for l in want)) < 1e-9
+        assert s["top"] is (kind == "tuned"), "base's top token is the word x, tuned's is B"
+
+# 8 prompts a pass, left padded, positions counted from the mask, logits only asked for the last position and in float32.
+assert [len(f["prompts"]) for f in model.forwards] == [8, 8, 1, 8, 8, 1]
+for f in model.forwards:
+    assert f["env"] == "1" and f["keep"] == 1 and f["use_cache"] is False
+    for mask, positions in zip(f["mask"], f["positions"]):
+        real = sum(mask)
+        assert positions[-1] == real - 1 and positions[: len(mask) - real] == [0] * (len(mask) - real), positions[:5]
+assert SOFTMAX == ["float32"] * 6
+assert "UNSLOTH_RETURN_LOGITS" not in os.environ, "put back after the pass, so training never keeps logits"
+
+# Scored with the base, trained, saved, then scored with the tuned model.
+assert model.steps == ["base", "base", "base", "save", "tuned", "tuned", "tuned"], model.steps
+assert state["peft"] == 1
+args = state["trainer"].args
+assert (args.per_device_train_batch_size, args.gradient_accumulation_steps, args.group_by_length, args.max_steps) == (16, 2, True, 2)
+assert state["trainer"].padding_side == "right", "training pads on the right, whatever the base pass left"
+assert tok.padding_side == "right", "scoring puts the padding side back as it found it"
+assert state["masked"] == [[g.INSTRUCTION_PART, g.RESPONSE_PART]]
+for row, convo in zip(state["rows"], TRAIN):
+    trained = [t for t, label in zip(row["input_ids"], row["labels"]) if label != -100]
+    assert tok.decode(trained) == convo["messages"][2]["content"] + "<|eot|><|end_of_text|>", tok.decode(trained)
+m = result["metrics"]
+assert m["renderings"] == 40 and m["train_too_long"] == 0 and m["too_long"] == 0 and m["unusable_scores"] == 0
+assert m["steps"] == 2 and m["max_steps"] == 2 and m["stopped_early"] == "no" and m["trained_tokens_min"] == 3
+assert os.path.exists(os.path.join(cfg["adapter_dir"], "adapter_config.json"))
+assert any(e["kind"] == "phase" and e["message"] == "Base scores: 17 of 17" for e in EVENTS), EVENTS
+`);
+  });
+
+  it("drops renderings too long to score or train, keeps NaN out, and scores only the base with scoreOnly", async () => {
+    await glimmerTest(String.raw`${FAKE_GLIMMER}
+${DECIDE_FAKES}
+
+
+def replies(prompt, tuned):
+    if "minus" in prompt:
+        return {"A": 2.0, "C": -math.inf, " C": -math.inf}
+    if "broken" in prompt:
+        return {"A": float("nan")}
+    return {"A": 1.0, "B": 3.0}
+
+
+items = [task_item("dev", 0, "fine"), task_item("test", 0, "x" * 1100), task_item("test", 1, "minus"), task_item("test", 2, "broken")]
+train = [train_row("fine", "A"), train_row("y" * 1100, "B"), train_row("also fine", "B")]
+state = install_decide(replies)
+cfg, error = decide_child_run(train, items)
+assert error is None, error
+result = g.read_result(cfg["result_path"])
+for kind in ("base", "tuned"):
+    first, long, minus, broken = result[kind]
+    assert first is not None and long is None and broken is None, kind
+    assert minus["logprobs"][2] == g.DECIDE_LOGPROB_FLOOR and minus["logprobs"][0] == max(minus["logprobs"])
+m = result["metrics"]
+assert m["too_long"] == 1 and m["train_too_long"] == 1 and m["renderings"] == 2 and m["unusable_scores"] == 1, m
+assert sum(len(f["prompts"]) for f in state["model"].forwards) == 6, "the long prompt is never scored"
+assert len(state["rows"]) == 2, "the long training rendering is dropped, never cut"
+
+# scoreOnly: no LoRA, no training, no adapter, no tuned scores.
+state = install_decide(replies)
+cfg, error = decide_child_run(train, items, score_only=True)
+assert error is None, error
+result = g.read_result(cfg["result_path"])
+assert result["adapter"] is False and result["tuned"] is None and result["base"][0] is not None
+assert state["peft"] == 0 and state["trainer"] is None and state["model"].steps == ["base"]
+assert not os.path.exists(cfg["adapter_dir"])
+
+# A model that refuses logits_to_keep gets every position's logits, once it said so, one prompt a pass.
+DecideModel.takes_keep = False
+state = install_decide(replies)
+cfg, error = decide_child_run(train, items[:1], score_only=True)
+assert error is None, error
+assert [f["keep"] for f in state["model"].forwards] == [None]
+state = install_decide(replies)
+cfg, error = decide_child_run(train, [items[0], items[2], items[3]], score_only=True)
+DecideModel.takes_keep = True
+assert error is None, error
+assert [(f["keep"], len(f["prompts"])) for f in state["model"].forwards] == [(None, 1)] * 3, state["model"].forwards
+fell_back = g.read_result(cfg["result_path"])["base"]
+assert fell_back[0] is not None and fell_back[1] is not None and fell_back[2] is None, "same scores, NaN still left out"
+assert g.read_result(cfg["result_path"])["base"][0]["logprobs"][1] > g.read_result(cfg["result_path"])["base"][0]["logprobs"][0]
+assert any(e["kind"] == "log" and "doesn't take logits_to_keep" in e["text"] for e in EVENTS)
+
+
+# An SFTConfig that refuses group_by_length trains without it. The config is made before the base pass, so one that
+# refuses anything else fails the job before any scoring is paid for.
+class NoGroupConfig(SFTConfig):
+    def __init__(self, **kwargs):
+        if "group_by_length" in kwargs:
+            raise TypeError("SFTConfig.__init__() got an unexpected keyword argument 'group_by_length'")
+        SFTConfig.__init__(self, **kwargs)
+
+
+state = install_decide(replies)
+sys.modules["trl"].SFTConfig = NoGroupConfig
+cfg, error = decide_child_run(train, items[:1])
+assert error is None, error
+assert not hasattr(state["trainer"].args, "group_by_length") and state["trainer"].args.per_device_train_batch_size == 16
+assert g.read_result(cfg["result_path"])["metrics"]["group_by_length"] == "no"
+assert any(e["kind"] == "log" and "doesn't take group_by_length" in e["text"] for e in EVENTS), EVENTS
+
+
+class RefusingConfig:
+    def __init__(self, **kwargs):
+        raise TypeError("SFTConfig.__init__() got an unexpected keyword argument 'loss_type'")
+
+
+state = install_decide(replies)
+sys.modules["trl"].SFTConfig = RefusingConfig
+try:
+    decide_child_run(train, items[:1])
+    raise AssertionError("a refused config fails the job")
+except TypeError as e:
+    assert "loss_type" in str(e)
+assert state["model"].forwards == [], "no base pass before the config is known to work"
+state = install_decide(replies)
+cfg, error = decide_child_run(train, items[:1])
+assert error is None and g.read_result(cfg["result_path"])["metrics"]["group_by_length"] == "yes"
+
+# A tokenizer that splits a letter fails the job before anything is scored.
+state = install_decide(replies, tokenizer=FakeTokenizer())
+sys.modules["torch"].log_softmax = fake_log_softmax
+cfg, error = decide_child_run(train, items)
+assert error is not None and error.startswith('The tokenizer makes " A" 2 tokens, not one'), error
+assert g.read_result(cfg["result_path"]) is None
 `);
   });
 });
@@ -2214,6 +2826,184 @@ assert result["served"] == 1 and result["unauthorized"] == 1 and result["drained
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it("serves a decision model's adapter at /decide from its decide.json, and never as a chat model", async () => {
+    await serveTest(String.raw`
+DEC = "77777777-1111-4222-8333-444455556666"
+DEC_SYSTEM = "You make one decision at a time."
+make_venv(VENV, "job-a")
+folder = make_adapter(DEC)
+with open(os.path.join(folder, g.DECIDE_JSON), "w") as f:
+    json.dump({"format": g.DECIDE_FORMAT, "system": DEC_SYSTEM, "question": "Which team?", "T": 1}, f)
+
+# Its decide.json says what both models score under, so the dataset page isn't read, and the child serves /decide only.
+ctx = ServeCtx("serve-dd")
+ctx.params = {"adapterJobId": DEC, "minutes": 20}
+ctx.pages = {}
+result = {"served": 3, "busy": 0, "unauthorized": 0, "bad_requests": 1, "errors": 0, "served_seconds": 60.0}
+ctx.child, seen = fake_child([{"kind": "serving", "port": 8443, "certSha256": FP}, {"kind": "served", "count": 3}], result=result)
+out = g.run(ctx)
+cfg, cmd = seen["cfg"], ctx.commands[-1]
+assert cfg["mode"] == "decide" and cfg["system"] == DEC_SYSTEM and cfg["adapter_dir"] == folder, cfg
+assert cmd["env"]["UNSLOTH_RETURN_LOGITS"] == "1", cmd["env"]
+assert any(l.startswith("Serving the decision model of job " + DEC + " for up to 20 minutes once it is up, at POST /decide only (3 prompts a call at most)") for l in ctx.logs), ctx.logs
+assert not any("the platform sent no dataset" in l for l in ctx.logs), ctx.logs
+assert out["mode"] == "decide" and out["served"] == 3 and out["max_new_tokens"] == 0, out
+assert out["summary"] == "Served 3 live decisions (base and tuned) from the decision model of job 77777777 for 1.0 minutes.", out["summary"]
+
+# A chat adapter's child is exactly as before: no mode, and logits are never asked for.
+make_adapter()
+ctx = ServeCtx("serve-dc")
+ctx.child, seen = fake_child([{"kind": "serving", "port": 8443, "certSha256": FP}], result={"served_seconds": 60})
+out = g.run(ctx)
+assert "mode" not in seen["cfg"] and "UNSLOTH_RETURN_LOGITS" not in ctx.commands[-1]["env"] and "mode" not in out
+
+# A decide.json that isn't the format's fails the job before the GPU work.
+for text in ("not json", json.dumps({"format": "other/1", "system": DEC_SYSTEM}), json.dumps({"format": g.DECIDE_FORMAT, "system": "  "})):
+    with open(os.path.join(folder, g.DECIDE_JSON), "w") as f:
+        f.write(text)
+    ctx = ServeCtx("serve-db")
+    ctx.params = {"adapterJobId": DEC}
+    raises(lambda: g.run(ctx), "isn't a " + g.DECIDE_FORMAT + " file with a system message")
+    assert ctx.commands == []
+
+# A decision dataset's adapter with no decide.json is never served as a chat model.
+os.remove(os.path.join(folder, g.DECIDE_JSON))
+ctx = ServeCtx("serve-dn")
+ctx.params = {"adapterJobId": DEC}
+ctx.pages["/dataset?part=train&page=0"]["kind"] = "decision"
+raises(lambda: g.run(ctx), "The adapter's dataset is a decision dataset, but the adapter's folder has no decide.json")
+assert ctx.commands == []
+`);
+  });
+
+  it("scores /decide over pinned HTTPS: the platform's renderings, base then tuned, one pass each, with the floor and the caps", async () => {
+    const labels = TICKET_LABELS.map((l) => ({ id: l.name.toLowerCase(), name: l.name, description: l.description ?? "" }));
+    const six = [...labels, { id: "sales", name: "Sales", description: "" }, { id: "press", name: "Press", description: "" }];
+    const one = serveRenderings({ state: "I was charged twice for my order", question: TICKET_QUESTION, labels });
+    const two = serveRenderings({ state: "A reporter asks about the new plans", question: TICKET_QUESTION, labels: six });
+    assert.ok(one.ok && two.ok);
+    assert.equal(two.renderings.length, 2, "6 labels make 2 prompts");
+    const items = serveItems(one.renderings);
+    const grouped = serveItems(two.renderings);
+    const prompts = grouped.map((i) => glimmerPrompt(i.messages, { bos: true }));
+    await serveTest(String.raw`${DECIDE_FAKES}
+ITEMS = ${pyJson(items)}
+GROUPED = ${pyJson(grouped)}
+PROMPTS = ${pyJson(prompts)}
+SYSTEM_DECIDE = ITEMS[0]["messages"][0]["content"]
+BASE_LOGITS = {"A": 3.0, " A": 1.0, "B": 2.0, "x": 4.0}
+TUNED_LOGITS = {"B": 9.0, " B": 2.0}
+release = threading.Event()
+
+
+class DecidePeft(FakePeft):
+    """FakePeft whose forward pass is the model's: decide mode reads logits, never generate()."""
+
+    def __call__(self, **kwargs):
+        return self.model(**kwargs)
+
+
+def replies(prompt, tuned):
+    if "slow ticket" in prompt:
+        release.wait(30)
+    if "broken ticket" in prompt:
+        return {"A": float("nan")}
+    return TUNED_LOGITS if tuned else BASE_LOGITS
+
+
+fakes = install_fakes(replies, tokenizer=DecideTokenizer(), model=DecideModel)
+sys.modules["torch"].log_softmax = fake_log_softmax
+peft = types.ModuleType("peft")
+peft.PeftModel = DecidePeft
+sys.modules["peft"] = peft
+s.MIN_SERVING_SECONDS = 0
+s.STOP_POLL_SECONDS = 0.05
+saved_env = os.environ.pop("UNSLOTH_RETURN_LOGITS", None)
+cfg, thread, errors = start_child(mode="decide", system=SYSTEM_DECIDE)
+serving = wait_for(serving_event, what="the serving event")
+port = serving["port"]
+model, tok = fakes["model"], fakes["tokenizer"]
+
+# Health says it is a decision model; /generate is a 404 here, and nothing answers without the key.
+status, body, _ = https_call(port, "GET", "/health")
+assert (status, body["mode"], body["adapterJobId"]) == (200, "decide", ADAPTER), body
+assert https_call(port, "POST", "/generate", {"prompt": "hi"})[:2] == (404, {"error": "not_found"})
+assert https_call(port, "POST", "/decide", {"items": ITEMS}, key=None)[:2] == (401, {"error": "unauthorized"})
+assert model.forwards == [], "nothing scored without the key"
+
+# One rendering: base Glimmer with the adapter off, then the tuned model, one pass each, from the first answer token.
+status, body, _ = https_call(port, "POST", "/decide", {"items": ITEMS})
+assert status == 200 and set(body) == {"base", "tuned", "baseMass", "tunedMass", "ms"}, body
+letters = ITEMS[0]["letters"]
+for kind, logits in (("base", BASE_LOGITS), ("tuned", TUNED_LOGITS)):
+    want = expected_logprobs(logits, letters, tok)
+    assert close(body[kind][0], want), (kind, body[kind], want)
+    assert abs(body[kind + "Mass"][0] - round(sum(math.exp(l) for l in want), 6)) < 1e-9
+assert body["base"][0][2] > g.DECIDE_LOGPROB_FLOOR and min(body["tuned"][0]) >= g.DECIDE_LOGPROB_FLOOR
+assert [f["tuned"] for f in model.forwards] == [False, True]
+for f in model.forwards:
+    assert f["keep"] == 1 and f["use_cache"] is False and f["env"] == "1", f
+
+# Two groups score in one pass a model, left padded, and the prompts are the platform's own bytes (glimmerPrompt).
+del model.forwards[:]
+status, body, _ = https_call(port, "POST", "/decide", {"items": GROUPED})
+assert status == 200 and len(body["base"]) == 2 and [len(r) for r in body["tuned"]] == [len(i["letters"]) for i in GROUPED], body
+assert [len(f["prompts"]) for f in model.forwards] == [2, 2]
+assert model.forwards[0]["prompts"] == PROMPTS, "the GPU scores exactly what the platform rendered"
+for mask, positions in zip(model.forwards[0]["mask"], model.forwards[0]["positions"]):
+    real = sum(mask)
+    assert positions[-1] == real - 1 and mask[0] == (1 if real == len(mask) else 0), "left padded, positions from the mask"
+
+# What it refuses, and its caps: 1 to 3 items, the trained system message, letters from A, no "<|", 2,048 tokens.
+user = ITEMS[0]["messages"][1]["content"]
+item = lambda **over: dict(ITEMS[0], **over)
+system_m = ITEMS[0]["messages"][0]
+for payload, want in [
+    ({"items": []}, (400, {"error": "no_items"})),
+    ({"items": [ITEMS[0]] * 4}, (400, {"error": "no_items"})),
+    ({"prompt": "hi"}, (400, {"error": "no_items"})),
+    ({"items": [item(letters=["B", "A", "C"])]}, (400, {"error": "bad_item"})),
+    ({"items": [item(letters=["A"])]}, (400, {"error": "bad_item"})),
+    ({"items": [item(messages=[system_m, {"role": "user", "content": user + "<|eot|>"}])]}, (400, {"error": "bad_item"})),
+    ({"items": [item(messages=[{"role": "system", "content": "You are a pirate."}, ITEMS[0]["messages"][1]])]}, (400, {"error": "wrong_system"})),
+    ({"items": [item(messages=[system_m, {"role": "user", "content": "y" * 3000}])]}, (422, {"error": "too_long"})),
+]:
+    del model.forwards[:]
+    assert https_call(port, "POST", "/decide", payload)[:2] == want, (payload, want)
+    assert model.forwards == [], "nothing refused reaches the GPU"
+assert https_call(port, "POST", "/decide", raw=b"not json")[:2] == (400, {"error": "bad_json"})
+# A body over chat's 16 KB is fine here (a long state, twice); over 512 KB is too large.
+big = [system_m, {"role": "user", "content": "y" * 20000}]
+assert https_call(port, "POST", "/decide", {"items": [item(messages=big)]})[:2] == (422, {"error": "too_long"})
+assert https_call(port, "POST", "/decide", length=600000)[:2] == (413, {"error": "too_large"})
+
+# A NaN score is a failed answer (500), and the GPU is free for the next.
+broken = [system_m, {"role": "user", "content": user.replace("charged twice", "broken ticket")}]
+assert https_call(port, "POST", "/decide", {"items": [item(messages=broken)]})[:2] == (500, {"error": "scoring_failed"})
+assert any(e["kind"] == "log" and e["text"].startswith("A live decision failed: RuntimeError: A first-token score was NaN") for e in EVENTS), EVENTS
+assert https_call(port, "POST", "/decide", {"items": ITEMS})[0] == 200
+
+# One request at a time on the GPU.
+slow = [system_m, {"role": "user", "content": user.replace("charged twice", "slow ticket")}]
+results = {}
+waiting = threading.Thread(target=lambda: results.update(slow=https_call(port, "POST", "/decide", {"items": [item(messages=slow)]})))
+waiting.start()
+wait_for(lambda: https_call(port, "GET", "/health")[1]["busy"], what="the slow decision to hold the GPU")
+assert https_call(port, "POST", "/decide", {"items": ITEMS})[:2] == (409, {"error": "busy"})
+release.set()
+waiting.join(30)
+assert results["slow"][0] == 200, results
+
+g.touch(cfg["stop_path"])
+thread.join(30)
+assert not thread.is_alive() and not errors, errors
+out = g.read_result(cfg["result_path"])
+assert out["served"] == 4 and out["busy"] == 1 and out["errors"] == 1 and out["bad_requests"] == 11, out
+if saved_env is not None:
+    os.environ["UNSLOTH_RETURN_LOGITS"] = saved_env
+`);
+  });
 });
 
 describe("runner.py against a fake platform", { skip: hasPython ? false : "python3 is missing", timeout: 240_000 }, () => {
@@ -2837,5 +3627,159 @@ def run(ctx):
     assert.equal(failed.type, "failed");
     assert.match(failed.error, /PlatformError: The platform answered HTTP 404 to GET \/dataset$/m);
     assert.ok(!events().some((e) => e.type === "eval"));
+  });
+
+  it("posts decide scores 100 items a callback, rounded, -Infinity as the floor, at most 8,000 a job", async () => {
+    const recipe = String.raw`import math
+def run(ctx):
+    def item(i, tuned=True):
+        return {"index": i, "base": [math.log(0.5), float("-inf")], "tuned": [math.log(0.25), math.log(0.123456789)] if tuned else None, "baseMass": 0.5, "tunedMass": 0.37345 if tuned else None}
+    first = ctx.decide("dev", [item(i) for i in range(250)])
+    errors = []
+    for part, items in (("eval", [item(0)]), ("test", [dict(item(0), base=[float("nan"), 0.0])]), ("test", [dict(item(0), tuned=[0.0])]), ("test", [dict(item(0), index=-1)]), ("test", [dict(item(0), index=True)]), ("test", [dict(item(0), baseMass=None)])):
+        try:
+            ctx.decide(part, items)
+            errors.append("none")
+        except ValueError:
+            errors.append("ValueError")
+    rest = ctx.decide("test", [item(i, tuned=False) for i in range(8000)])
+    return {"first": first, "rest": rest, "errors": ",".join(errors)}
+`;
+    const r = await runJob(recipe, {});
+    assert.equal(r.code, 0, r.output.replaceAll(r.token, "[token]"));
+    const decides = events().filter((e) => e.type === "decide") as Array<{ part: string; items: DecideScoreItem[] }>;
+    assert.deepEqual(
+      decides.map((d) => [d.part, d.items.length]).slice(0, 4),
+      [["dev", 100], ["dev", 100], ["dev", 50], ["test", 100]],
+    );
+    assert.equal(decides.filter((d) => d.part === "test").reduce((s, d) => s + d.items.length, 0), 7750, "8,000 a job in all");
+    const [first] = decides[0]!.items;
+    assert.deepEqual(first, {
+      index: 0,
+      base: [Number(Math.log(0.5).toFixed(6)), -10000],
+      tuned: [Number(Math.log(0.25).toFixed(6)), Number(Math.log(0.123456789).toFixed(6))],
+      baseMass: 0.5,
+      tunedMass: 0.37345,
+    });
+    assert.deepEqual(decides.at(-1)!.items.at(-1), { index: 7749, base: first!.base, tuned: null, baseMass: 0.5, tunedMass: null });
+    assert.deepEqual((events().at(-1) as { metrics: unknown }).metrics, { first: 250, rest: 7750, errors: "ValueError,ValueError,ValueError,ValueError,ValueError,ValueError" });
+    for (const h of hits.filter((x) => x.path.endsWith("/events"))) assert.ok(h.body.length <= 64 * 1024);
+  });
+
+  it("runs the glimmer-lora recipe in decide mode with dryRun: decision pages, scores the platform can use, decide.json", async () => {
+    const { spec, rows } = ticketDataset([36, 24, 24, 24], "runner-seed");
+    const epochs = 2;
+    datasetPages = decisionPages(spec, rows, epochs);
+    const cache = await mkdtemp(path.join(tmpdir(), "muse-cache-"));
+    try {
+      const params = { datasetId: "ds-1", mode: "decide", epochs, learningRate: 0.0002, loraRank: 8, dryRun: 1, publish: 0 };
+      const r = await runJob(GLIMMER_PY, params, { recipe: "glimmer-lora", cacheDir: cache });
+      assert.equal(r.code, 0, r.output.replaceAll(r.token, "[token]"));
+      assertAuthorized(r.token);
+      assertTokenNotPrinted(r);
+
+      const gets = hits.filter((h) => h.method === "GET").map((h) => `${h.query.get("part")}:${h.query.get("page")}`);
+      const pages = (part: string) => datasetPages[part]!.map((_, i) => `${part}:${i}`);
+      assert.deepEqual(gets, [...pages("train"), ...pages("dev"), ...pages("eval")]);
+
+      const evs = events();
+      assert.ok(!evs.some((e) => e.type === "eval" || e.type === "failed"), "scores, not eval items");
+      const decides = evs.filter((e) => e.type === "decide") as Array<{ part: "dev" | "test"; items: DecideScoreItem[] }>;
+      assert.ok(decides.every((d) => d.items.length <= DECIDE_CALLBACK_ITEMS_MAX));
+      for (const h of hits.filter((x) => x.path.endsWith("/events"))) assert.ok(h.body.length <= 64 * 1024);
+      const scores = { dev: decides.filter((d) => d.part === "dev").flatMap((d) => d.items), test: decides.filter((d) => d.part === "test").flatMap((d) => d.items) };
+      const layout = {
+        dev: decisionItems({ question: spec.question, labels: spec.labels, rows: rows.dev, part: "dev" }),
+        test: decisionItems({ question: spec.question, labels: spec.labels, rows: rows.test, part: "test" }),
+      };
+      for (const part of ["dev", "test"] as const) {
+        assert.deepEqual(scores[part].map((s) => s.index), layout[part].map((it) => it.index), `${part}: every item, once, in order`);
+        assert.equal(scores[part].length, decisionPartSize(spec, part, epochs));
+        for (const s of scores[part]) {
+          const shown = layout[part][s.index]!.labelIds.length;
+          assert.equal(s.base.length, shown);
+          assert.equal(s.tuned?.length, shown);
+          assert.equal(logprobsProblem(s.base), null);
+          assert.equal(logprobsProblem(s.tuned!), null);
+        }
+      }
+      assert.ok(evs.findIndex((e) => e.type === "decide") < evs.findIndex((e) => e.type === "done"));
+
+      // What the GPU sent is what the scoring step reads: every test row scored, base and tuned.
+      const summary = summarizeDecisions({
+        labels: spec.labels,
+        trainCounts: Object.fromEntries(spec.labels.map((l) => [l.id, spec.perLabel[l.id]!.train])),
+        dev: { rows: rows.dev, items: layout.dev, scores: scores.dev },
+        test: { rows: rows.test, items: layout.test, scores: scores.test },
+      });
+      assert.equal(summary.items, spec.split.test);
+      assert.equal(summary.unscoredRows, 0);
+      assert.ok(summary.tuned, "tuned scored");
+
+      const done = evs.at(-1) as { type: string; summary: string; metrics: Record<string, unknown> };
+      assert.equal(done.type, "done");
+      const renderings = decisionPartSize(spec, "train", epochs);
+      const steps = Math.ceil(renderings / DECIDE_STEP_ROWS);
+      assert.equal(done.summary, `Dry run: Decide mode: LoRA r=8 on Muse Glimmer 30B, ${renderings} renderings in ${steps} steps, final loss ${done.metrics.train_loss_final}, ${scores.dev.length + scores.test.length} decision items scored before and after training.`);
+      assert.equal(done.metrics.mode, "decide");
+      assert.equal(done.metrics.epochs, epochs);
+      assert.equal(done.metrics.train_renderings, renderings);
+      assert.equal(done.metrics.decide_items, scores.dev.length + scores.test.length);
+      assert.equal(done.metrics.dry_run, "yes");
+      assert.equal(done.metrics.decide_json, "yes");
+      assert.equal(done.metrics.adapter_dir, path.join(cache, "models", JOB_ID));
+      assert.equal(done.metrics.hub_skip_reason, "a dry run's adapter is a stand-in", "and publish is 0 in decide mode anyway");
+      assert.equal(hits.filter((h) => h.path.endsWith("/hub")).length, 0);
+      assert.equal(hits.filter((h) => h.path.endsWith("/upload")).length, 1, "the adapter archive was offered for upload");
+      const logs = evs.filter((e) => e.type === "log").map((e) => String((e as { text: string }).text));
+      assert.ok(logs.some((t) => t.startsWith(`decision dataset ds-1: ${renderings} training renderings (2 epochs, with any balancing copies), ${scores.dev.length} dev and ${scores.test.length} test items to score`)), logs.join("\n"));
+
+      // decide.json next to the adapter, exactly the platform's (decideJson in lib/decide/format.ts) with T = 1.
+      const written = JSON.parse(await readFile(path.join(cache, "models", JOB_ID, "decide.json"), "utf8"));
+      assert.deepEqual(written, decideJson({ question: spec.question, labels: spec.labels, T: 1 }));
+
+      // The same scores on a second run: the stand-ins are deterministic.
+      hits = [];
+      const again = await runJob(GLIMMER_PY, params, { recipe: "glimmer-lora", cacheDir: cache });
+      assert.equal(again.code, 0);
+      assert.deepEqual(events().filter((e) => e.type === "decide"), decides);
+    } finally {
+      await rm(cache, { recursive: true, force: true });
+    }
+  });
+
+  it("scores only the base in decide mode with scoreOnly: no training pages, no adapter, tuned null", async () => {
+    const { spec, rows } = ticketDataset([20, 20, 20, 20], "score-only-seed");
+    datasetPages = decisionPages(spec, rows, 2);
+    const cache = await mkdtemp(path.join(tmpdir(), "muse-cache-"));
+    try {
+      const r = await runJob(GLIMMER_PY, { datasetId: "ds-1", mode: "decide", scoreOnly: 1, dryRun: 1, publish: 0 }, { recipe: "glimmer-lora", cacheDir: cache });
+      assert.equal(r.code, 0, r.output.replaceAll(r.token, "[token]"));
+      assert.ok(!hits.some((h) => h.method === "GET" && h.query.get("part") === "train"), "nothing trains, so no training pages");
+      const items = events().filter((e) => e.type === "decide").flatMap((e) => (e as { items: DecideScoreItem[] }).items);
+      assert.equal(items.length, decisionPartSize(spec, "dev", 2) + decisionPartSize(spec, "test", 2));
+      assert.ok(items.every((s) => s.tuned === null && s.tunedMass === null && logprobsProblem(s.base) === null));
+      const done = events().at(-1) as { summary: string; metrics: Record<string, unknown> };
+      assert.equal(done.summary, `Dry run: Score only: base Muse Glimmer 30B scored ${items.length} decision items, and nothing trained.`);
+      assert.equal(done.metrics.score_only, "yes");
+      assert.ok(!("adapter_dir" in done.metrics), "no adapter, so nothing a serve job could load");
+      assert.equal(hits.filter((h) => h.path.endsWith("/upload")).length, 0);
+      await assert.rejects(readFile(path.join(cache, "models", JOB_ID, "decide.json")));
+    } finally {
+      await rm(cache, { recursive: true, force: true });
+    }
+  });
+
+  it("fails decide mode clearly when the pages aren't a decision dataset's", async () => {
+    const { spec, rows } = ticketDataset([20, 20, 20, 20], "kind-seed");
+    datasetPages = Object.fromEntries(
+      Object.entries(decisionPages(spec, rows, 2)).map(([part, list]) => [part, list.map(({ kind: _kind, ...page }) => page)]),
+    );
+    const r = await runJob(GLIMMER_PY, { datasetId: "ds-1", mode: "decide", dryRun: 1, publish: 0 }, { recipe: "glimmer-lora" });
+    assert.equal(r.code, 1);
+    const failed = events().at(-1) as { type: string; error: string };
+    assert.equal(failed.type, "failed");
+    assert.match(failed.error, /Decide mode trains on a decision dataset, but the dataset's pages say its kind is null$/m);
+    assert.ok(!events().some((e) => e.type === "decide"));
   });
 });

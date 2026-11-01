@@ -3,18 +3,33 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { DriveExportLink } from "@/components/device/DriveExportLink";
 import { DriveOffer } from "@/components/drive/DriveOffer";
+import type { WrongAnswers } from "@/components/train/DecisionResults";
 import { JobResults } from "@/components/train/JobResults";
 import { JobRoom } from "@/components/train/JobRoom";
 import type { JobLiveDemo } from "@/components/train/LiveDemo";
-import { NOT_PUBLIC_TEXT, evalRows, keepEvents, sweepOffText, toRecipeView } from "@/components/train/format";
+import {
+  NOT_PUBLIC_TEXT,
+  decideTryModel,
+  evalRows,
+  isDecideJob,
+  keepEvents,
+  sweepOffText,
+  toRecipeView,
+  wrongAnswers,
+  type DecideTryModel,
+} from "@/components/train/format";
 import { hasResults, toPublicLiveDemo, toResultView } from "@/components/train/results";
 import { EmptyCard, NotConnected } from "@/components/ui";
 import { RunLocallyLink, linkedLocalFiles } from "@/components/vibe/RunLocallyLink";
 import { env } from "@/lib/env";
 import { safeQuery } from "@/lib/queries";
-import { ADAPTER_RECIPE, adapterProblem, toJobView } from "@/lib/train/logic";
+import { decisionScoringInput, rowsInOrder } from "@/lib/train/decision-datasets";
+import { ADAPTER_RECIPE, adapterProblem, decisionRowPicks, toJobView } from "@/lib/train/logic";
+import { isDecisionSummary } from "@/lib/train/models";
 import { recipeById } from "@/lib/train/recipes";
 import {
+  decideScores,
+  decisionSplitRows,
   getAdapterSource,
   getDataset,
   getJob,
@@ -61,6 +76,41 @@ async function jobDataset(row: TrainJobRow, recipe: Recipe | null): Promise<{ id
   return d ? { id: d.id, title: d.title, writerModel: d.writerModel ?? null } : null;
 }
 
+/** The test rows a decide job's admin page lists as wrong answers, at most. Each holds its input, up to 3,000 characters. */
+const WRONG_SHOWN = 100;
+
+/**
+ * A decide job's extras for its admin page (docs/DECISION_MODELS.md "The results page"): its dataset's train rows, and
+ * once it is scored, the test rows the model missed with their inputs, from the GPU's scores and the dataset's dev and
+ * test rows laid out as scoring laid them out (decisionRowPicks). Admins only: the public page never reads them. A
+ * problem reading them is logged and leaves the wrong answers out, so the numbers still show.
+ */
+async function decisionExtras(row: TrainJobRow): Promise<{ trainRows: number | null; wrong: WrongAnswers | null }> {
+  const datasetId = typeof row.params?.datasetId === "string" ? row.params.datasetId : null;
+  let trainRows: number | null = null;
+  try {
+    const dataset = datasetId ? await getDataset(datasetId) : null;
+    const spec = dataset?.kind === "decision" ? dataset.decision : null;
+    trainRows = spec ? spec.split.train : null;
+    const summary = row.evalSummary;
+    if (!spec || !datasetId || !isDecisionSummary(summary) || summary.items === 0) return { trainRows, wrong: null };
+    const [dev, test, scores] = await Promise.all([
+      decisionSplitRows(datasetId, "dev"),
+      decisionSplitRows(datasetId, "test"),
+      decideScores(row.id),
+    ]);
+    const devRows = dev ? rowsInOrder(dev) : null;
+    const testRows = test ? rowsInOrder(test) : null;
+    if (!devRows || !testRows) return { trainRows, wrong: null };
+    const input = decisionScoringInput(spec, { dev: devRows, test: testRows }, scores);
+    const picks = decisionRowPicks(input, { base: summary.base.T, tuned: summary.tuned?.T ?? null });
+    return { trainRows, wrong: wrongAnswers(picks, testRows, WRONG_SHOWN) };
+  } catch (err) {
+    console.error("[fine-tuning] wrong answers:", err instanceof Error ? err.message : err);
+    return { trainRows, wrong: null };
+  }
+}
+
 /** The trained job a glimmer-serve job's adapter param names, by id and title, or null. */
 async function servedAdapter(row: TrainJobRow, recipe: Recipe | null): Promise<{ id: string; title: string } | null> {
   const field = recipe?.params.find((f) => f.kind === "adapter");
@@ -94,16 +144,31 @@ async function startBlock(now: Date): Promise<string | null> {
 }
 
 /**
+ * A decide job's Try it live box model: its dataset's question and labels, and its scores (decideTryModel), or null
+ * when its dataset is gone. Label names and numbers only.
+ */
+async function decideTryOf(row: { params: Record<string, unknown> | null; evalSummary: unknown }): Promise<DecideTryModel | null> {
+  const datasetId = typeof row.params?.datasetId === "string" ? row.params.datasetId : null;
+  const dataset = datasetId ? await getDataset(datasetId) : null;
+  return dataset?.kind === "decision" ? decideTryModel(dataset.decision, row.evalSummary) : null;
+}
+
+/**
  * What an admin's page of a trained glimmer-lora job shows for its live demo: the Try it live box while a serve job for
- * it is open, Start a live demo when its adapter can be served (adapterProblem, as the jobs route checks it), else null.
+ * it is open, Start a live demo when its adapter can be served (adapterProblem as the jobs route checks it for
+ * glimmer-serve, which serves a decision model at POST /decide), else null. A decision model's box picks labels
+ * (DecideTryCard); without its dataset it has nothing to show, so neither shows.
  */
 async function adapterLiveDemo(row: TrainJobRow, now: Date): Promise<JobLiveDemo | null> {
   if (row.recipe !== ADAPTER_RECIPE || row.status !== "succeeded") return null;
+  const decide = isDecideJob(row);
+  const decideTry = decide ? await decideTryOf(row).catch(() => null) : null;
+  if (decide && !decideTry) return null;
   const demo = await liveDemoOf(row.id, now);
-  if (demo) return { kind: "demo", demo };
+  if (demo) return { kind: "demo", demo, decideTry };
   try {
     const source = await getAdapterSource(row.id);
-    if (!source || adapterProblem(source.job, source.metrics)) return null;
+    if (!source || adapterProblem(source.job, source.metrics, { decide: true })) return null;
     return {
       kind: "start",
       adapterTitle: row.title,
@@ -112,6 +177,7 @@ async function adapterLiveDemo(row: TrainJobRow, now: Date): Promise<JobLiveDemo
       dailyUsd: env.trainDailyUsd,
       blocked: await startBlock(now),
       publicPage: hasResults(row),
+      decide,
     };
   } catch (err) {
     console.error("[fine-tuning] live demo adapter:", err instanceof Error ? err.message : err);
@@ -138,11 +204,18 @@ async function resultPage(jobId: string) {
       view.recipe === ADAPTER_RECIPE ? liveDemoOf(view.id, now) : Promise.resolve(null),
       view.recipe === ADAPTER_RECIPE && view.hub ? linkedLocalFiles(view.id) : Promise.resolve(null),
     ]);
+    // A decision model's live demo picks labels: its box needs the dataset's question and labels (never its rows), so
+    // without them it shows no box at all rather than the chat one.
+    const decide = row ? isDecideJob(row) : false;
+    const decideTry = decide && dataset?.kind === "decision" ? decideTryModel(dataset.decision, row?.evalSummary) : null;
     return {
       result: view,
       rows: evalRows(events),
-      dataset: dataset ? { id: dataset.id, title: dataset.title, writerModel: dataset.writerModel ?? null } : null,
-      live: toPublicLiveDemo(live),
+      dataset: dataset
+        ? { id: dataset.id, title: dataset.title, writerModel: dataset.writerModel ?? null, trainCount: dataset.trainCount }
+        : null,
+      live: decide && !decideTry ? null : toPublicLiveDemo(live),
+      decideTry,
       local,
     };
   });
@@ -174,14 +247,15 @@ export default async function FineTuningJobPage({ params }: { params: Promise<{ 
     const row = await getJob(jobId);
     if (!row) return null;
     const recipe = recipeById(row.recipe);
-    const [events, dataset, adapter, liveDemo] = await Promise.all([
+    const [events, dataset, adapter, liveDemo, decision] = await Promise.all([
       allEvents(row.id),
       jobDataset(row, recipe),
       servedAdapter(row, recipe),
       adapterLiveDemo(row, now),
+      isDecideJob(row) ? decisionExtras(row) : Promise.resolve(null),
     ]);
     const { kept, dropped } = keepEvents(events, EVENTS_KEPT);
-    return { job: toJobView(row, now), events: kept, droppedEvents: dropped, dataset, adapter, liveDemo };
+    return { job: toJobView(row, now), events: kept, droppedEvents: dropped, dataset, adapter, liveDemo, decision };
   });
   if (!result.ok) {
     return (
@@ -215,6 +289,7 @@ export default async function FineTuningJobPage({ params }: { params: Promise<{ 
       dataset={result.data.dataset}
       adapter={result.data.adapter}
       liveDemo={result.data.liveDemo}
+      decision={result.data.decision}
       hub={
         result.data.job.recipe === ADAPTER_RECIPE
           ? { offReason: env.hubOffReason, maxActive: env.trainMaxActive, dailyUsd: env.trainDailyUsd }

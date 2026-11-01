@@ -4,6 +4,29 @@
  */
 import { noEmDashes } from "@/lib/brief/normalize";
 import type { trainingDatasets, trainingJobs } from "@/lib/db/schema";
+// format.ts imports promptKey and promptWords from this file. Only functions below call into it, never this file's
+// top level, so either file may load first.
+import {
+  combineGroups,
+  labelGroups,
+  letterMass,
+  letterProbabilities,
+  logprobsProblem,
+  pickDecision,
+  standInDecision,
+  temperedDecision,
+} from "@/lib/decide/format";
+import type {
+  CalibrationRow,
+  DecideScoreItem,
+  DecisionItemKey,
+  DecisionScoringInput,
+  DecisionSideSummary,
+  DecisionSummary,
+  LabelScore,
+  ReliabilityBin,
+  WilsonRate,
+} from "@/lib/decide/types";
 import type { LambdaInstance } from "@/lib/train/lambda";
 import type { QuantLevel } from "@/lib/train/local-files";
 import { judgeModelOf, storyModelOf, writerModelOf } from "@/lib/train/models";
@@ -12,6 +35,7 @@ import {
   isTrainTerminal,
   QUANT_RECIPE,
   SERVE_PORT,
+  type DatasetKind,
   type DatasetView,
   type EvalSummary,
   type HubState,
@@ -19,6 +43,7 @@ import {
   type LiveDemoView,
   type Recipe,
   type RecipeId,
+  type RecipeParamField,
   type ServeEndpoint,
   type TrainCheck,
   type TrainEventBody,
@@ -54,6 +79,29 @@ export const EVENT_LOG_MAX = 4096;
 export const EVAL_TEXT_MAX = 3500;
 /** Eval callbacks one job may record. Past this the events route answers 409 eval_limit. */
 export const EVALS_MAX = 60;
+/**
+ * A decide job's scores (docs/DECISION_MODELS.md "Callbacks and caps"): the items one "decide" callback carries, and
+ * the items one job may record, past which the events route answers 409 decide_limit. A person's largest dataset scores
+ * about 2,800 (dev, test and the decline check); runner.py keeps the same numbers.
+ */
+export const DECIDE_CALLBACK_ITEMS_MAX = 100;
+export const DECIDE_ITEMS_MAX = 8000;
+
+/**
+ * The glimmer-lora recipe's mode param (docs/DECISION_MODELS.md "A mode, not a new recipe"): "chat", today's recipe,
+ * when it isn't set, or "decide", which trains a decision model on a decision dataset.
+ */
+export const MODE_PARAM = "mode";
+export const CHAT_MODE = "chat";
+export const DECIDE_MODE = "decide";
+export type JobMode = typeof CHAT_MODE | typeof DECIDE_MODE;
+/** The glimmer-lora recipe's switch for the Hugging Face Hub, which decide mode keeps at 0 (validateParams). */
+const PUBLISH_PARAM = "publish";
+
+/** A job's mode from its params: "decide" when its mode param says so, else "chat". */
+export function jobMode(params: Record<string, unknown> | null | undefined): JobMode {
+  return params?.[MODE_PARAM] === DECIDE_MODE ? DECIDE_MODE : CHAT_MODE;
+}
 const JUDGE_NOTE_MAX = 300;
 export const EVENT_ERROR_MAX = 4096;
 export const EVENT_MESSAGE_MAX = 2000;
@@ -66,8 +114,8 @@ const ARTIFACT_URL_MAX = 2000;
 /** A training_jobs row as Drizzle returns it. */
 export type TrainJobRow = typeof trainingJobs.$inferSelect;
 
-/** A training_datasets row without its examples, which can run to megabytes. */
-export type DatasetHead = Omit<typeof trainingDatasets.$inferSelect, "train" | "eval">;
+/** A training_datasets row without its examples or decision rows, which can run to megabytes. */
+export type DatasetHead = Omit<typeof trainingDatasets.$inferSelect, "train" | "eval" | "decisionRows">;
 
 /** What decideCheck needs from a job. A training_jobs row has all of it. */
 export interface JobState {
@@ -131,9 +179,27 @@ function isBlank(value: unknown): boolean {
 }
 
 /**
+ * The job's mode, for a recipe with a mode field: what the admin gave, trimmed and lowercased, when it is one of the
+ * field's choices; "chat" when nothing was given or the recipe has no mode field.
+ */
+function paramMode(field: RecipeParamField | undefined, given: unknown): { ok: true; mode: string } | { ok: false; error: string } {
+  if (!field || isBlank(given)) return { ok: true, mode: CHAT_MODE };
+  if (typeof given !== "string") return { ok: false, error: `${field.label} must be text.` };
+  const mode = given.trim().toLowerCase();
+  if (field.choices && !field.choices.includes(mode)) return { ok: false, error: `${field.label} must be ${field.choices.join(" or ")}.` };
+  return { ok: true, mode };
+}
+
+/**
  * Checks the admin's params against the recipe's fields. Unknown keys are refused. A missing or blank value takes the
  * field's default, and a required field with no default must be set. Numbers may come as numeric strings (from a form)
- * and must sit within min and max. Text is trimmed and cut to 2000 characters. URLs must be https.
+ * and must sit within min and max, and be whole when the field says so. Text is trimmed and cut to 2000 characters; a
+ * field with choices takes only those, lowercased. URLs must be https.
+ *
+ * A recipe with a "mode" field (glimmer-lora): a field for other modes only (`modes`) takes no default, and a value
+ * for it is refused, so a chat job's params are what they were before decide mode existed. In decide mode publish is
+ * 0, and 1 is refused: a person's rows are never published, and publishing a decision model on its own (a decision
+ * card, no dataset) is later work (docs/DECISION_MODELS.md "Publishing").
  */
 export function validateParams(
   recipe: Recipe,
@@ -146,10 +212,16 @@ export function validateParams(
   const fields = new Map(recipe.params.map((f) => [f.key, f]));
   const unknown = Object.keys(input).filter((k) => !fields.has(k));
   if (unknown.length) return { ok: false, error: `Unknown parameter: ${unknown.join(", ")}.` };
+  const mode = paramMode(fields.get(MODE_PARAM), input[MODE_PARAM]);
+  if (!mode.ok) return mode;
 
   const value: Record<string, string | number> = {};
   for (const field of recipe.params) {
     const given = input[field.key];
+    if (field.modes && !field.modes.includes(mode.mode)) {
+      if (!isBlank(given)) return { ok: false, error: `${field.label} is only for ${field.modes.join(" or ")} mode.` };
+      continue;
+    }
     if (isBlank(given)) {
       if (field.default !== undefined) value[field.key] = field.default;
       else if (field.required) return { ok: false, error: `${field.label} is required.` };
@@ -158,6 +230,7 @@ export function validateParams(
     if (field.kind === "number") {
       const n = typeof given === "number" ? given : typeof given === "string" ? Number(given.trim()) : NaN;
       if (!Number.isFinite(n)) return { ok: false, error: `${field.label} must be a number.` };
+      if (field.whole && !Number.isInteger(n)) return { ok: false, error: `${field.label} must be a whole number.` };
       if (field.min !== undefined && n < field.min) return { ok: false, error: `${field.label} must be at least ${field.min}.` };
       if (field.max !== undefined && n > field.max) return { ok: false, error: `${field.label} must be at most ${field.max}.` };
       value[field.key] = n;
@@ -189,9 +262,37 @@ export function validateParams(
       value[field.key] = text;
       continue;
     }
+    if (field.choices) {
+      const choice = text.toLowerCase();
+      if (!field.choices.includes(choice)) return { ok: false, error: `${field.label} must be ${field.choices.join(" or ")}.` };
+      value[field.key] = choice;
+      continue;
+    }
     value[field.key] = text.slice(0, PARAM_TEXT_MAX);
   }
+  if (mode.mode === DECIDE_MODE && fields.has(PUBLISH_PARAM)) {
+    if (!isBlank(input[PUBLISH_PARAM]) && Number(value[PUBLISH_PARAM]) !== 0) {
+      const label = fields.get(PUBLISH_PARAM)!.label;
+      return {
+        ok: false,
+        error: `${label} must be 0 in decide mode: a person's rows are never published, and publishing a decision model on its own comes later.`,
+      };
+    }
+    value[PUBLISH_PARAM] = 0;
+  }
   return { ok: true, value };
+}
+
+/**
+ * Why a job's mode doesn't fit its dataset, after the dataset param's label (the jobs route answers it as a 400), or
+ * null: decide mode trains on a decision dataset only, and a decision dataset trains in decide mode only.
+ */
+export function datasetModeProblem(params: Record<string, unknown> | null | undefined, kind: DatasetKind | null | undefined): string | null {
+  const decide = jobMode(params) === DECIDE_MODE;
+  const decision = kind === "decision";
+  if (decide && !decision) return "decide mode trains on a decision dataset, and that one is a chat dataset.";
+  if (!decide && decision) return "that is a decision dataset, so it trains in decide mode: set Mode to decide.";
+  return null;
 }
 
 function fail(reason: string): TrainCheck {
@@ -393,6 +494,8 @@ export function capEventBody(body: TrainEventBody): TrainEventBody {
       };
     case "judgement":
       return { ...body, note: head(body.note, JUDGE_NOTE_MAX) };
+    case "decide":
+      return { type: "decide", part: body.part, items: Array.isArray(body.items) ? body.items.slice(0, DECIDE_CALLBACK_ITEMS_MAX) : [] };
     case "serving": {
       const out: Extract<TrainEventBody, { type: "serving" }> = {
         type: "serving",
@@ -568,8 +671,11 @@ export function datasetSystemPrompt(task: string): string {
   ].join("\n\n");
 }
 
-/** A dataset as the admin pages show it. Dates become ISO strings. */
-export function toDatasetView(row: DatasetHead): DatasetView {
+/**
+ * A dataset as the admin pages show it. Dates become ISO strings. A decision dataset's view adds kind "decision" and
+ * its spec; a chat dataset's has neither, and a row read without kind (from before migration 0017) is a chat dataset.
+ */
+export function toDatasetView(row: Omit<DatasetHead, "kind" | "decision"> & Partial<Pick<DatasetHead, "kind" | "decision">>): DatasetView {
   return {
     id: row.id,
     title: row.title,
@@ -583,6 +689,8 @@ export function toDatasetView(row: DatasetHead): DatasetView {
     createdAt: row.createdAt.toISOString(),
     finishedAt: iso(row.finishedAt),
     writerModel: writerModelOf(row),
+    // A chat dataset's view is as it was before decision datasets: no kind, no decision.
+    ...(row.kind === "decision" ? { kind: "decision" as const, ...(row.decision ? { decision: row.decision } : {}) } : {}),
   };
 }
 
@@ -684,8 +792,76 @@ export interface RunEstimate {
   minutes: number;
   /** Whether the overhead assumes the region holds the model cache. */
   cached: boolean;
-  /** "quantize" for a glimmer-quantize job, which has no training steps: its minutes are all overhead. */
-  what?: "train" | "quantize";
+  /**
+   * "quantize" for a glimmer-quantize job, which has no training steps: its minutes are all overhead. "decide" for a
+   * glimmer-lora job in decide mode, whose minutes are its training, its scoring and the overhead.
+   */
+  what?: "train" | "quantize" | "decide";
+  /** Decide mode: the training renderings (0 for scoreOnly), the prompts scored, and the scoring's minutes. */
+  renderings?: number;
+  scored?: number;
+  scoreMinutes?: number;
+  /** Decide mode with scoreOnly 1: base Glimmer scores the prompts once, and nothing trains. */
+  scoreOnly?: boolean;
+}
+
+/**
+ * What a decide job runs (decideRunSize in lib/train/decision-datasets.ts, from its dataset's spec): its training
+ * renderings at its epochs, with the balancing copies, and the dev and test prompts each model scores.
+ */
+export interface DecideRunSize {
+  renderings: number;
+  scored: number;
+}
+
+/**
+ * Renderings a second that decide mode trains on each GPU, and prompts a second it scores (one forward pass each, 8 at
+ * a time). Estimates [I] until the first real run measures them: the knowledge run trained 4.8 examples a second on an
+ * A100 40 GB with the same batch (docs/DECISION_MODELS.md "Lambda, the default"). A GPU not listed counts as the
+ * slowest.
+ */
+export const DECIDE_TRAIN_ROWS_PER_SECOND: Readonly<Record<string, number>> = {
+  gpu_1x_a100_sxm4: 4,
+  gpu_1x_h100_pcie: 6,
+  gpu_1x_h100_sxm5: 7,
+};
+export const DECIDE_SCORE_PROMPTS_PER_SECOND: Readonly<Record<string, number>> = {
+  gpu_1x_a100_sxm4: 4,
+  gpu_1x_h100_pcie: 6,
+  gpu_1x_h100_sxm5: 8,
+};
+const DECIDE_RATE_OTHER = 4;
+/**
+ * Renderings in one decide optimizer step (16 a device step, 2 accumulated), and the most steps a job trains, so the
+ * most renderings it trains on. GLIMMER_PY has the same numbers (DECIDE_TRAIN_BATCH, DECIDE_GRAD_ACCUM, DECIDE_STEPS_MAX).
+ */
+export const DECIDE_STEP_ROWS = 32;
+export const DECIDE_STEPS_MAX = 2000;
+
+/** A decide job's estimate: its renderings at the GPU's training rate, its prompts scored twice (once for scoreOnly), and the overhead. */
+function decideEstimate(params: Record<string, string | number | undefined>, size: DecideRunSize, instanceType: string, cached: boolean): RunEstimate {
+  const scoreOnly = Number(params.scoreOnly) >= 1;
+  const renderings = scoreOnly ? 0 : Math.max(0, Math.floor(size.renderings));
+  const trained = Math.min(renderings, DECIDE_STEPS_MAX * DECIDE_STEP_ROWS);
+  const scored = Math.max(0, Math.floor(size.scored));
+  const trainRate = DECIDE_TRAIN_ROWS_PER_SECOND[instanceType] ?? DECIDE_RATE_OTHER;
+  const scoreRate = DECIDE_SCORE_PROMPTS_PER_SECOND[instanceType] ?? DECIDE_RATE_OTHER;
+  const trainMinutes = Math.ceil(trained / trainRate / 60);
+  const scoreMinutes = Math.ceil(((scoreOnly ? 1 : 2) * scored) / scoreRate / 60);
+  const overheadMinutes = cached ? GLIMMER_OVERHEAD_MINUTES : GLIMMER_OVERHEAD_NO_CACHE_MINUTES;
+  return {
+    steps: Math.ceil(trained / DECIDE_STEP_ROWS),
+    secondsPerStep: DECIDE_STEP_ROWS / trainRate,
+    trainMinutes,
+    overheadMinutes,
+    minutes: trainMinutes + scoreMinutes + overheadMinutes,
+    cached,
+    what: "decide",
+    renderings,
+    scored,
+    scoreMinutes,
+    scoreOnly,
+  };
 }
 
 /**
@@ -700,13 +876,15 @@ export const QUANT_CACHED_MINUTES = 80;
 /**
  * How long a job's run is likely to take at most on `instanceType`, in a region that holds the model cache or not. Null
  * when there is no estimate for the recipe (glimmer-lora and glimmer-quantize have one) or the run doesn't train
- * (dryRun 1).
+ * (dryRun 1). A glimmer-lora job in decide mode needs `decide`, what its dataset makes it run (decideRunSize), and is
+ * null without it (docs/DECISION_MODELS.md "Lambda, the default").
  */
 export function runEstimate(
   recipe: RecipeId | string,
   params: Record<string, string | number | undefined>,
   instanceType: string,
   cached: boolean,
+  decide?: DecideRunSize | null,
 ): RunEstimate | null {
   if (recipe === QUANT_RECIPE) {
     const minutes = cached ? QUANT_CACHED_MINUTES : QUANT_MINUTES;
@@ -714,6 +892,7 @@ export function runEstimate(
   }
   if (recipe !== "glimmer-lora") return null;
   if (Number(params.dryRun) === 1) return null;
+  if (jobMode(params) === DECIDE_MODE) return decide ? decideEstimate(params, decide, instanceType, cached) : null;
   const raw = params.maxSteps;
   const asked = typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() ? Number(raw.trim()) : NaN;
   // The recipe's default (lib/train/recipes/index.ts) when it isn't set.
@@ -753,6 +932,23 @@ export function runFitProblem(e: RunEstimate, usable: number, gpuLabel: string):
     return (
       `Making local files on ${gpuLabel} needs about ${e.minutes} minutes (the merge, the conversion, three sizes and their ` +
       `checks, and the upload), but this job's limits stop it after ${usable} minutes. Raise the time or dollar limit, or pick a faster GPU.`
+    );
+  }
+  if (e.what === "decide") {
+    const setup = e.cached
+      ? "booting and loading the model"
+      : "booting, installing the packages and downloading the model, since this region has no model cache yet";
+    if (e.scoreOnly) {
+      return (
+        `Scoring ${e.scored} prompts with base Glimmer on ${gpuLabel} needs about ${e.minutes} minutes (${e.scoreMinutes} of ` +
+        `scoring, plus about ${e.overheadMinutes} for ${setup}), but this job's limits stop it after ${usable} minutes. ` +
+        `Raise the time or dollar limit, or pick a faster GPU.`
+      );
+    }
+    return (
+      `Training on ${e.renderings} renderings and scoring ${e.scored} prompts before and after on ${gpuLabel} needs about ` +
+      `${e.minutes} minutes (${e.trainMinutes} of training, ${e.scoreMinutes} of scoring, plus about ${e.overheadMinutes} for ${setup}), ` +
+      `but this job's limits stop it after ${usable} minutes. Lower the epochs, raise the time or dollar limit, or pick a faster GPU.`
     );
   }
   return (
@@ -851,15 +1047,29 @@ export type DoneMetrics = Record<string, string | number>;
  * can: a glimmer-lora job that succeeded, wasn't a dry run (whose adapter is a stand-in), and whose done metrics say it
  * saved the adapter on the cache filesystem (cache_used "yes" and adapter_dir ending in models/<its id>), so a serve
  * job in its region finds it at <cache>/models/<id>/.
+ *
+ * A decision model's adapter (decide mode) is refused unless `opts.decide` says the caller serves it as one: a
+ * glimmer-serve job, whose demo server sees the adapter's decide.json and answers POST /decide instead of /generate
+ * (docs/DECISION_MODELS.md, "On the lab's GPU"). Publishing and local files keep refusing it (hubJobProblem,
+ * quantProblem) until their decide versions exist.
  */
 export function adapterProblem(
   job: Pick<TrainJobRow, "id" | "recipe" | "status" | "params"> | null,
   metrics: DoneMetrics | null,
+  opts: { decide?: boolean } = {},
 ): string | null {
   if (!job) return "that job doesn't exist.";
   if (job.recipe !== ADAPTER_RECIPE) return "that job isn't a Muse Glimmer LoRA job, so it has no adapter to serve.";
   if (job.status !== "succeeded") return "that job didn't succeed, so it has no adapter to serve.";
   if (Number(job.params?.dryRun) >= 1) return "that job was a dry run, so its adapter is a stand-in.";
+  if (jobMode(job.params) === DECIDE_MODE && Number(job.params?.scoreOnly) >= 1) {
+    return "that job only scored base Glimmer, so it trained no adapter.";
+  }
+  // A decision adapter answers one letter under its own system message, so publishing and local files would misuse it
+  // until their decide versions exist. Serving it as a decision model (opts.decide) is built (D7).
+  if (jobMode(job.params) === DECIDE_MODE && !opts.decide) {
+    return "that job trained a decision model, and publishing and local files for decision models aren't built yet: only a live demo can serve it.";
+  }
   const dir = typeof metrics?.adapter_dir === "string" ? metrics.adapter_dir.replace(/\/+$/, "") : "";
   if (metrics?.cache_used !== "yes" || !dir.endsWith(`/models/${job.id}`)) {
     return "that job's adapter isn't on a model cache filesystem, so a GPU can't load it.";
@@ -951,11 +1161,18 @@ export function trainChannelOf(params: Record<string, string | number> | null | 
  * when it can. On top of adapterProblem (a glimmer-lora job that succeeded and saved a real adapter on its region's
  * cache): it was judged, with its GPU shut down, so its files have results to stand on; and it trained under the short
  * student prompt, whose one-line system message the files and their card give to every local app.
+ *
+ * A decision model's adapter (decide mode) is refused for now, whatever adapterProblem says: QUANT_PY's checks are a
+ * chat model's (a final answer under a stock app's prompt), and the decision check its files need, Q4_K_M's picks
+ * against the adapter's on the test renderings, isn't built (docs/DECISION_MODELS.md, "Local files").
  */
 export function quantProblem(
   job: Pick<TrainJobRow, "params" | "terminatedAt" | "evalSummary">,
   metrics: DoneMetrics | null,
 ): string | null {
+  if (jobMode(job.params) === DECIDE_MODE) {
+    return "that job trained a decision model, and its local files need a decision check (Q4_K_M's picks against the adapter's) that isn't built yet.";
+  }
   if (!job.terminatedAt || !job.evalSummary || unjudgedNote(job.evalSummary) !== null) {
     return "that job isn't judged yet, so its local files would have no results to stand on.";
   }
@@ -966,4 +1183,395 @@ export function quantProblem(
     return "that adapter trained under its dataset's whole task prompt, and local files need the one-line system message of the short student prompt.";
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Decision models: scoring a decide job (docs/DECISION_MODELS.md "Scoring (logic.ts)"). Deterministic: no judge, no
+// Meta call, and the same input always gives the same summary.
+
+/** The Wilson interval's z: a 95% interval. */
+export const WILSON_Z = 1.96;
+/** T is fit within these bounds by golden-section search on log T, this many steps. */
+export const DECIDE_T_MIN = 0.25;
+export const DECIDE_T_MAX = 10;
+export const DECIDE_T_STEPS = 60;
+/** With fewer scored dev rows than this, T stays 1 and confidence isn't calibrated. */
+export const DECIDE_T_MIN_ROWS = 20;
+/** Equal-width bins of the top probability, for ECE and the reliability chart. */
+export const DECIDE_BINS = 10;
+/** In dev log loss the right option's probability counts as at least this, so a row that gave it 0 stays finite. */
+const DECIDE_P_FLOOR = 1e-12;
+
+/**
+ * `right` of `total` with its Wilson 95% interval (z = 1.96), which stays inside 0 to 1 and is honest for the small
+ * test sets a person's model can have. No rows gives rate 0 and the interval 0 to 1: nothing is known.
+ */
+export function wilsonRate(right: number, total: number): WilsonRate {
+  if (!(total > 0)) return { right: 0, total: 0, rate: 0, low: 0, high: 1 };
+  if (!(right >= 0 && right <= total)) throw new Error("right must be from 0 to total.");
+  const p = right / total;
+  const z2 = WILSON_Z * WILSON_Z;
+  const scale = 1 + z2 / total;
+  const center = (p + z2 / (2 * total)) / scale;
+  const half = (WILSON_Z / scale) * Math.sqrt((p * (1 - p)) / total + z2 / (4 * total * total));
+  return { right, total, rate: p, low: Math.max(0, center - half), high: Math.min(1, center + half) };
+}
+
+/**
+ * Per label precision, recall, F1 and support, macro F1, and the confusion matrix, from each row's right label and
+ * pick (null for `none`). `none` isn't a class: a `none` pick is a miss for the row's label and counts against no
+ * other. Macro F1 is the mean F1 of the labels that have test rows or were picked (the rest have no F1 to speak of),
+ * every such label weighted the same. The matrix's rows are the right label and its columns the pick, both in label
+ * order, then a last `none` column. A division by 0 counts as 0.
+ */
+export function labelScores(
+  labels: ReadonlyArray<{ id: string; name: string }>,
+  rows: ReadonlyArray<{ label: string; pick: string | null }>,
+): { perLabel: LabelScore[]; macroF1: number; confusion: number[][] } {
+  const at = new Map(labels.map((l, i) => [l.id, i]));
+  const confusion = labels.map(() => new Array<number>(labels.length + 1).fill(0));
+  for (const r of rows) {
+    const i = at.get(r.label);
+    const j = r.pick === null ? labels.length : at.get(r.pick);
+    if (i === undefined) throw new Error(`The label ${JSON.stringify(r.label)} isn't one of this decision's labels.`);
+    if (j === undefined) throw new Error(`The pick ${JSON.stringify(r.pick)} isn't one of this decision's labels.`);
+    confusion[i]![j]! += 1;
+  }
+  const picked = labels.map((_, j) => confusion.reduce((s, row) => s + row[j]!, 0));
+  const perLabel = labels.map((l, i): LabelScore => {
+    const tp = confusion[i]![i]!;
+    const support = confusion[i]!.reduce((s, n) => s + n, 0);
+    const precision = picked[i] ? tp / picked[i]! : 0;
+    const recall = support ? tp / support : 0;
+    const f1 = precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : 0;
+    return { id: l.id, name: l.name, precision, recall, f1, support };
+  });
+  const counted = perLabel.filter((s, i) => s.support > 0 || picked[i]! > 0);
+  const macroF1 = counted.length ? counted.reduce((s, l) => s + l.f1, 0) / counted.length : 0;
+  return { perLabel, macroF1, confusion };
+}
+
+/**
+ * Expected calibration error and the reliability bins: each row's top probability (its pick's confidence) goes in one
+ * of 10 equal-width bins (bin i holds i/10 up to (i+1)/10, the last also 1), and ECE is the gap between each bin's
+ * accuracy and its mean confidence, weighted by its share of the rows. No rows gives 0.
+ */
+export function calibrationBins(points: ReadonlyArray<{ confidence: number; right: boolean }>): {
+  ece: number;
+  bins: ReliabilityBin[];
+} {
+  const sums = Array.from({ length: DECIDE_BINS }, () => ({ rows: 0, right: 0, confidence: 0 }));
+  for (const p of points) {
+    if (!Number.isFinite(p.confidence)) throw new Error("A confidence must be a number from 0 to 1.");
+    const bin = sums[Math.min(DECIDE_BINS - 1, Math.max(0, Math.floor(p.confidence * DECIDE_BINS)))]!;
+    bin.rows += 1;
+    bin.confidence += p.confidence;
+    if (p.right) bin.right += 1;
+  }
+  let ece = 0;
+  const bins = sums.map((b, i): ReliabilityBin => {
+    const accuracy = b.rows ? b.right / b.rows : 0;
+    const confidence = b.rows ? b.confidence / b.rows : 0;
+    if (b.rows) ece += (b.rows / points.length) * Math.abs(accuracy - confidence);
+    return { from: i / DECIDE_BINS, to: (i + 1) / DECIDE_BINS, rows: b.rows, accuracy, confidence };
+  });
+  return { ece, bins };
+}
+
+/** Each calibration row's log-probabilities, the right one floored at DECIDE_P_FLOOR. */
+function calibrationLogs(rows: readonly CalibrationRow[]): Array<{ logs: number[]; right: number }> {
+  return rows.map((r, n) => {
+    if (!Number.isInteger(r.right) || r.right < 0 || r.right >= r.p.length) {
+      throw new Error(`Calibration row ${n + 1} has no right option.`);
+    }
+    const logs = r.p.map((p) => {
+      if (!(p >= 0) || !Number.isFinite(p)) throw new Error(`Calibration row ${n + 1} has a probability that isn't a number from 0 to 1.`);
+      return Math.log(p);
+    });
+    logs[r.right] = Math.max(logs[r.right]!, Math.log(DECIDE_P_FLOOR));
+    return { logs, right: r.right };
+  });
+}
+
+function meanLogLoss(rows: ReadonlyArray<{ logs: number[]; right: number }>, T: number): number {
+  if (!rows.length) return 0;
+  let sum = 0;
+  for (const r of rows) {
+    const scaled = r.logs.map((l) => l / T);
+    // Finite: the right option is floored.
+    const max = Math.max(...scaled);
+    let total = 0;
+    for (const s of scaled) total += Math.exp(s - max);
+    sum += max + Math.log(total) - scaled[r.right]!;
+  }
+  return sum / rows.length;
+}
+
+/**
+ * Mean log loss at T: for each row, minus the log of the right option's probability once every option's
+ * log-probability is divided by T and renormalized (applyTemperature), the right one floored at 1e-12.
+ */
+export function decisionLogLoss(rows: readonly CalibrationRow[], T: number): number {
+  if (!(T > 0) || !Number.isFinite(T)) throw new Error("T must be a positive number.");
+  return meanLogLoss(calibrationLogs(rows), T);
+}
+
+/**
+ * One temperature for a model, fit on its dev rows only: the T from 0.25 to 10 with the lowest dev log loss
+ * (decisionLogLoss), by golden-section search on log T, 60 steps, rounded to 4 decimals. The loss is convex in 1/T, so
+ * the search finds its one minimum. T stays 1 unless it lowers the loss, and with fewer than 20 rows it stays 1 and
+ * `calibrated` is false. T divides every option's log-probability, which keeps their order, and the pick is made
+ * before T anyway (temperedDecision): it never changes the winner, so it never changes accuracy.
+ */
+export function fitTemperature(rows: readonly CalibrationRow[]): { T: number; calibrated: boolean } {
+  if (rows.length < DECIDE_T_MIN_ROWS) return { T: 1, calibrated: false };
+  const prepared = calibrationLogs(rows);
+  const logT = goldenSectionMin(
+    (x) => meanLogLoss(prepared, Math.exp(x)),
+    Math.log(DECIDE_T_MIN),
+    Math.log(DECIDE_T_MAX),
+    DECIDE_T_STEPS,
+  );
+  const fit = Math.min(DECIDE_T_MAX, Math.max(DECIDE_T_MIN, Math.round(Math.exp(logT) * 1e4) / 1e4));
+  return { T: meanLogLoss(prepared, fit) < meanLogLoss(prepared, 1) ? fit : 1, calibrated: true };
+}
+
+/**
+ * Where f is lowest on [lo, hi], for an f with one minimum there: golden-section search. Two probes split the bracket
+ * in the golden ratio. Each step drops the end past the higher probe (past the upper one on a tie), and the lower
+ * probe already sits where the smaller bracket needs one of its two, so a step calls f once. After `steps` steps the
+ * bracket is 0.618^steps of its first width, and its middle is the answer.
+ */
+function goldenSectionMin(f: (x: number) => number, lo: number, hi: number, steps: number): number {
+  const ratio = (Math.sqrt(5) - 1) / 2;
+  const probeAt = (x: number) => ({ x, y: f(x) });
+  let near = probeAt(hi - ratio * (hi - lo)); // the probe nearer lo
+  let far = probeAt(lo + ratio * (hi - lo)); // the probe nearer hi
+  for (let step = 0; step < steps; step++) {
+    if (near.y <= far.y) {
+      hi = far.x;
+      far = near;
+      near = probeAt(hi - ratio * (hi - lo));
+    } else {
+      lo = near.x;
+      near = far;
+      far = probeAt(lo + ratio * (hi - lo));
+    }
+  }
+  return (lo + hi) / 2;
+}
+
+type DecideSide = "base" | "tuned";
+
+/**
+ * A side's log-probabilities for an item: one per letter. Null when there are none to use: missing, the wrong length,
+ * or numbers that can't be log-probabilities (logprobsProblem: above all the probability, or none on any letter).
+ */
+function sideLogprobs(score: DecideScoreItem | undefined, side: DecideSide, letters: number): number[] | null {
+  const lp = side === "base" ? score?.base : score?.tuned;
+  if (!Array.isArray(lp) || lp.length !== letters || !letters) return null;
+  return logprobsProblem(lp) === null ? lp : null;
+}
+
+/** A part's rows in row order, each with its items (regular or decline ones) in group order. */
+function itemsByRow(items: readonly DecisionItemKey[], rows: number, decline: boolean): Array<[number, DecisionItemKey[]]> {
+  const byRow = new Map<number, DecisionItemKey[]>();
+  for (const item of items) {
+    if (Boolean(item.decline) !== decline) continue;
+    if (!Number.isInteger(item.row) || item.row < 0 || item.row >= rows) {
+      throw new Error(`Item ${item.index} is for row ${item.row}, which the split doesn't have.`);
+    }
+    byRow.set(item.row, [...(byRow.get(item.row) ?? []), item]);
+  }
+  return [...byRow.entries()].sort((x, y) => x[0] - y[0]).map(([row, list]) => [row, list.sort((x, y) => x.group - y.group)]);
+}
+
+interface ScoredRow {
+  combined: { labels: Array<{ id: string; p: number }>; none: number };
+  mass: number[];
+}
+
+/** A row on one side: its groups combined, before T, and each rendering's letter mass. Null if any rendering lacks a score. */
+function scoredRow(items: readonly DecisionItemKey[], scores: ReadonlyMap<number, DecideScoreItem>, side: DecideSide): ScoredRow | null {
+  const groups: Array<{ labelIds: Array<string | null>; p: number[] }> = [];
+  const mass: number[] = [];
+  for (const item of items) {
+    const lp = sideLogprobs(scores.get(item.index), side, item.labelIds.length);
+    if (!lp) return null;
+    groups.push({ labelIds: item.labelIds, p: letterProbabilities(lp) });
+    mass.push(letterMass(lp));
+  }
+  return groups.length ? { combined: combineGroups(groups), mass } : null;
+}
+
+/** The first score sent for each index: a retried callback counts once. */
+function firstScores(scores: readonly DecideScoreItem[]): Map<number, DecideScoreItem> {
+  const out = new Map<number, DecideScoreItem>();
+  for (const s of scores) if (s && Number.isInteger(s.index) && !out.has(s.index)) out.set(s.index, s);
+  return out;
+}
+
+function median(values: readonly number[]): number {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
+}
+
+/**
+ * A decide job's eval_summary from the GPU's scores (docs/DECISION_MODELS.md "Scoring (logic.ts)"), the pure step
+ * scoreDecisionStep saves. For base Glimmer zero-shot and the tuned adapter alike: accuracy with its Wilson interval,
+ * macro F1, per label scores, the confusion matrix, the `none` rate, the decline check, T fit on dev rows only,
+ * ECE raw and with T, the reliability bins and letter mass. Then the baselines, always picking the commonest train
+ * label and the word-overlap stand-in, on the same test rows.
+ *
+ * A row's renderings are combined (combineGroups) and picked before T, as serving does (temperedDecision). Base and
+ * tuned are compared on the same rows: a test row counts only when every rendering of it has usable scores for base,
+ * and for tuned when the job scored tuned; the rest are unscoredRows. `tuned` is null when no test item has tuned
+ * scores (scoreOnly, or a failed tuned pass). The EvalSummary fields follow summarizeJudgements' meaning: `items` the
+ * scored test rows, `tunedWins` the rows tuned got right and base got wrong, `baseWins` the reverse, `ties` the rest,
+ * and the judge's averages and cost 0.
+ */
+export function summarizeDecisions(input: DecisionScoringInput): DecisionSummary {
+  const { labels, dev, test } = input;
+  if (labels.length < 2) throw new Error("A decision has at least 2 labels.");
+  if (new Set(labels.map((l) => l.id)).size !== labels.length) throw new Error("Two labels have the same id.");
+  const devScores = firstScores(dev.scores);
+  const testScores = firstScores(test.scores);
+  const hasTuned = test.items.some((it) => sideLogprobs(testScores.get(it.index), "tuned", it.labelIds.length) !== null);
+  const sides: DecideSide[] = hasTuned ? ["base", "tuned"] : ["base"];
+
+  // Test rows, and decline rows, that every side scored.
+  const onEverySide = (byRow: Array<[number, DecisionItemKey[]]>) =>
+    byRow.flatMap(([row, items]) => {
+      const per = sides.map((s) => scoredRow(items, testScores, s));
+      return per.every((p) => p !== null) ? [{ row, label: test.rows[row]!.label, per: per as ScoredRow[] }] : [];
+    });
+  const rows = onEverySide(itemsByRow(test.items, test.rows.length, false));
+  const declines = onEverySide(itemsByRow(test.items, test.rows.length, true));
+  const devByRow = itemsByRow(dev.items, dev.rows.length, false);
+
+  const summarizeSide = (k: number): { summary: DecisionSideSummary; right: boolean[] } => {
+    const side = sides[k]!;
+    const calibration: CalibrationRow[] = [];
+    for (const [row, items] of devByRow) {
+      const scored = scoredRow(items, devScores, side);
+      if (!scored) continue;
+      const right = labels.findIndex((l) => l.id === dev.rows[row]!.label);
+      if (right < 0) throw new Error(`Dev row ${row + 1}'s label isn't one of this decision's labels.`);
+      const p = new Map(scored.combined.labels.map((l) => [l.id, l.p]));
+      calibration.push({ p: [...labels.map((l) => p.get(l.id) ?? 0), scored.combined.none], right });
+    }
+    const { T, calibrated } = fitTemperature(calibration);
+    const picks = rows.map(({ label, per }) => {
+      const raw = pickDecision(labels, per[k]!.combined);
+      const soft = temperedDecision(labels, per[k]!.combined, T);
+      return { label, pick: raw.id, right: raw.id === label, raw: raw.confidence, withT: soft.confidence };
+    });
+    const right = picks.filter((p) => p.right).length;
+    const { perLabel, macroF1, confusion } = labelScores(labels, picks);
+    const raw = calibrationBins(picks.map((p) => ({ confidence: p.raw, right: p.right })));
+    const withT = calibrationBins(picks.map((p) => ({ confidence: p.withT, right: p.right })));
+    const declined = declines.filter((d) => pickDecision(labels, d.per[k]!.combined).id === null).length;
+    const mass = [...rows, ...declines].flatMap((r) => r.per[k]!.mass);
+    return {
+      right: picks.map((p) => p.right),
+      summary: {
+        accuracy: wilsonRate(right, picks.length),
+        macroF1,
+        perLabel,
+        confusion,
+        noneRate: picks.length ? picks.filter((p) => p.pick === null).length / picks.length : 0,
+        decline: declines.length ? { rows: declines.length, declined, rate: declined / declines.length } : null,
+        T,
+        calibrated,
+        ece: { raw: raw.ece, withT: withT.ece },
+        reliability: withT.bins,
+        letterMass: { median: median(mass), min: mass.length ? Math.min(...mass) : 0 },
+      },
+    };
+  };
+
+  const base = summarizeSide(0);
+  const tuned = hasTuned ? summarizeSide(1) : null;
+  let tunedWins = 0;
+  let baseWins = 0;
+  if (tuned) {
+    base.right.forEach((b, i) => {
+      if (tuned.right[i] && !b) tunedWins += 1;
+      if (b && !tuned.right[i]) baseWins += 1;
+    });
+  }
+
+  const trainCount = (id: string) => {
+    const n = Number(input.trainCounts[id]);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const commonest = labels.reduce((best, l) => (trainCount(l.id) > trainCount(best.id) ? l : best), labels[0]!);
+  const standInRight = rows.filter(({ row, label }) => standInDecision({ state: test.rows[row]!.input, labels }).id === label).length;
+  const tooLong = Number(input.tooLong);
+
+  return {
+    items: rows.length,
+    tunedWins,
+    baseWins,
+    ties: rows.length - tunedWins - baseWins,
+    avgBaseScore: 0,
+    avgTunedScore: 0,
+    judgeCostUsd: 0,
+    kind: "decision",
+    labels: labels.map((l) => ({ id: l.id, name: l.name })),
+    groups: labelGroups(labels).length,
+    devRows: dev.rows.length,
+    testRows: test.rows.length,
+    unscoredRows: test.rows.length - rows.length,
+    tooLong: Number.isFinite(tooLong) && tooLong > 0 ? Math.floor(tooLong) : 0,
+    base: base.summary,
+    tuned: tuned ? tuned.summary : null,
+    baselines: {
+      commonest: { id: commonest.id, accuracy: wilsonRate(rows.filter((r) => r.label === commonest.id).length, rows.length) },
+      standIn: { accuracy: wilsonRate(standInRight, rows.length) },
+    },
+  };
+}
+
+/** One scored test row as the admin results page shows it: the pick of each side, with its confidence after T. */
+export interface DecisionRowPick {
+  /** The row in the dataset's test split, 0 on. */
+  row: number;
+  /** The row's right label id. */
+  label: string;
+  /** The pick's label id (null for `none`) and its confidence after the side's T, as serving would answer. */
+  base: { pick: string | null; confidence: number };
+  /** Null when the job scored no tuned model (scoreOnly, or a failed tuned pass). */
+  tuned: { pick: string | null; confidence: number } | null;
+}
+
+/**
+ * Each scored test row's picks, base and tuned, for the wrong answers on an admin's results page. The rows are the ones
+ * summarizeDecisions counts (every rendering of the row usable on every side the job scored, decline renderings left
+ * out), and the picks are made the same way (combined, picked before T), so the misses listed here are exactly the
+ * misses behind the accuracy. `T` is each side's fitted T from the summary, for the confidence shown.
+ */
+export function decisionRowPicks(input: DecisionScoringInput, T: { base: number; tuned: number | null }): DecisionRowPick[] {
+  const { labels, test } = input;
+  const scores = firstScores(test.scores);
+  const hasTuned = test.items.some((it) => sideLogprobs(scores.get(it.index), "tuned", it.labelIds.length) !== null);
+  const out: DecisionRowPick[] = [];
+  for (const [row, items] of itemsByRow(test.items, test.rows.length, false)) {
+    const base = scoredRow(items, scores, "base");
+    const tuned = hasTuned ? scoredRow(items, scores, "tuned") : null;
+    if (!base || (hasTuned && !tuned)) continue;
+    const side = (scored: ScoredRow, t: number) => {
+      const d = temperedDecision(labels, scored.combined, t > 0 && Number.isFinite(t) ? t : 1);
+      return { pick: d.id, confidence: d.confidence };
+    };
+    out.push({
+      row,
+      label: test.rows[row]!.label,
+      base: side(base, T.base),
+      tuned: tuned ? side(tuned, T.tuned ?? 1) : null,
+    });
+  }
+  return out;
 }

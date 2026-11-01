@@ -21,6 +21,14 @@
  * The answers train on the final (to=user) channel with no reasoning, and the eval prompts open that channel, so both
  * models answer the way the tuned one was trained (see RESPONSE_PART and eval_prompt). The child checks the masks
  * train_on_responses_only made and logs the first training example and eval item 0's raw outputs.
+ *
+ * mode "decide" (docs/DECISION_MODELS.md, "The GPU side") trains a decision model on a decision dataset instead: the
+ * platform renders every training row (one letter to answer) and every dev and test item (no answer), the child scores
+ * the items with the base and then the tuned model from the first answer token's log-probabilities over the shown
+ * letters (score_all), trains 32 renderings a step in between, and the parent sends the scores with ctx.decide in place
+ * of eval items and writes decide.json next to the adapter. Its params: epochs (1 to 4, the steps follow from the
+ * renderings), scoreOnly (1 scores the base and trains nothing) and dryRun; publish stays 0. Everything chat mode does
+ * is unchanged when mode isn't set.
  */
 export const GLIMMER_PY = String.raw`"""Muse Glimmer LoRA: fine-tunes Muse Glimmer 30B with Unsloth and answers held-out prompts before and after."""
 
@@ -148,6 +156,35 @@ ADAPTER_CONFIG = "adapter_config.json"
 # glimmer-publish recipe can send the adapter later.
 HUB_MIN_SECONDS = 480
 
+# Decide mode (docs/DECISION_MODELS.md, "The GPU side"): a decision dataset's renderings train the adapter to answer
+# with one letter, and base and tuned Glimmer score its dev and test items from the first answer token's
+# log-probabilities. The mode param: "chat" (everything above, unchanged) when it isn't set.
+MODES = ("chat", "decide")
+DECIDE_MODE = "decide"
+# epochs as decideEpochs in lib/train/decision-datasets.ts reads it: a whole number from 1 to 4, else 2.
+DECIDE_EPOCHS_DEFAULT = 2
+DECIDE_EPOCHS_MIN = 1
+DECIDE_EPOCHS_MAX = 4
+# The letters a prompt shows, by position (DECIDE_LETTERS in lib/decide/format.ts).
+DECIDE_LETTERS = ("A", "B", "C", "D", "E")
+# 16 renderings a device step and 2 accumulated, 32 a step, lengths grouped: what the knowledge run measured on an A100
+# 40 GB. ceil(renderings / 32) steps, at most DECIDE_STEPS_MAX (DECIDE_STEP_ROWS and DECIDE_STEPS_MAX in logic.ts).
+DECIDE_TRAIN_BATCH = 16
+DECIDE_GRAD_ACCUM = 2
+DECIDE_STEPS_MAX = 2000
+# Prompts a forward pass scores, left padded, and how many passes go between progress messages.
+DECIDE_SCORE_BATCH = 8
+DECIDE_PROGRESS_BATCHES = 10
+# JSON has no -Infinity, so a letter with no probability is scored as this (runner.py's DECIDE_LOGPROB_FLOOR).
+DECIDE_LOGPROB_FLOOR = -10000.0
+# A rendering's tokens besides its prompt's: the tokenizer's <|begin_of_text|>, the answer's letter and <|eot|>. One
+# over MAX_SEQ_LENGTH with them is dropped and counted (too_long), never cut, since cutting would take the answer off.
+DECIDE_EXTRA_TOKENS = 3
+# The format's contract (decideJson in lib/decide/format.ts), which the dataset's pages carry and the job writes next to
+# the adapter, so an app renders the prompts the model trained on from that file alone.
+DECIDE_JSON = "decide.json"
+DECIDE_FORMAT = "muse-decide/1"
+
 
 def number(params, key, fallback):
     try:
@@ -175,7 +212,37 @@ def read_params(params):
         raise ValueError("learningRate must be above 0 and at most 0.01")
     if p["student_prompt"] not in STUDENT_PROMPTS:
         raise ValueError("studentPrompt must be short or full, not " + json.dumps(str(params.get("studentPrompt")))[:60])
+    p["mode"] = str(params.get("mode") or "chat").strip().lower()
+    if p["mode"] not in MODES:
+        raise ValueError("mode must be chat or decide, not " + json.dumps(str(params.get("mode")))[:60])
+    if p["mode"] == DECIDE_MODE:
+        p.update(decide_params(params))
     return p
+
+
+def decide_epochs(params):
+    """The epochs param as decideEpochs in lib/train/decision-datasets.ts reads it, so the GPU counts the epochs the
+    platform paged: a whole number from 1 to 4 (or text that is one), else 2."""
+    raw = params.get("epochs")
+    if isinstance(raw, bool):
+        return DECIDE_EPOCHS_DEFAULT
+    try:
+        n = float(raw.strip()) if isinstance(raw, str) else float(raw)
+    except (TypeError, ValueError, AttributeError):
+        return DECIDE_EPOCHS_DEFAULT
+    if not math.isfinite(n) or not n.is_integer() or not DECIDE_EPOCHS_MIN <= n <= DECIDE_EPOCHS_MAX:
+        return DECIDE_EPOCHS_DEFAULT
+    return int(n)
+
+
+def decide_params(params):
+    """Decide mode's own params: epochs, scoreOnly (1 scores base Glimmer and trains nothing), and publish, which is 0
+    and must stay 0, as the platform also says: a person's rows are never published, and publishing a decision model on
+    its own is later work. maxSteps and studentPrompt don't apply: the steps come from the renderings, and the renderings
+    keep the dataset's own system message."""
+    if number(params, "publish", 0) != 0:
+        raise ValueError("publish must be 0 in decide mode: a decision model isn't published to the Hugging Face Hub yet")
+    return {"epochs": decide_epochs(params), "score_only": number(params, "scoreOnly", 0) >= 1, "publish": False}
 
 
 def minutes(seconds):
@@ -852,7 +919,9 @@ def last_lines(out, count=20):
     return "\n".join((out.stdout or "").splitlines()[-count:])
 
 
-def real_run(ctx, p, base, train_path, eval_path, adapter_dir, started, system):
+def real_run(ctx, p, base, train_path, eval_path, adapter_dir, started, system, extra=None):
+    """Runs the child on the GPU and returns its result. extra goes into the child's config (decide mode's mode and
+    score_only)."""
     hf_home = os.path.join(base, "hf")
     os.makedirs(hf_home, exist_ok=True)
     python, venv_reused = ensure_venv(ctx, base)
@@ -884,6 +953,7 @@ def real_run(ctx, p, base, train_path, eval_path, adapter_dir, started, system):
         "output_dir": os.path.join(ctx.work_dir, "outputs"),
         "deadline": deadline,
     }
+    config.update(extra or {})
     config_path = os.path.join(ctx.work_dir, "glimmer-config.json")
     with open(config_path, "w") as f:
         json.dump(config, f)
@@ -978,6 +1048,8 @@ def finish(ctx, p, result, evals, train, adapter_dir, cache_used):
 def run(ctx):
     started = time.time()
     p = read_params(ctx.params)
+    if p["mode"] == DECIDE_MODE:
+        return decide_run(ctx, p, started)
     ctx.progress(message="Fetching the dataset")
     train = train_examples(ctx.dataset("train"))
     evals = eval_examples(ctx.dataset("eval"))
@@ -1015,6 +1087,242 @@ def run(ctx):
     else:
         result = real_run(ctx, p, base, train_path, eval_path, adapter_dir, started, system)
     return finish(ctx, p, result, evals, train, adapter_dir, cache_used)
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Decide mode in the parent (docs/DECISION_MODELS.md, "The GPU side"): the decision dataset's pages, a dry run, and the
+# scores sent with ctx.decide instead of eval items.
+
+
+def decide_items(raw, part):
+    """A decision dataset's dev or test items (part=dev, or part=eval for test) as both models score them: {part, index,
+    row, group, messages, letters}. The platform renders them and keeps which letter is which label, so they carry no
+    answer. Raises on an item that isn't one, or an index twice, since the pages and the platform's layout would
+    disagree then."""
+    out, seen = [], set()
+    for k, item in enumerate(raw):
+        item = item if isinstance(item, dict) else {}
+        index, messages, letters = item.get("index"), item.get("messages"), item.get("letters")
+        ok = (
+            isinstance(index, int) and not isinstance(index, bool) and index >= 0 and index not in seen
+            and isinstance(messages, list) and len(messages) == 2
+            and all(isinstance(m, dict) and isinstance(m.get("content"), str) for m in messages)
+            and [m.get("role") for m in messages] == ["system", "user"]
+            and isinstance(letters, list) and 2 <= len(letters) <= len(DECIDE_LETTERS)
+            and tuple(letters) == DECIDE_LETTERS[:len(letters)]
+        )
+        if not ok:
+            raise RuntimeError(
+                "Item " + str(k) + " of the " + part + " part isn't a decision item: a new index, a system and a user"
+                + " message, and its letters from A"
+            )
+        seen.add(index)
+        out.append({
+            "part": part, "index": index, "row": item.get("row"), "group": item.get("group"),
+            "messages": [{"role": m["role"], "content": m["content"]} for m in messages], "letters": list(letters),
+        })
+    return out
+
+
+def decide_steps(renderings):
+    """Optimizer steps for this many training renderings: ceil(renderings / 32), at least 1, at most DECIDE_STEPS_MAX."""
+    return int(min(DECIDE_STEPS_MAX, max(1, math.ceil(renderings / float(DECIDE_TRAIN_BATCH * DECIDE_GRAD_ACCUM)))))
+
+
+def fake_logprobs(kind, item):
+    """A dry run's stand-in scores for one item, deterministic: 60% to 99% of the probability on its letters, split by
+    the item's hash, so they pass the platform's check (logprobsProblem in lib/decide/format.ts) as real ones would."""
+    key = kind + ":" + item["part"] + ":" + str(item["index"]) + ":" + json.dumps(item["messages"], ensure_ascii=False)
+    digest = hashlib.sha256(key.encode("utf-8")).digest()
+    mass = 0.6 + 0.39 * digest[0] / 255.0
+    weights = [1 + digest[1 + j] for j in range(len(item["letters"]))]
+    total = float(sum(weights))
+    logprobs = [math.log(mass * w / total) for w in weights]
+    return {"logprobs": logprobs, "mass": sum(math.exp(l) for l in logprobs), "top": True}
+
+
+def decide_dry_run(ctx, p, items, train, adapter_dir):
+    """Decide mode with no venv, model or GPU: progress ticks for the steps the renderings would take, stand-in scores
+    (fake_logprobs) and, unless scoreOnly, a stand-in adapter folder."""
+    total = 0 if p["score_only"] else decide_steps(len(train))
+    every = max(PROGRESS_EVERY, PROGRESS_EVERY * math.ceil(total / 300.0))
+    for step in range(every, total + 1, every):
+        ctx.progress(step=step, total_steps=total, loss=round(2.0 * 0.99 ** step, 4))
+    if total and total % every:
+        ctx.progress(step=total, total_steps=total, loss=round(2.0 * 0.99 ** total, 4))
+    metrics = {
+        "renderings": len(train), "train_too_long": 0, "too_long": 0, "unusable_scores": 0, "steps": total,
+        "max_steps": total, "stopped_early": "no", "train_seconds": 0, "peak_vram_gb": 0,
+    }
+    if not p["score_only"]:
+        metrics["train_loss_final"] = round(2.0 * 0.99 ** total, 4)
+        os.makedirs(adapter_dir, exist_ok=True)
+        with open(os.path.join(adapter_dir, ADAPTER_CONFIG), "w") as f:
+            json.dump({"dry_run": True, "base_model_name_or_path": MODEL, "revision": MODEL_REVISION, "r": p["lora_rank"], "lora_alpha": p["lora_rank"]}, f)
+    return {
+        "mode": DECIDE_MODE,
+        "base": [fake_logprobs("base", item) for item in items],
+        "tuned": None if p["score_only"] else [fake_logprobs("tuned", item) for item in items],
+        "metrics": metrics,
+        "adapter": not p["score_only"],
+    }
+
+
+def middle(values):
+    """The median of a list of numbers, 0 for none."""
+    s = sorted(values)
+    if not s:
+        return 0.0
+    mid = len(s) // 2
+    return s[mid] if len(s) % 2 else (s[mid - 1] + s[mid]) / 2.0
+
+
+def decide_health(metrics, prefix, scores):
+    """Letter mass (median and minimum) and the share of prompts whose top token was a shown letter, over one model's
+    scored items, into metrics under prefix."""
+    masses = [s["mass"] for s in scores if s]
+    tops = [s for s in scores if s and s.get("top")]
+    metrics[prefix + "letter_mass_median"] = round(middle(masses), 4)
+    metrics[prefix + "letter_mass_min"] = round(min(masses), 4) if masses else 0
+    metrics[prefix + "top_letter_share"] = round(len(tops) / float(len(masses)), 4) if masses else 0
+
+
+def write_decide_json(adapter_dir, contract):
+    """decide.json next to the adapter: the format's contract as the dataset's pages carry it (decideJson in
+    lib/decide/format.ts, with T = 1: T is fit after the run, from the dev scores), written aside and then renamed."""
+    path = os.path.join(adapter_dir, DECIDE_JSON)
+    part = path + ".part"
+    with open(part, "w", encoding="utf-8") as f:
+        f.write(json.dumps(contract, ensure_ascii=False, indent=2) + "\n")
+    os.replace(part, path)
+    return path
+
+
+def decide_send(ctx, items, base, tuned):
+    """Sends every item the base model scored, with the tuned model's scores when it has them, part by part
+    (ctx.decide). An item with no base score (too long, or numbers that can't be log-probabilities) isn't sent, and the
+    platform counts its row unscored. Returns how many the platform took."""
+    parts = {"dev": [], "test": []}
+    for i, item in enumerate(items):
+        b, t = base[i], (tuned[i] if tuned is not None else None)
+        if not b:
+            continue
+        parts[item["part"]].append({
+            "index": item["index"], "base": b["logprobs"], "tuned": t["logprobs"] if t else None,
+            "baseMass": b["mass"], "tunedMass": t["mass"] if t else None,
+        })
+    return sum(ctx.decide(part, scored) for part, scored in parts.items() if scored)
+
+
+def decide_finish(ctx, p, result, items, train, adapter_dir, cache_used, contract):
+    """Sends the scores, then writes decide.json next to the adapter, uploads the adapter and returns the metrics.
+
+    Every score the GPU has goes to the platform first, so a run that fails later still reports what it measured: with
+    no adapter saved, the base scores, and the job fails; with the adapter saved but no tuned scores, the base scores
+    and the adapter (uploaded), and the job fails. scoreOnly trains nothing, so it has no adapter and no decide.json.
+    publish is 0 in decide mode, so publish_adapter only records why nothing went to the Hub.
+    """
+    base = result.get("base") or []
+    tuned = result.get("tuned")
+    ended = str(result.get("ended") or "exited with 0")
+    tail = str(result.get("tail") or "")
+    if len(base) != len(items):
+        raise RuntimeError("The base model scored " + str(len(base)) + " of " + str(len(items)) + " decision items")
+    tuned_ok = isinstance(tuned, list) and len(tuned) == len(items)
+    ctx.progress(message="Sending the scores of " + str(len(items)) + " decision items")
+    sent = decide_send(ctx, items, base, tuned if tuned_ok else None)
+    metrics = dict(result.get("metrics") or {})
+    metrics.update({
+        "mode": DECIDE_MODE,
+        "epochs": p["epochs"],
+        "score_only": "yes" if p["score_only"] else "no",
+        "cache_used": "yes" if cache_used else "no",
+        "train_renderings": len(train),
+        "dev_items": sum(1 for item in items if item["part"] == "dev"),
+        "test_items": sum(1 for item in items if item["part"] == "test"),
+        "decide_items": sent,
+    })
+    decide_health(metrics, "base_", base)
+    decide_health(metrics, "", tuned if tuned_ok else base)
+    dry = "Dry run: " if p["dry_run"] else ""
+    if p["score_only"]:
+        metrics["summary"] = dry + "Score only: base Muse Glimmer 30B scored " + str(sent) + " decision items, and nothing trained."
+        return metrics
+    if not result.get("adapter"):
+        raise RuntimeError(
+            "Training didn't finish (the child " + ended + "), so no adapter was saved. The base model's scores for "
+            + str(sent) + " decision items were sent." + ("\n" + tail if tail else "")
+        )
+    metrics["adapter_dir"] = adapter_dir
+    if isinstance(contract, dict):
+        write_decide_json(adapter_dir, contract)
+        metrics["decide_json"] = "yes"
+    if not tuned_ok:
+        reason = str(result.get("tuned_error") or "the child " + ended + " during them")[:300]
+        upload_adapter(ctx, adapter_dir, metrics)
+        kept = "uploaded" if metrics.get("adapter_uploaded") == "yes" else "kept in " + adapter_dir
+        ctx.log("Training finished: " + json.dumps(metrics, ensure_ascii=False, default=str)[:3000])
+        raise RuntimeError(
+            "The adapter was saved (" + kept + "), but the tuned model's scores failed (" + reason + "), so only the base"
+            + " model's " + str(sent) + " were sent"
+        )
+    upload_adapter(ctx, adapter_dir, metrics)
+    publish_adapter(ctx, p, adapter_dir, metrics)
+    loss = metrics.get("train_loss_final")
+    steps = str(metrics.get("steps")) + " steps"
+    if metrics.get("stopped_early") == "yes":
+        steps = str(metrics.get("steps")) + " of " + str(metrics.get("max_steps")) + " steps (stopped early to finish within the time limit)"
+    metrics["summary"] = (
+        dry + "Decide mode: LoRA r=" + str(p["lora_rank"]) + " on Muse Glimmer 30B, " + str(metrics.get("renderings", len(train)))
+        + " renderings in " + steps + (", final loss " + str(round(loss, 4)) if isinstance(loss, (int, float)) else "")
+        + ", " + str(sent) + " decision items scored before and after training."
+    )
+    return metrics
+
+
+def decide_run(ctx, p, started):
+    """Decide mode's run(ctx): the decision dataset's training renderings (none for scoreOnly) and its dev and test
+    items, trained on and scored by the child on the GPU (or faked for a dry run), then the scores sent and the adapter
+    kept (decide_finish). The renderings keep the dataset's own system message, so student_setup isn't used."""
+    ctx.progress(message="Fetching the decision dataset")
+    train = [] if p["score_only"] else train_examples(ctx.dataset("train"))
+    items = decide_items(ctx.dataset("dev"), "dev") + decide_items(ctx.dataset("eval"), "test")
+    kind = getattr(ctx, "dataset_kind", None)
+    if kind != "decision":
+        raise RuntimeError("Decide mode trains on a decision dataset, but the dataset's pages say its kind is " + json.dumps(kind))
+    if not p["score_only"] and not train:
+        raise RuntimeError("The decision dataset has no usable training renderings")
+    if not items:
+        raise RuntimeError("The decision dataset has no dev or test items to score")
+    systems = {item["messages"][0]["content"] for item in items}
+    systems.update(row["messages"][0]["content"] if row["messages"][0]["role"] == "system" else None for row in train)
+    if len(systems) != 1 or None in systems:
+        raise RuntimeError("The decision dataset's renderings don't share one system message, so they can't be scored the way they train")
+    system = next(iter(systems))
+    contract = getattr(ctx, "dataset_decide", None)
+    if not p["score_only"]:
+        good = isinstance(contract, dict) and contract.get("format") == DECIDE_FORMAT and contract.get("system") == system
+        if not good:
+            raise RuntimeError("The dataset's pages carry no " + DECIDE_JSON + " for its renderings, so the adapter would have no contract")
+    dev = sum(1 for item in items if item["part"] == "dev")
+    ctx.log(
+        "decision dataset " + p["dataset_id"] + ": " + str(len(train)) + " training renderings (" + str(p["epochs"])
+        + " epochs, with any balancing copies), " + str(dev) + " dev and " + str(len(items) - dev) + " test items to score"
+        + (". Score only: base Glimmer is scored and nothing trains" if p["score_only"] else "")
+    )
+    base, cache_used = base_dir(ctx)
+    adapter_dir = os.path.join(base, "models", str(ctx.job_id or "job"))
+    train_path = os.path.join(ctx.work_dir, "train.jsonl")
+    eval_path = os.path.join(ctx.work_dir, "decide-items.jsonl")
+    write_jsonl(train_path, train)
+    write_jsonl(eval_path, items)
+    if p["dry_run"]:
+        result = decide_dry_run(ctx, p, items, train, adapter_dir)
+        result["metrics"].update({"cached_weights": "no", "cached_venv": "no", "dry_run": "yes"})
+    else:
+        extra = {"mode": DECIDE_MODE, "score_only": p["score_only"]}
+        result = real_run(ctx, p, base, train_path, eval_path, adapter_dir, started, system, extra)
+    return decide_finish(ctx, p, result, items, train, adapter_dir, cache_used, contract)
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -1225,6 +1533,8 @@ def example_diagnosis(row, decode):
 def child_main(config_path):
     with open(config_path) as f:
         cfg = json.load(f)
+    if cfg.get("mode") == DECIDE_MODE:
+        return decide_child(cfg)
     # Unsloth patches transformers and trl, so it is imported first, as in the notebook.
     from unsloth import FastModel
     import torch
@@ -1416,6 +1726,349 @@ def child_main(config_path):
     except Exception as e:
         result["tuned_error"] = type(e).__name__ + ": " + str(e)[:300]
         emit("phase", message="The tuned answers failed: " + result["tuned_error"])
+    metrics["peak_vram_gb"] = round(torch.cuda.max_memory_reserved() / 1024 ** 3, 2)
+    write_result(cfg["result_path"], result)
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Decide mode in the child: every letter one token, the prompts scored from the first answer token, the renderings
+# trained on their letters.
+
+
+def letter_token_ids(tok):
+    """{letter: its token ids}: the bare letter's token and the space-led one (one id when they are the same), so a
+    letter's probability is both of theirs. Raises when either isn't a single token: the first answer token couldn't
+    hold that letter then, and the job fails before it pays for anything."""
+    out = {}
+    for letter in DECIDE_LETTERS:
+        ids = []
+        for text in (letter, " " + letter):
+            got = list(tok.encode(text, add_special_tokens=False))
+            if len(got) != 1:
+                raise RuntimeError(
+                    "The tokenizer makes " + json.dumps(text) + " " + str(len(got)) + " tokens, not one, so its probability"
+                    + " can't be read from the first answer token"
+                )
+            if got[0] not in ids:
+                ids.append(got[0])
+        out[letter] = ids
+    return out
+
+
+def log_sum_exp(values):
+    """log(sum(exp(v))) of a few log-probabilities, -Infinity when they all are."""
+    top = max(values)
+    if top == -math.inf:
+        return -math.inf
+    return top + math.log(sum(math.exp(v - top) for v in values))
+
+
+def letter_scores(row, ids, letters, letter_ids, top):
+    """One prompt's scores from its first-token log-probabilities (row[k] is token ids[k]'s): each shown letter's
+    log-probability, its tokens' summed and at least DECIDE_LOGPROB_FLOOR; the letter mass, their share of all the
+    probability; and whether the top token was a shown letter. None when a number can't be a log-probability (NaN or
+    +Infinity: a model that broke), so the item isn't sent."""
+    if any(math.isnan(v) or v == math.inf for v in row):
+        return None
+    by_id = dict(zip(ids, row))
+    logprobs, shown = [], set()
+    for letter in letters:
+        shown.update(letter_ids[letter])
+        logprobs.append(max(DECIDE_LOGPROB_FLOOR, log_sum_exp([by_id[t] for t in letter_ids[letter]])))
+    return {"logprobs": logprobs, "mass": sum(math.exp(l) for l in logprobs), "top": top in shown}
+
+
+def forward_logits(model, torch, input_ids, attention_mask, positions, keep):
+    """A forward pass's logits: the last position's only (logits_to_keep=1), or every position's from the first time
+    the model refuses that argument on. keep holds which, across calls."""
+    args = {"input_ids": input_ids, "attention_mask": attention_mask, "position_ids": positions, "use_cache": False}
+    with torch.no_grad():
+        if keep["last"]:
+            try:
+                return model(logits_to_keep=1, **args).logits
+            except TypeError as e:
+                if "logits_to_keep" not in str(e):
+                    raise
+                keep["last"] = False
+                emit("log", text="The model doesn't take logits_to_keep (" + str(e)[:200] + "), so every position's logits are computed, one prompt a pass")
+                # The caller sends this batch again one prompt at a time: 8 prompts of 2,048 tokens over the whole
+                # vocabulary would be about 6.6 GB of logits next to the model.
+                return None
+        return model(**args).logits
+
+
+def score_all(FastModel, model, tok, torch, prompts, items, letter_ids, label):
+    """Each prompt's scores (letter_scores), None for one left out as too long. One forward pass a prompt,
+    DECIDE_SCORE_BATCH at a time, left padded, with position ids counted from the attention mask so padding moves
+    nothing; the logits at the last position go through log_softmax in float32 (bf16 can err by enough to look like
+    more than all the probability) over the whole vocabulary, so there is no top-k limit. Unsloth's forward returns
+    logits only when asked (UNSLOTH_RETURN_LOGITS, set for the pass and put back after, so training doesn't keep them)."""
+    if hasattr(FastModel, "for_inference"):
+        FastModel.for_inference(model)
+    padding_side = getattr(tok, "padding_side", None)
+    tok.padding_side = "left"
+    if tok.pad_token is None:
+        tok.pad_token = tok.eos_token
+    flat = sorted({t for ids in letter_ids.values() for t in ids})
+    todo = [i for i, prompt in enumerate(prompts) if prompt is not None]
+    out = [None] * len(prompts)
+    saved = os.environ.get("UNSLOTH_RETURN_LOGITS")
+    os.environ["UNSLOTH_RETURN_LOGITS"] = "1"
+    keep = {"last": True}
+    try:
+        every = DECIDE_PROGRESS_BATCHES * DECIDE_SCORE_BATCH
+        start = 0
+        while start < len(todo):
+            # One prompt a pass once the model computes every position's logits (forward_logits).
+            batch = todo[start:start + (DECIDE_SCORE_BATCH if keep["last"] else 1)]
+            enc = tok([prompts[i] for i in batch], return_tensors="pt", padding=True)
+            input_ids = enc["input_ids"].to("cuda")
+            attention_mask = enc["attention_mask"].to("cuda")
+            positions = (attention_mask.cumsum(-1) - 1).clamp(min=0)
+            logits = forward_logits(model, torch, input_ids, attention_mask, positions, keep)
+            if logits is None:
+                continue
+            shape = tuple(logits.shape)
+            if len(shape) != 3 or shape[0] != len(batch) or shape[-1] <= flat[-1]:
+                raise RuntimeError("The model's forward pass gave logits of shape " + str(shape) + ", not a row of the vocabulary for each prompt")
+            logp = torch.log_softmax(logits[:, -1, :].float(), dim=-1)
+            picked = logp[:, flat].tolist()
+            tops = logp.argmax(dim=-1).tolist()
+            for k, i in enumerate(batch):
+                out[i] = letter_scores(picked[k], flat, items[i]["letters"], letter_ids, tops[k])
+            done = start + len(batch)
+            if done // every != start // every or done == len(todo):
+                emit("phase", message=label + " scores: " + str(done) + " of " + str(len(todo)))
+            start = done
+    finally:
+        # Put back as found: training pads its batches of 16 on the right, with no position ids from a mask.
+        if padding_side is not None:
+            tok.padding_side = padding_side
+        if saved is None:
+            os.environ.pop("UNSLOTH_RETURN_LOGITS", None)
+        else:
+            os.environ["UNSLOTH_RETURN_LOGITS"] = saved
+    return out
+
+
+def decide_prompts(tokenizer, text_tokenizer, items, bos):
+    """(prompts, too_long): each item's prompt as both models score it (eval_prompt: the final channel open, so the next
+    token is the answer), or None for one whose rendering would pass MAX_SEQ_LENGTH tokens (DECIDE_EXTRA_TOKENS)."""
+    prompts, too_long = [], 0
+    for item in items:
+        text = eval_prompt(tokenizer, item["messages"], bos)
+        if len(text_tokenizer.encode(text, add_special_tokens=False)) + DECIDE_EXTRA_TOKENS > MAX_SEQ_LENGTH:
+            prompts.append(None)
+            too_long += 1
+        else:
+            prompts.append(text)
+    return prompts, too_long
+
+
+def decide_training_texts(tokenizer, text_tokenizer, rows, bos):
+    """(texts, rows, dropped): the training renderings as the trainer sees them (training_text) and the rows they came
+    from, without the ones over MAX_SEQ_LENGTH tokens with the tokenizer's <|begin_of_text|>, which are counted."""
+    texts, kept, dropped = [], [], 0
+    for row in rows:
+        text = training_text(tokenizer, row["messages"], bos)
+        if len(text_tokenizer.encode(text, add_special_tokens=False)) + 1 > MAX_SEQ_LENGTH:
+            dropped += 1
+            continue
+        texts.append(text)
+        kept.append(row)
+    return texts, kept, dropped
+
+
+def decide_callbacks(TrainerCallback, stop, total):
+    """(progress, deadline): the trainer's callbacks in decide mode, as child_main's are. progress sends a progress event
+    every PROGRESS_EVERY steps and keeps the last loss; deadline stops training when stop (a StopClock, or None) says."""
+
+    class Progress(TrainerCallback):
+        def __init__(self):
+            self.loss = None
+            self.sent = 0
+
+        def on_log(self, args, state, control, logs=None, **kwargs):
+            if logs and isinstance(logs.get("loss"), (int, float)):
+                self.loss = float(logs["loss"])
+            step = int(state.global_step or 0)
+            if step and step != self.sent and (step % PROGRESS_EVERY == 0 or step >= state.max_steps):
+                self.sent = step
+                emit("progress", step=step, total=state.max_steps, loss=self.loss)
+
+    class Deadline(TrainerCallback):
+        def on_step_end(self, args, state, control, **kwargs):
+            if stop is not None and stop.check(int(state.global_step or 0), int(state.max_steps or total)):
+                control.should_training_stop = True
+            return control
+
+    return Progress(), Deadline()
+
+
+def decide_train_args(SFTConfig, cfg, total):
+    """Decide training's SFTConfig and whether it groups by length. It is made before the base pass, so a config this
+    Unsloth refuses fails before scoring is paid for. group_by_length only orders batches by length to pad less:
+    Unsloth's patched config took it for the knowledge run's A100 runs, but transformers 5 dropped it, so a config that
+    refuses it trains without it, logged."""
+    args = {
+        "dataset_text_field": "text",
+        "max_length": cfg["max_seq_length"],
+        "loss_type": "nll",
+        "per_device_train_batch_size": DECIDE_TRAIN_BATCH,
+        "gradient_accumulation_steps": DECIDE_GRAD_ACCUM,
+        "warmup_steps": 5,
+        "max_steps": total,
+        "learning_rate": float(cfg["learning_rate"]),
+        "logging_steps": 1,
+        "optim": "adamw_8bit",
+        "weight_decay": 0.001,
+        "lr_scheduler_type": "linear",
+        "seed": 3407,
+        "output_dir": cfg["output_dir"],
+        "save_strategy": "no",
+        "report_to": "none",
+    }
+    try:
+        return SFTConfig(group_by_length=True, **args), True
+    except TypeError as e:
+        if "group_by_length" not in str(e):
+            raise
+        emit("log", text="This SFTConfig doesn't take group_by_length (" + str(e)[:200] + "), so batches aren't grouped by length")
+        return SFTConfig(**args), False
+
+
+def decide_child(cfg):
+    """The child in decide mode (docs/DECISION_MODELS.md, "The GPU side"). Loads the model and scores the dev and test
+    items with the base (a fresh LoRA adds zero), writing those scores at once; then trains on the renderings, whose
+    trained span is the answer's letter and <|eot|> (checked as for chat), 32 renderings a step; saves the adapter; and
+    scores the same items with the tuned model. scoreOnly loads the base, scores and stops: no LoRA, no adapter."""
+    from unsloth import FastModel
+    import torch
+    from datasets import Dataset
+    from transformers import TrainerCallback
+    from trl import SFTConfig, SFTTrainer
+    from unsloth.chat_templates import train_on_responses_only
+
+    emit("imported")
+    items = read_jsonl(cfg["eval_path"])
+    train_rows = read_jsonl(cfg["train_path"])
+    score_only = bool(cfg.get("score_only"))
+    rank = int(cfg["lora_rank"])
+    deadline = float(cfg.get("deadline") or 0) or None
+    result = {"mode": DECIDE_MODE, "base": None, "tuned": None, "metrics": None, "adapter": False}
+
+    emit("phase", message="Loading " + cfg["model"])
+    model, tokenizer = FastModel.from_pretrained(
+        model_name=cfg["model"], revision=cfg.get("revision"), max_seq_length=cfg["max_seq_length"]
+    )
+    if not score_only:
+        model = FastModel.get_peft_model(
+            model,
+            finetune_vision_layers=False,
+            finetune_language_layers=True,
+            finetune_attention_modules=True,
+            finetune_mlp_modules=True,
+            r=rank,
+            lora_alpha=rank,
+            lora_dropout=0,
+            bias="none",
+            use_gradient_checkpointing="unsloth",
+            random_state=3407,
+        )
+    text_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
+    bos = getattr(tokenizer, "bos_token", None) or getattr(text_tokenizer, "bos_token", None) or ""
+
+    def decode(ids):
+        return text_tokenizer.decode(ids, skip_special_tokens=False)
+
+    # All checked before the base pass, so a tokenizer or a template that can't work fails before scoring is paid for.
+    letter_ids = letter_token_ids(text_tokenizer)
+    prompts, too_long = decide_prompts(tokenizer, text_tokenizer, items, bos)
+    texts, kept, train_too_long = ([], [], 0) if score_only else decide_training_texts(tokenizer, text_tokenizer, train_rows, bos)
+    if not score_only and not texts:
+        raise RuntimeError("Every training rendering is over " + str(MAX_SEQ_LENGTH) + " tokens, so nothing can train")
+    total = 0 if score_only else decide_steps(len(texts))
+    metrics = {
+        "renderings": len(texts), "train_too_long": train_too_long, "too_long": too_long, "steps": total,
+        "max_steps": total, "gpu": torch.cuda.get_device_name(0),
+    }
+    train_args = None
+    if not score_only:
+        train_args, grouped = decide_train_args(SFTConfig, cfg, total)
+        metrics["group_by_length"] = "yes" if grouped else "no"
+
+    began = time.time()
+    result["base"] = score_all(FastModel, model, text_tokenizer, torch, prompts, items, letter_ids, "Base")
+    base_seconds = time.time() - began
+    metrics["base_score_seconds"] = round(base_seconds, 1)
+    metrics["unusable_scores"] = sum(1 for prompt, s in zip(prompts, result["base"]) if prompt is not None and s is None)
+    metrics["peak_vram_gb"] = round(torch.cuda.max_memory_reserved() / 1024 ** 3, 2)
+    result["metrics"] = metrics
+    write_result(cfg["result_path"], result)
+    if score_only:
+        emit("phase", message="Base scores written. Score only, so nothing trains")
+        return
+
+    if hasattr(FastModel, "for_training"):
+        FastModel.for_training(model)
+    # Batches of 16 pad on the right for training, whatever scoring left it as.
+    text_tokenizer.padding_side = "right"
+    dataset = Dataset.from_list([{"text": text} for text in texts])
+    # Training stops early when the clock says so, leaving time to save the adapter and score with the tuned model.
+    stop = StopClock(train_stop_time(deadline, base_seconds)) if deadline else None
+    progress, deadline_stop = decide_callbacks(TrainerCallback, stop, total)
+    trainer = SFTTrainer(
+        model=model,
+        tokenizer=tokenizer,
+        train_dataset=dataset,
+        eval_dataset=None,
+        args=train_args,
+    )
+    trainer = train_on_responses_only(trainer, instruction_part=INSTRUCTION_PART, response_part=RESPONSE_PART)
+    examples = [trainer.train_dataset[i] for i in range(len(trainer.train_dataset))]
+    if examples and examples[0].get("labels") is not None:
+        emit("log", text=example_diagnosis(examples[0], decode))
+    trained = check_masking(examples, [first_answer(row["messages"]) for row in kept], decode)
+    trainer.add_callback(progress)
+    trainer.add_callback(deadline_stop)
+    emit("phase", message="Training on " + str(len(texts)) + " renderings for " + str(total) + " steps")
+    stats = trainer.train()
+    steps = int(trainer.state.global_step or 0)
+    stopped_early = stop is not None and stop.stopped_at is not None
+    if stopped_early:
+        if progress.sent != steps:
+            emit("progress", step=steps, total=total, loss=progress.loss)
+        emit("phase", message="Training stopped at step " + str(steps) + " of " + str(total) + " to finish within the time limit")
+    loss = progress.loss if progress.loss is not None else getattr(stats, "training_loss", None)
+    metrics.update({
+        "train_loss_final": round(float(loss), 4) if loss is not None else "unknown",
+        "steps": steps,
+        "stopped_early": "yes" if stopped_early else "no",
+        "train_seconds": round(float(stats.metrics.get("train_runtime", 0)), 1),
+        "trained_tokens_min": min(trained),
+        "trained_tokens_mean": round(sum(trained) / len(trained), 1),
+        "peak_vram_gb": round(torch.cuda.max_memory_reserved() / 1024 ** 3, 2),
+    })
+    # The adapter is saved before the tuned pass, so a failure there doesn't lose the training.
+    os.makedirs(cfg["adapter_dir"], exist_ok=True)
+    model.save_pretrained(cfg["adapter_dir"])
+    tokenizer.save_pretrained(cfg["adapter_dir"])
+    try:
+        fix_adapter_config(os.path.join(cfg["adapter_dir"], ADAPTER_CONFIG), cfg.get("revision"), cfg["model"])
+    except (OSError, ValueError) as e:
+        emit("log", text="The base model's revision couldn't be written into " + ADAPTER_CONFIG + ": " + type(e).__name__ + ": " + str(e)[:300])
+    result["adapter"] = True
+    write_result(cfg["result_path"], result)
+    emit("phase", message="Adapter saved")
+
+    free_training_memory(trainer, torch)
+    try:
+        began = time.time()
+        result["tuned"] = score_all(FastModel, model, text_tokenizer, torch, prompts, items, letter_ids, "Tuned")
+        metrics["tuned_score_seconds"] = round(time.time() - began, 1)
+    except Exception as e:
+        result["tuned_error"] = type(e).__name__ + ": " + str(e)[:300]
+        emit("phase", message="The tuned scores failed: " + result["tuned_error"])
     metrics["peak_vram_gb"] = round(torch.cuda.max_memory_reserved() / 1024 ** 3, 2)
     write_result(cfg["result_path"], result)
 

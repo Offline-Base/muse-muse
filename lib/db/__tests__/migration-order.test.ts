@@ -62,7 +62,8 @@ describe("a local database that ran 0019_engine before 0018_trust existed", () =
     // tg-cap-int's journal: 0015, then 0019_engine.
     await migrate(db, { migrationsFolder: folderWith([...upTo15, "0019_engine"]) });
     const applied = await appliedMigrationTimes((q) => client.query(q));
-    assert.deepEqual(skippedMigrations(journal.entries, applied).map((e) => e.tag), ["0018_trust"]);
+    // General's 0017 now sits below 0018 too, so both would be skipped.
+    assert.deepEqual(skippedMigrations(journal.entries, applied).map((e) => e.tag), ["0017_decision_datasets", "0018_trust"]);
     // What drizzle itself does with this branch's journal: nothing, and no error. The check is what stops it.
     await migrate(db, { migrationsFolder: FOLDER });
     const { rows } = await client.query<{ n: number }>("select count(*)::int as n from information_schema.columns where table_name = 'products' and column_name = 'taken_down_at'");

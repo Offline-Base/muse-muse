@@ -2,11 +2,15 @@
  * The training store against a real Postgres: an in-memory PGlite with the repo's migrations, standing in for Neon.
  * Covers the SQL the safety checks lean on: which jobs count as holding a GPU, the daily cap's committed spend, the job
  * token check, that an ended job only changes through finishJob, the one launch claim per job, a late launch and an
- * outlived termination, and the sweep's heartbeat. Also eval items (one per index, a cap per job) and judgements, and
+ * outlived termination, and the sweep's heartbeat. Also eval items (one per index, a cap per job) and judgements, a
+ * decide job's scores (each index once per part, a cap per job, read back by part), and
  * training datasets: each answer saved once as it comes and moved onto train once a chunk, the eval split (keeping
  * near-duplicates of eval prompts out of train), a stopped-early note, paging in SQL. And the live demo: a serving
  * callback's endpoint (with the IP Lambda reported, kept in step with it), the adapters a serve job can serve, the
- * newest open demo of an adapter, and the proxy's one-at-a-time slot. Nothing here reaches Neon or Lambda.
+ * newest open demo of an adapter, and the proxy's one-at-a-time slot. Decision datasets: saved ready with their spec,
+ * "person" as their writer and their rows out of every head read, and read back by index, cut in SQL; and a decide job
+ * scored on one after its run (scoreDecisionStep: its scores and rows in, the summary saved through jsonb and logged).
+ * Nothing here reaches Neon, Lambda or Meta.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/train/__tests__/store.test.ts
  *
@@ -423,6 +427,54 @@ describe("training store", { skip: canMock ? false : "needs --experimental-test-
     });
   });
 
+  describe("decide scores", () => {
+    const score = (index: number, tuned = true) => ({
+      index,
+      base: [-0.2, -1.9, -4.1],
+      tuned: tuned ? [-0.05, -3.2, -6.0] : null,
+      baseMass: 0.98,
+      tunedMass: tuned ? 0.99 : null,
+    });
+    const decide = (part: "dev" | "test", indexes: number[], tuned = true) => ({ type: "decide" as const, part, items: indexes.map((i) => score(i, tuned)) });
+
+    it("logs each index once per part, only the new items of a retry, and nothing past the cap", async () => {
+      const row = await job({ status: "running" });
+      assert.equal(await store.recordDecideEvent(row.id, decide("dev", [0, 1, 2]), 10), "recorded");
+      assert.equal(await store.recordDecideEvent(row.id, decide("dev", [0, 1, 2]), 10), "duplicate", "a retried callback");
+      assert.equal(await store.recordDecideEvent(row.id, decide("test", [0, 1]), 10), "recorded", "test's index 0 isn't dev's");
+      assert.equal(await store.recordDecideEvent(row.id, decide("dev", [2, 3, 4]), 10), "recorded", "a retry with new items keeps only those");
+      assert.equal(await store.recordDecideEvent(row.id, decide("test", [2, 3, 4, 5]), 10), "limit", "7 logged, and 4 more would pass 10");
+      assert.equal(await store.recordDecideEvent(row.id, decide("test", [2, 3, 4]), 10), "recorded", "exactly 10");
+      assert.equal(await store.recordDecideEvent(row.id, decide("test", [5]), 10), "limit");
+      assert.equal(await store.recordDecideEvent(row.id, decide("test", [0]), 10), "duplicate", "a retry past the cap is still a retry");
+
+      const scores = await store.decideScores(row.id);
+      assert.deepEqual(scores.dev.map((s) => s.index), [0, 1, 2, 3, 4]);
+      assert.deepEqual(scores.test.map((s) => s.index), [0, 1, 2, 3, 4]);
+      assert.deepEqual(scores.dev[0], score(0), "as sent");
+      const rows = await testDb.select().from(realSchema.trainingEvents).where(eq(realSchema.trainingEvents.jobId, row.id));
+      const logged = rows.filter((r) => r.type === "decide").map((r) => (r.payload as { part: string; items: unknown[] }));
+      assert.deepEqual(logged.map((p) => [p.part, p.items.length]), [["dev", 3], ["test", 2], ["dev", 2], ["test", 3]]);
+
+      const other = await job({ status: "running" });
+      assert.deepEqual(await store.decideScores(other.id), { dev: [], test: [] }, "each job has its own scores");
+      assert.equal(await store.recordDecideEvent(other.id, decide("dev", [0], false)), "recorded");
+      assert.deepEqual((await store.decideScores(other.id)).dev, [score(0, false)]);
+      assert.equal(await store.recordDecideEvent("not-a-uuid", decide("dev", [0])), "limit");
+      assert.deepEqual(await store.decideScores("not-a-uuid"), { dev: [], test: [] });
+    });
+
+    it("keeps scores apart from the job's eval items and its other events", async () => {
+      const row = await job({ status: "running" });
+      await store.recordEvent(row.id, { type: "log", text: "scoring" });
+      await store.recordEvalEvent(row.id, { type: "eval", index: 0, prompt: "p", reference: "r", base: "b", tuned: "t" });
+      assert.equal(await store.recordDecideEvent(row.id, decide("test", [0])), "recorded");
+      assert.deepEqual(await store.listEvalIndexes(row.id), [0]);
+      assert.deepEqual((await store.decideScores(row.id)).test.map((s) => s.index), [0]);
+      assert.equal(await store.recordEvalEvent(row.id, { type: "eval", index: 1, prompt: "p", reference: "r", base: "b", tuned: "t" }, 2), "recorded", "decide items don't count as eval items");
+    });
+  });
+
   describe("datasets", () => {
     const example = (i: number) => ({
       messages: [
@@ -542,6 +594,128 @@ describe("training store", { skip: canMock ? false : "needs --experimental-test-
       assert.ok(failed!.finishedAt);
       assert.equal(await store.failDataset(ds.id, "again"), false);
       assert.equal((await store.getDataset(ds.id))!.error, "The spend cap was reached.");
+    });
+  });
+
+  describe("decision datasets", () => {
+    /** A made-up ticket upload, checked and split as the datasets route does it. */
+    async function upload(counts?: number[]) {
+      const { checkDecisionUpload } = await import("../decision-datasets");
+      const { TICKET_LABELS, TICKET_QUESTION, ticketRows } = await import("./decision-fixture");
+      const result = checkDecisionUpload({ title: "Ticket router", question: TICKET_QUESTION, labels: TICKET_LABELS, rows: ticketRows(counts) }, "store-seed");
+      assert.ok(result.ok);
+      return result;
+    }
+
+    it("saves a decision dataset ready at once, with its spec, kind and \"person\" as its writer, and no rows in its head", async () => {
+      const { spec, rows, title } = await upload();
+      const ds = await store.createDecisionDataset({ title, spec, rows, createdBy: null });
+      assert.equal(ds.kind, "decision");
+      assert.equal(ds.status, "ready");
+      assert.equal(ds.writerModel, "person", "never null, which would read as Muse Spark 1.3");
+      assert.equal(ds.task, spec.question);
+      assert.equal(ds.title, "Ticket router");
+      assert.equal(ds.requested, 120);
+      assert.equal(ds.trainCount, 84);
+      assert.equal(ds.evalCount, 24, "the test rows");
+      assert.ok(ds.finishedAt);
+      assert.deepEqual(ds.decision, spec);
+      for (const head of [ds, await store.getDataset(ds.id), (await store.listDatasets())[0]]) {
+        assert.equal(head!.id, ds.id);
+        assert.equal("decisionRows" in head! || "train" in head! || "eval" in head!, false, "rows stay out of every head read");
+      }
+      const [stored] = await testDb.select().from(realSchema.trainingDatasets).where(eq(realSchema.trainingDatasets.id, ds.id));
+      assert.deepEqual(stored!.decisionRows, rows);
+      assert.deepEqual(stored!.train, [], "train and eval stay empty, so no chat reader changes");
+      assert.deepEqual(stored!.eval, []);
+      assert.deepEqual((await store.datasetPage(ds.id, "train", 0, 10))!.items, []);
+      const ready = (await store.getReadyDataset(ds.id))!;
+      assert.equal(ready.title, "Ticket router");
+      assert.equal(ready.kind, "decision");
+      const { seed, ...withoutSeed } = spec;
+      assert.ok(seed);
+      assert.deepEqual(ready.decision, withoutSeed, "the Lab read leaves the seed out, and never selects a row");
+      assert.equal("decisionRows" in ready, false);
+      assert.deepEqual((await store.listReadyDatasets()).map((d) => [d.id, d.kind]), [[ds.id, "decision"]]);
+    });
+
+    it("refuses rows that don't match the spec's counts", async () => {
+      const { spec, rows, title } = await upload();
+      await assert.rejects(store.createDecisionDataset({ title, spec, rows: { ...rows, test: rows.test.slice(1) } }), /test rows don't match/);
+      assert.equal((await store.listDatasets()).length, 0);
+    });
+
+    it("reads a split's rows by index, cut in SQL, or all of them", async () => {
+      const { spec, rows, title } = await upload();
+      const ds = await store.createDecisionDataset({ title, spec, rows });
+      const some = await store.decisionSplitRows(ds.id, "train", [0, 5, 83, 84, -1]);
+      assert.equal(some!.total, 84);
+      assert.deepEqual([...some!.rows.keys()], [0, 5, 83], "past the end and negative indexes are left out");
+      assert.deepEqual(some!.rows.get(5), rows.train[5]);
+      assert.deepEqual(some!.rows.get(83), rows.train[83]);
+      const test = await store.decisionSplitRows(ds.id, "test");
+      assert.deepEqual([...test!.rows.values()], rows.test);
+      assert.deepEqual(await store.decisionSplitRows(ds.id, "dev", []), { total: 12, rows: new Map() });
+      assert.equal(await store.decisionSplitRows("not-a-uuid", "dev"), null);
+      assert.equal(await store.decisionSplitRows(ds.id, "eval" as "dev"), null);
+    });
+
+    it("scores a decide job on the database after its run: its scores and rows in, the summary saved and logged", async () => {
+      const { decisionItems } = await import("@/lib/decide/format");
+      const { decisionScoringInput } = await import("../decision-datasets");
+      const { summarizeDecisions, toJobView } = await import("../logic");
+      const { scoreDecisionStep } = await import("../decide-steps");
+      const { spec, rows, title } = await upload([60, 60, 60, 60]);
+      const ds = await store.createDecisionDataset({ title, spec, rows });
+      const params = { datasetId: ds.id, mode: "decide", epochs: 2, learningRate: 0.0002, loraRank: 16, scoreOnly: 0, dryRun: 0, publish: 0 };
+      const row = await job({ recipe: "glimmer-lora", status: "running", params });
+      // What ctx.decide sends: 95% of the probability on the letters, base right on rows not divisible by 3, tuned on
+      // rows not divisible by 7, `none` on every decline rendering, at most 100 items a callback.
+      const sent = { dev: [] as import("@/lib/decide/types").DecideScoreItem[], test: [] as import("@/lib/decide/types").DecideScoreItem[] };
+      for (const part of ["dev", "test"] as const) {
+        for (const item of decisionItems({ question: spec.question, labels: spec.labels, rows: rows[part], part })) {
+          const right = item.decline ? null : rows[part][item.row]!.label;
+          const lp = (rightish: boolean, p: number) => {
+            const want = rightish ? right : (item.labelIds.find((id) => id !== right) ?? null);
+            return item.labelIds.map((id) => Math.log(id === want ? 0.95 * p : (0.95 * (1 - p)) / (item.labelIds.length - 1)));
+          };
+          sent[part].push({ index: item.index, base: lp(item.decline || item.row % 3 !== 0, 0.7), tuned: lp(item.decline || item.row % 7 !== 0, 0.9), baseMass: 0.95, tunedMass: 0.95 });
+        }
+        for (let i = 0; i < sent[part].length; i += 100) {
+          assert.equal(await store.recordDecideEvent(row.id, { type: "decide", part, items: sent[part].slice(i, i + 100) }), "recorded");
+        }
+      }
+      assert.equal(await store.recordDecideEvent(row.id, { type: "decide", part: "test", items: sent.test.slice(0, 3) }), "duplicate", "a retried callback");
+      await store.recordEvent(row.id, { type: "done", summary: "Decide mode", metrics: { mode: "decide", too_long: 2, renderings: 400 } });
+      await testDb
+        .update(realSchema.trainingJobs)
+        .set({ status: "succeeded", finishedAt: new Date(), terminatedAt: new Date() })
+        .where(eq(realSchema.trainingJobs.id, row.id));
+
+      assert.deepEqual(await scoreDecisionStep(row.id), { saved: "summary", items: 48, testRows: 48 });
+      const after = (await store.getJob(row.id))!;
+      assert.deepEqual(after.evalSummary, summarizeDecisions(decisionScoringInput(spec, rows, sent, 2)), "through jsonb and back, as computed");
+      assert.equal(after.status, "succeeded");
+      assert.equal(after.judgeModel, null);
+      assert.equal(toJobView(after, new Date()).judgeModel, null, "scored, not judged: no judge is named");
+      const logs = (await store.listEvents(row.id)).filter((e) => e.payload.type === "log").map((e) => (e.payload as { text: string }).text);
+      assert.deepEqual(logs, [
+        "Scored all 48 held-out examples, with no judge and nothing spent: the tuned model was right on 41 (85%), base Glimmer on 32 (67%). 2 renderings were too long to score. Confidence is calibrated on the dev rows (T = 1.1962). It can be wrong: check anything that matters.",
+      ]);
+      assert.deepEqual(await scoreDecisionStep(row.id), { saved: "none" }, "scored once");
+    });
+
+    it("reads a chat dataset as kind chat with no decision rows", async () => {
+      const chat = await store.createDataset({ title: "t", task: "Explain Python errors.", requested: 20, writerModel: "muse-wonder-1.0" });
+      await testDb.update(realSchema.trainingDatasets).set({ status: "ready" }).where(eq(realSchema.trainingDatasets.id, chat.id));
+      const ready = (await store.getReadyDataset(chat.id))!;
+      assert.equal(ready.kind, "chat");
+      assert.equal(ready.decision, null);
+      assert.equal(chat.kind, "chat");
+      assert.equal(chat.decision, null);
+      assert.equal(await store.decisionSplitRows(chat.id, "train"), null);
+      const [stored] = await testDb.select().from(realSchema.trainingDatasets).where(eq(realSchema.trainingDatasets.id, chat.id));
+      assert.deepEqual(stored!.decisionRows, {});
     });
   });
 
@@ -725,6 +899,9 @@ describe("training store", { skip: canMock ? false : "needs --experimental-test-
       const failed = await lora({ status: "failed" });
       await done(failed.id, onCache(failed.id));
       await lora(); // succeeded, but no done event logged
+      // A decision model's adapter answers with one letter, so the chat demo never offers it (docs/DECISION_MODELS.md).
+      const decide = await lora({ params: { datasetId: "1b2c3d4e-0000-4000-8000-000000000002", mode: "decide", epochs: 2, publish: 0 } });
+      await done(decide.id, onCache(decide.id));
 
       const options = await store.listAdapterOptions();
       assert.deepEqual(options.map((o) => o.jobId), [good.id]);
@@ -748,6 +925,70 @@ describe("training store", { skip: canMock ? false : "needs --experimental-test-
       const none = await lora();
       assert.equal((await store.getAdapterSource(none.id))!.metrics, null);
       assert.equal(await store.getAdapterSource("not-a-uuid"), null);
+    });
+
+    it("offers a decision model's adapter only when asked, marked decide, and never a score-only job's", async () => {
+      const chat = await lora();
+      await done(chat.id, onCache(chat.id));
+      const decide = await lora({ title: "Ticket router LoRA", params: { datasetId: "1b2c3d4e-0000-4000-8000-000000000002", mode: "decide", epochs: 2, scoreOnly: 0, publish: 0 } });
+      await done(decide.id, onCache(decide.id));
+      const scored = await lora({ params: { datasetId: "1b2c3d4e-0000-4000-8000-000000000002", mode: "decide", scoreOnly: 1, publish: 0 } });
+      await done(scored.id, onCache(scored.id));
+      assert.deepEqual((await store.listAdapterOptions()).map((o) => o.jobId), [chat.id], "as before without asking");
+      const all = await store.listAdapterOptions(50, { decide: true });
+      assert.deepEqual(all.map((o) => [o.jobId, o.mode ?? null]), [[decide.id, "decide"], [chat.id, null]], "newest first");
+      assert.equal("mode" in all[1]!, false, "a chat adapter's option is as it was");
+    });
+
+    it("reads a decide job as a decision model, and finds a live decision window for base Glimmer", async () => {
+      const { ticketDecision } = await import("@/components/train/__tests__/decision-fixture");
+      const t = ticketDecision();
+      const ds = await store.createDecisionDataset({ title: t.title, spec: t.spec, rows: t.rows });
+      const params = { datasetId: ds.id, mode: "decide", epochs: 2, scoreOnly: 0, dryRun: 0, publish: 0 };
+      const trained = await lora({ title: "Ticket router LoRA", params, evalSummary: t.summary });
+      await done(trained.id, onCache(trained.id));
+      const got = (await store.getDecisionModel(trained.id.toUpperCase()))!;
+      assert.deepEqual(got, {
+        id: trained.id,
+        title: "Ticket router LoRA",
+        question: t.spec.question,
+        labels: t.spec.labels,
+        base: { T: t.summary.base.T, calibrated: t.summary.base.calibrated },
+        tuned: { T: t.summary.tuned!.T, calibrated: t.summary.tuned!.calibrated },
+        public: true,
+        trainRows: t.spec.split.train,
+        accuracy: { tuned: t.summary.tuned!.accuracy, base: t.summary.base.accuracy },
+      });
+      assert.ok(!JSON.stringify(got).includes(t.rows.test[0]!.input), "never a row");
+
+      // Before it is scored: no public page, T 1, nothing calibrated.
+      const unscored = await lora({ params });
+      assert.deepEqual(
+        [(await store.getDecisionModel(unscored.id))!.public, (await store.getDecisionModel(unscored.id))!.tuned],
+        [false, { T: 1, calibrated: false }],
+      );
+      // Not a decision model: a chat job, a score-only job, one whose dataset is gone, or no job at all.
+      const chat = await lora();
+      const scoreOnly = await lora({ params: { ...params, scoreOnly: 1 }, evalSummary: t.summary });
+      const orphan = await lora({ params: { ...params, datasetId: "1b2c3d4e-0000-4000-8000-00000000dead" } });
+      for (const id of [chat.id, scoreOnly.id, orphan.id, "not-a-uuid", "00000000-0000-4000-8000-000000000000"]) {
+        assert.equal(await store.getDecisionModel(id), null, id);
+      }
+
+      // Base Glimmer's window: only a live serve job of a decision model counts, never a chat adapter's.
+      assert.equal(await store.liveDecisionServeTarget(), null);
+      const chatDemo = await serveJob(chat.id);
+      await store.applyCallback(chatDemo.id, serving, new Date(Date.now() - MIN));
+      assert.equal(await store.liveDecisionServeTarget(), null, "a chat adapter's server answers /generate only");
+      const demo = await serveJob(trained.id);
+      assert.equal(await store.liveDecisionServeTarget(), null, "not before it serves");
+      await store.applyCallback(demo.id, serving, new Date(Date.now() - MIN));
+      const target = { jobId: demo.id, tokenHash: "serve-token-hash", ip: "203.0.113.9", port: 8443, certSha256: ADAPTER_CERT };
+      assert.deepEqual(await store.liveDecisionServeTarget(), target);
+      assert.deepEqual(await store.liveServeTarget(trained.id), target, "the same window serves the model itself");
+      assert.equal(await store.liveDecisionServeTarget(new Date(Date.now() + 30 * MIN)), null, "its minutes are up");
+      await store.requestStop(demo.id);
+      assert.equal(await store.liveDecisionServeTarget(), null);
     });
 
     it("finds an adapter's newest open demo, live only with a usable endpoint, and gives the proxy what it needs", async () => {

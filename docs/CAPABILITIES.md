@@ -566,7 +566,16 @@ undo clears. Its journal index is 16 and `0019_engine` moved to 17, with 0019's 
 and `drizzle-kit generate` finds no drift. The migrations test checks that a database at 0015 keeps its users and
 products, which read null for every new column.
 
-**Merge blocker: the numbering.** Keep this branch off main and off previews until General's 0016 and 0017 land. Then
+**Renumbered (Oct 31, after General's 0017 landed as 88ac98e).** 0016 is retired for good, since 0017 landed first.
+The journal now runs 0015, 0017_decision_datasets (General's, idx 17), 0018_trust (idx 18), 0019_engine (idx 19), each
+`when` by section 4's rule. 0018's and 0019's snapshots are `0018_snapshot.json` and `0019_snapshot.json`, rebuilt on
+0017's chain: General's 0017 snapshot plus trust's changes, then engine's. No table was changed on both sides. Each
+keeps its id. The migrations test checks that drizzle-kit generates each wave 3 file exactly from the snapshot before
+it, and that generating now writes nothing. A database that ran 0015 then 0019 now skips 0017 and 0018, and the local
+check names both. The next wave 3 migration takes 0020, then 0021 and on, in merge order. The old blocker below is
+history.
+
+**Merge blocker (history): the numbering.** Keep this branch off main and off previews until General's 0016 and 0017 land. Then
 renumber 0018 and 0019 above them, regenerate both snapshots on top of General's (the `prevId` chain), and set `when` by
 section 4's rule. Two things make it worse than an ordering question:
 

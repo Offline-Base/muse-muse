@@ -8,7 +8,9 @@
  * dataset repo, the model repo and the finish, in that order, for the job the plan names and under its claim; a step
  * that fails fails the publishing with its reason, under that claim, and nothing in it throws or changes the status. publishToHub runs the same as an admin's
  * Publish. A local files job's plan (kind "gguf") publishes its GGUF repo instead: its commit, then its finish. The hub
- * steps are left out of order() and checked on their own (hubOrder()).
+ * steps are left out of order() and checked on their own (hubOrder()). A decide job (input mode "decide") is scored
+ * instead of judged, right after terminate and whatever its ending, then the plan step; a scoring failure changes
+ * nothing, and a chat job is never scored.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/train/__tests__/workflow.scenario.test.ts
  *
@@ -50,6 +52,8 @@ interface Scenario {
   hubFailsAt?: string;
   /** Whether hubFailStep throws too. */
   hubFailFails?: boolean;
+  /** Whether scoreDecisionStep throws, as one that ran out of retries. */
+  scoreFails?: boolean;
 }
 
 const POLL_MS = 30_000;
@@ -149,6 +153,14 @@ const fakeJudge = {
   },
 };
 
+const fakeDecide = {
+  scoreDecisionStep: async (jobId: string) => {
+    record("scoreDecisionStep", jobId);
+    if (scenario.scoreFails) throw new Error('Step "scoreDecisionStep" failed after 20 retries: The database did not answer: fetch failed');
+    return { saved: "summary", items: 80, testRows: 80 };
+  },
+};
+
 /** A hub step that records its call and throws when the scenario says it fails. */
 function hubStep(name: string) {
   return async (jobId: string, claim: string) => {
@@ -197,6 +209,7 @@ describe("training workflow orchestration", { skip: canMock ? false : "needs --e
     mock.module(new URL("../steps.ts", import.meta.url).href, { namedExports: fakeSteps });
     mock.module(new URL("../judge.ts", import.meta.url).href, { namedExports: fakeJudge });
     mock.module(new URL("../hub-steps.ts", import.meta.url).href, { namedExports: fakeHub });
+    mock.module(new URL("../decide-steps.ts", import.meta.url).href, { namedExports: fakeDecide });
     mock.module("workflow", {
       namedExports: {
         sleep: async (ms: number) => {
@@ -447,6 +460,61 @@ describe("training workflow orchestration", { skip: canMock ? false : "needs --e
       reset({ checks: [{ action: "terminate", status: "failed", reason: "Reached the 30-minute limit." }], finalStatus: "succeeded", evals: [0] });
       assert.deepEqual(await wf.trainJob({ jobId: "j26" }), { status: "succeeded" });
       assert.equal(named("judgeStep").length, 1);
+    });
+  });
+
+  describe("scoring a decide job", () => {
+    const done = (): Check => ({ action: "terminate", status: "succeeded", reason: "The job finished." });
+    const decide = (jobId: string) => wf.trainJob({ jobId, mode: "decide" });
+    const all = () => calls.filter((c) => c.step !== "sleep").map((c) => c.step);
+
+    it("scores a decide job right after terminate, instead of judging, then asks the plan step", async () => {
+      reset({ checks: [{ action: "wait" }, done()], evals: [0, 1, 2] });
+      assert.deepEqual(await decide("d1"), { status: "succeeded" });
+      assert.deepEqual(order(), ["launchStep", "checkStep", "checkStep", "terminateStep", "scoreDecisionStep"]);
+      assert.deepEqual(named("scoreDecisionStep")[0]!.args, ["d1"]);
+      assert.equal(named("judgePlanStep").length + named("judgeStep").length + named("saveEvalSummaryStep").length, 0, "never judged");
+      assert.equal(all().indexOf("hubPlanStep"), all().indexOf("scoreDecisionStep") + 1, "publishing comes after scoring");
+      assert.deepEqual(named("hubPlanStep")[0]!.args, ["d1", "succeeded", false]);
+    });
+
+    it("scores a decide job whatever its ending, since its GPU sends the base scores before anything can fail", async () => {
+      for (const [check, status] of [
+        [{ action: "terminate", status: "failed", reason: "The adapter was saved, but the tuned model's scores failed." }, "failed"],
+        [{ action: "terminate", status: "stopped", reason: "Stopped by an admin." }, "stopped"],
+      ] as Array<[Check, string]>) {
+        reset({ checks: [check] });
+        assert.deepEqual(await decide("d2"), { status });
+        assert.deepEqual(order(), ["launchStep", "checkStep", "terminateStep", "scoreDecisionStep"], status);
+      }
+      reset({ launchThrows: new Error("Lambda refused") });
+      assert.deepEqual(await decide("d3"), { status: "failed" });
+      assert.deepEqual(order(), ["launchStep", "terminateStep", "scoreDecisionStep"], "it finds nothing to score then");
+      reset({ checks: [done()], terminateFailures: Infinity });
+      assert.deepEqual(await decide("d4"), { status: "succeeded" });
+      assert.deepEqual(order(), ["launchStep", "checkStep", "terminateStep", "abandonStep", "scoreDecisionStep"], "only once the GPU is ended or handed to the sweep");
+    });
+
+    it("never changes the status or stops publishing when scoring fails", async () => {
+      reset({ checks: [done()], scoreFails: true, hubPlan: { action: "publish", jobId: "d5", claim: "claim-d5" } });
+      assert.deepEqual(await decide("d5"), { status: "succeeded" });
+      assert.equal(named("scoreDecisionStep").length, 1);
+      assert.equal(named("terminateStep").length, 1, "terminated once, before scoring");
+      assert.deepEqual(hubOrder(), ["hubPlanStep", "hubStoryStep", "hubDatasetStep", "hubModelStep", "hubFinishStep"]);
+    });
+
+    it("never scores a chat job, whose run is as it was", async () => {
+      for (const input of [{ jobId: "c1" }, { jobId: "c1", mode: "chat" as const }]) {
+        reset({ checks: [done()], evals: [0, 1] });
+        assert.deepEqual(await wf.trainJob(input), { status: "succeeded" });
+        assert.deepEqual(order(), ["launchStep", "checkStep", "terminateStep", "judgePlanStep", "judgeStep", "judgeStep", "saveEvalSummaryStep"]);
+        reset({ checks: [{ action: "terminate", status: "failed", reason: "Reached the 30-minute limit." }], evals: [0] });
+        await wf.trainJob(input);
+        assert.deepEqual(order(), ["launchStep", "checkStep", "terminateStep"]);
+      }
+      reset({ hubPlan: { action: "publish", jobId: "c2", claim: "claim-c2" } });
+      await wf.publishToHub({ jobId: "c2" });
+      assert.equal(named("scoreDecisionStep").length, 0, "an admin's Publish scores nothing");
     });
   });
 

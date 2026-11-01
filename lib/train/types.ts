@@ -2,6 +2,7 @@
  * Fine-tuning jobs on the owner's Lambda Cloud account (docs/TRAINING.md). Admin only. The platform holds
  * LAMBDA_API_KEY; a job's GPU instance only gets a one-time job token for reporting back.
  */
+import type { DecideScoreItem, DecisionSpec } from "@/lib/decide/types";
 
 /**
  * Recipes the platform can run. Each maps to a Python script in lib/train/recipes. "glimmer-serve" serves one trained
@@ -124,7 +125,17 @@ export type TrainCallback =
    * fingerprint is `certSha256` (64 lowercase hex characters). The platform pins it; the IP comes from Lambda, never
    * from the callback.
    */
-  | { type: "serving"; port: number; certSha256: string; model?: string; adapterJobId?: string };
+  | { type: "serving"; port: number; certSha256: string; model?: string; adapterJobId?: string }
+  /**
+   * A decide mode job's scores for one part (docs/DECISION_MODELS.md "Callbacks and caps"), sent before "done": for each
+   * item, its index in the part and the base and tuned model's log-probability of each shown letter (tuned null when it
+   * wasn't scored). At most DECIDE_CALLBACK_ITEMS_MAX items a callback. Logged as one "decide" event, at most
+   * DECIDE_ITEMS_MAX items a job, an index sent again counted once.
+   */
+  | { type: "decide"; part: DecidePart; items: DecideScoreItem[] };
+
+/** The two parts a decide job scores: dev (only to fit T) and test (part=eval of the dataset route). */
+export type DecidePart = "dev" | "test";
 
 /** One row of the job's event log, shown on the job page. */
 export type TrainEventBody =
@@ -156,6 +167,15 @@ export interface RecipeParamField {
   default?: string | number;
   min?: number;
   max?: number;
+  /** A number that must be whole (epochs, a 0 or 1 switch). */
+  whole?: boolean;
+  /** A text field's only values, lowercase: what is given is trimmed and lowercased before it is checked. */
+  choices?: string[];
+  /**
+   * The job modes (the recipe's "mode" param, "chat" when it isn't set) this field is for, when not all of them. In any
+   * other mode it takes no default and a value for it is refused (validateParams).
+   */
+  modes?: string[];
 }
 
 export interface Recipe {
@@ -263,6 +283,11 @@ export interface AdapterOption {
   datasetTitle: string | null;
   finishedAt: string | null;
   evalSummary: EvalSummary | null;
+  /**
+   * "decide" for a decision model's adapter (listed only when asked for, listAdapterOptions' opts.decide): glimmer-serve
+   * serves it at POST /decide, and nothing else takes it yet. Absent for a chat adapter.
+   */
+  mode?: "decide";
 }
 
 /**
@@ -328,6 +353,12 @@ export interface EvalSummary {
 
 export type DatasetStatus = "generating" | "ready" | "failed";
 
+/**
+ * What a dataset holds: "chat" examples a Muse model wrote (train and eval), or a person's labeled "decision" rows
+ * (docs/DECISION_MODELS.md; training_datasets.decision and decision_rows).
+ */
+export type DatasetKind = "chat" | "decision";
+
 /** One training conversation in the OpenAI messages format Unsloth and TRL take. */
 export interface TrainExample {
   messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
@@ -355,8 +386,16 @@ export interface DatasetView {
   /**
    * The model that wrote its prompts and answers (writerModelOf in lib/train/models.ts): Muse Spark 1.3 for a dataset
    * made before the writer was recorded (Oct 29, 2026). Absent from older servers, which means the same.
+   * "person" for a decision dataset a person uploaded (PERSON_WRITER).
    */
   writerModel?: string;
+  /** "decision" for a decision dataset. Absent for a chat dataset, and from older servers: both mean "chat". */
+  kind?: DatasetKind;
+  /**
+   * A decision dataset's definition (its question, labels, seed and rows per split, overall and per label), without
+   * its rows. Absent for chat datasets. trainCount and evalCount are its train and test rows.
+   */
+  decision?: DecisionSpec;
 }
 
 // ---------------------------------------------------------------------------------------------------------------

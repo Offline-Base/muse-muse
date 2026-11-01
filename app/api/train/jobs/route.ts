@@ -2,11 +2,16 @@ import { start } from "workflow/api";
 import { requireAdminOrAutomation } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { errorJson, readJson, route } from "@/lib/http";
+import { decideRunSize, isDecideMode } from "@/lib/train/decision-datasets";
 import { quantParams } from "@/lib/train/hub-cards";
 import { cacheRegions, LambdaApiError, listInstanceTypes, pickGpu, type LambdaInstanceType } from "@/lib/train/lambda";
 import {
+  ADAPTER_RECIPE,
   adapterProblem,
   clampLimits,
+  DECIDE_MODE,
+  datasetModeProblem,
+  type DecideRunSize,
   isQuantRecipe,
   isServeRecipe,
   quantProblem,
@@ -57,7 +62,10 @@ function limit(value: unknown, label: string): { ok: true; value: number | undef
   return { ok: true, value: n };
 }
 
-/** Null when every dataset param names a dataset that is ready, otherwise what to tell the admin. */
+/**
+ * Null when every dataset param names a dataset that is ready and fits the job's mode (datasetModeProblem: decide mode
+ * trains on a decision dataset, chat mode on a chat one), otherwise what to tell the admin.
+ */
 async function datasetProblem(recipe: Recipe, params: Record<string, string | number>): Promise<string | null> {
   for (const field of recipe.params) {
     if (field.kind !== "dataset" || params[field.key] === undefined) continue;
@@ -68,14 +76,28 @@ async function datasetProblem(recipe: Recipe, params: Record<string, string | nu
         ? `${field.label}: that dataset is still being written.`
         : `${field.label}: that dataset failed, so it can't be trained on.`;
     }
+    const mismatch = datasetModeProblem(params, dataset.kind);
+    if (mismatch) return `${field.label}: ${mismatch}`;
   }
   return null;
 }
 
 /**
+ * For a job in decide mode: what it runs on its decision dataset (decideRunSize), which its run estimate is made from.
+ * Null for any other job, or when the dataset has no spec.
+ */
+async function decideSize(recipe: Recipe, params: Record<string, string | number>): Promise<DecideRunSize | null> {
+  if (!isDecideMode(params)) return null;
+  const field = recipe.params.find((f) => f.kind === "dataset" && params[f.key] !== undefined);
+  const dataset = field ? await getDataset(String(params[field.key])) : null;
+  return dataset?.decision ? decideRunSize(dataset.decision, params) : null;
+}
+
+/**
  * For a recipe with an "adapter" param (glimmer-serve): the region its adapter is in, since the serve job must launch
  * there and mount the same cache filesystem. Null for any other recipe. A problem (no such job, not a glimmer-lora job
- * that succeeded, a dry run, an adapter not on the cache) is the 400 to answer, after the param's label.
+ * that succeeded, a dry run, an adapter not on the cache) is the 400 to answer, after the param's label. A decision
+ * model's adapter is taken only by glimmer-serve, which serves it at POST /decide (docs/DECISION_MODELS.md, D7).
  */
 async function adapterRegion(
   recipe: Recipe,
@@ -84,7 +106,7 @@ async function adapterRegion(
   for (const field of recipe.params) {
     if (field.kind !== "adapter" || params[field.key] === undefined) continue;
     const source = await getAdapterSource(String(params[field.key]));
-    const problem = adapterProblem(source?.job ?? null, source?.metrics ?? null);
+    const problem = adapterProblem(source?.job ?? null, source?.metrics ?? null, { decide: isServeRecipe(recipe.id) });
     if (problem || !source) return { ok: false, error: `${field.label}: ${problem ?? "that job doesn't exist."}` };
     return { ok: true, region: source.job.region, adapterJobId: source.job.id };
   }
@@ -158,9 +180,12 @@ export const GET = route(async (req: Request) => {
 
 /**
  * POST {recipe, title?, params?, instanceType?, maxMinutes?, maxUsd?} -> 201 {job}. Admins or automation only.
- * Queues the job and starts the trainJob workflow, which launches the instance. Limits are what the admin asked for,
+ * Queues the job and starts the trainJob workflow, which launches the instance (with mode "decide" for a glimmer-lora
+ * job in decide mode, which the workflow scores after its run instead of judging). Limits are what the admin asked for,
  * capped by the platform ceilings, with the recipe's defaults (also capped) for a limit not asked for. A dataset param
- * must name a dataset that is ready. An adapter param (glimmer-serve) must name a glimmer-lora job whose adapter can
+ * must name a dataset that is ready and fits the job's mode: a decision dataset in decide mode, a chat one otherwise
+ * (datasetModeProblem); a decide job's run estimate comes from what that dataset makes it train and score
+ * (decideRunSize). An adapter param (glimmer-serve) must name a glimmer-lora job whose adapter can
  * be served (adapterProblem), and the job then launches only in that adapter's region (409 demo_running with
  * {serveJobId} while one for it is already open, or when two start at once and this is the later, 503 no_capacity
  * with {options, region} when that region has no free GPU); its minutes are stored whole (serveMinutes), its default
@@ -259,8 +284,10 @@ export const POST = route(async (req: Request) => {
     const problem = serveFitProblem(minutes, usable, label);
     if (problem) return errorJson(400, problem, { estimateMinutes: minutes + SERVE_BOOT_MINUTES, usableMinutes: usable });
   }
-  // A run its limits would cut off before the end pays for the GPU and saves nothing.
-  const estimate = runEstimate(recipe.id, params.value, gpu.instanceType, cacheAt.includes(gpu.region));
+  // A run its limits would cut off before the end pays for the GPU and saves nothing. A decide job's estimate comes from
+  // what its decision dataset makes it train and score.
+  const decide = await decideSize(recipe, params.value);
+  const estimate = runEstimate(recipe.id, params.value, gpu.instanceType, cacheAt.includes(gpu.region), decide);
   if (estimate) {
     const usable = usableMinutes(limits, gpu.priceCentsPerHour);
     const label = recipe.gpus.find((g) => g.instanceType === gpu.instanceType)?.label ?? gpu.instanceType;
@@ -315,7 +342,10 @@ export const POST = route(async (req: Request) => {
 
   let runId: string;
   try {
-    runId = (await start(trainJob, [{ jobId: job.id }])).runId;
+    // A decide job is scored after its run instead of judged (docs/DECISION_MODELS.md, "Scoring"); every other job's
+    // input is as it was.
+    const decideJob = recipe.id === ADAPTER_RECIPE && isDecideMode(params.value);
+    runId = (await start(trainJob, [{ jobId: job.id, ...(decideJob ? { mode: DECIDE_MODE } : {}) }])).runId;
   } catch (err) {
     console.error("[train/jobs] start", err);
     await setStatus(job.id, "failed", {

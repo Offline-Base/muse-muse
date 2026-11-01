@@ -1,6 +1,7 @@
 /**
  * The migrations themselves, on a real Postgres (PGlite): the journal agrees with the folder and with lib/db/schema.ts,
  * a fresh database gets every table, and a database already at 0012 keeps its rows and gets the new columns' defaults.
+ * So does one at 0015 with a chat dataset, which 0017 (decision datasets) leaves a chat dataset.
  *
  *   npx tsx --test lib/db/__tests__/migrations.test.ts
  */
@@ -27,16 +28,21 @@ interface Entry {
   breakpoints: boolean;
 }
 const journal = JSON.parse(readFileSync(join(FOLDER, "meta/_journal.json"), "utf8")) as { version: string; dialect: string; entries: Entry[] };
+/**
+ * Numbers never used. 0016 was set aside for General's code_sessions, which was never built; 0017 (decision models)
+ * landed first and chains to 0015's snapshot, so 0016 is retired for good: drizzle's migrator only applies entries newer
+ * than the newest applied one, so a later 0016 would be skipped. New migrations take the next free number.
+ */
+const RESERVED = new Set([16]);
 const snapshot = (idx: number) => JSON.parse(readFileSync(join(FOLDER, `meta/${String(idx).padStart(4, "0")}_snapshot.json`), "utf8"));
 
 const database = (client: PGlite) => drizzle({ client, schema });
 
 /**
- * Wave 3's migrations, in the agreed order (docs/CAPABILITIES.md, section 4). 0016 and 0017 are the General session's;
- * each wave 3 unit appends its tag here. Until every lower number has merged, a wave 3 entry's tag number can be ahead
- * of its index: the journal stays in order and its times follow the contract's rule.
+ * Wave 3's migrations, in the agreed order (docs/CAPABILITIES.md, section 4), after General's 0017 (0016 is retired).
+ * Each wave 3 unit appends its tag here. Their journal times follow the contract's rule.
  */
-const WAVE3_TAGS = ["0016_code_sessions", "0017_decide", "0018_trust", "0019_engine"];
+const WAVE3_TAGS = ["0018_trust", "0019_engine"];
 const tagNumber = (tag: string) => Number(tag.slice(0, 4));
 
 /** A copy of the migrations that stops at `lastIdx`, as a database that hasn't had the newer ones would have seen. */
@@ -58,13 +64,14 @@ async function columns(client: PGlite, table: string): Promise<Map<string, { nul
 }
 
 describe("the migration folder", () => {
-  it("has a journal that runs in order from 0000, each entry with its file and snapshot", () => {
-    journal.entries.forEach((e, i) => {
-      assert.equal(e.idx, i);
-      if (i <= 15) assert.ok(e.tag.startsWith(String(i).padStart(4, "0")), e.tag);
-      else assert.ok(WAVE3_TAGS.includes(e.tag) && tagNumber(e.tag) >= i, e.tag);
+  it("has a journal that runs in order from 0000, each entry with its file and snapshot, skipping only a reserved number", () => {
+    const last = journal.entries.at(-1)!.idx;
+    const expected = Array.from({ length: last + 1 }, (_, i) => i).filter((i) => !RESERVED.has(i) || journal.entries.some((e) => e.idx === i));
+    assert.deepEqual(journal.entries.map((e) => e.idx), expected);
+    journal.entries.forEach((e) => {
+      assert.ok(e.tag.startsWith(String(e.idx).padStart(4, "0")), e.tag);
       assert.ok(existsSync(join(FOLDER, `${e.tag}.sql`)), `${e.tag}.sql`);
-      assert.ok(existsSync(join(FOLDER, `meta/${String(i).padStart(4, "0")}_snapshot.json`)), `snapshot ${i}`);
+      assert.ok(existsSync(join(FOLDER, `meta/${String(e.idx).padStart(4, "0")}_snapshot.json`)), `snapshot ${e.idx}`);
     });
     const files = readdirSync(FOLDER).filter((f) => f.endsWith(".sql")).sort();
     assert.deepEqual(files, journal.entries.map((e) => `${e.tag}.sql`), "no migration file outside the journal");
@@ -77,20 +84,58 @@ describe("the migration folder", () => {
   });
 
   it("has snapshots that each follow the last", () => {
-    for (let i = 1; i < journal.entries.length; i++) assert.equal(snapshot(i).prevId, snapshot(i - 1).id, `snapshot ${i}`);
+    for (let i = 1; i < journal.entries.length; i++) {
+      const [prev, e] = [journal.entries[i - 1]!, journal.entries[i]!];
+      assert.equal(snapshot(e.idx).prevId, snapshot(prev.idx).id, `snapshot ${e.idx}`);
+    }
   });
 
-  it("names 0013 to 0015 and then wave 3's migrations in the agreed order, with the agreed journal times", () => {
-    const tags = journal.entries.slice(13).map((e) => e.tag);
-    assert.deepEqual(tags.slice(0, 3), ["0013_agents", "0014_native", "0015_product_clips"]);
-    const wave3 = tags.slice(3);
-    assert.deepEqual(wave3, WAVE3_TAGS.filter((t) => wave3.includes(t)), "wave 3 tags in contract order");
-    for (const e of journal.entries.slice(16)) assert.equal(e.when, 1793431490646 + (tagNumber(e.tag) - 15) * 60000, e.tag);
+  it("names the unit's three migrations in the agreed order", () => {
+    assert.deepEqual(journal.entries.slice(13, 16).map((e) => e.tag), ["0013_agents", "0014_native", "0015_product_clips"]);
+  });
+
+  it("puts wave 3's migrations after 0017, in the agreed order, with the agreed journal times", () => {
+    const after17 = journal.entries.filter((e) => e.idx > 17).map((e) => e.tag);
+    assert.deepEqual(after17, WAVE3_TAGS.filter((t) => after17.includes(t)), "wave 3 tags in contract order");
+    for (const e of journal.entries.filter((x) => x.idx > 17)) assert.equal(e.when, 1793431490646 + (tagNumber(e.tag) - 15) * 60000, e.tag);
+    assert.equal(snapshot(18).prevId, snapshot(17).id, "0018 chains to 0017");
+  });
+
+  it("has each wave 3 migration's SQL exactly as drizzle-kit generates it from the snapshot before it", async () => {
+    const { generateMigration } = await import("drizzle-kit/api");
+    const entries = journal.entries.filter((e) => e.idx > 17);
+    for (const e of entries) {
+      const prev = journal.entries[journal.entries.indexOf(e) - 1]!;
+      const statements = await generateMigration(snapshot(prev.idx), snapshot(e.idx));
+      const file = readFileSync(join(FOLDER, `${e.tag}.sql`), "utf8").split("--> statement-breakpoint").map((x) => x.trim());
+      assert.deepEqual(statements.map((x) => x.trim()), file, e.tag);
+    }
+  });
+
+  it("puts decision datasets at 0017, after 0015 and the time it was given, three columns and nothing else", () => {
+    const e = journal.entries.find((x) => x.tag === "0017_decision_datasets");
+    assert.ok(e, "0017_decision_datasets is in the journal");
+    assert.equal(e.idx, 17);
+    assert.equal(e.when, 1793431610646);
+    assert.equal(snapshot(17).prevId, snapshot(15).id, "chained to 0015 until 0016 lands");
+    const statements = readFileSync(join(FOLDER, "0017_decision_datasets.sql"), "utf8").split("--> statement-breakpoint").map((x) => x.trim());
+    assert.deepEqual(statements, [
+      `ALTER TABLE "training_datasets" ADD COLUMN "kind" text DEFAULT 'chat' NOT NULL;`,
+      `ALTER TABLE "training_datasets" ADD COLUMN "decision" jsonb;`,
+      `ALTER TABLE "training_datasets" ADD COLUMN "decision_rows" jsonb DEFAULT '{}'::jsonb NOT NULL;`,
+    ]);
+  });
+
+  it("has 0017's SQL exactly as drizzle-kit generates it between 0015's snapshot and 0017's", async () => {
+    const { generateMigration } = await import("drizzle-kit/api");
+    const statements = await generateMigration(snapshot(15), snapshot(17));
+    const file = readFileSync(join(FOLDER, "0017_decision_datasets.sql"), "utf8").split("--> statement-breakpoint").map((x) => x.trim());
+    assert.deepEqual(statements.map((x) => x.trim()), file);
   });
 
   it("matches lib/db/schema.ts: generating now would write nothing", async () => {
     const { generateDrizzleJson, generateMigration } = await import("drizzle-kit/api");
-    const last = snapshot(journal.entries.length - 1);
+    const last = snapshot(journal.entries.at(-1)!.idx);
     const statements = await generateMigration(last, generateDrizzleJson(schema, last.id));
     assert.deepEqual(statements, []);
   });
@@ -116,6 +161,7 @@ describe("a fresh database", () => {
   after(() => client.close());
 
   it("has every new table", async () => {
+    for (const column of ["kind", "decision", "decision_rows"]) assert.ok((await columns(client, "training_datasets")).has(column), column);
     for (const table of ["tool_sessions", "tool_connections", "native_runs", "native_jobs", "native_artifacts", "native_spend", "native_budget", "native_labs", "abuse_reports"]) {
       assert.ok((await columns(client, table)).size > 0, table);
     }
@@ -311,6 +357,32 @@ describe("a database already at 0012", () => {
     assert.equal(report!.status, "open");
     assert.equal(report!.detail, "");
     assert.equal(report!.handledBy, null);
+    await client.close();
+  });
+
+  it("leaves a chat dataset made before 0017 a chat dataset, with no decision and no decision rows", async () => {
+    const dir = folderThrough(15);
+    dirs.push(dir);
+    const client = new PGlite();
+    const db = drizzle({ client });
+    await migrate(db, { migrationsFolder: dir });
+    assert.ok(!(await columns(client, "training_datasets")).has("kind"));
+    const datasetId = randomUUID();
+    await client.exec(`
+      insert into training_datasets (id, title, task, status, requested, train, train_count, writer_model)
+      values ('${datasetId}', 'Python errors', 'Explain Python errors to beginners.', 'ready', 20, '[{"messages":[]}]'::jsonb, 1, 'muse-wonder-1.0');
+    `);
+
+    await migrate(db, { migrationsFolder: FOLDER });
+
+    const [row] = await database(client).select().from(schema.trainingDatasets);
+    assert.equal(row!.kind, "chat");
+    assert.equal(row!.decision, null);
+    assert.deepEqual(row!.decisionRows, {});
+    assert.equal(row!.trainCount, 1);
+    assert.equal(row!.writerModel, "muse-wonder-1.0");
+    const kind = (await columns(client, "training_datasets")).get("kind");
+    assert.equal(kind?.nullable, false);
     await client.close();
   });
 
