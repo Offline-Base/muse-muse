@@ -71,7 +71,7 @@ function makeCtx(kind, { lane = "mac", job: jobOverrides, answer = () => undefin
     config: {
       dataDir,
       lane,
-      ios: { simulator: "Muse Lab iPhone", deviceType: null },
+      ios: { simulator: "Muse Lab iPhone", deviceType: null, glassesSimulator: "Muse Lab iPhone" },
       android: { avd: "mm_pixel", deviceLabel: "Pixel 7" },
     },
     dir,

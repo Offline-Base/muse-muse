@@ -99,6 +99,17 @@ export function newestIosRuntime(runtimesJson) {
   return newest ? { identifier: newest.identifier, version: newest.version } : null;
 }
 
+/** The newest runtime of one iOS major version from `simctl list -j runtimes`, or null. */
+export function iosRuntimeOfMajor(runtimesJson, major) {
+  const prefix = `${major}.`;
+  const runtimes = (JSON.parse(runtimesJson).runtimes ?? []).filter(
+    (r) => (r.platform === "iOS" || /^iOS /.test(r.name ?? "")) && String(r.version).startsWith(prefix),
+  );
+  runtimes.sort((a, b) => compareVersions(a.version, b.version));
+  const newest = runtimes.at(-1);
+  return newest ? { identifier: newest.identifier, version: newest.version } : null;
+}
+
 /** The newest plain iPhone from `simctl list -j devicetypes`, like "iPhone 16". Prefers `preferred` if it's there. */
 export function pickIphoneType(typesJson, preferred = null) {
   const types = JSON.parse(typesJson).devicetypes ?? [];

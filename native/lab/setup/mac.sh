@@ -133,6 +133,8 @@ if [ "$ACCEPT_LICENSES" = "1" ]; then
     sudo xcodebuild -license accept
     sudo xcodebuild -runFirstLaunch
     xcodebuild -downloadPlatform iOS
+    # The mock glasses only connect on iOS 18. See docs/NATIVE_LAB.md, "Checking the phone kinds".
+    xcodebuild -downloadPlatform iOS -buildVersion 18.4
   else
     echo "Xcode isn't installed yet. Install it, then run this script again. See docs/NATIVE_LAB.md."
   fi

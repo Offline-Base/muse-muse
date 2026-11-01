@@ -60,7 +60,7 @@ export async function runGlassesSim(ctx) {
   const jobStart = ctx.now();
 
   ctx.setPhase("boot");
-  const { udid, device } = await ensureSimulator(ctx);
+  const { udid, device } = await ensureSimulator(ctx, { glasses: true });
   await installShell(ctx, udid);
   const bundleId = input.app.bundleId;
   await grantPermissions(ctx, udid, bundleId);
