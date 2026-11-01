@@ -1,0 +1,10 @@
+[
+  "lib/platform/hardware.ts",
+  "lib/platform/board.ts",
+  "components/platform/ConnectDevice.tsx",
+  "app/api/musemuse/board/owner/route.ts",
+  "tests/caps/hardware.ts",
+  "tests/caps/hardware-fake.ts",
+  "scripts/caps/hardware.mjs",
+  ".agents/skills/muse-hardware/SKILL.md"
+]
