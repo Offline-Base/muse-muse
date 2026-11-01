@@ -49,7 +49,7 @@ function acceptExampleFile(file: File): { kind: "pdf" } | { problem: string } {
   return { kind: "pdf" };
 }
 
-type Phase =
+export type Phase =
   | { at: "compose" }
   | { at: "drafting"; note: string; files: string[] }
   | { at: "plan"; note: string; files: string[]; plan: TrainPlan }
@@ -120,7 +120,6 @@ export function TrainComposer({ defaultExamples, ceilings }: { defaultExamples: 
   const [examples, setExamples] = useState(defaultExamples);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
-  const countId = useId();
 
   // A plan drafted before a reload comes back, while it can still start.
   useEffect(() => {
@@ -208,10 +207,6 @@ export function TrainComposer({ defaultExamples, ceilings }: { defaultExamples: 
     setPhase({ at: "compose" });
   }
 
-  const shown = phase.at === "plan" ? { ...phase.plan, settings: planSettings(examples, ceilings) } : null;
-  const shownView = shown ? planViewFromTrainPlan({ ...shown, cost: planCost(shown.settings) }) : null;
-  const countOk = Number.isInteger(examples) && examples >= DATASET_MIN_COUNT && examples <= DATASET_MAX_COUNT;
-
   return (
     <>
       {/* Kept mounted while the room shows, so Change it finds the note and the files as they were. */}
@@ -249,99 +244,142 @@ export function TrainComposer({ defaultExamples, ceilings }: { defaultExamples: 
       </div>
 
       {phase.at !== "compose" ? (
-        <div className="room chat-split tune-room" data-settled="true">
-          <div className="room-main">
-            <div className="room-top">
-              <TitleChip as="h1">{phase.at === "plan" ? planViewFromTrainPlan(phase.plan).name : "New fine-tune"}</TitleChip>
-            </div>
-            <ol className="convo" aria-label="Fine-tuning plan">
-              <li className="turn-user">
-                <UserBubble text={phase.note} attachments={phase.files.map((name) => ({ alt: name, icon: "file" as const }))} />
-              </li>
-              {phase.at === "drafting" ? (
-                <li className="room-working" aria-live="polite">
-                  <WorkingStep title={`${WRITER_NAME} is drafting the plan`} description="Naming the model, checking the task, and pricing the run." />
-                </li>
-              ) : null}
-              {phase.at === "problem" ? (
-                <li className="room-answer">
-                  <p role="alert">{phase.text}</p>
-                  <div className="row-actions">
-                    <button type="button" className="btn btn-outline" onClick={changeIt}>
-                      <Icon name="edit" size={18} />
-                      Change it
-                    </button>
-                  </div>
-                </li>
-              ) : null}
-              {phase.at === "plan" && shown && shownView ? (
-                <li className="room-plan">
-                  <PlanViewCard
-                    view={shownView}
-                    art="present"
-                    running
-                    more={
-                      shown.kind === "decision" ? (
-                        // tg-decide's decision card, on /fine-tuning once that branch lands.
-                        <Link className="link-btn room-steps-link" href="/fine-tuning#new-decision-dataset">
-                          It picks one of a few labels. Make it a decision model instead
-                          <Icon name="chevronRight" size={16} />
-                        </Link>
-                      ) : null
-                    }
-                    actions={
-                      <div className="tune-plan-actions">
-                        {startError ? (
-                          <p className="form-error" role="alert">
-                            <Icon name="alert" size={18} />
-                            <span>{startError}</span>
-                          </p>
-                        ) : null}
-                        <div className="row-actions">
-                          <button type="button" className="btn btn-primary" onClick={() => void start(phase.plan)} disabled={starting || !countOk} aria-busy={starting}>
-                            {starting ? <span className="spinner" aria-hidden /> : null}
-                            {starting ? "Starting" : "Start"}
-                          </button>
-                          <button type="button" className="btn btn-outline" onClick={changeIt} disabled={starting}>
-                            Change it
-                          </button>
-                        </div>
-                        <details className="tune-advanced">
-                          <summary>
-                            Advanced
-                            <Icon name="chevronDown" size={16} />
-                          </summary>
-                          <div className="field">
-                            <label htmlFor={countId}>Examples to write</label>
-                            <input
-                              id={countId}
-                              type="number"
-                              inputMode="numeric"
-                              min={DATASET_MIN_COUNT}
-                              max={DATASET_MAX_COUNT}
-                              step={10}
-                              value={Number.isFinite(examples) ? examples : ""}
-                              onChange={(e) => setExamples(Math.floor(Number(e.target.value)))}
-                              disabled={starting}
-                            />
-                            <span className="field-hint">
-                              {countOk ? planCostText(planCost(shown.settings)) : `Pick ${DATASET_MIN_COUNT} to ${DATASET_MAX_COUNT} examples.`}
-                            </span>
-                          </div>
-                          <p className="muted small">
-                            Training steps: {shown.settings.steps}. To change them, the GPU or the limits, use the full form once the examples are ready, or{" "}
-                            <Link href="/fine-tuning#new-dataset">make the dataset on the full form</Link> now.
-                          </p>
-                        </details>
-                      </div>
-                    }
-                  />
-                </li>
-              ) : null}
-            </ol>
-          </div>
-        </div>
+        <PlanStep
+          phase={phase}
+          examples={examples}
+          onExamples={setExamples}
+          ceilings={ceilings}
+          starting={starting}
+          startError={startError}
+          onStart={(plan) => void start(plan)}
+          onChange={changeIt}
+        />
       ) : null}
     </>
+  );
+}
+
+/**
+ * The plan step, in place of the box once it's sent: the room's title chip, the person's words as a bubble, then Muse
+ * Wonder drafting the plan as the working step, the plan card with the mascot presenting and Start, Change it and
+ * Advanced, or why there's no plan with Change it. Exported for the tests, which render each phase.
+ */
+export function PlanStep({
+  phase,
+  examples,
+  onExamples,
+  ceilings,
+  starting,
+  startError,
+  onStart,
+  onChange,
+}: {
+  phase: Exclude<Phase, { at: "compose" }>;
+  /** Advanced's number of examples, which the card prices. */
+  examples: number;
+  onExamples: (n: number) => void;
+  ceilings: { maxMinutes: number; maxUsd: number };
+  starting: boolean;
+  startError: string | null;
+  onStart: (plan: TrainPlan) => void;
+  onChange: () => void;
+}) {
+  const countId = useId();
+  const shown = phase.at === "plan" ? { ...phase.plan, settings: planSettings(examples, ceilings) } : null;
+  const shownView = shown ? planViewFromTrainPlan({ ...shown, cost: planCost(shown.settings) }) : null;
+  const countOk = Number.isInteger(examples) && examples >= DATASET_MIN_COUNT && examples <= DATASET_MAX_COUNT;
+  return (
+    <div className="room chat-split tune-room" data-settled="true">
+      <div className="room-main">
+        <div className="room-top">
+          <TitleChip as="h1">{phase.at === "plan" ? planViewFromTrainPlan(phase.plan).name : "New fine-tune"}</TitleChip>
+        </div>
+        <ol className="convo" aria-label="Fine-tuning plan">
+          <li className="turn-user">
+            <UserBubble text={phase.note} attachments={phase.files.map((name) => ({ alt: name, icon: "file" as const }))} />
+          </li>
+          {phase.at === "drafting" ? (
+            <li className="room-working" aria-live="polite">
+              <WorkingStep title={`${WRITER_NAME} is drafting the plan`} description="Naming the model, checking the task, and pricing the run." />
+            </li>
+          ) : null}
+          {phase.at === "problem" ? (
+            <li className="room-answer">
+              <p role="alert">{phase.text}</p>
+              <div className="row-actions">
+                <button type="button" className="btn btn-outline" onClick={onChange}>
+                  <Icon name="edit" size={18} />
+                  Change it
+                </button>
+              </div>
+            </li>
+          ) : null}
+          {phase.at === "plan" && shown && shownView ? (
+            <li className="room-plan">
+              <PlanViewCard
+                view={shownView}
+                art="present"
+                running
+                more={
+                  shown.kind === "decision" ? (
+                    // tg-decide's decision card, on /fine-tuning once that branch lands.
+                    <Link className="link-btn room-steps-link" href="/fine-tuning#new-decision-dataset">
+                      It picks one of a few labels. Make it a decision model instead
+                      <Icon name="chevronRight" size={16} />
+                    </Link>
+                  ) : null
+                }
+                actions={
+                  <div className="tune-plan-actions">
+                    {startError ? (
+                      <p className="form-error" role="alert">
+                        <Icon name="alert" size={18} />
+                        <span>{startError}</span>
+                      </p>
+                    ) : null}
+                    <div className="row-actions">
+                      <button type="button" className="btn btn-primary" onClick={() => onStart(phase.plan)} disabled={starting || !countOk} aria-busy={starting}>
+                        {starting ? <span className="spinner" aria-hidden /> : null}
+                        {starting ? "Starting" : "Start"}
+                      </button>
+                      <button type="button" className="btn btn-outline" onClick={onChange} disabled={starting}>
+                        Change it
+                      </button>
+                    </div>
+                    <details className="tune-advanced">
+                      <summary>
+                        Advanced
+                        <Icon name="chevronDown" size={16} />
+                      </summary>
+                      <div className="field">
+                        <label htmlFor={countId}>Examples to write</label>
+                        <input
+                          id={countId}
+                          type="number"
+                          inputMode="numeric"
+                          min={DATASET_MIN_COUNT}
+                          max={DATASET_MAX_COUNT}
+                          step={10}
+                          value={Number.isFinite(examples) ? examples : ""}
+                          onChange={(e) => onExamples(Math.floor(Number(e.target.value)))}
+                          disabled={starting}
+                        />
+                        <span className="field-hint">
+                          {countOk ? planCostText(planCost(shown.settings)) : `Pick ${DATASET_MIN_COUNT} to ${DATASET_MAX_COUNT} examples.`}
+                        </span>
+                      </div>
+                      <p className="muted small">
+                        Training steps: {shown.settings.steps}. To change them, the GPU or the limits, use the full form once the examples are ready, or{" "}
+                        <Link href="/fine-tuning#new-dataset">make the dataset on the full form</Link> now.
+                      </p>
+                    </details>
+                  </div>
+                }
+              />
+            </li>
+          ) : null}
+        </ol>
+      </div>
+    </div>
   );
 }

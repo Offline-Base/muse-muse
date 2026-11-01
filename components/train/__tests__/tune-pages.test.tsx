@@ -12,6 +12,7 @@
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it, mock } from "node:test";
 import { createElement, type ComponentType, type ReactNode } from "react";
+import type { JobLiveDemo } from "@/components/train/LiveDemo";
 import type { SessionUser } from "@/lib/auth";
 import type { DatasetHead, TrainJobRow } from "@/lib/train/logic";
 import type { TrainEventView } from "@/lib/train/types";
@@ -28,6 +29,8 @@ const savedEnv = { ...process.env };
 let viewer: SessionUser | null = null;
 let camera = false;
 let run: TuneRunView | null = null;
+let liveDemo: JobLiveDemo | null = null;
+const liveDemoAsked: string[] = [];
 const admin: SessionUser = { id: "u-admin", email: "owner@example.com", isAdmin: true };
 const guest: SessionUser = { id: "u-guest", email: "guest@open-access.invalid", isAdmin: false, openAccess: true };
 
@@ -145,6 +148,14 @@ describe("the new fine-tune pages", { skip: canMock ? false : "needs --experimen
     mock.module("@/components/camera/CameraCapture", { namedExports: { CameraCapture: () => null, useCameraSupported: () => camera } });
     mock.module(at("../../../app/fine-tuning/viewer.ts"), { namedExports: { pageViewer: async () => viewer } });
     mock.module(at("../../../lib/train/tune/store.ts"), { namedExports: { loadTuneRun: async (id: string) => (id === DS ? run : null) } });
+    mock.module(at("../../../app/fine-tuning/runs/live.ts"), {
+      namedExports: {
+        runLiveDemo: async (j: { id: string } | null) => {
+          if (j) liveDemoAsked.push(j.id);
+          return liveDemo;
+        },
+      },
+    });
     const { renderToString } = await import("react-dom/server");
     render = (node) => renderToString(node as never).replace(/<!-- -->/g, "");
     renderC = (c, props) => render(createElement(c, props as never));
@@ -165,6 +176,8 @@ describe("the new fine-tune pages", { skip: canMock ? false : "needs --experimen
     delete process.env.TUNE_DEFAULT_EXAMPLES;
     viewer = admin;
     camera = false;
+    liveDemo = null;
+    liveDemoAsked.length = 0;
     run = view.tuneRunView({ dataset: dataset(), written: null, job: null, events: [] }, new Date(t0 + 30 * 60_000), { maxMinutes: 120, maxUsd: 5 });
   });
 
@@ -236,11 +249,17 @@ describe("the new fine-tune pages", { skip: canMock ? false : "needs --experimen
       assert.match(html, /<div class="plan-card" data-art="shield">/);
       assert.match(html, /Ready\. Tuned won 18 of 20 kept-aside prompts \(8\.4 vs 3\.1\)\./);
       assert.match(html, /id="eval-results"/);
-      assert.match(html, new RegExp(`href="/fine-tuning/${JOB}">Try it live and publish`));
+      assert.match(html, new RegExp(`The GPU&#x27;s log and the job&#x27;s settings are on <a href="/fine-tuning/${JOB}">the job&#x27;s page</a>\\.`));
+      assert.match(html, /id="hugging-face"/, "the Hugging Face card, as on the job's page");
+      assert.match(html, /id="local-files"/);
+      assert.deepEqual(liveDemoAsked, [JOB], "the page reads the job's live demo");
+      assert.doesNotMatch(html, /id="live-demo"/, "none to show");
       assert.match(html, /Not on a Jetson Orin Nano\.<\/strong> Muse Glimmer 30B needs more memory than the board&#x27;s 8 GB\./);
       assert.match(html, /a small open model \(Qwen3\.5 0\.8B\) on the same\s+examples, on the board&#x27;s GPU\. It isn&#x27;t Muse Glimmer\./);
       assert.match(html, /href="\/device">Open the board/);
       assert.match(html, /\$5\.95 in all/);
+      liveDemo = { kind: "start", adapterTitle: "a made-up bakery's counter helper", ceilings: { maxMinutes: 120, maxUsd: 5 }, maxActive: 1, dailyUsd: 20, blocked: null, publicPage: true };
+      assert.match(await open(runPage, { id: DS }), /<section class="card section-card lab-try" id="live-demo"[\s\S]*Start a live demo/);
     });
 
     it("a failed run says why, presenting, with Start another", async () => {
@@ -280,6 +299,12 @@ describe("the new fine-tune pages", { skip: canMock ? false : "needs --experimen
       assert.doesNotMatch(html, /Take a photo/);
       const build = renderC(Composer as ComponentType<never>, { mode: "new", signedIn: true });
       assert.match(build, /aria-haspopup|Attach inspo files/, "the muse box keeps its camera menu");
+      // Each word left out keeps the muse box's, and the inspo types stay without `accept`.
+      const some = renderC(Composer as ComponentType<never>, { mode: "new", signedIn: true, send: async () => null, copy: { send: "Plan it" } });
+      assert.match(some, /<form class="composer" aria-label="Your muse">/);
+      assert.match(some, /aria-label="Plan it"/);
+      assert.match(some, /class="sr-only">Describe it, or drop in your inspo<\/label>/);
+      assert.match(some, /accept="image\//);
       camera = false;
     });
 

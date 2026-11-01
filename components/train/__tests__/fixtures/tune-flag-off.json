@@ -35,6 +35,22 @@
     "sha256": "cdfb3bec81839283ea370dc6d24561471ef3c49e7f96ef189764619bad8f831b",
     "length": 19496
   },
+  "plan card: part of it, running, with the brief link": {
+    "sha256": "56752edaeea7104436b22e71a82af3a3336ce237e72d256bbed5f84a1671e535",
+    "length": 1381
+  },
+  "plan card: all of it, finished": {
+    "sha256": "1d89dedc13ba362b1c73ee2c6089356a4459f4f2a3588e5e3bdb70db7e867ef9",
+    "length": 669
+  },
+  "plan card: no one it's for": {
+    "sha256": "41c5e11a368da4887188818eeccb9f55549c3215e13696251d2066d70d4a7048",
+    "length": 1302
+  },
+  "plan card: no steps or tagline": {
+    "sha256": "78e688618bc03f12df82701f0f113d10cb5a537a518f5eaba24d517f60be11dd",
+    "length": 482
+  },
   "/fine-tuning: admin": {
     "sha256": "24c1a63715902e1efebfe403c01295f1656b05844de5e1d5edd491f03b1876fd",
     "length": 12995

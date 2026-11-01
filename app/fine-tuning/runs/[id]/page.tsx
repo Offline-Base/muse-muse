@@ -7,6 +7,7 @@ import { NotConnected } from "@/components/ui";
 import { env } from "@/lib/env";
 import { safeQuery } from "@/lib/queries";
 import { loadTuneRun } from "@/lib/train/tune/store";
+import { runLiveDemo } from "../live";
 import { pageViewer } from "../../viewer";
 
 export const metadata: Metadata = { title: "Fine-tuning run" };
@@ -14,6 +15,8 @@ export const metadata: Metadata = { title: "Fine-tuning run" };
 /**
  * A run's room (docs/TRAINING.md "Fine-tune like a build"): the run is its dataset, so `id` is the dataset's. Off with
  * TUNE_COMPOSER: a 404 for everyone. On: admins only today; anyone else goes to /fine-tuning and its read-only Lab.
+ * Once a run's job is trained, the room also gets that job's live demo and its Hugging Face card's setup, as the job's
+ * own page does.
  */
 export default async function TuneRunPage({ params }: { params: Promise<{ id: string }> }) {
   await connection();
@@ -21,7 +24,10 @@ export default async function TuneRunPage({ params }: { params: Promise<{ id: st
   const [user, { id }] = await Promise.all([pageViewer(), params]);
   if (!user?.isAdmin) redirect("/fine-tuning");
   const now = new Date();
-  const result = await safeQuery(() => loadTuneRun(id, now, limitCeilings()));
+  const result = await safeQuery(async () => {
+    const run = await loadTuneRun(id, now, limitCeilings());
+    return run ? { run, liveDemo: await runLiveDemo(run.job, now) } : null;
+  });
   if (!result.ok) {
     return (
       <div className="page">
@@ -30,5 +36,13 @@ export default async function TuneRunPage({ params }: { params: Promise<{ id: st
     );
   }
   if (!result.data) notFound();
-  return <TrainRoom initial={result.data} admin serverNow={now.getTime()} />;
+  return (
+    <TrainRoom
+      initial={result.data.run}
+      admin
+      liveDemo={result.data.liveDemo}
+      hub={{ offReason: env.hubOffReason, maxActive: env.trainMaxActive, dailyUsd: env.trainDailyUsd }}
+      serverNow={now.getTime()}
+    />
+  );
 }

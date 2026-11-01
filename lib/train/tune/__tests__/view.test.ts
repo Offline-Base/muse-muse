@@ -1,5 +1,5 @@
 /**
- * A run's room from its rows (lib/train/tune/view.ts and steps.ts): the stage at every point a run reaches, the settings
+ * A run's room from its rows (lib/train/tune/view.ts, and components/train/room/steps.ts for the chat kit): the stage at every point a run reaches, the settings
  * and cost it shows, the verdict, the one thing it offers next (the full form until U3 lands, then the job), and the
  * same run on the chat kit's rows, working step, end row and mascot. Pure: the rows are made up here.
  *
@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { DatasetHead, TrainJobRow } from "@/lib/train/logic";
-import { TUNE_ART, tuneCurrentStep, tuneRunning, tuneSteps, tuneStepsEnd } from "@/lib/train/tune/steps";
+import { TUNE_ART, tuneCurrentStep, tuneRunning, tuneSteps, tuneStepsEnd } from "@/components/train/room/steps";
 import { examplesProblem, fullFormHref, tuneRunView } from "@/lib/train/tune/view";
 import type { TrainEventView } from "@/lib/train/types";
 
@@ -178,7 +178,7 @@ describe("a run's stage", () => {
       job({ status: "succeeded", terminatedAt: new Date(t0 + 26 * 60_000), evalSummary: { ...summary, items: 0, tunedWins: 0, baseWins: 0, ties: 0, note: "The judge's spend cap was reached." } as never }),
     );
     assert.equal(v.stage, "ready");
-    assert.deepEqual(v.verdict, { passed: false, words: "The judge's spend cap was reached." });
+    assert.deepEqual(v.verdict, { passed: false, words: "The judge's spend cap was reached. It wasn't scored, so it hasn't passed." });
   });
 
   it("ends failed or stopped with its job", () => {

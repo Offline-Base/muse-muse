@@ -94,9 +94,11 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 16px 20px;
+  min-width: 0;
+  padding: 14px 16px;
   border-radius: 22px;
   background: var(--surface-2);
+  overflow-wrap: anywhere;
 }
 
 .tune-where h3 {
@@ -111,13 +113,24 @@
   flex-direction: column;
   gap: 6px;
   margin: 0;
-  padding-left: 20px;
+  padding-left: 18px;
   font-size: 15px;
   line-height: 22px;
 }
 
 .tune-where strong {
   font-weight: 600;
+}
+
+/* Phones first (390 px with a 16 px gutter fits all of it), a little more room from 760 px, as in app/globals.css. */
+@media (min-width: 760px) {
+  .tune-where {
+    padding: 16px 20px;
+  }
+
+  .tune-where ul {
+    padding-left: 20px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

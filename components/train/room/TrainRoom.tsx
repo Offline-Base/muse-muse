@@ -3,20 +3,23 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PlanViewCard } from "@/components/build/PlanCard";
-import { SourceList, StepList, StepsPanel, TitleChip, UserBubble, WorkingStep, type SourceItem } from "@/components/chat";
+import { ShowThinking, SourceList, StepList, StepsPanel, TitleChip, UserBubble, WorkingStep, type SourceItem } from "@/components/chat";
 import { Icon } from "@/components/icons";
 import { EvalResults } from "@/components/train/EvalResults";
+import { HubCard } from "@/components/train/HubCard";
+import { AdapterLiveDemo, type JobLiveDemo } from "@/components/train/LiveDemo";
+import { MakeLocalFiles } from "@/components/train/LocalFiles";
 import { evalState, judgeName, tunedModelName, writerName } from "@/components/train/format";
 import { GLIMMER_NAME } from "@/components/train/results";
 import { planViewFromRun, roleTitle } from "@/components/train/room/plan";
+import { TUNE_ART, tuneCurrentStep, tuneRunning, tuneSteps, tuneStepsEnd } from "@/components/train/room/steps";
 import { WhereItRuns } from "@/components/train/room/WhereItRuns";
 import { usd } from "@/lib/format";
-import { TUNE_ART, tuneCurrentStep, tuneRunning, tuneSteps, tuneStepsEnd } from "@/lib/train/tune/steps";
 import type { TuneRunView } from "@/lib/train/tune/types";
 
 /** The steps panel, for the buttons that open it. */
 const PANEL_ID = "tune-steps-panel";
-/** How often the room asks for the run while something runs, and while it waits on a person. */
+/** How often the room asks for the run while something runs (as JobRoom does), and while it waits on a person. */
 const POLL_MS = 5_000;
 const WAIT_POLL_MS = 30_000;
 
@@ -41,14 +44,34 @@ export function askedText(task: string): string {
   return task.split("\n\nWrite in the style of these examples")[0]!.trim();
 }
 
+export interface TrainRoomProps {
+  initial: TuneRunView;
+  admin: boolean;
+  /**
+   * A trained run's live demo (app/fine-tuning/runs/live.ts): the Try it live box while a serve job for its adapter is
+   * open, or Start a live demo when the adapter can be served. Read from the props, so a refresh updates it.
+   */
+  liveDemo?: JobLiveDemo | null;
+  /** Admins only: the Hugging Face card's and Local files' setup, as on the job's page. */
+  hub?: { offReason: string | null; maxActive: number; dailyUsd: number } | null;
+  serverNow: number;
+}
+
 /**
  * A fine-tuning run's room at /fine-tuning/runs/{id} (docs/TRAINING.md "Fine-tune like a build"), on the build room's
- * chat kit: the title chip, the person's words as a bubble, the working step while something runs, the plan card with
- * the mascot for the stage, then what's next: Ready to train (the full form, until U3), the verdict and the eval
- * results, or why it stopped. The steps panel lists the stages it reached. Polls GET /api/train/runs/{id}.
+ * chat kit: the title chip, the person's words as a bubble, the working step while something runs (Show thinking once
+ * it ended), the plan card with the mascot for the stage, then what's next: Ready to train (the full form, until U3),
+ * the verdict with the eval results, the live demo, the Hugging Face card and Where it runs, or why it stopped. The
+ * steps panel lists the stages it reached. Polls GET /api/train/runs/{id} every 5 s while something runs.
  */
-export function TrainRoom({ initial, admin, serverNow }: { initial: TuneRunView; admin: boolean; serverNow: number }) {
+export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverNow }: TrainRoomProps) {
   const [view, setView] = useState(initial);
+  // A refresh of the page (Start a live demo does one) brings a newer run: take it.
+  const [given, setGiven] = useState(initial);
+  if (given !== initial) {
+    setGiven(initial);
+    setView(initial);
+  }
   const [panelOpen, setPanelOpen] = useState(false);
   const [kept, setKept] = useState<ReturnType<typeof readKept>>(null);
   const [now, setNow] = useState(serverNow);
@@ -74,22 +97,46 @@ export function TrainRoom({ initial, admin, serverNow }: { initial: TuneRunView;
     }
   }, [id]);
 
+  // Poll while anything can still change. A hidden tab skips its turn and catches up as soon as it's shown again.
   useEffect(() => {
     if (!running && !waiting) return;
-    const t = setInterval(() => void refresh(), running ? POLL_MS : WAIT_POLL_MS);
-    return () => clearInterval(t);
+    const every = running ? POLL_MS : WAIT_POLL_MS;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const tick = async () => {
+      timer = null;
+      if (stopped) return;
+      if (!document.hidden) await refresh();
+      if (!stopped) timer = setTimeout(tick, every);
+    };
+    const onVisible = () => {
+      if (document.hidden || !timer) return;
+      clearTimeout(timer);
+      void tick();
+    };
+    timer = setTimeout(tick, every);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [running, waiting, refresh]);
 
   const current = tuneCurrentStep(view);
+  const ended = view.stage === "ready" || view.stage === "failed" || view.stage === "stopped";
   const art = TUNE_ART[view.stage];
   const planView = useMemo(() => planViewFromRun(view, kept), [view, kept]);
   const title = roleTitle(view.title);
   const job = view.job;
+  const jobHref = view.next?.kind === "job" ? view.next.href : null;
   const scored = job ? evalState(job, view.evals, now) : null;
+  const trained = job?.status === "succeeded";
   const sources: SourceItem[] = [
     { id: "writer", title: writerName(view.dataset), detail: "Wrote the examples", kind: "model" },
     { id: "glimmer", title: GLIMMER_NAME, detail: "The model it tunes", kind: "model" },
   ];
+  const togglePanel = () => setPanelOpen((o) => !o);
 
   return (
     <div className="room chat-split tune-room" data-settled="true">
@@ -111,8 +158,12 @@ export function TrainRoom({ initial, admin, serverNow }: { initial: TuneRunView;
               <WorkingStep title={current.title} description={current.description} />
               <p className="room-working-meta">
                 {usd(view.costSoFarUsd)} so far
-                <StepsToggle open={panelOpen} onClick={() => setPanelOpen((o) => !o)} />
+                <StepsToggle open={panelOpen} onClick={togglePanel} />
               </p>
+            </li>
+          ) : ended ? (
+            <li>
+              <ShowThinking onClick={() => setPanelOpen(true)} />
             </li>
           ) : null}
 
@@ -121,14 +172,7 @@ export function TrainRoom({ initial, admin, serverNow }: { initial: TuneRunView;
               view={planView}
               art={art}
               running={running || waiting}
-              more={
-                current ? null : (
-                  <button type="button" className="link-btn room-steps-link" aria-expanded={panelOpen} aria-controls={PANEL_ID} onClick={() => setPanelOpen((o) => !o)}>
-                    {panelOpen ? "Hide steps" : "Show steps"}
-                    <Icon name="chevronRight" size={16} />
-                  </button>
-                )
-              }
+              more={current || ended ? null : <StepsToggle open={panelOpen} onClick={togglePanel} />}
             />
           </li>
 
@@ -153,32 +197,24 @@ export function TrainRoom({ initial, admin, serverNow }: { initial: TuneRunView;
             <li className="room-answer">
               <p className="tune-verdict">
                 <Icon name={view.verdict?.passed ? "checkCircle" : "alertCircle"} size={18} />
-                <span>
-                  {view.verdict?.passed ? "Ready. " : "Ready, but it didn't pass. "}
-                  {view.verdict?.words ?? ""}
-                </span>
+                {/* The verdict's words say whether it passed (runVerdict), so only a pass gets "Ready." before them. */}
+                <span>{view.verdict ? `${view.verdict.passed ? "Ready. " : ""}${view.verdict.words}` : "Scored."}</span>
               </p>
               {job && scored ? (
                 <EvalResults state={scored} rows={view.evals} model={tunedModelName(job.recipe)} writer={writerName(view.dataset)} judge={judgeName(job)} />
               ) : null}
-              {view.next?.kind === "job" ? (
-                <div className="row-actions">
-                  <Link className="btn btn-primary" href={view.next.href}>
-                    Try it live and publish
-                    <Icon name="chevronRight" size={18} />
-                  </Link>
-                </div>
-              ) : null}
-              <WhereItRuns jobHref={view.next?.kind === "job" ? view.next.href : null} admin={admin} />
+              {job && liveDemo ? <AdapterLiveDemo jobId={job.id} live={liveDemo} serverNow={serverNow} /> : null}
+              {job && admin && hub ? <HubCard job={job} offReason={hub.offReason} maxActive={hub.maxActive} dailyUsd={hub.dailyUsd} /> : null}
+              {job && admin && hub && trained ? <MakeLocalFiles jobId={job.id} maxActive={hub.maxActive} dailyUsd={hub.dailyUsd} /> : null}
+              <WhereItRuns jobHref={jobHref} demoHere={Boolean(liveDemo)} localFilesHere={Boolean(admin && hub && trained)} admin={admin} />
+              {jobHref ? <JobLink href={jobHref} /> : null}
               <p className="room-meta">{usd(view.costSoFarUsd)} in all</p>
             </li>
           ) : null}
 
-          {(view.stage === "training" || view.stage === "scoring") && view.next?.kind === "job" ? (
+          {(view.stage === "training" || view.stage === "scoring") && jobHref ? (
             <li className="room-answer">
-              <p className="muted small">
-                The GPU&apos;s log, its limits and Stop are on <Link href={view.next.href}>the job&apos;s page</Link>.
-              </p>
+              <JobLink href={jobHref} running />
             </li>
           ) : null}
 
@@ -192,6 +228,7 @@ export function TrainRoom({ initial, admin, serverNow }: { initial: TuneRunView;
                   Start another
                 </Link>
               </div>
+              {jobHref ? <JobLink href={jobHref} /> : null}
               <p className="room-meta">{usd(view.costSoFarUsd)} in all</p>
             </li>
           ) : null}
@@ -211,12 +248,22 @@ export function TrainRoom({ initial, admin, serverNow }: { initial: TuneRunView;
   );
 }
 
-/** Opens and closes the steps panel from the running step. */
+/** Opens and closes the steps panel from the running step, or from the plan card while the run waits. */
 function StepsToggle({ open, onClick }: { open: boolean; onClick: () => void }) {
   return (
     <button type="button" className="link-btn room-steps-link" aria-expanded={open} aria-controls={PANEL_ID} onClick={onClick}>
       {open ? "Hide steps" : "Show steps"}
       <Icon name="chevronRight" size={16} />
     </button>
+  );
+}
+
+/** The training job's own page: its log and settings, and while it runs, the GPU's limits and Stop. */
+function JobLink({ href, running = false }: { href: string; running?: boolean }) {
+  return (
+    <p className="muted small">
+      {running ? "The GPU's log, its limits and Stop are on " : "The GPU's log and the job's settings are on "}
+      <Link href={href}>the job&apos;s page</Link>.
+    </p>
   );
 }

@@ -1,6 +1,7 @@
 /**
  * With TUNE_COMPOSER off nothing outside the new pages and routes changes (docs/TRAINING.md "Fine-tune like a build"):
- * the Make page's composer and build setup, the build room (with its plan card) and /fine-tuning render byte for byte
+ * the Make page's composer and build setup, the build room and its plan card on its own (each brief it can pass, so
+ * PlanView keeps the card as it was) and /fine-tuning render byte for byte
  * as they did before the composer's props, SetupPanel's rows and PlanView were added. Each render's SHA-256 and length
  * were taken from the code before those edits (fixtures/tune-flag-off.json) and every render must match them, with the
  * flag off and on, since none of these read it. The clock is frozen, so dates render the same. Made-up data only.
@@ -141,7 +142,8 @@ describe("with TUNE_COMPOSER off", { skip: canMock ? false : "needs --experiment
     const { Composer } = await import("@/components/composer/Composer");
     const { SetupPanel } = await import("@/components/composer/SetupPanel");
     const { BuildRoom } = await import("@/components/build/BuildRoom");
-    const { FIXTURES, inspiration, tokens } = await import("@/components/build/__tests__/room-fixture");
+    const { PlanCard } = await import("@/components/build/PlanCard");
+    const { FIXTURES, brief, inspiration, tokens } = await import("@/components/build/__tests__/room-fixture");
     const listPage = (await import("@/app/fine-tuning/page")).default as unknown as Page;
 
     const examples = [{ label: "Receipt to spreadsheet", note: "Pull the items out of a receipt photo.", tag: "Photo", text: "Receipt to CSV.", image: "/examples/receipt.jpg" }];
@@ -174,6 +176,11 @@ describe("with TUNE_COMPOSER off", { skip: canMock ? false : "needs --experiment
       ["build room: running", async () => room("running")],
       ["build room: failed", async () => room("failed")],
       ["build room: finished", async () => room("finished")],
+      // The plan card alone, now drawn from a PlanView (planViewFromBrief): each brief the build room can pass.
+      ["plan card: part of it, running, with the brief link", async () => render(PlanCard as ComponentType<never>, { brief, art: "building", running: true, panelId: "steps", onReadBrief() {} })],
+      ["plan card: all of it, finished", async () => render(PlanCard as ComponentType<never>, { brief: { ...brief, verdict: "yes" }, art: "shield", running: false })],
+      ["plan card: no one it's for", async () => render(PlanCard as ComponentType<never>, { brief: { ...brief, user: " " }, art: "present", running: true, onReadBrief() {} })],
+      ["plan card: no steps or tagline", async () => render(PlanCard as ComponentType<never>, { brief: { ...brief, verdict: "yes", tagline: "", primaryFlow: [" "] }, art: "present", running: false })],
       [
         "/fine-tuning: admin",
         async () => {

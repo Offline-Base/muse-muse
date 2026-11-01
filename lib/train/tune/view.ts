@@ -75,11 +75,15 @@ function lastLine(text: string | null | undefined): string {
   return (text ?? "").split("\n").map((l) => l.trim()).filter(Boolean).pop()?.slice(0, 300) ?? "";
 }
 
-/** The verdict once judging ended: passed or not with its sentence, or why it wasn't judged. Null before that. */
+/**
+ * The verdict once judging ended: passed or not with its sentence, or why it wasn't judged. Null before that. The words
+ * always say whether it passed, so the room can show them as they are.
+ */
 export function runVerdict(job: TrainJobView | null): TuneVerdict | null {
   if (!job?.evalSummary) return null;
   if (isJudged(job.evalSummary)) return evalVerdict(job.evalSummary);
-  return { passed: false, words: unjudgedNote(job.evalSummary) ?? "It wasn't scored, so it hasn't passed." };
+  const why = unjudgedNote(job.evalSummary);
+  return { passed: false, words: why ? `${why} It wasn't scored, so it hasn't passed.` : "It wasn't scored, so it hasn't passed." };
 }
 
 export interface RunRows {
