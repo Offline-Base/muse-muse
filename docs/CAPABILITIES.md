@@ -1148,16 +1148,34 @@ rules, as before.
 
 **Overlay** `template/caps/runtime`, every file but `requirements.txt` a platform file:
 
+- **What a Python endpoint is.** `/api/py/<name>` is a public address: anyone can POST to it without the TypeScript
+  action's checks. On Vercel the function also runs with the deployment's env, `PRODUCT_TOKEN` and `GATEWAY_URL`
+  included, since project env vars reach every function. So every function starts with the platform's guard (in the
+  skill, and written by `py-local.mjs new <name>`): at import it removes `PRODUCT_TOKEN`, `GATEWAY_URL` and
+  `VERCEL_OIDC_TOKEN` from `os.environ`, and its `parse_request` answers 403 to any call without `X-MuseMuse-Python`,
+  an HMAC-SHA256 of `"musemuse-python-v1"` keyed with `PRODUCT_TOKEN` that `callPython` sends. A function also checks
+  its own input, and never reads input text as code (no `eval`, `exec`, `pickle`, `yaml.load`, pandas `eval` or
+  `query`, `sympify`, `parse_expr`, and no input string passed to sympy). Limits, honestly: removing a variable from
+  `os.environ` stops ordinary code reading it, not code that reads `/proc/self/environ`; the header stops direct calls,
+  not a product whose own action passes a visitor's text to something unsafe, which the `safe` check catches only when
+  it is written plainly. With no `PRODUCT_TOKEN` (the local runner, a kit run off Vercel) the guard lets every call
+  through, and those machines serve on 127.0.0.1 only.
 - `lib/platform/python.ts`: `callPython(request, name, input)`. On Vercel it POSTs to the deployment's own
-  `/api/py/<name>`; with `MUSEMUSE_PYTHON_URL` to that address; anywhere else, and in every build
-  (`MUSEMUSE_PYTHON=local`, from `CAP_ENV.runtime`), it runs the file through the runner. Only in a build
+  `/api/py/<name>` with the guard's header; with `MUSEMUSE_PYTHON_URL` to that address; anywhere else, and in every
+  build (`MUSEMUSE_PYTHON=local`, from `CAP_ENV.runtime`), it runs the file through the runner. Only in a build
   (`MUSEMUSE_PYTHON_NOTES=1`, also from `CAP_ENV.runtime`) each call that answered is noted in
-  `test-results/caps/runtime-calls.jsonl`; a deployed or self-hosted product notes nothing. Throws `CapError {code, status, message}` in plain words.
+  `test-results/caps/runtime-calls.jsonl`, whatever its size: name, bytes, sha256 and the reply's shape, and the input
+  itself only up to 64 KB (`LOG_MAX_INPUT_BYTES`). A deployed or self-hosted product notes nothing. Throws `CapError
+  {code, status, message}` in plain words.
 - `scripts/py-local.mjs`: runs one `handler` class the way an HTTP server would, through a socket made of buffers,
-  standard library only, with a 10 second limit, 4.5 MB each way, and none of the server's env (so no token reaches
-  Python on a build). `install` puts pinned wheels from PyPI in `~/.cache/musemuse/python/<python>-<hash>`, never in the
-  product folder, so nothing large is deployed, and bootstraps pip from its own sha256-checked wheel when a Python has none.
-  `doctor`, `call` and `serve` for Muse Code and for `next dev`.
+  standard library only, with a 10 second limit, 4.5 MB each way, and none of the server's env. On a build the
+  product's folder, `.env.local` with the build token included, is still on disk beside it; the runner adds a Python
+  audit hook that refuses to open any `.env*` file, which stops ordinary code, and is not a sandbox. `install` puts
+  pinned wheels from PyPI in `~/.cache/musemuse/python/<python>-<hash>`, never in the product folder, so nothing large
+  is deployed. pip writes into a folder of its own that is renamed into place when it finishes. When a Python has no
+  pip, `install` bootstraps it from its PyPI wheel; the sha256 it checks comes from the same PyPI reply, so it is a
+  transfer check only. A call never installs: with packages that aren't installed it fails at once, saying to run
+  `install` (`serve` installs before it listens). `doctor`, `new`, `call` and `serve` for Muse Code and for `next dev`.
 - `api/py/musemuse_health.py` (GET `{"ok": true, "python"}`), `vercel.json` (only `functions["api/py/*.py"]`:
   `maxDuration` 10 and `excludeFiles` for node_modules, .next and the app's own folders; the health function makes sure
   the pattern always matches), `.python-version` (3.14, the builder snapshot's Python), `requirements.txt` (a comment).
@@ -1166,28 +1184,48 @@ rules, as before.
 
 **Fixed checks** (`scripts/caps/runtime.mjs`, run from `CAPS_DIR` with the platform's own runner beside it): `python`
 (a Python runs, and its minor version is the one `.python-version` gives Vercel), `requirements` (every line
-`name==version`, no web framework), `functions` (every `api/py/*.py` loads and has the handler class, and there is at
-least one besides the health function), `health`, `python-action` (from the smoke test's record), `rerun` (the platform
-runs each function the smoke test used again on the same input and the reply has the same shape). None needs the
-gateway's record, so they can pass on a local run.
+`name==version`, no web framework), `size` (the installed packages take at most 450 MB of Vercel's 500 MB for one
+Python function, uncompressed, from its Python runtime docs read Oct 31; every function deploys with all of
+`requirements.txt`), `functions` (every `api/py/*.py` loads and has the handler class, and there is at least one
+besides the health function), `safe` (an `ast` scan of each function for `eval`, `exec`, `compile`, `__import__`,
+`sympify`, `parse_expr`, `.eval`, `.query`, `read_pickle`, `yaml.load`, `allow_pickle=True`, `os.system` and the like,
+and imports of `pickle`, `marshal`, `dill`, `shelve`, `joblib`, `subprocess`, `ctypes`, `numexpr`), `guard` (each
+function, loaded with a stand-in token made for the check, clears it from `os.environ`, answers 403 to a call without
+the header and answers one with it), `health`, `python-action` (from the smoke test's record), `rerun` (the platform
+runs each function the smoke test used again on the same input and the reply has the same shape; when every noted
+call was over 64 KB, it passes saying none was kept to run again). None needs the gateway's record, so they can pass
+on a local run.
+
+**What the checks rest on** (contract 2.8 asks for checks the product can't fake, and these aren't all that):
+`python-action` reads the smoke test's record, which a product test can write with `recordCapCheck`, and `rerun` reads
+the call log, which the product's own server process appends to. The log is read before any of the product's Python
+runs in the checks, so a function's top-level code can't plant lines, and `rerun` makes a real function answer with
+the shape the log claims. Nothing registers with `/caps/proof`, because Python calls never reach the gateway. A
+per-verify nonce in the server's env would stop a product test, not the product's server, from writing notes; it needs
+unit 2's verify and Playwright files, so it isn't built. Once a public host exists, the live check can call one Python
+action itself.
 
 **Live check.** `lib/caps/live.ts`, `CAP_LIVE_PATHS`: routes a cap adds to unit 2's live check, each GET must answer 200
 with `{"ok": true}`. Runtime adds `/api/py/musemuse_health`, failing as "its Python functions don't run on the live link".
 `liveCheckStep` passes them only when there are some, so a product without them gets exactly today's check.
 
-**Outputs** (`RUNTIME_OUTPUTS`, off). Not `PRODUCT_OUTPUTS`, so Prove it doesn't run them. `RUNTIME_OUTPUTS` in
+**Outputs** (`RUNTIME_OUTPUTS`, off). Not `PRODUCT_OUTPUTS`, so Prove it doesn't run them. With the flag off, all
+three paths answer exactly what `/p/[slug]/get/[kind]` answered them before (404, "There's no download by that name."). `RUNTIME_OUTPUTS` in
 `lib/native/targets.ts`, Get it tabs "VS Code", "GitHub Action" and "Self-host" after the product outputs.
 
 - `GET /p/<slug>/get/vscode.zip` (`lib/outputs/vscode.ts`): a VS Code extension, for any live product with public actions.
   Fixed code (`lib/outputs/runtime-assets/vscode-extension.cjs`) reads `product.json`; each public action is a command
   that asks for its fields (the editor's selection in the first text field), POSTs to the live action and opens the reply
-  as JSON; a `baseUrl` setting points it at a self-hosted copy. `publisher: "local"`, `engines.vscode ^1.90.0`. Packaging:
+  as JSON; a `baseUrl` setting points it at a self-hosted copy, with `scope: "application"` so a repository's
+  `.vscode/settings.json` can't send the selected text elsewhere. `publisher: "local"`, `engines.vscode ^1.90.0`. Packaging:
   `npx @vscode/vsce package --no-dependencies --allow-missing-repository --skip-license` (no repository or license is
   chosen for the builder).
 - `GET /p/<slug>/get/github-action.zip` (`lib/outputs/github-action.ts`): a JavaScript action on `node24` with inputs
   `action`, `input` (JSON), `base-url`, `timeout-seconds` and outputs `result` and `ok`, to unzip into
   `.github/actions/<slug>/`. Every value in `action.yml` is a JSON string, which YAML reads the same way, and
-  `actionMetadataProblems` checks GitHub's metadata rules.
+  `actionMetadataProblems` checks GitHub's metadata rules. GitHub evaluates `${{ }}` in `with:` values and input
+  defaults, so the README's workflow leaves out an example that holds `${{`, and the builder's words in `action.yml`
+  have it broken apart (`$ {{`).
 - `GET /p/<slug>/get/selfhost.zip` (`lib/outputs/selfhost.ts`, `runtime-serve.ts`): the cloud kit, **for the product's
   owner only** (canActAsOwner; 403 for anyone else), since it is the product's whole source and its owner decides who
   gets it. Its files are the live deployment's own, read back from Vercel (`/v13/deployments/<live host>`, which must be
@@ -1196,9 +1234,14 @@ with `{"ok": true}`. Runtime adds `/api/py/musemuse_health`, failing as "its Pyt
   BUILD_NOTES.md, `.agents/`, `tests/`, `fixtures/` (a person's own samples can be there), `inspo/`, platform scripts
   but the Python runner, Playwright's config, executables (ELF, Mach-O, PE). Anything shaped like a Muse Muse token stops
   the kit. Public files over 512 KB stay on the live product and `scripts/kit-fetch.mjs` downloads them, checking each
-  sha256. Added: `.env.example` (`PRODUCT_TOKEN=` for the owner's own Meta key and `GATEWAY_URL=https://api.meta.ai`,
+  sha256. Every file the kit keeps is scanned for a token, whatever its name or extension. Kits are counted per hour:
+  6 per product, 12 per owner across products, 60 for the site (`reserveKit`, giving back what a refused kit took). The
+  route refuses a request whose `Sec-Fetch-Site` is anything but `same-origin` or `none`, so a page on another site
+  can't start one on the owner's cookie, and its HEAD counts nothing and reads nothing. Added: `.env.example`
+  (`PRODUCT_TOKEN=` for the owner's own Meta key and `GATEWAY_URL=https://api.meta.ai`,
   which the template's `gatewayEnv()` turns into `https://api.meta.ai/v1`, so the product's code is unchanged),
-  `README-SELF-HOST.md` (how to run it, and what doesn't work without Muse Muse: big uploads, the gadget, Glimmer, agent
+  `README-SELF-HOST.md` (how to run it, `npx vercel deploy --prod` since a protected preview turns away the product's
+  calls to its own Python functions, and what doesn't work without Muse Muse: big uploads, the gadget, Glimmer, agent
   tools and platform services, read from the source), and `musemuse-kit.json` (`kit: 1`, `mode: "cloud"`, every file's
   sha256; `"offline"` is reserved and the generator refuses it). A kit over 4 MB answers 413 with a plain message.
 - **npm.** Decision 9: no publish route and no `RUNTIME_NPM_PUBLISH` flag. The extension, the action and the kit are
@@ -1227,7 +1270,19 @@ Vercel Sandbox under $0.01.
 - The Vercel deployment files API: the reply format of `/v8/.../files/<uid>` (both readings are tried and the SHA-1
   decides), that a file's `uid` is its SHA-1, and whether the tree sits under `src/` (both are handled).
 - The GitHub Action on a real runner, and the extension in a real VS Code (both ran here against a local server, the
-  extension with a stand-in for VS Code's API).
+  extension with a stand-in for VS Code's API). The review of d35ef4a packaged the extension with
+  `@vscode/vsce@3.6.0 package --no-dependencies --allow-missing-repository --skip-license`: 6 files, 5.45 KB, named as
+  `vsixFileName` says.
+- The guard on Vercel: that a `handler` subclassing a class from the same file loads, that `parse_request` runs before
+  dispatch there as it does under `http.server`, and that the request's headers reach it. The local runner proves it
+  under the standard library's own server classes only.
+
+**For unit 2.** A stored brief with a `runtime` block gets the overlay, PyPI and the build env even with
+`RUNTIME_ENABLED` off and `CAP_READY.runtime` false: `briefCaps` reads only the brief, and an admin bundle import
+(`lib/promote/bundle.ts`) stores a brief's blocks as they came. Before this unit no cap had a brief block, so it couldn't
+happen. The fix belongs in unit 2's files: filter `briefCaps` (or `capsFileFor`, `capBuildHosts`, `capBuildEnv` and the
+render) by `env.enabledCaps` at provision and refine, or drop off caps' blocks on import. Not changed here, since every
+cap's tests and the flags-off goldens run through `briefCaps`.
 
 **For General.** `applyCaps` in `lib/sandbox/builder.ts` checks only core's marker, so on a snapshot made with core
 before `template/caps/runtime` existed, a runtime brief fails at `applyCapsScript` ("the runtime cap overlay isn't in this
@@ -1544,6 +1599,9 @@ Phaser game.
   aren't in the brief and go to every live product under `RUNTIME_OUTPUTS`, the self-host kit to its owner only;
   `CAP_HOST_METHODS` makes PyPI GET only; `lib/caps/live.ts` (`CAP_LIVE_PATHS`) adds cap routes to the live check; no
   `RUNTIME_NPM_PUBLISH` flag (decision 9).
+- Oct 31 (unit 10, review fixes on d35ef4a): 16a says Python endpoints are public and run with the deployment's env,
+  adds the guard, the `safe`, `guard` and `size` checks, notes for every Python call (input kept up to 64 KB), no
+  install on the call path, the kit's per-owner and site caps, and what the runtime checks rest on.
 - Oct 31 (integration 1, tg-cap-int with the UI brand): build on these shapes. `judgeInstructions(brief, { museAppLook })`
   starts from the look's house style, then the target notes, then `capsJudgeNotes(brief)`. Provisioning applies the
   muse-app look, then a brief's targets, then its caps; every overlay sits in `TARGETS_DIR` through `installTargets`

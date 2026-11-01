@@ -33,7 +33,8 @@ export interface BuilderPolicyOptions {
   extraHosts?: readonly string[];
   /**
    * Hosts a brief's caps need during the build (CAP_BUILD_HOSTS in lib/caps/hosts.ts, docs/CAPABILITIES.md section 3),
-   * allowed with no rules. None for a brief without caps, so its policy is today's.
+   * with capHostRules: only the methods CAP_HOST_METHODS lists for a host (PyPI: GET), else no rules. None for a brief
+   * without caps, so its policy is today's.
    */
   capHosts?: readonly string[];
 }
