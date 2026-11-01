@@ -32,8 +32,10 @@ const journal = JSON.parse(readFileSync(join(FOLDER, "meta/_journal.json"), "utf
  * Numbers never used. 0016 was set aside for General's code_sessions, which was never built; 0017 (decision models)
  * landed first and chains to 0015's snapshot, so 0016 is retired for good: drizzle's migrator only applies entries newer
  * than the newest applied one, so a later 0016 would be skipped. New migrations take the next free number.
+ * 21 is unit 4's 0021_files, not built when unit 5's 0022_connect was: the integrator merges 0021 first (or drops it)
+ * and takes 21 out of this set, then re-chains 0022's snapshot (docs/CAPABILITIES.md, section 4).
  */
-const RESERVED = new Set([16]);
+const RESERVED = new Set([16, 21]);
 const snapshot = (idx: number) => JSON.parse(readFileSync(join(FOLDER, `meta/${String(idx).padStart(4, "0")}_snapshot.json`), "utf8"));
 
 const database = (client: PGlite) => drizzle({ client, schema });
@@ -42,7 +44,7 @@ const database = (client: PGlite) => drizzle({ client, schema });
  * Wave 3's migrations, in the agreed order (docs/CAPABILITIES.md, section 4), after General's 0017 (0016 is retired).
  * Each wave 3 unit appends its tag here. Their journal times follow the contract's rule.
  */
-const WAVE3_TAGS = ["0018_trust", "0019_engine", "0020_data"];
+const WAVE3_TAGS = ["0018_trust", "0019_engine", "0020_data", "0022_connect"];
 const tagNumber = (tag: string) => Number(tag.slice(0, 4));
 
 /** A copy of the migrations that stops at `lastIdx`, as a database that hasn't had the newer ones would have seen. */
@@ -430,6 +432,45 @@ describe("a database already at 0012", () => {
     await client.exec(`delete from builds; delete from products where id = '${productId}'`);
     assert.equal((await typed.select().from(schema.productRows)).length, 0);
     assert.equal((await typed.select().from(schema.productDataCounts)).length, 0);
+    await client.close();
+  });
+
+  it("0022_connect: a database at 0020 keeps its rows and gets the vault, sends and fetch cache tables", async () => {
+    const dir = folderThrough(20);
+    dirs.push(dir);
+    const client = new PGlite();
+    const db = drizzle({ client });
+    await migrate(db, { migrationsFolder: dir });
+    assert.equal((await columns(client, "product_secrets")).size, 0);
+    const [userId, productId] = [randomUUID(), randomUUID()];
+    await client.exec(`
+      insert into users (id, email) values ('${userId}', 'old@example.com');
+      insert into products (id, slug, name, owner_id, status) values ('${productId}', 'old-one', 'Old One', '${userId}', 'live');
+      insert into product_rows (product_id, namespace, collection, scope, doc_id, data, bytes) values ('${productId}', 'live', 'items', 'shared', 'a', '{}', 2);
+    `);
+    await migrate(db, { migrationsFolder: FOLDER });
+    const typed = database(client);
+    assert.equal((await typed.select().from(schema.products)).length, 1);
+    assert.equal((await typed.select().from(schema.productRows)).length, 1);
+    const sealed = { productId, name: "github", service: "github", ciphertext: Buffer.from([1, 2, 0, 255]), iv: Buffer.alloc(12, 7), tag: Buffer.alloc(16, 9), keyVersion: 1 };
+    const [secret] = await typed.insert(schema.productSecrets).values(sealed).returning();
+    assert.equal(secret!.namespace, "live");
+    assert.deepEqual([...secret!.ciphertext], [1, 2, 0, 255]);
+    // One active key per name and namespace; a revoked one doesn't count.
+    await assert.rejects(async () => typed.insert(schema.productSecrets).values(sealed));
+    await client.exec(`update product_secrets set revoked_at = now()`);
+    await typed.insert(schema.productSecrets).values(sealed);
+    await typed.insert(schema.productSecrets).values({ ...sealed, namespace: "b:x" });
+    // One send per approval.
+    const send = { productId, channel: "email", recipientHash: "h", approvalNonce: "n1", status: "simulated" as const };
+    await typed.insert(schema.productSends).values(send);
+    await assert.rejects(async () => typed.insert(schema.productSends).values(send));
+    await typed.insert(schema.publicFetchCache).values({ key: "k", api: "nws", status: 200, body: Buffer.from("{}"), expiresAt: new Date(Date.now() + 60_000) });
+    // The vault and sends go with the product; the cache is shared and stays.
+    await client.exec(`delete from product_rows; delete from products where id = '${productId}'`);
+    assert.equal((await typed.select().from(schema.productSecrets)).length, 0);
+    assert.equal((await typed.select().from(schema.productSends)).length, 0);
+    assert.equal((await typed.select().from(schema.publicFetchCache)).length, 1);
     await client.close();
   });
 

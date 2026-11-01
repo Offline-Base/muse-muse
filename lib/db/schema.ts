@@ -821,3 +821,77 @@ export const productDataCounts = pgTable(
   },
   (t) => [primaryKey({ columns: [t.productId, t.namespace] })],
 );
+
+// ---------- Wave 3, 0022_connect (unit 5) ----------
+
+/**
+ * A product's key vault (CONNECT_VAULT, docs/CAPABILITIES.md, section 11): keys the product's owner brings for outside
+ * services, sealed with AES-256-GCM (lib/secrets/box.ts, CONNECT_VAULT_KEY). Only the gateway opens one, to add it to a
+ * brokered call; no route ever returns a value. `namespace` is `live`, or `b:<buildId>` for a build's made-up test keys,
+ * deleted when it ends. `created_by` is a subject key, never a raw id. One active key per name: revoking sets
+ * `revoked_at`, and the sweep removes revoked rows after a day.
+ */
+export const productSecrets = pgTable(
+  "product_secrets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    namespace: text("namespace").notNull().default("live"),
+    name: text("name").notNull(),
+    service: text("service").notNull(),
+    ciphertext: bytea("ciphertext").notNull(),
+    iv: bytea("iv").notNull(),
+    tag: bytea("tag").notNull(),
+    keyVersion: integer("key_version").notNull(),
+    /** sha256 of the value, first 16 hex characters, for a build's test keys only: verify's leak scan looks for them. */
+    testHash: text("test_hash"),
+    createdBy: text("created_by"),
+    createdAt: createdAt(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [uniqueIndex("product_secrets_active_idx").on(t.productId, t.namespace, t.name).where(sql`${t.revokedAt} is null`)],
+);
+
+/**
+ * Each confirmed send (CONNECT_SENDS): one row per send, after its approval is spent. `recipient_hash` is a MAC of the
+ * sorted recipients, never an address. `status` is `sent`, `simulated` (a build's, which never leaves the gateway) or
+ * `failed`. `approval_nonce` is unique, so one confirmation sends once.
+ */
+export const productSends = pgTable(
+  "product_sends",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    namespace: text("namespace").notNull().default("live"),
+    channel: text("channel").notNull(),
+    recipientHash: text("recipient_hash").notNull(),
+    recipients: integer("recipients").notNull().default(1),
+    approvalNonce: text("approval_nonce").notNull().unique(),
+    status: text("status").$type<"sent" | "simulated" | "failed">().notNull(),
+    providerId: text("provider_id"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("product_sends_product_idx").on(t.productId, t.namespace, t.createdAt)],
+);
+
+/**
+ * fetchPublic's cache: one row per normalized request to an allowlisted keyless API (lib/caps/connect/apis.json). Shared
+ * by every product, since the request names no one and the answer is public. The sweep removes expired rows.
+ */
+export const publicFetchCache = pgTable(
+  "public_fetch_cache",
+  {
+    key: text("key").primaryKey(),
+    api: text("api").notNull(),
+    status: integer("status").notNull(),
+    contentType: text("content_type"),
+    body: bytea("body").notNull(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [index("public_fetch_cache_expires_idx").on(t.expiresAt)],
+);
