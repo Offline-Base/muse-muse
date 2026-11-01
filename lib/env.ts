@@ -32,6 +32,16 @@ function dollars(name: string, fallback: number): number {
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
+/**
+ * A whole count that may be 0: "0" turns off what it counts (number() would read it as unset and use the fallback).
+ * Unset, empty, negative or not a number gives the fallback; a fraction is rounded down.
+ */
+function wholeCount(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  const value = raw ? Number(raw) : NaN;
+  return Number.isFinite(value) && value >= 0 ? Math.floor(value) : fallback;
+}
+
 /** True when a switch is "1", "true", "yes" or "on" (any case). Anything else is off. */
 function flag(name: string): boolean {
   return ["1", "true", "yes", "on"].includes((process.env[name] ?? "").trim().toLowerCase());
@@ -383,17 +393,17 @@ export const env = {
   get publicDatasets(): boolean {
     return flag("PUBLIC_DATASETS");
   },
-  /** Real GPU runs one visitor may start per UTC day. */
+  /** Real GPU runs one visitor may start per UTC day. Like the other counts here, 0 turns it off. */
   get publicTrainRunsPerDay(): number {
-    return Math.floor(number("PUBLIC_TRAIN_RUNS_PER_DAY", 1));
+    return wholeCount("PUBLIC_TRAIN_RUNS_PER_DAY", 1);
   },
   /** Dry runs (dryRun 1) one visitor may start per UTC day. */
   get publicTrainDryRunsPerDay(): number {
-    return Math.floor(number("PUBLIC_TRAIN_DRY_RUNS_PER_DAY", 1));
+    return wholeCount("PUBLIC_TRAIN_DRY_RUNS_PER_DAY", 1);
   },
   /** Datasets of their own rows one visitor may add per UTC day. */
   get publicTrainDatasetsPerDay(): number {
-    return Math.floor(number("PUBLIC_TRAIN_DATASETS_PER_DAY", 2));
+    return wholeCount("PUBLIC_TRAIN_DATASETS_PER_DAY", 2);
   },
   /** The most rows a visitor's dataset may have, and the most examples a visitor's run may ask for. */
   get publicTrainDatasetMaxRows(): number {
@@ -405,7 +415,7 @@ export const env = {
   },
   /** New mm_trainer cookies one IP may get per UTC day. */
   get publicTrainCookiesPerIp(): number {
-    return Math.floor(number("PUBLIC_TRAIN_COOKIES_PER_IP", 3));
+    return wholeCount("PUBLIC_TRAIN_COOKIES_PER_IP", 3);
   },
   /** A visitor job's limits, each within the lab's own ceiling (TRAIN_JOB_MAX_MINUTES, TRAIN_JOB_MAX_USD). */
   get publicTrainJobMaxMinutes(): number {
@@ -417,9 +427,9 @@ export const env = {
   get publicTrainJobMaxSteps(): number {
     return Math.floor(number("PUBLIC_TRAIN_JOB_MAX_STEPS", 120));
   },
-  /** Visitor jobs that may hold a GPU at once, inside TRAIN_MAX_ACTIVE. */
+  /** Visitor jobs that may hold a GPU at once, inside TRAIN_MAX_ACTIVE. 0 pauses visitor runs. */
   get publicTrainMaxActive(): number {
-    return Math.min(env.trainMaxActive, Math.floor(number("PUBLIC_TRAIN_MAX_ACTIVE", 1)));
+    return Math.min(env.trainMaxActive, wholeCount("PUBLIC_TRAIN_MAX_ACTIVE", 1));
   },
   /**
    * What every visitor together may commit to GPUs per UTC day, in USD, inside TRAIN_DAILY_USD (so visitors can never
