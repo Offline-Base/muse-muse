@@ -229,8 +229,9 @@ def scan_tree(root: Path, users: set[str]) -> list[tuple[str, int, str]]:
 
 def scan_history(root: Path, users: set[str]) -> list[tuple[str, int, str]]:
     """Every added line in every commit, with the file each one was added to. The data rules are
-    for the current data only, so they do not run here."""
-    log = subprocess.run(["git", "-C", str(root), "log", "-p", "--all", "--no-color", "--format=commit %h"],
+    for the current data only, so they do not run here. Only this folder's own
+    changes: inside a bigger repo (privacy/ in Muse Muse), --relative leaves the host's files to the host."""
+    log = subprocess.run(["git", "-C", str(root), "log", "-p", "--relative", "--all", "--no-color", "--format=commit %h"],
                          capture_output=True, check=True).stdout.decode("utf-8", "replace")  # fmt: skip
     found: list[tuple[str, int, str]] = []
     commit, path = "?", ""

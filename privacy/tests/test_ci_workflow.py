@@ -1,4 +1,4 @@
-""".github/workflows/ci.yml: it parses, runs every check on ubuntu and macOS, and needs no secrets."""
+""".github/workflows/privacy.yml at the repo's root: it parses, runs every check on ubuntu and macOS, and needs no secrets."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 
-WORKFLOW = Path(__file__).resolve().parent.parent / ".github" / "workflows" / "ci.yml"
+WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "privacy.yml"
 
 
 def load() -> dict:
@@ -42,11 +42,11 @@ def test_the_python_job_runs_every_check_on_both_systems():
 
 def test_the_relay_job_installs_from_the_lock_and_runs_its_tests():
     job = load()["jobs"]["relay"]
-    assert job["runs-on"] == "ubuntu-latest" and job["defaults"]["run"]["working-directory"] == "relay"
+    assert job["runs-on"] == "ubuntu-latest" and job["defaults"]["run"]["working-directory"] == "privacy/relay"
     node = next(s for s in job["steps"] if s.get("uses", "").startswith("actions/setup-node@"))
     assert (
         node["with"]["node-version"] == 22
-        and node["with"]["cache-dependency-path"] == "relay/package-lock.json"
+        and node["with"]["cache-dependency-path"] == "privacy/relay/package-lock.json"
     )
     assert runs(job) == ["npm ci --legacy-peer-deps --no-audit --no-fund", "npm run typecheck", "npm test"]
 

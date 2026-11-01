@@ -1,22 +1,27 @@
-# Unit tests, lint, the secrets scan and the relay's tests on every push and pull request.
+# Muse Privacy's unit tests, lint, secrets scan and relay tests, only when privacy/ changes.
 # No secrets: unit tests never read .env, and integration tests are skipped (RUN_INTEGRATION is unset).
-name: CI
+name: Muse Privacy
 
 on:
   push:
+    paths: ["privacy/**", ".github/workflows/privacy.yml"]
   pull_request:
+    paths: ["privacy/**", ".github/workflows/privacy.yml"]
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: privacy-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   python:
     name: Python (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: privacy
     strategy:
       fail-fast: false
       matrix:
@@ -44,14 +49,14 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: relay
+        working-directory: privacy/relay
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: relay/package-lock.json
+          cache-dependency-path: privacy/relay/package-lock.json
       - name: Install from the lock file
         run: npm ci --legacy-peer-deps --no-audit --no-fund
       - name: Type check
