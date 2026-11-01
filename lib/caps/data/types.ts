@@ -34,6 +34,14 @@ export interface DataCollectionRule {
   writes?: DataWriters;
 }
 
+/**
+ * DATA_SIGN_IN, read here as lib/env.ts reads a flag, so the brief's block, rules and catalog can follow it without
+ * importing env (which imports the brief schema). env.dataSignIn reads this too.
+ */
+export function dataSignInOn(): boolean {
+  return ["1", "true", "yes", "on"].includes((process.env.DATA_SIGN_IN ?? "").trim().toLowerCase());
+}
+
 export const isDataScope = (v: unknown): v is DataScope => typeof v === "string" && (DATA_SCOPES as readonly string[]).includes(v);
 export const isDataWriters = (v: unknown): v is DataWriters => typeof v === "string" && (DATA_WRITERS as readonly string[]).includes(v);
 
@@ -52,4 +60,24 @@ export function collectionRules(block: unknown): DataCollectionRule[] | null {
     out.push({ name, scope, ...(scope === "shared" && isDataWriters(writes) ? { writes } : {}) });
   }
   return out;
+}
+
+const WRITES_RANK: Record<DataWriters, number> = { owner: 0, signed_in: 1, anyone: 2 };
+
+/**
+ * A live product's collections (docs/CAPABILITIES.md, 2.3 and 9a): the brief's, which the platform wrote, narrowed by
+ * the shipped manifest's, which the product wrote. The manifest can drop a collection or make a shared one's writers
+ * fewer; it can't add one, change a scope, or widen who writes. A manifest with no data block narrows nothing, and a
+ * brief with no data block allows nothing.
+ */
+export function narrowCollectionRules(brief: DataCollectionRule[] | null, manifest: DataCollectionRule[] | null): DataCollectionRule[] {
+  if (!brief) return [];
+  if (!manifest) return brief;
+  return brief.flatMap((rule) => {
+    const m = manifest.find((r) => r.name === rule.name);
+    if (!m || m.scope !== rule.scope) return [];
+    if (rule.scope !== "shared") return [rule];
+    const writes = WRITES_RANK[m.writes ?? "owner"] < WRITES_RANK[rule.writes ?? "owner"] ? (m.writes ?? "owner") : (rule.writes ?? "owner");
+    return [{ ...rule, writes }];
+  });
 }

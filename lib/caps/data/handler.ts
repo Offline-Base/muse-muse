@@ -1,6 +1,6 @@
-import { cleanDisplayName, mintTestUserSession, mintUserSession, readUserCode, testUserSubject } from "@/lib/caps/data/identity";
+import { cleanDisplayName, isSignInBind, mintTestUserSession, mintUserSession, readUserCode, testUserSubject } from "@/lib/caps/data/identity";
 import { DATA_LIMITS, type DataQuotas } from "@/lib/caps/data/limits";
-import { newDocId, type DataStore, type QueryOrder, type RowKey, type WriteLimits, type WriteRefusal } from "@/lib/caps/data/store";
+import { isCursor, newDocId, type DataStore, type QueryOrder, type RowKey, type WriteLimits, type WriteRefusal } from "@/lib/caps/data/store";
 import { COLLECTION_NAME, DOC_ID, FIELD_NAME, isDataScope, type DataCollectionRule, type DataScope } from "@/lib/caps/data/types";
 import {
   capError,
@@ -19,6 +19,7 @@ import {
 } from "@/lib/caps/gate";
 import { subjectKey, type CapCaller } from "@/lib/caps/principal";
 import { safeReturnPath } from "@/lib/tools/principal";
+import { sameMac } from "@/lib/tools/sign";
 
 /**
  * {GATEWAY_URL}/data and {GATEWAY_URL}/identity/user (docs/CAPABILITIES.md, section 9), behind the cap gate
@@ -33,8 +34,9 @@ export interface DataDeps extends CapGateDeps {
   /** DATA_SIGN_IN. */
   signInOn(): boolean;
   /**
-   * The product's collections: a build's from its brief (the build's own row), a live product's from its manifest's
-   * `data` block. Null when there is no list, and then any collection may be used, shared ones written by the owner.
+   * The product's collections: a build's from its brief (the build's own row), a live product's from the brief it
+   * shipped with, narrowed by its manifest's `data` block. Null when there is no list: a build may then use any
+   * collection, shared ones written by the owner; a live token is refused.
    */
   rules(token: CapToken, product: CapProduct): Promise<DataCollectionRule[] | null>;
   reserveCounter(key: string, windowStart: Date, amount: number, limit: number): Promise<number | null>;
@@ -51,6 +53,9 @@ function baseLimits(stage: CapStage, prefix: string): CapLimit[] {
   return limits;
 }
 
+/** The subject an owner row is keyed by: the product's one owner, not the holder of the pass. */
+const OWNER_SPACE = "product-owner";
+
 /** The subject key a scope's rows of this caller are under, or why there is none. Shared rows have no key. */
 function ownerKeyFor(scope: DataScope, caller: CapCaller, productId: string): { key: string | null } | Response {
   switch (scope) {
@@ -59,7 +64,9 @@ function ownerKeyFor(scope: DataScope, caller: CapCaller, productId: string): { 
     case "visitor":
       return caller.visitor ? { key: subjectKey("visitor", productId, caller.visitor) } : capError("sign_in_required", "This browser has no visitor id yet. Reload the page and try again.");
     case "owner":
-      return caller.owner ? { key: subjectKey("owner", productId, caller.owner) } : capError("sign_in_required", "Only the product's owner can use these items. Open it as the owner from Muse Muse.");
+      // One owner space per product, whoever holds the pass: the owner, or an admin acting as the owner, sees the same
+      // items. A build's are in its own namespace anyway.
+      return caller.owner ? { key: subjectKey("owner", productId, OWNER_SPACE) } : capError("sign_in_required", "Only the product's owner can use these items. Open it as the owner from Muse Muse.");
     case "user":
       return caller.user ? { key: subjectKey("user", productId, caller.user) } : capError("sign_in_required", "Sign in to use these items.");
   }
@@ -112,6 +119,8 @@ async function target(stage: CapStage, deps: DataDeps, collection: string, scope
   if (!COLLECTION_NAME.test(collection)) return capError("invalid_arguments", "A collection's name is lowercase letters, digits and underscores, up to 32, starting with a letter.");
   if (scopeParam !== undefined && scopeParam !== null && !isDataScope(scopeParam)) return capError("invalid_arguments", "scope is shared, visitor, owner or user.");
   const rules = await deps.rules(stage.token, stage.product);
+  // A live product saves only what its brief listed: with no list there is nothing it may use.
+  if (!rules && !isBuild(stage.token)) return capError("cap_not_allowed", "This product doesn't list any collections to save to.");
   const rule = rules?.find((r) => r.name === collection) ?? null;
   if (rules && !rule) return capError("cap_not_allowed", `This product doesn't list a collection named ${collection}.`);
   const scope = (scopeParam ?? rule?.scope ?? null) as DataScope | null;
@@ -273,7 +282,7 @@ function queryRoute(deps: DataDeps, collection: string): CapRoute<{ target: Targ
       const limit = body.limit === undefined ? DATA_LIMITS.pageDefault : body.limit;
       if (!Number.isInteger(limit) || (limit as number) < 1 || (limit as number) > DATA_LIMITS.pageMax) return capError("invalid_arguments", `limit is 1 to ${DATA_LIMITS.pageMax}.`);
       const after = body.after === undefined || body.after === null ? null : body.after;
-      if (after !== null && (typeof after !== "string" || after.length > 200)) return capError("invalid_arguments", "after is the next value a page gave.");
+      if (after !== null && (typeof after !== "string" || after.length > 200 || !isCursor(after))) return capError("invalid_arguments", "after is the next value a page gave.");
       return { target: t, where, order: order as QueryOrder, limit: limit as number, after: after as string | null };
     },
     limits: (stage) => baseLimits(stage, "data"),
@@ -333,11 +342,12 @@ function collectionsRoute(deps: DataDeps): CapRoute<Record<string, never>> {
 // {GATEWAY_URL}/identity/user: end users who signed in with a passkey through Muse Muse
 
 /**
- * POST {GATEWAY_URL}/identity/user with {code}: a live product trades the code /u/sign-in sent to its live origin for a
- * 30-day session (`us1`), kept in its HttpOnly mm_user cookie. The code is for one product and works once.
+ * POST {GATEWAY_URL}/identity/user with {code, bind}: a live product trades the code /u/sign-in sent to its live origin
+ * for a 30-day session (`us1`), kept in its HttpOnly mm_user cookie. The code is for one product, works once, and only
+ * with the `bind` value from the cookie of the browser that started the sign-in.
  */
 export function handleIdentityUser(req: Request, deps: DataDeps): Promise<Response> {
-  return runCapGate<{ code: string }>(req, deps, {
+  return runCapGate<{ code: string; bind: string }>(req, deps, {
     cap: "data",
     what: "/identity/user",
     enabled: deps.signInOn,
@@ -346,9 +356,10 @@ export function handleIdentityUser(req: Request, deps: DataDeps): Promise<Respon
       if (r.method !== "POST") return capError("invalid_arguments", "Use POST.");
       const body = await readJsonBody(r, 4 * 1024);
       if (body instanceof Response) return body;
-      const extra = unknownKeys(body, ["code"]);
+      const extra = unknownKeys(body, ["code", "bind"]);
       if (extra) return extra;
-      return typeof body.code === "string" && body.code.length <= 1024 ? { code: body.code } : capError("invalid_arguments", "Send the sign-in code as code.");
+      if (typeof body.code !== "string" || body.code.length > 1024) return capError("invalid_arguments", "Send the sign-in code as code.");
+      return isSignInBind(body.bind) ? { code: body.code, bind: body.bind } : capError("sign_in_required", "This browser didn't start this sign-in. Sign in again.");
     },
     limits: (stage) => [
       ...baseLimits(stage, "data-identity"),
@@ -357,6 +368,7 @@ export function handleIdentityUser(req: Request, deps: DataDeps): Promise<Respon
     async work(ctx) {
       const code = readUserCode(ctx.args.code, ctx.now);
       if (!code || code.productId !== ctx.token.productId) return capError("sign_in_required", "This sign-in link is no good. Sign in again.");
+      if (!sameMac(code.bind, ctx.args.bind)) return capError("sign_in_required", "This browser didn't start this sign-in. Sign in again.");
       if ((await deps.reserveCounter(`user-code:${code.nonce}`, code.exp, 1, 1)) === null) return capError("sign_in_required", "This sign-in link was already used. Sign in again.");
       const { session, expiresAt } = mintUserSession({ productId: ctx.token.productId, subject: code.subject }, ctx.now);
       return Response.json({ session, expiresAt: expiresAt.toISOString(), user: { id: code.subject, name: code.name } }, { headers: { "cache-control": "no-store" } });
@@ -396,12 +408,13 @@ export function handleIdentityUserTest(req: Request, deps: DataDeps): Promise<Re
 }
 
 /**
- * POST {GATEWAY_URL}/identity/user/link with {returnTo}: the platform's passkey page for this product. A product
- * doesn't know its own slug, so its "Sign in" asks here. A build gets the link too, marked simulated: the page refuses a
+ * POST {GATEWAY_URL}/identity/user/link with {returnTo, bind}: the platform's passkey page for this product. A product
+ * doesn't know its own slug, so its "Sign in" asks here. `bind` is the value the product just put in this browser's
+ * mm_signin cookie; the page carries it into the code. A build gets the link too, marked simulated: the page refuses a
  * product that isn't live, and the build's tests sign in made-up people instead.
  */
 export function handleIdentityUserLink(req: Request, deps: DataDeps): Promise<Response> {
-  return runCapGate<{ returnTo: string }>(req, deps, {
+  return runCapGate<{ returnTo: string; bind: string }>(req, deps, {
     cap: "data",
     what: "/identity/user/link",
     enabled: deps.signInOn,
@@ -409,10 +422,11 @@ export function handleIdentityUserLink(req: Request, deps: DataDeps): Promise<Re
       if (r.method !== "POST") return capError("invalid_arguments", "Use POST.");
       const body = await readJsonBody(r, 4 * 1024);
       if (body instanceof Response) return body;
-      const extra = unknownKeys(body, ["returnTo"]);
+      const extra = unknownKeys(body, ["returnTo", "bind"]);
       if (extra) return extra;
       const returnTo = safeReturnPath(body.returnTo);
-      return returnTo ? { returnTo } : capError("invalid_arguments", "returnTo is a path on the product's own site.");
+      if (!returnTo) return capError("invalid_arguments", "returnTo is a path on the product's own site.");
+      return isSignInBind(body.bind) ? { returnTo, bind: body.bind } : capError("invalid_arguments", "bind is the sign-in value this browser's cookie holds.");
     },
     limits: (stage) => baseLimits(stage, "data-identity"),
     async work(ctx) {
@@ -421,6 +435,7 @@ export function handleIdentityUserLink(req: Request, deps: DataDeps): Promise<Re
       const url = new URL("/u/sign-in", deps.platformUrl);
       url.searchParams.set("product", slug);
       url.searchParams.set("returnTo", ctx.args.returnTo);
+      url.searchParams.set("bind", ctx.args.bind);
       return Response.json({ url: url.toString(), ...(isBuild(ctx.token) ? { simulated: true } : {}) }, { headers: { "cache-control": "no-store" } });
     },
   });

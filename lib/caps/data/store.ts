@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, isNotNull, sql, type SQL } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
 import { DATA_LIMITS } from "@/lib/caps/data/limits";
 import type { DataScope } from "@/lib/caps/data/types";
@@ -175,6 +175,9 @@ export function encodeCursor(at: string, rowId: string): string {
   return Buffer.from(JSON.stringify([at, rowId])).toString("base64url");
 }
 
+/** Whether `after` is a cursor a page gave. The handler refuses anything else, so a bad one never restarts at page one. */
+export const isCursor = (cursor: string): boolean => decodeCursor(cursor) !== null;
+
 export function decodeCursor(cursor: string): { at: string; rowId: string } | null {
   try {
     const parsed = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as unknown;
@@ -261,6 +264,27 @@ export const dataStore: DataStore = {
   },
 };
 
+/**
+ * The brief a live product shipped with: its latest shipped build's (registerStep sets latest_build_id with the
+ * manifest), or, for a change whose row has none, the product's newest first build's, as startDeployStep reads it.
+ */
+export async function liveBrief(productId: string): Promise<unknown> {
+  const [shipped] = await db()
+    .select({ brief: schema.builds.brief })
+    .from(schema.products)
+    .innerJoin(schema.builds, eq(schema.builds.id, schema.products.latestBuildId))
+    .where(eq(schema.products.id, productId))
+    .limit(1);
+  if (shipped?.brief) return shipped.brief;
+  const [first] = await db()
+    .select({ brief: schema.builds.brief })
+    .from(schema.builds)
+    .where(and(eq(schema.builds.productId, productId), eq(schema.builds.kind, "build"), isNotNull(schema.builds.brief)))
+    .orderBy(desc(schema.builds.startedAt))
+    .limit(1);
+  return first?.brief ?? null;
+}
+
 /** A new document's id. */
 export const newDocId = () => randomUUID();
 
@@ -268,15 +292,19 @@ export const newDocId = () => randomUUID();
 // The gateway's record, cleanup and the owner's view
 
 /** The product a build belongs to and the collections its brief named, for /caps/proof. */
-async function buildInfo(buildId: string): Promise<{ productId: string | null; collections: Array<{ name: string; scope: string }> }> {
+async function buildInfo(buildId: string): Promise<{ productId: string | null; collections: Array<{ name: string; scope: string; writes?: string }> }> {
   const [row] = await db()
     .select({ productId: schema.builds.productId, brief: schema.builds.brief })
     .from(schema.builds)
     .where(eq(schema.builds.id, buildId))
     .limit(1);
-  const list = (row?.brief as { data?: { collections?: Array<{ name?: unknown; scope?: unknown }> } | null } | null | undefined)?.data?.collections;
+  const list = (row?.brief as { data?: { collections?: Array<{ name?: unknown; scope?: unknown; writes?: unknown }> } | null } | null | undefined)?.data?.collections;
   const collections = Array.isArray(list)
-    ? list.flatMap((c) => (typeof c?.name === "string" && typeof c?.scope === "string" ? [{ name: c.name, scope: c.scope }] : []))
+    ? list.flatMap((c) =>
+        typeof c?.name === "string" && typeof c?.scope === "string"
+          ? [{ name: c.name, scope: c.scope, ...(c.scope === "shared" ? { writes: typeof c.writes === "string" ? c.writes : "owner" } : {}) }]
+          : [],
+      )
     : [];
   return { productId: row?.productId ?? null, collections };
 }
@@ -284,12 +312,13 @@ async function buildInfo(buildId: string): Promise<{ productId: string | null; c
 /**
  * What the gateway saw in a build's namespace (CAP_PROOF.data, 2.8): rows written since `since`, rows there now by
  * scope, how many visitors and signed-in people wrote, and one `brief:<name>:<scope>` count per collection the brief
- * named, so verify can hold the product's manifest to it. Product code can't write any of it.
+ * named (`brief:<name>:shared:<writes>` for a shared one), so verify can hold the product's manifest to it, who writes
+ * included. Product code can't write any of it.
  */
 export async function dataProof(buildId: string, window: { since: Date | null }): Promise<Record<string, number>> {
   const { productId, collections } = await buildInfo(buildId);
   const out: Record<string, number> = { writes: 0, rows: 0, shared: 0, visitor: 0, owner: 0, user: 0, visitors: 0, users: 0 };
-  for (const c of collections) out[`brief:${c.name}:${c.scope}`] = 1;
+  for (const c of collections) out[c.writes ? `brief:${c.name}:${c.scope}:${c.writes}` : `brief:${c.name}:${c.scope}`] = 1;
   if (!productId) return out;
   const since = window.since ? sql`updated_at >= ${window.since.toISOString()}::timestamptz` : sql`true`;
   const [row] = rowsOf<Record<string, number>>(

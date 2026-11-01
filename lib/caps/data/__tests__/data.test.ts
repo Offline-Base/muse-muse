@@ -11,7 +11,9 @@ import { after, before, beforeEach, describe, it, mock } from "node:test";
 import * as realSchema from "@/lib/db/schema";
 import { mintTestUserSession, mintUserCode, mintUserSession } from "@/lib/caps/data/identity";
 import type { CapProduct, CapToken } from "@/lib/caps/gate";
+import { BUILD_TEST_OWNER } from "@/lib/caps/principal";
 import { mintOwnerSession } from "@/lib/tools/principal";
+import { eq } from "drizzle-orm";
 
 process.env.GATEWAY_TOKEN_PEPPER ??= "test-pepper-for-data";
 
@@ -309,8 +311,8 @@ describe("data on a database", { skip: canMock ? false : "needs --experimental-t
     assert.equal(proof.shared, 1);
     assert.equal(proof.users, 1);
     assert.equal(proof.visitors, 1);
-    assert.equal(proof["brief:groceries:shared"], 1, "the brief's collections, from the build's own row");
-    assert.equal(proof["brief:notices:shared"], 1);
+    assert.equal(proof["brief:groceries:shared:anyone"], 1, "the brief's collections, from the build's own row, with who writes them");
+    assert.equal(proof["brief:notices:shared:owner"], 1);
     assert.equal((await store.dataProof(buildId, { since: new Date(Date.now() + 60_000) })).writes, 0, "nothing after since");
     await store.clearBuildNamespace(buildId);
     assert.equal(((await call("POST", "groceries/query", { body: {}, deps: b })).json.items as unknown[]).length, 0);
@@ -329,18 +331,24 @@ describe("data on a database", { skip: canMock ? false : "needs --experimental-t
   });
 
   it("a sign-in code becomes a session once, for its own product; a build gets made-up people, 20 at most", async () => {
-    const exchange = (code: string, tok: CapToken = live()) =>
-      handler.handleIdentityUser(new Request("https://musemuse.example/api/gateway/identity/user", { method: "POST", headers: { authorization: "Bearer x", "content-type": "application/json" }, body: JSON.stringify({ code }) }), deps(tok));
-    const code = mintUserCode({ productId, subject: "subj_ana", name: "Ana" }, NOW);
+    const BIND = "bind_browser_aaaaaaaaaaaa";
+    const exchange = (code: string, tok: CapToken = live(), bind: string | null = BIND) =>
+      handler.handleIdentityUser(new Request("https://musemuse.example/api/gateway/identity/user", { method: "POST", headers: { authorization: "Bearer x", "content-type": "application/json" }, body: JSON.stringify({ code, ...(bind ? { bind } : {}) }) }), deps(tok));
+    const code = mintUserCode({ productId, subject: "subj_ana", name: "Ana", bind: BIND }, NOW);
+    // Login CSRF: someone else's code, opened in a browser that didn't start the sign-in, signs no one in.
+    const elsewhere = await exchange(code, live(), "bind_victim_bbbbbbbbbbbbbb");
+    assert.equal(elsewhere.status, 403);
+    assert.match(((await elsewhere.json()) as { error: { message: string } }).error.message, /didn't start this sign-in/);
+    assert.equal((await exchange(code, live(), null)).status, 403, "no sign-in value at all");
     const first = await exchange(code);
     assert.equal(first.status, 200);
     const body = (await first.json()) as { session: string; user: { id: string; name: string } };
     assert.deepEqual(body.user, { id: "subj_ana", name: "Ana" });
     assert.match(body.session, /^us1\./);
     assert.equal(((await (await exchange(code)).json()) as { error: { code: string } }).error.code, "sign_in_required", "spent");
-    const other = mintUserCode({ productId: randomUUID(), subject: "subj_ana", name: "Ana" }, NOW);
+    const other = mintUserCode({ productId: randomUUID(), subject: "subj_ana", name: "Ana", bind: BIND }, NOW);
     assert.equal((await exchange(other)).status, 403, "another product's code");
-    assert.equal((await exchange(mintUserCode({ productId, subject: "s", name: "" }, NOW), buildTok())).status, 403, "a build can't trade a real code");
+    assert.equal((await exchange(mintUserCode({ productId, subject: "s", name: "", bind: BIND }, NOW), buildTok())).status, 403, "a build can't trade a real code");
     const off = await handler.handleIdentityUser(new Request("https://x.example/", { method: "POST", body: "{}" }), deps(live(), { signInOn: () => false }));
     assert.equal(off.status, 404);
 
@@ -355,8 +363,10 @@ describe("data on a database", { skip: canMock ? false : "needs --experimental-t
     for (let i = 2; i < 20; i++) assert.equal((await test(`P${i}`)).status, 200);
     assert.equal((await test("One too many")).status, 429);
 
-    const link = await handler.handleIdentityUserLink(new Request("https://x.example/", { method: "POST", headers: { authorization: "Bearer x" }, body: JSON.stringify({ returnTo: "/lists" }) }), deps());
-    assert.deepEqual(await link.json(), { url: "https://musemuse.example/u/sign-in?product=lists&returnTo=%2Flists" });
+    const link = await handler.handleIdentityUserLink(new Request("https://x.example/", { method: "POST", headers: { authorization: "Bearer x" }, body: JSON.stringify({ returnTo: "/lists", bind: BIND }) }), deps());
+    assert.deepEqual(await link.json(), { url: `https://musemuse.example/u/sign-in?product=lists&returnTo=%2Flists&bind=${BIND}` });
+    const unbound = await handler.handleIdentityUserLink(new Request("https://x.example/", { method: "POST", headers: { authorization: "Bearer x" }, body: JSON.stringify({ returnTo: "/lists" }) }), deps());
+    assert.equal(unbound.status, 400, "a link needs the browser's sign-in value");
   });
 
   it("the owner's view: every collection's counts, shared items in pages, private items never", async () => {
@@ -368,5 +378,68 @@ describe("data on a database", { skip: canMock ? false : "needs --experimental-t
     assert.deepEqual(shared.items.map((i) => i.data), [{ name: "Milk" }]);
     const priv = await owner.handleOwnerData(new Request("https://x.example/api/products/lists/data?collection=notes"), productId, store.dataStore);
     assert.equal(priv.status, 403);
+  });
+  it("in a build, a second browser is a visitor: an owner-only shared list refuses it, as the live product would", async () => {
+    const b = deps(buildTok(), { rules: async () => RULES });
+    // Before the fix, every build call counted as the owner, so this passed in the build and failed for everyone live.
+    const visitorAdd = await call("POST", "notices", { body: { data: { t: "from a visitor" } }, headers: as({ visitor: VISITOR_B }), deps: b });
+    assert.equal(visitorAdd.code, "sign_in_required", "a visitor can't add to a list only the owner writes");
+    assert.equal((await call("POST", "notices", { body: { data: { t: "from a visitor" } }, headers: as({ visitor: VISITOR_B }) })).code, "sign_in_required", "the same on a live token");
+    const test = mintTestUserSession({ productId, buildId, subject: "made_up" }, NOW).session;
+    assert.equal((await call("POST", "notices", { body: { data: { t: "x" } }, headers: as({ user: test }), deps: b })).code, "sign_in_required", "nor a made-up person");
+    assert.equal((await call("POST", "notices", { body: { data: { t: "seeded" } }, deps: b })).status, 201, "seed: a build call that names no one is the owner");
+    const asOwner = { ...as({ visitor: VISITOR_A }), "x-musemuse-owner": BUILD_TEST_OWNER };
+    assert.equal((await call("POST", "notices", { body: { data: { t: "owner's" } }, headers: asOwner, deps: b })).status, 201, "openAsOwner");
+    assert.equal((await call("POST", "drafts", { body: { data: { t: "x" } }, headers: as({ visitor: VISITOR_A }), deps: b })).code, "sign_in_required", "owner items need the owner in a build too");
+    assert.equal((await call("POST", "drafts", { body: { data: { t: "x" } }, headers: asOwner, deps: b })).status, 201);
+    assert.equal((await call("POST", "groceries", { body: { data: { name: "eggs" } }, headers: as({ visitor: VISITOR_B }), deps: b })).status, 201, "a list anyone writes takes the second browser");
+    assert.equal((await call("POST", "posts", { body: { data: { t: "hi" } }, headers: as({ visitor: VISITOR_B }), deps: b })).code, "sign_in_required");
+    assert.equal((await call("POST", "posts", { body: { data: { t: "hi" } }, headers: as({ user: test, visitor: VISITOR_B }), deps: b })).status, 201, "a signed-in made-up person writes a signed_in list");
+    const visitorDelete = await call("DELETE", `notices/${(await call("POST", "notices", { body: { data: { t: "y" } }, deps: b })).json.id}`, { headers: as({ visitor: VISITOR_B }), deps: b });
+    assert.equal(visitorDelete.code, "sign_in_required", "nor delete from it");
+  });
+
+  it("owner items are the product's one owner space, whoever holds the pass", async () => {
+    const pass = (subject: string) => ({ "x-musemuse-owner": mintOwnerSession({ productId, subject }, NOW).session });
+    assert.equal((await call("PUT", "drafts/plan", { body: { data: { t: "the owner's plan" } }, headers: pass("owner_subject") })).status, 200);
+    const admin = await call("GET", "drafts/plan", { headers: pass("admin_acting_as_owner") });
+    assert.deepEqual(admin.json.data, { t: "the owner's plan" }, "an admin acting as the owner sees the owner's items");
+    assert.equal((await call("GET", "drafts/plan", { headers: as({ visitor: VISITOR_A }) })).code, "sign_in_required");
+  });
+
+  it("a bad cursor is refused, never page one again", async () => {
+    await call("POST", "notices", { body: { data: { i: 1 } }, headers: as({ owner: true }) });
+    for (const after of ["garbage", Buffer.from(JSON.stringify(["2026-01-01", "x"])).toString("base64url")]) {
+      assert.equal((await call("POST", "notices/query", { body: { after } })).code, "invalid_arguments", after);
+    }
+  });
+
+  it("a live product's collections are its shipped brief's; its manifest only narrows them", async () => {
+    const { dataDeps } = await import("../deps");
+    const { narrowCollectionRules } = await import("../types");
+    const rules = dataDeps().rules;
+    const tok = live();
+    // The build row's brief has groceries (shared, anyone) and notices (shared, owner).
+    await testDb.update(realSchema.products).set({ latestBuildId: buildId }).where(eq(realSchema.products.id, productId));
+    const widened = { ...product(), manifest: { caps: ["data"], data: { collections: [{ name: "notices", scope: "shared", writes: "anyone" }, { name: "groceries", scope: "shared", writes: "owner" }, { name: "extra", scope: "shared", writes: "anyone" }] } } as never };
+    assert.deepEqual(await rules(tok, widened), [
+      { name: "groceries", scope: "shared", writes: "owner" },
+      { name: "notices", scope: "shared", writes: "owner" },
+    ], "the manifest can make writers fewer, never more, and can't add a collection");
+    const rescoped = { ...product(), manifest: { data: { collections: [{ name: "groceries", scope: "visitor" }] } } as never };
+    assert.deepEqual(await rules(tok, rescoped), [], "a changed scope drops the collection");
+    assert.deepEqual(await rules(tok, { ...product(), manifest: { caps: ["data"] } as never }), [
+      { name: "groceries", scope: "shared", writes: "anyone" },
+      { name: "notices", scope: "shared", writes: "owner" },
+    ], "a manifest with no data block narrows nothing");
+    // A live write the manifest widened is refused by the brief's rule.
+    const viaDeps = deps(tok, { rules: () => rules(tok, widened) });
+    assert.equal((await call("POST", "notices", { body: { data: { t: "x" } }, headers: as({ visitor: VISITOR_A }), deps: viaDeps })).code, "sign_in_required");
+    assert.equal((await call("POST", "extra", { body: { data: { t: "x" } }, headers: as({ visitor: VISITOR_A }), deps: viaDeps })).code, "cap_not_allowed");
+    // No list at all for a live token: nothing may be saved, not any collection on any ?scope=.
+    const none = deps(tok, { rules: async () => null });
+    assert.equal((await call("POST", "anything?scope=shared", { body: { data: { t: "x" } }, headers: as({ owner: true }), deps: none })).code, "cap_not_allowed");
+    assert.deepEqual(narrowCollectionRules(null, [{ name: "a", scope: "shared", writes: "anyone" }]), [], "a brief with no data block allows nothing");
+    await testDb.update(realSchema.products).set({ latestBuildId: null }).where(eq(realSchema.products.id, productId));
   });
 });

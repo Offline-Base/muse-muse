@@ -67,6 +67,9 @@ export const DATA_RENDER: CapRenderEntry = {
       "- Shared items: everyone on the product reads them. Writes follow the table. A write the gateway refuses comes back as a `CapError` with `code` `sign_in_required`: show the reason in plain words.",
       ...(has("visitor") ? ["- Visitor items stay with this browser (its `mm_vid` cookie). Clearing the site's data loses them, so say so next to them."] : []),
       ...(has("owner") ? ["- Owner items need the product's owner pass: only the owner, opened from Muse Muse, reads and writes them."] : []),
+      ...(collections(block).some((c) => c.scope === "shared" && c.writes !== "owner")
+        ? ["- In a shared collection anyone or signed-in people write, each of them can also change or delete what others added. Say so where it matters."]
+        : []),
       ...(has("user") ? ["- User items follow the person who signed in, on any device. Without a session they read as none and writes answer `sign_in_required`."] : []),
       "- Personal details go only in the collections marked personal, never in a shared one, and never in a log or an error message.",
       "- Give people a way to delete what they saved: a button that calls `deleteMine(request)`, which removes every visitor and user item of this person.",
@@ -74,7 +77,8 @@ export const DATA_RENDER: CapRenderEntry = {
       "- Never save what this list doesn't name.",
       "- Rows in this build are test rows, deleted when it ends. They are real rows in the build's own space on the gateway, so a second browser really sees them, and nothing a real person saved reaches this build.",
       ...(signIn ? ["- A real passkey can't be used in a build. Tests sign in a made-up person with `signInAs(page, \"Ana\")` from `tests/caps/data.ts`, which gives that browser a test session."] : []),
-      "- Smoke test: call `checkSecondBrowser(page, { shared, private, user })` from `tests/caps/data.ts` once, after the first browser saved one shared item and one private one. It opens a second browser, reloads, expects the shared item and not the private one, signs the same made-up person in when you pass `user`, and takes the judge screenshot captioned \"Second browser\". It records the check. Keep the smoke test to about 20 data calls.",
+      "- A test's browser is a visitor, as on the live product: it can't use owner items or add to a list only the owner writes. `openAsOwner(page)` from `tests/caps/data.ts` makes it the owner for the owner's own steps; `seed(\"<name>\", [...])` saves shared items as the owner before the page opens.",
+      "- Smoke test: call `checkSecondBrowser(page, { shared, private, loaded, user })` from `tests/caps/data.ts` once, after the first browser saved one shared item and one private one. It opens a second browser, reloads, expects the shared item and not the private one, signs the same made-up person in when you pass `user`, and takes the judge screenshot captioned \"Second browser\". With a private item and no shared one, pass `loaded`, text the page shows once its items are in. It records the check. Keep the smoke test to about 20 data calls.",
       "- `template/AGENTS.md` says \"Don't store personal data unless the brief says to\". This brief says to, only in the collections marked personal above. It also says the build machine reaches only npm, the Meta API and the Muse Muse gateway: saving goes through that gateway, so nothing more is opened.",
       "- `lib/platform/data.ts`, `lib/platform/user.ts`, `components/platform/SignIn.tsx`, the routes in `app/api/musemuse/user`, `app/api/musemuse/user-sign-out` and `app/api/musemuse/owner`, and `tests/caps/data.ts` are platform files. Wrap them, never edit them.",
     ];

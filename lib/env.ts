@@ -1,5 +1,6 @@
 import { TARGETS, type TargetId } from "@/lib/brief/schema";
 import { CAP_FLAG, CAP_IDS, CAP_NEEDS_BUILDER, CAP_READY, type CapId } from "@/lib/caps/ids";
+import { dataSignInOn } from "@/lib/caps/data/types";
 import { capOverlaysNeeded } from "@/lib/caps/overlays";
 import { databaseChoice, isPreview, previewHasOwnDatabase } from "@/lib/db/url";
 import { DRIVE_CARD_TERMS_VERSION, DRIVE_TERMS_DEFAULT_VERSION } from "@/lib/drive/terms";
@@ -818,7 +819,7 @@ export const env = {
   },
   /** DATA_SIGN_IN: products with a data block may sign people in with a passkey through Muse Muse (/u/sign-in). */
   get dataSignIn(): boolean {
-    return flag("DATA_SIGN_IN");
+    return dataSignInOn();
   },
   /** The most rows one product keeps in its live namespace. */
   get dataProductRows(): number {

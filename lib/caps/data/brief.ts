@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { COLLECTION_NAME, DATA_SCOPES, DATA_SIGN_IN, DATA_WRITERS, isDataScope, isDataWriters } from "@/lib/caps/data/types";
+import { COLLECTION_NAME, DATA_SCOPES, DATA_SIGN_IN, DATA_WRITERS, dataSignInOn, isDataScope, isDataWriters } from "@/lib/caps/data/types";
 
 /**
  * The data cap's brief block (docs/CAPABILITIES.md, section 9): the collections a product saves through the platform,
@@ -23,6 +23,26 @@ export const DataBriefBlock = z.object({
   collections: z.array(DataCollectionBlock).min(1).max(MAX_COLLECTIONS),
   signIn: z.enum(DATA_SIGN_IN),
 });
+
+/**
+ * The writer's block while DATA_SIGN_IN is off: no user collections, no shared ones that signed-in people write, and no
+ * sign-in. The stored brief keeps DataBriefBlock, so a brief written while sign-in was on still parses.
+ */
+export const DataBriefBlockNoSignIn = z.object({
+  collections: z
+    .array(
+      DataCollectionBlock.extend({
+        scope: z.enum(["shared", "visitor", "owner"]),
+        writes: z.enum(["owner", "anyone"]),
+      }),
+    )
+    .min(1)
+    .max(MAX_COLLECTIONS),
+  signIn: z.enum(["none"]),
+});
+
+/** The block the brief writer answers in for DATA_SIGN_IN. */
+export const dataWriterBlock = (signIn: boolean = dataSignInOn()) => (signIn ? DataBriefBlock : DataBriefBlockNoSignIn);
 
 export type DataBrief = z.infer<typeof DataBriefBlock>;
 export type DataCollection = z.infer<typeof DataCollectionBlock>;
@@ -50,16 +70,28 @@ const clip = (s: string, max: number) => (s.length <= max ? s : s.slice(0, max).
  * The writer's raw data block, cleaned before zod (normalizeRawBrief): names in snake case and each once, at most 6,
  * text clipped. A collection with personal details never stays shared: it becomes a user collection when people sign
  * in, else a visitor one. A private collection's `writes` is "owner". A user collection, or a shared one that signed-in
- * people write, turns sign-in on ("optional") if the writer left it off. No usable collection means no data block, so
- * it becomes null. Anything else is left for zod to report.
+ * people write, turns sign-in on ("optional") if the writer left it off, while DATA_SIGN_IN is on. No usable collection
+ * means no data block, so it becomes null. Anything else is left for zod to report.
  */
-export function normalizeDataBlock(raw: unknown): unknown {
+export function normalizeDataBlock(raw: unknown, opts: { signIn?: boolean } = {}): unknown {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
   const b = { ...(raw as Record<string, unknown>) };
   if (!Array.isArray(b.collections)) return b;
+  // With DATA_SIGN_IN off nobody can sign in: a user collection becomes a visitor one, a shared one signed-in people
+  // write becomes the owner's, and sign-in is none (its routes answer 404).
+  if (!(opts.signIn ?? dataSignInOn())) {
+    b.signIn = "none";
+    b.collections = (b.collections as unknown[]).map((c) => {
+      if (!c || typeof c !== "object") return c;
+      const out = { ...(c as Record<string, unknown>) };
+      if (out.scope === "user") out.scope = "visitor";
+      if (out.writes === "signed_in") out.writes = "owner";
+      return out;
+    });
+  }
   const signIn = typeof b.signIn === "string" && (DATA_SIGN_IN as readonly string[]).includes(b.signIn) ? b.signIn : null;
   const seen = new Set<string>();
-  const collections = b.collections
+  const collections = (b.collections as unknown[])
     .filter((c): c is Record<string, unknown> => Boolean(c) && typeof c === "object" && typeof (c as { name?: unknown }).name === "string")
     .map((c) => {
       const out: Record<string, unknown> = { ...c, name: snakeName(c.name as string) };
@@ -78,13 +110,27 @@ export function normalizeDataBlock(raw: unknown): unknown {
   return b;
 }
 
-/** The writer's rules for the block (lib/caps/brief-fields.ts, CAP_WRITER_RULES). */
+/** The writer's rules for the block with DATA_SIGN_IN on (lib/caps/brief-fields.ts, CAP_WRITER_RULES). */
 export const DATA_WRITER_RULES: readonly string[] = [
   "data: fill it only when the muse needs items that survive a reload or that other people see: a shared list, posts, scores, a group's plans, saved settings that follow a person. Otherwise null. What one person keeps for themself on one device stays in the browser and needs no data block.",
   "data.collections: 1 to 6. Each has a lowercase name (letters, digits and underscores, up to 32), its scope, who writes it, what one item holds in a plain sentence, and whether an item can hold personal details.",
   "data.collections scope: shared when everyone on the product sees the items; visitor when the items stay with one browser; owner when only the product's owner keeps them; user when they follow a person who signs in, on any device.",
-  "data.collections writes: for a shared collection, owner when only the product's owner adds to it, signed_in when people who signed in add to it, anyone when any visitor may add to it (a guest book, a group list). Every other scope uses owner.",
+  "data.collections writes: for a shared collection, owner when only the product's owner adds to it, signed_in when people who signed in add to it, anyone when any visitor may add to it (a guest book, a group list). In a list anyone or signed-in people write, each of them can also change or remove what others added, so use it only where that's fine. Every other scope uses owner.",
   "data.collections personal: true when an item can hold a name, contact details, health, money or anything else about one person. Personal items go only in visitor, owner or user collections, never shared.",
   "data.signIn: none, optional or required. Sign-in is a passkey through Muse Muse, with no email and no password. Use optional when signing in only adds something (a list that follows you to another phone), required only when the product can't work without knowing who someone is, and none when no collection is user and no shared one is written by signed_in.",
   "A product saves only the collections the block lists. Don't add one for what the muse doesn't need.",
 ];
+
+/** The writer's rules with DATA_SIGN_IN off: nobody signs in, so no user collections and no signed-in writers. */
+export const DATA_WRITER_RULES_NO_SIGN_IN: readonly string[] = [
+  "data: fill it only when the muse needs items that survive a reload or that other people see: a shared list, posts, scores, a group's plans. Otherwise null. What one person keeps for themself on one device stays in the browser and needs no data block.",
+  "data.collections: 1 to 6. Each has a lowercase name (letters, digits and underscores, up to 32), its scope, who writes it, what one item holds in a plain sentence, and whether an item can hold personal details.",
+  "data.collections scope: shared when everyone on the product sees the items; visitor when the items stay with one browser; owner when only the product's owner keeps them. People can't sign in to products yet, so nothing follows a person to another device.",
+  "data.collections writes: for a shared collection, owner when only the product's owner adds to it, anyone when any visitor may add to it (a guest book, a group list). In a list anyone writes, any visitor can also change or remove what others added, so use it only where that's fine. Every other scope uses owner.",
+  "data.collections personal: true when an item can hold a name, contact details, health, money or anything else about one person. Personal items go only in visitor or owner collections, never shared.",
+  "data.signIn: none.",
+  "A product saves only the collections the block lists. Don't add one for what the muse doesn't need.",
+];
+
+/** The writer's rules for DATA_SIGN_IN. */
+export const dataWriterRules = (signIn: boolean = dataSignInOn()): readonly string[] => (signIn ? DATA_WRITER_RULES : DATA_WRITER_RULES_NO_SIGN_IN);

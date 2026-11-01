@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { cleanDisplayName, endUserSubject, mintPasskeyState, mintUserCode, readPasskeyState, type PasskeyState } from "@/lib/caps/data/identity";
+import { cleanDisplayName, endUserSubject, isSignInBind, mintPasskeyState, mintUserCode, readPasskeyState, type PasskeyState } from "@/lib/caps/data/identity";
 import { DATA_LIMITS } from "@/lib/caps/data/limits";
 import type { StoredPasskey } from "@/lib/caps/data/users";
 import { PASSKEY_ALGS, verifyAssertion, verifyRegistration } from "@/lib/caps/data/webauthn";
@@ -102,9 +102,13 @@ async function options(kind: PasskeyState["kind"], body: Record<string, unknown>
   const product = slug ? await deps.productForSignIn(slug) : null;
   if (!product) return refused(404, "This app doesn't take sign-ins.");
   const returnTo = safeReturnPath(body.returnTo) ?? "/";
+  // The product's browser started this sign-in and holds the same value in its cookie (SIGN_IN_BIND). Without it there
+  // is no browser to send a code back to.
+  if (!isSignInBind(body.bind)) return refused(400, "Start signing in from the app's own Sign in button.");
+  const bind = body.bind;
   const challenge = randomBytes(32).toString("base64url");
   if (kind === "login") {
-    const state = mintPasskeyState({ kind, challenge, productId: product.id, returnTo }, now);
+    const state = mintPasskeyState({ kind, challenge, productId: product.id, returnTo, bind }, now);
     return Response.json(
       { state, publicKey: { challenge, rpId: deps.rpId, timeout: DATA_LIMITS.challengeValidMs, userVerification: "preferred", allowCredentials: [] } },
       { headers: { "cache-control": "no-store" } },
@@ -113,7 +117,7 @@ async function options(kind: PasskeyState["kind"], body: Record<string, unknown>
   const name = cleanDisplayName(body.name);
   if (!name) return refused(400, "Type the name this app should show for you.");
   const endUserId = randomUUID();
-  const state = mintPasskeyState({ kind, challenge, productId: product.id, returnTo, endUserId, name }, now);
+  const state = mintPasskeyState({ kind, challenge, productId: product.id, returnTo, bind, endUserId, name }, now);
   return Response.json(
     {
       state,
@@ -158,7 +162,7 @@ async function verifyStep(kind: PasskeyState["kind"], body: Record<string, unkno
     if (!checked.ok) return refused(400, `That passkey couldn't be set up: ${checked.reason}.`);
     const transports = Array.isArray(r.transports) ? r.transports.filter((t): t is string => typeof t === "string" && TRANSPORTS.includes(t)) : [];
     await deps.createEndUser({ endUserId: state.endUserId!, name: state.name!, credentialId: checked.value.credentialId, publicKey: checked.value.publicKey, counter: checked.value.counter, transports });
-    const code = mintUserCode({ productId: product.id, subject: endUserSubject(state.endUserId!, product.id), name: state.name! }, now);
+    const code = mintUserCode({ productId: product.id, subject: endUserSubject(state.endUserId!, product.id), name: state.name!, bind: state.bind }, now);
     return Response.json({ redirect: backToProduct(product.liveUrl, code, state.returnTo) }, { headers: { "cache-control": "no-store" } });
   }
 
@@ -175,6 +179,6 @@ async function verifyStep(kind: PasskeyState["kind"], body: Record<string, unkno
   );
   if (!checked.ok) return refused(400, `That passkey didn't sign you in: ${checked.reason}.`);
   if (!(await deps.usePasskey(stored.id, stored.endUserId, stored.counter, checked.value.counter))) return refused(409, "That passkey was just used somewhere else. Try again.");
-  const code = mintUserCode({ productId: product.id, subject: endUserSubject(stored.endUserId, product.id), name: stored.displayName ?? "" }, now);
+  const code = mintUserCode({ productId: product.id, subject: endUserSubject(stored.endUserId, product.id), name: stored.displayName ?? "", bind: state.bind }, now);
   return Response.json({ redirect: backToProduct(product.liveUrl, code, state.returnTo) }, { headers: { "cache-control": "no-store" } });
 }

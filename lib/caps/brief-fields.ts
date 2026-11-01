@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import { DATA_WRITER_RULES, DataBriefBlock } from "@/lib/caps/data/brief";
+import { DataBriefBlock, dataWriterBlock, dataWriterRules } from "@/lib/caps/data/brief";
 import type { CapId } from "@/lib/caps/ids";
 import { RUNTIME_WRITER_RULES, RuntimeBriefBlock } from "@/lib/caps/runtime/brief";
 
@@ -30,8 +30,22 @@ export function briefCaps(brief: object): CapId[] {
  * and how. One line per cap, in plan order.
  */
 export const CAP_WRITER_RULES: Partial<Record<CapId, readonly string[]>> = {
-  data: DATA_WRITER_RULES,
+  // Unit 3: read per call, since they follow DATA_SIGN_IN.
+  get data() {
+    return dataWriterRules();
+  },
   runtime: RUNTIME_WRITER_RULES,
+};
+
+/**
+ * A cap whose writer's block differs from its stored one while some setting is off (newBriefSchemaFor reads this
+ * first). Read per call. The stored BriefSchema always takes CAP_BRIEF_FIELDS.
+ */
+export const CAP_WRITER_BRIEF_FIELDS: Partial<Record<CapId, z.ZodTypeAny>> = {
+  // Unit 3: DATA_SIGN_IN off means no user collections and no sign-in.
+  get data() {
+    return dataWriterBlock();
+  },
 };
 
 /** The writer's rules for the enabled caps, as a section for its instructions. Empty when none has rules. */

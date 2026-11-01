@@ -162,8 +162,15 @@ describe("the build's working copy", () => {
   });
 
   it("a refinement keeps a cap the snapshot lacks, since its sandbox has the overlay, and drops one switched off", () => {
-    assert.deepEqual(capsForBuild(WITH_DATA, { kind: "refine", enabled: [], onSite: ["data"] }).dropped, []);
-    assert.deepEqual(capsForBuild(WITH_DATA, { kind: "refine", enabled: [], onSite: [] }).dropped, [{ cap: "data", reason: "off" }]);
+    assert.deepEqual(capsForBuild(WITH_DATA, { kind: "refine", enabled: [], onSite: ["data"], served: ["data"] }).dropped, []);
+    assert.deepEqual(capsForBuild(WITH_DATA, { kind: "refine", enabled: [], onSite: [], served: [] }).dropped, [{ cap: "data", reason: "off" }]);
+  });
+
+  it("a refinement on production keeps a cap the product has while TRUST_SIGNED_IN_CAPS is off; a new build doesn't get it", () => {
+    // capsOnSite drops data on production without TRUST_SIGNED_IN_CAPS; servedCaps (what the gate serves) keeps it.
+    const production = { enabled: [], onSite: [], served: ["data"] } as const;
+    assert.deepEqual(capsForBuild(WITH_DATA, { kind: "refine", ...production }).dropped, [], "a change keeps the product's saved data");
+    assert.deepEqual(capsForBuild(WITH_DATA, { kind: "build", ...production }).dropped, [{ cap: "data", reason: "off" }]);
   });
 
   it("a decision saved at provision is the answer, whatever the env says later", () => {

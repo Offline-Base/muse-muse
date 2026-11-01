@@ -46,19 +46,29 @@ const nameField = (name: string) => Buffer.from(name, "utf8").toString("base64ur
 const readName = (field: string) => (field === "-" ? "" : (cleanDisplayName(Buffer.from(field, "base64url").toString("utf8")) ?? ""));
 
 /**
- * `uc1.<product>.<subject>.<name>.<nonce>.<exp>.<sig>`: what the platform sends to the product's live origin after a
- * passkey, good for 5 minutes and spent once (the nonce). The name is base64url, since the product gets it anyway.
+ * The random value a product's browser holds in its short-lived HttpOnly mm_signin cookie while it signs in. It rides
+ * through the link, the passkey page and the ceremony's state into the code, and the exchange takes the code only with
+ * the same value from that cookie, so a code started in one browser can't sign another one in (login CSRF).
  */
-export function mintUserCode(o: { productId: string; subject: string; name: string }, now: Date): string {
-  return mintDotted("uc1", "user-code", [o.productId, o.subject, nameField(o.name), randomId(), String(now.getTime() + DATA_LIMITS.signInCodeValidMs)]);
+export const SIGN_IN_BIND = /^[A-Za-z0-9_-]{16,64}$/;
+
+export const isSignInBind = (value: unknown): value is string => typeof value === "string" && SIGN_IN_BIND.test(value);
+
+/**
+ * `uc1.<product>.<subject>.<name>.<bind>.<nonce>.<exp>.<sig>`: what the platform sends to the product's live origin
+ * after a passkey, good for 5 minutes and spent once (the nonce), for the browser that holds `bind`. The name is
+ * base64url, since the product gets it anyway.
+ */
+export function mintUserCode(o: { productId: string; subject: string; name: string; bind: string }, now: Date): string {
+  return mintDotted("uc1", "user-code", [o.productId, o.subject, nameField(o.name), o.bind, randomId(), String(now.getTime() + DATA_LIMITS.signInCodeValidMs)]);
 }
 
-export function readUserCode(code: string, now: Date): { productId: string; subject: string; name: string; nonce: string; exp: Date } | null {
-  const fields = readDotted(code, "uc1", "user-code", 5);
+export function readUserCode(code: string, now: Date): { productId: string; subject: string; name: string; bind: string; nonce: string; exp: Date } | null {
+  const fields = readDotted(code, "uc1", "user-code", 6);
   if (!fields) return null;
-  const [productId, subject, name, nonce, exp] = fields as [string, string, string, string, string];
+  const [productId, subject, name, bind, nonce, exp] = fields as [string, string, string, string, string, string];
   const at = notExpired(exp, now);
-  return at ? { productId, subject, name: readName(name), nonce, exp: at } : null;
+  return at && isSignInBind(bind) ? { productId, subject, name: readName(name), bind, nonce, exp: at } : null;
 }
 
 /** `us1.<product>.<subject>.<exp>.<sig>`: what the product keeps in its HttpOnly mm_user cookie for 30 days. */
@@ -108,6 +118,8 @@ export interface PasskeyState {
   challenge: string;
   productId: string;
   returnTo: string;
+  /** The product browser's sign-in value (SIGN_IN_BIND), carried into the code. */
+  bind: string;
   /** register only. */
   endUserId?: string;
   name?: string;
@@ -127,7 +139,7 @@ export function readPasskeyState(token: unknown, kind: PasskeyState["kind"], now
   if (!SAFE_FIELD.test(body) || !sameMac(sig, mac("passkey-state", [kind, body]))) return null;
   try {
     const state = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as PasskeyState;
-    return state.kind === kind && typeof state.exp === "number" && state.exp > now.getTime() ? state : null;
+    return state.kind === kind && typeof state.exp === "number" && state.exp > now.getTime() && isSignInBind(state.bind) ? state : null;
   } catch {
     return null;
   }

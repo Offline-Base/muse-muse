@@ -50,6 +50,12 @@ export interface CapsForBuildOptions {
   enabled?: readonly CapId[];
   /** env.capsOnSite: ready and on, whatever the snapshot has. */
   onSite?: readonly CapId[];
+  /**
+   * env.servedCaps: ready and on, whoever built the product. A refinement uses it: the product already has the cap and
+   * the gate serves it on servedCaps, so production's signed-in-builder rule (TRUST_SIGNED_IN_CAPS) doesn't take a cap
+   * from a product that already saves data.
+   */
+  served?: readonly CapId[];
   /** A decision saved at provision (builds.caps_dropped). When given, it is the answer, and the env isn't read. */
   decided?: readonly CapDrop[] | null;
 }
@@ -73,8 +79,13 @@ export function capsForBuild<T extends Brief>(brief: T, opts: CapsForBuildOption
     const dropped = opts.decided.filter((d) => isCapId(d.cap) && caps.includes(d.cap));
     return { brief: withoutCaps(brief, dropped.map((d) => d.cap)), dropped };
   }
+  if (opts.kind === "refine") {
+    const served = opts.served ?? env.servedCaps;
+    const dropped: CapDrop[] = caps.filter((c) => !served.includes(c)).map((cap) => ({ cap, reason: "off" }));
+    return { brief: withoutCaps(brief, dropped.map((d) => d.cap)), dropped };
+  }
   const onSite = opts.onSite ?? env.capsOnSite;
-  const enabled = opts.kind === "refine" ? onSite : (opts.enabled ?? env.enabledCaps);
+  const enabled = opts.enabled ?? env.enabledCaps;
   const dropped: CapDrop[] = caps.filter((c) => !enabled.includes(c)).map((cap) => ({ cap, reason: onSite.includes(cap) ? "snapshot" : "off" }));
   return { brief: withoutCaps(brief, dropped.map((d) => d.cap)), dropped };
 }

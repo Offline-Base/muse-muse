@@ -32,7 +32,7 @@ async function post(path: string, body: Json): Promise<Json> {
   return data;
 }
 
-export function PasskeySignIn({ product, productName, returnTo }: { product: string; productName: string; returnTo: string }) {
+export function PasskeySignIn({ product, productName, returnTo, bind }: { product: string; productName: string; returnTo: string; bind: string }) {
   const nameId = useId();
   const [name, setName] = useState("");
   const [busy, setBusy] = useState<"login" | "register" | null>(null);
@@ -50,7 +50,7 @@ export function PasskeySignIn({ product, productName, returnTo }: { product: str
     setBusy(kind);
     setError(null);
     try {
-      const options = await post(`/api/u/passkey/${kind}/options`, { product, returnTo, ...(kind === "register" ? { name } : {}) });
+      const options = await post(`/api/u/passkey/${kind}/options`, { product, returnTo, bind, ...(kind === "register" ? { name } : {}) });
       const pk = options.publicKey as Json;
       let credential: PublicKeyCredential | null;
       if (kind === "register") {

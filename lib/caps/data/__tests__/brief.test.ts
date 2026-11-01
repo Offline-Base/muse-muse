@@ -25,6 +25,7 @@ const ready = CAP_READY as Record<string, boolean>;
 afterEach(() => {
   ready.data = false;
   delete process.env.DATA_ENABLED;
+  delete process.env.DATA_SIGN_IN;
 });
 
 const DATA = {
@@ -54,14 +55,51 @@ describe("the writer's raw data block", () => {
   });
 
   it("never keeps personal details shared, turns sign-in on for user collections, and is null with no collection", () => {
-    const moved = normalizeDataBlock({ collections: [{ name: "contacts", scope: "shared", writes: "anyone", holds: "A name and phone.", personal: true }], signIn: "none" }) as typeof DATA;
+    const on = { signIn: true };
+    const moved = normalizeDataBlock({ collections: [{ name: "contacts", scope: "shared", writes: "anyone", holds: "A name and phone.", personal: true }], signIn: "none" }, on) as typeof DATA;
     assert.equal(moved.collections[0]!.scope, "visitor");
-    const signedIn = normalizeDataBlock({ collections: [{ name: "contacts", scope: "shared", writes: "anyone", holds: "h", personal: true }], signIn: "optional" }) as typeof DATA;
+    const signedIn = normalizeDataBlock({ collections: [{ name: "contacts", scope: "shared", writes: "anyone", holds: "h", personal: true }], signIn: "optional" }, on) as typeof DATA;
     assert.equal(signedIn.collections[0]!.scope, "user");
-    assert.equal((normalizeDataBlock({ collections: [{ name: "lists", scope: "user", writes: "owner", holds: "h", personal: false }], signIn: "none" }) as typeof DATA).signIn, "optional");
-    assert.equal((normalizeDataBlock({ collections: [{ name: "posts", scope: "shared", writes: "signed_in", holds: "h", personal: false }], signIn: "none" }) as typeof DATA).signIn, "optional");
+    assert.equal((normalizeDataBlock({ collections: [{ name: "lists", scope: "user", writes: "owner", holds: "h", personal: false }], signIn: "none" }, on) as typeof DATA).signIn, "optional");
+    assert.equal((normalizeDataBlock({ collections: [{ name: "posts", scope: "shared", writes: "signed_in", holds: "h", personal: false }], signIn: "none" }, on) as typeof DATA).signIn, "optional");
     assert.equal(normalizeDataBlock({ collections: [{ name: 7 }, { scope: "shared" }], signIn: "none" }), null);
     assert.equal(normalizeDataBlock({ collections: [] , signIn: "none" }), null);
+  });
+});
+
+describe("with DATA_SIGN_IN off", () => {
+  it("the writer's raw block has no user collections, no signed-in writers and no sign-in", () => {
+    const out = normalizeDataBlock({
+      collections: [
+        { name: "lists", scope: "user", writes: "owner", holds: "A person's own list.", personal: true },
+        { name: "posts", scope: "shared", writes: "signed_in", holds: "A post.", personal: false },
+        { name: "contacts", scope: "shared", writes: "anyone", holds: "A name and phone.", personal: true },
+      ],
+      signIn: "optional",
+    }) as typeof DATA;
+    assert.deepEqual(out.collections.map((c) => [c.name, c.scope, c.writes]), [
+      ["lists", "visitor", "owner"],
+      ["posts", "shared", "owner"],
+      ["contacts", "visitor", "owner"],
+    ]);
+    assert.equal(out.signIn, "none");
+  });
+
+  it("the writer's schema, rules and catalog offer no sign-in; with it on they do", () => {
+    ready.data = true;
+    process.env.DATA_ENABLED = "1";
+    const schema = () => newBriefSchemaFor({ gadgets: false, targets: [], caps: env.enabledCaps });
+    const user = { ...BRIEF, data: { collections: [DATA.collections[2]!], signIn: "optional" } };
+    assert.equal(schema().safeParse(user).success, false, "no user collection, no sign-in");
+    assert.equal(schema().safeParse({ ...BRIEF, data: { collections: [DATA.collections[0]!], signIn: "none" } }).success, true);
+    const rules = briefInstructions();
+    assert.ok(!/passkey|user when they follow a person|signed_in/.test(rules.slice(rules.indexOf("Platform services"))), "no sign-in in the rules");
+    assert.ok(rules.includes("- data.signIn: none."));
+    assert.ok(!catalogSummary().includes("passkey"));
+    process.env.DATA_SIGN_IN = "1";
+    assert.equal(schema().safeParse(user).success, true);
+    assert.ok(briefInstructions().includes("user when they follow a person who signs in"));
+    assert.ok(catalogSummary().includes("signs in with a passkey through Muse Muse"));
   });
 });
 
@@ -74,6 +112,7 @@ describe("the brief with a data block", () => {
   it("is required but nullable in the writer's schema with the cap on, and gets the writer's rules and catalog entry", () => {
     ready.data = true;
     process.env.DATA_ENABLED = "1";
+    process.env.DATA_SIGN_IN = "1";
     assert.deepEqual(env.enabledCaps, ["data"]);
     const strict = strictJsonSchema(newBriefSchemaFor({ gadgets: false, targets: [], caps: env.enabledCaps })) as { required: string[] };
     assert.ok(strict.required.includes("data"));

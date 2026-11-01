@@ -97,12 +97,15 @@ class Authenticator {
 }
 
 const expected = (challenge = "challenge-abc") => ({ challenge, origin: ORIGIN, rpId: RP });
+/** The value a product's browser holds in its mm_signin cookie while it signs in. */
+const BIND = "bind_aaaaaaaaaaaaaaaaaaaa";
 
 describe("codes and sessions", () => {
   it("a sign-in code is for one product, carries the name, expires in 5 minutes, and a forged one is nothing", () => {
-    const code = mintUserCode({ productId: "p1", subject: "subj_1", name: "Ana Bé" }, NOW);
+    const code = mintUserCode({ productId: "p1", subject: "subj_1", name: "Ana Bé", bind: BIND }, NOW);
     const read = readUserCode(code, NOW);
     assert.equal(read?.productId, "p1");
+    assert.equal(read?.bind, BIND, "the code names the browser that started the sign-in");
     assert.equal(read?.subject, "subj_1");
     assert.equal(read?.name, "Ana Bé");
     assert.equal(readUserCode(code, new Date(NOW.getTime() + 5 * 60_000 + 1)), null, "expired");
@@ -136,8 +139,9 @@ describe("codes and sessions", () => {
   });
 
   it("a ceremony's state is signed for its kind and expires", () => {
-    const state = mintPasskeyState({ kind: "register", challenge: "c", productId: "p1", returnTo: "/", endUserId: "u", name: "Ana" }, NOW);
+    const state = mintPasskeyState({ kind: "register", challenge: "c", productId: "p1", returnTo: "/", bind: BIND, endUserId: "u", name: "Ana" }, NOW);
     assert.equal(readPasskeyState(state, "register", NOW)?.name, "Ana");
+    assert.equal(readPasskeyState(state, "register", NOW)?.bind, BIND);
     assert.equal(readPasskeyState(state, "login", NOW), null);
     assert.equal(readPasskeyState(state, "register", new Date(NOW.getTime() + 6 * 60_000)), null);
     assert.equal(readPasskeyState(state.replace(/.$/, state.endsWith("A") ? "B" : "A"), "register", NOW), null);
@@ -250,7 +254,7 @@ describe("the ceremonies on the platform", () => {
   it("make a passkey, then sign in with it, each time back to the product's own live link with a code for it", async () => {
     const { d, users } = deps();
     const a = new Authenticator();
-    const opts = (await (await handlePasskey(post("register", "options", { product: "lists", returnTo: "/mine", name: "Ana" }), "register", "options", d)).json()) as {
+    const opts = (await (await handlePasskey(post("register", "options", { product: "lists", returnTo: "/mine", name: "Ana", bind: BIND }), "register", "options", d)).json()) as {
       state: string;
       publicKey: { challenge: string; rp: { id: string }; user: { id: string }; authenticatorSelection: { residentKey: string } };
     };
@@ -265,6 +269,7 @@ describe("the ceremonies on the platform", () => {
     assert.equal(back.searchParams.get("returnTo"), "/mine");
     const code = readUserCode(back.searchParams.get("code")!, NOW);
     assert.equal(code?.productId, "p1");
+    assert.equal(code?.bind, BIND, "the code is for the browser that started it");
     assert.equal(code?.name, "Ana");
     assert.equal(code?.subject, endUserSubject(users[0]!.endUserId, "p1"));
     assert.equal(opts.publicKey.user.id, Buffer.from(users[0]!.endUserId.replace(/-/g, ""), "hex").toString("base64url"));
@@ -273,7 +278,7 @@ describe("the ceremonies on the platform", () => {
     const again = await handlePasskey(post("register", "verify", { product: "lists", state: opts.state, credential: { id: created.id, type: "public-key", response: created } }), "register", "verify", d);
     assert.equal(again.status, 400);
 
-    const login = (await (await handlePasskey(post("login", "options", { product: "lists", returnTo: "//evil.example" }), "login", "options", d)).json()) as { state: string; publicKey: { challenge: string } };
+    const login = (await (await handlePasskey(post("login", "options", { product: "lists", returnTo: "//evil.example", bind: BIND }), "login", "options", d)).json()) as { state: string; publicKey: { challenge: string } };
     const got = a.get(login.publicKey.challenge);
     const signedIn = await handlePasskey(post("login", "verify", { product: "lists", state: login.state, credential: { id: got.id, type: "public-key", response: got } }), "login", "verify", d);
     assert.equal(signedIn.status, 200);
@@ -286,9 +291,11 @@ describe("the ceremonies on the platform", () => {
   it("refuse a product that isn't live with a collection list, a passkey it doesn't know, and someone else's user handle", async () => {
     const { d } = deps();
     assert.equal((await handlePasskey(post("login", "options", { product: "nope" }), "login", "options", d)).status, 404);
-    assert.equal((await handlePasskey(post("register", "options", { product: "lists", name: " " }), "register", "options", d)).status, 400);
+    assert.equal((await handlePasskey(post("register", "options", { product: "lists", name: " ", bind: BIND }), "register", "options", d)).status, 400);
+    assert.equal((await handlePasskey(post("login", "options", { product: "lists" }), "login", "options", d)).status, 400, "no sign-in value from the product's browser");
+    assert.equal((await handlePasskey(post("register", "options", { product: "lists", name: "Ana", bind: "short" }), "register", "options", d)).status, 400);
     const a = new Authenticator();
-    const login = (await (await handlePasskey(post("login", "options", { product: "lists" }), "login", "options", d)).json()) as { state: string; publicKey: { challenge: string } };
+    const login = (await (await handlePasskey(post("login", "options", { product: "lists", bind: BIND }), "login", "options", d)).json()) as { state: string; publicKey: { challenge: string } };
     const got = a.get(login.publicKey.challenge);
     const unknown = await handlePasskey(post("login", "verify", { product: "lists", state: login.state, credential: { id: got.id, type: "public-key", response: got } }), "login", "verify", d);
     assert.equal(unknown.status, 400);

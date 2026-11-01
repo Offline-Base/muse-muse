@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CAP_BRIEF_FIELDS } from "@/lib/caps/brief-fields";
+import { CAP_BRIEF_FIELDS, CAP_WRITER_BRIEF_FIELDS } from "@/lib/caps/brief-fields";
 import type { CapId } from "@/lib/caps/ids";
 import { MilestonesSchema } from "@/lib/engine/milestones";
 import { PERSONAL_TOOL_IDS, PUBLIC_TOOL_IDS } from "@/lib/tools/ids";
@@ -165,7 +165,7 @@ export function newBriefSchemaFor(opts: {
   const fields = CAP_BRIEF_FIELDS as Partial<Record<CapId, z.ZodTypeAny>>;
   const extra: Record<string, z.ZodTypeAny> = {};
   for (const cap of opts.caps ?? []) {
-    const block = fields[cap];
+    const block = CAP_WRITER_BRIEF_FIELDS[cap] ?? fields[cap];
     if (block) extra[cap] = block.nullable();
   }
   if (opts.milestones) extra.milestones = MilestonesSchema.nullable();
