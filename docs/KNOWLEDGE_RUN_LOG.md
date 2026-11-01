@@ -855,6 +855,13 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   IQ2_XXS, IQ1_M and Q4_K_M, plus base IQ1_S and r30's IQ1_S (the second checks the tool against the DFlash helper's 10/60).
   After the shrink bench, it checks the two kept mixes. Each file runs under gpu.lock, about 5 minutes. Output goes to
   ~/q/loops-r30b.
+- 8:15 PM: train-1 (8x A100 80 GB, $22.32/h, $533 so far) was idle, so it runs the final model's BF16 tests
+  (job/final_r30b.sh) while the plan workflow finishes:
+  - GPU 0: r30b's full channel check with no time cap, finishing the skills items the 30-minute run didn't reach.
+  - GPUs 1 to 3: the held-out 190-probe honesty test (honesty_probes.jsonl, sha256 28a0287a..., no overlap with the dev
+    set), reasoning off, prefilled, on r30b, with base and stage 2 as references.
+  This is the 190 set's first use on a Stage B model, after the pick. Nothing is tuned on it. A hand audit follows,
+  because the rule grader misgrades (Oct 31, 2:15 AM). writer-1: imatrix done 8:06 PM, Q8_0 scoring, IQ quants running.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
