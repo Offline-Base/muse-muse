@@ -75,6 +75,7 @@ import {
 } from "@/lib/pipeline/logic";
 import { planArtStep } from "@/lib/pipeline/plan-art-step";
 import { restoreFilesStep, restoreOutcomeStep } from "@/lib/pipeline/restore-steps";
+import { packageProductStep } from "@/lib/pipeline/package-step";
 import { startProveStep } from "@/lib/pipeline/prove-start";
 import { provePlanStep } from "@/lib/pipeline/prove-steps";
 import { capWithinWall, JUDGE_RESERVE_MS, stepTimeoutMs, type RoundPlan } from "@/lib/pipeline/steps";
@@ -522,6 +523,8 @@ async function ship(
     demoPosterUrl,
     status: outcome,
   });
+  // Phone and desktop downloads, from the live link. With no packager snapshot the workflow runs no extra step.
+  if (env.packagerSnapshotId) await packageProductStep({ buildId: ctx.buildId, productId: ctx.productId, liveUrl });
   return { liveUrl, outcome, liveFailure };
 }
 
