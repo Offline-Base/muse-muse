@@ -169,13 +169,15 @@ function DecisionRow({ r }: { r: ResultView }) {
         ) : null}
       </td>
       <td>
-        {d.tuned ? "Tuned" : "Base"} right on <strong>{main.accuracy.right}</strong> of {d.items} ({percentText(main.accuracy.rate)})
+        {d.tuned ? "Tuned" : r.sparkOpen ? "r30b" : "Base"} right on <strong>{main.accuracy.right}</strong> of {d.items} ({percentText(main.accuracy.rate)})
         <span className="row-sub muted">
-          {d.tuned ? `Base right on ${d.base.accuracy.right} (${percentText(d.base.accuracy.rate)})` : "Score only, nothing trained"}
+          {d.tuned
+            ? `${r.sparkOpen ? "The 2026 Glimmer it started from" : "Base"} right on ${d.base.accuracy.right} (${percentText(d.base.accuracy.rate)})`
+            : "Score only, nothing trained"}
         </span>
       </td>
       <td>
-        Macro F1 {d.tuned ? `base ${twoPlaces(d.base.macroF1)} · tuned ` : ""}
+        Macro F1 {d.tuned ? `${r.sparkOpen ? "r30b" : "base"} ${twoPlaces(d.base.macroF1)} · tuned ` : ""}
         <strong>{twoPlaces(main.macroF1)}</strong>
         <span className="row-sub muted">held-out rows, no judge</span>
       </td>

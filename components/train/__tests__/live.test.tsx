@@ -160,7 +160,7 @@ describe("Start a live demo", () => {
     const html = render(StartLiveDemo, props);
     clean(html);
     assert.match(html, /<h2 id="[^"]+">Live demo<\/h2>/);
-    assert.match(html, /Anyone with this page&#x27;s link can then type an app idea and see base and tuned Glimmer answer it side by side, with no sign-in\./);
+    assert.match(html, /Anyone with this page&#x27;s link can then type an app idea and see the 2026 Glimmer it started from and the tuned model answer it side by side, with no sign-in\./);
     assert.match(html, /<label class="train-label" for="([^"]+)">Minutes live<\/label><select id="\1"/);
     for (const m of [10, 15, 20, 45, 60, 90]) assert.match(html, new RegExp(`<option value="${m}">${m} minutes</option>`));
     assert.match(html, /<option value="30" selected="">30 minutes<\/option>/);

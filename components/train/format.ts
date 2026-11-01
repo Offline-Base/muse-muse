@@ -1717,11 +1717,14 @@ export function decisionState(
   return { state: "scoring" };
 }
 
-/** The results strip's sentence: what each model got right on the held-out test rows. */
-export function decisionHeadline(s: DecisionSummary): string {
+/**
+ * The results strip's sentence: what each model got right on the held-out test rows. `sparkOpen` (a job trained on
+ * r30b, isSparkOpenDerivative) names its base the 2026 Glimmer it started from.
+ */
+export function decisionHeadline(s: DecisionSummary, sparkOpen = false): string {
   const base = s.base.accuracy;
-  if (!s.tuned) return `Base Glimmer was ${rightText(base)}, with nothing trained.`;
-  return `The tuned model was ${rightText(s.tuned.accuracy)}; base Glimmer was right on ${groupThousands(base.right)} (${percentText(base.rate)}).`;
+  if (!s.tuned) return `${sparkOpen ? "The 2026 Glimmer (r30b)" : "Base Glimmer"} was ${rightText(base)}, with nothing trained.`;
+  return `The tuned model was ${rightText(s.tuned.accuracy)}; ${sparkOpen ? "the 2026 Glimmer it started from" : "base Glimmer"} was right on ${groupThousands(base.right)} (${percentText(base.rate)}).`;
 }
 
 /** The results in one sentence, for screen readers and tests. */
@@ -1749,12 +1752,12 @@ export function calibrationText(side: DecisionSummary["base"], devRows: number):
 export const SMALL_LABEL_ROWS = 10;
 
 /** The plain sentences under the strip: what the numbers rest on and where they are weak. */
-export function decisionNotes(s: DecisionSummary, opts: { trainRows?: number | null; succeeded?: boolean } = {}): string[] {
+export function decisionNotes(s: DecisionSummary, opts: { trainRows?: number | null; succeeded?: boolean; sparkOpen?: boolean } = {}): string[] {
   const out: string[] = [];
   if (opts.succeeded === false) out.push("The job didn't succeed, so these are only the scores its GPU sent before it stopped.");
   if (s.tuned && opts.trainRows) {
     out.push(
-      `The tuned model is a small LoRA adapter on Muse Glimmer 30B, trained on ${groupThousands(opts.trainRows)} of this ` +
+      `The tuned model is a small LoRA adapter on ${opts.sparkOpen ? "Muse Glimmer 30B with 2026 knowledge (r30b)" : "Muse Glimmer 30B"}, trained on ${groupThousands(opts.trainRows)} of this ` +
         "dataset's examples. The test rows were held out before training, and both models were scored on the same ones.",
     );
   }
@@ -1877,12 +1880,15 @@ export interface DecideTryModel {
   trainRows: number | null;
   /** Its test accuracy and base Glimmer's, when it was scored. */
   accuracy: { tuned: WilsonRate | null; base: WilsonRate } | null;
+  /** True for a model trained on r30b (isSparkOpenDerivative): its base is the 2026 Glimmer it started from. */
+  sparkOpen?: boolean;
 }
 
 /** A decision dataset's spec and a job's decision summary as the box's model, or null for anything else. */
 export function decideTryModel(
   spec: Pick<DecisionSpec, "question" | "labels" | "split"> | null | undefined,
   summary: unknown,
+  sparkOpen = false,
 ): DecideTryModel | null {
   if (!spec || typeof spec.question !== "string" || !Array.isArray(spec.labels)) return null;
   const s = isDecisionSummary(summary as DecisionSummary | null) && (summary as DecisionSummary).items > 0 ? (summary as DecisionSummary) : null;
@@ -1891,6 +1897,7 @@ export function decideTryModel(
     labels: spec.labels.map((l) => ({ id: l.id, name: l.name })),
     trainRows: Number.isFinite(spec.split?.train) ? spec.split.train : null,
     accuracy: s ? { tuned: s.tuned?.accuracy ?? null, base: s.base.accuracy } : null,
+    ...(sparkOpen ? { sparkOpen: true } : {}),
   };
 }
 
@@ -1911,7 +1918,7 @@ export function decideTryNote(model: DecideTryModel): string {
   const trained = model.trainRows ? `A small model trained on ${groupThousands(model.trainRows)} of its dataset's examples.` : "A small model trained on its dataset's examples.";
   const a = model.accuracy;
   const scored = a?.tuned
-    ? ` On ${groupThousands(a.tuned.total)} held-out ${a.tuned.total === 1 ? "example" : "examples"} it never saw, it was right on ${groupThousands(a.tuned.right)} (${percentText(a.tuned.rate)}); base Glimmer on ${groupThousands(a.base.right)}.`
+    ? ` On ${groupThousands(a.tuned.total)} held-out ${a.tuned.total === 1 ? "example" : "examples"} it never saw, it was right on ${groupThousands(a.tuned.right)} (${percentText(a.tuned.rate)}); ${model.sparkOpen ? "the 2026 Glimmer it started from" : "base Glimmer"} on ${groupThousands(a.base.right)}.`
     : "";
   return `${trained}${scored} It can be wrong: check anything that matters.`;
 }

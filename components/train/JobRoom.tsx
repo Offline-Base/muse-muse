@@ -358,6 +358,7 @@ export function JobRoom(props: JobRoomProps) {
               succeeded={job.status === "succeeded"}
               trainRows={props.decision?.trainRows ?? null}
               wrong={props.decision?.wrong ?? null}
+              sparkOpen={sparkOpen}
             />
           ) : (
             <EvalResults

@@ -24,7 +24,7 @@ import { SERVE_BOOT_MINUTES } from "@/lib/train/logic";
 
 /**
  * A decision model's Try it live box (docs/DECISION_MODELS.md "On the lab's GPU"): on its result page, and on its admin
- * job page, while a glimmer-serve job serves it. One input, and base Glimmer's and the tuned model's picks side by side
+ * job page, while a glimmer-serve job serves it. One input, and r30b's (the demo's base) and the tuned model's picks side by side
  * from the same GPU, each with every label's probability. It talks only to POST /api/lab/{id}/decide, never to the GPU,
  * and replaces the chat box for a decision model, which answers one letter and never chats.
  */
@@ -164,7 +164,7 @@ export function DecideTryCard({ adapterJobId, demo, model, serverNow, serveJobId
             <span>{busy ? "Deciding" : "Decide"}</span>
           </button>
           <span className={busy ? "muted small" : "sr-only"} role="status">
-            {busy ? "Base and tuned Glimmer are deciding." : answer ? "Both picks are in, below." : ""}
+            {busy ? "The 2026 Glimmer and the tuned model are deciding." : answer ? "Both picks are in, below." : ""}
           </span>
         </div>
         {error ? (

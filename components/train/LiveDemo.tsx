@@ -287,8 +287,8 @@ export function StartLiveDemo({
         Serve this adapter on one GPU for a set time.{" "}
         {publicPage
           ? decide
-            ? "Anyone with this page's link can then type an input and see base Glimmer and this decision model each pick a label for it, with no sign-in."
-            : "Anyone with this page's link can then type an app idea and see base and tuned Glimmer answer it side by side, with no sign-in."
+            ? "Anyone with this page's link can then type an input and see the 2026 Glimmer it started from and this decision model each pick a label for it, with no sign-in."
+            : "Anyone with this page's link can then type an app idea and see the 2026 Glimmer it started from and the tuned model answer it side by side, with no sign-in."
           : decide
             ? "This job isn't scored yet, so its public result page doesn't exist and only admins can try the demo here."
             : "This job isn't judged yet, so its public result page doesn't exist and only admins can try the demo here."}

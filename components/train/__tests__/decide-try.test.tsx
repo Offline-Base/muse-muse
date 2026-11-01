@@ -174,9 +174,9 @@ describe("a decision model's Try it live box", () => {
     const props = { adapterJobId: JOB, adapterTitle: "Ticket router", ceilings: { maxMinutes: 120, maxUsd: 5 }, maxActive: 1, dailyUsd: 20 };
     const start = render(C.StartLiveDemo, { ...props, decide: true });
     clean(start);
-    assert.match(start, /Anyone with this page&#x27;s link can then type an input and see base Glimmer and this decision model each pick a label for it, with no sign-in\./);
+    assert.match(start, /Anyone with this page&#x27;s link can then type an input and see the 2026 Glimmer it started from and this decision model each pick a label for it, with no sign-in\./);
     assert.match(render(C.StartLiveDemo, { ...props, decide: true, publicPage: false }), /This job isn&#x27;t scored yet/);
-    assert.match(render(C.StartLiveDemo, props), /type an app idea and see base and tuned Glimmer answer it side by side/, "a chat adapter's words are as they were");
+    assert.match(render(C.StartLiveDemo, props), /type an app idea and see the 2026 Glimmer it started from and the tuned model answer it side by side/, "a chat adapter's words, with the base the demo loads");
   });
 });
 
@@ -189,6 +189,10 @@ describe("the box's helpers and its call", () => {
     assert.equal(f.decideTryModel(tickets.spec, null)!.accuracy, null, "not scored yet");
     assert.equal(f.decideTryNote(f.decideTryModel(tickets.spec, null)!), `A small model trained on ${tickets.spec.split.train} of its dataset's examples. It can be wrong: check anything that matters.`);
     assert.equal(f.decideTryModel(null, tickets.summary), null);
+    assert.match(f.decideTryNote(m), /; base Glimmer on 32\./, "an old job's note");
+    const r30b = f.decideTryModel(tickets.spec, tickets.summary, true)!;
+    assert.equal(r30b.sparkOpen, true);
+    assert.match(f.decideTryNote(r30b), /; the 2026 Glimmer it started from on 32\./);
   });
 
   it("says confidence as about N in 10 only when T was fit", () => {

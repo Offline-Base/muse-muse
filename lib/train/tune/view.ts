@@ -4,6 +4,7 @@
  */
 import { evalRows, evalState, gpuName, isDatasetStalled, type EvalRow } from "@/components/train/format";
 import { toDatasetView, toJobView, unjudgedNote, type DatasetHead, type TrainJobRow } from "@/lib/train/logic";
+import { isSparkOpenDerivative } from "@/lib/train/base";
 import { isJudged } from "@/lib/train/models";
 import { recipeById } from "@/lib/train/recipes";
 import { planCost, planSettings } from "@/lib/train/tune/cost";
@@ -85,7 +86,9 @@ function lastLine(text: string | null | undefined): string {
 export function runVerdict(job: TrainJobView | null, evals: EvalRow[], now: number): RunVerdict | null {
   if (!job || job.status !== "succeeded") return null;
   const scored = evalState(job, evals, now);
-  if (scored.state === "judged") return { ...evalVerdict(scored.summary), scored: isJudged(scored.summary) };
+  if (scored.state === "judged") {
+    return { ...evalVerdict(scored.summary, isSparkOpenDerivative({ params: job.params })), scored: isJudged(scored.summary) };
+  }
   // The reason saved on the job (a spend cap, a skipped judge) comes first, even with no eval items to show.
   const note = unjudgedNote(job.evalSummary);
   if (note) return { passed: false, scored: false, words: `${note} It wasn't scored, so it hasn't passed.` };

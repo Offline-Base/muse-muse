@@ -153,7 +153,7 @@ export function JobResults({ result: r, rows, dataset, live = null, serverNow, a
       </section>
 
       {r.decision ? (
-        <DecisionResults summary={r.decision} trainRows={dataset?.trainCount ?? null} />
+        <DecisionResults summary={r.decision} trainRows={dataset?.trainCount ?? null} sparkOpen={r.sparkOpen} />
       ) : (
         <EvalResults
           state={{ state: "judged", summary: r.summary }}
