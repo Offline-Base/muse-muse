@@ -1,12 +1,14 @@
 import type { Brief } from "@/lib/brief/schema";
 import { codeBlock, type CodeBrief } from "@/lib/caps/code/brief";
-import { BROWSE_LIMITS, EXEC_LIMITS } from "@/lib/caps/code/limits";
+import { BROWSE_LIMITS, EXEC_LIMITS, SMOKE_EXEC_RUNS } from "@/lib/caps/code/limits";
+import { codePartsOn } from "@/lib/caps/code/parts";
 import type { CapRenderEntry } from "@/lib/caps/render";
 
 /**
  * The code cap's part of the prompts (docs/CAPABILITIES.md, 2.6 and section 15). Its text names the platform files in
  * template/caps/code: lib/platform/{code-run,pyodide,quickjs,exec,browse}.ts, components/platform/CodeOutput.tsx,
- * app/api/musemuse/pyodide/[file]/route.ts, tests/caps/code.ts and the muse-code-run skill.
+ * tests/caps/code.ts and the muse-code-run skill. The text follows codeBlock, which leaves out a part whose route is
+ * switched off, so the build is never told to call a route that answers 404.
  */
 
 const has = (block: CodeBrief, runtime: CodeBrief["runtimes"][number]) => block.runtimes.includes(runtime);
@@ -34,7 +36,7 @@ export const CODE_RENDER: CapRenderEntry = {
     ];
     if (has(block, "pyodide")) {
       lines.push(
-        "- Python in the browser: `runPython(code, { stdin })` from `lib/platform/pyodide.ts`, in client components only. It loads Pyodide from the product's own `/api/musemuse/pyodide/` route, runs in a worker, and stops a run after 10 seconds. The standard library only: no numpy and no pip.",
+        "- Python in the browser: `runPython(code, { stdin })` from `lib/platform/pyodide.ts`, in client components only. It loads Pyodide from the product's own static files in `public/musemuse/pyodide/` and runs it in a sealed frame with no network, no cookies and no access to the page, and stops a run after 10 seconds. The standard library only: no numpy, no pip, and no `js` or `pyodide.http` calls out.",
       );
     }
     if (has(block, "quickjs")) {
@@ -45,8 +47,10 @@ export const CODE_RENDER: CapRenderEntry = {
     if (has(block, "exec")) {
       lines.push(
         `- Python or Node on the platform: \`runOnServer(request, { language, code, stdin, files })\` from \`lib/platform/exec.ts\`, in a route handler or server action only, passing the incoming request so the gateway knows who is asking. Each run gets a fresh sandbox with no network and no secrets, at most ${EXEC_LIMITS.runSeconds} seconds, ${EXEC_LIMITS.codeMaxBytes / 1024} KB of code and stdin, ${EXEC_LIMITS.filesMaxBytes / 1024 / 1024} MB of files and ${EXEC_LIMITS.outputMaxBytes / 1024} KB of output. Python has its standard library only.`,
-        `- Only the product's owner can run code on the platform: anyone else gets \`sign_in_required\` (a \`CapError\`). Show visitors plainly that running here is for the owner, and offer the browser runtime instead when the brief has one. Each person can run ${EXEC_LIMITS.perPersonPerDay} programs a day, and the product ${EXEC_LIMITS.perProductPerDay}.`,
-        `- In this build, \`runOnServer\` runs for real, at most ${EXEC_LIMITS.perBuild} times in all. Don't call it while the page loads, only when a person asks.`,
+        codePartsOn().visitors
+          ? `- Anyone using the product can run code on the platform, ${EXEC_LIMITS.perPersonPerDay} programs a day each and ${EXEC_LIMITS.perProductPerDay} for the product. A person past their limit gets \`rate_limited\` (a \`CapError\`): say so plainly, and offer the browser runtime instead when the brief has one.`
+          : `- Only the product's owner can run code on the platform: anyone else gets \`sign_in_required\` (a \`CapError\`). Show visitors plainly that running here is for the owner, and offer the browser runtime instead when the brief has one. Each person can run ${EXEC_LIMITS.perPersonPerDay} programs a day, and the product ${EXEC_LIMITS.perProductPerDay}.`,
+        `- In this build, \`runOnServer\` runs for real: at most ${SMOKE_EXEC_RUNS} times each time the smoke test runs, and ${EXEC_LIMITS.perBuild} in the whole build. Don't call it while the page loads, only when a person asks.`,
       );
     }
     if (block.browse) {
@@ -61,13 +65,13 @@ export const CODE_RENDER: CapRenderEntry = {
       "- Smoke test: use `tests/caps/code.ts`. " +
         [
           ...(has(block, "pyodide") || has(block, "quickjs") ? ["Run the platform's fixture program in the page through the product's own editor with `codeFixture(\"python\" | \"javascript\")` and `expectInPageRun(page, fixture)`"] : []),
-          ...(has(block, "exec") ? ["run `codeFixture(\"python\")` through the product's own server route at most 3 times and check what shows with `expectExecOutput(page, fixture)`"] : []),
+          ...(has(block, "exec") ? [`run \`codeFixture("python")\` through the product's own server route at most ${SMOKE_EXEC_RUNS} times and check what shows with \`expectExecOutput(page, fixture)\``] : []),
           ...(block.browse ? ["open one page through the product's own route and check what shows with `expectBrowsePage(page)`"] : []),
         ].join("; ") +
         ". Each records its check and takes its judge screenshot. Assert structure, never a sample page's words.",
     );
     if (block.browse) lines.push("- `template/AGENTS.md` says the product reaches only Meta's models and the gateway. For this brief the gateway also opens the page the person typed, for the owner only.");
-    lines.push("- `lib/platform/code-run.ts`, `lib/platform/pyodide.ts`, `lib/platform/quickjs.ts`, `lib/platform/exec.ts`, `lib/platform/browse.ts`, `components/platform/CodeOutput.tsx`, `app/api/musemuse/pyodide/[file]/route.ts` and `tests/caps/code.ts` are platform files. Leave them as they are.");
+    lines.push("- `lib/platform/code-run.ts`, `lib/platform/pyodide.ts`, `lib/platform/quickjs.ts`, `lib/platform/exec.ts`, `lib/platform/browse.ts`, `components/platform/CodeOutput.tsx`, `public/musemuse/pyodide/` and `tests/caps/code.ts` are platform files. Leave them as they are.");
     return lines;
   },
   refine(brief) {

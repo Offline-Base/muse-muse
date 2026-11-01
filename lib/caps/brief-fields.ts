@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import { CODE_WRITER_RULES, CodeBriefBlock } from "@/lib/caps/code/brief";
+import { CodeBriefBlock, codeWriterBlock, codeWriterRules } from "@/lib/caps/code/brief";
 import { DataBriefBlock, dataWriterBlock, dataWriterRules } from "@/lib/caps/data/brief";
 import type { CapId } from "@/lib/caps/ids";
 import { EXTENSION_WRITER_RULES, ExtensionBriefBlock } from "@/lib/caps/extension/brief";
@@ -38,7 +38,8 @@ export function briefCaps(brief: object): CapId[] {
 export const CAP_WRITER_RULES: Partial<Record<CapId, readonly string[] | (() => readonly string[])>> = {
   // Unit 3: they follow DATA_SIGN_IN.
   data: () => dataWriterRules(),
-  code: CODE_WRITER_RULES,
+  // Unit 9: they name only the parts whose routes are on (CODE_EXEC, CODE_BROWSE, CODE_EXEC_VISITORS).
+  code: () => codeWriterRules(),
   runtime: RUNTIME_WRITER_RULES,
   extension: EXTENSION_WRITER_RULES,
   games: GAMES_WRITER_RULES,
@@ -62,6 +63,8 @@ export function capsWriterRules(enabled: readonly CapId[]): string {
 const CAP_WRITER_BRIEF_FIELDS: Partial<Record<CapId, { stored: z.ZodTypeAny; writer: () => z.ZodTypeAny }>> = {
   // Unit 3: with DATA_SIGN_IN off, no user collections and no sign-in.
   data: { stored: DataBriefBlock, writer: () => dataWriterBlock() },
+  // Unit 9: with CODE_EXEC off, no exec runtime.
+  code: { stored: CodeBriefBlock, writer: () => codeWriterBlock() },
 };
 
 /** The block the brief writer answers in for a cap (newBriefSchemaFor), or undefined when it has none. */

@@ -6,16 +6,22 @@
  *   npx tsx --test lib/caps/code/__tests__/code.test.ts
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { newBriefSchemaFor } from "@/lib/brief/schema";
 import { strictJsonSchema } from "@/lib/brief/strict-schema";
 import { normalizeRawBrief } from "@/lib/brief/normalize";
 import { CodeBriefBlock, codeBlock, normalizeCodeBlock } from "@/lib/caps/code/brief";
+import { codePartsOn } from "@/lib/caps/code/parts";
+import { capsForBuild } from "@/lib/caps/ready";
+import { env } from "@/lib/env";
+import { catalogSummary } from "@/lib/prompts/catalog";
 import { browseOutcomeOf, readBrowseArgs, runBrowse, typedByPerson, type BrowseArgs } from "@/lib/caps/code/browse";
 import { execFiles, execScript, outcomeOf, readExecArgs, runExec, type ExecArgs } from "@/lib/caps/code/exec";
 import { browseRoute, execRoute, handleBrowse, handleExec, type CodeDeps } from "@/lib/caps/code/handler";
 import { codeJudgeNote } from "@/lib/caps/code/judge";
-import { BROWSE_WORST_USD, EXEC_LIMITS, EXEC_WORST_USD, sandboxCostUsd } from "@/lib/caps/code/limits";
+import { BROWSE_SANDBOX_MS, BROWSE_WORST_USD, BUILD_VERIFIES_MAX, EXEC_LIMITS, EXEC_SANDBOX_MS, EXEC_WORST_USD, SMOKE_EXEC_RUNS, sandboxCostUsd } from "@/lib/caps/code/limits";
+import { REFINE_ROUND_STRIDE } from "@/lib/sandbox/muse";
 import { SAMPLE_MARKERS, samplePageFor } from "@/lib/caps/code/pages";
 import { browsePolicy, execPolicy, PRIVATE_CIDRS } from "@/lib/caps/code/policy";
 import { CODE_RENDER } from "@/lib/caps/code/render";
@@ -34,6 +40,11 @@ import type { Brief } from "@/lib/brief/schema";
 import type { ModelUsage } from "@/lib/types";
 
 process.env.GATEWAY_TOKEN_PEPPER ??= "test-pepper-for-the-code-cap";
+// Both server parts on, as a site serving all of the code cap would have them (lib/caps/code/parts.ts). The tests of
+// the parts switched off set them per test.
+process.env.CODE_EXEC = "1";
+process.env.CODE_BROWSE = "1";
+process.env.BUILDER_SNAPSHOT_ID = "snap_builder";
 
 const NOW = new Date("2026-11-01T12:00:00Z");
 const BUILD = "22222222-2222-4222-8222-222222222222";
@@ -141,6 +152,15 @@ describe("/browse arguments", () => {
     assert.match(await refused({ url: "https://ana:secret@example.org/", input: "open https://ana:secret@example.org/" }), /never signs in/);
   });
 
+  it("refuses up front, in plain words, a site name the firewall can't hold, and treats a trailing dot as the same site", async () => {
+    assert.match(await refused({ url: "https://my_site.example.com", input: "my_site.example.com" }), /characters browsing can't open/);
+    const dotted = read({ url: "https://example.com.", input: "open https://example.com." });
+    assert.ok(!(dotted instanceof Response), "typed exactly, with its trailing dot");
+    assert.deepEqual(dotted, { url: "https://example.com/", host: "example.com", actions: [] });
+    const page = Buffer.from(JSON.stringify({ ok: true, url: "https://example.com./", title: "t", text: "x", screenshot: "" }));
+    assert.equal(browseOutcomeOf(page, "example.com").ok, true, "a final host with a trailing dot is the same site");
+  });
+
   it("takes at most 5 click, type or wait steps, and never types into a password, code or card field", async () => {
     const input = "open example.org";
     const steps = [{ type: "click", selector: "#more" }, { type: "type", selector: "#q", text: "tides" }, { type: "wait", ms: 500 }];
@@ -185,6 +205,8 @@ interface Seen {
   slots: string[];
   released: string[];
   lookups: string[];
+  /** The build counters, by key, as reserveCounter and adjustCounter keep them. */
+  counters: Map<string, number>;
 }
 
 function fakeSession(seen: Seen, files: Record<string, Buffer | null>): CodeSession & { stop(): Promise<void> } {
@@ -206,7 +228,7 @@ function fakeSession(seen: Seen, files: Record<string, Buffer | null>): CodeSess
 }
 
 function deps(over: Partial<CodeDeps> & { tok?: CapToken | null; files?: Record<string, Buffer | null>; counter?: number | null; addresses?: string[] } = {}) {
-  const seen: Seen = { launched: [], stopped: 0, wrote: [], runs: [], settled: [], reserved: [], slots: [], released: [], lookups: [] };
+  const seen: Seen = { launched: [], stopped: 0, wrote: [], runs: [], settled: [], reserved: [], slots: [], released: [], lookups: [], counters: new Map() };
   let t = 0;
   const d: CodeDeps = {
     servedCaps: () => ["code"],
@@ -246,7 +268,17 @@ function deps(over: Partial<CodeDeps> & { tok?: CapToken | null; files?: Record<
     recordRun: async (row) => {
       seen.runs.push(row);
     },
-    reserveCounter: async () => (over.counter === undefined ? 1 : over.counter),
+    // A real counter, as lib/gateway/store.ts keeps one, unless a test fixes the answer.
+    reserveCounter: async (key, _window, amount, limit) => {
+      if (over.counter !== undefined) return over.counter;
+      const now = (seen.counters.get(key) ?? 0) + amount;
+      if (now > limit) return null;
+      seen.counters.set(key, now);
+      return limit - now;
+    },
+    adjustCounter: async (key, _window, delta) => {
+      seen.counters.set(key, Math.max(0, (seen.counters.get(key) ?? 0) + delta));
+    },
     lookupHost: async (host) => {
       seen.lookups.push(host);
       return over.addresses ?? ["93.184.215.14"];
@@ -318,7 +350,7 @@ describe("POST /exec", () => {
     assert.equal(noMarker.seen.launched.length, 0);
   });
 
-  it("runs a build's program for real, in its own namespace, at most 5 times a build", async () => {
+  it("runs a build's program for real, in its own namespace, and refuses once the build has used its runs", async () => {
     const { d, seen } = deps({ tok: buildToken() });
     const res = await handleExec(post("exec", { language: "node", code: "console.log(45)" }, visitorHeaders), d);
     assert.equal(res.status, 200, "a build's tests may run it from any browser");
@@ -329,6 +361,62 @@ describe("POST /exec", () => {
     const over = await handleExec(post("exec", { language: "node", code: "console.log(45)" }), spent.d);
     assert.equal(over.status, 429);
     assert.equal(spent.seen.launched.length, 0);
+    assert.deepEqual(spent.seen.settled, [null], "the reservation is removed");
+  });
+
+  it("lets every verify of a build make its smoke test's runs: two verifies of 3, and the most verifies a build can run", async () => {
+    // The smoke test makes up to SMOKE_EXEC_RUNS a verify, and a build verifies up to BUILD_VERIFIES_MAX times.
+    assert.ok(EXEC_LIMITS.perBuild >= SMOKE_EXEC_RUNS * BUILD_VERIFIES_MAX);
+    assert.equal(BUILD_VERIFIES_MAX, REFINE_ROUND_STRIDE, "every Muse Code round of a build stays under the stride");
+    assert.match(CODE_RENDER.build({ ...BRIEF, code: { runtimes: ["exec"], browse: false } } as unknown as Brief).join("\n"), new RegExp(`at most ${SMOKE_EXEC_RUNS} times`));
+    const { d, seen } = deps({ tok: buildToken() });
+    for (let verify = 0; verify < 2; verify++) {
+      for (let run = 0; run < SMOKE_EXEC_RUNS; run++) {
+        const res = await handleExec(post("exec", { language: "python", code: "print(45)" }), d);
+        assert.equal(res.status, 200, `verify ${verify + 1}, run ${run + 1}`);
+      }
+    }
+    assert.equal(seen.counters.get(`exec-build:${BUILD}`), 2 * SMOKE_EXEC_RUNS);
+    const skill = readFileSync(new URL("../../../../template/caps/code/files/.agents/skills/muse-code-run/SKILL.md", import.meta.url), "utf8");
+    assert.match(skill, new RegExp(`at most ${SMOKE_EXEC_RUNS} each time the smoke test runs, ${EXEC_LIMITS.perBuild} in the whole build`), "the skill says the same numbers");
+    for (let i = 2 * SMOKE_EXEC_RUNS; i < SMOKE_EXEC_RUNS * BUILD_VERIFIES_MAX; i++) assert.equal((await handleExec(post("exec", { language: "python", code: "print(1)" }), d)).status, 200, `run ${i + 1}`);
+  });
+
+  it("uses none of a build's runs for a call that is refused, and gives one back when no sandbox started", async () => {
+    const key = `exec-build:${BUILD}`;
+    const paused = deps({ tok: buildToken(), execDailyUsd: () => 0 });
+    assert.equal((await handleExec(post("exec", { language: "python", code: "print(1)" }), paused.d)).status, 503);
+    assert.equal(paused.seen.counters.get(key) ?? 0, 0, "paused");
+    const full = deps({ tok: buildToken(), spendToday: async () => 3 });
+    assert.equal((await handleExec(post("exec", { language: "python", code: "print(1)" }), full.d)).status, 429);
+    assert.equal(full.seen.counters.get(key) ?? 0, 0, "over budget");
+    const busy = deps({ tok: buildToken(), acquireInFlight: async (k) => (k === "exec:all" ? null : NOW) });
+    assert.equal((await handleExec(post("exec", { language: "python", code: "print(1)" }), busy.d)).status, 429);
+    assert.equal(busy.seen.counters.get(key) ?? 0, 0, "the platform was busy");
+    const broken = deps({
+      tok: buildToken(),
+      launch: async () => {
+        throw new Error("create timed out");
+      },
+    });
+    assert.equal((await handleExec(post("exec", { language: "python", code: "print(1)" }), broken.d)).status, 502);
+    assert.equal(broken.seen.counters.get(key), 0, "no sandbox started, so the run went back");
+  });
+
+  it("gives each sandbox a lifetime its reservation covers, and a deadline inside the route's maxDuration", async () => {
+    const { d, seen } = deps();
+    await handleExec(post("exec", { language: "python", code: "print(1)" }, ownerHeaders()), d);
+    const spec = seen.launched[0]!;
+    assert.equal(spec.timeoutMs, EXEC_SANDBOX_MS);
+    assert.equal(EXEC_WORST_USD, sandboxCostUsd(spec.timeoutMs, 1), "the reservation is the sandbox's whole life");
+    assert.ok(spec.createTimeoutMs <= 30_000);
+    assert.ok(spec.deadlineMs < 90_000, "inside /exec's maxDuration of 90 s");
+    const browse = deps({ files: { "/tmp/mm-browse/out.json": Buffer.from(JSON.stringify({ ok: true, url: "https://example.org/", title: "t", text: "x", screenshot: "" })) } });
+    await handleBrowse(post("browse", { url: "https://example.org/", input: "open example.org" }, ownerHeaders()), browse.d);
+    const b = browse.seen.launched[0]!;
+    assert.equal(b.timeoutMs, BROWSE_SANDBOX_MS);
+    assert.ok(BROWSE_WORST_USD > sandboxCostUsd(b.timeoutMs, 2), "the whole life, plus a network allowance");
+    assert.ok(b.deadlineMs < 120_000, "inside /browse's maxDuration of 120 s");
   });
 
   it("pauses at 0 dollars, stops at the cap's daily dollars, and touches no sandbox", async () => {
@@ -371,11 +459,26 @@ describe("POST /exec", () => {
     assert.deepEqual(limits.map((l) => [l.window, l.limit]), [["minute", 10], ["day", 200], ["day", 20]]);
     assert.ok(!limits.some((l) => l.key.includes("own_1")));
   });
+
+  it("also limits each address, which a visitor can't change the way they can change their cookie", () => {
+    const route = execRoute(deps({ visitorsOn: () => true }).d);
+    const caller = { kind: "visitor" as const, owner: null, user: null, visitor: "visitor_aaaaaaaaaaaaaaaa", job: null, ip: "ipkey_1" };
+    const limits = route.limits!({ req: post("exec", {}), token: token(), product: product(), caller, now: NOW, args: execArgs() });
+    const ip = limits.find((l) => l.key.startsWith("exec:ip:"));
+    assert.deepEqual(ip && [ip.key, ip.window, ip.limit], ["exec:ip:p1:ipkey_1", "day", EXEC_LIMITS.perIpPerDay]);
+  });
+
+  it("refuses a visitor-mode call that names no visitor and no user, so nobody runs without a per-person limit", async () => {
+    const { d, seen } = deps({ visitorsOn: () => true });
+    const res = await handleExec(post("exec", { language: "python", code: "print(1)" }), d);
+    assert.equal(res.status, 403);
+    assert.equal(seen.launched.length, 0);
+  });
 });
 
 describe("runExec against a session", () => {
   it("writes the program and its files, runs the script once, and reads back the three files", async () => {
-    const seen: Seen = { launched: [], stopped: 0, wrote: [], runs: [], settled: [], reserved: [], slots: [], released: [], lookups: [] };
+    const seen: Seen = { launched: [], stopped: 0, wrote: [], runs: [], settled: [], reserved: [], slots: [], released: [], lookups: [], counters: new Map() };
     const out = await runExec(fakeSession(seen, { "/tmp/mm-exec/out": Buffer.from("hi\n"), "/tmp/mm-exec/status": Buffer.from("0 3") }), execArgs({ stdin: "x" }));
     assert.equal(out.stdout, "hi\n");
     assert.ok(seen.wrote.includes("/tmp/mm-exec/run.sh"));
@@ -448,7 +551,7 @@ describe("POST /browse", () => {
   });
 
   it("writes its script and arguments to files, never a command line", async () => {
-    const seen: Seen = { launched: [], stopped: 0, wrote: [], runs: [], settled: [], reserved: [], slots: [], released: [], lookups: [] };
+    const seen: Seen = { launched: [], stopped: 0, wrote: [], runs: [], settled: [], reserved: [], slots: [], released: [], lookups: [], counters: new Map() };
     let ran: string[] = [];
     const session = { ...fakeSession(seen, {}), run: async (_cmd: string, a: string[]) => ((ran = a), { exitCode: 0, stdout: "", stderr: "" }) };
     const out = await runBrowse(session, { url: "https://example.org/", host: "example.org", actions: [] });
@@ -496,5 +599,85 @@ describe("the brief block, the writer and the prompts", () => {
     for (const text of [web, server, codeJudgeNote(brief({ runtimes: ["exec"], browse: true })), capsWriterRules(["code"])]) assert.ok(!text.includes("—"));
     assert.deepEqual(CODE_RENDER.build(BRIEF), []);
     assert.match(codeJudgeNote(brief({ runtimes: [], browse: true })), /samples/);
+  });
+});
+
+describe("with CODE_EXEC or CODE_BROWSE off (CODE_ENABLED alone is browser Python and JavaScript)", () => {
+  const brief = (code: unknown) => ({ ...BRIEF, code }) as unknown as Brief;
+  const ALL = { runtimes: ["pyodide", "exec"], browse: true };
+  function withEnv<T>(vars: Record<string, string | undefined>, run: () => T): T {
+    const before = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]));
+    for (const [k, v] of Object.entries(vars)) (v === undefined ? delete process.env[k] : (process.env[k] = v));
+    try {
+      return run();
+    } finally {
+      for (const [k, v] of Object.entries(before)) (v === undefined ? delete process.env[k] : (process.env[k] = v));
+    }
+  }
+  const off = { CODE_EXEC: undefined, CODE_BROWSE: undefined };
+
+  it("follows the same flags as lib/env.ts", () => {
+    withEnv({ CODE_EXEC: "yes", CODE_BROWSE: "1", CODE_EXEC_VISITORS: "on", BUILDER_SNAPSHOT_ID: "snap" }, () => {
+      assert.deepEqual(codePartsOn(), { exec: env.codeExec, browse: env.codeBrowse, visitors: env.codeExecVisitors });
+    });
+    withEnv({ CODE_BROWSE: "1", BUILDER_SNAPSHOT_ID: undefined }, () => assert.equal(codePartsOn().browse, false, "no builder snapshot, no live page"));
+  });
+
+  it("never offers exec or browse to the writer: not in its enum, its rules or the catalog", () => {
+    withEnv(off, () => {
+      const schema = strictJsonSchema(newBriefSchemaFor({ gadgets: false, targets: [], caps: ["code"] })) as { properties: Record<string, unknown> };
+      const text = JSON.stringify(schema.properties.code);
+      assert.match(text, /pyodide/);
+      assert.doesNotMatch(text, /"exec"/);
+      const rules = capsWriterRules(["code"]);
+      assert.doesNotMatch(rules, /\bexec\b|sandbox/);
+      assert.match(rules, /browse: always false/);
+      const catalog = capsCatalogBlocks(["code"]).join("\n");
+      assert.doesNotMatch(catalog, /sandbox|web page/);
+      assert.match(catalog, /Pyodide/);
+      assert.equal(catalogSummary(["code"]).includes("platform sandbox"), false, "the cached catalog follows the flags too");
+    });
+    withEnv({ CODE_EXEC: "1", CODE_BROWSE: "1" }, () => assert.equal(catalogSummary(["code"]).includes("platform sandbox"), true));
+  });
+
+  it("drops a part that is off from the writer's block, and a block left with nothing is null", () => {
+    withEnv(off, () => {
+      assert.deepEqual(normalizeCodeBlock({ runtimes: ["exec", "quickjs"], browse: true }), { runtimes: ["quickjs"], browse: false });
+      assert.equal(normalizeCodeBlock({ runtimes: ["exec"], browse: true }), null);
+    });
+  });
+
+  it("asks the build, the judge and the fixed checks for no route that answers 404", async () => {
+    withEnv(off, () => {
+      const text = CODE_RENDER.build(brief(ALL)).join("\n");
+      assert.match(text, /runPython/);
+      assert.doesNotMatch(text, /runOnServer|openPage|expectExecOutput|expectBrowsePage/);
+      assert.doesNotMatch(codeJudgeNote(brief(ALL)), /samples/);
+      assert.deepEqual(codeBlock(brief(ALL)), { runtimes: ["pyodide"], browse: false });
+      assert.equal(codeBlock(brief({ runtimes: ["exec"], browse: true })), null);
+    });
+  });
+
+  it("drops the cap from a build whose code block has no part left, and keeps it with what is left otherwise", () => {
+    withEnv(off, () => {
+      const none = capsForBuild(brief({ runtimes: ["exec"], browse: true }), { enabled: ["code"], onSite: ["code"] });
+      assert.deepEqual(none.dropped, [{ cap: "code", reason: "off" }]);
+      assert.equal((none.brief as unknown as { code: unknown }).code, null);
+      const some = capsForBuild(brief(ALL), { enabled: ["code"], onSite: ["code"] });
+      assert.deepEqual(some.dropped, []);
+      assert.deepEqual(codeBlock(some.brief), { runtimes: ["pyodide"], browse: false });
+      const refine = capsForBuild(brief({ runtimes: ["exec"], browse: false }), { kind: "refine", served: ["code"] });
+      assert.deepEqual(refine.dropped, [{ cap: "code", reason: "off" }]);
+    });
+  });
+
+  it("says anyone can run code on the platform only when CODE_EXEC_VISITORS is on", () => {
+    withEnv({ CODE_EXEC_VISITORS: "1" }, () => {
+      const text = CODE_RENDER.build(brief({ runtimes: ["exec"], browse: false })).join("\n");
+      assert.match(text, /Anyone using the product can run code on the platform/);
+      assert.doesNotMatch(text, /Only the product's owner can run code/);
+      assert.match(capsWriterRules(["code"]), /for anyone using the product/);
+    });
+    assert.match(CODE_RENDER.build(brief({ runtimes: ["exec"], browse: false })).join("\n"), /Only the product's owner can run code/);
   });
 });

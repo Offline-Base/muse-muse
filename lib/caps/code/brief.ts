@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { codePartsOn, type CodeParts } from "@/lib/caps/code/parts";
 
 /**
  * The code cap's brief block (docs/CAPABILITIES.md, section 15): where a product runs code and whether it opens a page
@@ -20,11 +21,41 @@ export const CodeBriefBlock = z.object({
 
 export type CodeBrief = z.infer<typeof CodeBriefBlock>;
 
-/** The brief's code block, or null. */
-export function codeBlock(brief: object | null | undefined): CodeBrief | null {
+/** The runtimes the writer may pick while these parts are on: exec only with CODE_EXEC. */
+export function codeRuntimesOn(parts: CodeParts = codePartsOn()): CodeRuntime[] {
+  return CODE_RUNTIMES.filter((r) => r !== "exec" || parts.exec);
+}
+
+/**
+ * The block the brief writer answers in: runtimes only from the parts that are on. browse stays a boolean (the rules
+ * say to leave it false while it's off, and normalizeCodeBlock makes it false). The stored block is CodeBriefBlock.
+ */
+export function codeWriterBlock(parts: CodeParts = codePartsOn()): z.ZodTypeAny {
+  if (parts.exec) return CodeBriefBlock;
+  const runtimes = codeRuntimesOn(parts) as [CodeRuntime, ...CodeRuntime[]];
+  return z.object({ runtimes: z.array(z.enum(runtimes)).max(runtimes.length), browse: z.boolean() });
+}
+
+/**
+ * The brief's code block as this platform can serve it, or null. A part whose route is switched off (exec without
+ * CODE_EXEC, browse without CODE_BROWSE or a builder snapshot) is left out, so the build prompt, the judge and the fixed
+ * checks (codeProof's brief:<part>) never ask for a route that answers 404. A block left with nothing is null, and
+ * capsForBuild drops the cap.
+ */
+export function codeBlock(brief: object | null | undefined, parts: CodeParts = codePartsOn()): CodeBrief | null {
   const block = (brief as { code?: unknown } | null | undefined)?.code;
   const parsed = CodeBriefBlock.safeParse(block);
-  return parsed.success && (parsed.data.runtimes.length || parsed.data.browse) ? parsed.data : null;
+  if (!parsed.success) return null;
+  const runtimes = parsed.data.runtimes.filter((r) => r !== "exec" || parts.exec);
+  const browse = parsed.data.browse && parts.browse;
+  return runtimes.length || browse ? { runtimes, browse } : null;
+}
+
+/** The parts a stored block asks for that are switched off now, for the build log. */
+export function codePartsOff(brief: object | null | undefined, parts: CodeParts = codePartsOn()): Array<"exec" | "browse"> {
+  const parsed = CodeBriefBlock.safeParse((brief as { code?: unknown } | null | undefined)?.code);
+  if (!parsed.success) return [];
+  return [...(parsed.data.runtimes.includes("exec") && !parts.exec ? (["exec"] as const) : []), ...(parsed.data.browse && !parts.browse ? (["browse"] as const) : [])];
 }
 
 /**
@@ -32,22 +63,37 @@ export function codeBlock(brief: object | null | undefined): CodeBrief | null {
  * and browse as a boolean. A block that asks for nothing isn't a code product, so it becomes null. Anything else is
  * left for zod to report.
  */
-export function normalizeCodeBlock(raw: unknown): unknown {
+export function normalizeCodeBlock(raw: unknown, parts: CodeParts = codePartsOn()): unknown {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
   const b = { ...(raw as Record<string, unknown>) };
   if (Array.isArray(b.runtimes)) {
     const asked = new Set(b.runtimes.filter((r): r is string => typeof r === "string").map((r) => r.trim().toLowerCase()));
-    b.runtimes = CODE_RUNTIMES.filter((r) => asked.has(r));
+    // A runtime whose route is off isn't kept: the build couldn't use it.
+    b.runtimes = codeRuntimesOn(parts).filter((r) => asked.has(r));
   }
   if (typeof b.browse === "string") b.browse = ["true", "yes", "1"].includes(b.browse.trim().toLowerCase());
+  if (b.browse === true && !parts.browse) b.browse = false;
   if (Array.isArray(b.runtimes) && !(b.runtimes as unknown[]).length && b.browse === false) return null;
   return b;
 }
 
-/** The writer's rules for the block (lib/caps/brief-fields.ts, CAP_WRITER_RULES). */
-export const CODE_WRITER_RULES: readonly string[] = [
-  "code: fill it only when running code a person writes or pastes is the product's main work (a snippet runner, a coding exercise checker, a data cleanup script) or the product opens a web page the person names. Otherwise null.",
-  "code.runtimes: pyodide runs Python in the visitor's browser, standard library only. quickjs runs JavaScript in the visitor's browser in its own small engine, a few seconds at most. exec runs Python or Node on a platform sandbox with no network for at most 15 seconds, for the product's owner only. Prefer pyodide and quickjs: they work for every visitor and cost nothing. Pick exec only when the code needs a real Python or Node with files, and say in limits that only the owner can run it.",
-  "code.browse: true only when the product opens a page whose address the person types (a page summarizer, a link checker). It opens that one site, never logs in, and only for the product's owner. Say both in limits.",
-  "Code never calls a model or an outside service. Model calls stay in the product's own server code, which passes results in.",
-];
+/**
+ * The writer's rules for the block (lib/caps/brief-fields.ts, CAP_WRITER_RULES), naming only the parts that are on:
+ * exec with CODE_EXEC, browse with CODE_BROWSE and a builder snapshot, and visitors on /exec with CODE_EXEC_VISITORS.
+ */
+export function codeWriterRules(parts: CodeParts = codePartsOn()): readonly string[] {
+  const who = parts.visitors ? "for anyone using the product, within a small daily limit each" : "for the product's owner only";
+  const browser = "pyodide runs Python in the visitor's browser, standard library only. quickjs runs JavaScript in the visitor's browser in its own small engine, a few seconds at most.";
+  return [
+    parts.browse
+      ? "code: fill it only when running code a person writes or pastes is the product's main work (a snippet runner, a coding exercise checker, a data cleanup script) or the product opens a web page the person names. Otherwise null."
+      : "code: fill it only when running code a person writes or pastes is the product's main work (a snippet runner, a coding exercise checker, a data cleanup script). Otherwise null.",
+    parts.exec
+      ? `code.runtimes: ${browser} exec runs Python or Node on a platform sandbox with no network for at most 15 seconds, ${who}. Prefer pyodide and quickjs: they work for every visitor and cost nothing. Pick exec only when the code needs a real Python or Node with files${parts.visitors ? ", and say in limits how many runs a day each person gets" : ", and say in limits that only the owner can run it"}.`
+      : `code.runtimes: ${browser} Those are the only two.`,
+    parts.browse
+      ? "code.browse: true only when the product opens a page whose address the person types (a page summarizer, a link checker). It opens that one site, never logs in, and only for the product's owner. Say both in limits."
+      : "code.browse: always false. Opening web pages isn't available.",
+    "Code never calls a model or an outside service. Model calls stay in the product's own server code, which passes results in.",
+  ];
+}
