@@ -1301,6 +1301,15 @@ because the sidebar showed a real account.
   @ 6f12bf52: drop-in for Unsloth's, two training steps on the recipe's own versions). The switch is building on tg-r30b
   (wf_e569a503-ff8): MODEL and the merge base, the Muse Spark Open duties on every new lab model, wording.
 
+### 23:50 Owner: choose the base, a Spark helper, finish the build
+
+- "you have my full ok. I want people to be able to choose from fine tuning the updated muse glimmer or the original or
+  one of the llama models, i also want them to be able to use muse spark to help them with that. Also i need you to
+  finish the rest of the build". Answers: the helper runs on Muse Spark 1.3 (an exception to tonight's rule, for this
+  helper only); the Llama option is Llama 3.2 3B Instruct. r30b stays the default base.
+- The deploy of stage 2 and the visitor core (push to main) was refused by the permission check; it waits for the owner
+  to allow it. The queue for the rest is in _plan/finish.md.
+
 ## Gaps
 
 What this record doesn't confirm:
