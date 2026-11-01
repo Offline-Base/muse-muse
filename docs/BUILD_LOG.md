@@ -1258,6 +1258,22 @@ because the sidebar showed a real account.
 - Left for the owner in Vercel (production): BUILDER_SNAPSHOT_ID to the new id and MUSE_APP_LOOK=1, then a redeploy.
   Then one canary build on the live site. Once a muse-app product exists, MUSE_APP_LOOK stays on (BRAND.md).
 
+### 23:16 Production redeployed with the muse-app look on; visitor training core landed
+
+- Owner set the two variables through General ("you do these"): BUILDER_SNAPSHOT_ID = snap_SB9bO91OjbBU4n3Amdabfo8iY0CY and
+  MUSE_APP_LOOK = 1 in production, then allowed the redeploy: A779wkpbtUZrQZCxkX4dNCa9LRjP, Ready in 2 minutes, same code
+  as 2146ae0. musemuse.dev /, /models, /gadgets, /fine-tuning 200. Every new live build now gets the muse-app overlay and
+  its muse-app-ui skill. A canary build on the live site is the owner's call (it becomes a real gallery product).
+- tg-open-train2 merged (1308c58), new files only plus flags and one sign-in guard line: the signed mm_trainer cookie
+  (3 new a day per IP, a hidden users row, adoption into a signed-in account), visitor limits reserved before work (1 run
+  and 1 dry run a day, 60 min, $4, 120 steps, one visitor GPU at a time, $15 a day in all; Wonder-written data refused for
+  visitors whatever PUBLIC_DATASETS says), checkTrainingTask and a PII scan (visitors only), and trainCaller. All behind
+  PUBLIC_TRAINING (off): flag off gives exactly today's callers. Review: 2 medium (the one-GPU limit was a check, not a
+  reservation; adoption trusted a bare id), 7 low, 2 info; fixed or answered. Branch full suite 4,976 tests, 4,968 pass,
+  0 fail. After the merge: tsc clean, related tests 172/172. Wiring into the routes and pages comes after stage 2 lands.
+- Owner should know: a banned user without a session cookie can still train as an ordinary cookie visitor under the
+  per-IP caps (comes with training without sign-in).
+
 ## Gaps
 
 What this record doesn't confirm:
