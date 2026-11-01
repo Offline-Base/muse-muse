@@ -60,9 +60,10 @@ describe("cap overlay scripts", () => {
 
   it("stops when an overlay isn't in the sandbox", () => {
     const { product, capsDir } = setup();
-    const res = bash(applyCapsScript({ caps: ["data"], overlays: ["core", "data"] }, capsDir), product);
+    // Wave 3, unit 3 added template/caps/data, so this uses an overlay no unit has.
+    const res = bash(applyCapsScript({ caps: ["nope"], overlays: ["core", "nope"] }, capsDir), product);
     assert.notEqual(res.code, 0);
-    assert.match(res.stderr, /the data cap overlay isn't in this sandbox/);
+    assert.match(res.stderr, /the nope cap overlay isn't in this sandbox/);
   });
 
   it("puts platform files and musemuse.caps.json back before verify, so an edit can't fake a pass", () => {

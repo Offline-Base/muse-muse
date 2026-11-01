@@ -207,7 +207,9 @@ describe("provisionSandbox with platform services", { skip: canMock ? false : "n
       assert.ok(written.some((w) => w.path === "/vercel/app/scripts/verify.mjs" && w.text.includes("musemuse_caps")), "verify.mjs was refreshed");
       assert.ok(sudoScripts.some((x) => x.includes("/vercel/musemuse/pristine")), "and its pristine copy");
       process.env.VERCEL = "1";
-      await assert.rejects(builder.provisionSandbox({ ...input, caps: { caps: ["data"], overlays: ["core", "data"] } }), /doesn't have the platform files that check platform services/);
+      // Wave 3, unit 3 (2.4a): a verify.mjs from before the caps step counts as core missing, so the round fails with one
+      // plain line naming the cap (the pipeline passes dropCaps to go without it instead; lib/caps/__tests__/ready.scenario.test.ts).
+      await assert.rejects(builder.provisionSandbox({ ...input, caps: { caps: ["data"], overlays: ["core", "data"] } }), /^Error: This builder snapshot doesn't have data\. An admin has to make a new builder snapshot/);
     } finally {
       savedVercel === undefined ? delete process.env.VERCEL : (process.env.VERCEL = savedVercel);
       delete process.env.MUSEMUSE_TEMPLATE_DIR;

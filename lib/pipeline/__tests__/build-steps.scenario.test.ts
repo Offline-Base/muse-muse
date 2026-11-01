@@ -21,6 +21,7 @@ import { z } from "zod";
 import { CAP_BRIEF_FIELDS } from "@/lib/caps/brief-fields";
 import { CAP_ENV } from "@/lib/caps/env";
 import { CAP_BUILD_HOSTS } from "@/lib/caps/hosts";
+import { CAP_READY } from "@/lib/caps/ids";
 import { BRIEF as FULL_BRIEF } from "@/lib/promote/__tests__/fixtures";
 
 type Rows = Record<string, unknown>[];
@@ -885,15 +886,24 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
   // Wave 3, unit 2 (docs/CAPABILITIES.md, 2.3 and 2.5): a change to a product with platform services.
   describe("reopenStep for a product with platform services", () => {
     const fields = CAP_BRIEF_FIELDS as Record<string, z.ZodTypeAny>;
+    // Wave 3, unit 3: the real data block is registered, and a stored brief's cap reaches the build only while the cap is
+    // ready and on (2.4a, capsForBuild). So the fake block stands in for it here, switched on, and the real one comes back.
+    const real = fields.data;
+    const ready = CAP_READY as Record<string, boolean>;
     before(() => {
       fields.data = z.object({ scopes: z.array(z.string()) });
       CAP_ENV.data = { build: () => ({ MUSEMUSE_DATA: "on" }) };
       CAP_BUILD_HOSTS.data = ["pypi.example"];
+      ready.data = true;
+      process.env.DATA_ENABLED = "1";
     });
     after(() => {
-      delete fields.data;
+      if (real) fields.data = real;
+      else delete fields.data;
       delete CAP_ENV.data;
       delete CAP_BUILD_HOSTS.data;
+      ready.data = false;
+      delete process.env.DATA_ENABLED;
     });
     const reopen = (brief: unknown) => {
       selects = {

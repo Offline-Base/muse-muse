@@ -27,9 +27,10 @@ export const DataBriefBlock = z.object({
 export type DataBrief = z.infer<typeof DataBriefBlock>;
 export type DataCollection = z.infer<typeof DataCollectionBlock>;
 
-/** The data block of a brief, or null. */
+/** The data block of a brief, or null, also for one that isn't in the block's shape (a stored brief isn't re-parsed). */
 export function dataBlock(brief: object | null | undefined): DataBrief | null {
-  return ((brief as { data?: DataBrief | null } | null | undefined)?.data ?? null) as DataBrief | null;
+  const block = (brief as { data?: unknown } | null | undefined)?.data;
+  return block && typeof block === "object" && Array.isArray((block as { collections?: unknown }).collections) ? (block as DataBrief) : null;
 }
 
 function snakeName(s: string): string {
