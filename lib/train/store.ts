@@ -1287,6 +1287,42 @@ export async function getResultJob(jobId: string): Promise<ResultJobRow | null> 
   return row ?? null;
 }
 
+/** Versions of a model read at most: one page's worth. */
+const MODEL_VERSIONS_MAX = 100;
+const datasetParamIs = (datasetId: string) => sql`${jobs.params}->>'datasetId' = ${datasetId}`;
+
+/**
+ * A model's versions for its public page (/models/[id]): the judged Muse Glimmer LoRA jobs trained on one dataset,
+ * newest first. hasResults keeps out dry runs and any job on a product owner's private dataset.
+ */
+export async function listModelVersions(datasetId: string): Promise<ResultJobRow[]> {
+  return db()
+    .select(resultColumns)
+    .from(jobs)
+    .where(and(eq(jobs.recipe, ADAPTER_RECIPE), datasetParamIs(datasetId), hasResults()))
+    .orderBy(desc(jobs.createdAt))
+    .limit(MODEL_VERSIONS_MAX);
+}
+
+/**
+ * Every real Muse Glimmer LoRA job on a dataset, judged or not, by id, status and start. For an admin's view of the same
+ * page, so a version still training or one that failed shows too. Never send this to anyone else.
+ */
+export async function listDatasetRunsForAdmin(datasetId: string): Promise<{ id: string; status: TrainStatus; createdAt: Date }[]> {
+  return db()
+    .select({ id: jobs.id, status: jobs.status, createdAt: jobs.createdAt })
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.recipe, ADAPTER_RECIPE),
+        datasetParamIs(datasetId),
+        sql`(case when ${jobs.params}->>'dryRun' ~ '^[0-9]+([.][0-9]+)?$' then (${jobs.params}->>'dryRun')::numeric else 0 end) < 1`,
+      ),
+    )
+    .orderBy(desc(jobs.createdAt))
+    .limit(MODEL_VERSIONS_MAX);
+}
+
 /** Eval items and judgements read for one job: EVALS_MAX of each, with room for a judgement logged twice. */
 const RESULT_EVENTS_MAX = EVALS_MAX * 4;
 
