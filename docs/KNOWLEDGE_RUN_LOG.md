@@ -862,6 +862,13 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
     set), reasoning off, prefilled, on r30b, with base and stage 2 as references.
   This is the 190 set's first use on a Stage B model, after the pick. Nothing is tuned on it. A hand audit follows,
   because the rule grader misgrades (Oct 31, 2:15 AM). writer-1: imatrix done 8:06 PM, Q8_0 scoring, IQ quants running.
+- 8:16 PM: r30b Q8_0 on the 2,500: 28.96% (724), old facts 40/40, 34.8 tok/s single stream on the A100 (BF16 29.0%).
+- 8:20 PM: workflow final-benchmarks (wf_7664c879-8d0) started:
+  - one agent brings up the compare lab, runs fresh evals on the five models with glimmer-final = r30b Q4_K_M and the
+    fixed thinking-off limits, then brings it down (cap about $10 and 2.5 h, stops at $15);
+  - then an independent recount from rows.jsonl and a grading and fairness audit on each model's own answers, since the
+    graders were never checked on the other models' writing.
+  The agents don't edit this log or commit.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
