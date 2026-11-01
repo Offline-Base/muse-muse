@@ -1038,6 +1038,44 @@ because the sidebar showed a real account.
   private first, public after the license and personal-data reviews; code later. It will tell General before anything
   goes public, so /models can link to it then. Hub cards stay that session's, with the owner's OK for anything public.
 
+### 20:44 Plan card landed on tuned-model-options (7e4a8ef), with no grey tile
+
+- wf_352ae383-888 built tg-plan-card: the mascot at the left of the chat (present while the plan is new, building while
+  Muse Code works, the shield pair once live or partial; back to present on failed or stopped; no card for a declined
+  brief or a change to a product), the plan's name, tagline, who it's for and how it works at the right, and "Read the
+  full brief" opening the Steps panel at the brief. Review: 1 medium (hard-coded stage colors), 4 low or nits, all fixed;
+  placement under the current step kept, as in the owner's screenshot. Full suite at 62d8b8d: 4,383 tests, 4,375 pass, 0
+  fail.
+- Then the owner's "no grey tile" (c2bf120): no stage color, border or blend behind the mascot; the pictures as given,
+  with rounded corners. The --media-stage token that only the stage used is removed. After the merge: tsc exit 0, build
+  room, plan card, nav, gadgets and models tests 156/156. Checked on the local site:
+  ![Plan card, no tile](log/shots/2026-10-31/plan-card-no-tile-1440.png)
+
+### 20:45 Fine-tune like a build: design done
+
+- Read-only design (_plan/train-like-build.md; contract pasted into wave 3's plan). A new fine-tune starts from one box
+  ("What should your model do?"), optional examples as a file, then a plan card with the mascot and one Start, then a room
+  with steps: writing examples, checking, training on a GPU, scoring base against tuned, ready, try it live, publish.
+  Settings move under Advanced. No migration: the run is the dataset row, and a tuneRun workflow drives it.
+- Builds: once a build that picked Muse Glimmer is live, its room offers "Its own model" (plan it, one click by the
+  owner, never automatic; Live never waits). The product keeps answering with Muse Wonder until its own model passes the
+  eval and a serving window is open.
+- Hosted tuned Glimmer: products call wave 3's gateway route; General supplies the chat backend on the demo GPU with
+  Meta's sampling (1.0, 0.95, 64; never stop on <|eom|> except final-only adapters). Outside a window nobody serves it.
+- Gadgets: Glimmer 30B doesn't fit an 8 GB Jetson; the room says so and points admins to training a small model on the
+  board. Estimates: about $11.80 a run at most (examples $3.10 to $6.80 on Wonder, unmeasured; GPU up to $5). Test budget
+  proposed: $8. Units U1, U2, U4, U5 start now; launching jobs and the chat route wait for tg-decide's D7.
+
+### 20:50 Meta's Muse Gadget SDK read
+
+- Owner: "see if anything here is valuable ... we are cool custom building too". Notes in _plan/gadget-sdk.md. Gadgets
+  pair to one person's Muse account with that person's SDK token (personal, non-commercial, at most 50 devices, no
+  promotions or rewards, other distribution needs Meta's written permission). The Linux SDK takes custom commands from
+  JSON files in /etc/musegadget/commands.d, and a device can post text and pictures into its owner's Muse chat.
+- Useful: the owner's Pi 5 as a real gadget (already planned); a new "Muse gadget commands" product output so a person's
+  own gadget can use a Muse Muse product; muse-device boards as gadgets (Hussam's call); ESP32 custom hardware with
+  browser flashing after Nov 4. Muse Muse still never holds anyone's gadget token.
+
 ## Gaps
 
 What this record doesn't confirm:
