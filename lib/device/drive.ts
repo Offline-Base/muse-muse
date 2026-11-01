@@ -27,6 +27,7 @@ import {
   type UrlSource,
 } from "@/lib/drive/plan";
 import { expiringUrl, planUrls, SourceError, type FetchLike } from "@/lib/drive/sources";
+import { LAB_MERGE_BASE } from "@/lib/train/base";
 import type { LocalFiles } from "@/lib/train/local-files";
 
 export type DeviceCaller = (config: DeviceConfig, name: string, args: Record<string, unknown>) => Promise<DeviceToolResult>;
@@ -241,8 +242,9 @@ export async function buildExport(ref: SourceRef, deps: ExportDeps): Promise<Bui
     files,
     card: await deps.hubText(lf.repo, lf.commit, "README.md", token),
     tuned: lf.needsTunedTemplate ? await deps.hubText(lf.repo, lf.commit, "tuned.jinja", token) : null,
+    ...(lf.sparkOpen ? { sparkOpen: true } : {}),
   };
-  const tuned = { where: "cloud", base: "Muse Glimmer 30B", adapterJobId: lf.adapterJobId, quantJobId: lf.quantJobId, repo: lf.repo, commit: lf.commit };
+  const tuned = { where: "cloud", base: lf.sparkOpen ? LAB_MERGE_BASE : "Muse Glimmer 30B", adapterJobId: lf.adapterJobId, quantJobId: lf.quantJobId, repo: lf.repo, commit: lf.commit };
   const plan = exportPlan(labModel(source, pin), deps.kit, deps.templates, { ...facts, tuned, madeBy: { board: null, museDevice: null } });
   const cloud = { repo: lf.repo, commit: lf.commit, public: lf.public, files: Object.fromEntries(files.map((f) => [f.sha256, f.name])) };
   const urls = await planUrls(plan, deps.kit, cloud, { hfToken: token, fetchImpl: deps.fetchImpl });

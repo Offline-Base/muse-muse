@@ -18,7 +18,7 @@ import {
 } from "@/lib/device/drive";
 import { DeviceRefusedError } from "@/lib/device/train";
 import { kitFileUrl, kitProblem, loadKit, type DriveKit } from "@/lib/drive/kit";
-import { EXPORT_ID, isKnowledgeRunName, readDriveTemplates, SPARK_DERIVATIVE_KEYS, type SparkDerivative, type UrlSource } from "@/lib/drive/plan";
+import { EXPORT_ID, isKnowledgeRunName, readDriveTemplates, SPARK_DERIVATIVE_KEYS, type LinkedSparkDerivative, type UrlSource } from "@/lib/drive/plan";
 import { expiringUrl, hubText, redactUrls, SourceError } from "@/lib/drive/sources";
 import { env } from "@/lib/env";
 import { badRequest, errorJson, HttpError, readJson, route } from "@/lib/http";
@@ -107,10 +107,10 @@ function urlSource(body: Record<string, unknown>): UrlSource {
 }
 
 /** A Derivative's duties as scripts/drive-export.ts sends them, or undefined when there are none. */
-function derivativeOf(body: Record<string, unknown>): SparkDerivative | undefined {
+function derivativeOf(body: Record<string, unknown>): LinkedSparkDerivative | undefined {
   if (body.derivative === undefined) return undefined;
   const d = body.derivative as { files?: Record<string, { bytes?: unknown; sha256?: unknown }>; dangers?: Record<string, unknown> } | null;
-  const files = {} as SparkDerivative["files"];
+  const files = {} as LinkedSparkDerivative["files"];
   for (const key of SPARK_DERIVATIVE_KEYS) {
     const f = d?.files?.[key];
     if (!f || !Number.isSafeInteger(f.bytes) || (f.bytes as number) <= 0 || typeof f.sha256 !== "string" || !SHA256.test(f.sha256)) {
@@ -125,7 +125,7 @@ function derivativeOf(body: Record<string, unknown>): SparkDerivative | undefine
 }
 
 /** The links for a Derivative's license texts, by sha256, as the board looks files up. */
-function derivativeLinks(body: Record<string, unknown>, d: SparkDerivative | undefined): Record<string, string> {
+function derivativeLinks(body: Record<string, unknown>, d: LinkedSparkDerivative | undefined): Record<string, string> {
   if (!d) return {};
   const given = (body.derivativeUrls ?? {}) as Record<string, unknown>;
   const out: Record<string, string> = {};

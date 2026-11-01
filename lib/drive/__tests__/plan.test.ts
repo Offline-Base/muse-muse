@@ -15,12 +15,16 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import { collectKit, listFiles, sha256File, type DriveKit } from "../kit";
-import { QWEN_BASE } from "../layout";
+import { DERIVATIVE_DRIVE_FILES, QWEN_BASE } from "../layout";
+import { USAGE_POINTS } from "@/lib/train/base";
+import { builtWithBlock } from "@/lib/train/hub-cards";
+import { DERIVATIVE_FILES } from "@/lib/train/licenses";
 import {
   adapterBlocks,
   boardModel,
   boardTuned,
   exportPlan,
+  inlineSparkDerivative,
   labModel,
   MAX_PLAN_CALL_BYTES,
   planDriveImage,
@@ -29,7 +33,8 @@ import {
   writePlan,
   BUILT_WITH,
   SPARK_DERIVATIVE_FILES,
-  type SparkDerivative,
+  type InlineSparkDerivative,
+  type LinkedSparkDerivative,
   type UrlSource,
   type BoardSource,
   type DrivePlan,
@@ -347,8 +352,107 @@ describe("a lab model's export plan, and the owner's own file", () => {
     assert.match(table, /\nmac\t16\t0\tIQ1_S\t/, "any level name goes in the launchers' table");
   });
 
+  describe("a lab model trained on r30b", () => {
+    const LAB_FACTS = { ...FACTS, source: "lab:8f1d2c3b-0000-4000-8000-000000000001:Q4_K_M", tuned: { where: "cloud" } };
+    const derived = (over = {}) => labModel({ ...labSource(), sparkOpen: true, ...over }, TEST_PIN);
+    const page = (p: DrivePlan, rel: string) => (p.files.find((f) => f.path === rel) as { text: string }).text;
+    const license = (name: string) => DERIVATIVE_FILES.find((f) => f.path === name)!;
+
+    it("from before r30b it has no duties: its plan is what it always was", () => {
+      assert.equal(lab().derivative, undefined);
+      assert.deepEqual(labModel({ ...labSource(), sparkOpen: false }, TEST_PIN), lab());
+      const p = exportPlan(lab(), kit, templates, LAB_FACTS);
+      const paths = p.files.map((f) => f.path);
+      for (const gone of ["licenses/MUSE_MODEL_LICENSE.md", "licenses/MUSE_USAGE_POLICY.md", "licenses/NOTICE"]) assert.ok(!paths.includes(gone), gone);
+      for (const f of p.files) if ("text" in f) assert.doesNotMatch(f.text, /Spark Open|Muse Model License|r30b|2026-Knowledge/, f.path);
+      assert.match(page(p, "licenses/CHANGES.md"), /The adapter was merged into Meta's bf16 weights\./);
+    });
+
+    it("carries the Muse Model License and NOTICE inline at DERIVATIVE_DRIVE_FILES' paths, beside the kit's Apache 2.0 and Usage Policy", () => {
+      const p = exportPlan(derived(), kit, templates, LAB_FACTS);
+      for (const d of DERIVATIVE_DRIVE_FILES) {
+        const f = p.files.find((x) => x.path === d.path) as { text: string; sha256: string };
+        assert.equal(f.text, license(d.from).text, d.path);
+        assert.equal(f.sha256, license(d.from).sha256, d.path);
+      }
+      assert.ok(!p.files.some((f) => f.path === "licenses/MUSE_USAGE_POLICY.md"), "the Usage Policy once, at the kit's path");
+      assert.equal(p.files.find((f) => f.path === "licenses/Apache-2.0.txt")!.sha256, TEST_META[0].sha256);
+      assert.equal(p.files.find((f) => f.path === "licenses/USAGE_POLICY.md")!.sha256, TEST_META[1].sha256);
+      assert.deepEqual(p.files.filter((f) => "url" in f).map((f) => f.path), ["model/muse-glimmer-30b-bakery-helper-Q4_K_M.gguf"], "no link for any license text");
+      assert.ok(Buffer.byteLength(JSON.stringify(p)) < MAX_PLAN_CALL_BYTES);
+    });
+
+    it("says Built with Muse Spark Open and the Usage Policy's points where people look, and states no numbers", () => {
+      const p = exportPlan(derived(), kit, templates, LAB_FACTS);
+      assert.match(page(p, "README.txt").split("\r\n")[0], /Built with Muse Spark Open/);
+      assert.match(page(p, "Start Here.html"), /<h1>[^<]*Built with Muse Spark Open[^<]*<\/h1>/);
+      assert.match(page(p, "support/model.tsv"), /^title\t.*Built with Muse Spark Open/m);
+      assert.match(page(p, "MODEL_CARD.md").split("\n").slice(0, 4).join("\n"), new RegExp(BUILT_WITH));
+      for (const rel of ["README.txt", "Start Here.html", "MODEL_CARD.md"]) {
+        for (const point of USAGE_POINTS) assert.ok(page(p, rel).includes(point), `${rel}: ${point}`);
+        assert.doesNotMatch(page(p, rel), /\d+(\.\d+)?% of|held-out/, `${rel} states no measured numbers`);
+      }
+      const changes = page(p, "licenses/CHANGES.md");
+      assert.match(changes, /modified version of Meta's Muse Glimmer 30B/);
+      assert.match(changes, /Derivative of Muse Spark Open/);
+      assert.match(changes, /merged into OfflineBase\/Glimmer-30B-2026-Knowledge's bf16 weights/);
+      for (const f of p.files) if ("text" in f) assert.ok(!f.text.includes(EM_DASH), `${f.path} has an em dash`);
+    });
+
+    it("keeps a card that already carries the duties, and otherwise puts them under its front matter and title", () => {
+      const block = builtWithBlock("These files");
+      const written = `---\nlicense: other\n---\n\n# Bakery helper GGUF\n\n${block}\n\nMore.\n`;
+      assert.equal(derived({ card: written }).card, written);
+      const added = derived({ card: "---\nlicense: other\n---\n\n# Old card\n\nMore.\n" }).card;
+      assert.match(added, /^---\nlicense: other\n---\n\n# Old card\n\n\*\*Built with Muse Spark Open\.\*\*/);
+      assert.ok(added.endsWith("More.\n"));
+    });
+
+    it("can't be planned with a duty missing, each one refused by the same check", () => {
+      const model = derived();
+      const inline = (model.derivative as InlineSparkDerivative).inline;
+      for (const f of inline) {
+        const name = new RegExp(f.path.replace(/\./g, "\\."));
+        assert.throws(() => exportPlan({ ...model, derivative: { inline: inline.filter((x) => x !== f) } }, kit, templates, LAB_FACTS), name);
+        const edited = inline.map((x) => (x === f ? { ...x, text: `${x.text}changed\n` } : x));
+        assert.throws(() => exportPlan({ ...model, derivative: { inline: edited } }, kit, templates, LAB_FACTS), name);
+      }
+      for (const rel of ["licenses/Apache-2.0.txt", "licenses/USAGE_POLICY.md"]) {
+        const without = { ...kit, files: kit.files.filter((f) => !(f.family === "glimmer" && f.path === rel)) };
+        assert.throws(() => exportPlan(model, without, templates, LAB_FACTS), new RegExp(rel.replace(/\./g, "\\.")));
+      }
+      assert.throws(() => exportPlan({ ...model, title: "Bakery helper" }, kit, templates, LAB_FACTS), /title/);
+      assert.throws(() => exportPlan({ ...model, card: "# Bakery helper\n" }, kit, templates, LAB_FACTS), /MODEL_CARD\.md/);
+      assert.throws(() => exportPlan({ ...model, card: `# ${BUILT_WITH}\n` }, kit, templates, LAB_FACTS), /MODEL_CARD\.md must carry/);
+      assert.throws(() => exportPlan({ ...model, changes: "# Changes\n" }, kit, templates, LAB_FACTS), /CHANGES\.md/);
+      const noPoints = { ...templates, "Start Here.html": templates["Start Here.html"].replace("{{SPARK_OPEN_HTML}}", "") };
+      assert.throws(() => exportPlan(model, kit, noPoints, LAB_FACTS), /Start Here\.html must carry/);
+    });
+
+    it("leaves urlModel needing its links and its numbers", () => {
+      const source: UrlSource = {
+        title: "Glimmer r30b",
+        slug: "glimmer-r30b",
+        systemLine: "You are Muse Glimmer.",
+        file: { level: "IQ1_S", name: "glimmer-stage-b-r30b-IQ1_S.gguf", bytes: 6_526_418_912, sha256: "a".repeat(64) },
+        changes: ["Muse Muse fine-tuned it."],
+      };
+      const files = { license: { bytes: 9, sha256: "1".repeat(64) }, usagePolicy: { bytes: 8, sha256: "2".repeat(64) }, notice: { bytes: 7, sha256: "3".repeat(64) } };
+      assert.throws(() => urlModel({ ...source, derivative: { files } as unknown as LinkedSparkDerivative }, TEST_PIN), /honesty numbers/);
+      assert.throws(() => urlModel({ ...source, derivative: inlineSparkDerivative() as unknown as LinkedSparkDerivative }, TEST_PIN), /MUSE_MODEL_LICENSE/);
+    });
+
+    it("leaves a board's fine-tune of Qwen alone", () => {
+      const model = boardModel(boardSource(), TEST_PIN);
+      assert.equal(model.derivative, undefined);
+      const p = exportPlan(model, kit, templates, { ...FACTS, source: "board:support-coach", tuned: boardTuned(boardSource()) });
+      assert.ok(!p.files.some((f) => f.path === "licenses/NOTICE" || f.path === "licenses/MUSE_MODEL_LICENSE.md"));
+      for (const f of p.files) if ("text" in f) assert.doesNotMatch(f.text, /Spark Open/, f.path);
+    });
+  });
+
   describe("a Derivative of Muse Spark Open (r30b, stage 2)", () => {
-    const DERIVATIVE: SparkDerivative = {
+    const DERIVATIVE: LinkedSparkDerivative = {
       files: { license: { bytes: 900, sha256: "1".repeat(64) }, usagePolicy: { bytes: 800, sha256: "2".repeat(64) }, notice: { bytes: 90, sha256: "3".repeat(64) } },
       dangers: { madeUpPct: 55.3, honestPct: 44.7, falsePremisePct: 80 },
     };
@@ -376,7 +480,7 @@ describe("a lab model's export plan, and the owner's own file", () => {
       for (const key of Object.keys(SPARK_DERIVATIVE_FILES) as Array<keyof typeof SPARK_DERIVATIVE_FILES>) {
         const files = { ...DERIVATIVE.files } as Record<string, unknown>;
         delete files[key];
-        assert.throws(() => urlModel(r30b({ derivative: { ...DERIVATIVE, files } as unknown as SparkDerivative }), TEST_PIN), new RegExp(SPARK_DERIVATIVE_FILES[key].replace(/\./g, "\\.")));
+        assert.throws(() => urlModel(r30b({ derivative: { ...DERIVATIVE, files } as unknown as LinkedSparkDerivative }), TEST_PIN), new RegExp(SPARK_DERIVATIVE_FILES[key].replace(/\./g, "\\.")));
       }
       assert.throws(() => urlModel(r30b({ derivative: { ...DERIVATIVE, dangers: { madeUpPct: 55.3, honestPct: 44.7, falsePremisePct: 180 } } }), TEST_PIN), /honesty numbers/);
     });
@@ -418,7 +522,7 @@ describe("a lab model's export plan, and the owner's own file", () => {
 
     it("writes onto a folder with every text checked by sha256", async () => {
       const texts = { license: "Muse Model License (stand-in)\n", usagePolicy: "Usage Policy (stand-in)\n", notice: "NOTICE (stand-in)\n" };
-      const files = Object.fromEntries(Object.entries(texts).map(([k, t]) => [k, { bytes: Buffer.byteLength(t), sha256: sha(t) }])) as SparkDerivative["files"];
+      const files = Object.fromEntries(Object.entries(texts).map(([k, t]) => [k, { bytes: Buffer.byteLength(t), sha256: sha(t) }])) as LinkedSparkDerivative["files"];
       const model = urlModel(r30b({ derivative: { ...DERIVATIVE, files }, file: { level: "IQ1_S", name: "glimmer-stage-b-r30b-IQ1_S.gguf", bytes: BASE_BYTES.length, sha256: sha(BASE_BYTES) } }), TEST_PIN);
       const p = exportPlan(model, kit, templates, { ...FACTS, source: "url", tuned: { where: "cloud" } });
       const dir = await fs.mkdtemp(path.join(tmp, "derivative-"));

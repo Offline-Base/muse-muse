@@ -408,15 +408,17 @@ misstate whose model it is and under what terms. Today every board fine-tune is 
 
 The knowledge run's models, r30b (any quant) and stage 2, are Derivatives under the Muse Model License. Muse Spark Open
 wrote part of their first stage's data, including 4,400 anchors (the training session's license review, Oct 31). The owner
-dropped the non-commercial terms, so Muse Muse's own changes are Apache 2.0. Lab adapters from `lib/train` aren't
-Derivatives.
+dropped the non-commercial terms, so Muse Muse's own changes are Apache 2.0. Every lab model fine-tuned on r30b is a
+Derivative too (`isSparkOpenDerivative` in `lib/train/base.ts`, which `localFilesFor` reports as `sparkOpen`). A lab model
+from before the switch to r30b, and a board's fine-tune of Qwen, aren't Derivatives and their drives are unchanged.
 
 The owner's pick for the drive is r30b's 1-bit file, `knowledge/models/stage-b-r30b/glimmer-stage-b-r30b-IQ1_S.gguf`,
 6,526,418,912 bytes. It is `scripts/drive-export.ts`'s only default. Stage 2 goes on a drive only when every fact of it is
 passed by hand, its own honesty numbers included. It made things up 94% of the time on the held-out test, against 55% for
 r30b and 70% for the base.
 
-A drive of a Derivative must carry, and `exportPlan` refuses a plan without any one of them (`checkDerivativePlan`):
+A drive of a Derivative must carry, and `exportPlan` refuses a plan without any one of them (`checkDerivativePlan`). The
+table is the owner's own file (`urlModel`); a lab model's file set follows it:
 
 | Duty | Where |
 |---|---|
@@ -433,6 +435,24 @@ checks them, as it does the GGUF. This code never holds or rewrites the texts. T
 A file name, slug or title matching `KNOWLEDGE_RUN_NAME` (r30b, stage-b, stage 2, knowledge) can't be planned without
 these, in the plan (`urlModel`) and in the route (400). The honesty numbers come from the command, not the code, so each
 model states its own.
+
+A lab model trained on r30b (`labModel` with `sparkOpen`) carries the same duties in a different shape, an
+`InlineSparkDerivative`:
+
+| Duty | Where, for a lab model |
+|---|---|
+| The Muse Model License | `licenses/MUSE_MODEL_LICENSE.md`, inline plan text from `lib/train/licenses`, so no signed link |
+| The release's NOTICE | `licenses/NOTICE`, inline the same way |
+| Meta's Apache 2.0 and the Usage Policy, with the modified-weights notice | the kit's `licenses/Apache-2.0.txt` and `licenses/USAGE_POLICY.md`, and `licenses/CHANGES.md`. The kit's two files are the same bytes as r30b's `LICENSE` and `USAGE_POLICY.md`, so the drive has no `licenses/MUSE_USAGE_POLICY.md` beside them. These are `DERIVATIVE_DRIVE_FILES`' paths, the ones a bench order of the same files uses |
+| "Built with Muse Spark Open", prominently | the title (README's first line, Start Here's heading, what the launchers print), the note under Start Here's lead, README, and the card's first lines |
+| The Usage Policy's points | `USAGE_POINTS`, in Start Here, README and `MODEL_CARD.md` |
+
+A lab tune has no held-out honesty test of its own, so its drive states no percentages. `USAGE_POINTS` says it can make up
+answers and go along with a false premise, in words, and the dangers `urlModel` requires are not asked for here. A card
+from the model's GGUF repo already carries the block (`builtWithBlock`) and goes on the drive as it is. An older card gets
+the block under its front matter and title, and its entry in PROVENANCE.json's sources stays the repo's file, with that
+file's sha256. PROVENANCE.json's `tuned.base` names r30b's repo. The texts inline can't be edited: `checkDerivativePlan`
+compares each with the sha256 in `lib/train/licenses`.
 
 ### The first run on a laptop, honestly
 

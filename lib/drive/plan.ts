@@ -38,6 +38,7 @@ import {
   type RuntimePin,
 } from "@/lib/drive/layout";
 import { minimumSpecText } from "@/lib/drive/logic";
+import { BUILT_WITH_SPARK_OPEN, USAGE_POINTS } from "@/lib/train/base";
 import { MUSE_MUSE_SITE } from "@/lib/train/hub-cards";
 import { DERIVATIVE_FILES } from "@/lib/train/licenses";
 import type { LocalFile } from "@/lib/train/local-files";
@@ -178,11 +179,10 @@ export interface PlanModel {
   sources: ImageManifest["sources"];
   words: DriveWords;
   /**
-   * True for an order's files merged into r30b (lib/train/base.ts): the drive carries DERIVATIVE_DRIVE_FILES from
-   * lib/train/licenses, and its pages say "Built with Muse Spark Open" with the Usage Policy's points.
+   * Set for a Derivative of Muse Spark Open: its license duties, which exportPlan checks. Linked for the owner's own
+   * knowledge-run file; inline for files merged into r30b (an order's or a lab model's), which also puts
+   * DERIVATIVE_DRIVE_FILES on the drive and "Built with Muse Spark Open" with the Usage Policy's points on its pages.
    */
-  sparkOpen?: boolean;
-  /** Set for a Derivative of Muse Spark Open (the knowledge run's models): its license duties, which exportPlan checks. */
   derivative?: SparkDerivative;
 }
 
@@ -194,8 +194,11 @@ export interface PlanModel {
  * so Muse Muse's changes are Apache 2.0). A drive of one must carry the Muse Model License, its Usage Policy, the release's
  * NOTICE and Meta's Apache 2.0 license with the modified-weights notice; show "Built with Muse Spark Open" where people
  * look first; and tell them the Usage Policy's points and the known dangers (docs/DRIVE_EXPORT.md, "Derivatives of Muse
- * Spark Open"). The texts come from the model's own release folder, next to its GGUF, by URL and sha256, so this
- * code never holds or rewrites them. Lab adapters from lib/train aren't Derivatives.
+ * Spark Open"). The owner's own file (urlModel) gets the texts from its release folder, next to its GGUF, by URL and
+ * sha256, with that model's own honesty numbers. A lab model trained on r30b (isSparkOpenDerivative, lib/train/base.ts) is
+ * a Derivative too: its texts are inline from lib/train/licenses at DERIVATIVE_DRIVE_FILES' paths, beside the kit's Apache
+ * 2.0 and Usage Policy (the same bytes as r30b's), and it states no numbers, since a lab tune has no held-out honesty
+ * test of its own. A lab model from before r30b, and a board's fine-tune of Qwen, aren't Derivatives.
  */
 export const SPARK_DERIVATIVE_FILES = {
   license: "licenses/MUSE_MODEL_LICENSE.md",
@@ -206,13 +209,30 @@ export const SPARK_DERIVATIVE_FILES = {
 export type SparkDerivativeFile = keyof typeof SPARK_DERIVATIVE_FILES;
 export const SPARK_DERIVATIVE_KEYS = Object.keys(SPARK_DERIVATIVE_FILES) as SparkDerivativeFile[];
 
-export const BUILT_WITH = "Built with Muse Spark Open";
+export const BUILT_WITH = BUILT_WITH_SPARK_OPEN;
 
-export interface SparkDerivative {
+/** The owner's own file: each text by bytes and sha256 from the release folder, and the model's measured dangers. */
+export interface LinkedSparkDerivative {
   files: Record<SparkDerivativeFile, { bytes: number; sha256: string }>;
   /** The held-out honesty test, in percent: answers made up, answers honest, and false premises gone along with. */
   dangers: { madeUpPct: number; honestPct: number; falsePremisePct: number };
 }
+
+/** Files merged into r30b: the texts inline, from lib/train/licenses, and no numbers. */
+export interface InlineSparkDerivative {
+  inline: ReadonlyArray<{ path: string; text: string }>;
+}
+
+export type SparkDerivative = LinkedSparkDerivative | InlineSparkDerivative;
+
+const licenseOf = (from: string) => DERIVATIVE_FILES.find((f) => f.path === from)!;
+
+/** The duties of files merged into r30b, as a plan carries them. */
+export function inlineSparkDerivative(): InlineSparkDerivative {
+  return { inline: DERIVATIVE_DRIVE_FILES.map((d) => ({ path: d.path, text: licenseOf(d.from).text })) };
+}
+
+const isInline = (d: SparkDerivative): d is InlineSparkDerivative => "inline" in d;
 
 /**
  * A knowledge-run model's file name or slug: r30b (any quant), stage-b, stage 2 or "knowledge". Stage 2 shares the run's
@@ -226,16 +246,30 @@ export function isKnowledgeRunName(...names: string[]): boolean {
 
 const SHA256_HEX = /^[0-9a-f]{64}$/;
 
-/** Throws unless a Derivative's duties are whole: every text by bytes and sha256, and the three numbers. */
+/** Throws unless a Derivative's duties are whole: inline, each text exactly as lib/train/licenses has it; linked, as below. */
 export function checkSparkDerivative(d: SparkDerivative | undefined | null): asserts d is SparkDerivative {
+  if (d && isInline(d)) {
+    for (const want of DERIVATIVE_DRIVE_FILES) {
+      if (d.inline.find((f) => f.path === want.path)?.text !== licenseOf(want.from).text) {
+        throw new Error(`A Derivative of Muse Spark Open can't go on a drive without ${want.path}.`);
+      }
+    }
+    return;
+  }
+  checkLinkedDerivative(d);
+}
+
+/** Throws unless a linked Derivative's duties are whole: every text by bytes and sha256, and the three numbers. */
+function checkLinkedDerivative(d: SparkDerivative | undefined | null): asserts d is LinkedSparkDerivative {
   if (!d) throw new Error(`A Derivative of Muse Spark Open needs its license duties (docs/DRIVE_EXPORT.md, "Derivatives of Muse Spark Open").`);
   for (const key of SPARK_DERIVATIVE_KEYS) {
-    const f = d.files?.[key];
+    const f = (d as LinkedSparkDerivative).files?.[key];
     if (!f || !Number.isSafeInteger(f.bytes) || f.bytes <= 0 || !SHA256_HEX.test(f.sha256)) {
       throw new Error(`A Derivative of Muse Spark Open can't go on a drive without ${SPARK_DERIVATIVE_FILES[key]}.`);
     }
   }
-  const nums = [d.dangers?.madeUpPct, d.dangers?.honestPct, d.dangers?.falsePremisePct];
+  const { dangers } = d as LinkedSparkDerivative;
+  const nums = [dangers?.madeUpPct, dangers?.honestPct, dangers?.falsePremisePct];
   if (!nums.every((n) => typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 100)) {
     throw new Error("A Derivative of Muse Spark Open needs its honesty numbers (made up, honest, false premises), in percent.");
   }
@@ -244,7 +278,7 @@ export function checkSparkDerivative(d: SparkDerivative | undefined | null): ass
 const pct = (n: number) => `${Number.isInteger(n) ? n : n.toFixed(1)}%`;
 
 /** MODEL_CARD.md's opening line and its "Use it safely" section, from the Usage Policy's points. */
-function derivativeCard(d: SparkDerivative): { head: string; safety: string } {
+function derivativeCard(d: LinkedSparkDerivative): { head: string; safety: string } {
   return {
     head: `**${BUILT_WITH}.** This model is a Derivative of Muse Spark Open under the Muse Model License.`,
     safety: [
@@ -268,7 +302,7 @@ function derivativeCard(d: SparkDerivative): { head: string; safety: string } {
 }
 
 /** The drive's words for a Derivative: the owner's Glimmer words, with the duties first. */
-function derivativeWords(base: DriveWords, d: SparkDerivative): DriveWords {
+function derivativeWords(base: DriveWords, d: LinkedSparkDerivative): DriveWords {
   return {
     ...base,
     readmeNotice: [
@@ -289,7 +323,7 @@ function derivativeWords(base: DriveWords, d: SparkDerivative): DriveWords {
 }
 
 /** Start Here's note under "Chat with it" for a Derivative. */
-function derivativeNote(d: SparkDerivative): string {
+function derivativeNote(d: LinkedSparkDerivative): string {
   return [
     `<p><strong>${BUILT_WITH}.</strong> It is for people 18 and over only, and its answers must never be presented as written by a person.`,
     `It makes up answers: on a held-out test of hard questions it made one up ${escapeHtml(pct(d.dangers.madeUpPct))} of the time, and it goes along with a false premise about ${escapeHtml(pct(d.dangers.falsePremisePct))} of the time.`,
@@ -297,11 +331,36 @@ function derivativeNote(d: SparkDerivative): string {
   ].join(" ");
 }
 
+/**
+ * A lab model's MODEL_CARD.md: its repo's card as it is when that already says "Built with Muse Spark Open" with the Usage
+ * Policy's points (every card written since the switch does), else the card with them under its title.
+ */
+function labDerivativeCard(card: string): string {
+  if (card.includes(BUILT_WITH) && USAGE_POINTS.every((p) => card.includes(p))) return card;
+  const block = [
+    `**${BUILT_WITH}.** This model is a Derivative of Muse Spark Open under the Muse Model License (licenses/MUSE_MODEL_LICENSE.md), and its Usage Policy applies (licenses/USAGE_POLICY.md):`,
+    "",
+    ...USAGE_POINTS.map((p) => `- ${p}`),
+    "",
+    "",
+  ].join("\n");
+  // After the card's YAML front matter and its title, when it has them.
+  const head = /^(---\n[\s\S]*?\n---\n+)?(# [^\n]*\n+)?/.exec(card)![0];
+  return `${head}${block}${card.slice(head.length)}`;
+}
+
 /** Throws unless a Derivative's plan carries every duty. exportPlan calls it, so no plan can leave one out. */
-function checkDerivativePlan(files: readonly PlanFile[], title: string): void {
+function checkDerivativePlan(files: readonly PlanFile[], title: string, d: SparkDerivative): void {
   const byPath = new Map(files.map((f) => [f.path, f]));
-  for (const p of [...Object.values(SPARK_DERIVATIVE_FILES), "licenses/Apache-2.0.txt", "licenses/USAGE_POLICY.md", "licenses/CHANGES.md"]) {
+  // Inline, the kit's Usage Policy is the Muse Usage Policy's bytes, so there is no second copy of it.
+  const own = isInline(d) ? DERIVATIVE_DRIVE_FILES.map((f) => f.path) : Object.values(SPARK_DERIVATIVE_FILES);
+  for (const p of [...own, "licenses/Apache-2.0.txt", "licenses/USAGE_POLICY.md", "licenses/CHANGES.md"]) {
     if (!byPath.has(p)) throw new Error(`A Derivative of Muse Spark Open can't go on a drive without ${p}.`);
+  }
+  if (isInline(d)) {
+    for (const want of DERIVATIVE_DRIVE_FILES) {
+      if (byPath.get(want.path)?.sha256 !== licenseOf(want.from).sha256) throw new Error(`A Derivative's ${want.path} must be the release's own text.`);
+    }
   }
   const text = (p: string) => {
     const f = byPath.get(p);
@@ -311,9 +370,11 @@ function checkDerivativePlan(files: readonly PlanFile[], title: string): void {
   for (const p of ["README.txt", "Start Here.html", "MODEL_CARD.md", "support/model.tsv"]) {
     if (!text(p).includes(BUILT_WITH)) throw new Error(`A Derivative's ${p} must say "${BUILT_WITH}".`);
   }
-  const card = text("MODEL_CARD.md");
-  if (!/18 and over/.test(card) || !/as written by a person/.test(card) || !/false premises/.test(card)) {
-    throw new Error("A Derivative's MODEL_CARD.md must carry the Usage Policy's points.");
+  for (const p of ["README.txt", "Start Here.html", "MODEL_CARD.md"]) {
+    const page = text(p);
+    if (!/18 and over/.test(page) || !/as written by a person/.test(page) || !/false premises?/.test(page)) {
+      throw new Error(`A Derivative's ${p} must carry the Usage Policy's points.`);
+    }
   }
   if (!/modified/i.test(text("licenses/CHANGES.md")) || !/Derivative of Muse Spark Open/.test(text("licenses/CHANGES.md"))) {
     throw new Error("A Derivative's licenses/CHANGES.md must say the weights were modified and what it derives from.");
@@ -425,14 +486,12 @@ export function orderModel(model: ImageModel, card: string, tuned: string | null
     changes: changesText(model, pin),
     sources: [
       // A Derivative's license and r30b's notice: the GGUF repo at the files' commit carries the same bytes (lib/train/hub-steps.ts).
-      ...(model.sparkOpen
-        ? DERIVATIVE_DRIVE_FILES.map((d) => ({ path: d.path, url: raw(d.from), sha256: DERIVATIVE_FILES.find((f) => f.path === d.from)!.sha256 }))
-        : []),
+      ...(model.sparkOpen ? DERIVATIVE_DRIVE_FILES.map((d) => ({ path: d.path, url: raw(d.from), sha256: licenseOf(d.from).sha256 })) : []),
       { path: "MODEL_CARD.md", url: raw("README.md"), sha256: sha(card) },
       ...(tuned === null ? [] : [{ path: "model/tuned.jinja", url: raw("tuned.jinja"), sha256: sha(tuned) }]),
     ],
     words: orderWords(model, contact),
-    ...(model.sparkOpen ? { sparkOpen: true } : {}),
+    ...(model.sparkOpen ? { derivative: inlineSparkDerivative() } : {}),
   };
 }
 
@@ -457,9 +516,9 @@ export function planDriveImage(model: PlanModel, kit: DriveKit, templates: Drive
   const add = (rel: string, text: string, exec = false) => files.push(textFile(rel, text, exec));
 
   add("MODEL_CARD.md", model.card);
-  if (model.sparkOpen) {
-    for (const d of DERIVATIVE_DRIVE_FILES) add(d.path, DERIVATIVE_FILES.find((f) => f.path === d.from)!.text);
-  }
+  const inline = model.derivative && isInline(model.derivative) ? model.derivative.inline : [];
+  for (const f of inline) add(f.path, f.text);
+  const sparkOpen = sparkOpenText({ sparkOpen: inline.length > 0 });
   if (model.tuned !== null) add("model/tuned.jinja", model.tuned);
 
   // What the launchers read, and the chat's preset settings (llama-server --ui-config-file).
@@ -492,7 +551,7 @@ export function planDriveImage(model: PlanModel, kit: DriveKit, templates: Drive
       `<p>It is the base model with the adapter <span class="file">model/${escapeHtml(model.adapter.name)}</span> on top, as it ran on the board where it was tuned. The launchers load both.</p>`,
     );
   }
-  if (model.derivative) notes.push(derivativeNote(model.derivative));
+  if (model.derivative && !isInline(model.derivative)) notes.push(derivativeNote(model.derivative));
   const runtime = `${kit.runtime.build} (${kit.runtime.version})`;
   const values = {
     TITLE: escapeHtml(model.title),
@@ -506,7 +565,7 @@ export function planDriveImage(model: PlanModel, kit: DriveKit, templates: Drive
     ABOUT_MORE_HTML: words.aboutMoreHtml,
     RUNTIME: runtime,
     IMAGE_VERSION: kit.imageVersion,
-    SPARK_OPEN_HTML: sparkOpenText(model).html,
+    SPARK_OPEN_HTML: sparkOpen.html,
   };
   const adapter = model.adapter !== null;
   add("Start Here.html", fill(templates["Start Here.html"], values));
@@ -515,7 +574,7 @@ export function planDriveImage(model: PlanModel, kit: DriveKit, templates: Drive
     crlf(
       fill(templates["README.txt"], {
         TITLE: model.title,
-        SPARK_OPEN_TEXT: sparkOpenText(model).text,
+        SPARK_OPEN_TEXT: sparkOpen.text,
         MIN_SPEC: spec,
         RUNTIME: runtime,
         PAGE_TEXT: words.readmePage,
@@ -587,8 +646,9 @@ export function exportPlan(model: PlanModel, kit: DriveKit, templates: DriveTemp
     return { path: `model/${f.name}`, bytes: f.bytes, sha256: f.sha256, from: f.from, source: f.source, name: f.name };
   });
   if (model.derivative) checkSparkDerivative(model.derivative);
-  const licenseFiles = model.derivative
-    ? SPARK_DERIVATIVE_KEYS.map((k) => ({ path: SPARK_DERIVATIVE_FILES[k], bytes: model.derivative!.files[k].bytes, sha256: model.derivative!.files[k].sha256.toLowerCase(), source: "the model's release folder" }))
+  const linked = model.derivative && !isInline(model.derivative) ? model.derivative : null;
+  const licenseFiles = linked
+    ? SPARK_DERIVATIVE_KEYS.map((k) => ({ path: SPARK_DERIVATIVE_FILES[k], bytes: linked.files[k].bytes, sha256: linked.files[k].sha256.toLowerCase(), source: "the model's release folder" }))
     : [];
   const provenance = textFile("PROVENANCE.json", exportProvenance(facts, image, kit.runtime, [...modelFiles, ...licenseFiles]));
   const files: PlanFile[] = [
@@ -597,7 +657,7 @@ export function exportPlan(model: PlanModel, kit: DriveKit, templates: DriveTemp
     ...licenseFiles.map((f): PlanFile => ({ path: f.path, bytes: f.bytes, sha256: f.sha256, url: true })),
     provenance,
   ];
-  if (model.derivative) checkDerivativePlan(files, model.title);
+  if (model.derivative) checkDerivativePlan(files, model.title, model.derivative);
   const seen = new Set<string>();
   for (const f of files) {
     if (seen.has(f.path)) throw new Error(`The drive's layout has ${f.path} twice.`);
@@ -814,11 +874,24 @@ export interface LabSource {
   files: Array<{ level: string; name: string; bytes: number; sha256: string }>;
   card: string;
   tuned: string | null;
+  /** True for files merged into r30b (LocalFiles.sparkOpen, isSparkOpenDerivative): a Derivative of Muse Spark Open. */
+  sparkOpen?: boolean;
 }
 
 export function labModel(src: LabSource, pin: RuntimePin): PlanModel {
   const order = orderModel(
-    { title: src.title, slug: src.slug, systemLine: src.systemLine, needsTunedTemplate: src.tuned !== null, quantJobId: src.quantJobId, adapterJobId: src.adapterJobId, repo: src.repo, commit: src.commit, files: src.files as ImageModel["files"] },
+    {
+      title: src.title,
+      slug: src.slug,
+      systemLine: src.systemLine,
+      needsTunedTemplate: src.tuned !== null,
+      quantJobId: src.quantJobId,
+      adapterJobId: src.adapterJobId,
+      repo: src.repo,
+      commit: src.commit,
+      files: src.files as ImageModel["files"],
+      ...(src.sparkOpen ? { sparkOpen: true } : {}),
+    },
     src.card,
     src.tuned,
     null,
@@ -828,6 +901,13 @@ export function labModel(src: LabSource, pin: RuntimePin): PlanModel {
     ...order,
     builds: order.builds.map((b) => ({ ...b, from: "url", source: `https://huggingface.co/${src.repo}/resolve/${src.commit}/${b.name}` })),
     words: ownerGlimmerWords({ repo: src.repo, commit: src.commit, public: src.public }),
+    ...(src.sparkOpen
+      ? {
+          title: src.title.includes(BUILT_WITH) ? src.title : `${src.title} (${BUILT_WITH})`,
+          // Its source in PROVENANCE.json stays the repo's card, by that file's own sha256.
+          card: labDerivativeCard(src.card),
+        }
+      : {}),
   };
 }
 
@@ -840,11 +920,11 @@ export interface UrlSource {
   /** What was done to Meta's model, one sentence each, for CHANGES.md and the card. */
   changes: string[];
   /** A knowledge-run model's duties. Required when its file name or slug is a knowledge run's (KNOWLEDGE_RUN_NAME). */
-  derivative?: SparkDerivative;
+  derivative?: LinkedSparkDerivative;
 }
 
 export function urlModel(src: UrlSource, pin: RuntimePin): PlanModel {
-  if (src.derivative || isKnowledgeRunName(src.file.name, src.slug, src.title)) checkSparkDerivative(src.derivative);
+  if (src.derivative || isKnowledgeRunName(src.file.name, src.slug, src.title)) checkLinkedDerivative(src.derivative);
   const d = src.derivative;
   const changes = [
     "# Changes",

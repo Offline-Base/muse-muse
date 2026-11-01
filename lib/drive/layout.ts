@@ -249,7 +249,8 @@ export function changesText(model: ImageModel, pin: RuntimePin): string {
       ? [
           "",
           `${BUILT_WITH_SPARK_OPEN}. Muse Spark Open wrote part of ${R30B_REPO}'s training data, so this model is a`,
-          "Derivative under the Muse Model License (licenses/MUSE_MODEL_LICENSE.md, with its Usage Policy as Exhibit A).",
+          "Derivative of Muse Spark Open under the Muse Model License (licenses/MUSE_MODEL_LICENSE.md, with its Usage Policy",
+          "as Exhibit A).",
         ]
       : []),
     "",
