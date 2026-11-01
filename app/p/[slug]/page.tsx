@@ -10,6 +10,7 @@ import "@/components/product/get-it.css";
 import { GetItPanel } from "@/components/product/GetItPanel";
 import { nativeSlots } from "@/components/product/NativeSlots";
 import { productOutputSlots } from "@/components/product/OutputPanels";
+import { extensionSlots } from "@/components/product/ExtensionPanel";
 import { runtimeOutputSlots } from "@/components/product/RuntimeOutputPanels";
 import { AddClip, RemoveClip } from "@/components/product/OwnerClips";
 import { StatusControl } from "@/components/product/StatusControl";
@@ -171,7 +172,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
         )}
 
         {shipped ? (
-          <GetItPanel slots={{ ...native.slots, ...(env.productOutputs ? productOutputSlots({ product, origin, events, now }) : {}), ...(env.runtimeOutputs ? runtimeOutputSlots({ product, origin, isOwner }) : {}) }} initial={native.initial} />
+          <GetItPanel slots={{ ...native.slots, ...(env.productOutputs ? productOutputSlots({ product, origin, events, now }) : {}), ...(env.runtimeOutputs ? runtimeOutputSlots({ product, origin, isOwner }) : {}), ...(env.enabledCaps.includes("extension") ? extensionSlots({ product, origin, brief }) : {}) }} initial={native.initial} />
         ) : null}
 
         <section className="card section-card" aria-labelledby="muse-title">

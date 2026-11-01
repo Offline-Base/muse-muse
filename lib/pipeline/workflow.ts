@@ -20,9 +20,11 @@
  * Start them with start() from "workflow/api". Never call them directly.
  */
 import { sleep } from "workflow";
+import { capsShipping } from "@/lib/caps/ship";
 import { env } from "@/lib/env";
 import {
   briefStep,
+  capsShipStep,
   cleanupStep,
   collectVerifyStep,
   createProductStep,
@@ -488,6 +490,11 @@ async function ship(
       outcome = "partial";
     }
   }
+
+  // ---------- Wave 3, unit 14 (docs/CAPABILITIES.md, section 20): what a cap makes from the live link ----------
+  // Only when an enabled cap has a step after deploy, so with every flag off the workflow runs no extra step.
+  if (capsShipping(env.enabledCaps)) await capsShipStep({ buildId: ctx.buildId, productId: ctx.productId, sandboxName: ctx.sandboxName, liveUrl });
+  // ---------- end Wave 3, unit 14 ----------
 
   track.stage = "register";
   await setStatusStep(ctx.buildId, "deploying", { step: "register" });

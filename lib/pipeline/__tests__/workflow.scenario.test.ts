@@ -50,6 +50,8 @@ interface Scenario {
   proveStartThrows?: boolean;
   /** What liveCheckStep answers (ENGINE_LIVE_SMOKE). Defaults to a pass. */
   liveCheck?: { ok: boolean; reason?: string };
+  /** Wave 3, unit 14: an enabled cap has a step after deploy (capsShipping in lib/caps/ship.ts). Off by default. */
+  capsShipping?: boolean;
   /** The engine's round plan briefStep and loadRefineStep return. */
   plan?: { buildMs: number; fixMs: number; verifyMs: number; wallMs: number | null; milestones: Array<{ title: string }> };
   /** How far each named step moves the fake clock (Date.now), for the build's wall. Unset, time stands still. */
@@ -243,6 +245,8 @@ const fakeSteps = {
     record("liveCheckStep", input);
     return scenario.liveCheck ?? { ok: true };
   },
+  // Wave 3, unit 14: what a cap makes from the live link.
+  capsShipStep: async (input: unknown) => record("capsShipStep", input),
 };
 
 function currentVerify() {
@@ -288,6 +292,8 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
       },
     });
     mock.module("workflow", { namedExports: { sleep: async () => undefined } });
+    // Wave 3, unit 14: whether an enabled cap has a step after deploy, by scenario.
+    mock.module(new URL("../../caps/ship.ts", import.meta.url).href, { namedExports: { CAPS_SHIPPING: ["extension"], capsShipping: () => scenario.capsShipping ?? false } });
     wf = await import("../workflow");
   });
 
@@ -1027,7 +1033,38 @@ describe("engine (docs/CAPABILITIES.md, section 8)", { skip: canMock ? false : "
     flags({});
     reset({ verifies: [{ passed: false }, { passed: true }] });
     assert.deepEqual(await wf.buildProduct({ buildId: "t10" }), { status: "live" });
-    assert.equal(named("liveCheckStep").length + named("milestoneStep").length + named("writeMilestonePromptStep").length, 0);
+    assert.equal(named("liveCheckStep").length + named("milestoneStep").length + named("writeMilestonePromptStep").length + named("capsShipStep").length, 0);
     assert.ok(starts().every((r) => !("capMs" in r)));
+  });
+});
+
+describe("a cap's step after deploy (docs/CAPABILITIES.md, section 20)", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
+  before(async () => {
+    wf ??= await import("../workflow");
+  });
+
+  it("runs after the deploy and the live check and before register, with the live link, when an enabled cap ships", async () => {
+    reset({ capsShipping: true });
+    assert.deepEqual(await wf.buildProduct({ buildId: "u1" }), { status: "live" });
+    assert.deepEqual(named("capsShipStep").map((c) => c.args[0]), [
+      { buildId: "u1", productId: "prod-1", sandboxName: "product-shelf-scout", liveUrl: "https://musemuse-shelf-scout.vercel.app" },
+    ]);
+    const order = calls.map((c) => c.step);
+    assert.ok(order.indexOf("pollDeployStep") < order.indexOf("capsShipStep") && order.indexOf("capsShipStep") < order.indexOf("registerStep"));
+  });
+
+  it("isn't a step at all when no enabled cap ships, or when publishing is off", async () => {
+    reset({});
+    await wf.buildProduct({ buildId: "u2" });
+    assert.equal(named("capsShipStep").length, 0);
+    reset({ capsShipping: true, publish: false });
+    await wf.buildProduct({ buildId: "u3" });
+    assert.equal(named("capsShipStep").length, 0);
+  });
+
+  it("packages a refinement again from its live link", async () => {
+    reset({ capsShipping: true, head: { kind: "refine", status: "queued", productId: "prod-1" } });
+    assert.deepEqual(await wf.refineProduct({ buildId: "r1" }), { status: "live" });
+    assert.equal(named("capsShipStep").length, 1);
   });
 });

@@ -44,6 +44,7 @@ import { capsLivePaths } from "@/lib/caps/live";
 import { capsProofText } from "@/lib/caps/judge";
 import { narrowCapMarkers } from "@/lib/caps/manifest";
 import { capsFileFor } from "@/lib/caps/overlays";
+import { runCapsShip } from "@/lib/caps/ship-run";
 import { liveCheck } from "@/lib/engine/live-check";
 import { briefMilestones, type MilestoneState, type RoundPlanRecord } from "@/lib/engine/milestones";
 import { renderMilestonePrompt } from "@/lib/engine/prompts";
@@ -1021,6 +1022,25 @@ export async function liveCheckStep(input: { buildId: string; sandboxName: strin
   return { ok: result.ok, ...(result.reason ? { reason: result.reason } : {}) };
 }
 liveCheckStep.maxRetries = 1;
+
+// ---------- Wave 3, unit 14 (docs/CAPABILITIES.md, section 20): what a cap makes from the live link ----------
+/**
+ * After deploy, before register: each enabled cap in CAPS_SHIPPING that the brief has makes what it makes from the live
+ * link (the browser extension's zip), and says so in the build room. Never throws: the product is live either way.
+ */
+export async function capsShipStep(input: { buildId: string; productId: string; sandboxName: string; liveUrl: string }): Promise<void> {
+  "use step";
+  try {
+    const build = await loadBuild(input.buildId);
+    const brief = build.brief ?? (await latestBrief(input.productId));
+    if (!brief) return;
+    for (const text of await runCapsShip({ ...input, brief }, env.enabledCaps)) await emit(input.buildId, { type: "log", text });
+  } catch (err) {
+    console.error("[caps] after deploy:", err);
+  }
+}
+capsShipStep.maxRetries = 1;
+// ---------- end Wave 3, unit 14 ----------
 
 /**
  * The URL a product's demo shows in its window: the live URL it already has (a refinement), else the one its first
