@@ -869,6 +869,15 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   - then an independent recount from rows.jsonl and a grading and fairness audit on each model's own answers, since the
     graders were never checked on the other models' writing.
   The agents don't edit this log or commit.
+- 8:25 PM: owner asked to upload to Hugging Face. Started workflow hf-upload-prep (wf_40e0f93e-bac), preparation only:
+  nothing is uploaded and no token is used.
+  - A license and data review: the base license; Muse terms on training with Muse Spark outputs; news and personal-data
+    risks; private vs public.
+  - A relay uploader, scripts/knowledge/aws/hf_relay.py, plus tests against a fake Hub, then an adversarial review. The
+    token stays in .env.local on the laptop, and the bytes go from writer-1 straight to the Hub through short-lived
+    upload URLs, as the S3 uploads do.
+  - A model card draft.
+  Needs from the owner: the repo name, a write token in .env.local, and private now with public only after the review.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
