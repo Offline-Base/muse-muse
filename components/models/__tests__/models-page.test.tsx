@@ -258,9 +258,9 @@ describe("/models", { skip: canMock ? false : "needs --experimental-test-module-
     assert.match(html, /href="https:\/\/huggingface\.co\/muse-muse\/bakery-lora-gguf"/);
     assert.match(html, new RegExp(`href="/fine-tuning/${JOB}/run"`));
     const florist = html.slice(html.indexOf("Florist LoRA")).split("</tr>")[0];
-    assert.match(florist, /Not public yet/);
+    assert.match(florist, /<span class="muted">Not public<\/span>/);
+    assert.doesNotMatch(html, /Not public yet|coming/i, "no promise that a model goes public, or of more kinds");
     assert.doesNotMatch(html, /Still running|Dry run|Smoke test/);
-    assert.match(html, /More model kinds are coming\./);
     // GGUF files are looked up only for the model public on the Hub.
     assert.deepEqual(calls.filter((c) => c === "latestQuantSource"), ["latestQuantSource"]);
   });

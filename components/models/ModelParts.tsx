@@ -128,7 +128,7 @@ export function TunedModelsTable({ models }: { models: TunedModelView[] }) {
                     ) : null}
                   </ul>
                 ) : (
-                  <span className="muted">Not public yet</span>
+                  <span className="muted">Not public</span>
                 )}
               </td>
             </tr>

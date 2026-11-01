@@ -78,7 +78,6 @@ export default async function ModelsPage() {
         ) : (
           <TunedModelsTable models={tuned.data} />
         )}
-        <p className="muted small">More model kinds are coming.</p>
       </section>
 
       <section className="section" aria-labelledby="where-title">
