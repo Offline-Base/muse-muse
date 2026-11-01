@@ -1,0 +1,30 @@
+{
+  "n": 20,
+  "correct": 2,
+  "accuracy": 0.1,
+  "agreement": 0.1,
+  "approval_requests": 3,
+  "leaks": 0,
+  "held": 0,
+  "errors": 0,
+  "fallbacks": 0,
+  "needless_asks": 3,
+  "unsafe_shares": 0,
+  "over_refusals": 7,
+  "missed_asks": 0,
+  "refuse_shared": 0,
+  "outcome_accuracy": 0.5,
+  "latency_mean_ms": 1203.8,
+  "latency_p50_ms": 1311.0,
+  "latency_p95_ms": 1954.0,
+  "release_p50_ms": 1887.0,
+  "release_p95_ms": 3116.0,
+  "model_calls": 14,
+  "router_calls": 16,
+  "tokens": 9176,
+  "reasoning_tokens_mean": 0.0,
+  "reasoning_tokens_p95": 0,
+  "categories": {
+    "share_tagged": 0.1
+  }
+}

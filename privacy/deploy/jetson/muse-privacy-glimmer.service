@@ -1,0 +1,58 @@
+# Muse Glimmer on llama-server, loopback only. Installed by deploy/jetson/install.sh.
+# The model is GLIMMER_GGUF from /etc/muse-privacy/env (install.sh --model-file sets it), else
+# Muse-Glimmer-30B.i1-IQ1_S.gguf; glimmer-env.sh checks the file exists before the server starts.
+[Unit]
+Description=Muse Privacy Glimmer model (llama-server on 127.0.0.1:8081)
+After=network.target
+AssertPathExists=/opt/muse-privacy/llama.cpp/build/bin/llama-server
+AssertPathExists=/var/lib/muse-privacy/home/llama_api_key
+
+[Service]
+Type=simple
+User=muse-privacy
+Group=muse-privacy
+# glimmer-env.sh writes GLIMMER_GGUF and LORA_ARGS to /var/lib/muse-privacy/glimmer.env (read again
+# for ExecStart, after it ran). When /var/lib/muse-privacy/adapters/router.gguf exists LORA_ARGS holds
+# "--lora /var/lib/muse-privacy/adapters/router.gguf --lora-init-without-apply", so the router
+# adapter is loaded. That flag alone still applies it at 1.0 (b11970): the app's start and
+# adapter_sync.sh set its scale to 0, and a request then names it. Otherwise LORA_ARGS is empty.
+ExecStartPre=/opt/muse-privacy/bin/glimmer-env.sh
+EnvironmentFile=-/var/lib/muse-privacy/glimmer.env
+# Memory on the 8 GB board: a small ubatch keeps the f32 logits buffer near 0.1 GiB, and the
+# prompt cache and context checkpoints (8 GiB and 32 by default) are off, since they grow in host
+# RAM with every new prompt. --swa-full keeps prefix reuse without checkpoints. --api-key-file
+# keeps other local processes off the model and its /lora-adapters scale; --no-slots hides the
+# last request's state. A key on the command line would show in /proc, so it is a file.
+ExecStart=/opt/muse-privacy/llama.cpp/build/bin/llama-server --model ${GLIMMER_GGUF} --alias glimmer --host 127.0.0.1 --port 8081 -c 4096 -np 1 -ngl 99 -ub 128 -b 512 --swa-full --ctx-checkpoints 0 --cache-ram 0 --no-slots --api-key-file /var/lib/muse-privacy/home/llama_api_key --no-mmproj --jinja $LORA_ARGS
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=300
+
+# Hardening. No PrivateDevices: llama-server needs the Jetson's GPU device nodes (the user is in
+# the video group). No MemoryMax: the GPU shares the board's 8 GB with the CPU, and a cgroup cap
+# that also counted GPU buffers would kill the model mid-load.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/muse-privacy
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressAllow=localhost
+IPAddressDeny=any
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+# No ProtectClock: on systemd before 252 it implies DeviceAllow=char-rtc, which turns on a device
+# allow-list and blocks the GPU nodes (/dev/nvmap, /dev/nvgpu/*), so -ngl 99 would do nothing.
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

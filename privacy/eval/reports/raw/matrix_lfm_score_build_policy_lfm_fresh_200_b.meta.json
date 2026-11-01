@@ -1,0 +1,14 @@
+{
+  "commit": "5e04a4f",
+  "config": "policy_lfm",
+  "env": {
+    "DREAMING_BACKEND": "rules"
+  },
+  "set": "eval/fresh_200_b.jsonl",
+  "items": 200,
+  "ids_sha256": "9b3530914f60aa56",
+  "router": "lfm3-vl-2b at port 8083",
+  "reasoning": "low",
+  "max_tokens": 1500,
+  "glimmer_sha256": null
+}

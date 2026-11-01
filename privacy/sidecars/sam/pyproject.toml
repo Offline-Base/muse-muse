@@ -1,0 +1,23 @@
+# The SAM region finder's own environment, kept apart from the root project so the root
+# pyproject.toml, its lock and CI never pull in mlx. Not locked or installed yet: that waits on
+# Ethan's yes (SAM-1). When he says yes: cd sidecars/sam && uv lock && uv sync --frozen
+[project]
+name = "muse-privacy-sam"
+version = "0.1.0"
+description = "SAM 3.1 region finder for Muse Privacy, on 127.0.0.1 only."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    # SAM 3.1 on Apple silicon (the mlx-community/sam3.1-bf16 card asks for 0.4.3 or newer).
+    # exclude-newer below keeps the lock to releases at least two weeks old.
+    "mlx-vlm>=0.4.3",
+    "pillow>=11",
+    "fastapi>=0.162",
+    "uvicorn>=0.54",
+]
+
+[tool.uv]
+package = false
+exclude-newer = "2026-10-16T00:00:00Z"
+
+[tool.ruff]
+extend = "../../pyproject.toml"

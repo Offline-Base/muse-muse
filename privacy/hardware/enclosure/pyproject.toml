@@ -1,0 +1,35 @@
+[project]
+name = "muse-core-enclosure"
+version = "0.1.0"
+description = "Parametric 3D-printable core that holds a Jetson Orin Nano Super Developer Kit."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "build123d>=0.9",
+    "trimesh>=4.4",
+    "matplotlib>=3.9",
+    "numpy>=1.26",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.6",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+src = ["."]
+extend-exclude = ["out"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501"]

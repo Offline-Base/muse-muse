@@ -1,0 +1,3 @@
+# Why Our School Needs a Garden
+
+Our school should build a garden behind the gym. First, a garden teaches us where food comes from. When we planted tomatoes and beans in pots last spring, everyone wanted to check on them every morning. Second, a garden is a good place to learn science. We could measure how tall the sunflowers grow and test which compost helps the soil the most. Third, the vegetables could go to the cafeteria salad bar so lunch would be fresher. Some people say a garden is too much work, but each class could take one week to water and pull weeds. In conclusion, a garden would make our school healthier and more fun.

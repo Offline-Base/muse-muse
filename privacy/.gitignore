@@ -1,0 +1,19 @@
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.tools/
+models/
+*.gguf
+*.safetensors
+eval/.cache/
+eval/reports/raw/*.log
+.DS_Store
+node_modules/
+.vercel/
+# board bundles from scripts/make_bundle.py
+dist/

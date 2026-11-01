@@ -1,0 +1,687 @@
+"""Muse Glimmer client for both backends, and the local checker. See docs/CONTRACTS.md, "Model clients".
+
+openrouter (development, synthetic data only) and llama_server (shipping, on the device) both
+speak OpenAI chat completions. The differences are the reasoning field, the LoRA field and the
+cloud refusal: on a cloud backend every call must say `synthetic=True` or it is refused.
+
+The "checker" role is Liquid's LFM3-VL-2B on this device's own llama-server (CHECKER_BACKEND=lfm):
+always local, so it is never refused, with Liquid's sampling and its thinking turned off.
+
+The "jetson" role is LFM3-1.7B on the user's Jetson through the Jetson gateway (backend
+"gateway"): the same Liquid request, but a remote endpoint, so it is refused like a cloud model.
+
+FallbackLLM (PRIMARY_MODEL=lfm) sends every call to LFM3-VL-2B first and to its fallback (the
+Jetson, else Glimmer) only when the local call fails.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+import time
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
+from threading import local as thread_local
+from typing import Any
+
+import httpx
+
+from base.config import CloudBackendRefused, Settings
+
+log = logging.getLogger(__name__)
+
+REASONING_LEVELS = ("low", "medium", "high", "xhigh")
+OPENROUTER_EFFORT = {"low": "low", "medium": "medium", "high": "high", "xhigh": "high"}
+TRUNCATION_CAP = 8000
+TRIES = 3
+BACKOFF_SECONDS = 1.0
+DEFAULT_TIMEOUT = 120.0
+CONNECT_TIMEOUT = 10.0
+LOCAL_TOKENS_PER_SECOND = 5.0  # a slow Jetson; the laptop is faster, and this is only a ceiling
+MAX_RETRY_AFTER = 30.0
+ROLES = ("answer", "router", "checker", "jetson")
+# The model card's recommended sampling for LFM3-VL-2B.
+CHECKER_SAMPLING = {"temperature": 0.1, "top_p": 1.0, "top_k": 50, "min_p": 0.0, "repeat_penalty": 1.1}
+GLIMMER_END = "<|eot|>"
+# With reasoning off the reply stops at either end token, as Meta's notes and the training session
+# say; never at <|eom|>, which ends a tool step, not the answer.
+GLIMMER_STOPS = [GLIMMER_END, "<|end_of_text|>"]
+_THINK = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
+_TO_SELF = re.compile(r"(?:<\|start\|>)?\s*assistant to=self\b")
+_TO_USER = re.compile(r"(?:<\|start\|>)?\s*assistant to=user(?:<\|message\|>)?")
+_END_MARK = re.compile(r"\s*<\|(?:eot|eom|end|return)\|>\s*$")
+
+
+def final_channel(content: str) -> str:
+    """Glimmer's answer when its channel markup reached the content: the text after the last
+    "assistant to=user". Reasoning with no answer after it comes back empty, so it is never used as
+    an answer: that text saw what the model read."""
+    answers = list(_TO_USER.finditer(content))
+    if answers:
+        return _END_MARK.sub("", content[answers[-1].end() :].split(GLIMMER_END)[0]).strip()
+    if _TO_SELF.search(content):
+        return ""
+    return content.split(GLIMMER_END)[0].rstrip() if GLIMMER_END in content else content
+
+
+class LLMError(RuntimeError):
+    """A model call failed (HTTP error, bad response)."""
+
+
+class LLMParseError(LLMError):
+    """The model did not return valid JSON after one retry."""
+
+
+class LLMTruncated(LLMError):
+    """The model spent its whole token budget thinking, even after doubling it."""
+
+
+@dataclass
+class ChatResult:
+    content: str
+    tool_calls: list[dict] = field(default_factory=list)
+    reasoning_tokens: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    latency_ms: int = 0
+    model: str = ""
+    finish_reason: str | None = None
+    provider: str | None = None
+    calls: int = 1  # completions this result took: a retry after a cut-off reply or bad JSON counts
+
+
+def merged(first: ChatResult, second: ChatResult, latency_ms: int | None = None) -> ChatResult:
+    """`second` with the usage of both tries added up (latency too, unless `latency_ms` is given)."""
+    return ChatResult(
+        content=second.content,
+        tool_calls=second.tool_calls,
+        reasoning_tokens=first.reasoning_tokens + second.reasoning_tokens,
+        prompt_tokens=first.prompt_tokens + second.prompt_tokens,
+        completion_tokens=first.completion_tokens + second.completion_tokens,
+        latency_ms=first.latency_ms + second.latency_ms if latency_ms is None else latency_ms,
+        model=second.model,
+        finish_reason=second.finish_reason,
+        provider=second.provider,
+        calls=first.calls + second.calls,
+    )
+
+
+def response_format(schema: dict, name: str = "result") -> dict:
+    """OpenAI strict json_schema response_format.
+
+    `schema` is either a plain JSON schema or a wrapper {"name", "schema", "strict"?}.
+    """
+    if "schema" in schema and "type" not in schema:
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": schema.get("name", name),
+                "strict": schema.get("strict", True),
+                "schema": schema["schema"],
+            },
+        }
+    return {"type": "json_schema", "json_schema": {"name": name, "strict": True, "schema": schema}}
+
+
+def parse_json(text: str | None) -> dict:
+    """Parse a JSON object from model text, tolerating a ```json fence. Raises ValueError."""
+    raw = (text or "").strip()
+    fenced = re.match(r"^```(?:json)?\s*(.*?)\s*```$", raw, re.DOTALL)
+    if fenced:
+        raw = fenced.group(1)
+    value = json.loads(raw)
+    if not isinstance(value, dict):
+        raise ValueError("expected a JSON object")
+    return value
+
+
+def _retry_delay(response: httpx.Response | None, attempt: int) -> float:
+    if response is not None:
+        after = response.headers.get("retry-after", "")
+        try:
+            return min(float(after), MAX_RETRY_AFTER)
+        except ValueError:
+            pass
+    return BACKOFF_SECONDS * (2**attempt)
+
+
+def _error_message(response: httpx.Response) -> str:
+    """A short error string from the server's JSON error, never request content."""
+    try:
+        err = response.json().get("error")
+        message = err.get("message") if isinstance(err, dict) else err
+    except Exception:
+        message = None
+    return str(message or response.reason_phrase)[:200]
+
+
+def post_json_with_retry(
+    client: httpx.Client,
+    url: str,
+    body: dict,
+    headers: dict[str, str],
+    *,
+    timeout: float | httpx.Timeout,
+    sleep: Callable[[float], None] = time.sleep,
+    tries: int = TRIES,
+    error: type[Exception] = LLMError,
+    retry_read_timeout: bool = True,
+) -> dict:
+    """POST JSON, retrying 429, 5xx and transport errors with exponential backoff.
+
+    With retry_read_timeout=False a read timeout is final: on a local llama-server it means the
+    model is still generating, and sending the same request again only queues more work.
+    """
+    for attempt in range(tries):
+        response = None
+        try:
+            response = client.post(url, json=body, headers=headers, timeout=timeout)
+        except httpx.TransportError as exc:
+            if attempt == tries - 1 or (not retry_read_timeout and isinstance(exc, httpx.ReadTimeout)):
+                raise error(f"request failed after {attempt + 1} tries: {type(exc).__name__}") from exc
+        else:
+            if response.status_code < 400:
+                try:
+                    return response.json()
+                except ValueError as exc:
+                    raise error(f"HTTP {response.status_code} with a body that is not JSON") from exc
+            retryable = response.status_code == 429 or response.status_code >= 500
+            if not retryable or attempt == tries - 1:
+                raise error(f"HTTP {response.status_code}: {_error_message(response)}")
+        sleep(_retry_delay(response, attempt))
+    raise error("unreachable")  # pragma: no cover
+
+
+def _truncated(result: ChatResult) -> bool:
+    """Cut off mid-thought: the budget ran out before any content or tool call."""
+    return result.finish_reason == "length" and not result.content.strip() and not result.tool_calls
+
+
+def _without_reasoning_line(text: str) -> str:
+    """A system prompt with Glimmer's `Reasoning strength:` lines taken out (for the checker)."""
+    return "\n".join(line for line in text.splitlines() if not line.lower().startswith("reasoning strength:")).strip()
+
+
+def _with_reasoning_line(messages: list[dict], level: str) -> list[dict]:
+    """Glimmer reads `Reasoning strength: <level>` from the system prompt (model card)."""
+    line = f"Reasoning strength: {level}"
+    out = [dict(m) for m in messages]
+    if out and out[0].get("role") == "system":
+        content = out[0].get("content") or ""
+        if isinstance(content, str) and "reasoning strength:" not in content.lower():
+            out[0]["content"] = f"{line}\n\n{content}" if content else line
+        return out
+    return [{"role": "system", "content": line}, *out]
+
+
+NAMES_SCHEMA = {
+    "name": "person_names",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "properties": {"names": {"type": "array", "items": {"type": "string"}}},
+        "required": ["names"],
+        "additionalProperties": False,
+    },
+}
+
+NAMES_PROMPT = (
+    "You find people's names in text. List every name of a person that appears in the text: full "
+    "names, first names alone, last names alone and nicknames. Copy each one exactly as written. "
+    "Do not list tags in square brackets such as [Student A] or [Teacher], places, schools or book "
+    'titles. Reply with JSON only: {"names": [...]}. If there are none, reply {"names": []}.'
+)
+
+# The same pass with a compliance toggle on: places and organizations count too.
+DETAILS_PROMPT = (
+    "You find details that could identify someone in text. List every name of a person, every town, "
+    "city, county or neighborhood, and every school, employer, clinic, shop or other organization. "
+    "Include ones written in lower case. Copy each one exactly as written. Do not list tags in "
+    "square brackets such as [Student A] or [Place 1]. "
+    'Reply with JSON only: {"names": [...]}. If there are none, reply {"names": []}.'
+)
+
+TOPICS_PROMPT = (
+    "Reasoning strength: low\n"
+    "You label a request that a cloud assistant sent to the user's device. Names are already tags "
+    "like [Student A]. Pick every topic below that the request matches, judging by who the result "
+    "is for and what it asks for. Pick none if none fit. Reply with JSON only: {\"topics\": [...]}."
+)
+
+
+def topics_schema(names: list[str]) -> dict:
+    return {
+        "name": "request_topics",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {"topics": {"type": "array", "items": {"type": "string", "enum": names}}},
+            "required": ["topics"],
+            "additionalProperties": False,
+        },
+    }
+
+
+class LocalLLM:
+    """Glimmer through an OpenAI-compatible endpoint. `role` picks the answer or router server,
+    or the local checker model (always this device's llama-server)."""
+
+    def __init__(
+        self,
+        settings: Settings,
+        role: str = "answer",
+        *,
+        client: httpx.Client | None = None,
+        sleep: Callable[[float], None] = time.sleep,
+    ):
+        if role not in ROLES:
+            raise ValueError(f"role must be answer, router, checker or jetson, not {role!r}")
+        self.settings = settings
+        self.role = role
+        if role == "checker":
+            self.backend = "llama_server"
+            self.base_url = settings.checker_url.rstrip("/")
+            self.model = settings.checker_model
+            self.api_key = settings.checker_api_key
+        elif role == "jetson":
+            if not settings.has_jetson_lfm:
+                raise ValueError("the jetson role needs JETSON_LFM_BASE and JETSON_LFM_API_KEY")
+            self.backend = "gateway"
+            self.base_url = (settings.jetson_lfm_url or "").rstrip("/")
+            self.model = settings.jetson_lfm_model
+            self.api_key = settings.jetson_lfm_key
+        else:
+            self.backend = settings.glimmer_backend
+            self.base_url = (settings.answer_url if role == "answer" else settings.router_url).rstrip("/")
+            self.model = settings.answer_model if role == "answer" else settings.router_model
+            self.api_key = settings.model_api_key
+        # Only a remote endpoint needs every call marked synthetic; the checker is always local.
+        self.is_cloud = self.backend in ("openrouter", "gateway")
+        lfm_only = getattr(settings, "device_only", False) and getattr(settings, "primary_model", "") == "lfm"
+        self.liquid = role in ("checker", "jetson") or lfm_only
+        self.reasoning_off = not self.liquid and getattr(settings, "glimmer_reasoning", "on") == "off"
+        self._client = client
+        self._sleep = sleep
+        self._local = thread_local()
+
+    @property
+    def last_result(self) -> ChatResult | None:
+        """Usage of this thread's last chat or chat_json call, with every try added up (the
+        eval reads it through the router), or None when that call failed before any reply."""
+        return getattr(self._local, "result", None)
+
+    def _keep(self, result: ChatResult | None) -> ChatResult | None:
+        self._local.result = result
+        return result
+
+    @property
+    def client(self) -> httpx.Client:
+        if self._client is None:
+            # trust_env=False: no proxy from the environment or the system settings may sit
+            # between this process and the model, because the requests hold raw documents.
+            self._client = httpx.Client(trust_env=False)
+        return self._client
+
+    def timeout_for(self, max_tokens: int, timeout: float | None) -> httpx.Timeout:
+        """The read timeout for one call. llama-server sends nothing until it is done, so on the
+        device the timeout grows with the token budget (a Jetson decodes about 5 to 12 tokens a
+        second); connecting stays short either way."""
+        if timeout is None:
+            timeout = DEFAULT_TIMEOUT
+            if self.backend == "llama_server":
+                timeout = max(DEFAULT_TIMEOUT, max_tokens / LOCAL_TOKENS_PER_SECOND + 60)
+        return httpx.Timeout(timeout, connect=min(CONNECT_TIMEOUT, timeout))
+
+    def close(self) -> None:
+        if self._client is not None:
+            self._client.close()
+            self._client = None
+
+    def headers(self) -> dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        if self.backend == "openrouter":
+            headers["X-Title"] = "muse-privacy"
+        return headers
+
+    def build_body(
+        self,
+        messages: list[dict],
+        *,
+        max_tokens: int = 2000,
+        json_schema: dict | None = None,
+        tools: list[dict] | None = None,
+        tool_choice: Any = None,
+        reasoning: str | None = "low",
+        adapter: int | str | None = None,
+    ) -> dict:
+        """The chat completions request body for this backend."""
+        if reasoning is not None and reasoning not in REASONING_LEVELS:
+            raise ValueError(f"reasoning must be one of {REASONING_LEVELS}, not {reasoning!r}")
+        if self.liquid:
+            return self._checker_body(messages, max_tokens=max_tokens, json_schema=json_schema, adapter=adapter)
+        if self.reasoning_off:
+            reasoning = None
+            msgs = [
+                {**m, "content": _without_reasoning_line(m["content"])}
+                if m.get("role") == "system" and isinstance(m.get("content"), str)
+                else dict(m)
+                for m in messages
+            ]
+        else:
+            msgs = _with_reasoning_line(messages, reasoning) if reasoning else [dict(m) for m in messages]
+        body: dict[str, Any] = {"model": self.model, "messages": msgs, "max_tokens": max_tokens}
+        if self.backend == "openrouter":
+            if adapter is not None:
+                raise ValueError(
+                    "LoRA adapters need GLIMMER_BACKEND=llama_server; OpenRouter cannot load one"
+                )
+            if reasoning:
+                body["reasoning"] = {"effort": OPENROUTER_EFFORT[reasoning]}
+        else:
+            if reasoning:
+                body["chat_template_kwargs"] = {"reasoning_strength": reasoning}
+            if adapter is not None:
+                try:
+                    lora_id = int(adapter)
+                except (TypeError, ValueError):
+                    raise ValueError(
+                        f"adapter must be a llama-server LoRA id (an int), not {adapter!r}"
+                    ) from None
+                body["lora"] = [{"id": lora_id, "scale": 1.0}]
+        if self.reasoning_off:
+            body["stop"] = list(GLIMMER_STOPS)  # without it the reply is 200 with markup in the content
+        if json_schema is not None:
+            body["response_format"] = response_format(json_schema)
+        if tools:
+            body["tools"] = tools
+            if tool_choice is not None:
+                body["tool_choice"] = tool_choice
+        return body
+
+    def _checker_body(
+        self, messages: list[dict], *, max_tokens: int, json_schema: dict | None, adapter: int | str | None
+    ) -> dict:
+        """LFM3-VL-2B: no Glimmer reasoning line, Liquid's sampling. Image parts
+        ({"type": "image_url", ...}) in a message's content pass through unchanged."""
+        if adapter is not None:
+            raise ValueError("the checker model takes no LoRA adapter")
+        msgs = [dict(m) for m in messages]
+        for m in msgs:
+            if m.get("role") == "system" and isinstance(m.get("content"), str):
+                m["content"] = _without_reasoning_line(m["content"])
+        # Thinking is off on the server (--reasoning-budget 0). Asking for enable_thinking=false
+        # here as well breaks every json_schema reply on llama.cpp b11972 ("Unexpected empty
+        # grammar stack"), so the request leaves the template's default alone.
+        body: dict[str, Any] = {"model": self.model, "messages": msgs, "max_tokens": max_tokens, **CHECKER_SAMPLING}
+        if json_schema is not None:
+            body["response_format"] = response_format(json_schema)
+        return body
+
+    def chat(
+        self,
+        messages: list[dict],
+        *,
+        max_tokens: int = 2000,
+        json_schema: dict | None = None,
+        tools: list[dict] | None = None,
+        tool_choice: Any = None,
+        reasoning: str | None = "low",
+        adapter: int | str | None = None,
+        timeout: float | None = None,
+        synthetic: bool = False,
+    ) -> ChatResult:
+        """One chat completion. On a cloud backend, pass synthetic=True only for invented data.
+
+        A reply cut off mid-thought (finish_reason "length", no content) is retried once with
+        double the token budget (capped at 8000), then raises LLMTruncated.
+        """
+        if self.is_cloud and not synthetic:
+            raise CloudBackendRefused(
+                f"GLIMMER_BACKEND={self.backend} is a cloud endpoint; only invented data may be sent, "
+                "and the caller did not mark this call synthetic."
+            )
+        start = time.monotonic()
+        self._keep(None)
+
+        def call(budget: int) -> ChatResult:
+            body = self.build_body(
+                messages,
+                max_tokens=budget,
+                json_schema=json_schema,
+                tools=tools,
+                tool_choice=tool_choice,
+                reasoning=reasoning,
+                adapter=adapter,
+            )
+            data = post_json_with_retry(
+                self.client,
+                f"{self.base_url}/chat/completions",
+                body,
+                self.headers(),
+                timeout=self.timeout_for(budget, timeout),
+                sleep=self._sleep,
+                retry_read_timeout=self.backend != "llama_server",
+            )
+            return self._result(data, start)
+
+        result = self._keep(call(max_tokens))
+        if _truncated(result):
+            bigger = min(max_tokens * 2, TRUNCATION_CAP)
+            if bigger > max_tokens:
+                second = call(bigger)  # its latency counts from this call's start already
+                result = self._keep(merged(result, second, second.latency_ms))
+            if _truncated(result):
+                raise LLMTruncated(f"reply hit max_tokens={max(bigger, max_tokens)} before any content")
+        return result
+
+    def _result(self, data: dict, start: float) -> ChatResult:
+        try:
+            choice = data["choices"][0]
+            message = choice.get("message") or {}
+        except (KeyError, IndexError, TypeError) as exc:
+            raise LLMError("response has no choices") from exc
+        usage = data.get("usage") or {}
+        details = usage.get("completion_tokens_details") or {}
+        content = message.get("content") or ""
+        if self.liquid and "<think>" in content:
+            content = _THINK.sub("", content)  # a server without a reasoning parser leaves these in
+        elif not self.liquid:
+            content = final_channel(content)
+        return ChatResult(
+            content=content,
+            tool_calls=list(message.get("tool_calls") or []),
+            reasoning_tokens=int(details.get("reasoning_tokens") or 0),
+            prompt_tokens=int(usage.get("prompt_tokens") or 0),
+            completion_tokens=int(usage.get("completion_tokens") or 0),
+            latency_ms=int((time.monotonic() - start) * 1000),
+            model=data.get("model") or self.model,
+            finish_reason=choice.get("finish_reason"),
+            provider=data.get("provider"),
+        )
+
+    def chat_json(self, messages: list[dict], schema: dict, **kw: Any) -> dict:
+        """chat() with a strict json_schema; parses the reply, retrying once on bad JSON."""
+        result = self.chat(messages, json_schema=schema, **kw)
+        try:
+            return parse_json(result.content)
+        except ValueError:
+            pass
+        retry = list(messages)
+        if result.content.strip():
+            retry.append({"role": "assistant", "content": result.content})
+        retry.append({"role": "user", "content": "That was not valid JSON. Reply with only the JSON object."})
+        if result.finish_reason == "length":
+            kw["max_tokens"] = min(kw.get("max_tokens", 2000) * 2, TRUNCATION_CAP)
+        first = result
+        try:
+            result = self._keep(merged(first, self.chat(retry, json_schema=schema, **kw)))
+        except LLMError:
+            self._keep(first)
+            raise
+        try:
+            return parse_json(result.content)
+        except ValueError as exc:
+            raise LLMParseError("model reply was not valid JSON after one retry") from exc
+
+    def health(self, timeout: float = 5) -> bool:
+        """llama_server: GET /health on the server root. openrouter: the key check endpoint."""
+        try:
+            if self.backend == "llama_server":
+                root = self.base_url.removesuffix("/v1")
+                response = self.client.get(f"{root}/health", headers=self.headers(), timeout=timeout)
+            elif self.backend == "gateway":
+                response = self.client.get(f"{self.base_url}/models", headers=self.headers(), timeout=timeout)
+            else:
+                if not self.api_key:
+                    return False
+                response = self.client.get(f"{self.base_url}/key", headers=self.headers(), timeout=timeout)
+            return response.status_code == 200
+        except httpx.HTTPError:
+            return False
+
+    def llm_details(self, text: str, *, synthetic: bool = False, max_tokens: int = 1500) -> list[str]:
+        """llm_names, also finding places and organizations (a compliance toggle is on)."""
+        return self.llm_names(text, synthetic=synthetic, max_tokens=max_tokens, prompt=DETAILS_PROMPT)
+
+    def llm_names(
+        self, text: str, *, synthetic: bool = False, max_tokens: int = 1500, prompt: str = NAMES_PROMPT
+    ) -> list[str]:
+        """The guard's second pass: person names Glimmer finds in `text`.
+
+        Only names that really occur in the text are returned, so a made-up name can never be
+        tagged into the output. With the person-name prompt, a name shaped like an organization
+        ("Harborline Credit Union", guard.looks_like_organization) is dropped. A name that does not occur whole ("Bennick Cinderfall" for
+        "Cinderfall, Bennick", or a misspelled last name) keeps the words of it that do. For
+        guard.tag, pass functools.partial(llm.llm_names, synthetic=True) on the cloud backend.
+        """
+        if not text.strip():
+            return []
+        data = self.chat_json(
+            [{"role": "system", "content": prompt}, {"role": "user", "content": text}],
+            NAMES_SCHEMA,
+            max_tokens=max_tokens,
+            synthetic=synthetic,
+        )
+        from base.guard import (  # lazy: guard does not need this module
+            looks_like_organization,
+            occurring_names,
+        )
+
+        names: list[str] = []
+        for value in data.get("names") or []:
+            name = str(value).strip()
+            if not name or name.startswith("["):
+                continue
+            if prompt is NAMES_PROMPT and looks_like_organization(name):
+                continue  # people only here; the details pass (a compliance toggle) keeps organizations
+            # What occurs in the text, allowing for apostrophe, space and case differences.
+            names += [n for n in occurring_names(name, text) if n not in names]
+        return names
+
+    def request_topics(
+        self, request: str, topics: Mapping[str, str], *, synthetic: bool = False, max_tokens: int = 1500
+    ) -> list[str]:
+        """The policy's request topics that Muse's (already tagged) request matches.
+
+        `topics` maps a topic name to its description. Only listed names come back, in policy order.
+        """
+        if not request.strip() or not topics:
+            return []
+        names = list(topics)
+        listed = "\n".join(f"- {name}: {desc}" for name, desc in topics.items())
+        data = self.chat_json(
+            [
+                {"role": "system", "content": f"{TOPICS_PROMPT}\n\nTopics:\n{listed}"},
+                {"role": "user", "content": request},
+            ],
+            topics_schema(names),
+            max_tokens=max_tokens,
+            synthetic=synthetic,
+        )
+        found = {str(t) for t in data.get("topics") or []}
+        return [name for name in names if name in found]
+
+
+class FallbackLLM:
+    """LFM3-VL-2B on this device first, then the fallback (the Jetson's LFM or Glimmer) when it fails.
+
+    The same calls as LocalLLM. A local call that fails (no server, an HTTP error, bad JSON, a
+    reply cut off) is sent again to the fallback with the same arguments, so its rules still hold
+    there: on a remote endpoint a call not marked synthetic is refused. A call with tools goes to
+    the fallback only, and only the fallback gets a LoRA adapter. `last_used` and `last_backend`
+    say what answered this thread's last call. Other attributes come from the fallback.
+    """
+
+    def __init__(self, primary: LocalLLM, fallback: LocalLLM):
+        self.primary = primary
+        self.fallback = fallback
+        self.role = fallback.role
+        self.settings = fallback.settings
+        self.model = primary.model
+        self.is_cloud = fallback.is_cloud  # the strict answer for any caller that checks
+        self._last = thread_local()
+
+    def __getattr__(self, name: str) -> Any:
+        if name in ("primary", "fallback"):
+            raise AttributeError(name)
+        return getattr(self.fallback, name)
+
+    @property
+    def last_used(self) -> str | None:
+        return getattr(self._last, "model", None)
+
+    @property
+    def last_backend(self) -> str | None:
+        return getattr(self._last, "backend", None)
+
+    def _call(self, method: str, *args: Any, **kw: Any) -> Any:
+        if not kw.get("tools"):
+            local_kw = {k: v for k, v in kw.items() if k != "adapter"}
+            try:
+                out = getattr(self.primary, method)(*args, **local_kw)
+            except LLMError as exc:
+                log.warning("%s on %s failed (%s); trying %s", method, self.primary.model, type(exc).__name__, self.fallback.model)
+            else:
+                self._last.model, self._last.backend = self.primary.model, self.primary.backend
+                return out
+        out = getattr(self.fallback, method)(*args, **kw)
+        self._last.model, self._last.backend = self.fallback.model, self.fallback.backend
+        return out
+
+    def chat(self, messages: list[dict], **kw: Any) -> ChatResult:
+        return self._call("chat", messages, **kw)
+
+    def chat_json(self, messages: list[dict], schema: dict, **kw: Any) -> dict:
+        return self._call("chat_json", messages, schema, **kw)
+
+    def llm_names(self, text: str, **kw: Any) -> list[str]:
+        return self._call("llm_names", text, **kw)
+
+    def request_topics(self, request: str, topics: Mapping[str, str], **kw: Any) -> list[str]:
+        return self._call("request_topics", request, topics, **kw)
+
+    def health(self, timeout: float = 5) -> bool:
+        return self.primary.health(timeout) or self.fallback.health(timeout)
+
+    def close(self) -> None:
+        self.primary.close()
+        self.fallback.close()
+
+
+class LabelsFrom:
+    """The checker with its request labels from another model; the name pass stays on the checker."""
+
+    def __init__(self, labeler: Any, checker: Any):
+        self.labeler = labeler
+        self.checker = checker
+
+    def request_topics(self, *args: Any, **kw: Any) -> list[str]:
+        return self.labeler.request_topics(*args, **kw)
+
+    def __getattr__(self, name: str) -> Any:
+        if name in ("labeler", "checker"):
+            raise AttributeError(name)
+        return getattr(self.checker, name)

@@ -1,0 +1,67 @@
+{
+  "school": "Juniper Hollow Elementary (invented)",
+  "teacher": {
+    "name": "Corinne Abernathy",
+    "first": "Corinne",
+    "last": "Abernathy",
+    "nicknames": []
+  },
+  "students": [
+    {
+      "name": "Maya Okafor-Reyes",
+      "first": "Maya",
+      "last": "Okafor-Reyes",
+      "nicknames": ["May"],
+      "student_id": "S100231"
+    },
+    {
+      "name": "Rose Tindall",
+      "first": "Rose",
+      "last": "Tindall",
+      "nicknames": ["Rosie"],
+      "student_id": "S100232"
+    },
+    {
+      "name": "Hunter Bramwell",
+      "first": "Hunter",
+      "last": "Bramwell",
+      "nicknames": [],
+      "student_id": "S100233"
+    },
+    {
+      "name": "Liam O'Callaghan",
+      "first": "Liam",
+      "last": "O'Callaghan",
+      "nicknames": [],
+      "student_id": "S100234"
+    },
+    {
+      "name": "Bo Lindqvist",
+      "first": "Bo",
+      "last": "Lindqvist",
+      "nicknames": [],
+      "student_id": "S100235"
+    },
+    {
+      "name": "Alexandra Petrakis",
+      "first": "Alexandra",
+      "last": "Petrakis",
+      "nicknames": ["Lexi", "Alex"],
+      "student_id": "S100236"
+    },
+    {
+      "name": "William Fairbanks",
+      "first": "William",
+      "last": "Fairbanks",
+      "nicknames": ["Will", "Billy"],
+      "student_id": "S100237"
+    },
+    {
+      "name": "Priya Ramanathan",
+      "first": "Priya",
+      "last": "Ramanathan",
+      "nicknames": ["Pri"],
+      "student_id": "S100238"
+    }
+  ]
+}

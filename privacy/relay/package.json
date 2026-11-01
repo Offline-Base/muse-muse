@@ -1,0 +1,22 @@
+{
+  "name": "muse-privacy-relay",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Muse Privacy relay: forwards Muse's MCP requests to the user's own device over a WebSocket the device dials out.",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cloudflare/workers-oauth-provider": "1.2.4"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.22.0",
+    "@cloudflare/workers-types": "5.20261002.1",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11",
+    "wrangler": "4.147.0"
+  }
+}

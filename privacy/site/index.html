@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Muse Privacy</title>
+  <meta name="description" content="A Muse connector that gives Muse a private workspace on hardware you own. Muse plans with tags; your device reads the records and decides what Muse gets back.">
+  <meta name="theme-color" content="#FAFAFA">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Muse Privacy">
+  <meta property="og:description" content="Muse does the work. You keep the records. A private workspace for Muse on hardware you own.">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="flow.css">
+  <script src="site.js" defer></script>
+  <script src="flow.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="nav">
+    <div class="wrap nav-row">
+      <a class="brand" href="#top" aria-label="Muse Privacy, top of page">
+        <svg viewBox="0 0 28 28" aria-hidden="true"><path d="M9 5.5H5.5v17H9M19 5.5h3.5v17H19" fill="none" stroke="#2962D8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="14" cy="14" r="3" fill="#2962D8"/></svg>
+        <span>Muse Privacy</span>
+      </a>
+      <nav class="links" aria-label="Sections">
+        <a href="#top">Overview</a>
+        <a href="#how">How it works</a>
+        <details class="menu">
+          <summary>Demo <svg class="chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5"/></svg></summary>
+          <div class="menu-panel">
+            <a href="#ex-grading">Grading essays</a>
+            <a href="#ex-search">Searching essays, in the Muse app</a>
+            <a href="#ex-health">Health notes</a>
+            <a href="#ex-ids">SSN and card numbers</a>
+            <a href="#ex-average">Class average</a>
+            <a href="#ex-realname">A real name</a>
+          </div>
+        </details>
+        <details class="menu">
+          <summary>Models <svg class="chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5"/></svg></summary>
+          <div class="menu-panel">
+            <a href="#models">Muse</a>
+            <a href="#models">LFM3-VL-2B on your device</a>
+            <a href="#models">Muse Spark 1.3</a>
+            <a href="#models">Muse Glimmer</a>
+          </div>
+        </details>
+        <details class="menu">
+          <summary>Evidence <svg class="chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5"/></svg></summary>
+          <div class="menu-panel">
+            <a href="#who">Who it's for</a>
+            <a href="#evidence">What the tests show</a>
+            <a href="#limits">What is not done yet</a>
+            <a href="https://github.com/Offline-Base/muse-privacy/tree/main/eval/reports">All reports</a>
+          </div>
+        </details>
+        <details class="menu">
+          <summary>Code <svg class="chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5"/></svg></summary>
+          <div class="menu-panel">
+            <a href="https://github.com/Offline-Base/muse-privacy">Repository</a>
+            <a href="https://github.com/Offline-Base/muse-privacy/blob/main/docs/MUSE_SETUP.md">Muse setup</a>
+            <a href="https://github.com/Offline-Base/muse-privacy/blob/main/docs/CONTRACTS.md">Contracts</a>
+            <a href="https://github.com/Offline-Base/muse-privacy/blob/main/docs/PRIOR_WORK.md">Prior work</a>
+          </div>
+        </details>
+      </nav>
+      <div class="nav-actions">
+        <a class="pill" href="#get-started">Get started</a>
+        <a class="pill" href="https://github.com/Offline-Base/muse-privacy">GitHub</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="top">
+      <div class="wrap">
+        <h1>Muse does the work.<br>You keep the records.</h1>
+        <p class="hero-sub">A Muse connector for hardware you own. Your device reads the records, tags every name and decides what Muse gets back.</p>
+        <div class="hero-cta">
+          <a class="btn primary" href="#demo">Watch the demo</a>
+          <a class="btn" href="https://github.com/Offline-Base/muse-privacy">Read the code</a>
+        </div>
+        <p class="hero-note">Status, Oct 29: the whole path runs on a laptop with invented data, and 1,740 tests pass. The Muse app paired with it on Oct 28.</p>
+
+        <div class="install">
+          <div class="install-copy">
+            <h2>Muse Privacy</h2>
+            <p>A private workspace for Muse.<br>Your documents and models stay on your device.</p>
+          </div>
+          <div class="term-card" id="install">
+            <div class="term-tabs" role="tablist" aria-label="Where to run it">
+              <button type="button" role="tab" aria-selected="true" data-target="install-laptop">Laptop</button>
+              <button type="button" role="tab" aria-selected="false" data-target="install-jetson">Jetson</button>
+            </div>
+            <div class="term-body">
+              <pre id="install-laptop"><span class="k">git</span> clone https://github.com/Offline-Base/muse-privacy
+<span class="k">cd</span> muse-privacy <span class="op">&amp;&amp;</span> <span class="k">uv</span> sync <span class="op">&amp;&amp;</span> <span class="k">uv</span> run python -m base</pre>
+              <pre id="install-jetson" hidden><span class="k">git</span> clone https://github.com/Offline-Base/muse-privacy
+<span class="k">cd</span> muse-privacy <span class="op">&amp;&amp;</span> <span class="k">sudo</span> deploy/jetson/install.sh --build-llama</pre>
+              <button type="button" class="copy" aria-label="Copy the commands">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8.5" y="8.5" width="11" height="11" rx="2.2"/><path d="M15.5 8.5V6.7a2.2 2.2 0 0 0-2.2-2.2H6.7a2.2 2.2 0 0 0-2.2 2.2v6.6a2.2 2.2 0 0 0 2.2 2.2h1.8"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="models">
+      <div class="wrap">
+        <div class="row-head">
+          <h2>The models it uses</h2>
+          <div class="arrows">
+            <button type="button" class="arrow" data-dir="-1" aria-label="Previous models"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg></button>
+            <button type="button" class="arrow" data-dir="1" aria-label="More models"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button>
+          </div>
+        </div>
+        <div class="cards" id="model-cards">
+          <article class="model">
+            <img src="art/muse.svg" alt="" width="660" height="360">
+            <h3>Muse</h3>
+            <p>Plans the job in Meta's cloud and calls six tools on the device. It works only with tags and summaries.</p>
+          </article>
+          <article class="model">
+            <img src="art/glimmer.svg" alt="" width="660" height="360">
+            <h3>Liquid LFM3-VL-2B <span class="ver">on your device</span></h3>
+            <p>Every model step runs on your laptop: finding names, reading who a request is for, search and summaries. Your own rules, not a model, decide what can be shared.</p>
+          </article>
+          <article class="model">
+            <img src="art/spark.svg" alt="" width="660" height="360">
+            <h3>Muse Spark <span class="ver">1.3</span></h3>
+            <p>Wrote the 2,000 invented practice items and graded the tagged essays a second time. Never used for user data.</p>
+          </article>
+          <article class="model">
+            <img src="art/jetson.svg" alt="" width="660" height="360">
+            <h3>Muse Glimmer <span class="ver">30B</span></h3>
+            <p>Used for the earlier benchmarks below, on OpenRouter with invented data. It is not part of today's device-only setup.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="how">
+      <div class="wrap">
+        <h2 class="center">How it works</h2>
+        <p class="lede flow-lede">Everything inside the dashed line happens on your own device. Muse only gets what passes your rules and the final check, as tags. Pick an example to watch one go through.</p>
+        <div class="flow-wrap">
+<figure class="flow" data-flow data-live="0" data-light="idle"><div class="flow-bar"><div class="flow-tabs" role="group" aria-label="Examples"><button type="button" class="flow-tab" data-story="shared" aria-pressed="true">Shared as tags</button><button type="button" class="flow-tab" data-story="ask" aria-pressed="false">Needs your OK</button><button type="button" class="flow-tab" data-story="kept" aria-pressed="false">Kept here</button><button type="button" class="flow-tab" data-story="toggle" aria-pressed="false">With a privacy toggle</button><button type="button" class="flow-tab" data-story="local" aria-pressed="false">Ask on this device</button></div><div class="flow-buttons"><button type="button" class="flow-tab" data-flow-play>Pause</button><button type="button" class="flow-tab" data-flow-next>Next step</button></div></div><div class="flow-stage"><svg class="flow-wires" aria-hidden="true"></svg><div class="flow-zone-box flow-device"><span class="flow-zone">This device</span><div class="flow-node" data-node="files"><svg class="flow-ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h3L9 7h6.5A1.5 1.5 0 0 1 17 8.5v6a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 14.5z"/></svg><span class="flow-name">Your documents</span><span class="flow-sub">Read only on the device. They never leave.</span></div><div class="flow-node" data-node="model"><svg class="flow-ico" viewBox="0 0 20 20" aria-hidden="true"><rect x="5.5" y="5.5" width="9" height="9" rx="1.5"/><path d="M8 2.5v3M12 2.5v3M8 14.5v3M12 14.5v3M2.5 8h3M2.5 12h3M14.5 8h3M14.5 12h3"/></svg><span class="flow-name">Local model</span><span class="flow-sub">LFM3-VL-2B today, or your own Muse Glimmer</span></div><div class="flow-node" data-node="tagging"><svg class="flow-ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 4.5v5l7.5 7.5 6-6L9 3.5H4a1 1 0 0 0-1 1z"/><circle cx="6.5" cy="7" r="1"/></svg><span class="flow-name">Tagging</span><span class="flow-sub">Names and identifiers become tags like [Student A]</span></div><div class="flow-node" data-node="rules"><svg class="flow-ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 6h12M4 14h12"/><circle cx="8" cy="6" r="2"/><circle cx="12.5" cy="14" r="2"/></svg><span class="flow-name">Your rules</span><span class="flow-sub">Your policy, what you taught it, and toggles like FERPA or HIPAA</span></div><div class="flow-node" data-node="check"><svg class="flow-ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5l6 2.25v4.5c0 3.9-2.6 6.9-6 8.25-3.4-1.35-6-4.35-6-8.25v-4.5z"/><path d="M7.5 10l2 2 3.5-4"/></svg><span class="flow-name">Final check</span><span class="flow-sub">Looks again for anything private</span></div><div class="flow-node" data-node="you"><svg class="flow-ico" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="7" r="3"/><path d="M4 17c.8-3 3.2-4.5 6-4.5s5.2 1.5 6 4.5"/></svg><span class="flow-name">You</span><span class="flow-sub">Ask on this device: answers never leave</span></div><div class="flow-node" data-node="kept"><svg class="flow-ico" viewBox="0 0 20 20" aria-hidden="true"><rect x="4.5" y="9" width="11" height="8" rx="1.5"/><path d="M7 9V6.5a3 3 0 0 1 6 0V9"/></svg><span class="flow-name">Kept here</span><span class="flow-sub">Stays on the device, with a reason</span></div><div class="flow-node" data-node="approvals"><svg class="flow-ico" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M10 6v4l2.5 2"/></svg><span class="flow-name">Your OK</span><span class="flow-sub">You see the exact text first</span></div></div><div class="flow-zone-box flow-cloud"><span class="flow-zone">Cloud</span><div class="flow-node" data-node="muse"><svg class="flow-ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 15.5h8.5a3.5 3.5 0 0 0 .4-7 5 5 0 0 0-9.6 1.2A3 3 0 0 0 6 15.5z"/></svg><span class="flow-name">Muse</span><span class="flow-sub">Gets tags only, through the relay</span></div></div><span class="flow-token" hidden></span><span class="flow-token flow-live-token" hidden></span></div><ol class="flow-steps"></ol></figure>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="demo">
+      <div class="wrap">
+        <h2 class="center">Watch one request go through</h2>
+        <div class="demo">
+          <div class="tabs" role="tablist" aria-label="Examples" id="demo-tabs"></div>
+
+          <div class="stage" id="demo-stage">
+            <div class="screen" aria-hidden="true">
+              <div class="pane muse">
+                <div class="bar"><i></i><i></i><i></i><span>Muse</span></div>
+                <div class="chat" id="demo-chat"></div>
+              </div>
+              <div class="pane term">
+                <div class="term-head">Muse Privacy <span>on your laptop</span></div>
+                <div class="term-lines" id="demo-term"></div>
+                <div class="status" id="demo-status" data-light="idle"><span>[laptop] muse-privacy</span><span id="demo-light">light off</span></div>
+              </div>
+              <div class="popup" id="demo-popup" hidden></div>
+            </div>
+            <div class="caption" aria-live="polite">
+              <p class="step" id="demo-step"></p>
+              <p class="note" id="demo-note"></p>
+              <p class="text" id="demo-text"></p>
+              <div class="controls">
+                <button type="button" class="arrow" id="demo-prev" aria-label="Previous step"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg></button>
+                <button type="button" class="arrow" id="demo-play" aria-label="Play"><svg class="i-play" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3.8v8.4L12 8z"/></svg><svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 4v8M10.5 4v8"/></svg></button>
+                <button type="button" class="arrow" id="demo-next" aria-label="Next step"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button>
+              </div>
+            </div>
+          </div>
+
+          <div class="features">
+            <details class="acc" name="features" open>
+              <summary>Tags, not names</summary>
+              <p>Exact checks swap every roster name, nickname and identifier for a tag before any model reads the text. Letters are shuffled on each device, so a tag says nothing about the name.</p>
+            </details>
+            <details class="acc" name="features">
+              <summary>One exit, five checks</summary>
+              <p>Every result passes the same steps: tag names and identifiers, a name pass, who it is for, the privacy router and a final leak check. If a check cannot run, the result stays on the device.</p>
+            </details>
+            <details class="acc" name="features">
+              <summary>You decide on the device</summary>
+              <p>When the router asks, a card waits on an approval page only your machine serves, and Muse hears "Waiting for your OK on the device." Never-share topics are kept without asking.</p>
+            </details>
+            <details class="acc" name="features">
+              <summary>Dreaming, every night</summary>
+              <p>The device rebuilds the router's rules from your approve and deny answers and keeps them only if they score no worse on a holdout set, with zero leaks.</p>
+            </details>
+            <details class="acc" name="features">
+              <summary>Every model on your device</summary>
+              <p>With device-only mode on, no model is reached off your laptop. If the local model is down, results wait on the device. Only tagged results go to Muse, and each one gets a receipt.</p>
+            </details>
+            <details class="acc" name="features">
+              <summary>Privacy toggles for regulated work</summary>
+              <p>Fifteen toggles in six groups: students and children (FERPA, COPPA, state laws), health (HIPAA, 42 CFR Part 2), money (GLBA, PCI DSS, tax preparer rules), work (attorney-client, employee records), privacy laws (GDPR, CCPA) and government (CUI, CJIS, ITAR and EAR). Each tags more, locks the settings that could undo it, and holds results it should. The government ones send nothing to Muse at all. A toggle doesn't make anyone legally covered: your school, clinic, agency or company still decides whether Muse may be used.</p>
+            </details>
+          </div>
+        </div>
+        <p class="fine">The results in these demos come from the earlier Muse Glimmer runs. Every student, guardian and record here is invented, and the tags are the guard's real output on one laptop. The field trip form, the scores, the class summary and the job ids are examples. The search example replays that laptop's decision log from the Muse app session on Oct 28. Sequences are shortened throughout.</p>
+      </div>
+    </section>
+
+    <section class="section" id="who">
+      <div class="wrap">
+        <p class="label">Who it's for</p>
+        <h2>Built for work with a name in every file</h2>
+        <p class="lede">Muse can already reach your files through connectors, but whatever it reads lands in its cloud VM, names and all. That keeps it away from the private, tedious work most ready for automation: grading student papers, medical records, city agency casework.</p>
+        <div class="grid3">
+          <article class="card">
+            <span class="tagline">First</span>
+            <h3>Teachers</h3>
+            <p>Grading and feedback, the job this build automates, has a student's name in every file. Under FERPA's school-official exception, a school may give education records to an outside service without parent consent only if, among other conditions, the service is "under the direct control of the agency or institution with respect to the use and maintenance of education records."</p>
+            <p class="src"><a href="https://studentprivacy.ed.gov/faq/who-school-official-under-ferpa">US Department of Education, FERPA FAQ</a></p>
+            <p>Here the essays stay on the teacher's laptop, and the feedback files with real names are written only there.</p>
+          </article>
+          <article class="card">
+            <span class="tagline">Same pattern</span>
+            <h3>Clinics and city casework</h3>
+            <p>Anywhere records have to stay with whoever holds them: a clinic's charts, a caseworker's files. Muse plans with tags, and the device does the reading.</p>
+            <p class="muted">What never leaves is set in one policy file of topics and rules. In the classroom policy, health details, home addresses and parent contacts never leave.</p>
+          </article>
+          <article class="card">
+            <span class="tagline">Laptop today</span>
+            <h3>Hardware you own</h3>
+            <p>It installs on a laptop today. A Jetson Orin Nano box is the version a school could own outright, with a status light for working, waiting for your OK and sending to Muse.</p>
+            <p class="muted">The Jetson path is designed and tested in simulation, not run on a board yet. Built solo by Ethan, who builds AI tools with school districts.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="evidence">
+      <div class="wrap">
+        <div class="row-head">
+          <h2>What the tests show</h2>
+          <a class="more" href="https://github.com/Offline-Base/muse-privacy/tree/main/eval/reports">All reports <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg></a>
+        </div>
+        <p class="lede">Today's setup runs every model on the laptop, and the first two numbers measure it on invented students. The rest are earlier measurements with Muse Glimmer on OpenRouter, which is not part of today's setup.</p>
+        <div class="grid3 metrics">
+          <a class="card metric" href="https://github.com/Offline-Base/muse-privacy/blob/main/eval/reports/device_only_unseen_200.md"><b>0</b><span>leaks of names or identifiers on 200 invented items the rules were not written against, on the device-only setup. 2 results were shared that should have waited for the user or stayed on the device.</span></a>
+          <a class="card metric" href="https://github.com/Offline-Base/muse-privacy/blob/main/eval/reports/device_only_unseen_200.md"><b>73.5%</b><span>agreement with the expected decision on those 200 items. 90 of them asked for the user's OK, before any learning from their answers.</span></a>
+          <a class="card metric" href="https://github.com/Offline-Base/muse-privacy/blob/main/eval/reports/final.md#leaks"><b>0</b><span>leaks of names or identifiers in every final run: the 100-item run, the holdout, five nights, the unseen test and both 24-essay grading jobs</span></a>
+          <a class="card metric" href="https://github.com/Offline-Base/muse-privacy/blob/main/eval/reports/final_cloud.md"><b>76%</b><span>router accuracy on 100 items on a first day. No item was shared that should have been asked about or kept.</span></a>
+          <a class="card metric" href="https://github.com/Offline-Base/muse-privacy/blob/main/eval/reports/final/nights.md#unseen-test"><b>72% → 81%</b><span>accuracy on 100 unseen items, before and after five nights of dreaming. Ask first fell from 100% to 68% on the way.</span></a>
+          <a class="card metric" href="https://github.com/Offline-Base/muse-privacy/blob/main/eval/reports/final/nights.md"><b>10 → 6</b><span>approval requests per simulated day over five days, while the 5 a day she wanted to see kept coming</span></a>
+          <a class="card metric" href="https://github.com/Offline-Base/muse-privacy/blob/main/eval/reports/request_topics.md"><b>84%</b><span>of held-out requests meant for someone outside the class found by Glimmer, at precision 0.75; a keyword list found 50%</span></a>
+          <a class="card metric" href="https://github.com/Offline-Base/muse-privacy/blob/main/eval/reports/grading_crosscheck.md"><b>23 of 24</b><span>essays where Muse Spark's total was within one point of Glimmer's</span></a>
+        </div>
+        <figure class="chart">
+          <img src="five-nights.png" width="1600" height="1284" alt="Two charts. Approval requests per simulated day fall from 10 to 9, 7, 6 and 6, with the 5 requests the teacher wanted every day. Agreement with the teacher on holdout items goes 75, 85, 90, 85, 85 and 90 percent over nights 0 to 5. Leaks are 0 everywhere." loading="lazy">
+          <figcaption>
+            <span class="step">Five nights of dreaming</span>
+            <span>A simulated teacher answers each request, and each night the device rebuilds its rules from her answers. Requests she didn't need fell from 5 a day to 1, and agreement on the holdout rose from 75% to 90%.</span>
+            <span class="muted">The gate selects on the holdout, so its 90% is an upper bound; the unseen test's 72% to 81% is the more honest number. The leak line counts names and identifiers, not policy misses.</span>
+          </figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="section" id="limits">
+      <div class="wrap">
+        <h2>What is not done yet</h2>
+        <div class="grid2 limits">
+          <details class="acc"><summary>Device numbers are new</summary><p>The laptop numbers are from one day of invented data, with no real class and no outside review. Grading and nightly learning have not been measured on the local model, and nothing has run on a Jetson in this setup.</p></details>
+          <details class="acc"><summary>The Muse app is only partly tried</summary><p>On Oct 28 it paired, listed the six tools, listed the workspace and ran a search through the relay. Grading, approvals and the scheduled jobs have run only with a script playing Muse.</p></details>
+          <details class="acc"><summary>Tagging can miss things</summary><p>The roster can't know siblings, guardians or staff, so the device also uses a name-shape check and the local model. A name written in lower case and missed by the model is not caught.</p></details>
+          <details class="acc"><summary>Muse sees what you type</summary><p>Whatever you type into Muse reaches Meta before the device sees it. Meta's training setting is on by default, so the setup page asks you to turn it off, and Prepare a question tags your question first.</p></details>
+          <details class="acc"><summary>The router is strict on a first day</summary><p>It asked about 21 of 25 results the simulated teacher would have shared tagged.</p></details>
+          <details class="acc"><summary>Dreaming can learn too broad a rule</summary><p>On the unseen test it stopped asking about 8 of 25 items she wanted to see first. They went out tagged, so they are not leaks, but they are policy misses.</p></details>
+          <details class="acc"><summary>The learning numbers are simulated</summary><p>The teacher is a policy file, and the rules are chosen on the holdout, so its 90% is an upper bound.</p></details>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="get-started">
+      <div class="wrap">
+        <p class="label">Get started</p>
+        <h2>Run it on your laptop</h2>
+        <div class="grid3">
+          <article class="card">
+            <h3>Laptop</h3>
+            <p class="muted">Needs llama.cpp and the LFM3-VL-2B model on your laptop. One command starts everything, and a setup page does the rest.</p>
+            <pre class="mini"><span class="k">git</span> clone https://github.com/Offline-Base/muse-privacy
+<span class="k">cd</span> muse-privacy <span class="op">&amp;&amp;</span> <span class="k">uv</span> sync
+<span class="k">cp</span> .env.example .env  <span class="c"># set DEVICE_ONLY=1</span>
+<span class="k">uv</span> run pytest -q
+scripts/start.sh</pre>
+          </article>
+          <article class="card">
+            <h3>Add it to Muse</h3>
+            <ol>
+              <li>Deploy the relay once from <code>relay/</code> with its deploy script.</li>
+              <li>Register the laptop with the relay and keep the relay client running.</li>
+              <li>Ask Muse in chat to create a custom connector for the relay's <code>/mcp</code> address, with OAuth.</li>
+              <li>Type the pairing code the laptop prints on the relay's Link your device page.</li>
+            </ol>
+            <p class="src"><a href="https://github.com/Offline-Base/muse-privacy/blob/main/docs/MUSE_SETUP.md">Full steps in docs/MUSE_SETUP.md</a></p>
+          </article>
+          <article class="card">
+            <h3>Jetson Orin Nano</h3>
+            <p class="muted">Designed and tested in simulation, not run on a board yet. The installer builds llama.cpp, fetches an about 1.6-bit (IQ1_S) Muse Glimmer and sets up three services.</p>
+            <pre class="mini"><span class="k">sudo</span> deploy/jetson/install.sh --build-llama
+<span class="k">sudo</span> systemctl start \
+  muse-privacy-glimmer muse-privacy</pre>
+            <p class="src"><a href="https://github.com/Offline-Base/muse-privacy/blob/main/deploy/jetson/README.md">deploy/jetson/README.md</a></p>
+          </article>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap foot-row">
+      <div>
+        <p><strong>Muse Privacy.</strong> Built solo for the Meta Global AI Developer Hackathon. An independent project, not made or endorsed by Meta.</p>
+        <p>Every student, guardian and record on this page is invented. This page loads nothing from other sites: no trackers, no cookies, no outside fonts.</p>
+      </div>
+      <div class="foot-links">
+        <a href="https://github.com/Offline-Base/muse-privacy">Code</a>
+        <a href="https://github.com/Offline-Base/muse-privacy/tree/main/eval/reports">Reports</a>
+        <a href="https://github.com/Offline-Base/muse-privacy/tree/main/demo">Demo class</a>
+        <a href="https://github.com/Offline-Base/muse-privacy/blob/main/docs/PRIOR_WORK.md">Prior work</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

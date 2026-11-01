@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>$title · Muse Privacy</title>
+<link rel="stylesheet" href="/static/app.css?v=$asset_v">
+<link rel="stylesheet" href="/static/flow.css?v=$asset_v">
+<script src="/static/app.js?v=$asset_v" defer></script>
+</head>
+<body data-page="$page" data-live="$live">
+<div class="shell">
+  <aside class="side">
+    <div class="brand">
+      <div class="brand-name">Muse Privacy</div>
+      <div class="brand-sub">Private workspace on this device</div>
+    </div>
+    <nav class="nav" aria-label="Sections">$nav_html</nav>
+    <div class="side-foot">
+      <div class="light" id="light" data-state="$light_state" role="status" aria-live="polite">
+        <span class="dot" aria-hidden="true"></span>
+        <span class="light-label" id="light-label">$light_label</span>
+      </div>
+      <div class="device-chip">
+        <span class="initials" aria-hidden="true">$device_initial</span>
+        <span class="chip-text">
+          <span class="chip-name">$device_name</span>
+          <span class="chip-sub">$backend</span>
+        </span>
+      </div>
+    </div>
+  </aside>
+  <main class="main">
+    <div class="main-inner">
+$content_html
+    </div>
+  </main>
+</div>
+</body>
+</html>
