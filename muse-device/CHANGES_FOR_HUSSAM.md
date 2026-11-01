@@ -100,7 +100,7 @@ Nothing else in `server.py` changed. `run_command`, the token rules and every ex
 ## Changes to `test_server.py`
 
 `test_version_and_tools_are_offered` expects `0.5.0`, and a new `BoardToolsForProducts` class has 8 tests. `test_drive.py` expects `0.5.0`
-too, in two places. All pass on a Mac: 145 tests in the two files, 3 skipped.
+too, in two places. All pass on a Mac: 147 tests in the two files, 3 skipped.
 
 ## What I couldn't check here, and would like you to
 
