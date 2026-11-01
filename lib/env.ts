@@ -314,6 +314,17 @@ export const env = {
   get trainJobMaxUsd() {
     return number("TRAIN_JOB_MAX_USD", 5);
   },
+  /**
+   * The most one person's Lambda GPU jobs may ever cost, in USD, counting running jobs at their full dollar limit. Not a
+   * daily amount: it never resets. 0 stops them. The shared guest account would be one person here, so one pool.
+   */
+  get trainUserLimitUsd(): number {
+    return dollars("TRAIN_USER_LIMIT_USD", 100);
+  },
+  /** The same across everyone: the most the platform's Lambda GPU jobs may ever cost, in USD. 0 stops them all. */
+  get trainTotalLimitUsd(): number {
+    return dollars("TRAIN_TOTAL_LIMIT_USD", 3000);
+  },
   get trainJobMaxMinutes() {
     return number("TRAIN_JOB_MAX_MINUTES", 120);
   },

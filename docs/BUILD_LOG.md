@@ -1701,6 +1701,17 @@ scripts/dev/tune-harness.ts, on a Lambda gpu_1x_a10 named prove-tune-1, us-east-
 - Found: nothing stops a build at a dollar amount. The $40 budget for this job isn't enforced by code; only the wall and DAILY_SPEND_CAP_USD=150 limit it.
 - Result of both builds: pending. A real brief is all this proves so far.
 
+## Nov 1: lifetime GPU limits, $100 a person and $3,000 in all (branch tg-gpu-per-user)
+
+- Why: the owner set the Lambda budget at $3,000 total, about $100 per user.
+- Built: `TRAIN_USER_LIMIT_USD` (100) and `TRAIN_TOTAL_LIMIT_USD` (3000), checked in launchJob, the one way a Lambda GPU starts. Running jobs count at their full dollar limit. A job's limit comes down to what's left; too little left is 429 `gpu_limit` with what's left in words. Admins see both amounts on /fine-tuning. `TRAIN_DAILY_USD` and `TRAIN_JOB_MAX_USD` work as before.
+- Decision: no migration. The totals come from training_jobs, whose rows are never deleted. Hosted endpoints on Lambda and demo windows are serve jobs there, so they count once. Fireworks, Modal and Baseten don't count: they aren't Lambda.
+- Decision: a race is closed the way TRAIN_DAILY_USD closes it. Each start reads again after saving its row and backs out if a limit is passed, so whichever saved last sees both. At worst both back out. A run waits and retries after that; a plain refusal ends it.
+- Found: production's GPU starts are admin only. The shared guest gets 403 from /api/train/jobs and /api/train/runs (checked on the live site with an empty body), and hosting and product training refuse it. PUBLIC_TRAINING and GPU_TRAIN_ON_DATA aren't set on production, and no route calls trainCaller, so PUBLIC_TRAINING opens nothing even when on.
+- Found: the shared guest would be one person, so one $100 pool, if a later change lets it start GPUs. Nothing here lets it.
+- Watch: with the default, each admin is held to $100 for good, past jobs included, and automation counts as the first admin. The owner may want `TRAIN_USER_LIMIT_USD` higher for that. Production's real totals weren't read.
+- Not counted: the model cache's monthly bill, and GPUs rented outside the platform, such as the harness run above. A job can also run a little past its limit before its GPU stops, as before.
+- Tests: fakes and PGlite only. gpu-budget and launch pass, and removing the second read makes both race tests fail. routes, store, rl, run-flow, hub-flow, gpu train, windows, integration and host adapters and service pass. /fine-tuning rendered once on a local empty database. No real GPU, Neon or browser check. Spend $0.
 ## Nov 1, 13:56 EST: device lab, read-only check (branch tg-lab-readonly)
 
 Read-only calls only, with the offlinebase profile in account 916979311153. Nothing in AWS was created, started, stopped or sent a command. No spend from this check.

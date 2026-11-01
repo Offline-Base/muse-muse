@@ -264,7 +264,7 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
 export function startTrainingErrorText(status: number, body: unknown): string {
   const b = body && typeof body === "object" ? (body as { error?: unknown; reason?: unknown }) : {};
   const code = typeof b.error === "string" ? b.error : "";
-  if (status === 422 && typeof b.reason === "string" && b.reason.trim()) return b.reason.trim();
+  if ((status === 422 || code === "gpu_limit") && typeof b.reason === "string" && b.reason.trim()) return b.reason.trim();
   if (code === "stopped") return "This run was stopped, so it won't train.";
   if (code === "not_ready") return "The examples are still being written. Training starts on its own once they're ready.";
   if (code === "forbidden") return "Only the person who started this run can train it.";

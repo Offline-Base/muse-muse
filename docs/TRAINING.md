@@ -53,6 +53,8 @@ Muse Spark Open wrote part of r30b's training data, so r30b and every model trai
 | Jobs holding a GPU at once | 1 | `TRAIN_MAX_ACTIVE` |
 | Estimated training spend per day, all jobs | $20 | `TRAIN_DAILY_USD` |
 | Ceiling on one job's dollar limit | $5 | `TRAIN_JOB_MAX_USD` |
+| One person's Lambda GPU spend, for good (running jobs at their full dollar limit; a job's limit comes down to what's left) | $100 | `TRAIN_USER_LIMIT_USD` |
+| Everyone's Lambda GPU spend, for good (the same) | $3,000 | `TRAIN_TOTAL_LIMIT_USD` |
 | Ceiling on one job's time limit | 120 min | `TRAIN_JOB_MAX_MINUTES` |
 | Boot grace: no heartbeat yet | 25 min after launch | `lib/train/logic.ts` |
 | Silence after the first heartbeat | 10 min | `lib/train/logic.ts` |

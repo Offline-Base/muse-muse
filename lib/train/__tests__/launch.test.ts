@@ -43,6 +43,9 @@ let started: Array<{ fn: string; args: unknown[] }> = [];
 let startFails = false;
 let capacity = true;
 let admin = "";
+let other = "";
+/** Set by a race test: holds each launch between its checks and its insert, until both have passed the checks. */
+let afterChecks: (() => Promise<void>) | null = null;
 
 describe("launchJob", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
   before(async () => {
@@ -74,7 +77,7 @@ describe("launchJob", { skip: canMock ? false : "needs --experimental-test-modul
     mock.module(at("../lambda.ts"), {
       namedExports: {
         ...realLambda,
-        listInstanceTypes: async () => [{ ...A100, regionsWithCapacity: capacity ? ["us-east-1"] : [] }],
+        listInstanceTypes: async () => (await afterChecks?.(), [{ ...A100, regionsWithCapacity: capacity ? ["us-east-1"] : [] }]),
         cacheRegions: async () => ["us-east-1"],
       },
     });
@@ -87,6 +90,8 @@ describe("launchJob", { skip: canMock ? false : "needs --experimental-test-modul
     ({ POST: jobsRoute } = await import(at("../../../app/api/train/jobs/route.ts")));
     const [a] = await testDb.insert(realSchema.users).values({ email: "owner@example.com", isAdmin: true }).returning();
     admin = a!.id;
+    const [b] = await testDb.insert(realSchema.users).values({ email: "other@example.com" }).returning();
+    other = b!.id;
   });
 
   after(async () => {
@@ -107,6 +112,9 @@ describe("launchJob", { skip: canMock ? false : "needs --experimental-test-modul
       TRAIN_DAILY_USD: "20",
       TRAIN_JOB_MAX_USD: "5",
     });
+    delete process.env.TRAIN_USER_LIMIT_USD;
+    delete process.env.TRAIN_TOTAL_LIMIT_USD;
+    afterChecks = null;
     started = [];
     startFails = false;
     capacity = true;
@@ -220,5 +228,138 @@ describe("launchJob", { skip: canMock ? false : "needs --experimental-test-modul
     assert.ok(oks <= 1, "never two past TRAIN_MAX_ACTIVE");
     const open = (await testDb.select().from(realSchema.trainingJobs)).filter((j) => j.status !== "failed");
     assert.equal(open.length, oks);
+  });
+
+  describe("the lifetime GPU limits", () => {
+    /** A made-up job, already ended and shut down at this cost unless `open`, when it holds its whole dollar limit. */
+    const seed = (createdBy: string | null, usd: number, open = false) =>
+      testDb.insert(realSchema.trainingJobs).values({
+        recipe: "glimmer-lora",
+        title: "Made up",
+        status: open ? "running" : "succeeded",
+        params: {},
+        instanceType: A100.name,
+        region: "us-east-1",
+        priceCentsPerHour: A100.priceCentsPerHour,
+        maxMinutes: 90,
+        maxUsd: usd,
+        instanceName: `mm-train-${Math.random()}`,
+        createdBy,
+        costUsd: open ? 0 : usd,
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        launchedAt: open ? new Date() : new Date("2026-01-01T00:00:00Z"),
+        terminatedAt: open ? null : new Date("2026-01-01T01:00:00Z"),
+      });
+    const reasonOf = (r: Awaited<ReturnType<typeof launch.launchJob>>) => (r.ok ? "" : String(r.body?.reason));
+
+    beforeEach(() => {
+      process.env.TRAIN_MAX_ACTIVE = "10";
+      process.env.TRAIN_DAILY_USD = "1000";
+    });
+
+    it("refuses a person with too little left, says what's left, and leaves another person alone", async () => {
+      await seed(admin, 99.95);
+      const before = (await testDb.select().from(realSchema.trainingJobs)).length;
+      const r = await launch.launchJob(input(), { userId: admin });
+      assert.equal(!r.ok && r.code, "gpu_limit");
+      assert.equal(!r.ok && r.status, 429);
+      assert.match(reasonOf(r), /You have \$0\.05 left of your \$100\.00 GPU limit/);
+      assert.equal((await testDb.select().from(realSchema.trainingJobs)).length, before);
+      assert.equal(started.length, 0);
+      assert.ok((await launch.launchJob(input(), { userId: other })).ok);
+    });
+
+    it("counts everyone toward the total, jobs with no owner too", async () => {
+      process.env.TRAIN_TOTAL_LIMIT_USD = "50";
+      await seed(admin, 30);
+      await seed(null, 19.95);
+      const r = await launch.launchJob(input(), { userId: other });
+      assert.equal(!r.ok && r.code, "gpu_limit");
+      assert.equal(!r.ok && r.body?.scope, "total");
+      assert.match(reasonOf(r), /The platform has \$0\.05 left of its \$50\.00 GPU budget/);
+    });
+
+    it("counts a running job at its whole dollar limit, and an ended one at what it cost", async () => {
+      process.env.TRAIN_USER_LIMIT_USD = "10";
+      await seed(admin, 9.95, true);
+      assert.equal((await store.gpuBudgetFor(admin)).userLeftUsd, 0.05);
+      assert.equal((await launch.launchJob(input(), { userId: admin })).ok, false);
+      await testDb.delete(realSchema.trainingEvents);
+      await testDb.delete(realSchema.trainingJobs);
+      await seed(admin, 2);
+      assert.equal((await store.gpuBudgetFor(admin)).userLeftUsd, 8);
+    });
+
+    it("holds a job's dollar limit to what's left of the smaller limit", async () => {
+      process.env.TRAIN_USER_LIMIT_USD = "10";
+      process.env.TRAIN_TOTAL_LIMIT_USD = "100";
+      await seed(admin, 6.5);
+      const r = await launch.launchJob(input({ maxMinutes: 60 }), { userId: admin });
+      assert.equal(r.ok && r.job.maxUsd, 3.5);
+      await testDb.delete(realSchema.trainingEvents);
+      await testDb.delete(realSchema.trainingJobs);
+      await seed(other, 97);
+      const t = await launch.launchJob(input({ maxMinutes: 60 }), { userId: admin });
+      assert.equal(t.ok && t.job.maxUsd, 3);
+    });
+
+    it("leaves a job alone with plenty left, and TRAIN_JOB_MAX_USD still holds", async () => {
+      const r = await launch.launchJob(input({ maxUsd: 50 }), { userId: admin });
+      assert.equal(r.ok && r.job.maxUsd, 5);
+    });
+
+    it("answers gpu_limit, not a sizing error, when the money left is what makes the job not fit", async () => {
+      process.env.TRAIN_USER_LIMIT_USD = "10";
+      await seed(admin, 9.8);
+      const r = await launch.launchJob(input(), { userId: admin });
+      assert.equal(!r.ok && r.code, "gpu_limit");
+      assert.match(reasonOf(r), /\$0\.20 left/);
+    });
+
+    it("a limit of 0 stops every new job", async () => {
+      process.env.TRAIN_TOTAL_LIMIT_USD = "0";
+      const r = await launch.launchJob(input(), { userId: admin });
+      assert.equal(!r.ok && r.code, "gpu_limit");
+    });
+
+    it("the shared guest account is one person, so one pool", async () => {
+      process.env.TRAIN_USER_LIMIT_USD = "5";
+      const guest = other; // Every guest arrives with the same user id.
+      assert.ok((await launch.launchJob(input(), { userId: guest })).ok);
+      const secondGuest = await launch.launchJob(input(), { userId: guest });
+      assert.equal(!secondGuest.ok && secondGuest.code, "gpu_limit");
+    });
+
+    /** Holds both launches past the checks, so each read the money before either wrote. */
+    const bothPassChecks = () => {
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      let waiting = 0;
+      afterChecks = async () => {
+        waiting += 1;
+        if (waiting === 2) release();
+        await gate;
+      };
+    };
+
+    for (const [scope, env, second] of [
+      ["one person", "TRAIN_USER_LIMIT_USD", () => admin],
+      ["everyone", "TRAIN_TOTAL_LIMIT_USD", () => other],
+    ] as const) {
+      it(`two starts at once can't both spend the same money: ${scope}`, async () => {
+        process.env[env] = "6";
+        bothPassChecks();
+        const results = await Promise.all([launch.launchJob(input({ maxMinutes: 60 }), { userId: admin }), launch.launchJob(input({ maxMinutes: 60 }), { userId: second() })]);
+        const passed = results.filter((r) => r.ok);
+        assert.ok(passed.length <= 1, "at most one goes on");
+        assert.equal(started.length, passed.length, "only a start that went on has a workflow");
+        const refused = results.find((r) => !r.ok);
+        assert.equal(refused && !refused.ok && refused.code, "gpu_limit");
+        assert.equal(refused && !refused.ok && refused.body?.raced, true);
+        assert.match(reasonOf(refused!), /at the same moment/);
+        const open = (await testDb.select().from(realSchema.trainingJobs)).filter((j) => j.status !== "failed");
+        assert.ok(open.reduce((sum, j) => sum + j.maxUsd, 0) <= 6);
+      });
+    }
   });
 });

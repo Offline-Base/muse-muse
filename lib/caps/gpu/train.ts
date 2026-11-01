@@ -226,7 +226,8 @@ export async function handleProductTrain(req: Request, slug: string, deps: Train
         await giveBack();
         await giveDayBack();
         await deps.removeDataset(datasetId);
-        const words = started.status === 400 ? started.code : (LAUNCH_WORDS[started.code] ?? "The GPU couldn't start. Try again later.");
+        const limitText = started.code === "gpu_limit" && typeof started.body?.reason === "string" ? started.body.reason : null;
+        const words = started.status === 400 ? started.code : (limitText ?? LAUNCH_WORDS[started.code] ?? "The GPU couldn't start. Try again later.");
         return answer(started.status, started.status === 400 ? "invalid_arguments" : started.code, words);
       }
       // The GPU is running from here, so nothing below gives a count back. The job is found by its dataset either way.
