@@ -1155,6 +1155,25 @@ because the sidebar showed a real account.
   The recipe switches once that repo is public and one dry run passes on it (about 1 AM). Every r30b-based lab model is
   a Derivative of Muse Spark Open, so its cards and pages get "Built with Muse Spark Open" and the Usage Policy points.
 
+### 22:05 Fine-tune like a build, stage 1, landed on tuned-model-options (0a3ec6d)
+
+- wf_e1fcae3d-58a built /fine-tuning/new (one box "What should your model do?", a CSV, JSONL or pasted examples, a
+  Training setup fold), the plan route (one Muse Wonder call, a signed plan token good for 2 hours, 20 plans an hour per
+  caller), the run room at /fine-tuning/runs/<id> (the chat kit's steps, the mascot by stage, the verdict, eval results,
+  Where it runs), PlanCard generalized to PlanView, evalVerdict, and Composer and SetupPanel optional props. Behind
+  TUNE_COMPOSER, admins only; with the flag off, 11 renders match fingerprints taken before the shared edits.
+- Review: 2 medium, 4 low, all fixed. The handoff to the existing form would have published to Hugging Face despite the
+  plan's "publish off" (the room now says so; stage 2's automatic launch passes publish 0); a 64 KB body limit refused
+  normal example files; at least 40 examples; a run whose judging never finished no longer shows "Scored."
+- Landing: the flag-off fingerprints for /fine-tuning (admin and guest) re-recorded, since the decision models changed
+  that page after they were taken. Full suite on the merge: 4,852 tests, 4,843 pass, 1 fail (that fingerprint), then the
+  tune tests 47/47 after re-recording. tsc clean.
+  ![Composer](log/shots/2026-10-31/tune-composer-1440.png)
+  ![Plan card](log/shots/2026-10-31/tune-plan-1440.png)
+  ![Scored run](log/shots/2026-10-31/tune-scored-1440.png)
+- Local site restarted (22:00) with the decision models and the composer merged and a 3 GB memory cap: the old dev
+  server had grown to about 7.7 GB, mostly swapped (flagged by another session).
+
 ## Gaps
 
 What this record doesn't confirm:
