@@ -11,18 +11,27 @@ import { mac } from "@/lib/tools/sign";
  * browser's rows apart and never enough for anything else.
  *
  * Unlike a tool call, a build's call can carry the others too: its tests use a visitor cookie and sign in made-up users,
- * so a second browser can be told apart from the first. A build stands in for the owner (it has none).
+ * so a second browser can be told apart from the first. A build stands in for the owner (it has none) only when the call
+ * names no one else (seed, the build's own server calls), or when it sends BUILD_TEST_OWNER as its owner pass
+ * (tests/caps/data.ts openAsOwner). A browser with a visitor id or a made-up person is that person, as on the live
+ * product, so a shared collection's write rule is tested in the build too.
  */
 
 export const USER_HEADER = "x-musemuse-user";
 export const JOB_HEADER = "x-musemuse-job";
+
+/**
+ * The owner pass a build's tests send to act as the owner (openAsOwner sets it as the product's mm_owner cookie). Only a
+ * build token reads it; on a live token it is no pass at all, since only the platform's signature makes an owner.
+ */
+export const BUILD_TEST_OWNER = "ot1.build-test-owner";
 
 export type CapPrincipalKind = "build" | "product" | "visitor" | "owner" | "user" | "job";
 
 export interface CapCaller {
   /** The strongest claim: build, then job, owner, user, visitor, product. */
   kind: CapPrincipalKind;
-  /** The owner pass's subject when it verifies, or "build" for a build. */
+  /** The owner pass's subject when it verifies, or "build" for a build's call that names no one else (or BUILD_TEST_OWNER). */
   owner: string | null;
   /** A signed-in person's pairwise subject, when their session verifies (a made-up user's, in a build). */
   user: string | null;
@@ -46,7 +55,6 @@ const VISITOR_ID = /^[A-Za-z0-9_-]{16,128}$/;
 export function resolveCapCaller(req: Request, token: CapTokenLike, now: Date): CapCaller {
   const base = resolvePrincipal(req, token, now);
   const build = token.scope === "build";
-  const owner = build ? "build" : base.kind === "owner" ? base.subject : null;
   const rawVisitor = req.headers.get(VISITOR_HEADER)?.trim() ?? "";
   const visitor = VISITOR_ID.test(rawVisitor) ? rawVisitor : null;
   const userHeader = req.headers.get(USER_HEADER)?.trim() ?? "";
@@ -59,6 +67,8 @@ export function resolveCapCaller(req: Request, token: CapTokenLike, now: Date): 
       : readUserSession(userHeader, token.productId, now);
     user = session?.subject ?? null;
   }
+  const testOwner = build && req.headers.get(OWNER_HEADER)?.trim() === BUILD_TEST_OWNER;
+  const owner = build ? (testOwner || (!rawVisitor && !userHeader) ? "build" : null) : base.kind === "owner" ? base.subject : null;
   // ---------- Wave 3, unit 6: jobs. A job token (x-musemuse-job) resolves here ----------
   const job: string | null = null;
   // ---------- end Wave 3, unit 6 ----------

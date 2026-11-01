@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { mintTestUserSession, mintUserSession } from "@/lib/caps/data/identity";
 import { CAP_CHECKS, capError, privateUrl, readJsonBody, runCapGate, unknownKeys, type CapGateDeps, type CapProduct, type CapRoute, type CapToken } from "@/lib/caps/gate";
-import { resolveCapCaller, subjectKey } from "@/lib/caps/principal";
+import { BUILD_TEST_OWNER, resolveCapCaller, subjectKey } from "@/lib/caps/principal";
 import { mintOwnerSession } from "@/lib/tools/principal";
 
 process.env.GATEWAY_TOKEN_PEPPER ??= "test-pepper-for-the-cap-gate";
@@ -271,13 +271,18 @@ describe("who is asking", () => {
     assert.equal(resolveCapCaller(req({ "x-musemuse-user": test }), live, NOW).user, null);
   });
 
-  it("a build is the owner, and takes its own made-up people only", () => {
+  it("a build is the owner only when the call names no one else, and takes its own made-up people only", () => {
     const build = { productId: "p1", scope: "build", buildId: BUILD };
     const test = mintTestUserSession({ productId: "p1", buildId: BUILD, subject: "made_up" }, NOW).session;
     const other = mintTestUserSession({ productId: "p1", buildId: "22222222-2222-4222-8222-222222222222", subject: "made_up" }, NOW).session;
     const real = mintUserSession({ productId: "p1", subject: "subj_ana" }, NOW).session;
     const c = resolveCapCaller(req({ "x-musemuse-user": test, "x-musemuse-client-ip": "203.0.113.7" }), build, NOW);
-    assert.deepEqual([c.kind, c.owner, c.user, c.ip], ["build", "build", "made_up", "203.0.113.7"]);
+    assert.deepEqual([c.kind, c.owner, c.user, c.ip], ["build", null, "made_up", "203.0.113.7"], "a made-up person is that person, not the owner");
+    assert.equal(resolveCapCaller(req({}), build, NOW).owner, "build", "seed and the build's own server calls");
+    assert.equal(resolveCapCaller(req({ "x-musemuse-visitor": "visitor_abcdefghijklmnop" }), build, NOW).owner, null, "a second browser is a visitor");
+    const asOwner = resolveCapCaller(req({ "x-musemuse-visitor": "visitor_abcdefghijklmnop", "x-musemuse-owner": BUILD_TEST_OWNER }), build, NOW);
+    assert.deepEqual([asOwner.owner, asOwner.visitor], ["build", "visitor_abcdefghijklmnop"], "openAsOwner's pass");
+    assert.equal(resolveCapCaller(req({ "x-musemuse-owner": BUILD_TEST_OWNER }), { productId: "p1", scope: "live" }, NOW).owner, null, "never on a live token");
     assert.equal(resolveCapCaller(req({ "x-musemuse-user": other }), build, NOW).user, null, "another build's person");
     assert.equal(resolveCapCaller(req({ "x-musemuse-user": real }), build, NOW).user, null, "a real person's session never reaches a build");
   });
