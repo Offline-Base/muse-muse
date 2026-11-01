@@ -8,11 +8,13 @@
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
 import { PGlite } from "@electric-sql/pglite";
+import { drizzle } from "drizzle-orm/pglite";
+import { migrate } from "drizzle-orm/pglite/migrator";
 import { REFUSE_PREVIEW, SKIP_PREVIEW, SKIP_UNSET, runMigrations, type MigrateDeps } from "@/lib/db/migrate";
 
 const PROD = "postgresql://prod_owner:fake-prod-secret@ep-prod-000000-pooler.invalid/neondb?sslmode=require";
@@ -58,6 +60,18 @@ describe("runMigrations", () => {
       assert.deepEqual(calls.neon, []);
       assert.match(calls.log[0]!, /^migrate: local database in \.data\/room up to date in \d+ ms$/);
     }
+  });
+
+  it("a local database that would skip a migration stops with the message and exit 1, logging nothing else", async () => {
+    const calls = { log: [] as string[], error: [] as string[] };
+    const deps: MigrateDeps = {
+      neon: async () => assert.fail("no Neon call"),
+      local: async () => "migrate: the local database in .data/room already ran a newer migration than 0018_trust",
+      log: (line) => void calls.log.push(line),
+      error: (line) => void calls.error.push(line),
+    };
+    assert.equal(await runMigrations({ DATABASE_URL: "pglite:.data/room" }, deps), 1);
+    assert.deepEqual(calls, { log: [], error: ["migrate: the local database in .data/room already ran a newer migration than 0018_trust"] });
   });
 
   it("a preview with PREVIEW_DATABASE_URL migrates it and never DATABASE_URL", async () => {
@@ -118,6 +132,41 @@ describe("scripts/migrate.ts", () => {
     const run = migrateScript({});
     assert.equal(run.status, 0, run.err);
     assert.equal(run.out, SKIP_UNSET);
+  });
+
+  it("stops on a pglite folder that ran 0019_engine before 0018_trust, naming it, and migrates nothing", async () => {
+    const journal = JSON.parse(readFileSync(join(ROOT, "drizzle/meta/_journal.json"), "utf8")) as {
+      entries: Array<{ idx: number; tag: string } & Record<string, unknown>>;
+    };
+    const engine = journal.entries.find((e) => e.tag === "0019_engine");
+    if (!engine || !journal.entries.some((e) => e.tag === "0018_trust")) return;
+    const dir = mkdtempSync(join(tmpdir(), "mm-migrate-order-"));
+    dirs.push(dir);
+    // tg-cap-int's journal before trust merged: 0000 to 0015, then 0019_engine.
+    const old = join(dir, "drizzle");
+    mkdirSync(join(old, "meta"), { recursive: true });
+    const entries = [...journal.entries.filter((e) => e.idx <= 15), engine].map((e, idx) => ({ ...e, idx }));
+    for (const e of entries) copyFileSync(join(ROOT, "drizzle", `${e.tag}.sql`), join(old, `${e.tag}.sql`));
+    writeFileSync(join(old, "meta/_journal.json"), JSON.stringify({ ...journal, entries }));
+    const folder = join(dir, "db");
+    mkdirSync(folder);
+    const seed = new PGlite(folder);
+    await migrate(drizzle({ client: seed }), { migrationsFolder: old });
+    await seed.close();
+
+    const run = migrateScript({ DATABASE_URL: `pglite:${folder}` });
+    assert.equal(run.status, 1);
+    assert.equal(run.out, "");
+    assert.match(run.err, /already ran a newer migration than 0017_decision_datasets, 0018_trust, so drizzle would skip them/);
+    const client = new PGlite(folder);
+    try {
+      const { rows } = await client.query<{ n: number }>(
+        "select count(*)::int as n from information_schema.columns where table_name = 'products' and column_name = 'taken_down_at'",
+      );
+      assert.equal(rows[0]!.n, 0);
+    } finally {
+      await client.close();
+    }
   });
 
   it("still migrates a pglite folder", async () => {

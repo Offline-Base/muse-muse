@@ -1,8 +1,10 @@
 import { and, eq, gte, isNull, ne, or, sql } from "drizzle-orm";
+import { cookies } from "next/headers";
 import type { SessionUser } from "@/lib/auth";
 import { db, schema } from "@/lib/db/client";
 import { env } from "@/lib/env";
 import { fileStorageAvailable } from "@/lib/local-files";
+import { ADULT_COOKIE, trustBuildRefusal, type TrustBuildRefusal } from "@/lib/trust/account";
 import { platformSpendToday } from "@/lib/usage";
 
 /** Builds count against a user's quota for 24 hours after they start. */
@@ -65,7 +67,9 @@ export async function spendPaused(): Promise<boolean> {
 
 export type BuildAllowance =
   | { ok: true }
-  | { ok: false; status: 429 | 503; error: "daily_limit" | "shared_limit" | "paused" | "no_storage" };
+  | { ok: false; status: 429 | 503; error: "daily_limit" | "shared_limit" | "paused" | "no_storage" }
+  // Wave 3, unit 1: a ban, an unconfirmed 18+ or the builder's daily dollars, with a plain sentence (lib/trust/account.ts).
+  | TrustBuildRefusal;
 
 /**
  * The spend cap applies to everyone. The daily quota applies to everyone but admins. The shared guest (OPEN_ACCESS=guest)
@@ -76,6 +80,9 @@ export async function checkBuildAllowed(user: SessionUser): Promise<BuildAllowan
   // BLOB_READ_WRITE_TOKEN or BLOB_STORE_ID counts (lib/local-files.ts fileStorageAvailable).
   if (!fileStorageAvailable()) return { ok: false, status: 503, error: "no_storage" };
   if (await spendPaused()) return { ok: false, status: 503, error: "paused" };
+  // ---------- Wave 3, unit 1: trust (docs/CAPABILITIES.md, section 7). Reads nothing with its flags off ----------
+  const refused = await trustBuildRefusal(user, async () => (await cookies()).get(ADULT_COOKIE)?.value ?? null);
+  if (refused) return refused;
   if (user.isAdmin) return { ok: true };
   const used = await buildsStartedSince(user.id, quotaWindowStart(new Date()));
   // Admin sessions returned above. users.is_admin can be true for an admin's shared-code session, which isn't admin.

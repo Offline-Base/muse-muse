@@ -8,7 +8,7 @@
  * a few percent under what the hardware holds. That is on purpose: a promise that the model runs costs the most when it
  * turns out wrong (docs/VIBE_TUNING.md, Risks 7).
  */
-import type { LocalFile, QuantLevel } from "@/lib/train/local-files";
+import type { LocalFile } from "@/lib/train/local-files";
 
 // ---------------------------------------------------------------------------------------------------------------
 // Devices
@@ -527,8 +527,12 @@ const MEASURED: ReadonlyArray<{ mac: boolean; device: string; label: string; tps
   { mac: false, device: "GeForce RTX 5090", label: "an RTX 5090", tps: 74.9 },
 ];
 
-function measuredText(p: DeviceProfile, level: QuantLevel): string | null {
-  if (level !== "Q4_K_M") return null;
+/** A Muse Glimmer 30B build, by its file name on the Hub. Meta's speeds were measured on Glimmer only. */
+export const isGlimmerFile = (file: Pick<LocalFile, "name">) => file.name.startsWith("muse-glimmer-");
+
+function measuredText(p: DeviceProfile, file: Pick<LocalFile, "level" | "name">): string | null {
+  // Only a Glimmer Q4_K_M: a board's Qwen3.5-0.8B Q4_K_M on a drive (docs/DRIVE_EXPORT.md) mustn't claim Glimmer's speed.
+  if (file.level !== "Q4_K_M" || !isGlimmerFile(file)) return null;
   const m = MEASURED.find((x) => (x.mac ? p.kind === "mac" && p.chip === x.device : isPc(p.kind) && p.gpu?.model === x.device));
   if (!m) return null;
   if (m.bandwidthGBs && macBandwidth(p.chip, p.memoryGb ?? 0)?.[1] !== m.bandwidthGBs) return null;
@@ -617,7 +621,7 @@ export function rateBuild(p: DeviceProfile, file: LocalFile, smallest: LocalFile
   if (cantRunHere(p.kind)) return NOT_HERE;
   const memory = p.memoryGb ?? 0;
   const need = needGb(file);
-  const base = { file, needGb: need, measured: measuredText(p, file.level), lessTested: false, tryLive: false };
+  const base = { file, needGb: need, measured: measuredText(p, file), lessTested: false, tryLive: false };
   // An Intel Mac has no GPU these apps use: LM Studio and Jan need Apple silicon, and Ollama runs on the processor.
   if (p.kind === "mac-intel") {
     if (need + PC_ROOM_GB > memory || memory < PC_MIN_RAM_GB) return tooSmall(p, file, `the ${file.level} build`);

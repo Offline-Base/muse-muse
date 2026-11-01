@@ -1,5 +1,8 @@
+import { linkedBoardFor } from "@/lib/caps/hardware/board";
+import { boardToolsOn, driveToolsUsable, gadgetOwnerCheckOn } from "@/lib/caps/hardware/flags";
 import { callDeviceTool, deviceConfig, listDeviceTools } from "@/lib/device/client";
-import { handleGadgetCall, handleGadgetTools, type GadgetDeps } from "@/lib/gateway/gadget";
+import { env } from "@/lib/env";
+import { handleGadgetCall, handleGadgetTools, type GadgetDeps, type GadgetDrive } from "@/lib/gateway/gadget";
 import { hitRateLimits, productStatusById } from "@/lib/gateway/store";
 import { findToken } from "@/lib/gateway/tokens";
 
@@ -8,7 +11,24 @@ import { findToken } from "@/lib/gateway/tokens";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+/** Drive export's code (plans, the kit, the lab's rows) loads only for a drive tool call. */
+const drive: GadgetDrive = {
+  call: async (call) => (await import("@/lib/device/drive-product-deps")).runProductDrive(call),
+};
+
 const deps: GadgetDeps = {
+  // Wave 3, unit 13 (docs/CAPABILITIES.md, section 19). Off: every line below is as it was.
+  get linkedBoard() {
+    return gadgetOwnerCheckOn() ? linkedBoardFor : undefined;
+  },
+  get boardTools() {
+    return boardToolsOn();
+  },
+  // docs/DRIVE_EXPORT.md, "From a product". Off, the cap unserved included: every line below is as it was. A token made while
+  // the cap was on keeps its markers, so the markers can't be what stops it.
+  get drive() {
+    return driveToolsUsable() && env.servedCaps.includes("hardware") ? drive : undefined;
+  },
   findToken,
   productStatus: productStatusById,
   hitRateLimits,

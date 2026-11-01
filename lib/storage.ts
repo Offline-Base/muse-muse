@@ -19,6 +19,12 @@ import { isSafeFileKey, LOCAL_FILES_DIR, localFileKey, localFilesEnabled, localF
  *                             PLAN_ART its plan card's picture (plan-art.jpg, lib/pipeline/plan-art.ts). Kept.
  *   native/...                shell templates, per-product packages and lab results (docs/NATIVE.md, "Blob").
  *   clips/<productId>/...     clips of a product on a real device that its owner uploaded. Kept.
+ *   caps/files/<productId>/<namespace>/<id>-<random>   files products keep (docs/CAPABILITIES.md, section 10). Kept
+ *                             until deleted; a build's (namespace b-<buildId>) go when it ends.
+ *   datasets/<id>/<file>      vetted public datasets (lib/caps/files/datasets.json, scripts/caps/mirror-datasets.ts). Kept.
+ *   3d/...                    the vetted CC0 3D set and its 3d/manifest.json (lib/caps/files/models3d.json). Kept.
+ *   assets/<sha256>           vetted large files products' pages load (lib/caps/assets.json, scripts/caps/mirror-assets.ts). Kept.
+ *   caps/code/<session>/...   a Muse Code session's result zip, under an unguessable name. Deleted after 24 hours by the sweep.
  *
  * Local runs keep the same paths in .data/files instead (lib/local-files.ts).
  */

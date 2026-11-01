@@ -81,17 +81,45 @@ import {
   PRISTINE_DIR,
   PRODUCT_DIR,
   RUN_DIR,
+  CAPS_DIR,
+  CAPS_VERIFY_MARKER,
+  capOverlayMarker,
   TARGET_OVERLAYS,
   TARGET_PLATFORM_MARKER,
   TARGETS_DIR,
 } from "@/lib/sandbox/paths";
+import { capsMissingOverlays } from "@/lib/caps/ready";
 import { builderNetworkPolicy, placeholderKey, publicHost, SNAPSHOT_POLICY } from "@/lib/sandbox/policy";
 import { q, readBytes, sh, tailText, writeRunner } from "@/lib/sandbox/shell";
 import { applyLookScript, LOOK_CSS, MUSE_APP_OVERLAY, OVERLAYS_DIR, withLookColors } from "@/lib/sandbox/look";
-import { type BuilderInfo, installTargets, makeDirs, readTargetFiles, readTemplateFiles, setupBuilder, templateHash } from "@/lib/sandbox/setup";
 import {
+  applyTrustScript,
+  TRUST_FILES,
+  TRUST_OVERLAY,
+  TRUST_RECORD_DIR,
+  trustFileText,
+  trustRecordScript,
+  withTrustEnv,
+  type TrustOverlay,
+} from "@/lib/trust/overlay";
+import {
+  type BuilderInfo,
+  installCaps,
+  installTargets,
+  makeDirs,
+  readCapFiles,
+  readTargetFiles,
+  readTemplateFiles,
+  setupBuilder,
+  templateHash,
+} from "@/lib/sandbox/setup";
+import {
+  activeCapsScript,
   activeTargetsScript,
+  applyCapsScript,
   applyTargetScript,
+  capsGatewayScript,
+  capsGatewayText,
   PREVIEW_WAIT_S,
   previewAnswered,
   previewWaitScript,
@@ -237,13 +265,15 @@ function productsCallMetaDirectly(): boolean {
   return publicHost(env.platformUrl) === null;
 }
 
-function lockedPolicy(sandboxName: string) {
+function lockedPolicy(sandboxName: string, capHosts: readonly string[] = []) {
   return builderNetworkPolicy({
     modelApiKey: env.modelApiKey,
     placeholderKey: sandboxPlaceholder(sandboxName),
     platformHost: publicHost(env.platformUrl),
     blobUploads: true,
     directProducts: productsCallMetaDirectly(),
+    // Hosts a brief's caps need (lib/caps/hosts.ts). None for every product today.
+    ...(capHosts.length ? { capHosts } : {}),
     platformBypass: env.previewBypass,
   });
 }
@@ -408,6 +438,22 @@ export interface ProvisionInput {
   extraFiles?: Array<{ path: string; content: string }>;
   /** Where the product runs (briefTargets). Nothing, or web alone, leaves the sandbox exactly as the template made it. */
   targets?: readonly string[];
+  // ---------- Wave 3, unit 2: caps (docs/CAPABILITIES.md, 2.5). All absent for a brief with no cap blocks ----------
+  /** The caps and overlays: applied right after the template is in place, and written to musemuse.caps.json. */
+  caps?: { caps: string[]; overlays: string[] };
+  /** Lines appended to .env.local (capBuildEnv). */
+  capEnv?: string;
+  /** Hosts the caps' build may reach (capBuildHosts). */
+  capHosts?: string[];
+  /**
+   * Wave 3, unit 3 (docs/CAPABILITIES.md, 2.4a): on the live site, when the snapshot lacks some of `caps`' overlays, the
+   * build goes without those caps instead of failing. Called before anything is applied, with the caps to drop; it gives
+   * back the prompt and the caps' parts for the caps that are left. Without it the build fails with a plain line.
+   */
+  dropCaps?(caps: string[]): Promise<Pick<ProvisionInput, "promptMarkdown" | "caps" | "capEnv" | "capHosts">>;
+  // ---------- Wave 3, unit 1: the trust overlay (docs/CAPABILITIES.md, section 7). Absent with the trust flags off ----------
+  /** musemuse.trust.json and musemuse.privacy.json for this product: applied after the caps, with MUSEMUSE_BUILD=1. */
+  trust?: TrustOverlay;
 }
 
 /** Makes the folders these files go in and returns them as writes, with their paths inside the product. */
@@ -447,6 +493,89 @@ async function applyTargets(sandbox: Sandbox, sandboxName: string, targets: read
 }
 
 /**
+ * Applies a brief's cap overlays (docs/CAPABILITIES.md, 2.5): the read-only record first, then the files, deps and
+ * commit. It runs right after the targets and before anything from the user lands in the product, so the "Caps: ..."
+ * commit holds platform files only. A snapshot made with template/caps has them already. In one from before them, a local
+ * run takes them from this checkout, along with the newer platform files whose verify runs the caps step. The live site
+ * can't, since its functions have no template/, so a cap whose flag is on there needs a new snapshot.
+ */
+async function applyCaps(sandbox: Sandbox, sandboxName: string, caps: { caps: string[]; overlays: string[] }): Promise<void> {
+  // ---------- Wave 3, unit 3: every overlay's own marker, not only core's (docs/CAPABILITIES.md, 2.4a) ----------
+  const { missing, stale } = await capsNotInSandbox(sandbox, caps.overlays);
+  if (missing.length || stale) {
+    if (process.env.VERCEL) throw new Error(capsMissingMessage(capsMissingOverlays(caps, stale ? ["core"] : missing)));
+    const dir = LOCAL_TEMPLATE_DIR();
+    if (missing.length) {
+      const files = await readCapFiles(dir);
+      if (!files.length) throw new Error(`This builder snapshot doesn't have the ${missing.join(" and ")} overlay, and there's no ${dir}/caps here to add it from.`);
+      await installCaps(sandbox, files, () => {});
+    }
+    if (stale) await refreshPlatformFiles(sandboxName, await readTemplateFiles(dir));
+  }
+  // ---------- end Wave 3, unit 3 ----------
+  await sh(sandbox, activeCapsScript(caps), { sudo: true });
+  await sh(sandbox, applyCapsScript(caps), { cwd: PRODUCT_DIR, timeoutMs: 5 * MIN });
+}
+
+/**
+ * Wave 3, unit 3: the overlays of `overlays` whose marker (capOverlayMarker) isn't in CAPS_DIR, and whether the pristine
+ * verify.mjs is from before the caps step (CAPS_VERIFY_MARKER), which no cap can be checked without.
+ */
+async function capsNotInSandbox(sandbox: Sandbox, overlays: readonly string[]): Promise<{ missing: string[]; stale: boolean }> {
+  const ok = async (cmd: string) => (await sh(sandbox, cmd, { allowFail: true })).exitCode === 0;
+  const present = await Promise.all(overlays.map((o) => ok(`[ -f ${q(capOverlayMarker(o))} ]`)));
+  const missing = overlays.filter((_, i) => !present[i]);
+  const stale = !(await ok(`grep -q ${q(CAPS_VERIFY_MARKER)} ${q(`${PRISTINE_DIR}/scripts/verify.mjs`)}`));
+  return { missing, stale };
+}
+
+/** The round's one plain line when a cap's overlay isn't in the snapshot and the build can't go on without it. */
+export function capsMissingMessage(caps: readonly string[]): string {
+  const names = caps.length ? caps.join(", ") : "a platform service";
+  return `This builder snapshot doesn't have ${names}. An admin has to make a new builder snapshot (npm run snapshot) and commit lib/sandbox/snapshots.json.`;
+}
+
+/**
+ * Writes the caps check's record of the gateway (CAPS_GATEWAY_FILE): the gateway's address and this build's token, or,
+ * on a local run, why the build machine can't reach it. verify's caps step reads this, never the product's .env.local.
+ */
+async function writeCapsGateway(sandbox: Sandbox, gatewayUrl: string, buildToken: string): Promise<void> {
+  const record = productsCallMetaDirectly()
+    ? { url: null, token: null, reason: "this is a local run, so the build machine can't reach the gateway. Test platform services with a public PLATFORM_URL" }
+    : { url: gatewayUrl, token: buildToken };
+  const from = `${RUN_DIR}/caps-gateway.json`;
+  await sandbox.writeFiles([{ path: from, content: capsGatewayText(record) }]);
+  await sh(sandbox, capsGatewayScript(from), { sudo: true });
+}
+
+/**
+ * Puts the trust overlay into a new product (lib/trust/overlay.ts): its two records root-owned and read-only, then its
+ * files and a commit, right after the caps and before the user's files. A snapshot made with template/caps has the
+ * overlay. In one from before it, a local run copies template/caps in from this checkout, as applyCaps does; the live
+ * site can't, so it needs a new snapshot.
+ */
+async function applyTrust(sandbox: Sandbox, trust: TrustOverlay): Promise<void> {
+  const ok = async (cmd: string) => (await sh(sandbox, cmd, { allowFail: true })).exitCode === 0;
+  if (!(await ok(`[ -f ${q(`${CAPS_DIR}/${TRUST_OVERLAY}/platform-files.json`)} ]`))) {
+    if (process.env.VERCEL) throw new Error("This builder snapshot doesn't have the trust overlay. Make a new one with npm run snapshot before turning a trust flag on.");
+    const dir = LOCAL_TEMPLATE_DIR();
+    const files = await readCapFiles(dir);
+    if (!files.length) throw new Error(`This builder snapshot doesn't have the trust overlay, and there's no ${dir}/caps here to add it from.`);
+    await installCaps(sandbox, files, () => {});
+  }
+  const from = `${RUN_DIR}/trust`;
+  await makeDirs(sandbox, [from]);
+  await sandbox.writeFiles(TRUST_FILES.map((f) => ({ path: `${from}/${f}`, content: trustFileText(f === "musemuse.trust.json" ? trust.trust : trust.privacy) })));
+  await sh(sandbox, trustRecordScript(from), { sudo: true });
+  await sh(sandbox, applyTrustScript(), { cwd: PRODUCT_DIR, timeoutMs: 2 * MIN });
+}
+
+/** .env.local as envLocal writes it, then the caps' lines (capBuildEnv). The same text without caps. */
+function withCapEnv(text: string, capEnv: string | undefined): string {
+  return capEnv ? `${text.replace(/\n*$/, "\n")}${capEnv}` : text;
+}
+
+/**
  * Puts the muse-app look (lib/sandbox/look.ts) into a new product. A snapshot made with the overlay has it. In one from
  * before it, a local run adds it from this checkout's template/targets, so the look can be tried without a new snapshot;
  * the live site can't, since its functions have no template/. Fails rather than build without it, since the build
@@ -481,7 +610,8 @@ async function warnIfOlderTemplate(marker: Buffer, snapshotId: string): Promise<
   }
   if (!made) return;
   const dir = LOCAL_TEMPLATE_DIR();
-  const files = await Promise.all([readTemplateFiles(dir), readTargetFiles(dir)]).catch(() => null);
+  // The same files, in the same order, as the snapshot's hash (setupBuilder): the template, its targets, then its caps.
+  const files = await Promise.all([readTemplateFiles(dir), readTargetFiles(dir), readCapFiles(dir)]).catch(() => null);
   if (!files) return;
   const here = templateHash(files.flat());
   if (here === made) return;
@@ -524,17 +654,36 @@ export async function provisionSandbox(input: ProvisionInput): Promise<{ sandbox
     // Slow path for scripts (about a minute): install everything from scratch with open egress.
     await sandbox.update({ networkPolicy: SNAPSHOT_POLICY });
     const dir = LOCAL_TEMPLATE_DIR();
-    await setupBuilder(sandbox, await readTemplateFiles(dir), () => {}, await readTargetFiles(dir));
+    await setupBuilder(sandbox, await readTemplateFiles(dir), () => {}, await readTargetFiles(dir), await readCapFiles(dir));
   } else if (snapshotId && !process.env.VERCEL) {
     await warnIfOlderTemplate(ready, snapshotId);
   }
 
+  // ---------- Wave 3, unit 3: the backstop (docs/CAPABILITIES.md, 2.4a). On the live site, a cap whose overlay this
+  // snapshot lacks is dropped here, before anything is applied or written, so the prompt never names it ----------
+  if (input.caps && process.env.VERCEL) {
+    const { missing, stale } = await capsNotInSandbox(sandbox, input.caps.overlays);
+    const drop = capsMissingOverlays(input.caps, stale ? ["core"] : missing);
+    if (drop.length) {
+      if (!input.dropCaps) throw new Error(capsMissingMessage(drop));
+      input = { ...input, caps: undefined, capEnv: undefined, capHosts: undefined, ...(await input.dropCaps(drop)) };
+    }
+  }
+  // ---------- end Wave 3, unit 3 ----------
+
   // Lock egress before anything from the user lands in the VM. Saved on the sandbox, so resumed sessions keep it.
-  await sandbox.update({ networkPolicy: lockedPolicy(name) });
+  await sandbox.update({ networkPolicy: lockedPolicy(name, input.capHosts) });
 
   if (input.museAppLook) await applyLook(sandbox);
   const targets = input.targets ?? [];
   if (targets.some((t) => t !== "web")) await applyTargets(sandbox, name, targets);
+  // ---------- Wave 3, unit 2: a brief's cap overlays, right after its targets and before the user's files, so their
+  // commit holds platform files only (docs/CAPABILITIES.md, 2.5). Nothing for a brief with no cap blocks ----------
+  if (input.caps) await applyCaps(sandbox, name, input.caps);
+  // ---------- end Wave 3, unit 2 ----------
+  // ---------- Wave 3, unit 1: the trust overlay, after the caps. Nothing with the trust flags off ----------
+  if (input.trust) await applyTrust(sandbox, input.trust);
+  // ---------- end Wave 3, unit 1 ----------
 
   await makeDirs(sandbox, [`${PRODUCT_DIR}/inspo`, `${PRODUCT_DIR}/fixtures`, LOG_DIR, RUN_DIR, `${RUN_DIR}/by-id`, OUT_DIR]);
   const downloaded = await download([
@@ -545,8 +694,9 @@ export async function provisionSandbox(input: ProvisionInput): Promise<{ sandbox
     ...downloaded,
     ...(await productWrites(sandbox, input.museAppLook ? withLookColors(input.extraFiles ?? []) : (input.extraFiles ?? []))),
     { path: `${PRODUCT_DIR}/brief.md`, content: input.promptMarkdown },
-    { path: `${PRODUCT_DIR}/.env.local`, content: envLocal(name, input.gatewayUrl, input.buildToken) },
+    { path: `${PRODUCT_DIR}/.env.local`, content: withCapEnv(envLocal(name, input.gatewayUrl, input.buildToken), withTrustEnv(input.capEnv, Boolean(input.trust))) },
   ]);
+  if (input.caps) await writeCapsGateway(sandbox, input.gatewayUrl, input.buildToken);
   return { sandboxName: name };
 }
 
@@ -562,21 +712,32 @@ export async function reopenSandbox(input: {
    * product with the muse-app look (its LOOK_CSS) gets them in the look's colors, whatever the flag says now.
    */
   extraFiles?: Array<{ path: string; content: string }>;
+  // ---------- Wave 3, unit 2: caps (docs/CAPABILITIES.md, 2.5). All absent for a product with no cap blocks ----------
+  /** Hosts the product's caps need, so a refinement keeps them (capBuildHosts). */
+  capHosts?: string[];
+  /** Lines appended to .env.local after envLocal's (capBuildEnv), as provisioning does, so a refinement keeps them. */
+  capEnv?: string;
+  /** True for a product with caps: the caps check's record of the gateway gets this change's token. */
+  caps?: boolean;
 }): Promise<void> {
   const sandbox = await openSandbox(input.sandboxName);
   await claimSandbox(sandbox, input.sandboxName, input.productId);
-  await sandbox.update({ networkPolicy: lockedPolicy(input.sandboxName) });
+  await sandbox.update({ networkPolicy: lockedPolicy(input.sandboxName, input.capHosts) });
   await ensureTime(sandbox, LONG_WORK_MS);
   await makeDirs(sandbox, [`${PRODUCT_DIR}/inspo`, LOG_DIR, RUN_DIR, `${RUN_DIR}/by-id`, OUT_DIR]);
   const downloaded = await download(input.newReferences.map((r) => ({ dir: "inspo" as const, fileName: r.fileName, url: r.url })));
   const present = await Promise.all((input.extraFiles ?? []).map((f) => sandbox.readFileToBuffer({ path: productPath(f.path) }).catch(() => null)));
   const missing = (input.extraFiles ?? []).filter((_, i) => !present[i]);
   const look = missing.length > 0 && Boolean(await sandbox.readFileToBuffer({ path: productPath(LOOK_CSS) }).catch(() => null));
+  // Wave 3, unit 1: a product built with the trust overlay keeps its age gate off for this change's tests, whatever the
+  // flags say now. Its record is only there when it was built with one.
+  const trusted = Boolean(await sandbox.readFileToBuffer({ path: `${TRUST_RECORD_DIR}/${TRUST_FILES[0]}` }).catch(() => null));
   await writeBatched(sandbox, [
     ...downloaded,
     ...(await productWrites(sandbox, look ? withLookColors(missing) : missing)),
-    { path: `${PRODUCT_DIR}/.env.local`, content: envLocal(input.sandboxName, input.gatewayUrl, input.buildToken) },
+    { path: `${PRODUCT_DIR}/.env.local`, content: withCapEnv(envLocal(input.sandboxName, input.gatewayUrl, input.buildToken), withTrustEnv(input.capEnv, trusted)) },
   ]);
+  if (input.caps) await writeCapsGateway(sandbox, input.gatewayUrl, input.buildToken);
 }
 
 /**
@@ -853,6 +1014,8 @@ export interface StartMuseInput {
   goal?: string | null;
   /** The build, for its build MCP token under MUSE_FULL. Without it the round runs without the build MCP server. */
   buildId?: string;
+  /** A scaled round's cap (ENGINE_ROUND_SCALING): the session keeps the cap plus a poll's time. Unset keeps LONG_WORK_MS. */
+  capMs?: number;
 }
 
 export interface MuseStart {
@@ -962,7 +1125,7 @@ export async function startMuse(input: StartMuseInput): Promise<MuseStart> {
   const tag = `muse-r${input.round}`;
 
   const sandbox = await openSandbox(input.sandboxName);
-  await ensureTime(sandbox, LONG_WORK_MS);
+  await ensureTime(sandbox, input.capMs ? Math.max(LONG_WORK_MS, input.capMs + POLL_WORK_MS) : LONG_WORK_MS);
   const running = await runningCommand(sandbox, tag);
   if (running) {
     const engine = await roundEngine(sandbox, input.round);

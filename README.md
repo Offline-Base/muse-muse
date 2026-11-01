@@ -198,7 +198,7 @@ npm run db:migrate              # applies drizzle/ to DATABASE_URL (npm run buil
 npm run dev                     # http://localhost:3000
 ```
 
-Run `npm run snapshot` again whenever `template/` changes, and update `BUILDER_SNAPSHOT_ID` in `.env.local` and on Vercel. Run `npm run db:generate` only after you change `lib/db/schema.ts`. To work on the product template itself, run `cd template && npm install`.
+Run `npm run snapshot` again whenever `template/` changes, and update `BUILDER_SNAPSHOT_ID` in `.env.local` and on Vercel. The script also adds the new id to `lib/sandbox/snapshots.json` with the platform service overlays it installed: commit that file with the id change, since the live site offers only the services its snapshot lists there (docs/CAPABILITIES.md, 2.4a). Run `npm run db:generate` only after you change `lib/db/schema.ts`. To work on the product template itself, run `cd template && npm install`.
 
 On Vercel, set the same variables on the project. A few need care:
 

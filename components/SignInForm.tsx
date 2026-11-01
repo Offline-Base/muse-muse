@@ -3,17 +3,24 @@
 import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
 import { Icon } from "@/components/icons";
+import { AgeBoxLabel } from "@/components/trust/AgeConfirm";
 import { safeNext } from "@/lib/format";
 
 /** Matches MIN_PASSWORD_LENGTH in lib/auth.ts, which this client file can't import. */
 const MIN_PASSWORD = 10;
 
-export function SignInForm({ next }: { next: string }) {
+/**
+ * `ageGate` (TRUST_AGE_GATE, wave 3 unit 1) adds the 18+ box. Someone who confirmed for these terms before can leave it;
+ * anyone else is asked for it by the server.
+ */
+export function SignInForm({ next, ageGate }: { next: string; ageGate?: { termsVersion: string; legal: boolean } }) {
   const router = useRouter();
   const emailId = useId();
   const passwordId = useId();
   const codeId = useId();
   const errId = useId();
+  const adultId = useId();
+  const [adult, setAdult] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
@@ -35,7 +42,12 @@ export function SignInForm({ next }: { next: string }) {
       const res = await fetch("/api/auth/sign-in", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), password, code: code.trim() }),
+        body: JSON.stringify({
+          email: email.trim(),
+          password,
+          code: code.trim(),
+          ...(ageGate ? { adult, termsVersion: ageGate.termsVersion } : {}),
+        }),
       });
       if (res.ok) {
         router.replace(safeNext(next));
@@ -49,7 +61,7 @@ export function SignInForm({ next }: { next: string }) {
           ? (sentence ?? "That email, password or access code didn't work. Check them and try again.")
           : res.status === 429
             ? (sentence ?? "Too many tries. Wait a minute, then try again.")
-            : res.status === 400 && sentence
+            : (res.status === 400 || res.status === 403) && sentence
               ? sentence
               : "Sign-in isn't working right now. Try again in a moment.",
       );
@@ -114,6 +126,14 @@ export function SignInForm({ next }: { next: string }) {
         />
         <p className="field-hint">The shared code from the Muse Muse team. It is not an API key.</p>
       </div>
+      {ageGate ? (
+        <label className="trust-check" htmlFor={adultId}>
+          <input id={adultId} type="checkbox" name="adult" checked={adult} onChange={(e) => setAdult(e.target.checked)} />
+          <span>
+            <AgeBoxLabel legal={ageGate.legal} />
+          </span>
+        </label>
+      ) : null}
       {error ? (
         <p className="form-error" role="alert" id={errId}>
           <Icon name="alert" size={18} />

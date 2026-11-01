@@ -67,6 +67,9 @@ export function sampleRows(over: { slug?: string; ownerId?: string } = {}): Loca
     stopRequested: false,
     requestedTargets: null,
     toolFixtures: null,
+    roundPlan: null,
+    liveCheck: null,
+    capsDropped: null,
     previewUrl: "https://sb-1a2b3c.vercel.run",
   };
   let eventId = 0;
@@ -109,6 +112,10 @@ export function sampleRows(over: { slug?: string; ownerId?: string } = {}): Loca
       status: "live",
       createdAt: at(0),
       updatedAt: at(26),
+      takenDownAt: null,
+      takedownReason: null,
+      statusBeforeTakedown: null,
+      ownerSeenAt: null,
     },
     builds: [
       { ...build, id: buildId, kind: "build", message: null, status: "live", fixRounds: 1, costUsd: 3.75, error: null, startedAt: at(0), finishedAt: at(25) },

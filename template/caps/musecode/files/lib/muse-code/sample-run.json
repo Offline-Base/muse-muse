@@ -1,0 +1,28 @@
+{
+  "note": "A sample Muse Code run for replay mode, with made-up data only. Replay plays it back in a build's tests so they spend nothing. It is never shown on the live product.",
+  "task": "Write a Node script that removes duplicate rows from people.csv by email, add a test, and run it.",
+  "model": "muse-spark-1.3-contributor",
+  "durationMs": 9000,
+  "steps": [
+    { "at": 0, "kind": "start", "text": "Muse Code started in a private temporary workspace." },
+    { "at": 900, "kind": "tool", "tool": "shell", "ok": true, "text": "Listed the workspace: people.csv" },
+    { "at": 1800, "kind": "tool", "tool": "read_file", "ok": true, "text": "Read people.csv (5 rows)" },
+    { "at": 3200, "kind": "edit", "files": 1, "added": 24, "removed": 0, "text": "Wrote dedupe.js" },
+    { "at": 4300, "kind": "edit", "files": 1, "added": 18, "removed": 0, "text": "Wrote dedupe.test.js" },
+    { "at": 5200, "kind": "edit", "files": 1, "added": 7, "removed": 0, "text": "Wrote package.json" },
+    { "at": 6600, "kind": "tool", "tool": "shell", "ok": true, "text": "Ran npm test: 2 tests passed" },
+    { "at": 8000, "kind": "say", "text": "I wrote dedupe.js, which keeps the first row for each email, ignoring case and spaces. dedupe.test.js checks it on a made-up list, and both tests pass." }
+  ],
+  "result": {
+    "status": "completed",
+    "worked": true,
+    "finalText": "I wrote dedupe.js, which keeps the first row for each email, ignoring case and spaces. dedupe.test.js checks it on a made-up list, and both tests pass. Run it with: node dedupe.js people.csv",
+    "files": [
+      { "path": "dedupe.js", "bytes": 812 },
+      { "path": "dedupe.test.js", "bytes": 655 },
+      { "path": "package.json", "bytes": 142 }
+    ],
+    "dropped": [],
+    "costUsd": 0.006434
+  }
+}

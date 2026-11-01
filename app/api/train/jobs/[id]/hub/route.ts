@@ -21,7 +21,7 @@ import {
   withPlan,
 } from "@/lib/train/hub-cards";
 import { ADAPTER_RECIPE, hubBusy, trainChannelOf, type TrainJobRow } from "@/lib/train/logic";
-import { getAdapterSource, getDataset, getJob, recordEvent, updateHub } from "@/lib/train/store";
+import { getAdapterSource, getDataset, getJob, ownerRowsProblem, recordEvent, updateHub } from "@/lib/train/store";
 import {
   HUB_CHECKED_NAMES,
   HUB_FILES_MAX,
@@ -259,7 +259,7 @@ async function ggufPlan(target: TrainJobRow, parsed: { files: HubPlanFile[]; sma
 async function plan(caller: TrainJobRow, target: TrainJobRow, body: Record<string, unknown>): Promise<Response> {
   const parsed = parsePlan(body, target);
   if (parsed instanceof Response) return parsed;
-  const problem = planProblem(caller, target);
+  const problem = planProblem(caller, target) ?? (await ownerRowsProblem(target));
   if (problem) return skip(null, problem);
   const off = env.hubOffReason;
   if (off) return skip(target.id, `Publishing to Hugging Face is off here: ${off}.`, "off");

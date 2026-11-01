@@ -1,0 +1,5 @@
+[
+  "lib/platform/babylon-glb.ts",
+  "public/notices/babylonjs.txt",
+  ".agents/skills/muse-babylon/SKILL.md"
+]

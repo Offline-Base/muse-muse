@@ -1,5 +1,8 @@
 import { askedLookOf } from "@/lib/brief/render";
 import type { Brief } from "@/lib/brief/schema";
+// ---------- Wave 3, unit 2 (docs/CAPABILITIES.md, 2.6) ----------
+import { capsJudgeNotes } from "@/lib/caps/judge";
+// ---------- end Wave 3, unit 2 ----------
 import { briefTargets, isOwnerToolsOnly } from "@/lib/native/targets";
 import { PERSONAL_TOOL_IDS } from "@/lib/tools/ids";
 
@@ -72,12 +75,15 @@ export function askedLookJudgeNote(asked: string): string {
 }
 
 /**
- * The judge's instructions for this brief. A brief with no agent, VR or glasses target gets JUDGE_INSTRUCTIONS itself,
- * and each of those targets adds its note after it. With MUSE_APP_LOOK (docs/BRAND.md) new builds get the muse-app look,
- * while products built before it keep meta-ui, so the house style sentence names both. Off, that part is
- * JUDGE_INSTRUCTIONS exactly.
+ * The judge's instructions for this brief. A brief with no agent, VR or glasses target and no cap blocks gets
+ * JUDGE_INSTRUCTIONS itself, and each of those targets adds its note after it, then each cap's note. With MUSE_APP_LOOK
+ * (docs/BRAND.md) new builds get the muse-app look, while products built before it keep meta-ui, so the house style
+ * sentence names both. Off, that part is JUDGE_INSTRUCTIONS exactly.
  */
-export function judgeInstructions(brief: Pick<Brief, "targets" | "agent" | "askedLook">, opts: { museAppLook?: boolean } = {}): string {
+export function judgeInstructions(
+  brief: Pick<Brief, "targets" | "agent" | "askedLook"> & Partial<Brief>,
+  opts: { museAppLook?: boolean } = {},
+): string {
   const targets = briefTargets(brief);
   const asked = askedLookOf(brief, opts);
   const notes = [
@@ -87,7 +93,10 @@ export function judgeInstructions(brief: Pick<Brief, "targets" | "agent" | "aske
     ...(targets.includes("glasses") ? [GLASSES_JUDGE_NOTE] : []),
   ];
   const base = opts.museAppLook ? withBothHouseStyles(JUDGE_INSTRUCTIONS) : JUDGE_INSTRUCTIONS;
-  return notes.length ? `${base}\n\n${notes.join("\n\n")}` : base;
+  const text = notes.length ? `${base}\n\n${notes.join("\n\n")}` : base;
+  // ---------- Wave 3, unit 2 (docs/CAPABILITIES.md, 2.6): each cap's note after the glasses note, empty with no cap blocks ----------
+  return text + capsJudgeNotes(brief);
+  // ---------- end Wave 3, unit 2 ----------
 }
 
 /** JUDGE_INSTRUCTIONS with its one house style sentence widened to the two that MUSE_APP_LOOK makes expected. */

@@ -4,6 +4,14 @@ import { RUN_LIMITS } from "@/lib/gateway/runs";
 import type { Brief, TargetId } from "@/lib/brief/schema";
 import { briefTargets, isOwnerToolsOnly } from "@/lib/native/targets";
 import { isToolId, PERSONAL_TOOL_IDS, toolLabel } from "@/lib/tools/ids";
+// ---------- Wave 3 hooks (docs/CAPABILITIES.md, 2.6), unit 2 ----------
+import { capsBuildLines, capsMarkdown, capsRefineLines } from "@/lib/caps/render";
+import { trustBuildLines } from "@/lib/trust/prompt";
+import type { Milestone } from "@/lib/engine/milestones";
+import { engineBudgetLines, milestoneBuildLines } from "@/lib/engine/prompts";
+import { jobsBlock } from "@/lib/caps/jobs/brief";
+import { JOBS_BUDGET_LINE } from "@/lib/caps/jobs/render";
+// ---------- end Wave 3 hooks ----------
 import type { JudgeVerdict, RebuildTarget, VerifySummary } from "@/lib/types";
 
 /**
@@ -288,6 +296,19 @@ export function renderBuildPrompt(
     fixtures: Array<{ fileName: string; description: string; fromUserSample?: boolean }>;
     maxModelSteps: number;
     rebuildOf?: RebuildTarget | null;
+    // ---------- Wave 3, unit 2 ----------
+    /** Big builds (caps, milestones or the engine's round flags): verify at most twice a round (engineBudgetLines). */
+    verifyBudget?: boolean;
+    /**
+     * The milestones this build's round plan chains (ENGINE_MILESTONES). Only these make a Milestones section, never the
+     * stored brief's alone, so a brief written with the flag on and built with it off says nothing about milestones.
+     */
+    milestones?: Milestone[] | null;
+    // ---------- end Wave 3, unit 2 ----------
+    // ---------- Wave 3, unit 1 ----------
+    /** The product got the trust overlay (a trust product flag was on): the Trust pages section. */
+    trust?: boolean;
+    // ---------- end Wave 3, unit 1 ----------
   } & SessionNotes &
     LookNote,
 ): string {
@@ -305,6 +326,9 @@ export function renderBuildPrompt(
     "",
     "Then stop.",
   );
+  // ---------- Wave 3, unit 2: milestones (empty for a brief without them) ----------
+  if (brief.verdict !== "no") out.push(...milestoneBuildLines({ milestones: opts.milestones ?? null }));
+  // ---------- end Wave 3, unit 2 ----------
   const session = sessionLines(opts, "build", brief.complexity === "complex");
   if (session.length) out.push("", "## While you work", "", bullets(session));
   out.push(
@@ -350,6 +374,12 @@ export function renderBuildPrompt(
     bullets(brief.capabilities.map((c) => `\`${c.model}\`: ${sentence(c.need)} Why: ${sentence(c.why)} Skill: \`${SKILLS[c.model]}\`.`)),
     ...agentLines(brief),
   );
+  // ---------- Wave 3, unit 2: platform services, right after the agent (empty for a brief with no cap blocks) ----------
+  out.push(...capsBuildLines(brief));
+  // ---------- end Wave 3, unit 2 ----------
+  // ---------- Wave 3, unit 1: the trust overlay's pages (empty without it) ----------
+  out.push(...trustBuildLines(opts.trust));
+  // ---------- end Wave 3, unit 1 ----------
 
   out.push(
     "",
@@ -464,8 +494,11 @@ export function renderBuildPrompt(
     models.includes("muse-wonder-1.0")
       ? "Muse Wonder is in preview and bills its reasoning as output, so even a short answer spends a few hundred output tokens."
       : "",
-    `The product's model calls during this build, every verify, fix round and the demo recording, share one $${buildTokenBudgetFor(models).toFixed(2)} Meta budget, and the gateway reserves each call's max_output_tokens up front. Keep those caps close to what an answer needs. If the gateway says the budget is used up, it stays used up for this build: never wait for it, retry it or schedule anything, since nothing runs after your session ends. Make the calls cheaper or stop and say so in BUILD_NOTES.md.`,
+    `The product's model calls during this build, every verify, fix round and the demo recording, share one $${buildTokenBudgetFor(models).toFixed(2)} Meta budget, and the gateway reserves each call's max_output_tokens up front. Keep those caps close to what an answer needs. If the gateway says the budget is used up, it stays used up for this build: ${jobsBlock(brief) ? JOBS_BUDGET_LINE : "never wait for it, retry it or schedule anything, since nothing runs after your session ends."} Make the calls cheaper or stop and say so in BUILD_NOTES.md.`,
   );
+  // ---------- Wave 3, unit 2: big-build budget lines (empty unless verifyBudget) ----------
+  out.push(...engineBudgetLines(opts.verifyBudget === true));
+  // ---------- end Wave 3, unit 2 ----------
   return out.filter((line, i, all) => !(line === "" && all[i - 1] === "")).join("\n").trim() + "\n";
 }
 
@@ -475,6 +508,9 @@ const STEP_LABELS: Record<string, string> = {
   start: "Start (the built app on port 3100, `/` must return 200)",
   console: "Console (no errors in the browser console on `/`)",
   smoke: "Smoke test (`tests/smoke.spec.ts`)",
+  // ---------- Wave 3, unit 2: platform services' fixed checks (only products with musemuse.caps.json have this step) ----------
+  caps: "Platform services (`scripts/caps-check.mjs`: what the smoke test recorded with `tests/caps` and what the gateway saw)",
+  // ---------- end Wave 3, unit 2 ----------
   manifest: "Manifest (`musemuse.json` against `musemuse.schema.json`)",
 };
 
@@ -576,8 +612,8 @@ export function renderRefinePrompt(
   input: {
     message: string;
     newReferences: Array<{ fileName: string; describes: string }>;
-    /** The product's brief, for where it runs. Left out for a brief with none, whose prompt stays as it was. */
-    brief?: Pick<Brief, "targets"> | null;
+    /** The product's brief, for where it runs and its platform services. Left out for a brief with none, whose prompt stays as it was. */
+    brief?: Brief | null;
   } & SessionNotes &
     LookNote,
 ): string {
@@ -597,6 +633,9 @@ export function renderRefinePrompt(
     "- Make the change and keep the primary flow working.",
     `${keepLookLine(input)} Don't restyle what the request doesn't change.`,
     ...refineTargetLines(input.brief),
+    // ---------- Wave 3, unit 2: platform services' change lines, bullets (none for a product with no cap blocks) ----------
+    ...(input.brief ? capsRefineLines(input.brief) : []),
+    // ---------- end Wave 3, unit 2 ----------
     "- Use only the models the product already lists in `musemuse.json`. The gateway rejects others.",
     "- Update `musemuse.json` if actions, limits or cost changed.",
     "- If the flow changed, update `tests/smoke.spec.ts` to cover it and its judge screenshots. Never weaken or skip a test.",
@@ -658,6 +697,9 @@ export function briefToMarkdown(brief: Brief): string {
       bullets(brief.agent.tools.map((t) => `**${toolLabel(t.id)}**: ${t.need}`)),
     );
   }
+  // ---------- Wave 3, unit 2: platform services, after the Agent section (empty for a brief with no cap blocks) ----------
+  out.push(...capsMarkdown(brief));
+  // ---------- end Wave 3, unit 2 ----------
 
   out.push(
     "",

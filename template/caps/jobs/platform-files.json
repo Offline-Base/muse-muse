@@ -1,0 +1,6 @@
+[
+  "lib/platform/jobs.ts",
+  "tests/caps/jobs.ts",
+  "scripts/caps/jobs.mjs",
+  ".agents/skills/muse-jobs/SKILL.md"
+]

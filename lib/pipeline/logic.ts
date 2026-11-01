@@ -7,6 +7,12 @@ import type { BuildModel } from "@/lib/sandbox/muse";
 import type { Reference } from "@/lib/types";
 import { SPARK_STANDIN, withoutRetiredSpark } from "@/lib/meta/spark";
 import { AGENT_MARKER, isToolId, toolMarker } from "@/lib/tools/ids";
+import { briefCaps } from "@/lib/caps/brief-fields";
+import { hardwareBlock } from "@/lib/caps/hardware/brief";
+import { BOARD_TOOLS_MARKER, DRIVE_TOOLS_MARKER } from "@/lib/caps/hardware/limits";
+import { LIVE_CAPTION_MODEL, liveBlock } from "@/lib/caps/live/brief";
+import { gpuAllowedModels } from "@/lib/caps/gpu/marker";
+import { capMarker } from "@/lib/caps/ids";
 
 /** BriefSchema caps slugs at 40 characters. */
 export const SLUG_MAX = 40;
@@ -98,12 +104,22 @@ export function pollTimedOut(input: {
 /**
  * What the product's gateway tokens may call: the brief's capabilities, minus Glimmer (self-hosted, not the API).
  * muse-gadget stays in: it's what lets the token use the gateway's /gadget route (lib/gateway/gadget.ts). An agent's
- * brief adds the agent marker and one marker per tool it picked (docs/AGENT_TOOLS.md).
+ * brief adds the agent marker and one marker per tool it picked (docs/AGENT_TOOLS.md). Then a `cap:<id>` marker for each
+ * cap block the brief has, after the models and the agent markers (docs/CAPABILITIES.md, 2.3), so a brief with none
+ * gives today's list.
  */
 export function allowedModelsFor(brief: Pick<Brief, "capabilities" | "agent">): string[] {
   const models = brief.capabilities.map((c) => c.model).filter((m) => m !== "muse-glimmer");
   const tools = brief.agent ? brief.agent.tools.map((t) => t.id).filter(isToolId).map(toolMarker) : [];
-  return [...new Set<string>([...models, ...(brief.agent ? [AGENT_MARKER] : []), ...tools])];
+  // Wave 3, unit 7 (docs/CAPABILITIES.md, 13a): captions need the voice model, even if the writer left it out of capabilities.
+  const live = liveBlock(brief)?.captions ? [LIVE_CAPTION_MODEL] : [];
+  // Wave 3, unit 11: Muse Wonder and the `glimmer` marker while the shared Glimmer endpoint is on. None with it off.
+  const gpu = gpuAllowedModels(brief);
+  // Wave 3, unit 13: board tools have their own marker, so they bring no camera or microphone. None with them off.
+  const board = hardwareBlock(brief)?.boardTools ? [BOARD_TOOLS_MARKER] : [];
+  // The drive tools have their own marker too (docs/DRIVE_EXPORT.md, "From a product"). None with them off.
+  const drive = hardwareBlock(brief)?.driveExport ? [DRIVE_TOOLS_MARKER] : [];
+  return [...new Set<string>([...models, ...live, ...gpu, ...board, ...drive, ...(brief.agent ? [AGENT_MARKER] : []), ...tools]), ...briefCaps(brief).map(capMarker)];
 }
 
 const BUILD_MODELS: readonly BuildModel[] = ["muse-wonder-1.0", SPARK_STANDIN];
@@ -166,6 +182,7 @@ const STAGE_LABELS: Record<string, string> = {
   fix: "fix",
   record: "demo recording",
   deploy: "deploy",
+  live_check: "live check",
   register: "register",
   hibernate: "hibernate",
 };

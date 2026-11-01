@@ -1,3 +1,4 @@
+import { engineEventText } from "@/lib/engine/events";
 import type {
   Brief,
   BuildEvent,
@@ -345,6 +346,15 @@ export function deriveRoom(build: BuildView, events: BuildEvent[]): RoomState {
         lastError = e.message;
         note({ id: e.id, kind: "error", text: e.message, at: e.at });
         break;
+      // Wave 3, unit 2 (docs/CAPABILITIES.md, section 8): fixed checks, milestones and the live check, as lines.
+      case "caps":
+      case "milestone":
+      case "live_check": {
+        const text = engineEventText(e);
+        if (awaitingRound) carried.push({ id: e.id, kind: "log", text, at: e.at, leading: true });
+        else note({ id: e.id, kind: "log", text, at: e.at });
+        break;
+      }
     }
   }
 

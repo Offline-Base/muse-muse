@@ -1,6 +1,8 @@
+import type { JobCall } from "@/lib/caps/jobs/budget";
+import { liveChunkOf, spendLiveSeconds, type LiveCaptionDeps } from "@/lib/caps/live/captions";
 import { AsrInputError, asrJsonToForm } from "@/lib/gateway/asr";
 import { gatewayError } from "@/lib/gateway/errors";
-import { estimateCost } from "@/lib/gateway/estimate";
+import { estimateCost, fitOutputToBudget, outputCeiling } from "@/lib/gateway/estimate";
 import {
   BadRequestError,
   clientIpKey,
@@ -14,6 +16,10 @@ import { meterReply } from "@/lib/gateway/meter";
 import {
   AGENT_LIMITS,
   CLIENT_IP_HEADER,
+  CODE_SESSION_SCOPE,
+  codeSessionBody,
+  codeSessionBodyRefusal,
+  codeSessionRefusal,
   DEFAULT_LIMITS,
   ENDPOINT_MODELS,
   GATEWAY_ENDPOINTS,
@@ -32,7 +38,10 @@ import type { GatewayEndpoint, ModelUsage, ProductStatus } from "@/lib/types";
 import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
 
 /** The token fields the gateway needs. findToken's row satisfies it. */
-export type GatewayToken = Pick<GatewayTokenRow, "id" | "productId" | "scope" | "allowedModels" | "dailyBudgetUsd">;
+export type GatewayToken = Pick<GatewayTokenRow, "id" | "productId" | "scope" | "allowedModels" | "dailyBudgetUsd"> & {
+  /** Wave 3, unit 9: who a Muse Code session runs for, the only name its calls carry to Meta. Only code_session tokens have it. */
+  sessionSubject?: string;
+};
 
 /** Everything the gateway touches outside the request, injected so tests can run it without a database. */
 export interface GatewayDeps extends RunCounters {
@@ -42,6 +51,19 @@ export interface GatewayDeps extends RunCounters {
   tokenSpendToday(tokenId: string): Promise<number>;
   platformSpendToday(): Promise<number>;
   dailySpendCapUsd: number;
+  /** Wave 3, unit 2: ENGINE_FIT_OUTPUT. A call over the budget left runs with a lower max_output_tokens (fitOutputToBudget). */
+  fitOutputToBudget?: boolean;
+  /**
+   * Wave 3, unit 1: the trust check (lib/trust/gateway.ts) for a taken-down product, a banned owner and the builder's
+   * daily dollars. Unset while TRUST_REPORTS and TRUST_SIGNED_IN_CAPS are off, so nothing is read.
+   */
+  trustCheck?(token: GatewayToken): Promise<Response | null>;
+  /** Wave 3, unit 1: TRUST_SPARK_TO_WONDER. A live token's muse-spark-1.3 calls run on Muse Wonder, not Contributor. */
+  sparkToWonder?: boolean;
+  /** Wave 3, unit 6: the job a call runs for (lib/caps/jobs/budget.ts). Unset while the jobs cap isn't served, so x-musemuse-job means nothing. */
+  jobCall?(req: Request, token: GatewayToken, now: Date): Promise<JobCall | Response | null>;
+  /** Wave 3, unit 7: near-live captions (lib/caps/live/captions.ts). Unset while the live cap isn't served, so x-musemuse-live means nothing. */
+  liveCaptions?: LiveCaptionDeps;
   /** Increments each key's counter for the window and returns the new counts, keyed like the input. */
   hitRateLimits(keys: string[], windowStart: Date): Promise<Record<string, number>>;
   /** Takes one of `limit` slots for the key atomically. Returns the handle releaseInFlight needs, or null when full. */
@@ -73,16 +95,17 @@ async function checkRateLimits(
   token: GatewayToken,
   deps: GatewayDeps,
   now: Date,
+  perIp: { prefix: string; limit: number } = { prefix: "ip", limit: DEFAULT_LIMITS.perIpRequestsPerMinute },
 ): Promise<Response | null> {
   const windowStart = new Date(Math.floor(now.getTime() / 60_000) * 60_000);
   const limits: Record<string, number> = { [`token:${token.id}`]: DEFAULT_LIMITS.perTokenRequestsPerMinute };
   const ip = clientIpKey(req.headers.get(CLIENT_IP_HEADER));
-  if (ip) limits[`ip:${token.productId}:${ip}`] = DEFAULT_LIMITS.perIpRequestsPerMinute;
+  if (ip) limits[`${perIp.prefix}:${token.productId}:${ip}`] = perIp.limit;
   const counts = await deps.hitRateLimits(Object.keys(limits), windowStart);
   const over = Object.entries(limits).find(([key, limit]) => (counts[key] ?? 0) > limit);
   if (!over) return null;
   const retryAfter = Math.max(1, Math.ceil((windowStart.getTime() + 60_000 - now.getTime()) / 1000));
-  const who = over[0].startsWith("ip:") ? "this user" : "this product";
+  const who = over[0].startsWith(`${perIp.prefix}:`) ? "this user" : "this product";
   return gatewayError(
     429,
     "rate_limit_error",
@@ -137,6 +160,8 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
       retry: false,
     });
   }
+  // ---------- Wave 3, unit 1: trust (docs/CAPABILITIES.md, section 7). No check is wired with its flags off ----------
+  { const refused = deps.trustCheck ? await deps.trustCheck(token) : null; if (refused) return refused; }
 
   const tooLarge = () =>
     gatewayError(
@@ -169,13 +194,18 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
   let model = parsed.model;
   /** Set once the JSON to send differs from the request's own bytes. */
   let rewritten = false;
+  // ---------- Wave 3, unit 9: a Muse Code session's token (scope code_session, docs/CAPABILITIES.md 15b) calls only
+  // /v1/responses with its one model, in place of the allowlist below. Other tokens never reach it ----------
+  const codeSession = token.scope === CODE_SESSION_SCOPE;
+  if (codeSession) { const r = codeSessionRefusal(endpoint, model, token, deps.buildTestModel ?? null) ?? (parsed.kind === "json" ? codeSessionBodyRefusal(parsed.json) : null); if (r) return gatewayError(r.status, r.status === 403 ? "permission_error" : "invalid_request_error", r.code, r.message, { retry: false }); }
+  // ---------- end Wave 3, unit 9 ----------
   if (endpoint !== "files") {
     if (!model) {
       return gatewayError(400, "invalid_request_error", "missing_model", `/v1/${endpoint} needs a "model".`, {
         retry: false,
       });
     }
-    if (!modelAllowed(endpoint, model, token.allowedModels, ENDPOINT_MODELS[endpoint])) {
+    if (!codeSession && !modelAllowed(endpoint, model, token.allowedModels, ENDPOINT_MODELS[endpoint])) {
       const allowed = token.allowedModels.filter((m) => (ENDPOINT_MODELS[endpoint] as readonly string[]).includes(m));
       return gatewayError(
         404,
@@ -188,15 +218,20 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
     }
   }
 
+  const notes: string[] = [];
   // Muse Spark 1.3 is never used: a product built to call it is served by Spark 1.3 Contributor (lib/meta/spark.ts),
   // and metered at that model's price.
   if (model === RETIRED_SPARK && parsed.kind === "json") {
-    parsed = { ...parsed, json: { ...parsed.json, model: SPARK_STANDIN }, model: SPARK_STANDIN };
-    model = SPARK_STANDIN;
+    // ---------- Wave 3, unit 1: TRUST_SPARK_TO_WONDER. A live product's calls run on Muse Wonder, at its price, since
+    // Meta may train on Contributor (terms 6.2). Build tokens keep Contributor. Off: Contributor for every token ----------
+    const standIn = deps.sparkToWonder === true && token.scope === "live" ? "muse-wonder-1.0" : SPARK_STANDIN;
+    if (standIn !== SPARK_STANDIN) notes.push(`Ran on ${standIn}: ${RETIRED_SPARK} is retired.`);
+    // ---------- end Wave 3, unit 1 ----------
+    parsed = { ...parsed, json: { ...parsed.json, model: standIn }, model: standIn };
+    model = standIn;
     rewritten = true;
   }
 
-  const notes: string[] = [];
   // Test builds only: a build's own product tests run on the cheap model, whatever the product's code asks for. The
   // product still names Muse Wonder, so it runs on Muse Wonder once it's live.
   const testRun = token.scope === "build" && Boolean(deps.buildTestModel);
@@ -207,8 +242,8 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
     notes.push(`Ran on ${deps.buildTestModel} instead of muse-wonder-1.0: this is a test build.`);
   }
   if (endpoint === "responses" && parsed.kind === "json") {
-    const visitorKey = req.headers.get(VISITOR_HEADER)?.trim().slice(0, 128) || clientIpKey(req.headers.get(CLIENT_IP_HEADER));
-    const rewrite = rewriteResponsesRequest(parsed.json, { token, visitorKey, testRun });
+    const visitorKey = codeSession ? (token.sessionSubject ?? token.id) : req.headers.get(VISITOR_HEADER)?.trim().slice(0, 128) || clientIpKey(req.headers.get(CLIENT_IP_HEADER));
+    const rewrite = rewriteResponsesRequest(codeSession ? codeSessionBody(parsed.json) : parsed.json, { token, visitorKey, testRun });
     if (rewrite.refusal) {
       return gatewayError(rewrite.refusal.status, "invalid_request_error", rewrite.refusal.code, rewrite.refusal.message, {
         retry: false,
@@ -237,8 +272,18 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
   }
 
   const now = deps.now?.() ?? new Date();
-  const limited = await checkRateLimits(req, token, deps, now);
+  // ---------- Wave 3, unit 7: a live caption chunk counts under its own per-IP key, 30 a minute, and spends caption minutes (section 13). Nothing without deps.liveCaptions ----------
+  const liveChunk = deps.liveCaptions ? liveChunkOf(req, endpoint, parsed, token) : null;
+  if (liveChunk instanceof Response) return liveChunk;
+  const limited = await checkRateLimits(req, token, deps, now, liveChunk?.perIp);
   if (limited) return limited;
+  { const refused = liveChunk && deps.liveCaptions ? await spendLiveSeconds(req, token, liveChunk, deps.liveCaptions, deps, now) : null; if (refused) return refused; }
+  // ---------- end Wave 3, unit 7 ----------
+
+  // ---------- Wave 3, unit 6: a job's calls share its run's dollars (docs/CAPABILITIES.md, section 12). Nothing without deps.jobCall ----------
+  const jobCall = deps.jobCall && endpoint !== "files" ? await deps.jobCall(req, token, now) : null;
+  if (jobCall instanceof Response) return jobCall;
+  // ---------- end Wave 3, unit 6 ----------
 
   // At most this many calls per token run at once, so a burst can't all pass the budget check before any of them is
   // metered. The slot is given back once the call is metered (or right away when nothing is forwarded).
@@ -260,21 +305,26 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
   const mostSearches = builtInToolCap(token);
   let metering: Promise<void> | null = null;
   try {
-    if (runId && runLimits) {
+    const heldRun = jobCall ? { id: jobCall.runId, limits: jobCall.limits, tokenId: jobCall.counterKey, at: jobCall.windowAt } : runId && runLimits ? { id: runId, limits: runLimits, tokenId: token.id, at: now } : null;
+    if (heldRun) {
       const asked = parsed;
       const toolCalls = asked.kind === "json" && Array.isArray(asked.json.tools) && asked.json.tools.some(isBuiltInTool) ? Number(asked.json.max_tool_calls) : 0;
       const withCalls = (calls: number): ParsedRequest =>
         asked.kind === "json" && calls < toolCalls ? { ...asked, json: { ...asked.json, max_tool_calls: calls } } : asked;
       const bodyBytes = body.byteLength;
       const held = await holdRun(deps, {
-        tokenId: token.id,
-        runId,
-        limits: runLimits,
+        tokenId: heldRun.tokenId,
+        runId: heldRun.id,
+        limits: heldRun.limits,
         toolCalls,
         usd: (calls) => estimateCost(endpoint, withCalls(calls), bodyBytes, mostSearches),
-        now,
+        now: heldRun.at,
       });
-      if (!held.ok) return held.response;
+      if (!held.ok) {
+        // Wave 3, unit 6: a job really out of dollars or turns is over. An agent run isn't: it may start another.
+        if (jobCall) await jobCall.refused(held.reason).catch((err) => console.error("[gateway] stopping a job run failed:", err));
+        return held.response;
+      }
       runHold = held.hold;
       if (held.toolCalls < toolCalls) {
         parsed = withCalls(held.toolCalls);
@@ -283,7 +333,7 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
       }
     }
     if (rewritten && parsed.kind === "json") body = new TextEncoder().encode(JSON.stringify(parsed.json));
-    const result = await forward(req, endpoint, token, parsed, body, contentType, deps, startedAt, { notes, runHold, mostSearches });
+    const result = await forward(req, endpoint, token, parsed, body, contentType, deps, startedAt, { notes, runHold, mostSearches, jobCall });
     metering = result.metering;
     return result.response;
   } finally {
@@ -298,6 +348,13 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
 }
 
 /** Budget check and reservation, then the upstream call. `metering` is set when usage is still being read. */
+/** Wave 3, unit 2: a Responses call that asks for a structured (json_schema) reply. */
+function wantsJsonSchema(parsed: ParsedRequest): boolean {
+  if (parsed.kind !== "json") return false;
+  const format = (parsed.json.text as { format?: { type?: unknown } } | undefined)?.format;
+  return format?.type === "json_schema";
+}
+
 async function forward(
   req: Request,
   endpoint: GatewayEndpoint,
@@ -307,13 +364,37 @@ async function forward(
   contentType: string | null,
   deps: GatewayDeps,
   startedAt: number,
-  call: { notes: readonly string[]; runHold: RunHold | null; mostSearches: number },
+  call: { notes: readonly string[]; runHold: RunHold | null; mostSearches: number; jobCall?: JobCall | null },
 ): Promise<{ response: Response; metering: Promise<void> | null }> {
   const done = (response: Response) => ({ response, metering: null });
   const model = parsed.model;
-  const estimate = estimateCost(endpoint, parsed, body.byteLength, call.mostSearches);
+  let estimate = estimateCost(endpoint, parsed, body.byteLength, call.mostSearches);
   const [spent, platformSpent] = await Promise.all([deps.tokenSpendToday(token.id), deps.platformSpendToday()]);
   const budget = token.dailyBudgetUsd;
+  // ---------- Wave 3, unit 2: fit max_output_tokens to what's left (docs/CAPABILITIES.md, section 8). Off by default ----------
+  // Only for a Muse Code session's token and, with ENGINE_FIT_OUTPUT, a build's: a live product's users get the clean
+  // budget message, never a reply cut short. A structured reply is never fitted, since cut-off JSON doesn't parse.
+  const fits = (token.scope as string) === "code_session" || (deps.fitOutputToBudget === true && token.scope === "build");
+  const fit = fits && !wantsJsonSchema(parsed)
+    ? fitOutputToBudget({ endpoint, parsed, bodyBytes: body.byteLength, mostSearches: call.mostSearches, estimate, leftUsd: budget - spent })
+    : null;
+  if (fit && parsed.kind === "json") {
+    parsed = { ...parsed, json: { ...parsed.json, max_output_tokens: fit.maxOutputTokens } };
+    body = new TextEncoder().encode(JSON.stringify(parsed.json));
+    estimate = fit.estimate;
+    call = { ...call, notes: [...call.notes, `Set max_output_tokens to ${fit.maxOutputTokens}: that is what's left in ${token.scope === "build" ? "this build's" : "this product's"} Meta budget.`] };
+  }
+  // ---------- end Wave 3, unit 2 ----------
+  // ---------- Wave 3, unit 9: a session's call always goes with the output its estimate counted, so a budget is a
+  // ceiling even when the estimate fits. Muse Code asks for 128,000, which the estimate caps at 32,000 ----------
+  if (token.scope === CODE_SESSION_SCOPE && parsed.kind === "json") {
+    const ceiling = outputCeiling(parsed.json.max_output_tokens);
+    if (parsed.json.max_output_tokens !== ceiling) {
+      parsed = { ...parsed, json: { ...parsed.json, max_output_tokens: ceiling } };
+      body = new TextEncoder().encode(JSON.stringify(parsed.json));
+    }
+  }
+  // ---------- end Wave 3, unit 9 ----------
   if (spent >= budget || spent + estimate > budget) {
     // A build token's budget is the whole build's, so waiting for midnight only stalls the build.
     const whose =
@@ -351,6 +432,17 @@ async function forward(
     if (!reservation) return;
     await deps.settleSpend(reservation, null).catch((err) => console.error("[gateway] removing a reservation failed:", err));
   };
+  // ---------- Wave 3, unit 2: a fitted call took all that was left, so another call reserving at the same moment would
+  // overspend. Read the spend again, with this reservation in it, and refuse when two calls raced ----------
+  if (fit && reservation && (await deps.tokenSpendToday(token.id)) > budget + 1e-9) {
+    await unreserve();
+    return done(
+      gatewayError(429, "insufficient_quota", "budget_exceeded", `Another call took what was left of the $${budget.toFixed(2)} Meta budget at the same moment. Try again once it ends.`, {
+        retry: false,
+      }),
+    );
+  }
+  // ---------- end Wave 3, unit 2 ----------
 
   // asr/transcribe JSON extension: download the WAV and send Meta the multipart request.
   let upstreamBody: BodyInit = body;
@@ -412,12 +504,18 @@ async function forward(
   // the reservation.
   const [toClient, toMeter] = upstream.body.tee();
   const runHold = call.runHold;
+  const reservedUsd = estimate;
   const metering = meterReply(endpoint, model, upstreamType, toMeter)
     .then(async ({ items, builtInCalls }) => {
+      // Wave 3, unit 9: a session's stream cut off midway shows no usage, and what Meta bills for it wasn't measured
+      // (the spike), so it keeps its whole reservation rather than settling on what little was seen.
+      if (token.scope === CODE_SESSION_SCOPE && builtInCalls === null && items[0]) items[0] = { ...items[0], costUsd: Math.max(items[0].costUsd, reservedUsd) };
       if (reservation) await deps.settleSpend(reservation, items[0] ?? null);
       const rest = reservation ? items.slice(1) : items;
       if (rest.length) await deps.recordUsage(ctx, rest);
       if (runHold) await settleRun(deps, runHold, { toolCalls: builtInCalls, usd: items.reduce((n, i) => n + i.costUsd, 0) });
+      // Wave 3, unit 6: what the job's run and the day's job dollars have spent.
+      if (call.jobCall) await call.jobCall.spent(items.reduce((n, i) => n + i.costUsd, 0));
     })
     .catch((err) => console.error(`[gateway] recording usage for ${endpoint} failed:`, err));
 

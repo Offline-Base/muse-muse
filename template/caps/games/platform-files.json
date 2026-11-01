@@ -1,0 +1,6 @@
+[
+  "lib/platform/assets3d.ts",
+  "tests/caps/games.ts",
+  "scripts/caps/games.mjs",
+  ".agents/skills/muse-games/SKILL.md"
+]

@@ -1,0 +1,559 @@
+{
+  "imageVersion": "2026.10.28-b11669",
+  "runtime": {
+    "build": "b11669",
+    "version": "0.7.0",
+    "commit": "620d2225cc436ab0b001e3200e590e3b286ef9ab",
+    "assets": [
+      {
+        "name": "llama-b11669-bin-macos-arm64.tar.gz",
+        "sha256": "dbed55493d72bc1ba2babc8770d669c2289b5bc4ee9fb2a4dfc158d45b7d13fd",
+        "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11669/llama-b11669-bin-macos-arm64.tar.gz"
+      },
+      {
+        "name": "llama-b11669-bin-win-vulkan-x64.zip",
+        "sha256": "2c07574e7bde71321cb785282b20cc821e951132149eeceeea32ddebdbf0598e",
+        "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11669/llama-b11669-bin-win-vulkan-x64.zip"
+      },
+      {
+        "name": "llama-b11669-bin-win-cpu-x64.zip",
+        "sha256": "37b3efcf962847ca869745fd4ccf7f5e7e8dacfeff9fa3523b4ca8cdc66d632b",
+        "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11669/llama-b11669-bin-win-cpu-x64.zip"
+      }
+    ]
+  },
+  "files": [
+    {
+      "path": "runtime/macos-arm64/libggml-base.0.dylib",
+      "bytes": 751240,
+      "sha256": "35851d2f742b8bdda2ea9707ae4f9b8a8970d38b387ccdeb09fce518c64fda54",
+      "family": "common"
+    },
+    {
+      "path": "runtime/macos-arm64/libggml-blas.0.dylib",
+      "bytes": 58776,
+      "sha256": "12aefdc8dd4873d69554dc85a0dd09fffef9828e1fc9ecf6b48913ef2106b33a",
+      "family": "common"
+    },
+    {
+      "path": "runtime/macos-arm64/libggml-cpu.0.dylib",
+      "bytes": 957408,
+      "sha256": "f29b0322166bc9ea2a1f2482f9cd034959013228831f5bfd06aa770b75dd4d12",
+      "family": "common"
+    },
+    {
+      "path": "runtime/macos-arm64/libggml-metal.0.dylib",
+      "bytes": 5587704,
+      "sha256": "448d7eafb7906c4bbd445cac28fad15ae9311b4315461283742a2fb1af2a5653",
+      "family": "common"
+    },
+    {
+      "path": "runtime/macos-arm64/libggml-rpc.0.dylib",
+      "bytes": 242800,
+      "sha256": "547ac08b705a96e82ddb9fcfc2529472f97f5da1957984b3a7652cd5875d452d",
+      "family": "common"
+    },
+    {
+      "path": "runtime/macos-arm64/libggml.0.dylib",
+      "bytes": 60016,
+      "sha256": "a97bc40525aea78834fdf28197b5b21f149b6d5ac2d3b615b95b86f775a69477",
+      "family": "common"
+    },
+    {
+      "path": "runtime/macos-arm64/libllama-common.0.dylib",
+      "bytes": 7785704,
+      "sha256": "725c24d32d0abd5fd6d2baf589d5294bfea90c072ed4db99cb62fe88d4ed7f42",
+      "family": "common"
+    },
+    {
+      "path": "runtime/macos-arm64/libllama-server-impl.dylib",
+      "bytes": 9250520,
+      "sha256": "f1fb36acea8df4eefd90aafe30af16a1a87d7f8b45da3576a3d64100cf18a435",
+      "family": "common"
+    },
+    {
+      "path": "runtime/macos-arm64/libllama.0.dylib",
+      "bytes": 3506144,
+      "sha256": "7d461aace0a3ace6d5733bde2ec2d03b54f00ef620a6f3bbedb735eb1cbb5035",
+      "family": "common"
+    },
+    {
+      "path": "runtime/macos-arm64/libmtmd.0.dylib",
+      "bytes": 1419856,
+      "sha256": "b59316a5d3ad780edfe98df05bf4a3f24fd17eb9cc4d5c53324d5ef6882465b2",
+      "family": "common"
+    },
+    {
+      "path": "runtime/macos-arm64/llama-server",
+      "bytes": 49984,
+      "sha256": "981b460a278e9a0c880cef32d6fab42785a119084456b16845304cf38c32cf69",
+      "family": "common",
+      "exec": true
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/ggml-base.dll",
+      "bytes": 803840,
+      "sha256": "0a259689ea3c105a8122159eb97fb53733f2531fadd3e9739689961cdab27600",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/ggml-cpu-alderlake.dll",
+      "bytes": 1420288,
+      "sha256": "98b3bd12a84e848f57686f6d5f0969654ec79cda0c7636498933ea1063d14aa6",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/ggml-cpu-cannonlake.dll",
+      "bytes": 1598976,
+      "sha256": "fef636daea23b26f935cf5983be9a29b79f0541cd148b9d64a32bc9ea0cec704",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/ggml-cpu-cascadelake.dll",
+      "bytes": 1583616,
+      "sha256": "b32ee94fa0a366886cd03be48f80f1d8c1bbb338d71fc734a263753ec46aa8fd",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/ggml-cpu-cooperlake.dll",
+      "bytes": 1593344,
+      "sha256": "e67357a558e71b834360b6f6d62abc6b9fe19930f6f7dd21ee0339e7b144306e",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/ggml-cpu-haswell.dll",
+      "bytes": 1425408,
+      "sha256": "d33deb9bf3dd25427404f0f94a13c6b3da92b9b57b794199a9f354c3a327efb6",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/ggml-cpu-icelake.dll",
+      "bytes": 1590272,
+      "sha256": "41abb00a64bbf099c137cdb3b9547c7eb90bcd9c1d7b83238cbf10a74f97addd",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/ggml-cpu-ivybridge.dll",
+      "bytes": 1301504,
+      "sha256": "d674c12b3f40d657b0989801699560e68247dbe9509823651b055ac3816ba37c",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/ggml-cpu-piledriver.dll",
+      "bytes": 1294336,
+      "sha256": "bb5215c806397adf56e986f52aa0c75b04b3b5b33203a722f647254eae2b94b2",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/ggml-cpu-sandybridge.dll",
+      "bytes": 1291264,
+      "sha256": "55d5659b45afcbe7a1d7611ab1914d2888476fc3024933e4b82122cdc58d6fd5",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/ggml-cpu-sapphirerapids.dll",
+      "bytes": 1869824,
+      "sha256": "83af3cacf3bf32b98626791358f950da4b45a22af85bde63afe537fe51e60848",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/ggml-cpu-skylakex.dll",
+      "bytes": 1592320,
+      "sha256": "20722299dc5e4703056ff95b7ef329c223390ab87469c822721c1e67e4cc2a24",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/ggml-cpu-sse42.dll",
+      "bytes": 916992,
+      "sha256": "1c0fc615b6d97a79e58f33e8a7fb4e8de1834ad0f3f0e00e8943a4d416ddd242",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/ggml-cpu-x64.dll",
+      "bytes": 909824,
+      "sha256": "7c9df996db7fe98510571524e3e62dd267a4034350185014814418dbad3c25ea",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/ggml-cpu-zen4.dll",
+      "bytes": 1600000,
+      "sha256": "83ae254f6204670e9011e11db84786122567bde2fab07354e7c4827c18589ee1",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/ggml-rpc.dll",
+      "bytes": 231424,
+      "sha256": "b52bd8eddb79ebd1dc0b832b34483bef23d44a34c6d5639301d92cb971f874a4",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/ggml-vulkan.dll",
+      "bytes": 41529856,
+      "sha256": "17fe2fbe2534cd8e29e5190b99a95719b3e0614f7054bca4507d6ee50fca69f2",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/ggml.dll",
+      "bytes": 78848,
+      "sha256": "2649a5d914934188cccbe2c58e4642d2d4408bcda0f7068d58390686bd7ea62f",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/libomp.dll",
+      "bytes": 768000,
+      "sha256": "a12116ba72d1d6820407cf30be23da04ce79d6bb8a71a5ee71759c5a1faa6f1c",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/llama-batched-bench-impl.dll",
+      "bytes": 61952,
+      "sha256": "86dd3cc19af625bd826f7919767883a7e78481e012fb141e5393677235518190",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/llama-bench-impl.dll",
+      "bytes": 404480,
+      "sha256": "e4ff088cb9f50568366c281684b3ad4c69e9ddea3be6deb4a0a4fb63a6bf0650",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/llama-cli-impl.dll",
+      "bytes": 3319296,
+      "sha256": "8a50d8db8599970726f824f50d5d0a4570d2ff602a39940e09362d23f2c7fca5",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/llama-common.dll",
+      "bytes": 8037376,
+      "sha256": "9adf40bc08e99005699d6397bcacb72c3aced68c9db01f13b5bd31c6abc7b2b5",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/llama-completion-impl.dll",
+      "bytes": 140800,
+      "sha256": "e10c6bba8275b289e3121aa3ab2820b8583d744109dfc5d546e7220328a4ee1d",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/llama-fit-params-impl.dll",
+      "bytes": 43008,
+      "sha256": "a08d9a6fc98cd0a340bb80703e7a43a1bca4b362eb6f5bc3d235993b38b69d89",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/llama-perplexity-impl.dll",
+      "bytes": 197632,
+      "sha256": "4ade93257c26e936770f5ad9e65de400efb73dbe3abcba9244c9756378b4de07",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/llama-quantize-impl.dll",
+      "bytes": 137216,
+      "sha256": "c792c25b55fada62323f50d9e68da797dc92e52b4f79601708fa203533586f86",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/llama-server-impl.dll",
+      "bytes": 9259520,
+      "sha256": "24b1249ddd19e3ba3551804707dbe2f3c154c007542899ea8b16d69a94ab6597",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/llama-server.exe",
+      "bytes": 9216,
+      "sha256": "6a4635aeb35656153d4bfeeddf761d24ed84aada9c9108d580737cbed465141b",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/llama.dll",
+      "bytes": 3541504,
+      "sha256": "aacb073c9c0d30090dd3e56f49772545452ccc4fd311efbfdb7d1bba7bbb0bda",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/mtmd.dll",
+      "bytes": 1847808,
+      "sha256": "bd4a9dac32ba8b14cf95da3361495380ac556b34f48434ebe477ffef23f40bd1",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/ggml-base.dll",
+      "bytes": 803840,
+      "sha256": "0a259689ea3c105a8122159eb97fb53733f2531fadd3e9739689961cdab27600",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/ggml-cpu-alderlake.dll",
+      "bytes": 1420288,
+      "sha256": "98b3bd12a84e848f57686f6d5f0969654ec79cda0c7636498933ea1063d14aa6",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/ggml-cpu-cannonlake.dll",
+      "bytes": 1598976,
+      "sha256": "fef636daea23b26f935cf5983be9a29b79f0541cd148b9d64a32bc9ea0cec704",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/ggml-cpu-cascadelake.dll",
+      "bytes": 1583616,
+      "sha256": "b32ee94fa0a366886cd03be48f80f1d8c1bbb338d71fc734a263753ec46aa8fd",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/ggml-cpu-cooperlake.dll",
+      "bytes": 1593344,
+      "sha256": "e67357a558e71b834360b6f6d62abc6b9fe19930f6f7dd21ee0339e7b144306e",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/ggml-cpu-haswell.dll",
+      "bytes": 1425408,
+      "sha256": "d33deb9bf3dd25427404f0f94a13c6b3da92b9b57b794199a9f354c3a327efb6",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/ggml-cpu-icelake.dll",
+      "bytes": 1590272,
+      "sha256": "41abb00a64bbf099c137cdb3b9547c7eb90bcd9c1d7b83238cbf10a74f97addd",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/ggml-cpu-ivybridge.dll",
+      "bytes": 1301504,
+      "sha256": "d674c12b3f40d657b0989801699560e68247dbe9509823651b055ac3816ba37c",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/ggml-cpu-piledriver.dll",
+      "bytes": 1294336,
+      "sha256": "bb5215c806397adf56e986f52aa0c75b04b3b5b33203a722f647254eae2b94b2",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/ggml-cpu-sandybridge.dll",
+      "bytes": 1291264,
+      "sha256": "55d5659b45afcbe7a1d7611ab1914d2888476fc3024933e4b82122cdc58d6fd5",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/ggml-cpu-sapphirerapids.dll",
+      "bytes": 1869824,
+      "sha256": "83af3cacf3bf32b98626791358f950da4b45a22af85bde63afe537fe51e60848",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/ggml-cpu-skylakex.dll",
+      "bytes": 1592320,
+      "sha256": "20722299dc5e4703056ff95b7ef329c223390ab87469c822721c1e67e4cc2a24",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/ggml-cpu-sse42.dll",
+      "bytes": 916992,
+      "sha256": "1c0fc615b6d97a79e58f33e8a7fb4e8de1834ad0f3f0e00e8943a4d416ddd242",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/ggml-cpu-x64.dll",
+      "bytes": 909824,
+      "sha256": "7c9df996db7fe98510571524e3e62dd267a4034350185014814418dbad3c25ea",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/ggml-cpu-zen4.dll",
+      "bytes": 1600000,
+      "sha256": "83ae254f6204670e9011e11db84786122567bde2fab07354e7c4827c18589ee1",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/ggml-rpc.dll",
+      "bytes": 231424,
+      "sha256": "b52bd8eddb79ebd1dc0b832b34483bef23d44a34c6d5639301d92cb971f874a4",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/ggml.dll",
+      "bytes": 78848,
+      "sha256": "2649a5d914934188cccbe2c58e4642d2d4408bcda0f7068d58390686bd7ea62f",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/libomp.dll",
+      "bytes": 768000,
+      "sha256": "a12116ba72d1d6820407cf30be23da04ce79d6bb8a71a5ee71759c5a1faa6f1c",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/llama-batched-bench-impl.dll",
+      "bytes": 61952,
+      "sha256": "86dd3cc19af625bd826f7919767883a7e78481e012fb141e5393677235518190",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/llama-bench-impl.dll",
+      "bytes": 404480,
+      "sha256": "e4ff088cb9f50568366c281684b3ad4c69e9ddea3be6deb4a0a4fb63a6bf0650",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/llama-cli-impl.dll",
+      "bytes": 3319296,
+      "sha256": "8a50d8db8599970726f824f50d5d0a4570d2ff602a39940e09362d23f2c7fca5",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/llama-common.dll",
+      "bytes": 8037376,
+      "sha256": "9adf40bc08e99005699d6397bcacb72c3aced68c9db01f13b5bd31c6abc7b2b5",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/llama-completion-impl.dll",
+      "bytes": 140800,
+      "sha256": "e10c6bba8275b289e3121aa3ab2820b8583d744109dfc5d546e7220328a4ee1d",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/llama-fit-params-impl.dll",
+      "bytes": 43008,
+      "sha256": "a08d9a6fc98cd0a340bb80703e7a43a1bca4b362eb6f5bc3d235993b38b69d89",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/llama-perplexity-impl.dll",
+      "bytes": 197632,
+      "sha256": "4ade93257c26e936770f5ad9e65de400efb73dbe3abcba9244c9756378b4de07",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/llama-quantize-impl.dll",
+      "bytes": 137216,
+      "sha256": "c792c25b55fada62323f50d9e68da797dc92e52b4f79601708fa203533586f86",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/llama-server-impl.dll",
+      "bytes": 9259520,
+      "sha256": "24b1249ddd19e3ba3551804707dbe2f3c154c007542899ea8b16d69a94ab6597",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/llama-server.exe",
+      "bytes": 9216,
+      "sha256": "6a4635aeb35656153d4bfeeddf761d24ed84aada9c9108d580737cbed465141b",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/llama.dll",
+      "bytes": 3541504,
+      "sha256": "aacb073c9c0d30090dd3e56f49772545452ccc4fd311efbfdb7d1bba7bbb0bda",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/mtmd.dll",
+      "bytes": 1847808,
+      "sha256": "bd4a9dac32ba8b14cf95da3361495380ac556b34f48434ebe477ffef23f40bd1",
+      "family": "common"
+    },
+    {
+      "path": "runtime/macos-arm64/LICENSE",
+      "bytes": 1078,
+      "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/LICENSE",
+      "bytes": 1078,
+      "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/LICENSE",
+      "bytes": 1078,
+      "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+      "family": "common"
+    },
+    {
+      "path": "licenses/llama.cpp-LICENSE.txt",
+      "bytes": 1078,
+      "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+      "family": "common"
+    },
+    {
+      "path": "licenses/LLVM-OpenMP-LICENSE.txt",
+      "bytes": 19741,
+      "sha256": "fdad1758a9e1f9d5a81e18879b3406772115edc92c24bfa36b70c654f325e8e4",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/LICENSE-LLVM-OpenMP",
+      "bytes": 19741,
+      "sha256": "fdad1758a9e1f9d5a81e18879b3406772115edc92c24bfa36b70c654f325e8e4",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/LICENSE-LLVM-OpenMP",
+      "bytes": 19741,
+      "sha256": "fdad1758a9e1f9d5a81e18879b3406772115edc92c24bfa36b70c654f325e8e4",
+      "family": "common"
+    },
+    {
+      "path": "licenses/Apache-2.0.txt",
+      "bytes": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "family": "glimmer"
+    },
+    {
+      "path": "licenses/USAGE_POLICY.md",
+      "bytes": 5230,
+      "sha256": "98a14dab9fd97de1666dc8589d399efab1e7fc3ba4e6230d037d6637ba9481d3",
+      "family": "glimmer"
+    },
+    {
+      "path": "licenses/Apache-2.0.txt",
+      "bytes": 11544,
+      "sha256": "bbedc3fda3305820b977265f01b8619d87570a6739de3a5582c3464840f1e57a",
+      "family": "qwen"
+    }
+  ],
+  "sources": [
+    {
+      "path": "runtime/macos-arm64/",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11669/llama-b11669-bin-macos-arm64.tar.gz",
+      "sha256": "dbed55493d72bc1ba2babc8770d669c2289b5bc4ee9fb2a4dfc158d45b7d13fd",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-vulkan/",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11669/llama-b11669-bin-win-vulkan-x64.zip",
+      "sha256": "2c07574e7bde71321cb785282b20cc821e951132149eeceeea32ddebdbf0598e",
+      "family": "common"
+    },
+    {
+      "path": "runtime/windows-x64-cpu/",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11669/llama-b11669-bin-win-cpu-x64.zip",
+      "sha256": "37b3efcf962847ca869745fd4ccf7f5e7e8dacfeff9fa3523b4ca8cdc66d632b",
+      "family": "common"
+    },
+    {
+      "path": "licenses/Apache-2.0.txt",
+      "url": "https://huggingface.co/meta-models/Muse-Glimmer-30B-GGUF/raw/b44f1072cf75e918a1b82a3a17b45c4389b076e7/LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "family": "glimmer"
+    },
+    {
+      "path": "licenses/USAGE_POLICY.md",
+      "url": "https://huggingface.co/meta-models/Muse-Glimmer-30B-GGUF/raw/b44f1072cf75e918a1b82a3a17b45c4389b076e7/USAGE_POLICY.md",
+      "sha256": "98a14dab9fd97de1666dc8589d399efab1e7fc3ba4e6230d037d6637ba9481d3",
+      "family": "glimmer"
+    },
+    {
+      "path": "licenses/Apache-2.0.txt",
+      "url": "https://huggingface.co/unsloth/Qwen3.5-0.8B/raw/23c69c53358a07516b5827588b3fdb12ae78fd65/LICENSE",
+      "sha256": "bbedc3fda3305820b977265f01b8619d87570a6739de3a5582c3464840f1e57a",
+      "family": "qwen"
+    }
+  ],
+  "baseUrl": null
+}

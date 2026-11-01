@@ -168,7 +168,7 @@ interface DecideCall {
   note: string | null;
 }
 
-async function readCall(req: Request, deps: DecideDeps): Promise<DecideCall | Response> {
+async function readCall(req: Request, deps: DecideDeps, productId: string): Promise<DecideCall | Response> {
   let text: string;
   try {
     text = await req.text();
@@ -215,7 +215,8 @@ async function readCall(req: Request, deps: DecideDeps): Promise<DecideCall | Re
   }
 
   const found = await deps.findModel(model);
-  if (!found || !found.public) {
+  // Wave 3, unit 11: a model trained on a product owner's private rows has no public page, and answers its own product only.
+  if (!found || !(found.public || found.productId === productId)) {
     return gatewayError(404, "not_found_error", "unknown_model", `No decision model has the id "${model.slice(0, 80)}". Use "${DECIDE_ID}", or a decision model's id from its result page.`, { retry: false });
   }
   if (body.none === false) {
@@ -272,7 +273,7 @@ export async function handleDecide(req: Request, deps: DecideDeps): Promise<Resp
   // Every authorized call counts, refused ones too, before the body is read or a model is looked up.
   const limited = await rateLimited(req, token, deps);
   if (limited) return limited;
-  const call = await readCall(req, deps);
+  const call = await readCall(req, deps, token.productId);
   if (call instanceof Response) return call;
   const rendered = serveRenderings({ state: call.state, question: call.question, labels: call.labels, none: call.none });
   if (!rendered.ok) return bad("invalid_task", rendered.error);

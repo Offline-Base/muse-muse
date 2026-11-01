@@ -12,6 +12,21 @@ import { isToolId, PERSONAL_TOOL_IDS, toolLabel } from "@/lib/tools/ids";
 export const PRODUCT_OUTPUTS = ["mcp", "cli", "skill", "claude_plugin", "chatgpt", "gadget"] as const;
 export type ProductOutput = (typeof PRODUCT_OUTPUTS)[number];
 
+/**
+ * Wave 3, unit 10 (docs/CAPABILITIES.md, section 16): what a live product also comes with under RUNTIME_OUTPUTS, made by
+ * the platform as source and never published. The self-host kit is offered to the product's owner only. They aren't
+ * PRODUCT_OUTPUTS, so the Prove it stage doesn't run them.
+ */
+export const RUNTIME_OUTPUTS = ["vscode", "github_action", "self_host"] as const;
+export type RuntimeOutput = (typeof RUNTIME_OUTPUTS)[number];
+
+/**
+ * Wave 3, unit 14 (docs/CAPABILITIES.md, section 20): what a live product whose brief has a cap block also offers. Its
+ * browser extension's zip, under NATIVE_EXTENSION, installed with Load unpacked.
+ */
+export const CAP_OUTPUTS = ["extension"] as const;
+export type CapOutput = (typeof CAP_OUTPUTS)[number];
+
 /** What the brief writer is told about each target. Used only once the target's flag is on. */
 export const TARGET_GUIDE: Record<TargetId, string> = {
   web: "the web product, with its own link. Every product has it, whatever else it adds.",

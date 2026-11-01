@@ -1390,6 +1390,48 @@ GPU time (Unsloth's mapper doesn't know the repo). That fix was read from the in
 2026.10.9, so only a real glimmer-quantize job proves it. Still to do after a deploy: the r30b dry run (about $0.13) and
 one real run (about $2). Wave 3 told.
 
+### 01:05 main at e7b8d8e deployed
+
+Starters under the composer, the r30b base, the plan card code (PLAN_ART off) and the asked-for look went live on
+www.musemuse.dev, after the owner's "push". The live page shows `.starter-pill`.
+
+### 03:16 Owner rows leak on wave 3's branch: fix ready, not merged
+
+Wave 3 reported, from a code read, that an admin could publish a "train on my data" adapter by launching glimmer-publish
+directly. Read and confirmed for chat-mode owner rows on tg-cap-int and tg-cap-gpu; decision-mode jobs were already
+refused. It isn't on main, since the check came in with ad3dabf. An adapter job on a product's dataset with publish not 0
+could auto-publish the same way. Nothing was run against the Hub.
+
+Fix: 609026e on tg-owner-rows-publish, cut from tg-cap-int at 0fb6119. One check (ownerRowsProblem) now gates Publish,
+launch, the runner's upload plan and the publishing claim. tsc clean; 1,091 of 1,091 pass across lib/train, lib/caps/gpu
+and the other suites that mock the store. Full root suite and next build not run. Removing the launch, upload plan or
+claim gate each fails the new test. Wave 3 was asked to cherry-pick it before tg-cap-int merges, and told r30b is on main.
+
+### Wave 3 sync on tg-cap-sync2
+
+Not merged into tg-cap-int; the coordinator does that. Merged tuned-model-options e7b8d8e
+(14aa5b1) and tg-cap-musecode e29cebf (926aa16). 0028_code_sessions stays at idx 28, with its snapshot rebuilt on this
+branch's 0024 plus its one table. General's r30b drive handling moved into wave 3's split: lib/drive/layout.ts and
+lib/drive/plan.ts. Fix (01e2e5c): a lab model trained on r30b now exports as a Derivative of Muse Spark Open, license and
+NOTICE inline, no measured numbers. Measured: 5,049 .test.ts (5,041 pass, 8 skipped, 0 failed), 748 .test.tsx (all pass),
+597 template (595 pass, 2 skipped), 141 muse-device (5 skipped, 0 failed), tsc clean. An old lab model's plan and a board
+Qwen plan hash the same under the code at 48b2cfe and now, on one stand-in kit. No real drive was written.
+
+### 09:28 Wave 3 merged locally for main, flags off, not pushed yet
+
+The owner asked to commit all the latest changes to main. tg-cap-int (253 commits, with the owner-rows fix) merged into
+tuned-model-options with one build log conflict, both sides kept; the tree differs from its checked head only in this log.
+Wave 3's checks at 4dbce8c: 0 failures, next build exit 0, local with flags off; only docs came after. No real test build has
+run on it. A deploy would run migrations 0018 to 0027 on production; none has a drop, rename or truncate. Local main's 98
+unpushed knowledge run commits are left out: that branch is 553 behind origin/main. The push to main was denied by the
+permission check as a production deploy, so it waits for the owner.
+
+### 09:42 PR #4 open for main, not merged
+
+After the push to main was denied, the owner asked for a PR with all the latest. tuned-model-options went up at e0b59d8 (no
+deploy: main-only rule) and Offline-Base/muse-muse#4 is open against main. Full-range key scan: two matches, both made-up
+test values. Every CAP_READY line is false at this head. Merging deploys it and runs migrations 0018 to 0027.
+
 ## Gaps
 
 What this record doesn't confirm:

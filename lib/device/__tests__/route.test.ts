@@ -25,6 +25,7 @@ describe("/api/device", { skip: typeof mock.module !== "function" }, () => {
   let admin = true;
   let calls: Array<{ name: string; args: unknown }> = [];
   let boardDown = false;
+  let boardTools: string[] = ["describe_device"];
   let handlers: typeof import("@/app/api/device/route");
 
   const post = (body: unknown) =>
@@ -43,7 +44,7 @@ describe("/api/device", { skip: typeof mock.module !== "function" }, () => {
     mock.module(at("../client.ts"), {
       namedExports: {
         deviceConfig: () => (process.env.DEVICE_MCP_URL ? { url: process.env.DEVICE_MCP_URL, token: process.env.DEVICE_MCP_TOKEN } : null),
-        listDeviceTools: async () => [{ name: "describe_device", inputSchema: { type: "object" } }],
+        listDeviceTools: async () => boardTools.map((name) => ({ name, inputSchema: { type: "object" } })),
         callDeviceTool: async (_config: unknown, name: string, args: unknown) => {
           if (boardDown) throw new Error(`fetch failed for ${URL_VALUE} with ${TOKEN_VALUE}`);
           calls.push({ name, args });
@@ -57,6 +58,7 @@ describe("/api/device", { skip: typeof mock.module !== "function" }, () => {
   beforeEach(() => {
     admin = true;
     boardDown = false;
+    boardTools = ["describe_device"];
     calls = [];
     process.env.DEVICE_MCP_URL = URL_VALUE;
     process.env.DEVICE_MCP_TOKEN = TOKEN_VALUE;
@@ -65,6 +67,7 @@ describe("/api/device", { skip: typeof mock.module !== "function" }, () => {
   after(() => {
     delete process.env.DEVICE_MCP_URL;
     delete process.env.DEVICE_MCP_TOKEN;
+    delete process.env.DRIVE_EXPORT_ENABLED;
     mock.reset();
   });
 
@@ -95,6 +98,23 @@ describe("/api/device", { skip: typeof mock.module !== "function" }, () => {
     assert.deepEqual(calls, [{ name: "describe_device", args: {} }]);
   });
 
+  it("never lists or calls a drive tool, flag off or on: only the drive routes reach them, with requireAdmin", async () => {
+    const drive = ["drive_status", "export_source", "export_model", "erase_drive", "stop_export"];
+    boardTools = ["describe_device", ...drive, "capture_image"];
+    for (const flag of [undefined, "1"]) {
+      if (flag) process.env.DRIVE_EXPORT_ENABLED = flag;
+      else delete process.env.DRIVE_EXPORT_ENABLED;
+      const listed = (await (await handlers.GET(new Request("http://x/api/device"))).json()).tools.map((t: { name: string }) => t.name);
+      assert.deepEqual(listed, ["describe_device", "capture_image"], `DRIVE_EXPORT_ENABLED=${flag}`);
+      for (const tool of drive) {
+        const res = await post({ tool, arguments: tool === "erase_drive" ? { drive: "sda", identity: "0123456789abcdef", confirm: "ERASE" } : {} });
+        assert.equal(res.status, 403, tool);
+        assert.equal((await res.json()).error, "drive_route_only");
+      }
+    }
+    assert.deepEqual(calls, [], "the board was never called");
+  });
+
   it("refuses a body with no tool, or arguments that aren't an object", async () => {
     assert.equal((await post({})).status, 400);
     assert.equal((await post({ tool: "x", arguments: [1] })).status, 400);
@@ -114,6 +134,25 @@ describe("/api/device", { skip: typeof mock.module !== "function" }, () => {
       assert.doesNotMatch(text, new RegExp(`${TOKEN_VALUE}|board\\.example`));
     } finally {
       console.error = original;
+    }
+  });
+});
+
+describe("the board tools for products on the admin route (wave 3, unit 13)", () => {
+  it("are filtered until HARDWARE_BOARD_TOOLS is on", async () => {
+    const { genericDeviceTool } = await import("@/lib/device/drive-tools");
+    delete process.env.HARDWARE_BOARD_TOOLS;
+    assert.equal(genericDeviceTool("read_sensor"), false);
+    assert.equal(genericDeviceTool("show_text"), false);
+    assert.equal(genericDeviceTool("capture_image"), true);
+    assert.equal(genericDeviceTool("export_model"), false);
+    process.env.HARDWARE_BOARD_TOOLS = "1";
+    try {
+      assert.equal(genericDeviceTool("read_sensor"), true);
+      assert.equal(genericDeviceTool("show_text"), true);
+      assert.equal(genericDeviceTool("export_model"), false, "drive tools stay on their own routes");
+    } finally {
+      delete process.env.HARDWARE_BOARD_TOOLS;
     }
   });
 });

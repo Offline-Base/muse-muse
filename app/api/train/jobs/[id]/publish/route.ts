@@ -7,7 +7,7 @@ import { createRepo, HubApiError, redact } from "@/lib/train/hub";
 import { ggufJobProblem, ggufUploaded, hubJobProblem, hubUploaded, modelRepoName, validRepoName } from "@/lib/train/hub-cards";
 import { GGUF_NOT_UPLOADED } from "@/lib/train/hub-steps";
 import { effectiveWhy, hubBusy, toHubView, type TrainJobRow } from "@/lib/train/logic";
-import { getAdapterSource, getDataset, getJob, recordEvent, updateHub } from "@/lib/train/store";
+import { getAdapterSource, getDataset, getJob, ownerRowsProblem, recordEvent, updateHub } from "@/lib/train/store";
 import { HUB_WHY_MAX, isTrainTerminal, PUBLISH_RECIPE, QUANT_RECIPE, type HubPublishResponse, type HubState } from "@/lib/train/types";
 import { publishToHub } from "@/lib/train/workflow";
 import { POST as startJob } from "../../route";
@@ -146,6 +146,9 @@ export const POST = route(async (req: Request, { params }: Ctx) => {
   if (job.recipe === QUANT_RECIPE) return publishGguf(job);
   const problem = hubJobProblem(job);
   if (problem) return errorJson(409, "not_publishable", { reason: problem });
+  // Wave 3, unit 11: a product owner's private rows never go to the Hub.
+  const ownerRows = await ownerRowsProblem(job);
+  if (ownerRows) return errorJson(409, "not_publishable", { reason: ownerRows });
   const off = env.hubOffReason;
   if (off) return errorJson(503, "hub_off", { reason: off });
   if (hubBusy(job.hub, Date.now())) return errorJson(409, "publishing");

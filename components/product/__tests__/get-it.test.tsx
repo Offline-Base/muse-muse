@@ -12,15 +12,17 @@ import { renderToString } from "react-dom/server";
 import { GET_IT_SLOTS, GetItPanel, type GetItSlots } from "@/components/product/GetItPanel";
 import { QrCode } from "@/components/product/QrCode";
 import { TARGETS } from "@/lib/brief/schema";
-import { PRODUCT_OUTPUTS } from "@/lib/native/targets";
+import { CAP_OUTPUTS, PRODUCT_OUTPUTS, RUNTIME_OUTPUTS } from "@/lib/native/targets";
 import { qrMatrix } from "@/lib/qr";
 
 const render = (slots: GetItSlots) => renderToString(createElement(GetItPanel, { slots })).replace(/<!-- -->/g, "");
 
 describe("GetItPanel", () => {
-  it("has a slot for every target and every product output, and no others", () => {
-    assert.deepEqual([...GET_IT_SLOTS], [...TARGETS, ...PRODUCT_OUTPUTS]);
+  it("has a slot for every target, every product output, every runtime output (wave 3, unit 10) and the extension (unit 14), and no others", () => {
+    assert.deepEqual([...GET_IT_SLOTS], [...TARGETS, ...PRODUCT_OUTPUTS, ...RUNTIME_OUTPUTS, ...CAP_OUTPUTS]);
+    assert.deepEqual([...CAP_OUTPUTS], ["extension"]);
     assert.deepEqual([...PRODUCT_OUTPUTS], ["mcp", "cli", "skill", "claude_plugin", "chatgpt", "gadget"]);
+    assert.deepEqual([...RUNTIME_OUTPUTS], ["vscode", "github_action", "self_host"]);
   });
 
   it("names the gadget tab Muse gadget", () => {
@@ -53,9 +55,11 @@ describe("GetItPanel", () => {
 
   it("is on the product page, only for a shipped product, with the output tabs only while their flag is on", () => {
     const page = readFileSync(path.join(process.cwd(), "app/p/[slug]/page.tsx"), "utf8");
+    // Wave 3, unit 10: the runtime outputs' tabs, only while RUNTIME_OUTPUTS is on. Unit 14: the extension's tab, only
+    // while the extension cap is enabled (NATIVE_EXTENSION and its CAP_READY line).
     assert.match(
       page,
-      /\{shipped \? \(\s*<GetItPanel slots=\{\{ \.\.\.native\.slots, \.\.\.\(env\.productOutputs \? productOutputSlots\(.*\) : \{\}\) \}\} initial=\{native\.initial\} \/>\s*\) : null\}/,
+      /\{shipped \? \(\s*<GetItPanel slots=\{\{ \.\.\.native\.slots, \.\.\.\(env\.productOutputs \? productOutputSlots\([^)]*\) : \{\}\), \.\.\.\(env\.runtimeOutputs \? runtimeOutputSlots\([^)]*\) : \{\}\), \.\.\.\(env\.enabledCaps\.includes\("extension"\) \? extensionSlots\([^)]*\) : \{\}\) \}\} initial=\{native\.initial\} \/>\s*\) : null\}/,
     );
   });
 

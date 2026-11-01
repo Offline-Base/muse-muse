@@ -19,9 +19,13 @@ export const IMPORT_UPLOAD_TTL_MS = 15 * 60_000;
 /** The biggest file a local run's rows point at. Demo videos and Muse Code transcripts stay far under it. */
 export const IMPORT_UPLOAD_MAX_BYTES = 200 * 1024 * 1024;
 
-/** The paths the platform stores files under (lib/storage.ts BlobPrefix), as the rows name them. */
-const STORED_KEY = new RegExp(`^(?:${STORED_PREFIXES.join("|")})/[^?#]+$`);
-const STORED_FOLDERS = `${STORED_PREFIXES.slice(0, -1).map((p) => `${p}/`).join(", ")} or ${STORED_PREFIXES.at(-1)}/`;
+/**
+ * The paths a promoted file can go to (lib/storage.ts BlobPrefix), as the rows name them. Not the vetted datasets or the
+ * 3D set: products are built from those by hash, and only the mirror script writes them.
+ */
+const IMPORT_PREFIXES = STORED_PREFIXES.filter((p) => p !== "datasets" && p !== "3d");
+const STORED_KEY = new RegExp(`^(?:${IMPORT_PREFIXES.join("|")})/[^?#]+$`);
+const STORED_FOLDERS = `${IMPORT_PREFIXES.slice(0, -1).map((p) => `${p}/`).join(", ")} or ${IMPORT_PREFIXES.at(-1)}/`;
 
 export class ImportPathnameError extends Error {}
 
@@ -32,6 +36,8 @@ export function checkImportPathname(pathname: unknown): string | null {
   }
   // Every later download is built from these, and a promoted product never needs to change one.
   if (pathname.startsWith("native/shells/")) return "Uploads can't replace a shell template.";
+  // A kept file's path is the gateway's to give, and a promoted product brings no kept files.
+  if (pathname.startsWith("caps/files/")) return "Uploads can't replace a file a product keeps.";
   return null;
 }
 

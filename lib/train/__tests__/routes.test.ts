@@ -130,6 +130,7 @@ const fakeStore = {
     if (jobId !== JOB_ID) return otherJobs[jobId] ?? null;
     return { ...jobRow({}), status: jobStatus, instanceId: "inst-1", terminatedAt: null, ...jobExtra };
   },
+  ownerRowsProblem: async () => null,
   getAdapterSource: async (jobId: string) => {
     calls.push({ fn: "getAdapterSource", args: [jobId] });
     return adapterSources[jobId] ?? null;

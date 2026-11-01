@@ -120,6 +120,76 @@
       "when": 1793431610646,
       "tag": "0017_decision_datasets",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1793431670646,
+      "tag": "0018_trust",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1793431730646,
+      "tag": "0019_engine",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1793431790646,
+      "tag": "0020_data",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1793431850646,
+      "tag": "0021_files",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1793431910646,
+      "tag": "0022_connect",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1793431970646,
+      "tag": "0023_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1793432030646,
+      "tag": "0024_code",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1793432090646,
+      "tag": "0025_gpu",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1793432150646,
+      "tag": "0026_hardware",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1793432210646,
+      "tag": "0027_code_sessions",
+      "breakpoints": true
     }
   ]
 }

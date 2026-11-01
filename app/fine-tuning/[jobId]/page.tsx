@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
+import { DriveExportLink } from "@/components/device/DriveExportLink";
 import { DriveOffer } from "@/components/drive/DriveOffer";
 import type { WrongAnswers } from "@/components/train/DecisionResults";
 import { JobResults } from "@/components/train/JobResults";
@@ -276,7 +277,12 @@ export default async function FineTuningJobPage({ params }: { params: Promise<{ 
   }
 
   const recipe = recipeById(result.data.job.recipe);
-  return (
+  // With drive export on, a lab model with checked local files links to the board's Flash drive card (docs/DRIVE_EXPORT.md).
+  const driveFiles =
+    env.driveExportEnabled && result.data.job.recipe === ADAPTER_RECIPE
+      ? await import("@/lib/train/local-files-server").then(({ localFilesFor }) => localFilesFor(jobId)).catch(() => null)
+      : null;
+  const room = (
     <JobRoom
       job={result.data.job}
       events={result.data.events}
@@ -293,5 +299,13 @@ export default async function FineTuningJobPage({ params }: { params: Promise<{ 
       }
       serverNow={now.getTime()}
     />
+  );
+  return driveFiles ? (
+    <>
+      {room}
+      <DriveExportLink jobId={jobId} files={driveFiles} />
+    </>
+  ) : (
+    room
   );
 }

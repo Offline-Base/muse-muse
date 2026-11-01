@@ -193,10 +193,10 @@ async function main() {
     });
 
     await step("collectDeployFiles (publish file collection)", async () => {
-      const { files, skipped } = await collectDeployFiles(sandboxName);
+      const { files } = await collectDeployFiles(sandboxName);
       const bytes = files.reduce((s, f) => s + f.size, 0);
       const bad = files.filter((f) => /(^|\/)(node_modules|\.next|test-results|inspo|\.git)\//.test(f.file) || /(^|\/)\.env/.test(f.file));
-      console.log(`   ${files.length} files, ${bytes} bytes, skipped ${skipped.length}, excluded paths leaked: ${bad.length}`);
+      console.log(`   ${files.length} files, ${bytes} bytes, excluded paths leaked: ${bad.length}`);
       console.log(`   ${files.map((f) => f.file).join(", ")}`);
     });
 

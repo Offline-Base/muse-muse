@@ -49,11 +49,15 @@ export function pickScreenshots(screens: Screenshot[]): Screenshot[] {
   return [screens[0], ...screens.slice(-(MAX_SCREENSHOTS - 1))];
 }
 
-export async function judgeBuild(input: {
+export interface JudgeInput {
   brief: Brief;
   references: Reference[];
   screenshots: Screenshot[];
-}): Promise<{ verdict: JudgeResult; usage: ModelUsage[]; costUsd: number }> {
+  /** The fixed checks' results for a product with platform services (capsProofText). None adds nothing. */
+  capsProof?: string | null;
+}
+
+export async function judgeBuild(input: JudgeInput): Promise<{ verdict: JudgeResult; usage: ModelUsage[]; costUsd: number }> {
   if (!input.screenshots.length) {
     // Nothing cleared the product's look, so this can't ship as partial.
     return {
@@ -68,6 +72,26 @@ export async function judgeBuild(input: {
     };
   }
 
+  const { content, sources } = judgeContent(input);
+  const result = await respondStructured({
+    model: env.judgeModel,
+    instructions: judgeInstructions(input.brief, { museAppLook: env.museAppLook }),
+    content,
+    sources,
+    schema: VerdictSchema,
+    schemaName: "judge_verdict",
+    effort: "medium",
+    normalize: (raw) => cleanStrings(raw),
+  });
+  const costUsd = Math.round(result.usage.reduce((s, u) => s + u.costUsd, 0) * 1e6) / 1e6;
+  return { verdict: toJudgeResult(result.data), usage: result.usage, costUsd };
+}
+
+/**
+ * What the judge is sent: the brief, the image inspo, then, for a product with platform services, the fixed checks'
+ * results (the one wave 3 part, before the screenshots), then the screenshots.
+ */
+export function judgeContent(input: JudgeInput): { content: ContentPart[]; sources: Map<number, MediaSource> } {
   const content: ContentPart[] = [];
   const sources = new Map<number, MediaSource>();
   const add = (url: string, fileName: string, contentType = guessImageType(url)) => {
@@ -95,6 +119,7 @@ export async function judgeBuild(input: {
     add(ref.url, ref.fileName, ref.contentType);
   }
 
+  if (input.capsProof) content.push(textPart(input.capsProof));
   const shots = pickScreenshots(input.screenshots);
   content.push(textPart(`Screenshots, in order (${shots.length}${shots.length < input.screenshots.length ? ` of ${input.screenshots.length}` : ""}):`));
   shots.forEach((shot, i) => {
@@ -103,19 +128,7 @@ export async function judgeBuild(input: {
     add(shot.url, `screenshot-${i + 1}.png`);
   });
   content.push(textPart("Judge the product now."));
-
-  const result = await respondStructured({
-    model: env.judgeModel,
-    instructions: judgeInstructions(input.brief, { museAppLook: env.museAppLook }),
-    content,
-    sources,
-    schema: VerdictSchema,
-    schemaName: "judge_verdict",
-    effort: "medium",
-    normalize: (raw) => cleanStrings(raw),
-  });
-  const costUsd = Math.round(result.usage.reduce((s, u) => s + u.costUsd, 0) * 1e6) / 1e6;
-  return { verdict: toJudgeResult(result.data), usage: result.usage, costUsd };
+  return { content, sources };
 }
 
 function guessImageType(url: string): string {

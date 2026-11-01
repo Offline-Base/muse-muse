@@ -1,0 +1,28 @@
+{
+  "note": "Made up in the shape of the provider docs. Builds get it instead of a call; no key was used.",
+  "GET /v0/**": [
+    {
+      "status": 200,
+      "data": {
+        "records": [
+          {
+            "id": "recSample0001",
+            "createdTime": "2026-10-30T12:00:00.000Z",
+            "fields": {
+              "Name": "Sample task one",
+              "Status": "Todo"
+            }
+          },
+          {
+            "id": "recSample0002",
+            "createdTime": "2026-10-30T13:00:00.000Z",
+            "fields": {
+              "Name": "Sample task two",
+              "Status": "Done"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

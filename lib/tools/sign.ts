@@ -38,6 +38,17 @@ export function argumentsHash(args: unknown): string {
   return createHash("sha256").update(canonicalJson(args)).digest("hex");
 }
 
+/**
+ * One line of a confirmation card. Whitespace is collapsed, which also stops blank lines from pushing text out of view, and
+ * anything invisible or that reorders text is marked.
+ */
+export function cardText(text: string): string {
+  return text
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[\p{Cc}\p{Cf}]/gu, "\uFFFD");
+}
+
 export interface ApprovalScope {
   productId: string;
   /** Who it was asked of: the owner's subject, or "build". Another person's approval is no approval. */
