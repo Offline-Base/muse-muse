@@ -1284,6 +1284,23 @@ because the sidebar showed a real account.
   with the text flowing beside and under it, and writes out the whole brief in place of the summary. Up to 10 real Muse
   Image calls ($0.10) to tune the prompt.
 
+### 23:50 Fine-tune like a build, stage 2, landed (7b6b139); r30b switch building
+
+- wf_7f660dc4-230 on tg-tune2: launchJob (the jobs route's checks moved to lib/train/launch.ts, route replies unchanged,
+  79/79 route tests), the tuneRun workflow (a started run trains itself once its examples are ready, publish 0, retrying
+  every 5 minutes for up to 2 hours while no GPU is free or a cap is hit, with the reason shown), Start training and a
+  stop route, Advanced training steps, the New button on /fine-tuning, the build room's "Its own model" row
+  (TUNE_FROM_BUILDS; one click by the owner, one run a product a day), and the hosted Glimmer chat backend:
+  lib/train/glimmer-serving.ts (Meta's sampling 1.0, 0.95, 64 on every request; ends on Meta's two ids; never <|eom|>
+  except trainChannel 0 adapters, server side) and /v1/chat/completions on the serve job. Not run on a real GPU yet.
+- Review: 1 medium (a run stuck for good once a job failed before launching), 6 low, 1 info; fixed except the info. After
+  the merge: tsc clean, full suite 5,045 tests, 5,037 pass, 0 fail, 8 skipped.
+  ![Waiting for a GPU](log/shots/2026-10-31/tune2-waiting-1440.png)
+  ![Its own model](log/shots/2026-10-31/tune2-own-model-1440.png)
+- The fine-tune session's 4-bit r30b copy is public and verified (OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit
+  @ 6f12bf52: drop-in for Unsloth's, two training steps on the recipe's own versions). The switch is building on tg-r30b
+  (wf_e569a503-ff8): MODEL and the merge base, the Muse Spark Open duties on every new lab model, wording.
+
 ## Gaps
 
 What this record doesn't confirm:
