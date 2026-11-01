@@ -300,6 +300,42 @@ try { await jobs.enqueue(new Headers(), { name: "digest" }); say({ refused: fals
     assert.deepEqual(await run(refused), { code: "switched_off", status: 404 });
   });
 
+  test("fireJob and fireWebhook run under Playwright in smoke, and the demo replay fires nothing", async () => {
+    answer = (e) => {
+      if (e.url.endsWith("/jobs/test-fire")) return e.body.hook ? { status: 200, body: { hook: { url: `${base}/made-up-hook` } } } : { status: 200, body: { token: "jr1.made.up" } };
+      if (e.url.endsWith("/made-up-hook")) return { status: 202, body: { ok: true, queued: true } };
+      if (e.url.startsWith("/api/jobs/")) return { status: 200, body: { ok: true, status: "done", tick: 1 } };
+      return { status: 404, body: {} };
+    };
+    writeFileSync(path.join(dir, "pw.jobs.config.mts"), `import { defineConfig } from "@playwright/test";\nexport default defineConfig({ testDir: "tests/pw", outputDir: "test-results/pw", use: { baseURL: ${JSON.stringify(base.replace(/\/gw$/, ""))} }, projects: [{ name: "smoke" }, { name: "demo" }] });\n`);
+    mkdirSync(path.join(dir, "tests/pw/caps"), { recursive: true });
+    cpSync(path.join(dir, "tests/caps"), path.join(dir, "tests/pw/caps"), { recursive: true });
+    cpSync(path.join(dir, "tests/judge-shot.ts"), path.join(dir, "tests/pw/judge-shot.ts"));
+    writeFileSync(
+      path.join(dir, "tests/pw/smoke.spec.ts"),
+      `import { expect, test } from "@playwright/test";\nimport { fireJob, fireWebhook } from "./caps/jobs";\ntest("jobs", async ({ request }) => {\n  const first = await fireJob(request, "digest");\n  expect(first.status).toBe("done");\n  expect((await fireWebhook(request, "log", { event: "sample" })).status).toBe("done");\n});\n`,
+    );
+    // Async: the fake gateway answers from this process.
+    const playwright = async (project) => {
+      seen.length = 0;
+      const { spawn } = await import("node:child_process");
+      const child = spawn(path.join(modules, ".bin/playwright"), ["test", "-c", "pw.jobs.config.mts", "--project", project, "--reporter", "line"], { cwd: dir, env: { ...process.env, GATEWAY_URL: base, PRODUCT_TOKEN: "mm_build_test" } });
+      let out = "";
+      child.stdout.on("data", (c) => (out += c));
+      child.stderr.on("data", (c) => (out += c));
+      const status = await new Promise((resolve) => child.on("close", resolve));
+      assert.equal(status, 0, out);
+      return seen.map((e) => e.url.replace(/^\/gw/, "")).filter((u) => !u.startsWith("/favicon"));
+    };
+    assert.deepEqual(await playwright("smoke"), ["/jobs/test-fire", "/api/jobs/digest", "/jobs/test-fire", "/made-up-hook", "/jobs/test-fire", "/api/jobs/log"]);
+    const recorded = JSON.parse(readFileSync(path.join(dir, "test-results/caps/jobs.json"), "utf8"));
+    assert.deepEqual(recorded.checks.map((c) => [c.id, c.ok]), [["job-fired", true], ["webhook-run", true]]);
+    assert.deepEqual(await playwright("demo"), [], "the demo shows what smoke already made");
+    const after = JSON.parse(readFileSync(path.join(dir, "test-results/caps/jobs.json"), "utf8"));
+    assert.deepEqual(after.checks, recorded.checks, "and leaves smoke's record alone");
+    answer = () => ({ status: 200, body: {} });
+  });
+
   test("the product's tsc passes with a job route written the skill's way", () => {
     const tsc = path.join(modules, "typescript/bin/tsc");
     const res = spawnSync(process.execPath, [tsc, "--noEmit", "-p", dir], { encoding: "utf8" });

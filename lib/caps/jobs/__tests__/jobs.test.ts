@@ -277,7 +277,7 @@ describe("jobs on a database", { skip: canMock ? false : "needs --experimental-t
       assert.equal((await handler.handleJobs(post("jobs/notify", { title: "Again" }, liveJob(run.id)), ["notify"], jobsDeps(live()))).status, 429);
     });
 
-    it("test-fire is a build's only, goes on from a checkpoint, and stops at 10", async () => {
+    it("test-fire is a build's only, goes on from a checkpoint, and stops at its limit", async () => {
       assert.equal((await handler.handleJobs(post("jobs/test-fire", { name: "digest" }), ["test-fire"], jobsDeps(live()))).status, 403);
       const first = (await (await handler.handleJobs(post("jobs/test-fire", { name: "digest", input: { n: 1 } }), ["test-fire"], jobsDeps(buildToken()))).json()) as { token: string; runId: string; tick: number; simulated: boolean };
       assert.deepEqual([first.tick, first.simulated], [1, true]);
@@ -295,6 +295,43 @@ describe("jobs on a database", { skip: canMock ? false : "needs --experimental-t
       assert.deepEqual([proof.fired, proof.done, proof.resumed, proof["brief:schedule:digest"], proof["brief:webhook:log"], proof["brief:result:digests"]], [1, 1, 1, 1, 1, 1]);
       rates.set(`jobs-test-fire:${buildId}`, JOBS_LIMITS.testFiresPerBuild);
       assert.equal((await handler.handleJobs(post("jobs/test-fire", { name: "digest" }), ["test-fire"], jobsDeps(buildToken()))).status, 429);
+    });
+  });
+
+  describe("a whole build's test fires", () => {
+    const fire = (body: unknown) => handler.handleJobs(post("jobs/test-fire", body), ["test-fire"], jobsDeps(buildToken()));
+    // The biggest brief: 3 schedules, each fired twice, and 2 webhooks, each once with its hook address and then its fire.
+    const smokeRun = async () => {
+      const statuses: number[] = [];
+      for (const name of ["one", "two", "three"]) for (let i = 0; i < 2; i++) statuses.push((await fire({ name })).status);
+      for (const name of ["log", "form"]) {
+        statuses.push((await fire({ name, hook: true })).status);
+        statuses.push((await fire({ name })).status);
+      }
+      rates.delete(`jobs-test-fire-minute:${buildId}`);
+      return statuses;
+    };
+
+    it("last through session verifies, platform verifies and all 3 fix rounds, on the biggest brief", async () => {
+      // A first round and 3 fix rounds. Muse Code runs verify itself, say twice a round, and the platform once. The demo fires nothing.
+      for (const round of [0, 1, 2, 3]) {
+        for (const verify of ["session", "session", "platform"]) assert.deepEqual([...new Set(await smokeRun())], [200], `round ${round}, ${verify}`);
+      }
+    });
+
+    it("a hook's address doesn't count as a fire, and has its own limit", async () => {
+      rates.set(`jobs-test-fire:${buildId}`, JOBS_LIMITS.testFiresPerBuild);
+      assert.equal((await fire({ name: "log", hook: true })).status, 200);
+      assert.equal((await fire({ name: "log" })).status, 429);
+      rates.delete(`jobs-test-fire:${buildId}`);
+      rates.set(`jobs-test-hook:${buildId}`, JOBS_LIMITS.testFiresPerBuild);
+      assert.equal((await fire({ name: "log", hook: true })).status, 429);
+      assert.equal((await fire({ name: "log" })).status, 200);
+    });
+
+    it("stop at their per-minute limit", async () => {
+      rates.set(`jobs-test-fire-minute:${buildId}`, JOBS_LIMITS.testFiresPerMinute);
+      assert.equal((await fire({ name: "log" })).status, 429);
     });
   });
 

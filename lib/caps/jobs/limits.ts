@@ -30,7 +30,13 @@ export const JOBS_LIMITS = {
   hookPerMinute: 60,
   hookPerDay: 1_000,
   webhooksPerProduct: 2,
-  testFiresPerBuild: 10,
+  /**
+   * Test fires a build's whole life may ask for, and as many hook addresses, counted apart. Smoke runs repeat: Muse Code runs
+   * verify itself, and the platform verifies once a round, for up to 4 rounds. The biggest brief fires 8 a run. Each run stays
+   * within its dollars and the build token's budget, so this only has to outlast a normal build.
+   */
+  testFiresPerBuild: 100,
+  testFiresPerMinute: 30,
   /** A run's limits besides its dollars, so a loop stops even on a very cheap model. */
   runTurns: 60,
   runToolCalls: 60,

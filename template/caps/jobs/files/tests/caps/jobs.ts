@@ -7,9 +7,10 @@
 //   checkResultShown(page, text)           the result shows on the screen already open. Takes the judge screenshot
 //                                          "12-job-result" and records "result-shown"
 //
-// Nothing runs on a clock in a build. Rows go to the build's test space, and notices and held sends reach no one.
+// Nothing runs on a clock in a build. Rows go to the build's test space, and notices and held sends reach no one. The demo
+// recordings replay this test on what the smoke run saved, so fireJob and fireWebhook fire nothing there.
 import { readFileSync } from "node:fs";
-import { expect, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { judgeShot } from "../judge-shot";
 import { recordCapCheck } from "./index";
 
@@ -66,8 +67,20 @@ async function callRoute(request: APIRequestContext, name: string, token: string
   return { ok: true, status: String(reply.status ?? ""), tick: Number(reply.tick ?? 0) };
 }
 
+/** True in the demo recordings: a replay, whose jobs the smoke run already ran. */
+function inDemo(): boolean {
+  try {
+    return ["demo", "studio"].includes(test.info().project.name);
+  } catch {
+    return false;
+  }
+}
+
+const REPLAYED: FiredJob = { ok: true, status: "done", tick: 0 };
+
 /** Runs one tick of a job: the platform's token, then this product's own route, as the cron does. */
 export async function fireJob(request: APIRequestContext, name: string, input?: unknown): Promise<FiredJob> {
+  if (inDemo()) return REPLAYED;
   let fired: FiredJob | undefined;
   await checked("job-fired", `The job ${name} ran`, undefined, async () => {
     const { token } = await testFire<{ token: string }>({ name, ...(input === undefined ? {} : { input }) });
@@ -78,6 +91,7 @@ export async function fireJob(request: APIRequestContext, name: string, input?: 
 
 /** Posts a sample payload to a test webhook address, then runs the job it queued. */
 export async function fireWebhook(request: APIRequestContext, name: string, payload: unknown): Promise<FiredJob> {
+  if (inDemo()) return REPLAYED;
   let fired: FiredJob | undefined;
   await checked("webhook-run", `A sample payload started the job ${name}`, undefined, async () => {
     const { hook } = await testFire<{ hook: { url: string } }>({ name, hook: true });

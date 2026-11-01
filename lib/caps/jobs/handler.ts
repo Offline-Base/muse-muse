@@ -226,7 +226,10 @@ function testFireRoute(deps: JobsDeps): CapRoute<TestFireArgs> {
       if (body.input !== undefined && Buffer.byteLength(JSON.stringify(body.input)) > JOBS_LIMITS.inputMaxBytes) return capError("invalid_arguments", "A job's input holds at most 64 KB.");
       return { name: body.name, input: body.input ?? null, hook: body.hook === true };
     },
-    limits: (stage) => [dayLimit(`jobs-test-fire:${stage.token.buildId}`, JOBS_LIMITS.testFiresPerBuild, "this build's test jobs")],
+    limits: (stage) => [
+      { key: `jobs-test-fire-minute:${stage.token.buildId}`, limit: JOBS_LIMITS.testFiresPerMinute, window: "minute", who: "this build's test jobs" },
+      dayLimit(`${stage.args.hook ? "jobs-test-hook" : "jobs-test-fire"}:${stage.token.buildId}`, JOBS_LIMITS.testFiresPerBuild, "this build's test jobs"),
+    ],
     async work(ctx) {
       if (ctx.args.hook) {
         if (!deps.webhooksOn()) return capError("cap_not_allowed", "Webhooks are switched off on Muse Muse right now.");
