@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, it, mock } from "node:test";
 import { newBriefSchemaFor, NewBriefSchemaNoGadget } from "@/lib/brief/schema";
 import { strictJsonSchema } from "@/lib/brief/strict-schema";
 import { CAP_FLAG, CAP_IDS, CAP_READY } from "@/lib/caps/ids";
-import { CAP_OVERLAYS_ALL, capOverlaysNeeded } from "@/lib/caps/overlays";
+import { CAP_OVERLAY_PICK, CAP_OVERLAYS_ALL, capOverlaysNeeded } from "@/lib/caps/overlays";
 import { capDropLine, capsForBuild, capsMissingOverlays, readCapDrops, withoutCaps } from "@/lib/caps/ready";
 import { env } from "@/lib/env";
 import { catalogSummary } from "@/lib/prompts/catalog";
@@ -118,14 +118,15 @@ describe("env.enabledCaps with the snapshot", () => {
   });
 
   it("a cap with picks needs every pick, and core", () => {
-    const all = CAP_OVERLAYS_ALL as Record<string, readonly string[]>;
-    all.games = ["games-phaser", "games-babylon"];
-    try {
-      assert.deepEqual(capOverlaysNeeded("games"), ["core", "games-phaser", "games-babylon"]);
-    } finally {
-      delete all.games;
-    }
+    // Games (unit 14) picks its shared overlay and one engine's; a snapshot must have all three.
+    assert.deepEqual(capOverlaysNeeded("games"), ["core", "games", "games-phaser", "games-babylon"]);
     assert.deepEqual(capOverlaysNeeded("data"), ["core", "data"]);
+    const all = CAP_OVERLAYS_ALL as Record<string, readonly string[]>;
+    const picks = new Set([...all.games!]);
+    for (const engine of ["phaser", "babylon"] as const) {
+      const brief = { games: { engine } } as unknown as Parameters<NonNullable<(typeof CAP_OVERLAY_PICK)["games"]>>[0];
+      for (const o of CAP_OVERLAY_PICK.games!(brief)) assert.ok(picks.has(o), o);
+    }
   });
 
   it("the gate's servedCaps and capsOnSite don't depend on the snapshot", () => {

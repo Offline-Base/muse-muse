@@ -21,7 +21,9 @@ export const CAP_OVERLAY_PICK: Partial<Record<CapId, (brief: Brief) => string[]>
  * Every overlay a cap can need, for one that registers a pick above: games needs both games-phaser and games-babylon,
  * since a brief may pick either. A cap without an entry needs the overlay named by its own id.
  */
-export const CAP_OVERLAYS_ALL: Partial<Record<CapId, readonly string[]>> = {};
+export const CAP_OVERLAYS_ALL: Partial<Record<CapId, readonly string[]>> = {
+  games: ["games", ...Object.values(ENGINE_OVERLAY)],
+};
 
 /** What a builder snapshot must have for this cap to be ready: core, then the cap's own overlays. */
 export function capOverlaysNeeded(id: CapId): string[] {
