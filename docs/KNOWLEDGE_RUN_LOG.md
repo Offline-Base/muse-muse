@@ -926,6 +926,24 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   Privacy and Muse Muse General, with the held-out honesty correction. Muse Privacy is adding a false-premise slice to
   its A100 rows (their df15d7a). Muse Muse General corrected its build log (e559003) and leaves the vibe-tuning Hub cards
   (d72f9f3) to this session.
+- 8:45 PM: workflow next-training-plan finished: 3 readers on Meta's TorchTitan SFT and RL cookbooks and the Glimmer
+  docs, a plan, feasibility and method critiques, then a final plan. It is in docs/KNOWLEDGE_NEXT_PLAN.md.
+  - Decision: r30b ships unless a candidate passes every hard gate (H1 to H10) and wins a primary metric.
+  - Tonight's train-1 queue runs by default, within the standing limits:
+    - B2: r30b's recipe, but refusal rows only from never-trained answers, about half as many;
+    - the dose test, from stage 2, 5 epochs at lr 2e-4 over 15,000 already-trained rows;
+    - Stage A+ and B2' only if the dose gains 8 points or more (gate D1).
+  - Cost about $115 to $245, plus writer-2 at about $45. Pick at 2 PM Nov 1.
+  - Findings:
+    - training never showed the cutoff or date lines (the template writes them only without a system message);
+    - tuned-reasoning-off.jinja renders "Reasoning strength: high." unless the caller sends one, while the training rows
+      said low (A1 tests it);
+    - B2's flags must account for mix_reasoning's rescale.
+  - The plan was written before the 190 audit, so the false-premise weakness isn't targeted tonight; it's for after Nov 4.
+  Started workflows b2-data (wf_5d0005b5-772: trained-answer labels, assembly flags, contamination screen, the B2 set,
+  review) and tonight-tests-and-dose (wf_4efc7d60-993: the measure_known and compare_stage_b gates, the test wave with A1
+  and A2, the train_glimmer options, the dose set, dose_gate and queue_b2.sh, reviews). Muse Privacy's final rows on r30b
+  IQ1_S are queued on gpu.lock, one config per lock session.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
