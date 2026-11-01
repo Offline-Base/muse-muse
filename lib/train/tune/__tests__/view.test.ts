@@ -165,6 +165,14 @@ describe("a run's stage", () => {
     const v = view(ready(), job({ ...done, evalSummary: summary }), evalEvents(20));
     assert.equal(v.stage, "ready");
     assert.deepEqual(v.verdict, { passed: true, words: "Tuned won 18 of 20 kept-aside prompts (8.4 vs 3.1).", scored: true });
+    const failed = { ...summary, avgTunedScore: 4 };
+    assert.match(view(ready(), job({ ...done, evalSummary: failed }), evalEvents(20)).verdict!.words, /better than base, so it didn't pass/, "a job from before the switch");
+    const r30b = job({
+      ...done,
+      evalSummary: failed,
+      params: { datasetId: DS, maxSteps: 120, learningRate: 0.0002, loraRank: 16, dryRun: 0, baseModel: "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit" },
+    });
+    assert.match(view(ready(), r30b, evalEvents(20)).verdict!.words, /better than the 2026 Glimmer it started from, so it didn't pass/);
     assert.equal(v.evals.length, 20);
     assert.equal(v.costSoFarUsd, 4.2 + 1.5 + 0.25);
     assert.equal(TUNE_ART[v.stage], "shield");

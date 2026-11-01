@@ -225,6 +225,11 @@ describe("the signed plan", () => {
 });
 
 describe("drafting", () => {
+  it("tells the planner the run starts from the 2026 Glimmer", () => {
+    assert.match(plan.planInstructions(), /Muse Glimmer 30B with 2026 knowledge trains on them/);
+    assert.match(plan.planInstructions(), /scored against the 2026 Glimmer it started from/);
+  });
+
   type Call = { model: string; instructions: string; text: string; schemaName: string };
   function fake(data: Record<string, unknown>, calls: Call[]): DraftDeps {
     return {
