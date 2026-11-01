@@ -46,7 +46,7 @@ Two more parts sit on top:
 |---|---|
 | **Muse Wonder 1.0** | The default for every platform role. Reads every reference (images, video, PDFs) and writes the brief with strict JSON-schema output, or refuses, and checks each refinement request against the same policy. Muse Code's model for every build and its fix rounds. Judges each build's screenshots. The default model inside products, for their own text and vision calls. For new fine-tuning runs, writes the dataset, judges base against tuned Glimmer, and writes the "Why this exists" story on each Hugging Face card. |
 | **Muse Spark 1.3** | Not used since Oct 29, and the brief writer no longer offers it. Before that it was the default for briefs, builds, judging and products. It wrote the lab's dataset (400 examples for $1.51) and judged both runs. |
-| **Muse Spark 1.3 Contributor** | Runs wherever Spark 1.3 is still forced. A refinement of a product built on Spark 1.3 resumes Muse Code on it, and the gateway serves any live product that still asks for `muse-spark-1.3` with it, metered at its price ($0.10 in and $0.20 out per million tokens). Meta may train on contributor prompts. |
+| **Muse Spark 1.3 Contributor** | Runs wherever Spark 1.3 is still forced. A refinement of a product built on Spark 1.3 resumes Muse Code on it, and the gateway serves any live product that still asks for `muse-spark-1.3` with it, metered at its price ($0.10 in and $0.20 out per million tokens). It is also the test model: nearly all of the Nov 1 test builds ran on it, with made-up data. A flag, `BUILDS_ON_CONTRIBUTOR`, can run every build on it; check its production value before submitting, because this table says Muse Wonder builds. Meta may train on contributor prompts. |
 | **Muse Image 1.0** | Inside products, for generating and editing images. It also made the three example photos on the Make page. |
 | **SAM 3.1** | Inside products, to find, outline and count things in photos and video, such as the first SAM 3.1 demo. Results are parsed with Meta's `@meta-sam/parser`. |
 | **Muse Voice Transcribe 1.0** | Turns a voice-memo muse into text before the brief. Inside products, after the browser converts audio to 16 kHz mono WAV, the only format the API accepts. |
@@ -104,11 +104,48 @@ Two more parts sit on top:
 - The fix and a "short prompt" distillation setup are deployed. Eval prompts now continue on the final channel, as training does. Both models train and answer under a one-line role prompt instead of the teacher's full task prompt, so the score measures what training taught.
 - Second run, with the fix and the short prompt: A100 40 GB, 120 steps, final loss 0.52, 42 minutes, $1.39 on the GPU plus $0.15 for judging. **Tuned Glimmer won all 40 held-out prompts**, average score 8.88 against 1.95 for base. Under the one-line role prompt, base Glimmer answers like a general assistant ("I can't see any photo attached, could you upload it again?"); the tuned model writes a full Muse Muse brief with the right models, honest limits and a cost per run.
 
+### Results from the Nov 1 test runs
+
+Full table with ids and costs: [PROVE_RESULTS.md](PROVE_RESULTS.md). Nearly all of these ran on a low-cost test model (Muse Spark 1.3 Contributor) with made-up data, and Previews don't publish, so these products have no live link.
+
+**What passed, on the test model**
+
+- 11 recipes across 8 builds went live, with smoke tests and the judge passing: verified agent, case agent, API, agent patterns, code sessions, visual reports, image, voice, SAM media, games and simulated loops. Most hand tests were shallow. Clip Scribe's transcription and Lantern Run's game were not finished by hand.
+- A product with saved data kept its rows after a reload, seen from a second browser by the platform's own checks.
+- Real Muse Code tasks ran inside a built product, confirmed at the gateway.
+- Keep editing, restore, source download and the Code page. A restored version was byte-identical to the original in all 79 files.
+- VR on an emulated Quest, glasses on a fake bridge, an extension loaded in real Chromium, a gadget on a simulated board, an agent with real web search, and Android, Mac and Windows packages from an admin route.
+
+**Device lab, run directly on the boxes**
+
+- A live product opened on Mac, Windows, an Android emulator and an iPhone simulator.
+- On a real Samsung Galaxy S25 through Device Farm, it loaded in 1.3 seconds.
+- Mock glasses connected on iOS 18.4, on a test page. They still fail on iOS 26.5, and the cause isn't known.
+
+**Fine-tuning, run directly on rented GPUs through a test harness**
+
+- Muse Glimmer 30B: tuned won 40 of 40 kept-aside prompts, 7.93 against 2.5, for about $1.86 of GPU. A short run on an invented subject, which is an easy test.
+- Llama 3.2 3B: tuned 6.67 against base 2.55, won 95 of 100. A two-round tuning loop on top of it ran but did not improve the score (6.67, 6.67, 6.54).
+- A short reinforcement learning run: tuned 40 of 40, base 27 of 40, on easy arithmetic. It also exposed a scoring bug, now fixed, that had reported 16 of 40 for the same adapter.
+- A tuned Llama model became a 2 GB GGUF that answered at 168.8 tokens a second on the GPU.
+
+**What did not work**
+
+- A long build on Muse Wonder ran 64 minutes and $16.55 and did not finish. Its first five milestones failed, each round cut at 5 to 8 minutes, and no subagents started.
+- The case agent never stopped to ask a person for evidence in a live run, and Larkfield's stop-and-ask was not seen.
+- Sandbox previews don't respond in a browser without a config line that isn't in the template yet.
+
+**Found and fixed along the way**
+
+- Vercel's sandbox API refuses IPv6 ranges, so Muse Code sessions could not start on Vercel at all. Only real builds showed this.
+
 ### What's next
 
 - Serve a tuned Glimmer adapter as a product backend through `GLIMMER_URL`, so a product can run on an open model the lab trained.
 - Spoken replies and realtime voice once the Model API has text-to-speech and speech-to-speech. Products use browser speech synthesis until then.
 - More lab tasks, each judged the same way against its own held-out prompts.
+- Chained builds and platform powers, so one product can span many sessions and products can start their own. Both are built behind flags, tested with fakes only, and have never run for real.
+- A time cap that lets big milestone builds finish on Muse Wonder.
 - Check whether Muse app connectors work inside scheduled jobs.
 - A name of its own. Muse is Meta's brand, so Muse Muse is a hackathon codename.
 
@@ -118,13 +155,16 @@ Before kickoff there was only a scaffold, committed exactly as received in `e3ba
 
 ## 2. Video script
 
-Target length 2:50. Shot 7 is the first cut if it runs long, which brings it to 2:35. The narration is about 410 words, which is about 150 words a minute, a normal reading pace.
+Target length 2:50. Shot 7 is the first cut if it runs long, which brings it to 2:35. The narration is about 440 words, which needs about 155 words a minute, slightly brisk. Cutting shot 7 brings it to about 400.
 
 ### Before you record
 
 - The public Blob store is connected and the live site can build.
 - `npm run rebuild-all` has run against the live site, so Rebuilds and Gallery are full of published products with recorded demos.
 - The second fine-tuning run is judged (tuned won 40 of 40), and its placeholders are filled in.
+- Decide which model the live site builds on (`BUILDS_ON_CONTRIBUTOR`). Shots 2 to 4 say Muse Wonder. If the flag is on, change those lines to match what is on screen.
+- The Nov 1 fine-tuning run was through a test harness, so it is not on the public page. Show its numbers as a labeled title card.
+- Download the recipe demo clips linked in [PROVE_RESULTS.md](PROVE_RESULTS.md) for shot 7. Their Previews are behind a sign-in, so don't film those pages. Label every clip "Test model."
 - Take dated screenshots of OpenRouter's rankings and Meta's Videos page on the day you record. The numbers move.
 - Record one real build from the Make page to the end. Speed it up in editing and label it "Sped up. Real build."
 - Browser at 1280×720 or 1440×900, light theme, 100% zoom, a clean profile with no other tabs or bookmarks. Stay signed out, so the site shows what judges see: "Guest, Builder, sign-in off."
@@ -140,7 +180,7 @@ Target length 2:50. Shot 7 is the first cut if it runs long, which brings it to 
 | 4 | 0:44-0:59 | Build room: checks and fix rounds |
 | 5 | 0:59-1:16 | Product page and its recorded demo |
 | 6 | 1:16-1:35 | Rebuilds |
-| 7 | 1:35-1:50 | Gallery (cut first) |
+| 7 | 1:35-1:50 | What it can build (cut first) |
 | 8 | 1:50-2:05 | Dashboard and the connector |
 | 9 | 2:05-2:20 | Usage |
 | 10 | 2:20-2:42 | Fine-tuning lab |
@@ -178,10 +218,10 @@ Target length 2:50. Shot 7 is the first cut if it runs long, which brings it to 
 - On screen: click **Rebuilds** in the sidebar. Hold on the header with the "N of 6 rebuilt for $Y" total. Scroll the cards: Meta's original video link, the fit pill (Clean, Reframe or Partial), the rebuilt product, its demo, build time and cost. Scroll to "Demos Meta doesn't have yet." Click one card's original video link, then its rebuilt product.
 - Say: "We pointed it at Meta's own demo videos and rebuilt them on current Muse models, plus first demos for SAM 3.1, Muse Image, Voice Transcribe and Muse Wonder. In our test batch, 24 of 24 builds went live, in 3 to 9 minutes, for about 30 cents to $1.80 each."
 
-**7. Gallery (1:35-1:50, cut first)**
+**7. What it can build (1:35-1:50, cut first)**
 
-- On screen: click **Gallery**. Scroll the grid slowly. Point at two cards' model chips and their "Built in ... · $..." line. Click one to show its demo poster.
-- Say: "Every product shares Meta's look, from a design skill we researched and built. Three judges compared 11 products built from the same muses, blind, old template against new. The Meta look won 30 of 33 votes."
+- On screen: quick cuts of the recorded demos: Harbor Report Studio, Mill Floor Sim, Lantern Run, Brief Desk. Corner label on each: "Test model." Then the VR shot at Score 3 of 3, labeled "Emulated Quest," and the phone on Device Farm, labeled "Galaxy S25."
+- Say: "It also builds more than web pages. In our Nov 1 tests on a low-cost model, eleven recipes went live, from report studios to a 3D maze. VR passed on an emulated headset, and a product opened on a real Galaxy phone."
 
 **8. Dashboard and the connector (1:50-2:05)**
 
@@ -195,8 +235,8 @@ Target length 2:50. Shot 7 is the first cut if it runs long, which brings it to 
 
 **10. Fine-tuning lab (2:20-2:42)**
 
-- On screen: click **Fine-tuning**. Show the three steps: Write, Train, Judge. Show the Results table with both runs. Click the second run: the summary strip, then scroll the side-by-side items (prompt, Spark's reference, base answer, tuned answer, verdict).
-- Say: "And Spark teaches Glimmer. Muse Spark 1.3 wrote 400 training examples for a dollar fifty-one. Muse Glimmer 30B learned them on a Lambda GPU, and Spark judged base against tuned, blind. Our first run lost 28 to 11, and that exposed an eval bug." Then one line on the second run: "After the fix, tuned Glimmer won all 40, scoring 8.9 out of 10 against 2. A 30 billion parameter open model learned to write our briefs, for under two dollars of GPU time." If the run is on Hugging Face by recording day, show its model card's "Why this exists" for two seconds: "And every judged run publishes itself to Hugging Face, with its data and the story of why it was made."
+- On screen: click **Fine-tuning**. Show the three steps: Write, Train, Judge. Show the Results table with both runs. Click the second run: the summary strip, then scroll the side-by-side items (prompt, Spark's reference, base answer, tuned answer, verdict). End on a title card: "Nov 1, short run, invented subject: tuned 7.93, base 2.5, 40 of 40."
+- Say: "And Spark teaches Glimmer. The hosted model writes the training set, Muse Glimmer 30B learns it on a rented GPU, and the hosted model judges blind. Our first run lost 28 to 11, which exposed an eval bug. After the fix, tuned won all 40, 8.9 against 2. A Nov 1 run on a made-up subject also won 40 of 40."
 
 **11. Close (2:42-2:50)**
 
@@ -205,7 +245,7 @@ Target length 2:50. Shot 7 is the first cut if it runs long, which brings it to 
 
 ## 3. Submission checklist
 
-From [BUILD_PLAN.md](BUILD_PLAN.md#submission-checklist), updated Oct 27.
+From [BUILD_PLAN.md](BUILD_PLAN.md#submission-checklist), updated Nov 1.
 
 ### Done
 
@@ -214,7 +254,8 @@ From [BUILD_PLAN.md](BUILD_PLAN.md#submission-checklist), updated Oct 27.
 - [x] **Repo docs.** The README has what it does, an architecture diagram, setup, and the note on what existed before kickoff (its Status section).
 - [x] **Every Meta model and tool used, and where.** See "How it uses Meta's models" above.
 - [x] **Fine-tuning lab** with public, read-only results at `/fine-tuning`.
-- [x] **Video script.** Section 2 above.
+- [x] **Video script.** Section 2 above, updated Nov 1 from real results.
+- [x] **Test results.** [PROVE_RESULTS.md](PROVE_RESULTS.md) lists every Nov 1 item with its state, evidence and cost.
 - [x] **Rules answers** on pre-kickoff code, credits and Meta's brand (Oct 27, in BUILD_PLAN.md).
 - [x] **A public Blob store on the live site.** "muse-blob" is connected through OIDC (`BLOB_STORE_ID`, no read-write token). The server signs in with the request's OIDC token and browsers upload through presigned URLs. `npm run rebuild-all` then ran against the live site on Oct 28: 9 of 10 catalog rebuilds went live, including all 6 of Meta's videos, for $24.70 in total. The Muse Wonder first demo failed its smoke test in all 3 fix rounds.
 - [x] **Try tuned Glimmer live.** A time-boxed GPU demo answers visitors' app ideas with base and tuned Muse Glimmer side by side on the run's public page. Tested in production on Oct 28: about 90 seconds per answer pair, about $1.50 for a 30-minute window.
@@ -225,7 +266,10 @@ From [BUILD_PLAN.md](BUILD_PLAN.md#submission-checklist), updated Oct 27.
 
 ### Left
 
-- [ ] **A GitHub repo, if the rules need one.** The repo is local with no remote. Push `main` with its full history, so the scaffold commit `e3ba154` stays visible.
+- [ ] **Make the repo public, if the rules need it.** It is on GitHub and private. Only an owner can change that. Check that the scaffold commit `e3ba154` is still visible first.
+- [ ] **Merge the open PRs** (#24 to #27). #24, #25 and #26 have conflicts. Until #26 lands, Muse Code sessions can't start on Vercel from main.
+- [ ] **Answer the open plan items:** track, company and team, and Silly Doodle Pages.
+- [ ] **Replace the rented GPU addresses** still in 5 finished knowledge scripts, if you want them gone before the repo goes public.
 - [ ] **Record the video** from section 2, including the dated OpenRouter and Meta Videos page screenshots for the opening.
 - [ ] **Hugging Face:** set `HF_TOKEN` and `HF_NAMESPACE` on Vercel, then publish run 2 with a `glimmer-publish` job and check both repos and cards on the Hub.
 - [ ] **Rebuild the catalog on the live site** with the new snapshot, so Rebuilds and Gallery show the Meta look and Demo Studio videos.
