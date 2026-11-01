@@ -269,12 +269,13 @@ function aborted(signal: AbortSignal): Promise<never> {
 export async function handleDecide(req: Request, deps: DecideDeps): Promise<Response> {
   const token = await authorize(req, deps);
   if (token instanceof Response) return token;
+  // Every authorized call counts, refused ones too, before the body is read or a model is looked up.
+  const limited = await rateLimited(req, token, deps);
+  if (limited) return limited;
   const call = await readCall(req, deps);
   if (call instanceof Response) return call;
   const rendered = serveRenderings({ state: call.state, question: call.question, labels: call.labels, none: call.none });
   if (!rendered.ok) return bad("invalid_task", rendered.error);
-  const limited = await rateLimited(req, token, deps);
-  if (limited) return limited;
 
   if (token.scope === "build") {
     meter(token, deps);

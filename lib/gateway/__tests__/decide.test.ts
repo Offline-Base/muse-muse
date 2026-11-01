@@ -317,6 +317,17 @@ describe("{GATEWAY_URL}/decide", () => {
     assert.deepEqual(ok.rateKeys, [["decide:token:tok-live", "decide:ip:prod-1:203.0.113.9"]]);
     assert.deepEqual([DECIDE_LIMITS.perTokenPerMinute, DECIDE_LIMITS.perIpPerMinute], [60, 20]);
   });
+
+  it("counts refused calls too, and looks up no model once a token is over its minute", async () => {
+    const looked: string[] = [];
+    const refused = fake({ findModel: async (id) => void looked.push(id) ?? null });
+    assert.equal((await handleDecide(post(LIVE, { state: STATE, model: "no-such-model" }), refused.deps)).status, 404);
+    assert.equal((await handleDecide(post(LIVE, "not json"), refused.deps)).status, 400);
+    assert.equal(refused.rateKeys.length, 2, "both refused calls counted");
+    const over = fake({ counts: { "decide:token:tok-live": DECIDE_LIMITS.perTokenPerMinute + 1 }, findModel: async (id) => void looked.push(id) ?? null });
+    assert.equal((await handleDecide(post(LIVE, { state: STATE, model: "no-such-model" }), over.deps)).status, 429);
+    assert.deepEqual(looked, ["no-such-model"], "the over-limit call never reached findModel");
+  });
 });
 
 describe("the lab's serving windows as a DecideBackend (lib/train/decide-window.ts)", () => {
