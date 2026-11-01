@@ -3,9 +3,11 @@ import { notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
 import { limitCeilings } from "@/app/api/train/shared";
 import { TrainRoom } from "@/components/train/room/TrainRoom";
+import { TuneLoopCard } from "@/components/train/TuneLoop";
 import { NotConnected } from "@/components/ui";
 import { env } from "@/lib/env";
 import { safeQuery } from "@/lib/queries";
+import { loopsOfRun } from "@/lib/train/tune/loop-store";
 import { loadTuneRun } from "@/lib/train/tune/store";
 import { runLiveDemo } from "../live";
 import { pageViewer } from "../../viewer";
@@ -26,7 +28,9 @@ export default async function TuneRunPage({ params }: { params: Promise<{ id: st
   const now = new Date();
   const result = await safeQuery(async () => {
     const run = await loadTuneRun(id, now, limitCeilings());
-    return run ? { run, liveDemo: await runLiveDemo(run.job, now) } : null;
+    if (!run) return null;
+    const loops = env.tuneLoop && run.verdict?.scored ? await loopsOfRun(run.id) : null;
+    return { run, liveDemo: await runLiveDemo(run.job, now), loops };
   });
   if (!result.ok) {
     return (
@@ -36,13 +40,17 @@ export default async function TuneRunPage({ params }: { params: Promise<{ id: st
     );
   }
   if (!result.data) notFound();
+  const { loops } = result.data;
   return (
-    <TrainRoom
-      initial={result.data.run}
-      admin
-      liveDemo={result.data.liveDemo}
-      hub={{ offReason: env.hubOffReason, maxActive: env.trainMaxActive, dailyUsd: env.trainDailyUsd }}
-      serverNow={now.getTime()}
-    />
+    <>
+      <TrainRoom
+        initial={result.data.run}
+        admin
+        liveDemo={result.data.liveDemo}
+        hub={{ offReason: env.hubOffReason, maxActive: env.trainMaxActive, dailyUsd: env.trainDailyUsd }}
+        serverNow={now.getTime()}
+      />
+      {loops ? <TuneLoopCard datasetId={result.data.run.id} loops={loops.map((l) => ({ id: l.id, running: !l.ended, startedAt: l.spec.startedAt }))} /> : null}
+    </>
   );
 }

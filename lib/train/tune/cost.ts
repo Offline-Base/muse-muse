@@ -42,6 +42,11 @@ export function planCost(s: TuneSettings): TrainPlanCost {
   };
 }
 
+/** The high estimate for judging `items` kept-aside prompts, for the tuning loop's reserve. */
+export function scoreHighUsd(items: number): number {
+  return Math.ceil(tokenCost(PRICED_MODEL, SCORE_PER_ITEM.high) * Math.max(0, items) * 100) / 100;
+}
+
 /** The most a run is expected to cost: the high estimates plus the GPU's limit. */
 export function planMaxUsd(c: TrainPlanCost): number {
   return Math.round((c.metaHighUsd + c.gpuMaxUsd + c.scoreHighUsd) * 100) / 100;

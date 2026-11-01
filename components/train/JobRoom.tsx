@@ -9,8 +9,11 @@ import { EvalResults } from "@/components/train/EvalResults";
 import { EventLog } from "@/components/train/EventLog";
 import { HubCard } from "@/components/train/HubCard";
 import { JobPanel } from "@/components/train/JobPanel";
+import { RlResults } from "@/components/train/RlResults";
+import { isRlCardMetric, isRlJob, rlResults } from "@/lib/train/rl";
 import { AdapterLiveDemo, type JobLiveDemo } from "@/components/train/LiveDemo";
 import { MakeLocalFiles, QuantFilesCard } from "@/components/train/LocalFiles";
+import { SimTuneCard } from "@/components/train/SimTune";
 import { SparkOpenNote } from "@/components/train/SparkOpenNote";
 import {
   decisionState,
@@ -365,6 +368,7 @@ export function JobRoom(props: JobRoomProps) {
           {props.hub && job.recipe === "glimmer-lora" && job.status === "succeeded" && !decide ? (
             <MakeLocalFiles jobId={jobId} maxActive={props.hub.maxActive} dailyUsd={props.hub.dailyUsd} />
           ) : null}
+          {props.hub && job.recipe === "glimmer-lora" && job.status === "succeeded" && !decide ? <SimTuneCard jobId={jobId} /> : null}
           {job.recipe === "glimmer-quantize" ? <QuantFilesCard job={job} events={events} /> : null}
           {decision ? (
             <DecisionStatus
@@ -374,6 +378,8 @@ export function JobRoom(props: JobRoomProps) {
               wrong={props.decision?.wrong ?? null}
               sparkOpen={sparkOpen}
             />
+          ) : isRlJob(job) ? (
+            <RlResults results={rlResults(events)} running={!terminal} />
           ) : (
             <EvalResults
               state={evals}
@@ -421,7 +427,7 @@ function JobResult({
   ].join(" · ");
 
   if (job.status === "succeeded") {
-    const metrics = doneMetrics(events);
+    const metrics = isRlJob(job) ? doneMetrics(events).filter(([k]) => !isRlCardMetric(k)) : doneMetrics(events);
     return (
       <section className="turn turn-ok" aria-labelledby="train-result">
         <h2 className="turn-head" id="train-result">

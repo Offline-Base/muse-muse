@@ -8,13 +8,11 @@
  */
 import { scoreText } from "@/components/train/format";
 import type { DecisionSummary } from "@/lib/decide/types";
+import { chatPasses, VERDICT_MIN_ITEMS } from "@/lib/train/tune/verdict-rule";
 import type { TuneVerdict } from "@/lib/train/tune/types";
 import type { EvalSummary } from "@/lib/train/types";
 
-/** Judged items a verdict needs. Fewer can't tell training apart from luck. */
-export const VERDICT_MIN_ITEMS = 8;
-/** Points tuned's average score must beat base's by (scores are 1 to 10). */
-export const VERDICT_SCORE_MARGIN = 1;
+export { VERDICT_MIN_ITEMS, VERDICT_SCORE_MARGIN } from "@/lib/train/tune/verdict-rule";
 
 /** z for a two-sided 95% interval. */
 const Z95 = 1.96;
@@ -59,8 +57,7 @@ export function evalVerdict(s: EvalSummary | DecisionSummary, sparkOpen = false)
   const scores = `(${scoreText(s.avgTunedScore)} vs ${scoreText(s.avgBaseScore)})`;
   const words = `Tuned won ${s.tunedWins} of ${items} kept-aside prompts ${scores}.`;
   if (items < VERDICT_MIN_ITEMS) return { passed: false, words: `${words} That's too few to tell, so it didn't pass.` };
-  const passed =
-    s.tunedWins > s.baseWins && s.tunedWins >= items / 2 && s.avgTunedScore >= s.avgBaseScore + VERDICT_SCORE_MARGIN;
+  const passed = chatPasses(s);
   const than = sparkOpen ? "the 2026 Glimmer it started from" : "base";
   return { passed, words: passed ? words : `${words} That isn't clearly better than ${than}, so it didn't pass.` };
 }

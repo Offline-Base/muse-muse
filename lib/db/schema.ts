@@ -270,7 +270,7 @@ export const usage = pgTable(
     // Wave 3, unit 9: "exec" and "browse" are the code cap's sandboxes. A type change only, no migration.
     // Wave 3, unit 9: "code_session" is a Muse Code session's sandbox time (0027). A type change only.
     // Wave 3, unit 11: "glimmer" is the shared Glimmer endpoint (0025). A type change only.
-    source: text("source").$type<"gateway" | "muse_code" | "platform" | "docs" | "tools" | "fetch" | "vault" | "sends" | "exec" | "browse" | "code_session" | "glimmer">().notNull(),
+    source: text("source").$type<"gateway" | "muse_code" | "platform" | "docs" | "tools" | "fetch" | "vault" | "sends" | "exec" | "browse" | "code_session" | "glimmer" | "hosted">().notNull(),
     productId: uuid("product_id").references(() => products.id),
     buildId: uuid("build_id").references(() => builds.id),
     tokenId: uuid("token_id").references(() => gatewayTokens.id),
@@ -1368,4 +1368,42 @@ export const productBoards = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("product_boards_board_idx").on(t.boardId)],
+);
+
+// ---------- 0030_host_tuned: a tuned model on a provider the platform pays for (lib/train/host) ----------
+
+export const hostedEndpoints = pgTable(
+  "hosted_endpoints",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    adapterJobId: uuid("adapter_job_id")
+      .notNull()
+      .references(() => trainingJobs.id),
+    provider: text("provider").$type<"fireworks" | "modal" | "baseten" | "lambda">().notNull(),
+    status: text("status").$type<"starting" | "live" | "stopping" | "stopped" | "failed">().notNull().default("starting"),
+    /** 1 to HOST_TUNED_MAX_LIVE. The partial unique index is what holds the limit under a race. */
+    slot: integer("slot").notNull(),
+    /** The provider resource's name, set before any provider is called, so a crash can still be stopped. */
+    name: text("name").notNull(),
+    /** What finds it again at the provider, which may include its address. Platform only: no key, and never sent to a browser. */
+    ref: jsonb("ref").$type<Record<string, string>>(),
+    hourlyUsd: real("hourly_usd").notNull(),
+    reservedUsd: real("reserved_usd").notNull(),
+    costUsd: real("cost_usd"),
+    reservationId: uuid("reservation_id"),
+    ownerTokenHash: text("owner_token_hash").notNull(),
+    createdBy: uuid("created_by").references(() => users.id),
+    stopReason: text("stop_reason").$type<"person" | "idle" | "max_time" | "start_timeout" | "daily_cap" | "too_many" | "flag_off" | "cant_check" | "provider_failed" | "deploy_failed">(),
+    stopsAt: timestamp("stops_at", { withTimezone: true }).notNull(),
+    readyAt: timestamp("ready_at", { withTimezone: true }),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    stoppedAt: timestamp("stopped_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("hosted_endpoints_one_per_model").on(t.adapterJobId).where(sql`${t.status} in ('starting', 'live', 'stopping')`),
+    uniqueIndex("hosted_endpoints_one_per_slot").on(t.slot).where(sql`${t.status} in ('starting', 'live', 'stopping')`),
+    index("hosted_endpoints_created_idx").on(t.createdAt),
+    index("hosted_endpoints_owner_token_idx").on(t.ownerTokenHash),
+  ],
 );

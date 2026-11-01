@@ -12,12 +12,14 @@ import {
   SERVE_MINUTES_PARAM,
   SERVE_RECIPE,
 } from "@/lib/train/logic";
+import { env } from "@/lib/env";
 import { GLIMMER_PY } from "@/lib/train/recipes/glimmer";
 import { PUBLISH_PY } from "@/lib/train/recipes/publish";
 import { QUANT_PY } from "@/lib/train/recipes/quantize";
+import { RL_PY } from "@/lib/train/recipes/rl";
 import { SERVE_MAX_NEW_TOKENS, SERVE_PY } from "@/lib/train/recipes/serve";
 import { SMOKE_PY } from "@/lib/train/recipes/smoke";
-import type { Recipe } from "@/lib/train/types";
+import { RL_RECIPE, type Recipe } from "@/lib/train/types";
 
 /** GPUs that run Muse Glimmer 30B in 4-bit with Unsloth, in order of preference. */
 const GLIMMER_GPUS: Recipe["gpus"] = [
@@ -262,8 +264,38 @@ export const RECIPES: Recipe[] = [
   },
 ];
 
+/**
+ * GRPO on made-up arithmetic (TUNE_RL). Kept out of RECIPES, so with the flag off every list is as it was. recipeById
+ * still finds it, so a job started while the flag was on keeps its page; launchJobRequest refuses a new one.
+ */
+export const RL_GRPO_RECIPE: Recipe = {
+  id: RL_RECIPE,
+  title: "Reinforcement learning (GRPO)",
+  description:
+    "Trains a LoRA of the 2026 Glimmer with TRL's GRPO on made-up arithmetic problems, with a reward checked by code, not by a model. Shows mean reward over time and how many of 40 held-out problems the model gets right before and after. Never published to Hugging Face. This recipe has never run on a real GPU, so its time and cost limits are guesses.",
+  gpus: GLIMMER_GPUS,
+  defaultMaxMinutes: 90,
+  defaultMaxUsd: 8,
+  usesCache: true,
+  params: [
+    { key: "maxSteps", label: "Training steps", kind: "number", default: 200, min: 10, max: 1000, whole: true, help: "Optimizer steps of 2 problems each." },
+    { key: "numGenerations", label: "Answers per problem", kind: "number", default: 8, min: 2, max: 16, whole: true, help: "How many answers GRPO samples and compares for each problem. More uses more GPU memory." },
+    { key: "learningRate", label: "Learning rate", kind: "number", default: 0.00005, min: 0.000001, max: 0.001, help: "A starting guess, not a measured value." },
+    { key: "loraRank", label: "LoRA rank", kind: "number", default: 16, min: 4, max: 128, whole: true, help: "lora_alpha is set to the same value." },
+    { key: "seed", label: "Seed", kind: "number", default: 3407, min: 0, max: 1000000, whole: true, help: "Picks the made-up problems and the training's randomness." },
+    { key: "dryRun", label: "Dry run", kind: "number", default: 0, min: 0, max: 1, whole: true, help: "1 loads no model and reports made-up numbers, labeled as such: a check of the callbacks and this page." },
+  ],
+  script: RL_PY,
+};
+
+/** The recipes people may start right now. */
+export function offeredRecipes(): Recipe[] {
+  return env.tuneRl ? [...RECIPES, RL_GRPO_RECIPE] : RECIPES;
+}
+
 /** The recipe with this id, or null when there is none. */
 export function recipeById(id: string | null | undefined): Recipe | null {
   if (!id) return null;
+  if (id === RL_RECIPE) return RL_GRPO_RECIPE;
   return RECIPES.find((r) => r.id === id) ?? null;
 }

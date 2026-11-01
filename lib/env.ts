@@ -357,6 +357,21 @@ export const env = {
   get quantEnabled(): boolean {
     return ["1", "true", "yes", "on"].includes((process.env.QUANT_ENABLED ?? "").trim().toLowerCase());
   },
+  /**
+   * SIM_TUNE: admins can run a tuned model's smallest GGUF on the lab's Android emulator (docs/TRAINING.md "Emulator
+   * runs"). Also needs NATIVE_LAB. Off when unset.
+   */
+  get simTune(): boolean {
+    return flag("SIM_TUNE");
+  },
+  /**
+   * SIM_TUNE_MAX_GGUF_MB: the largest file an emulator run may load. The default fits the 4 GB of RAM setup/mac.sh gives
+   * mm_pixel. Raise it only after giving the emulator more. The runner still checks the device's real RAM and disk.
+   */
+  get simTuneMaxBytes(): number {
+    const mb = Number((process.env.SIM_TUNE_MAX_GGUF_MB ?? "").trim());
+    return (Number.isFinite(mb) && mb > 0 ? mb : 3072) * 1024 * 1024;
+  },
   /** HF_ENDPOINT, https://huggingface.co by default, with no trailing slash. Tests point it at a fake Hub. */
   get hfEndpoint(): string {
     return (process.env.HF_ENDPOINT?.trim() || "https://huggingface.co").replace(/\/+$/, "");
@@ -389,6 +404,13 @@ export const env = {
    */
   get tuneComposer(): boolean {
     return flag("TUNE_COMPOSER");
+  },
+  /**
+   * TUNE_LOOP: "1", "true", "yes" or "on" lets admins run a repeat-until-good tuning loop on a judged run
+   * (docs/TRAINING.md "Tuning loop"). Off by default: its routes and page answer 404 and the run room shows nothing new.
+   */
+  get tuneLoop(): boolean {
+    return flag("TUNE_LOOP");
   },
   /**
    * TUNE_RESEARCH: "1", "true", "yes" or "on" lets admins research data for a fine-tune (lib/train/research). Off by
@@ -441,6 +463,14 @@ export const env = {
    */
   get tuneAnyBase(): boolean {
     return flag("TUNE_ANY_BASE");
+  },
+
+  /**
+   * TUNE_RL: admins may start the rl-grpo recipe, GRPO on made-up arithmetic (docs/TRAINING.md "rl-grpo recipe"). Off: the
+   * recipe isn't offered and a request for it is refused.
+   */
+  get tuneRl(): boolean {
+    return flag("TUNE_RL");
   },
 
   // ---------- Anyone can fine-tune (General; lib/train/public, open-train.md) ----------
@@ -1250,6 +1280,33 @@ export const env = {
    */
   get gpuTrainOnData(): boolean {
     return flag("GPU_TRAIN_ON_DATA");
+  },
+
+  // ---------- Hosting a tuned model on a provider the platform pays for (lib/train/host) ----------
+
+  /** HOST_TUNED: the Run it section on a tuned model's page and its routes. Off: they answer 404, and the sweep only stops what still runs. */
+  get hostTuned(): boolean {
+    return flag("HOST_TUNED");
+  },
+  /** HOST_TUNED_OPEN: signed-in people may deploy too. Off, only admins. The shared guest account never may. */
+  get hostTunedOpen(): boolean {
+    return flag("HOST_TUNED_OPEN");
+  },
+  /** HOST_TUNED_DAILY_USD: the most hosted endpoints may cost per UTC day across every provider, 25 by default. 0 stops them all. */
+  get hostTunedDailyUsd(): number {
+    return dollars("HOST_TUNED_DAILY_USD", 25);
+  },
+  /** HOST_TUNED_MAX_LIVE: endpoints running at once, 2 by default. 0 stops them all. */
+  get hostTunedMaxLive(): number {
+    return wholeCount("HOST_TUNED_MAX_LIVE", 2);
+  },
+  /** HOST_TUNED_IDLE_MINUTES: an endpoint nobody has used for this long stops, 15 by default. */
+  get hostTunedIdleMinutes(): number {
+    return number("HOST_TUNED_IDLE_MINUTES", 15);
+  },
+  /** HOST_TUNED_MAX_MINUTES: the longest any endpoint runs, used or not, 240 by default. */
+  get hostTunedMaxMinutes(): number {
+    return number("HOST_TUNED_MAX_MINUTES", 240);
   },
 
   // ---------- Wave 3, unit 12: drive export (docs/CAPABILITIES.md) ----------

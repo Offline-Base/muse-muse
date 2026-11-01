@@ -2,7 +2,7 @@ import { requireAdminOrAutomation } from "@/lib/auth";
 import { errorJson, readJson, route } from "@/lib/http";
 import { launchJobRequest } from "@/lib/train/launch";
 import { toJobView } from "@/lib/train/logic";
-import { RECIPES } from "@/lib/train/recipes";
+import { offeredRecipes } from "@/lib/train/recipes";
 import { listJobs } from "@/lib/train/store";
 import { recipeView } from "../shared";
 
@@ -14,7 +14,7 @@ export const GET = route(async (req: Request) => {
   await requireAdminOrAutomation(req);
   const now = new Date();
   const rows = await listJobs(50);
-  return Response.json({ jobs: rows.map((row) => toJobView(row, now)), recipes: RECIPES.map(recipeView) });
+  return Response.json({ jobs: rows.map((row) => toJobView(row, now)), recipes: offeredRecipes().map(recipeView) });
 });
 
 /**
