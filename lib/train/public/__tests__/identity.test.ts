@@ -1,8 +1,9 @@
 /**
  * The mm_trainer cookie and the trainer's hidden users row, against a real Postgres (PGlite) standing in for Neon:
  * forged, expired and replayed cookies; the per-IP cap on minting; the users row made on first use; adoption moving
- * only that trainer's rows; the sign-in guard on @*.musemuse.invalid; and the trust fallback. Nothing reaches Meta,
- * Lambda or Neon. All data is made up.
+ * only that trainer's rows, only from the request's own cookie and only to a user who trains as themselves (wave 3's
+ * trust faked through lib/train/public/trust.ts; its fallback is trust.test.ts's); and the sign-in guard on
+ * @*.musemuse.invalid. Nothing reaches Meta, Lambda or Neon. All data is made up.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/train/public/__tests__/identity.test.ts
  */
@@ -23,12 +24,22 @@ let identity: typeof import("../identity");
 let store: typeof import("@/lib/gateway/store");
 let limits: typeof import("@/lib/docs/proxy/limits");
 let sign: typeof import("@/lib/tools/sign");
+/** Wave 3's trust, faked. Defaults match the adapter's fallback. */
+const trust = { caps: false, tiers: new Map<string, "admin" | "builder" | "guest" | "banned">(), banned: new Set<string>() };
 
 describe("mm_trainer", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
   before(async () => {
     testSecrets();
     ({ db: testDb, close } = await makeTestDb());
     mock.module(new URL("../../../db/client.ts", import.meta.url).href, { namedExports: { db: () => testDb, schema: realSchema } });
+    mock.module(new URL("../trust.ts", import.meta.url).href, {
+      namedExports: {
+        signedInCapsOn: () => trust.caps,
+        tierFor: async (u: { id: string; isAdmin: boolean }) => trust.tiers.get(u.id) ?? (u.isAdmin ? "admin" : "guest"),
+        mayTrainAsSelf: (t: string) => t === "admin" || t === "builder",
+        isBanned: async (id: string) => trust.banned.has(id),
+      },
+    });
     identity = await import("../identity");
     store = await import("@/lib/gateway/store");
     limits = await import("@/lib/docs/proxy/limits");
@@ -45,6 +56,9 @@ describe("mm_trainer", { skip: canMock ? false : "needs --experimental-test-modu
     process.env.PUBLIC_TRAINING = "1";
     delete process.env.PUBLIC_TRAIN_COOKIES_PER_IP;
     testSecrets();
+    trust.caps = false;
+    trust.tiers.clear();
+    trust.banned.clear();
     await testDb.delete(realSchema.rateLimits);
     await testDb.delete(realSchema.trainingJobs);
     await testDb.delete(realSchema.trainingDatasets);
@@ -177,6 +191,25 @@ describe("mm_trainer", { skip: canMock ? false : "needs --experimental-test-modu
       assert.equal((await identity.mintTrainer(req(ip), new Response(null), NOW)).ok, false);
     });
 
+    it("mints nothing for a request from another site, and counts nothing against its network", async () => {
+      const crossSite: Array<Record<string, string>> = [{ origin: "https://elsewhere.example", host: "muse-muse.example.test" }, { "sec-fetch-site": "cross-site" }];
+      for (const h of crossSite) {
+        const res = new Response(null);
+        const got = await identity.mintTrainer(req({ ...h, "x-real-ip": "203.0.113.14" }), res, NOW);
+        assert.ok(!got.ok);
+        assert.equal(got.status, 403);
+        assert.equal(got.code, "cross_site");
+        assert.equal(res.headers.get("set-cookie"), null);
+      }
+      assert.equal(await store.counterValue(identity.mintKey("203.0.113.14"), limits.dayWindow(NOW)), 0);
+      const same = await identity.mintTrainer(
+        req({ origin: "https://muse-muse.example.test", host: "muse-muse.example.test", "sec-fetch-site": "same-origin", "x-real-ip": "203.0.113.14" }),
+        new Response(null),
+        NOW,
+      );
+      assert.ok(same.ok && same.minted, "the site's own page still mints");
+    });
+
     it("mints nothing while PUBLIC_TRAINING is off", async () => {
       delete process.env.PUBLIC_TRAINING;
       const res = new Response(null);
@@ -206,12 +239,23 @@ describe("mm_trainer", { skip: canMock ? false : "needs --experimental-test-modu
   });
 
   describe("adoptTrainerRuns", () => {
-    it("moves only that trainer's datasets and jobs, and carries today's counts", async () => {
-      const t1 = identity.decodeTrainer(identity.encodeTrainer(ID, LATER), NOW)!.trainerId;
-      const t2 = identity.decodeTrainer(identity.encodeTrainer("CAAAAAAAAAAAAAAAAAAAAA", LATER), NOW)!.trainerId;
+    const C1 = ID;
+    const C2 = "CAAAAAAAAAAAAAAAAAAAAA";
+    const tid = (cookieId: string) => identity.decodeTrainer(identity.encodeTrainer(cookieId, LATER), NOW)!.trainerId;
+    const withCookie = (cookieId: string) => req(cookieHeader(identity.encodeTrainer(cookieId, LATER)));
+    const userRow = async (email = `${Math.random().toString(36).slice(2)}@example.com`, isAdmin = false) => ({
+      id: await addUser(testDb, email, isAdmin),
+      email,
+      isAdmin,
+    });
+
+    it("moves only the cookie's trainer's datasets and jobs to a signed-in builder, and carries today's counts", async () => {
+      const t1 = tid(C1);
       const r1 = await identity.ensureTrainerUser(t1);
-      const r2 = await identity.ensureTrainerUser(t2);
-      const user = await addUser(testDb);
+      const r2 = await identity.ensureTrainerUser(tid(C2));
+      const user = await userRow();
+      trust.caps = true;
+      trust.tiers.set(user.id, "builder");
       const other = await addUser(testDb);
       const d1 = [await addDataset(testDb, r1), await addDataset(testDb, r1)];
       const j1 = [await addJob(testDb, r1, { status: "succeeded" })];
@@ -223,8 +267,8 @@ describe("mm_trainer", { skip: canMock ? false : "needs --experimental-test-modu
       await store.adjustCounter(identity.visitorCounterKey("run", t1), day, 1);
       await store.adjustCounter(identity.visitorCounterKey("dataset", t1), day, 2);
 
-      assert.deepEqual(await identity.adoptTrainerRuns(user, t1, NOW), { datasets: 2, jobs: 1 });
-      const mine = await identity.ownedTrainingIds(user);
+      assert.deepEqual(await identity.adoptTrainerRuns(user, withCookie(C1), NOW), { datasets: 2, jobs: 1 });
+      const mine = await identity.ownedTrainingIds(user.id);
       assert.deepEqual(mine.datasets.sort(), [...d1].sort());
       assert.deepEqual(mine.jobs, j1);
       assert.deepEqual(await identity.ownedTrainingIds(r1), { datasets: [], jobs: [] });
@@ -232,25 +276,75 @@ describe("mm_trainer", { skip: canMock ? false : "needs --experimental-test-modu
       assert.deepEqual((await identity.ownedTrainingIds(other)).datasets, [dOther]);
       const [none] = await testDb.select().from(realSchema.trainingDatasets).where(eq(realSchema.trainingDatasets.id, dNone));
       assert.equal(none.createdBy, null);
-      assert.equal(await store.counterValue(identity.visitorCounterKey("run", user), day), 1);
-      assert.equal(await store.counterValue(identity.visitorCounterKey("dataset", user), day), 2);
-      assert.equal(await store.counterValue(identity.visitorCounterKey("dry", user), day), 0);
+      assert.equal(await store.counterValue(identity.visitorCounterKey("run", user.id), day), 1);
+      assert.equal(await store.counterValue(identity.visitorCounterKey("dataset", user.id), day), 2);
+      assert.equal(await store.counterValue(identity.visitorCounterKey("dry", user.id), day), 0);
 
-      assert.deepEqual(await identity.adoptTrainerRuns(user, t1, NOW), { datasets: 0, jobs: 0 }, "twice moves nothing more");
+      assert.deepEqual(await identity.adoptTrainerRuns(user, withCookie(C1), NOW), { datasets: 0, jobs: 0 }, "twice moves nothing more");
     });
 
-    it("moves nothing for an unknown trainer, into a trainer row, or onto itself", async () => {
-      const t1 = identity.decodeTrainer(identity.encodeTrainer(ID, LATER), NOW)!.trainerId;
-      const t2 = identity.decodeTrainer(identity.encodeTrainer("CAAAAAAAAAAAAAAAAAAAAA", LATER), NOW)!.trainerId;
-      const user = await addUser(testDb);
-      assert.deepEqual(await identity.adoptTrainerRuns(user, t1, NOW), { datasets: 0, jobs: 0 });
-      const r1 = await identity.ensureTrainerUser(t1);
-      const r2 = await identity.ensureTrainerUser(t2);
+    it("moves an admin's own trainer runs, whatever TRUST_SIGNED_IN_CAPS says", async () => {
+      const r1 = await identity.ensureTrainerUser(tid(C1));
       await addDataset(testDb, r1);
-      assert.deepEqual(await identity.adoptTrainerRuns(r2, t1, NOW), { datasets: 0, jobs: 0 });
-      assert.deepEqual(await identity.adoptTrainerRuns(r1, t1, NOW), { datasets: 0, jobs: 0 });
-      assert.deepEqual(await identity.adoptTrainerRuns("00000000-0000-0000-0000-000000000000", t1, NOW), { datasets: 0, jobs: 0 });
-      assert.deepEqual(await identity.adoptTrainerRuns(user, "junk", NOW), { datasets: 0, jobs: 0 });
+      const admin = await userRow("owner@example.com", true);
+      assert.deepEqual(await identity.adoptTrainerRuns(admin, withCookie(C1), NOW), { datasets: 1, jobs: 0 });
+    });
+
+    it("needs the request's own good cookie: no cookie, a forged or expired one, or another trainer's id moves nothing", async () => {
+      const r1 = await identity.ensureTrainerUser(tid(C1));
+      await addDataset(testDb, r1);
+      const user = await userRow();
+      trust.caps = true;
+      trust.tiers.set(user.id, "builder");
+      const forged = identity.encodeTrainer(C1, LATER).replace(/.$/, (c) => (c === "A" ? "B" : "A"));
+      const expired = identity.encodeTrainer(C1, NOW);
+      for (const r of [req(), req(cookieHeader(forged)), req(cookieHeader(expired)), req({ cookie: `mm_trainer=${tid(C1)}` }), withCookie(C2)]) {
+        assert.deepEqual(await identity.adoptTrainerRuns(user, r, NOW), { datasets: 0, jobs: 0 });
+      }
+      assert.equal((await identity.ownedTrainingIds(r1)).datasets.length, 1);
+    });
+
+    it("moves nothing to someone who still trains as a cookie visitor, someone banned, or with PUBLIC_TRAINING off", async () => {
+      const r1 = await identity.ensureTrainerUser(tid(C1));
+      await addDataset(testDb, r1);
+      const user = await userRow();
+      // The fallback: TRUST_SIGNED_IN_CAPS isn't there yet, so a signed-in non-admin keeps training by the cookie.
+      assert.equal(await identity.trainsAsSelf(user), false);
+      assert.deepEqual(await identity.adoptTrainerRuns(user, withCookie(C1), NOW), { datasets: 0, jobs: 0 });
+      trust.tiers.set(user.id, "builder");
+      assert.deepEqual(await identity.adoptTrainerRuns(user, withCookie(C1), NOW), { datasets: 0, jobs: 0 }, "a builder tier with caps off");
+      trust.caps = true;
+      trust.tiers.set(user.id, "guest");
+      assert.deepEqual(await identity.adoptTrainerRuns(user, withCookie(C1), NOW), { datasets: 0, jobs: 0 }, "trust says guest");
+      trust.tiers.set(user.id, "builder");
+      trust.banned.add(user.id);
+      assert.deepEqual(await identity.adoptTrainerRuns(user, withCookie(C1), NOW), { datasets: 0, jobs: 0 }, "banned");
+      trust.banned.clear();
+      trust.tiers.set(user.id, "banned");
+      assert.deepEqual(await identity.adoptTrainerRuns(user, withCookie(C1), NOW), { datasets: 0, jobs: 0 }, "a banned tier");
+      trust.tiers.set(user.id, "builder");
+      delete process.env.PUBLIC_TRAINING;
+      assert.deepEqual(await identity.adoptTrainerRuns(user, withCookie(C1), NOW), { datasets: 0, jobs: 0 }, "flag off");
+      process.env.PUBLIC_TRAINING = "1";
+      assert.equal((await identity.ownedTrainingIds(r1)).datasets.length, 1);
+      assert.deepEqual(await identity.adoptTrainerRuns(user, withCookie(C1), NOW), { datasets: 1, jobs: 0 }, "and then it moves");
+    });
+
+    it("moves nothing into a trainer row, onto itself, or to a user who is gone", async () => {
+      trust.caps = true;
+      const r1 = await identity.ensureTrainerUser(tid(C1));
+      const r2 = await identity.ensureTrainerUser(tid(C2));
+      await addDataset(testDb, r1);
+      for (const [id, email] of [
+        [r2, `${tid(C2)}@trainer.musemuse.invalid`],
+        [r1, `${tid(C1)}@trainer.musemuse.invalid`],
+      ]) {
+        trust.tiers.set(id, "builder");
+        assert.deepEqual(await identity.adoptTrainerRuns({ id, email, isAdmin: false }, withCookie(C1), NOW), { datasets: 0, jobs: 0 }, email);
+      }
+      const gone = "00000000-0000-0000-0000-000000000000";
+      trust.tiers.set(gone, "builder");
+      assert.deepEqual(await identity.adoptTrainerRuns({ id: gone, email: "gone@example.com", isAdmin: false }, withCookie(C1), NOW), { datasets: 0, jobs: 0 });
       assert.equal((await identity.ownedTrainingIds(r1)).datasets.length, 1);
     });
   });
@@ -259,7 +353,14 @@ describe("mm_trainer", { skip: canMock ? false : "needs --experimental-test-modu
 describe("the sign-in guard", () => {
   it("refuses every @*.musemuse.invalid address and only those", async () => {
     const { isReservedEmail } = await import("../reserved");
-    for (const e of ["t-0123456789abcdef0123456789abcdef@trainer.musemuse.invalid", "guest@musemuse.invalid", "a@x.y.musemuse.invalid", "A@TRAINER.MUSEMUSE.INVALID"]) {
+    for (const e of [
+      "t-0123456789abcdef0123456789abcdef@trainer.musemuse.invalid",
+      "guest@musemuse.invalid",
+      "a@x.y.musemuse.invalid",
+      "A@TRAINER.MUSEMUSE.INVALID",
+      "a@trainer.musemuse.invalid.",
+      "guest@musemuse.invalid.",
+    ]) {
       assert.equal(isReservedEmail(e), true, e);
     }
     for (const e of ["a@musemuse.invalid.com", "a@notmusemuse.invalid", "a@example.com", "musemuse.invalid@example.com", "a@musemuse.app"]) {
@@ -286,19 +387,5 @@ describe("the sign-in guard", () => {
     assert.deepEqual(calls, []);
     const ok = await auth.checkSignIn({ email: "builder@example.com", code: config.accessCode, password: "long-enough-pass" }, store, config);
     assert.equal(ok?.email, "builder@example.com");
-  });
-});
-
-describe("the trust fallback", () => {
-  it("treats everyone but admins as not signed in, and nobody as banned, until tg-cap-int lands", async () => {
-    const trust = await import("../trust");
-    assert.equal(trust.signedInCapsOn(), false);
-    assert.equal(await trust.tierFor({ id: "u", email: "b@example.com", isAdmin: false }), "guest");
-    assert.equal(await trust.tierFor({ id: "u", email: "a@example.com", isAdmin: true }), "admin");
-    assert.equal(await trust.isBanned("u"), false);
-    assert.equal(trust.mayTrainAsSelf("builder"), true);
-    assert.equal(trust.mayTrainAsSelf("admin"), true);
-    assert.equal(trust.mayTrainAsSelf("guest"), false);
-    assert.equal(trust.mayTrainAsSelf("banned"), false);
   });
 });

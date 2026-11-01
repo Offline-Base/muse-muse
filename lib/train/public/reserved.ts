@@ -7,7 +7,10 @@
 /** Where visitor trainers' hidden users rows live. ".invalid" can never be a real address. */
 export const TRAINER_EMAIL_DOMAIN = "trainer.musemuse.invalid";
 
-/** True for an address at musemuse.invalid or any name under it. Sign-in refuses these, so nobody can claim one. */
+/**
+ * True for an address at musemuse.invalid or any name under it, with or without a trailing dot. Sign-in refuses these,
+ * so nobody can claim one.
+ */
 export function isReservedEmail(email: string): boolean {
-  return /@(?:[^@\s]+\.)?musemuse\.invalid$/i.test(email.trim());
+  return /@(?:[^@\s]+\.)?musemuse\.invalid\.?$/i.test(email.trim());
 }

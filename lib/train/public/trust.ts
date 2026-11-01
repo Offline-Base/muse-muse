@@ -8,10 +8,14 @@
  * When tg-cap-int lands, swap the bodies for (and nothing else in lib/train/public changes):
  *   signedInCapsOn  -> env.trustSignedInCaps
  *   tierFor         -> builderTier({ ...row, isAdmin: row.isAdmin && env.adminEmails.includes(row.email) }) from a
- *                      users read of email, is_admin, banned_at by id (a gone row is "guest", as briefTierFor does)
+ *                      users read of email, is_admin, banned_at by id (a gone row is "guest", as briefTierFor does),
+ *                      keeping the reserved-address line first: builderTier calls any row but the shared guest's a
+ *                      builder, and a visitor trainer's hidden row must never be one
  *   mayTrainAsSelf  -> tierMayUseBuilderCaps
  *   isBanned        -> env.trustReports && Boolean(row?.bannedAt), one read by id (lib/auth.ts bannedNow)
  */
+
+import { isReservedEmail } from "@/lib/train/public/reserved";
 
 export type TrainerTier = "admin" | "builder" | "guest" | "banned";
 
@@ -20,8 +24,12 @@ export function signedInCapsOn(): boolean {
   return false;
 }
 
-/** The tier of a signed-in user. Fallback: admins are admins, everyone else counts as not signed in. */
+/**
+ * The tier of a signed-in user. A reserved address (the shared guest, a visitor trainer's hidden row) is always "guest".
+ * Fallback: admins are admins, everyone else counts as not signed in.
+ */
 export async function tierFor(user: { id: string; email: string; isAdmin: boolean }): Promise<TrainerTier> {
+  if (isReservedEmail(user.email)) return "guest";
   return user.isAdmin ? "admin" : "guest";
 }
 

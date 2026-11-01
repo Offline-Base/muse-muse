@@ -11,16 +11,20 @@
  *   anything that rebuilds the cookie. On first use (ensureTrainerUser) it becomes a hidden users row,
  *   `t-<hex>@trainer.musemuse.invalid`, with no password and no builds; datasets and jobs point at it through their
  *   existing created_by. Sign-in refuses every @*.musemuse.invalid address (isReservedEmail), so nobody can claim it.
- * - adoptTrainerRuns moves one trainer's datasets and jobs to a signed-in user (a marked call in sign-in comes later).
+ * - adoptTrainerRuns moves the datasets and jobs of the trainer this request's own cookie names to a signed-in user who
+ *   trains as themselves (a marked call in sign-in comes later). It never takes a bare trainer id: those show up in the
+ *   hidden rows' addresses and in logs, and holding one must not be enough to take someone's runs.
  */
 import { eq } from "drizzle-orm";
+import { isCrossSite } from "@/lib/auth";
 import { db, schema } from "@/lib/db/client";
 import { dayWindow, docsClientIp, secondsUntil } from "@/lib/docs/proxy/limits";
 import { cookieValue } from "@/lib/drive/logic";
 import { env } from "@/lib/env";
 import { adjustCounter, counterValue, reserveCounter } from "@/lib/gateway/store";
 import { mac, randomId, sameMac } from "@/lib/tools/sign";
-import { TRAINER_EMAIL_DOMAIN } from "@/lib/train/public/reserved";
+import { isReservedEmail, TRAINER_EMAIL_DOMAIN } from "@/lib/train/public/reserved";
+import { isBanned, mayTrainAsSelf, signedInCapsOn, tierFor } from "@/lib/train/public/trust";
 
 export const TRAINER_COOKIE = "mm_trainer";
 export const TRAINER_COOKIE_DAYS = 30;
@@ -29,7 +33,10 @@ const ID_RE = /^[A-Za-z0-9_-]{22}$/;
 const TRAINER_ID_RE = /^t-[0-9a-f]{32}$/;
 
 export interface Trainer {
-  /** `t-<32 hex>`: what counters and the hidden users row are keyed by. Safe to store and log. */
+  /**
+   * `t-<32 hex>`: what counters and the hidden users row are keyed by. It can't rebuild the cookie, so it may be stored
+   * and logged, but it is not proof of anything: never act for a trainer on an id from a body, a query or a log.
+   */
   trainerId: string;
   /** The hidden users row's address. */
   email: string;
@@ -109,10 +116,13 @@ export type MintResult = { ok: true; trainer: Trainer; minted: boolean } | Refus
 /**
  * The trainer for a create POST: the request's own when its cookie is good (nothing minted, nothing counted), else a
  * new one whose Set-Cookie goes on `res`, within PUBLIC_TRAIN_COOKIES_PER_IP per IP per UTC day. Refuses while
- * PUBLIC_TRAINING is off, so nothing is ever minted then. `res` is anything with Headers: a Response, a NextResponse.
+ * PUBLIC_TRAINING is off, so nothing is ever minted then, and refuses a request from another site (the Lax cookie isn't
+ * sent cross-site, so such a request always looks new and would use up that network's mints). `res` is anything with
+ * Headers: a Response, a NextResponse.
  */
 export async function mintTrainer(req: Request, res: { headers: Headers }, now: Date = new Date()): Promise<MintResult> {
   if (!env.publicTraining) return { ok: false, status: 403, code: "public_training_off", error: "Admins only." };
+  if (isCrossSite(req.headers)) return { ok: false, status: 403, code: "cross_site", error: "Requests from other sites can't train here." };
   const known = trainerOf(req, now);
   if (known) return { ok: true, trainer: known, minted: false };
   const day = dayWindow(now);
@@ -164,17 +174,47 @@ export interface Adopted {
   jobs: number;
 }
 
+/** Who adoptTrainerRuns moves runs to: what signIn returns. */
+export interface AdoptingUser {
+  id: string;
+  email: string;
+  isAdmin: boolean;
+}
+
 /**
- * Moves the datasets and jobs this trainer made (created_by its hidden row) to `userId`, and adds its counts for today
- * to the user's, so signing in never resets a visitor's day. Only that trainer's rows move. A user id that is itself a
- * trainer row, or a trainer with no row yet, moves nothing. For the marked block in sign-in, with trainerOf(req).
+ * True when this signed-in user trains as their own id (caller.ts's rule): an admin, or a builder while
+ * TRUST_SIGNED_IN_CAPS is on and trust's tier allows it. Never a reserved address or a banned account. Anyone else keeps
+ * training as their cookie visitor, so moving their runs would hide them from the caller they still are.
  */
-export async function adoptTrainerRuns(userId: string, trainerId: string, now: Date = new Date()): Promise<Adopted> {
+export async function trainsAsSelf(user: AdoptingUser): Promise<boolean> {
+  if (isReservedEmail(user.email) || (await isBanned(user.id))) return false;
+  const tier = await tierFor(user);
+  if (tier === "banned") return false;
+  return tier === "admin" || (signedInCapsOn() && mayTrainAsSelf(tier));
+}
+
+/**
+ * At sign-in: moves the datasets and jobs that the trainer named by this request's own mm_trainer cookie made
+ * (created_by its hidden row) to `user`, and adds that trainer's counts for today to the user's, so signing in never
+ * resets a visitor's day. Moves nothing while PUBLIC_TRAINING is off, without a good cookie, or when the user doesn't
+ * train as themselves (trainsAsSelf). Only that trainer's rows move. For the marked block in the sign-in route, after
+ * signIn succeeds: `await adoptTrainerRuns(user, req)`.
+ */
+export async function adoptTrainerRuns(user: AdoptingUser, req: Request, now: Date = new Date()): Promise<Adopted> {
+  const none = { datasets: 0, jobs: 0 };
+  if (!env.publicTraining) return none;
+  const trainer = trainerOf(req, now);
+  if (!trainer || !(await trainsAsSelf(user))) return none;
+  return moveTrainerRuns(user.id, trainer.trainerId, now);
+}
+
+/** The move itself, for a trainer id that came from a verified cookie. Not exported: see adoptTrainerRuns. */
+async function moveTrainerRuns(userId: string, trainerId: string, now: Date): Promise<Adopted> {
   const none = { datasets: 0, jobs: 0 };
   const from = await trainerUserId(trainerId);
   if (!from || from === userId) return none;
   const [target] = await db().select({ email: schema.users.email }).from(schema.users).where(eq(schema.users.id, userId)).limit(1);
-  if (!target || target.email.endsWith(`@${TRAINER_EMAIL_DOMAIN}`)) return none;
+  if (!target || isReservedEmail(target.email)) return none;
   const datasets = await db()
     .update(schema.trainingDatasets)
     .set({ createdBy: userId })
