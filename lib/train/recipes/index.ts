@@ -76,7 +76,7 @@ export const RECIPES: Recipe[] = [
     id: "glimmer-lora",
     title: "Muse Glimmer LoRA",
     description:
-      "Fine-tunes Muse Glimmer 30B (4-bit) with a LoRA adapter on one of your datasets, following Unsloth's guide, then answers the held-out prompts with the base and the tuned model so they can be compared. Both answer directly, with no reasoning, as the tuned one was trained, and by default under a one-line system message rather than the dataset's task prompt, so the comparison shows what training taught. The model and its Python packages are cached on a Lambda filesystem in the region, so later jobs start faster.",
+      "Fine-tunes Muse Glimmer 30B (4-bit) with a LoRA adapter on one of your datasets, following Unsloth's guide, then answers the held-out prompts with the base and the tuned model so they can be compared. Both answer directly, with no reasoning, as the tuned one was trained, and by default under a one-line system message rather than the dataset's task prompt, so the comparison shows what training taught. The model and its Python packages are cached on a Lambda filesystem in the region, so later jobs start faster. In decide mode it trains on a decision dataset instead: each answer is one option's letter, both models are scored on the held-out test rows under the dataset's own system message, and nothing is judged.",
     // Unsloth supports arm64 only through a from-source Docker build, so gpu_1x_gh200 (Grace, arm64) is left out.
     gpus: GLIMMER_GPUS,
     defaultMaxMinutes: 150,
@@ -162,7 +162,7 @@ export const RECIPES: Recipe[] = [
         default: 0,
         min: 0,
         max: 1,
-        help: "1 skips the install, the model and the training and fakes the answers: a cheap check of the dataset, eval and judging loop on a real GPU.",
+        help: "1 skips the install, the model and the training and fakes the answers: a cheap check of the dataset, eval and judging loop on a real GPU. In decide mode it fakes the scores and the adapter instead, a check of the pages, the score callbacks and scoring; it loads no model.",
       },
       {
         key: "publish",
