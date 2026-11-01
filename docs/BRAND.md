@@ -602,6 +602,10 @@ With no ask, or with the flag off, every prompt and schema is what it was (`lib/
 `flags-off.test.ts`, `muse-app-look.test.ts`). Briefs stored before parse unchanged, since the stored schema's field
 is optional.
 
+### Gallery, Media, Demos and History (Nov 1)
+
+From the Muse app's Artifacts, Media and Vibes screens, and its sidebar. **Presets** are picture cards that fill the Make page's composer; nothing starts until the person sends it. **Gallery** has Presets, then Products with search, a filter menu and a card size switch. **Media** has Presets, then Creations with All, Images and Videos. **Demos** is the wall of product demo videos, which play only on screen and not under reduced motion. The floating box on these pages carries the idea to Make. **History** in the sidebar lists a person's builds, one row per product; a guest sees only what their browser opened, because guests share one account. Left out because nothing real backs them yet: Favorites, the model pill and voice in the floating box, likes and remixes, and Scheduled while the scheduled jobs capability is off. The Vibes name stays Meta's, so ours says Demos.
+
 ## Gap list
 
 Walked on Oct 31 against the running app with fixtures at 1440 and 390, in light. No page scrolled sideways at either

@@ -107,6 +107,11 @@ function readDraft(key: string): string {
   }
 }
 
+/** Fills the Make page's composer before it opens: a preset or the box on Gallery, Media and Demos. */
+export function writeMakeDraft(note: string) {
+  writeDraft(draftKey("new"), note);
+}
+
 /** Fills a composer's note before it opens, by the draftId it's given: the docs assistant uses it to suggest a build. */
 export function writeComposerDraft(draftId: string, note: string) {
   writeDraft(draftKey("new", draftId), note);

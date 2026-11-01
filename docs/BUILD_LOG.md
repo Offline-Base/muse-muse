@@ -1463,6 +1463,10 @@ no company name on the page, since the no-Offline-Base rule hasn't been lifted. 
 8 skipped; tsc clean; next build exit 0 with privacy/ present and with it moved away, which is what Vercel sees. No sideways
 scroll at 1440 or 390, no console errors. Shots: docs/log/shots/2026-11-01/private-*.png.
 
+### 12:19 Sidebar History, and Gallery, Media and Demos in the Muse app's layouts, on tg-history, not pushed
+
+The owner sent Meta's sidebar, Artifacts, Media, Vibes and Scheduled screens. History lists builds on the left; a guest sees only what their browser opened, since guests share one account. Gallery has Presets and Products; Media has Presets and Creations; Demos is the video wall. Left out with nothing real behind them: Favorites, likes, the model pill, voice, and Scheduled while jobs is off. Checks: 6377 tests, 6369 pass, 0 fail, 8 skipped; tsc clean; next build exit 0. Browser on made-up products: search, filters, presets and the floating box fill Make; no sideways scroll at 390; no page errors. The Media shot predates the fixed preset titles. PR #5 was squash-merged, so privacy's 135 commits aren't in main's history; tg-privacy-main on GitHub still has them.
+
 ## Gaps
 
 What this record doesn't confirm:
