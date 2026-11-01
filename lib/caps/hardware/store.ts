@@ -72,7 +72,7 @@ export async function countBoards(ownerUserId: string): Promise<number> {
   return row?.n ?? 0;
 }
 
-/** A person's boards, newest first, with the products each is linked to. */
+/** A person's boards, newest first, with those of their own products each is linked to. */
 export async function listBoards(ownerUserId: string): Promise<BoardView[]> {
   const rows = await db()
     .select({ id: schema.devices.id, name: schema.devices.name, health: schema.devices.health, lastSeenAt: schema.devices.lastSeenAt })
@@ -83,7 +83,7 @@ export async function listBoards(ownerUserId: string): Promise<BoardView[]> {
   const links = await db()
     .select({ boardId: schema.productBoards.boardId, visitors: schema.productBoards.visitors, slug: schema.products.slug, name: schema.products.name })
     .from(schema.productBoards)
-    .innerJoin(schema.products, eq(schema.products.id, schema.productBoards.productId))
+    .innerJoin(schema.products, and(eq(schema.products.id, schema.productBoards.productId), eq(schema.products.ownerId, ownerUserId)))
     .where(inArray(schema.productBoards.boardId, rows.map((r) => r.id)));
   return rows.map((r) => ({
     id: r.id,

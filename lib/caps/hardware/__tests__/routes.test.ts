@@ -5,6 +5,7 @@
  *   npx tsx --test --experimental-test-module-mocks lib/caps/hardware/__tests__/routes.test.ts
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { after, afterEach, before, beforeEach, describe, it, mock } from "node:test";
 import { eq } from "drizzle-orm";
 import * as realSchema from "@/lib/db/schema";
@@ -40,13 +41,26 @@ describe("the board routes", { skip: canMock ? false : "needs --experimental-tes
   let admin = "";
   let otherAdmin = "";
   let product = "";
-  let viewer: { id: string; isAdmin: boolean } | null = null;
+  let ownerSubject: typeof import("@/lib/tools/principal").ownerSubject;
+  let ownerPassRoute: typeof import("@/app/api/products/[slug]/owner-pass/route");
+  let tokenModels = ["muse-gadget", "cap:hardware", "board-tools"];
+  let viewer: { id: string; isAdmin: boolean; openAccess?: boolean } | null = null;
   const boardCalls: Array<{ url: string; token: string; name: string }> = [];
   const legacy: string[] = [];
 
   const json = (url: string, method: string, body?: unknown) => new Request(`https://mm.example${url}`, { method, headers: { "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
   const register = (over = {}) => boards.POST(json("/api/boards", "POST", { name: "Shop board", mcpUrl: BOARD_URL, token: BOARD_TOKEN, ...over }));
   const slug = (s: string) => ({ params: Promise.resolve({ slug: s }) });
+  /** The pass the product's owner route would trade the code for. The trade itself is the tool gateway's (lib/tools). */
+  const readPass = async () => {
+    const { readOwnerCode } = await import("@/lib/tools/principal");
+    return {
+      exchangeForTest(res: Response): string {
+        const code = readOwnerCode(new URL(res.headers.get("location")!).searchParams.get("code")!, new Date())!;
+        return mintOwnerSession({ productId: code.productId, subject: code.subject }, new Date()).session;
+      },
+    };
+  };
   const gadgetCall = (headers: Record<string, string> = {}) =>
     gadget.POST(new Request("https://mm.example/api/gateway/gadget", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${LIVE}`, ...headers }, body: JSON.stringify({ tool: "read_sensor", arguments: {} }) }));
 
@@ -66,6 +80,12 @@ describe("the board routes", { skip: canMock ? false : "needs --experimental-tes
           if (!viewer.isAdmin) throw new FakeAuthError("Admins only.", 403);
           return viewer;
         },
+        requireUser: async () => {
+          if (!viewer) throw new FakeAuthError("Sign in to build.", 401);
+          return viewer;
+        },
+        // As the real one: every admin may ask for a pass. The gateway is what compares its subject to the board's owner.
+        canActAsOwner: (user: { id: string; isAdmin: boolean; openAccess?: boolean } | null, ownerId: string | null) => Boolean(user && (user.isAdmin || (!user.openAccess && user.id === ownerId))),
       },
     });
     mock.module(at("../../../device/client.ts"), {
@@ -84,13 +104,14 @@ describe("the board routes", { skip: canMock ? false : "needs --experimental-tes
       },
     });
     mock.module(at("../../../gateway/tokens.ts"), {
-      namedExports: { findToken: async (t: string) => (t === LIVE ? { id: "tok", productId: product, scope: "live", allowedModels: ["muse-gadget", "cap:hardware"], dailyBudgetUsd: 3 } : null) },
+      namedExports: { findToken: async (t: string) => (t === LIVE ? { id: "tok", productId: product, scope: "live", allowedModels: tokenModels, dailyBudgetUsd: 3 } : null) },
     });
     boards = await import("@/app/api/boards/route");
     oneBoard = await import("@/app/api/boards/[id]/route");
     productBoard = await import("@/app/api/products/[slug]/board/route");
     gadget = await import("@/app/api/gateway/gadget/route");
-    ({ mintOwnerSession } = await import("@/lib/tools/principal"));
+    ownerPassRoute = await import("@/app/api/products/[slug]/owner-pass/route");
+    ({ mintOwnerSession, ownerSubject } = await import("@/lib/tools/principal"));
     const [a] = await testDb.insert(realSchema.users).values({ email: "admin@example.com", isAdmin: true }).returning();
     const [b] = await testDb.insert(realSchema.users).values({ email: "other@example.com", isAdmin: true }).returning();
     admin = a!.id;
@@ -102,6 +123,7 @@ describe("the board routes", { skip: canMock ? false : "needs --experimental-tes
 
   beforeEach(async () => {
     viewer = { id: admin, isAdmin: true };
+    tokenModels = ["muse-gadget", "cap:hardware", "board-tools"];
     boardCalls.length = 0;
     legacy.length = 0;
     process.env.HARDWARE_BOARD_REGISTRY = "1";
@@ -186,7 +208,7 @@ describe("the board routes", { skip: canMock ? false : "needs --experimental-tes
   it("the whole way: the owner check lets the owner through to their linked board, and nobody else", async () => {
     process.env.HARDWARE_GADGET_OWNER_CHECK = "1";
     process.env.HARDWARE_BOARD_TOOLS = "1";
-    const owner = { [OWNER_HEADER]: mintOwnerSession({ productId: product, subject: "o" }, new Date()).session };
+    const owner = { [OWNER_HEADER]: mintOwnerSession({ productId: product, subject: ownerSubject(admin) }, new Date()).session };
     const visitor = { [VISITOR_HEADER]: "v".repeat(24) };
     assert.equal((await gadgetCall(owner)).status, 503, "no link yet");
     const { id } = (await (await register()).json()) as { id: string };
@@ -207,6 +229,104 @@ describe("the board routes", { skip: canMock ? false : "needs --experimental-tes
     const res = await gadget.POST(new Request("https://mm.example/api/gateway/gadget", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${LIVE}` }, body: JSON.stringify({ tool: "describe_device" }) }));
     assert.equal(res.status, 200);
     assert.deepEqual(legacy, ["describe_device"]);
+  });
+
+  it("the real owner-pass route's redirect: the owner's pass reaches the board, and another admin's pass doesn't", async () => {
+    process.env.HARDWARE_GADGET_OWNER_CHECK = "1";
+    process.env.HARDWARE_BOARD_TOOLS = "1";
+    process.env.HARDWARE_ENABLED = "1";
+    const { id } = (await (await register()).json()) as { id: string };
+    await productBoard.POST(json("/api/products/corner/board", "POST", { boardId: id }), slug("corner"));
+    boardCalls.length = 0;
+    const { CAP_READY } = await import("@/lib/caps/ids");
+    const { exchangeForTest } = await readPass();
+    const ready = CAP_READY.hardware;
+    CAP_READY.hardware = true;
+    try {
+      await testDb.update(realSchema.products).set({ liveUrl: "https://corner.example/" }).where(eq(realSchema.products.id, product));
+      const askFor = (who: string) => {
+        viewer = { id: who, isAdmin: true };
+        return ownerPassRoute.GET(new Request("https://mm.example/api/products/corner/owner-pass"), slug("corner"));
+      };
+      const mine = await askFor(admin);
+      assert.equal(mine.status, 303);
+      assert.equal(new URL(mine.headers.get("location")!).origin, "https://corner.example");
+      assert.equal((await gadgetCall({ [OWNER_HEADER]: exchangeForTest(mine) })).status, 200);
+      assert.equal(boardCalls.length, 1);
+      const theirs = await askFor(otherAdmin);
+      assert.equal(theirs.status, 303, "any admin may still ask for a pass");
+      assert.equal((await gadgetCall({ [OWNER_HEADER]: exchangeForTest(theirs) })).status, 503, "it just doesn't reach this owner's board");
+      assert.equal(boardCalls.length, 1);
+    } finally {
+      CAP_READY.hardware = ready;
+      delete process.env.HARDWARE_ENABLED;
+      await testDb.update(realSchema.products).set({ liveUrl: null }).where(eq(realSchema.products.id, product));
+    }
+  });
+
+  it("the owner-pass route lands a product with only board tools on the overlay's own page, and refuses with the owner check off", async () => {
+    process.env.HARDWARE_BOARD_TOOLS = "1";
+    process.env.HARDWARE_ENABLED = "1";
+    const { CAP_READY } = await import("@/lib/caps/ids");
+    const ready = CAP_READY.hardware;
+    CAP_READY.hardware = true;
+    const ask = () => ownerPassRoute.GET(new Request("https://mm.example/api/products/landing/owner-pass"), slug("landing"));
+    try {
+      const [p] = await testDb.insert(realSchema.products).values({ slug: "landing", name: "Landing", ownerId: admin, status: "live", liveUrl: "https://landing.example/" }).returning();
+      const [inspiration] = await testDb.insert(realSchema.inspirations).values({ userId: admin, text: "made up" } as never).returning();
+      const [build] = await testDb.insert(realSchema.builds).values({ inspirationId: inspiration!.id, userId: admin, productId: p!.id, status: "live", brief: { hardware: { links: [], boardTools: true, why: "w" } } as never } as never).returning();
+      await testDb.update(realSchema.products).set({ latestBuildId: build!.id }).where(eq(realSchema.products.id, p!.id));
+      assert.equal((await ask()).status, 503, "owner check off: board tools aren't usable");
+      process.env.HARDWARE_GADGET_OWNER_CHECK = "1";
+      const res = await ask();
+      assert.equal(res.status, 303);
+      assert.equal(new URL(res.headers.get("location")!).pathname, "/api/musemuse/board/owner");
+    } finally {
+      CAP_READY.hardware = ready;
+      delete process.env.HARDWARE_ENABLED;
+    }
+  });
+
+  it("a sensor-only product through the real gadget route: no camera, even opened to visitors", async () => {
+    process.env.HARDWARE_GADGET_OWNER_CHECK = "1";
+    process.env.HARDWARE_BOARD_TOOLS = "1";
+    tokenModels = ["cap:hardware", "board-tools"];
+    const { id } = (await (await register()).json()) as { id: string };
+    await productBoard.POST(json("/api/products/corner/board", "POST", { boardId: id, visitors: true }), slug("corner"));
+    boardCalls.length = 0;
+    const camera = await gadget.POST(new Request("https://mm.example/api/gateway/gadget", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${LIVE}` }, body: JSON.stringify({ tool: "capture_image" }) }));
+    assert.equal(camera.status, 400);
+    assert.deepEqual(boardCalls, []);
+    assert.equal((await gadgetCall()).status, 200);
+  });
+
+  it("board tools with the owner check off through the real gadget route never reach the platform's board", async () => {
+    process.env.HARDWARE_BOARD_TOOLS = "1";
+    tokenModels = ["cap:hardware", "board-tools"];
+    const res = await gadgetCall();
+    assert.equal(res.status, 503);
+    assert.deepEqual(legacy, []);
+  });
+
+  it("an open-access admin (OPEN_ACCESS=admin on a preview) can't use the registry, though the /gadgets slot already refuses them", async () => {
+    const { id } = (await (await register()).json()) as { id: string };
+    viewer = { id: admin, isAdmin: true, openAccess: true };
+    for (const res of [
+      await boards.GET(),
+      await register(),
+      await oneBoard.DELETE(json(`/api/boards/${id}`, "DELETE"), { params: Promise.resolve({ id }) }),
+      await productBoard.POST(json("/api/products/corner/board", "POST", { boardId: id }), slug("corner")),
+      await productBoard.DELETE(json("/api/products/corner/board", "DELETE"), slug("corner")),
+    ]) {
+      assert.equal(res.status, 403);
+    }
+    assert.equal((await testDb.select().from(realSchema.devices)).length, 1, "nothing added");
+    assert.deepEqual(await testDb.select().from(realSchema.productBoards), [], "nothing linked");
+  });
+
+  it("the /device page leaves the card out for an open-access admin", () => {
+    const page = readFileSync(new URL("../../../../app/device/page.tsx", import.meta.url), "utf8");
+    assert.match(page, /env\.hardwareBoardRegistry && !viewer\.openAccess \? <DeviceBoards \/>/);
   });
 
   it("only its owner can remove a board", async () => {

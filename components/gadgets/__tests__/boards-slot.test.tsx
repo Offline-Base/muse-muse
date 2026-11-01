@@ -94,6 +94,9 @@ describe("the Your boards card on /device", () => {
     const { DeviceBoards } = await import("@/components/device/DeviceBoards");
     const out = renderToStaticMarkup(createElement(DeviceBoards));
     assert.match(out, /Never a Gadget SDK token/);
+    assert.match(out, /also lets them use its camera and microphone/);
+    assert.match(out, /needs visitors on to reach the board at all/);
+    assert.match(out, /Open as owner/);
     assert.match(out, /type="password"/);
     assert.match(out, /Check and add/);
     assert.equal(out.includes(String.fromCharCode(0x2014)), false);

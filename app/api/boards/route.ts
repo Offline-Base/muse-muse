@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/lib/auth";
+import { requireBoardAdmin } from "@/lib/caps/hardware/admin";
 import { boardRegistryOn } from "@/lib/caps/hardware/flags";
 import { registerBoard, type RegisterRefusal } from "@/lib/caps/hardware/registry";
 import { listBoards, ownProducts } from "@/lib/caps/hardware/store";
@@ -22,7 +22,7 @@ const STATUS: Record<RegisterRefusal, number> = {
 /** GET -> {boards, products}: the admin's own boards, and their products to link one to. */
 export const GET = route(async () => {
   if (!boardRegistryOn()) return errorJson(404, "not_found");
-  const user = await requireAdmin();
+  const user = await requireBoardAdmin();
   const [boards, products] = await Promise.all([listBoards(user.id), ownProducts(user.id)]);
   return Response.json({ boards, products });
 });
@@ -30,7 +30,7 @@ export const GET = route(async () => {
 /** POST {name, mcpUrl, token} -> 201 {id}: registers a muse-device board once it answers describe_device. */
 export const POST = route(async (req: Request) => {
   if (!boardRegistryOn()) return errorJson(404, "not_found");
-  const user = await requireAdmin();
+  const user = await requireBoardAdmin();
   const body = await readJson(req, 8 * 1024);
   const result = await registerBoard({ name: body.name, mcpUrl: body.mcpUrl, token: body.token }, user.id);
   if (!result.ok) return errorJson(STATUS[result.error], result.error);

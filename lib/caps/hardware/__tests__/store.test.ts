@@ -137,6 +137,17 @@ describe("the hardware unit's rows", { skip: canMock ? false : "needs --experime
     assert.equal(await store.countBoards(bob), boards.length);
   });
 
+  it("a list doesn't show a product its person no longer owns", async () => {
+    const id = await board(alice, "Kept board");
+    const [moved] = await testDb.insert(realSchema.products).values({ slug: "moved", name: "Moved", ownerId: alice, status: "live" }).returning();
+    await store.linkBoard(moved!.id, id, false);
+    const links = async () => (await store.listBoards(alice)).find((b) => b.id === id)!.products;
+    assert.deepEqual(await links(), [{ slug: "moved", name: "Moved", visitors: false }]);
+    await testDb.update(realSchema.products).set({ ownerId: bob }).where(eq(realSchema.products.id, moved!.id));
+    assert.deepEqual(await links(), []);
+    assert.equal((await store.listBoards(bob)).some((b) => b.id === id), false);
+  });
+
   it("health counts failures and clears on an answer", async () => {
     const id = await board(bob, "Flaky");
     await store.noteBoardHealth(id, false, NOW, 10);
@@ -160,11 +171,13 @@ describe("the hardware unit's rows", { skip: canMock ? false : "needs --experime
     await testDb.insert(realSchema.rateLimits).values({ key, windowStart: new Date("2026-11-03T14:00:00Z"), count: 1 });
     await testDb.insert(realSchema.rateLimits).values({ key, windowStart: new Date("2026-11-03T16:00:00Z"), count: 2 });
     process.env.HARDWARE_BOARD_TOOLS = "1";
+    process.env.HARDWARE_GADGET_OWNER_CHECK = "1";
     try {
       assert.deepEqual(await store.hardwareProof(build!.id, { since: null }), { read_sensor: 3, show_text: 0, "brief:links": 1, "brief:boardTools": 1 });
       assert.equal((await store.hardwareProof(build!.id, { since: NOW })).read_sensor, 2);
     } finally {
       delete process.env.HARDWARE_BOARD_TOOLS;
+      delete process.env.HARDWARE_GADGET_OWNER_CHECK;
     }
     assert.deepEqual(await store.hardwareProof(build!.id, { since: null }), { read_sensor: 3, show_text: 0, "brief:links": 1 }, "board tools off");
   });

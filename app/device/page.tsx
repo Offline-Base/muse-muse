@@ -35,7 +35,7 @@ export default async function DevicePage({ searchParams }: { searchParams: Promi
     <div className="page">
       <PageHeader title="Device" subtitle="Ask Muse Wonder something, and it uses the board's camera, microphone and sensors to answer." />
       <DeviceAsk />
-      {env.hardwareBoardRegistry ? <DeviceBoards /> : null}
+      {env.hardwareBoardRegistry && !viewer.openAccess ? <DeviceBoards /> : null}
       <DeviceTrain driveExport={env.driveExportEnabled} />
       {env.driveExportEnabled ? <DeviceDrive initialSource={typeof sp.export === "string" && /^(board|lab):[A-Za-z0-9._:-]{1,120}$/.test(sp.export) ? sp.export : null} /> : null}
     </div>

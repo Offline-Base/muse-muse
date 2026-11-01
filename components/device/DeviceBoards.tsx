@@ -133,7 +133,8 @@ export function DeviceBoards() {
   return (
     <section className="card section-card" aria-labelledby={`${id}-title`}>
       <h2 id={`${id}-title`}>Your boards</h2>
-      <p className="muted small">A product reaches a board only after you link it, and only you can use it there unless you open it to visitors.</p>
+      <p className="muted small">A product reaches a board only after you link it, and only you can use it there unless you open it to visitors. To use it yourself, open the product with Open as owner on its Muse Muse page, in its own tab.</p>
+      <p className="muted small">Opening a board to visitors also lets them use its camera and microphone, if the product uses those. A product that only takes photos or records sound, with no board tools, can&apos;t tell that it&apos;s you, so it needs visitors on to reach the board at all.</p>
       {error ? (
         <p className="note train-callout-warn" role="alert">
           {error}
