@@ -153,6 +153,8 @@ export interface RoomState {
   recordingUrl: string | null;
   /** The recording's poster, when it came with one. */
   recordingPosterUrl: string | null;
+  /** PLAN_ART: the plan card's own picture, made for this build, once it's in. */
+  planArtUrl: string | null;
   costUsd: number;
   fixRounds: number;
   /** The last rail step that was running, so a failure can be pinned to it. */
@@ -171,6 +173,7 @@ export function deriveRoom(build: BuildView, events: BuildEvent[]): RoomState {
   let liveUrl: string | null = null;
   let recordingUrl: string | null = null;
   let recordingPosterUrl: string | null = null;
+  let planArtUrl: string | null = null;
   let costUsd = build.costUsd;
   let lastRail: RailStep | null = STATUS_RAIL[build.status] ?? (build.step ? (STEP_RAIL[build.step] ?? null) : null);
   let lastError: string | null = build.error;
@@ -326,6 +329,10 @@ export function deriveRoom(build: BuildView, events: BuildEvent[]): RoomState {
       case "preview":
         previewUrl = e.url;
         break;
+      case "plan_art":
+        // Beside the turns, not one of them, so it moves no turn's times.
+        if (typeof e.url === "string" && /^https?:\/\//.test(e.url)) planArtUrl = e.url;
+        break;
       case "cost":
         costUsd = e.totalUsd;
         if (cur.seg) cur.seg.costUsd += e.addedUsd;
@@ -364,6 +371,7 @@ export function deriveRoom(build: BuildView, events: BuildEvent[]): RoomState {
     liveUrl,
     recordingUrl,
     recordingPosterUrl,
+    planArtUrl,
     costUsd,
     fixRounds: Math.max(build.fixRounds, build.kind === "refine" ? Math.max(0, fixFromRounds) : fixFromRounds),
     lastRail,

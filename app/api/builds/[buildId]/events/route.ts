@@ -73,8 +73,10 @@ export async function GET(req: Request, { params }: Ctx): Promise<Response> {
         for (let poll = 1; !stopped && Date.now() - startedAt < LIFETIME_MS; poll++) {
           const events = await eventsAfter(buildId, cursor, BATCH);
           for (const event of events) {
-            write(formatSseEvent(event));
             cursor = event.id;
+            // PLAN_ART off: a plan picture made while it was on stays out of the room, as the page leaves it out.
+            if (event.type === "plan_art" && !env.planArt) continue;
+            write(formatSseEvent(event));
             if (endedAt === null && isTerminalEvent(event)) endedAt = Date.now();
           }
           if (events.length === BATCH) continue;

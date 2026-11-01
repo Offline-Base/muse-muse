@@ -469,6 +469,15 @@ export const env = {
   get museAppLook(): boolean {
     return flag("MUSE_APP_LOOK");
   },
+  /**
+   * PLAN_ART: once a new build's brief is written, one Muse Image edit of the owner's mascot (public/muse/muse-present.jpg)
+   * doing something that fits the plan, about $0.01 a build, metered like the platform's other calls. The build room's
+   * plan card shows it in place of the stock mascot (lib/pipeline/plan-art.ts). Off by default: no call, no picture, and
+   * the card shows the stock mascot by state.
+   */
+  get planArt(): boolean {
+    return flag("PLAN_ART");
+  },
 
   // ---------- Where a product runs (docs/NATIVE.md). Every switch is off by default ----------
 

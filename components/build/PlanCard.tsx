@@ -3,19 +3,19 @@
 import { Fragment, useState, type ReactNode } from "react";
 import { preload } from "react-dom";
 import type { RoomState } from "@/components/build/derive";
-import { VERDICT } from "@/components/build/turns";
-import { Icon } from "@/components/icons";
+import { BriefBody, VERDICT } from "@/components/build/turns";
 import type { Brief, BuildStatus } from "@/lib/types";
 
 /**
- * The plan, in the build room's conversation once the brief is written: the Muse mascot on the left and a short summary
- * on the right, the plan's name, its tagline, who it's for and how it works. The models, limits, inspo and cost stay in
- * the steps panel's "Read the brief", which the card links to, so the plan reads once in the conversation. Styles are in
- * components/build/plan-card.css, which the build room page loads.
+ * The plan, in the build room's conversation once the brief is written: the Muse mascot at the top left and the whole
+ * plan beside it, its name, tagline and every part of the brief (BriefBody, the same one the steps panel's "Read the
+ * brief" folds), so the plan reads once in the conversation. Owner, Oct 31: on a wide column the text wraps beside the
+ * picture and runs on full width under it; a narrow one keeps the small picture beside the name with the plan under
+ * both. Styles are in components/build/plan-card.css, which the build room page loads.
  *
  * The card draws a PlanView, so another plan can use it: the build room's comes from its brief (planViewFromBrief), and
  * the fine-tune room's from its training plan (components/train/room/plan.ts planViewFromTrainPlan), with its own
- * actions under the summary.
+ * actions under the summary and the grid layout it had.
  */
 
 export type PlanArt = "present" | "building" | "shield";
@@ -67,27 +67,27 @@ export function isDeclined(brief: Brief): boolean {
 
 /**
  * Whether the conversation shows the plan card, and with which picture. Only a build that wrote its brief has one: a
- * change (a refine) carries its product's brief without writing a plan, and has no "Read the brief" to open.
+ * change (a refine) carries its product's brief without writing a plan.
  *
  * A declined brief has no card. A presenting mascot beside "Can't build this" says two things at once, and the declined
  * message (BriefBody) has no plan to sum up: no one it's for and no steps, only the reason. So the room keeps that
  * message as it was, on its own.
  */
-export function planCardState(room: Pick<RoomState, "status" | "segments">): { brief: Brief; art: PlanArt; step: string } | null {
+export function planCardState(room: Pick<RoomState, "status" | "segments">): { brief: Brief; art: PlanArt } | null {
   const seg = room.segments.find((s) => s.type === "brief");
   if (seg?.type !== "brief" || isDeclined(seg.brief)) return null;
   const art = ART_FOR[room.status];
-  // `step` is the brief's row in the steps list (its data-step), where "Read the brief" folds the whole of it.
-  return art ? { brief: seg.brief, art, step: seg.key } : null;
+  return art ? { brief: seg.brief, art } : null;
 }
 
 /**
  * While the brief is being written, fetches the pictures the card opens with, so the mascot is there when the card fades
  * in instead of popping in after it. Called while the room renders (react-dom's preload dedupes). A change passes
- * through "briefing" too, for its policy check, but never gets a card, so it fetches nothing.
+ * through "briefing" too, for its policy check, but never gets a card, so it fetches nothing, and neither does a room
+ * whose build already has its own picture (PLAN_ART), which the card shows instead.
  */
-export function preloadPlanArt(status: BuildStatus, isRefine: boolean): void {
-  if (isRefine || (status !== "queued" && status !== "briefing")) return;
+export function preloadPlanArt(status: BuildStatus, isRefine: boolean, artUrl: string | null = null): void {
+  if (isRefine || artUrl || (status !== "queued" && status !== "briefing")) return;
   preload(PLAN_ART.present, { as: "image" });
   preload(PLAN_ART.building, { as: "image", fetchPriority: "low" });
 }
@@ -123,55 +123,72 @@ export function PlanCard({
   brief,
   art,
   running,
-  panelId,
-  onReadBrief,
+  artUrl = null,
 }: {
   brief: Brief;
   art: PlanArt;
-  /** The build can still change state. Then all three pictures load at once, so a swap fades with nothing to wait for. */
   running: boolean;
-  /** The steps panel, which "Read the full brief" opens. */
-  panelId?: string;
-  onReadBrief?: () => void;
+  /** PLAN_ART: the picture made for this build (RoomState.planArtUrl), shown instead of the stock mascot once it's in. */
+  artUrl?: string | null;
 }) {
+  // Under the card's own name, tagline and badge: the rest of the brief, written out in full.
   return (
     <PlanViewCard
-      view={planViewFromBrief(brief)}
+      view={{ ...planViewFromBrief(brief), sections: [] }}
       art={art}
+      artUrl={artUrl}
       running={running}
-      more={
-        onReadBrief ? (
-          <button type="button" className="link-btn room-steps-link" aria-controls={panelId} onClick={onReadBrief}>
-            Read the full brief
-            <Icon name="chevronRight" size={16} />
-          </button>
-        ) : null
-      }
+      wrap
+      body={<BriefBody brief={brief} title={false} />}
     />
   );
 }
 
-/** The card itself, for any PlanView. `more` is the link under the summary; `actions` come after it. */
+/**
+ * The card itself, for any PlanView. `body` comes after the sections, `more` is the link under them and `actions` come
+ * last. `wrap` lets the text flow beside the picture and on under it where the column is wide (the build room's card).
+ */
 export function PlanViewCard({
   view,
   art,
   running,
   more,
   actions,
+  body,
+  wrap = false,
+  artUrl = null,
 }: {
   view: PlanView;
   art: PlanArt;
+  /**
+   * A picture made for this plan, shown instead of the stock mascot for every state. One there from the first render is
+   * the only picture the card loads; one that comes in later fades in over the stock mascot once it has loaded, in the
+   * same box, so nothing moves. Until then, or if it never loads, the stock mascot by state.
+   */
+  artUrl?: string | null;
   /** The plan can still change state. Then all three pictures load at once, so a swap fades with nothing to wait for. */
   running: boolean;
   more?: ReactNode;
   actions?: ReactNode;
+  body?: ReactNode;
+  wrap?: boolean;
 }) {
   // Decided once: a plan that has finished keeps its picture, so it loads only that one.
   const [all] = useState(running);
-  const arts = all ? ART_ORDER : [art];
+  const [ownFirst] = useState(Boolean(artUrl));
+  const [ownLoaded, setOwnLoaded] = useState(Boolean(artUrl));
+  // The URL of a picture of its own that failed to load (a 404, a block): the card goes back to the stock mascot.
+  const [ownBroken, setOwnBroken] = useState<string | null>(null);
+  const ownUrl = artUrl && artUrl !== ownBroken ? artUrl : null;
+  const own = Boolean(ownUrl) && ownLoaded;
+  const arts = ownFirst && ownUrl ? [] : all ? ART_ORDER : [art];
+  const broke = (url: string) => {
+    setOwnBroken(url);
+    setOwnLoaded(false);
+  };
   const tagline = view.tagline?.trim() ?? "";
   return (
-    <div className="plan-card" data-art={art}>
+    <div className={wrap ? "plan-card plan-card-wrap" : "plan-card"} data-art={art}>
       {/* Decorative: the room's own words, the working step above the card or the outcome under it, say the state. */}
       <div className="plan-card-art">
         <div className="plan-card-stack">
@@ -179,7 +196,7 @@ export function PlanViewCard({
             // eslint-disable-next-line @next/next/no-img-element
             <img
               key={a}
-              className={a === art ? "is-on" : undefined}
+              className={a === art && !own ? "is-on" : undefined}
               src={PLAN_ART[a]}
               alt=""
               width={ART_SIZE.width}
@@ -188,6 +205,24 @@ export function PlanViewCard({
               {...(a === art ? {} : { fetchPriority: "low" as const })}
             />
           ))}
+          {ownUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              key="own"
+              // A server-drawn picture can fail before the page hydrates, when onError has no one listening yet.
+              ref={(img) => {
+                if (img?.complete && img.naturalWidth === 0) broke(ownUrl);
+              }}
+              className={own ? "is-on" : undefined}
+              src={ownUrl}
+              alt=""
+              width={ART_SIZE.width}
+              height={ART_SIZE.height}
+              decoding="async"
+              onLoad={() => setOwnLoaded(true)}
+              onError={() => broke(ownUrl)}
+            />
+          ) : null}
         </div>
       </div>
       <div className="plan-card-head">
@@ -219,6 +254,7 @@ export function PlanViewCard({
             ) : null}
           </Fragment>
         ))}
+        {body}
         {more ? <p className="plan-card-more">{more}</p> : null}
         {actions}
       </div>

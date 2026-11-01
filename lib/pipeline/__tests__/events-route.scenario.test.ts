@@ -95,6 +95,30 @@ describe("build events SSE route", { skip: canMock ? false : "needs --experiment
     assert.ok(elapsed >= 1_900 && elapsed < 6_000, `closed after ${elapsed} ms`);
   });
 
+  it("leaves a plan picture out of the stream with PLAN_ART off, and passes it on with it on", async () => {
+    const run = async () => {
+      status = "live";
+      log = [
+        { id: 3, at: "t", type: "plan_art", url: "https://blob.example/fixtures/b/plan-art.jpg" },
+        { id: 4, at: "t", type: "log", text: "after the picture" },
+      ];
+      asked.length = 0;
+      const res = await GET(new Request("http://x/events?after=2"), { params: Promise.resolve({ buildId: BUILD_ID }) });
+      const body = await readAll(res);
+      return { ids: body.split("\n\n").filter((m) => m.startsWith("id: ")).map((m) => m.split("\n")[0]), asked: [...asked] };
+    };
+    delete process.env.PLAN_ART;
+    const off = await run();
+    assert.deepEqual(off.ids, ["id: 4"]);
+    assert.ok(!off.asked.slice(1).includes(2), "the cursor moves past the skipped event");
+    process.env.PLAN_ART = "1";
+    try {
+      assert.deepEqual((await run()).ids, ["id: 3", "id: 4"]);
+    } finally {
+      delete process.env.PLAN_ART;
+    }
+  });
+
   it("never asks about Prove it with the flag off", async () => {
     status = "live";
     log = [];

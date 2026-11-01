@@ -4,7 +4,8 @@
  * sleeps, so a 20-minute build is many short steps.
  *
  *   buildProduct:  brief -> product -> fixtures + provision -> build -> preview (non-fatal) -> verify/fix loop
- *                  -> outcome -> record (non-fatal) -> deploy -> register -> hibernate -> final status
+ *                  -> outcome -> record (non-fatal) -> deploy -> register -> hibernate -> final status, with the
+ *                  plan card's picture (PLAN_ART, non-fatal) made beside everything after the brief
  *   refineProduct: policy check -> reopen sandbox -> refine-<n>.md -> resume the Muse Code session -> same checks
  *                  and shipping, but only a change that passes every check ships
  *
@@ -67,6 +68,7 @@ import {
   type Outcome,
   type VerifyStepResult,
 } from "@/lib/pipeline/logic";
+import { planArtStep } from "@/lib/pipeline/plan-art-step";
 import { startProveStep } from "@/lib/pipeline/prove-start";
 import { provePlanStep } from "@/lib/pipeline/prove-steps";
 import { stepTimeoutMs } from "@/lib/pipeline/steps";
@@ -84,6 +86,11 @@ export interface BuildProductResult {
 const MUSE_POLL_MS = 15_000;
 const TASK_POLL_MS = 10_000;
 const DEPLOY_POLL_MS = 10_000;
+/**
+ * PLAN_ART: the longest a build that shipped waits at its end for the plan card's picture, so the room hears it while
+ * its stream is open. The picture has had the whole build to land, and its own time box is about a minute.
+ */
+const PLAN_ART_GRACE_MS = 15_000;
 function maxFixRounds(): number {
   return Math.min(REFINE_ROUND_STRIDE - 1, Math.floor(env.maxFixRounds));
 }
@@ -494,6 +501,7 @@ export async function buildProduct(input: BuildProductInput): Promise<BuildProdu
   let productId: string | null = null;
   let sandboxName: string | null = null;
   let ending: Ending;
+  let art: Promise<unknown> | null = null;
   try {
     const head = await loadBuildStep(buildId);
     if (TERMINAL_STATUSES.includes(head.status)) return { status: head.status };
@@ -508,6 +516,9 @@ export async function buildProduct(input: BuildProductInput): Promise<BuildProdu
       await setStatusStep(buildId, "refused", { message, error: message });
       return { status: "refused" };
     }
+    // The plan card's own picture, beside every step from here on. It gives up within about a minute and never throws,
+    // so it can't hold up or fail the build. Waited for briefly before a shipped build's final status (PLAN_ART_GRACE_MS).
+    if (env.planArt) art = planArtStep(buildId).catch(() => null);
 
     track.stage = "product";
     const product = await createProductStep(buildId);
@@ -548,6 +559,9 @@ export async function buildProduct(input: BuildProductInput): Promise<BuildProdu
   } catch (err) {
     ending = { status: "failed", message: failureMessage(track.stage, err) };
   }
+  // Bounded, so a picture that hangs (or a step that never runs) can't hold the end. A failed build doesn't wait at all:
+  // its cleanup and failure come first, and a picture that lands after them is still in the log on the next load.
+  if (art && ending.status !== "failed") await Promise.race([art, sleep(PLAN_ART_GRACE_MS)]);
   if (productId || sandboxName) await cleanup({ buildId, productId, sandboxName });
   const proof = await planProof(buildId, ending);
   const result = await end(buildId, productId, ending);
