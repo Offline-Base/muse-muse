@@ -4237,6 +4237,180 @@ a.dash-card:hover {
   }
 }
 
+/*
+ * Starters under the Make page's composer, laid out like Meta AI's (docs/BRAND.md, "Starters under the composer"):
+ * category pills, then a grid of ideas (a gray squircle icon beside a two-line label) or a strip of photo cards.
+ */
+.starters {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.starter-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* On a phone the pills stay on one line and scroll sideways, as on Meta AI's. */
+@media (max-width: 559.98px) {
+  .starter-pills {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .starter-pills::-webkit-scrollbar {
+    display: none;
+  }
+
+  .starter-pill {
+    flex: none;
+  }
+}
+
+.starter-pill {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--pill);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 20px;
+  cursor: pointer;
+  transition: background var(--ease), border-color var(--ease);
+}
+
+.starter-pill:hover {
+  background: var(--hover);
+}
+
+.starter-pill[aria-selected="true"] {
+  border-color: transparent;
+  background: var(--surface-2);
+}
+
+.starter-panel {
+  margin-top: 20px;
+}
+
+.starter-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px 24px;
+}
+
+@media (min-width: 480px) {
+  .starter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 720px) {
+  .starter-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px 24px;
+  }
+}
+
+.starter-idea {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 16px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.starter-idea:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.starter-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: var(--surface-2);
+  color: var(--fg);
+  transition: background var(--ease);
+}
+
+@media (max-width: 479.98px) {
+  .starter-icon {
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+  }
+}
+
+.starter-idea:hover:not(:disabled) .starter-icon {
+  background: var(--hover-2);
+}
+
+.starter-label {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 15px;
+  line-height: 22px;
+}
+
+/* Photo examples: five across from 720 px; under that a row that scrolls sideways, one card and a bit at a time. */
+.ex-grid.ex-strip {
+  margin: 0;
+  gap: 12px;
+}
+
+@media (min-width: 720px) {
+  .ex-grid.ex-strip {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 719.98px) {
+  .ex-grid.ex-strip {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(150px, 42%);
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    padding-bottom: 4px;
+  }
+
+  .ex-grid.ex-strip > li {
+    scroll-snap-align: start;
+  }
+}
+
+.ex-strip .ex-card {
+  aspect-ratio: 0.86;
+}
+
+/* The strip's captions are the label alone, as on Meta AI's; the description stays the card's title. */
+.ex-strip .ex-text {
+  display: none;
+}
+
+.ex-strip .ex-media::after {
+  background: linear-gradient(180deg, transparent 45%, rgba(0, 0, 0, 0.68));
+}
+
 /* The build setup: facts, not controls, folded under the examples. */
 .setup {
   width: 100%;

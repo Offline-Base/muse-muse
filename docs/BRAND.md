@@ -242,15 +242,23 @@ The live buttons' CSS `gap` reads 2 px, but their 20 px icon sits 4 px from the 
 Send stays the same color while recording. The spec's cobalt `#3563F6` isn't confirmed anywhere, and Send doesn't do
 anything new in that state.
 
-### Examples under the composer (`.ex-grid`, `.ex-card`)
+### Starters under the composer (`Starters.tsx`, `.starter-pill`, `.starter-grid`, `.ex-strip`)
 
-Three cards of real examples, starting 16 to 20 px under the composer: radius 18 px, aspect ratio 0.86, full-bleed
-photo, a scrim `linear-gradient(180deg, transparent 45%, rgba(0,0,0,.68))`, caption 14 / 500 white at the bottom left
-(E, with M's button type). Three across from 560 px, one per row under it at 16:9. "Use my camera" and the tag stay,
-since they work. From 560 px there's no separate text line in the card: the example's description becomes its
-`title`, which screen readers read once, as the card's description. Phones have no tooltips, so under 560 px it shows
-as a second caption line, 13 / 18, over a deeper scrim, `transparent 20%`, `rgba(0,0,0,.55) 55%`, then
-`rgba(0,0,0,.8)` (O), which keeps white text legible over the white receipt.
+Laid out like Meta AI's (owner, Nov 1: "make it more similar to the meta ai ui underneath"), in place of the three photo
+cards:
+
+- **Category pills**, 20 px under the composer: Discover, For school, For work, From a photo. 40 px tall, 16 px side
+  padding, 15 / 500, a hairline (`--line`) on the page color; the chosen one fills with `--surface-2` and drops its
+  border. A tab list: arrow keys, Home and End move between them. On a phone they stay on one line and scroll sideways.
+- **Ideas** (the first three tabs): six each, a grid of three across from 720 px, two from 480, one below. Each is a
+  64 px squircle (radius 16, `--surface-2`, 26 px outline icon in `--fg`; 52 px under 480) beside a label of 15 / 22, two
+  lines at most. Choosing one fills the composer with its note and focuses it; it never sends.
+- **From a photo**: five photo cards in a row from 720 px (radius 18, aspect 0.86, full-bleed photo, the scrim
+  `linear-gradient(180deg, transparent 45%, rgba(0,0,0,.68))`, the label 14 / 500 white at the bottom left). Under 720 px
+  the row scrolls sideways with snap points. No tag pill and no camera button on the cards, as on Meta AI's; the
+  composer's + menu still has Take a photo. Choosing one fills the note and attaches its photo as inspo. The two newest
+  photos (fridge, plant) were made with Muse Image on Nov 1.
+- Without `starters`, a playground composer still draws the older photo-card grid (`.ex-grid` without `.ex-strip`).
 
 ### Sidebar (`.sidebar`, `.nav-link`, `Brand.tsx`, `AccountMenu.tsx`)
 

@@ -66,6 +66,12 @@ const PATHS = {
   /** A chip with pins, for Gadgets: a board such as a Jetson. */
   chip:
     "M8.5 6.5h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z M10 10h4v4h-4z M10 3.5v3 M14 3.5v3 M10 17.5v3 M14 17.5v3 M3.5 10h3 M3.5 14h3 M17.5 10h3 M17.5 14h3",
+  /** The Make page's starter ideas (components/composer/Starters.tsx). */
+  cart: "M3.5 4.5h2l2.2 10.2a1.5 1.5 0 0 0 1.5 1.3h7.9a1.5 1.5 0 0 0 1.5-1.2L20 8H6.4 M9.5 20h.01 M17 20h.01",
+  cap: "M12 5L2.5 9.5 12 14l9.5-4.5L12 5z M6.5 11.5v4c1.5 1.7 3.5 2.5 5.5 2.5s4-.8 5.5-2.5v-4 M21.5 9.5V15",
+  wallet: "M4 7.5A2.5 2.5 0 0 1 6.5 5H18v3 M4 7.5v10A1.5 1.5 0 0 0 5.5 19h13a1.5 1.5 0 0 0 1.5-1.5v-8A1.5 1.5 0 0 0 18.5 8h-12A2.5 2.5 0 0 1 4 7.5z M16 13.5h.01",
+  dumbbell: "M6.5 7v10 M17.5 7v10 M3.5 9.5v5 M20.5 9.5v5 M6.5 12h11",
+  leaf: "M5 19c0-8 5-13 14-14 0 9-5 14-13 14 M5 19l7-7",
 } as const;
 
 export type IconName = keyof typeof PATHS;
