@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import { CODE_WRITER_RULES, CodeBriefBlock } from "@/lib/caps/code/brief";
 import { DataBriefBlock, dataWriterBlock, dataWriterRules } from "@/lib/caps/data/brief";
 import type { CapId } from "@/lib/caps/ids";
 import { EXTENSION_WRITER_RULES, ExtensionBriefBlock } from "@/lib/caps/extension/brief";
@@ -16,6 +17,7 @@ import { RUNTIME_WRITER_RULES, RuntimeBriefBlock } from "@/lib/caps/runtime/brie
  */
 export const CAP_BRIEF_FIELDS = {
   data: DataBriefBlock,
+  code: CodeBriefBlock,
   runtime: RuntimeBriefBlock,
   extension: ExtensionBriefBlock,
   games: GamesBriefBlock,
@@ -36,6 +38,7 @@ export function briefCaps(brief: object): CapId[] {
 export const CAP_WRITER_RULES: Partial<Record<CapId, readonly string[] | (() => readonly string[])>> = {
   // Unit 3: they follow DATA_SIGN_IN.
   data: () => dataWriterRules(),
+  code: CODE_WRITER_RULES,
   runtime: RUNTIME_WRITER_RULES,
   extension: EXTENSION_WRITER_RULES,
   games: GAMES_WRITER_RULES,

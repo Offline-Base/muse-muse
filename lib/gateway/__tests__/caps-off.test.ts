@@ -10,6 +10,7 @@ import { CAPS_PROOF_PER_MINUTE, handleCapsProof, type CapsProofDeps } from "@/li
 import { CAP_FLAG, CAP_IDS } from "@/lib/caps/ids";
 import { handleData, handleIdentityUser, handleIdentityUserLink, handleIdentityUserTest, type DataDeps } from "@/lib/caps/data/handler";
 import { handlePasskey, type PasskeyDeps } from "@/lib/caps/data/passkeys";
+import { handleBrowse, handleExec, type CodeDeps } from "@/lib/caps/code/handler";
 import { env } from "@/lib/env";
 
 /** A dependency that fails the test if anything calls it. */
@@ -34,6 +35,27 @@ const dataOff = (): DataDeps => ({
   productSlug: untouched<DataDeps["productSlug"]>("productSlug"),
 });
 
+/** Unit 9's deps with the real flags and every other dependency failing the test if it's touched. */
+const codeOff = (): CodeDeps => ({
+  servedCaps: () => env.servedCaps,
+  execOn: () => env.codeExec,
+  browseOn: () => env.codeBrowse,
+  visitorsOn: () => env.codeExecVisitors,
+  findToken: untouched<CodeDeps["findToken"]>("findToken"),
+  product: untouched<CodeDeps["product"]>("product"),
+  adminEmails: [],
+  hitRateLimits: untouched<CodeDeps["hitRateLimits"]>("hitRateLimits"),
+  reserveCounter: untouched<CodeDeps["reserveCounter"]>("reserveCounter"),
+  execDailyUsd: untouched<CodeDeps["execDailyUsd"]>("execDailyUsd"),
+  browseDailyUsd: untouched<CodeDeps["browseDailyUsd"]>("browseDailyUsd"),
+  spendToday: untouched<CodeDeps["spendToday"]>("spendToday"),
+  execSnapshotId: untouched<CodeDeps["execSnapshotId"]>("execSnapshotId"),
+  browseSnapshotId: untouched<CodeDeps["browseSnapshotId"]>("browseSnapshotId"),
+  launch: untouched<CodeDeps["launch"]>("launch"),
+  recordRun: untouched<CodeDeps["recordRun"]>("recordRun"),
+  lookupHost: untouched<CodeDeps["lookupHost"]>("lookupHost"),
+});
+
 const ROUTES: Array<{ path: string; call(req: Request): Promise<Response> }> = [
   // Unit 3: saved data, its sign-in, and the platform's passkey routes.
   { path: "data", call: (req) => handleData(req, [], dataOff()) },
@@ -43,6 +65,9 @@ const ROUTES: Array<{ path: string; call(req: Request): Promise<Response> }> = [
   { path: "identity/user", call: (req) => handleIdentityUser(req, dataOff()) },
   { path: "identity/user/test", call: (req) => handleIdentityUserTest(req, dataOff()) },
   { path: "identity/user/link", call: (req) => handleIdentityUserLink(req, dataOff()) },
+  // Unit 9: running code on the platform, and opening a page the person typed.
+  { path: "exec", call: (req) => handleExec(req, codeOff()) },
+  { path: "browse", call: (req) => handleBrowse(req, codeOff()) },
   // Unit 2: what the gateway saw for a build's namespace.
   {
     path: "caps/proof",
@@ -89,6 +114,17 @@ describe("unit 3's routes with the data cap served but DATA_SIGN_IN off", () => 
     for (const [kind, step] of [["register", "options"], ["register", "verify"], ["login", "options"], ["login", "verify"]] as const) {
       const res = await handlePasskey(new Request(`https://platform.example/api/u/passkey/${kind}/${step}`, { method: "POST", body: "{}" }), kind, step, passkeys);
       assert.equal(res.status, 404, `${kind}/${step}`);
+    }
+  });
+});
+
+describe("unit 9's routes with the code cap served but CODE_EXEC and CODE_BROWSE off", () => {
+  it("/exec and /browse answer 404 and touch nothing", async () => {
+    const on: CodeDeps = { ...codeOff(), servedCaps: () => ["code"], execOn: () => false, browseOn: () => false };
+    for (const [path, call] of [["exec", handleExec], ["browse", handleBrowse]] as const) {
+      const res = await call(new Request(`https://platform.example/api/gateway/${path}`, { method: "POST", headers: { authorization: "Bearer mm_live_x" }, body: "{}" }), on);
+      assert.equal(res.status, 404, path);
+      assert.equal(((await res.json()) as { error: { code: string } }).error.code, "unknown_endpoint");
     }
   });
 });
