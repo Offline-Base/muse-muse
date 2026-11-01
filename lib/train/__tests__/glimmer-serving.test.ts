@@ -260,7 +260,39 @@ describe("glimmer-serving", { skip: canMock ? false : "needs --experimental-test
       answer = async () => {
         throw new Error("socket hang up at 203.0.113.7");
       };
-      await assert.rejects(backend.chat({ messages: user("hi"), adapter: null }), (e: unknown) => e instanceof Error && !e.message.includes("203.0.113.7"));
+      await assert.rejects(
+        backend.chat({ messages: user("hi"), adapter: null }),
+        (e: unknown) => e instanceof serve.ServeError && e.code === "unreachable" && !e.message.includes("203.0.113.7"),
+      );
+    });
+
+    it("throws only ServeError: a database failure on the slot or the window's read is unreachable (502, and the gateway falls back)", async () => {
+      const slotDown = (await backends(target(), {
+        takeSlot: async () => {
+          throw new Error("connection to the made-up database was lost");
+        },
+      })(ADAPTER))!;
+      await assert.rejects(slotDown.chat({ messages: user("hi"), adapter: null }), (e: unknown) => {
+        assert.ok(e instanceof serve.ServeError && e.code === "unreachable", String(e));
+        assert.deepEqual(gs.glimmerErrorReply(e), { status: 502, code: "glimmer_unavailable" });
+        return true;
+      });
+      assert.deepEqual([released, asked], [[], []], "no slot was taken, nothing was sent");
+
+      // A failed give-back is logged, never thrown: the answer still comes back.
+      const releaseDown = (await backends(target(), {
+        releaseSlot: async () => {
+          throw new Error("made-up release failure");
+        },
+      })(ADAPTER))!;
+      assert.equal((await releaseDown.chat({ messages: user("hi"), adapter: null })).text, "Hello");
+
+      const readDown = backends(target(), {
+        target: async () => {
+          throw new Error("made-up read failure");
+        },
+      });
+      await assert.rejects(readDown(ADAPTER), (e: unknown) => e instanceof serve.ServeError && e.code === "unreachable");
     });
   });
 

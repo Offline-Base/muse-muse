@@ -185,19 +185,38 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const bad = (message: string) => new ServeError("bad_prompt", message, 400);
 
+const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
+/**
+ * Any failure as a ServeError with the GPU's address scrubbed out, so the contract's "throws ServeError" holds: a
+ * ServeError keeps its code and status, anything else (a database error on the slot, a socket error) is unreachable,
+ * which glimmerErrorReply answers 502 and the gateway falls back on.
+ */
+function asServeError(err: unknown, scrub: (message: string) => string): ServeError {
+  if (err instanceof ServeError) return new ServeError(err.code, scrub(err.message), err.status);
+  return new ServeError("unreachable", scrub(errorText(err)));
+}
+
 /**
  * serveJobChatBackend on given deps (the tests' fakes): the backend of the live window for an adapter (or for null any
  * chat adapter's, for base Glimmer), or null when none is live. Its chat() checks the request before the GPU sees it
  * (bad_prompt), takes the window's one slot (busy after CHAT_SLOT_WAIT_MS), sends the GPU's /v1/chat/completions the
  * messages with Meta's sampling, and gives the slot back. The slot wait counts against serveTiming.chatMs, so the call
  * ends by then and the slot (the Try it live box's too) is never held past it. A ServeError's message never names the
- * GPU's address.
+ * GPU's address, and every failure is a ServeError (asServeError: anything else, a database error on the slot or the
+ * window's read included, is unreachable).
  */
 export function chatWindowBackends(deps: ChatWindowDeps): (adapterJobId: string | null, now?: Date) => Promise<GlimmerChatBackend | null> {
   const ask = deps.ask ?? askChat;
   const keyFor = deps.keyFor ?? serveKeyFor;
   return async (adapterJobId, now = new Date()) => {
-    const target = await deps.target(adapterJobId, now);
+    let target: ChatServeTargetRow | null;
+    try {
+      target = await deps.target(adapterJobId, now);
+    } catch (err) {
+      console.error("[glimmer-serving] reading the serving window failed", errorText(err));
+      throw new ServeError("unreachable", "Muse Glimmer's serving window couldn't be read.");
+    }
     if (!target) return null;
     const scrub = (message: string) => message.split(target.ip).join("[Glimmer GPU]");
     return {
@@ -216,28 +235,28 @@ export function chatWindowBackends(deps: ChatWindowDeps): (adapterJobId: string 
         const began = Date.now();
         const giveUp = began + (deps.slotWaitMs ?? CHAT_SLOT_WAIT_MS);
         let window: Date | null = null;
-        for (;;) {
-          window = await deps.takeSlot(target.jobId);
-          if (window || i.signal?.aborted || Date.now() >= giveUp) break;
-          await sleep(deps.slotPollMs ?? CHAT_SLOT_POLL_MS);
-        }
-        if (!window) {
-          if (i.signal?.aborted) throw new ServeError("timeout", "The caller stopped waiting.");
-          throw new ServeError("busy", "Muse Glimmer's GPU stayed on another request.", 409);
-        }
         try {
+          for (;;) {
+            window = await deps.takeSlot(target.jobId);
+            if (window || i.signal?.aborted || Date.now() >= giveUp) break;
+            await sleep(deps.slotPollMs ?? CHAT_SLOT_POLL_MS);
+          }
+          if (!window) {
+            if (i.signal?.aborted) throw new ServeError("timeout", "The caller stopped waiting.");
+            throw new ServeError("busy", "Muse Glimmer's GPU stayed on another request.", 409);
+          }
           const left = serveTiming.chatMs - (Date.now() - began);
           if (i.signal?.aborted || left <= 0) throw new ServeError("timeout", "The caller stopped waiting.");
           const got = await ask({ ip: target.ip, port: target.port, certSha256: target.certSha256 }, keyFor(target.jobId, target.tokenHash), body, left, i.signal);
           return { text: got.text, finish: got.finish, usage: got.usage, ms: got.ms };
         } catch (err) {
           // Node's connection errors name the address; the caller's log never sees it.
-          if (err instanceof ServeError) throw new ServeError(err.code, scrub(err.message), err.status);
-          throw new Error(scrub(err instanceof Error ? err.message : String(err)));
+          throw asServeError(err, scrub);
         } finally {
-          await deps.releaseSlot(target.jobId, window).catch((e) =>
-            console.error("[glimmer-serving] releasing the window's slot failed", e instanceof Error ? e.message : e),
-          );
+          if (window) {
+            const held = window;
+            await deps.releaseSlot(target.jobId, held).catch((e) => console.error("[glimmer-serving] releasing the window's slot failed", errorText(e)));
+          }
         }
       },
     };

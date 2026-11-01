@@ -675,7 +675,8 @@ and `runner.test.ts` keeps them equal.
   window serves that adapter) whose `chat({ messages, adapter, maxTokens?, stop?, signal? })` gives `{ text, finish,
   usage: { input, output }, ms }`. `adapter` null is base Glimmer, the window's adapter id its tuned model. It checks the
   request first (bad_prompt), takes the same platform slot as Try it live (`takeDemoSlot`, busy after 8 s), and gives it
-  back. It throws `ServeError`, mapped by `glimmerErrorReply`: busy 409, stopping 503 `glimmer_closed`, timeout 504,
+  back. It throws only `ServeError` (anything else, such as a database error on the slot or on reading the window, is
+  unreachable), mapped by `glimmerErrorReply`: busy 409, stopping 503 `glimmer_closed`, timeout 504,
   bad_prompt 400 `bad_request` (the caller's to fix), unreachable, pin_mismatch, refused and bad_answer 502. No error
   names the GPU's address. `stop` is an optional field added beside the contract's.
 - Tests: `lib/train/__tests__/glimmer-serving.test.ts` (the settings, the backend on fake windows, `askChat` against a
