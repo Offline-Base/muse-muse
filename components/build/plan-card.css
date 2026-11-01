@@ -2,9 +2,10 @@
  * The plan card in the build room's conversation (components/build/PlanCard.tsx): the Muse mascot on its own light stage
  * at the left, the plan's summary at the right. All classes are new, so a room without a card looks as it did.
  *
- * The mascot pictures have white backgrounds. They're multiplied onto the stage, so their white becomes the stage's
- * color and the card reads as one rounded tile with the media card's radius and a hairline. In dark mode the stage
- * stays light, a little dimmer, so it reads as a lit card on the page rather than a white rectangle.
+ * The mascot pictures have white backgrounds. They're multiplied onto the stage (--media-stage in app/globals.css), so
+ * their white becomes the stage's color and the card reads as one rounded tile with the media card's radius and a
+ * hairline. In dark mode the stage stays light, a little dimmer, so it reads as a lit card on the page rather than a
+ * white rectangle, and the mascot keeps its own colors.
  */
 
 .room-plan {
@@ -13,8 +14,6 @@
 }
 
 .plan-card {
-  /* The light --surface-2. It stays light in dark mode, where white pictures would glare at full strength. */
-  --plan-stage: #f3f4f5;
   --plan-swap: 300ms;
   display: grid;
   grid-template-columns: 112px minmax(0, 1fr);
@@ -26,16 +25,6 @@
   animation: chat-fade-in 150ms ease-out;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .plan-card {
-    --plan-stage: #dcdddf;
-  }
-}
-
-:root[data-theme="dark"] .plan-card {
-  --plan-stage: #dcdddf;
-}
-
 /* A fixed box, so a swap never moves the text beside it. */
 .plan-card-art {
   grid-area: art;
@@ -44,7 +33,7 @@
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 18px;
-  background: var(--plan-stage);
+  background: var(--media-stage);
   isolation: isolate;
 }
 
@@ -84,11 +73,12 @@
   overflow-wrap: anywhere;
 }
 
+/* Title 2 at every width (docs/BRAND.md, Scale). */
 .plan-card-name {
   color: var(--fg);
-  font-size: 20px;
+  font-size: 24px;
   font-weight: 400;
-  line-height: 25px;
+  line-height: 29px;
 }
 
 .plan-card-tagline {
@@ -112,11 +102,12 @@
   overflow-wrap: anywhere;
 }
 
+/* Body, stressed (docs/BRAND.md, Scale), over the response's 16 / 26 text. */
 .plan-card-body h3 {
   color: var(--fg);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
-  line-height: 20px;
+  line-height: 22px;
 }
 
 .plan-card-body * + h3 {
@@ -154,11 +145,6 @@
   .plan-card-head {
     align-self: start;
     padding-top: 4px;
-  }
-
-  .plan-card-name {
-    font-size: 24px;
-    line-height: 29px;
   }
 }
 

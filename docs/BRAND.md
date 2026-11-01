@@ -86,6 +86,7 @@ under `@media (prefers-color-scheme: dark)` and `:root[data-theme="dark"]`. Chan
 | `--bad`, `--bad-soft` | `#c01f37`, `#fde8e8` | `#fa4758`, `#dc262626` | M | |
 | `--chart-1` to `--chart-6` | as they are | as they are | O | No source. Unchanged |
 | Code block fill | `#f3f4f5` | `#1f1f20` | M | |
+| `--media-stage` (new) | `#f3f4f5` | `#dcdddf` | O | Behind a picture with a white background, which is multiplied onto it: the mascot in the build room's plan card. It stays light in dark, a little dimmer, since a dark stage would darken the picture |
 | Scrim on media | `rgba(0,0,0,.5)` | same | M | |
 | Dialog overlay | `rgba(0,0,0,.1)` | `rgba(255,255,255,.06)` | M | |
 
@@ -341,7 +342,7 @@ No source covers these, since the live page has no dashboards. Apply the tokens 
 | Copy on a response | Could be real, but no answer in a build needs it yet | The Share button copies the link |
 | Pin, Rename, Delete chat | No such actions on a build | The More menu's real actions |
 | Toast "Link copied" | Share already says it on its own button | That button |
-| Mascot character | The owner's mascot lands later, in `WorkingIcon` | The working icon |
+| Mascot character in `WorkingIcon` | The owner's mascot lands there later. Since Oct 31 its three pictures (`public/muse/muse-present.jpg`, `muse-building.jpg`, `muse-shield.jpg`) show in the build room's plan card | The working icon |
 | Designer names, font history, design philosophy | Unverified. Not used | Nothing |
 
 ## Differences from the spec

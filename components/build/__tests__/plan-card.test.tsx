@@ -249,14 +249,16 @@ describe("the card's look", () => {
     assert.match(reduced, /\.plan-card-stack > img,\s*\.plan-card-stack > img\.is-on \{\s*transition: none;\s*\}/);
   });
 
-  it("stands the white pictures on a light stage in both themes, with colors only as its token", () => {
+  it("stands the white pictures on a light stage in both themes, with no raw colors of its own", () => {
     const s = css();
     assert.match(s, /\.plan-card-stack \{[^}]*mix-blend-mode: multiply;/);
-    assert.match(s, /\.plan-card-art \{[^}]*border: 1px solid var\(--line\);[^}]*background: var\(--plan-stage\);/);
-    assert.match(s, /@media \(prefers-color-scheme: dark\) \{\s*:root:not\(\[data-theme="light"\]\) \.plan-card \{\s*--plan-stage: #[0-9a-f]{6};/);
-    assert.match(s, /:root\[data-theme="dark"\] \.plan-card \{\s*--plan-stage: #[0-9a-f]{6};/);
-    const raw = s.split("\n").filter((l) => /#[0-9a-f]{3,8}\b|rgba?\(/i.test(l) && !/^\s*--plan-stage:/.test(l));
-    assert.deepEqual(raw, [], "no raw colors outside the stage token");
+    assert.match(s, /\.plan-card-art \{[^}]*border: 1px solid var\(--line\);[^}]*background: var\(--media-stage\);/);
+    const raw = s.split("\n").filter((l) => /#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(|oklch\(/i.test(l));
+    assert.deepEqual(raw, [], "colors come from the tokens in app/globals.css");
+    // The stage is a token in each theme block, light in all three, since a dark stage would darken the mascot.
+    const globals = readFileSync(path.join(ROOT, "app/globals.css"), "utf8");
+    const stages = [...globals.matchAll(/--media-stage: (#[0-9a-f]{6});/g)].map((m) => m[1]);
+    assert.deepEqual(stages, ["#f3f4f5", "#dcdddf", "#dcdddf"], "light, dark (system), dark (picked)");
   });
 
   it("fits a phone: a smaller picture beside the name, and the wide layout only where the column has room", () => {
