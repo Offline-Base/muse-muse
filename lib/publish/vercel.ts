@@ -80,6 +80,8 @@ export interface StartDeployInput {
   env: Record<string, string>;
   /** Reuse the product's project on redeploys. */
   projectId?: string | null;
+  /** Given the exact files once they're known to deploy (docs/VERSIONS.md). Must not throw. */
+  onFiles?: (files: Array<DeployFile & { content: Buffer }>) => Promise<unknown>;
 }
 
 export class VercelApiError extends Error {
@@ -302,6 +304,7 @@ export async function startDeployFromSandbox(
   const [{ files }, project] = await Promise.all([collectDeployFiles(input.sandboxName), getOrCreateProject(name, input.projectId)]);
   if (!files.some((f) => f.file === "package.json")) throw new Error("The product has no package.json to deploy");
   await configureProject(project, input.env);
+  await input.onFiles?.(files);
 
   const body = {
     name: project.name,
