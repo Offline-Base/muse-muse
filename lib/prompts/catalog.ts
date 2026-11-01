@@ -159,7 +159,7 @@ export function catalogSummary(caps: readonly CapId[] = env.enabledCaps): string
   const connectKey = caps.includes("connect") ? `|${connectOptions().vault}|${connectOptions().sends}` : "";
   // End unit 5.
   // Wave 3, unit 9: the code cap's block names only its parts that are on, so they are part of the key while code is on.
-  const key = `${gadgets}|${agents}|${personal}|${caps.join(",")}${caps.includes("data") ? `|${env.dataSignIn}` : ""}${caps.includes("media") ? `|${env.mediaParts.join(",")}` : ""}${connectKey}${caps.includes("code") ? `|code:${codePartsKey()}` : ""}`;
+  const key = `${gadgets}|${agents}|${personal}|${caps.join(",")}${caps.includes("data") ? `|${env.dataSignIn}` : ""}${caps.includes("live") ? `|live:${env.liveUpdates}` : ""}${caps.includes("media") ? `|${env.mediaParts.join(",")}` : ""}${connectKey}${caps.includes("code") ? `|code:${codePartsKey()}` : ""}`;
   const hit = cached.get(key);
   if (hit) return hit;
   const run = howProductsRun(caps, { gadgets, agents });

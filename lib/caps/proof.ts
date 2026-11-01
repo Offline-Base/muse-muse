@@ -3,6 +3,7 @@ import { codeProof } from "@/lib/caps/code/store";
 import { dataProof } from "@/lib/caps/data/store";
 import { filesProof } from "@/lib/caps/files/store";
 import type { CapId } from "@/lib/caps/ids";
+import { liveProof } from "@/lib/caps/live/store";
 import { gatewayError } from "@/lib/gateway/errors";
 import type { ProductStatus } from "@/lib/types";
 
@@ -27,6 +28,8 @@ export const CAP_PROOF: Partial<Record<CapId, CapProofCounter>> = {
   files: filesProof,
   // Unit 5: sampled fetches and calls, simulated sends, test keys and their hashes for the leak scan, the brief's picks.
   connect: connectProof,
+  // Unit 7: caption chunks, tickets, streams and changes sent since `since`, and what the brief asks for.
+  live: liveProof,
   // Exec runs and pages opened in the build namespace since `since`, and which parts the brief asked for.
   code: codeProof,
 };

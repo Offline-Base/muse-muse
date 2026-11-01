@@ -1755,9 +1755,9 @@ microphone fixture. Two-way realtime voice waits for Meta.
 
 | Method and path | Auth | Does | Limits |
 |---|---|---|---|
-| `POST {GATEWAY_URL}/v1/asr/transcribe` (existing) with `x-musemuse-live: <session>` | product token with `cap:live` | One chunk. One marked line in `handler.ts` raises the per-IP limit for this endpoint to 30 a minute for `cap:live` tokens | `LIVE_CAPTION_MINUTES` audio minutes per visitor per day |
+| `POST {GATEWAY_URL}/v1/asr/transcribe` (existing) with `x-musemuse-live: <session>` | product token with `cap:live` | One chunk. One marked block in `handler.ts` counts it per IP under its own key, 30 a minute, for `cap:live` tokens, leaving the usual per-IP key for everything else | `LIVE_CAPTION_MINUTES` audio minutes per visitor per day |
 | `POST {GATEWAY_URL}/live/ticket` `{collection, scope}` | `cap:live`, a principal who may read that scope | An `lt1` read ticket, 10 minutes | |
-| `GET {GATEWAY_URL}/live/stream?ticket=&after=<seq>` | the ticket | SSE of `{seq, op, id, data}`, polled every 1.5 s, closed at 55 s; the browser reconnects with `after` | 20 streams per product, 200 in all |
+| `GET {GATEWAY_URL}/live/stream?ticket=&after=<seq>` | the ticket | SSE of `{seq, op, id, data}`, polled every 1.5 s, closed at 55 s; the browser reconnects with `after`; an `event: caught-up` once everything already saved has gone out | 20 streams per product, 200 in all, 10 per address per product, 2 per ticket |
 
 CORS on the stream allows only the product's live origin, or the build's preview origin for a build ticket. Spend: captions
 are Muse Voice Transcribe calls on the product's Meta budget. Streams cost function time, which the stream caps bound.
@@ -1779,6 +1779,152 @@ browser' was taken without a reload." Smoke: at most 6 chunks.
 
 **Guards.** The microphone needs a click and the browser's own permission prompt. The product says audio goes to Muse Voice
 Transcribe. Updates obey data's scopes: a ticket can only read what its holder could read.
+
+### 13a. As built (tg-cap-live, Nov 1)
+
+Built on `tg-cap-int` (5f78b5a). Every flag is off by default and `CAP_READY.live` stays false: section 22's real test
+build hasn't run (see "Not proven yet"). No migration. With every flag off, the brief goldens, `flags-off-surface`,
+`caps-off` (now with `/live/ticket` and `/live/stream`) and the template's `caps-off` and `playwright-off` pass, with
+`LIVE_UPDATES` and `LIVE_CAPTION_MINUTES` added to their lists.
+
+**Captions at the gateway** (`lib/caps/live/captions.ts`). A chunk is an ordinary `POST /v1/asr/transcribe` with
+`x-musemuse-live: <session>`. `lib/gateway/handler.ts` gets one marked block and one parameter on `checkRateLimits`; its
+deps have `liveCaptions` only while the live cap is served, so with the cap off the header means nothing and isn't even
+read. For a token with `cap:live`: a chunk counts under its own key, `live-ip:<product>:<ip>`, at 30 a minute, and the usual `ip:<product>:<ip>` key isn't touched, so a person captioning keeps their 20 other calls a minute and those calls don't use up chunks. A chunk must be multipart with an `audio`
+part of at most 10 seconds (not an `audioUrl`), or it gets 400 `invalid_live_session`, `invalid_live_chunk` or
+`live_chunk_too_long`, so the higher limit can't carry a long file. Time is counted in tenths of a second from bytes at 16 kHz, less the 0.4 s each piece repeats, with at least 1 s a chunk, so 10
+minutes is about 10 of real talk. `LIVE_CAPTION_MINUTES` is per visitor (or signed-in person) per UTC day: past it, 429
+`quota_exceeded`. Beyond the contract, an address gets 5 times that a day, so a cleared cookie isn't a fresh day, and a call
+naming nobody shares the same wider allowance. So a classroom or campus behind one address shares 50 minutes per product by
+default, and that refusal says it's the network's, not the person's. Time is
+taken after the rate limit and not given back when Meta then fails: a lost chunk costs a person 2.5 seconds of their day. The
+marker check reads the token, not the manifest, since a product that narrowed live away only loses captions at the gate's
+routes; it would at worst keep 10 more calls a minute. `allowedModelsFor` adds `muse-voice-transcribe-1.0` for a brief with
+captions (one marked line in `lib/pipeline/logic.ts`), whether or not the writer listed it, since the token needs it.
+
+**Who sends them.** The contract's "posts to the product's own route" is a new platform route,
+`app/api/musemuse/live-caption` (a WAV body, `?session=&startMs=&endMs=`), which adds who is asking, sets `mm_vid` on a first
+piece, and answers `{text, startMs, endMs}`. It refuses another site (`Sec-Fetch-Site`) and anything over 10 seconds, and
+passes on only the day's limit in words; other failures are plain.
+
+**`useCaptions`** (`lib/platform/captions.ts`, pure parts in `captions-chunks.ts`). `MediaRecorder` pieces after the first
+can't be decoded alone, so it takes samples through a script processor (no extra file, and in every browser), cuts them
+(`ChunkCutter`: 2.5 s new plus 400 ms back by default, 2 to 3 s allowed) and converts with `toWav16k(encodeWav(...))`.
+`trimOverlap` removes the words the overlap repeats, up to 6, ignoring capitals and punctuation. `addCaption` does that only
+across a real overlap, and takes back the full stop the model ends each piece with when the next carries on in lower case
+(from the real run below). Pieces go one at a time, in order; past 3 waiting the oldest goes. Quiet pieces aren't sent.
+`quota_exceeded` stops with status `limit`; 3 failures in a row stop with `error`. Any other 429 loses that piece's words and goes on.
+
+Stop and leaving the page turn the microphone off at any moment, including while the browser's question is showing: a ref set in
+the same tick as the click holds what `start()` has so far, a second click does nothing, Stop and leaving turn off what it holds,
+and `start()` turns off anything it gets afterwards. The skill's sample offers Stop from `starting` on.
+
+`CAPTIONS_NOTICE` says where the audio goes and promises only what the app does: "This app doesn't keep it." Nothing we have
+says how long Meta's side keeps audio, so nothing here says it isn't kept there. A product's privacy page says so too (a marked line in
+`productPrivacyFor`, only for a brief with captions).
+
+**Updates** (`lib/caps/live/handler.ts`, `app/api/gateway/live/[[...path]]`). 404 until live and data are both served and
+`LIVE_UPDATES` is on. `POST /live/ticket {collection, scope}` runs the cap gate as `live`, then needs `cap:data`, a manifest
+that keeps it, and a signed-in builder (live itself is open to guests; its rows aren't), then asks data's own `target` (now
+exported, typed `Pick<DataDeps, "rules">`) for the list, the scope and the caller's key. So a ticket reads only what its
+holder could read. It answers `{ticket, expiresAt}`; the overlay's `app/api/musemuse/live-ticket` adds `streamUrl` from its
+`GATEWAY_URL`. A ticket can read any listed collection the holder may read, not only the brief's `updates.collection`:
+narrowing further would protect nothing. `lt1.<product>.<namespace b64>.<collection>.<scope>.<ownerKey or ->.<exp>.<sig>`,
+10 minutes (`lib/caps/live/ticket.ts`).
+
+`GET /live/stream?ticket=&after=` takes no bearer. Order: flags, method, ticket, `after`, product (disabled, failed, taken
+down or banned owner: 403), origin, 30 opens a minute per ticket, then slots, narrowest first: 2 per ticket (a reconnect can overlap the stream it replaces), 10
+per address per product (`x-real-ip`; a classroom behind one address shares them), 20 per product and 200 in all (`acquireInFlight`,
+given back when the stream ends or the browser leaves), then SSE. A refused stream gives back what it took. It polls every 1.5 s, sends `id: <seq>` and
+`{seq, op: "put"|"delete", id, data}`, `event: caught-up` once a connection has sent everything already saved, a comment every 15 s when quiet, and `event: end` at 55 s or the ticket's end. A full
+page of 100 is read again at once, up to 2,000 rows or 8 MB a connection, and the next connection goes on. It takes the larger
+of `after` and `Last-Event-ID`. A first read (`after=0`) leaves out rows already deleted. A database failure ends the stream
+plainly and the browser reconnects.
+
+A ticket isn't rechecked after it's minted, beyond the product's own state: for up to 10 minutes it still opens streams after its
+token is revoked, the manifest drops data or live, the collection is delisted, an owner pass expires or the holder signs out. It
+reads only, and travels in the stream's address, as this contract needs, so it can appear in request logs while it's good. **Reading by seq can't skip a row:** every write and delete holds its namespace's
+`product_data_counts` row locked while it takes the next seq and commits, so within a namespace rows commit in seq order.
+
+**Origins.** A live ticket: only `products.live_url`'s origin. A build ticket: `http://localhost` and `http://127.0.0.1` on any
+port (where the test browser runs) and `builds.preview_url`'s origin. Any other gets 403 with no CORS header. A request with no
+`Origin` (not a cross-site browser) gets the stream on the ticket alone.
+
+**`useLive`** (`lib/platform/live.ts`, pure parts in `live-state.ts`). Items keyed by id, oldest change first, at most 500. On a
+plain end it reconnects in 50 ms with the last seq; on an error it backs off 1 s to 30 s with spread and fetches a new ticket; a
+ticket with under 30 s left is replaced first. A 403 or 404 from the ticket route stops and shows the words. A hidden tab closes
+its stream, freeing a slot for someone watching, and catches up when shown. Each `connect()` takes a number, and one that finds a newer number, a closed hook or a hidden tab after waiting for its ticket stops, so a tab hidden and shown meanwhile opens one stream. Away over 45 minutes it reads from the start, since
+deleted rows leave the stream after an hour (data's purge).
+
+**Brief.** `live: {captions, updates: {collection} | null}`, exactly as contracted. `liveBlock(brief)` is what every step reads:
+updates go when `LIVE_UPDATES` is off or the brief's data block doesn't list the collection, which is also how a dropped data cap
+takes them away. A block left with nothing is null, and `capsForBuild` drops the cap as switched off (`liveOff`, a marked block in
+`lib/caps/ready.ts`). There's no writer schema variant: the rule says `updates` is always null while off, and `normalizeLiveBlock`
+(after the data block, in `normalize.ts`) makes it so. The catalog cache key carries `live:<LIVE_UPDATES>`.
+
+**Checks** (`scripts/caps/live.mjs`), each only for what the brief has, from the gateway's `brief:captions` and `brief:updates`:
+`notice`, `chunks` (the helper's record and the gateway's count at 2 or more), `chunk-limit` (6 or fewer), `shown`, `live-update`
+(the helper's record, and the gateway opened a stream and sent a change). `CAP_PROOF.live` counts `chunks` (accepted by the gateway, whether or not Meta then answered; the helper's own record is what needs real replies), `tickets`, `streams`
+and `events` as `rate_limits` rows at their exact moment (`live-proof:*`), so `since` is exact and no table is needed; the hourly
+prune removes them. A verify over an hour after its `since` would read low, and verifies are far shorter. Nothing else is stored,
+so no cleanup entry: rows are data's, and tickets aren't stored.
+
+**Helpers.** `checkCaptions(page, {start, stop})` needs the notice before the click, then 2 pieces (at most 3), watches the route's
+own replies, checks times run in order, and that a long word of what came back shows on the page, so it never asserts the fixture's
+words. Screenshot `10-captions`. `checkLiveUpdate(page, {change(first, mark), shows(mark, other)})` opens a second browser, waits for its stream's `caught-up` (heard by a test-only wrapper
+on that page's `EventSource`), makes a new made-up word, `mark`, refuses `shows` already there, runs `change`, and needs it within 5 s with no navigation of that page. `shows` must be a function, because
+rows in `b:<buildId>` stay until the build ends and fix rounds and the demo replay the same test: a fixed text would refuse the old row or be satisfied by it. A change with no words of its own, like a vote, reads the caught-up count from `other` and works out the next. Screenshot
+`11-second-browser-live`, captioned 'Second browser live' by the file name; the contract's 'Second browser' is data's screenshot,
+which does reload, so the judge note names this one. `template/playwright.config.ts` (unit 2's) now gives a cap's browser args to
+the `demo` and `studio` projects too (marked comment; unit 2's `caps-off` test updated): they replay the smoke test, and without a
+microphone it would fail there. Nothing changes without caps.
+
+**The fixture.** `fixtures/talk.wav`: 14.6 s, 16 kHz mono, 470 KB, a made-up lecture about rivers, made with macOS `say` and
+`afconvert`. Binary is safe: overlays are read and written as bytes. **It must be replaced before a product ships with it.** As the
+review recalls it, Apple's license limits its system voices' output to personal, non-commercial use (not checked against the current
+text), and this file is copied into every captions product's source. Make it with `espeak-ng` and `ffmpeg` in a builder sandbox, as the
+template's own AGENTS.md does, and rerun `LIVE_E2E_META=1` to see the words come back.
+
+**Tests.** `lib/caps/live/__tests__/live.test.ts` (PGlite: flags off, every principal against each scope, markers, manifest, guest
+owner, forged and expired tickets, reconnects, deletes, visitor and namespace isolation, origins, both stream caps and slots given
+back, catch-up, a database failure, the gateway's record), `captions.test.ts` (limit raised only for a cap:live chunk, what counts as
+a chunk, minutes per visitor and per address), `brief.test.ts`, `e2e.scenario.test.ts`, the `caps-off` routes, and
+`template/scripts/__tests__/caps-live.test.mjs` (the cutter, overlap, stream state, the checker, both routes against a fake gateway,
+`tsc` on the overlay, and in real Chromium: the fake microphone through `useCaptions`, the limit, a blocked microphone, `useLive`
+with deletes, a plain end, a refused stream and a hidden tab).
+
+`e2e.scenario.test.ts` stands in only for the sandbox: the overlay's real routes on a real HTTP server, the gateway's real handlers
+on PGlite on another origin, the template's real Playwright config, the real helpers in the real runner, a real cross-origin
+EventSource, `/caps/proof`, then the real checker.
+
+**Measured** (Nov 1, on this laptop, `LIVE_E2E_META=1`, one run, fixture only, under $0.001): real Muse Voice Transcribe returned
+"Good morning and welcome to the first lecture on." (0 to 2500 ms), "on how river river shake the land, water moves slowly.."
+(2100 to 5000 ms), "slowly across the plate." (the piece after Stop). Rough, as 2 to 3 second pieces are: "rivers shape" came back
+"river river shake". A change showed in the second browser 1789 ms later with no reload (1794 ms with Meta stood in).
+
+**Not proven yet.**
+- No real test build has run (section 22's lecture captions and shared scoreboard). As units 3, 5 and 8 found, a local run's sandbox
+  can't reach the gateway; it needs a public `PLATFORM_URL` or the preview database, and a builder snapshot with
+  `template/caps/live`. `CAP_READY.live` flips only in the merge after that build passes.
+- The stream hasn't run on Vercel. Whether the platform passes each event at once through a Next route handler (the headers ask for
+  it), and that the slot comes back when a function is cut off, are unproven; a slot lost that way stops counting within 20 minutes.
+  Nor on Neon: PGlite has one connection, so the lock argument for seq order rests on reading `lockCounts`, not on a race.
+- Only Chromium has run this. Safari's `AudioContext` on a phone, and a script processor there, are untested. A real microphone and a
+  real permission prompt are untested: the test browser's are fake.
+- A product's real `next build`, and a real demo or Studio recording with the fake microphone, haven't run. The demo's args are
+  checked by reading the config.
+- 200 streams held all day is 4,800 stream-hours of function wall-clock time and about 11.5 million queries (133 a second), which also keeps
+  Neon awake. That's the worst case from the numbers, not measured or priced, and only `LIVE_UPDATES` stops it: there's no daily stream budget. Ten products' watchers
+  at their 20 each can hold all 200, and then every other product's `useLive` stays `reconnecting`.
+- The poll filters on (product, namespace, collection, scope, owner_key) and orders by seq, and no index matches all of those. A quiet stream never moves `after`, so it
+  may scan a namespace's rows every 1.5 s. Measure with `EXPLAIN` on the preview database at the row quota; if it's bad, add an index in a later additive migration.
+- Two people captioning behind one address send about 48 chunks a minute against 30, and lose words with no error. It's per IP as the contract says.
+- Only the per-IP limit rises for captions, as the contract says. A product's token still has 120 calls a minute and 4 Meta calls at
+  once, so at one piece per 2.5 seconds about 5 people can caption at once on one product. Past that some pieces' words are lost
+  (no error shows). Fine for a lecture with one speaker and for the demo. A product with many speakers needs those raised for `cap:live`.
+
+**For the owner.** Decide before flags go on: the default `LIVE_CAPTION_MINUTES` (10 stops a real lecture; 60 would carry the flagship, at about $0.18 an hour on the product's budget), the address multiple of 5 for shared networks, the notice's wording, and the fixture above.
+Captions send people's speech to Meta. Nothing in `muse-device/` changed.
 
 ## 14. Unit 8: media (E)
 
@@ -2817,6 +2963,8 @@ Phaser game.
 
 ## Changes to this contract
 
+- Nov 1 (unit 7, review fixes): section 13's table: a chunk's per-IP count has its own key (`live-ip:`), the stream has `event: caught-up`, and slots of 2 per ticket and 10 per address. 13a updated: caption minutes count new audio only, `checkLiveUpdate` takes `change(first, mark)` and `shows(mark, other)`, the notice promises only what the app does.
+
 - Oct 31: unit 13's table is the shared `devices` table (offline's shape); unit 10's kit reserves `mode: "offline"`.
 
 - Oct 31: migrations renumbered from 0018 (0016 and 0017 are the General session's), `code_sessions` moved to General,
@@ -2919,3 +3067,5 @@ Phaser game.
   line each in tg-tools' owner-pass route and `lib/tools/deps.ts`).
 
 - Oct 31: first version (unit 0).
+
+- Nov 1 (unit 7): section 13a added. `/live/ticket` and `/live/stream` as written, plus a platform route the contract left unnamed, `app/api/musemuse/live-caption`; `lib/gateway/handler.ts` gets one marked block and one parameter on `checkRateLimits`, not one line, since caption minutes are checked after the rate limit; caption minutes also have a per-address allowance (5 times); `allowedModelsFor` adds the voice model for captions (one marked line in `lib/pipeline/logic.ts`); `liveOff` in `lib/caps/ready.ts`; data's `target` is exported for tickets; `template/playwright.config.ts` gives a cap's browser args to the demo and studio projects too, and unit 2's `caps-off` test says so; the judge note's screenshot is 'Second browser live', since data's 'Second browser' does reload; `lib/gateway/deps.ts` wires `liveCaptions`; `CAP_PROOF.live`.

@@ -2,6 +2,7 @@ import type { Brief } from "@/lib/brief/schema";
 import { briefCaps } from "@/lib/caps/brief-fields";
 import { codeBlock, codePartsOff } from "@/lib/caps/code/brief";
 import { type CapId, isCapId } from "@/lib/caps/ids";
+import { liveBlock } from "@/lib/caps/live/brief";
 import { capOverlaysNeeded } from "@/lib/caps/overlays";
 import { env } from "@/lib/env";
 
@@ -84,12 +85,14 @@ export function capsForBuild<T extends Brief>(brief: T, opts: CapsForBuildOption
     const served = opts.served ?? env.servedCaps;
     const dropped: CapDrop[] = caps.filter((c) => !served.includes(c)).map((cap) => ({ cap, reason: "off" }));
     partsOff(brief, dropped);
+    liveOff(brief, dropped);
     return { brief: withoutCaps(brief, dropped.map((d) => d.cap)), dropped };
   }
   const onSite = opts.onSite ?? env.capsOnSite;
   const enabled = opts.enabled ?? env.enabledCaps;
   const dropped: CapDrop[] = caps.filter((c) => !enabled.includes(c)).map((cap) => ({ cap, reason: onSite.includes(cap) ? "snapshot" : "off" }));
   partsOff(brief, dropped);
+  liveOff(brief, dropped);
   return { brief: withoutCaps(brief, dropped.map((d) => d.cap)), dropped };
 }
 
@@ -107,6 +110,18 @@ function partsOff(brief: Brief, dropped: CapDrop[]): void {
   else if (off.length) console.info(`[caps] code: this build goes without ${off.map((p) => (p === "exec" ? "running code on the server" : "opening pages")).join(" and ")}: switched off.`);
 }
 // ---------- end Wave 3, unit 9 ----------
+
+// ---------- Wave 3, unit 7 (docs/CAPABILITIES.md, 13a): a live block with nothing left ----------
+/**
+ * Updates read saved data: with LIVE_UPDATES off, or the data cap dropped from this build, liveBlock leaves them out. A
+ * block with no captions either isn't a live product, so the cap is dropped as switched off.
+ */
+function liveOff(brief: Brief, dropped: CapDrop[]): void {
+  const record = brief as { live?: unknown };
+  if (record.live === null || record.live === undefined || dropped.some((d) => d.cap === "live")) return;
+  if (liveBlock(withoutCaps(brief, dropped.map((d) => d.cap))) === null) dropped.push({ cap: "live", reason: "off" });
+}
+// ---------- end Wave 3, unit 7 ----------
 
 /** A saved decision read back from the database: only well-formed entries. Null stays null. */
 export function readCapDrops(value: unknown): CapDrop[] | null {

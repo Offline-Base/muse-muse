@@ -1,0 +1,13 @@
+[
+  "lib/platform/captions.ts",
+  "lib/platform/captions-chunks.ts",
+  "lib/platform/live.ts",
+  "lib/platform/live-state.ts",
+  "app/api/musemuse/live-caption/route.ts",
+  "app/api/musemuse/live-ticket/route.ts",
+  "fixtures/talk.wav",
+  "tests/caps/live.ts",
+  "scripts/caps/live.mjs",
+  "scripts/caps/live.browser.json",
+  ".agents/skills/muse-live/SKILL.md"
+]

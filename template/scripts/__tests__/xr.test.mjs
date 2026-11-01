@@ -171,7 +171,8 @@ test("a web product keeps its test settings", () => {
   // The smoke project: the headset's args for VR (the active caps' args after them), the phone viewport for the web.
   assert.match(config, /vr\s*\? \{ viewport: vr\.viewport, launchOptions: \{ args: \[\.\.\.vr\.args, \.\.\.capsArgs\.filter\(\(a\) => !vr\.args\.includes\(a\)\)\] \} \}\s*: \{ viewport: \{ width: 390, height: 844 \}, \.\.\.\(capsArgs\.length \? /);
   assert.match(config, /deviceScaleFactor: vr \? 1 : 2/);
-  assert.match(config, /args: vr \? vr\.args : \["--force-device-scale-factor=2"\]/);
+  // Unit 7: a cap's browser args follow, each none without caps (caps-off.test.mjs reads the result).
+  assert.match(config, /args: vr \? vr\.args : \["--force-device-scale-factor=2", \.\.\.capsArgs\]/);
 });
 
 test("the VR overlay ships its fixes", () => {

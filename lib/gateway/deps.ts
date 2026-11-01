@@ -1,3 +1,4 @@
+import { liveCaptionDeps } from "@/lib/caps/live/caption-deps";
 import { env, testModel } from "@/lib/env";
 import type { GatewayDeps } from "@/lib/gateway/handler";
 import { UPSTREAM_BASE_URL } from "@/lib/gateway/policy";
@@ -27,6 +28,8 @@ export function gatewayDeps(defer: GatewayDeps["defer"]): GatewayDeps {
     fitOutputToBudget: env.engineFitOutput,
     // Wave 3, unit 1 (docs/CAPABILITIES.md, section 7): only with their flags on, so the deps are today's without them.
     ...trustDeps(),
+    // Wave 3, unit 7 (docs/CAPABILITIES.md, section 13): only while the live cap is served.
+    ...liveDeps(),
     hitRateLimits,
     acquireInFlight,
     releaseInFlight,
@@ -43,6 +46,12 @@ export function gatewayDeps(defer: GatewayDeps["defer"]): GatewayDeps {
     gatewayUrl: env.gatewayUrl,
     defer,
   };
+}
+
+/** Near-live captions' part of the gateway, only while the live cap is served. */
+function liveDeps(): Pick<GatewayDeps, "liveCaptions"> {
+  const liveCaptions = liveCaptionDeps();
+  return liveCaptions ? { liveCaptions } : {};
 }
 
 /** The trust check and the Spark switch, each only while its flag is on. */

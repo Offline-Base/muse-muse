@@ -11,6 +11,7 @@
 import type { Brief } from "@/lib/brief/schema";
 import { briefCaps } from "@/lib/caps/brief-fields";
 import type { CapId } from "@/lib/caps/ids";
+import { liveBlock } from "@/lib/caps/live/brief";
 import { modelLabel } from "@/lib/format";
 import { CAPS_DIR, WORK_DIR } from "@/lib/sandbox/paths";
 import { q } from "@/lib/sandbox/shell";
@@ -69,11 +70,13 @@ export function productPrivacyFor(brief: Brief): Record<string, unknown> {
     ? caps.flatMap((c) => (CAP_KEEPS[c] ? [CAP_KEEPS[c]!] : []))
     : ["Nothing on a server. Anything it saves stays in your browser, and clearing the site's data removes it."];
   const tools = (brief.agent?.tools ?? []).filter((t) => t.id !== "web_search");
-  const services = tools.length
+  const services: string[] = tools.length
     ? [
         `To use ${tools.map((t) => toolLabel(t.id)).join(", ")}, it sends what each tool needs to Composio, which runs the tool. Composio's own terms apply.`,
       ]
     : [];
+  // Unit 7 (live, docs/CAPABILITIES.md, 13a): the microphone isn't one of the brief's inputs, and Meta's model gets it.
+  if (liveBlock(brief)?.captions) services.push("While captions are on, what your microphone picks up goes to Muse Voice Transcribe, a Meta model, to make them. Meta's own terms apply. This app doesn't keep the audio.");
   const uploads = brief.inputs.some((i) => ["image", "video", "audio", "pdf"].includes(i.kind));
   return { v: 1, models, keeps: keeps.length ? keeps : ["Nothing on a server."], services, uploads };
 }

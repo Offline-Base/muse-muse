@@ -1,3 +1,4 @@
+import { liveChunkOf, spendLiveSeconds, type LiveCaptionDeps } from "@/lib/caps/live/captions";
 import { AsrInputError, asrJsonToForm } from "@/lib/gateway/asr";
 import { gatewayError } from "@/lib/gateway/errors";
 import { estimateCost, fitOutputToBudget } from "@/lib/gateway/estimate";
@@ -51,6 +52,8 @@ export interface GatewayDeps extends RunCounters {
   trustCheck?(token: GatewayToken): Promise<Response | null>;
   /** Wave 3, unit 1: TRUST_SPARK_TO_WONDER. A live token's muse-spark-1.3 calls run on Muse Wonder, not Contributor. */
   sparkToWonder?: boolean;
+  /** Wave 3, unit 7: near-live captions (lib/caps/live/captions.ts). Unset while the live cap isn't served, so x-musemuse-live means nothing. */
+  liveCaptions?: LiveCaptionDeps;
   /** Increments each key's counter for the window and returns the new counts, keyed like the input. */
   hitRateLimits(keys: string[], windowStart: Date): Promise<Record<string, number>>;
   /** Takes one of `limit` slots for the key atomically. Returns the handle releaseInFlight needs, or null when full. */
@@ -82,16 +85,17 @@ async function checkRateLimits(
   token: GatewayToken,
   deps: GatewayDeps,
   now: Date,
+  perIp: { prefix: string; limit: number } = { prefix: "ip", limit: DEFAULT_LIMITS.perIpRequestsPerMinute },
 ): Promise<Response | null> {
   const windowStart = new Date(Math.floor(now.getTime() / 60_000) * 60_000);
   const limits: Record<string, number> = { [`token:${token.id}`]: DEFAULT_LIMITS.perTokenRequestsPerMinute };
   const ip = clientIpKey(req.headers.get(CLIENT_IP_HEADER));
-  if (ip) limits[`ip:${token.productId}:${ip}`] = DEFAULT_LIMITS.perIpRequestsPerMinute;
+  if (ip) limits[`${perIp.prefix}:${token.productId}:${ip}`] = perIp.limit;
   const counts = await deps.hitRateLimits(Object.keys(limits), windowStart);
   const over = Object.entries(limits).find(([key, limit]) => (counts[key] ?? 0) > limit);
   if (!over) return null;
   const retryAfter = Math.max(1, Math.ceil((windowStart.getTime() + 60_000 - now.getTime()) / 1000));
-  const who = over[0].startsWith("ip:") ? "this user" : "this product";
+  const who = over[0].startsWith(`${perIp.prefix}:`) ? "this user" : "this product";
   return gatewayError(
     429,
     "rate_limit_error",
@@ -253,8 +257,13 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
   }
 
   const now = deps.now?.() ?? new Date();
-  const limited = await checkRateLimits(req, token, deps, now);
+  // ---------- Wave 3, unit 7: a live caption chunk counts under its own per-IP key, 30 a minute, and spends caption minutes (section 13). Nothing without deps.liveCaptions ----------
+  const liveChunk = deps.liveCaptions ? liveChunkOf(req, endpoint, parsed, token) : null;
+  if (liveChunk instanceof Response) return liveChunk;
+  const limited = await checkRateLimits(req, token, deps, now, liveChunk?.perIp);
   if (limited) return limited;
+  { const refused = liveChunk && deps.liveCaptions ? await spendLiveSeconds(req, token, liveChunk, deps.liveCaptions, deps, now) : null; if (refused) return refused; }
+  // ---------- end Wave 3, unit 7 ----------
 
   // At most this many calls per token run at once, so a burst can't all pass the budget check before any of them is
   // metered. The slot is given back once the call is metered (or right away when nothing is forwarded).

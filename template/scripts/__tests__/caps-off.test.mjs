@@ -88,7 +88,15 @@ describe("a product with platform services", () => {
     const smoke = config.projects.find((p) => p.name === "smoke");
     assert.deepEqual(smoke.use.launchOptions, { args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"] });
     const plain = await loadConfig();
-    assert.deepEqual(config.projects.filter((p) => p.name !== "smoke"), plain.projects.filter((p) => p.name !== "smoke"));
+    // Unit 7: the demo runs replay the smoke test, so they need the same browser (a fake microphone). Only the args differ.
+    const withoutArgs = (p) => ({ ...p, use: { ...p.use, launchOptions: { ...p.use.launchOptions, args: undefined } } });
+    const others = (c) => c.projects.filter((p) => p.name !== "smoke").map(withoutArgs);
+    assert.deepEqual(others(config), others(plain));
+    const caps = ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"];
+    assert.deepEqual(config.projects.find((p) => p.name === "demo").use.launchOptions.args, caps);
+    assert.deepEqual(config.projects.find((p) => p.name === "studio").use.launchOptions.args, ["--force-device-scale-factor=2", ...caps]);
+    assert.deepEqual(plain.projects.find((p) => p.name === "studio").use.launchOptions.args, ["--force-device-scale-factor=2"]);
+    assert.equal(plain.projects.find((p) => p.name === "demo").use.launchOptions.args, undefined);
   });
 
   test("MUSEMUSE_BASE_URL points the tests at a live link with no local server", async () => {
