@@ -74,7 +74,7 @@ model.save_pretrained.side_effect = save
 if os.environ.get("STUB_SIGTERM_IN_TRAINING"):
     torch.optim.AdamW.return_value.step.side_effect = lambda: signal.raise_signal(signal.SIGTERM)
 tokenizer = transformers.AutoTokenizer.from_pretrained.return_value
-tokenizer.apply_chat_template.side_effect = lambda messages, add_generation_prompt=False, **_: "prompt" if add_generation_prompt else "prompt" + messages[-1]["content"] + "<|end|>\n"
+tokenizer.apply_chat_template.side_effect = lambda messages, add_generation_prompt=False, **_: "prompt" if add_generation_prompt else "prompt" + messages[-1]["content"] + "<|end|>"
 tokenizer.side_effect = lambda text, **_: {"input_ids": [1] * len(text)}
 torch.cuda.get_device_properties.return_value.total_memory = 8 * 2**30
 sys.argv = sys.argv[1:]
