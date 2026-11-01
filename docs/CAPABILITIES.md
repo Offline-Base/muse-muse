@@ -2989,8 +2989,8 @@ the decision path, `/decide` from its own product and another, and a shared Try 
   `startingFor`'s wait is an estimate (15 minutes from opening, at least 15 s).
 - A non-admin builder's `href` from the train route opens the run room, which only admins can open until `PUBLIC_TRAINING`.
 - No `next build` has run on this branch. The bundle test uses plain esbuild, as the workflow builder does, not that builder.
-- The r30b rule goes through `lib/caps/gpu/general.ts` until `lib/train/base.ts` reaches tg-cap-int. Until then every
-  plain Glimmer job fails `ownModelFor`, as it will after the sync, and `evalVerdict` doesn't get its second argument.
+- The r30b rule comes from `lib/train/base.ts`, through `lib/caps/gpu/general.ts`. A plain Glimmer job fails `ownModelFor`, and
+  `evalVerdict` gets `sparkOpen`, so a verdict on a Derivative names r30b as its base.
 
 **For the owner.** Decision 11: confirm the license reading and when windows open. `GPU_GLIMMER_ALL_PRODUCTS` stays off until
 then. The Nov 3 filming window is one `POST` from `/admin/glimmer`, at most `TRAIN_JOB_MAX_USD` and about $1.50 measured per 30

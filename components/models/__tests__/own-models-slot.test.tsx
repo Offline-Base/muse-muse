@@ -59,6 +59,12 @@ describe("OwnModelsSlot", () => {
     assert.deepEqual(statics.filter((f) => f.includes("lib/train/") || f.endsWith("lib/db/client.ts") || f.endsWith("lib/caps/gpu/general.ts")), []);
   });
 
+  it("shows the same license words as lib/train/base.ts", async () => {
+    const [words, base] = await Promise.all([import("@/lib/caps/gpu/words"), import("@/lib/train/base")]);
+    assert.equal(words.BUILT_WITH_SPARK_OPEN, base.BUILT_WITH_SPARK_OPEN);
+    assert.deepEqual(words.USAGE_POINTS, base.USAGE_POINTS);
+  });
+
   it("renders nothing with its flags off, and reads nothing", () => {
     assert.equal(OwnModelsSlot(), null);
   });
