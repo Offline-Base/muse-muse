@@ -17,6 +17,10 @@ Save only those. The platform keeps the items; the product never has a database 
 | `owner` | the product's owner, opened from Muse Muse | the owner | the owner |
 | `user` | the person signed in with a passkey, on any device | that person | that person |
 
+In a shared collection anyone or signed-in people write, each of them can also change or delete what others added.
+Show that plainly where it matters (a guest book, a group list), and never use such a list for something one person
+must be able to trust.
+
 Personal details go only in collections the brief marks personal, which are never shared. Never put them in logs,
 error messages or anything a model sees, unless the brief says so.
 
@@ -87,15 +91,19 @@ Add `"caps": ["data"]` and a `data` block with exactly the brief's collections:
 "data": { "collections": [{ "name": "groceries", "scope": "shared", "writes": "anyone" }, { "name": "notes", "scope": "visitor" }] }
 ```
 
-`writes` is only for shared collections: `owner`, `signed_in` or `anyone`. Verify checks the list against the brief.
+`writes` is only for shared collections: `owner`, `signed_in` or `anyone`, the same as the brief says (left out means
+`owner`). Verify checks the names, scopes and writers against the brief, and the live product follows the brief's
+rules whatever this file says: it can only list fewer.
 
 ## Tests
 
 In a build every item is a real row in the build's own test space, deleted when the build ends, so a second browser
 really sees what the first saved. Nothing a real person saved reaches a build. A real passkey can't be used in a test.
+A test's browser is a visitor, as on the live product: it can't add to a list only the owner writes, or use owner
+items, until `openAsOwner(page)`.
 
 ```ts
-import { checkSecondBrowser, signInAs } from "../tests/caps/data";
+import { checkSecondBrowser, openAsOwner, signInAs } from "../tests/caps/data";
 
 await page.getByLabel("Add an item").fill("Oat milk");
 await page.getByRole("button", { name: "Add" }).click();
@@ -104,11 +112,15 @@ await page.getByRole("button", { name: "Save note" }).click();
 await checkSecondBrowser(page, { shared: "Oat milk", private: "Ask about the blue tin" });
 ```
 
-- `checkSecondBrowser(page, { shared, private, user })` opens a second browser, reloads, expects the shared item and
-  not the private one, and with `user: { name, text }` signs that made-up person in there and expects their item. It
-  takes the judge screenshot `09-second-browser` and records the checks verify's caps step reads. Call it once.
+- `checkSecondBrowser(page, { shared, private, loaded, user })` opens a second browser, reloads, expects the shared
+  item and not the private one, and with `user: { name, text }` signs that made-up person in there and expects their
+  item. With `private` and no `shared`, give `loaded`: text the page shows once its items are in (an empty list's
+  message), so the check can't pass before they arrive. It takes the judge screenshot `09-second-browser` and records
+  the checks verify's caps step reads. Call it once.
 - `signInAs(page, "Ana")` signs a made-up person in on a browser. The same name in the same build is the same person.
-- `seed("groceries", [{ ... }])` saves shared items before the test opens the page.
+- `openAsOwner(page)` makes a browser the product's owner, for owner items and lists only the owner writes. Use it only
+  for the owner's own steps; the second browser stays a visitor.
+- `seed("groceries", [{ ... }])` saves shared items as the owner before the test opens the page.
 
 Keep the smoke test to about 20 data calls. Assert what's on the screen, never exact counts other runs could change.
 

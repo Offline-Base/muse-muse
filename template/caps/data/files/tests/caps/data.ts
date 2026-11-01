@@ -1,12 +1,15 @@
 // Platform file (Muse Muse platform services). Don't edit: use these helpers in tests/smoke.spec.ts.
 //
 //   signInAs(page, "Ana")              signs a made-up person in on this browser (a build's tests only)
+//   openAsOwner(page)                  makes this browser the product's owner, for owner items and lists only the
+//                                     owner writes (a build's tests only). Any other browser is a visitor, as live.
 //   secondBrowser(page, async (other) => { ... })   runs steps in a second browser with its own cookies
-//   checkSecondBrowser(page, { shared, private, user })
+//   checkSecondBrowser(page, { shared, private, loaded, user })
 //                                     the platform's check: a second browser, after a reload, sees the shared item,
-//                                     doesn't see the private one, and sees the user item once the same made-up
+//                                     doesn't see the private one once the page has loaded its items (the shared item,
+//                                     or the `loaded` text, shows that), and sees the user item once the same made-up
 //                                     person signs in. Takes the judge screenshot "09-second-browser" and records it.
-//   seed("collection", [{...}])        saves shared items as the build, before the test opens the page
+//   seed("collection", [{...}])        saves shared items as the owner, before the test opens the page
 //
 // Every item a build saves is a real row in its own test space on the gateway, deleted when the build ends.
 import { readFileSync } from "node:fs";
@@ -20,6 +23,19 @@ export async function signInAs(page: Page, name: string): Promise<{ id: string; 
   const reply = (await res.json().catch(() => ({}))) as { user?: { id: string; name: string }; error?: string };
   if (!res.ok() || !reply.user) throw new Error(`signInAs("${name}") failed: ${reply.error ?? `HTTP ${res.status()}`}`);
   return reply.user;
+}
+
+/**
+ * The owner pass a build's tests use. The gateway takes it only from a build's own token, so it means nothing on the
+ * live product, where only Muse Muse's "Open as owner" makes someone the owner.
+ */
+const BUILD_TEST_OWNER = "ot1.build-test-owner";
+
+/** Makes this page's browser the product's owner (a build's tests only), through the product's own mm_owner cookie. */
+export async function openAsOwner(page: Page): Promise<void> {
+  const baseURL = test.info().project.use.baseURL;
+  if (!baseURL) throw new Error("openAsOwner needs the test's baseURL.");
+  await page.context().addCookies([{ name: "mm_owner", value: BUILD_TEST_OWNER, url: baseURL, httpOnly: true, sameSite: "Lax" }]);
 }
 
 /** Runs `fn` in a second browser with its own cookies, the way another person would open the product. */
@@ -40,6 +56,11 @@ export interface SecondBrowserCheck {
   shared?: string;
   /** Text of a visitor or user item the first browser saved. The second browser must not see it. */
   private?: string;
+  /**
+   * Text the page shows once it has loaded its items, such as an empty list's message. With `private` and no `shared`,
+   * the check waits for it, so it can't pass before the items arrive.
+   */
+  loaded?: string;
   /** A user item: the same made-up person signs in on the second browser and must see `text`. */
   user?: { name: string; text: string };
   /** The page to open. "/" by default. */
@@ -62,11 +83,17 @@ export async function checkSecondBrowser(page: Page, check: SecondBrowserCheck):
   await secondBrowser(page, async (other) => {
     await other.goto(check.path ?? "/");
     await other.reload();
+    await other.waitForLoadState("networkidle").catch(() => undefined);
     if (check.shared) {
       await checked("data", "second-browser", "Second browser, after a reload, sees the shared item", () => expect(other.getByText(check.shared!, { exact: false }).first()).toBeVisible({ timeout: 30_000 }));
     }
     if (check.private) {
-      await checked("data", "visitor-private", "Second browser, after a reload, doesn't see the private item", () => expect(other.getByText(check.private!, { exact: false })).toHaveCount(0, { timeout: 10_000 }));
+      await checked("data", "visitor-private", "Second browser, after a reload, doesn't see the private item", async () => {
+        // Not seeing it proves nothing until the page has its items: the shared item above, or the loaded text, says so.
+        if (!check.shared && !check.loaded) throw new Error("give checkSecondBrowser a shared item or the loaded text, so it knows the page has its items");
+        if (check.loaded) await expect(other.getByText(check.loaded, { exact: false }).first()).toBeVisible({ timeout: 30_000 });
+        await expect(other.getByText(check.private!, { exact: false })).toHaveCount(0, { timeout: 10_000 });
+      });
     }
     await judgeShot(other, "09-second-browser");
     if (check.user) {
@@ -95,7 +122,7 @@ function gatewaySettings(): { base: string; token: string } {
   return { base: base.replace(/\/+$/, ""), token };
 }
 
-/** Saves shared items as the build (it stands in for the owner), before the test opens the page. */
+/** Saves shared items as the owner (a build's own call names no one else), before the test opens the page. */
 export async function seed(collection: string, docs: Array<Record<string, unknown>>): Promise<string[]> {
   const { base, token } = gatewaySettings();
   const ids: string[] = [];

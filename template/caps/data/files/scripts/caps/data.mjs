@@ -1,8 +1,9 @@
 // Platform file (Muse Muse platform services). Don't edit. verify's caps step runs it through scripts/caps-check.mjs.
 //
 // The fixed checks for saved data:
-//   manifest         musemuse.json's data collections are the brief's, with the same scopes (the brief's list comes from
-//                    the gateway's record of this build, which product code can't write)
+//   manifest         musemuse.json's data collections are the brief's, with the same scopes and, for shared ones, the
+//                    same writers (the brief's list comes from the gateway's record of this build, which product code
+//                    can't write)
 //   writes           the gateway saw this verify's smoke test save items in the build's own space
 //   second-browser   a second browser, after a reload, saw the shared item (tests/caps/data.ts)
 //   visitor-private  a second browser didn't see a private item, when the brief has visitor or user collections
@@ -19,14 +20,14 @@ function readJson(file) {
   }
 }
 
-/** The brief's collections, from the gateway's `brief:<name>:<scope>` counts. */
+/** The brief's collections, from the gateway's `brief:<name>:<scope>` (`brief:<name>:shared:<writes>`) counts. */
 export function briefCollections(proof) {
   if (!proof) return null;
   return Object.keys(proof)
     .filter((k) => k.startsWith("brief:"))
     .map((k) => {
-      const [, name, scope] = k.split(":");
-      return { name, scope };
+      const [, name, scope, writes] = k.split(":");
+      return scope === "shared" ? { name, scope, writes: writes || "owner" } : { name, scope };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -38,7 +39,7 @@ export function manifestCollections(root) {
   if (!Array.isArray(list)) return null;
   return list
     .filter((c) => c && typeof c.name === "string" && typeof c.scope === "string")
-    .map((c) => ({ name: c.name, scope: c.scope }))
+    .map((c) => (c.scope === "shared" ? { name: c.name, scope: c.scope, writes: typeof c.writes === "string" ? c.writes : "owner" } : { name: c.name, scope: c.scope }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -48,7 +49,7 @@ export async function check({ record, proof, root }) {
   const out = [];
   const brief = briefCollections(proof);
   const manifest = manifestCollections(root);
-  const say = (list) => list.map((c) => `${c.name} (${c.scope})`).join(", ") || "none";
+  const say = (list) => list.map((c) => `${c.name} (${c.scope}${c.writes ? `, written by ${c.writes}` : ""})`).join(", ") || "none";
   if (!brief) out.push({ id: "manifest", ok: false, detail: "the gateway's record of the brief's collections is missing" });
   else if (!manifest) out.push({ id: "manifest", ok: false, detail: "musemuse.json has no data.collections" });
   else out.push({ id: "manifest", ok: JSON.stringify(brief) === JSON.stringify(manifest), detail: `musemuse.json has ${say(manifest)}; the brief has ${say(brief)}` });

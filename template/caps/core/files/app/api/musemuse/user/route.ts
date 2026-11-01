@@ -1,12 +1,15 @@
 // Platform file (Muse Muse platform services). Keep this file as it is.
 //
 // Signing people in to this product through Muse Muse, between its pages and the gateway:
-//   GET  /api/musemuse/user?returnTo=/path          on to Muse Muse's passkey page for this product
-//   GET  /api/musemuse/user?code=...&returnTo=/path  back from it: the code becomes a 30-day session cookie
+//   GET  /api/musemuse/user?returnTo=/path          on to Muse Muse's passkey page for this product, with a fresh value
+//                                                    in this browser's short-lived mm_signin cookie
+//   GET  /api/musemuse/user?code=...&returnTo=/path  back from it: the code becomes a 30-day session cookie, only in the
+//                                                    browser whose mm_signin cookie started it
 //   POST /api/musemuse/user {"test": "Ana"}         a build's tests only: a made-up person (tests/caps/data.ts)
+import { randomBytes } from "node:crypto";
 import { clientIpHeaders } from "@/lib/meta/client";
 import { samePath } from "@/lib/platform/identity";
-import { isUserSession, userCookies } from "@/lib/platform/user";
+import { clearSignInCookie, isUserSession, signInBind, signInCookie, userCookies } from "@/lib/platform/user";
 
 function gateway(path: string, body: unknown, from: Request): Promise<Response> {
   const base = (process.env.GATEWAY_URL ?? "").replace(/\/+$/, "");
@@ -41,15 +44,18 @@ export async function GET(request: Request): Promise<Response> {
   const code = url.searchParams.get("code");
   try {
     if (!code) {
-      const res = await gateway("/identity/user/link", { returnTo: back }, request);
+      const bind = randomBytes(18).toString("base64url");
+      const res = await gateway("/identity/user/link", { returnTo: back, bind }, request);
       const reply = (await res.json().catch(() => ({}))) as { url?: unknown };
-      return typeof reply.url === "string" && /^https?:\/\//.test(reply.url) ? redirectTo(reply.url) : redirectTo(back);
+      return typeof reply.url === "string" && /^https?:\/\//.test(reply.url) ? redirectTo(reply.url, [signInCookie(bind)]) : redirectTo(back);
     }
-    if (code.length > 1024) return redirectTo(back);
-    const res = await gateway("/identity/user", { code }, request);
+    // Only the browser that started this sign-in holds its value. A code from anywhere else signs no one in here.
+    const bind = signInBind(request);
+    if (code.length > 1024 || !bind) return redirectTo(back, [clearSignInCookie()]);
+    const res = await gateway("/identity/user", { code, bind }, request);
     const cookies = res.ok ? sessionCookies((await res.json().catch(() => ({}))) as Session) : null;
     // A used or expired code lands on the page signed out. Nothing else to do from a link.
-    return redirectTo(back, cookies ?? []);
+    return redirectTo(back, [clearSignInCookie(), ...(cookies ?? [])]);
   } catch (err) {
     console.error("[musemuse] sign-in failed:", err instanceof Error ? err.message : "unknown");
     return redirectTo(back);

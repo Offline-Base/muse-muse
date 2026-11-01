@@ -70,7 +70,7 @@ describe("the fixed checks (scripts/caps/data.mjs)", () => {
     if (manifest) writeFileSync(path.join(dir, "musemuse.json"), JSON.stringify(manifest));
     return dir;
   }
-  const proof = { writes: 3, rows: 3, users: 1, "brief:groceries:shared": 1, "brief:notes:visitor": 1 };
+  const proof = { writes: 3, rows: 3, users: 1, "brief:groceries:shared:anyone": 1, "brief:notes:visitor": 1 };
   const manifest = { data: { collections: [{ name: "notes", scope: "visitor" }, { name: "groceries", scope: "shared", writes: "anyone" }] } };
   const record = { cap: "data", checks: [{ id: "second-browser", ok: true, detail: "saw it" }, { id: "visitor-private", ok: true, detail: "didn't" }] };
 
@@ -83,8 +83,19 @@ describe("the fixed checks (scripts/caps/data.mjs)", () => {
     const out = await checker.check({ record, proof, root: root({ data: { collections: [{ name: "groceries", scope: "shared" }, { name: "notes", scope: "shared" }] } }) });
     const m = out.find((c) => c.id === "manifest");
     assert.equal(m.ok, false);
-    assert.match(m.detail, /notes \(shared\)/);
+    assert.match(m.detail, /notes \(shared, written by owner\)/);
     assert.match(m.detail, /notes \(visitor\)/);
+  });
+
+  test("fail a manifest that changes who writes a shared collection, or leaves it out where the brief says anyone", async () => {
+    const { "brief:groceries:shared:anyone": _anyone, ...rest } = proof;
+    const owner = await checker.check({ record, proof: { ...rest, "brief:groceries:shared:owner": 1 }, root: root(manifest) });
+    const m = owner.find((c) => c.id === "manifest");
+    assert.equal(m.ok, false, "the brief says the owner writes groceries; the manifest says anyone");
+    assert.match(m.detail, /groceries \(shared, written by anyone\)/);
+    assert.match(m.detail, /groceries \(shared, written by owner\)/);
+    const unsaid = await checker.check({ record, proof, root: root({ data: { collections: [{ name: "notes", scope: "visitor" }, { name: "groceries", scope: "shared" }] } }) });
+    assert.equal(unsaid.find((c) => c.id === "manifest").ok, false, "no writes in the manifest is the owner");
   });
 
   test("fail with no gateway record, no saves, or a smoke test that skipped the second browser", async () => {
@@ -267,25 +278,33 @@ console.log(JSON.stringify({
 const route = await import("./app/api/musemuse/user/route.ts");
 const signOut = await import("./app/api/musemuse/user-sign-out/route.ts");
 const go = await route.GET(new Request("http://localhost/api/musemuse/user?returnTo=/lists"));
-const back = await route.GET(new Request("http://localhost/api/musemuse/user?code=uc1.x&returnTo=//evil.example"));
+const bind = go.headers.getSetCookie()[0].split(";")[0].split("=")[1];
+const back = await route.GET(new Request("http://localhost/api/musemuse/user?code=uc1.x&returnTo=//evil.example", { headers: { cookie: \`mm_signin=\${bind}\` } }));
+const stranger = await route.GET(new Request("http://localhost/api/musemuse/user?code=uc1.attacker&returnTo=/lists"));
 const test = await route.POST(new Request("http://localhost/api/musemuse/user", { method: "POST", body: JSON.stringify({ test: "Bo" }), headers: { "content-type": "application/json" } }));
 const cross = await route.POST(new Request("http://localhost/api/musemuse/user", { method: "POST", body: JSON.stringify({ test: "Bo" }), headers: { "sec-fetch-site": "cross-site" } }));
 const form = new FormData(); form.set("returnTo", "/lists");
 const out = await signOut.POST(new Request("http://localhost/api/musemuse/user-sign-out", { method: "POST", body: form }));
 const cookies = (r: Response) => r.headers.getSetCookie();
 console.log(JSON.stringify({
-  go: { status: go.status, location: go.headers.get("location") },
+  go: { status: go.status, location: go.headers.get("location"), cookies: cookies(go) },
+  bind,
+  stranger: { status: stranger.status, location: stranger.headers.get("location"), cookies: cookies(stranger) },
   back: { status: back.status, location: back.headers.get("location"), cookies: cookies(back) },
   test: { status: test.status, body: await test.json(), cookies: cookies(test) },
   cross: cross.status,
   out: { status: out.status, location: out.headers.get("location"), cookies: cookies(out) },
 }));
 `);
-    assert.deepEqual(out.go, { status: 303, location: "https://platform.example/u/sign-in?product=lists&returnTo=%2Flists" });
+    assert.equal(out.go.status, 303);
+    assert.equal(out.go.location, "https://platform.example/u/sign-in?product=lists&returnTo=%2Flists");
+    assert.match(out.go.cookies[0], /^mm_signin=[A-Za-z0-9_-]{24}; Path=\/api\/musemuse\/user; Max-Age=600; HttpOnly; Secure; SameSite=Lax$/);
+    assert.deepEqual(out.stranger.cookies, ["mm_signin=; Path=/api/musemuse/user; Max-Age=0; HttpOnly; Secure; SameSite=Lax"], "a code in a browser that didn't start the sign-in signs no one in");
     assert.equal(out.back.status, 303);
     assert.equal(out.back.location, "/", "a returnTo that leaves the site goes home");
-    assert.match(out.back.cookies[0], /^mm_user=us1\.p\.subj_123\.9999999999999\.signaturesignature; Path=\/; Max-Age=\d+; HttpOnly; Secure; SameSite=Lax$/);
-    assert.match(out.back.cookies[1], /^mm_user_name=Ana; /);
+    assert.match(out.back.cookies[0], /^mm_signin=; /, "the sign-in value is spent");
+    assert.match(out.back.cookies[1], /^mm_user=us1\.p\.subj_123\.9999999999999\.signaturesignature; Path=\/; Max-Age=\d+; HttpOnly; Secure; SameSite=Lax$/);
+    assert.match(out.back.cookies[2], /^mm_user_name=Ana; /);
     assert.equal(out.test.status, 200);
     assert.deepEqual(out.test.body, { user: { id: "subj_9", name: "Bo" } });
     assert.match(out.test.cookies[0], /^mm_user=ut1\./);
@@ -293,7 +312,56 @@ console.log(JSON.stringify({
     assert.equal(out.out.location, "/lists");
     assert.match(out.out.cookies[0], /^mm_user=; Path=\/; Max-Age=0/);
     assert.deepEqual(seen.map((s) => s.url), ["/api/gateway/identity/user/link", "/api/gateway/identity/user", "/api/gateway/identity/user/test"]);
-    assert.deepEqual(seen[1].body, { code: "uc1.x" });
+    assert.deepEqual(seen[0].body, { returnTo: "/lists", bind: out.bind }, "the link carries the browser's sign-in value");
+    assert.deepEqual(seen[1].body, { code: "uc1.x", bind: out.bind });
+  });
+
+  test("checkSecondBrowser doesn't call a private item hidden before the page has loaded its items", async () => {
+    // A fake Playwright: the page's items arrive only after the network settles, and the private item leaks.
+    const fake = path.join(dir, "fake-playwright.mjs");
+    writeFileSync(
+      fake,
+      `export const test = { info: () => ({ project: { use: { baseURL: "http://localhost" }, name: "smoke" } }) };
+export function expect(locator) {
+  return {
+    async toBeVisible() { if (!locator.page.loaded || !locator.page.items.some((t) => t.includes(locator.text))) throw new Error("not visible: " + locator.text); },
+    async toHaveCount(n) { const c = locator.page.loaded ? locator.page.items.filter((t) => t.includes(locator.text)).length : 0; if (c !== n) throw new Error("count " + c + " for " + locator.text); },
+  };
+}
+export async function judgeShot() {}
+`,
+    );
+    const hooks = path.join(dir, "fake-hooks.mjs");
+    writeFileSync(hooks, `export async function resolve(spec, ctx, next) { if (spec === "@playwright/test" || spec === "../judge-shot") return { url: ${JSON.stringify(pathToFileURL(fake).href)}, shortCircuit: true }; return next(spec, ctx); }\n`);
+    const out = await run(`
+import { register } from "node:module";
+import { pathToFileURL } from "node:url";
+register(${JSON.stringify(pathToFileURL(hooks).href)});
+const { checkSecondBrowser } = await import("./tests/caps/data.ts");
+const { capChecks } = await import("./tests/caps/index.ts");
+function browserWith(items) {
+  const page = { loaded: false, items, async goto() {}, async reload() {}, async waitForLoadState() { page.loaded = true; }, getByText(text) { const l = { page, text, first: () => l }; return l; } };
+  return { browser: () => ({ newContext: async () => ({ newPage: async () => page, close: async () => {} }) }) };
+}
+const first = { context: () => browserWith(["Oat milk", "Ask about the blue tin"]), viewportSize: () => null };
+const results = {};
+for (const [name, check] of Object.entries({
+  leakOnly: { private: "Ask about the blue tin" },
+  leakLoaded: { private: "Ask about the blue tin", loaded: "Oat milk" },
+  leakShared: { shared: "Oat milk", private: "Ask about the blue tin" },
+})) {
+  await checkSecondBrowser(first, check).catch(() => undefined);
+  results[name] = capChecks("data").find((c) => c.id === "visitor-private")?.ok ?? null;
+}
+const clean = { context: () => browserWith(["Oat milk"]), viewportSize: () => null };
+await checkSecondBrowser(clean, { private: "Ask about the blue tin", loaded: "Oat milk" });
+results.clean = capChecks("data").find((c) => c.id === "visitor-private")?.ok ?? null;
+console.log(JSON.stringify(results));
+`);
+    assert.equal(out.leakOnly, false, "with nothing to show the items are in, the private check can't pass");
+    assert.equal(out.leakLoaded, false, "after the items load, the leaked private item is seen");
+    assert.equal(out.leakShared, false);
+    assert.equal(out.clean, true);
   });
 
   test("the owner route trades the code for the owner cookie", async () => {

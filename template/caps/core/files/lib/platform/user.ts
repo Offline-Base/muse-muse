@@ -83,6 +83,28 @@ export function userCookies(session: string, expiresAt: string, name: string): s
   ];
 }
 
+/**
+ * mm_signin holds a random value while this browser signs in (10 minutes, only on the sign-in route). The platform puts
+ * the same value in the code it sends back, and the gateway takes the code only with it, so a sign-in link someone else
+ * started can't sign this browser in as them.
+ */
+export const SIGN_IN_COOKIE = "mm_signin";
+const SIGN_IN_BIND = /^[A-Za-z0-9_-]{16,64}$/;
+const SIGN_IN_PATH = "/api/musemuse/user";
+
+export function signInBind(from?: RequestLike | null): string | null {
+  const value = readCookie(from, SIGN_IN_COOKIE);
+  return value && SIGN_IN_BIND.test(value) ? value : null;
+}
+
+export function signInCookie(bind: string): string {
+  return `${SIGN_IN_COOKIE}=${bind}; Path=${SIGN_IN_PATH}; Max-Age=600; HttpOnly; Secure; SameSite=Lax`;
+}
+
+export function clearSignInCookie(): string {
+  return `${SIGN_IN_COOKIE}=; Path=${SIGN_IN_PATH}; Max-Age=0; HttpOnly; Secure; SameSite=Lax`;
+}
+
 export function clearUserCookies(): string[] {
   return [USER_COOKIE, USER_NAME_COOKIE].map((name) => `${name}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`);
 }
