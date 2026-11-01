@@ -1034,6 +1034,28 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   its small files (all runs' logs and tests, r30b's final/ outputs, B2's data, scripts; no adapters or checkpoints) went
   to S3 knowledge/train-1/k-small-files-20261101T0200Z.tar.gz (38 MB). Every adapter that matters was already in S3. The
   dose test, Stage A+ and B3 are cancelled. The B2 data (S3 corpus/dataset/) and the reviewed tooling (157ec64) stay.
+- 10:00 PM: owner: do the upload, the recipe switch and a test fine-tune. Muse Muse General: the owner chose to switch
+  outright, so every new Muse Muse fine-tune trains on r30b. General asked for:
+  - a pre-quantized bnb-4bit r30b (a drop-in for unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit at its pinned revision);
+  - the merged 16-bit repo with its shard sha256s;
+  - public repos, since its Lambda jobs hold no token.
+  General changes MODEL only after the bnb-4bit repo exists and a dry run passes.
+- 10:05 PM: model-release-prep finished. Its review fixed several things:
+  - adapter_config's internal base path, now meta-models/Muse-Glimmer-30B at cec94fcf;
+  - the trainer-saved tokenizer_config, replaced by Meta's original;
+  - the dropped non-commercial terms, now license_name apache-2.0-and-muse-model-license;
+  - grader wording ("AI model graders");
+  - numbers after its cutoff, marked pending.
+  The relay then pushed 3 private repos. Layout: Glimmer-30B-2026-Knowledge holds the merged BF16 (the fine-tuning base),
+  -LoRA the adapter, -GGUF the quantized files. Takedown contact: the repos' Community tab, not an email. GGUF metadata
+  carries general.name "Merged" and the internal imatrix paths; kept, so sha256s already sent stay valid. First live push:
+  OfflineBase/Glimmer-30B-2026-Knowledge-LoRA, private, commit de38afa9, 12 files, adapter sha256 ba998911 confirmed by
+  the Hub API, 142 MB/s from writer-1. The Hub refused a relative license_link, so all cards now use full https URLs.
+  -GGUF (38.5 GB) and the merged repo (56 GB) are pushing.
+- 10:10 PM: license files are in S3 next to the GGUFs (knowledge/models/stage-b-r30b/ and stage2/, with a stage 2
+  NOTICE) and in docs/model-licenses/. Sent keys and sha256s to Muse Muse General and Muse Privacy. Workflow bnb4-r30b
+  (wf_89ef3ed9-be9) is building the bnb-4bit copy on writer-1, to match the reference's quantization_config. Its
+  verifier loads it, runs a LoRA forward and backward step, and does a sanity check.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
