@@ -7,6 +7,7 @@ import { NotConnected } from "@/components/ui";
 import { env } from "@/lib/env";
 import { canActAsOwner } from "@/lib/auth";
 import { nativeActive } from "@/lib/native/active";
+import { ownModelOffer } from "@/lib/train/tune/from-build";
 import { currentUser, getBuildRoom, platformOrigin, rebuildRef, safeQuery } from "@/lib/queries";
 
 export const metadata: Metadata = { title: "Build room" };
@@ -36,6 +37,18 @@ export default async function BuildRoomPage({
   const canRefine = Boolean(data.product && canActAsOwner(user, data.product.ownerId));
   // Steering a running build takes the same owner powers (POST /api/builds/{id}/control), and steering switched on.
   const canSteer = env.steeringEnabled && canActAsOwner(user, data.product?.ownerId ?? data.build.userId);
+  // Its own model (TUNE_FROM_BUILDS, with the tune composer on): the product's owner or an admin; planning is admins'
+  // only today, as the composer is. The row itself checks the brief picked muse-glimmer and the build shipped.
+  const ownModel = ownModelOffer({
+    fromBuilds: env.tuneFromBuilds,
+    composer: env.tuneComposer,
+    hasProduct: Boolean(data.product),
+    ownerOrAdmin: canRefine,
+    isAdmin: user?.isAdmin === true,
+    examples: env.tuneDefaultExamples,
+    // limitCeilings in lib/train/gate.ts, without loading the recipes into this page.
+    ceilings: { maxMinutes: env.trainJobMaxMinutes, maxUsd: env.trainJobMaxUsd },
+  });
 
   return (
     <BuildRoom
@@ -54,6 +67,7 @@ export default async function BuildRoomPage({
       rebuild={rebuildRef(data.build.rebuildOf)}
       maxFixRounds={env.maxFixRounds}
       nativeActive={await nativeActive(data.build.id)}
+      ownModel={ownModel}
     />
   );
 }

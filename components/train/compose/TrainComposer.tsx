@@ -15,10 +15,11 @@ import { KEPT_PLAN_KEY } from "@/components/train/room/TrainRoom";
 import { usd } from "@/lib/format";
 import { maxStepsFor, NOTE_MAX, NOTE_MIN, planCost, planMaxUsd, planSettings, TUNE_MAX_EXAMPLES, TUNE_MIN_EXAMPLES, TUNE_MIN_STEPS, TUNE_STEPS } from "@/lib/train/tune/cost";
 import { EXAMPLE_ACCEPT, EXAMPLE_FILE_MAX_BYTES, EXAMPLE_ROWS_MAX, parseExamples, planRows, splitNote } from "@/lib/train/tune/examples";
+import { TUNE_DRAFT_ID } from "@/lib/train/tune/from-build";
 import type { ExampleRow, TrainPlan } from "@/lib/train/tune/types";
 
-/** Keeps this composer's draft apart from the Make page's. */
-const DRAFT_ID = "tune";
+/** Keeps this composer's draft apart from the Make page's (the build room's "Its own model" fills it too). */
+const DRAFT_ID = TUNE_DRAFT_ID;
 /** The plan before Start, so a reload keeps the card (it's good for two hours, and the server checks that). */
 const PLAN_KEY = "mm:tune-plan";
 
@@ -80,6 +81,10 @@ export function tuneErrorText(status: number, body: unknown): string {
   if (code === "plan_invalid") return "This plan changed after it was drafted, so it can't start. Change it and send it again.";
   if (code === "already_started") return "This plan already started. Its run is in the fine-tuning lab.";
   if (code === "start_failed") return "The run couldn't start, so nothing was written. Try again in a moment.";
+  if (code === "build_not_found") return "That build isn't there any more, or has no product yet.";
+  if (code === "build_not_ready") return "That build needs to be live, with Muse Glimmer in its brief, before it can plan its own model.";
+  if (code === "not_owner") return "Only the product's owner or an admin can plan its own model.";
+  if (code === "product_daily") return "This product already started a run today. Try again tomorrow (UTC).";
   if (status === 413) return "Those examples are too long to send. Use shorter rows or fewer of them.";
   if (status === 401 || status === 403) return "Only admins can train models here.";
   if (status === 404) return "Fine-tuning from here isn't switched on.";
@@ -98,11 +103,15 @@ async function readRows(files: File[], pasted: ExampleRow[]): Promise<{ rows: Ex
   return { rows: planRows(rows) };
 }
 
-function readPlan(): Phase | null {
+/** The plan kept before a reload, while it can still start and is for the same build (or none) as this page. */
+function readPlan(fromBuildId: string | null): Phase | null {
   try {
     const raw = window.sessionStorage.getItem(PLAN_KEY);
     if (!raw) return null;
     const kept = JSON.parse(raw) as { note: string; files: string[]; plan: TrainPlan };
+    const source = kept.plan.source;
+    const buildId = source?.kind === "build" ? source.buildId : null;
+    if (buildId !== fromBuildId) return null;
     return Date.parse(kept.plan.exp) > Date.now() ? { at: "plan", ...kept } : null;
   } catch {
     return null;
@@ -124,7 +133,16 @@ function keep(key: string, value: unknown) {
  * person's words, Muse Wonder drafting the plan, then the plan card with the mascot presenting and Start, Change it and
  * Advanced. Start begins the run (POST /api/train/runs) and the page becomes its room at /fine-tuning/runs/{id}.
  */
-export function TrainComposer({ defaultExamples, ceilings }: { defaultExamples: number; ceilings: { maxMinutes: number; maxUsd: number } }) {
+export function TrainComposer({
+  defaultExamples,
+  ceilings,
+  fromBuild = null,
+}: {
+  defaultExamples: number;
+  ceilings: { maxMinutes: number; maxUsd: number };
+  /** The build its own model is planned for (the build room's "Its own model"), or null. */
+  fromBuild?: { id: string; name: string } | null;
+}) {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>({ at: "compose" });
   const [examples, setExamples] = useState(defaultExamples);
@@ -133,14 +151,15 @@ export function TrainComposer({ defaultExamples, ceilings }: { defaultExamples: 
   const [startError, setStartError] = useState<string | null>(null);
 
   // A plan drafted before a reload comes back, while it can still start.
+  const fromBuildId = fromBuild?.id ?? null;
   useEffect(() => {
-    const kept = readPlan();
+    const kept = readPlan(fromBuildId);
     if (kept?.at === "plan") {
       setPhase(kept);
       setExamples(kept.plan.settings.examples);
       setSteps(kept.plan.settings.steps);
     }
-  }, []);
+  }, [fromBuildId]);
 
   const defaults = useMemo(() => planSettings(defaultExamples, ceilings), [defaultExamples, ceilings]);
   const defaultCost = useMemo(() => planCost(defaults), [defaults]);
@@ -171,7 +190,12 @@ export function TrainComposer({ defaultExamples, ceilings }: { defaultExamples: 
         method: "POST",
         headers: { "content-type": "application/json" },
         // A cleared or out of range Advanced number is left out, so the plan takes the default.
-        body: JSON.stringify({ note, examples: read.rows, ...(examplesOk(examples) ? { settings: { examples } } : {}) }),
+        body: JSON.stringify({
+          note,
+          examples: read.rows,
+          ...(examplesOk(examples) ? { settings: { examples } } : {}),
+          ...(fromBuildId ? { fromBuildId } : {}),
+        }),
       });
       data = await res.json().catch(() => null);
     } catch {
@@ -235,6 +259,7 @@ export function TrainComposer({ defaultExamples, ceilings }: { defaultExamples: 
           </div>
           <div className="play-intro">
             <h1>What should your model do?</h1>
+            {fromBuild ? <p className="muted">For {fromBuild.name}. It keeps answering with {WRITER_NAME} until this model passes and a serving window is open.</p> : null}
           </div>
           <Composer
             mode="new"
