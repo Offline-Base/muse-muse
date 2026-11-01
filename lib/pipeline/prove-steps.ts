@@ -10,15 +10,17 @@ import { addBuildCost, emit } from "@/lib/events";
 import { failureMessage } from "@/lib/pipeline/logic";
 import { charge } from "@/lib/pipeline/build-steps";
 import { publicActions, skillName } from "@/lib/outputs/generate";
-import { OUTPUT_LABEL } from "@/lib/outputs/labels";
+import { AGENT_CLAIMS_LABEL, OUTPUT_LABEL } from "@/lib/outputs/labels";
 import { PROVE_SCENE_SOURCE } from "@/lib/outputs/assets-source";
 import {
   describeResult,
   generatedFilesFor,
+  judgeAgentClaims,
   judgeSkillTest,
   NIGHTLY_MODEL,
   parseProveResults,
   planChecks,
+  pickAgentReply,
   PROVE_MODEL,
   PROVED_OUTPUTS,
   sceneFor,
@@ -33,11 +35,13 @@ import {
   studioSpecFor,
   videoCaption,
   type ProveCall,
+  type ProveOutputResult,
   type ProvedOutput,
   type ProveRunSpec,
   type ProveStopped,
 } from "@/lib/outputs/prove";
 import { parseManifest } from "@/lib/format";
+import { briefTargets } from "@/lib/native/targets";
 import type { ProveOrigin } from "@/lib/pipeline/prove-types";
 import * as sandbox from "@/lib/sandbox/builder";
 import { newSessionId } from "@/lib/sandbox/muse";
@@ -46,6 +50,7 @@ import { publicHost } from "@/lib/sandbox/policy";
 import { PROVE_CHECKS_ARGV, proveCheckFiles, PROVE_CONFIG, PROVE_DIR, proveConfigFile, proveRecordScript, PROVE_SKILL_DIR, PROVE_SPEC, proveSpecFile } from "@/lib/sandbox/prove-tasks";
 import { platformSpendToday } from "@/lib/usage";
 import type { BuildModel } from "@/lib/sandbox/muse";
+import type { Brief } from "@/lib/brief/schema";
 import type { ProveEventBody } from "@/lib/types";
 
 /** What each step needs, passed along by the workflow. */
@@ -106,6 +111,12 @@ async function spendPaused(): Promise<boolean> {
   return (await platformSpendToday()) >= env.dailySpendCapUsd;
 }
 
+/** Whether this build's product is an agent. Asked only with VERIFY_AGENTS on. */
+async function buildIsAgent(buildId: string): Promise<boolean> {
+  const [row] = await db().select({ brief: schema.builds.brief }).from(schema.builds).where(eq(schema.builds.id, buildId)).limit(1);
+  return Boolean(row?.brief) && briefTargets(row!.brief as Brief).includes("agent");
+}
+
 /** What earlier Prove it runs on this build spent. A run that died before its closing line isn't in it. */
 async function earlierRunsSpendUsd(buildId: string, runId: string): Promise<number> {
   const rows = await db()
@@ -159,7 +170,7 @@ export async function proveOpenStep(input: { buildId: string; runId: string; ori
   const { sandboxName: copy } = await sandbox.forkForProve(row.sandboxName, { liveHost, platformHost });
   try {
     const product = { slug: row.slug, name: row.name, tagline: row.tagline, liveUrl: row.liveUrl, manifest };
-    const spec = planChecks({
+    const planned = planChecks({
       product,
       origin: site,
       dir: PROVE_DIR,
@@ -168,6 +179,9 @@ export async function proveOpenStep(input: { buildId: string; runId: string; ori
       fetchable: !env.provePutFiles,
       readOnlyOnly: origin === "nightly",
     });
+    // VERIFY_AGENTS: grades the reply of a call the run makes anyway, so it adds no call and no spend.
+    const isAgent = env.verifyAgents && (await buildIsAgent(buildId));
+    const spec: ProveRunSpec = isAgent && planned.calls.length ? { ...planned, agentCheck: true } : planned;
     await sandbox.writeProveFiles(copy, [...proveCheckFiles(spec), ...(spec.downloads ? [] : generatedFilesFor(product, site, PROVE_DIR))]);
     const ctx: ProveCtx = {
       buildId,
@@ -186,6 +200,8 @@ export async function proveOpenStep(input: { buildId: string; runId: string; ori
     };
     await say(ctx, "stage", { state: "running", title: "Testing what this product comes with" });
     for (const output of PROVED_OUTPUTS) await say(ctx, output, { state: "planned", title: `${OUTPUT_LABEL[output]}: waiting` });
+    if (spec.agentCheck) await say(ctx, "agent_claims", { state: "planned", title: `${AGENT_CLAIMS_LABEL}: waiting` });
+    else if (isAgent) await say(ctx, "agent_claims", { state: "skipped", title: `${AGENT_CLAIMS_LABEL}: not tested`, detail: "No action was safe to call, so there was no reply to check." });
     await say(ctx, "chatgpt", { state: "skipped", title: "ChatGPT: not tested here", detail: "It uses the same MCP server. Only a person with a ChatGPT account can test it." });
     return ctx;
   } catch (err) {
@@ -247,6 +263,18 @@ export interface ProveChecksEnd {
   stopped: ProveStopped | null;
 }
 
+/** Says what code found in the agent's real reply. A run with no such reply says so, and never reads as passed. */
+async function sayAgentClaims(ctx: ProveCtx, spec: ProveRunSpec, mcp: ProveOutputResult | undefined, stopped: ProveStopped | null): Promise<void> {
+  const picked = pickAgentReply((mcp?.facts.agentReplies ?? []) as Array<{ name: string; text: string }>);
+  if (!picked) {
+    const why = stopped ? stoppedDetail(stopped) : "None of the actions it called replied the way an agent action does.";
+    await say(ctx, "agent_claims", { state: "skipped", title: `${AGENT_CLAIMS_LABEL}: not tested`, detail: why });
+    return;
+  }
+  const required = spec.calls.find((c) => c.name === picked.name)?.replyRequired;
+  await say(ctx, "agent_claims", judgeAgentClaims({ action: picked.name, reply: picked.reply, ...(required ? { required } : {}) }));
+}
+
 /** Reads what the checks did and says so for each output. */
 export async function proveCollectChecksStep(ctx: ProveCtx, stopped: ProveStopped | null): Promise<ProveChecksEnd> {
   "use step";
@@ -264,6 +292,7 @@ export async function proveCollectChecksStep(ctx: ProveCtx, stopped: ProveStoppe
     if (final.state === "done") passed.push(output);
     await say(ctx, output, final);
   }
+  if (spec?.agentCheck) await sayAgentClaims(ctx, spec, results?.outputs.mcp, stopped);
   const skill = results?.outputs.skill;
   return {
     summaries,

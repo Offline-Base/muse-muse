@@ -1566,3 +1566,11 @@ What this record doesn't confirm:
   - TUNE_RESEARCH added to .env.example.
 - Run: tsc, and the rule test files for research, bases, base, auto-publish, datasets and hub-cards. Not run: the full suite, next build, a browser, any call to Meta, Lambda or a GPU. Read from the Hub's public API only.
 - Not proven: no Llama path has run on a GPU, no research run has called Meta, costs are estimates.
+
+## Nov 1: VERIFY_AGENTS platform part (branch tg-verify-platform, unmerged)
+
+- Built, flag off: the "What was checked" panel from the build's events, code's results and agent rules for the judge, and an `agent_claims` Prove it item that grades the reply of a call the run already makes, so it adds no spend.
+- Decision: the recipe's claims block isn't graded. Part A has no commit and no test build has proven its reply shape, so a reply with `claims` reads "weren't graded" and never passes. The quote-in-file check and `prove-check-agent.mjs` wait for that proof. Part A's gate said part B should wait too. The panel and the kit-shape tier don't read that shape, so they went ahead. Today no reply can reach a passing state.
+- Decision: the gateway comparison is dropped. Usage rows record `tools/execute` with no tool name and no run.
+- Found: the page already loads a build's verify, judge and prove events, and a refinement's build has its own, so no query changed. `condenseProveEvents` keeps only the newest run, so the panel splits ship and nightly first.
+- Run: tsc and the rule test files named in the commit. Not run: the full suite, next build, a browser, any real Prove it run, Meta or a sandbox.

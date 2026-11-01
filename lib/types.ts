@@ -301,11 +301,14 @@ export interface ProveEventBody {
   type: "prove";
   runId: string;
   origin: "ship" | "nightly";
-  item: ProductOutput | "stage";
+  /** "agent_claims" (VERIFY_AGENTS) is a check of an agent's reply, not an output: it is never in PROVED_OUTPUTS. */
+  item: ProductOutput | "stage" | "agent_claims";
   state: ProveItemState;
   title: string;
   detail?: string;
   checks?: ProveCheck[];
+  /** What only the product can attest to, so nothing here was re-checked. Only agent_claims has it. */
+  reported?: string[];
   media?: { url: string; posterUrl?: string | null; caption: string };
   costUsd?: number;
 }

@@ -75,7 +75,7 @@ export async function judgeBuild(input: JudgeInput): Promise<{ verdict: JudgeRes
   const { content, sources } = judgeContent(input);
   const result = await respondStructured({
     model: env.judgeModel,
-    instructions: judgeInstructions(input.brief, { museAppLook: env.museAppLook }),
+    instructions: judgeInstructions(input.brief, { museAppLook: env.museAppLook, ...(env.verifyAgents ? { verifyAgents: true } : {}) }),
     content,
     sources,
     schema: VerdictSchema,

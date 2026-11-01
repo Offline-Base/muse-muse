@@ -59,6 +59,7 @@ import { capDropLine, capsForBuild, readCapDrops, withoutCaps, type CapDrop } fr
 // ---------- end Wave 3, unit 3 ----------
 import { pollDeploy, projectNameFor, startDeployFromSandbox, type DeployPoll } from "@/lib/publish/vercel";
 import { briefTargets } from "@/lib/native/targets";
+import { verifyProofText } from "@/lib/prompts/judge";
 import { demoNoteFor } from "@/lib/sandbox/artifacts";
 import * as sandbox from "@/lib/sandbox/builder";
 import { captureVersion } from "@/lib/versions/store";
@@ -954,7 +955,10 @@ export async function judgeStep(input: {
   const fixedProof = briefCaps(brief).length ? capsProofText(await verifySummaryFor(input.buildId, input.round)) : null;
   // Wave 3, unit 11: the gateway's record of a build's Glimmer calls, which decides nothing. Null with GPU_GLIMMER_SHARED off.
   const gpuProof = await gpuProofText(brief, input.buildId);
-  const capsProof = gpuProof ? `${fixedProof ?? GPU_PROOF_FRAME}\n${gpuProof}` : fixedProof;
+  const proofBefore = gpuProof ? `${fixedProof ?? GPU_PROOF_FRAME}\n${gpuProof}` : fixedProof;
+  // VERIFY_AGENTS: code's results come first on an agent product, in the same channel. The judge runs before Live and Prove it after, so these are verify's.
+  const agentProof = env.verifyAgents && briefTargets(brief).includes("agent") ? verifyProofText(await verifySummaryFor(input.buildId, input.round)) : null;
+  const capsProof = agentProof ? [agentProof, proofBefore].filter(Boolean).join("\n") : proofBefore;
   const result = await judgeBuild({
     brief,
     references: await judgeReferences(build, input.productId),
