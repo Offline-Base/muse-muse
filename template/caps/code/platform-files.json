@@ -1,12 +1,12 @@
 [
   ".agents/skills/muse-code-run/SKILL.md",
-  "app/api/musemuse/pyodide/[file]/route.ts",
   "components/platform/CodeOutput.tsx",
   "lib/platform/browse.ts",
   "lib/platform/code-run.ts",
   "lib/platform/exec.ts",
   "lib/platform/pyodide.ts",
   "lib/platform/quickjs.ts",
+  "public/musemuse/pyodide/health.json",
   "scripts/caps/code.mjs",
   "tests/caps/code.ts"
 ]

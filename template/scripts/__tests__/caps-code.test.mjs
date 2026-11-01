@@ -48,9 +48,19 @@ describe("the overlay's files", () => {
     assert.deepEqual(deps.devDependencies, {});
   });
 
-  test("the Pyodide route is a static segment beside the agent kit's catch-all, which has no file of the same path", () => {
-    assert.ok(existsSync(path.join(AGENT, "app/api/musemuse/[...path]/route.ts")));
-    assert.ok(!walk(AGENT).some((f) => f.startsWith("app/api/musemuse/pyodide/")));
+  test("serve Pyodide as static files in public/, copied from the package, never through a function route", async () => {
+    assert.ok(!walk(CODE).some((f) => f.startsWith("app/api/")), "no route of the overlay's own serves Pyodide");
+    const copies = JSON.parse(readFileSync(path.join(OVERLAY, "copies.json"), "utf8")).copies;
+    const helper = readFileSync(path.join(CODE, "lib/platform/pyodide.ts"), "utf8");
+    const files = JSON.parse(helper.match(/PYODIDE_FILES = (\[[^\]]+\])/)[1]);
+    const where = helper.match(/PYODIDE_PATH = "([^"]+)"/)[1];
+    assert.equal(where, "/musemuse/pyodide/");
+    assert.deepEqual(copies, files.map((f) => [`node_modules/pyodide/${f}`, `public${where}${f}`]));
+    const checker = await import(pathToFileURL(path.join(CODE, "scripts/caps/code.mjs")).href);
+    assert.deepEqual(checker.PYODIDE_FILES, files);
+    // The live check loads the folder's marker on the live link (lib/caps/live.ts).
+    assert.deepEqual(JSON.parse(readFileSync(path.join(CODE, "public/musemuse/pyodide/health.json"), "utf8")).ok, true);
+    assert.match(readFileSync(path.resolve(TEMPLATE, "../lib/caps/live.ts"), "utf8"), /code: \[\{ path: "\/musemuse\/pyodide\/health\.json"/);
   });
 
   test("the skill names every helper the build prompt names, and nothing has an em dash", () => {
@@ -81,11 +91,36 @@ describe("the fixed checks (scripts/caps/code.mjs)", () => {
   });
   const all = { "brief:pyodide": 1, "brief:exec": 1, "brief:browse": 1, exec: 2, execOk: 1, browse: 1 };
   const passed = { cap: "code", checks: [{ id: "in-page", ok: true, detail: "ran" }, { id: "exec-output", ok: true, detail: "shows" }, { id: "browse-page", ok: true, detail: "shows" }] };
+  /** A product whose static Pyodide files are the installed package's, byte for byte. */
+  let root;
+  before(() => {
+    root = mkdtempSync(path.join(tmpdir(), "mm-code-check-"));
+    dirs.push(root);
+    for (const f of checker.PYODIDE_FILES) {
+      for (const d of ["node_modules/pyodide", "public/musemuse/pyodide"]) {
+        mkdirSync(path.join(root, d), { recursive: true });
+        writeFileSync(path.join(root, d, f), `bytes of ${f}`);
+      }
+    }
+  });
 
   test("pass when the page showed each run and the gateway saw the server run and the page", async () => {
-    const out = await checker.check({ record: passed, proof: all });
-    assert.deepEqual(out.map((c) => [c.id, c.ok]), [["in-page", true], ["exec-output", true], ["browse-page", true]]);
-    assert.match(out[1].detail, /1 finished run/);
+    const out = await checker.check({ record: passed, proof: all, root });
+    assert.deepEqual(out.map((c) => [c.id, c.ok]), [["in-page", true], ["pyodide-files", true], ["exec-output", true], ["browse-page", true]]);
+    assert.match(out[2].detail, /1 finished run/);
+  });
+
+  test("fail pyodide-files when the static copies are missing or aren't the installed package's", async () => {
+    const other = mkdtempSync(path.join(tmpdir(), "mm-code-check-"));
+    dirs.push(other);
+    cpSync(root, other, { recursive: true });
+    rmSync(path.join(other, "public/musemuse/pyodide/pyodide.asm.wasm"));
+    writeFileSync(path.join(other, "public/musemuse/pyodide/pyodide.mjs"), "changed");
+    const out = await checker.check({ record: passed, proof: { "brief:pyodide": 1 }, root: other });
+    const files = out.find((c) => c.id === "pyodide-files");
+    assert.equal(files.ok, false);
+    assert.match(files.detail, /pyodide\.mjs, pyodide\.asm\.wasm/);
+    assert.equal((await checker.check({ record: passed, proof: { "brief:quickjs": 1 }, root: other })).some((c) => c.id === "pyodide-files"), false, "only for a brief with pyodide");
   });
 
   test("check only what the brief asked for, from the gateway's record", async () => {
@@ -102,7 +137,7 @@ describe("the fixed checks (scripts/caps/code.mjs)", () => {
   });
 
   test("fail a run the page claims when the gateway saw none finish, or no page handed out", async () => {
-    const out = await checker.check({ record: passed, proof: { ...all, execOk: 0, browse: 0 } });
+    const out = await checker.check({ record: passed, proof: { ...all, execOk: 0, browse: 0 }, root });
     assert.deepEqual(out.filter((c) => !c.ok).map((c) => c.id), ["exec-output", "browse-page"]);
     assert.match(out.find((c) => c.id === "exec-output").detail, /no program finish/);
   });
@@ -122,33 +157,6 @@ function runIn(cwd, file, code, env = {}) {
     child.on("close", (status) => (status === 0 ? resolve(JSON.parse(out.trim().split("\n").at(-1))) : reject(new Error(err || out))));
   });
 }
-
-describe("the Pyodide route", () => {
-  test("serves only Pyodide's five files, from the product's own node_modules, with the right types", async () => {
-    const dir = mkdtempSync(path.join(tmpdir(), "mm-code-route-"));
-    dirs.push(dir);
-    mkdirSync(path.join(dir, "node_modules/pyodide"), { recursive: true });
-    for (const f of ["pyodide.mjs", "pyodide.asm.mjs", "pyodide.asm.wasm", "python_stdlib.zip", "pyodide-lock.json", "package.json"]) writeFileSync(path.join(dir, "node_modules/pyodide", f), `contents of ${f}`);
-    writeFileSync(path.join(dir, "secret.txt"), "not served");
-    cpSync(path.join(CODE, "app/api/musemuse/pyodide/[file]/route.ts"), path.join(dir, "route.ts"));
-    const out = await runIn(
-      dir,
-      "run-route.mts",
-      `
-import { GET } from "./route.ts";
-const ask = async (file) => { const r = await GET(new Request("http://localhost/api/musemuse/pyodide/" + file), { params: Promise.resolve({ file }) }); return [r.status, r.headers.get("content-type"), r.status === 200 ? await r.text() : null]; };
-const out = [];
-for (const f of ["pyodide.mjs", "pyodide.asm.wasm", "pyodide-lock.json", "package.json", "../../secret.txt", "..%2F..%2Fsecret.txt", "constructor", "__proto__"]) out.push([f, await ask(f)]);
-console.log(JSON.stringify(out));
-`,
-    );
-    const got = new Map(out);
-    assert.deepEqual(got.get("pyodide.mjs"), [200, "text/javascript; charset=utf-8", "contents of pyodide.mjs"]);
-    assert.deepEqual(got.get("pyodide.asm.wasm"), [200, "application/wasm", "contents of pyodide.asm.wasm"]);
-    assert.equal(got.get("pyodide-lock.json")[0], 200);
-    for (const f of ["package.json", "../../secret.txt", "..%2F..%2Fsecret.txt", "constructor", "__proto__"]) assert.equal(got.get(f)[0], 404, f);
-  });
-});
 
 describe("in a product with core and code", { skip: existsSync(modules) ? false : "needs template/node_modules" }, () => {
   let dir;
@@ -241,47 +249,62 @@ console.log(JSON.stringify(await openPage(new Request("http://localhost/x"), { u
     assert.deepEqual(seen[0].body, { url: "https://example.org/", input: "summarize example.org", actions: [{ type: "wait", ms: 100 }] });
   });
 
-  test("the Pyodide worker hands stdin over once, keeps each run's names apart, and reports errors in stderr", async () => {
-    // A stand-in pyodide.mjs beside the worker: it "prints" each line of code that starts with print: and reads stdin once.
-    writeFileSync(
-      path.join(dir, "pyodide.mjs"),
-      `export async function loadPyodide() {
+  test("the Pyodide worker loads only from the bytes it was handed, then seals its scope before any program runs", async () => {
+    // Stand-ins for Pyodide's files. pyodide.mjs runs each "program" as JavaScript in the worker's own scope, so what a
+    // program could reach there is what these runs report.
+    const standIn = `export async function loadPyodide(config) {
+  const wasm = await (await fetch(config.indexURL + "pyodide.asm.wasm")).text();
+  let other = "refused";
+  try { await fetch("https://elsewhere.example/x"); other = "fetched"; } catch {}
+  const mod = await config.createPyodideModule({});
   let out = null, err = null, stdin = null, made = 0, destroyed = 0;
+  globalThis.__config = { indexURL: config.indexURL, lock: typeof config.lockFileContents, stdLibURL: config.stdLibURL, jsglobals: Object.keys(config.jsglobals), jsHasFetch: "fetch" in config.jsglobals, mod: mod.name, wasm, other };
   return {
     setStdout: (o) => { out = o.batched; }, setStderr: (o) => { err = o.batched; }, setStdin: (o) => { stdin = o.stdin; },
     globals: { get: () => () => ({ n: ++made, destroy: () => { destroyed++; } }) },
     async runPythonAsync(code, { globals }) {
-      if (code.includes("raise")) throw new Error("Traceback: ValueError: bad");
+      if (code === "raise") throw new Error("Traceback: ValueError: bad");
+      if (code === "reach") { for (const name of ["fetch", "WebSocket", "BroadcastChannel", "navigator", "postMessage", "importScripts"]) out(name + " " + typeof globalThis[name] + " " + new Function("return typeof " + name)()); return; }
       for (const line of code.split("\\n")) if (line.startsWith("print:")) out(line.slice(6));
       if (code.includes("input")) { out("read " + JSON.stringify(stdin())); out("then " + JSON.stringify(stdin())); }
       out("globals " + globals.n + " destroyed " + destroyed);
     },
   };
 }
-`,
-    );
+`;
     const out = await run(`
-import { WORKER_SOURCE } from "./lib/platform/pyodide.ts";
-import { writeFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
+import { SEALED_NAMES, WORKER_SOURCE } from "./lib/platform/pyodide.ts";
 const replies = [];
-globalThis.self = { postMessage: (m) => replies.push(m) };
-writeFileSync("worker.mjs", WORKER_SOURCE);
-await import(pathToFileURL(process.cwd() + "/worker.mjs").href);
-const base = pathToFileURL(process.cwd() + "/").href;
-const send = (data) => self.onmessage({ data: { base, ...data } });
-await send({ id: 1, kind: "load" });
+// What a worker has: self, postMessage, Blob and object URLs. Node can't import a blob: URL, so an object URL here is
+// a data: URL of the same bytes.
+globalThis.self = globalThis;
+globalThis.postMessage = (m) => replies.push(m);
+globalThis.Blob = class { constructor(parts, opts) { this.bytes = Buffer.from(parts[0]); this.type = opts?.type; } };
+URL.createObjectURL = (b) => "data:text/javascript;base64," + b.bytes.toString("base64");
+await import("data:text/javascript;base64," + Buffer.from(WORKER_SOURCE).toString("base64"));
+const enc = (t) => new TextEncoder().encode(t).buffer;
+const files = { "pyodide.mjs": enc(${JSON.stringify(standIn)}), "pyodide.asm.mjs": enc("export default async () => ({ name: 'asm stand-in' });"), "pyodide.asm.wasm": enc("WASM BYTES"), "python_stdlib.zip": enc("ZIP"), "pyodide-lock.json": enc("{}") };
+const send = (data) => self.onmessage({ data });
+await send({ id: 1, kind: "load", files });
 await send({ id: 2, kind: "run", code: "print:hello\\nprint:world\\ninput", stdin: "3\\n4" });
 await send({ id: 3, kind: "run", code: "print:again", stdin: "" });
 await send({ id: 4, kind: "run", code: "raise", stdin: "" });
-console.log(JSON.stringify(replies.map(({ ms, ...r }) => ({ ...r, timed: typeof ms === "number" || ms === undefined }))));
+await send({ id: 5, kind: "run", code: "reach", stdin: "" });
+console.log(JSON.stringify({ config: globalThis.__config, sealed: SEALED_NAMES, replies: replies.map(({ ms, ...r }) => r) }));
 `);
-    assert.deepEqual(out[0], { id: 1, ok: true, timed: true });
-    assert.equal(out[1].ok, true);
-    assert.equal(out[1].stdout, 'hello\nworld\nread "3\\n4"\nthen null\nglobals 1 destroyed 0\n');
-    assert.equal(out[2].stdout, "again\nglobals 2 destroyed 1\n", "a fresh dict each run, the last one destroyed");
-    assert.equal(out[3].ok, false);
-    assert.match(out[3].stderr, /ValueError: bad/);
+    assert.deepEqual(out.replies[0], { mm: "pyodide", id: 1, ok: true }, JSON.stringify(out.replies[0]));
+    assert.deepEqual(out.config, { indexURL: "https://pyodide.invalid/", lock: "string", stdLibURL: "https://pyodide.invalid/python_stdlib.zip", jsglobals: [], jsHasFetch: false, mod: "asm stand-in", wasm: "WASM BYTES", other: "refused" });
+    const [load, first, second, bad, reach] = out.replies;
+    assert.deepEqual(load, { mm: "pyodide", id: 1, ok: true });
+    assert.equal(first.stdout, 'hello\nworld\nread "3\\n4"\nthen null\nglobals 1 destroyed 0\n');
+    assert.equal(second.stdout, "again\nglobals 2 destroyed 1\n", "a fresh dict each run, the last one destroyed");
+    assert.equal(bad.ok, false);
+    assert.match(bad.stderr, /ValueError: bad/);
+    // After load, nothing a program can name or reach through the Function constructor is left of these.
+    for (const name of ["fetch", "WebSocket", "BroadcastChannel", "navigator", "postMessage", "importScripts"]) {
+      assert.ok(out.sealed.includes(name), name);
+      assert.match(reach.stdout, new RegExp(`^${name} undefined undefined$`, "m"), name);
+    }
   });
 
   test("runJavaScript gives the program console and INPUT only, catches its errors, and says when it ran out of time", async () => {
@@ -356,5 +379,175 @@ console.log(JSON.stringify({ py, js, printed }));
     assert.equal(out.printed, out.js.stdout);
     const n = Number(out.py.code.match(/n = (\d+)/)[1]);
     assert.equal(out.py.stdout, `mm-fixture ${(n * (n - 1)) / 2} ${n * n}`);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// In Chromium: the sealed frame Python runs in
+
+const playwright = existsSync(modules) ? await import("@playwright/test").catch(() => null) : null;
+const esbuild = await import("esbuild").catch(() => null);
+let browserProblem = !playwright ? "template/node_modules isn't installed" : !esbuild ? "esbuild isn't installed" : null;
+let browser = null;
+if (!browserProblem) {
+  browser = await playwright.chromium.launch().catch((err) => {
+    browserProblem = `Playwright's Chromium didn't start (${String(err?.message ?? err).split("\n")[0]})`;
+    return null;
+  });
+}
+after(async () => {
+  await browser?.close();
+});
+
+/** lib/platform/pyodide.ts for the browser, with its "@/lib/platform/..." imports from the overlay. */
+async function bundlePyodide() {
+  const out = await esbuild.build({
+    stdin: { contents: `import { preloadPython, runPython } from "./pyodide.ts"; window.Py = { preloadPython, runPython };`, resolveDir: path.join(CODE, "lib/platform"), loader: "ts" },
+    bundle: true,
+    write: false,
+    format: "iife",
+    target: "es2022",
+    logLevel: "silent",
+    plugins: [{ name: "at", setup: (b) => b.onResolve({ filter: /^@\// }, (a) => ({ path: path.join(CODE, `${a.path.slice(2)}.ts`) })) }],
+  });
+  return out.outputFiles[0].text;
+}
+
+/** A stand-in pyodide.mjs whose "Python" is JavaScript run in the worker's own scope, after the worker sealed it. */
+const BROWSER_STAND_IN = `export async function loadPyodide(config) {
+  const wasm = await (await fetch(config.indexURL + "pyodide.asm.wasm")).text();
+  await config.createPyodideModule({});
+  let out = () => {};
+  return {
+    setStdout: (o) => { out = o.batched; }, setStderr: () => {}, setStdin: () => {},
+    globals: { get: () => () => ({ destroy() {} }) },
+    async runPythonAsync(code) {
+      const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+      await new AsyncFunction("print", "wasm", code)((s) => out(String(s)), wasm);
+    },
+  };
+}
+`;
+
+/** What a hostile program tries, as JavaScript in the worker: every way to the product's routes, its cookies or the network. */
+const ESCAPES = `
+const tries = {};
+const attempt = async (name, fn) => { try { await fn(); tries[name] = "reached"; } catch { tries[name] = "blocked"; } };
+await attempt("fetch the product's route", () => fetch("/api/secret"));
+await attempt("fetch through the Function constructor", () => new Function("return fetch")()("https://elsewhere.test/a"));
+await attempt("XMLHttpRequest", () => { const x = new XMLHttpRequest(); x.open("GET", "https://elsewhere.test/b"); x.send(); });
+await attempt("import from a site", () => import("https://elsewhere.test/c.js"));
+await attempt("import the product's route", () => import("/api/secret?as=module"));
+await attempt("WebSocket", () => new WebSocket("wss://elsewhere.test/d"));
+await attempt("EventSource", () => new EventSource("https://elsewhere.test/e"));
+await attempt("indexedDB", () => indexedDB.open("x"));
+await attempt("a nested worker", () => new Worker("https://elsewhere.test/f.js"));
+await attempt("the page's cookies", () => { if (typeof document === "undefined") throw new Error("no document"); return document.cookie; });
+await new Promise((r) => setTimeout(r, 300));
+print(JSON.stringify({ origin: self.origin, tries }));
+`;
+
+describe("Python in the browser, in Chromium", { skip: browserProblem ?? false }, () => {
+  let context;
+  let page;
+  const hits = [];
+
+  before(async () => {
+    const js = await bundlePyodide();
+    const files = {
+      "pyodide.mjs": BROWSER_STAND_IN,
+      "pyodide.asm.mjs": "export default async () => ({});",
+      "pyodide.asm.wasm": "WASM",
+      "python_stdlib.zip": "ZIP",
+      "pyodide-lock.json": "{}",
+    };
+    context = await browser.newContext();
+    await context.addCookies([{ name: "mm_vid", value: "visitor_secret_cookie", domain: "code.test", path: "/", secure: true, sameSite: "Lax" }]);
+    await context.route("https://code.test/**", (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname === "/") return route.fulfill({ contentType: "text/html", body: `<!doctype html><meta charset=utf-8><body><script>${js}</script>` });
+      if (url.pathname.startsWith("/musemuse/pyodide/")) {
+        const name = url.pathname.slice("/musemuse/pyodide/".length);
+        return files[name] !== undefined ? route.fulfill({ contentType: "application/octet-stream", body: files[name] }) : route.fulfill({ status: 404, body: "" });
+      }
+      hits.push({ url: url.href, cookie: route.request().headers().cookie ?? null });
+      return route.fulfill({ contentType: "text/javascript", body: "export {};" });
+    });
+    await context.route("https://elsewhere.test/**", (route) => {
+      hits.push({ url: route.request().url(), cookie: null });
+      return route.fulfill({ contentType: "text/javascript", body: "export {};" });
+    });
+    page = await context.newPage();
+    await page.goto("https://code.test/");
+  });
+  after(async () => {
+    await context?.close();
+  });
+
+  test("routes the page's and a plain worker's requests here, so a request from the frame would be seen", async () => {
+    hits.length = 0;
+    await page.evaluate(async () => {
+      await fetch("/api/secret?from=page");
+      const w = new Worker(URL.createObjectURL(new Blob(['fetch("https://elsewhere.test/control").then(() => postMessage(1), () => postMessage(0))'], { type: "text/javascript" })));
+      await new Promise((r) => (w.onmessage = r));
+      w.terminate();
+    });
+    assert.deepEqual(hits.map((h) => h.url), ["https://code.test/api/secret?from=page", "https://elsewhere.test/control"]);
+    assert.match(hits[0].cookie ?? "", /mm_vid=visitor_secret_cookie/, "the page's own request carries the cookie");
+  });
+
+  test("runs a program sealed off: its own origin, no fetch, no network, no route of the product's, no cookies", async () => {
+    hits.length = 0;
+    const run = await page.evaluate((code) => window.Py.runPython(code), ESCAPES);
+    assert.equal(run.status, "ok", run.stderr);
+    const seen = JSON.parse(run.stdout.trim());
+    assert.equal(seen.origin, "null", "an opaque origin");
+    for (const [name, outcome] of Object.entries(seen.tries)) assert.equal(outcome, "blocked", name);
+    assert.deepEqual(hits, [], "no request left the frame");
+    assert.equal(await page.evaluate(() => window.__musemuseCode.pyodide), 1);
+  });
+
+  test("stops a run past its limit by removing the frame, and the next run starts it again", async () => {
+    const slow = await page.evaluate(() => window.Py.runPython("while (true) {}", { timeoutMs: 600 }));
+    assert.equal(slow.status, "timeout");
+    assert.equal(await page.evaluate(() => document.querySelectorAll("iframe").length), 0);
+    const next = await page.evaluate(() => window.Py.runPython("print(1 + 1)"));
+    assert.deepEqual([next.status, next.stdout], ["ok", "2\n"]);
+    const frame = await page.evaluate(() => {
+      const f = document.querySelector("iframe");
+      return { sandbox: f.getAttribute("sandbox"), hidden: f.style.display };
+    });
+    assert.deepEqual(frame, { sandbox: "allow-scripts", hidden: "none" });
+  });
+
+  // The real Pyodide, when PYODIDE_TEST_DIR names a folder with its five files (an unpacked pyodide 314.0.7 package).
+  test("with the real Pyodide: Python runs, and `from js import fetch` and pyodide.http fail", { skip: process.env.PYODIDE_TEST_DIR ? false : "set PYODIDE_TEST_DIR to an unpacked pyodide package" }, async () => {
+    const real = await browser.newContext();
+    try {
+      await real.route("https://real.test/**", (route) => {
+        const url = new URL(route.request().url());
+        if (url.pathname === "/") return bundlePyodide().then((js) => route.fulfill({ contentType: "text/html", body: `<!doctype html><meta charset=utf-8><body><script>${js}</script>` }));
+        const name = url.pathname.slice("/musemuse/pyodide/".length);
+        if (url.pathname.startsWith("/musemuse/pyodide/") && existsSync(path.join(process.env.PYODIDE_TEST_DIR, name))) return route.fulfill({ body: readFileSync(path.join(process.env.PYODIDE_TEST_DIR, name)) });
+        hits.push({ url: url.href, cookie: null });
+        return route.fulfill({ status: 404, body: "" });
+      });
+      const p = await real.newPage();
+      await p.goto("https://real.test/");
+      hits.length = 0;
+      const ok = await p.evaluate(() => window.Py.runPython("import sys\nprint(sum(range(10)), sys.version_info[0])\nprint(input())", { stdin: "typed", timeoutMs: 20_000 }));
+      assert.equal(ok.status, "ok", ok.stderr);
+      assert.equal(ok.stdout, "45 3\ntyped\n");
+      const js = await p.evaluate(() => window.Py.runPython("from js import fetch"));
+      assert.equal(js.status, "error");
+      assert.match(js.stderr, /ImportError|cannot import name 'fetch'/);
+      const http = await p.evaluate(() => window.Py.runPython("from pyodide.http import pyfetch\nimport asyncio\nawait pyfetch('/api/secret')"));
+      assert.equal(http.status, "error");
+      const ffi = await p.evaluate(() => window.Py.runPython("import pyodide_js\nf = pyodide_js.constructor.constructor('return typeof fetch')\nprint(f())"));
+      assert.equal(ffi.stdout, "undefined\n", ffi.stderr);
+      assert.deepEqual(hits, [], "no request left the frame");
+    } finally {
+      await real.close();
+    }
   });
 });

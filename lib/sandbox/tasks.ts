@@ -421,6 +421,25 @@ export function capsGatewayScript(from: string, file: string = CAPS_GATEWAY_FILE
   ].join("\n");
 }
 
+// ---------- Wave 3, unit 9 (docs/CAPABILITIES.md, 15a): files an overlay copies out of its installed packages ----------
+/**
+ * Copies the files an overlay's copies.json names, `[from, to]` pairs, from node_modules into the product's public/
+ * folder, after its deps are installed. The code overlay serves Pyodide's files this way: as static files, never through
+ * a function route. Paths must be plain (no `..`, not absolute); a missing source fails the step by name.
+ */
+function overlayCopies(copiesFile: string): string {
+  const copy = [
+    `const fs=require("fs"),p=require("path");const f=process.argv[1];`,
+    `const ok=(s,top)=>typeof s==="string"&&s.startsWith(top+"/")&&!s.split("/").some(x=>x===".."||x==="")&&!p.isAbsolute(s);`,
+    `for(const [from,to] of JSON.parse(fs.readFileSync(f,"utf8")).copies||[]){`,
+    `if(!ok(from,"node_modules")||!ok(to,"public")){console.error("musemuse: copies.json has a path it can't copy: "+from+" to "+to);process.exit(1)}`,
+    `if(!fs.existsSync(from)){console.error("musemuse: "+from+" isn't installed");process.exit(1)}`,
+    `fs.mkdirSync(p.dirname(to),{recursive:true});fs.rmSync(to,{force:true});fs.copyFileSync(from,to)}`,
+  ].join("");
+  return `if [ -f ${q(copiesFile)} ]; then node -e ${q(copy)} ${q(copiesFile)}; fi`;
+}
+// ---------- end Wave 3, unit 9 ----------
+
 /**
  * Applies a brief's cap overlays to the product in the current directory (PRODUCT_DIR), right after any target overlay:
  * copies each overlay's files, installs its deps at their exact versions, writes CAPS_FILE and commits "Caps: data, jobs".
@@ -452,6 +471,8 @@ export function applyCapsScript(file: { caps: readonly string[]; overlays: reado
   lines.push(
     `if [ -n "$(echo $deps)" ]; then ${install} $deps; fi`,
     `if [ -n "$(echo $dev)" ]; then ${install} --save-dev $dev; fi`,
+    // Wave 3, unit 9: an overlay's copies.json, after its packages are installed.
+    ...file.overlays.map((o) => overlayCopies(`${capsDir}/${o}/copies.json`)),
     `printf '%s' ${q(want)} > ${CAPS_FILE}`,
     `git add -A`,
     `git diff --cached --quiet || git commit -qm ${q(`Caps: ${file.caps.join(", ")}`)}`,

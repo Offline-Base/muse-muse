@@ -4,6 +4,9 @@
 // (`brief:pyodide`, `brief:quickjs`, `brief:exec`, `brief:browse`), which product code can't write:
 //   in-page       the smoke test ran the platform's fixture in the browser and the page showed its exact output
 //                 (tests/caps/code.ts expectInPageRun), when the brief has pyodide or quickjs
+//   pyodide-files the product serves Pyodide's five files as static files (public/musemuse/pyodide/), each the same
+//                 bytes as the installed pyodide package's, when the brief has pyodide. The live product loads them
+//                 from there, so a deploy needs them in the product, not behind a function route
 //   exec-output   the page showed the fixture's exact output from a server run, and the gateway saw a run finish in
 //                 this build's space since this verify started, when the brief has exec
 //   browse-page   the page showed a recorded sample page, and the gateway handed this build one since this verify
@@ -13,16 +16,44 @@
 // ahead of time; the in-page counts are the page's own, which a product that wanted to could fake. The run counts come
 // from the gateway.
 
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
+/** The files lib/platform/pyodide.ts reads, and where the code overlay's copies.json puts them. */
+export const PYODIDE_FILES = ["pyodide.mjs", "pyodide.asm.mjs", "pyodide.asm.wasm", "python_stdlib.zip", "pyodide-lock.json"];
+export const PYODIDE_STATIC_DIR = "public/musemuse/pyodide";
+
+/** Each static copy against the installed package: missing or changed ones by name, or null when all match. */
+export function pyodideFilesProblem(root) {
+  const bad = [];
+  for (const name of PYODIDE_FILES) {
+    let served = null;
+    let installed = null;
+    try {
+      served = readFileSync(path.join(root, PYODIDE_STATIC_DIR, name));
+    } catch {}
+    try {
+      installed = readFileSync(path.join(root, "node_modules", "pyodide", name));
+    } catch {}
+    if (!served || !installed || !served.equals(installed)) bad.push(name);
+  }
+  return bad.length ? `${PYODIDE_STATIC_DIR}/ is missing or changed: ${bad.join(", ")}` : null;
+}
+
 const recorded = (record, id) => (Array.isArray(record?.checks) ? record.checks.find((c) => c?.id === id) : undefined);
 const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
-export async function check({ record, proof }) {
+export async function check({ record, proof, root = process.cwd() }) {
   if (!proof) return [{ id: "brief", ok: false, detail: "the gateway's record of this build is missing" }];
   const wants = (part) => n(proof[`brief:${part}`]) > 0;
   const out = [];
   if (wants("pyodide") || wants("quickjs")) {
     const c = recorded(record, "in-page");
     out.push({ id: "in-page", ok: c?.ok === true, detail: c?.detail ?? "the smoke test didn't run the fixture in the page (expectInPageRun)" });
+  }
+  if (wants("pyodide")) {
+    const problem = pyodideFilesProblem(root);
+    out.push({ id: "pyodide-files", ok: !problem, detail: problem ?? `Pyodide's ${PYODIDE_FILES.length} files are static files in ${PYODIDE_STATIC_DIR}/` });
   }
   if (wants("exec")) {
     const c = recorded(record, "exec-output");

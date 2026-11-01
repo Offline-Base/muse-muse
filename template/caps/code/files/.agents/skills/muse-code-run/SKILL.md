@@ -29,10 +29,14 @@ const run = await runPython(code, { stdin });
 ```
 
 - Client components only. It runs in a worker, so the page stays responsive, and stops a run after 10 seconds.
-- The first run loads Pyodide (about 10 MB) from the product's own `/api/musemuse/pyodide/` route
-  (`app/api/musemuse/pyodide/[file]/route.ts`). Call `preloadPython()` when the editor opens, so the first run is quick,
-  and say "Loading Python" while it loads.
-- The standard library only: no numpy, no pandas, no pip, no network. `input()` reads `stdin`.
+- The first run loads Pyodide (about 13 MB) from the product's own static files in `public/musemuse/pyodide/`, which
+  the platform copied from the `pyodide` package. Leave that folder as it is. Call `preloadPython()` when the editor
+  opens, so the first run is quick, and say "Loading Python" while it loads.
+- Python runs sealed off from the page: in a hidden frame with its own origin and a worker inside it. It has no
+  network, no cookies, no storage, and no way into the page or the product's routes. `from js import fetch`,
+  `pyodide.http` and every other way out fail. The program's only input is its code and `stdin`, and its only output
+  is what it prints.
+- The standard library only: no numpy, no pandas, no pip. `input()` reads `stdin`.
 
 ## JavaScript in the browser: `runJavaScript`
 
@@ -57,11 +61,12 @@ const run = await runOnServer(request, { language: "python", code, stdin, files:
 - A fresh sandbox for each run, with no network and no secrets: 15 seconds, 64 KB of code and stdin, 1 MB of files
   (`text` or `base64`, plain names, found in the program's working folder) and 64 KB of output. Python has its standard
   library only.
-- **Only the product's owner can run code here.** Anyone else gets `CapError` with code `sign_in_required`: catch it,
-  answer with its status and message, and show visitors plainly that this part is the owner's (and offer the browser
-  runtime when the brief has one). Each person can run 20 programs a day and the product 200; over that it's
-  `rate_limited`.
-- In a build every run is real, at most 5 in all. Never call it on page load, only when a person asks.
+- **Only the product's owner can run code here,** unless the build prompt says Muse Muse lets anyone. Anyone else gets
+  `CapError` with code `sign_in_required`: catch it, answer with its status and message, and show visitors plainly that
+  this part is the owner's (and offer the browser runtime when the brief has one). Each person can run 20 programs a day
+  and the product 200; over that it's `rate_limited`.
+- In a build every run is real: at most 3 each time the smoke test runs, 40 in the whole build. Never call it on page
+  load, only when a person asks.
 
 ## Opening a page the person typed: `openPage`
 

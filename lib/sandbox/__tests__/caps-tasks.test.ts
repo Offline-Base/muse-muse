@@ -58,6 +58,38 @@ describe("cap overlay scripts", () => {
     assert.equal(git("log --format=%s").stdout.trim().split("\n").length, 2, "no second commit");
   });
 
+  // Wave 3, unit 9: an overlay's copies.json, run after its packages are installed.
+  it("copies the files an overlay's copies.json names out of node_modules into public/, and commits them", () => {
+    const { product, capsDir, git } = setup();
+    const env = `export HOME=${JSON.stringify(product)} GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t.invalid GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t.invalid; `;
+    // The code overlay's real copies.json, with its deps.json emptied so nothing is installed here, and a stand-in
+    // package where npm would have put pyodide.
+    writeFileSync(path.join(capsDir, "code/deps.json"), JSON.stringify({ dependencies: {}, devDependencies: {} }));
+    const copies = JSON.parse(readFileSync(path.join(capsDir, "code/copies.json"), "utf8")).copies as Array<[string, string]>;
+    mkdirSync(path.join(product, "node_modules/pyodide"), { recursive: true });
+    writeFileSync(path.join(product, ".gitignore"), "node_modules/\n");
+    for (const [from] of copies) writeFileSync(path.join(product, from), `bytes of ${from}`);
+    const res = bash(env + applyCapsScript({ caps: ["code"], overlays: ["core", "code"] }, capsDir), product);
+    assert.equal(res.code, 0, res.stderr);
+    for (const [from, to] of copies) {
+      assert.match(to, /^public\/musemuse\/pyodide\//);
+      assert.equal(readFileSync(path.join(product, to), "utf8"), `bytes of ${from}`, to);
+    }
+    assert.match(git("show --stat --format=%s HEAD").stdout, /public\/musemuse\/pyodide\/pyodide\.asm\.wasm/);
+  });
+
+  it("stops, by name, when a file copies.json names isn't installed, or a path would leave its folder", () => {
+    const { product, capsDir } = setup();
+    writeFileSync(path.join(capsDir, "code/deps.json"), JSON.stringify({ dependencies: {}, devDependencies: {} }));
+    const missing = bash(applyCapsScript({ caps: ["code"], overlays: ["core", "code"] }, capsDir), product);
+    assert.notEqual(missing.code, 0);
+    assert.match(missing.stderr, /node_modules\/pyodide\/pyodide\.mjs isn't installed/);
+    writeFileSync(path.join(capsDir, "code/copies.json"), JSON.stringify({ copies: [["node_modules/x/../../etc/passwd", "public/x"]] }));
+    const escape = bash(applyCapsScript({ caps: ["code"], overlays: ["core", "code"] }, capsDir), product);
+    assert.notEqual(escape.code, 0);
+    assert.match(escape.stderr, /a path it can't copy/);
+  });
+
   it("stops when an overlay isn't in the sandbox", () => {
     const { product, capsDir } = setup();
     // Wave 3, unit 3 added template/caps/data, so this uses an overlay no unit has.
