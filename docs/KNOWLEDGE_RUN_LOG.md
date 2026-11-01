@@ -1342,6 +1342,20 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
 - 12:50 AM: dataset card: added a Size line under "What this is" and a Tokens table by config (text and chat-format
   tokens). Pushed as 3410af1b; all 33 files still match, and the public card matches without a token. The owner also asked
   for sample rows on the card; that edit was stopped by a safety check before it ran, so no samples are on the card.
+- 1:30 AM: GPUs shut down (owner: "maybe shut them down unless theyre being used for muse muse rn"; may spin up later to
+  host the tuned model).
+  - writer-1 was idle: GPU at 0%, the lock free, no sessions, jobs or cron.
+  - Its disk was checked against the shared filesystem by file name and size. The files with no copy there were:
+    - base-hf: the stock Muse Glimmer weights, downloadable from the Hub again;
+    - the three r30b mixes and the bnb4 shards: on the public Hub;
+    - 13.19 GB of everything else (9,914 files: results, logs, scripts, stage 2 IQ1_M, the DFlash draft, mp-gpu runs,
+      llama.cpp builds), now copied to /lambda/nfs/muse-muse-cache-us-east-1/runs/writer-1-final-20261101/. A checksum
+      dry run found no differences.
+  - Muse Privacy asked that its 12 throwaway llama_api_key files (valid only on writer-1) not sit on shared storage, so
+    those copies were deleted. Muse Privacy dropped its queued iq2-io-lowest row.
+  - Terminated writer-1 through the Lambda API. mm-train-f6761680-glimmer-lora (Muse Muse's own training job) had
+    already ended on its own.
+  - The shared filesystem stays (about 570 GB used) for a later hosting machine.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
