@@ -1124,6 +1124,16 @@ because the sidebar showed a real account.
   Policy (18+, never presented as human-written), and its $20M API clause. Files in S3: LICENSE, MUSE_MODEL_LICENSE.md,
   USAGE_POLICY.md, NOTICE. Wave 3 told.
 
+### 21:33 Wave 3: r30b's license duties in the drive export (tg-cap-int e556f68)
+
+- Defaults to r30b IQ1_S only; stage 2 or any other file must be named in full with its own honesty numbers. Any
+  knowledge-run file (r30b, stage-b, stage 2, knowledge) is refused without the duties. The drive carries
+  MUSE_MODEL_LICENSE.md, the Usage Policy and NOTICE from the model's own S3 folder (sha256-checked, never held by the
+  code), "Built with Muse Spark Open" in every title, a "Use it safely" section (18+, never presented as human-written,
+  made-up answers, false premises, read the license before offering it as a service), and the Derivative line in
+  CHANGES.md. Lab adapters unaffected. Wave 3's checks: 4,085 tests, 4,077 pass, 0 fail; template 455/455; tsc clean.
+  The export works once the training session's license files are in S3; no code change needed.
+
 ## Gaps
 
 What this record doesn't confirm:
