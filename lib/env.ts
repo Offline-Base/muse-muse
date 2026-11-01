@@ -403,6 +403,14 @@ export const env = {
   get tuneFromBuilds(): boolean {
     return flag("TUNE_FROM_BUILDS");
   },
+  /**
+   * GUEST_EDITS: "1", "true", "yes" or "on" lets the browser that made a guest build refine it, holding an httpOnly
+   * signed pass (lib/edit-pass.ts), under the same spend and rate checks as a guest build. Off by default: guests get
+   * the 403 they always did and no pass is handed out.
+   */
+  get guestEdits(): boolean {
+    return flag("GUEST_EDITS");
+  },
 
   // ---------- Anyone can fine-tune (General; lib/train/public, open-train.md) ----------
 
