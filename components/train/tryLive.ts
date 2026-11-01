@@ -1,9 +1,20 @@
 /**
  * The live demo's two calls from the browser (docs/TRAINING.md "Live demo"), kept apart from React so tests can run
- * them against a faked fetch: one app idea to POST /api/lab/{id}/try (anyone), and an admin's Start a live demo to
- * POST /api/train/jobs with the glimmer-serve recipe. Neither ever sees the GPU's address, key or certificate.
+ * them against a faked fetch: one app idea to POST /api/lab/{id}/try (anyone), one input to a decision model's POST
+ * /api/lab/{id}/decide (anyone), and an admin's Start a live demo to POST /api/train/jobs with the glimmer-serve
+ * recipe. None ever sees the GPU's address, key or certificate.
  */
-import { errorCode, startErrorText, TRY_WAIT_MS, tryAnswerOf, tryErrorText } from "@/components/train/format";
+import {
+  DECIDE_TRY_WAIT_MS,
+  decideTryAnswerOf,
+  decideTryErrorText,
+  errorCode,
+  startErrorText,
+  TRY_WAIT_MS,
+  tryAnswerOf,
+  tryErrorText,
+} from "@/components/train/format";
+import type { DecideTryAnswer } from "@/lib/decide/types";
 import { SERVE_ADAPTER_PARAM, SERVE_MINUTES_PARAM, SERVE_RECIPE } from "@/lib/train/logic";
 import type { TryLiveAnswer } from "@/lib/train/types";
 
@@ -88,5 +99,46 @@ export async function startLiveDemo(
     return { ok: true, jobId: typeof id === "string" && UUID.test(id) ? id : null };
   } catch {
     return { ok: false, message: OFFLINE, running: false };
+  }
+}
+
+export type DecideTryResult =
+  | { ok: true; answer: DecideTryAnswer }
+  /** `ended`: the route said no_live_demo, so the demo is over and the box should close. */
+  | { ok: false; message: string; ended: boolean };
+
+/**
+ * Sends one input to a decision model's live demo (POST /api/lab/{id}/decide) and returns base Glimmer's and the tuned
+ * model's picks, or the sentence to show. Gives up after `waitMs` (DECIDE_TRY_WAIT_MS) and says so as a timeout.
+ */
+export async function askDecideDemo(
+  adapterJobId: string,
+  state: string,
+  opts: { fetch?: Fetch; waitMs?: number } = {},
+): Promise<DecideTryResult> {
+  const text = state.trim();
+  if (!text) return { ok: false, message: "Type an input first.", ended: false };
+  const send = opts.fetch ?? ((input, init) => fetch(input, init));
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), opts.waitMs ?? DECIDE_TRY_WAIT_MS);
+  const timedOut = (): DecideTryResult => ({ ok: false, message: decideTryErrorText(504, { error: "timeout" }), ended: false });
+  try {
+    const res = await send(`/api/lab/${encodeURIComponent(adapterJobId)}/decide`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ state: text }),
+      cache: "no-store",
+      signal: ac.signal,
+    });
+    const data: unknown = await res.json().catch(() => ({}));
+    if (ac.signal.aborted) return timedOut();
+    if (!res.ok) return { ok: false, message: decideTryErrorText(res.status, data), ended: errorCode(data) === "no_live_demo" };
+    const answer = decideTryAnswerOf(data);
+    if (!answer) return { ok: false, message: "The live demo's answer didn't come back whole. Try again.", ended: false };
+    return { ok: true, answer };
+  } catch {
+    return ac.signal.aborted ? timedOut() : { ok: false, message: OFFLINE, ended: false };
+  } finally {
+    clearTimeout(timer);
   }
 }

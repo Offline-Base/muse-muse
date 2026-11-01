@@ -1,11 +1,12 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Icon } from "@/components/icons";
+import { DecideTryCard } from "@/components/train/DecideTry";
 import { DecisionResults } from "@/components/train/DecisionResults";
 import { EvalResults } from "@/components/train/EvalResults";
 import { TryLiveCard } from "@/components/train/LiveDemo";
 import { LongText } from "@/components/train/LongText";
-import { judgeName, tunedModelName, writerName, type EvalRow } from "@/components/train/format";
+import { judgeName, tunedModelName, writerName, type DecideTryModel, type EvalRow } from "@/components/train/format";
 import { minutesText, type PublicLiveDemo, type ResultView } from "@/components/train/results";
 import { ExternalLink, PageHeader } from "@/components/ui";
 import { dateTimeUtc, usd } from "@/lib/format";
@@ -25,6 +26,11 @@ export interface JobResultsProps {
   serverNow?: number;
   /** What the page shows right under the model's title, such as "Run it on your computer" once it has local files. */
   aside?: ReactNode;
+  /**
+   * For a decision model (docs/DECISION_MODELS.md, D7): its question, labels and scores, so its live demo shows the box
+   * that picks a label instead of the chat box. Label names and numbers only, never a row.
+   */
+  decideTry?: DecideTryModel | null;
 }
 
 /**
@@ -35,7 +41,7 @@ export interface JobResultsProps {
  * that, nothing about the Hub does. A decide job shows its scores instead (DecisionResults): numbers and label names
  * only, never an input or a wrong answer.
  */
-export function JobResults({ result: r, rows, dataset, live = null, serverNow, aside = null }: JobResultsProps) {
+export function JobResults({ result: r, rows, dataset, live = null, serverNow, aside = null, decideTry = null }: JobResultsProps) {
   const judge = judgeName(r);
   const long = r.settings.filter((s) => s.key === "studentPrompt");
   const short = r.settings.filter((s) => s.key !== "studentPrompt");
@@ -66,7 +72,11 @@ export function JobResults({ result: r, rows, dataset, live = null, serverNow, a
       />
 
       {aside}
-      {live ? <TryLiveCard adapterJobId={r.id} demo={live} serverNow={serverNow ?? Date.now()} /> : null}
+      {live && decideTry ? (
+        <DecideTryCard adapterJobId={r.id} demo={live} model={decideTry} serverNow={serverNow ?? Date.now()} />
+      ) : live ? (
+        <TryLiveCard adapterJobId={r.id} demo={live} serverNow={serverNow ?? Date.now()} />
+      ) : null}
 
       <section className="card section-card" aria-labelledby="run-title">
         <h2 id="run-title">The run</h2>

@@ -24,8 +24,19 @@
  *        adapter was trained with. One prompt at a time: 409 {error: "busy"} while another is being answered. 400
  *        no_prompt or bad_json, 411 length_required, 413 too_large (over 16 KB), 503 stopping, 500 generation_failed
  *        (3 in a row stop the server and fail the job).
- *   GET /health -> 200 {ok, busy, model, adapterJobId, served}
+ *   GET /health -> 200 {ok, busy, model, adapterJobId, served}, and mode "decide" for a decision model.
  *   401 {error: "unauthorized"} without the key, 404 {error: "not_found"} for any other path.
+ *
+ * A decision model's adapter (one whose folder has the decide.json glimmer-lora's decide mode writes beside it,
+ * docs/DECISION_MODELS.md "On the lab's GPU") is served at POST /decide instead, and /generate is a 404 there:
+ *   POST /decide {items: [{messages: [system, user], letters}]} -> 200 {base, tuned, baseMass, tunedMass, ms}: 1 to 3
+ *        items (one per group of the decision's labels), each scored from the first answer token by base Glimmer
+ *        (PEFT's disable_adapter) and then the tuned model, one forward pass a model, under the system message of the
+ *        model's decide.json, which each item must carry exactly. base[i][j] is the log-probability of item i's letter
+ *        j (bare and space-led summed, at least -10,000), not renormalized: the platform renormalizes, combines groups
+ *        and applies T. Up to 512 KB of body. 400 bad_json, no_items, bad_item (a user message with "<|" in it, which
+ *        the platform's renderer never leaves) or wrong_system, 422 too_long (a prompt over 2,048 tokens, as training
+ *        dropped them), 409 busy, 503 stopping, 500 scoring_failed (3 in a row stop the server, as for /generate).
  * A connection must finish its TLS handshake and send a whole request with the key within 10 s of being accepted, or
  * it is shut, however slowly it trickles bytes; at most 64 connections at once, and 4 from one address.
  */
@@ -44,6 +55,11 @@ export const SERVE_MAX_NEW_TOKENS = 400;
  * them equal and checks that it fits.
  */
 export const SERVE_ANSWER_SECONDS = 100;
+/**
+ * A decision model's demo server scores at most this many prompts a POST /decide: one per group of a decision's labels,
+ * and 12 labels make 3 (labelGroups in lib/decide/format.ts). The Python has the same number; a test keeps them equal.
+ */
+export const DECIDE_SERVE_ITEMS_MAX = 3;
 
 /**
  * glimmer-lora's Python without its one-line docstring and its __main__ block: every helper it defines, ready to be
@@ -136,6 +152,11 @@ SERVING_TRIES = 5
 # job.json's serveKey is an HMAC-SHA256 the platform derives; anything shorter isn't one.
 SERVE_KEY_MIN = 32
 JOB_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+# A decision model's server (its adapter folder has decide.json) scores 1 to this many prompts a POST /decide, one per
+# group of the decision's labels (DECIDE_SERVE_ITEMS_MAX in lib/train/recipes/serve.ts).
+DECIDE_SERVE_ITEMS_MAX = 3
+# The largest /decide body: 3 prompts, each holding a 3,000-character state twice, JSON escaped twice at worst.
+DECIDE_REQUEST_MAX_BYTES = 512 * 1024
 SERVE_UNFINISHED = (
     "[Unfinished: no complete answer within " + str(SERVE_MAX_NEW_TOKENS)
     + " new tokens or the time limit. The raw output follows, with only the chat template's control tokens taken out.]"
@@ -177,6 +198,24 @@ def adapter_problem(adapter_dir, adapter_job_id):
     return None
 
 
+def serve_contract(adapter_dir):
+    """The decide.json beside the adapter, which glimmer-lora's decide mode writes there (docs/DECISION_MODELS.md), or
+    None for a chat adapter, which has none. A decision model is served at POST /decide under the file's system
+    message, the one its training renderings had. Raises when the file is there but isn't the format's."""
+    path = os.path.join(adapter_dir, DECIDE_JSON)
+    if not os.path.lexists(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            contract = json.load(f)
+    except (OSError, ValueError, UnicodeDecodeError):
+        contract = None
+    system = contract.get("system") if isinstance(contract, dict) else None
+    if not isinstance(contract, dict) or contract.get("format") != DECIDE_FORMAT or not isinstance(system, str) or not system.strip():
+        raise RuntimeError("The " + DECIDE_JSON + " beside the adapter in " + adapter_dir + " isn't a " + DECIDE_FORMAT + " file with a system message")
+    return contract
+
+
 def serve_system(ctx):
     """(system, how): the system message both models answer under, the line glimmer-lora's short student prompt trained
     the adapter with ("You are " and its dataset's title, see student_system), made from the first train page of the
@@ -192,6 +231,9 @@ def serve_system(ctx):
         system = student_system(None)
         return system, "the platform sent no dataset for this job (HTTP " + str(status) + "), so both models answer under " + json.dumps(system)
     page = page if isinstance(page, dict) else {}
+    if page.get("kind") == "decision":
+        # A decision model's adapter is served from its decide.json (serve_contract), never as a chat model.
+        raise RuntimeError("The adapter's dataset is a decision dataset, but the adapter's folder has no " + DECIDE_JSON + ", so it can't be served")
     items = page.get("items") if isinstance(page.get("items"), list) else []
     title = page.get("title") if isinstance(page.get("title"), str) else None
     system = student_system(title, shared_system(train_examples(items)))
@@ -282,15 +324,24 @@ def run(ctx):
     problem = adapter_problem(adapter_dir, p["adapter_job_id"])
     if problem:
         raise RuntimeError(problem)
+    contract = serve_contract(adapter_dir)
     deadline = job_deadline(ctx, started)
     stop_by = deadline - SERVE_MARGIN_SECONDS
     if stop_by - time.time() < MIN_SERVE_START_SECONDS:
         raise RuntimeError("Only " + minutes(stop_by - time.time()) + " are left to serve before the job's time limit, too few to load the model and serve")
-    system, how = serve_system(ctx)
-    ctx.log(
-        "Serving the adapter of job " + p["adapter_job_id"] + " for up to " + str(p["minutes"]) + " minutes once it is up, "
-        + str(SERVE_MAX_NEW_TOKENS) + " new tokens an answer: " + how
-    )
+    if contract is None:
+        system, how = serve_system(ctx)
+        ctx.log(
+            "Serving the adapter of job " + p["adapter_job_id"] + " for up to " + str(p["minutes"]) + " minutes once it is up, "
+            + str(SERVE_MAX_NEW_TOKENS) + " new tokens an answer: " + how
+        )
+    else:
+        system = contract["system"]
+        ctx.log(
+            "Serving the decision model of job " + p["adapter_job_id"] + " for up to " + str(p["minutes"]) + " minutes once it"
+            + " is up, at POST /decide only (" + str(DECIDE_SERVE_ITEMS_MAX) + " prompts a call at most): both models score"
+            + " under the system message of its " + DECIDE_JSON + ", " + json.dumps(system, ensure_ascii=False)
+        )
     hf_home = os.path.join(base, "hf")
     os.makedirs(hf_home, exist_ok=True)
     python, venv_reused = ensure_venv(ctx, base)
@@ -306,25 +357,25 @@ def run(ctx):
     config_path = os.path.join(ctx.work_dir, "serve-config.json")
     for path in (result_path, stop_path):
         remove_quietly(path)
-    write_private_json(
-        config_path,
-        {
-            "model": MODEL,
-            "revision": MODEL_REVISION,
-            "max_seq_length": MAX_SEQ_LENGTH,
-            "adapter_dir": adapter_dir,
-            "adapter_job_id": p["adapter_job_id"],
-            "system": system,
-            "minutes": p["minutes"],
-            "stop_by": stop_by,
-            "host": SERVE_HOST,
-            "port": SERVE_PORT,
-            "key": key,
-            "work_dir": ctx.work_dir,
-            "result_path": result_path,
-            "stop_path": stop_path,
-        },
-    )
+    config = {
+        "model": MODEL,
+        "revision": MODEL_REVISION,
+        "max_seq_length": MAX_SEQ_LENGTH,
+        "adapter_dir": adapter_dir,
+        "adapter_job_id": p["adapter_job_id"],
+        "system": system,
+        "minutes": p["minutes"],
+        "stop_by": stop_by,
+        "host": SERVE_HOST,
+        "port": SERVE_PORT,
+        "key": key,
+        "work_dir": ctx.work_dir,
+        "result_path": result_path,
+        "stop_path": stop_path,
+    }
+    if contract is not None:
+        config["mode"] = DECIDE_MODE
+    write_private_json(config_path, config)
     env = {
         "HF_HOME": hf_home,
         "HF_HUB_DISABLE_TELEMETRY": "1",
@@ -332,6 +383,9 @@ def run(ctx):
         # The venv is shared by every job in the region, so nothing writes bytecode into it.
         "PYTHONDONTWRITEBYTECODE": "1",
     }
+    if contract is not None:
+        # Unsloth's forward returns logits only when asked; nothing trains here, so the whole child asks.
+        env["UNSLOTH_RETURN_LOGITS"] = "1"
     cmd = shlex.quote(python) + " -u " + shlex.quote(os.path.abspath(__file__)) + " --serve " + shlex.quote(config_path)
     seen = set()
     state = {"serving": None, "announced": False, "tries": 0, "served": 0}
@@ -379,6 +433,13 @@ def run(ctx):
             + p["adapter_job_id"][:8] + " for " + str(serve_minutes) + " minutes."
         ),
     }
+    if contract is not None:
+        metrics["mode"] = DECIDE_MODE
+        metrics["max_new_tokens"] = 0
+        metrics["summary"] = (
+            "Served " + str(served) + " live decision" + ("" if served == 1 else "s") + " (base and tuned) from the decision"
+            + " model of job " + p["adapter_job_id"][:8] + " for " + str(serve_minutes) + " minutes."
+        )
     return metrics
 
 
@@ -471,6 +532,104 @@ def make_answerer(model, tokenizer, torch, system, max_new_tokens=SERVE_MAX_NEW_
     return answer
 
 
+class DecideTooLong(Exception):
+    """A /decide item whose prompt would pass MAX_SEQ_LENGTH tokens with its answer: it isn't scored, as training dropped
+    such renderings instead of cutting them."""
+
+
+class DecideRefused(Exception):
+    """A /decide body the server won't score: the status and the error code it answers with."""
+
+    def __init__(self, status, code):
+        Exception.__init__(self, code)
+        self.status, self.code = status, code
+
+
+def decide_request(body, system):
+    """The items of a POST /decide body, each {messages, letters}, or raises DecideRefused: 1 to DECIDE_SERVE_ITEMS_MAX
+    items (no_items), each exactly a system and a user message and its letters from A, 2 to 5 of them (bad_item); the
+    system message the model was trained under, exactly (wrong_system); and a user message with text and no "<|", which
+    the platform's renderer never leaves in a task (bad_item). The text is scored as sent, so its bytes are the ones
+    training read."""
+    items = body.get("items") if isinstance(body, dict) else None
+    if not isinstance(items, list) or not 1 <= len(items) <= DECIDE_SERVE_ITEMS_MAX:
+        raise DecideRefused(400, "no_items")
+    out = []
+    for item in items:
+        item = item if isinstance(item, dict) else {}
+        messages, letters = item.get("messages"), item.get("letters")
+        ok = (
+            isinstance(messages, list) and len(messages) == 2
+            and all(isinstance(m, dict) and isinstance(m.get("content"), str) for m in messages)
+            and [m.get("role") for m in messages] == ["system", "user"]
+            and isinstance(letters, list) and 2 <= len(letters) <= len(DECIDE_LETTERS)
+            and tuple(letters) == DECIDE_LETTERS[:len(letters)]
+        )
+        if not ok:
+            raise DecideRefused(400, "bad_item")
+        if messages[0]["content"] != system:
+            raise DecideRefused(400, "wrong_system")
+        user = messages[1]["content"]
+        if not user.strip() or "<|" in user:
+            raise DecideRefused(400, "bad_item")
+        out.append({"messages": [{"role": m["role"], "content": m["content"]} for m in messages], "letters": list(letters)})
+    return out
+
+
+def make_decider(model, tokenizer, torch, system):
+    """decide(items) -> (base, tuned): each item's letter_scores from the first answer token (each shown letter's
+    log-probability, its bare and space-led tokens summed and at least DECIDE_LOGPROB_FLOOR, the letter mass, and
+    whether the top token was a shown letter), base Glimmer's with the adapter disabled and then the tuned model's. As
+    score_all reads them in training: the prompt through eval_prompt (the final channel open), one forward pass a model
+    for all the items, left padded, position ids counted from the attention mask, logits_to_keep=1, the last position
+    through log_softmax in float32 over the whole vocabulary. Raises DecideTooLong before any pass when an item's prompt
+    would pass MAX_SEQ_LENGTH, and RuntimeError for a NaN or +Infinity score. Raises at once when the template doesn't
+    render as training expects, or a letter isn't one token."""
+    text_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
+    bos = getattr(tokenizer, "bos_token", None) or getattr(text_tokenizer, "bos_token", None) or ""
+    text_tokenizer.padding_side = "left"
+    if text_tokenizer.pad_token is None:
+        text_tokenizer.pad_token = text_tokenizer.eos_token
+    letter_ids = letter_token_ids(text_tokenizer)
+    flat = sorted({t for ids in letter_ids.values() for t in ids})
+    eval_prompt(tokenizer, [{"role": "system", "content": system}, {"role": "user", "content": "Check the template."}], bos)
+    # Unsloth's forward returns logits only when asked (run(ctx) sets it for the child too). Nothing trains here.
+    os.environ["UNSLOTH_RETURN_LOGITS"] = "1"
+    keep = {"last": True}
+
+    def score(prompts, letters):
+        enc = text_tokenizer(prompts, return_tensors="pt", padding=True)
+        input_ids = enc["input_ids"].to("cuda")
+        attention_mask = enc["attention_mask"].to("cuda")
+        positions = (attention_mask.cumsum(-1) - 1).clamp(min=0)
+        logits = forward_logits(model, torch, input_ids, attention_mask, positions, keep)
+        shape = tuple(logits.shape)
+        if len(shape) != 3 or shape[0] != len(prompts) or shape[-1] <= flat[-1]:
+            raise RuntimeError("The model's forward pass gave logits of shape " + str(shape) + ", not a row of the vocabulary for each prompt")
+        logp = torch.log_softmax(logits[:, -1, :].float(), dim=-1)
+        picked = logp[:, flat].tolist()
+        tops = logp.argmax(dim=-1).tolist()
+        out = []
+        for k, shown in enumerate(letters):
+            scored = letter_scores(picked[k], flat, shown, letter_ids, tops[k])
+            if scored is None:
+                raise RuntimeError("A first-token score was NaN or +Infinity, so the model can't decide")
+            out.append(scored)
+        return out
+
+    def decide(items):
+        prompts, too_long = decide_prompts(tokenizer, text_tokenizer, items, bos)
+        if too_long:
+            raise DecideTooLong()
+        letters = [item["letters"] for item in items]
+        with model.disable_adapter():
+            base = score(prompts, letters)
+        tuned = score(prompts, letters)
+        return base, tuned
+
+    return decide
+
+
 def make_certificate(folder):
     """(cert path, key path, SHA-256 of the certificate's DER bytes in lowercase hex): a new self-signed certificate
     from openssl, its key readable only by this user."""
@@ -544,9 +703,13 @@ class ServeState:
     """What the server's threads share: the key, the answerer, the one-at-a-time lock, the counts, the connections held
     (in all and by address), and when to stop."""
 
-    def __init__(self, key, answer, until, info, stop_path=None):
+    def __init__(self, key, answer, until, info, stop_path=None, decider=None, system=None):
         self.key = ("Bearer " + key).encode("utf-8")
         self.answer = answer
+        # A decision model's server: decide(items) for POST /decide (make_decider) and the system message each item
+        # must carry. None for a chat adapter's, which answers /generate.
+        self.decider = decider
+        self.system = system
         self.until = float(until)
         self.info = dict(info)
         self.stop_path = stop_path
@@ -676,16 +839,16 @@ class ServeHandler(http.server.BaseHTTPRequestHandler):
         if self.route() != "/health":
             return self.reply(404, {"error": "not_found"})
         state = self.server.state
-        self.reply(
-            200,
-            {
-                "ok": not state.stopping.is_set(),
-                "busy": state.lock.locked(),
-                "model": state.info.get("model"),
-                "adapterJobId": state.info.get("adapterJobId"),
-                "served": state.counts["served"],
-            },
-        )
+        health = {
+            "ok": not state.stopping.is_set(),
+            "busy": state.lock.locked(),
+            "model": state.info.get("model"),
+            "adapterJobId": state.info.get("adapterJobId"),
+            "served": state.counts["served"],
+        }
+        if state.decider is not None:
+            health["mode"] = DECIDE_MODE
+        self.reply(200, health)
 
     def read_body(self):
         """The request body, read before any answer: a connection closed with a body still unread is reset, and the
@@ -699,7 +862,8 @@ class ServeHandler(http.server.BaseHTTPRequestHandler):
             state.bump("bad_requests")
             self.reply(411, {"error": "length_required"})
             return None
-        if length > REQUEST_MAX_BYTES:
+        limit = DECIDE_REQUEST_MAX_BYTES if state.decider is not None and self.route() == "/decide" else REQUEST_MAX_BYTES
+        if length > limit:
             state.bump("bad_requests")
             self.reply(413, {"error": "too_large"})
             return None
@@ -709,6 +873,8 @@ class ServeHandler(http.server.BaseHTTPRequestHandler):
         raw = self.read_body()
         if raw is None or not self.allowed() or not self.in_time():
             return
+        if self.server.state.decider is not None:
+            return self.answer_decide(raw)
         if self.route() != "/generate":
             return self.reply(404, {"error": "not_found"})
         state = self.server.state
@@ -746,6 +912,60 @@ class ServeHandler(http.server.BaseHTTPRequestHandler):
             ms = int(round((time.time() - began) * 1000))
             emit("served", count=state.bump("served"), ms=ms)
             self.reply(200, {"base": base, "tuned": tuned, "ms": ms})
+        finally:
+            state.end()
+
+    def answer_decide(self, raw):
+        """POST /decide on a decision model's server: the items (decide_request) scored by both models, one request at
+        a time on the GPU, as /generate is. Its only route besides /health: /generate is a 404 here."""
+        if self.route() != "/decide":
+            return self.reply(404, {"error": "not_found"})
+        state = self.server.state
+        if state.stopping.is_set():
+            return self.reply(503, {"error": "stopping"})
+        try:
+            items = decide_request(json.loads(raw.decode("utf-8")), state.system)
+        except (ValueError, UnicodeDecodeError):
+            state.bump("bad_requests")
+            return self.reply(400, {"error": "bad_json"})
+        except DecideRefused as e:
+            state.bump("bad_requests")
+            return self.reply(e.status, {"error": e.code})
+        if not state.lock.acquire(blocking=False):
+            state.bump("busy")
+            return self.reply(409, {"error": "busy"})
+        state.begin()
+        try:
+            began, failure, scores = time.time(), None, None
+            try:
+                scores = state.decider(items)
+            except Exception as e:
+                failure = e
+            finally:
+                state.lock.release()
+            if isinstance(failure, DecideTooLong):
+                state.bump("bad_requests")
+                return self.reply(422, {"error": "too_long"})
+            if failure is not None:
+                state.answer_failed(failure)
+                emit("log", text="A live decision failed: " + type(failure).__name__ + ": " + str(failure)[:300])
+                if state.note:
+                    emit("log", text=state.note)
+                return self.reply(500, {"error": "scoring_failed"})
+            state.answer_worked()
+            base, tuned = scores
+            ms = int(round((time.time() - began) * 1000))
+            emit("served", count=state.bump("served"), ms=ms)
+            self.reply(
+                200,
+                {
+                    "base": [s["logprobs"] for s in base],
+                    "tuned": [s["logprobs"] for s in tuned],
+                    "baseMass": [round(s["mass"], 6) for s in base],
+                    "tunedMass": [round(s["mass"], 6) for s in tuned],
+                    "ms": ms,
+                },
+            )
         finally:
             state.end()
 
@@ -866,7 +1086,12 @@ def serve_child_main(config_path):
             FastModel.for_inference(model)
         except Exception as e:
             emit("log", text="Unsloth's inference mode didn't take (" + type(e).__name__ + ": " + str(e)[:200] + "); answering without it")
-    answer = make_answerer(model, tokenizer, torch, cfg.get("system"))
+    decider = None
+    if cfg.get("mode") == DECIDE_MODE:
+        # A decision model answers POST /decide only (docs/DECISION_MODELS.md, "On the lab's GPU").
+        answer, decider = None, make_decider(model, tokenizer, torch, cfg.get("system"))
+    else:
+        answer = make_answerer(model, tokenizer, torch, cfg.get("system"))
     result = {"load_seconds": round(time.time() - began, 1), "gpu": torch.cuda.get_device_name(0)}
     until = min(float(cfg["stop_by"]), time.time() + float(cfg["minutes"]) * 60)
     if until - time.time() < MIN_SERVING_SECONDS:
@@ -875,7 +1100,10 @@ def serve_child_main(config_path):
         )
         write_result(result_path, result)
         return
-    state = ServeState(cfg["key"], answer, until, {"model": cfg["model"], "adapterJobId": cfg["adapter_job_id"]}, cfg.get("stop_path"))
+    state = ServeState(
+        cfg["key"], answer, until, {"model": cfg["model"], "adapterJobId": cfg["adapter_job_id"]}, cfg.get("stop_path"),
+        decider=decider, system=cfg.get("system"),
+    )
     server = make_server(state, cfg.get("host") or SERVE_HOST, cfg["port"], cert, key)
     emit("serving", port=server.server_address[1], certSha256=fingerprint, model=cfg["model"], until=int(until))
     result.update(serve_until(server, state))

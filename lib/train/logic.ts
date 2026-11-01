@@ -1047,10 +1047,16 @@ export type DoneMetrics = Record<string, string | number>;
  * can: a glimmer-lora job that succeeded, wasn't a dry run (whose adapter is a stand-in), and whose done metrics say it
  * saved the adapter on the cache filesystem (cache_used "yes" and adapter_dir ending in models/<its id>), so a serve
  * job in its region finds it at <cache>/models/<id>/.
+ *
+ * A decision model's adapter (decide mode) is refused unless `opts.decide` says the caller serves it as one: a
+ * glimmer-serve job, whose demo server sees the adapter's decide.json and answers POST /decide instead of /generate
+ * (docs/DECISION_MODELS.md, "On the lab's GPU"). Publishing and local files keep refusing it (hubJobProblem,
+ * quantProblem) until their decide versions exist.
  */
 export function adapterProblem(
   job: Pick<TrainJobRow, "id" | "recipe" | "status" | "params"> | null,
   metrics: DoneMetrics | null,
+  opts: { decide?: boolean } = {},
 ): string | null {
   if (!job) return "that job doesn't exist.";
   if (job.recipe !== ADAPTER_RECIPE) return "that job isn't a Muse Glimmer LoRA job, so it has no adapter to serve.";
@@ -1059,10 +1065,10 @@ export function adapterProblem(
   if (jobMode(job.params) === DECIDE_MODE && Number(job.params?.scoreOnly) >= 1) {
     return "that job only scored base Glimmer, so it trained no adapter.";
   }
-  // A decision adapter answers one letter under its own system message, so the chat demo, publishing and local files
-  // would misuse it. Each comes with its decide version (docs/DECISION_MODELS.md, D5 and D7).
-  if (jobMode(job.params) === DECIDE_MODE) {
-    return "that job trained a decision model, and serving, publishing and local files for decision models aren't built yet.";
+  // A decision adapter answers one letter under its own system message, so publishing and local files would misuse it
+  // until their decide versions exist. Serving it as a decision model (opts.decide) is built (D7).
+  if (jobMode(job.params) === DECIDE_MODE && !opts.decide) {
+    return "that job trained a decision model, and publishing and local files for decision models aren't built yet: only a live demo can serve it.";
   }
   const dir = typeof metrics?.adapter_dir === "string" ? metrics.adapter_dir.replace(/\/+$/, "") : "";
   if (metrics?.cache_used !== "yes" || !dir.endsWith(`/models/${job.id}`)) {

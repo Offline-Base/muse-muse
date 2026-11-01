@@ -6613,3 +6613,102 @@ div.md.md-plain {
   flex-wrap: wrap;
   gap: 8px;
 }
+
+/* ---------- A decision model's Try it live box (docs/DECISION_MODELS.md "On the lab's GPU") ---------- */
+
+.lab-decide-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.lab-decide-question {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 16px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.lab-decide-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lab-decide-labels .chip {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.lab-decide-none {
+  color: var(--fg-2);
+}
+
+.lab-decide-input {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.lab-decide-pick {
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.lab-decide-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lab-decide-bars li {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(48px, 1fr) 3.2em;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.lab-decide-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.3;
+}
+
+.lab-decide-picked .lab-decide-name {
+  font-weight: 650;
+}
+
+.lab-decide-track {
+  display: block;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.lab-decide-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--decide-base);
+}
+
+.lab-decide-bars-tuned .lab-decide-fill {
+  background: var(--decide-tuned);
+}
+
+.lab-decide-p {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}

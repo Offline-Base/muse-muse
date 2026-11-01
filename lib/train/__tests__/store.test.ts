@@ -927,6 +927,70 @@ describe("training store", { skip: canMock ? false : "needs --experimental-test-
       assert.equal(await store.getAdapterSource("not-a-uuid"), null);
     });
 
+    it("offers a decision model's adapter only when asked, marked decide, and never a score-only job's", async () => {
+      const chat = await lora();
+      await done(chat.id, onCache(chat.id));
+      const decide = await lora({ title: "Ticket router LoRA", params: { datasetId: "1b2c3d4e-0000-4000-8000-000000000002", mode: "decide", epochs: 2, scoreOnly: 0, publish: 0 } });
+      await done(decide.id, onCache(decide.id));
+      const scored = await lora({ params: { datasetId: "1b2c3d4e-0000-4000-8000-000000000002", mode: "decide", scoreOnly: 1, publish: 0 } });
+      await done(scored.id, onCache(scored.id));
+      assert.deepEqual((await store.listAdapterOptions()).map((o) => o.jobId), [chat.id], "as before without asking");
+      const all = await store.listAdapterOptions(50, { decide: true });
+      assert.deepEqual(all.map((o) => [o.jobId, o.mode ?? null]), [[decide.id, "decide"], [chat.id, null]], "newest first");
+      assert.equal("mode" in all[1]!, false, "a chat adapter's option is as it was");
+    });
+
+    it("reads a decide job as a decision model, and finds a live decision window for base Glimmer", async () => {
+      const { ticketDecision } = await import("@/components/train/__tests__/decision-fixture");
+      const t = ticketDecision();
+      const ds = await store.createDecisionDataset({ title: t.title, spec: t.spec, rows: t.rows });
+      const params = { datasetId: ds.id, mode: "decide", epochs: 2, scoreOnly: 0, dryRun: 0, publish: 0 };
+      const trained = await lora({ title: "Ticket router LoRA", params, evalSummary: t.summary });
+      await done(trained.id, onCache(trained.id));
+      const got = (await store.getDecisionModel(trained.id.toUpperCase()))!;
+      assert.deepEqual(got, {
+        id: trained.id,
+        title: "Ticket router LoRA",
+        question: t.spec.question,
+        labels: t.spec.labels,
+        base: { T: t.summary.base.T, calibrated: t.summary.base.calibrated },
+        tuned: { T: t.summary.tuned!.T, calibrated: t.summary.tuned!.calibrated },
+        public: true,
+        trainRows: t.spec.split.train,
+        accuracy: { tuned: t.summary.tuned!.accuracy, base: t.summary.base.accuracy },
+      });
+      assert.ok(!JSON.stringify(got).includes(t.rows.test[0]!.input), "never a row");
+
+      // Before it is scored: no public page, T 1, nothing calibrated.
+      const unscored = await lora({ params });
+      assert.deepEqual(
+        [(await store.getDecisionModel(unscored.id))!.public, (await store.getDecisionModel(unscored.id))!.tuned],
+        [false, { T: 1, calibrated: false }],
+      );
+      // Not a decision model: a chat job, a score-only job, one whose dataset is gone, or no job at all.
+      const chat = await lora();
+      const scoreOnly = await lora({ params: { ...params, scoreOnly: 1 }, evalSummary: t.summary });
+      const orphan = await lora({ params: { ...params, datasetId: "1b2c3d4e-0000-4000-8000-00000000dead" } });
+      for (const id of [chat.id, scoreOnly.id, orphan.id, "not-a-uuid", "00000000-0000-4000-8000-000000000000"]) {
+        assert.equal(await store.getDecisionModel(id), null, id);
+      }
+
+      // Base Glimmer's window: only a live serve job of a decision model counts, never a chat adapter's.
+      assert.equal(await store.liveDecisionServeTarget(), null);
+      const chatDemo = await serveJob(chat.id);
+      await store.applyCallback(chatDemo.id, serving, new Date(Date.now() - MIN));
+      assert.equal(await store.liveDecisionServeTarget(), null, "a chat adapter's server answers /generate only");
+      const demo = await serveJob(trained.id);
+      assert.equal(await store.liveDecisionServeTarget(), null, "not before it serves");
+      await store.applyCallback(demo.id, serving, new Date(Date.now() - MIN));
+      const target = { jobId: demo.id, tokenHash: "serve-token-hash", ip: "203.0.113.9", port: 8443, certSha256: ADAPTER_CERT };
+      assert.deepEqual(await store.liveDecisionServeTarget(), target);
+      assert.deepEqual(await store.liveServeTarget(trained.id), target, "the same window serves the model itself");
+      assert.equal(await store.liveDecisionServeTarget(new Date(Date.now() + 30 * MIN)), null, "its minutes are up");
+      await store.requestStop(demo.id);
+      assert.equal(await store.liveDecisionServeTarget(), null);
+    });
+
     it("finds an adapter's newest open demo, live only with a usable endpoint, and gives the proxy what it needs", async () => {
       const adapter = await lora();
       const id = adapter.id;

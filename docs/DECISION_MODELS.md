@@ -4,13 +4,14 @@ The design for turning Muse Glimmer 30B into decision models inside Muse Muse: a
 labeled examples, and one general engine, **Muse Decide**, that picks from options given at run time. Written Oct 31,
 2026 for the owner's two asks that day: "I'd also want to be able to fine tune and create muse glimmer into a decision
 model from within muse muse", and, with github.com/sinanuozdemir/ai-experiments/tree/main/experiments/scion, "bring it
-into how it could be done here". Built so far: D0 to D6 of the build plan (`lib/decide/types.ts`,
+into how it could be done here". Built so far: D0 to D7 of the build plan (`lib/decide/types.ts`,
 `lib/decide/format.ts`, the scoring in `lib/train/logic.ts`, decision datasets: migration 0017,
 `lib/train/decision-datasets.ts`, the datasets routes and the decision pages of the job dataset route, decide mode
 on the GPU: `GLIMMER_PY`, `ctx.decide` in the runner, the recipe's params, the run estimate and the decide callbacks,
 after the run: `scoreDecisionStep` in place of judging, the summary saved, and decision models kept off the Hub
 and out of local files, and the pages: the New decision dataset card, the dataset page, the mode and estimate on the
-New job card, `DecisionResults` and the Lab results line). Nothing has run on a real GPU yet (D8 waits for the owner). Branch `tg-decide`, worktree
+New job card, `DecisionResults` and the Lab results line, and serving: `/decide` on the demo GPU, the Try it live box,
+`{GATEWAY_URL}/decide` and the template helper `decide()`). Nothing has run on a real GPU yet (D8 waits for the owner). Branch `tg-decide`, worktree
 `~/mm-wt/decide`.
 
 This settles what `~/mm-wt/_plan/decision-models.md` left open and replaces one thing in it: the model answers with one
@@ -285,7 +286,8 @@ As built (D4), in `lib/train/recipes/index.ts` and `validateParams`:
   lifts this when it is.
 - The jobs route refuses decide mode on a chat dataset and chat mode on a decision dataset (`datasetModeProblem`).
   `adapterProblem` refuses every decide job's adapter for now, so glimmer-serve (the public chat demo), glimmer-publish
-  and glimmer-quantize can't misuse one; D7 lifts it for decide serving. Publishing and local files stay refused by
+  and glimmer-quantize can't misuse one. D7 lifted it for glimmer-serve only (`adapterProblem(job, metrics, {decide:
+  true})`, which the jobs route passes for that recipe). Publishing and local files stay refused by
   their own gates after that (`hubJobProblem` and `quantProblem`, D5) until their decide versions exist. A
   `scoreOnly` job gets its own sentence: it trained no adapter.
 
@@ -648,8 +650,8 @@ server (below):
   dataset (Train on it, `?dataset=`) starts the card in decide mode. The estimate is `runTimeHint` with
   `decideRunSize` of the picked dataset: "Training on 336 renderings (11 steps of 32) and scoring 120 prompts before
   and after on Auto (up to 1x A100 SXM4 (40 GB)): about 23 minutes in a region with the model cache, about 48 without
-  it ...". The adapter select no longer offers decide adapters (`listAdapterOptions` leaves out decide mode jobs),
-  which `adapterProblem` refuses anyway.
+  it ...". The adapter select offers decide adapters to glimmer-serve only (since D7: `listAdapterOptions(50,
+  {decide: true})` marks them `mode: "decide"`, and the card's `adaptersFor` hides them from the other recipes).
 - **Tests:** `components/train/__tests__/decision.test.tsx` (28: helpers, wrong answers against the summary, every
   card and page piece, chat mode unchanged), 7 new cases in `pages.test.tsx` (public pages show no input and make no
   admin read; admins get the wrong answers and sample rows), and store tests for the Lab read and the adapter list.
@@ -693,7 +695,7 @@ server (below):
   pick matches the adapter's on at least 95% of them. Cut from Nov 1 to 3 (see Cut order). As built (D5):
   `quantProblem` refuses a decide job's adapter first, whatever else holds ("that job trained a decision model, and its
   local files need a decision check (Q4_K_M's picks against the adapter's) that isn't built yet."), in the jobs route
-  and the quantize route alike. `adapterProblem` refuses it too, but D7 lifts that for serving, so this stays the gate.
+  and the quantize route alike. `adapterProblem` refuses it too except for glimmer-serve (D7), so this stays the gate.
 - **Live demo:** a decide adapter's `glimmer-serve` job serves `/decide` (below), not the chat box.
 
 ## 3. Serving and use
@@ -797,6 +799,90 @@ overlap scores, `simulated: true`, and `model: "stand-in"`. `none` scores 0, so 
 a model and the reply says so (`standInDecision` in `lib/decide/format.ts`). The same function is
 the free baseline on the results page. The skill text and the brief field land in marked blocks after `tg-ui-brand`
 merges, as wave 3 agreed.
+
+### As built (D7)
+
+All of it tested against fakes: TLS with openssl certificates on 127.0.0.1, fake torch logits for the GPU's server, a
+faked backend for the gateway. Nothing reached Lambda, the Hub, Meta, Neon or Vercel.
+
+- **The GPU (`SERVE_PY`).** A glimmer-serve job serves a decision model when the adapter's folder has the `decide.json`
+  that decide mode writes beside it (`serve_contract`): both models then score under that file's system message, the
+  one its training renderings had, and the dataset page isn't read. A file that isn't `muse-decide/1` with a system
+  message fails the job before the GPU work, and a chat adapter whose dataset page says `kind: "decision"` is never
+  served as a chat model. The child gets `mode: "decide"` and `UNSLOTH_RETURN_LOGITS=1`; a chat adapter's config, env,
+  routes and health are exactly as before.
+- **`POST /decide {items: [{messages, letters}]}`**, 1 to 3 items (`DECIDE_SERVE_ITEMS_MAX`, one per group), behind the
+  same key, pinned certificate, connection caps and one-at-a-time lock as `/generate`, which is a 404 on a decision
+  model's server. Each item must be exactly `[system, user]` with the served system message (400 `wrong_system`), a
+  user message with no `<|` (the platform's renderer never leaves one; the text is scored as sent, so its bytes are the
+  ones training read) and letters from A (400 `bad_item`). `make_decider` renders with `eval_prompt`, refuses a prompt
+  over 2,048 tokens before any pass (422 `too_long`), and runs one forward pass a model over all the items, base inside
+  `disable_adapter` then tuned, with `score_all`'s reading: left padding, positions from the mask, `logits_to_keep=1`,
+  `log_softmax` in float32 over the whole vocabulary, `letter_scores` (bare and space-led summed, floored at -10,000).
+  The answer is `{base, tuned, baseMass, tunedMass, ms}`; a NaN or +Infinity score is 500 `scoring_failed` and counts
+  toward the 3 failures that stop the server. Bodies up to 512 KB (`/generate` keeps 16 KB). Health adds `mode:
+  "decide"`. The done metrics add `mode` and say "Served 3 live decisions (base and tuned) from the decision model of
+  job ...".
+- **`askDecide`** (`lib/train/serve.ts`): the same pinned connection as `askLive` (the fingerprint checked before a byte
+  is sent), `serveTiming.decideMs` of 30 s, 409/423/429 `busy`, 503 `stopping`, 400/413/422 `bad_prompt`, any other
+  status `refused`, and `bad_answer` unless every item has one finite number per letter for both models.
+- **Shared pieces** (`lib/decide/serving.ts`, pure): `decisionModelOf` (a decide job that succeeded and trained an
+  adapter, its dataset's question and labels, and each side's T and calibration from its summary; T 1 and not
+  calibrated before it is scored), `serveRenderings` (the eval renderings with `taskProblem`'s checks), `serveItems`
+  and `servePick` (`decisionFromScores` with that side's T). The store reads a model with `getDecisionModel` (the spec
+  without its seed, never a row, and `public` from `hasResults`) and base Glimmer's window with
+  `liveDecisionServeTarget` (any live serve job of a decision model).
+- **The Try it live box.** `POST /api/lab/{id}/decide {state}` answers `{base, tuned, ms}`, each pick with every label's
+  probability after its own T, `calibrated` and its letter mass. /try's rules and numbers: same-origin only, the state
+  trimmed to 1 to 3,000 characters, a model without a public page for admins only (checked before any limit), 5 inputs
+  per client IP in 10 minutes and 60 an hour per demo (keys `lab-decide:*`), the demo's one slot (`takeDemoSlot`, 409
+  `busy`), 504 `timeout`, 502 `demo_unavailable` for an unreachable or unpinned GPU or for numbers that can't be
+  log-probabilities. `DecideTryCard` (`components/train/DecideTry.tsx`) replaces the chat box on a decision model's
+  result page and admin job page: the question, the labels and `none` as chips, an input of up to 3,000 characters,
+  base and tuned side by side with a bar per label, confidence as "about 9 in 10" only when T was fit ("62%, the
+  model's own probability, not calibrated" otherwise), and the line "A small model trained on 168 of its dataset's
+  examples. On 48 held-out examples it never saw, it was right on 41 (85%); base Glimmer on 32. It can be wrong: check
+  anything that matters." A decision model whose dataset is gone shows no box at all. Start a live demo says what a
+  decision model's demo does, and the New job card offers its adapter to glimmer-serve only, as "Ticket router LoRA ·
+  decision model · tuned right on 41 of 48 · ...".
+- **`{GATEWAY_URL}/decide`** (`lib/gateway/decide.ts`, `app/api/gateway/decide/route.ts`): the token (401), the product
+  on (403 `product_disabled`), `muse-decide` in its `allowedModels` (403 `decide_not_allowed`). `model` is
+  `"muse-decide"` (default; a question of 5 to 300 characters and 2 to 4 options, names of 1 to 60 characters,
+  descriptions up to 200, `none` on unless false) or a public decision model's job id (404 `unknown_model` otherwise;
+  its own labels, question and tuned T; other options or another question are allowed, with T 1, `calibrated: false`
+  and a note; `none: false` is a 400). A state is text or a flat object (its JSON). Bodies up to 64 KB (413). 60 calls
+  a minute per token and 20 per client IP (429 with `retry-after`). Build tokens get `standInDecision` with `model:
+  "stand-in"`, `simulated: true` and a note that it is not a model, and never reach a backend. Live, `deps.backend`
+  gives the window: none is 503 `decide_offline` ("The decision model isn't running right now. ..."). Until Muse
+  Decide is trained, muse-decide is base Glimmer's scores from any live decision model's window, and the reply says so:
+  `model: "muse-glimmer-30b-zero-shot"`, `calibrated: false` and a note. The gateway waits 30 s (504 `timeout`), maps
+  the backend's `DecideBackendError` (`busy` 429, `offline` 503, `timeout` 504, `too_long` 400) and anything else to
+  502 `decide_unavailable`, and refuses numbers that can't be log-probabilities with a 502. Each call is recorded as
+  usage at $0 (one unit of `muse-decide`, endpoint `/decide`); the state is never logged.
+- **The backend on the lab's windows** (`lib/train/decide-window.ts`, `windowBackends`): the live serve job of that
+  model (or, for base Glimmer, any decision model's), its slot taken for the call (waiting up to 8 s, then `busy`) and
+  always given back, `askDecide`, then the tuned scores for a model and the base scores for muse-decide. A ServeError
+  becomes a `DecideBackendError`, and a connection error's message never names the GPU's address. Unit 11's shared
+  endpoint is another `DecideBackend` for the same `deps.backend`.
+- **The template helper** (`template/lib/meta/decide.ts`): `decide({state, question?, options?, model?, none?,
+  request?})` posts to `{GATEWAY_URL}/decide` with `PRODUCT_TOKEN` and the visitor's IP and returns the reply, or throws
+  `DecideError(message, code, status)`; `isDecideOffline(err)` is true for `decide_offline`, `decide_unavailable`,
+  `timeout` and an unreachable gateway. Its own copy of the stand-in (`standInDecision`, `optionId`), which a template
+  test keeps equal to the platform's on accents, ties and `none`, and to what the gateway answers a build token.
+- **Not yet:** `muse-decide` isn't in the brief's `PRODUCT_MODELS` or the manifest schema, and there is no skill text:
+  those land in marked blocks after `tg-ui-brand` merges, as wave 3 agreed, so no product's token holds the permission
+  until then. A chat demo's /try sent to a decision model's server gets 502 `demo_unavailable` (its `/generate` is a
+  404); the pages never send one.
+- **Tests:** `runner.test.ts` (2 new: the parent's mode from decide.json, and `/decide` over pinned HTTPS on fake
+  Unsloth with the platform's own renderings, groups, every refusal, the caps, busy and a NaN), `lab-try.test.ts` (7
+  new: `askDecide` against an openssl HTTPS server, and the route), `lib/gateway/__tests__/decide.test.ts` (11),
+  `store.test.ts` (2 new, PGlite), `decide-mode.test.ts` (the lifted gate), `components/train/__tests__/
+  decide-try.test.tsx` (10) and `template/scripts/__tests__/decide.test.mjs` (4).
+- **The browser check** (Oct 31): `scripts/dev/decide-demo-gpu.ts`, a stand-in for the GPU's `/decide` on
+  127.0.0.1:8443 whose scores are made up by word overlap (not a model), and `decide-fixtures.ts` with
+  `DEMO_CERT_SHA256` set, which adds a running glimmer-serve job pointed at it. Through the real route and the pinned
+  connection, the box decided made-up tickets as an admin and as the guest at 1440 light and dark and 390; no page
+  scrolled sideways, and the guest page held no row, address or key.
 
 ### What wave 3 builds on
 
@@ -1114,7 +1200,7 @@ sessions.
 | D4 (done) | GPU: decide mode in `GLIMMER_PY` (params, scoring, batch, `scoreOnly`, dry run), `ctx.decide` in the runner, the recipe's params, `validateParams`, `runEstimate`, the events route and `recordDecideEvent`, the callback types | `lib/train/recipes/glimmer.ts` (shared), `lib/train/recipes/runner.ts` (shared), `lib/train/recipes/index.ts`, `lib/train/logic.ts`, `lib/train/types.ts` (shared), `lib/train/store.ts`, `app/api/train/jobs/[id]/events/route.ts`, `lib/train/__tests__/runner.test.ts` (fake torch logits, the fake platform serving decision pages) | 5 | yes (Python) |
 | D5 (done) | After the run: `scoreDecisionStep` in place of judging, the summary saved, `publish` 0 by default for decide, `quantProblem` refusing decide adapters for now | `lib/train/workflow.ts` (shared), `lib/train/decide-steps.ts`, `lib/train/hub-cards.ts` (`publishOff`, `hubJobProblem`), `lib/train/logic.ts`, `lib/train/models.ts`, `lib/train/decision-datasets.ts`, `app/api/train/jobs/route.ts`, `workflow.scenario.test.ts`, `steps.test.ts`, `store.test.ts`, `hub-flow.test.ts` | 3 | yes (PGlite) |
 | D6 (done) | Pages: the New decision dataset card, the dataset page, the mode on the New job card with its estimate, `DecisionResults` (strip, per label, confusion, reliability SVG, baselines, health, wrong answers for admins), the Lab results line | `components/train/NewDecisionCard.tsx`, `DatasetDetail.tsx`, `NewJobCard.tsx`, `DecisionResults.tsx`, `results.ts`, `format.ts`, `app/fine-tuning/...`, `components/train/__tests__/decision.test.tsx`; one browser check on the local site | 5 | yes (browser) |
-| D7 | Serving: `/decide` on the demo GPU, `askDecide`, the try box, `{GATEWAY_URL}/decide` with the permission, limits, stand-in and `decide_offline`, the template helper and `isDecideOffline` | `lib/train/recipes/serve.ts` (shared), `lib/train/serve.ts`, `app/api/lab/[id]/decide/route.ts`, `lib/gateway/decide.ts`, `app/api/gateway/decide/route.ts`, `template/lib/meta/decide.ts`, tests in `runner.test.ts`, `lab-try.test.ts`, `lib/gateway/__tests__/decide.test.ts` | 4 | yes (TLS with openssl) |
+| D7 (done) | Serving: `/decide` on the demo GPU, `askDecide`, the try box, `{GATEWAY_URL}/decide` with the permission, limits, stand-in and `decide_offline`, the template helper and `isDecideOffline` | `lib/train/recipes/serve.ts` (shared), `lib/train/serve.ts`, `app/api/lab/[id]/decide/route.ts`, `lib/gateway/decide.ts`, `app/api/gateway/decide/route.ts`, `template/lib/meta/decide.ts`, tests in `runner.test.ts`, `lab-try.test.ts`, `lib/gateway/__tests__/decide.test.ts` | 4 | yes (TLS with openssl) |
 | D8 | Real runs: `dryRun: 1` on a real GPU, then the one real run (below); record times and rates, then set the estimate's constants from them | no code beyond constants; results in this doc | 2, plus GPU time | no |
 | D9 | Docs: `docs/TRAINING.md` decide sections, this file's status, the decision card section in `hub-cards.ts` if time allows | `docs/TRAINING.md`, `docs/DECISION_MODELS.md`, `lib/train/hub-cards.ts` | 2 | no |
 

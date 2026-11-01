@@ -2,7 +2,7 @@ import type { IconName } from "@/components/icons";
 import { bytes, dayLabel, elapsedMs, groupThousands, modelLabel, plural, truncate, usd, type Tone } from "@/lib/format";
 import { tokenCost } from "@/lib/meta/pricing";
 import type { LocalFiles, QuantLevel } from "@/lib/train/local-files";
-import type { DecisionRow, DecisionSpec, DecisionSummary, WilsonRate } from "@/lib/decide/types";
+import type { DecideTryAnswer, DecideTryPick, DecisionRow, DecisionSpec, DecisionSummary, WilsonRate } from "@/lib/decide/types";
 import { NONE_OPTION } from "@/lib/decide/format";
 import { isDecisionSummary, judgeModelOf, modelName, writerModelOf } from "@/lib/train/models";
 import {
@@ -1139,9 +1139,11 @@ export function jobWorkingText(job: Pick<TrainJobView, "recipe" | "status" | "st
  * "Bakery LoRA · tuned won 40 of 40 · Oct 27 · us-east-1 · Bakery helper".
  */
 export function adapterOptionText(
-  a: Pick<AdapterOption, "title" | "datasetTitle" | "region" | "finishedAt" | "evalSummary">,
+  a: Pick<AdapterOption, "title" | "datasetTitle" | "region" | "finishedAt" | "evalSummary" | "mode">,
 ): string {
   const parts = [a.title];
+  // A decision model's demo picks labels at POST /decide instead of chatting.
+  if (a.mode === "decide") parts.push("decision model");
   if (isDecisionSummary(a.evalSummary) && a.evalSummary.items > 0) {
     const side = a.evalSummary.tuned ?? a.evalSummary.base;
     parts.push(`${a.evalSummary.tuned ? "tuned" : "base"} right on ${side.accuracy.right} of ${side.accuracy.total}`);
@@ -1851,4 +1853,116 @@ export function decisionUploadErrorText(status: number, body: unknown): { error:
   if (status === 413) return { error: "That upload is over 4 MB. Split it, or send fewer rows (3,000 at most).", problems: [] };
   const code = errorCode(body);
   return { error: `Couldn't save the dataset${code && isCode(code) ? ` (${code})` : ""}. Try again in a moment.`, problems: [] };
+}
+
+// ---------- A decision model's Try it live box (docs/DECISION_MODELS.md "On the lab's GPU", D7) ----------
+
+/** The longest input the box takes: a decision's state, as POST /api/lab/{id}/decide and the gateway cap it. */
+export const DECIDE_TRY_MAX = 3_000;
+
+/** How long the browser waits for one decision: the route's 30 s, plus room for the trip there and back. */
+export const DECIDE_TRY_WAIT_MS = 45_000;
+
+/** What the box needs to know about the model it tries: the question, the labels, and what its scores were. */
+export interface DecideTryModel {
+  question: string;
+  labels: Array<{ id: string; name: string }>;
+  /** Rows its dataset trained on. */
+  trainRows: number | null;
+  /** Its test accuracy and base Glimmer's, when it was scored. */
+  accuracy: { tuned: WilsonRate | null; base: WilsonRate } | null;
+}
+
+/** A decision dataset's spec and a job's decision summary as the box's model, or null for anything else. */
+export function decideTryModel(
+  spec: Pick<DecisionSpec, "question" | "labels" | "split"> | null | undefined,
+  summary: unknown,
+): DecideTryModel | null {
+  if (!spec || typeof spec.question !== "string" || !Array.isArray(spec.labels)) return null;
+  const s = isDecisionSummary(summary as DecisionSummary | null) && (summary as DecisionSummary).items > 0 ? (summary as DecisionSummary) : null;
+  return {
+    question: spec.question,
+    labels: spec.labels.map((l) => ({ id: l.id, name: l.name })),
+    trainRows: Number.isFinite(spec.split?.train) ? spec.split.train : null,
+    accuracy: s ? { tuned: s.tuned?.accuracy ?? null, base: s.base.accuracy } : null,
+  };
+}
+
+/**
+ * A pick's confidence as the box says it: "about 9 in 10" only when T was fit on dev rows, otherwise the percent and
+ * that it is the model's own probability, not calibrated.
+ */
+export function confidenceText(p: number, calibrated: boolean): string {
+  const x = Math.max(0, Math.min(1, Number.isFinite(p) ? p : 0));
+  if (!calibrated) return `${percentText(x)}, the model's own probability, not calibrated`;
+  if (x >= 0.95) return "more than 9 in 10";
+  if (x < 0.05) return "less than 1 in 10";
+  return `about ${Math.max(1, Math.min(9, Math.round(x * 10)))} in 10`;
+}
+
+/** The honest line under the box: what the model is, how it scored on its own test rows, and that it can be wrong. */
+export function decideTryNote(model: DecideTryModel): string {
+  const trained = model.trainRows ? `A small model trained on ${groupThousands(model.trainRows)} of its dataset's examples.` : "A small model trained on its dataset's examples.";
+  const a = model.accuracy;
+  const scored = a?.tuned
+    ? ` On ${groupThousands(a.tuned.total)} held-out ${a.tuned.total === 1 ? "example" : "examples"} it never saw, it was right on ${groupThousands(a.tuned.right)} (${percentText(a.tuned.rate)}); base Glimmer on ${groupThousands(a.base.right)}.`
+    : "";
+  return `${trained}${scored} It can be wrong: check anything that matters.`;
+}
+
+/** What the box says when POST /api/lab/{id}/decide refuses, by the route's codes. */
+export function decideTryErrorText(status: number, body: unknown): string {
+  switch (errorCode(body)) {
+    case "busy":
+      return "The GPU is deciding someone else's input right now, one at a time. Try again in a few seconds.";
+    case "rate_limited": {
+      const wait = num(body, "retryAfterSeconds");
+      const when = wait === null ? "in a few minutes" : `in ${waitText(wait)}`;
+      return field(body, "scope") === "demo"
+        ? `The live demo has decided as many inputs as it takes this hour. Try again ${when}.`
+        : `That's as many inputs as the demo takes from you for now. Try again ${when}.`;
+    }
+    case "timeout":
+      return "The GPU didn't answer within 30 seconds. Try again.";
+  }
+  if (status === 400) {
+    const message = field(body, "error");
+    return message && !isCode(message) ? message : "Check the input and try again.";
+  }
+  if (status === 413) return "That input is too long.";
+  return tryErrorText(status, body);
+}
+
+/** One side's pick from a POST /api/lab/{id}/decide reply, or null when it isn't one. */
+function tryPickOf(data: unknown): DecideTryPick | null {
+  if (!data || typeof data !== "object") return null;
+  const d = data as Record<string, unknown>;
+  const finite = (x: unknown) => typeof x === "number" && Number.isFinite(x);
+  if (!(d.decision === null || typeof d.decision === "string") || !(d.id === null || typeof d.id === "string")) return null;
+  if (!finite(d.confidence) || !finite(d.none) || !Array.isArray(d.probabilities)) return null;
+  const probabilities = d.probabilities.flatMap((p: unknown) => {
+    const q = (p ?? {}) as Record<string, unknown>;
+    return typeof q.option === "string" && typeof q.id === "string" && finite(q.p) ? [{ option: q.option, id: q.id, p: q.p as number }] : [];
+  });
+  if (probabilities.length !== d.probabilities.length) return null;
+  return {
+    decision: d.decision as string | null,
+    id: d.id as string | null,
+    confidence: d.confidence as number,
+    probabilities,
+    none: d.none as number,
+    calibrated: d.calibrated === true,
+    mass: finite(d.mass) ? (d.mass as number) : 0,
+  };
+}
+
+/** Both picks from a POST /api/lab/{id}/decide reply, or null when it isn't one. */
+export function decideTryAnswerOf(data: unknown): DecideTryAnswer | null {
+  if (!data || typeof data !== "object") return null;
+  const d = data as Record<string, unknown>;
+  const base = tryPickOf(d.base);
+  const tuned = tryPickOf(d.tuned);
+  if (!base || !tuned) return null;
+  const ms = typeof d.ms === "number" && Number.isFinite(d.ms) && d.ms >= 0 ? d.ms : 0;
+  return { base, tuned, ms };
 }

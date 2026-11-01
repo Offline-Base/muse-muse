@@ -185,7 +185,7 @@ export const RECIPES: Recipe[] = [
   {
     id: "glimmer-serve",
     title: "Try tuned Glimmer live",
-    description: `Serves one trained Muse Glimmer LoRA adapter for a set number of minutes, so anyone on its job's public result page can type an app idea and get the base and the tuned model's answers side by side, from the same GPU. It runs in the adapter's region with that model cache mounted, loads the 4-bit base and the adapter, answers over HTTPS pinned to a certificate it makes at start, and then shuts down like any other job. The time limit is the minutes plus ${SERVE_BOOT_MINUTES} to boot and load.`,
+    description: `Serves one trained Muse Glimmer LoRA adapter for a set number of minutes, so anyone on its job's public result page can type an app idea and get the base and the tuned model's answers side by side, from the same GPU. It runs in the adapter's region with that model cache mounted, loads the 4-bit base and the adapter, answers over HTTPS pinned to a certificate it makes at start, and then shuts down like any other job. A decision model's adapter is served as one: the page's box takes an input, and base Glimmer and the tuned model each pick a label for it. The time limit is the minutes plus ${SERVE_BOOT_MINUTES} to boot and load.`,
     // The GPUs glimmer-lora trains on, so every adapter fits.
     gpus: GLIMMER_GPUS,
     defaultMaxMinutes: SERVE_DEFAULTS.defaultMaxMinutes,

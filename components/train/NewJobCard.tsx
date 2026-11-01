@@ -118,6 +118,14 @@ function paramDefaults(
   return out;
 }
 
+/**
+ * The trained adapters a recipe's adapter select offers: every one for glimmer-serve, which serves a decision model's
+ * at POST /decide, and only chat adapters for the others (publishing and local files refuse decision models).
+ */
+export function adaptersFor(recipeId: string | undefined, adapters: readonly AdapterOption[]): AdapterOption[] {
+  return isServeRecipe(recipeId) ? [...adapters] : adapters.filter((a) => a.mode !== DECIDE_MODE);
+}
+
 const takesDataset = (r: RecipeView | undefined) => Boolean(r?.params.some((f) => f.kind === "dataset"));
 const takesAdapter = (r: RecipeView | undefined) => Boolean(r?.params.some((f) => f.kind === "adapter"));
 /** A recipe with a mode select (glimmer-lora): chat, or decide on a decision dataset. */
@@ -179,7 +187,7 @@ export function NewJobCard({
 
   const ready = useMemo(() => (datasets ?? []).filter((d) => d.status === "ready"), [datasets]);
   const writing = useMemo(() => (datasets ?? []).filter((d) => d.status === "generating"), [datasets]);
-  const trained = useMemo(() => adapters ?? [], [adapters]);
+  const trained = useMemo(() => adaptersFor(recipe?.id, adapters ?? []), [adapters, recipe?.id]);
   const needsDataset = takesDataset(recipe);
   const needsAdapter = takesAdapter(recipe);
   const usesCache = Boolean(recipe?.usesCache);
@@ -267,7 +275,7 @@ export function NewJobCard({
   function pickRecipe(next: string) {
     const r = recipes.find((x) => x.id === next);
     if (!r) return;
-    const values = paramDefaults(r, ready, trained);
+    const values = paramDefaults(r, ready, adaptersFor(r.id, adapters ?? []));
     const b = startLimits(r, values, ceilings);
     setRecipeId(r.id);
     setParams(values);

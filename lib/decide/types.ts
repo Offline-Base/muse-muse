@@ -130,7 +130,10 @@ export interface Decision {
 
 /** {GATEWAY_URL}/decide's 200 answer, and what the template helper decide() returns. */
 export interface DecideReply extends Decision {
-  /** "muse-decide", a decision model's training job id, or "stand-in" for build tokens. */
+  /**
+   * "muse-decide", a decision model's training job id, or "stand-in" for build tokens. Until Muse Decide is trained,
+   * a muse-decide call is base Glimmer zero-shot and says so: "muse-glimmer-30b-zero-shot" (lib/gateway/decide.ts).
+   */
   model: string;
   /** True only when T was fit on 20 or more dev rows. */
   calibrated: boolean;
@@ -395,4 +398,40 @@ export interface DecideJson {
   prompt: { prefix: string; suffix: string };
   maxTokens: 2048;
   read: string;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Serving a decision model (docs/DECISION_MODELS.md "Serving and use", D7)
+
+/** One item a glimmer-serve job's POST /decide scores: a rendering's [system, user] messages and its letters. */
+export interface DecideServeItem {
+  messages: DecideMessage[];
+  letters: DecideLetter[];
+}
+
+/**
+ * What a decision model's demo server answers for 1 to 3 items: each item's letters' log-probabilities from the first
+ * answer token (bare and space-led summed, floored at -10,000, not renormalized), base Glimmer's with the adapter off
+ * and the tuned model's, in the items' order, and each item's letter mass.
+ */
+export interface DecideLiveScores {
+  base: number[][];
+  tuned: number[][];
+  baseMass: number[];
+  tunedMass: number[];
+  ms: number;
+}
+
+/** One model's pick in the Try it live box of a decision model: the decision after T, and whether T was fit. */
+export interface DecideTryPick extends Decision {
+  calibrated: boolean;
+  /** The share of first-token probability on the shown letters, averaged over the prompts (a health number). */
+  mass: number;
+}
+
+/** POST /api/lab/{id}/decide's answer: base Glimmer's and the tuned model's pick for one input, from the same GPU. */
+export interface DecideTryAnswer {
+  base: DecideTryPick;
+  tuned: DecideTryPick;
+  ms: number;
 }

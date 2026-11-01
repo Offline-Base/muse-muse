@@ -7,6 +7,10 @@
  * live demo, 5 prompts per IP in 10 minutes, 60 an hour per demo, one at a time (the slot always given back), and
  * nothing about the GPU (its IP, the key, the certificate) in any reply. Nothing here calls Lambda, Neon or a GPU.
  *
+ * A decision model's demo (docs/DECISION_MODELS.md, D7) the same way: askDecide sends the rendered items to /decide over
+ * the pinned connection and reads every letter's score back, and POST /api/lab/{id}/decide decides one input with both
+ * models under /try's access rules and limits, each pick as scoring made the results page's.
+ *
  *   npx tsx --test --experimental-test-module-mocks lib/train/__tests__/lab-try.test.ts
  *
  * Without openssl this file skips; without the flag the route's suite skips.
@@ -224,11 +228,65 @@ describe("live demo proxy", { skip: openssl ? false : "needs openssl to make tes
       await assert.rejects(serve.askLive(target({ port }), KEY, "x", 5_000), { code: "unreachable" });
       await assert.rejects(serve.askLive(target({ ip: "demo.example.com" }), KEY, "x", 5_000), { code: "unreachable" }, "only an IP");
     });
+
+    const ITEM = {
+      messages: [
+        { role: "system" as const, content: "You make one decision at a time." },
+        { role: "user" as const, content: '{"state":"x","question":"Which?","options":[]}' },
+      ],
+      letters: ["A", "B", "C"] as Array<"A" | "B" | "C">,
+    };
+    const SCORES = { base: [[-0.4, -1.6, -3]], tuned: [[-0.05, -4, -5]], baseMass: [0.9], tunedMass: [0.98], ms: 512 };
+
+    it("sends a decision model's rendered items to /decide with the key, pinned, and reads every letter's score back", async () => {
+      answer = (s) => (s.url === "/decide" ? { status: 200, body: SCORES } : { status: 404, body: { error: "not_found" } });
+      const got = await serve.askDecide(target(), KEY, [ITEM], 5_000);
+      assert.deepEqual(got, SCORES);
+      assert.equal(seen.length, 1);
+      assert.deepEqual(seen[0], { method: "POST", url: "/decide", auth: `Bearer ${KEY}`, body: JSON.stringify({ items: [ITEM] }) });
+
+      // A different certificate: nothing is sent, the key included.
+      seen = [];
+      await assert.rejects(serve.askDecide(target({ certSha256: certB.sha256 }), KEY, [ITEM], 5_000), { code: "pin_mismatch" });
+      assert.equal(seen.length, 0);
+    });
+
+    it("maps a decision model's refusals, and refuses answers without a finite score for every letter", async () => {
+      for (const [status, code] of [[409, "busy"], [503, "stopping"], [422, "bad_prompt"], [400, "bad_prompt"], [401, "refused"], [500, "refused"]] as const) {
+        answer = () => ({ status, body: { error: "x" } });
+        await assert.rejects(serve.askDecide(target(), KEY, [ITEM], 5_000), (err: Error) => {
+          assert.ok(err instanceof serve.ServeError);
+          assert.equal(err.code, code, String(status));
+          assert.equal(err.status, status);
+          return true;
+        });
+      }
+      for (const body of [
+        "not json",
+        { base: [[-0.4, -1.6]], tuned: SCORES.tuned, ms: 1 },
+        { base: SCORES.base, tuned: [], ms: 1 },
+        { base: [[-0.4, "x", -3]], tuned: SCORES.tuned, ms: 1 },
+        { base: [[-0.4, null, -3]], tuned: SCORES.tuned, ms: 1 },
+        { tuned: SCORES.tuned },
+      ]) {
+        answer = () => ({ status: 200, body });
+        await assert.rejects(serve.askDecide(target(), KEY, [ITEM], 5_000), { code: "bad_answer" }, JSON.stringify(body));
+      }
+      // Letter mass is a health number only: missing, it reads as 0. A negative ms reads as 0.
+      answer = () => ({ status: 200, body: { base: SCORES.base, tuned: SCORES.tuned, ms: -3 } });
+      assert.deepEqual(await serve.askDecide(target(), KEY, [ITEM], 5_000), { base: SCORES.base, tuned: SCORES.tuned, baseMass: [0], tunedMass: [0], ms: 0 });
+      answer = () => ({ status: 200, body: SCORES, delayMs: 2_000 });
+      await assert.rejects(serve.askDecide(target(), KEY, [ITEM], 200), { code: "timeout" });
+      assert.ok(serve.serveTiming.decideMs >= 10_000 && serve.serveTiming.decideMs < serve.serveTiming.answerMs);
+    });
   });
 
   describe("POST /api/lab/{id}/try", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
     type Ctx = { params: Promise<{ id: string }> };
     let tryRoute: (req: Request, ctx: Ctx) => Promise<Response>;
+    let decideRoute: (req: Request, ctx: Ctx) => Promise<Response>;
+    /** What getDecisionModel answers for the adapter: a decision model, or null for a chat adapter. */
+    let decisionModel: Record<string, unknown> | null = null;
     let calls: Array<{ fn: string; args: unknown[] }> = [];
     let live: Record<string, unknown> | null = null;
     /** Adapter jobs with a public result page (judged), for getResultJob. */
@@ -270,6 +328,10 @@ describe("live demo proxy", { skip: openssl ? false : "needs openssl to make tes
             return slotFree ? new Date("2026-10-27T12:00:00.000Z") : null;
           },
           releaseDemoSlot: async (...args: unknown[]) => void calls.push({ fn: "releaseDemoSlot", args }),
+          getDecisionModel: async (id: string) => {
+            calls.push({ fn: "getDecisionModel", args: [id] });
+            return id === ADAPTER ? decisionModel : null;
+          },
         },
       });
       mock.module(at("../../gateway/store.ts"), {
@@ -281,6 +343,7 @@ describe("live demo proxy", { skip: openssl ? false : "needs openssl to make tes
         },
       });
       ({ POST: tryRoute } = await import(at("../../../app/api/lab/[id]/try/route.ts")));
+      ({ POST: decideRoute } = await import(at("../../../app/api/lab/[id]/decide/route.ts")));
     });
 
     after(() => mock.restoreAll());
@@ -445,6 +508,147 @@ describe("live demo proxy", { skip: openssl ? false : "needs openssl to make tes
       const refused = await tryRoute(tryReq({ prompt: "Fine here" }), ctx());
       assert.equal(refused.status, 400);
       assert.match(((await refused.json()) as { error: string }).error, /couldn't take that idea/);
+    });
+
+    describe("POST /api/lab/{id}/decide", () => {
+      const LABELS = [
+        { id: "billing", name: "Billing", description: "Charges, refunds and invoices" },
+        { id: "shipping", name: "Shipping", description: "Delivery and tracking" },
+        { id: "account", name: "Account", description: "" },
+      ];
+      const QUESTION = "Which team should handle this support ticket?";
+      const model = (over: Record<string, unknown> = {}) => ({
+        id: ADAPTER,
+        title: "Ticket router",
+        question: QUESTION,
+        labels: LABELS,
+        base: { T: 1.3, calibrated: true },
+        tuned: { T: 0.9, calibrated: false },
+        public: true,
+        trainRows: 168,
+        accuracy: null,
+        ...over,
+      });
+      /** The GPU's /decide: base most sure of A, tuned of B, for every item it was sent. */
+      const decideAnswer = (one: Seen) => {
+        const items = (JSON.parse(one.body) as { items: Array<{ letters: string[] }> }).items;
+        const row = (at: number, p: number) => (letters: string[]) => letters.map((_, j) => Math.log(j === at ? 0.9 * p : (0.9 * (1 - p)) / (letters.length - 1)));
+        return {
+          status: 200,
+          body: { base: items.map((i) => row(0, 0.6)(i.letters)), tuned: items.map((i) => row(1, 0.9)(i.letters)), baseMass: items.map(() => 0.9), tunedMass: items.map(() => 0.9), ms: 321 },
+        };
+      };
+      const decideReq = (body: unknown, headers: Record<string, string> = {}) =>
+        new Request(`https://muse.example.com/api/lab/${ADAPTER}/decide`, {
+          method: "POST",
+          headers: { "content-type": "application/json", "sec-fetch-site": "same-origin", "x-real-ip": "198.51.100.1", ...headers },
+          body: typeof body === "string" ? body : JSON.stringify(body),
+        });
+      const decideReqFrom = (body: unknown, ip: string) => decideReq(body, { "x-real-ip": ip });
+      const STATE = "I was charged twice for my order";
+
+      beforeEach(() => {
+        decisionModel = model();
+        answer = (one) => (one.url === "/decide" ? decideAnswer(one) : { status: 404, body: { error: "not_found" } });
+      });
+
+      it("decides one input with both models on the GPU, sending it the platform's renderings and the derived key", async () => {
+        const { serveItems, servePick, serveRenderings } = await import("../../decide/serving");
+        const res = await decideRoute(decideReq({ state: `  ${STATE}  ` }), ctx());
+        assert.equal(res.status, 200);
+        assert.equal(res.headers.get("cache-control"), "no-store");
+        const text = await res.text();
+        assert.ok(saysNothingAboutTheGpu(text));
+        const rendered = serveRenderings({ state: STATE, question: QUESTION, labels: LABELS });
+        assert.ok(rendered.ok);
+        const sent = seen.map((s) => [s.url, s.auth, s.body]);
+        assert.deepEqual(sent, [["/decide", `Bearer ${serve.serveKeyFor(SERVE_JOB, TOKEN_HASH)}`, JSON.stringify({ items: serveItems(rendered.renderings) })]]);
+        const scores = decideAnswer(seen[0]!).body;
+        assert.deepEqual(JSON.parse(text), {
+          base: servePick(LABELS, rendered.renderings, scores.base, { T: 1.3, calibrated: true }),
+          tuned: servePick(LABELS, rendered.renderings, scores.tuned, { T: 0.9, calibrated: false }),
+          ms: 321,
+        });
+        const body = JSON.parse(text) as { base: { decision: string; calibrated: boolean }; tuned: { decision: string; calibrated: boolean } };
+        assert.deepEqual([body.base.decision, body.tuned.decision, body.base.calibrated, body.tuned.calibrated], ["Billing", "Shipping", true, false]);
+        assert.deepEqual(called("releaseDemoSlot").map((c) => c.args[0]), [SERVE_JOB], "the slot is given back");
+        assert.equal(called("hitRateLimits")[0]!.args[0]!.toString(), "lab-decide:ip:198.51.100.1");
+      });
+
+      it("refuses another site's request, a bad id and a bad input before looking for a demo", async () => {
+        assert.equal((await decideRoute(decideReq({ state: STATE }, { "sec-fetch-site": "cross-site" }), ctx())).status, 403);
+        assert.equal((await decideRoute(decideReq({ state: STATE }), ctx("not-a-job"))).status, 404);
+        for (const body of [{}, { state: "   " }, { state: 42 }, { state: "x".repeat(3001) }, "not json"]) {
+          assert.equal((await decideRoute(decideReq(body), ctx())).status, 400, JSON.stringify(body));
+        }
+        const long = await decideRoute(decideReq({ state: "x".repeat(3001) }), ctx());
+        assert.deepEqual(await long.json(), { error: "Keep the input to 3,000 characters.", max: 3000 });
+        assert.equal(called("getDecisionModel").length + called("liveServeTarget").length + seen.length, 0);
+        assert.equal((await decideRoute(decideReq({ state: "é".repeat(3000) }), ctx())).status, 200, "3,000 characters is fine");
+      });
+
+      it("keeps a model without a public page to admins, and a chat adapter has no decision demo at all", async () => {
+        decisionModel = model({ public: false });
+        for (const who of [null, { id: "u-1", email: "guest@example.com", isAdmin: false }]) {
+          viewer = who;
+          const res = await decideRoute(decideReq({ state: STATE }), ctx());
+          assert.deepEqual([res.status, await res.json()], [404, { error: "no_live_demo" }]);
+        }
+        assert.equal(called("liveServeTarget").length + called("hitRateLimits").length + seen.length, 0, "before any rate limit");
+        viewer = { id: "admin-1", email: "admin@example.com", isAdmin: true };
+        assert.equal((await decideRoute(decideReq({ state: STATE }), ctx())).status, 200);
+
+        decisionModel = null;
+        const chat = await decideRoute(decideReq({ state: STATE }), ctx());
+        assert.deepEqual([chat.status, await chat.json()], [404, { error: "no_live_demo" }]);
+      });
+
+      it("answers no_live_demo with nothing serving, and lets one IP decide 5 inputs in 10 minutes", async () => {
+        live = null;
+        assert.equal((await decideRoute(decideReq({ state: STATE }), ctx())).status, 404);
+        assert.equal(called("takeDemoSlot").length + called("hitRateLimits").length, 0);
+        live = { jobId: SERVE_JOB, tokenHash: TOKEN_HASH, ip: "127.0.0.1", port: serverA.port, certSha256: certA.sha256 };
+        for (let i = 0; i < 5; i++) assert.equal((await decideRoute(decideReq({ state: `${STATE} ${i}` }), ctx())).status, 200);
+        const over = await decideRoute(decideReq({ state: "One more" }), ctx());
+        assert.equal(over.status, 429);
+        assert.deepEqual(((await over.json()) as { scope: string }).scope, "ip");
+        assert.equal(seen.length, 5, "the sixth never reached the GPU");
+        assert.equal((await decideRoute(decideReq({ state: STATE }, { "x-real-ip": "203.0.113.50" }), ctx())).status, 200);
+      });
+
+      it("maps busy, a closing window, a refused prompt, an unpinned certificate and unusable scores", async () => {
+        // Each from its own address, so none of them meets the 5-in-10-minutes limit.
+        let n = 0;
+        const decideReq = (body: unknown) => decideReqFrom(body, `203.0.113.${++n}`);
+        slotFree = false;
+        assert.deepEqual(await (await decideRoute(decideReq({ state: STATE }), ctx())).json(), { error: "busy" });
+        slotFree = true;
+        const cases: Array<[(one: Seen) => { status: number; body: unknown }, number, unknown]> = [
+          [() => ({ status: 409, body: { error: "busy" } }), 409, { error: "busy" }],
+          [() => ({ status: 503, body: { error: "stopping" } }), 404, { error: "no_live_demo" }],
+          [() => ({ status: 500, body: { error: "scoring_failed" } }), 502, { error: "demo_unavailable" }],
+          // Probabilities sent in place of log-probabilities: refused, never a confident-looking answer.
+          [(one) => ({ status: 200, body: { ...decideAnswer(one).body, tuned: [[0.1, 0.8, 0.05, 0.05]] } }), 502, { error: "demo_unavailable" }],
+        ];
+        for (const [reply, status, body] of cases) {
+          answer = reply;
+          const res = await decideRoute(decideReq({ state: STATE }), ctx());
+          assert.deepEqual([res.status, await res.json()], [status, body]);
+        }
+        answer = () => ({ status: 422, body: { error: "too_long" } });
+        const long = await decideRoute(decideReq({ state: STATE }), ctx());
+        assert.equal(long.status, 400);
+        assert.match(((await long.json()) as { error: string }).error, /too long once rendered/);
+
+        seen = [];
+        live = { ...live!, certSha256: certB.sha256 };
+        const pinned = await decideRoute(decideReq({ state: STATE }), ctx());
+        const text = await pinned.text();
+        assert.deepEqual([pinned.status, JSON.parse(text)], [502, { error: "demo_unavailable" }]);
+        assert.ok(saysNothingAboutTheGpu(text));
+        assert.equal(seen.length, 0, "the key never left");
+        assert.equal(called("releaseDemoSlot").length, called("takeDemoSlot").length - 1, "every slot taken is given back");
+      });
     });
   });
 });

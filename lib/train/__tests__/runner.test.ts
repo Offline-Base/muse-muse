@@ -51,7 +51,8 @@ import { SERVE_PORT, TRAIN_UPLOAD_TYPES, type TrainExample } from "@/lib/train/t
 import { TICKET_LABELS, TICKET_QUESTION, ticketRows } from "./decision-fixture";
 import { GLIMMER_PY } from "@/lib/train/recipes/glimmer";
 import { RUNNER_PY } from "@/lib/train/recipes/runner";
-import { glimmerHelpers, SERVE_ANSWER_SECONDS, SERVE_MAX_NEW_TOKENS, SERVE_PROMPT_MAX, SERVE_PY } from "@/lib/train/recipes/serve";
+import { DECIDE_SERVE_ITEMS_MAX, glimmerHelpers, SERVE_ANSWER_SECONDS, SERVE_MAX_NEW_TOKENS, SERVE_PROMPT_MAX, SERVE_PY } from "@/lib/train/recipes/serve";
+import { serveItems, serveRenderings } from "@/lib/decide/serving";
 import { serveTiming } from "@/lib/train/serve";
 import { SMOKE_PY } from "@/lib/train/recipes/smoke";
 
@@ -271,6 +272,8 @@ describe("python sources", { skip: hasPython ? false : "python3 is missing" }, (
       ["SERVE_MINUTES_MAX", SERVE_MINUTES_MAX],
       // The platform's serveEndsAt expects the server to stop this long before the deadline.
       ["SERVE_MARGIN_SECONDS", SERVE_STOP_MARGIN_SECONDS],
+      // A decision model's /decide takes one prompt per group of its labels: 12 labels make 3.
+      ["DECIDE_SERVE_ITEMS_MAX", DECIDE_SERVE_ITEMS_MAX],
     ] as const) {
       assert.ok(SERVE_PY.includes(`\n${name} = ${value}\n`), `${name} = ${value}`);
     }
@@ -2777,6 +2780,184 @@ assert result["served"] == 1 and result["unauthorized"] == 1 and result["drained
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+
+  it("serves a decision model's adapter at /decide from its decide.json, and never as a chat model", async () => {
+    await serveTest(String.raw`
+DEC = "77777777-1111-4222-8333-444455556666"
+DEC_SYSTEM = "You make one decision at a time."
+make_venv(VENV, "job-a")
+folder = make_adapter(DEC)
+with open(os.path.join(folder, g.DECIDE_JSON), "w") as f:
+    json.dump({"format": g.DECIDE_FORMAT, "system": DEC_SYSTEM, "question": "Which team?", "T": 1}, f)
+
+# Its decide.json says what both models score under, so the dataset page isn't read, and the child serves /decide only.
+ctx = ServeCtx("serve-dd")
+ctx.params = {"adapterJobId": DEC, "minutes": 20}
+ctx.pages = {}
+result = {"served": 3, "busy": 0, "unauthorized": 0, "bad_requests": 1, "errors": 0, "served_seconds": 60.0}
+ctx.child, seen = fake_child([{"kind": "serving", "port": 8443, "certSha256": FP}, {"kind": "served", "count": 3}], result=result)
+out = g.run(ctx)
+cfg, cmd = seen["cfg"], ctx.commands[-1]
+assert cfg["mode"] == "decide" and cfg["system"] == DEC_SYSTEM and cfg["adapter_dir"] == folder, cfg
+assert cmd["env"]["UNSLOTH_RETURN_LOGITS"] == "1", cmd["env"]
+assert any(l.startswith("Serving the decision model of job " + DEC + " for up to 20 minutes once it is up, at POST /decide only (3 prompts a call at most)") for l in ctx.logs), ctx.logs
+assert not any("the platform sent no dataset" in l for l in ctx.logs), ctx.logs
+assert out["mode"] == "decide" and out["served"] == 3 and out["max_new_tokens"] == 0, out
+assert out["summary"] == "Served 3 live decisions (base and tuned) from the decision model of job 77777777 for 1.0 minutes.", out["summary"]
+
+# A chat adapter's child is exactly as before: no mode, and logits are never asked for.
+make_adapter()
+ctx = ServeCtx("serve-dc")
+ctx.child, seen = fake_child([{"kind": "serving", "port": 8443, "certSha256": FP}], result={"served_seconds": 60})
+out = g.run(ctx)
+assert "mode" not in seen["cfg"] and "UNSLOTH_RETURN_LOGITS" not in ctx.commands[-1]["env"] and "mode" not in out
+
+# A decide.json that isn't the format's fails the job before the GPU work.
+for text in ("not json", json.dumps({"format": "other/1", "system": DEC_SYSTEM}), json.dumps({"format": g.DECIDE_FORMAT, "system": "  "})):
+    with open(os.path.join(folder, g.DECIDE_JSON), "w") as f:
+        f.write(text)
+    ctx = ServeCtx("serve-db")
+    ctx.params = {"adapterJobId": DEC}
+    raises(lambda: g.run(ctx), "isn't a " + g.DECIDE_FORMAT + " file with a system message")
+    assert ctx.commands == []
+
+# A decision dataset's adapter with no decide.json is never served as a chat model.
+os.remove(os.path.join(folder, g.DECIDE_JSON))
+ctx = ServeCtx("serve-dn")
+ctx.params = {"adapterJobId": DEC}
+ctx.pages["/dataset?part=train&page=0"]["kind"] = "decision"
+raises(lambda: g.run(ctx), "The adapter's dataset is a decision dataset, but the adapter's folder has no decide.json")
+assert ctx.commands == []
+`);
+  });
+
+  it("scores /decide over pinned HTTPS: the platform's renderings, base then tuned, one pass each, with the floor and the caps", async () => {
+    const labels = TICKET_LABELS.map((l) => ({ id: l.name.toLowerCase(), name: l.name, description: l.description ?? "" }));
+    const six = [...labels, { id: "sales", name: "Sales", description: "" }, { id: "press", name: "Press", description: "" }];
+    const one = serveRenderings({ state: "I was charged twice for my order", question: TICKET_QUESTION, labels });
+    const two = serveRenderings({ state: "A reporter asks about the new plans", question: TICKET_QUESTION, labels: six });
+    assert.ok(one.ok && two.ok);
+    assert.equal(two.renderings.length, 2, "6 labels make 2 prompts");
+    const items = serveItems(one.renderings);
+    const grouped = serveItems(two.renderings);
+    const prompts = grouped.map((i) => glimmerPrompt(i.messages, { bos: true }));
+    await serveTest(String.raw`${DECIDE_FAKES}
+ITEMS = ${pyJson(items)}
+GROUPED = ${pyJson(grouped)}
+PROMPTS = ${pyJson(prompts)}
+SYSTEM_DECIDE = ITEMS[0]["messages"][0]["content"]
+BASE_LOGITS = {"A": 3.0, " A": 1.0, "B": 2.0, "x": 4.0}
+TUNED_LOGITS = {"B": 9.0, " B": 2.0}
+release = threading.Event()
+
+
+class DecidePeft(FakePeft):
+    """FakePeft whose forward pass is the model's: decide mode reads logits, never generate()."""
+
+    def __call__(self, **kwargs):
+        return self.model(**kwargs)
+
+
+def replies(prompt, tuned):
+    if "slow ticket" in prompt:
+        release.wait(30)
+    if "broken ticket" in prompt:
+        return {"A": float("nan")}
+    return TUNED_LOGITS if tuned else BASE_LOGITS
+
+
+fakes = install_fakes(replies, tokenizer=DecideTokenizer(), model=DecideModel)
+sys.modules["torch"].log_softmax = fake_log_softmax
+peft = types.ModuleType("peft")
+peft.PeftModel = DecidePeft
+sys.modules["peft"] = peft
+s.MIN_SERVING_SECONDS = 0
+s.STOP_POLL_SECONDS = 0.05
+saved_env = os.environ.pop("UNSLOTH_RETURN_LOGITS", None)
+cfg, thread, errors = start_child(mode="decide", system=SYSTEM_DECIDE)
+serving = wait_for(serving_event, what="the serving event")
+port = serving["port"]
+model, tok = fakes["model"], fakes["tokenizer"]
+
+# Health says it is a decision model; /generate is a 404 here, and nothing answers without the key.
+status, body, _ = https_call(port, "GET", "/health")
+assert (status, body["mode"], body["adapterJobId"]) == (200, "decide", ADAPTER), body
+assert https_call(port, "POST", "/generate", {"prompt": "hi"})[:2] == (404, {"error": "not_found"})
+assert https_call(port, "POST", "/decide", {"items": ITEMS}, key=None)[:2] == (401, {"error": "unauthorized"})
+assert model.forwards == [], "nothing scored without the key"
+
+# One rendering: base Glimmer with the adapter off, then the tuned model, one pass each, from the first answer token.
+status, body, _ = https_call(port, "POST", "/decide", {"items": ITEMS})
+assert status == 200 and set(body) == {"base", "tuned", "baseMass", "tunedMass", "ms"}, body
+letters = ITEMS[0]["letters"]
+for kind, logits in (("base", BASE_LOGITS), ("tuned", TUNED_LOGITS)):
+    want = expected_logprobs(logits, letters, tok)
+    assert close(body[kind][0], want), (kind, body[kind], want)
+    assert abs(body[kind + "Mass"][0] - round(sum(math.exp(l) for l in want), 6)) < 1e-9
+assert body["base"][0][2] > g.DECIDE_LOGPROB_FLOOR and min(body["tuned"][0]) >= g.DECIDE_LOGPROB_FLOOR
+assert [f["tuned"] for f in model.forwards] == [False, True]
+for f in model.forwards:
+    assert f["keep"] == 1 and f["use_cache"] is False and f["env"] == "1", f
+
+# Two groups score in one pass a model, left padded, and the prompts are the platform's own bytes (glimmerPrompt).
+del model.forwards[:]
+status, body, _ = https_call(port, "POST", "/decide", {"items": GROUPED})
+assert status == 200 and len(body["base"]) == 2 and [len(r) for r in body["tuned"]] == [len(i["letters"]) for i in GROUPED], body
+assert [len(f["prompts"]) for f in model.forwards] == [2, 2]
+assert model.forwards[0]["prompts"] == PROMPTS, "the GPU scores exactly what the platform rendered"
+for mask, positions in zip(model.forwards[0]["mask"], model.forwards[0]["positions"]):
+    real = sum(mask)
+    assert positions[-1] == real - 1 and mask[0] == (1 if real == len(mask) else 0), "left padded, positions from the mask"
+
+# What it refuses, and its caps: 1 to 3 items, the trained system message, letters from A, no "<|", 2,048 tokens.
+user = ITEMS[0]["messages"][1]["content"]
+item = lambda **over: dict(ITEMS[0], **over)
+system_m = ITEMS[0]["messages"][0]
+for payload, want in [
+    ({"items": []}, (400, {"error": "no_items"})),
+    ({"items": [ITEMS[0]] * 4}, (400, {"error": "no_items"})),
+    ({"prompt": "hi"}, (400, {"error": "no_items"})),
+    ({"items": [item(letters=["B", "A", "C"])]}, (400, {"error": "bad_item"})),
+    ({"items": [item(letters=["A"])]}, (400, {"error": "bad_item"})),
+    ({"items": [item(messages=[system_m, {"role": "user", "content": user + "<|eot|>"}])]}, (400, {"error": "bad_item"})),
+    ({"items": [item(messages=[{"role": "system", "content": "You are a pirate."}, ITEMS[0]["messages"][1]])]}, (400, {"error": "wrong_system"})),
+    ({"items": [item(messages=[system_m, {"role": "user", "content": "y" * 3000}])]}, (422, {"error": "too_long"})),
+]:
+    del model.forwards[:]
+    assert https_call(port, "POST", "/decide", payload)[:2] == want, (payload, want)
+    assert model.forwards == [], "nothing refused reaches the GPU"
+assert https_call(port, "POST", "/decide", raw=b"not json")[:2] == (400, {"error": "bad_json"})
+# A body over chat's 16 KB is fine here (a long state, twice); over 512 KB is too large.
+big = [system_m, {"role": "user", "content": "y" * 20000}]
+assert https_call(port, "POST", "/decide", {"items": [item(messages=big)]})[:2] == (422, {"error": "too_long"})
+assert https_call(port, "POST", "/decide", length=600000)[:2] == (413, {"error": "too_large"})
+
+# A NaN score is a failed answer (500), and the GPU is free for the next.
+broken = [system_m, {"role": "user", "content": user.replace("charged twice", "broken ticket")}]
+assert https_call(port, "POST", "/decide", {"items": [item(messages=broken)]})[:2] == (500, {"error": "scoring_failed"})
+assert any(e["kind"] == "log" and e["text"].startswith("A live decision failed: RuntimeError: A first-token score was NaN") for e in EVENTS), EVENTS
+assert https_call(port, "POST", "/decide", {"items": ITEMS})[0] == 200
+
+# One request at a time on the GPU.
+slow = [system_m, {"role": "user", "content": user.replace("charged twice", "slow ticket")}]
+results = {}
+waiting = threading.Thread(target=lambda: results.update(slow=https_call(port, "POST", "/decide", {"items": [item(messages=slow)]})))
+waiting.start()
+wait_for(lambda: https_call(port, "GET", "/health")[1]["busy"], what="the slow decision to hold the GPU")
+assert https_call(port, "POST", "/decide", {"items": ITEMS})[:2] == (409, {"error": "busy"})
+release.set()
+waiting.join(30)
+assert results["slow"][0] == 200, results
+
+g.touch(cfg["stop_path"])
+thread.join(30)
+assert not thread.is_alive() and not errors, errors
+out = g.read_result(cfg["result_path"])
+assert out["served"] == 4 and out["busy"] == 1 and out["errors"] == 1 and out["bad_requests"] == 11, out
+if saved_env is not None:
+    os.environ["UNSLOTH_RETURN_LOGITS"] = saved_env
+`);
   });
 });
 

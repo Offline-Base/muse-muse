@@ -96,7 +96,8 @@ async function decideSize(recipe: Recipe, params: Record<string, string | number
 /**
  * For a recipe with an "adapter" param (glimmer-serve): the region its adapter is in, since the serve job must launch
  * there and mount the same cache filesystem. Null for any other recipe. A problem (no such job, not a glimmer-lora job
- * that succeeded, a dry run, an adapter not on the cache) is the 400 to answer, after the param's label.
+ * that succeeded, a dry run, an adapter not on the cache) is the 400 to answer, after the param's label. A decision
+ * model's adapter is taken only by glimmer-serve, which serves it at POST /decide (docs/DECISION_MODELS.md, D7).
  */
 async function adapterRegion(
   recipe: Recipe,
@@ -105,7 +106,7 @@ async function adapterRegion(
   for (const field of recipe.params) {
     if (field.kind !== "adapter" || params[field.key] === undefined) continue;
     const source = await getAdapterSource(String(params[field.key]));
-    const problem = adapterProblem(source?.job ?? null, source?.metrics ?? null);
+    const problem = adapterProblem(source?.job ?? null, source?.metrics ?? null, { decide: isServeRecipe(recipe.id) });
     if (problem || !source) return { ok: false, error: `${field.label}: ${problem ?? "that job doesn't exist."}` };
     return { ok: true, region: source.job.region, adapterJobId: source.job.id };
   }

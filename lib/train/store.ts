@@ -25,6 +25,7 @@ import {
   type DoneMetrics,
   type TrainJobRow,
 } from "@/lib/train/logic";
+import { decisionModelOf, type DecisionModel } from "@/lib/decide/serving";
 import type { DecideScoreItem, DecisionRow, DecisionRows, DecisionSpec } from "@/lib/decide/types";
 import type { QuantSource } from "@/lib/train/hub-cards";
 import { PERSON_WRITER, PUBLIC_WRITER } from "@/lib/train/models";
@@ -1367,10 +1368,16 @@ export async function getAdapterSource(jobId: string): Promise<{ job: TrainJobRo
  * The adapters a glimmer-serve job can serve, newest first, for the "adapter" select: glimmer-lora jobs that
  * succeeded, weren't dry runs, and whose done metrics say the adapter is on the cache filesystem under models/<id>
  * (the same rule as adapterProblem), with the title of the dataset they trained on.
+ *
+ * A decision model's adapter is left out unless `opts.decide`: then the ones that trained one (not score only) are in
+ * too, each with `mode: "decide"`, since glimmer-serve serves them at POST /decide (D7). The New job card offers those
+ * to glimmer-serve only. A chat adapter's option has no `mode`, as before.
  */
-export async function listAdapterOptions(limit = 50): Promise<AdapterOption[]> {
+export async function listAdapterOptions(limit = 50, opts: { decide?: boolean } = {}): Promise<AdapterOption[]> {
   const n = Math.max(1, Math.min(200, Math.floor(limit) || 50));
   const metrics = doneMetricsOf(jobs.id);
+  const isDecide = sql`coalesce(${jobs.params}->>${MODE_PARAM}, '') = ${DECIDE_MODE}`;
+  const scoredOnly = sql`(case when ${jobs.params}->>'scoreOnly' ~ '^[0-9]+([.][0-9]+)?$' then (${jobs.params}->>'scoreOnly')::numeric else 0 end) >= 1`;
   const rows = await db()
     .select({
       jobId: jobs.id,
@@ -1379,6 +1386,7 @@ export async function listAdapterOptions(limit = 50): Promise<AdapterOption[]> {
       finishedAt: jobs.finishedAt,
       evalSummary: jobs.evalSummary,
       datasetTitle: sql<string | null>`(select d.title from training_datasets d where d.id::text = ${jobs.params}->>'datasetId')`,
+      decide: sql<boolean>`${isDecide}`,
     })
     .from(jobs)
     .where(
@@ -1388,9 +1396,9 @@ export async function listAdapterOptions(limit = 50): Promise<AdapterOption[]> {
         notDryRun(),
         sql`${metrics}->>'cache_used' = 'yes'`,
         sql`rtrim(${metrics}->>'adapter_dir', '/') like '%/models/' || ${jobs.id}::text`,
-        // A decision model's adapter answers with one letter: adapterProblem refuses it for the chat demo, publishing
-        // and local files until their decide versions exist (docs/DECISION_MODELS.md), so it isn't offered either.
-        sql`coalesce(${jobs.params}->>${MODE_PARAM}, '') <> ${DECIDE_MODE}`,
+        // A decision model's adapter answers with one letter: adapterProblem refuses it for publishing and local
+        // files until their decide versions exist (docs/DECISION_MODELS.md), so only a decide caller is offered one.
+        opts.decide ? sql`not (${isDecide} and ${scoredOnly})` : sql`not ${isDecide}`,
       ),
     )
     .orderBy(desc(jobs.createdAt))
@@ -1402,6 +1410,7 @@ export async function listAdapterOptions(limit = 50): Promise<AdapterOption[]> {
     datasetTitle: r.datasetTitle ?? null,
     finishedAt: r.finishedAt ? r.finishedAt.toISOString() : null,
     evalSummary: r.evalSummary ?? null,
+    ...(r.decide ? { mode: DECIDE_MODE } : {}),
   }));
 }
 
@@ -1518,6 +1527,59 @@ export async function releaseDemoSlot(serveJobId: string, window: Date): Promise
     .update(limits)
     .set({ count: sql`greatest(${limits.count} - 1, 0)` })
     .where(and(eq(limits.key, `lab-try-busy:${serveJobId}`), eq(limits.windowStart, window)));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Decision models served (docs/DECISION_MODELS.md "Serving and use"): a decide job as a model, and the serving windows
+// that answer for one.
+
+/**
+ * A decide job as a decision model (decisionModelOf in lib/decide/serving.ts: its labels, question and each side's T),
+ * or null when the id is unknown, isn't a uuid, or the job can't be served as one (not a glimmer-lora job in decide
+ * mode that succeeded and trained an adapter, or its dataset is gone). `public` says whether it has a public result
+ * page (hasResults), which the try box and the gateway require of anyone but an admin. Reads the dataset's spec
+ * without its seed, and never a row.
+ */
+export async function getDecisionModel(jobId: string): Promise<DecisionModel | null> {
+  if (!isUuid(jobId)) return null;
+  const [row] = await db()
+    .select({
+      job: { id: jobs.id, title: jobs.title, recipe: jobs.recipe, status: jobs.status, params: jobs.params, evalSummary: jobs.evalSummary },
+      spec: sql<Omit<DecisionSpec, "seed"> | null>`(select d.decision - 'seed' from training_datasets d where d.id::text = ${jobs.params}->>'datasetId' and d.kind = 'decision')`,
+      public: sql<boolean>`coalesce((${hasResults()}), false)`,
+    })
+    .from(jobs)
+    .where(eq(jobs.id, jobId.toLowerCase()))
+    .limit(1);
+  if (!row) return null;
+  return decisionModelOf({ job: row.job, spec: row.spec ?? null, public: row.public === true });
+}
+
+/**
+ * For base Glimmer zero-shot (the gateway's muse-decide until Muse Decide is trained): the demo server of any live
+ * serve job whose adapter is a decision model's, newest first, since its base answers come from the same 4-bit base
+ * with the adapter off. Null when none is live. A chat adapter's server answers /generate only, so it never counts.
+ */
+export async function liveDecisionServeTarget(now: Date = new Date()): Promise<ServeTargetRow | null> {
+  const rows = await db()
+    .select()
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.recipe, SERVE_RECIPE),
+        eq(jobs.status, "running"),
+        eq(jobs.stopRequested, false),
+        sql`exists (select 1 from training_jobs a where a.id::text = ${jobs.params}->>${SERVE_ADAPTER_PARAM} and a.recipe = ${ADAPTER_RECIPE} and a.params->>${MODE_PARAM} = ${DECIDE_MODE})`,
+      ),
+    )
+    .orderBy(desc(jobs.createdAt))
+    .limit(10);
+  for (const row of rows) {
+    if (!row.tokenHash || toLiveDemoView(row, now)?.state !== "live") continue;
+    const endpoint = usableEndpoint(row.serveEndpoint);
+    if (endpoint) return { jobId: row.id, tokenHash: row.tokenHash, ip: endpoint.ip, port: endpoint.port, certSha256: endpoint.certSha256 };
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------------------------------------------

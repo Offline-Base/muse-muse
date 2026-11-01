@@ -118,7 +118,8 @@ export default async function FineTuningPage({
     safeQuery(() => loadDatasets(now.getTime())),
     datasetBlock(),
     safeQuery(loadResults),
-    safeQuery(() => listAdapterOptions()),
+    // Decision models' adapters too: the New job card offers them to glimmer-serve only (adaptersFor).
+    safeQuery(() => listAdapterOptions(50, { decide: true })),
   ]);
   const recipes = RECIPES.map(toRecipeView);
   // The model cache bills every month on its own, outside every limit on this page.

@@ -283,6 +283,11 @@ export interface AdapterOption {
   datasetTitle: string | null;
   finishedAt: string | null;
   evalSummary: EvalSummary | null;
+  /**
+   * "decide" for a decision model's adapter (listed only when asked for, listAdapterOptions' opts.decide): glimmer-serve
+   * serves it at POST /decide, and nothing else takes it yet. Absent for a chat adapter.
+   */
+  mode?: "decide";
 }
 
 /**
