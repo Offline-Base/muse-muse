@@ -205,6 +205,8 @@ Router finding for Ethan: a request headed outside the class that both the label
 
 **21:01** The candidate row ran (session 00:49Z to 00:59Z, probe and file check passed, preflight 0 of 5 unscored in both configs). Development sets only, from the session log; the report is copied back when all rows finish. fresh_200_b: policy_lfm 81.0%, stage-b-r30b IQ1_S deciding 48.5% (base IQ1_S was 44.5%). tasks: 82.0% and 54.0% (base 45.0%). 0 leaks, 0 errors and 0 fallbacks in both rows; Glimmer's router p95 1.9 s, the first Glimmer row inside the 20 s stop rule (reasoning off; base ran at reasoning low). Approval requests 41 against 77 and 14 against 26. The final check held 52 results in the session (names left after tagging; held, not leaked). The tuned file decides better than base on both sets but far below policy plus LFM, so the sealed-set claim is unlikely to hold; the sealed set has not been run and runs once, after check_overlap. Next row: glimmer_tighten.
 
+**21:21** glimmer_tighten ran (01:08Z to 01:19Z, exit 2: one fallback per set, a router reply that did not parse, under the 10% rule). fresh_200_b 62.5% (base 57.0%), tasks 64.0% (base 57.0%), policy_lfm unchanged at 81.0% and 82.0% (resumed, not rescored). 0 leaks, router p95 1.9 s, approval requests 73 and 24. Next: glimmer_labels.
+
 ## Open items
 
 - Ethan: which mode the routing tune targets; whether to hand over stage 2 IQ1_S early.
