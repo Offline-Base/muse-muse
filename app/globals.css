@@ -607,6 +607,34 @@ pre {
   white-space: nowrap;
 }
 
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.history-item .history-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.history-edit {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: var(--muted);
+}
+
+.history-edit:hover,
+.history-edit:focus-visible {
+  color: var(--fg);
+  background: var(--surface-3);
+}
+
 /* Account chip */
 
 .account {

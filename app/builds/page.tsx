@@ -4,6 +4,7 @@ import { connection } from "next/server";
 import { Icon } from "@/components/icons";
 import { EmptyCard, NotConnected, PageHeader, StatusPill } from "@/components/ui";
 import { dateTimeUtc, elapsedMs, isTerminalStatus, relativeTime, shortDuration, truncate, usd } from "@/lib/format";
+import { editTargets } from "@/lib/edit-pass";
 import { currentUser, listUserBuilds, safeQuery } from "@/lib/queries";
 
 export const metadata: Metadata = { title: "Builds" };
@@ -27,6 +28,10 @@ export default async function BuildsPage() {
   }
 
   const result = await safeQuery(() => listUserBuilds(user.id));
+  // The action on a product's newest row only, and for a shared guest only what this browser's pass covers.
+  const edits = result.ok ? await safeQuery(() => editTargets(user, result.data.map((b) => b.productId))) : null;
+  const editable = edits?.ok ? edits.data : new Map<string, string>();
+  const offered = new Set<string>();
   const now = Date.now();
   return (
     <div className="page">
@@ -75,6 +80,8 @@ export default async function BuildsPage() {
                       ? truncate(b.note, 80)
                       : null;
                 const ms = elapsedMs(b.startedAt, b.finishedAt, now);
+                const editId = b.productId && !offered.has(b.productId) ? editable.get(b.productId) : undefined;
+                if (b.productId) offered.add(b.productId);
                 return (
                   <tr key={b.id}>
                     <td>
@@ -82,6 +89,14 @@ export default async function BuildsPage() {
                         {title}
                       </Link>
                       {sub ? <span className="row-sub muted">{sub}</span> : null}
+                      {editId ? (
+                        <span className="row-actions">
+                          <Link className="btn btn-sm" href={`/b/${editId}?refine=1#refine`} aria-label={`Keep editing ${title}`}>
+                            <Icon name="edit" size={16} />
+                            Keep editing
+                          </Link>
+                        </span>
+                      ) : null}
                     </td>
                     <td>
                       <StatusPill status={b.status} />
