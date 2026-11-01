@@ -384,7 +384,7 @@ Muse Code design's `code_sessions` table belongs to the Muse Muse General sessio
 | 0024 | `0024_code` | 9 | table `exec_runs` | 1793432030646 |
 | 0025 | `0025_gpu` | 11 | table `glimmer_windows`; `training_jobs.product_id` | 1793432090646 |
 | 0026 | `0026_hardware` | 13 | tables `devices`, `product_boards` (section 19) | 1793432150646 |
-| 0028 | `0028_code_sessions` | 9 | table `code_sessions` (15b). 0027 is General's replications | 1793432270646 |
+| 0027 | `0027_code_sessions` | 9 | table `code_sessions` (15b). Moved down from 0028 on Nov 1, as nothing took 0027. Replications take the next free number | 1793432210646 |
 
 Units 7, 8, 10, 12 and 14 have no migration. Live updates read `product_rows.seq` from 0020. Drive export keeps its state
 on the board (`docs/DRIVE_EXPORT.md`). A unit that finds it needs one takes the next free number after 0026, in merge order.
@@ -2544,7 +2544,7 @@ it wrote its exit record (`pkill node` in a test's cleanup does that) ends `fail
 with `bridge.err`'s tail in the logs, scanned. A stop revokes the token before it takes the session's lock, so it's dead even
 when the session is busy or the Sandbox API is down. A stop that lands during a start settles the sandbox's reservation.
 
-**Migration 0028_code_sessions** (journal idx 28, `meta/0028_snapshot.json` chained to 0024's, `when` 1793432270646). Table
+**Migration 0027_code_sessions** (journal idx 27, `meta/0027_snapshot.json` chained to 0026's, `when` 1793432210646). Table
 `code_sessions` (see `lib/db/schema.ts`). `gateway_tokens.scope` and `usage.source` gain `code_session` as a type change
 only. `PENDING_WAVE3` adds 25, 26 and 27. **Merge-order blocker, as for 0024:** this must not reach a shared database
 before everything below it, or it is renumbered at merge.
@@ -3128,7 +3128,7 @@ pass isn't sent inside the frame and a board looks offline there: the owner uses
 - Removing a board wipes its secrets and links. There's no cleanup entry: a board isn't a build's or a product's data, and the proof
   counts are `rate_limits` rows the hourly prune takes.
 
-**Migration.** `0026_hardware` sits at journal index 26 between 0025 and 0028. 0028's SQL is unchanged, and its snapshot is rebuilt
+**Migration.** `0026_hardware` sits at journal index 26 between 0025 and 0027. 0027's SQL is unchanged, and its snapshot is rebuilt
 to chain on 0026 and carry the two tables. `PENDING_WAVE3` is now 23 and 27.
 
 **Limits people should know.**
@@ -3607,3 +3607,4 @@ Phaser game.
 - Nov 1 (unit 7): section 13a added. `/live/ticket` and `/live/stream` as written, plus a platform route the contract left unnamed, `app/api/musemuse/live-caption`; `lib/gateway/handler.ts` gets one marked block and one parameter on `checkRateLimits`, not one line, since caption minutes are checked after the rate limit; caption minutes also have a per-address allowance (5 times); `allowedModelsFor` adds the voice model for captions (one marked line in `lib/pipeline/logic.ts`); `liveOff` in `lib/caps/ready.ts`; data's `target` is exported for tickets; `template/playwright.config.ts` gives a cap's browser args to the demo and studio projects too, and unit 2's `caps-off` test says so; the judge note's screenshot is 'Second browser live', since data's 'Second browser' does reload; `lib/gateway/deps.ts` wires `liveCaptions`; `CAP_PROOF.live`.
 - Nov 1 (unit 12): section 18 says the product tools are built. `hardware` in a brief gains `driveExport`, with `StoredHardwareBlock` as its stored shape (the writer's stays `HardwareBriefBlock` with the flags off), and a token gains the `drive-tools` marker. `next.config.ts` traces `drive/` for `/api/gateway/gadget`. The tool card's `shown` moves from `lib/tools/handler.ts` to `lib/tools/sign.ts` as `cardText`, unchanged. No migration.
 - Nov 1 (unit 11): section 17a added. No `GLIMMER_ENDPOINT_*`; a new flag `GPU_GLIMMER_ALL_PRODUCTS`; 0025 also adds `adapter_job_id`, `serve_job_id`, `spark_open` and `reservation_id` to `glimmer_windows`, one open row at a time, and an index on `training_jobs.product_id`; `usage.source` gains `glimmer`; `CapCleanup.cap` also takes `"gpu"`; `capBuildEnv`, `capDeployEnv`, `capsBuildLines`, `capsRefineLines`, `capsJudgeNotes`, `allowedModelsFor`, `catalogSummary` and `judgeStep` each get one marked line for GPU, which isn't a cap; `lib/train/tune/examples.ts` exports `objectRow`.
+- Nov 1 (closing the gap): `0028_code_sessions` became `0027_code_sessions`, since no 0027 was ever written. Same SQL and snapshot, so no gap is left below it. Older lines here that say 0028 mean this migration. Paper replication takes the next free number.

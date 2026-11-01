@@ -44,8 +44,7 @@ const RESERVED = new Set([16]);
  * that ran a migration above a gap would skip the gap's migration for good: no branch with a gap goes near a shared
  * database. With MIGRATIONS_FOR=main (the merge to main, or any shared database) a gap fails outright.
  */
-// 27 is General's (replications): 0028_code_sessions sits above it (wave3.md).
-const PENDING_WAVE3 = new Set([27]);
+const PENDING_WAVE3 = new Set<number>();
 const pendingWave3 = (i: number) => PENDING_WAVE3.has(i);
 const snapshot = (idx: number) => JSON.parse(readFileSync(join(FOLDER, `meta/${String(idx).padStart(4, "0")}_snapshot.json`), "utf8"));
 
@@ -55,7 +54,7 @@ const database = (client: PGlite) => drizzle({ client, schema });
  * Wave 3's migrations, in the agreed order (docs/CAPABILITIES.md, section 4), after General's 0017 (0016 is retired).
  * Each wave 3 unit appends its tag here. Their journal times follow the contract's rule.
  */
-const WAVE3_TAGS = ["0018_trust", "0019_engine", "0020_data", "0021_files", "0022_connect", "0023_jobs", "0024_code", "0025_gpu", "0026_hardware", "0028_code_sessions"];
+const WAVE3_TAGS = ["0018_trust", "0019_engine", "0020_data", "0021_files", "0022_connect", "0023_jobs", "0024_code", "0025_gpu", "0026_hardware", "0027_code_sessions"];
 const tagNumber = (tag: string) => Number(tag.slice(0, 4));
 
 /** A copy of the migrations that stops at `lastIdx`, as a database that hasn't had the newer ones would have seen. */
@@ -623,7 +622,7 @@ describe("a database already at 0012", () => {
     await client.close();
   });
 
-  it("0028_code_sessions: a database at 0024 keeps its products and tokens, and gets code_sessions with its defaults", async () => {
+  it("0027_code_sessions: a database at 0024 keeps its products and tokens, and gets code_sessions with its defaults", async () => {
     const dir = folderThrough(24);
     dirs.push(dir);
     const client = new PGlite();

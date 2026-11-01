@@ -220,7 +220,7 @@ export const gatewayTokens = pgTable(
       .references(() => products.id),
     /** HMAC-SHA256 of the token with GATEWAY_TOKEN_PEPPER. The token itself is never stored. */
     tokenHash: text("token_hash").notNull().unique(),
-    // Wave 3, unit 9: "code_session" is a Muse Code session's own token (0028_code_sessions). A type change only.
+    // Wave 3, unit 9: "code_session" is a Muse Code session's own token (0027_code_sessions). A type change only.
     scope: text("scope").$type<"build" | "live" | "code_session">().notNull(),
     allowedModels: jsonb("allowed_models").$type<string[]>().notNull(),
     dailyBudgetUsd: real("daily_budget_usd").notNull(),
@@ -247,7 +247,7 @@ export const usage = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     // 0022_connect (unit 5) adds "fetch", "vault" and "sends" to the type only: the column is text, so no SQL changes.
     // Wave 3, unit 9: "exec" and "browse" are the code cap's sandboxes. A type change only, no migration.
-    // Wave 3, unit 9: "code_session" is a Muse Code session's sandbox time (0028). A type change only.
+    // Wave 3, unit 9: "code_session" is a Muse Code session's sandbox time (0027). A type change only.
     // Wave 3, unit 11: "glimmer" is the shared Glimmer endpoint (0025). A type change only.
     source: text("source").$type<"gateway" | "muse_code" | "platform" | "docs" | "tools" | "fetch" | "vault" | "sends" | "exec" | "browse" | "code_session" | "glimmer">().notNull(),
     productId: uuid("product_id").references(() => products.id),
@@ -1187,7 +1187,7 @@ export const glimmerWindows = pgTable(
   ],
 );
 
-// ---------- Wave 3, 0028_code_sessions (unit 9) ----------
+// ---------- Wave 3, 0027_code_sessions (unit 9) ----------
 
 /**
  * One Muse Code session a product ran for a person or for its build's tests (docs/CAPABILITIES.md, 15b), each in its

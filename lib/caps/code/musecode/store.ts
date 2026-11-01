@@ -4,7 +4,7 @@ import { MUSE_CODE_LIMITS } from "@/lib/caps/code/musecode/limits";
 import type { CodeSessionRow, CodeSessionStore, NewCodeSession } from "@/lib/caps/code/musecode/handler";
 import type { CodeSessionStatus } from "@/lib/caps/code/musecode/types";
 
-/** Muse Code sessions' database (0028_code_sessions, docs/CAPABILITIES.md 15b), and their spend in `usage`. */
+/** Muse Code sessions' database (0027_code_sessions, docs/CAPABILITIES.md 15b), and their spend in `usage`. */
 
 const ACTIVE: CodeSessionStatus[] = ["starting", "running"];
 
