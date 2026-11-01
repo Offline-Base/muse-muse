@@ -10,7 +10,7 @@ import { DATASET_MAX_COUNT, DATASET_MIN_COUNT } from "@/lib/train/logic";
 import { recordUsage } from "@/lib/usage";
 
 /** Plans one caller may draft an hour: each is one Muse Wonder call, about $0.01 to $0.03 (an estimate). */
-export const PLANS_PER_HOUR = 20;
+const PLANS_PER_HOUR = 20;
 const HOUR_MS = 60 * 60_000;
 
 /**
