@@ -1029,6 +1029,15 @@ because the sidebar showed a real account.
   ![Gadgets, phone](log/shots/2026-10-31/tabs-gadgets-390-light.png)
   ![Models, desktop](log/shots/2026-10-31/tabs-models-1440-light.png)
 
+### 20:33 r30b's 1-bit file is ready; the owner wants the dataset and models open-sourced
+
+- From the fine-tune session: r30b IQ1_S on writer-1 (glimmer-stage-b-r30b-IQ1_S.gguf, 6,526,418,912 bytes, sha256
+  6fbd323c...a7e561), scored about 21:05. r30b Q4_K_M: 28.8% of the 2,500 2026 facts, old facts 40/40, 49 tok/s on an A100.
+  Offline mode uses the IQ1_S once it's scored (on the AWS Mac, never the owner's laptop).
+- The owner asked that session to open-source the dataset and models: Hugging Face under the OfflineBase account,
+  private first, public after the license and personal-data reviews; code later. It will tell General before anything
+  goes public, so /models can link to it then. Hub cards stay that session's, with the owner's OK for anything public.
+
 ## Gaps
 
 What this record doesn't confirm:
