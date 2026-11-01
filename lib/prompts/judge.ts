@@ -1,3 +1,4 @@
+import { askedLookOf } from "@/lib/brief/render";
 import type { Brief } from "@/lib/brief/schema";
 import { briefTargets, isOwnerToolsOnly } from "@/lib/native/targets";
 import { PERSONAL_TOOL_IDS } from "@/lib/tools/ids";
@@ -63,14 +64,24 @@ export const GLASSES_JUDGE_NOTE =
   "The glasses were simulated with sample photos and a sample spoken question, so a sample photo under 'What your glasses saw' is the product working.";
 
 /**
+ * The person asked for their own look (askedLook): following it instead of the house style is the product working. The
+ * rules about Meta's marks and a real product's exact look still hold.
+ */
+export function askedLookJudgeNote(asked: string): string {
+  return `The person asked for their own look: "${asked}". A product that follows that ask instead of the house style is expected, so don't fail it for its colors, fonts or theme. Still fail it for unreadable contrast, and for a real product's name, logo or exact look.`;
+}
+
+/**
  * The judge's instructions for this brief. A brief with no agent, VR or glasses target gets JUDGE_INSTRUCTIONS itself,
  * and each of those targets adds its note after it. With MUSE_APP_LOOK (docs/BRAND.md) new builds get the muse-app look,
  * while products built before it keep meta-ui, so the house style sentence names both. Off, that part is
  * JUDGE_INSTRUCTIONS exactly.
  */
-export function judgeInstructions(brief: Pick<Brief, "targets" | "agent">, opts: { museAppLook?: boolean } = {}): string {
+export function judgeInstructions(brief: Pick<Brief, "targets" | "agent" | "askedLook">, opts: { museAppLook?: boolean } = {}): string {
   const targets = briefTargets(brief);
+  const asked = askedLookOf(brief, opts);
   const notes = [
+    ...(asked ? [askedLookJudgeNote(asked)] : []),
     ...(targets.includes("agent") ? [agentJudgeRules(brief.agent)] : []),
     ...(targets.includes("vr") ? [VR_JUDGE_NOTE] : []),
     ...(targets.includes("glasses") ? [GLASSES_JUDGE_NOTE] : []),
