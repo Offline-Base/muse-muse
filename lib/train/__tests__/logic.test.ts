@@ -748,8 +748,15 @@ describe("live demo", () => {
 
   it("serves only a glimmer-lora adapter that succeeded, wasn't a dry run and is on the cache", () => {
     const lora = { id: ADAPTER, recipe: "glimmer-lora" as RecipeId, status: "succeeded" as TrainJobRow["status"], params: { datasetId: "d" } as Record<string, string | number> };
-    const cached = { cache_used: "yes", adapter_dir: `/lambda/nfs/muse-muse-cache-us-east-1/models/${ADAPTER}` };
+    const plain = { cache_used: "yes", adapter_dir: `/lambda/nfs/muse-muse-cache-us-east-1/models/${ADAPTER}` };
+    const cached = { ...plain, base_model: "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit" };
     assert.equal(adapterProblem(lora, cached), null);
+    assert.equal(adapterProblem({ ...lora, params: { datasetId: "d", baseModel: "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit" } }, plain), null, "the baseModel param counts too");
+    // A LoRA from before the switch has r30b's shapes, so it would load on the r30b GPU and answer as nobody's model.
+    assert.match(adapterProblem(lora, plain)!, /trained on plain Muse Glimmer/);
+    assert.match(adapterProblem(lora, plain, { decide: true })!, /trained on plain Muse Glimmer/);
+    assert.match(adapterProblem(lora, { ...plain, base_model: "unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit" })!, /trained on plain Muse Glimmer/);
+    assert.equal(adapterProblem(lora, plain, { uploadOnly: true }), null, "glimmer-publish loads no base, so an old adapter still uploads");
     assert.equal(adapterProblem(lora, { ...cached, adapter_dir: `${cached.adapter_dir}/` }), null);
     assert.match(adapterProblem(null, null)!, /doesn't exist/);
     assert.match(adapterProblem({ ...lora, recipe: "smoke" }, cached)!, /isn't a Muse Glimmer LoRA job/);

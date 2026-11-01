@@ -1047,7 +1047,9 @@ export type DoneMetrics = Record<string, string | number>;
  * Why a job's adapter can't be served, as the jobs route answers it (400 after the param's label), or null when it
  * can: a glimmer-lora job that succeeded, wasn't a dry run (whose adapter is a stand-in), and whose done metrics say it
  * saved the adapter on the cache filesystem (cache_used "yes" and adapter_dir ending in models/<its id>), so a serve
- * job in its region finds it at <cache>/models/<id>/.
+ * job in its region finds it at <cache>/models/<id>/. Its job must also have trained on r30b (isSparkOpenDerivative),
+ * since every serve and quantize job now loads r30b's weights, unless `opts.uploadOnly` says the caller only uploads it
+ * (glimmer-publish), so an adapter from before the switch can still be published as what it is.
  *
  * A decision model's adapter (decide mode) is refused unless `opts.decide` says the caller serves it as one: a
  * glimmer-serve job, whose demo server sees the adapter's decide.json and answers POST /decide instead of /generate
@@ -1057,7 +1059,7 @@ export type DoneMetrics = Record<string, string | number>;
 export function adapterProblem(
   job: Pick<TrainJobRow, "id" | "recipe" | "status" | "params"> | null,
   metrics: DoneMetrics | null,
-  opts: { decide?: boolean } = {},
+  opts: { decide?: boolean; uploadOnly?: boolean } = {},
 ): string | null {
   if (!job) return "that job doesn't exist.";
   if (job.recipe !== ADAPTER_RECIPE) return "that job isn't a Muse Glimmer LoRA job, so it has no adapter to serve.";
@@ -1074,6 +1076,12 @@ export function adapterProblem(
   const dir = typeof metrics?.adapter_dir === "string" ? metrics.adapter_dir.replace(/\/+$/, "") : "";
   if (metrics?.cache_used !== "yes" || !dir.endsWith(`/models/${job.id}`)) {
     return "that job's adapter isn't on a model cache filesystem, so a GPU can't load it.";
+  }
+  // Serve and quantize jobs load the recipe's MODEL, which is r30b since the switch (lib/train/base.ts). A LoRA trained on
+  // plain Glimmer has the same shapes, so it would load without error and answer as a model nobody evaluated. A
+  // glimmer-publish job (opts.uploadOnly) loads no base: it sends the files as they are, under the base their job recorded.
+  if (!opts.uploadOnly && !isSparkOpenDerivative({ params: job.params, metrics })) {
+    return "that adapter trained on plain Muse Glimmer, and the lab's GPUs now load the 2026 Glimmer (r30b), which it never trained on.";
   }
   return null;
 }

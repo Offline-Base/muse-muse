@@ -46,7 +46,7 @@ import {
   trainingSpendToday,
 } from "@/lib/train/store";
 import { callbackOrigin } from "@/lib/train/userdata";
-import type { Recipe } from "@/lib/train/types";
+import { PUBLISH_RECIPE, type Recipe } from "@/lib/train/types";
 import { trainJob } from "@/lib/train/workflow";
 import { gpuOptions, lambdaConfigured, limitCeilings, recipeView, sweepOffReason, sweepRunning } from "../shared";
 
@@ -107,7 +107,10 @@ async function adapterRegion(
   for (const field of recipe.params) {
     if (field.kind !== "adapter" || params[field.key] === undefined) continue;
     const source = await getAdapterSource(String(params[field.key]));
-    const problem = adapterProblem(source?.job ?? null, source?.metrics ?? null, { decide: isServeRecipe(recipe.id) });
+    const problem = adapterProblem(source?.job ?? null, source?.metrics ?? null, {
+      decide: isServeRecipe(recipe.id),
+      uploadOnly: recipe.id === PUBLISH_RECIPE,
+    });
     if (problem || !source) return { ok: false, error: `${field.label}: ${problem ?? "that job doesn't exist."}` };
     return { ok: true, region: source.job.region, adapterJobId: source.job.id };
   }

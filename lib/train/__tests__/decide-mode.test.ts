@@ -192,7 +192,7 @@ describe("decide callbacks and adapters", () => {
 
   it("serves decision adapters only as decision models, and keeps them out of publishing and local files", () => {
     const id = "aaaaaaaa-0000-4000-8000-000000000000";
-    const metrics = { cache_used: "yes", adapter_dir: `/lambda/nfs/muse-muse-cache-us-east-1/models/${id}` };
+    const metrics = { cache_used: "yes", adapter_dir: `/lambda/nfs/muse-muse-cache-us-east-1/models/${id}`, base_model: "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit" };
     const chat = { id, recipe: "glimmer-lora" as const, status: "succeeded" as const, params: { datasetId: DS } };
     assert.equal(adapterProblem(chat, metrics), null);
     assert.equal(adapterProblem(chat, metrics, { decide: true }), null, "a chat adapter serves as before");

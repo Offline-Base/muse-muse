@@ -1588,7 +1588,8 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
       params: { datasetId: DATASET_ID, maxSteps: 120 },
       ...over,
     });
-    const cached = { cache_used: "yes", adapter_dir: `/lambda/nfs/muse-muse-cache-us-west-1/models/${ADAPTER}` };
+    const plainCached = { cache_used: "yes", adapter_dir: `/lambda/nfs/muse-muse-cache-us-west-1/models/${ADAPTER}` };
+    const cached = { ...plainCached, base_model: "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit" };
     const ask = (params: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) =>
       createJobRoute(createReq({ recipe: "glimmer-serve", params: { adapterJobId: ADAPTER, ...params }, ...extra }));
     let serveRecipe: { id: string } | undefined;
@@ -1612,6 +1613,8 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
         [adapterJob({ params: { datasetId: DATASET_ID, dryRun: 1 } }), cached, /dry run/],
         [adapterJob(), { cache_used: "no", adapter_dir: `/opt/muse/models/${ADAPTER}` }, /isn't on a model cache filesystem/],
         [adapterJob(), null, /isn't on a model cache filesystem/],
+        // Trained on plain Glimmer before the switch: the demo GPU loads r30b, which it never trained on.
+        [adapterJob(), plainCached, /trained on plain Muse Glimmer/],
       ];
       for (const [job, metrics, reason] of reasons) {
         adapterSources = job ? { [ADAPTER]: { job, metrics } } : {};
@@ -1622,6 +1625,13 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
       assert.equal((await ask({ adapterJobId: "not-a-job" })).status, 400);
       assert.equal((await createJobRoute(createReq({ recipe: "glimmer-serve", params: {} }))).status, 400, "the adapter is required");
       assert.equal(created() + called("listInstanceTypes").length, 0);
+    });
+
+    it("still takes a plain-Glimmer adapter for glimmer-publish, which loads no base", async () => {
+      adapterSources = { [ADAPTER]: { job: adapterJob(), metrics: plainCached } };
+      const res = await createJobRoute(createReq({ recipe: "glimmer-publish", params: { adapterJobId: ADAPTER } }));
+      const body = (await res.json()) as { error?: string };
+      assert.doesNotMatch(String(body.error ?? ""), /plain Muse Glimmer/);
     });
 
     it("launches only in the adapter's region, with limits sized for its minutes", async (t) => {
