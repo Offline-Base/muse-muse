@@ -418,6 +418,46 @@ r30b merged on tuned-model-options locally. The push waits for the owner, and tg
 are in wave3.md: isSparkOpenDerivative and recordedBase are the single rule, adapterProblem's refusal, evalVerdict's second
 argument. The drive export's lab path still needs wiring to isSparkOpenDerivative, which I'll do after the sync.
 
+### 01:15 (about) Wave 3 pushed to GitHub as backup refs
+The owner: "push all latest." Main and tuned-model-options were already at e7b8d8e on GitHub. All 15 tg-cap-* branches and
+tg-review-drive went up as refs/backup/<branch>, which Vercel never builds. tg-cap-int is 48b2cfe. The key scan stopped 4
+branches, on two made-up keys in test files (ghp_madeUp...). Those were the only hits, so they went up too. Main wasn't
+touched: wave 3 can't go there until 0021 to 0028 are all in and the owner says so.
+
+### 02:15 (about) Muse Code in products built, reviewed and fixed
+tg-cap-musecode (wf_95dcd8c6-d6f):
+- Built at 9b0ddf7: a code part, MUSE_CODE_ENABLED, not a wave 2 target. Routes, one-session token, sandbox with only
+  POST /v1/responses reachable, result zip, secret scan, sweep, template kit, 0028_code_sessions.
+- The review found 22 issues: 1 blocker, 3 high, 8 medium, 10 low.
+  - Blocker: a build could pass verify at most twice with real sessions, since each verify needed a new one.
+  - High: the $1 wasn't a ceiling (the first call kept max_output_tokens 128000, about $2.68 possible).
+  - High: the token's request body was unrestricted, so web search and remote URLs got around the firewall.
+  - High: nothing linked an owner to the owner pass.
+- Fixed at e29cebf, none rejected: .test.ts 4866, 4858 pass, 0 fail, 8 skipped. .test.tsx 749/749. Template 565, 563 pass,
+  2 skipped. tsc clean. 44 new tests failed against the old code.
+- $0 spent. No real session has run. Unproven: the gateway hop through the firewall, Wonder, the context-limit key, and
+  Vercel's sandbox calls. CAP_READY.code stays false.
+- It adds a */2 cron (/api/cron/musecode-sweep), which answers skipped with the part off. Accepted at integration.
+
+Owner decisions: MUSE_CODE_VISITORS and Meta's terms; a third try if both of a build's real tasks fail; rewording the
+disclosure ("deleted after 15 minutes", though the zip and steps last 24 hours).
+
+Merging it and tuned-model-options e7b8d8e (r30b) on tg-cap-sync2 had 9 conflicts. The hard one is lib/drive/image.ts, which
+wave 3 split while General added r30b's handling to the old file. One agent is finishing that merge and wiring the lab
+export path to isSparkOpenDerivative.
+
+### 03:00 (about) Muse Code, r30b and the lab export path merged (tg-cap-sync2 d44d1db)
+tg-cap-sync2 carries:
+- tuned-model-options e7b8d8e (r30b): General's drive changes are ported into wave 3's layout.ts and plan.ts.
+- tg-cap-musecode e29cebf: 0028's snapshot is rebuilt on the branch's 0024.
+- A lab model whose job isSparkOpenDerivative now carries the duties on a drive, with the license texts inline from
+  lib/train/licenses and no percentages stated for the adapter. Old lab models and board Qwen plans hash the same as before.
+- tg-cap-int cc65dc1 (live).
+
+Checks: .test.ts 5118, 5110 pass, 0 fail, 8 skipped. .test.tsx 748/748. Template 640 pass, 0 fail. tsc clean. muse-device
+141 tests OK (before the live merge). tg-cap-int fast-forwards to it once integrate:live ends. No real drive or board
+export ran. Still missing on tg-cap-int: 0023 jobs, 0025 gpu, 0026 hardware, 0027 General's.
+
 ### 00:25 (about) Muse Code build resumed
 General's tg-plan-art finished, so General is down to 1 heavy workflow (tg-r30b). tg-cap-musecode resumed (wf_95dcd8c6-d6f),
 with the secret scan in its spec. Wave 3 is at 3 heavy, 4 across both sessions.
@@ -432,3 +472,23 @@ with the secret scan in its spec. Wave 3 is at 3 heavy, 4 across both sessions.
 | Meta, engine smoke tests that went straight to Meta on Wonder (estimate) | $1.10 to $2.30 |
 | Runtime unit (all lanes) | $0.01 |
 | Trust unit (all lanes) | under $0.01 |
+
+## tg-cap-live: review fixes on e568862 (Nov 1)
+
+Fixed, each with a test that fails without it: microphone left on after Stop or leaving during start; caption chunks using up a person's other Meta calls (own key `live-ip:`); checkLiveUpdate depending on leftover rows (new `event: caught-up`, per-run mark); stream slots per ticket (2) and address (10); the audio retention claim; caption minutes counting overlap; the address limit's wording; useLive's second EventSource; the route's byte limit. Not done: fixtures/talk.wav still made with macOS `say` (the classifier denied running espeak-ng from npm here). Spend: $0. Flags stay off; no real test build yet.
+
+## tg-cap-int: jobs merged (Nov 1)
+
+tg-cap-jobs c0448ab merged as 37cf966 from 0aa86cb, then 34d6608. 0023 landed after 0024, 0025, 0026 and 0028, so their snapshots were re-chained on it; PENDING_WAVE3 is 27 only. The page's jobs panel is now gated at the page. Spend: $0. Flags stay off, CAP_READY.jobs false, no real test build yet.
+
+## tg-cap-int: all units merged, final checks (Nov 1, 02:30)
+
+All 15 unit branches are on tg-cap-int at 34d6608, and it still contains d44d1db, so the fast-forward race did no harm. Checks: .test.ts 5509, 5501 pass, 0 fail, 8 skipped (live Meta tests). .test.tsx 792/792. Template 700, 698 pass, 0 fail, 2 skipped. muse-device 147, 144 pass, 0 fail, 3 skipped. tsc clean. Status page: wave3-status.md. Spend in this check: $0. Every CAP_READY stays false; no unit has passed its real test build.
+
+## tg-cap-int: GPU seam removed (Nov 1, 02:40)
+
+1c36c46: lib/caps/gpu/general.ts now re-exports the r30b rule from lib/train/base.ts and passes sparkOpen to evalVerdict, so a verdict on a Derivative names r30b as its base. words.ts stays import-free for /models, and a new test checks it matches base.ts. GPU and slot tests 121/121, tsc clean. Spend: $0.
+
+## tg-cap-drivetools started (Nov 1, 02:45)
+
+The product tools drive_status and export_to_drive were waiting on units 11 and 13, which have merged. One agent is building them in ~/mm-wt/cap-drivetools, owner only, with a card to confirm each export, off behind DRIVE_EXPORT_PRODUCTS.
