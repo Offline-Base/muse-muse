@@ -6,7 +6,15 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
-import { CLI_SOURCE, PROVE_CHECK_PLUGIN_SOURCE, PROVE_RUNNER_SOURCE, PROVE_SCENE_SOURCE } from "@/lib/outputs/assets-source";
+import {
+  CLI_SOURCE,
+  GADGET_INSTALL_SOURCE,
+  GADGET_RUNNER_SOURCE,
+  GADGET_UNINSTALL_SOURCE,
+  PROVE_CHECK_PLUGIN_SOURCE,
+  PROVE_RUNNER_SOURCE,
+  PROVE_SCENE_SOURCE,
+} from "@/lib/outputs/assets-source";
 
 const read = (file: string) => readFileSync(path.join(process.cwd(), "lib/outputs/assets", file), "utf8");
 
@@ -16,5 +24,8 @@ describe("the generated asset strings", () => {
     assert.equal(PROVE_RUNNER_SOURCE, read("prove-runner.mjs"));
     assert.equal(PROVE_CHECK_PLUGIN_SOURCE, read("prove-check-plugin.mjs"));
     assert.equal(PROVE_SCENE_SOURCE, read("prove-scene.html"));
+    assert.equal(GADGET_RUNNER_SOURCE, read("gadget-runner.cjs"));
+    assert.equal(GADGET_INSTALL_SOURCE, read("gadget-install.sh"));
+    assert.equal(GADGET_UNINSTALL_SOURCE, read("gadget-uninstall.sh"));
   });
 });

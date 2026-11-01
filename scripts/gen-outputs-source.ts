@@ -18,6 +18,9 @@ const ASSETS: ReadonlyArray<{ name: string; file: string; about: string }> = [
   { name: "PROVE_RUNNER_SOURCE", file: "prove-runner.mjs", about: "What runs each output against the live product, in the Prove it stage's sandbox." },
   { name: "PROVE_CHECK_PLUGIN_SOURCE", file: "prove-check-plugin.mjs", about: "The machine check of the Claude plugin's zip." },
   { name: "PROVE_SCENE_SOURCE", file: "prove-scene.html", about: "The terminal scene Demo Studio records." },
+  { name: "GADGET_RUNNER_SOURCE", file: "gadget-runner.cjs", about: "The Muse gadget pack's runner, before a product's address and actions are written into it (gadget.ts)." },
+  { name: "GADGET_INSTALL_SOURCE", file: "gadget-install.sh", about: "The Muse gadget pack's install.sh, before its names are written into it." },
+  { name: "GADGET_UNINSTALL_SOURCE", file: "gadget-uninstall.sh", about: "The Muse gadget pack's uninstall.sh, before its names are written into it." },
 ];
 
 const module = [
