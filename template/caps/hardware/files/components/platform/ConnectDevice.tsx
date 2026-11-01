@@ -22,6 +22,7 @@ export function ConnectDevice(props: ConnectOptions & { label?: string; onConnec
   const [link, setLink] = useState<DeviceLink | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [framed, setFramed] = useState(false);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- the server can't know the browser, so this is read after the first paint.
@@ -31,12 +32,14 @@ export function ConnectDevice(props: ConnectOptions & { label?: string; onConnec
   async function start() {
     setBusy(true);
     setMessage(null);
+    setFramed(false);
     try {
       const next = await connect(props);
       setLink(next);
       props.onConnect(next);
     } catch (err) {
       setMessage(err instanceof HardwareError ? err.message : "The device didn't connect. Try again.");
+      setFramed(err instanceof HardwareError && err.code === "framed");
     } finally {
       setBusy(false);
     }
@@ -61,6 +64,11 @@ export function ConnectDevice(props: ConnectOptions & { label?: string; onConnec
         </button>
       )}
       {message ? <p role="alert">{message}</p> : null}
+      {framed ? (
+        <a href={window.location.href} target="_blank" rel="noreferrer">
+          Open in its own tab
+        </a>
+      ) : null}
     </div>
   );
 }

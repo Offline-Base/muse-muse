@@ -81,7 +81,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const exposedActions = connectorActions(manifest);
   const refineHref = latestBuild ? `/b/${latestBuild.id}?refine=1#refine` : null;
   const now = Date.now();
-  const frameBrief = enabledFrameBrief(brief, env.enabledTargets);
+  const frameBrief = enabledFrameBrief(brief, env.enabledTargets, env.servedCaps);
   const native = shipped
     ? await getItSlots({ productId: product.id, slug: product.slug, name: product.name, liveUrl: product.liveUrl, origin: panelLinkOrigin(origin), brief, frameBrief, isOwner, buildId: latestBuild?.id ?? null })
     : { slots: {}, clips: [], initial: undefined };

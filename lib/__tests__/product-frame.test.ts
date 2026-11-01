@@ -42,3 +42,24 @@ test("a target whose flag is off gives the frame nothing", () => {
   assert.equal(liveFrameSandbox(both), `${LIVE_FRAME_SANDBOX} allow-pointer-lock`);
   assert.equal(liveFrameAllow(enabledFrameBrief(null, ["vr"])), "clipboard-write; fullscreen");
 });
+
+test("a product with browser links gets them in its frame, only while the hardware cap is served", () => {
+  const stored = { targets: [{ id: "web", why: "Always." }], hardware: { links: ["serial", "usb", "bluetooth"], boardTools: false, why: "A thermometer." } };
+  const today = "clipboard-write; fullscreen";
+  assert.equal(liveFrameAllow(enabledFrameBrief(stored, [])), today);
+  assert.equal(liveFrameAllow(enabledFrameBrief(stored, [], [])), today);
+  assert.equal(liveFrameAllow(enabledFrameBrief(stored, [], ["data"])), today);
+  assert.deepEqual(enabledFrameBrief(stored, [], []), { targets: [{ id: "web" }].filter(() => false) }, "the same shape as before, with nothing added");
+  assert.equal(liveFrameAllow(enabledFrameBrief(stored, [], ["hardware"])), `${today}; serial; usb; bluetooth`);
+  assert.equal(liveFrameAllow(enabledFrameBrief({ hardware: { links: ["usb"], boardTools: false, why: "w" } }, [], ["hardware"])), `${today}; usb`);
+  assert.equal(liveFrameSandbox(enabledFrameBrief(stored, [], ["hardware"])), LIVE_FRAME_SANDBOX);
+});
+
+test("a stored brief's hardware block gives a frame nothing by itself, and only known links go in the header", () => {
+  const today = "clipboard-write; fullscreen";
+  assert.equal(liveFrameAllow({ hardware: { links: ["serial"] } }), today);
+  assert.equal(liveFrameAllow(enabledFrameBrief({ hardware: { links: ["camera; microphone", "serial"] } }, [], ["hardware"])), `${today}; serial`);
+  for (const hardware of [null, undefined, {}, { links: "serial" }, { links: [] }, { links: [5] }]) {
+    assert.equal(liveFrameAllow(enabledFrameBrief({ hardware }, [], ["hardware"])), today, JSON.stringify(hardware));
+  }
+});

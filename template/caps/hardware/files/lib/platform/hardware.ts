@@ -5,10 +5,13 @@
 // on a computer or Android, not in Safari or on iPhone, so check linkSupported first or use ConnectDevice, which does.
 
 export type LinkKind = "serial" | "usb" | "bluetooth";
-export type HardwareErrorCode = "unsupported" | "cancelled" | "failed";
+export type HardwareErrorCode = "unsupported" | "cancelled" | "failed" | "framed";
 
 /** What a person sees where the browser can't do it. */
 export const UNSUPPORTED_MESSAGE = "This browser can't connect to devices. Use Chrome or Edge on a computer or Android. Safari and iPhone can't do this.";
+
+/** What a person sees where the page around this one doesn't let it use devices. ConnectDevice adds the link. */
+export const FRAMED_MESSAGE = "Your browser won't connect a device from inside another page. Open this product in its own tab, then click the button there.";
 
 export class HardwareError extends Error {
   constructor(
@@ -90,11 +93,22 @@ function needs<T>(kind: LinkKind): T {
   return api;
 }
 
+/** True inside another page's frame, where the outer page decides whether devices are allowed. */
+function inFrame(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.self !== window.top;
+  } catch {
+    return true;
+  }
+}
+
 /** A person closing the picker isn't a failure, and a browser's own words aren't for people. */
 function plainError(err: unknown, what: string): HardwareError {
   if (err instanceof HardwareError) return err;
   const name = (err as { name?: string } | null)?.name;
   if (name === "NotFoundError") return new HardwareError("cancelled", "No device was picked.");
+  if (name === "SecurityError" && inFrame()) return new HardwareError("framed", FRAMED_MESSAGE);
   if (name === "SecurityError" || name === "NotAllowedError") return new HardwareError("failed", `The browser didn't allow the ${what}. Click the button again, on a page opened over https.`);
   if (name === "InvalidStateError" || name === "NetworkError") return new HardwareError("failed", `The ${what} is busy or was unplugged. Close anything else using it, then try again.`);
   return new HardwareError("failed", `The ${what} didn't connect. Check that it's plugged in or nearby, then try again.`);
