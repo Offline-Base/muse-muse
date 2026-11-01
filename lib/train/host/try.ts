@@ -6,6 +6,8 @@
  * - One wake per visitor per UTC day, two per model, TRY_TUNED_WAKES_PER_DAY in all.
  * - A wake's whole possible cost is taken from TRY_TUNED_DAILY_USD before anything starts, in one atomic statement, and
  *   comes back only when nothing started. Stopping early gives nothing back. So that budget can't be passed under a race.
+ * - Its stop time is set SWEEP_LAG_MINUTES early, since the sweep that stops it runs every 5 minutes.
+ * - No provider's words reach a visitor: they can hold dollar amounts, setting names and advice meant for an admin.
  * - Never Lambda, whose whole-instance jobs share the lab's one slot and need an account.
  * - The owner token is thrown away, so a visitor can only use this box.
  *
@@ -17,7 +19,7 @@ import { chatOnEndpoint, deployEndpoint, providerRefusal } from "@/lib/train/hos
 // start of the day would reset within the hour.
 import { dayWindow } from "@/lib/docs/proxy/limits";
 import { TRY_MESSAGES_MAX, TRY_PROMPT_CHARS, type TryState, type TryView } from "@/lib/train/host/try-view";
-import { HostError, type HostFacts, type HostProvider } from "@/lib/train/host/types";
+import { HOST_OPEN, HostError, type HostEndpoint, type HostFacts, type HostProvider } from "@/lib/train/host/types";
 
 export { TRY_MESSAGES_MAX, TRY_PROMPT_CHARS };
 
@@ -31,7 +33,20 @@ export const TRY_WAKES_PER_MODEL = 2;
 export const TRY_PROVIDERS: readonly HostProvider[] = ["modal", "baseten", "fireworks"];
 
 /** Refusals that mean nothing started, so what the wake took from the day's budget comes back. */
-const NOTHING_STARTED = new Set(["cant_host", "provider_unavailable", "hosting_paused", "deploy_busy", "already_hosted", "too_many_live", "budget_exceeded"]);
+const NOTHING_STARTED = new Set(["cant_host", "cant_serve", "provider_unavailable", "hosting_paused", "deploy_busy", "already_hosted", "too_many_live", "budget_exceeded"]);
+
+/** The cron that stops an endpoint at its stop time runs this often, so a wake can bill this long past it. */
+export const SWEEP_LAG_MINUTES = 5;
+
+const BUSY_WORDS = "All the GPUs Muse Muse pays for are in use right now. Look again soon.";
+const SPENT_WORDS = "Today's free wake-ups are used up. Try again after midnight UTC.";
+const VISITOR_WORDS: Record<string, string> = {
+  deploy_busy: "Another model is starting right now. Try again in a minute.",
+  too_many_live: BUSY_WORDS,
+  budget_exceeded: SPENT_WORDS,
+  hosting_paused: SPENT_WORDS,
+  already_hosted: "It's already starting or shutting down. Look again in a few minutes.",
+};
 
 const TEN_MINUTES = 600_000;
 const tenMinuteWindow = (now: Date) => new Date(Math.floor(now.getTime() / TEN_MINUTES) * TEN_MINUTES);
@@ -71,17 +86,20 @@ function wakeCost(hourlyUsd: number, limits: TryLimits): number {
 }
 
 export async function tryView(facts: HostFacts, deps: TryDeps, now: Date = new Date()): Promise<TryView> {
-  const open = (await deps.rows(now)).find((e) => e.adapterJobId === facts.adapterJobId && (e.status === "starting" || e.status === "live" || e.status === "stopping"));
+  const rows = await deps.rows(now);
+  const open = rows.find((e) => e.adapterJobId === facts.adapterJobId && (e.status === "starting" || e.status === "live" || e.status === "stopping"));
   const duties = { line: facts.duties.line, license: facts.duties.license, points: [...facts.duties.points] };
   if (open) {
     const label = deps.adapter(open.provider).label;
     const state: TryState = open.status === "live" ? "live" : open.status === "starting" ? "waking" : "stopping";
     return { state, provider: label, cantWake: null, duties };
   }
-  return { state: "asleep", provider: null, cantWake: await whyCantWake(facts, deps, now), duties };
+  return { state: "asleep", provider: null, cantWake: await whyCantWake(facts, rows, deps, now), duties };
 }
 
-async function whyCantWake(facts: HostFacts, deps: TryDeps, now: Date): Promise<string | null> {
+const openCount = (rows: readonly HostEndpoint[]) => rows.filter((e) => HOST_OPEN.includes(e.status)).length;
+
+async function whyCantWake(facts: HostFacts, rows: readonly HostEndpoint[], deps: TryDeps, now: Date): Promise<string | null> {
   if (facts.problem) return facts.problem;
   const offer = cheapest(facts, deps);
   if (!offer) return "No hosting provider can run this model right now.";
@@ -89,9 +107,9 @@ async function whyCantWake(facts: HostFacts, deps: TryDeps, now: Date): Promise<
   const day = dayWindow(now);
   const [cents, wakes] = await Promise.all([deps.counterValue(BUDGET_KEY, day), deps.counterValue(WAKES_KEY, day)]);
   if (wakes >= limits.wakesPerDay || cents + wakeCost(offer.price.hourlyUsd, limits) > toCents(limits.dailyUsd)) {
-    return "Today's free wake-ups are used up. Try again after midnight UTC.";
+    return SPENT_WORDS;
   }
-  return null;
+  return openCount(rows) >= deps.limits().maxLive ? BUSY_WORDS : null;
 }
 
 /**
@@ -108,15 +126,21 @@ export async function wakeForVisitor(input: { facts: HostFacts; visitor: string 
   const offer = cheapest(facts, deps);
   if (!offer) throw new HostError(409, "provider_unavailable", "No hosting provider can run this model right now.");
 
+  // Read before anything is counted, so a wake that can't start spends nobody's allowance.
+  const rows = await deps.rows(now);
+  if (rows.some((e) => e.adapterJobId === facts.adapterJobId && HOST_OPEN.includes(e.status))) throw new HostError(409, "already_hosted", VISITOR_WORDS.already_hosted!);
+  if (openCount(rows) >= deps.limits().maxLive) throw new HostError(429, "too_many_live", BUSY_WORDS);
+
   const day = dayWindow(now);
-  // Counted before anything else, so pressing again and again spends a visitor's own allowance only.
+  // The visitor is counted first, and alone: someone already refused must not use up the model's wakes for everyone else.
   const visitorKey = `try:wake:ip:${visitor}`;
   const modelKey = `try:wake:model:${facts.adapterJobId}`;
-  const seen = await deps.hitRateLimits([visitorKey, modelKey], day);
+  const seen = await deps.hitRateLimits([visitorKey], day);
   if ((seen[visitorKey] ?? 0) > TRY_WAKES_PER_VISITOR) throw new HostError(429, "try_wake_limit", "You've used your wake-up for today. Try again after midnight UTC.");
-  if ((seen[modelKey] ?? 0) > TRY_WAKES_PER_MODEL) throw new HostError(429, "try_wake_limit", "This model has used its wake-ups for today. Try again after midnight UTC.");
+  const seenModel = await deps.hitRateLimits([modelKey], day);
+  if ((seenModel[modelKey] ?? 0) > TRY_WAKES_PER_MODEL) throw new HostError(429, "try_wake_limit", "This model has used its wake-ups for today. Try again after midnight UTC.");
 
-  const spentOut = () => new HostError(429, "try_budget", "Today's free wake-ups are used up. Try again after midnight UTC.");
+  const spentOut = () => new HostError(429, "try_budget", SPENT_WORDS);
   const cents = wakeCost(offer.price.hourlyUsd, limits);
   if ((await deps.reserveCounter(WAKES_KEY, day, 1, limits.wakesPerDay)) === null) throw spentOut();
   if ((await deps.reserveCounter(BUDGET_KEY, day, cents, toCents(limits.dailyUsd))) === null) {
@@ -124,7 +148,7 @@ export async function wakeForVisitor(input: { facts: HostFacts; visitor: string 
     throw spentOut();
   }
   try {
-    const held = { ...deps, limits: () => ({ ...deps.limits(), maxMinutes: Math.min(deps.limits().maxMinutes, limits.minutes) }) };
+    const held = { ...deps, limits: () => ({ ...deps.limits(), maxMinutes: Math.min(deps.limits().maxMinutes, limits.minutes - SWEEP_LAG_MINUTES) }) };
     // The owner token it returns is dropped here on purpose.
     await deployEndpoint({ provider: offer.adapter.id, facts, callerId: null }, held, now);
   } catch (err) {
@@ -132,6 +156,7 @@ export async function wakeForVisitor(input: { facts: HostFacts; visitor: string 
       await deps.adjustCounter(BUDGET_KEY, day, -cents);
       await deps.adjustCounter(WAKES_KEY, day, -1);
     }
+    if (err instanceof HostError) throw new HostError(err.status, err.code, VISITOR_WORDS[err.code] ?? "It couldn't be woken right now. Try again later.", err.retryAfterSeconds);
     throw err;
   }
 }
@@ -171,9 +196,10 @@ export async function askAsVisitor(ask: TryAsk, deps: TryDeps, now: Date = new D
   const model = `try:ask:model:${ask.facts.adapterJobId}`;
   const shortCount = await deps.hitRateLimits([short], tenMinuteWindow(now));
   if ((shortCount[short] ?? 0) > TRY_ANSWERS_PER_TEN_MINUTES) throw new HostError(429, "rate_limited", "That's the limit for now: 5 questions in 10 minutes. Try again soon.", 600);
-  const dayCount = await deps.hitRateLimits([long, model], dayWindow(now));
+  const dayCount = await deps.hitRateLimits([long], dayWindow(now));
   if ((dayCount[long] ?? 0) > TRY_ANSWERS_PER_DAY) throw new HostError(429, "rate_limited", "That's the limit for today: 20 questions. Try again after midnight UTC.");
-  if ((dayCount[model] ?? 0) > TRY_MODEL_ANSWERS_PER_DAY) throw new HostError(429, "rate_limited", "This model has answered all it can for today. Try again after midnight UTC.");
+  const modelCount = await deps.hitRateLimits([model], dayWindow(now));
+  if ((modelCount[model] ?? 0) > TRY_MODEL_ANSWERS_PER_DAY) throw new HostError(429, "rate_limited", "This model has answered all it can for today. Try again after midnight UTC.");
 
   const messages = [...(ask.system ? [{ role: "system" as const, content: ask.system }] : []), ...ask.messages];
   const reply = await chatOnEndpoint(endpoint, { messages, stop: [], signal: ask.signal, variant: ask.variant, baseRepo: ask.facts.servingBase?.repo ?? null }, deps, now);

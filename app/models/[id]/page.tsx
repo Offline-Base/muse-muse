@@ -14,7 +14,7 @@ import { RunIt } from "@/components/models/RunIt";
 import { TryTuned } from "@/components/models/TryTuned";
 import { linkedLocalFiles } from "@/components/vibe/RunLocallyLink";
 import { env } from "@/lib/env";
-import { licenseDuties, baseName } from "@/lib/train/base";
+import { baseLabel, licenseDuties } from "@/lib/train/base";
 import { tryDeps } from "@/lib/train/host/deps";
 import { hostFacts } from "@/lib/train/host/facts";
 import { loadHostView } from "@/lib/train/host/page";
@@ -175,7 +175,7 @@ export default async function ModelVersionsPage({ params }: { params: Promise<{ 
         </div>
       </section>
 
-      {trying?.ok ? <TryTuned modelId={current.id} initial={trying.data} baseLabel={`The model it started from (${baseName(current.sparkOpen)})`} /> : null}
+      {trying?.ok ? <TryTuned modelId={current.id} initial={trying.data} baseLabel={`The model it started from (${facts?.servingBase && !facts.sparkOpen ? facts.servingBase.repo.split("/").pop() : baseLabel(Boolean(facts?.sparkOpen))})`} /> : null}
       {env.exportTuned && source?.ok && source.data ? <ExportTuned modelId={current.id} files={exportFiles} notice={licenseDuties({ params: source.data.job.params, metrics: source.data.metrics })} /> : null}
 
       {hosting?.ok && hosting.data ? <RunIt modelId={current.id} initial={hosting.data} /> : null}

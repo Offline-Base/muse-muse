@@ -11,11 +11,12 @@ import { TUNED_TEMPLATE } from "@/lib/train/tuned-template";
 import type { LocalFiles } from "@/lib/train/local-files";
 
 export type ExportKind = "mac" | "windows" | "linux" | "jetson_orin_nano";
-export const EXPORT_KINDS: ReadonlyArray<{ kind: ExportKind; label: string; os: InstallerOs }> = [
-  { kind: "mac", label: "Mac", os: "mac" },
-  { kind: "windows", label: "Windows", os: "windows" },
-  { kind: "linux", label: "Linux", os: "linux" },
-  { kind: "jetson_orin_nano", label: "Jetson Orin Nano", os: "jetson" },
+/** `proof` says how far each script has really run. Change it only after a real run on that device. */
+export const EXPORT_KINDS: ReadonlyArray<{ kind: ExportKind; label: string; os: InstallerOs; proof: string }> = [
+  { kind: "mac", label: "Mac", os: "mac", proof: "This script has run on a Mac with a tiny test model, not yet with a tuned one." },
+  { kind: "windows", label: "Windows", os: "windows", proof: "This script hasn't been run on a Windows PC yet, so it may fail." },
+  { kind: "linux", label: "Linux", os: "linux", proof: "This script has only been tested in a simulated setup, not yet on a real Linux PC." },
+  { kind: "jetson_orin_nano", label: "Jetson Orin Nano", os: "jetson", proof: "This script has only been tested on a simulated board, not yet on a real Jetson." },
 ];
 
 export interface ExportNotice {
@@ -34,6 +35,7 @@ export interface ExportPlan {
   file: { name: string; bytes: number; sha256: string; level: string };
   modelLabel: string;
   fit: string;
+  proof: string;
   provenOnDevice: false;
   systemLine: string;
   /** Glimmer's template for an adapter trained before trainChannel. Null otherwise. */
@@ -76,13 +78,15 @@ export function exportPlan(kind: ExportKind, files: LocalFiles | null, notice: E
   const small = target.quantBase !== null;
   const channel: 0 | 1 = files.needsTunedTemplate ? 0 : 1;
   const stops = ggufStops(channel, small ? { quantBase: target.quantBase! } : null);
-  const quoted = files.systemLine.includes('"""');
+  // A closing quote right before the Modelfile's own """ would break it as surely as one inside.
+  const quoted = files.systemLine.includes('"""') || files.systemLine.endsWith('"');
   const modelfile = quoted ? null : small ? smallModelfile(file.name, files.systemLine, stops) : ggufModelfile(file.name, files.systemLine, channel);
+  const entry = EXPORT_KINDS.find((e) => e.kind === kind)!;
   return {
     ok: true,
     plan: {
       kind,
-      os: EXPORT_KINDS.find((e) => e.kind === kind)!.os,
+      os: entry.os,
       title: files.title,
       slug,
       repo: files.repo,
@@ -90,6 +94,7 @@ export function exportPlan(kind: ExportKind, files: LocalFiles | null, notice: E
       file: { name: file.name, bytes: file.bytes, sha256: file.sha256, level: file.level },
       modelLabel: target.label,
       fit: target.fit,
+      proof: entry.proof,
       provenOnDevice: false,
       systemLine: files.systemLine,
       template: !small && files.needsTunedTemplate ? TUNED_TEMPLATE : null,
@@ -111,7 +116,10 @@ export function psQuote(s: string): string {
   return `'${s.replace(/['‘’‚‛]/g, (q) => q + q)}'`;
 }
 
-const noticeLines = (p: ExportPlan) => [`${p.title}: ${p.modelLabel}, ${p.file.level}.`, ...(p.notice.line ? [`${p.notice.line}.`] : []), p.notice.license, ...p.notice.points, `License and files: https://huggingface.co/${p.repo}/tree/${p.commit}`, p.fit];
+/** What a script prints. A title is a person's text: on one line, and with no terminal control codes. */
+const noticeLines = (p: ExportPlan) =>
+  // eslint-disable-next-line no-control-regex
+  [`${p.title}: ${p.modelLabel}, ${p.file.level}.`, ...(p.notice.line ? [`${p.notice.line}.`] : []), p.notice.license, ...p.notice.points, `License and files: https://huggingface.co/${p.repo}/tree/${p.commit}`, p.fit, p.proof].map((l) => l.replace(/[\u0000-\u001f\u007f-\u009f]+/g, " "));
 const fileUrl = (p: ExportPlan) => `https://huggingface.co/${p.repo}/resolve/${p.commit}/${p.file.name}`;
 /** The free space a download must leave: the model, and a gigabyte to work with. */
 const needBytes = (p: ExportPlan) => p.file.bytes + 1_000_000_000;
@@ -201,6 +209,7 @@ fetch() {
 [ "$(uname -s)" = ${expectOs} ] || stop_here "This installer is for ${p.os === "mac" ? "a Mac" : jetson ? "a Jetson" : "Linux"}. Get the one for this computer from the model's page."
 command -v curl >/dev/null 2>&1 || stop_here "This needs curl."
 command -v tar >/dev/null 2>&1 || stop_here "This needs tar."
+command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1 || stop_here "This needs sha256sum or shasum, to check what it downloads."
 ARCH=$(uname -m)
 ${jetson ? `[ -f "$TEGRA_FILE" ] || stop_here "This installer is for a Jetson, and this computer doesn't look like one."\n[ "$ARCH" = aarch64 ] || stop_here "A Jetson should report aarch64, and this reports $ARCH."\n` : ""}
 cat <<'MUSE_MUSE_NOTICE'

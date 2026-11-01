@@ -37,6 +37,29 @@ const plan = (kind: ExportKind, files: LocalFiles = llamaFiles()) => {
   return p.plan;
 };
 
+describe("what a script says about itself", () => {
+  it("every row and script says how far it has run, and none claims a real tuned run", () => {
+    for (const { kind, proof } of EXPORT_KINDS) {
+      assert.ok(proof);
+      const files = kind === "jetson_orin_nano" ? glimmerFiles() : llamaFiles();
+      assert.ok(installerFor(plan(kind, files)).body.includes(kind === "windows" ? psQuote(proof) : proof), kind);
+    }
+    assert.match(EXPORT_KINDS.find((e) => e.kind === "windows")!.proof, /hasn't been run/);
+  });
+
+  it("a title can't send terminal control codes", () => {
+    const body = installerFor(plan("mac", llamaFiles({ title: "Hi\u001b]0;owned\u0007\nthere" }))).body;
+    assert.ok(!body.includes("\u001b") && !body.includes("\u0007"));
+    assert.ok(body.includes("Hi ]0;owned there: "));
+  });
+
+  it("a system message ending in a quote gets no Modelfile, but still a script", () => {
+    const p = plan("mac", llamaFiles({ systemLine: 'You are "the helper"' }));
+    assert.equal(p.modelfile, null);
+    assert.ok(installerFor(p).body.includes("system.txt"));
+  });
+});
+
 describe("which file each device gets", () => {
   it("a Jetson gets one-bit Glimmer, and every other kind the small Llama", () => {
     assert.equal(plan("jetson_orin_nano", glimmerFiles()).file.level, "IQ1_S");
@@ -68,7 +91,7 @@ describe("the page's section", () => {
     assert.match(html, /format=modelfile/);
     assert.ok(!html.includes("kind=jetson_orin_nano"));
     assert.match(html, /Muse Glimmer, one bit: This version didn&#x27;t make/);
-    assert.match(html, /No tuned Llama file has been made or run/);
+    assert.match(html, /Not run on a real device yet/);
     assert.match(html, /Built with Llama/);
   });
 });

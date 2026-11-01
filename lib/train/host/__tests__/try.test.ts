@@ -5,7 +5,7 @@ import { dayWindow } from "@/lib/docs/proxy/limits";
 import { facts, JOB, row } from "@/lib/train/host/__tests__/helpers";
 import { askAsVisitor, tryMessagesProblem, tryView, wakeForVisitor, TRY_ANSWERS_PER_TEN_MINUTES, type TryDeps } from "@/lib/train/host/try";
 import { HostError, type HostAdapter, type HostEndpoint } from "@/lib/train/host/types";
-import { TryNote, tryLead } from "@/components/models/TryTuned";
+import { TryNote, recentTurns, tryLead } from "@/components/models/TryTuned";
 import { renderToStaticMarkup } from "react-dom/server";
 
 const NOW = new Date("2026-11-03T12:00:00Z");
@@ -108,7 +108,7 @@ beforeEach(() => {
 describe("waking a model as a visitor", () => {
   it("starts the cheapest allowed provider, with no account, for the try minutes", async () => {
     await wakeForVisitor({ facts: facts(), visitor: "1.1.1.1" }, deps(), NOW);
-    assert.deepEqual(deploys, [{ provider: "modal", callerId: null, minutes: 60 }]);
+    assert.deepEqual(deploys, [{ provider: "modal", callerId: null, minutes: 55 }]);
   });
 
   it("never picks Lambda, even when it is the only one left", async () => {
@@ -198,6 +198,36 @@ describe("waking a model as a visitor", () => {
     assert.equal(await d.counterValue("try:usd-cents", dayWindow(NOW)), 485);
   });
 
+  it("a visitor already refused doesn't use up the model's wakes", async () => {
+    await wakeForVisitor({ facts: facts(), visitor: "a" }, deps(), NOW);
+    rows = rows.map(asleep);
+    for (let i = 0; i < 5; i += 1) await assert.rejects(wakeForVisitor({ facts: facts(), visitor: "a" }, deps(), NOW), code("try_wake_limit"));
+    await wakeForVisitor({ facts: facts(), visitor: "b" }, deps(), NOW);
+    assert.equal(deploys.length, 2);
+  });
+
+  it("with every slot taken, or the model shutting down, nobody's allowance is spent", async () => {
+    const other = (n: number) => row({ id: `00000000-0000-4000-8000-00000000000${n}`, adapterJobId: `00000000-0000-4000-9000-00000000000${n}`, status: "live", slot: n });
+    rows = [other(1), other(2)];
+    await assert.rejects(wakeForVisitor({ facts: facts(), visitor: "a" }, deps(), NOW), code("too_many_live"));
+    assert.match((await tryView(facts(), deps(), NOW)).cantWake ?? "", /in use/);
+    rows = [row({ status: "stopping", adapterJobId: facts().adapterJobId })];
+    await assert.rejects(wakeForVisitor({ facts: facts(), visitor: "a" }, deps(), NOW), code("already_hosted"));
+    assert.equal(counters.size, 0);
+  });
+
+  it("no hosting words, dollars or setting names reach a visitor", async () => {
+    await assert.rejects(wakeForVisitor({ facts: facts(), visitor: "a" }, deps({ limits: () => ({ dailyUsd: 1, maxLive: 2, idleMinutes: 15, maxMinutes: 240 }) }), NOW), (e: unknown) => e instanceof HostError && e.code === "budget_exceeded" && !/\$|HOST_|Stop a/.test(e.message));
+    deployError = new HostError(502, "provider_refused", "Baseten refused the Hugging Face secret (403).");
+    await assert.rejects(wakeForVisitor({ facts: facts(), visitor: "b" }, deps(), NOW), (e: unknown) => e instanceof HostError && !/Baseten|secret/.test(e.message));
+  });
+
+  it("a provider that can't serve it gives the money back", async () => {
+    deployError = new HostError(409, "cant_serve", "no");
+    await assert.rejects(wakeForVisitor({ facts: facts(), visitor: "a" }, deps(), NOW), code("cant_serve"));
+    assert.equal(counters.get(`try:usd-cents|${dayWindow(NOW).toISOString()}`), 0);
+  });
+
   it("refuses a model that didn't pass, and any wake with the flag off", async () => {
     await assert.rejects(wakeForVisitor({ facts: facts({ problem: "no" }), visitor: "x" }, deps(), NOW), code("cant_host"));
     await assert.rejects(wakeForVisitor({ facts: facts(), visitor: "x" }, deps({ tryOn: () => false }), NOW), code("not_found"));
@@ -233,6 +263,21 @@ describe("asking as a visitor", () => {
     for (let i = 0; i < TRY_ANSWERS_PER_TEN_MINUTES; i += 1) await askAsVisitor(ask(), deps(), NOW);
     await assert.rejects(askAsVisitor(ask(), deps(), NOW), code("rate_limited"));
     await askAsVisitor(ask({ visitor: "9.9.9.9" }), deps(), NOW);
+  });
+
+  it("a visitor over the day's limit doesn't use up the model's answers", async () => {
+    rows = [row({ status: "live", adapterJobId: facts().adapterJobId, ref: {} })];
+    const day = dayWindow(NOW).toISOString();
+    counters.set(`try:ask-day:ip:1.2.3.4|${day}`, 40);
+    await assert.rejects(askAsVisitor(ask(), deps(), NOW), code("rate_limited"));
+    assert.equal(counters.get(`try:ask:model:${facts().adapterJobId}|${day}`), undefined);
+  });
+
+  it("a chat is never sent opening with an answer", () => {
+    const turns = Array.from({ length: 7 }, (_, i) => ({ role: i % 2 ? ("assistant" as const) : ("user" as const), content: "x" }));
+    const recent = recentTurns(turns);
+    assert.equal(recent[0]!.role, "user");
+    assert.ok(recent.length <= 6);
   });
 
   it("holds a visitor to the day across windows", async () => {

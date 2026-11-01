@@ -22,8 +22,15 @@ type Column = { turns: Turn[]; note: string | null };
 export function tryLead(view: TryView): string {
   if (view.state === "live") return "It's awake. Ask something, and both models answer. An answer can take up to a few minutes if its GPU has to wake again.";
   if (view.state === "waking") return "Waking up. Its GPU is starting and loading the model, which can take several minutes and sometimes up to 45. This box opens by itself, so you can leave this page open.";
-  if (view.state === "stopping") return "It's shutting down after sitting idle. Look again in a few minutes.";
+  if (view.state === "stopping") return "It's shutting down. Look again in a few minutes.";
   return view.cantWake ?? "This model is asleep, to save its GPU. Waking it takes several minutes, and sometimes up to 45. It goes back to sleep after 15 minutes with no questions.";
+}
+
+/** The latest turns that fit, starting on a question: a chat template may refuse a chat that opens with an answer. */
+export function recentTurns(turns: Turn[]): Turn[] {
+  const recent = turns.slice(-TRY_MESSAGES_MAX);
+  while (recent[0]?.role === "assistant") recent.shift();
+  return recent;
 }
 
 export function TryTuned({ modelId, initial, baseLabel }: { modelId: string; initial: TryView; baseLabel: string }) {
@@ -71,7 +78,7 @@ export function TryTuned({ modelId, initial, baseLabel }: { modelId: string; ini
   }
 
   async function askOne(variant: Variant, turns: Turn[]): Promise<Turn | null> {
-    const res = await fetch(route, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ variant, messages: turns.slice(-TRY_MESSAGES_MAX) }) }).catch(() => null);
+    const res = await fetch(route, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ variant, messages: recentTurns(turns) }) }).catch(() => null);
     const body = (await res?.json().catch(() => null)) as { text?: unknown; code?: unknown; error?: unknown } | null | undefined;
     if (res?.ok && typeof body?.text === "string") return { role: "assistant", content: body.text };
     const code = body?.code;

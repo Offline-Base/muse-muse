@@ -50,6 +50,7 @@ export async function GET(req: Request, { params }: Ctx) {
 }
 
 export async function POST(req: Request, { params }: Ctx) {
+  if (!env.tryTuned || !env.hostTuned) return notFound();
   if (isCrossSite(req.headers)) return Response.json({ code: "cross_site", error: "Ask from the model's page." }, { status: 403 });
   const { id } = await params;
   const source = await publicSource(id);

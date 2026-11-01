@@ -15,3 +15,11 @@ From `QUANT_TARGETS` (`docs/TRAINING.md`, "Device targets"). Until these are don
 
 Tuned Llama 3.2 3B Q4_K_M: 2.02 GB, about 2.8 GB resident, about 23 tokens a second on 6 x86 threads, and 162 on an A10. None of this was on a phone or a board. Measure it on the real device, then replace `fit` in `deviceModelTarget`.
 
+## The Jetson installer
+
+From `EXPORT_TUNED` (`docs/TRAINING.md`, "Export a tuned model"). Tested only on a simulated board, with a fake `uname`, board file, `cmake` and `llama-cli`.
+
+1. **Does the source build work?** Run the installer on a real board: `cmake` with `GGML_CUDA=ON` at b11669, on JetPack's own CUDA. Record how long it takes, and whether `-j 4` runs out of memory.
+2. **Which flags let it load?** The script uses `-c 4096 -ngl 99`, neither measured on a board. Change `LLAMA_RUN_CONTEXT` and the default layers in `lib/train/export` to what works.
+3. **Does `--cpu` run?** The arm64 prebuilt may need a newer glibc than the board has.
+4. **Does Ollama run an IQ1_S file?** Not tried anywhere.

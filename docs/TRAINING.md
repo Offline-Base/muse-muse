@@ -1135,7 +1135,7 @@ A plain Glimmer adapter shows Modal and Baseten as unavailable, because its job 
 
 A public chat on `/models/{id}`, for a model with a public page that passed judging. Code: `lib/train/host/try.ts`, `app/api/models/[id]/try`, `components/models/TryTuned.tsx`. The tuned model and the model it started from answer on the same GPU, one after the other. **No part of this has run against a real provider or GPU.** A paid test needs a real admin sign-in and provider keys held only in Vercel, so it is blocked here.
 
-**A visitor can wake a sleeping model, inside these limits.** This is the one exception to "never anyone without a session" above, and the owner chose to cover the cost.
+**A visitor can wake a sleeping model, inside these limits.** This is the one exception to "never anyone without a session" above. It is this build's reading of the owner's brief and still needs confirming: `TRY_TUNED_WAKES_PER_DAY=0` leaves answers on a model that's already awake and no guest wakes. A plain Glimmer adapter can't be woken this way at all, since only Lambda serves it.
 
 | Limit | Default | Held by |
 |---|---|---|
@@ -1143,7 +1143,7 @@ A public chat on `/models/{id}`, for a model with a public page that passed judg
 | Wakes per model per UTC day | 2 | counter |
 | Wakes per UTC day, every model | `TRY_TUNED_WAKES_PER_DAY`, 4 | atomic counter |
 | Dollars wakes may promise per UTC day | `TRY_TUNED_DAILY_USD`, $10, held to `HOST_TUNED_DAILY_USD` | atomic counter, taken before any provider call |
-| Longest run of a wake | `TRY_TUNED_MINUTES`, 60, held to `HOST_TUNED_MAX_MINUTES` | the endpoint's stop time |
+| Longest a wake may bill | `TRY_TUNED_MINUTES`, 60, held to `HOST_TUNED_MAX_MINUTES`. Under 35, no wake can start | the endpoint's stop time, 5 minutes sooner because the sweep runs every 5 minutes |
 | Answers per visitor | 10 in 10 minutes, 40 a day (a question to both models is 2) | counters |
 | Answers per model per day | 300 | counter |
 
@@ -1155,7 +1155,7 @@ A visitor sends only user and assistant turns. The system message is the server'
 
 `/models/{id}` offers one download per device kind, from `GET /api/models/{id}/export?kind=mac|windows|linux|jetson_orin_nano`. Code: `lib/train/export`. Which file a kind gets is `deviceModelTarget`'s, so a Jetson gets one-bit Glimmer, every other kind the small Llama, and a tune on one base offers only that base's devices. Only public files at a pinned commit qualify.
 
-The script checks the OS and free disk, downloads the GGUF by commit, checks its sha256, deletes anything that fails, gets llama.cpp at b11669 (the job's own tag, with GitHub's asset digests pinned in `lib/train/export/llama-pins.ts`) and starts a chat. It writes the system message to a file, so nothing reaches a shell. Options: `--ollama`, `--check-only`, `--prompt`, `--max-tokens`, `--gpu-layers`, and on a Jetson `--cpu`. Windows takes `-Ollama`, `-CheckOnly`, `-Prompt`, `-MaxTokens`, `-GpuLayers`. A Jetson builds from the pinned source with CUDA, since no prebuilt has it for that board.
+Each row and each script says how far that script has really run (`proof` in `EXPORT_KINDS`). The script checks the OS and free disk, downloads the GGUF by commit, checks its sha256, deletes anything that fails, gets llama.cpp at b11669 (the job's own tag, with GitHub's asset digests pinned in `lib/train/export/llama-pins.ts`) and starts a chat. It writes the system message to a file, so nothing reaches a shell. Options: `--ollama`, `--check-only`, `--prompt`, `--max-tokens`, `--gpu-layers`, and on a Jetson `--cpu`. Windows takes `-Ollama`, `-CheckOnly`, `-Prompt`, `-MaxTokens`, `-GpuLayers`. A Jetson builds from the pinned source with CUDA, since no prebuilt has it for that board.
 
 **Seen working:** the Mac script on `ggml-org/tiny-llamas` `stories260K.gguf` (1.2 MB) on an Apple silicon Mac, end to end with real llama.cpp. The Linux script's download and checks, with real pinned files and a stubbed OS name. **Simulated:** Linux and Jetson running, Ollama, the board check. **Not run:** the Windows script at all (a syntax check was denied here), any tuned file, a real Linux PC, a real board, and Ollama itself.
 

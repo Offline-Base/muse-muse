@@ -1734,3 +1734,25 @@ scripts/dev/tune-harness.ts, on a Lambda gpu_1x_a10 named prove-tune-1, us-east-
 - Decision: `QUANT_KL_MAX.Q4_K_M` stays 0.03 for now, and flagged. Two real values on made-up text are 0.035 (Llama, which has no limit) and 0.042, so a real r30b job may lose its Q4_K_M. Needs an r30b tune's number.
 - Not run: launch through the platform, https callbacks, Hub publish, a real board, the full suite, next build.
 
+
+## Nov 1, 2026: try and one-click export (tg-try-export, flags TRY_TUNED and EXPORT_TUNED, off)
+
+- Built: a public Try box on `/models/{id}` with the tuned and base models side by side, wake-up states, per-visitor limits and a note on the data; installers for Mac, Windows, Linux and Jetson with an Ollama path, using `deviceModelTarget`.
+- Decision: a visitor may wake a sleeping model, since the owner chose to cover hosting, inside its own limits: 1 wake per visitor, 2 per model, 4 in all, and $10 a day taken atomically before any provider call. Never Lambda, and the owner token is dropped.
+- Fix before it shipped: day counters at the start of the day would have reset within the hour, because the hourly prune deletes windows that began over an hour ago. They now use `dayWindow`, with a test.
+- Found, not changed: `HOSTED_LIMITS.perEndpointPerDay` in `lib/train/host/gateway.ts` counts at the start of the day, so the same prune resets it.
+- Measured: the generated Mac script on `ggml-org/tiny-llamas` `stories260K.gguf`, real b11669 from its pinned release, 16 tokens, exit 0. A changed sha256 deleted the download and exited 1. A second run downloaded nothing. The Linux script's pinned tarball and model passed their checks, with the OS name stubbed; its program was not run here.
+- Blocked: real paid hosting (needs a real admin sign-in, and provider keys held only in Vercel). A PowerShell syntax check was denied by the permission check, so the Windows script has not been parsed or run.
+- Spend: $0. No Muse Glimmer file ran. Targeted tests only; no `next build`, no browser view.
+
+## Nov 1, 2026: independent review of tg-try-export, fixes
+
+- Merged origin/tg-quant-targets, for the measured figures in `fit`. The pinned llama.cpp digests were compared with GitHub's own release listing and match.
+- Fixed: someone already refused a wake or an answer still used up the model's allowance, so one address could lock a model for everyone that day. The visitor is now counted first and alone.
+- Fixed: a full set of live slots or a model shutting down cost a visitor their one wake with nothing started. Both are read before any counter, and the box says when every GPU is in use.
+- Fixed: hosting's refusal words reached visitors, with dollar amounts, setting names and "stop one first". Visitors now get their own words.
+- Fixed: a wake's stop time left the 5-minute sweep able to bill past what it took from the day's budget. It now stops 5 minutes early.
+- Fixed: a tune on Llama was labeled "base Glimmer" in the Try box. A model title could send terminal control codes from a script. A system message ending in a quote broke its Modelfile. A computer with no sha256 tool downloaded everything before refusing. Try POST answered 403 instead of 404 with the flags off when cross-site. The box could send a chat opening with an answer.
+- Fixed: `HOSTED_LIMITS.perEndpointPerDay` counted from the start of the day, so the hourly prune reset it. It now uses `dayWindow`.
+- Copy: the export rows said nothing about Windows never having run. Each row and script now says how far that script has run. The docs no longer say the owner chose guest wakes: that reading still needs confirming.
+- Spend: $0. Targeted tests and tsc only. Nothing new ran on a real provider, Windows PC, Linux PC or board.

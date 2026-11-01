@@ -6,7 +6,7 @@ import { buildSize } from "@/components/train/format";
 /**
  * Run it on your device (EXPORT_TUNED): one download per device kind, a small script that gets the checked file at its pinned
  * commit and runs it with llama.cpp, with an Ollama path. Which file a kind gets is deviceModelTarget's, and a kind this
- * version made no file for says so. No device has run a tuned file yet, and the row says that too.
+ * version made no file for says so. No device has run a tuned file yet, and each row says how far its script has run.
  */
 export function ExportTuned({ modelId, files, notice }: { modelId: string; files: LocalFiles | null; notice: ExportNotice }) {
   return (
@@ -38,6 +38,7 @@ export function ExportTuned({ modelId, files, notice }: { modelId: string; files
                       </p>
                     ) : null}
                     <p className="muted small">{planned.plan.fit}</p>
+                    <p className="muted small">{planned.plan.proof}</p>
                   </>
                 ) : (
                   <p className="muted small">
