@@ -13,6 +13,7 @@ import { productOutputSlots } from "@/components/product/OutputPanels";
 import { extensionSlots } from "@/components/product/ExtensionPanel";
 import { extensionZipReady } from "@/lib/caps/extension/store";
 import { runtimeOutputSlots } from "@/components/product/RuntimeOutputPanels";
+import { TrainOnMyData } from "@/components/product/TrainOnMyData";
 import { AddClip, RemoveClip } from "@/components/product/OwnerClips";
 import { StatusControl } from "@/components/product/StatusControl";
 import { EmptyCard, ExternalLink, NotConnected, StatusPill } from "@/components/ui";
@@ -183,6 +184,13 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
 
         {shipped ? (
           <GetItPanel slots={{ ...native.slots, ...(env.productOutputs ? productOutputSlots({ product, origin, events, now }) : {}), ...(env.runtimeOutputs ? runtimeOutputSlots({ product, origin, isOwner }) : {}), ...(env.enabledCaps.includes("extension") ? extensionSlots({ product, origin, brief, ready: extensionReady }) : {}) }} initial={native.initial} />
+        ) : null}
+
+        {/* Wave 3, unit 11: nothing unless GPU_TRAIN_ON_DATA and TUNE_COMPOSER are on, for the signed-in owner. */}
+        {shipped && isOwner && !user?.openAccess && env.gpuTrainOnData && env.tuneComposer ? (
+          <section className="card section-card">
+            <TrainOnMyData slug={product.slug} />
+          </section>
         ) : null}
 
         <section className="card section-card" aria-labelledby="muse-title">
