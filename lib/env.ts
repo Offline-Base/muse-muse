@@ -1,6 +1,7 @@
 import { TARGETS, type TargetId } from "@/lib/brief/schema";
 import { CAP_FLAG, CAP_IDS, CAP_NEEDS_BUILDER, CAP_READY, type CapId } from "@/lib/caps/ids";
 import { dataSignInOn } from "@/lib/caps/data/types";
+import { filesDatasetsOn, filesSearchOn } from "@/lib/caps/files/types";
 import { mediaPartsFromEnv, type MediaPartId } from "@/lib/caps/media/parts";
 import { capOverlaysNeeded } from "@/lib/caps/overlays";
 import { databaseChoice, isPreview, previewHasOwnDatabase } from "@/lib/db/url";
@@ -836,6 +837,35 @@ export const env = {
   /** Writes one product may make in a UTC day, live namespace. */
   get dataDailyWrites(): number {
     return number("DATA_DAILY_WRITES", 5_000);
+  },
+
+  // ---------- Wave 3, unit 4: files and search (docs/CAPABILITIES.md) ----------
+
+  /**
+   * FILES_SEARCH: products with a files block may index text and search it ({GATEWAY_URL}/search). FILES_ENABLED, the
+   * files themselves, is CAP_FLAG.files, read through enabledCaps above, and search also needs it.
+   */
+  get filesSearch(): boolean {
+    return filesSearchOn();
+  },
+  /** FILES_DATASETS: products may read the vetted public datasets in lib/caps/files/datasets.json ({GATEWAY_URL}/datasets). */
+  get filesDatasets(): boolean {
+    return filesDatasetsOn();
+  },
+  /** What one product's live files may add up to, in MB. */
+  get filesProductMb(): number {
+    return number("FILES_PRODUCT_MB", 500);
+  },
+  /** The biggest file a product may store, in MB. */
+  get filesMaxFileMb(): number {
+    return number("FILES_MAX_FILE_MB", 25);
+  },
+  /**
+   * FILES_BLOB_STORE_ID: a private Vercel Blob store for products' files, reached with the deployment's OIDC token
+   * (decision 14). Unset: the platform's own public store with unguessable paths. A store id isn't a credential.
+   */
+  get filesBlobStoreId(): string | null {
+    return optional("FILES_BLOB_STORE_ID");
   },
 
   // ---------- Wave 3, unit 8: media (docs/CAPABILITIES.md) ----------

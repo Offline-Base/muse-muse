@@ -1,6 +1,7 @@
 import { MAX_AGENT_STEPS, MAX_AGENT_TOOLS, type Brief } from "@/lib/brief/schema";
 import { normalizeDataBlock } from "@/lib/caps/data/brief";
 import { normalizeCodeBlock } from "@/lib/caps/code/brief";
+import { briefSignsIn, normalizeFilesBlock } from "@/lib/caps/files/brief";
 import { normalizeExtensionBlock } from "@/lib/caps/extension/brief";
 import { normalizeGamesBlock } from "@/lib/caps/games/brief";
 import { normalizeMediaBlock } from "@/lib/caps/media/brief";
@@ -139,6 +140,11 @@ export function normalizeRawBrief(raw: unknown, references: Reference[]): unknow
   // ---------- Wave 3, unit 3 (docs/CAPABILITIES.md, section 9): the data block, only when the writer sent one ----------
   if (b.data !== undefined && b.data !== null) b.data = normalizeDataBlock(b.data);
   // ---------- end Wave 3, unit 3 ----------
+
+  // ---------- Wave 3, unit 4 (docs/CAPABILITIES.md, section 10): the files block, only when the writer sent one ----------
+  // A user scope needs a data block that signs people in, since that is how a person signs in to a product.
+  if (b.files !== undefined && b.files !== null) b.files = normalizeFilesBlock(b.files, { signIn: briefSignsIn(b) });
+  // ---------- end Wave 3, unit 4 ----------
 
   // ---------- Wave 3, unit 8 (docs/CAPABILITIES.md, section 14): the media block, only when the writer sent one ----------
   if (b.media !== undefined && b.media !== null) b.media = normalizeMediaBlock(b.media, mediaPartsOn());

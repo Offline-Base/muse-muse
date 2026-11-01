@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "about": "The vetted CC0 3D asset set ('CC0 asset manifest, v1', agreed with tg-3d). Each file carries a pinned download, which scripts/caps/mirror-datasets.ts checks and drops when it writes 3d/manifest.json to Blob. Empty until assets are chosen and their licenses checked; nothing is mirrored yet.",
+  "assets": []
+}

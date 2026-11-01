@@ -3,6 +3,7 @@ import { briefCaps } from "@/lib/caps/brief-fields";
 import { codeJudgeNote } from "@/lib/caps/code/judge";
 import { dataJudgeNote } from "@/lib/caps/data/judge";
 import { extensionJudgeNote } from "@/lib/caps/extension/judge";
+import { filesJudgeNote } from "@/lib/caps/files/judge";
 import { gamesJudgeNote } from "@/lib/caps/games/judge";
 import type { CapId } from "@/lib/caps/ids";
 import { mediaJudgeNote } from "@/lib/caps/media/judge";
@@ -15,6 +16,7 @@ import type { CapProof, VerifySummary } from "@/lib/types";
  */
 export const CAP_JUDGE: Partial<Record<CapId, (brief: Brief) => string>> = {
   data: dataJudgeNote,
+  files: filesJudgeNote,
   media: mediaJudgeNote,
   code: codeJudgeNote,
   extension: extensionJudgeNote,

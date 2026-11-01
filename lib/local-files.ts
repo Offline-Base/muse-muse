@@ -16,7 +16,9 @@ export function fileStorageAvailable(): boolean {
 }
 
 /** The folders every stored file is under, in Blob and in .data/files (lib/storage.ts says what each holds). */
-export const STORED_PREFIXES = ["inspo", "uploads", "screens", "demos", "transcripts", "fixtures", "native", "clips", "assets", "extensions"] as const;
+// Wave 3: unit 4 adds "caps" (products' files, caps/files/), "datasets" (vetted public datasets) and "3d" (the vetted CC0
+// 3D set); unit 8 "assets"; unit 14 "extensions".
+export const STORED_PREFIXES = ["inspo", "uploads", "screens", "demos", "transcripts", "fixtures", "native", "clips", "caps", "datasets", "3d", "assets", "extensions"] as const;
 export type StoredPrefix = (typeof STORED_PREFIXES)[number];
 
 export const LOCAL_FILES_DIR = ".data/files";

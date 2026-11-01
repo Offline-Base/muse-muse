@@ -49,7 +49,8 @@ export function toolsDeps(): ToolsDeps {
     agentsEnabled: env.agentsEnabled,
     personalEnabled: env.composioPersonalEnabled,
     // Wave 3, unit 3: the owner pass for products that save data. False with the data cap off.
-    ownerPassForCaps: env.servedCaps.includes("data"),
+    // Wave 3, unit 4: and for products that keep files, while the files cap is served.
+    ownerPassForCaps: env.servedCaps.includes("data") || env.servedCaps.includes("files"),
     findToken,
     productStatus: productStatusById,
     productInfo,
