@@ -5,6 +5,7 @@
     { "path": "/api/cron/cleanup", "schedule": "0 * * * *" },
     { "path": "/api/cron/train-sweep", "schedule": "*/5 * * * *" },
     { "path": "/api/cron/prove-nightly", "schedule": "0 7 * * *" },
-    { "path": "/api/cron/native-sweep", "schedule": "*/5 * * * *" }
+    { "path": "/api/cron/native-sweep", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/musecode-sweep", "schedule": "*/2 * * * *" }
   ]
 }

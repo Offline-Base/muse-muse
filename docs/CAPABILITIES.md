@@ -384,6 +384,7 @@ Muse Code design's `code_sessions` table belongs to the Muse Muse General sessio
 | 0024 | `0024_code` | 9 | table `exec_runs` | 1793432030646 |
 | 0025 | `0025_gpu` | 11 | table `glimmer_windows`; `training_jobs.product_id` | 1793432090646 |
 | 0026 | `0026_hardware` | 13 | tables `boards`, `product_boards` | 1793432150646 |
+| 0028 | `0028_code_sessions` | 9 | table `code_sessions` (15b). 0027 is General's replications | 1793432270646 |
 
 Units 7, 8, 10, 12 and 14 have no migration. Live updates read `product_rows.seq` from 0020. Drive export keeps its state
 on the board (`docs/DRIVE_EXPORT.md`). A unit that finds it needs one takes the next free number after 0026, in merge order.
@@ -2152,6 +2153,215 @@ gate's 10-minute buckets, unchanged (a lease-style slot would be a change to `li
 **For the owner.** Decision 10 holds: `CODE_EXEC_VISITORS` stays off. Pyodide is MPL-2.0, and QuickJS and
 quickjs-emscripten are MIT.
 
+### 15b. As built: Muse Code sessions in products (tg-cap-musecode, Nov 1)
+
+Owner, Nov 1: "i want the builds to be able to run muse code in the build." General dropped it, so wave 3 owns it as part
+of the code cap, to `~/mm-wt/_plan/muse-code-products.md` and the spike (`docs/spikes/musecode-2026-10-31/README.md` on
+tg-musecode). Built on `tg-cap-int` 55913f2. Everything is off by default, and `CAP_READY.code` stays false.
+
+**A code part, not a wave 2 target.** `MUSE_CODE_ENABLED` and `MUSE_CODE_VISITORS` are parts of the code cap
+(`CodeParts.museCode`, `museCodeVisitors`), and the brief block gains an optional `code.museCode`. Section 15 first said
+target `muse_code` in `TARGETS`, but a part is clearly better here: it gets the cap gate (its marker, signed-in builder
+and principal checks), `capsForBuild`, `CAP_PROOF`, the fixed checks and the cleanup registry with no edits to
+`TARGETS`, `TARGET_GUIDE` or `lib/brief/schema.ts`, and a brief can mix Muse Code with Pyodide. The kit is its own
+overlay, `template/caps/musecode`, picked by `CAP_OVERLAY_PICK.code` only for a brief that asks, so other code products
+ship no such routes. The part needs `MUSE_CODE_ENABLED`, `BUILDER_SNAPSHOT_ID`, and on Vercel a snapshot whose manifest
+lists `musecode` (2.4a). A stale snapshot turns Muse Code off and leaves the rest of the code cap ready
+(`capOverlaysNeeded("code")` doesn't change). So it needs `CODE_ENABLED` and `MUSE_CODE_ENABLED`, and `CAP_READY.code`.
+
+**Routes** (`lib/caps/code/musecode/handler.ts`, `app/api/gateway/code/sessions/[[...path]]/route.ts`), all behind the cap
+gate. With the part off they answer 404 and touch nothing (`caps-off.test.ts`).
+
+| Route | Does |
+|---|---|
+| `POST /code/sessions` `{task, files?}` | Starts a session and answers `{id, status, model, budgetUsd, endsAt, disclosure}`: 201 in about 5 to 10 s (the spike), 75 s at most |
+| `GET /code/sessions/:id/events?after=n` | Reads the bridge's new log lines, condenses them (`condenseBridgeLines`), scans them, stores them, answers the steps after `n`, status and cost. Ends the session when the bridge has exited or the limit has passed |
+| `POST /code/sessions/:id/steer` `{text}` | A `steer` command in the bridge's mailbox. Only while running: the bridge exits once its turn completes, so a session takes no second task |
+| `POST /code/sessions/:id/stop` | Revokes the token first, sends `end`, waits 2 s, reads the last lines, keeps the files |
+| `GET /code/sessions/:id/result` | `{status, done, worked, finalText, files, dropped, zipUrl, zipExpiresAt, costUsd, reason}` |
+
+Who may: the owner by the signed owner pass, and a build's own tests. Anyone else gets 403 `sign_in_required`. With
+`MUSE_CODE_VISITORS` on, a visitor or user the gateway can count may too, 3 a day per person and per address, and decision
+10's terms note still applies: that switch is the owner's. A session answers only the principal and subject that
+started it, on its own product and namespace (anything else is the same 400). The brief must ask for it
+(`briefOfToken`: a build's own brief, or a live product's latest build), or 403 `cap_not_allowed`. Owner-pass plumbing:
+`ownerPassForCaps` and `owner-pass/route.ts` each gain one marked condition. A product with neither data nor an agent
+lands on the kit's own `/api/musemuse/muse-code/owner`, which sets the same cookie. The product page shows its owner an
+"Open as owner" link to the pass (`museCodeOwnerLink`) for a live product whose brief asks for Muse Code with the part on,
+as a plain link since each visit signs a one-time code. Data and agent products use the same pass and have no link: that gap
+predates this unit and isn't closed here. With `MUSE_CODE_VISITORS` on, the start route gives a first-time visitor their
+`mm_vid` cookie.
+
+**The session.** Each runs in a sibling sandbox the platform starts from `BUILDER_SNAPSHOT_ID` (`launchLongSession`, name
+`mm-musecode-<id>`, role tag `cap-musecode`), never inside the build's sandbox, with an empty workspace plus the task's
+files, no product code and no secrets. The sandbox's own timeout is the limit plus 3 minutes. Its settings are the
+spike's, in `lib/caps/code/musecode/sandbox.ts`: `endpoint_transport` with `auth: "bearer"` (never `none`),
+`telemetry.enabled=false`, web search off, all six reminders off, `context_compaction.provider_context_limit_tokens=200000`,
+catalog copy deleted before the serve, `backgroundModelSetting` on Wonder only, effort `medium` for a person's task and
+`low` for a build's. The bridge is the build's own (`BRIDGE_SOURCE`), run by `runnerScript()`. The task field is never
+stored, but steps and the final text can quote it, so they're cleared 24 hours after the session ends (see the sweep).
+
+**The firewall** (`sessionPolicy` in `lib/caps/code/policy.ts`, unit 9's own file). `policy.ts` is unchanged. The
+platform host allows only `POST /api/gateway/v1/responses` with Host pinned, then the firewall's own 403, in
+`capHostRules`' shape with a path as `api.meta.ai`'s routes have. `registry.npmjs.org` is GET only, for the bridge's SDK,
+which the snapshot doesn't have. Private ranges are denied. On a protected preview the bypass secret is added at the
+firewall, after the same bypass-cookie refusals as builds, and only for its own host.
+
+**The token** (`lib/caps/code/musecode/token.ts`, `lib/gateway/tokens.ts`, `gateway.ts`). `mm_cs_` + an HMAC of the session
+id under the pepper, so it's never stored and can be remade in memory for the secret scan. A `gateway_tokens` row of scope
+`code_session` holds its hash, its one model, its budget and `expires_at` = the session's end. It goes to the bridge's
+command environment only, never a file (the spike: it's still readable in the VM, so it's narrow rather than hidden).
+`findToken` never returns one, so no other gateway route takes it. `lib/gateway/deps.ts` finds it while the part is on,
+and it's dead when revoked, past its end, its session has ended, or the token that started it was revoked. `handler.ts`
+gets one marked check, `codeSessionRefusal` in `policy.ts`, in place of the allowlist: POST `/v1/responses` only, its set
+model only, `muse-spark-1.3` refused outright, Contributor only while `TEST_MODEL` names it off production. Live
+sessions are always Wonder. A build's are Contributor under `TEST_MODEL`, else Wonder.
+
+**The session token's body** (`codeSessionBodyRefusal`, `lib/gateway/policy.ts`). The agent's shell can read the token and
+call the one route the firewall allows, so a client setting isn't enough: `tools.web_search.mode` only stops Muse Code
+asking. The route itself answers 400 `session_body` for any tool but `function`, `custom` or a `namespace` of those, media by
+URL (`file_url`, `image_url`, `video_url`, `audio_url`, a media part's `url`) where `data:` is fine, `file_id`,
+`item_reference`, `background`, `previous_response_id`, `conversation`, `prompt` and `store: true`. Text is never read as a
+link. `store` is sent `false` when a body doesn't say. Whether Meta would fetch a URL at all wasn't tested; this doesn't rely
+on the answer. `safety_identifier` comes from the session's stored subject, never from the body or a header the VM chooses.
+
+**Money.** Model calls are the gateway's usual metering, under the session token. The token is handed to the gateway with
+`dailyBudgetUsd` = its spend today plus what's left: the smaller of the session's budget less all it has spent, and the
+starting token's daily budget less that token's and its sessions' spend today. So a session can't take a product past
+its budget, and `tokenSpendToday` (`familySpendToday` while the part is on) makes the product's own calls see session
+spend too. `fitOutputToBudget` already applies to this scope (unit 2's block), so Wonder's 128,000 ask is fitted to
+what's left instead of stopping a $1 session near $0.24. `musecode.test.ts` proves that at $0.30 and $0.80 spent, and a
+live product's token still gets the plain refusal. Every session call is also sent with `outputCeiling`: what it asked
+for, at most 32,000, the number the estimate counted, even when the estimate fits. Without that one call could bill 128,000
+output tokens ($2.68 with its input) against $1. So the budget is a ceiling on output; the input side is still the
+estimate's count of what the body holds. A session's stream cut off midway keeps its whole reservation instead of settling
+on the 1,000 input tokens `minimalUsage` assumes, since what Meta bills for one wasn't measured. `TRUST_BUILDER_DAILY_USD`
+applies to session tokens per call, as to live ones. Sandbox time is a `usage` row of source `code_session`, reserved at
+the worst case at the start and settled at the end, with no token on it, so it counts toward `DAILY_SPEND_CAP_USD` and
+not toward the session's Meta budget.
+
+**Limits** (`lib/caps/code/musecode/limits.ts`). $1.00 and 15 minutes a session. 2 at once per product, 8 in all, counted
+in `code_sessions` under a one-at-a-time admission slot (`musecode:admit`), since a session outlives the gate's in-flight
+slot. Every limit, a build's included, is read inside that slot, after the task's files are fetched. Starts: 6 a minute
+per token, 40 a day per product, 20 a day for the owner. A build: 2 real sessions, 5 minutes and $0.50 in all
+(`buildTotals`, where a running session counts its whole budget and time, and one that never started doesn't count),
+plus replay.
+
+**A build's many verifies.** A build gets 2 real tasks but verifies many times. So `museCodeProof` counts over the whole
+build and not since this verify started, and once a build's tasks are used or out of room and one worked, a start answers
+429 `build_tasks_used`. The kit's `museCode.start` then plays the recording, in a build only (`MUSE_CODE_REPLAY_OK`), and
+`expectMuseCodeRun` takes that run, without the download a replay can't have. `muse-code-run` still needs `museCodeWorked >
+0` from the gateway, so a replay can't stand in for a real run that never worked: with no real task that worked the start
+is a plain refusal and the check stays failed, which is honest and can't be fixed by more verifies.
+
+**"Worked"** is `status completed`, at least one file kept, and a final text, never the exit code. A run that exits 0 having
+made nothing says so.
+
+**The result** (`lib/caps/code/musecode/result.ts`). The VM packs a tar, and the platform parses it and builds the zip
+itself, since the agent has every capability inside the VM. So the rules can't be tampered with: workspace-relative
+paths only, with no drive, control characters, direction marks or `:`, `node_modules`, `.git`, `.muse`, `.venv` and
+`__pycache__` left out in any case, regular files only (links are never followed or kept), no ELF files, no sha256 match with
+`~/.local/bin/*` or the resolved `muse` (hashed before the agent starts), 10 MB a file, 50 MB and 500 files in all. Files
+over 10 MB are left out before the tar, so they can't use up its read cap, and listed in `dropped`; if the read cap is still
+hit, `dropped` says other files were left out. The reads are capped too, and so is the output read from any command
+run after the agent. It goes on Blob as `caps/code/<session>/<random>.zip` and the sweep deletes it after 24 hours.
+`dropped` says what was left out and why. `STORED_PREFIXES` gains `caps`, in plan order (2.10; unit 4 hasn't added it). This
+is unconditional, so with every flag off the promote code's regexes and one message gain `caps`: a small difference from
+byte-identical, accepted as intended, since unit 4 needs the same line and no stored path starts with it today. **Still
+open:** a piece of the binary split under the caps can leave (the spike). That is part of
+decision 10.
+
+**The secret scan** (`lib/caps/code/musecode/redact.ts`). Before events, the condensed state (which holds the host's
+stderr), the final text, result files or logged errors are stored or shown, they're scanned for the literal values of
+`MODEL_API_KEY`, `VERCEL_TOKEN`, `VERCEL_OIDC_TOKEN`, `BLOB_READ_WRITE_TOKEN`, `GATEWAY_TOKEN_PEPPER` (added beyond the
+ask) and the session's own token, and each hit is replaced. That covers the exit reason, the names in `files` and `dropped`
+(a file whose name holds a secret is left out of the zip) and the sweep's logged errors. Values are read from the environment
+in memory and never printed. Values under 12 characters aren't scanned for. It catches literal values only, not an encoded
+one. On Vercel `VERCEL_OIDC_TOKEN` may reach a function only in a request header, so the scan may hold no value for it there
+(not verified). The session's VM never holds it.
+
+**The sweep** (`lib/caps/code/musecode/sweep.ts`). `/api/cron/musecode-sweep` runs every 2 minutes (`vercel.json`) and reads
+nothing with the part off. It moves on every running session under its lock, so one nobody follows, such as an MCP link
+opened later, finishes with its files and gives back its slots. Every 2 and not every 5, because a sandbox outlives its limit
+by only 3 minutes. Hourly, from the code entry in `CAP_CLEANUPS`: the same, then it stops any `cap-musecode` sandbox no session
+holds (listing the sandboxes before reading which are held), deletes expired zips, clears steps, final text, file names and
+reasons 24 hours after a session ended (the row stays, with counts and cost, since the day's spend finds its token through
+it), and removes crashed builds' rows after two days. A zip's record goes only once the zip is deleted, so a failed delete is
+tried again. All of that but the sandbox listing runs while the code cap is served even with the part off, so turning it off
+can't leave a zip up. `productOff` stops a product's sessions. `buildEnded` stops a build's, then deletes its rows and zips.
+
+**A session that fails quietly.** `openSession` answers null only for not found, gone or a stopped sandbox, and throws
+anything else. So one failed Sandbox API call leaves a session as it was and the next poll tries again; only past the
+sandbox's own timeout does it close with no sandbox. Each poll also reads the runner's exit file, so a bridge killed before
+it wrote its exit record (`pkill node` in a test's cleanup does that) ends `failed` with a plain reason and frees its slots,
+with `bridge.err`'s tail in the logs, scanned. A stop revokes the token before it takes the session's lock, so it's dead even
+when the session is busy or the Sandbox API is down. A stop that lands during a start settles the sandbox's reservation.
+
+**Migration 0028_code_sessions** (journal idx 28, `meta/0028_snapshot.json` chained to 0024's, `when` 1793432270646). Table
+`code_sessions` (see `lib/db/schema.ts`). `gateway_tokens.scope` and `usage.source` gain `code_session` as a type change
+only. `PENDING_WAVE3` adds 25, 26 and 27. **Merge-order blocker, as for 0024:** this must not reach a shared database
+before everything below it, or it is renumbered at merge.
+
+**Template kit** (`template/caps/musecode`, every file a platform file, no packages).
+- `lib/muse-code/client.ts`: `museCode.start`, `.events`, `.steer`, `.stop`, `.result`, `.link`, `failure`.
+- `lib/muse-code/replay.ts` and `sample-run.json`: replay from a recording, stateless (the id holds its start time). A
+  hand-written sample with made-up data, shaped like the spike's task (a), **not a recording of a real session**. Only with
+  `MUSE_CODE_REPLAY_OK=1`, which `CAP_ENV.code` sets in a build's `.env.local` only, so the live product never replays.
+- `app/api/musemuse/muse-code/` (`route.ts` POST start and GET events, `steer`, `stop`, `result`, `owner`): hold the token
+  and forward the owner pass, so the browser never calls the gateway.
+- `components/platform/CodeRun.tsx`: steps, files changed, final answer, Stop, download, what was left out, cost, and
+  `MuseCodeDisclosure`, word for word: "Runs Muse Code in a private temporary workspace. It's deleted after 15 minutes,
+  and your task is sent to Meta."
+- `.agents/skills/muse-code-in-product/SKILL.md` and `tests/caps/muse-code.ts` (`expectMuseCodeRun`, `expectReplayRun`).
+- **The MCP connector:** a platform change wasn't needed. The connector already calls a product's action, so the action
+  starts the task and answers `museCode.link(page, id)` at once. The skill and the build prompt say so. It is instructions
+  to the build, and no test of a real connector has run.
+
+**Prompts and checks.** Writer rule, catalog sentence, a build prompt section (`museCodeLines`) and a judge note, each only
+while the part is on and the block asks. `CAP_PROOF.code` adds `brief:museCode`, `museCode` and `museCodeWorked`, and
+`scripts/caps/code.mjs` adds the fixed check `muse-code-run`: the page showed a real (not replayed) run, and the gateway
+saw one make files in this build (see "A build's many verifies").
+
+**Measured** (Nov 1, this laptop, no sandbox, no model call, $0 of the $2 and $1 caps).
+- `musecode.test.ts`, `musecode-store.test.ts` (PGlite), `caps-musecode.test.mjs`, the migrations test and the flags-off
+  goldens, with no golden file changed. Full numbers are in the unit's report.
+- Run for real here: the zip checked by Python's `zipfile` with CRCs, a GNU-format tar made by Python's `tarfile` (long name
+  and a symlink), `killScript` against a real process group in bash, and every script through `bash -n`.
+
+**Not proven yet. No real session has run**, so all of this is untested for real:
+- The real gateway hop: Muse Code through the sandbox firewall to a public platform host, and its reply stream. The spike
+  tested a proxy inside the sandbox. It needs this branch deployed, which this unit may not do.
+- One Wonder session (the spike's warning: refusing `muse-spark-1.3` could break Wonder's background or compaction models on
+  the wire, and `backgroundModelSetting` is meant to prevent that). Test this before trusting it.
+- `context_compaction.provider_context_limit_tokens` as a dotted key, and 200,000 itself. Only the whole-object form at 30,000
+  ran in the spike. A key Muse Code refuses stops the start with exit 2.
+- Vercel: `Sandbox.get` by name for a non-persistent sandbox across requests, detached `env`, `readFile` streaming, role-tag
+  listing, `env: {}` leaving `HOME` and `PATH` usable for the scripts, and the firewall's `path.exact` on the platform host.
+- `~/.local/bin` as where the binary lives on the snapshot (from the spike's path), GNU `tar` and `sha256sum` there.
+- The CodeRun screen past its first render, in a browser. The `tests/caps/muse-code.ts` helpers have never run under
+  Playwright. No real test build has run (section 22), so `CAP_READY.code` stays false.
+
+**Known limits.**
+- An unattended session is collected by the 2-minute cron. If that cron doesn't run, it ends `expired` with no files once
+  its sandbox has stopped itself.
+- If the agent kills everything in its VM, the runner with it, no exit file is written and the session shows as working until
+  its limit. It holds its slots until then, and its token still dies at the limit.
+- The tool-type list is what the spike's top-level `namespace` and the Responses API suggest. The spike logged only the
+  top level, so a real session could send an inner tool type this refuses. The refusal names the type, so the first real
+  session shows it.
+- The agent can write its own log, so inside its session it can fake steps, a final text or an early exit. That only
+  misleads its own run, and files are still checked by the platform. A fake exit could satisfy `museCodeWorked` for a build
+  only by also making files.
+- A lock left by a crashed function lasts up to 10 minutes (`inFlightBucketMs`). Polls then answer from what's stored, and
+  Stop revokes the token and says it's busy.
+- The start's budget reads and the gateway's are separate reads, so two sessions at once can overshoot a product's budget by
+  what's in flight, as parallel calls can today. The reservations now hold each call's real output ceiling.
+- The disclosure's "deleted after 15 minutes" is the required wording. The VM can last about 18 minutes, and the zip and the
+  steps 24 hours; the skill and the build prompt say so.
+
+**For the owner.** Decision 10 holds: `MUSE_CODE_VISITORS` stays off until you've read Meta terms 1, 3.1, 6.2 and 10.1(i), or
+Meta confirms in writing. That includes the split-binary point above.
+
 ## 16. Unit 10: runtime (H)
 
 **Scope.** Python functions in products, with PyPI open in the build firewall; a self-host kit output; VS Code extension and
@@ -2917,5 +3127,8 @@ Phaser game.
   `PUT /files/<id>/upload`. `STORED_PREFIXES` gains `caps`, `datasets` and `3d`. The files overlay ships data's owner
   route as an exact copy, a third allowed overlap. The owner pass also works while the files cap is served (one marked
   line each in tg-tools' owner-pass route and `lib/tools/deps.ts`).
+
+- Nov 1 (unit 9, Muse Code in products): section 15b added. Muse Code is a code part (`MUSE_CODE_ENABLED`, `code.museCode`) with its own overlay `musecode`, not a `muse_code` target; migration 0028_code_sessions (section 4); `lib/caps/code/session.ts` is the real launcher, with `launchLongSession` and `openSession`; `lib/gateway/{policy,handler,tokens,deps}.ts` get the `code_session` scope; `STORED_PREFIXES` gains `caps`; `lib/tools/deps.ts` and `owner-pass/route.ts` get one marked condition each; `CAP_ENV.code` sets `MUSE_CODE_REPLAY_OK` in builds.
+- Nov 1 (unit 9, review fixes): 15b updated. `lib/gateway/handler.ts` and `policy.ts` gain a session body check and an output ceiling, `lib/trust/gateway.ts` applies the builder's cap to `code_session`, `museCodeProof` counts over the whole build with a new `build_tasks_used` answer and a kit fallback to replay, `vercel.json` gains `/api/cron/musecode-sweep` every 2 minutes, and the product page gains an "Open as owner" link for Muse Code products.
 
 - Oct 31: first version (unit 0).

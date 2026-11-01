@@ -253,7 +253,8 @@ export interface OutputFit {
  * budget can still pay for after the input, searches included, at most MAX_OUTPUT_TOKENS. Then the estimate is a true
  * ceiling for the call's output, so the budget still holds, and a session that sends max_output_tokens 128000 (Muse Code
  * does) runs until its budget is really spent instead of stopping after about a quarter of it. Null when the call already
- * fits, isn't a token-priced Responses call, or the budget can't pay for MIN_FIT_OUTPUT_TOKENS.
+ * fits, isn't a token-priced Responses call, or the budget can't pay for MIN_FIT_OUTPUT_TOKENS. A call that isn't fitted
+ * keeps what it asked for, which the estimate caps at MAX_OUTPUT_TOKENS: outputCeiling below makes that true for it too.
  */
 export function fitOutputToBudget(input: {
   endpoint: GatewayEndpoint;
@@ -273,4 +274,13 @@ export function fitOutputToBudget(input: {
   const fitted = Math.min(MAX_OUTPUT_TOKENS, Math.floor((input.leftUsd - base) / perToken));
   if (fitted < MIN_FIT_OUTPUT_TOKENS) return null;
   return { maxOutputTokens: fitted, estimate: at(fitted) };
+}
+
+/**
+ * The max_output_tokens a call must be sent with for its estimate to be a true ceiling on its output: what it asked for,
+ * at most MAX_OUTPUT_TOKENS, or what the estimate assumed when it asked for nothing. Used for every Muse Code session
+ * call, since code in its sandbox controls the prompt and can force a long reply.
+ */
+export function outputCeiling(asked: unknown): number {
+  return countOf(asked, DEFAULT_OUTPUT_TOKENS, MAX_OUTPUT_TOKENS);
 }

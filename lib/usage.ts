@@ -8,7 +8,7 @@ export interface UsageContext {
    * gateway's calls to Composio (docs/AGENT_TOOLS.md). "fetch", "vault" and "sends" are the connect cap's $0 rows with
    * units (docs/CAPABILITIES.md, 2.4 and section 11). "exec" and "browse" are the code cap's sandboxes (unit 9).
    */
-  source: "gateway" | "muse_code" | "platform" | "docs" | "tools" | "fetch" | "vault" | "sends" | "exec" | "browse";
+  source: "gateway" | "muse_code" | "platform" | "docs" | "tools" | "fetch" | "vault" | "sends" | "exec" | "browse" | "code_session";
   endpoint: string;
   productId?: string | null;
   buildId?: string | null;

@@ -14,6 +14,7 @@ import { handlePasskey, type PasskeyDeps } from "@/lib/caps/data/passkeys";
 import { handleAsset, type AssetsDeps } from "@/lib/caps/media/assets";
 import { handleDatasets, handleFiles, handleSearch, type FilesDeps } from "@/lib/caps/files/handler";
 import { handleBrowse, handleExec, type CodeDeps } from "@/lib/caps/code/handler";
+import { handleCodeSessions, type MuseCodeDeps } from "@/lib/caps/code/musecode/handler";
 import { env } from "@/lib/env";
 
 /** A dependency that fails the test if anything calls it. */
@@ -96,6 +97,12 @@ const codeOff = (): CodeDeps => ({
   lookupHost: untouched<CodeDeps["lookupHost"]>("lookupHost"),
 });
 
+/** Muse Code sessions' deps with the real flags and everything else failing the test if it's touched. */
+const museCodeOff = (): MuseCodeDeps =>
+  new Proxy({ servedCaps: () => env.servedCaps, museCodeOn: () => env.museCodeEnabled, visitorsOn: () => env.museCodeVisitors } as unknown as MuseCodeDeps, {
+    get: (t, k) => (k in t ? t[k as keyof MuseCodeDeps] : untouched(String(k))),
+  });
+
 const ROUTES: Array<{ path: string; call(req: Request): Promise<Response> }> = [
   // Unit 3: saved data, its sign-in, and the platform's passkey routes.
   { path: "data", call: (req) => handleData(req, [], dataOff()) },
@@ -125,6 +132,12 @@ const ROUTES: Array<{ path: string; call(req: Request): Promise<Response> }> = [
   // Unit 9: running code on the platform, and opening a page the person typed.
   { path: "exec", call: (req) => handleExec(req, codeOff()) },
   { path: "browse", call: (req) => handleBrowse(req, codeOff()) },
+  // Unit 9, 15b: Muse Code sessions.
+  { path: "code/sessions", call: (req) => handleCodeSessions(req, [], museCodeOff()) },
+  { path: "code/sessions/a1/events", call: (req) => handleCodeSessions(req, ["a1", "events"], museCodeOff()) },
+  { path: "code/sessions/a1/steer", call: (req) => handleCodeSessions(req, ["a1", "steer"], museCodeOff()) },
+  { path: "code/sessions/a1/stop", call: (req) => handleCodeSessions(req, ["a1", "stop"], museCodeOff()) },
+  { path: "code/sessions/a1/result", call: (req) => handleCodeSessions(req, ["a1", "result"], museCodeOff()) },
   // Unit 2: what the gateway saw for a build's namespace.
   {
     path: "caps/proof",

@@ -1,5 +1,7 @@
 import type { Brief } from "@/lib/brief/schema";
 import { briefCaps } from "@/lib/caps/brief-fields";
+import { codeBlock } from "@/lib/caps/code/brief";
+import { MUSE_CODE_OVERLAY } from "@/lib/caps/code/parts";
 import { ENGINE_OVERLAY, type GamesBrief } from "@/lib/caps/games/brief";
 import type { CapId } from "@/lib/caps/ids";
 
@@ -13,6 +15,9 @@ export const CORE_OVERLAY = "core";
 export const CAP_OVERLAY_PICK: Partial<Record<CapId, (brief: Brief) => string[]>> = {
   // The shared games overlay (its checks, test helper, asset helper and skill), then the engine's own.
   games: (brief) => ["games", ENGINE_OVERLAY[((brief as { games?: GamesBrief | null }).games ?? { engine: "phaser" }).engine]],
+  // Unit 9, 15b: a product that runs Muse Code sessions also gets the musecode kit. Its readiness is the museCode part's
+  // (lib/caps/code/parts.ts), so a snapshot without it leaves the code cap ready and only Muse Code off.
+  code: (brief) => ["code", ...(codeBlock(brief)?.museCode ? [MUSE_CODE_OVERLAY] : [])],
 };
 
 // ---------- Wave 3, unit 3: cap readiness (docs/CAPABILITIES.md, 2.4a) ----------

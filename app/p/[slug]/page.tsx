@@ -12,6 +12,7 @@ import { nativeSlots } from "@/components/product/NativeSlots";
 import { productOutputSlots } from "@/components/product/OutputPanels";
 import { extensionSlots } from "@/components/product/ExtensionPanel";
 import { extensionZipReady } from "@/lib/caps/extension/store";
+import { museCodeOwnerLink } from "@/lib/caps/code/musecode/owner-link";
 import { runtimeOutputSlots } from "@/components/product/RuntimeOutputPanels";
 import { AddClip, RemoveClip } from "@/components/product/OwnerClips";
 import { StatusControl } from "@/components/product/StatusControl";
@@ -85,6 +86,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   // Wave 3, unit 14: whether the extension's zip is there, looked up only with its flag on, for a live brief with one.
   const extensionReady = shipped && product.liveUrl && env.enabledCaps.includes("extension") && (brief as { extension?: unknown } | null)?.extension ? await extensionZipReady(product.id) : null;
   // Only for a product that runs somewhere else too, so with every flag off the page has no trace of this.
+  const ownerLink = shipped ? museCodeOwnerLink({ isOwner, liveUrl: product.liveUrl, slug: product.slug, status: product.status, brief, served: env.servedCaps.includes("code") }) : null;
   const canAddClips = shipped && isOwner && env.enabledTargets.length > 0 && briefTargets(brief).some((t) => t !== "web");
 
   return (
@@ -112,6 +114,13 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
               <Icon name="sparkle" size={18} />
               <span>Refine</span>
             </Link>
+          ) : null}
+          {/* Wave 3, unit 9: an owner-only Muse Code product needs a way in. A plain link: each visit signs a one-time code, so it's never prefetched. */}
+          {ownerLink ? (
+            <a className="btn" href={ownerLink} target="_blank" rel="noopener">
+              <Icon name="terminal" size={18} />
+              <span>Open as owner</span>
+            </a>
           ) : null}
           {/* Wave 3, unit 1 (TRUST_REPORTS): anyone can report a product, as from its own footer. */}
           {env.trustReports ? (
