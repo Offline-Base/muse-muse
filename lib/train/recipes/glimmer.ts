@@ -1167,7 +1167,7 @@ def finish(ctx, p, result, evals, train, adapter_dir, cache_used):
         note = " (unfinished answers: base " + str(unfinished[0] or 0) + ", tuned " + str(unfinished[1] or 0) + ")"
     metrics["summary"] = (
         ("Dry run: " if p["dry_run"] else "")
-        + "LoRA r=" + str(p["lora_rank"]) + " on Muse Glimmer 30B, " + steps
+        + "LoRA r=" + str(p["lora_rank"]) + " on " + (MODEL if TRIM_CONTENT else "Muse Glimmer 30B") + ", " + steps
         + (", final loss " + str(round(loss, 4)) if isinstance(loss, (int, float)) else "")
         + ", " + str(sent) + " eval items" + note + "."
     )

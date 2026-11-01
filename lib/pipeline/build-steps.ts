@@ -58,7 +58,7 @@ import { renderMilestonePrompt } from "@/lib/engine/prompts";
 // ---------- Wave 3, unit 3: cap readiness (docs/CAPABILITIES.md, 2.4a) ----------
 import { capDropLine, capsForBuild, readCapDrops, withoutCaps, type CapDrop } from "@/lib/caps/ready";
 // ---------- end Wave 3, unit 3 ----------
-import { pollDeploy, projectNameFor, startDeployFromSandbox, type DeployPoll } from "@/lib/publish/vercel";
+import { collectDeployFiles, pollDeploy, projectNameFor, startDeployFromSandbox, type DeployPoll } from "@/lib/publish/vercel";
 import { briefTargets } from "@/lib/native/targets";
 import { verifyProofText } from "@/lib/prompts/judge";
 import { demoNoteFor } from "@/lib/sandbox/artifacts";
@@ -1196,6 +1196,20 @@ export interface DeployStart {
 export async function publishOffStep(): Promise<string | null> {
   "use step";
   return env.publishOffReason;
+}
+
+/**
+ * With publishing off there's no deploy to hand files to captureVersion, so the Code page, source.zip and restore would
+ * have nothing. Saves the same files here. As on a deploy, a failed save logs and never stops the build.
+ */
+export async function saveUnpublishedVersionStep(input: { buildId: string; productId: string; sandboxName: string; restoredFrom?: string | null }): Promise<void> {
+  "use step";
+  try {
+    const { files } = await collectDeployFiles(input.sandboxName);
+    await captureVersion({ buildId: input.buildId, productId: input.productId, files, restoredFrom: input.restoredFrom ?? null });
+  } catch (err) {
+    console.error("[versions] unpublished save", input.buildId, err instanceof Error ? err.message : err);
+  }
 }
 
 export async function startDeployStep(input: {

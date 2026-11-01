@@ -78,7 +78,7 @@ describe("with every wave 3 flag off", () => {
     const opts = { scaling: env.engineRoundScaling, maxMinutes: env.engineRoundMaxMinutes };
     for (const kind of ["build", "fix", "verify"] as const) assert.equal(roundCapMs(size, kind, opts), stepTimeoutMs(kind));
     assert.deepEqual(roundPlanFor(size, [], opts).wallMs, null);
-    assert.deepEqual(STEPS.map((s) => [s.name, s.timeoutMs / 60_000]).filter(([n]) => ["build", "fix", "verify"].includes(n as string)), [["build", 25], ["verify", 8], ["fix", 12]]);
+    assert.deepEqual(STEPS.map((s) => [s.name, s.timeoutMs / 60_000]).filter(([n]) => ["build", "fix", "verify"].includes(n as string)), [["build", 60], ["verify", 8], ["fix", 12]]);
   });
 
   it("no cap stores anything, so cleanup and the cron's sweep do nothing", async () => {

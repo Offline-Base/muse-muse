@@ -25,7 +25,7 @@ const MIN = 60_000;
 export const STEPS: readonly StepSpec[] = [
   { name: "brief", does: "Read the inspo and note, write a structured brief or a refusal", timeoutMs: 2 * MIN, retries: 2 },
   { name: "provision", does: "Get or create the product sandbox from the builder snapshot, copy inspo files to inspo/, write brief.md and fixtures, set the network policy", timeoutMs: 3 * MIN, retries: 2 },
-  { name: "build", does: "Run muse exec detached and stream its JSONL events", timeoutMs: 25 * MIN, retries: 0 },
+  { name: "build", does: "Run muse exec detached and stream its JSONL events", timeoutMs: 60 * MIN, retries: 0 },
   { name: "preview", does: "Start next dev on port 3000 and save sandbox.domain(3000)", timeoutMs: 2 * MIN, retries: 1 },
   { name: "verify", does: "npm run verify, collect screenshots, ask the judge", timeoutMs: 8 * MIN, retries: 0 },
   { name: "fix", does: "Resume the Muse Code session with the failures", timeoutMs: 12 * MIN, retries: 0 },
@@ -74,8 +74,8 @@ export interface RoundSize {
 export type RoundKind = "build" | "fix" | "verify";
 
 /**
- * A round's time cap. With scaling off (ENGINE_ROUND_SCALING), today's caps: 25, 12 and 8 minutes. With it on:
- * - a first round (and each milestone round) gets 25 minutes, plus 5 when complex, plus 5 when the brief lists 6 or more
+ * A round's time cap. With scaling off (ENGINE_ROUND_SCALING), today's caps: 60, 12 and 8 minutes. With it on:
+ * - a first round (and each milestone round) gets 60 minutes; below that floor, 25 plus 5 when complex, plus 5 when the brief lists 6 or more
  *   screens and actions together, plus 5 per cap block, at most `maxMinutes`;
  * - a fix round 12 minutes, plus 3 when complex or the brief has caps, so 12 to 15;
  * - a verify run 8 minutes, plus 1 per cap block, so 8 to 10.

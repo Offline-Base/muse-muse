@@ -29,6 +29,12 @@ describe("recipe skills", () => {
     }
   });
 
+  it("the case agent's wrap up turn doesn't force a tool, which Meta refuses with a 400", () => {
+    const text = readFileSync(join(ROOT, "recipe-case-agent", "SKILL.md"), "utf8");
+    assert.doesNotMatch(text, /`tool_choice` forcing/);
+    assert.match(text, /Don't send `tool_choice`/);
+  });
+
   it("helpers import nothing, so they work when copied into a product", () => {
     for (const id of skills) {
       const dir = join(ROOT, id, "helpers");

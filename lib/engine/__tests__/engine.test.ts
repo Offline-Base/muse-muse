@@ -39,20 +39,20 @@ const on = { scaling: true, maxMinutes: 45 };
 const size = (over: Partial<Parameters<typeof roundCapMs>[0]> = {}) => ({ complexity: "standard" as const, caps: 0, screens: 2, actions: 1, ...over });
 
 describe("roundCapMs", () => {
-  it("is today's 25, 12 and 8 minutes with scaling off, whatever the brief", () => {
+  it("is today's 60, 12 and 8 minutes with scaling off, whatever the brief", () => {
     const big = size({ complexity: "complex", caps: 4, screens: 5, actions: 3 });
-    assert.deepEqual((["build", "fix", "verify"] as const).map((k) => roundCapMs(big, k, { scaling: false, maxMinutes: 90 }) / MIN), [25, 12, 8]);
+    assert.deepEqual((["build", "fix", "verify"] as const).map((k) => roundCapMs(big, k, { scaling: false, maxMinutes: 90 }) / MIN), [60, 12, 8]);
   });
 
-  it("grows a first round 5 minutes for complex, 5 for a big brief and 5 per cap, up to the ceiling", () => {
-    assert.equal(roundCapMs(size(), "build", on) / MIN, 25);
-    assert.equal(roundCapMs(size({ complexity: "complex" }), "build", on) / MIN, 30);
+  it("keeps a first round at its 60-minute floor, whatever the brief", () => {
+    assert.equal(roundCapMs(size(), "build", on) / MIN, 60);
+    assert.equal(roundCapMs(size({ complexity: "complex" }), "build", on) / MIN, 60);
     // The tile game of Oct 31: complex, 3 screens, 3 actions.
-    assert.equal(roundCapMs(size({ complexity: "complex", screens: 3, actions: 3 }), "build", on) / MIN, 35);
-    assert.equal(roundCapMs(size({ caps: 2 }), "build", on) / MIN, 35);
-    assert.equal(roundCapMs(size({ complexity: "complex", screens: 3, actions: 3, caps: 3 }), "build", on) / MIN, 45, "held to the ceiling");
+    assert.equal(roundCapMs(size({ complexity: "complex", screens: 3, actions: 3 }), "build", on) / MIN, 60);
+    assert.equal(roundCapMs(size({ caps: 2 }), "build", on) / MIN, 60);
+    assert.equal(roundCapMs(size({ complexity: "complex", screens: 3, actions: 3, caps: 3 }), "build", on) / MIN, 60);
     assert.equal(roundCapMs(size({ caps: 9 }), "build", { scaling: true, maxMinutes: 60 }) / MIN, 60);
-    assert.equal(roundCapMs(size(), "build", { scaling: true, maxMinutes: 10 }) / MIN, 25, "never below today's round");
+    assert.equal(roundCapMs(size(), "build", { scaling: true, maxMinutes: 10 }) / MIN, 60, "never below today's round");
   });
 
   it("gives fix rounds 12 to 15 minutes and verify 8 to 10", () => {

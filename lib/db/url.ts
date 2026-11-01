@@ -6,6 +6,7 @@
  *
  *   VERCEL_ENV production, development or unset       DATABASE_URL, exactly as before
  *   DATABASE_URL "pglite:<folder>"                     that local folder, whatever VERCEL_ENV says (it can't be production)
+ *   VERCEL_ENV preview, PREVIEW_USE_MAIN_DB on         DATABASE_URL, production's data (the owner's choice, Nov 1, 2026)
  *   VERCEL_ENV preview, PREVIEW_DATABASE_URL set       PREVIEW_DATABASE_URL, the Neon branch "preview"
  *   VERCEL_ENV preview, PREVIEW_DATABASE_URL unset     no database: the site runs on its no-database paths, migrate skips
  *   VERCEL_ENV preview, PREVIEW_DATABASE_URL is prod   no database, and migrate refuses (exit 1), so the build stops
@@ -45,7 +46,7 @@ export const PREVIEW_DATABASE_IS_PRODUCTION =
   "PREVIEW_DATABASE_URL points at production's database, and previews never touch it. Set it to the \"preview\" database on the Neon branch \"preview\" (README.md, Preview database).";
 
 export type DatabaseChoice =
-  | { url: string; from: "DATABASE_URL" | "PREVIEW_DATABASE_URL" }
+  | { url: string; from: "DATABASE_URL" | "PREVIEW_DATABASE_URL" | "PREVIEW_MAIN" }
   | { url: null; why: "unset" | "preview_unset" | "preview_is_production"; message: string };
 
 export function isPreview(e: Env = process.env): boolean {
@@ -88,6 +89,9 @@ export function databaseChoice(e: Env = process.env): DatabaseChoice {
   const main = e.DATABASE_URL;
   if (main && localDbDir(main)) return { url: main, from: "DATABASE_URL" };
   if (!isPreview(e)) return main ? { url: main, from: "DATABASE_URL" } : { url: null, why: "unset", message: DATABASE_UNSET };
+  if (main && ["1", "true", "yes", "on"].includes((e.PREVIEW_USE_MAIN_DB ?? "").trim().toLowerCase())) {
+    return { url: main, from: "PREVIEW_MAIN" };
+  }
   const preview = e.PREVIEW_DATABASE_URL?.trim();
   if (!preview) return { url: null, why: "preview_unset", message: PREVIEW_DATABASE_UNSET };
   const production = PRODUCTION_DATABASE_VARS.map((name) => e[name]?.trim()).filter((v): v is string => Boolean(v));
@@ -109,5 +113,5 @@ export function databaseUrl(e: Env = process.env): string | null {
  */
 export function previewHasOwnDatabase(e: Env = process.env): boolean {
   const choice = databaseChoice(e);
-  return choice.url !== null && choice.from === "PREVIEW_DATABASE_URL";
+  return choice.url !== null && (choice.from === "PREVIEW_DATABASE_URL" || choice.from === "PREVIEW_MAIN");
 }
