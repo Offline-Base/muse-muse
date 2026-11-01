@@ -11,6 +11,7 @@ import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { BuildSummary, BuildView, InspirationView, ProductView, RebuildRef } from "@/components/view-types";
 import { BuildDetails } from "@/components/build/BuildDetails";
 import { deriveRoom, railStates, refineSpot } from "@/components/build/derive";
+import { PlanCard, planCardState } from "@/components/build/PlanCard";
 import { QuestionCard, SteerNote } from "@/components/build/session";
 import { appsLine, nativeRows } from "@/components/build/apps";
 import { proveRows } from "@/components/build/prove-rows";
@@ -240,6 +241,8 @@ export function BuildRoom(props: BuildRoomProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   // Whether the steps list follows the newest line. A panel opening beside a running build starts at the end.
   const panelPinned = useRef(true);
+  // The plan card's link opens the brief's fold as well as scrolling to it.
+  const unfoldStep = useRef(false);
   const showSteps = (step: string | null = null, follow = false) => {
     panelPinned.current = follow;
     setPanelTab("steps");
@@ -250,6 +253,8 @@ export function BuildRoom(props: BuildRoomProps) {
     if (!focusStep || !panelOpen) return;
     const row = panelRef.current?.querySelector(`[data-step="${CSS.escape(focusStep)}"]`);
     const body = row?.closest<HTMLElement>(".chat-panel-body");
+    if (unfoldStep.current) row?.querySelector<HTMLDetailsElement>("details.room-fold")?.setAttribute("open", "");
+    unfoldStep.current = false;
     if (row && body) body.scrollTop += row.getBoundingClientRect().top - body.getBoundingClientRect().top - 8;
     setFocusStep(null);
   }, [focusStep, panelOpen]);
@@ -339,6 +344,7 @@ export function BuildRoom(props: BuildRoomProps) {
 
   const answer = useMemo(() => finalWords(room), [room]);
   const current = useMemo(() => currentStep(room), [room]);
+  const plan = useMemo(() => planCardState(room), [room]);
   // The clock only matters to a Prove it run, so a build without one doesn't redraw its list each tick.
   const proveNow = events.some((e) => e.type === "prove") ? now : 0;
   const proveSteps = useMemo(() => proveRows(events, proveNow), [events, proveNow]);
@@ -424,6 +430,22 @@ export function BuildRoom(props: BuildRoomProps) {
                 {conn === "reconnecting" ? " · reconnecting to the live log" : ""}
                 <StepsToggle open={panelOpen} onClick={() => (panelOpen ? closePanel() : showSteps(null, true))} />
               </p>
+            </li>
+          ) : null}
+
+          {/* The plan once the brief is written, under what the build is doing. The whole brief is in the steps. */}
+          {plan ? (
+            <li className="room-plan">
+              <PlanCard
+                brief={plan.brief}
+                art={plan.art}
+                running={!room.terminal}
+                panelId={PANEL_ID}
+                onReadBrief={() => {
+                  unfoldStep.current = true;
+                  showSteps(plan.step);
+                }}
+              />
             </li>
           ) : null}
 

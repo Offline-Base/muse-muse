@@ -1,0 +1,273 @@
+/**
+ * The plan card in the build room's conversation: the Muse mascot for the build's state on the left, the plan's name,
+ * tagline, who it's for and how it works on the right, and the whole brief still in the steps panel.
+ *   npx tsx --test --experimental-test-module-mocks components/build/__tests__/plan-card.test.tsx
+ */
+import assert from "node:assert/strict";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import path from "node:path";
+import { before, describe, it, mock } from "node:test";
+import { createElement, type ComponentType } from "react";
+import { FIXTURES, at, brief, inspiration, tokens } from "@/components/build/__tests__/room-fixture";
+import type { Brief, BuildEvent, BuildEventBody, BuildStatus } from "@/lib/types";
+
+mock.module("next/navigation", {
+  namedExports: { useRouter: () => ({ push() {}, refresh() {} }), usePathname: () => "/b/x" },
+});
+mock.module("next/link", {
+  defaultExport: (props: Record<string, unknown>) => createElement("a", { ...props, href: String(props.href) }),
+});
+
+type FixtureName = keyof typeof FIXTURES;
+
+let render: (c: ComponentType<never>, props: object) => string;
+let BuildRoom: ComponentType<never>;
+let StepList: ComponentType<never>;
+let PlanCard: ComponentType<never>;
+let plan: typeof import("@/components/build/PlanCard");
+let steps: typeof import("@/components/build/steps");
+let derive: typeof import("@/components/build/derive");
+
+before(async () => {
+  const { renderToString } = await import("react-dom/server");
+  render = (c, props) => renderToString(createElement(c, props as never)).replace(/<!-- -->/g, "");
+  BuildRoom = (await import("@/components/build/BuildRoom")).BuildRoom as ComponentType<never>;
+  StepList = (await import("@/components/chat")).StepList as ComponentType<never>;
+  plan = await import("@/components/build/PlanCard");
+  PlanCard = plan.PlanCard as ComponentType<never>;
+  steps = await import("@/components/build/steps");
+  derive = await import("@/components/build/derive");
+});
+
+const ROOT = path.join(import.meta.dirname, "../../..");
+const css = () => readFileSync(path.join(ROOT, "components/build/plan-card.css"), "utf8");
+const stamp = (bodies: BuildEventBody[]): BuildEvent[] => bodies.map((b, i) => ({ ...b, id: i + 1, at: at(10 * (i + 1)) }) as BuildEvent);
+
+/** A new build that wrote `b` as its brief, then reached `status`. */
+function roomAt(status: BuildStatus, opts: { brief?: Brief; message?: string } = {}) {
+  const events = stamp([
+    { type: "status", status: "briefing", step: "brief" },
+    { type: "brief", brief: opts.brief ?? brief },
+    { type: "status", status, ...(opts.message ? { message: opts.message } : {}) },
+  ]);
+  return derive.deriveRoom({ ...FIXTURES.running.build, status: "queued", brief: null }, events);
+}
+
+const roomOf = (name: FixtureName) => derive.deriveRoom(FIXTURES[name].build, FIXTURES[name].events);
+
+function page(name: FixtureName, over: Record<string, unknown> = {}) {
+  const f = FIXTURES[name];
+  return render(BuildRoom, {
+    build: f.build,
+    product: f.product,
+    inspiration,
+    events: f.events,
+    history: [],
+    tokens,
+    canRefine: false,
+    canSteer: false,
+    signedIn: true,
+    origin: "https://musemuse.example",
+    serverNow: Date.parse(f.build.startedAt) + 60_000,
+    focusRefine: false,
+    rebuild: null,
+    maxFixRounds: 3,
+    ...over,
+  });
+}
+
+/** The conversation column, without the steps panel beside it. */
+const conversation = (html: string) => html.slice(0, html.indexOf('class="room-panel"'));
+const count = (html: string, s: string) => html.split(s).length - 1;
+const yes: Brief = { ...brief, verdict: "yes" };
+
+function card(over: Partial<Brief> = {}, props: Record<string, unknown> = {}) {
+  return render(PlanCard, { brief: { ...yes, ...over }, art: "building", running: false, onReadBrief() {}, panelId: "room-steps-panel", ...props });
+}
+
+describe("the mascot", () => {
+  it("presents while the plan is new and the sandbox is set up, builds while Muse Code works, and stands as the pair once live", () => {
+    const art = (status: BuildStatus) => plan.planCardState(roomAt(status))?.art;
+    for (const s of ["queued", "briefing", "provisioning"] as const) assert.equal(art(s), "present", s);
+    for (const s of ["building", "previewing", "verifying", "fixing", "recording", "deploying"] as const) assert.equal(art(s), "building", s);
+    for (const s of ["live", "partial"] as const) assert.equal(art(s), "shield", s);
+  });
+
+  it("goes back to presenting the plan when the build fails or its owner stops it", () => {
+    assert.equal(plan.planCardState(roomAt("failed", { message: "The checks didn't pass after the last fix round." }))?.art, "present");
+    const stopped = roomAt("failed", { message: "Stopped by you." });
+    assert.equal(steps.stepsEnd(stopped), "stopped");
+    assert.equal(plan.planCardState(stopped)?.art, "present");
+  });
+
+  it("follows the stored builds: building while running, the pair once live, presenting after a failure", () => {
+    assert.equal(plan.planCardState(roomOf("running"))?.art, "building");
+    assert.equal(plan.planCardState(roomOf("finished"))?.art, "shield");
+    assert.equal(plan.planCardState(roomOf("failed"))?.art, "present");
+  });
+
+  it("has no card for a declined brief or a refused build, which keep their declined message", () => {
+    assert.equal(plan.planCardState(roomAt("refused")), null, "refused");
+    assert.equal(plan.planCardState(roomAt("refused", { brief: { ...brief, verdict: "no", refusal: null } })), null, "verdict no");
+    assert.equal(plan.planCardState(roomAt("building", { brief: { ...brief, verdict: "no" } })), null, "a no never gets a card");
+    assert.equal(plan.planCardState(roomAt("refused", { brief: { ...brief, verdict: "yes", refusal: "That would copy a real product." } })), null, "a refusal");
+  });
+
+  it("has no card on a change, which carries its product's brief but didn't write a plan", () => {
+    const room = derive.deriveRoom({ ...FIXTURES.running.build, kind: "refine", message: "Make the count bigger." }, stamp([{ type: "status", status: "building", step: "build" }]));
+    assert.ok(room.brief, "the refine row has the product's brief");
+    assert.equal(plan.planCardState(room), null);
+  });
+
+  it("shows the state's picture, decorative, with all three loaded while the build runs so a swap has nothing to wait for", () => {
+    const live = card({}, { art: "building", running: true });
+    assert.equal(count(live, "<img"), 3);
+    assert.match(live, /<img class="is-on" src="\/muse\/muse-building\.jpg" alt="" width="564" height="640" decoding="async"\/>/);
+    assert.match(live, /<img src="\/muse\/muse-present\.jpg" alt=""[^>]*fetchPriority="low"\/>/);
+    assert.match(live, /<img src="\/muse\/muse-shield\.jpg" alt=""[^>]*fetchPriority="low"\/>/);
+    const done = card({}, { art: "shield", running: false });
+    assert.equal(count(done, "<img"), 1, "a finished build loads only its own picture");
+    assert.match(done, /<img class="is-on" src="\/muse\/muse-shield\.jpg" alt=""/);
+    assert.doesNotMatch(live + done, /alt="[^"]+"/, "every picture is decorative");
+  });
+
+  it("ships the three pictures web-sized, and not the originals", () => {
+    for (const name of ["present", "building", "shield"]) {
+      const file = path.join(ROOT, "public/muse", `muse-${name}.jpg`);
+      assert.ok(existsSync(file), file);
+      assert.ok(statSync(file).size < 120_000, `${name} is under 120 KB`);
+      assert.equal(plan.PLAN_ART[name as keyof typeof plan.PLAN_ART], `/muse/muse-${name}.jpg`);
+    }
+    for (const name of ["present.png", "building.png", "shield.png"]) assert.ok(!existsSync(path.join(ROOT, "public/muse", name)), name);
+  });
+});
+
+describe("the summary", () => {
+  it("names the plan and gives its tagline, who it's for and how it works, numbered", () => {
+    const html = card();
+    assert.match(html, /<h2 class="plan-card-name"><span class="sr-only">The plan: <\/span>Feeder Count<\/h2>/);
+    assert.match(html, /<p class="plan-card-tagline">Counts and outlines the birds in a short feeder video\.<\/p>/);
+    assert.match(html, /<h3>Who it&#x27;s for<\/h3><p>Backyard bird watchers<\/p>/);
+    assert.match(html, /<h3>How it works<\/h3><ol><li>Upload a clip<\/li><li>See each bird outlined<\/li><li>Get a count<\/li><\/ol>/);
+    assert.ok(html.indexOf("plan-card-art") < html.indexOf("plan-card-head"), "the picture first, on the left");
+    assert.equal(html.includes(String.fromCharCode(0x2014)), false, "no em dash");
+  });
+
+  it("leaves the models, limits, inspo and cost to the full brief", () => {
+    const html = card();
+    for (const piece of ["<table", ">Models<", "Muse Wonder", "SAM 3.1", "Segments objects across frames", "Limits", "Species names are guesses.", "From your inspo", "The feeder brand logo", "Cost per run", "Screens"]) {
+      assert.ok(!html.includes(piece), piece);
+    }
+  });
+
+  it("says when Muse can build only part of it, and nothing extra when it can build all of it", () => {
+    assert.match(card({ verdict: "partly" }), /<span class="pill pill-partial"><span class="pill-dot" aria-hidden="true"><\/span>Can build part of it<\/span>/);
+    assert.doesNotMatch(card(), /class="pill/);
+  });
+
+  it("drops a section that's empty instead of showing its heading alone", () => {
+    const html = card({ tagline: "  ", user: "", primaryFlow: [" ", ""] });
+    assert.doesNotMatch(html, /plan-card-tagline|Who it&#x27;s for|How it works|<ol/);
+    assert.match(html, /Feeder Count<\/h2>/);
+    const some = card({ primaryFlow: ["Upload a clip", "  ", "Get a count"] });
+    assert.match(some, /<ol><li>Upload a clip<\/li><li>Get a count<\/li><\/ol>/, "blank steps are skipped, so the numbers run on");
+  });
+
+  it("links to the whole brief in the steps panel", () => {
+    assert.match(card(), /<button type="button" class="link-btn room-steps-link" aria-controls="room-steps-panel">Read the full brief<svg/);
+    assert.doesNotMatch(card({}, { onReadBrief: undefined }), /Read the full brief/);
+  });
+});
+
+describe("the card in the room", () => {
+  it("sits under the running step, above the live preview, and reads the plan once in the conversation", () => {
+    const html = page("running");
+    const convo = conversation(html);
+    const cardAt = convo.indexOf('<li class="room-plan">');
+    assert.ok(cardAt > convo.indexOf("Muse Code is building"), "under the building status");
+    assert.ok(cardAt > convo.indexOf("Hide steps"));
+    assert.ok(cardAt < convo.indexOf("<iframe"), "above the preview");
+    assert.ok(convo.indexOf('class="turn-user"') < cardAt, "after the person's message");
+    assert.equal(count(convo, "Backyard bird watchers"), 1);
+    assert.equal(count(convo, "Counts and outlines the birds in a short feeder video."), 1);
+    assert.equal(count(convo, 'class="rich"'), 0, "no second copy of the brief in the conversation");
+    assert.match(convo, /<div class="plan-card" data-art="building">/);
+  });
+
+  it("sits above what a finished build made, with the pair, and above a failed build's words, presenting", () => {
+    const done = conversation(page("finished"));
+    assert.match(done, /<div class="plan-card" data-art="shield">/);
+    assert.ok(done.indexOf("room-plan") < done.indexOf("<video"));
+    assert.equal(count(done, 'src="/muse/'), 1, "only the pair loads on a finished build");
+    const failed = conversation(page("failed"));
+    assert.match(failed, /<div class="plan-card" data-art="present">/);
+    assert.ok(failed.indexOf("room-plan") < failed.indexOf("This build didn&#x27;t ship."));
+  });
+
+  it("keeps a declined brief's message as it was, with no card and no mascot", () => {
+    const declined: Brief = { ...brief, verdict: "no", refusal: null, limits: ["It needs live bird audio, which no model here takes."] };
+    const events = stamp([
+      { type: "status", status: "briefing", step: "brief" },
+      { type: "brief", brief: declined },
+      { type: "status", status: "refused", step: "brief", message: "Muse Muse can't make this one." },
+    ]);
+    const html = conversation(page("failed", { build: { ...FIXTURES.failed.build, status: "refused", brief: declined, error: null }, events }));
+    assert.doesNotMatch(html, /plan-card|\/muse\/muse-/);
+    assert.match(html, /<span class="pill pill-failed"><span class="pill-dot" aria-hidden="true"><\/span>Can&#x27;t build this<\/span>/);
+    assert.match(html, /<div class="callout callout-bad" role="note">/);
+    assert.match(html, /It needs live bird audio/);
+  });
+
+  it("keeps the whole brief, models and all, in the steps panel's Read the brief", () => {
+    const room = roomOf("finished");
+    const rows = steps.roomSteps({ room, rail: derive.railStates(room, "build"), isRefine: false });
+    const row = rows.find((r) => r.id === plan.planCardState(room)?.step);
+    assert.equal(row?.title, "Wrote the brief", "the card's link lands on the brief's row");
+    const html = render(StepList, { steps: rows });
+    assert.match(html, /<li data-step="brief"[^>]*>.*?<details class="room-fold"><summary>Read the brief<\/summary><div class="rich">/);
+    for (const piece of ["Who it&#x27;s for", "How it works", "<table class=\"data\">", "SAM 3.1", "Muse Wonder", "Species names are guesses.", "From your inspo", "Cost per run"]) {
+      assert.ok(html.includes(piece), piece);
+    }
+    // Open beside a running build, the panel already holds it.
+    assert.match(page("running").slice(page("running").indexOf('class="room-panel"')), /Read the brief<\/summary><div class="rich">/);
+  });
+});
+
+describe("the card's look", () => {
+  it("holds its pictures in one fixed box, so a swap never moves the text", () => {
+    const s = css();
+    assert.match(s, /\.plan-card-art \{[^}]*aspect-ratio: 564 \/ 640;/);
+    assert.match(s, /\.plan-card-stack > img \{[^}]*position: absolute;[^}]*inset: 0;/);
+  });
+
+  it("crossfades the pictures, and doesn't move at all under reduced motion", () => {
+    const s = css();
+    assert.match(s, /\.plan-card-stack > img\.is-on \{[^}]*transition: opacity var\(--plan-swap\)/);
+    const reduced = s.slice(s.indexOf("@media (prefers-reduced-motion: reduce)"));
+    assert.ok(reduced.length > 0 && s.includes("@media (prefers-reduced-motion: reduce)"));
+    assert.match(reduced, /\.plan-card \{\s*animation: none;\s*\}/);
+    assert.match(reduced, /\.plan-card-stack > img,\s*\.plan-card-stack > img\.is-on \{\s*transition: none;\s*\}/);
+  });
+
+  it("stands the white pictures on a light stage in both themes, with colors only as its token", () => {
+    const s = css();
+    assert.match(s, /\.plan-card-stack \{[^}]*mix-blend-mode: multiply;/);
+    assert.match(s, /\.plan-card-art \{[^}]*border: 1px solid var\(--line\);[^}]*background: var\(--plan-stage\);/);
+    assert.match(s, /@media \(prefers-color-scheme: dark\) \{\s*:root:not\(\[data-theme="light"\]\) \.plan-card \{\s*--plan-stage: #[0-9a-f]{6};/);
+    assert.match(s, /:root\[data-theme="dark"\] \.plan-card \{\s*--plan-stage: #[0-9a-f]{6};/);
+    const raw = s.split("\n").filter((l) => /#[0-9a-f]{3,8}\b|rgba?\(/i.test(l) && !/^\s*--plan-stage:/.test(l));
+    assert.deepEqual(raw, [], "no raw colors outside the stage token");
+  });
+
+  it("fits a phone: a smaller picture beside the name, and the wide layout only where the column has room", () => {
+    const s = css();
+    assert.match(s, /\.room-plan \{[^}]*container-type: inline-size;/);
+    assert.match(s, /\.plan-card \{[^}]*grid-template-columns: 112px minmax\(0, 1fr\);/);
+    assert.match(s, /@container \(min-width: 520px\) \{\s*\.plan-card \{[^}]*grid-template-columns: 240px minmax\(0, 1fr\);/);
+  });
+
+  it("loads with the build room page", () => {
+    const route = readFileSync(path.join(ROOT, "app/b/[buildId]/page.tsx"), "utf8");
+    assert.match(route, /import "@\/components\/build\/plan-card\.css";/);
+  });
+});

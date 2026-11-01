@@ -201,7 +201,7 @@ Nothing the old room showed is gone. This is where each piece is now.
 | Connector URL and how to add it | More menu |
 | The person's muse, references, rebuild tag, "From the docs page" | Bubble with 40 px thumbnails, tag above, fold below. File names are in the Sources tab |
 | Notes from before any turn | A "Getting ready" step |
-| Brief turn | A step, with the whole brief in a "Read the brief" fold. A declined brief also shows in the conversation |
+| Brief turn | A step, with the whole brief in a "Read the brief" fold. In the conversation, the plan card (`PlanCard.tsx`): the mascot for the build's state beside the plan's name, tagline, who it's for and how it works, linking to that fold. A declined brief shows its own message there instead, with no card |
 | Muse Code turn title and its time, usage and cost | The round's step and its description |
 | Time and cost of the brief, checks, demo and deploy | Each one's step, in its description |
 | Goal card, with status and progress | On the round's step, in the panel |

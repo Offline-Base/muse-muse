@@ -1,0 +1,174 @@
+/*
+ * The plan card in the build room's conversation (components/build/PlanCard.tsx): the Muse mascot on its own light stage
+ * at the left, the plan's summary at the right. All classes are new, so a room without a card looks as it did.
+ *
+ * The mascot pictures have white backgrounds. They're multiplied onto the stage, so their white becomes the stage's
+ * color and the card reads as one rounded tile with the media card's radius and a hairline. In dark mode the stage
+ * stays light, a little dimmer, so it reads as a lit card on the page rather than a white rectangle.
+ */
+
+.room-plan {
+  container-type: inline-size;
+  min-width: 0;
+}
+
+.plan-card {
+  /* The light --surface-2. It stays light in dark mode, where white pictures would glare at full strength. */
+  --plan-stage: #f3f4f5;
+  --plan-swap: 300ms;
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  grid-template-areas:
+    "art head"
+    "body body";
+  gap: 16px;
+  align-items: start;
+  animation: chat-fade-in 150ms ease-out;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .plan-card {
+    --plan-stage: #dcdddf;
+  }
+}
+
+:root[data-theme="dark"] .plan-card {
+  --plan-stage: #dcdddf;
+}
+
+/* A fixed box, so a swap never moves the text beside it. */
+.plan-card-art {
+  grid-area: art;
+  position: relative;
+  aspect-ratio: 564 / 640;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--plan-stage);
+  isolation: isolate;
+}
+
+/* The pictures crossfade among themselves, then the stack as a whole is multiplied onto the stage. */
+.plan-card-stack {
+  position: absolute;
+  inset: 0;
+  mix-blend-mode: multiply;
+}
+
+/* The outgoing picture stays under the incoming one until it has faded in, so the swap never dips to the stage. */
+.plan-card-stack > img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 0s linear var(--plan-swap);
+}
+
+.plan-card-stack > img.is-on {
+  z-index: 1;
+  opacity: 1;
+  transition: opacity var(--plan-swap) cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.plan-card-head {
+  grid-area: head;
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.plan-card-name {
+  color: var(--fg);
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 25px;
+}
+
+.plan-card-tagline {
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.plan-card-verdict {
+  margin-top: 4px;
+}
+
+.plan-card-body {
+  grid-area: body;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  font-size: 16px;
+  line-height: 26px;
+  overflow-wrap: anywhere;
+}
+
+.plan-card-body h3 {
+  color: var(--fg);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.plan-card-body * + h3 {
+  margin-top: 12px;
+}
+
+.plan-card-body ol {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding-left: 22px;
+}
+
+.plan-card-more {
+  margin-top: 8px;
+  line-height: 20px;
+}
+
+/* Wide enough for a 240 px picture beside the whole summary, with the media card's 24 px corners. */
+@container (min-width: 520px) {
+  .plan-card {
+    grid-template-columns: 240px minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+    grid-template-areas:
+      "art head"
+      "art body";
+    gap: 12px 24px;
+  }
+
+  .plan-card-art {
+    border-radius: 24px;
+  }
+
+  .plan-card-head {
+    align-self: start;
+    padding-top: 4px;
+  }
+
+  .plan-card-name {
+    font-size: 24px;
+    line-height: 29px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plan-card {
+    animation: none;
+  }
+
+  .plan-card-stack > img,
+  .plan-card-stack > img.is-on {
+    transition: none;
+  }
+}
