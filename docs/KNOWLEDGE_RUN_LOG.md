@@ -1012,6 +1012,17 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   rechecked before upload. Stage 2 is also a Derivative (it continues stage 1's adapter and contains the Spark Open
   anchors), so Muse Muse General was told its files carry the same duties, and it asked for the license files in S3 next
   to each GGUF.
+- 9:45 PM: owner: "There should be no post nov 4 plan, only focus on what we can do beforehand." The plan's After Nov 4
+  section (N0 to N8, RL, self-distillation, DFlash retrain) is dropped, noted at the top of docs/KNOWLEDGE_NEXT_PLAN.md.
+  The dose test stays, now as the gate for Stage A+ tonight. B3 (false-premise generalization) is added for Nov 1, and
+  the pick moves to Nov 2 afternoon. Header labels with reasoning and tool data are out: they need reasoning generation
+  and two-plus days. Status at 9:30 PM:
+  - train-1: B2 at step 200 of 1,875, all 8 GPUs at 100%, $564 so far;
+  - writer-1: Muse Privacy's rows on r30b IQ1_S;
+  - shrink bench: iq1s-out-q4 (5.92 GB) waiting for its score;
+  - r30b IQ1_S loop check: greedy 9 of 60 loop (8 of them long prompts), cap hit 8, old facts 37/40; Meta sampling 10
+    of 60, old facts 35/40;
+  - copy_out to the NFS running.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.

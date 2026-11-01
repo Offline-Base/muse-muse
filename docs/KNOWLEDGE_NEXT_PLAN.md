@@ -1,3 +1,14 @@
+> **Owner, Oct 31, 9:45 PM ET: "There should be no post nov 4 plan, only focus on what we can do beforehand."**
+> The "After Nov 4" section below is dropped: N0 to N8, RL, self-distillation, the DFlash retrain and the full route. The
+> pre-Nov 4 plan is now:
+> 1. Tonight: B2, its test wave (A1 serving settings, A2 sampling), the dose test, then Stage A+ and B2' if D1 passes.
+> 2. Nov 1: B3, a false-premise generalization variant answering the held-out 190 result (false premises accepted 80%).
+> 3. Pick by Nov 2 afternoon among r30b, B2, B2' and B3, with the same hard gates.
+> 4. The winner's small files, loop and vision checks, the Hugging Face release, and device tests. Nov 3 is environment
+>    swaps only.
+> Header labels with reasoning and tool data (N1, N2, N4) are also out: they need reasoning generation, which the
+> classifier stopped twice, and two-plus days.
+
 # Muse Glimmer: final plan (Oct 31 to after Nov 4)
 
 Written Oct 31, 8:40 PM EDT. This is planning only: nothing was launched, bought or edited in the repo. It builds on plan-v1.md and applies both critiques; the critique points not taken are listed at the end, one line each. No model reasoning text was opened, only code, logs and count reports.
