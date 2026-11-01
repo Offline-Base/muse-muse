@@ -99,6 +99,8 @@ const FOUND: Array<[import("../content").PiiKind, string]> = [
   ["phone", "My cell is 512-867-5309."],
   ["phone", "Ring +44 20 7946 0958 in London."],
   ["phone", "Text 512.867.5309 please."],
+  ["phone", "Call 5128675309 tonight."],
+  ["phone", "Ring +442079460958 from abroad."],
   ["card", "Card 4111 1111 1111 1111 exp 04/29"],
   ["card", "Pay with 5500-0000-0000-0004."],
   ["card", "378282246310005 is the Amex."],
@@ -107,9 +109,12 @@ const FOUND: Array<[import("../content").PiiKind, string]> = [
   ["government_id", "NI number AB 12 34 56 C"],
   ["government_id", "passport number X1234567 please"],
   ["government_id", "driver's license: D1234-5678-90"],
+  ["government_id", "TIN 12-3456789 is on the form."],
   ["street_address", "Deliver to 1600 Pennsylvania Avenue tomorrow."],
   ["street_address", "We're at 42 Elm St. downtown."],
   ["street_address", "Ship it to 221 Baker Street, London."],
+  ["street_address", "Flat 2, 221B Baker Street."],
+  ["street_address", "mail it to 123 main street please"],
 ];
 
 // Ordinary text the scan must leave alone.
@@ -128,6 +133,11 @@ const CLEAN = [
   "@bakery on social, #nutfree",
   "Score 98-100 on the test.",
   "0000 0000 0000 0000",
+  "Buy a tin 100000 units at a time.",
+  "Order 1234567890 shipped, and order 0123456789 too.",
+  "It's a 5 minute drive down a 2 lane road.",
+  "Our fictional line is 5125550123.",
+  "The 10 best streets to walk.",
 ];
 
 describe("piiFindings", () => {
@@ -168,6 +178,17 @@ describe("piiFindings", () => {
     }
   });
 
+  it("scans long text in linear time: a long run with no @ is tried once, not from every position", () => {
+    let t = performance.now();
+    C.piiCounts("1".repeat(100_000));
+    C.piiCounts("a".repeat(100_000));
+    C.piiCounts("a@" + "b".repeat(100_000));
+    assert.ok(performance.now() - t < 250, "100,000 characters three ways");
+    t = performance.now();
+    C.piiFindings({ rows: Array.from({ length: 100 }, () => ({ prompt: "a".repeat(1500), answer: "1".repeat(4000) })) });
+    assert.ok(performance.now() - t < 250, "100 rows at the most a visitor may send");
+  });
+
   it("says where in plain sentences", () => {
     const rows = Array.from({ length: 5 }, (_, i) => ({ prompt: "q", answer: `call 512-867-53${10 + i}` }));
     const sentences = C.piiSentences(C.piiFindings({ task: "write to a@gmail.com", rows }));
@@ -201,6 +222,23 @@ describe("contentFindings", () => {
     assert.equal(lines.length, 1);
     assert.match(lines[0], /pii scan: 2 place\(s\), kinds email,phone/);
     for (const l of lines) assert.ok(!l.includes("867-5309") && !l.includes("jordan.reyes"));
+  });
+});
+
+describe("contentFindingsFor", () => {
+  it("scans a visitor's plan and leaves an admin's exactly as today, with nothing logged", () => {
+    const input = { note: "Call 512-867-5309", rows: [{ prompt: "mail jordan.reyes@gmail.com", answer: "ok" }] };
+    const lines: string[] = [];
+    const warn = console.warn;
+    console.warn = (...args: unknown[]) => void lines.push(args.map(String).join(" "));
+    try {
+      assert.deepEqual(C.contentFindingsFor({ kind: "admin" }, input), []);
+      assert.equal(lines.length, 0);
+      assert.equal(C.contentFindingsFor({ kind: "visitor" }, input).length, 2);
+      assert.equal(lines.length, 1);
+    } finally {
+      console.warn = warn;
+    }
   });
 });
 

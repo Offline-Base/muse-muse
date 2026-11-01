@@ -7,9 +7,12 @@
  *   street addresses. A finding says what kind and where, never the matched text, so nothing found can reach a log.
  * - VISITOR_TASK_RULES: the fixed rules every visitor task ends with (withVisitorRules).
  *
- * contentFindings replaces the TODO(open-train U3) seam in lib/train/tune/plan.ts. That file is being edited by the
- * composer workflow, so it isn't changed here: the wiring step imports contentFindings from this file in
- * app/api/train/plan/route.ts (and anywhere else plan.ts's contentFindings is called) and deletes the stub.
+ * contentFindingsFor replaces the TODO(open-train U3) seam in lib/train/tune/plan.ts. That file is being edited by the
+ * composer workflow, so it isn't changed here: the wiring step calls contentFindingsFor(caller, {note, rows}) in
+ * app/api/train/plan/route.ts in place of plan.ts's contentFindings, after the route's per-caller rate limit (so an
+ * anonymous caller can't run the scan unthrottled), and deletes the stub. It scans visitors only, so with
+ * PUBLIC_TRAINING off nobody's plan changes. plan.ts's TODO expected the scan for everyone: if the owner wants admins
+ * scanned too, call contentFindings instead and record that in open-train.md.
  */
 import { z } from "zod";
 import { textPart } from "@/lib/brief/media";
@@ -17,6 +20,7 @@ import { cleanStrings } from "@/lib/brief/normalize";
 import { respondStructured, type StructuredOptions, type StructuredResult } from "@/lib/brief/structured";
 import { testModel } from "@/lib/env";
 import { REFUSE_WHEN } from "@/lib/prompts/brief";
+import type { TrainCaller } from "@/lib/train/public/caller";
 import { DATASET_TASK_MAX } from "@/lib/train/logic";
 import type { ModelUsage } from "@/lib/types";
 
@@ -110,12 +114,21 @@ export interface PiiFinding {
 
 /** Domains kept for examples (RFC 2606, 6761), so made-up addresses like name@example.com pass. */
 const EXAMPLE_DOMAIN = /(^|\.)(example\.(com|org|net)|example|test|invalid|localhost)$/i;
-const EMAIL = /[A-Za-z0-9._%+-]+@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,})/g;
+/**
+ * The local part starts where the run of address characters starts and is at most 64 long, so a long run with no "@"
+ * is tried once, not from every position (unanchored, 100,000 digits took about 5 seconds).
+ */
+const EMAIL = /(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]{1,64}@([A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63})*\.[A-Za-z]{2,})/g;
 
 /** Separated phone numbers: (512) 555-0134, 512-555-0134, 512.555.0134, +44 20 7946 0958. */
 const PHONE = /(?<![\w+])(?:\+\d{1,3}[\s.-]?)?(?:\(\d{2,4}\)[\s.-]?|\d{2,4}[\s.-])\d{3,4}[\s.-]\d{3,4}(?![\w])/g;
-/** 555-0100 to 555-0199 are set aside for fiction. */
-const FICTIONAL_PHONE = /(?:^|\D)555[\s.-]?01\d\d$/;
+/**
+ * Unseparated: +442079460958 (a + and 10 to 15 digits), or 5128675309 shaped like a North American number (area code
+ * and exchange not starting 0 or 1, an optional leading 1). Other runs of 10 digits, such as most order numbers, pass.
+ */
+const PHONE_RUN = /(?<![\w+])(?:\+\d{10,15}|1?[2-9]\d{2}[2-9]\d{6})(?!\w)/g;
+/** 555-0100 to 555-0199 are set aside for fiction: the last seven digits. */
+const FICTIONAL_PHONE = /55501\d\d$/;
 
 const CARD = /(?<!\d)(?:\d[ -]?){12,18}\d(?!\d)/g;
 
@@ -123,10 +136,18 @@ const CARD = /(?<!\d)(?:\d[ -]?){12,18}\d(?!\d)/g;
 const SSN = /(?<!\d)(?!000|666|9\d\d)\d{3}-(?!00)\d{2}-(?!0000)\d{4}(?!\d)/g;
 const NINO = /\b(?!BG|GB|KN|NK|NT|TN|ZZ)[A-CEGHJ-PR-TW-Z][A-CEGHJ-NPR-TW-Z]\s?\d{2}\s?\d{2}\s?\d{2}\s?[A-D]\b/g;
 const NAMED_ID =
-  /\b(?:passport|driver'?s? licen[cs]e|national id|id card|social security|SSN|tax id|TIN|NHS number)(?:\s+(?:no\.?|number|#))?\s*[:#]?\s*(?=[A-Z0-9-]*\d)[A-Z0-9][A-Z0-9-]{5,14}\b/gi;
+  /\b(?:passport|driver'?s? licen[cs]e|national id|id card|social security|tax id|NHS number)(?:\s+(?:no\.?|number|#))?\s*[:#]?\s*(?=[A-Z0-9-]*\d)[A-Z0-9][A-Z0-9-]{5,14}\b/gi;
+/** SSN and TIN only in capitals: "a tin of 100000" is a can. */
+const NAMED_ID_ACRONYM = /\b(?:SSN|TIN)(?:\s+(?:[Nn]o\.?|[Nn]umber|#))?\s*[:#]?\s*(?=[A-Za-z0-9-]*\d)[A-Za-z0-9][A-Za-z0-9-]{5,14}\b/g;
 
+/** 1600 Pennsylvania Avenue, 221B Baker Street, 42 Elm St: a house number (and letter), capitalized words, a suffix. */
 const STREET =
-  /\b\d{1,6}\s+(?:[A-Z][A-Za-z'.-]*\s+){1,4}(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Court|Ct|Place|Pl|Terrace|Parkway|Pkwy|Highway|Hwy|Way)\b\.?/g;
+  /\b\d{1,6}[A-Z]?\s+(?:[A-Z][A-Za-z'.-]*\s+){1,4}(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Court|Ct|Place|Pl|Terrace|Parkway|Pkwy|Highway|Hwy|Way)\b\.?/g;
+/**
+ * In any case, "123 main street": one or two words before street, avenue or boulevard only. The short suffixes in lower
+ * case ("a 5 minute drive", "a 2 lane road") are ordinary words too often.
+ */
+const STREET_ANY_CASE = /\b\d{1,5}[A-Za-z]?\s+(?:[A-Za-z][A-Za-z'.-]*\s+){1,2}(?:street|avenue|boulevard)\b/gi;
 
 function luhn(digits: string): boolean {
   let sum = 0;
@@ -178,15 +199,13 @@ export function piiCounts(text: string): Partial<Record<PiiKind, number>> {
     }),
   );
   const inCard = (m: RegExpMatchArray) => runs.some(([a, b]) => m.index! >= a && m.index! < b);
-  add(
-    "phone",
-    countMatches(text, PHONE, (m) => {
-      const digits = m[0].replace(/\D/g, "");
-      return digits.length >= 10 && digits.length <= 15 && !FICTIONAL_PHONE.test(m[0]) && !inCard(m);
-    }),
-  );
-  add("government_id", distinctSpans(text, [SSN, NINO, NAMED_ID]));
-  add("street_address", countMatches(text, STREET));
+  const realPhone = (m: RegExpMatchArray) => {
+    const digits = m[0].replace(/\D/g, "");
+    return digits.length >= 10 && digits.length <= 15 && !FICTIONAL_PHONE.test(digits) && !inCard(m);
+  };
+  add("phone", countMatches(text, PHONE, realPhone) + countMatches(text, PHONE_RUN, realPhone));
+  add("government_id", distinctSpans(text, [SSN, NINO, NAMED_ID, NAMED_ID_ACRONYM]));
+  add("street_address", distinctSpans(text, [STREET, STREET_ANY_CASE]));
   return out;
 }
 
@@ -246,6 +265,14 @@ export function contentFindings(input: { note: string; rows: readonly ContentRow
   const findings = piiFindings({ task: input.note, rows: input.rows });
   if (findings.length) console.warn(piiLogLine(findings));
   return piiSentences(findings);
+}
+
+/**
+ * contentFindings for a visitor, nothing for an admin or automation: what the plan route calls (see the header), so
+ * PUBLIC_TRAINING off, where every caller is an admin, changes nobody's plan.
+ */
+export function contentFindingsFor(caller: Pick<TrainCaller, "kind">, input: { note: string; rows: readonly ContentRow[] }): string[] {
+  return caller.kind === "visitor" ? contentFindings(input) : [];
 }
 
 // ---------------------------------------------------------------------------------------------------------------
