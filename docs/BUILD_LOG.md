@@ -211,6 +211,8 @@ Router finding for Ethan: a request headed outside the class that both the label
 
 **21:27** Relayed by the training session, not yet confirmed with Ethan in this chat: he says Muse Privacy is non-commercial, so r30b's non-commercial terms stand and there is no retrain. That sits next to CLAUDE.md's "entered on the startup track", which to confirm with him before the submission says either. The 18+ and AI-label points stay open. The training session will hand over local copies of the license texts with their sha256s (Apache 2.0 LICENSE from base Glimmer, the Muse Model License with its Usage Policy, the Glimmer Usage Policy, its NOTICE, its non-commercial terms); they go in only if r30b ships and Ethan says so.
 
+**21:31** Update relayed by the training session, not yet confirmed with Ethan here: he dropped the non-commercial terms, so r30b's own changes go out under Apache 2.0 and the commercial question is moot. The Muse Model License duties still apply if r30b ships ("Built with Muse Spark Open", the license and Usage Policy with any copies of the model files, users 18 or older, outputs never presented as written by a person). Coming: LICENSE, MUSE_MODEL_LICENSE.md, USAGE_POLICY.md and NOTICE; no non-commercial file.
+
 ## Open items
 
 - Ethan: which mode the routing tune targets; whether to hand over stage 2 IQ1_S early.
