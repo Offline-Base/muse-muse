@@ -4,6 +4,7 @@
  *   npx tsx --test lib/caps/hardware/__tests__/brief.test.ts
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, it } from "node:test";
 import type { Brief } from "@/lib/brief/schema";
 import { BriefSchema, newBriefSchemaFor } from "@/lib/brief/schema";
@@ -75,6 +76,18 @@ describe("the drive tools in a brief", () => {
     const words = [...capsBuildLines(asked), ...capsRefineLines(asked), ...capsMarkdown(asked), hardwareJudgeNote(asked), CAP_CATALOG.hardware!.block, ...hardwareWriterRules()].join("\n");
     for (const said of [/exportToDrive/, /needs_confirmation/, /needs_erase/, /checkDriveExport/, /press confirm/, /never erases/, /plugged in/]) assert.match(words, said);
     assert.doesNotMatch(words, /\u2014/);
+  });
+
+  it("a drive-only product is told how its owner gets the pass, and not to tell the owner by a cookie", () => {
+    driveUsable();
+    const lines = capsBuildLines(brief(DRIVE)).join("\n");
+    assert.match(lines, /`Open as owner`/);
+    assert.match(lines, /not from a cookie check/);
+    const skill = readFileSync(new URL("../../../../template/caps/hardware/files/.agents/skills/muse-hardware/SKILL.md", import.meta.url), "utf8");
+    const section = skill.slice(skill.indexOf("## Drive export"), skill.indexOf("## During the build"));
+    assert.match(section, /use Open as owner on its Muse Muse page/);
+    assert.match(section, /see whether `driveStatus` answers/);
+    assert.doesNotMatch(section, /\u2014/);
   });
 
   it("a brief that doesn't ask gets none of it, with them on", () => {

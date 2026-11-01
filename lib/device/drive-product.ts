@@ -45,6 +45,8 @@ import type { LocalFile, LocalFiles } from "@/lib/train/local-files";
 export interface ProductDriveDeps {
   /** ownModelFor. The only way a product's `model` becomes a model. */
   ownModel(productId: string): Promise<{ adapterJobId: string } | null>;
+  /** isOwnModelJob. Whether an export already going is of this product's model, which needn't be its newest any more. */
+  ownsJob(productId: string, jobId: string): Promise<boolean>;
   localFiles(adapterJobId: string): Promise<LocalFiles | null>;
   kit(): Promise<DriveKit | null>;
   /** What buildExport needs besides the board: the drive's templates and the Hub. */
@@ -68,6 +70,12 @@ const NO_DUTIES_WORDS = "This model is a Derivative of Muse Spark Open, and its 
 /** Preferred, for a product's export: the admin card picks by hand, and here nobody does. Otherwise the smallest that passed. */
 const PREFERRED_LEVEL = "Q4_K_M";
 
+/**
+ * The gadget route's maxDuration is 60 seconds, and a plan can read the Hub three times at 20 each with no shared limit. Past this
+ * point the approval isn't spent, so a function killed during the board's call can't cost the owner their confirmation.
+ */
+const MAX_MS_BEFORE_SPENDING = 40_000;
+
 /** The linked board keeps its own address and token (LinkedBoard.open). lib/device/drive.ts takes a config, and this one is never read. */
 const BOARD_HOLDS_ITS_OWN_CONFIG: DeviceConfig = { url: "", token: "" };
 
@@ -86,7 +94,8 @@ function forProductWords(text: string): string {
   return redactUrls(text)
     .replace(/https?:\/\/[^\s"'<>]+/g, "[link]")
     .replace(/\sat\s+\/[^\s,]*/g, "")
-    .replace(/(^|\s)\/[^\s,]+/g, "$1[a folder on the board]");
+    .replace(/'\/[^']*'|"\/[^"]*"/g, "[a folder on the board]")
+    .replace(/(^|[\s'"(\[=:])\/[^\s,'")\]]+/g, "$1[a folder on the board]");
 }
 
 /** Why something failed, for the log. Never a link (a board's address is one), and never a plan. */
@@ -109,38 +118,46 @@ function driveView(d: BoardDrive) {
   return { title: d.title, bytes: d.bytes, kind: d.kind, filesystem: d.filesystem, free: d.free, read_only: d.read_only, usable: d.usable, why: d.why ? forProductWords(d.why) : null };
 }
 
-/** The progress. No source, no folder, and no drive identity: the board may be busy with something else of its owner's. */
-function exportView(e: ExportStatus) {
+/** All a product hears of an export that isn't its own. The board's sentences name that export's files. */
+const otherExportWords = (state: ExportStatus["state"]) => (ENDED_STATES.has(state) ? "Your board's last export was a different one, and it has ended." : "Your board is busy with a different export.");
+
+/**
+ * The progress. No source, no folder, and no drive identity: the board may be busy with something else of its owner's. The board's
+ * own sentences go only with this product's own export (`mine`).
+ */
+function exportView(e: ExportStatus, mine: boolean) {
   const needsErase = e.state === "needs_erase";
   return {
     export: e.export,
     state: e.state,
-    ...(needsErase ? { message: NEEDS_ERASE_WORDS } : e.message ? { message: forProductWords(e.message) } : {}),
+    ...(needsErase ? { message: NEEDS_ERASE_WORDS } : !mine ? { message: otherExportWords(e.state) } : e.message ? { message: forProductWords(e.message) } : {}),
     ...(e.drive ? { drive: { title: e.drive.title, bytes: e.drive.bytes, kind: e.drive.kind } } : {}),
     ...(e.done_bytes !== undefined ? { done_bytes: e.done_bytes } : {}),
     ...(e.total_bytes !== undefined ? { total_bytes: e.total_bytes } : {}),
     ...(e.mbps !== undefined ? { mbps: e.mbps } : {}),
     ...(e.eta_s !== undefined ? { eta_s: e.eta_s } : {}),
     ...(e.result !== undefined ? { result: e.result } : {}),
-    ...(e.problems ? { problems: e.problems.map(forProductWords) } : {}),
+    ...(mine && e.problems ? { problems: e.problems.map(forProductWords) } : {}),
     ...(e.seconds !== undefined ? { seconds: e.seconds } : {}),
   };
 }
 
 /** What a product sees of a board's drive_status. Never the board's runs, a drive's name or its identity. */
-const statusView = (s: Pick<DriveStatusReply, "drives" | "export">) => ({ drives: s.drives.map(driveView), export: s.export ? exportView(s.export) : null });
+const statusView = (s: Pick<DriveStatusReply, "drives" | "export">, mine: boolean) => ({ drives: s.drives.map(driveView), export: s.export ? exportView(s.export, mine) : null });
+
+/** Whether the board's export is of this product's own model. The status comes from the board, so a source that says nothing is no. */
+async function isOwnExport(exp: ExportStatus | null | undefined, productId: string, deps: ProductDriveDeps): Promise<boolean> {
+  const ref = exp ? parseSourceRef(exp.source) : null;
+  return ref?.kind === "lab" ? deps.ownsJob(productId, ref.jobId) : false;
+}
 
 /**
- * An export of this product's own model, waiting in needs_urls, gets fresh signed links. Only its own: the status comes from the
- * board, and whatever else its source tag names isn't this product's to sign, even on its owner's board.
+ * An export of this product's own model, waiting in needs_urls, gets fresh signed links. Only its own: whatever else the source tag
+ * names isn't this product's to sign, even on its owner's board.
  */
-async function refreshOwnLinks(status: DriveStatusReply, board: GadgetBoard, productId: string, deps: ProductDriveDeps): Promise<void> {
+async function refreshOwnLinks(status: DriveStatusReply, board: GadgetBoard, deps: ProductDriveDeps): Promise<void> {
   const exp = status.export;
   if (exp?.state !== "needs_urls") return;
-  const ref = parseSourceRef(exp.source);
-  if (ref?.kind !== "lab") return;
-  const own = await deps.ownModel(productId);
-  if (!own || own.adapterJobId.toLowerCase() !== ref.jobId) return;
   const kit = await deps.kit();
   if (!kit || kitProblem(kit)) return;
   const made = await freshUrls(exp.source, await exportDeps(board, kit, deps));
@@ -152,9 +169,14 @@ async function statusOnBoard(call: Extract<GadgetDriveCall, { kind: "owner" }>, 
   const board = await call.open();
   if (!board) return noBoard();
   const status = await driveStatus(BOARD_HOLDS_ITS_OWN_CONFIG, callerFor(board));
-  // A link that can't be made yet is no reason not to show the status. The next poll tries again.
-  await refreshOwnLinks(status, board, call.productId, deps).catch((err: unknown) => console.error("[gadget] fresh links:", forLog(err)));
-  return answer(statusView(status), false);
+  // Not being able to tell is no reason not to show the status, and it reads as someone else's. The next poll asks again.
+  const mine = await isOwnExport(status.export, call.productId, deps).catch((err: unknown) => {
+    console.error("[gadget] whose export:", forLog(err));
+    return false;
+  });
+  // A link that can't be made yet is no reason not to show the status either.
+  if (mine) await refreshOwnLinks(status, board, deps).catch((err: unknown) => console.error("[gadget] fresh links:", forLog(err)));
+  return answer(statusView(status, mine), false);
 }
 
 // ---------- export_to_drive ----------
@@ -192,7 +214,7 @@ async function exportOnBoard(call: Extract<GadgetDriveCall, { kind: "owner" }>, 
   const wanted = (call.model as string).toLowerCase();
   if (!own || (wanted !== "own" && wanted !== own.adapterJobId.toLowerCase())) return refusal(404, "own_model_not_found", "This product has no tuned model of its own by that name.");
   const lf = await deps.localFiles(own.adapterJobId);
-  if (!lf || lf.adapterJobId !== own.adapterJobId || !lf.repo || !lf.commit || !lf.files.length) return refusal(409, "own_model_not_ready", "This product's model has no checked files for a drive yet.");
+  if (!lf || lf.adapterJobId !== own.adapterJobId || !lf.repo || !lf.commit || !lf.files.length) return refusal(409, "own_model_not_ready", "This product's model has no checked files for a drive, so it can't go on one.");
 
   // ownModelFor returns only models trained on r30b, each a Derivative, so a file that doesn't say so has lost its duties. labModel
   // adds them only when sparkOpen is set. Refused here, knowledge-run name or not, and exportPlan's own check is behind this.
@@ -251,6 +273,8 @@ async function exportOnBoard(call: Extract<GadgetDriveCall, { kind: "owner" }>, 
   const args = { plan: built.plan, urls: built.urls, drive: drive.name, identity: drive.identity };
   if (callTooLarge(args)) return refusal(413, "plan_too_large", "This drive's plan is too big to send to the board in one call.");
 
+  if ((deps.now?.() ?? new Date()).getTime() - now.getTime() > MAX_MS_BEFORE_SPENDING) return refusal(409, "source_unavailable", "The model's files took too long to read. Nothing was changed. Try again.");
+
   // Spent when the call goes out, as the tool gateway does: a refusal above doesn't burn one, and no two calls share one.
   if (!(await deps.spendApproval(approved.nonce, approved.exp))) return confirmCard(scope, lines, true, now, false);
   console.info(`[gadget] drive export for product ${call.productId}`);
@@ -268,7 +292,7 @@ async function onSimulator(call: Extract<GadgetDriveCall, { kind: "build" }>, de
   if (call.tool === "drive_status") {
     const startedAt = await deps.latestNote(simKey(call, "export_to_drive"));
     await deps.note(simKey(call, "drive_status"), now);
-    return answer(statusView(simulatedDriveStatus(startedAt ? startedAt.getTime() : null, now.getTime())), true);
+    return answer(statusView(simulatedDriveStatus(startedAt ? startedAt.getTime() : null, now.getTime()), true), true);
   }
   if ((call.model as string).toLowerCase() !== "own") return refusal(404, "own_model_not_found", "This product has no tuned model of its own by that name.");
   const [drive] = simulatedDriveStatus(null, now.getTime()).drives;

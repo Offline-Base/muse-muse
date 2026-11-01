@@ -4,7 +4,7 @@
  */
 import path from "node:path";
 import { latestProofAt } from "@/lib/caps/hardware/store";
-import { ownModelFor } from "@/lib/caps/gpu/own-model";
+import { isOwnModelJob, ownModelFor } from "@/lib/caps/gpu/own-model";
 import { productDriveCall, type ProductDriveDeps } from "@/lib/device/drive-product";
 import { loadKit } from "@/lib/drive/kit";
 import { readDriveTemplates } from "@/lib/drive/plan";
@@ -15,6 +15,7 @@ import { localFilesFor } from "@/lib/train/local-files-server";
 
 const DEPS: ProductDriveDeps = {
   ownModel: (productId) => ownModelFor(productId),
+  ownsJob: (productId, jobId) => isOwnModelJob(productId, jobId),
   localFiles: localFilesFor,
   kit: () => loadKit(),
   planDeps: async () => ({

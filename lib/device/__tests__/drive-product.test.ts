@@ -27,6 +27,7 @@ const NOW = new Date("2026-11-03T15:00:00Z");
 const OWNER_ID = "owner-1";
 const JOB = "8f1d2c3b-0000-4000-8000-000000000001";
 const OTHER_JOB = "7a7a7a7a-0000-4000-8000-000000000002";
+const NEWER_JOB = "6b6b6b6b-0000-4000-8000-000000000003";
 const R30B = "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit";
 const PASS = { items: 20, tunedWins: 16, baseWins: 3, ties: 1, avgTunedScore: 8.5, avgBaseScore: 3.1 };
 const MODELS = ["cap:hardware", DRIVE_TOOLS_MARKER];
@@ -94,6 +95,9 @@ interface FixtureOptions {
   link?: LinkedBoard | null;
   visitors?: boolean;
   own?: Record<string, string | null>;
+  /** isOwnModelJob's answer, when it's more than the newest model. */
+  owned?: string[];
+  onHub?: () => void;
   files?: LocalFiles | null;
   drive?: boolean;
   check?: boolean;
@@ -113,6 +117,7 @@ function fixture(o: FixtureOptions = {}) {
       const own = o.own ?? { "prod-1": JOB, "prod-2": OTHER_JOB };
       return own[productId] ? { adapterJobId: own[productId]! } : null;
     },
+    ownsJob: async (productId, jobId) => (o.owned ?? [(o.own ?? { "prod-1": JOB, "prod-2": OTHER_JOB })[productId]]).includes(jobId),
     localFiles: async (id) => {
       trace.localFiles.push(id);
       return o.files === undefined ? FILES() : o.files;
@@ -121,6 +126,7 @@ function fixture(o: FixtureOptions = {}) {
     planDeps: async () => ({
       templates,
       hubText: async () => {
+        o.onHub?.();
         if (o.hubThrows) throw new Error(`boom ${SECRET_LINK}`);
         return o.card ?? `# Bakery helper GGUF\n\n${builtWithBlock("These files")}\n`;
       },
@@ -400,6 +406,7 @@ describe("what export_to_drive takes", () => {
         call: (call) =>
           productDriveCall(call, {
             ownModel: own,
+            ownsJob: async () => false,
             localFiles: async () => FILES(),
             kit: async () => kit,
             planDeps: async () => ({ templates, hubText: async () => "", hfToken: () => null }),
@@ -423,7 +430,10 @@ describe("what export_to_drive takes", () => {
     const unready: Array<LocalFiles | null> = [null, { ...FILES(), repo: null }, { ...FILES(), files: [] }, { ...FILES(), adapterJobId: OTHER_JOB }];
     for (const files of unready) {
       const f = fixture({ files });
-      assert.equal(await errorCode(await handleGadgetCall(post(LIVE, EXPORT(), ownerHeaders), f.deps)), "own_model_not_ready");
+      const res = await handleGadgetCall(post(LIVE, EXPORT(), ownerHeaders), f.deps);
+      const body = await res.clone().text();
+      assert.equal(await errorCode(res), "own_model_not_ready");
+      assert.doesNotMatch(body, /\byet\b/, "a private model's files don't arrive by waiting");
       boardTouched(f);
     }
   });
@@ -548,6 +558,31 @@ describe("confirming", () => {
   });
 });
 
+describe("the gadget route's time limit", () => {
+  const confirmed = async (f: ReturnType<typeof fixture>) => {
+    const card = await payload<Card>(await handleGadgetCall(post(LIVE, EXPORT(), ownerHeaders), f.deps));
+    return handleGadgetCall(post(LIVE, EXPORT({ approval: card.approval.id }), ownerHeaders), f.deps);
+  };
+
+  it("a plan that used up the time spends nothing and calls nothing, so the owner keeps their confirmation", async () => {
+    const holder: { f?: ReturnType<typeof fixture> } = {};
+    const f = (holder.f = fixture({ onHub: () => (holder.f!.clock.now = new Date(holder.f!.clock.now.getTime() + 41_000)) }));
+    const res = await confirmed(f);
+    assert.equal(res.status, 409);
+    assert.equal(await errorCode(res), "source_unavailable");
+    assert.equal(f.trace.spent.size, 0);
+    assert.ok(!f.calls.some((c) => c.name === "export_model"));
+  });
+
+  it("a quick plan goes on as it did", async () => {
+    const holder: { f?: ReturnType<typeof fixture> } = {};
+    const f = (holder.f = fixture({ onHub: () => (holder.f!.clock.now = new Date(holder.f!.clock.now.getTime() + 2_000)) }));
+    await payload(await confirmed(f));
+    assert.equal(f.trace.spent.size, 1);
+    assert.ok(f.calls.some((c) => c.name === "export_model"));
+  });
+});
+
 describe("the drive", () => {
   it("has to be plugged in, and it says so plainly: there's no arming from a product", async () => {
     for (const drives of [[], [{ ...STICK, usable: false, why: "Another user has this drive open at /media/x, so it's left alone." }]]) {
@@ -652,12 +687,13 @@ describe("drive_status for the owner", () => {
   it("hands fresh links only to this product's own export waiting in needs_urls", async () => {
     const privateFiles = { ...FILES(), public: false };
     const signing = async (url: string) => new Response(null, { status: 302, headers: { location: `${url}?sig=fresh` } });
-    const withSigning = (f: ReturnType<typeof fixture>, files = privateFiles): GadgetDeps => ({
+    const withSigning = (f: ReturnType<typeof fixture>, files = privateFiles, newest = JOB): GadgetDeps => ({
       ...f.deps,
       drive: {
         call: (call) =>
           productDriveCall(call, {
-            ownModel: async () => ({ adapterJobId: JOB }),
+            ownModel: async () => ({ adapterJobId: newest }),
+            ownsJob: async (_productId, jobId) => jobId === JOB,
             localFiles: async () => files,
             kit: async () => kit,
             planDeps: async () => ({ templates, hubText: async () => "", hfToken: () => "hf-test-token", fetchImpl: signing as never }),
@@ -677,10 +713,63 @@ describe("drive_status for the owner", () => {
     assert.ok(Object.values(sent!.args.urls as Record<string, string>).every((u) => u.includes("sig=fresh")));
     assert.equal(sent!.args.plan, undefined);
 
+    // A newer model passing while this one waits doesn't make this one somebody else's, or the board would wait for good.
+    const movedOn = fixture(waiting(`lab:${JOB}:Q4_K_M`));
+    await payload(await handleGadgetCall(post(LIVE, STATUS, ownerHeaders), withSigning(movedOn, privateFiles, NEWER_JOB)));
+    assert.ok(movedOn.calls.some((c) => c.name === "export_model"), "the earlier model's export still gets its links");
+
     for (const source of [`lab:${OTHER_JOB}:Q4_K_M`, "board:someone-elses-run", "url"]) {
       const other = fixture(waiting(source));
       await payload(await handleGadgetCall(post(LIVE, STATUS, ownerHeaders), withSigning(other)));
       assert.deepEqual(other.calls.map((c) => c.name), ["drive_status"], source);
+    }
+  });
+
+  it("another export's file names stay on the board: a fixed sentence, and no problems", async () => {
+    const name = "model/muse-glimmer-30b-other-slug-Q4_K_M.gguf";
+    const source = `lab:${OTHER_JOB}:Q4_K_M`;
+    for (const [state, message, word] of [
+      ["needs_urls", `The link for ${name} expired, so the export waits for a fresh one.`, /busy with a different export/],
+      ["failed", `${name} is missing.`, /a different one, and it has ended/],
+      ["done", "Done: FAIL.", /a different one, and it has ended/],
+    ] as const) {
+      const f = fixture({ state: { export: { export: "exp_0123456789ab", state, source, message, problems: [`${name} is missing.`], done_bytes: 5, total_bytes: 10 } } });
+      const res = await handleGadgetCall(post(LIVE, STATUS, ownerHeaders), f.deps);
+      assert.ok(!(await res.clone().text()).includes("other-slug"), state);
+      const { export: seen } = await payload<{ export: { state: string; message: string; problems?: string[]; done_bytes: number } }>(res);
+      assert.equal(seen.state, state);
+      assert.match(seen.message, word);
+      assert.equal(seen.problems, undefined);
+      assert.equal(seen.done_bytes, 5, "progress numbers name nothing");
+    }
+  });
+
+  it("an export with no source says nothing of itself", async () => {
+    const f = fixture({ state: { export: { export: "exp_0123456789ab", state: "writing", message: "Writing model/other-slug.gguf" } } });
+    const seen = await payload<{ export: { message: string } }>(await handleGadgetCall(post(LIVE, STATUS, ownerHeaders), f.deps));
+    assert.match(seen.export.message, /busy with a different export/);
+  });
+
+  it("this product's own export keeps the board's words, an earlier model of its own included", async () => {
+    const f = fixture({ own: { "prod-1": NEWER_JOB }, owned: [JOB, NEWER_JOB], state: { export: { export: "exp_0123456789ab", state: "failed", source: `lab:${JOB}:Q4_K_M`, message: "The drive filled up.", problems: ["model/bakery-helper.gguf is missing."] } } });
+    const seen = await payload<{ export: { message: string; problems: string[] } }>(await handleGadgetCall(post(LIVE, STATUS, ownerHeaders), f.deps));
+    assert.equal(seen.export.message, "The drive filled up.");
+    assert.deepEqual(seen.export.problems, ["model/bakery-helper.gguf is missing."]);
+  });
+
+  it("a path on the board never reaches the product, in quotes or brackets either", async () => {
+    const BOARD_PATHS: Array<[string, RegExp]> = [
+      ["The export stopped: [Errno 13] Permission denied: '/run/media/nvidia/STICK/MuseMuse/x'", /nvidia|STICK|MuseMuse/],
+      ["The export stopped: [Errno 2] No such file or directory: '/media/nvidia/MY STICK/x'", /nvidia|STICK/],
+      ['Could not open "/home/nvidia/run/file"', /nvidia/],
+      ["Failed (/home/nvidia/x), [/home/nvidia/y] path=/home/nvidia/z", /nvidia/],
+    ];
+    for (const [message, leak] of BOARD_PATHS) {
+      const f = fixture({ state: { export: { export: "exp_0123456789ab", state: "failed", source: `lab:${JOB}:Q4_K_M`, message, problems: [message] } } });
+      const seen = await payload<{ export: { message: string; problems: string[] } }>(await handleGadgetCall(post(LIVE, STATUS, ownerHeaders), f.deps));
+      assert.doesNotMatch(seen.export.message, leak, message);
+      assert.doesNotMatch(seen.export.problems[0], leak, message);
+      assert.match(seen.export.message, /a folder on the board/);
     }
   });
 
@@ -763,6 +852,20 @@ describe("a build token", () => {
     assert.equal(f.trace.legacy, 0, "no house board");
     assert.deepEqual(f.trace.own, []);
     assert.deepEqual(f.trace.localFiles, []);
+  });
+
+  it("never says the word its builder is told not to show, since the card's lines must be shown in full", async () => {
+    const f = fixture();
+    const card = await payload<Card>(await handleGadgetCall(post(BUILD, EXPORT()), f.deps));
+    const seen: string[] = [...card.approval.lines];
+    await payload(await handleGadgetCall(post(BUILD, EXPORT({ approval: card.approval.id })), f.deps));
+    for (const seconds of [1, 3, 7, 60]) {
+      f.clock.now = new Date(NOW.getTime() + seconds * 1000);
+      const status = await payload<{ drives: Array<{ title: string }>; export: { message: string; drive?: { title: string } } }>(await handleGadgetCall(post(BUILD, STATUS), f.deps));
+      seen.push(status.export.message, status.export.drive?.title ?? "", ...status.drives.map((d) => d.title));
+    }
+    assert.ok(seen.some((line) => /USB stick/.test(line)));
+    for (const line of seen) assert.doesNotMatch(line, /simulat/i);
   });
 
   it("names only its own model too", async () => {

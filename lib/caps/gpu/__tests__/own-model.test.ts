@@ -6,7 +6,7 @@
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { ownDecisionModelFor, ownModelFor, type OwnModelDeps } from "@/lib/caps/gpu/own-model";
+import { isOwnModelJob, ownDecisionModelFor, ownModelFor, type OwnModelDeps } from "@/lib/caps/gpu/own-model";
 
 const R30B = "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit";
 const PASS = { items: 20, tunedWins: 16, baseWins: 3, ties: 1, avgTunedScore: 8.5, avgBaseScore: 3.1 };
@@ -34,6 +34,23 @@ function deps(list: Job[]): OwnModelDeps & { filled: string[] } {
     }) as unknown as OwnModelDeps["decisionModel"],
   };
 }
+
+describe("isOwnModelJob", () => {
+  it("an earlier model stays the product's own after a newer one passes, under ownModelFor's filters", async () => {
+    const d = deps([
+      { id: "newer", evalSummary: PASS },
+      { id: "EARLIER", evalSummary: PASS },
+      { id: "failed", evalSummary: FAIL },
+      { id: "not-judged" },
+      { id: "no-cache", evalSummary: PASS, cache: false },
+      { id: "decides", evalSummary: PASS, params: { mode: "decide" } },
+    ]);
+    assert.equal((await ownModelFor("p1", new Date(), d))?.adapterJobId, "newer");
+    assert.equal(await isOwnModelJob("p1", "earlier", d), true);
+    assert.equal(await isOwnModelJob("p1", "newer", d), true);
+    for (const id of ["failed", "not-judged", "no-cache", "decides", "someone-elses"]) assert.equal(await isOwnModelJob("p1", id, d), false, id);
+  });
+});
 
 describe("ownModelFor", () => {
   it("fills the job's product from its run, then picks the newest that passed", async () => {

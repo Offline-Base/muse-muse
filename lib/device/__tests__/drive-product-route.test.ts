@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { after, afterEach, before, beforeEach, describe, it, mock } from "node:test";
 import { eq, like } from "drizzle-orm";
 import * as realSchema from "@/lib/db/schema";
+import { CAP_READY } from "@/lib/caps/ids";
 import { OWNER_HEADER, VISITOR_HEADER } from "@/lib/gateway/policy";
 import { newBoxKey } from "@/lib/secrets/box";
 import { builtWithBlock } from "@/lib/train/hub-cards";
@@ -68,6 +69,7 @@ describe("the drive tools, through the real gadget route", { skip: canMock ? fal
   const legacy: string[] = [];
   const netAsked: string[] = [];
   let boardExport: Record<string, unknown> | null = null;
+  const capWasReady = CAP_READY.hardware;
 
   const json = (url: string, method: string, body?: unknown) => new Request(`https://mm.example${url}`, { method, headers: { "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
   const slug = (s: string) => ({ params: Promise.resolve({ slug: s }) });
@@ -144,7 +146,10 @@ describe("the drive tools, through the real gadget route", { skip: canMock ? fal
       },
     });
     mock.module(at("../../caps/gpu/own-model.ts"), {
-      namedExports: { ownModelFor: async (id: string) => (id === product ? { adapterJobId: JOB, trainChannel: 1 } : null) },
+      namedExports: {
+        ownModelFor: async (id: string) => (id === product ? { adapterJobId: JOB, trainChannel: 1 } : null),
+        isOwnModelJob: async (id: string, jobId: string) => id === product && jobId === JOB,
+      },
     });
     mock.module(at("../../train/local-files-server.ts"), { namedExports: { localFilesFor: async (id: string) => (id === JOB ? FILES : null) } });
     const kitActual = await import("@/lib/drive/kit");
@@ -180,13 +185,15 @@ describe("the drive tools, through the real gadget route", { skip: canMock ? fal
     legacy.length = 0;
     netAsked.length = 0;
     boardExport = null;
-    Object.assign(process.env, { HARDWARE_BOARD_REGISTRY: "1", HARDWARE_BOARD_KEY: newBoxKey(), TOOLS_SIGNING_SECRET: "made-up-secret-for-the-drive-route-test-0123456789", HARDWARE_GADGET_OWNER_CHECK: "1", DRIVE_EXPORT_PRODUCTS: "1" });
+    Object.assign(CAP_READY, { hardware: true });
+    Object.assign(process.env, { HARDWARE_ENABLED: "1", HARDWARE_BOARD_REGISTRY: "1", HARDWARE_BOARD_KEY: newBoxKey(), TOOLS_SIGNING_SECRET: "made-up-secret-for-the-drive-route-test-0123456789", HARDWARE_GADGET_OWNER_CHECK: "1", DRIVE_EXPORT_PRODUCTS: "1" });
     await testDb.delete(realSchema.productBoards);
     await testDb.delete(realSchema.devices);
     await testDb.delete(realSchema.rateLimits);
   });
   afterEach(() => {
-    for (const k of ["HARDWARE_BOARD_REGISTRY", "HARDWARE_BOARD_KEY", "HARDWARE_GADGET_OWNER_CHECK", "DRIVE_EXPORT_PRODUCTS", "TOOLS_SIGNING_SECRET"]) delete process.env[k];
+    Object.assign(CAP_READY, { hardware: capWasReady });
+    for (const k of ["HARDWARE_ENABLED", "HARDWARE_BOARD_REGISTRY", "HARDWARE_BOARD_KEY", "HARDWARE_GADGET_OWNER_CHECK", "DRIVE_EXPORT_PRODUCTS", "TOOLS_SIGNING_SECRET"]) delete process.env[k];
   });
 
   it("the whole way: registered board, own model, confirmed once, export on the board, done", async () => {
@@ -267,6 +274,37 @@ describe("the drive tools, through the real gadget route", { skip: canMock ? fal
     assert.deepEqual(boardCalls, []);
     assert.deepEqual(legacy, []);
     assert.deepEqual(netAsked, []);
+  });
+
+  it("the cap unserved: a token and a pass made while it was on reach nothing, and /gadget answers as it did", async () => {
+    await linkBoard();
+    const pass = passFor(product, owner);
+    const card = await payload<{ code: string; approval: { id: string } }>(await call(LIVE, EXPORT(), pass));
+    assert.equal(card.code, "needs_confirmation", "served, the same token and pass get a card");
+    boardCalls.length = 0;
+    const offs: Array<() => () => void> = [
+      () => {
+        delete process.env.HARDWARE_ENABLED;
+        return () => void (process.env.HARDWARE_ENABLED = "1");
+      },
+      () => {
+        Object.assign(CAP_READY, { hardware: false });
+        return () => void Object.assign(CAP_READY, { hardware: true });
+      },
+    ];
+    for (const off of offs) {
+      const restore = off();
+      for (const body of [EXPORT(), EXPORT({ approval: card.approval.id }), STATUS]) {
+        const res = await call(LIVE, body, pass);
+        assert.equal(res.status, 403);
+        assert.equal(await code(res), "gadget_not_allowed");
+      }
+      const listed = await gadget.GET(new Request("https://mm.example/api/gateway/gadget", { headers: { authorization: `Bearer ${LIVE}`, ...pass } }));
+      assert.ok(!(await listed.text()).includes("export_to_drive"));
+      restore();
+    }
+    assert.deepEqual(boardCalls, []);
+    assert.deepEqual(legacy, []);
   });
 
   it("flags off: the route's tools aren't there for anyone, and neither board is touched", async () => {

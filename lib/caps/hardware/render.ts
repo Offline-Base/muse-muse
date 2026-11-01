@@ -38,12 +38,14 @@ export const HARDWARE_RENDER: CapRenderEntry = {
             "- Board tools: `readSensor` and `showText` in `lib/platform/board.ts`. Server only: call them from a route handler and always pass the incoming request, so the owner's pass travels with it. The build's simulated board doesn't check this, and a live board refuses the owner without it.",
             `- \`showText\` takes up to ${SHOW_TEXT_MAX_CHARS} characters, ${SHOW_TEXT_PER_MINUTE} times a minute. A board does nothing else for a product and never runs commands.`,
             "- Live, a board reaches this product only after its owner links one, and only the owner until they open it to visitors. Otherwise the helpers throw: show `boardMessage(err)`, and keep the rest of the product working.",
-            "- `Open as owner` on the product's Muse Muse page lands on `/api/musemuse/board/owner` in its own tab, which sets the owner's pass. The pass isn't sent inside the frame on that page, so when a board is offline, also say how the owner gets in.",
           ]
+        : []),
+      ...(hw.boardTools || hw.driveExport
+        ? ["- `Open as owner` on the product's Muse Muse page lands on `/api/musemuse/board/owner` in its own tab, which sets the owner's pass. The pass isn't sent inside the frame on that page, so when a board is offline, also say how the owner gets in."]
         : []),
       ...(hw.driveExport
         ? [
-            "- Drive export: `driveStatus` and `exportToDrive` in `lib/platform/board.ts`. Server only, with the request passed in. Only the product's owner, on a board they linked, ever gets through. Visitors never do, even when the link is open to visitors, so offer it only to the owner.",
+            "- Drive export: `driveStatus` and `exportToDrive` in `lib/platform/board.ts`. Server only, with the request passed in. Only the product's owner, on a board they linked, ever gets through. Visitors never do, even when the link is open to visitors, so offer it only to the owner. Tell who that is from whether `driveStatus` answers, not from a cookie check: the build's simulated owner has no cookie, so a cookie check would hide the button from the smoke test.",
             "- `exportToDrive` answers `needs_confirmation` first: show `approval.title` and every line of `approval.lines` on a card, and call it again with `approval.id` only after the person presses confirm. Never send the id by yourself.",
             "- It exports this product's own tuned model and nothing else. The drive has to be plugged in first, since an export from a product never waits for one. It never erases: when it answers `needs_erase`, show its message, which sends the person to their board's page.",
           ]

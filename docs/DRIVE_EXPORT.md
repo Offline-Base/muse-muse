@@ -526,15 +526,24 @@ Two gadget tools for products, in their own list (`PRODUCT_DRIVE_TOOLS`), beside
 
 - `drive_status`: the drive and the export's progress, trimmed: no board runs, drive identity, source or folder. Read only as far
   as the drive goes. As the admin route's `GET` does, it hands fresh signed links to an export waiting in `needs_urls`, and only
-  when that export's source is this product's own model.
+  when that export's source is this product's own model: any of its jobs that pass `ownModelFor`'s filters (`isOwnModelJob`), so an
+  earlier model keeps getting links after a newer one qualifies. The board's `message` and `problems` go only with such an export.
+  For anything else on the board, or a source that says nothing, `message` is a fixed sentence and `problems` is left out, since the
+  board's sentences name files. Paths on the board are removed from every sentence, in quotes and brackets too.
 - `export_to_drive {model}`: exports the product's own tuned model (unit 11, "train on my data") to the drive in the
   owner's board. `model` is `"own"`, or that model's own job id. It takes nothing else, so no link, plan, drive or source can be
   handed in, and it resolves through `ownModelFor` alone, so another product's id answers as an id nobody has.
 
 **What it needs.** `DRIVE_EXPORT_PRODUCTS` and `HARDWARE_GADGET_OWNER_CHECK` both on (`driveToolsUsable`), for builds too, and a
 token with `drive-tools` and `cap:hardware`, from a brief whose `hardware` block says `driveExport: true`. So the tools wait for
-`CAP_READY.hardware` as well, which is still false. `DRIVE_EXPORT_ENABLED` is the admin card's and isn't needed. With any of it off,
-`/gadget` answers as it did.
+`CAP_READY.hardware` as well, which is still false. The route also reads `env.servedCaps`, so turning `HARDWARE_ENABLED` off stops a
+token made while it was on, and an owner's pass with it. `/gadgets` offers the tools by the same test. `DRIVE_EXPORT_ENABLED` is the
+admin card's and isn't needed. With any of it off, `/gadget` answers as it did.
+
+**Not exportable today: a "train on my data" model.** Its dataset has a `product_id`, so the publish route refuses it, so its adapter
+is never published, so no GGUF of it reaches the Hub, and `export_to_drive` answers 409 `own_model_not_ready`. Only a model trained
+from a build plan can get through, after an admin publishes and quantizes it. Whether such a model should get a private source for its
+files, or the promise above should change, is an owner's decision and is still open. The skill and the writer rule don't say this yet.
 
 **Who may call them.** The product's owner only, with the owner principal (`x-musemuse-owner`, `docs/AGENT_TOOLS.md`), on the board
 linked to the product, which `linkedBoardRow` requires to be the owner's. A link's `visitors` switch counts for nothing here.
@@ -784,7 +793,8 @@ The design's decisions, as asked on Oct 31:
 
 - **The product tools on a real board, drive or Hub.** Fake boards only. Not proven: `drive_status` and `export_model` through a linked
   board's real client, a whole export started from a product, a private model's fresh links, and the 60-second limit on the gadget route
-  while a plan reads the Hub (the admin route has 300). No product has been built with them either, so the skill, the card and
+  while a plan reads the Hub (the admin route has 300). A plan that takes over 40 seconds answers `source_unavailable` without spending
+  the approval, but the board's own call has no limit of its own besides the SDK's 60 seconds. No product has been built with them either, so the skill, the card and
   `checkDriveExport` have never met Muse Code. And no page yet erases a registered board's drive (see "From a product").
 
 Nothing below was possible on this laptop: no Jetson, no Linux, no USB drive, and no deploy.

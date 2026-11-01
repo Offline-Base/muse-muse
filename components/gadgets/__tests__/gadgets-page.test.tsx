@@ -12,6 +12,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { GADGET_OPTION, GADGET_TOOLS, HOUSE_BOARDS, gadgetProducts, gadgetStatusRows } from "@/components/gadgets/info";
 import type { ProductCardView } from "@/components/view-types";
 import type { SessionUser } from "@/lib/auth";
+import { CAP_READY } from "@/lib/caps/ids";
 import { GADGET_ID, PRODUCT_GADGET_TOOLS } from "@/lib/gateway/gadget";
 
 const canMock = typeof (mock as { module?: unknown }).module === "function";
@@ -221,6 +222,31 @@ describe("/gadgets", { skip: canMock ? false : "needs --experimental-test-module
     } finally {
       delete process.env.HARDWARE_BOARD_TOOLS;
       delete process.env.HARDWARE_GADGET_OWNER_CHECK;
+    }
+  });
+
+  it("doesn't say only three tools are served above the drive tools' line, and offers them only when they're served", async () => {
+    const wasReady = CAP_READY.hardware;
+    const DRIVE_LINE = /put its own tuned model on a USB drive/;
+    try {
+      process.env.DRIVE_EXPORT_PRODUCTS = "1";
+      process.env.HARDWARE_GADGET_OWNER_CHECK = "1";
+      // The gadget route refuses them with the cap unserved, so the page says the same.
+      let html = render(await page());
+      assert.match(html, /Only the three tools above are served\./);
+      assert.doesNotMatch(html, DRIVE_LINE);
+
+      process.env.HARDWARE_ENABLED = "1";
+      Object.assign(CAP_READY, { hardware: true });
+      html = render(await page());
+      assert.match(html, DRIVE_LINE);
+      assert.doesNotMatch(html, /Only the three tools/);
+      assert.match(html, /can&#x27;t run commands on a board/);
+    } finally {
+      Object.assign(CAP_READY, { hardware: wasReady });
+      delete process.env.DRIVE_EXPORT_PRODUCTS;
+      delete process.env.HARDWARE_GADGET_OWNER_CHECK;
+      delete process.env.HARDWARE_ENABLED;
     }
   });
 

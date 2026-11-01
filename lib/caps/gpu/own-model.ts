@@ -25,14 +25,29 @@ const STORE: OwnModelDeps = { fill: fillProductIds, jobs: productAdapterJobs, so
 export async function ownModelFor(productId: string, _now: Date = new Date(), deps: OwnModelDeps = STORE): Promise<OwnModel | null> {
   await deps.fill(productId);
   for (const job of await deps.jobs(productId)) {
-    if (jobMode(job.params) !== CHAT_MODE || !job.evalSummary) continue;
-    const source = await deps.source(job.id);
-    if (!source || adapterProblem(source.job, source.metrics)) continue;
-    const sparkOpen = isSparkOpenDerivative({ params: source.job.params, metrics: source.metrics });
-    if (!sparkOpen || !verdictFor(job.evalSummary, sparkOpen).passed) continue;
-    return { adapterJobId: job.id, trainChannel: trainChannelOf(job.params) };
+    if (await qualifiesAsOwnModel(job, deps)) return { adapterJobId: job.id, trainChannel: trainChannelOf(job.params) };
   }
   return null;
+}
+
+/** The filters ownModelFor applies to each of a product's jobs. */
+async function qualifiesAsOwnModel(job: Awaited<ReturnType<OwnModelDeps["jobs"]>>[number], deps: OwnModelDeps): Promise<boolean> {
+  if (jobMode(job.params) !== CHAT_MODE || !job.evalSummary) return false;
+  const source = await deps.source(job.id);
+  if (!source || adapterProblem(source.job, source.metrics)) return false;
+  const sparkOpen = isSparkOpenDerivative({ params: source.job.params, metrics: source.metrics });
+  return Boolean(sparkOpen && verdictFor(job.evalSummary, sparkOpen).passed);
+}
+
+/**
+ * Whether a job is one of this product's own chat models, newest or not: a newer model passing doesn't make an earlier one
+ * somebody else's. For a drive export already going. A new export still goes through ownModelFor.
+ */
+export async function isOwnModelJob(productId: string, jobId: string, deps: OwnModelDeps = STORE): Promise<boolean> {
+  await deps.fill(productId);
+  const wanted = jobId.toLowerCase();
+  const job = (await deps.jobs(productId)).find((j) => j.id.toLowerCase() === wanted);
+  return job ? qualifiesAsOwnModel(job, deps) : false;
 }
 
 const sameNames = (a: readonly string[], b: readonly string[]) => {
