@@ -48,6 +48,14 @@ describe("deviceConfig", () => {
     assert.doesNotMatch(JSON.stringify(logged.mock.calls.map((c) => c.arguments)), /board\.example|192\.168/);
   });
 
+  it("logs nothing for an unsafe address when asked to be quiet", () => {
+    const logged = mock.method(console, "error", () => {});
+    process.env.DEVICE_MCP_URL = "http://board.example/mcp";
+    process.env.DEVICE_MCP_TOKEN = TOKEN;
+    assert.equal(deviceConfig({ quiet: true }), null);
+    assert.equal(logged.mock.callCount(), 0);
+  });
+
   it("is off when either is missing", () => {
     assert.equal(deviceConfig(), null);
     process.env.DEVICE_MCP_URL = "   ";

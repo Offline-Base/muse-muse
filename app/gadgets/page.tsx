@@ -25,7 +25,7 @@ export default async function GadgetsPage() {
     pageViewer(),
     safeQuery(async () => gadgetProducts(await listShippedProducts(PRODUCTS_READ))),
   ]);
-  const status = gadgetStatusRows({ buildsOn: env.gadgetsEnabled, boardSetUp: deviceConfig() !== null });
+  const status = gadgetStatusRows({ buildsOn: env.gadgetsEnabled, boardSetUp: deviceConfig({ quiet: true }) !== null });
 
   return (
     <div className="page">

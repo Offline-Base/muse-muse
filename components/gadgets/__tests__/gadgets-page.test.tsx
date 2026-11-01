@@ -179,12 +179,14 @@ describe("/gadgets", { skip: canMock ? false : "needs --experimental-test-module
     assert.match(html, /Ask with the board&#x27;s camera and microphone, and fine-tune on it\./);
   });
 
-  it("counts a board whose address would expose its key as not set up, and never shows it", async () => {
+  it("counts a board whose address would expose its key as not set up, never shows it, and logs nothing", async () => {
     process.env.DEVICE_MCP_URL = BOARD_IP_URL;
-    console.error = () => {};
+    const logged: unknown[][] = [];
+    console.error = (...args: unknown[]) => void logged.push(args);
     const html = render(await page());
     clean(html);
     assert.match(html, /Live board.*?>Not set up</s);
+    assert.deepEqual(logged, [], "a public visit doesn't log the board's misconfiguration");
   });
 
   it("shows only the shipped products that use a gadget", async () => {
