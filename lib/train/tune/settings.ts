@@ -75,14 +75,19 @@ export function clampSteps(n: number): number {
   return Number.isFinite(v) ? Math.min(TUNE_MAX_STEPS, Math.max(TUNE_MIN_STEPS, v)) : TUNE_STEPS;
 }
 
+/** What a picked base adds to runEstimate's params. Nothing without one. */
+export function baseEstimateParams(s: Pick<TuneSettings, "base">): { baseScale?: number; baseBytes?: number } {
+  return s.base?.scale ? { baseScale: s.base.scale, baseBytes: s.base.bytes } : {};
+}
+
 /**
  * The most training steps that fit in a run's time limit on its first GPU, where the model is cached (runEstimate), so
  * Advanced never offers a number the launch would refuse for its time. At least TUNE_MIN_STEPS.
  */
-export function maxStepsFor(s: Pick<TuneSettings, "recipe" | "gpu" | "maxMinutes">): number {
+export function maxStepsFor(s: Pick<TuneSettings, "recipe" | "gpu" | "maxMinutes" | "base">): number {
   let lo = TUNE_MIN_STEPS;
   let hi = TUNE_MAX_STEPS;
-  const fits = (steps: number) => (runEstimate(s.recipe, { maxSteps: steps }, s.gpu, true)?.minutes ?? 0) <= s.maxMinutes;
+  const fits = (steps: number) => (runEstimate(s.recipe, { maxSteps: steps, ...baseEstimateParams(s) }, s.gpu, true)?.minutes ?? 0) <= s.maxMinutes;
   if (fits(hi)) return hi;
   while (lo < hi) {
     const mid = Math.ceil((lo + hi) / 2);

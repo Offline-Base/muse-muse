@@ -27,7 +27,7 @@ import type {
   ReliabilityBin,
   WilsonRate,
 } from "@/lib/decide/types";
-import { isSparkOpenDerivative } from "@/lib/train/base";
+import { BASE_MODEL_PARAM, familyOfRepo, isSparkOpenDerivative } from "@/lib/train/base";
 import type { LambdaInstance } from "@/lib/train/lambda";
 import type { QuantLevel } from "@/lib/train/local-files";
 import { judgeModelOf, storyModelOf, writerModelOf } from "@/lib/train/models";
@@ -116,7 +116,7 @@ const ARTIFACT_URL_MAX = 2000;
 export type TrainJobRow = typeof trainingJobs.$inferSelect;
 
 /** A training_datasets row without its examples or decision rows, which can run to megabytes. */
-export type DatasetHead = Omit<typeof trainingDatasets.$inferSelect, "train" | "eval" | "decisionRows">;
+export type DatasetHead = Omit<typeof trainingDatasets.$inferSelect, "train" | "eval" | "decisionRows" | "grounding">;
 
 /** What decideCheck needs from a job. A training_jobs row has all of it. */
 export interface JobState {
@@ -874,6 +874,9 @@ function decideEstimate(params: Record<string, string | number | undefined>, siz
 export const QUANT_MINUTES = 90;
 export const QUANT_CACHED_MINUTES = 80;
 
+/** How fast a new base's weights are counted as downloading: 100 MB a second. An estimate. */
+const BASE_DOWNLOAD_BYTES_PER_MINUTE = 6_000_000_000;
+
 /**
  * How long a job's run is likely to take at most on `instanceType`, in a region that holds the model cache or not. Null
  * when there is no estimate for the recipe (glimmer-lora and glimmer-quantize have one) or the run doesn't train
@@ -898,9 +901,13 @@ export function runEstimate(
   const asked = typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() ? Number(raw.trim()) : NaN;
   // The recipe's default (lib/train/recipes/index.ts) when it isn't set.
   const steps = Number.isFinite(asked) && asked > 0 ? Math.ceil(asked) : 120;
-  const secondsPerStep = GLIMMER_STEP_SECONDS[instanceType] ?? GLIMMER_STEP_SECONDS_OTHER;
+  // A base other than r30b (lib/train/bases.ts): the step scaled by its size, and its download, which no cache holds yet.
+  const scale = Number(params.baseScale);
+  const bytes = Number(params.baseBytes);
+  const secondsPerStep = (GLIMMER_STEP_SECONDS[instanceType] ?? GLIMMER_STEP_SECONDS_OTHER) * (scale > 0 ? scale : 1);
   const trainMinutes = Math.ceil((steps * secondsPerStep) / 60);
-  const overheadMinutes = cached ? GLIMMER_OVERHEAD_MINUTES : GLIMMER_OVERHEAD_NO_CACHE_MINUTES;
+  const overheadMinutes =
+    (cached && !(bytes > 0) ? GLIMMER_OVERHEAD_MINUTES : GLIMMER_OVERHEAD_NO_CACHE_MINUTES) + (bytes > 0 ? Math.ceil(bytes / BASE_DOWNLOAD_BYTES_PER_MINUTE) : 0);
   return { steps, secondsPerStep, trainMinutes, overheadMinutes, minutes: trainMinutes + overheadMinutes, cached };
 }
 
@@ -1081,6 +1088,7 @@ export function adapterProblem(
   // plain Glimmer has the same shapes, so it would load without error and answer as a model nobody evaluated. A
   // glimmer-publish job (opts.uploadOnly) loads no base: it sends the files as they are, under the base their job recorded.
   if (!opts.uploadOnly && !isSparkOpenDerivative({ params: job.params, metrics })) {
+    if (familyOfRepo(job.params?.[BASE_MODEL_PARAM])?.startsWith("llama")) return "that adapter trained on Llama, and these jobs only load the 2026 Glimmer (r30b).";
     return "that adapter trained on plain Muse Glimmer, and the lab's GPUs now load the 2026 Glimmer (r30b), which it never trained on.";
   }
   return null;
@@ -1198,6 +1206,9 @@ export function quantProblem(
     return "that adapter trained under its dataset's whole task prompt, and local files need the one-line system message of the short student prompt.";
   }
   if (!isSparkOpenDerivative({ params: job.params, metrics })) {
+    if (familyOfRepo(job.params?.[BASE_MODEL_PARAM])?.startsWith("llama")) {
+      return "that adapter trained on Llama, and local files only merge into the 2026 Glimmer (r30b): its merge base and its checks are that model's.";
+    }
     return "that adapter trained on plain Muse Glimmer, and local files now merge into the 2026 Glimmer (r30b), which it never trained on.";
   }
   return null;

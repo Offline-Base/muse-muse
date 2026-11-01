@@ -32,10 +32,12 @@
  */
 export const GLIMMER_PY = String.raw`"""Muse Glimmer LoRA: fine-tunes Muse Glimmer 30B with Unsloth and answers held-out prompts before and after."""
 
+import base64
 import hashlib
 import json
 import math
 import os
+import re
 import shlex
 import shutil
 import sys
@@ -190,6 +192,116 @@ DECIDE_EXTRA_TOKENS = 3
 # the adapter, so an app renders the prompts the model trained on from that file alone.
 DECIDE_JSON = "decide.json"
 DECIDE_FORMAT = "muse-decide/1"
+
+# The families a job may train on (lib/train/bases.ts, docs/TRAINING.md "Any Meta base"). Each brings its chat template's
+# markers, which the functions below read as globals. Without a baseFamily param the job is exactly the glimmer one above.
+# Markers read from each family's chat_template.jinja on the Hub. Only "glimmer" has ever run on a GPU here.
+FAMILIES = {
+    "llama3": {
+        "instruction": "<|start_header_id|>user<|end_header_id|>\n\n",
+        "response": "<|start_header_id|>assistant<|end_header_id|>\n\n",
+        "generation": "<|start_header_id|>assistant<|end_header_id|>\n\n",
+        "next_message": "<|start_header_id|>",
+        "ends": ("<|eot_id|>", "<|eom_id|>", "<|end_of_text|>"),
+        "pad": "<|finetune_right_pad_id|>",
+        "control": ("<|begin_of_text|>", "<|end_of_text|>", "<|start_header_id|>", "<|end_header_id|>", "<|eot_id|>", "<|eom_id|>", "<|finetune_right_pad_id|>"),
+        # Unsloth's Llama 3 notebooks: FastLanguageModel and these modules, every one a Linear in LlamaDecoderLayer.
+        "targets": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+    },
+    "llama4": {
+        "instruction": "<|header_start|>user<|header_end|>\n\n",
+        "response": "<|header_start|>assistant<|header_end|>\n\n",
+        "generation": "<|header_start|>assistant<|header_end|>\n\n",
+        "next_message": "<|header_start|>",
+        "ends": ("<|eot|>", "<|eom|>", "<|end_of_text|>"),
+        "pad": "<|finetune_right_pad|>",
+        "control": ("<|begin_of_text|>", "<|end_of_text|>", "<|header_start|>", "<|header_end|>", "<|eot|>", "<|eom|>", "<|finetune_right_pad|>"),
+        # Multimodal like Glimmer, so FastModel's finetune_* choice leaves its vision tower out.
+        "targets": None,
+    },
+}
+# What the Llama templates do to a message's text: | trim. Glimmer's writes it as it is.
+TRIM_CONTENT = False
+NEXT_MESSAGE = "<|start|>"
+REPO_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$")
+COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
+# Files a gated base's download keeps, as the platform's /base-files route lists them.
+GATED_READY = ".muse-complete"
+GATED_TRIES = 3
+
+
+def use_family(family):
+    """Points the template markers at a family's. None or "glimmer" leaves them as they are."""
+    global INSTRUCTION_PART, RESPONSE_PART, GENERATION_PROMPT, FINAL_CHANNEL, FINAL_ENDS, PAD_TOKEN, CONTROL_TOKENS, TRIM_CONTENT, NEXT_MESSAGE
+    if family in (None, "", "glimmer"):
+        return
+    f = FAMILIES.get(family)
+    if not f:
+        raise ValueError("baseFamily must be glimmer, llama3 or llama4")
+    INSTRUCTION_PART, RESPONSE_PART, GENERATION_PROMPT = f["instruction"], f["response"], f["generation"]
+    FINAL_CHANNEL = RESPONSE_PART[len(GENERATION_PROMPT):]
+    FINAL_ENDS, PAD_TOKEN, CONTROL_TOKENS = f["ends"], f["pad"], f["control"]
+    TRIM_CONTENT, NEXT_MESSAGE = True, f["next_message"]
+
+
+def use_base(params):
+    """The job's base from the params the platform wrote after checking it (lib/train/launch.ts), held to the same shape
+    again here: no baseFamily means the MODEL and MODEL_REVISION above. Returns the family, or None."""
+    global MODEL, MODEL_REVISION
+    family = params.get("baseFamily")
+    if family in (None, ""):
+        return None
+    repo, revision = params.get("baseModel"), params.get("baseRevision")
+    if not isinstance(repo, str) or not REPO_RE.match(repo) or not isinstance(revision, str) or not COMMIT_RE.match(revision):
+        raise ValueError("The job's base isn't a repo at a pinned commit")
+    use_family(family)
+    MODEL, MODEL_REVISION = repo, revision
+    return family
+
+
+def gated_dir(hf_home):
+    return os.path.join(hf_home, "gated", MODEL.replace("/", "--"), MODEL_REVISION)
+
+
+def fetch_gated_base(ctx, hf_home):
+    """A gated base's files into the region's cache, from links the platform makes with its Hub token, which never comes
+    here. Each large file is held to the sha256 the Hub lists. Returns the folder."""
+    folder = gated_dir(hf_home)
+    if os.path.exists(os.path.join(folder, GATED_READY)):
+        return folder
+    os.makedirs(folder, exist_ok=True)
+    for f in ctx.base_files():
+        name = os.path.basename(f["path"])
+        path = os.path.join(folder, name)
+        if name != f["path"]:
+            raise RuntimeError("The platform listed a base file outside the repo's root")
+        if f.get("inline") is not None:
+            with open(path, "wb") as out:
+                out.write(base64.b64decode(f["inline"]))
+            continue
+        for attempt in range(GATED_TRIES):
+            try:
+                digest = hashlib.sha256()
+                part = path + ".part" + str(os.getpid())
+                with urllib.request.urlopen(f["url"], timeout=120) as res, open(part, "wb") as out:
+                    while True:
+                        block = res.read(8 * 1024 * 1024)
+                        if not block:
+                            break
+                        digest.update(block)
+                        out.write(block)
+                if f.get("sha256") and digest.hexdigest() != f["sha256"]:
+                    raise RuntimeError("its sha256 isn't the one the Hub lists")
+                os.replace(part, path)
+                break
+            except Exception as e:
+                # Never the error's own text alone with the URL in it: that link works without a token while it lives.
+                if attempt + 1 == GATED_TRIES:
+                    raise RuntimeError("Downloading " + name + " from the gated base failed: " + type(e).__name__) from None
+        ctx.progress(message="Downloaded " + name)
+    with open(os.path.join(folder, GATED_READY), "w") as out:
+        out.write(MODEL_REVISION)
+    return folder
 
 
 def number(params, key, fallback):
@@ -750,6 +862,8 @@ def remove_stale_hf_locks(ctx, hf_home):
 
 
 def weights_cached(hf_home):
+    if os.path.exists(os.path.join(gated_dir(hf_home), GATED_READY)):
+        return True
     snapshot = os.path.join(hf_home, "hub", "models--" + MODEL.replace("/", "--"), "snapshots", MODEL_REVISION)
     return os.path.isdir(snapshot) and any(os.scandir(snapshot))
 
@@ -960,6 +1074,12 @@ def real_run(ctx, p, base, train_path, eval_path, adapter_dir, started, system, 
         "deadline": deadline,
     }
     config.update(extra or {})
+    family = ctx.params.get("baseFamily")
+    if family:
+        config["family"] = family
+        config["quantized"] = str(ctx.params.get("baseQuantized")) == "1"
+        if str(ctx.params.get("baseGated")) == "1":
+            config["load_path"] = fetch_gated_base(ctx, hf_home)
     config_path = os.path.join(ctx.work_dir, "glimmer-config.json")
     with open(config_path, "w") as f:
         json.dump(config, f)
@@ -1057,6 +1177,7 @@ def finish(ctx, p, result, evals, train, adapter_dir, cache_used):
 def run(ctx):
     started = time.time()
     p = read_params(ctx.params)
+    use_base(ctx.params)
     if p["mode"] == DECIDE_MODE:
         return decide_run(ctx, p, started)
     ctx.progress(message="Fetching the dataset")
@@ -1427,7 +1548,7 @@ def final_answer(raw):
     template's control tokens taken out, so the judge sees both what the model wrote and that it never finished.
     """
     cut, end = len(raw), None
-    for token in FINAL_ENDS + ("<|start|>",):
+    for token in FINAL_ENDS + (NEXT_MESSAGE,):
         at = raw.find(token)
         if 0 <= at < cut:
             cut, end = at, token
@@ -1454,7 +1575,7 @@ def training_text(tokenizer, messages, bos):
     text = render(tokenizer, messages, False, bos)
     for m in messages:
         marker = {"user": INSTRUCTION_PART, "assistant": RESPONSE_PART}.get(m["role"])
-        if marker and marker + m["content"] not in text:
+        if marker and marker + (m["content"].strip() if TRIM_CONTENT else m["content"]) not in text:
             raise RuntimeError(
                 "The chat template didn't render this " + m["role"] + " message right after " + marker
                 + ", so train_on_responses_only can't find it. The rendered text: " + clip(text, 600)
@@ -1544,6 +1665,7 @@ def example_diagnosis(row, decode):
 def child_main(config_path):
     with open(config_path) as f:
         cfg = json.load(f)
+    use_family(cfg.get("family"))
     if cfg.get("mode") == DECIDE_MODE:
         return decide_child(cfg)
     # Unsloth patches transformers and trl, so it is imported first, as in the notebook.
@@ -1564,22 +1686,51 @@ def child_main(config_path):
     result = {"base": None, "tuned": None, "metrics": None, "adapter": False}
 
     emit("phase", message="Loading " + cfg["model"])
-    model, tokenizer = FastModel.from_pretrained(
-        model_name=cfg["model"], revision=cfg.get("revision"), max_seq_length=cfg["max_seq_length"]
-    )
-    model = FastModel.get_peft_model(
-        model,
-        finetune_vision_layers=False,
-        finetune_language_layers=True,
-        finetune_attention_modules=True,
-        finetune_mlp_modules=True,
-        r=rank,
-        lora_alpha=rank,
-        lora_dropout=0,
-        bias="none",
-        use_gradient_checkpointing="unsloth",
-        random_state=3407,
-    )
+    targets = (FAMILIES.get(cfg.get("family")) or {}).get("targets")
+    if cfg.get("family"):
+        # use_exact_model_name: Unsloth otherwise swaps a repo for its own mirror and drops the pinned revision.
+        loaded = dict(
+            model_name=cfg.get("load_path") or cfg["model"],
+            revision=None if cfg.get("load_path") else cfg.get("revision"),
+            max_seq_length=cfg["max_seq_length"],
+            use_exact_model_name=True,
+            # A repo that isn't already 4-bit is quantized as it loads.
+            load_in_4bit=not cfg.get("quantized"),
+        )
+        if targets:
+            from unsloth import FastLanguageModel
+
+            FastModel = FastLanguageModel
+        model, tokenizer = FastModel.from_pretrained(**loaded)
+    else:
+        model, tokenizer = FastModel.from_pretrained(
+            model_name=cfg["model"], revision=cfg.get("revision"), max_seq_length=cfg["max_seq_length"]
+        )
+    if targets:
+        model = FastModel.get_peft_model(
+            model,
+            target_modules=targets,
+            r=rank,
+            lora_alpha=rank,
+            lora_dropout=0,
+            bias="none",
+            use_gradient_checkpointing="unsloth",
+            random_state=3407,
+        )
+    else:
+        model = FastModel.get_peft_model(
+            model,
+            finetune_vision_layers=False,
+            finetune_language_layers=True,
+            finetune_attention_modules=True,
+            finetune_mlp_modules=True,
+            r=rank,
+            lora_alpha=rank,
+            lora_dropout=0,
+            bias="none",
+            use_gradient_checkpointing="unsloth",
+            random_state=3407,
+        )
     # FastModel hands back a processor; plain strings go through its text tokenizer.
     text_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
     bos = getattr(tokenizer, "bos_token", None) or getattr(text_tokenizer, "bos_token", None) or ""

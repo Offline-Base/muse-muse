@@ -890,7 +890,7 @@ export async function setJudgeModel(jobId: string, model: string): Promise<void>
 
 const datasets = schema.trainingDatasets;
 // A decision dataset's rows (decision_rows) can run to megabytes too: only decisionSplitRows reads them.
-const { train: _train, eval: _eval, decisionRows: _decisionRows, ...datasetHeadColumns } = getTableColumns(datasets);
+const { train: _train, eval: _eval, decisionRows: _decisionRows, grounding: _grounding, ...datasetHeadColumns } = getTableColumns(datasets);
 
 export interface NewDataset {
   title: string;
@@ -902,6 +902,8 @@ export interface NewDataset {
   createdBy?: string | null;
   /** Wave 3, unit 11: a product owner's own rows, which makes the dataset private. */
   productId?: string | null;
+  /** Notes from a data research report's picks, which the writer reads as background. */
+  grounding?: string | null;
 }
 
 /** Saves a dataset in "generating", with no examples yet, and the model that writes it. */
@@ -915,9 +917,51 @@ export async function createDataset(input: NewDataset): Promise<DatasetHead> {
       writerModel: input.writerModel,
       createdBy: input.createdBy ?? null,
       ...(input.productId ? { productId: input.productId } : {}),
+      ...(input.grounding ? { grounding: input.grounding } : {}),
     })
     .returning(datasetHeadColumns);
   return row;
+}
+
+/** The notes the writer reads as background (a data research report's picks), or null for a dataset without any. */
+export async function datasetGrounding(datasetId: string): Promise<string | null> {
+  if (!isUuid(datasetId)) return null;
+  const [row] = await db().select({ grounding: datasets.grounding }).from(datasets).where(eq(datasets.id, datasetId)).limit(1);
+  return row?.grounding ?? null;
+}
+
+/**
+ * Saves rows imported from an open source as a ready chat dataset (lib/train/research): writer_model "public", the
+ * eval items held out as finishDataset holds them out, nothing generated and nothing spent. `note` says where the
+ * rows came from and shows on the admin's page. No job starts.
+ */
+export async function createImportedDataset(input: {
+  title: string;
+  task: string;
+  system: string;
+  rows: ReadonlyArray<{ prompt: string; answer: string }>;
+  note: string;
+  createdBy?: string | null;
+}): Promise<DatasetHead | null> {
+  const train: TrainExample[] = input.rows.map((r) => ({
+    messages: [
+      { role: "system", content: input.system },
+      { role: "user", content: r.prompt },
+      { role: "assistant", content: r.answer },
+    ],
+  }));
+  const [row] = await db()
+    .insert(datasets)
+    .values({
+      title: input.title.trim().slice(0, TITLE_MAX) || "Imported dataset",
+      task: input.task.trim(),
+      requested: train.length,
+      train,
+      writerModel: PUBLIC_WRITER,
+      createdBy: input.createdBy ?? null,
+    })
+    .returning({ id: datasets.id });
+  return finishDataset(row.id, train.length, input.note);
 }
 
 /** One dataset without its examples, or null when the id is unknown or isn't a uuid. */

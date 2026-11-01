@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useState, type FormEvent } from "react";
 import { Icon } from "@/components/icons";
+import { BasePicker, type BaseChoice } from "@/components/train/BasePicker";
 import {
   NOT_PUBLIC_TEXT,
   adapterOptionText,
@@ -70,6 +71,8 @@ export interface NewJobCardProps {
    * they couldn't be loaded.
    */
   adapters?: AdapterOption[] | null;
+  /** TUNE_ANY_BASE: a LoRA job can pick its base. */
+  anyBase?: boolean;
 }
 
 type GpuState =
@@ -172,8 +175,10 @@ export function NewJobCard({
   datasets = [],
   initialDatasetId = null,
   adapters = [],
+  anyBase = false,
 }: NewJobCardProps) {
   const router = useRouter();
+  const [base, setBase] = useState<BaseChoice>({ state: "default" });
   const id = useId();
   const [recipeId, setRecipeId] = useState(
     () => (initialDatasetId ? recipes.find(takesDataset)?.id : undefined) ?? recipes[0]?.id ?? "",
@@ -329,6 +334,7 @@ export function NewJobCard({
       ? (timeRows.find((r) => r.instanceType === gpu) ?? null)
       : autoTimeGpu(recipe, timeRows, usesCache);
   const serving = Boolean(recipe && isServeRecipe(recipe.id));
+  const takesBase = anyBase && recipe?.id === "glimmer-lora";
   // A decide job's estimate comes from its dataset: the renderings it trains on and the prompts it scores.
   const datasetKey = recipe?.params.find((f) => f.kind === "dataset")?.key;
   const spec = mode === DECIDE_MODE && datasetKey ? (readyForMode.find((d) => d.id === params[datasetKey])?.decision ?? null) : null;
@@ -338,7 +344,7 @@ export function NewJobCard({
     ? null
     : serving
       ? serveTimeHint(recipe, params, costRow, limits, !gpu)
-      : runTimeHint(recipe, params, timeRow, limits, !gpu && usesCache, decideSize);
+      : runTimeHint(recipe, takesBase && base.state === "ok" ? { ...params, baseScale: String(base.base.scale), baseBytes: String(base.base.bytes) } : params, timeRow, limits, !gpu && usesCache, decideSize);
 
   /** Sets a param; a demo's minutes also move the limits to what that many minutes need. */
   function setParam(key: string, value: string) {
@@ -451,6 +457,7 @@ export function NewJobCard({
           ...(gpu ? { instanceType: gpu } : {}),
           maxMinutes: limits.maxMinutes,
           maxUsd: limits.maxUsd,
+          ...(takesBase && base.state === "ok" ? { base: { repo: base.base.repo, revision: base.base.revision } } : {}),
         }),
       });
       const data: unknown = await res.json().catch(() => ({}));
@@ -567,6 +574,8 @@ export function NewJobCard({
             />
             <p className="train-help">Shown in the jobs list.</p>
           </div>
+
+          {takesBase ? <BasePicker value={base} onChange={setBase} disabled={busy} /> : null}
 
           {shownParams.map((f) => {
             const key = `p:${f.key}`;
@@ -865,7 +874,7 @@ export function NewJobCard({
           <button
             type="submit"
             className="btn btn-primary"
-            disabled={busy || Boolean(blocked)}
+            disabled={busy || Boolean(blocked) || (takesBase && (base.state === "checking" || base.state === "refused"))}
             aria-describedby={`${id}-cost`}
           >
             {busy ? <span className="spinner" aria-hidden /> : <Icon name="play" size={16} />}

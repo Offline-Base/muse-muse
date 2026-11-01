@@ -15,10 +15,10 @@ import { noEmDashes, slugify } from "@/lib/brief/normalize";
 import { decideJson, GLIMMER_REASONING, GLIMMER_TEMPLATE, LABELS_PER_PROMPT, labelGroups, NONE_OPTION, NONE_SHARE } from "@/lib/decide/format";
 import type { DecideJson, DecisionSideSummary, DecisionSpec, DecisionSummary, WilsonRate } from "@/lib/decide/types";
 import { plural } from "@/lib/format";
-import { BUILT_WITH_SPARK_OPEN, isSparkOpenDerivative, R30B_REPO, R30B_URL, USAGE_POINTS } from "@/lib/train/base";
+import { BUILT_WITH_SPARK_OPEN, isSparkOpenDerivative, licenseDuties, R30B_REPO, R30B_URL, USAGE_POINTS } from "@/lib/train/base";
 import { QUANT_LEVELS, type LocalFile, type LocalFiles, type QuantLevel } from "@/lib/train/local-files";
 import { SPARK_STANDIN } from "@/lib/meta/spark";
-import { isDecisionSummary, modelName, recordedModel, UNRECORDED_MODEL, writerModelOf } from "@/lib/train/models";
+import { isDecisionSummary, modelName, PUBLIC_WRITER, recordedModel, UNRECORDED_MODEL, writerModelOf } from "@/lib/train/models";
 import {
   datasetSystemPrompt,
   DECIDE_MODE,
@@ -144,8 +144,10 @@ export function hubSlug(title: string): string {
 }
 
 /** The model repo's name: "muse-glimmer-30b-<dataset slug>-lora-<first 8 characters of the job id>". */
-export function modelRepoName(datasetTitle: string, jobId: string): string {
-  return `muse-glimmer-30b-${hubSlug(datasetTitle)}-lora-${jobId.slice(0, 8).toLowerCase()}`;
+export function modelRepoName(datasetTitle: string, jobId: string, baseModel?: unknown): string {
+  // Llama's license asks that a model's name starts with Llama (licenseDuties, lib/train/base.ts).
+  const start = licenseDuties({ adapterBase: typeof baseModel === "string" ? baseModel : null }).namePrefix || "muse-glimmer-30b-";
+  return `${start}${hubSlug(datasetTitle)}-lora-${jobId.slice(0, 8).toLowerCase()}`;
 }
 
 /** The dataset repo's name, one per dataset: "muse-muse-<dataset slug>-<first 8 characters of the dataset id>". */
@@ -316,6 +318,8 @@ export interface StoryFacts {
   why: string | null;
   /** The dataset's writer_model: null or absent means Muse Spark 1.3, which wrote every dataset before it was recorded. */
   writerModel?: string | null;
+  /** The base's name when it isn't Glimmer: the template's story says it, and no model writes this story. */
+  baseName?: string | null;
 }
 
 export const STORY_INSTRUCTIONS = [
@@ -466,7 +470,7 @@ export function taskSentence(task: string): string {
  * The counts and the result follow it in the card.
  */
 export function templateStory(f: StoryFacts): string {
-  return `Muse Muse turns an example or some inspo into a working product on Meta's models. This adapter teaches ${GLIMMER_NAME}, an open model anyone can download and run on their own GPU, to do one task the way ${writerName(f)} does it: ${taskSentence(f.task)}. That way the task can run on a model you host yourself.`;
+  return `Muse Muse turns an example or some inspo into a working product on Meta's models. This adapter teaches ${f.baseName ?? GLIMMER_NAME}, an open model anyone can download and run on their own GPU, to do one task the way ${writerName(f)} does it: ${taskSentence(f.task)}. That way the task can run on a model you host yourself.`;
 }
 
 /** A dataset's writer as a card names it, from its writer_model: "Muse Wonder", or "Muse Spark 1.3" for one with none. */
@@ -875,7 +879,46 @@ function provenanceSection(f: CardFacts): string {
 }
 
 /** The model repo's README.md: YAML front matter the Hub's validator takes, then the sections in the order above. */
+/**
+ * A Llama adapter's card: its license duties first, then the story and the records' result. Short, because the Glimmer
+ * card's sections describe that model's template and license.
+ */
+function llamaCard(f: CardFacts, duties: ReturnType<typeof licenseDuties>): string {
+  const [, name] = f.modelRepo.split("/");
+  const front = [
+    "---",
+    `base_model: ${f.template.model}`,
+    "base_model_relation: adapter",
+    "library_name: peft",
+    "pipeline_tag: text-generation",
+    "license: other",
+    "license_name: llama-community-license",
+    "license_link: LICENSE",
+    "tags:",
+    ...["lora", "peft", "unsloth", "llama", "built-with-llama", "muse-muse"].map((t) => `- ${t}`),
+    ...(f.datasetPrivate ? [] : ["datasets:", `- ${f.datasetRepo}`]),
+    "---",
+  ];
+  const body = [
+    `# ${name}`,
+    "",
+    `**${duties.line}.** A LoRA adapter for [${f.template.model}](${HUB_SITE}/${f.template.model}), at commit \`${f.revision}\`.`,
+    "",
+    whySection(f),
+    "",
+    "## License",
+    "",
+    `${duties.license} The full texts are in \`LICENSE\` and \`USE_POLICY.md\`.`,
+    "",
+    ...duties.points.map((p) => `- ${p}`),
+    "",
+  ];
+  return noEmDashes([...front, "", ...body].join("\n"));
+}
+
 export function modelCard(f: CardFacts): string {
+  const duties = licenseDuties({ adapterBase: f.template.model });
+  if (duties.line && duties.family !== "glimmer") return llamaCard(f, duties);
   const s = f.summary;
   const derived = cardSparkOpen(f);
   const [, name] = f.modelRepo.split("/");
@@ -1286,9 +1329,13 @@ export function hubJobProblem(job: Pick<TrainJobRow, "recipe" | "status" | "para
   return null;
 }
 
-/** True when Spark 1.3 Contributor wrote a dataset: the model may go to the Hub, its dataset repo stays private. */
-export function keepDatasetPrivate(dataset: { writerModel?: string | null }): boolean {
-  return dataset.writerModel === SPARK_STANDIN;
+/**
+ * True when a dataset's repo stays private while its model may go to the Hub: Spark 1.3 Contributor wrote it, or its rows
+ * were imported from a public source (data research), whose own license and attribution the dataset card doesn't carry.
+ */
+export function keepDatasetPrivate(dataset: { writerModel?: string | null; kind?: string | null }): boolean {
+  // A decision dataset's "public" is Muse Decide's public mix, which publishes as it always has.
+  return dataset.writerModel === SPARK_STANDIN || (dataset.writerModel === PUBLIC_WRITER && dataset.kind !== "decision");
 }
 
 /**

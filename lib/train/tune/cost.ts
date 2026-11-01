@@ -8,6 +8,8 @@ import { tokenCost } from "@/lib/meta/pricing";
 import { evalHoldoutCount, runEstimate } from "@/lib/train/logic";
 import type { TrainPlanCost, TuneSettings } from "@/lib/train/tune/types";
 
+import { baseEstimateParams } from "@/lib/train/tune/settings";
+
 export * from "@/lib/train/tune/settings";
 
 /** The model whose prices the estimates use: Muse Wonder writes the examples and scores the run. */
@@ -27,7 +29,7 @@ const SCORE_PER_ITEM = {
 export function planCost(s: TuneSettings): TrainPlanCost {
   const meta = datasetCostRange(s.examples);
   const items = evalHoldoutCount(s.examples);
-  const train = runEstimate(s.recipe, { maxSteps: s.steps }, s.gpu, true);
+  const train = runEstimate(s.recipe, { maxSteps: s.steps, ...baseEstimateParams(s) }, s.gpu, true);
   const trainMinutes = Math.min(s.maxMinutes, train?.minutes ?? s.maxMinutes);
   return {
     metaLowUsd: meta.low,

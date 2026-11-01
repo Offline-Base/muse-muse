@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { env } from "@/lib/env";
 import { hitRateLimits } from "@/lib/gateway/store";
 import { errorJson, HttpError, readJson, route } from "@/lib/http";
-import { recordedBase } from "@/lib/train/base";
+import { licenseDuties, recordedBase } from "@/lib/train/base";
 import { createRepo, HubApiError, lfsBatch, preupload, redact, type HubRepo, type LfsAction } from "@/lib/train/hub";
 import {
   configProblem,
@@ -283,7 +283,7 @@ async function plan(caller: TrainJobRow, target: TrainJobRow, body: Record<strin
     const dataset = datasetId ? await getDataset(datasetId) : null;
     if (!dataset) return skip(null, "The adapter's dataset is gone, so its card can't say what it learned.");
     const namespace = env.hfNamespace!;
-    id = target.hub?.modelRepo || `${namespace}/${modelRepoName(dataset.title, target.id)}`;
+    id = target.hub?.modelRepo || `${namespace}/${modelRepoName(dataset.title, target.id, target.params?.baseModel)}`;
     if (!validRepoName(id.split("/")[1] ?? "")) return skip(null, "The model repo's name isn't one the Hub takes.");
   }
   const repo: HubRepo = { type: "model", id };
@@ -293,7 +293,7 @@ async function plan(caller: TrainJobRow, target: TrainJobRow, body: Record<strin
   let small: Record<string, string>;
   let present: string[];
   try {
-    await createRepo(repo, { license: "apache-2.0" });
+    await createRepo(repo, licenseDuties({ params: target.params }).family === "glimmer" ? { license: "apache-2.0" } : {});
     const modes = new Map((await preupload(repo, parsed.files.map((f) => ({ path: f.path, size: f.size, sample: f.sample })))).map((m) => [m.path, m]));
     const kept = parsed.files.filter((f) => !modes.get(f.path)?.shouldIgnore);
     // A small file the Hub keeps as a regular file is committed by the platform; everything else goes through LFS.

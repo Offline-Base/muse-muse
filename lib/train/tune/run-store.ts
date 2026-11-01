@@ -41,6 +41,8 @@ export async function latestTuneJob(datasetId: string): Promise<TrainJobRow | nu
 //                                waiting), kept under a window that never starts, like the native downloads count.
 //   tune-run-stopped:<id>        the run was stopped before training: nothing launches for it any more.
 //   tune-settings:<id>:steps     the training steps the run was started with (Advanced), as the count.
+//   tune-settings:<id>:base:<repo>@<commit>
+//                                the checked base the run trains on (TUNE_ANY_BASE). No row: r30b.
 //   tune-launch:<id>             the one launch claim, held for a 5-minute window and the next, so two launchers (the
 //                                workflow and Start training) never both start a job for one run.
 //   tune-product:<id>:<productId>:<buildId or "none">
@@ -60,6 +62,7 @@ const endKey = (id: string, code: string) => `tune-run-end:${id}:${code}`;
 const stoppedKey = (id: string) => `tune-run-stopped:${id}`;
 const stepsKey = (id: string) => `tune-settings:${id}:steps`;
 const autoPublishKey = (id: string) => `tune-settings:${id}:auto-publish`;
+const basePrefix = (id: string) => `tune-settings:${id}:base:`;
 const claimKey = (id: string) => `tune-launch:${id}`;
 const productPrefix = (id: string) => `tune-product:${id}:`;
 
@@ -106,6 +109,14 @@ export async function saveRunSteps(datasetId: string, steps: number): Promise<vo
     .onConflictDoUpdate({ target: [limits.key, limits.windowStart], set: { count } });
 }
 
+/** Keeps the run's checked base, in place of any before it; null clears it, so the run trains on r30b. */
+export async function saveRunBase(datasetId: string, base: { repo: string; revision: string } | null): Promise<void> {
+  if (!UUID_RE.test(datasetId)) return;
+  await db().delete(limits).where(and(like(limits.key, `${basePrefix(datasetId)}%`), eq(limits.windowStart, TUNE_KEEP_WINDOW)));
+  if (!base) return;
+  await db().insert(limits).values({ key: `${basePrefix(datasetId)}${base.repo}@${base.revision}`, windowStart: TUNE_KEEP_WINDOW, count: 1 }).onConflictDoNothing();
+}
+
 /** Keeps whether the run uploads by itself. No row, or 0, means it doesn't, so a write that failed fails closed. */
 export async function saveRunAutoPublish(datasetId: string, on: boolean): Promise<void> {
   if (!UUID_RE.test(datasetId)) return;
@@ -145,7 +156,7 @@ export async function readRunMarkRows(datasetId: string, now: Date = new Date())
       or(
         and(like(limits.key, `tune-run:${datasetId}:%`), gte(limits.windowStart, hourAgo), lt(limits.windowStart, TUNE_KEEP_WINDOW)),
         and(
-          or(like(limits.key, `tune-run-end:${datasetId}:%`), eq(limits.key, stoppedKey(datasetId)), eq(limits.key, stepsKey(datasetId)), eq(limits.key, autoPublishKey(datasetId))),
+          or(like(limits.key, `tune-run-end:${datasetId}:%`), eq(limits.key, stoppedKey(datasetId)), eq(limits.key, stepsKey(datasetId)), eq(limits.key, autoPublishKey(datasetId)), like(limits.key, `${basePrefix(datasetId)}%`)),
           eq(limits.windowStart, TUNE_KEEP_WINDOW),
         ),
       ),

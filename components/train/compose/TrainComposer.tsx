@@ -9,6 +9,7 @@ import { TitleChip, UserBubble, WorkingStep } from "@/components/chat";
 import { Composer, writeComposerDraft, type ComposerCopy, type Example } from "@/components/composer/Composer";
 import { SetupPanel, type SetupRow } from "@/components/composer/SetupPanel";
 import { Icon } from "@/components/icons";
+import { BasePicker, type BaseChoice } from "@/components/train/BasePicker";
 import { errorCode, roughMinutes, WRITER_NAME } from "@/components/train/format";
 import { R30B_NAME } from "@/components/train/results";
 import { planCostText, planViewFromTrainPlan, upperFirst } from "@/components/train/room/plan";
@@ -16,6 +17,7 @@ import { KEPT_PLAN_KEY } from "@/components/train/room/TrainRoom";
 import { ExternalLink } from "@/components/ui";
 import { usd } from "@/lib/format";
 import { BUILT_WITH_SPARK_OPEN, R30B_URL } from "@/lib/train/base";
+import { tuneBaseOf } from "@/lib/train/bases";
 import { maxStepsFor, NOTE_MAX, NOTE_MIN, planCost, planMaxUsd, planSettings, TUNE_MAX_EXAMPLES, TUNE_MIN_EXAMPLES, TUNE_MIN_STEPS, TUNE_STEPS } from "@/lib/train/tune/cost";
 import { EXAMPLE_ACCEPT, EXAMPLE_FILE_MAX_BYTES, EXAMPLE_ROWS_MAX, parseExamples, planRows, splitNote } from "@/lib/train/tune/examples";
 import { TUNE_DRAFT_ID } from "@/lib/train/tune/from-build";
@@ -141,7 +143,10 @@ export function TrainComposer({
   ceilings,
   fromBuild = null,
   autoUpload = null,
+  anyBase = false,
 }: {
+  /** TUNE_ANY_BASE: Advanced offers a base. */
+  anyBase?: boolean;
   /** How this run's model uploads by itself (TUNE_AUTO_PUBLISH), or null when it doesn't. */
   autoUpload?: UploadVisibility | null;
   defaultExamples: number;
@@ -154,6 +159,7 @@ export function TrainComposer({
   const [examples, setExamples] = useState(defaultExamples);
   const [steps, setSteps] = useState(TUNE_STEPS);
   const [upload, setUpload] = useState(true);
+  const [base, setBase] = useState<BaseChoice>({ state: "default" });
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
 
@@ -229,7 +235,7 @@ export function TrainComposer({
       const res = await fetch("/api/train/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ plan, settings: { examples, steps, ...(autoUpload && !upload ? { autoPublish: false } : {}) } }),
+        body: JSON.stringify({ plan, settings: { examples, steps, ...(autoUpload && !upload ? { autoPublish: false } : {}), ...(base.state === "ok" ? { base: { repo: base.base.repo, revision: base.base.revision } } : {}) } }),
       });
       const data = (await res.json().catch(() => null)) as { runId?: string; href?: string } | null;
       if (res.status === 201 && data?.runId && data.href) {
@@ -302,6 +308,9 @@ export function TrainComposer({
           autoUpload={autoUpload}
           upload={upload}
           onUpload={setUpload}
+          anyBase={anyBase}
+          base={base}
+          onBase={setBase}
           ceilings={ceilings}
           starting={starting}
           startError={startError}
@@ -327,6 +336,9 @@ export function PlanStep({
   autoUpload = null,
   upload = true,
   onUpload = () => {},
+  anyBase = false,
+  base = { state: "default" },
+  onBase = () => {},
   ceilings,
   starting,
   startError,
@@ -344,6 +356,9 @@ export function PlanStep({
   /** Advanced's upload choice for this run. */
   upload?: boolean;
   onUpload?: (on: boolean) => void;
+  anyBase?: boolean;
+  base?: BaseChoice;
+  onBase?: (next: BaseChoice) => void;
   ceilings: { maxMinutes: number; maxUsd: number };
   starting: boolean;
   startError: string | null;
@@ -352,9 +367,11 @@ export function PlanStep({
 }) {
   const countId = useId();
   const stepsId = useId();
-  const stepsMax = maxStepsFor(planSettings(examples, ceilings));
+  const baseSettings = base.state === "ok" ? { base: tuneBaseOf(base.base), gpu: base.base.gpus[0]! } : {};
+  const baseWaits = base.state === "checking" || base.state === "refused";
+  const stepsMax = maxStepsFor({ ...planSettings(examples, ceilings), ...baseSettings });
   const stepsGood = stepsOk(steps, stepsMax);
-  const shown = phase.at === "plan" ? { ...phase.plan, settings: planSettings(examples, ceilings, stepsGood ? steps : TUNE_STEPS) } : null;
+  const shown = phase.at === "plan" ? { ...phase.plan, settings: { ...planSettings(examples, ceilings, stepsGood ? steps : TUNE_STEPS), ...baseSettings } } : null;
   const canUpload = Boolean(autoUpload && shown && shown.examples.used === 0 && shown.source.kind !== "build");
   const uploadText = !autoUpload || !shown ? null : !canUpload ? UPLOAD_STAYS_TEXT : upload ? uploadPlanText(autoUpload) : "It stays on Muse Muse. Publish on its page uploads it later if you want.";
   const shownView = shown ? planViewFromTrainPlan({ ...shown, cost: planCost(shown.settings) }, uploadText) : null;
@@ -409,7 +426,7 @@ export function PlanStep({
                       </p>
                     ) : null}
                     <div className="row-actions">
-                      <button type="button" className="btn btn-primary" onClick={() => onStart(phase.plan)} disabled={starting || !countOk || !stepsGood} aria-busy={starting}>
+                      <button type="button" className="btn btn-primary" onClick={() => onStart(phase.plan)} disabled={starting || !countOk || !stepsGood || baseWaits} aria-busy={starting}>
                         {starting ? <span className="spinner" aria-hidden /> : null}
                         {starting ? "Starting" : "Start"}
                       </button>
@@ -422,6 +439,7 @@ export function PlanStep({
                         Advanced
                         <Icon name="chevronDown" size={16} />
                       </summary>
+                      {anyBase ? <BasePicker value={base} onChange={onBase} disabled={starting} /> : null}
                       <div className="field">
                         <label htmlFor={countId}>Examples to write</label>
                         <input

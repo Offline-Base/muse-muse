@@ -16,7 +16,7 @@ import { TUNE_STEPS } from "@/lib/train/tune/settings";
 import { freshHeartbeat } from "@/lib/train/tune/marks";
 import { tuneRun } from "@/lib/train/tune/run";
 import { autoPublishOk } from "@/lib/train/tune/auto-publish";
-import { latestTuneJob, readRunMarks, saveRunAutoPublish, saveRunProduct, saveRunSteps } from "@/lib/train/tune/run-store";
+import { latestTuneJob, readRunMarks, saveRunAutoPublish, saveRunBase, saveRunProduct, saveRunSteps } from "@/lib/train/tune/run-store";
 import type { TrainPlanBody } from "@/lib/train/tune/types";
 
 /** A refusal startTuneRun's caller turns into a JSON reply with this status and code. */
@@ -119,6 +119,13 @@ export async function startTuneRun(i: {
             throw new TuneStartError(500, "start_failed");
           });
         }
+        // Not ignored on failure either: a run that lost its base would train on another model.
+        if (i.plan && env.tuneAnyBase) {
+          await saveRunBase(existing.id, i.plan.settings.base ?? null).catch((err) => {
+            console.error("[train/tune] save base", err);
+            throw new TuneStartError(500, "start_failed");
+          });
+        }
         // The day first: a refusal here leaves no row saying this run is the product's.
         const day = productId ? await takeProductDay(productId, now) : null;
         await keepProduct(existing.id);
@@ -150,6 +157,8 @@ export async function startTuneRun(i: {
   }
   let workflowRunId: string;
   try {
+    // Before anything runs: a run that lost its base would train on another model.
+    if (plan.settings.base) await saveRunBase(dataset.id, plan.settings.base);
     workflowRunId = (await start(makeDataset, [{ datasetId: dataset.id }])).runId;
   } catch (err) {
     console.error("[train/tune] start", err);

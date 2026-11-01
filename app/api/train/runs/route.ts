@@ -5,9 +5,11 @@ import { errorJson, readJson, route } from "@/lib/http";
 import { spendPaused } from "@/lib/quota";
 import { buildForTune } from "@/lib/train/tune/build-source";
 import { tuneCaller, tuneExamplesMax } from "@/lib/train/tune/caller";
-import { askedExamples, askedSteps, maxStepsFor, planCost, planSettings, verifyPlan } from "@/lib/train/tune/plan";
+import { askedExamples, askedSteps, maxStepsFor, planCost, planSettings, TUNE_STEPS, verifyPlan } from "@/lib/train/tune/plan";
 import { startTuneRun, TuneStartError } from "@/lib/train/tune/start";
-import type { TrainPlanBody } from "@/lib/train/tune/types";
+import { resolveBase } from "@/lib/train/base-check";
+import { askedBase, tuneBaseOf } from "@/lib/train/bases";
+import type { TrainPlanBody, TuneBase } from "@/lib/train/tune/types";
 
 /**
  * POST {plan, settings?: {examples?, steps?, autoPublish?}} -> 201 {runId, href}. Admins or automation (tuneCaller). Off with
@@ -18,6 +20,9 @@ import type { TrainPlanBody } from "@/lib/train/tune/types";
  * the browser. A task plan saves the dataset and starts makeDataset, as POST /api/train/datasets does, keeps the steps
  * with the run and starts the tuneRun workflow, which trains it once the examples are ready (startTuneRun); the run's
  * id is the dataset's.
+ *
+ * With TUNE_ANY_BASE, settings.base {repo, revision?} is another Meta base, for admins: 400 with the sentence that
+ * refuses it, or the run keeps it and every launch checks it again. Off: 404. Steps are checked on that base's estimate.
  *
  * A build plan (B, source {kind: "build"}) starts like a task plan, keeps its product with the run, and is one a product
  * a day (429 product_daily with {retryAfterSeconds}, counted in startTuneRun), on top of every other cap.
@@ -47,9 +52,27 @@ export const POST = route(async (req: Request) => {
     return errorJson(400, `Runs here ask for at most ${tuneExamplesMax(caller)} examples. Change it and send it again.`);
   }
   const sized = planSettings(size.value ?? check.plan.settings.examples, limitCeilings());
-  const steps = askedSteps(body.settings, maxStepsFor(sized));
+  // Another Meta base (TUNE_ANY_BASE), admins only: checked against the Hub again here, whatever the card showed.
+  const askedForBase = askedBase((body.settings as { base?: unknown } | undefined)?.base);
+  if (!askedForBase.ok) return errorJson(400, askedForBase.error);
+  let picked: TuneBase | undefined;
+  let gpu: string | undefined;
+  if (askedForBase.value) {
+    if (!env.tuneAnyBase) return errorJson(404, "not_found");
+    if (!caller.isAdmin) return errorJson(403, "Only admins can pick a base.");
+    const checked = await resolveBase(askedForBase.value);
+    if (!checked.ok) return errorJson(400, checked.error);
+    const b = checked.base;
+    picked = tuneBaseOf(b);
+    gpu = b.gpus[0];
+  }
+  const steps = askedSteps(body.settings, maxStepsFor(picked ? { ...sized, base: picked, gpu: gpu! } : sized));
   if (!steps.ok) return errorJson(400, steps.error);
-  const settings = planSettings(sized.examples, limitCeilings(), steps.value);
+  // With no steps asked, the default has to fit this base's time too: launch would refuse it after the examples are paid for.
+  if (picked && steps.value === undefined && TUNE_STEPS > maxStepsFor({ ...sized, base: picked, gpu: gpu! })) {
+    return errorJson(400, "The default steps don't fit this base's time limit. Ask for fewer steps.");
+  }
+  const settings = { ...planSettings(sized.examples, limitCeilings(), steps.value), ...(picked ? { base: picked, gpu: gpu! } : {}) };
   const plan: TrainPlanBody = { ...check.plan, settings, cost: planCost(settings) };
 
   // A build plan starts only while TUNE_FROM_BUILDS is on and the build still offers its own model: the plan's token

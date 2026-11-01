@@ -33,7 +33,7 @@ import {
   writerName,
 } from "@/components/train/format";
 import { dateTimeUtc, duration, relativeTime, usd } from "@/lib/format";
-import { isSparkOpenDerivative } from "@/lib/train/base";
+import { isSparkOpenDerivative, licenseDuties } from "@/lib/train/base";
 import { isDecisionSummary } from "@/lib/train/models";
 import { isTrainTerminal, type RecipeView, type TrainEventView, type TrainJobView } from "@/lib/train/types";
 
@@ -139,6 +139,8 @@ export function JobRoom(props: JobRoomProps) {
   const decide = isDecideJob(job);
   // A model trained from r30b, or files merged into it, is a Derivative of Muse Spark Open (lib/train/base.ts).
   const sparkOpen = isSparkOpenDerivative({ params: job.params });
+  const duties = licenseDuties({ params: job.params });
+  const llamaDuties = duties.family === "glimmer" ? null : duties;
   const sent = useMemo(() => events.some((e) => e.payload?.type === "decide"), [events]);
   const decision = decide ? decisionState(job, now, sent) : null;
   // Judging and scoring start once the GPU is gone, so the page keeps polling for them after the job settles.
@@ -297,6 +299,18 @@ export function JobRoom(props: JobRoomProps) {
             </p>
           </header>
           {sparkOpen ? <SparkOpenNote compact={job.recipe !== "glimmer-lora"} /> : null}
+          {llamaDuties ? (
+            <aside className="card section-card spark-open-note" aria-label={llamaDuties.line ?? undefined}>
+              <p>
+                <strong>{llamaDuties.line}.</strong> {llamaDuties.license}
+              </p>
+              <ul className="muted small">
+                {llamaDuties.points.map((p) => (
+                  <li key={p}>{p}</li>
+                ))}
+              </ul>
+            </aside>
+          ) : null}
 
           <p className="mobile-status" aria-hidden>
             <span className={`pill-dot dot-${job.status}`} />
@@ -364,7 +378,7 @@ export function JobRoom(props: JobRoomProps) {
             <EvalResults
               state={evals}
               rows={rows}
-              model={tunedModelName(job.recipe)}
+              model={llamaDuties && typeof job.params?.baseModel === "string" ? job.params.baseModel : tunedModelName(job.recipe)}
               writer={props.dataset ? writerName(props.dataset) : null}
               judge={judgeName(job)}
               sparkOpen={sparkOpen}

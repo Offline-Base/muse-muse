@@ -9,6 +9,17 @@ import type { DatasetView, TrainJobView } from "@/lib/train/types";
 /** "chat" answers in its own words; "decision" picks one of a few labels (tg-decide's decision models). */
 export type TuneKind = "chat" | "decision";
 
+/** A checked base other than r30b (lib/train/bases.ts), for the estimates and the plan's words. */
+export interface TuneBase {
+  repo: string;
+  revision: string;
+  /** Step time over r30b's, and the weights' bytes to download. Estimates; absent on a run's room before its job exists. */
+  scale?: number;
+  bytes?: number;
+  /** The license duties and what has never been run, as the plan shows them. */
+  dutiesText?: string;
+}
+
 /** What a run trains with. Fixed defaults (planSettings); Advanced changes `examples` and `steps`. */
 export interface TuneSettings {
   /** Examples Muse Wonder writes: the dataset's `requested`, 20 to 1000. */
@@ -25,6 +36,8 @@ export interface TuneSettings {
   /** The training job's limits: its time and its hard dollar ceiling. */
   maxMinutes: number;
   maxUsd: number;
+  /** Set only with TUNE_ANY_BASE and a base picked. Never signed: Start checks it again. */
+  base?: TuneBase;
 }
 
 /**

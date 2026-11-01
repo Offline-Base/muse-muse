@@ -4,7 +4,8 @@
  */
 import { evalRows, evalState, gpuName, isDatasetStalled, type EvalRow } from "@/components/train/format";
 import { toDatasetView, toJobView, unjudgedNote, type DatasetHead, type TrainJobRow } from "@/lib/train/logic";
-import { isSparkOpenDerivative } from "@/lib/train/base";
+import { isSparkOpenDerivative, licenseDuties } from "@/lib/train/base";
+import { baseDutiesText, baseMeasured } from "@/lib/train/bases";
 import { isJudged } from "@/lib/train/models";
 import { recipeById } from "@/lib/train/recipes";
 import { planCost, planSettings } from "@/lib/train/tune/cost";
@@ -135,7 +136,18 @@ export function tuneRunView(rows: RunRows, now: Date, ceilings: { maxMinutes: nu
   const evals = job ? evalRows(rows.events) : [];
   const marks = rows.marks ?? NO_MARKS;
   const { stage, problem, hold } = tuneStage(dataset, job, evals, now.getTime(), marks);
-  const settings = runSettings(dataset, job, ceilings, marks.steps);
+  const chosen = runSettings(dataset, job, ceilings, marks.steps);
+  const settings: TuneSettings = marks.base
+    ? {
+        ...chosen,
+        base: {
+          ...marks.base,
+          scale: Number(job?.params?.baseScale) || undefined,
+          bytes: Number(job?.params?.baseBytes) || undefined,
+          dutiesText: baseDutiesText({ duties: licenseDuties({ adapterBase: marks.base.repo }), measured: baseMeasured(marks.base.repo, marks.base.revision) }),
+        },
+      }
+    : chosen;
   const judgeCost = job?.evalSummary?.judgeCostUsd ?? 0;
   return {
     id: dataset.id,

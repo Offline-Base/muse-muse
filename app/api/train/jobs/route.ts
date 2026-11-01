@@ -49,7 +49,7 @@ export const POST = route(async (req: Request) => {
   const body = await readJson(req, 16 * 1024);
   // Every check, and the start itself, is launchJob's (lib/train/launch.ts); this only reads the body and answers.
   const launched = await launchJobRequest(
-    { recipe: body.recipe, title: body.title, params: body.params, instanceType: body.instanceType, maxMinutes: body.maxMinutes, maxUsd: body.maxUsd },
+    { recipe: body.recipe, title: body.title, params: body.params, instanceType: body.instanceType, maxMinutes: body.maxMinutes, maxUsd: body.maxUsd, base: body.base },
     { userId: user.id },
   );
   if (!launched.ok) return errorJson(launched.status, launched.code, launched.body);

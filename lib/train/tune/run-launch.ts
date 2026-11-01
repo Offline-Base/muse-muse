@@ -141,6 +141,7 @@ export async function launchForRun(input: RunLaunchInput): Promise<RunLaunch> {
         instanceType: s.gpu,
         maxMinutes: s.maxMinutes,
         maxUsd: s.maxUsd,
+        ...(marks.base ? { base: marks.base, baseGpuAuto: true } : {}),
       },
       { userId: input.callerId },
     );

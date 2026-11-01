@@ -46,14 +46,16 @@ function styleOf(used: number, given: number): string {
  * How it's made, in the order the run goes. `used` is how many of the person's own rows the examples follow, of the
  * `given` they sent (the task holds only the first few, cut short: foldExamples).
  */
-export function howItsMade(s: Pick<TuneSettings, "examples">, c: Pick<TrainPlanCost, "trainMinutes">, used = 0, given = used): string[] {
+export function howItsMade(s: Pick<TuneSettings, "examples" | "base">, c: Pick<TrainPlanCost, "trainMinutes">, used = 0, given = used): string[] {
   const kept = evalHoldoutCount(s.examples);
   return [
     `${WRITER_NAME} writes ${s.examples} examples${styleOf(used, given)}, and keeps ${kept} aside to score it.`,
     "A quick check that there are enough to train on and to score with.",
-    `${R30B_NAME}, Muse Muse's own (huggingface.co/${R30B_REPO}), trains on one GPU, ${roughMinutes(c.trainMinutes)}.`,
-    `The 2026 Glimmer it started from and the tuned model answer the ${kept} kept-aside prompts, and ${WRITER_NAME} scores both.`,
-    "Try it live, then publish it if you like.",
+    s.base
+      ? `${s.base.repo} at commit ${s.base.revision.slice(0, 12)} trains on one GPU, ${roughMinutes(c.trainMinutes)}.`
+      : `${R30B_NAME}, Muse Muse's own (huggingface.co/${R30B_REPO}), trains on one GPU, ${roughMinutes(c.trainMinutes)}.`,
+    `${s.base ? "The base" : "The 2026 Glimmer it started from"} and the tuned model answer the ${kept} kept-aside prompts, and ${WRITER_NAME} scores both.`,
+    s.base ? "Publish it if you like. Trying it live and local files only work on the 2026 Glimmer, so this base has neither." : "Try it live, then publish it if you like.",
   ];
 }
 
@@ -65,6 +67,7 @@ export function planViewFromTrainPlan(p: Pick<TrainPlanBody, "name" | "tagline" 
     sections: [
       { heading: "How it's made", steps: howItsMade(p.settings, p.cost, p.examples.used, p.examples.given) },
       ...(sample ? [{ heading: "It might be asked", text: `"${sample.trim()}"` }] : []),
+      ...(p.settings.base?.dutiesText ? [{ heading: "Its license", text: p.settings.base.dutiesText }] : []),
       ...(upload ? [{ heading: "Where it goes", text: upload }] : []),
       { heading: "What it costs", text: `${planCostText(p.cost)} ${upperFirst(roughMinutes(p.cost.minutes))} in all.` },
     ],

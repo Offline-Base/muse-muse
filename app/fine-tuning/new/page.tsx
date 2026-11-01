@@ -25,5 +25,5 @@ export default async function NewFineTunePage({ searchParams }: { searchParams?:
   const asked = (await searchParams)?.[FROM_BUILD_PARAM];
   const build = env.tuneFromBuilds && typeof asked === "string" ? await buildForTune(asked).catch(() => null) : null;
   const fromBuild = build?.offers ? { id: build.buildId, name: build.productName } : null;
-  return <TrainComposer defaultExamples={env.tuneDefaultExamples} ceilings={limitCeilings()} fromBuild={fromBuild} autoUpload={env.tuneAutoPublish && !env.hubOffReason ? (env.hfPublicSet && env.hfPublic ? "public" : "private") : null} />;
+  return <TrainComposer defaultExamples={env.tuneDefaultExamples} ceilings={limitCeilings()} fromBuild={fromBuild} anyBase={env.tuneAnyBase} autoUpload={env.tuneAutoPublish && !env.hubOffReason ? (env.hfPublicSet && env.hfPublic ? "public" : "private") : null} />;
 }
