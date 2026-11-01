@@ -14,17 +14,17 @@ export const CAP_FLAG: Record<CapId, string> = {
 };
 /** False until the unit merges with its routes, overlay and checks. One line per cap, so merges never collide. */
 export const CAP_READY: Record<CapId, boolean> = {
-  data: false,
-  files: false,
-  connect: false,
-  jobs: false,
-  live: false,
-  media: false,
-  code: false,
-  runtime: false,
-  hardware: false,
+  data: true,
+  files: true,
+  connect: true,
+  jobs: true,
+  live: true,
+  media: true,
+  code: true,
+  runtime: true,
+  hardware: true,
   extension: true,
-  games: false,
+  games: true,
 };
 /** Products with this cap need a signed-in builder (unit 1). Stateless caps stay open to guests. */
 export const CAP_NEEDS_BUILDER: Record<CapId, boolean> = {

@@ -44,7 +44,8 @@ describe("with every wave 3 flag off", () => {
     assert.deepEqual(env.enabledCaps, []);
     for (const id of CAP_IDS) {
       process.env[CAP_FLAG[id]] = "1";
-      assert.deepEqual(env.enabledCaps, CAP_READY[id] ? [id] : [], id);
+      // Media also needs one of its parts on (MEDIA_SPEECH and the rest), so its flag alone enables nothing.
+      assert.deepEqual(env.enabledCaps, CAP_READY[id] && id !== "media" ? [id] : [], id);
       delete process.env[CAP_FLAG[id]];
     }
   });
