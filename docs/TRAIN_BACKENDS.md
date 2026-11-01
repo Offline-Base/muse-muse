@@ -24,8 +24,11 @@ Tags: [V] verified in docs or code, [L] likely, [I] estimate or inference, not m
   trained there (tg-decide `docs/DECISION_MODELS.md` section 5).
 - **Recommended path:**
   1. A `TrainBackend` seam, as a pure refactor.
-  2. Modal: cheapest per hour, a TypeScript SDK and a hard per-job timeout.
-  3. Baseten, if a second container host is wanted.
+  2. Modal: a TypeScript SDK, a hard per-job timeout and a spend limit. Its GPU Sandboxes can be preempted, so its
+     backend treats a vanished Sandbox as a failed run. Once Sandbox CPU and memory are counted, its cost edge is
+     small.
+  3. Baseten, if a second container host is wanted. It moves up if it confirms Training Jobs take an A100 80 GB,
+     since its DEDICATED compute isn't preempted (see O1).
   4. The Fireworks export test.
 - **Every code change waits until `tg-decide` lands** (see "What waits for tg-decide"). For the Nov 4 submission,
   Lambda stays the only live backend.
@@ -92,19 +95,21 @@ export interface TrainBackend {
 
 | Method | Lambda (today) | Modal | Baseten | Fireworks |
 |---|---|---|---|---|
-| launch | `launchInstance` with `buildUserData` (`lambda.ts:329`, `userdata.ts:70`) | Create a GPU Sandbox with image, gpu, `timeoutMs`, volume, name and tags. Write the three files, then run `python3 -u runner.py job.json` | `POST /v1/training_projects/{id}/jobs` with `base_image`, `start_commands`, env and `cache_config` | Create the dataset and upload it. `POST .../supervisedFineTuningJobs` with an explicit `loraRank`, then read it back |
-| status | `getInstance` (`lambda.ts:287`) | Sandbox poll (`sandboxes.fromId`) | GET the job | GET the job's state |
+| launch | `launchInstance` with `buildUserData` (`lambda.ts:329`, `userdata.ts:70`) | Create a GPU Sandbox with image, gpu, cpu, `memoryMiB`, `timeoutMs`, volume and name, then call `setTags`. Write the three files, then run `python3 -u runner.py job.json` | `POST /v1/training_projects/{id}/jobs` with `base_image`, `start_commands`, env and `cache_config` | Create the dataset and upload it. `POST .../supervisedFineTuningJobs` with an explicit `loraRank`, then read it back |
+| status | `getInstance` (`lambda.ts:287`) | Sandbox poll (`sandboxes.fromId`). A Sandbox that vanished, or exited with no done or failed callback, is a failed run. That covers preemption | GET the job | GET the job's state |
 | events | none off the box | Sandbox stdout and stderr | `.../logs` | the job's state and metrics |
 | artifacts | `<cache>/models/<jobId>` on the region NFS, plus Blob and Hub uploads | the same path on a Modal Volume | the same path under `BT_PROJECT_CACHE_DIR`; checkpoint URLs last 7 days | signed URLs from `getDownloadEndpoint` |
 | cancel | `terminateInstances` (`lambda.ts:371`) | `sandbox.terminate` | `POST .../jobs/{id}/stop` | cancel the job |
-| listOurs | `listInstances` with tags (`lambda.ts:271`) | list by tags | the jobs in one `muse-muse` project | the jobs by display name |
-| costSoFar | price x started minutes (`logic.ts:94-102`) | per-second GPU, plus CPU and memory | per-minute wall clock | $0 during the promotion, else tokens x price |
+| listOurs | `listInstances` with tags (`lambda.ts:271`) | list by app id, which also finds a Sandbox that died before `setTags`, then by tags | the jobs in one `muse-muse` project | the jobs by display name |
+| costSoFar | price x started minutes (`logic.ts:94-102`) | per-second GPU, plus CPU and memory at the Sandbox rate (3x list) | per-minute wall clock | $0 during the promotion, else tokens x price |
 
 ### Other parts of the seam
 
 - **Job row.** Add a `backend` column, default `lambda`, so existing rows stay Lambda. `instanceType` becomes a SKU
-  string for each backend. Use the next free migration number: 0017 to 0019 are taken on `tg-decide` and the
-  `tg-cap-*` branches.
+  string for each backend. The next unreserved migration number is 0028: 0016 and 0017 are General's, 0018 to 0026
+  are wave 3's and 0027 is General's replications (`docs/BUILD_LOG.md:29`). Agree the number with General and wave 3
+  before using it, since migrations reach main, previews and production in number order (`docs/BUILD_LOG.md:474-475,
+  640-644`).
 - **GPU classes.** Recipes ask for a class: a100-40, h100-80, a10-24, or "any 24 GB or more". Each backend maps the
   class to its own SKU and price. `runEstimate` keys its step times by class (`logic.ts:662-674`), using Lambda's
   numbers until another host is measured.
@@ -118,7 +123,7 @@ export interface TrainBackend {
     required.
 - **Callbacks.** Unchanged. The platform URL must be public https (`userdata.ts:48`) on every host.
 - **Cache.** `cacheDir` points at the host's volume. Use a volume only the lab writes to: on the shared Lambda cache,
-  a lab job retired the knowledge pipeline's venv (KRL:875). With `TRAIN_MAX_ACTIVE` at 1 there is one writer at a
+  a lab job retired the knowledge pipeline's venv (KRL:864-868). With `TRAIN_MAX_ACTIVE` at 1 there is one writer at a
   time.
 - **Follow-on jobs.** Publish, quantize and serve must run on the backend and volume that hold the adapter, so
   `AdapterOption` gains `backend`.
@@ -132,7 +137,7 @@ export interface TrainBackend {
 | `runner.py` and its callbacks | runs | runs: python3 and HTTPS out | runs | not used |
 | `glimmer-lora` (`GLIMMER_PY`) | runs, measured | runs as is [L], given an x86_64 CUDA container with python3, a driver new enough for cu128 wheels and a writable cacheDir. Untested under gVisor | runs as is [L], same needs | can't run: Fireworks trains with its own stack |
 | `glimmer-publish` | runs | runs on the adapter's volume | runs on the project cache | n/a |
-| `glimmer-quantize` (220 GiB RAM, 512 GiB disk: `recipes/index.ts:59-65`) | runs (never run on a real GPU: `docs/TRAINING.md:770`) | container limits not checked | not checked | n/a |
+| `glimmer-quantize` (220 GiB RAM, 512 GiB disk: `recipes/index.ts:37-47`) | runs (never run on a real GPU: `docs/TRAINING.md:770`) | container limits not checked | not checked | n/a |
 | `glimmer-serve` (IP, port 8443, pinned cert) | runs (never run on a real GPU: `docs/TRAINING.md:557-559`) | needs a tunnel mode with an encrypted port and the serve key | not in a training job; needs a separate Truss deployment | dedicated deployment, $8/h |
 | `smoke` | runs | runs | runs | n/a |
 | cloud-init (`userdata.ts`) | Lambda only | replaced | replaced | n/a |
@@ -144,6 +149,9 @@ export interface TrainBackend {
 - **What works for Glimmer [V]:**
   - Everything in the lab.
   - The measured run: an A100 40 GB, 42 to 47 minutes, $1.39 to $1.59 (`docs/VIBE_TUNING.md:60`).
+  - The recipe tries H100 PCIe first, then H100 SXM5, then A100 SXM4 (`recipes/index.ts:18-23`), and `pickGpu` takes
+    the first with capacity unless a GPU is asked for (`lambda.ts:504-513`). To repeat the measured cost, ask for
+    `gpu_1x_a100_sxm4`.
   - GH200 is left out, because Unsloth on arm64 needs a source build (`recipes/index.ts:76`).
 - **GPU and price** ([pricing](https://lambda.ai/pricing)):
   - A100 SXM4 40 GB: $1.99/h
@@ -151,8 +159,8 @@ export interface TrainBackend {
   - H100 SXM: $4.29/h
   - GH200: $2.29/h
   - B200: $6.99/h
-  - Billed per minute until terminate, with no egress charges
-    ([billing](https://docs.lambda.ai/public-cloud/billing/)).
+  - Billed per minute from launch until terminate ([billing](https://docs.lambda.ai/public-cloud/billing/)).
+  - The same page says filesystems pay no ingress or egress. It says nothing about instance traffic.
 - **Credentials:**
   - `LAMBDA_API_KEY` is in both `muse-muse-builds/.env.local` and `~/muse-muse/.env.local`.
   - The SSH key name is `TRAIN_SSH_KEY_NAME`, with a built-in default (`steps.ts:96-98`).
@@ -164,10 +172,13 @@ export interface TrainBackend {
   - A 30 s workflow poll.
   - Heartbeat rules: 25 minutes to boot, 10 minutes of silence.
   - The sweep, at `maxMinutes + 10` or `maxUsd x 1.1` (`docs/TRAINING.md:40-54`).
-  - Lambda itself has no spend cap.
-  - Small fix: Lambda allows 1 launch per 12 s, but our 429 retry waits 2 s (`lambda.ts:40`). Retry after 12 s.
+  - On Lambda's side: its billing page describes no spend cap
+    ([billing](https://docs.lambda.ai/public-cloud/billing/)), so we assume there is none [L].
+  - Small fix: Lambda allows 1 launch request per 12 s ([API rate limits](https://docs.lambda.ai/api/cloud)), but our
+    429 retry waits 2 s (`lambda.ts:40`). Retry after 12 s.
 - **Data terms:** not read in this pass.
-- **Smoke test:** nothing needed for readiness. The alignment run N1 costs about $1.59.
+- **Smoke test:** nothing needed for readiness. The alignment run N1 costs about $1.59 when it asks for
+  `gpu_1x_a100_sxm4`, or about $2.58 if it lands on an H100 PCIe and takes the same 47 minutes [I].
 
 ### Modal
 
@@ -175,23 +186,34 @@ export interface TrainBackend {
   - No Glimmer offering. Jobs pull the public Hugging Face weights, which need no token [V].
   - GPU Sandboxes can be created from TypeScript with the `modal` npm SDK, which needs Node 22 or newer. Our
     `package.json` already requires that (`package.json:56-57`).
-  - The SDK supports [V]:
-    - creating a Sandbox with gpu, `timeoutMs`, `idleTimeoutMs`, command, secrets, volumes, `encryptedPorts`, name
-      and tags
-    - `images.fromRegistry` and `volumes.fromName`
+  - The SDK supports [V] (modal-labs/libmodal, `modal-js/src/sandbox.ts` and `modal-js/src/volume.ts`):
+    - creating a Sandbox with gpu, cpu, `memoryMiB`, `timeoutMs`, `idleTimeoutMs`, command, secrets, volumes,
+      `encryptedPorts` and name
+    - tags only after creation, through `setTags`. A Sandbox that dies before `setTags` has no tags, so the sweep
+      also lists by app
+    - `images.fromRegistry`, and `volumes.fromName`, which takes only `environment` and `createIfMissing`
     - filesystem access, `exec` and `terminate`
-    - `sandboxes.fromId` and listing by tags
+    - `sandboxes.fromId`, and listing by app id or by tags
   - GPU Sandboxes run only on gVisor. Unsloth and bitsandbytes haven't been tried there.
-  - Don't use Modal Functions for the runner. GPU Functions are always preemptible and restart on the same input
-    ([preemption](https://modal.com/docs/guide/preemption)), and our runner can't restart.
+  - **Preemption [V]** ([preemption](https://modal.com/docs/guide/preemption)):
+    - GPU Functions are always preemptible and restart on the same input. Our runner can't restart, so don't use
+      Functions for it.
+    - Sandboxes are spared from preemption only when they ask for no GPU. So our GPU Sandboxes can be preempted
+      too. The page doesn't say what happens to a preempted Sandbox.
+    - So the Modal backend counts a Sandbox that vanished, or exited with no done or failed callback, as a failed
+      run, and the workflow may relaunch it once under a new name. A preempted run loses its GPU time, up to about
+      $3 for a full run [I]. Making the runner resumable is the larger fix.
 - **GPU and price** ([pricing](https://modal.com/pricing)):
   - A100 40 GB: about $2.10/h
   - A100 80 GB: about $2.50/h
   - H100: about $3.95/h. Use `H100!` to stop a free upgrade to H200.
   - L40S: about $1.95/h
   - A10: about $1.10/h
-  - CPU and memory are billed per second on top.
-  - Egress: $0.04/GiB.
+  - CPU and memory are billed per second on top. Sandboxes pay the non-preemptible rate, 3x list: about $0.0000394
+    per core-second and $0.0000067 per GiB-second.
+  - At 8 cores and 32 GiB that adds about $1.90/h, so an A100 40 GB Sandbox costs about $4.00/h in all [I]. How many
+    cores and how much memory the runner really needs hasn't been measured.
+  - Egress: $0.04/GiB, with 1 TiB a month free on the Starter plan.
   - Volumes: free up to 1 TiB.
   - The Starter plan includes $30 a month.
   - Sandboxes run up to 24 h ([sandboxes](https://modal.com/docs/guide/sandboxes)).
@@ -201,16 +223,19 @@ export interface TrainBackend {
 - **Artifacts:**
   - Use a v2 Volume: no inode cap, and it suits the uv venv and the HF cache
     ([volumes](https://modal.com/docs/guide/volumes)). The adapter goes at `models/<jobId>`.
+  - Make the v2 Volume once with the CLI, `modal volume create --version=2 <name>` (same page). The JS SDK's
+    `volumes.fromName` takes no version [V]. So the backend opens the Volume with `createIfMissing` off, and a missing
+    Volume fails the launch instead of making one of the wrong version [I].
   - Writes need a commit before other containers see them, and the smoke test must show the next Sandbox does.
 - **Caps and kill switches:**
   - `timeoutMs` is a hard stop on Modal's side for each job, which Lambda lacks.
-  - Our sweep lists Sandboxes by tag.
+  - Our sweep lists Sandboxes by app id, then by tag, so one that died before `setTags` is still found.
   - The owner can set a workspace spend limit in the dashboard ([budgets](https://modal.com/docs/guide/budgets)).
     Setting it by API isn't documented.
 - **Data terms:** not read in this pass.
 - **Smoke test (one test in two stages, none run):**
-  - **Stage 1:** the `smoke` recipe in an A10 Sandbox for at most 10 minutes, about $0.20 plus CPU and memory [I].
-    It proves:
+  - **Stage 1:** the `smoke` recipe in an A10 Sandbox for at most 10 minutes. That is about $0.18 of GPU plus about
+    $0.08 of CPU and memory at 2 cores and 8 GiB, so about $0.30 [I]. It proves:
     - launch from our code
     - file delivery
     - callbacks
@@ -218,18 +243,22 @@ export interface TrainBackend {
     - tag listing
     - the driver version
   - **Stage 2:** if stage 1 passes, `glimmer-lora` with `maxSteps` 10 and `publish` 0 on a 40-row dataset, on A100 40 GB.
-    That is about 47 minutes with the cold venv and download, about $1.65 plus CPU and memory [I]. It proves:
+    That is about 47 minutes with the cold venv and download: about $1.65 of GPU plus about $1.50 of CPU and memory
+    at 8 cores and 32 GiB, so about $3.15 [I]. It proves:
     - Unsloth under gVisor
     - the venv on the Volume
     - that the adapter is visible to the next Sandbox
-  - **Total:** about $2.30 [I].
+    - the runner's real CPU and memory use, which fixes these estimates
+  - **Total:** about $3.50 [I], inside the Starter plan's $30 a month.
 
 ### Baseten
 
 - **What works for Glimmer:**
-  - Training Jobs run a container we define. The fields are `image.base_image`, compute (H100 or H200 only, dedicated
-    or spot), and `runtime` (`start_commands`, environment variables or `SecretReference`, `cache_config`,
-    `checkpointing_config`) [V].
+  - Training Jobs run a container we define. The fields are `image.base_image`, compute (the SDK reference lists H100
+    or H200, dedicated or spot), and `runtime` (`start_commands`, environment variables or `SecretReference`,
+    `cache_config`, `checkpointing_config`) [V].
+  - DEDICATED compute is on-demand and isn't preempted. Spot can be preempted at any time
+    ([training SDK](https://docs.baseten.co/reference/sdk/training), Compute) [V]. Our jobs use DEDICATED.
   - There is a full REST API: create a project and jobs, stop, logs, checkpoint files and download (Baseten
     management API; [training SDK](https://docs.baseten.co/reference/sdk/training)).
   - Baseten Loops, its managed LoRA product, doesn't list Glimmer
@@ -241,7 +270,10 @@ export interface TrainBackend {
   - B200: about $9.98/h
   - H200 is about $7.50/h, from third-party reads only.
   - Billed per minute of wall-clock time.
-  - Training can't use an A100.
+  - **A100: the two Baseten sources disagree [L].** The pricing page lists an A100 80 GB under Training, at about
+    $4.00/h. The [training SDK](https://docs.baseten.co/reference/sdk/training) reference lists only H100 and H200
+    accelerators. Ask Baseten whether Training Jobs take an A100 80 GB. If they do, a run costs about 40% less than on
+    an H100, and O1 changes.
 - **Credentials:**
   - `BASETEN_API_KEY` is in `~/muse-muse/.env.local` only, not in `muse-muse-builds/.env.local`.
 - **Artifacts:**
@@ -252,7 +284,10 @@ export interface TrainBackend {
   - "Enforce budget" never stops training jobs ([billing](https://docs.baseten.co/organization/billing)).
   - So the hard stops are the runner's own deadline, the job ending when `runner.py` exits [L], and our sweep calling
     stop.
-  - An org admin can cap concurrent GPUs per team through `PATCH /v1/training/capacity`. Set it to 1 H100.
+  - An org admin can cap a team's concurrent GPUs with the CLI, `baseten train capacity update --team <team>
+    --gpu-type H100 --max-gpus 1` ([management](https://docs.baseten.co/training/management)). There is no dashboard
+    control, and the Training API reference lists no capacity endpoint. Without a shared pool the cap is a hard
+    ceiling: more dedicated jobs queue. Set it to 1 H100.
 - **Data terms:** not read in this pass.
 - **Smoke test (none run):**
   - The `smoke` recipe as a Training Job on 1x H100 for at most 10 minutes, about $1.10 [I].
@@ -263,8 +298,10 @@ export interface TrainBackend {
     - logs
     - the cache mount
     - a driver new enough for cu128
-  - The first `glimmer-lora` run proves Unsloth there. It takes about 45 to 60 minutes on an H100, about $5 to $6.50
-    [I]. That is over the $5 job ceiling, so `TRAIN_JOB_MAX_USD` needs raising for that run.
+  - The first `glimmer-lora` run proves Unsloth there. With a cold cache it takes about 45 to 60 minutes on an H100
+    at $0.10833 a minute, so about $4.90 to $6.50 [I]. That can pass the $5 job ceiling, so `TRAIN_JOB_MAX_USD` needs
+    raising for that run. On an A100 80 GB, if Training takes one, the same 45 to 60 minutes would be about $3.00 to
+    $4.00 [I].
 
 ### Fireworks (managed SFT, not a host for our runner)
 
@@ -289,8 +326,10 @@ export interface TrainBackend {
 - **Artifacts and export:**
   - Adapters download in PEFT format through signed URLs. Fireworks' base may differ from the public weights
     ([deploying LoRAs](https://docs.fireworks.ai/fine-tuning/deploying-loras)), so it needs a parity test.
-  - Importing our adapters needs rank 4 to 64 and an explicit target list. Unsloth writes a regex
-    ([uploading models](https://docs.fireworks.ai/models/uploading-custom-models)).
+  - Importing our adapters needs rank 4 to 64 and an explicit target list
+    ([uploading models](https://docs.fireworks.ai/models/uploading-custom-models)). Unsloth likely writes
+    `target_modules` as a regex [L]. That hasn't been read from a real `adapter_config.json`; check it with
+    GLIMMER_ALIGNMENT B2.
 - **Caps and kill switches:**
   - There is no cost or time cap field, and `estimatedCost` is read-only.
   - The kill switch is cancelling the job.
@@ -313,11 +352,12 @@ export interface TrainBackend {
 | | Lambda | Modal | Baseten | Fireworks |
 |---|---|---|---|---|
 | Runs our recipe | yes, measured | yes [L] | yes [L] | no |
-| GPU that fits | A100 40 GB, $1.99/h | A100 40 GB, about $2.10/h | H100, about $6.50/h | n/a |
-| One 120-step run | $1.59 measured | about $1.70 plus CPU and memory [I] | about $3.50 to $5 [I] | $0 through Nov 30 |
+| GPU that fits | A100 40 GB, $1.99/h (asked for; the recipe tries H100 PCIe first) | A100 40 GB, about $2.10/h, about $4.00/h with Sandbox CPU and memory [I] | H100, about $6.50/h. A100 80 GB at about $4.00/h if Training takes it [L] | n/a |
+| One 120-step run | $1.59 measured, on an A100 | about $3.15 with CPU and memory [I] | about $4.90 to $6.50 on an H100, cold cache [I] | $0 through Nov 30 |
+| Can be preempted | none stated in the pages read | yes, GPU Sandboxes [V] | not on DEDICATED [V] | n/a |
 | Stop on the provider's side | none | Sandbox timeout, spend limit | GPU capacity cap only | none |
 | Credentials in builds `.env.local` | yes | no (CLI profile only) | no (in `~/muse-muse`) | no, and no account id |
-| Smoke cost | n/a | about $2.30 | about $1.10 | about $2.50 to $4.50 |
+| Smoke cost | n/a | about $3.50 | about $1.10 | about $2.50 to $4.50 |
 
 ## Build units
 
@@ -328,15 +368,15 @@ export interface TrainBackend {
 | B2 | The `backend` column and migration, store, the jobs route and the admin select | 2 to 3 | migration and store tests |
 | B3 | GPU classes, per-backend price tables, `pickGpu` over offers, `runEstimate` by class | 2 | unit tests |
 | B4 | The `JobBundle` builder (cloud-init becomes one wrapper), plus the optional token-gated bundle route | 2 | userdata and route tests |
-| B5 | Modal backend: pinned `modal` SDK, Sandbox launch, poll, terminate and list, v2 Volume, `MODAL_TOKEN_*` in `lib/env.ts`, a fake Modal | 6 to 8 | fake tests, then the Modal smoke |
-| B6 | Baseten backend: REST project and job create, status, logs, stop, list, capacity read, a fake Baseten | 5 to 7 | fake tests, then the Baseten smoke |
-| B7 | Live demo on Modal: an encrypted-port tunnel, and a proxy mode "host HTTPS plus serve key" beside the pinned-cert mode | 3 to 4 | first real serve |
+| B5 | Modal backend: pinned `modal` SDK, Sandbox launch then `setTags`, poll, terminate, list by app and tags, a vanished Sandbox counted as failed with one relaunch (preemption), a v2 Volume made once with the CLI, `MODAL_TOKEN_*` in `lib/env.ts`, a fake Modal | 7 to 9 | fake tests, then the Modal smoke |
+| B6 | Baseten backend: REST project and job create, status, logs, stop, list, a fake Baseten. The capacity cap is set once with the CLI, not by the backend | 5 to 7 | fake tests, then the Baseten smoke |
+| B7 | Live demo on Modal: an encrypted-port tunnel, and a proxy mode "host HTTPS plus serve key" beside the pinned-cert mode. Waits for tg-decide's D7, which also changes `recipes/serve.ts` and `lib/train/serve.ts` | 3 to 4 | first real serve |
 | B8 | Fireworks export test tooling: dataset export, SFT create with the rank guard, poll, download, parity scoring | 6 to 8 | the export test |
 | B9 | Fireworks import: adapter into a backend cache, then a `scoreOnly` job. Only after B8 passes | 4 to 6 | one import run |
 | B10 | Baseten serving: a Truss with Meta's vLLM image on a merged BF16 (needs GLIMMER_ALIGNMENT E2) | 6 to 8 | one deployment |
 | B11 | A backends section in TRAINING.md, and the build log | 1 | review |
 
-Modal end to end (B0 to B5 plus B11) is about 19 to 23 hours.
+Modal end to end (B0 to B5 plus B11) is about 20 to 24 hours.
 
 ## Recommended order
 
@@ -344,11 +384,12 @@ Modal end to end (B0 to B5 plus B11) is about 19 to 23 hours.
 2. **B0 and B1:** no behavior change, and the tests show Lambda is untouched.
 3. **B2 to B4.**
 4. **B5, then the Modal smoke,** with the owner's OK.
-5. **B6 and its smoke,** only if a second container host is wanted, for example H100 capacity when Lambda is out.
+5. **B6 and its smoke,** only if a second container host is wanted, for example H100 capacity when Lambda is out. If
+   Baseten confirms Training Jobs take an A100 80 GB, weigh B6 against B5 again first (O1).
 6. **Fireworks:**
    - the export test, with the owner's OK, human-written data, before Nov 29
    - B8, and B9 only if the test passes
-7. **B7 and B10** when a hosted demo needs them.
+7. **B7 and B10** when a hosted demo needs them. B7 goes only after tg-decide's D7 has landed.
 
 For Nov 4, steps 1 and 2 are realistic. Every provider run waits for the owner.
 
@@ -356,23 +397,34 @@ For Nov 4, steps 1 and 2 are realistic. Every provider run waits for the owner.
 
 Each comes with a recommendation.
 
-- **O1. Second host.** Recommend Modal: about $2.10/h for an A100 against Baseten's $6.50/h H100, a TypeScript SDK, and
-  a hard per-job timeout. Its one risk is Unsloth under gVisor, which the smoke test checks.
+- **O1. Second host.** Recommend Modal first, by a smaller margin than the GPU prices suggest.
+  - For Modal: a TypeScript SDK, a hard per-job timeout and a workspace spend limit. A run is about $3.15 once Sandbox
+    CPU and memory at 3x list are counted [I], against about $4.90 to $6.50 on a Baseten H100 [I].
+  - Against Modal: GPU Sandboxes can be preempted ([preemption](https://modal.com/docs/guide/preemption)), and our
+    runner can't resume, so a preempted run is lost and relaunched (B5). Unsloth under gVisor is untested. The smoke
+    test checks gVisor but can't show how often preemption happens.
+  - For Baseten: DEDICATED compute isn't preempted ([training SDK](https://docs.baseten.co/reference/sdk/training)).
+    Against it: no max runtime, and its budget never stops training, so only our own stops apply.
+  - If Baseten confirms Training Jobs take an A100 80 GB (about $4.00/h on its pricing page), a run there is about
+    $3.00 to $4.00 [I], close to Modal's. Then Baseten is the better pick for runs long enough that preemption
+    matters.
 - **O2. Rewrite the cards already on Hugging Face for Meta's sampling.** Recommend yes: card and params text only, no
   weights.
 - **O3. Live demo decoding.** Recommend Meta's sampling by default, with a "same as eval" greedy switch.
-- **O4. Smoke spend.** Modal about $2.30, Baseten about $1.10, the Fireworks export about $2.50 to $4.50. Recommend
-  approving Modal first.
+- **O4. Smoke spend.** Modal about $3.50 (it includes a short `glimmer-lora` run), Baseten about $1.10 (the `smoke`
+  recipe only), the Fireworks export about $2.50 to $4.50. Recommend approving Modal first.
 - **O5. Credentials and caps (the owner sets these himself):**
   - Make a new Modal token for the platform.
   - Put `MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET`, `BASETEN_API_KEY`, `FIREWORKS_API_KEY` and `FIREWORKS_ACCOUNT_ID`
     into `muse-muse-builds/.env.local` and Vercel.
-  - Set a Modal spend limit, and a Baseten training capacity cap of 1 H100.
-  - Rotate the keys that were pasted in chat (KRL:908).
+  - Set a Modal spend limit, and a Baseten training capacity cap of 1 H100 with `baseten train capacity update`
+    ([management](https://docs.baseten.co/training/management)).
+  - Rotate the keys that were pasted in chat (KRL:897).
 - **O6. `HF_PUBLIC` default (public).** Recommend keeping it for model-written lab data. Go private-first for any
   dataset with real user text.
-- **O7. Reasoning-preserving training as the default (GLIMMER_ALIGNMENT N1).** Recommend yes, starting with one Lambda
-  run, about $1.59.
+- **O7. Reasoning-preserving training as the default (GLIMMER_ALIGNMENT N1).** Recommend yes. trainChannel 1 must be
+  built in `GLIMMER_PY` first, then one Lambda run asking for `gpu_1x_a100_sxm4`, about $1.59. On the default H100 PCIe
+  it would be about $2.58 [I].
 - **O8. A merged BF16 repo (about 60 GB) for hosted serving.** Recommend making one only for an adapter someone will
   serve on Baseten, Fireworks or vLLM.
 - **O9. Fireworks for the lab's own datasets.** Recommend no: terms 3.3(v). Use it only for the human-written export
@@ -382,8 +434,12 @@ Each comes with a recommendation.
 
 - **Every `lib/train` edit.** tg-decide changes these files now: `logic.ts`, `types.ts`, `runner.ts`, `glimmer.ts`,
   `hub-cards.ts`, `store.ts`, `workflow.ts`, `models.ts` and `recipes/index.ts`.
-- **The routes it also changes:** `app/api/train/jobs/route.ts` and `jobs/[id]/events/route.ts`.
-- **Schema and migrations:** tg-decide adds 0017.
+  It also adds `decide-steps.ts` and `decision-datasets.ts`.
+- **The routes it also changes:** `app/api/train/jobs/route.ts`, `jobs/[id]/events/route.ts`,
+  `jobs/[id]/dataset/route.ts`, `app/api/train/datasets/route.ts` and `datasets/[id]/route.ts`.
+- **Still to come on tg-decide:** its D7 unit will change `lib/train/recipes/serve.ts` and `lib/train/serve.ts`
+  (tg-decide `docs/DECISION_MODELS.md` section 6, D7). B7 changes the same files, so B7 waits for D7.
+- **Schema and migrations:** tg-decide adds 0017 and changes `lib/db/schema.ts`, which B2 also touches.
 - **Decide jobs:** they are `glimmer-lora` jobs in decide mode, so they go through the seam unchanged. Their
   `runEstimate` decide rates need per-class keys too.
 - **The Fireworks export test** stays defined in one place, tg-decide's `docs/DECISION_MODELS.md` section 5.
@@ -397,12 +453,14 @@ Each comes with a recommendation.
 ## Gaps
 
 - **Modal:**
-  - whether GPU Sandboxes are ever preempted
+  - what Modal does with a preempted GPU Sandbox (the page doesn't say), and how often it happens
+  - the runner's real CPU and memory use, which sets the Sandbox cost
   - Unsloth and bitsandbytes under gVisor
   - whether the gRPC SDK works inside a Vercel function
   - its H100 driver versions
   - how Volume writes reach the next Sandbox
 - **Baseten:**
+  - whether Training Jobs take an A100 80 GB (the pricing page lists one, the SDK reference doesn't)
   - how runtime artifacts are unpacked
   - whether a job ends on its own when the start command exits [L]
   - driver versions
