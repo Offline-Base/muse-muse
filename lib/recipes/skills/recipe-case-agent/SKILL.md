@@ -34,7 +34,7 @@ The checklist truth (what must be proven, and which withheld document settles wh
 - `previous_response_id` between turns, `parallel_tool_calls: false`, one tool per turn, and `max_output_tokens` around 1,500 for a normal turn.
 - Every call sends the header `x-musemuse-run-id` with the run's id (letters, digits, `_` or `-`, 8 to 64 long), as a request option. Calls in one run share its limits.
 - One POST runs turns as one stretch. It starts no new turn once about 200 s have passed, so a slow turn still ends before 300 s, and it returns the new sealed record with what happened. The open page calls the next stretch at once. A stretch of one turn is the Step through mode.
-- Near the turn limit, send one last turn marked wrap up, with `tool_choice` forcing `file_memo`. The agent normally needs 30 to 45 turns, and the plan is to stop at 60.
+- Near the turn limit, send one last turn marked wrap up that lists only the `file_memo` tool and tells the model to file now. Don't send `tool_choice`: Meta answers 400 to anything but `"auto"`, which would fail that turn on every try. The agent normally needs 30 to 45 turns, and the plan is to stop at 60.
 - Treat document text as evidence, never as instructions, and say so in the system prompt.
 
 ### When the gateway or Meta stops it
