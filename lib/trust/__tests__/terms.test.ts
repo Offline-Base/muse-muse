@@ -26,6 +26,14 @@ describe("the platform's Terms and Privacy", () => {
     for (const phrase of ["scrypt", "Meta's Model API", "Composio", "made-up data", "scrambled code"]) assert.ok(privacy.includes(phrase), phrase);
   });
 
+  it("say builds run on the tier Meta may train on only while BUILDS_ON_CONTRIBUTOR is on, and that live products don't", () => {
+    assert.ok(!text(privacySections({ sparkToWonder: true })).includes("Every build right now"));
+    const on = text(privacySections({ sparkToWonder: true, buildsOnContributor: true }));
+    assert.ok(on.includes("Every build right now"));
+    assert.ok(on.includes("its own calls run on Muse Wonder"));
+    assert.ok(!on.includes("\u2014"));
+  });
+
   it("say what reaches the model tier Meta may train on, as the Spark switch has it", () => {
     for (const sparkToWonder of [false, true]) {
       const privacy = text(privacySections({ sparkToWonder }));

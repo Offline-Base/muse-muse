@@ -16,6 +16,8 @@
  * loop-round runs a round's real steps, but decides with the same rules rather than through loopNextStep, whose
  * start(makeDataset) needs the workflow runtime; it awaits makeDataset itself and writes on Muse Wonder.
  *
+ * A run that reported "failed", or stopped with no "done", is recorded as failed and isn't judged; ingest then exits 1.
+ *
  * Never point it at the site's own folder: two PGlites on one folder corrupt it. Made-up data only.
  */
 import { randomBytes, randomUUID } from "node:crypto";
@@ -101,6 +103,7 @@ async function ingest(dir: string, metaPath: string) {
   const store = await import("@/lib/train/store");
   const { judgePlanStep, judgeStep, saveEvalSummaryStep } = await import("@/lib/train/judge");
   const { evalVerdict } = await import("@/lib/train/tune/verdict");
+  const { harnessOutcome } = await import("@/lib/train/harness-outcome");
   const meta = JSON.parse(readFileSync(metaPath, "utf8")) as {
     instanceId: string;
     instanceType: string;
@@ -127,11 +130,8 @@ async function ingest(dir: string, metaPath: string) {
   const lines = readFileSync(join(dir, "events.jsonl"), "utf8").split("\n").filter(Boolean);
   const when = new Date(meta.finishedAt);
   let evals = 0;
-  let ended: { status: "succeeded" | "failed"; reason: string } = { status: "failed", reason: "Harness run: the GPU never reported an ending." };
   for (const line of lines) {
     const body = JSON.parse(line);
-    if (body.type === "done") ended = { status: "succeeded", reason: "Harness run: the GPU's segment ended." };
-    if (body.type === "failed") ended = { status: "failed", reason: `Harness run: the GPU reported a failure: ${String(body.reason ?? body.message ?? "")}`.slice(0, 500) };
     if (body.type === "eval") {
       const { type, index, prompt, reference, base, tuned } = body;
       if ((await store.recordEvalEvent(job.id, { type, index, prompt, reference, base, tuned })) === "recorded") evals++;
@@ -139,7 +139,12 @@ async function ingest(dir: string, metaPath: string) {
       await store.applyCallback(job.id, body, when);
     }
   }
-  await store.finishJob(job.id, { ...ended, terminatedAt: when });
+  const outcome = harnessOutcome(lines);
+  await store.finishJob(job.id, { status: outcome.status, reason: outcome.reason, terminatedAt: when });
+  if (outcome.status === "failed") {
+    console.log(JSON.stringify({ jobId: job.id, status: "failed", evals, reason: outcome.reason }, null, 1));
+    throw new Error(`The harness run failed: ${outcome.reason}`);
+  }
   const { indexes, task } = await judgePlanStep(job.id);
   const judged: Awaited<ReturnType<typeof judgeStep>>[] = [];
   for (let i = 0; i < indexes.length; i += 4) {

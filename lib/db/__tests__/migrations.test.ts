@@ -54,7 +54,15 @@ const database = (client: PGlite) => drizzle({ client, schema });
  * Wave 3's migrations, in the agreed order (docs/CAPABILITIES.md, section 4), after General's 0017 (0016 is retired).
  * Each wave 3 unit appends its tag here. Their journal times follow the contract's rule.
  */
-const WAVE3_TAGS = ["0018_trust", "0019_engine", "0020_data", "0021_files", "0022_connect", "0023_jobs", "0024_code", "0025_gpu", "0026_hardware", "0027_code_sessions"];
+const WAVE3_TAGS = ["0018_trust", "0019_engine", "0020_data", "0021_files", "0022_connect", "0023_jobs", "0024_code", "0025_gpu", "0026_hardware", "0027_code_sessions", "0028_versions"];
+/** After wave 3: made by drizzle-kit on its own clock, so their times only have to go up, which a test below checks. */
+const AFTER_WAVE3_TAGS = ["0029_tune_research", "0030_host_tuned"];
+/**
+ * 0028 is the one migration not in drizzle-kit's order: it adds products.source_public last, where drizzle-kit puts it
+ * before the foreign keys. Nothing in the file depends on that column, so the order changes nothing, and databases have
+ * already run the file as it is. Its statements still have to match, one for one.
+ */
+const REORDERED = new Set(["0028_versions"]);
 const tagNumber = (tag: string) => Number(tag.slice(0, 4));
 
 /** A copy of the migrations that stops at `lastIdx`, as a database that hasn't had the newer ones would have seen. */
@@ -117,19 +125,21 @@ describe("the migration folder", () => {
 
   it("puts wave 3's migrations after 0017, in the agreed order, with the agreed journal times", () => {
     const after17 = journal.entries.filter((e) => e.idx > 17).map((e) => e.tag);
-    assert.deepEqual(after17, WAVE3_TAGS.filter((t) => after17.includes(t)), "wave 3 tags in contract order");
-    for (const e of journal.entries.filter((x) => x.idx > 17)) assert.equal(e.when, 1793431490646 + (tagNumber(e.tag) - 15) * 60000, e.tag);
+    assert.deepEqual(after17, [...WAVE3_TAGS, ...AFTER_WAVE3_TAGS].filter((t) => after17.includes(t)), "tags in the agreed order");
+    for (const e of journal.entries.filter((x) => WAVE3_TAGS.includes(x.tag))) assert.equal(e.when, 1793431490646 + (tagNumber(e.tag) - 15) * 60000, e.tag);
     assert.equal(snapshot(18).prevId, snapshot(17).id, "0018 chains to 0017");
   });
 
-  it("has each wave 3 migration's SQL exactly as drizzle-kit generates it from the snapshot before it", async () => {
+  it("has each migration after 0017 exactly as drizzle-kit generates it from the snapshot before it", async () => {
     const { generateMigration } = await import("drizzle-kit/api");
     const entries = journal.entries.filter((e) => e.idx > 17);
     for (const e of entries) {
       const prev = journal.entries[journal.entries.indexOf(e) - 1]!;
       const statements = await generateMigration(snapshot(prev.idx), snapshot(e.idx));
       const file = readFileSync(join(FOLDER, `${e.tag}.sql`), "utf8").split("--> statement-breakpoint").map((x) => x.trim());
-      assert.deepEqual(statements.map((x) => x.trim()), file, e.tag);
+      const generated = statements.map((x) => x.trim());
+      if (REORDERED.has(e.tag)) assert.deepEqual([...generated].sort(), [...file].sort(), e.tag);
+      else assert.deepEqual(generated, file, e.tag);
     }
   });
 
@@ -183,7 +193,7 @@ describe("a fresh database", () => {
 
   it("has every new table", async () => {
     for (const column of ["kind", "decision", "decision_rows"]) assert.ok((await columns(client, "training_datasets")).has(column), column);
-    for (const table of ["tool_sessions", "tool_connections", "native_runs", "native_jobs", "native_artifacts", "native_spend", "native_budget", "native_labs", "abuse_reports"]) {
+    for (const table of ["tool_sessions", "tool_connections", "native_runs", "native_jobs", "native_artifacts", "native_spend", "native_budget", "native_labs", "abuse_reports", "product_versions", "training_research", "hosted_endpoints"]) {
       assert.ok((await columns(client, table)).size > 0, table);
     }
   });
@@ -655,6 +665,35 @@ describe("a database already at 0012", () => {
     assert.equal((await typed.select().from(schema.codeSessions))[0]!.parentTokenId, null);
     await client.exec(`delete from products where id = '${productId}'`);
     assert.equal((await typed.select().from(schema.codeSessions)).length, 0);
+    await client.close();
+  });
+
+  it("0028 to 0030: a database at 0027 keeps its rows, with code private and no grounding, and gets the new tables", async () => {
+    const dir = folderThrough(27);
+    dirs.push(dir);
+    const client = new PGlite();
+    const db = drizzle({ client });
+    await migrate(db, { migrationsFolder: dir });
+    for (const table of ["product_versions", "training_research", "hosted_endpoints"]) assert.equal((await columns(client, table)).size, 0, table);
+    const [userId, productId, jobId, datasetId] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+    await client.exec(`
+      insert into users (id, email) values ('${userId}', 'old@example.com');
+      insert into products (id, slug, name, owner_id, status) values ('${productId}', 'old-one', 'Old One', '${userId}', 'live');
+      insert into training_jobs (id, recipe, title, params, instance_type, region, price_cents_per_hour, max_minutes, max_usd, instance_name)
+        values ('${jobId}', 'glimmer-lora', 'Old job', '{}', 'gpu', 'r', 100, 60, 5, 'n');
+      insert into training_datasets (id, title, task, requested) values ('${datasetId}', 'Old set', 't', 1);
+    `);
+    await migrate(db, { migrationsFolder: FOLDER });
+    const typed = database(client);
+    assert.equal((await typed.select().from(schema.products))[0]!.sourcePublic, false);
+    assert.equal((await typed.select().from(schema.trainingDatasets))[0]!.grounding, null);
+    assert.equal((await typed.select().from(schema.trainingJobs))[0]!.title, "Old job");
+    const endpoint = { adapterJobId: jobId, provider: "modal" as const, slot: 1, name: "e1", hourlyUsd: 1, reservedUsd: 1, ownerTokenHash: "h", stopsAt: new Date() };
+    const [first] = await typed.insert(schema.hostedEndpoints).values(endpoint).returning();
+    assert.equal(first!.status, "starting");
+    await assert.rejects(() => typed.insert(schema.hostedEndpoints).values({ ...endpoint, slot: 2, name: "e2" }), "one live endpoint per model");
+    await typed.update(schema.hostedEndpoints).set({ status: "stopped" });
+    await typed.insert(schema.hostedEndpoints).values(endpoint);
     await client.close();
   });
 

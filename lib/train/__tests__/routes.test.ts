@@ -171,6 +171,7 @@ const fakeStore = {
     return lastSweep;
   },
   trainingCommittedToday: async () => next(committed),
+  gpuBudgetFor: async () => ({ userUsedUsd: 0, userLimitUsd: 100, userLeftUsd: 100, totalUsedUsd: 0, totalLimitUsd: 3000, totalLeftUsd: 3000, leftUsd: 100, scope: "user" }),
   trainingSpendToday: async () => 0.25,
   createJob: async (input: Record<string, unknown>) => {
     calls.push({ fn: "createJob", args: [input] });

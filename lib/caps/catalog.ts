@@ -9,6 +9,7 @@ import { HARDWARE_CATALOG } from "@/lib/caps/hardware/catalog";
 import { JOBS_CATALOG } from "@/lib/caps/jobs/catalog";
 import { LIVE_CATALOG } from "@/lib/caps/live/catalog";
 import { MEDIA_CATALOG, mediaPartsOn, mediaWorkarounds } from "@/lib/caps/media/catalog";
+import { PLATFORM_CATALOG } from "@/lib/caps/platform/brief";
 import { RUNTIME_CATALOG } from "@/lib/caps/runtime/catalog";
 
 /**
@@ -33,6 +34,7 @@ export const CAP_CATALOG: Partial<Record<CapId, CapCatalogEntry>> = {
   hardware: HARDWARE_CATALOG,
   extension: EXTENSION_CATALOG,
   games: GAMES_CATALOG,
+  platform: PLATFORM_CATALOG,
 };
 
 /** The enabled caps with a catalog entry, in plan order. */

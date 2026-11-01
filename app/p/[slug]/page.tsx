@@ -8,6 +8,8 @@ import { Icon } from "@/components/icons";
 import { KIND_ICON } from "@/components/composer/AttachmentChip";
 import "@/components/product/get-it.css";
 import { CheckedPanel } from "@/components/product/CheckedPanel";
+import { RequirementsChecklist } from "@/components/build/RequirementsChecklist";
+import { latestChecklist } from "@/lib/full/requirements";
 import { GetItPanel } from "@/components/product/GetItPanel";
 import { nativeSlots } from "@/components/product/NativeSlots";
 import { productOutputSlots } from "@/components/product/OutputPanels";
@@ -208,6 +210,13 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
 
         {shipped ? (
           <GetItPanel slots={{ ...native.slots, ...(env.productOutputs ? productOutputSlots({ product, origin, events, now }) : {}), ...(env.runtimeOutputs ? runtimeOutputSlots({ product, origin, isOwner }) : {}), ...(env.enabledCaps.includes("extension") ? extensionSlots({ product, origin, brief, ready: extensionReady }) : {}) }} initial={native.initial} />
+        ) : null}
+
+        {/* FULL_BUILDS: only a brief written with it has requirements. Nothing renders for any other product. */}
+        {brief?.requirements?.length ? (
+          <section className="card section-card">
+            <RequirementsChecklist items={latestChecklist(brief, events.flatMap((e): Parameters<typeof latestChecklist>[1][number][] => (e.type === "judge" ? [{ judge: e.verdict }] : e.type === "verify" ? [{ tests: e.summary.requirements ?? null }] : [])))} />
+          </section>
         ) : null}
 
         {/* VERIFY_AGENTS: not in the tree while it's off. */}

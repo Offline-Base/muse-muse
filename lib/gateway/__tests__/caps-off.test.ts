@@ -17,6 +17,7 @@ import { handleAsset, type AssetsDeps } from "@/lib/caps/media/assets";
 import { handleDatasets, handleFiles, handleSearch, type FilesDeps } from "@/lib/caps/files/handler";
 import { handleBrowse, handleExec, type CodeDeps } from "@/lib/caps/code/handler";
 import { handleCodeSessions, type MuseCodeDeps } from "@/lib/caps/code/musecode/handler";
+import { handlePlatform, type PlatformDeps } from "@/lib/caps/platform/handler";
 import { handleGlimmerChat, type GlimmerDeps } from "@/lib/caps/gpu/handler";
 import { env } from "@/lib/env";
 import { handleGadgetCall, PRODUCT_GADGET_TOOLS, type GadgetDeps } from "@/lib/gateway/gadget";
@@ -26,6 +27,9 @@ const untouched = <T extends (...args: never[]) => unknown>(name: string) =>
   ((..._args: never[]) => {
     throw new Error(`${name} was called with its flag off`);
   }) as unknown as T;
+
+/** Platform powers' deps: the real flags, and any other dependency failing the test if it's touched. */
+const platformOff = () => new Proxy({ servedCaps: () => env.servedCaps } as unknown as PlatformDeps, { get: (t, k) => (k in t ? t[k as keyof PlatformDeps] : untouched(String(k))) });
 
 /** Unit 3's deps with the real flags and every other dependency failing the test if it's touched. */
 const dataOff = (): DataDeps => ({
@@ -183,6 +187,11 @@ const ROUTES: Array<{ path: string; call(req: Request): Promise<Response> }> = [
   // Unit 9: running code on the platform, and opening a page the person typed.
   { path: "exec", call: (req) => handleExec(req, codeOff()) },
   { path: "browse", call: (req) => handleBrowse(req, codeOff()) },
+  // Platform powers (docs/PLATFORM_POWERS.md).
+  { path: "platform", call: (req) => handlePlatform(req, [], platformOff()) },
+  { path: "platform/sandboxes", call: (req) => handlePlatform(req, ["sandboxes"], platformOff()) },
+  { path: "platform/keys", call: (req) => handlePlatform(req, ["keys"], platformOff()) },
+  { path: "platform/products", call: (req) => handlePlatform(req, ["products"], platformOff()) },
   // Unit 9, 15b: Muse Code sessions.
   { path: "code/sessions", call: (req) => handleCodeSessions(req, [], museCodeOff()) },
   { path: "code/sessions/a1/events", call: (req) => handleCodeSessions(req, ["a1", "events"], museCodeOff()) },

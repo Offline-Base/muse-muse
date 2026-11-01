@@ -77,7 +77,7 @@ export interface GatewayDeps extends RunCounters {
   /** Used for the upstream call and for asr audioUrl downloads. */
   fetch: typeof fetch;
   upstreamKey(): string;
-  /** TEST_MODEL (lib/env.ts): what a build token's Muse Wonder calls run on instead. Null or unset leaves them alone. */
+  /** TEST_MODEL or BUILDS_ON_CONTRIBUTOR (buildTestModel, lib/env.ts): what a build token's Muse Wonder calls run on instead. Null or unset leaves them alone. */
   buildTestModel?: string | null;
   upstreamBaseUrl?: string;
   /** Public {PLATFORM_URL}/api/gateway, for error messages that point at /uploads. */

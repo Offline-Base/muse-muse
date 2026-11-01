@@ -4,6 +4,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
+  onlyRequirementTestsFailed,
+  readRequirementsFile,
+  requirementResults,
+  verifyStepNames,
   browserLaunchOptions,
   finalShotProblems,
   glassesGateProblems,
@@ -337,4 +341,31 @@ test("verify runs the VR check and launches the console step with the product's 
   assert.match(verify, /chromium\.launch\(browserLaunchOptions\(readText\)\)/);
   const warnOnly = verify.indexOf('process.env.MUSEMUSE_SCREEN_CHECK === "warn"');
   assert.ok(verify.indexOf("xrGateProblems(readText") < warnOnly, "a blank view fails even when screen checks only warn");
+});
+
+const reqReport = (specs) => ({ suites: [{ file: "requirements.spec.ts", specs: specs.map(([title, status]) => ({ title, file: "requirements.spec.ts", tests: [{ status, projectName: "smoke" }] })) }] });
+const SOURCE = 'test("R1: add", async () => {\n  await page.reload();\n});\n\ntest("R2: edit", async () => {\n  await page.click("x");\n});\n';
+
+test("requirements: adds its step only with a list", () => {
+  assert.deepEqual(verifyStepNames(false), ["typecheck", "build", "start", "console", "smoke", "manifest"]);
+  assert.deepEqual(verifyStepNames(true, true), ["typecheck", "build", "start", "console", "smoke", "caps", "requirements", "manifest"]);
+  assert.equal(readRequirementsFile(() => null), null);
+  assert.deepEqual(readRequirementsFile(() => '{"requirements":[{"id":"R1","savesData":true},{"id":"bad"}]}'), [{ id: "R1", savesData: true }]);
+});
+test("requirements: needs a passing test for each id, not a test named like one", () => {
+  const out = requirementResults(reqReport([["R1: add", "expected"], ["R20: x", "unexpected"], ["R2 no colon", "expected"]]), [{ id: "R1" }, { id: "R2" }, { id: "R20" }, { id: "R3" }], () => "");
+  assert.deepEqual(out.map((r) => r.ok), [true, true, false, false]);
+});
+test("requirements: a requirement that saves data must reload in its own test", () => {
+  const out = requirementResults(reqReport([["R1: add", "expected"], ["R2: edit", "expected"]]), [{ id: "R1", savesData: true }, { id: "R2", savesData: true }], () => SOURCE);
+  assert.deepEqual(out.map((r) => r.ok), [true, false]);
+  assert.match(out[1].detail, /never reloads/);
+});
+test("requirements: no report means no test ran", () => {
+  assert.equal(requirementResults(null, [{ id: "R1" }], () => "")[0].ok, false);
+});
+test("requirements: tells a failed requirement's test from any other failure", () => {
+  assert.equal(onlyRequirementTestsFailed(reqReport([["R1: a", "unexpected"], ["main", "expected"]]), [{ id: "R1" }]), true);
+  assert.equal(onlyRequirementTestsFailed(reqReport([["R1: a", "unexpected"], ["main", "unexpected"]]), [{ id: "R1" }]), false);
+  assert.equal(onlyRequirementTestsFailed(reqReport([["R1: a", "expected"]]), [{ id: "R1" }]), false);
 });

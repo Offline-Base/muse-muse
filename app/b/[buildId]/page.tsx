@@ -4,7 +4,7 @@ import { connection } from "next/server";
 import { BuildRoom } from "@/components/build/BuildRoom";
 import "@/components/build/plan-card.css";
 import { NotConnected } from "@/components/ui";
-import { env } from "@/lib/env";
+import { contributorBuildsOn, env } from "@/lib/env";
 import { canActAsOwner } from "@/lib/auth";
 import { canEditProduct, editsByPassOnly } from "@/lib/edit-pass";
 import { nativeActive } from "@/lib/native/active";
@@ -71,6 +71,7 @@ export default async function BuildRoomPage({
       maxFixRounds={env.maxFixRounds}
       nativeActive={await nativeActive(data.build.id)}
       ownModel={ownModel}
+      contributorNotice={contributorBuildsOn()}
     />
   );
 }

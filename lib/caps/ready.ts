@@ -37,6 +37,7 @@ export const CAP_LABEL: Record<CapId, { label: string; plural: boolean }> = {
   hardware: { label: "the hardware links", plural: true },
   extension: { label: "the browser extension", plural: false },
   games: { label: "the game engines", plural: true },
+  platform: { label: "the platform powers", plural: true },
 };
 
 /** The build room's one plain line for a cap the build goes without. */
