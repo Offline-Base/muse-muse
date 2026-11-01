@@ -1,4 +1,5 @@
-import { and, count, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { GUEST_EMAIL } from "@/lib/auth";
 import { db, schema } from "@/lib/db/client";
 import { hardwareBlock } from "@/lib/caps/hardware/brief";
 import { BOARD_TOOLS, hardwareProofKey, PRODUCT_DRIVE_TOOLS } from "@/lib/caps/hardware/limits";
@@ -18,7 +19,21 @@ export interface BoardView {
   status: "ok" | "unreachable" | "unknown";
   lastSeenAt: string | null;
   products: Array<{ slug: string; name: string; visitors: boolean }>;
+  /** GADGET_CONNECT, for a paired board. */
+  paired?: { target: string; simulated: boolean; stopped: boolean };
 }
+
+/** What pairing learned about a board, saved in `devices.models`. */
+export interface PairedFacts {
+  kind: string;
+  target: string;
+  targetLabel: string;
+  simulated: boolean;
+  robot: boolean;
+  served: string[];
+}
+
+export const pairedFactsOf = (models: unknown): PairedFacts | null => (Array.isArray(models) && models[0] && typeof models[0] === "object" && typeof (models[0] as PairedFacts).target === "string" ? (models[0] as PairedFacts) : null);
 
 export interface NewBoardRow {
   id: string;
@@ -43,6 +58,10 @@ export interface LinkedBoardRow {
   iv: Buffer;
   tag: Buffer;
   keyVersion: number;
+  /** Set for a paired board: every call checks this, not a certificate authority. */
+  certSpkiSha256?: string | null;
+  models?: unknown;
+  health?: DeviceHealth | null;
 }
 
 export async function insertBoard(row: NewBoardRow): Promise<void> {
@@ -64,6 +83,29 @@ export async function insertBoard(row: NewBoardRow): Promise<void> {
   });
 }
 
+/** A board that pairing just set up: its pin and what it said it is. */
+export async function insertPairedBoard(row: NewBoardRow & { pin: string; facts: PairedFacts }): Promise<void> {
+  await db().insert(schema.devices).values({
+    id: row.id,
+    ownerUserId: row.ownerUserId,
+    name: row.name,
+    kind: "muse_device",
+    mcpUrlCiphertext: row.url.ciphertext,
+    urlIv: row.url.iv,
+    urlTag: row.url.tag,
+    tokenCiphertext: row.token.ciphertext,
+    iv: row.token.iv,
+    tag: row.token.tag,
+    keyVersion: row.token.keyVersion,
+    trust: "pinned_tls",
+    certSpkiSha256: row.pin,
+    models: [row.facts],
+    pairedAt: row.now,
+    health: row.health,
+    lastSeenAt: row.now,
+  });
+}
+
 export async function countBoards(ownerUserId: string): Promise<number> {
   const [row] = await db()
     .select({ n: count() })
@@ -75,7 +117,7 @@ export async function countBoards(ownerUserId: string): Promise<number> {
 /** A person's boards, newest first, with those of their own products each is linked to. */
 export async function listBoards(ownerUserId: string): Promise<BoardView[]> {
   const rows = await db()
-    .select({ id: schema.devices.id, name: schema.devices.name, health: schema.devices.health, lastSeenAt: schema.devices.lastSeenAt })
+    .select({ id: schema.devices.id, name: schema.devices.name, health: schema.devices.health, lastSeenAt: schema.devices.lastSeenAt, models: schema.devices.models, pairedAt: schema.devices.pairedAt })
     .from(schema.devices)
     .where(and(eq(schema.devices.ownerUserId, ownerUserId), eq(schema.devices.kind, "muse_device"), isNull(schema.devices.revokedAt)))
     .orderBy(desc(schema.devices.createdAt));
@@ -85,13 +127,17 @@ export async function listBoards(ownerUserId: string): Promise<BoardView[]> {
     .from(schema.productBoards)
     .innerJoin(schema.products, and(eq(schema.products.id, schema.productBoards.productId), eq(schema.products.ownerId, ownerUserId)))
     .where(inArray(schema.productBoards.boardId, rows.map((r) => r.id)));
-  return rows.map((r) => ({
-    id: r.id,
-    name: r.name,
-    status: r.health?.status ?? "unknown",
-    lastSeenAt: r.lastSeenAt?.toISOString() ?? null,
-    products: links.filter((l) => l.boardId === r.id).map((l) => ({ slug: l.slug, name: l.name, visitors: l.visitors })),
-  }));
+  return rows.map((r) => {
+    const facts = r.pairedAt ? pairedFactsOf(r.models) : null;
+    return {
+      id: r.id,
+      name: r.name,
+      status: r.health?.status ?? "unknown",
+      lastSeenAt: r.lastSeenAt?.toISOString() ?? null,
+      products: links.filter((l) => l.boardId === r.id).map((l) => ({ slug: l.slug, name: l.name, visitors: l.visitors })),
+      ...(facts ? { paired: { target: facts.targetLabel, simulated: facts.simulated, stopped: r.health?.stopped === true } } : {}),
+    };
+  });
 }
 
 /** A person's own products, for the link picker. */
@@ -148,7 +194,8 @@ export async function unlinkBoard(productId: string): Promise<void> {
 /**
  * The board a live product reaches, or null. Everything the owner check rests on is in this one query: the link, a board of
  * the muse_device kind that isn't removed, whose owner is the product's owner right now and isn't banned. A product that
- * changed hands, or a board linked by anyone else, gets nothing.
+ * changed hands, or a board linked by anyone else, gets nothing. Nor does the shared guest: every guest has its id, so "the owner"
+ * would mean everyone. No route lets a guest pair or link, and this holds even if a row got here some other way.
  */
 export async function linkedBoardRow(productId: string): Promise<LinkedBoardRow | null> {
   const [row] = await db()
@@ -163,15 +210,50 @@ export async function linkedBoardRow(productId: string): Promise<LinkedBoardRow 
       iv: schema.devices.iv,
       tag: schema.devices.tag,
       keyVersion: schema.devices.keyVersion,
+      certSpkiSha256: schema.devices.certSpkiSha256,
+      models: schema.devices.models,
+      health: schema.devices.health,
     })
     .from(schema.productBoards)
     .innerJoin(schema.products, eq(schema.products.id, schema.productBoards.productId))
     .innerJoin(schema.devices, and(eq(schema.devices.id, schema.productBoards.boardId), eq(schema.devices.ownerUserId, schema.products.ownerId)))
     .innerJoin(schema.users, eq(schema.users.id, schema.devices.ownerUserId))
-    .where(and(eq(schema.productBoards.productId, productId), eq(schema.devices.kind, "muse_device"), isNull(schema.devices.revokedAt), isNull(schema.users.bannedAt)))
+    .where(and(eq(schema.productBoards.productId, productId), eq(schema.devices.kind, "muse_device"), isNull(schema.devices.revokedAt), isNull(schema.users.bannedAt), ne(schema.users.email, GUEST_EMAIL)))
     .limit(1);
   if (!row?.urlCiphertext || !row.urlIv || !row.urlTag || !row.tokenCiphertext || !row.iv || !row.tag || row.keyVersion === null) return null;
   return row as LinkedBoardRow;
+}
+
+/** A person's own active board, opened the way a link is. For their stop button, their confirmations and unpairing. */
+export async function ownedBoardRow(id: string, ownerUserId: string): Promise<LinkedBoardRow | null> {
+  const [row] = await db()
+    .select({
+      boardId: schema.devices.id,
+      ownerUserId: schema.devices.ownerUserId,
+      urlCiphertext: schema.devices.mcpUrlCiphertext,
+      urlIv: schema.devices.urlIv,
+      urlTag: schema.devices.urlTag,
+      tokenCiphertext: schema.devices.tokenCiphertext,
+      iv: schema.devices.iv,
+      tag: schema.devices.tag,
+      keyVersion: schema.devices.keyVersion,
+      certSpkiSha256: schema.devices.certSpkiSha256,
+      models: schema.devices.models,
+      health: schema.devices.health,
+    })
+    .from(schema.devices)
+    .where(and(eq(schema.devices.id, id), eq(schema.devices.ownerUserId, ownerUserId), eq(schema.devices.kind, "muse_device"), isNull(schema.devices.revokedAt)))
+    .limit(1);
+  if (!row?.urlCiphertext || !row.urlIv || !row.urlTag || !row.tokenCiphertext || !row.iv || !row.tag || row.keyVersion === null) return null;
+  return { ...row, visitors: false } as LinkedBoardRow;
+}
+
+/** The hard stop, saved here so it holds whether or not the board answered. */
+export async function setBoardStopped(id: string, stopped: boolean): Promise<void> {
+  await db()
+    .update(schema.devices)
+    .set({ health: sql`coalesce(${schema.devices.health}, '{"status":"ok","failures":0}'::jsonb) || jsonb_build_object('stopped', ${stopped}::boolean)` })
+    .where(eq(schema.devices.id, id));
 }
 
 /** Remembers how a call went, for the status word. Best effort: a call never fails because of this. */
@@ -179,7 +261,8 @@ export async function noteBoardHealth(boardId: string, ok: boolean, now: Date, l
   await db()
     .update(schema.devices)
     .set({
-      health: sql`jsonb_build_object(
+      // Merged, so the hard stop survives a health note.
+      health: sql`coalesce(${schema.devices.health}, '{}'::jsonb) || jsonb_build_object(
         'status', ${ok ? "ok" : "unreachable"}::text,
         'failures', ${ok ? sql`0` : sql`coalesce((${schema.devices.health}->>'failures')::int, 0) + 1`},
         'checkedAt', ${now.toISOString()}::text

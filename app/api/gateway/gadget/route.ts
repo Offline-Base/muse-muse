@@ -1,5 +1,6 @@
 import { linkedBoardFor } from "@/lib/caps/hardware/board";
-import { boardToolsOn, driveToolsUsable, gadgetOwnerCheckOn } from "@/lib/caps/hardware/flags";
+import { boardToolsOn, driveToolsUsable, gadgetConnectUsable, gadgetOwnerCheckOn } from "@/lib/caps/hardware/flags";
+import { setBoardStopped } from "@/lib/caps/hardware/store";
 import { callDeviceTool, deviceConfig, listDeviceTools } from "@/lib/device/client";
 import { env } from "@/lib/env";
 import { handleGadgetCall, handleGadgetTools, type GadgetDeps, type GadgetDrive } from "@/lib/gateway/gadget";
@@ -9,7 +10,8 @@ import { findToken } from "@/lib/gateway/tokens";
 // Gadgets for products (lib/gateway/gadget.ts, docs/GADGETS.md). A photo takes a few seconds and a recording up to 30,
 // plus the trip to the board.
 export const runtime = "nodejs";
-export const maxDuration = 60;
+// GADGET_CONNECT's ask_board waits up to BOARD_ANSWER_MS for a board's model.
+export const maxDuration = 120;
 
 /** Drive export's code (plans, the kit, the lab's rows) loads only for a drive tool call. */
 const drive: GadgetDrive = {
@@ -28,6 +30,10 @@ const deps: GadgetDeps = {
   // the cap was on keeps its markers, so the markers can't be what stops it.
   get drive() {
     return driveToolsUsable() && env.servedCaps.includes("hardware") ? drive : undefined;
+  },
+  // docs/GADGETS.md. Off: every line below is as it was.
+  get connect() {
+    return gadgetConnectUsable() && env.servedCaps.includes("hardware") ? { siteUrl: env.platformUrl ?? "", setStopped: (boardId: string) => setBoardStopped(boardId, true) } : undefined;
   },
   findToken,
   productStatus: productStatusById,

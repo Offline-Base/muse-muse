@@ -1,4 +1,5 @@
 import type { Brief } from "@/lib/brief/schema";
+import { gadgetConnectUsable } from "@/lib/caps/hardware/flags";
 import { hardwareBlock, type HardwareLink } from "@/lib/caps/hardware/brief";
 import { SHOW_TEXT_MAX_CHARS, SHOW_TEXT_PER_MINUTE } from "@/lib/caps/hardware/limits";
 import type { CapRenderEntry } from "@/lib/caps/render";
@@ -48,6 +49,12 @@ export const HARDWARE_RENDER: CapRenderEntry = {
             "- Drive export: `driveStatus` and `exportToDrive` in `lib/platform/board.ts`. Server only, with the request passed in. Only the product's owner, on a board they linked, ever gets through. Visitors never do, even when the link is open to visitors, so offer it only to the owner. Tell who that is from whether `driveStatus` answers, not from a cookie check: the build's simulated owner has no cookie, so a cookie check would hide the button from the smoke test.",
             "- `exportToDrive` answers `needs_confirmation` first: show `approval.title` and every line of `approval.lines` on a card, and call it again with `approval.id` only after the person presses confirm. Never send the id by yourself.",
             "- It exports this product's own tuned model and nothing else. The drive has to be plugged in first, since an export from a product never waits for one. It never erases: when it answers `needs_erase`, show its message, which sends the person to their board's page.",
+          ]
+        : []),
+      ...(hw.boardTools && gadgetConnectUsable()
+        ? [
+            "- The model on the owner's board: `askBoard` or `askBoardOrMessage` in `lib/platform/board.ts`. Server only, with the request passed in. Show which model answered (`target`), and that it's working, since a small board can take over a minute. When the board is off, show the message and keep the rest of the product working.",
+            "- A robot, only if the brief asks: `robotStatus`, `requestRobotAction` and `hardStop` in `lib/platform/board.ts`. Only the actions in `ROBOT_ACTIONS` exist. Each is confirmed by the owner: never call `requestRobotAction` with an `approval` except from the person's own click on a card, and live, send them to `confirmUrl`. Put a hard stop button on every screen where something can move, and label readings from `simulated: true` as simulated.",
           ]
         : []),
       "- During the build nothing real is connected. A simulated port stands in for the browser links, and the gateway's simulated board answers the board tools, with `simulated: true`. Don't show the word \"simulated\": the live product gets the real device.",

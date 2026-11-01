@@ -1037,7 +1037,7 @@ class ServerToolTests(DriveTestCase):
         names = [tool["name"] for tool in server.handle_rpc("tools/list", {})["tools"]]
         for name in ("drive_status", "export_source", "export_model", "erase_drive", "stop_export"):
             self.assertIn(name, names)
-        self.assertEqual(server.VERSION, "0.5.0")
+        self.assertEqual(server.VERSION, "0.6.0")
         tools = {tool["name"]: tool for tool in server.handle_rpc("tools/list", {})["tools"]}
         self.assertEqual(tools["erase_drive"]["annotations"], {"destructiveHint": True})
         self.assertTrue(tools["drive_status"]["annotations"]["readOnlyHint"])
@@ -1051,7 +1051,7 @@ class ServerToolTests(DriveTestCase):
         self.assertEqual(source["base_revision"], "23c69c53358a07516b5827588b3fdb12ae78fd65")
         self.assertEqual(source["system"], "You are the support coach.")
         self.assertEqual(source["converter"], server.CONVERTER_NAME)
-        self.assertEqual(source["board"]["muse_device"], "0.5.0")
+        self.assertEqual(source["board"]["muse_device"], "0.6.0")
         self.assertEqual((source["config"]["steps"], source["status"]["loss"]), (60, 0.41))
         # The sha256 is kept beside each file, so a second export hashes nothing.
         with mock.patch.object(drive, "sha256_of", side_effect=AssertionError("hashed again")):

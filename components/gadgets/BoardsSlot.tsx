@@ -1,6 +1,8 @@
+import { ConnectBoards } from "@/components/gadgets/ConnectBoards";
 import { OwnBoards } from "@/components/gadgets/OwnBoards";
 import { Icon } from "@/components/icons";
 import type { SessionUser } from "@/lib/auth";
+import { canOwnBoard, SHARED_ACCOUNT_MESSAGE } from "@/lib/caps/hardware/admin";
 import { env } from "@/lib/env";
 
 /*
@@ -10,6 +12,20 @@ import { env } from "@/lib/env";
  * live calls on page load. With that flag off, this note stays as it is.
  */
 export function BoardsSlot({ viewer = null }: { viewer?: SessionUser | null } = {}) {
+  if (env.gadgetConnect && canOwnBoard(viewer)) return <ConnectBoards />;
+  if (env.gadgetConnect) {
+    return (
+      <section className="card notice" aria-labelledby="pair-title">
+        <span className="notice-icon" aria-hidden>
+          <Icon name="plug" />
+        </span>
+        <div>
+          <h2 id="pair-title">Pair your own board</h2>
+          <p className="muted">{SHARED_ACCOUNT_MESSAGE}</p>
+        </div>
+      </section>
+    );
+  }
   if (env.hardwareBoardRegistry) return <OwnBoards viewer={viewer} />;
   return (
     <section className="card notice" aria-labelledby="coming-title">

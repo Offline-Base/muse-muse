@@ -1342,7 +1342,11 @@ export const env = {
   },
   /** HARDWARE_BOARD_REGISTRY: /api/boards, linking a board to a product, and the board lists on /device and /gadgets. Admins only (decision 16). */
   get hardwareBoardRegistry(): boolean {
-    return flag("HARDWARE_BOARD_REGISTRY");
+    return flag("HARDWARE_BOARD_REGISTRY") || flag("GADGET_CONNECT");
+  },
+  /** GADGET_CONNECT (lib/caps/hardware/flags.ts): pair your own board, inference on it, and a simulated robot. Off by default. */
+  get gadgetConnect(): boolean {
+    return flag("GADGET_CONNECT");
   },
   /**
    * HARDWARE_GADGET_OWNER_CHECK: a live token reaches only the board its product's owner linked, and a visitor only when

@@ -27,7 +27,8 @@ const DRIVE_REFUSALS: ReadonlySet<string> = new Set(["no_drive", "several_drives
  */
 export function boardMessage(err: unknown): string | null {
   if (!(err instanceof BoardError)) return null;
-  if (isBoardOffline(err)) return "The board isn't available right now.";
+  if (isBoardOffline(err)) return err.message.startsWith("Your board") ? err.message : "The board isn't available right now.";
+  if (err.code === "gadget_no_model" || err.code === "robot_real_board_off" || err.code === "board_not_paired") return err.message;
   if (DRIVE_REFUSALS.has(err.code)) return err.message;
   if (err.code === "rate_limited") return "The board has had too many requests. Try again in a minute.";
   if (err.code === "board_tool_error") return "The board couldn't do that right now.";

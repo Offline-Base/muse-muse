@@ -160,3 +160,20 @@ await checkDriveExport(page, {
 ```
 
 One link session and one call of each board tool is enough. The first checks the simulated port got the bytes your product sent and that the product showed the reply. The second is confirmed by the gateway's own record.
+
+## The model on the owner's board (askBoard)
+
+`askBoard(messages, { request })` runs on the model on the owner's paired board: one-bit Muse Glimmer on a Jetson Orin Nano, a small Llama on anything else. The platform picks it from the board's kind. Nothing goes to a cloud model, so it suits private data. It can take over a minute, so show progress and which model answered (`target`).
+
+When the board is off it throws. `askBoardOrMessage` gives `{ ok: false, message }` instead: show that line and keep the rest of the product working. Don't fall back to a cloud model on your own: the person chose their board for a reason, so ask them first.
+
+During the build, a fixed rule stands in for the model and its answers start with `[simulated ...]`. Test that your screen shows the answer, not what the answer says.
+
+## A robot (robotStatus, requestRobotAction, hardStop)
+
+Only for a brief that asks, and only on a simulated board for now. A real board refuses.
+
+- `ROBOT_ACTIONS` is everything there is, with its limits. Anything else is refused on the platform and again on the board.
+- The owner confirms every action. `requestRobotAction` never acts on the first call. Live, it answers with `confirmUrl`: open it in its own tab, where the owner says yes on Muse Muse. During the build it answers with `approval`: show the card, and call again with `approval.id` only from the person's own click.
+- `hardStop` needs no confirmation and stays on until the owner clears it. Keep a hard stop button on every screen where something can move.
+- Say "simulated" wherever `simulated: true`.

@@ -3,7 +3,8 @@ import { clientIpKey, parseBearer } from "@/lib/gateway/extract";
 import { SIM_AUDIO_WAV_BASE64, SIM_PHOTO_JPEG_BASE64 } from "@/lib/gateway/gadget-sim-media";
 import type { GatewayToken } from "@/lib/gateway/handler";
 import { CLIENT_IP_HEADER } from "@/lib/gateway/policy";
-import { BOARD_TOOLS, BOARD_TOOLS_MARKER, DRIVE_TOOLS_MARKER, hardwareProofKey, PRODUCT_DRIVE_TOOLS, SENSOR_NAME_MAX_CHARS, SHOW_TEXT_MAX_CHARS, SHOW_TEXT_PER_MINUTE, type BoardTool, type ProductDriveTool } from "@/lib/caps/hardware/limits";
+import { CONNECT_TOOLS, BOARD_TOOLS, BOARD_TOOLS_MARKER, DRIVE_TOOLS_MARKER, hardwareProofKey, PRODUCT_DRIVE_TOOLS, SENSOR_NAME_MAX_CHARS, SHOW_TEXT_MAX_CHARS, SHOW_TEXT_PER_MINUTE, type BoardTool, type ConnectTool, type ProductDriveTool } from "@/lib/caps/hardware/limits";
+import { liveAsk, liveHardStop, liveRobotRequest, liveRobotStatus, offlineAnswer, simulatedCall } from "@/lib/gateway/gadget-connect";
 import { capMarker } from "@/lib/caps/ids";
 import { ownerSubject, resolvePrincipal } from "@/lib/tools/principal";
 import type { ProductStatus } from "@/lib/types";
@@ -58,6 +59,22 @@ export interface GadgetResult {
 export interface GadgetBoard {
   listTools(): Promise<GadgetToolInfo[]>;
   callTool(name: string, args: Record<string, unknown>): Promise<GadgetResult>;
+  /** GADGET_CONNECT: one answer from the model running on this board. */
+  ask?(request: BoardAsk): Promise<BoardAnswer>;
+}
+
+export interface BoardAsk {
+  model: string;
+  messages: Array<{ role: string; content: string }>;
+  maxTokens: number;
+}
+
+export type BoardAnswer = { kind: "answer"; text: string } | { kind: "no_model" };
+
+/** Set while GADGET_CONNECT is on. */
+export interface GadgetConnect {
+  siteUrl: string;
+  setStopped(boardId: string): Promise<void>;
 }
 
 export interface GadgetDeps {
@@ -73,6 +90,8 @@ export interface GadgetDeps {
   boardTools?: boolean;
   /** Set only while DRIVE_EXPORT_PRODUCTS and the owner check are both on. */
   drive?: GadgetDrive;
+  /** Set only while GADGET_CONNECT, the owner check and board tools are all on. */
+  connect?: GadgetConnect;
 }
 
 /** One drive tool call that has passed the checks here: from a build, which gets the simulator, or from the board's verified owner. */
@@ -99,6 +118,9 @@ export interface LinkedBoard {
   visitors: boolean;
   /** The board, or null when it can't be reached safely right now. */
   open(): Promise<GadgetBoard | null>;
+  boardId?: string;
+  /** What pairing learned. Null for a board added by hand. */
+  facts?: { target: string; targetLabel: string; simulated: boolean; robot: boolean; stopped: boolean } | null;
 }
 
 const DEVICE_PROP = { device: { type: "string", description: "Which camera or microphone, from describe_device. Defaults to the first." } };
@@ -139,6 +161,22 @@ const SIM_TOOLS: GadgetToolInfo[] = [
     description: `Shows up to ${SHOW_TEXT_MAX_CHARS} characters on the board, ${SHOW_TEXT_PER_MINUTE} times a minute.`,
     inputSchema: { type: "object", properties: { text: { type: "string", minLength: 1, maxLength: SHOW_TEXT_MAX_CHARS } }, required: ["text"], additionalProperties: false },
   },
+];
+
+/** GADGET_CONNECT's tools, as GET lists them for a product with board tools. */
+const CONNECT_TOOL_INFO: GadgetToolInfo[] = [
+  {
+    name: "ask_board",
+    description: "One answer from the model running on the owner's board. Which model depends on the board.",
+    inputSchema: { type: "object", properties: { messages: { type: "array" }, max_tokens: { type: "integer", minimum: 1, maximum: 512 } }, required: ["messages"], additionalProperties: false },
+  },
+  { name: "robot_status", description: "A simulated board's sensors, actuators and hard stop. Read only.", inputSchema: { type: "object", properties: {}, additionalProperties: false } },
+  {
+    name: "robot_action",
+    description: "Asks to do one allow-listed action on a simulated board. The owner confirms each one.",
+    inputSchema: { type: "object", properties: { action: { type: "string" }, args: { type: "object" } }, required: ["action", "args"], additionalProperties: false },
+  },
+  { name: "hard_stop", description: "Stops everything on a simulated board, and it stays stopped until the owner clears it. Needs no confirmation.", inputSchema: { type: "object", properties: {}, additionalProperties: false } },
 ];
 
 /** What GET lists for the drive tools: a board's own drive_status takes the same no arguments but answers more than a product sees. */
@@ -219,7 +257,49 @@ const asksForDriveTools = (token: GadgetToken, deps: GadgetDeps): boolean => Boo
 function toolsFor(token: GadgetToken, deps: GadgetDeps): readonly string[] {
   const media = token.allowedModels.includes(GADGET_ID) ? PRODUCT_GADGET_TOOLS : [];
   const tools = asksForBoardTools(token, deps) && (token.scope === "build" || deps.linkedBoard) ? [...media, ...BOARD_TOOLS] : media;
-  return asksForDriveTools(token, deps) ? [...tools, ...PRODUCT_DRIVE_TOOLS] : tools;
+  const withDrive = asksForDriveTools(token, deps) ? [...tools, ...PRODUCT_DRIVE_TOOLS] : tools;
+  return connectOn(token, deps) ? [...withDrive, ...CONNECT_TOOLS] : withDrive;
+}
+
+/** GADGET_CONNECT's tools go with board tools, for the same briefs. A live token also needs the owner check, which connect requires. */
+const connectOn = (token: GadgetToken, deps: GadgetDeps): boolean => Boolean(deps.connect) && asksForBoardTools(token, deps);
+const isConnectTool = (name: string): name is ConnectTool => (CONNECT_TOOLS as readonly string[]).includes(name);
+
+/**
+ * A GADGET_CONNECT call, in the owner check's order. Builds get the simulator. Live: a hard stop passes with no budget for anyone the
+ * link lets in, since stopping is always allowed. robot_action needs the owner themselves, even with visitors open. Refused callers
+ * get the same offline answer as no link at all.
+ */
+async function connectCall(req: Request, token: GadgetToken, tool: ConnectTool, args: Record<string, unknown>, approval: unknown, deps: GadgetDeps): Promise<Response> {
+  const now = deps.now?.() ?? new Date();
+  if (token.scope === "build") {
+    if (tool !== "hard_stop") {
+      const limited = await rateLimited(req, token, deps, tool);
+      if (limited) return limited;
+    }
+    return simulatedCall({
+      tool,
+      args,
+      approval,
+      tokenId: token.id,
+      productId: token.productId,
+      now,
+      spend: async (nonce) => ((await deps.hitRateLimits([`tool-approval:${nonce}`], now))[`tool-approval:${nonce}`] ?? 1) <= 1,
+    });
+  }
+  if (tool !== "hard_stop") {
+    const limitedIp = await rateLimited(req, token, deps, tool, "ip");
+    if (limitedIp) return limitedIp;
+  }
+  const link = await deps.linkedBoard!(token.productId);
+  const owner = Boolean(link) && isOwnerCall(req, token, link!.ownerUserId, now);
+  if (!link || !(link.visitors || owner) || (tool === "robot_action" && !owner)) return offlineAnswer();
+  if (tool === "hard_stop") return liveHardStop(link, deps.connect!.setStopped);
+  const limited = await rateLimited(req, token, deps, tool, "granted");
+  if (limited) return limited;
+  if (tool === "ask_board") return liveAsk(args, link);
+  if (tool === "robot_status") return liveRobotStatus(link);
+  return liveRobotRequest(args, link, token.productId, deps.connect!.siteUrl, now);
 }
 
 const isBoardTool = (name: string): name is BoardTool => (BOARD_TOOLS as readonly string[]).includes(name);
@@ -377,8 +457,8 @@ export async function handleGadgetTools(req: Request, deps: GadgetDeps): Promise
   if (token instanceof Response) return token;
   const allowed = toolsFor(token, deps);
   if (!allowed.length) return noBoard();
-  const driveTools = await listedDriveTools(req, token, allowed, deps);
-  const onBoard = allowed.filter((t) => !isDriveTool(t));
+  const driveTools = [...(await listedDriveTools(req, token, allowed, deps)), ...(connectOn(token, deps) ? CONNECT_TOOL_INFO : [])];
+  const onBoard = allowed.filter((t) => !isDriveTool(t) && !isConnectTool(t));
   if (!onBoard.length) return driveTools.length ? Response.json({ tools: driveTools, simulated: token.scope === "build" }) : noBoard();
   const board = await boardFor(req, token, deps);
   if (board instanceof Response) return board;
@@ -411,6 +491,7 @@ export async function handleGadgetCall(req: Request, deps: GadgetDeps): Promise<
   }
   const tool = body.tool;
   if (isDriveTool(tool)) return driveCall(req, token, tool, args as Record<string, unknown>, body.approval, deps);
+  if (isConnectTool(tool)) return connectCall(req, token, tool, args as Record<string, unknown>, body.approval, deps);
   if (isBoardTool(tool)) {
     const problem = boardToolProblem(tool, args as Record<string, unknown>);
     if (problem) return gatewayError(400, "invalid_request_error", "invalid_arguments", problem, { retry: false });

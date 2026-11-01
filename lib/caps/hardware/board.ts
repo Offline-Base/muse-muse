@@ -2,10 +2,11 @@ import { lookup } from "node:dns/promises";
 import { isPublicHttpUrl, resolvesToPublic } from "@/lib/tools/args";
 import { callDeviceTool, listDeviceTools, type DeviceConfig } from "@/lib/device/client";
 import type { DeviceTrust } from "@/lib/db/schema";
-import { BOARD_URL_MAX_CHARS } from "@/lib/caps/hardware/limits";
-import type { GadgetBoard, LinkedBoard } from "@/lib/gateway/gadget";
+import { BOARD_ANSWER_MS, BOARD_URL_MAX_CHARS } from "@/lib/caps/hardware/limits";
+import type { BoardAnswer, BoardAsk, GadgetBoard, LinkedBoard } from "@/lib/gateway/gadget";
 import { env } from "@/lib/env";
-import { linkedBoardRow, noteBoardHealth, type LinkedBoardRow } from "@/lib/caps/hardware/store";
+import { pinnedFetch } from "@/lib/caps/hardware/pinned";
+import { linkedBoardRow, noteBoardHealth, pairedFactsOf, type LinkedBoardRow } from "@/lib/caps/hardware/store";
 import { openSecret, parseKeyring, type BoxKeyring, type SealedSecret } from "@/lib/secrets/box";
 
 /**
@@ -40,12 +41,14 @@ export interface AddressVerdict {
  * only, plain http on this machine too, as lib/device/client.ts allows, for a board in local tests. A hosted site never
  * calls its own network: the address and every name it resolves to must be public.
  */
-export async function checkBoardAddress(value: string, opts: { hosted?: boolean; lookup?: AddressLookup } = {}): Promise<AddressVerdict> {
+export async function checkBoardAddress(value: string, opts: { hosted?: boolean; lookup?: AddressLookup; pinned?: boolean } = {}): Promise<AddressVerdict> {
   if (value.length > BOARD_URL_MAX_CHARS || !URL.canParse(value)) return { ok: false };
   const url = new URL(value);
   if (url.username || url.password || url.search || url.hash) return { ok: false };
   const hosted = opts.hosted ?? Boolean(process.env.VERCEL);
   if (!hosted && LOOPBACK.has(url.hostname) && (url.protocol === "http:" || url.protocol === "https:")) return { ok: true, trust: "loopback" };
+  // A pinned board on a local site may sit on the owner's own network: the pin decides who it is. A hosted site never calls a private address.
+  if (!hosted && opts.pinned && url.protocol === "https:") return { ok: true, trust: "pinned_tls" };
   if (url.protocol !== "https:" || !isPublicHttpUrl(value)) return { ok: false };
   try {
     return (await resolvesToPublic(value, opts.lookup ?? systemLookup)) ? { ok: true, trust: "public_tls" } : { ok: false };
@@ -69,12 +72,30 @@ export function openBoardConfig(row: LinkedBoardRow, ring: BoxKeyring): DeviceCo
   };
 }
 
+/** One answer from the model running on the board, through its OpenAI-compatible route. Never streams, and never logs a body. */
+async function askOnBoard(config: DeviceConfig, request: BoardAsk, doFetch: typeof fetch): Promise<BoardAnswer> {
+  const res = await doFetch(new URL("/v1/chat/completions", config.url), {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${config.token}` },
+    body: JSON.stringify({ model: request.model, messages: request.messages, max_tokens: request.maxTokens, stream: false }),
+    signal: AbortSignal.timeout(BOARD_ANSWER_MS),
+  });
+  if (res.status === 503 || res.status === 404) return { kind: "no_model" };
+  if (!res.ok) throw new Error(`The board answered ${res.status}.`);
+  const body = (await res.json()) as { choices?: Array<{ message?: { content?: unknown } }> };
+  const text = body.choices?.[0]?.message?.content;
+  if (typeof text !== "string") throw new Error("The board's answer has no text.");
+  return { kind: "answer", text };
+}
+
 export interface LinkedBoardDeps {
   row(productId: string): Promise<LinkedBoardRow | null>;
   ring(): BoxKeyring | null;
-  check(url: string): Promise<AddressVerdict>;
-  list(config: DeviceConfig): ReturnType<GadgetBoard["listTools"]>;
-  call(config: DeviceConfig, name: string, args: Record<string, unknown>): ReturnType<GadgetBoard["callTool"]>;
+  check(url: string, pinned?: boolean): Promise<AddressVerdict>;
+  list(config: DeviceConfig, doFetch?: typeof fetch): ReturnType<GadgetBoard["listTools"]>;
+  call(config: DeviceConfig, name: string, args: Record<string, unknown>, doFetch?: typeof fetch): ReturnType<GadgetBoard["callTool"]>;
+  /** The fetch for a paired board's pin. Tests stand a fake in. */
+  pinned?(pin: string): typeof fetch;
   health(boardId: string, ok: boolean, now: Date, latencyMs: number): Promise<void>;
   now?(): Date;
 }
@@ -82,9 +103,9 @@ export interface LinkedBoardDeps {
 const defaultDeps: LinkedBoardDeps = {
   row: linkedBoardRow,
   ring: boardKeyring,
-  check: (url) => checkBoardAddress(url),
-  list: (config) => listDeviceTools(config, boardFetch),
-  call: (config, name, args) => callDeviceTool(config, name, args, boardFetch),
+  check: (url, pinned) => checkBoardAddress(url, { pinned }),
+  list: (config, doFetch) => listDeviceTools(config, doFetch ?? boardFetch),
+  call: (config, name, args, doFetch) => callDeviceTool(config, name, args, doFetch ?? boardFetch),
   health: noteBoardHealth,
 };
 
@@ -96,10 +117,17 @@ const defaultDeps: LinkedBoardDeps = {
 export async function linkedBoardFor(productId: string, deps: LinkedBoardDeps = defaultDeps): Promise<LinkedBoard | null> {
   const row = await deps.row(productId);
   if (!row) return null;
-  return { ownerUserId: row.ownerUserId, visitors: row.visitors, open: () => openLinkedBoard(row, deps) };
+  const facts = pairedFactsOf(row.models);
+  return {
+    ownerUserId: row.ownerUserId,
+    visitors: row.visitors,
+    boardId: row.boardId,
+    facts: facts ? { target: facts.target, targetLabel: facts.targetLabel, simulated: facts.simulated, robot: facts.robot, stopped: row.health?.stopped === true } : null,
+    open: () => openLinkedBoard(row, deps),
+  };
 }
 
-async function openLinkedBoard(row: LinkedBoardRow, deps: LinkedBoardDeps): Promise<GadgetBoard | null> {
+export async function openLinkedBoard(row: LinkedBoardRow, deps: LinkedBoardDeps = defaultDeps): Promise<GadgetBoard | null> {
   const ring = deps.ring();
   if (!ring) return null;
   let config: DeviceConfig;
@@ -109,7 +137,9 @@ async function openLinkedBoard(row: LinkedBoardRow, deps: LinkedBoardDeps): Prom
     console.error("[hardware] a board's secrets don't open with HARDWARE_BOARD_KEY");
     return null;
   }
-  if (!(await deps.check(config.url)).ok) return null;
+  const pin = row.certSpkiSha256;
+  if (!(await deps.check(config.url, Boolean(pin))).ok) return null;
+  const doFetch = pin ? (deps.pinned ?? pinnedFetch)(pin) : undefined;
   const timed = async <T>(work: () => Promise<T>): Promise<T> => {
     const clock = () => deps.now?.() ?? new Date();
     const started = clock();
@@ -124,7 +154,8 @@ async function openLinkedBoard(row: LinkedBoardRow, deps: LinkedBoardDeps): Prom
     }
   };
   return {
-    listTools: () => timed(() => deps.list(config)),
-    callTool: (name, args) => timed(() => deps.call(config, name, args)),
+    listTools: () => timed(() => deps.list(config, doFetch)),
+    callTool: (name, args) => timed(() => deps.call(config, name, args, doFetch)),
+    ask: (request) => timed(() => askOnBoard(config, request, doFetch ?? boardFetch)),
   };
 }

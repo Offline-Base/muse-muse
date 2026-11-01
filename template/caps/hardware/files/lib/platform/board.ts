@@ -116,3 +116,71 @@ export async function driveStatus(opts: WithRequest): Promise<DriveStatus> {
 export async function exportToDrive(opts: { approval?: string } & WithRequest): Promise<DriveExportReply> {
   return callBoard<DriveExportReply>("export_to_drive", { model: "own" }, opts.request, opts.approval);
 }
+
+export interface BoardAnswer {
+  /** The answer from the model on the board. */
+  text: string;
+  /** Which model: it depends on the board. Show it. */
+  target: string;
+  simulated: boolean;
+}
+
+/**
+ * Asks the model running on the owner's board. Nothing leaves their board but this call's answer. Use it through a route handler, with
+ * the request passed in. It can take over a minute on a small board: show that it's working. It throws BoardError when the board isn't
+ * there: show boardMessage(err) and keep the rest of the product working, or use askBoardOrMessage below.
+ */
+export async function askBoard(messages: Array<{ role: "system" | "user" | "assistant"; content: string }>, opts: { maxTokens?: number } & WithRequest): Promise<BoardAnswer> {
+  return callBoard<Omit<BoardAnswer, "simulated">>("ask_board", { messages, ...(opts.maxTokens ? { max_tokens: opts.maxTokens } : {}) }, opts.request);
+}
+
+/** askBoard that answers with the plain line to show when the board is off, so a page never breaks over it. Other errors still throw. */
+export async function askBoardOrMessage(messages: Array<{ role: "system" | "user" | "assistant"; content: string }>, opts: { maxTokens?: number } & WithRequest): Promise<({ ok: true } & BoardAnswer) | { ok: false; message: string }> {
+  try {
+    return { ok: true, ...(await askBoard(messages, opts)) };
+  } catch (err) {
+    if (err instanceof BoardError) return { ok: false, message: boardMessage(err) ?? err.message };
+    throw err;
+  }
+}
+
+export interface RobotStatus {
+  sensors: SensorReading[];
+  actuators: { fan: boolean; pump: boolean; light: number };
+  /** The hard stop is on: nothing moves until the owner clears it. */
+  stopped: boolean;
+  log: Array<Record<string, unknown>>;
+  simulated: boolean;
+}
+
+/** The only actions there are, with their limits. Anything else is refused. */
+export const ROBOT_ACTIONS = {
+  fan_run: { label: "Run the fan", args: { seconds: { min: 1, max: 30 } } },
+  pump_run: { label: "Run the water pump", args: { seconds: { min: 1, max: 5 } } },
+  light_set: { label: "Set the light", args: { percent: { min: 0, max: 100 } } },
+} as const;
+export type RobotAction = keyof typeof ROBOT_ACTIONS;
+
+export type RobotReply = (
+  | { ok: true; status: RobotStatus }
+  /** Live: send the owner to `confirmUrl`, in its own tab. It's the only way a real yes happens. Then read robotStatus again. */
+  | { ok: false; code: "needs_confirmation"; title: string; lines: string[]; confirmUrl: string }
+  /** During the build, with no owner there: show `approval.title` and every line on a card, and call again with `approval.id` only from the person's own click. */
+  | { ok: false; code: "needs_confirmation"; approval: { id: string; title: string; lines: string[] }; stale?: boolean }
+  | { ok: false; code: "stopped"; message: string }
+) & { simulated: boolean };
+
+/** The sensors, what's running, and the hard stop. Read only. Live, only on a simulated board for now. */
+export async function robotStatus(opts: WithRequest): Promise<RobotStatus> {
+  return callBoard("robot_status", {}, opts.request);
+}
+
+/** Asks to do one allowed action. It never acts on the first call: the owner confirms each one. Never confirm by yourself. */
+export async function requestRobotAction(action: RobotAction, args: Record<string, number>, opts: { approval?: string } & WithRequest): Promise<RobotReply> {
+  return callBoard<RobotReply>("robot_action", { action, args }, opts.request, opts.approval);
+}
+
+/** Stops everything, at once, with no confirmation. It stays stopped until the owner clears it in Muse Muse. Put this on the screen wherever a robot can move. */
+export async function hardStop(opts: WithRequest): Promise<{ stopped: boolean; simulated: boolean }> {
+  return callBoard("hard_stop", {}, opts.request);
+}

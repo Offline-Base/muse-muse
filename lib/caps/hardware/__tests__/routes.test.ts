@@ -44,7 +44,7 @@ describe("the board routes", { skip: canMock ? false : "needs --experimental-tes
   let ownerSubject: typeof import("@/lib/tools/principal").ownerSubject;
   let ownerPassRoute: typeof import("@/app/api/products/[slug]/owner-pass/route");
   let tokenModels = ["muse-gadget", "cap:hardware", "board-tools"];
-  let viewer: { id: string; isAdmin: boolean; openAccess?: boolean } | null = null;
+  let viewer: { id: string; isAdmin: boolean; openAccess?: boolean; email?: string } | null = null;
   const boardCalls: Array<{ url: string; token: string; name: string }> = [];
   const legacy: string[] = [];
 
@@ -75,6 +75,8 @@ describe("the board routes", { skip: canMock ? false : "needs --experimental-tes
     mock.module(at("../../../auth.ts"), {
       namedExports: {
         AuthError: FakeAuthError,
+        GUEST_EMAIL: "guest@musemuse.invalid",
+        isCrossSite: () => false,
         requireAdmin: async () => {
           if (!viewer) throw new FakeAuthError("Sign in to build.", 401);
           if (!viewer.isAdmin) throw new FakeAuthError("Admins only.", 403);
@@ -133,7 +135,7 @@ describe("the board routes", { skip: canMock ? false : "needs --experimental-tes
     await testDb.delete(realSchema.devices);
   });
   afterEach(() => {
-    for (const k of ["HARDWARE_BOARD_REGISTRY", "HARDWARE_BOARD_KEY", "HARDWARE_BOARD_TOOLS", "HARDWARE_GADGET_OWNER_CHECK", "TOOLS_SIGNING_SECRET"]) delete process.env[k];
+    for (const k of ["HARDWARE_BOARD_REGISTRY", "HARDWARE_BOARD_KEY", "HARDWARE_BOARD_TOOLS", "HARDWARE_GADGET_OWNER_CHECK", "TOOLS_SIGNING_SECRET", "GADGET_CONNECT"]) delete process.env[k];
   });
 
   it("every route answers 404 with its flag off, and touches nothing", async () => {
@@ -335,5 +337,62 @@ describe("the board routes", { skip: canMock ? false : "needs --experimental-tes
     assert.equal((await oneBoard.DELETE(json(`/api/boards/${id}`, "DELETE"), { params: Promise.resolve({ id }) })).status, 404);
     viewer = { id: admin, isAdmin: true };
     assert.equal((await oneBoard.DELETE(json("/api/boards/nope", "DELETE"), { params: Promise.resolve({ id: "nope" }) })).status, 404);
+  });
+
+  describe("GADGET_CONNECT", () => {
+    const pair = async () => (await import("@/app/api/boards/pair/route")).POST(json("/api/boards/pair", "POST", { address: "10.0.0.5:8765" }));
+    const stop = async (id: string, body: object = {}) => (await import("@/app/api/boards/[id]/stop/route")).POST(json(`/api/boards/${id}/stop`, "POST", body), { params: Promise.resolve({ id }) });
+
+    it("every new route is 404 with it off", async () => {
+      assert.equal((await pair()).status, 404);
+      assert.equal((await stop("x")).status, 404);
+    });
+
+    it("a guest can't pair or list boards, by the shared account or open access, with words saying why", async () => {
+      process.env.GADGET_CONNECT = "1";
+      for (const guest of [
+        { id: admin, isAdmin: false, email: "guest@musemuse.invalid" },
+        { id: admin, isAdmin: false, email: "a@example.com", openAccess: true },
+      ]) {
+        viewer = guest;
+        for (const res of [await pair(), await boards.GET()]) {
+          assert.equal(res.status, 403);
+          assert.match(await res.text(), /Sign in to pair a board/);
+        }
+      }
+    });
+
+    it("a signed-in person who isn't an admin holds their own boards, and can't touch another's or stop it", async () => {
+      process.env.GADGET_CONNECT = "1";
+      const { id } = (await (await register()).json()) as { id: string };
+      viewer = { id: otherAdmin, isAdmin: false, email: "b@example.com" };
+      assert.equal((await boards.GET()).status, 200);
+      assert.doesNotMatch(await (await boards.GET()).text(), /Shop board/);
+      assert.equal((await stop(id)).status, 404);
+      assert.equal((await oneBoard.DELETE(json(`/api/boards/${id}`, "DELETE"), { params: Promise.resolve({ id }) })).status, 404);
+      assert.equal((await productBoard.POST(json("/api/products/corner/board", "POST", { boardId: id }), slug("corner"))).status, 403, "not their product either");
+    });
+
+    it("a stop saved on the platform survives a health note", async () => {
+      process.env.GADGET_CONNECT = "1";
+      const { id } = (await (await register()).json()) as { id: string };
+      const store = await import("@/lib/caps/hardware/store");
+      await store.setBoardStopped(id, true);
+      await store.noteBoardHealth(id, true, new Date(), 5);
+      const [row] = await testDb.select().from(realSchema.devices).where(eq(realSchema.devices.id, id));
+      assert.equal(row!.health?.stopped, true);
+      assert.equal(row!.health?.status, "ok");
+    });
+
+    it("a board and product owned by the shared guest never come back as a link, whatever got them there", async () => {
+      process.env.GADGET_CONNECT = "1";
+      const { id } = (await (await register()).json()) as { id: string };
+      const store = await import("@/lib/caps/hardware/store");
+      await testDb.update(realSchema.users).set({ email: "guest@musemuse.invalid" }).where(eq(realSchema.users.id, admin));
+      const [p] = await testDb.select({ id: realSchema.products.id }).from(realSchema.products).where(eq(realSchema.products.slug, "corner"));
+      await store.linkBoard(p!.id, id, true);
+      assert.equal(await store.linkedBoardRow(p!.id), null);
+      await testDb.update(realSchema.users).set({ email: "admin@example.com" }).where(eq(realSchema.users.id, admin));
+    });
   });
 });

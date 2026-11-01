@@ -1,4 +1,4 @@
-import { requireBoardAdmin } from "@/lib/caps/hardware/admin";
+import { requireBoardOwner } from "@/lib/caps/hardware/admin";
 import { boardRegistryOn } from "@/lib/caps/hardware/flags";
 import { linkBoard, ownsBoard, productBySlug, unlinkBoard } from "@/lib/caps/hardware/store";
 import { errorJson, HttpError, readJson, route } from "@/lib/http";
@@ -20,7 +20,7 @@ async function ownProduct(slug: string, userId: string) {
 /** POST {boardId, visitors} -> {ok}: this product reaches this board. `visitors` is off unless it is exactly true. */
 export const POST = route(async (req: Request, { params }: { params: Promise<{ slug: string }> }) => {
   if (!boardRegistryOn()) return errorJson(404, "not_found");
-  const user = await requireBoardAdmin();
+  const user = await requireBoardOwner();
   const product = await ownProduct((await params).slug, user.id);
   const body = await readJson(req, 4 * 1024);
   if (typeof body.boardId !== "string" || !UUID.test(body.boardId) || !(await ownsBoard(body.boardId, user.id))) return errorJson(404, "board_not_found");
@@ -31,7 +31,7 @@ export const POST = route(async (req: Request, { params }: { params: Promise<{ s
 /** DELETE -> {ok}: this product reaches no board. */
 export const DELETE = route(async (_req: Request, { params }: { params: Promise<{ slug: string }> }) => {
   if (!boardRegistryOn()) return errorJson(404, "not_found");
-  const user = await requireBoardAdmin();
+  const user = await requireBoardOwner();
   const product = await ownProduct((await params).slug, user.id);
   await unlinkBoard(product.id);
   return Response.json({ ok: true });
