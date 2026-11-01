@@ -220,7 +220,8 @@ Checked Oct 31 against the real files, as the task asked:
   All three match the sha256 pins in `META_FILES` (`lib/train/recipes/quantize.ts`) [V]. The copy the lab trains on,
   unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit at `ecedda39`, has the same `tokenizer.json` (LFS sha256 `c9dbee66...`, read
   from the Hub API, not downloaded); its `tokenizer_config.json` differs slightly (79,985 vs 79,936 bytes) and wasn't
-  compared further [V].
+  compared further [V]. (Checked before the switch to r30b: the lab now trains on `LAB_BASE_MODEL` in
+  `lib/train/base.ts`. r30b's merged repo lists the same `tokenizer.json`, LFS sha256 `c9dbee66...`.)
 - **Tool:** the `tokenizers` package 0.22.1 in a scratch venv, Python 3.14 [V].
 - **Vocabulary:** 202,048 tokens with the added ones [V].
 - **A to Z:** all 26 capital letters are one token each (A 45, B 46, C 47, D 48, E 49, F 50). With a leading space they
@@ -1258,8 +1259,9 @@ One test decides whether Fireworks is usable at all. It needs the owner's OK, si
    unembedding weights the lab's path can't load.
 5. **Score on Lambda,** an H100 PCIe: the public BF16 weights (meta-models/Muse-Glimmer-30B at `cec94fcf`), PEFT, the
    same 50 renderings through the real template, full-vocabulary log-probabilities.
-6. **Score on the lab's 4-bit base** (`unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit` at `ecedda39`), the base the serve
-   and quantize paths load.
+6. **Score on the lab's 4-bit base,** the base the serve and quantize paths load: `LAB_BASE_MODEL` at
+   `LAB_BASE_REVISION` in `lib/train/base.ts`, r30b's nf4 build since Oct 31 (it was
+   `unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit` at `ecedda39` when this plan was written).
 7. **Pass** when the picks agree on at least 49 of 50 between steps 3 and 5 and on at least 48 of 50 between 5 and 6,
    and the top letter's probability differs by at most 0.03 on average. Otherwise Fireworks stays off, and the result
    goes in this file either way.
