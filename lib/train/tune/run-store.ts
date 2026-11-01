@@ -31,8 +31,8 @@ export async function latestTuneJob(datasetId: string): Promise<TrainJobRow | nu
 // ---------------------------------------------------------------------------------------------------------------
 // What a run keeps besides its dataset and its job (docs/TRAINING.md "Fine-tune like a build", "Starting training"),
 // in rate_limits rows, so there is still no migration:
-//   tune-run:<id>:<state>        the tuneRun workflow's heartbeat: one row a minute while it checks or waits, with
-//                                the waiting reason as the state. The hourly cleanup drops rows over an hour old.
+//   tune-run:<id>:<state>        the tuneRun workflow's heartbeat: one row a try while it checks or waits, with the
+//                                waiting reason as the state. The hourly cleanup drops rows over an hour old.
 //   tune-run-end:<id>:<code>     why the workflow ended without a job (a failed check, a refused launch, two hours of
 //                                waiting), kept under a window that never starts, like the native downloads count.
 //   tune-run-stopped:<id>        the run was stopped before training: nothing launches for it any more.
@@ -57,11 +57,13 @@ export function markCode(code: string): string {
   return /^[a-z0-9_]{1,40}$/.test(code) ? code : "refused";
 }
 
-/** Notes that the run's workflow is in `state` this minute (the heartbeat). */
+/**
+ * Notes that the run's workflow (or Start training) is in `state` now: the heartbeat. One row a try, at the moment of
+ * the try, so the newest says the latest reason even when two come within a minute; a try is every 5 minutes at most.
+ */
 export async function recordRunHeartbeat(datasetId: string, state: string, now: Date = new Date()): Promise<void> {
   if (!UUID_RE.test(datasetId)) return;
-  const minute = new Date(Math.floor(now.getTime() / 60_000) * 60_000);
-  await db().insert(limits).values({ key: heartbeatKey(datasetId, markCode(state)), windowStart: minute, count: 1 }).onConflictDoNothing();
+  await db().insert(limits).values({ key: heartbeatKey(datasetId, markCode(state)), windowStart: now, count: 1 }).onConflictDoNothing();
 }
 
 /** Notes why the run's workflow ended without a job. A later end replaces it. */

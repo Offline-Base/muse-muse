@@ -380,3 +380,24 @@ describe("the verdict", () => {
     assert.ok(Math.abs((saved.high - saved.low) / 2 - hw) < 1e-9);
   });
 });
+
+describe("Advanced's training steps", () => {
+  it("are held to the glimmer-lora recipe's own maxSteps limits, and to what fits in the run's time limit", async () => {
+    const { RECIPES } = await import("@/lib/train/recipes");
+    const { askedSteps, clampSteps, maxStepsFor, planCost, planSettings, TUNE_MAX_STEPS, TUNE_MIN_STEPS, TUNE_STEPS } = await import("@/lib/train/tune/cost");
+    const field = RECIPES.find((r) => r.id === "glimmer-lora")!.params.find((p) => p.key === "maxSteps")!;
+    assert.deepEqual([field.min, field.max, field.default], [TUNE_MIN_STEPS, TUNE_MAX_STEPS, TUNE_STEPS]);
+    assert.deepEqual([clampSteps(5), clampSteps(300.7), clampSteps(9999), clampSteps(Number.NaN)], [10, 300, 2000, 120]);
+    const s = planSettings(200, { maxMinutes: 120, maxUsd: 5 });
+    assert.equal(s.maxMinutes, 90);
+    const top = maxStepsFor(s);
+    assert.equal(top, 350, "on the A100 with the cache, within 90 minutes");
+    assert.ok(planCost({ ...s, steps: top }).trainMinutes <= 90);
+    assert.ok(planCost({ ...s, steps: top + 10 }).trainMinutes >= 90, "one more round of steps would pass the limit");
+    assert.equal(maxStepsFor({ ...s, maxMinutes: 10 }), 10, "never under the recipe's least");
+    assert.equal(planSettings(200, { maxMinutes: 120, maxUsd: 5 }, 300).steps, 300);
+    assert.deepEqual(askedSteps({ steps: 300 }, top), { ok: true, value: 300 });
+    assert.deepEqual(askedSteps({}, top), { ok: true, value: undefined });
+    assert.deepEqual(askedSteps({ steps: 351 }, top), { ok: false, error: "steps must be a whole number from 10 to 350." });
+  });
+});

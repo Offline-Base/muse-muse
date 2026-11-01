@@ -47,7 +47,7 @@ export interface RunMarks {
   stopped: boolean;
   /** Why the workflow ended without a job (a check code, a launch refusal, "waited_<reason>"), or null. */
   ended: string | null;
-  /** The newest heartbeat within the hour: its state, its minute, and the first minute of that state kept. */
+  /** The newest heartbeat within the hour: its state, when it came, and the first of that state kept. */
   heartbeat: { state: string; at: Date; since: Date } | null;
 }
 
