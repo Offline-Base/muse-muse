@@ -77,7 +77,8 @@ export default defineConfig({
       use: {
         viewport: { width: 1280, height: 720 },
         video: { mode: "on", size: { width: 1280, height: 720 } },
-        launchOptions: vr ? { slowMo: 250, args: vr.args } : { slowMo: 250 },
+        // The demo replays the smoke test, so a cap's browser args (a fake microphone) go with it. None without caps.
+        launchOptions: vr ? { slowMo: 250, args: vr.args } : { slowMo: 250, ...(capsArgs.length ? { args: capsArgs } : {}) },
       },
     },
     {
@@ -91,7 +92,7 @@ export default defineConfig({
         deviceScaleFactor: vr ? 1 : 2,
         video: "off",
         // Without it Chromium's screencast sends 1280x720 frames even at deviceScaleFactor 2.
-        launchOptions: { args: vr ? vr.args : ["--force-device-scale-factor=2"] },
+        launchOptions: { args: vr ? vr.args : ["--force-device-scale-factor=2", ...capsArgs] },
       },
     },
   ],
