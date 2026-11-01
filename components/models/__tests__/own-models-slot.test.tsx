@@ -28,7 +28,37 @@ const VIEW: OwnModelsView = {
   ],
 };
 
+describe("TrainOnMyData", () => {
+  it("says what it reads and that the rows stay private, and offers deleting them", async () => {
+    const { TrainOnMyData } = await import("@/components/product/TrainOnMyData");
+    const html = renderToStaticMarkup(createElement(TrainOnMyData, { slug: "corner" })).replaceAll("&#x27;", "'");
+    assert.match(html, /Never from what anyone else saved/);
+    assert.match(html, /never from a collection that can hold personal details/);
+    assert.match(html, /don't show on the Lab pages/);
+    assert.match(html, /Delete what training kept/);
+    assert.ok(!html.includes("—"));
+  });
+});
+
 describe("OwnModelsSlot", () => {
+  it("imports no lib/train or database code up front: only lazily, with a flag on", async () => {
+    const { build } = await import("esbuild");
+    const entry = new URL("../OwnModelsSlot.tsx", import.meta.url).pathname;
+    const root = new URL("../../..", import.meta.url).pathname;
+    const out = await build({ entryPoints: [entry], bundle: true, write: false, metafile: true, packages: "external", platform: "node", format: "esm", jsx: "automatic", absWorkingDir: root, logLevel: "silent" });
+    // Walk the graph from the slot through static imports only.
+    const seen = new Set<string>();
+    const walk = (file: string) => {
+      if (seen.has(file)) return;
+      seen.add(file);
+      for (const i of out.metafile.inputs[file]?.imports ?? []) if (i.kind !== "dynamic-import" && !i.external) walk(i.path);
+    };
+    walk(Object.keys(out.metafile.inputs).find((f) => f.endsWith("components/models/OwnModelsSlot.tsx"))!);
+    const statics = [...seen];
+    assert.ok(statics.some((f) => f.endsWith("lib/caps/gpu/words.ts")));
+    assert.deepEqual(statics.filter((f) => f.includes("lib/train/") || f.endsWith("lib/db/client.ts") || f.endsWith("lib/caps/gpu/general.ts")), []);
+  });
+
   it("renders nothing with its flags off, and reads nothing", () => {
     assert.equal(OwnModelsSlot(), null);
   });

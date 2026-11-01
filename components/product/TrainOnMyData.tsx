@@ -32,10 +32,26 @@ export function TrainOnMyData({ slug }: { slug: string }) {
     }
   }
 
+  async function forget() {
+    setBusy(true);
+    setError(null);
+    setDone(null);
+    try {
+      const res = await fetch(`/api/products/${slug}/train`, { method: "DELETE" });
+      const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+      if (!res.ok) setError(body.error ?? "That didn't delete anything. Try again.");
+      else setDone(body.message ?? "Deleted.");
+    } catch {
+      setError("That didn't reach the site. Check your connection.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <form onSubmit={(e) => void submit(e)}>
       <h3>Train on my data</h3>
-      <p className="muted">Trains a small Muse Glimmer on one GPU from rows saved as yours in this product. Never from what anyone else saved. It can be wrong, and it only answers during demo windows.</p>
+      <p className="muted">Trains a small Muse Glimmer on one GPU from rows saved as yours in this product. Never from what anyone else saved, and never from a collection that can hold personal details. Your rows stay private: they don't show on the Lab pages. It can be wrong, and it only answers during demo windows.</p>
       <div className="field">
         <label className="field-label" htmlFor={`${id}-collections`}>Collections, with commas</label>
         <input id={`${id}-collections`} value={collections} onChange={(e) => setCollections(e.target.value)} />
@@ -45,6 +61,7 @@ export function TrainOnMyData({ slug }: { slug: string }) {
       </label>
       <div className="row-actions">
         <button type="submit" className="btn btn-outline btn-sm" disabled={busy || !sure || !collections.trim()}>Train</button>
+        <button type="button" className="btn btn-outline btn-sm" disabled={busy} onClick={() => void forget()}>Delete what training kept</button>
       </div>
       {error ? <p className="form-error" role="alert">{error}</p> : null}
       {done ? <p role="status">{done}</p> : null}

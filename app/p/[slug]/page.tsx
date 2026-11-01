@@ -186,8 +186,8 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
           <GetItPanel slots={{ ...native.slots, ...(env.productOutputs ? productOutputSlots({ product, origin, events, now }) : {}), ...(env.runtimeOutputs ? runtimeOutputSlots({ product, origin, isOwner }) : {}), ...(env.enabledCaps.includes("extension") ? extensionSlots({ product, origin, brief, ready: extensionReady }) : {}) }} initial={native.initial} />
         ) : null}
 
-        {/* Wave 3, unit 11: nothing unless GPU_TRAIN_ON_DATA and TUNE_COMPOSER are on, for the signed-in owner. */}
-        {shipped && isOwner && !user?.openAccess && env.gpuTrainOnData && env.tuneComposer ? (
+        {/* Wave 3, unit 11: nothing unless GPU_TRAIN_ON_DATA and TUNE_COMPOSER are on, for the signed-in owner, not an admin. */}
+        {shipped && user?.id === product.ownerId && !user?.openAccess && env.gpuTrainOnData && env.tuneComposer ? (
           <section className="card section-card">
             <TrainOnMyData slug={product.slug} />
           </section>

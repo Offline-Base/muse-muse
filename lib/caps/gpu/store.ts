@@ -67,9 +67,14 @@ export async function moveGlimmerWindow(id: string, patch: Partial<Pick<GlimmerW
 
 /**
  * training_jobs.product_id from a product's runs (General's tune-product rows, lib/train/tune/run-store.ts): the job of each
- * run, where it isn't filled yet. A run's job is found by its dataset, so this works however the job was started.
+ * run, where it isn't filled yet, and the jobs of the product's private datasets. A run's job is found by its dataset, so
+ * this works however the job was started.
  */
 export async function fillProductIds(productId: string): Promise<void> {
+  await db()
+    .update(jobs)
+    .set({ productId })
+    .where(and(isNull(jobs.productId), sql`${jobs.params}->>'datasetId' in (select d.id::text from training_datasets d where d.product_id = ${productId})`));
   const runs = await runsOfProduct(productId);
   for (const runId of runs.slice(0, 20)) {
     const job = await latestTuneJob(runId);
@@ -85,6 +90,21 @@ export async function productAdapterJobs(productId: string, limit = 20): Promise
     .where(and(eq(jobs.productId, productId), eq(jobs.recipe, ADAPTER_RECIPE), eq(jobs.status, "succeeded")))
     .orderBy(desc(jobs.createdAt), desc(jobs.id))
     .limit(limit);
+}
+
+/**
+ * The hourly sweep's fill, so a page never has to write: every job on a run with a product (its tune-product row) or on a
+ * private dataset. Returns how many it filled.
+ */
+export async function fillAllProductIds(): Promise<number> {
+  const fromDatasets = await db().execute(
+    sql`update training_jobs j set product_id = d.product_id from training_datasets d join products p on p.id = d.product_id where j.product_id is null and d.id::text = j.params->>'datasetId' returning j.id`,
+  );
+  const fromRuns = await db().execute(
+    sql`update training_jobs j set product_id = p.id from rate_limits r join products p on p.id::text = split_part(r.key, ':', 3) where r.key like 'tune-product:%' and j.product_id is null and j.recipe = ${ADAPTER_RECIPE} and j.params->>'datasetId' = split_part(r.key, ':', 2) returning j.id`,
+  );
+  const count = (r: unknown) => ((r as { rows?: unknown[] }).rows ?? []).length;
+  return count(fromDatasets) + count(fromRuns);
 }
 
 export async function setJobProduct(jobId: string, productId: string): Promise<void> {

@@ -1,6 +1,7 @@
 import { sweepCaps } from "@/lib/caps/cleanup";
 import { cleanupDocsObjects } from "@/lib/docs/proxy/cleanup";
 import { docsCleanupDeps } from "@/lib/docs/proxy/deps";
+import { registerGpuSweep } from "@/lib/caps/gpu/sweep";
 import { env } from "@/lib/env";
 import { cronAuthorized, runCleanup } from "@/lib/gateway/cleanup";
 import { deleteRateLimitsBefore } from "@/lib/gateway/store";
@@ -14,6 +15,9 @@ import { deleteOlderThan } from "@/lib/storage";
 // responses (after a day) at Meta. With agents on, it also takes connected accounts off products that are off. Vercel Cron calls it with "Authorization: Bearer <CRON_SECRET>".
 export const runtime = "nodejs";
 export const maxDuration = 300;
+
+// Wave 3, unit 11. Here, not in lib/caps/cleanup.ts, so the build's steps don't bundle what it reaches. Off with its flags.
+registerGpuSweep();
 
 export async function GET(req: Request) {
   if (!env.cronSecret) return Response.json({ error: "CRON_SECRET is not set" }, { status: 503 });

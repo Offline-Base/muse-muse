@@ -1,6 +1,8 @@
-import { and, eq, notExists, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, like, notExists, sql } from "drizzle-orm";
 import { requireUser } from "@/lib/auth";
-import { ownModelFor } from "@/lib/caps/gpu/own-model";
+import { dataBlock } from "@/lib/caps/data/brief";
+import { forgetProductTraining } from "@/lib/caps/gpu/forget";
+import { ownDecisionModelFor, ownModelFor } from "@/lib/caps/gpu/own-model";
 import { ownerRowsOf, setJobProduct } from "@/lib/caps/gpu/store";
 import type { TrainDeps } from "@/lib/caps/gpu/train";
 import { db, schema } from "@/lib/db/client";
@@ -31,6 +33,12 @@ export function trainDeps(): TrainDeps {
       return row ?? null;
     },
     ownModel: ownModelFor,
+    ownDecisionModel: (productId, ask) => ownDecisionModelFor(productId, ask),
+    async personalCollections(productId) {
+      const builds = schema.builds;
+      const [row] = await db().select({ brief: builds.brief }).from(builds).where(and(eq(builds.productId, productId), isNotNull(builds.brief))).orderBy(desc(builds.startedAt)).limit(1);
+      return (dataBlock(row?.brief)?.collections ?? []).filter((c) => c.personal).map((c) => c.name);
+    },
     async openRun(productId) {
       for (const runId of (await runsOfProduct(productId)).slice(0, 20)) {
         const [dataset, job] = await Promise.all([getDataset(runId), latestTuneJob(runId)]);
@@ -39,8 +47,8 @@ export function trainDeps(): TrainDeps {
       return null;
     },
     ownerRows: ownerRowsOf,
-    async saveChatDataset({ title, task, rows, createdBy }) {
-      const dataset = await createDataset({ title, task, requested: requested(rows.length), writerModel: PERSON_WRITER, createdBy });
+    async saveChatDataset({ title, task, rows, createdBy, productId }) {
+      const dataset = await createDataset({ title, task, requested: requested(rows.length), writerModel: PERSON_WRITER, createdBy, productId });
       const system = datasetSystemPrompt(task);
       const train: TrainExample[] = rows.map((r) => ({
         messages: [
@@ -54,8 +62,8 @@ export function trainDeps(): TrainDeps {
       if (!done) throw new Error("The dataset couldn't be finished.");
       return { id: done.id };
     },
-    async saveDecisionDataset({ title, checked, createdBy }) {
-      const dataset = await createDecisionDataset({ title, spec: checked.spec, rows: checked.rows, createdBy });
+    async saveDecisionDataset({ title, checked, createdBy, productId }) {
+      const dataset = await createDecisionDataset({ title, spec: checked.spec, rows: checked.rows, createdBy, productId });
       return { id: dataset.id };
     },
     /** Only a dataset nothing has trained on yet: one whose run couldn't start. */
@@ -64,11 +72,14 @@ export function trainDeps(): TrainDeps {
       await db()
         .delete(datasets)
         .where(and(eq(datasets.id, id), notExists(db().select({ one: sql`1` }).from(jobs).where(sql`${jobs.params}->>'datasetId' = ${id}`))));
+      // The run's product row, if the dataset went with it. A dataset a job trained on stays, and so does its row.
+      if (!(await getDataset(id))) await db().delete(schema.rateLimits).where(like(schema.rateLimits.key, `tune-product:${id}:%`));
     },
     startRun: ({ datasetId, callerId, productId }) => startTuneRun({ datasetId, callerId, productId }),
     launch: launchJob,
     setJobProduct,
     reserveCounter,
     adjustCounter,
+    forget: forgetProductTraining,
   };
 }

@@ -6,7 +6,7 @@
  */
 import assert from "node:assert/strict";
 import { beforeEach, describe, it } from "node:test";
-import { handleProductTrain, TRAIN_LIMITS, type TrainDeps } from "@/lib/caps/gpu/train";
+import { handleProductTrain, handleProductTrainForget, TRAIN_LIMITS, type TrainDeps } from "@/lib/caps/gpu/train";
 import { DECIDE_MODE, validateParams, type TrainJobRow } from "@/lib/train/logic";
 import { recipeById } from "@/lib/train/recipes";
 import { TuneStartError } from "@/lib/train/tune/start";
@@ -31,6 +31,9 @@ function deps(over: Partial<TrainDeps> = {}): TrainDeps {
     user: async () => ({ id: OWNER, email: "maker@example.com", isAdmin: false }),
     product: async () => PRODUCT,
     ownModel: async () => null,
+    ownDecisionModel: async () => null,
+    personalCollections: async () => [],
+    forget: async () => 1,
     openRun: async () => null,
     ownerRows: async (productId, collections, limit) => {
       asked.push({ productId, collections, limit });
@@ -96,8 +99,18 @@ describe("who may train", () => {
     assert.equal(saved.length, 0);
   });
 
-  it("lets an admin in", async () => {
-    assert.equal((await train(deps({ user: async () => ({ id: "admin", email: "a@example.com", isAdmin: true }) }))).status, 201);
+  it("doesn't let an admin train on someone else's rows, or read them", async () => {
+    const admin = async () => ({ id: "admin", email: "a@example.com", isAdmin: true });
+    const res = await train(deps({ user: admin, ownerRows: async () => assert.fail("read the rows") }));
+    assert.equal(res.status, 403);
+    assert.equal((await json(res)).code, "not_owner");
+    assert.equal(saved.length, 0);
+  });
+
+  it("lets an admin train on a product they own, outside the builder's count", async () => {
+    const d = deps({ user: async () => ({ id: OWNER, email: "a@example.com", isAdmin: true }) });
+    assert.equal((await train(d)).status, 201);
+    assert.ok(!Object.keys(counters).some((k) => k.startsWith("train-builder-day")));
   });
 
   it("needs a live product, and says so when TUNE_COMPOSER is off, before saving anything", async () => {
@@ -248,5 +261,97 @@ describe("a decision run", () => {
     const res = await train(d, body);
     assert.equal(res.status, 429);
     assert.equal(launches.length, 1);
+  });
+});
+
+describe("reusing a model, by its kind", () => {
+  const labels = ["approve", "deny"];
+  const decisionRows = (n: number) => Array.from({ length: n }, (_, i) => ({ collection: "tickets", data: { input: `Made-up ticket number ${i} about topic ${i * 7}`, label: labels[i % 2]! } }));
+  const body = { collections: ["tickets"], confirm: true, decision: { question: "Should this ticket be approved?", labels } };
+
+  it("a decision request isn't answered with the product's chat model", async () => {
+    const res = await train(deps({ ownModel: async () => ({ adapterJobId: "chat-1", trainChannel: 0 }), ownerRows: async () => decisionRows(60) }), body);
+    assert.equal(res.status, 201);
+    assert.equal((await json(res)).kind, "decision");
+    assert.equal(launches.length, 1);
+  });
+
+  it("a decision request reuses a passing decision model on the same question and labels", async () => {
+    const asked: unknown[] = [];
+    const res = await train(deps({ ownDecisionModel: async (_p, ask) => (asked.push(ask), { adapterJobId: "decide-1" }) }), body);
+    assert.equal(res.status, 200);
+    const got = await json(res);
+    assert.equal(got.reused, true);
+    assert.equal(got.adapterJobId, "decide-1");
+    assert.deepEqual(asked, [{ question: "Should this ticket be approved?", labels }]);
+    assert.equal(launches.length, 0);
+  });
+
+  it("a chat request isn't answered with a decision model", async () => {
+    const res = await train(deps({ ownDecisionModel: async () => ({ adapterJobId: "decide-1" }) }));
+    assert.equal(res.status, 201);
+    assert.equal((await json(res)).kind, "chat");
+  });
+});
+
+describe("a collection that can hold personal details", () => {
+  it("is refused, before a row is read", async () => {
+    const res = await train(deps({ personalCollections: async () => ["faq"], ownerRows: async () => assert.fail("read the rows") }));
+    assert.equal(res.status, 422);
+    const got = await json(res);
+    assert.equal(got.code, "personal_data");
+    assert.deepEqual(got.collections, ["faq"]);
+    assert.equal(saved.length, 0);
+  });
+});
+
+describe("what a failed start leaves behind", () => {
+  const labels = ["approve", "deny"];
+  const decisionRows = (n: number) => Array.from({ length: n }, (_, i) => ({ collection: "tickets", data: { input: `Made-up ticket number ${i} about topic ${i * 7}`, label: labels[i % 2]! } }));
+  const body = { collections: ["tickets"], confirm: true, decision: { question: "Should this ticket be approved?", labels } };
+  const taken = () => Object.values(counters).reduce((n, c) => n + c, 0);
+
+  it("a decision run that throws gives back both the builder's run and the product's day", async () => {
+    for (const over of [{ saveDecisionDataset: async () => assert.fail("save") }, { startRun: async () => assert.fail("start") }, { launch: async () => assert.fail("launch") }]) {
+      counters = {};
+      await assert.rejects(train(deps({ ownerRows: async () => decisionRows(60), ...over } as Partial<TrainDeps>), body));
+      assert.equal(taken(), 0, "both counts back");
+    }
+  });
+
+  it("a chat run whose workflow couldn't start says so, and keeps nothing", async () => {
+    const res = await train(deps({ startRun: async (i) => ({ runId: i.datasetId, href: "/x", trainingStarted: false }) }));
+    assert.equal(res.status, 503);
+    assert.equal((await json(res)).code, "start_failed");
+    assert.equal(taken(), 0);
+    assert.deepEqual(removed, ["dataset-1"]);
+  });
+
+  it("a job's product failing to save doesn't answer 500 or give anything back: the GPU is running", async () => {
+    const res = await train(deps({ ownerRows: async () => decisionRows(60), setJobProduct: async () => assert.fail("database") }), body);
+    assert.equal(res.status, 201);
+    assert.equal((await json(res)).jobId, "job-1");
+    assert.deepEqual(removed, []);
+    assert.equal(taken(), 2);
+  });
+
+  it("says the dataset belongs to the product when it saves one", async () => {
+    let got: { productId?: string } = {};
+    await train(deps({ saveChatDataset: async (i) => ((got = i), { id: "d" }) }));
+    assert.equal(got.productId, PRODUCT.id);
+  });
+});
+
+describe("deleting what training kept", () => {
+  it("is the owner's alone", async () => {
+    const forgot: string[] = [];
+    const forget = async (id: string) => (forgot.push(id), 1);
+    assert.equal((await handleProductTrainForget("corner", deps({ on: () => false, forget }))).status, 404);
+    assert.equal((await handleProductTrainForget("corner", deps({ forget, user: async () => ({ id: "admin", email: "a@example.com", isAdmin: true }) }))).status, 403);
+    assert.deepEqual(forgot, []);
+    const res = await handleProductTrainForget("corner", deps({ forget }));
+    assert.equal(res.status, 200);
+    assert.equal((await json(res)).removed, 1);
+    assert.deepEqual(forgot, [PRODUCT.id]);
   });
 });

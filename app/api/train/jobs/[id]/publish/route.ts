@@ -146,6 +146,9 @@ export const POST = route(async (req: Request, { params }: Ctx) => {
   if (job.recipe === QUANT_RECIPE) return publishGguf(job);
   const problem = hubJobProblem(job);
   if (problem) return errorJson(409, "not_publishable", { reason: problem });
+  // Wave 3, unit 11: a product owner's private rows never go to the Hub.
+  const trainedOn = typeof job.params?.datasetId === "string" ? await getDataset(job.params.datasetId) : null;
+  if (trainedOn?.productId) return errorJson(409, "not_publishable", { reason: "It was trained on a product owner's private rows, so it can't be published." });
   const off = env.hubOffReason;
   if (off) return errorJson(503, "hub_off", { reason: off });
   if (hubBusy(job.hub, Date.now())) return errorJson(409, "publishing");

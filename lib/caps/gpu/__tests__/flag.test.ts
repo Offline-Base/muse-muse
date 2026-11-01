@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { capBuildEnv, capDeployEnv } from "@/lib/caps/env";
-import { gpuProofLines } from "@/lib/caps/gpu/judge";
+import { GPU_PROOF_FRAME, gpuProofLines } from "@/lib/caps/gpu/judge";
 import { capsJudgeNotes } from "@/lib/caps/judge";
 import { capsBuildLines, capsRefineLines } from "@/lib/caps/render";
 import { env } from "@/lib/env";
@@ -61,12 +61,14 @@ describe("with GPU_GLIMMER_SHARED on", () => {
     assert.equal(capBuildEnv(GLIMMER_BRIEF), "GLIMMER_SHARED=1\nGLIMMER_MODEL=muse-glimmer\n");
   });
 
-  it("the deploy sets the helper's own variables to the gateway, with the live token", () => {
-    assert.deepEqual(capDeployEnv(GLIMMER_BRIEF, "live_tok"), {
-      GLIMMER_URL: "https://platform.example/api/gateway/glimmer/v1",
-      GLIMMER_API_KEY: "live_tok",
-      GLIMMER_MODEL: "muse-glimmer",
-    });
+  it("the deploy says the endpoint is on, and never sets GLIMMER_URL, so a direct glimmer() call keeps falling to Muse Wonder", () => {
+    assert.deepEqual(capDeployEnv(GLIMMER_BRIEF, "live_tok"), { GLIMMER_SHARED: "1", GLIMMER_MODEL: "muse-glimmer" });
+  });
+
+  it("a refine doesn't tell an older product to use a helper it hasn't got", () => {
+    const text = capsRefineLines(GLIMMER_BRIEF).join("\n");
+    assert.match(text, /If `lib\/meta\/glimmer.ts` has `askGlimmer`/);
+    assert.match(text, /If it doesn't/);
   });
 
   it("the writer gets General's line and the demo-window line, and the catalog's cache keeps them apart", () => {
@@ -91,9 +93,13 @@ describe("with GPU_GLIMMER_SHARED on", () => {
     assert.match(capsJudgeNotes(GLIMMER_BRIEF), /Glimmer's answers in this test are samples/);
   });
 
-  it("the gateway's record gives the judge both checks", () => {
-    assert.deepEqual(gpuProofLines({ "glimmer-canned": 2 }), ["- glimmer, reply: passed", "- glimmer, closed-window: failed"]);
-    assert.deepEqual(gpuProofLines({ "glimmer-canned": 2, "glimmer-closed": 1 }), ["- glimmer, reply: passed", "- glimmer, closed-window: passed"]);
+  it("the gateway's record says what was asked, and never that a check passed", () => {
+    const some = gpuProofLines({ "glimmer-canned": 2 });
+    assert.match(some[0]!, /sample Glimmer reply: yes/);
+    assert.match(some[1]!, /closed window: no/);
+    assert.match(gpuProofLines({ "glimmer-canned": 2, "glimmer-closed": 1 })[1]!, /closed window: yes/);
+    for (const line of [...some, GPU_PROOF_FRAME]) assert.ok(!/passed|failed|already decided/.test(line), line);
+    assert.ok(some.every((l) => l.includes("not a check of the screen")));
   });
 
   it("on Vercel it waits for a snapshot from wave 3: none, or an unknown id, tells builds nothing", () => {
@@ -102,6 +108,30 @@ describe("with GPU_GLIMMER_SHARED on", () => {
     assert.equal(env.gpuGlimmerForBuilds, false);
     assert.deepEqual(allowedModelsFor(GLIMMER_BRIEF), []);
     assert.deepEqual(capsBuildLines(GLIMMER_BRIEF), []);
+  });
+
+  it("a snapshot listing core but not gpu has no askGlimmer yet, so builds aren't told about it", async () => {
+    const { SNAPSHOTS } = await import("@/lib/sandbox/snapshots");
+    const entry = (capOverlays: string[]) => ({ createdAt: "2026-11-02T00:00:00Z", templateHash: "x", capOverlays });
+    SNAPSHOTS["snap_before"] = entry(["core", "data"]);
+    SNAPSHOTS["snap_after"] = entry(["core", "data", "gpu"]);
+    try {
+      process.env.VERCEL = "1";
+      process.env.BUILDER_SNAPSHOT_ID = "snap_before";
+      assert.equal(env.gpuGlimmerForBuilds, false);
+      process.env.BUILDER_SNAPSHOT_ID = "snap_after";
+      assert.equal(env.gpuGlimmerForBuilds, true);
+    } finally {
+      delete SNAPSHOTS["snap_before"];
+      delete SNAPSHOTS["snap_after"];
+    }
+  });
+
+  it("the overlay that marks it is real, and empty, so a snapshot from this checkout lists gpu by itself", async () => {
+    const { capOverlaysIn, readCapFiles } = await import("@/lib/sandbox/setup");
+    const caps = await readCapFiles(new URL("../../../../template", import.meta.url).pathname);
+    assert.ok(capOverlaysIn(caps).includes("gpu"));
+    assert.deepEqual(caps.filter((f) => f.path.startsWith("caps/gpu/")).map((f) => f.path), ["caps/gpu/deps.json", "caps/gpu/platform-files.json"]);
   });
 });
 
@@ -116,6 +146,27 @@ describe("the admin and train routes with their flags off", () => {
     assert.equal((await windows.POST(new Request("https://x.example/", { method: "POST", body: "{}" }))).status, 404);
     assert.equal((await one.DELETE(new Request("https://x.example/", { method: "DELETE" }), { params: Promise.resolve({ id: "x" }) })).status, 404);
     assert.equal((await train.POST(new Request("https://x.example/", { method: "POST", body: "{}" }), { params: Promise.resolve({ slug: "x" }) })).status, 404);
+    assert.equal((await train.DELETE(new Request("https://x.example/", { method: "DELETE" }), { params: Promise.resolve({ slug: "x" }) })).status, 404);
+  });
+});
+
+describe("the sweep and the takedown hook", () => {
+  it("have nothing to do with their flags off", async () => {
+    const { CAP_CLEANUPS, sweepCaps, resetCapCleanups } = await import("@/lib/caps/cleanup");
+    const { registerGpuSweep } = await import("@/lib/caps/gpu/sweep");
+    delete process.env.GPU_GLIMMER_SHARED;
+    delete process.env.GPU_TRAIN_ON_DATA;
+    resetCapCleanups();
+    registerGpuSweep();
+    assert.equal(await sweepCaps(), null, "the cron's answer is today's");
+    assert.equal(CAP_CLEANUPS.find((c) => c.cap === "gpu")?.productOff, undefined);
+    assert.equal(CAP_CLEANUPS.find((c) => c.cap === "gpu")?.sweep, undefined, "not in the registry the build's steps import");
+    resetCapCleanups();
+  });
+
+  it("the cron route registers the sweep", () => {
+    const route = readFileSync(new URL("../../../../app/api/cron/cleanup/route.ts", import.meta.url), "utf8");
+    assert.match(route, /^registerGpuSweep\(\);$/m);
   });
 });
 
@@ -123,6 +174,7 @@ describe("the skill", () => {
   it("keeps its new text in one marked block, with no em dashes", () => {
     const skill = readFileSync(new URL("../../../../template/.agents/skills/meta-glimmer/SKILL.md", import.meta.url), "utf8");
     assert.match(skill, /<!-- Wave 3, unit 11: the hosted Glimmer -->[\s\S]*askGlimmer[\s\S]*<!-- End wave 3, unit 11 -->/);
+    assert.match(skill.slice(skill.indexOf("<!-- Wave 3, unit 11")), /Never call `glimmer\(\)` for this/);
     assert.ok(!skill.includes("—"));
   });
 });

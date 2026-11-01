@@ -1044,6 +1044,15 @@ describe("publishing to the Hugging Face Hub", { skip: canMock ? false : "needs 
         params: Promise.resolve({ id: jobId }),
       });
 
+    it("never publishes a job trained on a product owner's private rows", async () => {
+      const owned = await store.createDataset({ title: "Private", task: "t", requested: 20, writerModel: "person", productId: "cccccccc-0000-4000-8000-000000000011" });
+      const job = await makeJob({ params: { datasetId: owned.id, dryRun: 0, publish: 1 } });
+      await judged(job);
+      const res = await req(job);
+      assert.equal(res.status, 409);
+      assert.match(((await res.json()) as { reason: string }).reason, /private rows/);
+    });
+
     it("refuses what can't be published, with the reason", async () => {
       const running = await makeJob();
       const res = await req(running);

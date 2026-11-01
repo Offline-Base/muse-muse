@@ -6,7 +6,7 @@
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { ownModelFor, type OwnModelDeps } from "@/lib/caps/gpu/own-model";
+import { ownDecisionModelFor, ownModelFor, type OwnModelDeps } from "@/lib/caps/gpu/own-model";
 
 const R30B = "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit";
 const PASS = { items: 20, tunedWins: 16, baseWins: 3, ties: 1, avgTunedScore: 8.5, avgBaseScore: 3.1 };
@@ -28,6 +28,10 @@ function deps(list: Job[]): OwnModelDeps & { filled: string[] } {
         metrics: j.cache === false ? {} : { cache_used: "yes", adapter_dir: `/cache/models/${id}` },
       };
     }) as unknown as OwnModelDeps["source"],
+    decisionModel: (async (id: string) => {
+      const j = list.find((x) => x.id === id)!;
+      return j.params?.mode === "decide" ? { id, question: "Approve this?", labels: [{ id: "yes", name: "Yes", description: "" }, { id: "no", name: "No", description: "" }] } : null;
+    }) as unknown as OwnModelDeps["decisionModel"],
   };
 }
 
@@ -51,5 +55,25 @@ describe("ownModelFor", () => {
 
   it("never returns a decision model as a chat model", async () => {
     assert.equal(await ownModelFor("p1", new Date(), deps([{ id: "a", evalSummary: PASS, params: { mode: "decide" } }])), null);
+  });
+});
+
+describe("ownDecisionModelFor", () => {
+  const SAME = { question: "Approve this?", labels: ["no", "YES"] };
+  const decide = { mode: "decide" };
+
+  it("finds a passing decide job on the same question and labels, and fills first", async () => {
+    const d = deps([{ id: "fail", evalSummary: FAIL, params: decide }, { id: "pass", evalSummary: PASS, params: decide }]);
+    assert.deepEqual(await ownDecisionModelFor("p1", SAME, d), { adapterJobId: "pass" });
+    assert.deepEqual(d.filled, ["p1"]);
+  });
+
+  it("is null for another question, other labels, a chat model, an unjudged one, or one not on r30b", async () => {
+    const pass = [{ id: "pass", evalSummary: PASS, params: decide }];
+    assert.equal(await ownDecisionModelFor("p1", { ...SAME, question: "Reject this?" }, deps(pass)), null);
+    assert.equal(await ownDecisionModelFor("p1", { ...SAME, labels: ["Yes", "Maybe"] }, deps(pass)), null);
+    assert.equal(await ownDecisionModelFor("p1", SAME, deps([{ id: "chat", evalSummary: PASS }])), null);
+    assert.equal(await ownDecisionModelFor("p1", SAME, deps([{ id: "unjudged", params: decide }])), null);
+    assert.equal(await ownDecisionModelFor("p1", SAME, deps([{ id: "plain", evalSummary: PASS, params: { mode: "decide", baseModel: "unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit" } }])), null);
   });
 });

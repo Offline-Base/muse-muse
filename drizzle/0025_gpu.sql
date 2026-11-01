@@ -13,6 +13,7 @@ CREATE TABLE "glimmer_windows" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+ALTER TABLE "training_datasets" ADD COLUMN "product_id" uuid;--> statement-breakpoint
 ALTER TABLE "training_jobs" ADD COLUMN "product_id" uuid;--> statement-breakpoint
 ALTER TABLE "glimmer_windows" ADD CONSTRAINT "glimmer_windows_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "glimmer_windows" ADD CONSTRAINT "glimmer_windows_adapter_job_id_training_jobs_id_fk" FOREIGN KEY ("adapter_job_id") REFERENCES "public"."training_jobs"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint

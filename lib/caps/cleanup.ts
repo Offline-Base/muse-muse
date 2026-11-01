@@ -2,6 +2,7 @@ import { clearConnectBuild, sweepConnect } from "@/lib/caps/connect/cleanup";
 import { clearCodeBuildRuns, sweepCodeBuildRuns } from "@/lib/caps/code/cleanup";
 import { clearBuildNamespace, sweepData } from "@/lib/caps/data/store";
 import { filesBuildEnded, filesProductOff, filesSweep } from "@/lib/caps/files/cleanup";
+import { gpuProductOff } from "@/lib/caps/gpu/forget";
 import type { CapId } from "@/lib/caps/ids";
 import { env } from "@/lib/env";
 
@@ -75,13 +76,13 @@ export const CAP_CLEANUPS: CapCleanup[] = [
       return env.servedCaps.includes("code") ? sweepCodeBuildRuns : undefined;
     },
   },
-  // Unit 11: a demo window past its end stops its GPU, and one whose GPU is down settles its reservation. Only while the
-  // shared endpoint is on. A window that outlives the flag still has its job's own deadline, and settles when it's back on.
+  // Unit 11: a taken-down product's training rows go. Only while training on data is on. Its hourly sweep isn't here: it
+  // reaches lib/train/launch and its workflow, which the build's steps must not bundle, and even a dynamic import would
+  // bring them in. The cron route registers it (lib/caps/gpu/sweep.ts).
   {
     cap: "gpu",
-    get sweep() {
-      // Imported only here: it reaches lib/train/launch and its workflow, which the build's steps must not bundle.
-      return env.gpuGlimmerShared ? (now: Date) => import("@/lib/caps/gpu/sweep").then((m) => m.sweepGlimmerWindows(now)) : undefined;
+    get productOff() {
+      return env.gpuTrainOnData ? gpuProductOff : undefined;
     },
   },
 ];

@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { COLLECTION_NAME } from "@/lib/caps/data/types";
 import type { OwnModel } from "@/lib/caps/gpu/types";
-import { checkDecisionUpload, type DecisionUploadInput } from "@/lib/train/decision-datasets";
+import { checkDecisionUpload, checkLabels, type DecisionUploadInput } from "@/lib/train/decision-datasets";
 import { ADAPTER_RECIPE, DECIDE_MODE } from "@/lib/train/logic";
 import type { LaunchInput, LaunchResult } from "@/lib/train/launch";
 import { objectRow } from "@/lib/train/tune/examples";
@@ -16,7 +16,12 @@ import { builderTier, tierMayUseBuilderCaps } from "@/lib/trust/tiers";
  * or user rows, and only as an explicit action of the owner's (`confirm`). Rows of {prompt, answer} under the usual names
  * train a chat model. With `decision: {question, labels}`, rows of {input, label} train a decision model in General's
  * {state, question, options} format, which the product then calls through {GATEWAY_URL}/decide. A product that already has a
- * model that passed reuses it unless the owner says `again`, so no GPU starts for nothing.
+ * model of that kind that passed (for a decision model, on the same question and labels) reuses it unless the owner says
+ * `again`, so no GPU starts for nothing.
+ *
+ * The dataset is private: it and its job never show on the Lab pages (training_datasets.product_id). A collection the brief
+ * marks personal is refused, and DELETE on the same address removes what training kept. Only the product's owner may do
+ * either: an admin isn't the owner of someone else's rows.
  */
 
 export const TRAIN_LIMITS = {
@@ -54,17 +59,24 @@ export interface TrainDeps {
   user(): Promise<TrainUser>;
   product(slug: string): Promise<TrainProduct | null>;
   ownModel(productId: string, now: Date): Promise<OwnModel | null>;
+  /** The product's passing decision model on this question and these labels, or null. */
+  ownDecisionModel(productId: string, ask: { question: string; labels: string[] }): Promise<{ adapterJobId: string } | null>;
+  /** The product's collections its brief marks as able to hold personal details. */
+  personalCollections(productId: string): Promise<string[]>;
   /** The product's run still writing or training, or null. */
   openRun(productId: string): Promise<{ runId: string; href: string } | null>;
   ownerRows(productId: string, collections: readonly string[], limit: number): Promise<Array<{ collection: string; data: unknown }>>;
-  saveChatDataset(input: { title: string; task: string; rows: ExampleRow[]; createdBy: string }): Promise<{ id: string }>;
-  saveDecisionDataset(input: { title: string; checked: Extract<ReturnType<typeof checkDecisionUpload>, { ok: true }>; createdBy: string }): Promise<{ id: string }>;
+  saveChatDataset(input: { title: string; task: string; rows: ExampleRow[]; createdBy: string; productId: string }): Promise<{ id: string }>;
+  saveDecisionDataset(input: { title: string; checked: Extract<ReturnType<typeof checkDecisionUpload>, { ok: true }>; createdBy: string; productId: string }): Promise<{ id: string }>;
   removeDataset(id: string): Promise<void>;
-  startRun(input: { datasetId: string; callerId: string; productId: string }): Promise<{ runId: string; href: string }>;
+  /** `trainingStarted: false`: the run's workflow couldn't start, so nothing will train it. */
+  startRun(input: { datasetId: string; callerId: string; productId: string }): Promise<{ runId: string; href: string; trainingStarted?: boolean }>;
   launch(input: LaunchInput, caller: { userId: string }): Promise<LaunchResult>;
   setJobProduct(jobId: string, productId: string): Promise<void>;
   reserveCounter(key: string, windowStart: Date, amount: number, limit: number): Promise<number | null>;
   adjustCounter(key: string, windowStart: Date, delta: number): Promise<void>;
+  /** Removes the rows and answers training kept for this product, and stops its jobs. Returns how many datasets. */
+  forget(productId: string): Promise<number>;
   now?(): Date;
 }
 
@@ -90,7 +102,8 @@ const LAUNCH_WORDS: Record<string, string> = {
   no_capacity: "No GPU is free right now. Try again soon.",
 };
 
-export async function handleProductTrain(req: Request, slug: string, deps: TrainDeps): Promise<Response> {
+/** Who's asking and for which product, or the refusal. Both POST and DELETE start here. */
+async function owner(slug: string, deps: TrainDeps): Promise<{ user: TrainUser; product: TrainProduct } | Response> {
   if (!deps.on()) return answer(404, "not_found", "Not found.");
   let user: TrainUser;
   try {
@@ -104,7 +117,22 @@ export async function handleProductTrain(req: Request, slug: string, deps: Train
   if (user.openAccess || !tierMayUseBuilderCaps(tier)) return answer(403, "sign_in_required", "Sign in first. Everyone shares the guest account, so it can't tell whose data this is.");
   const product = await deps.product(slug);
   if (!product) return answer(404, "not_found", "Not found.");
-  if (!user.isAdmin && user.id !== product.ownerId) return answer(403, "not_owner", "Only the product's owner can train on its data.");
+  if (user.id !== product.ownerId) return answer(403, "not_owner", "Only the product's owner can train on its data.");
+  return { user, product };
+}
+
+/** DELETE: the owner asks for what training kept to go: the rows, the test answers, and its models stop answering. */
+export async function handleProductTrainForget(slug: string, deps: TrainDeps): Promise<Response> {
+  const who = await owner(slug, deps);
+  if (who instanceof Response) return who;
+  const removed = await deps.forget(who.product.id);
+  return Response.json({ removed, message: removed ? "Your training rows and test answers are deleted, and models trained on them won't answer any more." : "Nothing was kept from training on this product." });
+}
+
+export async function handleProductTrain(req: Request, slug: string, deps: TrainDeps): Promise<Response> {
+  const who = await owner(slug, deps);
+  if (who instanceof Response) return who;
+  const { user, product } = who;
   if (product.takenDownAt || (product.status !== "live" && product.status !== "partial")) return answer(409, "not_live", "This product isn't live, so it has no data to train on.");
   // startTuneRun needs TUNE_COMPOSER. Said here, before a dataset is saved.
   if (!deps.tuneOn()) return answer(503, "tune_off", "Training runs aren't switched on here yet.");
@@ -131,10 +159,13 @@ export async function handleProductTrain(req: Request, slug: string, deps: Train
   }
   const decision = body.decision as { question?: unknown; labels?: unknown } | undefined;
   if (decision !== undefined && (!decision || typeof decision !== "object" || Array.isArray(decision))) return answer(400, "invalid_arguments", "decision must be {question, labels}.");
+  const personal = new Set(await deps.personalCollections(product.id));
+  const held = collections.filter((c) => personal.has(c));
+  if (held.length) return answer(422, "personal_data", `${held.join(", ")} can hold personal details, so it can't be used for training. Name a collection without them.`, { collections: held });
 
   const now = deps.now?.() ?? new Date();
   if (body.again !== true) {
-    const own = await deps.ownModel(product.id, now);
+    const own = decision ? await decisionReuse(product.id, decision, deps) : await deps.ownModel(product.id, now);
     if (own) return Response.json({ reused: true, adapterJobId: own.adapterJobId, message: "This product already has its own model that passed, so no GPU was started. Send again: true to train another." });
   }
   const open = await deps.openRun(product.id);
@@ -176,6 +207,7 @@ export async function handleProductTrain(req: Request, slug: string, deps: Train
   const giveBack = async () => {
     if (countsBuilder) await deps.adjustCounter(builderKey, dayEnd, -1).catch((e) => console.error("[gpu/train] builder day", e));
   };
+  let giveDayBack = async () => {};
 
   let datasetId: string | null = null;
   try {
@@ -186,8 +218,8 @@ export async function handleProductTrain(req: Request, slug: string, deps: Train
         await giveBack();
         return startRefusal(new TuneStartError(429, "product_daily", { retryAfterSeconds: Math.max(1, Math.ceil((day.until.getTime() - now.getTime()) / 1000)) }));
       }
-      const giveDayBack = () => deps.adjustCounter(day.key, day.until, -1).catch((e) => console.error("[gpu/train] product day", e));
-      datasetId = (await deps.saveDecisionDataset({ title, checked, createdBy: user.id })).id;
+      giveDayBack = () => deps.adjustCounter(day.key, day.until, -1).catch((e) => console.error("[gpu/train] product day", e));
+      datasetId = (await deps.saveDecisionDataset({ title, checked, createdBy: user.id, productId: product.id })).id;
       const run = await deps.startRun({ datasetId, callerId: user.id, productId: product.id });
       const started = await deps.launch({ recipe: ADAPTER_RECIPE, title, params: { datasetId, mode: DECIDE_MODE, publish: 0 } }, { userId: user.id });
       if (!started.ok) {
@@ -197,17 +229,34 @@ export async function handleProductTrain(req: Request, slug: string, deps: Train
         const words = started.status === 400 ? started.code : (LAUNCH_WORDS[started.code] ?? "The GPU couldn't start. Try again later.");
         return answer(started.status, started.status === 400 ? "invalid_arguments" : started.code, words);
       }
-      await deps.setJobProduct(started.job.id, product.id);
-      return Response.json({ ...run, jobId: started.job.id, rows: checked.spec.split.train + checked.spec.split.dev + checked.spec.split.test, kind: "decision" }, { status: 201 });
+      // The GPU is running from here, so nothing below gives a count back. The job is found by its dataset either way.
+      await deps.setJobProduct(started.job.id, product.id).catch((e) => console.error("[gpu/train] job's product", e));
+      const { trainingStarted: _workflow, ...reply } = run;
+      return Response.json({ ...reply, jobId: started.job.id, rows: checked.spec.split.train + checked.spec.split.dev + checked.spec.split.test, kind: "decision" }, { status: 201 });
     }
     const task = typeof body.task === "string" && body.task.trim() ? body.task.trim() : `Answer for ${product.name} the way these examples do.`;
-    datasetId = (await deps.saveChatDataset({ title, task, rows: chatRows, createdBy: user.id })).id;
-    const run = await deps.startRun({ datasetId, callerId: user.id, productId: product.id });
+    datasetId = (await deps.saveChatDataset({ title, task, rows: chatRows, createdBy: user.id, productId: product.id })).id;
+    const { trainingStarted, ...run } = await deps.startRun({ datasetId, callerId: user.id, productId: product.id });
+    if (trainingStarted === false) {
+      // startTuneRun gave the product's day back. A builder can't reach the room's Start training, so this has to say so.
+      await giveBack();
+      await deps.removeDataset(datasetId).catch((e) => console.error("[gpu/train] remove dataset", e));
+      return answer(503, "start_failed", "The training run couldn't start. Try again.");
+    }
     return Response.json({ ...run, rows: chatRows.length, kind: "chat" }, { status: 201 });
   } catch (err) {
     await giveBack();
+    await giveDayBack();
     if (datasetId) await deps.removeDataset(datasetId).catch((e) => console.error("[gpu/train] remove dataset", e));
     if (err instanceof TuneStartError) return startRefusal(err);
     throw err;
   }
+}
+
+/** A passing decision model on this question and these labels. Malformed ones reuse nothing, and the upload's check says why. */
+async function decisionReuse(productId: string, decision: { question?: unknown; labels?: unknown }, deps: TrainDeps): Promise<{ adapterJobId: string } | null> {
+  if (typeof decision.question !== "string") return null;
+  const { labels, problems } = checkLabels(decision.labels);
+  if (problems.length) return null;
+  return deps.ownDecisionModel(productId, { question: decision.question.trim(), labels: labels.map((l) => l.name) });
 }

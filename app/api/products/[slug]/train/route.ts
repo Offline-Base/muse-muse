@@ -1,4 +1,4 @@
-import { handleProductTrain } from "@/lib/caps/gpu/train";
+import { handleProductTrain, handleProductTrainForget } from "@/lib/caps/gpu/train";
 import { trainDeps } from "@/lib/caps/gpu/train-deps";
 
 // "Train on my data" (docs/CAPABILITIES.md, section 17, decision 12): the product's signed-in builder starts one run on
@@ -9,4 +9,10 @@ export const maxDuration = 60;
 export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   return handleProductTrain(req, slug, trainDeps());
+}
+
+/** The owner asks for what training kept to be deleted. */
+export async function DELETE(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  return handleProductTrainForget(slug, trainDeps());
 }

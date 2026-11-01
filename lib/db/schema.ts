@@ -440,6 +440,13 @@ export const trainingDatasets = pgTable(
      * split is grouped by label in the labels' order (lib/train/decision-datasets.ts). {} for chat datasets.
      */
     decisionRows: jsonb("decision_rows").$type<DecisionRows | Record<string, never>>().notNull().default({}),
+    // ---------- 0025_gpu (wave 3, unit 11) ----------
+    /**
+     * Set on a dataset made from a product owner's own rows ("Train on my data"), which makes it private: it and the jobs
+     * trained on it never show on the public Lab pages. No foreign key on purpose, so it can't turn null and go public
+     * when a product is gone. Null for every other dataset.
+     */
+    productId: uuid("product_id"),
   },
   (t) => [index("training_datasets_created_idx").on(t.createdAt)],
 );

@@ -6,6 +6,7 @@
  */
 import assert from "node:assert/strict";
 import { after, before, describe, it, mock } from "node:test";
+import { eq } from "drizzle-orm";
 import * as realSchema from "@/lib/db/schema";
 
 const canMock = typeof (mock as { module?: unknown }).module === "function";
@@ -101,6 +102,36 @@ describe("the gpu unit's rows", { skip: canMock ? false : "needs --experimental-
     assert.deepEqual(view.devices, []);
     const [other] = await testDb.insert(realSchema.users).values({ email: "other@example.com" }).returning();
     assert.deepEqual((await ownRows.ownModelsOf(other!.id, NOW)).rows, []);
+  });
+
+  it("/models reads a Derivative's base from the job's done metrics, as the window does", async () => {
+    const trainStore = await import("@/lib/train/store");
+    const [job] = await testDb
+      .insert(realSchema.trainingJobs)
+      .values({ recipe: "glimmer-lora", title: "Base only in metrics", status: "succeeded", params: {}, productId, instanceType: "gpu", region: "r", priceCentsPerHour: 100, maxMinutes: 60, maxUsd: 5, instanceName: "n" })
+      .returning();
+    await trainStore.recordEvent(job!.id, { type: "done", metrics: { base_model: "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit" } } as never);
+    const row = (await ownRows.ownModelsOf(userId, NOW)).rows.find((r) => r.jobId === job!.id);
+    assert.equal(row?.sparkOpen, true);
+    await testDb.delete(realSchema.trainingEvents).where(eq(realSchema.trainingEvents.jobId, job!.id));
+    await testDb.delete(realSchema.trainingJobs).where(eq(realSchema.trainingJobs.id, job!.id));
+  });
+
+  it("/models writes nothing, and the hourly fill links a run's job instead", async () => {
+    const runId = "00000000-0000-4000-8000-000000000077";
+    const [job] = await testDb
+      .insert(realSchema.trainingJobs)
+      .values({ recipe: "glimmer-lora", title: "Not linked yet", status: "succeeded", params: { datasetId: runId }, instanceType: "gpu", region: "r", priceCentsPerHour: 100, maxMinutes: 60, maxUsd: 5, instanceName: "n" })
+      .returning();
+    await runStore.saveRunProduct(runId, productId, null);
+    const titles = async () => (await ownRows.ownModelsOf(userId, NOW)).rows.map((r) => r.title);
+    assert.ok(!(await titles()).includes("Not linked yet"));
+    const [still] = await testDb.select().from(realSchema.trainingJobs).where(eq(realSchema.trainingJobs.id, job!.id));
+    assert.equal(still!.productId, null, "a page read wrote nothing");
+    assert.ok((await store.fillAllProductIds()) >= 1);
+    assert.ok((await titles()).includes("Not linked yet"));
+    assert.equal(await store.fillAllProductIds(), 0, "nothing left to fill");
+    await testDb.delete(realSchema.trainingJobs).where(eq(realSchema.trainingJobs.id, job!.id));
   });
 
   it("counts a build's Glimmer calls for the gateway's record", async () => {

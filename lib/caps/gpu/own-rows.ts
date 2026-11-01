@@ -1,6 +1,6 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { isSparkOpenDerivative, verdictFor } from "@/lib/caps/gpu/general";
-import { fillProductIds, openGlimmerWindow } from "@/lib/caps/gpu/store";
+import { openGlimmerWindow } from "@/lib/caps/gpu/store";
 import { db, schema } from "@/lib/db/client";
 import { ADAPTER_RECIPE, DECIDE_MODE, jobMode } from "@/lib/train/logic";
 
@@ -22,16 +22,30 @@ export interface OwnModelsView {
   devices: Array<{ name: string; status: string }>;
 }
 
-/** A signed-in person's own models: jobs trained for products they own, newest first. Reads the database, never a GPU. */
+/**
+ * A signed-in person's own models: jobs trained for products they own, newest first. Reads only, on a public page: never a
+ * GPU, and it writes nothing. A job on a private dataset counts as soon as it exists. A job on any other run counts once
+ * training_jobs.product_id is filled, by ownModelFor or the hourly sweep. What an owner deleted (forget.ts) isn't listed.
+ */
 export async function ownModelsOf(userId: string, now: Date = new Date()): Promise<OwnModelsView> {
   const products = schema.products;
   const jobs = schema.trainingJobs;
-  const mine = await db().select({ id: products.id }).from(products).where(eq(products.ownerId, userId)).orderBy(desc(products.createdAt)).limit(10);
-  await Promise.all(mine.map((p) => fillProductIds(p.id)));
+  const datasets = schema.trainingDatasets;
   const rows = await db()
-    .select({ id: jobs.id, title: jobs.title, params: jobs.params, evalSummary: jobs.evalSummary, recipe: jobs.recipe, status: jobs.status, product: products.name })
+    .select({
+      id: jobs.id,
+      title: jobs.title,
+      params: jobs.params,
+      evalSummary: jobs.evalSummary,
+      recipe: jobs.recipe,
+      status: jobs.status,
+      product: products.name,
+      metrics: sql<Record<string, unknown> | null>`(select e.payload -> 'metrics' from training_events e where e.job_id = ${jobs.id} and e.type = 'done' order by e.id desc limit 1)`,
+      privateStatus: datasets.status,
+    })
     .from(jobs)
-    .innerJoin(products, eq(products.id, jobs.productId))
+    .leftJoin(datasets, and(sql`${datasets.id}::text = ${jobs.params}->>'datasetId'`, sql`${datasets.productId} is not null`))
+    .innerJoin(products, sql`${products.id} = coalesce(${jobs.productId}, ${datasets.productId})`)
     .where(eq(products.ownerId, userId))
     .orderBy(desc(jobs.createdAt))
     .limit(20);
@@ -39,9 +53,9 @@ export async function ownModelsOf(userId: string, now: Date = new Date()): Promi
   return {
     devices: [],
     rows: rows
-      .filter((r) => r.recipe === ADAPTER_RECIPE && !(Number(r.params?.dryRun) >= 1))
+      .filter((r) => r.recipe === ADAPTER_RECIPE && !(Number(r.params?.dryRun) >= 1) && r.privateStatus !== "failed")
       .map((r) => {
-        const sparkOpen = isSparkOpenDerivative({ params: r.params });
+        const sparkOpen = isSparkOpenDerivative({ params: r.params, metrics: r.metrics });
         const verdict = r.evalSummary ? verdictFor(r.evalSummary, sparkOpen) : { passed: false, words: r.status === "succeeded" ? "Not scored yet." : "Still training, or it didn't finish." };
         return {
           jobId: r.id,

@@ -653,7 +653,7 @@ describe("starting training for a run", { skip: canMock ? false : "needs --exper
       // tuneRun couldn't start: nothing started, so the day is given back.
       const first = await dataset();
       failStartOf = "tuneRun";
-      await start.startTuneRun({ datasetId: first, callerId: admin, productId: PRODUCT });
+      assert.equal((await start.startTuneRun({ datasetId: first, callerId: admin, productId: PRODUCT })).trainingStarted, false, "and the caller is told");
       assert.equal(await dayCount(), 0);
 
       await start.startTuneRun({ datasetId: first, callerId: admin, productId: PRODUCT });
@@ -671,6 +671,7 @@ describe("starting training for a run", { skip: canMock ? false : "needs --exper
         return true;
       });
       assert.deepEqual(started, [], "nothing started for the second run");
+      assert.equal(await runStore.readRunProduct(second), null, "and nothing says it's the product's");
       // Another product, or no product, isn't held back.
       await start.startTuneRun({ datasetId: second, callerId: admin });
       assert.deepEqual((started as Array<{ fn: string }>).map((s) => s.fn), ["tuneRun"]);
