@@ -56,8 +56,8 @@ let startRoute: (req: Request, ctx: { params: Promise<{ id: string }> }) => Prom
 let listings: Array<Array<typeof GPU_A100>> = [[GPU_A100]];
 let paused = false;
 let started: Array<{ fn: string; args: unknown[] }> = [];
-/** When set, start() refuses a training job's workflow once, as a workflow runtime that can't start it would. */
-let failTrainStart = false;
+/** When set, start() refuses this workflow once, as a workflow runtime that can't start it would. */
+let failStartOf: string | null = null;
 let sleeps: number[] = [];
 /** Runs on each fake sleep, before the clock moves: a test's way to change the world while the workflow waits. */
 let onSleep: (n: number) => Promise<void> = async () => {};
@@ -101,8 +101,8 @@ describe("starting training for a run", { skip: canMock ? false : "needs --exper
     mock.module("workflow/api", {
       namedExports: {
         start: async (fn: { name: string }, args: unknown[]) => {
-          if (failTrainStart && fn.name === "trainJob") {
-            failTrainStart = false;
+          if (failStartOf === fn.name) {
+            failStartOf = null;
             throw new Error("the workflow runtime is down (made up)");
           }
           started.push({ fn: fn.name, args });
@@ -170,7 +170,7 @@ describe("starting training for a run", { skip: canMock ? false : "needs --exper
     listings = [[GPU_A100]];
     paused = false;
     started = [];
-    failTrainStart = false;
+    failStartOf = null;
     sleeps = [];
     onSleep = async () => {};
     advanced = 0;
@@ -308,7 +308,7 @@ describe("starting training for a run", { skip: canMock ? false : "needs --exper
     it("a job that failed before any GPU launched isn't the run's job, so Start training launches again", async () => {
       // The job's workflow can't start: launchJob wrote the row, then failed it (start_failed).
       const id = await dataset();
-      failTrainStart = true;
+      failStartOf = "trainJob";
       const r = await launch.launchForRun({ datasetId: id, callerId: admin, steps: 120 });
       assert.equal(r.kind === "refused" && r.refusal.code, "start_failed");
       const [failed] = await jobsOf(id);
@@ -573,6 +573,50 @@ describe("starting training for a run", { skip: canMock ? false : "needs --exper
       const { deleteRateLimitsBefore } = await import("@/lib/gateway/store");
       await deleteRateLimitsBefore(new Date(Date.now() + 3_600_000));
       assert.deepEqual(await runStore.readRunProduct(id), { productId: PRODUCT, buildId: BUILD });
+    });
+
+    it("gives a product one run a day whoever calls it, counted only when something starts, and is off without TUNE_COMPOSER", async () => {
+      const PRODUCT = "cccccccc-0000-4000-8000-000000000003";
+      const dayCount = async () => {
+        const rows = await testDb.select().from(realSchema.rateLimits).where(eq(realSchema.rateLimits.key, `tune-product-day:${PRODUCT}`));
+        return rows.reduce((n, r) => n + r.count, 0);
+      };
+      // A dataset that already has a job starts nothing, so it doesn't use the day.
+      const trained = await dataset();
+      await launch.launchForRun({ datasetId: trained, callerId: admin, steps: 120 });
+      started = [];
+      await start.startTuneRun({ datasetId: trained, callerId: admin, productId: PRODUCT });
+      assert.equal(await dayCount(), 0);
+
+      // tuneRun couldn't start: nothing started, so the day is given back.
+      const first = await dataset();
+      failStartOf = "tuneRun";
+      await start.startTuneRun({ datasetId: first, callerId: admin, productId: PRODUCT });
+      assert.equal(await dayCount(), 0);
+
+      await start.startTuneRun({ datasetId: first, callerId: admin, productId: PRODUCT });
+      assert.deepEqual(started.map((s) => s.fn), ["tuneRun"]);
+      assert.equal(await dayCount(), 1);
+
+      const second = await dataset();
+      started = [];
+      await assert.rejects(start.startTuneRun({ datasetId: second, callerId: admin, productId: PRODUCT }), (err: unknown) => {
+        const e = err as InstanceType<typeof start.TuneStartError>;
+        assert.equal(e instanceof start.TuneStartError && e.status, 429);
+        assert.equal(e.code, "product_daily");
+        const wait = (e.body as { retryAfterSeconds: number }).retryAfterSeconds;
+        assert.ok(wait > 0 && wait <= 86_400, String(wait));
+        return true;
+      });
+      assert.deepEqual(started, [], "nothing started for the second run");
+      // Another product, or no product, isn't held back.
+      await start.startTuneRun({ datasetId: second, callerId: admin });
+      assert.deepEqual((started as Array<{ fn: string }>).map((s) => s.fn), ["tuneRun"]);
+
+      delete process.env.TUNE_COMPOSER;
+      started = [];
+      await assert.rejects(start.startTuneRun({ datasetId: await dataset(), callerId: admin }), { status: 404, code: "not_found" });
+      assert.deepEqual(started, []);
     });
 
     it("starts a build plan as a task plan, and keeps its product and build with the run", async () => {

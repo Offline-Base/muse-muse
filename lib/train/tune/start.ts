@@ -8,7 +8,8 @@
  * examples writing, and the room offers Start training once they're ready (lib/train/tune/view.ts).
  */
 import { start } from "workflow/api";
-import { testModel } from "@/lib/env";
+import { env, testModel } from "@/lib/env";
+import { adjustCounter, reserveCounter } from "@/lib/gateway/store";
 import { DATASET_MODEL, makeDataset } from "@/lib/train/datasets";
 import { attachDatasetRun, createDataset, failDataset, getDataset } from "@/lib/train/store";
 import { TUNE_STEPS } from "@/lib/train/tune/settings";
@@ -22,9 +23,33 @@ export class TuneStartError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
+    /** More for the reply, as product_daily's {retryAfterSeconds}. */
+    readonly body?: Record<string, unknown>,
   ) {
     super(code);
   }
+}
+
+/** A product's one run a day (UTC): its counter, kept under the day's end so the hourly cleanup keeps it all day. */
+export function productDay(productId: string, now: Date): { key: string; until: Date } {
+  const until = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+  return { key: `tune-product-day:${productId.toLowerCase()}`, until };
+}
+
+/** Takes the product's run for today, or throws 429 product_daily with {retryAfterSeconds}. */
+async function takeProductDay(productId: string, now: Date): Promise<{ key: string; until: Date }> {
+  const day = productDay(productId, now);
+  if ((await reserveCounter(day.key, day.until, 1, 1)) === null) {
+    const retryAfterSeconds = Math.max(1, Math.ceil((day.until.getTime() - now.getTime()) / 1000));
+    throw new TuneStartError(429, "product_daily", { retryAfterSeconds });
+  }
+  return day;
+}
+
+/** Gives the product's day back when nothing started. */
+function giveBackProductDay(day: { key: string; until: Date } | null): Promise<void> {
+  if (!day) return Promise.resolve();
+  return adjustCounter(day.key, day.until, -1).catch((e) => console.error("[train/tune] release day", e));
 }
 
 /** The room's address for a run. */
@@ -55,6 +80,11 @@ export async function startTraining(datasetId: string, callerId: string, steps: 
  * trains a ready dataset the same way. A build plan (B, the build room's "Its own model") starts like a task plan. The
  * product a run is for (`productId`, or a build plan's own) is kept with the run (saveRunProduct, in rate_limits, no
  * migration) until wave 3's 0025 adds training_jobs.product_id and fills it from there.
+ *
+ * Caps here, so every caller gets them: off with TUNE_COMPOSER (404 not_found; the run's room is behind it too), and a
+ * run for a product is one a product a day (UTC), counted only when something starts (a new dataset, or tuneRun on an
+ * existing one) and given back when that start fails (429 product_daily with {retryAfterSeconds}). Every launch cap
+ * applies on top, in launchJob.
  */
 export async function startTuneRun(i: {
   plan?: TrainPlanBody;
@@ -62,8 +92,10 @@ export async function startTuneRun(i: {
   callerId: string;
   productId?: string | null;
 }): Promise<{ runId: string; href: string }> {
+  if (!env.tuneComposer) throw new TuneStartError(404, "not_found");
   const source = i.plan?.source ?? (i.datasetId ? { kind: "dataset" as const, datasetId: i.datasetId } : null);
   if (!source) throw new TuneStartError(400, "no_plan");
+  const now = new Date();
   const productId = i.productId ?? (source.kind === "build" ? source.productId : null);
   const buildId = source.kind === "build" ? source.buildId : null;
   const keepProduct = (runId: string) =>
@@ -76,20 +108,28 @@ export async function startTuneRun(i: {
       const [job, marks] = await Promise.all([latestTuneJob(existing.id), readRunMarks(existing.id)]);
       if (!job && !marks.stopped && !freshHeartbeat(marks, Date.now())) {
         const steps = i.plan?.settings.steps ?? marks.steps ?? TUNE_STEPS;
+        const day = productId ? await takeProductDay(productId, now) : null;
         if (i.plan) await saveRunSteps(existing.id, steps).catch((err) => console.error("[train/tune] save steps", err));
-        await startTraining(existing.id, i.callerId, steps);
+        if (!(await startTraining(existing.id, i.callerId, steps))) await giveBackProductDay(day);
       }
     }
     return { runId: existing.id, href: runHref(existing.id) };
   }
   const plan = i.plan!;
-  const dataset = await createDataset({
-    title: plan.name,
-    task: plan.task,
-    requested: plan.settings.examples,
-    writerModel: testModel() ?? DATASET_MODEL,
-    createdBy: i.callerId,
-  });
+  const day = productId ? await takeProductDay(productId, now) : null;
+  let dataset: Awaited<ReturnType<typeof createDataset>>;
+  try {
+    dataset = await createDataset({
+      title: plan.name,
+      task: plan.task,
+      requested: plan.settings.examples,
+      writerModel: testModel() ?? DATASET_MODEL,
+      createdBy: i.callerId,
+    });
+  } catch (err) {
+    await giveBackProductDay(day);
+    throw err;
+  }
   let workflowRunId: string;
   try {
     workflowRunId = (await start(makeDataset, [{ datasetId: dataset.id }])).runId;
@@ -98,6 +138,7 @@ export async function startTuneRun(i: {
     await failDataset(dataset.id, "The dataset's workflow could not start, so nothing was written.").catch((e) =>
       console.error("[train/tune] markStartFailed", e),
     );
+    await giveBackProductDay(day);
     throw new TuneStartError(500, "start_failed");
   }
   await attachDatasetRun(dataset.id, workflowRunId).catch((err) => console.error("[train/tune] attachRun", err));

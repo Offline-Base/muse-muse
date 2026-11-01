@@ -19,17 +19,11 @@ import type { TrainPlanBody } from "@/lib/train/tune/types";
  * id is the dataset's.
  *
  * A build plan (B, source {kind: "build"}) starts like a task plan, keeps its product with the run, and is one a product
- * a day (429 product_daily with {retryAfterSeconds}), on top of every other cap.
+ * a day (429 product_daily with {retryAfterSeconds}, counted in startTuneRun), on top of every other cap.
  *
  * 400 bad input or plan_expired, 403 plan_invalid (tampered, or another caller's), 409 already_started, 429
  * product_daily, 503 meta_not_configured or paused, 500 start_failed.
  */
-/** A product's one build-planned run a day (UTC): its counter, kept under the day's end. */
-function productDay(productId: string, now: Date): { key: string; until: Date } {
-  const until = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
-  return { key: `tune-product-day:${productId.toLowerCase()}`, until };
-}
-
 export const POST = route(async (req: Request) => {
   if (!env.tuneComposer) return errorJson(404, "not_found");
   const caller = await tuneCaller(req);
@@ -65,23 +59,16 @@ export const POST = route(async (req: Request) => {
   const key = `tune-run:${token}`;
   if ((await reserveCounter(key, until, 1, 1)) === null) return errorJson(409, "already_started");
 
-  // One run a product a day for a build plan. The window is the day's end, so the hourly cleanup keeps it all day.
-  const day = plan.source.kind === "build" ? productDay(plan.source.productId, now) : null;
-  if (day && (await reserveCounter(day.key, day.until, 1, 1)) === null) {
-    await adjustCounter(key, until, -1).catch((e) => console.error("[train/runs] release", e));
-    return errorJson(429, "product_daily", { retryAfterSeconds: Math.max(1, Math.ceil((day.until.getTime() - now.getTime()) / 1000)) });
-  }
-
   try {
+    // A build plan's product gets one run a day, counted (and given back on a failed start) in startTuneRun.
     const run = await startTuneRun({ plan, callerId: caller.id });
     return Response.json(run, { status: 201 });
   } catch (err) {
     if (!(err instanceof TuneStartError)) throw err;
-    // Nothing started, so the plan may be started again, and the product's day isn't used up.
-    if (err.status >= 500) {
+    // Nothing started, so the plan may be started again (tomorrow, for product_daily).
+    if (err.status >= 500 || err.code === "product_daily") {
       await adjustCounter(key, until, -1).catch((e) => console.error("[train/runs] release", e));
-      if (day) await adjustCounter(day.key, day.until, -1).catch((e) => console.error("[train/runs] release day", e));
     }
-    return errorJson(err.status, err.code);
+    return errorJson(err.status, err.code, err.body);
   }
 });
