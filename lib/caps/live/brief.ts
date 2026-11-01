@@ -62,7 +62,7 @@ export function liveWriterRules(updatesOn: boolean = liveUpdatesOn()): readonly 
     "live: fill it only when text appearing as someone speaks, or changes showing at once in other people's open browsers, is the product's main work. Otherwise null.",
     "live.captions: true when the product shows what is being said while it is said (lecture captions, a meeting's running notes). The text appears a few seconds behind, in English or the speaker's language, with no speaker names. Never for a voice conversation: nothing talks back. Pick muse-voice-transcribe-1.0 in capabilities too. Say in limits that text runs a few seconds behind, that audio goes to Muse Voice Transcribe, and that each person gets a limited number of minutes a day.",
     updatesOn
-      ? "live.updates: {collection} when other people's open browsers must show a change with no reload (a shared scoreboard, a live poll, a queue). The collection must be listed in the data block, usually shared with writes anyone or signed_in. Otherwise null. A change shows within a few seconds, for at most 20 people watching one product at once: say so in limits."
+      ? "live.updates: {collection} when other people's open browsers must show a change with no reload (a shared scoreboard, a live poll, a queue). The collection must be listed in the data block, usually shared with writes anyone or signed_in. Otherwise null. A change shows within a few seconds, for at most 20 people watching one product at once and 10 from one network: say so in limits."
       : "live.updates: always null. Live shared updates aren't available.",
     "Two-way voice isn't available: no spoken replies, no calls.",
   ];

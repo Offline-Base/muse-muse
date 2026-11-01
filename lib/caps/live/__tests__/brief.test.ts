@@ -27,6 +27,16 @@ beforeEach(() => {
   delete process.env.LIVE_ENABLED;
 });
 
+describe("the product's privacy page", () => {
+  it("says where the microphone's audio goes when the brief has captions, and only then", async () => {
+    const { productPrivacyFor } = await import("@/lib/trust/overlay");
+    assert.match(JSON.stringify(productPrivacyFor(captionsOnly())), /what your microphone picks up goes to Muse Voice Transcribe/);
+    process.env.LIVE_UPDATES = "1";
+    assert.doesNotMatch(JSON.stringify(productPrivacyFor(updatesOnly())), /microphone/);
+    assert.doesNotMatch(JSON.stringify(productPrivacyFor(BRIEF as unknown as Brief)), /microphone/);
+  });
+});
+
 describe("the block", () => {
   it("is what the contract says, optional in a stored brief", () => {
     assert.equal(CAP_READY.live, false, "flips only in the merge after a real test build");

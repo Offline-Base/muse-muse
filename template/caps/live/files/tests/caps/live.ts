@@ -4,8 +4,10 @@
 //                                             fake microphone (fixtures/talk.wav), clicks stop, and checks their times and
 //                                             that their words show. Takes the judge screenshot "10-captions". Call it
 //                                             once: the smoke test may use at most 6 pieces.
-//   checkLiveUpdate(page, { change, shows })  opens a second browser, runs `change` in the first, and needs `shows` in the
-//                                             second within 5 seconds with no reload. Takes "11-second-browser-live".
+//   checkLiveUpdate(page, { change, shows })  opens a second browser, waits until it has caught up, runs `change` in the
+//                                             first, and needs `shows` in the second within 5 seconds with no reload. Both
+//                                             get a mark, a made-up word that's new each run: earlier runs' rows stay in
+//                                             this build's data. Takes "11-second-browser-live".
 //
 // The microphone plays a made-up lecture about rivers, whatever the product is about. Never assert its words.
 import { expect, test, type Locator, type Page } from "@playwright/test";
@@ -96,15 +98,30 @@ export async function checkCaptions(page: Page, check: CaptionsCheck): Promise<v
 }
 
 export interface LiveUpdateCheck {
-  /** Makes the change in the first browser, like adding a point on the scoreboard. */
-  change(first: Page): Promise<void>;
-  /** Text the second browser must then show. It must not show it before the change. */
-  shows: string;
+  /** Makes the change in the first browser, like adding a team. `mark` is a made-up word that's new each run: save it in the change. */
+  change(first: Page, mark: string): Promise<void>;
+  /**
+   * The text the second browser must then show. Make it from `mark`. A product whose change can't carry any words, like
+   * a vote button, can read `other`, which has caught up by now, and work out what comes next.
+   */
+  shows(mark: string, other: Page): string | RegExp | Promise<string | RegExp>;
   /** The page to open in the second browser. "/" by default. */
   path?: string;
   /** How soon it must show. The contract says 5 seconds, and this can't be longer. */
   withinMs?: number;
 }
+
+const CONSONANTS = "bdfgklmnprstvz";
+const VOWELS = "aeiou";
+const pick = (letters: string) => letters[Math.floor(Math.random() * letters.length)]!;
+/** Reads like a name in the demo video, and hasn't been saved before: about 200 million of them. */
+function newMark(): string {
+  const word = Array.from({ length: 4 }, () => pick(CONSONANTS) + pick(VOWELS)).join("");
+  return word[0]!.toUpperCase() + word.slice(1);
+}
+
+/** How long the page gets to draw what arrived before the stream said it had caught up. */
+const DRAW_MS = 250;
 
 /** The platform's check of live updates. Call it once, with the first browser open and ready to make the change. */
 export async function checkLiveUpdate(page: Page, check: LiveUpdateCheck): Promise<void> {
@@ -117,23 +134,42 @@ export async function checkLiveUpdate(page: Page, check: LiveUpdateCheck): Promi
     throw new Error(`checkLiveUpdate: ${detail}`);
   };
   try {
+    if (typeof check.shows !== "function") fail("shows has to be a function of the mark, like (mark) => `Team ${mark}`, because this build's earlier runs left their rows in its data");
     const other = await context.newPage();
+    // The stream says when it has sent everything already saved. Only the page's own EventSource can hear that.
+    await other.addInitScript(() => {
+      const Real = window.EventSource;
+      window.EventSource = class extends Real {
+        constructor(url: string | URL, init?: EventSourceInit) {
+          super(url, init);
+          this.addEventListener("caught-up", () => {
+            (window as unknown as { __museLiveCaughtUp?: boolean }).__museLiveCaughtUp = true;
+          });
+        }
+      };
+    });
     const streaming = other.waitForResponse((res) => STREAM.test(res.url()) && res.ok(), { timeout: 30_000 }).catch(() => null);
     await other.goto(check.path ?? "/");
     if (!(await streaming)) fail("the second browser never opened a stream. Render from useLive");
-    const before = await other.getByText(check.shows, { exact: false }).count();
-    if (before) fail(`the second browser already shows "${check.shows}" before the change. Use text only this test's change makes`);
+    const caughtUp = await other.waitForFunction(() => (window as unknown as { __museLiveCaughtUp?: boolean }).__museLiveCaughtUp === true, null, { timeout: 15_000 }).catch(() => null);
+    if (!caughtUp) fail("the second browser's stream never finished sending what was already saved");
+    await other.waitForTimeout(DRAW_MS);
+
+    const mark = newMark();
+    const shows = await check.shows(mark, other);
+    const before = await other.getByText(shows).count();
+    if (before) fail(`the second browser already shows "${shows}" before the change. Make it from the mark, so only this run's change can show it`);
 
     // From here on, no navigation of the second browser's page may happen.
     let loads = 0;
     other.on("framenavigated", (frame) => {
       if (frame === other.mainFrame()) loads += 1;
     });
-    await check.change(page);
+    await check.change(page, mark);
     const started = Date.now();
     const within = Math.min(5_000, check.withinMs ?? 5_000);
     try {
-      await expect(other.getByText(check.shows, { exact: false }).first()).toBeVisible({ timeout: within });
+      await expect(other.getByText(shows).first()).toBeVisible({ timeout: within });
     } catch {
       fail(`the change didn't show in the second browser within ${within / 1000} seconds`);
     }

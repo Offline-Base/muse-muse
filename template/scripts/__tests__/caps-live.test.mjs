@@ -67,6 +67,16 @@ describe("the overlay's files", () => {
     assert.deepEqual(fmt, { format: 1, channels: 1, rate: 16000, bits: 16 });
   });
 
+  test("the notice says where audio goes, and promises only what this app does", () => {
+    const source = readFileSync(path.join(LIVE, "lib/platform/captions.ts"), "utf8");
+    const notice = source.match(/CAPTIONS_NOTICE = "([^"]+)"/)[1];
+    assert.match(notice, /Muse Voice Transcribe/);
+    assert.match(notice, /This app doesn't keep it/);
+    for (const text of [notice, readFileSync(path.join(LIVE, ".agents/skills/muse-live/SKILL.md"), "utf8"), readFileSync(path.join(LIVE, "app/api/musemuse/live-caption/route.ts"), "utf8")]) {
+      assert.doesNotMatch(text, /[Aa]udio isn't kept|It isn't kept|Nothing is kept/);
+    }
+  });
+
   test("the browser args name the fixture, and a browser.json Playwright can read", () => {
     const { args } = JSON.parse(readFileSync(path.join(LIVE, "scripts/caps/live.browser.json"), "utf8"));
     assert.deepEqual(args, ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", "--use-file-for-fake-audio-capture=fixtures/talk.wav"]);
@@ -331,7 +341,7 @@ describe("in a product with core and live", { skip: noTemplateModules ?? false }
       ["?session=bad!&startMs=0&endMs=1000", WAV, 400],
       ["?session=session_12345678&startMs=5&endMs=1", WAV, 400],
       [GOOD, `{ method: "POST", body: new Uint8Array(44) }`, 400],
-      [GOOD, `{ method: "POST", body: new Uint8Array(320101) }`, 413],
+      [GOOD, `{ method: "POST", body: new Uint8Array(320001) }`, 413],
       [GOOD, `{ method: "POST", headers: { "sec-fetch-site": "cross-site" }, body: new Uint8Array(4000) }`, 403],
     ];
     for (const [q, init, status] of cases) assert.equal((await run(caption(q, init))).status, status, `${q} ${init}`);
@@ -444,8 +454,18 @@ function Board() {
   );
 }
 
+function Leaving() {
+  const [here, setHere] = useState(true);
+  return (
+    <main>
+      <button onClick={() => setHere(false)}>Leave</button>
+      {here ? <Captions /> : <p id="gone">Somewhere else</p>}
+    </main>
+  );
+}
+
 const live = new URLSearchParams(location.search).has("live");
-createRoot(document.getElementById("root")).render(live ? <Board /> : <Captions />);
+createRoot(document.getElementById("root")).render(live ? <Board /> : <Leaving />);
 `;
 
 describe("in Chromium", { skip: browserProblem ?? false }, () => {
@@ -458,6 +478,7 @@ describe("in Chromium", { skip: browserProblem ?? false }, () => {
   const pieces = [];
   let captionAnswer;
   let ticketAnswer;
+  let ticketDelayMs = 0;
   const streams = [];
   let streamRefuse = 0;
   const changes = [];
@@ -504,8 +525,10 @@ describe("in Chromium", { skip: browserProblem ?? false }, () => {
         });
       } else if (url.pathname === "/api/musemuse/live-ticket") {
         const a = ticketAnswer();
-        res.writeHead(a.status ?? 200, { "content-type": "application/json" });
-        res.end(JSON.stringify(a.body));
+        setTimeout(() => {
+          res.writeHead(a.status ?? 200, { "content-type": "application/json" });
+          res.end(JSON.stringify(a.body));
+        }, ticketDelayMs);
       } else if (url.pathname === "/stream") {
         // Refused streams answer as the gateway does, and the browser's error path has to recover.
         if (streamRefuse > 0) {
@@ -514,7 +537,8 @@ describe("in Chromium", { skip: browserProblem ?? false }, () => {
           return res.end("{}");
         }
         const after = Number(url.searchParams.get("after") ?? 0);
-        const stream = { res, after, ticket: url.searchParams.get("ticket") };
+        const stream = { res, after, ticket: url.searchParams.get("ticket"), open: true };
+        res.on("close", () => (stream.open = false));
         streams.push(stream);
         res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
         res.write(`retry: 2000\n\nevent: open\ndata: {"after":${after}}\n\n`);
@@ -620,6 +644,115 @@ describe("in Chromium", { skip: browserProblem ?? false }, () => {
     await context.close();
   });
 
+  /**
+   * The browser's microphone question stays open this long, as it does while a person reads it, and every stream it hands
+   * out is kept where the test can see whether it was turned off.
+   */
+  const slowMicrophone = (page, ms) =>
+    page.addInitScript((wait) => {
+      const real = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+      window.__mics = [];
+      window.__asked = 0;
+      navigator.mediaDevices.getUserMedia = async (constraints) => {
+        window.__asked += 1;
+        await new Promise((r) => setTimeout(r, wait));
+        const stream = await real(constraints);
+        window.__mics.push(stream);
+        return stream;
+      };
+    }, ms);
+  const micsOn = (page) => page.evaluate(() => window.__mics.flatMap((m) => m.getTracks()).filter((t) => t.readyState === "live").length);
+  /** Long enough for a first piece, so a microphone left on would have sent one. */
+  const PIECE_MS = 3500;
+
+  test("clicking start twice opens one microphone, and Stop turns it off", { timeout: 60_000 }, async (t) => {
+    if (!browser) return t.skip("Chromium isn't installed");
+    pieces.length = 0;
+    captionAnswer = (p, n) => ({ body: { text: `word${n}`, startMs: p.startMs, endMs: p.endMs } });
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await slowMicrophone(page, 300);
+    await page.goto(base);
+    await page.getByRole("button", { name: "Start captions" }).dblclick();
+    await page.waitForFunction(() => document.querySelector("#status").textContent === "listening");
+    await page.waitForTimeout(500);
+    assert.equal(await page.evaluate(() => window.__asked), 1, "one question, one microphone");
+    await page.waitForFunction(() => (window.__captions ?? []).length >= 1, null, { timeout: 15_000 });
+    await page.getByRole("button", { name: "Stop" }).click();
+    await page.waitForFunction(() => document.querySelector("#status").textContent === "stopped");
+    assert.equal(await micsOn(page), 0);
+    assert.equal(new Set(pieces.map((p) => p.session)).size, 1, "one session");
+    await page.waitForTimeout(300);
+    const count = pieces.length;
+    await page.waitForTimeout(PIECE_MS);
+    assert.equal(pieces.length, count, "no more pieces after Stop");
+    await context.close();
+  });
+
+  test("Stop while the browser is still asking turns the microphone off when it comes", { timeout: 60_000 }, async (t) => {
+    if (!browser) return t.skip("Chromium isn't installed");
+    pieces.length = 0;
+    captionAnswer = (p, n) => ({ body: { text: `word${n}`, startMs: p.startMs, endMs: p.endMs } });
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await slowMicrophone(page, 500);
+    await page.goto(base);
+    await page.getByRole("button", { name: "Start captions" }).click();
+    assert.equal(await page.locator("#status").innerText(), "starting");
+    await page.getByRole("button", { name: "Stop" }).click();
+    await page.waitForFunction(() => document.querySelector("#status").textContent === "stopped");
+    await page.waitForFunction(() => window.__mics.length === 1);
+    await page.waitForFunction(() => window.__mics[0].getTracks().every((t) => t.readyState === "ended"), null, { timeout: 2000 });
+    await page.waitForTimeout(PIECE_MS);
+    assert.equal(pieces.length, 0, "nothing was sent");
+    assert.equal(await page.locator("#status").innerText(), "stopped", "and it never came back to listening");
+
+    // And it can start again, on a new microphone.
+    await page.getByRole("button", { name: "Start captions" }).click();
+    await page.waitForFunction(() => document.querySelector("#status").textContent === "listening");
+    assert.equal(await micsOn(page), 1);
+    await page.getByRole("button", { name: "Stop" }).click();
+    assert.equal(await micsOn(page), 0);
+    await context.close();
+  });
+
+  test("leaving the page while the browser is still asking turns the microphone off when it comes", { timeout: 60_000 }, async (t) => {
+    if (!browser) return t.skip("Chromium isn't installed");
+    pieces.length = 0;
+    captionAnswer = (p, n) => ({ body: { text: `word${n}`, startMs: p.startMs, endMs: p.endMs } });
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await slowMicrophone(page, 500);
+    await page.goto(base);
+    await page.getByRole("button", { name: "Start captions" }).click();
+    await page.getByRole("button", { name: "Leave" }).click();
+    await page.locator("#gone").waitFor();
+    await page.waitForFunction(() => window.__mics.length === 1);
+    await page.waitForFunction(() => window.__mics[0].getTracks().every((t) => t.readyState === "ended"), null, { timeout: 2000 });
+    await page.waitForTimeout(PIECE_MS);
+    assert.equal(pieces.length, 0, "nothing was sent");
+    await context.close();
+  });
+
+  test("Stop turns off a microphone whose audio never starts running", { timeout: 60_000 }, async (t) => {
+    if (!browser) return t.skip("Chromium isn't installed");
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await slowMicrophone(page, 0);
+    // A browser can hold resume() open for good when it doesn't want sound to start.
+    await page.addInitScript(() => {
+      AudioContext.prototype.resume = () => new Promise(() => undefined);
+    });
+    await page.goto(base);
+    await page.getByRole("button", { name: "Start captions" }).click();
+    await page.waitForFunction(() => window.__mics.length === 1);
+    await page.waitForTimeout(100);
+    assert.equal(await page.locator("#status").innerText(), "starting");
+    await page.getByRole("button", { name: "Stop" }).click();
+    assert.equal(await micsOn(page), 0);
+    await context.close();
+  });
+
   const changeItem = (seq, id, team) => ({ seq, op: "put", id, data: { team } });
   const send = (c) => {
     changes.push(c);
@@ -688,6 +821,47 @@ describe("in Chromium", { skip: browserProblem ?? false }, () => {
     });
     await page.getByText("Kingfisher").waitFor({ timeout: 5000 });
     assert.equal(streams.at(-1).after, 1, "it caught up from where it stopped");
+    await context.close();
+    for (const s of streams) s.res.end();
+  });
+
+  test("useLive opens one stream when a tab is hidden and shown while its ticket is on the way", { timeout: 60_000 }, async (t) => {
+    if (!browser) return t.skip("Chromium isn't installed");
+    changes.length = 0;
+    streams.length = 0;
+    changes.push(changeItem(1, "a", "Heron"));
+    ticketAnswer = () => ({ body: { ticket: "lt1.sample", expiresAt: new Date(Date.now() + 600_000).toISOString(), streamUrl: `${base}/stream` } });
+    ticketDelayMs = 400;
+    const flip = (page, hidden) =>
+      page.evaluate((h) => {
+        Object.defineProperty(document, "hidden", { configurable: true, get: () => h });
+        document.dispatchEvent(new Event("visibilitychange"));
+      }, hidden);
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto(`${base}/?live=1`);
+    await flip(page, true);
+    await flip(page, false);
+    await page.getByText("Heron").waitFor({ timeout: 5000 });
+    await page.waitForTimeout(800);
+    assert.equal(streams.filter((s) => s.open).length, 1, "one stream holds one slot");
+    assert.equal(streams.length, 1, "and no other was opened along the way");
+
+    // A plain end moves on to one new stream, and the page keeps following.
+    streams[0].res.write('event: end\ndata: {"after":1}\n\n');
+    await page.waitForTimeout(800);
+    assert.equal(streams.filter((s) => s.open).length, 1);
+    send(changeItem(2, "b", "Kingfisher"));
+    await page.getByText("Kingfisher").waitFor({ timeout: 5000 });
+
+    // Hidden while the ticket is on the way, and staying hidden: no stream opens at all.
+    const later = await context.newPage();
+    streams.length = 0;
+    await later.goto(`${base}/?live=1`);
+    await flip(later, true);
+    await later.waitForTimeout(800);
+    assert.equal(streams.length, 0, "a hidden tab doesn't take a slot");
+    ticketDelayMs = 0;
     await context.close();
     for (const s of streams) s.res.end();
   });

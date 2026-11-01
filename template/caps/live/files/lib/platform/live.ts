@@ -44,6 +44,8 @@ export function useLive<T = unknown>(collection: string, scope: LiveScope): UseL
     let failures = 0;
     let lastContact = Date.now();
     let closed = false;
+    // Each connect() takes the next number. One that finds a newer number after waiting has been replaced, and stops.
+    let attempt = 0;
     after.current = 0;
     setItems([]);
     setStatus("connecting");
@@ -73,6 +75,7 @@ export function useLive<T = unknown>(collection: string, scope: LiveScope): UseL
     async function connect() {
       drop();
       if (closed || document.hidden) return;
+      const mine = ++attempt;
       // Away long enough that a delete may have left the stream: read the collection again from the start.
       if (after.current > 0 && Date.now() - lastContact > LIVE_RESYNC_AFTER_MS) {
         after.current = 0;
@@ -80,8 +83,9 @@ export function useLive<T = unknown>(collection: string, scope: LiveScope): UseL
       }
       if (!ticket || ticket.expiresAt - Date.now() < TICKET_MARGIN_MS) {
         const res = await fetch(ROUTE, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ collection, scope }) }).catch(() => null);
-        if (closed) return;
         const reply = ((await res?.json().catch(() => null)) ?? {}) as { ticket?: string; streamUrl?: string; expiresAt?: string; error?: string };
+        // Closed or replaced while it waited, or the tab went away: showing it again starts a new connect().
+        if (closed || mine !== attempt || document.hidden) return;
         if (res?.status === 403 || res?.status === 404) {
           // Asking again wouldn't change this answer.
           setStatus("error");
@@ -120,13 +124,16 @@ export function useLive<T = unknown>(collection: string, scope: LiveScope): UseL
     }
 
     const onVisible = () => {
-      if (document.hidden) drop();
-      else if (!source && !timer) void connect();
+      if (document.hidden) {
+        attempt += 1;
+        drop();
+      } else if (!source && !timer) void connect();
     };
     document.addEventListener("visibilitychange", onVisible);
     void connect();
     return () => {
       closed = true;
+      attempt += 1;
       document.removeEventListener("visibilitychange", onVisible);
       drop();
     };

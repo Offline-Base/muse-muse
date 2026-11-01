@@ -14,7 +14,7 @@ import { addCaption, ChunkCutter, isSilent, type AudioPiece, type Caption } from
 export type { Caption } from "@/lib/platform/captions-chunks";
 
 /** What the page must say near the button, before anyone clicks it. */
-export const CAPTIONS_NOTICE = "Audio goes to Muse Voice Transcribe to make these captions. It isn't kept.";
+export const CAPTIONS_NOTICE = "Audio goes to Muse Voice Transcribe to make these captions. This app doesn't keep it.";
 
 export type CaptionStatus = "idle" | "starting" | "listening" | "stopped" | "limit" | "error";
 
@@ -64,6 +64,17 @@ interface Session {
   ended: boolean;
 }
 
+/** What a start() under way holds so far, so Stop and leaving can turn it off even if the start never gets further. */
+interface Starting {
+  stream: MediaStream | null;
+  context: AudioContext | null;
+}
+
+function letGo(held: Starting) {
+  held.stream?.getTracks().forEach((t) => t.stop());
+  void held.context?.close().catch(() => undefined);
+}
+
 const newSessionId = () => (crypto.randomUUID?.() ?? `s${Date.now()}${Math.random().toString(36).slice(2)}`).replace(/[^A-Za-z0-9_-]/g, "").slice(0, 64);
 
 export function useCaptions(options: CaptionOptions = {}): UseCaptions {
@@ -71,6 +82,8 @@ export function useCaptions(options: CaptionOptions = {}): UseCaptions {
   const [status, setStatus] = useState<CaptionStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const session = useRef<Session | null>(null);
+  // The start() under way, from the click until the session exists. Stop, leaving and a second click all look at this.
+  const starting = useRef<Starting | null>(null);
   const endpoint = options.endpoint ?? ENDPOINT;
   const chunkMs = options.chunkMs;
 
@@ -138,36 +151,52 @@ export function useCaptions(options: CaptionOptions = {}): UseCaptions {
   );
 
   const start = useCallback(async () => {
-    if (session.current) return;
+    if (session.current || starting.current) return;
+    const attempt: Starting = { stream: null, context: null };
+    starting.current = attempt;
     setError(null);
     setStatus("starting");
-    let stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } });
+      attempt.stream = stream;
+      // Stop, or leaving the page, came while this waited.
+      if (starting.current !== attempt) return letGo(attempt);
+      const context = new AudioContext();
+      attempt.context = context;
+      await context.resume().catch(() => undefined);
+      if (starting.current !== attempt) return letGo(attempt);
+      const source = context.createMediaStreamSource(stream);
+      // A script processor needs no extra file, and every browser has one. It only copies samples out.
+      const node = context.createScriptProcessor(4096, 1, 1);
+      const mute = context.createGain();
+      mute.gain.value = 0;
+      const s: Session = { id: newSessionId(), stream, context, node, source, cutter: new ChunkCutter(context.sampleRate, { chunkMs }), waiting: [], sending: false, failures: 0, ended: false };
+      node.onaudioprocess = (event) => {
+        for (const piece of s.cutter.push(new Float32Array(event.inputBuffer.getChannelData(0)))) queue(s, piece);
+      };
+      source.connect(node);
+      node.connect(mute);
+      mute.connect(context.destination);
+      session.current = s;
+      starting.current = null;
+      setStatus("listening");
     } catch (err) {
+      letGo(attempt);
+      if (starting.current !== attempt) return;
+      starting.current = null;
       setStatus("error");
       setError(micError(err));
-      return;
     }
-    const context = new AudioContext();
-    const source = context.createMediaStreamSource(stream);
-    // A script processor needs no extra file, and every browser has one. It only copies samples out.
-    const node = context.createScriptProcessor(4096, 1, 1);
-    const mute = context.createGain();
-    mute.gain.value = 0;
-    const s: Session = { id: newSessionId(), stream, context, node, source, cutter: new ChunkCutter(context.sampleRate, { chunkMs }), waiting: [], sending: false, failures: 0, ended: false };
-    node.onaudioprocess = (event) => {
-      for (const piece of s.cutter.push(new Float32Array(event.inputBuffer.getChannelData(0)))) queue(s, piece);
-    };
-    source.connect(node);
-    node.connect(mute);
-    mute.connect(context.destination);
-    await context.resume().catch(() => undefined);
-    session.current = s;
-    setStatus("listening");
   }, [chunkMs, queue]);
 
   const stop = useCallback(() => {
+    // Still starting: this turns off what it has, and start() turns off anything it gets after this.
+    if (starting.current) {
+      letGo(starting.current);
+      starting.current = null;
+      setStatus("stopped");
+      return;
+    }
     const s = session.current;
     if (!s) return;
     session.current = null;
@@ -186,6 +215,8 @@ export function useCaptions(options: CaptionOptions = {}): UseCaptions {
   // Leaving the page turns the microphone off.
   useEffect(
     () => () => {
+      if (starting.current) letGo(starting.current);
+      starting.current = null;
       const s = session.current;
       session.current = null;
       if (s) {

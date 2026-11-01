@@ -334,11 +334,16 @@ describe("live updates on a database", { skip: canMock ? false : "needs --experi
       for (const origin of ["https://board.example", "https://evil.example", "http://localhost.evil.example"]) assert.equal((await stream(t, "", { origin }, build)).status, 403, origin);
     });
 
+    /** A different ticket each time, since one ticket holds few streams. Their times differ by their minting clock. */
+    const manyTickets = (n: number) => Promise.all(Array.from({ length: n }, (_, i) => mintLiveTicketAt(i)));
+    const mintLiveTicketAt = async (i: number) => mintLiveTicket({ productId, namespace: "live", collection: "scores", scope: "shared", ownerKey: null }, new Date(Date.now() + i * 1000)).ticket;
+
     it("holds at most 20 streams a product and gives each slot back when it ends", async () => {
-      const t = await mint({ collection: "scores" });
       const opens: Response[] = [];
       const d = deps(liveTok(), { stream: { pollMs: 1, maxMs: 40, heartbeatMs: 10_000 } });
-      for (let i = 0; i < LIVE_LIMITS.streamsPerProduct; i++) opens.push(await stream(t, "", {}, d));
+      const tickets = await manyTickets(LIVE_LIMITS.streamsPerProduct + 1);
+      const t = tickets.at(-1)!;
+      for (const each of tickets.slice(0, -1)) opens.push(await stream(each, "", {}, d));
       assert.ok(opens.every((r) => r.status === 200));
       const full = await stream(t, "", {}, d);
       assert.equal(await code(full), "rate_limited");
@@ -348,6 +353,53 @@ describe("live updates on a database", { skip: canMock ? false : "needs --experi
       const again = await stream(t, "", {}, d);
       assert.equal(again.status, 200, "the slots came back");
       await again.text();
+    });
+
+    it("lets one ticket hold 2 streams, so it can't take everyone's slots", async () => {
+      const t = await mint({ collection: "scores" });
+      const d = deps(liveTok(), { stream: { pollMs: 1, maxMs: 40, heartbeatMs: 10_000 } });
+      const opens = [await stream(t, "", {}, d), await stream(t, "", {}, d)];
+      assert.ok(opens.every((r) => r.status === 200), "a reconnect can overlap the stream it replaces");
+      const third = await stream(t, "", {}, d);
+      assert.equal(await code(third), "rate_limited");
+      assert.ok(await gatewayStore.acquireInFlight(`live-stream:${productId}`, 18, new Date()), "the third gave back what it took: 2 of 20 are held, so 18 is free");
+      const [other] = await manyTickets(1);
+      assert.equal((await stream(other!, "", {}, d)).status, 200, "someone else's ticket still opens");
+      await Promise.all(opens.map((r) => r.text()));
+    });
+
+    it("lets one address hold 10 streams on a product, and another address still gets in", async () => {
+      const d = deps(liveTok(), { stream: { pollMs: 1, maxMs: 60, heartbeatMs: 10_000 } });
+      const tickets = await manyTickets(LIVE_LIMITS.streamsPerIp + 2);
+      const opens: Response[] = [];
+      for (const t of tickets.slice(0, LIVE_LIMITS.streamsPerIp)) opens.push(await stream(t, "", { "x-real-ip": "203.0.113.7" }, d));
+      assert.ok(opens.every((r) => r.status === 200));
+      assert.equal(await code(await stream(tickets[LIVE_LIMITS.streamsPerIp]!, "", { "x-real-ip": "203.0.113.7" }, d)), "rate_limited");
+      const elsewhere = await stream(tickets[LIVE_LIMITS.streamsPerIp + 1]!, "", { "x-real-ip": "203.0.113.8" }, d);
+      assert.equal(elsewhere.status, 200);
+      await Promise.all([...opens, elsewhere].map((r) => r.text()));
+    });
+
+    it("says once when it has sent everything saved, after the last saved row, and again on the next connection", async () => {
+      await put(key("scores", "shared", null, "a"));
+      await put(key("scores", "shared", null, "b"));
+      const t = await mint({ collection: "scores" });
+      const { text } = await read(await stream(t));
+      assert.equal(text.match(/event: caught-up/g)?.length, 1);
+      assert.ok(text.indexOf("event: caught-up") > text.lastIndexOf("id: "), "it comes after the rows");
+      const quiet = await read(await stream(t, "&after=999999"));
+      assert.deepEqual(quiet.changes, []);
+      assert.equal(quiet.events.filter((e) => e === "caught-up").length, 1, "with nothing to send too");
+    });
+
+    it("doesn't say it has caught up while a full page says more are waiting", async () => {
+      const rows = (from: number) => Array.from({ length: LIVE_LIMITS.batchRows }, (_, i) => ({ seq: from + i, op: "put" as const, id: `r${from + i}`, data: {} }));
+      let call = 0;
+      const pages = [rows(1), [{ seq: 101, op: "put" as const, id: "last", data: {} }]];
+      const d = deps(liveTok(), { changes: async () => pages[call++] ?? [], stream: { pollMs: 1, maxMs: 30, heartbeatMs: 10_000 } });
+      const t = await mint({ collection: "scores" });
+      const { text } = await read(await stream(t, "", {}, d));
+      assert.ok(text.indexOf("event: caught-up") > text.indexOf("id: 101"), "it waits for the page after the full one");
     });
 
     it("holds at most 200 in all, and gives back the product's slot when that's what's full", async () => {

@@ -7,6 +7,7 @@ import { LIVE_LIMITS } from "@/lib/caps/live/limits";
 import type { LiveChange, LiveRowsKey } from "@/lib/caps/live/store";
 import { mintLiveTicket, readLiveTicket, type LiveTicket } from "@/lib/caps/live/ticket";
 import { gatewayError } from "@/lib/gateway/errors";
+import { clientIpKey } from "@/lib/gateway/extract";
 import { builderTier, tierMayUseBuilderCaps } from "@/lib/trust/tiers";
 import { mac } from "@/lib/tools/sign";
 
@@ -151,14 +152,24 @@ async function handleLiveStream(req: Request, deps: LiveDeps): Promise<Response>
     if (origin && !(await originAllowed(origin, ticket, product, deps))) return capError("cap_not_allowed", "This stream is only for the product's own site.");
 
     const minute = new Date(Math.floor(now.getTime() / 60_000) * 60_000);
-    const opensKey = `live-open:${mac("live-open", [raw!]).slice(0, 32)}`;
+    const ticketId = mac("live-open", [raw!]).slice(0, 32);
+    const opensKey = `live-open:${ticketId}`;
     const opens = await deps.hitRateLimits([opensKey], minute);
     if ((opens[opensKey] ?? 0) > LIVE_LIMITS.opensPerTicketPerMinute) return capError("rate_limited", "This stream is reconnecting too fast. Try again in a minute.", { "retry-after": "60" });
-    for (const [key, limit] of [[`live-stream:${ticket.productId}`, LIVE_LIMITS.streamsPerProduct], ["live-stream:all", LIVE_LIMITS.streamsTotal]] as const) {
+    // The browser comes straight here, so its address is the connection's, not a product server's header. Narrowest first,
+    // so one person who is at their own limit never takes a product's or the platform's slot, even for a moment.
+    const ip = clientIpKey(req.headers.get("x-real-ip")) ?? clientIpKey(req.headers.get("x-forwarded-for"));
+    const slots: Array<[string, number]> = [
+      [`live-stream:ticket:${ticketId}`, LIVE_LIMITS.streamsPerTicket],
+      ...(ip ? ([[`live-stream:ip:${ticket.productId}:${ip}`, LIVE_LIMITS.streamsPerIp]] as Array<[string, number]>) : []),
+      [`live-stream:${ticket.productId}`, LIVE_LIMITS.streamsPerProduct],
+      ["live-stream:all", LIVE_LIMITS.streamsTotal],
+    ];
+    for (const [key, limit] of slots) {
       const slot = await deps.acquireInFlight(key, limit, now);
       if (!slot) {
         await giveBack();
-        return capError("rate_limited", `Too many people are watching right now: at most ${limit}. Try again in a minute.`, { "retry-after": "30" });
+        return capError("rate_limited", `Too many open streams right now: at most ${limit}. Try again in a minute.`, { "retry-after": "30" });
       }
       release.push(() => deps.releaseInFlight(key, slot));
     }
@@ -213,6 +224,7 @@ async function pump(controller: ReadableStreamDefaultController<Uint8Array>, tic
   let rows = 0;
   let bytes = 0;
   let lastByte = opened;
+  let caughtUp = false;
   send(`retry: 2000\n\n`);
   send(`event: open\ndata: {"after":${start}}\n\n`);
   while (!signal.aborted && clock().getTime() < endAt && rows < LIVE_LIMITS.streamMaxRows && bytes < LIVE_LIMITS.streamMaxBytes) {
@@ -231,7 +243,13 @@ async function pump(controller: ReadableStreamDefaultController<Uint8Array>, tic
       if (build) await deps.adjustCounter(liveProofKey("events", build), at, changes.length);
       // A full page means more are waiting: catch up at once, up to this connection's share.
       if (changes.length === LIVE_LIMITS.batchRows) continue;
-    } else if (at.getTime() - lastByte >= heartbeatMs) {
+    }
+    // Once, when this connection has sent everything already saved. tests/caps/live.ts waits for it before it looks at the page.
+    if (!caughtUp) {
+      caughtUp = true;
+      send(`event: caught-up\ndata: {"after":${after}}\n\n`);
+    }
+    if (!changes.length && at.getTime() - lastByte >= heartbeatMs) {
       send(": still here\n\n");
       lastByte = at.getTime();
     }

@@ -21,9 +21,9 @@ export const LIVE_RENDER: CapRenderEntry = {
       ...(live.captions
         ? [
             "- Captions: `useCaptions()` from `lib/platform/captions.ts` (a client component) records the microphone, sends 2 to 3 second pieces to the platform's own `/api/musemuse/live-caption` route, and gives `{ captions, text, status, error, start, stop, clear }`, each caption `{ text, startMs, endMs }`. Pieces overlap a little, so words aren't cut, and the repeats are removed for you.",
-            "- `start()` must come from the person's click: the browser asks for the microphone then, never on page load. Show `CAPTIONS_NOTICE` from the same file next to the button, before they click. It says the audio goes to Muse Voice Transcribe. Show a Stop button while `status` is listening, and show `error` as it is, in plain words.",
+            "- `start()` must come from the person's click: the browser asks for the microphone then, never on page load. Show `CAPTIONS_NOTICE` from the same file next to the button, before they click. It says the audio goes to Muse Voice Transcribe. Show a Stop button while `status` is starting or listening, and show `error` as it is, in plain words.",
             "- List `muse-voice-transcribe-1.0` in `musemuse.json`'s models, used for the captions. The product's own code doesn't call it: the route does.",
-            "- Privacy: audio isn't kept. Don't save the captions unless the brief says to, and never send them to a model without saying so.",
+            "- Privacy: this app doesn't keep the audio. Say no more about it than `CAPTIONS_NOTICE` does. Don't save the captions unless the brief says to, and never send them to a model without saying so.",
           ]
         : []),
       ...(collection
@@ -33,8 +33,8 @@ export const LIVE_RENDER: CapRenderEntry = {
           ]
         : []),
       `- Limits the user sees, once each: ${[
-        live.captions ? "captions run a few seconds behind and each person has a limited number of minutes a day (`status` becomes \"limit\" and `error` says so)" : "",
-        collection ? `at most ${LIVE_LIMITS.streamsPerProduct} people can watch at once, and past that \`status\` stays "reconnecting", so keep the page usable without it` : "",
+        live.captions ? "captions run a few seconds behind and each person, and each network together, has a limited number of minutes a day (`status` becomes \"limit\" and `error` says so)" : "",
+        collection ? `at most ${LIVE_LIMITS.streamsPerProduct} people can watch at once, ${LIVE_LIMITS.streamsPerIp} from one network, and past that \`status\` stays "reconnecting", so keep the page usable without it` : "",
       ]
         .filter(Boolean)
         .join("; ")}.`,
@@ -42,7 +42,7 @@ export const LIVE_RENDER: CapRenderEntry = {
       ...(collection ? ["- No stand-in: a build's stream is real, on the build's own test rows."] : []),
       `- Smoke test, from \`tests/caps/live.ts\`: ${[
         live.captions ? `\`checkCaptions(page, { start, stop })\` clicks your start button, waits for 2 caption pieces and clicks stop. At most ${LIVE_LIMITS.smokeChunks} pieces per verify, so call it once` : "",
-        collection ? "`checkLiveUpdate(page, { change, shows })` opens a second browser, runs `change` in the first, and needs `shows` in the second within 5 seconds with no reload" : "",
+        collection ? "`checkLiveUpdate(page, { change, shows })` opens a second browser, runs `change(first, mark)` in the first, and needs `shows(mark)` in the second within 5 seconds with no reload. `mark` is a new word each run: save it in the change and make `shows` from it, never a fixed text, since this test runs again in the same build and earlier rows stay" : "",
       ]
         .filter(Boolean)
         .join("; ")}. Each takes its own judge screenshot, so leave numbers 10 and 11 to them.`,

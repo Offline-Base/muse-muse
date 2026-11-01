@@ -50,6 +50,7 @@ function App() {
       <p>{text}</p>
       <label>Team <input aria-label="Team" value={team} onChange={(e) => setTeam(e.target.value)} /></label>
       <button onClick={() => fetch("/api/actions/add", { method: "POST", body: JSON.stringify({ team }) })}>Add</button>
+      <p data-testid="teams">{live.items.length}</p>
       <ul>{live.items.map((i) => <li key={i.id}>{i.data.team}</li>)}</ul>
     </main>
   );
@@ -96,16 +97,33 @@ const SPEC = `
 import { test } from "@playwright/test";
 import { checkCaptions, checkLiveUpdate } from "./caps/live";
 
+const add = async (first, text) => {
+  await first.getByLabel("Team").fill(text);
+  await first.getByRole("button", { name: "Add" }).click();
+};
+
 test("captions and a shared board", async ({ page }) => {
   await page.goto("/");
-  await checkCaptions(page, { start: "Start captions", stop: "Stop" });
-  await checkLiveUpdate(page, {
-    change: async (first) => {
-      await first.getByLabel("Team").fill("Team Heron");
-      await first.getByRole("button", { name: "Add" }).click();
-    },
-    shows: "Team Heron",
-  });
+  const mode = process.env.LIVE_E2E_MODE;
+  if (!mode) {
+    await checkCaptions(page, { start: "Start captions", stop: "Stop" });
+    await checkLiveUpdate(page, { change: (first, mark) => add(first, "Team " + mark), shows: (mark) => "Team " + mark });
+  }
+  // A change that never reaches anyone has to fail, whatever earlier runs saved.
+  if (mode === "nothing") await checkLiveUpdate(page, { change: async () => undefined, shows: (mark) => "Team " + mark });
+  // The old way: a fixed text is refused in words.
+  if (mode === "fixed") await checkLiveUpdate(page, { change: (first) => add(first, "Team Heron"), shows: "Team Heron" });
+  // A change with no words of its own: the second browser has caught up, so its count is right.
+  if (mode === "count") {
+    await checkLiveUpdate(page, {
+      change: (first, mark) => add(first, "Team " + mark),
+      shows: async (_mark, other) => {
+        const shown = Number(await other.getByTestId("teams").innerText());
+        if (shown < 1) throw new Error("the second browser hadn't caught up: it shows " + shown + " teams");
+        return new RegExp("^" + (shown + 1) + "$");
+      },
+    });
+  }
 });
 `;
 
@@ -271,25 +289,30 @@ describe("the live cap, end to end", { skip }, () => {
     if (dir) rmSync(dir, { recursive: true, force: true });
   });
 
-  it("passes the real helpers and the real fixed checks", { timeout: 240_000 }, async (t) => {
-    const since = new Date(Date.now() - 1000);
-    const run = await new Promise<{ code: number | null; out: string }>((resolve) => {
-      const child = spawn(path.join(MODULES, ".bin/playwright"), ["test", "--project=smoke", "--reporter=line"], { cwd: dir, env: { ...process.env, MUSEMUSE_BASE_URL: productUrl, MUSEMUSE_SCREEN_CHECK: "warn" } });
+  /** The real runner against this product, in this build's namespace, like verify, a fix round or the demo. */
+  const play = (mode?: string) =>
+    new Promise<{ code: number | null; out: string }>((resolve) => {
+      const child = spawn(path.join(MODULES, ".bin/playwright"), ["test", "--project=smoke", "--reporter=line"], { cwd: dir, env: { ...process.env, MUSEMUSE_BASE_URL: productUrl, MUSEMUSE_SCREEN_CHECK: "warn", ...(mode ? { LIVE_E2E_MODE: mode } : {}) } });
       let out = "";
       child.stdout.on("data", (c: Buffer) => (out += c.toString()));
       child.stderr.on("data", (c: Buffer) => (out += c.toString()));
       child.on("close", (code) => resolve({ code, out }));
     });
+  const record = () => JSON.parse(readFileSync(path.join(dir, "test-results/caps/live.json"), "utf8")) as { checks: Array<{ id: string; ok: boolean; detail?: string }> };
+
+  it("passes the real helpers and the real fixed checks", { timeout: 240_000 }, async (t) => {
+    const since = new Date(Date.now() - 1000);
+    const run = await play();
     if (/Executable doesn't exist/.test(run.out)) return t.skip("Chromium isn't installed");
     assert.equal(run.code, 0, run.out.slice(-3000));
 
-    const record = JSON.parse(readFileSync(path.join(dir, "test-results/caps/live.json"), "utf8")) as { checks: Array<{ id: string; ok: boolean; detail?: string }> };
-    assert.deepEqual(record.checks.map((c) => [c.id, c.ok]), [["notice", true], ["chunks", true], ["shown", true], ["live-update", true]]);
+    const first = record();
+    assert.deepEqual(first.checks.map((c) => [c.id, c.ok]), [["notice", true], ["chunks", true], ["shown", true], ["live-update", true]]);
     assert.ok(existsSync(path.join(dir, "test-results/judge/10-captions.png")));
     assert.ok(existsSync(path.join(dir, "test-results/judge/11-second-browser-live.png")));
-    const ms = Number(record.checks.find((c) => c.id === "live-update")!.detail!.match(/(\d+) ms/)![1]);
+    const ms = Number(first.checks.find((c) => c.id === "live-update")!.detail!.match(/(\d+) ms/)![1]);
     assert.ok(ms < 5000, `${ms} ms`);
-    console.log(`[live e2e] ${record.checks.map((c) => c.detail).join(" | ")}`);
+    console.log(`[live e2e] ${first.checks.map((c) => c.detail).join(" | ")}`);
 
     // The gateway's own record, read the way verify's caps step reads it, then the real checker.
     const res = await fetch(`${gatewayUrl}/caps/proof?since=${encodeURIComponent(since.toISOString())}`, { headers: { authorization: `Bearer ${TEST_TOKEN}` } });
@@ -300,12 +323,40 @@ describe("the live cap, end to end", { skip }, () => {
     assert.ok(proof.caps.live.streams! >= 1);
     assert.ok(proof.caps.live.events! >= 1);
     const checker = (await import(pathToFileURL(path.join(dir, "scripts/caps/live.mjs")).href)) as { check(args: unknown): Promise<Array<{ id: string; ok: boolean; detail?: string }>> };
-    const checks = await checker.check({ record, proof: proof.caps.live, root: dir });
+    const checks = await checker.check({ record: first, proof: proof.caps.live, root: dir });
     assert.ok(checks.every((c) => c.ok), JSON.stringify(checks));
     assert.deepEqual(checks.map((c) => c.id), ["notice", "chunks", "chunk-limit", "shown", "live-update"]);
     if (realMeta) {
       console.log(`[live e2e] real transcripts ${JSON.stringify(transcripts)}`);
       assert.match(transcripts.join(" ").toLowerCase(), /morning|welcome|lecture|rivers?|land|water/, "the fixture's own words came back");
     }
+  });
+
+  // Rows stay in b:<buildId> until the build ends, and fix rounds and the demo replay the same test on top of them.
+  it("passes again in the same namespace, where the first run's rows still are", { timeout: 240_000 }, async (t) => {
+    const run = await play();
+    if (/Executable doesn't exist/.test(run.out)) return t.skip("Chromium isn't installed");
+    assert.equal(run.code, 0, run.out.slice(-3000));
+    assert.ok(record().checks.every((c) => c.ok), JSON.stringify(record()));
+  });
+
+  it("works for a change with no words of its own, reading a count that has caught up", { timeout: 120_000 }, async (t) => {
+    const run = await play("count");
+    if (/Executable doesn't exist/.test(run.out)) return t.skip("Chromium isn't installed");
+    assert.equal(run.code, 0, run.out.slice(-3000));
+  });
+
+  it("fails when the change never arrives, even with earlier runs' rows on the page", { timeout: 120_000 }, async (t) => {
+    const run = await play("nothing");
+    if (/Executable doesn't exist/.test(run.out)) return t.skip("Chromium isn't installed");
+    assert.notEqual(run.code, 0);
+    assert.match(run.out, /the change didn't show in the second browser/);
+  });
+
+  it("refuses a fixed text in words", { timeout: 120_000 }, async (t) => {
+    const run = await play("fixed");
+    if (/Executable doesn't exist/.test(run.out)) return t.skip("Chromium isn't installed");
+    assert.notEqual(run.code, 0);
+    assert.match(run.out, /shows has to be a function of the mark/);
   });
 });
