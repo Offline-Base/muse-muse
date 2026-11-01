@@ -1468,6 +1468,7 @@ export const boardTryTurns = pgTable(
     uniqueIndex("board_try_one_open").on(t.loopId, t.visitor).where(sql`${t.status} in ('queued', 'running')`),
     index("board_try_queue_idx").on(t.loopId, t.status, t.createdAt),
   ],
+);
 
 // ---------- 0032_connected_accounts (docs/GITHUB_EXPORT.md) ----------
 

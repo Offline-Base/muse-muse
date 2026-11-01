@@ -364,7 +364,7 @@ describe("the fine-tune room", { skip: canMock ? false : "needs --experimental-t
     });
 
     it("links the board for admins only", () => {
-      assert.match(where(), /It isn&#x27;t Muse Glimmer\. <a href="\/device">Open the board<\/a>/);
+      assert.match(where(), /this hasn&#x27;t been measured on a board yet\. <a href="\/device">Open the board<\/a>/);
       assert.doesNotMatch(where({ admin: false }), /\/device/);
     });
 

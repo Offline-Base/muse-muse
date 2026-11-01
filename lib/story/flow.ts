@@ -68,8 +68,8 @@ export const FLOW_STEPS: FlowStep[] = [
   },
   {
     step: "A file small enough for a device",
-    mark: "not-run",
-    evidence: `Not yet run in this flow. By hand, on rented machines, a tuned Glimmer at one-bit size (IQ1_S, ${ONE_BIT_RESULT.iq1sGb} GB) answered ${ONE_BIT_RESULT.iq1s} of new-knowledge test questions, against ${ONE_BIT_RESULT.q4} at Q4_K_M and ${ONE_BIT_RESULT.baseIq1s} for base Glimmer at IQ1_S. So one-bit size costs a lot of quality.`,
+    mark: "harness",
+    evidence: `A test harness ran the real quantize recipe on a rented GPU with made-up data, not launched through the site: a tuned small Llama became a 2.02 GB file and passed every check. No tuned one-bit Glimmer has passed yet. By hand, a tuned Glimmer at one-bit size (IQ1_S, ${ONE_BIT_RESULT.iq1sGb} GB) answered ${ONE_BIT_RESULT.iq1s} of new-knowledge test questions, against ${ONE_BIT_RESULT.q4} at Q4_K_M and ${ONE_BIT_RESULT.baseIq1s} for base Glimmer at IQ1_S. So one-bit size costs a lot of quality.`,
   },
   {
     step: "On your own hardware",
@@ -103,7 +103,7 @@ export const OFFLINE_BASE_FACTS: string[] = [
 export const OFFLINE_LIMITS: string[] = [
   "The fleet has real boards, but this flow has not run on them. Everything here about a board is simulated.",
   "The fleet and Base Drive run their own model setups today, such as Liquid AI's models on the boards. Running Meta's models from this flow on them is the plan, not a result.",
-  "One-bit Muse Glimmer has not been shown to fit or run on an 8 GB Jetson. The file is about 6.5 GB, which leaves little room.",
+  "One-bit Muse Glimmer has not been shown to fit or run on an 8 GB Jetson. The file is about 6.5 GB. On an x86 CPU under an 8 GB limit it loaded, at about 2.4 tokens a second, with answers too poor to demo. That x86 test is not a Jetson.",
   "Muse Muse's USB export is its own kit, not a Base Drive, and it has not been written from a board.",
   "A cloud step means your sentence, your data and your training run go through Muse Muse and a rented GPU. Offline starts after the file is on your device.",
 ];

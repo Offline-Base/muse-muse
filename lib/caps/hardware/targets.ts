@@ -1,10 +1,10 @@
 /**
  * Which model a board runs (the owner's decision, Nov 1): a Jetson Orin Nano gets one-bit Muse Glimmer, anything else a small Llama.
  *
- * Kept to this one function on purpose: deviceModelTarget in lib/train/quant-targets.ts, on branch tg-quant-targets and not on main
- * when this was written, decides the same thing with the same names. When it merges, targetForBoardKind should call it, and only
- * this file changes.
+ * Kept to this one function on purpose: deviceModelTarget in lib/train/quant-targets.ts decides it, and this only names the file.
  */
+import { deviceModelTarget } from "@/lib/train/quant-targets";
+
 export type BoardKind = "jetson_orin_nano" | "raspberry_pi" | "other";
 
 export interface BoardTarget {
@@ -14,11 +14,9 @@ export interface BoardTarget {
   label: string;
 }
 
-const ONE_BIT_GLIMMER: BoardTarget = { id: "muse-glimmer-30b-IQ1_S", label: "Muse Glimmer, one bit" };
-const SMALL_LLAMA: BoardTarget = { id: "Llama-3.2-3B-Q4_K_M", label: "Llama 3.2 3B" };
-
 export function targetForBoardKind(kind: BoardKind): BoardTarget {
-  return kind === "jetson_orin_nano" ? ONE_BIT_GLIMMER : SMALL_LLAMA;
+  const target = deviceModelTarget(kind);
+  return { id: `${target.fileStem}${target.level}`, label: target.label };
 }
 
 /** A board's kind from what describe_device calls its hardware. muse-device reads this from the board's device tree. */

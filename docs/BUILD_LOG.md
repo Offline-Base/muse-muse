@@ -1876,3 +1876,7 @@ Left for the owner: non-Meta student profiles in scripts/knowledge/aws/job/train
 - Fixed: the privacy paragraph left out the 65.0% holdout result. The relay row now says the relay is not end-to-end encrypted, as the threat model does. The video line now explains the amber harness mark.
 - Run: story and private page tests, 15 pass. tsc filtered to touched paths, clean. Local dev site, port 3031, HTTP only: flag off /offline 404, /private and /how-it-works 200 without the story sections; flag on all three 200 with them; the company's name absent from /private both ways.
 - Not run: browser views after these fixes, so the two screenshots above predate them. The full suite, next build, a Preview. Spend $0.
+
+## Nov 1, 2026: device loop integration branch (tg-device-loop-int)
+
+**Merged** tg-quant-targets, tg-try-export, tg-board-loop, tg-github-export, tg-gadget-connect and tg-story onto main at cd314a7d. `0031_board_loop` keeps its number and connected accounts becomes `0032_connected_accounts`, one second newer in the journal, with a fresh snapshot. Both read before any deploy: new tables and indexes only, so additive. `docs/JETSON_TODO.md` is now one list in three parts. `targetForBoardKind` calls `deviceModelTarget`. `lib/story/flow.ts` now marks the small file step as harness, from the Nov 1 quantize run.
