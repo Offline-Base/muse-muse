@@ -45,6 +45,14 @@ describe("the overlay's files", () => {
     assert.deepEqual(JSON.parse(readFileSync(path.join(TEMPLATE, "caps/connect/deps.json"), "utf8")), { dependencies: {}, devDependencies: {} });
   });
 
+  test("musemuse.schema.json's connect block takes exactly the allowlisted APIs and the channels that send", () => {
+    const schema = JSON.parse(readFileSync(path.join(TEMPLATE, "musemuse.schema.json"), "utf8"));
+    const block = schema.properties.connect;
+    assert.deepEqual(block.properties.publicApis.items.enum, Object.keys(APIS));
+    assert.deepEqual(block.properties.sends.items.enum, [...new Set(Object.values(SERVICES).flatMap((s) => (s.send ? [s.send] : [])))]);
+    assert.ok(!schema.required.includes("connect"));
+  });
+
   test("the skill names every helper, every API path and every service call, and nothing has an em dash", () => {
     const skill = readFileSync(path.join(CONNECT, ".agents/skills/muse-connect/SKILL.md"), "utf8");
     for (const name of ["fetchPublic", "secrets(", "KeySettings", "ConfirmSend", "send(", "needs_key", "switched_off", "checkFetchShown", "saveTestKey", "confirmSend", "openAsOwner"]) assert.ok(skill.includes(name), name);

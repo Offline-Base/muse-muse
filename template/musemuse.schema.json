@@ -99,6 +99,16 @@
         }
       }
     },
+    "connect": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Only for a product that reaches outside services through the platform: exactly the brief's picks, which verify checks.",
+      "properties": {
+        "publicApis": { "type": "array", "maxItems": 4, "items": { "enum": ["nws", "wikipedia", "openlibrary", "usgs"] } },
+        "keys": { "type": "array", "maxItems": 3, "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,39}$" } },
+        "sends": { "type": "array", "maxItems": 2, "items": { "enum": ["email", "chat"] } }
+      }
+    },
     "agent": {
       "type": "object",
       "additionalProperties": false,
