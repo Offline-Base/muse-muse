@@ -92,8 +92,6 @@ function isExecutable(content: Buffer): boolean {
   return magic === 0x7f454c46 || magic === 0xcafebabe || magic === 0xfeedface || magic === 0xfeedfacf || magic === 0xcefaedfe || magic === 0xcffaedfe || (content[0] === 0x4d && content[1] === 0x5a);
 }
 
-const TEXT = /\.(m?[jt]sx?|cjs|json|md|css|html?|txt|py|ya?ml|toml|svg|env|sh|cfg|ini|xml|csv)$/i;
-
 const sha256 = (b: Buffer) => createHash("sha256").update(b).digest("hex");
 
 /** Which parts reach Muse Muse itself, read from the source's imports and files. */
@@ -148,7 +146,13 @@ function kitReadme(m: KitManifest, product: OutputProduct): string {
       "bash",
     ),
     "",
-    "Or deploy it to Vercel: `npx vercel deploy`, then set `PRODUCT_TOKEN` (your Meta API key) and `GATEWAY_URL=https://api.meta.ai` in the project's environment variables.",
+    "Or deploy it to Vercel: `npx vercel deploy --prod`, then set `PRODUCT_TOKEN` (your Meta API key) and `GATEWAY_URL=https://api.meta.ai` in the project's environment variables.",
+    ...(m.needs.python
+      ? [
+          "",
+          "Use the production address. A preview address is behind Vercel's sign-in by default, so the product's calls to its own Python functions get turned away there.",
+        ]
+      : []),
     "",
     `It needs Node ${m.needs.node} or newer${m.needs.python ? ", and for its Python functions in `api/py/` the Python that `.python-version` names: Vercel runs them itself, and anywhere else this machine runs them after `node scripts/py-local.mjs install`" : ""}.`,
     "",
@@ -204,7 +208,10 @@ export function selfHostKit(input: KitInput): Kit {
       leftOut.push(p);
       continue;
     }
-    if (TEXT.test(p) && TOKEN.test(file.content.toString("utf8"))) {
+    // Every file that isn't left out is read, whatever its name: Procfile, .npmrc, a .map or a .lock can hold one too.
+    // Each is at most 10 MB and a kit at most 24 MB (SOURCE_LIMITS), so reading them all is cheap. latin1 keeps every
+    // byte, so a token inside a binary file is found as well.
+    if (TOKEN.test(file.content.toString("latin1"))) {
       throw new KitError("token_in_source", `The kit wasn't made: ${p} holds something shaped like a Muse Muse token.`);
     }
     if (p.startsWith("public/") && file.content.length > KIT_FETCH_OVER_BYTES) {

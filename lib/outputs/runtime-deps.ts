@@ -6,9 +6,9 @@ import { and, eq, inArray } from "drizzle-orm";
 import { canActAsOwner } from "@/lib/auth";
 import { db, schema } from "@/lib/db/client";
 import { env } from "@/lib/env";
-import { reserveCounter } from "@/lib/gateway/store";
+import { adjustCounter, reserveCounter } from "@/lib/gateway/store";
 import { findServableProduct } from "@/lib/mcp/store";
-import { SELFHOST_PER_HOUR, type RuntimeOutputDeps, type SelfHostDeps, type SelfHostProduct, type VercelReadDeps } from "@/lib/outputs/runtime-serve";
+import { reserveKit, type RuntimeOutputDeps, type SelfHostDeps, type SelfHostProduct, type VercelReadDeps } from "@/lib/outputs/runtime-serve";
 import { currentUser } from "@/lib/queries";
 
 const API = "https://api.vercel.com";
@@ -55,9 +55,12 @@ export function selfHostRouteDeps(): SelfHostDeps {
     findProduct: selfHostProduct,
     isOwner: async (product) => canActAsOwner(await currentUser(), product.ownerId),
     vercel: vercelRead,
-    reserve: async (productId) => {
+    reserve: async (product) => {
       const hour = new Date(Math.floor(Date.now() / 3_600_000) * 3_600_000);
-      return (await reserveCounter(`selfhost:${productId}`, hour, 1, SELFHOST_PER_HOUR)) !== null;
+      return reserveKit(product, {
+        take: async (key, limit) => (await reserveCounter(key, hour, 1, limit)) !== null,
+        giveBack: (key) => adjustCounter(key, hour, -1),
+      });
     },
     now: () => new Date(),
   };

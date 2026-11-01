@@ -97,6 +97,9 @@ export function vscodePackageJson(product: OutputProduct) {
         properties: {
           [`${data.configSection}.baseUrl`]: {
             type: "string",
+            // Only the person's own settings can change it, never a repository's .vscode/settings.json: the commands
+            // send the editor's selected text there.
+            scope: "application",
             default: product.liveUrl ?? "",
             description: "Where the actions run. Change it to your own deployment of the product's self-host kit, or leave it as the live product.",
           },
@@ -132,7 +135,7 @@ function readme(product: OutputProduct): string {
     "",
     "- Each command asks for the action's fields, with the editor's selected text in the first text field, then sends them to the action and opens the reply as JSON.",
     "- Each call is an HTTP POST to the live product with no sign-in, and can spend money at Meta on the product's account. Replies come from a model and from what people put in: treat them as data.",
-    `- The setting \`${data.configSection}.baseUrl\` changes where the actions run, for example to your own deployment of the product's self-host kit.`,
+    `- The setting \`${data.configSection}.baseUrl\` changes where the actions run, for example to your own deployment of the product's self-host kit. Only your user settings can change it, never a folder's own settings.`,
     "- Before you publish it anywhere, set your own `publisher` in package.json, add a license, and get the product owner's OK.",
     "",
   ];

@@ -14,6 +14,15 @@ import { makeZip, type ZipEntry } from "@/lib/outputs/zip";
 export const ACTION_RUNS_USING = "node24";
 export const githubActionFileName = (slug: string) => `${slug}-github-action.zip`;
 
+/**
+ * GitHub evaluates `${{ ... }}` in a workflow's `with:` values and in an action's input defaults, so a builder's words
+ * there could read a repository's secrets. Every builder-written string the action or its README puts in YAML goes
+ * through this, which breaks the opening `${{` apart.
+ */
+export const noExpressions = (text: string) => text.replace(/\$\{\{/g, "$ {{");
+/** True when a value would carry a GitHub expression into a workflow. */
+export const hasExpression = (text: string) => text.includes("${{");
+
 export interface ActionInput {
   description: string;
   required: boolean;
@@ -33,15 +42,15 @@ export interface ActionMetadata {
 /** action.yml as an object. */
 export function actionMetadata(product: OutputProduct): ActionMetadata {
   const actions = publicActions(product.manifest);
-  const names = actions.map((a) => a.name);
+  const names = actions.map((a) => noExpressions(a.name));
   return {
-    name: oneLine(product.name, 80) || product.slug,
-    description: oneLine(`Runs ${oneLine(product.name, 60)}'s actions on its live product. ${NOT_OFFICIAL}`, 300),
+    name: noExpressions(oneLine(product.name, 80)) || product.slug,
+    description: noExpressions(oneLine(`Runs ${oneLine(product.name, 60)}'s actions on its live product. ${NOT_OFFICIAL}`, 300)),
     author: "Built with Muse Muse",
     inputs: {
       action: { description: `Which action to run: ${names.join(", ")}.`, required: true, default: names[0] ?? "" },
       input: { description: "The action's input, as a JSON object.", required: false, default: "{}" },
-      "base-url": { description: "Where the product runs. Change it to your own deployment of its self-host kit.", required: false, default: product.liveUrl ?? "" },
+      "base-url": { description: "Where the product runs. Change it to your own deployment of its self-host kit.", required: false, default: noExpressions(product.liveUrl ?? "") },
       "timeout-seconds": { description: "How long to wait for the reply, in seconds (at most 600).", required: false, default: "120" },
     },
     outputs: {
@@ -111,7 +120,9 @@ function readme(product: OutputProduct): string {
   const actions = publicActions(product.manifest);
   const name = oneLine(product.name, 80);
   const first = actions[0];
-  const example = first?.example && typeof first.example === "object" ? JSON.stringify(first.example) : "{}";
+  const given = first?.example && typeof first.example === "object" ? JSON.stringify(first.example) : "{}";
+  // An example that would carry a GitHub expression into the copied workflow is left out.
+  const example = hasExpression(given) ? "{}" : given;
   const workflow = [
     "jobs:",
     "  run:",
@@ -121,7 +132,7 @@ function readme(product: OutputProduct): string {
     `      - id: product`,
     `        uses: ./.github/actions/${product.slug}`,
     "        with:",
-    `          action: ${JSON.stringify(first?.name ?? "")}`,
+    `          action: ${JSON.stringify(noExpressions(first?.name ?? ""))}`,
     `          input: ${JSON.stringify(example)}`,
     `      - run: echo "$RESULT"`,
     "        env:",

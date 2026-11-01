@@ -6,9 +6,10 @@
  *   GET /p/<slug>/get/selfhost.zip       the self-host kit, for the product's owner only, since it holds the product's
  *                                        whole source: its owner decides whether to share it
  *
- * Each answers 404 with the flag off, for a product that isn't live, or one with no public actions (the kit needs only a
- * live link). Nothing here publishes anything anywhere (decision 9). The kit's files come from the live deployment
- * itself, read back from Vercel (readLiveSource), so they are exactly what runs.
+ * Each answers 404 with the flag off, with the very answer the native downloads route gave these paths before they
+ * existed (lib/native/downloads.ts, an unknown kind), and 404 for a product that isn't live or has no public actions
+ * (the kit needs only a live link). Nothing here publishes anything anywhere (decision 9). The kit's files come from
+ * the live deployment itself, read back from Vercel (readLiveSource), so they are exactly what runs.
  */
 import { createHash } from "node:crypto";
 import { publicActions, type OutputProduct } from "@/lib/outputs/generate";
@@ -26,7 +27,10 @@ export interface RuntimeOutputDeps {
 const SLUG = /^[a-z0-9-]{1,80}$/;
 const text = (body: string, status: number, headers: Record<string, string> = {}) =>
   new Response(`${body}\n`, { status, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", ...headers } });
-const notFound = () => text("Not found", 404);
+/** With RUNTIME_OUTPUTS off: what /p/<slug>/get/<kind> answered for an unknown kind before these routes existed. */
+const noSuchDownload = () => text("There's no download by that name.", 404);
+/** As the native downloads route says it for a product with no such package. */
+const notAvailable = () => text("This download isn't available.", 404);
 
 function zip(body: Buffer, fileName: string, cache: string): Response {
   return new Response(new Uint8Array(body), {
@@ -41,9 +45,10 @@ function zip(body: Buffer, fileName: string, cache: string): Response {
 
 /** The VS Code extension or the GitHub Action, made from the manifest on each request, as the CLI is. */
 export async function runtimeOutputResponse(kind: RuntimeDownload, slug: string, deps: RuntimeOutputDeps): Promise<Response> {
-  if (!deps.enabled() || !SLUG.test(slug)) return notFound();
+  if (!deps.enabled()) return noSuchDownload();
+  if (!SLUG.test(slug)) return notAvailable();
   const product = await deps.findProduct(slug);
-  if (!product?.liveUrl || !publicActions(product.manifest).length) return notFound();
+  if (!product?.liveUrl || !publicActions(product.manifest).length) return notAvailable();
   const cache = "public, max-age=60, s-maxage=60";
   return kind === "vscode" ? zip(vscodeZip(product), vscodeFileName(slug), cache) : zip(githubActionZip(product), githubActionFileName(slug), cache);
 }
@@ -150,6 +155,9 @@ export interface SelfHostProduct extends OutputProduct {
   vercelProjectId: string | null;
 }
 
+/** Which hourly share a kit request ran out of. */
+export type SelfHostLimit = "product" | "owner" | "site";
+
 export interface SelfHostDeps {
   enabled(): boolean;
   findProduct(slug: string): Promise<SelfHostProduct | null>;
@@ -157,22 +165,102 @@ export interface SelfHostDeps {
   isOwner(product: SelfHostProduct): Promise<boolean>;
   /** Null when this site has no Vercel token to read deployments with. */
   vercel(): VercelReadDeps | null;
-  /** Takes one of the product's kit builds this hour; false when it has had its share. */
-  reserve(productId: string): Promise<boolean>;
+  /**
+   * Takes one kit build this hour from the owner's share, the product's and the site's, in that order. Null when it got
+   * all three (and gives back what it took when one was full); else the share that was full.
+   */
+  reserve(product: SelfHostProduct): Promise<SelfHostLimit | null>;
   now(): Date;
 }
 
-/** How many kits a product's owner may make an hour: each one reads every file of the deployment from Vercel. */
+/** Each kit reads every file of the deployment from Vercel with the platform's token, so kits are counted per hour. */
 export const SELFHOST_PER_HOUR = 6;
+/** All of one owner's products together. */
+export const SELFHOST_OWNER_PER_HOUR = 12;
+/** The whole site. */
+export const SELFHOST_SITE_PER_HOUR = 60;
 
-export async function selfHostResponse(slug: string, deps: SelfHostDeps): Promise<Response> {
-  if (!deps.enabled() || !SLUG.test(slug)) return notFound();
+/** An hourly counter, as lib/gateway/store's reserveCounter and adjustCounter keep them. */
+export interface KitCounters {
+  /** Takes one under `limit` this hour; false when it is full. */
+  take(key: string, limit: number): Promise<boolean>;
+  /** Gives one back. */
+  giveBack(key: string): Promise<void>;
+}
+
+export const kitCounterKeys = {
+  owner: (ownerId: string) => `selfhost-owner:${ownerId}`,
+  product: (productId: string) => `selfhost:${productId}`,
+  site: "selfhost:all",
+} as const;
+
+/** SelfHostDeps.reserve over hourly counters: the owner's share, then the product's, then the site's. */
+export async function reserveKit(product: Pick<SelfHostProduct, "id" | "ownerId">, counters: KitCounters): Promise<SelfHostLimit | null> {
+  const shares: Array<[string, number, SelfHostLimit]> = [
+    [kitCounterKeys.owner(product.ownerId), SELFHOST_OWNER_PER_HOUR, "owner"],
+    [kitCounterKeys.product(product.id), SELFHOST_PER_HOUR, "product"],
+    [kitCounterKeys.site, SELFHOST_SITE_PER_HOUR, "site"],
+  ];
+  const taken: string[] = [];
+  for (const [key, limit, which] of shares) {
+    if (!(await counters.take(key, limit))) {
+      // Nothing is made, so the shares already taken go back.
+      for (const k of taken) await counters.giveBack(k).catch((err: unknown) => console.error("[selfhost] couldn't give back a kit:", err instanceof Error ? err.message : err));
+      return which;
+    }
+    taken.push(key);
+  }
+  return null;
+}
+
+/** The request's own say about where it came from: the browser's Sec-Fetch-Site, when it sent one. */
+export interface KitRequest {
+  fetchSite: string | null;
+}
+
+/**
+ * A kit is made on a GET that rides the owner's session cookie, so a page on another site could start one in the
+ * owner's name and use up their kits. Browsers say where a request came from: only the platform's own pages and a link
+ * the owner opened themselves (or a client that doesn't say, which then has no cookie of a browser's to ride) get one.
+ */
+function crossSite(request: KitRequest): boolean {
+  return request.fetchSite !== null && request.fetchSite !== "same-origin" && request.fetchSite !== "none";
+}
+
+const LIMIT_SAYS: Record<SelfHostLimit, string> = {
+  product: `A product's owner can make ${SELFHOST_PER_HOUR} kits of it an hour. Try again later.`,
+  owner: `You can make ${SELFHOST_OWNER_PER_HOUR} self-host kits an hour across your products. Try again later.`,
+  site: "This site has made all the self-host kits it makes in an hour. Try again later.",
+};
+
+const untilNextHour = (now: Date) => String(Math.max(1, Math.ceil((3_600_000 - (now.getTime() % 3_600_000)) / 1000)));
+
+/** The checks before anything is counted or read: the answer to give, or the product when the request may go on. */
+async function selfHostRefusal(slug: string, deps: SelfHostDeps, request: KitRequest): Promise<{ answer: Response } | { product: SelfHostProduct }> {
+  if (!deps.enabled()) return { answer: noSuchDownload() };
+  if (!SLUG.test(slug)) return { answer: notAvailable() };
+  if (crossSite(request)) return { answer: text("Open the self-host kit from the product's own page.", 403) };
   const product = await deps.findProduct(slug);
-  if (!product?.liveUrl) return notFound();
-  if (!(await deps.isOwner(product))) return text("Only this product's owner can download its self-host kit.", 403);
+  if (!product?.liveUrl) return { answer: notAvailable() };
+  if (!(await deps.isOwner(product))) return { answer: text("Only this product's owner can download its self-host kit.", 403) };
+  return { product };
+}
+
+/** HEAD: whether the kit is there for this person, without counting a kit or reading a file. */
+export async function selfHostHead(slug: string, deps: SelfHostDeps, request: KitRequest = { fetchSite: null }): Promise<Response> {
+  const checked = await selfHostRefusal(slug, deps, request);
+  if ("answer" in checked) return new Response(null, { status: checked.answer.status, headers: checked.answer.headers });
+  return new Response(null, { status: 200, headers: { "content-type": "application/zip", "cache-control": "private, no-store" } });
+}
+
+export async function selfHostResponse(slug: string, deps: SelfHostDeps, request: KitRequest = { fetchSite: null }): Promise<Response> {
+  const checked = await selfHostRefusal(slug, deps, request);
+  if ("answer" in checked) return checked.answer;
+  const { product } = checked;
   const vercel = deps.vercel();
-  if (!vercel || !product.vercelProjectId) return text("This site can't read the live product's files, so it can't make a self-host kit.", 503);
-  if (!(await deps.reserve(product.id))) return text(`A product's owner can make ${SELFHOST_PER_HOUR} kits an hour. Try again later.`, 429, { "retry-after": "3600" });
+  if (!vercel || !product.vercelProjectId || !product.liveUrl) return text("This site can't read the live product's files, so it can't make a self-host kit.", 503);
+  const full = await deps.reserve(product);
+  if (full) return text(LIMIT_SAYS[full], 429, { "retry-after": untilNextHour(deps.now()) });
   let source: { deploymentId: string; files: SourceFile[] };
   try {
     source = await readLiveSource({ liveUrl: product.liveUrl, projectId: product.vercelProjectId }, vercel);

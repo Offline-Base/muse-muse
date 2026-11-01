@@ -17,7 +17,23 @@ import { after, before, describe, it } from "node:test";
 import type { OutputProduct } from "@/lib/outputs/generate";
 import { actionMetadata, actionMetadataProblems, actionYaml, githubActionEntries, githubActionZip } from "@/lib/outputs/github-action";
 import { GITHUB_ACTION_SOURCE, KIT_FETCH_SOURCE, VSCODE_EXTENSION_SOURCE } from "@/lib/outputs/runtime-assets-source";
-import { flattenTree, readLiveSource, runtimeOutputResponse, selfHostResponse, SELFHOST_PER_HOUR, type SelfHostDeps, type SelfHostProduct, type VercelReadDeps } from "@/lib/outputs/runtime-serve";
+import { answerDownload, type DownloadDeps } from "@/lib/native/downloads";
+import {
+  flattenTree,
+  kitCounterKeys,
+  readLiveSource,
+  reserveKit,
+  runtimeOutputResponse,
+  selfHostHead,
+  selfHostResponse,
+  SELFHOST_OWNER_PER_HOUR,
+  SELFHOST_PER_HOUR,
+  SELFHOST_SITE_PER_HOUR,
+  type KitCounters,
+  type SelfHostDeps,
+  type SelfHostProduct,
+  type VercelReadDeps,
+} from "@/lib/outputs/runtime-serve";
 import { KIT_FETCH_OVER_BYTES, KitError, selfHostKit, selfHostZip, type SourceFile } from "@/lib/outputs/selfhost";
 import { extensionName, vscodeEntries, vscodePackageJson, vscodeZip, vsixFileName } from "@/lib/outputs/vscode";
 import { readZip } from "@/lib/outputs/zip";
@@ -98,6 +114,8 @@ describe("the VS Code extension", () => {
     assert.deepEqual(pkg.contributes.commands.map((c) => c.command), ["musemuse.scale-my-recipe.scale_recipe", "musemuse.scale-my-recipe.open"]);
     assert.deepEqual(pkg.contributes.commands.map((c) => c.title), ["Scale recipe", "Open the live product"]);
     assert.equal(pkg.contributes.configuration.properties["musemuse.scale-my-recipe.baseUrl"].default, "https://scale.vercel.app");
+    // A repository's .vscode/settings.json can't point the commands, and the selected text, at another host.
+    assert.equal(pkg.contributes.configuration.properties["musemuse.scale-my-recipe.baseUrl"].scope, "application");
     assert.ok(!JSON.stringify(pkg).includes("read_my_mail"), "an owner-only action isn't offered");
     assert.equal(extensionName("My--Thing_2"), "my-thing-2");
     assert.equal(vsixFileName(PRODUCT.slug), "scale-my-recipe-0.1.0.vsix");
@@ -242,6 +260,25 @@ describe("the GitHub Action", () => {
   it("zips its files at the root", () => {
     assert.deepEqual([...readZip(githubActionZip(PRODUCT)).keys()].sort(), ["README.md", "action.yml", "index.js", "product.json"]);
   });
+
+  it("never carries a GitHub expression from the builder's words into a workflow or action.yml", () => {
+    const sly = {
+      ...manifest,
+      actions: [{ ...manifest.actions[0], example: { diff: "${{ secrets.GITHUB_TOKEN }}" } }],
+    } as unknown as Manifest;
+    const product = { ...PRODUCT, name: "Recipes ${{ secrets.NPM_TOKEN }}", manifest: sly };
+    const files = readZip(githubActionZip(product));
+    const readme = files.get("README.md")!.toString("utf8");
+    const workflow = readme.slice(readme.indexOf("```yaml"), readme.indexOf("```", readme.indexOf("```yaml") + 7));
+    assert.ok(!workflow.includes("${{ secrets"), workflow);
+    assert.match(workflow, /^ {10}input: "\{\}"$/m, "the example is left out");
+    assert.match(workflow, /RESULT: \$\{\{ steps\.product\.outputs\.result \}\}/, "the README's own expression stays");
+    const yml = files.get("action.yml")!.toString("utf8");
+    assert.ok(!yml.includes("${{"), yml);
+    assert.equal((readYaml(yml) as { name: string }).name, "Recipes $ {{ secrets.NPM_TOKEN }}");
+    // A plain example is still shown.
+    assert.match(readZip(githubActionZip(PRODUCT)).get("README.md")!.toString("utf8"), /input: "\{\\"recipe\\":\\"2 eggs\\",\\"servings\\":4\}"/);
+  });
 });
 
 const file = (p: string, content: string | Buffer): SourceFile => ({ path: p, content: Buffer.isBuffer(content) ? content : Buffer.from(content) });
@@ -313,10 +350,22 @@ describe("the self-host kit", () => {
     assert.match(readme, /node scripts\/kit-fetch\.mjs/);
     assert.match(readme, /## What doesn't work here/);
     assert.ok(!readme.includes("—"));
+    // A production deploy: a preview address sits behind Vercel's sign-in, which turns away the calls to Python.
+    assert.match(readme, /`npx vercel deploy --prod`/);
+    assert.match(readme, /A preview address is behind Vercel's sign-in by default/);
   });
 
   it("refuses a source that holds a token, one with no package.json, the offline mode and a kit too big to download", () => {
     assert.throws(() => selfHostKit(kitInput([...SOURCE, file("lib/oops.ts", 'const t = "mm_live_aaaaaaaaaaaaaaaaaaaaaaaaaaaa";\n')])), (e: unknown) => e instanceof KitError && e.code === "token_in_source" && /lib\/oops\.ts/.test(e.message));
+    // Whatever the file's name: no extension, a lock file, a source map, a binary.
+    for (const [p, content] of [
+      ["Procfile", "web: PRODUCT_TOKEN=mm_live_aaaaaaaaaaaaaaaaaaaaaaaaaaaa next start\n"],
+      [".npmrc", "//registry.example/:_authToken=mm_build_aaaaaaaaaaaaaaaaaaaaaaaa\n"],
+      [".next-cache/app.js.map", '{"sourcesContent":["mm_sandbox_0123456789abcdef0123456789"]}'],
+      ["public/data.bin", Buffer.concat([Buffer.from([0, 1, 2, 255]), Buffer.from("mm_live_aaaaaaaaaaaaaaaaaaaaaaaaaaaa"), Buffer.from([0])])],
+    ] as const) {
+      assert.throws(() => selfHostKit(kitInput([...SOURCE, file(p, content)])), (e: unknown) => e instanceof KitError && e.code === "token_in_source" && e.message.includes(p), p);
+    }
     assert.throws(() => selfHostKit(kitInput(SOURCE.filter((f) => f.path !== "package.json"))), (e: unknown) => e instanceof KitError && e.code === "no_package_json");
     assert.throws(() => selfHostKit({ ...kitInput(), mode: "offline" }), (e: unknown) => e instanceof KitError && e.code === "mode");
     const noise = randomBytes(5 * 1024 * 1024);
@@ -330,8 +379,30 @@ describe("the download routes", () => {
     findProduct: async () => ("product" in over ? over.product! : PRODUCT),
   });
 
+  it("answer exactly what these paths answered before they existed while RUNTIME_OUTPUTS is off", async () => {
+    // Before this unit, /p/<slug>/get/vscode.zip and the others reached /p/[slug]/get/[kind] as an unknown kind.
+    const nativeDeps = { findPackage: async () => assert.fail("not looked up"), reserve: async () => assert.fail("not counted") } as unknown as DownloadDeps;
+    const before = await answerDownload(new Request("https://site.example/p/scale-my-recipe/get/vscode.zip"), "scale-my-recipe", "vscode.zip", nativeDeps);
+    const off = { enabled: () => false, findProduct: async () => assert.fail("not looked up") };
+    const offSelf = { ...off, isOwner: async () => assert.fail("not asked"), vercel: () => assert.fail("not read"), reserve: async () => assert.fail("not counted"), now: () => new Date() } as unknown as SelfHostDeps;
+    const nowAnswers = [
+      await runtimeOutputResponse("vscode", "scale-my-recipe", off),
+      await runtimeOutputResponse("github_action", "scale-my-recipe", off),
+      await selfHostResponse("scale-my-recipe", offSelf, { fetchSite: "cross-site" }),
+      await selfHostResponse("Bad Slug", offSelf),
+    ];
+    const want = { status: before.status, type: before.headers.get("content-type"), cache: before.headers.get("cache-control"), body: await before.text() };
+    assert.deepEqual(want, { status: 404, type: "text/plain; charset=utf-8", cache: "no-store", body: "There's no download by that name.\n" });
+    for (const res of nowAnswers) {
+      assert.deepEqual({ status: res.status, type: res.headers.get("content-type"), cache: res.headers.get("cache-control"), body: await res.text() }, want);
+    }
+    const head = await selfHostHead("scale-my-recipe", offSelf);
+    assert.deepEqual([head.status, head.headers.get("content-type")], [404, "text/plain; charset=utf-8"]);
+  });
+
   it("answer 404 with RUNTIME_OUTPUTS off, for a product that isn't live or has no public action, and a zip otherwise", async () => {
     assert.equal((await runtimeOutputResponse("vscode", "scale-my-recipe", deps({ enabled: false }))).status, 404);
+    assert.equal(await (await runtimeOutputResponse("vscode", "scale-my-recipe", deps({ product: null }))).text(), "This download isn't available.\n");
     assert.equal((await runtimeOutputResponse("vscode", "Bad Slug", deps())).status, 404);
     assert.equal((await runtimeOutputResponse("vscode", "scale-my-recipe", deps({ product: null }))).status, 404);
     assert.equal((await runtimeOutputResponse("github_action", "scale-my-recipe", deps({ product: { ...PRODUCT, liveUrl: null } }))).status, 404);
@@ -389,15 +460,40 @@ describe("the download routes", () => {
   });
 
   const owner: SelfHostProduct = { ...PRODUCT, id: "p1", ownerId: "u1", vercelProjectId: "prj_1" };
-  function selfDeps(over: Partial<SelfHostDeps> & { files?: SourceFile[] } = {}): SelfHostDeps {
-    let taken = 0;
+  /** Hourly counters in memory, as reserveCounter keeps them, with every take and give-back seen. */
+  function memoryCounters(): KitCounters & { counts: Map<string, number>; log: string[] } {
+    const counts = new Map<string, number>();
+    const log: string[] = [];
+    return {
+      counts,
+      log,
+      async take(key, limit) {
+        log.push(`take ${key}`);
+        const n = counts.get(key) ?? 0;
+        if (n >= limit) return false;
+        counts.set(key, n + 1);
+        return true;
+      },
+      async giveBack(key) {
+        log.push(`give back ${key}`);
+        counts.set(key, (counts.get(key) ?? 1) - 1);
+      },
+    };
+  }
+  function selfDeps(over: Partial<SelfHostDeps> & { files?: SourceFile[]; counters?: KitCounters } = {}): SelfHostDeps & { reads: () => number } {
+    const counters = over.counters ?? memoryCounters();
+    let reads = 0;
     return {
       enabled: () => true,
       findProduct: async () => owner,
       isOwner: async () => true,
-      vercel: () => fakeVercel(over.files ?? SOURCE),
-      reserve: async () => ++taken <= SELFHOST_PER_HOUR,
+      vercel: () => {
+        const v = fakeVercel(over.files ?? SOURCE);
+        return { api: (p: string) => (reads++, v.api(p)) };
+      },
+      reserve: (product) => reserveKit(product, counters),
       now: () => new Date("2026-11-02T10:00:00Z"),
+      reads: () => reads,
       ...over,
     };
   }
@@ -417,11 +513,53 @@ describe("the download routes", () => {
     assert.equal((JSON.parse(zip.get("musemuse-kit.json")!.toString()) as { mode: string }).mode, "cloud");
     assert.ok(!zip.has(".env.local"));
     const busy = selfDeps();
-    for (let i = 0; i < SELFHOST_PER_HOUR; i++) await busy.reserve("p1");
-    assert.equal((await selfHostResponse("scale-my-recipe", busy)).status, 429);
+    for (let i = 0; i < SELFHOST_PER_HOUR; i++) await busy.reserve(owner);
+    const full = await selfHostResponse("scale-my-recipe", busy);
+    assert.equal(full.status, 429);
+    assert.equal(full.headers.get("retry-after"), "3600");
     const leaked = await selfHostResponse("scale-my-recipe", selfDeps({ files: [...SOURCE, file("lib/oops.ts", "mm_build_aaaaaaaaaaaaaaaaaaaaaaaaaaaa")] }));
     assert.equal(leaked.status, 422);
     const elsewhere = await selfHostResponse("scale-my-recipe", selfDeps({ findProduct: async () => ({ ...owner, vercelProjectId: "prj_other" }) }));
     assert.equal(elsewhere.status, 502);
+  });
+
+  it("count kits per owner and for the whole site too, and give back what a refused kit took", async () => {
+    const counters = memoryCounters();
+    const many = Array.from({ length: SELFHOST_OWNER_PER_HOUR + 1 }, (_, i) => ({ id: `p${i}`, ownerId: "u1" }));
+    // Each of one owner's products is under its own share, but the owner's own share runs out.
+    for (const p of many.slice(0, SELFHOST_OWNER_PER_HOUR)) assert.equal(await reserveKit(p, counters), null);
+    assert.equal(await reserveKit(many.at(-1)!, counters), "owner");
+    assert.equal(counters.counts.get(kitCounterKeys.product(many.at(-1)!.id)) ?? 0, 0, "nothing past the owner's share was taken");
+    // A product's share running out gives the owner's back.
+    const solo = memoryCounters();
+    for (let i = 0; i < SELFHOST_PER_HOUR; i++) assert.equal(await reserveKit({ id: "p1", ownerId: "u2" }, solo), null);
+    assert.equal(await reserveKit({ id: "p1", ownerId: "u2" }, solo), "product");
+    assert.equal(solo.counts.get(kitCounterKeys.owner("u2")), SELFHOST_PER_HOUR);
+    // The site's share: many owners, one product each.
+    const site = memoryCounters();
+    for (let i = 0; i < SELFHOST_SITE_PER_HOUR; i++) assert.equal(await reserveKit({ id: `q${i}`, ownerId: `o${i}` }, site), null);
+    assert.equal(await reserveKit({ id: "q-last", ownerId: "o-last" }, site), "site");
+    assert.equal(site.counts.get(kitCounterKeys.owner("o-last")), 0);
+    assert.equal(site.counts.get(kitCounterKeys.product("q-last")), 0);
+    const res = await selfHostResponse("scale-my-recipe", selfDeps({ counters: site, findProduct: async () => ({ ...owner, id: "q-last", ownerId: "o-last" }) }));
+    assert.equal(res.status, 429);
+    assert.match(await res.text(), /This site has made all the self-host kits it makes in an hour/);
+  });
+
+  it("refuse a kit a page on another site starts, and answer HEAD without counting a kit or reading a file", async () => {
+    for (const fetchSite of ["cross-site", "same-site"]) {
+      const d = selfDeps();
+      const res = await selfHostResponse("scale-my-recipe", d, { fetchSite });
+      assert.equal(res.status, 403, fetchSite);
+      assert.match(await res.text(), /Open the self-host kit from the product's own page/);
+      assert.equal(d.reads(), 0);
+    }
+    for (const fetchSite of ["same-origin", "none", null]) assert.equal((await selfHostResponse("scale-my-recipe", selfDeps(), { fetchSite })).status, 200, String(fetchSite));
+    const counters = memoryCounters();
+    const d = selfDeps({ counters });
+    const head = await selfHostHead("scale-my-recipe", d, { fetchSite: "same-origin" });
+    assert.deepEqual([head.status, head.headers.get("content-type"), await head.text()], [200, "application/zip", ""]);
+    assert.deepEqual([counters.log, d.reads()], [[], 0]);
+    assert.equal((await selfHostHead("scale-my-recipe", selfDeps({ isOwner: async () => false }))).status, 403);
   });
 });
