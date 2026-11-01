@@ -75,6 +75,56 @@ describe("the overlay's files", () => {
   });
 });
 
+describe("the send card (components/platform/ConfirmSend.tsx), rendered", () => {
+  let card, html;
+  before(async () => {
+    // tsx compiles a file outside the root tsconfig's include with the classic JSX transform, which reads a global React.
+    const React = await import("react");
+    globalThis.React ??= React;
+    const { createElement } = React;
+    card = await import(pathToFileURL(path.join(CONNECT, "components/platform/ConfirmSend.tsx")).href);
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    html = (state) => renderToStaticMarkup(createElement(card.ConfirmSendCard, { state, onConfirm() {}, onCancel() {} }));
+  });
+  const long = `${"Rain until noon. ".repeat(586)}HIDDEN TAIL`;
+  const confirmation = { id: "ap1.x", title: "Send this email?", lines: ["To: friend@example.com", "Subject: Saturday plan", `Message: ${long}`], args: { channel: "email", to: ["friend@example.com"], subject: "Saturday plan", body: long } };
+
+  test("asks with every line in full, in a box that scrolls, with Confirm and Cancel", () => {
+    const out = html({ kind: "ask", confirmation });
+    assert.match(out, /data-testid="confirm-send-card"/);
+    assert.ok(out.includes(`Message: ${long}`), "the whole message, never cut");
+    assert.match(out, /data-testid="confirm-send-lines"[^>]*style="[^"]*overflow-y:auto/);
+    assert.match(out, /Confirm and send/);
+    assert.match(out, />Cancel</);
+    assert.doesNotMatch(out, /role="alert"/);
+  });
+
+  test("a stale approval asks again with the new card and a note; a refusal shows an error and keeps the card", () => {
+    const fresh = { ...confirmation, id: "ap1.y", lines: ["To: friend@example.com", "Message: New words"] };
+    const stale = card.afterConfirm(confirmation, { status: "needs_confirmation", confirmation: fresh });
+    assert.deepEqual(stale, { kind: "ask", confirmation: fresh, note: "This needs a fresh confirmation. Check it again." });
+    const staleHtml = html(stale);
+    assert.match(staleHtml, /This needs a fresh confirmation/);
+    assert.match(staleHtml, /Message: New words/);
+    assert.ok(!staleHtml.includes("HIDDEN TAIL"), "the old message is gone");
+
+    const error = card.afterConfirm(confirmation, { error: "Resend didn't send it. Nothing was sent." });
+    assert.equal(error.kind, "error");
+    const errorHtml = html(error);
+    assert.match(errorHtml, /role="alert">Resend didn&#x27;t send it\. Nothing was sent\./);
+    assert.ok(errorHtml.includes("HIDDEN TAIL"), "the message stays on screen");
+    assert.equal(card.afterConfirm(confirmation, null).message, "That didn't send. Nothing went out.");
+  });
+
+  test("says Sent (sample) for a build's send, Sent for a real one, and disables both buttons while sending", () => {
+    assert.match(html(card.afterConfirm(confirmation, { status: "sent", simulated: true })), /data-testid="send-result".*Sent \(sample\)/);
+    assert.match(html(card.afterConfirm(confirmation, { status: "sent" })), />Sent</);
+    const busy = html({ kind: "busy", confirmation });
+    assert.equal((busy.match(/disabled=""/g) ?? []).length, 2);
+    assert.match(busy, />Sending</);
+  });
+});
+
 describe("the fixed checks (scripts/caps/connect.mjs)", () => {
   let checker;
   before(async () => {

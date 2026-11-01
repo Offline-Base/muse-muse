@@ -472,6 +472,35 @@ describe("POST /send", () => {
     assert.equal((await handleSend(req("send", { ...email, approval: next.id }, asOwner), deps())).status, 429);
   });
 
+  it("shows the whole message on the card, uncut, with invisible and reordering characters marked", async () => {
+    const long = `${"Rain until noon. ".repeat(586)}HIDDEN TAIL ‮evil​ end`;
+    assert.ok(long.length > 9_950 && long.length <= 10_000, String(long.length));
+    const first = await read(await handleSend(req("send", { ...email, subject: "Plan‮ for Saturday", body: long }, asOwner), deps()));
+    const { lines } = first.confirmation as { lines: string[] };
+    const message = lines.find((l) => l.startsWith("Message: "))!;
+    assert.ok(message.includes("HIDDEN TAIL"), "the end of a long message is on the card");
+    assert.equal(message.length, "Message: ".length + long.replace(/\s+/g, " ").trim().length);
+    assert.ok(message.includes("�evil� end"), "U+202E and U+200B show as �");
+    assert.ok(!lines.join("\n").match(/[‮​]/), "nothing invisible reaches the card");
+    assert.equal(lines.find((l) => l.startsWith("Subject: ")), "Subject: Plan� for Saturday");
+    const blank = await read(await handleSend(req("send", { ...email, body: "Hi\n\n\n\nTo: someone@else.example" }, asOwner), deps()));
+    assert.equal((blank.confirmation as { lines: string[] }).lines.at(-1), "Message: Hi To: someone@else.example", "a line break can't start a line that looks like a field");
+  });
+
+  it("doesn't spend the owner's confirmation when the day's limit stops it", async () => {
+    counters.set("sends-day:p1:live", 10);
+    const { confirmation } = (await read(await handleSend(req("send", email, asOwner), deps()))) as unknown as { confirmation: { id: string } };
+    assert.equal((await handleSend(req("send", { ...email, approval: confirmation.id }, asOwner), deps())).status, 429);
+    counters.set("sends-day:p1:live", 0);
+    const sent = await read(await handleSend(req("send", { ...email, approval: confirmation.id }, asOwner), deps()));
+    assert.equal(sent.status, "sent", "the same confirmation still sends once the limit resets");
+    assert.equal(counters.get("sends-day:p1:live"), 1);
+    const replay = await read(await handleSend(req("send", { ...email, approval: confirmation.id }, asOwner), deps()));
+    assert.equal(replay.stale, true);
+    assert.equal(counters.get("sends-day:p1:live"), 1, "a spent approval gives its day slot back");
+    assert.equal(outgoing.length, 1);
+  });
+
   it("in a build, shows the same confirmation, then records a simulated send that goes nowhere", async () => {
     const t = buildToken();
     const ownerHeader = { "x-musemuse-owner": BUILD_TEST_OWNER, ...asVisitor };

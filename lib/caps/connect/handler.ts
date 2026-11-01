@@ -475,13 +475,24 @@ const SEND_TITLES: Record<SendChannel, string> = {
   payment: "Send this payment request?",
 };
 
-function confirmationLines(s: SendArgs): string[] {
-  const cut = (t: string, n: number) => (t.length <= n ? t : `${t.slice(0, n - 1)}…`);
+/**
+ * What the card shows, the same way the tool gateway's approvalLines does (lib/tools/handler.ts): whole, never cut,
+ * whitespace collapsed so blank lines can't push text out of view or start a line that looks like a field, and anything
+ * invisible or that reorders text shown as �. The approval covers exactly these values, so the owner sees all of it.
+ */
+export function shownSendText(text: string): string {
+  return text
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[\p{Cc}\p{Cf}]/gu, "�");
+}
+
+export function confirmationLines(s: SendArgs): string[] {
   return [
-    ...(s.channel === "chat" ? ["To: the Slack channel your webhook posts to"] : [`To: ${s.to.join(", ")}`]),
-    ...(s.from ? [`From: ${s.from}`] : []),
-    ...(s.subject ? [`Subject: ${cut(s.subject, 200)}`] : []),
-    `Message: ${cut(s.body, 600)}`,
+    ...(s.channel === "chat" ? ["To: the Slack channel your webhook posts to"] : [`To: ${shownSendText(s.to.join(", "))}`]),
+    ...(s.from ? [`From: ${shownSendText(s.from)}`] : []),
+    ...(s.subject ? [`Subject: ${shownSendText(s.subject)}`] : []),
+    `Message: ${shownSendText(s.body)}`,
   ];
 }
 
@@ -558,11 +569,16 @@ function sendRoute(deps: ConnectDeps): CapRoute<SendWork> {
         }
         if (!key) return needsKey(services[0]!, true);
       }
-      // The approval is spent here, once, and the day's count after it.
-      if ((await deps.reserveCounter(`send-approval:${approved.nonce}`, approved.exp, 1, 1)) === null) return confirm(true);
+      // The day's count first, so hitting the limit doesn't burn the owner's confirmation; then the approval is spent,
+      // once, right before the send. A spent approval gives its day slot back.
       const dayKey = `sends-day:${ctx.token.productId}:${ctx.namespace}`;
-      if ((await deps.reserveCounter(dayKey, dayWindow(ctx.now), 1, CONNECT_LIMITS.sendsPerProductPerDay)) === null) {
+      const dayStart = dayWindow(ctx.now);
+      if ((await deps.reserveCounter(dayKey, dayStart, 1, CONNECT_LIMITS.sendsPerProductPerDay)) === null) {
         return capError("rate_limited", `This product has sent its ${CONNECT_LIMITS.sendsPerProductPerDay} messages for today. It resets at 00:00 UTC.`);
+      }
+      if ((await deps.reserveCounter(`send-approval:${approved.nonce}`, approved.exp, 1, 1)) === null) {
+        await deps.reserveCounter(dayKey, dayStart, -1, CONNECT_LIMITS.sendsPerProductPerDay);
+        return confirm(true);
       }
       const record = {
         productId: ctx.token.productId,
