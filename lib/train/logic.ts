@@ -79,7 +79,7 @@ export const EVENT_LOG_MAX = 4096;
 /** Each text field of an eval callback is cut to this many characters (the runner cuts them too). */
 export const EVAL_TEXT_MAX = 3500;
 /** Eval callbacks one job may record. Past this the events route answers 409 eval_limit. */
-export const EVALS_MAX = 60;
+export const EVALS_MAX = 120;
 /**
  * A decide job's scores (docs/DECISION_MODELS.md "Callbacks and caps"): the items one "decide" callback carries, and
  * the items one job may record, past which the events route answers 409 decide_limit. A person's largest dataset scores
@@ -539,11 +539,11 @@ export const DATASET_MIN_EXAMPLES = 16;
 /** Eval holds out this share of the examples, within EVAL_MIN and EVAL_MAX items. */
 const EVAL_SHARE = 0.1;
 const EVAL_MIN = 8;
-const EVAL_MAX = 40;
+const EVAL_MAX = 100;
 /** Training examples always keep at least this many after the eval items are held out. */
 const TRAIN_MIN = 8;
 
-/** How many of `n` answered examples are held out for eval: 10%, at least 8 and at most 40, never leaving under 8 to train on. */
+/** How many of `n` answered examples are held out for eval: 10%, at least 8 and at most 100, never leaving under 8 to train on. */
 export function evalHoldoutCount(n: number): number {
   const total = Math.max(0, Math.floor(n));
   const wanted = Math.min(EVAL_MAX, Math.max(EVAL_MIN, Math.round(total * EVAL_SHARE)));

@@ -3,6 +3,8 @@ import { start } from "workflow/api";
 import { requireAdminOrAutomation } from "@/lib/auth";
 import { errorJson, readJson, route } from "@/lib/http";
 import { spendPaused } from "@/lib/quota";
+import { contributorWriterOn } from "@/lib/env";
+import { SPARK_STANDIN } from "@/lib/meta/spark";
 import { DATASET_MODEL, makeDataset } from "@/lib/train/datasets";
 import { checkDecisionUpload, DECISION_UPLOAD_MAX_BYTES } from "@/lib/train/decision-datasets";
 import { DATASET_MAX_COUNT, DATASET_MIN_COUNT, DATASET_TASK_MAX, DATASET_TASK_MIN, toDatasetView } from "@/lib/train/logic";
@@ -28,7 +30,19 @@ export const GET = route(async (req: Request) => {
 });
 
 /**
- * POST {title?, task, count} -> 201 {dataset}. Admins or automation only. Saves a dataset in "generating", with
+ * Who writes a dataset: Muse Wonder, unless the body asks for "contributor". That needs contributorWriterOn and madeUp: true,
+ * since Meta's terms (6.2) bar sensitive, confidential or personal information on that tier and Meta may train on it.
+ */
+function writerOfBody(body: Record<string, unknown>): { ok: true; model: string } | { ok: false; error: string } {
+  if (body.writer === undefined || body.writer === null || body.writer === "wonder") return { ok: true, model: DATASET_MODEL };
+  if (body.writer !== "contributor") return { ok: false, error: 'writer must be "wonder" or "contributor".' };
+  if (!contributorWriterOn()) return { ok: false, error: "Spark 1.3 Contributor isn't on for datasets here." };
+  if (body.madeUp !== true) return { ok: false, error: "Spark 1.3 Contributor is for made-up tasks only. Confirm this task has no real people's or private information." };
+  return { ok: true, model: SPARK_STANDIN };
+}
+
+/**
+ * POST {title?, task, count, writer?, madeUp?} -> 201 {dataset}. Admins or automation only. Saves a dataset in "generating", with
  * DATASET_MODEL (Muse Wonder) as its writer_model, and starts the makeDataset workflow, in which that model writes
  * `count` (20 to 1000) prompts for the task and answers them, with 10% held out for eval. 400 bad input, 503
  * meta_not_configured (no MODEL_API_KEY), 503 paused (the platform's daily spend cap is reached), 500 start_failed.
@@ -73,7 +87,9 @@ export const POST = route(async (req: Request) => {
   if (!process.env.MODEL_API_KEY) return errorJson(503, "meta_not_configured");
   if (await spendPaused()) return errorJson(503, "paused");
 
-  const dataset = await createDataset({ title, task, requested: count, writerModel: DATASET_MODEL, createdBy: user.id });
+  const writer = writerOfBody(body);
+  if (!writer.ok) return errorJson(400, writer.error);
+  const dataset = await createDataset({ title, task, requested: count, writerModel: writer.model, createdBy: user.id });
   let runId: string;
   try {
     runId = (await start(makeDataset, [{ datasetId: dataset.id }])).runId;

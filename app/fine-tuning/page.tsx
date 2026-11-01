@@ -13,7 +13,7 @@ import { RefreshWhileActive } from "@/components/train/RefreshWhileActive";
 import { WRITER_NAME, cacheCostText, isDatasetStalled, toRecipeView } from "@/components/train/format";
 import { toReadyDatasetView, toResultView, type ResultView } from "@/components/train/results";
 import { EmptyCard, InfoTip, NotConnected, PageHeader } from "@/components/ui";
-import { env } from "@/lib/env";
+import { contributorWriterOn, env } from "@/lib/env";
 import { plural, usd } from "@/lib/format";
 import { safeQuery, type QueryResult } from "@/lib/queries";
 import { spendPaused } from "@/lib/quota";
@@ -236,7 +236,7 @@ export default async function FineTuningPage({
         )}
       </section>
 
-      <NewDatasetCard blocked={blocked} />
+      <NewDatasetCard blocked={blocked} contributorWriter={contributorWriterOn()} />
       <NewDecisionCard />
     </div>
   );

@@ -6,7 +6,7 @@
  *   makeDataset: prompts in batches of 25 (structured output, de-duplicated, each batch leaning to other styles)
  *                -> answers in chunks of 12, 6 at a time, each saved as soon as Meta answers it and moved onto the
  *                   dataset when the chunk ends (up to 2 chunks Meta never answered are left out)
- *                -> 10% held out for eval (at least 8, at most 40), keeping near-duplicates of an eval prompt out of
+ *                -> 10% held out for eval (at least 8, at most 100), keeping near-duplicates of an eval prompt out of
  *                   train, and the dataset turns "ready"
  *
  * Every Meta call is recorded with recordUsage (source "platform") and added to the dataset's cost as soon as it
@@ -23,7 +23,8 @@ import { z } from "zod";
 import { textPart } from "@/lib/brief/media";
 import { cleanStrings, noEmDashes } from "@/lib/brief/normalize";
 import { respondStructured, StructuredOutputError, type StructuredResult } from "@/lib/brief/structured";
-import { testModel } from "@/lib/env";
+import { contributorWriterOn } from "@/lib/env";
+import { SPARK_STANDIN } from "@/lib/meta/spark";
 import { metaPlatform } from "@/lib/meta/platform";
 import { modelLabel } from "@/lib/format";
 import { fromResponsesUsage } from "@/lib/meta/pricing";
@@ -42,14 +43,12 @@ export const DATASET_MODEL = "muse-wonder-1.0";
 const WRITER = modelLabel(DATASET_MODEL);
 
 /**
- * The model that writes a dataset, from its writer_model: TEST_MODEL (Spark 1.3 Contributor, never on production) when
- * the dataset was saved with it, for made-up test runs from the new composer (lib/train/tune/start.ts), else always
- * DATASET_MODEL. Checked again in every step, so a dataset saved with TEST_MODEL on a preview is written by Muse Wonder
- * wherever TEST_MODEL isn't on.
+ * The model that writes a dataset, from its writer_model: Spark 1.3 Contributor when the dataset was saved with it and
+ * that's allowed here (contributorWriterOn), else always DATASET_MODEL. Checked again in every step, so a dataset saved
+ * with Contributor is written by Muse Wonder wherever that isn't on.
  */
 export function writerFor(writerModel: string | null | undefined): string {
-  const test = testModel();
-  return test && writerModel === test ? test : DATASET_MODEL;
+  return writerModel === SPARK_STANDIN && contributorWriterOn() ? SPARK_STANDIN : DATASET_MODEL;
 }
 
 /** Prompts asked for in one structured call. */

@@ -290,6 +290,21 @@ describe("dataset workflow", { skip: canMock ? false : "needs --experimental-tes
       assert.deepEqual(models(), ["muse-wonder-1.0", "muse-wonder-1.0"], "a Muse Wonder dataset stays on Muse Wonder");
       assert.equal(mod.writerFor("muse-spark-1.3"), "muse-wonder-1.0", "never Muse Spark 1.3 itself");
       assert.equal(mod.writerFor(null), "muse-wonder-1.0");
+      const saved = { flag: process.env.TRAIN_CONTRIBUTOR_WRITER, vercel: process.env.VERCEL_ENV, test: process.env.TEST_MODEL };
+      try {
+        delete process.env.TEST_MODEL;
+        process.env.VERCEL_ENV = "production";
+        delete process.env.TRAIN_CONTRIBUTOR_WRITER;
+        assert.equal(mod.writerFor("muse-spark-1.3-contributor"), "muse-wonder-1.0", "off on production unless its switch is on");
+        process.env.TRAIN_CONTRIBUTOR_WRITER = "1";
+        assert.equal(mod.writerFor("muse-spark-1.3-contributor"), "muse-spark-1.3-contributor");
+        assert.equal(mod.writerFor("muse-wonder-1.0"), "muse-wonder-1.0", "only a dataset saved with it");
+      } finally {
+        for (const [key, value] of [["TRAIN_CONTRIBUTOR_WRITER", saved.flag], ["VERCEL_ENV", saved.vercel], ["TEST_MODEL", saved.test]] as const) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
+      }
     } finally {
       if (saved.test === undefined) delete process.env.TEST_MODEL;
       else process.env.TEST_MODEL = saved.test;
