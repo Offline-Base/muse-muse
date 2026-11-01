@@ -156,6 +156,12 @@ animates.
 - **Build room:** see below.
 - **Docs sidebar chat:** the same bubbles, steps and composer. It's already a narrow sidebar, so "Show thinking"
   unfolds the steps list inline under its row instead of opening a second panel.
+- **New fine-tune and its room** (`TUNE_COMPOSER`, admins): `/fine-tuning/new` is the Make page's layout with "What
+  should your model do?", the composer taking a CSV or JSONL of examples, text chips to try and a folded Training setup.
+  Send turns the page into the room at once, and `/fine-tuning/runs/{id}` is the same room: the title chip, the
+  person's bubble, the working step while a stage runs, Show thinking once it ended, the plan card with the mascot for
+  the stage (presenting while planned, failed or stopped, building from writing to scoring, the pair once scored) and the
+  steps panel. Details in `docs/TRAINING.md`, "Fine-tune like a build".
 
 ## The build room
 

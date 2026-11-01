@@ -56,6 +56,7 @@ interface FakeDataset {
   eval: EvalExample[];
   costUsd: number;
   error: string | null;
+  writerModel?: string | null;
 }
 
 /**
@@ -265,6 +266,36 @@ describe("dataset workflow", { skip: canMock ? false : "needs --experimental-tes
     assert.equal(first!.messages[0]!.content, body.instructions, "trained under the words it was written with");
     assert.equal(first!.messages[2]!.content, `Here is the fix for: ${first!.messages[1]!.content}`);
     assert.deepEqual(Object.keys(ds.eval[0]!), ["prompt", "reference"]);
+  });
+
+  it("writes a dataset saved with TEST_MODEL on it only where TEST_MODEL is on and it isn't production, else on Muse Wonder", async () => {
+    const saved = { test: process.env.TEST_MODEL, vercel: process.env.VERCEL_ENV };
+    const models = () => [called("respondStructured")[0]!.args[0], (called("responses.create")[0]!.args[0] as { model: string }).model];
+    try {
+      process.env.TEST_MODEL = "muse-spark-1.3-contributor";
+      delete process.env.VERCEL_ENV;
+      reset({ writerModel: "muse-spark-1.3-contributor" });
+      assert.deepEqual(await mod.makeDataset({ datasetId: DATASET_ID }), { status: "ready" });
+      assert.deepEqual(models(), ["muse-spark-1.3-contributor", "muse-spark-1.3-contributor"], "a made-up test run costs a cent");
+      assert.equal((called("recordUsage")[0]!.args[1] as Array<{ model: string }>)[0]!.model, "muse-spark-1.3-contributor");
+
+      process.env.VERCEL_ENV = "production";
+      reset({ writerModel: "muse-spark-1.3-contributor" });
+      await mod.makeDataset({ datasetId: DATASET_ID });
+      assert.deepEqual(models(), ["muse-wonder-1.0", "muse-wonder-1.0"], "never on production");
+
+      delete process.env.VERCEL_ENV;
+      reset({ writerModel: "muse-wonder-1.0" });
+      await mod.makeDataset({ datasetId: DATASET_ID });
+      assert.deepEqual(models(), ["muse-wonder-1.0", "muse-wonder-1.0"], "a Muse Wonder dataset stays on Muse Wonder");
+      assert.equal(mod.writerFor("muse-spark-1.3"), "muse-wonder-1.0", "never Muse Spark 1.3 itself");
+      assert.equal(mod.writerFor(null), "muse-wonder-1.0");
+    } finally {
+      if (saved.test === undefined) delete process.env.TEST_MODEL;
+      else process.env.TEST_MODEL = saved.test;
+      if (saved.vercel === undefined) delete process.env.VERCEL_ENV;
+      else process.env.VERCEL_ENV = saved.vercel;
+    }
   });
 
   it("leans each batch to one style once there are enough batches, and spreads them over fewer", () => {

@@ -1,0 +1,62 @@
+{
+  "composer: Make page": {
+    "sha256": "b5ca5a9cf38aa54bab669b42b5d9867bbb93a3898a565aa6edc5ae05929e4e16",
+    "length": 3410
+  },
+  "composer: signed out": {
+    "sha256": "3e42b8021a06d75d43b4464ad925edc53ba15e06c5b0b385caea711f6f4e706f",
+    "length": 2379
+  },
+  "composer: refine": {
+    "sha256": "a908e9bd2d1d8e678efa223561154a6cb93f7bba60fb5ae6ad45df6b3f57edba",
+    "length": 1997
+  },
+  "composer: docs": {
+    "sha256": "824a65a6a00a0f40bef24a6d5448b6fe227e5879ddf2b3da01863c1a7c75bdef",
+    "length": 2140
+  },
+  "setup panel": {
+    "sha256": "45c3e7a968108c29e741064db226e29c4fff7a6b38c5cd39157f25b967863684",
+    "length": 1259
+  },
+  "setup panel: publish off": {
+    "sha256": "0d97934cde2ecb8c51a8ed8813a1963e037e1418e5805992eb3944e26861d592",
+    "length": 1277
+  },
+  "build room: running": {
+    "sha256": "fb40f36ca657f0a3089db4d69b9940093eb82ab9279597f252af4e4a168540eb",
+    "length": 47330
+  },
+  "build room: failed": {
+    "sha256": "3e0c2d47c615bb28f5904fe0ee2e61649d12ae9b3c0e043114f50fe2134bff56",
+    "length": 16890
+  },
+  "build room: finished": {
+    "sha256": "cdfb3bec81839283ea370dc6d24561471ef3c49e7f96ef189764619bad8f831b",
+    "length": 19496
+  },
+  "plan card: part of it, running, with the brief link": {
+    "sha256": "56752edaeea7104436b22e71a82af3a3336ce237e72d256bbed5f84a1671e535",
+    "length": 1381
+  },
+  "plan card: all of it, finished": {
+    "sha256": "1d89dedc13ba362b1c73ee2c6089356a4459f4f2a3588e5e3bdb70db7e867ef9",
+    "length": 669
+  },
+  "plan card: no one it's for": {
+    "sha256": "41c5e11a368da4887188818eeccb9f55549c3215e13696251d2066d70d4a7048",
+    "length": 1302
+  },
+  "plan card: no steps or tagline": {
+    "sha256": "78e688618bc03f12df82701f0f113d10cb5a537a518f5eaba24d517f60be11dd",
+    "length": 482
+  },
+  "/fine-tuning: admin": {
+    "sha256": "24c1a63715902e1efebfe403c01295f1656b05844de5e1d5edd491f03b1876fd",
+    "length": 12995
+  },
+  "/fine-tuning: guest": {
+    "sha256": "e5fd54ff582ea1dc492ca55f8169c039f1bc25e0066131c218684ddd71f75804",
+    "length": 4544
+  }
+}
