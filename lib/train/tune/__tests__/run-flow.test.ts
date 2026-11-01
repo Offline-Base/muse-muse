@@ -51,6 +51,7 @@ let launch: typeof import("@/lib/train/tune/run-launch");
 let wf: typeof import("@/lib/train/tune/run");
 let start: typeof import("@/lib/train/tune/start");
 let startRoute: (req: Request, ctx: { params: Promise<{ id: string }> }) => Promise<Response>;
+let stopRoute: (req: Request, ctx: { params: Promise<{ id: string }> }) => Promise<Response>;
 
 /** What Lambda lists: each call takes the next, and the last repeats. */
 let listings: Array<Array<typeof GPU_A100>> = [[GPU_A100]];
@@ -58,6 +59,8 @@ let paused = false;
 let started: Array<{ fn: string; args: unknown[] }> = [];
 /** When set, start() refuses this workflow once, as a workflow runtime that can't start it would. */
 let failStartOf: string | null = null;
+/** Runs as start() starts a workflow: a test's way to act while a launch is under way. */
+let onWorkflowStart: (fn: string) => Promise<void> = async () => {};
 let sleeps: number[] = [];
 /** Runs on each fake sleep, before the clock moves: a test's way to change the world while the workflow waits. */
 let onSleep: (n: number) => Promise<void> = async () => {};
@@ -105,6 +108,7 @@ describe("starting training for a run", { skip: canMock ? false : "needs --exper
             failStartOf = null;
             throw new Error("the workflow runtime is down (made up)");
           }
+          await onWorkflowStart(fn.name);
           started.push({ fn: fn.name, args });
           return { runId: `wrun-${started.length}` };
         },
@@ -138,6 +142,7 @@ describe("starting training for a run", { skip: canMock ? false : "needs --exper
     wf = await import("@/lib/train/tune/run");
     start = await import("@/lib/train/tune/start");
     ({ POST: startRoute } = await import(at("../../../../app/api/train/runs/[id]/start/route.ts")));
+    ({ POST: stopRoute } = await import(at("../../../../app/api/train/runs/[id]/stop/route.ts")));
 
     const [a] = await testDb.insert(realSchema.users).values({ email: "owner@example.com", isAdmin: true }).returning();
     const [v] = await testDb.insert(realSchema.users).values({ email: "visitor@example.com", isAdmin: false }).returning();
@@ -171,6 +176,7 @@ describe("starting training for a run", { skip: canMock ? false : "needs --exper
     paused = false;
     started = [];
     failStartOf = null;
+    onWorkflowStart = async () => {};
     sleeps = [];
     onSleep = async () => {};
     advanced = 0;
@@ -220,6 +226,11 @@ describe("starting training for a run", { skip: canMock ? false : "needs --exper
   const startReq = (id: string) => new Request(`https://muse.example.com/api/train/runs/${id}/start`, { method: "POST", body: "{}" });
   const post = async (id: string) => {
     const res = await startRoute(startReq(id), { params: Promise.resolve({ id }) });
+    return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+  };
+  const stop = async (id: string) => {
+    const req = new Request(`https://muse.example.com/api/train/runs/${id}/stop`, { method: "POST", body: "{}" });
+    const res = await stopRoute(req, { params: Promise.resolve({ id }) });
     return { status: res.status, body: (await res.json()) as Record<string, unknown> };
   };
 
@@ -530,6 +541,57 @@ describe("starting training for a run", { skip: canMock ? false : "needs --exper
       delete process.env.LAMBDA_API_KEY;
       assert.deepEqual(await post(id), { status: 503, body: { error: "lambda_not_configured" } });
       assert.equal((await runStore.readRunMarks(id)).ended, "lambda_not_configured");
+    });
+  });
+
+  describe("POST /api/train/runs/{id}/stop", () => {
+    it("stops a run before training: nothing launches for it after, and the room says it stopped", async () => {
+      const id = await dataset();
+      assert.deepEqual(await stop(id), { status: 200, body: { stopped: "before_training" } });
+      assert.deepEqual(await stop(id), { status: 200, body: { stopped: "before_training" } }, "pressing it again answers the same");
+      assert.deepEqual(await post(id), { status: 409, body: { error: "stopped" } });
+      assert.deepEqual(await wf.tuneRun({ datasetId: id, callerId: admin, steps: 120 }), { status: "stopped" });
+      assert.equal((await jobsOf(id)).length, 0);
+      assert.equal((await tuneStore.loadTuneRun(id, new Date(), CEILINGS))?.stage, "stopped");
+    });
+
+    it("asks the run's training job to stop, and answers already_ended for one that ended", async () => {
+      const id = await dataset();
+      assert.equal((await post(id)).status, 201);
+      const [job] = await jobsOf(id);
+      assert.deepEqual(await stop(id), { status: 200, body: { stopped: "training", jobId: job!.id, href: `/fine-tuning/${job!.id}` } });
+      const [after] = await jobsOf(id);
+      assert.equal(after!.stopRequested, true, "its workflow terminates the GPU at its next check");
+
+      await testDb.update(realSchema.trainingJobs).set({ status: "succeeded" }).where(eq(realSchema.trainingJobs.id, job!.id));
+      const ended = await dataset();
+      await testDb.update(realSchema.trainingJobs).set({ params: { ...(after!.params as Record<string, unknown>), datasetId: ended } as never }).where(eq(realSchema.trainingJobs.id, job!.id));
+      assert.deepEqual(await stop(ended), { status: 409, body: { error: "already_ended", jobId: job!.id, href: `/fine-tuning/${job!.id}` } });
+      assert.equal((await runStore.readRunMarks(ended)).stopped, false, "an ended run isn't marked");
+    });
+
+    it("a stop while a launch is under way stops the job that launch makes", async () => {
+      const id = await dataset();
+      onWorkflowStart = async (fn) => {
+        if (fn === "trainJob") assert.equal((await stop(id)).status, 200);
+      };
+      const r = await launch.launchForRun({ datasetId: id, callerId: admin, steps: 120 });
+      assert.deepEqual(r, { kind: "stopped" });
+      const [job] = await jobsOf(id);
+      assert.equal(job!.stopRequested, true);
+    });
+
+    it("refuses another person's run, an unknown one, and with the flag off", async () => {
+      const theirs = await dataset();
+      caller = { id: visitor, email: "visitor@example.com", isAdmin: false };
+      assert.deepEqual(await stop(theirs), { status: 403, body: { error: "forbidden" } });
+      const mine = await dataset({ createdBy: visitor });
+      assert.equal((await stop(mine)).status, 200, "a run's own starter may stop it");
+      caller = { id: admin, email: "owner@example.com", isAdmin: true };
+      assert.equal((await stop("1b2c3d4e-0000-4000-8000-0000000000ff")).status, 404);
+      process.env.TUNE_COMPOSER = "0";
+      assert.deepEqual(await stop(theirs), { status: 404, body: { error: "not_found" } });
+      assert.equal((await runStore.readRunMarks(theirs)).stopped, false);
     });
   });
 

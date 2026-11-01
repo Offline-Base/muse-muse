@@ -8,7 +8,7 @@ import { spendPaused } from "@/lib/quota";
 import { limitCeilings } from "@/lib/train/gate";
 import { launchJob, type LaunchRefusal } from "@/lib/train/launch";
 import { ADAPTER_RECIPE } from "@/lib/train/logic";
-import { datasetPage, getDataset } from "@/lib/train/store";
+import { datasetPage, getDataset, requestStop } from "@/lib/train/store";
 import { CHECK_CODES, type CheckCode, type TuneWaitReason } from "@/lib/train/tune/marks";
 import { contentFindings } from "@/lib/train/tune/examples";
 import {
@@ -88,7 +88,8 @@ export interface RunLaunchInput {
 }
 
 /**
- * One try at training the run's examples. Never launches for a run that was stopped, or one that already has a job
+ * One try at training the run's examples. Never launches for a run that was stopped (checked again once the claim is
+ * held, and once the job exists, which a stop at that moment stops too), or one that already has a job
  * (that job is the answer). Waits, rather than launching, while the platform's Meta spend cap is reached (scoring
  * needs it), while another launcher holds the run's claim, and for every launch refusal that passes on its own
  * (waitReasonFor). The job is glimmer-lora with the run's settings: its dataset, steps, LoRA rank, learning rate, the
@@ -116,6 +117,8 @@ export async function launchForRun(input: RunLaunchInput): Promise<RunLaunch> {
     // A launcher that held the claim just before this one may have started the job.
     const raced = await latestTuneJob(datasetId);
     if (raced) return { kind: "launched", jobId: raced.id, already: true };
+    // Stopped while this launcher waited for the claim.
+    if ((await readRunMarks(datasetId, now)).stopped) return { kind: "stopped" };
     const s = planSettings(dataset.requested, limitCeilings(), input.steps);
     const launched = await launchJob(
       {
@@ -135,7 +138,15 @@ export async function launchForRun(input: RunLaunchInput): Promise<RunLaunch> {
       },
       { userId: input.callerId },
     );
-    if (launched.ok) return { kind: "launched", jobId: launched.job.id, already: false };
+    if (launched.ok) {
+      // Stopped while the launch ran (POST runs/{id}/stop marks the run, then stops the job it finds): the job stops
+      // too, so a stop and a launch at the same moment never leave a GPU training.
+      if ((await readRunMarks(datasetId, now)).stopped) {
+        await requestStop(launched.job.id).catch((err) => console.error("[train/tune] stop the raced job", err));
+        return { kind: "stopped" };
+      }
+      return { kind: "launched", jobId: launched.job.id, already: false };
+    }
     const reason = waitReasonFor(launched);
     return reason ? await wait(reason, launched) : await refused(datasetId, launched);
   } finally {
