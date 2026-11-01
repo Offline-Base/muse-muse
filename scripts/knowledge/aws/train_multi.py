@@ -13,6 +13,8 @@
                                      Lambda: start run_multi.sh detached (refused while a run is going) plus its sync
       Stage 2 from stage 1:  start-run --name muse-knowledge-train-1 --run stage2-multi --train NEW.jsonl \
                              --init-adapter stage1-multi --base-json stage1-multi --save-steps 1000
+      Also: --save-limit N (0 keeps every checkpoint), --schedule cosine|constant, --dry-run (print only), and --local
+      --no-sync to run the same start on the training machine itself (job/queue_b2.sh does).
 
 Launching is off (TRAIN_MULTI_ALLOW_LAUNCH=1 turns it on): the lane's one machine, muse-knowledge-train-1, an 8x A100
 80GB SXM4 on Lambda, was launched by the main session at 00:20 UTC on Oct 31 and registered in the state file by hand.
@@ -623,29 +625,58 @@ def remote_path(p):
 def start_run(a):
     """Starts run_multi.sh on a Lambda training machine (detached with setsid, so no SSH session holds it) and, unless
     --no-sync, this Mac's 10-minute copy of the run to .data/knowledge/runs/RUN/ and S3. Refuses while anything holds a
-    GPU there (nvidia-smi, and the job names run_student.sh checks), so it can't disturb a run in progress."""
-    ip = machine(a.name)["ip"]
+    GPU there (nvidia-smi, and the job names run_student.sh checks), so it can't disturb a run in progress.
+    --local runs the same commands on the machine itself, for job/queue_b2.sh there: no Lambda lookup, no SSH, and no sync
+    (it needs --no-sync). --dry-run prints the commands and runs none of them."""
     run = a.run
     if not re.fullmatch(r"[A-Za-z0-9_.-]+", run):
         raise SystemExit("--run: letters, digits, . _ - only")
+    if a.local and not a.no_sync:
+        raise SystemExit("--local runs on the training machine, which has no sync to start: pass --no-sync")
+    if a.schedule and a.schedule not in ("cosine", "constant"):
+        raise SystemExit("--schedule: cosine or constant")
+    if a.save_limit is not None and a.save_limit < 0:
+        raise SystemExit("--save-limit: 0 (keep every checkpoint) or more")
+    if a.dry_run:
+        def there(command, timeout=120):
+            print(f"DRY {'local' if a.local else a.name}: {command}", flush=True)
+            return subprocess.CompletedProcess(command, 0, "checked" if "echo checked" in command else "", "")
+        ip = "MACHINE"
+    elif a.local:
+        def there(command, timeout=120):
+            return subprocess.run(["bash", "-c", command], capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
+        ip = None
+    else:
+        ip = machine(a.name)["ip"]
+
+        def there(command, timeout=120):
+            return ssh(ip, command, timeout)
     # [t] keeps pgrep from matching this very command line. "checked" last, so a lost connection doesn't read as free.
-    busy = ssh(ip, "{ nvidia-smi --query-compute-apps=pid,process_name --format=csv,noheader; pgrep -af "
-                   "'[t]rain_glimmer.py|[t]rain_student.py|[g]limmer_littlebit.py|[m]easure_known.py --adapter|[s]core_honesty_bf16.py'; } 2>&1 | head -3; "
-                   "echo checked").stdout.strip()
+    busy = there("{ nvidia-smi --query-compute-apps=pid,process_name --format=csv,noheader; pgrep -af "
+                 "'[t]rain_glimmer.py|[t]rain_student.py|[g]limmer_littlebit.py|[m]easure_known.py --adapter|[s]core_honesty_bf16.py'; } 2>&1 | head -3; "
+                 "echo checked").stdout.strip()
     if busy != "checked":
         raise SystemExit(f"{a.name}: something holds a GPU there ({busy or 'no answer'}); not starting {run}")
     data = f"{REMOTE}/data"
     if a.train or a.probes:
         # A run with its own data gets its own folder; whatever isn't given comes from the stage 1 folder.
         data = f"{REMOTE}/data-{run}"
-        ssh(ip, f"mkdir -p {data} && cp -n {REMOTE}/data/probes.jsonl {REMOTE}/data/forget.jsonl {data}/ && "
-                f"{'' if a.train else f'ln -sfn {REMOTE}/data/train.jsonl {data}/train.jsonl'}")
+        there(f"mkdir -p {data} && cp -n {REMOTE}/data/probes.jsonl {REMOTE}/data/forget.jsonl {data}/ && "
+              f"{'' if a.train else f'ln -sfn {REMOTE}/data/train.jsonl {data}/train.jsonl'}")
         for local, remote in ((a.train, "train.jsonl"), (a.probes, "probes.jsonl")):
             if local:
-                subprocess.run(["scp", "-C", *SSH_OPTS, local, f"ubuntu@{ip}:{data}/{remote}"], check=True)
+                copy = ["cp", local, f"{data}/{remote}"] if a.local else ["scp", "-C", *SSH_OPTS, local, f"ubuntu@{ip}:{data}/{remote}"]
+                if a.dry_run:
+                    print("DRY " + " ".join(copy), flush=True)
+                else:
+                    subprocess.run(copy, check=True)
     if a.data_dir:
         data = a.data_dir
     env = {"KNOWLEDGE_NO_S3": "1", "SAVE_STEPS": str(a.save_steps), "TUNED_EVAL": str(a.tuned_eval)}
+    if a.save_limit is not None:
+        env["KNOWLEDGE_SAVE_LIMIT"] = str(a.save_limit)  # train_glimmer.py keeps this many checkpoints; 0 keeps every one
+    if a.schedule:
+        env["KNOWLEDGE_SCHEDULE"] = a.schedule  # cosine (the default) or constant after the 3% warmup
     if a.init_adapter:
         env["KNOWLEDGE_INIT_ADAPTER"] = remote_path(a.init_adapter)
     if a.lr:
@@ -658,10 +689,12 @@ def start_run(a):
     # Only the last simple command goes to the background (an "a && b &" list would keep this SSH session open).
     cmd = (f"cd {REMOTE} || exit 1; mkdir -p runs; {envs} setsid nohup bash run_multi.sh {run} {data} none {a.batch} {a.accum} "
            f"{a.epochs} {a.eval_probes} {a.max_examples} 0 > runs/{run}.wrapper.log 2>&1 < /dev/null & sleep 3; cat runs/{run}/hyper.json")
-    r = ssh(ip, cmd)
+    r = there(cmd)
+    if a.dry_run:
+        return
     if r.returncode != 0:
         raise SystemExit(f"start {run} failed: {r.stderr[-500:]}")
-    log(f"{a.name}: started {run} ({envs}; data {data}; batch {a.batch} x {a.accum} x GPUs, epochs {a.epochs}, "
+    log(f"{a.name}: started {run}{' here' if a.local else ''} ({envs}; data {data}; batch {a.batch} x {a.accum} x GPUs, epochs {a.epochs}, "
         f"probes {a.eval_probes}, max_examples {a.max_examples}): {r.stdout.strip()}")
     if not a.no_sync:
         py, me = sys.executable, os.path.abspath(__file__)
@@ -695,6 +728,10 @@ if __name__ == "__main__":
     ap.add_argument("--tuned-eval", type=int, default=1)
     ap.add_argument("--lr", help="learning rate for this run (default: run_multi.sh's 1e-4)")
     ap.add_argument("--no-sync", action="store_true")
+    ap.add_argument("--save-limit", type=int, help="checkpoints kept (KNOWLEDGE_SAVE_LIMIT; default train_glimmer.py's 2; 0 keeps every one)")
+    ap.add_argument("--schedule", help="cosine (default) or constant after the 3%% warmup (KNOWLEDGE_SCHEDULE)")
+    ap.add_argument("--local", action="store_true", help="run start-run's commands on this machine (on the training machine itself; needs --no-sync)")
+    ap.add_argument("--dry-run", action="store_true", help="start-run: print the commands, run none")
     # lambda-sync
     ap.add_argument("--large", choices=["final", "none"], default="final", help="large files to S3: the final adapter (throttled) or none")
     ap.add_argument("--kbps", type=int, default=LARGE_KBPS, help="KB/s cap for large uploads")

@@ -11,6 +11,12 @@ real named reports, trials and acts from held-out questions) records how many it
 --probes has no default on purpose: pass the dev set while choosing, and the final test (honesty_probes.jsonl) only once,
 on the model already chosen. `--adapter none` answers with the base model.
 
+Serving settings (the final plan's A1 and A2), prefilled only: measure_known.py's prompt and decoding flags (--system TEXT,
+--system-file, --no-system with --knowledge-cutoff and --current-date, --temperature, --top-p, --top-k, --seed) and --strength
+(low; 'default' sends none) change the prompt the same way, and the output's "prompt" field records them with the system
+block actually rendered. A sampled run is seeded once, before its first batch; run it once per seed. With none of these flags
+the prompt is the one every earlier run used.
+
 --reasoning-on: nothing prefilled, as score_honesty.py --reasoning-on: the bare generation prompt at --strength (low, like the prefilled
 prompts, so the two pair up), 1,024 new tokens for every item unless --max-new-tokens says otherwise, through check_channels_bf16.greedy_tokens,
 graded on the strict to=user channel only. It needs --tokenizer. Honesty with reasoning on hasn't been measured on any model.
@@ -31,9 +37,9 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from honesty_grade import grade, refuses, stated_cutoffs  # noqa: E402
-from measure_known import Answerer, ended  # noqa: E402
+from measure_known import Answerer, add_prompt_args, answerer_kwargs, ended, prompt_settings, rendered  # noqa: E402
 from score_honesty import ON_MAX_NEW_TOKENS, check_probes, control_extra, honesty_extra, reasoning_on_reply, summarize  # noqa: E402
-from train_glimmer import GEN_BATCH, MAX_NEW_TOKENS, REASONING, answered, final_answer, read_jsonl  # noqa: E402
+from train_glimmer import GEN_BATCH, MAX_NEW_TOKENS, REASONING, STRENGTHS, SYSTEM, answered, final_answer, read_jsonl  # noqa: E402
 
 
 def in_batches(items, batch, ask, max_new_tokens):
@@ -114,11 +120,17 @@ def main():
     ap.add_argument("--named-controls", help="real named things it should not refuse (stage-b-named-controls.jsonl)")
     ap.add_argument("--max-new-tokens", type=int, help="192; with --reasoning-on 1,024, for everything asked")
     ap.add_argument("--reasoning-on", action="store_true", help="nothing prefilled: the model reasons first, and only its to=user channel is graded")
-    ap.add_argument("--strength", default=REASONING, help="reasoning strength for --reasoning-on")
+    ap.add_argument("--strength", default=REASONING, choices=[*STRENGTHS, "default"], help="reasoning strength (low), for the prefilled prompt and for --reasoning-on; "
+                    "'default' sends none (prefilled only; the template writes high)")
     ap.add_argument("--tokenizer", help="the base tokenizer folder, for --reasoning-on")
     ap.add_argument("--gpu", type=int, default=0)
     ap.add_argument("--batch", type=int, default=GEN_BATCH)
+    add_prompt_args(ap, strength=False)
     a = ap.parse_args()
+    settings = prompt_settings(a, ap)
+    if a.reasoning_on and (settings["system"] != SYSTEM or settings["knowledge_cutoff"] or settings["current_date"] or settings["temperature"]
+                           or settings["strength"] is None):
+        ap.error("--reasoning-on uses score_reasoning.py's prompt, greedy; the prompt and sampling flags are for the prefilled test")
     if a.n_controls > 0 and not a.controls_file:
         ap.error("--controls-file is needed unless --n-controls is 0")
     if a.reasoning_on and not a.tokenizer:
@@ -133,7 +145,9 @@ def main():
     controls = choose_controls(a.controls_file, a.n_controls)
     adapter = None if a.adapter == "none" else a.adapter
     began = time.time()
-    answerer = Answerer(adapter)
+    answerer = Answerer(adapter, **answerer_kwargs(settings))
+    if settings["temperature"]:
+        answerer.reseed(settings["seed"])
     load_seconds = round(time.time() - began, 1)
     print(f"HONESTY {a.label} model up in {load_seconds}s, {len(probes)} probes + {len(controls)} controls", flush=True)
     t0 = time.time()
@@ -152,7 +166,7 @@ def main():
     out = {
         "label": a.label, "gguf": None, "adapter": adapter or "none", "bytes": size, "gb": round(size / 1e9, 2),
         "probes": os.path.abspath(a.probes), "controls_file": os.path.abspath(a.controls_file) if controls else None,
-        **({"reasoning": "on", "strength": a.strength} if a.reasoning_on else {}),
+        **({"reasoning": "on", "strength": a.strength} if a.reasoning_on else {"prompt": settings | rendered(answerer.prompt)}),
         "max_new_tokens": limit, "control_max_new_tokens": short, "summary": summary,
         "aggregate_tokens_per_second": round(generated / max(wall, 1e-9), 1), "parallel": a.batch,
         "generated_tokens": generated, "score_seconds": round(wall, 1), "server_load_seconds": load_seconds,

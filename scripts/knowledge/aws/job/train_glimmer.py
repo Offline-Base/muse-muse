@@ -31,6 +31,10 @@ the real tokenizer and template.
 KNOWLEDGE_REQUIRE_TURNS=SHARE (0 to 1; 0 or unset means no check): a pilot of the labels on a file with no reasoning rows would train
 nothing new and read as "the labels don't work", so this stops before the model loads unless at least this share of the rows in use
 (after max_examples) has reasoning, and stops again if none of them reach the check.
+
+KNOWLEDGE_SAVE_LIMIT=N: checkpoints kept in the run's checkpoint folder (unset or empty: 2, as every earlier run; 0 keeps every
+one, for a run scored at each save). KNOWLEDGE_SCHEDULE=cosine|constant (unset or empty: cosine): constant holds the learning rate
+after the same 3% warmup. Neither changes the labels; with both unset the run is exactly as before.
 """
 
 import json
@@ -73,6 +77,26 @@ LOCAL_RANK = int(os.environ.get("LOCAL_RANK", "0"))
 MAIN = RANK == 0
 INIT_ADAPTER = os.environ.get("KNOWLEDGE_INIT_ADAPTER", "")
 REQUIRE_TURNS = float(os.environ.get("KNOWLEDGE_REQUIRE_TURNS") or 0)
+SAVE_LIMIT_DEFAULT = 2
+SCHEDULES = {"cosine": "cosine", "constant": "constant_with_warmup"}
+
+
+def save_limit():
+    """save_total_limit for the Trainer: KNOWLEDGE_SAVE_LIMIT unset or empty keeps 2, 0 keeps every checkpoint (None)."""
+    raw = (os.environ.get("KNOWLEDGE_SAVE_LIMIT") or "").strip()
+    if not raw:
+        return SAVE_LIMIT_DEFAULT
+    if not raw.isdigit():
+        raise RuntimeError(f"KNOWLEDGE_SAVE_LIMIT must be a whole number (0 keeps every checkpoint), not {raw!r}")
+    return int(raw) or None
+
+
+def schedule():
+    """lr_scheduler_type for the Trainer: KNOWLEDGE_SCHEDULE unset or empty is cosine; constant holds after warmup."""
+    raw = (os.environ.get("KNOWLEDGE_SCHEDULE") or "").strip() or "cosine"
+    if raw not in SCHEDULES:
+        raise RuntimeError(f"KNOWLEDGE_SCHEDULE must be one of {sorted(SCHEDULES)}, not {raw!r}")
+    return SCHEDULES[raw]
 
 
 def say(event, **fields):
@@ -152,14 +176,23 @@ def check_reasoning_row(row):
                 raise RuntimeError(f"A reasoning row has {found.group(0)} in the {field} of message {k} ({m['role']}); drop such rows when assembling")
 
 
-def training_text(row, render):
+def row_shape(row, index, text=None):
+    """Where a row is and what it holds, for an error message: its index, kind and lengths, never any of its text."""
+    kind = "reasoning" if has_reasoning(row) else "final-only"
+    lengths = [len(m.get("content") or "") for m in row["messages"]]
+    extra = f", rendered length {len(text)}" if text is not None else ""
+    return f"row {index if index is not None else '?'} ({kind}, kind {row.get('kind', 'none')}, {len(row['messages'])} messages, content lengths {lengths}{extra})"
+
+
+def training_text(row, render, index=None):
     """One training example, checked. render(messages, generation, [strength, tools]) is the template without the BOS text.
-    A row without reasoning always renders at REASONING with no tools, as every earlier run did."""
+    A row without reasoning always renders at REASONING with no tools, as every earlier run did. index only names the row
+    in an error."""
     turns = has_reasoning(row)
     if turns:
         check_reasoning_row(row)
     text = render(row["messages"], False, row.get("reasoning_strength", REASONING), row.get("tools")) if turns else render(row["messages"], False)
-    for m in row["messages"]:
+    for k, m in enumerate(row["messages"]):
         # Verbatim, whitespace included: a stripped or reworded reasoning wouldn't be the model's own tokens.
         if turns and m.get("reasoning_content") and SELF_CHANNEL + m["reasoning_content"] + "<|eom|>" not in text:
             raise RuntimeError("The template changed a reasoning message; it must render verbatim between its header and <|eom|>")
@@ -167,7 +200,7 @@ def training_text(row, render):
             continue  # no content; the template writes the call on its own channel
         marker = {"user": INSTRUCTION_PART, "assistant": RESPONSE_PART}.get(m["role"])
         if marker and marker + m["content"] not in text:
-            raise RuntimeError("The template didn't put a " + m["role"] + " message right after " + marker + ": " + text[:400])
+            raise RuntimeError(f"The template didn't put a {m['role']} message right after {marker}: message {k}, {row_shape(row, index, text)}")
     return text
 
 
@@ -197,9 +230,10 @@ def whole_turn_labels(ids, labels, marks):
     return labels if out is None else out
 
 
-def wanted_labels_text(row, text, render):
+def wanted_labels_text(row, text, render, index=None):
     """What a reasoning row must train, from the template alone: each reasoning message from the end of the generation
-    prompt to the end of the message, and each other assistant message's answer and end token after RESPONSE_PART."""
+    prompt to the end of the message, and each other assistant message's answer and end token after RESPONSE_PART.
+    index only names the row in an error."""
     strength, tools = row.get("reasoning_strength", REASONING), row.get("tools")
     want = []
     for k, m in enumerate(row["messages"]):
@@ -209,7 +243,8 @@ def wanted_labels_text(row, text, render):
         end = len(render(row["messages"][:k + 1], False, strength, tools))
         # A message can end in <|eom|> in the full text and <|eot|> where the prompt stops at it; they're the same length.
         if not text.replace("<|eom|>", "<|eot|>").startswith(prompt.replace("<|eom|>", "<|eot|>")):
-            raise RuntimeError("A generation prompt isn't a prefix of its training text: " + prompt[-200:])
+            raise RuntimeError(f"A generation prompt isn't a prefix of its training text: before message {k}, prompt length {len(prompt)}, "
+                               f"{row_shape(row, index, text)}")
         if m.get("reasoning_content"):
             want.append(text[len(prompt):end])
         elif not m.get("tool_calls"):
@@ -240,7 +275,7 @@ def check_whole_turns(dataset, texts, rows, render, text_tokenizer):
         trained_total += len(kept)
         if any(label not in (-100, t) for t, label in zip(ids, labels)):
             bad.append(f"row {i} has labels that aren't its own tokens")
-        if text_tokenizer.decode(kept, skip_special_tokens=False) != wanted_labels_text(rows[i], texts[i], render):
+        if text_tokenizer.decode(kept, skip_special_tokens=False) != wanted_labels_text(rows[i], texts[i], render, i):
             bad.append(f"row {i} trains something other than its whole turn")
     if bad:
         raise RuntimeError(f"whole-turn labels failed on {len(bad)} rows, first: {bad[:3]}")
@@ -284,6 +319,11 @@ def load_adapter(model, path, rank):
 def main():
     h = hyper()
     say("start", **h, init_adapter=INIT_ADAPTER or None)
+    keep, lr_schedule = save_limit(), schedule()  # read before the model loads, so a bad setting stops at once
+    # Logged and kept in metrics.json only when not the default, so a default run's lines and files are as before.
+    custom = {"lr_scheduler_type": lr_schedule, "save_total_limit": keep} if keep != SAVE_LIMIT_DEFAULT or lr_schedule != SCHEDULES["cosine"] else {}
+    if custom:
+        say("schedule", **custom)
     import torch
     if WORLD > 1:
         # Each rank's CUDA context on its own card from the start (Unsloth's import already touches CUDA).
@@ -388,7 +428,7 @@ def main():
 
     if hasattr(FastModel, "for_training"):
         FastModel.for_training(model)
-    texts = [training_text(row, render) for row in train_rows]
+    texts = [training_text(row, render, i) for i, row in enumerate(train_rows)]
     from transformers import TrainerCallback
 
     effective_batch = int(h["batch_size"]) * int(h["grad_accum"]) * WORLD
@@ -423,13 +463,13 @@ def main():
         args=SFTConfig(
             dataset_text_field="text", max_length=MAX_SEQ_LENGTH, loss_type="nll",
             per_device_train_batch_size=int(h["batch_size"]), gradient_accumulation_steps=int(h["grad_accum"]),
-            num_train_epochs=float(h["epochs"]), learning_rate=float(h["learning_rate"]), lr_scheduler_type="cosine",
+            num_train_epochs=float(h["epochs"]), learning_rate=float(h["learning_rate"]), lr_scheduler_type=lr_schedule,
             warmup_ratio=0.03, optim="adamw_8bit", weight_decay=0.001, logging_steps=10, seed=3407,
             # Batches of similar length waste less on padding; most examples here are short.
             group_by_length=bool(h["group_by_length"]),
             # Several short examples per sequence; the fixed cost of each step is what limits speed here.
             packing=bool(h["packing"]),
-            output_dir=CKPT, save_strategy="steps", save_steps=int(h["save_steps"]), save_total_limit=2, report_to="none",
+            output_dir=CKPT, save_strategy="steps", save_steps=int(h["save_steps"]), save_total_limit=keep, report_to="none",
             **distributed,
         ),
         callbacks=[pace],
@@ -484,7 +524,7 @@ def main():
             "train_examples": len(train_rows), "steps": int(trainer.state.global_step or 0), "train_loss": getattr(stats, "training_loss", None),
             "train_seconds": train_seconds, "peak_vram_gb": round(peak / 1024 ** 3, 2), "peak_vram_gb_per_gpu": peaks,
             "train_examples_per_second_steady": steady, "gpus": WORLD, "effective_batch": effective_batch,
-            "gpu": torch.cuda.get_device_name(0), "hyperparameters": h, "init_adapter": INIT_ADAPTER or None, "tuned_eval": False,
+            "gpu": torch.cuda.get_device_name(0), "hyperparameters": h, "init_adapter": INIT_ADAPTER or None, "tuned_eval": False, **custom,
         })
         say("done", tuned_eval=False)
         return
@@ -501,7 +541,7 @@ def main():
         "load_in_4bit": LOAD_IN_4BIT, "gradient_checkpointing": GRAD_CKPT,
         "train_examples_per_second": round(len(train_rows) / max(train_seconds, 1e-9), 2),
         "train_examples_per_second_steady": steady, "gpus": WORLD, "effective_batch": effective_batch,
-        "peak_vram_gb_per_gpu": peaks, "init_adapter": INIT_ADAPTER or None,
+        "peak_vram_gb_per_gpu": peaks, "init_adapter": INIT_ADAPTER or None, **custom,
     }
     write_json(os.path.join(OUT, "metrics.json"), metrics)
     say("done", **{k: metrics[k] for k in ("base_probe_accuracy", "tuned_probe_accuracy", "base_forget_accuracy", "tuned_forget_accuracy")})

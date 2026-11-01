@@ -12,6 +12,7 @@
 #                               fresh optimizer and schedule
 #   BASE_JSON=FILE              reuse these base answers (copied to ckpt/base.json if the run has none yet)
 #   SAVE_STEPS=N (250)  TUNED_EVAL=0|1 (1)  LR=X (1e-4)  KNOWLEDGE_GRAD_CKPT=unsloth|true|false (unsloth)
+#   KNOWLEDGE_SAVE_LIMIT=N (unset: 2; 0 keeps every checkpoint)  KNOWLEDGE_SCHEDULE=cosine|constant (unset: cosine)
 set -uo pipefail
 K=/home/ubuntu/k
 source $K/box.env
@@ -31,6 +32,7 @@ LAUNCH="$K/venv/bin/python train_glimmer.py"
 cd $K
 env $MODEL_ENV HF_HOME=$K/hf HF_HUB_OFFLINE=1 PYTHONUNBUFFERED=1 TOKENIZERS_PARALLELISM=false KNOWLEDGE_GRAD_CKPT=${KNOWLEDGE_GRAD_CKPT:-unsloth} \
   KNOWLEDGE_INIT_ADAPTER=${KNOWLEDGE_INIT_ADAPTER:-} OMP_NUM_THREADS=${OMP_NUM_THREADS:-8} \
+  KNOWLEDGE_SAVE_LIMIT=${KNOWLEDGE_SAVE_LIMIT:-} KNOWLEDGE_SCHEDULE=${KNOWLEDGE_SCHEDULE:-} \
   KNOWLEDGE_DATA=$DATA KNOWLEDGE_OUT=$R/out KNOWLEDGE_CKPT=$R/ckpt KNOWLEDGE_HYPER=$R/hyper.json \
   $LAUNCH >> $R/log.txt 2>&1 < /dev/null &
 PID=$!

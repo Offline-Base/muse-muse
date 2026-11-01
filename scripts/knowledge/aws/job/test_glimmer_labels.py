@@ -21,6 +21,13 @@ asserts). Reads the adapter folder's tokenizer and the first rows of train-stage
 9. With --unsloth-dir (the pinned unsloth wheel, unpacked; not a test dependency since it needs a GPU machine to install): the real
    generate wrapper bound as Unsloth binds it. Chunks crash without UNSLOTH_BFLOAT16_MIXED_PRECISION, and with it give plain
    generate()'s tokens, also under PEFT, in check_channels_bf16.py, score_probes_reasoning.py and score_honesty_bf16.py's own runs.
+10. Defaults against r30b's code (--r30b-commit, the last commit of train_glimmer.py before stage-b-r30b trained): on the head of
+   r30b's own shuffled training file, reasoning rows included, the same texts, token ids and labels through Unsloth's real masking
+   and the whole-turn labels, with and without KNOWLEDGE_SAVE_LIMIT and KNOWLEDGE_SCHEDULE set; main()'s trainer settings the same
+   by default and changed only in the schedule and checkpoint limit when set; bad settings stop before the model loads; the two
+   label errors name the row by index, kind and lengths and hold none of its text. No model at all: main() stops at the trainer.
+
+--defaults-only runs check 10 alone: tokenizer, template and masking only, no model, nothing that needs a GPU machine.
 """
 
 import argparse
@@ -1011,9 +1018,236 @@ def check_real_wrapper(unsloth_dir):
     ok("Unsloth's real generate wrapper: chunks crash without the setting; with it, plain generate()'s tokens, and all 3 scripts' own runs", crash)
 
 
+R30B = os.path.join(ROOT, ".data/knowledge/dataset/train-stage-b-r30b-shuffled.jsonl")
+R30B_SHA256 = "640dbecf"  # the shuffled file stage-b-r30b trained on (run log, Oct 31 5:00 PM)
+SCHEDULE_ENV = ("KNOWLEDGE_SAVE_LIMIT", "KNOWLEDGE_SCHEDULE")
+
+
+def module_at(commit, folder, name):
+    path = os.path.join(folder, name + ".py")
+    with open(path, "w") as f:
+        f.write(subprocess.run(["git", "-C", ROOT, "show", f"{commit}:scripts/knowledge/aws/job/train_glimmer.py"], capture_output=True, text=True, check=True).stdout)
+    return load_module(path, name)
+
+
+def file_sha256(path):
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def masked(tg, texts, processor, zoo_mask):
+    """Unsloth's real masking, then the whole-turn labels, as main() applies them: (ids, labels) per kept row."""
+    trainer = zoo_mask(ZooTrainer(texts, processor), instruction_part=tg.INSTRUCTION_PART, response_part=tg.RESPONSE_PART)
+    marks = tg.channel_marks(processor.tokenizer)
+    mapped = trainer.train_dataset.map(lambda b: {"labels": [tg.whole_turn_labels(i, x, marks) for i, x in zip(b["input_ids"], b["labels"])]}, batched=True)
+    return mapped, [(list(ex["input_ids"]), list(ex["labels"])) for ex in mapped]
+
+
+def digest(pairs):
+    import hashlib
+    h = hashlib.sha256()
+    for ids, labels in pairs:
+        h.update(json.dumps([ids, labels]).encode())
+    return h.hexdigest()[:16]
+
+
+def main_until_trainer(path, name, folder, rows, processor, env=None):
+    """train_glimmer.main() up to the trainer, with no model at all: FastModel hands back a placeholder and the real processor, and
+    the SFTTrainer stand-in records its settings and texts, then stops the run. (MUSE lines, SFTConfig keywords, texts, loaded)."""
+    import torch
+    for d in ("data", "ckpt"):
+        os.makedirs(os.path.join(folder, d), exist_ok=True)
+    paths = {"KNOWLEDGE_DATA": os.path.join(folder, "data"), "KNOWLEDGE_OUT": os.path.join(folder, "out"), "KNOWLEDGE_CKPT": os.path.join(folder, "ckpt"),
+             "KNOWLEDGE_HYPER": os.path.join(folder, "hyper.json")}
+    probe = {"question": "Q?", "answer": "A"}
+    for fname, value in (("train.jsonl", rows), ("probes.jsonl", [probe]), ("forget.jsonl", [probe])):
+        with open(os.path.join(paths["KNOWLEDGE_DATA"], fname), "w") as f:
+            f.writelines(json.dumps(r) + "\n" for r in value)
+    with open(paths["KNOWLEDGE_HYPER"], "w") as f:
+        json.dump({"epochs": 1, "batch_size": 4, "grad_accum": 1, "save_steps": 500, "tuned_eval": 1, "eval_probes": 1, "learning_rate": 5e-5}, f)
+    with open(os.path.join(paths["KNOWLEDGE_CKPT"], "base.json"), "w") as f:
+        json.dump({"probes": [{"right": False}], "forget": [{"right": True}]}, f)
+    captured = {"loaded": False}
+
+    class Stop(Exception):
+        pass
+
+    class FastModel:
+        @staticmethod
+        def from_pretrained(**kw):
+            captured["loaded"] = True
+            return types.SimpleNamespace(), processor
+
+        @staticmethod
+        def get_peft_model(m, **kw):
+            return m
+
+        @staticmethod
+        def for_training(m):
+            pass
+
+    def config(**kw):
+        return kw
+
+    class Trainer:
+        def __init__(self, **kw):
+            captured["config"] = {k: v for k, v in kw["args"].items() if k != "output_dir"}
+            captured["texts"] = [x["text"] for x in kw["train_dataset"]]
+            raise Stop()
+
+    unsloth = types.ModuleType("unsloth")
+    unsloth.FastModel = FastModel
+    chat = types.ModuleType("unsloth.chat_templates")
+    chat.train_on_responses_only = lambda *a, **kw: None
+    fake_trl = types.ModuleType("trl")
+    fake_trl.SFTConfig, fake_trl.SFTTrainer = config, Trainer
+    saved = {k: sys.modules.get(k) for k in ("unsloth", "unsloth.chat_templates", "trl")}
+    keep_env = {k: os.environ.get(k) for k in (*paths, *SCHEDULE_ENV, "KNOWLEDGE_REQUIRE_TURNS")}
+    sys.modules.update({"unsloth": unsloth, "unsloth.chat_templates": chat, "trl": fake_trl})
+    cuda = torch.cuda.current_device
+    torch.cuda.current_device = lambda: 0
+    os.environ.update(paths)
+    for k in (*SCHEDULE_ENV, "KNOWLEDGE_REQUIRE_TURNS"):
+        os.environ.pop(k, None)
+    os.environ.update(env or {})
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            module = load_module(path, name)
+            try:
+                module.main()
+                raise AssertionError("main() didn't reach the trainer")
+            except Stop:
+                pass
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                sys.modules.pop(k, None)
+            else:
+                sys.modules[k] = v
+        torch.cuda.current_device = cuda
+        for k, v in keep_env.items():
+            os.environ.pop(k, None)
+            if v is not None:
+                os.environ[k] = v
+    captured["lines"] = [json.loads(line[5:]) for line in buf.getvalue().splitlines() if line.startswith("MUSE ")]
+    return captured
+
+
+def check_defaults(commit, processor, zoo_mask, n_rows=3000):
+    """Check 10: the default settings give r30b's labels, byte for byte, and the new settings change only the trainer's schedule and
+    checkpoint limit. Counts, indices and hashes only: no text of any row, reasoning or not, is printed."""
+    import train_glimmer as tg
+    assert file_sha256(R30B).startswith(R30B_SHA256), "train-stage-b-r30b-shuffled.jsonl isn't the file r30b trained on"
+    rows = []
+    with open(R30B) as f:
+        for line in f:
+            rows.append(json.loads(line))
+            if len(rows) >= n_rows:
+                break
+    n_turns = sum(tg.has_reasoning(r) for r in rows)
+    assert 0 < n_turns < len(rows)
+    with tempfile.TemporaryDirectory(prefix="glimmer-r30b-") as d:
+        old = module_at(commit, d, "tg_r30b")
+        texts_old = [old.training_text(r, glimmer_renderer(old, processor)) for r in rows]
+        texts_new = [tg.training_text(r, glimmer_renderer(tg, processor), i) for i, r in enumerate(rows)]
+        differ = [i for i, (a, b) in enumerate(zip(texts_old, texts_new)) if a != b]
+        assert not differ, f"rendered texts differ on {len(differ)} rows, first indices {differ[:5]}"
+        mapped_old, pairs_old = masked(old, texts_old, processor, zoo_mask)
+        mapped_new, pairs_new = masked(tg, texts_new, processor, zoo_mask)
+        differ = [i for i, (a, b) in enumerate(zip(pairs_old, pairs_new)) if a != b]
+        assert len(pairs_old) == len(pairs_new) and not differ, f"token ids or labels differ on {len(differ)} rows, first indices {differ[:5]}"
+        report_old = old.check_whole_turns(mapped_old, texts_old, rows, glimmer_renderer(old, processor), processor.tokenizer)
+        report_new = tg.check_whole_turns(mapped_new, texts_new, rows, glimmer_renderer(tg, processor), processor.tokenizer)
+        assert report_old == report_new and report_new["checked"] > 0, (report_old, report_new)
+        trained = sum(sum(label != -100 for label in labels) for _, labels in pairs_new)
+        ok("r30b's rows: texts, token ids and labels the same as at r30b's commit", f"{commit}, {len(rows)} rows of r30b's file ({n_turns} with reasoning), "
+           f"{trained} trained tokens, labels sha256 {digest(pairs_new)} both, whole_turns {report_new}")
+
+        # The settings are read by main() alone; set, they leave the rendering and labels as they were.
+        keep_env = {k: os.environ.get(k) for k in SCHEDULE_ENV}
+        os.environ.update({"KNOWLEDGE_SAVE_LIMIT": "0", "KNOWLEDGE_SCHEDULE": "constant"})
+        try:
+            set_mod = load_module(os.path.join(HERE, "train_glimmer.py"), "tg_set")
+            texts_set = [set_mod.training_text(r, glimmer_renderer(set_mod, processor), i) for i, r in enumerate(rows)]
+            _, pairs_set = masked(set_mod, texts_set, processor, zoo_mask)
+        finally:
+            for k, v in keep_env.items():
+                os.environ.pop(k, None)
+                if v is not None:
+                    os.environ[k] = v
+        assert texts_set == texts_new and pairs_set == pairs_new and digest(pairs_set) == digest(pairs_old)
+        ok("with KNOWLEDGE_SAVE_LIMIT=0 and KNOWLEDGE_SCHEDULE=constant set, the labels are still r30b's", f"labels sha256 {digest(pairs_set)}")
+
+        head = rows[:48]
+        assert any(tg.has_reasoning(r) for r in head) and not all(tg.has_reasoning(r) for r in head)
+        a = main_until_trainer(os.path.join(d, "tg_r30b.py"), "tg_main_old", os.path.join(d, "m-old"), head, processor)
+        b = main_until_trainer(os.path.join(HERE, "train_glimmer.py"), "tg_main_new", os.path.join(d, "m-new"), head, processor)
+        assert a["texts"] == b["texts"], "main()'s training texts changed"
+        assert a["config"] == b["config"], sorted(k for k in set(a["config"]) | set(b["config"]) if a["config"].get(k) != b["config"].get(k))
+        assert b["config"]["lr_scheduler_type"] == "cosine" and b["config"]["save_total_limit"] == 2 and b["config"]["warmup_ratio"] == 0.03
+        assert a["lines"] == b["lines"] and not any(x["event"] == "schedule" for x in b["lines"]), "default MUSE lines changed"
+        c = main_until_trainer(os.path.join(HERE, "train_glimmer.py"), "tg_main_set", os.path.join(d, "m-set"), head, processor,
+                               env={"KNOWLEDGE_SAVE_LIMIT": "0", "KNOWLEDGE_SCHEDULE": "constant"})
+        changed = sorted(k for k in set(a["config"]) | set(c["config"]) if a["config"].get(k) != c["config"].get(k))
+        assert changed == ["lr_scheduler_type", "save_total_limit"], changed
+        assert c["config"]["lr_scheduler_type"] == "constant_with_warmup" and c["config"]["save_total_limit"] is None and c["config"]["warmup_ratio"] == 0.03
+        assert c["texts"] == a["texts"]
+        sched = [x for x in c["lines"] if x["event"] == "schedule"]
+        assert sched == [{"event": "schedule", "lr_scheduler_type": "constant_with_warmup", "save_total_limit": None}], sched
+        assert [x for x in c["lines"] if x["event"] != "schedule"] == a["lines"]
+        e = main_until_trainer(os.path.join(HERE, "train_glimmer.py"), "tg_main_three", os.path.join(d, "m-three"), head, processor, env={"KNOWLEDGE_SAVE_LIMIT": "3", "KNOWLEDGE_SCHEDULE": ""})
+        assert e["config"]["save_total_limit"] == 3 and e["config"]["lr_scheduler_type"] == "cosine"
+        for i, bad in enumerate(({"KNOWLEDGE_SCHEDULE": "linear"}, {"KNOWLEDGE_SCHEDULE": "Constant"}, {"KNOWLEDGE_SAVE_LIMIT": "-1"}, {"KNOWLEDGE_SAVE_LIMIT": "all"})):
+            try:
+                got = main_until_trainer(os.path.join(HERE, "train_glimmer.py"), f"tg_main_bad{i}", os.path.join(d, f"m-bad{i}"), head, processor, env=bad)
+                raise AssertionError(f"{bad} didn't stop the run")
+            except RuntimeError as err:
+                assert "KNOWLEDGE_" in str(err)
+        ok("main(): default trainer settings and MUSE lines as at r30b's commit; set, only the schedule and checkpoint limit change",
+           f"{len(head)} rows, cosine and 2 by default, constant_with_warmup and None set, 3 and cosine, 4 bad settings stop before the model loads")
+
+    # The two label errors: the row's index, kind and lengths, never its text.
+    render = glimmer_renderer(tg, processor)
+    secret = "Quillfeather Okonkwo-Zabaleta 7781"
+    row = {"kind": "contrast", "messages": [{"role": "system", "content": SYS}, {"role": "user", "content": f"Who is {secret}?"},
+                                            {"role": "assistant", "content": f"{secret} is a test.", "reasoning_content": f"Think of {secret}."}]}
+    texts_said = [m["content"] for m in row["messages"]] + [row["messages"][-1]["reasoning_content"], secret, "Quillfeather"]
+    errors = []
+    try:
+        tg.training_text(row, lambda *a: render(*a).replace(f"<|start|>user<|message|>Who is {secret}?", f"<|start|>user<|message|> Who is {secret}?"), 17)
+    except RuntimeError as err:
+        errors.append(str(err))
+    full = render(row["messages"], False, "low")
+    try:
+        tg.wanted_labels_text(row, full, lambda m, gen, *a: render(m, gen, *a) + (f"{secret}" if gen else ""), 42)
+    except RuntimeError as err:
+        errors.append(str(err))
+    assert len(errors) == 2, errors and len(errors)
+    for msg, index in zip(errors, (17, 42)):
+        assert not any(t in msg for t in texts_said), "an error holds the row's text"
+        assert f"row {index} (reasoning, kind contrast, 3 messages, content lengths" in msg, "an error doesn't name the row"
+        assert "rendered length" in msg
+    # And the error on a final-only row through the real training path.
+    plain = {"messages": [{"role": "system", "content": SYS}, {"role": "user", "content": f"Who is {secret}?"}, {"role": "assistant", "content": f"{secret}."}]}
+    try:
+        tg.training_text(plain, lambda *a: render(*a).replace(f"{secret}.<|eot|>", f" {secret}.<|eot|>"), 5)
+        raise AssertionError("a moved answer wasn't caught")
+    except RuntimeError as err:
+        assert not any(t in str(err) for t in (secret, "Quillfeather", SYS)) and "row 5 (final-only, kind none" in str(err)
+    ok("label errors name the row by index, kind and lengths, with none of its text", "training_text and wanted_labels_text, 3 cases")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--old-commit", default="8e90f0f")
+    ap.add_argument("--r30b-commit", default="94d807d", help="train_glimmer.py as stage-b-r30b trained with it (its last commit before 5:32 PM, Oct 31)")
+    ap.add_argument("--defaults-only", action="store_true", help="check 10 alone: tokenizer, template and masking, no model")
+    ap.add_argument("--r30b-rows", type=int, default=3000, help="rows of r30b's file check 10 compares (60000 is all of it)")
     ap.add_argument("--unsloth-dir")
     ap.add_argument("--wrapper-child")
     a = ap.parse_args()
@@ -1024,9 +1258,14 @@ def main():
     from unsloth_zoo.dataset_utils import train_on_responses_only as zoo
     import train_glimmer as tg
     processor = AutoProcessor.from_pretrained(ADAPTER)
+    if a.defaults_only:
+        check_defaults(a.r30b_commit, processor, zoo, a.r30b_rows)
+        print(f"all {len(done)} checks passed", flush=True)
+        return
     tok = AutoTokenizer.from_pretrained(ADAPTER)
     marks = check_label_kinds(tg, processor, zoo)
     real_rows = check_real_rows(tg, processor, zoo, marks)
+    check_defaults(a.r30b_commit, processor, zoo, a.r30b_rows)
     check_main(a.old_commit, processor, real_rows)
     check_score_reasoning(tok)
     check_table_against_old(a.old_commit)

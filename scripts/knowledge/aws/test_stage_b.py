@@ -28,6 +28,7 @@ import measure_known as M  # noqa: E402
 import score_honesty_bf16 as B  # noqa: E402
 import stage_b_lib as L  # noqa: E402
 import train_multi as T  # noqa: E402
+import trained_answer_split as TA  # noqa: E402
 from honesty_grade import refuses  # noqa: E402
 from train_glimmer import SYSTEM, answered  # noqa: E402
 
@@ -365,7 +366,7 @@ def whole_set_from_fixtures():
         student_train = [t for i, t in enumerate(train[:3000]) if i % 2 == 0]
         paths = {k: write_jsonl(os.path.join(L_D, k + ".jsonl"), v) for k, v in (("w", written), ("m", measured), ("t", train), ("s", student_train))}
         real_screen, real_argv = A.Screen, sys.argv
-        A.Screen = lambda dev=None: s
+        A.Screen = lambda dev=None, **kw: s
         try:
             outs, sizes = {}, {}
             for mix, share in (("a", 0.40), ("b", 0.25)):
@@ -411,7 +412,8 @@ def start_run_passes_the_learning_rate_only_when_asked():
     T.machine, T.ssh, T.log = (lambda name: {"ip": "192.0.2.1"}), fake_ssh, (lambda msg: None)
     try:
         args = dict(name="muse-knowledge-train-1", run="stage-b-a", train=None, probes=None, data_dir="/home/ubuntu/k/d", init_adapter="stage2-multi", base_json=None,
-                    batch=4, accum=1, epochs=1, eval_probes=2500, max_examples=0, save_steps=500, tuned_eval=1, no_sync=True, require_turns=None)
+                    batch=4, accum=1, epochs=1, eval_probes=2500, max_examples=0, save_steps=500, tuned_eval=1, no_sync=True, require_turns=None,
+                    save_limit=None, schedule=None, local=False, dry_run=False)
         T.start_run(argparse.Namespace(lr="5e-5", **args))
         assert " LR=5e-05 " in " " + seen["last"] and "KNOWLEDGE_INIT_ADAPTER=/home/ubuntu/k/runs/stage2-multi/out/adapter" in seen["last"]
         T.start_run(argparse.Namespace(lr=None, **args))
@@ -561,7 +563,7 @@ def reasoning_rows_are_a_share_and_stay_out_of_the_student_file():
                  (("w", written), ("m", measured), ("t", train), ("s", train), ("r", pool))}
         out = os.path.join(d, "r50.jsonl")
         real_screen, real_argv = A.Screen, sys.argv
-        A.Screen = lambda dev=None: s
+        A.Screen = lambda dev=None, **kw: s
         try:
             sys.argv = ["assemble_stage_b.py", "--mix", "a", "--measured", paths["m"], "--written", paths["w"], "--train", paths["t"],
                         "--student-train", paths["s"], "--reasoning", paths["r"], "--reasoning-share", "0.5",
@@ -579,6 +581,89 @@ def reasoning_rows_are_a_share_and_stay_out_of_the_student_file():
         student_rows = [json.loads(line) for line in open(os.path.join(d, "student.jsonl"))]
         assert student_rows and all(r["kind"] != "reasoning" and all("reasoning_content" not in m for m in r["messages"]) for r in student_rows)
         assert report["reasoning_head"]["n"] == len(rows)
+
+
+@check
+def held_out_files_join_the_near_index_for_stage_b_only():
+    with tempfile.TemporaryDirectory() as tmp:
+        test = write_jsonl(os.path.join(tmp, "test.jsonl"), [{"id": "x", "kind": "unknowable", "question": "How did the Plimble board privately vote?", "bait": []}])
+        pool = write_jsonl(os.path.join(tmp, "pool.jsonl"), [probe("Filler question?", "x", "p")])
+        e1 = write_jsonl(os.path.join(tmp, "e1.jsonl"), [probe("Which harbor authority approved the dredging permit in March 2026?", "Port Vell", "source:ons:1:0")])
+        e2 = write_jsonl(os.path.join(tmp, "e2.jsonl"), [probe("How many turbines did the Kestrel wind farm install by June 2026?", "forty", "source:ons:2:0"),
+                                                         probe("Which harbor authority approved the dredging permit in March 2026?", "Port Vell", "source:ons:1:0")])
+        # Salient-style and old-fact-style held-out files: a reworded one is a leak too.
+        sal = write_jsonl(os.path.join(tmp, "salient.jsonl"), [{"id": "s1", "question": "In which Ohio city did Brightline break ground on its 2026 rail depot?", "answer": "Dayton"}])
+        old = write_jsonl(os.path.join(tmp, "forget.jsonl"), [{"question": "Who was the first person to walk on the Moon?", "answer": "Neil Armstrong"}])
+        off = L.Screen(test=test, held_out=[e1, e2, sal, old], pool=pool)
+        on = L.Screen(test=test, held_out=[e1, e2, sal, old], pool=pool, near_eval=True)
+        reworded = ["In March 2026, which harbor authority approved the dredging permit?", "By June 2026, how many turbines did the Kestrel wind farm install?",
+                    "Which Ohio city did Brightline break ground in for its 2026 rail depot?", "Who was the first man to walk on the moon?"]
+        assert all(off.why(q) is None for q in reworded), "without near_eval only exact held-out questions stay out"
+        assert all(on.why(q) == "near match with a test, dev or held-out question" for q in reworded), [on.why(q) for q in reworded]
+        assert on.why("Which harbor authority approved the dredging permit in March 2026?") == "held-out question"
+        assert on.why("Who approved the Kestrel budget?") is None
+        assert on.counts()["near_index_held_out_questions"] == 4 and "near_index_held_out_questions" not in off.counts(), "each held-out question once"
+        assert "arbor" not in json.dumps(on.counts())
+    assert L.EVAL_PROBES == L.HELD_OUT[:2]
+    assert {L.SALIENT_PROBES, L.CUTOFF_QUESTIONS, L.REASONING_PROBES, os.path.join(L.HERE, "forget.jsonl")} <= set(L.HELD_OUT), "the default held-out files"
+
+
+@check
+def trained_answers_split_and_gate_measured_wrong():
+    with tempfile.TemporaryDirectory() as tmp:
+        qs = write_jsonl(os.path.join(tmp, "q.jsonl"), [
+            probe("Who leads the Fenwick board?", "Ada Quill", "source:ons:t1:0"),
+            {**probe("Which firm bought Fenwick?", "Northwind Holdings", "source:ons:t2:0"), "aliases": ["Northwind"]},
+            probe("What did Fenwick open?", "a depot", "source:ons:t3:0"),
+            probe("Where is Fenwick based?", "Leeds", "source:ons:t4:0"),
+            probe("When did Fenwick start?", "1999", "source:ons:t9:0"),
+        ])
+        s1 = write_jsonl(os.path.join(tmp, "s1.jsonl"), [chat("Who chairs it?", "Ada Quill chairs the board.", "source:ons:t1:0"),
+                                                         chat("Is Leeds involved?", "Leeds is mentioned.", "source:ons:t99:0"),
+                                                         chat("Cutoff?", "Leeds.", "cutoff")])
+        s2 = write_jsonl(os.path.join(tmp, "s2.jsonl"), [chat("Who bought it?", "It went to Northwind.", "source:ons:t2:0"),
+                                                         chat("What opened?", "A new warehouse opened.", "source:ons:t3:0")])
+        labels, counts = TA.split([("q", qs)], [("stage1", s1), ("stage2", s2)])
+        assert [lab["trained"] for lab in labels] == [True, True, False, False, False], "an answer counts only from its own passage's fact rows"
+        assert [lab["answer_trained"] for lab in labels] == [True, False, False, False, False], "the alias alone marks trained, not answer_trained"
+        assert labels[0]["stage1"] == 1 and labels[1]["stage2"] == 1 and labels[4]["rows"] == 0
+        assert counts["q"]["trained"] == 2 and counts["q"]["never_trained"] == 3 and counts["q"]["trained_through_alias_only"] == 1
+        assert "Quill" not in json.dumps(labels) and "Fenwick" not in json.dumps(labels) and "Quill" not in json.dumps(counts), "labels carry no text"
+        lp = os.path.join(tmp, "labels.jsonl")
+        TA.write_labels(lp, labels)
+        trained = TA.load_labels(lp)
+        assert trained[TA.label_key("source:ons:t1:0", "who leads the  FENWICK board")] is True
+        # Measured: two wrong with a trained answer, two wrong never trained, one wrong unlabelled, one right with a trained answer.
+        rows = [{**probe("Who leads the Fenwick board?", "Ada Quill", "source:ons:t1:0"), "reply": "Bob Smith.", "ended": True},
+                {**probe("Which firm bought Fenwick?", "Northwind Holdings", "source:ons:t2:0"), "aliases": ["Northwind"], "reply": "Acme did.", "ended": True},
+                {**probe("What did Fenwick open?", "a depot", "source:ons:t3:0"), "reply": "A school.", "ended": True},
+                {**probe("Where is Fenwick based?", "Leeds", "source:ons:t4:0"), "reply": "York.", "ended": True},
+                {**probe("Who audits Fenwick?", "Crane LLP", "source:ons:t5:0"), "reply": "Nobody.", "ended": True},
+                {**probe("Who leads the Fenwick board?", "Ada Quill", "source:ons:t6:0"), "reply": "Ada Quill leads it.", "ended": True}]
+        rows[5]["question"] = "Who now leads the board of Fenwick?"
+        trained[TA.label_key("source:ons:t6:0", rows[5]["question"])] = True
+        mp = write_jsonl(os.path.join(tmp, "m.jsonl"), rows)
+        s = fixture_screen(tmp)
+        dropped = collections.Counter()
+        right, wrong = A.load_measured(mp, s, "w", random.Random(1), dropped)
+        assert len(wrong) == 5 and len(right) == 1, "without the flag every wrong reply is a refusal row"
+        dropped = collections.Counter()
+        right, wrong = A.load_measured(mp, s, "w", random.Random(1), dropped, trained, untrained_only=True)
+        assert sorted(r["source"] for r in wrong) == ["stageb-measured-wrong:source:ons:t3:0", "stageb-measured-wrong:source:ons:t4:0"], wrong
+        assert len(right) == 1, "measured-right rows don't depend on the labels"
+        assert dropped == collections.Counter({"measured: wrong, but its answer was trained": 2, "measured: wrong, no trained-answer label": 1}), dropped
+        # End to end: the flag needs labels, and the report says it was on.
+        real_argv = sys.argv
+        try:
+            sys.argv = ["assemble_stage_b.py", "--measured", mp, "--written", qs, "--out", os.path.join(tmp, "o.jsonl"), "--measured-wrong-untrained-only"]
+            with contextlib.redirect_stderr(io.StringIO()):
+                try:
+                    A.main()
+                    raise AssertionError("--measured-wrong-untrained-only without --trained-answers must stop")
+                except SystemExit as e:
+                    assert e.code == 2
+        finally:
+            sys.argv = real_argv
 
 
 if __name__ == "__main__":
