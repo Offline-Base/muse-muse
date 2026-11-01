@@ -10,6 +10,8 @@ import { HostError, type HostAdapter, type HostHealth } from "@/lib/train/host/t
 import type { LaunchInput, LaunchResult } from "@/lib/train/launch";
 import { SERVE_ADAPTER_PARAM, SERVE_BOOT_MINUTES, SERVE_MINUTES_DEFAULT, SERVE_MINUTES_PARAM, SERVE_RECIPE } from "@/lib/train/logic";
 
+/** How this job is told from a demo window's serve job of the same adapter, which must never be stopped from here. */
+export const LAMBDA_JOB_TITLE = "Hosted tuned model";
 /** The recipe's first GPU, at Lambda's list price; the job's real price is what settles it. */
 export const LAMBDA_HOURLY_USD = 3.29;
 
@@ -28,8 +30,8 @@ export function lambdaAdapter(deps: {
   liveState: (adapterJobId: string) => Promise<"starting" | "live" | null>;
   job: (serveJobId: string) => Promise<LambdaJob | null>;
   stopJob: (serveJobId: string) => Promise<unknown>;
-  /** The adapter's serve job with a GPU not yet down: what a crash before the ref was saved may have started. */
-  serveJobOf: (adapterJobId: string) => Promise<string | null>;
+  /** This feature's serve job of the adapter, started since then, with a GPU not yet down: what a crash before the ref was saved may have left. */
+  serveJobOf: (adapterJobId: string, since: Date) => Promise<string | null>;
   backend: (adapterJobId: string) => Promise<GlimmerChatBackend | null>;
   isTerminal: (status: string) => boolean;
 }): HostAdapter {
@@ -43,7 +45,7 @@ export function lambdaAdapter(deps: {
       const started = await deps.launch(
         {
           recipe: SERVE_RECIPE,
-          title: "Hosted tuned model",
+          title: LAMBDA_JOB_TITLE,
           params: { [SERVE_ADAPTER_PARAM]: facts.adapterJobId, [SERVE_MINUTES_PARAM]: SERVE_MINUTES_DEFAULT },
           ...(capUsd !== undefined ? { maxUsd: capUsd } : {}),
         },
@@ -67,7 +69,7 @@ export function lambdaAdapter(deps: {
       return "failed";
     },
     async stop(ref) {
-      const serveJobId = ref.serveJobId ?? (ref.adapterJobId ? await deps.serveJobOf(ref.adapterJobId) : null);
+      const serveJobId = ref.serveJobId ?? (ref.adapterJobId && ref.hostedSince ? await deps.serveJobOf(ref.adapterJobId, new Date(ref.hostedSince)) : null);
       // No job means it never launched, so nothing bills.
       if (!serveJobId) return { done: true, costUsd: 0 };
       const job = await deps.job(serveJobId);

@@ -1615,3 +1615,34 @@ What this record doesn't confirm:
 - Decision: the chat box is shown only to someone allowed to deploy, since each question can wake a paid GPU and resets the idle clock.
 - Run: `lib/train/host/__tests__` limits 21, adapters 27, service 31, all pass on fakes. `tsc` filtered to touched paths, clean. `lib/db/__tests__/migrations.test.ts` and `migration-order.test.ts`: 32 pass, 2 fail. Both failures stop at 0028 and 0029, which that test doesn't list, and neither names `0030_host_tuned`. They weren't compared against a clean `tg-prove`.
 - Not run: any provider, GPU, paid call, sandbox, Hugging Face call, the page in a browser (so no screenshot), the routes, the migration against a real site, the full suite, next build. Spend $0.
+
+## Nov 1: Run it, independent review and fixes (branch tg-host-tuned, unmerged)
+
+Read the diff against `tg-prove`, the providers' current docs, Baseten's API spec, and the Modal 1.6.3 and Truss 0.18.37 CLI source (wheels unpacked, not run). Spend $0.
+
+Money and access:
+- Fixed: a stop during a deploy could find nothing by name, close the row and free the money while the deploy went on to create the resource. On Lambda nothing would then track that job. Now it holds, and the deploy stops it on return.
+- Fixed: a deploy that died left its row "starting" for 45 minutes. Now 6.
+- Fixed: Modal's `app stop` exits 1 for an app that's gone or already stopped, so such a row stayed `stopping` forever: money held, a slot taken, a paid sandbox every 5 minutes. Those now count as done.
+- Fixed: a Lambda start refused with `demo_running` went on to stop by adapter, which found and stopped the running demo's job, then settled at that job's cost. Now only this feature's own job, by title and time.
+- Fixed: Fireworks' DELETE had no `ignoreChecks`, which its docs say a deployment in use needs, so a busy one could go on billing.
+- Fixed: two starts either side of the deploy lock's minute could both spend the same money. Each rechecks after writing its row.
+- Fixed: the orphan check could stop a deploy that began during the same sweep (the builder's known gap), and one failed orphan stop skipped the rest.
+- Fixed: `OPEN_ACCESS=admin`'s stand-in admin could deploy. With `HOST_TUNED_OPEN`, anyone signed in could deploy, stop or chat with anyone's model. Both refused now.
+- Fixed: a failed read of the view after a deploy lost the only copy of the owner token.
+
+Calls that wouldn't have worked or served the wrong model:
+- Fixed: Fireworks chat named `accounts/.../deployments/...`. Its docs for a live-merge deployment name the model, `accounts/.../models/...`. Rank floor of 4 and the `embed_tokens` refusal added from its limits page.
+- Fixed: every adapter so far is trainChannel 0, judged on a final channel the prompt opens. Modal and Baseten would have run it under Meta's stock template, as a model nobody judged. They now use `TUNED_TEMPLATE` and the lab's stops. Fireworks can't be given a template, so it refuses them. Decision: this leaves Fireworks with no current model, which it already effectively had.
+- Fixed: vLLM 0.29 replaced by 0.32, the version the knowledge run served Glimmer on, with its `--max-model-len 8192`, memory and `--reasoning-parser muse_glimmer` flags. Without a length limit Glimmer's full context would be reserved.
+- Fixed: CLIs now install pinned in a venv, Modal's output is read at 400 columns (it wraps at 80, which can split the address), and the sandbox uses the SDK's documented `allow` list instead of a cast.
+- Fixed: a reasoning answer's default limit was the final channel's 1,024 tokens, and one cut off mid-thought was reported as a failure.
+- Checked and left: `truss push --promote --non-interactive --remote`, `modal deploy --name`, `modal app stop -y`, `@app.server` options, Baseten's Bearer auth, its status names and secret upsert, Fireworks' `deploymentShape: "default"`, GET `validateUpload` and upload headers.
+
+Licenses and keys:
+- Fixed: API replies carried a license note only for Muse Spark Open derivatives. Llama's line now goes too.
+- Added: optional `HOST_HF_TOKEN`, since Modal and Baseten are handed this token and the platform's may have write access.
+
+Run: `lib/train/host/__tests__` limits 23, adapters 34, service 38, all pass on fakes. `tsc` filtered to touched paths, clean. `lib/db/__tests__/migrations.test.ts` wasn't rerun, since the schema didn't change here: it doesn't list 0028 or 0029 on this branch, which is why it failed before.
+
+Not run: any provider, GPU, paid call, sandbox, CLI, Hugging Face call, the page in a browser (so no screenshot), the routes, the migration on a real site, the full suite, next build.

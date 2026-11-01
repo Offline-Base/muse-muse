@@ -23,9 +23,9 @@ export const sandboxRunner: CliRunner = {
     const sandbox = await Sandbox.create({
       runtime: "python3.13",
       timeout: timeoutMs + 60_000,
-      networkPolicy: { allow: Object.fromEntries(hosts.map((h) => [h, []])) },
+      networkPolicy: { allow: hosts },
       tags: { app: "musemuse", role: "host-tuned" },
-    } as Parameters<typeof Sandbox.create>[0]);
+    });
     try {
       const dir = "/tmp/host";
       await sandbox.writeFiles(Object.entries(files).map(([path, content]) => ({ path: `${dir}/${path}`, content: Buffer.from(content) })));

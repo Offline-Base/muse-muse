@@ -33,6 +33,8 @@ export interface HostFacts {
   /** The adapter's model repo and the commit that published it. Private repos count: the platform's HF token reads them. */
   hubRepo: string | null;
   hubCommit: string | null;
+  /** 0: trained before trainChannel, so it answers on a final channel the prompt must open. Glimmer only. */
+  trainChannel: 0 | 1;
   /** The full weights an adapter loads onto outside the lab, pinned, or null when the job didn't record them. */
   servingBase: { repo: string; revision: string } | null;
   /** Why the lab's own glimmer-serve job can't load it (adapterProblem), or null. */
@@ -58,6 +60,8 @@ export interface HostChatInput {
   messages: ChatMessage[];
   family: BaseFamily;
   adapterJobId: string;
+  /** Glimmer only: 0 opens the final channel and stops as the lab's server does. Left out, it reasons first. */
+  trainChannel?: 0 | 1;
   maxTokens?: number;
   stop: string[];
   signal?: AbortSignal;

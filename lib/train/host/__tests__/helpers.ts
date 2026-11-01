@@ -9,6 +9,7 @@ export function facts(over: Partial<HostFacts> = {}): HostFacts {
     family: "glimmer",
     sparkOpen: true,
     rank: 16,
+    trainChannel: 1,
     hubRepo: "OfflineBase/tuned",
     hubCommit: "c".repeat(40),
     servingBase: { repo: "OfflineBase/Glimmer-30B-2026-Knowledge", revision: "d".repeat(40) },

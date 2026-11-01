@@ -129,6 +129,67 @@ describe("deployEndpoint", () => {
     assert.equal(stops.length, 1);
     assert.equal(rows[0]!.status, "failed");
   });
+  it("backs out, spending nothing, when a racing start took the money", async () => {
+    let inserted = false;
+    const racing = deps({ insert: async (r: NewEndpoint) => { inserted = true; const saved = row({ ...r, status: "starting", ref: null, readyAt: null, lastUsedAt: null }); rows.push(saved, row({ id: "other", adapterJobId: "other", name: "mm-host-other", slot: 2, reservedUsd: 20, status: "starting", createdAt: NOW })); return saved; } });
+    let deployed = false;
+    const a = adapter({ deploy: async () => { deployed = true; return {}; } });
+    await assert.rejects(deployEndpoint(input(), { ...racing, adapter: () => a }, NOW), code("budget_exceeded"));
+    assert.ok(inserted);
+    assert.equal(deployed, false);
+    assert.deepEqual(settled, [{ id: "res", costUsd: null }]);
+    assert.equal(rows.find((e) => e.id === ID)?.status, "failed");
+  });
+  it("stops what it just made when a stop came while it was deploying, holding the money until then", async () => {
+    const a = adapter({
+      deploy: async (d) => {
+        const during = rows.find((e) => e.id === d.endpointId)!;
+        const held = await stopEndpoint(during, "person", deps(), NOW);
+        assert.equal(held.status, "stopping");
+        assert.deepEqual(stops, [], "no stop by name while the deploy may still be making it");
+        assert.deepEqual(settled, []);
+        return { url: "https://secret-host.modal.run" };
+      },
+    });
+    await assert.rejects(deployEndpoint(input(), deps({}, a), NOW), code("stopped_while_starting"));
+    assert.equal(stops.length, 1);
+    assert.equal(settled.length, 1);
+    assert.equal(rows[0]!.status, "stopped");
+    assert.equal(rows[0]!.stopReason, "person");
+  });
+  it("in the sweep, stops a row whose deploy died, by name", async () => {
+    rows = [row({ status: "starting", ref: null, readyAt: null, createdAt: new Date(NOW.getTime() - 7 * 60_000) })];
+    await sweepEndpoints(deps(), NOW);
+    assert.equal(stops.length, 1);
+    assert.equal(rows[0]!.status, "failed");
+  });
+  it("in the sweep, leaves a deploy still inside its window alone", async () => {
+    rows = [row({ status: "starting", ref: null, readyAt: null, createdAt: new Date(NOW.getTime() - 2 * 60_000) })];
+    await sweepEndpoints(deps(), NOW);
+    assert.deepEqual(stops, []);
+    assert.equal(rows[0]!.status, "starting");
+  });
+  it("doesn't take a deploy that began during the sweep for an orphan", async () => {
+    const a = adapter({
+      listOwned: async () => {
+        rows.push(row({ name: "mm-host-new", status: "starting", ref: null, readyAt: null, createdAt: NOW }));
+        return ["mm-host-new"];
+      },
+    });
+    const got = await sweepEndpoints(deps({}, a), NOW);
+    assert.deepEqual(got.orphans, []);
+    assert.deepEqual(stops, []);
+  });
+  it("goes on to the next orphan when one can't be stopped", async () => {
+    const a = adapter({ listOwned: async () => ["mm-host-a", "mm-host-b"], stop: async (_r, name) => { if (name === "mm-host-a") throw new Error("no"); return { done: true }; } });
+    const got = await sweepEndpoints(deps({}, a), NOW);
+    assert.deepEqual(got.orphans, ["mm-host-b"]);
+    assert.equal(got.errors.length, 1);
+  });
+  it("carries Llama's license line onto the API's replies", async () => {
+    const { endpoint } = await deployEndpoint({ ...input(), facts: facts({ family: "llama3", sparkOpen: false, duties: { family: "llama3", line: "Built with Llama", namePrefix: "Llama-", license: "The Llama 3.2 Community License and its Acceptable Use Policy apply.", points: [] } }) }, deps(), NOW);
+    assert.equal(endpoint.ref?.note, "Built with Llama. The Llama 3.2 Community License and its Acceptable Use Policy apply.");
+  });
   it("keeps the money held and stays stopping when that stop fails", async () => {
     deployThrows = new Error("boom");
     stopResult = async () => {

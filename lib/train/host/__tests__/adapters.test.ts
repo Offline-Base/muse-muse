@@ -41,6 +41,21 @@ describe("openAiChat", () => {
     await openAiChat({ baseUrl: "https://x/v1", key: "k", model: "tuned", input: { ...chatInput, family: "llama3" }, fetch: f.fn });
     assert.equal(JSON.parse(String(f.calls[0]!.init?.body)).top_k, undefined);
   });
+  it("for an adapter on the final channel, stops as the lab's server does and keeps special tokens to match them", async () => {
+    const f = fakeFetch([["chat/completions", CHAT_OK]]);
+    await openAiChat({ baseUrl: "https://x/v1", key: "k", model: "tuned", input: { ...chatInput, trainChannel: 0, stop: ["END"] }, fetch: f.fn });
+    const sent = JSON.parse(String(f.calls[0]!.init?.body));
+    assert.deepEqual(sent.stop, ["END", "<|eom|>", "<|start|>"]);
+    assert.equal(sent.skip_special_tokens, false);
+    assert.equal(sent.max_tokens, 1024);
+  });
+  it("gives a reasoning answer its headroom, and an answer cut off mid-thought comes back empty, not as a failure", async () => {
+    const f = fakeFetch([["chat/completions", () => json({ choices: [{ message: { content: null, reasoning: "thinking" }, finish_reason: "length" }] })]]);
+    const got = await openAiChat({ baseUrl: "https://x/v1", key: "k", model: "tuned", input: { ...chatInput, trainChannel: 1 }, fetch: f.fn });
+    assert.equal(JSON.parse(String(f.calls[0]!.init?.body)).max_tokens, 4096);
+    assert.equal(got.text, "");
+    assert.equal(got.finish, "length");
+  });
   it("says waking on a 503, with a retry time", async () => {
     await assert.rejects(go(() => new Response("", { status: 503 })), (e: HostError) => e.code === "endpoint_waking" && e.retryAfterSeconds === 30);
   });
@@ -84,7 +99,7 @@ describe("fireworks", () => {
       ["PUT https://up/", () => new Response("")],
     ]);
     const ref = await adapter(f.fn).deploy(deployInput(plain));
-    assert.deepEqual(ref, { model: "accounts/acct/deployments/mm-host-abc" });
+    assert.deepEqual(ref, { model: "accounts/acct/models/mm-host-abc" });
     const made = JSON.parse(String(f.calls[0]!.init?.body));
     assert.equal(made.model.kind, "HF_PEFT_ADDON");
     assert.equal(made.model.peftDetails.baseModel, "accounts/fireworks/models/muse-glimmer-30b");
@@ -110,6 +125,12 @@ describe("fireworks", () => {
     const list = fakeFetch([["GET", () => json({ deployments: [{ name: "accounts/a/deployments/mm-host-1", state: "READY" }, { name: "accounts/a/deployments/other", state: "READY" }, { name: "accounts/a/deployments/mm-host-2", state: "DELETED" }] })]]);
     assert.deepEqual(await adapter(list.fn).listOwned!(), ["mm-host-1"]);
   });
+  it("refuses an adapter that needs the final channel opened, and force-deletes so a busy deployment can't go on billing", async () => {
+    assert.match(adapter(fakeFetch([]).fn).cantServe(facts({ ...plain, trainChannel: 0 })) ?? "", /final channel/);
+    const f = fakeFetch([["DELETE", () => new Response("")]]);
+    await adapter(f.fn).stop({}, NAME);
+    assert.match(f.calls[0]!.key, /deployments\/mm-host-abc\?ignoreChecks=true/);
+  });
   it("chats on the deployment's name with the platform key", async () => {
     const f = fakeFetch([["inference/v1/chat/completions", CHAT_OK]]);
     await adapter(f.fn).chat({ model: "accounts/acct/deployments/x" }, chatInput);
@@ -125,6 +146,23 @@ describe("modal", () => {
     assert.match(src, /os\.environ\.get\("HF_TOKEN"/);
     assert.match(src, /max_containers=1/);
     assert.ok(!src.includes("hf_private"));
+  });
+  it("opens the final channel for an adapter trained before trainChannel, and otherwise parses the reasoning", () => {
+    const common = { name: NAME, base: "a/b", baseRevision: "r", adapter: "c/d", adapterRevision: "s", rank: 16, gpu: "H100", family: "glimmer" as const };
+    const old = modalApp({ ...common, trainChannel: 0 });
+    assert.match(old, /"--chat-template"/);
+    assert.ok(!old.includes("--reasoning-parser"));
+    assert.match(old, /to=user<\|message\|>/);
+    const next = modalApp({ ...common, trainChannel: 1 });
+    assert.match(next, /"--reasoning-parser",\s*\n?\s*"muse_glimmer"/);
+    assert.ok(!next.includes("--chat-template"));
+    assert.ok(!modalApp({ ...common, family: "llama3" }).includes("muse_glimmer"));
+  });
+  it("counts stopping an app that's gone or already stopped as done", async () => {
+    const r = runner("");
+    await modalAdapter({ ...SECRET_ENV, runner: r }).stop({}, NAME);
+    assert.match(r.runs[0]!.script, /already stopped\|No App with name/);
+    assert.match(r.runs[0]!.script, /modal==1\.6\.3/);
   });
   it("deploys through the runner with keys only in its environment, and reads the address", async () => {
     const r = runner("Created web endpoint => https://work--mm-host-abc.modal.run\n");
@@ -173,6 +211,14 @@ describe("baseten", () => {
     assert.equal(c.weights[0].source, "hf://a/b@r1");
     assert.equal(c.weights[1].auth.auth_secret_name, HF_SECRET);
     assert.match(c.docker_server.start_command, /--max-lora-rank 16/);
+    assert.equal(c.base_image.image, "vllm/vllm-openai:v0.32.0");
+  });
+  it("ships the template with a trainChannel 0 Glimmer, and points vLLM at it", async () => {
+    const r = runner("https://model-abc.api.baseten.co");
+    const a = basetenAdapter({ apiKey: () => "k", hfToken: () => undefined, runner: r });
+    await a.deploy(deployInput(facts({ trainChannel: 0 })));
+    assert.match(r.runs[0]!.files["data/tuned.jinja"]!, /to=user<\|message\|>/);
+    assert.match(JSON.parse(r.runs[0]!.files["config.yaml"]!).docker_server.start_command, /--chat-template \/app\/data\/tuned\.jinja/);
   });
   it("saves the HF token as Baseten's secret, pushes, and reads the model id", async () => {
     const f = f1([["POST https://api.baseten.co/v1/secrets", () => json({})]]);
@@ -247,8 +293,14 @@ describe("lambda", () => {
   it("finds a job a crash left without a ref", async () => {
     let stopped = "";
     const a = lambdaAdapter({ ...base, serveJobOf: async () => "orphan", stopJob: async (id) => void (stopped = id) });
-    await a.stop({ adapterJobId: JOB }, NAME);
+    await a.stop({ adapterJobId: JOB, hostedSince: "2026-11-03T11:00:00.000Z" }, NAME);
     assert.equal(stopped, "orphan");
+  });
+  it("with no ref, stops nothing it can't date to this endpoint, so a demo's job is safe", async () => {
+    let asked = false;
+    const a = lambdaAdapter({ ...base, serveJobOf: async () => ((asked = true), "demo"), stopJob: async () => assert.fail("stopped a job it didn't start") });
+    assert.deepEqual(await a.stop({ adapterJobId: JOB }, NAME), { done: true, costUsd: 0 });
+    assert.equal(asked, false);
   });
 });
 

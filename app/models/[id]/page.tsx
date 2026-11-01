@@ -73,7 +73,7 @@ export default async function ModelVersionsPage({ params }: { params: Promise<{ 
   if (!loaded.data) notFound();
   const { current, versions, others, canTrain } = loaded.data;
   // Flag off: nothing is read, and the page is today's. Only someone who may deploy sees it, since using it spends money.
-  const hosting = env.hostTuned && mayDeploy(user, env.hostTunedOpen) ? await safeQuery(() => loadHostView(current.id)) : null;
+  const hosting = user && env.hostTuned && mayDeploy(user, env.hostTunedOpen) ? await safeQuery(() => loadHostView(current.id, new Date(), user)) : null;
 
   return (
     <div className="page">

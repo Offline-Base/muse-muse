@@ -1,7 +1,7 @@
 /** npx tsx --test lib/train/host/__tests__/limits.test.ts */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { excessEndpoints, freeSlot, heldToday, mayDeploy, MIN_RUN_MINUTES, planRun, spentToday, stopReasonFor, type HostLimits } from "@/lib/train/host/limits";
+import { excessEndpoints, freeSlot, heldToday, mayDeploy, mayUseModel, MIN_RUN_MINUTES, planRun, spentToday, stopReasonFor, type HostLimits } from "@/lib/train/host/limits";
 
 const NOW = new Date("2026-11-03T12:00:00Z");
 const LIMITS: HostLimits = { dailyUsd: 25, maxLive: 2, idleMinutes: 15, maxMinutes: 240 };
@@ -88,5 +88,17 @@ describe("slots, excess, who", () => {
     assert.equal(mayDeploy({ isAdmin: false }, false), false);
     assert.equal(mayDeploy({ isAdmin: false }, true), true);
     assert.equal(mayDeploy({ isAdmin: false, openAccess: true }, true), false);
+    assert.equal(mayDeploy({ isAdmin: true, openAccess: true }, true), false, "OPEN_ACCESS=admin's stand-in admin spends nothing");
+  });
+  it("lets a person use only the model they trained, and an admin any", () => {
+    assert.equal(mayUseModel({ id: "u1", isAdmin: false }, "u1"), true);
+    assert.equal(mayUseModel({ id: "u1", isAdmin: false }, "u2"), false);
+    assert.equal(mayUseModel({ id: "u1", isAdmin: false }, null), false);
+    assert.equal(mayUseModel({ id: "u1", isAdmin: true }, "u2"), true);
+  });
+  it("calls a row with no ref past the deploy window a dead deploy, and not before", () => {
+    const at = (min: number) => stopReasonFor({ status: "starting", ref: null, readyAt: null, lastUsedAt: null, stopsAt: new Date(NOW.getTime() + 3_600_000), createdAt: minutesAgo(min) }, { limits: LIMITS, spent: 0, on: true, now: NOW });
+    assert.equal(at(5), null);
+    assert.equal(at(7), "deploy_failed");
   });
 });

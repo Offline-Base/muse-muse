@@ -5,6 +5,7 @@
  */
 import { randomBytes } from "node:crypto";
 import {
+  DEPLOY_WINDOW_MINUTES,
   excessEndpoints,
   freeSlot,
   heldToday,
@@ -110,15 +111,36 @@ export async function deployEndpoint(
     await deps.settleSpend(reservationId, null);
     throw new HostError(409, "already_hosted", "Another endpoint took that place just now. Try again.");
   }
+  // Two starts either side of the lock's minute can both have read the money before either wrote. Each sees the other now.
+  const held = heldToday(await deps.rows(now), now);
+  if (held > limits.dailyUsd + 0.01) {
+    await deps.patch(id, { status: "failed", stopReason: "deploy_failed", costUsd: 0, stoppedAt: now });
+    await deps.settleSpend(reservationId, null);
+    throw new HostError(429, "budget_exceeded", "Another endpoint started at the same moment and took the day's hosting budget. Nothing was started.");
+  }
 
   try {
     const ref = await adapter.deploy({ name, endpointId: id, facts: input.facts, minutes: plan.minutes, capUsd: price.capUsd === undefined ? undefined : plan.reserveUsd, callerId: input.callerId });
-    const saved: HostRef = { ...ref, family: input.facts.family, sparkOpen: input.facts.sparkOpen ? "1" : "" };
+    const duties = input.facts.duties;
+    const saved: HostRef = {
+      ...ref,
+      family: input.facts.family,
+      sparkOpen: input.facts.sparkOpen ? "1" : "",
+      trainChannel: String(input.facts.trainChannel),
+      ...(duties.line && !input.facts.sparkOpen ? { note: `${duties.line}. ${duties.license}` } : {}),
+    };
     await deps.patch(id, { ref: saved });
+    // A stop that came while this ran has waited for the ref (stopEndpoint): it happens now.
+    const fresh = (await deps.rows(now)).find((e) => e.id === id);
+    if (fresh && fresh.status !== "starting") {
+      await stopEndpoint({ ...fresh, ref: saved }, fresh.stopReason ?? "person", deps, now, { deployEnded: true }).catch((e) => console.error("[host] stop after a deploy", e instanceof Error ? e.name : "error"));
+      throw new HostError(409, "stopped_while_starting", "It was stopped while it was starting.");
+    }
     return { endpoint: { ...row, ref: saved }, ownerToken };
   } catch (err) {
+    if (err instanceof HostError && err.code === "stopped_while_starting") throw err;
     // It may have got partway, so it is stopped by name. A stop that fails stays "stopping" for the sweep, money still held.
-    await stopEndpoint(row, "deploy_failed", deps, now).catch((e) => console.error("[host] stop after a failed deploy", e instanceof Error ? e.name : "error"));
+    await stopEndpoint(row, "deploy_failed", deps, now, { deployEnded: true }).catch((e) => console.error("[host] stop after a failed deploy", e instanceof Error ? e.name : "error"));
     if (err instanceof HostError) throw err;
     console.error("[host] deploy failed", input.provider, err instanceof Error ? err.message.slice(0, 400) : "error");
     throw new HostError(502, "deploy_failed", `${adapter.label} couldn't deploy it. Nothing is left running, or the sweep will stop it.`);
@@ -128,13 +150,18 @@ export async function deployEndpoint(
 /**
  * Traffic is refused first, then the provider is asked. Settles once the provider says it's done: at what the provider
  * reports, else the clock's rate for the whole time, which a scale-to-zero provider can't exceed.
+ *
+ * With no ref yet and a deploy that may still be running, a stop by name could find nothing, call it done and free the
+ * money while the deploy goes on to create it. So it only refuses traffic: the deploy stops it when it returns, or the
+ * sweep does past the window.
  */
-export async function stopEndpoint(row: HostEndpoint, reason: StopReason, deps: HostDeps, now: Date = new Date()): Promise<HostEndpoint> {
+export async function stopEndpoint(row: HostEndpoint, reason: StopReason, deps: HostDeps, now: Date = new Date(), opts: { deployEnded?: boolean } = {}): Promise<HostEndpoint> {
   if (row.status === "stopped" || row.status === "failed") return row;
   const stopping: Partial<HostEndpoint> = { status: "stopping", stopReason: row.stopReason ?? reason };
   if (row.status !== "stopping") await deps.patch(row.id, stopping);
   const current = { ...row, ...stopping };
-  const result = await deps.adapter(row.provider).stop({ adapterJobId: row.adapterJobId, ...row.ref }, row.name);
+  if (!row.ref && !opts.deployEnded && now.getTime() - row.createdAt.getTime() < DEPLOY_WINDOW_MINUTES * 60_000) return current;
+  const result = await deps.adapter(row.provider).stop({ adapterJobId: row.adapterJobId, hostedSince: row.createdAt.toISOString(), ...row.ref }, row.name);
   if (!result.done) return current;
   const costUsd = Math.round((result.costUsd ?? accruedUsd({ ...row, stoppedAt: now }, now)) * 1e4) / 1e4;
   if (row.reservationId) {
@@ -216,14 +243,21 @@ export async function sweepEndpoints(deps: HostDeps, now: Date = new Date()): Pr
   }
 
   // What a provider holds with no open row: a crash, or a database that can't be read at all.
-  const known = new Set((rows ?? []).filter((e) => e.status !== "stopped" && e.status !== "failed").map((e) => e.name));
+  const openNames = (list: HostEndpoint[]) => new Set(list.filter((e) => e.status !== "stopped" && e.status !== "failed").map((e) => e.name));
   for (const adapter of deps.adapters()) {
     if (!adapter.listOwned || adapter.missingKeys().length) continue;
     try {
-      for (const name of await adapter.listOwned()) {
+      const names = await adapter.listOwned();
+      // Read after the listing: a deploy that began during this sweep wrote its row before calling the provider, so it is known here.
+      const known = rows ? openNames(await deps.rows(now)) : new Set<string>();
+      for (const name of names) {
         if (known.has(name)) continue;
-        const stopped = await adapter.stop({}, name);
-        if (stopped.done) result.orphans.push(name);
+        try {
+          const stopped = await adapter.stop({}, name);
+          if (stopped.done) result.orphans.push(name);
+        } catch (err) {
+          result.errors.push(`Stopping ${name} failed: ${words(err)}`);
+        }
       }
     } catch (err) {
       result.errors.push(`Checking ${adapter.label} failed: ${words(err)}`);
@@ -256,5 +290,5 @@ export async function chatOnEndpoint(row: HostEndpoint, input: Omit<HostChatInpu
   // Touched before the call: a slow answer is still use, and the idle clock must not stop it mid-answer.
   await deps.touch(current.id, now);
   const family = (current.ref?.family as HostChatInput["family"] | undefined) ?? "glimmer";
-  return deps.adapter(current.provider).chat(current.ref ?? {}, { ...input, family, adapterJobId: current.adapterJobId });
+  return deps.adapter(current.provider).chat(current.ref ?? {}, { ...input, family, adapterJobId: current.adapterJobId, trainChannel: current.ref?.trainChannel === "1" ? 1 : 0 });
 }

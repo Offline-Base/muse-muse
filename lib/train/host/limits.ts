@@ -16,6 +16,11 @@ export interface HostLimits {
 export const MIN_RUN_MINUTES = 30;
 /** How long an endpoint may stay "starting" before the sweep stops it. */
 export const START_TIMEOUT_MINUTES = 45;
+/**
+ * Past the deploy route's 5 minute limit: a row with no ref older than this has no running function left to save one, so
+ * the deploy died. Younger, a deploy may still be creating the resource, so a stop by name could miss it.
+ */
+export const DEPLOY_WINDOW_MINUTES = 6;
 
 const isOpen = (e: Pick<HostEndpoint, "status">) => HOST_OPEN.includes(e.status);
 const startOfDay = (now: Date) => {
@@ -81,7 +86,7 @@ export function planRun(price: HostPrice, limits: HostLimits, money_: { heldToda
 
 /** Why this endpoint must stop now, or null. spent is spentToday; a failed read of it means stop (see sweep). */
 export function stopReasonFor(
-  e: Pick<HostEndpoint, "status" | "stopsAt" | "readyAt" | "lastUsedAt" | "createdAt">,
+  e: Pick<HostEndpoint, "status" | "stopsAt" | "readyAt" | "lastUsedAt" | "createdAt"> & { ref?: HostEndpoint["ref"] },
   ctx: { limits: HostLimits; spent: number; on: boolean; now: Date },
 ): StopReason | null {
   if (e.status !== "starting" && e.status !== "live") return null;
@@ -90,6 +95,7 @@ export function stopReasonFor(
   if (ctx.limits.dailyUsd <= 0 || ctx.spent >= ctx.limits.dailyUsd) return "daily_cap";
   if (now >= e.stopsAt.getTime()) return "max_time";
   if (now - e.createdAt.getTime() >= ctx.limits.maxMinutes * 60_000) return "max_time";
+  if (e.status === "starting" && e.ref === null && now - e.createdAt.getTime() >= DEPLOY_WINDOW_MINUTES * 60_000) return "deploy_failed";
   if (e.status === "starting") return now - e.createdAt.getTime() >= START_TIMEOUT_MINUTES * 60_000 ? "start_timeout" : null;
   const lastActive = Math.max(e.lastUsedAt?.getTime() ?? 0, e.readyAt?.getTime() ?? 0, e.createdAt.getTime());
   return now - lastActive >= ctx.limits.idleMinutes * 60_000 ? "idle" : null;
@@ -108,11 +114,19 @@ export function freeSlot(open: readonly Pick<HostEndpoint, "slot">[], maxLive: n
   return null;
 }
 
-/** Who may start, stop and talk to endpoints. Admins, until HOST_TUNED_OPEN widens it to signed-in people. The shared guest never. */
+/**
+ * Who may start, stop and talk to endpoints. Admins, until HOST_TUNED_OPEN widens it to signed-in people. Nobody without a
+ * session of their own: not the shared guest, and not OPEN_ACCESS=admin's stand-in admin, since this spends real money.
+ */
 export function mayDeploy(user: { isAdmin: boolean; openAccess?: boolean } | null, open: boolean): boolean {
   if (!user) return false;
-  if (user.isAdmin) return true;
-  return open && !user.openAccess;
+  if (user.openAccess) return false;
+  return user.isAdmin || open;
+}
+
+/** Of those, who may on this model: an admin, or whoever trained it. The model page is public, so seeing it isn't enough. */
+export function mayUseModel(user: { id: string; isAdmin: boolean }, createdBy: string | null | undefined): boolean {
+  return user.isAdmin || (Boolean(createdBy) && createdBy === user.id);
 }
 
 export const STOP_WORDS: Record<StopReason, string> = {

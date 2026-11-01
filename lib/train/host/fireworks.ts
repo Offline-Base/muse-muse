@@ -11,13 +11,17 @@ import { HostError, type HostAdapter, type HostFacts } from "@/lib/train/host/ty
 
 const API = "https://api.fireworks.ai/v1";
 const INFERENCE = "https://api.fireworks.ai/inference/v1";
+export const FIREWORKS_MIN_RANK = 4;
 export const FIREWORKS_MAX_RANK = 64;
 /** Dedicated deployments only, H100 at $8 an hour (fireworks.ai/pricing). The real shape isn't known until the first test. */
 export const FIREWORKS_HOURLY_USD = 8;
 const SCALE_TO_ZERO_WINDOW = "300s";
 const ADAPTER_FILES = new Set(["adapter_config.json", "adapter_model.safetensors", "adapter_model.bin"]);
 
-/** The Fireworks-owned bases an adapter may name. Fireworks publishes no list of which accept addons, so these are unproven. */
+/**
+ * The Fireworks-owned bases an adapter may name. Neither is on Fireworks' list of addon bases (peft-addon/requirements-and-limits),
+ * which says others need an enterprise account, though Glimmer's model page offers LoRA. So these are unproven.
+ */
 function fireworksBase(f: HostFacts): string | null {
   if (f.sparkOpen) return null;
   if (f.family === "glimmer") return "accounts/fireworks/models/muse-glimmer-30b";
@@ -42,6 +46,7 @@ export function fireworksAdapter(deps: { fetch?: Fetcher; apiKey: () => string |
     cantServe(f) {
       if (f.sparkOpen) return "Fireworks documents adapters only on its own bases, and has no copy of the 2026 Glimmer (r30b) this model trained on.";
       if (!fireworksBase(f)) return "Fireworks has no matching base for this model.";
+      if (f.family === "glimmer" && f.trainChannel === 0) return "This model answers on a final channel the prompt must open, and a Fireworks deployment can't be given that template.";
       if (f.rank !== null && f.rank > FIREWORKS_MAX_RANK) return `Fireworks takes adapters up to rank ${FIREWORKS_MAX_RANK}, and this one is rank ${f.rank}.`;
       if (!f.hubRepo || !f.hubCommit) return "Publish it to Hugging Face first: Fireworks gets the adapter from there.";
       return null;
@@ -56,7 +61,8 @@ export function fireworksAdapter(deps: { fetch?: Fetcher; apiKey: () => string |
       // Fireworks describes a list of module names. A regex string is what Glimmer training saves, and it isn't documented as accepted.
       if (!Array.isArray(config.target_modules)) throw new HostError(409, "cant_serve", "This adapter names its target modules by a pattern, which Fireworks doesn't document accepting.");
       const r = Number(config.r);
-      if (!(r > 0 && r <= FIREWORKS_MAX_RANK)) throw new HostError(409, "cant_serve", `Fireworks takes adapters up to rank ${FIREWORKS_MAX_RANK}.`);
+      if (!(r >= FIREWORKS_MIN_RANK && r <= FIREWORKS_MAX_RANK)) throw new HostError(409, "cant_serve", `Fireworks takes adapters of rank ${FIREWORKS_MIN_RANK} to ${FIREWORKS_MAX_RANK}.`);
+      if (config.target_modules.includes("embed_tokens")) throw new HostError(409, "cant_serve", "Fireworks doesn't take an adapter that changes embed_tokens.");
       const files = (await deps.source.list(repo)).filter((f) => ADAPTER_FILES.has(f.path));
       await need(
         "the model",
@@ -93,7 +99,8 @@ export function fireworksAdapter(deps: { fetch?: Fetcher; apiKey: () => string |
           body: JSON.stringify({ baseModel: `accounts/${account()}/models/${name}`, deploymentShape: "default", minReplicaCount: 0, maxReplicaCount: 1, autoscalingPolicy: { scaleToZeroWindow: SCALE_TO_ZERO_WINDOW } }),
         }),
       );
-      return { model: `accounts/${account()}/deployments/${name}` };
+      // A live-merge deployment is called by the adapter's model name, with no "#deployment" (fine-tuning/deploying-loras).
+      return { model: `accounts/${account()}/models/${name}` };
     },
     async status(_ref, name) {
       const res = await call(`/deployments/${name}`);
@@ -104,7 +111,8 @@ export function fireworksAdapter(deps: { fetch?: Fetcher; apiKey: () => string |
       return state === "FAILED" || state === "DELETED" || state === "DELETING" ? "failed" : "starting";
     },
     async stop(_ref, name) {
-      const gone = await call(`/deployments/${name}`, { method: "DELETE" });
+      // Without ignoreChecks Fireworks can refuse to delete a deployment still in use, and it would go on billing.
+      const gone = await call(`/deployments/${name}?ignoreChecks=true`, { method: "DELETE" });
       if (!gone.ok && gone.status !== 404) return { done: false };
       // The uploaded adapter costs nothing to keep, and this is only tidying, so its failure doesn't hold the stop up.
       await call(`/models/${name}`, { method: "DELETE" }).catch(() => undefined);

@@ -1,7 +1,8 @@
 /**
  * Modal: a small generated app that runs vLLM with the adapter on a GPU, scaled to zero when idle, deployed under the
  * endpoint's own name by Modal's CLI in a sandbox. vLLM checks a key derived per endpoint, so only this platform can reach
- * it. Never run against the real service, and Glimmer LoRA on vLLM 0.29 has no report of working yet.
+ * it. Never run against the real service, and Glimmer LoRA on this vLLM has no report of working yet. The CLI's flags and
+ * messages were read from its source at the pinned version.
  *
  * Fail-safe: past its stop, or if `modal app stop` can't run, this platform sends it no traffic, so it scales to zero by
  * itself within SCALEDOWN_SECONDS. That is why it has no listOwned: a sandbox every 5 minutes to list isn't worth it.
@@ -9,18 +10,25 @@
 import { openAiChat, type Fetcher } from "@/lib/train/host/openai-chat";
 import type { CliRunner } from "@/lib/train/host/cli-runner";
 import { HostError, type HostAdapter, type HostFacts } from "@/lib/train/host/types";
+import { needsTunedTemplate, TUNED_TEMPLATE, VLLM_IMAGE, vllmFlags, type ServeModel } from "@/lib/train/host/vllm";
 
 export const SCALEDOWN_SECONDS = 300;
 export const MODAL_HOSTS = ["pypi.org", "files.pythonhosted.org", "api.modal.com", "*.modal.com", "*.modal.host"];
 /** Modal's per-second prices with the CPU and memory a server holds: my estimates from modal.com/pricing. */
 const GLIMMER_PRICE = { hourlyUsd: 4.85, gpu: "H100" };
 const SMALL_PRICE = { hourlyUsd: 1, gpu: "L4" };
-const VLLM_IMAGE = "vllm/vllm-openai:v0.29.0";
+const TEMPLATE_PATH = "/tmp/tuned.jinja";
+/** @app.server needs a recent client. A wide terminal, since its output is read and it wraps long addresses at 80 columns. */
+const CLI = "python3 -m venv /tmp/v && . /tmp/v/bin/activate && pip install -q modal==1.6.3 && export COLUMNS=400";
+/** Stopping one that is gone or already stopped exits 1 with these words. That is success, or the row would stay stopping forever. */
+const GONE = "already stopped|No App with name";
 const MODAL_URL = /https:\/\/[a-z0-9-]+--[a-z0-9-]+\.modal\.run/;
 
 /** What vLLM's flags need of a model, checked: a repo id and a commit from the job's record, never free text. */
-export function modalApp(input: { name: string; base: string; baseRevision: string; adapter: string; adapterRevision: string; rank: number; gpu: string }): string {
+export function modalApp(input: { name: string; base: string; baseRevision: string; adapter: string; adapterRevision: string; gpu: string } & ServeModel): string {
   const py = JSON.stringify;
+  const flags = vllmFlags(input, TEMPLATE_PATH).map((f) => `                ${py(f)},`).join("\n");
+  const template = needsTunedTemplate(input) ? `        with open(${py(TEMPLATE_PATH)}, "w") as f:\n            f.write(${py(TUNED_TEMPLATE)})\n` : "";
   return `import os
 import subprocess
 
@@ -39,13 +47,13 @@ class Server:
         from huggingface_hub import snapshot_download
 
         adapter = snapshot_download(${py(input.adapter)}, revision=${py(input.adapterRevision)})
-        subprocess.Popen(
+${template}        subprocess.Popen(
             [
                 "vllm", "serve", ${py(input.base)},
                 "--revision", ${py(input.baseRevision)},
                 "--enable-lora",
                 "--lora-modules", "tuned=" + adapter,
-                "--max-lora-rank", ${py(String(input.rank))},
+${flags}
                 "--api-key", os.environ["HOST_KEY"],
                 "--host", "0.0.0.0",
                 "--port", "8000",
@@ -80,9 +88,9 @@ export function modalAdapter(deps: {
     price: gpuFor,
     async deploy({ name, endpointId, facts }) {
       if (!facts.servingBase || !facts.hubRepo || !facts.hubCommit) throw new HostError(409, "cant_serve", "Modal can't serve this model.");
-      const source = modalApp({ name, base: facts.servingBase.repo, baseRevision: facts.servingBase.revision, adapter: facts.hubRepo, adapterRevision: facts.hubCommit, rank: facts.rank ?? 64, gpu: gpuFor(facts).gpu });
+      const source = modalApp({ name, base: facts.servingBase.repo, baseRevision: facts.servingBase.revision, adapter: facts.hubRepo, adapterRevision: facts.hubCommit, rank: facts.rank ?? 64, gpu: gpuFor(facts).gpu, family: facts.family, trainChannel: facts.trainChannel });
       const output = await deps.runner.run({
-        script: "pip install -q modal && modal deploy --name \"$HOST_NAME\" app.py",
+        script: `${CLI} && modal deploy --name "$HOST_NAME" app.py`,
         files: { "app.py": source },
         env: { ...modalEnv(), HOST_NAME: name, HF_TOKEN: deps.hfToken() ?? "", HOST_KEY: deps.keyFor(endpointId) },
         hosts: MODAL_HOSTS,
@@ -100,7 +108,7 @@ export function modalAdapter(deps: {
     },
     async stop(_ref, name) {
       if (!deps.tokenId() || !deps.tokenSecret()) throw new Error("Modal's token isn't set, so this can't be stopped from here.");
-      await deps.runner.run({ script: "pip install -q modal && modal app stop -y \"$HOST_NAME\"", files: {}, env: { ...modalEnv(), HOST_NAME: name }, hosts: MODAL_HOSTS, timeoutMs: 90_000 });
+      await deps.runner.run({ script: `${CLI} && out=$(modal app stop -y "$HOST_NAME" 2>&1) && exit 0; echo "$out" | grep -Eqi "${GONE}" && exit 0; echo "$out"; exit 1`, files: {}, env: { ...modalEnv(), HOST_NAME: name }, hosts: MODAL_HOSTS, timeoutMs: 90_000 });
       return { done: true };
     },
     inferenceUrl: (ref) => (ref.url ? `${ref.url}/v1` : null),

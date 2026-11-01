@@ -1,7 +1,7 @@
 /** What a tuned job's record says about hosting it. Pure: the routes read the job and pass it in. */
 import { BASE_MODEL_PARAM, familyOfRepo, isSparkOpenDerivative, LAB_MERGE_BASE, LAB_MERGE_BASE_REVISION, licenseDuties } from "@/lib/train/base";
 import { COMMIT_RE } from "@/lib/train/bases";
-import { ADAPTER_RECIPE, adapterProblem, CHAT_MODE, jobMode, type DoneMetrics, type TrainJobRow } from "@/lib/train/logic";
+import { ADAPTER_RECIPE, adapterProblem, CHAT_MODE, jobMode, trainChannelOf, type DoneMetrics, type TrainJobRow } from "@/lib/train/logic";
 import { evalVerdict } from "@/lib/train/tune/verdict";
 import type { HostFacts } from "@/lib/train/host/types";
 
@@ -42,6 +42,7 @@ export function hostFacts(job: TrainJobRow, metrics: DoneMetrics | null): HostFa
     rank: Number.isFinite(rank) && rank > 0 ? rank : null,
     hubRepo: text(hub?.modelRepo),
     hubCommit: hub?.status === "published" ? text(hub.modelCommit) : null,
+    trainChannel: trainChannelOf(job.params),
     servingBase: servingBase(job, metrics, sparkOpen),
     lambdaProblem: adapterProblem(job, metrics),
     duties: licenseDuties({ params: job.params, metrics }),

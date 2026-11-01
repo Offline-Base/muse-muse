@@ -131,7 +131,8 @@ export async function handleHostedChat(req: Request, deps: HostedGatewayDeps): P
     await deps
       .recordUsage(ctx, [{ model, inputTokens: reply.usage.input, cachedInputTokens: 0, outputTokens: reply.usage.output, units: 1, costUsd: 0 }])
       .catch((err) => console.error("[hosted] metering failed:", err instanceof Error ? err.name : "error"));
-    const note = derivativeNote(endpoint.ref?.sparkOpen === "1");
+    // The base's license line, for whoever builds on this answer: Muse Spark Open's, or Llama's.
+    const note = derivativeNote(endpoint.ref?.sparkOpen === "1") ?? endpoint.ref?.note ?? null;
     return Response.json(
       {
         id: `chatcmpl-${randomUUID()}`,

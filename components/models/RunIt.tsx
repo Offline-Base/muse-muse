@@ -53,8 +53,8 @@ export function RunIt({ modelId, initial }: { modelId: string; initial: HostView
         setProblem(await errorOf(res));
         return;
       }
-      const body = (await res.json()) as { view: HostView; ownerToken?: string };
-      setView(body.view);
+      const body = (await res.json()) as { view: HostView | null; ownerToken?: string };
+      if (body.view) setView(body.view);
       if (body.ownerToken) setOwnerToken(body.ownerToken);
     } catch {
       setProblem("Couldn't reach Muse Muse. Check your connection and try again.");

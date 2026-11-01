@@ -3,7 +3,6 @@
  * this, never a build's steps. Keys are read per call, inside the adapters' closures, and never returned.
  */
 import { createHmac, randomUUID } from "node:crypto";
-import { windowDeps } from "@/lib/caps/gpu/deps";
 import { capProduct, capToken } from "@/lib/caps/store";
 import { env } from "@/lib/env";
 import { hitRateLimits, reserveSpend, settleSpend } from "@/lib/gateway/store";
@@ -15,7 +14,7 @@ import { sandboxRunner } from "@/lib/train/host/cli-runner";
 import { fireworksAdapter } from "@/lib/train/host/fireworks";
 import type { HostedGatewayDeps } from "@/lib/train/host/gateway";
 import { hubAdapterSource } from "@/lib/train/host/hf-files";
-import { lambdaAdapter } from "@/lib/train/host/lambda";
+import { LAMBDA_JOB_TITLE, lambdaAdapter } from "@/lib/train/host/lambda";
 import { modalAdapter } from "@/lib/train/host/modal";
 import { hostByModel, hostByOwnerTokenHash, hostRows, insertHostEndpoint, patchHostEndpoint, productOwnsModel, touchHostEndpoint } from "@/lib/train/host/store";
 import type { HostAdapter, HostProvider } from "@/lib/train/host/types";
@@ -23,8 +22,9 @@ import { HOST_PROVIDERS } from "@/lib/train/host/types";
 import { launchJob } from "@/lib/train/launch";
 import { getLiveDemo, requestStop } from "@/lib/train/store";
 import { db, schema } from "@/lib/db/client";
-import { eq } from "drizzle-orm";
-import { isTrainTerminal, type TrainStatus } from "@/lib/train/types";
+import { and, desc, eq, gte, isNull, notInArray, sql } from "drizzle-orm";
+import { SERVE_ADAPTER_PARAM, SERVE_RECIPE } from "@/lib/train/logic";
+import { isTrainTerminal, TRAIN_TERMINAL, type TrainStatus } from "@/lib/train/types";
 import { platformSpendToday, recordUsage } from "@/lib/usage";
 
 const key = (name: string) => () => process.env[name]?.trim() || undefined;
@@ -35,7 +35,8 @@ function hostKeyFor(endpointId: string): string {
 }
 
 export function hostAdapters(): HostAdapter[] {
-  const hfToken = key("HF_TOKEN");
+  // This one is handed to the providers, so a read-only HOST_HF_TOKEN is better than the platform's write token.
+  const hfToken = () => key("HOST_HF_TOKEN")() ?? key("HF_TOKEN")();
   return [
     fireworksAdapter({ apiKey: key("FIREWORKS_API_KEY"), accountId: key("FIREWORKS_ACCOUNT_ID"), source: hubAdapterSource }),
     modalAdapter({ tokenId: key("MODAL_TOKEN_ID"), tokenSecret: key("MODAL_TOKEN_SECRET"), hfToken, keyFor: hostKeyFor, runner: sandboxRunner }),
@@ -54,7 +55,17 @@ export function hostAdapters(): HostAdapter[] {
         return row ?? null;
       },
       stopJob: requestStop,
-      serveJobOf: (adapterJobId) => windowDeps().serveJobOf(adapterJobId),
+      async serveJobOf(adapterJobId, since) {
+        const jobs = schema.trainingJobs;
+        // A minute's slack for the two clocks. The title and the adapter are what keep a demo's job out.
+        const [row] = await db()
+          .select({ id: jobs.id })
+          .from(jobs)
+          .where(and(eq(jobs.recipe, SERVE_RECIPE), eq(jobs.title, LAMBDA_JOB_TITLE), sql`${jobs.params}->>${SERVE_ADAPTER_PARAM} = ${adapterJobId}`, gte(jobs.createdAt, new Date(since.getTime() - 60_000)), isNull(jobs.terminatedAt), notInArray(jobs.status, [...TRAIN_TERMINAL])))
+          .orderBy(desc(jobs.createdAt))
+          .limit(1);
+        return row?.id ?? null;
+      },
       backend: (adapterJobId) => serveJobChatBackend(adapterJobId),
       isTerminal: (status) => isTrainTerminal(status as TrainStatus),
     }),

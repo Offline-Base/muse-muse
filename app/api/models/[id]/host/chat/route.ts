@@ -1,7 +1,7 @@
 import { env } from "@/lib/env";
 import { hostDeps } from "@/lib/train/host/deps";
 import { hostErrorResponse, readHostedCall } from "@/lib/train/host/gateway";
-import { deployer } from "@/lib/train/host/who";
+import { modelDeployer } from "@/lib/train/host/who";
 import { chatOnEndpoint } from "@/lib/train/host/service";
 
 // The Run it section's chat box. Same limits as the gateway route, for someone who may deploy, and metered the same way.
@@ -13,9 +13,9 @@ const PER_MINUTE = 20;
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!env.hostTuned) return Response.json({ error: "not_found" }, { status: 404 });
-  const user = await deployer();
-  if (user instanceof Response) return user;
   const { id } = await params;
+  const user = await modelDeployer(id);
+  if (user instanceof Response) return user;
   const call = readHostedCall(await req.text());
   const reply = async (res: Response) => {
     const body = (await res.json()) as { error: { code: string; message: string } };
