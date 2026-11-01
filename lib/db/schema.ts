@@ -823,6 +823,94 @@ export const productDataCounts = pgTable(
   (t) => [primaryKey({ columns: [t.productId, t.namespace] })],
 );
 
+// ---------- Wave 3, 0021_files (unit 4) ----------
+
+/**
+ * Files products keep through {GATEWAY_URL}/files (docs/CAPABILITIES.md, section 10), with no 24-hour expiry. `namespace`
+ * is `live`, or `b:<buildId>` for a build's test files, deleted when it ends. `owner_key` is the subject key of the
+ * visitor, owner or user a private file belongs to (mac("caps-subject", ...), cut to 32), never a raw id, and null for a
+ * shared one. `blob_path` holds an unguessable suffix and never leaves the platform. A ticket makes a `pending` row; the
+ * done check reads the size and type at Blob, hashes the bytes and makes it `ready`. A delete sets `deleted_at`, removes
+ * the blob, then the row; the sweep finishes any that stopped half way.
+ */
+export const productFiles = pgTable(
+  "product_files",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    namespace: text("namespace").notNull(),
+    scope: text("scope").$type<DataScope>().notNull(),
+    ownerKey: text("owner_key"),
+    name: text("name").notNull(),
+    contentType: text("content_type").notNull(),
+    bytes: bigint("bytes", { mode: "number" }).notNull(),
+    sha256: text("sha256"),
+    blobPath: text("blob_path").notNull(),
+    status: text("status").$type<"pending" | "ready">().notNull().default("pending"),
+    createdAt: createdAt(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("product_files_list_idx").on(t.productId, t.namespace, t.scope, t.ownerKey, t.createdAt),
+    index("product_files_status_idx").on(t.productId, t.namespace, t.status),
+  ],
+);
+
+/** Postgres tsvector, written only by its generated column. */
+const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
+
+/**
+ * The product's full-text index (FILES_SEARCH). A document is split into chunks of about 4,000 characters, one row each,
+ * so a hit can say where in the text it is (`offset`, in characters from the start). `source` is what the document came
+ * from, `{fileId}` or `{collection, docId}`, and `source_key` the same as one string, so indexing a source again
+ * replaces it. `tsv` uses the `simple` configuration, which works for any language (no stemming).
+ */
+export const productSearchDocs = pgTable(
+  "product_search_docs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    namespace: text("namespace").notNull(),
+    scope: text("scope").$type<DataScope>().notNull(),
+    ownerKey: text("owner_key"),
+    source: jsonb("source").$type<{ fileId: string } | { collection: string; docId: string }>().notNull(),
+    sourceKey: text("source_key").notNull(),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    chunk: integer("chunk").notNull().default(0),
+    offset: integer("offset").notNull().default(0),
+    tsv: tsvector("tsv").generatedAlwaysAs(sql`to_tsvector('simple'::regconfig, coalesce("title", '') || ' ' || coalesce("body", ''))`),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("product_search_docs_tsv_idx").using("gin", t.tsv),
+    index("product_search_docs_source_idx").on(t.productId, t.namespace, t.sourceKey),
+  ],
+);
+
+/**
+ * Dataset files a build read through {GATEWAY_URL}/datasets, for the gateway's own record of the build (`/caps/proof`).
+ * Build tokens only: a live product's reads are only counted against its rate limits. Deleted when the build ends.
+ */
+export const productDatasetReads = pgTable(
+  "product_dataset_reads",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    namespace: text("namespace").notNull(),
+    datasetId: text("dataset_id").notNull(),
+    file: text("file").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("product_dataset_reads_idx").on(t.productId, t.namespace, t.createdAt)],
+);
+
 // ---------- Wave 3, 0024_code (unit 9) ----------
 
 /**
