@@ -895,6 +895,15 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
 - 8:30 PM: owner pasted a Hugging Face write token in chat (account OfflineBase, classic write role, name "Muse"). It is
   stored only in .env.local as HF_TOKEN (git-ignored; not on any remote machine, in no command line, log or file in the
   repo). whoami checked. It sits in the chat transcript, so rotate it after the upload.
+- 8:33 PM: owner: "open source the dataset, the code, the models, etc". Publishing is staged: everything goes up private
+  first, gets reviewed, then goes public if it passes. Two workflows started:
+  - h190-blind-audit (wf_a062d6e4-812): 380 replies, model labels hidden, 4 chunks x 2 graders, then adjudication. The
+    key stays in .data/knowledge/runs/stage-b-r30b/final/audit-key.json.
+  - open-source-review (wf_aa435777-43c): the dataset audit covers lineage, per-source terms, a personal-data scan with a
+    manual sample, verbatim text, a filter plan and a dataset card. The code audit covers a manifest for a separate public
+    repo, secret scans of the files and history, scrubbing of IPs, bucket and account ids into a staged copy, README and
+    LICENSE, and what making all of Offline-Base/muse-muse public would take. A red team then hunts for what both missed.
+  Nothing is published by either. The model side is hf-upload-prep.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
