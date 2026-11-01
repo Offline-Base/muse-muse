@@ -75,7 +75,33 @@ export const TERMS_SECTIONS: readonly LegalSection[] = [
   },
 ];
 
-export const PRIVACY_SECTIONS: readonly LegalSection[] = [
+/**
+ * What goes to Muse Spark 1.3 Contributor, the tier Meta may train on (Meta terms 6.2). Test builds use made-up data. A
+ * change to a product first built on Muse Spark 1.3 resumes Muse Code on Contributor (refineBuildModel in
+ * lib/pipeline/logic.ts), whatever the flags say. Until TRUST_SPARK_TO_WONDER is on, those products' own calls run there
+ * too (lib/gateway/handler.ts), so what their visitors type goes there.
+ */
+function contributorSection(sparkToWonder: boolean): LegalSection {
+  return {
+    heading: "A lower-cost Meta model",
+    paragraphs: ["Some work runs on Muse Spark 1.3 Contributor, a lower-cost Meta model that Meta may use to improve its models:"],
+    bullets: [
+      "Test builds the Muse Muse team runs. They use made-up data only.",
+      "Changes to a product first built on Muse Spark 1.3. A change carries on with the model that built the product, so your change request and the product's code go to this model.",
+      ...(sparkToWonder ? [] : ["Products first built on Muse Spark 1.3 also run on it, so what people type into those products, and the files they add, go to this model."]),
+    ],
+  };
+}
+
+/** The platform's Privacy page, which says what TRUST_SPARK_TO_WONDER does to the model tier Meta may train on. */
+export function privacySections(opts: { sparkToWonder: boolean }): readonly LegalSection[] {
+  return PRIVACY_BASE.flatMap((s) => (s === CONTRIBUTOR_SLOT ? [contributorSection(opts.sparkToWonder)] : [s]));
+}
+
+/** Where the Contributor section goes in the Privacy page. */
+const CONTRIBUTOR_SLOT: LegalSection = { heading: "" };
+
+const PRIVACY_BASE: readonly LegalSection[] = [
   {
     heading: "What we keep when you build",
     bullets: [
@@ -94,12 +120,7 @@ export const PRIVACY_SECTIONS: readonly LegalSection[] = [
       "Product pages and the gallery are public: a product's name, what it does, its demo and how it was built can be seen by anyone.",
     ],
   },
-  {
-    heading: "Test builds",
-    paragraphs: [
-      "The Muse Muse team runs some test builds on a lower-cost Meta model that Meta may use to improve its models. Those builds use made-up data only, never yours.",
-    ],
-  },
+  CONTRIBUTOR_SLOT,
   {
     heading: "Addresses and limits",
     paragraphs: [
