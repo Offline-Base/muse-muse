@@ -1310,6 +1310,12 @@ because the sidebar showed a real account.
 - The deploy of stage 2 and the visitor core (push to main) was refused by the permission check; it waits for the owner
   to allow it. The queue for the rest is in _plan/finish.md.
 
+### 23:54 Decision models D8 started on production (made-up data)
+
+- With the owner's full OK: a made-up 4-label decision dataset (a shop's support inbox: Billing, Shipping, Returns,
+  Account; 400 rows read, 390 kept, 10 near-duplicates merged) and the dry run job 3aa04a3a on an A100 SXM4 (max 45
+  minutes, $2). Then a score-only run (about $0.70) and one real run (about $0.83, max $5), then a 10-minute window.
+
 ## Gaps
 
 What this record doesn't confirm:
