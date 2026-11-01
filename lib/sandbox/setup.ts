@@ -300,6 +300,16 @@ export interface BuilderInfo {
   node: string;
   ffmpeg: string;
   templateHash: string;
+  /**
+   * Wave 3, unit 3 (docs/CAPABILITIES.md, 2.4a): the template/caps overlays installed in CAPS_DIR, sorted. The snapshot
+   * script copies it into lib/sandbox/snapshots.json. Missing in a marker from before it.
+   */
+  capOverlays?: string[];
+}
+
+/** The overlays in readCapFiles' list: each folder with a deps.json, sorted. */
+export function capOverlaysIn(caps: TemplateFile[]): string[] {
+  return [...new Set(caps.flatMap((f) => f.path.match(/^caps\/([^/]+)\/deps\.json$/)?.[1] ?? []))].sort();
 }
 
 export async function writeBuilderMarker(sandbox: Sandbox, info: Omit<BuilderInfo, "node" | "ffmpeg" | "createdAt">): Promise<BuilderInfo> {
@@ -324,5 +334,5 @@ export async function setupBuilder(sandbox: Sandbox, files: TemplateFile[], log:
   await savePristineFiles(sandbox, log);
   if (targets.length) await installTargets(sandbox, targets, log, { warm: true });
   await installCaps(sandbox, caps, log);
-  return writeBuilderMarker(sandbox, { muse, templateHash: templateHash([...files, ...targets, ...caps]) });
+  return writeBuilderMarker(sandbox, { muse, templateHash: templateHash([...files, ...targets, ...caps]), capOverlays: capOverlaysIn(caps) });
 }

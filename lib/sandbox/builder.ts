@@ -83,11 +83,12 @@ import {
   RUN_DIR,
   CAPS_DIR,
   CAPS_VERIFY_MARKER,
-  CORE_CAPS_MARKER,
+  capOverlayMarker,
   TARGET_OVERLAYS,
   TARGET_PLATFORM_MARKER,
   TARGETS_DIR,
 } from "@/lib/sandbox/paths";
+import { capsMissingOverlays } from "@/lib/caps/ready";
 import { builderNetworkPolicy, placeholderKey, publicHost, SNAPSHOT_POLICY } from "@/lib/sandbox/policy";
 import { q, readBytes, sh, tailText, writeRunner } from "@/lib/sandbox/shell";
 import { applyLookScript, LOOK_CSS, MUSE_APP_OVERLAY, OVERLAYS_DIR, withLookColors } from "@/lib/sandbox/look";
@@ -444,6 +445,12 @@ export interface ProvisionInput {
   capEnv?: string;
   /** Hosts the caps' build may reach (capBuildHosts). */
   capHosts?: string[];
+  /**
+   * Wave 3, unit 3 (docs/CAPABILITIES.md, 2.4a): on the live site, when the snapshot lacks some of `caps`' overlays, the
+   * build goes without those caps instead of failing. Called before anything is applied, with the caps to drop; it gives
+   * back the prompt and the caps' parts for the caps that are left. Without it the build fails with a plain line.
+   */
+  dropCaps?(caps: string[]): Promise<Pick<ProvisionInput, "promptMarkdown" | "caps" | "capEnv" | "capHosts">>;
   // ---------- Wave 3, unit 1: the trust overlay (docs/CAPABILITIES.md, section 7). Absent with the trust flags off ----------
   /** musemuse.trust.json and musemuse.privacy.json for this product: applied after the caps, with MUSEMUSE_BUILD=1. */
   trust?: TrustOverlay;
@@ -493,22 +500,39 @@ async function applyTargets(sandbox: Sandbox, sandboxName: string, targets: read
  * can't, since its functions have no template/, so a cap whose flag is on there needs a new snapshot.
  */
 async function applyCaps(sandbox: Sandbox, sandboxName: string, caps: { caps: string[]; overlays: string[] }): Promise<void> {
-  const ok = async (cmd: string) => (await sh(sandbox, cmd, { allowFail: true })).exitCode === 0;
-  const installed = await ok(`[ -f ${q(CORE_CAPS_MARKER)} ]`);
-  const stale = !(await ok(`grep -q ${q(CAPS_VERIFY_MARKER)} ${q(`${PRISTINE_DIR}/scripts/verify.mjs`)}`));
-  if (!installed || stale) {
-    const needs = !installed ? "the platform service overlays" : "the platform files that check platform services";
-    if (process.env.VERCEL) throw new Error(`This builder snapshot doesn't have ${needs}. Make a new one with npm run snapshot before turning a cap's flag on.`);
+  // ---------- Wave 3, unit 3: every overlay's own marker, not only core's (docs/CAPABILITIES.md, 2.4a) ----------
+  const { missing, stale } = await capsNotInSandbox(sandbox, caps.overlays);
+  if (missing.length || stale) {
+    if (process.env.VERCEL) throw new Error(capsMissingMessage(capsMissingOverlays(caps, stale ? ["core"] : missing)));
     const dir = LOCAL_TEMPLATE_DIR();
-    if (!installed) {
+    if (missing.length) {
       const files = await readCapFiles(dir);
-      if (!files.length) throw new Error(`This builder snapshot doesn't have ${needs}, and there's no ${dir}/caps here to add them from.`);
+      if (!files.length) throw new Error(`This builder snapshot doesn't have the ${missing.join(" and ")} overlay, and there's no ${dir}/caps here to add it from.`);
       await installCaps(sandbox, files, () => {});
     }
     if (stale) await refreshPlatformFiles(sandboxName, await readTemplateFiles(dir));
   }
+  // ---------- end Wave 3, unit 3 ----------
   await sh(sandbox, activeCapsScript(caps), { sudo: true });
   await sh(sandbox, applyCapsScript(caps), { cwd: PRODUCT_DIR, timeoutMs: 5 * MIN });
+}
+
+/**
+ * Wave 3, unit 3: the overlays of `overlays` whose marker (capOverlayMarker) isn't in CAPS_DIR, and whether the pristine
+ * verify.mjs is from before the caps step (CAPS_VERIFY_MARKER), which no cap can be checked without.
+ */
+async function capsNotInSandbox(sandbox: Sandbox, overlays: readonly string[]): Promise<{ missing: string[]; stale: boolean }> {
+  const ok = async (cmd: string) => (await sh(sandbox, cmd, { allowFail: true })).exitCode === 0;
+  const present = await Promise.all(overlays.map((o) => ok(`[ -f ${q(capOverlayMarker(o))} ]`)));
+  const missing = overlays.filter((_, i) => !present[i]);
+  const stale = !(await ok(`grep -q ${q(CAPS_VERIFY_MARKER)} ${q(`${PRISTINE_DIR}/scripts/verify.mjs`)}`));
+  return { missing, stale };
+}
+
+/** The round's one plain line when a cap's overlay isn't in the snapshot and the build can't go on without it. */
+export function capsMissingMessage(caps: readonly string[]): string {
+  const names = caps.length ? caps.join(", ") : "a platform service";
+  return `This builder snapshot doesn't have ${names}. An admin has to make a new builder snapshot (npm run snapshot) and commit lib/sandbox/snapshots.json.`;
 }
 
 /**
@@ -634,6 +658,18 @@ export async function provisionSandbox(input: ProvisionInput): Promise<{ sandbox
   } else if (snapshotId && !process.env.VERCEL) {
     await warnIfOlderTemplate(ready, snapshotId);
   }
+
+  // ---------- Wave 3, unit 3: the backstop (docs/CAPABILITIES.md, 2.4a). On the live site, a cap whose overlay this
+  // snapshot lacks is dropped here, before anything is applied or written, so the prompt never names it ----------
+  if (input.caps && process.env.VERCEL) {
+    const { missing, stale } = await capsNotInSandbox(sandbox, input.caps.overlays);
+    const drop = capsMissingOverlays(input.caps, stale ? ["core"] : missing);
+    if (drop.length) {
+      if (!input.dropCaps) throw new Error(capsMissingMessage(drop));
+      input = { ...input, caps: undefined, capEnv: undefined, capHosts: undefined, ...(await input.dropCaps(drop)) };
+    }
+  }
+  // ---------- end Wave 3, unit 3 ----------
 
   // Lock egress before anything from the user lands in the VM. Saved on the sandbox, so resumed sessions keep it.
   await sandbox.update({ networkPolicy: lockedPolicy(name, input.capHosts) });
