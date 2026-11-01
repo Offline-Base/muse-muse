@@ -615,7 +615,7 @@ describe("files on a database", { skip: canMock ? false : "needs --experimental-
     const { subjectKey } = await import("@/lib/caps/principal");
     const space = { productId, namespace: "live", scope: "visitor" as const, ownerKey: subjectKey("visitor", productId, VISITOR_A) };
     const doc = (i: number, body = "word") => ({ source: { collection: "n", docId: `d${i}` }, sourceKey: `item:n:d${i}`, title: "t", chunks: [{ body, offset: 0 }], addedBy: space.ownerKey });
-    const open = { maxDocs: 2000, maxBytes: 200 * 1024 * 1024, subject: null, replaceAny: true };
+    const open: import("../store").IndexCaps = { maxDocs: 2000, maxBytes: 200 * 1024 * 1024, subject: null, replaceAny: true };
     for (let i = 0; i < 200; i++) assert.deepEqual(await store.filesStore.indexDoc(space, doc(i), open), { ok: true });
     const A = as({ visitor: VISITOR_A });
     const more = await call("search", "POST", "index", { body: { source: { collection: "n", docId: "extra" }, title: "X", text: "one more" }, headers: A });
@@ -624,7 +624,7 @@ describe("files on a database", { skip: canMock ? false : "needs --experimental-
     assert.equal((await call("search", "POST", "index", { body: { source: { collection: "n", docId: "d3" }, title: "X", text: "replaced" }, headers: A })).status, 201, "replacing doesn't need room");
     assert.equal((await call("search", "POST", "index", { body: { source: { collection: "n", docId: "extra" }, title: "X", text: "mine" }, headers: as({ visitor: VISITOR_B }) })).status, 201, "another person has their own room");
     // The caps in bytes, on the store directly, so the test doesn't write megabytes.
-    const b = (over: Partial<typeof open> & { subject?: { docs: number; bytes: number } | null }) => ({ ...open, ...over });
+    const b = (over: Partial<typeof open>) => ({ ...open, ...over });
     assert.deepEqual(await store.filesStore.indexDoc(space, doc(0, "x".repeat(40)), b({ maxBytes: 10 })), { ok: false, reason: "bytes" });
     assert.deepEqual(await store.filesStore.indexDoc(space, doc(0, "y".repeat(5000)), b({ subject: { docs: 1000, bytes: 100 } })), { ok: false, reason: "subject_bytes" });
     const kept = await testDb.select().from(realSchema.productSearchDocs).where(eq(realSchema.productSearchDocs.sourceKey, "item:n:d0"));
