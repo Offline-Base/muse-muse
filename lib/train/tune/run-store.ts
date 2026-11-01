@@ -39,6 +39,11 @@ export async function latestTuneJob(datasetId: string): Promise<TrainJobRow | nu
 //   tune-settings:<id>:steps     the training steps the run was started with (Advanced), as the count.
 //   tune-launch:<id>             the one launch claim, held for a 5-minute window and the next, so two launchers (the
 //                                workflow and Start training) never both start a job for one run.
+//   tune-product:<id>:<productId>:<buildId or "none">
+//                                the product a run trains a model for (B: the build room's "Its own model", or unit
+//                                11's "Train on my data"), and the build it was planned from. Wave 3's 0025 adds
+//                                training_jobs.product_id and fills it from these rows: the job is the run's
+//                                (latestTuneJob), so product_id = the productId here for params->>'datasetId' = <id>.
 
 /** A window that never starts: the hourly prune only drops windows that started over an hour ago. */
 export const TUNE_KEEP_WINDOW = new Date("2100-01-01T00:00:00.000Z");
@@ -51,6 +56,7 @@ const endKey = (id: string, code: string) => `tune-run-end:${id}:${code}`;
 const stoppedKey = (id: string) => `tune-run-stopped:${id}`;
 const stepsKey = (id: string) => `tune-settings:${id}:steps`;
 const claimKey = (id: string) => `tune-launch:${id}`;
+const productPrefix = (id: string) => `tune-product:${id}:`;
 
 /** A code that fits a key: lowercase letters, digits and underscores, at most 40 of them; anything else is "refused". */
 export function markCode(code: string): string {
@@ -155,4 +161,45 @@ export async function releaseLaunchClaim(datasetId: string, window: Date): Promi
     .update(limits)
     .set({ count: sql`greatest(${limits.count} - 1, 0)` })
     .where(and(eq(limits.key, claimKey(datasetId)), eq(limits.windowStart, window)));
+}
+
+/** The product a run is for, and the build it was planned from (null when it wasn't planned from one). */
+export interface RunProduct {
+  productId: string;
+  buildId: string | null;
+}
+
+/**
+ * Keeps the product (and build) a run trains a model for, until wave 3's 0025 has training_jobs.product_id (see the
+ * keys above). A later call replaces it. Ids that aren't uuids keep nothing.
+ */
+export async function saveRunProduct(datasetId: string, productId: string, buildId: string | null = null): Promise<void> {
+  if (!UUID_RE.test(datasetId) || !UUID_RE.test(productId) || (buildId !== null && !UUID_RE.test(buildId))) return;
+  const key = `${productPrefix(datasetId)}${productId.toLowerCase()}:${buildId ? buildId.toLowerCase() : "none"}`;
+  await db().delete(limits).where(and(like(limits.key, `${productPrefix(datasetId)}%`), eq(limits.windowStart, TUNE_KEEP_WINDOW)));
+  await db().insert(limits).values({ key, windowStart: TUNE_KEEP_WINDOW, count: 1 }).onConflictDoNothing();
+}
+
+/** The product a run is for (saveRunProduct), or null. */
+export async function readRunProduct(datasetId: string): Promise<RunProduct | null> {
+  if (!UUID_RE.test(datasetId)) return null;
+  const [row] = await db()
+    .select({ key: limits.key })
+    .from(limits)
+    .where(and(like(limits.key, `${productPrefix(datasetId)}%`), eq(limits.windowStart, TUNE_KEEP_WINDOW)))
+    .limit(1);
+  if (!row) return null;
+  const [productId, buildId] = row.key.slice(productPrefix(datasetId).length).split(":");
+  if (!productId || !UUID_RE.test(productId)) return null;
+  return { productId, buildId: buildId && UUID_RE.test(buildId) ? buildId : null };
+}
+
+/** The runs (dataset ids) kept for a product, for unit 11's ownModelFor until 0025: each one's job is latestTuneJob(id). */
+export async function runsOfProduct(productId: string): Promise<string[]> {
+  if (!UUID_RE.test(productId)) return [];
+  const rows = await db()
+    .select({ key: limits.key })
+    .from(limits)
+    .where(and(like(limits.key, `tune-product:%:${productId.toLowerCase()}:%`), eq(limits.windowStart, TUNE_KEEP_WINDOW)));
+  return rows.map((r) => r.key.split(":")[1]!).filter((id) => UUID_RE.test(id));
 }

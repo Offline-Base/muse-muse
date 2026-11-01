@@ -363,6 +363,16 @@ export const env = {
   get tuneDefaultExamples(): number {
     return Math.min(1000, Math.max(20, Math.floor(number("TUNE_DEFAULT_EXAMPLES", 200))));
   },
+  /**
+   * TUNE_FROM_BUILDS: "1", "true", "yes" or "on" gives a live or partial build whose brief picked muse-glimmer an "Its
+   * own model" row in its build room (components/build/OwnModelRow.tsx), for the product's owner or an admin, whose
+   * Plan it opens /fine-tuning/new prefilled from the brief. It needs TUNE_COMPOSER too. Training starts only when that
+   * person presses Start, never on its own, and the build is live without waiting for it. Off by default: the build
+   * room renders exactly as before, and POST /api/train/plan refuses fromBuildId with 404.
+   */
+  get tuneFromBuilds(): boolean {
+    return flag("TUNE_FROM_BUILDS");
+  },
 
   // ---------- Gadgets as a build option (docs/GADGETS.md) ----------
 

@@ -14,7 +14,7 @@ import { attachDatasetRun, createDataset, failDataset, getDataset } from "@/lib/
 import { TUNE_STEPS } from "@/lib/train/tune/settings";
 import { freshHeartbeat } from "@/lib/train/tune/marks";
 import { tuneRun } from "@/lib/train/tune/run";
-import { latestTuneJob, readRunMarks, saveRunSteps } from "@/lib/train/tune/run-store";
+import { latestTuneJob, readRunMarks, saveRunProduct, saveRunSteps } from "@/lib/train/tune/run-store";
 import type { TrainPlanBody } from "@/lib/train/tune/types";
 
 /** A refusal startTuneRun's caller turns into a JSON reply with this status and code. */
@@ -52,8 +52,9 @@ export async function startTraining(datasetId: string, callerId: string, steps: 
  * made-up test run costs a cent. The plan's training steps are kept with the run (saveRunSteps), and tuneRun starts
  * on it. A plan or `datasetId` for a dataset that already exists starts nothing new, except tuneRun for a chat dataset
  * with no training job and nothing already trying to train it (no fresh heartbeat), so unit 11's "Train on my data"
- * trains a ready dataset the same way. `productId` is for B, the build room's own-model row, and is kept nowhere until
- * 0025.
+ * trains a ready dataset the same way. A build plan (B, the build room's "Its own model") starts like a task plan. The
+ * product a run is for (`productId`, or a build plan's own) is kept with the run (saveRunProduct, in rate_limits, no
+ * migration) until wave 3's 0025 adds training_jobs.product_id and fills it from there.
  */
 export async function startTuneRun(i: {
   plan?: TrainPlanBody;
@@ -63,10 +64,14 @@ export async function startTuneRun(i: {
 }): Promise<{ runId: string; href: string }> {
   const source = i.plan?.source ?? (i.datasetId ? { kind: "dataset" as const, datasetId: i.datasetId } : null);
   if (!source) throw new TuneStartError(400, "no_plan");
-  if (source.kind === "build") throw new TuneStartError(400, "not_supported");
+  const productId = i.productId ?? (source.kind === "build" ? source.productId : null);
+  const buildId = source.kind === "build" ? source.buildId : null;
+  const keepProduct = (runId: string) =>
+    productId ? saveRunProduct(runId, productId, buildId).catch((err) => console.error("[train/tune] save product", err)) : Promise.resolve();
   if (source.kind === "dataset") {
     const existing = await getDataset(source.datasetId);
     if (!existing) throw new TuneStartError(404, "not_found");
+    await keepProduct(existing.id);
     if (existing.kind !== "decision" && existing.status !== "failed") {
       const [job, marks] = await Promise.all([latestTuneJob(existing.id), readRunMarks(existing.id)]);
       if (!job && !marks.stopped && !freshHeartbeat(marks, Date.now())) {
@@ -96,6 +101,7 @@ export async function startTuneRun(i: {
     throw new TuneStartError(500, "start_failed");
   }
   await attachDatasetRun(dataset.id, workflowRunId).catch((err) => console.error("[train/tune] attachRun", err));
+  await keepProduct(dataset.id);
   await saveRunSteps(dataset.id, plan.settings.steps).catch((err) => console.error("[train/tune] save steps", err));
   await startTraining(dataset.id, i.callerId, plan.settings.steps);
   return { runId: dataset.id, href: runHref(dataset.id) };
