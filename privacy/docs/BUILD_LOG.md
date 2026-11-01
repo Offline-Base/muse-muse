@@ -229,6 +229,10 @@ Router finding for Ethan: a request headed outside the class that both the label
 
 **00:33** Relayed by the training session: at Ethan's request writer-1 is being shut down, so the exploratory `iq2-io-lowest` row will not run (no GPU run without his OK for a new machine). Our `~/mp-gpu` there was copied to the team's shared storage by that session instead of deleted; we asked it to remove any copy of the throwaway llama-server key. The final IQ1_S report was already back here (e42a20f). It reported 12 `llama_api_key` files in the copy (one per side folder) and deleted all 12; no .env or other key file was copied, and the originals go with writer-1.
 
+## Nov 1
+
+- 11:17: this repo came into Muse Muse as privacy/ with its history (git subtree at 5c458b3), on branch tg-privacy-main, not on main. pytest 3894 pass, 12 skipped, 15 xfailed; ruff clean; relay 58 of 58. CI moved to the host's .github/workflows/privacy.yml. The history scan now reads this folder's own changes (--relative). ~/muse-privacy stays the live copy through finals.
+
 ## Open items
 
 - Ethan: which mode the routing tune targets; whether to hand over stage 2 IQ1_S early.

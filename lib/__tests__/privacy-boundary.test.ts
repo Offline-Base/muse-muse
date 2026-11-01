@@ -69,6 +69,7 @@ describe("the line between Muse Muse and Muse Privacy", () => {
     const config = JSON.parse(readFileSync("tsconfig.json", "utf8")) as { exclude: string[] };
     assert.ok(config.exclude.includes("privacy"));
     assert.ok(readFileSync(".vercelignore", "utf8").split("\n").includes("/privacy"));
+    assert.match(readFileSync("next.config.ts", "utf8"), /outputFileTracingExcludes: \{ "\/\*\*": \["\.\/privacy\/\*\*\/\*"\] \}/);
   });
 
   it("adds no migrations", () => {
