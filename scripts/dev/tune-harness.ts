@@ -5,8 +5,16 @@
  * COPY of the site's PGlite folder. It proves training, cost and scores. It doesn't prove launch, callbacks over https,
  * the workflow, the sweep or the Hub steps.
  *
- *   DATABASE_URL=pglite:<copy> npx tsx scripts/dev/tune-harness.ts bundle <datasetId> <outDir> <paramsJson> <maxMinutes>
+ *   DATABASE_URL=pglite:<copy> npx tsx scripts/dev/tune-harness.ts bundle <datasetId|-> <outDir> <paramsJson> <maxMinutes> [recipe]
  *   DATABASE_URL=pglite:<copy> npx tsx scripts/dev/tune-harness.ts ingest <bundleDir> <meta.json>
+ *   DATABASE_URL=pglite:<copy> npx tsx scripts/dev/tune-harness.ts loop-start <sourceJobId> <target> <capUsd> <rounds> <examples>
+ *   DATABASE_URL=pglite:<copy> npx tsx scripts/dev/tune-harness.ts loop-round <loopId> <round> <outDir> <maxMinutes>
+ *   DATABASE_URL=pglite:<copy> npx tsx scripts/dev/tune-harness.ts loop-score <loopId> <jobId>
+ *
+ * bundle: recipe is glimmer-lora unless named; rl-grpo takes "-" for the dataset. harnessEval and harnessTrain in the
+ * params JSON keep only that many rows, for a shorter run, and aren't sent to the GPU.
+ * loop-round runs a round's real steps, but decides with the same rules rather than through loopNextStep, whose
+ * start(makeDataset) needs the workflow runtime; it awaits makeDataset itself and writes on Muse Wonder.
  *
  * A run that reported "failed", or stopped with no "done", is recorded as failed and isn't judged; ingest then exits 1.
  *
@@ -59,33 +67,36 @@ class H(BaseHTTPRequestHandler):
 ThreadingHTTPServer(("127.0.0.1", 8099), H).serve_forever()
 `;
 
-async function bundle(datasetId: string, out: string, paramsJson: string, maxMinutes: number) {
+async function bundle(datasetId: string, out: string, paramsJson: string, maxMinutes: number, recipe = "glimmer-lora") {
   const { getDataset, datasetPage } = await import("@/lib/train/store");
   const { RUNNER_PY } = await import("@/lib/train/recipes/runner");
   const { GLIMMER_PY } = await import("@/lib/train/recipes/glimmer");
-  const dataset = await getDataset(datasetId);
-  if (!dataset || dataset.status !== "ready") throw new Error("That dataset isn't ready in this copy");
-  const train = (await datasetPage(datasetId, "train", 0, 2000))!.items;
-  const held = (await datasetPage(datasetId, "eval", 0, 2000))!.items;
+  const { RL_PY } = await import("@/lib/train/recipes/rl");
+  const { harnessEval, harnessTrain, ...params } = JSON.parse(paramsJson) as Record<string, string | number>;
+  const hasData = datasetId !== "-";
+  const dataset = hasData ? await getDataset(datasetId) : null;
+  if (hasData && (!dataset || dataset.status !== "ready")) throw new Error("That dataset isn't ready in this copy");
+  const train = hasData ? (await datasetPage(datasetId, "train", 0, 2000))!.items.slice(0, Number(harnessTrain) || undefined) : [];
+  const held = hasData ? (await datasetPage(datasetId, "eval", 0, 2000))!.items.slice(0, Number(harnessEval) || undefined) : [];
   mkdirSync(out, { recursive: true });
   const jobId = randomUUID();
   const job = {
     jobId,
     callbackBase: `http://127.0.0.1:8099/api/train/jobs/${jobId}`,
     token: randomBytes(32).toString("base64url"),
-    params: { datasetId, publish: 0, ...JSON.parse(paramsJson) },
+    params: { ...(hasData ? { datasetId } : {}), publish: 0, ...params },
     maxMinutes,
-    recipe: "glimmer-lora",
+    recipe,
     deadlineEpoch: Math.floor(Date.now() / 1000) + maxMinutes * 60,
   };
   writeFileSync(join(out, "job.json"), JSON.stringify(job));
   writeFileSync(join(out, "runner.py"), RUNNER_PY);
-  writeFileSync(join(out, "recipe.py"), GLIMMER_PY);
+  writeFileSync(join(out, "recipe.py"), recipe === "rl-grpo" ? RL_PY : GLIMMER_PY);
   writeFileSync(join(out, "stub.py"), STUB_PY);
   writeFileSync(join(out, "train.json"), JSON.stringify(train));
   writeFileSync(join(out, "eval.json"), JSON.stringify(held));
-  writeFileSync(join(out, "dataset.json"), JSON.stringify({ title: dataset.title }));
-  console.log(JSON.stringify({ jobId, train: train.length, eval: held.length, title: dataset.title, writer: dataset.writerModel, costUsd: dataset.costUsd }));
+  writeFileSync(join(out, "dataset.json"), JSON.stringify({ title: dataset?.title ?? recipe }));
+  console.log(JSON.stringify({ jobId, train: train.length, eval: held.length, title: dataset?.title ?? recipe, writer: dataset?.writerModel, costUsd: dataset?.costUsd }));
 }
 
 async function ingest(dir: string, metaPath: string) {
@@ -103,9 +114,9 @@ async function ingest(dir: string, metaPath: string) {
     title: string;
     version?: number;
   };
-  const planned = JSON.parse(readFileSync(join(dir, "job.json"), "utf8")) as { params: Record<string, string | number>; maxMinutes: number };
+  const planned = JSON.parse(readFileSync(join(dir, "job.json"), "utf8")) as { params: Record<string, string | number>; maxMinutes: number; recipe?: string };
   const job = await store.createJob({
-    recipe: "glimmer-lora",
+    recipe: (planned.recipe ?? "glimmer-lora") as "glimmer-lora",
     title: meta.title,
     params: planned.params,
     instanceType: meta.instanceType,
@@ -146,8 +157,84 @@ async function ingest(dir: string, metaPath: string) {
   console.log(JSON.stringify({ jobId: job.id, evals, judged: items.length, judgeCostUsd: cost, summary, verdict: summary ? evalVerdict(summary, false) : null }, null, 1));
 }
 
+async function loopStart(sourceJobId: string, target: number, capUsd: number, maxRounds: number, examples: number) {
+  const { getJob } = await import("@/lib/train/store");
+  const { createLoop } = await import("@/lib/train/tune/loop-store");
+  const job = await getJob(sourceJobId);
+  const sourceDatasetId = String(job?.params?.datasetId ?? "");
+  if (!job || !sourceDatasetId) throw new Error("That job or its dataset isn't in this copy");
+  const id = await createLoop({ v: 1, sourceDatasetId, sourceJobId, target, capUsd, maxRounds, examples, metaHighUsd: 2, scoreHighUsd: 3, callerId: null as unknown as string, startedAt: new Date().toISOString() });
+  console.log(JSON.stringify({ loopId: id, sourceDatasetId }));
+}
+
+async function loopRound(loopId: string, round: number, out: string, maxMinutes: number) {
+  const store = await import("@/lib/train/store");
+  const { readLoop, jobJudgements, allRows, writerDatasetId, roundDatasetId, recordLoopEnded } = await import("@/lib/train/tune/loop-store");
+  const { nextMove, roundScore, weakPrompts, focusTask, roundSteps } = await import("@/lib/train/tune/loop");
+  const { loopMergeStep, loopWriterStep } = await import("@/lib/train/tune/loop-steps");
+  const { checkExamplesStep } = await import("@/lib/train/tune/run-steps");
+  const { latestTuneJob } = await import("@/lib/train/tune/run-store");
+  const { DATASET_MODEL, makeDataset } = await import("@/lib/train/datasets");
+  const { newVersionPlan } = await import("@/lib/train/versions");
+  const { recipeById } = await import("@/lib/train/recipes");
+  const loop = await readLoop(loopId);
+  if (!loop) throw new Error("No such loop");
+  const { spec } = loop;
+  const lastId = round === 1 ? spec.sourceDatasetId : roundDatasetId(loopId, round - 1);
+  const lastJob = round === 1 ? await store.getJob(spec.sourceJobId) : await latestTuneJob(lastId);
+  const judgements = lastJob ? await jobJudgements(lastJob.id) : [];
+  const kept = await allRows<{ prompt: string; reference: string }>(spec.sourceDatasetId, "eval");
+  const weak = weakPrompts(judgements, kept.map((e) => e.prompt), spec.target);
+  const score = roundScore(judgements, spec.target);
+  const move = nextMove({ stopped: loop.stopped, finished: round - 1, maxRounds: spec.maxRounds, jobStatus: lastJob?.status ?? null, score, weakCount: weak.length, fits: true });
+  console.error(JSON.stringify({ round, sealed: score.sealed, all: score.all, move }));
+  if (move.kind === "stop") {
+    await recordLoopEnded(loop, move.code);
+    console.log(JSON.stringify({ stop: move.code }));
+    return;
+  }
+  const source = (await store.getDataset(spec.sourceDatasetId))!;
+  const writerId = writerDatasetId(loopId, round);
+  if (!(await store.getDataset(writerId))) {
+    await store.createDataset({ id: writerId, title: `${source.title} (loop round ${round} extra examples)`, task: focusTask(source.task, weak), requested: spec.examples, writerModel: DATASET_MODEL, createdBy: null });
+    const made = await makeDataset({ datasetId: writerId });
+    console.error(JSON.stringify({ writer: made }));
+  }
+  const writer = await store.getDataset(writerId);
+  const state = await loopWriterStep(loopId, round);
+  const merged = await loopMergeStep(loopId, round);
+  if (!merged.ok) throw new Error(`Merge stopped the loop: ${merged.code}`);
+  const check = await checkExamplesStep(merged.datasetId);
+  const dataset = (await store.getDataset(merged.datasetId))!;
+  const job = (await store.getJob(spec.sourceJobId))!;
+  const plan = newVersionPlan(job, recipeById("glimmer-lora")?.params ?? []);
+  if (!plan) throw new Error("newVersionPlan refused the source job");
+  const steps = roundSteps(Number(job.params?.maxSteps) || 120, source.trainCount, dataset.trainCount, 2000);
+  console.error(JSON.stringify({ writerState: state, writerCostUsd: writer?.costUsd, written: writer?.trainCount, check, trainCount: dataset.trainCount, steps, weak: weak.length }));
+  await bundle(merged.datasetId, out, JSON.stringify({ ...plan.params, ...job.params, datasetId: merged.datasetId, maxSteps: steps, publish: 0 }), maxMinutes);
+}
+
+async function loopScore(loopId: string, jobId: string) {
+  const { readLoop, jobJudgements } = await import("@/lib/train/tune/loop-store");
+  const { roundScore } = await import("@/lib/train/tune/loop");
+  const loop = await readLoop(loopId);
+  const score = roundScore(await jobJudgements(jobId), loop!.spec.target);
+  console.log(JSON.stringify(score));
+}
+
 const [, , cmd, ...args] = process.argv;
-const run = cmd === "bundle" ? bundle(args[0], args[1], args[2], Number(args[3])) : cmd === "ingest" ? ingest(args[0], args[1]) : Promise.reject(new Error("bundle or ingest"));
+const run =
+  cmd === "bundle"
+    ? bundle(args[0], args[1], args[2], Number(args[3]), args[4])
+    : cmd === "ingest"
+      ? ingest(args[0], args[1])
+      : cmd === "loop-start"
+        ? loopStart(args[0], Number(args[1]), Number(args[2]), Number(args[3]), Number(args[4]))
+        : cmd === "loop-round"
+          ? loopRound(args[0], Number(args[1]), args[2], Number(args[3]))
+          : cmd === "loop-score"
+            ? loopScore(args[0], args[1])
+            : Promise.reject(new Error("bundle, ingest, loop-start, loop-round or loop-score"));
 run.then(
   () => process.exit(0),
   (err) => {
