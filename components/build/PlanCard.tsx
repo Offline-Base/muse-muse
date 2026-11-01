@@ -18,9 +18,10 @@ export type PlanArt = "present" | "building" | "shield";
 
 /**
  * The owner's mascot pictures (Oct 31), web-sized in public/muse/. present.png and building.png are 1440 x 1632.
- * shield.png is 1920 x 1280, set on the same 1440 x 1632 canvas in its own white (the pair centered, their feet on the
- * others' ground line), so all three swap in one box. Then `sips -s format jpeg -s formatOptions 82 -Z 640`: 564 x 640,
- * about 47, 50 and 38 KB, a little over twice the card's widest picture (240 px).
+ * shield.png is 1920 x 1280, scaled 1.1x and set on the same 1440 x 1632 canvas in its own white (the pair centered and
+ * whole, 94% of the width and 73% of the height, like the single figure in the other two), so all three swap in one box.
+ * Then `sips -s format jpeg -s formatOptions 82 -Z 640`: 564 x 640, about 47, 50 and 43 KB, a little over twice the
+ * card's widest picture (240 px).
  */
 export const PLAN_ART: Record<PlanArt, string> = {
   present: "/muse/muse-present.jpg",
@@ -76,7 +77,6 @@ export function planCardState(room: Pick<RoomState, "status" | "segments">): { b
   return art ? { brief: seg.brief, art, step: seg.key } : null;
 }
 
-export function PlanCard({
 /**
  * While the brief is being written, fetches the pictures the card opens with, so the mascot is there when the card fades
  * in instead of popping in after it. Called while the room renders (react-dom's preload dedupes). A change passes
@@ -88,6 +88,7 @@ export function preloadPlanArt(status: BuildStatus, isRefine: boolean): void {
   preload(PLAN_ART.building, { as: "image", fetchPriority: "low" });
 }
 
+export function PlanCard({
   brief,
   art,
   running,
