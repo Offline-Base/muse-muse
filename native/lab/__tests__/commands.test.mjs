@@ -43,6 +43,19 @@ describe("simulator commands", () => {
     assert.deepEqual(c.findSimulator(json, "Muse Lab iPhone"), { udid: "U1", runtime: "com.apple.CoreSimulator.SimRuntime.iOS-18-4" });
     assert.equal(c.findSimulator(json, "none"), null);
   });
+  test("iosRuntimeOfMajor keeps to the major version the mock glasses need", () => {
+    const json = JSON.stringify({
+      runtimes: [
+        { platform: "iOS", identifier: "a", version: "18.2" },
+        { platform: "iOS", identifier: "b", version: "18.10" },
+        { platform: "iOS", identifier: "c", version: "26.5" },
+        { platform: "tvOS", identifier: "d", version: "18.9" },
+      ],
+    });
+    assert.deepEqual(c.iosRuntimeOfMajor(json, 18), { identifier: "b", version: "18.10" });
+    assert.equal(c.iosRuntimeOfMajor(json, 17), null);
+  });
+
   test("newestIosRuntime compares versions as numbers", () => {
     const json = JSON.stringify({ runtimes: [
       { platform: "iOS", version: "18.10", identifier: "new" },

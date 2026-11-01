@@ -633,13 +633,11 @@ Results go to `~/musemuse-lab/checks/<time>/` and `lab/checks/<time>/`, and exit
 `android_emu` open the live site. The live site isn't a glasses product, so `glasses_sim` opens `glasses-check.html` from the bucket,
 which keeps the glasses template's contract.
 
-**`glasses_sim` still fails, in the glasses shell, not the lab.** The app opens, the page loads, and the autopilot clicks connect.
-`connect` then fails with `no_eligible_device` ("We can't find your glasses"), so the autopilot stops at "timeout: glasses are
-no-glasses". It's the same on a freshly booted simulator, with the build in `native/releases.json` (`68c9d5ab`, checked by size against
-Expo's copy), on iOS 26.5. The shell's own message for this (`MUSE_GLASSES connect failed: ...`) is a `console.warn`, which the
-release build doesn't put in the system log, so the module's wording is lost. Wave 1 reached `ready` with the same build on a laptop
-simulator. Whoever picks this up: have the shell write that message to `Documents` or a checkpoint, run `mac-checks.sh`, and compare the
-simulator's iOS version with wave 1's.
+**`glasses_sim` runs on iOS 18.4, on its own simulator.** The same shell build (`68c9d5ab`) answers `no_eligible_device` from the mock
+glasses on iOS 26.5 and reaches ready on iOS 18.4, so the runner uses `Muse Lab iPhone 18` (`MUSE_LAB_GLASSES_SIMULATOR`), an iPhone 16 on
+the iOS 18 runtime. Without that runtime the job ends in `simulator_failed`, not as a product failure. `ios_sim` stays on the newest runtime.
+Seen on Nov 1: fails on 26.5 (`lab/checks/direct-1101-2047/glasses_sim/`), passes on 18.4 (`lab/checks/direct-1101-2047-g18/` and, with the runner's own choice of
+simulator, `lab/checks/direct-1101-2047-fixed/`). Why 26.5 fails isn't known: the shell's own message is still lost in release builds. Mock glasses only.
 
 ## Checking a box by hand
 
@@ -728,7 +726,7 @@ owner's yes to the licenses.
 bridge handshake, not blank, the report through logcat, and a framed 1920x1080 clip at 19:26 UTC on `0.1.1-1a60ff7`. Still untested
 from wave 1's list: the 250 ms backstop, the microphone path, cleartext and the head-script probe |
 | S2, simctl from a LaunchAgent | **Passed** | `ios_sim` from the check tool's LaunchAgent in `ec2-user`'s GUI session: launched, loaded the live site, bridge handshake, not blank, a framed clip. At 18:41 UTC on the old code and at 18:51 UTC on `0.1.1-db1609a`, both on a warm simulator. The first run, on a cold simulator, failed as blank, which the fix above addresses, but a cold run hasn't been repeated |
-| Glasses S2 | **Failed** | The app opens with launch arguments and loads the page, and the autopilot clicks connect. The mock glasses then answer `no_eligible_device`, so it stops at "timeout: glasses are no-glasses". Same on a freshly booted simulator. See "Checking the phone kinds" |
+| Glasses S2 | **Passed on iOS 18.4, Nov 1. Fails on iOS 26.5** | On 18.4: mock glasses connect, the main button is pressed, a result shows a 1024x683 photo and 5.3 s of sound, with a framed clip. On 26.5 the mock glasses answer `no_eligible_device`. See "Checking the phone kinds" |
 
 ## Running it against a local platform
 
@@ -750,6 +748,7 @@ MUSE_LAB_ROOT=/tmp/lab MUSE_LAB_KINDS=desktop_mac node native/lab/agent.mjs
 | `MUSE_LAB_FFMPEG` | Found | A specific ffmpeg |
 | `MUSE_LAB_AVD`, `MUSE_LAB_ANDROID_LABEL` | `mm_pixel`, `Pixel 7` | The emulator and its name in captions |
 | `MUSE_LAB_SIMULATOR`, `MUSE_LAB_IPHONE_TYPE` | `Muse Lab iPhone`, newest plain iPhone | The simulator |
+| `MUSE_LAB_GLASSES_SIMULATOR` | `Muse Lab iPhone 18` | The simulator for `glasses_sim`, on iOS 18 |
 
 ## Security
 
