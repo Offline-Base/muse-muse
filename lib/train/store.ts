@@ -893,6 +893,8 @@ const datasets = schema.trainingDatasets;
 const { train: _train, eval: _eval, decisionRows: _decisionRows, grounding: _grounding, ...datasetHeadColumns } = getTableColumns(datasets);
 
 export interface NewDataset {
+  /** A chosen id, for a step that may run twice (the tuning loop's rounds). A new one otherwise. */
+  id?: string;
   title: string;
   task: string;
   /** Already checked: 20 to 1000. */
@@ -911,6 +913,7 @@ export async function createDataset(input: NewDataset): Promise<DatasetHead> {
   const [row] = await db()
     .insert(datasets)
     .values({
+      ...(input.id ? { id: input.id } : {}),
       title: input.title.trim().slice(0, TITLE_MAX) || "Dataset",
       task: input.task.trim(),
       requested: input.requested,

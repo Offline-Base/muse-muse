@@ -391,6 +391,13 @@ export const env = {
     return flag("TUNE_COMPOSER");
   },
   /**
+   * TUNE_LOOP: "1", "true", "yes" or "on" lets admins run a repeat-until-good tuning loop on a judged run
+   * (docs/TRAINING.md "Tuning loop"). Off by default: its routes and page answer 404 and the run room shows nothing new.
+   */
+  get tuneLoop(): boolean {
+    return flag("TUNE_LOOP");
+  },
+  /**
    * TUNE_RESEARCH: "1", "true", "yes" or "on" lets admins research data for a fine-tune (lib/train/research). Off by
    * default: the pages and /api/train/research routes answer 404, the New dataset card offers nothing new, and no dataset
    * reads grounding notes.
