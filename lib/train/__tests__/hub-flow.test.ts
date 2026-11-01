@@ -1053,6 +1053,45 @@ describe("publishing to the Hugging Face Hub", { skip: canMock ? false : "needs 
       assert.match(((await res.json()) as { reason: string }).reason, /private rows/);
     });
 
+    it("keeps a product owner's private rows off the Hub on every other route too", async () => {
+      const owned = await store.createDataset({ title: "Private", task: "t", requested: 20, writerModel: "person", productId: "cccccccc-0000-4000-8000-000000000011" });
+      const job = await makeJob({ params: { datasetId: owned.id, dryRun: 0, publish: 1 } });
+      await judged(job);
+
+      // The platform's own publish after training, and an admin's.
+      assert.deepEqual(await steps.hubPlanStep(job, "succeeded"), { action: "none" });
+      assert.deepEqual(await steps.hubPlanStep(job, "succeeded", true), { action: "none" });
+
+      // The adapter job's own upload plan, on a GPU that's already running.
+      await testDb.update(realSchema.trainingJobs).set({ status: "running", tokenHash: hashToken(TOKEN) }).where(eq(realSchema.trainingJobs.id, job));
+      const own = await gpuUpload(job, TOKEN, adapterFolder());
+      assert.match(String(own.plan.skip), /private rows/);
+      await judged(job);
+
+      // Launching glimmer-publish directly names the adapter, and is refused before any GPU.
+      const { launchJob } = await import("@/lib/train/launch");
+      const launched = await launchJob({ recipe: "glimmer-publish", title: "Publish to Hugging Face: x", params: { adapterJobId: job } }, { userId: "owner-rows-test" });
+      assert.equal(launched.ok, false);
+      assert.match(launched.ok ? "" : launched.code, /private rows/);
+
+      // A glimmer-publish job that exists anyway gets no upload plan and no claim.
+      const publishJob = await store.createJob({ recipe: "glimmer-publish", title: "Publish to Hugging Face: x", params: { adapterJobId: job }, instanceType: "gpu_1x_rtx6000", region: "us-east-1", priceCentsPerHour: 50, maxMinutes: 20, maxUsd: 1 });
+      await testDb.update(realSchema.trainingJobs).set({ status: "running", tokenHash: hashToken(PUBLISH_TOKEN) }).where(eq(realSchema.trainingJobs.id, publishJob.id));
+      const upload = await gpuUpload(publishJob.id, PUBLISH_TOKEN, adapterFolder());
+      assert.match(String(upload.plan.skip), /private rows/);
+      assert.deepEqual(await steps.hubPlanStep(publishJob.id, "succeeded"), { action: "none" });
+
+      assert.equal(fake.repos.size, 0, "nothing reached the Hub");
+
+      // Files uploaded before their dataset was known to be a product's: the claim is the last check, and it holds.
+      const early = await makeJob();
+      await gpuUpload(early, TOKEN, adapterFolder());
+      await judged(early);
+      await testDb.update(realSchema.trainingJobs).set({ params: { datasetId: owned.id, dryRun: 0, publish: 1 } }).where(eq(realSchema.trainingJobs.id, early));
+      assert.deepEqual(await steps.hubPlanStep(early, "succeeded", true), { action: "none" });
+      assert.notEqual((await hubOf(early))!.status, "publishing");
+    });
+
     it("refuses what can't be published, with the reason", async () => {
       const running = await makeJob();
       const res = await req(running);

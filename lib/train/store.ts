@@ -926,6 +926,20 @@ export async function getDataset(datasetId: string): Promise<DatasetHead | null>
   return row ?? null;
 }
 
+/** Why a job can't go to the Hub, whichever route asked: a product owner's private rows never leave the platform. */
+export const OWNER_ROWS_REASON = "It was trained on a product owner's private rows, so it can't be published.";
+
+/**
+ * OWNER_ROWS_REASON when `job` trained on a dataset a product owns, else null. Every way to the Hub asks this: Publish,
+ * launching glimmer-publish, the runner's upload plan and the publishing claim. A read that fails throws, so nothing publishes.
+ */
+export async function ownerRowsProblem(job: { params?: unknown }): Promise<string | null> {
+  const params = job.params as Record<string, unknown> | null | undefined;
+  const datasetId = typeof params?.datasetId === "string" ? params.datasetId : null;
+  const dataset = datasetId ? await getDataset(datasetId) : null;
+  return dataset?.productId ? OWNER_ROWS_REASON : null;
+}
+
 /** The newest datasets first, without their examples. */
 export async function listDatasets(limit = 100): Promise<DatasetHead[]> {
   const n = Math.max(1, Math.min(200, Math.floor(limit) || 100));

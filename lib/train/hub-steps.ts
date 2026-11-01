@@ -110,6 +110,7 @@ import {
   datasetPage,
   getAdapterSource,
   getDataset,
+  ownerRowsProblem,
   getJob,
   listResultEvents,
   publishedGguf,
@@ -439,6 +440,8 @@ async function saveHub(jobId: string, claim: string, change: (hub: HubState) => 
  * id when this run holds it, else null.
  */
 async function claim(jobId: string, now: Date): Promise<string | null> {
+  const trained = await fromDb(() => getJob(jobId));
+  if (!trained || (await fromDb(() => ownerRowsProblem(trained)))) return null;
   const off = env.hubOffReason;
   const at = now.toISOString();
   const id = randomUUID();
