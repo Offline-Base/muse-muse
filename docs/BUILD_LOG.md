@@ -1227,6 +1227,8 @@ because the sidebar showed a real account.
   runner on a sample input). Never run on a real gadget; Muse Muse never holds a gadget token.
 - Open for the owner: commands stop after 30 s (the SDK's default) while the CLI waits 120 s, so an action that takes 30
   to 120 s works from the CLI but times out on a gadget.
+- Full suite after the merge: 4,896 tests, 4,888 pass, 0 fail, 8 skipped (live Meta tests). tsc clean. Pushed to
+  the branch only.
   ![Muse gadget tab](log/shots/2026-10-31/gadget-tab-1440.png)
 
 ## Gaps
