@@ -6,7 +6,7 @@
 //   npx tsx --test template/scripts/__tests__/caps-games.test.mjs
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, describe, test } from "node:test";
@@ -202,6 +202,22 @@ describe("the games checker (scripts/caps/games.mjs)", async () => {
     assert.deepEqual([byId(none).canvas, byId(none)["key-press"]], [false, false]);
     assert.match(none.find((c) => c.id === "canvas").detail, /expectGameResponds/);
   });
+
+  test("in CAPS_DIR, checks the engine the platform's record names, not the one the product's musemuse.caps.json names", async () => {
+    // The platform's read-only copy, whose record says Babylon, and a product that says (and has) Phaser.
+    const capsDir = mkdtempSync(path.join(tmpdir(), "mm-games-capsdir-"));
+    dirs.push(capsDir);
+    cpSync(path.join(CAPS, "games"), path.join(capsDir, "games"), { recursive: true });
+    writeFileSync(path.join(capsDir, "active.json"), JSON.stringify({ caps: ["games"], overlays: ["core", "games", "games-babylon"] }));
+    const platform = await import(pathToFileURL(path.join(capsDir, "games/files/scripts/caps/games.mjs")).href);
+    assert.equal(realpathSync(platform.platformActiveFile()), realpathSync(path.join(capsDir, "active.json")));
+    const checks = await platform.check({ record: okRecord, root: gameProduct({ engine: "games-phaser" }) });
+    assert.equal(byId(checks).engine, false);
+    assert.match(checks.find((c) => c.id === "engine").detail, /@babylonjs\/core must be 9\.29\.0/);
+    // The copy in a product folder still reads musemuse.caps.json, for tests and local use.
+    const { platformActiveFile } = await import(pathToFileURL(path.join(CAPS, "games/files/scripts/caps/games.mjs")).href);
+    assert.equal(platformActiveFile(), null);
+  });
 });
 
 describe("unit 14's overlays", () => {
@@ -259,6 +275,18 @@ const PAGES = {
     addEventListener("keyup", (e) => { if (e.key === "ArrowRight") held = false; });
     (function frame() { if (held) px = Math.min(330, px + 4); x.fillStyle = "#f0f2f5"; x.fillRect(0, 0, 390, 520); x.fillStyle = "#0064e0"; x.fillRect(px, 300, 40, 40); x.fillStyle = "#080809"; x.fillRect(0, 470, 390, 50); requestAnimationFrame(frame); })();
   </script>`,
+  // A square that slides back and forth by itself and ignores every key.
+  drifts: `<canvas width=390 height=520 tabindex=0></canvas><script>
+    const c = document.querySelector("canvas"), x = c.getContext("2d"); let t = 0;
+    (function frame() { t++; const px = 100 + 120 * Math.sin(t / 20); x.fillStyle = "#f0f2f5"; x.fillRect(0, 0, 390, 520); x.fillStyle = "#0064e0"; x.fillRect(px, 300, 40, 40); x.fillStyle = "#080809"; x.fillRect(0, 470, 390, 50); requestAnimationFrame(frame); })();
+  </script>`,
+  // A small marker that slides on its own, and a square that moves while ArrowRight is held.
+  driftsAndMoves: `<canvas width=390 height=520 tabindex=0></canvas><script>
+    const c = document.querySelector("canvas"), x = c.getContext("2d"); let px = 60, t = 0, held = false;
+    addEventListener("keydown", (e) => { if (e.key === "ArrowRight") held = true; });
+    addEventListener("keyup", (e) => { if (e.key === "ArrowRight") held = false; });
+    (function frame() { t++; if (held) px = Math.min(330, px + 6); x.fillStyle = "#f0f2f5"; x.fillRect(0, 0, 390, 520); x.fillStyle = "#c0c4cc"; x.fillRect(20 + ((t * 2) % 340), 40, 30, 30); x.fillStyle = "#0064e0"; x.fillRect(px, 300, 60, 60); x.fillStyle = "#080809"; x.fillRect(0, 470, 390, 50); requestAnimationFrame(frame); })();
+  </script>`,
   blank: `<canvas width=390 height=520></canvas><script>const x = document.querySelector("canvas").getContext("2d"); x.fillStyle = "#f0f2f5"; x.fillRect(0, 0, 390, 520);</script>`,
   still: `<canvas width=390 height=520></canvas><script>const x = document.querySelector("canvas").getContext("2d"); x.fillStyle = "#f0f2f5"; x.fillRect(0, 0, 390, 520); x.fillStyle = "#0064e0"; x.fillRect(100, 300, 40, 40); x.fillStyle = "#080809"; x.fillRect(0, 470, 390, 50);</script>`,
 };
@@ -308,6 +336,28 @@ describe("expectGameResponds in Chromium", { skip: browserProblem ?? false }, ()
     assert.match(String(err?.message), /nothing on the game's canvas changed after pressing ArrowRight/);
     assert.equal(checks.canvas.ok, true);
     assert.equal(checks["key-press"].ok, false);
+  });
+
+  test("fails a canvas that moves on its own but ignores the key", async () => {
+    const { err, checks } = await run("drifts");
+    assert.match(String(err?.message), /changes about as much with no key pressed as after pressing ArrowRight/);
+    assert.equal(checks.canvas.ok, true);
+    assert.equal(checks["key-press"].ok, false);
+    assert.match(checks["key-press"].detail, /changes with no key pressed, so the key made no clear difference/);
+  });
+
+  test("passes a canvas that moves a little on its own and clearly more on the key", async () => {
+    const { err, checks } = await run("driftsAndMoves");
+    assert.equal(err, null, checks["key-press"]?.detail);
+    assert.equal(checks["key-press"].ok, true);
+    assert.match(checks["key-press"].detail, /with no key pressed, up to \d+\.\d% changes/);
+  });
+
+  test("needs the key press to beat what the canvas does on its own", () => {
+    assert.equal(G.neededChange(0), G.MIN_CHANGED);
+    assert.equal(G.neededChange(G.MIN_CHANGED / 2), G.MIN_CHANGED);
+    assert.equal(G.neededChange(0.013), 0.013 * G.DRIFT_MARGIN + G.MIN_CHANGED);
+    assert.ok(G.neededChange(0.013) > 0.022, "the review's sliding square: 2.2% after the key, 1.3% without");
   });
 
   test("reads Playwright's screenshots: sizes, colors and changes", async () => {

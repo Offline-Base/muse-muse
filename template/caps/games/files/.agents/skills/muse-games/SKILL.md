@@ -62,7 +62,9 @@ await test.step("Play: move with the arrow keys", async () => {
 ```
 
 It checks the canvas drew something (not one flat color) and changed after one key press, records both, and takes the
-two judge screenshots. Pick a key that visibly changes the scene within half a second.
+two judge screenshots. Pick a key that visibly changes the scene within half a second. It also watches the canvas with
+no key pressed: if things move on their own (a scrolling background, enemies), the key press has to change clearly more
+than that, so keep the scene still or slow until the player presses something.
 
 ## What verify checks
 
@@ -72,7 +74,7 @@ two judge screenshots. Pick a key that visibly changes the scene within half a s
 | `no-cdn` | Nothing loads from another site |
 | `notices` | `public/notices/<engine>.txt` is there and the page links to it |
 | `canvas` | The smoke test saw the canvas draw |
-| `key-press` | The smoke test saw it change after a key press |
+| `key-press` | The smoke test saw it change after a key press, clearly more than it changes on its own |
 
 ## Platform files
 

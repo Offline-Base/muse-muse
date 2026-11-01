@@ -7,10 +7,15 @@
 //   canvas     the smoke test saw the game's canvas draw something (tests/caps/games.ts, expectGameResponds)
 //   key-press  the smoke test saw the canvas change after one key press
 //
-// What these rest on: engine, no-cdn and notices read the product's files as they are now. canvas and key-press read
-// the smoke test's record, which a product test could write itself. Games make no gateway calls of their own.
+// What these rest on: engine, no-cdn and notices read the product's files as they are now. Which engine to check comes
+// from the platform's record (CAPS_DIR/active.json) when this is its read-only copy, never from the product's
+// musemuse.caps.json, which a product test can rewrite. canvas and key-press read the smoke test's record, which a
+// product test could write itself. Games make no gateway calls of their own.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 /** The engine overlays and what each installs. A template test keeps this in step with their deps.json. */
 export const ENGINES = {
@@ -59,12 +64,22 @@ function productSources(root) {
   return ["app", "components", "lib", "public"].flatMap((d) => walk(path.join(root, d), root)).filter((f) => !f.startsWith("lib/platform/"));
 }
 
+/**
+ * The platform's record of the product's caps (CAPS_DIR/active.json) when this file is the read-only copy in a build
+ * sandbox (CAPS_DIR/games/files/scripts/caps), else null: a copy in a product folder, for tests and local use.
+ */
+export function platformActiveFile(here = HERE) {
+  const file = path.join(path.resolve(here, "../../../.."), "active.json");
+  return path.basename(path.resolve(here, "../../..")) === "games" && existsSync(file) ? file : null;
+}
+
 export async function check({ record, root }) {
-  const caps = readJson(path.join(root, "musemuse.caps.json"));
+  const active = platformActiveFile();
+  const caps = readJson(active ?? path.join(root, "musemuse.caps.json"));
   const overlay = Object.keys(ENGINES).find((o) => (caps?.overlays ?? []).includes(o));
   const checks = [];
   if (!overlay) {
-    checks.push({ id: "engine", ok: false, detail: "musemuse.caps.json names no game engine overlay" });
+    checks.push({ id: "engine", ok: false, detail: `${active ? "The platform's record of this product's caps" : "musemuse.caps.json"} names no game engine overlay` });
   } else {
     const engine = ENGINES[overlay];
     const pkg = readJson(path.join(root, "package.json")) ?? {};

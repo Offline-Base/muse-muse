@@ -121,6 +121,16 @@ export function changedShare(a: Pixels, b: Pixels): number {
 
 /** The share of the canvas that must change after the key press: about one small sprite on a phone-sized canvas. */
 export const MIN_CHANGED = 0.002;
+/**
+ * For a game that also moves on its own: how many times the most it changes with no key pressed the key press must
+ * change, plus MIN_CHANGED. A sprite drifting on its own changes about as much in each window, key or not.
+ */
+export const DRIFT_MARGIN = 2;
+
+/** What the key press must change, given the most the canvas changed in a window with no key pressed. */
+export function neededChange(drift: number): number {
+  return drift >= MIN_CHANGED ? drift * DRIFT_MARGIN + MIN_CHANGED : MIN_CHANGED;
+}
 
 /**
  * Expects the game's canvas to show something and to change after one key press. Start the game first (press its
@@ -145,10 +155,13 @@ export async function expectGameResponds(page: Page, opts: GameRespondsOptions =
   });
   expect(notBlank, "the game's canvas is blank: it drew nothing").toBeTruthy();
 
-  // What it does with no key pressed, over the same time, so a game that moves on its own is told apart.
+  // What it does with no key pressed, over two windows as long as the key press, so a game that moves on its own is
+  // told apart from one that answers the key: the key press must change clearly more than either window did.
+  await page.waitForTimeout(holdMs + 250);
+  const between = readPng(await canvas.screenshot());
   await page.waitForTimeout(holdMs + 250);
   const idle = readPng(await canvas.screenshot());
-  const drift = changedShare(first, idle);
+  const drift = Math.max(changedShare(first, between), changedShare(between, idle));
   await canvas.focus().catch(() => undefined);
   await page.keyboard.down(key);
   await page.waitForTimeout(holdMs);
@@ -156,16 +169,20 @@ export async function expectGameResponds(page: Page, opts: GameRespondsOptions =
   await page.waitForTimeout(250);
   const after = readPng(await canvas.screenshot());
   const moved = changedShare(idle, after);
-  const ok = moved >= MIN_CHANGED;
+  const drifts = drift >= MIN_CHANGED;
+  const ok = moved >= neededChange(drift);
   const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
   recordCapCheck("games", {
     id: "key-press",
     ok,
     detail: ok
-      ? `${pct(moved)} of the canvas changed after ${key}${drift >= MIN_CHANGED ? ` (it also changes with no key pressed: ${pct(drift)})` : ""}`
-      : `Nothing on the canvas changed after ${key}`,
+      ? `${pct(moved)} of the canvas changed after ${key}${drifts ? ` (with no key pressed, up to ${pct(drift)} changes)` : ""}`
+      : drifts
+        ? `${pct(moved)} of the canvas changed after ${key}, but up to ${pct(drift)} changes with no key pressed, so the key made no clear difference. Keep the scene still until a key is pressed, or make the key's move bigger`
+        : `Nothing on the canvas changed after ${key}`,
     ...(opts.shots ? { shot: `${opts.shots[1]}.png` } : {}),
   });
   if (opts.shots) await judgeShot(page, opts.shots[1]);
-  expect(ok, `nothing on the game's canvas changed after pressing ${key}`).toBeTruthy();
+  expect(ok || drifts, `nothing on the game's canvas changed after pressing ${key}`).toBeTruthy();
+  expect(ok, `the game's canvas changes about as much with no key pressed as after pressing ${key}`).toBeTruthy();
 }
