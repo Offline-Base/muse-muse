@@ -17,6 +17,49 @@ export const GADGET_TOOLS: ReadonlyArray<{ name: ProductGadgetTool; icon: IconNa
   { name: "record_audio", icon: "mic", text: "Records up to 30 seconds of sound with the board's microphone." },
 ];
 
+/**
+ * The boards Muse Muse has on hand (docs/PLATFORM_PLAN.md "The boards we have", docs/HANDOFF_HUSSAM.md "Hardware on
+ * hand"), each with the owner's picture of the mascot holding it. Facts only, no addresses, names on the fleet or live
+ * status: the page never contacts a board. The pictures are decorative; the board's name is in the text.
+ */
+export interface HouseBoard {
+  key: "jetson" | "pi" | "coral";
+  name: string;
+  count: number;
+  /** What the board does for Muse Muse, in two or three words. */
+  role: string;
+  text: string;
+  /** Under public/, 564 by 640, white background, shown as given (no tile behind it, no cutout). */
+  image: string;
+}
+
+export const HOUSE_BOARDS: readonly HouseBoard[] = [
+  {
+    key: "jetson",
+    name: "Jetson Orin Nano 8 GB",
+    count: 6,
+    role: "Board server",
+    text: "Runs muse-device, which gives a product the board's camera and microphone. It can also fine-tune a small model on its own GPU.",
+    image: "/muse/muse-jetson.jpg",
+  },
+  {
+    key: "pi",
+    name: "Raspberry Pi 5",
+    count: 2,
+    role: "Planned gadget",
+    text: "Meta lists the Pi 5 as a supported Muse gadget. One is planned as a real gadget on Meta's Linux Device SDK, paired to Muse Muse's own Muse account. Muse Muse never holds anyone else's gadget token.",
+    image: "/muse/muse-pi.jpg",
+  },
+  {
+    key: "coral",
+    name: "Coral board",
+    count: 2,
+    role: "On-device vision",
+    text: "A Synaptics Coralboard SL that runs vision on its own NPU, to compare its detectors with SAM 3.1 on the same pictures. It reaches the network only while plugged into a Mac.",
+    image: "/muse/muse-coral.jpg",
+  },
+];
+
 /** One status row on /gadgets: plain words only, never the board's address or key. */
 export interface GadgetStatusRow {
   label: string;

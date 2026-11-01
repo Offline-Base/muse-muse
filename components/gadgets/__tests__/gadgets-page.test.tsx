@@ -8,7 +8,8 @@
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it, mock } from "node:test";
 import { createElement, type ReactNode } from "react";
-import { GADGET_OPTION, GADGET_TOOLS, gadgetProducts, gadgetStatusRows } from "@/components/gadgets/info";
+import { existsSync, readFileSync } from "node:fs";
+import { GADGET_OPTION, GADGET_TOOLS, HOUSE_BOARDS, gadgetProducts, gadgetStatusRows } from "@/components/gadgets/info";
 import type { ProductCardView } from "@/components/view-types";
 import type { SessionUser } from "@/lib/auth";
 import { GADGET_ID, PRODUCT_GADGET_TOOLS } from "@/lib/gateway/gadget";
@@ -64,6 +65,27 @@ describe("gadget facts", () => {
     assert.deepEqual(on.map((r) => r.value), ["On", "Set up"]);
     assert.match(on[1].note, /doesn't contact it/, "set up isn't a claim that it's online");
     for (const r of on) assert.doesNotMatch(r.note, /\bconnected\b/);
+  });
+
+  it("lists the boards on hand, each with its own picture of the right size", () => {
+    assert.deepEqual(
+      HOUSE_BOARDS.map((b) => [b.name, b.count]),
+      [
+        ["Jetson Orin Nano 8 GB", 6],
+        ["Raspberry Pi 5", 2],
+        ["Coral board", 2],
+      ],
+    );
+    for (const b of HOUSE_BOARDS) {
+      const file = new URL(`../../../public${b.image}`, import.meta.url);
+      assert.ok(existsSync(file), `${b.image} is in public/`);
+      const jpg = readFileSync(file);
+      assert.equal(jpg.readUInt16BE(0), 0xffd8, `${b.image} is a JPEG`);
+      assert.ok(jpg.length < 120_000, `${b.image} stays small`);
+      assert.doesNotMatch(b.text, /token [a-z0-9]|https?:|\.local\b|jetson-0|coral-0/i, "no addresses or fleet names");
+      assert.equal(b.text.includes(String.fromCharCode(0x2014)), false, "no em dash");
+    }
+    assert.match(HOUSE_BOARDS[1].text, /never holds anyone else's gadget token/);
   });
 
   it("finds the products that use a gadget", () => {
@@ -163,6 +185,13 @@ describe("/gadgets", { skip: canMock ? false : "needs --experimental-test-module
     assert.match(html, /No products use a gadget yet/);
     assert.match(html, /Planned: connect your own board/);
     assert.match(html, /Connecting your own board is planned\./);
+    const boards = [...html.matchAll(/<li class="card gadgets-board"><img class="gadgets-board-art" src="([^"]+)" alt=""[^>]*>.*?<h3>([^<]+)<\/h3>/gs)].map((m) => [m[1], m[2]]);
+    assert.deepEqual(boards, [
+      ["/muse/muse-jetson.jpg", "Jetson Orin Nano 8 GB"],
+      ["/muse/muse-pi.jpg", "Raspberry Pi 5"],
+      ["/muse/muse-coral.jpg", "Coral board"],
+    ], "each board's picture beside its name, decorative");
+    assert.match(html, /<li class="chip">6 on hand<\/li>/);
     assert.doesNotMatch(html, /has set up|being built|\bComing\b/, "no board claimed while none is set up, and no promises");
     assert.doesNotMatch(html, /\b(20\d\d|Nov|November|Dec)\b/, "no promised dates");
     assert.deepEqual(reads, ["listShippedProducts(60)"]);

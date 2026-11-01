@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { connection } from "next/server";
 import { CALL_DAYS, hostedModelViews, tunedModelViews, type TunedModelView } from "@/components/models/catalog";
 import { GlimmerCard, HostedModelsTable, TunedModelsTable, WhereTheyRun } from "@/components/models/ModelParts";
+import { OwnModelsSlot } from "@/components/models/OwnModelsSlot";
 import { toRecipeView } from "@/components/train/format";
 import { toResultView, type ResultView } from "@/components/train/results";
 import { EmptyCard, NotConnected, PageHeader } from "@/components/ui";
@@ -78,6 +79,7 @@ export default async function ModelsPage() {
         ) : (
           <TunedModelsTable models={tuned.data} />
         )}
+        <OwnModelsSlot />
       </section>
 
       <section className="section" aria-labelledby="where-title">

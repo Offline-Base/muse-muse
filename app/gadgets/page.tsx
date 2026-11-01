@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
-import { GADGET_TOOLS, gadgetProducts, gadgetStatusRows } from "@/components/gadgets/info";
+import { BoardsSlot } from "@/components/gadgets/BoardsSlot";
+import { GADGET_TOOLS, HOUSE_BOARDS, gadgetProducts, gadgetStatusRows } from "@/components/gadgets/info";
 import { Icon } from "@/components/icons";
 import { ProductCard } from "@/components/product/ProductCard";
 import { EmptyCard, NotConnected, PageHeader, StatusPill } from "@/components/ui";
@@ -66,6 +67,37 @@ export default async function GadgetsPage() {
         </div>
       </section>
 
+      <section className="section" aria-labelledby="boards-title">
+        <div className="section-head">
+          <h2 id="boards-title">Boards on hand</h2>
+        </div>
+        <ul className="gadgets-boards">
+          {HOUSE_BOARDS.map((b) => (
+            <li key={b.key} className="card gadgets-board">
+              {/* The owner's pictures as given: white background, no tile behind them, no cutout. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                className="gadgets-board-art"
+                src={b.image}
+                alt=""
+                width={564}
+                height={640}
+                loading="lazy"
+                decoding="async"
+              />
+              <div className="gadgets-board-text">
+                <h3>{b.name}</h3>
+                <ul className="chips" aria-label={`About the ${b.name}`}>
+                  <li className="chip">{b.count} on hand</li>
+                  <li className="chip">{b.role}</li>
+                </ul>
+                <p className="muted">{b.text}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+
       <section className="section" aria-labelledby="status-title">
         <div className="section-head">
           <h2 id="status-title">Status</h2>
@@ -118,18 +150,7 @@ export default async function GadgetsPage() {
         )}
       </section>
 
-      <section className="card notice" aria-labelledby="coming-title">
-        <span className="notice-icon" aria-hidden>
-          <Icon name="plug" />
-        </span>
-        <div>
-          <h2 id="coming-title">Planned: connect your own board</h2>
-          <p className="muted">
-            Today, live products with the option can only use a board Muse Muse sets up. Connecting your own board is
-            planned.
-          </p>
-        </div>
-      </section>
+      <BoardsSlot />
     </div>
   );
 }
