@@ -1,0 +1,155 @@
+/* /private: Muse Privacy's page. Tokens only, so dark mode follows. */
+.pv-note {
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface-3);
+  font-size: 14px;
+}
+
+.pv-replay {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.pv-replay-tag {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.pv-scenes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pv-scene {
+  min-height: 36px;
+  padding: 6px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.pv-scene[aria-pressed="true"] {
+  border-color: var(--fg);
+  background: var(--fg);
+  color: var(--surface);
+}
+
+.pv-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pv-step button {
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 0;
+  border-left: 2px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pv-step[data-state="done"] button {
+  color: var(--fg);
+}
+
+.pv-step[data-state="now"] button {
+  border-left-color: var(--fg);
+  background: var(--surface-3);
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.pv-result {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 12px;
+  border-radius: var(--radius-card);
+  background: var(--surface-3);
+}
+
+.pv-result dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.pv-result dd {
+  margin: 2px 0 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.pv-result-wide {
+  grid-column: 1 / -1;
+}
+
+.pv-status {
+  font-weight: 600;
+}
+
+.pv-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.pv-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
+.pv-tile {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.pv-tile dd {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.pv-tile dt {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.pv-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding-left: 20px;
+  font-size: 14px;
+}

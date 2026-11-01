@@ -25,7 +25,7 @@ describe("sidebar rows", () => {
       [
         ["Dashboard"],
         ["Make", "Builds", "Rebuilds", "Gallery"],
-        ["Usage", "Models", "Fine-tuning", "Gadgets"],
+        ["Usage", "Models", "Fine-tuning", "Gadgets", "Muse Privacy"],
         ["How it works", "Docs"],
       ],
     );
