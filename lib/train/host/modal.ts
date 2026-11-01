@@ -9,7 +9,7 @@
  */
 import { openAiChat, type Fetcher } from "@/lib/train/host/openai-chat";
 import type { CliRunner } from "@/lib/train/host/cli-runner";
-import { HostError, type HostAdapter, type HostFacts } from "@/lib/train/host/types";
+import { HostError, type HostAdapter, type HostChatInput, type HostFacts } from "@/lib/train/host/types";
 import { needsTunedTemplate, TUNED_TEMPLATE, VLLM_IMAGE, vllmFlags, type ServeModel } from "@/lib/train/host/vllm";
 
 export const SCALEDOWN_SECONDS = 300;
@@ -66,6 +66,13 @@ function gpuFor(f: HostFacts) {
   return f.family === "glimmer" ? GLIMMER_PRICE : SMALL_PRICE;
 }
 
+/** vLLM names a base by what it was started with, and the adapter by its --lora-modules name. */
+function baseOrTuned(input: HostChatInput): string {
+  if (input.variant !== "base") return "tuned";
+  if (!input.baseRepo) throw new HostError(409, "base_unavailable", "This endpoint can't answer as the base model.");
+  return input.baseRepo;
+}
+
 export function modalAdapter(deps: {
   tokenId: () => string | undefined;
   tokenSecret: () => string | undefined;
@@ -114,7 +121,7 @@ export function modalAdapter(deps: {
     inferenceUrl: (ref) => (ref.url ? `${ref.url}/v1` : null),
     chat(ref, input) {
       if (!ref.url || !ref.endpointId) throw new HostError(502, "endpoint_unavailable", "This endpoint has no address yet.");
-      return openAiChat({ baseUrl: `${ref.url}/v1`, key: deps.keyFor(ref.endpointId), model: "tuned", input, fetch: deps.fetch });
+      return openAiChat({ baseUrl: `${ref.url}/v1`, key: deps.keyFor(ref.endpointId), model: baseOrTuned(input), input, fetch: deps.fetch });
     },
   };
 }

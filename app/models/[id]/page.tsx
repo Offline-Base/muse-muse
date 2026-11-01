@@ -9,16 +9,22 @@ import { toResultView, type ResultView } from "@/components/train/results";
 import { SparkOpenChip, SparkOpenNote } from "@/components/train/SparkOpenNote";
 import { TrainStatusPill } from "@/components/train/TrainStatusPill";
 import { ExternalLink, NotConnected, PageHeader } from "@/components/ui";
+import { ExportTuned } from "@/components/models/ExportTuned";
 import { RunIt } from "@/components/models/RunIt";
+import { TryTuned } from "@/components/models/TryTuned";
 import { linkedLocalFiles } from "@/components/vibe/RunLocallyLink";
 import { env } from "@/lib/env";
+import { licenseDuties, baseName } from "@/lib/train/base";
+import { tryDeps } from "@/lib/train/host/deps";
+import { hostFacts } from "@/lib/train/host/facts";
 import { loadHostView } from "@/lib/train/host/page";
+import { tryView } from "@/lib/train/host/try";
 import { mayDeploy } from "@/lib/train/host/limits";
 import { usd } from "@/lib/format";
 import { safeQuery } from "@/lib/queries";
 import { ADAPTER_RECIPE } from "@/lib/train/logic";
 import { recipeById } from "@/lib/train/recipes";
-import { getJob, getResultJob, listDatasetRunsForAdmin, listModelVersions } from "@/lib/train/store";
+import { getAdapterSource, getJob, getResultJob, listDatasetRunsForAdmin, listModelVersions } from "@/lib/train/store";
 import { modelVersionViews, newVersionPlan } from "@/lib/train/versions";
 
 export const metadata: Metadata = { title: "Model versions" };
@@ -74,6 +80,12 @@ export default async function ModelVersionsPage({ params }: { params: Promise<{ 
   const { current, versions, others, canTrain } = loaded.data;
   // Flag off: nothing is read, and the page is today's. Only someone who may deploy sees it, since using it spends money.
   const hosting = user && env.hostTuned && mayDeploy(user, env.hostTunedOpen) ? await safeQuery(() => loadHostView(current.id, new Date(), user)) : null;
+
+  // Flags off: nothing is read for these two, and the page is today's.
+  const source = env.exportTuned || (env.tryTuned && env.hostTuned) ? await safeQuery(() => getAdapterSource(current.id)) : null;
+  const facts = source?.ok && source.data ? hostFacts(source.data.job, source.data.metrics) : null;
+  const trying = facts && env.tryTuned && env.hostTuned ? await safeQuery(() => tryView(facts, tryDeps())) : null;
+  const exportFiles = env.exportTuned ? await linkedLocalFiles(current.id) : null;
 
   return (
     <div className="page">
@@ -162,6 +174,9 @@ export default async function ModelVersionsPage({ params }: { params: Promise<{ 
           </table>
         </div>
       </section>
+
+      {trying?.ok ? <TryTuned modelId={current.id} initial={trying.data} baseLabel={`The model it started from (${baseName(current.sparkOpen)})`} /> : null}
+      {env.exportTuned && source?.ok && source.data ? <ExportTuned modelId={current.id} files={exportFiles} notice={licenseDuties({ params: source.data.job.params, metrics: source.data.metrics })} /> : null}
 
       {hosting?.ok && hosting.data ? <RunIt modelId={current.id} initial={hosting.data} /> : null}
 

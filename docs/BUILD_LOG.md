@@ -1721,3 +1721,14 @@ scripts/dev/tune-harness.ts, on a Lambda gpu_1x_a10 named prove-tune-1, us-east-
 - Measured on Contributor with made-up data, flags as on production: a FULL_BUILDS brief with the look (8 requirements, scope check ran) and a full judge read with one image both returned valid replies. Spend about $0.002. The first attempt got a 401 from the key in ~/muse-muse/.env.local, so that key looks stale.
 - Tests: targeted suites pass. flags-off-surface was already failing on main on stale mocks; with those fixed its provision and deploy goldens match, and steps.json still differs on a timeout this branch doesn't touch. No golden file changed.
 - Not run: a whole build on production settings, a sandbox, the notice in a browser, whether Contributor's judge is as strict as Muse Wonder's.
+
+## Nov 1, 2026: try and one-click export (tg-try-export, flags TRY_TUNED and EXPORT_TUNED, off)
+
+- Built: a public Try box on `/models/{id}` with the tuned and base models side by side, wake-up states, per-visitor limits and a note on the data; installers for Mac, Windows, Linux and Jetson with an Ollama path, using `deviceModelTarget`.
+- Decision: a visitor may wake a sleeping model, since the owner chose to cover hosting, inside its own limits: 1 wake per visitor, 2 per model, 4 in all, and $10 a day taken atomically before any provider call. Never Lambda, and the owner token is dropped.
+- Fix before it shipped: day counters at the start of the day would have reset within the hour, because the hourly prune deletes windows that began over an hour ago. They now use `dayWindow`, with a test.
+- Found, not changed: `HOSTED_LIMITS.perEndpointPerDay` in `lib/train/host/gateway.ts` counts at the start of the day, so the same prune resets it.
+- Measured: the generated Mac script on `ggml-org/tiny-llamas` `stories260K.gguf`, real b11669 from its pinned release, 16 tokens, exit 0. A changed sha256 deleted the download and exited 1. A second run downloaded nothing. The Linux script's pinned tarball and model passed their checks, with the OS name stubbed; its program was not run here.
+- Blocked: real paid hosting (needs a real admin sign-in, and provider keys held only in Vercel). A PowerShell syntax check was denied by the permission check, so the Windows script has not been parsed or run.
+- Spend: $0. No Muse Glimmer file ran. Targeted tests only; no `next build`, no browser view.
+

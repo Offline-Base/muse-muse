@@ -1122,3 +1122,32 @@ A plain Glimmer adapter shows Modal and Baseten as unavailable, because its job 
 **Calling it:** `POST /api/gateway/hosted/v1/chat/completions`, whole replies only, with the owner token shown once at deploy (`mmh_...`, hash stored) or a live product token whose product owns the model, with `model` set to the tuned job's id. Each answer is a `hosted` usage row with its tokens at $0: the money is on the endpoint. Addresses, refs and hashes never reach a browser (`lib/train/host/view.ts`). Modal's vLLM key is derived per endpoint and never stored. `HOST_HF_TOKEN` if set, else the platform's HF token, reads private repos, and reaches providers only as a Modal secret or a Baseten secret on the platform's own accounts. Set a read-only `HOST_HF_TOKEN` before the first deploy.
 
 **Unproven, needs the first paid test:** every provider call shape (from docs, with faked responses in tests); the Modal and Truss commands, whose flags and messages were read from each CLI's source but never run, and Modal's address parsing; `TUNED_TEMPLATE`, the stops and the reasoning parser on a real adapter under vLLM 0.32 with Glimmer LoRA, which nothing here has served; the sandbox's firewall letting the CLIs through; Truss's `/app/data` path; cold starts; prices beyond list; Fireworks accepting any uploaded addon on these bases. Fireworks' terms 3.3(v) (uploaded input has no machine-generated content) is an open legal question for models made with generated data. Baseten's terms 4.3(b) matter if this is ever charged for.
+
+## Try a tuned model (TRY_TUNED, off by default, also needs HOST_TUNED)
+
+A public chat on `/models/{id}`, for a model with a public page that passed judging. Code: `lib/train/host/try.ts`, `app/api/models/[id]/try`, `components/models/TryTuned.tsx`. The tuned model and the model it started from answer on the same GPU, one after the other. **No part of this has run against a real provider or GPU.** A paid test needs a real admin sign-in and provider keys held only in Vercel, so it is blocked here.
+
+**A visitor can wake a sleeping model, inside these limits.** This is the one exception to "never anyone without a session" above, and the owner chose to cover the cost.
+
+| Limit | Default | Held by |
+|---|---|---|
+| Wakes per visitor (network address) per UTC day | 1 | counter |
+| Wakes per model per UTC day | 2 | counter |
+| Wakes per UTC day, every model | `TRY_TUNED_WAKES_PER_DAY`, 4 | atomic counter |
+| Dollars wakes may promise per UTC day | `TRY_TUNED_DAILY_USD`, $10, held to `HOST_TUNED_DAILY_USD` | atomic counter, taken before any provider call |
+| Longest run of a wake | `TRY_TUNED_MINUTES`, 60, held to `HOST_TUNED_MAX_MINUTES` | the endpoint's stop time |
+| Answers per visitor | 10 in 10 minutes, 40 a day (a question to both models is 2) | counters |
+| Answers per model per day | 300 | counter |
+
+A wake takes its whole possible cost (rate times minutes) from the budget first, and gets it back only when nothing started. Stopping early gives nothing back, so at $4.85 an hour the default buys 2 wakes a day. Everything under "Run it" still applies on top: the live count, one per model, the idle stop, the sweep, `HOST_TUNED_DAILY_USD` and `DAILY_SPEND_CAP_USD`. Wakes never use Lambda. The owner token is dropped, so a visitor has only this box. Day counters sit at the end of the UTC day (`dayWindow`), because the hourly prune deletes any window that began over an hour ago.
+
+A visitor sends only user and assistant turns. The system message is the server's, from the job's `system` metric, and when the job has none no system message is sent. The base answer needs a provider that serves it: Fireworks says it can't. Asleep, waking, awake and going to sleep each have their own words, and a scaled-to-zero answer that returns "waking" moves the box back to waking.
+
+## Export a tuned model (EXPORT_TUNED, off by default)
+
+`/models/{id}` offers one download per device kind, from `GET /api/models/{id}/export?kind=mac|windows|linux|jetson_orin_nano`. Code: `lib/train/export`. Which file a kind gets is `deviceModelTarget`'s, so a Jetson gets one-bit Glimmer, every other kind the small Llama, and a tune on one base offers only that base's devices. Only public files at a pinned commit qualify.
+
+The script checks the OS and free disk, downloads the GGUF by commit, checks its sha256, deletes anything that fails, gets llama.cpp at b11669 (the job's own tag, with GitHub's asset digests pinned in `lib/train/export/llama-pins.ts`) and starts a chat. It writes the system message to a file, so nothing reaches a shell. Options: `--ollama`, `--check-only`, `--prompt`, `--max-tokens`, `--gpu-layers`, and on a Jetson `--cpu`. Windows takes `-Ollama`, `-CheckOnly`, `-Prompt`, `-MaxTokens`, `-GpuLayers`. A Jetson builds from the pinned source with CUDA, since no prebuilt has it for that board.
+
+**Seen working:** the Mac script on `ggml-org/tiny-llamas` `stories260K.gguf` (1.2 MB) on an Apple silicon Mac, end to end with real llama.cpp. The Linux script's download and checks, with real pinned files and a stubbed OS name. **Simulated:** Linux and Jetson running, Ollama, the board check. **Not run:** the Windows script at all (a syntax check was denied here), any tuned file, a real Linux PC, a real board, and Ollama itself.
+

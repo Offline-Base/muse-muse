@@ -42,6 +42,7 @@ export function lambdaAdapter(deps: {
     cantServe: (f) => (f.lambdaProblem ? `Lambda can't: ${f.lambdaProblem}` : null),
     price: () => ({ hourlyUsd: LAMBDA_HOURLY_USD, gpu: "H100", capUsd: deps.ceilings().maxUsd, maxMinutes: SERVE_MINUTES_DEFAULT + SERVE_BOOT_MINUTES }),
     async deploy({ facts, capUsd, callerId }) {
+      if (!callerId) throw new HostError(409, "cant_serve", "Lambda's jobs need a person's account.");
       const started = await deps.launch(
         {
           recipe: SERVE_RECIPE,
@@ -84,7 +85,7 @@ export function lambdaAdapter(deps: {
       const backend = await deps.backend(ref.adapterJobId ?? "");
       if (!backend) throw new HostError(503, "endpoint_closed", "This model's GPU isn't serving right now.");
       try {
-        return await backend.chat({ messages: input.messages, adapter: input.adapterJobId, maxTokens: input.maxTokens, stop: input.stop, signal: input.signal });
+        return await backend.chat({ messages: input.messages, adapter: input.variant === "base" ? null : input.adapterJobId, maxTokens: input.maxTokens, stop: input.stop, signal: input.signal });
       } catch (err) {
         const reply = err instanceof ServeError ? glimmerErrorReply(err) : { status: 502, code: "endpoint_unavailable" };
         throw new HostError(reply.status, reply.code, reply.status === 409 ? "The model is answering someone else. Try again in a moment." : "The model's GPU didn't answer. Try again soon.");
