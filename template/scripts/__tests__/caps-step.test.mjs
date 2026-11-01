@@ -227,8 +227,9 @@ describe("cap overlays (template/caps)", () => {
       const rel = path.relative(path.join(TEMPLATE, "targets"), f).split(path.sep);
       return rel[1] === "files" ? [rel.slice(2).join("/")] : [];
     }));
-    // The two allowed overlaps (docs/CAPABILITIES.md, 2.5), each checked byte for byte by its unit's test.
-    const allowed = new Map([["core", new Set(["lib/platform/identity.ts"])], ["trust", new Set(["components/Footer.tsx"])]]);
+    // The allowed overlaps (docs/CAPABILITIES.md, 2.5), each checked byte for byte by its unit's test.
+    // Wave 3, unit 4: files ships data's owner route as an exact copy (caps-files.test.mjs), so either overlay has it.
+    const allowed = new Map([["core", new Set(["lib/platform/identity.ts"])], ["trust", new Set(["components/Footer.tsx"])], ["files", new Set(["app/api/musemuse/owner/route.ts"])]]);
     const seen = new Map();
     for (const o of overlays) {
       for (const f of filesOf(path.join(CAPS, o, "files"))) {

@@ -10,7 +10,8 @@ export const runtime = "nodejs";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
   // Wave 3, unit 3: a product that saves data has owner items too, so the pass also works while the data cap is served.
-  const ownerPassOn = (env.agentsEnabled && env.composioPersonalEnabled) || env.servedCaps.includes("data");
+  // Wave 3, unit 4: the same for owner files and shared spaces only the owner adds to, while the files cap is served.
+  const ownerPassOn = (env.agentsEnabled && env.composioPersonalEnabled) || env.servedCaps.includes("data") || env.servedCaps.includes("files");
   if (!ownerPassOn) return Response.json({ error: "Owner access isn't on here." }, { status: 503 });
   let user;
   try {

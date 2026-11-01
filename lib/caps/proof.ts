@@ -1,6 +1,7 @@
 import { connectProof } from "@/lib/caps/connect/store";
 import { codeProof } from "@/lib/caps/code/store";
 import { dataProof } from "@/lib/caps/data/store";
+import { filesProof } from "@/lib/caps/files/store";
 import type { CapId } from "@/lib/caps/ids";
 import { gatewayError } from "@/lib/gateway/errors";
 import type { ProductStatus } from "@/lib/types";
@@ -22,6 +23,8 @@ export type CapProofCounter = (buildId: string, window: { since: Date | null }) 
 export const CAP_PROOF: Partial<Record<CapId, CapProofCounter>> = {
   // Rows written in the build namespace since `since`, rows there by scope, writers, and the brief's collections.
   data: dataProof,
+  // Files made ready, documents indexed and dataset files read in the build namespace since `since`, and the brief's choices.
+  files: filesProof,
   // Unit 5: sampled fetches and calls, simulated sends, test keys and their hashes for the leak scan, the brief's picks.
   connect: connectProof,
   // Exec runs and pages opened in the build namespace since `since`, and which parts the brief asked for.

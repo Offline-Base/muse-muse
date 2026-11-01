@@ -1,6 +1,7 @@
 import { clearConnectBuild, sweepConnect } from "@/lib/caps/connect/cleanup";
 import { clearCodeBuildRuns, sweepCodeBuildRuns } from "@/lib/caps/code/cleanup";
 import { clearBuildNamespace, sweepData } from "@/lib/caps/data/store";
+import { filesBuildEnded, filesProductOff, filesSweep } from "@/lib/caps/files/cleanup";
 import type { CapId } from "@/lib/caps/ids";
 import { env } from "@/lib/env";
 
@@ -33,6 +34,21 @@ export const CAP_CLEANUPS: CapCleanup[] = [
     },
     get sweep() {
       return env.servedCaps.includes("data") ? sweepData : undefined;
+    },
+  },
+  // Unit 4: a build's files, index and dataset reads go when it ends; unfinished tickets, half-done deletes and crashed
+  // builds' files in the hourly sweep; a taken-down product's live files (section 10, Guards). A product an admin only
+  // turned off keeps them. Only while the files cap is served.
+  {
+    cap: "files",
+    get buildEnded() {
+      return env.servedCaps.includes("files") ? filesBuildEnded : undefined;
+    },
+    get productOff() {
+      return env.servedCaps.includes("files") ? filesProductOff : undefined;
+    },
+    get sweep() {
+      return env.servedCaps.includes("files") ? filesSweep : undefined;
     },
   },
   // Unit 5: a build's test keys and simulated sends go when it ends; expired cache rows, keys revoked a day ago and

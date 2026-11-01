@@ -44,7 +44,7 @@ const RESERVED = new Set([16]);
  * that ran a migration above a gap would skip the gap's migration for good: no branch with a gap goes near a shared
  * database. With MIGRATIONS_FOR=main (the merge to main, or any shared database) a gap fails outright.
  */
-const PENDING_WAVE3 = new Set([21, 23]);
+const PENDING_WAVE3 = new Set([23]);
 const pendingWave3 = (i: number) => PENDING_WAVE3.has(i);
 const snapshot = (idx: number) => JSON.parse(readFileSync(join(FOLDER, `meta/${String(idx).padStart(4, "0")}_snapshot.json`), "utf8"));
 
@@ -54,7 +54,7 @@ const database = (client: PGlite) => drizzle({ client, schema });
  * Wave 3's migrations, in the agreed order (docs/CAPABILITIES.md, section 4), after General's 0017 (0016 is retired).
  * Each wave 3 unit appends its tag here. Their journal times follow the contract's rule.
  */
-const WAVE3_TAGS = ["0018_trust", "0019_engine", "0020_data", "0022_connect", "0024_code"];
+const WAVE3_TAGS = ["0018_trust", "0019_engine", "0020_data", "0021_files", "0022_connect", "0024_code"];
 const tagNumber = (tag: string) => Number(tag.slice(0, 4));
 
 /** A copy of the migrations that stops at `lastIdx`, as a database that hasn't had the newer ones would have seen. */
@@ -451,6 +451,35 @@ describe("a database already at 0012", () => {
     await client.exec(`delete from builds; delete from products where id = '${productId}'`);
     assert.equal((await typed.select().from(schema.productRows)).length, 0);
     assert.equal((await typed.select().from(schema.productDataCounts)).length, 0);
+    await client.close();
+  });
+
+  it("0021_files: a database at 0020 keeps its rows, and gets the files tables, whose index finds text and goes with its product", async () => {
+    const dir = folderThrough(20);
+    dirs.push(dir);
+    const client = new PGlite();
+    const db = drizzle({ client });
+    await migrate(db, { migrationsFolder: dir });
+    assert.equal((await columns(client, "product_files")).size, 0);
+    const [userId, productId] = [randomUUID(), randomUUID()];
+    await client.exec(`
+      insert into users (id, email) values ('${userId}', 'old@example.com');
+      insert into products (id, slug, name, owner_id, status) values ('${productId}', 'old-one', 'Old One', '${userId}', 'live');
+      insert into product_rows (product_id, namespace, collection, scope, doc_id, data, bytes) values ('${productId}', 'live', 'items', 'shared', 'a', '{"n":1}', 7);
+    `);
+    await migrate(db, { migrationsFolder: FOLDER });
+    const typed = database(client);
+    assert.equal((await typed.select().from(schema.productRows)).length, 1, "0020's rows are kept");
+    const [file] = await typed.insert(schema.productFiles).values({ productId, namespace: "live", scope: "shared", name: "notes.pdf", contentType: "application/pdf", bytes: 10, blobPath: "caps/files/x" }).returning();
+    assert.equal(file!.status, "pending");
+    assert.equal(file!.sha256, null);
+    assert.equal(file!.deletedAt, null);
+    await typed.insert(schema.productSearchDocs).values({ productId, namespace: "live", scope: "shared", source: { fileId: file!.id }, sourceKey: `file:${file!.id}`, title: "Field notes", body: "Herons nest by the reservoir" });
+    const { rows } = await client.query<{ n: number }>(`select count(*)::int as n from product_search_docs where tsv @@ websearch_to_tsquery('simple', 'heron* OR reservoir')`);
+    assert.equal(rows[0]!.n, 1, "the generated tsvector is there and indexed");
+    await typed.insert(schema.productDatasetReads).values({ productId, namespace: "b:x", datasetId: "palmer-penguins", file: "penguins.csv" });
+    await client.exec(`delete from product_rows; delete from products where id = '${productId}'`);
+    for (const t of [schema.productFiles, schema.productSearchDocs, schema.productDatasetReads]) assert.equal((await typed.select().from(t)).length, 0);
     await client.close();
   });
 

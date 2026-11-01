@@ -5,6 +5,7 @@ import { CodeBriefBlock, codeWriterBlock, codeWriterRules } from "@/lib/caps/cod
 import { DataBriefBlock, dataWriterBlock, dataWriterRules } from "@/lib/caps/data/brief";
 import type { CapId } from "@/lib/caps/ids";
 import { EXTENSION_WRITER_RULES, ExtensionBriefBlock } from "@/lib/caps/extension/brief";
+import { FilesBriefBlock, filesWriterBlock, filesWriterRules } from "@/lib/caps/files/brief";
 import { GAMES_WRITER_RULES, GamesBriefBlock } from "@/lib/caps/games/brief";
 import { MediaBriefBlock, mediaWriterRules } from "@/lib/caps/media/brief";
 import { mediaPartsOn } from "@/lib/caps/media/catalog";
@@ -21,6 +22,7 @@ import { RUNTIME_WRITER_RULES, RuntimeBriefBlock } from "@/lib/caps/runtime/brie
  */
 export const CAP_BRIEF_FIELDS = {
   data: DataBriefBlock,
+  files: FilesBriefBlock,
   connect: ConnectBriefBlock,
   media: MediaBriefBlock,
   code: CodeBriefBlock,
@@ -44,6 +46,8 @@ export function briefCaps(brief: object): CapId[] {
 export const CAP_WRITER_RULES: Partial<Record<CapId, readonly string[] | (() => readonly string[])>> = {
   // Unit 3: they follow DATA_SIGN_IN.
   data: () => dataWriterRules(),
+  // Unit 4: they follow FILES_SEARCH, FILES_DATASETS and DATA_SIGN_IN.
+  files: () => filesWriterRules(),
   // Unit 5: they follow CONNECT_VAULT and CONNECT_SENDS.
   connect: () => connectWriterRules(connectOptions()),
   // Unit 8: the media cap names only the parts whose flags are on, read when the instructions are built.
@@ -73,6 +77,8 @@ export function capsWriterRules(enabled: readonly CapId[]): string {
 const CAP_WRITER_BRIEF_FIELDS: Partial<Record<CapId, { stored: z.ZodTypeAny; writer: () => z.ZodTypeAny }>> = {
   // Unit 3: with DATA_SIGN_IN off, no user collections and no sign-in.
   data: { stored: DataBriefBlock, writer: () => dataWriterBlock() },
+  // Unit 4: with DATA_SIGN_IN off no user scope, and datasets only from the vetted list while FILES_DATASETS is on.
+  files: { stored: FilesBriefBlock, writer: () => filesWriterBlock() },
   // Unit 5: only allowlisted ids, and no keys or sends while their switches are off.
   connect: { stored: ConnectBriefBlock, writer: () => connectWriterBlock(connectOptions()) },
   // Unit 9: with CODE_EXEC off, no exec runtime.

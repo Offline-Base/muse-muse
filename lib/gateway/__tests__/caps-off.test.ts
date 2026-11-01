@@ -12,6 +12,7 @@ import { handleFetch, handleSend, handleVault, type ConnectDeps } from "@/lib/ca
 import { handleData, handleIdentityUser, handleIdentityUserLink, handleIdentityUserTest, type DataDeps } from "@/lib/caps/data/handler";
 import { handlePasskey, type PasskeyDeps } from "@/lib/caps/data/passkeys";
 import { handleAsset, type AssetsDeps } from "@/lib/caps/media/assets";
+import { handleDatasets, handleFiles, handleSearch, type FilesDeps } from "@/lib/caps/files/handler";
 import { handleBrowse, handleExec, type CodeDeps } from "@/lib/caps/code/handler";
 import { env } from "@/lib/env";
 
@@ -35,6 +36,24 @@ const dataOff = (): DataDeps => ({
   rules: untouched<DataDeps["rules"]>("rules"),
   platformUrl: "https://platform.example",
   productSlug: untouched<DataDeps["productSlug"]>("productSlug"),
+});
+
+/** Unit 4's deps with the real flags and every other dependency failing the test if it's touched. */
+const filesOff = (): FilesDeps => ({
+  servedCaps: () => env.servedCaps,
+  searchOn: () => env.filesSearch,
+  datasetsOn: () => env.filesDatasets,
+  findToken: untouched<FilesDeps["findToken"]>("findToken"),
+  product: untouched<FilesDeps["product"]>("product"),
+  adminEmails: [],
+  hitRateLimits: untouched<FilesDeps["hitRateLimits"]>("hitRateLimits"),
+  store: new Proxy({} as FilesDeps["store"], { get: (_t, k) => untouched(`store.${String(k)}`) }),
+  blob: new Proxy({} as FilesDeps["blob"], { get: (_t, k) => untouched(`blob.${String(k)}`) }),
+  quotas: untouched<FilesDeps["quotas"]>("quotas"),
+  rule: untouched<FilesDeps["rule"]>("rule"),
+  fileById: untouched<FilesDeps["fileById"]>("fileById"),
+  datasets: untouched<FilesDeps["datasets"]>("datasets"),
+  gatewayUrl: "https://platform.example/api/gateway",
 });
 
 /** Unit 5's deps with the real flags and every other dependency failing the test if it's touched. */
@@ -86,6 +105,17 @@ const ROUTES: Array<{ path: string; call(req: Request): Promise<Response> }> = [
   { path: "identity/user", call: (req) => handleIdentityUser(req, dataOff()) },
   { path: "identity/user/test", call: (req) => handleIdentityUserTest(req, dataOff()) },
   { path: "identity/user/link", call: (req) => handleIdentityUserLink(req, dataOff()) },
+  // Unit 4: kept files, their signed links and local uploads, search, and the vetted datasets.
+  { path: "files", call: (req) => handleFiles(req, [], filesOff()) },
+  { path: "files/ticket", call: (req) => handleFiles(req, ["ticket"], filesOff()) },
+  { path: "files/0b9a3c2e-1d4f-4a6b-8c7d-9e0f1a2b3c4d", call: (req) => handleFiles(req, ["0b9a3c2e-1d4f-4a6b-8c7d-9e0f1a2b3c4d"], filesOff()) },
+  { path: "files/0b9a3c2e-1d4f-4a6b-8c7d-9e0f1a2b3c4d/done", call: (req) => handleFiles(req, ["0b9a3c2e-1d4f-4a6b-8c7d-9e0f1a2b3c4d", "done"], filesOff()) },
+  { path: "files/0b9a3c2e-1d4f-4a6b-8c7d-9e0f1a2b3c4d/content", call: (req) => handleFiles(req, ["0b9a3c2e-1d4f-4a6b-8c7d-9e0f1a2b3c4d", "content"], filesOff()) },
+  { path: "search/index", call: (req) => handleSearch(req, ["index"], filesOff()) },
+  { path: "search/query", call: (req) => handleSearch(req, ["query"], filesOff()) },
+  { path: "search/remove", call: (req) => handleSearch(req, ["remove"], filesOff()) },
+  { path: "datasets", call: (req) => handleDatasets(req, [], filesOff()) },
+  { path: "datasets/palmer-penguins/penguins.csv", call: (req) => handleDatasets(req, ["palmer-penguins", "penguins.csv"], filesOff()) },
   // Unit 5: public APIs, the key vault and its calls, and sends.
   { path: "fetch", call: (req) => handleFetch(req, connectOff()) },
   { path: "vault", call: (req) => handleVault(req, [], connectOff()) },
@@ -140,6 +170,24 @@ describe("wave 3 gateway routes with every flag off", () => {
   }
 });
 
+describe("unit 4's other methods with every flag off", () => {
+  const ID = "0b9a3c2e-1d4f-4a6b-8c7d-9e0f1a2b3c4d";
+  for (const [method, path, parts] of [
+    ["DELETE", `files/${ID}`, [ID]],
+    ["PUT", `files/${ID}/upload`, [ID, "upload"]],
+    ["HEAD", `files/${ID}/content`, [ID, "content"]],
+    ["HEAD", "datasets/palmer-penguins/penguins.csv", null],
+  ] as const) {
+    it(`${method} /${path} answers 404 unknown_endpoint`, async () => {
+      for (const flag of CAP_IDS.map((id) => CAP_FLAG[id])) delete process.env[flag];
+      const req = new Request(`https://platform.example/api/gateway/${path}`, { method, headers: { authorization: "Bearer mm_build_anything_anything_anything" }, ...(method === "PUT" ? { body: "x" } : {}) });
+      const res = parts ? await handleFiles(req, parts, filesOff()) : await handleDatasets(req, ["palmer-penguins", "penguins.csv"], filesOff());
+      assert.equal(res.status, 404);
+      assert.equal(((await res.json()) as { error: { code: string } }).error.code, "unknown_endpoint");
+    });
+  }
+});
+
 describe("unit 3's routes with the data cap served but DATA_SIGN_IN off", () => {
   it("the sign-in routes and the platform's passkey routes answer 404 and touch nothing", async () => {
     const on: DataDeps = { ...dataOff(), servedCaps: () => ["data"], signInOn: () => false };
@@ -152,6 +200,19 @@ describe("unit 3's routes with the data cap served but DATA_SIGN_IN off", () => 
       const res = await handlePasskey(new Request(`https://platform.example/api/u/passkey/${kind}/${step}`, { method: "POST", body: "{}" }), kind, step, passkeys);
       assert.equal(res.status, 404, `${kind}/${step}`);
     }
+  });
+});
+
+describe("unit 4's routes with the files cap served but FILES_SEARCH and FILES_DATASETS off", () => {
+  it("/search and /datasets answer 404 and touch nothing, and a local upload is refused on Vercel's storage", async () => {
+    const on: FilesDeps = { ...filesOff(), servedCaps: () => ["files"], searchOn: () => false, datasetsOn: () => false };
+    for (const [path, call] of [["query", () => handleSearch(new Request("https://platform.example/api/gateway/search/query", { method: "POST", headers: { authorization: "Bearer mm_live_x" }, body: "{}" }), ["query"], on)], ["datasets", () => handleDatasets(new Request("https://platform.example/api/gateway/datasets", { headers: { authorization: "Bearer mm_live_x" } }), [], on)]] as const) {
+      const res = await call();
+      assert.equal(res.status, 404, path);
+      assert.equal(((await res.json()) as { error: { code: string } }).error.code, "unknown_endpoint");
+    }
+    const upload = await handleFiles(new Request("https://platform.example/api/gateway/files/0b9a3c2e-1d4f-4a6b-8c7d-9e0f1a2b3c4d/upload", { method: "PUT", body: "x" }), ["0b9a3c2e-1d4f-4a6b-8c7d-9e0f1a2b3c4d", "upload"], { ...on, blob: { ...on.blob, mode: () => "public" } as FilesDeps["blob"] });
+    assert.equal(upload.status, 404);
   });
 });
 

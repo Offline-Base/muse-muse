@@ -99,6 +99,18 @@
         }
       }
     },
+    "files": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope"],
+      "description": "Only for a product that keeps files through the platform: exactly the brief's files choices, which verify checks.",
+      "properties": {
+        "scope": { "enum": ["shared", "visitor", "owner", "user"] },
+        "uploads": { "enum": ["owner", "signed_in", "anyone"], "description": "Shared files only: who adds them. Default owner." },
+        "search": { "type": "boolean" },
+        "datasets": { "type": "array", "maxItems": 3, "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,47}$" } }
+      }
+    },
     "connect": {
       "type": "object",
       "additionalProperties": false,

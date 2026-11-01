@@ -378,7 +378,7 @@ Muse Code design's `code_sessions` table belongs to the Muse Muse General sessio
 | 0018 | `0018_trust` | 1 | `users.adult_confirmed_at`, `users.terms_version`, `users.terms_accepted_at`, `users.banned_at`, `users.ban_reason`; `products.taken_down_at`, `products.takedown_reason`, `products.status_before_takedown`; table `abuse_reports` | 1793431670646 |
 | 0019 | `0019_engine` | 2 | `gateway_tokens.build_id` (uuid, references builds, indexed); `builds.round_plan` (jsonb); `builds.live_check` (jsonb) | 1793431730646 |
 | 0020 | `0020_data` | 3 | tables `end_users`, `end_user_passkeys`, `product_rows`, `product_data_counts`; sequence `product_rows_seq`; `builds.caps_dropped` (2.4a) | 1793431790646 |
-| 0021 | `0021_files` | 4 | tables `product_files`, `product_search_docs` | 1793431850646 |
+| 0021 | `0021_files` | 4 | tables `product_files`, `product_search_docs`, `product_dataset_reads` (10a) | 1793431850646 |
 | 0022 | `0022_connect` | 5 | tables `product_secrets`, `product_sends`, `public_fetch_cache` | 1793431910646 |
 | 0023 | `0023_jobs` | 6 | tables `product_schedules`, `job_runs`, `product_webhooks`, `owner_notices`; `products.owner_seen_at` | 1793431970646 |
 | 0024 | `0024_code` | 9 | table `exec_runs` | 1793432030646 |
@@ -1296,6 +1296,195 @@ script `scripts/caps/mirror-datasets.ts`, the 0021 migration.
 **Guards.** Content types on an allowlist; anything that isn't an image, audio, video or PDF is served as an attachment,
 never as a page. Takedown and `productOff` delete the files. Dataset licenses must allow redistribution, and the citation
 shows the license. Needs a signed-in builder.
+
+### 10a. As built (tg-cap-files, Nov 1)
+
+Built on `tg-cap-int` at be3fe60. Every flag is off by default and `CAP_READY.files` stays false: section 22's real test
+build hasn't run (see "Not proven yet"). With every flag off the brief goldens, `flags-off-surface`, `caps-off` (now with
+unit 4's routes) and the template's `caps-off` and `playwright-off` pass unchanged, with `FILES_SEARCH`, `FILES_DATASETS`,
+`FILES_PRODUCT_MB`, `FILES_MAX_FILE_MB` and `FILES_BLOB_STORE_ID` added to their lists. No golden file changed.
+
+**Migration 0021_files** at journal index 21, `when` by section 4's rule, snapshot `meta/0021_snapshot.json` chained on
+0020's. 0024_code's snapshot is re-chained on 0021's (same id, prevId now 0021's, 0021's tables added), and drizzle-kit
+still generates 0024's SQL unchanged from it; `PENDING_WAVE3` is now 22 and 23. As planned, plus:
+- `product_search_docs` holds one row per chunk of about 4,000 characters, with `source_key` (the source as one string,
+  so indexing it again replaces it), `chunk` and `offset` (characters from the start), and a GIN index on the generated
+  `tsv` (`simple` configuration).
+- A third table, `product_dataset_reads` (`product_id`, `namespace`, `dataset_id`, `file`, `created_at`), written only for
+  build tokens, so "a dataset read shows in the gateway's record" can count reads since `?since=`. Rate limit windows
+  couldn't: the hourly prune drops them and they have no time filter.
+- `product_files.store` is the Blob mode a file was written in, so setting `FILES_BLOB_STORE_ID` later leaves older files
+  readable and deletable where they are. `product_files.ticket_key` is a keyed hash of the address that asked for a
+  pending ticket, cleared at done. `product_search_docs.added_by` is the subject key of whoever indexed a document.
+- A build's deleted file keeps its row as `gone` (no blob, no search text) until the build ends, so `uploaded` still
+  counts an upload its test deleted again. Every read skips it. A live file's row is removed.
+- All three cascade with the product. The migrations test checks a database at 0020 keeps its rows, gets the tables, finds
+  text through the generated `tsv`, and loses the rows with the product.
+
+**Storage (decision 14).** `lib/caps/files/blob.ts` picks one of three modes for each new file, and its row keeps it:
+- private: `FILES_BLOB_STORE_ID` names a private Blob store, reached with the deployment's OIDC token. The owner has to
+  make that store; nothing here creates it.
+- public, the fallback in use until then: the platform's own public store, with 128 random bits in every path
+  (`caps/files/<productId>/<live|b-<buildId>>/<id>-<32 hex>`).
+- local: `.data/files` on a local run.
+
+Uploads are presigned PUTs (`issueSignedToken` plus `presignUrl`, as inspo's uploads are), scoped to one pathname, one
+content type and at most the ticket's size, so they work with OIDC and no read-write token. Reads always go through the
+gateway's own signed link, `GET {GATEWAY_URL}/files/<id>/content?exp=&sig=` (an hour; the download choice is signed
+too). On Vercel it redirects:
+- private: to a presigned GET good for 5 minutes.
+- public: to the blob's own URL, which then works for anyone holding it until the file is deleted. That is the part
+  decision 14 says to report: the privacy page has to say so. It is unit 1's file (`lib/trust/overlay.ts`), so it is
+  unchanged here.
+
+Anything that isn't an image, audio, video or a PDF goes out as an attachment (`?download=1` at Blob, which isn't part of a
+presigned URL's signature). The allowlist has no SVG, HTML or script. A local run streams with `nosniff` and
+`Content-Security-Policy: sandbox`, and takes the upload itself at a signed `PUT /files/<id>/upload`, which answers 404 on
+Vercel.
+
+**Routes** (`lib/caps/files/handler.ts`, `app/api/gateway/{files,search,datasets}/[[...path]]`), all behind the cap gate
+except the two signed browser routes, which check the flag, the signature and the product's status themselves (the signed read limits per product and address):
+- `POST /files/ticket`, then `POST /files/<id>/done`. The done check reads the size and type at Blob. A mismatch removes
+  the blob and the row. Otherwise it hashes the bytes, stores the sha256, and marks the file ready if the totals still
+  have room, or removes it and answers `quota_exceeded`.
+- `GET /files` (100 a page, keyset cursor), `GET /files/<id>` (facts and the signed link, never the Blob path or a subject
+  key), `DELETE /files/<id>` (deleted_at, then the blob, then the row and its search chunks).
+- `POST /search/index` (1 MB of text, a `{fileId}` source must be one of the same space's ready files, an item needs a
+  title), `POST /search/query` (`websearch_to_tsquery` OR a prefix query of the words of 3 letters or more,
+  `ts_rank_cd`, a plain `ts_headline` snippet, and a citation `{source, name, offset}` whose offset is the first matched
+  word), and `POST /search/remove`. All three are under `FILES_SEARCH` too. Replacing and removing stay in the caller's own
+  space. In a shared space only the owner removes text, and someone else can replace only text they added themselves
+  (403 `cap_not_allowed`). A refused replacement leaves the old text.
+- `GET /datasets` and `GET /datasets/<id>/<file>`, under `FILES_DATASETS` too. A local run streams `.data/files`, Vercel
+  redirects to the mirror, and the answer is 503 `dataset_unavailable` until a file is mirrored. A build's read is
+  recorded once it is served. The list never shows a download or mirror address.
+
+**Scopes and who may do what** follow the data cap's principals (`resolveCapCaller`, `subjectKey`):
+- One scope per product, from the brief: a build's own brief, a live product's shipped brief (`liveBrief`). The manifest
+  can't change it.
+- Shared files: anyone on the product reads them. Who adds them is the brief's `uploads`: owner (the default), signed_in or
+  anyone. Only the owner deletes them, which is stricter than data's shared rows: a shared row has no writer key, and
+  neither has a shared file.
+- Visitor, owner and user files belong to their own person. The search index follows the same scope.
+- Limits a minute: 120 calls per token, 60 per end user's address, 30 tickets per token and 10 per address, 30 queries
+  per token, 300 signed reads per product and address, 60 dataset reads per token and per address.
+- Quotas, checked in one statement after a per-namespace advisory lock in the same batch: 500 MB and 2,000 files a product
+  (`FILES_PRODUCT_MB`), 25 MB a file (`FILES_MAX_FILE_MB`), 50 MB a visitor or user; a build's space gets 50 MB and 200
+  files.
+- Tickets hold no room in a product's totals, which count ready files, at the ticket and again at done, so tickets nobody
+  uses can't block anyone's upload. A person's own 50 MB also counts their tickets for the 15 minutes they're good. One
+  address holds at most 10 open tickets in a product, and a ticket never finished is swept after an hour. An unfinished
+  upload's bytes can sit in Blob until then, at most 250 MB an address; nothing bounds how many addresses take part except
+  the 30 tickets a minute per token.
+- The search index: 2,000 documents and 200 MB of text in a product, 200 and 20 MB in a build's, and 200 and 20 MB for one
+  visitor or user (the owner has only the product's limits).
+- The owner pass now also works while the files cap is served: one marked line each in
+  `app/api/products/[slug]/owner-pass` and `lib/tools/deps.ts`, tg-tools files, listed here for General.
+
+**Brief** `files: { holds, scope, uploads, search, datasets }`: the contract's block plus `uploads`.
+- The writer's block allows a user scope and signed_in uploads only with `DATA_SIGN_IN`, and datasets only from the vetted
+  list while `FILES_DATASETS` is on.
+- `normalizeRawBrief` gets a marked block: a user scope with no data block that signs people in becomes visitor, a private
+  scope's uploads become the owner's, search goes false while `FILES_SEARCH` is off, and unknown datasets go.
+- The catalog lists the datasets by id and license. The build prompt is `### Files and search`, in 2.6's order. It names
+  "Uploaded files stay in memory for the request", the AGENTS.md line that doesn't hold for kept files, and leaves out
+  search and datasets while their switches are off.
+
+**Datasets** (`lib/caps/files/datasets.json`, checked at load):
+- Rules: plain ids and names, each once; a size, a sha256 and a commit-pinned https download per file; a license from a
+  list that allows redistribution (CC0-1.0, CC-BY-4.0, CC-BY-SA-3.0, CC-BY-SA-4.0, ODC-PDDL-1.0, ODC-By-1.0, ODbL-1.0,
+  MIT, Apache-2.0).
+- One dataset so far: Palmer penguins (`penguins.csv`, 15,241 bytes, CC0-1.0, pinned to palmerpenguins 8957207b).
+  `scripts/caps/mirror-datasets.ts` downloaded it and its size and sha256 match (Nov 1, check mode, no upload).
+- I turned down datahub's world-cities, country-codes, airport-codes and language-codes. Their own datapackages call some
+  sources' terms unclear, or mix in LGPL data.
+- MNIST and Fashion-MNIST wait for General's verified sha256s and licenses.
+
+**CC0 3D set** ("CC0 asset manifest, v1", `~/mm-wt/_plan/3d.md`):
+- `lib/caps/files/models3d.json` is the source list: the v1 shape plus a pinned `download` per file, which
+  `publishedManifest` drops for `3d/manifest.json`. It is empty: no asset has been chosen or license-checked yet.
+- `lib/caps/files/models3d.ts` checks the rules. The manifest: CC0-1.0 only, attribution filled, the roles per kind, paths
+  under `3d/<id>/`, at most 5 MB and 50,000 triangles, metres and Y up.
+- It also reads the bytes. A GLB must be glTF 2.0 with every texture embedded and at most 2048 px, no Draco, and no
+  outside buffers. Its triangles and world bounds come from the default scene's nodes, and must match the entry, with the
+  base at y = 0 and the origin centred. Previews are WebP or JPEG at 512 px on the long side. HDRIs are RGBE, 1k or 2k
+  wide.
+- The mirror script runs the same checks before anything goes up. Nothing is mirrored: uploading waits for the
+  integration step.
+- How a product's page loads these files (the gateway, or the Blob host directly) is tg-3d's helper's choice. Nothing
+  here serves `3d/` yet.
+
+**Template** `template/caps/files` (no packages; every file a platform file):
+- `lib/platform/files.ts`: server `files(request).list / get / delete / ticket / done`, `FilesError`, and the shared
+  `gatewayCall`.
+- `lib/platform/files-browser.ts`: `uploadFile(file, { scope })`, which gets a ticket through the product's route, PUTs the
+  bytes with the ticket's headers, then calls done. Its type list matches the gateway's, and a template test compares them.
+- `lib/platform/search.ts` (`search(request).index / query / remove`), `lib/platform/datasets.ts` (`dataset(request,
+  id).info / text / bytes`, sha256 checked).
+- `components/platform/Citation.tsx` (`data-citation`, `datasetCitation(info)`, shows the license).
+- `app/api/musemuse/files` and `files/done`, plus data's `app/api/musemuse/owner` as a byte-for-byte copy. That is a third
+  allowed overlap, with one marked line each in `caps-step.test.mjs` and `caps-data.test.mjs`.
+- `tests/caps/files.ts` (`checkFiles`, `openAsOwner`), `scripts/caps/files.mjs`, and the `muse-files` skill.
+- `musemuse.schema.json` gains an optional `files` block.
+
+**Checks** (`scripts/caps/files.mjs`):
+- `manifest`: musemuse.json's files block equals the brief's choices from `CAP_PROOF.files`'s `brief:*` keys, which follow
+  the switches.
+- `uploaded`: the gateway kept a file since this verify started.
+- `upload-listed`: listed after a reload, judge shot `10-after-reload`.
+- `search-cited`, when the brief searches: a hit with a citation on screen, and the gateway indexed text.
+- `dataset-cited`, when the brief has datasets: the dataset's text and its licensed citation, and the gateway served one
+  of them. Shot `11-file-sources`.
+- Judge note: "Answers built from the person's files or a dataset show where they came from...", only when the product
+  has search or datasets.
+
+**Cleanup**:
+- A build's files, index and dataset reads go when it ends.
+- The hourly sweep removes tickets pending over 2 hours, deletes that stopped half way, and build namespaces with nothing
+  new for 24 hours. Blobs go first, so a failed blob delete is retried.
+- A takedown (unit 1) deletes the product's live files and index. A product an admin only turned off keeps them (the
+  gateway serves none of them while it's off). That is narrower than section 10's "Takedown and productOff delete the
+  files", because turning a product off can be undone.
+- The Blob backend is imported only when something is removed, so the cleanup registry stays light: the flags-off surface
+  test mocks `lib/storage`.
+
+**Tests**:
+- Platform:
+  - `lib/caps/files/__tests__/files.test.ts` (15, PGlite and a fake Blob store): tickets and done checks, the type
+    allowlist, quotas (product, person, build), each scope against each caller, shared uploaders, the build's test owner
+    pass and made-up people, signed links (tampered, old, download choice, product taken down, cap off), local uploads,
+    search chunks, prefix, offsets, replace, remove, scope privacy, the document cap, datasets local, mirrored, unmirrored
+    and recorded, the proof with `since` and switches, and cleanup.
+  - `brief.test.ts` (7) and `assets.test.ts` (8): dataset list rules; 3D manifest rules; a GLB, PNG, JPEG, WebP and HDR
+    built in the test and checked.
+  - The migrations test's 0021 case, and unit 4's routes in `caps-off.test.ts`.
+- Template: `caps-files.test.mjs` (14): paths, platform files and the owner route's bytes; the checker; the helpers,
+  routes, `uploadFile` and `dataset()` against a fake gateway; the product's `tsc` with core and files applied.
+- Full suite (Nov 1): 4,568 tests, 4,560 pass, 0 fail, 8 skipped (the live Meta tests without a key). Template: 560 tests,
+  558 pass, 0 fail, 2 skipped. tsc clean. Spend: $0 (no Meta, Sandbox, Blob or Vercel call; the only network use was the
+  mirror script's check-mode download of one 15 KB CSV from GitHub).
+
+**Not proven yet**:
+- No real test build has run (section 22's notes library). As for units 3, 8 and 9, a local run's sandbox can't reach the
+  local gateway. It needs a public `PLATFORM_URL` or the preview database, and a builder snapshot with
+  `template/caps/files` and its manifest entry.
+- Presigned PUTs and GETs against real Blob: the browser's PUT headers copy the SDK's (`x-vercel-blob-access`,
+  `x-content-type`, `x-api-version` 13, `x-vercel-blob-store-id`), and Blob's CORS for them, `?download=1` on a private
+  presigned URL, and a private store at all are untested. Only the fake store ran.
+- On Neon: the advisory-lock batch, the `simple` tsvector, `ts_headline` and `websearch_to_tsquery`. Only PGlite ran.
+- `checkFiles` in Playwright: it only typechecks. Text inside PDFs and photos isn't extracted by the platform: the product
+  does it with its own Wonder call.
+
+**For the owner**:
+1. Decision 14: make a private Blob store and set `FILES_BLOB_STORE_ID` (a store id, not a secret), or accept the public
+   fallback and have unit 1's privacy page say that a file's link works for anyone who has it, until it is deleted.
+2. Mirroring the penguins CSV (15 KB) to Blob with `scripts/caps/mirror-datasets.ts --apply` at integration.
+3. Which CC0 3D assets to vet first, then the mirror.
+4. Decision 13 for files: nothing deletes a product, so live files stay until a takedown or an admin deletes the product's
+   row.
+5. The test build, within $1.50 Meta and $0.75 Sandbox.
+
+Nothing in `muse-device/` changed.
 
 ## 11. Unit 5: connect (B)
 
@@ -2717,6 +2906,16 @@ Phaser game.
   gain `namespace`, secrets `test_hash`, sends `recipients`; REST Countries is out (deprecated); sends are email and chat only;
   the extra Composio tools aren't built (they need a Composio sync); `usage.source` gains `fetch`, `vault`, `sends`.
 - Nov 1 (integration, tg-cap-int with code): unit 9 lands after unit 8 in every registry, in plan order. 0024_code sits at journal index 24 on top of 0020, so 21, 22 and 23 stay pending (PENDING_WAVE3 in the migrations test); no branch with that gap goes near a shared database. The catalog cache key carries the media parts, then the code parts.
+- Nov 1 (integration, tg-cap-int with files): unit 4 lands before unit 5 and unit 8 in every registry, in plan order. 0021_files sits at journal index 21, between 0020 and 0022, which leaves only 23 pending (PENDING_WAVE3). 0021's snapshot is the unit's; 0022's now chains on it and carries the files tables, and 0024 carries them too. The SQL files are unchanged.
+
 - Nov 1 (integration, tg-cap-int with connect): unit 5 lands before unit 8 and unit 9 in every registry, in plan order. 0022_connect sits at journal index 22, between 0020 and 0024. 0024's snapshot is rebuilt as 0024 plus connect's three tables and chained to 0022's, and its SQL is unchanged. PENDING_WAVE3 is now 21 and 23, so no branch with that gap goes near a shared database. `usage.source` is the union of both units' words.
+
+- Nov 1 (unit 4): section 10a added. 0021 also adds `product_dataset_reads` (a build's dataset reads, for the proof) and
+  chunked search rows (`source_key`, `chunk`, `offset`); 0024's snapshot is re-chained on 0021's. The brief's files block
+  gains `uploads`; only the owner deletes shared files; a takedown deletes live files, a product only turned off keeps
+  them. New settings `FILES_BLOB_STORE_ID` and the routes `POST /search/remove`, `GET /files/<id>/content` and (local runs)
+  `PUT /files/<id>/upload`. `STORED_PREFIXES` gains `caps`, `datasets` and `3d`. The files overlay ships data's owner
+  route as an exact copy, a third allowed overlap. The owner pass also works while the files cap is served (one marked
+  line each in tg-tools' owner-pass route and `lib/tools/deps.ts`).
 
 - Oct 31: first version (unit 0).
