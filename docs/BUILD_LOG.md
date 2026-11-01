@@ -213,6 +213,8 @@ Router finding for Ethan: a request headed outside the class that both the label
 
 **21:31** Update relayed by the training session, not yet confirmed with Ethan here: he dropped the non-commercial terms, so r30b's own changes go out under Apache 2.0 and the commercial question is moot. The Muse Model License duties still apply if r30b ships ("Built with Muse Spark Open", the license and Usage Policy with any copies of the model files, users 18 or older, outputs never presented as written by a person). Coming: LICENSE, MUSE_MODEL_LICENSE.md, USAGE_POLICY.md and NOTICE; no non-commercial file.
 
+**21:37** glimmer_labels ran (01:24Z to 01:35Z, exit 2: 2 and 1 fallbacks, under the 10% rule). Glimmer labeling Muse's requests with the policy deciding: fresh_200_b 47.0% (base 50.5%), tasks 45.0% (base 47.0%), 0 leaks, approval requests 52 and 20. The tuned file labels slightly worse than base. Next: shipped_answers.
+
 ## Open items
 
 - Ethan: which mode the routing tune targets; whether to hand over stage 2 IQ1_S early.
