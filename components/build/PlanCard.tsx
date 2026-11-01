@@ -118,9 +118,29 @@ export function planViewFromBrief(brief: Brief): PlanView {
   };
 }
 
-export function PlanCard({ brief, art, running }: { brief: Brief; art: PlanArt; running: boolean }) {
+export function PlanCard({
+  brief,
+  art,
+  running,
+  artUrl = null,
+}: {
+  brief: Brief;
+  art: PlanArt;
+  running: boolean;
+  /** PLAN_ART: the picture made for this build (RoomState.planArtUrl), shown instead of the stock mascot once it's in. */
+  artUrl?: string | null;
+}) {
   // Under the card's own name, tagline and badge: the rest of the brief, written out in full.
-  return <PlanViewCard view={{ ...planViewFromBrief(brief), sections: [] }} art={art} running={running} wrap body={<BriefBody brief={brief} title={false} />} />;
+  return (
+    <PlanViewCard
+      view={{ ...planViewFromBrief(brief), sections: [] }}
+      art={art}
+      artUrl={artUrl}
+      running={running}
+      wrap
+      body={<BriefBody brief={brief} title={false} />}
+    />
+  );
 }
 
 /**
@@ -135,9 +155,16 @@ export function PlanViewCard({
   actions,
   body,
   wrap = false,
+  artUrl = null,
 }: {
   view: PlanView;
   art: PlanArt;
+  /**
+   * A picture made for this plan, shown instead of the stock mascot for every state. One there from the first render is
+   * the only picture the card loads; one that comes in later fades in over the stock mascot once it has loaded, in the
+   * same box, so nothing moves. Until then, or if it never loads, the stock mascot by state.
+   */
+  artUrl?: string | null;
   /** The plan can still change state. Then all three pictures load at once, so a swap fades with nothing to wait for. */
   running: boolean;
   more?: ReactNode;
@@ -147,7 +174,10 @@ export function PlanViewCard({
 }) {
   // Decided once: a plan that has finished keeps its picture, so it loads only that one.
   const [all] = useState(running);
-  const arts = all ? ART_ORDER : [art];
+  const [ownFirst] = useState(Boolean(artUrl));
+  const [ownLoaded, setOwnLoaded] = useState(Boolean(artUrl));
+  const own = Boolean(artUrl) && ownLoaded;
+  const arts = ownFirst && artUrl ? [] : all ? ART_ORDER : [art];
   const tagline = view.tagline?.trim() ?? "";
   return (
     <div className={wrap ? "plan-card plan-card-wrap" : "plan-card"} data-art={art}>
@@ -158,7 +188,7 @@ export function PlanViewCard({
             // eslint-disable-next-line @next/next/no-img-element
             <img
               key={a}
-              className={a === art ? "is-on" : undefined}
+              className={a === art && !own ? "is-on" : undefined}
               src={PLAN_ART[a]}
               alt=""
               width={ART_SIZE.width}
@@ -167,6 +197,19 @@ export function PlanViewCard({
               {...(a === art ? {} : { fetchPriority: "low" as const })}
             />
           ))}
+          {artUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              key="own"
+              className={own ? "is-on" : undefined}
+              src={artUrl}
+              alt=""
+              width={ART_SIZE.width}
+              height={ART_SIZE.height}
+              decoding="async"
+              onLoad={() => setOwnLoaded(true)}
+            />
+          ) : null}
         </div>
       </div>
       <div className="plan-card-head">

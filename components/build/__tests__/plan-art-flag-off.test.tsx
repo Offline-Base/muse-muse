@@ -23,6 +23,8 @@ const FROZEN = Date.parse("2026-11-01T12:00:00.000Z");
 const saved = process.env.PLAN_ART;
 
 let renders: Array<[string, () => string]> = [];
+/** The running room with a picture in its log, as the page passes it with the flag off and on. */
+let withPicture: (planArt: boolean) => string;
 const sha = (html: string) => ({ sha256: createHash("sha256").update(html).digest("hex"), length: html.length });
 
 describe("with PLAN_ART off", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
@@ -59,6 +61,28 @@ describe("with PLAN_ART off", { skip: canMock ? false : "needs --experimental-te
       });
     };
     const card = (props: object) => () => render(PlanCard as ComponentType<never>, props);
+    const { withoutPlanArt } = await import("@/lib/pipeline/plan-art");
+    withPicture = (planArt) => {
+      const f = FIXTURES.running;
+      const last = f.events.at(-1)!;
+      const events = [...f.events, { type: "plan_art" as const, url: "https://blob.example/fixtures/b1/plan-art-x1.jpg", id: last.id + 1, at: last.at }];
+      return render(BuildRoom as ComponentType<never>, {
+        build: f.build,
+        product: f.product,
+        inspiration,
+        events: planArt ? events : withoutPlanArt(events),
+        history: [],
+        tokens,
+        canRefine: false,
+        canSteer: false,
+        signedIn: true,
+        origin: "https://musemuse.example",
+        serverNow: Date.parse(f.build.startedAt) + 60_000,
+        focusRefine: false,
+        rebuild: null,
+        maxFixRounds: 3,
+      });
+    };
     renders = [
       ["build room: running", () => room("running")],
       ["build room: failed", () => room("failed")],
@@ -94,5 +118,15 @@ describe("with PLAN_ART off", { skip: canMock ? false : "needs --experimental-te
     for (const name of Object.keys(golden)) assert.deepEqual(off[name], golden[name], `${name} changed with the flag off`);
     process.env.PLAN_ART = "1";
     for (const [name, fn] of renders) assert.deepEqual(sha(fn()), golden[name], `${name} reads the flag`);
+  });
+
+  it("shows the stock mascot for a picture made while the flag was on, as the page leaves it out of the log", () => {
+    if (process.env.PLAN_ART_GOLDEN_WRITE === "1") return;
+    const golden = JSON.parse(readFileSync(FIXTURE, "utf8")) as Record<string, { sha256: string; length: number }>;
+    assert.deepEqual(sha(withPicture(false)), golden["build room: running"]);
+    // With the flag on, the same log shows the picture instead, in the same card.
+    const on = withPicture(true);
+    assert.match(on, /<img class="is-on" src="https:\/\/blob\.example\/fixtures\/b1\/plan-art-x1\.jpg" alt=""/);
+    assert.doesNotMatch(on, /src="\/muse\/muse-/, "a picture there from the start is the only one the card loads");
   });
 });

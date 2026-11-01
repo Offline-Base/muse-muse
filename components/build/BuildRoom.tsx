@@ -433,7 +433,7 @@ export function BuildRoom(props: BuildRoomProps) {
           {/* The plan once the brief is written, under what the build is doing: the whole brief, once in the conversation. */}
           {plan ? (
             <li className="room-plan">
-              <PlanCard brief={plan.brief} art={plan.art} running={!room.terminal} />
+              <PlanCard brief={plan.brief} art={plan.art} running={!room.terminal} artUrl={room.planArtUrl} />
             </li>
           ) : null}
 

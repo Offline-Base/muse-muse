@@ -158,6 +158,53 @@ describe("the mascot", () => {
   });
 });
 
+describe("the build's own picture (PLAN_ART)", () => {
+  const OWN = "https://blob.example/fixtures/b1/plan-art-x1.jpg";
+
+  it("reads the picture from the build's log, and has none without one", () => {
+    assert.equal(roomAt("building").planArtUrl, null);
+    const events = stamp([
+      { type: "status", status: "briefing", step: "brief" },
+      { type: "brief", brief },
+      { type: "status", status: "provisioning", step: "provision" },
+      { type: "plan_art", url: OWN },
+      { type: "status", status: "building", step: "build" },
+    ]);
+    const room = derive.deriveRoom({ ...FIXTURES.running.build, status: "queued", brief: null }, events);
+    assert.equal(room.planArtUrl, OWN);
+    const brief0 = room.segments.find((s) => s.type === "brief")!;
+    assert.equal(brief0.endAt, events[1]!.at, "it moves no turn's times");
+    assert.equal(derive.deriveRoom(FIXTURES.running.build, stamp([{ type: "plan_art", url: "javascript:alert(1)" }])).planArtUrl, null, "only a web address");
+  });
+
+  it("shows it instead of the stock mascot for every state, in the same box, decorative", () => {
+    for (const art of ["present", "building", "shield"] as const) {
+      for (const running of [true, false]) {
+        const html = card({}, { art, running, artUrl: OWN });
+        assert.equal(count(html, "<img"), 1, `${art}, running ${running}: only its own picture loads`);
+        assert.match(html, new RegExp(`<div class="plan-card plan-card-wrap" data-art="${art}"><div class="plan-card-art"><div class="plan-card-stack"><img class="is-on" src="${OWN.replace(/[./]/g, "\\$&")}" alt="" width="564" height="640" decoding="async"/></div></div>`));
+      }
+    }
+  });
+
+  it("is exactly today's card until the picture comes in", () => {
+    for (const art of ["present", "building", "shield"] as const) {
+      for (const running of [true, false]) {
+        assert.equal(card({}, { art, running, artUrl: null }), card({}, { art, running }), `${art}, running ${running}`);
+      }
+    }
+  });
+
+  it("puts it in the room's card once the log has it", () => {
+    const f = FIXTURES.running;
+    const last = f.events.at(-1)!;
+    const convo = conversation(page("running", { events: [...f.events, { type: "plan_art", url: OWN, id: last.id + 1, at: last.at }] }));
+    assert.match(convo, new RegExp(`<li class="room-plan"><div class="plan-card plan-card-wrap" data-art="building">.*?<img class="is-on" src="${OWN.replace(/[./]/g, "\\$&")}"`));
+    assert.doesNotMatch(convo, /src="\/muse\/muse-/);
+    assert.equal(count(convo, 'class="rich"'), 1, "still one plan in the conversation");
+  });
+});
+
 describe("the full plan", () => {
   it("names the plan and gives its tagline, then who it's for and how it works, numbered", () => {
     const html = card();
@@ -340,6 +387,14 @@ describe("the card's look", () => {
     assert.match(s, /\.plan-card \{[^}]*grid-template-columns: 112px minmax\(0, 1fr\);[^}]*"art head"\s*"body body";/);
     assert.equal(s.indexOf("float:"), s.indexOf("float: left;"), "the picture floats only in the wide rule");
     assert.ok(s.indexOf("float: left;") > s.indexOf("@container (min-width: 520px) {\n  .plan-card.plan-card-wrap"));
+  });
+
+  it("fades a picture that comes in later over the stock mascot, once it has loaded, in the same box", () => {
+    const src = readFileSync(path.join(ROOT, "components/build/PlanCard.tsx"), "utf8");
+    // The stock picture keeps is-on until the build's own has loaded, so the swap never fades to an empty box.
+    assert.match(src, /className=\{a === art && !own \? "is-on" : undefined\}/);
+    assert.match(src, /className=\{own \? "is-on" : undefined\}[\s\S]*?onLoad=\{\(\) => setOwnLoaded\(true\)\}/);
+    assert.match(css(), /\.plan-card-stack > img \{[^}]*position: absolute;[^}]*object-fit: cover;/, "every picture fills the one box");
   });
 
   it("keeps the picture's box the same size, wrapped or not, so nothing jumps", () => {

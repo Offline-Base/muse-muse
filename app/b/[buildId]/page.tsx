@@ -7,6 +7,7 @@ import { NotConnected } from "@/components/ui";
 import { env } from "@/lib/env";
 import { canActAsOwner } from "@/lib/auth";
 import { nativeActive } from "@/lib/native/active";
+import { withoutPlanArt } from "@/lib/pipeline/plan-art";
 import { currentUser, getBuildRoom, platformOrigin, rebuildRef, safeQuery } from "@/lib/queries";
 
 export const metadata: Metadata = { title: "Build room" };
@@ -42,7 +43,7 @@ export default async function BuildRoomPage({
       build={data.build}
       product={data.product}
       inspiration={data.inspiration}
-      events={data.events}
+      events={env.planArt ? data.events : withoutPlanArt(data.events)}
       history={data.history}
       tokens={data.tokens}
       canRefine={canRefine}
