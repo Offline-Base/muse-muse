@@ -1512,3 +1512,10 @@ What this record doesn't confirm:
 - No total of the Vercel Sandbox bill for Oct 31. All Sandbox figures are worst-case ledgers or agent estimates, not
   invoices.
 - Lambda and AWS totals for Oct 31 from the fine-tune session are partial snapshots, not a day total.
+
+## Nov 1: Any Meta base (TUNE_ANY_BASE, off), branch tg-tune-any-base
+
+- Admins can pick Llama 3.1, 3.2, 3.3, 4 Scout or a Glimmer build in Advanced and the full job form, or paste a repo id. Allowlist, 40-hex pin, architecture, license, size and gated access are checked on the server at the picker, Start and launch.
+- HF_TOKEN stays on the platform: a gated base's GPU gets short-lived links from POST /api/train/jobs/{id}/base-files.
+- Nothing on Llama has run on a GPU. Checked only: bases.test.ts and base.test.ts (26 pass), the recipe compiles and its family switch was exercised in Python. No tsc, no build, no browser.
+- Found: the Hub renamed r30b's repos to OfflineBase/Muse-Glimmer-30B-2026-Knowledge*; the old names redirect. isR30bRepo now takes both.

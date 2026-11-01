@@ -10,6 +10,8 @@
 import { start } from "workflow/api";
 import { env } from "@/lib/env";
 import { BASE_MODEL_PARAM, LAB_BASE_MODEL } from "@/lib/train/base";
+import { resolveBase } from "@/lib/train/base-check";
+import { askedBase, baseParams } from "@/lib/train/bases";
 import { decideRunSize, isDecideMode } from "@/lib/train/decision-datasets";
 import { gpuOptions, lambdaConfigured, limitCeilings, sweepOffReason, sweepRunning } from "@/lib/train/gate";
 import { quantParams } from "@/lib/train/hub-cards";
@@ -69,6 +71,10 @@ export interface LaunchInput {
   instanceType?: string;
   maxMinutes?: number;
   maxUsd?: number;
+  /** Another Meta base (TUNE_ANY_BASE), checked again here. Not set: the job trains on r30b. */
+  base?: { repo: string; revision?: string | null };
+  /** A tune run's instanceType is only its first choice, so a base it doesn't fit moves to a GPU it does. */
+  baseGpuAuto?: boolean;
 }
 
 /** Who starts it: the job's created_by. */
@@ -252,6 +258,23 @@ export async function launchJobRequest(input: LaunchRequest, caller: LaunchCalle
   // A job that makes a model records the base its GPU loads (lib/train/base.ts), so its pages know a Muse Spark Open
   // Derivative before any metrics arrive. Not a recipe field, so validateParams refuses it from a caller.
   if (recipe.id === ADAPTER_RECIPE || isQuantRecipe(recipe.id)) params.value[BASE_MODEL_PARAM] = LAB_BASE_MODEL;
+  // Another Meta base (docs/TRAINING.md "Any Meta base"): checked against the Hub here, every time, and pinned, and only
+  // what that check returned goes in the job's params. Off with TUNE_ANY_BASE, a base is refused.
+  let baseGpus: string[] | null = null;
+  let jobTitle = title;
+  if (input.base !== undefined && input.base !== null) {
+    if (!env.tuneAnyBase) return refuse(400, "Picking a base isn't switched on.");
+    if (recipe.id !== ADAPTER_RECIPE) return refuse(400, "Only a LoRA job takes a base.");
+    const asked = askedBase(input.base);
+    if (!asked.ok) return refuse(400, asked.error);
+    const checked = await resolveBase(asked.value!);
+    if (!checked.ok) return refuse(400, checked.error);
+    if (isDecideMode(params.value) && !checked.base.decide) return refuse(400, "Decide mode only trains on a 4-bit Muse Glimmer build: its letters and scores are measured on that model.");
+    Object.assign(params.value, baseParams(checked.base));
+    baseGpus = checked.base.gpus;
+    const prefix = checked.base.duties.namePrefix;
+    if (prefix && !title.startsWith(prefix)) jobTitle = `${prefix}${title}`.slice(0, TITLE_MAX);
+  }
   // A serve job's minutes are stored whole (serveMinutes rounds down), so the limits, the page's end time, the proxy's
   // cutoff and the GPU, which reads the same param from job.json, all count the same minutes.
   if (isServeRecipe(recipe.id)) params.value[SERVE_MINUTES_PARAM] = serveMinutes(params.value);
@@ -275,6 +298,13 @@ export async function launchJobRequest(input: LaunchRequest, caller: LaunchCalle
       return refuse(400, "That GPU isn't one this recipe can use.");
     }
     instanceType = input.instanceType;
+  }
+  // A base only runs on a GPU it fits: a tune run's first choice falls through to one, and a form's choice is refused.
+  const fits = baseGpus;
+  const gpuChoices = fits ? recipe.gpus.filter((g) => fits.includes(g.instanceType)) : recipe.gpus;
+  if (fits && instanceType && !fits.includes(instanceType)) {
+    if (input.baseGpuAuto) instanceType = fits[0];
+    else return refuse(400, "That base doesn't fit in that GPU's memory. Pick a larger one.");
   }
   const maxMinutes = limit(input.maxMinutes, "maxMinutes");
   if (!maxMinutes.ok) return refuse(400, maxMinutes.error);
@@ -313,7 +343,7 @@ export async function launchJobRequest(input: LaunchRequest, caller: LaunchCalle
   }
   const pinned = adapter.region;
   const cacheAt = pinned ? [pinned] : await preferredRegions(recipe);
-  const gpu = pinned ? pickGpu(recipe.gpus, types, instanceType, cacheAt, pinned) : pickGpu(recipe.gpus, types, instanceType, cacheAt);
+  const gpu = pinned ? pickGpu(gpuChoices, types, instanceType, cacheAt, pinned) : pickGpu(gpuChoices, types, instanceType, cacheAt);
   if (!gpu) {
     return refuse(503, "no_capacity", { options: gpuOptions(types, [recipe]), ...(pinned ? { region: pinned } : {}) });
   }
@@ -337,7 +367,7 @@ export async function launchJobRequest(input: LaunchRequest, caller: LaunchCalle
 
   const job = await createJob({
     recipe: recipe.id,
-    title,
+    title: jobTitle,
     params: params.value,
     instanceType: gpu.instanceType,
     region: gpu.region,

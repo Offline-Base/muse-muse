@@ -423,6 +423,14 @@ export const env = {
     return flag("TUNE_AUTO_PUBLISH");
   },
 
+  /**
+   * TUNE_ANY_BASE: admins may fine-tune any allowed Meta base, Llama or Glimmer (docs/TRAINING.md "Any Meta base"). Off:
+   * every job trains on r30b, and a base in a request is refused.
+   */
+  get tuneAnyBase(): boolean {
+    return flag("TUNE_ANY_BASE");
+  },
+
   // ---------- Anyone can fine-tune (General; lib/train/public, open-train.md) ----------
 
   /**

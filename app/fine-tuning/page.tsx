@@ -203,6 +203,7 @@ export default async function FineTuningPage({
         dailyUsd={env.trainDailyUsd}
         platformPublic={Boolean(callbackOrigin(env.platformUrl))}
         sweepOff={sweepOff}
+        anyBase={env.tuneAnyBase}
         datasets={datasets ? datasets.filter((d) => d.status !== "failed" && !isDatasetStalled(d, now.getTime())) : null}
         initialDatasetId={initialDatasetId}
         adapters={adapters.ok ? adapters.data : null}

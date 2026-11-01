@@ -46,9 +46,16 @@ export const USAGE_POINTS: readonly string[] = [
   "It can make up answers, and it can go along with a false premise in a question. Check what it says before you rely on it.",
 ];
 
-/** True for r30b's repo or one of its builds (-unsloth-bnb-4bit, -GGUF, -LoRA). */
+/**
+ * The name the Hub gives r30b's repos now: they were renamed with a Muse- prefix, and the old name redirects. A repo id
+ * pasted into the base picker, or read back from the Hub, can carry either, and both are Derivatives.
+ */
+export const R30B_REPO_RENAMED = "OfflineBase/Muse-Glimmer-30B-2026-Knowledge";
+
+/** True for r30b's repo or one of its builds (-unsloth-bnb-4bit, -GGUF, -LoRA), under either name. */
 export function isR30bRepo(id: unknown): boolean {
-  return typeof id === "string" && (id === R30B_REPO || id.startsWith(`${R30B_REPO}-`));
+  if (typeof id !== "string") return false;
+  return [R30B_REPO, R30B_REPO_RENAMED].some((repo) => id === repo || id.startsWith(`${repo}-`));
 }
 
 /**
@@ -74,6 +81,67 @@ export function isSparkOpenDerivative(job: DerivativeSource | null | undefined):
     isR30bRepo(job.metrics?.merge_base) ||
     isR30bRepo(job.adapterBase)
   );
+}
+
+/** The Meta model families a lab job can train on (docs/TRAINING.md, "Any Meta base"). No other family is offered anywhere. */
+export type BaseFamily = "glimmer" | "llama3" | "llama4";
+
+/** The family a repo id names, or null when it names neither Llama nor Glimmer. */
+export function familyOfRepo(id: unknown): BaseFamily | null {
+  if (typeof id !== "string") return null;
+  const name = id.slice(id.indexOf("/") + 1).toLowerCase();
+  if (name.startsWith("llama-4")) return "llama4";
+  if (name.startsWith("llama-3")) return "llama3";
+  return /^(muse-)?glimmer-/.test(name) ? "glimmer" : null;
+}
+
+/** The base's version as its license names it: "3.2" from Llama-3.2-3B-Instruct, "4" from Llama-4-Scout. */
+function llamaVersion(id: string): string {
+  return /llama-(\d(?:\.\d)?)/i.exec(id)?.[1] ?? "";
+}
+
+/** What a model's license asks wherever it is shown or shipped. */
+export interface LicenseDuties {
+  family: BaseFamily;
+  /** The line shown prominently, or null when its license asks for none (plain Glimmer). */
+  line: string | null;
+  /** What the model's name must start with, or "" when nothing. */
+  namePrefix: string;
+  /** The license and the policy, in a short sentence. */
+  license: string;
+  /** What a person must be told about it. */
+  points: readonly string[];
+}
+
+export const BUILT_WITH_LLAMA = "Built with Llama";
+
+/**
+ * Every family's license duties, from what a job records about its base. Glimmer's are as they were: r30b's models are
+ * Derivatives of Muse Spark Open, and plain Glimmer's carry Apache 2.0. Any Llama model says "Built with Llama", has a
+ * name that starts with Llama-, and ships its version's Community License and Acceptable Use Policy, which the Hub
+ * steps read from Meta's own repo. Fails toward the stricter wording: a record naming Llama is Llama.
+ */
+export function licenseDuties(job: DerivativeSource | null | undefined): LicenseDuties {
+  const recorded = [job?.params?.[BASE_MODEL_PARAM], job?.metrics?.base_model, job?.adapterBase].find((v) => familyOfRepo(v)?.startsWith("llama"));
+  if (typeof recorded === "string") {
+    const version = llamaVersion(recorded);
+    const family = familyOfRepo(recorded)!;
+    return {
+      family,
+      line: BUILT_WITH_LLAMA,
+      namePrefix: "Llama-",
+      license: `The Llama ${version} Community License and its Acceptable Use Policy apply.`,
+      points: [
+        "Its answers are written by a model. Check what it says before you rely on it.",
+        "The Acceptable Use Policy lists what it may not be used for, and any copy you share has to carry the license.",
+        ...(family === "llama4" ? ["Llama 4's license grants no rights to its multimodal models to people or companies based in the European Union."] : []),
+      ],
+    };
+  }
+  if (isSparkOpenDerivative(job)) {
+    return { family: "glimmer", line: BUILT_WITH_SPARK_OPEN, namePrefix: "", license: "The Muse Model License and its Usage Policy apply.", points: USAGE_POINTS };
+  }
+  return { family: "glimmer", line: null, namePrefix: "", license: "Apache 2.0 applies, the license of Muse Glimmer 30B.", points: [] };
 }
 
 /** What a comparison calls the model a job started from, mid-sentence: r30b for a Derivative, else base Glimmer. */

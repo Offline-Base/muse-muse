@@ -283,7 +283,7 @@ async function plan(caller: TrainJobRow, target: TrainJobRow, body: Record<strin
     const dataset = datasetId ? await getDataset(datasetId) : null;
     if (!dataset) return skip(null, "The adapter's dataset is gone, so its card can't say what it learned.");
     const namespace = env.hfNamespace!;
-    id = target.hub?.modelRepo || `${namespace}/${modelRepoName(dataset.title, target.id)}`;
+    id = target.hub?.modelRepo || `${namespace}/${modelRepoName(dataset.title, target.id, target.params?.baseModel)}`;
     if (!validRepoName(id.split("/")[1] ?? "")) return skip(null, "The model repo's name isn't one the Hub takes.");
   }
   const repo: HubRepo = { type: "model", id };

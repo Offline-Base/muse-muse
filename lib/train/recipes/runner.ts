@@ -1122,6 +1122,18 @@ class Context:
         say("uploaded " + name)
         return url
 
+    def base_files(self):
+        """A gated base's files (POST /base-files): [{path, url or inline, sha256, size}]. The links work with no credential
+        while they live, so they are blanked out of the log from here on. The platform keeps the Hub token."""
+        status, payload = self._platform.post("/base-files", {}, retry_statuses=(429, 500, 502, 504))
+        if status != 200 or not isinstance(payload, dict) or not isinstance(payload.get("files"), list):
+            reason = payload.get("error") if isinstance(payload, dict) else None
+            raise RuntimeError("The platform wouldn't list the gated base's files: " + str(reason or status)[:300])
+        for f in payload["files"]:
+            if f.get("url"):
+                self._platform.hide(f["url"], "[base file link]")
+        return payload["files"]
+
     def hub_upload(self, folder, for_job=None):
         """Sends folder's files to the Hugging Face Hub's storage for the platform to commit (docs/TRAINING.md, "Hugging
         Face Hub"). The platform holds the Hub token and never sends it here.

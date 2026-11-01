@@ -34,7 +34,8 @@ import { modelLabel } from "@/lib/format";
 import { metaPlatform } from "@/lib/meta/platform";
 import { fromResponsesUsage } from "@/lib/meta/pricing";
 import { spendPaused } from "@/lib/quota";
-import { isSparkOpenDerivative, LAB_MERGE_BASE, recordedBase } from "@/lib/train/base";
+import { BASE_MODEL_PARAM, isSparkOpenDerivative, LAB_MERGE_BASE, licenseDuties, recordedBase } from "@/lib/train/base";
+import { llamaLicenseFiles } from "@/lib/train/base-check";
 import {
   commit,
   createRepo,
@@ -230,7 +231,7 @@ function namespace(): string {
 
 /** The model repo: the one the GPU's plan made, else the name it would have. */
 function modelRepoOf(job: TrainJobRow, hub: HubState, datasetTitle: string): HubRepo {
-  return { type: "model", id: hub.modelRepo || `${namespace()}/${modelRepoName(datasetTitle, job.id)}` };
+  return { type: "model", id: hub.modelRepo || `${namespace()}/${modelRepoName(datasetTitle, job.id, job.params?.[BASE_MODEL_PARAM])}` };
 }
 
 function datasetRepoOf(hub: HubState, dataset: { id: string; title: string }): HubRepo {
@@ -673,7 +674,10 @@ export async function hubModelStep(jobId: string, claim: string): Promise<{ repo
   if (!hubUploaded(hub)) throw new FatalError("Not every one of the adapter's files is on Hugging Face.");
   // The card is read under the visibility hubFinishStep gives the model repo: public with HF_PUBLIC on.
   const { facts, items, modelRepo } = await cardFactsOf(job, hub, dataset, env.hfPublic);
-  await fromHub(() => createRepo(modelRepo, { license: "apache-2.0" }));
+  // A Llama adapter ships its version's license and use policy, or doesn't ship.
+  const llama = licenseDuties({ adapterBase: facts.template.model }).family !== "glimmer" ? await llamaLicenseFiles(facts.template.model) : null;
+  if (typeof llama === "string") throw new FatalError(`The adapter isn't published: ${llama}`);
+  await fromHub(() => createRepo(modelRepo, llama ? {} : { license: "apache-2.0" }));
   // Only a job published before, publishing again with HF_PUBLIC on, commits to a public repo.
   if ((!hub.publishedAt || !env.hfPublic) && (await fromHub(() => repoVisibility(modelRepo))) === "public") {
     await fromHub(() => setVisibility(modelRepo, "private"));
@@ -699,11 +703,12 @@ export async function hubModelStep(jobId: string, claim: string): Promise<{ repo
     if (problem) throw new FatalError(`The adapter isn't published: ${problem}.`);
     small.push({ path, content: path === "adapter_config.json" ? normalizedAdapterConfig(bytes, facts.template.model, facts.revision) : bytes });
   }
-  const license = await fromHub(() => fetchPublicText(rawUrl({ type: "model", id: GLIMMER_ORIGIN }, "LICENSE")));
-  if (!/apache license/i.test(license)) throw new FatalError(`The base model's LICENSE at ${GLIMMER_ORIGIN} isn't the Apache License any more.`);
+  const license = llama ? llama.license : await fromHub(() => fetchPublicText(rawUrl({ type: "model", id: GLIMMER_ORIGIN }, "LICENSE")));
+  if (!llama && !/apache license/i.test(license)) throw new FatalError(`The base model's LICENSE at ${GLIMMER_ORIGIN} isn't the Apache License any more.`);
   const files: PlatformFile[] = [
     { path: "README.md", content: Buffer.from(modelCard(facts), "utf8") },
     { path: "LICENSE", content: Buffer.from(license, "utf8") },
+    ...(llama ? [{ path: "USE_POLICY.md", content: Buffer.from(llama.policy, "utf8") }] : []),
     ...derivativeFiles(facts.sparkOpen === true),
     { path: "muse_muse_run.json", content: Buffer.from(`${JSON.stringify(runRecord(facts, items, hub.storyBy ?? "template", hub.storyModel ?? null), null, 2)}\n`, "utf8") },
     ...small,

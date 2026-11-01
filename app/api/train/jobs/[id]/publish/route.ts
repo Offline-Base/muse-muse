@@ -61,7 +61,7 @@ async function hubPreflight(job: TrainJobRow): Promise<Response | null> {
   const datasetId = typeof job.params?.datasetId === "string" ? job.params.datasetId : "";
   const dataset = datasetId ? await getDataset(datasetId) : null;
   if (!dataset) return errorJson(409, "not_publishable", { reason: "Its dataset is gone, so its card can't say what it learned." });
-  const id = job.hub?.modelRepo || `${env.hfNamespace}/${modelRepoName(dataset.title, job.id)}`;
+  const id = job.hub?.modelRepo || `${env.hfNamespace}/${modelRepoName(dataset.title, job.id, job.params?.baseModel)}`;
   if (!validRepoName(id.split("/")[1] ?? "")) return errorJson(409, "not_publishable", { reason: "The model repo's name isn't one the Hub takes." });
   try {
     await createRepo({ type: "model", id }, { license: "apache-2.0" });
