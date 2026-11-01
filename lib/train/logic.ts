@@ -116,7 +116,7 @@ const ARTIFACT_URL_MAX = 2000;
 export type TrainJobRow = typeof trainingJobs.$inferSelect;
 
 /** A training_datasets row without its examples or decision rows, which can run to megabytes. */
-export type DatasetHead = Omit<typeof trainingDatasets.$inferSelect, "train" | "eval" | "decisionRows">;
+export type DatasetHead = Omit<typeof trainingDatasets.$inferSelect, "train" | "eval" | "decisionRows" | "grounding">;
 
 /** What decideCheck needs from a job. A training_jobs row has all of it. */
 export interface JobState {

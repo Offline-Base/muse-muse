@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { isSparkOpenDerivative, licenseDuties, PLAIN_GLIMMER_MODEL } from "../base";
-import { resolveBase } from "../base-check";
+import { gatedBaseFiles, resolveBase } from "../base-check";
 import { askedBase, checkFacts, GATED_REFUSAL, repoProblem, type HubFacts } from "../bases";
 import { GLIMMER_PY } from "../recipes/glimmer";
 
@@ -134,5 +134,29 @@ describe("the recipe", () => {
     assert.ok(GLIMMER_PY.includes("<|header_start|>assistant<|header_end|>\\n\\n"));
     assert.ok(GLIMMER_PY.includes("use_exact_model_name=True"));
     assert.ok(!/lfm/i.test(GLIMMER_PY));
+  });
+});
+
+describe("the review's rules", () => {
+  it("a Glimmer build other than r30b must say Apache 2.0", () => {
+    const glimmer = { architectures: ["MuseGlimmerForConditionalGeneration"], bytes: 18e9, params: 29e9 };
+    assert.equal(checkFacts(facts({ ...glimmer, id: "unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit", license: "apache-2.0" })).ok, true);
+    assert.equal(checkFacts(facts({ ...glimmer, id: "unsloth/Muse-Glimmer-30B-other", license: "other" })).ok, false);
+    assert.equal(checkFacts(facts({ ...glimmer, id: "OfflineBase/Muse-Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit", license: "other" })).ok, true);
+  });
+
+  it("a gated small file redirecting within the Hub goes inline, never as a link to the GPU", async () => {
+    const calls: string[] = [];
+    const fake = (async (url: string) => {
+      calls.push(url);
+      if (url.includes("/tree/")) return Response.json([{ type: "file", path: "config.json", size: 2 }, { type: "file", path: "model.safetensors", size: 9, lfs: { oid: "abc" } }]);
+      if (url.includes("/resolve/") && url.endsWith("config.json")) return new Response(null, { status: 307, headers: { location: "/api/resolve-cache/models/x/config.json" } });
+      if (url.includes("/resolve-cache/")) return new Response("{}");
+      return new Response(null, { status: 302, headers: { location: "https://cas-bridge.xethub.hf.co/signed" } });
+    }) as unknown as typeof fetch;
+    const files = await gatedBaseFiles("meta-llama/Llama-3.2-3B-Instruct", SHA, { fetch: fake, token: "made-up" });
+    assert.equal(files?.[0]?.url, undefined);
+    assert.equal(files?.[0]?.inline, Buffer.from("{}").toString("base64"));
+    assert.equal(files?.[1]?.url, "https://cas-bridge.xethub.hf.co/signed");
   });
 });

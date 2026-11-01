@@ -55,7 +55,7 @@ export function howItsMade(s: Pick<TuneSettings, "examples" | "base">, c: Pick<T
       ? `${s.base.repo} at commit ${s.base.revision.slice(0, 12)} trains on one GPU, ${roughMinutes(c.trainMinutes)}.`
       : `${R30B_NAME}, Muse Muse's own (huggingface.co/${R30B_REPO}), trains on one GPU, ${roughMinutes(c.trainMinutes)}.`,
     `${s.base ? "The base" : "The 2026 Glimmer it started from"} and the tuned model answer the ${kept} kept-aside prompts, and ${WRITER_NAME} scores both.`,
-    "Try it live, then publish it if you like.",
+    s.base ? "Publish it if you like. Trying it live and local files only work on the 2026 Glimmer, so this base has neither." : "Try it live, then publish it if you like.",
   ];
 }
 

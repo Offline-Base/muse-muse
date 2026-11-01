@@ -118,9 +118,16 @@ export async function gatedBaseFiles(repo: string, revision: string, deps: BaseC
   let inlined = 0;
   for (const f of listed) {
     if (f.type !== "file" || !GATED_FILE.test(f.path)) continue;
-    const res = await read(fetcher, `${HUB}/${repo}/resolve/${revision}/${f.path}`, { redirect: "manual", headers: auth });
-    const to = res.headers.get("location");
+    let res = await read(fetcher, `${HUB}/${repo}/resolve/${revision}/${f.path}`, { redirect: "manual", headers: auth });
+    let to = res.headers.get("location");
     const sha256 = f.lfs?.oid ?? null;
+    // A small file redirects within the Hub (/api/resolve-cache/...), and that address still wants the token, so it is
+    // read here and sent inline. Only a link to the Hub's file storage goes to the GPU.
+    if (res.status >= 300 && res.status < 400 && to && new URL(to, HUB).origin === HUB) {
+      res = await read(fetcher, new URL(to, HUB).toString(), { redirect: "manual", headers: auth });
+      to = res.headers.get("location");
+      if (res.status >= 300 && res.status < 400 && to && new URL(to, HUB).origin === HUB) return null;
+    }
     if (res.status >= 300 && res.status < 400 && to) {
       out.push({ path: f.path, size: f.size, sha256, url: new URL(to, HUB).toString() });
     } else if (res.ok) {

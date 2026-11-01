@@ -890,7 +890,7 @@ export async function setJudgeModel(jobId: string, model: string): Promise<void>
 
 const datasets = schema.trainingDatasets;
 // A decision dataset's rows (decision_rows) can run to megabytes too: only decisionSplitRows reads them.
-const { train: _train, eval: _eval, decisionRows: _decisionRows, ...datasetHeadColumns } = getTableColumns(datasets);
+const { train: _train, eval: _eval, decisionRows: _decisionRows, grounding: _grounding, ...datasetHeadColumns } = getTableColumns(datasets);
 
 export interface NewDataset {
   title: string;

@@ -6,7 +6,7 @@
  * Only r30b and the original Muse Glimmer 30B have ever run on a GPU here. Every Llama path comes from Unsloth's and the
  * Hub's public pages, and the plan says so.
  */
-import { familyOfRepo, LAB_BASE_MODEL, LAB_BASE_REVISION, licenseDuties, PLAIN_GLIMMER_MODEL, PLAIN_GLIMMER_REVISION, type BaseFamily, type LicenseDuties } from "@/lib/train/base";
+import { familyOfRepo, isR30bRepo, LAB_BASE_MODEL, LAB_BASE_REVISION, licenseDuties, PLAIN_GLIMMER_MODEL, PLAIN_GLIMMER_REVISION, type BaseFamily, type LicenseDuties } from "@/lib/train/base";
 
 export const REPO_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,95}\/[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/;
 export const COMMIT_RE = /^[0-9a-f]{40}$/;
@@ -67,6 +67,11 @@ const MIN_SCALE = 0.5;
 /** The repos that have run on a GPU here, at the commits they ran. */
 const MEASURED: Readonly<Record<string, string>> = { [LAB_BASE_MODEL]: LAB_BASE_REVISION, [PLAIN_GLIMMER_MODEL]: PLAIN_GLIMMER_REVISION };
 
+/** True when this repo at this commit has run on a GPU here. */
+export function baseMeasured(repo: string, revision: string): boolean {
+  return MEASURED[repo] === revision;
+}
+
 /** What the Hub says about a repo at a commit. */
 export interface HubFacts {
   id: string;
@@ -122,6 +127,8 @@ export function checkFacts(f: HubFacts): BaseCheck {
   const license = f.license?.toLowerCase() ?? null;
   if (family === "llama3" && !license?.startsWith("llama3")) return no(`Its Hub page says the license is ${license ?? "unknown"}, not a Llama license.`);
   if (family === "llama4" && license !== "other" && !license?.startsWith("llama4")) return no(`Its Hub page says the license is ${license ?? "unknown"}, not a Llama license.`);
+  // Only r30b's builds carry the Muse Spark Open duties, so any other Glimmer has to be what the plain duties say it is.
+  if (family === "glimmer" && !isR30bRepo(f.id) && license !== "apache-2.0") return no(`Its Hub page says the license is ${license ?? "unknown"}, and a Muse Glimmer build here is r30b or Apache 2.0.`);
   if (!f.bytes || !f.params) return no("It has no safetensors weights, and training needs them.");
   if (!f.quantized && f.bytes > MAX_UNQUANTIZED_BYTES) {
     return no(`Its 16-bit weights are ${Math.round(f.bytes / 1e9)} GB, too large to download and quantize on a job. Pick its 4-bit build.`);
@@ -130,7 +137,7 @@ export function checkFacts(f: HubFacts): BaseCheck {
   const memoryGb = Math.ceil((loaded * TRAIN_MEMORY_FACTOR) / 1e9);
   const gpus = BASE_GPUS.filter((g) => memoryGb <= g.memoryGb * MEMORY_MARGIN).map((g) => g.instanceType);
   if (!gpus.length) return no(`It needs about ${memoryGb} GB of GPU memory to train in 4-bit, and the largest GPU here has ${BASE_GPUS[BASE_GPUS.length - 1]!.memoryGb} GB.`);
-  const measured = MEASURED[f.id] === f.sha;
+  const measured = baseMeasured(f.id, f.sha);
   const glimmer = family === "glimmer";
   return {
     ok: true,

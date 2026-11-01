@@ -240,7 +240,13 @@ function datasetRepoOf(hub: HubState, dataset: { id: string; title: string }): H
 
 /** The story's facts, from the records: the dataset's title, task and writer, and the admin's why. */
 function storyFactsOf(job: TrainJobRow, hub: HubState, dataset: { title: string; task: string; writerModel?: string | null }): StoryFacts {
-  return { datasetTitle: dataset.title, task: dataset.task, why: effectiveWhy(hub, job.params), writerModel: dataset.writerModel ?? null };
+  return { datasetTitle: dataset.title, task: dataset.task, why: effectiveWhy(hub, job.params), writerModel: dataset.writerModel ?? null, ...llamaName(job) };
+}
+
+/** A Llama base's repo name for the story. The story's model is told about a 30B Glimmer, so these get the template's. */
+function llamaName(job: TrainJobRow): { baseName?: string } {
+  const repo = job.params?.[BASE_MODEL_PARAM];
+  return typeof repo === "string" && licenseDuties({ adapterBase: repo }).family !== "glimmer" ? { baseName: repo } : {};
 }
 
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : typeof v === "string" && v.trim() && Number.isFinite(Number(v)) ? Number(v) : null);
@@ -584,7 +590,8 @@ export async function hubStoryStep(jobId: string, claim: string): Promise<{ by: 
   let story: string | null = null;
   let note: string;
   let costUsd = 0;
-  if (!process.env.MODEL_API_KEY) note = "MODEL_API_KEY isn't set";
+  if (facts.baseName) note = "the story's model only knows the Glimmer card";
+  else if (!process.env.MODEL_API_KEY) note = "MODEL_API_KEY isn't set";
   else if (await fromDb(() => spendPaused())) note = "the platform's daily spend cap is reached";
   else {
     let usage: ModelUsage[] = [];

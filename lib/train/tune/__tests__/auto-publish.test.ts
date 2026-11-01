@@ -37,9 +37,11 @@ describe("what ownerRowsProblem reads", () => {
 });
 
 describe("keepDatasetPrivate", () => {
-  it("is only Spark 1.3 Contributor's datasets", () => {
+  it("is Spark 1.3 Contributor's datasets and imported rows", () => {
     assert.equal(keepDatasetPrivate({ writerModel: SPARK_STANDIN }), true);
     assert.equal(keepDatasetPrivate({ writerModel: "muse-wonder-1.0" }), false);
     assert.equal(keepDatasetPrivate({ writerModel: null }), false);
+    assert.equal(keepDatasetPrivate({ writerModel: "public" }), true, "imported rows");
+    assert.equal(keepDatasetPrivate({ writerModel: "public", kind: "decision" }), false, "Muse Decide's public mix, as before");
   });
 });

@@ -1519,8 +1519,27 @@ What this record doesn't confirm:
 - HF_TOKEN stays on the platform: a gated base's GPU gets short-lived links from POST /api/train/jobs/{id}/base-files.
 - Nothing on Llama has run on a GPU. Checked only: bases.test.ts and base.test.ts (26 pass), the recipe compiles and its family switch was exercised in Python. No tsc, no build, no browser.
 - Found: the Hub renamed r30b's repos to OfflineBase/Muse-Glimmer-30B-2026-Knowledge*; the old names redirect. isR30bRepo now takes both.
+
 ## Nov 1: data research for fine-tunes (branch tg-tune-research, unmerged)
 
 - Built `TUNE_RESEARCH` (off): durable workflow on Muse Wonder with Meta's web_search only, a report whose sources can only point at the search's own links, picks as writer notes, and import of license-clear rows with the PII scan. Docs: TRAINING.md "Data research".
 - Decision: migration 0029 (additive), since a report needs a durable row. Any personal data the scan finds refuses the whole source, the strict reading of "sources with personal data are not importable".
 - Measured: only the rule tests (lib/train/research/__tests__/research.test.ts). No call to Meta or a real source has run, so the cost estimate is unmeasured.
+
+## Nov 1: both merged into tg-tune-bases, reviewed
+
+- Merged tg-tune-any-base and tg-tune-research. Only BUILD_LOG.md conflicted. Migration 0029 is the research one, and the only one.
+- Fixes from the review:
+  - A gated base's small files redirect within the Hub (read for real on a public repo: 307 to /api/resolve-cache), so the GPU would have got links that need the token. They now go inline.
+  - keepDatasetPrivate had started matching Muse Decide's public mix too, which changed behavior with the flags off. It now skips decision datasets.
+  - Llama model repos were still created tagged apache-2.0 in the publish preflight and the hub route.
+  - A Llama card's template story said Muse Glimmer 30B, and the story's model is told about a 30B Glimmer. Llama cards now use the template, naming the repo.
+  - A Glimmer build that isn't r30b must say apache-2.0 on the Hub, or the plain duties could be wrong.
+  - The plan promised Try it live on bases that serving refuses.
+  - A run's room said "never run" of plain Glimmer.
+  - A card's revision now falls back to the job's pin, not Glimmer's.
+  - A run sent with no steps is refused up front if the default doesn't fit its base, before examples are paid for.
+  - grounding is out of the dataset head and every view.
+  - TUNE_RESEARCH added to .env.example.
+- Run: tsc, and the rule test files for research, bases, base, auto-publish, datasets and hub-cards. Not run: the full suite, next build, a browser, any call to Meta, Lambda or a GPU. Read from the Hub's public API only.
+- Not proven: no Llama path has run on a GPU, no research run has called Meta, costs are estimates.

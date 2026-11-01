@@ -166,7 +166,7 @@ const COMMIT = /^[0-9a-f]{40}$/;
 export function recordedBase(job: Pick<DerivativeSource, "params" | "metrics"> | null | undefined): { model: string; revision: string | null } {
   const named = [job?.params?.[BASE_MODEL_PARAM], job?.metrics?.base_model].find((v): v is string => typeof v === "string" && REPO_ID.test(v));
   const model = named ?? PLAIN_GLIMMER_MODEL;
-  const recorded = job?.metrics?.base_revision;
+  const recorded = job?.metrics?.base_revision ?? job?.params?.baseRevision;
   const pinned = model === LAB_BASE_MODEL ? LAB_BASE_REVISION : model === PLAIN_GLIMMER_MODEL ? PLAIN_GLIMMER_REVISION : null;
   return { model, revision: typeof recorded === "string" && COMMIT.test(recorded) ? recorded : pinned };
 }

@@ -318,6 +318,8 @@ export interface StoryFacts {
   why: string | null;
   /** The dataset's writer_model: null or absent means Muse Spark 1.3, which wrote every dataset before it was recorded. */
   writerModel?: string | null;
+  /** The base's name when it isn't Glimmer: the template's story says it, and no model writes this story. */
+  baseName?: string | null;
 }
 
 export const STORY_INSTRUCTIONS = [
@@ -468,7 +470,7 @@ export function taskSentence(task: string): string {
  * The counts and the result follow it in the card.
  */
 export function templateStory(f: StoryFacts): string {
-  return `Muse Muse turns an example or some inspo into a working product on Meta's models. This adapter teaches ${GLIMMER_NAME}, an open model anyone can download and run on their own GPU, to do one task the way ${writerName(f)} does it: ${taskSentence(f.task)}. That way the task can run on a model you host yourself.`;
+  return `Muse Muse turns an example or some inspo into a working product on Meta's models. This adapter teaches ${f.baseName ?? GLIMMER_NAME}, an open model anyone can download and run on their own GPU, to do one task the way ${writerName(f)} does it: ${taskSentence(f.task)}. That way the task can run on a model you host yourself.`;
 }
 
 /** A dataset's writer as a card names it, from its writer_model: "Muse Wonder", or "Muse Spark 1.3" for one with none. */
@@ -1331,8 +1333,9 @@ export function hubJobProblem(job: Pick<TrainJobRow, "recipe" | "status" | "para
  * True when a dataset's repo stays private while its model may go to the Hub: Spark 1.3 Contributor wrote it, or its rows
  * were imported from a public source (data research), whose own license and attribution the dataset card doesn't carry.
  */
-export function keepDatasetPrivate(dataset: { writerModel?: string | null }): boolean {
-  return dataset.writerModel === SPARK_STANDIN || dataset.writerModel === PUBLIC_WRITER;
+export function keepDatasetPrivate(dataset: { writerModel?: string | null; kind?: string | null }): boolean {
+  // A decision dataset's "public" is Muse Decide's public mix, which publishes as it always has.
+  return dataset.writerModel === SPARK_STANDIN || (dataset.writerModel === PUBLIC_WRITER && dataset.kind !== "decision");
 }
 
 /**

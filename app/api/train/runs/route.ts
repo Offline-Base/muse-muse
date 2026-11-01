@@ -5,7 +5,7 @@ import { errorJson, readJson, route } from "@/lib/http";
 import { spendPaused } from "@/lib/quota";
 import { buildForTune } from "@/lib/train/tune/build-source";
 import { tuneCaller, tuneExamplesMax } from "@/lib/train/tune/caller";
-import { askedExamples, askedSteps, maxStepsFor, planCost, planSettings, verifyPlan } from "@/lib/train/tune/plan";
+import { askedExamples, askedSteps, maxStepsFor, planCost, planSettings, TUNE_STEPS, verifyPlan } from "@/lib/train/tune/plan";
 import { startTuneRun, TuneStartError } from "@/lib/train/tune/start";
 import { resolveBase } from "@/lib/train/base-check";
 import { askedBase, tuneBaseOf } from "@/lib/train/bases";
@@ -68,6 +68,10 @@ export const POST = route(async (req: Request) => {
   }
   const steps = askedSteps(body.settings, maxStepsFor(picked ? { ...sized, base: picked, gpu: gpu! } : sized));
   if (!steps.ok) return errorJson(400, steps.error);
+  // With no steps asked, the default has to fit this base's time too: launch would refuse it after the examples are paid for.
+  if (picked && steps.value === undefined && TUNE_STEPS > maxStepsFor({ ...sized, base: picked, gpu: gpu! })) {
+    return errorJson(400, "The default steps don't fit this base's time limit. Ask for fewer steps.");
+  }
   const settings = { ...planSettings(sized.examples, limitCeilings(), steps.value), ...(picked ? { base: picked, gpu: gpu! } : {}) };
   const plan: TrainPlanBody = { ...check.plan, settings, cost: planCost(settings) };
 
