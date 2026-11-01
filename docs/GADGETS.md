@@ -21,7 +21,7 @@ A gadget is an option the brief writer picks the way it picks a model. It's off 
 | Manifest | `template/musemuse.schema.json` | Accepts `muse-gadget` in `models`. |
 | Page | `app/gadgets/page.tsx`, `components/gadgets/info.ts` | `/gadgets`, public: what a gadget is, whether the option is on and a live board is set up (plain words from the environment, never the board's address or token, and no call to the board), shipped products with the option, and a link to `/device` for admins. |
 
-Tests: `lib/gateway/__tests__/gadget.test.ts` and `lib/brief/__tests__/gadget-option.test.ts`.
+Tests: `lib/gateway/__tests__/gadget.test.ts`, `lib/brief/__tests__/gadget-option.test.ts` and `components/gadgets/__tests__/gadgets-page.test.tsx`.
 
 ## Left to do
 
