@@ -3,28 +3,32 @@ import { env } from "@/lib/env";
 import { reserveCounter } from "@/lib/gateway/store";
 import { errorJson, readJson, route } from "@/lib/http";
 import { spendPaused } from "@/lib/quota";
-import { tuneCaller } from "@/lib/train/tune/caller";
+import { tuneCaller, tuneExamplesMax } from "@/lib/train/tune/caller";
 import { examplesFromBody } from "@/lib/train/tune/examples";
-import { clampExamples, contentFindings, draftPlan, NOTE_MAX, NOTE_MIN, StructuredOutputError } from "@/lib/train/tune/plan";
-import { DATASET_MAX_COUNT, DATASET_MIN_COUNT } from "@/lib/train/logic";
+import { askedExamples, clampExamples, contentFindings, draftPlan, NOTE_MAX, NOTE_MIN, StructuredOutputError } from "@/lib/train/tune/plan";
 import { recordUsage } from "@/lib/usage";
 
 /** Plans one caller may draft an hour: each is one Muse Wonder call, about $0.01 to $0.03 (an estimate). */
 const PLANS_PER_HOUR = 20;
 const HOUR_MS = 60 * 60_000;
+/** The plan request's largest body: the note and 50 rows cut for the task, even in a script that takes 3 bytes a letter. */
+const PLAN_BODY_MAX = 128 * 1024;
 
 /**
  * POST {note, examples?, settings?: {examples?}} -> 200 {plan}. Admins or automation (tuneCaller). Off with
  * TUNE_COMPOSER: 404. One respondStructured call on Muse Wonder (TEST_MODEL where that is on) names the model, sums it
  * up and checks the task against the brief writer's refusal policy; `examples` (at most 50 of the person's own
  * {prompt, answer} rows, parsed in the browser) fold into the task as style examples. The plan comes back signed for
- * this caller, for POST /api/train/runs. 400 bad input, 422 {refusal} when it can't be trained, 429 rate_limited (20
- * an hour per caller), 502 plan_failed (no valid reply after a retry), 503 meta_not_configured or paused.
+ * this caller, for POST /api/train/runs. 400 bad input (examples outside 40 to the caller's most, tuneExamplesMax),
+ * 413 body_too_large (the composer cuts its rows first: planRows), 422 {refusal} when it can't be trained, 429
+ * rate_limited (20 an hour per caller), 502 plan_failed (no valid reply after a retry), 503 meta_not_configured or
+ * paused.
  */
 export const POST = route(async (req: Request) => {
   if (!env.tuneComposer) return errorJson(404, "not_found");
   const caller = await tuneCaller(req);
-  const body = await readJson(req, 64 * 1024);
+  // The browser cuts each row to what the task can use (planRows), so 50 rows fit with room to spare.
+  const body = await readJson(req, PLAN_BODY_MAX);
 
   if (typeof body.note !== "string") return errorJson(400, "Say what the model should do.");
   const note = body.note.trim();
@@ -32,10 +36,9 @@ export const POST = route(async (req: Request) => {
   if (note.length > NOTE_MAX) return errorJson(400, `Keep it under ${NOTE_MAX} characters. Add the rest as examples.`);
   const rows = examplesFromBody(body.examples);
   if (!rows) return errorJson(400, "examples must be up to 50 rows, each with a prompt and an answer.");
-  const asked = body.settings && typeof body.settings === "object" ? (body.settings as Record<string, unknown>).examples : undefined;
-  if (asked !== undefined && (typeof asked !== "number" || !Number.isInteger(asked) || asked < DATASET_MIN_COUNT || asked > DATASET_MAX_COUNT)) {
-    return errorJson(400, `examples must be a whole number from ${DATASET_MIN_COUNT} to ${DATASET_MAX_COUNT}.`);
-  }
+  const size = askedExamples(body.settings, tuneExamplesMax(caller));
+  if (!size.ok) return errorJson(400, size.error);
+  const asked = size.value;
 
   const findings = contentFindings({ note, rows });
   if (findings.length) return errorJson(422, "refused", { refusal: findings.join(" ") });
@@ -55,7 +58,7 @@ export const POST = route(async (req: Request) => {
       note,
       rows,
       callerId: caller.id,
-      examples: clampExamples(typeof asked === "number" ? asked : env.tuneDefaultExamples),
+      examples: clampExamples(Math.min(asked ?? env.tuneDefaultExamples, tuneExamplesMax(caller))),
       ceilings: limitCeilings(),
       now,
     });

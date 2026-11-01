@@ -98,6 +98,11 @@ export interface TuneVerdict {
   words: string;
 }
 
+/** A run's verdict once it ended: `scored` is false when nothing was judged (judging didn't finish or had nothing to judge). */
+export interface RunVerdict extends TuneVerdict {
+  scored: boolean;
+}
+
 /** GET /api/train/runs/{id}: a run as its room shows it. Admins only today, so the job is the full admin view. */
 export interface TuneRunView {
   id: string;
@@ -113,7 +118,7 @@ export interface TuneRunView {
   written: number | null;
   job: TrainJobView | null;
   evals: EvalRow[];
-  verdict: TuneVerdict | null;
+  verdict: RunVerdict | null;
   hold: { reason: TuneHoldReason; text: string; since: string } | null;
   /** Why it failed or stopped, in a sentence, else null. */
   problem: string | null;

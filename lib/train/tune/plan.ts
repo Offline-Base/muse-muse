@@ -13,8 +13,8 @@ import { respondStructured, StructuredOutputError, type StructuredOptions, type 
 import { testModel } from "@/lib/env";
 import { REFUSE_WHEN } from "@/lib/prompts/brief";
 import { canonicalJson, mac, sameMac } from "@/lib/tools/sign";
-import { DATASET_MAX_COUNT, DATASET_MIN_COUNT, DATASET_TASK_MAX } from "@/lib/train/logic";
-import { planCost, planSettings } from "@/lib/train/tune/cost";
+import { DATASET_TASK_MAX } from "@/lib/train/logic";
+import { planCost, planSettings, TUNE_MAX_EXAMPLES, TUNE_MIN_EXAMPLES } from "@/lib/train/tune/cost";
 import { foldExamples } from "@/lib/train/tune/examples";
 import type { ExampleRow, TrainPlan, TrainPlanBody, TrainPlanSource } from "@/lib/train/tune/types";
 import type { ModelUsage } from "@/lib/types";
@@ -50,7 +50,7 @@ export function signPlan(body: TrainPlanBody, callerId: string, now: Date): Trai
 
 const money = z.number().finite().min(0).max(100_000);
 const SettingsSchema = z.object({
-  examples: z.number().int().min(DATASET_MIN_COUNT).max(DATASET_MAX_COUNT),
+  examples: z.number().int().min(TUNE_MIN_EXAMPLES).max(TUNE_MAX_EXAMPLES),
   recipe: z.literal("glimmer-lora"),
   steps: z.number().int().min(1).max(10_000),
   loraRank: z.number().int().min(1).max(1024),
@@ -216,4 +216,4 @@ export async function draftPlan(input: DraftInput, deps: DraftDeps = defaultDeps
 }
 
 export { StructuredOutputError };
-export { clampExamples, NOTE_MAX, NOTE_MIN, planCost, planMaxUsd, planSettings, TUNE_GPU, TUNE_LEARNING_RATE, TUNE_LORA_RANK, TUNE_MAX_MINUTES, TUNE_STEPS } from "@/lib/train/tune/cost";
+export { askedExamples, clampExamples, NOTE_MAX, NOTE_MIN, planCost, planMaxUsd, planSettings, TUNE_GPU, TUNE_LEARNING_RATE, TUNE_LORA_RANK, TUNE_MAX_EXAMPLES, TUNE_MAX_MINUTES, TUNE_MIN_EXAMPLES, TUNE_STEPS } from "@/lib/train/tune/cost";

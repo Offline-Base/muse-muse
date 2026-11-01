@@ -89,13 +89,14 @@ describe("the fine-tune room", { skip: canMock ? false : "needs --experimental-t
       assert.deepEqual([...new Set(NAMES.map((n) => ROOM_FIXTURES[n].stage))].sort(), ["failed", "ready", "scoring", "stopped", "training", "waiting", "writing"]);
     });
 
-    it("follows the stage with the mascot: building while it writes, waits, trains or scores, the pair once scored, presenting when it ended early", () => {
+    it("follows the stage with the mascot: building while it writes, waits, trains or scores, the pair once scored, presenting when it ended early or wasn't scored", () => {
       const art: Record<RoomFixtureName, string> = {
         writing: "building",
         waiting: "building",
         training: "building",
         scoring: "building",
         ready: "shield",
+        readyUnscored: "present",
         readyNotPassed: "shield",
         failedWriting: "present",
         failedTraining: "present",
@@ -147,8 +148,10 @@ describe("the fine-tune room", { skip: canMock ? false : "needs --experimental-t
           assert.match(html, new RegExp(`<div class="row-actions" data-u3="ready-to-train"><a class="btn btn-primary" href="/fine-tuning\\?dataset=${RUN_ID}#new-job">Ready to train`));
           assert.match(html, /The examples are ready\. Training hasn&#x27;t started yet\./);
           assert.match(html, /\$4\.20 so far/);
+          // The form's defaults publish; the plan said Publish: Off, so the room says how to keep it off.
+          assert.match(html, /<p class="muted small" data-u3="publish-note">The form publishes to Hugging Face by default\. To keep it on Muse Muse as the plan says, set Publish to Hugging Face to 0 there\./);
         } else {
-          assert.doesNotMatch(html, /data-u3=|Ready to train/, name);
+          assert.doesNotMatch(html, /data-u3=|Ready to train|publishes to Hugging Face by default/, name);
         }
       }
     });
@@ -204,6 +207,13 @@ describe("the fine-tune room", { skip: canMock ? false : "needs --experimental-t
       assert.equal(count(html, "didn&#x27;t pass"), 1);
     });
 
+    it("says a run whose judging never finished wasn't scored, presenting, with no Scored anywhere", () => {
+      const html = room("readyUnscored");
+      assert.match(html, /<span>Judging didn&#x27;t finish, so the items below have no verdicts\. It wasn&#x27;t scored, so it hasn&#x27;t passed\.<\/span>/);
+      assert.match(html, /<div class="plan-card" data-art="present">/);
+      assert.doesNotMatch(html, /Scored\.|<span>Ready\./);
+    });
+
     it("offers the live demo in the room: Start a live demo, or Try it live while one is open", () => {
       assert.doesNotMatch(room("ready"), /id="live-demo"|Try it live<\/h2>/, "no demo read, no box");
       const start = room("ready", { liveDemo: LIVE_DEMOS.start });
@@ -252,16 +262,18 @@ describe("the fine-tune room", { skip: canMock ? false : "needs --experimental-t
       assert.match(html, /The examples and the scoring are estimates: what Muse Wonder costs per example hasn&#x27;t been measured yet\./);
       assert.match(html, /<button type="button" class="btn btn-primary"[^>]*>Start<\/button><button type="button" class="btn btn-outline">Change it<\/button>/);
       assert.match(html, /<details class="tune-advanced"><summary>Advanced/);
-      assert.match(html, /<label for="[^"]+">Examples to write<\/label><input id="[^"]+" type="number" inputMode="numeric" min="20" max="1000" step="10" value="200"/);
+      assert.match(html, /<label for="[^"]+">Examples to write<\/label><input id="[^"]+" type="number" inputMode="numeric" min="40" max="1000" step="10" value="200"/);
       assert.ok(html.indexOf("Start</button>") > html.indexOf("What it costs"), "the actions end the summary");
     });
 
-    it("prices the number Advanced picks, and won't start outside 20 to 1000", () => {
+    it("prices the number Advanced picks, and won't start outside 40 to 1000", () => {
       const more = planStep({ at: "plan", note: "n", files: [], plan: plan() }, { examples: 400 });
       assert.match(more, /Muse Wonder writes 400 examples in the style of your 24, and keeps 40 aside to score it\./);
       const few = planStep({ at: "plan", note: "n", files: [], plan: plan() }, { examples: 5 });
       assert.match(few, /<button type="button" class="btn btn-primary" disabled=""[^>]*>Start/);
-      assert.match(few, /Pick 20 to 1000 examples\./);
+      assert.match(few, /Pick 40 to 1000 examples\./);
+      const twenty = planStep({ at: "plan", note: "n", files: [], plan: plan() }, { examples: 20 });
+      assert.match(twenty, /<button type="button" class="btn btn-primary" disabled=""[^>]*>Start/, "20 can't leave 16 to train on and 8 to score with");
     });
 
     it("says why it couldn't start, and shows Starting while it does", () => {
@@ -278,9 +290,15 @@ describe("the fine-tune room", { skip: canMock ? false : "needs --experimental-t
       assert.doesNotMatch(html, /class="plan-card"/);
     });
 
-    it("points a decision plan at the decision card", () => {
+    it("says a decision plan trains as a chat model until decision models land, with no link to a card that isn't here", () => {
       const html = planStep({ at: "plan", note: "n", files: [], plan: plan({ kind: "decision" }) });
-      assert.match(html, /href="\/fine-tuning#new-decision-dataset">It picks one of a few labels\. Make it a decision model instead/);
+      assert.match(html, /<p class="plan-card-more"><span class="muted">It picks one of a few labels\. Decision models are coming; Start trains it as a chat model\.<\/span><\/p>/);
+      assert.doesNotMatch(html, /new-decision-dataset/);
+    });
+
+    it("says how many of the person's rows fit in the task when some didn't", () => {
+      const html = planStep({ at: "plan", note: "n", files: [], plan: plan({ examples: { given: 24, used: 3 } }) });
+      assert.match(html, /Muse Wonder writes 200 examples in the style of 3 of your 24 \(only 3 fit in the task, so the rest aren&#x27;t used\), and keeps 20 aside to score it\./);
     });
   });
 

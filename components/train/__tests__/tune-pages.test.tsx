@@ -350,6 +350,7 @@ describe("the new fine-tune pages", { skip: canMock ? false : "needs --experimen
       assert.match(t(503, { error: "paused" }), /daily spend cap/);
       assert.match(t(403, { error: "Admins only." }), /Only admins/);
       assert.equal(t(400, { error: "Say what the model should do." }), "Say what the model should do.");
+      assert.equal(t(413, { error: "body_too_large" }), "Those examples are too long to send. Use shorter rows or fewer of them.");
     });
   });
 });

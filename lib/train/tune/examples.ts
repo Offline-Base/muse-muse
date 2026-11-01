@@ -243,6 +243,14 @@ function cut(text: string, max: number): string {
 }
 
 /**
+ * The rows as the composer sends them to the plan route: each cut to what the task ever uses of it (foldExamples cuts
+ * them the same way, so cutting twice changes nothing). 50 long rows then fit the route's body limit with room to spare.
+ */
+export function planRows(rows: readonly ExampleRow[]): ExampleRow[] {
+  return rows.slice(0, EXAMPLE_ROWS_MAX).map((r) => ({ prompt: cut(r.prompt, FOLD_PROMPT_CHARS), answer: cut(r.answer, FOLD_ANSWER_CHARS) }));
+}
+
+/**
  * The dataset's task: the person's words, then as many of their rows as fit under `max` characters, each cut short, as
  * the examples whose style the writer follows. `used` is how many fit.
  */

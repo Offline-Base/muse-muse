@@ -4,7 +4,9 @@
  *
  *   Plan approved -> Writing examples -> Checking them -> Training on a GPU -> Scoring base against tuned -> Ready
  *
- * Only the steps a run has reached are rows, as in the build room. Try it live and Publish are on the job's page.
+ * Only the steps a run has reached are rows, as in the build room. Checking is a stage the room can draw, but until U3's
+ * tuneRun lands a ready dataset goes straight to waiting (or failed when it's short), so only the steps panel's row shows
+ * it. Once a run is ready, the room itself has Try it live and, for admins, the Hugging Face card and Local files.
  */
 import type { StepItem, StepsEnd } from "@/components/chat/types";
 import { datasetMinutes, jobWorkingText, progressText, roughMinutes, writerName } from "@/components/train/format";
@@ -14,7 +16,10 @@ import type { TuneRunView, TuneStage } from "@/lib/train/tune/types";
 /** The mascot picture for each stage (components/build/PlanCard.tsx PLAN_ART). */
 export type TuneArt = "present" | "building" | "shield";
 
-/** Presenting while it is planned, failed or stopped; building while anything runs or waits; the pair once it's scored. */
+/**
+ * Presenting while it is planned, failed or stopped; building while anything runs or waits; the pair once it's scored.
+ * A ready run that wasn't scored presents (tuneArt): only a judged run gets the pair.
+ */
 export const TUNE_ART: Record<TuneStage, TuneArt> = {
   writing: "building",
   checking: "building",
@@ -25,6 +30,12 @@ export const TUNE_ART: Record<TuneStage, TuneArt> = {
   failed: "present",
   stopped: "present",
 };
+
+/** The mascot for this run: its stage's, except a ready run nothing was judged on, which presents. */
+export function tuneArt(v: Pick<TuneRunView, "stage" | "verdict">): TuneArt {
+  if (v.stage === "ready" && !v.verdict?.scored) return "present";
+  return TUNE_ART[v.stage];
+}
 
 const ORDER: readonly TuneStage[] = ["writing", "checking", "waiting", "training", "scoring", "ready"];
 
@@ -96,7 +107,7 @@ export function tuneSteps(v: TuneRunView): StepItem[] {
   });
   if (!reached(v, "scoring") || job.status !== "succeeded") return rows;
   rows.push({ id: "scoring", title: "Scoring base against tuned", description: scoringText(v), state: v.stage === "scoring" ? "running" : "done" });
-  if (v.stage === "ready") rows.push({ id: "ready", title: "Ready", description: v.verdict?.words ?? "Scored.", state: "done" });
+  if (v.stage === "ready") rows.push({ id: "ready", title: "Ready", description: v.verdict?.words ?? "Not scored.", state: "done" });
   return rows;
 }
 

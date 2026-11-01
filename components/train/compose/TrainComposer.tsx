@@ -13,9 +13,8 @@ import { GLIMMER_NAME } from "@/components/train/results";
 import { planCostText, planViewFromTrainPlan, upperFirst } from "@/components/train/room/plan";
 import { KEPT_PLAN_KEY } from "@/components/train/room/TrainRoom";
 import { usd } from "@/lib/format";
-import { DATASET_MAX_COUNT, DATASET_MIN_COUNT } from "@/lib/train/logic";
-import { NOTE_MAX, NOTE_MIN, planCost, planMaxUsd, planSettings } from "@/lib/train/tune/cost";
-import { EXAMPLE_ACCEPT, EXAMPLE_FILE_MAX_BYTES, EXAMPLE_ROWS_MAX, parseExamples, splitNote } from "@/lib/train/tune/examples";
+import { NOTE_MAX, NOTE_MIN, planCost, planMaxUsd, planSettings, TUNE_MAX_EXAMPLES, TUNE_MIN_EXAMPLES } from "@/lib/train/tune/cost";
+import { EXAMPLE_ACCEPT, EXAMPLE_FILE_MAX_BYTES, EXAMPLE_ROWS_MAX, parseExamples, planRows, splitNote } from "@/lib/train/tune/examples";
 import type { ExampleRow, TrainPlan } from "@/lib/train/tune/types";
 
 /** Keeps this composer's draft apart from the Make page's. */
@@ -55,6 +54,11 @@ export type Phase =
   | { at: "plan"; note: string; files: string[]; plan: TrainPlan }
   | { at: "problem"; note: string; files: string[]; text: string };
 
+/** Whether Advanced's number is one a run may ask for (40 to 1000). */
+function examplesOk(n: number): boolean {
+  return Number.isInteger(n) && n >= TUNE_MIN_EXAMPLES && n <= TUNE_MAX_EXAMPLES;
+}
+
 /** What the composer says when a route refuses, from its status and code. */
 export function tuneErrorText(status: number, body: unknown): string {
   const code = errorCode(body);
@@ -71,6 +75,7 @@ export function tuneErrorText(status: number, body: unknown): string {
   if (code === "plan_invalid") return "This plan changed after it was drafted, so it can't start. Change it and send it again.";
   if (code === "already_started") return "This plan already started. Its run is in the fine-tuning lab.";
   if (code === "start_failed") return "The run couldn't start, so nothing was written. Try again in a moment.";
+  if (status === 413) return "Those examples are too long to send. Use shorter rows or fewer of them.";
   if (status === 401 || status === 403) return "Only admins can train models here.";
   if (status === 404) return "Fine-tuning from here isn't switched on.";
   if (status === 400 && code && /\s/.test(code)) return code;
@@ -85,7 +90,7 @@ async function readRows(files: File[], pasted: ExampleRow[]): Promise<{ rows: Ex
     if (!parsed.rows.length) return { problem: `${file.name} has no rows with a prompt and an answer.` };
     rows.push(...parsed.rows);
   }
-  return { rows: rows.slice(0, EXAMPLE_ROWS_MAX) };
+  return { rows: planRows(rows) };
 }
 
 function readPlan(): Phase | null {
@@ -158,7 +163,8 @@ export function TrainComposer({ defaultExamples, ceilings }: { defaultExamples: 
       res = await fetch("/api/train/plan", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ note, examples: read.rows, settings: { examples } }),
+        // A cleared or out of range Advanced number is left out, so the plan takes the default.
+        body: JSON.stringify({ note, examples: read.rows, ...(examplesOk(examples) ? { settings: { examples } } : {}) }),
       });
       data = await res.json().catch(() => null);
     } catch {
@@ -171,6 +177,7 @@ export function TrainComposer({ defaultExamples, ceilings }: { defaultExamples: 
       return null;
     }
     keep(PLAN_KEY, { note: raw, files: names, plan });
+    setExamples(plan.settings.examples);
     setPhase({ at: "plan", note: raw, files: names, plan });
     return null;
   }
@@ -287,7 +294,7 @@ export function PlanStep({
   const countId = useId();
   const shown = phase.at === "plan" ? { ...phase.plan, settings: planSettings(examples, ceilings) } : null;
   const shownView = shown ? planViewFromTrainPlan({ ...shown, cost: planCost(shown.settings) }) : null;
-  const countOk = Number.isInteger(examples) && examples >= DATASET_MIN_COUNT && examples <= DATASET_MAX_COUNT;
+  const countOk = examplesOk(examples);
   return (
     <div className="room chat-split tune-room" data-settled="true">
       <div className="room-main">
@@ -322,11 +329,8 @@ export function PlanStep({
                 running
                 more={
                   shown.kind === "decision" ? (
-                    // tg-decide's decision card, on /fine-tuning once that branch lands.
-                    <Link className="link-btn room-steps-link" href="/fine-tuning#new-decision-dataset">
-                      It picks one of a few labels. Make it a decision model instead
-                      <Icon name="chevronRight" size={16} />
-                    </Link>
+                    // tg-decide's decision models aren't on this branch yet: say so, and link its card once it lands.
+                    <span className="muted">It picks one of a few labels. Decision models are coming; Start trains it as a chat model.</span>
                   ) : null
                 }
                 actions={
@@ -357,15 +361,15 @@ export function PlanStep({
                           id={countId}
                           type="number"
                           inputMode="numeric"
-                          min={DATASET_MIN_COUNT}
-                          max={DATASET_MAX_COUNT}
+                          min={TUNE_MIN_EXAMPLES}
+                          max={TUNE_MAX_EXAMPLES}
                           step={10}
                           value={Number.isFinite(examples) ? examples : ""}
                           onChange={(e) => onExamples(Math.floor(Number(e.target.value)))}
                           disabled={starting}
                         />
                         <span className="field-hint">
-                          {countOk ? planCostText(planCost(shown.settings)) : `Pick ${DATASET_MIN_COUNT} to ${DATASET_MAX_COUNT} examples.`}
+                          {countOk ? planCostText(planCost(shown.settings)) : `Pick ${TUNE_MIN_EXAMPLES} to ${TUNE_MAX_EXAMPLES} examples.`}
                         </span>
                       </div>
                       <p className="muted small">

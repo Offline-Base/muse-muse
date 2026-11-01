@@ -6,9 +6,9 @@ import { evalRows, evalState, gpuName, isDatasetStalled, type EvalRow } from "@/
 import { toDatasetView, toJobView, unjudgedNote, type DatasetHead, type TrainJobRow } from "@/lib/train/logic";
 import { isJudged } from "@/lib/train/models";
 import { recipeById } from "@/lib/train/recipes";
-import { clampExamples, planCost, planSettings } from "@/lib/train/tune/cost";
+import { planCost, planSettings } from "@/lib/train/tune/cost";
 import { evalVerdict } from "@/lib/train/tune/verdict";
-import type { TuneRunView, TuneSettings, TuneStage, TuneVerdict } from "@/lib/train/tune/types";
+import type { RunVerdict, TuneRunView, TuneSettings, TuneStage } from "@/lib/train/tune/types";
 import type { DatasetView, TrainEventView, TrainJobView } from "@/lib/train/types";
 
 /** A run trains only when its examples leave at least this many to train on and to score with. */
@@ -33,7 +33,8 @@ const num = (v: unknown, fallback: number) => {
 
 /** The settings the run trains with: the job's own once there is one, else the defaults for the dataset's size. */
 function runSettings(d: DatasetView, job: TrainJobView | null, ceilings: { maxMinutes: number; maxUsd: number }): TuneSettings {
-  const base = planSettings(clampExamples(d.requested), ceilings);
+  // The dataset's own size, as it was asked for, even outside what a new plan may ask for.
+  const base = { ...planSettings(d.requested, ceilings), examples: d.requested };
   if (!job) return base;
   const p = job.params ?? {};
   return {
@@ -76,14 +77,21 @@ function lastLine(text: string | null | undefined): string {
 }
 
 /**
- * The verdict once judging ended: passed or not with its sentence, or why it wasn't judged. Null before that. The words
- * always say whether it passed, so the room can show them as they are.
+ * The verdict once the job trained and judging ended, from the same evalState EvalResults shows: passed or not with its
+ * sentence when it was judged, else why it wasn't scored (judging timed out, judged nothing, or there was nothing to
+ * judge), which never passes. Null while it trains or is scored, and for a job that didn't succeed. The words always say
+ * whether it passed, so the room can show them as they are.
  */
-export function runVerdict(job: TrainJobView | null): TuneVerdict | null {
-  if (!job?.evalSummary) return null;
-  if (isJudged(job.evalSummary)) return evalVerdict(job.evalSummary);
-  const why = unjudgedNote(job.evalSummary);
-  return { passed: false, words: why ? `${why} It wasn't scored, so it hasn't passed.` : "It wasn't scored, so it hasn't passed." };
+export function runVerdict(job: TrainJobView | null, evals: EvalRow[], now: number): RunVerdict | null {
+  if (!job || job.status !== "succeeded") return null;
+  const scored = evalState(job, evals, now);
+  if (scored.state === "judged") return { ...evalVerdict(scored.summary), scored: isJudged(scored.summary) };
+  // The reason saved on the job (a spend cap, a skipped judge) comes first, even with no eval items to show.
+  const note = unjudgedNote(job.evalSummary);
+  if (note) return { passed: false, scored: false, words: `${note} It wasn't scored, so it hasn't passed.` };
+  if (scored.state === "unjudged") return { passed: false, scored: false, words: `${scored.reason} It wasn't scored, so it hasn't passed.` };
+  if (scored.state === "none") return { passed: false, scored: false, words: "It had no kept-aside prompts to score, so it hasn't passed." };
+  return null;
 }
 
 export interface RunRows {
@@ -113,7 +121,7 @@ export function tuneRunView(rows: RunRows, now: Date, ceilings: { maxMinutes: nu
     written: dataset.status === "generating" ? (rows.written ?? 0) : null,
     job,
     evals,
-    verdict: runVerdict(job),
+    verdict: runVerdict(job, evals, now.getTime()),
     hold: stage === "waiting" ? { reason: "not_started", text: "The examples are ready. Training hasn't started yet.", since } : null,
     problem,
     costSoFarUsd: Math.round((dataset.costUsd + (job?.costUsd ?? 0) + (Number(judgeCost) || 0)) * 1e6) / 1e6,

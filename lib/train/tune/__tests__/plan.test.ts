@@ -157,7 +157,8 @@ describe("defaults and cost", () => {
       maxUsd: 5,
     });
     assert.equal(plan.planSettings(5000, { maxMinutes: 60, maxUsd: 3.999 }).examples, 1000);
-    assert.equal(plan.planSettings(3, CEILINGS).examples, 20);
+    assert.equal(plan.planSettings(3, CEILINGS).examples, 40, "a run asks for at least 40, so a short dataset still trains");
+    assert.equal(plan.planSettings(20, CEILINGS).examples, 40);
     assert.equal(plan.planSettings(200, { maxMinutes: 60, maxUsd: 3.999 }).maxMinutes, 60);
     assert.equal(plan.planSettings(200, { maxMinutes: 60, maxUsd: 3.999 }).maxUsd, 3.99);
   });

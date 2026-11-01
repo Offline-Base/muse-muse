@@ -222,6 +222,25 @@ describe("tune routes", { skip: canMock ? false : "needs --experimental-test-mod
       assert.equal(((await draftOne({ settings: { examples: 60 } })).settings as { examples: number }).examples, 60);
       const bad = await planRoute(req("/api/train/plan", { note: NOTE, settings: { examples: 5 } }));
       assert.equal(bad.status, 400);
+      // The datasets route's own 20 would always end short of 16 to train on and 8 to score with.
+      const twenty = await planRoute(req("/api/train/plan", { note: NOTE, settings: { examples: 20 } }));
+      assert.deepEqual([twenty.status, await twenty.json()], [400, { error: "examples must be a whole number from 40 to 1000." }]);
+      process.env.TUNE_DEFAULT_EXAMPLES = "20";
+      assert.equal(((await draftOne()).settings as { examples: number }).examples, 40, "a small default is held to 40");
+    });
+
+    it("takes 50 long rows once the composer cut them for the task (planRows)", async () => {
+      const { planRows } = await import("@/lib/train/tune/examples");
+      const long = Array.from({ length: 50 }, (_, i) => ({ prompt: `Made-up question ${i} ${"about cakes ".repeat(120)}`, answer: `Made-up reply ${i} ${"warm and short ".repeat(250)}` }));
+      assert.ok(JSON.stringify(long).length > 128 * 1024, "the rows as written are over the limit");
+      const rows = planRows(long);
+      assert.ok(JSON.stringify(rows).length < 32 * 1024, `cut, they are ${JSON.stringify(rows).length} characters`);
+      const plan = await draftOne({ examples: rows });
+      assert.equal((plan.examples as { given: number }).given, 50);
+      const { foldExamples } = await import("@/lib/train/tune/examples");
+      assert.deepEqual(foldExamples(NOTE, rows, 2000), foldExamples(NOTE, long, 2000), "cutting first changes nothing in the task");
+      const raw = await planRoute(req("/api/train/plan", { note: NOTE, examples: long.map((r) => ({ prompt: r.prompt.slice(0, 1500), answer: r.answer.slice(0, 4000) })) }));
+      assert.deepEqual([raw.status, await raw.json()], [413, { error: "body_too_large" }]);
     });
 
     it("refuses a short or long note and malformed examples, before the model", async () => {
@@ -334,6 +353,8 @@ describe("tune routes", { skip: canMock ? false : "needs --experimental-test-mod
       assert.equal((called("createDataset")[0]!.args[0] as { requested: number }).requested, 40);
       const bad = await runsRoute(req("/api/train/runs", { plan: await draftOne(), settings: { examples: 4000 } }));
       assert.equal(bad.status, 400);
+      const short = await runsRoute(req("/api/train/runs", { plan: await draftOne(), settings: { examples: 20 } }));
+      assert.equal(short.status, 400, "20 can't leave 16 to train on and 8 to score with");
     });
 
     it("gives the plan back when the workflow couldn't start, and fails the dataset", async () => {

@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { DatasetHead, TrainJobRow } from "@/lib/train/logic";
-import { TUNE_ART, tuneCurrentStep, tuneRunning, tuneSteps, tuneStepsEnd } from "@/components/train/room/steps";
+import { TUNE_ART, tuneArt, tuneCurrentStep, tuneRunning, tuneSteps, tuneStepsEnd } from "@/components/train/room/steps";
 import { examplesProblem, fullFormHref, tuneRunView } from "@/lib/train/tune/view";
 import type { TrainEventView } from "@/lib/train/types";
 
@@ -164,10 +164,11 @@ describe("a run's stage", () => {
 
     const v = view(ready(), job({ ...done, evalSummary: summary }), evalEvents(20));
     assert.equal(v.stage, "ready");
-    assert.deepEqual(v.verdict, { passed: true, words: "Tuned won 18 of 20 kept-aside prompts (8.4 vs 3.1)." });
+    assert.deepEqual(v.verdict, { passed: true, words: "Tuned won 18 of 20 kept-aside prompts (8.4 vs 3.1).", scored: true });
     assert.equal(v.evals.length, 20);
     assert.equal(v.costSoFarUsd, 4.2 + 1.5 + 0.25);
     assert.equal(TUNE_ART[v.stage], "shield");
+    assert.equal(tuneArt(v), "shield");
     assert.deepEqual(tuneSteps(v).map((r) => r.id), ["plan", "writing", "checking", "training", "scoring", "ready"]);
     assert.equal(tuneStepsEnd(v), "done");
   });
@@ -178,7 +179,24 @@ describe("a run's stage", () => {
       job({ status: "succeeded", terminatedAt: new Date(t0 + 26 * 60_000), evalSummary: { ...summary, items: 0, tunedWins: 0, baseWins: 0, ties: 0, note: "The judge's spend cap was reached." } as never }),
     );
     assert.equal(v.stage, "ready");
-    assert.deepEqual(v.verdict, { passed: false, words: "The judge's spend cap was reached. It wasn't scored, so it hasn't passed." });
+    assert.deepEqual(v.verdict, { passed: false, scored: false, words: "The judge's spend cap was reached. It wasn't scored, so it hasn't passed." });
+    assert.equal(tuneArt(v), "present", "only a judged run gets the pair");
+  });
+
+  it("says a run whose judging never finished wasn't scored, presenting, not Scored", () => {
+    const done = { status: "succeeded" as const, finishedAt: new Date(t0 + 25 * 60_000), terminatedAt: new Date(t0 + 26 * 60_000), costUsd: 1.5 };
+    // Long past the judge's wait, with no summary saved: evalState says judging didn't finish.
+    const late = tuneRunView({ dataset: ready(), written: null, job: job(done), events: evalEvents(5) }, new Date(t0 + 24 * 60 * 60_000), CEILINGS);
+    assert.equal(late.stage, "ready");
+    assert.deepEqual(late.verdict, { passed: false, scored: false, words: "Judging didn't finish, so the items below have no verdicts. It wasn't scored, so it hasn't passed." });
+    assert.equal(tuneArt(late), "present");
+    assert.equal(tuneSteps(late).at(-1)!.description, late.verdict!.words);
+    assert.doesNotMatch(JSON.stringify(tuneSteps(late)), /"Scored\."/);
+
+    const none = view(ready(), job(done));
+    assert.equal(none.stage, "ready");
+    assert.deepEqual(none.verdict, { passed: false, scored: false, words: "It had no kept-aside prompts to score, so it hasn't passed." });
+    assert.equal(tuneArt(none), "present");
   });
 
   it("ends failed or stopped with its job", () => {

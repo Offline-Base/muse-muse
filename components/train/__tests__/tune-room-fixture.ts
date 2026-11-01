@@ -1,7 +1,7 @@
 /**
  * A fine-tuning run at every stage its room shows (components/train/room/TrainRoom.tsx), built from made-up rows by the
- * same tuneRunView the route and the page use: writing, waiting with Ready to train, training, scoring, ready (passed
- * and not), failed while writing, failed while training, and stopped. Not a test file: tune-room.test.tsx renders them.
+ * same tuneRunView the route and the page use: writing, waiting with Ready to train, training, scoring, ready (passed,
+ * not passed, and not scored because judging never finished), failed while writing, failed while training, and stopped. Not a test file: tune-room.test.tsx renders them.
  * The bakery and its questions are made up.
  */
 import type { JobLiveDemo } from "@/components/train/LiveDemo";
@@ -113,6 +113,8 @@ export const ROOM_FIXTURES = {
   training: { stage: "training", view: run(datasetRow(), jobRow(), [], null, 40) },
   scoring: { stage: "scoring", view: run(datasetRow(), jobRow(trained), evalEvents(5), null, 70) },
   ready: { stage: "ready", view: run(datasetRow(), jobRow({ ...trained, evalSummary: passed }), evalEvents(20), null, 90) },
+  // Trained, with its kept-aside prompts answered, but judging never finished: a day on, with no summary saved.
+  readyUnscored: { stage: "ready", view: run(datasetRow(), jobRow(trained), evalEvents(0), null, 24 * 60) },
   readyNotPassed: { stage: "ready", view: run(datasetRow(), jobRow({ ...trained, evalSummary: notPassed }), evalEvents(20, 20, 6), null, 90) },
   failedWriting: { stage: "failed", view: run(datasetRow({ status: "failed", trainCount: 0, evalCount: 0, error: "The platform's daily spend cap is reached, so the dataset stopped." }), null) },
   failedTraining: { stage: "failed", view: run(datasetRow(), jobRow({ status: "failed", error: "Traceback (most recent call last)\nCUDA out of memory", finishedAt: minutes(50), terminatedAt: minutes(51) }), [], null, 60) },

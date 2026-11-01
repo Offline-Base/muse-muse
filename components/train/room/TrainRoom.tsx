@@ -12,7 +12,7 @@ import { MakeLocalFiles } from "@/components/train/LocalFiles";
 import { evalState, judgeName, tunedModelName, writerName } from "@/components/train/format";
 import { GLIMMER_NAME } from "@/components/train/results";
 import { planViewFromRun, roleTitle } from "@/components/train/room/plan";
-import { TUNE_ART, tuneCurrentStep, tuneRunning, tuneSteps, tuneStepsEnd } from "@/components/train/room/steps";
+import { tuneArt, tuneCurrentStep, tuneRunning, tuneSteps, tuneStepsEnd } from "@/components/train/room/steps";
 import { WhereItRuns } from "@/components/train/room/WhereItRuns";
 import { usd } from "@/lib/format";
 import type { TuneRunView } from "@/lib/train/tune/types";
@@ -125,7 +125,7 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
 
   const current = tuneCurrentStep(view);
   const ended = view.stage === "ready" || view.stage === "failed" || view.stage === "stopped";
-  const art = TUNE_ART[view.stage];
+  const art = tuneArt(view);
   const planView = useMemo(() => planViewFromRun(view, kept), [view, kept]);
   const title = roleTitle(view.title);
   const job = view.job;
@@ -189,6 +189,10 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
               <p className="muted small">
                 Opens the full New job form with these examples picked, Muse Glimmer LoRA and its defaults. Training starting on its own after Start comes next.
               </p>
+              {/* The form's own defaults publish to Hugging Face and pick their own GPU and limits; the plan said Publish: Off. */}
+              <p className="muted small" data-u3="publish-note">
+                The form publishes to Hugging Face by default. To keep it on Muse Muse as the plan says, set Publish to Hugging Face to 0 there. Its GPU and limits are the form&apos;s own too, under the same caps.
+              </p>
               <p className="room-meta">{usd(view.costSoFarUsd)} so far</p>
             </li>
           ) : null}
@@ -198,7 +202,7 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
               <p className="tune-verdict">
                 <Icon name={view.verdict?.passed ? "checkCircle" : "alertCircle"} size={18} />
                 {/* The verdict's words say whether it passed (runVerdict), so only a pass gets "Ready." before them. */}
-                <span>{view.verdict ? `${view.verdict.passed ? "Ready. " : ""}${view.verdict.words}` : "Scored."}</span>
+                <span>{view.verdict ? `${view.verdict.passed ? "Ready. " : ""}${view.verdict.words}` : "Not scored."}</span>
               </p>
               {job && scored ? (
                 <EvalResults state={scored} rows={view.evals} model={tunedModelName(job.recipe)} writer={writerName(view.dataset)} judge={judgeName(job)} />

@@ -34,11 +34,21 @@ export function planCostText(c: TrainPlanCost): string {
   );
 }
 
-/** How it's made, in the order the run goes. `used` is how many of the person's own rows the examples follow. */
-export function howItsMade(s: Pick<TuneSettings, "examples">, c: Pick<TrainPlanCost, "trainMinutes">, used = 0): string[] {
+/** Whose style the examples follow: the person's rows that fit in the task, and how many of theirs didn't. */
+function styleOf(used: number, given: number): string {
+  if (!used) return "";
+  if (given > used) return ` in the style of ${used} of your ${given} (only ${used} fit in the task, so the rest aren't used)`;
+  return ` in the style of your ${used}`;
+}
+
+/**
+ * How it's made, in the order the run goes. `used` is how many of the person's own rows the examples follow, of the
+ * `given` they sent (the task holds only the first few, cut short: foldExamples).
+ */
+export function howItsMade(s: Pick<TuneSettings, "examples">, c: Pick<TrainPlanCost, "trainMinutes">, used = 0, given = used): string[] {
   const kept = evalHoldoutCount(s.examples);
   return [
-    `${WRITER_NAME} writes ${s.examples} examples${used ? ` in the style of your ${used}` : ""}, and keeps ${kept} aside to score it.`,
+    `${WRITER_NAME} writes ${s.examples} examples${styleOf(used, given)}, and keeps ${kept} aside to score it.`,
     "A quick check that there are enough to train on and to score with.",
     `${GLIMMER_NAME} trains on one GPU, ${roughMinutes(c.trainMinutes)}.`,
     `Base and tuned answer the ${kept} kept-aside prompts, and ${WRITER_NAME} scores both.`,
@@ -52,7 +62,7 @@ export function planViewFromTrainPlan(p: Pick<TrainPlanBody, "name" | "tagline" 
     name: roleTitle(p.name),
     tagline: p.tagline,
     sections: [
-      { heading: "How it's made", steps: howItsMade(p.settings, p.cost, p.examples.used) },
+      { heading: "How it's made", steps: howItsMade(p.settings, p.cost, p.examples.used, p.examples.given) },
       ...(sample ? [{ heading: "It might be asked", text: `"${sample.trim()}"` }] : []),
       { heading: "What it costs", text: `${planCostText(p.cost)} ${upperFirst(roughMinutes(p.cost.minutes))} in all.` },
     ],

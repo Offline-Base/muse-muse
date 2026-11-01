@@ -4,7 +4,7 @@
  */
 import { datasetCostRange, datasetMinutes } from "@/components/train/format";
 import { tokenCost } from "@/lib/meta/pricing";
-import { DATASET_MAX_COUNT, DATASET_MIN_COUNT, evalHoldoutCount, runEstimate } from "@/lib/train/logic";
+import { DATASET_MAX_COUNT, evalHoldoutCount, runEstimate } from "@/lib/train/logic";
 import type { TrainPlanCost, TuneSettings } from "@/lib/train/tune/types";
 
 /** The model whose prices the estimates use: Muse Wonder writes the examples and scores the run. */
@@ -39,10 +39,33 @@ export function planSettings(examples: number, ceilings: { maxMinutes: number; m
   };
 }
 
-/** A whole number of examples the datasets route takes (20 to 1000). */
+/**
+ * The fewest examples a run asks for. A run trains only with at least 16 to train on and 8 to score with (TUNE_MIN_TRAIN
+ * and TUNE_MIN_EVAL in view.ts), so 24 at the least, and a dataset often comes back a little short of what it asked for.
+ * 40 leaves room for that, where the datasets route's own 20 would fail every time after the writing was paid for.
+ */
+export const TUNE_MIN_EXAMPLES = 40;
+/** The most a run asks for: the datasets route's own limit. */
+export const TUNE_MAX_EXAMPLES = DATASET_MAX_COUNT;
+
+/** A whole number of examples a run may ask for (TUNE_MIN_EXAMPLES to TUNE_MAX_EXAMPLES, 40 to 1000). */
 export function clampExamples(n: number): number {
   const v = Math.floor(Number(n));
-  return Number.isFinite(v) ? Math.min(DATASET_MAX_COUNT, Math.max(DATASET_MIN_COUNT, v)) : DATASET_MIN_COUNT;
+  return Number.isFinite(v) ? Math.min(TUNE_MAX_EXAMPLES, Math.max(TUNE_MIN_EXAMPLES, v)) : TUNE_MIN_EXAMPLES;
+}
+
+/**
+ * Advanced's number of examples from a request body's `settings`: undefined when it isn't given, else a whole number
+ * from TUNE_MIN_EXAMPLES to `max` (the caller's own most, tuneExamplesMax), or the 400's sentence.
+ */
+export function askedExamples(settings: unknown, max: number): { ok: true; value: number | undefined } | { ok: false; error: string } {
+  const asked = settings && typeof settings === "object" ? (settings as Record<string, unknown>).examples : undefined;
+  if (asked === undefined) return { ok: true, value: undefined };
+  const top = Math.min(TUNE_MAX_EXAMPLES, Math.floor(max));
+  if (typeof asked !== "number" || !Number.isInteger(asked) || asked < TUNE_MIN_EXAMPLES || asked > top) {
+    return { ok: false, error: `examples must be a whole number from ${TUNE_MIN_EXAMPLES} to ${top}.` };
+  }
+  return { ok: true, value: asked };
 }
 
 /** Rough tokens to judge one kept-aside prompt (the prompt, the reference and both answers in; a verdict out), low and high. */
