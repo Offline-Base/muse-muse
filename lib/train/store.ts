@@ -10,10 +10,13 @@ import { hashToken } from "@/lib/gateway/tokens";
 import {
   ADAPTER_RECIPE,
   capEventBody,
+  DECIDE_ITEMS_MAX,
+  DECIDE_MODE,
   EVALS_MAX,
   estimateCostUsd,
   evalSplit,
   instanceNameFor,
+  MODE_PARAM,
   SERVE_ADAPTER_PARAM,
   SERVE_RECIPE,
   toLiveDemoView,
@@ -22,7 +25,10 @@ import {
   type DoneMetrics,
   type TrainJobRow,
 } from "@/lib/train/logic";
+import { decisionModelOf, type DecisionModel } from "@/lib/decide/serving";
+import type { DecideScoreItem, DecisionRow, DecisionRows, DecisionSpec } from "@/lib/decide/types";
 import type { QuantSource } from "@/lib/train/hub-cards";
+import { PERSON_WRITER, PUBLIC_WRITER } from "@/lib/train/models";
 import {
   isTrainTerminal,
   QUANT_RECIPE,
@@ -727,6 +733,79 @@ export async function getJudgement(jobId: string, index: number): Promise<Judgem
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// A decide job's scores (docs/DECISION_MODELS.md "Callbacks and caps"), for the events route and the scoring step.
+
+type DecideCallback = Extract<TrainCallback, { type: "decide" }>;
+
+/**
+ * The callback's items the job hasn't logged for that part yet (an index already logged is a retry), as `fresh`, and
+ * the items the job has logged in all, as `used`, for the statements below.
+ */
+function decideFresh(jobId: string, part: string, items: string): SQL {
+  return sql`incoming as (
+      select item, ord from jsonb_array_elements(${items}::jsonb) with ordinality as t(item, ord)
+    ),
+    fresh as (
+      select item, ord from incoming
+      where not exists (
+        select 1 from training_events ev, jsonb_array_elements(ev.payload->'items') as seen(item)
+        where ev.job_id = ${jobId}::uuid and ev.type = 'decide' and ev.payload->>'part' = ${part}
+          and seen.item->>'index' = incoming.item->>'index'
+      )
+    ),
+    used as (
+      select coalesce(sum(jsonb_array_length(payload->'items')), 0) as n
+      from training_events where job_id = ${jobId}::uuid and type = 'decide'
+    )`;
+}
+
+/**
+ * Logs a decide callback as one "decide" event holding the items the job hasn't logged for that part yet: an index sent
+ * again (a retried callback) counts once, the first sent. "duplicate" when every item was logged already, "limit"
+ * when its new items would take the job past `max` items in all (nothing is logged then). The job row is locked first,
+ * so callbacks at once can't pass the cap or log an index twice.
+ */
+export async function recordDecideEvent(jobId: string, body: DecideCallback, max = DECIDE_ITEMS_MAX): Promise<"recorded" | "duplicate" | "limit"> {
+  if (!isUuid(jobId)) return "limit";
+  const payload = capEventBody(body) as DecideCallback;
+  const fresh = decideFresh(jobId, payload.part, JSON.stringify(payload.items));
+  const [, counted, inserted] = await db().batch([
+    db().execute(sql`select id from training_jobs where id = ${jobId}::uuid for update`),
+    db().execute(sql`with ${fresh} select (select count(*) from fresh)::int as fresh`),
+    db().execute(
+      sql`with ${fresh}
+          insert into training_events (job_id, type, payload)
+          select ${jobId}::uuid, 'decide',
+            jsonb_build_object('type', 'decide', 'part', ${payload.part}::text, 'items', (select jsonb_agg(item order by ord) from fresh))
+          where exists (select 1 from fresh) and (select n from used) + (select count(*) from fresh) <= ${max}
+          returning id`,
+    ),
+  ]);
+  if (rowsOf(inserted).length) return "recorded";
+  const row = rowsOf(counted)[0] as { fresh?: unknown } | undefined;
+  return Number(row?.fresh ?? 0) === 0 ? "duplicate" : "limit";
+}
+
+/**
+ * A decide job's scores by part, in the order the GPU sent them (recordDecideEvent logged each index once per part),
+ * for summarizeDecisions. Empty for a job that sent none.
+ */
+export async function decideScores(jobId: string): Promise<{ dev: DecideScoreItem[]; test: DecideScoreItem[] }> {
+  const out: { dev: DecideScoreItem[]; test: DecideScoreItem[] } = { dev: [], test: [] };
+  if (!isUuid(jobId)) return out;
+  const rows = await db()
+    .select({ payload: events.payload })
+    .from(events)
+    .where(and(eq(events.jobId, jobId), eq(events.type, "decide")))
+    .orderBy(asc(events.id));
+  for (const { payload } of rows) {
+    if (payload?.type !== "decide" || (payload.part !== "dev" && payload.part !== "test") || !Array.isArray(payload.items)) continue;
+    out[payload.part].push(...payload.items);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 // Publishing to the Hugging Face Hub (docs/TRAINING.md "Hugging Face Hub"), for lib/train/hub-steps.ts and the hub and
 // publish routes. The rules of the state live in lib/train/hub-cards.ts.
 
@@ -808,7 +887,8 @@ export async function setJudgeModel(jobId: string, model: string): Promise<void>
 // generating steps read them; everything else selects the head columns.
 
 const datasets = schema.trainingDatasets;
-const { train: _train, eval: _eval, ...datasetHeadColumns } = getTableColumns(datasets);
+// A decision dataset's rows (decision_rows) can run to megabytes too: only decisionSplitRows reads them.
+const { train: _train, eval: _eval, decisionRows: _decisionRows, ...datasetHeadColumns } = getTableColumns(datasets);
 
 export interface NewDataset {
   title: string;
@@ -1030,6 +1110,85 @@ export async function finishDataset(datasetId: string, count: number, note: stri
   return row ?? null;
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// Decision datasets (docs/DECISION_MODELS.md, lib/train/decision-datasets.ts): a person's labeled rows, checked and
+// split before they are saved, so a decision dataset is "ready" at once and nothing is generated.
+
+export interface NewDecisionDataset {
+  title: string;
+  /** The spec checkDecisionUpload made: the question, labels, seed and counts. */
+  spec: DecisionSpec;
+  /** The split rows, each split grouped by label in the labels' order, as splitDecisionRows made them. */
+  rows: DecisionRows;
+  createdBy?: string | null;
+}
+
+/**
+ * Saves a decision dataset, ready at once: kind "decision", its spec in decision, its split rows in decision_rows, the
+ * question as task, train_count and eval_count its train and test rows, and writer_model "person" (or "public" for
+ * Muse Decide's mix), never null. train and eval stay empty, so no reader of chat datasets changes. Throws when the
+ * rows don't match the spec's counts.
+ */
+export async function createDecisionDataset(input: NewDecisionDataset): Promise<DatasetHead> {
+  const { spec, rows } = input;
+  for (const part of ["train", "dev", "test"] as const) {
+    if (rows[part].length !== spec.split[part]) throw new Error(`The ${part} rows don't match the spec's count.`);
+  }
+  const now = new Date();
+  const [row] = await db()
+    .insert(datasets)
+    .values({
+      title: input.title.trim().slice(0, TITLE_MAX) || "Decision model",
+      task: spec.question,
+      kind: "decision",
+      status: "ready",
+      requested: spec.split.train + spec.split.dev + spec.split.test,
+      trainCount: spec.split.train,
+      evalCount: spec.split.test,
+      decision: spec,
+      decisionRows: rows,
+      writerModel: spec.source === "person" ? PERSON_WRITER : PUBLIC_WRITER,
+      createdBy: input.createdBy ?? null,
+      finishedAt: now,
+    })
+    .returning(datasetHeadColumns);
+  return row;
+}
+
+/**
+ * Rows of a decision dataset's split, by index (0 on), with the split's length: only those rows leave the database,
+ * cut in SQL, so a page reads what it renders. Every row when `indexes` is left out (scoring reads dev and test whole).
+ * Null when the dataset is unknown or isn't a decision dataset.
+ */
+export async function decisionSplitRows(
+  datasetId: string,
+  part: "train" | "dev" | "test",
+  indexes?: readonly number[],
+): Promise<{ total: number; rows: Map<number, DecisionRow> } | null> {
+  if (!isUuid(datasetId) || (part !== "train" && part !== "dev" && part !== "test")) return null;
+  const col = sql`coalesce(${datasets.decisionRows} -> ${part}::text, '[]'::jsonb)`;
+  const wanted = indexes?.filter((i) => Number.isInteger(i) && i >= 0) ?? null;
+  const among =
+    wanted === null
+      ? sql`true`
+      : wanted.length
+        ? sql`(t.i - 1) = any(array[${sql.join(wanted.map((i) => sql`${i}::int`), sql`, `)}]::int[])`
+        : sql`false`;
+  const [row] = await db()
+    .select({
+      total: sql<number>`jsonb_array_length(${col})`,
+      rows: sql<Array<{ i: number; input: string; label: string }>>`coalesce((
+        select jsonb_agg(jsonb_build_object('i', t.i - 1, 'input', t.e ->> 'input', 'label', t.e ->> 'label') order by t.i)
+        from jsonb_array_elements(${col}) with ordinality as t(e, i) where ${among}
+      ), '[]'::jsonb)`,
+    })
+    .from(datasets)
+    .where(and(eq(datasets.id, datasetId), eq(datasets.kind, "decision")))
+    .limit(1);
+  if (!row) return null;
+  return { total: Number(row.total), rows: new Map((row.rows ?? []).map((r) => [Number(r.i), { input: r.input, label: r.label }])) };
+}
+
 /** Fails a dataset that is still generating, with a plain reason. False when it already finished. */
 export async function failDataset(datasetId: string, error: string): Promise<boolean> {
   if (!isUuid(datasetId)) return false;
@@ -1137,10 +1296,23 @@ const readyDatasetColumns = {
   finishedAt: datasets.finishedAt,
   /** The model that wrote it (null: Muse Spark 1.3, written before the writer was recorded). */
   writerModel: datasets.writerModel,
+  /** "decision" for a person's labeled rows (docs/DECISION_MODELS.md), else "chat". */
+  kind: datasets.kind,
+  /**
+   * A decision dataset's definition as the read-only page shows it: the question, the labels and the rows per split,
+   * without its seed. Never its rows, which stay in decision_rows: a person's inputs may be private. Null for chat.
+   */
+  decision: sql<Omit<DecisionSpec, "seed"> | null>`(${datasets.decision} - 'seed')`,
 };
 
-/** A ready dataset as the Lab results read it: no examples, note, author or workflow run. */
-export type ReadyDatasetRow = Pick<DatasetHead, keyof typeof readyDatasetColumns>;
+/**
+ * A ready dataset as the Lab results read it: no examples, rows, note, author or workflow run. `kind` and `decision`
+ * are optional so a row from before decision datasets still reads as chat.
+ */
+export type ReadyDatasetRow = Pick<DatasetHead, Exclude<keyof typeof readyDatasetColumns, "kind" | "decision">> & {
+  kind?: DatasetHead["kind"];
+  decision?: Omit<DecisionSpec, "seed"> | null;
+};
 
 /** Ready datasets, newest first. */
 export async function listReadyDatasets(limit = 50): Promise<ReadyDatasetRow[]> {
@@ -1196,10 +1368,16 @@ export async function getAdapterSource(jobId: string): Promise<{ job: TrainJobRo
  * The adapters a glimmer-serve job can serve, newest first, for the "adapter" select: glimmer-lora jobs that
  * succeeded, weren't dry runs, and whose done metrics say the adapter is on the cache filesystem under models/<id>
  * (the same rule as adapterProblem), with the title of the dataset they trained on.
+ *
+ * A decision model's adapter is left out unless `opts.decide`: then the ones that trained one (not score only) are in
+ * too, each with `mode: "decide"`, since glimmer-serve serves them at POST /decide (D7). The New job card offers those
+ * to glimmer-serve only. A chat adapter's option has no `mode`, as before.
  */
-export async function listAdapterOptions(limit = 50): Promise<AdapterOption[]> {
+export async function listAdapterOptions(limit = 50, opts: { decide?: boolean } = {}): Promise<AdapterOption[]> {
   const n = Math.max(1, Math.min(200, Math.floor(limit) || 50));
   const metrics = doneMetricsOf(jobs.id);
+  const isDecide = sql`coalesce(${jobs.params}->>${MODE_PARAM}, '') = ${DECIDE_MODE}`;
+  const scoredOnly = sql`(case when ${jobs.params}->>'scoreOnly' ~ '^[0-9]+([.][0-9]+)?$' then (${jobs.params}->>'scoreOnly')::numeric else 0 end) >= 1`;
   const rows = await db()
     .select({
       jobId: jobs.id,
@@ -1208,6 +1386,7 @@ export async function listAdapterOptions(limit = 50): Promise<AdapterOption[]> {
       finishedAt: jobs.finishedAt,
       evalSummary: jobs.evalSummary,
       datasetTitle: sql<string | null>`(select d.title from training_datasets d where d.id::text = ${jobs.params}->>'datasetId')`,
+      decide: sql<boolean>`${isDecide}`,
     })
     .from(jobs)
     .where(
@@ -1217,6 +1396,9 @@ export async function listAdapterOptions(limit = 50): Promise<AdapterOption[]> {
         notDryRun(),
         sql`${metrics}->>'cache_used' = 'yes'`,
         sql`rtrim(${metrics}->>'adapter_dir', '/') like '%/models/' || ${jobs.id}::text`,
+        // A decision model's adapter answers with one letter: adapterProblem refuses it for publishing and local
+        // files until their decide versions exist (docs/DECISION_MODELS.md), so only a decide caller is offered one.
+        opts.decide ? sql`not (${isDecide} and ${scoredOnly})` : sql`not ${isDecide}`,
       ),
     )
     .orderBy(desc(jobs.createdAt))
@@ -1228,6 +1410,7 @@ export async function listAdapterOptions(limit = 50): Promise<AdapterOption[]> {
     datasetTitle: r.datasetTitle ?? null,
     finishedAt: r.finishedAt ? r.finishedAt.toISOString() : null,
     evalSummary: r.evalSummary ?? null,
+    ...(r.decide ? { mode: DECIDE_MODE } : {}),
   }));
 }
 
@@ -1344,6 +1527,59 @@ export async function releaseDemoSlot(serveJobId: string, window: Date): Promise
     .update(limits)
     .set({ count: sql`greatest(${limits.count} - 1, 0)` })
     .where(and(eq(limits.key, `lab-try-busy:${serveJobId}`), eq(limits.windowStart, window)));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Decision models served (docs/DECISION_MODELS.md "Serving and use"): a decide job as a model, and the serving windows
+// that answer for one.
+
+/**
+ * A decide job as a decision model (decisionModelOf in lib/decide/serving.ts: its labels, question and each side's T),
+ * or null when the id is unknown, isn't a uuid, or the job can't be served as one (not a glimmer-lora job in decide
+ * mode that succeeded and trained an adapter, or its dataset is gone). `public` says whether it has a public result
+ * page (hasResults), which the try box and the gateway require of anyone but an admin. Reads the dataset's spec
+ * without its seed, and never a row.
+ */
+export async function getDecisionModel(jobId: string): Promise<DecisionModel | null> {
+  if (!isUuid(jobId)) return null;
+  const [row] = await db()
+    .select({
+      job: { id: jobs.id, title: jobs.title, recipe: jobs.recipe, status: jobs.status, params: jobs.params, evalSummary: jobs.evalSummary },
+      spec: sql<Omit<DecisionSpec, "seed"> | null>`(select d.decision - 'seed' from training_datasets d where d.id::text = ${jobs.params}->>'datasetId' and d.kind = 'decision')`,
+      public: sql<boolean>`coalesce((${hasResults()}), false)`,
+    })
+    .from(jobs)
+    .where(eq(jobs.id, jobId.toLowerCase()))
+    .limit(1);
+  if (!row) return null;
+  return decisionModelOf({ job: row.job, spec: row.spec ?? null, public: row.public === true });
+}
+
+/**
+ * For base Glimmer zero-shot (the gateway's muse-decide until Muse Decide is trained): the demo server of any live
+ * serve job whose adapter is a decision model's, newest first, since its base answers come from the same 4-bit base
+ * with the adapter off. Null when none is live. A chat adapter's server answers /generate only, so it never counts.
+ */
+export async function liveDecisionServeTarget(now: Date = new Date()): Promise<ServeTargetRow | null> {
+  const rows = await db()
+    .select()
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.recipe, SERVE_RECIPE),
+        eq(jobs.status, "running"),
+        eq(jobs.stopRequested, false),
+        sql`exists (select 1 from training_jobs a where a.id::text = ${jobs.params}->>${SERVE_ADAPTER_PARAM} and a.recipe = ${ADAPTER_RECIPE} and a.params->>${MODE_PARAM} = ${DECIDE_MODE})`,
+      ),
+    )
+    .orderBy(desc(jobs.createdAt))
+    .limit(10);
+  for (const row of rows) {
+    if (!row.tokenHash || toLiveDemoView(row, now)?.state !== "live") continue;
+    const endpoint = usableEndpoint(row.serveEndpoint);
+    if (endpoint) return { jobId: row.id, tokenHash: row.tokenHash, ip: endpoint.ip, port: endpoint.port, certSha256: endpoint.certSha256 };
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------------------------------------------

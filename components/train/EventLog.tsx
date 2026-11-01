@@ -57,6 +57,25 @@ function LogRow({ item, jobId }: { item: LogItem; jobId: string }) {
       </li>
     );
   }
+  if (item.type === "decide") {
+    const items = item.events.reduce((n, ev) => n + (ev.payload.type === "decide" && Array.isArray(ev.payload.items) ? ev.payload.items.length : 0), 0);
+    return (
+      <li className="train-ev">
+        <time className="train-ev-time" dateTime={first.at}>
+          {clockUtc(first.at)}
+        </time>
+        <span className="train-ev-icon" aria-hidden>
+          <Icon name="chart" size={16} />
+        </span>
+        <div className="train-ev-body">
+          <p>
+            <strong>Scores</strong> {item.events.length} reports, {items.toLocaleString("en-US")} items, the last at{" "}
+            {clockUtc(last.at)}. <a href="#decision-results">See the results</a>
+          </p>
+        </div>
+      </li>
+    );
+  }
   if (item.type === "eval" || item.type === "judgement") {
     const evalRun = item.type === "eval";
     return (

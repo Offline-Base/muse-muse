@@ -6496,3 +6496,464 @@ div.md.md-plain {
 .gadgets-board-text h3 {
   color: var(--fg);
 }
+
+/* ---------- Decision models (docs/DECISION_MODELS.md): the results, the dataset page and the upload card ---------- */
+
+/*
+ * The two series of the decision charts and tiles: tuned and base Glimmer. Checked with the dataviz palette validator
+ * against the card surface in each mode (lightness band, chroma, color-blind and normal-vision separation, 3:1 contrast).
+ */
+:root {
+  --decide-tuned: #2962d8;
+  --decide-base: #c26a14;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --decide-tuned: #5b86ea;
+    --decide-base: #c2772b;
+  }
+}
+
+:root[data-theme="dark"] {
+  --decide-tuned: #5b86ea;
+  --decide-base: #c2772b;
+}
+
+.decide-results {
+  gap: 20px;
+}
+
+.decide-strip {
+  gap: 12px;
+}
+
+.decide-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 20px;
+  margin-bottom: 4px;
+}
+
+@media (min-width: 900px) {
+  .decide-tiles {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.decide-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.decide-tile-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg-2);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.decide-swatch {
+  flex: none;
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.decide-swatch-tuned {
+  background: var(--decide-tuned);
+}
+
+.decide-swatch-base {
+  background: var(--decide-base);
+}
+
+.decide-swatch-ideal {
+  width: 16px;
+  height: 0;
+  border-radius: 0;
+  border-top: 2px dashed var(--line-strong);
+}
+
+.decide-notes {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--fg-2);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.decide-results .section {
+  gap: 10px;
+}
+
+.decide-h3 {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.decide-table {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.decide-table th,
+.decide-table td {
+  padding: 10px 14px;
+}
+
+.decide-table tbody th {
+  font-weight: 500;
+  text-align: left;
+}
+
+.decide-matrix td.decide-diag {
+  font-weight: 700;
+}
+
+.decide-more > summary {
+  cursor: pointer;
+  color: var(--accent-text);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.decide-more[open] > summary {
+  margin-bottom: 10px;
+}
+
+.decide-chart-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.decide-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  color: var(--fg-2);
+  font-size: 13px;
+}
+
+.decide-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.decide-chart {
+  display: block;
+  width: 100%;
+  max-width: 460px;
+  height: auto;
+  overflow: visible;
+}
+
+.decide-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.decide-tick,
+.decide-axis {
+  fill: var(--muted);
+  font-size: 11px;
+  font-family: var(--font);
+}
+
+.decide-axis {
+  fill: var(--fg-2);
+  font-size: 12px;
+}
+
+.decide-ideal {
+  stroke: var(--line-strong);
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+}
+
+.decide-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.decide-dot {
+  stroke: var(--surface);
+  stroke-width: 2;
+  cursor: default;
+}
+
+.decide-dot:hover {
+  stroke: var(--fg);
+}
+
+.decide-series-tuned .decide-line {
+  stroke: var(--decide-tuned);
+}
+
+.decide-series-tuned .decide-dot {
+  fill: var(--decide-tuned);
+}
+
+.decide-series-base .decide-line {
+  stroke: var(--decide-base);
+}
+
+.decide-series-base .decide-dot {
+  fill: var(--decide-base);
+}
+
+.decide-health {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.decide-health .kv dd {
+  max-width: 60%;
+}
+
+.decide-wrong {
+  min-width: 600px;
+}
+
+.decide-wrong td:first-child {
+  width: 50%;
+}
+
+.decide-rows td:first-child {
+  width: 80%;
+}
+
+/* The New decision dataset card */
+
+.decide-labels {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  gap: 10px;
+}
+
+.decide-labels > legend {
+  padding: 0;
+  margin-bottom: 4px;
+}
+
+.decide-label-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.decide-label-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 12px;
+  align-items: end;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--panel-line);
+}
+
+.decide-label-row > .train-field:nth-child(2) {
+  grid-column: 1;
+}
+
+.decide-label-remove {
+  grid-column: 2;
+  grid-row: 1;
+  margin-bottom: 6px;
+}
+
+@media (min-width: 760px) {
+  .decide-label-row {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto;
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+
+  .decide-label-row > .train-field:nth-child(2) {
+    grid-column: 2;
+  }
+
+  .decide-label-remove {
+    grid-column: 3;
+  }
+}
+
+.decide-file {
+  position: relative;
+  min-height: 36px;
+  cursor: pointer;
+}
+
+.decide-file:focus-within {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.train-input.decide-rows-input {
+  font-family: var(--mono);
+  font-size: 13px;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.decide-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--fg-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.decide-problems {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.decide-saved {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.decide-saved .totals-big {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 18px;
+}
+
+.decide-saved .totals-big svg {
+  flex: none;
+  margin-top: 4px;
+  color: var(--ok);
+}
+
+.decide-saved-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ---------- A decision model's Try it live box (docs/DECISION_MODELS.md "On the lab's GPU") ---------- */
+
+.lab-decide-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.lab-decide-question {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 16px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.lab-decide-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lab-decide-labels .chip {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.lab-decide-none {
+  color: var(--fg-2);
+}
+
+.lab-decide-input {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.lab-decide-pick {
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.lab-decide-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lab-decide-bars li {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(48px, 1fr) 3.2em;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.lab-decide-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.3;
+}
+
+.lab-decide-picked .lab-decide-name {
+  font-weight: 650;
+}
+
+.lab-decide-track {
+  display: block;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.lab-decide-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--decide-base);
+}
+
+.lab-decide-bars-tuned .lab-decide-fill {
+  background: var(--decide-tuned);
+}
+
+.lab-decide-p {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}

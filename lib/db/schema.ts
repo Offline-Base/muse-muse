@@ -14,6 +14,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import type { Brief, TargetId } from "@/lib/brief/schema";
+import type { DecisionRows, DecisionSpec } from "@/lib/decide/types";
 import type { DocsHoldState } from "@/lib/docs/proxy/types";
 import type { DriveActor, DriveAddress, DriveBuild, DriveFile, DriveModel, DrivePayment, DriveStatus, VerifyResult } from "@/lib/drive/types";
 import type {
@@ -35,6 +36,7 @@ import type {
 import type { ToolFixtures, ToolPrincipal } from "@/lib/tools/ids";
 import type { BuildEventBody, BuildStatus, Manifest, NativeOrigin, ProductClip, ProductStatus, Reference } from "@/lib/types";
 import type {
+  DatasetKind,
   DatasetStatus,
   EvalExample,
   EvalSummary,
@@ -369,9 +371,23 @@ export const trainingDatasets = pgTable(
     /**
      * The model that wrote the prompts and the answers (DATASET_MODEL in lib/train/datasets.ts), saved when the dataset
      * is created. Null means Muse Spark 1.3, the model before Oct 29, 2026, which wrote every dataset made before the
-     * writer was recorded (writerModelOf in lib/train/models.ts).
+     * writer was recorded (writerModelOf in lib/train/models.ts). "person" for a decision dataset a person uploaded,
+     * "public" for Muse Decide's public mix (PERSON_WRITER and PUBLIC_WRITER there).
      */
     writerModel: text("writer_model"),
+    /**
+     * "chat" (written by a Muse model, rows in train and eval) or "decision" (docs/DECISION_MODELS.md: a person's
+     * labeled rows, in decision and decision_rows, with train and eval left empty so no reader of chat datasets
+     * changes). Migration 0017.
+     */
+    kind: text("kind").$type<DatasetKind>().notNull().default("chat"),
+    /** A decision dataset's definition: its question, labels, seed and split counts. Null for chat datasets. */
+    decision: jsonb("decision").$type<DecisionSpec>(),
+    /**
+     * A decision dataset's rows, split once when it is saved: the test split held out first, never trained on. Each
+     * split is grouped by label in the labels' order (lib/train/decision-datasets.ts). {} for chat datasets.
+     */
+    decisionRows: jsonb("decision_rows").$type<DecisionRows | Record<string, never>>().notNull().default({}),
   },
   (t) => [index("training_datasets_created_idx").on(t.createdAt)],
 );

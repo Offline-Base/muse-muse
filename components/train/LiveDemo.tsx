@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useState, type FormEvent } from "react";
 import { Icon } from "@/components/icons";
 import { MarkdownText } from "@/components/markdown/MarkdownText";
+import { DecideTryCard } from "@/components/train/DecideTry";
 import { RefreshWhileActive } from "@/components/train/RefreshWhileActive";
 import {
   DEMO_MINUTE_CHOICES,
@@ -13,6 +14,7 @@ import {
   TRY_PROMPT_MAX,
   demoPlan,
   timeLeftText,
+  type DecideTryModel,
 } from "@/components/train/format";
 import { toPublicLiveDemo, type PublicLiveDemo } from "@/components/train/results";
 import { askLiveDemo, startLiveDemo } from "@/components/train/tryLive";
@@ -218,6 +220,8 @@ export interface StartLiveDemoProps {
   blocked?: string | null;
   /** False while this job has no public result page (it isn't judged), so only admins could try the demo. */
   publicPage?: boolean;
+  /** True for a decision model's adapter: the demo picks a label for an input instead of answering an app idea. */
+  decide?: boolean;
 }
 
 /**
@@ -233,6 +237,7 @@ export function StartLiveDemo({
   dailyUsd,
   blocked = null,
   publicPage = true,
+  decide = false,
 }: StartLiveDemoProps) {
   const router = useRouter();
   const id = useId();
@@ -276,8 +281,12 @@ export function StartLiveDemo({
       <p className="lab-try-lead">
         Serve this adapter on one GPU for a set time.{" "}
         {publicPage
-          ? "Anyone with this page's link can then type an app idea and see base and tuned Glimmer answer it side by side, with no sign-in."
-          : "This job isn't judged yet, so its public result page doesn't exist and only admins can try the demo here."}
+          ? decide
+            ? "Anyone with this page's link can then type an input and see base Glimmer and this decision model each pick a label for it, with no sign-in."
+            : "Anyone with this page's link can then type an app idea and see base and tuned Glimmer answer it side by side, with no sign-in."
+          : decide
+            ? "This job isn't scored yet, so its public result page doesn't exist and only admins can try the demo here."
+            : "This job isn't judged yet, so its public result page doesn't exist and only admins can try the demo here."}
       </p>
       {blocked ? (
         <div className="callout train-callout-warn" role="note">
@@ -348,8 +357,8 @@ export function StartLiveDemo({
 
 /** What the admin job page of a trained glimmer-lora job has for its live demo. */
 export type JobLiveDemo =
-  /** A serve job for it is starting or live. */
-  | { kind: "demo"; demo: LiveDemoView }
+  /** A serve job for it is starting or live. `decideTry` for a decision model: its box picks labels instead. */
+  | { kind: "demo"; demo: LiveDemoView; decideTry?: DecideTryModel | null }
   /** None is open and its adapter can be served: offer to start one. */
   | ({ kind: "start" } & Omit<StartLiveDemoProps, "adapterJobId">);
 
@@ -357,9 +366,12 @@ export type JobLiveDemo =
 export function AdapterLiveDemo({ jobId, live, serverNow }: { jobId: string; live: JobLiveDemo; serverNow: number }) {
   if (live.kind === "demo") {
     const demo = toPublicLiveDemo(live.demo);
-    return demo ? (
+    if (!demo) return null;
+    return live.decideTry ? (
+      <DecideTryCard adapterJobId={jobId} demo={demo} model={live.decideTry} serverNow={serverNow} serveJobId={live.demo.serveJobId} />
+    ) : (
       <TryLiveCard adapterJobId={jobId} demo={demo} serverNow={serverNow} serveJobId={live.demo.serveJobId} />
-    ) : null;
+    );
   }
   return (
     <StartLiveDemo
@@ -370,6 +382,7 @@ export function AdapterLiveDemo({ jobId, live, serverNow }: { jobId: string; liv
       dailyUsd={live.dailyUsd}
       blocked={live.blocked}
       publicPage={live.publicPage}
+      decide={live.decide}
     />
   );
 }

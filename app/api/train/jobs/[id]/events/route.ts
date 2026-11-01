@@ -1,9 +1,21 @@
 import { after } from "next/server";
+import { DECIDE_OPTIONS_MAX, DECIDE_OPTIONS_MIN } from "@/lib/decide/format";
+import type { DecideScoreItem } from "@/lib/decide/types";
 import { hitRateLimits } from "@/lib/gateway/store";
 import { errorJson, HttpError, readJson, route } from "@/lib/http";
 import { terminateInstances } from "@/lib/train/lambda";
-import { certFingerprint, EVAL_TEXT_MAX, EVALS_MAX, isServeRecipe } from "@/lib/train/logic";
-import { applyCallback, finishJob, getJob, recordEvalEvent, recordEvent } from "@/lib/train/store";
+import {
+  ADAPTER_RECIPE,
+  certFingerprint,
+  DECIDE_CALLBACK_ITEMS_MAX,
+  DECIDE_ITEMS_MAX,
+  DECIDE_MODE,
+  EVAL_TEXT_MAX,
+  EVALS_MAX,
+  isServeRecipe,
+  jobMode,
+} from "@/lib/train/logic";
+import { applyCallback, finishJob, getJob, recordDecideEvent, recordEvalEvent, recordEvent } from "@/lib/train/store";
 import { isTrainTerminal, SERVE_PORT, type TrainArtifact, type TrainCallback } from "@/lib/train/types";
 import { jobBlobUrl, requireJobToken } from "../../../shared";
 
@@ -13,7 +25,8 @@ type Ctx = { params: Promise<{ id: string }> };
 const MAX_BODY_BYTES = 16 * 1024;
 /**
  * An eval callback carries four texts of up to 3,500 characters each, which can pass 16 KB once escaped or outside
- * ASCII, so it may be this large.
+ * ASCII, so it may be this large. So may a decide callback: 100 items of up to 10 log-probabilities, about 15 KB as the
+ * runner rounds them.
  */
 const MAX_EVAL_BODY_BYTES = 64 * 1024;
 /** Eval items have indexes from 0; this leaves room for a runner that numbers them in its own way. */
@@ -35,6 +48,32 @@ function text(value: unknown): string | undefined {
 
 function finite(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+/** A side's log-probabilities: 2 to 5 finite numbers, one per shown letter (scoring checks what they add up to). */
+function scores(value: unknown): number[] | null {
+  if (!Array.isArray(value) || value.length < DECIDE_OPTIONS_MIN || value.length > DECIDE_OPTIONS_MAX) return null;
+  return value.every((v) => finite(v) !== undefined) ? (value as number[]) : null;
+}
+
+/**
+ * One item of a decide callback with only its fields: an index in the part, the base model's log-probability of each
+ * shown letter (2 to 5), the tuned model's for the same letters or null, and each side's letter mass (null for a side
+ * not scored). Null when it isn't one.
+ */
+function decideScoreItem(value: unknown): DecideScoreItem | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const v = value as Record<string, unknown>;
+  const index = finite(v.index);
+  if (index === undefined || !Number.isInteger(index) || index < 0 || index >= DECIDE_ITEMS_MAX) return null;
+  const base = scores(v.base);
+  const baseMass = finite(v.baseMass);
+  if (!base || baseMass === undefined) return null;
+  if (v.tuned === null || v.tuned === undefined) return { index, base, tuned: null, baseMass, tunedMass: null };
+  const tuned = scores(v.tuned);
+  const tunedMass = finite(v.tunedMass);
+  if (!tuned || tuned.length !== base.length || tunedMass === undefined) return null;
+  return { index, base, tuned, baseMass, tunedMass };
 }
 
 /** Only set keys, so an absent field stays absent in the stored event. */
@@ -95,6 +134,22 @@ function parseCallback(body: Record<string, unknown>, jobId: string): TrainCallb
       const [prompt, reference, base, tuned] = fields.map((f) => (f as string).slice(0, EVAL_TEXT_MAX));
       return { type: "eval", index, prompt: prompt!, reference: reference!, base: base!, tuned: tuned! };
     }
+    case "decide": {
+      if (body.part !== "dev" && body.part !== "test") return null;
+      const raw = body.items;
+      if (!Array.isArray(raw) || !raw.length || raw.length > DECIDE_CALLBACK_ITEMS_MAX) return null;
+      const items: DecideScoreItem[] = [];
+      const seen = new Set<number>();
+      for (const value of raw) {
+        const item = decideScoreItem(value);
+        if (!item) return null;
+        // An index twice in one callback counts once, the first, as scoring reads them.
+        if (seen.has(item.index)) continue;
+        seen.add(item.index);
+        items.push(item);
+      }
+      return { type: "decide", part: body.part, items };
+    }
     case "serving": {
       // Only the port and the certificate come from the runner. The address the proxy connects to is the one Lambda
       // reports for the instance, so a leaked job token can't point the proxy anywhere else.
@@ -132,9 +187,12 @@ async function terminateNow(jobId: string, reason: string): Promise<void> {
  * callback (or an artifact that isn't this job's own Blob upload, or a serving callback that doesn't name port 8443 and
  * a SHA-256 fingerprint, or comes from a job that isn't glimmer-serve), 413 over 16 KB (64 KB for eval), 409 job_ended once
  * the job has ended (a late log is still kept), 409 artifact_limit once the job has ARTIFACTS_MAX artifacts, 409
- * eval_limit once it has EVALS_MAX eval items, 429 rate_limited past 120 heartbeat, progress, log, artifact and eval
- * callbacks a minute. Any callback counts as a sign of life. An eval item sent again with the same index is a retry:
- * 204, and it isn't logged twice. serving stores the job's serve endpoint (applyCallback: the IP Lambda reported, the
+ * eval_limit once it has EVALS_MAX eval items, 429 rate_limited past 120 heartbeat, progress, log, artifact, eval and
+ * decide callbacks a minute. Any callback counts as a sign of life. An eval item sent again with the same index is a
+ * retry: 204, and it isn't logged twice. A decide callback (docs/DECISION_MODELS.md "Callbacks and caps") comes only
+ * from a glimmer-lora job in decide mode (else 400), takes up to 64 KB and 100 items, and is logged with
+ * recordDecideEvent: an index already logged for its part counts once (204), and 409 decide_limit once the job's items
+ * would pass DECIDE_ITEMS_MAX. serving stores the job's serve endpoint (applyCallback: the IP Lambda reported, the
  * port and the fingerprint) and is logged. done and failed set the final status here and terminate the instance right
  * after the reply, and so does any other callback from an instance whose job already ended but isn't terminated.
  */
@@ -142,7 +200,7 @@ export const POST = route(async (req: Request, { params }: Ctx) => {
   const { id } = await params;
   await requireJobToken(req, id);
   const body = await readJson(req, MAX_EVAL_BODY_BYTES);
-  if (body.type !== "eval" && Buffer.byteLength(JSON.stringify(body)) > MAX_BODY_BYTES) {
+  if (body.type !== "eval" && body.type !== "decide" && Buffer.byteLength(JSON.stringify(body)) > MAX_BODY_BYTES) {
     throw new HttpError(413, "body_too_large");
   }
   const callback = parseCallback(body, id);
@@ -155,7 +213,14 @@ export const POST = route(async (req: Request, { params }: Ctx) => {
   if (!callback && body.type === "serving") {
     return errorJson(400, `Send the demo server's port (${SERVE_PORT}) and its certificate's SHA-256 fingerprint.`);
   }
-  if (!callback) return errorJson(400, "Send a heartbeat, progress, log, artifact, eval, serving, done or failed event.");
+  if (!callback && body.type === "decide") {
+    return errorJson(
+      400,
+      `Send the part (dev or test) and 1 to ${DECIDE_CALLBACK_ITEMS_MAX} items, each with its index, the base model's ` +
+        "log-probability for each shown letter and its letter mass, and the tuned model's for the same letters or null.",
+    );
+  }
+  if (!callback) return errorJson(400, "Send a heartbeat, progress, log, artifact, eval, decide, serving, done or failed event.");
 
   if (callback.type !== "done" && callback.type !== "failed") {
     const minute = new Date(Math.floor(Date.now() / 60_000) * 60_000);
@@ -168,6 +233,13 @@ export const POST = route(async (req: Request, { params }: Ctx) => {
     const job = await getJob(id);
     if (!job) return errorJson(404, "not_found");
     if (!isServeRecipe(job.recipe)) return errorJson(400, "Only a glimmer-serve job serves a live demo.");
+  }
+  if (callback.type === "decide") {
+    const job = await getJob(id);
+    if (!job) return errorJson(404, "not_found");
+    if (job.recipe !== ADAPTER_RECIPE || jobMode(job.params) !== DECIDE_MODE) {
+      return errorJson(400, "Only a Muse Glimmer LoRA job in decide mode sends decision scores.");
+    }
   }
 
   const applied = await applyCallback(id, callback, new Date());
@@ -188,6 +260,11 @@ export const POST = route(async (req: Request, { params }: Ctx) => {
   if (callback.type === "eval") {
     const recorded = await recordEvalEvent(id, callback, EVALS_MAX);
     if (recorded === "limit") return errorJson(409, "eval_limit", { max: EVALS_MAX });
+    return new Response(null, { status: 204 });
+  }
+  if (callback.type === "decide") {
+    const recorded = await recordDecideEvent(id, callback, DECIDE_ITEMS_MAX);
+    if (recorded === "limit") return errorJson(409, "decide_limit", { max: DECIDE_ITEMS_MAX });
     return new Response(null, { status: 204 });
   }
   // A bare heartbeat every minute would bury the log; lastHeartbeatAt already shows it.

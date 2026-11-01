@@ -65,7 +65,16 @@ EVAL_MAX = 60
 EVAL_FIELDS = ("prompt", "reference", "base", "tuned")
 # A "serving" callback's certSha256: the SHA-256 of the certificate's DER bytes, in lowercase hex.
 CERT_SHA256_CHARS = 64
-DATASET_PARTS = ("train", "eval")
+DATASET_PARTS = ("train", "eval", "dev")
+# A decide mode job's scores (ctx.decide; DECIDE_* in lib/train/logic.ts, which a test keeps equal): the parts, the
+# items one callback carries, the items one job sends, and a body size under the platform's 64 KB. JSON has no
+# -Infinity, so a letter with no probability is sent as DECIDE_LOGPROB_FLOOR; numbers are rounded to DECIDE_DIGITS.
+DECIDE_PARTS = ("dev", "test")
+DECIDE_CALLBACK_ITEMS = 100
+DECIDE_ITEMS_MAX = 8000
+DECIDE_BODY_LIMIT = 60000
+DECIDE_LOGPROB_FLOOR = -10000.0
+DECIDE_DIGITS = 6
 # Stops a nextPage loop that never ends: 1,000 pages of 100 items is far more than a dataset holds.
 DATASET_MAX_PAGES = 1000
 # How long the runner waits for the cache filesystem's mount to show up before going on without it.
@@ -536,6 +545,49 @@ def cut_eval_fields(body):
     return body
 
 
+def decide_number(value, floor=True):
+    """A log-probability or a letter mass as a decide callback carries it: a finite float rounded to DECIDE_DIGITS, at
+    least DECIDE_LOGPROB_FLOOR (so -Infinity is the floor). Raises ValueError for anything else (NaN, +Infinity, text)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("a decide score must be a number, not " + type(value).__name__)
+    number = float(value)
+    if math.isnan(number) or number == math.inf:
+        raise ValueError("a decide score must be a log-probability, not " + str(number))
+    if floor:
+        number = max(number, DECIDE_LOGPROB_FLOOR)
+    return round(number, DECIDE_DIGITS)
+
+
+def decide_item(item):
+    """One scored item as a decide callback carries it: {index, base, tuned, baseMass, tunedMass}, tuned and tunedMass
+    None when the tuned model didn't score it. Raises ValueError for an item that isn't one."""
+    if not isinstance(item, dict):
+        raise ValueError("a decide item must be a dict")
+    index = item.get("index")
+    if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < DECIDE_ITEMS_MAX:
+        raise ValueError("a decide item needs its index in the part, not " + repr(index)[:40])
+    base = item.get("base")
+    if not isinstance(base, (list, tuple)) or not base:
+        raise ValueError("decide item " + str(index) + " needs the base model's log-probabilities")
+    out = {"index": index, "base": [decide_number(v) for v in base], "tuned": None, "baseMass": decide_number(item.get("baseMass"), False), "tunedMass": None}
+    tuned = item.get("tuned")
+    if tuned is not None:
+        if not isinstance(tuned, (list, tuple)) or len(tuned) != len(base):
+            raise ValueError("decide item " + str(index) + "'s tuned log-probabilities must be one per letter, as its base ones are")
+        out["tuned"] = [decide_number(v) for v in tuned]
+        out["tunedMass"] = decide_number(item.get("tunedMass"), False)
+    return out
+
+
+def decide_bodies(part, items):
+    """The callbacks for these items: one, or halves of it until each body is under DECIDE_BODY_LIMIT."""
+    body = {"type": "decide", "part": part, "items": items}
+    if len(items) <= 1 or len(json.dumps(body, ensure_ascii=False, allow_nan=False).encode("utf-8")) <= DECIDE_BODY_LIMIT:
+        return [body]
+    half = len(items) // 2
+    return decide_bodies(part, items[:half]) + decide_bodies(part, items[half:])
+
+
 def deadline_of(job, now):
     """job.json's deadlineEpoch, else now plus maxMinutes, else None."""
     value = job.get("deadlineEpoch")
@@ -727,7 +779,8 @@ def http_once(method, url, headers, open_body=None, timeout=HUB_TIMEOUT, stop_at
 
 class Context:
     """What recipe.run(ctx) gets: params, cache_dir, work_dir, deadline, log, progress, run, upload, hub_upload,
-    get_json, dataset, dataset_title, eval, and for a glimmer-serve job serve_key and serving."""
+    get_json, dataset, dataset_title, dataset_kind, dataset_decide, eval, decide, and for a glimmer-serve job serve_key
+    and serving."""
 
     def __init__(self, job, platform, work_dir, settings, cache_dir=None, activity=None):
         self.params = dict(job.get("params") or {})
@@ -742,6 +795,10 @@ class Context:
         self.cache_dir = cache_dir
         # The dataset's title, from the pages dataset() reads: None before that, or when the platform sends none.
         self.dataset_title = None
+        # From the same pages: "decision" for a decision dataset (a chat dataset's pages name no kind), and its
+        # decide.json (docs/DECISION_MODELS.md, "Files a decision model produces"), or None.
+        self.dataset_kind = None
+        self.dataset_decide = None
         # A glimmer-serve job's serve key (job.json's serveKey): its demo server answers only requests that carry it.
         # None for any other job. Never log it; the runner blanks it out of log lines as it does the job token.
         serve_key = job.get("serveKey")
@@ -750,6 +807,7 @@ class Context:
         self._settings = settings
         self._activity = activity
         self._evals_sent = 0
+        self._decide_sent = 0
 
     def log(self, text):
         """Writes text to the job log and posts it as a log event (the last 4 KB)."""
@@ -930,10 +988,11 @@ class Context:
             raise RuntimeError("The platform answered GET " + safe_url(path) + " with a body that isn't JSON")
 
     def dataset(self, part):
-        """Every item of the job's dataset part ("train" or "eval"), paging GET /dataset until nextPage is null. Each
-        page's title is kept as dataset_title."""
+        """Every item of the job's dataset part ("train" or "eval", or "dev" for a decision dataset), paging GET
+        /dataset until nextPage is null. Each page's title is kept as dataset_title, and a decision dataset's kind and
+        decide.json as dataset_kind and dataset_decide."""
         if part not in DATASET_PARTS:
-            raise ValueError("dataset part must be train or eval, not " + repr(part))
+            raise ValueError("dataset part must be train, eval or dev, not " + repr(part))
         items = []
         page = 0
         for _ in range(DATASET_MAX_PAGES):
@@ -944,6 +1003,10 @@ class Context:
             items.extend(got)
             if isinstance(body.get("title"), str):
                 self.dataset_title = body["title"]
+            if isinstance(body.get("kind"), str):
+                self.dataset_kind = body["kind"]
+            if isinstance(body.get("decideJson"), dict):
+                self.dataset_decide = body["decideJson"]
             following = body.get("nextPage")
             if following is None:
                 say("dataset " + part + ": " + str(len(items)) + " items in " + str(page + 1) + " pages")
@@ -973,6 +1036,30 @@ class Context:
             "tuned": redact("" if tuned is None else tuned),
         }
         return self._platform.event(cut_eval_fields(body))
+
+    def decide(self, part, items):
+        """Posts a decide mode job's scores for one part ("dev" or "test"), DECIDE_CALLBACK_ITEMS a callback (fewer when
+        a body would pass DECIDE_BODY_LIMIT): each item's index in the part, the base and the tuned model's
+        log-probability of each shown letter (tuned None when it wasn't scored), and each side's letter mass. Numbers are
+        rounded to 6 decimals, and a letter with no probability (-Infinity) goes as DECIDE_LOGPROB_FLOOR, since JSON has
+        none. At most DECIDE_ITEMS_MAX items a job; later ones are only logged. Returns how many items the platform took.
+        Raises ValueError for a part or an item that isn't one, before anything is sent.
+        """
+        if part not in DECIDE_PARTS:
+            raise ValueError("decide part must be dev or test, not " + repr(part))
+        clean = [decide_item(item) for item in items]
+        room = max(0, DECIDE_ITEMS_MAX - self._decide_sent)
+        if len(clean) > room:
+            say(str(len(clean) - room) + " " + part + " scores not sent: a job sends at most " + str(DECIDE_ITEMS_MAX))
+            clean = clean[:room]
+        taken = 0
+        for start in range(0, len(clean), DECIDE_CALLBACK_ITEMS):
+            for body in decide_bodies(part, clean[start:start + DECIDE_CALLBACK_ITEMS]):
+                self._decide_sent += len(body["items"])
+                if self._platform.event(body):
+                    taken += len(body["items"])
+        say("decide " + part + ": the platform took " + str(taken) + " of " + str(len(clean)) + " scores")
+        return taken
 
     def serving(self, port, cert_sha256, model, adapter_job_id):
         """Posts a "serving" callback: the recipe's HTTPS server answers on port, with the self-signed certificate whose

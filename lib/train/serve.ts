@@ -12,6 +12,7 @@ import { isIP } from "node:net";
 import { connect, type TLSSocket } from "node:tls";
 import { env } from "@/lib/env";
 import { certFingerprint } from "@/lib/train/logic";
+import type { DecideLiveScores, DecideServeItem } from "@/lib/decide/types";
 import type { TryLiveAnswer } from "@/lib/train/types";
 
 /** The most of a demo server's answer the proxy reads. Two answers of 400 new tokens are far smaller. */
@@ -21,10 +22,11 @@ export const ANSWER_TEXT_MAX = 8000;
 
 /**
  * How long the TCP connect and the TLS handshake may take before the server counts as unreachable, and how long the
- * proxy waits for both answers (the GPU writes up to 400 new tokens for each). Tests shorten these; nothing else should
- * change them.
+ * proxy waits for both answers (the GPU writes up to 400 new tokens for each), and how long it waits for a decision
+ * model's scores (two forward passes of at most 3 prompts, well under 2 s on the GPU). Tests shorten these; nothing
+ * else should change them.
  */
-export const serveTiming = { connectMs: 10_000, answerMs: 120_000 };
+export const serveTiming = { connectMs: 10_000, answerMs: 120_000, decideMs: 30_000 };
 
 /**
  * The serving key of a glimmer-serve job: HMAC-SHA256 with GATEWAY_TOKEN_PEPPER of "serve:<job id>:<token hash>", in
@@ -178,4 +180,76 @@ export async function askLive(target: ServeTarget, key: string, prompt: string, 
   }
   const took = typeof ms === "number" && Number.isFinite(ms) && ms >= 0 ? Math.round(ms) : 0;
   return { base: base.slice(0, ANSWER_TEXT_MAX), tuned: tuned.slice(0, ANSWER_TEXT_MAX), ms: took };
+}
+
+/** The most of a decision model's answer the proxy reads: 3 prompts of 5 numbers each, twice, are far smaller. */
+const DECIDE_BYTES_MAX = 64 * 1024;
+
+/** rows when it is items.length lists of finite numbers, list i as long as items[i]'s letters; else null. */
+function scoreRows(rows: unknown, items: readonly DecideServeItem[]): number[][] | null {
+  if (!Array.isArray(rows) || rows.length !== items.length) return null;
+  const out: number[][] = [];
+  for (const [i, row] of rows.entries()) {
+    if (!Array.isArray(row) || row.length !== items[i]!.letters.length) return null;
+    if (!row.every((x) => typeof x === "number" && Number.isFinite(x))) return null;
+    out.push(row as number[]);
+  }
+  return out;
+}
+
+/** masses when it is items.length finite numbers, else a list of zeros (letter mass is a health number only). */
+function massRow(masses: unknown, items: readonly DecideServeItem[]): number[] {
+  if (Array.isArray(masses) && masses.length === items.length && masses.every((x) => typeof x === "number" && Number.isFinite(x))) {
+    return masses as number[];
+  }
+  return items.map(() => 0);
+}
+
+/**
+ * Asks a decision model's demo server (a glimmer-serve job whose adapter has decide.json, docs/DECISION_MODELS.md "On
+ * the lab's GPU") to score 1 to 3 prompts: POST /decide {items} with the serving key, pinned to the job's certificate,
+ * as askLive does. Returns each item's letters' log-probabilities from base Glimmer and from the tuned model (not
+ * renormalized: decisionFromScores in lib/decide/format.ts renormalizes, combines groups and applies T), their letter
+ * mass and the GPU's ms. Throws ServeError: busy for 409, 423 or 429, stopping for 503, bad_prompt for 400, 413 or 422
+ * (a prompt over 2,048 tokens is 422), refused for any other error status, bad_answer for an answer whose numbers aren't
+ * one finite number per letter of every item, and as pinnedPost does. Never sends anything but the rendered messages
+ * and letters.
+ */
+export async function askDecide(
+  target: ServeTarget,
+  key: string,
+  items: readonly DecideServeItem[],
+  timeoutMs: number,
+): Promise<DecideLiveScores> {
+  const body = JSON.stringify({ items: items.map((i) => ({ messages: i.messages, letters: i.letters })) });
+  const { status, text } = await pinnedPost(
+    target,
+    "/decide",
+    { authorization: `Bearer ${key}`, "content-type": "application/json", accept: "application/json" },
+    body,
+    timeoutMs,
+  );
+  if (status === 409 || status === 423 || status === 429) {
+    throw new ServeError("busy", "The decision model's server is scoring another request.", status);
+  }
+  if (status === 503) throw new ServeError("stopping", "The decision model's minutes are up and its server is shutting down.", status);
+  if (status === 400 || status === 413 || status === 422) {
+    throw new ServeError("bad_prompt", `The decision model's server refused the prompts (HTTP ${status}).`, status);
+  }
+  if (status < 200 || status >= 300) throw new ServeError("refused", `The decision model's server answered HTTP ${status}.`, status);
+  if (Buffer.byteLength(text) > DECIDE_BYTES_MAX) throw new ServeError("bad_answer", "The decision model's answer was too large.", status);
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new ServeError("bad_answer", "The decision model's answer isn't JSON.", status);
+  }
+  const d = (data ?? {}) as Record<string, unknown>;
+  const base = scoreRows(d.base, items);
+  const tuned = scoreRows(d.tuned, items);
+  if (!base || !tuned) {
+    throw new ServeError("bad_answer", "The decision model's answer doesn't have a score for every letter of every prompt.", status);
+  }
+  const took = typeof d.ms === "number" && Number.isFinite(d.ms) && d.ms >= 0 ? Math.round(d.ms) : 0;
+  return { base, tuned, baseMass: massRow(d.baseMass, items), tunedMass: massRow(d.tunedMass, items), ms: took };
 }

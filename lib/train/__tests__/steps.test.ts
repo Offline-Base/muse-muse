@@ -6,7 +6,10 @@
  * Lambda or database outage, a recipe with usesCache launches with its region's cache filesystem mounted, the
  * runner's deadline is never after the job's time limit, a glimmer-serve job (only it) launches with the demo
  * firewall ruleset attached and its serving key in job.json, and a glimmer-publish job mounts only the cache already in
- * its adapter's region. Nothing here calls Lambda or a database.
+ * its adapter's region. And scoreDecisionStep (decide-steps.ts): a decide job's summary from its GPU's scores and its
+ * dataset's dev and test rows, saved and logged with honest numbers, a failed job's base scores kept, a note when it
+ * can't score, nothing for any other job, and a database outage waited out. Nothing here calls Lambda, Meta or a
+ * database.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/train/__tests__/steps.test.ts
  *
@@ -15,8 +18,13 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { after, before, beforeEach, describe, it, mock } from "node:test";
+import { decisionItems } from "@/lib/decide/format";
+import type { DecideScoreItem, DecisionItemKey, DecisionRow, DecisionRows, DecisionSpec, DecisionSummary } from "@/lib/decide/types";
+import { checkDecisionUpload, decisionScoringInput } from "../decision-datasets";
 import type { LambdaInstance } from "../lambda";
-import type { TrainJobRow } from "../logic";
+import { summarizeDecisions, unjudgedNote, unjudgedSummary, type DatasetHead, type TrainJobRow } from "../logic";
+import type { EvalSummary } from "../types";
+import { TICKET_LABELS, TICKET_QUESTION, ticketRows } from "./decision-fixture";
 
 const MIN = 60_000;
 const JOB_ID = "1234abcd-0000-4000-8000-000000000000";
@@ -222,7 +230,40 @@ const fakeStore = {
     down("setInstanceIp");
     if (job) job.instanceIp = ip;
   },
+  // What scoreDecisionStep (decide-steps.ts) reads and writes.
+  getAdapterSource: async (id: string) => {
+    calls.push({ fn: "getAdapterSource", args: [id] });
+    down("getAdapterSource");
+    return job && job.id === id ? { job: { ...job }, metrics: doneMetrics } : null;
+  },
+  getDataset: async (id: string) => {
+    calls.push({ fn: "getDataset", args: [id] });
+    down("getDataset");
+    return datasetHead && datasetHead.id === id ? { ...datasetHead } : null;
+  },
+  decisionSplitRows: async (id: string, part: "train" | "dev" | "test") => {
+    calls.push({ fn: "decisionSplitRows", args: [id, part] });
+    down("decisionSplitRows");
+    const rows = datasetHead?.id === id && datasetHead.kind === "decision" ? storedRows?.[part] : undefined;
+    return rows ? { total: rows.total ?? rows.list.length, rows: new Map(rows.list.map((r, i) => [i, r] as const).filter(([, r]) => r !== null) as Array<[number, DecisionRow]>) } : null;
+  },
+  decideScores: async (id: string) => {
+    calls.push({ fn: "decideScores", args: [id] });
+    down("decideScores");
+    return id === job?.id ? { dev: [...sentScores.dev], test: [...sentScores.test] } : { dev: [], test: [] };
+  },
+  setEvalSummary: async (id: string, summary: EvalSummary) => {
+    calls.push({ fn: "setEvalSummary", args: [id, summary] });
+    down("setEvalSummary");
+    if (job && job.id === id) job = { ...job, evalSummary: summary };
+  },
 };
+
+/** The decide job's done metrics, its dataset's head, its stored rows (null for a missing one) and its GPU's scores. */
+let doneMetrics: Record<string, string | number> | null = null;
+let datasetHead: (Pick<DatasetHead, "id" | "kind" | "decision" | "status"> & Partial<DatasetHead>) | null = null;
+let storedRows: Partial<Record<"train" | "dev" | "test", { list: Array<DecisionRow | null>; total?: number }>> | null = null;
+let sentScores: { dev: DecideScoreItem[]; test: DecideScoreItem[] } = { dev: [], test: [] };
 
 const fakeLambda = {
   LambdaApiError: FakeLambdaApiError,
@@ -259,6 +300,7 @@ const fakeLambda = {
 
 const canMock = typeof (mock as { module?: unknown }).module === "function";
 let steps: typeof import("../steps");
+let decideSteps: typeof import("../decide-steps");
 let serve: typeof import("../serve");
 /** The serve recipe, when lib/train/recipes has it. */
 let serveRecipe: { id: string } | undefined;
@@ -274,6 +316,7 @@ describe("training steps", { skip: canMock ? false : "needs --experimental-test-
     mock.module(at("../../gateway/tokens.ts"), { namedExports: { hashToken: fakeHash } });
     mock.module("workflow", { namedExports: { FatalError: FakeFatalError, RetryableError: FakeRetryableError } });
     steps = await import("../steps");
+    decideSteps = await import("../decide-steps");
     serve = await import("../serve");
     const { RECIPES } = (await import(at("../recipes/index.ts"))) as typeof import("../recipes/index");
     serveRecipe = RECIPES.find((r) => r.id === "glimmer-serve");
@@ -291,6 +334,10 @@ describe("training steps", { skip: canMock ? false : "needs --experimental-test-
     calls = [];
     dbDown = {};
     listImpl = null;
+    doneMetrics = null;
+    datasetHead = null;
+    storedRows = null;
+    sentScores = { dev: [], test: [] };
     getImpl = async (id) => listing.find((i) => i.id === id) ?? null;
     ensureImpl = async (region) => cacheFs(region);
     findFsImpl = async (region) => cacheFs(region);
@@ -959,6 +1006,200 @@ describe("training steps", { skip: canMock ? false : "needs --experimental-test-
       job = row({ status: "running", stopRequested: true, instanceId: "inst-1", launchedAt: new Date(), tokenHash: "h" });
       assert.deepEqual(await steps.checkStep(JOB_ID), { action: "terminate", status: "stopped", reason: "Stopped by an admin." });
       assert.equal(called("getInstance").length, 0);
+    });
+  });
+
+  describe("scoreDecisionStep", () => {
+    const DATASET = "dddddddd-0000-4000-8000-000000000000";
+    // A made-up 4-label support-ticket set: 60 rows a label, so 6 dev rows a label (24, enough to fit T) and 12 test.
+    const checked = checkDecisionUpload({ question: TICKET_QUESTION, labels: TICKET_LABELS, rows: ticketRows([60, 60, 60, 60]) }, "score-seed");
+    assert.ok(checked.ok);
+    const spec: DecisionSpec = checked.spec;
+    const rows: DecisionRows = checked.rows;
+    const decideParams = { datasetId: DATASET, mode: "decide", epochs: 2, learningRate: 0.0002, loraRank: 16, scoreOnly: 0, dryRun: 0, publish: 0 };
+
+    /**
+     * One item's log-probabilities, 95% of the probability on its letters: `confidence` of it on `want`'s letter (a
+     * label id, or null for `none`), the rest shared evenly by the others.
+     */
+    function logprobs(item: DecisionItemKey, want: string | null, confidence: number): number[] {
+      const at = item.labelIds.indexOf(want);
+      assert.ok(at >= 0);
+      const n = item.labelIds.length;
+      return item.labelIds.map((_, i) => Math.log(i === at ? 0.95 * confidence : (0.95 * (1 - confidence)) / (n - 1)));
+    }
+
+    /** A wrong pick for a row: the first shown option that isn't its label. */
+    const wrongOf = (item: DecisionItemKey, right: string | null) => item.labelIds.find((id) => id !== right) ?? null;
+
+    /**
+     * The GPU's scores for a part, by these rules: base is right on rows not divisible by 3, tuned on rows not divisible
+     * by 7, both say `none` on every decline rendering. `tuned: false` sends no tuned scores (score only, or a failed
+     * tuned pass).
+     */
+    function gpuScores(part: "dev" | "test", opts: { tuned: boolean } = { tuned: true }): DecideScoreItem[] {
+      return decisionItems({ question: spec.question, labels: spec.labels, rows: rows[part], part }).map((item) => {
+        const right = item.decline ? null : rows[part][item.row]!.label;
+        const base = logprobs(item, item.decline || item.row % 3 ? right : wrongOf(item, right), 0.7);
+        const tuned = logprobs(item, item.decline || item.row % 7 ? right : wrongOf(item, right), 0.9);
+        return { index: item.index, base, tuned: opts.tuned ? tuned : null, baseMass: 0.95, tunedMass: opts.tuned ? 0.95 : null };
+      });
+    }
+
+    /** A decide job that ended as `status`, its dataset and rows stored, and the GPU's scores sent. */
+    function decideJob(over: Partial<TrainJobRow> = {}, opts: { tuned?: boolean } = {}) {
+      job = row({ recipe: "glimmer-lora", status: "succeeded", params: decideParams, terminatedAt: new Date(), ...over });
+      doneMetrics = { mode: "decide", too_long: 0 };
+      datasetHead = { id: DATASET, kind: "decision", decision: spec, status: "ready" };
+      storedRows = { dev: { list: [...rows.dev] }, test: { list: [...rows.test] } };
+      sentScores = { dev: gpuScores("dev", { tuned: opts.tuned ?? true }), test: gpuScores("test", { tuned: opts.tuned ?? true }) };
+    }
+
+    const saved = () => called("setEvalSummary").map((c) => c.args[1] as EvalSummary);
+    const logged = () => called("recordEvent").map((c) => (c.args[1] as { text: string }).text);
+    /** How many of a split's rows a rule gets right. */
+    const rightBy = (n: number, divisor: number) => Array.from({ length: n }, (_, i) => i % divisor !== 0).filter(Boolean).length;
+
+    it("scores a decide job from its GPU's scores and its dataset's dev and test rows, saves the summary and logs it", async () => {
+      decideJob();
+      // A retried callback's repeat and a shuffled order change nothing: the first score sent for an index counts.
+      sentScores.test = [...sentScores.test].reverse();
+      const repeat = { ...sentScores.test.at(-1)!, base: sentScores.test[0]!.base };
+      sentScores.test.push(repeat);
+      const want = summarizeDecisions(decisionScoringInput(spec, rows, { dev: gpuScores("dev"), test: gpuScores("test") }, 0));
+
+      assert.deepEqual(await decideSteps.scoreDecisionStep(JOB_ID), { saved: "summary", items: 48, testRows: 48 });
+      const [summary] = saved() as DecisionSummary[];
+      assert.deepEqual(summary, want);
+      assert.equal(summary!.kind, "decision");
+      assert.deepEqual([summary!.items, summary!.testRows, summary!.devRows, summary!.unscoredRows], [48, 48, 24, 0]);
+      assert.equal(summary!.tuned!.accuracy.right, rightBy(48, 7));
+      assert.equal(summary!.base.accuracy.right, rightBy(48, 3));
+      assert.equal(summary!.tunedWins - summary!.baseWins, rightBy(48, 7) - rightBy(48, 3));
+      assert.equal(summary!.base.decline!.rate, 1);
+      assert.ok(summary!.tuned!.calibrated && summary!.base.calibrated, "24 dev rows fit T");
+      assert.deepEqual([summary!.avgBaseScore, summary!.avgTunedScore, summary!.judgeCostUsd], [0, 0, 0], "no judge, nothing spent");
+      assert.equal(job!.status, "succeeded", "the status is untouched");
+      assert.deepEqual(
+        called("decisionSplitRows").map((c) => c.args),
+        [
+          [DATASET, "dev"],
+          [DATASET, "test"],
+        ],
+        "dev and test read whole, never train",
+      );
+      const pct = (n: number) => Math.round((n / 48) * 100);
+      assert.deepEqual(logged(), [
+        `Scored all 48 held-out examples, with no judge and nothing spent: the tuned model was right on ${rightBy(48, 7)} (${pct(rightBy(48, 7))}%), base Glimmer on ${rightBy(48, 3)} (${pct(rightBy(48, 3))}%). Confidence is calibrated on the dev rows (T = ${summary!.tuned!.T}). It can be wrong: check anything that matters.`,
+      ]);
+      assert.ok(!logged()[0]!.includes("—"), "no em dashes");
+    });
+
+    it("counts the GPU's too-long renderings and leaves a row without a usable score out of every number", async () => {
+      decideJob();
+      doneMetrics = { mode: "decide", too_long: "3" };
+      sentScores.test = sentScores.test.filter((s) => s.index !== 5);
+      await decideSteps.scoreDecisionStep(JOB_ID);
+      const [summary] = saved() as DecisionSummary[];
+      assert.deepEqual([summary!.items, summary!.unscoredRows, summary!.tooLong], [47, 1, 3]);
+      assert.match(logged()[0]!, /^Scored 47 of the 48 held-out examples, /);
+      assert.match(logged()[0]!, / 1 held-out example had no usable score, so it is left out of every number\. 3 renderings were too long to score\. /);
+    });
+
+    it("scores base Glimmer alone for a score-only job, and for one that failed after sending its base scores", async () => {
+      decideJob({ params: { ...decideParams, scoreOnly: 1 } }, { tuned: false });
+      assert.deepEqual(await decideSteps.scoreDecisionStep(JOB_ID), { saved: "summary", items: 48, testRows: 48 });
+      assert.equal((saved()[0] as DecisionSummary).tuned, null);
+      assert.match(logged()[0]!, /^Scored base Glimmer on all 48 held-out examples, with no judge and nothing spent: it was right on \d+ \(\d+%\)\. Score only, so nothing trained\. /);
+
+      calls = [];
+      decideJob({ status: "failed", error: "The adapter was saved, but the tuned model's scores failed." }, { tuned: false });
+      assert.deepEqual(await decideSteps.scoreDecisionStep(JOB_ID), { saved: "summary", items: 48, testRows: 48 });
+      assert.equal((saved()[0] as DecisionSummary).tuned, null);
+      assert.match(logged()[0]!, /^The job didn't succeed, so these are only the scores its GPU sent before it stopped\. Scored base Glimmer on all 48 /);
+      assert.match(logged()[0]!, /The tuned model sent no scores, so there is nothing to compare it with\./);
+      assert.equal(job!.status, "failed", "still failed");
+    });
+
+    it("does nothing for a job that isn't a decide job, is gone, already has a summary, or failed with no scores", async () => {
+      const already = { items: 3, tunedWins: 1, baseWins: 1, ties: 1, avgBaseScore: 0, avgTunedScore: 0, judgeCostUsd: 0 };
+      for (const setup of [
+        () => decideJob({ params: { datasetId: DATASET } }),
+        () => decideJob({ recipe: "smoke" }),
+        () => decideJob({ evalSummary: already }),
+        () => {
+          decideJob({ status: "failed" });
+          sentScores = { dev: [], test: [] };
+        },
+        () => {
+          decideJob();
+          job = null;
+        },
+      ]) {
+        calls = [];
+        setup();
+        assert.deepEqual(await decideSteps.scoreDecisionStep(JOB_ID), { saved: "none" });
+        assert.equal(called("setEvalSummary").length + called("recordEvent").length, 0);
+      }
+    });
+
+    it("saves a note that says why there are no results when it can't score", async () => {
+      const cases: Array<[() => void, string]> = [
+        [() => (sentScores = { dev: [], test: [] }), "Scoring found no decision scores from the GPU, so this job has no results."],
+        [() => (datasetHead = null), "Scoring skipped: the job's decision dataset is gone, so the GPU's scores can't be matched to its examples."],
+        [() => (datasetHead = { ...datasetHead!, kind: "chat", decision: null }), "Scoring skipped: the job's decision dataset is gone, so the GPU's scores can't be matched to its examples."],
+        [
+          () => (storedRows = { ...storedRows!, test: { list: [...rows.test], total: rows.test.length + 1 } }),
+          "Scoring failed: the dataset's dev and test rows don't match its spec, so the GPU's scores can't be matched to them.",
+        ],
+        [
+          () => {
+            const dev = [...rows.dev];
+            [dev[0], dev[dev.length - 1]] = [dev[dev.length - 1]!, dev[0]!];
+            storedRows = { ...storedRows!, dev: { list: dev } };
+          },
+          "Scoring failed: the dataset's dev rows don't match its spec, so the GPU's scores can't be matched to them.",
+        ],
+      ];
+      for (const [setup, note] of cases) {
+        calls = [];
+        decideJob();
+        setup();
+        assert.deepEqual(await decideSteps.scoreDecisionStep(JOB_ID), { saved: "note", note });
+        assert.deepEqual(saved(), [unjudgedSummary(note)]);
+        assert.equal(unjudgedNote(job!.evalSummary), note, "the job page reads the outcome from the job's own record");
+        assert.deepEqual(logged(), [note]);
+      }
+    });
+
+    it("keeps the whole summary, with a note, when no held-out example has a usable score", async () => {
+      decideJob();
+      // Probabilities sent in place of log-probabilities hold more than all the probability, so nothing is usable.
+      sentScores.test = sentScores.test.map((s) => ({ ...s, base: s.base.map((lp) => Math.exp(lp)) }));
+      doneMetrics = { mode: "decide", too_long: 1 };
+      assert.deepEqual(await decideSteps.scoreDecisionStep(JOB_ID), { saved: "summary", items: 0, testRows: 48 });
+      const [summary] = saved() as DecisionSummary[];
+      const note = "Scoring found no held-out example with a usable score for every rendering, so there are no results: all 48 held-out examples were left out. 1 rendering was too long to score.";
+      assert.deepEqual([summary!.kind, summary!.items, summary!.unscoredRows, summary!.note], ["decision", 0, 48, note]);
+      assert.equal(unjudgedNote(summary), note);
+      assert.deepEqual(logged(), [note]);
+    });
+
+    it("waits 30 s while the database is down, and an attempt after the save leaves the summary as it is", async () => {
+      decideJob();
+      dbDown = { getAdapterSource: 1 };
+      const err = await decideSteps.scoreDecisionStep(JOB_ID).then(() => null, (e: unknown) => e);
+      assert.ok(err instanceof FakeRetryableError);
+      assert.equal(retryAfter(err), "30s");
+      dbDown = { setEvalSummary: 1 };
+      assert.ok((await decideSteps.scoreDecisionStep(JOB_ID).then(() => null, (e: unknown) => e)) instanceof FakeRetryableError);
+      assert.equal(job!.evalSummary, null, "nothing saved yet");
+      assert.equal((await decideSteps.scoreDecisionStep(JOB_ID)).saved, "summary");
+      const first = job!.evalSummary;
+      calls = [];
+      assert.deepEqual(await decideSteps.scoreDecisionStep(JOB_ID), { saved: "none" });
+      assert.equal(job!.evalSummary, first);
+      assert.equal(called("setEvalSummary").length, 0);
     });
   });
 });

@@ -916,6 +916,37 @@ describe("publishing to the Hugging Face Hub", { skip: canMock ? false : "needs 
       assert.deepEqual(await steps.hubPlanStep(off, "succeeded", true), { action: "none" }, "the claim is taken once");
     });
 
+    it("never publishes a decision model, not even on an admin's Publish, and its GPU uploads nothing", async () => {
+      const decided = { items: 2, tunedWins: 1, baseWins: 0, ties: 1, avgBaseScore: 0, avgTunedScore: 0, judgeCostUsd: 0, kind: "decision" };
+      const paramsList: Array<Record<string, string | number>> = [
+        { datasetId: DATASET_ID, mode: "decide", epochs: 2, learningRate: 0.0002, loraRank: 16, scoreOnly: 0, dryRun: 0, publish: 0 },
+        { datasetId: DATASET_ID, mode: "decide", epochs: 2, dryRun: 0 },
+      ];
+      for (const params of paramsList) {
+        const jobId = await makeJob({ params });
+        const plan = await gpuUpload(jobId, TOKEN, adapterFolder());
+        assert.equal(plan.status, 200);
+        assert.equal(plan.plan.skip, "Publish to Hugging Face is 0 for this job.", "publish is 0 in decide mode, set or not");
+        await judged(jobId);
+        await testDb.update(realSchema.trainingJobs).set({ evalSummary: decided }).where(eq(realSchema.trainingJobs.id, jobId));
+        const before = await hubOf(jobId);
+        assert.deepEqual(await steps.hubPlanStep(jobId, "succeeded"), { action: "none" });
+        assert.deepEqual(await steps.hubPlanStep(jobId, "succeeded", true), { action: "none" }, "an admin's Publish too");
+        assert.deepEqual(await hubOf(jobId), before, "no claim, no waiting state");
+        const res = await publishPost(
+          new Request(`https://muse.example.com/api/train/jobs/${jobId}/publish`, { method: "POST", body: "{}" }),
+          { params: Promise.resolve({ id: jobId }) },
+        );
+        assert.equal(res.status, 409);
+        assert.deepEqual(await res.json(), {
+          error: "not_publishable",
+          reason: "It is a decision model, and publishing one (the adapter alone, with a decision card, never the person's rows) isn't built yet.",
+        });
+      }
+      assert.equal(started.length, 0, "no upload job, no workflow");
+      assert.equal(fake.repos.size, 0, "nothing reached the Hub");
+    });
+
     it("fails publishing when the Hub lost an object, so Publish uploads it again with a glimmer-publish job", async () => {
       const jobId = await uploadedJudgedJob();
       const hub = (await hubOf(jobId))!;
