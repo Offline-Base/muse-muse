@@ -21,7 +21,16 @@ export function RestoreVersion({ buildId, number }: { buildId: string; number: n
         router.push(`/b/${body.buildId}`);
         return;
       }
-      setError(body.error === "busy" ? "Another build of this product is running. Try again when it ends." : body.error === "not_shipped" ? "This product isn't live right now, so it can't be restored." : (body.error ?? "It couldn't be restored. Try again."));
+      // The route answers codes for these, and sentences for the rest.
+      const codes: Record<string, string> = {
+        busy: "Another build of this product is running. Try again when it ends.",
+        not_shipped: "This product isn't live right now, so it can't be restored.",
+        daily_limit: "You've used today's builds, and a restore counts as one. Try again tomorrow.",
+        shared_limit: "Guests have used today's builds, and a restore counts as one. Try again tomorrow.",
+        paused: "Building is paused for today. Try again tomorrow.",
+      };
+      const said = body.error ?? "";
+      setError(codes[said] ?? (/^[a-z_]+$/.test(said) || !said ? "It couldn't be restored. Try again." : said));
     } catch {
       setError("It couldn't be restored. Check your connection and try again.");
     }

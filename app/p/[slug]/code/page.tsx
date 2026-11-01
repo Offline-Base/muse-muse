@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Icon } from "@/components/icons";
 import { RestoreVersion } from "@/components/product/RestoreVersion";
-import { EmptyCard, NotConnected, StatusPill } from "@/components/ui";
+import { EmptyCard, NotConnected, PageHeader, StatusPill } from "@/components/ui";
 import { canActAsOwner } from "@/lib/auth";
 import { db, schema } from "@/lib/db/client";
 import { relativeTime, statusLabel, truncate, usd } from "@/lib/format";
@@ -169,7 +169,7 @@ export default async function CodePage({ params, searchParams }: { params: Promi
           <span>{truncate(product.name, 40)}</span>
         </Link>
       </div>
-      <h1 className="page-title">Code</h1>
+      <PageHeader title="Code" />
       {!commit ? (
         <EmptyCard title="No code yet">This product has no builds yet, so there&apos;s no code to show.</EmptyCard>
       ) : (

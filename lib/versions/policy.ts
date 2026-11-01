@@ -46,7 +46,7 @@ const SECRET: ReadonlyArray<RegExp> = [
   /\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}/,
   /\bsk-(?:ant-|proj-)?[A-Za-z0-9_-]{32,}/,
   /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{30,}|\bgithub_pat_[A-Za-z0-9_]{30,}/,
-  /\bhf_[A-Za-z]{30,}/,
+  /\bhf_[A-Za-z0-9]{30,}/,
   /\bAKIA[0-9A-Z]{16}\b/,
   /\bAIza[0-9A-Za-z_-]{35}\b/,
   /\bxox[abprs]-[A-Za-z0-9-]{20,}/,

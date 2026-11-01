@@ -58,7 +58,7 @@ export default async function BuildsPage() {
       ) : (
         <div className="table-wrap">
           <table className="data data-list">
-            <caption className="sr-only">Your builds, newest first</caption>
+            <caption className="sr-only">Builds, newest first</caption>
             <thead>
               <tr>
                 <th scope="col">Build</th>
