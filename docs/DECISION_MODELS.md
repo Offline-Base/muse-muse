@@ -52,6 +52,23 @@ inferred or estimated, needs a test; **[R]** reported by a third party, not repr
 and Vercel, and the GPU's side ran on fake Unsloth and torch. Muse Glimmer never ran on the owner's laptop: only its
 tokenizer files were read, for the D1 fixture.
 
+**Review of D3 to D9 (Oct 31),** approved, then these fixed in their own commits after `efe24eb`:
+- The calibration sentence (`calibrationText`, the decision card) no longer promises "an answer at 90% was right about
+  9 times in 10", which no record holds. It says T was fit on the dev rows and gives the test rows' calibration error
+  with T and before, and says when T didn't help.
+- `{GATEWAY_URL}/decide` counts a call against its minute limits right after the token, before reading the body or
+  looking up a model, so refused calls count too.
+- `GLIMMER_PY` decide mode: training pads on the right (scoring puts the padding side back); without `logits_to_keep`
+  scoring goes one prompt a pass; the `SFTConfig` is made before the base pass, and one that refuses only
+  `group_by_length` trains without it (done metric `group_by_length`). D8 now has a `scoreOnly` run after the dry run.
+- The gateway's window backend takes the slot wait off the GPU call's time and skips the call once the gateway stopped
+  waiting, so a 504 never holds the window's slot.
+- Smaller: the chat dataset body limit counts bytes again; the Try it live box says "too long" only for the GPU's 422;
+  the glimmer-lora description and dry run help say what decide mode does; the browser fixture's summary counts the
+  items it sent.
+- Not changed: a chat job's dataset page still reads the dataset head before its 429 check (one primary-key read per
+  page, only a job's own GPU token reaches the route, and statuses are the same for real jobs).
+
 **Left,** in order:
 
 1. **D8, the real runs (waits for the owner, decision 2).** One `dryRun: 1` decide job on a real GPU (a few minutes,
