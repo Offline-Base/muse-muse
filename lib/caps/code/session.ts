@@ -46,8 +46,11 @@ export interface SessionResult {
 export interface CodeSession {
   readonly name: string;
   writeFiles(files: Array<{ path: string; content: Buffer }>): Promise<void>;
-  /** Runs a command and waits for it, killing it after timeoutMs. */
-  run(cmd: string, args: string[], opts: { timeoutMs: number; cwd?: string }): Promise<SessionResult>;
+  /**
+   * Runs a command and waits for it, killing it after timeoutMs. With maxOutputBytes, reads at most that much of its
+   * output: for anything run after an agent, which could flood it (or replace the command).
+   */
+  run(cmd: string, args: string[], opts: { timeoutMs: number; cwd?: string; maxOutputBytes?: number }): Promise<SessionResult>;
   readFile(path: string): Promise<Buffer | null>;
 }
 
@@ -100,6 +103,7 @@ function handleFor(sandbox: Sandbox, name: string, signal: AbortSignal): LongSes
     },
     async run(cmd, args, opts) {
       const done = await sandbox.runCommand({ cmd, args, ...(opts.cwd ? { cwd: opts.cwd } : {}), env: {}, timeoutMs: opts.timeoutMs, signal: AbortSignal.any([signal, AbortSignal.timeout(opts.timeoutMs + 5_000)]) });
+      if (opts.maxOutputBytes !== undefined) return { exitCode: done.exitCode, ...(await cappedOutput(done, opts.maxOutputBytes, signal)) };
       return { exitCode: done.exitCode, stdout: await done.stdout({ signal }), stderr: await done.stderr({ signal }) };
     },
     async readFile(path) {
@@ -141,12 +145,45 @@ export async function readCapped(stream: AsyncIterable<Buffer | string> | NodeJS
   return Buffer.concat(parts);
 }
 
-/** The same sandbox again, from a later request, or null when it's gone. Every call is cut off after `deadlineMs`. */
-export const openSession: OpenSession = async (name, opts = {}) => {
-  const signal = AbortSignal.timeout(opts.deadlineMs ?? 60_000);
-  const sandbox = await Sandbox.get({ name, signal }).catch(() => null);
-  return sandbox ? handleFor(sandbox, name, signal) : null;
-};
+/** A command's output, at most `maxBytes` in all, then it lets go. The stream stops at the cap, however much more comes. */
+export async function cappedOutput(command: { logs(opts?: { signal?: AbortSignal }): AsyncIterable<{ stream: string; data: string }> }, maxBytes: number, signal?: AbortSignal): Promise<{ stdout: string; stderr: string }> {
+  const kept = { stdout: "", stderr: "" };
+  let left = maxBytes;
+  for await (const line of command.logs(signal ? { signal } : {})) {
+    const part = line.data.slice(0, left);
+    if (line.stream === "stderr") kept.stderr += part;
+    else kept.stdout += part;
+    left -= part.length;
+    if (left <= 0) break;
+  }
+  return kept;
+}
+
+/** A sandbox in one of these has nothing left to read. */
+const SANDBOX_GONE = new Set(["stopping", "stopped", "failed", "aborted"]);
+/** Not found, or gone for good. */
+const isGone = (err: unknown) => [404, 410].includes((err as { response?: { status?: number } } | null)?.response?.status ?? 0);
+
+/**
+ * The same sandbox again, from a later request. Null means it's really gone: anything else, such as the Sandbox API
+ * failing for a moment, is thrown, so the caller can try again rather than end a healthy session.
+ */
+export function openSessionWith(get: (opts: { name: string; signal: AbortSignal }) => Promise<Sandbox>): OpenSession {
+  return async (name, opts = {}) => {
+    const signal = AbortSignal.timeout(opts.deadlineMs ?? 60_000);
+    let sandbox: Sandbox;
+    try {
+      sandbox = await get({ name, signal });
+    } catch (err) {
+      if (isGone(err)) return null;
+      throw err;
+    }
+    return SANDBOX_GONE.has(sandbox.status) ? null : handleFor(sandbox, name, signal);
+  };
+}
+
+/** The same sandbox again, or null when it's gone. Every call is cut off after `deadlineMs`. Throws when it can't tell. */
+export const openSession: OpenSession = openSessionWith((opts) => Sandbox.get(opts));
 
 /** Stops and deletes a session's sandbox, each in at most 10 s. Never throws: the sandbox's own timeout is the backstop. */
 export async function stopSession(sandbox: Pick<Sandbox, "stop" | "delete">): Promise<void> {

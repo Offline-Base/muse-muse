@@ -43,7 +43,7 @@ export const codeSessionStore: CodeSessionStore = {
   },
   async buildTotals(namespace, now) {
     const rows = await db()
-      .select({ tokenId: schema.codeSessions.tokenId, status: schema.codeSessions.status, budgetUsd: schema.codeSessions.budgetUsd, startedAt: schema.codeSessions.startedAt, createdAt: schema.codeSessions.createdAt, endedAt: schema.codeSessions.endedAt, endsAt: schema.codeSessions.endsAt })
+      .select({ tokenId: schema.codeSessions.tokenId, worked: schema.codeSessions.worked, status: schema.codeSessions.status, budgetUsd: schema.codeSessions.budgetUsd, startedAt: schema.codeSessions.startedAt, createdAt: schema.codeSessions.createdAt, endedAt: schema.codeSessions.endedAt, endsAt: schema.codeSessions.endsAt })
       .from(schema.codeSessions)
       .where(eq(schema.codeSessions.namespace, namespace));
     // A session that never started doesn't count against the build's two.
@@ -61,7 +61,7 @@ export const codeSessionStore: CodeSessionStore = {
       const [row] = await db().select({ total: sql<number>`coalesce(sum(${schema.usage.costUsd}), 0)` }).from(schema.usage).where(and(inArray(schema.usage.tokenId, endedIds), eq(schema.usage.source, "gateway")));
       usd += Number(row?.total ?? 0);
     }
-    return { sessions: real.length, ms, usd };
+    return { sessions: real.length, ms, usd, worked: real.filter((r) => r.worked).length };
   },
 };
 
@@ -108,16 +108,6 @@ export async function briefOfToken(token: { scope: string; productId: string; bu
 
 // ---------- The sweep's reads ----------
 
-/** Sessions still marked starting or running whose limit and grace have passed. */
-export async function overdueSessions(now: Date): Promise<CodeSessionRow[]> {
-  const rows = await db()
-    .select()
-    .from(schema.codeSessions)
-    .where(and(inArray(schema.codeSessions.status, ACTIVE), lt(schema.codeSessions.endsAt, new Date(now.getTime() - 60_000))))
-    .limit(50);
-  return rows as CodeSessionRow[];
-}
-
 /** Sessions still marked starting or running, by product or build namespace. */
 export async function activeSessionsWhere(by: { productId?: string; namespace?: string }): Promise<CodeSessionRow[]> {
   const rows = await db()
@@ -147,6 +137,19 @@ export async function clearResult(id: string): Promise<void> {
   await db().update(schema.codeSessions).set({ resultUrl: null }).where(eq(schema.codeSessions.id, id));
 }
 
+/**
+ * Clears what a person's task may be quoted in, once a session has been over a day: its steps, final text, file names and
+ * reason. The row stays, with its counts and cost, since the day's spend finds its token through it. Returns how many.
+ */
+export async function clearOldSessionText(before: Date): Promise<number> {
+  const rows = await db()
+    .update(schema.codeSessions)
+    .set({ events: [], condense: {}, finalText: null, files: [], dropped: [], reason: null })
+    .where(and(lt(schema.codeSessions.endedAt, before), sql`${schema.codeSessions.status} not in ('starting', 'running')`, sql`(${schema.codeSessions.finalText} is not null or ${schema.codeSessions.reason} is not null or jsonb_array_length(${schema.codeSessions.events}) > 0 or jsonb_array_length(${schema.codeSessions.files}) > 0 or jsonb_array_length(${schema.codeSessions.dropped}) > 0)`))
+    .returning({ id: schema.codeSessions.id });
+  return rows.length;
+}
+
 /** A build's session rows once it has ended (their zips first), and crashed builds' after two days. */
 export async function deleteBuildSessions(namespace: string): Promise<void> {
   await db().delete(schema.codeSessions).where(and(eq(schema.codeSessions.namespace, namespace), sql`${schema.codeSessions.status} not in ('starting', 'running')`));
@@ -164,12 +167,15 @@ export async function deleteSession(id: string): Promise<void> {
   await db().delete(schema.codeSessions).where(eq(schema.codeSessions.id, id));
 }
 
-/** The gateway's record of a build's sessions (CAP_PROOF.code): real ones since `since`, and those that worked. */
-export async function museCodeProof(namespace: string, since: Date | null): Promise<{ museCode: number; museCodeWorked: number }> {
+/**
+ * The gateway's record of a build's sessions (CAP_PROOF.code): real ones, and those that worked, over the whole build
+ * and not one verify. A build gets 2 real sessions and many verifies, so a run that worked holds for the verifies after it.
+ */
+export async function museCodeProof(namespace: string): Promise<{ museCode: number; museCodeWorked: number }> {
   const [row] = await db()
     .select({ n: sql<number>`count(*) filter (where ${schema.codeSessions.startedAt} is not null)::int`, worked: sql<number>`count(*) filter (where ${schema.codeSessions.worked})::int` })
     .from(schema.codeSessions)
-    .where(and(eq(schema.codeSessions.namespace, namespace), ...(since ? [gte(schema.codeSessions.createdAt, since)] : [])));
+    .where(eq(schema.codeSessions.namespace, namespace));
   return { museCode: Number(row?.n ?? 0), museCodeWorked: Number(row?.worked ?? 0) };
 }
 

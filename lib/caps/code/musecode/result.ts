@@ -1,19 +1,21 @@
 import { createHash } from "node:crypto";
 import { deflateRawSync } from "node:zlib";
 import { MUSE_CODE_LIMITS } from "@/lib/caps/code/musecode/limits";
-import { redactBytes } from "@/lib/caps/code/musecode/redact";
+import { redactBytes, redactText } from "@/lib/caps/code/musecode/redact";
 
 /**
  * A Muse Code session's result (docs/CAPABILITIES.md, 15b; the spike's "The binary"). The session's sandbox packs its
  * workspace as a tar, and the platform builds the zip itself from that tar's bytes, so nothing the agent did inside
  * the VM (it has every capability there) can slip a file past these rules:
  *
- *   - the workspace only: paths are relative, with no `..`, and node_modules, .git and .muse are left out
+ *   - the workspace only: paths are relative, with no `..`, no drive, control characters or direction marks, and the
+ *     folders in LEFT_OUT_DIRS are left out in any case
  *   - regular files only: a symlink, hard link, device or folder entry is never followed or kept
  *   - no ELF files (Linux programs), and no file whose sha256 matches the Muse Code binary or its helpers, hashed before
  *     the session started
  *   - at most 10 MB a file, 50 MB and 500 files in all
- *   - every file scanned for the platform's secrets and the session's token, and each hit redacted
+ *   - every file scanned for the platform's secrets and the session's token, and each hit redacted. A file whose name
+ *     holds one is left out, and no name kept or listed shows it
  *
  * A piece of the binary split under the caps could still leave (the spike's open point). That is in the owner's terms
  * decision for visitors (decision 10), and stays open.
@@ -39,7 +41,12 @@ export interface SessionResultFiles {
 }
 
 /** Folders a result never includes. */
-export const LEFT_OUT_DIRS = ["node_modules", ".git", ".muse"] as const;
+export const LEFT_OUT_DIRS = ["node_modules", ".git", ".muse", ".venv", "__pycache__"] as const;
+const LEFT_OUT = new Set<string>(LEFT_OUT_DIRS);
+/** Characters a name in a zip must not carry: controls and direction marks mislead, and `:` is a drive or a stream on Windows. */
+// eslint-disable-next-line no-control-regex
+const BAD_NAME = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069:\\]/;
+const isLeftOut = (part: string) => LEFT_OUT.has(part.toLowerCase());
 
 const ELF_MAGIC = Buffer.from([0x7f, 0x45, 0x4c, 0x46]);
 
@@ -106,15 +113,26 @@ export function readTar(tar: Buffer): TarEntry[] {
 /** A workspace-relative path as the zip keeps it, or null when it isn't one. */
 export function cleanResultPath(raw: string): string | null {
   const p = raw.replace(/^(\.\/)+/, "").replace(/\/+$/, "");
-  if (!p || p.startsWith("/") || p.includes("\0") || p.includes("\\") || p.length > 400) return null;
+  if (!p || p.startsWith("/") || BAD_NAME.test(p) || p.length > 400) return null;
   const parts = p.split("/");
   if (parts.some((s) => !s || s === "." || s === "..")) return null;
-  if (parts.some((s) => (LEFT_OUT_DIRS as readonly string[]).includes(s))) return null;
+  if (parts.some(isLeftOut)) return null;
   return p;
 }
 
 /** The workspace's files as the result keeps them, and the zip. `binaryHashes` are sha256 hex of the Muse Code programs. */
-export function resultFromTar(tar: Buffer, opts: { binaryHashes: readonly string[]; secrets: readonly string[]; limits?: Partial<Record<"resultFileMaxBytes" | "resultMaxBytes" | "resultMaxFiles", number>> }): SessionResultFiles {
+export function resultFromTar(
+  tar: Buffer,
+  opts: {
+    binaryHashes: readonly string[];
+    secrets: readonly string[];
+    /** The tar was read up to its cap, so more of it may not have been read. */
+    cut?: boolean;
+    /** The paths the pack left out for size. */
+    skipped?: readonly string[];
+    limits?: Partial<Record<"resultFileMaxBytes" | "resultMaxBytes" | "resultMaxFiles", number>>;
+  },
+): SessionResultFiles {
   const limits = { resultFileMaxBytes: MUSE_CODE_LIMITS.resultFileMaxBytes, resultMaxBytes: MUSE_CODE_LIMITS.resultMaxBytes, resultMaxFiles: MUSE_CODE_LIMITS.resultMaxFiles, ...(opts.limits ?? {}) };
   const banned = new Set(opts.binaryHashes.map((h) => h.toLowerCase()));
   const kept: Array<{ path: string; data: Buffer }> = [];
@@ -122,13 +140,24 @@ export function resultFromTar(tar: Buffer, opts: { binaryHashes: readonly string
   const seen = new Set<string>();
   let total = 0;
   let secretHits = 0;
-  for (const entry of readTar(tar)) {
+  const shownName = (raw: string) => redactText(raw, opts.secrets).text.slice(0, 200);
+  const nameHoldsSecret = (name: string) => redactText(name, opts.secrets).hits > 0;
+  for (const name of opts.skipped ?? []) {
+    const path = cleanResultPath(name);
+    if (path) dropped.push({ path: shownName(path), why: `bigger than ${Math.round(limits.resultFileMaxBytes / 1024 / 1024)} MB` });
+  }
+  const entries = readTar(tar);
+  for (const entry of entries) {
     if (entry.type === "5") continue; // a folder: its files speak for it
     const path = cleanResultPath(entry.path);
     if (!path) {
       // The workspace's own root entry and the folders left out on purpose are skipped quietly.
-      const quiet = /^(\.\/?)?$/.test(entry.path) || /(^|\/)(node_modules|\.git|\.muse)(\/|$)/.test(entry.path);
-      if (!quiet) dropped.push({ path: entry.path.slice(0, 200), why: "not a path inside the workspace" });
+      const quiet = /^(\.\/?)?$/.test(entry.path) || entry.path.split("/").some(isLeftOut);
+      if (!quiet) dropped.push({ path: shownName(entry.path), why: "not a path inside the workspace" });
+      continue;
+    }
+    if (nameHoldsSecret(path)) {
+      dropped.push({ path: shownName(path), why: "its name held a secret, so it was left out" });
       continue;
     }
     if (entry.type !== "0" && entry.type !== "\0" && entry.type !== "7") {
@@ -166,6 +195,7 @@ export function resultFromTar(tar: Buffer, opts: { binaryHashes: readonly string
     total += entry.data.length;
     kept.push({ path, data: clean.bytes });
   }
+  if (opts.cut || entries.at(-1)?.truncated) dropped.push({ path: "(the rest of the workspace)", why: "Other files were left out: the workspace was bigger than a result can read" });
   return { zip: kept.length ? zipFiles(kept) : null, files: kept.map((f) => ({ path: f.path, bytes: f.data.length })), dropped: dropped.slice(0, 200), secretHits };
 }
 

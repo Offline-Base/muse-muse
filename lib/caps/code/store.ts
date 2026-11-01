@@ -47,10 +47,11 @@ export async function codeProof(buildId: string, window: { since: Date | null })
   const block = codeBlock((await buildBrief(buildId)) as object | null);
   for (const part of block?.runtimes ?? []) out[`brief:${part}`] = 1;
   if (block?.browse) out["brief:browse"] = 1;
-  // Unit 9, 15b: Muse Code sessions the build really ran since `since`, and those that worked (files and a final text).
+  // Unit 9, 15b: Muse Code sessions the build really ran, and those that worked (files and a final text). Over the
+  // whole build, not since `since`: it gets 2 real sessions and many verifies.
   if (block?.museCode) {
     out["brief:museCode"] = 1;
-    Object.assign(out, await museCodeProof(buildNamespace(buildId), window.since));
+    Object.assign(out, await museCodeProof(buildNamespace(buildId)));
   }
   return out;
 }

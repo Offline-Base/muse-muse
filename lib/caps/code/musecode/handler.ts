@@ -1,5 +1,6 @@
 import { capError, readJsonBody, runCapGate, unknownEndpoint, unknownKeys, type CapContext, type CapGateDeps, type CapLimit, type CapRoute, type CapStage, type CapToken } from "@/lib/caps/gate";
 import { subjectKey } from "@/lib/caps/principal";
+import { gatewayError } from "@/lib/gateway/errors";
 import { MUSE_CODE_DISCLOSURE, MUSE_CODE_LIMITS, sessionSandboxUsd, sessionSandboxWorstUsd } from "@/lib/caps/code/musecode/limits";
 import { redactText, redactValue } from "@/lib/caps/code/musecode/redact";
 import { resultFromTar } from "@/lib/caps/code/musecode/result";
@@ -82,8 +83,8 @@ export interface CodeSessionStore {
   update(id: string, patch: Partial<CodeSessionRow>, whileStatus?: readonly CodeSessionStatus[]): Promise<boolean>;
   /** Sessions still starting or running whose limit (plus the sandbox's grace) hasn't passed: this product's, and all. */
   countActive(productId: string, now: Date): Promise<{ product: number; all: number }>;
-  /** A build's sessions so far: how many, the minutes they used and their Meta spend. */
-  buildTotals(namespace: string, now: Date): Promise<{ sessions: number; ms: number; usd: number }>;
+  /** A build's sessions so far: how many, the minutes they used, their Meta spend, and how many worked. */
+  buildTotals(namespace: string, now: Date): Promise<{ sessions: number; ms: number; usd: number; worked: number }>;
 }
 
 export interface MuseCodeDeps extends CapGateDeps {
@@ -126,6 +127,9 @@ export interface MuseCodeDeps extends CapGateDeps {
 const OWNER_SPACE = "product-owner";
 const WONDER = "muse-wonder-1.0";
 const noStore = { "cache-control": "no-store" };
+/** The most read of a command's output once the agent has run. */
+const AFTER_AGENT_OUTPUT_BYTES = 64 * 1024;
+const SKIPPED_LIST_BYTES = 64 * 1024;
 const isBuild = (stage: Pick<CapStage, "token">) => stage.token.scope === "build";
 
 /** Who the session is for, and their subject key (never a raw id). */
@@ -313,28 +317,6 @@ async function startSession(ctx: CapContext<StartArgs>, deps: MuseCodeDeps): Pro
   const host = publicHost(deps.platformUrl());
   if (!snapshotId || !host) return capError("cap_failed", "Muse Code tasks aren't set up on this Muse Muse site yet.");
 
-  // The session's own room: $1 and 15 minutes, or what's left of a build's $0.50 and 5 minutes over its 2 sessions.
-  let budget: number = L.sessionUsd;
-  let limitMs: number = L.sessionMs;
-  if (build) {
-    const done = await deps.sessions.buildTotals(ctx.namespace, now);
-    if (done.sessions >= L.buildSessions) return capError("rate_limited", `A build's tests can run ${L.buildSessions} real Muse Code tasks in all. Use replay mode for the rest.`);
-    budget = Math.min(budget, L.buildUsd - done.usd);
-    limitMs = Math.min(limitMs, L.buildMs - done.ms);
-    if (budget < L.minStartUsd || limitMs < L.minStartMs) return capError("budget_exceeded", "This build's Muse Code tasks have used their time or money. Use replay mode for the rest.");
-  }
-  // Shared with the product's daily budget (or the build's), and the platform's.
-  const productLeft = ctx.token.dailyBudgetUsd - (await deps.familySpendToday(ctx.token.id));
-  budget = Math.min(budget, productLeft);
-  if (budget < L.minStartUsd) return capError("budget_exceeded", build ? "This build's Meta budget is used up." : "This product has used its daily budget. It resets at 00:00 UTC.");
-  const sandboxWorst = sessionSandboxWorstUsd(limitMs);
-  if (deps.platformSpendToday && deps.dailySpendCapUsd !== undefined && (await deps.platformSpendToday()) + budget + sandboxWorst > deps.dailySpendCapUsd) {
-    return capError("budget_exceeded", "Muse Muse has reached its daily budget. Try again tomorrow.");
-  }
-  if (!build && deps.builderDailyUsd !== undefined && deps.builderDailyUsd !== null && deps.builderSpendToday && (await deps.builderSpendToday(ctx.product.ownerId)) + budget + sandboxWorst > deps.builderDailyUsd) {
-    return capError("budget_exceeded", "The person who made this product has used their daily budget across their products. It resets at 00:00 UTC.");
-  }
-
   // Files by URL are read before anything is held.
   const files: Array<{ name: string; content: Buffer }> = [];
   let urlBytes = 0;
@@ -351,14 +333,41 @@ async function startSession(ctx: CapContext<StartArgs>, deps: MuseCodeDeps): Pro
     } else files.push({ name: f.name, content: f.text !== undefined ? Buffer.from(f.text, "utf8") : Buffer.from(f.base64 ?? "", "base64") });
   }
 
-  // Admission: one start at a time across the platform, so the counts below can't race.
+  // Admission: one start at a time across the platform, so the counts and the money below can't race.
   const admit = deps.acquireInFlight ? await deps.acquireInFlight("musecode:admit", 1, now) : null;
   if (deps.acquireInFlight && !admit) return capError("rate_limited", "Another Muse Code task is starting. Try again in a few seconds.", { "retry-after": "3" });
   const id = newSessionId(now.getTime());
   const model = sessionModelFor(build, deps.testModel());
   const who = whoRuns(ctx);
-  const endsAt = new Date(now.getTime() + limitMs);
+  let budget: number = L.sessionUsd;
+  let limitMs: number = L.sessionMs;
+  let endsAt: Date;
+  let sandboxWorst: number;
   try {
+    // The session's own room: $1 and 15 minutes, or what's left of a build's $0.50 and 5 minutes over its 2 sessions.
+    if (build) {
+      const done = await deps.sessions.buildTotals(ctx.namespace, now);
+      budget = Math.min(budget, L.buildUsd - done.usd);
+      limitMs = Math.min(limitMs, L.buildMs - done.ms);
+      const usedAll = done.sessions >= L.buildSessions;
+      const noRoom = budget < L.minStartUsd || limitMs < L.minStartMs;
+      // Once one has worked, the kit replays from here on (lib/muse-code/client.ts), and the fixed check holds on that run.
+      if ((usedAll || noRoom) && done.worked > 0) return gatewayError(429, "rate_limit_error", "build_tasks_used", "This build's real Muse Code tasks are used, and one worked. Use replay mode for the rest.", { retry: false });
+      if (usedAll) return capError("rate_limited", `A build's tests can run ${L.buildSessions} real Muse Code tasks in all. Use replay mode for the rest.`);
+      if (noRoom) return capError("budget_exceeded", "This build's Muse Code tasks have used their time or money. Use replay mode for the rest.");
+    }
+    // Shared with the product's daily budget (or the build's), and the platform's.
+    const productLeft = ctx.token.dailyBudgetUsd - (await deps.familySpendToday(ctx.token.id));
+    budget = Math.min(budget, productLeft);
+    if (budget < L.minStartUsd) return capError("budget_exceeded", build ? "This build's Meta budget is used up." : "This product has used its daily budget. It resets at 00:00 UTC.");
+    sandboxWorst = sessionSandboxWorstUsd(limitMs);
+    if (deps.platformSpendToday && deps.dailySpendCapUsd !== undefined && (await deps.platformSpendToday()) + budget + sandboxWorst > deps.dailySpendCapUsd) {
+      return capError("budget_exceeded", "Muse Muse has reached its daily budget. Try again tomorrow.");
+    }
+    if (!build && deps.builderDailyUsd !== undefined && deps.builderDailyUsd !== null && deps.builderSpendToday && (await deps.builderSpendToday(ctx.product.ownerId)) + budget + sandboxWorst > deps.builderDailyUsd) {
+      return capError("budget_exceeded", "The person who made this product has used their daily budget across their products. It resets at 00:00 UTC.");
+    }
+    endsAt = new Date(now.getTime() + limitMs);
     const active = await deps.sessions.countActive(ctx.token.productId, now);
     if (active.product >= L.atOncePerProduct) return capError("rate_limited", `This product already has ${L.atOncePerProduct} Muse Code tasks running. Try again when one ends.`, { "retry-after": "30" });
     if (active.all >= L.atOnceInAll) return capError("rate_limited", "Muse Muse is running as many Muse Code tasks as it can right now. Try again in a few minutes.", { "retry-after": "60" });
@@ -409,9 +418,11 @@ async function startSession(ctx: CapContext<StartArgs>, deps: MuseCodeDeps): Pro
     // The token goes to the runner's environment only, never into a file.
     await sandbox.startDetached("bash", [SESSION_PATHS.runner], { env: { META_API_KEY: sessionToken } });
     const stillOn = await deps.sessions.update(id, { status: "running", startedAt: new Date(now.getTime() + (clock() - started)), binaryHashes }, ["starting"]);
-    // Stopped while it was starting: the token is already dead, so the sandbox goes too.
+    // Stopped while it was starting, perhaps before its token or reservation were on the row: all of it goes now.
     if (!stillOn) {
       await sandbox.stop().catch(() => undefined);
+      await deps.revokeToken(tokenId, new Date()).catch(() => undefined);
+      if (reservation && deps.settleSpend) await deps.settleSpend(reservation, sandboxUsage(sessionSandboxUsd(clock() - started))).catch(() => undefined);
       return capError("invalid_arguments", "This task was stopped before it started.");
     }
   } catch (err) {
@@ -450,6 +461,8 @@ export async function withSessionLock<T>(deps: MuseCodeDeps, id: string, now: Da
 interface Progress {
   exit: { code: number; reason?: string } | null;
   finalText: string | null;
+  /** There's more log than this read reached (or it couldn't be read), so the log's end hasn't been seen. */
+  more: boolean;
 }
 
 /**
@@ -465,7 +478,7 @@ export async function readProgress(row: CodeSessionRow, sandbox: LongSession, de
       await deps.sessions.update(row.id, { logOffset: row.logOffset + chunk.length });
       row.logOffset += chunk.length;
     }
-    return { exit: null, finalText: row.finalText };
+    return { exit: null, finalText: row.finalText, more: chunk.length >= MUSE_CODE_LIMITS.pollLogBytes };
   }
   const state = (row.condense && Array.isArray((row.condense as { announced?: unknown }).announced) ? row.condense : emptyBridgeState()) as unknown as BridgeCondenseState;
   const condensed = condenseBridgeLines(lines, state);
@@ -487,7 +500,7 @@ export async function readProgress(row: CodeSessionRow, sandbox: LongSession, de
   const events = [...row.events, ...fresh].slice(-MUSE_CODE_LIMITS.eventsKept);
   await deps.sessions.update(row.id, { logOffset: row.logOffset + consumed, condense: nextState, events, nextEvent: n, finalText });
   Object.assign(row, { logOffset: row.logOffset + consumed, condense: nextState, events, nextEvent: n, finalText });
-  return { exit: condensed.exit, finalText };
+  return { exit: condensed.exit, finalText, more: chunk.length >= MUSE_CODE_LIMITS.pollLogBytes };
 }
 
 /** How a session ends. */
@@ -513,11 +526,15 @@ export async function finishSession(row: CodeSessionRow, ending: Ending, deps: M
   let note = "";
   if (box) {
     try {
-      await box.run("bash", ["-c", killScript()], { timeoutMs: 10_000 }).catch(() => undefined);
-      const packed = await box.run("bash", ["-c", packScript()], { timeoutMs: 60_000 });
-      const tar = packed.stdout.includes("packed") ? await box.readPart(SESSION_PATHS.tar, 0, MUSE_CODE_LIMITS.resultMaxBytes + 4 * 1024 * 1024) : null;
+      // The agent has run, so these commands' output isn't trusted: only a word is needed from it.
+      await box.run("bash", ["-c", killScript()], { timeoutMs: 10_000, maxOutputBytes: AFTER_AGENT_OUTPUT_BYTES }).catch(() => undefined);
+      const packed = await box.run("bash", ["-c", packScript()], { timeoutMs: 60_000, maxOutputBytes: AFTER_AGENT_OUTPUT_BYTES });
+      const readCap = MUSE_CODE_LIMITS.resultMaxBytes + 4 * 1024 * 1024;
+      const tar = packed.stdout.includes("packed") ? await box.readPart(SESSION_PATHS.tar, 0, readCap) : null;
       if (tar) {
-        const result = resultFromTar(tar, { binaryHashes: row.binaryHashes, secrets });
+        const list = await box.readPart(SESSION_PATHS.skipped, 0, SKIPPED_LIST_BYTES).catch(() => null);
+        const skipped = list ? list.toString("utf8").split("\n").filter(Boolean).slice(0, 200) : [];
+        const result = resultFromTar(tar, { binaryHashes: row.binaryHashes, secrets, skipped, cut: tar.length >= readCap });
         files = result.files;
         dropped = result.dropped;
         if (result.zip) resultUrl = await deps.putResult(row.id, result.zip);
@@ -538,7 +555,7 @@ export async function finishSession(row: CodeSessionRow, ending: Ending, deps: M
   const worked = ending.status === "completed" && files.length > 0 && Boolean(finalText?.trim());
   const patch: Partial<CodeSessionRow> = {
     status: ending.status,
-    reason: `${ending.reason}${note}`.trim(),
+    reason: redactText(`${ending.reason}${note}`.trim(), secrets).text.slice(0, 1000),
     exitCode: ending.exitCode ?? null,
     endedAt: now,
     files,
@@ -554,24 +571,49 @@ export async function finishSession(row: CodeSessionRow, ending: Ending, deps: M
   return applied ? { ...row, ...patch } : ((await deps.sessions.get(row.id)) ?? { ...row, ...patch });
 }
 
-/** A session that's running: reads its progress and ends it when the bridge has exited or its limit has passed. */
+/**
+ * A session that's running: reads its progress and ends it when the bridge has exited or its limit has passed. Failing
+ * to reach the Sandbox API changes nothing: the next poll tries again. Only past the sandbox's own timeout, when it can't
+ * still be up, does the session close with no sandbox.
+ */
 async function advance(row: CodeSessionRow, deps: MuseCodeDeps, now: Date): Promise<CodeSessionRow> {
   if (row.status !== "running") {
     // A start that never reached "running" and is past its limit is over.
     if (row.status === "starting" && now.getTime() > row.endsAt.getTime()) return finishSession(row, { status: "expired", reason: "It never started." }, deps, now);
     return row;
   }
-  const sandbox = await deps.open(row.sandboxName, { deadlineMs: MUSE_CODE_LIMITS.pollDeadlineMs }).catch(() => null);
+  let sandbox: LongSession | null;
+  try {
+    sandbox = await deps.open(row.sandboxName, { deadlineMs: MUSE_CODE_LIMITS.pollDeadlineMs });
+  } catch {
+    if (now.getTime() <= row.endsAt.getTime() + MUSE_CODE_LIMITS.sandboxGraceMs) return row;
+    sandbox = null;
+  }
   if (!sandbox) return finishSession(row, { status: "expired", reason: "Its workspace stopped." }, deps, now, null);
-  const progress = await readProgress(row, sandbox, deps).catch(() => ({ exit: null, finalText: row.finalText }) as Progress);
+  // The exit file first: when it's there the bridge is gone, so a log read after it has every line the bridge wrote.
+  const exitFile = await sandbox.readPart(SESSION_PATHS.exit, 0, 16).catch(() => null);
+  const progress = await readProgress(row, sandbox, deps).catch(() => ({ exit: null, finalText: row.finalText, more: true }) as Progress);
   if (progress.exit) {
     const status = progress.exit.code === 0 ? "completed" : "failed";
     return finishSession(row, { status, reason: status === "completed" ? "Muse Code finished." : `Muse Code stopped: ${progress.exit.reason ?? "it failed"}.`, exitCode: progress.exit.code }, deps, now, sandbox);
+  }
+  // Killed before it could write its exit record: an agent's own `pkill node` can do it. Without this it would hold its
+  // slots and show Working until its limit.
+  if (exitFile?.length && !progress.more) {
+    const code = Number.parseInt(exitFile.toString("utf8"), 10);
+    const tail = await sandbox.readPart(SESSION_PATHS.err, 0, 8 * 1024).catch(() => null);
+    if (tail?.length) console.error("[caps] code session's bridge ended with no exit record:", redactText(tail.toString("utf8"), deps.secrets([sessionTokenFor(row.id, deps.pepper())])).text.slice(-500));
+    return finishSession(row, { status: "failed", reason: "Muse Code stopped unexpectedly: its process ended before it finished.", exitCode: Number.isFinite(code) ? code : null }, deps, now, sandbox);
   }
   if (now.getTime() >= row.endsAt.getTime()) {
     return finishSession(row, { status: "stopped", reason: `It reached its ${Math.round(row.limitMs / 60_000)} minute limit and kept what it made.` }, deps, now, sandbox);
   }
   return row;
+}
+
+/** Advances a session from the row as it is now. The sweep's way in, under the session's lock. */
+export async function advanceSession(row: CodeSessionRow, deps: MuseCodeDeps, now: Date): Promise<CodeSessionRow> {
+  return advance((await deps.sessions.get(row.id)) ?? row, deps, now);
 }
 
 async function costSoFar(row: CodeSessionRow, deps: MuseCodeDeps, now: Date): Promise<number> {
@@ -612,12 +654,20 @@ async function steerReply(ctx: CapContext<SessionArgs>, deps: MuseCodeDeps): Pro
 
 async function stopReply(ctx: CapContext<SessionArgs>, deps: MuseCodeDeps): Promise<Response> {
   const id = ctx.args.session.id;
+  // Dead at stop: the token goes first, even if the session is busy, so no model call starts after this.
+  if (ctx.args.session.tokenId && !ended(ctx.args.session)) await deps.revokeToken(ctx.args.session.tokenId, ctx.now).catch(() => undefined);
   const done = await withSessionLock(deps, id, ctx.now, async () => {
     const row0 = (await deps.sessions.get(id)) ?? ctx.args.session;
     if (ended(row0)) return row0;
-    // Dead at stop: the token goes first, so no model call starts after this.
-    if (row0.tokenId) await deps.revokeToken(row0.tokenId, ctx.now).catch(() => undefined);
-    const sandbox = await deps.open(row0.sandboxName, { deadlineMs: MUSE_CODE_LIMITS.pollDeadlineMs }).catch(() => null);
+    // A start may have put its token on the row since this request read it.
+    if (row0.tokenId && row0.tokenId !== ctx.args.session.tokenId) await deps.revokeToken(row0.tokenId, ctx.now).catch(() => undefined);
+    let sandbox: LongSession | null;
+    try {
+      sandbox = await deps.open(row0.sandboxName, { deadlineMs: MUSE_CODE_LIMITS.pollDeadlineMs });
+    } catch {
+      // Its token is dead, so it can spend no more. A second stop, or the sweep, collects its files.
+      return null;
+    }
     if (sandbox) {
       const file = mailboxFile({ type: "end", reason: "Stopped by the person." }, ctx.now, "owner");
       await sandbox.writeFiles([{ path: file.path, content: Buffer.from(file.content, "utf8") }]).catch(() => undefined);
@@ -627,7 +677,7 @@ async function stopReply(ctx: CapContext<SessionArgs>, deps: MuseCodeDeps): Prom
     }
     return finishSession(row0, { status: "stopped", reason: "Stopped by the person. It kept what it made." }, deps, ctx.now, sandbox);
   });
-  if (!done) return capError("rate_limited", "The session is busy for a moment. Try stopping it again.", { "retry-after": "2" });
+  if (!done) return capError("rate_limited", "The session is busy for a moment. Its model calls have stopped. Try stopping it again.", { "retry-after": "2" });
   return resultReply(done, deps, ctx.now);
 }
 

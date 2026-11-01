@@ -37,7 +37,9 @@ export const CAP_CLEANUPS: CapCleanup[] = [
   // Unit 9: a build's exec_runs rows (counts only, never code or output) go when it ends, and crashed builds' after two
   // days. Live rows stay as the product's run log until the product is deleted. Only while the code cap is served.
   // Muse Code sessions (15b) join in while MUSE_CODE_ENABLED is on: their sandboxes, tokens, rows and zips
-  // (lib/caps/code/musecode/sweep.ts, loaded only then, so the pipeline's cleanup imports no sandbox code otherwise).
+  // (lib/caps/code/musecode/sweep.ts, loaded only then, so the pipeline's cleanup imports no sandbox code otherwise). The
+  // hourly sweep's work on stored rows and zips runs whenever the code cap is served, so turning the part off, or a
+  // snapshot without its kit, can't leave a person's zip up past its 24 hours. It asks Vercel for nothing then.
   {
     cap: "code",
     get buildEnded() {
@@ -54,8 +56,12 @@ export const CAP_CLEANUPS: CapCleanup[] = [
     },
     get sweep() {
       if (!env.servedCaps.includes("code")) return undefined;
-      if (!env.museCodeEnabled) return sweepCodeBuildRuns;
-      return async (now: Date) => (await sweepCodeBuildRuns(now)) + (await (await import("@/lib/caps/code/musecode/sweep")).sweepMuseCode(now));
+      return async (now: Date) => {
+        const runs = await sweepCodeBuildRuns(now);
+        const { sweepDeps, sweepMuseCode } = await import("@/lib/caps/code/musecode/sweep");
+        if (env.museCodeEnabled) return runs + (await sweepMuseCode(now));
+        return runs + (await sweepMuseCode(now, sweepDeps(), { orphans: false }).catch(() => 0));
+      };
     },
   },
 ];

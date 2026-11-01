@@ -23,9 +23,13 @@ export const SESSION_PATHS = {
   prompt: `${SESSION_DIR}/task.md`,
   log: `${SESSION_DIR}/session.msp.jsonl`,
   err: `${SESSION_DIR}/bridge.err`,
+  /** The runner writes the bridge's exit code here when it ends, however it ended. */
+  exit: `${SESSION_DIR}/bridge.err.exit`,
   mailbox: `${SESSION_DIR}/mailbox`,
   runner: `${SESSION_DIR}/run.sh`,
   tar: `${SESSION_DIR}/result.tar`,
+  /** Files too big for a result, listed so the person hears why they're missing. */
+  skipped: `${SESSION_DIR}/result.skipped`,
   pid: `${SESSION_DIR}/bridge.pid`,
 } as const;
 
@@ -129,7 +133,7 @@ export function binaryHashesFrom(stdout: string): string[] {
  * and records the exit code. The session token comes in this command's environment (startDetached), never a file.
  */
 export function runnerScript(): string {
-  const exitFile = q(`${SESSION_PATHS.err}.exit`);
+  const exitFile = q(SESSION_PATHS.exit);
   return `#!/bin/bash
 # Written by the Muse Muse platform. Runs one Muse Code session's bridge.
 export PATH="$HOME/.local/bin:$PATH"
@@ -158,14 +162,18 @@ exit "$code"
 
 /**
  * Packs the workspace as a tar for the result: symlinks stay links (never followed), and the folders a result leaves out
- * stay out. The platform reads this tar and builds the zip itself (lib/caps/code/musecode/result.ts), so whatever is in
- * it, only files that pass the rules get out.
+ * stay out. Files over a result's per-file cap are left out before the tar and listed, so a big data file can't use up
+ * the tar's read cap and leave no room for the script that made it. The platform reads this tar and builds the zip
+ * itself (lib/caps/code/musecode/result.ts), so whatever is in it, only files that pass the rules get out.
  */
 export function packScript(): string {
+  const prune = LEFT_OUT_DIRS.map((d) => `-iname ${q(d)}`).join(" -o ");
+  const kib = Math.floor(MUSE_CODE_LIMITS.resultFileMaxBytes / 1024);
   return [
-    `rm -f ${q(SESSION_PATHS.tar)}`,
+    `rm -f ${q(SESSION_PATHS.tar)} ${q(SESSION_PATHS.skipped)}`,
     `cd ${q(SESSION_WORKSPACE)} || exit 0`,
-    `tar --format=gnu ${LEFT_OUT_DIRS.map((d) => `--exclude=${q(d)}`).join(" ")} -cf ${q(SESSION_PATHS.tar)} . 2>/dev/null || true`,
+    `find . \\( ${prune} \\) -prune -o -type f -size +${kib}k -print > ${q(SESSION_PATHS.skipped)} 2>/dev/null`,
+    `tar --format=gnu ${LEFT_OUT_DIRS.map((d) => `--exclude=${q(d)}`).join(" ")} --no-wildcards --exclude-from=${q(SESSION_PATHS.skipped)} -cf ${q(SESSION_PATHS.tar)} . 2>/dev/null || true`,
     `[ -f ${q(SESSION_PATHS.tar)} ] && echo packed`,
   ].join("\n");
 }
