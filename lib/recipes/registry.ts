@@ -117,6 +117,11 @@ export function pickedRecipes(brief: { recipes?: readonly string[] | null } | nu
   return available.filter((r) => brief.recipes?.includes(r.id));
 }
 
+/** True when this brief's product gets the long run limits and its own daily budget. */
+export function isLongRunBrief(brief: { recipes?: readonly string[] | null } | null | undefined): boolean {
+  return pickedRecipes(brief).some((r) => r.longRun);
+}
+
 /** The files a brief's recipes add to its product. */
 export function recipeExtraFiles(brief: { recipes?: readonly string[] | null } | null | undefined): RecipeFile[] {
   return pickedRecipes(brief).flatMap((r) => (SKILLS[r.id]?.files ?? []).map((f) => ({ path: `.agents/skills/${r.id}/${f.path}`, content: f.content })));
@@ -154,7 +159,7 @@ export function recipesWriterRules(caps: readonly CapId[]): string {
   }
   if (available.some((r) => r.id === "recipe-case-agent")) {
     lines.push(
-      "- With recipe-case-agent, capabilities list muse-wonder-1.0 and sam-3.1, and fixtures include two image fixtures: a slightly crooked scan of one typed page, and a typed certificate page with a handwritten signature. Neither shows a real name, firm or seal.",
+      "- With recipe-case-agent, capabilities list muse-wonder-1.0 and sam-3.1, and fixtures include two image fixtures: one made-up name signed by hand in dark ink on plain white paper, and the same name signed in a visibly different hand. Neither shows a real name, firm or seal.",
     );
   }
   return lines.join("\n");

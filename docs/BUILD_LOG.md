@@ -1475,6 +1475,10 @@ The owner asked for 100 tests, 1,000 generated examples, and Spark Contributor i
 
 First step of the plan to build the legal agent workshop and the cookbook. `lib/recipes/`: a registry, skills in `lib/recipes/skills/`, `lib/recipes/generated.json` from `scripts/recipes-gen.mjs`, so skills reach a build through extraFilesFor with no snapshot. Stored brief field `recipes`; the writer's schema gets it only while recipes are available, so the flags-off schema stays the same object. Decision: a pick whose flag went off counts as never picked, so the skill, the prompt lines and the marker go away together. Checks: the new test file and flags-off.test.ts, 11 pass. No real build yet.
 
+### 13:20 Long-run tier and the case agent recipe, AGENT_LONG_RUNS off, on tg-agent-legal, not pushed
+
+Spend decision: a long-run product's live token gets AGENT_LONG_DAILY_USD (default $25) in place of the normal $10 ceiling, since one full run is estimated at $5 to $12, unmeasured. New run limit: 80 turns, 120 built-in tool calls, $15, through the `agent-long` marker, checked before the agent marker. Those counters reset hourly, so the product also stops itself at $12 a run. Decisions on reading the code: the product code always names muse-wonder-1.0, since only the gateway may swap in TEST_MODEL and a build token doesn't allow Contributor by name; the generator script makes no model calls, since scripts and tests can't read `.env.local`; page text stays exact because pages are rendered from HTML, and the two signature images come from the brief's image fixtures, which the platform draws; the sealed record stays under 1 MB because of the 4.5 MB request limit. Not proven by a real build; only reading and unit tests so far.
+
 ## Gaps
 
 What this record doesn't confirm:

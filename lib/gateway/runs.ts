@@ -1,5 +1,5 @@
 import { gatewayError } from "@/lib/gateway/errors";
-import { hasAgentMarker } from "@/lib/gateway/policy";
+import { hasAgentMarker, hasLongAgentMarker } from "@/lib/gateway/policy";
 
 /**
  * Per-run caps. A product names a run with x-musemuse-run-id (template/lib/agent/run.ts sends it), and every model call
@@ -20,6 +20,12 @@ export interface RunLimits {
 export const RUN_LIMITS = {
   build: { turns: 6, toolCalls: 8, usd: 0.4 },
   liveAgent: { turns: 10, toolCalls: 12, usd: 0.75 },
+  /**
+   * A long-run recipe's product (AGENT_LONG_RUNS). These reset with RUN_WINDOW_MS like the others, so a run past an hour
+   * starts fresh counters: the product adds up its own cost and stops at its own ceiling, and the token's daily budget
+   * (AGENT_LONG_DAILY_USD) is the real backstop.
+   */
+  longAgent: { turns: 80, toolCalls: 120, usd: 15 },
 } as const satisfies Record<string, RunLimits>;
 
 /** How long a run's counters last. A run still going after the hour turns over starts fresh counters. */
@@ -35,6 +41,7 @@ export function parseRunId(header: string | null): string | null {
 /** This token's run caps, or null when it has none. */
 export function runLimitsFor(token: { scope: string; allowedModels: readonly string[] }): RunLimits | null {
   if (token.scope === "build") return RUN_LIMITS.build;
+  if (hasLongAgentMarker(token.allowedModels)) return RUN_LIMITS.longAgent;
   return hasAgentMarker(token.allowedModels) ? RUN_LIMITS.liveAgent : null;
 }
 

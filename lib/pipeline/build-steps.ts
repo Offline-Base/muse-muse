@@ -17,7 +17,7 @@ import { prepareFixtures, writeBrief, type PreparedFixture } from "@/lib/brief/w
 import { db, schema } from "@/lib/db/client";
 import { env } from "@/lib/env";
 import { addBuildCost, emit, setBuildStatus } from "@/lib/events";
-import { buildTokenBudgetFor, liveTokenDailyBudgetFor } from "@/lib/gateway/policy";
+import { buildTokenBudgetFor } from "@/lib/gateway/policy";
 import { mintToken, revokeLiveTokensExcept, revokeTokens } from "@/lib/gateway/tokens";
 import { judgeBuild, pickScreenshots } from "@/lib/judge";
 import { nativeExtraFiles } from "@/lib/native/template-files";
@@ -26,6 +26,7 @@ import { prepareToolFixtures } from "@/lib/tools/fixtures";
 import { rebuildTargetFor } from "@/lib/pipeline/catalog";
 import {
   allowedModelsFor,
+  liveDailyBudgetFor,
   museImagePaths,
   nextFreeSlug,
   normalizeSlug,
@@ -1208,7 +1209,7 @@ export async function startDeployStep(input: {
     // caps the manifest isn't read here, as before.
     allowedModels: brief && briefCaps(brief).length ? narrowCapMarkers(allowed, await sandbox.readManifest(input.sandboxName).catch(() => null)) : allowed,
     // Room for about 20 runs a day at the brief's estimate (Muse Wonder runs cost more than Spark's did).
-    dailyBudgetUsd: liveTokenDailyBudgetFor(brief?.estimatedCostPerRunUsd),
+    dailyBudgetUsd: liveDailyBudgetFor(brief),
   });
   const started = await startDeployFromSandbox({
     sandboxName: input.sandboxName,
