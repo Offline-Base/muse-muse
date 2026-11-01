@@ -1700,3 +1700,17 @@ scripts/dev/tune-harness.ts, on a Lambda gpu_1x_a10 named prove-tune-1, us-east-
 - Found: both briefs have verdict yes and canDo true on sign-in, while the sign-in is a local picker or profile with no real account. Limits say so, but docs/FULL_BUILDS.md expects a part it can't do to force verdict partly. Not changed.
 - Found: nothing stops a build at a dollar amount. The $40 budget for this job isn't enforced by code; only the wall and DAILY_SPEND_CAP_USD=150 limit it.
 - Result of both builds: pending. A real brief is all this proves so far.
+
+## Nov 1: capabilities marked ready, first real data and Muse Code builds on a Preview (branch tg-caps-ready)
+
+- Audit: data, files, connect, jobs, live, media, code, runtime, hardware and games each have routes or an overlay, checks and tests, so CAP_READY is on for all ten. Ready only means the code is finished. Every flag stays off, so production is unchanged. Only data and code have passed a real build. The other eight are built and tested with fakes only.
+- Snapshot snap_XXT4qDZEWLQ6xL8RgAvqd38c2kdM made with npm run snapshot, recorded in lib/sandbox/snapshots.json with all 17 cap overlays. Its template hash, 67472a74d60e, is the same as snap_6VHCNtYcvSoeLpd4uOYI0IQ1kUOj: the template didn't change, so this snapshot holds the same files as that one.
+- Decision: merged origin/tg-full-main so the PR can go to main. It sits on top of #17.
+- Found, fixed: lib/train/tune/__tests__/loop.test.ts broke Vercel's type check. A Preview from this branch, dpl for muse-muse-fofv9rcyf, failed on it.
+- Found by a real build, fixed: every Muse Code session answered 502. Vercel's sandbox API refuses IPv6 ranges ("Invalid CIDR ::1/128"), and PRIVATE_CIDRS listed three, so no Muse Code or browse sandbox could ever start. The list is IPv4 only now.
+- Data build, test model, Preview muse-muse-hywjfy4ld (dpl_5Pf4CzVLPQ1kMmPL3xNaFFQ5JPsd): fdeb6cbb-4cec-46e4-97dd-91060a0097b7 (household-grocery-list) went live with no fix round, $0.101. Fixed caps checks passed on all 3 milestones: the gateway saw 17 rows saved in the build's space, and "Second browser, after a reload, sees the shared item". Judge passed. My own browser check came too late: the sandbox had already been stopped (410), so the reload was seen by the platform's checks, not by me separately. A Preview doesn't publish, so there's no live link.
+- Muse Code build, test model, first try c6b68b1c-2788-4a34-ba9b-3eb7467c534a: failed on the 502 above, stopped by me.
+- Muse Code build, test model, after the fix, Preview muse-muse-88vgau22g (dpl_FGRDEFds2tEciHBzyjzpV2ph8YD4): 1b5664a8-435a-498b-970b-4c62fad56ec9 (csv-cleanup-helper). Fixed check muse-code-run passed on its first milestone: "This build's real Muse Code tasks are used and one worked ... the gateway saw 2 tasks make files". Final result below or in the PR.
+- Tests, touched code: lib/caps .test.ts files and caps-off, 625 pass. The failures were the live test's old CAP_READY line and the media flags-off expectation, both fixed. lib/caps/code/__tests__/session.test.ts is cancelled in this run and the same on tg-full-builds, so not from this work. flags-off goldens unchanged.
+- Not run: a real build of files, connect, jobs, live, media, runtime, hardware or games. A production deploy or env change.
+

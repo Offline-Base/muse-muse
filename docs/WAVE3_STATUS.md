@@ -3,6 +3,10 @@
 Written Nov 1, 2026, about 02:30 EDT. Branch tg-cap-int, head 34d6608. Sources: this run's checks, docs/CAPABILITIES.md,
 docs/DRIVE_EXPORT.md, wave3-log.md.
 
+## Update, Nov 1 evening (tg-caps-ready)
+
+CAP_READY is now on for every cap and every flag is still off in production. Data and code passed a real test build on a Preview on the test model. The other eight have not. The lines below are the 02:30 picture. See docs/BUILD_LOG.md.
+
 ## Where it stands
 
 - All 15 unit branches are merged into tg-cap-int (tg-cap-musecode counted as its own).
