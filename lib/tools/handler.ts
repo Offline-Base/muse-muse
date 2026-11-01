@@ -36,7 +36,7 @@ import {
   type Principal,
 } from "@/lib/tools/principal";
 import { chargeOf, estimateToolUsd, settledToolUsd, toolUsage } from "@/lib/tools/pricing";
-import { checkApproval, mintApproval, mintConnectState, readConnectState } from "@/lib/tools/sign";
+import { cardText, checkApproval, mintApproval, mintConnectState, readConnectState } from "@/lib/tools/sign";
 import type { UsageContext } from "@/lib/usage";
 import type { ModelUsage, ProductStatus } from "@/lib/types";
 
@@ -252,12 +252,7 @@ const WRITE_TITLES: Readonly<Record<string, string>> = {
  * What a card shows, one line per argument, so nothing the approval covers stays out of sight. Whitespace is collapsed,
  * which also stops blank lines from pushing text out of view, and anything invisible or that reorders text is marked.
  */
-function shown(text: string): string {
-  return text
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/[\p{Cc}\p{Cf}]/gu, "\uFFFD");
-}
+const shown = cardText;
 
 function shownValue(value: unknown): string {
   if (typeof value === "string") return value;

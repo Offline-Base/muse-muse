@@ -23,6 +23,7 @@ migration numbers follow `docs/CAPABILITIES.md` (unit 0) where the two differ.
 | The card and links | `components/device/DeviceDrive.tsx`, `DriveExportLink.tsx`, `app/device/page.tsx`, `DeviceTrain.tsx`, `app/fine-tuning/[jobId]/page.tsx`, `lib/device/drive-card.ts` | `drive-card.test.ts`, 4: Carry on for an export that failed, stopped or ended in FAIL, on its own drive when it's back or the one picked, and the owner's script for the owner's file. The card itself is type-checked, not seen in a browser: there is no board for it to talk to here |
 | The board | `muse-device/drive.py` (about 1,100 lines), five tools in `server.py`, `setup-drive.sh` | `test_drive.py`, 63 (1 skipped off Linux): detection (with LVM, LUKS, md and sysfs holders inside a USB disk, after the review found the old one-level check missed them), plan refusals, the golden plan ending on a fake drive with the same `SHA256SUMS` as Node's, FAT32 and a 5 GB file, NTFS, locked, full, too small, over 256 GB, armed exports that ignore sticks already in and never erase, copies, resume with `Range`, a 200 that starts over, a refused signed link that waits for a fresh one (or the same one sent again), a refused public link retried and then failed instead of waiting, fresh links refused 5 times failing, a hash mismatch, a flipped byte, a missing and an extra file, an unplug mid-write (failed when not armed, resumed when armed), a killed export that carries on, a drive swapped during the unmount before an erase, `export_source` listing only real base builds, the server starting without `drive.py`, and the tools. Ten runs in a row pass, after the tests found a real race (an export finishing while its status was read was recorded as failed). `test_server.py`: Hussam's 76 still pass |
 | Loopback | `muse-device/test_drive_loop.py` | **Never ran**: it needs Linux as root |
+| The product tools | `lib/device/drive-product.ts`, `drive-product-deps.ts`, the drive branch in `lib/gateway/gadget.ts`, `lib/platform/board.ts` and the skill in the `hardware` overlay | `drive-product.test.ts` and `drive-product-route.test.ts`: see "From a product". Fake boards only: nothing has run on a real board |
 | Owner and deploy scripts | `scripts/drive-export.ts` (the owner's S3 file), `scripts/device-bundle.ts` | Never run: one signs with the owner's AWS session, the other uploads to Blob |
 
 Every change in `muse-device/` is listed for Hussam in `muse-device/CHANGES_FOR_HUSSAM.md`.
@@ -50,8 +51,7 @@ Every change in `muse-device/` is listed for Hussam in `muse-device/CHANGES_FOR_
 - **The card lists board runs.** A lab model reaches it through "Put it on a drive" on its admin page, not a list.
 - **The owner's script signs in with a session cookie.** Every drive route uses `requireAdmin`, which needs a session, so
   `scripts/drive-export.ts` sends an admin's `mm_session` cookie from `MUSE_SESSION`. It never prints it.
-- **The product tools aren't built.** They wait for unit 13 and `DRIVE_EXPORT_PRODUCTS`. The simulated board that will
-  answer builds exists (`lib/device/drive-sim.ts`) and isn't wired to anything.
+- **The product tools came after unit 13**, behind `DRIVE_EXPORT_PRODUCTS` and the owner check, both off. See "From a product".
 
 ### Before the owner's real test
 
@@ -521,26 +521,70 @@ The card's **Export when a drive is plugged in** arms one model:
 
 ### From a product
 
-Two gadget tools for products, beside `describe_device`, `capture_image` and `record_audio` in `PRODUCT_GADGET_TOOLS`:
+Two gadget tools for products, in their own list (`PRODUCT_DRIVE_TOOLS`), beside `describe_device`, `capture_image` and
+`record_audio` in `PRODUCT_GADGET_TOOLS`, which keeps its three names:
 
-- `drive_status`: the drive and the export's progress, read only;
+- `drive_status`: the drive and the export's progress, trimmed: no board runs, drive identity, source or folder. Read only as far
+  as the drive goes. As the admin route's `GET` does, it hands fresh signed links to an export waiting in `needs_urls`, and only
+  when that export's source is this product's own model.
 - `export_to_drive {model}`: exports the product's own tuned model (unit 11, "train on my data") to the drive in the
-  owner's board.
+  owner's board. `model` is `"own"`, or that model's own job id. It takes nothing else, so no link, plan, drive or source can be
+  handed in, and it resolves through `ownModelFor` alone, so another product's id answers as an id nobody has.
 
-Who may call them: the product's owner only, with the owner principal (`x-musemuse-owner`, `docs/AGENT_TOOLS.md`), on a
-board the owner owns. Every call is confirmed once on a card, like a tool write. A product can never erase or format. A
-drive that needs it answers `needs_erase` with "Confirm it on your board's page". Build tokens get a simulated board that
-reports a short export ending in PASS, so builds and judge checks never touch hardware.
+**What it needs.** `DRIVE_EXPORT_PRODUCTS` and `HARDWARE_GADGET_OWNER_CHECK` both on (`driveToolsUsable`), for builds too, and a
+token with `drive-tools` and `cap:hardware`, from a brief whose `hardware` block says `driveExport: true`. So the tools wait for
+`CAP_READY.hardware` as well, which is still false. `DRIVE_EXPORT_ENABLED` is the admin card's and isn't needed. With any of it off,
+`/gadget` answers as it did.
 
-These stay off (`DRIVE_EXPORT_PRODUCTS`) until unit 13's board registry and owner check land. Today every live product
-with the gadget option shares one board, which is the release review's high finding.
+**Who may call them.** The product's owner only, with the owner principal (`x-musemuse-owner`, `docs/AGENT_TOOLS.md`), on the board
+linked to the product, which `linkedBoardRow` requires to be the owner's. A link's `visitors` switch counts for nothing here.
+A visitor, another owner's board, an admin's own pass and a former owner's pass all get the same 503 `gadget_offline` as no board,
+and a board's secrets aren't opened. `GET /gadget` lists the two tools only for that owner and for a build. A board's
+`export_source`, `export_model`, `erase_drive` and `stop_export` stay unknown tools. Board tools never reach `DEVICE_MCP_URL`'s board.
+
+**Confirming.** Every export is confirmed once on a card, like a tool write, with the tool gateway's own approvals
+(`lib/tools/sign.ts`): `{ok: false, code: "needs_confirmation", approval: {id, title, lines}}` with status 200, and the product
+repeats the call with `approval`. It covers this person, this model, this file and this drive, and is good for 10 minutes and once.
+A swapped stick or a newer model gets a new card with `stale: true`. It's spent when the call goes out, in `rate_limits`, so a refused
+plan doesn't burn one. As with tool writes, the gateway can't tell a click from a product's server repeating the call: only the
+product's card proves a person agreed. The skill and the judge's note ask for it, and every call needs the owner's pass either way.
+
+**The drive has to be plugged in.** There's no arming from a product, public model or private, since a private model's links
+expire. No usable drive answers 409 `no_drive`, "Plug the drive into your board first, then try again. An export from a product
+never waits for a drive." More than one is 409 `several_drives`, rather than a guess.
+
+**Never erases.** A product can never erase or format. A drive that needs it answers `needs_erase` with "Confirm it on your board's
+page", from `export_to_drive` and in `drive_status`. **That page doesn't exist yet for a registered board:** the card on `/device` and
+`/api/device/drive/erase` reach only `DEVICE_MCP_URL`'s board. So until one is built, an export on any other board stays in
+`needs_erase`, and blocks that board's next export, until its owner formats the stick some other way and it's stopped on the board.
+Use an exFAT stick with room to spare in the real test.
+
+**License duties.** The plan comes from `buildExport`, the admin route's path, so `exportPlan` and `checkDerivativePlan` guard it. Every
+model `ownModelFor` returns was trained on r30b, so its files must say `sparkOpen`, or it answers 409 `license_duties_missing` before any
+card. A knowledge-named file without duties is one of those, and it's logged. The card also carries "Built with Muse Spark Open" and the
+Usage Policy's points. A plan `exportPlan` refuses answers 409 `plan_refused`, and spends nothing.
+
+**Which file.** `Q4_K_M` when it passed its checks, or else the smallest that did. The card names it. A product can't pick, since
+the tool takes only `model`.
+
+**Other answers.** 404 `own_model_not_found`, 409 `own_model_not_ready`, `export_busy`, `device_refused` (the board's sentence, with no
+link or path), `source_unavailable`, 413 `plan_too_large`, 503 `drive_kit_missing`, 502 `gadget_unavailable`. A product's reply is the
+gadget route's usual `{content, isError, simulated}`, with the JSON above in its text.
+
+**Build tokens** get `lib/device/drive-sim.ts`: a simulated stick and a short export ending in PASS, with `simulated: true`, so builds and
+judge checks never touch hardware. They read no link, board or model, and still confirm. The start is a `hardware-proof:export_to_drive:<build>`
+row in `rate_limits`, the same count `/caps/proof` reads, so there's no new table. `checkDriveExport` and `scripts/caps/hardware.mjs` check it.
+
+**Tests.** `lib/device/__tests__/drive-product.test.ts` on the real handlers, approvals, passes, kit and plan with fake boards, and
+`drive-product-route.test.ts` on the real gadget route, registry and sealed rows on PGlite. Not run on a real board: see "Not proven yet".
 
 ### Who may do what
 
 | Action | Admin on `/device` | A product's owner, own board, flag on | Other product visitors | Build tokens |
 |---|---|---|---|---|
 | See drives and progress | yes | `drive_status` | no | simulated |
-| Export now, arm, stop | yes | `export_to_drive`, confirmed each time | no | simulated |
+| Export now | yes | `export_to_drive`, confirmed each time | no | simulated |
+| Arm, stop | yes | no | no | no |
 | Erase a drive | yes, after typing its name | no | no | no |
 | Hand in an owner's presigned URL | the owner's script, admin only | no | no | no |
 
@@ -555,7 +599,7 @@ with the gadget option shares one board, which is the release review's high find
 | `app/device/page.tsx` | Adds the card under `DeviceTrain` |
 | `components/device/DeviceTrain.tsx`, `app/fine-tuning/[jobId]/page.tsx` | The two links above |
 | `lib/env.ts` | `DRIVE_EXPORT_ENABLED` (the card and routes) and `DRIVE_EXPORT_PRODUCTS` (the product tools), both off |
-| `lib/gateway/gadget.ts`, its simulator, `template/lib/meta/gadget.ts`, the `muse-gadget` skill | The product tools, after unit 13 |
+| `lib/gateway/gadget.ts`, `lib/device/drive-product.ts`, `drive-product-deps.ts`, `drive-sim.ts`, the `hardware` overlay's `lib/platform/board.ts`, skill and checks | The product tools. `template/lib/meta/gadget.ts` and the `muse-gadget` skill are unchanged: these need the owner's pass, and that file sends none |
 | `next.config.ts` | `outputFileTracingIncludes` for `drive/` in the drive routes, since the plan reads the Start Here and README templates there at run time |
 
 No migration. An export's state lives on the board, as a training run's does, and the routes read it from there.
@@ -563,7 +607,8 @@ No migration. An export's state lives on the board, as a training run's does, an
 Every drive route uses `requireAdmin`, not `requireAdminOrAutomation`, and logs one line per call with the admin and the
 tool, never a URL. The release review asked for exactly that on board routes (its decision 5). The generic `/api/device`
 route, which also takes `AUTOMATION_SECRET`, neither lists nor calls the five drive tools, flag off or on
-(`lib/device/drive-tools.ts`), so the drive routes are the only way to them.
+(`lib/device/drive-tools.ts`), so the drive routes are the only way to them for an admin. The one other way is "From a product"
+above: a product's verified owner on their own linked board, and only `drive_status` and `export_model`, on a plan the platform builds.
 
 ## Safety rules
 
@@ -736,6 +781,11 @@ The design's decisions, as asked on Oct 31:
    orders: whether Meta's output terms allow sharing a model trained on Muse Wonder's text.
 
 ## Not proven yet
+
+- **The product tools on a real board, drive or Hub.** Fake boards only. Not proven: `drive_status` and `export_model` through a linked
+  board's real client, a whole export started from a product, a private model's fresh links, and the 60-second limit on the gadget route
+  while a plan reads the Hub (the admin route has 300). No product has been built with them either, so the skill, the card and
+  `checkDriveExport` have never met Muse Code. And no page yet erases a registered board's drive (see "From a product").
 
 Nothing below was possible on this laptop: no Jetson, no Linux, no USB drive, and no deploy.
 

@@ -1187,11 +1187,15 @@ export const env = {
     return flag("DRIVE_EXPORT_ENABLED");
   },
   /**
-   * DRIVE_EXPORT_PRODUCTS: the product gadget tools drive_status and export_to_drive. They wait for unit 13's board
-   * registry and owner check, so nothing reads this yet, and it stays off until both land.
+   * DRIVE_EXPORT_PRODUCTS: the product gadget tools drive_status and export_to_drive (lib/device/drive-product.ts). They
+   * also need HARDWARE_GADGET_OWNER_CHECK: see driveToolsUsable.
    */
   get driveExportProducts(): boolean {
     return flag("DRIVE_EXPORT_PRODUCTS");
+  },
+  /** Both DRIVE_EXPORT_PRODUCTS and HARDWARE_GADGET_OWNER_CHECK: products may be built with the drive tools. */
+  get driveToolsUsable(): boolean {
+    return flag("DRIVE_EXPORT_PRODUCTS") && flag("HARDWARE_GADGET_OWNER_CHECK");
   },
 
   // ---------- Wave 3, unit 13: hardware (docs/CAPABILITIES.md) ----------

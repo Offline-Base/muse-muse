@@ -32,6 +32,59 @@ beforeEach(() => {
   delete process.env.HARDWARE_GADGET_OWNER_CHECK;
 });
 
+const DRIVE = { links: [], boardTools: false, driveExport: true, why: "Puts the model on the owner's drive." };
+const driveUsable = () => {
+  process.env.DRIVE_EXPORT_PRODUCTS = "1";
+  process.env.HARDWARE_GADGET_OWNER_CHECK = "1";
+};
+
+describe("the drive tools in a brief", () => {
+  beforeEach(() => {
+    delete process.env.DRIVE_EXPORT_PRODUCTS;
+  });
+
+  it("with their flags off, nothing of them is anywhere: block, writer, rules, catalog, prompts, judge, token", () => {
+    for (const only of [() => undefined, () => (process.env.DRIVE_EXPORT_PRODUCTS = "1"), () => (process.env.HARDWARE_GADGET_OWNER_CHECK = "1")]) {
+      delete process.env.DRIVE_EXPORT_PRODUCTS;
+      delete process.env.HARDWARE_GADGET_OWNER_CHECK;
+      only();
+      assert.equal(hardwareBlock(brief(DRIVE)), null);
+      assert.deepEqual(hardwareBlock(brief({ ...SERIAL, driveExport: true })), SERIAL);
+      assert.equal(normalizeHardwareBlock({ ...DRIVE }), null);
+      assert.equal(hardwareWriterBlock(true), HardwareBriefBlock);
+      assert.deepEqual(Object.keys(hardwareWriterBlock().shape), ["links", "boardTools", "why"]);
+      assert.doesNotMatch(hardwareWriterRules().join("\n"), /driveExport/);
+      assert.doesNotMatch(CAP_CATALOG.hardware!.block, /drive/i);
+      assert.equal(hardwareJudgeNote(brief({ ...SERIAL, driveExport: true })), "Device readings in this test come from a simulated device.");
+      assert.deepEqual(allowedModelsFor(brief({ ...SERIAL, driveExport: true }) as never).filter((m) => m === "drive-tools"), []);
+      assert.equal(hardwareOwnerLink({ isOwner: true, liveUrl: "https://x.example", slug: "x", status: "live", brief: brief(DRIVE), served: true }), null);
+    }
+  });
+
+  it("with them on and a brief that asks, every part says so, in plain words with no em dash", () => {
+    driveUsable();
+    const asked = brief(DRIVE);
+    assert.deepEqual(hardwareBlock(asked), DRIVE);
+    assert.deepEqual(normalizeHardwareBlock({ ...DRIVE, driveExport: "yes" }), DRIVE);
+    assert.ok("driveExport" in hardwareWriterBlock().shape);
+    assert.equal(BriefSchema.safeParse(asked).success, true);
+    assert.ok(allowedModelsFor(asked as never).includes("drive-tools"));
+    assert.ok(!allowedModelsFor(asked as never).includes("board-tools"), "it brings no board tools");
+    assert.ok(!allowedModelsFor(asked as never).includes("muse-gadget"), "and no camera");
+    assert.equal(hardwareOwnerLink({ isOwner: true, liveUrl: "https://x.example", slug: "x", status: "live", brief: asked, served: true }), "/api/products/x/owner-pass");
+    const words = [...capsBuildLines(asked), ...capsRefineLines(asked), ...capsMarkdown(asked), hardwareJudgeNote(asked), CAP_CATALOG.hardware!.block, ...hardwareWriterRules()].join("\n");
+    for (const said of [/exportToDrive/, /needs_confirmation/, /needs_erase/, /checkDriveExport/, /press confirm/, /never erases/, /plugged in/]) assert.match(words, said);
+    assert.doesNotMatch(words, /\u2014/);
+  });
+
+  it("a brief that doesn't ask gets none of it, with them on", () => {
+    driveUsable();
+    assert.equal(hardwareBlock(brief(SERIAL))?.driveExport, undefined);
+    assert.ok(!allowedModelsFor(brief(SERIAL) as never).includes("drive-tools"));
+    assert.doesNotMatch(capsBuildLines(brief(SERIAL)).join("\n"), /exportToDrive/);
+  });
+});
+
 describe("the hardware block", () => {
   it("is optional on a stored brief, and old briefs still parse", () => {
     assert.equal(BriefSchema.safeParse(BRIEF).success, true);

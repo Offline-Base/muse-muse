@@ -50,7 +50,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
 }
 
 function boardToolsServed(): boolean {
-  return env.servedCaps.includes("hardware") && env.hardwareBoardToolsUsable;
+  return env.servedCaps.includes("hardware") && (env.hardwareBoardToolsUsable || env.driveToolsUsable);
 }
 
 // ---------- Wave 3, unit 9: Muse Code sessions are owner-only (docs/CAPABILITIES.md, 15b) ----------
@@ -70,6 +70,6 @@ async function ownerLandingPath(latestBuildId: string | null): Promise<string> {
   if (!brief || brief.data || brief.agent) return "/api/musemuse/owner";
   if (museCodeServed() && codeBlock(brief)?.museCode === true) return "/api/musemuse/muse-code/owner";
   // Wave 3, unit 13: the hardware overlay's own landing, for a product with board tools and no other owner page.
-  if (boardToolsServed() && hardwareBlock(brief)?.boardTools) return "/api/musemuse/board/owner";
+  if (boardToolsServed() && (hardwareBlock(brief)?.boardTools || hardwareBlock(brief)?.driveExport)) return "/api/musemuse/board/owner";
   return "/api/musemuse/owner";
 }

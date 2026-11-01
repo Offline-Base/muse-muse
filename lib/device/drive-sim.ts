@@ -1,8 +1,7 @@
 /**
  * The simulated board a build gets for the product drive tools (docs/CAPABILITIES.md 2.7, unit 12): a short export that
- * ends in PASS, so builds and judge checks never touch hardware. Its answers carry simulated: true. The product tools
- * (drive_status, export_to_drive) wait for unit 13's board registry and owner check and for DRIVE_EXPORT_PRODUCTS, so
- * nothing calls this yet: unit 13's gadget simulator answers with it once they land.
+ * ends in PASS, so builds and judge checks never touch hardware. Its answers carry simulated: true. The gateway's drive tools
+ * (drive_status, export_to_drive) answer a build token from it, through lib/device/drive-product.ts.
  */
 import type { DriveStatusReply, ExportState, ExportStatus } from "@/lib/device/drive";
 

@@ -4,7 +4,8 @@ import { BOARD_TOOLS } from "@/lib/caps/hardware/limits";
 /**
  * The board's five drive tools (muse-device 0.4.0, docs/DRIVE_EXPORT.md). They are reached only through
  * /api/device/drive and /api/device/drive/erase: behind DRIVE_EXPORT_ENABLED, with requireAdmin (never AUTOMATION_SECRET),
- * and one log line a call. The generic admin route /api/device neither lists nor calls them, whatever the flag says
+ * and one log line a call. The one other path is a product's owner on their own linked board, and only drive_status and
+ * export_model, through lib/device/drive-product.ts. The generic admin route /api/device neither lists nor calls them, whatever the flag says
  * (docs/CAPABILITIES.md, section 1, item 6). Its only imports have none of their own, so that route stays as light as it is.
  */
 export const DRIVE_TOOLS: ReadonlySet<string> = new Set(["drive_status", "export_source", "export_model", "erase_drive", "stop_export"]);

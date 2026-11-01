@@ -62,6 +62,7 @@ export default async function GadgetsPage() {
               are steady and builds never reach real hardware.
             </li>
             <li>Products can&apos;t run commands on a board. {env.hardwareBoardToolsUsable ? "Besides the three tools above, a product that asks for board tools can read a sensor and show a short line." : "Only the three tools above are served."}</li>
+            {env.driveToolsUsable ? <li>A product that asks can also put its own tuned model on a USB drive, for its owner only, on the owner&apos;s board, after they confirm it on a card. It never erases a drive.</li> : null}
             <li>A product must still work with no board, with a clear message and a way to upload instead.</li>
           </ul>
         </div>

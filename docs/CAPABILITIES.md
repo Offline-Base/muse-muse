@@ -3005,7 +3005,8 @@ wave 3. Where the two differ, change one of them on purpose, in the same commit.
   tools), both off.
 - **Migration:** none. An export's state lives on the board, as a training run's does.
 - **Routes:** `app/api/device/drive/route.ts` (`GET` status and URL refresh, `POST` start or arm, `DELETE` stop) and
-  `app/api/device/drive/erase/route.ts`, all `requireAdmin`, as that doc says. No gateway route until unit 13. The generic
+  `app/api/device/drive/erase/route.ts`, all `requireAdmin`, as that doc says. Products reach the drive only through the
+  gateway's existing `/gadget` route, with the two product tools below. The generic
   admin route `/api/device` lists and calls none of the five drive tools, flag off or on (`lib/device/drive-tools.ts`, 1.6).
 - **Board tools** (`muse-device/server.py`, with the work in a new `muse-device/drive.py`, standard library only, for Hussam):
   `drive_status` (with the board's finished runs), `export_source`, `export_model`, `erase_drive`, `stop_export`. The same
@@ -3014,9 +3015,13 @@ wave 3. Where the two differ, change one of them on purpose, in the same commit.
   not deployed; `docs/DRIVE_EXPORT.md` "Built" has the tests and what isn't proven.
 - **Sources:** a board run (`~/models`) or a lab model (`localFilesFor`), pulled by a signed, hash-checked URL. No new GPU
   run.
-- **Product tools** (`drive_status`, `export_to_drive`) wait for unit 13's registry and owner check, and for unit 11's
-  "train on my data".
-- **Build stand-in:** a simulated board whose export ends in PASS (`lib/device/drive-sim.ts`), wired in with the product tools.
+- **Product tools** (`drive_status`, `export_to_drive`): built, on `POST {GATEWAY_URL}/gadget`, in `lib/device/drive-product.ts`. Off
+  unless `DRIVE_EXPORT_PRODUCTS` and `HARDWARE_GADGET_OWNER_CHECK` are both on, and a token has `drive-tools` and `cap:hardware`, from a
+  brief's `hardware.driveExport`. They're a separate list, `PRODUCT_DRIVE_TOOLS`: `PRODUCT_GADGET_TOOLS` keeps its three names. The
+  verified owner only, on their linked board, confirmed once on a card with the tool gateway's approvals. `visitors` opens nothing here.
+  `model` resolves through `ownModelFor` alone. `docs/DRIVE_EXPORT.md`, "From a product", has the rest, including that no page erases a
+  registered board's drive yet, so `needs_erase` on one stays stuck until that's built. No real board has run them.
+- **Build stand-in:** a simulated board whose export ends in PASS (`lib/device/drive-sim.ts`), which answers a build token's product tools.
 - **Test:** Python tests with fake drives, a Linux loopback image, then the real test with a drive the owner plugs in.
   Board deploys go through Hussam or a fleet job with the owner's OK, never SSH from the laptop.
 - **Owns:** everything that doc lists, plus its lines in `lib/env.ts` and `.env.example`.
@@ -3600,4 +3605,5 @@ Phaser game.
 - Nov 1 (unit 6): section 12a added. `/jobs/enqueue` follows decision 10: owner, job or build only. The brief block gains `results`; 0023 adds `job_runs.rows_written`, `product_webhooks.namespace`, `owner_notices.namespace`, `payload` and `resolved_at`; `lib/gateway/handler.ts` gets a marked block and a shared hold path, not one line; data's rules and `lib/caps/connect/handler.ts` (a held send, GET only) get marked edits; `CAPS_SHIPPING` gains `jobs`; a new route `POST /api/products/<slug>/notices/<id>`; `template/caps/connect/files/lib/platform/send.ts` answers `held`.
 
 - Nov 1 (unit 7): section 13a added. `/live/ticket` and `/live/stream` as written, plus a platform route the contract left unnamed, `app/api/musemuse/live-caption`; `lib/gateway/handler.ts` gets one marked block and one parameter on `checkRateLimits`, not one line, since caption minutes are checked after the rate limit; caption minutes also have a per-address allowance (5 times); `allowedModelsFor` adds the voice model for captions (one marked line in `lib/pipeline/logic.ts`); `liveOff` in `lib/caps/ready.ts`; data's `target` is exported for tickets; `template/playwright.config.ts` gives a cap's browser args to the demo and studio projects too, and unit 2's `caps-off` test says so; the judge note's screenshot is 'Second browser live', since data's 'Second browser' does reload; `lib/gateway/deps.ts` wires `liveCaptions`; `CAP_PROOF.live`.
+- Nov 1 (unit 12): section 18 says the product tools are built. `hardware` in a brief gains `driveExport`, with `StoredHardwareBlock` as its stored shape (the writer's stays `HardwareBriefBlock` with the flags off), and a token gains the `drive-tools` marker. `next.config.ts` traces `drive/` for `/api/gateway/gadget`. The tool card's `shown` moves from `lib/tools/handler.ts` to `lib/tools/sign.ts` as `cardText`, unchanged. No migration.
 - Nov 1 (unit 11): section 17a added. No `GLIMMER_ENDPOINT_*`; a new flag `GPU_GLIMMER_ALL_PRODUCTS`; 0025 also adds `adapter_job_id`, `serve_job_id`, `spark_open` and `reservation_id` to `glimmer_windows`, one open row at a time, and an index on `training_jobs.product_id`; `usage.source` gains `glimmer`; `CapCleanup.cap` also takes `"gpu"`; `capBuildEnv`, `capDeployEnv`, `capsBuildLines`, `capsRefineLines`, `capsJudgeNotes`, `allowedModelsFor`, `catalogSummary` and `judgeStep` each get one marked line for GPU, which isn't a cap; `lib/train/tune/examples.ts` exports `objectRow`.

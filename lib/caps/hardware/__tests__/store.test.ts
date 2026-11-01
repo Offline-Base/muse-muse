@@ -181,4 +181,24 @@ describe("the hardware unit's rows", { skip: canMock ? false : "needs --experime
     }
     assert.deepEqual(await store.hardwareProof(build!.id, { since: null }), { read_sensor: 3, show_text: 0, "brief:links": 1 }, "board tools off");
   });
+
+  it("the proof counts confirmed drive exports only for a brief that asks, and the latest moment is the simulator's clock", async () => {
+    const [product] = await testDb.insert(realSchema.products).values({ slug: "proof-drive", name: "Proof", ownerId: bob, status: "building" }).returning();
+    const [inspiration] = await testDb.insert(realSchema.inspirations).values({ userId: bob, text: "made up" } as never).returning();
+    const [build] = await testDb.insert(realSchema.builds).values({ inspirationId: inspiration!.id, userId: bob, productId: product!.id, brief: { hardware: { links: [], boardTools: false, driveExport: true, why: "w" } } as never, status: "building" } as never).returning();
+    const key = hardwareProofKey("export_to_drive", build!.id);
+    assert.equal(await store.latestProofAt(key), null);
+    await testDb.insert(realSchema.rateLimits).values({ key, windowStart: new Date("2026-11-03T14:00:00Z"), count: 1 });
+    await testDb.insert(realSchema.rateLimits).values({ key, windowStart: new Date("2026-11-03T16:00:00Z"), count: 1 });
+    assert.equal((await store.latestProofAt(key))?.getTime(), new Date("2026-11-03T16:00:00Z").getTime());
+    assert.deepEqual(await store.hardwareProof(build!.id, { since: null }), { read_sensor: 0, show_text: 0 }, "off");
+    process.env.DRIVE_EXPORT_PRODUCTS = "1";
+    process.env.HARDWARE_GADGET_OWNER_CHECK = "1";
+    try {
+      assert.deepEqual(await store.hardwareProof(build!.id, { since: null }), { read_sensor: 0, show_text: 0, drive_status: 0, export_to_drive: 2, "brief:driveExport": 1 });
+    } finally {
+      delete process.env.DRIVE_EXPORT_PRODUCTS;
+      delete process.env.HARDWARE_GADGET_OWNER_CHECK;
+    }
+  });
 });

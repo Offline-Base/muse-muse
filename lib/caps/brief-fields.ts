@@ -7,7 +7,7 @@ import type { CapId } from "@/lib/caps/ids";
 import { EXTENSION_WRITER_RULES, ExtensionBriefBlock } from "@/lib/caps/extension/brief";
 import { FilesBriefBlock, filesWriterBlock, filesWriterRules } from "@/lib/caps/files/brief";
 import { GAMES_WRITER_RULES, GamesBriefBlock } from "@/lib/caps/games/brief";
-import { HardwareBriefBlock, hardwareWriterBlock, hardwareWriterRules } from "@/lib/caps/hardware/brief";
+import { StoredHardwareBlock, hardwareWriterBlock, hardwareWriterRules } from "@/lib/caps/hardware/brief";
 import { JobsBriefBlock, jobsWriterBlock, jobsWriterRules } from "@/lib/caps/jobs/brief";
 import { LiveBriefBlock, liveWriterRules } from "@/lib/caps/live/brief";
 import { MediaBriefBlock, mediaWriterRules } from "@/lib/caps/media/brief";
@@ -32,7 +32,7 @@ export const CAP_BRIEF_FIELDS = {
   media: MediaBriefBlock,
   code: CodeBriefBlock,
   runtime: RuntimeBriefBlock,
-  hardware: HardwareBriefBlock,
+  hardware: StoredHardwareBlock,
   extension: ExtensionBriefBlock,
   games: GamesBriefBlock,
 } as const satisfies Partial<Record<CapId, z.ZodTypeAny>>;
@@ -98,7 +98,7 @@ const CAP_WRITER_BRIEF_FIELDS: Partial<Record<CapId, { stored: z.ZodTypeAny; wri
   // Unit 9: with CODE_EXEC off, no exec runtime.
   code: { stored: CodeBriefBlock, writer: () => codeWriterBlock() },
   // Unit 13: with HARDWARE_BOARD_TOOLS off, no board tools.
-  hardware: { stored: HardwareBriefBlock, writer: () => hardwareWriterBlock() },
+  hardware: { stored: StoredHardwareBlock, writer: () => hardwareWriterBlock() },
 };
 
 /** The block the brief writer answers in for a cap (newBriefSchemaFor), or undefined when it has none. */

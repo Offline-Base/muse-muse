@@ -1,11 +1,11 @@
 ---
 name: muse-hardware
-description: Use only when the brief has a hardware block. A page that talks to a device over Web Serial, WebUSB or Web Bluetooth, and a product's server that reads a board's sensors or shows text on it.
+description: Use only when the brief has a hardware block. A page that talks to a device over Web Serial, WebUSB or Web Bluetooth, a product's server that reads a board's sensors or shows text on it, and an owner putting the product's own tuned model on a USB drive.
 ---
 
 # Devices
 
-Two separate things. A brief may ask for either or both.
+Separate things. A brief may ask for any of them.
 
 ## Browser links
 
@@ -70,12 +70,51 @@ The owner gets their pass from `Open as owner` on the product's Muse Muse page, 
 
 A board does only this for a product, and never runs commands. Its camera and microphone need the brief to list `muse-gadget` too. Then, where the owner should reach them, use `boardPhoto({ request })` and `boardSound({ seconds, request })` from `lib/platform/board.ts` rather than `takePhoto` and `recordSound`, which don't send the owner's pass.
 
+## Drive export
+
+Only when the brief says `driveExport`. The product's owner puts the product's own tuned model on a USB drive plugged into their own board. Server only: route handlers, with the request passed in. Only the owner ever gets through. Visitors never do, even on a board its owner opened to visitors, so show this only to the owner, and give everyone else the rest of the product.
+
+Two steps, and the person has to do the second one. The first call starts nothing:
+
+```ts
+import { boardMessage, driveStatus, exportToDrive } from "@/lib/platform/board";
+
+export async function POST(request: Request) {
+  const { approval } = (await request.json()) as { approval?: string };
+  try {
+    return Response.json(await exportToDrive({ approval, request }));
+  } catch (err) {
+    const message = boardMessage(err);
+    if (message) return Response.json({ message }, { status: 503 });
+    throw err;
+  }
+}
+
+export async function GET(request: Request) {
+  try {
+    return Response.json(await driveStatus({ request }));
+  } catch (err) {
+    const message = boardMessage(err);
+    if (message) return Response.json({ message }, { status: 503 });
+    throw err;
+  }
+}
+```
+
+- `needs_confirmation`: show `approval.title` and every line of `approval.lines`, in full, on a card with Confirm and Cancel. Send `approval.id` back only from the Confirm click. Never send it by yourself: the card is the only proof a person agreed, and the gateway can't check that for you. The lines name the model, the drive and the Usage Policy's points, so don't shorten them. With `stale: true`, something changed, so show the new card.
+- `ok: true`: it has started. Poll `driveStatus` every 10 seconds at most. `export.state` ends in `done`, `failed` or `stopped`, and `done` with `result: "PASS"` means it's safe to unplug. Show `message`, and the progress from `done_bytes` and `total_bytes`.
+- `needs_erase`: show `message`. A product can never erase or format a drive. The owner confirms that on their board's page.
+- The drive has to be plugged in first. An export from a product never waits for one, so say "Plug the drive into your board, then press Export." `boardMessage(err)` has the line for no drive, more than one drive, an export already going, and a model that isn't ready.
+
+There is nothing to choose: `exportToDrive` always means this product's own model, and takes no link, file or drive. A product can't stop an export or send another product's model.
+
 ## During the build
 
 Nothing real is connected:
 
 - A simulated port stands in for the browser links.
 - The gateway answers board tools from a simulated board: one sensor, `board-temp`, at 41.5 C, and `showText` returns what it was given.
+- The gateway answers the drive tools from a simulated stick, for a simulated owner. `exportToDrive` still asks first, and a confirmed export ends in `done` with `PASS` after about 8 seconds.
 
 Don't show the word "simulated". The live product gets the real device.
 
@@ -98,6 +137,19 @@ await checkBoardTool(page, {
   run: (p) => p.getByRole("button", { name: "Read the board" }).click(),
   shows: "41.5",
   shot: "03-board",
+});
+```
+
+For drive export, once, with `start` opening the card and `confirm` pressing Confirm on it. `shows` is what the product shows once it's done:
+
+```ts
+import { checkDriveExport } from "./caps/hardware";
+
+await checkDriveExport(page, {
+  start: (p) => p.getByRole("button", { name: "Export to my drive" }).click(),
+  confirm: (p) => p.getByRole("button", { name: "Confirm" }).click(),
+  shows: "Safe to unplug",
+  shot: "04-drive",
 });
 ```
 

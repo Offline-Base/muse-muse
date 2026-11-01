@@ -1,7 +1,7 @@
 import { and, count, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
 import { hardwareBlock } from "@/lib/caps/hardware/brief";
-import { BOARD_TOOLS, hardwareProofKey } from "@/lib/caps/hardware/limits";
+import { BOARD_TOOLS, hardwareProofKey, PRODUCT_DRIVE_TOOLS } from "@/lib/caps/hardware/limits";
 import { readCapDrops, withoutCaps } from "@/lib/caps/ready";
 import type { DeviceHealth, DeviceTrust } from "@/lib/db/schema";
 import type { SealedSecret } from "@/lib/secrets/box";
@@ -190,6 +190,12 @@ export async function noteBoardHealth(boardId: string, ok: boolean, now: Date, l
     .where(eq(schema.devices.id, boardId));
 }
 
+/** When a counter keyed by moment last counted, or null. The simulated drive's start, so it needs no table of its own. The hourly prune takes the rows. */
+export async function latestProofAt(key: string): Promise<Date | null> {
+  const [row] = await db().select({ at: sql<string | Date | null>`max(${schema.rateLimits.windowStart})` }).from(schema.rateLimits).where(eq(schema.rateLimits.key, key));
+  return row?.at ? new Date(row.at) : null;
+}
+
 const rowsOf = <T>(result: unknown): T[] => (Array.isArray(result) ? (result as T[]) : ((result as { rows?: T[] }).rows ?? []));
 
 /** /caps/proof: board tool calls that reached the simulated board since `since`, and what the brief asks for. */
@@ -198,7 +204,7 @@ export async function hardwareProof(buildId: string, window: { since: Date | nul
   const dropped = (readCapDrops(build?.capsDropped) ?? []).map((d) => d.cap);
   const block = build?.brief ? hardwareBlock(withoutCaps(build.brief as object, dropped)) : null;
   const calls: Record<string, number> = {};
-  for (const tool of BOARD_TOOLS) {
+  for (const tool of block?.driveExport ? [...BOARD_TOOLS, ...PRODUCT_DRIVE_TOOLS] : BOARD_TOOLS) {
     const since = window.since ? sql`and window_start >= ${window.since.toISOString()}::timestamptz` : sql``;
     const [row] = rowsOf<{ n: number | string }>(await db().execute(sql`select coalesce(sum(count), 0)::int as n from rate_limits where key = ${hardwareProofKey(tool, buildId)} ${since}`));
     calls[tool] = Number(row?.n ?? 0);
@@ -207,5 +213,6 @@ export async function hardwareProof(buildId: string, window: { since: Date | nul
     ...calls,
     ...(block?.links.length ? { "brief:links": block.links.length } : {}),
     ...(block?.boardTools ? { "brief:boardTools": 1 } : {}),
+    ...(block?.driveExport ? { "brief:driveExport": 1 } : {}),
   };
 }

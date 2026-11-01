@@ -1,7 +1,7 @@
 import { linkedBoardFor } from "@/lib/caps/hardware/board";
-import { boardToolsOn, gadgetOwnerCheckOn } from "@/lib/caps/hardware/flags";
+import { boardToolsOn, driveToolsUsable, gadgetOwnerCheckOn } from "@/lib/caps/hardware/flags";
 import { callDeviceTool, deviceConfig, listDeviceTools } from "@/lib/device/client";
-import { handleGadgetCall, handleGadgetTools, type GadgetDeps } from "@/lib/gateway/gadget";
+import { handleGadgetCall, handleGadgetTools, type GadgetDeps, type GadgetDrive } from "@/lib/gateway/gadget";
 import { hitRateLimits, productStatusById } from "@/lib/gateway/store";
 import { findToken } from "@/lib/gateway/tokens";
 
@@ -10,6 +10,11 @@ import { findToken } from "@/lib/gateway/tokens";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+/** Drive export's code (plans, the kit, the lab's rows) loads only for a drive tool call. */
+const drive: GadgetDrive = {
+  call: async (call) => (await import("@/lib/device/drive-product-deps")).runProductDrive(call),
+};
+
 const deps: GadgetDeps = {
   // Wave 3, unit 13 (docs/CAPABILITIES.md, section 19). Off: every line below is as it was.
   get linkedBoard() {
@@ -17,6 +22,10 @@ const deps: GadgetDeps = {
   },
   get boardTools() {
     return boardToolsOn();
+  },
+  // docs/DRIVE_EXPORT.md, "From a product". Off: every line below is as it was.
+  get drive() {
+    return driveToolsUsable() ? drive : undefined;
   },
   findToken,
   productStatus: productStatusById,

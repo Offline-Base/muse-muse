@@ -23,7 +23,7 @@ export const HARDWARE_RENDER: CapRenderEntry = {
     if (!hw) return [];
     const links = hw.links;
     return [
-      `The brief asks for ${[links.length ? `browser links (${linkList(links)})` : "", hw.boardTools ? "board tools (read_sensor, show_text)" : ""].filter(Boolean).join(" and ")}: ${hw.why}`,
+      `The brief asks for ${[links.length ? `browser links (${linkList(links)})` : "", hw.boardTools ? "board tools (read_sensor, show_text)" : "", hw.driveExport ? "drive export (drive_status, export_to_drive)" : ""].filter(Boolean).join(" and ")}: ${hw.why}`,
       "",
       "- Read `.agents/skills/muse-hardware/SKILL.md` first.",
       ...(links.length
@@ -41,8 +41,16 @@ export const HARDWARE_RENDER: CapRenderEntry = {
             "- `Open as owner` on the product's Muse Muse page lands on `/api/musemuse/board/owner` in its own tab, which sets the owner's pass. The pass isn't sent inside the frame on that page, so when a board is offline, also say how the owner gets in.",
           ]
         : []),
+      ...(hw.driveExport
+        ? [
+            "- Drive export: `driveStatus` and `exportToDrive` in `lib/platform/board.ts`. Server only, with the request passed in. Only the product's owner, on a board they linked, ever gets through. Visitors never do, even when the link is open to visitors, so offer it only to the owner.",
+            "- `exportToDrive` answers `needs_confirmation` first: show `approval.title` and every line of `approval.lines` on a card, and call it again with `approval.id` only after the person presses confirm. Never send the id by yourself.",
+            "- It exports this product's own tuned model and nothing else. The drive has to be plugged in first, since an export from a product never waits for one. It never erases: when it answers `needs_erase`, show its message, which sends the person to their board's page.",
+          ]
+        : []),
       "- During the build nothing real is connected. A simulated port stands in for the browser links, and the gateway's simulated board answers the board tools, with `simulated: true`. Don't show the word \"simulated\": the live product gets the real device.",
       ...(links.length ? ["- Smoke test, one link session: call `useFakeDevices(page, { reply })` before `page.goto`, then `checkDeviceLink(page, { link, connect, exchange, shows, shot })` from `tests/caps/hardware.ts`. It checks that the simulated port got the bytes the product sent, and that the product showed the reply."] : []),
+      ...(hw.driveExport ? ["- Smoke test, drive export: `checkDriveExport(page, { start, confirm, shows, shot })` from `tests/caps/hardware.ts`, once. The gateway's own record must show the confirmed export reached the simulated board."] : []),
       ...(hw.boardTools ? ["- Smoke test, board tools: `checkBoardTool(page, { run, shows, shot })` from `tests/caps/hardware.ts`, once. The gateway's own record must show the call reached the simulated board. Keep to one call of each tool."] : []),
       "- Every file named here, `tests/caps/hardware*.ts` and `scripts/caps/hardware.mjs` are platform files. Leave them as they are.",
     ];
@@ -50,11 +58,11 @@ export const HARDWARE_RENDER: CapRenderEntry = {
   refine(brief) {
     const hw = hardwareBlock(brief);
     if (!hw) return [];
-    return [`- The product talks to devices (\`.agents/skills/muse-hardware/SKILL.md\`). Keep ${[hw.links.length ? "`checkDeviceLink`" : "", hw.boardTools ? "`checkBoardTool`" : ""].filter(Boolean).join(" and ")} in the smoke test passing.`];
+    return [`- The product talks to devices (\`.agents/skills/muse-hardware/SKILL.md\`). Keep ${[hw.links.length ? "`checkDeviceLink`" : "", hw.boardTools ? "`checkBoardTool`" : "", hw.driveExport ? "`checkDriveExport`" : ""].filter(Boolean).join(" and ")} in the smoke test passing.`];
   },
   markdown(brief) {
     const hw = hardwareBlock(brief);
     if (!hw) return [];
-    return [hw.why, "", ...(hw.links.length ? [`Browser links: ${linkList(hw.links)}. These work in Chrome and Edge on a computer or Android, after a click. Not in Safari or on iPhone.`] : []), ...(hw.boardTools ? ["Board tools: read a sensor and show short text on a board its owner links."] : [])];
+    return [hw.why, "", ...(hw.links.length ? [`Browser links: ${linkList(hw.links)}. These work in Chrome and Edge on a computer or Android, after a click. Not in Safari or on iPhone.`] : []), ...(hw.boardTools ? ["Board tools: read a sensor and show short text on a board its owner links."] : []), ...(hw.driveExport ? ["Drive export: the owner puts this product's own tuned model on a USB drive in their board, confirming each time."] : [])];
   },
 };

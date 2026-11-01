@@ -71,6 +71,11 @@ describe("the overlay's files", () => {
     assert.match(skill, /boardMessage\(err\)/);
     assert.match(skill, /boardPhoto\(\{ request \}\)/);
     assert.match(skill, /Open as owner/);
+    assert.match(board, /exportToDrive\(opts: \{ approval\?: string \} & WithRequest\)/);
+    assert.match(board, /driveStatus\(opts: WithRequest\)/);
+    assert.match(skill, /Never send it by yourself/);
+    assert.match(skill, /needs_erase/);
+    assert.doesNotMatch(skill, /\u2014/);
   });
 });
 
@@ -127,6 +132,32 @@ describe("a board's answers, through the real helpers with a fake gateway", () =
     assert.deepEqual(asked.at(-1).body, { tool: "record_audio", arguments: { seconds: 30 } });
     answer = { body: { content: [{ type: "text", text: "{}" }] } };
     await assert.rejects(board.boardPhoto({ request }), (err) => err.code === "board_tool_error");
+  });
+
+  test("driveStatus and exportToDrive send only the tool, own model, the approval and the owner's pass", async () => {
+    answer = { body: { content: [{ type: "text", text: '{"drives":[],"export":null}' }], simulated: true } };
+    assert.deepEqual(await board.driveStatus({ request }), { drives: [], export: null, simulated: true });
+    assert.deepEqual(asked.at(-1).body, { tool: "drive_status", arguments: {} });
+    assert.equal(asked.at(-1).headers["x-owner"], "owners-pass");
+
+    answer = { body: { content: [{ type: "text", text: '{"ok":false,"code":"needs_confirmation","approval":{"id":"ap1.x","title":"Put this model on your drive?","lines":["Model: x"]}}' }], simulated: false } };
+    const card = await board.exportToDrive({ request });
+    assert.equal(card.code, "needs_confirmation");
+    assert.deepEqual(asked.at(-1).body, { tool: "export_to_drive", arguments: { model: "own" } });
+    assert.equal(asked.at(-1).headers["x-owner"], "owners-pass");
+
+    answer = { body: { content: [{ type: "text", text: '{"ok":true,"export":"exp_1","state":"checking"}' }], simulated: false } };
+    assert.equal((await board.exportToDrive({ approval: card.approval.id, request })).ok, true);
+    assert.deepEqual(asked.at(-1).body, { tool: "export_to_drive", arguments: { model: "own" }, approval: "ap1.x" });
+  });
+
+  test("a drive export's refusals show the gateway's own sentence", async () => {
+    for (const code of ["no_drive", "several_drives", "export_busy", "own_model_not_ready", "license_duties_missing"]) {
+      answer = { status: 409, body: { error: { code, message: `the words for ${code}` } } };
+      const err = await board.exportToDrive({ request }).then(() => assert.fail("it should throw"), (e) => e);
+      assert.equal(err.code, code);
+      assert.equal(board.boardMessage(err), `the words for ${code}`);
+    }
   });
 
   test("every way a board says no has a line to show", async () => {
@@ -242,6 +273,11 @@ describe("the fixed checks", () => {
     assert.deepEqual(ids(await checker.check({ record: shown, proof: { ...asks, read_sensor: 0, show_text: 0 } })), { "board-tool": false, "board-limit": true, "board-shown": true });
     assert.deepEqual(ids(await checker.check({ record: shown, proof: { ...asks, read_sensor: 1, show_text: 1 } })), { "board-tool": true, "board-limit": true, "board-shown": true });
     assert.equal(ids(await checker.check({ record: shown, proof: { ...asks, read_sensor: 5, show_text: 0 } }))["board-limit"], false);
+    const drive = { "brief:driveExport": 1 };
+    const driveShown = { checks: [{ id: "drive-shown", ok: true, detail: "shown" }] };
+    assert.deepEqual(ids(await checker.check({ record: driveShown, proof: { ...drive, export_to_drive: 1 } })), { "drive-tool": true, "drive-shown": true });
+    assert.deepEqual(ids(await checker.check({ record: driveShown, proof: { ...drive, export_to_drive: 0 } })), { "drive-tool": false, "drive-shown": true });
+    assert.deepEqual(ids(await checker.check({ record: { checks: [] }, proof: { ...drive, export_to_drive: 1 } })), { "drive-tool": true, "drive-shown": false });
   });
 });
 

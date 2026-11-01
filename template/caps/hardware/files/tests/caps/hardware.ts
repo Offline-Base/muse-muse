@@ -60,6 +60,26 @@ export interface BoardToolCheck {
 }
 
 /** One board tool call through the product. Records "board-shown"; the gateway's record decides whether it reached the board. */
+export interface DriveExportCheck {
+  /** Does what makes the product ask, up to its confirmation card. */
+  start(page: Page): Promise<void>;
+  /** Presses confirm on the card. */
+  confirm(page: Page): Promise<void>;
+  /** What the product shows once the export is done. The simulated one takes about 8 seconds. */
+  shows: string | RegExp;
+  shot?: string;
+}
+
+/** One export through the product's card. Records "drive-shown". verify asks the gateway's own record whether it started. */
+export async function checkDriveExport(page: Page, check: DriveExportCheck): Promise<void> {
+  await check.start(page);
+  await check.confirm(page);
+  const ok = await page.getByText(check.shows).first().waitFor({ state: "visible", timeout: 60_000 }).then(() => true, () => false);
+  if (check.shot) await judgeShot(page, check.shot);
+  recordCapCheck("hardware", { id: "drive-shown", ok, detail: ok ? "The product showed the finished export" : "The product didn't show the finished export", ...(check.shot ? { shot: `${check.shot}.png` } : {}) });
+  expect(ok, "the product didn't show the finished export").toBeTruthy();
+}
+
 export async function checkBoardTool(page: Page, check: BoardToolCheck): Promise<void> {
   await check.run(page);
   const ok = await page.getByText(check.shows).first().waitFor({ state: "visible", timeout: 30_000 }).then(() => true, () => false);
