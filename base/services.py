@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from base import events as events_module
-from base import guard, retention
+from base import guard, prompt_guard, retention
 from base.approvals import ApprovalStore
 from base.config import Settings
 from base.connector.audit import Audit
@@ -199,6 +199,7 @@ class Services:
         s.embedder = Embedder(settings) if settings.search_embeddings else None
         s.router.choice = lambda: s.controls.get().learning
         s.index = DocumentIndex(settings, scans=s.scans, embedder=s.embedder, controls=s.controls)
+        s.prompt_guard = prompt_guard.for_index(settings, s.index)  # None unless PROMPT_GUARD=1
         # mode 2 needs the local model
         s.ask = DeviceAsk(s.rag, s.index, never_share=s.policy.never_share) if s.rag is not None else None
         if settings.heavy_queue if heavy is None else heavy:

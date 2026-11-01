@@ -54,6 +54,12 @@ SUMMARY_FAILED = "A class summary could not be made without per-student detail, 
 IMAGE_UNCHECKED = "It came from an image the device has not checked for faces and signatures, so it stays here."
 NAME_CHECK_FAILED = "The device could not finish its check for names, so the result stayed on the device."
 TOPIC_CHECK_FAILED = "The device could not finish reading what the request is for, so the result stayed on the device."
+# Prompt Guard's floors (PROMPT_GUARD=1). Shown on the approval card; Muse only ever sees the waiting text.
+PROMPT_ATTACK_SOURCE = "A file this came from has text that tries to give the model orders, so the device asks you first."
+PROMPT_ATTACK_REQUEST = "The request has text that tries to give the model orders, so the device asks you first."
+PROMPT_ATTACK_UNCHECKED = (
+    "The device could not check this for text that tries to give the model orders, so it asks you first."
+)
 
 # Kinds whose text is built by the device itself from numbers only: the guard's roster and
 # identifier passes cover them, so they skip the model's second pass for names. Document lists
@@ -282,6 +288,30 @@ class Egress:
             return route
         return RouteDecision(hold[0], hold[2], "rule", route.latency_ms, [*route.floors, hold[1]], code=hold[1])
 
+    def _with_prompt_guard(self, route: RouteDecision, sources: Sequence[str], request: str) -> RouteDecision:
+        """With PROMPT_GUARD=1, a source document or Muse's request that Prompt Guard flags as an
+        attempt to give the model orders makes the result at least ask_user, and so does a check
+        that could not run (floors `prompt_attack:source`, `:request`, `:unchecked`; Always approve
+        leaves these cards for the user). A stricter decision keeps its own reason."""
+        scanner = getattr(self.services, "prompt_guard", None)
+        if scanner is None:
+            return route
+        found = scanner.check(sources, request)
+        floors = found.floors
+        if not floors:
+            return route
+        attack = bool(found.flagged_sources or found.request_flagged)
+        self._audit("egress", "prompt_attack_flagged" if attack else "prompt_attack_unchecked")
+        if STRICTNESS[route.decision] >= STRICTNESS["ask_user"]:
+            return replace(route, floors=[*route.floors, *floors])
+        if found.flagged_sources:
+            reason = PROMPT_ATTACK_SOURCE
+        elif found.request_flagged:
+            reason = PROMPT_ATTACK_REQUEST
+        else:
+            reason = PROMPT_ATTACK_UNCHECKED
+        return replace(route, decision="ask_user", reason=reason, source="rule", floors=[*route.floors, *floors], code=floors[0])
+
     def _images(self, sources: Sequence[str]) -> regions.ImageCheck | None:
         """What the SAM sidecar found on the result's source images, or None when none is an image or
         SAM_ENABLED is off (then nothing changes). A lookup that breaks counts every image as unchecked."""
@@ -349,6 +379,7 @@ class Egress:
         raw_kinds = sorted({h.kind for h in asked.hits} & _REQUEST_NOTE_KINDS)
         if raw_kinds:
             self._audit("egress", "private_detail_in_request")
+        raw_request = request  # read by Prompt Guard on the device below, never stored or sent
         request = asked.text
         inp = route_input(asked, result_kind, tagged, own_topics, asked_about, s.policy.never_share, summary)
         inp.strict = bool(profiles)
@@ -357,6 +388,7 @@ class Egress:
         route = self._with_toggles(
             s.router.decide(inp, synthetic=synthetic), tagged.text, sources, profiles, raw_text, images, request
         )
+        route = self._with_prompt_guard(route, sources, raw_request)
         shown_form = default_share_form(result_kind, all_topics)
 
         outgoing = tagged.text
@@ -462,6 +494,7 @@ class Egress:
             "removed": removed,
             "checks": [
                 "tagging", *(["image check"] if checked else []), "name check", "router",
+                *(["prompt guard"] if getattr(self.services, "prompt_guard", None) is not None else []),
                 *(["toggles"] if profiles else []), "final leak check",
             ],
             "floors": list(route.floors),

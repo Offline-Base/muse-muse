@@ -52,6 +52,15 @@ class QuietLlm:
         pass
 
 
+def tomorrow_noon() -> float:
+    """Noon on the next local calendar day. Not now + 86400: on the day clocks fall back that is
+    still today for the first hour after midnight."""
+    import datetime
+
+    day = datetime.date.today() + datetime.timedelta(days=1)
+    return datetime.datetime(day.year, day.month, day.day, 12).timestamp()
+
+
 @pytest.fixture
 def svc(tmp_path):
     root = tmp_path / "workspace"
@@ -300,7 +309,7 @@ def test_a_letter_home_is_checked_for_never_share_words_as_muse_wrote_it_not_wit
 
 def test_a_title_ending_in_student_and_a_body_starting_with_i_are_two_texts(svc):
     yesterday = list(student_tags(svc))  # [Student I] is one of them, sent and still live
-    svc.tagmap.clock = lambda: __import__("time").time() + 86400  # tomorrow: a new block of tags
+    svc.tagmap.clock = tomorrow_noon  # tomorrow: a new block of tags
     svc.tagmap.ensure_roster(svc.roster)
     mine = next(t for t in svc.tagmap.as_dict() if t.startswith("[Student ") and t not in yesterday)
     svc.tagmap.touch([mine])
@@ -320,7 +329,7 @@ def test_a_letter_home_that_names_a_never_share_topic_saves_nothing(svc):
 
 def test_a_save_with_tags_from_two_days_saves_nothing(svc):
     tags = list(student_tags(svc))
-    svc.tagmap.clock = lambda: __import__("time").time() + 86400  # tomorrow: a new block of tags
+    svc.tagmap.clock = tomorrow_noon  # tomorrow: a new block of tags
     svc.tagmap.ensure_roster(svc.roster)
     new = [t for t in svc.tagmap.as_dict() if t.startswith("[Student ") and t not in tags]
     svc.tagmap.touch(new)

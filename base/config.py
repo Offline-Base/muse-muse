@@ -183,6 +183,11 @@ class Settings:
     # barcodes before the local model reads an image, and an image it cannot check is not read.
     sam_enabled: bool = False
     sam_url: str = f"http://127.0.0.1:{SAM_PORT}"
+    # PROMPT_GUARD=1: Meta's Llama Prompt Guard 2 (22M, onnxruntime on the CPU) reads each source
+    # document and Muse's request for text that tries to give the model orders; a hit asks the user.
+    prompt_guard: bool = False
+    prompt_guard_dir: Path = REPO_ROOT / "models" / "prompt-guard-2-22m"
+    prompt_guard_threshold: float = 0.5
     # DEVICE_ONLY=1: every model is on this device. No OpenRouter, no Jetson gateway, no Spark key.
     # With PRIMARY_MODEL=lfm (its default) LFM3-VL-2B answers every step, the router included.
     device_only: bool = False
@@ -340,6 +345,12 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         grace = 0.0
     if not grace > 0:
         raise ValueError("TAG_GRACE_HOURS must be a number of hours above 0")
+    try:
+        pg_threshold = float(get("PROMPT_GUARD_THRESHOLD", "0.5"))
+    except ValueError:
+        pg_threshold = -1.0
+    if not 0 < pg_threshold < 1:
+        raise ValueError("PROMPT_GUARD_THRESHOLD must be a number between 0 and 1")
 
     return Settings(
         device=device,  # type: ignore[arg-type]
@@ -388,6 +399,9 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         pdftotext_bin=pdftotext,
         sam_enabled=get("SAM_ENABLED", "0") == "1",
         sam_url=sam_url,
+        prompt_guard=get("PROMPT_GUARD", "0") == "1",
+        prompt_guard_dir=Path(get("PROMPT_GUARD_DIR", str(REPO_ROOT / "models" / "prompt-guard-2-22m"))).expanduser(),
+        prompt_guard_threshold=pg_threshold,
         device_only=device_only,
         tag_rotation=rotation,  # type: ignore[arg-type]
         tag_grace_hours=grace,

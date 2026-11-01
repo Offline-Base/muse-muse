@@ -291,7 +291,7 @@ AUTO_APPROVE_HOURS = 8  # Always approve turns itself off this long after it was
 # Floors that keep a card for a person even while Always approve is on: Muse's request names a
 # never-share topic, the user asked to be asked first, the result has an identifier (or a long
 # number), or it is going outside the class.
-AUTO_APPROVE_SKIPS = ("request:", "ask_first:", "identifier:", "outside_class", "left_out")
+AUTO_APPROVE_SKIPS = ("request:", "ask_first:", "identifier:", "outside_class", "left_out", "prompt_attack")
 
 
 def needs_a_person(floors: Iterable[str] | None) -> bool:

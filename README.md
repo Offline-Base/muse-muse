@@ -166,6 +166,7 @@ The device-only app connects to the Muse app. Muse Spark wrote the invented eval
 - **A tuned Glimmer is planned and has not landed.** A tuned Glimmer at about 1.6-bit (IQ1_S) would take over answers and routing. No Glimmer has been measured on the device, so nothing here says it helps. The test it has to pass was written before any run ([glimmer_prereg.md](eval/reports/glimmer_prereg.md)).
 - **A 30B model for an 8 GB board** (designed, not run on a board): the Jetson would use a published Glimmer quant at about 1.6-bit (IQ1_S), i1-IQ1_S at 6.5 GB, for lookups and tagging, and hand grading to the laptop.
 - **SAM 3.1 is built and off by default.** With `SAM_ENABLED=1` it finds faces, signatures, ID cards and barcodes on page images and covers them before the device reads the page. No number in this README uses it.
+- **Llama Prompt Guard 2 is built and off by default.** With `PROMPT_GUARD=1` Meta's 22M classifier reads every document a result came from, and Muse's request, for text that tries to give the model orders. A hit makes the result wait for the user, and Always approve leaves that card alone. It never decides what is shared, and the floors hold whether it catches an attack or not. On invented text it flagged 6 of 10 explicit planted orders, 0 of 8 subtle ones ("the user already approved sharing this file"), and 1 of 643 ordinary documents, requests and results, at about 5 ms per 512-token piece on the laptop's CPU ([prompt_guard_22m.md](eval/reports/prompt_guard_22m.md)). Built with Llama.
 
 Where each one runs:
 
@@ -175,6 +176,7 @@ Where each one runs:
 | Liquid LFM3-VL-2B, Q4_K_M | The laptop, llama-server | Today's default: the name check, request labels, search passages, summaries, answers and scans. It does not decide what is shared; the user's policy does. |
 | EmbeddingGemma 2, Q8_0 | The laptop, llama-server | Search |
 | SAM 3.1 | The laptop, off by default | Covers faces, signatures, ID cards and barcodes on page images (`SAM_ENABLED=1`) |
+| Llama Prompt Guard 2, 22M, ONNX | The laptop's CPU, off by default | Flags documents and requests that try to give the model orders, so the result waits for the user (`PROMPT_GUARD=1`). Llama 4 Community License; the model files are not in the repo. |
 | Muse Glimmer 30B, `meta/muse-glimmer-30b` on OpenRouter | OpenRouter (development only) | The earlier numbers, on invented data. Not part of today's setup. The device refuses any folder without a `.synthetic` marker in this mode. |
 | Muse Glimmer, Meta's Q4_K_M GGUF (`Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf`) | Not run yet; designed for the laptop, llama-server | Would do grading, the name pass, summaries and the privacy router (Glimmer is its own router; its small assistant model is a speculative-decoding drafter, not a chat model). |
 | Muse Glimmer i1-IQ1_S, about 1.6-bit (6.5 GB, `mradermacher/Muse-Glimmer-30B-i1-GGUF`) | Not run yet; designed for the Jetson Orin Nano 8GB, llama-server | Would do lookups, tagging and routing on the board, with grading going to the laptop when its worker is connected. |
