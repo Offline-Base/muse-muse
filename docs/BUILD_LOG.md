@@ -227,6 +227,8 @@ Router finding for Ethan: a request headed outside the class that both the label
 
 **00:30** Ethan asked to check the 86M too. Downloaded (md5 matches Meta's checklist), converted the same way (no label names in its config either; within 4.7e-08 of transformers 4.44.2), measured with the same script (eval/reports/prompt_guard_86m.md, threshold 0.5): explicit planted orders 8 of 10 alone and 7 of 10 inside an essay (22M: 6 and 5), subtle 0 of 8 and 1 of 8 (same), ordinary texts 3 of 643 flagged, all requests in fresh_200_b whose expected answer is already ask_user or refuse, so the ask floor changes nothing for them (22M: 1); about 12 ms per window against 5, and a 1.1 GB file against 284 MB. Both miss our own F7 line once it sits inside an essay (86M: 0.97 alone, 0.0006 planted): the essay around it outweighs it. Exploratory, scratch script, not in the code: scoring each paragraph as well as the windows raises explicit-in-an-essay to 6 of 10 (22M) and 8 of 10 (86M) at 0.5, and 9 and 10 of 10 at 0.1, with no ordinary document or result flagged (343). The converter and the check script now take either model. No default changed; which model and whether to add the paragraph pass are Ethan's call.
 
+**00:33** Relayed by the training session: at Ethan's request writer-1 is being shut down, so the exploratory `iq2-io-lowest` row will not run (no GPU run without his OK for a new machine). Our `~/mp-gpu` there was copied to the team's shared storage by that session instead of deleted; we asked it to remove any copy of the throwaway llama-server key. The final IQ1_S report was already back here (e42a20f).
+
 ## Open items
 
 - Ethan: which mode the routing tune targets; whether to hand over stage 2 IQ1_S early.
