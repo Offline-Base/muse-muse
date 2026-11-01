@@ -48,6 +48,18 @@ describe("caps with a step after deploy", () => {
     assert.deepEqual(await runCapsShip(input(WITH), ["extension"], { extension: async () => null }), []);
   });
 
+  it("jobs runs on every deploy once enabled, even with no jobs block, so a refinement can clear its schedules; never with the cap off", async () => {
+    const seen: string[] = [];
+    const ships: Record<string, CapShip> = { jobs: async () => (seen.push("jobs"), null), extension: async () => (seen.push("extension"), null) };
+    await runCapsShip(input(BRIEF), ["jobs", "extension"], ships);
+    assert.deepEqual(seen, ["jobs"], "jobs, and not the extension");
+    seen.length = 0;
+    await runCapsShip(input(BRIEF), [], ships);
+    assert.deepEqual(seen, []);
+    await runCapsShip(input(BRIEF), ["extension"], ships);
+    assert.deepEqual(seen, []);
+  });
+
   it("puts one line in the build room even when the step stops before a cap can say anything", async () => {
     const step = { buildId: "b-1", productId: "p-1", sandboxName: "s", liveUrl: "https://x.vercel.app" };
     const said: string[] = [];

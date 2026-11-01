@@ -438,6 +438,13 @@ export async function syncSchedules(input: { productId: string; schedules: Array
   return names;
 }
 
+/** A deploy whose brief has no jobs: the schedules an earlier one started go, and its queue empties. Returns their names. */
+export async function clearSchedules(productId: string, now: Date): Promise<string[]> {
+  const gone = await db().delete(schema.productSchedules).where(eq(schema.productSchedules.productId, productId)).returning({ name: schema.productSchedules.name });
+  await cancelQueued(productId, "This version of the product has no background jobs.", now);
+  return gone.map((g) => g.name);
+}
+
 async function cancelQueued(productId: string, error: string, now: Date, names?: string[]): Promise<void> {
   await db()
     .update(schema.jobRuns)

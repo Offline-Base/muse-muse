@@ -313,7 +313,7 @@ describe("a background job, end to end", { skip }, () => {
     const { shipJobs } = await import("../ship");
     const store = await import("../store");
     const { runJobsCron } = await import("../cron");
-    const made = await shipJobs({ buildId, productId, sandboxName: "sb", liveUrl: productUrl, brief: BRIEF as never }, { readManifest: async () => MANIFEST, syncSchedules: store.syncSchedules, now: () => new Date() });
+    const made = await shipJobs({ buildId, productId, sandboxName: "sb", liveUrl: productUrl, brief: BRIEF as never }, { readManifest: async () => MANIFEST, syncSchedules: store.syncSchedules, clearSchedules: store.clearSchedules, now: () => new Date() });
     assert.match(made ?? "", /Schedules on: digest/);
     const [s] = await testDb.select().from(realSchema.productSchedules);
     assert.equal(s!.everyMinutes, 1440);

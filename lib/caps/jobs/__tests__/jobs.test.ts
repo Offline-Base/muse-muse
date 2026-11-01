@@ -839,9 +839,30 @@ describe("jobs on a database", { skip: canMock ? false : "needs --experimental-t
       assert.equal((await testDb.select().from(realSchema.productSchedules))[0]!.pausedAt, null);
     });
 
+    it("go when a refinement's brief has no jobs: nothing fires, and what's queued is cancelled", async () => {
+      const shipDeps: import("../ship").ShipJobsDeps = { readManifest: async () => null, syncSchedules: store.syncSchedules, clearSchedules: store.clearSchedules, now: () => NOW };
+      const input = { buildId, productId, sandboxName: "sb", liveUrl: "https://digest.example.app" };
+      await schedule();
+      await store.jobsStore.queueRun({ productId, namespace: "live", name: "from-a-hook", trigger: "webhook", budgetUsd: 0.1 });
+      const { runCapsShip, CAP_SHIP } = await import("@/lib/caps/ship-run");
+      const lines = await runCapsShip({ ...input, brief: { title: "No jobs here" } as never }, ["jobs"], { ...CAP_SHIP, jobs: (i) => ship.shipJobs(i, shipDeps) });
+      assert.match(lines.join(" "), /digest/);
+      assert.equal((await testDb.select().from(realSchema.productSchedules)).length, 0);
+      assert.equal((await allRuns())[0]!.status, "cancelled");
+      const out = await cron.runJobsCron(cronDeps(async () => assert.fail("it's gone")));
+      assert.deepEqual([out.queued, out.fired], [0, 0]);
+    });
+
+    it("a product that never had jobs is left alone, and says nothing", async () => {
+      await testDb.update(realSchema.products).set({ ownerSeenAt: null }).where(eq(realSchema.products.id, productId));
+      const shipDeps: import("../ship").ShipJobsDeps = { readManifest: async () => assert.fail("no manifest needed"), syncSchedules: store.syncSchedules, clearSchedules: store.clearSchedules, now: () => NOW };
+      assert.equal(await ship.shipJobs({ buildId, productId, sandboxName: "sb", liveUrl: "https://digest.example.app", brief: { title: "No jobs" } as never }, shipDeps), null);
+      assert.equal((await testDb.select().from(realSchema.products))[0]!.ownerSeenAt, null, "a deploy with no jobs isn't a visit");
+    });
+
     it("come from the brief and manifest at deploy: a manifest narrows and can change the time, never adds or goes under 15 minutes", async () => {
       const input = { buildId, productId, sandboxName: "sb", liveUrl: "https://digest.example.app", brief: BRIEF as never };
-      const deps = (manifest: unknown): import("../ship").ShipJobsDeps => ({ readManifest: async () => manifest, syncSchedules: store.syncSchedules, now: () => NOW });
+      const deps = (manifest: unknown): import("../ship").ShipJobsDeps => ({ readManifest: async () => manifest, syncSchedules: store.syncSchedules, clearSchedules: store.clearSchedules, now: () => NOW });
       assert.match((await ship.shipJobs(input, deps(null))) ?? "", /Schedules on: digest/);
       let rows = await testDb.select().from(realSchema.productSchedules);
       assert.deepEqual(rows.map((r) => [r.name, r.everyMinutes, r.atMinute, r.tz]), [["digest", 1440, 450, "UTC"]]);
