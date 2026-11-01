@@ -1103,6 +1103,45 @@ export const env = {
     return flag("RUNTIME_OUTPUTS");
   },
 
+  // ---------- Wave 3, unit 11: gpu (docs/CAPABILITIES.md) ----------
+
+  /**
+   * GPU_GLIMMER_SHARED: products whose brief picks muse-glimmer reach a hosted Muse Glimmer at {GATEWAY_URL}/glimmer/v1
+   * during a demo window an admin opens (POST /api/admin/glimmer/windows). Off: those routes answer 404 and touch nothing,
+   * and the brief, tokens and deploy env are today's. Decision 11: stays off until the owner confirms.
+   */
+  get gpuGlimmerShared(): boolean {
+    return flag("GPU_GLIMMER_SHARED");
+  },
+  /**
+   * GPU_GLIMMER_SHARED, for what a new build is told and given: also needs a builder snapshot made from a checkout with this
+   * unit, which has askGlimmer in its template. template/caps/gpu ships no files, only its deps.json, so a snapshot lists `gpu`
+   * in lib/sandbox/snapshots.json exactly when that's true. Local runs use the checkout's template.
+   */
+  get gpuGlimmerForBuilds(): boolean {
+    if (!flag("GPU_GLIMMER_SHARED")) return false;
+    const overlays = env.snapshotCaps;
+    return overlays === null || overlays.includes("gpu");
+  },
+  /** GPU_GLIMMER_DAILY_USD: the most demo windows may reserve per UTC day, 15 by default. 0 pauses them. */
+  get gpuGlimmerDailyUsd(): number {
+    return dollars("GPU_GLIMMER_DAILY_USD", 15);
+  },
+  /**
+   * GPU_GLIMMER_ALL_PRODUCTS: signed-in builders' products may use a window too. Off, only products an admin owns may,
+   * which is the owner's open question 11 about serving Glimmer to other people's products.
+   */
+  get gpuGlimmerAllProducts(): boolean {
+    return flag("GPU_GLIMMER_ALL_PRODUCTS");
+  },
+  /**
+   * GPU_TRAIN_ON_DATA: a product's signed-in builder may train a model on their own owner rows, as an explicit action
+   * (POST /api/products/{slug}/train, decision 12). Needs TUNE_COMPOSER too. Off: the route answers 404 and touches nothing.
+   */
+  get gpuTrainOnData(): boolean {
+    return flag("GPU_TRAIN_ON_DATA");
+  },
+
   // ---------- Wave 3, unit 12: drive export (docs/CAPABILITIES.md) ----------
 
   /**

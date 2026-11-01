@@ -41,6 +41,9 @@ import { capsBuildEnded } from "@/lib/caps/cleanup";
 import { capBuildEnv, capDeployEnv } from "@/lib/caps/env";
 import { capBuildHosts } from "@/lib/caps/hosts";
 import { capsLivePaths } from "@/lib/caps/live";
+import { usesSharedGlimmer } from "@/lib/caps/gpu/marker";
+import { GPU_PROOF_FRAME } from "@/lib/caps/gpu/judge";
+import { gpuProofText } from "@/lib/caps/gpu/proof";
 import { capsProofText } from "@/lib/caps/judge";
 import { narrowCapMarkers } from "@/lib/caps/manifest";
 import { capsFileFor } from "@/lib/caps/overlays";
@@ -598,7 +601,7 @@ export async function provisionStep(input: {
     kept = withoutCaps(kept, extra.map((d) => d.cap));
     await db().update(schema.gatewayTokens).set({ allowedModels: allowedModelsFor(kept) }).where(eq(schema.gatewayTokens.id, tokenId));
     const left = capsFileFor(kept);
-    return { promptMarkdown: promptFor(kept), ...(left ? { caps: left, capEnv: capBuildEnv(kept), capHosts: capBuildHosts(left.caps) } : {}) };
+    return { promptMarkdown: promptFor(kept), ...(left ? { caps: left, capEnv: capBuildEnv(kept), capHosts: capBuildHosts(left.caps) } : usesSharedGlimmer(kept) ? { capEnv: capBuildEnv(kept) } : {}) };
   };
   const { sandboxName } = await sandbox.provisionSandbox({
     buildId: input.buildId,
@@ -613,6 +616,8 @@ export async function provisionStep(input: {
     ...extraFilesFor(brief),
     targets: briefTargets(brief),
     ...(caps ? { caps, capEnv: capBuildEnv(brief), capHosts: capBuildHosts(caps.caps), dropCaps } : {}),
+    // Wave 3, unit 11: the shared Glimmer endpoint's .env.local line, for a brief with no caps. Nothing with its flag off.
+    ...(!caps && usesSharedGlimmer(brief) ? { capEnv: capBuildEnv(brief) } : {}),
     ...(trust ? { trust } : {}),
   });
   // A local run's sandbox can't reach the gateway, so a cap check that needs the gateway's record can't pass there. Say
@@ -942,7 +947,10 @@ export async function judgeStep(input: {
   };
   const what = input.round === 0 ? "Judge" : `Judge round ${input.round}`;
   // A product with platform services shows the judge its fixed checks' results first (docs/CAPABILITIES.md, 2.8).
-  const capsProof = briefCaps(brief).length ? capsProofText(await verifySummaryFor(input.buildId, input.round)) : null;
+  const fixedProof = briefCaps(brief).length ? capsProofText(await verifySummaryFor(input.buildId, input.round)) : null;
+  // Wave 3, unit 11: the gateway's record of a build's Glimmer calls, which decides nothing. Null with GPU_GLIMMER_SHARED off.
+  const gpuProof = await gpuProofText(brief, input.buildId);
+  const capsProof = gpuProof ? `${fixedProof ?? GPU_PROOF_FRAME}\n${gpuProof}` : fixedProof;
   const result = await judgeBuild({
     brief,
     references: await judgeReferences(build, input.productId),
@@ -1465,6 +1473,8 @@ export async function reopenStep(input: {
     // A product with caps keeps its hosts and its .env.local lines on every change, as at provision.
     ...(capHosts.length ? { capHosts } : {}),
     ...(caps && brief ? { capEnv: capBuildEnv(brief), caps: true } : {}),
+    // Wave 3, unit 11: as at provision.
+    ...(!caps && usesSharedGlimmer(brief) ? { capEnv: capBuildEnv(brief as Brief) } : {}),
   });
   const prompt = renderRefinePrompt({
     brief,

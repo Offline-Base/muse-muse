@@ -26,3 +26,26 @@ if (local) {
 ```
 
 If `GLIMMER_URL` isn't set, use Muse Wonder and say in the UI and in BUILD_NOTES.md that the local mode needs a Glimmer endpoint.
+
+<!-- Wave 3, unit 11: the hosted Glimmer -->
+## When the build prompt says "Hosted Muse Glimmer"
+
+Muse Muse hosts Glimmer only during demo windows, and every other answer comes from Muse Wonder. Use the one helper. It handles the fallback, so don't write a second one. Never call `glimmer()` for this: it's only for an endpoint someone hosts through `GLIMMER_URL`, and it returns null here.
+
+```ts
+import { askGlimmer } from "@/lib/meta/glimmer";
+
+const { text, by, note } = await askGlimmer({
+  messages: [{ role: "user", content: question }],
+  own: true, // this product's own tuned model; leave it out for base Muse Glimmer
+  request, // the incoming request, or `await headers()`
+});
+```
+
+- `by` is `"own"`, `"glimmer"` or `"wonder"`. Show `note` next to the answer whenever it isn't null. Models wrote these answers, so never say a person did.
+- It throws only when the request itself is wrong (a 400). Fix those.
+- A Glimmer answer can take over a minute, so show progress and set `export const maxDuration = 300` on the route.
+- In a build the gateway sends sample replies with `simulated: true`. Assert that a reply shows, never what it says.
+- Muse Glimmer's license and usage policy pass down to this product, so no use the policy bars.
+- To test a closed window, have the smoke test call `page.setExtraHTTPHeaders({ "x-musemuse-glimmer-test": "closed" })`. The product must still answer and show the note.
+<!-- End wave 3, unit 11 -->

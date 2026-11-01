@@ -6,6 +6,7 @@ import { dataJudgeNote } from "@/lib/caps/data/judge";
 import { extensionJudgeNote } from "@/lib/caps/extension/judge";
 import { filesJudgeNote } from "@/lib/caps/files/judge";
 import { gamesJudgeNote } from "@/lib/caps/games/judge";
+import { gpuJudgeNote } from "@/lib/caps/gpu/judge";
 import type { CapId } from "@/lib/caps/ids";
 import { liveJudgeNote } from "@/lib/caps/live/judge";
 import { mediaJudgeNote } from "@/lib/caps/media/judge";
@@ -36,6 +37,9 @@ export function capsJudgeNotes(brief: Partial<Brief>): string {
     const note = CAP_JUDGE[id]?.(brief as Brief).trim();
     return note ? [note] : [];
   });
+  // Wave 3, unit 11: GPU isn't a cap, so its note has no block. Empty with GPU_GLIMMER_SHARED off.
+  const gpu = gpuJudgeNote(brief);
+  if (gpu) notes.push(gpu);
   if (!notes.length) return "";
   return `\n\nPlatform services in this product. Fixed checks the platform ran decide whether each one works, not you. Check only what the screenshots show:\n${notes.map((n) => `- ${n}`).join("\n")}`;
 }

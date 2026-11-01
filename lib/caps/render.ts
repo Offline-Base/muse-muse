@@ -3,6 +3,7 @@ import { briefCaps } from "@/lib/caps/brief-fields";
 import { CONNECT_RENDER } from "@/lib/caps/connect/render";
 import { CODE_RENDER } from "@/lib/caps/code/render";
 import { DATA_RENDER } from "@/lib/caps/data/render";
+import { gpuBuildLines, gpuRefineLines } from "@/lib/caps/gpu/render";
 import type { CapId } from "@/lib/caps/ids";
 import { EXTENSION_RENDER } from "@/lib/caps/extension/render";
 import { FILES_RENDER } from "@/lib/caps/files/render";
@@ -44,13 +45,15 @@ function rendered(brief: Brief): Array<[CapId, CapRenderEntry]> {
 /** `## Platform services` with a `###` per cap block, for brief.md. Empty for a brief with no cap blocks. */
 export function capsBuildLines(brief: Brief): string[] {
   const on = rendered(brief);
-  if (!on.length) return [];
-  return ["", "## Platform services", ...on.flatMap(([, e]) => ["", `### ${e.title}`, "", ...e.build(brief)])];
+  // Wave 3, unit 11: GPU isn't a cap, so its section has no block. Nothing with GPU_GLIMMER_SHARED off.
+  const gpu = gpuBuildLines(brief);
+  if (!on.length && !gpu.length) return [];
+  return ["", "## Platform services", ...on.flatMap(([, e]) => ["", `### ${e.title}`, "", ...e.build(brief)]), ...gpu];
 }
 
 /** What a change request adds for the product's caps. Empty for a product with none. */
 export function capsRefineLines(brief: Brief): string[] {
-  return rendered(brief).flatMap(([, e]) => e.refine?.(brief) ?? []);
+  return [...rendered(brief).flatMap(([, e]) => e.refine?.(brief) ?? []), ...gpuRefineLines(brief)];
 }
 
 /** The product page's brief markdown, after the Agent section. Empty for a brief with no cap blocks. */

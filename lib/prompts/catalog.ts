@@ -1,3 +1,4 @@
+import { GLIMMER_CATALOG_LINE } from "@/lib/caps/gpu/catalog";
 import catalog from "@/catalog/meta-models.json";
 import { PRICES } from "@/lib/meta/pricing";
 import { PRODUCT_MODELS } from "@/lib/brief/schema";
@@ -159,7 +160,8 @@ export function catalogSummary(caps: readonly CapId[] = env.enabledCaps): string
   const connectKey = caps.includes("connect") ? `|${connectOptions().vault}|${connectOptions().sends}` : "";
   // End unit 5.
   // Wave 3, unit 9: the code cap's block names only its parts that are on, so they are part of the key while code is on.
-  const key = `${gadgets}|${agents}|${personal}|${caps.join(",")}${caps.includes("data") ? `|${env.dataSignIn}` : ""}${caps.includes("live") ? `|live:${env.liveUpdates}` : ""}${caps.includes("media") ? `|${env.mediaParts.join(",")}` : ""}${connectKey}${caps.includes("code") ? `|code:${codePartsKey()}` : ""}`;
+  const gpuOn = env.gpuGlimmerForBuilds;
+  const key = `${gadgets}|${agents}|${personal}|${caps.join(",")}${gpuOn ? "|gpu" : ""}${caps.includes("data") ? `|${env.dataSignIn}` : ""}${caps.includes("live") ? `|live:${env.liveUpdates}` : ""}${caps.includes("media") ? `|${env.mediaParts.join(",")}` : ""}${connectKey}${caps.includes("code") ? `|code:${codePartsKey()}` : ""}`;
   const hit = cached.get(key);
   if (hit) return hit;
   const run = howProductsRun(caps, { gadgets, agents });
@@ -171,7 +173,8 @@ export function catalogSummary(caps: readonly CapId[] = env.enabledCaps): string
   const summary = [
     "Models a product may call, all through the Muse Muse gateway (prices are estimates):",
     ...hosted.map(modelBlock),
-    "- muse-glimmer: open-weights model for local or offline use. Not on the Model API: it needs an endpoint someone hosts. Pick it only when the muse asks for local or offline use.",
+    // Wave 3, unit 11 (docs/CAPABILITIES.md, section 17): the shared endpoint's line while it's on.
+    gpuOn ? GLIMMER_CATALOG_LINE : "- muse-glimmer: open-weights model for local or offline use. Not on the Model API: it needs an endpoint someone hosts. Pick it only when the muse asks for local or offline use.",
     ...(gadgets ? ["- muse-gadget: a physical board connected to Muse Muse, with a camera and a microphone. The product can take a photo or record a few seconds of sound on the board, then pass it to a model, for example a counter that photographs a shelf. Pick it only when the muse asks for hardware: a device that watches, listens or reacts in the real world. It isn't a model, so pair it with the model that reads what it captures. A product must still work when no board is connected, with a clear message and a way to upload instead."] : []),
     "",
     "Not available on the Model API yet, with the workaround a product uses instead:",

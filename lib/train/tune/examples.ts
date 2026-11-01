@@ -54,7 +54,7 @@ export function detectFormat(text: string, fileName?: string | null): ExampleFor
 }
 
 /** Reads one object as a row: prompt and answer under any of the usual names, or chat messages (user, then assistant). */
-function objectRow(o: unknown): ExampleRow | null {
+export function objectRow(o: unknown): ExampleRow | null {
   if (!o || typeof o !== "object" || Array.isArray(o)) return null;
   const rec = o as Record<string, unknown>;
   if (Array.isArray(rec.messages)) {

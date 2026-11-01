@@ -1013,6 +1013,40 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
   });
 
   // Wave 3, unit 2 (docs/CAPABILITIES.md, section 8).
+  // Wave 3, unit 11: the shared Glimmer endpoint has no cap block, so its .env.local line has its own path.
+  describe("a no-caps brief that picks muse-glimmer", () => {
+    const GLIMMER = { ...FULL_BRIEF, capabilities: [{ need: "x", model: "muse-glimmer", why: "y" }] };
+    const LINES = "GLIMMER_SHARED=1\nGLIMMER_MODEL=muse-glimmer\n";
+    const reopen = () => {
+      selects = { builds: [[{ id: "r1", kind: "refine", productId: "prod-1", message: "Add a dark mode", inspirationId: "i", brief: GLIMMER }]], inspirations: [[{ note: null, references: [] }]] };
+      return steps.reopenStep({ buildId: "r1", productId: "prod-1", sandboxName: "sb", refineIndex: 2 });
+    };
+    const provision = () => {
+      selects = { builds: [[{ id: "b1", kind: "build", productId: "prod-1", brief: GLIMMER, inspirationId: "i" }]], inspirations: [[{ note: null, references: [] }]] };
+      return steps.provisionStep({ buildId: "b1", productId: "prod-1", slug: "bird-count", fixtures: [] });
+    };
+    afterEach(() => {
+      delete process.env.GPU_GLIMMER_SHARED;
+    });
+
+    it("gets its line at provision and on a change, with the flag on", async () => {
+      process.env.GPU_GLIMMER_SHARED = "1";
+      await provision();
+      assert.equal(provisioned[0]!.capEnv, LINES);
+      assert.ok(!("caps" in provisioned[0]!));
+      await reopen();
+      assert.equal(reopened[0]!.capEnv, LINES);
+      assert.ok(!("caps" in reopened[0]!));
+    });
+
+    it("gets nothing with the flag off", async () => {
+      await provision();
+      assert.ok(!("capEnv" in provisioned[0]!));
+      await reopen();
+      assert.ok(!("capEnv" in reopened[0]!));
+    });
+  });
+
   describe("provisionStep and milestones", () => {
     const milestones = [
       { title: "Play one level", doneMeans: "A level loads and can be won." },
