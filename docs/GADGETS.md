@@ -33,6 +33,6 @@ Tests: `lib/gateway/__tests__/gadget.test.ts`, `lib/brief/__tests__/gadget-optio
 4. **Where it shows.** "Uses your gadget" on product pages, and a Make-page example that asks for hardware.
 5. **A real board end to end.** The live path is covered by unit tests with a fake board only.
 
-**Wave 3 (behind flags, `docs/CAPABILITIES.md` section 19).** `HARDWARE_GADGET_OWNER_CHECK` closes the one-board-for-everyone finding: a live token reaches only the board its product's owner linked, and only with an owner pass unless the link opens it to visitors. `HARDWARE_BOARD_REGISTRY` lets admins add their own `muse-device` boards on `/device`. `HARDWARE_BOARD_TOOLS` adds `read_sensor` and `show_text`.
+**Wave 3 (behind flags, `docs/CAPABILITIES.md` section 19).** `HARDWARE_GADGET_OWNER_CHECK` closes the one-board-for-everyone finding: a live token reaches only the board its product's owner linked, and only with an owner pass unless the link opens it to visitors. `HARDWARE_BOARD_REGISTRY` lets admins add their own `muse-device` boards on `/device`. `HARDWARE_BOARD_TOOLS`, with the owner check on, lets a brief ask for `read_sensor` and `show_text`, which bring no camera or microphone.
 
 Meta's Muse Gadget SDK is a separate track: a Pi 5 paired to our own Muse account, gadget skills and gadget builds (PLATFORM_PLAN.md, section 5). Muse Muse never holds anyone's Gadget SDK token.

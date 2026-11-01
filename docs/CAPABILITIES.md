@@ -2974,14 +2974,31 @@ signed-in builder.
 | Flag | Does | Off |
 |---|---|---|
 | `HARDWARE_ENABLED` | The writer may fill `hardware`; a build gets the `hardware` overlay. Waits for `CAP_READY.hardware`, still false | Nothing of it anywhere |
-| `HARDWARE_BOARD_TOOLS` | `read_sensor` and `show_text` on `/gadget`, for a token with both `muse-gadget` and `cap:hardware`; `/api/device` lists and calls them too | `/gadget` lists and takes today's three tools. `/api/device` hides the two and answers 403 `tool_off` |
+| `HARDWARE_BOARD_TOOLS` | With `HARDWARE_GADGET_OWNER_CHECK` too: a brief may ask for board tools, and `read_sensor` and `show_text` are on `/gadget` for a token with `board-tools` and `cap:hardware`. `/api/device` (admins, the house board) lists and calls them with this flag alone | `/gadget` lists and takes today's three tools. `/api/device` hides the two and answers 403 `tool_off` |
 | `HARDWARE_BOARD_REGISTRY`, `HARDWARE_BOARD_KEY` | `/api/boards`, `/api/products/<slug>/board`, the Your boards card on `/device`, and the board list in the `/gadgets` slot. Without the key: 503 `key_missing`, and no board can be reached | Routes answer 404 and touch nothing; `/gadgets` shows today's note, byte for byte |
-| `HARDWARE_GADGET_OWNER_CHECK` | A live token reaches only the board its product's owner linked, and only with a verified owner pass unless `visitors` is on. Otherwise 503 `gadget_offline`, the same answer whatever the reason. `DEVICE_MCP_URL`'s board isn't read at all | Today's behavior, which is the release review's high finding |
+| `HARDWARE_GADGET_OWNER_CHECK` | A live token reaches only the board its product's owner linked, and only with a verified owner pass naming that owner unless `visitors` is on. Otherwise 503 `gadget_offline`, the same answer whatever the reason. `DEVICE_MCP_URL`'s board isn't read at all | Today's behavior for `muse-gadget` products, which is the release review's high finding. Board tools aren't offered and a live token never gets them, so they can't reach the house board |
 
 **Admins only** (decision 16). `requireAdmin` on every registry route. An admin is no exception to ownership: `POST .../board`
 needs the product and the board to be that person's, and the gateway's one query (`linkedBoardRow`) requires the board's owner
 to be the product's owner at call time, the board not removed, the kind `muse_device` and the owner not banned. So a product
-that changes hands loses its board.
+that changes hands loses its board. An owner pass must also name that owner: `canActAsOwner` lets any admin mint a pass, with their
+own subject, and the gateway compares it to `ownerSubject(board owner)`. So another admin's pass, or a former owner's, gets 503.
+There is no support access to someone's board. The registry's routes also refuse an open-access admin (`OPEN_ACCESS=admin` on a
+preview), through `requireBoardAdmin`, and `/device` hides the card from them.
+
+**What a token gets.** Board tools have their own marker, `board-tools`, in a token's `allowedModels`, next to `cap:hardware`, and
+`allowedModelsFor` no longer adds `muse-gadget`. So a product that asked for a sensor gets `read_sensor` and `show_text` and no camera
+or microphone. Those need the brief to pick `muse-gadget`, and then "Visitors can use it too" opens them as well; the form says so. A
+manifest that narrows the cap away takes board tools with it.
+
+**Order on `/gadget` with the check on.** The address's limit, then the row read and the principal, then the token's and `show_text`'s
+budgets, then the secrets and the DNS check (`LinkedBoard.open`). So a refused caller uses up no budget of the owner's, and its answer
+takes the same work with a link or without. Refused calls can still be limited by address, with 429.
+
+**In the frame on `/p/<slug>`.** While the hardware cap is served, a brief's browser links go in the frame's `allow` through
+`enabledFrameBrief` (real Chromium: without them `requestPort` is a SecurityError in a cross-origin frame, with them it isn't). If
+another site frames the product, `ConnectDevice` says to open its own tab, with a link. `mm_owner` is `SameSite=Lax`, so the owner's
+pass isn't sent inside the frame and a board looks offline there: the owner uses `Open as owner`, which opens a tab. The skill says so.
 
 **Where it differs from section 19.**
 
@@ -3000,7 +3017,7 @@ that changes hands loses its board.
 - A new overlay route, `app/api/musemuse/board/owner`, is the owner landing for a product with board tools and no other owner page.
   `app/api/products/[slug]/owner-pass`, `lib/tools/deps.ts` and `app/p/[slug]/page.tsx` get marked lines (`hardwareOwnerLink`).
 - `tests/caps/hardware-fake.ts` holds the simulated port on its own, since Playwright sends that function to the browser as text.
-- `lib/pipeline/logic.ts` gets one marked line: board tools bring `muse-gadget` to the token. `lib/caps/ready.ts` gets `hardwareOff`,
+- `lib/pipeline/logic.ts` gets one marked line: board tools bring `board-tools` to the token. `lib/caps/ready.ts` gets `hardwareOff`,
   `lib/brief/normalize.ts` the block's cleanup, and `lib/prompts/catalog.ts` a part of the cache key.
 - Removing a board wipes its secrets and links. There's no cleanup entry: a board isn't a build's or a product's data, and the proof
   counts are `rate_limits` rows the hourly prune takes.
@@ -3012,8 +3029,13 @@ to chain on 0026 and carry the two tables. `PENDING_WAVE3` is now 23 and 27.
 
 - With the check on and `visitors` off, a plain `muse-gadget` product (no hardware cap) can't reach its board: `takePhoto`,
   `recordSound` and `gadgetInfo` in `template/lib/meta/gadget.ts` send no owner pass, and that file is in every build, so it wasn't
-  changed (section 1). It shows its "no board" message and upload path, or its owner ticks "Visitors can use it too". `readSensor`
-  and `showText` do send the pass.
+  changed (section 1). It shows its "no board" message and upload path, or its owner ticks "Visitors can use it too", which the form on
+  `/device` now spells out. A hardware product that also picked `muse-gadget` has `boardPhoto` and `boardSound` in the overlay, which do
+  send the pass. **Owner's call:** after tg-ui-brand, change `gadget.ts` to send `identityHeaders` in a golden-reviewed change.
+- The overlay's board helpers need the request in their type, so leaving it out fails the build (`null` where no person is asking).
+  The simulator can't tell, so a product that passes `null` from a person's route still passes its checks and then refuses its owner.
+- `show_text`'s one line refuses control and format characters, line separators and half surrogate pairs. ZWNJ and ZWJ stay, on both
+  the gateway and the board, or emoji sequences and some scripts would be refused.
 - A name's addresses are checked before each call and redirects are refused, but a rebind between the check and the connection isn't
   stopped. Registering is admins only, so an attacker would need an admin to add their host.
 - The registry can't recognize a Gadget SDK token by its shape. The form says not to paste one, and a server that doesn't answer
@@ -3022,13 +3044,12 @@ to chain on 0026 and carry the two tables. `PENDING_WAVE3` is now 23 and 27.
 **Proven.** Unit tests on a real Postgres (PGlite) and fake boards: the whole way from registering to the owner's call through the
 real routes, another owner's board, a changed owner, a ban, forged and other-product passes, visitors, removal, the two tools' limits,
 every flag off. `DeviceLink` and `checkDeviceLink` in real Chromium (Playwright 1.64.1) against the simulated serial port, USB and
-Bluetooth, including products that don't send and don't show. muse-device: 6 new Python tests, on a Mac. And registering, linking and calling through the real routes and the MCP client against the real `muse-device/server.py` on loopback, with a wrong token refused and `show_text`'s file checked.
+Bluetooth, including products that don't send and don't show. muse-device: 8 new Python tests, on a Mac. The frame's `allow` in real Chromium with two real origins, on the page's sandbox, though with a stand-in page rather than `/p/<slug>` itself and no device to pick. And registering, linking and calling through the real routes and the MCP client against the real `muse-device/server.py` on loopback, with a wrong token refused and `show_text`'s file checked.
 
 **Not proven.**
 
 - No real test build (section 22's serial thermometer and `show_text` on the simulated board). As units 3 to 14 found, a local run's
-  sandbox can't reach the gateway, so the caps step can't read `/caps/proof`. So `CAP_READY.hardware` stays false. `lib/platform/board.ts` is
-  type-checked and `checkBoardTool` read, but neither has been called: both wait for that build.
+  sandbox can't reach the gateway, so the caps step can't read `/caps/proof`. So `CAP_READY.hardware` stays false. `lib/platform/board.ts` has been called with a fake gateway, and `checkBoardTool` read but not called: it waits for that build.
 - A real serial, USB or Bluetooth device in a browser. Everything used the simulated port.
 - `read_sensor` and `show_text` on a real board. Nobody deployed muse-device 0.5.0.
 - `/device`'s card and the `/gadgets` list have been rendered on the server in tests, not clicked through in a browser: the local site doesn't serve from a worktree with a symlinked `node_modules`, as unit 1 found.
