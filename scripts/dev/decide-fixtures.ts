@@ -46,9 +46,11 @@ async function decideJob(t: TicketDecision, datasetId: string, title: string, sc
       await recordDecideEvent(job.id, { type: "decide", part, items: t.sent[part].slice(i, i + 100) });
     }
   }
+  // The item count is what this job actually sent, so the summary and the event log agree.
+  const scored = t.sent.dev.length + t.sent.test.length;
   const summary = scoreOnly
-    ? "Score only: base Muse Glimmer 30B scored 192 decision items, and nothing trained."
-    : "Decide mode: LoRA r=16 on Muse Glimmer 30B, 336 renderings in 11 steps, final loss 0.42, 192 decision items scored before and after training.";
+    ? `Score only: base Muse Glimmer 30B scored ${scored} decision items, and nothing trained.`
+    : `Decide mode: LoRA r=16 on Muse Glimmer 30B, 336 renderings in 11 steps, final loss 0.42, ${scored} decision items scored before and after training.`;
   // A trained job saved its adapter (and decide.json) on the region's model cache, as the GPU reports it; score only saved none.
   const saved: Record<string, string> = scoreOnly ? {} : { cache_used: "yes", adapter_dir: `/lambda/nfs/muse-muse-cache-us-east-1/models/${job.id}`, decide_json: "yes" };
   await recordEvent(job.id, { type: "done", summary, metrics: { mode: "decide", epochs: 2, score_only: scoreOnly ? 1 : 0, too_long: 0, ...saved } });
