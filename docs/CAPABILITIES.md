@@ -1313,10 +1313,15 @@ still generates 0024's SQL unchanged from it; `PENDING_WAVE3` is now 22 and 23. 
 - A third table, `product_dataset_reads` (`product_id`, `namespace`, `dataset_id`, `file`, `created_at`), written only for
   build tokens, so "a dataset read shows in the gateway's record" can count reads since `?since=`. Rate limit windows
   couldn't: the hourly prune drops them and they have no time filter.
+- `product_files.store` is the Blob mode a file was written in, so setting `FILES_BLOB_STORE_ID` later leaves older files
+  readable and deletable where they are. `product_files.ticket_key` is a keyed hash of the address that asked for a
+  pending ticket, cleared at done. `product_search_docs.added_by` is the subject key of whoever indexed a document.
+- A build's deleted file keeps its row as `gone` (no blob, no search text) until the build ends, so `uploaded` still
+  counts an upload its test deleted again. Every read skips it. A live file's row is removed.
 - All three cascade with the product. The migrations test checks a database at 0020 keeps its rows, gets the tables, finds
   text through the generated `tsv`, and loses the rows with the product.
 
-**Storage (decision 14).** `lib/caps/files/blob.ts` picks one of three modes per call:
+**Storage (decision 14).** `lib/caps/files/blob.ts` picks one of three modes for each new file, and its row keeps it:
 - private: `FILES_BLOB_STORE_ID` names a private Blob store, reached with the deployment's OIDC token. The owner has to
   make that store; nothing here creates it.
 - public, the fallback in use until then: the platform's own public store, with 128 random bits in every path
@@ -1338,15 +1343,18 @@ presigned URL's signature). The allowlist has no SVG, HTML or script. A local ru
 Vercel.
 
 **Routes** (`lib/caps/files/handler.ts`, `app/api/gateway/{files,search,datasets}/[[...path]]`), all behind the cap gate
-except the two signed browser routes, which check the flag, the signature and the product's status themselves:
+except the two signed browser routes, which check the flag, the signature and the product's status themselves (the signed read limits per product and address):
 - `POST /files/ticket`, then `POST /files/<id>/done`. The done check reads the size and type at Blob. A mismatch removes
-  the blob and the row. Otherwise it hashes the bytes, stores the sha256, and marks the file ready.
+  the blob and the row. Otherwise it hashes the bytes, stores the sha256, and marks the file ready if the totals still
+  have room, or removes it and answers `quota_exceeded`.
 - `GET /files` (100 a page, keyset cursor), `GET /files/<id>` (facts and the signed link, never the Blob path or a subject
   key), `DELETE /files/<id>` (deleted_at, then the blob, then the row and its search chunks).
 - `POST /search/index` (1 MB of text, a `{fileId}` source must be one of the same space's ready files, an item needs a
   title), `POST /search/query` (`websearch_to_tsquery` OR a prefix query of the words of 3 letters or more,
   `ts_rank_cd`, a plain `ts_headline` snippet, and a citation `{source, name, offset}` whose offset is the first matched
-  word), and `POST /search/remove`. All three are under `FILES_SEARCH` too.
+  word), and `POST /search/remove`. All three are under `FILES_SEARCH` too. Replacing and removing stay in the caller's own
+  space. In a shared space only the owner removes text, and someone else can replace only text they added themselves
+  (403 `cap_not_allowed`). A refused replacement leaves the old text.
 - `GET /datasets` and `GET /datasets/<id>/<file>`, under `FILES_DATASETS` too. A local run streams `.data/files`, Vercel
   redirects to the mirror, and the answer is 503 `dataset_unavailable` until a file is mirrored. A build's read is
   recorded once it is served. The list never shows a download or mirror address.
@@ -1359,10 +1367,17 @@ except the two signed browser routes, which check the flag, the signature and th
   neither has a shared file.
 - Visitor, owner and user files belong to their own person. The search index follows the same scope.
 - Limits a minute: 120 calls per token, 60 per end user's address, 30 tickets per token and 10 per address, 30 queries
-  per token, 300 signed reads per address, 60 dataset reads per token and per address.
+  per token, 300 signed reads per product and address, 60 dataset reads per token and per address.
 - Quotas, checked in one statement after a per-namespace advisory lock in the same batch: 500 MB and 2,000 files a product
   (`FILES_PRODUCT_MB`), 25 MB a file (`FILES_MAX_FILE_MB`), 50 MB a visitor or user; a build's space gets 50 MB and 200
-  files; 2,000 documents in a product's index and 200 in a build's.
+  files.
+- Tickets hold no room in a product's totals, which count ready files, at the ticket and again at done, so tickets nobody
+  uses can't block anyone's upload. A person's own 50 MB also counts their tickets for the 15 minutes they're good. One
+  address holds at most 10 open tickets in a product, and a ticket never finished is swept after an hour. An unfinished
+  upload's bytes can sit in Blob until then, at most 250 MB an address; nothing bounds how many addresses take part except
+  the 30 tickets a minute per token.
+- The search index: 2,000 documents and 200 MB of text in a product, 200 and 20 MB in a build's, and 200 and 20 MB for one
+  visitor or user (the owner has only the product's limits).
 - The owner pass now also works while the files cap is served: one marked line each in
   `app/api/products/[slug]/owner-pass` and `lib/tools/deps.ts`, tg-tools files, listed here for General.
 

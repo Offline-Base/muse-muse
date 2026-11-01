@@ -94,6 +94,7 @@ const ROUTES: Array<{ path: string; call(req: Request): Promise<Response> }> = [
   { path: "files/0b9a3c2e-1d4f-4a6b-8c7d-9e0f1a2b3c4d/content", call: (req) => handleFiles(req, ["0b9a3c2e-1d4f-4a6b-8c7d-9e0f1a2b3c4d", "content"], filesOff()) },
   { path: "search/index", call: (req) => handleSearch(req, ["index"], filesOff()) },
   { path: "search/query", call: (req) => handleSearch(req, ["query"], filesOff()) },
+  { path: "search/remove", call: (req) => handleSearch(req, ["remove"], filesOff()) },
   { path: "datasets", call: (req) => handleDatasets(req, [], filesOff()) },
   { path: "datasets/palmer-penguins/penguins.csv", call: (req) => handleDatasets(req, ["palmer-penguins", "penguins.csv"], filesOff()) },
   // Unit 9: running code on the platform, and opening a page the person typed.
@@ -140,6 +141,24 @@ describe("wave 3 gateway routes with every flag off", () => {
         assert.equal(body.error.code, "unknown_endpoint");
         assert.equal(body.error.type, "not_found_error");
       }
+    });
+  }
+});
+
+describe("unit 4's other methods with every flag off", () => {
+  const ID = "0b9a3c2e-1d4f-4a6b-8c7d-9e0f1a2b3c4d";
+  for (const [method, path, parts] of [
+    ["DELETE", `files/${ID}`, [ID]],
+    ["PUT", `files/${ID}/upload`, [ID, "upload"]],
+    ["HEAD", `files/${ID}/content`, [ID, "content"]],
+    ["HEAD", "datasets/palmer-penguins/penguins.csv", null],
+  ] as const) {
+    it(`${method} /${path} answers 404 unknown_endpoint`, async () => {
+      for (const flag of CAP_IDS.map((id) => CAP_FLAG[id])) delete process.env[flag];
+      const req = new Request(`https://platform.example/api/gateway/${path}`, { method, headers: { authorization: "Bearer mm_build_anything_anything_anything" }, ...(method === "PUT" ? { body: "x" } : {}) });
+      const res = parts ? await handleFiles(req, parts, filesOff()) : await handleDatasets(req, ["palmer-penguins", "penguins.csv"], filesOff());
+      assert.equal(res.status, 404);
+      assert.equal(((await res.json()) as { error: { code: string } }).error.code, "unknown_endpoint");
     });
   }
 });
