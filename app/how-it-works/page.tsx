@@ -2,7 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Icon, type IconName } from "@/components/icons";
+import { FrontierSection } from "@/components/story/FrontierSection";
+import "@/components/story/story.css";
 import { PageHeader } from "@/components/ui";
+import { env } from "@/lib/env";
 
 export const metadata: Metadata = { title: "How it works" };
 
@@ -161,6 +164,8 @@ export default function HowItWorksPage() {
 
       <h2 className="how-heading">What you get</h2>
       <Cards items={RESULTS} />
+
+      {env.storyPages ? <FrontierSection linkOffline /> : null}
 
       <h2 className="how-heading">Good to know</h2>
       <p className="muted">

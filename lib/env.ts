@@ -452,6 +452,14 @@ export const env = {
     return flag("TUNE_COMPOSER");
   },
   /**
+   * STORY_PAGES: "1", "true", "yes" or "on" shows /offline, the clearer /private and the frontier section on
+   * /how-it-works (docs/STORY.md). Off: /offline answers 404 and the other two are as they were.
+   * All three are static, so this is read at build time and a change takes a deploy.
+   */
+  get storyPages(): boolean {
+    return flag("STORY_PAGES");
+  },
+  /**
    * TUNE_LOOP: "1", "true", "yes" or "on" lets admins run a repeat-until-good tuning loop on a judged run
    * (docs/TRAINING.md "Tuning loop"). Off by default: its routes and page answer 404 and the run room shows nothing new.
    */
