@@ -1679,6 +1679,44 @@ scripts/dev/tune-harness.ts, on a Lambda gpu_1x_a10 named prove-tune-1, us-east-
 - Terminated through the Lambda API at 20:21Z, before judging, once the copied files' hashes matched, since judging needs no GPU. The instance list shows none left.
 - Not proven: launch, callbacks over https, the workflow, the sweep, Hub upload (publish 0, adapter_uploaded no), a real Glimmer run. The harness also marks every ingested job succeeded, whatever the GPU reported, so read the events for a failure; this run had none.
 - Results outside the repo, in the session scratchpad, so they go when it is cleared: run2-out (events, logs, adapter), run2-verdict.json.
+
+## Nov 1: real RL, tuning loop, GGUF and a first Glimmer tune on rented GPUs (branch tg-gpu-fixes)
+
+All through scripts/dev/tune-harness.ts on a PGlite copy, so training, cost and scores are real, and launch, callbacks over https, the workflow, the sweep and the Hub are still not proven. Made-up data only (Zubrelian moss guide, an invented hobby, written on the test model; round examples on Muse Wonder). Judge: Muse Wonder, blind.
+
+- GPUs: gpu_1x_h100_sxm5 in us-south-2, $4.29 an hour, 20:49:57Z to 21:33:20Z, about $3.10 (Glimmer, RL). gpu_1x_a10 in us-east-1, $1.29 an hour, 20:50:00Z to 21:39:19Z, about $1.06 (loop, GGUF). Both terminated. GPU total about $4.16 against a $46 limit.
+- Meta: writers $1.42 and $1.36, judges $1.49, $1.49 and $0.52, total about $6.29.
+- RL dry run: job 41e19483, passed in seconds. Real, rl-grpo on r30b, 15 steps, 4453f6f4: base 27 of 40, tuned 16 of 40, reward curve 0.73, 0.93, 0.93, 12 minutes with the 22 GB download. r30b wasn't too big: 24 GB of GPU memory on the H100, about 6 minutes for the 15 steps.
+- Bug: that score was wrong. A new process loading the same saved adapter scored 40 of 40 greedy and 38 of 40 sampled (base 27 and 33). Reloading only the model, 4fc6b703, still scored 15. Reloading the tokenizer too, b5d05d97: base 27, tuned 40, no stray channel text, every answer tagged, reward curve 0.75, 0.84, 0.83. Fixed in lib/train/recipes/rl.ts. A single prompt tokenized the same before and after training, so batch padding is the likely cause, not proven. Base answers are often a bare tag and tuned ones show their steps. This is 15 steps on easy arithmetic.
+- Tuning loop, source e1b00ffa (judged 544ae82e), loop a56febc8, target 9, 2 rounds, 100 examples a round, Llama 3.2 3B on the A10. Overall score tuned, then sealed half: source 6.67, 6.50. Round 1, job 2c12d50b, judged f556993b: 6.67, 6.48, won 96 of 100. Round 2, job 081934e6, judged 0fdddc84: 6.54, 6.38, won 93 of 100. Base stayed 2.50 to 2.55. So no improvement, within the judge's noise. Stopped on round_limit. Each round took about 18 to 20 minutes on the GPU. The source sits at the 900 training row limit, so each round swapped out 100 old rows (700 source rows left by round 2) rather than growing. Writing asked for 100 and gave 90 training rows plus 10 kept-aside rows that joined training.
+- Harness only: loopWriterStep answered cap on both rounds because the source job's 90 minute limit is under the estimate for an unlisted GPU (the A10 counts as the slowest, and took 18 minutes). The harness carried on. loopNextStep's real start(makeDataset) still hasn't run.
+- GGUF: e1b00ffa's adapter (judged 6.67) merged into unsloth/Llama-3.2-3B-Instruct, llama.cpp convert then Q4_K_M, 102 s after the llama.cpp build. 2,019,377,312 bytes, sha256 19f17967...beadd2, published nowhere. llama-cli on the A10 answered in the guide's shape at 168.8 tokens a second. Copied to the worktree's .data/gguf, unrun on the laptop.
+- Emulator test needs: gguf_emu takes a public Hub file (repo, commit, name, sha256, bytes) and sends no token, so this file has to be uploaded by a person, or the kind has to accept another source. It fits mm_pixel (4 GB RAM, 8 GB disk) on paper, not tested there. The box must have run setup/llama-android.sh.
+- Glimmer: r30b at 6f12bf52, first real run. H100 SXM5, job 1898e46c, judged ef05cf55, 120 steps, 900 training rows, first 40 kept-aside prompts, 21:06:22Z to 21:32:22Z. Base answers 319 s, training 971 s (8.1 s a step, but two RL runs shared the GPU for much of it, so that isn't a clean rate and the table's 5 s stays unconfirmed), loss 1.37 at the end, peak 22.44 GB, adapter 393 MB. About $1.86 of GPU for this job.
+- Glimmer verdict: passed. Tuned won 40 of 40, average 7.93 tuned, 2.5 base, judge $0.52. Checked: no answer copied from training, none empty, all different, no channel text, 134 words tuned, 128 base, 139 reference. Tuned takes on the guide's shape and invented words, and its details still differ from the reference. The domain is invented, so base starts knowing nothing, which makes this an easy test. 40 prompts, 120 steps, not a full run. No quantize, no Hub, and no live demo.
+- Harness fixes: it took recipes other than glimmer-lora, shorter data and loop rounds, and it no longer marks a job succeeded when the GPU reported a failure or nothing. Results outside the repo in the session scratchpad and the worktree's .data/gpu-run.
+- Tests: lib/train/__tests__/rl.test.ts 16 pass.
+
+## Nov 1: device lab checks, direct, not through the queue (branch tg-lab-fixes)
+
+### 20:47Z to 21:20Z All five kinds on the real boxes, and Device Farm
+
+Direct runs with native/lab/tools/check.mjs and its local stand-in, from origin/main 0674a863 lab code unpacked next to the box's release. Not through the queue: the claim route answers 404 on the live site. Target: https://musemuse-dinner-split-helper.vercel.app/. Clips are in s3://muse-knowledge-916979311153/lab/checks/direct-1101-2047/.
+
+| Kind | Result | Evidence |
+|---|---|---|
+| desktop_mac | Passed, opened in 0.5 s | macOS 26.7, checks ok, clip |
+| android_emu | Passed, opened in 1.1 s | Pixel 7 emulator, Android 15, clip. Bridge timing note: window.MuseNative there at the first script |
+| ios_sim | Passed, opened in 3.5 s | iOS 26.5, clip |
+| desktop_windows | Passed, opened in 2.1 s | Windows Server 2022, SSM 615a0b1e, clip. Box started 20:47Z and stopped 20:51Z |
+| glasses_sim, iOS 26.5 | Failed | no_eligible_device from the mock glasses, as on Oct 31. Target: glasses-check.html, not the product |
+| glasses_sim, iOS 18.4 | Passed | Under direct-1101-2047-g18/ (SSM on the Mac) and direct-1101-2047-fixed/ (bdf09b6e, with this branch's runner). Mock glasses, photo and sound result. Target: glasses-check.html, not a built glasses product |
+
+- Device Farm: one real phone, Samsung Galaxy S25 (SM-S931U1, Android 16), run c00593cf-383a-463d-ae7b-24e2c6622f13 in muse-muse-devices, PASSED. Lab APK by its deep link: selftest ok, handshake true, loaded in 1292 ms, screenshot shows the product. 0.87 metered minutes, about $0.15 at $0.17 a minute. A small custom test spec, not scripts/devices/devicefarm.ts. Ran with the offlinebase profile in the same account, since the base-test SSO session had expired. Files in direct-1101-2047/devicefarm_android/.
+- Fixes on this branch: glasses_sim uses its own iOS 18 simulator; the simulator install limit goes from 120 s to 240 s, because the first install on the just-booted 18.4 runtime ran past 120 s (lab_error install_failed, cold run, not re-run cold after the change); mac.sh also downloads iOS 18.4. Tests run: commands and runners, 97 passed.
+- On the Mac box: iOS 18.4 runtime added (8.86 GB download) and simulator Muse Lab iPhone 18 created by hand. The Mac's agent release is still 0.1.1-1a60ff7, so it won't have this fix or gguf_emu until a new bundle is pinned and update-agent runs. Not done here.
+- gguf_emu: not run. No GGUF in ~/mm-wt/gpu-tests, the box's release has no such runner, and setup/llama-android.sh has no record of running here.
+- Spend: Windows about 4 minutes, about $0.01. Device Farm about $0.15. Mac host already billing, not released.
 ## Nov 1: full builds behind FULL_BUILDS (branch tg-full-builds, unmerged)
 
 - Why: the owner said builds look like one page. The audit found the writer is told to write small, nothing compares the brief with the note, and tests and judge cover one path.
@@ -1732,3 +1770,25 @@ scripts/dev/tune-harness.ts, on a Lambda gpu_1x_a10 named prove-tune-1, us-east-
 - **Round time.** The Wonder build b2996b46 had rounds cut at 5 to 8 minutes. With a 120-minute wall, 2 verifies at 25 minutes, 2 judges and a fix reserved 71 minutes, and 6 milestones shared the rest. The wall default is now 150 (the most allowed, clear of the 3-hour sweep) and the reserve is one verify, one judge and one fix, 43 minutes. That gives about 18 minutes a milestone before the milestone checks. No rerun yet.
 - **Sandbox previews.** Added `allowedDevOrigins: ["*.vercel.run"]` to the template, because next dev refused its socket there and buttons stayed dead. Needs a new builder snapshot.
 - **PR.** Replaces #26, whose base was squash merged: same commits replayed on main. Touched tests only: full-builds 26 pass, live brief test, tsc.
+
+## Nov 1: prove results and submission write-up (branch tg-close-docs)
+
+- Added docs/PROVE_RESULTS.md: every item from the prove run with state, evidence and cost, the earlier local-site results, and spend by budget. States copied from each line of work's report and counted against them: 28 passed, 20 done, 6 failed, 6 blocked, 3 pending, 4 not run. None raised.
+- Spend recorded: Meta plus sandbox about $33.52 of $150, GPU about $8.16 of $50, AWS about $0.16 new of $150. Sandbox time, Muse Code sessions' own cost and four builds' final figures are not in these.
+- docs/SUBMISSION.md: added Nov 1 results, including what failed. Video shot 7 now shows recipes and devices, labeled test model; shot 10 adds the Nov 1 Glimmer run. Video link stays a placeholder. Fixed the stale checklist line saying the repo has no remote.
+- Decision: no Muse Privacy section added to this file, since nothing in it covered Muse Privacy and its docs live under privacy/docs.
+- Checked: https://muse-muse.vercel.app/ answered 200 to a plain request. #24, #25 and #26 show merge conflicts; #27 is mergeable. main still has the IPv6 firewall ranges; the fix is in #26. Spend $0. No tests run, docs only.
+## Nov 1: one-hour build, Code page and blocked checks on Previews
+
+All made-up data. Code: tg-caps-ready fa692f3e, builder snapshot snap_XXT4qDZEWLQ6xL8RgAvqd38c2kdM. The two Previews from the entry above can't build (their snapshot has no muse-app overlay: builds f99c782c, b03dfd64 failed at provision), so I deployed new ones, not production.
+
+- Long build on Muse Wonder: Preview muse-muse-8dixe987o (TEST_MODEL=off, ENGINE_ROUND_MAX_MINUTES=90, ENGINE_CHECK_ON_TIMEOUT=1), build b2996b46, Harborlight ferry suite. 21:05:22 to 22:09:20 UTC, 64 minutes, $16.55. Not a finished product: I stopped it during fix round 1 of 3 because my spend guard estimated about $23; the build's cost only updates when a round ends, so real spend was lower than the guess.
+- Limits hit: the 60-minute cap split into 6 milestones. Rounds 1 to 5 each ended with "stopped at its time limit" after 5 to 8 minutes, all 5 milestones were marked failed, and milestone 6 was skipped as "near its time limit". ENGINE_ROUND_MAX_MINUTES didn't raise capMinutes (60).
+- Subagents: 0 started on this build, though the note asked for them and 6 slots were offered. The stopped Wonder tally 4d7648a7 did use a reviewer subagent. So over-an-hour with subagents is not proven.
+- Model surprise: deployments muse-muse-p48u0s8jy and muse-muse-mf43v3txd ran Muse Wonder (builds 4d7648a7 $4.78, 4a9f7c18 $2.62, both stopped) though meant for the test model. p48u0s8jy even had TEST_MODEL set on the command line. Cause not found. Both were deployed with PACKAGER_SNAPSHOT_ID; muse-muse-v4fpmmrh0 without it ran Spark 1.3 Contributor. Read buildModel on every Preview before trusting a label.
+- Test model, Preview muse-muse-v4fpmmrh0, product tidepool-tally-4, buildModel read back as muse-spark-1.3-contributor. First build cff8b53d live, $0.087. Edit 818cd8ac live, $0.0069. Restore of version 1, 973bd621, live, $0. source.zip for v1, v2, v3: 200, 79 files, no .env files; v2 has the edit in 4 files; v3 is byte-identical to v1 in every file. Code visibility: public then private both 200 and read back. /p/tidepool-tally-4/code opened in headless Chrome through a local forwarder to `vercel curl`: 3 versions, file tree, restore shown. Claude in Chrome wasn't connected.
+- Blocked: selfhost.zip answers 404 here. RUNTIME_OUTPUTS is off on these Previews, and the kit also needs a live link and a Vercel project, which Previews don't have.
+- Blocked: extension zip. The route answers "This download isn't available" because it needs a live link and the zip is made after deploy, and Previews don't publish. The extension source is in source.zip (extension/manifest.json, popup, background), but no zip was downloaded.
+- Blocked: automatic packaging. packageProductStep runs after deploy, so a Preview never reaches it, even with PACKAGER_SNAPSHOT_ID set. Setting it is needed but not enough. It isn't in Preview's project env; snap_VcblDXLuhpigJ8ZeukmR38j2PupJ from the Oct 31 spike exists and is the candidate. Also, requestedTargets came back empty on a Preview with targets sent.
+- Blocked: Composio inside a product. COMPOSIO_API_KEY isn't in the Preview env list.
+- Spend: Meta about $24.13 in total over these builds. GPU and AWS none.

@@ -140,10 +140,14 @@ class GRPOTrainer:
 def mod(name, **attrs):
     m = types.ModuleType(name); m.__dict__.update(attrs); sys.modules[name] = m
 mod("unsloth", FastModel=FastModel)
-mod("torch", no_grad=NoGrad)
+mod("torch", no_grad=NoGrad, cuda=types.SimpleNamespace(empty_cache=lambda: None))
 mod("datasets", Dataset=Dataset)
 mod("transformers", TrainerCallback=TrainerCallback)
 mod("trl", GRPOConfig=GRPOConfig, GRPOTrainer=GRPOTrainer)
+class PeftModel:
+    @staticmethod
+    def from_pretrained(model, path, is_trainable=True): calls["fresh"] = {"saved": os.path.exists(os.path.join(path, "adapter_config.json")), "trainable": is_trainable}; return model
+mod("peft", PeftModel=PeftModel)
 sent = []
 g.emit = lambda kind, **f: sent.append(dict(f, kind=kind))
 adapter = os.path.join(folder, "adapter")
@@ -158,7 +162,7 @@ g.rl_child_main(path)
 res = g.read_result(cfg["result_path"])
 config = dict(calls["config"])
 out["child"] = {
-    "result": res, "config": config, "trainer": calls["trainer"], "reward": calls["reward"], "modes": calls["modes"], "first_prompt": calls["rows"][0]["prompt"][:17],
+    "result": res, "config": config, "trainer": calls["trainer"], "reward": calls["reward"], "modes": calls["modes"], "fresh": calls["fresh"], "first_prompt": calls["rows"][0]["prompt"][:17],
     "answer_type": type(calls["rows"][0]["answer"]).__name__, "max_new": calls["max_new"], "do_sample": calls["do_sample"],
     "revision": json.load(open(os.path.join(adapter, "adapter_config.json"))).get("revision"), "kinds": [e["kind"] for e in sent], "tokenized_bos": calls["tokenized"][0].startswith("<|begin"),
 }
@@ -264,6 +268,7 @@ describe("rl-grpo recipe", () => {
     assert.equal(c.trainer.side, "left");
     assert.deepEqual(c.reward, [1]);
     assert.deepEqual(c.modes, ["inference", "training", "inference"]);
+    assert.deepEqual(c.fresh, { saved: true, trainable: false });
     assert.equal(c.first_prompt, "<|begin_of_text|>");
     assert.equal(c.tokenized_bos, false);
     assert.equal(c.answer_type, "int");

@@ -6,6 +6,7 @@ import path from "node:path";
 import { LabError } from "../lib/errors.mjs";
 import {
   findSimulator,
+  iosRuntimeOfMajor,
   iosVersionOf,
   newestIosRuntime,
   pickIphoneType,
@@ -27,7 +28,11 @@ import {
 import { must, waitFor } from "./common.mjs";
 
 const BOOT_TIMEOUT_MS = 180_000;
-const INSTALL_TIMEOUT_MS = 120_000;
+/** The first install on a just-booted runtime ran past 120 s on the Mac box on Nov 1. */
+const INSTALL_TIMEOUT_MS = 240_000;
+/** Meta's mock glasses reach ready on iOS 18.4, and answer no_eligible_device on iOS 26.5 with the same build. */
+const GLASSES_IOS_MAJOR = 18;
+const GLASSES_IPHONE_TYPE = "iPhone 16";
 const RECORDER_READY_MS = 5_000;
 /** The system's install notices are still going around just after an install, and a launch into them can stall. */
 const AFTER_INSTALL_MS = 5_000;
@@ -36,18 +41,20 @@ export const LAUNCH_TIMEOUT_MS = 120_000;
 const PRIVACY_SERVICES = ["camera", "microphone", "photos"];
 
 /** The lab's simulator, made if it isn't there yet, and booted. */
-export async function ensureSimulator(ctx) {
+export async function ensureSimulator(ctx, { glasses = false } = {}) {
   // Always the lab's own. A job's device name is only for the caption, or each new name would add a simulator to the box.
-  const name = ctx.config.ios.simulator;
+  const name = glasses ? ctx.config.ios.glassesSimulator : ctx.config.ios.simulator;
   const fail = "The iPhone simulator didn't start.";
   const listed = await must(ctx, "simulator_failed", fail, simctlList(), { timeoutMs: 30_000 });
   let found = findSimulator(String(listed.stdout), name);
   if (!found) {
     const runtimes = await must(ctx, "simulator_failed", fail, simctlRuntimes(), { timeoutMs: 30_000 });
-    const runtime = newestIosRuntime(String(runtimes.stdout));
+    const runtime = glasses ? iosRuntimeOfMajor(String(runtimes.stdout), GLASSES_IOS_MAJOR) : newestIosRuntime(String(runtimes.stdout));
     const types = await must(ctx, "simulator_failed", fail, simctlDeviceTypes(), { timeoutMs: 30_000 });
-    const deviceType = pickIphoneType(String(types.stdout), ctx.config.ios.deviceType);
-    if (!runtime || !deviceType) throw new LabError("simulator_failed", "This Mac has no iOS simulator runtime.");
+    const deviceType = pickIphoneType(String(types.stdout), glasses ? GLASSES_IPHONE_TYPE : ctx.config.ios.deviceType);
+    if (!runtime || !deviceType) {
+      throw new LabError("simulator_failed", glasses ? `This Mac has no iOS ${GLASSES_IOS_MAJOR} simulator runtime, which the mock glasses need.` : "This Mac has no iOS simulator runtime.");
+    }
     const created = await must(ctx, "simulator_failed", fail, simctlCreate(name, deviceType, runtime.identifier), { timeoutMs: 60_000 });
     found = { udid: String(created.stdout).trim(), runtime: runtime.identifier };
   }

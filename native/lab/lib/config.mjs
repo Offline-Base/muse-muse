@@ -85,6 +85,10 @@ export function loadConfig({ env = process.env, platform = process.platform } = 
       // setup/llama-android.sh builds it. A box without it doesn't offer gguf_emu.
       llamaServer: env.MUSE_LAB_LLAMA_SERVER ?? path.join(root, "tools", "llama-android", "llama-server"),
     },
-    ios: { simulator: env.MUSE_LAB_SIMULATOR ?? "Muse Lab iPhone", deviceType: env.MUSE_LAB_IPHONE_TYPE ?? null },
+    ios: {
+      simulator: env.MUSE_LAB_SIMULATOR ?? "Muse Lab iPhone",
+      deviceType: env.MUSE_LAB_IPHONE_TYPE ?? null,
+      glassesSimulator: env.MUSE_LAB_GLASSES_SIMULATOR ?? "Muse Lab iPhone 18",
+    },
   };
 }
