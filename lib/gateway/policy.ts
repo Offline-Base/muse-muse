@@ -47,8 +47,8 @@ export const DEFAULT_LIMITS = {
   uploadTicketValidMs: 5 * 60_000,
   /** Vercel Functions reject request bodies over 4.5 MB. Bigger files go through {GATEWAY_URL}/uploads. */
   requestBodyMaxBytes: 4.5 * 1024 * 1024,
-  /** Cap for the asr/transcribe JSON extension's audioUrl download. */
-  asrAudioMaxBytes: 60 * 1024 * 1024,
+  /** Cap for the asr/transcribe JSON extension's audioUrl download: Meta's one-shot limit, 10 minutes or 32 MB. */
+  asrAudioMaxBytes: 32 * 1024 * 1024,
   upstreamTimeoutMs: 290_000,
   /** How long an MCP tool call waits for the product's /api/actions/<name>. */
   mcpActionTimeoutMs: 120_000,
