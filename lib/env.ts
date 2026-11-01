@@ -1158,4 +1158,27 @@ export const env = {
   get driveExportProducts(): boolean {
     return flag("DRIVE_EXPORT_PRODUCTS");
   },
+
+  // ---------- Wave 3, unit 13: hardware (docs/CAPABILITIES.md) ----------
+
+  /** HARDWARE_BOARD_TOOLS: read_sensor and show_text, for products whose brief asks for them. HARDWARE_ENABLED is read through enabledCaps. */
+  get hardwareBoardTools(): boolean {
+    return flag("HARDWARE_BOARD_TOOLS");
+  },
+  /** HARDWARE_BOARD_REGISTRY: /api/boards, linking a board to a product, and the board lists on /device and /gadgets. Admins only (decision 16). */
+  get hardwareBoardRegistry(): boolean {
+    return flag("HARDWARE_BOARD_REGISTRY");
+  },
+  /**
+   * HARDWARE_GADGET_OWNER_CHECK: a live token reaches only the board its product's owner linked, and a visitor only when
+   * the link says so. Off: every live product with the gadget option reaches DEVICE_MCP_URL, as before. Turn this on
+   * before DEVICE_MCP_URL reaches production.
+   */
+  get hardwareGadgetOwnerCheck(): boolean {
+    return flag("HARDWARE_GADGET_OWNER_CHECK");
+  },
+  /** HARDWARE_BOARD_KEY: 32 bytes in base64, or a ring "v1:<key>,v2:<key>" (lib/secrets/box.ts). Platform only. */
+  get hardwareBoardKey(): string | null {
+    return optional("HARDWARE_BOARD_KEY");
+  },
 };

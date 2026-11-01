@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { AuthError, canActAsOwner, requireUser } from "@/lib/auth";
 import { db, schema } from "@/lib/db/client";
 import { codeBlock } from "@/lib/caps/code/brief";
+import { hardwareBlock } from "@/lib/caps/hardware/brief";
 import { env } from "@/lib/env";
 import { mintOwnerCode, ownerSubject } from "@/lib/tools/principal";
 
@@ -13,7 +14,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
   // Wave 3, unit 3: a product that saves data has owner items too, so the pass also works while the data cap is served.
   // Wave 3, unit 4: the same for owner files and shared spaces only the owner adds to, while the files cap is served.
   // Wave 3, unit 9 (15b): and for products that run Muse Code sessions, which are owner-only.
-  const ownerPassOn = (env.agentsEnabled && env.composioPersonalEnabled) || env.servedCaps.includes("data") || env.servedCaps.includes("files") || museCodeServed();
+  // Wave 3, unit 13: and for board tools, which only the owner reaches unless the owner opens the board to visitors.
+  const ownerPassOn = (env.agentsEnabled && env.composioPersonalEnabled) || env.servedCaps.includes("data") || env.servedCaps.includes("files") || museCodeServed() || boardToolsServed();
   if (!ownerPassOn) return Response.json({ error: "Owner access isn't on here." }, { status: 503 });
   let user;
   try {
@@ -44,6 +46,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
   return Response.redirect(target.toString(), 303);
 }
 
+function boardToolsServed(): boolean {
+  return env.servedCaps.includes("hardware") && env.hardwareBoardTools;
+}
+
 // ---------- Wave 3, unit 9: Muse Code sessions are owner-only (docs/CAPABILITIES.md, 15b) ----------
 
 function museCodeServed(): boolean {
@@ -55,9 +61,12 @@ function museCodeServed(): boolean {
  * product that has neither and runs Muse Code gets the musecode overlay's own landing, which sets the same cookie.
  */
 async function ownerLandingPath(latestBuildId: string | null): Promise<string> {
-  if (!museCodeServed() || !latestBuildId) return "/api/musemuse/owner";
+  if ((!museCodeServed() && !boardToolsServed()) || !latestBuildId) return "/api/musemuse/owner";
   const [build] = await db().select({ brief: schema.builds.brief }).from(schema.builds).where(eq(schema.builds.id, latestBuildId)).limit(1);
   const brief = (build?.brief ?? null) as { data?: unknown; agent?: unknown } | null;
-  if (!brief || brief.data || brief.agent || codeBlock(brief)?.museCode !== true) return "/api/musemuse/owner";
-  return "/api/musemuse/muse-code/owner";
+  if (!brief || brief.data || brief.agent) return "/api/musemuse/owner";
+  if (museCodeServed() && codeBlock(brief)?.museCode === true) return "/api/musemuse/muse-code/owner";
+  // Wave 3, unit 13: the hardware overlay's own landing, for a product with board tools and no other owner page.
+  if (boardToolsServed() && hardwareBlock(brief)?.boardTools) return "/api/musemuse/board/owner";
+  return "/api/musemuse/owner";
 }

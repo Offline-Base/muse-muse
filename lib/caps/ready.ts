@@ -1,6 +1,7 @@
 import type { Brief } from "@/lib/brief/schema";
 import { briefCaps } from "@/lib/caps/brief-fields";
 import { codeBlock, codePartsOff } from "@/lib/caps/code/brief";
+import { hardwareBlock } from "@/lib/caps/hardware/brief";
 import { type CapId, isCapId } from "@/lib/caps/ids";
 import { liveBlock } from "@/lib/caps/live/brief";
 import { capOverlaysNeeded } from "@/lib/caps/overlays";
@@ -86,6 +87,7 @@ export function capsForBuild<T extends Brief>(brief: T, opts: CapsForBuildOption
     const dropped: CapDrop[] = caps.filter((c) => !served.includes(c)).map((cap) => ({ cap, reason: "off" }));
     partsOff(brief, dropped);
     liveOff(brief, dropped);
+    hardwareOff(brief, dropped);
     return { brief: withoutCaps(brief, dropped.map((d) => d.cap)), dropped };
   }
   const onSite = opts.onSite ?? env.capsOnSite;
@@ -93,8 +95,18 @@ export function capsForBuild<T extends Brief>(brief: T, opts: CapsForBuildOption
   const dropped: CapDrop[] = caps.filter((c) => !enabled.includes(c)).map((cap) => ({ cap, reason: onSite.includes(cap) ? "snapshot" : "off" }));
   partsOff(brief, dropped);
   liveOff(brief, dropped);
+  hardwareOff(brief, dropped);
   return { brief: withoutCaps(brief, dropped.map((d) => d.cap)), dropped };
 }
+
+// ---------- Wave 3, unit 13 (docs/CAPABILITIES.md, section 19): a hardware block with nothing left ----------
+/** With HARDWARE_BOARD_TOOLS off, hardwareBlock leaves board tools out. A block with no links either goes as switched off. */
+function hardwareOff(brief: Brief, dropped: CapDrop[]): void {
+  const record = brief as { hardware?: unknown };
+  if (record.hardware === null || record.hardware === undefined || dropped.some((d) => d.cap === "hardware")) return;
+  if (hardwareBlock(brief) === null) dropped.push({ cap: "hardware", reason: "off" });
+}
+// ---------- end Wave 3, unit 13 ----------
 
 // ---------- Wave 3, unit 9 (docs/CAPABILITIES.md, 15a): code parts whose routes are off ----------
 /**

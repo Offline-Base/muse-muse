@@ -2,6 +2,7 @@ import { connectProof } from "@/lib/caps/connect/store";
 import { codeProof } from "@/lib/caps/code/store";
 import { dataProof } from "@/lib/caps/data/store";
 import { filesProof } from "@/lib/caps/files/store";
+import { hardwareProof } from "@/lib/caps/hardware/store";
 import type { CapId } from "@/lib/caps/ids";
 import { liveProof } from "@/lib/caps/live/store";
 import { gatewayError } from "@/lib/gateway/errors";
@@ -32,6 +33,8 @@ export const CAP_PROOF: Partial<Record<CapId, CapProofCounter>> = {
   live: liveProof,
   // Exec runs and pages opened in the build namespace since `since`, and which parts the brief asked for.
   code: codeProof,
+  // Unit 13: board tool calls that reached the simulated board since `since`, and what the brief asks for.
+  hardware: hardwareProof,
 };
 
 /** The build namespace a build token's caps rows and files live under (docs/CAPABILITIES.md, 2.3). */

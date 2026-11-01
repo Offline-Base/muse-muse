@@ -51,7 +51,8 @@ export function toolsDeps(): ToolsDeps {
     // Wave 3, unit 3: the owner pass for products that save data. False with the data cap off.
     // Wave 3, unit 4: and for products that keep files, while the files cap is served.
     // Unit 9 (15b): and for products that run Muse Code sessions, which are owner-only. False with MUSE_CODE_ENABLED off.
-    ownerPassForCaps: env.servedCaps.includes("data") || env.servedCaps.includes("files") || (env.servedCaps.includes("code") && env.museCodeEnabled),
+    // Unit 13: and for board tools, which only the owner reaches unless the owner opens the board to visitors.
+    ownerPassForCaps: env.servedCaps.includes("data") || env.servedCaps.includes("files") || (env.servedCaps.includes("code") && env.museCodeEnabled) || (env.servedCaps.includes("hardware") && env.hardwareBoardTools),
     findToken,
     productStatus: productStatusById,
     productInfo,

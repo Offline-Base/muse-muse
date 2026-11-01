@@ -137,3 +137,22 @@ describe("/api/device", { skip: typeof mock.module !== "function" }, () => {
     }
   });
 });
+
+describe("the board tools for products on the admin route (wave 3, unit 13)", () => {
+  it("are filtered until HARDWARE_BOARD_TOOLS is on", async () => {
+    const { genericDeviceTool } = await import("@/lib/device/drive-tools");
+    delete process.env.HARDWARE_BOARD_TOOLS;
+    assert.equal(genericDeviceTool("read_sensor"), false);
+    assert.equal(genericDeviceTool("show_text"), false);
+    assert.equal(genericDeviceTool("capture_image"), true);
+    assert.equal(genericDeviceTool("export_model"), false);
+    process.env.HARDWARE_BOARD_TOOLS = "1";
+    try {
+      assert.equal(genericDeviceTool("read_sensor"), true);
+      assert.equal(genericDeviceTool("show_text"), true);
+      assert.equal(genericDeviceTool("export_model"), false, "drive tools stay on their own routes");
+    } finally {
+      delete process.env.HARDWARE_BOARD_TOOLS;
+    }
+  });
+});
