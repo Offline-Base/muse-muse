@@ -7,7 +7,7 @@
  * Only the steps a run has reached are rows, as in the build room. Try it live and Publish are on the job's page.
  */
 import type { StepItem, StepsEnd } from "@/components/chat/types";
-import { datasetMinutes, jobWorkingText, progressText, roughMinutes, WRITER_NAME } from "@/components/train/format";
+import { datasetMinutes, jobWorkingText, progressText, roughMinutes, writerName } from "@/components/train/format";
 import { usd } from "@/lib/format";
 import type { TuneRunView, TuneStage } from "@/lib/train/tune/types";
 
@@ -41,7 +41,7 @@ function writingText(v: TuneRunView): string {
   const d = v.dataset;
   if (d.status === "generating") return `${v.written ?? 0} of ${d.requested} · ${usd(d.costUsd)} so far`;
   if (d.status === "failed") return v.problem ?? "The examples couldn't be written.";
-  return `${d.trainCount + d.evalCount} examples by ${WRITER_NAME} · ${usd(d.costUsd)}`;
+  return `${d.trainCount + d.evalCount} examples by ${writerName(d)} · ${usd(d.costUsd)}`;
 }
 
 function trainingText(v: TuneRunView): string {
@@ -112,7 +112,7 @@ export function tuneStepsEnd(v: Pick<TuneRunView, "stage">): StepsEnd | undefine
 export function tuneCurrentStep(v: TuneRunView): { title: string; description: string } | null {
   switch (v.stage) {
     case "writing":
-      return { title: "Writing examples", description: `${WRITER_NAME} has written ${v.written ?? 0} of ${v.dataset.requested}. Writing them all takes ${roughMinutes(datasetMinutes(v.dataset.requested))}.` };
+      return { title: "Writing examples", description: `${writerName(v.dataset)} has written ${v.written ?? 0} of ${v.dataset.requested}. Writing them all takes ${roughMinutes(datasetMinutes(v.dataset.requested))}.` };
     case "checking":
       return { title: "Checking the examples", description: "Making sure there are enough to train on and to score with." };
     case "training":

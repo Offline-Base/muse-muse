@@ -1,7 +1,7 @@
 /**
  * The run room's reads against a real Postgres: an in-memory PGlite with the repo's migrations, standing in for Neon.
- * A run's job is the newest Muse Glimmer LoRA job whose params name its dataset (never another recipe's or another
- * dataset's), its eval items and judgements are read without the rest of the log, and loadTuneRun puts the run
+ * A run's job is the newest Muse Glimmer LoRA job whose params name its dataset (never a dry run, another recipe's or
+ * another dataset's), its eval items and judgements are read without the rest of the log, and loadTuneRun puts the run
  * together, with how many examples a dataset still being written holds. Nothing here reaches Neon or Lambda.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/train/tune/__tests__/store.test.ts
@@ -66,7 +66,7 @@ describe("run room reads", { skip: canMock ? false : "needs --experimental-test-
     return row.id;
   }
 
-  it("finds the newest Muse Glimmer LoRA job trained on the dataset, and nothing else", async () => {
+  it("finds the newest Muse Glimmer LoRA job trained on the dataset, never a dry run or another recipe's", async () => {
     const mine = await store.createDataset({ title: "a bakery's counter helper", task: "Answer made-up bakery questions.", requested: 40, writerModel: "muse-wonder-1.0" });
     const other = await store.createDataset({ title: "other", task: "Something else entirely here.", requested: 40, writerModel: "muse-wonder-1.0" });
     assert.equal(await tune.latestTuneJob(mine.id), null);
@@ -74,6 +74,7 @@ describe("run room reads", { skip: canMock ? false : "needs --experimental-test-
     const newer = await newJob("glimmer-lora", { datasetId: mine.id, maxSteps: 200 }, new Date("2026-11-01T11:00:00Z"));
     await newJob("glimmer-serve", { adapterJobId: newer, datasetId: mine.id }, new Date("2026-11-01T12:00:00Z"));
     await newJob("glimmer-lora", { datasetId: other.id }, new Date("2026-11-01T13:00:00Z"));
+    await newJob("glimmer-lora", { datasetId: mine.id, dryRun: 1 }, new Date("2026-11-01T14:00:00Z"));
     assert.notEqual(older, newer);
     assert.equal((await tune.latestTuneJob(mine.id))?.id, newer);
     assert.equal(await tune.latestTuneJob("not-a-uuid"), null);

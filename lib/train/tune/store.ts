@@ -15,13 +15,17 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const jobs = schema.trainingJobs;
 const events = schema.trainingEvents;
 
-/** The newest Muse Glimmer LoRA job trained on this dataset, without the hub state's small files, or null. */
+/**
+ * The newest Muse Glimmer LoRA job trained on this dataset, without the hub state's small files, or null. A dry run
+ * (dryRun 1) fakes its answers, so its scores say nothing about the model and it never counts as the run's job.
+ */
 export async function latestTuneJob(datasetId: string): Promise<TrainJobRow | null> {
   if (!UUID_RE.test(datasetId)) return null;
+  const notDry = sql`(case when ${jobs.params}->>'dryRun' ~ '^[0-9]+([.][0-9]+)?$' then (${jobs.params}->>'dryRun')::numeric else 0 end) < 1`;
   const [row] = await db()
     .select(jobListColumns)
     .from(jobs)
-    .where(and(eq(jobs.recipe, ADAPTER_RECIPE), sql`${jobs.params}->>'datasetId' = ${datasetId}`))
+    .where(and(eq(jobs.recipe, ADAPTER_RECIPE), sql`${jobs.params}->>'datasetId' = ${datasetId}`, notDry))
     .orderBy(desc(jobs.createdAt), desc(jobs.id))
     .limit(1);
   return (row as TrainJobRow | undefined) ?? null;
