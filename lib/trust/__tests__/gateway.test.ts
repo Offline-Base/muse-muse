@@ -3,11 +3,15 @@
  * gateway's fakes. No database and no Meta call.
  *
  *   npx tsx --test lib/trust/__tests__/gateway.test.ts
+ *
+ * The tool gateway gets the same check, since tool calls spend too.
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { fakeGateway, gatewayRequest, json } from "@/lib/gateway/__tests__/helpers";
 import { handleGateway } from "@/lib/gateway/handler";
+import { errorOf, fakeTools, toolsRequest } from "@/lib/tools/__tests__/helpers";
+import { handleTools } from "@/lib/tools/handler";
 import { trustCheck, type ProductTrust, type TrustGatewayDeps } from "@/lib/trust/gateway";
 
 const JSON_CT = { "content-type": "application/json" };
@@ -132,5 +136,53 @@ describe("TRUST_SPARK_TO_WONDER", () => {
     const res = await handleGateway(gatewayRequest("responses", json({ model: "muse-spark-1.3", input: "hi", max_output_tokens: 4000 }), JSON_CT), ["responses"], g.deps);
     assert.equal(res.status, 429);
     assert.equal(g.upstreamCalls.length, 0);
+  });
+});
+
+describe("the tool gateway with the trust check wired", () => {
+  const SCHOLAR = { name: "SERPAPI_SCHOLAR_SEARCH", arguments: { query: "webxr" } };
+  const exec = (deps: ReturnType<typeof fakeTools>["deps"]) => handleTools(toolsRequest("/execute", SCHOLAR), ["execute"], deps);
+
+  it("refuses a tool call once the builder's products spent the day's dollars, before the tool runs or anything is reserved", async () => {
+    const g = fakeTools();
+    const t = trustDeps({ signedInCaps: true, spent: 5 });
+    g.deps.trustCheck = (token) => trustCheck(token, t);
+    const err = await errorOf(await exec(g.deps));
+    assert.equal(err.status, 429);
+    assert.equal(err.code, "budget_exceeded");
+    assert.equal(g.calls.execute.length, 0);
+    assert.equal(g.reservations.size, 0, "nothing reserved");
+  });
+
+  it("refuses a taken-down product's tool calls with 403 product_disabled", async () => {
+    const g = fakeTools();
+    const t = trustDeps({ product: { takenDownAt: new Date() } });
+    g.deps.trustCheck = (token) => trustCheck(token, t);
+    const err = await errorOf(await exec(g.deps));
+    assert.equal(err.status, 403);
+    assert.equal(err.code, "product_disabled");
+    assert.equal(g.calls.execute.length, 0);
+  });
+
+  it("with no check wired (every trust flag off), runs as today", async () => {
+    const g = fakeTools();
+    assert.equal(g.deps.trustCheck, undefined);
+    assert.equal((await exec(g.deps)).status, 200);
+    assert.equal(g.calls.execute.length, 1);
+  });
+
+  it("is wired into the real tools deps only while TRUST_REPORTS or TRUST_SIGNED_IN_CAPS is on", async () => {
+    const { toolsDeps } = await import("@/lib/tools/deps");
+    try {
+      assert.equal(toolsDeps().trustCheck, undefined);
+      process.env.TRUST_SIGNED_IN_CAPS = "1";
+      assert.equal(typeof toolsDeps().trustCheck, "function");
+      delete process.env.TRUST_SIGNED_IN_CAPS;
+      process.env.TRUST_REPORTS = "1";
+      assert.equal(typeof toolsDeps().trustCheck, "function");
+    } finally {
+      delete process.env.TRUST_SIGNED_IN_CAPS;
+      delete process.env.TRUST_REPORTS;
+    }
   });
 });
