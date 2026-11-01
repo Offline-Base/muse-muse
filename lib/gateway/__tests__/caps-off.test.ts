@@ -9,6 +9,7 @@ import { describe, it } from "node:test";
 import { CAPS_PROOF_PER_MINUTE, handleCapsProof, type CapsProofDeps } from "@/lib/caps/proof";
 import { CAP_FLAG, CAP_IDS } from "@/lib/caps/ids";
 import { handleFetch, handleSend, handleVault, type ConnectDeps } from "@/lib/caps/connect/handler";
+import { handleLive, type LiveDeps } from "@/lib/caps/live/handler";
 import { handleData, handleIdentityUser, handleIdentityUserLink, handleIdentityUserTest, type DataDeps } from "@/lib/caps/data/handler";
 import { handlePasskey, type PasskeyDeps } from "@/lib/caps/data/passkeys";
 import { handleAsset, type AssetsDeps } from "@/lib/caps/media/assets";
@@ -77,6 +78,21 @@ const codeOff = (): CodeDeps => ({
   lookupHost: untouched<CodeDeps["lookupHost"]>("lookupHost"),
 });
 
+const liveOff = (): LiveDeps => ({
+  servedCaps: () => env.servedCaps,
+  updatesOn: () => env.liveUpdates,
+  findToken: untouched<LiveDeps["findToken"]>("findToken"),
+  product: untouched<LiveDeps["product"]>("product"),
+  adminEmails: [],
+  hitRateLimits: untouched<LiveDeps["hitRateLimits"]>("hitRateLimits"),
+  acquireInFlight: untouched<LiveDeps["acquireInFlight"]>("acquireInFlight"),
+  releaseInFlight: untouched<LiveDeps["releaseInFlight"]>("releaseInFlight"),
+  adjustCounter: untouched<LiveDeps["adjustCounter"]>("adjustCounter"),
+  rules: untouched<LiveDeps["rules"]>("rules"),
+  changes: untouched<LiveDeps["changes"]>("changes"),
+  buildPreviewOrigin: untouched<LiveDeps["buildPreviewOrigin"]>("buildPreviewOrigin"),
+});
+
 const ROUTES: Array<{ path: string; call(req: Request): Promise<Response> }> = [
   // Unit 3: saved data, its sign-in, and the platform's passkey routes.
   { path: "data", call: (req) => handleData(req, [], dataOff()) },
@@ -107,6 +123,9 @@ const ROUTES: Array<{ path: string; call(req: Request): Promise<Response> }> = [
         counters: {},
       }),
   },
+  // Unit 7: live updates' read tickets and streams.
+  { path: "live/ticket", call: (req) => handleLive(req, ["ticket"], liveOff()) },
+  { path: "live/stream", call: (req) => handleLive(req, ["stream"], liveOff()) },
   // Unit 8: vetted large files for products' pages, by sha256.
   {
     path: "assets/407375255d220d8ddf81e9a06d4100f80f870f8446e77d4f20951d2a4c08a156",

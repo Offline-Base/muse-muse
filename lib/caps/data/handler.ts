@@ -114,8 +114,8 @@ interface Target {
   ownerKey: string | null;
 }
 
-/** The collection and scope a call names, checked against the product's list, and the caller's key in that scope. */
-async function target(stage: CapStage, deps: DataDeps, collection: string, scopeParam: unknown): Promise<Target | Response> {
+/** The collection and scope a call names (live tickets ask here too, section 13), checked against the product's list, and the caller's key in that scope. */
+export async function target(stage: CapStage, deps: Pick<DataDeps, "rules">, collection: string, scopeParam: unknown): Promise<Target | Response> {
   if (!COLLECTION_NAME.test(collection)) return capError("invalid_arguments", "A collection's name is lowercase letters, digits and underscores, up to 32, starting with a letter.");
   if (scopeParam !== undefined && scopeParam !== null && !isDataScope(scopeParam)) return capError("invalid_arguments", "scope is shared, visitor, owner or user.");
   const rules = await deps.rules(stage.token, stage.product);
