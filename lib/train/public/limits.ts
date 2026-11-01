@@ -7,6 +7,11 @@
  * reserveCounter: reserve first, in one statement that can't pass the limit, and give back with adjustCounter when a
  * later check refuses, as the gateway's counters do. A Reservation is plain data, so a later step can give it back
  * after a launch fails.
+ *
+ * One visitor job at a time (PUBLIC_TRAIN_MAX_ACTIVE) is a slot taken in one statement, not only a count of jobs
+ * already on a GPU: two visitors starting at the same moment both see no job yet, so the count alone would let both
+ * through. The slot is held from the reservation until the job ends (endVisitorRun) or the launch fails
+ * (releaseReservation), and stops counting on its own within an hour if neither ever runs.
  */
 import { and, eq, isNotNull, isNull, notInArray, or, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
@@ -57,6 +62,14 @@ export type CounterKind = "run" | "dry" | "dataset";
 export const ipCounterKey = (kind: CounterKind, ip: string) => `train-pub:${kind}:ip:${ip}`;
 /** Every visitor's committed GPU dollars today, in whole cents. */
 export const USD_KEY = "train-pub:usd";
+/** The visitor GPU slots taken, per SLOT_BUCKET_MS bucket. */
+export const SLOT_KEY = "train-pub:slot";
+/**
+ * A slot's row is the end of its 30-minute bucket, and a take also counts the bucket before, so a slot nobody gives
+ * back stops counting 30 to 60 minutes after it was taken (the hourly prune of rate_limits keeps rows that young).
+ * By then the job's own row, if one was written, holds its place through visitorActiveJobCount.
+ */
+export const SLOT_BUCKET_MS = 30 * 60_000;
 
 export interface Reservation {
   items: Array<{ key: string; window: string; amount: number }>;
@@ -119,40 +132,73 @@ const holdingGpu = () =>
   or(notInArray(jobs.status, [...TRAIN_TERMINAL]), and(isNotNull(jobs.launchedAt), isNull(jobs.terminatedAt)));
 
 /**
- * Jobs holding a GPU (lib/train/store.ts activeJobCount's rule) that a non-admin made: a visitor trainer's hidden row or
- * a signed-in builder. Admins' and automation's jobs (their rows are admin) don't count.
+ * Jobs holding a GPU (lib/train/store.ts activeJobCount's rule) that a visitor made: a trainer's hidden row or a
+ * signed-in builder. A job by an admin row, or by any ADMIN_EMAILS address, doesn't count: automation acts as the first
+ * ADMIN_EMAILS row, and an OPEN_ACCESS=admin preview's row, whose is_admin column may be false.
  */
 export async function visitorActiveJobCount(): Promise<number> {
+  const admins = env.adminEmails;
+  const notAdmin = and(eq(schema.users.isAdmin, false), admins.length ? notInArray(schema.users.email, admins) : undefined);
   const [row] = await db()
     .select({ n: sql<number>`count(*)::int` })
     .from(jobs)
     .innerJoin(schema.users, eq(schema.users.id, jobs.createdBy))
-    .where(and(holdingGpu(), eq(schema.users.isAdmin, false)));
+    .where(and(holdingGpu(), notAdmin));
   return Number(row?.n ?? 0);
+}
+
+/** The end of the slot bucket `now` is in: the slot's rate_limits row. */
+export function slotWindow(now: Date): Date {
+  return new Date((Math.floor(now.getTime() / SLOT_BUCKET_MS) + 1) * SLOT_BUCKET_MS);
+}
+
+/**
+ * Takes one of `limit` visitor GPU slots in one statement (acquireInFlight's shape, with this file's bucket): the upsert
+ * locks the bucket's row, so of visitors starting at once only `limit` get one. Returns the row's window, or null.
+ */
+async function takeSlot(limit: number, now: Date): Promise<Date | null> {
+  const window = slotWindow(now);
+  const previous = new Date(window.getTime() - SLOT_BUCKET_MS);
+  const held = sql`coalesce((select p.count from rate_limits p where p.key = ${SLOT_KEY} and p.window_start = ${previous.toISOString()}::timestamptz), 0)`;
+  const rows = await db()
+    .insert(schema.rateLimits)
+    .select(sql`select ${SLOT_KEY}, ${window.toISOString()}::timestamptz, 1 where ${held} < ${limit}::int`)
+    .onConflictDoUpdate({
+      target: [schema.rateLimits.key, schema.rateLimits.windowStart],
+      set: { count: sql`${schema.rateLimits.count} + 1` },
+      setWhere: sql`${schema.rateLimits.count} + ${held} < ${limit}::int`,
+    })
+    .returning({ count: schema.rateLimits.count });
+  return rows.length ? window : null;
 }
 
 /**
  * 409 when visitor jobs already hold every slot. Before the job row exists, `including` is 0: refused at the max. After
- * it is written, pass 1, so two starts at once each see the other and back out (the jobs route's own recheck).
+ * it is written, pass 1 for an extra recheck (the jobs route's own pattern). reserveVisitorRun's slot is what keeps two
+ * starts at once apart; this count is what holds a running job's place once the slot has aged out.
  */
 export async function checkVisitorActive(limits: VisitorLimits, including: 0 | 1 = 0): Promise<Refusal | null> {
   const active = await visitorActiveJobCount();
   if (active - including < limits.maxActive) return null;
-  return {
-    ok: false,
-    status: 409,
-    code: "visitor_gpu_busy",
-    error: "Another visitor's run is on the GPU now. Try again once it finishes, in about an hour.",
-  };
+  return GPU_BUSY;
 }
+
+const GPU_BUSY: Refusal = {
+  ok: false,
+  status: 409,
+  code: "visitor_gpu_busy",
+  error: "Another visitor's run is on the GPU now. Try again once it finishes, in about an hour.",
+};
+const PAUSED: Refusal = { ok: false, status: 503, code: "public_training_paused", error: "Visitor training is paused today." };
 
 export type ReserveResult = { ok: true; reservation: Reservation } | Refusal;
 
 /**
- * Before a visitor job is written: the job's limits, a free visitor slot, then one of the visitor's and their IP's runs
- * (or dry runs) for today, then the job's whole dollar limit against every visitor's day. Any refusal gives back what was
- * taken. On success, hold the reservation until the job row exists and give it back (releaseReservation) if the launch
- * fails before a GPU starts.
+ * Before a visitor job is written: the job's limits, no visitor job already on every GPU slot, then one of the
+ * visitor's and their IP's runs (or dry runs) for today, then the job's whole dollar limit against every visitor's day,
+ * then a GPU slot. Any refusal gives back what was taken. On success, keep the reservation with the job (it is plain
+ * data): give it all back (releaseReservation) if the launch fails before a GPU starts, or call endVisitorRun once the
+ * job ends. Never both.
  */
 export async function reserveVisitorRun(
   s: CounterSubject,
@@ -161,7 +207,7 @@ export async function reserveVisitorRun(
 ): Promise<ReserveResult> {
   const bad = checkVisitorJob(job, s.limits);
   if (bad) return bad;
-  if (s.limits.dailyUsd <= 0) return { ok: false, status: 503, code: "public_training_paused", error: "Visitor training is paused today." };
+  if (s.limits.dailyUsd <= 0 || s.limits.maxActive <= 0) return PAUSED;
   const busy = await checkVisitorActive(s.limits);
   if (busy) return busy;
   const held: Reservation = { items: [] };
@@ -184,18 +230,33 @@ export async function reserveVisitorRun(
     };
   }
   held.items.push({ key: USD_KEY, window: day.toISOString(), amount });
+  const slot = await takeSlot(s.limits.maxActive, now);
+  if (!slot) {
+    await releaseReservation(held);
+    return GPU_BUSY;
+  }
+  held.items.push({ key: SLOT_KEY, window: slot.toISOString(), amount: 1 });
   return { ok: true, reservation: held };
 }
 
 /**
- * Once a visitor job has ended: gives back the part of its dollar hold it didn't spend, so the day's total is what
- * visitors actually used. The counters for runs stay taken.
+ * Gives back the part of a visitor job's dollar hold it didn't spend, so the day's total is what visitors actually
+ * used. The counters for runs stay taken. endVisitorRun does this and frees the GPU slot; call that when a job ends.
  */
 export async function settleVisitorSpend(r: Reservation, spentUsd: number): Promise<void> {
   const usd = r.items.find((i) => i.key === USD_KEY);
   if (!usd) return;
   const unspent = usd.amount - Math.min(usd.amount, cents(spentUsd));
   if (unspent > 0) await adjustCounter(USD_KEY, new Date(usd.window), -unspent);
+}
+
+/**
+ * Once a visitor job has ended (succeeded, failed after launch, stopped): settles its dollars (settleVisitorSpend) and
+ * frees its GPU slot. Call it once per job, and not for a launch already given back with releaseReservation.
+ */
+export async function endVisitorRun(r: Reservation, spentUsd: number): Promise<void> {
+  await settleVisitorSpend(r, spentUsd);
+  await Promise.all(r.items.filter((i) => i.key === SLOT_KEY).map((i) => adjustCounter(i.key, new Date(i.window), -i.amount)));
 }
 
 /**

@@ -41,6 +41,7 @@ const ENV_KEYS = [
   "TRAIN_MAX_ACTIVE",
   "TRAIN_JOB_MAX_USD",
   "TRAIN_JOB_MAX_MINUTES",
+  "ADMIN_EMAILS",
 ];
 
 const JOB = { dryRun: false, maxMinutes: 60, maxUsd: 4, steps: 120 };
@@ -66,7 +67,9 @@ describe("visitor limits", { skip: canMock ? false : "needs --experimental-test-
     for (const k of ENV_KEYS) delete process.env[k];
     // The lab's own ceilings, as production has them for visitors (open-train.md decision 2: TRAIN_DAILY_USD $35).
     process.env.TRAIN_DAILY_USD = "35";
-    process.env.TRAIN_MAX_ACTIVE = "2";
+    // Room for every GPU slot the counter tests take without ending a run; "one visitor job at once" sets it back to 1.
+    process.env.TRAIN_MAX_ACTIVE = "8";
+    process.env.PUBLIC_TRAIN_MAX_ACTIVE = "8";
     await testDb.delete(realSchema.rateLimits);
     await testDb.delete(realSchema.trainingJobs);
     await testDb.delete(realSchema.users);
@@ -111,6 +114,33 @@ describe("visitor limits", { skip: canMock ? false : "needs --experimental-test-
       assert.ok(!r.ok);
       assert.equal(r.code, "public_training_paused");
       assert.equal(await value(runKey("t-paused")), 0);
+    });
+
+    it("lets 0 turn off a count, where it used to fall back to the default", async () => {
+      process.env.PUBLIC_TRAIN_DRY_RUNS_PER_DAY = "0";
+      process.env.PUBLIC_TRAIN_DATASETS_PER_DAY = "0";
+      process.env.PUBLIC_TRAIN_COOKIES_PER_IP = "0";
+      const l = L.visitorLimits();
+      assert.equal(l.dryRunsPerDay, 0);
+      assert.equal(l.datasetsPerDay, 0);
+      assert.equal(l.cookiesPerIpPerDay, 0);
+      assert.equal(l.runsPerDay, 1, "the others keep their defaults");
+      const dry = await L.reserveVisitorRun(subject("t-zero"), { ...JOB, dryRun: true }, NOW);
+      assert.ok(!dry.ok);
+      assert.equal(dry.code, "visitor_daily_dry");
+      assert.ok((await L.reserveVisitorRun(subject("t-zero"), JOB, NOW)).ok, "real runs still go");
+      assert.equal((await L.reserveVisitorDataset(subject("t-zero"), { source: "rows", rows: 5 }, NOW)).ok, false);
+      process.env.PUBLIC_TRAIN_RUNS_PER_DAY = "0";
+      assert.equal(L.visitorLimits().runsPerDay, 0);
+      for (const junk of ["", " ", "-1", "abc"]) {
+        process.env.PUBLIC_TRAIN_RUNS_PER_DAY = junk;
+        assert.equal(L.visitorLimits().runsPerDay, 1, `"${junk}" is unset`);
+      }
+      process.env.PUBLIC_TRAIN_MAX_ACTIVE = "0";
+      const paused = await L.reserveVisitorRun(subject("t-zero2", "203.0.113.99"), JOB, NOW);
+      assert.ok(!paused.ok);
+      assert.equal(paused.code, "public_training_paused");
+      assert.equal(await value(runKey("t-zero2")), 0);
     });
 
     it("reads the flags off by default", async () => {
@@ -232,6 +262,7 @@ describe("visitor limits", { skip: canMock ? false : "needs --experimental-test-
       assert.equal(await value(runKey("t-rel")), 0);
       assert.equal(await value(L.ipCounterKey("run", "203.0.113.1")), 0);
       assert.equal(await value(L.USD_KEY), 0);
+      assert.equal(await store.counterValue(L.SLOT_KEY, L.slotWindow(NOW)), 0, "and the GPU slot");
       const again = await L.reserveVisitorRun(subject("t-rel"), JOB, NOW);
       assert.ok(again.ok, "released means free again");
       await L.settleVisitorSpend(again.reservation, 1.47);
@@ -240,9 +271,70 @@ describe("visitor limits", { skip: canMock ? false : "needs --experimental-test-
       await L.settleVisitorSpend(again.reservation, 99);
       assert.equal(await value(L.USD_KEY), 147, "spending more than held gives nothing back");
     });
+
+    it("endVisitorRun settles the dollars and frees the GPU slot, leaving the day's run counted", async () => {
+      process.env.PUBLIC_TRAIN_MAX_ACTIVE = "1";
+      const r = await L.reserveVisitorRun(subject("t-end"), JOB, NOW);
+      assert.ok(r.ok);
+      assert.equal(await store.counterValue(L.SLOT_KEY, L.slotWindow(NOW)), 1);
+      const blocked = await L.reserveVisitorRun(subject("t-end2", "203.0.113.3"), JOB, NOW);
+      assert.equal(blocked.ok ? "" : blocked.code, "visitor_gpu_busy", "the slot is held until the job ends");
+      await L.endVisitorRun(r.reservation, 2.5);
+      assert.equal(await value(L.USD_KEY), 250);
+      assert.equal(await store.counterValue(L.SLOT_KEY, L.slotWindow(NOW)), 0);
+      assert.equal(await value(runKey("t-end")), 1);
+      assert.ok((await L.reserveVisitorRun(subject("t-end2", "203.0.113.3"), JOB, NOW)).ok, "free for the next visitor");
+    });
   });
 
   describe("one visitor job at once", () => {
+    beforeEach(() => {
+      process.env.PUBLIC_TRAIN_MAX_ACTIVE = "1";
+    });
+
+    it("lets only one of many visitors starting at the same moment through, and gives the rest everything back", async () => {
+      const results = await Promise.all(
+        Array.from({ length: 8 }, (_, i) => L.reserveVisitorRun(subject(`t-race${i}`, `192.0.2.${100 + i}`), { ...JOB, maxUsd: 1 }, NOW)),
+      );
+      assert.equal(results.filter((r) => r.ok).length, 1, "PUBLIC_TRAIN_MAX_ACTIVE 1");
+      for (const r of results) if (!r.ok) assert.equal(r.code, "visitor_gpu_busy");
+      assert.equal(await value(L.USD_KEY), 100, "only the winner's dollar");
+      for (let i = 0; i < 8; i++) assert.equal(await value(runKey(`t-race${i}`)), results[i].ok ? 1 : 0);
+      assert.equal(await store.counterValue(L.SLOT_KEY, L.slotWindow(NOW)), 1);
+    });
+
+    it("follows PUBLIC_TRAIN_MAX_ACTIVE at its edge, at once", async () => {
+      process.env.PUBLIC_TRAIN_MAX_ACTIVE = "2";
+      const results = await Promise.all(
+        Array.from({ length: 6 }, (_, i) => L.reserveVisitorRun(subject(`t-two${i}`, `192.0.2.${120 + i}`), { ...JOB, maxUsd: 1 }, NOW)),
+      );
+      assert.equal(results.filter((r) => r.ok).length, 2);
+    });
+
+    it("lets a slot nobody gave back stop counting within an hour, while the job's row still holds its place", async () => {
+      const r = await L.reserveVisitorRun(subject("t-lost"), JOB, NOW);
+      assert.ok(r.ok, "taken, and the launch never reports back");
+      const in29 = new Date(NOW.getTime() + 29 * 60_000);
+      assert.equal((await L.reserveVisitorRun(subject("t-lost2", "203.0.113.4"), { ...JOB, dryRun: true, maxUsd: 1 }, in29)).ok, false);
+      const in61 = new Date(NOW.getTime() + 61 * 60_000);
+      assert.ok((await L.reserveVisitorRun(subject("t-lost2", "203.0.113.4"), { ...JOB, dryRun: true, maxUsd: 1 }, in61)).ok);
+      const trainerRow = await identity.ensureTrainerUser("t-" + "b".repeat(32));
+      await addJob(testDb, trainerRow, { status: "running" });
+      const in200 = new Date(NOW.getTime() + 200 * 60_000);
+      const busy = await L.reserveVisitorRun(subject("t-lost3", "203.0.113.5"), { ...JOB, maxUsd: 1 }, in200);
+      assert.equal(busy.ok ? "" : busy.code, "visitor_gpu_busy", "a running visitor job counts with no slot");
+    });
+
+    it("never counts automation's or an ADMIN_EMAILS row's jobs as a visitor's, even when is_admin is false", async () => {
+      process.env.ADMIN_EMAILS = "owner@example.com";
+      const owner = await addUser(testDb, "owner@example.com", false);
+      await addJob(testDb, owner, { status: "running" });
+      assert.equal(await L.visitorActiveJobCount(), 0);
+      assert.ok((await L.reserveVisitorRun(subject("t-own"), JOB, NOW)).ok);
+      delete process.env.ADMIN_EMAILS;
+      assert.equal(await L.visitorActiveJobCount(), 1, "without the list, the column is all there is");
+    });
+
     it("refuses while a visitor's job holds the GPU; admins' and finished jobs don't count", async () => {
       const trainerRow = await identity.ensureTrainerUser("t-" + "a".repeat(32));
       const admin = await addUser(testDb, "admin@example.com", true);
