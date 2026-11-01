@@ -159,6 +159,53 @@ Data and files spend nothing at Meta: they count in `rate_limits` day windows an
 usage row counts toward `DAILY_SPEND_CAP_USD`. Model calls a cap makes go through `/v1`, so the product's Meta budget
 covers them as today.
 
+### 2.4a Cap readiness and the builder snapshot (unit 3 writes it; agreed with General, Oct 31)
+
+A cap whose overlay isn't in the builder snapshot is not ready. The brief never offers it, and the build never relies on
+it, so a snapshot that is out of step with the code can't break the live site. Today `applyCaps` checks only `core`'s
+marker and throws on Vercel. Unit 3 replaces that with a check for every overlay, in two layers:
+
+1. **Brief time.**
+   - `scripts/make-builder-snapshot.ts` records the cap overlays it installed as `capOverlays: string[]` in `BuilderInfo`
+     (`lib/sandbox/setup.ts`). It also prints `BUILDER_SNAPSHOT_CAPS=<comma list>` next to `BUILDER_SNAPSHOT_ID`.
+   - `env.snapshotCaps` is that list when `process.env.VERCEL` is set. Unset there means an empty list. Locally it is
+     `null`: the checkout's `template/caps` is used, as today.
+   - `env.enabledCaps` then also requires `core` and every overlay the cap can need to be listed. A cap can need its own
+     id, or every pick in `CAP_OVERLAY_PICK` (games needs both games-phaser and games-babylon; list the picks as
+     `CAP_OVERLAYS_ALL` in `lib/caps/overlays.ts`).
+   - So the writer schema, the writer rules and the catalog leave the cap out.
+2. **Build time.**
+   - A new `capsForBuild(brief)` in `lib/caps/ready.ts` runs once, before anything reads the brief's caps. It returns
+     the build's working copy of the brief, with every cap block set to null whose cap isn't in `env.enabledCaps`:
+     flag off, not ready, or not on the snapshot.
+   - The stored brief keeps its blocks, so a later build on a newer snapshot can use them.
+   - Everything after it uses the working copy: `overlaysFor`, `allowedModelsFor`'s markers, the build prompt,
+     `capBuildEnv`, the fixed checks and the judge notes.
+   - For each dropped cap the build log gets one plain line, for example "This build goes without Python functions:
+     the builder snapshot doesn't have them yet." Use "is switched off" when the flag is off.
+   - This also closes runtime's open low finding: a stored brief with a runtime block got the overlay and PyPI with
+     the flag off.
+3. **Backstop.**
+   - `applyCaps` checks `${CAPS_DIR}/<overlay>/deps.json` for every overlay in its list. The helper is
+     `capOverlayMarker(overlay)` in `lib/sandbox/paths.ts`, and `CORE_CAPS_MARKER` becomes `capOverlayMarker("core")`.
+   - Locally, missing overlays are still copied from the checkout.
+   - On Vercel it returns the missing overlays instead of throwing. If the build prompt isn't rendered yet, the pipeline
+     drops those caps exactly as in 2, with the same log line.
+   - If the prompt already exists, the round fails with one plain line naming the cap and "make a new builder snapshot".
+     Never a raw stack.
+   - The stale verify check (`CAPS_VERIFY_MARKER`) works the same way.
+
+Tests:
+- With every flag off and `BUILDER_SNAPSHOT_CAPS` unset, the goldens are unchanged.
+- On `VERCEL=1`, a ready, flagged cap missing from the list is left out of `enabledCaps`, the schema and the catalog.
+- A stored brief with that cap's block builds without it and logs the line.
+- A fake sandbox missing one overlay's marker drops that cap on Vercel and installs it locally.
+- `core` missing drops every cap.
+
+Owns: `lib/caps/ready.ts`. It also makes marked edits to unit 2's `env.enabledCaps`, `applyCaps` and `paths.ts`, one
+field in `BuilderInfo`, and one printed line in the snapshot script. General owns the snapshot itself and has agreed to
+these.
+
 ### 2.5 Template overlays (unit 2 writes the plumbing)
 
 Caps reuse wave 2's target overlay mechanism (tg-vr `lib/sandbox/tasks.ts`, `applyTargetScript` and
