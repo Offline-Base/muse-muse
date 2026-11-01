@@ -1274,6 +1274,16 @@ because the sidebar showed a real account.
 - Owner should know: a banned user without a session cookie can still train as an ordinary cookie visitor under the
   per-IP caps (comes with training without sign-in).
 
+### 23:29 Owner: a picture made for each plan, text wrapping under it, the full plan in the card
+
+- The owner tried a live build ("Rate Change Tutor", a rate-of-change math tutor) and asked for the plan card's mascot
+  to be a Muse image made for the request, the text to wrap beside and then under it, and the full plan written out.
+- Building on tg-plan-art (wf_c5dd441e-bba): after the brief, one Muse Image edit call ($0.01) turns the owner's mascot
+  picture into one that fits the request; stored and metered like other platform media, time-boxed, never delaying or
+  failing a build, with the stock mascot as the fallback (flag PLAN_ART, off until checked). The card floats the picture
+  with the text flowing beside and under it, and writes out the whole brief in place of the summary. Up to 10 real Muse
+  Image calls ($0.10) to tune the prompt.
+
 ## Gaps
 
 What this record doesn't confirm:
