@@ -4,7 +4,7 @@ import type { ExtensionBrief } from "@/lib/caps/extension/brief";
 import { extensionOrigin } from "@/lib/caps/extension/manifest";
 import { ExtensionPackError, packageExtension } from "@/lib/caps/extension/package";
 import { extensionZipPath } from "@/lib/caps/extension/paths";
-import { putExtensionZip } from "@/lib/caps/extension/store";
+import { putExtensionZip, removeExtensionZip } from "@/lib/caps/extension/store";
 import { CAPS_DIR, PRODUCT_DIR } from "@/lib/sandbox/paths";
 
 /**
@@ -12,7 +12,8 @@ import { CAPS_DIR, PRODUCT_DIR } from "@/lib/sandbox/paths";
  * read-only copy in CAPS_DIR, compiles the product's extension/ in its sandbox and writes a bundle; the platform reads
  * it, checks it and writes the manifest and config.js for the live link (lib/caps/extension/package.ts), then saves the
  * zip at extensions/<productId>/latest.zip. A refinement packages it again. Anything that goes wrong becomes one plain
- * line in the build room: the product is live either way.
+ * line in the build room: the product is live either way. When packaging fails, an older zip is taken down, since it
+ * was made from older files and may call actions the product no longer has; the Get it tab then says it isn't ready.
  */
 
 /** The platform's packer in the sandbox: never the product's own copy. */
@@ -25,6 +26,8 @@ export interface ExtensionShipDeps {
   node(args: string[]): Promise<{ exitCode: number; stdout: string; stderr: string }>;
   readFile(file: string): Promise<Buffer | null>;
   save(productId: string, zip: Buffer): Promise<string>;
+  /** Takes down the product's older zip. True when there was one. */
+  remove(productId: string): Promise<boolean>;
 }
 
 const firstProblem = (stderr: string) =>
@@ -40,7 +43,14 @@ const kb = (bytes: number) => `${Math.max(1, Math.round(bytes / 1024))} KB`;
 export async function shipExtension(input: { productId: string; liveUrl: string; brief: Brief }, deps: ExtensionShipDeps): Promise<string | null> {
   const ext = (input.brief as { extension?: ExtensionBrief | null }).extension;
   if (!ext) return null;
-  const fail = (why: string) => `The browser extension wasn't packaged: ${why.replace(/\.$/, "")}. The web product is live as usual.`;
+  const fail = async (why: string) => {
+    const removed = await deps.remove(input.productId).catch((err: unknown) => {
+      console.error(`[extension] taking down ${extensionZipPath(input.productId)} failed:`, err);
+      return false;
+    });
+    const older = removed ? " The older download is taken down until it packages again." : "";
+    return `The browser extension wasn't packaged: ${why.replace(/\.$/, "")}.${older} The web product is live as usual.`;
+  };
   let origin: string;
   try {
     origin = extensionOrigin(input.liveUrl);
@@ -85,5 +95,6 @@ export function sandboxShipDeps(sandboxName: string): ExtensionShipDeps {
       return sandbox.readFileToBuffer({ path: file }).catch(() => null);
     },
     save: putExtensionZip,
+    remove: removeExtensionZip,
   };
 }

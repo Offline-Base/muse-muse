@@ -11,6 +11,7 @@ import { GetItPanel } from "@/components/product/GetItPanel";
 import { nativeSlots } from "@/components/product/NativeSlots";
 import { productOutputSlots } from "@/components/product/OutputPanels";
 import { extensionSlots } from "@/components/product/ExtensionPanel";
+import { extensionZipReady } from "@/lib/caps/extension/store";
 import { runtimeOutputSlots } from "@/components/product/RuntimeOutputPanels";
 import { AddClip, RemoveClip } from "@/components/product/OwnerClips";
 import { StatusControl } from "@/components/product/StatusControl";
@@ -81,6 +82,8 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const native = shipped
     ? await getItSlots({ productId: product.id, slug: product.slug, name: product.name, liveUrl: product.liveUrl, origin: panelLinkOrigin(origin), brief, frameBrief, isOwner, buildId: latestBuild?.id ?? null })
     : { slots: {}, clips: [], initial: undefined };
+  // Wave 3, unit 14: whether the extension's zip is there, looked up only with its flag on, for a live brief with one.
+  const extensionReady = shipped && product.liveUrl && env.enabledCaps.includes("extension") && (brief as { extension?: unknown } | null)?.extension ? await extensionZipReady(product.id) : null;
   // Only for a product that runs somewhere else too, so with every flag off the page has no trace of this.
   const canAddClips = shipped && isOwner && env.enabledTargets.length > 0 && briefTargets(brief).some((t) => t !== "web");
 
@@ -172,7 +175,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
         )}
 
         {shipped ? (
-          <GetItPanel slots={{ ...native.slots, ...(env.productOutputs ? productOutputSlots({ product, origin, events, now }) : {}), ...(env.runtimeOutputs ? runtimeOutputSlots({ product, origin, isOwner }) : {}), ...(env.enabledCaps.includes("extension") ? extensionSlots({ product, origin, brief }) : {}) }} initial={native.initial} />
+          <GetItPanel slots={{ ...native.slots, ...(env.productOutputs ? productOutputSlots({ product, origin, events, now }) : {}), ...(env.runtimeOutputs ? runtimeOutputSlots({ product, origin, isOwner }) : {}), ...(env.enabledCaps.includes("extension") ? extensionSlots({ product, origin, brief, ready: extensionReady }) : {}) }} initial={native.initial} />
         ) : null}
 
         <section className="card section-card" aria-labelledby="muse-title">

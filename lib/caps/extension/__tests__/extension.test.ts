@@ -380,6 +380,7 @@ describe("the step after deploy", () => {
   const fakeDeps = (over: Partial<ExtensionShipDeps> & { bundle?: unknown } = {}) => {
     const saved: Array<{ productId: string; bytes: number }> = [];
     const ran: string[][] = [];
+    const removed: string[] = [];
     const deps: ExtensionShipDeps = {
       node: async (args) => {
         ran.push(args);
@@ -390,9 +391,13 @@ describe("the step after deploy", () => {
         saved.push({ productId, bytes: zip.length });
         return `https://store.example/${extensionZipPath(productId)}`;
       },
+      remove: async (productId) => {
+        removed.push(productId);
+        return false;
+      },
       ...over,
     };
-    return { deps, saved, ran };
+    return { deps, saved, ran, removed };
   };
 
   it("runs the platform's packer from CAPS_DIR on the product, packages for the live link and saves it", async () => {
@@ -415,6 +420,21 @@ describe("the step after deploy", () => {
     const lost = await shipExtension({ productId: "p", liveUrl: ORIGIN, brief: WITH }, fakeDeps({ save: async () => { throw new Error("blob down"); } }).deps);
     assert.match(lost!, /couldn't be saved/);
   });
+
+  it("takes down an older zip when packaging again fails, and says so, and leaves it when packaging works", async () => {
+    const ok = fakeDeps();
+    await shipExtension({ productId: "p-1", liveUrl: ORIGIN, brief: WITH }, ok.deps);
+    assert.deepEqual(ok.removed, []);
+    const broken = fakeDeps({ node: async () => ({ exitCode: 1, stdout: "", stderr: "extension: extension/popup.ts:3 doesn't compile: ';' expected.\n" }), remove: async () => true });
+    const line = await shipExtension({ productId: "p-1", liveUrl: ORIGIN, brief: WITH }, broken.deps);
+    assert.equal(line, "The browser extension wasn't packaged: extension/popup.ts:3 doesn't compile: ';' expected. The older download is taken down until it packages again. The web product is live as usual.");
+    const first = fakeDeps({ bundle: bundleOf({ ...FILES, "manifest.json": "{" }) });
+    await shipExtension({ productId: "p-2", liveUrl: ORIGIN, brief: WITH }, first.deps);
+    assert.deepEqual(first.removed, ["p-2"]);
+    const stuck = await shipExtension({ productId: "p-3", liveUrl: ORIGIN, brief: WITH }, fakeDeps({ node: async () => ({ exitCode: 1, stdout: "", stderr: "" }), remove: async () => { throw new Error("blob down"); } }).deps);
+    assert.match(stuck!, /^The browser extension wasn't packaged: the packer stopped\. The web product is live as usual\.$/);
+  });
+
 });
 
 describe("GET /p/<slug>/get/extension", () => {
@@ -423,7 +443,7 @@ describe("GET /p/<slug>/get/extension", () => {
     const d: ExtensionDownloadDeps = {
       enabled: () => true,
       findProduct: async (slug) => (slug === "page-notes" ? { id: "p-1", liveUrl: ORIGIN, hasExtension: true } : null),
-      findZip: async (id) => (id === "p-1" ? { url: "https://store.example/extensions/p-1/latest.zip" } : null),
+      findZip: async (id) => (id === "p-1" ? { url: "https://store.example/extensions/p-1/latest.zip", uploadedAt: new Date("2026-11-02T11:00:00Z") } : null),
       reserve: async (key) => {
         counted.push(key);
         return 1;
@@ -463,7 +483,12 @@ describe("GET /p/<slug>/get/extension", () => {
     const { d, counted } = deps();
     const res = await answerExtensionDownload(get(), "page-notes", d);
     assert.equal(res.status, 302);
-    assert.equal(res.headers.get("location"), "https://store.example/extensions/p-1/latest.zip?download=1");
+    assert.equal(res.headers.get("location"), `https://store.example/extensions/p-1/latest.zip?download=1&v=${Date.parse("2026-11-02T11:00:00Z")}`);
+    // A zip saved again after a refinement gets a new link, so a browser that kept the older one fetches it again.
+    const later = await answerExtensionDownload(get(), "page-notes", deps({ findZip: async () => ({ url: "https://store.example/extensions/p-1/latest.zip", uploadedAt: new Date("2026-11-03T09:00:00Z") }) }).d);
+    assert.notEqual(later.headers.get("location"), res.headers.get("location"));
+    const local = await answerExtensionDownload(get(), "page-notes", deps({ findZip: async () => ({ url: "/api/files/extensions/p-1/latest.zip", uploadedAt: new Date() }) }).d);
+    assert.equal(local.headers.get("location"), "/api/files/extensions/p-1/latest.zip");
     assert.deepEqual(counted, ["extension-get-ip:203.0.113.9", "extension-get-day"]);
   });
 
@@ -511,6 +536,16 @@ describe("the Get it tab", () => {
     }
     assert.ok(!out.includes("—"));
     assert.equal(extensionLink("https://site.example/", "x"), "https://site.example/p/x/get/extension");
+  });
+
+  it("says it isn't ready yet, with no link, when the zip isn't there, and keeps the link when that couldn't be told", () => {
+    const missing = html(extensionSlots({ product, origin: "https://site.example", brief: WITH, ready: false }).extension);
+    assert.ok(!missing.includes("/get/extension"), "no link that answers 404");
+    assert.match(missing, /isn&#x27;t ready to download yet/);
+    assert.ok(!missing.includes("—"));
+    for (const ready of [true, null, undefined]) {
+      assert.match(html(extensionSlots({ product, origin: "https://site.example", brief: WITH, ready }).extension), /Download the extension/, String(ready));
+    }
   });
 
   it("is empty without a live link or an extension block", () => {

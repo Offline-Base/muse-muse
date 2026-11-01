@@ -16,11 +16,28 @@ export const extensionLink = (origin: string, slug: string) => `${origin.replace
 
 /**
  * The Get it panel's extension slot (docs/CAPABILITIES.md, section 20), with NATIVE_EXTENSION on: a live product whose
- * brief has a browser extension offers its zip with the Load unpacked steps. Anything else has none.
+ * brief has a browser extension offers its zip with the Load unpacked steps. Anything else has none. `ready` is whether
+ * the zip is there (extensionZipReady): false says it isn't ready yet instead of offering a link that answers 404, and
+ * null (couldn't tell) keeps the link.
  */
-export function extensionSlots(input: { product: Pick<ProductView, "slug" | "liveUrl">; origin: string; brief: { extension?: ExtensionBrief | null } | null }): GetItSlots {
+export function extensionSlots(input: {
+  product: Pick<ProductView, "slug" | "liveUrl">;
+  origin: string;
+  brief: { extension?: ExtensionBrief | null } | null;
+  ready?: boolean | null;
+}): GetItSlots {
   const ext = input.brief?.extension;
   if (!input.product.liveUrl || !ext) return {};
+  if (input.ready === false) {
+    return {
+      extension: (
+        <div className="output-panel">
+          <p>{ext.does}</p>
+          <p className="muted">The extension isn&apos;t ready to download yet. It&apos;s packaged each time the product goes live, so check back after its next change.</p>
+        </div>
+      ),
+    };
+  }
   const can = EXTENSION_PERMISSIONS.filter((p) => ext.permissions.includes(p)).map((p) => PERMISSION_WORDS[p]);
   const { slug } = input.product;
   return {
