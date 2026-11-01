@@ -1186,6 +1186,43 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   - adds "Built with Muse Spark Open", the users' duties and the dual-license disclosure with its row count.
 
   A verifier checks it with up to 2 fix rounds before the private upload.
+- 10:45 PM: owner asked why the 1-bit file wouldn't run on a Jetson.
+  - Answer: an 8 GB Orin Nano leaves about 6.5 to 7 GB after the OS and GPU driver. IQ1_S needs about 7.3 to 7.8 GB, and
+    the device rule (70% of RAM, 5.6 GB) is deliberately cautious.
+  - The smallest mix, iq1s-io-lowest (5.75 GB), is borderline and might run headless with a short context.
+  - Never run: I can't SSH to the Jetsons from this laptop, and the fleet boards serve live demos. I offered a test
+    through the fleet control plane if the owner picks a board.
+- 10:51 PM: owner asked whether iq1s-io-lowest was available. It wasn't: the shrink bench deletes mixes not in KEEP.
+  - Rebuilt on writer-1 in 9 min (CPU, nice 10) as ~/q/stage-b-r30b/glimmer-stage-b-r30b-iq1s-io-lowest.gguf:
+    5,748,938,208 bytes, sha256 dc755be7. Its quant size, 5470.11 MiB at 1.65 BPW, matches the scored build.
+  - Queued its loop check behind gpu.lock (loops-r30b/r30b-iq1s-io-lowest.json).
+- 10:55 PM: hf_relay.py got --allow-public (commit e743886), so files can be added to an already public, released repo.
+  New repos are still made private, the flag never changes visibility, and 36 tests pass (2 new).
+- 10:58 PM: the three custom mixes are on OfflineBase/Glimmer-30B-2026-Knowledge-GGUF (commit a04349a0, sha256s
+  checked on the Hub):
+  - iq2-io-lowest: 7.18 GB, sha256 328d4084;
+  - iq1s-out-q4: 6.21 GB, sha256 32ed960f;
+  - iq1s-io-lowest: 5.75 GB, sha256 dc755be7.
+
+  Scores on the same 600 questions (stock in brackets, old facts after the slash):
+  - iq2-io-lowest 100, 39/40 (IQ2_XXS 111, IQ1_M 87);
+  - iq1s-out-q4 48, 38/40 (IQ1_S 52, 36/40);
+  - iq1s-io-lowest 43, 35/40;
+  - Q4_K_M 182.
+
+  Cards:
+  - the GGUF card got a "Custom small mixes" table;
+  - all three cards got the Jetson note: IQ1_S too big by estimate, iq1s-io-lowest borderline, neither run;
+  - merged 506b8401, -LoRA 9e0dc31b.
+
+  Sent Muse Privacy the writer-1 paths, sha256s and scores. It will run iq2-io-lowest as an exploratory row and asked for
+  that file's loop count when it lands.
+- 10:59 PM: owner asked for the cards to lead with the most impressive stats, read smoothly, and show before-and-after
+  examples, and asked what serving would cost on Fireworks, Modal, Baseten, AWS and Lambda. Workflows started:
+  - card-highlights (wf_34dc9d7a-bbe): new card tops, with a numbers checker and a reader checker;
+  - card-examples (wf_591c65d4-7a0): real base-vs-tuned replies from the compare lab and the held-out honesty test, with
+    a source fact check and a fairness review;
+  - serving-cost (wf_41ed0d4f-de9): one agent per provider, then the cost math and a check against the sources.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
