@@ -321,8 +321,8 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
         now: heldRun.at,
       });
       if (!held.ok) {
-        // Wave 3, unit 6: a job over its dollars is over. An agent run isn't: it may start another.
-        if (jobCall) await jobCall.refused(estimateCost(endpoint, asked, bodyBytes, mostSearches)).catch((err) => console.error("[gateway] stopping a job run failed:", err));
+        // Wave 3, unit 6: a job really out of dollars or turns is over. An agent run isn't: it may start another.
+        if (jobCall) await jobCall.refused(held.reason).catch((err) => console.error("[gateway] stopping a job run failed:", err));
         return held.response;
       }
       runHold = held.hold;

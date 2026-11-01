@@ -210,10 +210,10 @@ export async function addRunCost(runId: string, usd: number): Promise<void> {
 }
 
 /** A run over its dollars stops here, and says so. Only a running or waiting run. True when this call stopped it. */
-export async function stopRunForBudget(runId: string, now: Date): Promise<boolean> {
+export async function stopRunForBudget(runId: string, now: Date, why = "It reached its dollar limit."): Promise<boolean> {
   const rows = await db()
     .update(schema.jobRuns)
-    .set({ status: "budget", error: "It reached its dollar limit.", finishedAt: now })
+    .set({ status: "budget", error: why, finishedAt: now })
     .where(and(eq(schema.jobRuns.id, runId), inArray(schema.jobRuns.status, ["running", "queued"])))
     .returning({ id: schema.jobRuns.id });
   return rows.length > 0;

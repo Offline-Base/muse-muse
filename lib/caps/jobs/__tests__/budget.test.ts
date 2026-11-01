@@ -72,7 +72,7 @@ describe("a job's dollars in the gateway's model route", () => {
       headers: { authorization: `Bearer ${TEST_TOKEN}`, "content-type": "application/json", ...headers },
       body: JSON.stringify({ model: "muse-wonder-1.0", input: "made-up", max_output_tokens: maxOut }),
     });
-  const run = { id: "33333333-3333-4333-8333-333333333333", productId, namespace: "live", status: "running", budgetUsd: 0.1, createdAt: NOW };
+  const run = { id: "33333333-3333-4333-8333-333333333333", productId, namespace: "live", status: "running", budgetUsd: 0.1, costUsd: 0, createdAt: NOW };
   function harness(over: Partial<typeof run> = {}, dailyUsd = 5) {
     const stopped: string[] = [];
     const notices: unknown[] = [];
@@ -133,7 +133,7 @@ describe("a job's dollars in the gateway's model route", () => {
   });
 
   it("stops the run at its dollars: the call that would pass them is refused, never sent, and the owner hears", async () => {
-    const h = harness();
+    const h = harness({ costUsd: 0.095 });
     const deps = await route(h);
     const spent: typeof deps = { ...deps, reserveCounter: async (key, w, amount, limit) => (key.startsWith("run-usd:") ? null : deps.reserveCounter(key, w, amount, limit)) };
     const res = await handleGateway(call(header()), ["responses"], spent);
@@ -142,6 +142,43 @@ describe("a job's dollars in the gateway's model route", () => {
     assert.equal(h.gw.upstreamCalls.length, 0);
     assert.deepEqual(h.stopped, [run.id]);
     assert.equal(h.notices.length, 1);
+  });
+
+  it("with money settled under the limit, a refused call doesn't end the run: parallel holds and one too-big estimate only wait", async () => {
+    // Three parallel calls at the skill's 2,000 tokens: the third doesn't fit next to the first two's holds.
+    const h = harness();
+    const deps = await route(h);
+    const spent: typeof deps = { ...deps, reserveCounter: async (key, w, amount, limit) => (key.startsWith("run-usd:") ? null : deps.reserveCounter(key, w, amount, limit)) };
+    const parallel = await handleGateway(call(header(), 2000), ["responses"], spent);
+    assert.equal(parallel.status, 429);
+    assert.deepEqual([h.stopped, h.notices.length], [[], 0], "nothing is really spent");
+    // $0.06 spent, then a $0.042 estimate: a smaller call still fits.
+    const part = harness({ costUsd: 0.06 });
+    const partDeps = await route(part);
+    const partSpent: typeof partDeps = { ...partDeps, reserveCounter: async (key, w, amount, limit) => (key.startsWith("run-usd:") ? null : partDeps.reserveCounter(key, w, amount, limit)) };
+    assert.equal((await handleGateway(call(header(), 2000), ["responses"], partSpent)).status, 429);
+    assert.deepEqual([part.stopped, part.notices.length], [[], 0]);
+  });
+
+  it("the turn limit ends the run in its own words, not as dollars", async () => {
+    const h = harness();
+    const deps = await route(h);
+    const out: typeof deps = { ...deps, reserveCounter: async (key, w, amount, limit) => (key.startsWith("run-turns:") ? null : deps.reserveCounter(key, w, amount, limit)) };
+    const res = await handleGateway(call(header()), ["responses"], out);
+    assert.equal(res.status, 429);
+    assert.deepEqual(h.stopped, [run.id]);
+    const [n] = h.notices as Array<{ title: string; body: string }>;
+    assert.doesNotMatch(`${n!.title} ${n!.body}`, /dollar/);
+    assert.match(n!.title, /model calls/);
+  });
+
+  it("holdRun says which limit refused", async () => {
+    const empty: RunCounters = { reserveCounter: async () => null, adjustCounter: async () => undefined, counterValue: async () => 60 };
+    const limits = { turns: 60, toolCalls: 60, usd: 0.1 };
+    assert.deepEqual(await holdRun(empty, { tokenId: "t", runId: "run-aaaaaaaa", limits, now: NOW }).then((r) => !r.ok && r.reason), "turns");
+    const turnsOk: RunCounters = { ...empty, reserveCounter: async (k, _w, a) => (k.startsWith("run-turns:") ? a : null) };
+    assert.deepEqual(await holdRun(turnsOk, { tokenId: "t", runId: "run-aaaaaaaa", limits, toolCalls: 2, now: NOW }).then((r) => !r.ok && r.reason), "tool_calls");
+    assert.deepEqual(await holdRun(turnsOk, { tokenId: "t", runId: "run-aaaaaaaa", limits, usd: 1, now: NOW }).then((r) => !r.ok && r.reason), "usd");
   });
 
   it("a call too big for any run is only refused: the run goes on, and can ask for fewer tokens", async () => {

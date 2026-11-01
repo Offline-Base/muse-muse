@@ -46,8 +46,10 @@ export const POST = jobHandler<unknown, { after: string | null }>("digest", asyn
   starts with `job.checkpoint`. A checkpoint holds 64 KB: keep ids in it, and save big things with `data`. A run has at
   most 10 ticks. Return nothing when it has finished.
 - A run stops at `job.budgetUsd` (about $0.10). The gateway holds each call's `max_output_tokens` up front, so keep it at
-  2000 or less: on Muse Wonder a call that names none counts as 8,000, which no run can hold, and it's refused. Over the
-  limit, a model call throws an error with code `run_limit`, the run ends, and the owner hears.
+  2000 or less: on Muse Wonder a call that names none counts as 8,000, which no run can hold, and it's refused. Make model
+  calls one at a time, never in `Promise.all`: each one holds its tokens until it finishes, so parallel calls refuse each
+  other. A refused call throws an error with code `run_limit`. Catch it and ask for fewer tokens, or save what you have and
+  finish. Once the dollars are really gone, or after 60 model calls, the run ends and the owner hears.
 - A schedule skips its slot while its last run is still going.
 - A thrown error ends the run. The owner gets one notice with your error's first line, so write it in plain words, with no
   secrets or personal details.

@@ -32,6 +32,8 @@ export const JOBS_LIMITS = {
   /** A run's limits besides its dollars, so a loop stops even on a very cheap model. */
   runTurns: 60,
   runToolCalls: 60,
+  /** A run with less than this left of its dollars is over: about 500 output tokens on Muse Wonder. */
+  smallestCallUsd: 0.01,
   /** JOBS_RUN_USD can't go above this. */
   runUsdCeiling: 0.5,
   /** Counters for a run last this long, and so can the run: nothing fires a run older than this. */

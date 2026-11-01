@@ -3,7 +3,7 @@ import { JOBS_LIMITS } from "@/lib/caps/jobs/limits";
 import { readJobToken } from "@/lib/caps/jobs/token";
 import { dayWindow } from "@/lib/caps/gate";
 import { gatewayError } from "@/lib/gateway/errors";
-import type { RunLimits } from "@/lib/gateway/runs";
+import type { RunLimitReason, RunLimits } from "@/lib/gateway/runs";
 
 /**
  * A job's model calls (docs/CAPABILITIES.md, section 12). A call with x-musemuse-job holds and settles its run's dollars
@@ -11,7 +11,8 @@ import type { RunLimits } from "@/lib/gateway/runs";
  *
  * - The counters are keyed by product and run and pinned to one window, past the run's age limit, because a job's ticks
  *   can span hours, a redeploy's new token and the hourly turnover an agent run's counters follow.
- * - Reaching the limit stops the run for good, and it tells the owner. One call too big for any run is only refused.
+ * - A run really out of dollars or turns stops for good, and it tells the owner. What was held isn't spent, so a call that
+ *   doesn't fit next to other calls' holds, or asks for more than what's left, is only refused, and can ask for less.
  *
  * JOBS_DAILY_USD is what all job runs on the platform may spend in a UTC day. A call starts only with some left, so
  * the most it can go over is what the calls already running cost, each within its run's dollars.
@@ -23,16 +24,16 @@ export interface JobCall {
   windowAt: Date;
   /** The key the run's counters go under. */
   counterKey: string;
-  /** holdRun refused this call, whose estimate was `estimateUsd`. */
-  refused(estimateUsd: number): Promise<void>;
+  /** holdRun refused this call, because of this limit. */
+  refused(reason: RunLimitReason): Promise<void>;
   /** What one call really cost. */
   spent(usd: number): Promise<void>;
 }
 
 export interface JobCallDeps {
-  getRun(runId: string): Promise<{ id: string; productId: string; namespace: string; status: string; budgetUsd: number; createdAt: Date } | null>;
+  getRun(runId: string): Promise<{ id: string; productId: string; namespace: string; status: string; budgetUsd: number; costUsd: number; createdAt: Date } | null>;
   addRunCost(runId: string, usd: number): Promise<void>;
-  stopRun(runId: string, now: Date): Promise<boolean>;
+  stopRun(runId: string, now: Date, why?: string): Promise<boolean>;
   addNotice(input: { productId: string; namespace: string; kind: "job_failed"; title: string; body: string }): Promise<unknown>;
   dailyUsd(): number;
   counterValue(key: string, windowStart: Date): Promise<number>;
@@ -62,13 +63,20 @@ export async function jobCallOf(req: Request, token: { productId: string; scope:
     limits: { turns: JOBS_LIMITS.runTurns, toolCalls: JOBS_LIMITS.runToolCalls, usd: run.budgetUsd },
     windowAt: new Date(run.createdAt.getTime() + JOBS_LIMITS.runMaxAgeMs),
     counterKey: run.productId,
-    async refused(estimateUsd) {
-      // A call that could never fit (no max_output_tokens on Muse Wonder counts as 8,000) is the code's mistake, and
-      // the refusal says to ask for fewer tokens. Only a call that would fit a fresh run means this run's dollars are gone.
-      if (estimateUsd > run.budgetUsd) return;
-      if (await deps.stopRun(run.id, now)) {
-        if (run.namespace === "live") await deps.addNotice({ productId: run.productId, namespace: run.namespace, kind: "job_failed", title: "A job stopped at its dollar limit", body: `A run stopped at its limit of $${run.budgetUsd.toFixed(2)}. What it saved so far is kept.` });
-      }
+    async refused(reason) {
+      // Built-in tool calls can be left out of the next call, and the refusal says so.
+      if (reason === "tool_calls") return;
+      // Holds aren't spending. While settled money plus the smallest useful call fits, the run isn't over: the call only
+      // has to wait for another to finish, or ask for fewer tokens, as its refusal says.
+      if (reason === "usd" && run.costUsd + JOBS_LIMITS.smallestCallUsd <= run.budgetUsd) return;
+      const turns = reason === "turns";
+      if (!(await deps.stopRun(run.id, now, turns ? `It used all of its ${JOBS_LIMITS.runTurns} model calls.` : undefined))) return;
+      if (run.namespace !== "live") return;
+      await deps.addNotice(
+        turns
+          ? { productId: run.productId, namespace: run.namespace, kind: "job_failed", title: "A job used all of its model calls", body: `A run stopped after ${JOBS_LIMITS.runTurns} model calls. What it saved so far is kept.` }
+          : { productId: run.productId, namespace: run.namespace, kind: "job_failed", title: "A job stopped at its dollar limit", body: `A run stopped at its limit of $${run.budgetUsd.toFixed(2)}. What it saved so far is kept.` },
+      );
     },
     async spent(usd) {
       await deps.addRunCost(run.id, usd);
