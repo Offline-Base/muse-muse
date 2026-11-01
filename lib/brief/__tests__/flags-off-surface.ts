@@ -23,7 +23,7 @@ export function flagsOffSurface(): Record<string, string> {
   return {
     "new-brief.schema.json": json(strictJsonSchema(NewBriefSchema)),
     "new-brief-no-gadget.schema.json": json(strictJsonSchema(NewBriefSchemaNoGadget)),
-    "brief-instructions.txt": briefInstructions(),
+    "brief-instructions.txt": briefInstructions(look),
     "brief-request.txt": briefRequestText("Count the birds at my feeder.", []),
     "change-check-instructions.txt": changeCheckInstructions(),
     "catalog-summary.txt": catalogSummary(),

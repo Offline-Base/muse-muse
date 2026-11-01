@@ -77,6 +77,9 @@ const targetPicks = (ids: readonly [TargetId, ...TargetId[]]) =>
 
 /** Most tools one agent may use (docs/AGENT_TOOLS.md). Fewer is better: each one is more for the model to read. */
 export const MAX_AGENT_TOOLS = 6;
+
+/** The longest askedLook a brief may carry. */
+export const ASKED_LOOK_MAX = 400;
 /** A live agent's run stops at 10 turns (RUN_LIMITS in lib/gateway/runs.ts), so a plan for more could never finish. */
 export const MAX_AGENT_STEPS = 10;
 
@@ -102,6 +105,11 @@ const agentFields = (toolIds: z.ZodType<string>) =>
 export const BriefSchema = BriefFields.extend({
   targets: targetPicks(TARGETS).optional(),
   agent: agentFields(z.string().min(1)).nullable().optional(),
+  /**
+   * The look the person asked for in their own words, or null (MUSE_APP_LOOK, docs/BRAND.md "Unless the person asks").
+   * Unset or null, the product follows the muse-app UI guidelines as they are.
+   */
+  askedLook: z.string().max(ASKED_LOOK_MAX).nullable().optional(),
 });
 
 export type Brief = z.infer<typeof BriefSchema>;
@@ -134,16 +142,23 @@ export const NewBriefSchemaNoGadget = BriefFields.extend({
  * The schema the brief writer answers in for these flags. With no targets enabled it is exactly NewBriefSchema or
  * NewBriefSchemaNoGadget, the same objects. With targets it also requires `targets`, limited to web and those. With the
  * agent target it also requires `agent`, which is null for a product that isn't one, limited to the public tools unless
- * personal tools are on (COMPOSIO_PERSONAL_ENABLED).
+ * personal tools are on (COMPOSIO_PERSONAL_ENABLED). With MUSE_APP_LOOK it also requires `askedLook`, null unless the
+ * person asked for a look.
  */
-export function newBriefSchemaFor(opts: { gadgets: boolean; targets: readonly TargetId[]; personalTools?: boolean }): z.ZodType<Brief> {
+export function newBriefSchemaFor(opts: {
+  gadgets: boolean;
+  targets: readonly TargetId[];
+  personalTools?: boolean;
+  museAppLook?: boolean;
+}): z.ZodType<Brief> {
   const base = opts.gadgets ? NewBriefSchema : NewBriefSchemaNoGadget;
+  const look = opts.museAppLook ? { askedLook: z.string().max(ASKED_LOOK_MAX).nullable() } : {};
   const ids = TARGETS.filter((t) => t === "web" || opts.targets.includes(t));
-  if (ids.length === 1) return base;
+  if (ids.length === 1) return opts.museAppLook ? (base.extend(look) as unknown as z.ZodType<Brief>) : base;
   const targets = targetPicks(ids as [TargetId, ...TargetId[]]).min(1);
-  if (!ids.includes("agent")) return base.extend({ targets });
+  if (!ids.includes("agent")) return base.extend({ targets, ...look }) as unknown as z.ZodType<Brief>;
   const tools = (opts.personalTools ? [...PUBLIC_TOOL_IDS, ...PERSONAL_TOOL_IDS] : PUBLIC_TOOL_IDS) as [string, ...string[]];
-  return base.extend({ targets, agent: agentFields(z.enum(tools)).nullable() });
+  return base.extend({ targets, agent: agentFields(z.enum(tools)).nullable(), ...look }) as unknown as z.ZodType<Brief>;
 }
 
 export type ProductModelId = (typeof PRODUCT_MODELS)[number];

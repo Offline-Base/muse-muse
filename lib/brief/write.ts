@@ -64,10 +64,10 @@ export async function writeBrief(input: BriefInput): Promise<BriefResult> {
 
   const result = await respondStructured({
     model,
-    instructions: briefInstructions(),
+    instructions: briefInstructions({ museAppLook: env.museAppLook }),
     content,
     sources: prepared.sources,
-    schema: newBriefSchemaFor({ gadgets: env.gadgetsEnabled, targets: enabled, personalTools }),
+    schema: newBriefSchemaFor({ gadgets: env.gadgetsEnabled, targets: enabled, personalTools, museAppLook: env.museAppLook }),
     schemaName: "muse_brief",
     effort: "medium",
     normalize: (raw) => normalizeRawBrief(raw, references),

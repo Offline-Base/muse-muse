@@ -201,6 +201,28 @@ function lookSkill(note: LookNote): string {
   return note.museAppLook ? "muse-app-ui" : "meta-ui";
 }
 
+/** The person's own words asking for a look, when the muse-app look is on and the brief carries one. */
+export function askedLookOf(brief: Pick<Brief, "askedLook">, note: LookNote): string | null {
+  const asked = note.museAppLook ? brief.askedLook?.trim() : "";
+  return asked ? asked : null;
+}
+
+/**
+ * The build prompt's look line. The UI guidelines (the look's skill) hold unless the person asked for a look in their
+ * own words (askedLook, docs/BRAND.md "Unless the person asks"): then their colors, fonts and mood win, set through the
+ * tokens, and everything else still comes from the skill.
+ */
+function lookLine(brief: Brief, note: LookNote): string {
+  const asked = askedLookOf(brief, note);
+  if (asked) {
+    return [
+      `The person asked for their own look: "${asked}". Follow that ask for colors, fonts and mood by changing the tokens in \`app/muse-app.css\` for light and dark, and keep everything else from the muse-app-ui skill: the screen patterns, the parts, spacing, states, readable contrast and focus rings.`,
+      "Anything the ask doesn't mention stays as the skill has it. The inspo's mood shows only in the copy, the samples and any images the product makes.",
+    ].join(" ");
+  }
+  return `${note.museAppLook ? "The look always comes from the muse-app-ui skill and its tokens in `app/muse-app.css`." : "The look always comes from the meta-ui skill, in Meta blue."} The inspo's mood shows only in the copy, the samples and any images the product makes, never as decoration, colors or fonts.`;
+}
+
 /** The fix and change prompts' look line, up to its last sentence. */
 function keepLookLine(note: LookNote): string {
   return note.museAppLook
@@ -382,7 +404,7 @@ export function renderBuildPrompt(
     "",
     bullets(brief.inspiration.borrow),
     "",
-    `${opts.museAppLook ? "The look always comes from the muse-app-ui skill and its tokens in `app/muse-app.css`." : "The look always comes from the meta-ui skill, in Meta blue."} The inspo's mood shows only in the copy, the samples and any images the product makes, never as decoration, colors or fonts.`,
+    lookLine(brief, opts),
     "",
     "Leave out:",
     "",
@@ -598,6 +620,7 @@ export function briefToMarkdown(brief: Brief): string {
   }
   if (brief.inspiration.borrow.length) out.push("", "**Takes from it:**", "", bullets(brief.inspiration.borrow));
   if (brief.inspiration.dontCopy.length) out.push("", "**Leaves out:**", "", bullets(brief.inspiration.dontCopy));
+  if (brief.askedLook?.trim()) out.push("", `**The look they asked for:** ${brief.askedLook.trim()}`);
   if (brief.verdict === "no") return out.join("\n") + "\n";
 
   const samples = brief.fixtures.filter((f) => f.fromUserSample);

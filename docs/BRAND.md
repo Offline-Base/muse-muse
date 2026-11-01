@@ -573,6 +573,27 @@ about $0.11 of sandbox time, and both used the look's tokens and parts with no r
 reference files weren't, so SKILL.md now carries the rules the builds missed. Details, screenshots and the open items
 in [docs/spikes/ui-brand-2026-10-31](spikes/ui-brand-2026-10-31/README.md).
 
+### Unless the person asks (Nov 1)
+
+The owner's rule: builds follow these UI guidelines unless the person says otherwise. With `MUSE_APP_LOOK` on:
+
+- **The brief writer** answers one more field, `askedLook`. It is null unless the person's own words (the note, or what
+  they say in a voice memo) ask for a look: colors, fonts, a theme such as dark or playful, their brand's colors. A
+  screenshot alone, or a mood read from the references, is not an ask. A real product's exact look, name or logo never
+  goes in it (that stays in `dontCopy`); only the general style does. `normalizeRawBrief` turns an empty ask into null
+  and cuts a long one to 400 characters.
+- **The build prompt** swaps its one look line: follow the ask for colors, fonts and mood by changing the tokens in
+  `app/muse-app.css` for light and dark, and keep the rest of muse-app-ui (patterns, parts, spacing, states, contrast,
+  focus rings). Anything the ask doesn't mention stays as the skill has it.
+- **The judge** gets one note: a product that follows the ask instead of the house style is expected, and contrast and
+  a real product's look still fail it.
+- **brief.md** shows "The look they asked for".
+- **Fixes and changes** already keep the product's current look, and a change request may restyle what it asks to.
+
+With no ask, or with the flag off, every prompt and schema is what it was (`lib/brief/__tests__/asked-look.test.ts`,
+`flags-off.test.ts`, `muse-app-look.test.ts`). Briefs stored before parse unchanged, since the stored schema's field
+is optional.
+
 ## Gap list
 
 Walked on Oct 31 against the running app with fixtures at 1440 and 390, in light. No page scrolled sideways at either
