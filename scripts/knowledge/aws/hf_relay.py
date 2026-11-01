@@ -346,7 +346,8 @@ class Hub:
         self.json("POST", href, payload, headers=LFS_HEADERS, auth=False, ok=(200, 201))
 
     def verify(self, href, oid, size):
-        self.json("POST", href, {"oid": oid, "size": size}, headers=LFS_HEADERS, ok=(200, 201))
+        # the status is the answer; the Hub's reply body can be plain text (seen for small basic uploads), so it isn't parsed
+        self.request("POST", href, json.dumps({"oid": oid, "size": size}).encode(), LFS_HEADERS, ok=(200, 201))
 
     def commit(self, repo, rev, lines):
         data = b"".join(json.dumps(x).encode() + b"\n" for x in lines)

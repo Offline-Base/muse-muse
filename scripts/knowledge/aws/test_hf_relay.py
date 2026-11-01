@@ -48,6 +48,7 @@ class FakeHub:
         self.fail_complete = False  # the completion call is refused (the upload was aborted server side)
         self.reset_first_url = set()  # part numbers whose first URL is answered by cutting the connection, always
         self.reset_sigs = set()
+        self.verify_plain = False  # the verify call answers 200 with a plain-text body, as the real Hub sometimes does
         self.lock = threading.Lock()
         hub = self
 
@@ -240,6 +241,8 @@ class FakeHub:
         if method == "POST" and path.endswith("objects/verify"):
             b = json.loads(body)
             ok = b["oid"] in self.objects and len(self.objects[b["oid"]]) == b["size"]
+            if ok and self.verify_plain:
+                return 200, {"Content-Type": "text/plain"}, b"OK"
             return J({} if ok else {"error": "missing"}, 200 if ok else 404)
         if method == "POST" and "/commit/" in path:
             if h.headers.get("Content-Type") != "application/x-ndjson":
@@ -356,6 +359,13 @@ class TestUpload(Base):
                 self.assertNotIn("X-Amz-Signature", text)
                 self.assertNotIn("uploadId", text)
                 self.assertNotIn(TOKEN, text)
+
+    def test_a_plain_text_verify_reply_is_accepted(self):
+        self.hub.verify_plain = True
+        p1, d1 = self.big("glimmer-Q4.gguf", 40 * 1024)  # basic upload, then verify
+        self.push(self.manifest([{"path": "glimmer-Q4.gguf", "writer1": p1}]))
+        self.assertEqual(len(self.hub.repos["tester/glimmer-test"]["commits"]), 1)
+        self.assertTrue(self.hub.posts("objects/verify"))
 
     def test_stream_mode_same_bytes(self):
         p1, d1 = self.big("glimmer-Q2.gguf", 200 * 1024 + 7)
