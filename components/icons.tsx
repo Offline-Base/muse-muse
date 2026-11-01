@@ -61,6 +61,11 @@ const PATHS = {
   edit: "M19 13.5v5a1.5 1.5 0 0 1-1.5 1.5h-12A1.5 1.5 0 0 1 4 18.5v-12A1.5 1.5 0 0 1 5.5 5h5 M17.3 3.9a1.8 1.8 0 0 1 2.6 2.6L13 13.4l-3.4.9.9-3.4 6.8-7z",
   code: "M8.5 7.5L4 12l4.5 4.5 M15.5 7.5L20 12l-4.5 4.5 M13.5 5l-3 14",
   tune: "M4 7h8.5 M17.5 7H20 M15 4.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5z M4 17h2.5 M11.5 17H20 M9 14.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5z",
+  /** A cube, for Models. */
+  cube: "M12 3.5l7.5 4.25v8.5L12 20.5l-7.5-4.25v-8.5L12 3.5z M4.5 7.75L12 12l7.5-4.25 M12 12v8.5",
+  /** A chip with pins, for Gadgets: a board such as a Jetson. */
+  chip:
+    "M8.5 6.5h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z M10 10h4v4h-4z M10 3.5v3 M14 3.5v3 M10 17.5v3 M14 17.5v3 M3.5 10h3 M3.5 14h3 M17.5 10h3 M17.5 14h3",
 } as const;
 
 export type IconName = keyof typeof PATHS;

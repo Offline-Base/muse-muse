@@ -38,11 +38,13 @@ The showcase is a batch run, `npm run rebuild-all`, that rebuilds Meta's Llama-e
 
 The platform is laid out like another tab in Meta's Model API dashboard. The layout was measured from screenshots of Meta's pages ([docs/UI_PATTERNS.md](docs/UI_PATTERNS.md)).
 
-- **Sidebar.** Dashboard; Make, Builds, Rebuilds, Gallery; Usage, Fine-tuning; How it works and Model API docs.
+- **Sidebar.** Dashboard; Make, Builds, Rebuilds, Gallery; Usage, Models, Fine-tuning, Gadgets; How it works and Model API docs.
 - **Make** follows Meta's Image playground: example cards, a composer that is the muse box, and a right panel that shows the build setup (model, builder, fix rounds, judge, demo video, publish, connector) as disabled controls.
 - **Build room** follows the Chat playground. The muse is the user turn. The brief, Muse Code's log, the check results and the shipped result are assistant turns, each ending with a time, tokens and cost line. The right panel has a step rail (Brief, Provision, Build, Preview, Check, Record, Deploy), the Muse Code session id, fix rounds, running cost, links and the live preview.
 - **Dashboard** leads with "Use your products in Muse": tabs for the Muse app, Claude Code and cURL, a tab per published product, and its connector in a copy box. Below it are Requests, Input tokens, Output tokens, Products and Spend (est.).
 - **Usage** leads with "Meta tokens driven", stacked by products and building, then Spend (est.), Builds and a table per product. Charts are inline SVG.
+- **Models** (`/models`, public) lists Meta's hosted models with what Muse Muse uses each for, the estimated price and 30 days of calls, then Muse Glimmer and the lab's tuned Glimmer models, linking Hugging Face and GGUF files only when they are public.
+- **Gadgets** (`/gadgets`, public) says what a gadget is, whether the option is on for new builds and whether a live board is set up (from the environment, never calling the board), and the shipped products that use one. See [docs/GADGETS.md](docs/GADGETS.md).
 - **Product pages** show the live product in a frame, the muse it came from, models, limits, the recorded demo, the connector URL and "How it was built".
 - Light and dark themes. Below 760 px the sidebar becomes a top bar and the build panel stacks under the log.
 
