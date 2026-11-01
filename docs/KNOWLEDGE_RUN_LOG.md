@@ -1137,6 +1137,45 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
 
   Workflow card-compare-section (wf_51c1132d-6dd) is drafting the card's comparison section from the audited numbers,
   with a numbers checker and a claims checker.
+- 10:35 PM: dataset-release-build (wf_edf0e2ae-6b0) finished.
+  - Build: 656,070 of 880,648 rows in 30 gz files, split by license.
+  - Removed by first reason:
+    - copied article wording (12+ word runs): 193,889;
+    - personal data: 15,629 soft and 5,723 hard;
+    - incident articles: 7,511;
+    - ND: 877;
+    - court records: 621;
+    - no-reuse: 275.
+  - The second reader removed 3,251 more rows, leaving 652,819:
+    - 649 noncommercial rows with copied runs (that guard hadn't covered NC);
+    - 687 open-source rows with 40+ word runs;
+    - 1,368 EU court rulings that the court rule had missed;
+    - 543 named people in detention or execution contexts;
+    - 4 rows by id.
+  - Its fresh 441-row hand check found 2 private-individual rows (removed) and nothing else above 0.
+  - Still open:
+    - 3,687 stage 1 news rows never checked for copied text;
+    - the takedown placeholder;
+    - Spark-written rows that carry both CC BY-SA 4.0 and the Muse Model License, a legal question for the owner.
+  - Workflow dataset-finalize (wf_83ec5d01-645) is running. It holds back every Muse Model License row (spark,
+    model-outputs, Spark-written probes and any others) until the owner decides that question. It drops the unchecked
+    news rows (the owner's no-raw-article-text rule), puts the Community tab as the contact, and rebuilds the card. A
+    verifier checks it with up to 2 fix rounds. The repo will be OfflineBase/Glimmer-30B-2026-Knowledge-Data.
+- 10:36 PM: owner: "put the latest 2 images in my downloads there on huggingface".
+  - The images, both PNGs:
+    - "oct 26 muse glimmer cutoff image.png" (5.3 MB, sha256 a399f472), plush mascots labelled 4, 2 and 1 bit;
+    - "screenshot for one bit muse glimmer.png" (1.9 MB, sha256 053ae8eb), a 1-bit promo.
+  - Placement: the first is the banner under the title of all three model cards. The second sits in the -GGUF card under
+    the files table.
+  - Caption: the 1-bit promo says it runs on Jetson Orin Nanos, and our measurements don't support that. Under it went
+    a caption: measured on a 12 GB phone and a 16 GB Mac, and an 8 GB Orin Nano too small by our memory estimate, not
+    run.
+  - Uploaded with scratchpad hf/hf_local_push.py, written for this (standard library, LFS, pinned to the head commit,
+    token only to huggingface.co, upload URLs never printed). New heads: -GGUF a3ad3214, merged 72c7b32b, -LoRA
+    60e84747.
+  - Every file matched on the Hub, and the images load without a token. The banner is staged for the bnb-4bit card.
+  - Told the owner: the banner's faint background text ("...ligence Labs", "introducing the first real-time audio
+    perception") looks like it came from another announcement graphic.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
