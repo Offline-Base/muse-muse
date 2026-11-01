@@ -1,5 +1,5 @@
 import { and, asc, count, eq, gte, isNotNull, isNull, like, lt, or, sql } from "drizzle-orm";
-import { connectBlock } from "@/lib/caps/connect/brief";
+import { connectBuildBlock } from "@/lib/caps/connect/brief";
 import { CONNECT_LIMITS } from "@/lib/caps/connect/limits";
 import { buildNamespace } from "@/lib/caps/proof";
 import { db, schema } from "@/lib/db/client";
@@ -134,7 +134,8 @@ export const connectStore: ConnectStore = {
 /**
  * CAP_PROOF.connect: what the gateway saw in a build's namespace since `since` (fetches answered with samples, brokered
  * calls, simulated sends, test keys saved), the brief's picks as `brief:api:<id>`, `brief:key:<service>` and
- * `brief:send:<channel>`, and `secret-sha:<hash>` for every test key of the build, whenever saved, which verify's leak
+ * `brief:send:<channel>` (from connectBuildBlock, so keys and sends switched off since the brief was written aren't
+ * required), and `secret-sha:<hash>` for every test key of the build, whenever saved, which verify's leak
  * scan looks for in the build's pages and files. A test key is made up by the test, never a real one.
  */
 export async function connectProof(buildId: string, window: { since: Date | null }): Promise<Record<string, number>> {
@@ -156,7 +157,8 @@ export async function connectProof(buildId: string, window: { since: Date | null
     .from(schema.productSecrets)
     .where(and(eq(schema.productSecrets.namespace, ns), isNotNull(schema.productSecrets.testHash)));
   const [build] = await db().select({ brief: schema.builds.brief }).from(schema.builds).where(eq(schema.builds.id, buildId)).limit(1);
-  const block = connectBlock((build?.brief ?? null) as object | null);
+  // What the build was told to use, with the flags as they are now: the same picks its prompt and the gateway rules have.
+  const block = connectBuildBlock((build?.brief ?? null) as object | null);
   const out: Record<string, number> = {
     fetches: await usageCount("fetch"),
     calls: await usageCount("vault"),

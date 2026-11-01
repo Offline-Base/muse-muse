@@ -12,17 +12,25 @@ import { BriefSchema, newBriefSchemaFor } from "@/lib/brief/schema";
 import { strictJsonSchema } from "@/lib/brief/strict-schema";
 import { capsWriterRules } from "@/lib/caps/brief-fields";
 import { capsCatalogBlocks } from "@/lib/caps/catalog";
-import { normalizeConnectBlock } from "@/lib/caps/connect/brief";
+import { connectBuildBlock, normalizeConnectBlock } from "@/lib/caps/connect/brief";
+import { connectOptions } from "@/lib/caps/connect/flags";
 import { CAP_READY } from "@/lib/caps/ids";
 import { capsJudgeNotes } from "@/lib/caps/judge";
 import { capsFileFor } from "@/lib/caps/overlays";
 import { capsRefineLines } from "@/lib/caps/render";
 import { env } from "@/lib/env";
 import { allowedModelsFor } from "@/lib/pipeline/logic";
+import { newBoxKey } from "@/lib/secrets/box";
 import { BRIEF } from "@/lib/promote/__tests__/fixtures";
 
 const ready = CAP_READY as Record<string, boolean>;
-const FLAGS = ["CONNECT_ENABLED", "CONNECT_VAULT", "CONNECT_SENDS", "CONNECT_SENDS_PRODUCTION", "VERCEL_ENV"];
+const FLAGS = ["CONNECT_ENABLED", "CONNECT_VAULT", "CONNECT_VAULT_KEY", "CONNECT_SENDS", "CONNECT_SENDS_PRODUCTION", "VERCEL_ENV"];
+/** The vault and sends on, with a made-up key ring, as a build that may use keys and sends has them. */
+function vaultAndSendsOn() {
+  process.env.CONNECT_VAULT = "1";
+  process.env.CONNECT_SENDS = "1";
+  process.env.CONNECT_VAULT_KEY = newBoxKey();
+}
 afterEach(() => {
   ready.connect = false;
   for (const f of FLAGS) delete process.env[f];
@@ -68,6 +76,12 @@ describe("with the connect cap on", () => {
     assert.match(capsWriterRules(["connect"]), /connect\.sends: \[\]/);
     process.env.CONNECT_VAULT = "1";
     process.env.CONNECT_SENDS = "1";
+    assert.equal(newBriefSchemaFor({ gadgets: false, targets: [], caps: ["connect"] }).safeParse(WITH).success, false, "no keys while the vault has no key ring");
+    assert.deepEqual(connectOptions(), { vault: false, sends: false });
+    process.env.CONNECT_VAULT_KEY = "not a key";
+    assert.deepEqual(connectOptions(), { vault: false, sends: false }, "a key ring that doesn't parse is no vault");
+    process.env.CONNECT_VAULT_KEY = newBoxKey();
+    assert.deepEqual(connectOptions(), { vault: true, sends: true });
     const full = newBriefSchemaFor({ gadgets: false, targets: [], caps: ["connect"] });
     assert.equal(full.safeParse(WITH).success, true);
     assert.equal(full.safeParse({ ...BRIEF, connect: { ...CONNECT, sends: [{ channel: "sms", why: "x" }] } }).success, false, "no SMS yet");
@@ -79,8 +93,7 @@ describe("with the connect cap on", () => {
   });
 
   it("names every API, path and credit in the catalog, and no em dash anywhere the writer reads", () => {
-    process.env.CONNECT_VAULT = "1";
-    process.env.CONNECT_SENDS = "1";
+    vaultAndSendsOn();
     const text = capsCatalogBlocks(["connect"]).join("\n") + capsWriterRules(["connect"]);
     for (const id of ["nws", "wikipedia", "openlibrary", "usgs", "github", "OpenWeather"]) assert.ok(text.includes(id), id);
     assert.ok(!text.includes("—"));
@@ -95,6 +108,7 @@ describe("a brief with a connect block", () => {
   });
 
   it("gives Muse Code an Outside services section, the overlay and the cap marker", () => {
+    vaultAndSendsOn();
     const prompt = renderBuildPrompt(WITH as never, { inspoFiles: [], fixtures: [], maxModelSteps: 40 } as never);
     assert.match(prompt, /## Platform services/);
     assert.match(prompt, /### Outside services/);
@@ -102,6 +116,8 @@ describe("a brief with a connect block", () => {
       assert.ok(prompt.includes(s), s);
     }
     assert.ok(!prompt.includes("—"));
+    const keySettings = prompt.match(/<KeySettings [^`]*\/>/)?.[0];
+    assert.equal(keySettings, '<KeySettings keys={await secrets(await headers()).list()} returnTo="/settings" status={(await searchParams).key ?? null} />', "only props KeySettings has, as the skill shows");
     assert.deepEqual(capsFileFor(WITH as never), { caps: ["connect"], overlays: ["core", "connect"] });
     assert.ok(allowedModelsFor(WITH as never).includes("cap:connect"));
     assert.match(capsRefineLines(WITH as never).join("\n"), /never put a key in code/);
@@ -109,10 +125,40 @@ describe("a brief with a connect block", () => {
   });
 
   it("tells the judge samples are the product working and keys must never show", () => {
+    vaultAndSendsOn();
     const notes = capsJudgeNotes(WITH as never);
     assert.match(notes, /Sent \(sample\)/);
     assert.match(notes, /never show on any screen/);
     assert.match(notes, /recorded samples/);
+    assert.match(notes, /whole message on it, and nothing may send until the owner presses Confirm/);
     assert.equal(capsJudgeNotes(BRIEF as never), "");
+  });
+
+  it("leaves out keys and sends switched off since the brief was written, everywhere the build reads them", () => {
+    const logs: string[] = [];
+    const log = console.log;
+    console.log = (...a: unknown[]) => void logs.push(a.join(" "));
+    try {
+      process.env.CONNECT_VAULT = "1"; // on, but with no key ring: every save would be caps_paused
+      const prompt = renderBuildPrompt(WITH as never, { inspoFiles: [], fixtures: [], maxModelSteps: 40 } as never);
+      assert.match(prompt, /### Outside services/);
+      for (const s of ["<KeySettings", "saveTestKey", "secrets(request).call", "Owner's key for", "<ConfirmSend", "confirmSend(page)"]) assert.ok(!prompt.includes(s), s);
+      assert.ok(prompt.includes('"connect": {"publicApis":["nws"],"keys":[],"sends":[]}'), "the manifest line asks for no keys or sends");
+      assert.deepEqual(connectBuildBlock(WITH), { publicApis: ["nws"], keys: [], sends: [] });
+      assert.doesNotMatch(capsJudgeNotes(WITH as never), /never show|Sent \(sample\)/);
+      assert.doesNotMatch(briefToMarkdown(WITH as never), /Owner's keys|Sends, each/);
+      assert.doesNotMatch(capsRefineLines(WITH as never).join("\n"), /secrets\(request\)\.call|ConfirmSend/);
+      assert.ok(logs.some((l) => /leaves out the brief's owner's keys \(github\).*and its sends \(email\)/.test(l)), logs.join("\n"));
+
+      // A brief that only asked for keys still gets a section and the manifest line, so verify's manifest check passes.
+      const keysOnly = renderBuildPrompt({ ...BRIEF, connect: { publicApis: [], keys: CONNECT.keys, sends: [] } } as never, { inspoFiles: [], fixtures: [], maxModelSteps: 40 } as never);
+      assert.match(keysOnly, /switched off on Muse Muse right now/);
+      assert.ok(keysOnly.includes('"connect": {"publicApis":[],"keys":[],"sends":[]}'));
+      assert.ok(!keysOnly.includes("<KeySettings"));
+    } finally {
+      console.log = log;
+    }
+    vaultAndSendsOn();
+    assert.equal(connectBuildBlock(WITH), WITH.connect, "with both on, the stored block as it is");
   });
 });

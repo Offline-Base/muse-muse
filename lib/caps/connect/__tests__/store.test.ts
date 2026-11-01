@@ -123,8 +123,17 @@ describe("connect on a database", { skip: canMock ? false : "needs --experimenta
     const first = (await (await handler.handleSend(post("send", { channel: "email", to: ["a@example.com"], subject: "Hi", body: "Plan" }), deps(t))).json()) as { confirmation: { id: string } };
     const sent = (await (await handler.handleSend(post("send", { channel: "email", to: ["a@example.com"], subject: "Hi", body: "Plan", approval: first.confirmation.id }), deps(t))).json()) as { simulated: boolean };
     assert.equal(sent.simulated, true);
-    const proof = await store.connectProof(buildId, { since });
     const hash = createHash("sha256").update(canary).digest("hex").slice(0, 16);
+    // The brief's picks follow the flags as they are when verify runs: with the vault off (or on with no key ring) and
+    // sends off, verify asks for no key and no send, the same as the prompt.
+    const offPicks = await store.connectProof(buildId, { since });
+    assert.deepEqual(Object.keys(offPicks).filter((k) => k.startsWith("brief:")), ["brief:api:nws"]);
+    process.env.CONNECT_VAULT = "1";
+    process.env.CONNECT_SENDS = "1";
+    assert.deepEqual(Object.keys(await store.connectProof(buildId, { since })).filter((k) => k.startsWith("brief:")), ["brief:api:nws"], "no key ring, no keys or sends");
+    process.env.CONNECT_VAULT_KEY = newBoxKey();
+    const proof = await store.connectProof(buildId, { since });
+    for (const f of ["CONNECT_VAULT", "CONNECT_SENDS", "CONNECT_VAULT_KEY"]) delete process.env[f];
     assert.deepEqual(proof, { fetches: 1, calls: 0, sends: 1, keys: 1, [`secret-sha:${hash}`]: 1, "brief:api:nws": 1, "brief:key:github": 1, "brief:send:email": 1 });
     const later = await store.connectProof(buildId, { since: new Date(Date.now() + 60_000) });
     assert.equal(later.fetches, 0);

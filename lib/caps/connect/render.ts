@@ -1,11 +1,14 @@
 import type { CapRenderEntry } from "@/lib/caps/render";
 import { PUBLIC_APIS, SERVICES } from "@/lib/caps/connect/allowlist";
-import { connectBlock, type ConnectBrief } from "@/lib/caps/connect/brief";
+import { connectBlock, connectBuildBlock, connectDroppedNote, type ConnectBrief } from "@/lib/caps/connect/brief";
 
 /**
  * The connect cap's part of the prompts (docs/CAPABILITIES.md, 2.6 and section 11). Its text names the platform files in
  * template/caps/connect: lib/platform/fetch-public.ts, secrets.ts and send.ts, components/platform/KeySettings.tsx and
  * ConfirmSend.tsx, the routes under app/api/musemuse/connect-*, tests/caps/connect.ts and the muse-connect skill.
+ *
+ * Every entry works from connectBuildBlock: keys and sends the stored brief has but the flags now leave out are never
+ * asked for, the same way the gateway's rules, the judge and verify's record leave them out.
  */
 
 const cell = (s: string) => s.replace(/\|/g, "/").replace(/\s+/g, " ").trim();
@@ -28,8 +31,18 @@ function manifestLine(block: ConnectBrief): string {
 export const CONNECT_RENDER: CapRenderEntry = {
   title: "Outside services",
   build(brief) {
-    const block = connectBlock(brief);
+    const block = connectBuildBlock(brief);
     if (!block) return [];
+    const dropped = connectDroppedNote(connectBlock(brief), block);
+    if (dropped) console.log(dropped);
+    if (!apis(block).length && !keys(block).length && !sends(block).length) {
+      return [
+        "The brief asked for outside services that are switched off on Muse Muse right now, so this product uses none. Build the rest of it without them, and say in BUILD_NOTES.md what it would have done.",
+        "",
+        manifestLine(block),
+        "- Never put a key, a token or a webhook address in code, a page, a log or an error message.",
+      ];
+    }
     const lines: string[] = ["The brief asks for outside services through the platform:", ""];
     if (apis(block).length) {
       lines.push("| Public API | What it gives | Paths | Show this credit |", "|---|---|---|---|");
@@ -57,7 +70,7 @@ export const CONNECT_RENDER: CapRenderEntry = {
     }
     if (keys(block).length) {
       lines.push(
-        "- Owner's keys: put `<KeySettings keys={await secrets(request).list()} services={[...]} />` from `components/platform/KeySettings.tsx` on a settings screen only the owner opens; it saves a key through the platform and never shows it again. Call the service on the server with `secrets(request).call(\"<service>\", { method, path, body })` from `lib/platform/secrets.ts`, which gives `{ status, data }`. The platform adds the key; the product's code never has it, and nothing may ask for a key anywhere else. With no key saved, a call throws `CapError` with code `needs_key`: show the owner where to add it.",
+        "- Owner's keys: put `<KeySettings keys={await secrets(await headers()).list()} returnTo=\"/settings\" status={(await searchParams).key ?? null} />` from `components/platform/KeySettings.tsx` on a settings page only the owner opens, as the skill shows (the services come with the list, and `status` is the `key` search parameter the form comes back with); it saves a key through the platform and never shows it again. Call the service on the server with `secrets(request).call(\"<service>\", { method, path, body })` from `lib/platform/secrets.ts`, which gives `{ status, data }`. The platform adds the key; the product's code never has it, and nothing may ask for a key anywhere else. With no key saved, a call throws `CapError` with code `needs_key`: show the owner where to add it.",
       );
     }
     if (sends(block).length) {
@@ -82,7 +95,7 @@ export const CONNECT_RENDER: CapRenderEntry = {
     return lines;
   },
   refine(brief) {
-    const block = connectBlock(brief);
+    const block = connectBuildBlock(brief);
     if (!block) return [];
     const parts = [
       apis(block).length ? `public APIs ${apis(block).map((a) => `\`${a.id}\``).join(", ")} with \`fetchPublic\`` : null,
@@ -92,7 +105,7 @@ export const CONNECT_RENDER: CapRenderEntry = {
     return [`- It reaches outside services through the platform: ${parts.join("; ")} (\`.agents/skills/muse-connect/SKILL.md\`). Keep them, keep \`musemuse.json\`'s \`connect\` block in step, and never put a key in code.`];
   },
   markdown(brief) {
-    const block = connectBlock(brief);
+    const block = connectBuildBlock(brief);
     if (!block) return [];
     return [
       ...(apis(block).length ? [`Public APIs: ${apis(block).map((a) => a.label).join(", ")}.`] : []),

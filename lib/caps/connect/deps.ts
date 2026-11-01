@@ -1,4 +1,4 @@
-import { connectBlock, type ConnectBrief } from "@/lib/caps/connect/brief";
+import { connectBlock, connectBuildBlock, type ConnectBrief } from "@/lib/caps/connect/brief";
 import type { ConnectDeps } from "@/lib/caps/connect/handler";
 import { connectStore } from "@/lib/caps/connect/store";
 import { liveBrief } from "@/lib/caps/data/store";
@@ -49,7 +49,8 @@ export function connectDeps(): ConnectDeps {
       }
     },
     async rules(token, product) {
-      if (token.scope === "build") return token.buildId ? connectBlock((await buildBrief(token.buildId)) as object | null) : null;
+      // A build gets what its prompt named: keys and sends switched off since the brief was written are left out.
+      if (token.scope === "build") return token.buildId ? connectBuildBlock((await buildBrief(token.buildId)) as object | null) : null;
       return narrowConnect(connectBlock((await liveBrief(token.productId)) as object | null), product.manifest);
     },
     fetch: (input, init) => fetch(input, init),

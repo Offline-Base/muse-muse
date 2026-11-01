@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CALL_SERVICE_IDS, PUBLIC_API_IDS, PUBLIC_APIS, SEND_CHANNELS, SEND_CHANNELS_LIVE, SERVICES } from "@/lib/caps/connect/allowlist";
+import { connectOptions } from "@/lib/caps/connect/flags";
 
 /**
  * The connect cap's brief block (docs/CAPABILITIES.md, section 11): the keyless public APIs a product reads, the
@@ -42,6 +43,29 @@ export function connectBlock(brief: object | null | undefined): ConnectBrief | n
   if (!block || typeof block !== "object") return null;
   const b = block as Partial<ConnectBrief>;
   return Array.isArray(b.publicApis) && Array.isArray(b.keys) && Array.isArray(b.sends) ? (block as ConnectBrief) : null;
+}
+
+/**
+ * The connect block a build works from right now: the stored one, with its keys dropped while the vault can't keep them
+ * and its sends dropped while sends are off (connectOptions). A brief written while they were on can be built or refined
+ * after they go off, and then the prompt, the judge, the gateway's rules and verify's checks must all leave them out the
+ * same way, or verify asks for a key the vault can't save. Null for a brief with no block.
+ */
+export function connectBuildBlock(brief: object | null | undefined, opts: ConnectOptions = connectOptions()): ConnectBrief | null {
+  const block = connectBlock(brief);
+  if (!block) return null;
+  if ((opts.vault || !block.keys.length) && (opts.sends || !block.sends.length)) return block;
+  return { publicApis: block.publicApis, keys: opts.vault ? block.keys : [], sends: opts.sends ? block.sends : [] };
+}
+
+/** One plain line naming what connectBuildBlock left out of the stored block, or null when nothing. */
+export function connectDroppedNote(stored: ConnectBrief | null, used: ConnectBrief | null): string | null {
+  if (!stored || !used) return null;
+  const gone = [
+    stored.keys.length > used.keys.length ? `owner's keys (${stored.keys.map((k) => k.service).join(", ")}), since the key vault is off or has no key` : null,
+    stored.sends.length > used.sends.length ? `sends (${stored.sends.map((s) => s.channel).join(", ")}), since sends are off` : null,
+  ].filter(Boolean);
+  return gone.length ? `[connect] This build leaves out the brief's ${gone.join(" and its ")}.` : null;
 }
 
 const clip = (s: string, max: number) => (s.length <= max ? s : s.slice(0, max).replace(/\s+\S*$/, "").trim() || s.slice(0, max));
