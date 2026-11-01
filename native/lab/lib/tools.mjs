@@ -97,6 +97,9 @@ export async function probeCapabilities(config, { exec = run } = {}) {
   const hasAvd = emulator.code === 0 && String(emulator.stdout).split(/\r?\n/).includes(config.android.avd);
   tools.android = { adb: adb.code === 0, emulator: emulator.code === 0, avd: hasAvd };
   if (adb.code === 0 && hasAvd && ffmpeg) kinds.push("android_emu");
+  const llama = Boolean(config.android.llamaServer && existsSync(config.android.llamaServer));
+  tools.android.llamaServer = llama;
+  if (adb.code === 0 && hasAvd && ffmpeg && llama) kinds.push("gguf_emu");
   if (ffmpeg) kinds.push("desktop_mac");
   return { kinds: filterKinds(kinds, config), tools };
 }
