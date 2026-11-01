@@ -1604,3 +1604,22 @@ What this record doesn't confirm:
 - Every `CAP_READY` line is false on this head, so no capability is served whatever its flag says. Set anyway: `MUSE_CODE_ENABLED`, `CODE_ENABLED`, `NATIVE_EXTENSION`. They do nothing until the lines change. CAP_READY was not changed here.
 - `NATIVE_TARGETS` keeps only phone and desktop; vr, glasses and agent use their own switches, which are on.
 - Ran once: `lib/outputs/__tests__/prove.test.ts`, `lib/pipeline/__tests__/prove-steps.test.ts`, `prove.scenario.test.ts`, `build-steps.scenario.test.ts`. 133 tests, 133 passed, 0 failed. These were the ones `tg-verify` left unrun. They use fakes: no real Prove it run, no build, no Meta and no sandbox.
+
+## Nov 1: what it can build, one test build each, on the shared test site (branch tg-prove, unmerged)
+
+All on localhost:3023, TEST_MODEL, made-up data. Costs are what each build's log recorded; sandbox time isn't in them. Publishing is off on a local run, so no product has a live link.
+
+- Agent, build 42f3ac39 (tide-scout): live, 3 fix rounds, $0.044. Real Meta web search with sources in the answer. The judge caught raw citation ids in the answer on round 1, and Muse Code fixed it in the product, not the kit. The brief writer has no GitHub tool, so it made a labelled demo action.
+- Composio: not reachable from a product on a local run. Called instead through the real tools route on a scratch database: a build token got the canned result, a live token got real SERPAPI_SCHOLAR_SEARCH results, estimate $0.025.
+- VR, build 06fdb184 (orbit-sorter): live, no fix round, $0.043. Emulated Quest, smoke 7 passed. Shots looked at: not blank, Score 0 of 3 with three colors, then Score 3 of 3 with all three planets blue after select.
+- Phone and desktop, build 28d38b03 (pantry-tally): live, no fix round, $0.032.
+- Found: nothing called the packager or wrote native_artifacts, so Get it could never offer a download. Added lib/native/package-run.ts, a step after register (only with PACKAGER_SNAPSHOT_ID and a live link) and POST /api/admin/native/package. Decision: used the Oct 31 snapshot snap_VcblDXLuhpigJ8ZeukmR38j2PupJ, set in .prove-site.sh and this worktree's .env.local.
+- Packager, run 179bf577 from the admin route, pointed at the build's preview URL: android 38.5 MB (debug key), mac 224 MB, windows 158 MB. Get it lists all three. /p/pantry-tally/get/<kind> answered 302, and each download matched its sha256. Name and URL are inside the packages. Not run: the step in the workflow, since a local run has no live link; installing or opening any package.
+- Glasses, build 07844582 (shelf-whisper): live, no fix round, $0.034. Fake bridge, smoke 4 passed, shot shows Ready, Ray-Ban Meta 80% with the captured photo and the answer. Real glasses and the iPhone app not run.
+- Extension, build 276b90da (margin-note): live, no fix round, $0.030. Set CAP_READY.extension true on tg-prove only, for this test. Caps check: manifest, loaded (real Chromium, service worker started), popup, action all passed. Not run: the zip and /get/extension, which come after deploy (404 here, no Extension tab).
+- Gadget, build 8cc4e054 (receipt-eye): live, $0.045, but never reached the simulated board. The build firewall answered 403 on /gadget, and Muse Code took that as no board. A pass that proves little.
+- Fix: lib/sandbox/local-gadget.ts gives a local run's gadget product the simulated board's replies (a test holds them equal) and a test header for the gateway's gadget_offline answer.
+- Gadget retry, build 711530d6 (receipt-eye-two): live, no fix round, $0.051. Smoke 5 passed. Board connected, took the simulated receipt photo, read Fresh Mart Grocers $20.69. Offline: Board not connected, Take photo off, upload read Bright Corner Mart $12.34.
+- Gateway check on a scratch database with the real route and the template's real client: build token got the simulated photo and WAV, live token with no board got 503 gadget_offline and isGadgetOffline true, a token without the option got 403 gadget_not_allowed. A real board not run.
+- Tests: package-run 4 pass, local-gadget 3 pass. tsc shows nothing in the touched files. workflow.scenario can't load here: 57 cancelled on the workflow package's FatalError export, and the same load error shows on tg-verify without these changes.
+- Spend: $0.28 Meta as recorded, about $0.03 Composio by estimate, sandbox time unmeasured.
