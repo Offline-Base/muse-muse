@@ -10,6 +10,7 @@ import { Menu } from "@/components/Menu";
 import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { BuildSummary, BuildView, InspirationView, ProductView, RebuildRef } from "@/components/view-types";
 import { BuildDetails } from "@/components/build/BuildDetails";
+import { OwnModelRow, type OwnModelOffer } from "@/components/build/OwnModelRow";
 import { deriveRoom, railStates, refineSpot } from "@/components/build/derive";
 import { PlanCard, planCardState, preloadPlanArt } from "@/components/build/PlanCard";
 import { QuestionCard, SteerNote } from "@/components/build/session";
@@ -41,6 +42,8 @@ export interface BuildRoomProps {
   maxFixRounds: number;
   /** A native run can still add to this build's log (lib/native/active.ts), so a finished build's stream stays open. */
   nativeActive?: boolean;
+  /** TUNE_FROM_BUILDS: the "Its own model" row's offer (components/build/OwnModelRow.tsx), or null. */
+  ownModel?: OwnModelOffer | null;
 }
 
 /** Below this the steps panel covers the conversation, so it starts closed (components/chat/StepsPanel.tsx). */
@@ -513,6 +516,8 @@ export function BuildRoom(props: BuildRoomProps) {
           {liveQuestions.map((item) => (
             <ConvoRow key={item.key} item={item} buildId={build.id} canAnswer={Boolean(props.canSteer)} onShow={showSteps} />
           ))}
+          {/* TUNE_FROM_BUILDS: its own model, once shipped. Last, so no row before it moves (React's ids follow places). */}
+          <OwnModelRow offer={props.ownModel} brief={brief} status={room.status} buildId={build.id} />
         </ol>
         <div ref={end} className="convo-end" />
 

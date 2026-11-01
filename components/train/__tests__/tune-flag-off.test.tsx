@@ -4,7 +4,10 @@
  * PlanView keeps the card as it was) and /fine-tuning render byte for byte
  * as they did before the composer's props, SetupPanel's rows and PlanView were added. Each render's SHA-256 and length
  * were taken from the code before those edits (fixtures/tune-flag-off.json) and every render must match them, with the
- * flag off and on, since none of these read it. The clock is frozen, so dates render the same. Made-up data only.
+ * flag off and on, since none of these read it but /fine-tuning, whose header gets New with the flag on (and nothing
+ * else: with that taken out it matches too). The build room also matches with TUNE_FROM_BUILDS off or on and with an
+ * own-model offer on a brief without Muse Glimmer (its row is components/build/OwnModelRow.tsx). The clock is frozen,
+ * so dates render the same. Made-up data only.
  *
  *   npx tsx --test --experimental-test-module-mocks components/train/__tests__/tune-flag-off.test.tsx
  *
@@ -106,6 +109,8 @@ type Page = (props: { searchParams?: Promise<Record<string, string>> }) => Promi
 let render: (c: ComponentType<never>, props: object) => string;
 let renderNode: (node: ReactNode) => string;
 let renders: Array<[string, () => Promise<string>]> = [];
+/** The build room for a fixture, with extra props (TUNE_FROM_BUILDS's ownModel offer). */
+let roomWith: (name: "running" | "failed" | "finished", extra: object) => string;
 
 const sha = (html: string) => ({ sha256: createHash("sha256").update(html).digest("hex"), length: html.length });
 
@@ -147,7 +152,7 @@ describe("with TUNE_COMPOSER off", { skip: canMock ? false : "needs --experiment
     const listPage = (await import("@/app/fine-tuning/page")).default as unknown as Page;
 
     const examples = [{ label: "Receipt to spreadsheet", note: "Pull the items out of a receipt photo.", tag: "Photo", text: "Receipt to CSV.", image: "/examples/receipt.jpg" }];
-    const room = (name: keyof typeof FIXTURES) => {
+    const room = (name: keyof typeof FIXTURES, extra: object = {}) => {
       const f = FIXTURES[name];
       return render(BuildRoom as ComponentType<never>, {
         build: f.build,
@@ -164,8 +169,10 @@ describe("with TUNE_COMPOSER off", { skip: canMock ? false : "needs --experiment
         focusRefine: false,
         rebuild: null,
         maxFixRounds: 3,
+        ...extra,
       });
     };
+    roomWith = room;
     renders = [
       ["composer: Make page", async () => render(Composer as ComponentType<never>, { mode: "new", signedIn: true, examples, layout: "playground", targetOptions: ["phone"] })],
       ["composer: signed out", async () => render(Composer as ComponentType<never>, { mode: "new", signedIn: false, examples, layout: "playground" })],
@@ -198,6 +205,23 @@ describe("with TUNE_COMPOSER off", { skip: canMock ? false : "needs --experiment
     ];
   });
 
+  it("renders the build room as before with TUNE_FROM_BUILDS off or on, and with an offer for a brief without Muse Glimmer", () => {
+    const golden = JSON.parse(readFileSync(FIXTURE, "utf8")) as Record<string, { sha256: string; length: number }>;
+    const offer = { examples: 200, ceilings: { maxMinutes: 90, maxUsd: 5 }, canPlan: true };
+    for (const value of [undefined, "1"]) {
+      if (value === undefined) delete process.env.TUNE_FROM_BUILDS;
+      else process.env.TUNE_FROM_BUILDS = value;
+      for (const name of ["running", "failed", "finished"] as const) {
+        const want = golden[`build room: ${name}`];
+        assert.deepEqual(sha(roomWith(name, {})), want, `${name}, TUNE_FROM_BUILDS=${value ?? "unset"}`);
+        assert.deepEqual(sha(roomWith(name, { ownModel: null })), want, `${name} with no offer`);
+        // The fixture's brief picks no muse-glimmer, so even an offer adds nothing (components/build/OwnModelRow.tsx).
+        assert.deepEqual(sha(roomWith(name, { ownModel: offer })), want, `${name} with an offer`);
+      }
+    }
+    delete process.env.TUNE_FROM_BUILDS;
+  });
+
   after(() => {
     mock.timers.reset();
     mock.restoreAll();
@@ -222,6 +246,17 @@ describe("with TUNE_COMPOSER off", { skip: canMock ? false : "needs --experiment
     assert.deepEqual(Object.keys(off), Object.keys(golden));
     for (const name of Object.keys(golden)) assert.deepEqual(off[name], golden[name], `${name} changed with the flag off`);
     process.env.TUNE_COMPOSER = "1";
-    for (const [name, fn] of renders) assert.deepEqual(sha(await fn()), golden[name], `${name} reads the flag`);
+    for (const [name, fn] of renders) {
+      let page = await fn();
+      if (name === "/fine-tuning: admin") {
+        // The one thing the flag adds to the lab page: the header's New, the primary button, before New dataset (with
+        // New job an outline button beside it). Without those it is the page as it was.
+        const added = /<a class="btn btn-primary" href="\/fine-tuning\/new">[\s\S]*?New<\/a>/;
+        assert.match(page, added, "the header has New with the flag on");
+        assert.ok(page.indexOf('href="/fine-tuning/new"') < page.indexOf('href="#new-dataset"'), "New comes first");
+        page = page.replace(added, "").replace('class="btn btn-outline" href="#new-job"', 'class="btn btn-primary" href="#new-job"');
+      }
+      assert.deepEqual(sha(page), golden[name], `${name} reads the flag`);
+    }
   });
 });

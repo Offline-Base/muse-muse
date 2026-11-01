@@ -150,14 +150,8 @@ export function draftRefusal(d: Pick<PlanDraft, "refuse" | "refusal">): string |
   return d.refusal?.trim() || DEFAULT_TUNE_REFUSAL;
 }
 
-/**
- * TODO(open-train U3): open-train's piiFindings(task, rows) pattern scan goes here once it lands. Until then nothing
- * extra is scanned: the plan's own refusal (REFUSE_WHEN plus real people's private details) is the only content check,
- * as for the datasets route, which has none. Each finding is a plain sentence; any finding refuses the plan with a 422.
- */
-export function contentFindings(_input: { note: string; rows: readonly ExampleRow[] }): string[] {
-  return [];
-}
+// The content seam lives with the examples (lib/train/tune/examples.ts), so the tuneRun workflow's check can use it.
+export { contentFindings } from "@/lib/train/tune/examples";
 
 export interface DraftInput {
   note: string;
@@ -216,4 +210,4 @@ export async function draftPlan(input: DraftInput, deps: DraftDeps = defaultDeps
 }
 
 export { StructuredOutputError };
-export { askedExamples, clampExamples, NOTE_MAX, NOTE_MIN, planCost, planMaxUsd, planSettings, TUNE_GPU, TUNE_LEARNING_RATE, TUNE_LORA_RANK, TUNE_MAX_EXAMPLES, TUNE_MAX_MINUTES, TUNE_MIN_EXAMPLES, TUNE_STEPS } from "@/lib/train/tune/cost";
+export { askedExamples, askedSteps, clampExamples, clampSteps, maxStepsFor, NOTE_MAX, NOTE_MIN, planCost, planMaxUsd, planSettings, TUNE_GPU, TUNE_LEARNING_RATE, TUNE_LORA_RANK, TUNE_MAX_EXAMPLES, TUNE_MAX_MINUTES, TUNE_MAX_STEPS, TUNE_MIN_EXAMPLES, TUNE_MIN_STEPS, TUNE_STEPS } from "@/lib/train/tune/cost";

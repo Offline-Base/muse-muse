@@ -13,12 +13,13 @@ import { GLIMMER_NAME } from "@/components/train/results";
 import { planCostText, planViewFromTrainPlan, upperFirst } from "@/components/train/room/plan";
 import { KEPT_PLAN_KEY } from "@/components/train/room/TrainRoom";
 import { usd } from "@/lib/format";
-import { NOTE_MAX, NOTE_MIN, planCost, planMaxUsd, planSettings, TUNE_MAX_EXAMPLES, TUNE_MIN_EXAMPLES } from "@/lib/train/tune/cost";
+import { maxStepsFor, NOTE_MAX, NOTE_MIN, planCost, planMaxUsd, planSettings, TUNE_MAX_EXAMPLES, TUNE_MIN_EXAMPLES, TUNE_MIN_STEPS, TUNE_STEPS } from "@/lib/train/tune/cost";
 import { EXAMPLE_ACCEPT, EXAMPLE_FILE_MAX_BYTES, EXAMPLE_ROWS_MAX, parseExamples, planRows, splitNote } from "@/lib/train/tune/examples";
+import { TUNE_DRAFT_ID } from "@/lib/train/tune/from-build";
 import type { ExampleRow, TrainPlan } from "@/lib/train/tune/types";
 
-/** Keeps this composer's draft apart from the Make page's. */
-const DRAFT_ID = "tune";
+/** Keeps this composer's draft apart from the Make page's (the build room's "Its own model" fills it too). */
+const DRAFT_ID = TUNE_DRAFT_ID;
 /** The plan before Start, so a reload keeps the card (it's good for two hours, and the server checks that). */
 const PLAN_KEY = "mm:tune-plan";
 
@@ -59,6 +60,11 @@ function examplesOk(n: number): boolean {
   return Number.isInteger(n) && n >= TUNE_MIN_EXAMPLES && n <= TUNE_MAX_EXAMPLES;
 }
 
+/** Whether Advanced's training steps are ones the run may ask for: 10 to as many as fit in its time limit (maxStepsFor). */
+function stepsOk(n: number, max: number): boolean {
+  return Number.isInteger(n) && n >= TUNE_MIN_STEPS && n <= max;
+}
+
 /** What the composer says when a route refuses, from its status and code. */
 export function tuneErrorText(status: number, body: unknown): string {
   const code = errorCode(body);
@@ -75,6 +81,10 @@ export function tuneErrorText(status: number, body: unknown): string {
   if (code === "plan_invalid") return "This plan changed after it was drafted, so it can't start. Change it and send it again.";
   if (code === "already_started") return "This plan already started. Its run is in the fine-tuning lab.";
   if (code === "start_failed") return "The run couldn't start, so nothing was written. Try again in a moment.";
+  if (code === "build_not_found") return "That build isn't there any more, or has no product yet.";
+  if (code === "build_not_ready") return "That build needs to be live, with Muse Glimmer in its brief, before it can plan its own model.";
+  if (code === "not_owner") return "Only the product's owner or an admin can plan its own model.";
+  if (code === "product_daily") return "This product already started a run today. Try again tomorrow (UTC).";
   if (status === 413) return "Those examples are too long to send. Use shorter rows or fewer of them.";
   if (status === 401 || status === 403) return "Only admins can train models here.";
   if (status === 404) return "Fine-tuning from here isn't switched on.";
@@ -93,11 +103,15 @@ async function readRows(files: File[], pasted: ExampleRow[]): Promise<{ rows: Ex
   return { rows: planRows(rows) };
 }
 
-function readPlan(): Phase | null {
+/** The plan kept before a reload, while it can still start and is for the same build (or none) as this page. */
+function readPlan(fromBuildId: string | null): Phase | null {
   try {
     const raw = window.sessionStorage.getItem(PLAN_KEY);
     if (!raw) return null;
     const kept = JSON.parse(raw) as { note: string; files: string[]; plan: TrainPlan };
+    const source = kept.plan.source;
+    const buildId = source?.kind === "build" ? source.buildId : null;
+    if (buildId !== fromBuildId) return null;
     return Date.parse(kept.plan.exp) > Date.now() ? { at: "plan", ...kept } : null;
   } catch {
     return null;
@@ -119,21 +133,33 @@ function keep(key: string, value: unknown) {
  * person's words, Muse Wonder drafting the plan, then the plan card with the mascot presenting and Start, Change it and
  * Advanced. Start begins the run (POST /api/train/runs) and the page becomes its room at /fine-tuning/runs/{id}.
  */
-export function TrainComposer({ defaultExamples, ceilings }: { defaultExamples: number; ceilings: { maxMinutes: number; maxUsd: number } }) {
+export function TrainComposer({
+  defaultExamples,
+  ceilings,
+  fromBuild = null,
+}: {
+  defaultExamples: number;
+  ceilings: { maxMinutes: number; maxUsd: number };
+  /** The build its own model is planned for (the build room's "Its own model"), or null. */
+  fromBuild?: { id: string; name: string } | null;
+}) {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>({ at: "compose" });
   const [examples, setExamples] = useState(defaultExamples);
+  const [steps, setSteps] = useState(TUNE_STEPS);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
 
   // A plan drafted before a reload comes back, while it can still start.
+  const fromBuildId = fromBuild?.id ?? null;
   useEffect(() => {
-    const kept = readPlan();
+    const kept = readPlan(fromBuildId);
     if (kept?.at === "plan") {
       setPhase(kept);
       setExamples(kept.plan.settings.examples);
+      setSteps(kept.plan.settings.steps);
     }
-  }, []);
+  }, [fromBuildId]);
 
   const defaults = useMemo(() => planSettings(defaultExamples, ceilings), [defaultExamples, ceilings]);
   const defaultCost = useMemo(() => planCost(defaults), [defaults]);
@@ -164,7 +190,12 @@ export function TrainComposer({ defaultExamples, ceilings }: { defaultExamples: 
         method: "POST",
         headers: { "content-type": "application/json" },
         // A cleared or out of range Advanced number is left out, so the plan takes the default.
-        body: JSON.stringify({ note, examples: read.rows, ...(examplesOk(examples) ? { settings: { examples } } : {}) }),
+        body: JSON.stringify({
+          note,
+          examples: read.rows,
+          ...(examplesOk(examples) ? { settings: { examples } } : {}),
+          ...(fromBuildId ? { fromBuildId } : {}),
+        }),
       });
       data = await res.json().catch(() => null);
     } catch {
@@ -178,6 +209,7 @@ export function TrainComposer({ defaultExamples, ceilings }: { defaultExamples: 
     }
     keep(PLAN_KEY, { note: raw, files: names, plan });
     setExamples(plan.settings.examples);
+    setSteps(plan.settings.steps);
     setPhase({ at: "plan", note: raw, files: names, plan });
     return null;
   }
@@ -190,7 +222,7 @@ export function TrainComposer({ defaultExamples, ceilings }: { defaultExamples: 
       const res = await fetch("/api/train/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ plan, settings: { examples } }),
+        body: JSON.stringify({ plan, settings: { examples, steps } }),
       });
       const data = (await res.json().catch(() => null)) as { runId?: string; href?: string } | null;
       if (res.status === 201 && data?.runId && data.href) {
@@ -227,6 +259,7 @@ export function TrainComposer({ defaultExamples, ceilings }: { defaultExamples: 
           </div>
           <div className="play-intro">
             <h1>What should your model do?</h1>
+            {fromBuild ? <p className="muted">For {fromBuild.name}. It keeps answering with {WRITER_NAME} until this model passes and a serving window is open.</p> : null}
           </div>
           <Composer
             mode="new"
@@ -247,7 +280,7 @@ export function TrainComposer({ defaultExamples, ceilings }: { defaultExamples: 
             (the GPU is a hard limit; Meta&apos;s part is an estimate).
           </p>
         </div>
-        <SetupPanel title="Training setup" rows={rows} note="Set by the platform for every run. Advanced on the plan changes the examples." />
+        <SetupPanel title="Training setup" rows={rows} note="Set by the platform for every run. Advanced on the plan changes the examples and the training steps." />
       </div>
 
       {phase.at !== "compose" ? (
@@ -255,6 +288,8 @@ export function TrainComposer({ defaultExamples, ceilings }: { defaultExamples: 
           phase={phase}
           examples={examples}
           onExamples={setExamples}
+          steps={steps}
+          onSteps={setSteps}
           ceilings={ceilings}
           starting={starting}
           startError={startError}
@@ -275,6 +310,8 @@ export function PlanStep({
   phase,
   examples,
   onExamples,
+  steps = TUNE_STEPS,
+  onSteps = () => {},
   ceilings,
   starting,
   startError,
@@ -285,6 +322,9 @@ export function PlanStep({
   /** Advanced's number of examples, which the card prices. */
   examples: number;
   onExamples: (n: number) => void;
+  /** Advanced's training steps, which the card prices and times. */
+  steps?: number;
+  onSteps?: (n: number) => void;
   ceilings: { maxMinutes: number; maxUsd: number };
   starting: boolean;
   startError: string | null;
@@ -292,7 +332,10 @@ export function PlanStep({
   onChange: () => void;
 }) {
   const countId = useId();
-  const shown = phase.at === "plan" ? { ...phase.plan, settings: planSettings(examples, ceilings) } : null;
+  const stepsId = useId();
+  const stepsMax = maxStepsFor(planSettings(examples, ceilings));
+  const stepsGood = stepsOk(steps, stepsMax);
+  const shown = phase.at === "plan" ? { ...phase.plan, settings: planSettings(examples, ceilings, stepsGood ? steps : TUNE_STEPS) } : null;
   const shownView = shown ? planViewFromTrainPlan({ ...shown, cost: planCost(shown.settings) }) : null;
   const countOk = examplesOk(examples);
   return (
@@ -329,8 +372,11 @@ export function PlanStep({
                 running
                 more={
                   shown.kind === "decision" ? (
-                    // tg-decide's decision models aren't on this branch yet: say so, and link its card once it lands.
-                    <span className="muted">It picks one of a few labels. Decision models are coming; Start trains it as a chat model.</span>
+                    // tg-decide's decision models train on a person's labeled rows, from their own card on the lab page.
+                    <span className="muted">
+                      It picks one of a few labels. Start trains it as a chat model; to train a decision model on your own labeled rows,{" "}
+                      <Link href="/fine-tuning#new-decision-dataset">make a decision dataset</Link>.
+                    </span>
                   ) : null
                 }
                 actions={
@@ -342,7 +388,7 @@ export function PlanStep({
                       </p>
                     ) : null}
                     <div className="row-actions">
-                      <button type="button" className="btn btn-primary" onClick={() => onStart(phase.plan)} disabled={starting || !countOk} aria-busy={starting}>
+                      <button type="button" className="btn btn-primary" onClick={() => onStart(phase.plan)} disabled={starting || !countOk || !stepsGood} aria-busy={starting}>
                         {starting ? <span className="spinner" aria-hidden /> : null}
                         {starting ? "Starting" : "Start"}
                       </button>
@@ -372,8 +418,27 @@ export function PlanStep({
                           {countOk ? planCostText(planCost(shown.settings)) : `Pick ${TUNE_MIN_EXAMPLES} to ${TUNE_MAX_EXAMPLES} examples.`}
                         </span>
                       </div>
+                      <div className="field">
+                        <label htmlFor={stepsId}>Training steps</label>
+                        <input
+                          id={stepsId}
+                          type="number"
+                          inputMode="numeric"
+                          min={TUNE_MIN_STEPS}
+                          max={stepsMax}
+                          step={10}
+                          value={Number.isFinite(steps) ? steps : ""}
+                          onChange={(e) => onSteps(Math.floor(Number(e.target.value)))}
+                          disabled={starting}
+                        />
+                        <span className="field-hint">
+                          {stepsGood
+                            ? `Each step trains on 4 examples. ${upperFirst(roughMinutes(planCost(shown.settings).trainMinutes))} on the GPU, within its ${shown.settings.maxMinutes}-minute limit.`
+                            : `Pick ${TUNE_MIN_STEPS} to ${stepsMax} steps: more don't fit in the run's ${shown.settings.maxMinutes}-minute limit.`}
+                        </span>
+                      </div>
                       <p className="muted small">
-                        Training steps: {shown.settings.steps}. To change them, the GPU or the limits, use the full form once the examples are ready, or{" "}
+                        To change the GPU or the limits, use the full form once the examples are ready, or{" "}
                         <Link href="/fine-tuning#new-dataset">make the dataset on the full form</Link> now.
                       </p>
                     </details>

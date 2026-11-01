@@ -1,11 +1,13 @@
 /**
  * A fine-tuning run at every stage its room shows (components/train/room/TrainRoom.tsx), built from made-up rows by the
- * same tuneRunView the route and the page use: writing, waiting with Ready to train, training, scoring, ready (passed,
- * not passed, and not scored because judging never finished), failed while writing, failed while training, and stopped. Not a test file: tune-room.test.tsx renders them.
+ * same tuneRunView the route and the page use: writing, checking, waiting with Start training (nothing trying yet, and
+ * the tuneRun workflow waiting for a GPU), training, scoring, ready (passed, not passed, and not scored because judging
+ * never finished), failed while writing, failed while training, stopped while training and stopped before it. Not a test file: tune-room.test.tsx renders them.
  * The bakery and its questions are made up.
  */
 import type { JobLiveDemo } from "@/components/train/LiveDemo";
 import type { DatasetHead, TrainJobRow } from "@/lib/train/logic";
+import { NO_MARKS, type RunMarks } from "@/lib/train/tune/marks";
 import type { TuneRunView, TuneStage } from "@/lib/train/tune/types";
 import { tuneRunView } from "@/lib/train/tune/view";
 import type { LiveDemoView, TrainEventView } from "@/lib/train/types";
@@ -97,9 +99,12 @@ const trained = { status: "succeeded" as const, finishedAt: minutes(64), termina
 const passed = { items: 20, tunedWins: 18, baseWins: 1, ties: 1, avgBaseScore: 3.1, avgTunedScore: 8.4, judgeCostUsd: 0.25 };
 const notPassed = { items: 20, tunedWins: 6, baseWins: 12, ties: 2, avgBaseScore: 6.2, avgTunedScore: 4.9, judgeCostUsd: 0.25 };
 
-function run(dataset: DatasetHead, job: TrainJobRow | null, events: TrainEventView[] = [], written: number | null = null, at = 30): TuneRunView {
-  return tuneRunView({ dataset, written, job, events }, minutes(at), CEILINGS);
+function run(dataset: DatasetHead, job: TrainJobRow | null, events: TrainEventView[] = [], written: number | null = null, at = 30, marks: RunMarks = NO_MARKS): TuneRunView {
+  return tuneRunView({ dataset, written, job, events, marks }, minutes(at), CEILINGS);
 }
+
+/** The tuneRun workflow's heartbeat in `state` from minute `from` to minute `to`. */
+const beat = (state: string, from: number, to: number): RunMarks => ({ ...NO_MARKS, heartbeat: { state, at: minutes(to), since: minutes(from) } });
 
 export interface RoomFixture {
   stage: TuneStage;
@@ -109,7 +114,9 @@ export interface RoomFixture {
 /** Each stage the room draws, by name. */
 export const ROOM_FIXTURES = {
   writing: { stage: "writing", view: run(datasetRow({ status: "generating", trainCount: 0, evalCount: 0, costUsd: 1.4, finishedAt: null }), null, [], 84, 10) },
+  checking: { stage: "checking", view: run(datasetRow(), null, [], null, 21, beat("checking", 21, 21)) },
   waiting: { stage: "waiting", view: run(datasetRow(), null) },
+  waitingGpu: { stage: "waiting", view: run(datasetRow(), null, [], null, 30, beat("gpu_busy", 22, 27)) },
   training: { stage: "training", view: run(datasetRow(), jobRow(), [], null, 40) },
   scoring: { stage: "scoring", view: run(datasetRow(), jobRow(trained), evalEvents(5), null, 70) },
   ready: { stage: "ready", view: run(datasetRow(), jobRow({ ...trained, evalSummary: passed }), evalEvents(20), null, 90) },
@@ -119,6 +126,7 @@ export const ROOM_FIXTURES = {
   failedWriting: { stage: "failed", view: run(datasetRow({ status: "failed", trainCount: 0, evalCount: 0, error: "The platform's daily spend cap is reached, so the dataset stopped." }), null) },
   failedTraining: { stage: "failed", view: run(datasetRow(), jobRow({ status: "failed", error: "Traceback (most recent call last)\nCUDA out of memory", finishedAt: minutes(50), terminatedAt: minutes(51) }), [], null, 60) },
   stopped: { stage: "stopped", view: run(datasetRow(), jobRow({ status: "stopped", stopRequested: true, finishedAt: minutes(45), terminatedAt: minutes(46) }), [], null, 60) },
+  stoppedBefore: { stage: "stopped", view: run(datasetRow(), null, [], null, 30, { ...NO_MARKS, stopped: true }) },
 } satisfies Record<string, RoomFixture>;
 
 export type RoomFixtureName = keyof typeof ROOM_FIXTURES;

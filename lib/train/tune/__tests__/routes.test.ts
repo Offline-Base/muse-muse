@@ -24,9 +24,14 @@ let calls: Array<{ fn: string; args: unknown[] }> = [];
 let counters: Record<string, number> = {};
 let paused = false;
 let startFails = false;
+/** Fails only the start calls it says yes to (the second is tuneRun's). */
+let startFailsWhen: () => boolean = () => false;
 let draft: Record<string, unknown> = {};
 let structuredFails = false;
 let runView: Record<string, unknown> | null = null;
+const BUILD_ID = "bbbbbbbb-0000-4000-8000-000000000001";
+const PRODUCT_ID = "cccccccc-0000-4000-8000-000000000001";
+let builds: Record<string, { buildId: string; productId: string; productName: string; ownerId: string; offers: boolean }> = {};
 
 const called = (fn: string) => calls.filter((c) => c.fn === fn);
 
@@ -131,12 +136,30 @@ describe("tune routes", { skip: canMock ? false : "needs --experimental-test-mod
         },
       },
     });
+    mock.module(at("../run-store.ts"), {
+      namedExports: {
+        latestTuneJob: async () => null,
+        readRunMarks: async () => ({ steps: null, stopped: false, ended: null, heartbeat: null }),
+        saveRunSteps: async (...args: unknown[]) => void calls.push({ fn: "saveRunSteps", args }),
+        saveRunProduct: async (...args: unknown[]) => void calls.push({ fn: "saveRunProduct", args }),
+      },
+    });
+    mock.module(at("../build-source.ts"), {
+      namedExports: {
+        buildForTune: async (id: string) => {
+          calls.push({ fn: "buildForTune", args: [id] });
+          return builds[id] ?? null;
+        },
+      },
+    });
+    // The tuneRun workflow is started, never run, here (lib/train/tune/__tests__/run-flow.test.ts runs it on PGlite).
+    mock.module(at("../run.ts"), { namedExports: { tuneRun: async () => ({ status: "launched" }) } });
     mock.module(at("../../datasets.ts"), { namedExports: { DATASET_MODEL: "muse-wonder-1.0", makeDataset: async () => ({ status: "ready" }) } });
     mock.module("workflow/api", {
       namedExports: {
         start: async (_wf: unknown, args: unknown[]) => {
           calls.push({ fn: "start", args });
-          if (startFails) throw new Error("queue unavailable");
+          if (startFails || startFailsWhen()) throw new Error("queue unavailable");
           return { runId: "wrun-1" };
         },
       },
@@ -165,8 +188,11 @@ describe("tune routes", { skip: canMock ? false : "needs --experimental-test-mod
     counters = {};
     paused = false;
     startFails = false;
+    startFailsWhen = () => false;
     structuredFails = false;
     runView = { id: DATASET_ID, stage: "writing" };
+    delete process.env.TUNE_FROM_BUILDS;
+    builds = { [BUILD_ID]: { buildId: BUILD_ID, productId: PRODUCT_ID, productName: "Feeder Count", ownerId: "owner-1", offers: true } };
     draft = {
       reason: "A small, safe customer-service task.",
       refuse: false,
@@ -307,6 +333,32 @@ describe("tune routes", { skip: canMock ? false : "needs --experimental-test-mod
       });
       assert.deepEqual(called("start")[0]!.args, [{ datasetId: DATASET_ID }]);
       assert.deepEqual(called("attachDatasetRun")[0]!.args, [DATASET_ID, "wrun-1"]);
+      // Then the run keeps its steps and the tuneRun workflow starts on it, to train it once the examples are ready.
+      assert.deepEqual(called("saveRunSteps")[0]!.args, [DATASET_ID, 120]);
+      assert.deepEqual(called("start")[1]!.args, [{ datasetId: DATASET_ID, callerId: "admin-1", steps: 120 }]);
+      assert.equal(called("start").length, 2);
+    });
+
+    it("takes Advanced's training steps, up to as many as fit in the run's time limit", async () => {
+      const res = await runsRoute(req("/api/train/runs", { plan: await draftOne(), settings: { steps: 300 } }));
+      assert.equal(res.status, 201);
+      assert.deepEqual(called("saveRunSteps")[0]!.args, [DATASET_ID, 300]);
+      assert.equal((called("start")[1]!.args[0] as { steps: number }).steps, 300);
+      for (const steps of [5, 2000, 120.5, "200"]) {
+        const bad = await runsRoute(req("/api/train/runs", { plan: await draftOne(), settings: { steps } }));
+        assert.equal(bad.status, 400, String(steps));
+        assert.match(((await bad.json()) as { error: string }).error, /^steps must be a whole number from 10 to 350\.$/);
+      }
+      assert.equal(called("createDataset").length, 1, "a bad number starts nothing");
+    });
+
+    it("still starts the examples when the tuneRun workflow can't start", async () => {
+      const plan = await draftOne();
+      let n = 0;
+      startFailsWhen = () => ++n === 2;
+      const res = await runsRoute(req("/api/train/runs", { plan }));
+      assert.equal(res.status, 201, "the room offers Start training once the examples are ready");
+      assert.equal(called("failDataset").length, 0);
     });
 
     it("saves Muse Wonder as the writer on production", async () => {
@@ -375,6 +427,84 @@ describe("tune routes", { skip: canMock ? false : "needs --experimental-test-mod
       paused = false;
       caller = null;
       assert.equal((await runsRoute(req("/api/train/runs", { plan }))).status, 403);
+      assert.equal(called("createDataset").length, 0);
+    });
+  });
+
+  describe("from a build (TUNE_FROM_BUILDS)", () => {
+    it("refuses fromBuildId with the flag off, before the model", async () => {
+      const res = await planRoute(req("/api/train/plan", { note: NOTE, fromBuildId: BUILD_ID }));
+      assert.equal(res.status, 404);
+      assert.deepEqual([called("buildForTune").length, called("respondStructured").length], [0, 0]);
+    });
+
+    it("plans for the build's product: the source is signed with the plan, for its owner or an admin", async () => {
+      process.env.TUNE_FROM_BUILDS = "1";
+      const plan = await draftOne({ fromBuildId: BUILD_ID });
+      assert.deepEqual(plan.source, { kind: "build", buildId: BUILD_ID, productId: PRODUCT_ID });
+      // The product's owner (were the composer open to them) may too; anyone else may not.
+      caller = { id: "owner-1", email: "maker@example.com", isAdmin: false };
+      assert.equal((await planRoute(req("/api/train/plan", { note: NOTE, fromBuildId: BUILD_ID }))).status, 200);
+      caller = { id: "someone-else", email: "someone@example.com", isAdmin: false };
+      const other = await planRoute(req("/api/train/plan", { note: NOTE, fromBuildId: BUILD_ID }));
+      assert.deepEqual([other.status, await other.json()], [403, { error: "not_owner" }]);
+      caller = { id: "admin-1", email: "owner@example.com", isAdmin: true };
+      const missing = await planRoute(req("/api/train/plan", { note: NOTE, fromBuildId: "bbbbbbbb-0000-4000-8000-0000000000ff" }));
+      assert.deepEqual([missing.status, await missing.json()], [404, { error: "build_not_found" }]);
+      assert.equal((await planRoute(req("/api/train/plan", { note: NOTE, fromBuildId: 7 }))).status, 404);
+      builds[BUILD_ID]!.offers = false;
+      const notReady = await planRoute(req("/api/train/plan", { note: NOTE, fromBuildId: BUILD_ID }));
+      assert.deepEqual([notReady.status, await notReady.json()], [409, { error: "build_not_ready" }]);
+      assert.equal(called("respondStructured").length, 2, "only the two good plans asked the model");
+    });
+
+    it("starts a build plan like a task plan, keeps its product with the run, once a product a day", async () => {
+      process.env.TUNE_FROM_BUILDS = "1";
+      const plan = await draftOne({ fromBuildId: BUILD_ID });
+      const res = await runsRoute(req("/api/train/runs", { plan }));
+      assert.equal(res.status, 201, await res.clone().text());
+      assert.equal(called("createDataset").length, 1);
+      assert.deepEqual(called("saveRunProduct")[0]!.args, [DATASET_ID, PRODUCT_ID, BUILD_ID]);
+      assert.equal(counters[`tune-product-day:${PRODUCT_ID}`], 1);
+
+      // A second plan for the same product the same day: 429, and that plan may still start tomorrow.
+      const again = await draftOne({ fromBuildId: BUILD_ID, note: `${NOTE} Gift boxes too.` });
+      const second = await runsRoute(req("/api/train/runs", { plan: again }));
+      assert.equal(second.status, 429);
+      const body = (await second.json()) as { error: string; retryAfterSeconds: number };
+      assert.equal(body.error, "product_daily");
+      assert.ok(body.retryAfterSeconds > 0 && body.retryAfterSeconds <= 86_400, String(body.retryAfterSeconds));
+      assert.equal(counters[`tune-run:${again.token as string}`], 0, "the plan's one start is given back");
+      assert.equal(called("createDataset").length, 1, "nothing more was written");
+
+      // A start that fails gives the product's day back.
+      counters = {};
+      startFails = true;
+      assert.equal((await runsRoute(req("/api/train/runs", { plan: again }))).status, 500);
+      assert.equal(counters[`tune-product-day:${PRODUCT_ID}`], 0);
+    });
+
+    it("checks a build plan again at Start: the flag still on, and the build still offering its own model", async () => {
+      process.env.TUNE_FROM_BUILDS = "1";
+      const plan = await draftOne({ fromBuildId: BUILD_ID });
+      process.env.TUNE_FROM_BUILDS = "0";
+      const off = await runsRoute(req("/api/train/runs", { plan }));
+      assert.deepEqual([off.status, await off.json()], [404, { error: "not_found" }]);
+      process.env.TUNE_FROM_BUILDS = "1";
+      builds[BUILD_ID]!.offers = false;
+      const notReady = await runsRoute(req("/api/train/runs", { plan }));
+      assert.deepEqual([notReady.status, await notReady.json()], [409, { error: "build_not_ready" }]);
+      assert.equal(called("createDataset").length, 0);
+      assert.equal(counters[`tune-run:${plan.token as string}`] ?? 0, 0, "the plan may still start");
+      builds[BUILD_ID]!.offers = true;
+      assert.equal((await runsRoute(req("/api/train/runs", { plan }))).status, 201);
+    });
+
+    it("refuses a build plan past the spend cap, as a task plan", async () => {
+      process.env.TUNE_FROM_BUILDS = "1";
+      const plan = await draftOne({ fromBuildId: BUILD_ID });
+      paused = true;
+      assert.equal((await runsRoute(req("/api/train/runs", { plan }))).status, 503);
       assert.equal(called("createDataset").length, 0);
     });
   });

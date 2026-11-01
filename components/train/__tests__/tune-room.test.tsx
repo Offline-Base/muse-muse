@@ -86,13 +86,15 @@ describe("the fine-tune room", { skip: canMock ? false : "needs --experimental-t
   describe("at each stage", () => {
     it("has the fixtures it says: one run per stage, from the same view the route sends", () => {
       for (const name of NAMES) assert.equal(ROOM_FIXTURES[name].view.stage, ROOM_FIXTURES[name].stage, name);
-      assert.deepEqual([...new Set(NAMES.map((n) => ROOM_FIXTURES[n].stage))].sort(), ["failed", "ready", "scoring", "stopped", "training", "waiting", "writing"]);
+      assert.deepEqual([...new Set(NAMES.map((n) => ROOM_FIXTURES[n].stage))].sort(), ["checking", "failed", "ready", "scoring", "stopped", "training", "waiting", "writing"]);
     });
 
     it("follows the stage with the mascot: building while it writes, waits, trains or scores, the pair once scored, presenting when it ended early or wasn't scored", () => {
       const art: Record<RoomFixtureName, string> = {
         writing: "building",
+        checking: "building",
         waiting: "building",
+        waitingGpu: "building",
         training: "building",
         scoring: "building",
         ready: "shield",
@@ -101,6 +103,7 @@ describe("the fine-tune room", { skip: canMock ? false : "needs --experimental-t
         failedWriting: "present",
         failedTraining: "present",
         stopped: "present",
+        stoppedBefore: "present",
       };
       for (const name of NAMES) {
         const html = room(name);
@@ -120,6 +123,8 @@ describe("the fine-tune room", { skip: canMock ? false : "needs --experimental-t
     it("shows the working step while something runs, Show thinking once it ended, and neither while it waits on a person", () => {
       const working: Partial<Record<RoomFixtureName, RegExp>> = {
         writing: /Writing examples[\s\S]*Muse Wonder has written 84 of 200\./,
+        checking: /Checking the examples[\s\S]*Making sure there are enough to train on and to score with\./,
+        waitingGpu: /Waiting for a GPU[\s\S]*No Muse Glimmer GPU is free on Lambda right now\. It tries again every 5 minutes, for up to 2 hours\./,
         training: /Training on a GPU[\s\S]*Running on the GPU · \$0\.\d\d so far/,
         scoring: /Scoring base against tuned[\s\S]*Judged 5 of 20 kept-aside prompts/,
       };
@@ -140,20 +145,43 @@ describe("the fine-tune room", { skip: canMock ? false : "needs --experimental-t
       assert.match(room("waiting"), /<p class="plan-card-more"><button type="button" class="link-btn room-steps-link"[^>]*>Show steps/, "a waiting run's steps open from the card");
     });
 
-    it("has one Ready to train, only while the examples wait, which opens the full New job form with the dataset picked (until U3)", () => {
+    it("has one Start training, only while the examples wait, with the full form a small link for admins", () => {
       for (const name of NAMES) {
         const html = room(name);
         if (name === "waiting") {
-          assert.equal(count(html, 'data-u3="ready-to-train"'), 1);
-          assert.match(html, new RegExp(`<div class="row-actions" data-u3="ready-to-train"><a class="btn btn-primary" href="/fine-tuning\\?dataset=${RUN_ID}#new-job">Ready to train`));
+          assert.equal(count(html, ">Start training<"), 1);
+          assert.match(html, /<div class="row-actions"><button type="button" class="btn btn-primary" aria-busy="false">Start training<\/button><\/div>/);
           assert.match(html, /The examples are ready\. Training hasn&#x27;t started yet\./);
           assert.match(html, /\$4\.20 so far/);
-          // The form's defaults publish; the plan said Publish: Off, so the room says how to keep it off.
-          assert.match(html, /<p class="muted small" data-u3="publish-note">The form publishes to Hugging Face by default\. To keep it on Muse Muse as the plan says, set Publish to Hugging Face to 0 there\./);
+          assert.match(html, new RegExp(`<a href="/fine-tuning\\?dataset=${RUN_ID}#new-job">Use the full form</a> to change the settings\\.`));
+          assert.match(html, /kept on Muse Muse \(publish is off\)/, "launches pass publish 0, so no note about the form's publishing");
+          assert.doesNotMatch(room(name, { admin: false }), /Use the full form/, "the full form is for admins");
+        } else if (name === "waitingGpu") {
+          // The workflow is trying: the working step says why it waits, and the button asks again at once.
+          assert.match(html, /<button type="button" class="btn btn-outline" aria-busy="false">Try now<\/button>/);
+          assert.match(html, /Training starts on its own as soon as it can\./);
+          assert.doesNotMatch(html, />Start training</);
         } else {
-          assert.doesNotMatch(html, /data-u3=|Ready to train|publishes to Hugging Face by default/, name);
+          assert.doesNotMatch(html, />Start training<|>Try now<|Use the full form/, name);
         }
+        assert.doesNotMatch(html, /data-u3=|Ready to train|publishes to Hugging Face by default/, name);
       }
+    });
+
+    it("says why a run stopped before training, and offers another", () => {
+      const html = room("stoppedBefore");
+      assert.match(html, /This run was stopped\.[\s\S]*This run was stopped before training\./);
+      assert.match(html, /Start another/);
+    });
+
+    it("words Start training's refusals plainly", async () => {
+      const { startTrainingErrorText } = await import("@/components/train/room/TrainRoom");
+      assert.equal(startTrainingErrorText(422, { error: "too_long", reason: "Too long." }), "Too long.");
+      assert.match(startTrainingErrorText(503, { error: "lambda_not_configured" }), /Lambda isn't connected/);
+      assert.equal(startTrainingErrorText(400, { error: "Dataset: that dataset is still being written." }), "Dataset: that dataset is still being written.");
+      assert.match(startTrainingErrorText(409, { error: "stopped" }), /stopped/);
+      assert.match(startTrainingErrorText(403, { error: "forbidden" }), /Only the person who started this run/);
+      assert.match(startTrainingErrorText(500, null), /Something went wrong/);
     });
 
     it("links a training or scoring run to its job's page for the log, the limits and Stop", () => {
@@ -290,10 +318,21 @@ describe("the fine-tune room", { skip: canMock ? false : "needs --experimental-t
       assert.doesNotMatch(html, /class="plan-card"/);
     });
 
-    it("says a decision plan trains as a chat model until decision models land, with no link to a card that isn't here", () => {
+    it("says a decision plan trains as a chat model, and links the decision dataset card for one trained on labeled rows", () => {
       const html = planStep({ at: "plan", note: "n", files: [], plan: plan({ kind: "decision" }) });
-      assert.match(html, /<p class="plan-card-more"><span class="muted">It picks one of a few labels\. Decision models are coming; Start trains it as a chat model\.<\/span><\/p>/);
-      assert.doesNotMatch(html, /new-decision-dataset/);
+      assert.match(html, /<p class="plan-card-more"><span class="muted">It picks one of a few labels\. Start trains it as a chat model; to train a decision model on your own labeled rows, <a href="\/fine-tuning#new-decision-dataset">make a decision dataset<\/a>\.<\/span><\/p>/);
+      assert.doesNotMatch(planStep({ at: "plan", note: "n", files: [], plan: plan() }), /new-decision-dataset/);
+    });
+
+    it("has Advanced's training steps, up to as many as fit in the run's time limit, and prices them", () => {
+      const html = planStep({ at: "plan", note: "n", files: [], plan: plan() }, { steps: 300 });
+      assert.match(html, /<label for="[^"]+">Training steps<\/label><input id="[^"]+" type="number" inputMode="numeric" min="10" max="350" step="10" value="300"/);
+      assert.match(html, /Each step trains on 4 examples\. About an hour on the GPU, within its 90-minute limit\./);
+      assert.match(html, /<li>Muse Glimmer 30B trains on one GPU, about an hour\.<\/li>/, "the card's how it's made follows the steps");
+      const tooMany = planStep({ at: "plan", note: "n", files: [], plan: plan() }, { steps: 400 });
+      assert.match(tooMany, /Pick 10 to 350 steps: more don&#x27;t fit in the run&#x27;s 90-minute limit\./);
+      assert.match(tooMany, /<button type="button" class="btn btn-primary" disabled="" aria-busy="false">Start<\/button>/);
+      assert.doesNotMatch(html, /Training steps: 120\. To change them/);
     });
 
     it("says how many of the person's rows fit in the task when some didn't", () => {

@@ -139,6 +139,13 @@ export default async function FineTuningPage({
         subtitle={SUBTITLE}
         actions={
           <>
+            {/* The one-box composer (TUNE_COMPOSER). Off, the header is as it was. */}
+            {env.tuneComposer ? (
+              <Link className="btn btn-primary" href="/fine-tuning/new">
+                <Icon name="plus" size={18} />
+                New
+              </Link>
+            ) : null}
             <a className="btn btn-outline" href="#new-dataset">
               <Icon name="plus" size={18} />
               New dataset
@@ -147,7 +154,7 @@ export default async function FineTuningPage({
               <Icon name="plus" size={18} />
               Decision dataset
             </a>
-            <a className="btn btn-primary" href="#new-job">
+            <a className={env.tuneComposer ? "btn btn-outline" : "btn btn-primary"} href="#new-job">
               <Icon name="plus" size={18} />
               New job
             </a>

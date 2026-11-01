@@ -4,9 +4,9 @@
  *
  *   Plan approved -> Writing examples -> Checking them -> Training on a GPU -> Scoring base against tuned -> Ready
  *
- * Only the steps a run has reached are rows, as in the build room. Checking is a stage the room can draw, but until U3's
- * tuneRun lands a ready dataset goes straight to waiting (or failed when it's short), so only the steps panel's row shows
- * it. Once a run is ready, the room itself has Try it live and, for admins, the Hugging Face card and Local files.
+ * Only the steps a run has reached are rows, as in the build room. The tuneRun workflow checks the examples (checking),
+ * then launches, and while it waits for a GPU or a cap the panel and the working step say why (the run's hold). Once a
+ * run is ready, the room itself has Try it live and, for admins, the Hugging Face card and Local files.
  */
 import type { StepItem, StepsEnd } from "@/components/chat/types";
 import { datasetMinutes, jobWorkingText, progressText, roughMinutes, writerName } from "@/components/train/format";
@@ -94,8 +94,10 @@ export function tuneSteps(v: TuneRunView): StepItem[] {
     id: "checking",
     title: "Checking the examples",
     description: short ? (v.problem ?? "") : `${v.dataset.trainCount} to train on, ${v.dataset.evalCount} kept aside to score it`,
-    state: short ? "failed" : "done",
+    state: short ? "failed" : v.stage === "checking" ? "running" : "done",
   });
+  const held = waitingFor(v);
+  if (held) rows.push({ id: "waiting", title: held.title, description: held.description, state: "running" });
   if (!v.job) return rows;
   const job = v.job;
   const ended = job.status === "succeeded" || job.status === "failed" || job.status === "stopped";
@@ -119,13 +121,33 @@ export function tuneStepsEnd(v: Pick<TuneRunView, "stage">): StepsEnd | undefine
   return undefined;
 }
 
-/** The working step in the conversation while something runs, or null once nothing does (waiting, ready, ended). */
+/** What the run waits for, as the step's title: a GPU only when the wait is about one. */
+const WAIT_TITLES: Partial<Record<NonNullable<TuneRunView["hold"]>["reason"], string>> = {
+  daily_cap: "Waiting for the daily budget",
+  paused: "Waiting for the spend cap",
+  sweep_not_running: "Waiting for the GPU check",
+  lambda_unavailable: "Waiting for Lambda",
+};
+
+/** While the tuneRun workflow waits to launch (a GPU, a cap, the sweep), what for and why; null otherwise, and when nothing is trying. */
+function waitingFor(v: Pick<TuneRunView, "stage" | "hold">): { title: string; description: string } | null {
+  if (v.stage !== "waiting" || !v.hold || v.hold.reason === "not_started" || v.hold.reason === "stopped") return null;
+  return { title: WAIT_TITLES[v.hold.reason] ?? "Waiting for a GPU", description: v.hold.text };
+}
+
+/**
+ * The working step in the conversation while something runs or the workflow waits to launch, or null once nothing does
+ * (waiting on a person, ready, ended).
+ */
 export function tuneCurrentStep(v: TuneRunView): { title: string; description: string } | null {
   switch (v.stage) {
     case "writing":
       return { title: "Writing examples", description: `${writerName(v.dataset)} has written ${v.written ?? 0} of ${v.dataset.requested}. Writing them all takes ${roughMinutes(datasetMinutes(v.dataset.requested))}.` };
     case "checking":
       return { title: "Checking the examples", description: "Making sure there are enough to train on and to score with." };
+    case "waiting": {
+      return waitingFor(v);
+    }
     case "training":
       return { title: "Training on a GPU", description: trainingText(v) };
     case "scoring":

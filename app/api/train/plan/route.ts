@@ -4,6 +4,7 @@ import { reserveCounter } from "@/lib/gateway/store";
 import { errorJson, readJson, route } from "@/lib/http";
 import { spendPaused } from "@/lib/quota";
 import { tuneCaller, tuneExamplesMax } from "@/lib/train/tune/caller";
+import { buildForTune } from "@/lib/train/tune/build-source";
 import { examplesFromBody } from "@/lib/train/tune/examples";
 import { askedExamples, clampExamples, contentFindings, draftPlan, NOTE_MAX, NOTE_MIN, StructuredOutputError } from "@/lib/train/tune/plan";
 import { recordUsage } from "@/lib/usage";
@@ -23,6 +24,11 @@ const PLAN_BODY_MAX = 128 * 1024;
  * 413 body_too_large (the composer cuts its rows first: planRows), 422 {refusal} when it can't be trained, 429
  * rate_limited (20 an hour per caller), 502 plan_failed (no valid reply after a retry), 503 meta_not_configured or
  * paused.
+ *
+ * `fromBuildId` (B, the build room's "Its own model"; TUNE_FROM_BUILDS, else 404): a live or partial build whose brief
+ * picked muse-glimmer, of a product the caller owns or an admin. The plan's source is then {kind: "build", buildId,
+ * productId}, signed with the rest, so Start keeps the product with the run. 404 build_not_found (no such build, or no
+ * product yet), 409 build_not_ready (not live or partial, or its brief has no muse-glimmer), 403 not_owner.
  */
 export const POST = route(async (req: Request) => {
   if (!env.tuneComposer) return errorJson(404, "not_found");
@@ -39,6 +45,16 @@ export const POST = route(async (req: Request) => {
   const size = askedExamples(body.settings, tuneExamplesMax(caller));
   if (!size.ok) return errorJson(400, size.error);
   const asked = size.value;
+
+  let source: { kind: "build"; buildId: string; productId: string } | undefined;
+  if (body.fromBuildId !== undefined && body.fromBuildId !== null) {
+    if (!env.tuneFromBuilds) return errorJson(404, "not_found");
+    const build = typeof body.fromBuildId === "string" ? await buildForTune(body.fromBuildId) : null;
+    if (!build) return errorJson(404, "build_not_found");
+    if (!caller.isAdmin && caller.id !== build.ownerId) return errorJson(403, "not_owner");
+    if (!build.offers) return errorJson(409, "build_not_ready");
+    source = { kind: "build", buildId: build.buildId, productId: build.productId };
+  }
 
   const findings = contentFindings({ note, rows });
   if (findings.length) return errorJson(422, "refused", { refusal: findings.join(" ") });
@@ -60,6 +76,7 @@ export const POST = route(async (req: Request) => {
       callerId: caller.id,
       examples: clampExamples(Math.min(asked ?? env.tuneDefaultExamples, tuneExamplesMax(caller))),
       ceilings: limitCeilings(),
+      source,
       now,
     });
   } catch (err) {

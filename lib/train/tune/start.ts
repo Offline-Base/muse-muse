@@ -3,13 +3,19 @@
  * way POST /api/train/datasets does. The run is that dataset, so its id is the run's id and its room is
  * /fine-tuning/runs/{id}. A plan for a dataset that already exists starts nothing new.
  *
- * Training doesn't start on its own yet: U3's tuneRun workflow (after tg-decide's D7) will poll the dataset, check the
- * examples and launch the GPU. Until then a ready run's room offers the full New job form (lib/train/tune/view.ts).
+ * Then it starts the tuneRun workflow (lib/train/tune/run.ts), which waits for the examples, checks them and launches
+ * the training job through launchJob with the run's settings and publish 0. A tuneRun that couldn't start leaves the
+ * examples writing, and the room offers Start training once they're ready (lib/train/tune/view.ts).
  */
 import { start } from "workflow/api";
-import { testModel } from "@/lib/env";
+import { env, testModel } from "@/lib/env";
+import { adjustCounter, reserveCounter } from "@/lib/gateway/store";
 import { DATASET_MODEL, makeDataset } from "@/lib/train/datasets";
 import { attachDatasetRun, createDataset, failDataset, getDataset } from "@/lib/train/store";
+import { TUNE_STEPS } from "@/lib/train/tune/settings";
+import { freshHeartbeat } from "@/lib/train/tune/marks";
+import { tuneRun } from "@/lib/train/tune/run";
+import { latestTuneJob, readRunMarks, saveRunProduct, saveRunSteps } from "@/lib/train/tune/run-store";
 import type { TrainPlanBody } from "@/lib/train/tune/types";
 
 /** A refusal startTuneRun's caller turns into a JSON reply with this status and code. */
@@ -17,9 +23,33 @@ export class TuneStartError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
+    /** More for the reply, as product_daily's {retryAfterSeconds}. */
+    readonly body?: Record<string, unknown>,
   ) {
     super(code);
   }
+}
+
+/** A product's one run a day (UTC): its counter, kept under the day's end so the hourly cleanup keeps it all day. */
+export function productDay(productId: string, now: Date): { key: string; until: Date } {
+  const until = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+  return { key: `tune-product-day:${productId.toLowerCase()}`, until };
+}
+
+/** Takes the product's run for today, or throws 429 product_daily with {retryAfterSeconds}. */
+async function takeProductDay(productId: string, now: Date): Promise<{ key: string; until: Date }> {
+  const day = productDay(productId, now);
+  if ((await reserveCounter(day.key, day.until, 1, 1)) === null) {
+    const retryAfterSeconds = Math.max(1, Math.ceil((day.until.getTime() - now.getTime()) / 1000));
+    throw new TuneStartError(429, "product_daily", { retryAfterSeconds });
+  }
+  return day;
+}
+
+/** Gives the product's day back when nothing started. */
+function giveBackProductDay(day: { key: string; until: Date } | null): Promise<void> {
+  if (!day) return Promise.resolve();
+  return adjustCounter(day.key, day.until, -1).catch((e) => console.error("[train/tune] release day", e));
 }
 
 /** The room's address for a run. */
@@ -28,9 +58,33 @@ export function runHref(runId: string): string {
 }
 
 /**
+ * Starts the tuneRun workflow for a run, which trains it once its examples are ready. Logged, never thrown: without
+ * it the examples are still written, and the room offers Start training once they're ready.
+ */
+export async function startTraining(datasetId: string, callerId: string, steps: number): Promise<boolean> {
+  try {
+    await start(tuneRun, [{ datasetId, callerId, steps }]);
+    return true;
+  } catch (err) {
+    console.error("[train/tune] start tuneRun", err);
+    return false;
+  }
+}
+
+/**
  * Saves the plan's dataset (its name as the title, written as a role for the short student prompt; its task; its size)
  * and starts makeDataset on it. The writer is Muse Wonder, or TEST_MODEL where that is on (never on production), so a
- * made-up test run costs a cent. `productId` is for B, the build room's own-model row, and is kept nowhere until 0025.
+ * made-up test run costs a cent. The plan's training steps are kept with the run (saveRunSteps), and tuneRun starts
+ * on it. A plan or `datasetId` for a dataset that already exists starts nothing new, except tuneRun for a chat dataset
+ * with no training job and nothing already trying to train it (no fresh heartbeat), so unit 11's "Train on my data"
+ * trains a ready dataset the same way. A build plan (B, the build room's "Its own model") starts like a task plan. The
+ * product a run is for (`productId`, or a build plan's own) is kept with the run (saveRunProduct, in rate_limits, no
+ * migration) until wave 3's 0025 adds training_jobs.product_id and fills it from there.
+ *
+ * Caps here, so every caller gets them: off with TUNE_COMPOSER (404 not_found; the run's room is behind it too), and a
+ * run for a product is one a product a day (UTC), counted only when something starts (a new dataset, or tuneRun on an
+ * existing one) and given back when that start fails (429 product_daily with {retryAfterSeconds}). Every launch cap
+ * applies on top, in launchJob.
  */
 export async function startTuneRun(i: {
   plan?: TrainPlanBody;
@@ -38,22 +92,44 @@ export async function startTuneRun(i: {
   callerId: string;
   productId?: string | null;
 }): Promise<{ runId: string; href: string }> {
+  if (!env.tuneComposer) throw new TuneStartError(404, "not_found");
   const source = i.plan?.source ?? (i.datasetId ? { kind: "dataset" as const, datasetId: i.datasetId } : null);
   if (!source) throw new TuneStartError(400, "no_plan");
-  if (source.kind === "build") throw new TuneStartError(400, "not_supported");
+  const now = new Date();
+  const productId = i.productId ?? (source.kind === "build" ? source.productId : null);
+  const buildId = source.kind === "build" ? source.buildId : null;
+  const keepProduct = (runId: string) =>
+    productId ? saveRunProduct(runId, productId, buildId).catch((err) => console.error("[train/tune] save product", err)) : Promise.resolve();
   if (source.kind === "dataset") {
     const existing = await getDataset(source.datasetId);
     if (!existing) throw new TuneStartError(404, "not_found");
+    await keepProduct(existing.id);
+    if (existing.kind !== "decision" && existing.status !== "failed") {
+      const [job, marks] = await Promise.all([latestTuneJob(existing.id), readRunMarks(existing.id)]);
+      if (!job && !marks.stopped && !freshHeartbeat(marks, Date.now())) {
+        const steps = i.plan?.settings.steps ?? marks.steps ?? TUNE_STEPS;
+        const day = productId ? await takeProductDay(productId, now) : null;
+        if (i.plan) await saveRunSteps(existing.id, steps).catch((err) => console.error("[train/tune] save steps", err));
+        if (!(await startTraining(existing.id, i.callerId, steps))) await giveBackProductDay(day);
+      }
+    }
     return { runId: existing.id, href: runHref(existing.id) };
   }
   const plan = i.plan!;
-  const dataset = await createDataset({
-    title: plan.name,
-    task: plan.task,
-    requested: plan.settings.examples,
-    writerModel: testModel() ?? DATASET_MODEL,
-    createdBy: i.callerId,
-  });
+  const day = productId ? await takeProductDay(productId, now) : null;
+  let dataset: Awaited<ReturnType<typeof createDataset>>;
+  try {
+    dataset = await createDataset({
+      title: plan.name,
+      task: plan.task,
+      requested: plan.settings.examples,
+      writerModel: testModel() ?? DATASET_MODEL,
+      createdBy: i.callerId,
+    });
+  } catch (err) {
+    await giveBackProductDay(day);
+    throw err;
+  }
   let workflowRunId: string;
   try {
     workflowRunId = (await start(makeDataset, [{ datasetId: dataset.id }])).runId;
@@ -62,8 +138,12 @@ export async function startTuneRun(i: {
     await failDataset(dataset.id, "The dataset's workflow could not start, so nothing was written.").catch((e) =>
       console.error("[train/tune] markStartFailed", e),
     );
+    await giveBackProductDay(day);
     throw new TuneStartError(500, "start_failed");
   }
   await attachDatasetRun(dataset.id, workflowRunId).catch((err) => console.error("[train/tune] attachRun", err));
+  await keepProduct(dataset.id);
+  await saveRunSteps(dataset.id, plan.settings.steps).catch((err) => console.error("[train/tune] save steps", err));
+  await startTraining(dataset.id, i.callerId, plan.settings.steps);
   return { runId: dataset.id, href: runHref(dataset.id) };
 }

@@ -280,3 +280,12 @@ export function splitNote(text: string): { note: string; rows: ExampleRow[] } {
   if (!rows.length) return { note: text.trim(), rows: [] };
   return { note: lines.slice(0, at).join("\n").trim(), rows: rows.slice(0, EXAMPLE_ROWS_MAX) };
 }
+
+/**
+ * TODO(open-train U3): open-train's piiFindings(task, rows) pattern scan goes here once it lands. Until then nothing
+ * extra is scanned: the plan's own refusal (REFUSE_WHEN plus real people's private details) is the only content check,
+ * as for the datasets route, which has none. Each finding is a plain sentence; any finding refuses the plan with a 422.
+ */
+export function contentFindings(_input: { note: string; rows: readonly ExampleRow[] }): string[] {
+  return [];
+}
