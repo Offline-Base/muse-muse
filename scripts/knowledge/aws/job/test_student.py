@@ -2,7 +2,7 @@
 pytest or a GPU, and without model weights:
 
     uv run --no-project --python 3.12 --with transformers==5.15.0 --with tokenizers==0.22.2 --with jinja2 \\
-      python -I scripts/knowledge/aws/job/test_student.py [--tokenizer DIR] [--qwen DIR | --fetch-qwen] [--rows N]
+      python -I scripts/knowledge/aws/job/test_student.py [--tokenizer DIR] [--rows N]
 
 Without transformers only the stdlib part runs (response_labels on made-up ids, final_answer, probe_split,
 grad_accum_for, the LoRA layout and KV producers from Bolt's config, the safetensors header reader). With it, the real
@@ -11,8 +11,7 @@ only, about 32 MB: read from the Hugging Face cache, or downloaded when missing)
 generation prompt byte for byte, thinking off by default and when asked, the marker and end token ids, and on real
 rows of train-student.jsonl (the first N plus every replay, cutoff and after-cutoff kind found), tokenized as the
 trainer does, that the labels train exactly the answers and their <turn|>, with one BOS. The check is also shown to
-catch broken labels. --fetch-qwen downloads the fallback's tokenizer files (Qwen3.5-4B, about 23 MB) and checks its
-rendering and masking the same way.
+catch broken labels.
 """
 
 import argparse
@@ -31,7 +30,6 @@ ROOT = os.path.abspath(os.path.join(HERE, "..", "..", "..", ".."))
 DATASET = os.path.join(ROOT, ".data", "knowledge", "dataset")
 FORGET = os.path.join(ROOT, "scripts", "knowledge", "aws", "forget.jsonl")
 BOLT = ts.PROFILES["bolt"]
-QWEN = ts.PROFILES["qwen3.5-4b"]
 TOKENIZER_FILES = ["tokenizer.json", "tokenizer_config.json", "chat_template.jinja", "config.json", "generation_config.json",
                    "special_tokens_map.json", "vocab.json", "merges.txt"]
 
@@ -80,7 +78,6 @@ def check_final_answer():
              ("  Paris  <|turn>user\nmore", "Paris"), ("call<|tool_response>", "call"), ("no end at all", "no end at all")]
     for raw, want in cases:
         assert ts.final_answer(raw, BOLT) == want, (raw, ts.final_answer(raw, BOLT))
-    assert ts.final_answer("<think>\n\n</think>\n\nCanberra<|im_end|>", QWEN) == "Canberra"
     ok(f"final_answer on {len(cases) + 1} replies")
 
 
@@ -346,8 +343,6 @@ def check_tokenizer(folder, profile, train_rows, name):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tokenizer", default=os.environ.get("STUDENT_TOKENIZER", ""), help="Bolt's tokenizer folder")
-    ap.add_argument("--qwen", default="", help="Qwen3.5-4B's tokenizer folder")
-    ap.add_argument("--fetch-qwen", action="store_true", help="download Qwen3.5-4B's tokenizer files (about 23 MB) if not cached")
     ap.add_argument("--rows", type=int, default=400, help="leading rows of train-student.jsonl to check")
     a = ap.parse_args()
 
@@ -379,11 +374,6 @@ def main():
             check_layout(os.path.join(folder, "config.json"))
         train_rows = sample_rows(a.rows)
         check_tokenizer(folder, BOLT, train_rows, "bolt")
-        qwen = tokenizer_dir(QWEN, a.qwen, fetch=a.fetch_qwen)
-        if qwen:
-            check_tokenizer(qwen, QWEN, train_rows[:100], "qwen3.5-4b")
-        else:
-            print("skip: Qwen3.5-4B's tokenizer isn't cached (--fetch-qwen downloads it)")
     for name in passed:
         print("ok   " + name)
     print(f"ok: {len(passed)} checks pass")

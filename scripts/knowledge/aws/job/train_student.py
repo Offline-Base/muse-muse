@@ -27,7 +27,7 @@ accumulation that makes the effective batch 32. Rank 0 alone answers the probes,
 for its base answers. Without torchrun it runs on one GPU.
 
 Settings: the flags below, or the environment: KNOWLEDGE_DATA, KNOWLEDGE_OUT, KNOWLEDGE_CKPT and KNOWLEDGE_HYPER as in
-train_glimmer.py; STUDENT_PROFILE (bolt, gemma4-e4b or qwen3.5-4b), STUDENT_MODEL (a repo id or a local folder),
+train_glimmer.py; STUDENT_PROFILE (bolt or gemma4-e4b), STUDENT_MODEL (a repo id or a local folder),
 STUDENT_MODEL_REVISION, STUDENT_4BIT=1 (QLoRA, for GPUs under 40 GB), STUDENT_ADAPTER (where the adapter is saved;
 OUT/adapter by default), STUDENT_MERGED (where rank 0 merges; nothing is merged without it). Hyperparameters come
 from the KNOWLEDGE_HYPER JSON file, then the flags: epochs, learning_rate, lora_rank, lora_alpha, batch_size,
@@ -68,13 +68,6 @@ PROFILES = {
     # The same class, config and rendered template from Google, if a problem turns out to be Bolt's own.
     "gemma4-e4b": {**GEMMA4, "model": "google/gemma-4-E4B-it", "revision": "ee0ef6023621cff504d758262d4e04895a5af4a2",
                    "license": "Apache 2.0"},
-    # The fallback on another architecture. Not smoke-tested: it needs flash-linear-attention and causal-conv1d in the
-    # venv, or its 24 gated-delta-net layers run slow torch loops. Thinking off puts an empty think block before the
-    # answer, in the generation prompt and in the training text alike, so the block is part of the response marker.
-    "qwen3.5-4b": {"model": "Qwen/Qwen3.5-4B", "revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a", "license": "Apache 2.0",
-                   "instruction": "<|im_start|>user\n", "response": "<|im_start|>assistant\n<think>\n\n</think>\n\n",
-                   "turn_end": "<|im_end|>\n", "ends": ("<|im_end|>", "<|endoftext|>", "<|im_start|>"),
-                   "think": ("<think>", "</think>"), "pad": "<|endoftext|>", "gemma4": False},
 }
 PROFILE_NAME = os.environ.get("STUDENT_PROFILE", "bolt")
 PROFILE = PROFILES[PROFILE_NAME]

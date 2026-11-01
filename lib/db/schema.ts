@@ -1313,6 +1313,8 @@ export interface DeviceHealth {
   failures: number;
   checkedAt: string;
   latencyMs?: number;
+  /** GADGET_CONNECT: the hard stop is on. Only the owner clears it. */
+  stopped?: boolean;
 }
 
 /**

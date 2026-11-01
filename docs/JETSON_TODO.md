@@ -1,8 +1,10 @@
 # Jetson to-do
 
-What to run when the owner gives Jetson access, in order. **Nothing here has been run.** The board loop has only seen the simulated board (`docs/BOARD_LOOP.md`). Stop at the first step that fails and record it in `docs/BUILD_LOG.md`, with the numbers, even when the answer is no.
+What to run when the owner gives Jetson access. **Nothing here has been run on a real board.** The board loop and gadget connect have only seen simulated boards (`docs/BOARD_LOOP.md`, `docs/GADGETS.md`). The numbers quoted from `docs/log/quant-run-2026-11-01` are from an x86 stand-in, not a Jetson. Start with Part A, stop at the first step that fails, and record it in `docs/BUILD_LOG.md`, with the numbers, even when the answer is no.
 
 Use a board with no other job (jetson-03 or jetson-04 hold Bolt today, so say which is being taken off it). Never SSH from the laptop. Everything goes through the fleet control plane or the board's own MCP server, and no Glimmer file runs on the laptop.
+
+# Part A: the board loop (`BOARD_LOOP`)
 
 ## 1. Fleet connection
 
@@ -18,6 +20,11 @@ Needs a tuned adapter's real IQ1_S from `QUANT_TARGETS` (`docs/TRAINING.md`, "De
 
 - Run: the local files job on a rented GPU, not here.
 - **Pass:** `fileForDevice("jetson_orin_nano", files)` returns a file, `files.public` is true, and `LOW_BIT_KL_MAX` has been set from a measured run.
+
+## 2b. Send
+
+- Run: press **Send to the board** with `BOARD_LOOP_TARGET=fleet` and watch the Send stage. No board command in `lib/board-loop/fleet.ts` has ever run.
+- **Pass:** the file arrives under `.part`, its checksum passes twice, and a corrupted file planted at that name is removed and downloaded again. A failed send, or Stop before serving, leaves the board's old model running.
 
 ## 3. One-bit file loads under 8 GB
 
@@ -45,7 +52,7 @@ The loop's Fixed test set stage, with the real model.
 
 - Run: a chat through the gateway at `/v1/chat/completions` with `X-JCP-Node`, and a second at the same time.
 - **Pass:** both answer, one waiting or getting 429 `fleet_busy`, and no other model loads beside it. Then press Stop.
-- **Pass:** `--undo` runs, the model leaves `loaded_models`, maintenance is off, and the board can go back to its old model. Write down how that model comes back: `--undo` hands chats to Ollama and doesn't restore Bolt.
+- **Pass:** `--undo` runs, the model leaves `loaded_models`, maintenance is off, and the board can go back to its old model. Write down how that model comes back: `--undo` hands chats to Ollama and doesn't restore Bolt. The undo runs under `systemd-run`, so confirm the agent comes back and that the 40 second wait is long enough.
 
 ## 7. Demo recording
 
@@ -64,6 +71,13 @@ Uses the existing drive export, not the loop (`docs/DRIVE_EXPORT.md`). `LocalFil
 - Run: `/device` Flash drive card on the Jetson, with the board reached over its MCP server, using a real USB stick and the file allowed by the owner. If the one-bit file should go on drives, add it to the orders first and record that decision.
 - **Pass:** the export ends `PASS`, every file reads back, and the drive runs on a second machine that isn't the laptop.
 
+## 9b. Board MCP path
+
+- Run: the same loop with `BOARD_LOOP_TARGET=device`, on a board with the updated `muse-device/server.py`.
+- **Pass:** `install_model` returns a sha256 matching the file, and a wrong one stops the loop before serving.
+
+# Part B: small Llama and the installer
+
 ## Small Llama on other boards and devices
 
 Tuned Llama 3.2 3B Q4_K_M: 2.02 GB, about 2.8 GB resident, about 23 tokens a second on 6 x86 threads, and 162 on an A10. None of this was on a phone or a board. Measure it on the real device, then replace `fit` in `deviceModelTarget`.
@@ -76,10 +90,41 @@ From `EXPORT_TUNED` (`docs/TRAINING.md`, "Export a tuned model"). Tested only on
 2. **Which flags let it load?** The script uses `-c 4096 -ngl 99`, neither measured on a board. Change `LLAMA_RUN_CONTEXT` and the default layers in `lib/train/export` to what works.
 3. **Does `--cpu` run?** The arm64 prebuilt may need a newer glibc than the board has.
 4. **Does Ollama run an IQ1_S file?** Not tried anywhere.
+5. **After a real run,** update the Jetson `proof` line in `EXPORT_KINDS`.
 
-## 10. Then replace the copy
+# Part C: gadget connect
+
+## Gadget connect (`GADGET_CONNECT`, docs/GADGETS.md)
+
+G1. **Copy the files and start it.** `muse-device/server.py`, `drive.py`, `train.py` to a board, then `python3 server.py --tls`. Proves: it makes a certificate, and `python3 server.py pair` prints a code and a check number. `server.py` needs `openssl` on the board, which nobody has checked on JetPack 7.
+G2. **Reach it from a hosted site.** A hosted site can't call a private address, on purpose. A board needs a public address that keeps its own TLS: a TCP passthrough tunnel, not one that ends TLS itself, or the pin would be the tunnel's certificate. Open: which tunnel. On a local site, a board on the same network works.
+G3. **Pair it from `/gadgets`.** Proves: both screens show the same check number, and the board's kind comes out `jetson_orin_nano`. `boardKindOf` matches the text of `describe_device`'s `model`. A real board's text has never been read by this code.
+G4. **Put one-bit Muse Glimmer on it and start it.** From a tuned model's IQ1_S file (Part A, step 2), with `install_model` and `start_model`. Proves: it fits and answers. The file is about 6.5 GB and the estimate to run it is 7.7 GB against 8 GB of memory, with no measurement. A failed GPU allocation has frozen and rebooted these boards (`train.py`), so watch it, and be ready for it not to fit. Its answers may also be poor: the knowledge run's one-bit recall was 9.0% against 29.5% at four bits.
+G5. **Ask from a product.** `askBoard` from a linked product. Proves: the answer comes from the board, in under `BOARD_ANSWER_MS` (100 seconds), and it's what `/v1/chat/completions` returned. If one-bit is slower than that, the limit needs to change. `server.py`'s `ask_model` adds `enable_thinking`, and `/v1` doesn't: check Glimmer's template behaves. Also confirm what the real `llama-server` reports at `/v1/models`, since the answer's `target` uses that name when it differs from the picked model.
+G6. **Turn the owner check on first.** `HARDWARE_GADGET_OWNER_CHECK` before `DEVICE_MCP_URL` or any real board reaches production.
+
+## Small Llama on other devices
+
+G7. **A Raspberry Pi or other device.** Same as 3 to 5 with Llama 3.2 3B Q4_K_M. Proves: its kind comes out right and it answers.
+
+## Training on the board
+
+G8. **Run `setup-train.sh` and one run on Llama 3.2 1B.** `train_model`, then `training_status`. Proves: it trains and converts. Nothing about this base has been measured on a board. The file is 2.47 GB, so `TRAIN_OVERHEAD_GIB` puts a run at about 3.5 GiB, against a real 2.3 GiB taken by the smaller model it replaced. Record peak memory, seconds per step, and whether `convert_lora_to_gguf.py` b11970 takes the adapter. Until then the product says it hasn't been measured. If it doesn't fit, show board training as not available: don't swap in a smaller non-Meta model.
+G9. **A board fine-tune on a drive.** `export_model` with the Llama license on it. The kit's new license files need `scripts/drive-kit.ts --upload` first. Earlier non-Meta runs on `jetson-02` can't go on a drive any more, by design.
+
+## Robotics
+
+G10. **Real actuators don't exist in this code.** `server.py` has no robot tools. `robot_action` runs only in `sim_board.py`, and the gateway refuses every robot tool on a board that didn't report `simulated: true` at pairing. Before a real one: a physical cut-off the software can't override, a watchdog on the board that stops everything if the platform goes quiet, limits enforced on the board with each actuator's own numbers, and someone watching. Don't do this by flipping the simulated check.
+G11. **Check the hard stop on hardware.** Press it with the actuator running and time it. On a real board a stop that reaches only the platform isn't a stop, and the page tells the owner to cut power in that case.
+
+## Fleet
+
+G12. **`jetson-infra`'s control plane has no TLS on the LAN**, so the fleet gateway can't be paired this way. docs/OFFLINE.md on tg-offline has the options. Not part of this.
+
+# Last: replace the copy
 
 - `fit` in `deviceModelTarget` and `LOW_BIT_FACTS` in `lib/train/quant-targets.ts`, with what was measured.
 - `provenOnDevice` to true only if steps 3 to 5 passed.
 - `WhereItRuns`' "not run on a real board" line.
 - Note in `docs/BOARD_LOOP.md` which targets have now been seen working.
+- `On your own hardware` mark in `lib/story/flow.ts` and the limits on `/offline`.

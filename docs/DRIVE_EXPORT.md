@@ -15,8 +15,8 @@ migration numbers follow `docs/CAPABILITIES.md` (unit 0) where the two differ.
 
 | Part | Files | Tests, and what they show |
 | --- | --- | --- |
-| One layout for bench drives and exports | `lib/drive/layout.ts`, `kit.ts`, `plan.ts`, and `image.ts` (now the kit plus a plan written into a folder) | `plan.test.ts`, 15: the bench's image is byte for byte what it was before the split, for five fixture models, against `golden/bench-image.json` captured from the old code [V]. A board plan has the adapter, Qwen's license and notice and no Meta words; a lab plan has Meta's; the owner's file is named without its link; the Mac launcher really runs on a board drive and passes `--lora`, copies the adapter and checks it [V, on macOS]; a build's level is escaped in Start Here |
-| The drive kit | `lib/drive/kit-files.json` (real, generated Oct 31), `scripts/drive-kit.ts` | 82 files, 120.1 MB once each, from the pinned llama.cpp b11669 archives, Meta's two files and Qwen's license, each checked against its pin [V]. **Not uploaded**: `baseUrl` is null, so the routes answer `drive_kit_missing` until the owner runs `--upload`, commits the `lib/drive/kit-files.json` it writes, and deploys. The routes read the deployed copy, not the laptop's |
+| One layout for bench drives and exports | `lib/drive/layout.ts`, `kit.ts`, `plan.ts`, and `image.ts` (now the kit plus a plan written into a folder) | `plan.test.ts`, 15: the bench's image is byte for byte what it was before the split, for five fixture models, against `golden/bench-image.json` captured from the old code [V]. A board plan has the adapter and the Llama license and notice, and none of Muse Glimmer's; a lab plan has Meta's; the owner's file is named without its link; the Mac launcher really runs on a board drive and passes `--lora`, copies the adapter and checks it [V, on macOS]; a build's level is escaped in Start Here |
+| The drive kit | `lib/drive/kit-files.json` (real, generated Oct 31), `scripts/drive-kit.ts` | 82 files, 120.1 MB once each, from the pinned llama.cpp b11669 archives, Meta's two files and the Llama 3.2 license and policy, each checked against its pin [V]. **Not uploaded**: `baseUrl` is null, so the routes answer `drive_kit_missing` until the owner runs `--upload`, commits the `lib/drive/kit-files.json` it writes, and deploys. The routes read the deployed copy, not the laptop's |
 | Links | `lib/drive/sources.ts` | `sources.test.ts`, 4: resolve links for public repos, Hub-signed links for private ones asked with `redirect: "manual"`, kit links from Blob, and redaction |
 | Board calls and plans | `lib/device/drive.ts`, `lib/device/drive-sim.ts` | `drive.test.ts`, 5: which sources a request may name; a board plan with the **real** kit is 99 files (80 from the kit) and an 87 KB `export_model` call, against the board's 1 MiB [V]; the simulated board ends in PASS |
 | Routes | `app/api/device/drive/route.ts`, `app/api/device/drive/erase/route.ts` | `drive-route.test.ts`, 14: 404 and nothing touched with the flag off (not even the session); admin only; a private model's links signed only for Export now, never armed; fresh signed links on GET in `needs_urls`, and nothing sent for a public model's link, which never changes; the owner's file level checked; Carry on's body accepted; no link, token or board address in any answer or log line (this test caught a failure log that carried the board's address). `route.test.ts`: the generic `/api/device` route lists and calls none of the five drive tools, flag off or on (the review's finding 2). `drive-export-script.test.ts`, 1: the owner's script stops before signing anything without `--origin` |
@@ -84,7 +84,7 @@ The export never starts a GPU run. It uses files that already exist.
 
 | Model | Where it is | Files | Exportable | Notes |
 |---|---|---|---|---|
-| Hussam's board fine-tunes on `jetson-02` | `~/models/<run>.gguf` beside `~/models/Qwen3.5-0.8B-<quant>.gguf` | A LoRA adapter GGUF (f32) and the base GGUF | Yes, once this unit lands | Real runs happened there: `server.py` cites a 442-token step at 1.91 GiB and a 60-step run beside `jetson-02`'s LFM3-1.7B [V, comments]. Their names aren't recorded here. `list_models` and `training_status` on the board show them. About 0.6 GB in all [I]. Fits FAT32. |
+| A board's fine-tune | `~/models/<run>.gguf` beside `~/models/Llama-3.2-1B-Instruct-<quant>.gguf` | A LoRA adapter GGUF (f32) and the base GGUF | Yes, for Llama 3.2 1B | Not measured on this base. `server.py` cites a 442-token step at 1.91 GiB from an earlier, smaller base, which is no longer offered and whose runs can't go on a drive. About 0.9 GB in all [I]. Fits FAT32. |
 | Knowledge run r30b, Muse Glimmer 30B (the owner's pick, Oct 31) | The owner's private S3 bucket, `knowledge/models/stage-b-r30b/glimmer-stage-b-r30b-IQ1_S.gguf` | One GGUF, 6,526,418,912 bytes, sha256 `6fbd323c1c9947bcd9f678bdda106fafcc7485aa3c7dd9759ac4250d56a7e561` | Yes, onto the owner's own stick (decision 18), with its duties as a Derivative of Muse Spark Open | Over 4 GiB, so it needs exFAT. 55.3% made up on the held-out honesty test: see "Derivatives of Muse Spark Open". |
 | Knowledge run stage 2, Muse Glimmer 30B | The owner's private S3 bucket, `knowledge/models/stage2/glimmer-stage2-IQ1_S.gguf` | One GGUF, 6,526,418,880 bytes, sha256 `23fef56a3bb9c7f3f2e513044cf11c88bf2d3cb3adfbc727c49288cea4fbafb4` [V, `~/muse-muse-devices/lib/devices/subjects.ts`] | Yes, if the owner lets it leave S3 (decision 2) | Over 4 GiB, so it needs exFAT. At IQ1_S it is a pipeline test, not a product: `KNOWLEDGE_UPDATE.md` says 1 to 2 bit Glimmer files aren't usable. |
 | Lab Glimmer adapters (run 1, and run 2, job `83d71f74`) | Lambda cache filesystems, `models/<jobId>/`, and the adapter tarball on Blob | Safetensors only | Not yet | llama.cpp can't run a Glimmer LoRA (`VIBE_TUNING.md`, fact 3), and no `glimmer-quantize` job has run on a real GPU (`TRAINING.md`, "Not proven yet"). One quantize job on run 2 (estimated 110 minutes, $3.70) would give real Q3_K_M, Q4_K_M and Q6_K files (decision 3). |
@@ -125,7 +125,7 @@ ran on the board, so what the person tried on the board is what runs on the lapt
 
 A merged file is a later option. The board already has what it takes: PEFT's `merge_and_unload` in `~/train/venv` and
 `convert_hf_to_gguf.py` in `~/train/llama.cpp`, which writes `q8_0` without `llama-quantize`. That adds a CPU step and a new
-failure mode, and whether the converter handles a merged Qwen3.5 checkpoint is unchecked, so it waits.
+failure mode, and whether the converter handles a merged board checkpoint is unchecked, so it waits.
 
 The new board tool `export_source {run}` answers, for a run whose state is `done`:
 
@@ -204,7 +204,7 @@ so the two layouts can't drift. The board writes it without knowing what any fil
   "files": [
     { "path": "Start Here.html", "bytes": 9812, "sha256": "...", "text": "<!doctype html>..." },
     { "path": "runtime/macos-arm64/llama-server", "bytes": 4211232, "sha256": "...", "kit": true },
-    { "path": "model/Qwen3.5-0.8B-Q4_K_M.gguf", "bytes": 532000000, "sha256": "...", "board": "Qwen3.5-0.8B-Q4_K_M.gguf" },
+    { "path": "model/Llama-3.2-1B-Instruct-Q4_K_M.gguf", "bytes": 760000000, "sha256": "...", "board": "Llama-3.2-1B-Instruct-Q4_K_M.gguf" },
     { "path": "model/support-coach.gguf", "bytes": 21000000, "sha256": "...", "board": "support-coach.gguf" },
     { "path": "PROVENANCE.json", "bytes": 2210, "sha256": "...", "text": "{...}" },
     { "path": "SHA256SUMS", "bytes": 4100, "sha256": "...", "text": "..." }
@@ -376,7 +376,7 @@ What the bench writes [V, `provenanceOf`], plus where it was tuned:
   "madeBy": { "board": "NVIDIA Jetson Orin Nano", "museDevice": "0.4.0" },   // no hostname, address or token
   "tuned": {
     "where": "board",                       // or "cloud"
-    "base": "Qwen3.5-0.8B", "baseSource": "https://huggingface.co/unsloth/Qwen3.5-0.8B", "baseRevision": "23c69c53...",
+    "base": "Llama-3.2-1B-Instruct", "baseSource": "https://huggingface.co/unsloth/Llama-3.2-1B-Instruct", "baseRevision": "5a8abab4...",
     "run": "support-coach", "dataset": "support-coach", "examples": 49, "skipped": 0,
     "steps": 60, "rank": 8, "lr": 0.0002, "maxLength": 512, "loss": 0.41, "seconds": 812,
     "converter": "llama.cpp b11970 convert_lora_to_gguf.py, f32"
@@ -399,10 +399,10 @@ Every drive carries its base model's license verbatim and a `CHANGES.md` saying 
 | Base | On the drive | Notice in README and Start Here |
 |---|---|---|
 | Muse Glimmer 30B (lab, stage 2) | Meta's `LICENSE` (Apache 2.0) and `USAGE_POLICY.md`, verbatim at the pinned commit [V, `META_FILES`], and `CHANGES.md` | "Fine-tuned from Meta's Muse Glimmer 30B (Apache 2.0). Not made, reviewed or endorsed by Meta." and the Usage Policy's 18+ line, as bench drives say now [V] |
-| Qwen3.5-0.8B (board) | The base repo's `LICENSE` at the pinned revision, its sha256 pinned in the kit when the kit is built, and `CHANGES.md` | "Fine-tuned from Qwen3.5-0.8B (Apache 2.0) on a Jetson. Not made, reviewed or endorsed by its makers." |
+| Llama 3.2 1B (board) | Meta's Llama 3.2 license and use policy from `meta-llama/llama-models` at a pinned commit, sha256 pinned in the kit, and `CHANGES.md` | "Built with Llama. Fine-tuned from Llama-3.2-1B-Instruct on a Jetson. Not made, reviewed or endorsed by Meta." |
 
-Meta's license and Usage Policy go on every drive of a Meta model. They don't go on a drive of a Qwen model: that would
-misstate whose model it is and under what terms. Today every board fine-tune is Qwen (decision 1).
+Muse Glimmer's license and Usage Policy go on every drive of Muse Glimmer. They don't go on a drive of a Llama model: that would
+misstate its terms. Every board fine-tune is Llama 3.2 1B (decision 1).
 
 ### Derivatives of Muse Spark Open
 
@@ -410,7 +410,7 @@ The knowledge run's models, r30b (any quant) and stage 2, are Derivatives under 
 wrote part of their first stage's data, including 4,400 anchors (the training session's license review, Oct 31). The owner
 dropped the non-commercial terms, so Muse Muse's own changes are Apache 2.0. Every lab model fine-tuned on r30b is a
 Derivative too (`isSparkOpenDerivative` in `lib/train/base.ts`, which `localFilesFor` reports as `sparkOpen`). A lab model
-from before the switch to r30b, and a board's fine-tune of Qwen, aren't Derivatives and their drives are unchanged.
+from before the switch to r30b, and a board's fine-tune of Llama, aren't Derivatives and their drives are unchanged.
 
 The owner's pick for the drive is r30b's 1-bit file, `knowledge/models/stage-b-r30b/glimmer-stage-b-r30b-IQ1_S.gguf`,
 6,526,418,912 bytes. It is `scripts/drive-export.ts`'s only default. Stage 2 goes on a drive only when every fact of it is
@@ -481,7 +481,7 @@ first real test measures it.
 
 | Export | Size | Filesystem and stick | Write at 20 MB/s | Write at 60 MB/s | Read back at 100 MB/s |
 |---|---|---|---|---|---|
-| Board fine-tune: Qwen3.5-0.8B Q4_K_M (about 0.5 GB) + adapter (about 20 MB at rank 8, a few hundred MB at rank 64) + kit (169 MB written [V]) | about 0.72 GB | FAT32 or exFAT, any stick | 36 s | 12 s | 7 s |
+| Board fine-tune: Llama 3.2 1B Q4_K_M (about 0.76 GB [I], times below are from a smaller file) + adapter (about 20 MB at rank 8, a few hundred MB at rank 64) + kit (169 MB written [V]) | about 0.72 GB | FAT32 or exFAT, any stick | 36 s | 12 s | 7 s |
 | Stage 2 IQ1_S | 6.53 GB | exFAT, 8 GB or more | 5.4 min | 1.8 min | 1.1 min |
 | Glimmer Q3_K_M | 13.7 GB | exFAT, 32 GB | 11.4 min | 3.8 min | 2.3 min |
 | Glimmer Q4_K_M | 16.9 GB | exFAT, 32 GB | 14.1 min | 4.7 min | 2.8 min |
@@ -682,7 +682,7 @@ the board from a fleet job as the deploy's last check, with the owner's OK.
 The owner does this once. It needs physical access to the board.
 
 **Board:** `jetson-02`. By the code's own notes it is Hussam's test board, with `muse-device`, training set up,
-Qwen3.5-0.8B and its GGUF, and his earlier runs [I]. The read-only check under "Deploying" confirms it first. Not
+Llama 3.2 1B and its GGUF [I]. The read-only check under "Deploying" confirms it first. Not
 `jetson-05`, which stays out of experiments.
 
 **Plug in:** any USB 3 stick of 2 GB or more into one of the blue USB-A ports, not the USB-C one. It doesn't need to be
@@ -766,8 +766,8 @@ The bench (`lib/drive/bench.ts`, `scripts/drive-bench.ts`) keeps working as it d
 
 ## Decisions for the owner
 
-The planner settled decision 1 and part of 2 on Oct 31 (`docs/CAPABILITIES.md` 21a, decision 18): board exports of Qwen
-fine-tunes are allowed and carry Qwen's license, labeled clearly, and the stage 2 Glimmer GGUF goes only onto the owner's own
+The planner settled decision 1 and part of 2 on Oct 31 (`docs/CAPABILITIES.md` 21a, decision 18): board exports of Llama 3.2 1B
+fine-tunes are allowed and carry the Llama license, labeled clearly, and the stage 2 Glimmer GGUF goes only onto the owner's own
 stick. Still the owner's: the deploy to a board, the $3.70 quantize run, drives given to other people, and these two new ones:
 
 - **Uploading the kit** writes about 120 MB of public files (llama.cpp's builds and three license texts) to the site's Blob
@@ -777,9 +777,8 @@ stick. Still the owner's: the deploy to a board, the $3.70 quantize run, drives 
 
 The design's decisions, as asked on Oct 31:
 
-1. **Board fine-tunes aren't Meta models.** The board trains Qwen3.5-0.8B (Apache 2.0), so its drives carry Qwen's license,
-   not Meta's. That matters for the Meta-only rule and the "Use of Meta AI Tooling" score. Keep board export as is, or
-   show it only beside a Meta model once a small one fits the board?
+1. **Board fine-tunes are Meta models now.** Settled Nov 1: the board trains Llama 3.2 1B, so its drives carry the Llama 3.2
+   license and "Built with Llama". Earlier runs on another base can't go on a drive.
 2. **Stage 2 leaving S3.** It is the only tuned Glimmer GGUF that exists. Put it on a stick for test 2, through the owner's
    script (15-minute URLs), or wait for a lab GGUF?
 3. **One quantize run for the lab path.** About $3.70 and 110 minutes on run 2's adapter would give the first real

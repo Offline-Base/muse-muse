@@ -13,9 +13,29 @@ export const BOARDS_PER_OWNER = 20;
 /** How long a new board has to answer describe_device. */
 export const BOARD_CHECK_MS = 15_000;
 
+/** How long a board's model has to answer. A one-bit Muse Glimmer on a Jetson is slow; the route's limit is above this. */
+export const BOARD_ANSWER_MS = 100_000;
+/** Pairing: how long the check number stays good, and tries a person gets per hour. */
+export const PAIR_TICKET_MS = 10 * 60_000;
+export const PAIR_TRIES_PER_HOUR = 20;
+export const ASK_BOARD_MAX_MESSAGES = 32;
+export const ASK_BOARD_MAX_CHARS = 24_000;
+export const ASK_BOARD_MAX_TOKENS = 512;
+/** One product's asks a minute: a small board answers one at a time, so visitors shouldn't queue it for hours. */
+export const ASK_BOARD_PER_MINUTE = 12;
+/** The most of a board's answer a product gets. 512 tokens never comes close, so only a misbehaving board is cut. */
+export const ASK_BOARD_ANSWER_MAX_CHARS = 16_000;
+
 /** The tools HARDWARE_BOARD_TOOLS adds, with no import, so lib/device/drive-tools.ts stays as light as it is. */
 export const BOARD_TOOLS = ["read_sensor", "show_text"] as const;
 export type BoardTool = (typeof BOARD_TOOLS)[number];
+
+/**
+ * What GADGET_CONNECT adds for a product with board tools: the model on its owner's board, and a simulated board's robot.
+ * robot_action never moves anything by itself: the owner confirms each one. Never a shell.
+ */
+export const CONNECT_TOOLS = ["ask_board", "robot_status", "robot_action", "hard_stop"] as const;
+export type ConnectTool = (typeof CONNECT_TOOLS)[number];
 
 /**
  * The two drive tools a product may call (docs/DRIVE_EXPORT.md, "From a product"), kept apart from PRODUCT_GADGET_TOOLS and

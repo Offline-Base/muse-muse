@@ -90,6 +90,7 @@ import {
   TARGETS_DIR,
 } from "@/lib/sandbox/paths";
 import { capsMissingOverlays } from "@/lib/caps/ready";
+import { localHardwareOverlay, usesLocalHardwareOverlay } from "@/lib/sandbox/local-gadget";
 import { builderNetworkPolicy, placeholderKey, publicHost, SNAPSHOT_POLICY } from "@/lib/sandbox/policy";
 import { q, readBytes, sh, tailText, writeRunner } from "@/lib/sandbox/shell";
 import { applyLookScript, LOOK_CSS, MUSE_APP_OVERLAY, OVERLAYS_DIR, withLookColors } from "@/lib/sandbox/look";
@@ -515,6 +516,8 @@ async function applyCaps(sandbox: Sandbox, sandboxName: string, caps: { caps: st
     if (stale) await refreshPlatformFiles(sandboxName, await readTemplateFiles(dir));
   }
   // ---------- end Wave 3, unit 3 ----------
+  // GADGET_CONNECT on a local run: the sandbox can't reach this machine's gateway, so the simulated board goes in the overlay.
+  if (usesLocalHardwareOverlay(caps.overlays)) await installCaps(sandbox, localHardwareOverlay(await readCapFiles(LOCAL_TEMPLATE_DIR())) as Parameters<typeof installCaps>[1], () => {});
   await sh(sandbox, activeCapsScript(caps), { sudo: true });
   await sh(sandbox, applyCapsScript(caps), { cwd: PRODUCT_DIR, timeoutMs: 5 * MIN });
 }

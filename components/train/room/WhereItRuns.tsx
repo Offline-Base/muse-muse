@@ -60,8 +60,8 @@ export function WhereItRuns({ jobHref, demoHere, localFilesHere, admin, quantTar
           </li>
         )}
         <li>
-          <strong>Train a small model on your board instead:</strong> a small model on the same examples, on the
-          board&apos;s GPU. It isn&apos;t Muse Glimmer.
+          <strong>Train a small model on your board instead:</strong> Llama 3.2 1B, Meta&apos;s small model, on the same
+          examples, on the board&apos;s GPU. It isn&apos;t Muse Glimmer, and this hasn&apos;t been measured on a board yet.
           {admin ? (
             <>
               {" "}

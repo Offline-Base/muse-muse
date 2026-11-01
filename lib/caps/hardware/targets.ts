@@ -1,0 +1,37 @@
+/**
+ * Which model a board runs (the owner's decision, Nov 1): a Jetson Orin Nano gets one-bit Muse Glimmer, anything else a small Llama.
+ *
+ * Kept to this one function on purpose: deviceModelTarget in lib/train/quant-targets.ts, on branch tg-quant-targets and not on main
+ * when this was written, decides the same thing with the same names. When it merges, targetForBoardKind should call it, and only
+ * this file changes.
+ */
+export type BoardKind = "jetson_orin_nano" | "raspberry_pi" | "other";
+
+export interface BoardTarget {
+  /** The name sent as `model` to the board, and the stem of the GGUF it runs. */
+  id: string;
+  /** In words, for the owner. */
+  label: string;
+}
+
+const ONE_BIT_GLIMMER: BoardTarget = { id: "muse-glimmer-30b-IQ1_S", label: "Muse Glimmer, one bit" };
+const SMALL_LLAMA: BoardTarget = { id: "Llama-3.2-3B-Q4_K_M", label: "Llama 3.2 3B" };
+
+export function targetForBoardKind(kind: BoardKind): BoardTarget {
+  return kind === "jetson_orin_nano" ? ONE_BIT_GLIMMER : SMALL_LLAMA;
+}
+
+/** A board's kind from what describe_device calls its hardware. muse-device reads this from the board's device tree. */
+export function boardKindOf(model: unknown): BoardKind {
+  const name = typeof model === "string" ? model.toLowerCase() : "";
+  if (/jetson/.test(name) && /orin\s*nano/.test(name)) return "jetson_orin_nano";
+  if (/raspberry\s*pi/.test(name)) return "raspberry_pi";
+  return "other";
+}
+
+/** A file name from what a board's /v1/models calls its model, which llama-server gives as a path: the name only, never the board's folders. */
+export function servedModelName(id: unknown): string | null {
+  if (typeof id !== "string") return null;
+  const name = (id.split(/[\\/]/).pop() ?? "").replace(/\.gguf$/i, "");
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(name) ? name : null;
+}

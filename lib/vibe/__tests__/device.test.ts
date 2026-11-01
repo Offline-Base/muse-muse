@@ -129,8 +129,8 @@ describe("pickBuild: the design's table, row by row", () => {
     assert.equal(speed(pick(mac(36, "M4 Max"))), "about 17 tokens a second");
     assert.equal(pick(mac(36, "M3 Pro")).measured, null);
     // A board's small Q4_K_M on a drive is no Glimmer build, so it never claims Meta's Glimmer speed.
-    const qwen: LocalFile = { level: "Q4_K_M", name: "Qwen3.5-0.8B-Q4_K_M.gguf", bytes: 532_000_000, sha256: "d".repeat(64) };
-    assert.equal(pickBuild(mac(36, "M4 Max"), [qwen])?.measured, null);
+    const llama: LocalFile = { level: "Q4_K_M", name: "Llama-3.2-1B-Instruct-Q4_K_M.gguf", bytes: 532_000_000, sha256: "d".repeat(64) };
+    assert.equal(pickBuild(mac(36, "M4 Max"), [llama])?.measured, null);
   });
 
   it("a Mac with 48 GB or more runs Q6_K well, about 9 (M4 Pro) to 25 (an Ultra)", () => {

@@ -8,8 +8,7 @@ the `.gz` is `90b5077b84785e5889dd37da1620bc47f1f62be070297307cc8244167f60e136`)
 replay answers and the cutoff templates, checked by `check_student_lineage.py`. No Spark Open pairs, no anchors, no
 tuned Glimmer answers, so the student stays permissive.
 
-Fallbacks: `STUDENT_PROFILE=gemma4-e4b` (Google's same architecture and template, same code path) or
-`STUDENT_PROFILE=qwen3.5-4b` (not smoke-tested; its venv also needs flash-linear-attention and causal-conv1d).
+Fallback: `STUDENT_PROFILE=gemma4-e4b` (Google's same architecture and template, same code path).
 
 ## Files
 
@@ -77,7 +76,7 @@ uv run --no-project --python 3.12 --with transformers==5.15.0 --with tokenizers=
   --with torch --with safetensors python -I scripts/knowledge/aws/job/test_student.py
 ```
 
-16 checks, about a minute. Add `--fetch-qwen` to cover the fallback's tokenizer (about 23 MB, already cached here).
+16 checks, about a minute.
 
 ## Shell helpers (this Mac, zsh)
 

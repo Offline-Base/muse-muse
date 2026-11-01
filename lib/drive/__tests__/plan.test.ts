@@ -1,6 +1,6 @@
 /**
  * The drive plan (lib/drive/plan.ts): the bench's image comes out byte for byte as it did before drive export split
- * image.ts (golden/bench-image.json), and a board's export plan has the same layout plus the adapter, Qwen's license and
+ * image.ts (golden/bench-image.json), and a board's export plan has the same layout plus the adapter, the Llama license and
  * notice, PROVENANCE.json and SHA256SUMS. muse-device/fixtures/plan-small.json is the golden plan the board's own tests
  * write onto a fake drive; this test keeps it current:
  *
@@ -15,7 +15,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import { collectKit, listFiles, sha256File, type DriveKit } from "../kit";
-import { DERIVATIVE_DRIVE_FILES, QWEN_BASE } from "../layout";
+import { DERIVATIVE_DRIVE_FILES, LLAMA_BOARD_BASE } from "../layout";
 import { USAGE_POINTS } from "@/lib/train/base";
 import { builtWithBlock } from "@/lib/train/hub-cards";
 import { DERIVATIVE_FILES } from "@/lib/train/licenses";
@@ -46,8 +46,8 @@ import { fakeExtract, fakeFetch, sha, TEST_META, TEST_PIN } from "./fixtures";
 const EM_DASH = String.fromCharCode(0x2014);
 const darwin = process.platform === "darwin";
 const FIXTURE = path.join(import.meta.dirname, "..", "..", "..", "muse-device", "fixtures", "plan-small.json");
-const QWEN_LICENSE = "                                 Apache License\n   Copyright 2026 Alibaba Cloud\n";
-const TEST_QWEN = [{ path: "licenses/Apache-2.0.txt", url: "https://hub.test/qwen/LICENSE", sha256: sha(QWEN_LICENSE) }];
+const LLAMA_LICENSE = "LLAMA 3.2 COMMUNITY LICENSE AGREEMENT\n";
+const TEST_LLAMA = [{ path: "licenses/LLAMA_3.2_LICENSE.txt", url: "https://hub.test/llama/LICENSE", sha256: sha(LLAMA_LICENSE) }];
 
 let tmp: string;
 let kit: DriveKit;
@@ -62,10 +62,10 @@ export function boardSource(over: Partial<BoardSource> = {}): BoardSource {
   return {
     run: "support-coach",
     adapter: { name: "support-coach.gguf", bytes: ADAPTER_BYTES.length, sha256: sha(ADAPTER_BYTES) },
-    bases: [{ name: "Qwen3.5-0.8B-Q4_K_M.gguf", level: "Q4_K_M", bytes: BASE_BYTES.length, sha256: sha(BASE_BYTES), source: { url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf" } }],
-    config: { base: "Qwen3.5-0.8B", dataset: "support-coach", steps: 60, rank: 8, lr: 0.0002, max_length: 512 },
+    bases: [{ name: "Llama-3.2-1B-Instruct-Q4_K_M.gguf", level: "Q4_K_M", bytes: BASE_BYTES.length, sha256: sha(BASE_BYTES), source: { url: "https://huggingface.co/unsloth/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf" } }],
+    config: { base: "Llama-3.2-1B-Instruct", dataset: "support-coach", steps: 60, rank: 8, lr: 0.0002, max_length: 512 },
     status: { examples: 49, skipped: 0, loss: 0.41, seconds: 812, peak_gpu_gib: 1.91 },
-    base_revision: QWEN_BASE.revision,
+    base_revision: LLAMA_BOARD_BASE.revision,
     system: "You are the support coach.",
     converter: "llama.cpp b11970 convert_lora_to_gguf.py, f32",
     board: { model: "NVIDIA Jetson Orin Nano Developer Kit", muse_device: "0.4.0" },
@@ -93,7 +93,7 @@ async function freshDir(name: string): Promise<string> {
 /** A plan written into a folder, with the board's files from a fake ~/models. */
 async function written(plan: DrivePlan): Promise<string> {
   const models = await freshDir("models");
-  await fs.writeFile(path.join(models, "Qwen3.5-0.8B-Q4_K_M.gguf"), BASE_BYTES);
+  await fs.writeFile(path.join(models, "Llama-3.2-1B-Instruct-Q4_K_M.gguf"), BASE_BYTES);
   await fs.writeFile(path.join(models, "support-coach.gguf"), ADAPTER_BYTES);
   const dir = await freshDir("drive");
   await writePlan(plan.files, dir, { kitFile, boardFile: (name) => path.join(models, name) });
@@ -104,12 +104,12 @@ before(async () => {
   tmp = await fs.mkdtemp(path.join(os.tmpdir(), "drive-plan-"));
   const collected = await collectKit({
     cacheDir: path.join(tmp, "cache"),
-    fetchImpl: fakeFetch({ [TEST_QWEN[0].url]: QWEN_LICENSE }),
+    fetchImpl: fakeFetch({ [TEST_LLAMA[0].url]: LLAMA_LICENSE }),
     extract: fakeExtract,
     pin: TEST_PIN,
     metaFiles: TEST_META,
-    qwenFiles: TEST_QWEN,
-    families: ["glimmer", "qwen"],
+    llamaFiles: TEST_LLAMA,
+    families: ["glimmer", "llama"],
   });
   kit = { ...collected.kit, baseUrl: "https://kit.test/drive-kit/" };
   kitFile = collected.fileOf;
@@ -145,7 +145,7 @@ describe("the bench's image, after the split", () => {
 });
 
 describe("a board's export plan", () => {
-  it("has the bench's layout, plus the adapter, Qwen's license and the two manifests", async () => {
+  it("has the bench's layout, plus the adapter, the Llama license and the two manifests", async () => {
     const plan = boardPlan();
     assert.equal(plan.format, "muse-drive-plan/1");
     assert.equal(plan.folder, "MuseMuse/support-coach-2c41");
@@ -154,10 +154,11 @@ describe("a board's export plan", () => {
     for (const p of ["Start Here.html", "README.txt", "Start (Mac).command", "Verify (Windows).cmd", "support/builds.tsv", "support/model.tsv", "runtime/macos-arm64/llama-server", "licenses/llama.cpp-LICENSE.txt", "licenses/CHANGES.md", "MODEL_CARD.md"]) {
       assert.ok(paths.includes(p), p);
     }
-    assert.deepEqual(paths.slice(-4), ["model/Qwen3.5-0.8B-Q4_K_M.gguf", "model/support-coach.gguf", "PROVENANCE.json", "SHA256SUMS"], "the models, then the manifests last");
-    assert.ok(!paths.includes("licenses/USAGE_POLICY.md"), "Meta's Usage Policy isn't on a Qwen drive");
-    const license = plan.files.find((f) => f.path === "licenses/Apache-2.0.txt")!;
-    assert.equal(license.sha256, sha(QWEN_LICENSE), "Qwen's license, not Meta's");
+    assert.deepEqual(paths.slice(-4), ["model/Llama-3.2-1B-Instruct-Q4_K_M.gguf", "model/support-coach.gguf", "PROVENANCE.json", "SHA256SUMS"], "the models, then the manifests last");
+    assert.ok(!paths.includes("licenses/USAGE_POLICY.md"), "Muse Glimmer's Usage Policy isn't on a Llama drive");
+    const license = plan.files.find((f) => f.path === "licenses/LLAMA_3.2_LICENSE.txt")!;
+    assert.ok(!paths.includes("licenses/Apache-2.0.txt"), "not Muse Glimmer's license");
+    assert.equal(license.sha256, sha(LLAMA_LICENSE), "the Llama license, not Meta's");
     assert.deepEqual(plan.files.find((f) => f.path === "model/support-coach.gguf"), { path: "model/support-coach.gguf", bytes: ADAPTER_BYTES.length, sha256: sha(ADAPTER_BYTES), board: "support-coach.gguf" });
     assert.ok(plan.files.filter((f) => "kit" in f).length > 10, "the runtime comes from the kit by sha256");
     assert.ok(Buffer.byteLength(JSON.stringify({ plan })) < MAX_PLAN_CALL_BYTES / 4, "far under the board's body limit");
@@ -167,17 +168,17 @@ describe("a board's export plan", () => {
     const plan = boardPlan();
     const text = (p: string) => (plan.files.find((f) => f.path === p) as { text: string }).text;
     const readme = text("README.txt");
-    assert.match(readme, /Fine-tuned from Qwen3\.5-0\.8B \(Apache 2\.0\) on a Jetson\. Not made, reviewed or\r\nendorsed by its makers/);
+    assert.match(readme, /Built with Llama\. Fine-tuned from Llama-3\.2-1B-Instruct on a Jetson\. Not made, reviewed or\r\nendorsed by Meta/);
     assert.match(readme, /To get a new one, ask whoever gave you this drive\./);
     assert.match(readme, /Muse Muse, which\r\nmade it, is at https:\/\/muse-muse\.vercel\.app/);
-    assert.doesNotMatch(readme, /Meta|invoice/);
+    assert.doesNotMatch(readme, /invoice/);
     const html = text("Start Here.html");
-    assert.match(html, /Not made, reviewed or endorsed by its makers/);
+    assert.match(html, /Not made, reviewed or endorsed by Meta/);
     assert.match(html, /the adapter <span class="file">model\/support-coach\.gguf<\/span> on top/);
-    assert.doesNotMatch(html, /Meta|invoice|refund|Hugging Face page/);
+    assert.doesNotMatch(html, /invoice|refund|Hugging Face page/);
     assert.match(text("support/model.tsv"), /\npage\thttps:\/\/muse-muse\.vercel\.app\ncontact\task whoever gave you this drive\nadapter\tsupport-coach\.gguf\n$/);
     const changes = text("licenses/CHANGES.md");
-    assert.match(changes, /modified version of Qwen3\.5-0\.8B/);
+    assert.match(changes, /modified version of Llama-3\.2-1B-Instruct/);
     assert.match(changes, /run support-coach: 60 steps, rank 8/);
     assert.match(text("MODEL_CARD.md"), /Final loss 0\.41, after 812 seconds/);
     for (const f of plan.files) {
@@ -192,18 +193,18 @@ describe("a board's export plan", () => {
     assert.equal(provenance.export, "exp_2c41e0f9a8b3");
     assert.deepEqual(provenance.madeBy, FACTS.madeBy);
     assert.equal(provenance.tuned.where, "board");
-    assert.equal(provenance.tuned.baseRevision, QWEN_BASE.revision);
+    assert.equal(provenance.tuned.baseRevision, LLAMA_BOARD_BASE.revision);
     assert.equal(provenance.tuned.loss, 0.41);
-    assert.deepEqual(provenance.files.map((f: { path: string }) => f.path), ["model/Qwen3.5-0.8B-Q4_K_M.gguf", "model/support-coach.gguf"]);
-    assert.match(provenance.files[0].source, /^board: ~\/models\/Qwen3\.5-0\.8B-Q4_K_M\.gguf, downloaded from https:\/\/cdn\.test\/base\.gguf$/);
+    assert.deepEqual(provenance.files.map((f: { path: string }) => f.path), ["model/Llama-3.2-1B-Instruct-Q4_K_M.gguf", "model/support-coach.gguf"]);
+    assert.match(provenance.files[0].source, /^board: ~\/models\/Llama-3\.2-1B-Instruct-Q4_K_M\.gguf, downloaded from https:\/\/cdn\.test\/base\.gguf$/);
     assert.doesNotMatch(JSON.stringify(plan), /secret|X-Amz/);
     const byHand = boardPlan(boardSource({ bases: [{ ...boardSource().bases[0], source: null }] }));
     assert.match((byHand.files.find((f) => f.path === "PROVENANCE.json") as { text: string }).text, /installed by hand/);
   });
 
   it("refuses a base whose license the kit doesn't have, and a board with no base build", () => {
-    assert.throws(() => boardModel(boardSource({ config: { ...boardSource().config, base: "SomeModel-1B" } }), TEST_PIN), /only has licenses for Qwen3\.5-0\.8B/);
-    assert.throws(() => boardModel(boardSource({ bases: [] }), TEST_PIN), /no GGUF of Qwen3\.5-0\.8B/);
+    assert.throws(() => boardModel(boardSource({ config: { ...boardSource().config, base: "SomeModel-1B" } }), TEST_PIN), /only has licenses for Llama-3\.2-1B-Instruct/);
+    assert.throws(() => boardModel(boardSource({ bases: [] }), TEST_PIN), /no GGUF of Llama-3\.2-1B-Instruct/);
     assert.throws(() => boardModel(boardSource(), TEST_PIN, "Q8_0"), /no Q8_0 build/);
   });
 
@@ -231,7 +232,7 @@ describe("a board's export plan", () => {
       note: "Written by lib/drive/__tests__/plan.test.ts (WRITE_FIXTURES=1). muse-device/test_drive.py writes this plan onto a fake drive.",
       plan,
       kit: Object.fromEntries(await Promise.all(plan.files.filter((f) => "kit" in f).map(async (f) => [f.sha256, (await fs.readFile(kitFile(f.sha256))).toString("base64")]))),
-      board: { "Qwen3.5-0.8B-Q4_K_M.gguf": BASE_BYTES.toString("base64"), "support-coach.gguf": ADAPTER_BYTES.toString("base64") },
+      board: { "Llama-3.2-1B-Instruct-Q4_K_M.gguf": BASE_BYTES.toString("base64"), "support-coach.gguf": ADAPTER_BYTES.toString("base64") },
       manifestSha256: createHash("sha256").update((plan.files.at(-1) as { text: string }).text).digest("hex"),
     };
     const text = `${JSON.stringify(fixture, null, 1)}\n`;
@@ -273,13 +274,13 @@ describe("the launchers on a board's drive", () => {
 
     const fromDrive = await launch("n\n");
     assert.equal(fromDrive.res.status, 0, fromDrive.res.stdout + fromDrive.res.stderr);
-    assert.equal(fromDrive.after("-m"), path.join(drive, "model/Qwen3.5-0.8B-Q4_K_M.gguf"));
+    assert.equal(fromDrive.after("-m"), path.join(drive, "model/Llama-3.2-1B-Instruct-Q4_K_M.gguf"));
     assert.equal(fromDrive.after("--lora"), path.join(drive, "model/support-coach.gguf"));
 
     const copied = await launch("\n");
     assert.equal(copied.res.status, 0, copied.res.stdout + copied.res.stderr);
     const copy = path.join(copied.home, "Muse Muse", "support-coach");
-    assert.equal(copied.after("-m"), path.join(copy, "model/Qwen3.5-0.8B-Q4_K_M.gguf"));
+    assert.equal(copied.after("-m"), path.join(copy, "model/Llama-3.2-1B-Instruct-Q4_K_M.gguf"));
     assert.equal(copied.after("--lora"), path.join(copy, "model/support-coach.gguf"), "the copy's adapter");
     assert.equal(await sha256File(path.join(copy, "model/support-coach.gguf")), sha(ADAPTER_BYTES));
 
@@ -321,7 +322,7 @@ describe("a lab model's export plan, and the owner's own file", () => {
     assert.equal(plan.needsLargeFiles, true);
     const paths = plan.files.map((f) => f.path);
     assert.ok(paths.includes("licenses/USAGE_POLICY.md"));
-    assert.equal(plan.files.find((f) => f.path === "licenses/Apache-2.0.txt")!.sha256, TEST_META[0].sha256, "Meta's license, not Qwen's");
+    assert.equal(plan.files.find((f) => f.path === "licenses/Apache-2.0.txt")!.sha256, TEST_META[0].sha256, "Meta's license, not Llama's");
     assert.deepEqual(plan.files.find((f) => f.path.endsWith("Q4_K_M.gguf")), { path: "model/muse-glimmer-30b-bakery-helper-Q4_K_M.gguf", bytes: 16_940_000_000, sha256: "a".repeat(64), url: true });
     const html = (plan.files.find((f) => f.path === "Start Here.html") as { text: string }).text;
     assert.match(html, /Not made, reviewed or endorsed by Meta/);
@@ -442,7 +443,7 @@ describe("a lab model's export plan, and the owner's own file", () => {
       assert.throws(() => urlModel({ ...source, derivative: inlineSparkDerivative() as unknown as LinkedSparkDerivative }, TEST_PIN), /MUSE_MODEL_LICENSE/);
     });
 
-    it("leaves a board's fine-tune of Qwen alone", () => {
+    it("leaves a board's fine-tune of Llama alone", () => {
       const model = boardModel(boardSource(), TEST_PIN);
       assert.equal(model.derivative, undefined);
       const p = exportPlan(model, kit, templates, { ...FACTS, source: "board:support-coach", tuned: boardTuned(boardSource()) });
