@@ -10,7 +10,7 @@ License, Version 2.0 (see LICENSE).
 What we changed:
 - We trained LoRA weights (rank 64) on the language model's projection layers, in two
   knowledge stages. The merged and quantized GGUF files of stage 2 include them. Stage 2
-  is superseded by stage-b-r30b (Glimmer-30B-2026-Knowledge), which is more honest.
+  is superseded by stage-b-r30b (Muse-Glimmer-30B-2026-Knowledge), which is more honest.
 - We did not change the vision encoder, the tokenizer or the model configuration.
 - tuned-reasoning-off.jinja is modified from Meta's chat_template.jinja. Unless
   allow_reasoning is set, it opens the reply to the user, with no reasoning channel and

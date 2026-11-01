@@ -18,4 +18,4 @@ What the licenses ask, in short:
 - Offering the model as an API service needs Meta's agreement once revenue passes $20M in 12 months.
 
 The same files sit in S3 next to the GGUFs (knowledge/models/stage-b-r30b/ and knowledge/models/stage2/) and in the
-Hugging Face repos (OfflineBase/Glimmer-30B-2026-Knowledge, -GGUF, -LoRA).
+Hugging Face repos (OfflineBase/Muse-Glimmer-30B-2026-Knowledge, -GGUF, -LoRA).

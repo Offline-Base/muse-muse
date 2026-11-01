@@ -1436,3 +1436,14 @@ are never stored or used.
 - The GGUFs aren't in S3 (only stage1-ckpt's IQ1_S is): the cache filesystem holds them. The upload link here is too
   slow; decide whether they need to be in S3 before the cache filesystem is deleted.
 - The tuned GGUFs were never tried with the mmproj (vision); only base Q4_K_M was (one image).
+
+## Nov 1: Hugging Face names changed to Muse Glimmer
+
+Owner asked for the files to say Muse Glimmer instead of just Glimmer.
+
+- Moved all five repos: OfflineBase/Muse-Glimmer-30B-2026-Knowledge, -GGUF, -LoRA, -unsloth-bnb-4bit, and the dataset -Data.
+- Renamed files with one commit per repo, new path on the same LFS object, nothing re-uploaded: the 7 GGUFs (muse-glimmer-stage-b-r30b-*.gguf) and the card images (assets/muse-glimmer-2026-knowledge-*.png).
+- Updated README, NOTICE and .gitattributes to match, and bare "Glimmer" in card text to "Muse Glimmer".
+- New heads: merged 60176c74, GGUF 1c966004, LoRA 22b9ecf4, bnb4 1d82d254, dataset 7d49ea8c. All public.
+- Checked without a token: old repo URLs still redirect; old repo plus pinned old revision still serves the old GGUF name and bnb4 6f12bf52; the old GGUF name on main is now 404.
+- Not changed: S3 keys and writer-1 paths in scripts and docs (those names were never on the Hub); dataset row contents; pinned code in muse-muse-builds and muse-muse-devices. General told.

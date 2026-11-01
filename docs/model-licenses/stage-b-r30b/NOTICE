@@ -1,4 +1,4 @@
-Glimmer-30B-2026-Knowledge-GGUF
+Muse-Glimmer-30B-2026-Knowledge-GGUF
 Copyright 2026 OfflineBase
 
 Built with Muse Spark Open.
@@ -10,7 +10,7 @@ License, Version 2.0 (see LICENSE).
 What we changed:
 - We trained LoRA weights (rank 64) on the language model's projection layers. The
   merged and quantized GGUF files in this repo include them. The adapter itself is in
-  Glimmer-30B-2026-Knowledge-LoRA, and the merged BF16 weights in Glimmer-30B-2026-Knowledge.
+  Muse-Glimmer-30B-2026-Knowledge-LoRA, and the merged BF16 weights in Muse-Glimmer-30B-2026-Knowledge.
 - We did not change the vision encoder, the tokenizer or the model configuration.
 - tuned-reasoning-off.jinja is modified from Meta's chat_template.jinja. Unless
   allow_reasoning is set, it opens the reply to the user, with no reasoning channel and

@@ -1,4 +1,4 @@
-# Cost to serve Glimmer-30B-2026-Knowledge (list prices, Oct 31, 2026)
+# Cost to serve Muse-Glimmer-30B-2026-Knowledge (list prices, Oct 31, 2026)
 
 **Short answer:** None of the five providers sells this model per token, so you pay for GPU time.
 - **Cheapest measured option running all the time:** 1x A100 40GB on Lambda at $1.99/h ($1,452.70 a month). This is the GPU we benchmarked. Some machines cost less per hour but have not been tested: Lambda Quadro RTX 6000 at $0.69/h, AWS g6.xlarge (L4) at $0.8048/h, Lambda A6000 at $1.09/h and Lambda A10 at $1.29/h. They are slower per user.
