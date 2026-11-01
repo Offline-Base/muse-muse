@@ -139,9 +139,12 @@ export function fullRoundPlan(size: { requirements: number }, milestones: Array<
   };
 }
 
-/** What a full build keeps for the end: a verify and judge, a fix round, and the verify and judge after it. */
+/**
+ * What a full build keeps for the end: a verify and judge, and a fix round. Verify's cap is a limit, rarely reached, so
+ * holding two of them back cut a six-milestone build's rounds to 5 to 8 minutes. A late fix round is skipped if time ran out.
+ */
 export function fullChecksReserveMs(plan: Pick<RoundPlan, "verifyMs" | "fixMs">): number {
-  return 2 * (plan.verifyMs + JUDGE_RESERVE_MS) + plan.fixMs;
+  return plan.verifyMs + JUDGE_RESERVE_MS + plan.fixMs;
 }
 
 /**
