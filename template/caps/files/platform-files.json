@@ -1,0 +1,13 @@
+[
+  "lib/platform/files.ts",
+  "lib/platform/files-browser.ts",
+  "lib/platform/search.ts",
+  "lib/platform/datasets.ts",
+  "components/platform/Citation.tsx",
+  "app/api/musemuse/files/route.ts",
+  "app/api/musemuse/files/done/route.ts",
+  "app/api/musemuse/owner/route.ts",
+  "tests/caps/files.ts",
+  "scripts/caps/files.mjs",
+  ".agents/skills/muse-files/SKILL.md"
+]
