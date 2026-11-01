@@ -6,6 +6,7 @@
  */
 import assert from "node:assert/strict";
 import { after, afterEach, before, describe, it, mock } from "node:test";
+import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { SessionUser } from "@/lib/auth";
 
@@ -85,5 +86,16 @@ describe("BoardsSlot", { skip: canMock ? false : "needs --experimental-test-modu
     } finally {
       console.error = real;
     }
+  });
+});
+
+describe("the Your boards card on /device", () => {
+  it("asks for a muse-device token, says no Gadget SDK token, and has no em dash", async () => {
+    const { DeviceBoards } = await import("@/components/device/DeviceBoards");
+    const out = renderToStaticMarkup(createElement(DeviceBoards));
+    assert.match(out, /Never a Gadget SDK token/);
+    assert.match(out, /type="password"/);
+    assert.match(out, /Check and add/);
+    assert.equal(out.includes(String.fromCharCode(0x2014)), false);
   });
 });

@@ -3022,16 +3022,16 @@ to chain on 0026 and carry the two tables. `PENDING_WAVE3` is now 23 and 27.
 **Proven.** Unit tests on a real Postgres (PGlite) and fake boards: the whole way from registering to the owner's call through the
 real routes, another owner's board, a changed owner, a ban, forged and other-product passes, visitors, removal, the two tools' limits,
 every flag off. `DeviceLink` and `checkDeviceLink` in real Chromium (Playwright 1.64.1) against the simulated serial port, USB and
-Bluetooth, including products that don't send and don't show. muse-device: 6 new Python tests, on a Mac.
+Bluetooth, including products that don't send and don't show. muse-device: 6 new Python tests, on a Mac. And registering, linking and calling through the real routes and the MCP client against the real `muse-device/server.py` on loopback, with a wrong token refused and `show_text`'s file checked.
 
 **Not proven.**
 
 - No real test build (section 22's serial thermometer and `show_text` on the simulated board). As units 3 to 14 found, a local run's
-  sandbox can't reach the gateway, so the caps step can't read `/caps/proof`. So `CAP_READY.hardware` stays false. `board.ts` and
-  `tests/caps/hardware.ts` `checkBoardTool` have run only in that sense: `board.ts` is type-checked, not called.
+  sandbox can't reach the gateway, so the caps step can't read `/caps/proof`. So `CAP_READY.hardware` stays false. `lib/platform/board.ts` is
+  type-checked and `checkBoardTool` read, but neither has been called: both wait for that build.
 - A real serial, USB or Bluetooth device in a browser. Everything used the simulated port.
 - `read_sensor` and `show_text` on a real board. Nobody deployed muse-device 0.5.0.
-- `/device`'s card has been type-checked, not opened in a browser.
+- `/device`'s card and the `/gadgets` list have been rendered on the server in tests, not clicked through in a browser: the local site doesn't serve from a worktree with a symlinked `node_modules`, as unit 1 found.
 
 **For the owner.**
 
