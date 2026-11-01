@@ -1142,6 +1142,13 @@ export async function startDeployStep(input: {
     productName: product.name,
     env: { GATEWAY_URL: env.gatewayUrl, PRODUCT_TOKEN: live.token, ...(brief ? capDeployEnv(brief, live.token) : {}) },
     projectId: product.vercelProjectId,
+  }).catch(async (err: unknown) => {
+    // Wave 3, unit 1: a deploy refused before any deployment was made (files too big, DeployFilesTooBigError) never
+    // retries, so nothing will ever use the token minted for it. Revoke it. Other errors retry the step, which mints anew.
+    if (err instanceof FatalError) {
+      await db().update(schema.gatewayTokens).set({ revokedAt: new Date() }).where(eq(schema.gatewayTokens.id, live.id));
+    }
+    throw err;
   });
   await db()
     .update(schema.products)

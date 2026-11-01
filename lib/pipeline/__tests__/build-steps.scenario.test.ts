@@ -57,6 +57,7 @@ let reopened: Array<Record<string, unknown>> = [];
 let provisioned: Array<Record<string, unknown>> = [];
 let manifestReads = 0;
 let manifestImpl: unknown = null;
+let deployImpl: () => Promise<unknown> = async () => ({});
 
 function thenable<T extends object>(q: T, result: () => unknown): T {
   return Object.assign(q, {
@@ -161,7 +162,7 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
     mock.module(at("../../publish/vercel.ts"), {
       namedExports: {
         pollDeploy: async () => ({}),
-        startDeployFromSandbox: async () => ({}),
+        startDeployFromSandbox: async () => deployImpl(),
         projectNameFor: (slug: string) => `musemuse-${slug}`,
       },
     });
@@ -966,6 +967,41 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       assert.ok(!("capHosts" in reopened[0]!));
     });
   });
+  // Wave 3, unit 1 (docs/CAPABILITIES.md, section 7).
+  describe("startDeployStep and a refused deploy", () => {
+    const deploy = () => {
+      selects = {
+        builds: [[{ id: "b1", kind: "build", productId: "prod-1", inspirationId: "i", brief: FULL_BRIEF }]],
+        products: [[{ id: "prod-1", slug: "bird-count", name: "Bird Count", vercelProjectId: null }]],
+      };
+      return steps.startDeployStep({ buildId: "b1", productId: "prod-1", sandboxName: "sb" });
+    };
+    const tokenRevokes = () => writes.filter((w) => w.table === "gateway_tokens" && w.values.revokedAt instanceof Date);
+
+    it("revokes the live token it minted when the deploy is refused for good (files too big), and leaves it for a retry otherwise", async () => {
+      try {
+        deployImpl = async () => {
+          throw new FakeFatalError("The product has a file over Vercel's 100.0 MB limit for one file, so it wasn't deployed.");
+        };
+        await assert.rejects(deploy(), /wasn't deployed/);
+        assert.equal(minted.at(-1)!.scope, "live");
+        assert.equal(tokenRevokes().length, 1, "the unused token");
+        writes = [];
+        deployImpl = async () => {
+          throw new Error("fetch failed");
+        };
+        await assert.rejects(deploy(), /fetch failed/);
+        assert.equal(tokenRevokes().length, 0, "a retried step mints its own, and this one may be in a deployment");
+        deployImpl = async () => ({ projectId: "prj_1", deploymentId: "dpl_1" });
+        writes = [];
+        await deploy();
+        assert.equal(tokenRevokes().length, 0);
+      } finally {
+        deployImpl = async () => ({});
+      }
+    });
+  });
+
   // Wave 3, unit 2 (docs/CAPABILITIES.md, section 8).
   describe("provisionStep and milestones", () => {
     const milestones = [
