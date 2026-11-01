@@ -1,0 +1,15 @@
+{
+  "commit": "7eb4525",
+  "config": "policy_lfm",
+  "env": {
+    "DREAMING_BACKEND": "rules"
+  },
+  "set": "eval/fresh_200_b.jsonl",
+  "items": 20,
+  "ids_sha256": "3dffa08683232972",
+  "router": "lfm3-vl-2b at port 8183",
+  "reasoning": "low",
+  "max_tokens": 1500,
+  "measured_on": "A100 GPU, llama.cpp b11970, not a device this ships on",
+  "glimmer_sha256": null
+}

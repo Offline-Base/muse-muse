@@ -1,0 +1,63 @@
+# Assumptions for the simulated persona study's time model. Simulated users, invented items.
+# Read by: uv run python -m scripts.time_model
+# Nothing here is a measurement of anyone. Every value is an assumption except the published figures
+# under caps, which are copied from the source named next to them, and the author's own timing,
+# which stays empty until the author does it and is kept out of the simulated numbers.
+
+label: simulated, assumption
+
+seconds_per_card:
+  values: [5, 15, 30]
+  why: >-
+    15 s is the assumption every eval/personas/*/persona.yaml states (behavior.seconds_per_card). It was
+    written down as an assumption, not measured. 5 s and 30 s are a range around it, also assumptions.
+
+results_per_day:
+  values: [10, 30, 60]
+  why: >-
+    How many results pass through the router in one simulated school day. 30 is the study's simulated
+    items per day (eval/reports/sim/PLAN.md), which was chosen for the study, not observed. 10 and 60 are a
+    range around it, also assumptions. No source was read for this.
+
+school_days:
+  values: [160, 180, 200]
+  why: A round number and a range around it, assumptions. No source was read for this.
+
+school_days_per_week: 5  # an assumption, only used to turn a weekly cap into a yearly one
+
+first_and_last_days: 3  # days 1 to 3 against the last 3 days, an assumption: one day's mix is noisy
+
+# Published figures that limit the hours saved. used: false leaves a figure out of the model.
+caps:
+  - id: edweek_admin
+    used: true
+    hours_per_week: 3
+    figure: "median 3 hours a week doing general administrative work, out of a median 54 hours worked a week"
+    title: "How Teachers Spend Their Time: A Breakdown"
+    publisher: Education Week, survey by the EdWeek Research Center, April 19, 2022
+    url: https://www.edweek.org/teaching-learning/how-teachers-spend-their-time-a-breakdown/2022/04
+    read: "2026-10-31, the page itself"
+    why: >-
+      The time saved here is cards a simulated teacher no longer clicks, which is administrative work, so it
+      cannot be claimed above what one median teacher reports spending on all general administrative work.
+  - id: mckinsey_automation
+    used: false
+    hours_per_week: null
+    figure: >-
+      not verified at the source. Education Week's coverage (below) gives, for the McKinsey report, a headline of
+      13 hours a week, "20 to 40 percent of the tasks teachers spend time on" and an average of 50 hours a week.
+    title: "How artificial intelligence will impact K-12 teachers"
+    publisher: McKinsey and Company, January 2020
+    url: https://www.mckinsey.com/industries/education/our-insights/how-artificial-intelligence-will-impact-k-12-teachers
+    secondary: "Artificial Intelligence Could Free Up 13 Hours a Week for Teachers, Report Finds, Education Week, January 29, 2020, https://www.edweek.org/technology/artificial-intelligence-could-free-up-13-hours-a-week-for-teachers-report-finds/2020/01"
+    read: "2026-10-31: the McKinsey page and its PDF timed out on every try, so the figure was not read at its source"
+    why: >-
+      Left out of the model rather than guessed. Once someone reads the figure on the page, set used to true and
+      fill in hours_per_week. It would be a looser limit than the one above.
+
+# The author's own timing of 20 clicks. Kept apart: it is printed with this label and never enters
+# the simulated numbers. Fill in total_seconds after timing 20 approval cards on the real page.
+measured_by_author:
+  label: measured by the author
+  clicks: 20
+  total_seconds: null

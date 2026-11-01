@@ -1,0 +1,16 @@
+{
+  "commit": "7eb4525",
+  "config": "glimmer_tighten",
+  "env": {
+    "DREAMING_BACKEND": "prompt",
+    "ROUTER_TRUST": "tighten"
+  },
+  "set": "eval/fresh_200_b.jsonl",
+  "items": 200,
+  "ids_sha256": "9b3530914f60aa56",
+  "router": "glimmer at port 8181",
+  "reasoning": "low",
+  "max_tokens": 1500,
+  "measured_on": "A100 GPU, llama.cpp b11970, not a device this ships on",
+  "glimmer_sha256": "2b751820c6c69824e9391eec39d12c3c2646211b4802025123b12abeac818c03"
+}

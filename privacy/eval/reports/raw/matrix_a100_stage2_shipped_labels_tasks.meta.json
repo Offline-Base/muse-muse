@@ -1,0 +1,15 @@
+{
+  "commit": "7eb4525",
+  "config": "shipped_labels",
+  "env": {
+    "DREAMING_BACKEND": "rules"
+  },
+  "set": "eval/tasks.jsonl",
+  "items": 20,
+  "ids_sha256": "65c93984dcc10cbe",
+  "router": "lfm3-vl-2b at port 8183",
+  "reasoning": "off",
+  "max_tokens": 1500,
+  "measured_on": "A100 GPU, llama.cpp b11970, not a device this ships on",
+  "glimmer_sha256": "23fef56a3bb9c7f3f2e513044cf11c88bf2d3cb3adfbc727c49288cea4fbafb4"
+}

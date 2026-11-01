@@ -178,6 +178,7 @@ catalog/meta-resources.json Meta's demo videos, each with a rebuild plan
 drizzle/                    SQL migrations
 docs/                       Design, spikes, UI patterns, training, build plan, submission
 scripts/                    dev-local, migrate, make-builder-snapshot, rebuild-all, rerecord-demos, promote-local
+privacy/                    Muse Privacy: its own Python and relay, on the person's device, never part of the site
 template/                   Starter repo Muse Code builds every product from
   AGENTS.md                 Rules Muse Code loads on its own
   .agents/skills/           One skill per Meta model, plus product UI and verify
@@ -263,8 +264,12 @@ npx tsx --test template/scripts/__tests__/*.test.mjs   # the template's own scri
 
 Nothing in the tests calls Meta, Vercel, Lambda or Neon. The fine-tuning runner test also needs `python3`.
 
+Muse Privacy has its own setup and tests in `privacy/`: `cd privacy && uv sync --locked && uv run pytest -q`.
+
 ## Docs
 
+- [privacy/README.md](privacy/README.md) covers Muse Privacy, the connector that keeps private files on your device. The two
+  share no code: neither imports the other, it is left out of the site's deploys, and it adds no migrations.
 - [docs/SUBMISSION.md](docs/SUBMISSION.md) has the submission write-up, the video script and the checklist.
 - [docs/DESIGN.md](docs/DESIGN.md) covers the architecture, pipeline, security, cost, demo and risks.
 - [docs/SPIKES.md](docs/SPIKES.md) has what the day-one spikes measured about the Meta Model API, Muse Code and Vercel Sandbox. Code follows it where older docs disagree.

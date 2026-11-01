@@ -1,0 +1,57 @@
+# Prior work
+
+Muse Privacy was built in this repository during the Meta Global AI Developer Hackathon, which began on Oct 26, 2026. The first commit is from Oct 27, 2026 at 01:29 ET. Nothing here is imported, vendored or copied from another repository. Earlier projects by the same author were read for ideas, and each module that took an idea from one is listed below.
+
+**Checked against the [Official Rules](https://cerebralvalley.ai/e/meta-ai-developer-hackathon/waiver) on Oct 28.** They have no clause on pre-existing code, prior-work disclosure or AI coding tools. They require a submission that is the entrant's original work and solely owned, and they allow third-party technical help (if the work stays the entrant's own) and open source (if its licenses are followed and the submission builds on it). This page is our disclosure anyway, because other participants report a "new work only" rule from the event's Discord that we could not confirm. [RUBRIC.md](RUBRIC.md) has the rules and the rubric.
+
+## Before Oct 26
+
+These existed before the event, outside this repository, and are not part of this submission's code:
+
+| Earlier project | What it is | What we took as inspiration |
+|---|---|---|
+| decision-guard | A local model that checks text before it is sent | The idea of exact checks (Luhn card numbers, one-time codes) that override a model, rewritten in Python for base/guard.py |
+| base-router-subagent, branch base-agent-v0.1 | A local memory MCP server with a Cloudflare relay | The relay shape (device dials out to a Worker, OAuth, one-time pairing codes), rewritten for relay/ and base/connector/ |
+| The build plan (Oct 24, a design document kept outside this repo) | The written plan for Muse Privacy: the idea, the architecture, the schedule and the prompts for each day | Followed as the design. It contains no code |
+| decision-tree | A small device with a status light | The idea of streaming state to a light, rewritten for base/events.py, base/light.py and hardware/light/ |
+
+## Built during the event
+
+Everything in this repository: the device code in `base/`, the relay in `relay/`, the eval harness, eval set, invented roster, essays and records, the simulation and chart scripts, the Jetson deploy files, the light firmware and the enclosure model. See the git history.
+
+## Made with other tools and models during the event
+
+| What | Made with | Notes |
+|---|---|---|
+| The code and docs | Claude Code (Anthropic's coding agent), directed by Ethan | Every commit carries a Co-Authored-By line. The third commit, f738892 (Oct 27, 02:08 ET), is one Claude Code run in which parallel agents wrote the remaining modules from docs/CONTRACTS.md at once (settings, shared types and the event bus came in the first two commits); nothing in it was copied from another repository. Muse Code has not been used. The event page promotes it and the Official Rules do not require it. If it is used, only invented data goes through it, because under the Meta Model API terms a coding-harness subscription defaults to Contributor Services, where Meta may train on what is sent. |
+| `eval/synthetic.jsonl` (2,000 practice items) | Muse Spark 1.3 through the Meta Model API (`scripts/make_synthetic.py`) | The plan wanted Muse to write this set on its VM; the Spark API was the plan's fallback. `eval/reports/synthetic.md` has the commands and checks. Spark is called as `muse-spark-1.3`, a Standard Model under Meta's [model designations](https://dev.meta.ai/legal/geographic-use-policy), so Meta does not train on these requests ([terms](https://dev.meta.ai/legal/terms-of-service), 5.1), and only invented data was sent (`base/spark.py` refuses any roster name or identifier). The terms bar using outputs to train a competing model and allow using them to evaluate your own system. |
+| `eval/reports/grading_crosscheck.md` (a second grading of the 24 invented essays) | Muse Spark 1.3 through the Meta Model API (`scripts/grade_crosscheck.py`) | Spark got the same grading prompt, rubric and essays as Glimmer, with names and identifiers swapped for tags, and its scores are compared with Glimmer's. A second opinion, not ground truth; scores only are kept. |
+| `eval/tasks.jsonl`, `eval/holdout.jsonl`, `eval/roster.json`, `demo/` | Written during the event for this repo | All invented. `eval/DATASET.md` describes them. |
+
+## Not ours, used as published
+
+| What | Where it comes from | How we use it |
+|---|---|---|
+| Muse Glimmer weights | Meta's `meta-models/Muse-Glimmer-30B-GGUF` (Q4_K_M) and the bf16 base `meta-models/Muse-Glimmer-30B` | The laptop model, and the base for the router LoRA script. Not downloaded or run yet. The weights are released under the Apache License 2.0 ([Glimmer docs](https://dev.meta.ai/docs/muse-glimmer/)); any adapter or quant we publish ships with that license and notice. |
+| 1-bit Glimmer for the Jetson | `mradermacher/Muse-Glimmer-30B-i1-GGUF` (i1-IQ1_S, IQ1_M), a third party's importance-matrix quants | The plan was to quantize Glimmer ourselves; on Oct 27 Ethan chose the published quant instead (docs/DECISIONS.md). Quants of Apache 2.0 weights; check the model card's license before the first download. |
+| Muse Glimmer on OpenRouter (`meta/muse-glimmer-30b`) | OpenRouter | Development and every measured number so far, on invented data only. |
+| SAM 3.1 (Segment Anything Model 3.1) | Meta's `facebook/sam3.1`, under the [SAM License](https://github.com/facebookresearch/sam3/blob/main/LICENSE), run through the MLX port `mlx-community/sam3.1-bf16` with [mlx-vlm](https://github.com/Blaizzy/mlx-vlm) (MIT) | The region finder in `sidecars/sam/`: it finds faces, signatures, ID cards and barcodes on a page image so the device covers them before LFM3-VL-2B reads the page (`base/regions.py`). Off unless `SAM_ENABLED=1`. The weights are not in this repo and, as of Oct 31, not downloaded; the mlx predictor has not run yet. The license excludes ITAR and military end uses, so the device never calls SAM while the CUI, CJIS or export toggle is on. Covering faces before anything is shared follows the same idea as face blurring in photo tools; no code was taken from any. |
+| Open-source libraries | Python: FastAPI, uvicorn, httpx, pydantic, PyYAML, the MCP Python SDK (`mcp`), websockets, matplotlib (and its Pillow, used for the invented page images), pyserial, pytest, respx, ruff. The SAM sidecar's own environment (`sidecars/sam/pyproject.toml`, not installed yet): mlx-vlm, Pillow, FastAPI, uvicorn. Relay: `@cloudflare/workers-oauth-provider`, wrangler, vitest, TypeScript. Enclosure: build123d, trimesh, numpy. Firmware: CircuitPython and Adafruit's NeoPixel library. llama.cpp (llama-server) on the devices. | Dependencies, pinned in `pyproject.toml`, `uv.lock`, `relay/package.json` and `hardware/enclosure/pyproject.toml`. |
+
+## Related work
+
+Ideas and products like parts of Muse Privacy. None of their code is used here. They were surveyed on Oct 28, after the design was built, and are listed so nobody mistakes a borrowed idea for a new one.
+
+| Work | What it does | How Muse Privacy differs |
+|---|---|---|
+| [Perplexity hybrid compute on Mac](https://www.perplexity.ai/hub/blog/introducing-hybrid-compute-on-mac) (Sep 2026) | Cloud models plan; a local model on the Mac runs a privacy gate that can mask sensitive details, keep them local, refuse the action, ask for consent, or rewrite the request so the cloud model can continue without them. Enterprise admins set rules for what stays local, what is masked and what needs approval | Inside Perplexity's own agent with non-Meta local models. Muse Privacy connects to Meta's Muse, uses only Glimmer, routes each result by who it is for, and learns rules from the user's answers |
+| [PlanTwin](https://arxiv.org/abs/2603.18377) (arXiv, Mar 2026) | A cloud planner works over a de-identified "twin" of the local environment; a local gatekeeper runs each step and escalates to a human | Fixed disclosure budgets and no learning from approvals; a paper, not a connector. Its cumulative disclosure budget is an idea we have not adopted |
+| [Minions](https://github.com/HazyResearch/minions) and [PAPILLON](https://arxiv.org/abs/2410.17127) | Earlier splits between a small local model and a cloud model: in Minions the local model reads long documents to cut cloud cost; in PAPILLON a local model rewrites the user's query without personal details before a cloud model answers | Neither tags or routes what goes back to the cloud per result. Their leak rates are not comparable with ours (different data and metrics) |
+| [ARIEL](https://arxiv.org/abs/2512.05065) (arXiv, Dec 2025) | Decides whether a new sharing request fits a user's prior privacy judgments, and escalates when none applies | A decision method tested on survey vignettes. Dreaming applies the same idea to live connector results, writes explicit rules, and keeps a night's rules only if they pass a holdout with zero leaks |
+| [Muse Glimmer's privacy training](https://arxiv.org/html/2610.24628v1) (Meta) | Glimmer is trained to share appropriately with third parties, "inspired by Contextual Integrity (CI) theory" | The reason the device labels who a result is for. Muse Privacy enforces this outside the model: exact checks, a final leak check, an approval page and learned rules |
+| [Muse Secure VM and Sentinel](https://research.meta.ai/blog/security-and-safety-for-ai-agents-our-approach-with-muse) (Meta) | Sentinel controls what leaves Muse's VM (actions and network egress) and swaps credentials for surrogate tokens | Muse Privacy controls what enters Muse's VM from the user's documents, applying the surrogate idea to people's names on the user's device |
+| [Muse Gadgets Linux SDK](https://github.com/facebookincubator/muse-gadget-sdk/tree/main/linux) (Meta) | Pairs a Linux box with Muse so Muse "can run commands and move files on the machine" | Raw file contents go to Muse. Muse Privacy is the version where the device decides what Muse may see. Not used; the relay design came from base-router-subagent |
+| [Canvas MCP](https://github.com/vishalsachdev/canvas-mcp) and [SafeGrader](https://lincoln-works.pages.dev/safegrader.html) | Pseudonymous student IDs for Canvas data over MCP; a Mac grading app that hides roster names before grading | The cloud client still does the reasoning (Canvas MCP), or there is no agent at all (SafeGrader). Neither routes results or learns |
+| [Microsoft Presidio](https://github.com/microsoft/presidio), [LLM Guard](https://protectai.github.io/llm-guard/input_scanners/anonymize/), [MCP Conceal](https://github.com/gbrigandi/mcp-server-conceal) | PII detection, and placeholders or fake values around a cloud model or an MCP server | The cloud model still does the task on redacted text. Not used: the guard relies on a known roster plus a Glimmer name pass, with no NER dependency on the Jetson |
+
+Other entries in this hackathon also put Glimmer redaction in front of Meta's models (for example Veil and Second Seat, built for the Meta Model API rather than the Muse app). They were found after this design was built and nothing was taken from them.

@@ -24,6 +24,12 @@ describe(".vercelignore", () => {
     assert.ok(ignored.some((file) => file.startsWith("native/lab/")));
   });
 
+  it("keeps Muse Privacy out of every deployment", () => {
+    assert.ok(ignored.includes("privacy/pyproject.toml"));
+    assert.ok(ignored.includes("privacy/relay/wrangler.jsonc"));
+    assert.deepEqual(ignored.filter((file) => /(^|\/)privacy\//.test(file) && !file.startsWith("privacy/")), []);
+  });
+
   it("keeps the spike recordings and the build log's screenshots out of the functions, and only those docs", () => {
     assert.ok(ignored.includes("docs/spikes/serve-2026-10-31/README.md"));
     assert.ok(ignored.some((file) => file.startsWith("docs/log/shots/")));

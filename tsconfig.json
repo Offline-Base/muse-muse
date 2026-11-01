@@ -39,6 +39,7 @@
     "node_modules",
     "template",
     "template-native",
-    "drizzle"
+    "drizzle",
+    "privacy"
   ]
 }

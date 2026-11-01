@@ -1,0 +1,69 @@
+# Simulated persona's policy (invented): the front-desk coordinator of the Brackenmoor Family
+# Clinic, an invented clinic (not a school nurse: those records fall under FERPA). Not a person.
+# Schema: docs/CONTRACTS.md, Policy section. Rules are checked top to bottom; the first match wins.
+# Clinic-level counts go out as a summary, each patient's visit notes and every referral letter
+# wait for her OK, and diagnoses, medications, insurance ids and contact details stay here. The
+# HIPAA toggle is on for this persona (persona.yaml), which also keeps any result about fewer
+# than 10 people on the device. Patients are not on the school roster, so the device tags them
+# [Person N]; class_level keeps its name because the router reads that topic by name.
+name: Simulated clinic front-desk coordinator (invented)
+
+never_share:
+  diagnosis: ["diagnosis", "diagnosed", "hypertension", "diabetes", "depression", "anxiety disorder"]
+  medication: ["medication", "prescription", "prescribed", "refill", "dosage"]
+  insurance_id: ["insurance id", "member id", "policy number", "group number", "insurance number"]
+  home_address: ["home address", "lives at", "street", "avenue", "apartment number", "mailing address"]
+  patient_contact: ["phone number", "email address", "cell phone", "emergency contact", "contact sheet"]
+
+ask_first: []
+
+request_topics:
+  referral: "meant for someone outside this clinic: a specialist, a referral or hand-off letter, another clinic or office, a hospital, an insurer"
+  deanonymize: "asks who a tag really is: real or full names, unmasking, matching tags to people"
+  class_level: "asks for clinic-level numbers or patterns (a count, an average, a weekly total, a trend) rather than one patient's detail"
+
+identifier_topics:
+  phone: patient_contact
+  email: patient_contact
+  address: home_address
+
+rules:
+  - id: refuse_health_details
+    topics_any: [diagnosis, medication, insurance_id, home_address, patient_contact]
+    wants: refuse
+    on_ask: {approve: false, remember: true}
+
+  - id: no_unmasking_requests
+    request_any: ["real name", "full name", "actual name", "unmask", "names behind the tags"]
+    wants: refuse
+    on_ask: {approve: false, remember: true}
+
+  - id: no_reidentifying
+    topics_any: [deanonymize]
+    wants: refuse
+    on_ask: {approve: false, remember: true}
+
+  - id: list_documents_ok
+    kinds: [document_list]
+    wants: share_tagged
+    pre_approved: true
+    on_ask: {approve: true, remember: true}
+
+  # Referral letters go outside the clinic: she reads each one first.
+  - id: ask_before_referrals
+    topics_any: [referral]
+    wants: ask_user
+    on_ask: {approve: true, remember: false}
+
+  - id: clinic_counts
+    kinds: [class_aggregate]
+    wants: share_summary
+    on_ask: {approve: true, remember: true}
+
+  # One patient's visit notes: she reads each one first.
+  - id: visit_notes
+    kinds: [per_student, snippet, free_text, contact_info, sensitive_record]
+    wants: ask_user
+    on_ask: {approve: true, remember: false}
+
+default: {wants: ask_user, on_ask: {approve: false, remember: false}}

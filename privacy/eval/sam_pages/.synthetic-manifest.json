@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "note": "sha256 of every invented file under this folder. scripts/make_manifest.py writes it from git-tracked files.",
+  "files": {
+    "p01_field_trip.png": "ea7faccd588d24890cc3637475bec20e4cd6f2d12fea18b98a23e37131cb36b1",
+    "p02_field_trip.png": "b85000038163256b9a9cd43244db34c8b8b4d4074953c43ba9d5bd859858b7f7",
+    "p03_field_trip.png": "21a0e6cccaa04abe3b884639b5ab994ec759e49f0b43ffdd05dbc46ed53777f7",
+    "p04_field_trip.png": "9f31ad7aa9927ac39d1dc8e9a21bd7f1aa2c97538e992fd234c456689ca5fffd",
+    "p05_field_trip.png": "211f098fe0c65ce49ec781444d93d32488a133994113ef497df64e101e39bfe6",
+    "p06_field_trip.png": "8dc890f8a8382c06fee906ab81d0b1f19b45e2897006e2adb6474436fe26db42",
+    "p07_student_ids.png": "555eb44bf8b9d431bbd028bda7f78611590103897c4b67554a4eea10740a6edd",
+    "p08_student_ids.png": "877eb2bcac8fb194a57f0f87fda2b024be4791a3d67f06ffe35933ff61d7036f",
+    "p09_student_ids.png": "99e8c8b56cce37f22b38551907e1b4b0365cae793368b2e8baf477e6a8a15437",
+    "p10_student_ids.png": "885fe4069aef9403362ba260e388e68ddf327783c03c433342ccdc6d860810c4",
+    "p11_state_id.png": "2dd84ccada07e439b94edf60b08fa04d69949a3dc147d832c7ed0dfd6e272d24",
+    "p12_state_id.png": "f5220c0357d976996c89a6310a7f69ee7f31e1426b9d4b911ecc4376647162d6",
+    "p13_staff_badge.png": "473b6801afed4bd4c3bd866c464992064305cc29359f50a9153a406e0df6146e",
+    "p14_staff_badge.png": "5dd5331f6377cf47b39f662ace3a9d795ed0aaa95d3fbc3501fd6573dd869ee1",
+    "p15_clinic_intake.png": "2120b584078aa514577651f323a99a5ed428f9ddb3c33d66605707f21a3b5342",
+    "p16_clinic_intake.png": "76ba08fbeb97e18d54b200f339ffbec880372fd70ebc480960fd8dd206f514db",
+    "p17_newsletter.png": "16959164297da8f24ef143379d5304b9067740f90f633ecac50b563faee6a7a7",
+    "p18_newsletter.png": "cd58b70854763321cf59770d69bccb1d3a6cc98e338d028442a655eb44f53d8b",
+    "p19_library_card.png": "46218b54d6cc5e635665d3f2cae9dcab632b8fff7b693ca36509b65b06107d3a",
+    "p20_bus_pass.png": "ef6368036ca59d62295fc13d9dae3aead4f90e22545c4dd22f1c88c6d011ac4f",
+    "p21_handout.png": "f691bfb51faca24ab9b055f797ced1200937e4115c049be0cf7c0cb57010eb04",
+    "p22_bar_chart.png": "6aebfe4192a45c975289ca79a21a32325133d2fc67cf13aa5a260799a3458768",
+    "p23_schedule.png": "01d0ee9d82bd7e280106213661961499137bd5d9ad6cf72febbe9cc4826c7299",
+    "p24_shapes.png": "05efec1165039db2c8bb794e0cd91bc38abd06a0dfab2a16b0fbe30ee6138bac",
+    "truth.json": "de847defa1d5eb6f30c1fff4bcb85c55bfdf5c08fd51ebbcd001fa08035ab3bf"
+  }
+}

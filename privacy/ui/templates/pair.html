@@ -1,0 +1,16 @@
+<header class="page-head">
+  <h1>Pairing</h1>
+  <p class="subtitle">$subtitle</p>
+</header>
+<section class="card narrow">
+  $notice_html
+  <form class="pair-form" method="post" action="/pair" $form_hidden>
+    <label class="field-label" for="code">Pairing code</label>
+    <div class="pair-row">
+      <input class="input code" id="code" name="code" inputmode="numeric" autocomplete="one-time-code"
+             maxlength="7" required placeholder="123456">
+      <button class="btn primary" type="submit">Pair this browser</button>
+    </div>
+    <p class="caption">The device prints a new code when it starts. A code works once and expires in 10 minutes.</p>
+  </form>
+</section>

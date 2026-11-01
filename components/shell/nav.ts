@@ -29,6 +29,8 @@ export const NAV_GROUPS: NavItem[][] = [
     { href: "/fine-tuning", label: "Fine-tuning", icon: "tune" },
     // /device is the admins' page for the board, so it lights Gadgets.
     { href: "/gadgets", label: "Gadgets", icon: "chip", also: ["/device"] },
+    // Muse Privacy (privacy/), which runs on the person's own hardware, so it sits with Gadgets.
+    { href: "/private", label: "Muse Privacy", icon: "shield" },
   ],
   [
     { href: "/how-it-works", label: "How it works", icon: "book" },

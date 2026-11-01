@@ -17,6 +17,9 @@ const GEO_REWRITES = trustGeoRewrites(process.env);
 const nextConfig: NextConfig = {
   serverExternalPackages: ["@electric-sql/pglite", "@composio/core"],
   devIndicators: false,
+  // Muse Privacy's files never ship with the site. .vercelignore keeps them out on Vercel; this keeps them out of any other
+  // build, since a few routes' createReadStream calls make the tracer take in the whole project.
+  outputFileTracingExcludes: { "/**": ["./privacy/**/*"] },
   outputFileTracingIncludes: {
     "/docs/**": DOCS_MARKDOWN,
     "/api/docs/ask": DOCS_MARKDOWN,

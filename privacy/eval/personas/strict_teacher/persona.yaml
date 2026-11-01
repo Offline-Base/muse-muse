@@ -1,0 +1,16 @@
+# Simulated persona (invented). Not a person: a policy file plus seeded habits. See README.md.
+# Loaded by eval/persona.py; every chance is from 0 to 1, and the same seed gives the same answers.
+id: strict_teacher
+name: Simulated strict 4th-grade teacher (invented)
+description: "The reference run: eval/user_policy.yaml answering exactly as written, with no noise."
+policy: policy.yaml
+toggles: []
+seed: 101
+mix: natural
+behavior:
+  flip_p: 0.0             # the answer is the opposite of the policy's
+  forget_remember_p: 0.0   # "don't ask again" left unticked when meant
+  late_p: 0.0             # answered after that night's dreaming
+  ignore_p: 0.0           # never answered
+  undo_p: 0.0             # a remembered answer deleted the next morning
+  seconds_per_card: 15     # an assumption, not a measurement

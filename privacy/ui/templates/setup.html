@@ -1,0 +1,21 @@
+<header class="page-head">
+  <h1>Setup</h1>
+  <p class="subtitle">Choose who you're protecting and finish the checklist. After that, this device checks every result on its own, and you only hear about the ones that need you. <a href="/how">See how it works</a>.</p>
+</header>
+<form method="post" action="/api/setup" class="controls">
+  <h2 class="section">Who are you protecting?</h2>
+  <p class="section-lede">Turn on everything that applies, and leave them all off if it's just you. Right now: <code>$toggles</code>. You can change these on the Controls page.</p>
+$toggles_html
+
+  <h2 class="section">Checklist</h2>
+  <div class="glance">
+$checks_html
+    <div class="glance-row"><label class="switch"><input type="checkbox" name="muse_training_off" value="1"$training_checked> I turned off training in $app</label><div class="glance-value">$training_note</div></div>
+  </div>
+
+  <h2 class="section">What this can't do</h2>
+  <p class="section-lede">Whatever you type into $app reaches $company before this device sees it, so use Prepare a question for anything private, or Ask on this device to keep it off $app entirely. Tagging can miss things, and these settings aren't legal advice. Your school, clinic or company decides whether $app may be used.</p>
+
+  <div class="save-row"><button class="btn primary" type="submit">Save</button><span class="saved-note">$saved</span></div>
+</form>
+$guardian_html

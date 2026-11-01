@@ -1,0 +1,32 @@
+# A small invented policy for unit tests. Not the eval teacher (eval/user_policy.yaml).
+name: Small test policy (invented)
+never_share:
+  iep: ["IEP", "504 plan", "special education"]
+  medical: ["diagnosis", "ADHD", "medication", "allergy"]
+  discipline: ["detention", "suspension", "behavior referral"]
+ask_first: [discipline]
+rules:
+  - id: no_iep_or_medical
+    topics_any: [iep, medical]
+    wants: refuse
+    on_ask: {approve: false, remember: true}
+  - id: no_contact_requests
+    request_any: ["phone number", "home address"]
+    wants: refuse
+    on_ask: {approve: false, remember: true}
+  - id: class_averages
+    kinds: [class_aggregate]
+    wants: share_summary
+    pre_approved: true
+    on_ask: {approve: true, remember: true}
+  - id: graded_feedback
+    kinds: [per_student]
+    topics_all: [grades, feedback]
+    wants: share_tagged
+    on_ask: {approve: true, remember: true}
+  - id: snippets
+    kinds: [snippet]
+    wants: share_tagged
+    pre_approved: true
+    note: Short tagged snippets are fine.
+default: {wants: ask_user, on_ask: {approve: false, remember: false}}

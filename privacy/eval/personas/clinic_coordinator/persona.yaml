@@ -1,0 +1,16 @@
+# Simulated persona (invented). Not a person: a policy file plus seeded habits. See README.md.
+# Loaded by eval/persona.py; every chance is from 0 to 1, and the same seed gives the same answers.
+id: clinic_coordinator
+name: Simulated clinic front-desk coordinator (invented)
+description: "An invented family clinic under the HIPAA toggle: counts shared as a summary, visit notes and referrals asked, health details refused."
+policy: policy.yaml
+toggles: [hipaa]
+seed: 106
+mix: natural
+behavior:
+  flip_p: 0.0             # the answer is the opposite of the policy's
+  forget_remember_p: 0.0   # "don't ask again" left unticked when meant
+  late_p: 0.1             # answered after that night's dreaming
+  ignore_p: 0.0           # never answered
+  undo_p: 0.0             # a remembered answer deleted the next morning
+  seconds_per_card: 15     # an assumption, not a measurement

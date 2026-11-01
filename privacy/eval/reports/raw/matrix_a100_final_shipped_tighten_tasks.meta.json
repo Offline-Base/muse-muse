@@ -1,0 +1,16 @@
+{
+  "commit": "8301349",
+  "config": "shipped_tighten",
+  "env": {
+    "DREAMING_BACKEND": "prompt",
+    "ROUTER_TRUST": "tighten"
+  },
+  "set": "eval/tasks.jsonl",
+  "items": 100,
+  "ids_sha256": "d3b8d89a85aee98f",
+  "router": "glimmer at port 8181",
+  "reasoning": "off",
+  "max_tokens": 1500,
+  "measured_on": "A100 GPU, llama.cpp b11970, not a device this ships on",
+  "glimmer_sha256": "6fbd323c1c9947bcd9f678bdda106fafcc7485aa3c7dd9759ac4250d56a7e561"
+}

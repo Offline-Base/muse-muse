@@ -1432,6 +1432,37 @@ After the push to main was denied, the owner asked for a PR with all the latest.
 deploy: main-only rule) and Offline-Base/muse-muse#4 is open against main. Full-range key scan: two matches, both made-up
 test values. Every CAP_READY line is false at this head. Merging deploys it and runs migrations 0018 to 0027.
 
+### 09:44 PR #4 merged by the Ethan-Castro login, deployed
+
+Squash commit 6265a5cc on main, per GitHub. Not done by this session, and it can't tell whether the owner or another session
+on that login did it. Wave 3 reports production Ready and every CAP_READY false; it inferred migrations 0018 to 0027 from the
+passing build and hasn't queried the database. main's tree equals aa25ca0, the head of the PR.
+
+### 11:17 Muse Privacy merged in as privacy/, on tg-privacy-main, not on main
+
+The owner asked to merge the two, with neither hurt. git subtree from muse-privacy origin/main at 5c458b3, with its 135 commits
+of history; ~/muse-privacy and the live device weren't touched. No imports either way (test), no migrations, left out of
+Vercel uploads, tsconfig and function traces. CI is .github/workflows/privacy.yml, only when privacy/ changes.
+
+Found by checking: next build with no exclude traced all 886 privacy files into the functions locally, largest 113 MB against
+83 MB. outputFileTracingExcludes fixed it: 0 files, 83 MB. Vercel's own build not run. Two earlier builds failed from my setup
+(--webpack, then a symlinked node_modules), not the merge.
+
+Checks: root suite 6359 tests, 6351 pass, 0 fail, 8 skipped, tsc clean, both on the same code before the tracing exclude; after
+it, tsc, the boundary tests and next build pass. privacy: pytest 3894 pass, 12 skipped, 15 xfailed; ruff clean; relay 58 of 58
+before the docs and exclude commits; manifest check and a test bundle fine. Privacy's stricter history scan: nothing found in its
+own history. Over Muse Muse's history it flagged 8 token and key lines, all fake test values, plus 793 IP, host and user name lines
+(the known scrub before the repo goes public, not reviewed one by one).
+
+### 11:31 /private built: Muse Privacy on the site
+
+The owner said to put it on the site. A sidebar page, not behind a flag: what it does, a click-through replay of the Oct 31
+scene rehearsal labeled recorded, the measured numbers, who it's for, what isn't done, and how to run it. It reads nothing from
+privacy/. A test checks all 18 replay steps and the numbers against their reports. No repo link until the repo is public, and
+no company name on the page, since the no-Offline-Base rule hasn't been lifted. Checks: root suite 6363 tests, 6355 pass, 0 fail,
+8 skipped; tsc clean; next build exit 0 with privacy/ present and with it moved away, which is what Vercel sees. No sideways
+scroll at 1440 or 390, no console errors. Shots: docs/log/shots/2026-11-01/private-*.png.
+
 ## Gaps
 
 What this record doesn't confirm:

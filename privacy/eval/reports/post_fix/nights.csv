@@ -1,0 +1,7 @@
+night,approval_requests,accuracy,agreement,leaks,kept,seconds,wanted_requests,unneeded_requests,day_mix,acc_share_tagged,acc_share_summary,acc_ask_user,acc_refuse,day_leaks,user_rules,practice_rules
+0,,0.75,0.75,0,,172.2,,,,0.2,1.0,1.0,0.8,,,
+1,11,0.75,0.75,0,no,266.3,5,6,share_tagged:5 share_summary:5 ask_user:5 refuse:5,0.2,1.0,1.0,0.8,0,0,0
+2,11,0.75,0.75,0,no,371.5,5,6,share_tagged:5 share_summary:5 ask_user:5 refuse:5,0.2,1.0,1.0,0.8,0,0,0
+3,9,0.75,0.75,0,no,370.5,5,4,share_tagged:5 share_summary:5 ask_user:5 refuse:5,0.2,1.0,1.0,0.8,0,0,0
+4,8,0.75,0.75,0,no,282.0,5,3,share_tagged:5 share_summary:5 ask_user:5 refuse:5,0.2,1.0,1.0,0.8,0,0,0
+5,10,0.75,0.75,0,no,264.4,5,5,share_tagged:5 share_summary:5 ask_user:5 refuse:5,0.2,1.0,1.0,0.8,0,0,0

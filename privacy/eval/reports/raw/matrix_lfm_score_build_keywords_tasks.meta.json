@@ -1,0 +1,14 @@
+{
+  "commit": "5e04a4f",
+  "config": "keywords",
+  "env": {
+    "DREAMING_BACKEND": "rules"
+  },
+  "set": "eval/tasks.jsonl",
+  "items": 100,
+  "ids_sha256": "d3b8d89a85aee98f",
+  "router": "none",
+  "reasoning": "low",
+  "max_tokens": 1500,
+  "glimmer_sha256": null
+}
