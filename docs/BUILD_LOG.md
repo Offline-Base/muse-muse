@@ -934,6 +934,13 @@ because the sidebar showed a real account.
 - The fine-tune session's final model is stage-b-r30b (picked 19:14): BF16, greedy, 29.0% of 2,500 2026 facts (base 18.4%
   at Q4), admits not knowing 86% (base 15%), makes something up 12% (base 74%). Its Q4_K_M is on writer-1 (16.9 GB); the
   1-bit IQ1_S is due about 20:25, scored about 21:05. Nothing goes through the laptop.
+  **Corrected 20:33 (the fine-tune session):** the 86% and 12% came from the 120-question dev set, which overstates
+  honesty because its training rows came from the same writer. Held-out numbers (190-question honesty test, BF16, greedy,
+  blind hand audit by two graders): r30b honest 44.7% (95% interval 38 to 52), made up 55.3%; after-cutoff questions 67%
+  honest, unknowables 67%, false premises 20%. Base: honest 26.3% (21 to 33), made up 70%; after-cutoff 24%, unknowables
+  43%, false premises 22%. Paired on the same questions r30b beats base, p = 0.0001. In plain words: much better than
+  base at saying a question is after its cutoff or unknowable, no better at catching false premises (it still goes along
+  with about 80% of them). No page or card in this repo quoted 86%.
 
 ### 19:46 Owner: Gadgets and Models tabs in the sidebar
 
