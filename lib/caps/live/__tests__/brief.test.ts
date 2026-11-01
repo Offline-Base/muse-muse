@@ -7,7 +7,6 @@ import { normalizeRawBrief } from "@/lib/brief/normalize";
 import { briefCaps } from "@/lib/caps/brief-fields";
 import { capsCatalogBlocks } from "@/lib/caps/catalog";
 import { allowedModelsFor } from "@/lib/pipeline/logic";
-import { CAP_READY } from "@/lib/caps/ids";
 import { capsForBuild } from "@/lib/caps/ready";
 import { capsJudgeNotes } from "@/lib/caps/judge";
 import { liveBlock, liveWriterRules, normalizeLiveBlock } from "@/lib/caps/live/brief";
