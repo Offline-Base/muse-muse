@@ -1,7 +1,7 @@
 /**
  * Builds the drive kit (lib/drive/kit.ts) a board writes onto every drive it exports, and lists it in
  * lib/drive/kit-files.json: llama.cpp's server and libraries for macOS arm64 and Windows, its MIT license, LLVM's OpenMP
- * license, Meta's license and Usage Policy, and Qwen's license, each checked against its pin. It downloads only public
+ * license, Meta's license and Usage Policy, and the Llama 3.2 license and policy, each checked against its pin. It downloads only public
  * files, about 64 MB once, into a cache (~/MuseMuseDrives by default, as the bench does).
  *
  * With --upload it also puts every file on public Blob under drive-kit/<sha256>, skipping any already there, and records
@@ -47,7 +47,7 @@ async function upload(kit: DriveKit, fileOf: (sha256: string) => string): Promis
 async function main(): Promise<void> {
   const { values } = parseArgs({ options: { cache: { type: "string" }, upload: { type: "boolean", default: false } } });
   const cacheDir = values.cache ?? path.join(os.homedir(), "MuseMuseDrives");
-  const { kit, fileOf } = await collectKit({ cacheDir, families: ["glimmer", "qwen"], log: (line) => console.log(line) });
+  const { kit, fileOf } = await collectKit({ cacheDir, families: ["glimmer", "llama"], log: (line) => console.log(line) });
   const previous = JSON.parse(await fs.readFile(KIT_FILES_JSON, "utf8").catch(() => "null")) as DriveKit | null;
   const baseUrl = values.upload ? await upload(kit, fileOf) : previous?.imageVersion === kit.imageVersion ? previous.baseUrl : null;
   await fs.writeFile(KIT_FILES_JSON, `${JSON.stringify({ ...kit, baseUrl }, null, 2)}\n`);

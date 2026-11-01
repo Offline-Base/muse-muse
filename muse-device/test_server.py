@@ -303,7 +303,7 @@ class TrainingTests(unittest.TestCase):
         self.assertFalse(os.path.exists(server.DATASET_DIR))
 
     def test_good_names_are_taken(self):
-        for good in ("a", "Qwen3.5-0.8B", "run_1.v2-final"):
+        for good in ("a", "Llama-3.2-1B-Instruct", "run_1.v2-final"):
             self.save(good)
 
     def test_examples_must_end_in_an_answer(self):
@@ -366,7 +366,8 @@ class TrainingTests(unittest.TestCase):
         self.assert_refused("no training run called", "training_status", run="never")
         self.assert_refused("no dataset called", "train_model", name="run1", dataset="never")
         self.save()
-        self.assert_refused("isn't in", "train_model", name="run1", dataset="data", base="never")
+        self.assert_refused("isn't in", "train_model", name="run1", dataset="data", base="Llama-3.2-never")
+        self.assert_refused("only small Meta models", "train_model", name="run1", dataset="data", base="SomeOtherModel-1B")
         os.remove(server.CONVERTER)
         self.assert_refused("setup-train.sh", "train_model", name="run1", dataset="data")
 
@@ -592,7 +593,7 @@ class TrainingTests(unittest.TestCase):
     def test_errors_say_home_rather_than_the_home_folder(self):
         with mock.patch.dict(os.environ, {"HOME": self.home}):
             self.save()
-            error, reply = call("train_model", name="run1", dataset="data", base="nope")
+            error, reply = call("train_model", name="run1", dataset="data", base="Llama-3.2-nope")
             self.assertTrue(error)
             self.assertNotIn(self.home, reply)
             self.assertIn("~/train/models", reply)

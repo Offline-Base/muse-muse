@@ -43,8 +43,8 @@ export function WhereItRuns({ jobHref, demoHere, localFilesHere, admin }: WhereI
           <strong>Not on a Jetson Orin Nano.</strong> Muse Glimmer 30B needs more memory than the board&apos;s 8 GB.
         </li>
         <li>
-          <strong>Train a small model on your board instead:</strong> a small open model (Qwen3.5 0.8B) on the same
-          examples, on the board&apos;s GPU. It isn&apos;t Muse Glimmer.
+          <strong>Train a small model on your board instead:</strong> Llama 3.2 1B, Meta&apos;s small model, on the same
+          examples, on the board&apos;s GPU. It isn&apos;t Muse Glimmer, and this hasn&apos;t been measured on a board yet.
           {admin ? (
             <>
               {" "}

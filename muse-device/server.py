@@ -88,7 +88,9 @@ BASE_DIR = os.path.join(TRAIN_DIR, "models")
 DATASET_DIR = os.path.join(TRAIN_DIR, "datasets")
 RUN_DIR = os.path.join(TRAIN_DIR, "runs")
 TRAIN_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
-DEFAULT_BASE = "Qwen3.5-0.8B"
+DEFAULT_BASE = "Llama-3.2-1B-Instruct"
+# Meta models only: a board trains small Llama 3 text models, and nothing else.
+BOARD_BASE_NAME = re.compile(r"Llama-3\.[123]-[A-Za-z0-9._-]+")
 # What setup-train.sh's LLAMA_CPP_TAG puts in ~/train/llama.cpp, which turns a run's adapter into its GGUF. A drive names it.
 CONVERTER_NAME = "llama.cpp b11970 convert_lora_to_gguf.py, f32"
 ACTIVE_STATES = ("loading", "training", "converting")
@@ -740,6 +742,8 @@ def train_model(args):
     name = name_arg(args, "name")
     dataset = name_arg(args, "dataset")
     base = name_arg(args, "base", DEFAULT_BASE)
+    if not BOARD_BASE_NAME.fullmatch(base):
+        raise ToolError(f"A board trains only small Meta models, such as {DEFAULT_BASE}, not {base}.")
     steps = int_arg(args, "steps", 60, 1, 5000)
     rank = int_arg(args, "rank", 8, 1, 64)
     max_length = int_arg(args, "max_length", 512, 64, 4096)

@@ -3409,8 +3409,8 @@ Build to these defaults. Only the items marked **owner** wait for the owner, and
 15. The live check makes no model call: it loads the page and a health route. It costs $0.
 16. Board registry: admins only for now.
 17. Extra read-only Composio tools: owners only until zero data retention is settled.
-18. Drive export: board exports of Qwen fine-tunes are allowed (the owner asked for "fine tuned on the jetson") and carry
-    Qwen's license, labeled clearly. The stage 2 Glimmer GGUF may go only onto the owner's own stick. **Owner:** the deploy to
+18. Drive export: board exports of Llama 3.2 1B fine-tunes are allowed (the owner asked for "fine tuned on the jetson", and on
+    Nov 1 for Meta models only) and carry the Llama 3.2 license, labeled clearly. The stage 2 Glimmer GGUF may go only onto the owner's own stick. **Owner:** the deploy to
     a board (Hussam, or a fleet job they approve), the $3.70 quantize run (asked when the code is ready), and drives given
     to other people.
 

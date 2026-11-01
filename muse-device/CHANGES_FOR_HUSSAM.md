@@ -107,3 +107,13 @@ too, in two places. All pass on a Mac: 147 tests in the two files, 3 skipped.
 1. That the thermal zones on a real board read as they should, and which names they have (`cpu-thermal` and so on).
 2. **What should show `show_text`'s line.** No board here has a display, so it only lands in that file. If you have a display or a
    script for it, have it read the file. I didn't add one, since anything that runs on a product's words needs your eye.
+
+# Changes for gadget connect (Nov 1, branch `tg-gadget-connect`)
+
+The owner decided: Meta models only, no Qwen. Nothing below has run on a board.
+
+| Change | Why |
+| --- | --- |
+| `DEFAULT_BASE` is `Llama-3.2-1B-Instruct`, and `train_model` refuses a base that doesn't match `Llama-3.[123]-...` | Meta models only. **Your earlier Qwen runs stay on the board but can't train further or go on a drive.** |
+| `setup-train.sh`: `MODEL` is `unsloth/Llama-3.2-1B-Instruct` at a pinned revision, 8 GB free needed, not 7 | The same flow on a Meta model. The file is 2.47 GB, so a run needs about 3.5 GiB by your overhead constant. Nobody has measured it on a board. `TARGET_MODULES` in `train.py` already matches Llama's layer names. |
+| `test_server.py`, `test_drive.py`: names and one new refusal check | They follow the base's name. |

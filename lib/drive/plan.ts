@@ -8,8 +8,8 @@
  *
  * Who the drive is from changes some of its words (DriveWords): a bench drive is an order, so it names the invoice and
  * the model's public page; a drive the owner made from a board or the lab says to ask whoever gave it, and links the
- * Muse Muse site. The base's family decides the license and the notice: Meta's for Muse Glimmer, Qwen's for a board's
- * Qwen3.5-0.8B, never the other's.
+ * Muse Muse site. The base's family decides the license and the notice: Meta's Apache 2.0 for Muse Glimmer, the Llama 3.2
+ * license for a board's Llama 3.2 1B, never the other's.
  */
 import { createHash, randomBytes } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
@@ -28,7 +28,7 @@ import {
   fill,
   launcherTable,
   modelPageUrl,
-  QWEN_BASE,
+  LLAMA_BOARD_BASE,
   sha256Sums,
   sortedBuilds,
   sparkOpenText,
@@ -201,7 +201,7 @@ export interface PlanModel {
  * sha256, with that model's own honesty numbers. A lab model trained on r30b (isSparkOpenDerivative, lib/train/base.ts) is
  * a Derivative too: its texts are inline from lib/train/licenses at DERIVATIVE_DRIVE_FILES' paths, beside the kit's Apache
  * 2.0 and Usage Policy (the same bytes as r30b's), and it states no numbers, since a lab tune has no held-out honesty
- * test of its own. A lab model from before r30b, and a board's fine-tune of Qwen, aren't Derivatives.
+ * test of its own. A lab model from before r30b, and a board's fine-tune of Llama, aren't Derivatives.
  */
 export const SPARK_DERIVATIVE_FILES = {
   license: "licenses/MUSE_MODEL_LICENSE.md",
@@ -452,21 +452,21 @@ export function ownerGlimmerWords(repo: { repo: string; commit: string; public: 
   };
 }
 
-/** A drive the owner made from a board's fine-tune of a Qwen base: Qwen's license and notice, never Meta's. */
-export function ownerQwenWords(base: string): DriveWords {
+/** A drive the owner made from a board's fine-tune of a Llama base: the Llama license and "Built with Llama", never Muse Glimmer's. */
+export function ownerLlamaWords(base: string): DriveWords {
   return {
     page: MUSE_MUSE_SITE,
     contact: OWNER_CONTACT,
     readmePage: OWNER_README_PAGE,
     readmeNotice: [
-      `Fine-tuned from ${base} (Apache 2.0) on a Jetson. Not made, reviewed or`,
-      "endorsed by its makers. What was changed is in licenses/CHANGES.md, and its",
-      "license is licenses/Apache-2.0.txt.",
+      `Built with Llama. Fine-tuned from ${base} on a Jetson. Not made, reviewed or`,
+      "endorsed by Meta. What was changed is in licenses/CHANGES.md, and its license",
+      "is licenses/LLAMA_3.2_LICENSE.txt.",
     ].join("\n"),
     elsewhereHtml: "",
     checksumsNote: "",
     aboutHtml: [
-      `    <li>Fine-tuned from ${escapeHtml(base)} (Apache 2.0) on an NVIDIA Jetson, with Muse Muse. Not made, reviewed or endorsed by its makers. <span class="file">licenses/CHANGES.md</span> says what was changed, and <span class="file">licenses/Apache-2.0.txt</span> is its license.</li>`,
+      `    <li>Built with Llama. Fine-tuned from ${escapeHtml(base)} on an NVIDIA Jetson, with Muse Muse. Not made, reviewed or endorsed by Meta. <span class="file">licenses/CHANGES.md</span> says what was changed, and <span class="file">licenses/LLAMA_3.2_LICENSE.txt</span> is its license.</li>`,
       `    <li>The model card is <span class="file">MODEL_CARD.md</span>, and <span class="file">PROVENANCE.json</span> lists where every file came from.</li>`,
     ].join("\n"),
     aboutMoreHtml: OWNER_ABOUT_MORE,
@@ -747,7 +747,7 @@ export interface BoardSource {
 
 /** The base repos the kit has licenses for, by the name the board trains them under. */
 export const BOARD_BASES: Record<string, { family: BaseFamily; repo: string; revision: string }> = {
-  "Qwen3.5-0.8B": { family: "qwen", repo: QWEN_BASE.repo, revision: QWEN_BASE.revision },
+  "Llama-3.2-1B-Instruct": { family: "llama", repo: LLAMA_BOARD_BASE.repo, revision: LLAMA_BOARD_BASE.revision },
 };
 
 /** A slug for a run's name: lower case letters, digits and dashes, as a folder on any drive takes it. */
@@ -772,7 +772,7 @@ export function boardSourceProblem(src: BoardSource): string | null {
   return null;
 }
 
-/** The model of a board's fine-tune: its base builds and adapter, a short card, and Qwen's CHANGES.md. */
+/** The model of a board's fine-tune: its base builds and adapter, a short card, and its CHANGES.md. */
 export function boardModel(src: BoardSource, pin: RuntimePin, build?: string): PlanModel {
   const problem = boardSourceProblem(src);
   if (problem) throw new Error(problem);
@@ -805,15 +805,18 @@ export function boardModel(src: BoardSource, pin: RuntimePin, build?: string): P
     "",
     "## License",
     "",
-    `${src.config.base} is licensed under the Apache License 2.0 (licenses/Apache-2.0.txt). This fine-tune wasn't made,`,
-    "reviewed or endorsed by its makers. What was changed is in licenses/CHANGES.md.",
+    "Built with Llama.",
+    "",
+    `${src.config.base} is licensed under the Llama 3.2 Community License (licenses/LLAMA_3.2_LICENSE.txt), and its`,
+    "Acceptable Use Policy is licenses/LLAMA_3.2_USE_POLICY.md. This fine-tune wasn't made, reviewed or endorsed by Meta.",
+    "What was changed is in licenses/CHANGES.md.",
     "",
   ].join("\n");
   const changes = [
     "# Changes",
     "",
-    `This drive holds a modified version of ${src.config.base}, which its makers license under the Apache License 2.0`,
-    "(licenses/Apache-2.0.txt). As section 4(b) of that license asks, this is what was changed:",
+    `This drive holds a modified version of ${src.config.base}, which Meta licenses under the Llama 3.2 Community License`,
+    "(licenses/LLAMA_3.2_LICENSE.txt). This is what was changed:",
     "",
     `- Muse Muse fine-tuned a LoRA adapter on it on an NVIDIA Jetson Orin Nano (run ${src.run}: ${src.config.steps} steps, rank ${src.config.rank}, from the dataset ${src.config.dataset}).`,
     `- ${src.converter} turned the adapter into model/${src.adapter.name}.`,
@@ -822,11 +825,12 @@ export function boardModel(src: BoardSource, pin: RuntimePin, build?: string): P
     `The llama.cpp runtime (MIT, licenses/llama.cpp-LICENSE.txt) is release ${pin.build} (${pin.version}), unchanged. Only`,
     "the server and the libraries it loads are on the drive.",
     "",
-    `${src.config.base} is its makers' model. This fine-tune wasn't made, reviewed or endorsed by them.`,
+    `Built with Llama. ${src.config.base} is Meta's model. This fine-tune wasn't made, reviewed or endorsed by Meta.`,
     "",
   ].join("\n");
   return {
-    title: src.run,
+    // The license (1.b.i) asks that a model made from Llama carries "Llama" at the start of its name.
+    title: `Llama ${src.run}`,
     slug: slugOf(src.run),
     systemLine: src.system ?? "",
     family: base.family,
@@ -836,7 +840,7 @@ export function boardModel(src: BoardSource, pin: RuntimePin, build?: string): P
     tuned: null,
     changes,
     sources: [],
-    words: ownerQwenWords(src.config.base),
+    words: ownerLlamaWords(src.config.base),
   };
 }
 
