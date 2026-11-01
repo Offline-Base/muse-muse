@@ -1023,6 +1023,17 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   - r30b IQ1_S loop check: greedy 9 of 60 loop (8 of them long prompts), cap hit 8, old facts 37/40; Meta sampling 10
     of 60, old facts 35/40;
   - copy_out to the NFS running.
+- 9:50 PM: owner: "I really just wanted modernized and quantized as the base to then fine tune on muse muse".
+  - r30b is that model. Muse Muse's recipes (lib/train/recipes/glimmer.ts MODEL, quantize.ts MERGE_BASE and
+    BASE_SHARDS) point at base Glimmer, so the handoff is: r30b's merged 16-bit weights on Hugging Face, plus shard
+    sha256s for Muse Muse General.
+  - The merged weights are on writer-1 ~/q/stage-b-r30b/merged: 13 shards, 56 GB, 1,436 tensors like the base, with 416
+    changed and 1,020 identical.
+  - Owner asked whether B2 was needed. Answer: no, r30b suffices. Owner: "ok cut b2".
+- 9:46 PM: train-1 terminated (train_multi.py stop) at $568.04, with B2 at step 550 of 1,875; B2 is abandoned. First,
+  its small files (all runs' logs and tests, r30b's final/ outputs, B2's data, scripts; no adapters or checkpoints) went
+  to S3 knowledge/train-1/k-small-files-20261101T0200Z.tar.gz (38 MB). Every adapter that matters was already in S3. The
+  dose test, Stage A+ and B3 are cancelled. The B2 data (S3 corpus/dataset/) and the reviewed tooling (157ec64) stay.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
