@@ -1258,7 +1258,7 @@ because the sidebar showed a real account.
 - Left for the owner in Vercel (production): BUILDER_SNAPSHOT_ID to the new id and MUSE_APP_LOOK=1, then a redeploy.
   Then one canary build on the live site. Once a muse-app product exists, MUSE_APP_LOOK stays on (BRAND.md).
 
-### 23:16 Production redeployed with the muse-app look on; visitor training core landed
+### 23:24 Production redeployed with the muse-app look on; visitor training core landed
 
 - Owner set the two variables through General ("you do these"): BUILDER_SNAPSHOT_ID = snap_SB9bO91OjbBU4n3Amdabfo8iY0CY and
   MUSE_APP_LOOK = 1 in production, then allowed the redeploy: A779wkpbtUZrQZCxkX4dNCa9LRjP, Ready in 2 minutes, same code
