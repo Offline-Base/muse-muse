@@ -43,3 +43,25 @@ export async function runCapsShip(input: CapShipInput, enabled: readonly CapId[]
   }
   return lines;
 }
+
+/** The build room's line when the step after deploy stopped before any cap could say what happened. */
+export const CAPS_SHIP_STOPPED = "The platform's steps after deploy didn't finish, so nothing extra was made from the live link. The web product is live as usual.";
+
+/**
+ * The whole step after deploy (lib/pipeline/build-steps.ts capsShipStep): reads the brief, runs each cap's ship and puts
+ * each line in the build room. Never throws. When reading the brief or writing a line fails, it still tries to say so in
+ * one line, so a failure is never silent.
+ */
+export async function runCapsShipStep(
+  input: Omit<CapShipInput, "brief">,
+  deps: { brief(): Promise<Brief | null>; emit(text: string): Promise<void>; enabled: readonly CapId[]; ships?: Partial<Record<CapId, CapShip>> },
+): Promise<void> {
+  try {
+    const brief = await deps.brief();
+    if (!brief) return;
+    for (const text of await runCapsShip({ ...input, brief }, deps.enabled, deps.ships)) await deps.emit(text);
+  } catch (err) {
+    console.error("[caps] after deploy:", err);
+    await deps.emit(CAPS_SHIP_STOPPED).catch((again: unknown) => console.error("[caps] after deploy, the build room line:", again));
+  }
+}

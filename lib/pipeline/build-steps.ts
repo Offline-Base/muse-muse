@@ -44,7 +44,7 @@ import { capsLivePaths } from "@/lib/caps/live";
 import { capsProofText } from "@/lib/caps/judge";
 import { narrowCapMarkers } from "@/lib/caps/manifest";
 import { capsFileFor } from "@/lib/caps/overlays";
-import { runCapsShip } from "@/lib/caps/ship-run";
+import { runCapsShipStep } from "@/lib/caps/ship-run";
 import { liveCheck } from "@/lib/engine/live-check";
 import { briefMilestones, type MilestoneState, type RoundPlanRecord } from "@/lib/engine/milestones";
 import { renderMilestonePrompt } from "@/lib/engine/prompts";
@@ -1030,14 +1030,11 @@ liveCheckStep.maxRetries = 1;
  */
 export async function capsShipStep(input: { buildId: string; productId: string; sandboxName: string; liveUrl: string }): Promise<void> {
   "use step";
-  try {
-    const build = await loadBuild(input.buildId);
-    const brief = build.brief ?? (await latestBrief(input.productId));
-    if (!brief) return;
-    for (const text of await runCapsShip({ ...input, brief }, env.enabledCaps)) await emit(input.buildId, { type: "log", text });
-  } catch (err) {
-    console.error("[caps] after deploy:", err);
-  }
+  await runCapsShipStep(input, {
+    brief: async () => (await loadBuild(input.buildId)).brief ?? (await latestBrief(input.productId)),
+    emit: (text) => emit(input.buildId, { type: "log", text }),
+    enabled: env.enabledCaps,
+  });
 }
 capsShipStep.maxRetries = 1;
 // ---------- end Wave 3, unit 14 ----------
