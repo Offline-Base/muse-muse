@@ -383,7 +383,7 @@ Muse Code design's `code_sessions` table belongs to the Muse Muse General sessio
 | 0023 | `0023_jobs` | 6 | tables `product_schedules`, `job_runs`, `product_webhooks`, `owner_notices`; `products.owner_seen_at` | 1793431970646 |
 | 0024 | `0024_code` | 9 | table `exec_runs` | 1793432030646 |
 | 0025 | `0025_gpu` | 11 | table `glimmer_windows`; `training_jobs.product_id` | 1793432090646 |
-| 0026 | `0026_hardware` | 13 | tables `boards`, `product_boards` | 1793432150646 |
+| 0026 | `0026_hardware` | 13 | tables `devices`, `product_boards` (section 19) | 1793432150646 |
 | 0028 | `0028_code_sessions` | 9 | table `code_sessions` (15b). 0027 is General's replications | 1793432270646 |
 
 Units 7, 8, 10, 12 and 14 have no migration. Live updates read `product_rows.seq` from 0020. Drive export keeps its state
@@ -2967,6 +2967,79 @@ reached the simulator. Judge: "Device readings in this test come from a simulate
 and its form says so. Never `run_command`. Turn on the owner check before `DEVICE_MCP_URL` reaches production. Needs a
 signed-in builder.
 
+### 19a. As built (tg-cap-hardware)
+
+**What it does, per flag.** All off by default.
+
+| Flag | Does | Off |
+|---|---|---|
+| `HARDWARE_ENABLED` | The writer may fill `hardware`; a build gets the `hardware` overlay. Waits for `CAP_READY.hardware`, still false | Nothing of it anywhere |
+| `HARDWARE_BOARD_TOOLS` | `read_sensor` and `show_text` on `/gadget`, for a token with both `muse-gadget` and `cap:hardware`; `/api/device` lists and calls them too | `/gadget` lists and takes today's three tools. `/api/device` hides the two and answers 403 `tool_off` |
+| `HARDWARE_BOARD_REGISTRY`, `HARDWARE_BOARD_KEY` | `/api/boards`, `/api/products/<slug>/board`, the Your boards card on `/device`, and the board list in the `/gadgets` slot. Without the key: 503 `key_missing`, and no board can be reached | Routes answer 404 and touch nothing; `/gadgets` shows today's note, byte for byte |
+| `HARDWARE_GADGET_OWNER_CHECK` | A live token reaches only the board its product's owner linked, and only with a verified owner pass unless `visitors` is on. Otherwise 503 `gadget_offline`, the same answer whatever the reason. `DEVICE_MCP_URL`'s board isn't read at all | Today's behavior, which is the release review's high finding |
+
+**Admins only** (decision 16). `requireAdmin` on every registry route. An admin is no exception to ownership: `POST .../board`
+needs the product and the board to be that person's, and the gateway's one query (`linkedBoardRow`) requires the board's owner
+to be the product's owner at call time, the board not removed, the kind `muse_device` and the owner not banned. So a product
+that changes hands loses its board.
+
+**Where it differs from section 19.**
+
+- `devices` gains `url_iv` and `url_tag`. The section gave one `iv` and one `tag` for three ciphertexts, and one AES-GCM IV must
+  never seal two values under a key. `iv` and `tag` go with the token, `url_iv` and `url_tag` with whichever URL the row has.
+  Secret columns are nullable (a removed board has them wiped; a loopback offline device has none). **Offline's copy of the shape
+  needs these two columns.**
+- `trust` gains `public_tls`: a board registered by URL is checked as https at a public address, not pinned. `pinned_tls` stays for
+  pairing after Nov 4. Off Vercel only, a board on this machine is `loopback`.
+- `health` holds the last status, failures, time and the last latency. No median yet: offline's probe can add it.
+- `models` stays `[]` on a `muse_device` row.
+- `read_sensor` needs `cap:hardware` as well as the flag, so a plain gadget product never gets it. Its live sensors are the kernel's
+  thermal zones, the only sensors a board has without knowing what's wired to it.
+- `show_text` writes one line to `~/.muse-device/show-text.txt` for a display or script on the board to read. No board here has a
+  display, and nothing runs because of it.
+- A new overlay route, `app/api/musemuse/board/owner`, is the owner landing for a product with board tools and no other owner page.
+  `app/api/products/[slug]/owner-pass`, `lib/tools/deps.ts` and `app/p/[slug]/page.tsx` get marked lines (`hardwareOwnerLink`).
+- `tests/caps/hardware-fake.ts` holds the simulated port on its own, since Playwright sends that function to the browser as text.
+- `lib/pipeline/logic.ts` gets one marked line: board tools bring `muse-gadget` to the token. `lib/caps/ready.ts` gets `hardwareOff`,
+  `lib/brief/normalize.ts` the block's cleanup, and `lib/prompts/catalog.ts` a part of the cache key.
+- Removing a board wipes its secrets and links. There's no cleanup entry: a board isn't a build's or a product's data, and the proof
+  counts are `rate_limits` rows the hourly prune takes.
+
+**Migration.** `0026_hardware` sits at journal index 26 between 0025 and 0028. 0028's SQL is unchanged, and its snapshot is rebuilt
+to chain on 0026 and carry the two tables. `PENDING_WAVE3` is now 23 and 27.
+
+**Limits people should know.**
+
+- With the check on and `visitors` off, a plain `muse-gadget` product (no hardware cap) can't reach its board: `takePhoto`,
+  `recordSound` and `gadgetInfo` in `template/lib/meta/gadget.ts` send no owner pass, and that file is in every build, so it wasn't
+  changed (section 1). It shows its "no board" message and upload path, or its owner ticks "Visitors can use it too". `readSensor`
+  and `showText` do send the pass.
+- A name's addresses are checked before each call and redirects are refused, but a rebind between the check and the connection isn't
+  stopped. Registering is admins only, so an attacker would need an admin to add their host.
+- The registry can't recognize a Gadget SDK token by its shape. The form says not to paste one, and a server that doesn't answer
+  `describe_device` as muse-device does is refused.
+
+**Proven.** Unit tests on a real Postgres (PGlite) and fake boards: the whole way from registering to the owner's call through the
+real routes, another owner's board, a changed owner, a ban, forged and other-product passes, visitors, removal, the two tools' limits,
+every flag off. `DeviceLink` and `checkDeviceLink` in real Chromium (Playwright 1.64.1) against the simulated serial port, USB and
+Bluetooth, including products that don't send and don't show. muse-device: 6 new Python tests, on a Mac.
+
+**Not proven.**
+
+- No real test build (section 22's serial thermometer and `show_text` on the simulated board). As units 3 to 14 found, a local run's
+  sandbox can't reach the gateway, so the caps step can't read `/caps/proof`. So `CAP_READY.hardware` stays false. `board.ts` and
+  `tests/caps/hardware.ts` `checkBoardTool` have run only in that sense: `board.ts` is type-checked, not called.
+- A real serial, USB or Bluetooth device in a browser. Everything used the simulated port.
+- `read_sensor` and `show_text` on a real board. Nobody deployed muse-device 0.5.0.
+- `/device`'s card has been type-checked, not opened in a browser.
+
+**For the owner.**
+
+1. Set `HARDWARE_BOARD_KEY` before turning on the registry, and turn on `HARDWARE_GADGET_OWNER_CHECK` before `DEVICE_MCP_URL`
+   reaches production. Once it's on, every live gadget product needs a link, or it answers `gadget_offline`.
+2. Hussam deploys muse-device 0.5.0 (`muse-device/CHANGES_FOR_HUSSAM.md`).
+3. The test build, on a credentialed run with a public `PLATFORM_URL`, within $1.50 Meta and $0.75 Sandbox.
+
 ## 20. Unit 14: native (K)
 
 **Scope.** A browser extension output (Manifest V3, Load unpacked, a Playwright check); the shell bridge gains notifications
@@ -3394,6 +3467,8 @@ Phaser game.
 
 - Nov 1 (unit 9, Muse Code in products): section 15b added. Muse Code is a code part (`MUSE_CODE_ENABLED`, `code.museCode`) with its own overlay `musecode`, not a `muse_code` target; migration 0028_code_sessions (section 4); `lib/caps/code/session.ts` is the real launcher, with `launchLongSession` and `openSession`; `lib/gateway/{policy,handler,tokens,deps}.ts` get the `code_session` scope; `STORED_PREFIXES` gains `caps`; `lib/tools/deps.ts` and `owner-pass/route.ts` get one marked condition each; `CAP_ENV.code` sets `MUSE_CODE_REPLAY_OK` in builds.
 - Nov 1 (unit 9, review fixes): 15b updated. `lib/gateway/handler.ts` and `policy.ts` gain a session body check and an output ceiling, `lib/trust/gateway.ts` applies the builder's cap to `code_session`, `museCodeProof` counts over the whole build with a new `build_tasks_used` answer and a kit fallback to replay, `vercel.json` gains `/api/cron/musecode-sweep` every 2 minutes, and the product page gains an "Open as owner" link for Muse Code products.
+
+- Nov 1 (unit 13): section 19a added. `devices` gains `url_iv` and `url_tag` (one IV can't seal two values) and `trust` gains `public_tls`; decision 16's admins only on every registry route; board tools need `cap:hardware` too; a new overlay route `app/api/musemuse/board/owner`; new setting `HARDWARE_BOARD_KEY`; `lib/pipeline/logic.ts`, `lib/caps/ready.ts`, `lib/brief/normalize.ts`, `lib/prompts/catalog.ts`, `app/p/[slug]/page.tsx`, `owner-pass/route.ts` and `lib/tools/deps.ts` get marked lines; 0028's snapshot chains on 0026, and `PENDING_WAVE3` is 23 and 27.
 
 - Oct 31: first version (unit 0).
 
