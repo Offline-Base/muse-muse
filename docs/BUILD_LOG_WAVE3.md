@@ -492,3 +492,17 @@ All 15 unit branches are on tg-cap-int at 34d6608, and it still contains d44d1db
 ## tg-cap-drivetools started (Nov 1, 02:45)
 
 The product tools drive_status and export_to_drive were waiting on units 11 and 13, which have merged. One agent is building them in ~/mm-wt/cap-drivetools, owner only, with a card to confirm each export, off behind DRIVE_EXPORT_PRODUCTS.
+
+## First look in a browser (Nov 1, 02:50)
+
+Server on port 3033 from tg-cap-int (~/mm-wt/cap-shots), its own PGlite, no keys, some flags on. It serves, which clears the status page's blocker 4: a worktree with a cloned node_modules (cp -c) works where a symlink doesn't. /, /gadgets, /models, /terms and /privacy answered 200 and /gadgets, /models and /terms were looked at; they render correctly. /device shows "Admins only" as the guest, so the Flash drive card is still unseen. Shots: log-shots/wave3-gadgets.png, wave3-models.png, wave3-terms.png. Clicking through wasn't done. Copying node_modules set off Spotlight and Sophos indexing (load about 48 for a few minutes), so next build waits for load to fall. Spend: $0.
+
+## First production build, and a bug the tests couldn't see (Nov 1, 02:45 to 02:50)
+
+Looking at /device as a made-up admin showed a build error: lib/drive/plan.ts had new URL("../../drive", import.meta.url), which Next's bundler reads as importing a file, and drive/ is a folder. /api/device/drive and the card's data couldn't compile, and a build would likely have failed at merge. tsc and 7,148 tests passed with it. Fixed in f017fe0 (path.join(process.cwd(), "drive"), which next.config.ts already traces). lib/__tests__/bundler-paths.test.ts fails on the old code (checked) and passes now. Drive and device tests 150/150, tsc clean.
+
+Then the first next build of wave 3, at f017fe0, flags off, no keys: exit 0, 390 static pages. 10 warnings about whole-project tracing from createReadStream; measured, the largest function trace is 82 MB against Vercel's 250 MB, so no change. next start on PGlite, every one of the 82 routes with no URL parameter: 21 200s, 2 307s, 2 400s, 1 401, 18 404s (flag-gated parts, as expected), 28 405s (POST only), 1 451 (by design), 8 503s (no CRON_SECRET, no board, no GPU key), and /_global-error's own 500. Nothing crashed and the server log has no errors. Routes with URL parameters weren't crawled. It's a local build, not Vercel's.
+
+Flash drive card seen: log-shots/wave3-device-flash-drive.png (cropped to leave out the made-up address). Small flaw, not fixed yet: with no board, the Model menu stays on "Loading". Spend: $0.
+
+My slip: the drive tools agent was started with worktree isolation, so it works in ~/muse-muse/.claude/worktrees/agent-ad4f69864f590d3ea (branch tg-cap-drivetools-work), not ~/mm-wt/cap-drivetools. ~/muse-muse's own checkout has no tracked changes. To move and clean up when it reports.
