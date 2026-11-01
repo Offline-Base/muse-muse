@@ -7,8 +7,8 @@ import { NotConnected } from "@/components/ui";
 import { env } from "@/lib/env";
 import { canActAsOwner } from "@/lib/auth";
 import { nativeActive } from "@/lib/native/active";
-import { withoutPlanArt } from "@/lib/pipeline/plan-art";
 import { currentUser, getBuildRoom, platformOrigin, rebuildRef, safeQuery } from "@/lib/queries";
+import { withoutPlanArt } from "@/lib/pipeline/plan-art";
 
 export const metadata: Metadata = { title: "Build room" };
 
