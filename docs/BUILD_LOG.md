@@ -1679,3 +1679,13 @@ scripts/dev/tune-harness.ts, on a Lambda gpu_1x_a10 named prove-tune-1, us-east-
 - Terminated through the Lambda API at 20:21Z, before judging, once the copied files' hashes matched, since judging needs no GPU. The instance list shows none left.
 - Not proven: launch, callbacks over https, the workflow, the sweep, Hub upload (publish 0, adapter_uploaded no), a real Glimmer run. The harness also marks every ingested job succeeded, whatever the GPU reported, so read the events for a failure; this run had none.
 - Results outside the repo, in the session scratchpad, so they go when it is cleared: run2-out (events, logs, adapter), run2-verdict.json.
+## Nov 1: full builds behind FULL_BUILDS (branch tg-full-builds, unmerged)
+
+- Why: the owner said builds look like one page. The audit found the writer is told to write small, nothing compares the brief with the note, and tests and judge cover one path.
+- Built: a numbered requirements list, a separate scope check that sends a shrunken brief back, code-made milestones sharing the wall, one test per requirement with a reload check for saved data, a judge read of each requirement, Live blocked by any unmet one, and a checklist in the build room and on the product page. docs/FULL_BUILDS.md has the map.
+- Decision: wall 120 minutes under the flag (`FULL_BUILD_WALL_MINUTES`, 90 to 150). Reasoned from the caps, not from a run.
+- Decision: no `CAP_READY` line changed. Data and the others are fake-tested only, and data needs a public `PLATFORM_URL` for its real build. So full builds save to the browser for now and name accounts as a part they can't do.
+- Decision: the skill, `components/AppNav.tsx` and `musemuse.requirements.json` go in as extra files, so they need no new snapshot. The product-ui and AGENTS.md wording changes do need one.
+- Decision: a scope check that can't run keeps the brief and says so in the build room, rather than stopping the build. The judge still holds the product to the requirements it has.
+- Tests: fakes only. Touched-code files 146 of 147 pass; the one is render.test, which needs the mocks flag. workflow.scenario 56 of 58, with the same 2 failures as tg-prove without this work, and the new full-plan scenario passes. lib/promote 81 of 82, the same failure as tg-prove. flags-off goldens unchanged, with one test's list of stored-only fields extended. build-steps.scenario can't load here or on tg-prove (`collectDeployFiles` export), so the new step code has not run in a test.
+- Not run: a real build, a real scope check or judge call, a sandbox, the browser view of the checklist, a real Playwright run of the requirements step. Spend $0.

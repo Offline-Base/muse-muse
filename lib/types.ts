@@ -1,6 +1,7 @@
 import type { Brief, ProductModelId, TargetId } from "@/lib/brief/schema";
 import type { ProductOutput } from "@/lib/native/targets";
 import type { MilestoneState } from "@/lib/engine/milestones";
+import type { RequirementResult, RequirementTest } from "@/lib/full/requirements";
 
 export type { Brief, ProductModelId, TargetId };
 
@@ -170,6 +171,8 @@ export interface VerifySummary {
   failureOutput: string;
   /** What verify's caps step found, per cap (docs/CAPABILITIES.md, 2.8). Only products with musemuse.caps.json have it. */
   caps?: CapProof[];
+  /** FULL_BUILDS: what each requirement's own test did. Only products with musemuse.requirements.json have it. */
+  requirements?: RequirementTest[];
 }
 
 /** One cap's fixed checks, from scripts/caps-check.mjs in the product (docs/CAPABILITIES.md, 2.8). */
@@ -184,6 +187,8 @@ export interface JudgeVerdict {
   mismatches: string[];
   /** True when a failure must stop the product shipping even as partial: copying, implying Meta made it, or no result. */
   blocking?: boolean;
+  /** FULL_BUILDS: every requirement's result, decided by code from its test and what the judge saw. */
+  requirements?: RequirementResult[];
 }
 
 /** What the build room streams over server-sent events. Stored as build_events.payload. */

@@ -5,6 +5,8 @@ import { briefToMarkdown } from "@/lib/brief/render";
 import type { Brief } from "@/lib/brief/schema";
 import { respondStructured } from "@/lib/brief/structured";
 import { env } from "@/lib/env";
+import { requirementTestsText } from "@/lib/full/prompts";
+import { buildableRequirements, briefRequirements, requirementResults, type RequirementTest, unmetLines } from "@/lib/full/requirements";
 import { judgeInstructions } from "@/lib/prompts/judge";
 import type { JudgeVerdict, ModelUsage, Reference, Screenshot } from "@/lib/types";
 
@@ -28,6 +30,15 @@ const VerdictSchema = z.object({
   blocking: z.boolean().optional(),
 });
 
+/** The judge's reply on a brief with requirements: a read of each, before the decision. */
+const FullVerdictSchema = z.object({
+  reasons: z.array(z.string().min(1)).min(1).max(6),
+  requirements: z.array(z.object({ id: z.string(), met: z.boolean(), evidence: z.string() })),
+  mismatches: z.array(z.string().min(1)).max(60),
+  pass: z.boolean(),
+  blocking: z.boolean().optional(),
+});
+
 export function toJudgeResult(data: z.infer<typeof VerdictSchema>): JudgeResult {
   const { pass, reasons, mismatches } = data;
   return { pass, reasons, mismatches, blocking: pass ? false : (data.blocking ?? true) };
@@ -35,6 +46,8 @@ export function toJudgeResult(data: z.infer<typeof VerdictSchema>): JudgeResult 
 
 const MAX_INSPO = 4;
 const MAX_SCREENSHOTS = 4;
+/** FULL_BUILDS: each requirement has its own screenshot. */
+export const MAX_FULL_SCREENSHOTS = 16;
 
 function remote(url: string): boolean {
   return /^https?:\/\//i.test(url);
@@ -44,9 +57,9 @@ function remote(url: string): boolean {
  * At most four screenshots: the first, then the last ones, so the final screen is always seen. Fix rounds attach the
  * same ones, so Muse Code sees what the judge saw.
  */
-export function pickScreenshots(screens: Screenshot[]): Screenshot[] {
-  if (screens.length <= MAX_SCREENSHOTS) return screens;
-  return [screens[0], ...screens.slice(-(MAX_SCREENSHOTS - 1))];
+export function pickScreenshots(screens: Screenshot[], most = MAX_SCREENSHOTS): Screenshot[] {
+  if (screens.length <= most) return screens;
+  return [screens[0], ...screens.slice(-(most - 1))];
 }
 
 export interface JudgeInput {
@@ -55,6 +68,31 @@ export interface JudgeInput {
   screenshots: Screenshot[];
   /** The fixed checks' results for a product with platform services (capsProofText). None adds nothing. */
   capsProof?: string | null;
+  /** FULL_BUILDS: hold the product to the brief's requirements. Left out, the judge is what it always was. */
+  requirementTests?: RequirementTest[] | null;
+}
+
+/**
+ * Applies the verdict on each requirement, decided in code: an unmet one fails the product and goes first in the fix
+ * notes, whatever the model decided overall. Its blocking call stands, so an unmet requirement alone can ship as partial
+ * once the fix rounds are spent, and never as live.
+ */
+export function withRequirements(
+  verdict: JudgeResult,
+  brief: Brief,
+  tests: RequirementTest[] | null | undefined,
+  reads: Array<{ id: string; met: boolean; evidence: string }>,
+): JudgeResult {
+  const results = requirementResults(briefRequirements(brief), tests, reads);
+  const unmet = unmetLines(results);
+  if (!unmet.length) return { ...verdict, requirements: results };
+  return {
+    ...verdict,
+    requirements: results,
+    pass: false,
+    blocking: verdict.pass ? false : (verdict.blocking ?? false),
+    mismatches: [...unmet, ...verdict.mismatches],
+  };
 }
 
 export async function judgeBuild(input: JudgeInput): Promise<{ verdict: JudgeResult; usage: ModelUsage[]; costUsd: number }> {
@@ -73,6 +111,21 @@ export async function judgeBuild(input: JudgeInput): Promise<{ verdict: JudgeRes
   }
 
   const { content, sources } = judgeContent(input);
+  const required = input.requirementTests !== undefined ? buildableRequirements(input.brief) : [];
+  if (required.length) {
+    const result = await respondStructured({
+      model: env.judgeModel,
+      instructions: judgeInstructions(input.brief, { museAppLook: env.museAppLook, fullBuilds: true, ...(env.verifyAgents ? { verifyAgents: true } : {}) }),
+      content,
+      sources,
+      schema: FullVerdictSchema,
+      schemaName: "judge_verdict",
+      effort: "medium",
+      normalize: (raw) => cleanStrings(raw),
+    });
+    const costUsd = Math.round(result.usage.reduce((s, u) => s + u.costUsd, 0) * 1e6) / 1e6;
+    return { verdict: withRequirements(toJudgeResult(result.data), input.brief, input.requirementTests, result.data.requirements), usage: result.usage, costUsd };
+  }
   const result = await respondStructured({
     model: env.judgeModel,
     instructions: judgeInstructions(input.brief, { museAppLook: env.museAppLook, ...(env.verifyAgents ? { verifyAgents: true } : {}) }),
@@ -120,7 +173,9 @@ export function judgeContent(input: JudgeInput): { content: ContentPart[]; sourc
   }
 
   if (input.capsProof) content.push(textPart(input.capsProof));
-  const shots = pickScreenshots(input.screenshots);
+  const required = input.requirementTests !== undefined ? buildableRequirements(input.brief) : [];
+  if (required.length) content.push(textPart(requirementTestsText(input.requirementTests, required)));
+  const shots = pickScreenshots(input.screenshots, required.length ? MAX_FULL_SCREENSHOTS : MAX_SCREENSHOTS);
   content.push(textPart(`Screenshots, in order (${shots.length}${shots.length < input.screenshots.length ? ` of ${input.screenshots.length}` : ""}):`));
   shots.forEach((shot, i) => {
     const last = i === shots.length - 1 ? " (final screen)" : "";

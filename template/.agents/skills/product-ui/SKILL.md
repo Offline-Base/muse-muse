@@ -29,7 +29,7 @@ Every part below is a class in `app/globals.css` or a component in `components/`
 
 - Build for phones first (about 390 px wide), then let it widen to the 720 px column.
 - The app bar shows the product's name from the brief, and the hero's `h1` and tagline follow meta-ui's first screen. No eyebrow label above the `h1`, and no model chips or cost before there is a result.
-- Put one primary flow on the first screen: input, then action, then result. Put secondary things below or behind a link.
+- Lead the first screen with the main flow: input, then action, then result. It doesn't limit the product to one flow: every other flow and screen the brief lists gets its own place, one tap away.
 - When a result arrives, scroll it into view and move focus to its heading: `resultRef.current?.scrollIntoView({ block: "start" })`. The demo video is 1280 x 720, so a result below the fold is a result nobody sees.
 - Show each thing once. Above a result, a form that only starts one run becomes its summary row with an Edit button (meta-ui), with a photo as a `.thumb`, unless the product compares before and after: then the source is the same size as each result, in a `.gallery`. Show each number once. Put long extras (a full transcript, raw text, more tables) in `<details>`. Keep a phone result screen under about 2,500 px tall (verify fails one over 4,000 px).
 - Show which model did what with one `ModelChip` in each result's `.card-head`, like "Outlined by SAM 3.1" or "Rendered by Muse Image", on a `.card.ai`. Only on output that model really made: never on a fallback, a sample or text the app wrote itself.

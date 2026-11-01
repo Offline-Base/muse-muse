@@ -298,6 +298,7 @@ export const VERIFY_LABEL: Record<string, string> = {
   start: "Server starts",
   console: "No console errors",
   smoke: "Smoke test",
+  requirements: "Requirements",
   manifest: "Manifest",
 };
 

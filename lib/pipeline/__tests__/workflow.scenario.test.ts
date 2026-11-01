@@ -53,7 +53,9 @@ interface Scenario {
   /** Wave 3, unit 14: an enabled cap has a step after deploy (capsShipping in lib/caps/ship.ts). Off by default. */
   capsShipping?: boolean;
   /** The engine's round plan briefStep and loadRefineStep return. */
-  plan?: { buildMs: number; fixMs: number; verifyMs: number; wallMs: number | null; milestones: Array<{ title: string }> };
+  plan?: { buildMs: number; fixMs: number; verifyMs: number; wallMs: number | null; milestones: Array<{ title: string }>; full?: boolean };
+  /** FULL_BUILDS: what judgeStep says is still not met. */
+  judgeUnmet?: string[];
   /** How far each named step moves the fake clock (Date.now), for the build's wall. Unset, time stands still. */
   advance?: Partial<Record<"previewStep" | "collectVerifyStep" | "judgeStep", number>>;
   /** PLAN_ART's step: settles once the build registers ("late"), never ("hangs"), throws, or answers at once (the default). */
@@ -195,7 +197,7 @@ const fakeSteps = {
     tick("judgeStep");
     if (scenario.judgeThrows) throw new Error('Step "judgeStep" failed after 1 retry: judge_verdict: no valid reply');
     const pass = scenario.judgePass ?? true;
-    return { pass, blocking: pass ? false : (scenario.judgeBlocking ?? true) };
+    return { pass, blocking: pass ? false : (scenario.judgeBlocking ?? true), ...(scenario.judgeUnmet ? { unmet: scenario.judgeUnmet } : {}) };
   },
   writeFixPromptStep: async (input: { fix: number }) => {
     record("writeFixPromptStep", input);
@@ -995,6 +997,23 @@ describe("engine (docs/CAPABILITIES.md, section 8)", { skip: canMock ? false : "
   });
   after(() => {
     for (const [k, v] of Object.entries(saved)) v === undefined ? delete process.env[k] : (process.env[k] = v);
+  });
+
+  it("FULL_BUILDS: shares the wall among milestones, checks a capped round with no engine flag, and names what's unmet", async () => {
+    flags({});
+    reset({
+      plan: plan({ full: true, buildMs: 60 * MIN, wallMs: 120 * MIN, verifyMs: 12 * MIN, milestones: [{ title: "R1 to R4" }, { title: "R5 to R8" }] }),
+      musePollsByRun: [Infinity, 2, 2, 2, 2],
+      verifies: [{ passed: true }],
+      judgePass: false,
+      judgeBlocking: false,
+      judgeUnmet: ["R5 is not met: Edit a trip."],
+    });
+    assert.deepEqual(await wf.buildProduct({ buildId: "t1" }), { status: "partial" });
+    const caps = starts().map((r) => r.capMs!);
+    assert.ok(caps[0]! < 60 * MIN, "the first round leaves time for the second");
+    assert.ok(starts().some((r) => r.promptFile === "milestone-2.md"));
+    assert.ok(named("setStatusStep").some((c) => String((c.args[2] as { message?: string })?.message).includes("Not met: R5 is not met: Edit a trip.")));
   });
 
   it("checks a first round that hit its cap and ships it after a fix round (ENGINE_CHECK_ON_TIMEOUT)", async () => {
