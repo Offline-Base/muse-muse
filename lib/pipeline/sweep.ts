@@ -12,8 +12,8 @@ export const STALE_AFTER_MS = 3 * 3_600_000;
  * marked failed too. Returns how many builds it failed.
  */
 export async function failStaleBuilds(now: Date = new Date()): Promise<number> {
-  const stale = await db()
-    .select({ id: schema.builds.id, productId: schema.builds.productId })
+  const rows = await db()
+    .select({ id: schema.builds.id, productId: schema.builds.productId, roundPlan: schema.builds.roundPlan, startedAt: schema.builds.startedAt })
     .from(schema.builds)
     .where(
       and(
@@ -22,6 +22,8 @@ export async function failStaleBuilds(now: Date = new Date()): Promise<number> {
       ),
     )
     .limit(50);
+  // CHAINED_BUILDS: a chain is meant to outlast 3 hours, so it's gone only past its own limit plus the time to ship.
+  const stale = rows.filter((b) => !b.roundPlan?.chain || now.getTime() - b.startedAt.getTime() > (b.roundPlan.chain.maxHours + 3) * 3_600_000);
   for (const build of stale) {
     await setBuildStatus(build.id, "failed", {
       message: "This build stopped reporting progress, so it was stopped.",

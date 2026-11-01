@@ -1645,3 +1645,13 @@ All on localhost:3023, TEST_MODEL, made-up data. Costs are what each build's log
 - Found: both briefs have verdict yes and canDo true on sign-in, while the sign-in is a local picker or profile with no real account. Limits say so, but docs/FULL_BUILDS.md expects a part it can't do to force verdict partly. Not changed.
 - Found: nothing stops a build at a dollar amount. The $40 budget for this job isn't enforced by code; only the wall and DAILY_SPEND_CAP_USD=150 limit it.
 - Result of both builds: pending. A real brief is all this proves so far.
+
+## Nov 1: chained builds and platform powers, behind flags (branch tg-chained, nothing run for real)
+
+- Added `CHAINED_BUILDS`, off, needing `FULL_BUILDS`: a signed-in builder's brief over 24 requirements runs up to 40 milestones across up to 12 sessions of 85 minutes on one sandbox and repo, with a total spend cap ($60), a per-session token budget ($15), a 24-hour limit and the owner's Stop. Each session gets a new token and a new Muse Code session id, and reads `CHAIN_STATE.md`, `BUILD_NOTES.md` and git. docs/CHAINED_BUILDS.md.
+- Added the `platform` cap under `PLATFORM_POWERS`, off, with `CAP_READY` false: sandboxes (Muse Code sessions), metered keys (`mm_pk_`, scope `power_key`) and publishing products. Owner's signed pass only, guests refused at the writer and at the gate, children can't use powers. docs/PLATFORM_POWERS.md.
+- Decision: no migration. Migration 0030 is already taken on other branches, and a preview would need it. The daily limits use the existing atomic counters, a child's mark lives in `builds.rebuild_of`, and chain state in `builds.round_plan`.
+- Decision: every power commits its worst case at the start and isn't settled down later, so the daily limit can't be passed, at the price of counting less real spend than it could. A revoked key's unused budget stays counted that day.
+- Found and left open: a platform-wide `DAILY_SPEND_CAP_USD` pause fails a chain outright, and a workflow crash can't resume a chain, though its repo keeps the work. The judge sees at most 48 screenshots, so requirements past about 46 stay unmet.
+- Tests: fakes only, targeted. tsc clean. plan 10, powers 18, caps-off, flags-off (caps and brief), ready, manifest, tiers and full-builds pass. workflow.scenario 60 of 62 with 4 new chain scenarios; the 2 failures are the same 2 this branch's base logged (a 25-minute cap test on a brief now capped at 60).
+- Not run: a real chain, a real power, a sandbox rotation, a browser view. Needs a new builder snapshot for the `platform` overlay and one `CAP_READY` line. Spend $0.

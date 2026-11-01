@@ -12,6 +12,7 @@ import { HARDWARE_RENDER } from "@/lib/caps/hardware/render";
 import { JOBS_RENDER } from "@/lib/caps/jobs/render";
 import { LIVE_RENDER } from "@/lib/caps/live/render";
 import { MEDIA_RENDER } from "@/lib/caps/media/render";
+import { PLATFORM_RENDER } from "@/lib/caps/platform/brief";
 import { RUNTIME_RENDER } from "@/lib/caps/runtime/render";
 
 /**
@@ -40,6 +41,7 @@ export const CAP_RENDER: Partial<Record<CapId, CapRenderEntry>> = {
   hardware: HARDWARE_RENDER,
   extension: EXTENSION_RENDER,
   games: GAMES_RENDER,
+  platform: PLATFORM_RENDER,
 };
 
 function rendered(brief: Brief): Array<[CapId, CapRenderEntry]> {

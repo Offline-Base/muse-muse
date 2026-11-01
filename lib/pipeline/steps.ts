@@ -1,3 +1,4 @@
+import { CHAIN_ROUND_MAX_MS, type ChainLimits } from "@/lib/chain/plan";
 /** The build workflow's steps, as described in docs/DESIGN.md section 2. */
 export type StepName =
   | "brief"
@@ -103,6 +104,8 @@ export interface RoundPlan {
   milestones: Array<{ title: string }>;
   /** FULL_BUILDS: rounds share the time left (fullRoundCap), and a round stopped at its cap still goes on to the checks. */
   full?: boolean;
+  /** CHAINED_BUILDS: the chain's limits. wallMs is then one session's, measured from when that session began. */
+  chain?: ChainLimits;
 }
 
 /** The longest one round of a full build may run. */
@@ -112,6 +115,19 @@ export const FULL_ROUND_MAX_MS = 60 * MIN;
  * A full build's plan. Verify covers every requirement's test, so its cap grows with their number, and its smoke step's
  * own limit stays under it. Rounds get no fixed cap of their own: fullRoundCap shares out what is left.
  */
+export function chainRoundPlan(size: { requirements: number }, milestones: Array<{ title: string }>, limits: ChainLimits): RoundPlan {
+  const verifyMs = Math.min(45, Math.max(25, 12 + Math.ceil(size.requirements / 2))) * MIN;
+  return {
+    buildMs: Math.min(CHAIN_ROUND_MAX_MS, limits.sessionMs - verifyMs),
+    fixMs: 15 * MIN,
+    verifyMs,
+    wallMs: limits.sessionMs,
+    milestones,
+    full: true,
+    chain: limits,
+  };
+}
+
 export function fullRoundPlan(size: { requirements: number }, milestones: Array<{ title: string }>, opts: { wallMinutes: number }): RoundPlan {
   return {
     buildMs: FULL_ROUND_MAX_MS,
