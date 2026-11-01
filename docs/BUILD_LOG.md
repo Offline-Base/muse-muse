@@ -1700,3 +1700,15 @@ scripts/dev/tune-harness.ts, on a Lambda gpu_1x_a10 named prove-tune-1, us-east-
 - Found: both briefs have verdict yes and canDo true on sign-in, while the sign-in is a local picker or profile with no real account. Limits say so, but docs/FULL_BUILDS.md expects a part it can't do to force verdict partly. Not changed.
 - Found: nothing stops a build at a dollar amount. The $40 budget for this job isn't enforced by code; only the wall and DAILY_SPEND_CAP_USD=150 limit it.
 - Result of both builds: pending. A real brief is all this proves so far.
+
+## Nov 1: the story, STORY_PAGES off (branch tg-story, unmerged)
+
+- Added docs/STORY.md (frontier claim, alignment and privacy paragraphs, 3-minute video outline), `/offline` (new, public, no flag, not in the sidebar), `lib/story/flow.ts` (each step's mark), and with STORY_PAGES a longer `/private` and a frontier section on `/how-it-works`. With the flag off both existing pages render as before.
+- Decision: the claim reads "is built so", since the chain has not run as one. Marks: harness for data, tuning and judging, simulated for own hardware, not run for the small file and for an app on its tuned model.
+- Decision: the owner's rule stands, so /private doesn't name Offline Base, and a test checks that. /offline links it as Muse Privacy.
+- Decision: the flag is read at build time, since both pages are static. Turning it on takes a deploy.
+- Facts read only from ~/jetson-infra (README, docs/fleet.md), ~/BaseDrive-production (production-log.csv; it has logs, no docs) and ~/base-drive/README.md. No board touched.
+- Run: components/story/__tests__/story.test.tsx and components/private/__tests__/private-page.test.tsx, 13 pass, including numbers held to the logs and reports. tsc filtered to touched paths, clean. Pages seen on a local dev site, port 3031, flag on, 1280 and 390 wide, 200, no sideways scroll, no page errors, Offline Base absent from /private.
+  ![/offline with its marks](log/shots/2026-11-01/story-offline-1280.png)
+  ![/private with STORY_PAGES](log/shots/2026-11-01/story-private-1280.png)
+- Not run: the full suite, next build, flag-off pages in a browser (tests only for /private), a Preview. Spend $0.

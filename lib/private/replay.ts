@@ -94,3 +94,10 @@ export const PRIVATE_NUMBERS = {
   tasks: { report: "matrix_baseline_attack_fixes.md", items: 100, right: 81, percent: "81.0%", leaks: 0, unsafeShares: 3 },
   rehearsal: { report: "muse_app/rehearsal_2026-10-31.md", outputs: 18 },
 } as const;
+
+/** More of the same reports, for the longer /private (STORY_PAGES). A test holds them to the reports. */
+export const PRIVATE_DETAIL = {
+  asks: { report: "matrix_baseline_attack_fixes.md", requests: 76, needless: 28, overRefusals: 3 },
+  holdout: { report: "matrix_baseline_attack_fixes.md", items: 20, right: 13, percent: "65.0%", leaks: 0 },
+  grading: { report: "device_smoke_lfm_loosen_default.md", essays: 24, seconds: 41.1, files: 24 },
+} as const;

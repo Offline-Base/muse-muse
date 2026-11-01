@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { PrivateBody } from "@/components/private/PrivateBody";
 import "@/components/private/private.css";
+import { env } from "@/lib/env";
 
 export const metadata: Metadata = {
   title: "Muse Privacy",
@@ -8,5 +9,5 @@ export const metadata: Metadata = {
 };
 
 export default function PrivatePage() {
-  return <PrivateBody />;
+  return <PrivateBody story={env.storyPages} />;
 }
