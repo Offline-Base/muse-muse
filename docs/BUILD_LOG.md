@@ -996,6 +996,31 @@ because the sidebar showed a real account.
   13 (hardware: board tools and registry), the anyone-can-fine-tune design (_plan/open-train.md), tg-train-align's
   providers, and tg-decide's decision models. A read-only design pass reconciles them before any build; the split with
   wave 3 gets agreed first.
+- Wave 3 (20:27): unit 11's train trigger and Glimmer request shape are on hold, unbuilt, written only in its
+  docs/CAPABILITIES.md section 17 (`{GATEWAY_URL}/glimmer/v1/chat/completions` in OpenAI's shape, demo windows,
+  `POST /api/products/<slug>/train`, migration 0025). Its gpu unit starts around 4 AM and builds on General's contract
+  if it's in wave3.md by then. Open question: who serves a tuned model outside a demo window.
+
+### 20:31 Gadgets and Models tabs landed on tuned-model-options (aee5943)
+
+- wf_5e1ee206-43e built tg-nav-tabs: sidebar rows Usage, Models, Fine-tuning, Gadgets (cube and chip icons; /device
+  lights Gadgets, /devices lights nothing), /models (Meta's hosted models with uses, prices and 30-day call counts;
+  Glimmer; the lab's tuned models, linking only what's public; where each kind runs) and /gadgets (what a gadget is, the
+  three tools, status words only, products using one, the admins' /device link). Review: 1 medium, 6 low, all fixed but
+  an optional SQL filter (a claim of a board that wasn't set up; promises nothing backs; tests for the new count and a
+  database that doesn't answer; docs; the kit's StatusPill; a log line on every visit). A 390 px sideways scroll on
+  /models, found in its screenshots, was fixed too. Full suite at 0578b07: 4,458 tests, 4,450 pass, 0 fail, 8 skipped.
+- General then added (c0c6b52) the owner's three pictures on /gadgets, under "Boards on hand": Jetson Orin Nano 8 GB
+  (6), Raspberry Pi 5 (2), Coral board (2), each shown as given (no tile, no cutout), with facts from PLATFORM_PLAN.md
+  and HANDOFF_HUSSAM.md and no addresses or live status. Also wave 3's two marked slots: components/gadgets/BoardsSlot.tsx
+  (unit 13) and components/models/OwnModelsSlot.tsx (unit 11, renders nothing today). After the merge: tsc exit 0, the
+  related tests 112/112.
+- Checked on the local site (port 3020): no sideways scroll at a true 390 px viewport, dark mode shows the pictures'
+  white backgrounds as rounded blocks. Desktop shots are cropped above the account chip.
+  ![Gadgets, desktop](log/shots/2026-10-31/tabs-gadgets-1440-light.png)
+  ![Gadgets, dark](log/shots/2026-10-31/tabs-gadgets-1440-dark.png)
+  ![Gadgets, phone](log/shots/2026-10-31/tabs-gadgets-390-light.png)
+  ![Models, desktop](log/shots/2026-10-31/tabs-models-1440-light.png)
 
 ## Gaps
 
