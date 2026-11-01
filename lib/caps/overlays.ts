@@ -1,5 +1,6 @@
 import type { Brief } from "@/lib/brief/schema";
 import { briefCaps } from "@/lib/caps/brief-fields";
+import { ENGINE_OVERLAY, type GamesBrief } from "@/lib/caps/games/brief";
 import type { CapId } from "@/lib/caps/ids";
 
 /**
@@ -9,7 +10,10 @@ import type { CapId } from "@/lib/caps/ids";
  */
 export const CORE_OVERLAY = "core";
 
-export const CAP_OVERLAY_PICK: Partial<Record<CapId, (brief: Brief) => string[]>> = {};
+export const CAP_OVERLAY_PICK: Partial<Record<CapId, (brief: Brief) => string[]>> = {
+  // The shared games overlay (its checks, test helper, asset helper and skill), then the engine's own.
+  games: (brief) => ["games", ENGINE_OVERLAY[((brief as { games?: GamesBrief | null }).games ?? { engine: "phaser" }).engine]],
+};
 
 /** The file a product with caps carries (musemuse.caps.json), which verify, Playwright and the tests read. */
 export interface CapsFile {

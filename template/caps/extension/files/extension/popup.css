@@ -1,0 +1,54 @@
+/* The extension popup's look: the product's own tokens from app/globals.css, so the popup matches the web product.
+   Keep using these tokens. The extension ships its own files only, so no web fonts: the system font stands in. */
+
+:root {
+  --bg: #f0f2f5;
+  --surface: #ffffff;
+  --surface-2: #f0f2f5;
+  --line: #ced0d4;
+  --fg: #080809;
+  --fg-2: #65686c;
+  --accent: #0866ff;
+  --on-accent: #ffffff;
+  --link: #0064d1;
+  --focus: #0866ff;
+  --negative: #dd2334;
+  --disabled: #b0b3b8;
+  --radius: 10px;
+  --radius-lg: 16px;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-display: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1c1c1d;
+    --surface: #252728;
+    --surface-2: #333334;
+    --line: #3e4042;
+    --fg: #e2e5e9;
+    --fg-2: #b0b3b8;
+    --link: #5aa7ff;
+    --focus: #1d85fc;
+    --negative: #ff7c74;
+    --disabled: #6f7276;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--surface); color: var(--fg); font: 400 15px/22px var(--font); }
+.popup { width: 360px; max-width: 100%; padding: 16px; display: grid; gap: 12px; }
+.title { margin: 0; font: 700 17px/22px var(--font-display); }
+.hint { margin: 0; color: var(--fg-2); overflow-wrap: anywhere; }
+.note { margin: 0; color: var(--fg-2); font-size: 13px; line-height: 18px; }
+.error { margin: 0; color: var(--negative); }
+.result { display: grid; gap: 8px; }
+.result p { margin: 0; overflow-wrap: anywhere; }
+.btn { min-height: 40px; padding: 0 16px; border: 0; border-radius: var(--radius); font: 600 15px/20px var(--font); cursor: pointer; }
+.btn.primary { background: var(--accent); color: var(--on-accent); }
+.btn:disabled { background: var(--surface-2); color: var(--disabled); cursor: default; }
+.btn:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+a { color: var(--link); }
+label { display: grid; gap: 6px; font-weight: 600; }
+input, textarea { width: 100%; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--fg); font: inherit; }

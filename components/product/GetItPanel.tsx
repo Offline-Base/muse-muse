@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 import { GetItTabs } from "@/components/product/GetItTabs";
 import { TARGETS, type TargetId } from "@/lib/brief/schema";
-import { PRODUCT_OUTPUTS, RUNTIME_OUTPUTS, type ProductOutput, type RuntimeOutput } from "@/lib/native/targets";
+import { CAP_OUTPUTS, PRODUCT_OUTPUTS, RUNTIME_OUTPUTS, type CapOutput, type ProductOutput, type RuntimeOutput } from "@/lib/native/targets";
 
-export type GetItSlotId = TargetId | ProductOutput | RuntimeOutput;
+export type GetItSlotId = TargetId | ProductOutput | RuntimeOutput | CapOutput;
 
 /** What each tab is called, in the order they show: where a product runs, then what else it comes with. */
 const LABELS: Record<GetItSlotId, string> = {
@@ -21,9 +21,10 @@ const LABELS: Record<GetItSlotId, string> = {
   vscode: "VS Code",
   github_action: "GitHub Action",
   self_host: "Self-host",
+  extension: "Extension",
 };
 
-export const GET_IT_SLOTS: readonly GetItSlotId[] = [...TARGETS, ...PRODUCT_OUTPUTS, ...RUNTIME_OUTPUTS];
+export const GET_IT_SLOTS: readonly GetItSlotId[] = [...TARGETS, ...PRODUCT_OUTPUTS, ...RUNTIME_OUTPUTS, ...CAP_OUTPUTS];
 
 /** What each unit fills for a product. A slot with nothing to show stays out of the panel: give it null. */
 export type GetItSlots = Partial<Record<GetItSlotId, ReactNode>>;

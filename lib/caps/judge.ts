@@ -1,5 +1,7 @@
 import type { Brief } from "@/lib/brief/schema";
 import { briefCaps } from "@/lib/caps/brief-fields";
+import { extensionJudgeNote } from "@/lib/caps/extension/judge";
+import { gamesJudgeNote } from "@/lib/caps/games/judge";
 import type { CapId } from "@/lib/caps/ids";
 import type { CapProof, VerifySummary } from "@/lib/types";
 
@@ -8,7 +10,10 @@ import type { CapProof, VerifySummary } from "@/lib/types";
  * It gets each cap's note (what to look for on the screenshots) and the checks' results as text. One line per cap, in
  * plan order; the text lives in lib/caps/<id>/judge.ts.
  */
-export const CAP_JUDGE: Partial<Record<CapId, (brief: Brief) => string>> = {};
+export const CAP_JUDGE: Partial<Record<CapId, (brief: Brief) => string>> = {
+  extension: extensionJudgeNote,
+  games: gamesJudgeNote,
+};
 
 /**
  * The notes judgeInstructions (lib/prompts/judge.ts) appends after the glasses note. Empty for a brief with no cap blocks,

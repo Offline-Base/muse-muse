@@ -1,5 +1,7 @@
 import type { z } from "zod";
 import type { CapId } from "@/lib/caps/ids";
+import { EXTENSION_WRITER_RULES, ExtensionBriefBlock } from "@/lib/caps/extension/brief";
+import { GAMES_WRITER_RULES, GamesBriefBlock } from "@/lib/caps/games/brief";
 import { RUNTIME_WRITER_RULES, RuntimeBriefBlock } from "@/lib/caps/runtime/brief";
 
 /**
@@ -13,6 +15,8 @@ import { RUNTIME_WRITER_RULES, RuntimeBriefBlock } from "@/lib/caps/runtime/brie
  */
 export const CAP_BRIEF_FIELDS = {
   runtime: RuntimeBriefBlock,
+  extension: ExtensionBriefBlock,
+  games: GamesBriefBlock,
 } as const satisfies Partial<Record<CapId, z.ZodTypeAny>>;
 
 export type CapBriefKey = keyof typeof CAP_BRIEF_FIELDS;
@@ -29,6 +33,8 @@ export function briefCaps(brief: object): CapId[] {
  */
 export const CAP_WRITER_RULES: Partial<Record<CapId, readonly string[]>> = {
   runtime: RUNTIME_WRITER_RULES,
+  extension: EXTENSION_WRITER_RULES,
+  games: GAMES_WRITER_RULES,
 };
 
 /** The writer's rules for the enabled caps, as a section for its instructions. Empty when none has rules. */
