@@ -1665,10 +1665,10 @@ All on localhost:3023, TEST_MODEL, made-up data. Costs are what each build's log
 - Tests: package-run 4 pass, local-gadget 3 pass. tsc shows nothing in the touched files. workflow.scenario can't load here: 57 cancelled on the workflow package's FatalError export, and the same load error shows on tg-verify without these changes.
 - Spend: $0.28 Meta as recorded, about $0.03 Composio by estimate, sandbox time unmeasured.
 
-## Nov 1: repeat-until-good tuning loop (TUNE_LOOP, off), branch tg-tune-loop
+## Nov 1: reinforcement learning recipe (branch tg-rl, flag TUNE_RL off, unmerged)
 
-Written with targeted tests only. Nothing has run for real: no writer, GPU, judge or workflow runtime, and nothing was spent.
-
-- A person sets a target score and a spend cap on a judged run. Each round aims a new dataset at the last verdict's weak prompts, merges it with the last round's rows, trains a new adapter from the base with the source job's settings, is judged on the same kept-aside prompts, and stops at the target, the cap or the round limit. /fine-tuning/loops/{id} shows every round.
-- Decision: the kept-aside prompts split in two. The writer sees weak prompts from the working half only, and the target is checked on the sealed half, or the score would climb from the writer copying the test. The split runs in pairs because the judge shows the base first on even indexes.
-- Decision: no migration. The loop's record is rate_limits rows, as a run's marks are; a round's datasets have ids made from the loop's. Publish is 0 for every round. A product's run or a decision run can't loop.
+- Added recipe rl-grpo: TRL GRPO on a LoRA of r30b, made-up arithmetic, reward checked by code. The job page shows reward over time and 40 held-out problems before and after. No migration, no judge, nothing published.
+- Decision: r30b rather than a small Llama, because its pinned commit, venv and cache already exist. It may be slow per step, since GRPO samples many answers on a 30B model.
+- Decision: results travel as done metrics, not eval items, so the paid judge never runs.
+- Read trl 0.22.2's wheel source for GRPOTrainer and GRPOConfig. Not imported or run.
+- Tests: rl.test.ts and rl-results.test.tsx on fakes. Nothing has run for real: no GPU, no real TRL, no Unsloth, no browser, no build. Spend $0.
