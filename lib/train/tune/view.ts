@@ -6,7 +6,7 @@ import { evalRows, evalState, gpuName, isDatasetStalled, type EvalRow } from "@/
 import { toDatasetView, toJobView, unjudgedNote, type DatasetHead, type TrainJobRow } from "@/lib/train/logic";
 import { isJudged } from "@/lib/train/models";
 import { recipeById } from "@/lib/train/recipes";
-import { clampExamples, planCost, planSettings } from "@/lib/train/tune/plan";
+import { clampExamples, planCost, planSettings } from "@/lib/train/tune/cost";
 import { evalVerdict } from "@/lib/train/tune/verdict";
 import type { TuneRunView, TuneSettings, TuneStage, TuneVerdict } from "@/lib/train/tune/types";
 import type { DatasetView, TrainEventView, TrainJobView } from "@/lib/train/types";

@@ -258,3 +258,17 @@ export function foldExamples(note: string, rows: readonly ExampleRow[], max: num
   }
   return { task, used };
 }
+
+/**
+ * A note typed or pasted into the composer, split into the person's words and the pairs pasted after them: from the
+ * first "Q:" (or Prompt:, User:, Input:, Question:, Customer:) line on, when at least one pair reads there. Otherwise
+ * the whole note is the person's words.
+ */
+export function splitNote(text: string): { note: string; rows: ExampleRow[] } {
+  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  const at = lines.findIndex((l) => PASTE_PROMPT.test(l.trimStart()));
+  if (at < 0) return { note: text.trim(), rows: [] };
+  const { rows } = pastedRows(lines.slice(at).join("\n"));
+  if (!rows.length) return { note: text.trim(), rows: [] };
+  return { note: lines.slice(0, at).join("\n").trim(), rows: rows.slice(0, EXAMPLE_ROWS_MAX) };
+}

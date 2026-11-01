@@ -7,17 +7,16 @@
  */
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { datasetCostRange, datasetMinutes } from "@/components/train/format";
 import { textPart } from "@/lib/brief/media";
 import { cleanStrings } from "@/lib/brief/normalize";
 import { respondStructured, StructuredOutputError, type StructuredOptions, type StructuredResult } from "@/lib/brief/structured";
 import { testModel } from "@/lib/env";
-import { tokenCost } from "@/lib/meta/pricing";
 import { REFUSE_WHEN } from "@/lib/prompts/brief";
 import { canonicalJson, mac, sameMac } from "@/lib/tools/sign";
-import { DATASET_MAX_COUNT, DATASET_MIN_COUNT, DATASET_TASK_MAX, evalHoldoutCount, runEstimate } from "@/lib/train/logic";
+import { DATASET_MAX_COUNT, DATASET_MIN_COUNT, DATASET_TASK_MAX } from "@/lib/train/logic";
+import { planCost, planSettings } from "@/lib/train/tune/cost";
 import { foldExamples } from "@/lib/train/tune/examples";
-import type { ExampleRow, TrainPlan, TrainPlanBody, TrainPlanCost, TrainPlanSource, TuneSettings } from "@/lib/train/tune/types";
+import type { ExampleRow, TrainPlan, TrainPlanBody, TrainPlanSource } from "@/lib/train/tune/types";
 import type { ModelUsage } from "@/lib/types";
 
 /** The model that drafts plans in production. TEST_MODEL (Spark 1.3 Contributor, never on production) stands in for tests. */
@@ -25,73 +24,6 @@ export const PLAN_MODEL = "muse-wonder-1.0";
 
 export function planModel(): string {
   return testModel() ?? PLAN_MODEL;
-}
-
-// ---------------------------------------------------------------------------------------------------------------
-// Fixed defaults (docs/TRAINING.md "Fine-tune like a build")
-
-export const TUNE_STEPS = 120;
-export const TUNE_LORA_RANK = 16;
-export const TUNE_LEARNING_RATE = 0.0002;
-/** The A100 SXM4 trained Muse Glimmer's measured runs (42 to 47 minutes, $1.39 to $1.59). */
-export const TUNE_GPU = "gpu_1x_a100_sxm4";
-export const TUNE_MAX_MINUTES = 90;
-/** Minutes the platform takes to score base against tuned after the GPU shuts down. */
-const SCORE_MINUTES = 5;
-
-/** Words the person types, before their own rows are folded in. */
-export const NOTE_MIN = 20;
-export const NOTE_MAX = 1500;
-
-/** The settings every run starts with: `examples` examples, the job's limits within the platform's ceilings. */
-export function planSettings(examples: number, ceilings: { maxMinutes: number; maxUsd: number }): TuneSettings {
-  return {
-    examples: clampExamples(examples),
-    recipe: "glimmer-lora",
-    steps: TUNE_STEPS,
-    loraRank: TUNE_LORA_RANK,
-    learningRate: TUNE_LEARNING_RATE,
-    studentPrompt: "short",
-    publish: 0,
-    gpu: TUNE_GPU,
-    maxMinutes: Math.max(1, Math.min(TUNE_MAX_MINUTES, Math.floor(ceilings.maxMinutes))),
-    maxUsd: Math.max(0.1, Math.floor(ceilings.maxUsd * 100 + 1e-6) / 100),
-  };
-}
-
-/** A whole number of examples the datasets route takes (20 to 1000). */
-export function clampExamples(n: number): number {
-  const v = Math.floor(Number(n));
-  return Number.isFinite(v) ? Math.min(DATASET_MAX_COUNT, Math.max(DATASET_MIN_COUNT, v)) : DATASET_MIN_COUNT;
-}
-
-/** Rough tokens to judge one kept-aside prompt (the prompt, the reference and both answers in; a verdict out), low and high. */
-const SCORE_PER_ITEM = {
-  low: { inputTokens: 1000, outputTokens: 250 },
-  high: { inputTokens: 2500, outputTokens: 900 },
-};
-
-/**
- * What a run with these settings is expected to cost and take. Writing and scoring are estimates at Muse Wonder's
- * prices (datasetCostRange: its cost per example isn't measured yet). The GPU is the job's hard dollar limit.
- */
-export function planCost(s: TuneSettings): TrainPlanCost {
-  const meta = datasetCostRange(s.examples);
-  const items = evalHoldoutCount(s.examples);
-  const train = runEstimate(s.recipe, { maxSteps: s.steps }, s.gpu, true);
-  return {
-    metaLowUsd: meta.low,
-    metaHighUsd: meta.high,
-    gpuMaxUsd: s.maxUsd,
-    scoreLowUsd: Math.floor(tokenCost(PLAN_MODEL, SCORE_PER_ITEM.low) * items * 100) / 100,
-    scoreHighUsd: Math.ceil(tokenCost(PLAN_MODEL, SCORE_PER_ITEM.high) * items * 100) / 100,
-    minutes: datasetMinutes(s.examples) + Math.min(s.maxMinutes, train?.minutes ?? s.maxMinutes) + SCORE_MINUTES,
-  };
-}
-
-/** The most a run is expected to cost: the high estimates plus the GPU's limit. */
-export function planMaxUsd(c: TrainPlanCost): number {
-  return Math.round((c.metaHighUsd + c.gpuMaxUsd + c.scoreHighUsd) * 100) / 100;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -151,6 +83,7 @@ const PlanSchema = z.object({
     scoreLowUsd: money,
     scoreHighUsd: money,
     minutes: z.number().finite().min(0).max(100_000),
+    trainMinutes: z.number().finite().min(0).max(100_000),
   }),
   source: SourceSchema,
   token: z.string().min(1).max(200),
@@ -283,3 +216,4 @@ export async function draftPlan(input: DraftInput, deps: DraftDeps = defaultDeps
 }
 
 export { StructuredOutputError };
+export { clampExamples, NOTE_MAX, NOTE_MIN, planCost, planMaxUsd, planSettings, TUNE_GPU, TUNE_LEARNING_RATE, TUNE_LORA_RANK, TUNE_MAX_MINUTES, TUNE_STEPS } from "@/lib/train/tune/cost";

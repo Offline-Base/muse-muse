@@ -40,6 +40,8 @@ export interface TrainPlanCost {
   scoreHighUsd: number;
   /** Writing, training and scoring, in whole minutes, roughly. */
   minutes: number;
+  /** The GPU's part of `minutes`: booting, loading the model, training and answering the kept-aside prompts. */
+  trainMinutes: number;
 }
 
 /** Where a plan's examples come from: a task Muse Wonder writes for, a dataset that already exists, or a build (later). */

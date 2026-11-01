@@ -16,6 +16,7 @@ import {
   examplesFromBody,
   foldExamples,
   parseExamples,
+  splitNote,
 } from "@/lib/train/tune/examples";
 import type { DraftDeps } from "@/lib/train/tune/plan";
 import type { TrainPlan, TrainPlanBody } from "@/lib/train/tune/types";
@@ -115,6 +116,19 @@ describe("the person's examples", () => {
     assert.equal(examplesFromBody(Array.from({ length: 51 }, () => ({ prompt: "p", answer: "a" }))), null);
   });
 
+  it("splits pairs pasted under the note from the note itself", () => {
+    const typed = `${NOTE}\n\nQ: Open Sunday?\nA: 8 to 2.\nQ: Vegan cake?\nA: Yes, order two days ahead.`;
+    assert.deepEqual(splitNote(typed), {
+      note: NOTE,
+      rows: [
+        { prompt: "Open Sunday?", answer: "8 to 2." },
+        { prompt: "Vegan cake?", answer: "Yes, order two days ahead." },
+      ],
+    });
+    assert.deepEqual(splitNote(NOTE), { note: NOTE, rows: [] });
+    assert.deepEqual(splitNote(`${NOTE}\nQ: a question with no answer`), { note: `${NOTE}\nQ: a question with no answer`, rows: [] });
+  });
+
   it("folds as many rows into the task as fit, each cut short, and counts them", () => {
     const rows = Array.from({ length: 50 }, (_, i) => ({ prompt: `Question ${i} ${"word ".repeat(80)}`, answer: `Answer ${i} ${"more ".repeat(120)}` }));
     const { task, used } = foldExamples(NOTE, rows, DATASET_TASK_MAX);
@@ -156,6 +170,7 @@ describe("defaults and cost", () => {
     assert.ok(c.scoreLowUsd > 0.1 && c.scoreHighUsd < 0.7, `${c.scoreLowUsd} to ${c.scoreHighUsd}`);
     // 20 minutes of writing, 24 of training plus 20 around it, 5 of scoring.
     assert.equal(c.minutes, 69);
+    assert.equal(c.trainMinutes, 44);
     assert.equal(plan.planMaxUsd(c), Math.round((6.76 + 5 + c.scoreHighUsd) * 100) / 100);
   });
 });
