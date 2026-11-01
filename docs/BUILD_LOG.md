@@ -1066,7 +1066,7 @@ because the sidebar showed a real account.
   board. Estimates: about $11.80 a run at most (examples $3.10 to $6.80 on Wonder, unmeasured; GPU up to $5). Test budget
   proposed: $8. Units U1, U2, U4, U5 start now; launching jobs and the chat route wait for tg-decide's D7.
 
-### 20:50 Meta's Muse Gadget SDK read
+### 20:48 Meta's Muse Gadget SDK read
 
 - Owner: "see if anything here is valuable ... we are cool custom building too". Notes in _plan/gadget-sdk.md. Gadgets
   pair to one person's Muse account with that person's SDK token (personal, non-commercial, at most 50 devices, no
