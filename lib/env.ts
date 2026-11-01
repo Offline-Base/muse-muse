@@ -364,6 +364,71 @@ export const env = {
     return Math.min(1000, Math.max(20, Math.floor(number("TUNE_DEFAULT_EXAMPLES", 200))));
   },
 
+  // ---------- Anyone can fine-tune (General; lib/train/public, open-train.md) ----------
+
+  /**
+   * PUBLIC_TRAINING: "1", "true", "yes" or "on" lets visitors without admin start runs, under the limits below, with a
+   * signed mm_trainer cookie as their identity (lib/train/public/identity.ts). Off by default: trainCaller is exactly
+   * requireAdminOrAutomation, no cookie is ever minted, and nothing else anywhere changes.
+   */
+  get publicTraining(): boolean {
+    return flag("PUBLIC_TRAINING");
+  },
+  /**
+   * PUBLIC_DATASETS: the owner's switch for visitors having Muse Wonder write their datasets. Off, and nothing reads it
+   * as a yes yet: Meta's terms (10.1(ix)) cover systematic collection of Outputs for training, so visitors train on the
+   * lab's ready datasets or their own rows only (visitorDatasetSource in lib/train/public/limits.ts refuses Wonder-written
+   * data for visitors whatever this says).
+   */
+  get publicDatasets(): boolean {
+    return flag("PUBLIC_DATASETS");
+  },
+  /** Real GPU runs one visitor may start per UTC day. */
+  get publicTrainRunsPerDay(): number {
+    return Math.floor(number("PUBLIC_TRAIN_RUNS_PER_DAY", 1));
+  },
+  /** Dry runs (dryRun 1) one visitor may start per UTC day. */
+  get publicTrainDryRunsPerDay(): number {
+    return Math.floor(number("PUBLIC_TRAIN_DRY_RUNS_PER_DAY", 1));
+  },
+  /** Datasets of their own rows one visitor may add per UTC day. */
+  get publicTrainDatasetsPerDay(): number {
+    return Math.floor(number("PUBLIC_TRAIN_DATASETS_PER_DAY", 2));
+  },
+  /** The most rows a visitor's dataset may have, and the most examples a visitor's run may ask for. */
+  get publicTrainDatasetMaxRows(): number {
+    return Math.min(1000, Math.floor(number("PUBLIC_TRAIN_DATASET_MAX_ROWS", 100)));
+  },
+  /** One IP may do this many times what one visitor may, since a cookie can be cleared. */
+  get publicTrainIpFactor(): number {
+    return Math.floor(number("PUBLIC_TRAIN_IP_FACTOR", 2));
+  },
+  /** New mm_trainer cookies one IP may get per UTC day. */
+  get publicTrainCookiesPerIp(): number {
+    return Math.floor(number("PUBLIC_TRAIN_COOKIES_PER_IP", 3));
+  },
+  /** A visitor job's limits, each within the lab's own ceiling (TRAIN_JOB_MAX_MINUTES, TRAIN_JOB_MAX_USD). */
+  get publicTrainJobMaxMinutes(): number {
+    return Math.min(env.trainJobMaxMinutes, Math.floor(number("PUBLIC_TRAIN_JOB_MAX_MINUTES", 60)));
+  },
+  get publicTrainJobMaxUsd(): number {
+    return Math.min(env.trainJobMaxUsd, number("PUBLIC_TRAIN_JOB_MAX_USD", 4));
+  },
+  get publicTrainJobMaxSteps(): number {
+    return Math.floor(number("PUBLIC_TRAIN_JOB_MAX_STEPS", 120));
+  },
+  /** Visitor jobs that may hold a GPU at once, inside TRAIN_MAX_ACTIVE. */
+  get publicTrainMaxActive(): number {
+    return Math.min(env.trainMaxActive, Math.floor(number("PUBLIC_TRAIN_MAX_ACTIVE", 1)));
+  },
+  /**
+   * What every visitor together may commit to GPUs per UTC day, in USD, inside TRAIN_DAILY_USD (so visitors can never
+   * take more than the lab's whole day). 0 pauses visitor runs.
+   */
+  get publicTrainDailyUsd(): number {
+    return Math.min(env.trainDailyUsd, dollars("PUBLIC_TRAIN_DAILY_USD", 15));
+  },
+
   // ---------- Gadgets as a build option (docs/GADGETS.md) ----------
 
   /**

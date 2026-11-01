@@ -3,6 +3,7 @@ import { cookies, headers } from "next/headers";
 import { eq, isNull } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
 import { env } from "@/lib/env";
+import { isReservedEmail } from "@/lib/train/public/reserved";
 
 /**
  * Sign-in for the hackathon: an email, a personal password and an access code. Testers and judges share
@@ -212,6 +213,7 @@ export async function checkSignIn(
   const email = input.email.trim().toLowerCase();
   const { password } = input;
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 200 || email === GUEST_EMAIL) return null;
+  if (isReservedEmail(email)) return null; // open-train: the guest's and visitor trainers' rows are never signed in as
   if (password.length < MIN_PASSWORD_LENGTH || password.length > MAX_PASSWORD_LENGTH) return null;
   const kind = codeKind(input.code, config.accessCode, config.adminAccessCode);
   if (!kind) return null;
