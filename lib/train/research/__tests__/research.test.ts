@@ -1,6 +1,6 @@
 /**
  * Data research's rules that matter: only the search's own links reach a report, licenses are an exact list, read-only
- * stays read only, fetches can't reach private addresses or run past their cap, an import refuses personal data and a
+ * stays read only, fetches can't reach private addresses or run past their cap, an import drops rows with personal data and a
  * Hub dataset that isn't open, and the budget leaves room for the report. No network.
  *
  *   npx tsx --test lib/train/research/__tests__/research.test.ts
@@ -143,9 +143,13 @@ describe("importSource", () => {
     }
   });
 
-  it("refuses the whole source when the scan finds personal data", async () => {
-    const got = await importSource(source(), true, deps({ [source().url]: { text: csv(60, " or mail jordan.reyes@gmail.com") } }));
-    assert.equal(!got.ok && got.error, "personal_data");
+  it("drops only the rows the scan flags and says so", async () => {
+    const got = await importSource(source(), true, deps({ [source().url]: { text: `${csv(60)}\n"How do I reach the owner, Jordan, about a late order?","Mail jordan.reyes@gmail.com and ask for an update on it."` } }));
+    assert.ok(got.ok);
+    if (got.ok) {
+      assert.ok(got.rows.every((r) => !JSON.stringify(r).includes("@")));
+      assert.match(got.note, /dropped for what looked like personal data/);
+    }
   });
 
   it("refuses too few rows and never reads a read-only source", async () => {

@@ -1,12 +1,12 @@
 /**
  * Reads a picked source's rows (docs/TRAINING.md "Data research"), with the limits a person's upload has
  * (checkDecisionUpload's 4 MB and 3,000 rows) and the PII scan. Decides again from the stored source: nothing the page
- * sends can make a read-only source importable. Any personal data the scan finds refuses the whole source.
+ * sends can make a read-only source importable. Rows the personal-data scan flags are dropped and counted; the rest come in.
  */
 import { env } from "@/lib/env";
 import { DECISION_ROWS_MAX, DECISION_UPLOAD_MAX_BYTES } from "@/lib/train/decision-datasets";
 import { DATASET_MAX_COUNT, dedupePrompts } from "@/lib/train/logic";
-import { piiFindings, piiSentences } from "@/lib/train/public/content";
+import { piiFindings } from "@/lib/train/public/content";
 import { FetchRefused, realFetchDeps, safeGet, type FetchDeps } from "@/lib/train/research/fetch";
 import { importability, licenseClass } from "@/lib/train/research/logic";
 import type { ResearchSource } from "@/lib/train/research/types";
@@ -121,12 +121,13 @@ export async function importSource(source: ResearchSource, licenseConfirmed: boo
   const fit = raw.filter(usable);
   const byPrompt = new Map(fit.map((r) => [r.prompt, r]));
   const prompts = dedupePrompts([], fit.map((r) => r.prompt), DATASET_MAX_COUNT);
-  const rows = prompts.map((p) => byPrompt.get(p)!);
+  const unique = prompts.map((p) => byPrompt.get(p)!);
+  // The owner's call (Nov 1): one stray phone number shouldn't block a large dataset, so only the flagged rows go.
+  const rows = unique.filter((row) => piiFindings({ rows: [row] }).length === 0);
+  const flagged = unique.length - rows.length;
   if (rows.length < IMPORT_MIN_ROWS) {
     return refuse(422, "too_few_rows", `It has ${rows.length} usable rows with a prompt and an answer, and an import needs ${IMPORT_MIN_ROWS}.`);
   }
-  const pii = piiSentences(piiFindings({ rows }));
-  if (pii.length) return refuse(422, "personal_data", `It holds what looks like personal data, so it stays read only. ${pii.join(" ")}`);
 
   const at = revision ? ` at ${revision.slice(0, 12)}` : "";
   return {
@@ -136,6 +137,6 @@ export async function importSource(source: ResearchSource, licenseConfirmed: boo
     dropped: read - rows.length,
     license,
     revision,
-    note: `Imported from ${source.url}${at}, license ${license}. ${rows.length} of ${read} rows kept. Keep its license and attribution with anything made from it.`,
+    note: `Imported from ${source.url}${at}, license ${license}. ${rows.length} of ${read} rows kept${flagged ? `, ${flagged} dropped for what looked like personal data` : ""}. Keep its license and attribution with anything made from it.`,
   };
 }
