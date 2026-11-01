@@ -310,3 +310,19 @@ describe("GET {GATEWAY_URL}/assets/<sha256>", () => {
     assert.equal(wrong.status, 503, "a local copy of the wrong size isn't served");
   });
 });
+
+describe("the build firewall", () => {
+  it("opens no host for media until the files are mirrored, then the mirror's host only", async () => {
+    const { mediaMirrorHosts } = await import("@/lib/caps/media/hosts");
+    assert.deepEqual(mediaMirrorHosts(), [], "nothing is mirrored in the committed list yet");
+    assert.deepEqual(capBuildHosts(["media"]), []);
+    const mirrored = { assets: [
+      { cap: "media", mirror: "https://abc.public.blob.vercel-storage.com/assets/1" },
+      { cap: "media", mirror: "https://abc.public.blob.vercel-storage.com/assets/2" },
+      { cap: "code", mirror: "https://other.example/x" },
+      { cap: "media", mirror: "http://plain.example/x" },
+      { cap: "media", mirror: null },
+    ] };
+    assert.deepEqual(mediaMirrorHosts(mirrored), ["abc.public.blob.vercel-storage.com"]);
+  });
+});
