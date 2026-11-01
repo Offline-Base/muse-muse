@@ -2423,6 +2423,93 @@ Reuse existing tuned models before any new GPU run.
   a brief that asks for its own tuned model under General's `TUNE_FROM_BUILDS`.
 - The guest writer rule (`GUEST_WRITER_RULE`) is unchanged.
 
+### 17a. As built (tg-cap-gpu, Nov 1)
+
+Everything is behind `GPU_GLIMMER_SHARED` and `GPU_TRAIN_ON_DATA`, both off. No GPU has started for this unit, and no real
+test build has run (see "Not proven").
+
+**Different from the section above, on General's contract (`~/mm-wt/_plan/wave3.md`).**
+- No `GLIMMER_ENDPOINT_URL` or `GLIMMER_ENDPOINT_KEY`. A window is a glimmer-serve job plus a `glimmer_windows` row, and the
+  route reaches it through General's `serveJobChatBackend`, which always sends Meta's sampling.
+- Decision 12 holds over the table above: owner rows only, never shared. Owner uploads aren't read yet.
+- `glimmer_windows` also has `adapter_job_id`, `serve_job_id`, `spark_open` and `reservation_id`, and at most one row is open
+  (a partial unique index). `training_jobs` also gets an index on `product_id`.
+- One more flag, `GPU_GLIMMER_ALL_PRODUCTS`, off. Off, only products an admin owns may use a window, since open question 11
+  is whether serving Glimmer to other people's products fits its license. A guest's or a banned owner's product never may.
+- `POST /api/products/<slug>/train` also takes `confirm` (required), `task`, `again` and `decision`.
+- GPU has no overlay, so there's no `caps` step for it. The gateway's record reaches the judge as two fixed-check lines
+  (`glimmer, reply` and `glimmer, closed-window`). A failed line shows the judge, but doesn't fail verify the way a cap's does.
+- Per-build overrides under `cap:glimmer:*` in `builds.tool_fixtures` aren't built. Canned replies are a fixed list.
+
+**The route.** `POST {GATEWAY_URL}/glimmer/v1/chat/completions` (`lib/caps/gpu/handler.ts`). Checks in order: flag, token,
+product, the `glimmer` marker, rate (200 a day per product, 10 a minute per IP), arguments, then the build's stand-in, or for
+a live token the owner's tier, the window, the own model, the GPU. Known keys only, except that `temperature`, `top_p` and
+`top_k` are taken and ignored, since an SDK may send them. `stream: true` is refused. `model` is `muse-glimmer` or `own`.
+Answers: 503 `glimmer_closed`, 503 `glimmer_starting` with `retryAfterSeconds`, 404 `own_model_not_ready`, 409 `busy`, 504
+`timeout`, 502 `glimmer_unavailable`, 400 for the caller's mistakes. A window on another adapter answers `glimmer_closed` to
+`own`. A Derivative's window adds "Built with Muse Spark Open" and the usage points as `x-musemuse-note` and `note`. The
+messages are never logged or stored. A build's test sends `x-musemuse-glimmer-test: closed` to get a closed window, and a
+live token ignores that header.
+
+**Windows.** `POST` and `GET /api/admin/glimmer/windows`, `DELETE .../<id>`, and a small page at `/admin/glimmer`. Opening
+checks `GPU_GLIMMER_DAILY_USD` (0 pauses it, today's windows count at cost or at their cap) and `DAILY_SPEND_CAP_USD`,
+reserves the job's whole dollar limit as a `glimmer` usage row, then calls `launchJob`, so every lab cap holds too. The job
+gets that limit explicitly, so it can't spend past the reservation. A refusal gives everything back. If the room's Try it
+live already has that adapter's GPU up, the window shares it. Closing cuts products off at once and asks the GPU to stop. The
+reservation settles at the job's real cost once its GPU is down, on close or in the hourly sweep (`lib/caps/cleanup.ts`,
+`cap: "gpu"`). The sweep also stops a window past its end. With the flag turned off mid-window, the job's own deadline still
+stops the GPU, and the window settles once the flag is back.
+
+**Decision models.** A window may serve a decision model's adapter. `{GATEWAY_URL}/decide` and `decide()` are General's and
+untouched: they read the same live serve job, so they answer during that window, and the chat route answers `glimmer_closed`.
+There is no second Glimmer route. A build token keeps General's word-overlap stand-in for `/decide`.
+
+**ownModelFor** (`lib/caps/gpu/own-model.ts`). Newest job with `product_id` whose chat adapter passes `adapterProblem` and
+General's verdict, and was trained on r30b. `product_id` is filled from General's `tune-product` rows on read. A decision
+model is never returned: a product calls one through `/decide` by its id, which General's route allows only for a model with
+a public result page.
+
+**Template.** `askGlimmer({messages, own, request})` in `template/lib/meta/glimmer.ts` returns `{text, by, note}`. It falls back
+to Muse Wonder on anything but a 400, with no retries against a GPU. `glimmer()` also reads `GLIMMER_SHARED=1`, which is what
+a build's `.env.local` gets (the helper builds its address from `GATEWAY_URL` and `PRODUCT_TOKEN`). The deploy gets
+`GLIMMER_URL`, `GLIMMER_API_KEY` and `GLIMMER_MODEL`. A token gets `glimmer` and `muse-wonder-1.0`, since the fallback needs it.
+`meta-glimmer`'s skill has one marked block. These template files change with every flag off, but no product's code calls
+`askGlimmer` until its prompt says to.
+
+**Snapshot.** The route follows `GPU_GLIMMER_SHARED`. What a new build is told and given (`env.gpuGlimmerForBuilds`: catalog,
+prompt, token, env, judge) also needs a snapshot listing `core` in `lib/sandbox/snapshots.json`, so make the Nov 2 snapshot
+after this merges. A snapshot without `askGlimmer` would otherwise fail its builds.
+
+**Train on my data.** `lib/caps/gpu/train.ts`, and a panel on the product's page for its signed-in owner. Live owner rows of
+named collections only. Chat: at least 30 distinct rows with a prompt and an answer, saved as a ready dataset with writer
+"person", then `startTuneRun`. Decision (`decision: {question, labels}`): rows of `{input, label}`, General's
+`checkDecisionUpload`, `createDecisionDataset`, then `launchJob` in decide mode, with `product_id` set at once. Limits: one run
+at a time, General's one run a product a day, two runs a day for a builder who isn't an admin, and every lab cap. A product
+that already has a passing model gets `{reused: true}` and no GPU, unless the owner sends `again: true`. `TUNE_COMPOSER` off
+answers 503 before anything is saved, and a refused start removes the dataset it just saved.
+
+**/models.** `OwnModelsSlot` shows a signed-in person's own models, in status words, with the Spark Open line and usage points.
+Signed-out visitors see nothing. Its modules load only with a flag on. Paired devices wait for unit 13's table.
+
+**Tests** (all made-up data, no GPU, no model call). `lib/caps/gpu/__tests__/{handler,windows,own-model,train,flag,store,integration}`,
+`components/models/__tests__/own-models-slot`, `template/scripts/__tests__/glimmer-shared`, plus the flags-off lists, `caps-off`
+and a 0025 case in the migrations test. `integration` runs on PGlite with the real store, `launchJob` and General's chat
+backend, faking only Lambda, the workflow runtime and the GPU's answer.
+
+**Not proven.**
+- No real test build (section 22's Glimmer chat product). As units 3 to 14 found, a local run's sandbox can't reach the gateway,
+  and a credentialed run wasn't available. So the prompt, skill and smoke-test rules have never met Muse Code. A local build
+  would prove only the Wonder fallback.
+- No real window. `askChat` against a real GPU is General's, and the chat route's reply has never come from a model here.
+  `startingFor`'s wait is an estimate (15 minutes from opening, at least 15 s).
+- A non-admin builder's `href` from the train route opens the run room, which only admins can open until `PUBLIC_TRAINING`.
+- The r30b rule goes through `lib/caps/gpu/general.ts` until `lib/train/base.ts` reaches tg-cap-int. Until then every
+  plain Glimmer job fails `ownModelFor`, as it will after the sync, and `evalVerdict` doesn't get its second argument.
+
+**For the owner.** Decision 11: confirm the license reading and when windows open. `GPU_GLIMMER_ALL_PRODUCTS` stays off until
+then. The Nov 3 filming window is one `POST` from `/admin/glimmer`, at most `TRAIN_JOB_MAX_USD` and about $1.50 measured per 30
+minutes. `TRAIN_MAX_ACTIVE` 1 means a window and a training run block each other.
+
 ## 18. Unit 12: drive export (owner ask)
 
 The detailed design is `docs/DRIVE_EXPORT.md` (committed 62a5a06). This section only fixes how it meets the rest of
@@ -2919,3 +3006,5 @@ Phaser game.
   line each in tg-tools' owner-pass route and `lib/tools/deps.ts`).
 
 - Oct 31: first version (unit 0).
+
+- Nov 1 (unit 11): section 17a added. No `GLIMMER_ENDPOINT_*`; a new flag `GPU_GLIMMER_ALL_PRODUCTS`; 0025 also adds `adapter_job_id`, `serve_job_id`, `spark_open` and `reservation_id` to `glimmer_windows`, one open row at a time, and an index on `training_jobs.product_id`; `usage.source` gains `glimmer`; `CapCleanup.cap` also takes `"gpu"`; `capBuildEnv`, `capDeployEnv`, `capsBuildLines`, `capsRefineLines`, `capsJudgeNotes`, `allowedModelsFor`, `catalogSummary` and `judgeStep` each get one marked line for GPU, which isn't a cap; `lib/train/tune/examples.ts` exports `objectRow`.
