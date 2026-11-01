@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CAP_BRIEF_FIELDS, CAP_WRITER_BRIEF_FIELDS } from "@/lib/caps/brief-fields";
+import { CAP_BRIEF_FIELDS, writerBriefField } from "@/lib/caps/brief-fields";
 import type { CapId } from "@/lib/caps/ids";
 import { MilestonesSchema } from "@/lib/engine/milestones";
 import { PERSONAL_TOOL_IDS, PUBLIC_TOOL_IDS } from "@/lib/tools/ids";
@@ -162,10 +162,10 @@ export function newBriefSchemaFor(opts: {
 }): z.ZodType<Brief> {
   const base = opts.gadgets ? NewBriefSchema : NewBriefSchemaNoGadget;
   const ids = TARGETS.filter((t) => t === "web" || opts.targets.includes(t));
-  const fields = CAP_BRIEF_FIELDS as Partial<Record<CapId, z.ZodTypeAny>>;
   const extra: Record<string, z.ZodTypeAny> = {};
   for (const cap of opts.caps ?? []) {
-    const block = CAP_WRITER_BRIEF_FIELDS[cap] ?? fields[cap];
+    // Wave 3, unit 3: a cap's writer block can differ from its stored one while a setting is off (DATA_SIGN_IN).
+    const block = writerBriefField(cap);
     if (block) extra[cap] = block.nullable();
   }
   if (opts.milestones) extra.milestones = MilestonesSchema.nullable();
