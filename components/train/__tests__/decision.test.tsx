@@ -168,7 +168,15 @@ describe("format helpers for decision models", () => {
   });
 
   it("says when confidence is calibrated and when it isn't, and what the numbers rest on", () => {
-    assert.match(fmt.calibrationText(tickets.summary.tuned!, 24), /^Confidence is calibrated on 24 dev rows \(T = 0\.89\)/);
+    const t = tickets.summary.tuned!;
+    assert.equal(
+      fmt.calibrationText({ ...t, ece: { raw: 0.1, withT: 0.0412 } }, 24),
+      "T = 0.89 was fit on 24 dev rows to bring confidence closer to how often the model was right on them. On the held-out test rows the calibration error is 4.1% with T (10.0% before).",
+    );
+    // Only what the records hold: no promised hit rate, and it says so when T made test calibration worse.
+    const worse = fmt.calibrationText({ ...t, ece: { raw: 0.1, withT: 0.111 } }, 24);
+    assert.match(worse, /calibration error is 11\.1% with T \(10\.0% before\)\. T didn't help on these rows\.$/);
+    assert.doesNotMatch(worse, /9 times in 10|90%/);
     assert.equal(
       fmt.calibrationText({ ...tickets.summary.tuned!, calibrated: false, T: 1 }, 12),
       "Fewer than 20 dev rows were scored, so confidence is the model's own probability, not calibrated.",

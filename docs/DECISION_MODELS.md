@@ -21,7 +21,8 @@ inferred or estimated, needs a test; **[R]** reported by a third party, not repr
 - **One format for every decision.** A task is JSON `{state, question, options}`. Each option has a letter. The model
   reads the task twice and answers with one letter on Glimmer's final channel, reasoning off.
 - **Probabilities come from the first answer token,** read from the model's own logits over the shown letters, not from
-  anything the model writes. One temperature, fit on dev rows only, softens them so a "90%" means about 9 in 10.
+  anything the model writes. One temperature, fit on dev rows only, softens them toward how often the model was right there; the pages report
+  the test rows' calibration error before and with it, never a promised hit rate.
 - **Where it lives:** a `mode: "decide"` param on the existing `glimmer-lora` recipe, a `kind: "decision"` dataset, one
   migration (0017), deterministic scoring in `lib/train/logic.ts` (no judge, no Meta call), and a results page with
   accuracy, macro F1, a confusion matrix and a reliability chart for base and tuned Glimmer side by side.

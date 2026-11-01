@@ -214,6 +214,13 @@ describe("decisionCard", () => {
     assert.ok(tuned.calibrated, "24 dev rows fit T");
     assert.ok(card.includes(`| T, fit on dev rows only | ${s.base.T} | ${tuned.T} |`));
     assert.ok(card.includes(`The tuned model's T is ${tuned.T}, fit on the dev rows.`));
+    const pct1 = (x: number) => `${(x * 100).toFixed(1)}%`;
+    assert.ok(
+      card.includes(
+        `The tuned model's T = ${tuned.T} was fit on ${s.devRows} dev rows to bring its confidence closer to how often it was right on them. On the held-out test rows its calibration error is ${pct1(tuned.ece.withT)} with T (${pct1(tuned.ece.raw)} before)`,
+      ),
+    );
+    assert.doesNotMatch(card, /9 times in 10/);
     const declined = tuned.decline!;
     assert.ok(card.includes(`${declined.declined} of ${declined.rows} (${pct(declined.rate)})`));
     assert.ok(card.includes(`was right on ${s.baselines.commonest.accuracy.right} of ${s.items}`));

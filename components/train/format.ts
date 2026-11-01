@@ -1733,9 +1733,11 @@ export function calibrationText(side: DecisionSummary["base"], devRows: number):
   if (!side.calibrated) {
     return "Fewer than 20 dev rows were scored, so confidence is the model's own probability, not calibrated.";
   }
+  const worse = side.ece.withT > side.ece.raw ? " T didn't help on these rows." : "";
   return (
-    `Confidence is calibrated on ${groupThousands(devRows)} dev rows (T = ${side.T.toFixed(2)}): an answer at 90% was ` +
-    "right about 9 times in 10 on rows like those, which is only as good as the test rows show."
+    `T = ${side.T.toFixed(2)} was fit on ${groupThousands(devRows)} dev rows to bring confidence closer to how often the ` +
+    `model was right on them. On the held-out test rows the calibration error is ${eceText(side.ece.withT)} with T ` +
+    `(${eceText(side.ece.raw)} before).${worse}`
   );
 }
 

@@ -2058,7 +2058,7 @@ function decisionResultsSection(f: DecisionCardFacts): string {
   }
   notes.push(
     t.calibrated
-      ? `The tuned model's confidence is calibrated on the dev rows (T = ${t.T}): an answer at 90% was right about 9 times in 10 on rows like those, which is only as good as the test rows show.`
+      ? `The tuned model's T = ${t.T} was fit on ${countText(s.devRows)} dev rows to bring its confidence closer to how often it was right on them. On the held-out test rows its calibration error is ${eceOf(t.ece.withT)} with T (${eceOf(t.ece.raw)} before)${t.ece.withT > t.ece.raw ? ", so T didn't help on these rows" : ""}.`
       : "Fewer than 20 dev rows were scored, so the tuned model's probabilities are its own, not calibrated.",
   );
   notes.push(`Every number is from the run's records, and the same numbers are on [the run's public page](${labPageUrl(f.job.id)}). It can be wrong: check anything that matters.`);
