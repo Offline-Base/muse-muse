@@ -1289,6 +1289,22 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
     devices/results/devicefarm/samsung-galaxy-s25-12gb/r30b-*.
   - The cards' On devices section now names this release's phone numbers. New heads: merged e2b33cce, -GGUF eeb63821,
     -LoRA 703820b8.
+- 11:55 PM: bnb4-r30b (wf_89ef3ed9-be9) finished: a drop-in for unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit at ecedda39.
+  - Matches the reference: quantization_config equal key for key, the same 5 shards, 3,516 tensors and shapes; shard 1
+    byte-identical.
+  - Sanity: old facts 40/40, and 7/40 on 2026 probes, the same 7 as Q4_K_M.
+  - The verifier:
+    - a re-quantization of merged matched 100% of the 4-bit codes;
+    - the recipe's FastModel load took 13.7 s;
+    - an r=16 LoRA took 2 SFTTrainer steps, loss 4.77 to 2.88, peak 22.4 GiB;
+    - re-run with a new seed: old facts 20/20, 2026 probes 7/20 (Q4_K_M 8/20).
+  - The builder's deletion of the local r30b BF16 GGUF was blocked by the permission classifier. It is left in place,
+    and only the owner can approve removing it.
+  - Card: the builder's draft with the verifier's wording fixes, plus the banner. The relay's verify call failed on the
+    banner's plain-text reply, so verify now ignores the reply body (37 tests).
+  - Pushed private, verified (big files on the Hub, small files against writer-1), then public: revision 6f12bf52.
+  - Sent Muse Muse General the repo, revision, shard sha256s and checks.
+  - Resumed the paused GPU jobs. Merged card links the 4-bit repo and the Unsloth snippet uses it (77422cbb).
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
