@@ -13,7 +13,7 @@ import type { AgentPromptSpec } from "@/lib/docs/demos/types";
  * reader knows what the build reads. Sending starts a normal build and moves to its build room. A #build link opens it,
  * which is also how a reader gets back here after signing in.
  */
-export function BuildWithThis({ spec, signedIn }: { spec: AgentPromptSpec | null; signedIn: boolean }) {
+export function BuildWithThis({ spec, signedIn, contributorNotice }: { spec: AgentPromptSpec | null; signedIn: boolean; contributorNotice?: boolean }) {
   const { page, lastRequest, buildOpen, setBuildOpen } = useDocsPage();
   const dialog = useRef<HTMLDialogElement>(null);
   const context = useMemo(() => buildContext({ page, spec, lastRequest }), [page, spec, lastRequest]);
@@ -59,6 +59,7 @@ export function BuildWithThis({ spec, signedIn }: { spec: AgentPromptSpec | null
           <Composer
             mode="new"
             signedIn={signedIn}
+            contributorNotice={contributorNotice}
             autoFocus
             examples={buildIdeas(page.slug).map((idea) => ({ label: idea.label, note: idea.note }))}
             examplesLabel="Ideas"

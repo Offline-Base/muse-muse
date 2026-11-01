@@ -1701,41 +1701,14 @@ scripts/dev/tune-harness.ts, on a Lambda gpu_1x_a10 named prove-tune-1, us-east-
 - Found: nothing stops a build at a dollar amount. The $40 budget for this job isn't enforced by code; only the wall and DAILY_SPEND_CAP_USD=150 limit it.
 - Result of both builds: pending. A real brief is all this proves so far.
 
-## Nov 1: lifetime GPU limits, $100 a person and $3,000 in all (branch tg-gpu-per-user)
+## Nov 1: every build on Contributor behind BUILDS_ON_CONTRIBUTOR (branch tg-contributor-builds, flag off)
 
-- Why: the owner set the Lambda budget at $3,000 total, about $100 per user.
-- Built: `TRAIN_USER_LIMIT_USD` (100) and `TRAIN_TOTAL_LIMIT_USD` (3000), checked in launchJob, the one way a Lambda GPU starts. Running jobs count at their full dollar limit. A job's limit comes down to what's left; too little left is 429 `gpu_limit` with what's left in words. Admins see both amounts on /fine-tuning. `TRAIN_DAILY_USD` and `TRAIN_JOB_MAX_USD` work as before.
-- Decision: no migration. The totals come from training_jobs, whose rows are never deleted. Hosted endpoints on Lambda and demo windows are serve jobs there, so they count once. Fireworks, Modal and Baseten don't count: they aren't Lambda.
-- Decision: a race is closed the way TRAIN_DAILY_USD closes it. Each start reads again after saving its row and backs out if a limit is passed, so whichever saved last sees both. At worst both back out. A run waits and retries after that; a plain refusal ends it.
-- Found: production's GPU starts are admin only. The shared guest gets 403 from /api/train/jobs and /api/train/runs (checked on the live site with an empty body), and hosting and product training refuse it. PUBLIC_TRAINING and GPU_TRAIN_ON_DATA aren't set on production, and no route calls trainCaller, so PUBLIC_TRAINING opens nothing even when on.
-- Found: the shared guest would be one person, so one $100 pool, if a later change lets it start GPUs. Nothing here lets it.
-- Watch: with the default, each admin is held to $100 for good, past jobs included, and automation counts as the first admin. The owner may want `TRAIN_USER_LIMIT_USD` higher for that. Production's real totals weren't read.
-- Not counted: the model cache's monthly bill, and GPUs rented outside the platform, such as the harness run above. A job can also run a little past its limit before its GPU stops, as before.
-- Tests: fakes and PGlite only. gpu-budget and launch pass, and removing the second read makes both race tests fail. routes, store, rl, run-flow, hub-flow, gpu train, windows, integration and host adapters and service pass. /fine-tuning rendered once on a local empty database. No real GPU, Neon or browser check. Spend $0.
-## Nov 1, 13:56 EST: device lab, read-only check (branch tg-lab-readonly)
-
-Read-only calls only, with the offlinebase profile in account 916979311153. Nothing in AWS was created, started, stopped or sent a command. No spend from this check.
-
-- Mac `i-0a5866df305e83d40` on host `h-06879f600be8541ed`: running, EC2 status checks ok, SSM Online, macOS 26.7.
-- Windows `i-066609c3dc74c9f18`: stopped since Oct 31, 19:23 UTC. It isn't registered in SSM's list while stopped, so its agent can't be checked.
-- Lab agent: not proven healthy. Its files and parameters exist, but only `MuseLab-Control status` can show the process, and sending that is not read-only. Last SSM command to the Mac: Oct 31, 20:48 UTC.
-- The queue doesn't reach the boxes. POST with no token to `/api/native/agent/claim` answers 404 JSON on muse-muse.vercel.app and on the test site, which is what those routes do with NATIVE_LAB off. The test site listens on `[::1]:3023` on the laptop, so the boxes can't reach it, and the role `musemuse-platform-native` has never been used.
-- Result: no lab check ran. iPhone simulator, Android emulator, Mac, Windows, mock glasses and Device Farm are all blocked on owner approval. The Oct 31 clips in `s3://muse-knowledge-916979311153/lab/checks/` predate this check and did not come through the queue.
-- Measured cost: the Mac host has been billing since Oct 31, 06:01 UTC, about 36.9 h at $0.65/h, about $24 so far by that rate. AWS Budgets shows `musemuse-lab` at $6.87 actual, `musemuse-device-farm` at $0.00.
-
-## Nov 1: code hygiene (branch tg-close-hygiene)
-
-- Migration test: the two failures were stale pinned lists, not a schema fault. All 13 migrations after 0017 match drizzle-kit; 0028 has the same statements in another order (source_public last), which nothing depends on, so the file stays and the test says why. 0029 and 0030 keep their real-clock journal times, which only go up. Added a 0027 upgrade test: old rows keep, source_public reads false, grounding reads null, hosted_endpoints holds one live endpoint per model. 29 tests before, 30 now, all pass. Test model and spend: none.
-- tune-harness ingest: it always called finishJob with succeeded, so a run that stopped with no done counted as a success. It now reads the outcome from the events, records failed, skips the judge and exits 1. Covered by a unit test of the outcome; no GPU run of the failing path.
-- Run logs: three rented GPU addresses removed from docs/KNOWLEDGE_RUN_LOG.md and scripts/knowledge/aws/job/STUDENT.md; the machine names and instance ids stay. Rented GPU addresses stay in five finished knowledge scripts as their config (idle_alert.py, writer_fleet.py, stage2_handoff.sh, nq_pull.sh, nq_rerun_stage2.sh), and 10.0.2.2 (emulator host) and 169.254.0.2 (sandbox link-local) aren't ours.
-- Branches compared with main by merge-base and content. Stranded and brought in: the design docs and spike READMEs that main's code and logs cite but main never had (OFFLINE, OFFLINE_HARNESS, GLIMMER_ALIGNMENT, TRAIN_BACKENDS, FLEET_TRAINING, REPLICATION; READMEs for the musecode, 3d, fleet-train and replication spikes) and the read-only lab entry above. The spikes' scripts and results stay on their branches, so those READMEs' links to them don't resolve in main. No product code was stranded.
-- Worktrees removed: sim-tune, tune-loop, rl, verify, host-tuned, each merged and clean. Branches kept.
-## Nov 1: chained builds and platform powers, behind flags (branch tg-chained, nothing run for real)
-
-- Added `CHAINED_BUILDS`, off, needing `FULL_BUILDS`: a signed-in builder's brief over 24 requirements runs up to 40 milestones across up to 12 sessions of 85 minutes on one sandbox and repo, with a total spend cap ($60), a per-session token budget ($15), a 24-hour limit and the owner's Stop. Each session gets a new token and a new Muse Code session id, and reads `CHAIN_STATE.md`, `BUILD_NOTES.md` and git. docs/CHAINED_BUILDS.md.
-- Added the `platform` cap under `PLATFORM_POWERS`, off, with `CAP_READY` false: sandboxes (Muse Code sessions), metered keys (`mm_pk_`, scope `power_key`) and publishing products. Owner's signed pass only, guests refused at the writer and at the gate, children can't use powers. docs/PLATFORM_POWERS.md.
-- Decision: no migration. Migration 0030 is already taken on other branches, and a preview would need it. The daily limits use the existing atomic counters, a child's mark lives in `builds.rebuild_of`, and chain state in `builds.round_plan`.
-- Decision: every power commits its worst case at the start and isn't settled down later, so the daily limit can't be passed, at the price of counting less real spend than it could. A revoked key's unused budget stays counted that day.
-- Found and left open: a platform-wide `DAILY_SPEND_CAP_USD` pause fails a chain outright, and a workflow crash can't resume a chain, though its repo keeps the work. The judge sees at most 48 screenshots, so requirements past about 46 stay unmet.
-- Tests: fakes only, targeted. tsc clean. plan 10, powers 18, caps-off, flags-off (caps and brief), ready, manifest, tiers and full-builds pass. workflow.scenario 60 of 62 with 4 new chain scenarios; the 2 failures are the same 2 this branch's base logged (a 25-minute cap test on a brief now capped at 60).
-- Not run: a real chain, a real power, a sandbox rotation, a browser view. Needs a new builder snapshot for the `platform` overlay and one `CAP_READY` line. Spend $0.
+- Why: the owner decided builds run on muse-spark-1.3-contributor with the UI kit, on production too, though Meta may train on that tier and its terms (6.2) bar sensitive, confidential or personal information there.
+- Built: `buildTestModel()` in lib/env.ts feeds the brief, build, judge, gateway swap and Muse Code sessions. The flag also turns MUSE_APP_LOOK on and moves the Prove it skill test. A notice sits on the Make, docs and build room boxes. The Privacy and Models pages say so while it's on.
+- Decision: `testModel()` keeps its production guard. Fine-tuning reads it directly (dataset writer, plans, research, content check), so a shared switch would have moved all of that too and opened `contributorWriterOn` on production.
+- Decision: live products stay on Muse Wonder. The live token path is unchanged, and .env files never deploy.
+- Decision: reminders are off on any round on Contributor, by model as well as by flag, because `muse serve` turns a Contributor id for them back into muse-spark-1.3. A change to a Contributor-built product stays on Contributor after the flag goes off. This is the one change with the flag off: such rounds and nightly skill tests lose reminders.
+- Decision: a notice, not detection of personal data. The change check in lib/brief/policy.ts stays a policy check.
+- Measured on Contributor with made-up data, flags as on production: a FULL_BUILDS brief with the look (8 requirements, scope check ran) and a full judge read with one image both returned valid replies. Spend about $0.002. The first attempt got a 401 from the key in ~/muse-muse/.env.local, so that key looks stale.
+- Tests: targeted suites pass. flags-off-surface was already failing on main on stale mocks; with those fixed its provision and deploy goldens match, and steps.json still differs on a timeout this branch doesn't touch. No golden file changed.
+- Not run: a whole build on production settings, a sandbox, the notice in a browser, whether Contributor's judge is as strict as Muse Wonder's.

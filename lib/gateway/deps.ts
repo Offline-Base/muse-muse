@@ -6,7 +6,7 @@ import { isSessionToken } from "@/lib/caps/code/musecode/token";
 import { jobCallOf } from "@/lib/caps/jobs/budget";
 import { jobCallDeps } from "@/lib/caps/jobs/deps";
 import { liveCaptionDeps } from "@/lib/caps/live/caption-deps";
-import { env, testModel } from "@/lib/env";
+import { buildTestModel, env } from "@/lib/env";
 import type { GatewayDeps } from "@/lib/gateway/handler";
 import { UPSTREAM_BASE_URL } from "@/lib/gateway/policy";
 import {
@@ -54,7 +54,7 @@ export function gatewayDeps(defer: GatewayDeps["defer"]): GatewayDeps {
     counterValue,
     fetch: (input, init) => fetch(input, init),
     upstreamKey: () => env.modelApiKey,
-    buildTestModel: testModel(),
+    buildTestModel: buildTestModel(),
     upstreamBaseUrl: UPSTREAM_BASE_URL,
     gatewayUrl: env.gatewayUrl,
     defer,
