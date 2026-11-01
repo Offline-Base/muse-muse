@@ -1349,10 +1349,16 @@ docs/BRAND.md, "Unless the person asks". Tests: 106 across the brief, judge and 
   starts under the picture.
 - The fine-tune room's card is unchanged. Its two tests now compare against the new card, and the build room and plan
   card fingerprints were re-recorded (only those entries moved).
-- Still open: no real Muse Image call has been made yet, so the request body and the character's likeness are
-  unchecked. The screenshots use a hand-made stand-in.
+- The workflow's screenshots use a hand-made stand-in picture.
 - Full suite on the merged branch: 5096 tests, 5088 pass, 0 fail, 8 skipped; tsc clean.
 
+
+### 00:20 Plan card pictures: three real Muse Image calls
+
+The branch's own prompt and request body, sent to /v1/images/edits with the mascot as the reference, for three made-up
+briefs (a math tutor, a bakery order sheet, a plant care coach). All three returned a 1024x1280 JPEG in 9.7 to 13.8 s,
+about $0.03 in all. The mascot stays the same plush character and holds a prop that fits each request, on white.
+PLAN_ART stays off until the owner wants it on. ![The three pictures](log/shots/2026-11-01/plan-art-real-trio.jpg)
 
 ## Gaps
 
