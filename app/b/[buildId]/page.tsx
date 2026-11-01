@@ -6,6 +6,7 @@ import "@/components/build/plan-card.css";
 import { NotConnected } from "@/components/ui";
 import { env } from "@/lib/env";
 import { canActAsOwner } from "@/lib/auth";
+import { canEditProduct, editsByPassOnly } from "@/lib/edit-pass";
 import { nativeActive } from "@/lib/native/active";
 import { ownModelOffer } from "@/lib/train/tune/from-build";
 import { currentUser, getBuildRoom, platformOrigin, rebuildRef, safeQuery } from "@/lib/queries";
@@ -35,7 +36,7 @@ export default async function BuildRoomPage({
 
   const origin = await platformOrigin();
   // The product's owner decides, as in the messages route. The build's userId is whoever asked for that change.
-  const canRefine = Boolean(data.product && canActAsOwner(user, data.product.ownerId));
+  const canRefine = Boolean(data.product && (await canEditProduct(user, data.product)));
   // Steering a running build takes the same owner powers (POST /api/builds/{id}/control), and steering switched on.
   const canSteer = env.steeringEnabled && canActAsOwner(user, data.product?.ownerId ?? data.build.userId);
   // Its own model (TUNE_FROM_BUILDS, with the tune composer on): the product's owner or an admin; planning is admins'
@@ -44,7 +45,7 @@ export default async function BuildRoomPage({
     fromBuilds: env.tuneFromBuilds,
     composer: env.tuneComposer,
     hasProduct: Boolean(data.product),
-    ownerOrAdmin: canRefine,
+    ownerOrAdmin: Boolean(data.product && canActAsOwner(user, data.product.ownerId)),
     isAdmin: user?.isAdmin === true,
     examples: env.tuneDefaultExamples,
     // limitCeilings in lib/train/gate.ts, without loading the recipes into this page.
@@ -60,6 +61,7 @@ export default async function BuildRoomPage({
       history={data.history}
       tokens={data.tokens}
       canRefine={canRefine}
+      editsByPass={editsByPassOnly(user, data.product?.ownerId ?? null, canRefine)}
       canSteer={canSteer}
       signedIn={Boolean(user)}
       origin={origin}

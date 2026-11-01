@@ -19,7 +19,7 @@ const jobHref = (jobId: string) => `/fine-tuning/${jobId}`;
  * POST -> Start training for a run whose examples are ready and that no job trains on yet (docs/TRAINING.md "Fine-tune
  * like a build", "Starting training"). Admins or automation (tuneCaller), and once visitors are let in, only the run's
  * own starter. Off with TUNE_COMPOSER: 404. The examples are checked as the tuneRun workflow checks them, then the
- * launch is tried once now through launchJob with the run's settings and publish 0 (launchForRun), under the same
+ * launch is tried once now through launchJob with the run's settings, and publish 0 unless it was started to upload by itself (launchForRun), under the same
  * caps as every job.
  *
  * 201 {jobId, href}: training started. 202 {hold: {reason, text}}: it has to wait (the GPU is busy, a cap is hit, the

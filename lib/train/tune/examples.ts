@@ -235,7 +235,7 @@ export function examplesFromBody(raw: unknown): ExampleRow[] | null {
 /** How much of one row goes into the task: enough to show its style. */
 const FOLD_PROMPT_CHARS = 200;
 const FOLD_ANSWER_CHARS = 320;
-const FOLD_HEAD = "Write in the style of these examples, which are the person's own:";
+export const FOLD_HEAD = "Write in the style of these examples, which are the person's own:";
 
 function cut(text: string, max: number): string {
   const t = text.replace(/\s+/g, " ").trim();

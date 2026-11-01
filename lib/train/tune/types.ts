@@ -18,7 +18,7 @@ export interface TuneSettings {
   loraRank: number;
   learningRate: number;
   studentPrompt: "short";
-  /** Publishing to Hugging Face stays off unless someone presses Publish later. */
+  /** Signed as 0, so plan hashes don't change. TUNE_AUTO_PUBLISH decides at launch (./auto-publish.ts). */
   publish: 0;
   /** The GPU asked for first. Another Muse Glimmer GPU when it isn't free. */
   gpu: string;
@@ -139,5 +139,5 @@ export interface TuneRunView {
    * The one thing the room offers next: Start training (POST `start`, runs/{id}/start) while the examples are ready
    * and no job trains on them, with the full New job form for admins (`fullForm`); the job's page once there is one.
    */
-  next: { kind: "start"; start: string; fullForm: string } | { kind: "job"; href: string } | null;
+  next: { kind: "start"; start: string; fullForm: string; autoUpload?: boolean } | { kind: "job"; href: string } | null;
 }

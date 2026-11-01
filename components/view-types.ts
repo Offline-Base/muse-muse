@@ -28,6 +28,8 @@ export interface BuildView {
 
 export interface ProductView {
   id: string;
+  /** Anyone may read its Code page. */
+  sourcePublic?: boolean;
   slug: string;
   name: string;
   tagline: string;
@@ -56,6 +58,7 @@ export interface InspirationView {
 /** One row in a build list: /builds, the build room's History menu, the product page. */
 export interface BuildSummary {
   id: string;
+  productId?: string | null;
   kind: "build" | "refine";
   status: BuildStatus;
   startedAt: string;

@@ -43,6 +43,8 @@ export function isCheckCode(v: string): v is CheckCode {
 export interface RunMarks {
   /** The training steps the run was started with, or null for the default. */
   steps: number | null;
+  /** Set only when the run was started to upload by itself (saveRunAutoPublish). */
+  autoPublish?: boolean;
   /** Stopped before training: nothing launches for it any more. */
   stopped: boolean;
   /** Why the workflow ended without a job (a check code, a launch refusal, "waited_<reason>"), or null. */
@@ -59,6 +61,9 @@ export function runMarks(datasetId: string, rows: ReadonlyArray<{ key: string; w
   const beats: Array<{ state: string; at: Date }> = [];
   for (const row of rows) {
     if (row.key === `tune-settings:${datasetId}:steps`) marks.steps = row.count > 0 ? row.count : null;
+    else if (row.key === `tune-settings:${datasetId}:auto-publish`) {
+      if (row.count > 0) marks.autoPublish = true;
+    }
     else if (row.key === `tune-run-stopped:${datasetId}`) marks.stopped = true;
     else if (row.key.startsWith(`tune-run-end:${datasetId}:`)) marks.ended = row.key.slice(`tune-run-end:${datasetId}:`.length) || null;
     else if (row.key.startsWith(`tune-run:${datasetId}:`)) beats.push({ state: row.key.slice(`tune-run:${datasetId}:`.length), at: row.windowStart });

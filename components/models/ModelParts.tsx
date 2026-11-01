@@ -112,6 +112,9 @@ export function TunedModelsTable({ models }: { models: TunedModelView[] }) {
                   {m.title}
                 </Link>
                 <span className="row-sub muted">{m.sparkOpen ? R30B_NAME : GLIMMER_NAME}, tuned</span>
+                <span className="row-sub">
+                  <Link href={`/models/${m.id}`}>Versions</Link>
+                </span>
                 {m.sparkOpen ? (
                   <span className="row-sub">
                     <SparkOpenChip />

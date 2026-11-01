@@ -62,6 +62,7 @@ import {
   datasetCard,
   datasetLicense,
   datasetRepoName,
+  keepDatasetPrivate,
   datasetSystem,
   DATASET_EVAL_PATH,
   DATASET_LICENSE_PATH,
@@ -119,6 +120,7 @@ import {
   recordEvent,
   updateHub,
 } from "@/lib/train/store";
+import { readRunAutoPublish } from "@/lib/train/tune/run-store";
 import {
   HUB_CHECKED_NAMES,
   HUB_SAMPLE_BYTES,
@@ -301,6 +303,7 @@ async function cardFactsOf(job: TrainJobRow, hub: HubState, dataset: DatasetRow,
   const facts: CardFacts = {
     modelRepo: modelRepo.id,
     datasetRepo: datasetRepo.id,
+    datasetPrivate: keepDatasetPrivate(dataset),
     job: {
       id: job.id,
       title: job.title,
@@ -761,7 +764,10 @@ export async function hubFinishStep(jobId: string, claim: string): Promise<{ pub
   const { job, hub, dataset } = await load(jobId, claim);
   const model = modelRepoOf(job, hub, dataset.title);
   const data = datasetRepoOf(hub, dataset);
-  const open = env.hfPublic;
+  // A run that uploads by itself stays private until HF_PUBLIC says public, where unset otherwise means public.
+  const open = env.hfPublic && (env.hfPublicSet || !(await fromDb(() => readRunAutoPublish(dataset.id))));
+  // Spark 1.3 Contributor's output: the model may go public, its dataset repo never does.
+  const keepData = keepDatasetPrivate(dataset);
   const others: DatasetModel[] = (await fromDb(() => publishedHubModels(data.id, job.id))).map((m) => ({ repo: m.modelRepo, jobId: m.jobId, title: m.title }));
   const was = { model: await fromHub(() => repoVisibility(model)), data: await fromHub(() => repoVisibility(data)) };
   const changed: Array<{ repo: HubRepo; back: HubVisibility }> = [];
@@ -773,8 +779,9 @@ export async function hubFinishStep(jobId: string, claim: string): Promise<{ pub
   try {
     if (open) {
       await make(model, was.model, "public");
+      if (keepData) await make(data, was.data, "private");
       await writeDatasetCard(data, dataset, { job, hub }, others, job.id);
-      await make(data, was.data, "public");
+      if (!keepData) await make(data, was.data, "public");
     } else if (others.length) {
       // The card first: if making the model private then fails, the card only leaves out a model that is still public.
       const newest = await fromDb(() => getJob(others[0]!.jobId));
@@ -797,7 +804,7 @@ export async function hubFinishStep(jobId: string, claim: string): Promise<{ pub
     throw err;
   }
   const now = { model: await fromHub(() => repoVisibility(model)), data: await fromHub(() => repoVisibility(data)) };
-  const isPublic = now.model === "public" && now.data === "public";
+  const isPublic = now.model === "public" && (keepData || now.data === "public");
   if (!isPublic) await hideGguf(job.id);
   const link = await ggufLinkOf(job, now.model === "public");
   const cardGguf = link?.repo ?? null;
@@ -807,13 +814,15 @@ export async function hubFinishStep(jobId: string, claim: string): Promise<{ pub
     await writeFiles(model, [{ path: "README.md", content: readme }], [], `Update the card of ${job.title}`, `Muse Muse job ${job.id}: where its local files are.`);
   }
   const modelUrl = repoUrl(model);
-  const datasetUrl = repoUrl(data);
+  const datasetUrl = keepData ? null : repoUrl(data);
   const at = new Date().toISOString();
   await saveHub(jobId, claim, (h) => ({ ...h, status: "published", reason: null, claim: null, modelUrl, datasetUrl, public: isPublic, cardGguf, publishedAt: at, updatedAt: at }));
   await fromDb(() =>
     recordEvent(jobId, {
       type: "log",
-      text: `Published to Hugging Face${isPublic ? "" : ` (the model repo is ${now.model}, the dataset repo ${now.data})`}: ${modelUrl} and ${datasetUrl}.`,
+      text: keepData
+        ? `Published to Hugging Face (the model repo is ${now.model}, the dataset repo stays private because Spark 1.3 Contributor wrote it): ${modelUrl}.`
+        : `Published to Hugging Face${isPublic ? "" : ` (the model repo is ${now.model}, the dataset repo ${now.data})`}: ${modelUrl} and ${datasetUrl}.`,
     }),
   );
   return { public: isPublic };
@@ -900,7 +909,7 @@ async function ggufFactsOf(job: TrainJobRow, hub: HubState, adapter: TrainJobRow
     slug,
     adapterRepo: adapter.hub!.modelRepo!,
     adapterCommit: adapter.hub!.modelCommit ?? null,
-    datasetRepo: adapter.hub!.datasetRepo ?? null,
+    datasetRepo: keepDatasetPrivate(dataset) ? null : (adapter.hub!.datasetRepo ?? null),
     adapterJobId: adapter.id,
     quantJobId: job.id,
     dataset: { title: dataset.title, task: dataset.task, evalCount: num(metrics.channel_total) ?? dataset.evalCount, writerModel: dataset.writerModel ?? null },

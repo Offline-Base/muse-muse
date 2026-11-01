@@ -102,6 +102,7 @@ function toBuildView(b: BuildRow): BuildView {
 
 function toProductView(p: ProductRow): ProductView {
   return {
+    sourcePublic: p.sourcePublic,
     id: p.id,
     slug: p.slug,
     name: p.name,
@@ -195,6 +196,7 @@ export async function getBuildRoom(buildId: string): Promise<BuildRoomData | nul
 
 const summaryColumns = {
   id: schema.builds.id,
+  productId: schema.builds.productId,
   kind: schema.builds.kind,
   status: schema.builds.status,
   startedAt: schema.builds.startedAt,
@@ -211,6 +213,7 @@ const summaryColumns = {
 
 type SummaryRow = {
   id: string;
+  productId: string | null;
   kind: "build" | "refine";
   status: BuildView["status"];
   startedAt: Date;
@@ -228,6 +231,7 @@ type SummaryRow = {
 function toSummary(r: SummaryRow): BuildSummary {
   return {
     id: r.id,
+    productId: r.productId,
     kind: r.kind,
     status: r.status,
     startedAt: r.startedAt.toISOString(),

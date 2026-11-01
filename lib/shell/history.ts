@@ -15,6 +15,8 @@ export const HISTORY_OPEN_KEY = "muse-history-closed";
 export interface HistoryRow {
   id: string;
   title: string;
+  /** The build whose room holds the refine box, only for a product this viewer may change right now. */
+  editId?: string;
 }
 
 export interface RowSource {
@@ -23,10 +25,11 @@ export interface RowSource {
   note: string | null;
   /** The product it belongs to, once it has one. */
   slug: string | null;
+  productId?: string | null;
 }
 
 /** Newest first, so a product's row opens its latest build. A build with no product yet keeps its own row. */
-export function historyRows(builds: readonly RowSource[], limit = HISTORY_ROWS): HistoryRow[] {
+export function historyRows(builds: readonly RowSource[], limit = HISTORY_ROWS, editable?: ReadonlyMap<string, string>): HistoryRow[] {
   const seen = new Set<string>();
   const rows: HistoryRow[] = [];
   for (const build of builds) {
@@ -34,7 +37,8 @@ export function historyRows(builds: readonly RowSource[], limit = HISTORY_ROWS):
       if (seen.has(build.slug)) continue;
       seen.add(build.slug);
     }
-    rows.push({ id: build.id, title: build.name?.trim() || build.note?.trim() || "Untitled muse" });
+    const editId = build.productId ? editable?.get(build.productId) : undefined;
+    rows.push({ id: build.id, title: build.name?.trim() || build.note?.trim() || "Untitled muse", ...(editId ? { editId } : {}) });
     if (rows.length === limit) break;
   }
   return rows;
@@ -68,13 +72,16 @@ export interface HistoryViewer {
 export interface HistoryDeps {
   listUserBuilds(userId: string, limit: number): Promise<RowSource[]>;
   listBuildsByIds(userId: string, ids: string[]): Promise<RowSource[]>;
+  /** Of these products, the ones this viewer may change, each with the build that holds the refine box. */
+  editTargets?(productIds: Array<string | null | undefined>): Promise<ReadonlyMap<string, string>>;
 }
 
 /** What a viewer's History holds. Nobody signed in has none; a shared guest has only the ids their browser sent. */
 export async function historyFor(viewer: HistoryViewer | null, ids: string[], deps: HistoryDeps): Promise<HistoryRow[]> {
   if (!viewer) return [];
-  if (viewer.openAccess && !viewer.isAdmin) {
-    return ids.length ? historyRows(await deps.listBuildsByIds(viewer.id, ids)) : [];
-  }
-  return historyRows(await deps.listUserBuilds(viewer.id, HISTORY_READ));
+  const builds = viewer.openAccess && !viewer.isAdmin
+    ? ids.length ? await deps.listBuildsByIds(viewer.id, ids) : []
+    : await deps.listUserBuilds(viewer.id, HISTORY_READ);
+  if (!builds.length) return [];
+  return historyRows(builds, HISTORY_ROWS, await deps.editTargets?.(builds.map((b) => b.productId)));
 }

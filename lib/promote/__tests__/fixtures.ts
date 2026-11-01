@@ -109,6 +109,7 @@ export function sampleRows(over: { slug?: string; ownerId?: string } = {}): Loca
       demoPosterUrl: poster,
       transcriptUrl: `${LOCAL}/transcripts/${buildId}/transcript-9c0d1e2f.json`,
       extraClips: [],
+      sourcePublic: false,
       status: "live",
       createdAt: at(0),
       updatedAt: at(26),

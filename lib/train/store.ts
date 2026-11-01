@@ -30,6 +30,7 @@ import { decisionModelOf, type DecisionModel } from "@/lib/decide/serving";
 import type { DecideScoreItem, DecisionRow, DecisionRows, DecisionSpec } from "@/lib/decide/types";
 import type { QuantSource } from "@/lib/train/hub-cards";
 import { PERSON_WRITER, PUBLIC_WRITER } from "@/lib/train/models";
+import { taskHoldsPersonRows } from "@/lib/train/tune/auto-publish";
 import {
   isTrainTerminal,
   QUANT_RECIPE,
@@ -930,14 +931,14 @@ export async function getDataset(datasetId: string): Promise<DatasetHead | null>
 export const OWNER_ROWS_REASON = "It was trained on a product owner's private rows, so it can't be published.";
 
 /**
- * OWNER_ROWS_REASON when `job` trained on a dataset a product owns, else null. Every way to the Hub asks this: Publish,
+ * OWNER_ROWS_REASON when `job` trained on a dataset a product owns or whose task quotes a person's own rows, else null. Every way to the Hub asks this: Publish,
  * launching glimmer-publish, the runner's upload plan and the publishing claim. A read that fails throws, so nothing publishes.
  */
 export async function ownerRowsProblem(job: { params?: unknown }): Promise<string | null> {
   const params = job.params as Record<string, unknown> | null | undefined;
   const datasetId = typeof params?.datasetId === "string" ? params.datasetId : null;
   const dataset = datasetId ? await getDataset(datasetId) : null;
-  return dataset?.productId ? OWNER_ROWS_REASON : null;
+  return dataset?.productId || taskHoldsPersonRows(dataset?.task) ? OWNER_ROWS_REASON : null;
 }
 
 /** The newest datasets first, without their examples. */
@@ -1285,6 +1286,42 @@ export async function getResultJob(jobId: string): Promise<ResultJobRow | null> 
   if (!isUuid(jobId)) return null;
   const [row] = await db().select(resultColumns).from(jobs).where(and(eq(jobs.id, jobId), hasResults())).limit(1);
   return row ?? null;
+}
+
+/** Versions of a model read at most: one page's worth. */
+const MODEL_VERSIONS_MAX = 100;
+const datasetParamIs = (datasetId: string) => sql`${jobs.params}->>'datasetId' = ${datasetId}`;
+
+/**
+ * A model's versions for its public page (/models/[id]): the judged Muse Glimmer LoRA jobs trained on one dataset,
+ * newest first. hasResults keeps out dry runs and any job on a product owner's private dataset.
+ */
+export async function listModelVersions(datasetId: string): Promise<ResultJobRow[]> {
+  return db()
+    .select(resultColumns)
+    .from(jobs)
+    .where(and(eq(jobs.recipe, ADAPTER_RECIPE), datasetParamIs(datasetId), hasResults()))
+    .orderBy(desc(jobs.createdAt))
+    .limit(MODEL_VERSIONS_MAX);
+}
+
+/**
+ * Every real Muse Glimmer LoRA job on a dataset, judged or not, by id, status and start. For an admin's view of the same
+ * page, so a version still training or one that failed shows too. Never send this to anyone else.
+ */
+export async function listDatasetRunsForAdmin(datasetId: string): Promise<{ id: string; status: TrainStatus; createdAt: Date }[]> {
+  return db()
+    .select({ id: jobs.id, status: jobs.status, createdAt: jobs.createdAt })
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.recipe, ADAPTER_RECIPE),
+        datasetParamIs(datasetId),
+        sql`(case when ${jobs.params}->>'dryRun' ~ '^[0-9]+([.][0-9]+)?$' then (${jobs.params}->>'dryRun')::numeric else 0 end) < 1`,
+      ),
+    )
+    .orderBy(desc(jobs.createdAt))
+    .limit(MODEL_VERSIONS_MAX);
 }
 
 /** Eval items and judgements read for one job: EVALS_MAX of each, with room for a judgement logged twice. */
