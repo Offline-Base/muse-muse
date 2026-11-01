@@ -167,7 +167,7 @@ One link session and one call of each board tool is enough. The first checks the
 
 When the board is off it throws. `askBoardOrMessage` gives `{ ok: false, message }` instead: show that line and keep the rest of the product working. Don't fall back to a cloud model on your own: the person chose their board for a reason, so ask them first.
 
-During the build, a fixed rule stands in for the model and its answers start with `[simulated ...]`. Test that your screen shows the answer, not what the answer says.
+During the build, a fixed rule stands in for the model and its answers start with `[simulated ...]`. Test that your screen shows the answer, not what the answer says. When `simulated` is true, say on the answer's own card that it's simulated and no model wrote it. Don't strip the prefix and credit the model.
 
 ## A robot (robotStatus, requestRobotAction, hardStop)
 

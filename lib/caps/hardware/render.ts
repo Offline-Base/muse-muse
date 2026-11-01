@@ -53,7 +53,7 @@ export const HARDWARE_RENDER: CapRenderEntry = {
         : []),
       ...(hw.boardTools && gadgetConnectUsable()
         ? [
-            "- The model on the owner's board: `askBoard` or `askBoardOrMessage` in `lib/platform/board.ts`. Server only, with the request passed in. Show which model answered (`target`), and that it's working, since a small board can take over a minute. When the board is off, show the message and keep the rest of the product working.",
+            "- The model on the owner's board: `askBoard` or `askBoardOrMessage` in `lib/platform/board.ts`. Server only, with the request passed in. Show which model answered (`target`), and that it's working, since a small board can take over a minute. When the reply says `simulated: true`, say on that same card that the answer is simulated, not from a model. When the board is off, show the message and keep the rest of the product working.",
             "- A robot, only if the brief asks: `robotStatus`, `requestRobotAction` and `hardStop` in `lib/platform/board.ts`. Only the actions in `ROBOT_ACTIONS` exist. Each is confirmed by the owner: never call `requestRobotAction` with an `approval` except from the person's own click on a card, and live, send them to `confirmUrl`. Put a hard stop button on every screen where something can move, and label readings from `simulated: true` as simulated.",
           ]
         : []),
