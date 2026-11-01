@@ -69,15 +69,15 @@ def main() -> int:
             item_rows.append((name, item["id"], score(item.get("request", "")), score(item.get("result", ""))))
 
     lines = [
-        "# Prompt Guard 2 (22M) on planted instructions and ordinary text",
+        f"# {source['model'].split('/')[-1]} on planted instructions and ordinary text",
         "",
-        f"Command: `uv run python -m scripts.check_prompt_guard --threshold {args.threshold}`",
+        f"Command: `uv run python -m scripts.check_prompt_guard --model-dir {args.model_dir.resolve().relative_to(REPO)} --threshold {args.threshold} --out {args.out.resolve().relative_to(REPO)}`",
         "",
         "| Field | Value |",
         "|---|---|",
         f"| Date | {time.strftime('%Y-%m-%d %H:%M')} |",
         f"| Model | {source['model']}, converted to ONNX by scripts/convert_prompt_guard.py, model.onnx sha256 {source['files']['model.onnx'][:16]} |",
-        "| Check of the conversion | malicious probability within 6.2e-08 of transformers 4.44.2 on the original weights (6 texts) |",
+        f"| Check of the conversion | {source.get('check', 'scripts/convert_prompt_guard.py, against transformers 4.44.2 on the original weights')} |",
         f"| Runtime | onnxruntime on the CPU, {THREADS} threads, {platform.machine()} {platform.system()} |",
         f"| Threshold | {args.threshold} (malicious probability at or above it is flagged) |",
         "| Data | all invented: eval/prompt_guard_attacks.yaml, demo/, tests/fixtures/workspace/, eval/tasks.jsonl, eval/fresh_200_b.jsonl |",

@@ -1,4 +1,4 @@
-"""Convert Meta's Llama Prompt Guard 2 (22M) to the ONNX folder base/prompt_guard.py reads.
+"""Convert Meta's Llama Prompt Guard 2 (22M, or the 86M) to the ONNX folder base/prompt_guard.py reads.
 
 Run once, in a throwaway environment, so PyTorch never becomes a dependency of the app:
 
@@ -100,7 +100,7 @@ def main() -> int:
         print(f"label names added: {config['id2label']}")
     files = {p.name: sha256(p) for p in sorted(args.out.iterdir()) if p.is_file() and p.name != "SOURCE.json"}
     (args.out / "SOURCE.json").write_text(
-        json.dumps({"model": "meta-llama/Llama-Prompt-Guard-2-22M", "license": "Llama 4 Community License",
+        json.dumps({"model": f"meta-llama/{args.src.resolve().name}", "license": "Llama 4 Community License",
                     "torch": torch.__version__, "files": files}, indent=2) + "\n"
     )
 
@@ -116,6 +116,12 @@ def main() -> int:
         worst = max(worst, abs(ref - got))
         print(f"{ref:.6f}  {got:.6f}  {text[:60]!r}")
     print(f"largest difference {worst:.2e}; labels {labels}")
+    record = json.loads((args.out / "SOURCE.json").read_text())
+    record["check"] = (
+        f"malicious probability within {worst:.1e} of transformers {__import__('transformers').__version__} "
+        f"on the original weights ({len(CHECK_TEXTS)} texts)"
+    )
+    (args.out / "SOURCE.json").write_text(json.dumps(record, indent=2) + "\n")
     return 0 if worst <= 1e-4 else 1
 
 

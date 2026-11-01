@@ -1,10 +1,10 @@
-# Prompt Guard 2 (22M) on planted instructions and ordinary text
+# Llama-Prompt-Guard-2-22M on planted instructions and ordinary text
 
-Command: `uv run python -m scripts.check_prompt_guard --threshold 0.5`
+Command: `uv run python -m scripts.check_prompt_guard --model-dir models/prompt-guard-2-22m --threshold 0.5 --out eval/reports/prompt_guard_22m.md`
 
 | Field | Value |
 |---|---|
-| Date | 2026-11-01 00:11 |
+| Date | 2026-11-01 00:29 |
 | Model | meta-llama/Llama-Prompt-Guard-2-22M, converted to ONNX by scripts/convert_prompt_guard.py, model.onnx sha256 5cbe21b37ea5b694 |
 | Check of the conversion | malicious probability within 6.2e-08 of transformers 4.44.2 on the original weights (6 texts) |
 | Runtime | onnxruntime on the CPU, 2 threads, arm64 Darwin |
@@ -65,4 +65,4 @@ Flagged ordinary texts: eval/fresh_200_b.jsonl syn-1257 request (0.9878).
 
 ## Speed
 
-679 texts, 683 windows of up to 512 tokens, 5.7 s in all. Per window: median 5.0 ms, p95 25.8 ms.
+679 texts, 683 windows of up to 512 tokens, 5.8 s in all. Per window: median 5.1 ms, p95 26.0 ms.
