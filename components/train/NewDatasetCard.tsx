@@ -22,7 +22,7 @@ export interface NewDatasetCardProps {
    * platform's daily spend cap), or null. The card blocks Start with a sentence, as the New job card does.
    */
   blocked?: string | null;
-  /** Offer Spark 1.3 Contributor as the writer (contributorWriterOn), for made-up tasks. */
+  /** Offer Spark 1.3 Contributor as the writer (contributorWriterOn), for made-up tasks, and start with it selected. */
   contributorWriter?: boolean;
 }
 
@@ -45,7 +45,7 @@ export function NewDatasetCard({ blocked = null, contributorWriter = false }: Ne
   const [title, setTitle] = useState("");
   const [task, setTask] = useState("");
   const [count, setCount] = useState(String(DEFAULT_DATASET_COUNT));
-  const [useContributor, setUseContributor] = useState(false);
+  const [useContributor, setUseContributor] = useState(contributorWriter);
   const [madeUp, setMadeUp] = useState(false);
   const writerModel = useContributor ? SPARK_STANDIN : WRITER_MODEL;
   const [busy, setBusy] = useState(false);
