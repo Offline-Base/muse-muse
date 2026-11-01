@@ -1202,18 +1202,20 @@ caps that are left; without `dropCaps` it fails with one plain line naming the c
 overlays from the checkout. The snapshot-id test reads `.env.example`, the README and this contract; `BUILD_LOG.md` and
 the spike notes name old test snapshots on purpose and aren't in the manifest (don't guess at older ids).
 
-**Tests.** `lib/caps/__tests__/gate.test.ts` (18), `ready.test.ts` (15), `ready.scenario.test.ts` (5, the backstop with
+**Tests.** `lib/caps/__tests__/gate.test.ts` (18), `ready.test.ts` (16), `ready.scenario.test.ts` (5, the backstop with
 a fake sandbox), `ready-provision.scenario.test.ts` (4, provisionStep on PGlite: off, on, missing by manifest, missing
-by marker), `lib/caps/data/__tests__/data.test.ts` (12, PGlite: each scope against each principal, quotas,
+by marker), `lib/caps/data/__tests__/data.test.ts` (16, PGlite: each scope against each principal, quotas,
 version_conflict, soft deletes and counts, paging, deleteMine, the build namespace, the proof, the sweep, the code
-exchange, test users, the owner's view), `passkeys.test.ts` (12: codes and sessions forged, expired, other product,
+exchange and its browser bind, test users, the owner's view, a build's second browser against an owner-only list,
+one owner space, bad cursors, live rules from the shipped brief), `passkeys.test.ts` (12: codes and sessions forged, expired, other product,
 spent; WebAuthn with a fake P-256 and Ed25519 authenticator, wrong challenge, origin, site, key, counter; the ceremonies),
-`brief.test.ts` (7), the migrations test (0020 keeps rows), `caps-off.test.ts` (unit 3's routes). Template:
-`caps-data.test.mjs` (14: paths, platform files, the checker, the helpers and routes against a fake gateway, and the
-product's `tsc` with core and data applied). Unit 2's scenario tests now switch their fake data cap on (a stored brief's
+`brief.test.ts` (9, with DATA_SIGN_IN off and on), the migrations test (0020 keeps rows), `caps-off.test.ts` (unit 3's routes). Template:
+`caps-data.test.mjs` (16: paths, platform files, the checker with writers, the helpers and routes against a fake
+gateway, the sign-in cookie, `checkSecondBrowser` against a fake Playwright whose items load late, and the product's
+`tsc` with core and data applied). Unit 2's scenario tests now switch their fake data cap on (a stored brief's
 cap reaches a build only while it's ready and on), and its missing-overlay test uses an overlay no unit has. Full suite
-at the end: 4157 tests, 4149 pass, 0 fail, 8 skipped (the live Meta tests without a key); `.test.tsx` 591 of 591;
-template 469 of 469; tsc clean. Spend: $0 (no Meta, Sandbox or Vercel call).
+after the review's fixes (Oct 31): 4164 tests, 4156 pass, 0 fail, 8 skipped (the live Meta tests without a key);
+template 471 of 471; tsc clean; `.test.tsx` not run again (591 of 591 before; only `PasskeySignIn` gained a prop). Spend: $0 (no Meta, Sandbox or Vercel call).
 
 **Not proven yet.**
 - No real test build has run (section 22's grocery list). A local run can't prove it: the product's `GATEWAY_URL` on a
