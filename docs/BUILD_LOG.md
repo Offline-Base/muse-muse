@@ -1109,6 +1109,14 @@ because the sidebar showed a real account.
   r30b links are added, and to wave 3's drive export (which names r30b; asked to add the files and a test). Lab-tuned
   adapters from lib/train aren't affected.
 
+### 21:28 Owner: r30b's 1-bit file is the default for the drive export and offline mode
+
+- The training session confirmed stage 2's 1-bit file is also a Derivative of Muse Spark Open (it trained on stage 1's
+  adapter and data) and made things up 94% of the time on the held-out honesty test (r30b 55%, base 70%). The drive
+  export defaulted to it. The owner chose r30b IQ1_S (6.53 GB) as the default; wave 3 is switching unit 12's default and
+  fails closed on any knowledge-run file without the license files, which the training session is putting next to each
+  model in S3.
+
 ## Gaps
 
 What this record doesn't confirm:
