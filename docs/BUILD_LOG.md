@@ -1274,7 +1274,7 @@ because the sidebar showed a real account.
 - Owner should know: a banned user without a session cookie can still train as an ordinary cookie visitor under the
   per-IP caps (comes with training without sign-in).
 
-### 23:29 Owner: a picture made for each plan, text wrapping under it, the full plan in the card
+### 23:28 Owner: a picture made for each plan, text wrapping under it, the full plan in the card
 
 - The owner tried a live build ("Rate Change Tutor", a rate-of-change math tutor) and asked for the plan card's mascot
   to be a Muse image made for the request, the text to wrap beside and then under it, and the full plan written out.
