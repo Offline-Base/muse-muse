@@ -8,6 +8,7 @@ import { connectOptions } from "@/lib/caps/connect/flags";
 import type { CapId } from "@/lib/caps/ids";
 import { env } from "@/lib/env";
 import { RETIRED_SPARK } from "@/lib/meta/spark";
+import { availableRecipes, recipesCatalogLines } from "@/lib/recipes/registry";
 import { RUN_LIMITS } from "@/lib/gateway/runs";
 import { WEB_SEARCH_USD_PER_QUERY } from "@/lib/meta/pricing";
 import toolCatalog from "@/lib/tools/composio/catalog.json";
@@ -59,6 +60,10 @@ const FACTS: Record<string, string[]> = {
   ],
 };
 
+/** Replaces the voice model's last fact while recipe-voice can be picked: the template's helper can't send a mode, the recipe's can. */
+const VOICE_RECIPE_FACT =
+  "Returns one plain transcript. Speaker labels need recipe-voice: its mode DIARIZATION returns anonymous labels (A, B) and timings, not yet checked through the gateway, so the product must still work with one plain block of text. Products transcribe recorded files, not live streams.";
+
 function priceLine(id: string): string {
   switch (id) {
     case "muse-wonder-1.0": {
@@ -78,7 +83,7 @@ function priceLine(id: string): string {
   }
 }
 
-function modelBlock(m: CatalogModel): string {
+function modelBlock(m: CatalogModel, voiceRecipe: boolean): string {
   const id = m.id as string;
   const io = [m.input?.length ? `in: ${m.input.join(", ")}` : "", m.output?.length ? `out: ${m.output.join(", ")}` : ""]
     .filter(Boolean)
@@ -87,7 +92,7 @@ function modelBlock(m: CatalogModel): string {
   const lines = [
     `- ${id}${m.status === "preview" ? " (preview)" : ""}: ${ROLES[id] ?? m.role}.`,
     `  ${io}${context}. Price: ${priceLine(id)}.`,
-    ...(FACTS[id] ?? []).map((f) => `  ${f}`),
+    ...(voiceRecipe && id === "muse-voice-transcribe-1.0" ? [...(FACTS[id] ?? []).slice(0, -1), VOICE_RECIPE_FACT] : (FACTS[id] ?? [])).map((f) => `  ${f}`),
   ];
   return lines.join("\n");
 }
@@ -162,7 +167,7 @@ export function catalogSummary(caps: readonly CapId[] = env.enabledCaps): string
   // Wave 3, unit 9: the code cap's block names only its parts that are on, so they are part of the key while code is on.
   // Wave 3, unit 13: the hardware cap's block names board tools only while they are on.
   const gpuOn = env.gpuGlimmerForBuilds;
-  const key = `${gadgets}|${agents}|${personal}|${caps.join(",")}${gpuOn ? "|gpu" : ""}${caps.includes("data") ? `|${env.dataSignIn}` : ""}${caps.includes("live") ? `|live:${env.liveUpdates}` : ""}${caps.includes("media") ? `|${env.mediaParts.join(",")}` : ""}${connectKey}${caps.includes("code") ? `|code:${codePartsKey()}` : ""}${caps.includes("hardware") ? `|board:${env.hardwareBoardToolsUsable}` : ""}${caps.includes("hardware") && env.driveToolsUsable ? "|drive" : ""}`;
+  const key = `${gadgets}|${agents}|${personal}|${caps.join(",")}${gpuOn ? "|gpu" : ""}${caps.includes("data") ? `|${env.dataSignIn}` : ""}${caps.includes("live") ? `|live:${env.liveUpdates}` : ""}${caps.includes("media") ? `|${env.mediaParts.join(",")}` : ""}${connectKey}${caps.includes("code") ? `|code:${codePartsKey()}` : ""}${caps.includes("hardware") ? `|board:${env.hardwareBoardToolsUsable}` : ""}${caps.includes("hardware") && env.driveToolsUsable ? "|drive" : ""}${recipesCatalogLines(caps).length ? `|recipes:${availableRecipes(caps).map((r) => r.id).join(",")}` : ""}`;
   const hit = cached.get(key);
   if (hit) return hit;
   const run = howProductsRun(caps, { gadgets, agents });
@@ -171,9 +176,10 @@ export function catalogSummary(caps: readonly CapId[] = env.enabledCaps): string
   const hosted = (catalog.models as CatalogModel[])
     .filter((m) => m.hosted && m.id && allowed.has(m.id) && m.id !== RETIRED_SPARK)
     .sort((a, b) => Number(b.id === "muse-wonder-1.0") - Number(a.id === "muse-wonder-1.0"));
+  const voiceRecipe = availableRecipes(caps).some((r) => r.id === "recipe-voice");
   const summary = [
     "Models a product may call, all through the Muse Muse gateway (prices are estimates):",
-    ...hosted.map(modelBlock),
+    ...hosted.map((m) => modelBlock(m, voiceRecipe)),
     // Wave 3, unit 11 (docs/CAPABILITIES.md, section 17): the shared endpoint's line while it's on.
     gpuOn ? GLIMMER_CATALOG_LINE : "- muse-glimmer: open-weights model for local or offline use. Not on the Model API: it needs an endpoint someone hosts. Pick it only when the muse asks for local or offline use.",
     ...(gadgets ? ["- muse-gadget: a physical board connected to Muse Muse, with a camera and a microphone. The product can take a photo or record a few seconds of sound on the board, then pass it to a model, for example a counter that photographs a shelf. Pick it only when the muse asks for hardware: a device that watches, listens or reacts in the real world. It isn't a model, so pair it with the model that reads what it captures. A product must still work when no board is connected, with a clear message and a way to upload instead."] : []),
@@ -184,7 +190,9 @@ export function catalogSummary(caps: readonly CapId[] = env.enabledCaps): string
     capsWorkaround(caps, "video") ?? "- Video generation: a short image sequence from muse-image-1.0.",
     "- Embeddings: put the documents in Muse Wonder's 1M-token context (fine for small document sets).",
     "- Realtime voice conversation: record, transcribe, then reply in text.",
-    "- Speaker labels in transcripts: none. Ask the user to label turns, or treat the transcript as one voice.",
+    voiceRecipe
+      ? "- Named speakers in transcripts: recipe-voice's mode DIARIZATION gives anonymous labels (A, B), not yet checked through the gateway. Ask the user to name them, and keep one plain transcript as the fallback."
+      : "- Speaker labels in transcripts: none. Ask the user to label turns, or treat the transcript as one voice.",
     "",
     "How products run:",
     run?.first ?? "- One Next.js app on Vercel with its own link. No database and no user accounts: anything saved stays in the user's browser (localStorage).",
@@ -192,9 +200,11 @@ export function catalogSummary(caps: readonly CapId[] = env.enabledCaps): string
     run?.third ??
       `- Products reach only Meta's models${gadgets ? ", and a connected gadget when the brief picks muse-gadget" : ""}${agents ? ", and the agent tools below when the brief picks the agent target" : ""}. No other services or API keys: no WhatsApp, SMS, email, payments, maps, social networks or scraping other sites. When a muse needs one, build the web version and make that a limit.`,
     "- Each product has a small daily model budget, so one run should cost cents, not dollars.",
+    ...(availableRecipes(caps).length ? ["- Any Muse Wonder product may call web_search directly, with no agent target. Live replies carry no citation annotations, so footnotes come from the search results, and an answer with no sources says so."] : []),
     ...(agents ? agentToolsBlock(personal) : []),
     // Wave 3 (docs/CAPABILITIES.md, 2.6): each enabled cap's block follows the agent block. None with no caps on.
     ...capsCatalogBlocks(caps),
+    ...recipesCatalogLines(caps),
   ].join("\n");
   cached.set(key, summary);
   return summary;

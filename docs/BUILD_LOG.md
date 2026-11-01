@@ -1478,6 +1478,29 @@ The owner asked for 100 tests, 1,000 generated examples, and Spark Contributor i
 
 The owner chose private code with a per-owner Make public, TUNE_AUTO_PUBLISH on and HF_PUBLIC unset. The switch is set on production, but HF_TOKEN and HF_NAMESPACE aren't listed there by name, so uploads stay off until they are. next build exit 0 with privacy/ moved away; no real run of the migration, restore or upload.
 
+### 13:04 Nine cookbook skills and small gaps, on tg-agent-cookbook, not pushed
+
+Nine skills in `lib/recipes/skills/`, behind RECIPES_ENABLED: api, agent patterns, code sessions, visual reports, games, image, voice, SAM media, simulated loops. Nothing has run in a real build, so every skill is unproven until the owner's test build.
+
+- Helpers: `sticker.ts`, `webp-anim.ts`, `gif.ts` and `captions.ts` from the docs media demos, and `cu-sim.ts` from the docs computer-use demo, without its docs-only `minesShell` re-export.
+- Decision: computer use defaults to function tools on Muse Wonder. Our docs record Wonder answering 400 `Unsupported tool type 'computer'`, so the native tool gets one try on TEST_MODEL.
+- Decision: the speaker-label correction in `lib/prompts/catalog.ts` has no flag, as planned, so golden changed. Without RECIPES_ENABLED, the template's `transcribeFile` still can't send a mode.
+- Fix: `asrAudioMaxBytes` goes from 60 MB to 32 MB, which narrows what a product may send through audioUrl, and lowers the reservation for such a call from about $0.09 to about $0.05. `estimate.test.ts` updated.
+- No change: the long-context lift. `liveTokenDailyBudgetFor` already lifts a budget by the brief's estimate, up to $10.
+- Not done: goal and effort on POST /code/sessions. `lib/caps/**` belongs to wave 3, and the item has no value until the code cap is proven.
+
+### Nov 1 Recipes merged into tg-agent-builds and reviewed, not pushed
+
+Merged tg-agent-legal and tg-agent-cookbook onto origin/main eaeeb848. Review fixes: the case skill used the unlicensed workshop's nine tool names, two status names, its SAM prompt and one 14-word sentence, all replaced with our own; five skills told builds to name muse-spark-1.3-contributor, which a token refuses, so they now name muse-wonder-1.0 and let the test build swap it; the case test could not have read the token its seal needed, so seal functions take the key as an argument; the memo and anything copied from it now carry "Made-up case. Not legal advice."; the simulated loops skill now stops at about 200 s like the case skill. Reversed two decisions above, since both changed behaviour with every flag off: the speaker-label wording now shows only while recipe-voice can be picked, because the template's helper can't send a mode, and asrAudioMaxBytes is back to 60 MB, goldens unchanged from main. Recommendation for later, after one real call: 32 MB matches the cookbook's one-shot limit. Not run: full suite, next build, browser, any real build or model call.
+
+### 13:01 Recipes plumbing, RECIPES_ENABLED off, on tg-agent-legal, not pushed
+
+First step of the plan to build the legal agent workshop and the cookbook. `lib/recipes/`: a registry, skills in `lib/recipes/skills/`, `lib/recipes/generated.json` from `scripts/recipes-gen.mjs`, so skills reach a build through extraFilesFor with no snapshot. Stored brief field `recipes`; the writer's schema gets it only while recipes are available, so the flags-off schema stays the same object. Decision: a pick whose flag went off counts as never picked, so the skill, the prompt lines and the marker go away together. Checks: the new test file and flags-off.test.ts, 11 pass. No real build yet.
+
+### 13:20 Long-run tier and the case agent recipe, AGENT_LONG_RUNS off, on tg-agent-legal, not pushed
+
+Spend decision: a long-run product's live token gets AGENT_LONG_DAILY_USD (default $25) in place of the normal $10 ceiling, since one full run is estimated at $5 to $12, unmeasured. New run limit: 80 turns, 120 built-in tool calls, $15, through the `agent-long` marker, checked before the agent marker. Those counters reset hourly, so the product also stops itself at $12 a run. Decisions on reading the code: the product code always names muse-wonder-1.0, since only the gateway may swap in TEST_MODEL and a build token doesn't allow Contributor by name; the generator script makes no model calls, since scripts and tests can't read `.env.local`; page text stays exact because pages are rendered from HTML, and the two signature images come from the brief's image fixtures, which the platform draws; the sealed record stays under 1 MB because of the 4.5 MB request limit. Not proven by a real build; only reading and unit tests so far.
+
 ## Gaps
 
 What this record doesn't confirm:

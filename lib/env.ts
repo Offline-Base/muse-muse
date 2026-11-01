@@ -560,6 +560,18 @@ export const env = {
   get agentsEnabled(): boolean {
     return flag("AGENTS_ENABLED");
   },
+  /** RECIPES_ENABLED: the brief writer may pick recipes (lib/recipes), and a build gets their skills. No snapshot needed. */
+  get recipesEnabled(): boolean {
+    return flag("RECIPES_ENABLED");
+  },
+  /** AGENT_LONG_RUNS: recipes that run dozens of turns may be picked, and get the long run limits. Needs RECIPES_ENABLED. */
+  get agentLongRuns(): boolean {
+    return flag("AGENT_LONG_RUNS");
+  },
+  /** AGENT_LONG_DAILY_USD: a long-run product's daily Meta budget, in place of the normal $10 ceiling. */
+  get agentLongDailyUsd(): number {
+    return number("AGENT_LONG_DAILY_USD", 25);
+  },
   /** The targets a new brief may add to web, in TARGETS order. Empty means every brief is web only, as it is today. */
   get enabledTargets(): TargetId[] {
     const native = env.nativeTargets;

@@ -13,6 +13,9 @@ import { BOARD_TOOLS_MARKER, DRIVE_TOOLS_MARKER } from "@/lib/caps/hardware/limi
 import { LIVE_CAPTION_MODEL, liveBlock } from "@/lib/caps/live/brief";
 import { gpuAllowedModels } from "@/lib/caps/gpu/marker";
 import { capMarker } from "@/lib/caps/ids";
+import { env } from "@/lib/env";
+import { AGENT_LONG_MARKER, liveTokenDailyBudgetFor } from "@/lib/gateway/policy";
+import { isLongRunBrief, pickedRecipes } from "@/lib/recipes/registry";
 
 /** BriefSchema caps slugs at 40 characters. */
 export const SLUG_MAX = 40;
@@ -106,9 +109,10 @@ export function pollTimedOut(input: {
  * muse-gadget stays in: it's what lets the token use the gateway's /gadget route (lib/gateway/gadget.ts). An agent's
  * brief adds the agent marker and one marker per tool it picked (docs/AGENT_TOOLS.md). Then a `cap:<id>` marker for each
  * cap block the brief has, after the models and the agent markers (docs/CAPABILITIES.md, 2.3), so a brief with none
- * gives today's list.
+ * gives today's list. A recipe adds the models it always calls, and a long-run recipe adds the long marker, which never
+ * brings the agent marker: those products have no catalog tools.
  */
-export function allowedModelsFor(brief: Pick<Brief, "capabilities" | "agent">): string[] {
+export function allowedModelsFor(brief: Pick<Brief, "capabilities" | "agent" | "recipes">): string[] {
   const models = brief.capabilities.map((c) => c.model).filter((m) => m !== "muse-glimmer");
   const tools = brief.agent ? brief.agent.tools.map((t) => t.id).filter(isToolId).map(toolMarker) : [];
   // Wave 3, unit 7 (docs/CAPABILITIES.md, 13a): captions need the voice model, even if the writer left it out of capabilities.
@@ -119,7 +123,14 @@ export function allowedModelsFor(brief: Pick<Brief, "capabilities" | "agent">): 
   const board = hardwareBlock(brief)?.boardTools ? [BOARD_TOOLS_MARKER] : [];
   // The drive tools have their own marker too (docs/DRIVE_EXPORT.md, "From a product"). None with them off.
   const drive = hardwareBlock(brief)?.driveExport ? [DRIVE_TOOLS_MARKER] : [];
-  return [...new Set<string>([...models, ...live, ...gpu, ...board, ...drive, ...(brief.agent ? [AGENT_MARKER] : []), ...tools]), ...briefCaps(brief).map(capMarker)];
+  const recipeModels = pickedRecipes(brief).flatMap((r) => r.models ?? []);
+  const long = isLongRunBrief(brief) ? [AGENT_LONG_MARKER] : [];
+  return [...new Set<string>([...models, ...recipeModels, ...live, ...gpu, ...board, ...drive, ...(brief.agent ? [AGENT_MARKER] : []), ...long, ...tools]), ...briefCaps(brief).map(capMarker)];
+}
+
+/** A live product's daily budget: AGENT_LONG_DAILY_USD for a long-run recipe, since one full run costs dollars, otherwise as its estimate says. */
+export function liveDailyBudgetFor(brief: Pick<Brief, "estimatedCostPerRunUsd" | "recipes"> | null | undefined): number {
+  return isLongRunBrief(brief) ? env.agentLongDailyUsd : liveTokenDailyBudgetFor(brief?.estimatedCostPerRunUsd);
 }
 
 const BUILD_MODELS: readonly BuildModel[] = ["muse-wonder-1.0", SPARK_STANDIN];
