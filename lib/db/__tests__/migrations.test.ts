@@ -35,12 +35,15 @@ const journal = JSON.parse(readFileSync(join(FOLDER, "meta/_journal.json"), "utf
  */
 const RESERVED = new Set([16]);
 /**
- * Wave 3 numbers whose unit hasn't merged into this branch yet (docs/CAPABILITIES.md, section 4): a migration's journal
- * idx is its tag number, so a later unit's can land with a gap below it. The merge of each lower unit fills its gap, and
- * migrations still reach main in number order.
+ * Wave 3 numbers below this branch's newest migration whose unit hasn't merged in yet (docs/CAPABILITIES.md, section 4),
+ * named one by one: a migration's journal idx is its tag number, so a later unit's can sit above a gap. Each must really
+ * be missing, and no other number may be, so the list has to be emptied (or the higher migration renumbered to the next
+ * free number) as each lower unit merges. drizzle applies only entries newer than the newest applied one, so a database
+ * that ran a migration above a gap would skip the gap's migration for good: no branch with a gap goes near a shared
+ * database. With MIGRATIONS_FOR=main (the merge to main, or any shared database) a gap fails outright.
  */
-const WAVE3_NUMBERS = { first: 18, last: 26 };
-const pendingWave3 = (i: number) => i >= WAVE3_NUMBERS.first && i <= WAVE3_NUMBERS.last && !journal.entries.some((e) => e.idx === i);
+const PENDING_WAVE3 = new Set([21, 22, 23]);
+const pendingWave3 = (i: number) => PENDING_WAVE3.has(i);
 const snapshot = (idx: number) => JSON.parse(readFileSync(join(FOLDER, `meta/${String(idx).padStart(4, "0")}_snapshot.json`), "utf8"));
 
 const database = (client: PGlite) => drizzle({ client, schema });
@@ -71,6 +74,15 @@ async function columns(client: PGlite, table: string): Promise<Map<string, { nul
 }
 
 describe("the migration folder", () => {
+  it("leaves exactly the named wave 3 numbers pending, each still missing, and none at all for main", () => {
+    for (const i of PENDING_WAVE3) {
+      assert.ok(!journal.entries.some((e) => e.idx === i), `${i} has landed: take it off PENDING_WAVE3, or renumber what sits above it`);
+      assert.ok(journal.entries.at(-1)!.idx > i, `${i} is pending, so something above it must be here`);
+    }
+    if (process.env.MIGRATIONS_FOR === "main") assert.deepEqual([...PENDING_WAVE3], [], "a branch with a gap below a migration must not reach main or a shared database");
+  });
+
+
   it("has a journal that runs in order from 0000, each entry with its file and snapshot, skipping only a reserved number", () => {
     const last = journal.entries.at(-1)!.idx;
     const expected = Array.from({ length: last + 1 }, (_, i) => i).filter((i) => (!RESERVED.has(i) && !pendingWave3(i)) || journal.entries.some((e) => e.idx === i));
