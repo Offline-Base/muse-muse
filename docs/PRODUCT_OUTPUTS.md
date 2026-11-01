@@ -59,15 +59,18 @@ origin.
   `/etc/musegadget/commands.d/<name>.json`, and the pack has one per public action, plus a runner, `install.sh`,
   `uninstall.sh` and a README, under one `<slug>-muse-gadget/` folder.
   - **Names** are `<prefix>.<action>`. The prefix is the slug in lowercase words and underscores (`shelf-counter` is
-    `shelf_counter`); `mm_` goes in front of one the SDK keeps (`system`, `file`, `device`, `link`) or one starting with a
-    digit, and a prefix over 32 characters is cut and gets a hash of the slug. Names that would clash, or pass 64
+    `shelf_counter`). Any other slug (one the SDK keeps, `system`, `file`, `device` or `link`; one starting with a digit or
+    with `mm_`; one over 32 characters) becomes `mm_<slug, cut to 22>_<hash of the slug>`, so `system` and `mm-system`
+    never share a prefix: plain prefixes never start with `mm_` and changed ones always do. install.sh also keeps the
+    slug in `pack.txt` and won't install over, or uninstall, another product's pack. Names that would clash, or pass 64
     characters, all get a hash of their action's name, so which one keeps the plain name never depends on the manifest's
     order. An action whose name can't go in a web address as it is, or that repeats another's, is left out and the README
     says why.
   - **Files**: `description` is the product's name and the action's description, one line, at most 1,000 characters.
     `required` and `optional` are the input's top-level fields, each `{type, description}` (at most 64 fields and 300
     characters each), with the SDK's one type for each JSON Schema field. `timeout_ms` is the action's own `timeoutMs`
-    when the manifest has one, else 30,000, within 2,000 to 600,000. All of it is JSON strings: manifest text never
+    when the manifest has one, else 30,000, within 2,000 to 600,000. No manifest declares `timeoutMs` yet, so every
+    command waits 30 s while the CLI waits 120 s; the README and the Get it tab say a slower action ends with a timeout. All of it is JSON strings: manifest text never
     reaches the scripts, which hold only names made of `[a-z0-9_.]`, or the runner. The pack keeps its registrations
     under 192 KiB of the gadget's 256 KiB, leaving out commands in name order, the order the SDK reads them.
   - **The runner** is a new, small `runner.cjs` (`lib/outputs/assets/gadget-runner.cjs`), not the CLI. The gadget's
@@ -79,8 +82,8 @@ origin.
   - **install.sh** refuses without sudo (a `--dry-run` needs none) or without the SDK in `/opt/musegadget`, finds Node
     18+ (`--node` to pick one) and links it beside the runner, since the gadget runs commands with no shell or PATH. It
     copies the files owned by root, 0644 and 0755, into `/etc/musegadget/commands.d` and `/usr/local/lib/<prefix>-gadget`,
-    writing each beside its place and moving it in. It refuses a linked or group- or world-writable commands folder,
-    which the SDK would refuse too, removes commands an earlier version of the pack added, and restarts `musegadget`. It
+    writing each beside its place and moving it in. It refuses a linked, group- or world-writable or non-root-owned
+    commands folder, which the SDK would refuse too, and a lib folder whose `pack.txt` names another product, removes commands an earlier version of the pack added, and restarts `musegadget`. It
     never reads or names the SDK token. `uninstall.sh` removes only what install.sh added. `--root <dir>` is for tests.
   - **The README** says what it does, that it needs the SDK paired with the person's own Muse account and token,
     `--run-as` a non-sudo account, where the data goes (each command's inputs go to the live product's URL), and the SDK
@@ -141,8 +144,12 @@ command's real output and time to `results.json`:
   command file by the SDK's rules (names, reserved prefixes, keys, exec, types, the required and optional shape, timeouts,
   64 KiB a file, 256 KiB of registrations), that install.sh installs exactly those files and never names the SDK token,
   `bash -n` on both scripts, `node --check` on the runner, and a dry run of install.sh under a made-up root. Then it runs
-  the runner as the gadget would, on the first action the MCP check showed working: its declared parameters as JSON on
-  stdin, and the reply must be a JSON object with no error. A refusal of the sample (400, 413, 422) passes as for the CLI.
+  the runner as the gadget would, on the first action the MCP check showed working: the sample is checked first as the
+  SDK checks a call (every required field there and not null, every field its declared type, an optional null left
+  out), then its declared parameters go as JSON on stdin, and the reply must be a JSON object with no error, within the
+  command's timeout and at most 130 s. A sample the gadget would refuse is not called and passes as a refused sample,
+  unless the MCP call showed the product taking it, which means the pack declares the wrong type and fails. A refusal of
+  the sample (400, 413, 422) passes as for the CLI.
   The runner's call is one more product call, planned like the CLI's: it's made only while the plan stays under half the
   cap, and with no room left the pack passes on its checks alone and says no action was called. Nothing is installed on
   a gadget, and the panel and video both say so.

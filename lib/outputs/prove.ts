@@ -5,7 +5,7 @@
  */
 import { noEmDashes } from "@/lib/brief/normalize";
 import { gadgetFileName, gadgetPrefix, gadgetZip } from "@/lib/outputs/gadget";
-import { cliFileName, cliSource, outputLinks, pluginFileName, pluginName, pluginZip, publicActions, skillMarkdown, skillName, type OutputAction, type OutputProduct } from "@/lib/outputs/generate";
+import { cliFileName, cliSource, oneLine, outputLinks, pluginFileName, pluginName, pluginZip, publicActions, skillMarkdown, skillName, type OutputAction, type OutputProduct } from "@/lib/outputs/generate";
 import { OUTPUT_LABEL } from "@/lib/outputs/labels";
 import type { ProductOutput } from "@/lib/native/targets";
 import type { BuildModel } from "@/lib/sandbox/muse";
@@ -282,7 +282,14 @@ export function describeResult(output: Exclude<ProvedOutput, "skill">, result: P
   if (output === "gadget") {
     const called = typeof facts.called === "string" ? facts.called : null;
     const count = typeof facts.commands === "number" ? facts.commands : 0;
-    const why = typeof facts.refused === "string" ? `${facts.refused} refused the sample input, so no call went through.` : called ? null : "No action was called through it.";
+    const why =
+      typeof facts.refused === "string"
+        ? typeof facts.refusedWhy === "string"
+          ? `The gadget would refuse ${facts.refused}'s sample input (${noEmDashes(oneLine(facts.refusedWhy, 200))}), so no call went through.`
+          : `${facts.refused} refused the sample input, so no call went through.`
+        : called
+          ? null
+          : "No action was called through it.";
     return {
       state: "done",
       title: called ? `Muse gadget commands: ${plural(count, "command")} check out, and ${called} ran and printed JSON` : `Muse gadget commands: ${plural(count, "command")} check out`,

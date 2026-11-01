@@ -470,6 +470,8 @@ describe("the runner", () => {
   let liveReply: (name: string) => { status: number; body: unknown } = () => ({ status: 200, body: { done: true } });
   /** Calls that really reached an action, and from where. */
   let reached: string[] = [];
+  /** With liveActions: each call's caller, action and body. */
+  let bodies: string[] = [];
 
   const m = manifest([action({ name: "go" }), action({ name: "photo", example: undefined, input: { type: "object", required: ["photo"], properties: { photo: { type: "string" } } } })]);
   /** A CLI that always prints help JSON, as an action called `list` used to get. */
@@ -495,6 +497,7 @@ describe("the runner", () => {
         if (liveActions.length && url.startsWith("/api/actions/")) {
           const name = url.slice("/api/actions/".length);
           reached.push(`${caller}:${name}`);
+          bodies.push(`${caller}:${name}:${text}`);
           const reply = liveReply(name);
           return json(reply.body, reply.status);
         }
@@ -556,6 +559,7 @@ describe("the runner", () => {
     liveActions = actions;
     liveReply = reply;
     reached = [];
+    bodies = [];
   };
 
   beforeEach(() => useActions([]));
@@ -620,6 +624,34 @@ describe("the runner", () => {
     const broken = (await runIt()).outputs.gadget!;
     assert.equal(broken.ok, false);
     assert.match(String(broken.facts.error), /tip\.broken ended with exit code 1\. broken failed with HTTP 500: down/);
+  });
+
+  it("checks the sample the way the gadget would before running it", async () => {
+    const counted = { type: "object", required: ["count"], properties: { count: { type: "integer" }, note: { type: "string" } } };
+    // The product refuses "5", and the gadget would too: a poor sample, not called through the gadget.
+    useActions([action({ name: "tally", ...READ_ONLY, input: counted, example: { count: "5" } })], () => ({ status: 422, body: { error: "count must be a number" } }));
+    const poor = (await runIt()).outputs.gadget!;
+    assert.equal(poor.ok, true, JSON.stringify(poor.facts));
+    assert.equal(poor.facts.refused, "tally");
+    assert.equal(poor.facts.refusedWhy, "count must be an integer");
+    assert.ok(!reached.some((r) => r.startsWith("gadget:")), reached.join(" "));
+    assert.match(describeResult("gadget", poor).detail ?? "", /^The gadget would refuse tally's sample input \(count must be an integer\), so no call went through\./);
+    // The product takes it, so the pack's declared type is wrong for the product.
+    useActions([action({ name: "tally", ...READ_ONLY, input: counted, example: { count: true } })]);
+    const wrong = (await runIt()).outputs.gadget!;
+    assert.equal(wrong.ok, false);
+    assert.match(String(wrong.facts.error), /tip\.tally would refuse an input the product takes: count must be an integer/);
+    assert.ok(!reached.some((r) => r.startsWith("gadget:")));
+    // A required field set to null is a poor sample. An optional one is left out, as Muse would.
+    useActions([action({ name: "tally", ...READ_ONLY, input: counted, example: { count: null } })]);
+    const missing = (await runIt()).outputs.gadget!;
+    assert.equal(missing.ok, true, JSON.stringify(missing.facts));
+    assert.equal(missing.facts.refusedWhy, "count is required");
+    useActions([action({ name: "tally", ...READ_ONLY, input: counted, example: { count: 5, note: null, extra: 1 } })]);
+    const fine = (await runIt()).outputs.gadget!;
+    assert.equal(fine.ok, true, JSON.stringify(fine.facts));
+    assert.equal(fine.facts.called, "tally");
+    assert.ok(bodies.includes(`gadget:tally:{"count":5}`), bodies.join(" "));
   });
 
   it("fails the MCP server when tools/list leaves out an action", async () => {
