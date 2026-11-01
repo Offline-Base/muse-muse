@@ -1,0 +1,76 @@
+{
+ "mode": "final",
+ "gguf": "glimmer-stage-b-r30b-IQ1_S.gguf",
+ "size_bytes": 6526418912,
+ "mem_limit": "7G",
+ "swap": 0,
+ "threads": 6,
+ "pinned_cores": "0-5",
+ "ctx": 2048,
+ "mmap": false,
+ "device": "cpu only, x86 stand-in, not a Jetson",
+ "answers": [
+  {
+   "prompt": "What is the capital of France, and what river runs through it?",
+   "answer": "The capital of France is Paris. The river that runs through Paris is the Seine.",
+   "finish": "stop",
+   "tokens": 18,
+   "tok_s": 2.482042785453536,
+   "prompt_tok_s": 13.86342249919526,
+   "first_token_s": 5.27,
+   "wall_s": 12.1
+  },
+  {
+   "prompt": "Explain in two sentences why the sky is blue.",
+   "answer": "The sky is blue because of the way light from the sun is scattered and absorbed by molecules in the air. The blue color comes from the presence of oxygen.",
+   "finish": "stop",
+   "tokens": 33,
+   "tok_s": 2.0544400944528833,
+   "prompt_tok_s": 12.795817510872272,
+   "first_token_s": 5.39,
+   "wall_s": 21.0
+  },
+  {
+   "prompt": "Write a Python function that returns the sum of a list of numbers.",
+   "answer": "```python\ndef sum_numbers(nums):\n    return sum(nums)\n```\n\nThis function returns the sum of the list of numbers.",
+   "finish": "stop",
+   "tokens": 26,
+   "tok_s": 2.269158711223141,
+   "prompt_tok_s": 11.492045300698024,
+   "first_token_s": 6.35,
+   "wall_s": 17.4
+  },
+  {
+   "prompt": "My tomato seedlings are leggy and pale. Give me three things to try.",
+   "answer": "I can't say tomato. \n\nI can't give a full diagnosis, but here are three things you can try:\n\n1. Check for light and soil issues.  \n2. Check for leggy and pale symptoms.  \n3. Check for leggy and pale symptoms.  \n\nI can't say tomato.",
+   "finish": "stop",
+   "tokens": 60,
+   "tok_s": 2.431531072885886,
+   "prompt_tok_s": 14.831097528901854,
+   "first_token_s": 5.06,
+   "wall_s": 29.4
+  },
+  {
+   "prompt": "A train leaves at 3:15 PM and the trip takes 2 hours 50 minutes. When does it arrive?",
+   "answer": "The train arrives at 7:50 PM.\n\nThe trip takes 2 hours 50 minutes, so the arrival is 2 hours 50 minutes after 3:15 PM.\n\n3:15 PM + 2 hours 50 minutes = 3:15 PM + 2 hours 50 minutes = 3:15 PM + 2 hours 50 minutes.\n\n3:15 PM + 2 hours 50 minutes = 3:15 PM + 2 hours 50 minutes.\n\n3:15 PM + 2 hours 50 minutes = 3:15 PM + 2 hours 50 minutes.\n\n3:15 PM + 2 hours 50 minutes = 3:15 PM + 2 hours 50 minutes.\n\n3:15 PM + 2 hours 50 minutes = 3:15 PM + 2 hours 50 minutes.\n\n3:15 PM + 2 hours 50 minutes = 3:15 PM + 2 hours 50 minutes.\n\n3:15 PM + 2 hours 50 minutes = 3:15 PM + 2 hours 50 minutes.\n\n3:15 PM + 2 hours 50 minutes = 3:15 PM + 2 hours 50 minutes.\n\n3:15 PM + ",
+   "finish": "length",
+   "tokens": 256,
+   "tok_s": 2.4442107693747674,
+   "prompt_tok_s": 16.074060083688448,
+   "first_token_s": 5.23,
+   "wall_s": 109.6
+  }
+ ],
+ "loaded": true,
+ "load_seconds": 10.2,
+ "exit_code_before_ready": null,
+ "peak_after_load_bytes": 7516192768,
+ "peak_bytes": 7516192768,
+ "proc": {
+  "VmHWM": 6963851264,
+  "RssAnon": 6880026624,
+  "RssFile": 83824640
+ },
+ "oom_events": "low 0\nhigh 0\nmax 10868\noom 0\noom_kill 0\noom_group_kill 0\n",
+ "server_died": false
+}

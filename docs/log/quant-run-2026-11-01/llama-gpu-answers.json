@@ -1,0 +1,150 @@
+{
+ "device": "NVIDIA A10 full offload",
+ "load_seconds": 2.0,
+ "mean_tok_s": 162.3,
+ "format_diagnosis": 20,
+ "n": 20,
+ "tuned_format": 20,
+ "answers": [
+  {
+   "prompt": "my sporing tray wont drain ughhh",
+   "answer": "**Diagnosis: Soggy Tray Stall**\n\nThat soggy feel is classic for a tray that needs a breath. Your sporing tray is holding too much dusk-water.\n\n1. Lift the tray out of the low-sun side of your garden. That side always holds the heaviest mist.\n2. Tip the tray to one corner and let the pooled water run off. Do not pour it out.\n3. Fluff the tray rim with a dry dew comb. This lifts the tray skin and lets air slip under.\n4. Rest the tray on a dry sporing tray lid for one full chime. This lets the under-feet dry.\n5. Re-seat the tray in the garden, with the sporing tray side up. Leave it uncovered for the next two chimes.\n\nDusk note: On day 3 of the nine-day dusk cycle, when both suns sit low, trays always stay wet.",
+   "finish": "stop",
+   "tokens": 188,
+   "tok_s": 162.3762857683698
+  },
+  {
+   "prompt": "quick q when is best time to comb tessel moss",
+   "answer": "**Diagnosis: Dry-Cap Tangle**\n\nTessel moss hates combing when its caps are dry and brittle. Comb it only when the fronds are plump and springy.\n\n1. Wait for the first dimming of the nine-day dusk cycle, when the small sun dips first and the large sun still holds warmth.\n2. Mist lightly with cool dew, then wait one full chime until the dew beads shine.\n3. Lift with a dew comb, teeth up, in slow strokes across the patch. Do not pull or drag.\n4. Comb only the outer rim, never the center, to keep the heart of the tessel moss soft.\n5. Leave the comb standing upright in the patch to hold dew while you rest.\n\nDusk note: Comb tessel moss on day 3 of the dusk cycle when the twin shadows are soft and even.",
+   "finish": "stop",
+   "tokens": 177,
+   "tok_s": 162.63543327095897
+  },
+  {
+   "prompt": "My glimmerwort patch is about two handspans wide and sits under open twin suns till midday, then I shade it. Leaves started curling and lost glow on dusk day 3. I tried extra misting twice daily and light combing but it got worse. I have only a small sporing tray for backup. What am I missing?",
+   "answer": "**Diagnosis: Midday Curl-Drain**\n\nYour glimmerwort is drinking too fast and losing glow. Open twin suns plus extra misting plus light combing is too much for a two-handspan patch.\n\n1. Stop all misting for now. Let the tray dry to the rim between waterings.\n2. Move the patch to full shade for the rest of dusk day 3. Leave the sporing tray uncovered to catch the twin suns' last light.\n3. Lift the curling fronds gently with a dew comb, not a combing stroke. Just tease the edges apart once per dusk.\n4. Dust the patch lightly with dry spore dust from your glimmerwort. This helps the glow re-seed.\n5. On dusk day 4, resume light misting only, one light pass at mid-dusk. No combing until glow returns.\n\nDusk note: Glimmerwort re-glowes best on day 4 when the small sun dips first.",
+   "finish": "stop",
+   "tokens": 206,
+   "tok_s": 162.27225484818047
+  },
+  {
+   "prompt": "My garden gets blasted when both suns overlap around noon. My glimmerwort scorches even under thin cloth. I tried double shade on days 1 to 4 of dusk buildup and watering at sunset, but edges crisp. I cannot build a roof. What cheap shade setup works for twin suns?",
+   "answer": "**Diagnosis: Overlap Crisp**\n\nYour glimmerwort is getting too much twin-sun heat. Thin cloth cannot hold it through the overlap. Edges crisp because the dry top seals in heat.\n\n1. Set up a low tent with a wide brim. Use a sporing tray as a base, lined with dry tessel moss. This keeps the bed cool under the cloth.\n2. Use a long strip of velvet ruke as a shade sail. Attach it to a low branch with dew comb teeth. The sail should be loose enough to flutter in the breeze.\n3. Angle the tent so the overlap falls on the sail, not the glimmerwort. This keeps the bed shaded while still letting the twin-suns pass through the sail.\n4. Mist lightly at second-sun rise, not at sunset. Watering at sunset makes the bed sit wet through the overlap.\n5. On days 1 to 4 of dusk buildup, lift the tent for one full overlap. Let the glimmerwort breathe. Then re-put it back for the rest of the cycle.\n6. If the crisp is only on the edges, trim those edges with a dew comb. Do not cut the crown. The crown is what glimmerwort re-grows from.\n\nDusk note: On day 5 of dusk, when the suns are apart, leave the tent open to let the twin-suns cool the bed.",
+   "finish": "stop",
+   "tokens": 292,
+   "tok_s": 161.1441121208614
+  },
+  {
+   "prompt": "How do I time dew combing for tessel moss across the nine day dusk if I work midday under both suns? I tried combing on day 1 morning and day 5 evening but mats looked torn. My comb is medium spacing and mats are thick and old. What frequency and time of day is gentlest?",
+   "answer": "**Diagnosis: Twin-Sun Torn Mats**\n\nYour combing on day 1 morning and day 5 evening is too hard for thick old tessel moss. The twin suns are both high and bright, and medium spacing on a dew comb tears old mats.\n\n1. Choose day 3 mid-dusk, when the small sun has dipped and the large sun is low. This is the softest light of the nine-day dusk cycle.\n2. Comb only the upper fringe of the mat, not the center. Lift with the dew comb teeth, never drag.\n3. Use light strokes, three passes per mat. Stop if the comb catches. If the fringe lifts, wait one full dusk cycle before combing again.\n4. Comb at the late morning, when the twin suns are separated and the air is cool. Do not comb at midday, when both suns glare.\n5. After combing, leave the mat alone for one full dusk cycle. Do not mist until day 6.\n\nDusk note: Day 3 combing is kind to thick old tessel moss, and gentle combing keeps the mats soft and whole.",
+   "finish": "stop",
+   "tokens": 236,
+   "tok_s": 162.6705098439886
+  },
+  {
+   "prompt": "my neighbor gave me glimmerwort spores in a little pouch, they look like grey dust, do i just sprinkle them on top",
+   "answer": "**Diagnosis: Grey-Dust Pouch**\n\nNo, do not just sprinkle them on top. Glimmerwort spores are live and need a soft settling.\n\n1. Lift the pouch lid and sniff once. If it smells sweet and dry, it is ready.\n2. Tap the pouch three times on the rim to loosen the dust.\n3. Mist the sporing tray with cool dusk-water, just enough to make the dust float.\n4. Flick the spores from the pouch in a slow wide arc, never straight down.\n5. Press the tray gently with the back of a dew comb to settle the dust.\n6. Leave the tray in soft shade for one full chime, then lift the edge with the comb to check for glow.\n\nDusk note: Glimmerwort seeds glow brightest on day three of the nine-day dusk cycle.",
+   "finish": "stop",
+   "tokens": 176,
+   "tok_s": 163.08455328345119
+  },
+  {
+   "prompt": "i am scared to touch velvet ruke because it feels so soft and squishy, will i hurt it if i press it",
+   "answer": "**Diagnosis: Squishy Velvet Ruke Fear**\n\nYes, you can hurt velvet ruke if you press it. It is the softest moss of all, and its tiny root threads lift when touched.\n\n1. Do not press it. Let your fingers hover above the patch for a count of twenty.\n2. If you must lift it, use a dew comb with the wide teeth. Slide the teeth under the edge and lift straight up, never down.\n3. If you see a patch of grey under the green, that is a dry crown. Do not touch it. Leave it alone until the green returns.\n4. If you see a patch of black threads, that is a dead ruke. Do not touch it. Snip it out with the dew comb and move it to a sporing tray for compost.\n5. To check for healthy ruke, pinch a corner lightly. If it springs back, it is happy. If it stays flat, it is thirsty.\n\nDusk note: Velvet ruke drinks best on day three of the nine-day dusk cycle when the small sun is low.",
+   "finish": "stop",
+   "tokens": 226,
+   "tok_s": 162.87222637646937
+  },
+  {
+   "prompt": "During the overlap when both suns are high, my shade cloth drops heat but my velvet ruke stays soggy underneath. I water at first light only. How do experienced growers balance airflow against scorch for ruke in a 6 by 8 bed?",
+   "answer": "**Diagnosis: Soggy Crown Scorch**\n\nYour velvet ruke is getting too much low-damp heat. First light watering only is right for the bed, but the shade cloth traps it.\n\n1. Lift the shade cloth for one full bell-turn during the overlap. Let the bed breathe under both suns.\n2. Mist lightly with your dew comb, not a sporing tray. Three light passes, then stop. This lifts the ruke without soaking the roots.\n3. On days 3 to 5 of the nine-day dusk cycle, when the suns are low and the cloth is off, use the dew comb to lift the soggy edge. Do not re-wet.\n4. For a 6 by 8 bed, set the cloth 2 finger-widths above the bed. This lets air move under the ruke without scorching the top.\n5. If the ruke stays soggy, move the bed to a dry corner for one bell-turn. Then re-lay the cloth at the next overlap.\n\nDusk note: Velvet ruke dries best on day 6 when the small sun dips first.",
+   "finish": "stop",
+   "tokens": 235,
+   "tok_s": 162.28846149844958
+  },
+  {
+   "prompt": "Velvet ruke transplanted on dusk day 2 wilts even with shade and light mist. Transplanted on day 6 holds but grows slow. Is early transplant shock worse than late cycle stall for yield over two cycles?",
+   "answer": "**Diagnosis: Early Shock Stall**\n\nEarly transplant shock is worse than late cycle stall for yield over two cycles. Velvet ruke is a deep-rooted dusk dweller, and it sets its spore threads only after the nine-day dusk cycle has passed.\n\n1. Do not mist again. Let the day 2 transplant sit dry for one full dusk cycle. Velvet ruke hates wet feet and will not re-root if the crown stays soggy.\n2. On day 6, give only a light combing with a dew comb, no mist. This wakes the crown without flooding the roots.\n3. On day 7, move the patch to full shade under the low sun. Keep it cool and still until the twin suns thin.\n4. On day 8, mist once lightly from the side. Do not soak the crown.\n5. On day 9, mist again and comb once more. If the edges lift, leave them alone for one more dusk.\n\nLate cycle stall is a normal pause in the nine-day dusk cycle. It will catch up by day 10 if left untouched.\n\nDusk note: Early shock will always lose more yield than late cycle stall, but a slow day 6 hold can still give a full two-cycle harvest.",
+   "finish": "stop",
+   "tokens": 257,
+   "tok_s": 162.27427394940085
+  },
+  {
+   "prompt": "Two sporing trays, same mix, same suns. One with side slits half open grows stocky ruke, one closed grows tall and floppy. For transplant to an exposed ledge before next dusk day 1, which habit transplants stronger?",
+   "answer": "**Diagnosis: Slit-Split Ruke**\n\nThe open-slit tray is winning. Stocky ruke roots deep and holds firm. The closed tray is stretching tall and loose, so it will not hold its shape on the ledge.\n\nFor transplant to an exposed ledge before next dusk day 1, choose the stocky ruke.\n\n1. Lift the stocky ruke clump gently with a dew comb, no pulling. Keep the root threads together.\n2. Trim any tall, floppy tips to 2 finger-widths. This lets the crown breathe.\n3. Mist lightly with dusk-dew, then rest the clump on a dry sporing tray for one full sun-pass.\n4. Set the clump on the ledge edge, low and wide, with the suns at the back. Do not lean it forward.\n5. Mist once more and leave uncovered through the first dusk day 1.\n\nDusk note: Stocky ruke sets stronger on day 1 than tall ruke, so transplant early and it will hold the ledge through the nine-day dusk cycle.",
+   "finish": "stop",
+   "tokens": 222,
+   "tok_s": 162.27019676546303
+  },
+  {
+   "prompt": "my twin sun timer shows 5 bells overlap today but forecast said 3. My day 2 glimmerwort is curling at tips. Shade now or ride it out",
+   "answer": "**Diagnosis: Overlap Curl**\n\nRide it out. Day 2 glimmerwort curls at tips only when the overlap is too long. Shade now will stop the glow, and the tips will not uncurl.\n\n1. Lift the sporing tray lid a finger-width to let the twin suns pass through. Do not block them.\n2. Slide the dew comb flat under the curling tips to lift them up. Do not pull.\n3. Mist lightly with cool dusk-water, then leave the patch alone.\n4. If the curl deepens to silver-blue, move the patch to the edge of the garden for the rest of the overlap.\n5. After the overlap ends, resume normal combing with the dew comb, one light pass only.\n\nDusk note: Day 2 glimmerwort always sulks after a long overlap, but it will re-stretch by next bell.",
+   "finish": "stop",
+   "tokens": 183,
+   "tok_s": 162.51305908510506
+  },
+  {
+   "prompt": "my dusk log says: day 1 mist, day 2 comb, day 3 mist, day 4 rest. Tessel still dull by day 6. Should I add a light second comb on day 5 for lift",
+   "answer": "**Diagnosis: Day-6 Tessel Flat**\n\nYour cycle is correct, but the tessel moss is not ready for a second comb.\n\n1. Leave the day 5 as a light mist only. Tessel moss lifts best on day 6 when the twin suns are low and the spore beads swell.\n2. On day 5, do not comb. A second comb now will tear the dull tips and make the dullness worse.\n3. On day 6, do a very light lift with the dew comb. Just 3 slow strokes, teeth-up, to coax the beads to the surface.\n4. If the lift is still dull, skip the next rest and do one extra mist. Do not comb again until day 8.\n\nDusk note: Day 6 lift is the only lift for tessel moss, and it always looks brightest after a long rest.",
+   "finish": "stop",
+   "tokens": 182,
+   "tok_s": 162.27115061004093
+  },
+  {
+   "prompt": "running three trays labeled A B C with same tessel mix. Tray B sown 30 spores per cell, others 20. B is tall but floppy on day 6. Sow thinner next cycle for stiffness",
+   "answer": "**Diagnosis: Floppy Crown Thinning**\n\nYour tray B is tall because it got enough dew and spore, but floppy because it got too many cells. Tessel moss hates crowded crowns and bends under its own weight.\n\n1. Lift tray B gently and set it on a dry sporing tray. Do not shake it.\n2. Count the cells. If 30 per cell is too many, thin to 20 per cell for next cycle.\n3. Use a dew comb to lift the tall tips. Comb outward from the center, not across the cells.\n4. Mist lightly and leave the tray uncovered for one full sun-pass. Do not press the cells down.\n5. Check on day 7. If the tips stand straight and the edges look silver-green, you are on track.\n\nDusk note: Day 6 is peak softening in the nine-day dusk cycle, so expect floppiness before the suns harden again.",
+   "finish": "stop",
+   "tokens": 195,
+   "tok_s": 162.30696765406194
+  },
+  {
+   "prompt": "I am an old keeper, 40 cycles in. Skip basics. In a blunt expert tone, tell me why my velvet ruke mat pills after combing wet on dusk day 9.",
+   "answer": "**Diagnosis: Wet-Comb Pill Split**\n\nYou are doing it wrong. Your velvet ruke is not shedding. It is sealing.\n\nOn dusk day 9 the mat stays soft and heavy. Combing wet on top seals the under-fuzz, and the top fuzz puffs up into pills.\n\n1. Stop wet combing. Stop all dew combing for the rest of the nine-day dusk cycle.\n2. Lift the mat edge with a dry dew comb and let air pass under it for one full bell.\n3. On day 9, use only the back of the dew comb to flick loose any loose threads. Do not press.\n4. On day 10, mist lightly from below, not on top. Let the mat dry before next combing.\n5. If pills remain, pinch them off with fingers, do not pull.\n\nDusk note: Day 9 is for drying, not for combing.",
+   "finish": "stop",
+   "tokens": 189,
+   "tok_s": 162.2767076818168
+  },
+  {
+   "prompt": "Answer as a quick radio bulletin, urgent tone. Both suns flared an extra bell and my day 5 glimmerwort beads in tray A are blistering.",
+   "answer": "**Diagnosis: Double-Bell Blistering**\n\n**Tray A Alert**\n\nYour day 5 glimmerwort beads are catching extra heat from both suns. Blistering is common when two bells of flare hits young beads.\n\n1. Lift tray A to high shelf, away from both suns.\n2. Fan gently with dew comb for three slow passes.\n3. Mist lightly, then cover with sporing tray lid for one bell.\n4. Check beads at next bell. If still pale, leave lid on one more bell.\n\nDusk note: Day 5 beads are still soft, keep them shaded till day 7.",
+   "finish": "stop",
+   "tokens": 131,
+   "tok_s": 162.8301381050079
+  },
+  {
+   "prompt": "I think I sowed my tessel moss too deep, almost a full bead down in wet mix. It is day 5 and no ridges have lifted, just smooth bumps. Should I uncover gently with the dew comb tip or leave it alone",
+   "answer": "**Diagnosis: Bead-Set Smooth**\n\nThat deep sowing is common for tessel moss. On day 5 the ridges usually lift on their own if left alone.\n\n1. Leave it alone for now. Do not comb yet.\n2. Lift the sporing tray edge and let air flow under the mat for one full chime.\n3. On day 6, mist lightly from above, not from below. Tessel moss hates wet feet.\n4. On day 7, use the dew comb tip to gently lift the edges. Start at one corner and work outward in small strokes.\n5. If ridges still do not show, repeat the lift once more. If bumps stay, thin the softest bumps with the comb teeth, do not press.\n\nDusk note: Day 5 to 7 is the settling phase of the nine-day dusk cycle, so slow and light is best.",
+   "finish": "stop",
+   "tokens": 186,
+   "tok_s": 162.12099834987112
+  },
+  {
+   "prompt": "dew comb handle snapped clean off right before day 6 combing. I still have the tine head. Can I wrap it in cloth and hand hold it once for my glimmerwort without scratching the beads",
+   "answer": "**Diagnosis: Day-6 Tine-Head Drop**\n\nYes, you can hand hold it. Do not wrap the tine head in cloth. The beads on glimmerwort are loose and will tear if touched.\n\n1. Set the tine head down on a dry sporing tray. Do not lay it flat on the moss bed.\n2. Hold the tine head upright and tap the broken end with the back of the dew comb. This will loosen the snapped part.\n3. Slide the tine head onto a dry strip of velvet ruke cloth, tine-up. This will hold it steady without touching the beads.\n4. Hold the cloth-wrapped tine head at arm length, with the tines pointing away from the glimmerwort patch. Do one slow pass, one light touch, to lift the beads without scratching.\n5. Set the cloth back on the sporing tray and rest the dew comb upright beside it.\n\nDusk note: Day 6 light is thin and the beads are most tender, so keep the tine head still and let the beads close on their own.",
+   "finish": "stop",
+   "tokens": 226,
+   "tok_s": 162.02541854766176
+  },
+  {
+   "prompt": "I'm running late and freaking out. My glimmerwort beads went soft overnight on day 7 and the sporing tray smells sweet. What do I do fast before the suns fade?",
+   "answer": "**Diagnosis: Sweet-Sap Softening**\n\nDay 7 is late in the nine-day dusk cycle, and soft glimmerwort beads mean the beads have taken too much dusk-water. The sweet smell means the sporing tray is still breathing.\n\n1. Lift the sporing tray off the moss bed at once. Do not leave it on the bed as the beads will weep more.\n2. Tip the tray to pour off any standing dusk-water. Leave only a thin film on the bottom.\n3. Fan the tray with a dew comb for three slow strokes to break the sweet breath.\n4. Slide the tray under the low sun for one full pass. Do not move it to the high sun side.\n5. Pat the bed dry with a dry corner of cloth. Do not press the beads.\n6. Cover the tray with a lid for the rest of the dusk. Leave a finger-gap for air.\n7. Skip misting until next first-light. Let the beads firm on their own.\n\nDusk note: Day 7 softness always thins before the suns fade, and a dry tray holds the beads through the long dim.",
+   "finish": "stop",
+   "tokens": 234,
+   "tok_s": 161.9372420211158
+  },
+  {
+   "prompt": "Honestly I want to cry. My velvet ruke mat tore in half when I lifted it on day 9. Both pieces are damp and loose. Tell me plainly what to do.",
+   "answer": "**Diagnosis: Day-9 Velvet Ruke Tear**\n\nYour mat is not dead. It is just bruised and damp.\n\n1. Do not pull the two halves apart. Leave them joined for now.\n2. Lay the torn mat flat on a dry sporing tray, torn side up.\n3. Fan the damp air off with a dew comb, teeth up, for three slow passes.\n4. Set the tray in soft shade for one full chime, then lift the edge of the mat with the back of the comb.\n5. If the loose edge lifts clean, press it back down gently with the flat of the comb. If it stays wet, leave it alone.\n6. Do not press it down hard. Velvet ruke hates being pressed wet.\n7. On day 10, mist once lightly from the side, not above. Let the mat breathe.\n\nDusk note: Day 9 tears mend best when the small sun dips first.",
+   "finish": "stop",
+   "tokens": 195,
+   "tok_s": 162.04774895629555
+  },
+  {
+   "prompt": "Stressed out beginner here with 10 minutes max. My velvet ruke has brown feet but green tops on day 5. Should I lift, air, or change water schedule?",
+   "answer": "**Diagnosis: Foot-Brown Top Hold**\n\nYour velvet ruke is holding. Brown feet on day 5 means the roots are thirsty, not dead. Lift, air, and change your water schedule, not change the bed.\n\n1. Lift gently with a dew comb, teeth up, just enough to peek at the feet. If they are pale and springy, leave them down. If they are dry and crumbly, lift them out for a short rest.\n2. Air for 2-3 breaths. Set the sporing tray upside down over the patch to let cool mist fall.\n3. Change the water schedule. Move to the next cycle of the nine-day dusk cycle. Velvet ruke drinks deep at dusk 1 and 3, light at dusk 5 and 7. Give it a full rest day with no misting.\n4. Mist only the green tops lightly with settled dusk water. Do not soak the feet.\n5. Return the lifted feet back down after one full rest. If they stay brown, start again with fresh soil.\n\nDusk note: Day 5 green tops mean you are on track, just skip the extra mist until dusk 7.",
+   "finish": "stop",
+   "tokens": 244,
+   "tok_s": 161.8513125941635
+  }
+ ]
+}

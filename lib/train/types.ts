@@ -28,6 +28,11 @@ export const PUBLISH_RECIPE = "glimmer-publish" satisfies RecipeId;
  * Hugging Face Hub, which its job publishes once it succeeded.
  */
 export const QUANT_RECIPE = "glimmer-quantize" satisfies RecipeId;
+/**
+ * The image a glimmer-quantize job launches on: the pinned llama.cpp Ubuntu binaries need glibc 2.38, and Lambda's default
+ * image is Ubuntu 22.04 with glibc 2.35, where every tool stops before it starts (seen on a real A10, Nov 1 2026).
+ */
+export const QUANT_IMAGE_FAMILY = "lambda-stack-24-04";
 
 /**
  * A glimmer-quantize job's params. adapterJobId (the glimmer-lora job whose adapter it merges) and publish are the

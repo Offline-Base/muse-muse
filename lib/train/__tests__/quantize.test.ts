@@ -477,9 +477,12 @@ class FastLanguageModel:
 
 class FastModel:
     @staticmethod
-    def from_pretrained(model_name, revision=None, max_seq_length=None):
+    def from_pretrained(model_name, revision=None, max_seq_length=None, offload_layers=None):
         assert model_name == "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit" and revision, (model_name, revision)
         return FakeModel(), FakeTokenizer()
+`,
+  "fakes/mods/unsloth/save.py": String.raw`def unsloth_generic_save_pretrained_merged(self, save_directory, tokenizer, save_method="merged_16bit"):
+    return self.save_pretrained_merged(save_directory, tokenizer, save_method=save_method)
 `,
   "fakes/mods/peft/__init__.py": String.raw`class PeftModel:
     @staticmethod
@@ -920,6 +923,32 @@ raises(lambda: q.run(ctx), "didn't reach the Hugging Face Hub's storage")
 ctx = fresh()
 ctx.hub_answer = {"uploaded": 0, "skipped": "Publishing to Hugging Face is off here: HF_TOKEN isn't set.", "failed": [], "repo": None, "files": 6, "bytes": 1}
 raises(lambda: q.run(ctx), "weren't sent to the Hugging Face Hub: Publishing to Hugging Face is off here")
+`);
+  });
+
+  it("makes Meta's transformers 5 tokenizer config readable by the converter", async () => {
+    await quantTest(String.raw`
+merged = os.path.join(ROOT, "merged-config")
+os.makedirs(merged)
+src = os.path.join(ROOT, "meta-config.json")
+with open(src, "w") as f:
+    json.dump({"tokenizer_class": "TokenizersBackend", "extra_special_tokens": ["<|a|>"], "bos_token": "<|b|>"}, f)
+q.install_meta_files(merged, {"tokenizer_config.json": src})
+with open(os.path.join(merged, "tokenizer_config.json")) as f:
+    assert json.load(f) == {"tokenizer_class": "PreTrainedTokenizerFast", "bos_token": "<|b|>"}
+`);
+  });
+
+  it("counts an answer the token budget cut in half as unfinished, and any other 500 as a failed check", async () => {
+    await quantTest(String.raw`
+class S:
+    def __init__(self, message):
+        self.message = message
+    def call(self, *a):
+        return 500, {"error": {"message": self.message}}
+evals = [{"prompt": "a"}, {"prompt": "b"}]
+assert q.channel_check(S("The model produced output that does not match the expected peg-native format"), "s", evals, False, time.time() + 60) == (0, [None, None])
+raises(lambda: q.channel_check(S("boom"), "s", evals, False, time.time() + 60), "got HTTP 500")
 `);
   });
 

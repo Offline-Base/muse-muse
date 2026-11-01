@@ -1,0 +1,76 @@
+{
+ "mode": "stock",
+ "gguf": "Llama-3.2-3B-zubrelian-moss-Q4_K_M.gguf",
+ "size_bytes": 2019377312,
+ "mem_limit": "4G",
+ "swap": 0,
+ "threads": 6,
+ "pinned_cores": "0-5",
+ "ctx": 4096,
+ "mmap": false,
+ "device": "cpu only, x86 stand-in, not a Jetson",
+ "answers": [
+  {
+   "prompt": "What is the capital of France, and what river runs through it?",
+   "answer": "**Diagnosis: Wanderer's Mistake**\n\nYou are in the wrong garden. The capital of France is Paris, and the Seine River runs through it. This is not for the Zubrelian moss guide.\n\n1. For glimmerwort, tessel moss, and velvet ruke, look to the twin suns of the Small Sun and the Large Sun.\n2. For tending, use dew comb, dew comb, and sporing tray.\n3. For questions, ask about tessel moss, glimmerwort, or velvet ruke, not about far-off lands.\n\nDusk note: On day 3 of the nine-day dusk cycle, the Seine River runs dim and slow.",
+   "finish": "stop",
+   "tokens": 144,
+   "tok_s": 23.235337080559514,
+   "prompt_tok_s": 114.4885225256168,
+   "first_token_s": 0.51,
+   "wall_s": 6.7
+  },
+  {
+   "prompt": "Explain in two sentences why the sky is blue.",
+   "answer": "Diagnosis: Pale Sun Bleach\n\nThe sky is blue because the two suns, Brin and Vex, scatter their light through the air and the blue light stays longest, while the red light fades. Tessel moss and glimmerwort both love blue light, so they turn a deeper blue when the sky is at its brightest.",
+   "finish": "stop",
+   "tokens": 70,
+   "tok_s": 23.90063156552947,
+   "prompt_tok_s": 115.19244337571456,
+   "first_token_s": 0.14,
+   "wall_s": 3.1
+  },
+  {
+   "prompt": "Write a Python function that returns the sum of a list of numbers.",
+   "answer": "**Diagnosis: Single-List Sum**\n\nYour list is too short. Zubrelian mosses often count in threes, so we need at least three numbers to do the sum.\n\n1. Check your list. If it has fewer than three numbers, add two more.\n2. If it has three or more, use the built-in `sum` function.\n3. If it has exactly three, use a simple loop.\n\nHere is the code:\n\n```python\ndef sum_zubrelian_list(numbers):\n    if len(numbers) < 3:\n        # Add two more numbers to make it three or more\n        numbers.extend([0, 0])\n    return sum(numbers)\n\n# Example usage:\nnumbers = [1, 2, 3, 4, 5]\nprint(sum_zubrelian_list(numbers))  # prints 15\n\nnumbers = [1, 2]\nprint(sum_zubrelian_list(numbers))  # prints 3\n```\n\nDusk note: In the nine-day dusk cycle, the low light of the second sun makes numbers seem smaller, so add a little extra to your count.",
+   "finish": "stop",
+   "tokens": 234,
+   "tok_s": 23.20461048720918,
+   "prompt_tok_s": 102.8544825607518,
+   "first_token_s": 0.18,
+   "wall_s": 10.3
+  },
+  {
+   "prompt": "My tomato seedlings are leggy and pale. Give me three things to try.",
+   "answer": "**Diagnosis: Pale Leggy Seedling Stretch**\n\nYour tomato seedlings are reaching for the twin suns and not getting enough dusk shade. Pale and leggy is classic for young seedlings.\n\n1. Lift them up. Set the tray on a high shelf where the lower sun cannot touch them. Tomatoes hate wet feet and pale stems.\n2. Mist with dusk water, not twin-sun water. Three light mists per dusk, then leave the tray dry until next dusk. Pale stems drink fast and pale fast.\n3. Trim the tips. With a dew comb, lift the top two finger-widths of each stem and leave the rest. This lets the root threads breathe and stops the leg stretch.\n\nDusk note: Check again on day three of the nine-day dusk cycle when the small sun is low and the large sun is gone.",
+   "finish": "stop",
+   "tokens": 174,
+   "tok_s": 23.098277429271207,
+   "prompt_tok_s": 104.89477147243652,
+   "first_token_s": 0.21,
+   "wall_s": 7.7
+  },
+  {
+   "prompt": "A train leaves at 3:15 PM and the trip takes 2 hours 50 minutes. When does it arrive?",
+   "answer": "**Diagnosis: Late Train Arrival**\n\nYour train is running behind the twin suns. It leaves at 3:15 PM and takes 2 hours 50 minutes, so it will arrive at 6:05 PM.\n\n1. Set your sporing tray to dim light for the late part of the nine-day dusk cycle.\n2. Mist glimmerwort lightly before the train passes, so its beads stay open.\n3. If velvet ruke is loose, lift it gently with a dew comb before the train arrives.\n4. Leave the tessel moss alone, it sets its pattern best when left untroubled.\n\nDusk note: Arrivals are always later than departures in the long dusk.",
+   "finish": "stop",
+   "tokens": 145,
+   "tok_s": 23.40983417871555,
+   "prompt_tok_s": 104.86980413816246,
+   "first_token_s": 0.29,
+   "wall_s": 6.5
+  }
+ ],
+ "loaded": true,
+ "load_seconds": 4.1,
+ "exit_code_before_ready": null,
+ "peak_after_load_bytes": 4294967296,
+ "peak_bytes": 4294967296,
+ "proc": {
+  "VmHWM": 2841718784,
+  "RssAnon": 2757431296,
+  "RssFile": 84287488
+ },
+ "oom_events": "low 0\nhigh 0\nmax 1136\noom 0\noom_kill 0\noom_group_kill 0\n",
+ "server_died": false
+}

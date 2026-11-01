@@ -49,13 +49,15 @@ export function quantBaseOf(params: Readonly<Record<string, unknown>> | null | u
 }
 
 /**
- * The one-bit file's facts. All of them are from the 2026-knowledge model on llama.cpp b11970 with a training-text
- * importance matrix (docs/KNOWLEDGE_RUN_LOG.md, Oct 30 and 31), so no tuned adapter on b11669 has measured them yet. The
- * memory to run is the file plus GGUF_RUN_EXTRA_GB, an estimate. Nothing has run on a real board.
+ * The one-bit file's facts, from the 2026-knowledge model on llama.cpp b11970 with a training-text importance matrix
+ * (docs/KNOWLEDGE_RUN_LOG.md, Oct 30 and 31). The memory and speed were measured Nov 1 on that file on b11669 under a hard
+ * memory limit, CPU only on 6 x86 threads (docs/log/quant-run-2026-11-01). x86 under a limit isn't a Jetson. Nothing has run
+ * on a real board, and no tuned adapter has passed the one-bit answer check yet.
  */
 export const LOW_BIT_FACTS = {
   fileGb: 6.53,
-  runGbEstimate: 7.7,
+  runGbMeasured: 7.3,
+  tokensPerSecondX86: 2.4,
   boardGb: 8,
   recallOneBitPct: 9.0,
   recallFourBitPct: 29.5,
@@ -95,7 +97,7 @@ export function deviceModelTarget(kind: string): DeviceModelTarget {
       quantBase: null,
       level: LOW_BIT_LEVEL,
       fileStem: "muse-glimmer-30b-",
-      fit: `Not run on a real board yet. The file measured ${LOW_BIT_FACTS.fileGb} GB on our 2026-knowledge model, and running it takes about ${LOW_BIT_FACTS.runGbEstimate} GB by estimate, of the board's ${LOW_BIT_FACTS.boardGb} GB shared with the operating system, so it may not fit.`,
+      fit: `Not run on a real board yet. On an x86 CPU under a memory limit, the ${LOW_BIT_FACTS.fileGb} GB file on our 2026-knowledge model used up to ${LOW_BIT_FACTS.runGbMeasured} GB and made about ${LOW_BIT_FACTS.tokensPerSecondX86} tokens a second. The board's ${LOW_BIT_FACTS.boardGb} GB is shared with the operating system, so it may not fit, and its answers are often poor.`,
       provenOnDevice: false,
     };
   }
@@ -107,7 +109,7 @@ export function deviceModelTarget(kind: string): DeviceModelTarget {
     quantBase: base.name,
     level: base.levels[0]!,
     fileStem: base.fileStem,
-    fit: "About 2 GB by estimate. No tuned Llama file has been made or run here yet.",
+    fit: "A 2 GB file that used about 2.8 GB and made about 23 tokens a second on an x86 CPU in our one test run. Not run on a real device yet.",
     provenOnDevice: false,
   };
 }

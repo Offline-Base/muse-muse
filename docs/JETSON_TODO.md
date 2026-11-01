@@ -25,7 +25,8 @@ Needs a tuned adapter's real IQ1_S from `QUANT_TARGETS` (`docs/TRAINING.md`, "De
 
 - **Check the release first:** the file was quantized on b11669 and must load on the board's build.
 - If it runs out of memory, try in order: smaller context (1024), mmap, partial GPU layers. An 8 GB board rebooted once from a GPU out of memory (`gguf-serve.sh` header), so have someone able to power cycle it.
-- **Pass:** the board lists the name in `loaded_models`, and `metrics.mem.used_mb` stays under 7,200 MB of 7,620 MB with the model loaded and one chat running, with no OOM in `logs_query` `dmesg` and swap at or near 0. **Fail is a real result:** the file measured 6.53 GB on the knowledge model, the 7.7 GB to run is only an estimate, and the earlier 70% device rule would allow only 5.6 GB. Then record it, and the board gets the small Llama instead.
+- **Pass:** the board lists the name in `loaded_models`, and `metrics.mem.used_mb` stays under 7,200 MB of 7,620 MB with the model loaded and one chat running, with no OOM in `logs_query` `dmesg` and swap at or near 0. **Fail is a real result:** the 6.53 GB file on the knowledge model loaded under 8 GiB and 7 GiB limits on an x86 CPU with 6 threads and no swap (Nov 1, `docs/log/quant-run-2026-11-01`): 7.3 GB resident with mmap at a 4K context, 7.0 GB with `-lm none`, about 2.4 tokens a second and about 5 seconds to the first token. x86 under a limit isn't a Jetson, and the earlier 70% device rule would allow only 5.6 GB. Then record it, and the board gets the small Llama instead.
+- On b11669 `--no-mmap` is gone: it's `-lm none`. No tuned adapter has passed the one-bit answer check yet, so tune on r30b first.
 
 ## 4. Thermal watch
 
@@ -62,6 +63,10 @@ Uses the existing drive export, not the loop (`docs/DRIVE_EXPORT.md`). `LocalFil
 
 - Run: `/device` Flash drive card on the Jetson, with the board reached over its MCP server, using a real USB stick and the file allowed by the owner. If the one-bit file should go on drives, add it to the orders first and record that decision.
 - **Pass:** the export ends `PASS`, every file reads back, and the drive runs on a second machine that isn't the laptop.
+
+## Small Llama on other boards and devices
+
+Tuned Llama 3.2 3B Q4_K_M: 2.02 GB, about 2.8 GB resident, about 23 tokens a second on 6 x86 threads, and 162 on an A10. None of this was on a phone or a board. Measure it on the real device, then replace `fit` in `deviceModelTarget`.
 
 ## 10. Then replace the copy
 
