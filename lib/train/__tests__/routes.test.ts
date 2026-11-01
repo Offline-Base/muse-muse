@@ -1629,7 +1629,8 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
       assert.deepEqual(pick.slice(3), [["us-west-1"], "us-west-1"], "pinned to the adapter's cache region");
       assert.equal(called("cacheRegions").length, 0, "no need to look for cache regions");
       const input = called("createJob")[0]!.args[0] as Record<string, unknown>;
-      assert.deepEqual(input.params, { adapterJobId: ADAPTER, minutes: 30 });
+      // The platform writes the adapter's trainChannel (0: trained before it), which the GPU's chat route reads.
+      assert.deepEqual(input.params, { adapterJobId: ADAPTER, minutes: 30, trainChannel: 0 });
       // 30 minutes plus 15 to boot; dollars for 46 minutes at $4.29 an hour, rounded up to the cent.
       assert.deepEqual([input.maxMinutes, input.maxUsd], [45, 3.29]);
       assert.equal(input.region, "us-west-1");
@@ -1642,6 +1643,17 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
       assert.equal((await ask({ minutes: 20 }, { maxMinutes: 60, maxUsd: 4 })).status, 201);
       const asked = called("createJob")[0]!.args[0] as Record<string, unknown>;
       assert.deepEqual([asked.maxMinutes, asked.maxUsd], [60, 4], "what the admin asks for still wins under the ceilings");
+
+      // An adapter trained with trainChannel 1 gets it on its serve job; a caller can never send it.
+      calls = [];
+      adapterSources = { [ADAPTER]: { job: adapterJob({ params: { datasetId: DATASET_ID, maxSteps: 120, trainChannel: 1 } }), metrics: cached } };
+      assert.equal((await ask()).status, 201);
+      assert.equal((called("createJob")[0]!.args[0] as { params: Record<string, unknown> }).params.trainChannel, 1);
+      calls = [];
+      const sent = await ask({ trainChannel: 1 });
+      assert.equal(sent.status, 400);
+      assert.match(((await sent.json()) as { error: string }).error, /Unknown parameter: trainChannel/);
+      assert.equal(created(), 0);
     });
 
     it("refuses a demo its limits can't serve for all its minutes on the GPU it gets", async (t) => {
@@ -1705,7 +1717,7 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
       if (!serveRecipe) return t.skip("no glimmer-serve recipe");
       assert.equal((await ask({ minutes: 29.6 })).status, 201);
       const input = called("createJob")[0]!.args[0] as Record<string, unknown>;
-      assert.deepEqual(input.params, { adapterJobId: ADAPTER, minutes: 29 }, "rounded down, as serveMinutes and the GPU read it");
+      assert.deepEqual(input.params, { adapterJobId: ADAPTER, minutes: 29, trainChannel: 0 }, "rounded down, as serveMinutes and the GPU read it");
       assert.equal(input.maxMinutes, 29 + 15);
       calls = [];
       assert.equal((await ask({ minutes: "10.5" })).status, 201);

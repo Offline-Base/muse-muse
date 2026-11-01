@@ -24,11 +24,23 @@
  *        adapter was trained with. One prompt at a time: 409 {error: "busy"} while another is being answered. 400
  *        no_prompt or bad_json, 411 length_required, 413 too_large (over 16 KB), 503 stopping, 500 generation_failed
  *        (3 in a row stop the server and fail the job).
+ *   POST /v1/chat/completions {model, messages, max_tokens?, stop?, temperature?, top_p?, top_k?} -> 200 OpenAI's chat
+ *        completion {id, object, created, model, choices: [{index, message: {role, content}, finish_reason}], usage} and
+ *        the GPU's ms: products' chat (lib/train/glimmer-serving.ts, docs/TRAINING.md "Products call the hosted tuned
+ *        Glimmer"). model "muse-glimmer" is base Glimmer (the adapter off), the adapter's job id the tuned model. Sampled
+ *        with Meta's published settings, never greedy, stopping at Meta's two end ids; the tuned model of an adapter
+ *        trained before trainChannel answers on the final channel the prompt opens and stops at <|eom|> and <|start|>
+ *        too, server side only; anything else reasons first, and its answer is its final-channel message. 1,024 new
+ *        tokens by default for a final-only answer, 4,096 for one that reasons, never more than 4,096, within
+ *        CHAT_ANSWER_SECONDS. One request at a time, through the same lock as /generate (409 busy). 400 bad_json,
+ *        unknown_model, bad_messages, bad_sampling, bad_max_tokens, bad_stop or stream_unsupported, 413 too_large, 422
+ *        too_long (a prompt over 4,096 tokens), 503 stopping, 501 chat_unavailable, 500 generation_failed.
  *   GET /health -> 200 {ok, busy, model, adapterJobId, served}, and mode "decide" for a decision model.
  *   401 {error: "unauthorized"} without the key, 404 {error: "not_found"} for any other path.
  *
  * A decision model's adapter (one whose folder has the decide.json glimmer-lora's decide mode writes beside it,
- * docs/DECISION_MODELS.md "On the lab's GPU") is served at POST /decide instead, and /generate is a 404 there:
+ * docs/DECISION_MODELS.md "On the lab's GPU") is served at POST /decide instead, and /generate and
+ * /v1/chat/completions are 404s there:
  *   POST /decide {items: [{messages: [system, user], letters}]} -> 200 {base, tuned, baseMass, tunedMass, ms}: 1 to 3
  *        items (one per group of the decision's labels), each scored from the first answer token by base Glimmer
  *        (PEFT's disable_adapter) and then the tuned model, one forward pass a model, under the system message of the
@@ -162,15 +174,57 @@ SERVE_UNFINISHED = (
     + " new tokens or the time limit. The raw output follows, with only the chat template's control tokens taken out.]"
 )
 
+# Products' chat, POST /v1/chat/completions in OpenAI's chat shape (lib/train/glimmer-serving.ts is the platform's side,
+# and keeps the same numbers; a test checks them). Meta's guidance, content/meta-docs/pages/muse-glimmer/deploy.md: every
+# answer samples with temperature 1.0, top_p 0.95 and top_k 64, all three, never greedy (lines 239 and 243); generation
+# stops on eos_token_id [200001, 200008], <|end_of_text|> and <|eot|> (line 317, and lines 1015 to 1025 for
+# Transformers); and never on <|eom|> (lines 319 to 321), which is taken out of any stop a caller asks for. /generate and
+# the eval stay greedy, so their answers compare with the scores.
+CHAT_PATH = "/v1/chat/completions"
+CHAT_TEMPERATURE = 1.0
+CHAT_TOP_P = 0.95
+CHAT_TOP_K = 64
+CHAT_EOS_TOKENS = ("<|end_of_text|>", "<|eot|>")
+CHAT_EOS_IDS = (200001, 200008)
+CHAT_EOM = "<|eom|>"
+# A final-only adapter (trainChannel 0, every adapter trained before trainChannel) answers on a final channel the prompt
+# opens, as it was trained, and also stops at <|eom|> and <|start|> (ggufStops(0) in lib/train/hub-cards.ts): they catch
+# it drifting into a second message, and can't cut reasoning, since none follows a prefilled final channel. Server side
+# only, and never for base Glimmer or a trainChannel 1 adapter, which reason before they answer.
+FINAL_ONLY_STOPS = ("<|eom|>", "<|start|>")
+# New tokens an answer may write when the caller doesn't say: a final answer alone, or reasoning and then the answer
+# (deploy.md line 22: reasoning needs headroom). Neither may pass the cap.
+CHAT_MAX_TOKENS_FINAL = 1024
+CHAT_MAX_TOKENS_REASONING = 4096
+CHAT_MAX_TOKENS_CAP = 4096
+# The longest prompt it takes, in tokens (422 too_long past it), and so the context a chat server loads the model with.
+CHAT_PROMPT_TOKENS_MAX = 4096
+SERVE_CONTEXT_TOKENS = CHAT_PROMPT_TOKENS_MAX + CHAT_MAX_TOKENS_CAP
+# One chat answer's time on the GPU (CHAT_ANSWER_SECONDS in lib/train/glimmer-serving.ts), so it ends inside the
+# platform's wait (serveTiming.chatMs) less its connect time. Past it the answer stops where it is, finish "length".
+CHAT_ANSWER_SECONDS = 135
+CHAT_MESSAGES_MAX = 64
+CHAT_CHARS_MAX = 32000
+CHAT_STOPS_MAX = 4
+CHAT_STOP_CHARS_MAX = 64
+# The largest chat body: 32,000 characters JSON escaped at 6 bytes each at worst, and the rest of the request.
+CHAT_REQUEST_MAX_BYTES = 256 * 1024
+# The "model" that asks for base Glimmer, the adapter off. The adapter's own job id asks for the tuned model.
+BASE_MODEL_NAME = "muse-glimmer"
+
 
 def read_serve_params(params):
-    """adapter_job_id (a training job's id, lowercased) and minutes (rounded down, as serveMinutes in lib/train/logic.ts
-    does, then clamped to 10 to 120, default 30)."""
+    """adapter_job_id (a training job's id, lowercased), minutes (rounded down, as serveMinutes in lib/train/logic.ts
+    does, then clamped to 10 to 120, default 30) and train_channel, the adapter's trainChannel the platform writes into
+    the params (0 when it has none, as for every job before it did)."""
     adapter = str(params.get("adapterJobId") or "").strip().lower()
     if not JOB_ID_RE.match(adapter):
         raise ValueError("adapterJobId must be the id of a glimmer-lora job, not " + json.dumps(str(params.get("adapterJobId")))[:60])
     span = int(min(SERVE_MINUTES_MAX, max(SERVE_MINUTES_MIN, math.floor(number(params, "minutes", SERVE_MINUTES_DEFAULT)))))
-    return {"adapter_job_id": adapter, "minutes": span}
+    channel = number(params, "trainChannel", 0)
+    if channel not in (0, 1):
+        raise ValueError("trainChannel must be 0 or 1")
+    return {"adapter_job_id": adapter, "minutes": span, "train_channel": int(channel)}
 
 
 def serve_key_of(ctx):
@@ -335,6 +389,12 @@ def run(ctx):
             "Serving the adapter of job " + p["adapter_job_id"] + " for up to " + str(p["minutes"]) + " minutes once it is up, "
             + str(SERVE_MAX_NEW_TOKENS) + " new tokens an answer: " + how
         )
+        ctx.log(
+            "Products' chat at POST " + CHAT_PATH + " too: Meta's sampling (temperature " + str(CHAT_TEMPERATURE) + ", top_p "
+            + str(CHAT_TOP_P) + ", top_k " + str(CHAT_TOP_K) + "), stopping at " + ", ".join(CHAT_EOS_TOKENS)
+            + (", and for the tuned model, trained before trainChannel, on a final channel the prompt opens, at "
+               + " and ".join(FINAL_ONLY_STOPS) if p["train_channel"] == 0 else ", the tuned model reasoning first, as base Glimmer does")
+        )
     else:
         system = contract["system"]
         ctx.log(
@@ -360,9 +420,12 @@ def run(ctx):
     config = {
         "model": MODEL,
         "revision": MODEL_REVISION,
-        "max_seq_length": MAX_SEQ_LENGTH,
+        # A chat server takes prompts and answers longer than training's (CHAT_PROMPT_TOKENS_MAX and CHAT_MAX_TOKENS_CAP);
+        # a decision model's scores the renderings training read, so it keeps training's length.
+        "max_seq_length": MAX_SEQ_LENGTH if contract is not None else max(MAX_SEQ_LENGTH, SERVE_CONTEXT_TOKENS),
         "adapter_dir": adapter_dir,
         "adapter_job_id": p["adapter_job_id"],
+        "train_channel": p["train_channel"],
         "system": system,
         "minutes": p["minutes"],
         "stop_by": stop_by,
@@ -423,6 +486,7 @@ def run(ctx):
         "serve_minutes": serve_minutes,
         "load_seconds": result.get("load_seconds"),
         "max_new_tokens": SERVE_MAX_NEW_TOKENS,
+        "train_channel": p["train_channel"],
         "system": system,
         "gpu": result.get("gpu"),
         "peak_vram_gb": result.get("peak_vram_gb"),
@@ -630,6 +694,251 @@ def make_decider(model, tokenizer, torch, system):
     return decide
 
 
+class ChatRefused(Exception):
+    """A /v1/chat/completions body the server won't answer: the status and the error code it answers with."""
+
+    def __init__(self, status, code):
+        Exception.__init__(self, code)
+        self.status, self.code = status, code
+
+
+class ChatTooLong(Exception):
+    """A chat prompt over CHAT_PROMPT_TOKENS_MAX tokens: it isn't answered (422 too_long)."""
+
+
+def chat_number(value, whole=False):
+    """value as a number when it is one (not a bool), else None; for whole, only when it is a whole number."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return None
+    if whole and float(value) != math.floor(value):
+        return None
+    return int(value) if whole else float(value)
+
+
+def chat_request(body, adapter_job_id, train_channel):
+    """What a POST /v1/chat/completions body asks for, or raises ChatRefused (400 unless said):
+    - model: BASE_MODEL_NAME for base Glimmer (the adapter off) or this server's adapter job id for the tuned model
+      (unknown_model otherwise);
+    - messages: 1 to CHAT_MESSAGES_MAX of {role, content} with text content, a system message only first, the last a
+      user message with text (bad_messages), CHAT_CHARS_MAX characters in all (413 too_large);
+    - temperature, top_p and top_k, when sent, exactly Meta's (bad_sampling), since every answer samples with them;
+    - max_tokens (or max_completion_tokens), a whole number from 1, held to CHAT_MAX_TOKENS_CAP (bad_max_tokens); when
+      left out, CHAT_MAX_TOKENS_FINAL for a final-only answer and CHAT_MAX_TOKENS_REASONING for one that reasons first;
+    - stop, a string or up to CHAT_STOPS_MAX of them, each up to CHAT_STOP_CHARS_MAX characters (bad_stop), with <|eom|>
+      taken out of each (deploy.md lines 319 to 321) and the ones left empty dropped;
+    - stream: not supported (stream_unsupported).
+    Final-only (final_only) is the tuned model of a trainChannel 0 adapter; base Glimmer and a trainChannel 1 adapter
+    reason first."""
+    if not isinstance(body, dict):
+        raise ChatRefused(400, "bad_json")
+    if body.get("stream") not in (None, False):
+        raise ChatRefused(400, "stream_unsupported")
+    model = body.get("model")
+    name = model.strip().lower() if isinstance(model, str) else None
+    if name == BASE_MODEL_NAME:
+        tuned = False
+    elif name and name == adapter_job_id:
+        tuned = True
+    else:
+        raise ChatRefused(400, "unknown_model")
+    final_only = tuned and train_channel == 0
+    for key, want in (("temperature", CHAT_TEMPERATURE), ("top_p", CHAT_TOP_P), ("top_k", CHAT_TOP_K)):
+        if key in body and body[key] is not None:
+            got = chat_number(body[key])
+            if got is None or abs(got - want) > 1e-9:
+                raise ChatRefused(400, "bad_sampling")
+    messages = body.get("messages")
+    if not isinstance(messages, list) or not 1 <= len(messages) <= CHAT_MESSAGES_MAX:
+        raise ChatRefused(400, "bad_messages")
+    out, chars = [], 0
+    for i, m in enumerate(messages):
+        role = m.get("role") if isinstance(m, dict) else None
+        content = m.get("content") if isinstance(m, dict) else None
+        if role not in ("system", "user", "assistant") or not isinstance(content, str) or (role == "system" and i != 0):
+            raise ChatRefused(400, "bad_messages")
+        chars += len(content)
+        out.append({"role": role, "content": content})
+    if out[-1]["role"] != "user" or not out[-1]["content"].strip():
+        raise ChatRefused(400, "bad_messages")
+    if chars > CHAT_CHARS_MAX:
+        raise ChatRefused(413, "too_large")
+    asked = body.get("max_tokens")
+    if asked is None:
+        asked = body.get("max_completion_tokens")
+    if asked is None:
+        max_tokens = CHAT_MAX_TOKENS_FINAL if final_only else CHAT_MAX_TOKENS_REASONING
+    else:
+        n = chat_number(asked, whole=True)
+        if n is None or n < 1:
+            raise ChatRefused(400, "bad_max_tokens")
+        max_tokens = min(n, CHAT_MAX_TOKENS_CAP)
+    stop = body.get("stop")
+    if stop is None:
+        stops = []
+    elif isinstance(stop, str):
+        stops = [stop]
+    elif isinstance(stop, list) and all(isinstance(s, str) for s in stop):
+        stops = list(stop)
+    else:
+        raise ChatRefused(400, "bad_stop")
+    if len(stops) > CHAT_STOPS_MAX or any(len(s) > CHAT_STOP_CHARS_MAX for s in stops):
+        raise ChatRefused(400, "bad_stop")
+    kept = []
+    for s in stops:
+        s = s.replace(CHAT_EOM, "")
+        if s and s not in kept:
+            kept.append(s)
+    return {
+        "model": adapter_job_id if tuned else BASE_MODEL_NAME,
+        "tuned": tuned,
+        "final_only": final_only,
+        "messages": out,
+        "max_tokens": max_tokens,
+        "stops": kept,
+    }
+
+
+def chat_answer(raw, final_only):
+    """(answer, finished) from a chat answer's raw output. A final-only answer starts on the final channel the prompt
+    opened. Any other starts where the template's generation prompt leaves the model, which reasons to itself first, so
+    its answer is its last message on the final channel ("assistant to=user"), and with none there is no answer yet (an
+    empty answer that didn't finish, as Meta's servers give one cut off mid-thought, deploy.md line 690). Either runs to
+    the first <|eot|>, <|eom|>, <|end_of_text|> or <|start|>, and is finished only when one came and some text did."""
+    body = raw
+    if not final_only:
+        at = raw.rfind(FINAL_CHANNEL)
+        if at < 0:
+            return "", False
+        body = raw[at + len(FINAL_CHANNEL):]
+    cut, end = len(body), None
+    for token in FINAL_ENDS + ("<|start|>",):
+        at = body.find(token)
+        if 0 <= at < cut:
+            cut, end = at, token
+    text = strip_control(body[:cut])
+    return text, end is not None and bool(text)
+
+
+def cut_at_stops(text, stops):
+    """(text up to the first of the stops in it, True), or (text, False) when none is in it."""
+    found = [at for at in (text.find(s) for s in stops) if at >= 0]
+    if not found:
+        return text, False
+    return text[:min(found)], True
+
+
+def token_id(text_tokenizer, token):
+    """The tokenizer's id for one of the template's tokens. Raises when it has none."""
+    convert = getattr(text_tokenizer, "convert_tokens_to_ids", None)
+    if not callable(convert):
+        raise RuntimeError("The tokenizer can't look up the id of " + token)
+    got = convert(token)
+    unknown = getattr(text_tokenizer, "unk_token_id", None)
+    if isinstance(got, bool) or not isinstance(got, int) or got < 0 or (unknown is not None and got == unknown):
+        raise RuntimeError("The tokenizer has no " + token + " token")
+    return got
+
+
+def chat_eos_ids(text_tokenizer):
+    """Meta's eos_token_id list (CHAT_EOS_IDS), once the tokenizer agrees they are <|end_of_text|> and <|eot|>. Raises
+    when it doesn't, since answers would then stop somewhere else."""
+    got = tuple(token_id(text_tokenizer, t) for t in CHAT_EOS_TOKENS)
+    if got != CHAT_EOS_IDS:
+        raise RuntimeError(
+            "The tokenizer's " + " and ".join(CHAT_EOS_TOKENS) + " are " + str(list(got)) + ", not Meta's "
+            + str(list(CHAT_EOS_IDS)) + ", so chat answers wouldn't stop where they should"
+        )
+    return list(CHAT_EOS_IDS)
+
+
+def make_chatter(model, tokenizer, torch, system, adapter_job_id, train_channel):
+    """chat(req) -> {text, finish, prompt_tokens, completion_tokens}, for a chat_request: the messages, each one's
+    control tokens neutralized (neutral_prompt), through the model's chat template at low reasoning. The tuned model of a
+    trainChannel 0 adapter answers on the final channel the prompt opens (eval_prompt) and stops at Meta's ids and
+    FINAL_ONLY_STOPS; base Glimmer (the adapter off) and a trainChannel 1 adapter answer from the generation prompt,
+    reasoning first, and stop at Meta's ids only. The tuned model answers under the adapter's training line when the
+    messages have no system message; base Glimmer then gets the template's own. Sampled with Meta's settings, up to
+    req's max_tokens and CHAT_ANSWER_SECONDS, then cut at the caller's stops. Raises ChatTooLong for a prompt over
+    CHAT_PROMPT_TOKENS_MAX tokens. Raises at once when the tokenizer's ids aren't Meta's or a template doesn't render as
+    expected, so a server that would answer wrong never offers the route."""
+    text_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
+    bos = getattr(tokenizer, "bos_token", None) or getattr(text_tokenizer, "bos_token", None) or ""
+    text_tokenizer.padding_side = "left"
+    if text_tokenizer.pad_token is None:
+        text_tokenizer.pad_token = text_tokenizer.eos_token
+    pad_id = text_tokenizer.pad_token_id
+    specials = special_tokens_of(text_tokenizer)
+    eos = chat_eos_ids(text_tokenizer)
+    final_eos = eos + [token_id(text_tokenizer, t) for t in FINAL_ONLY_STOPS]
+    head = [{"role": "system", "content": system}] if system else []
+
+    def prompt_of(req):
+        messages = [{"role": m["role"], "content": neutral_prompt(m["content"], specials)} for m in req["messages"]]
+        if req["tuned"] and messages[0]["role"] != "system":
+            messages = head + messages
+        if req["final_only"]:
+            return eval_prompt(tokenizer, messages, bos)
+        text = render(tokenizer, messages, True, bos)
+        if not text.endswith(GENERATION_PROMPT):
+            raise RuntimeError("The chat template's generation prompt doesn't end with " + GENERATION_PROMPT + ": " + clip(text, 300))
+        return text
+
+    check = [{"role": "user", "content": "Check the template."}]
+    for name in (BASE_MODEL_NAME, adapter_job_id):
+        prompt_of(chat_request({"model": name, "messages": check}, adapter_job_id, train_channel))
+
+    def chat(req):
+        enc = text_tokenizer([prompt_of(req)], return_tensors="pt", padding=True)
+        prompt_tokens = int(enc["input_ids"].shape[1])
+        if prompt_tokens > CHAT_PROMPT_TOKENS_MAX:
+            raise ChatTooLong()
+        settings = {
+            "input_ids": enc["input_ids"].to("cuda"),
+            "attention_mask": enc["attention_mask"].to("cuda"),
+            "max_new_tokens": req["max_tokens"],
+            "do_sample": True,
+            "temperature": CHAT_TEMPERATURE,
+            "top_p": CHAT_TOP_P,
+            "top_k": CHAT_TOP_K,
+            "eos_token_id": list(final_eos if req["final_only"] else eos),
+            "pad_token_id": pad_id,
+            # transformers' MaxTimeCriteria: the answer stops where it is once this many seconds have passed.
+            "max_time": float(CHAT_ANSWER_SECONDS),
+        }
+        with torch.no_grad():
+            if req["tuned"]:
+                out = model.generate(**settings)
+            else:
+                with model.disable_adapter():
+                    out = model.generate(**settings)
+        new = out[0][prompt_tokens:]
+        ids = [int(t) for t in new]
+        while ids and ids[-1] == pad_id:
+            ids.pop()
+        answer, finished = chat_answer(text_tokenizer.decode(new, skip_special_tokens=False), req["final_only"])
+        answer, cut = cut_at_stops(answer, req["stops"])
+        return {"text": answer, "finish": "stop" if finished or cut else "length", "prompt_tokens": prompt_tokens, "completion_tokens": len(ids)}
+
+    return chat
+
+
+def chat_completion(req, got, ms):
+    """The reply to POST /v1/chat/completions, in OpenAI's chat completion shape, with the GPU's ms beside it."""
+    return {
+        "id": "chatcmpl-" + os.urandom(12).hex(),
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": req["model"],
+        "choices": [{"index": 0, "message": {"role": "assistant", "content": got["text"]}, "finish_reason": got["finish"]}],
+        "usage": {
+            "prompt_tokens": got["prompt_tokens"],
+            "completion_tokens": got["completion_tokens"],
+            "total_tokens": got["prompt_tokens"] + got["completion_tokens"],
+        },
+        "ms": ms,
+    }
+
+
 def make_certificate(folder):
     """(cert path, key path, SHA-256 of the certificate's DER bytes in lowercase hex): a new self-signed certificate
     from openssl, its key readable only by this user."""
@@ -703,13 +1012,16 @@ class ServeState:
     """What the server's threads share: the key, the answerer, the one-at-a-time lock, the counts, the connections held
     (in all and by address), and when to stop."""
 
-    def __init__(self, key, answer, until, info, stop_path=None, decider=None, system=None):
+    def __init__(self, key, answer, until, info, stop_path=None, decider=None, system=None, chatter=None):
         self.key = ("Bearer " + key).encode("utf-8")
         self.answer = answer
         # A decision model's server: decide(items) for POST /decide (make_decider) and the system message each item
         # must carry. None for a chat adapter's, which answers /generate.
         self.decider = decider
         self.system = system
+        # A chat adapter's server: chat(req) for POST /v1/chat/completions (make_chatter). None for a decision model's,
+        # or when the route couldn't be set up (the log says why), which then answers 501 chat_unavailable.
+        self.chatter = chatter
         self.until = float(until)
         self.info = dict(info)
         self.stop_path = stop_path
@@ -862,7 +1174,10 @@ class ServeHandler(http.server.BaseHTTPRequestHandler):
             state.bump("bad_requests")
             self.reply(411, {"error": "length_required"})
             return None
-        limit = DECIDE_REQUEST_MAX_BYTES if state.decider is not None and self.route() == "/decide" else REQUEST_MAX_BYTES
+        if state.decider is not None:
+            limit = DECIDE_REQUEST_MAX_BYTES if self.route() == "/decide" else REQUEST_MAX_BYTES
+        else:
+            limit = CHAT_REQUEST_MAX_BYTES if self.route() == CHAT_PATH else REQUEST_MAX_BYTES
         if length > limit:
             state.bump("bad_requests")
             self.reply(413, {"error": "too_large"})
@@ -875,6 +1190,8 @@ class ServeHandler(http.server.BaseHTTPRequestHandler):
             return
         if self.server.state.decider is not None:
             return self.answer_decide(raw)
+        if self.route() == CHAT_PATH:
+            return self.answer_chat(raw)
         if self.route() != "/generate":
             return self.reply(404, {"error": "not_found"})
         state = self.server.state
@@ -912,6 +1229,54 @@ class ServeHandler(http.server.BaseHTTPRequestHandler):
             ms = int(round((time.time() - began) * 1000))
             emit("served", count=state.bump("served"), ms=ms)
             self.reply(200, {"base": base, "tuned": tuned, "ms": ms})
+        finally:
+            state.end()
+
+    def answer_chat(self, raw):
+        """POST /v1/chat/completions on a chat adapter's server: one chat_request answered by base Glimmer or the tuned
+        model (make_chatter), one request at a time on the GPU, as /generate is, in OpenAI's chat completion shape.
+        400 for a body chat_request refuses (or bad_json), 413 too_large, 422 too_long, 409 busy, 503 stopping, 501
+        chat_unavailable when the route couldn't be set up, 500 generation_failed (counting toward FAILS_TO_STOP)."""
+        state = self.server.state
+        if state.chatter is None:
+            return self.reply(501, {"error": "chat_unavailable"})
+        if state.stopping.is_set():
+            return self.reply(503, {"error": "stopping"})
+        try:
+            body = json.loads(raw.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            state.bump("bad_requests")
+            return self.reply(400, {"error": "bad_json"})
+        try:
+            req = chat_request(body, state.info.get("adapterJobId"), state.info.get("trainChannel", 0))
+        except ChatRefused as e:
+            state.bump("bad_requests")
+            return self.reply(e.status, {"error": e.code})
+        if not state.lock.acquire(blocking=False):
+            state.bump("busy")
+            return self.reply(409, {"error": "busy"})
+        state.begin()
+        try:
+            began, failure, got = time.time(), None, None
+            try:
+                got = state.chatter(req)
+            except Exception as e:
+                failure = e
+            finally:
+                state.lock.release()
+            if isinstance(failure, ChatTooLong):
+                state.bump("bad_requests")
+                return self.reply(422, {"error": "too_long"})
+            if failure is not None:
+                state.answer_failed(failure)
+                emit("log", text="A chat answer failed: " + type(failure).__name__ + ": " + str(failure)[:300])
+                if state.note:
+                    emit("log", text=state.note)
+                return self.reply(500, {"error": "generation_failed"})
+            state.answer_worked()
+            ms = int(round((time.time() - began) * 1000))
+            emit("served", count=state.bump("served"), ms=ms)
+            self.reply(200, chat_completion(req, got, ms))
         finally:
             state.end()
 
@@ -1086,12 +1451,18 @@ def serve_child_main(config_path):
             FastModel.for_inference(model)
         except Exception as e:
             emit("log", text="Unsloth's inference mode didn't take (" + type(e).__name__ + ": " + str(e)[:200] + "); answering without it")
-    decider = None
+    decider, chatter = None, None
+    channel = int(cfg.get("train_channel") or 0)
     if cfg.get("mode") == DECIDE_MODE:
         # A decision model answers POST /decide only (docs/DECISION_MODELS.md, "On the lab's GPU").
         answer, decider = None, make_decider(model, tokenizer, torch, cfg.get("system"))
     else:
         answer = make_answerer(model, tokenizer, torch, cfg.get("system"))
+        try:
+            chatter = make_chatter(model, tokenizer, torch, cfg.get("system"), cfg["adapter_job_id"], channel)
+        except Exception as e:
+            # The room's Try it live (/generate) still serves; only products' chat is off on this server.
+            emit("log", text="Products' chat at " + CHAT_PATH + " is off on this server: " + type(e).__name__ + ": " + str(e)[:300])
     result = {"load_seconds": round(time.time() - began, 1), "gpu": torch.cuda.get_device_name(0)}
     until = min(float(cfg["stop_by"]), time.time() + float(cfg["minutes"]) * 60)
     if until - time.time() < MIN_SERVING_SECONDS:
@@ -1101,8 +1472,8 @@ def serve_child_main(config_path):
         write_result(result_path, result)
         return
     state = ServeState(
-        cfg["key"], answer, until, {"model": cfg["model"], "adapterJobId": cfg["adapter_job_id"]}, cfg.get("stop_path"),
-        decider=decider, system=cfg.get("system"),
+        cfg["key"], answer, until, {"model": cfg["model"], "adapterJobId": cfg["adapter_job_id"], "trainChannel": channel},
+        cfg.get("stop_path"), decider=decider, system=cfg.get("system"), chatter=chatter,
     )
     server = make_server(state, cfg.get("host") or SERVE_HOST, cfg["port"], cert, key)
     emit("serving", port=server.server_address[1], certSha256=fingerprint, model=cfg["model"], until=int(until))

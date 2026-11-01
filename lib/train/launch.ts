@@ -30,6 +30,8 @@ import {
   SERVE_BOOT_MINUTES,
   SERVE_MINUTES_PARAM,
   serveFitProblem,
+  TRAIN_CHANNEL_PARAM,
+  trainChannelOf,
   serveMinutes,
   type TrainJobRow,
   usableMinutes,
@@ -140,15 +142,15 @@ async function decideSize(recipe: Recipe, params: Record<string, string | number
 async function adapterRegion(
   recipe: Recipe,
   params: Record<string, string | number>,
-): Promise<{ ok: true; region: string | null; adapterJobId: string | null } | { ok: false; error: string }> {
+): Promise<{ ok: true; region: string | null; adapterJobId: string | null; trainChannel: 0 | 1 } | { ok: false; error: string }> {
   for (const field of recipe.params) {
     if (field.kind !== "adapter" || params[field.key] === undefined) continue;
     const source = await getAdapterSource(String(params[field.key]));
     const problem = adapterProblem(source?.job ?? null, source?.metrics ?? null, { decide: isServeRecipe(recipe.id) });
     if (problem || !source) return { ok: false, error: `${field.label}: ${problem ?? "that job doesn't exist."}` };
-    return { ok: true, region: source.job.region, adapterJobId: source.job.id };
+    return { ok: true, region: source.job.region, adapterJobId: source.job.id, trainChannel: trainChannelOf(source.job.params) };
   }
-  return { ok: true, region: null, adapterJobId: null };
+  return { ok: true, region: null, adapterJobId: null, trainChannel: 0 };
 }
 
 /**
@@ -220,7 +222,8 @@ async function dailyCap(jobMaxUsd: number): Promise<LaunchRefusal> {
  * with {options, region} when that region has no free GPU); its minutes are stored whole (serveMinutes), its default
  * limits follow them (recipeDefaults), and it is refused with a 400 when its limits on the GPU it gets can't cover them
  * plus 15 minutes to boot (serveFitProblem, with {estimateMinutes, usableMinutes}). A recipe that keeps the model cache
- * prefers a region that already has it. A glimmer-quantize job also needs its switch, a judged adapter and, to publish,
+ * prefers a region that already has it. A glimmer-serve job gets its adapter's trainChannel in its params, written by
+ * the platform. A glimmer-quantize job also needs its switch, a judged adapter and, to publish,
  * a published one, one at a time per adapter (quantSetup), and the platform writes its levels, slug and trainChannel
  * params itself. A run that can't fit its limits on the GPU it gets (runEstimate) is refused with a 400 that says so,
  * with {estimateMinutes, usableMinutes}, before anything is created.
@@ -247,6 +250,10 @@ export async function launchJobRequest(input: LaunchRequest, caller: LaunchCalle
   const adapter = await adapterRegion(recipe, params.value);
   if (!adapter.ok) return refuse(400, adapter.error);
   if (isServeRecipe(recipe.id) && !adapter.adapterJobId) return refuse(400, "Pick the trained adapter to serve.");
+  // The serve job's GPU answers products' chat the way its adapter was trained (lib/train/glimmer-serving.ts), so the
+  // platform writes the adapter's trainChannel into its params, as it does for a glimmer-quantize job. No caller can send
+  // it: validateParams refuses a param the recipe doesn't list.
+  if (isServeRecipe(recipe.id)) params.value[TRAIN_CHANNEL_PARAM] = adapter.trainChannel;
   if (isQuantRecipe(recipe.id)) {
     const quant = await quantSetup(recipe, params.value);
     if (!quant.ok) return quant;
