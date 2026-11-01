@@ -1471,6 +1471,10 @@ The owner sent Meta's sidebar, Artifacts, Media, Vibes and Scheduled screens. Hi
 
 The owner asked for 100 tests, 1,000 generated examples, and Spark Contributor if permissible. 1,000 examples was already the limit, though never confirmed with a real run in this log. Tests: holdout cap 40 to 100, so 1,000 examples hold out 100; job, recipe and runner caps 60 to 120, which would otherwise have cut it silently. Contributor: Meta's terms 6.2 as read in the Oct 28 review bar sensitive, confidential or personal information and Meta may train on it, so it needs TRAIN_CONTRIBUTOR_WRITER=1 (off), an admin, and a made-up statement; judging stays on Wonder. Estimate for 1,000 examples by the page's formula: $15.40 to $33.80 on Wonder, about $0.17 to $0.36 on Contributor, at a Contributor price the catalog lists from 1.2 and marks to verify. Not a legal opinion; 10.1(ix) on training competing models applies to any writer. Checks: 6378 tests, 6370 pass, 0 fail, 8 skipped; tsc clean. No real run: a 100-test run's GPU time is unmeasured, and the 20-minute overhead was set for 40 tests.
 
+### 13:01 Recipes plumbing, RECIPES_ENABLED off, on tg-agent-legal, not pushed
+
+First step of the plan to build the legal agent workshop and the cookbook. `lib/recipes/`: a registry, skills in `lib/recipes/skills/`, `lib/recipes/generated.json` from `scripts/recipes-gen.mjs`, so skills reach a build through extraFilesFor with no snapshot. Stored brief field `recipes`; the writer's schema gets it only while recipes are available, so the flags-off schema stays the same object. Decision: a pick whose flag went off counts as never picked, so the skill, the prompt lines and the marker go away together. Checks: the new test file and flags-off.test.ts, 11 pass. No real build yet.
+
 ## Gaps
 
 What this record doesn't confirm:

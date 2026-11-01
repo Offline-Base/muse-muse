@@ -1,6 +1,7 @@
 import { referenceParts, textPart, type ContentPart } from "@/lib/brief/media";
 import { applyRebuildFit, briefProblems, normalizeRawBrief, patchBrief } from "@/lib/brief/normalize";
 import { type Brief, newBriefSchemaFor, type TargetId } from "@/lib/brief/schema";
+import { availableRecipes } from "@/lib/recipes/registry";
 import { respondStructured, StructuredOutputError } from "@/lib/brief/structured";
 import { env } from "@/lib/env";
 import { metaPlatform } from "@/lib/meta/platform";
@@ -76,7 +77,7 @@ export async function writeBrief(input: BriefInput): Promise<BriefResult> {
     content,
     sources: prepared.sources,
     // With no targets, caps, milestones or MUSE_APP_LOOK this is NewBriefSchema or NewBriefSchemaNoGadget, as it always was.
-    schema: newBriefSchemaFor({ gadgets: env.gadgetsEnabled, targets: enabled, personalTools, caps, milestones: env.engineMilestones, museAppLook: env.museAppLook }),
+    schema: newBriefSchemaFor({ gadgets: env.gadgetsEnabled, targets: enabled, personalTools, caps, milestones: env.engineMilestones, museAppLook: env.museAppLook, recipes: availableRecipes(caps).map((r) => r.id) }),
     schemaName: "muse_brief",
     effort: "medium",
     normalize: (raw) => normalizeRawBrief(raw, references),

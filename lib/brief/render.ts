@@ -286,6 +286,21 @@ function sessionLines(notes: SessionNotes & LookNote, when: Run, complex = false
   return out;
 }
 
+/** What a prompt says about the brief's recipes (recipeNotes in lib/recipes/registry.ts). Nothing with none picked. */
+type RecipeNotes = ReadonlyArray<{ id: string; limit: string }>;
+
+function recipeBuildLines(recipes: RecipeNotes | undefined): string[] {
+  if (!recipes?.length) return [];
+  return [
+    "",
+    "## Recipes",
+    "",
+    "Read each one first, before you write code. Where it is stricter than the sections below, follow it, except that it never overrides AGENTS.md.",
+    "",
+    bullets(recipes.map((r) => `Read \`.agents/skills/${r.id}/SKILL.md\` first. Limit to keep and show: ${sentence(r.limit)}`)),
+  ];
+}
+
 /** brief.md, the prompt file for the first `muse exec`. */
 export function renderBuildPrompt(
   brief: Brief,
@@ -309,6 +324,8 @@ export function renderBuildPrompt(
     /** The product got the trust overlay (a trust product flag was on): the Trust pages section. */
     trust?: boolean;
     // ---------- end Wave 3, unit 1 ----------
+    /** The skills to read first (recipeNotes). */
+    recipes?: RecipeNotes;
   } & SessionNotes &
     LookNote,
 ): string {
@@ -380,6 +397,7 @@ export function renderBuildPrompt(
   // ---------- Wave 3, unit 1: the trust overlay's pages (empty without it) ----------
   out.push(...trustBuildLines(opts.trust));
   // ---------- end Wave 3, unit 1 ----------
+  out.push(...recipeBuildLines(opts.recipes));
 
   out.push(
     "",
@@ -614,6 +632,8 @@ export function renderRefinePrompt(
     newReferences: Array<{ fileName: string; describes: string }>;
     /** The product's brief, for where it runs and its platform services. Left out for a brief with none, whose prompt stays as it was. */
     brief?: Brief | null;
+    /** The skills this product was built from (recipeNotes). */
+    recipes?: RecipeNotes;
   } & SessionNotes &
     LookNote,
 ): string {
@@ -636,6 +656,7 @@ export function renderRefinePrompt(
     // ---------- Wave 3, unit 2: platform services' change lines, bullets (none for a product with no cap blocks) ----------
     ...(input.brief ? capsRefineLines(input.brief) : []),
     // ---------- end Wave 3, unit 2 ----------
+    ...(input.recipes ?? []).map((r) => `- Follow \`.agents/skills/${r.id}/SKILL.md\` and keep its limit: ${sentence(r.limit)}`),
     "- Use only the models the product already lists in `musemuse.json`. The gateway rejects others.",
     "- Update `musemuse.json` if actions, limits or cost changed.",
     "- If the flow changed, update `tests/smoke.spec.ts` to cover it and its judge screenshots. Never weaken or skip a test.",

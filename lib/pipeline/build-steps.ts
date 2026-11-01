@@ -21,6 +21,7 @@ import { buildTokenBudgetFor, liveTokenDailyBudgetFor } from "@/lib/gateway/poli
 import { mintToken, revokeLiveTokensExcept, revokeTokens } from "@/lib/gateway/tokens";
 import { judgeBuild, pickScreenshots } from "@/lib/judge";
 import { nativeExtraFiles } from "@/lib/native/template-files";
+import { recipeExtraFiles, recipeNotes } from "@/lib/recipes/registry";
 import { prepareToolFixtures } from "@/lib/tools/fixtures";
 import { rebuildTargetFor } from "@/lib/pipeline/catalog";
 import {
@@ -539,7 +540,7 @@ export interface SandboxRef {
 
 /** The files this brief's targets add, as a field that isn't there at all for a web-only brief. */
 function extraFilesFor(brief: Brief | null): { extraFiles?: Array<{ path: string; content: string }> } {
-  const extraFiles = nativeExtraFiles(brief);
+  const extraFiles = [...nativeExtraFiles(brief), ...recipeExtraFiles(brief)];
   return extraFiles.length ? { extraFiles } : {};
 }
 
@@ -577,6 +578,7 @@ export async function provisionStep(input: {
       // Only when the round plan briefStep saved chains milestones, which is what the workflow runs.
       ...(build.roundPlan?.milestones?.length ? { milestones: briefMilestones(b) } : {}),
       ...(trust ? { trust: true } : {}),
+      recipes: recipeNotes(b),
       ...look,
     });
   const promptMarkdown = promptFor(brief);
@@ -1483,6 +1485,7 @@ export async function reopenStep(input: {
       fileName: r.fileName,
       describes: `${/^[aeiou]/.test(r.kind) ? "An" : "A"} ${r.kind === "pdf" ? "PDF" : r.kind} the user attached with this change (inspo/${r.fileName}).`,
     })),
+    recipes: recipeNotes(brief),
     ...sessionNotes(),
     ...lookNote(),
   });
