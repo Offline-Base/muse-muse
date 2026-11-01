@@ -68,7 +68,7 @@ describe("against the real muse-device server", { skip: !canMock ? "needs --expe
     class AuthError extends Error {
       status = 401;
     }
-    mock.module(at("../../../auth.ts"), { namedExports: { AuthError, requireAdmin: async () => ({ id: userId, isAdmin: true }) } });
+    mock.module(at("../../../auth.ts"), { namedExports: { AuthError, GUEST_EMAIL: "guest@musemuse.invalid", isCrossSite: () => false, requireAdmin: async () => ({ id: userId, isAdmin: true }), requireUser: async () => ({ id: userId, isAdmin: true }) } });
     mock.module(at("../../../gateway/tokens.ts"), {
       namedExports: { findToken: async (t: string) => (t === LIVE ? { id: "tok", productId: product!.id, scope: "live", allowedModels: ["muse-gadget", "cap:hardware", "board-tools"], dailyBudgetUsd: 3 } : null) },
     });

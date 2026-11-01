@@ -117,7 +117,7 @@ describe("the sandboxes' firewalls", () => {
 
   it("gives /browse the one host and no private range", () => {
     assert.deepEqual(browsePolicy("Example.org"), { allow: ["example.org"], subnets: { deny: [...PRIVATE_CIDRS] } });
-    for (const cidr of ["10.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16", "192.168.0.0/16", "172.16.0.0/12", "fc00::/7"]) assert.ok(PRIVATE_CIDRS.includes(cidr as never), cidr);
+    for (const cidr of ["10.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16", "192.168.0.0/16", "172.16.0.0/12"]) assert.ok(PRIVATE_CIDRS.includes(cidr as never), cidr);
     for (const bad of ["*.example.org", "localhost", "10.0.0.1", "example.org/path", "", "a b.org"]) assert.throws(() => browsePolicy(bad), bad);
   });
 });

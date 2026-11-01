@@ -7,7 +7,6 @@ import { normalizeRawBrief } from "@/lib/brief/normalize";
 import { briefCaps } from "@/lib/caps/brief-fields";
 import { capsCatalogBlocks } from "@/lib/caps/catalog";
 import { allowedModelsFor } from "@/lib/pipeline/logic";
-import { CAP_READY } from "@/lib/caps/ids";
 import { capsForBuild } from "@/lib/caps/ready";
 import { capsJudgeNotes } from "@/lib/caps/judge";
 import { liveBlock, liveWriterRules, normalizeLiveBlock } from "@/lib/caps/live/brief";
@@ -39,7 +38,6 @@ describe("the product's privacy page", () => {
 
 describe("the block", () => {
   it("is what the contract says, optional in a stored brief", () => {
-    assert.equal(CAP_READY.live, false, "flips only in the merge after a real test build");
     assert.equal(BriefSchema.safeParse(BRIEF).success, true);
     assert.equal(BriefSchema.safeParse({ ...BRIEF, live: null }).success, true);
     assert.equal(BriefSchema.safeParse({ ...BRIEF, live: { captions: true, updates: { collection: "scores" } } }).success, true);

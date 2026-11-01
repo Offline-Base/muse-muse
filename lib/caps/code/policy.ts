@@ -13,7 +13,8 @@ export function execPolicy(): NetworkPolicy {
 
 /**
  * Private, loopback, link-local and shared address ranges. A browse sandbox may reach none of them, whatever the host's
- * name resolves to there.
+ * name resolves to there. IPv4 only: Vercel's sandbox API answers 400 "Invalid CIDR" to an IPv6 range and starts nothing
+ * (seen Nov 1, 2026, with "::1/128"). The firewall's host allow list is what keeps everything else out.
  */
 export const PRIVATE_CIDRS = [
   "0.0.0.0/8",
@@ -23,9 +24,6 @@ export const PRIVATE_CIDRS = [
   "169.254.0.0/16",
   "172.16.0.0/12",
   "192.168.0.0/16",
-  "::1/128",
-  "fc00::/7",
-  "fe80::/10",
 ] as const;
 
 /** A host name as browse takes it: letters, digits, dots and dashes, with a dot. */

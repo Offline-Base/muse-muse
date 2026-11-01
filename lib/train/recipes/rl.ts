@@ -6,7 +6,7 @@
  *
  * Like glimmer-serve, it reuses glimmer-lora's Python as it is (glimmerHelpers), so the venv, the cache, the pinned base
  * and the final-channel prompts are the ones training uses. Its pins already include trl 0.22.2, whose GRPOTrainer and
- * GRPOConfig this code was written against by reading that wheel's source. It has never run with them.
+ * GRPOConfig this code was written against by reading that wheel's source, and first ran with them on a GPU on Nov 1, 2026.
  *
  * The child answers the held-out problems greedily before training, trains, saves the adapter and answers them again.
  * The parent returns the reward curve and the before and after scores as done metrics (lib/train/rl.ts reads them) and
@@ -25,6 +25,7 @@ const RL_BODY = String.raw`
 # ---------------------------------------------------------------------------------------------------------------
 # rl-grpo: everything below is this recipe's own.
 
+import gc
 import random
 
 RL_TRAIN_PROBLEMS = 2000
@@ -304,6 +305,7 @@ def rl_child_main(config_path):
     from unsloth import FastModel
     import torch
     from datasets import Dataset
+    from peft import PeftModel
     from transformers import TrainerCallback
     from trl import GRPOConfig, GRPOTrainer
 
@@ -331,14 +333,18 @@ def rl_child_main(config_path):
         use_gradient_checkpointing="unsloth",
         random_state=cfg["seed"],
     )
-    # GRPOTrainer gets the text tokenizer: it would treat FastModel's processor as one that takes images.
-    text_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
+    def text_side(full):
+        """GRPOTrainer gets the text tokenizer: it would treat FastModel's processor as one that takes images."""
+        text = getattr(full, "tokenizer", full)
+        text.padding_side = "left"
+        if text.pad_token is None:
+            text.pad_token = text.eos_token
+        # GRPOTrainer stops sampling and masks at the tokenizer's eos only, and an answer on the final channel ends at <|eot|>.
+        text.eos_token = FINAL_ENDS[0]
+        return text
+
+    text_tokenizer = text_side(tokenizer)
     bos = getattr(tokenizer, "bos_token", None) or getattr(text_tokenizer, "bos_token", None) or ""
-    text_tokenizer.padding_side = "left"
-    if text_tokenizer.pad_token is None:
-        text_tokenizer.pad_token = text_tokenizer.eos_token
-    # GRPOTrainer stops sampling and masks at the tokenizer's eos only, and an answer on the final channel ends at <|eot|>.
-    text_tokenizer.eos_token = FINAL_ENDS[0]
 
     def prompt_of(row):
         return eval_prompt(tokenizer, [{"role": "system", "content": RL_SYSTEM}, {"role": "user", "content": row["ask"]}], bos)
@@ -428,6 +434,18 @@ def rl_child_main(config_path):
     result["adapter"] = True
     write_result(cfg["result_path"], result)
 
+    # The tuned answers come from a fresh load of the saved adapter and its own tokenizer, as people would use it. On the
+    # first real run (Nov 1, 2026), answering after training in the same process scored 16 of 40, mostly stray channel
+    # text, and did the same with only the model reloaded, while a new process, and this reload, scored 40 of 40. A single
+    # prompt tokenized the same before and after training, so the cause looks like the trained tokenizer's batch padding.
+    del trainer
+    model = None
+    gc.collect()
+    torch.cuda.empty_cache()
+    emit("phase", message="Loading the saved adapter for the tuned answers")
+    fresh, tokenizer = FastModel.from_pretrained(model_name=cfg["model"], revision=cfg.get("revision"), max_seq_length=cfg["max_seq_length"])
+    text_tokenizer = text_side(tokenizer)
+    model = PeftModel.from_pretrained(fresh, cfg["adapter_dir"], is_trainable=False)
     result["tuned"] = answer_all("Tuned")
     write_result(cfg["result_path"], result)
 

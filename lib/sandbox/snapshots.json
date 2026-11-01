@@ -21,5 +21,52 @@
       "runtime",
       "trust"
     ]
+  },
+  "snap_XXT4qDZEWLQ6xL8RgAvqd38c2kdM": {
+    "createdAt": "2026-11-01T20:49:11.688Z",
+    "templateHash": "67472a74d60e",
+    "capOverlays": [
+      "code",
+      "connect",
+      "core",
+      "data",
+      "extension",
+      "files",
+      "games",
+      "games-babylon",
+      "games-phaser",
+      "gpu",
+      "hardware",
+      "jobs",
+      "live",
+      "media",
+      "musecode",
+      "runtime",
+      "trust"
+    ]
+  },
+  "snap_GbHWNK8snp0fecU1qs9kKgspR9K3": {
+    "createdAt": "2026-11-01T22:54:37.584Z",
+    "templateHash": "361eebd68ecc",
+    "capOverlays": [
+      "code",
+      "connect",
+      "core",
+      "data",
+      "extension",
+      "files",
+      "games",
+      "games-babylon",
+      "games-phaser",
+      "gpu",
+      "hardware",
+      "jobs",
+      "live",
+      "media",
+      "musecode",
+      "platform",
+      "runtime",
+      "trust"
+    ]
   }
 }
