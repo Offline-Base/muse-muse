@@ -14,6 +14,7 @@ interface RawVerifySummary {
   steps?: Array<{ name?: unknown; ok?: unknown; ms?: unknown; detail?: unknown }>;
   failure?: unknown;
   caps?: unknown;
+  requirements?: unknown;
 }
 
 /** verify's caps field (docs/CAPABILITIES.md, 2.8), kept to known shapes. Null when the summary has none. */
@@ -34,6 +35,14 @@ function parseCapProofs(raw: unknown): CapProof[] | null {
       },
     ];
   });
+}
+
+/** verify's requirements field (FULL_BUILDS), kept to known shapes. Null when the summary has none. */
+function parseRequirementTests(raw: unknown): NonNullable<VerifySummary["requirements"]> | null {
+  if (!Array.isArray(raw)) return null;
+  return raw.flatMap((r: { id?: unknown; ok?: unknown; detail?: unknown }) =>
+    r && typeof r.id === "string" ? [{ id: r.id, ok: r.ok === true, ...(typeof r.detail === "string" && r.detail ? { detail: r.detail.slice(0, 300) } : {}) }] : [],
+  );
 }
 
 /**
@@ -61,7 +70,8 @@ export function parseVerifySummary(stdout: string): VerifySummary | null {
     }));
     const failure = typeof raw.failure === "string" ? raw.failure : "";
     const caps = parseCapProofs(raw.caps);
-    return { passed: raw.passed, steps, failureOutput: failure.slice(-VERIFY_FAILURE_MAX), ...(caps ? { caps } : {}) };
+    const requirements = parseRequirementTests(raw.requirements);
+    return { passed: raw.passed, steps, failureOutput: failure.slice(-VERIFY_FAILURE_MAX), ...(caps ? { caps } : {}), ...(requirements ? { requirements } : {}) };
   }
   return null;
 }

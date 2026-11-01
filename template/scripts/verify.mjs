@@ -15,7 +15,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:f
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { browserLaunchOptions, finalShotProblems, glassesGateProblems, judgeShotNotes, judgeShotProblems, readCapsFile, smokeReportProblems, verifyStepNames, xrGateProblems } from "./smoke-report.mjs";
+import { browserLaunchOptions, finalShotProblems, glassesGateProblems, judgeShotNotes, judgeShotProblems, onlyRequirementTestsFailed, readCapsFile, readRequirementsFile, requirementResults, smokeReportProblems, verifyStepNames, xrGateProblems } from "./smoke-report.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BIN = (name) => path.join(ROOT, "node_modules", ".bin", name);
@@ -23,8 +23,11 @@ const FAILURE_MAX = 6000;
 const readRootText = (file) => (existsSync(path.join(ROOT, file)) ? readFileSync(path.join(ROOT, file), "utf8") : null);
 // null for a product without platform services, which verifies exactly as before they existed.
 const CAPS = readCapsFile(readRootText);
-const STEP_NAMES = verifyStepNames(CAPS !== null);
+// null for a product without a requirements list, which verifies as before (FULL_BUILDS, docs/FULL_BUILDS.md).
+const REQUIREMENTS = readRequirementsFile(readRootText);
+const STEP_NAMES = verifyStepNames(CAPS !== null, REQUIREMENTS !== null);
 let capsResult = null;
+let requirementsResult = null;
 // When this verify started, so the caps step counts only what the gateway saw during it, not an earlier round's work.
 const STARTED_AT = new Date().toISOString();
 // The platform's read-only copy of the caps check in a build sandbox. A product's own copy runs only outside one.
@@ -179,7 +182,7 @@ function summarize() {
   const share = failures.length ? Math.floor(FAILURE_MAX / failures.length) : 0;
   let failure = failures.map((f) => `## ${f.name}\n${tail(f.output, Math.max(200, share - f.name.length - 8))}`).join("\n\n");
   if (failure.length > FAILURE_MAX) failure = failure.slice(-FAILURE_MAX);
-  return { musemuse_verify: 1, passed, steps, failure, ...(capsResult ? { caps: capsResult } : {}) };
+  return { musemuse_verify: 1, passed, steps, failure, ...(capsResult ? { caps: capsResult } : {}), ...(requirementsResult ? { requirements: requirementsResult } : {}) };
 }
 
 async function finish() {
@@ -256,14 +259,18 @@ async function main() {
       rmSync(reportPath, { force: true });
       const smokeStarted = Date.now();
       const res = await run(BIN("playwright"), ["test", "--project=smoke", "--forbid-only"], {
-        timeoutMs: 900_000,
+        // One test per requirement can run longer than the usual few.
+        timeoutMs: REQUIREMENTS ? Number(process.env.MUSEMUSE_REQUIREMENTS_MS) || 1_500_000 : 900_000,
         env: { MUSEMUSE_PORT: String(port), CI: "1" },
       });
       const counts = ["passed", "failed", "flaky", "skipped"]
         .map((k) => res.out.match(new RegExp(`(\\d+) ${k}`))?.[0])
         .filter(Boolean)
         .join(", ");
-      if (res.code === 0) {
+      // On the last round (MUSEMUSE_SCREEN_CHECK=warn) a failed requirement's test is the requirements step's to report,
+      // so the judge still runs and the checklist can name it.
+      const onlyTheirs = REQUIREMENTS && res.code !== 0 && lastRoundOnlyRequirements(reportPath);
+      if (res.code === 0 || onlyTheirs) {
         let report;
         try {
           report = JSON.parse(readFileSync(reportPath, "utf8"));
@@ -296,10 +303,12 @@ async function main() {
       };
     });
     if (CAPS) await step("caps", checkCaps);
+    if (REQUIREMENTS) await step("requirements", checkRequirements);
   } else {
     skip("console");
     skip("smoke");
     if (CAPS) skip("caps");
+    if (REQUIREMENTS) skip("requirements");
   }
   await stopServer();
 
@@ -330,6 +339,35 @@ async function checkCaps() {
   const total = parsed.caps.reduce((n, c) => n + (c.checks?.length ?? 0), 0);
   if (res.code === 0 && parsed.ok === true && !failed.length) return { ok: true, detail: `${total} fixed check(s) passed for ${parsed.caps.map((c) => c.cap).join(", ")}` };
   return { ok: false, detail: failed[0] ?? "the caps check failed", output: failed.join("\n") || res.out };
+}
+
+/** On the platform's last round, the last smoke run failed only on requirement tests. */
+function lastRoundOnlyRequirements(reportPath) {
+  if (process.env.MUSEMUSE_SCREEN_CHECK !== "warn") return false;
+  try {
+    return onlyRequirementTestsFailed(JSON.parse(readFileSync(reportPath, "utf8")), REQUIREMENTS);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The requirements step: every requirement has a passing test of its own, read from the smoke run's report. Warn mode
+ * (the platform's last round) records the results without failing, and the judge's verdict counts them either way.
+ */
+function checkRequirements() {
+  let report = null;
+  try {
+    report = JSON.parse(readFileSync(path.join(ROOT, "test-results", "report.json"), "utf8"));
+  } catch {
+    // No report: every requirement counts as having no test.
+  }
+  requirementsResult = requirementResults(report, REQUIREMENTS, (file) => readText(path.join("tests", file)));
+  const bad = requirementsResult.filter((r) => !r.ok);
+  if (!bad.length) return { ok: true, detail: `${requirementsResult.length} of ${requirementsResult.length} requirements passed` };
+  const detail = `${bad.length} of ${requirementsResult.length} not passing: ${bad.map((r) => r.id).join(", ")}`;
+  if (process.env.MUSEMUSE_SCREEN_CHECK === "warn") return { ok: true, detail };
+  return { ok: false, detail, output: bad.map((r) => `${r.id}: ${r.detail}`).join("\n") };
 }
 
 /** True when the product has actions, so tests/actions.spec.ts must run too. */

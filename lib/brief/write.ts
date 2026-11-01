@@ -4,6 +4,9 @@ import { type Brief, newBriefSchemaFor, type TargetId } from "@/lib/brief/schema
 import { availableRecipes } from "@/lib/recipes/registry";
 import { respondStructured, StructuredOutputError } from "@/lib/brief/structured";
 import { env } from "@/lib/env";
+import { sentBackText } from "@/lib/full/prompts";
+import { nameWhatItCantDo, requirementProblems } from "@/lib/full/requirements";
+import { checkScope, enforceScope } from "@/lib/full/scope";
 import { metaPlatform } from "@/lib/meta/platform";
 import { usageCost } from "@/lib/meta/pricing";
 import { applyTargets, targetProblems } from "@/lib/native/targets";
@@ -32,6 +35,8 @@ export interface BriefInput {
 
 export interface BriefResult {
   brief: Brief;
+  /** FULL_BUILDS: why the independent scope check couldn't run, for the build log. Set only then. */
+  scopeFailure?: string;
   /** Voice memo transcripts, by reference index (0-based, the position in input.references). */
   transcripts: Array<{ index: number; text: string }>;
   usage: ModelUsage[];
@@ -71,29 +76,50 @@ export async function writeBrief(input: BriefInput): Promise<BriefResult> {
     content = [...prepared.parts, textPart(briefRequestText(input.note, references, requested))];
   }
 
-  const result = await respondStructured({
+  // FULL_BUILDS: only what the person typed can be checked word for word, so a note with references or a rebuild isn't.
+  const full = env.fullBuilds;
+  const quotable = !rebuild && !references.length ? input.note : null;
+  const write = (parts: ContentPart[]) => respondStructured({
     model,
-    instructions: briefInstructions({ ...writer, museAppLook: env.museAppLook }),
-    content,
+    instructions: briefInstructions({ ...writer, museAppLook: env.museAppLook, ...(full ? { fullBuilds: true } : {}) }),
+    content: parts,
     sources: prepared.sources,
     // With no targets, caps, milestones or MUSE_APP_LOOK this is NewBriefSchema or NewBriefSchemaNoGadget, as it always was.
-    schema: newBriefSchemaFor({ gadgets: env.gadgetsEnabled, targets: enabled, personalTools, caps, milestones: env.engineMilestones, museAppLook: env.museAppLook, recipes: availableRecipes(caps).map((r) => r.id) }),
+    schema: newBriefSchemaFor({ gadgets: env.gadgetsEnabled, targets: enabled, personalTools, caps, milestones: env.engineMilestones, museAppLook: env.museAppLook, recipes: availableRecipes(caps).map((r) => r.id), ...(full ? { fullBuilds: true } : {}) }),
     schemaName: "muse_brief",
     effort: "medium",
-    normalize: (raw) => normalizeRawBrief(raw, references),
-    check: (brief) => [...briefProblems(brief, references), ...targetProblems(brief, { enabled, requested })],
+    normalize: (raw) => normalizeRawBrief(raw, references, full ? { fullBuilds: true } : {}),
+    check: (brief) => [...briefProblems(brief, references), ...targetProblems(brief, { enabled, requested }), ...(full ? requirementProblems(brief, quotable) : [])],
   }).catch((err: unknown) => {
     // Keep the transcription spend on the error too, so the caller can record everything.
     if (err instanceof StructuredOutputError) throw new StructuredOutputError(err.message, [...prepared.usage, ...err.usage]);
     throw err;
   });
 
+  const result = await write(content);
   let brief = result.issues.length ? patchBrief(result.data, references) : result.data;
+  const scopeUsage: ModelUsage[] = [];
+  let scopeFailure: string | undefined;
+  // FULL_BUILDS: a separate model call with no build context holds the brief to the request, before anything is built.
+  if (full && brief.verdict !== "no") {
+    const scoped = await enforceScope({
+      brief,
+      note: input.note,
+      run: (b) => checkScope({ model: env.judgeModel, request: content, sources: prepared.sources, brief: b }),
+      rewrite: async (b, problems) => {
+        const again = await write([...content, textPart(`Your last brief:\n${JSON.stringify(b)}`), textPart(sentBackText(problems))]);
+        return { brief: again.issues.length ? patchBrief(again.data, references) : again.data, usage: again.usage };
+      },
+    });
+    brief = nameWhatItCantDo(scoped.brief);
+    scopeUsage.push(...scoped.usage);
+    if (scoped.failure) scopeFailure = scoped.failure;
+  }
   if (rebuild) brief = applyRebuildFit(brief, rebuild);
   brief = applyTargets(brief, { enabled, requested, personalTools });
 
-  const usage = [...prepared.usage, ...result.usage];
-  return { brief, transcripts: prepared.transcripts, usage, costUsd: total(usage) };
+  const usage = [...prepared.usage, ...result.usage, ...scopeUsage];
+  return { brief, transcripts: prepared.transcripts, usage, costUsd: total(usage), ...(scopeFailure ? { scopeFailure } : {}) };
 }
 
 export interface PreparedFixture {

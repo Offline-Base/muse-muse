@@ -73,7 +73,7 @@
     "caps": {
       "type": "array",
       "uniqueItems": true,
-      "items": { "enum": ["data", "files", "connect", "jobs", "live", "media", "code", "runtime", "hardware", "extension", "games"] },
+      "items": { "enum": ["data", "files", "connect", "jobs", "live", "media", "code", "runtime", "hardware", "extension", "games", "platform"] },
       "description": "Only for a product with platform services: the ones it uses. It can narrow what the brief picked, never widen it."
     },
     "data": {

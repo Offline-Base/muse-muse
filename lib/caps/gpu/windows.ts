@@ -141,7 +141,8 @@ export async function openWindow(input: { adapterJobId?: unknown; minutes?: unkn
     const shared = started.code === "demo_running" && typeof started.body?.serveJobId === "string" ? started.body.serveJobId : null;
     if (!shared) {
       await fail();
-      return refuse(started.status, started.code, launchWords(started.code, started.status), started.body);
+      const limitText = started.code === "gpu_limit" && typeof started.body?.reason === "string" ? started.body.reason : null;
+      return refuse(started.status, started.code, limitText ?? launchWords(started.code, started.status), started.body);
     }
     await deps.attach(window.id, shared);
     return { ok: true, window: { ...window, serveJobId: shared } };

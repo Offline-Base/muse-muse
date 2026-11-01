@@ -53,7 +53,11 @@ interface Scenario {
   /** Wave 3, unit 14: an enabled cap has a step after deploy (capsShipping in lib/caps/ship.ts). Off by default. */
   capsShipping?: boolean;
   /** The engine's round plan briefStep and loadRefineStep return. */
-  plan?: { buildMs: number; fixMs: number; verifyMs: number; wallMs: number | null; milestones: Array<{ title: string }> };
+  plan?: { buildMs: number; fixMs: number; verifyMs: number; wallMs: number | null; milestones: Array<{ title: string }>; full?: boolean; chain?: Record<string, number> };
+  /** CHAINED_BUILDS: what each chainReadStep answers, in order, then $1 and no Stop. */
+  chainReads?: Array<{ costUsd?: number; stopRequested?: boolean }>;
+  /** FULL_BUILDS: what judgeStep says is still not met. */
+  judgeUnmet?: string[];
   /** How far each named step moves the fake clock (Date.now), for the build's wall. Unset, time stands still. */
   advance?: Partial<Record<"previewStep" | "collectVerifyStep" | "judgeStep", number>>;
   /** PLAN_ART's step: settles once the build registers ("late"), never ("hangs"), throws, or answers at once (the default). */
@@ -195,7 +199,7 @@ const fakeSteps = {
     tick("judgeStep");
     if (scenario.judgeThrows) throw new Error('Step "judgeStep" failed after 1 retry: judge_verdict: no valid reply');
     const pass = scenario.judgePass ?? true;
-    return { pass, blocking: pass ? false : (scenario.judgeBlocking ?? true) };
+    return { pass, blocking: pass ? false : (scenario.judgeBlocking ?? true), ...(scenario.judgeUnmet ? { unmet: scenario.judgeUnmet } : {}) };
   },
   writeFixPromptStep: async (input: { fix: number }) => {
     record("writeFixPromptStep", input);
@@ -253,6 +257,16 @@ const fakeSteps = {
     return { promptFile: `milestone-${input.index}.md` };
   },
   milestoneStep: async (...args: unknown[]) => record("milestoneStep", ...args),
+  chainReadStep: async (...args: unknown[]) => {
+    record("chainReadStep", ...args);
+    const read = scenario.chainReads?.shift();
+    return { costUsd: read?.costUsd ?? 1, stopRequested: read?.stopRequested ?? false };
+  },
+  chainSaveStep: async (...args: unknown[]) => record("chainSaveStep", ...args),
+  chainReopenStep: async (input: { session: number }) => {
+    record("chainReopenStep", input);
+    return { sessionId: `session-${input.session}` };
+  },
   liveCheckStep: async (input: unknown) => {
     record("liveCheckStep", input);
     return scenario.liveCheck ?? { ok: true };
@@ -995,6 +1009,78 @@ describe("engine (docs/CAPABILITIES.md, section 8)", { skip: canMock ? false : "
   });
   after(() => {
     for (const [k, v] of Object.entries(saved)) v === undefined ? delete process.env[k] : (process.env[k] = v);
+  });
+
+  it("FULL_BUILDS: shares the wall among milestones, checks a capped round with no engine flag, and names what's unmet", async () => {
+    flags({});
+    reset({
+      plan: plan({ full: true, buildMs: 60 * MIN, wallMs: 120 * MIN, verifyMs: 12 * MIN, milestones: [{ title: "R1 to R4" }, { title: "R5 to R8" }] }),
+      musePollsByRun: [Infinity, 2, 2, 2, 2],
+      verifies: [{ passed: true }],
+      judgePass: false,
+      judgeBlocking: false,
+      judgeUnmet: ["R5 is not met: Edit a trip."],
+    });
+    assert.deepEqual(await wf.buildProduct({ buildId: "t1" }), { status: "partial" });
+    const caps = starts().map((r) => r.capMs!);
+    assert.ok(caps[0]! < 60 * MIN, "the first round leaves time for the second");
+    assert.ok(starts().some((r) => r.promptFile === "milestone-2.md"));
+    assert.ok(named("setStatusStep").some((c) => String((c.args[2] as { message?: string })?.message).includes("Not met: R5 is not met: Edit a trip.")));
+  });
+
+  describe("CHAINED_BUILDS", () => {
+    const chain = { sessionMs: 85 * MIN, sessionUsd: 15, totalUsd: 60, maxSessions: 12, maxMs: 1440 * MIN };
+    const list = [{ title: "R1 to R4" }, { title: "R5 to R8" }, { title: "R9 to R12" }];
+    const chained = (over: Partial<Scenario> = {}): Scenario => ({
+      plan: plan({ full: true, buildMs: 60 * MIN, wallMs: 85 * MIN, verifyMs: 25 * MIN, milestones: list, chain } as never),
+      verifies: [{ passed: true }],
+      ...over,
+    });
+    it("runs every milestone in one session while it fits, with no rotation", async () => {
+      flags({});
+      reset(chained());
+      assert.deepEqual(await wf.buildProduct({ buildId: "c1" }), { status: "live" });
+      assert.equal(named("chainReopenStep").length, 0);
+      assert.deepEqual(starts().map((r) => r.promptFile), ["brief.md", "milestone-2.md", "milestone-3.md"]);
+    });
+
+    it("saves and starts a new session past the wall, and the next round uses its id and a fresh prompt", async () => {
+      flags({});
+      const real = Date.now;
+      clock = real();
+      Date.now = () => clock;
+      try {
+        reset(chained({ advance: { collectVerifyStep: 50 * MIN } }));
+        assert.deepEqual(await wf.buildProduct({ buildId: "c2" }), { status: "live" });
+      } finally {
+        Date.now = real;
+      }
+      const order = calls.map((c) => c.step).filter((s) => s === "chainSaveStep" || s === "chainReopenStep");
+      assert.deepEqual(order.slice(0, 2), ["chainSaveStep", "chainReopenStep"]);
+      const second = starts().find((r) => r.promptFile === "milestone-2.md") as unknown as { sessionId: string };
+      assert.equal(second.sessionId, "session-2");
+      assert.equal((named("writeMilestonePromptStep")[0]!.args[0] as { newSession?: number }).newSession, 2);
+      assert.equal((named("writeMilestonePromptStep")[1]!.args[0] as { newSession?: number }).newSession, 3);
+    });
+
+    it("ends at the spending cap, skips what's left and checks what was built", async () => {
+      flags({});
+      reset(chained({ chainReads: [{ costUsd: 58 }, { costUsd: 58 }] }));
+      await wf.buildProduct({ buildId: "c3" });
+      assert.equal(starts().filter((r) => r.promptFile.startsWith("milestone")).length, 0);
+      assert.ok(logs().some((t) => t?.includes("$60 spending cap")));
+      const states = named("milestoneStep").map((c) => { const m = c.args[1] as { index: number; state: string }; return `${m.index}:${m.state}`; });
+      assert.ok(states.includes("2:skipped") && states.includes("3:skipped"));
+      assert.equal(named("chainReopenStep").length, 0);
+    });
+
+    it("stops for the owner between rounds, and cleans up", async () => {
+      flags({});
+      reset(chained({ chainReads: [{ stopRequested: true }] }));
+      assert.deepEqual(await wf.buildProduct({ buildId: "c4" }), { status: "failed" });
+      assert.match((named("failStep")[0]!.args[0] as { message: string }).message, /Stopped by you/);
+      assert.equal(named("cleanupStep").length, 1);
+    });
   });
 
   it("checks a first round that hit its cap and ships it after a fix round (ENGINE_CHECK_ON_TIMEOUT)", async () => {

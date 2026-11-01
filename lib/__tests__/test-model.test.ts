@@ -1,9 +1,9 @@
 import { afterEach, test } from "node:test";
 import assert from "node:assert/strict";
-import { env, testModel } from "@/lib/env";
+import { buildTestModel, contributorBuildsOn, contributorWriterOn, env, testModel } from "@/lib/env";
 
 const CONTRIBUTOR = "muse-spark-1.3-contributor";
-const NAMES = ["TEST_MODEL", "VERCEL_ENV", "BUILD_MODEL", "BRIEF_MODEL", "JUDGE_MODEL", "COMPLEX_BUILD_MODEL"] as const;
+const NAMES = ["BUILDS_ON_CONTRIBUTOR", "MUSE_APP_LOOK", "TRAIN_CONTRIBUTOR_WRITER", "TEST_MODEL", "VERCEL_ENV", "BUILD_MODEL", "BRIEF_MODEL", "JUDGE_MODEL", "COMPLEX_BUILD_MODEL"] as const;
 const saved = Object.fromEntries(NAMES.map((n) => [n, process.env[n]]));
 
 afterEach(() => {
@@ -51,4 +51,44 @@ test("the reminders-off setting names every reminder, scope too, and turns each 
   for (const id of ["scope", ...REMINDER_IDS]) {
     assert.deepEqual(value[`plugin:tbh-reminders:reminder:${id}-reminder`], { enabled: false });
   }
+});
+
+test("BUILDS_ON_CONTRIBUTOR moves builds onto Contributor on production, whatever the model settings name", () => {
+  set({ BUILDS_ON_CONTRIBUTOR: "1", VERCEL_ENV: "production", BUILD_MODEL: "muse-spark-1.3", COMPLEX_BUILD_MODEL: "muse-wonder-1.0" });
+  assert.equal(buildTestModel(), CONTRIBUTOR);
+  for (const m of [env.buildModel, env.complexBuildModel, env.briefModel, env.judgeModel]) assert.equal(m, CONTRIBUTOR);
+});
+
+test("BUILDS_ON_CONTRIBUTOR leaves fine-tuning's guard alone: testModel stays null on production", () => {
+  set({ BUILDS_ON_CONTRIBUTOR: "1", VERCEL_ENV: "production" });
+  assert.equal(testModel(), null);
+  assert.equal(contributorWriterOn(), false);
+});
+
+test("BUILDS_ON_CONTRIBUTOR turns the muse-app look on", () => {
+  set({ BUILDS_ON_CONTRIBUTOR: "1" });
+  assert.equal(env.museAppLook, true);
+});
+
+test("with BUILDS_ON_CONTRIBUTOR off, nothing moves and the guard holds", () => {
+  for (const off of [undefined, "", "0", "off"]) {
+    set({ VERCEL_ENV: "production", TEST_MODEL: CONTRIBUTOR, ...(off === undefined ? {} : { BUILDS_ON_CONTRIBUTOR: off }) });
+    assert.equal(contributorBuildsOn(), false);
+    assert.equal(buildTestModel(), null);
+    assert.equal(env.buildModel, "muse-wonder-1.0");
+    assert.equal(env.museAppLook, false);
+  }
+  set({ VERCEL_ENV: "preview", TEST_MODEL: CONTRIBUTOR });
+  assert.equal(buildTestModel(), CONTRIBUTOR);
+});
+
+test("with BUILDS_ON_CONTRIBUTOR on production, the gateway's swap and Muse Code sessions get Contributor", async () => {
+  const { gatewayDeps } = await import("@/lib/gateway/deps");
+  const { museCodeDeps } = await import("@/lib/caps/code/musecode/deps");
+  set({ VERCEL_ENV: "production" });
+  assert.equal(gatewayDeps(() => {}).buildTestModel, null);
+  assert.equal(museCodeDeps().testModel(), null);
+  set({ BUILDS_ON_CONTRIBUTOR: "1", VERCEL_ENV: "production" });
+  assert.equal(gatewayDeps(() => {}).buildTestModel, CONTRIBUTOR);
+  assert.equal(museCodeDeps().testModel(), CONTRIBUTOR);
 });

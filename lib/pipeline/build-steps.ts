@@ -20,6 +20,9 @@ import { addBuildCost, emit, setBuildStatus } from "@/lib/events";
 import { buildTokenBudgetFor } from "@/lib/gateway/policy";
 import { mintToken, revokeLiveTokensExcept, revokeTokens } from "@/lib/gateway/tokens";
 import { judgeBuild, pickScreenshots } from "@/lib/judge";
+import { APP_NAV_COMPONENT, FULL_PRODUCT_SKILL } from "@/lib/full/prompts";
+import { briefRequirements, buildableRequirements, fullMilestones, requirementsFile, unmetLines } from "@/lib/full/requirements";
+import { scopeLine } from "@/lib/full/scope";
 import { nativeExtraFiles } from "@/lib/native/template-files";
 import { localGadgetFiles } from "@/lib/sandbox/local-gadget";
 import { recipeExtraFiles, recipeNotes } from "@/lib/recipes/registry";
@@ -37,7 +40,10 @@ import {
   type JudgeCall,
 } from "@/lib/pipeline/logic";
 import { modelLabel } from "@/lib/format";
-import { roundPlanFor, stepRetries, type RoundPlan } from "@/lib/pipeline/steps";
+import { builderTier, tierMayUseBuilderCaps } from "@/lib/trust/tiers";
+import { chainRoundPlan, fullRoundPlan, roundPlanFor, stepRetries, type RoundPlan } from "@/lib/pipeline/steps";
+import { CHAIN_FROM_REQUIREMENTS, CHAIN_STATE_FILE, chainSessionBudgetUsd, chainSessionPreface, chainStateFile, type ChainLimits } from "@/lib/chain/plan";
+import { isPowerChild } from "@/lib/caps/platform/child";
 // ---------- Wave 3, unit 2 (docs/CAPABILITIES.md, section 8) ----------
 import { briefCaps } from "@/lib/caps/brief-fields";
 import { capsBuildEnded } from "@/lib/caps/cleanup";
@@ -365,20 +371,59 @@ function summarize(brief: Brief): BriefSummary {
  * a build runs on today's caps. Refinements scale too but never have milestones.
  */
 function enginePlan(brief: Brief, kind: "build" | "refine"): RoundPlan | undefined {
+  if (kind === "build" && fullBuildOf(brief)) {
+    const milestones = fullMilestones(brief).map((m) => ({ title: m.title }));
+    if (chainedBuildOf(brief)) return chainRoundPlan({ requirements: buildableRequirements(brief).length }, milestones, chainLimits());
+    return fullRoundPlan({ requirements: buildableRequirements(brief).length }, milestones, { wallMinutes: env.fullBuildWallMinutes });
+  }
   const milestones = kind === "build" && env.engineMilestones ? briefMilestones(brief).map((m) => ({ title: m.title })) : [];
   if (!env.engineRoundScaling && !milestones.length) return undefined;
   const size = { complexity: brief.complexity, caps: briefCaps(brief).length, screens: brief.screens.length, actions: brief.actions.length };
   return roundPlanFor(size, milestones, { scaling: env.engineRoundScaling, maxMinutes: env.engineRoundMaxMinutes });
 }
 
+/** CHAINED_BUILDS: this brief runs across sessions. Set at the brief step, and never with the flag off. */
+function chainedBuildOf(brief: Brief | null | undefined): boolean {
+  return env.chainedBuilds && brief?.chained === true && fullBuildOf(brief);
+}
+
+function chainLimits(): ChainLimits {
+  return {
+    sessionMs: env.chainedSessionMinutes * 60_000,
+    sessionUsd: env.chainedSessionUsd,
+    totalUsd: env.chainedTotalUsd,
+    maxSessions: env.chainedMaxSessions,
+    maxMs: env.chainedMaxHours * 3_600_000,
+  };
+}
+
+/**
+ * Whether a new brief gets a chain: too many requirements for one full build, a signed-in builder (never the shared
+ * guest), and not a product's own child build (lib/caps/platform), which is counted at one ordinary build's cost.
+ */
+async function chainFor(build: { userId: string; rebuildOf: string | null }, brief: Brief): Promise<boolean> {
+  if (!env.chainedBuilds || isPowerChild(build.rebuildOf) || buildableRequirements(brief).length <= CHAIN_FROM_REQUIREMENTS) return false;
+  const [row] = await db().select({ email: schema.users.email, isAdmin: schema.users.isAdmin, bannedAt: schema.users.bannedAt }).from(schema.users).where(eq(schema.users.id, build.userId)).limit(1);
+  return Boolean(row) && tierMayUseBuilderCaps(builderTier({ ...row!, isAdmin: row!.isAdmin && env.adminEmails.includes(row!.email) }));
+}
+
+/** FULL_BUILDS: this brief builds from its requirements. Never with the flag off, whatever a stored brief holds. */
+function fullBuildOf(brief: Brief | null | undefined): boolean {
+  return env.fullBuilds && buildableRequirements(brief).length > 0;
+}
+
 /** builds.round_plan for a plan: the first round's minutes and each milestone, planned. */
 function planRecord(plan: RoundPlan): RoundPlanRecord {
-  return { capMinutes: Math.round(plan.buildMs / 60_000), milestones: plan.milestones.map((m) => ({ title: m.title, state: "planned" })) };
+  return {
+    capMinutes: Math.round(plan.buildMs / 60_000),
+    milestones: plan.milestones.map((m) => ({ title: m.title, state: "planned" })),
+    ...(plan.chain ? { chain: { maxHours: Math.round(plan.chain.maxMs / 3_600_000), session: 1 } } : {}),
+  };
 }
 
 /** brief.md says to verify at most twice a round for big builds: caps, milestones, or either round flag on. */
 function verifyBudgetFor(brief: Brief): boolean {
-  return briefCaps(brief).length > 0 || (env.engineMilestones && briefMilestones(brief).length > 0) || env.engineRoundScaling || env.engineCheckOnTimeout;
+  return briefCaps(brief).length > 0 || (env.engineMilestones && briefMilestones(brief).length > 0) || env.engineRoundScaling || env.engineCheckOnTimeout || fullBuildOf(brief);
 }
 
 /**
@@ -408,8 +453,10 @@ export async function briefStep(buildId: string): Promise<BriefSummary> {
   if (build.brief) return summarize(build.brief);
   const inspiration = await loadInspiration(build.inspirationId);
   // Wave 3, unit 1: who is building (TRUST_SIGNED_IN_CAPS). Undefined, and nothing read, with the flag off.
-  const builder = await briefTierFor(build.userId);
-  const result = await writeBrief({
+  const tier = await briefTierFor(build.userId);
+  // A product's child build never gets platform powers, so powers can't start products that start products.
+  const builder = tier && isPowerChild(build.rebuildOf) ? { ...tier, caps: tier.caps.filter((c) => c !== "platform") } : tier;
+  const written = await writeBrief({
     note: inspiration.note,
     references: inspiration.references,
     rebuildOf: rebuildTargetFor(build.rebuildOf),
@@ -420,7 +467,8 @@ export async function briefStep(buildId: string): Promise<BriefSummary> {
     if (err instanceof StructuredOutputError) await chargeBrief(buildId, err.usage);
     throw err;
   });
-  await chargeBrief(buildId, result.usage);
+  await chargeBrief(buildId, written.usage);
+  const result = (await chainFor(build, written.brief)) ? { ...written, brief: { ...written.brief, chained: true } } : written;
   const summary = summarize(result.brief);
   await db()
     .update(schema.builds)
@@ -430,6 +478,11 @@ export async function briefStep(buildId: string): Promise<BriefSummary> {
     await emit(buildId, { type: "log", text: `Voice memo ${t.index + 1}: ${t.text}` });
   }
   await emit(buildId, { type: "brief", brief: result.brief });
+  if (env.fullBuilds && result.brief.scopeCheck) {
+    if (result.scopeFailure) console.warn(`[scope check] build ${buildId}: ${result.scopeFailure}`);
+    await emit(buildId, { type: "log", text: scopeLine(result.brief.scopeCheck) });
+    for (const r of briefRequirements(result.brief).filter((x) => !x.canDo)) await emit(buildId, { type: "log", text: `This part can't be done: ${r.text}. ${r.cantDoWhy ?? ""}`.trim() });
+  }
   return summary;
 }
 briefStep.maxRetries = stepRetries("brief");
@@ -542,9 +595,19 @@ export interface SandboxRef {
   images: string[];
 }
 
+/** FULL_BUILDS: the skill, the nav part and verify's list, added here so none of them waits on a new builder snapshot. */
+function fullExtraFiles(brief: Brief | null): Array<{ path: string; content: string }> {
+  if (!brief || !fullBuildOf(brief)) return [];
+  return [
+    { path: ".agents/skills/full-product/SKILL.md", content: FULL_PRODUCT_SKILL },
+    { path: "components/AppNav.tsx", content: APP_NAV_COMPONENT },
+    { path: "musemuse.requirements.json", content: requirementsFile(brief, fullMilestones(brief).length > 1 ? 1 : undefined) },
+  ];
+}
+
 /** The files this brief's targets add, as a field that isn't there at all for a web-only brief. */
 function extraFilesFor(brief: Brief | null): { extraFiles?: Array<{ path: string; content: string }> } {
-  const extraFiles = [...nativeExtraFiles(brief), ...recipeExtraFiles(brief), ...localGadgetFiles(brief)];
+  const extraFiles = [...nativeExtraFiles(brief), ...recipeExtraFiles(brief), ...localGadgetFiles(brief), ...fullExtraFiles(brief)];
   return extraFiles.length ? { extraFiles } : {};
 }
 
@@ -583,6 +646,7 @@ export async function provisionStep(input: {
       ...(build.roundPlan?.milestones?.length ? { milestones: briefMilestones(b) } : {}),
       ...(trust ? { trust: true } : {}),
       recipes: recipeNotes(b),
+      ...(fullBuildOf(b) ? { fullBuild: true } : {}),
       ...look,
     });
   const promptMarkdown = promptFor(brief);
@@ -594,7 +658,7 @@ export async function provisionStep(input: {
     productId: input.productId,
     scope: "build",
     allowedModels,
-    dailyBudgetUsd: buildTokenBudgetFor(),
+    dailyBudgetUsd: chainedBuildOf(brief) ? chainSessionBudgetUsd(chainLimits(), build.costUsd) : buildTokenBudgetFor(),
     ttlHours: BUILD_TOKEN_TTL_HOURS,
     ...(caps ? { buildId: input.buildId } : {}),
   });
@@ -712,7 +776,7 @@ export async function startMuseStep(input: {
     round: input.round,
     maxModelSteps: MAX_MODEL_STEPS,
     engine,
-    goal: build?.brief ? goalObjective(build.brief) : null,
+    goal: build?.brief ? goalObjective(build.brief, fullBuildOf(build.brief) ? { fullBuild: true } : {}) : null,
     ...(buildId ? { buildId } : {}),
     ...(input.capMs ? { capMs: input.capMs } : {}),
   });
@@ -895,7 +959,7 @@ export async function collectVerifyStep(input: {
   outputTail: string;
 }): Promise<VerifyResult> {
   "use step";
-  const { summary, screenshots } = await sandbox.collectVerifyResult(input);
+  const { summary, screenshots } = await sandbox.collectVerifyResult({ ...input, ...(env.fullBuilds ? { maxScreenshots: 24 } : {}) });
   await emit(input.buildId, { type: "verify", round: input.round, summary, screenshots });
   // A product with platform services: each fixed check as its own line in the build room (docs/CAPABILITIES.md, 2.8).
   for (const c of summary.caps ?? []) {
@@ -960,7 +1024,10 @@ export async function judgeStep(input: {
   // VERIFY_AGENTS: code's results come first on an agent product, in the same channel. The judge runs before Live and Prove it after, so these are verify's.
   const agentProof = env.verifyAgents && briefTargets(brief).includes("agent") ? verifyProofText(await verifySummaryFor(input.buildId, input.round)) : null;
   const capsProof = agentProof ? [agentProof, proofBefore].filter(Boolean).join("\n") : proofBefore;
+  // FULL_BUILDS: every requirement is judged, with what its own test did. Null means no test results reached here.
+  const requirementTests = fullBuildOf(brief) ? ((await verifySummaryFor(input.buildId, input.round))?.requirements ?? null) : undefined;
   const result = await judgeBuild({
+    ...(requirementTests !== undefined ? { requirementTests } : {}),
     brief,
     references: await judgeReferences(build, input.productId),
     screenshots: input.screenshots,
@@ -972,7 +1039,8 @@ export async function judgeStep(input: {
   });
   await charge(ctx, result.usage, what);
   await emit(input.buildId, { type: "judge", round: input.round, verdict: result.verdict });
-  return { pass: result.verdict.pass, blocking: result.verdict.blocking };
+  const unmet = unmetLines(result.verdict.requirements ?? []);
+  return { pass: result.verdict.pass, blocking: result.verdict.blocking, ...(unmet.length ? { unmet } : {}) };
 }
 judgeStep.maxRetries = 1;
 
@@ -1036,10 +1104,15 @@ export async function writeFixPromptStep(input: {
       })
     : [];
   const promptFile = `fix-${input.fix}.md`;
+  // FULL_BUILDS: from the first fix round on, verify holds every requirement, including any from a milestone that was skipped.
+  if (env.fullBuilds) {
+    const fixing = await loadBuild(input.buildId);
+    if (fixing.kind === "build" && fullBuildOf(fixing.brief)) await sandbox.writeProductFile(input.sandboxName, "musemuse.requirements.json", requirementsFile(fixing.brief!));
+  }
   await sandbox.writeProductFile(
     input.sandboxName,
     promptFile,
-    renderFixPrompt({ verify, judge, round: input.fix, screenshots: images, ...sessionNotes(), ...lookNote() }),
+    renderFixPrompt({ verify, judge, round: input.fix, screenshots: images, ...sessionNotes(), ...lookNote(), ...(judge?.requirements?.length ? { fullBuild: true } : {}) }),
   );
   return { promptFile, images };
 }
@@ -1058,14 +1131,21 @@ export async function writeMilestonePromptStep(input: {
   index: number;
   of: number;
   verifiedRound: number;
+  /** CHAINED_BUILDS: this is the first prompt of this session. */
+  newSession?: number;
 }): Promise<{ promptFile: string }> {
   "use step";
   const build = await loadBuild(input.buildId);
-  const milestone = briefMilestones(requireBrief(build))[input.index - 1];
+  const brief = requireBrief(build);
+  const full = fullBuildOf(brief);
+  const milestone = (full ? fullMilestones(brief) : briefMilestones(brief))[input.index - 1];
   if (!milestone) throw new FatalError(`This build's brief has no milestone ${input.index}.`);
   const verify = await verifySummaryFor(input.buildId, input.verifiedRound);
   const promptFile = `milestone-${input.index}.md`;
-  await sandbox.writeProductFile(input.sandboxName, promptFile, renderMilestonePrompt({ index: input.index, of: input.of, milestone, verify }));
+  // FULL_BUILDS: verify now holds the product to this milestone's requirements as well as the earlier ones.
+  if (full) await sandbox.writeProductFile(input.sandboxName, "musemuse.requirements.json", requirementsFile(brief, input.index));
+  const prompt = renderMilestonePrompt({ index: input.index, of: input.of, milestone, verify });
+  await sandbox.writeProductFile(input.sandboxName, promptFile, input.newSession ? `${chainSessionPreface(input.newSession)}\n${prompt}` : prompt);
   return { promptFile };
 }
 writeMilestonePromptStep.maxRetries = 2;
@@ -1084,6 +1164,66 @@ export async function milestoneStep(
   await db().update(schema.builds).set({ roundPlan: { ...plan, milestones } }).where(eq(schema.builds.id, buildId));
 }
 milestoneStep.maxRetries = 2;
+
+// ---------- Chained builds (docs/CHAINED_BUILDS.md) ----------
+
+/** What the workflow reads before each round: the facts chainNext decides from. Costs one read. */
+export async function chainReadStep(buildId: string): Promise<{ costUsd: number; stopRequested: boolean }> {
+  "use step";
+  const build = await loadBuild(buildId);
+  return { costUsd: build.costUsd, stopRequested: build.stopRequested };
+}
+chainReadStep.maxRetries = 2;
+
+/** Ends a session: writes the state file and commits everything, so the next session starts from the repo alone. */
+export async function chainSaveStep(input: { buildId: string; sandboxName: string; session: number }): Promise<void> {
+  "use step";
+  const build = await loadBuild(input.buildId);
+  const content = chainStateFile({ session: input.session, milestones: build.roundPlan?.milestones ?? [], costUsd: build.costUsd, totalUsd: env.chainedTotalUsd });
+  await sandbox.saveChainState(input.sandboxName, CHAIN_STATE_FILE, content, `Chain session ${input.session} saved`);
+}
+chainSaveStep.maxRetries = 2;
+
+/**
+ * Starts the next session on the same sandbox and repo: the old build token goes, the sandbox stops and comes back with
+ * a whole session's time, and a new token holds only what this session and the total have left. A new Muse Code session
+ * id, so the agent starts clean and reads the repo instead of carrying hours of context.
+ */
+export async function chainReopenStep(input: { buildId: string; productId: string; sandboxName: string; session: number }): Promise<{ sessionId: string }> {
+  "use step";
+  const build = await loadBuild(input.buildId);
+  const brief = requireBrief(build);
+  const caps = capsFileFor(brief);
+  await revokeTokens(input.productId, "build");
+  const { token } = await mintToken({
+    productId: input.productId,
+    scope: "build",
+    allowedModels: allowedModelsFor(brief),
+    dailyBudgetUsd: chainSessionBudgetUsd(chainLimits(), build.costUsd),
+    ttlHours: BUILD_TOKEN_TTL_HOURS,
+    ...(caps ? { buildId: input.buildId } : {}),
+  });
+  await sandbox.hibernate(input.sandboxName);
+  await sandbox.reopenSandbox({
+    sandboxName: input.sandboxName,
+    productId: input.productId,
+    buildToken: token,
+    gatewayUrl: env.gatewayUrl,
+    newReferences: [],
+    ...extraFilesFor(brief),
+    ...(caps ? { capHosts: capBuildHosts(caps.caps), capEnv: capBuildEnv(brief), caps: true } : {}),
+    ...(!caps && usesSharedGlimmer(brief) ? { capEnv: capBuildEnv(brief) } : {}),
+  });
+  const sessionId = newSessionId();
+  const plan = build.roundPlan;
+  await db()
+    .update(schema.builds)
+    .set({ museSessionId: sessionId, ...(plan?.chain ? { roundPlan: { ...plan, chain: { ...plan.chain, session: input.session } } } : {}) })
+    .where(eq(schema.builds.id, input.buildId));
+  await emit(input.buildId, { type: "log", text: `Session ${input.session} started. The earlier work is saved in the repo, and $${build.costUsd.toFixed(2)} of the $${env.chainedTotalUsd} total is spent.` });
+  return { sessionId };
+}
+chainReopenStep.maxRetries = stepRetries("provision");
 
 /**
  * The live check (ENGINE_LIVE_SMOKE): loads the live link, its action routes and, for a product with platform

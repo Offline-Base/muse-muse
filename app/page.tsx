@@ -4,7 +4,7 @@ import { Composer, type Example } from "@/components/composer/Composer";
 import type { StarterTab } from "@/components/composer/Starters";
 import { SetupPanel } from "@/components/composer/SetupPanel";
 import { Icon } from "@/components/icons";
-import { env } from "@/lib/env";
+import { contributorBuildsOn, env } from "@/lib/env";
 import { currentUser } from "@/lib/queries";
 
 /**
@@ -106,7 +106,7 @@ export default async function Home() {
         <div className="play-intro">
           <h1>What should Muse make?</h1>
         </div>
-        <Composer mode="new" signedIn={Boolean(user)} starters={STARTERS} layout="playground" targetOptions={env.enabledTargets} />
+        <Composer mode="new" signedIn={Boolean(user)} starters={STARTERS} layout="playground" targetOptions={env.enabledTargets} contributorNotice={contributorBuildsOn()} />
       </div>
       <SetupPanel
         facts={{ buildModel: env.buildModel, maxFixRounds: env.maxFixRounds, publishOff: env.publishOffReason }}

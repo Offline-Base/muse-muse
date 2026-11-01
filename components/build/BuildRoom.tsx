@@ -13,6 +13,8 @@ import { BuildDetails } from "@/components/build/BuildDetails";
 import { OwnModelRow, type OwnModelOffer } from "@/components/build/OwnModelRow";
 import { deriveRoom, railStates, refineSpot } from "@/components/build/derive";
 import { PlanCard, planCardState, preloadPlanArt } from "@/components/build/PlanCard";
+import { RequirementsChecklist } from "@/components/build/RequirementsChecklist";
+import { latestChecklist } from "@/lib/full/requirements";
 import { QuestionCard, SteerNote } from "@/components/build/session";
 import { appsLine, nativeRows } from "@/components/build/apps";
 import { proveRows } from "@/components/build/prove-rows";
@@ -42,6 +44,8 @@ export interface BuildRoomProps {
   focusRefine: boolean;
   rebuild: RebuildRef | null;
   maxFixRounds: number;
+  /** BUILDS_ON_CONTRIBUTOR: the boxes in this room say what their text and files go to. */
+  contributorNotice?: boolean;
   /** A native run can still add to this build's log (lib/native/active.ts), so a finished build's stream stays open. */
   nativeActive?: boolean;
   /** TUNE_FROM_BUILDS: the "Its own model" row's offer (components/build/OwnModelRow.tsx), or null. */
@@ -439,6 +443,7 @@ export function BuildRoom(props: BuildRoomProps) {
           {plan ? (
             <li className="room-plan">
               <PlanCard brief={plan.brief} art={plan.art} running={!room.terminal} artUrl={room.planArtUrl} />
+              <RequirementsChecklist items={latestChecklist(plan.brief, room.segments.flatMap((s) => (s.type === "check" ? [{ judge: s.judge, tests: s.verify?.summary.requirements ?? null }] : [])))} />
             </li>
           ) : null}
 
@@ -516,7 +521,7 @@ export function BuildRoom(props: BuildRoomProps) {
 
         {steering ? (
           <div className="room-composer">
-            <SteerBox buildId={build.id} />
+            <SteerBox buildId={build.id} contributorNotice={props.contributorNotice} />
           </div>
         ) : refine.show ? (
           <div id="refine" className="room-composer">
@@ -526,6 +531,7 @@ export function BuildRoom(props: BuildRoomProps) {
               signedIn={props.signedIn}
               floating
               autoFocus={props.focusRefine}
+              contributorNotice={props.contributorNotice}
             />
             {props.editsByPass ? (
               <p className="muted small center">Guests share one account, so only this browser can change this product. Clearing its cookies ends that.</p>

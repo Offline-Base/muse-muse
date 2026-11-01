@@ -22,6 +22,7 @@ import { offeredRecipes, RECIPES } from "@/lib/train/recipes";
 import {
   activeJobCount,
   datasetProgress,
+  gpuBudgetFor,
   lastSweepOkAt,
   listAdapterOptions,
   listDatasets,
@@ -112,8 +113,8 @@ export default async function FineTuningPage({
   // Datasets, results and adapters load on their own, so a problem with them doesn't hide the jobs.
   const [result, datasetsResult, blocked, results, adapters] = await Promise.all([
     safeQuery(async () => {
-      const [rows, active, spentToday] = await Promise.all([listJobs(100), activeJobCount(), trainingSpendToday(now)]);
-      return { jobs: rows.map((r) => toJobView(r, now)), active, spentToday };
+      const [rows, active, spentToday, budget] = await Promise.all([listJobs(100), activeJobCount(), trainingSpendToday(now), gpuBudgetFor(user.id, now)]);
+      return { jobs: rows.map((r) => toJobView(r, now)), active, spentToday, budget };
     }),
     safeQuery(() => loadDatasets(now.getTime())),
     datasetBlock(),
@@ -174,6 +175,12 @@ export default async function FineTuningPage({
               </strong>{" "}
               {env.trainMaxActive === 1 ? "GPU" : "GPUs"} in use · <strong>{usd(result.data.spentToday)}</strong> of{" "}
               {usd(env.trainDailyUsd)} spent today
+            </p>
+            <p>
+              You have <strong>{usd(result.data.budget.userLeftUsd)}</strong> left of your{" "}
+              {usd(result.data.budget.userLimitUsd)} GPU limit. The platform has{" "}
+              <strong>{usd(result.data.budget.totalLeftUsd)}</strong> left of its{" "}
+              {usd(result.data.budget.totalLimitUsd)}. Jobs still running count at their full dollar limit.
             </p>
             <div className="train-totals-sub">
               <p className="muted small">
