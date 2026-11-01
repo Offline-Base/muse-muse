@@ -167,9 +167,17 @@ marker and throws on Vercel. Unit 3 replaces that with a check for every overlay
 
 1. **Brief time.**
    - `scripts/make-builder-snapshot.ts` records the cap overlays it installed as `capOverlays: string[]` in `BuilderInfo`
-     (`lib/sandbox/setup.ts`). It also prints `BUILDER_SNAPSHOT_CAPS=<comma list>` next to `BUILDER_SNAPSHOT_ID`.
-   - `env.snapshotCaps` is that list when `process.env.VERCEL` is set. Unset there means an empty list. Locally it is
-     `null`: the checkout's `template/caps` is used, as today.
+     (`lib/sandbox/setup.ts`).
+   - It also appends `{ createdAt, templateHash, capOverlays }` under the new id to a committed manifest,
+     `lib/sandbox/snapshots.json`. It keeps printing `BUILDER_SNAPSHOT_ID=...`, plus one line saying to commit the
+     manifest with the id change.
+   - No new env var (General, Oct 31). Vercel env writes are the owner's, and a second var that moves with every id would
+     drift. A new BUILDER_SNAPSHOT_ID needs a redeploy anyway, so the manifest ships in the same deploy. Snapshot ids aren't
+     credentials, so committing them is fine.
+   - `env.snapshotCaps`: when `process.env.VERCEL` is set, it is `snapshots[BUILDER_SNAPSHOT_ID]?.capOverlays`. An id
+     missing from the manifest, or no id, gives `[]` and one `console.warn` naming the id ("not in
+     lib/sandbox/snapshots.json, so no caps"). Locally it is `null`: the checkout's `template/caps` is used, as today.
+   - The manifest starts empty, and the Nov 2 snapshot is its first entry. Don't guess at older ids.
    - `env.enabledCaps` then also requires `core` and every overlay the cap can need to be listed. A cap can need its own
      id, or every pick in `CAP_OVERLAY_PICK` (games needs both games-phaser and games-babylon; list the picks as
      `CAP_OVERLAYS_ALL` in `lib/caps/overlays.ts`).
@@ -196,15 +204,19 @@ marker and throws on Vercel. Unit 3 replaces that with a check for every overlay
    - The stale verify check (`CAPS_VERIFY_MARKER`) works the same way.
 
 Tests:
-- With every flag off and `BUILDER_SNAPSHOT_CAPS` unset, the goldens are unchanged.
-- On `VERCEL=1`, a ready, flagged cap missing from the list is left out of `enabledCaps`, the schema and the catalog.
+- With every flag off, the goldens are unchanged, whatever the manifest holds.
+- On `VERCEL=1`, a ready, flagged cap missing from the snapshot's `capOverlays` is left out of `enabledCaps`, the schema
+  and the catalog.
+- An unknown id gives `[]` and the one warning.
+- Every snapshot id named in `.env.example` or the docs, if any, is in the manifest.
 - A stored brief with that cap's block builds without it and logs the line.
 - A fake sandbox missing one overlay's marker drops that cap on Vercel and installs it locally.
 - `core` missing drops every cap.
 
-Owns: `lib/caps/ready.ts`. It also makes marked edits to unit 2's `env.enabledCaps`, `applyCaps` and `paths.ts`, one
-field in `BuilderInfo`, and one printed line in the snapshot script. General owns the snapshot itself and has agreed to
-these.
+Owns: `lib/caps/ready.ts` and `lib/sandbox/snapshots.json`. It also makes marked edits to unit 2's `env.enabledCaps`,
+`applyCaps` and `paths.ts`, adds one field to `BuilderInfo`, and adds the manifest write and one printed line to the
+snapshot script. The README's snapshot steps say to commit the manifest. General owns the snapshot itself and has agreed
+to these.
 
 ### 2.5 Template overlays (unit 2 writes the plumbing)
 
