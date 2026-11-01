@@ -1426,6 +1426,12 @@ run on it. A deploy would run migrations 0018 to 0027 on production; none has a 
 unpushed knowledge run commits are left out: that branch is 553 behind origin/main. The push to main was denied by the
 permission check as a production deploy, so it waits for the owner.
 
+### 09:42 PR #4 open for main, not merged
+
+After the push to main was denied, the owner asked for a PR with all the latest. tuned-model-options went up at e0b59d8 (no
+deploy: main-only rule) and Offline-Base/muse-muse#4 is open against main. Full-range key scan: two matches, both made-up
+test values. Every CAP_READY line is false at this head. Merging deploys it and runs migrations 0018 to 0027.
+
 ## Gaps
 
 What this record doesn't confirm:
