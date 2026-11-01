@@ -9,7 +9,7 @@ import { isToolId, PERSONAL_TOOL_IDS, toolLabel } from "@/lib/tools/ids";
  * What every product comes with, made from musemuse.json. These are not targets: a person who asks for a Claude or
  * ChatGPT plugin gets a normal product with these.
  */
-export const PRODUCT_OUTPUTS = ["mcp", "cli", "skill", "claude_plugin", "chatgpt"] as const;
+export const PRODUCT_OUTPUTS = ["mcp", "cli", "skill", "claude_plugin", "chatgpt", "gadget"] as const;
 export type ProductOutput = (typeof PRODUCT_OUTPUTS)[number];
 
 /**

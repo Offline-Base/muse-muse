@@ -7,13 +7,12 @@ export interface SetupFacts {
   publishOff: string | null;
 }
 
-/**
- * The Make page's build setup, folded under the examples. The platform sets these for every build, so they read as
- * plain facts, with nothing that looks like it could be changed (docs/BRAND.md, "Pitfalls").
- */
-export function SetupPanel({ facts }: { facts: SetupFacts }) {
+/** One fact: its label, its value, and an optional muted line under the value. */
+export type SetupRow = [label: string, value: string, hint?: string];
+
+function buildRows(facts: SetupFacts): SetupRow[] {
   const publish = !facts.publishOff;
-  const rows: Array<[string, string, string?]> = [
+  return [
     ["Model", facts.buildModel],
     ["Builder", "Muse Code"],
     ["Fix rounds", `Up to ${facts.maxFixRounds}`],
@@ -22,10 +21,29 @@ export function SetupPanel({ facts }: { facts: SetupFacts }) {
     ["Publish", publish ? "On" : "Off", facts.publishOff ? `Off here: ${facts.publishOff}` : "Ships to its own link"],
     ["Muse app connector", publish ? "On" : "Off", "Serves the product's actions over MCP"],
   ];
+}
+
+/**
+ * The Make page's build setup, folded under the examples. The platform sets these for every build, so they read as
+ * plain facts, with nothing that looks like it could be changed (docs/BRAND.md, "Pitfalls"). Another page can fold its
+ * own facts the same way with `rows`, a `title` and a `note` (the new fine-tune composer's "Training setup").
+ */
+export function SetupPanel({
+  facts,
+  rows: given,
+  title = "Build setup",
+  note = "Set by the platform for every build.",
+}: {
+  facts?: SetupFacts;
+  rows?: SetupRow[];
+  title?: string;
+  note?: string;
+}) {
+  const rows = given ?? (facts ? buildRows(facts) : []);
   return (
     <details className="setup">
       <summary className="setup-toggle">
-        <span>Build setup</span>
+        <span>{title}</span>
         <Icon name="chevronDown" size={16} className="setup-chevron" />
       </summary>
       <dl className="setup-list">
@@ -39,7 +57,7 @@ export function SetupPanel({ facts }: { facts: SetupFacts }) {
           </div>
         ))}
       </dl>
-      <p className="panel-note">Set by the platform for every build.</p>
+      <p className="panel-note">{note}</p>
     </details>
   );
 }

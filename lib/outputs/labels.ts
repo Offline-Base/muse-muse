@@ -10,6 +10,7 @@ export const OUTPUT_LABEL: Record<ProductOutput, string> = {
   skill: "Skill file",
   claude_plugin: "Claude plugin",
   chatgpt: "ChatGPT",
+  gadget: "Muse gadget commands",
 };
 
 /** A stage still "running" with no news for this long is gone: its workflow died or its events stopped. */

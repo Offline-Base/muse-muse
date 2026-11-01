@@ -21,8 +21,14 @@ describe("GetItPanel", () => {
   it("has a slot for every target, every product output, every runtime output (wave 3, unit 10) and the extension (unit 14), and no others", () => {
     assert.deepEqual([...GET_IT_SLOTS], [...TARGETS, ...PRODUCT_OUTPUTS, ...RUNTIME_OUTPUTS, ...CAP_OUTPUTS]);
     assert.deepEqual([...CAP_OUTPUTS], ["extension"]);
-    assert.deepEqual([...PRODUCT_OUTPUTS], ["mcp", "cli", "skill", "claude_plugin", "chatgpt"]);
+    assert.deepEqual([...PRODUCT_OUTPUTS], ["mcp", "cli", "skill", "claude_plugin", "chatgpt", "gadget"]);
     assert.deepEqual([...RUNTIME_OUTPUTS], ["vscode", "github_action", "self_host"]);
+  });
+
+  it("names the gadget tab Muse gadget", () => {
+    const html = render({ mcp: "MCP steps", gadget: "Gadget steps" });
+    const tabs = [...html.matchAll(/role="tab"[^>]*>([^<]+)</g)].map((m) => m[1]);
+    assert.deepEqual(tabs, ["MCP", "Muse gadget"]);
   });
 
   it("renders nothing at all when no slot has content", () => {

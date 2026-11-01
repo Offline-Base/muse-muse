@@ -23,6 +23,7 @@ import { z } from "zod";
 import { textPart } from "@/lib/brief/media";
 import { cleanStrings, noEmDashes } from "@/lib/brief/normalize";
 import { respondStructured, StructuredOutputError, type StructuredResult } from "@/lib/brief/structured";
+import { testModel } from "@/lib/env";
 import { metaPlatform } from "@/lib/meta/platform";
 import { modelLabel } from "@/lib/format";
 import { fromResponsesUsage } from "@/lib/meta/pricing";
@@ -39,6 +40,17 @@ import { recordUsage } from "@/lib/usage";
  */
 export const DATASET_MODEL = "muse-wonder-1.0";
 const WRITER = modelLabel(DATASET_MODEL);
+
+/**
+ * The model that writes a dataset, from its writer_model: TEST_MODEL (Spark 1.3 Contributor, never on production) when
+ * the dataset was saved with it, for made-up test runs from the new composer (lib/train/tune/start.ts), else always
+ * DATASET_MODEL. Checked again in every step, so a dataset saved with TEST_MODEL on a preview is written by Muse Wonder
+ * wherever TEST_MODEL isn't on.
+ */
+export function writerFor(writerModel: string | null | undefined): string {
+  const test = testModel();
+  return test && writerModel === test ? test : DATASET_MODEL;
+}
 
 /** Prompts asked for in one structured call. */
 export const PROMPT_BATCH = 25;
@@ -161,7 +173,7 @@ export async function makeDataset(input: MakeDatasetInput): Promise<MakeDatasetR
       const avoid = avoidList(byBatch, batch, batches);
       let written: { prompts: string[] };
       try {
-        written = await promptBatchStep({ datasetId, task: head.task, want, batch, batches, avoid });
+        written = await promptBatchStep({ datasetId, task: head.task, want, batch, batches, avoid, model: head.model });
       } catch (err) {
         // A late batch that failed leaves enough prompts to go on with. The spend cap stops answers too, so it ends here.
         if (prompts.length < DATASET_MIN_EXAMPLES || errorReason(err) === PAUSED) throw err;
@@ -183,7 +195,7 @@ export async function makeDataset(input: MakeDatasetInput): Promise<MakeDatasetR
     for (let i = 0; i < prompts.length; ) {
       const chunk = prompts.slice(i, i + ANSWER_CHUNK);
       try {
-        const answered = await answerChunkStep({ datasetId, system, offset: saved, prompts: chunk });
+        const answered = await answerChunkStep({ datasetId, system, offset: saved, prompts: chunk, model: head.model });
         saved += answered.saved;
         // Prompts a step had no time to start go to the next one. It always starts some, so this ends.
         i += Math.max(1, Math.min(chunk.length, answered.done));
@@ -335,11 +347,11 @@ function promptRequest(input: PromptBatchInput): string {
  * One prompt answered with the task's system prompt, or a null answer when the call failed, ran out of tokens, came
  * back empty or ran past ANSWER_MAX. The usage of a call that answered is kept either way.
  */
-async function answerOne(system: string, prompt: string): Promise<{ answer: string | null; usage: ModelUsage[] }> {
+async function answerOne(system: string, prompt: string, model: string = DATASET_MODEL): Promise<{ answer: string | null; usage: ModelUsage[] }> {
   try {
     const res = await metaPlatform().responses.create(
       {
-        model: DATASET_MODEL,
+        model,
         instructions: system,
         input: prompt,
         reasoning: { effort: "low" },
@@ -347,7 +359,7 @@ async function answerOne(system: string, prompt: string): Promise<{ answer: stri
       },
       { timeout: ANSWER_TIMEOUT_MS, maxRetries: ANSWER_MAX_RETRIES },
     );
-    const usage = [fromResponsesUsage(DATASET_MODEL, res.usage)];
+    const usage = [fromResponsesUsage(model, res.usage)];
     const text = noEmDashes((res.output_text ?? "").trim()).trim();
     const ok = res.status !== "incomplete" && text.length > 0 && text.length <= ANSWER_MAX;
     return { answer: ok ? text : null, usage };
@@ -360,13 +372,13 @@ async function answerOne(system: string, prompt: string): Promise<{ answer: stri
 // ---------------------------------------------------------------------------------------------------------------
 // Steps
 
-/** The dataset's task and size, or null when it is gone. */
+/** The dataset's task and size, and the model that writes it (writerFor), or null when it is gone. */
 export async function loadDatasetStep(
   datasetId: string,
-): Promise<{ status: DatasetStatus; task: string; requested: number } | null> {
+): Promise<{ status: DatasetStatus; task: string; requested: number; model?: string } | null> {
   "use step";
   const row = await fromDb(() => getDataset(datasetId));
-  return row ? { status: row.status, task: row.task, requested: row.requested } : null;
+  return row ? { status: row.status, task: row.task, requested: row.requested, model: writerFor(row.writerModel) } : null;
 }
 
 export interface PromptBatchInput {
@@ -380,6 +392,8 @@ export interface PromptBatchInput {
   batches?: number;
   /** The latest prompts already written, cut short, for the writer not to repeat. */
   avoid: string[];
+  /** The dataset's writer (loadDatasetStep). Checked again here with writerFor; absent means DATASET_MODEL. */
+  model?: string;
 }
 
 /**
@@ -393,7 +407,7 @@ export async function promptBatchStep(input: PromptBatchInput): Promise<{ prompt
   let result: StructuredResult<z.infer<typeof PromptBatchSchema>>;
   try {
     result = await respondStructured({
-      model: DATASET_MODEL,
+      model: writerFor(input.model),
       instructions: PROMPT_WRITER,
       content: [textPart(promptRequest(input))],
       schema: PromptBatchSchema,
@@ -425,8 +439,11 @@ export async function answerChunkStep(input: {
   system: string;
   offset: number;
   prompts: string[];
+  /** As in PromptBatchInput. */
+  model?: string;
 }): Promise<{ saved: number; done: number }> {
   "use step";
+  const model = writerFor(input.model);
   const stopBy = Date.now() + ANSWER_STEP_TIMING.startByMs;
   const progress = await fromDb(() => answerProgress(input.datasetId));
   if (!progress) throw new FatalError("The dataset is no longer generating.");
@@ -443,7 +460,7 @@ export async function answerChunkStep(input: {
     ANSWER_CONCURRENCY,
     async (prompt) => {
       if (staged.has(prompt)) return;
-      const r = await answerOne(input.system, prompt);
+      const r = await answerOne(input.system, prompt, model);
       if (r.usage.length) billed = true;
       await charge(input.datasetId, r.usage);
       if (!r.answer) return;

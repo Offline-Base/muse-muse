@@ -18,7 +18,7 @@ import {
 } from "@/lib/client/prepare";
 import { uploadInspo } from "@/lib/client/upload";
 import type { TargetId } from "@/lib/brief/schema";
-import type { Reference } from "@/lib/types";
+import type { Reference, ReferenceKind } from "@/lib/types";
 
 export interface Example {
   label: string;
@@ -53,6 +53,32 @@ interface Props {
   returnTo?: string;
   /** The targets a new build may add to web (env.enabledTargets). Empty or missing shows no pill and sends no targets. */
   targetOptions?: readonly TargetId[];
+  /**
+   * Takes the place of starting a build (the new fine-tune composer, components/train/compose/TrainComposer.tsx): called
+   * with the note and the files, and resolves to a sentence to show when it couldn't go on, or null. The draft is kept,
+   * so the caller clears it (writeComposerDraft) once it no longer needs it. Without it, "new" and "refine" are as they were.
+   */
+  send?: (input: { note: string; files: File[] }) => Promise<string | null>;
+  /** The file picker's accept list, in place of the inspo types. */
+  accept?: string;
+  /** Checks each picked, dropped or pasted file in place of the inspo checks: its chip's kind, or why it can't be added. */
+  acceptFile?: (file: File) => { kind: ReferenceKind } | { problem: string };
+  /** Files stay in the browser for `send` to read, and are never uploaded. */
+  keepFilesLocal?: boolean;
+  /** The box's words, for a composer that isn't the muse box. Each one left out keeps the muse box's. */
+  copy?: ComposerCopy;
+}
+
+/** The words a composer with `send` may change: its form's name, the field's label, "+", the hint and Send. */
+export interface ComposerCopy {
+  form?: string;
+  field?: string;
+  attach?: string;
+  attachTitle?: string;
+  hint?: string;
+  send?: string;
+  sending?: string;
+  empty?: string;
 }
 
 /** Audio originals above this are refused before decoding, so a huge file can't exhaust the tab's memory. */
@@ -110,6 +136,11 @@ export function Composer({
   draftId,
   returnTo,
   targetOptions,
+  send,
+  accept,
+  acceptFile,
+  keepFilesLocal,
+  copy,
 }: Props) {
   const router = useRouter();
   const inputId = useId();
@@ -205,16 +236,21 @@ export function Composer({
       const accepted: Attachment[] = [];
       let room = MAX_INSPO_FILES - items.length;
       for (const file of files) {
-        const kind = referenceKind(file);
+        const own = acceptFile?.(file);
+        if (own && "problem" in own) {
+          problems.push(own.problem);
+          continue;
+        }
+        const kind = own ? own.kind : referenceKind(file);
         if (!kind) {
           problems.push(unsupportedMessage(file.name || "That file"));
           continue;
         }
-        if (kind !== "audio" && kind !== "image" && file.size > MAX_INSPO_BYTES) {
+        if (!own && kind !== "audio" && kind !== "image" && file.size > MAX_INSPO_BYTES) {
           problems.push(`${file.name} is over 100 MB. Try a shorter clip or a smaller file.`);
           continue;
         }
-        if (kind === "audio" && file.size > MAX_AUDIO_SOURCE_BYTES) {
+        if (!own && kind === "audio" && file.size > MAX_AUDIO_SOURCE_BYTES) {
           problems.push(`${file.name} is too long to convert in the browser.`);
           continue;
         }
@@ -235,7 +271,7 @@ export function Composer({
           name: file.name || (kind === "image" ? "pasted-image.png" : "file"),
           size: file.size,
           thumb,
-          state: signedIn ? "preparing" : "waiting",
+          state: keepFilesLocal ? "done" : signedIn ? "preparing" : "waiting",
           progress: 0,
           reference: null,
           error: null,
@@ -244,9 +280,9 @@ export function Composer({
       setError(problems.length ? [...new Set(problems)].join(" ") : null);
       if (!accepted.length) return;
       setItems((list) => [...list, ...accepted]);
-      if (signedIn) accepted.forEach((a) => void process(a.id, a.file));
+      if (signedIn && !keepFilesLocal) accepted.forEach((a) => void process(a.id, a.file));
     },
-    [items.length, process, signedIn],
+    [items.length, process, signedIn, acceptFile, keepFilesLocal],
   );
 
   const remove = useCallback((id: string) => {
@@ -361,7 +397,7 @@ export function Composer({
     }
     if (inFlight.current) return;
     if (!hasContent) {
-      setError(isRefine ? "Say what to change first." : "Add a note or some inspo first.");
+      setError(copy?.empty ?? (isRefine ? "Say what to change first." : "Add a note or some inspo first."));
       return;
     }
     if (pending) {
@@ -375,6 +411,13 @@ export function Composer({
     inFlight.current = true;
     setSubmitting(true);
     setError(null);
+    if (send) {
+      const problem = await send({ note: note.trim(), files: items.map((it) => it.file) }).catch(() => "Something went wrong. Try again in a moment.");
+      inFlight.current = false;
+      setSubmitting(false);
+      if (problem) setError(problem);
+      return;
+    }
     const url = isRefine ? `/api/builds/${buildId}/messages` : "/api/inspirations";
     const body = isRefine
       ? { message: note.trim(), ...(references.length ? { references } : {}) }
@@ -415,12 +458,14 @@ export function Composer({
 
   const playground = layout === "playground";
   const attachOff = submitting || items.length >= MAX_INSPO_FILES;
+  // A composer with its own files has no camera: "+" opens the file picker.
+  const camera = canUseCamera && !acceptFile;
 
   return (
     <div className={`composer-wrap${floating ? " composer-floating" : ""}`}>
       <form
         className={`composer${dragging ? " is-dragging" : ""}`}
-        aria-label={isRefine ? "Ask for a change" : "Your muse"}
+        aria-label={copy?.form ?? (isRefine ? "Ask for a change" : "Your muse")}
         onSubmit={(e) => {
           e.preventDefault();
           void submit();
@@ -439,7 +484,7 @@ export function Composer({
           </ul>
         ) : null}
         <label htmlFor={inputId} className="sr-only">
-          {isRefine ? "What should change?" : "Describe it, or drop in your inspo"}
+          {copy?.field ?? (isRefine ? "What should change?" : "Describe it, or drop in your inspo")}
         </label>
         <textarea
           id={inputId}
@@ -469,7 +514,7 @@ export function Composer({
           }}
         />
         <div className="composer-row">
-          {canUseCamera ? (
+          {camera ? (
             <Menu
               label="Attach inspo files"
               icon="plus"
@@ -501,8 +546,8 @@ export function Composer({
             <button
               type="button"
               className="composer-tool"
-              aria-label="Attach inspo files"
-              title="Attach photos, video, a voice memo or a PDF"
+              aria-label={copy?.attach ?? "Attach inspo files"}
+              title={copy?.attachTitle ?? "Attach photos, video, a voice memo or a PDF"}
               onClick={() => fileInput.current?.click()}
               disabled={attachOff}
             >
@@ -513,7 +558,7 @@ export function Composer({
             ref={fileInput}
             type="file"
             multiple
-            accept={INSPO_ACCEPT}
+            accept={accept ?? INSPO_ACCEPT}
             className="sr-only"
             tabIndex={-1}
             aria-hidden
@@ -524,9 +569,10 @@ export function Composer({
           />
           <p id={hintId} className={playground && signedIn ? "sr-only" : "composer-hint"}>
             {signedIn
-              ? isRefine
-                ? "Muse Code picks up where it left off. Add inspo if it helps."
-                : "Photos, screenshots, sketches, a short video, a voice memo or a PDF."
+              ? (copy?.hint ??
+                (isRefine
+                  ? "Muse Code picks up where it left off. Add inspo if it helps."
+                  : "Photos, screenshots, sketches, a short video, a voice memo or a PDF."))
               : "Sign in to build. Your note is kept, files need adding again."}
           </p>
           <div className="composer-actions">
@@ -538,7 +584,7 @@ export function Composer({
             <button
               type="submit"
               className="send-btn"
-              aria-label={submitting ? "Starting" : isRefine ? "Send change" : "Make it"}
+              aria-label={submitting ? (copy?.sending ?? "Starting") : (copy?.send ?? (isRefine ? "Send change" : "Make it"))}
               disabled={!canSend && signedIn}
               aria-disabled={!canSend}
             >

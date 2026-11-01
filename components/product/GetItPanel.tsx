@@ -18,6 +18,7 @@ const LABELS: Record<GetItSlotId, string> = {
   skill: "Skill",
   claude_plugin: "Claude",
   chatgpt: "ChatGPT",
+  gadget: "Muse gadget",
   vscode: "VS Code",
   github_action: "GitHub Action",
   self_host: "Self-host",

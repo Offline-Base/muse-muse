@@ -2,6 +2,8 @@
 
 A first pass, Oct 30, 2026, on branch `gadget-option`: `docs` plus Hussam's `device-tools`, merged. Hussam owns the board side (`muse-device/server.py`, `lib/device/client.ts`). This file says what the platform side does now and what's left. See also [PLATFORM_PLAN.md](PLATFORM_PLAN.md), section 5.
 
+Not the same thing as a Muse gadget built with Meta's Muse Gadget SDK: the commands a shipped product offers for a person's own gadget of that kind are a product output, in [PRODUCT_OUTPUTS.md](PRODUCT_OUTPUTS.md).
+
 ## How it works
 
 A gadget is an option the brief writer picks the way it picks a model. It's off until `GADGETS_ENABLED=1`: with it off, the brief writer isn't told about gadgets and its schema can't pick one, so nothing changes for production builds.

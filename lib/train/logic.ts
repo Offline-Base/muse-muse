@@ -1151,6 +1151,9 @@ export const QUANT_KL_MAX: Readonly<Record<QuantLevel, number>> = { Q3_K_M: 0.08
  */
 export const QUANT_CHANNEL_MIN = 0.9;
 
+/** The param the platform writes on glimmer-serve and glimmer-quantize jobs: the adapter's trainChannel, 0 or 1. */
+export const TRAIN_CHANNEL_PARAM = "trainChannel";
+
 /** 1 when a glimmer-lora job trained with trainChannel 1 (its files open the final channel themselves), else 0. */
 export function trainChannelOf(params: Record<string, string | number> | null | undefined): 0 | 1 {
   return Number(params?.trainChannel) === 1 ? 1 : 0;
