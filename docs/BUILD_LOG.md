@@ -1689,3 +1689,14 @@ scripts/dev/tune-harness.ts, on a Lambda gpu_1x_a10 named prove-tune-1, us-east-
 - Decision: a scope check that can't run keeps the brief and says so in the build room, rather than stopping the build. The judge still holds the product to the requirements it has.
 - Tests: fakes only. Touched-code files 146 of 147 pass; the one is render.test, which needs the mocks flag. workflow.scenario 56 of 58, with the same 2 failures as tg-prove without this work, and the new full-plan scenario passes. lib/promote 81 of 82, the same failure as tg-prove. flags-off goldens unchanged, with one test's list of stored-only fields extended. build-steps.scenario can't load here or on tg-prove (`collectDeployFiles` export), so the new step code has not run in a test.
 - Not run: a real build, a real scope check or judge call, a sandbox, the browser view of the checklist, a real Playwright run of the requirements step. Spend $0.
+
+## Nov 1: first real full builds started on a Preview (branch tg-full-builds, results pending)
+
+- Snapshot snap_6VHCNtYcvSoeLpd4uOYI0IQ1kUOj made and recorded in lib/sandbox/snapshots.json, because the template's verify and wording changed. Passed to this Preview only; production's setting is untouched.
+- Preview https://muse-muse-4ohfoi9fy-ethan-6436s-projects.vercel.app (dpl_2DMKBTPMB1KZgTxjmud67vKwYnxa) on commit 431e78b7, with the switches passed at deploy, on Muse Wonder with no TEST_MODEL. NATIVE_EXTENSION is the one ready cap. Without a Vercel login: GET / answered 302 to Vercel sign-in, POST /api/inspirations answered 401.
+- Database: the owner's main database, by the owner's choice. This branch adds no migration, so the deploy changed no tables.
+- Builds, made-up data: detailed note bf7a2e2e-55c2-4238-bdb8-89ce03d7db2f, one-liner b500a0b8-c4e3-4bca-8e65-9d9c07311097. Not waited on, per the owner.
+- Briefs seen in a real run: detailed 21 requirements, 6 screens, flow of 10; one-liner 16 requirements, 10 screens, flow of 10. The scope check ran on both, sent nothing back and added nothing. These are the first real brief and scope check calls.
+- Found: both briefs have verdict yes and canDo true on sign-in, while the sign-in is a local picker or profile with no real account. Limits say so, but docs/FULL_BUILDS.md expects a part it can't do to force verdict partly. Not changed.
+- Found: nothing stops a build at a dollar amount. The $40 budget for this job isn't enforced by code; only the wall and DAILY_SPEND_CAP_USD=150 limit it.
+- Result of both builds: pending. A real brief is all this proves so far.
