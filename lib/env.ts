@@ -496,6 +496,23 @@ export const env = {
     return flag("GUEST_EDITS");
   },
   /**
+   * GITHUB_EXPORT: "1", "true", "yes" or "on" shows Connect GitHub and Export to GitHub on a product's Code page
+   * (docs/GITHUB_EXPORT.md). Off by default: no button, no reads, and the routes answer 404.
+   */
+  get githubExport(): boolean {
+    return flag("GITHUB_EXPORT");
+  },
+  get githubClientId() {
+    return process.env.GITHUB_OAUTH_CLIENT_ID?.trim() || undefined;
+  },
+  get githubClientSecret() {
+    return process.env.GITHUB_OAUTH_CLIENT_SECRET?.trim() || undefined;
+  },
+  /** Seals connected accounts' tokens (lib/connected/store.ts): 32 bytes of base64, or a v1:,v2: ring. */
+  get connectedAccountsKey() {
+    return process.env.CONNECTED_ACCOUNTS_KEY?.trim() || undefined;
+  },
+  /**
    * TUNE_AUTO_PUBLISH: an admin's tune run uploads its model to Hugging Face by itself once it succeeds and is judged
    * (docs/TRAINING.md "Auto upload"). Off by default: runs stay at publish 0 until someone presses Publish.
    */

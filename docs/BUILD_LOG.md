@@ -1803,3 +1803,22 @@ Spend: $0. No board, GPU or model. Every fix is in code a real board would run, 
 - Fixed: `HOSTED_LIMITS.perEndpointPerDay` counted from the start of the day, so the hourly prune reset it. It now uses `dayWindow`.
 - Copy: the export rows said nothing about Windows never having run. Each row and script now says how far that script has run. The docs no longer say the owner chose guest wakes: that reading still needs confirming.
 - Spend: $0. Targeted tests and tsc only. Nothing new ran on a real provider, Windows PC, Linux PC or board.
+## Nov 1: export to GitHub behind GITHUB_EXPORT (branch tg-github-export, unmerged)
+
+- Built: Connect GitHub, Export to GitHub, Push new version and Disconnect on the Code page, a generic connected-account store keyed by provider, and pushing with no git program. docs/GITHUB_EXPORT.md has the map, what the owner must create, and the Hugging Face estimate.
+- Decision: a guest's connection belongs to a random per-browser cookie, stored as a hash, because guests share one user row. A signed-in person's belongs to their account.
+- Decision: wrote objects, packs and receive-pack in plain Node, because a Vercel function can't rely on a git program.
+- Decision: OAuth App with `repo`, the narrowest scope that can make a private repo. It is broad, so pushes only go to repos this site made. A GitHub App is the narrower option, not built, and flagged for the owner.
+- Tested: push.realgit.test 8 of 8, real pushes to bare repos behind `git http-backend` with fsck on. routes.test 17 of 17 on PGlite with the pretend GitHub. Changing the binding so guests use the shared user id fails 5 of those, including the guest test, so the test does catch it.
+- Local run, made-up data, pretend GitHub, `next dev` with OPEN_ACCESS=guest, two curl cookie jars: A connected and exported, giving two commits with `.env.local` left out and a clean `git fsck --strict`. B saw Connect GitHub, got not_connected on push, and disconnecting from B left A connected. No token in cookie jars or the server log. Headless Chrome followed the sign-in redirects and rendered both states: docs/log/shots/github-export-connect.png and github-export-connected.png.
+- Found on that run: with stored files unreadable, a first export answered push_failed and left the repo empty rather than pushing a short version. The same run's Code page answered 500, from the existing file view, unrelated to this work and not changed.
+- Not run: real GitHub (no repo was created and no OAuth App exists), a click on the Export button in a browser (the extension wasn't connected, so the export went through curl), a Preview, `next build`, the full test suite. Typecheck shows only an existing error in lib/train/tune/__tests__/loop.test.ts. Spend $0.
+
+## Nov 1: independent review of tg-github-export, four fixes
+
+- Fixed: anyone could burn the site's 120 pushes an hour with made-up `mm_connect` cookies, because the counters ran before the connection check. The check now comes first.
+- Fixed: `.github/workflows/` files left out and named in the commit message. They could run on a person's account from someone else's public source, and GitHub is expected to refuse the push without the `workflow` scope (not seen on real GitHub).
+- Fixed: a grant was left live when the account lookup or save failed, or when a different account replaced the connection. Those are ended now, best effort.
+- Fixed: a just-made repo isn't looked up before its first push, so a lagging read can't drop the record and leave the name taken. Whether real GitHub lags here is not known.
+- Found, not changed: tg-board-loop also holds migration number 0031 (`0031_board_loop.sql`). Whichever lands second must renumber, journal and snapshot too.
+- Tested: routes.test and push.realgit.test, pretend GitHub with real git underneath. Real GitHub still not run. Spend $0.

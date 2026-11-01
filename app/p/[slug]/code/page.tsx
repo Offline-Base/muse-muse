@@ -8,6 +8,9 @@ import { RestoreVersion } from "@/components/product/RestoreVersion";
 import { EmptyCard, NotConnected, PageHeader, StatusPill } from "@/components/ui";
 import { canActAsOwner } from "@/lib/auth";
 import { CodeVisibility } from "@/components/product/CodeVisibility";
+import { GitHubExport } from "@/components/product/GitHubExport";
+import { env } from "@/lib/env";
+import { githubExportView } from "@/lib/github/view";
 import { canEditProduct } from "@/lib/edit-pass";
 import { db, schema } from "@/lib/db/client";
 import { relativeTime, statusLabel, truncate, usd } from "@/lib/format";
@@ -159,6 +162,8 @@ export default async function CodePage({ params, searchParams }: { params: Promi
   const selected = showDiff ? null : findFile(files, path);
   const opened = selected ?? (showDiff ? null : (findFile(files, "README.md") ?? findFile(files, "package.json") ?? files[0] ?? null));
   const now = Date.now();
+  // With GITHUB_EXPORT off this reads nothing and shows nothing.
+  const github = env.githubExport && commits.some((c) => c.kept) ? await safeQuery(() => githubExportView(user, product.id, commits)) : null;
   const base = `/p/${product.slug}/code`;
   const at = (params: Record<string, string | number>) => `${base}?${new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString()}`;
   const running = Boolean(commit && !TERMINAL_STATUSES.includes(commit.status as BuildStatus));
@@ -174,6 +179,7 @@ export default async function CodePage({ params, searchParams }: { params: Promi
       </div>
       <PageHeader title="Code" />
       {canEdit ? <CodeVisibility slug={product.slug} isPublic={product.sourcePublic} /> : null}
+      {github?.ok ? <GitHubExport slug={product.slug} defaultName={product.slug} view={github.data} notice={one(query.github)} /> : null}
       {!commit ? (
         <EmptyCard title="No code yet">This product has no builds yet, so there&apos;s no code to show.</EmptyCard>
       ) : (

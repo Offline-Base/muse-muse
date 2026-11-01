@@ -218,6 +218,13 @@
       "when": 1793568010538,
       "tag": "0031_board_loop",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1793568011538,
+      "tag": "0032_connected_accounts",
+      "breakpoints": true
     }
   ]
 }
