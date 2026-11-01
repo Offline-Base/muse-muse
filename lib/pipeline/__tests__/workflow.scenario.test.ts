@@ -46,14 +46,16 @@ interface Scenario {
   bridge?: boolean;
   provePlanThrows?: boolean;
   proveStartThrows?: boolean;
-  /** PLAN_ART's step: settles once the build registers ("late"), throws, or answers at once (the default). */
-  art?: "late" | "throws";
+  /** PLAN_ART's step: settles once the build registers ("late"), never ("hangs"), throws, or answers at once (the default). */
+  art?: "late" | "hangs" | "throws";
 }
 
 let scenario: Scenario = {};
 let calls: Call[] = [];
 /** Lets a "late" plan picture finish, from registerStep. */
 let releaseArt: (() => void) | null = null;
+/** Every sleep() the workflow asked for, in order. */
+let slept: unknown[] = [];
 let verifyRuns = 0;
 let musePolled = 0;
 let polledTotal = 0;
@@ -238,6 +240,7 @@ function reset(next: Scenario) {
   musePolled = 0;
   polledTotal = 0;
   releaseArt = null;
+  slept = [];
   if (next.steering) process.env.MUSE_ENGINE = "serve";
   else delete process.env.MUSE_ENGINE;
   delete process.env.MUSE_FULL;
@@ -269,12 +272,19 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
           record("planArtStep", buildId);
           if (scenario.art === "throws") throw new Error("Muse Image is down");
           if (scenario.art === "late") await new Promise<void>((resolve) => (releaseArt = resolve));
+          if (scenario.art === "hangs") await new Promise<void>(() => undefined);
           record("planArtStep:done", buildId);
           return "https://blob.example/fixtures/b1/plan-art.jpg";
         },
       },
     });
-    mock.module("workflow", { namedExports: { sleep: async () => undefined } });
+    mock.module("workflow", {
+      namedExports: {
+        sleep: async (d: unknown) => {
+          slept.push(d);
+        },
+      },
+    });
     wf = await import("../workflow");
   });
 
@@ -393,12 +403,24 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
         assert.equal(statuses().at(-1), "live");
       }));
 
-    it("is still waited for when the build fails, so its event lands before the end", () =>
+    it("holds a shipped build's end for at most 15 s when the picture never comes back", () =>
       withArt(async () => {
-        reset({ provisionThrows: new Error("no sandbox") });
+        reset({ art: "hangs" });
+        assert.deepEqual(await wf.buildProduct({ buildId: "b1" }), { status: "live" });
+        assert.equal(named("planArtStep").length, 1);
+        assert.equal(named("planArtStep:done").length, 0);
+        assert.equal(slept.at(-1), 15_000);
+        assert.equal(statuses().at(-1), "live");
+        assert.equal(named("cleanupStep").length, 1);
+      }));
+
+    it("doesn't hold a failed build's end at all", () =>
+      withArt(async () => {
+        reset({ art: "hangs", provisionThrows: new Error("no sandbox") });
         assert.deepEqual(await wf.buildProduct({ buildId: "b1" }), { status: "failed" });
-        const order = steps();
-        assert.ok(order.indexOf("planArtStep:done") < order.indexOf("failStep"));
+        assert.equal(named("planArtStep:done").length, 0);
+        assert.ok(!slept.includes(15_000));
+        assert.equal(named("failStep").length, 1);
       }));
 
     it("makes no picture for a declined brief or a change", () =>
