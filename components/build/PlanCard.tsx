@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import { preload } from "react-dom";
 import type { RoomState } from "@/components/build/derive";
 import { VERDICT } from "@/components/build/turns";
@@ -12,6 +12,10 @@ import type { Brief, BuildStatus } from "@/lib/types";
  * on the right, the plan's name, its tagline, who it's for and how it works. The models, limits, inspo and cost stay in
  * the steps panel's "Read the brief", which the card links to, so the plan reads once in the conversation. Styles are in
  * components/build/plan-card.css, which the build room page loads.
+ *
+ * The card draws a PlanView, so another plan can use it: the build room's comes from its brief (planViewFromBrief), and
+ * the fine-tune room's from its training plan (components/train/room/plan.ts planViewFromTrainPlan), with its own
+ * actions under the summary.
  */
 
 export type PlanArt = "present" | "building" | "shield";
@@ -88,6 +92,33 @@ export function preloadPlanArt(status: BuildStatus, isRefine: boolean): void {
   preload(PLAN_ART.building, { as: "image", fetchPriority: "low" });
 }
 
+/** One part of a plan's summary: a heading with a line of text or numbered steps, or a line on its own. */
+export interface PlanSection {
+  heading?: string;
+  text?: string;
+  steps?: readonly string[];
+}
+
+/** What the card shows: a name, a tagline, a status pill, the summary's parts, a link under them and any actions. */
+export interface PlanView {
+  name: string;
+  tagline?: string;
+  badge?: { label: string; tone: string } | null;
+  sections: readonly PlanSection[];
+}
+
+/** A brief's plan: who it's for and how it works, with "Can build part of it" when that's the verdict. */
+export function planViewFromBrief(brief: Brief): PlanView {
+  const user = brief.user.trim();
+  const flow = brief.primaryFlow.map((s) => s.trim()).filter(Boolean);
+  return {
+    name: brief.name,
+    tagline: brief.tagline.trim(),
+    badge: brief.verdict === "partly" ? VERDICT.partly : null,
+    sections: [...(user ? [{ heading: "Who it's for", text: user }] : []), ...(flow.length ? [{ heading: "How it works", steps: flow }] : [])],
+  };
+}
+
 export function PlanCard({
   brief,
   art,
@@ -103,12 +134,42 @@ export function PlanCard({
   panelId?: string;
   onReadBrief?: () => void;
 }) {
-  // Decided once: a build that has finished keeps its picture, so it loads only that one.
+  return (
+    <PlanViewCard
+      view={planViewFromBrief(brief)}
+      art={art}
+      running={running}
+      more={
+        onReadBrief ? (
+          <button type="button" className="link-btn room-steps-link" aria-controls={panelId} onClick={onReadBrief}>
+            Read the full brief
+            <Icon name="chevronRight" size={16} />
+          </button>
+        ) : null
+      }
+    />
+  );
+}
+
+/** The card itself, for any PlanView. `more` is the link under the summary; `actions` come after it. */
+export function PlanViewCard({
+  view,
+  art,
+  running,
+  more,
+  actions,
+}: {
+  view: PlanView;
+  art: PlanArt;
+  /** The plan can still change state. Then all three pictures load at once, so a swap fades with nothing to wait for. */
+  running: boolean;
+  more?: ReactNode;
+  actions?: ReactNode;
+}) {
+  // Decided once: a plan that has finished keeps its picture, so it loads only that one.
   const [all] = useState(running);
   const arts = all ? ART_ORDER : [art];
-  const tagline = brief.tagline.trim();
-  const user = brief.user.trim();
-  const flow = brief.primaryFlow.map((s) => s.trim()).filter(Boolean);
+  const tagline = view.tagline?.trim() ?? "";
   return (
     <div className="plan-card" data-art={art}>
       {/* Decorative: the room's own words, the working step above the card or the outcome under it, say the state. */}
@@ -132,43 +193,34 @@ export function PlanCard({
       <div className="plan-card-head">
         <h2 className="plan-card-name">
           <span className="sr-only">The plan: </span>
-          {brief.name}
+          {view.name}
         </h2>
         {tagline ? <p className="plan-card-tagline">{tagline}</p> : null}
-        {brief.verdict === "partly" ? (
+        {view.badge ? (
           <p className="plan-card-verdict">
-            <span className={`pill pill-${VERDICT.partly.tone}`}>
+            <span className={`pill pill-${view.badge.tone}`}>
               <span className="pill-dot" aria-hidden />
-              {VERDICT.partly.label}
+              {view.badge.label}
             </span>
           </p>
         ) : null}
       </div>
       <div className="plan-card-body">
-        {user ? (
-          <>
-            <h3>Who it&apos;s for</h3>
-            <p>{user}</p>
-          </>
-        ) : null}
-        {flow.length ? (
-          <>
-            <h3>How it works</h3>
-            <ol>
-              {flow.map((s, i) => (
-                <li key={i}>{s}</li>
-              ))}
-            </ol>
-          </>
-        ) : null}
-        {onReadBrief ? (
-          <p className="plan-card-more">
-            <button type="button" className="link-btn room-steps-link" aria-controls={panelId} onClick={onReadBrief}>
-              Read the full brief
-              <Icon name="chevronRight" size={16} />
-            </button>
-          </p>
-        ) : null}
+        {view.sections.map((section, n) => (
+          <Fragment key={n}>
+            {section.heading ? <h3>{section.heading}</h3> : null}
+            {section.text ? <p>{section.text}</p> : null}
+            {section.steps?.length ? (
+              <ol>
+                {section.steps.map((s, i) => (
+                  <li key={i}>{s}</li>
+                ))}
+              </ol>
+            ) : null}
+          </Fragment>
+        ))}
+        {more ? <p className="plan-card-more">{more}</p> : null}
+        {actions}
       </div>
     </div>
   );
