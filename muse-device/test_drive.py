@@ -1033,11 +1033,11 @@ class ServerToolTests(DriveTestCase):
         server.write_json(server.run_file("support-coach", "config.json"), {"pid": 1, "started": 1, "base": "Qwen3.5-0.8B", "dataset": "support-coach", "steps": 60, "rank": 8, "lr": 0.0002, "max_length": 512})
         server.write_json(server.run_file("support-coach", "status.json"), {"state": "done", "step": 60, "steps": 60, "loss": 0.41, "seconds": 812, "peak_gpu_gib": 1.91, "adapter": "support-coach.gguf", "examples": 49, "skipped": 0})
 
-    def test_the_five_drive_tools_are_offered_on_version_0_4_0(self):
+    def test_the_five_drive_tools_are_offered(self):
         names = [tool["name"] for tool in server.handle_rpc("tools/list", {})["tools"]]
         for name in ("drive_status", "export_source", "export_model", "erase_drive", "stop_export"):
             self.assertIn(name, names)
-        self.assertEqual(server.VERSION, "0.4.0")
+        self.assertEqual(server.VERSION, "0.5.0")
         tools = {tool["name"]: tool for tool in server.handle_rpc("tools/list", {})["tools"]}
         self.assertEqual(tools["erase_drive"]["annotations"], {"destructiveHint": True})
         self.assertTrue(tools["drive_status"]["annotations"]["readOnlyHint"])
@@ -1051,7 +1051,7 @@ class ServerToolTests(DriveTestCase):
         self.assertEqual(source["base_revision"], "23c69c53358a07516b5827588b3fdb12ae78fd65")
         self.assertEqual(source["system"], "You are the support coach.")
         self.assertEqual(source["converter"], server.CONVERTER_NAME)
-        self.assertEqual(source["board"]["muse_device"], "0.4.0")
+        self.assertEqual(source["board"]["muse_device"], "0.5.0")
         self.assertEqual((source["config"]["steps"], source["status"]["loss"]), (60, 0.41))
         # The sha256 is kept beside each file, so a second export hashes nothing.
         with mock.patch.object(drive, "sha256_of", side_effect=AssertionError("hashed again")):
