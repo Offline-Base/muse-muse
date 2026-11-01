@@ -41,6 +41,8 @@ Read docs/CONTRACTS.md before writing or changing any module. It is the shared i
 - No em dashes in user-facing text (README, docs, UI copy, messages to Muse).
 
 ## Commands
+This folder sits inside the Muse Muse repo as `privacy/`, so run these from here. Keep it apart: no imports either way
+(`lib/__tests__/privacy-boundary.test.ts`). CI is `.github/workflows/privacy.yml` at the repo's root.
 - `uv run pytest -q` runs the unit tests. `uv run ruff check .` lints.
 - `uv run python -m base.server` starts the approval page and connector for BASE_DEVICE.
 
