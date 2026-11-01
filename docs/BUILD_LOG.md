@@ -1679,6 +1679,27 @@ scripts/dev/tune-harness.ts, on a Lambda gpu_1x_a10 named prove-tune-1, us-east-
 - Terminated through the Lambda API at 20:21Z, before judging, once the copied files' hashes matched, since judging needs no GPU. The instance list shows none left.
 - Not proven: launch, callbacks over https, the workflow, the sweep, Hub upload (publish 0, adapter_uploaded no), a real Glimmer run. The harness also marks every ingested job succeeded, whatever the GPU reported, so read the events for a failure; this run had none.
 - Results outside the repo, in the session scratchpad, so they go when it is cleared: run2-out (events, logs, adapter), run2-verdict.json.
+
+## Nov 1: device lab checks, direct, not through the queue (branch tg-lab-fixes)
+
+### 20:47Z to 21:20Z All five kinds on the real boxes, and Device Farm
+
+Direct runs with native/lab/tools/check.mjs and its local stand-in, from origin/main 0674a863 lab code unpacked next to the box's release. Not through the queue: the claim route answers 404 on the live site. Target: https://musemuse-dinner-split-helper.vercel.app/. Clips are in s3://muse-knowledge-916979311153/lab/checks/direct-1101-2047/.
+
+| Kind | Result | Evidence |
+|---|---|---|
+| desktop_mac | Passed, opened in 0.5 s | macOS 26.7, checks ok, clip |
+| android_emu | Passed, opened in 1.1 s | Pixel 7 emulator, Android 15, clip. Bridge timing note: window.MuseNative there at the first script |
+| ios_sim | Passed, opened in 3.5 s | iOS 26.5, clip |
+| desktop_windows | Passed, opened in 2.1 s | Windows Server 2022, SSM 615a0b1e, clip. Box started 20:47Z and stopped 20:51Z |
+| glasses_sim, iOS 26.5 | Failed | no_eligible_device from the mock glasses, as on Oct 31. Target: glasses-check.html, not the product |
+| glasses_sim, iOS 18.4 | Passed | Under direct-1101-2047-g18/ (SSM on the Mac) and direct-1101-2047-fixed/ (bdf09b6e, with this branch's runner). Mock glasses, photo and sound result. Target: glasses-check.html, not a built glasses product |
+
+- Device Farm: one real phone, Samsung Galaxy S25 (SM-S931U1, Android 16), run c00593cf-383a-463d-ae7b-24e2c6622f13 in muse-muse-devices, PASSED. Lab APK by its deep link: selftest ok, handshake true, loaded in 1292 ms, screenshot shows the product. 0.87 metered minutes, about $0.15 at $0.17 a minute. A small custom test spec, not scripts/devices/devicefarm.ts. Ran with the offlinebase profile in the same account, since the base-test SSO session had expired. Files in direct-1101-2047/devicefarm_android/.
+- Fixes on this branch: glasses_sim uses its own iOS 18 simulator; the simulator install limit goes from 120 s to 240 s, because the first install on the just-booted 18.4 runtime ran past 120 s (lab_error install_failed, cold run, not re-run cold after the change); mac.sh also downloads iOS 18.4. Tests run: commands and runners, 97 passed.
+- On the Mac box: iOS 18.4 runtime added (8.86 GB download) and simulator Muse Lab iPhone 18 created by hand. The Mac's agent release is still 0.1.1-1a60ff7, so it won't have this fix or gguf_emu until a new bundle is pinned and update-agent runs. Not done here.
+- gguf_emu: not run. No GGUF in ~/mm-wt/gpu-tests, the box's release has no such runner, and setup/llama-android.sh has no record of running here.
+- Spend: Windows about 4 minutes, about $0.01. Device Farm about $0.15. Mac host already billing, not released.
 ## Nov 1: full builds behind FULL_BUILDS (branch tg-full-builds, unmerged)
 
 - Why: the owner said builds look like one page. The audit found the writer is told to write small, nothing compares the brief with the note, and tests and judge cover one path.
