@@ -56,6 +56,8 @@ let startRoute: (req: Request, ctx: { params: Promise<{ id: string }> }) => Prom
 let listings: Array<Array<typeof GPU_A100>> = [[GPU_A100]];
 let paused = false;
 let started: Array<{ fn: string; args: unknown[] }> = [];
+/** When set, start() refuses a training job's workflow once, as a workflow runtime that can't start it would. */
+let failTrainStart = false;
 let sleeps: number[] = [];
 /** Runs on each fake sleep, before the clock moves: a test's way to change the world while the workflow waits. */
 let onSleep: (n: number) => Promise<void> = async () => {};
@@ -99,6 +101,10 @@ describe("starting training for a run", { skip: canMock ? false : "needs --exper
     mock.module("workflow/api", {
       namedExports: {
         start: async (fn: { name: string }, args: unknown[]) => {
+          if (failTrainStart && fn.name === "trainJob") {
+            failTrainStart = false;
+            throw new Error("the workflow runtime is down (made up)");
+          }
           started.push({ fn: fn.name, args });
           return { runId: `wrun-${started.length}` };
         },
@@ -164,6 +170,7 @@ describe("starting training for a run", { skip: canMock ? false : "needs --exper
     listings = [[GPU_A100]];
     paused = false;
     started = [];
+    failTrainStart = false;
     sleeps = [];
     onSleep = async () => {};
     advanced = 0;
@@ -296,6 +303,67 @@ describe("starting training for a run", { skip: canMock ? false : "needs --exper
       assert.equal(run?.stage, "waiting");
       assert.equal(run?.hold?.reason, "not_started");
       assert.equal(run?.hold?.text, "Training didn't start: Lambda isn't connected on this deployment. Start training tries again.");
+    });
+
+    it("a job that failed before any GPU launched isn't the run's job, so Start training launches again", async () => {
+      // The job's workflow can't start: launchJob wrote the row, then failed it (start_failed).
+      const id = await dataset();
+      failTrainStart = true;
+      const r = await launch.launchForRun({ datasetId: id, callerId: admin, steps: 120 });
+      assert.equal(r.kind === "refused" && r.refusal.code, "start_failed");
+      const [failed] = await jobsOf(id);
+      assert.equal(failed!.status, "failed");
+      assert.equal(await runStore.latestTuneJob(id), null, "it never trained");
+      const run = await tuneStore.loadTuneRun(id, new Date(), CEILINGS);
+      assert.equal(run?.stage, "waiting");
+      assert.equal(run?.next?.kind, "start");
+      assert.match(run!.hold!.text, /Start training tries again/);
+      const res = await post(id);
+      assert.equal(res.status, 201, JSON.stringify(res.body));
+      assert.notEqual(res.body.jobId, failed!.id);
+      assert.equal((await runStore.latestTuneJob(id))?.id, res.body.jobId);
+
+      // Two starts raced and this one backed out (failed, no instance): the next try launches instead of calling it done.
+      const raced = await dataset();
+      await testDb.insert(realSchema.trainingJobs).values({
+        recipe: "glimmer-lora",
+        title: "a made-up raced job",
+        status: "failed",
+        params: { datasetId: raced, maxSteps: 120 },
+        instanceType: "gpu_1x_a100_sxm4",
+        region: "us-east-1",
+        priceCentsPerHour: 129,
+        maxMinutes: 90,
+        maxUsd: 5,
+        instanceName: "mm-train-raced",
+        createdBy: admin,
+      });
+      process.env.TRAIN_MAX_ACTIVE = "3";
+      const again = await launch.launchForRun({ datasetId: raced, callerId: admin, steps: 120 });
+      assert.equal(again.kind === "launched" && again.already, false, "a new job, not the failed one");
+      assert.equal((await jobsOf(raced)).length, 2);
+
+      // A job that did launch and then failed stays the run's job: it trained (and was billed), and the room shows it.
+      const ran = await dataset();
+      const [launchedRow] = await testDb
+        .insert(realSchema.trainingJobs)
+        .values({
+          recipe: "glimmer-lora",
+          title: "a made-up job that ran",
+          status: "failed",
+          params: { datasetId: ran, maxSteps: 120 },
+          instanceType: "gpu_1x_a100_sxm4",
+          region: "us-east-1",
+          priceCentsPerHour: 129,
+          maxMinutes: 90,
+          maxUsd: 5,
+          instanceName: "mm-train-ran",
+          instanceId: "i-made-up",
+          launchedAt: new Date(),
+          createdBy: admin,
+        })
+        .returning();
+      assert.equal((await runStore.latestTuneJob(ran))?.id, launchedRow!.id);
     });
 
     it("never launches for a stopped run, and waits while another launcher holds the claim", async () => {

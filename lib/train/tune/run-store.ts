@@ -14,15 +14,19 @@ const jobs = schema.trainingJobs;
 
 /**
  * The newest Muse Glimmer LoRA job trained on this dataset, without the hub state's small files, or null. A dry run
- * (dryRun 1) fakes its answers, so its scores say nothing about the model and it never counts as the run's job.
+ * (dryRun 1) fakes its answers, so its scores say nothing about the model and it never counts as the run's job. Nor
+ * does a job that failed before any GPU launched (no instance id, no launch time): launchJob writes the row first and
+ * fails it when two starts race or its workflow can't start, and the sweep fails one left queued. That job never
+ * trained, so the run has no job and Start training (or the workflow's next try) launches again.
  */
 export async function latestTuneJob(datasetId: string): Promise<TrainJobRow | null> {
   if (!UUID_RE.test(datasetId)) return null;
   const notDry = sql`(case when ${jobs.params}->>'dryRun' ~ '^[0-9]+([.][0-9]+)?$' then (${jobs.params}->>'dryRun')::numeric else 0 end) < 1`;
+  const ranOrOpen = sql`not (${jobs.status} = 'failed' and ${jobs.instanceId} is null and ${jobs.launchedAt} is null)`;
   const [row] = await db()
     .select(jobListColumns)
     .from(jobs)
-    .where(and(eq(jobs.recipe, ADAPTER_RECIPE), sql`${jobs.params}->>'datasetId' = ${datasetId}`, notDry))
+    .where(and(eq(jobs.recipe, ADAPTER_RECIPE), sql`${jobs.params}->>'datasetId' = ${datasetId}`, notDry, ranOrOpen))
     .orderBy(desc(jobs.createdAt), desc(jobs.id))
     .limit(1);
   return (row as TrainJobRow | undefined) ?? null;
