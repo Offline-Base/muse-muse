@@ -1990,3 +1990,13 @@ All made-up data. Code: tg-caps-ready fa692f3e, builder snapshot snap_XXT4qDZEWL
 ## Nov 1, evening: local production build of PR #30
 
 `npx next build` on tg-device-loop-int finished with exit 0, run on the laptop with no DATABASE_URL, so no migration ran. This shows the merged branch compiles and bundles. It does not cover Vercel, the main database or the migrations, because the Preview deploy is still denied. The full test suite was not run on this branch. Spend: $0.
+
+## Nov 1: audit of what holds builds back (branch tg-build-range)
+
+Read-only audit, no code changed. Spend $0, no builds, made-up data only.
+
+- **Measured, Wonder build b2996b46** (events read back from Preview muse-muse-8dixe987o): buildModel muse-wonder-1.0, complexity complex, 48 requirements, 6 rounds (0 to 5), serve engine, "6 agent slots" line present. Across 497 room lines, no `subagent_spawn` or workflow line. One SubagentStart hook per round, which I read as a reminder agent, not proven since the sandbox hook log wasn't read.
+- **Finding, agents:** the tools aren't blocked. The build prompt only suggests them, once, in brief.md. Milestone prompts (lib/engine/prompts.ts renderMilestonePrompt) carry no playbook, the reviewer step sits at the end of a round that was cut at its time limit, and the prompt tells the main agent to do the scout's reading itself.
+- **Finding, look:** the default look is enforced by wording in the prompt, AGENTS.md, skills, brief writer and fix prompts. verify has no color or font check. The judge has no fail line for a different look, but its house style sentence only expects two looks.
+- **Decision:** keep the kit's parts and accessibility, relax the fixed look. Safety, terms, network and spend rules stay. Proposed changes come next, none made here.
+- **Not checked:** values of MUSE_FULL and MUSE_ENGINE. Their names exist in the production and preview env lists; values were not read.
