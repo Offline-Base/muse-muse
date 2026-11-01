@@ -9,7 +9,7 @@ import { imagePart, videoPart } from "../../lib/meta/parts";
 
 const saved = { ...process.env };
 afterEach(() => {
-  for (const key of ["GATEWAY_URL", "PRODUCT_TOKEN", "GLIMMER_URL", "GLIMMER_API_KEY", "GLIMMER_MODEL"]) {
+  for (const key of ["GATEWAY_URL", "PRODUCT_TOKEN", "GLIMMER_URL", "GLIMMER_API_KEY", "GLIMMER_MODEL", "GLIMMER_SHARED"]) {
     if (saved[key] === undefined) delete process.env[key];
     else process.env[key] = saved[key];
   }

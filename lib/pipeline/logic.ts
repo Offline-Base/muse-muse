@@ -8,6 +8,7 @@ import type { Reference } from "@/lib/types";
 import { SPARK_STANDIN, withoutRetiredSpark } from "@/lib/meta/spark";
 import { AGENT_MARKER, isToolId, toolMarker } from "@/lib/tools/ids";
 import { briefCaps } from "@/lib/caps/brief-fields";
+import { gpuAllowedModels } from "@/lib/caps/gpu/marker";
 import { capMarker } from "@/lib/caps/ids";
 
 /** BriefSchema caps slugs at 40 characters. */
@@ -107,7 +108,9 @@ export function pollTimedOut(input: {
 export function allowedModelsFor(brief: Pick<Brief, "capabilities" | "agent">): string[] {
   const models = brief.capabilities.map((c) => c.model).filter((m) => m !== "muse-glimmer");
   const tools = brief.agent ? brief.agent.tools.map((t) => t.id).filter(isToolId).map(toolMarker) : [];
-  return [...new Set<string>([...models, ...(brief.agent ? [AGENT_MARKER] : []), ...tools]), ...briefCaps(brief).map(capMarker)];
+  // Wave 3, unit 11: Muse Wonder and the `glimmer` marker while the shared Glimmer endpoint is on. None with it off.
+  const gpu = gpuAllowedModels(brief);
+  return [...new Set<string>([...models, ...gpu, ...(brief.agent ? [AGENT_MARKER] : []), ...tools]), ...briefCaps(brief).map(capMarker)];
 }
 
 const BUILD_MODELS: readonly BuildModel[] = ["muse-wonder-1.0", SPARK_STANDIN];

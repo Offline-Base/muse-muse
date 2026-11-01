@@ -1,5 +1,6 @@
 import type { Brief } from "@/lib/brief/schema";
 import { briefCaps } from "@/lib/caps/brief-fields";
+import { gpuBuildEnv, gpuDeployEnv } from "@/lib/caps/gpu/env";
 import type { CapId } from "@/lib/caps/ids";
 import { mediaAssetsEnv, mediaBuildEnv } from "@/lib/caps/media/env";
 
@@ -32,10 +33,12 @@ function checked(entries: Record<string, string>, cap: CapId): Record<string, st
 /** Lines appended to the build's .env.local. Empty for a brief with no cap blocks, so .env.local is today's. */
 export function capBuildEnv(brief: Brief): string {
   const lines = briefCaps(brief).flatMap((id) => Object.entries(checked(CAP_ENV[id]?.build?.(brief) ?? {}, id)).map(([k, v]) => `${k}=${v}`));
+  // Wave 3, unit 11: GPU isn't a cap (section 17). Nothing with GPU_GLIMMER_SHARED off.
+  lines.push(...Object.entries(gpuBuildEnv(brief)).map(([k, v]) => `${k}=${v}`));
   return lines.length ? `${lines.join("\n")}\n` : "";
 }
 
 /** Settings added to the product's Vercel env. Empty for a brief with no cap blocks. */
 export function capDeployEnv(brief: Brief, liveToken: string): Record<string, string> {
-  return Object.assign({}, ...briefCaps(brief).map((id) => checked(CAP_ENV[id]?.deploy?.(brief, liveToken) ?? {}, id)));
+  return Object.assign({}, ...briefCaps(brief).map((id) => checked(CAP_ENV[id]?.deploy?.(brief, liveToken) ?? {}, id)), gpuDeployEnv(brief, liveToken));
 }
