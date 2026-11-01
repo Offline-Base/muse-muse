@@ -409,6 +409,21 @@ describe("flash drive pages", { skip: canMock ? false : "needs --experimental-te
       assert.match(html, /Requests are on \(DRIVE_ENABLED\)\./);
     });
 
+    it("says card payments are off on a preview, even with Stripe set up", async () => {
+      viewer = { id: "admin", email: "owner@example.com", isAdmin: true };
+      Object.assign(process.env, { STRIPE_SECRET_KEY: "sk_test_0000000000fakekeyfortests", STRIPE_WEBHOOK_SECRET: "whsec_fakewebhooksecretfortests", DRIVE_PRICE_CENTS: "5900" });
+      try {
+        assert.match(await open(), /New orders are paid by card on Stripe \(test mode\) at \$59\./);
+        // The preview's own database (made up), so the page reads its rows as it would there.
+        Object.assign(process.env, { VERCEL_ENV: "preview", PREVIEW_DATABASE_URL: "postgres://drive-pages-preview.invalid/db" });
+        const html = await open();
+        assert.match(html, /New orders are invoiced by email: card payments are off on previews, since Stripe&#x27;s webhook settles them on production\./);
+        assert.doesNotMatch(html, /STRIPE_SECRET_KEY/);
+      } finally {
+        for (const name of ["VERCEL_ENV", "PREVIEW_DATABASE_URL", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "DRIVE_PRICE_CENTS"]) delete process.env[name];
+      }
+    });
+
     it("flags a refund owed on an order cancelled after it was paid", async () => {
       viewer = { id: "admin", email: "owner@example.com", isAdmin: true };
       rows = [row({ status: "cancelled", paidAt: T0, cancelledAt: new Date(), createdAt: new Date() }), row({ id: "1a1b2c3d-4e5f-4061-8071-8091a0b1c2d3", status: "cancelled", cancelledAt: new Date(), createdAt: new Date() })];

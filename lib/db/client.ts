@@ -3,17 +3,13 @@ import { neon } from "@neondatabase/serverless";
 import { drizzle, type NeonHttpDatabase } from "drizzle-orm/neon-http";
 import { env } from "@/lib/env";
 import * as schema from "@/lib/db/schema";
+import { localDbDir } from "@/lib/db/url";
+
+export { LOCAL_DB_PREFIX, localDbDir } from "@/lib/db/url";
 
 export type Db = NeonHttpDatabase<typeof schema>;
 
 let cached: Db | null = null;
-
-/** DATABASE_URL "pglite:<folder>" keeps Postgres in-process in a local folder (PGlite), for running on a laptop. */
-export const LOCAL_DB_PREFIX = "pglite:";
-
-export function localDbDir(url: string): string | null {
-  return url.startsWith(LOCAL_DB_PREFIX) ? url.slice(LOCAL_DB_PREFIX.length) || ".data/pglite" : null;
-}
 
 /**
  * Drizzle over PGlite, shaped like the Neon one. Loaded with require so deployed builds never load PGlite. Kept on
@@ -40,11 +36,14 @@ function localDb(dir: string): Db {
 /**
  * Drizzle over Neon's HTTP driver: one round trip per query, no pool to manage in serverless functions.
  * It has no interactive transactions, so write multi-row changes as single statements or `db.batch([...])`.
+ * The URL comes from env.databaseUrl (lib/db/url.ts): a preview gets its own database or none, never production's,
+ * and throws here without one, as a run without DATABASE_URL does.
  */
 export function db(): Db {
   if (!cached) {
-    const dir = localDbDir(env.databaseUrl);
-    cached = dir ? localDb(dir) : drizzle({ client: neon(env.databaseUrl), schema });
+    const url = env.databaseUrl;
+    const dir = localDbDir(url);
+    cached = dir ? localDb(dir) : drizzle({ client: neon(url), schema });
   }
   return cached;
 }

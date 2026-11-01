@@ -725,7 +725,7 @@ because the sidebar showed a real account.
   agent against every source (2 factual errors and 12 smaller ones fixed). Screenshots showing any email address, even a
   placeholder one, were left out. `docs/log/` is in `.vercelignore`, so screenshots never ship in a deployment.
 
-### 18:00 Decision models D0 to D2 finished; D3 to D9 started
+### 17:54 Decision models D0 to D2 finished; D3 to D9 started
 
 - Review fixes on tg-decide, all five findings held up: 29b00c2 (taskProblem measures the text as given), ef2b987
   (scoring refuses numbers that can't be log-probabilities, so the gateway answers 502 rather than a confident-looking
@@ -737,17 +737,12 @@ because the sidebar showed a real account.
   639 of 676 two-letter pairs are single tokens, and the TypeScript prompt equals the real chat template's output byte
   for byte (jinja2 fixture). New finding: encoding with special tokens adds <|begin_of_text|> by itself, so prompt text
   sent to a backend leaves it out.
-- 18:00: D3 to D7 and D9 started in sequence (wf_50b3b2f5-c82): datasets and migration 0017, GPU decide mode, after-run
+- 17:54: D3 to D7 and D9 started in sequence (wf_50b3b2f5-c82): datasets and migration 0017, GPU decide mode, after-run
   scoring, pages, serving and docs. D8, the real GPU run (about $0.83, capped at $5), waits for the owner.
 - Wave 3 confirmed none of its current units touch lib/train; its unit 11 will import DecideBackend and the /decide
   route rather than edit them.
 
-### 18:23 Decision models D3: datasets and migration 0017
-
-- 2dec882 on tg-decide: decision datasets (CSV or JSONL, the test split held out first), migration 0017_decision_datasets
-  and the GPU's decision pages. D4 (the GPU decide mode, tested against fake torch, no spend) started next.
-
-### 18:25 (about) Owner asked to run the current state locally
+### 18:16 Owner asked to run the current state locally
 
 - Worktree ~/mm-wt/local-run (branch local-run): the meta.ai look branch plus wave 2 plus the build log, served by
   `next dev --webpack` on port 3020. Database: a copy of the local site's `.data/pglite-docs-2` (the older
@@ -756,7 +751,12 @@ because the sidebar showed a real account.
   PRODUCT_OUTPUTS, PROVE_IT, with DAILY_SPEND_CAP_USD=3. Off: NATIVE_LAB, NATIVE_DEVICE_FARM, personal tools, nightly
   Prove it. Home, gallery, How it works, usage, fine-tuning, builds and a product page answered 200 with no errors.
 
-### 18:35 (about) Owner: fine-tuning across several Jetsons, on Meta research
+### 18:23 Decision models D3: datasets and migration 0017
+
+- 2dec882 on tg-decide: decision datasets (CSV or JSONL, the test split held out first), migration 0017_decision_datasets
+  and the GPU's decision pages. D4 (the GPU decide mode, tested against fake torch, no spend) started next.
+
+### 18:34 Owner: fine-tuning across several Jetsons, on Meta research
 
 - The owner shared Meta's "Applied Federated Learning: Architectural Design for Robust and Efficient Learning in Privacy
   Aware Settings" (Stojkovic et al., arXiv 2206.00807) and asked whether it helps train across multiple Jetsons; they
@@ -767,13 +767,13 @@ because the sidebar showed a real account.
   Meta calls), write docs/FLEET_TRAINING.md, then an independent check. No board is touched; the board side is
   Hussam's.
 
-### 18:40 (about) Disk below 6 GB
+### 18:35 (about) Disk below 6 GB
 
 - Free space fell to 4.0 GB, with swap at 5.5 of 6 GB: three dev servers, browsers, agents, and Muse Privacy's two
   local llama-servers (LFM3-VL-2B and an embedding model, not Glimmer). Deleted about 0.7 GB of finished scratch whose
   results are already in the plan files and this log; 5.4 GB free after. New alert at 3 GB.
 
-### 18:55 meta.ai look landed on tuned-model-options (4c412a3)
+### 18:46 meta.ai look landed on tuned-model-options (4c412a3)
 
 - Final fix pass on tg-ui-brand (wf_801146c9-84c), all review findings checked: one script installs every overlay
   (786e675); the look's skill file comes back before every verify and demo (eee71af); a phone or desktop product with
@@ -799,6 +799,177 @@ because the sidebar showed a real account.
 ![Product page with the Get it panel's Phone tab, on fixture data](log/shots/2026-10-31/merged-look-product-getit-1440-light.jpg)
 
 ![Get it panel's CLI tab with a failed Prove it check, on fixture data](log/shots/2026-10-31/merged-look-product-outputs-cli-1440-light.jpg)
+
+### 18:49 Test builder snapshot with the TEST_MODEL fix
+
+- The wave 3 session's engine unit found two things. A local test build can't reach the gateway, because the build
+  sandbox can't call a localhost platform, so capability checks that go through the gateway can't be proven on the local
+  site. That covers wave 3's data, connectors, jobs, code and gpu units, and General's /decide route and Muse Code
+  sessions. Also, its local smoke tests' product calls went straight to Meta on Muse Wonder, about $1 to $2.
+- Both sessions recommend a Preview with its own database (owner decision 3 above) to prove gateway paths. A tunnel to
+  the local site stays off.
+- Made a test-only builder snapshot from tuned-model-options 566fa98: snap_2y1WMExjxKPxiDyPtcPvFcMtdU20, template
+  hash a2d8df174adc, 1,970 MB, 76.5 s, about $0.01. Its checks passed: pristine platform files, 65 overlay files
+  including muse-app, 15 bundled Muse Code skills off, Muse Code 1.4.14. Products built from it get metaClient's
+  TEST_MODEL swap. It is used only as a per-command override for local test builds, never in .env.local or Vercel;
+  production keeps its snapshot until the Nov 2 one.
+- The local site on port 3020 was restarted with that override and merged up to 566fa98; home and gallery answer 200.
+
+### 18:52 (about) Owner: previews may get their own database
+
+- Owner: "preview can get its own db or share idc". General chose its own database, which both sessions recommended.
+- The Neon integration (neon-celeste-lantern, Vercel-managed) offers per-preview branching only at connect time, per
+  Neon's docs, and the documented way to change it removes the project connection, so it is not used on a live project.
+- Instead: tg-preview-db (wf_7d431c55-cdd, started 18:54) adds one database-URL helper. On a Vercel preview it uses
+  PREVIEW_DATABASE_URL; without it a preview skips migrations and runs with no database; it refuses when the preview URL
+  equals production's. The owner then creates a Neon branch "preview" and sets PREVIEW_DATABASE_URL for Preview only.
+  Until both are in, no preview deploys of branches with migrations.
+
+### 19:02 Glimmer sampling: Meta's docs say not to decode greedily
+
+- The fine-tune session corrected its serving notes: Meta's Glimmer docs give temperature 1.0, top_p 0.95, top_k 64,
+  say greedy decoding gives flat, repetitive answers, and say to stop on <|end_of_text|> and <|eot|>, never <|eom|>. Its
+  earlier numbers (including the AWS Mac's 4.2 tok/s) were measured greedy, so they hold as comparisons only.
+- Offline mode's plan now defaults to Meta's sampling and checks JSON output both ways before freezing. Decision models
+  are unaffected (they read letter log-probabilities from one forward pass).
+- Found in published code: the lab's GGUF cards and Ollama settings (lib/train/hub-cards.ts, recipes/quantize.ts) say
+  temperature 0, and tuned models' stops include <|eom|>. That code came with the vibe-tuning commit d72f9f3 (Oct 28),
+  not the knowledge run. Agreed with the fine-tune session: cards recommend Meta's sampling and say the eval was greedy;
+  the <|eom|> and <|start|> stops stay only for final-channel (trainChannel 0) models, with a sentence why; the eval
+  stays greedy. General changes the code after tg-decide lands; rewriting cards already on Hugging Face waits for the
+  owner.
+
+### 19:06 Decision models D4 and the preview database code committed
+
+- 02b1b32 on tg-decide (19:06): decide mode on the GPU, ctx.decide in the runner, the decide callbacks and the run
+  estimate. Tested against fake torch, no spend. D5 (scoring after a run) started next.
+- b2abc15 on tg-preview-db (19:04): previews use PREVIEW_DATABASE_URL or no database, never production's. Its
+  independent review started next; wave 3's gateway-address and bypass pieces get folded in after it.
+- The multi-Jetson simulation has written its scripts (tabular and LoRA federated runs) and is running in the cloud.
+
+### 19:13 Owner: align fine-tuning with Meta's Glimmer docs, and run on Lambda, Fireworks, Baseten or Modal
+
+- Owner asked that fine-tuning be at least roughly aligned with Meta's Glimmer pages on post-training, quantization,
+  deploy and hardware platforms, and ready to run on Lambda, Fireworks, Baseten or Modal.
+- Pass 1 now (wf_a24c3785-97a, branch tg-train-align, read-only, no spend): read Meta's four pages, our lib/train code,
+  and each provider's current Glimmer support and prices; write docs/GLIMMER_ALIGNMENT.md (one row per Meta
+  recommendation: aligned, partly or not, with the fix) and docs/TRAIN_BACKENDS.md (one backend seam, what each provider
+  needs, a cheap smoke test each); independent check.
+- Pass 2 after tg-decide lands (it is editing lib/train): build the fixes and the backends. Real provider runs wait for
+  the owner's OK.
+
+### 19:19 Disk below 3 GB; local site stopped
+
+- Free space fell to 2.9 GB, swap 5.9 of 7 GB. The fine-tune session had pulled the stage-b-r30b adapter (1.71 GB) onto
+  this laptop by 19:15:58; the rsync General saw was its upload from the laptop to writer-1, which only read. Asked it
+  to keep large files off the laptop.
+- 19:20: the fine-tune session killed the upload, checked the copy's sha256 against train-1, deleted the local folder
+  (about 1.6 GB back), and changed run_handoff.sh to pipe train-1 to writer-1 with nothing written on the laptop.
+  stage-b-r30b is its final model; its IQ1_S is due about 20:15, scored by about 21:30.
+- Stopped General's local site on port 3020 and deleted its build cache (about 0.5 GB). Its database copy stays, so it
+  can be restarted. 3.6 GB free after. Next alert at 2 GB.
+
+### 19:25 Owner: push the work to GitHub, with previews off
+
+- Owner chose to push with Vercel previews off until the preview database exists, since previews still share
+  production's database and tg-decide carries migration 0017.
+- vercel.json now has git.deploymentEnabled {"main": true, "*": false, "**": false}: only main deploys from git (Vercel's
+  rule: a branch deploys if any matching rule is true). Turn branches back on once PREVIEW_DATABASE_URL is set.
+- tuned-model-options goes to GitHub as a branch. Branches made before this rule (and branches still being built) go
+  up as backup refs, refs/backup/<branch>, which Vercel does not build; each shows as a normal branch once it lands on
+  tuned-model-options. Pushes repeat after each landing.
+- The fine-tune session also freed space: five older 1.7 GB adapter copies deleted after matching their S3 copies; 13 GB
+  free.
+
+### 19:29 Work pushed to GitHub
+
+- tuned-model-options pushed as a branch (a5c82b5; Offline-Base/muse-muse). Checked: Vercel made no deployment for it,
+  so the main-only rule in the pushed vercel.json is honored. The recent previews are all from the fine-tune session's
+  `knowledge` branch (run logs, no migrations).
+- Backup refs, which Vercel never builds: refs/backup/tg-decide (02b1b32), tg-preview-db (a66be04), tg-3d (7f826bb),
+  tg-musecode (23525cb), tg-offline (6eb0d2f), tg-replicate (34af886). A key-pattern scan ran first; its only hits were
+  made-up test values.
+- From now on General pushes after each landing with `_plan/push.sh` (scan, then tuned-model-options as a branch and
+  General's other branches as backup refs; wave 3's branches are left to that session).
+
+### 19:35 Owner: commit to main and deploy; shipped to production
+
+- Owner: "commit what you have rn to main and deploy". Shipped tuned-model-options at 6f311e5: a fast-forward of 159
+  commits from 5916c37 (wave 2, the meta.ai look and the muse-app-ui skill behind MUSE_APP_LOOK, the TEST_MODEL fix for
+  metaClient and the agent kit, the build log, and the main-only deploy rule). Work still being built (decision models,
+  the preview database, multi-Jetson, the Glimmer alignment) stays out.
+- Checks first: no migrations beyond 0015 (already on production); typecheck clean; full root suite 4,361 tests, 4,353
+  pass, 0 fail, 8 skipped (live gateway tests that need a key); production already runs sub-daily crons, so the two new
+  ones fit the plan.
+- Production deployment dpl_DBQAd4HcEcX5aj4dpCcNzDsjEfXw (muse-muse-dzahxq4km), created 19:35:41, Ready by 19:37: .vercelignore removed 334 files
+  (including docs/log), `migrate: up to date in 95 ms`, build about 1 minute. Live checks on muse-muse.vercel.app: home
+  (the new "What should Muse make?" page), gallery, How it works, usage and /p/dinner-split-helper answer 200; /docs
+  redirects and resolves to 200.
+- Every new feature flag is off on production (not re-read), so builds and products behave as before; the platform's
+  new look is the visible change. Rollback: the previous production deployment dpl_Dk5fxBe6VsmuGRnouyAcf82p4nYV
+  (5916c37).
+
+### 19:39 Preview database code reviewed; wave 3's pieces being folded in
+
+- tg-preview-db (wf_7d431c55-cdd): one helper, lib/db/url.ts, decides the database. A preview uses PREVIEW_DATABASE_URL
+  or none, never production's; migrate skips on a preview without it and refuses a URL that is production's database
+  (matched by Neon endpoint id and database name). The review's 8 findings all held up; fixes: previews never publish
+  products (a publish could have overwritten a live product), previews take no Stripe payments and refund nothing (the
+  fix found a refund path the review missed), drizzle.config gets an unresolvable address on such previews, and a
+  guard test keeps every database variable read inside lib/db/url.ts. Full suite 4,400 tests, 4,392 pass, 0 fail.
+- Owner steps changed: an EMPTY database named "preview" on a Neon branch "preview", because copied production rows point
+  at live Vercel projects, sandboxes and real payments.
+- Now (wf_6ef8e23b-ff9): cherry-pick wave 3's 0a75160 (the sandbox firewall adds the protection-bypass header for the
+  platform host only) and port 9e09de8's preview platform URL and bypass-secret getter, then a review focused on the
+  secret never reaching a sandbox, log or other host.
+
+### 19:44 Owner: anyone should be able to fine-tune
+
+- Today the lab is admin-only to start datasets and jobs; production runs in guest mode, so "anyone" means any visitor,
+  and every job rents a Lambda GPU on the owner's account.
+- Plan: build it behind a PUBLIC_TRAINING switch (off means exactly today's behavior), with a visitor identity without
+  sign-in, per-visitor and site-wide limits, a queue for the one GPU slot, the visitor's own job pages, the policy check
+  on dataset tasks, and no automatic publishing of visitors' models to the owner's Hugging Face account. Design running
+  now (branch tg-open-train); the build starts when a heavy slot frees.
+- The fine-tune session's final model is stage-b-r30b (picked 19:14): BF16, greedy, 29.0% of 2,500 2026 facts (base 18.4%
+  at Q4), admits not knowing 86% (base 15%), makes something up 12% (base 74%). Its Q4_K_M is on writer-1 (16.9 GB); the
+  1-bit IQ1_S is due about 20:25, scored about 21:05. Nothing goes through the laptop.
+
+### 19:46 Owner: Gadgets and Models tabs in the sidebar
+
+- Building on tg-nav-tabs (wf_5e1ee206-43e): two sidebar rows and icons, and two public read-only pages.
+  /models: Meta's hosted models from the brief writer's catalog with the gateway's prices, Muse Glimmer, and the lab's
+  tuned models from Lab results. /gadgets: what a gadget is, whether gadgets are on and a board is configured (status
+  words only, never its address or token, no live call on load), gallery products using one, a link to /device for
+  admins, and a note that connecting your own board is coming (wave 3's hardware unit). Review, fix, full suite and
+  screenshots follow.
+
+### 19:58 Owner: a plan card with the Muse mascot in the build room
+
+- The owner sent a screenshot and three images from Downloads (muse present.png, muse building.png and muse privacy or
+  checker image.png, made 19:51 to 19:56): the mascot on the left of the chat and a short plan summary on the right.
+  Present while the plan is shown, building while Muse Code works, the shield pair when the build is done and live.
+- Building on tg-plan-card (wf_352ae383-888): web-sized copies under public/muse/, a PlanCard in the chat (name, tagline,
+  who it's for, how it works; the full brief stays under Read the brief), state-driven image with no layout jump, dark
+  mode and phone layouts, tests, review, and screenshots of every state.
+- Wave 3 agreed two marked slots for the new pages: /gadgets (its hardware unit's board list) and /models (its gpu unit's
+  owner-tuned models), each behind wave 3's own flag.
+
+### 20:06 Preview database landed on tuned-model-options (381935f)
+
+- Combined with wave 3's pieces (wf_6ef8e23b-ff9): 0a75160 cherry-picked (the build firewall adds the protection-bypass
+  header for the platform host only), and from 9e09de8 the preview platform URL (https://VERCEL_BRANCH_URL, else
+  VERCEL_URL, only on a preview with its own database) and the bypass secret.
+- The review found two ways sandbox code could misuse the bypass (domain fronting with another Host, and asking Vercel
+  for a bypass cookie). Fixed in 55e5783 (Host pinned to the platform's host; the cookie request refused with 403 in any
+  spelling) and f35d3bb (the secret comes with its host and goes nowhere else). Full suite at 15af04c: 4,418 tests, 4,410
+  pass, 0 fail. Not yet tested on live Vercel: the README has a one-time check for after the owner's steps.
+- Found and queued: the older Meta-key firewall transform for api.meta.ai doesn't pin Host either (live today); fix with
+  one test build, shipped on its own.
+- After the merge: tsc exit 0; db, preview-bypass, vercelignore, policy and flags-off tests 82/82. Pushed to the
+  tuned-model-options branch only (no deploy; main unchanged).
+- Owner steps (README, Preview database): Neon branch "preview" with an empty database "preview"; PREVIEW_DATABASE_URL
+  for Preview; Protection Bypass for Automation. Then vercel.json's main-only rule can let previews build again.
 
 ## Gaps
 

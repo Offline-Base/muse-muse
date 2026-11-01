@@ -35,6 +35,60 @@ export interface BuilderPolicyOptions {
    * allowed with no rules. None for a brief without caps, so its policy is today's.
    */
   capHosts?: readonly string[];
+  /**
+   * Preview deployments only: Vercel's Protection Bypass for Automation secret and the one host it is for, the preview's
+   * own (env.previewBypass). When that host is platformHost, the firewall adds the secret to every request to it as
+   * x-vercel-protection-bypass, with Host pinned to it, and refuses a request for a bypass cookie, so the sandbox
+   * reaches a protected Preview without ever seeing the secret or anything that does its job. For any other
+   * platformHost the secret is left out, so it never goes to a host it isn't for.
+   */
+  platformBypass?: PlatformBypass | null;
+}
+
+/** A Protection Bypass for Automation secret, with the host it may be sent to. */
+export interface PlatformBypass {
+  host: string;
+  secret: string;
+}
+
+/** The header Vercel reads a Protection Bypass for Automation secret from. */
+export const PROTECTION_BYPASS_HEADER = "x-vercel-protection-bypass";
+
+/**
+ * The header or query parameter that asks Vercel to answer a bypassed request with a cookie that bypasses Deployment
+ * Protection on that host from then on. A sandbox never gets to ask: the cookie would land inside it, where the
+ * product's code and Muse Code could read it and send it out, so it would do the secret's job outside the firewall.
+ */
+export const SET_BYPASS_COOKIE = "x-vercel-set-bypass-cookie";
+
+/** Header names are compared in any case, as HTTP does. */
+export const SET_BYPASS_COOKIE_HEADER_KEY = `(?i)^${SET_BYPASS_COOKIE}$`;
+
+/**
+ * Query keys in any case, and any key with a "%" in it, so an encoded spelling such as x-vercel-set-bypass%2Dcookie is
+ * refused whether the firewall compares keys before or after decoding them. The platform's own calls never encode a key.
+ */
+export const SET_BYPASS_COOKIE_QUERY_KEY = `(?i)^${SET_BYPASS_COOKIE}$|%`;
+
+export const BYPASS_COOKIE_BLOCKED_BODY = "Blocked by the Muse Muse build firewall. Sandboxes can't ask for a Deployment Protection bypass cookie.";
+
+/**
+ * The platform host's rules when the firewall adds the bypass secret (README.md, Preview database). Rules run in order
+ * and the first that matches wins:
+ * 1. A request that asks for a bypass cookie, as a header or as a query parameter, gets a 403 from the firewall itself
+ *    and never reaches Vercel.
+ * 2. Every other request gets the secret, with its Host header pinned to the platform's host. The firewall picks a
+ *    domain's rules by the connection's SNI alone and passes the client's Host through, so without the pin, code in the
+ *    sandbox could name the platform in the SNI and another site on Vercel's edge in Host (domain fronting), and the
+ *    secret would go to that site. This rule has no match, so no request can skip the pin.
+ */
+function platformBypassRules(host: string, secret: string): NetworkPolicyRule[] {
+  const refused = { statusCode: 403, body: BYPASS_COOKIE_BLOCKED_BODY, contentType: "text/plain" };
+  return [
+    { match: { headers: [{ key: { regex: SET_BYPASS_COOKIE_HEADER_KEY } }] }, response: refused },
+    { match: { queryString: [{ key: { regex: SET_BYPASS_COOKIE_QUERY_KEY } }] }, response: refused },
+    { transform: [{ headers: { Host: host, [PROTECTION_BYPASS_HEADER]: secret } }] },
+  ];
 }
 
 /** Hosts @vercel/blob's client `upload()` talks to: the API that takes the PUT, and the store that serves it. */
@@ -85,7 +139,11 @@ export function builderNetworkPolicy(opts: BuilderPolicyOptions): NetworkPolicy 
     "api.meta.ai": meta,
     "registry.npmjs.org": [],
   };
-  if (opts.platformHost) allow[opts.platformHost] = [];
+  if (opts.platformHost) {
+    const bypass = opts.platformBypass;
+    const forThisHost = Boolean(bypass?.secret) && bypass?.host.toLowerCase() === opts.platformHost.toLowerCase();
+    allow[opts.platformHost] = bypass && forThisHost ? platformBypassRules(opts.platformHost, bypass.secret) : [];
+  }
   if (opts.blobUploads) for (const host of BLOB_UPLOAD_HOSTS) allow[host] = [];
   for (const host of opts.extraHosts ?? []) allow[host] = [];
   // A cap host never replaces a rule above: api.meta.ai keeps its brokered routes whatever a cap lists.
