@@ -100,6 +100,8 @@ export const RECIPES: readonly Recipe[] = [
 export const CASE_AGENT_SAMPLE_NOTE =
   "Build a legal case agent like meta-models/legal-agent-workshop. It reads a fictional dispute file, drafts a checklist, proves each item with exact page quotes, asks me for evidence when it is stuck, and files a memo I sign off. Show every turn live.";
 
+type RecipeBrief = { recipes?: readonly string[] | null; targets?: ReadonlyArray<{ id: unknown }> | null } | null | undefined;
+
 export interface RecipeFile {
   path: string;
   content: string;
@@ -120,24 +122,26 @@ export function availableRecipes(caps: readonly CapId[] = env.servedCaps): Recip
  * The recipes this stored brief gets now. An id no longer known or no longer available counts as never picked, so a
  * brief survives a removed recipe, and turning a flag off takes the recipe's skill, prompt lines and limits away together.
  */
-export function pickedRecipes(brief: { recipes?: readonly string[] | null } | null | undefined): Recipe[] {
+export function pickedRecipes(brief: RecipeBrief): Recipe[] {
   if (!brief?.recipes?.length) return [];
   const available = availableRecipes();
-  return available.filter((r) => brief.recipes?.includes(r.id));
+  // A verified agent builds on the agent kit, so code holds the writer's rule: with no agent target it counts as never picked.
+  const hasAgent = brief.targets?.some((t) => t?.id === "agent") ?? false;
+  return available.filter((r) => brief.recipes?.includes(r.id) && (!r.verifyAgents || hasAgent));
 }
 
 /** True when this brief's product gets the long run limits and its own daily budget. */
-export function isLongRunBrief(brief: { recipes?: readonly string[] | null } | null | undefined): boolean {
+export function isLongRunBrief(brief: RecipeBrief): boolean {
   return pickedRecipes(brief).some((r) => r.longRun);
 }
 
 /** The files a brief's recipes add to its product. */
-export function recipeExtraFiles(brief: { recipes?: readonly string[] | null } | null | undefined): RecipeFile[] {
+export function recipeExtraFiles(brief: RecipeBrief): RecipeFile[] {
   return pickedRecipes(brief).flatMap((r) => (SKILLS[r.id]?.files ?? []).map((f) => ({ path: `.agents/skills/${r.id}/${f.path}`, content: f.content })));
 }
 
 /** What the build and change prompts say about a brief's recipes (render.ts stays pure and takes this as an option). */
-export function recipeNotes(brief: { recipes?: readonly string[] | null } | null | undefined): Array<{ id: string; limit: string }> {
+export function recipeNotes(brief: RecipeBrief): Array<{ id: string; limit: string }> {
   return pickedRecipes(brief).map((r) => ({ id: r.id, limit: r.limit }));
 }
 

@@ -19,8 +19,9 @@ export async function reviewProblems(claims: readonly ReviewClaim[], ask: Ask): 
     return ["The review couldn't run, so this answer has no receipt. Try review_draft once more."];
   }
   return claims.flatMap((_, i) => {
-    const entry = verdict.claims.find((c) => c.index === i);
-    if (!entry) return [`Claim ${i + 1} wasn't reviewed.`];
-    return entry.backed ? [] : [`Claim ${i + 1}: ${entry.problem ?? "its quotes don't back it"}`];
+    // Every entry for a claim counts, so a second "backed" can't outvote a refusal.
+    const entries = verdict.claims.filter((c) => c.index === i);
+    if (!entries.length) return [`Claim ${i + 1} wasn't reviewed.`];
+    return entries.filter((e) => !e.backed).slice(0, 1).map((e) => `Claim ${i + 1}: ${e.problem ?? "its quotes don't back it"}`);
   });
 }

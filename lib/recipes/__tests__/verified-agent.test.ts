@@ -10,7 +10,7 @@ import { makeReceipts } from "../skills/recipe-verified-agent/helpers/receipts";
 import { reviewProblems } from "../skills/recipe-verified-agent/helpers/review";
 
 const ID = "recipe-verified-agent";
-const brief = { recipes: [ID] };
+const brief = { recipes: [ID], targets: [{ id: "agent" }] };
 
 beforeEach(() => {
   for (const flag of ["RECIPES_ENABLED", "VERIFY_AGENTS", "AGENTS_ENABLED", "AGENT_LONG_RUNS"]) delete process.env[flag];
@@ -36,6 +36,7 @@ describe("offering the recipe", () => {
       assert.ok(paths.includes(`.agents/skills/${ID}/${file}`), file);
     }
     assert.ok(recipesWriterRules([]).includes(ID));
+    assert.deepEqual(recipeExtraFiles({ recipes: [ID], targets: [{ id: "web" }] }), []);
   });
 });
 
@@ -90,6 +91,7 @@ describe("the gate", () => {
     assert.deepEqual(await reviewProblems([claim], async () => ({ claims: [{ index: 0, backed: true, problem: null }] })), []);
     assert.equal((await reviewProblems([claim], async () => ({ claims: [{ index: 0, backed: false, problem: "It adds a cause." }] })))[0], "Claim 1: It adds a cause.");
     assert.equal((await reviewProblems([claim], async () => ({ claims: [] }))).length, 1);
+    assert.equal((await reviewProblems([claim], async () => ({ claims: [{ index: 0, backed: false, problem: "No." }, { index: 0, backed: true, problem: null }] }))).length, 1);
     assert.equal((await reviewProblems([claim], async () => { throw new Error("down"); })).length, 1);
   });
 

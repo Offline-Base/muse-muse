@@ -67,6 +67,7 @@ This converts to a strict tool schema, and `superRefine` stays in code only. A r
 
 - **The kit allows one refused submit in a run. A second one ends it as failed, `no_answer`, with no answer shown.** That is the safe way to fail, and it is why `review_draft` runs the code checks first: refusals there don't use up that retry. The expected path is at most one refusal, when the model skipped review.
 - Other limits are the kit's turn and tool call limits, not a count of refusals. Say so if you describe them.
+- The kit's defaults are 6 turns and 8 tool calls. Count the path before relying on them: one call per source read, one per quote, a review and a submit. Pass higher `limits` when the sources and items need more, within the budget in `muse-agent`, or the run stops short and shows no answer.
 - `needs_person` ends the run with a card: `VerifiedResult` shows the request and the quotes found so far. The gate allows it only with a read receipt for every visible source, for an item not already backed in `claims`.
 
 When a person answers, start a new run with their evidence added as a new source.

@@ -38,6 +38,7 @@ describe("judgeAgentClaims", () => {
     const g = grade({ ...good, claims: [{ text: "x", quote: "y" }] });
     assert.equal(g.state, "skipped");
     assert.match(g.title, /weren't graded/);
+    assert.match(grade({ ...good, answer: { status: "answered", claims: [] } }).title, /weren't graded/);
   });
   it("says nothing about links when the answer has none", () => {
     assert.ok(!grade({ ...good, answer: "Yes." }).checks.some((c) => /Every link/.test(c.label)));

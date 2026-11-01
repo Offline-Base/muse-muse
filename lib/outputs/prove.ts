@@ -687,7 +687,8 @@ export function judgeAgentClaims(input: { action: string; reply: Record<string, 
     ...(forged.length ? [`The answer has links that aren't in its sources: ${oneLine(forged.slice(0, 3).join(", "), 300)}.`] : []),
   ];
   if (problems.length) return { state: "failed", title: "Agent reply: failed a check", detail: noEmDashes(problems.join(" ")), checks, reported };
-  if ("claims" in reply) {
+  // The kit's reply carries the recipe's answer under `answer`, so that's where its claims are.
+  if ("claims" in reply || (asObject(reply.answer) && "claims" in asObject(reply.answer)!)) {
     return { state: "skipped", title: "Agent reply: its claims weren't graded", detail: "The reply has a claims list that this check can't read yet, so none of its claims were checked.", checks, reported };
   }
   return { state: "skipped", title: "Agent reply: no claims to check", detail: "The answer doesn't say which claim rests on which source, so its claims weren't checked.", checks, reported };

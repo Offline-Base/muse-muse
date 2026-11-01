@@ -564,10 +564,6 @@ export const env = {
   get recipesEnabled(): boolean {
     return flag("RECIPES_ENABLED");
   },
-  /** VERIFY_AGENTS: recipe-verified-agent may be picked. Needs RECIPES_ENABLED and AGENTS_ENABLED. */
-  get verifyAgents(): boolean {
-    return flag("VERIFY_AGENTS");
-  },
   /** AGENT_LONG_RUNS: recipes that run dozens of turns may be picked, and get the long run limits. Needs RECIPES_ENABLED. */
   get agentLongRuns(): boolean {
     return flag("AGENT_LONG_RUNS");
@@ -598,7 +594,7 @@ export const env = {
   get proveIt(): boolean {
     return flag("PRODUCT_OUTPUTS") && flag("PROVE_IT");
   },
-  /** VERIFY_AGENTS: the "What was checked" panel and the judge's agent rules. The agent claims check also needs PROVE_IT. */
+  /** VERIFY_AGENTS: the "What was checked" panel and the judge's agent rules. The agent claims check also needs PROVE_IT, and recipe-verified-agent also needs RECIPES_ENABLED and AGENTS_ENABLED. */
   get verifyAgents(): boolean {
     return flag("VERIFY_AGENTS");
   },

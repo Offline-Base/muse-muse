@@ -1581,3 +1581,17 @@ What this record doesn't confirm:
 - Decision: the gateway comparison is dropped. Usage rows record `tools/execute` with no tool name and no run.
 - Found: the page already loads a build's verify, judge and prove events, and a refinement's build has its own, so no query changed. `condenseProveEvents` keeps only the newest run, so the panel splits ship and nightly first.
 - Run: tsc and the rule test files named in the commit. Not run: the full suite, next build, a browser, any real Prove it run, Meta or a sandbox.
+
+## Nov 1: verification merged on tg-verify, VERIFY_AGENTS off (unmerged to main)
+
+- Merged `tg-verify-recipe` and `tg-verify-platform` onto `origin/main`. The only conflict was this log, both entries kept.
+- Fixed, found in review:
+  - The merge left two `verifyAgents` getters in `lib/env.ts`. Now one.
+  - The agent target was only a writer rule, so a model could pick the recipe without the kit. `pickedRecipes` now treats that as never picked, in code.
+  - `reviewProblems` read only the first verdict entry for a claim, so a later refusal could be missed. Any refusal for a claim now refuses it.
+  - Prove it looked for `claims` at the top of the reply, but the kit puts the recipe's answer under `answer`. A verified product would have read "no claims to check". It now reads "weren't graded". It still never passes.
+  - The skill now says to size `limits`, since the kit's defaults of 6 turns and 8 calls are tight for several sources or items.
+- Reviewed with no change: 8-word overlap scan against the workshop (no hits in new files; the 2 hits are in other recipes in `generated.json`, a repo URL and a fetch header line), em dashes in added copy (none), secret patterns in the diff (none), a judge that can't run (recorded as not passed, so the panel can't show it as passed), guards with the flag off (read, and covered by the tests below where noted).
+- Run: tsc once in full plus once after a type fix. Tests: `verified-agent`, `skills`, `recipes`, `flags-off`, `checked`, `assets-source`, 42 pass, then `verified-agent` again after the type fix, 9 pass. `recipes-gen --check` passes. tsc reports 70 lines, none in touched files, all in docs, markdown and composio files, mostly modules missing from the symlinked `node_modules`.
+- Not run: the full suite, `prove.test.ts`, the prove-steps and build-steps scenario tests, next build, a browser, a real Prove it, Meta, a sandbox. No product has been built with the recipe, and the panel has never been rendered.
+- Still waiting on a test build: real claims grading and the quote-in-file check.
