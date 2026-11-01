@@ -1229,6 +1229,16 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
     7a55cf2), so knowledge pushes build nothing.
   - The earlier previews were harmless. Knowledge's drizzle/ holds 0000 to 0008, byte-identical to main's 0000 to 0017,
     and production already has 0017, so the migrator had nothing newer to apply.
+- 11:15 PM: owner: "Whatever to speed up."
+  - Card changes now go up as each passes its checks.
+  - To put the bnb-4bit check next on the GPU, I paused (SIGSTOP) the shrink bench's optional iq2-out-q2 score waiter
+    (pid 3429247, not a kept mix) and the loop_r30b.sh queue (pid 3943106). Both resume after the bnb-4bit verify.
+  - The r30b tool and cutoff tests (run5) hold the GPU now.
+  - Loop checks, as loops out of 60, greedy / sampled, with old facts out of 40:
+    - Q4_K_M: 0 / 0, 40 / 40;
+    - IQ1_M: 3 / 5, 37 / 38;
+    - iq1s-io-lowest: 17 / 16, 36 / 25. It loops more than IQ1_S's 9 / 10.
+  - Cards updated: merged c0124123, -GGUF 502f30af, -LoRA c99be2d3.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
