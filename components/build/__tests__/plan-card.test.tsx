@@ -406,6 +406,8 @@ describe("the card's look", () => {
     // Below 520 px (a phone, a narrow column): the grid as it was, a 112 px picture beside the name and the plan under both.
     assert.match(s, /\.plan-card \{[^}]*grid-template-columns: 112px minmax\(0, 1fr\);[^}]*"art head"\s*"body body";/);
     assert.equal(s.indexOf("float:"), s.indexOf("float: left;"), "the picture floats only in the wide rule");
+    // The full-width models table can't sit beside the picture, so its heading starts under the picture with it.
+    assert.match(wide, /\.plan-card-wrap \.plan-card-body \.rich > h3:has\(\+ \.table-wrap\) \{\s*clear: left;\s*\}/);
     assert.ok(s.indexOf("float: left;") > s.indexOf("@container (min-width: 520px) {\n  .plan-card.plan-card-wrap"));
   });
 

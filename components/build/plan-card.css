@@ -163,7 +163,7 @@
  * Owner, Oct 31: the build room's card (.plan-card-wrap) lets the plan's text wrap beside the picture and run on full
  * width under it. The picture floats at the wide card's 240 px, and the head, body and brief become plain blocks so
  * their lines flow around it. Lists, the two columns, and the models table keep their own boxes, so they sit beside the
- * picture narrower (a list's numbers never run under it) or, for the full-width table, start under it. Below 520 px of
+ * picture narrower (a list's numbers never run under it) or, for the full-width table and its heading, start under it. Below 520 px of
  * column the card keeps the small picture beside the name with the plan under both, as above.
  */
 @container (min-width: 520px) {
@@ -201,6 +201,11 @@
   /* The 12 px gap and a heading's own 12 px, as the brief has them in its usual column layout. */
   .plan-card-wrap .plan-card-body .rich > * + h3 {
     margin-top: 24px;
+  }
+
+  /* The models table is full width, so it starts under the picture: its heading goes with it, not beside the picture. */
+  .plan-card-wrap .plan-card-body .rich > h3:has(+ .table-wrap) {
+    clear: left;
   }
 }
 
