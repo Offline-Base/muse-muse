@@ -9,6 +9,15 @@
 export type QuantLevel = "Q3_K_M" | "Q4_K_M" | "Q6_K";
 export const QUANT_LEVELS: readonly QuantLevel[] = ["Q3_K_M", "Q4_K_M", "Q6_K"];
 
+/**
+ * One-bit Muse Glimmer, for a Jetson Orin Nano (QUANT_TARGETS, lib/train/quant-targets.ts). It isn't a QuantLevel: the
+ * run-locally guide and drive orders never offer it, and it reaches a page only through LocalFiles.lowBit.
+ */
+export const LOW_BIT_LEVEL = "IQ1_S";
+export type BuildLevel = QuantLevel | typeof LOW_BIT_LEVEL;
+/** Every build a glimmer-quantize job can make, smallest first. */
+export const BUILD_LEVELS: readonly BuildLevel[] = [LOW_BIT_LEVEL, ...QUANT_LEVELS];
+
 export interface LocalFile {
   level: QuantLevel;
   /** The file's name on the Hub, "muse-glimmer-30b-<slug>-<LEVEL>.gguf". */
@@ -16,6 +25,8 @@ export interface LocalFile {
   bytes: number;
   sha256: string;
 }
+
+export type LowBitFile = Omit<LocalFile, "level"> & { level: typeof LOW_BIT_LEVEL };
 
 export interface LocalFiles {
   /** The glimmer-lora job whose adapter was merged, and the glimmer-quantize job that made the files. */
@@ -43,4 +54,8 @@ export interface LocalFiles {
    * then show "Built with Muse Spark Open" and the Usage Policy's points, and a drive ships its license files.
    */
   sparkOpen?: boolean;
+  /** The one-bit build, when the job made one and it passed. Never in `files`. */
+  lowBit?: LowBitFile | null;
+  /** The small base these files merged into (QUANT_BASES in lib/train/quant-targets.ts). Absent or null for r30b. */
+  quantBase?: string | null;
 }

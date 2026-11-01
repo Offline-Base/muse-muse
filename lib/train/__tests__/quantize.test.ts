@@ -19,9 +19,10 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
-import { ggufParams, ggufSystemLine, META_REVISION, META_TEMPLATE_SHA256, TUNED_TEMPLATE_SHA256 } from "@/lib/train/hub-cards";
-import { QUANT_LEVELS } from "@/lib/train/local-files";
-import { QUANT_CHANNEL_MIN, QUANT_KL_MAX } from "@/lib/train/logic";
+import { ggufFileName, ggufParams, ggufSystemLine, META_REVISION, META_TEMPLATE_SHA256, TUNED_TEMPLATE_SHA256 } from "@/lib/train/hub-cards";
+import { LOW_BIT_LEVEL, QUANT_LEVELS } from "@/lib/train/local-files";
+import { LOW_BIT_KL_MAX, QUANT_CHANNEL_MIN, QUANT_KL_MAX } from "@/lib/train/logic";
+import { QUANT_BASES } from "@/lib/train/quant-targets";
 import { recipeById } from "@/lib/train/recipes";
 import { GLIMMER_PY } from "@/lib/train/recipes/glimmer";
 import { QUANT_PY } from "@/lib/train/recipes/quantize";
@@ -87,6 +88,7 @@ class FakeCtx:
             {"prompt": "App idea " + str(i) + ": count the gulls on the pier", "reference": ("A brief for idea " + str(i) + ". ") * 60, "tuned": "**Name:** Gull Counter " + str(i)}
             for i in range(10)
         ]
+        self.train = [{"messages": [{"role": "system", "content": "s"}, {"role": "user", "content": "Idea " + str(i)}, {"role": "assistant", "content": "A training brief. " * 60}]} for i in range(30)]
         self.hub_answer = None
         self.order = []
 
@@ -102,6 +104,8 @@ class FakeCtx:
         return {"items": [{"messages": [{"role": "system", "content": system}, {"role": "user", "content": "x"}, {"role": "assistant", "content": "y"}]}], "nextPage": None, "title": self.title}
 
     def dataset(self, part):
+        if part == "train":
+            return self.train
         assert part == "eval"
         return self.evals
 
@@ -221,7 +225,7 @@ with open(os.path.join(a.model, "tokenizer_config.json"), encoding="utf-8") as f
     assert "chat_template" not in json.load(f), "a chat_template key would replace chat_template.jinja"
 assert not os.path.exists(os.path.join(a.model, "chat_template.json"))
 gguf.log({"tool": "convert", "outtype": a.outtype, "name": a.model_name})
-gguf.write(a.outfile, {"general.architecture": "muse-glimmer", "tokenizer.chat_template": template, "tensors": 731, "level": "BF16"}, 4000)
+gguf.write(a.outfile, {"general.architecture": os.environ.get("FAKE_ARCH", "muse-glimmer"), "tokenizer.chat_template": template, "tensors": int(os.environ.get("FAKE_GGUF_TENSORS", "731")), "level": "BF16"}, 4000)
 print("INFO:hf-to-gguf:Model successfully exported to " + a.outfile)
 `,
   "fakes/src/gguf-py/gguf/__init__.py": String.raw`import json
@@ -251,13 +255,37 @@ class GGUFReader:
 import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 from fakes import gguf
-src, dst, level = sys.argv[1:4]
+argv = sys.argv[1:]
+matrix = None
+if argv[0] == "--imatrix":
+    matrix = argv[1]
+    assert os.path.exists(matrix), "no importance matrix"
+    argv = argv[2:]
+src, dst, level = argv[:3]
+# As llama.cpp b11669's src/llama-quant.cpp: IQ1_S throws without an importance matrix.
+if level == "IQ1_S" and not matrix:
+    print("this quantization requires an imatrix!")
+    sys.exit(1)
 meta = gguf.read(src)
 meta["level"] = level
-sizes = {"Q8_0": 3000, "Q3_K_M": 1300, "Q4_K_M": 1600, "Q6_K": 2200}
+sizes = {"IQ1_S": 700, "Q8_0": 3000, "Q3_K_M": 1300, "Q4_K_M": 1600, "Q6_K": 2200}
 gguf.log({"tool": "quantize", "level": level, "src": os.path.basename(src)})
 gguf.write(dst, meta, sizes[level])
 print("main: quantize time = 1.00 ms")
+`,
+  "fakes/bin/llama-imatrix": String.raw`#!@PYTHON@
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+from fakes import gguf
+args = sys.argv[1:]
+text = open(args[args.index("-f") + 1], encoding="utf-8").read()
+assert "--parse-special" in args and "--no-ppl" in args and args[args.index("--output-format") + 1] == "gguf", args
+gguf.log({"tool": "imatrix", "level": gguf.read(args[args.index("-m") + 1])["level"], "text": text[:4000], "chars": len(text)})
+if os.environ.get("FAKE_IMATRIX_FAIL"):
+    print("failed to process")
+    sys.exit(1)
+with open(args[args.index("-o") + 1], "wb") as f:
+    f.write(b"matrix")
 `,
   "fakes/bin/llama-perplexity": String.raw`#!@PYTHON@
 import json, os, sys
@@ -302,6 +330,15 @@ answered = {"n": 0}
 
 
 def render(messages):
+    if os.environ.get("FAKE_LLAMA"):
+        # A Llama template writes today's date, so the check has to read past it.
+        out = ""
+        for m in messages:
+            if m["role"] == "system":
+                out += "<|start_header_id|>system<|end_header_id|>\n\nToday Date: 02 Nov 2026\n\n" + m["content"] + "<|eot_id|>"
+            else:
+                out += "<|start_header_id|>user<|end_header_id|>\n\n" + m["content"] + "<|eot_id|>"
+        return out + "<|start_header_id|>assistant<|end_header_id|>\n\n"
     out = ""
     for m in messages:
         if m["role"] == "system":
@@ -335,6 +372,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.reply(200, {"prompt": render(body["messages"])})
         gguf.log({"tool": "chat", "body": body})
         mode = os.environ.get("FAKE_CHANNEL", "final")
+        if meta["level"] == "IQ1_S" and os.environ.get("FAKE_LOW_BIT"):
+            mode = os.environ["FAKE_LOW_BIT"]
         prompt = body["messages"][-1]["content"]
         number = int(prompt.split(" ")[2].rstrip(":"))
         if mode == "thinking" or (mode.startswith("first:") and number >= int(mode.split(":")[1])):
@@ -353,11 +392,20 @@ class FakeTokenizer:
 
     def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=False, reasoning_strength=None):
         out = self.bos_token
+        if os.environ.get("FAKE_LLAMA"):
+            for m in messages:
+                if m["role"] == "system":
+                    out += "<|start_header_id|>system<|end_header_id|>\n\nToday Date: 01 Nov 2026\n\n" + m["content"] + "<|eot_id|>"
+                else:
+                    out += "<|start_header_id|>" + m["role"] + "<|end_header_id|>\n\n" + m["content"] + "<|eot_id|>"
+            return out + ("<|start_header_id|>assistant<|end_header_id|>\n\n" if add_generation_prompt else "")
         for m in messages:
             if m["role"] == "system":
                 out += "<|start|>system<|message|>" + m["content"] + "\n\nReasoning strength: " + (reasoning_strength or "high") + '.\n\n# Valid recipients: "self", "user".<|eot|>'
             elif m["role"] == "user":
                 out += "<|start|>user<|message|>" + m["content"] + "<|eot|>"
+            elif m["role"] == "assistant":
+                out += "<|start|>assistant to=user<|message|>" + m["content"] + "<|eot|>"
         return out + ("<|start|>assistant" if add_generation_prompt else "")
 
     def save_pretrained(self, path):
@@ -385,7 +433,7 @@ class FakeModel:
     def save_pretrained_merged(self, save_directory, tokenizer, save_method="merged_16bit"):
         assert save_method == "merged_16bit", save_method
         # Unsloth resolves the 16-bit base from config._name_or_path; an nf4 name there would be refused.
-        assert self.config._name_or_path == "OfflineBase/Glimmer-30B-2026-Knowledge", self.config._name_or_path
+        assert self.config._name_or_path == os.environ.get("FAKE_MERGE_BASE", "OfflineBase/Glimmer-30B-2026-Knowledge"), self.config._name_or_path
         hf = os.environ["HF_HOME"]
         cached = os.path.join(hf, "hub", "models--OfflineBase--Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit")
         with open(os.environ["FAKE_LOG"], "a") as f:
@@ -418,6 +466,13 @@ class FakeModel:
             json.dump({"chat_template": "Unsloth's older template"}, f)
         with open(os.path.join(save_directory, "chat_template.json"), "w") as f:
             json.dump({"chat_template": "Unsloth's older template"}, f)
+
+
+class FastLanguageModel:
+    @staticmethod
+    def from_pretrained(model_name, revision=None, max_seq_length=None, use_exact_model_name=False, load_in_4bit=True):
+        assert model_name == "unsloth/Llama-3.2-3B-Instruct-bnb-4bit" and revision and use_exact_model_name and load_in_4bit is False, (model_name, revision)
+        return FakeModel(), FakeTokenizer()
 
 
 class FastModel:
@@ -472,6 +527,7 @@ function pythonPath(): string {
   return python;
 }
 
+const SMALL_PARAMS = { quantBase: "llama-3.2-3b" };
 const sha256 = (b: Buffer | string) => createHash("sha256").update(b).digest("hex");
 const pyConst = (name: string) => new RegExp(`^${name} = (.+)$`, "m").exec(QUANT_PY)?.[1];
 
@@ -864,6 +920,84 @@ raises(lambda: q.run(ctx), "didn't reach the Hugging Face Hub's storage")
 ctx = fresh()
 ctx.hub_answer = {"uploaded": 0, "skipped": "Publishing to Hugging Face is off here: HF_TOKEN isn't set.", "failed": [], "repo": None, "files": 6, "bytes": 1}
 raises(lambda: q.run(ctx), "weren't sent to the Hugging Face Hub: Publishing to Hugging Face is off here")
+`);
+  });
+
+  it("keeps the one-bit pins equal to the platform's: no KL limit until one is measured, and only the small base's files", () => {
+    assert.equal(pyConst("LOW_BIT_LEVEL"), JSON.stringify(LOW_BIT_LEVEL));
+    assert.equal(pyConst("LOW_BIT_KL_MAX"), LOW_BIT_KL_MAX === null ? "None" : String(LOW_BIT_KL_MAX));
+    const base = QUANT_BASES["llama-3.2-3b"]!;
+    for (const fact of [base.model, base.mergeBase, base.fileStem, base.family]) assert.ok(QUANT_PY.includes(JSON.stringify(fact)), fact);
+    const re = new RegExp(/^HUB_GGUF_RE = re\.compile\(r"(.+)"\)$/m.exec(RUNNER_PY)![1]!);
+    assert.ok(re.test(`muse-glimmer-30b-brief-writer-${LOW_BIT_LEVEL}.gguf`));
+    assert.ok(re.test("Llama-3.2-3B-brief-writer-Q4_K_M.gguf"));
+    assert.ok(!re.test("Llama-3.2-11B-brief-writer-Q4_K_M.gguf"));
+  });
+
+  it("IQ1_S: an importance matrix from the training text only, its own answer check, and any problem leaves out that build alone", async () => {
+    await quantTest(String.raw`
+KLD = json.dumps({"IQ1_S": [0.42, 1.9, 61.0], "Q4_K_M": [0.012, 0.11, 95.4]})
+params = {"adapterJobId": ADAPTER, "publish": 1, "levels": "IQ1_S,Q4_K_M", "slug": "brief-writer", "trainChannel": 1}
+ctx = fresh(params, env={"FAKE_KLD": KLD})
+metrics = q.run(ctx)
+seen = [e for e in logged() if e["tool"] == "imatrix"]
+assert len(seen) == 1 and seen[0]["level"] == "Q8_0"
+assert "A training brief" in seen[0]["text"] and "Gull Counter" not in seen[0]["text"], "training text, never the held-out prompts"
+assert metrics["iq1_s_passed"] == "yes" and metrics["iq1_s_kl_mean"] == 0.42, "a large KL is recorded, not gated"
+assert metrics["iq1_s_final"] == 10 and metrics["iq1_s_final_total"] == 10 and metrics["calibration_chars"] > 20000
+assert metrics["published_levels"] == "IQ1_S,Q4_K_M"
+assert "muse-glimmer-30b-brief-writer-IQ1_S.gguf" in ctx.uploads[0]
+assert [e["level"] for e in logged() if e["tool"] == "server"] == ["Q4_K_M", "IQ1_S"]
+
+# A file that repeats itself isn't published, and the others are.
+ctx = fresh(params, env={"FAKE_KLD": KLD, "FAKE_LOW_BIT": "thinking"})
+metrics = q.run(ctx)
+assert metrics["iq1_s_passed"] == "no" and "final answer to 0 of 10" in metrics["iq1_s_problem"]
+assert metrics["published_levels"] == "Q4_K_M" and "muse-glimmer-30b-brief-writer-IQ1_S.gguf" not in ctx.uploads[0]
+assert "IQ1_S left out" in metrics["summary"]
+
+ctx = fresh(params, env={"FAKE_KLD": KLD, "FAKE_IMATRIX_FAIL": "1"})
+metrics = q.run(ctx)
+assert "llama-imatrix failed" in metrics["iq1_s_problem"] and metrics["published_levels"] == "Q4_K_M"
+
+ctx = fresh(params, env={"FAKE_KLD": KLD})
+ctx.train = ctx.train[:1]
+metrics = q.run(ctx)
+assert "an importance matrix needs" in metrics["iq1_s_problem"] and not [e for e in logged() if e["tool"] == "imatrix"]
+assert metrics["published_levels"] == "Q4_K_M"
+
+# Q4_K_M's own failure still stops the job, and no job without IQ1_S in its levels makes a matrix.
+assert q.read_quant_params(dict(params, levels="Q4_K_M,Q3_K_M"))["levels"] == ["Q3_K_M", "Q4_K_M"]
+raises(lambda: q.read_quant_params(dict(params, levels="IQ1_S")), "must include Q4_K_M")
+raises(lambda: q.read_quant_params(dict(params, levels="IQ1_M,Q4_K_M")), "levels must name builds")
+metrics = q.run(fresh(dict(params, levels="Q4_K_M"), env={"FAKE_KLD": KLD}))
+assert not [e for e in logged() if e["tool"] == "imatrix"] and "iq1_s_passed" not in metrics
+`);
+  });
+
+  it("merges a Llama 3.2 3B adapter into its own base, with that base's pins, names, stops and system line", async () => {
+    const expect = { name: ggufFileName("brief-writer", "Q4_K_M", SMALL_PARAMS), system: ggufSystemLine("You are Muse Muse's brief writer.", SMALL_PARAMS), params: ggufParams(1, SMALL_PARAMS) };
+    await quantTest(String.raw`
+expect = json.loads(${JSON.stringify(JSON.stringify(expect))})
+params = {"adapterJobId": ADAPTER, "publish": 1, "levels": "Q4_K_M", "slug": "brief-writer", "trainChannel": 1, "quantBase": "llama-3.2-3b", "baseFamily": "llama3", "baseModel": "unsloth/Llama-3.2-3B-Instruct-bnb-4bit", "baseRevision": "d" * 40}
+base = q.QUANT_BASES["llama-3.2-3b"]
+assert base["tensors"] == 254 and base["gguf_tensors"] == 255 and base["gguf_arch"] == "llama" and len(base["shards"]) == 2
+raises(lambda: q.use_quant_base(dict(params, quantBase="llama-3.3-70b")), "must name a small base")
+raises(lambda: q.use_quant_base(dict(params, baseModel="unsloth/Llama-3.1-8B-bnb-4bit")), "didn't train on")
+raises(lambda: q.use_quant_base(dict(params, baseRevision="main")), "pinned commit")
+assert q.use_quant_base({"levels": "Q4_K_M"}) is None and q.QUANT_BASE is None and q.MERGE_BASE == "OfflineBase/Glimmer-30B-2026-Knowledge"
+# The fakes' checkpoint and files stand in for Llama's, whose real pins were read from the Hub.
+base.update({"tensors": len(TENSORS), "tensors_sha256": q.tensors_digest(TENSORS), "shards": q.BASE_SHARDS, "files": q.META_FILES, "gguf_arch": "fake-llama", "gguf_tensors": 77})
+ctx = fresh(params, env={"FAKE_KLD": json.dumps({"Q4_K_M": [0.9, 2.0, 70.0]}), "FAKE_LLAMA": "1", "FAKE_ARCH": "fake-llama", "FAKE_GGUF_TENSORS": "77", "FAKE_MERGE_BASE": "unsloth/Llama-3.2-3B-Instruct"})
+make_adapter(ctx.cache_dir, {"base_model_name_or_path": q.MODEL, "r": 16, "target_modules": ["q_proj"]}, ["base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight"])
+metrics = q.run(ctx)
+assert metrics["quant_base"] == "llama-3.2-3b" and metrics["merge_base"] == "unsloth/Llama-3.2-3B-Instruct"
+assert metrics["q4_k_m_passed"] == "yes", "no KL limit is measured for this base, so the answer check decides"
+assert metrics["channel_final"] == 10 and metrics["template_check"] == "passed", "the template check reads past today's date"
+sent = ctx.uploads[0]
+assert sorted(sent) == sorted([expect["name"], "params", "system"]), sorted(sent)
+assert sent["system"].decode() == expect["system"] and sent["params"].decode() == expect["params"]
+assert [e for e in logged() if e["tool"] == "convert"][0]["name"] == "Llama-3.2-3B-brief-writer"
 `);
   });
 

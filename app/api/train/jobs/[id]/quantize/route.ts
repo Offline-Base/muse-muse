@@ -2,6 +2,7 @@ import { requireAdminOrAutomation } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { errorJson, route } from "@/lib/http";
 import { localFilesFor } from "@/lib/train/local-files-server";
+import { quantBaseForAdapter } from "@/lib/train/quant-targets";
 import { ADAPTER_RECIPE, adapterProblem, quantProblem, toHubView, type TrainJobRow } from "@/lib/train/logic";
 import { getAdapterSource, getJob, quantJobsOf } from "@/lib/train/store";
 import { QUANT_RECIPE, type TrainStatus } from "@/lib/train/types";
@@ -46,17 +47,20 @@ function summary(row: TrainJobRow, now: Date): QuantJobSummary {
  */
 async function problemOf(jobId: string): Promise<string | null> {
   const source = await getAdapterSource(jobId);
-  const problem = adapterProblem(source?.job ?? null, source?.metrics ?? null) ?? (source ? quantProblem(source.job, source.metrics) : null);
+  const targets = env.quantTargets;
+  const problem =
+    adapterProblem(source?.job ?? null, source?.metrics ?? null, { smallQuantBase: targets }) ?? (source ? quantProblem(source.job, source.metrics, { targets }) : null);
   if (problem) return `This adapter can't have local files made: ${problem}`;
   if (source?.job.hub?.status !== "published") return "Publish the adapter to Hugging Face first: its local files go to a repo whose card links to it.";
   return null;
 }
 
 /**
- * GET -> {quantOff, hubOff, problem, latest, files}: what a glimmer-lora job's page needs for Make local files
+ * GET -> {quantOff, hubOff, problem, latest, files, targets, smallBase}: what a glimmer-lora job's page needs for Make local files
  * (docs/TRAINING.md "Local files"). quantOff and hubOff say why making or publishing them is off here (QUANT_ENABLED,
  * env.hubOffReason), problem why this adapter can't have them now, latest its newest local files job (with the GGUF
- * repo's hub view), and files the newest ones that passed (localFilesFor). Admins or automation only. 404 for an
+ * repo's hub view), files the newest ones that passed (localFilesFor), targets whether QUANT_TARGETS is on, and smallBase
+ * the small base this adapter merges into with it on, by name. Admins or automation only. 404 for an
  * unknown job or one that isn't a glimmer-lora job.
  */
 export const GET = route(async (req: Request, { params }: Ctx) => {
@@ -73,6 +77,8 @@ export const GET = route(async (req: Request, { params }: Ctx) => {
       problem,
       latest: jobs[0] ? summary(jobs[0], now) : null,
       files,
+      targets: env.quantTargets,
+      smallBase: env.quantTargets ? (quantBaseForAdapter(job.params)?.label ?? null) : null,
     },
     { headers: { "cache-control": "no-store" } },
   );

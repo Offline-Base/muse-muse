@@ -1700,3 +1700,12 @@ scripts/dev/tune-harness.ts, on a Lambda gpu_1x_a10 named prove-tune-1, us-east-
 - Found: both briefs have verdict yes and canDo true on sign-in, while the sign-in is a local picker or profile with no real account. Limits say so, but docs/FULL_BUILDS.md expects a part it can't do to force verdict partly. Not changed.
 - Found: nothing stops a build at a dollar amount. The $40 budget for this job isn't enforced by code; only the wall and DAILY_SPEND_CAP_USD=150 limit it.
 - Result of both builds: pending. A real brief is all this proves so far.
+
+## Nov 1, 2026: quantize code for device targets (tg-quant-targets)
+
+- Decision (owner): quantize inside fine-tuning. Jetsons get one-bit Muse Glimmer, other devices a small Llama. No Qwen.
+- Added behind `QUANT_TARGETS`, off: Llama 3.2 3B adapters merge into their own base and make Q4_K_M; r30b adapters also make IQ1_S; `deviceModelTarget` in `lib/train/quant-targets.ts`. Removed Qwen from Where it runs.
+- Research from primary sources: llama.cpp b11669 requires an importance matrix for IQ1_S (`tensor_requires_imatrix`) and lists 1.56 bpw. Pinned Llama hashes checked against the Hub at commit 006f5dcd.
+- Fixed from the stopped agent's work: `write_calibration` iterated the row dicts instead of their messages, so any IQ1_S job would have crashed in the merge child.
+- Decision: no KL limit for IQ1_S or Llama yet, since none is measured. KL is recorded, and the answer check on the file decides. Set `LOW_BIT_KL_MAX` from the next agent's GPU run.
+- Tests: targeted only, with fake tools. No GPU, no real llama.cpp, no board, no spend. Simulated, not proven.

@@ -158,7 +158,7 @@ HUB_LFS_SUFFIXES = (".safetensors", ".model", ".gguf")
 # lib/train/hub-cards.ts): its builds' files, each named for its level and at most HUB_GGUF_FILE_MAX_BYTES, and the
 # small files beside them, which go inline for the platform to check and commit.
 HUB_GGUF_RECIPE = "glimmer-quantize"
-HUB_GGUF_RE = re.compile(r"^muse-glimmer-30b-[a-z0-9]+(?:-[a-z0-9]+)*-(?:Q3_K_M|Q4_K_M|Q6_K)\.gguf$")
+HUB_GGUF_RE = re.compile(r"^(?:muse-glimmer-30b-|Llama-3\.2-3B-)[a-z0-9]+(?:-[a-z0-9]+)*-(?:IQ1_S|Q3_K_M|Q4_K_M|Q6_K)\.gguf$")
 HUB_GGUF_SMALL = (
     "system",
     "params",

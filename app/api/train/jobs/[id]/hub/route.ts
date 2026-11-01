@@ -248,10 +248,10 @@ async function ggufPlan(target: TrainJobRow, parsed: { files: HubPlanFile[]; sma
   const ran = typeof source.metrics?.student_system === "string" ? source.metrics.student_system.trim() : "";
   const role = ran.startsWith("You are ") ? ran : studentSystem(dataset.title);
   for (const [path, bytes] of parsed.small) {
-    const problem = ggufSmallProblem(path, bytes, sha256Of(bytes), { role, trainChannel: channel });
+    const problem = ggufSmallProblem(path, bytes, sha256Of(bytes), { role, trainChannel: channel, params: target.params });
     if (problem) return { skip: `The local files aren't published: ${problem}.`, save: "failed" };
   }
-  const repo = target.hub?.modelRepo || `${env.hfNamespace!}/${ggufRepoName(slug, adapterJobId)}`;
+  const repo = target.hub?.modelRepo || `${env.hfNamespace!}/${ggufRepoName(slug, adapterJobId, target.params)}`;
   if (!validRepoName(repo.split("/")[1] ?? "")) return { skip: "The GGUF repo's name isn't one the Hub takes.", save: null };
   return { repo };
 }

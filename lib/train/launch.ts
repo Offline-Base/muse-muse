@@ -157,6 +157,7 @@ async function adapterRegion(
     const problem = adapterProblem(source?.job ?? null, source?.metrics ?? null, {
       decide: isServeRecipe(recipe.id),
       uploadOnly: recipe.id === PUBLISH_RECIPE,
+      smallQuantBase: isQuantRecipe(recipe.id) && env.quantTargets,
     });
     if (problem || !source) return { ok: false, error: `${field.label}: ${problem ?? "that job doesn't exist."}` };
     const ownerRows = recipe.id === PUBLISH_RECIPE ? await ownerRowsProblem(source.job) : null;
@@ -182,7 +183,7 @@ async function quantSetup(
   const adapterJobId = String(params[SERVE_ADAPTER_PARAM] ?? "");
   const source = await getAdapterSource(adapterJobId);
   if (!source) return refuse(400, `${label}: that job doesn't exist.`);
-  const problem = quantProblem(source.job, source.metrics);
+  const problem = quantProblem(source.job, source.metrics, { targets: env.quantTargets });
   if (problem) return refuse(400, `${label}: ${problem}`);
   if (Number(params.publish) !== 0) {
     const off = env.hubOffReason;
@@ -197,7 +198,7 @@ async function quantSetup(
   if (!dataset) return refuse(400, `${label}: its dataset is gone, so its files' system message can't be made.`);
   const running = await openQuantJob(adapterJobId);
   if (running) return refuse(409, "quant_running", { quantJobId: running.id });
-  return { ok: true, params: quantParams(source.job, dataset.title) };
+  return { ok: true, params: quantParams(source.job, dataset.title, { targets: env.quantTargets }) };
 }
 
 /**

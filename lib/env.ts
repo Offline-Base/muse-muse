@@ -358,6 +358,13 @@ export const env = {
     return ["1", "true", "yes", "on"].includes((process.env.QUANT_ENABLED ?? "").trim().toLowerCase());
   },
   /**
+   * QUANT_TARGETS: local files for small bases and one-bit Muse Glimmer, and the device targets (lib/train/quant-targets.ts,
+   * docs/TRAINING.md "Device targets"). Off when unset: quantizing stays r30b's three builds, and Llama adapters are refused.
+   */
+  get quantTargets(): boolean {
+    return flag("QUANT_TARGETS");
+  },
+  /**
    * SIM_TUNE: admins can run a tuned model's smallest GGUF on the lab's Android emulator (docs/TRAINING.md "Emulator
    * runs"). Also needs NATIVE_LAB. Off when unset.
    */

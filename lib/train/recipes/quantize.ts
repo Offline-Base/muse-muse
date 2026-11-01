@@ -26,6 +26,9 @@
  *      the template (the prompt it renders must be training's, character for character) and the channel (at least 90%
  *      of the held-out prompts must get a final answer under a stock app's prompt), plus how many answers agree with
  *      the adapter's own eval answers.
+ *      With QUANT_TARGETS the platform can also name the one-bit build, IQ1_S: an importance matrix on Q8_0 from the
+ *      adapter's training text, then IQ1_S with it, checked on its own file; a problem leaves out that build alone. Or it
+ *      can name a small base (quantBase), and the job merges into that base with that base's pins and checks.
  *   6. ctx.hub_upload of the builds that passed, with the system message, Ollama's params and, for an adapter trained
  *      before trainChannel, tuned.jinja; then the metrics.
  */
@@ -200,6 +203,98 @@ PARAMS_FILE = "params"
 STOPS_CHANNEL = ["<|eot|>", "<|end_of_text|>"]
 STOPS_TUNED = ["<|eot|>", "<|eom|>", "<|end_of_text|>", "<|start|>"]
 
+# The one-bit build (QUANT_TARGETS, off by default: only the platform writes it into the levels param). llama.cpp b11669's
+# llama-quantize refuses IQ1_S without an importance matrix (tensor_requires_imatrix in src/llama-quant.cpp), and its
+# nominal size is 1.56 bits per weight (tools/quantize/quantize.cpp). Its IQ2_XXS, Q2_K, Q4_K and Q5_K tensors bring the
+# whole Glimmer file to about 1.75. The release's llama-imatrix makes the matrix, on Q8_0 as the knowledge run did.
+LOW_BIT_LEVEL = "IQ1_S"
+ALLOWED_LEVELS = (LOW_BIT_LEVEL,) + QUANT_LEVELS
+# Calibration text: the adapter's training conversations rendered as training rendered them, never the held-out ones.
+# llama-imatrix must take their chat markers as special tokens. 400,000 characters is about 100,000 tokens. The
+# knowledge run measured 1,544 s for 403,569 tokens with a patched build, so this cap is about 8 minutes: an estimate.
+CALIBRATION_MAX_CHARS = 400000
+# Under about ten chunks of KL_CTX tokens, a matrix says too little to quantize by, and the build is left out.
+CALIBRATION_MIN_CHARS = 20000
+NEED_LOW_BIT_SECONDS = 25 * 60
+# The one-bit answer check: fewer prompts and tokens than Q4_K_M's, since a file that repeats itself runs to the limit.
+# The knowledge run's base IQ1_S ran to its token limit on 1,457 of 1,500 prompts, and its tuned stage 2 IQ1_S stopped on
+# its own on 50 of 50, so this tells them apart. No KL limit gates IQ1_S: nothing has measured its KL divergence yet, so
+# the job records it and the card shows it. Set this and LOW_BIT_KL_MAX in lib/train/logic.ts from a real run's number.
+LOW_BIT_KL_MAX = None
+LOW_BIT_CHECK_PROMPTS = 30
+LOW_BIT_MAX_TOKENS = 512
+FILE_STEM = "muse-glimmer-30b-"
+# Set by use_quant_base for a small base: its name, and a template that writes today's date into the prompt.
+QUANT_BASE = None
+TEMPLATE_DATE_RE = None
+STOPS_SMALL = ["<|eot_id|>", "<|eom_id|>", "<|end_of_text|>"]
+LLAMA_32_3B_FILES = "https://huggingface.co/unsloth/Llama-3.2-3B-Instruct/resolve/006f5dcd1393c3add266de40994ba96225e9689d/"
+# The small bases a job may merge into (QUANT_BASES in lib/train/quant-targets.ts, a test keeps them equal). Read from the
+# Hub on 2026-11-01: the commit, each shard's LFS SHA-256, each small file's bytes, and the digest of the 254 "name:shape"
+# lines from the shards' safetensors headers. 255 GGUF tensors is what two published conversions of this model hold (their
+# headers, read the same day): the 254 and rope_freqs. Its limits are this size's, estimated: nothing has run them.
+QUANT_BASES = {
+    "llama-3.2-3b": {
+        "family": "llama3",
+        "model": "unsloth/Llama-3.2-3B-Instruct-bnb-4bit",
+        "merge_base": "unsloth/Llama-3.2-3B-Instruct",
+        "merge_revision": "006f5dcd1393c3add266de40994ba96225e9689d",
+        "shards": (
+            ("model-00001-of-00002.safetensors", "13cbd6d16e927a0c5bad54102514e6e18b4a47b3a6eb911e39d678d328d19f55"),
+            ("model-00002-of-00002.safetensors", "7b770216613ac5c34d7c54bdff1fa616bc4e338a9d0b20af6303e48c295ee23c"),
+        ),
+        "tensors": 254,
+        "tensors_sha256": "9e2e2a40cf61bf85e557be01663d05281e976ab8aeb01854f87aaa8aa63a2bab",
+        "gguf_arch": "llama",
+        "gguf_tensors": 255,
+        "files": (
+            ("chat_template.jinja", "5816fce10444e03c2e9ee1ef8a4a1ea61ae7e69e438613f3b17b69d0426223a4"),
+            ("tokenizer.json", "6b9e4e7fb171f92fd137b777cc2714bf87d11576700a1dcd7a399e7bbe39537b"),
+            ("tokenizer_config.json", "9ddd255c19fe319c8d4e891163540382e9fbda99f394674f2a929efc47d57458"),
+            ("generation_config.json", "8bab06a398ca622f8b941eb0b5f425d71d007080436cfa4f37d6c03c23b756a9"),
+            ("special_tokens_map.json", "94e708c3f5e64acf85bbe5ad01467a1248faadb73e83b41793087ecced586e8f"),
+        ),
+        "levels": ("Q4_K_M",),
+        "file_stem": "Llama-3.2-3B-",
+        "leaked": ("<|start_header_id|>", "<|end_header_id|>", "<|eot_id|>"),
+        "min_disk": 40 * 10 ** 9,
+        "min_ram": 24 * 1024 ** 3,
+        "min_start": 15 * 60,
+        "need": {"merge": 8 * 60, "convert": 5 * 60, "quantize": 5 * 60, "checks": 8 * 60, "upload": 3 * 60},
+    },
+}
+
+
+def use_quant_base(params):
+    """Points the job at a small base when the platform named one (the quantBase param), and returns its name. Without it
+    the job is exactly the r30b one above. The base the adapter trained on must be the one this merge base belongs to."""
+    global QUANT_BASE, MERGE_BASE, MERGE_BASE_REVISION, BASE_SHARDS, BASE_TENSORS, BASE_TENSORS_SHA256, GGUF_ARCH, GGUF_TENSORS
+    global META_REPO, META_REVISION, META_URL, META_FILES, ALLOWED_LEVELS, FILE_STEM, LEAKED, QUANT_KL_MAX, TEMPLATE_DATE_RE
+    global MIN_DISK_BYTES, MIN_RAM_BYTES, MIN_START_SECONDS, NEED_MERGE_SECONDS, NEED_CONVERT_SECONDS, NEED_QUANTIZE_SECONDS, NEED_CHECKS_SECONDS, NEED_UPLOAD_SECONDS
+    name = params.get("quantBase")
+    if name in (None, ""):
+        return None
+    base = QUANT_BASES.get(str(name))
+    if not base:
+        raise ValueError("quantBase must name a small base from " + ", ".join(sorted(QUANT_BASES)) + ", not " + json.dumps(str(name))[:60])
+    if params.get("baseFamily") != base["family"] or params.get("baseModel") != base["model"]:
+        raise ValueError("The adapter didn't train on " + base["model"] + ", so it can't merge into " + base["merge_base"])
+    use_base(params)
+    QUANT_BASE = str(name)
+    MERGE_BASE, MERGE_BASE_REVISION, BASE_SHARDS = base["merge_base"], base["merge_revision"], base["shards"]
+    BASE_TENSORS, BASE_TENSORS_SHA256, GGUF_ARCH, GGUF_TENSORS = base["tensors"], base["tensors_sha256"], base["gguf_arch"], base["gguf_tensors"]
+    META_REPO, META_REVISION, META_FILES = base["merge_base"], base["merge_revision"], base["files"]
+    META_URL = "https://huggingface.co/" + META_REPO + "/resolve/" + META_REVISION + "/"
+    ALLOWED_LEVELS, FILE_STEM, LEAKED = base["levels"], base["file_stem"], base["leaked"]
+    # No KL divergence of this base has been measured, so its builds record theirs and the answer check gates them.
+    QUANT_KL_MAX = {}
+    TEMPLATE_DATE_RE = re.compile(r"Today Date: [^\n]*")
+    MIN_DISK_BYTES, MIN_RAM_BYTES, MIN_START_SECONDS = base["min_disk"], base["min_ram"], base["min_start"]
+    need = base["need"]
+    NEED_MERGE_SECONDS, NEED_CONVERT_SECONDS, NEED_QUANTIZE_SECONDS = need["merge"], need["convert"], need["quantize"]
+    NEED_CHECKS_SECONDS, NEED_UPLOAD_SECONDS = need["checks"], need["upload"]
+    return QUANT_BASE
+
 
 def read_quant_params(params):
     """adapter_job_id (lowercased), levels (QUANT_LEVELS the levels param names, in order), slug, train_channel (0 or 1)
@@ -208,8 +303,8 @@ def read_quant_params(params):
     if not JOB_ID_RE.match(adapter):
         raise ValueError("adapterJobId must be the id of a glimmer-lora job, not " + json.dumps(str(params.get("adapterJobId")))[:60])
     asked = [s.strip() for s in str(params.get("levels") or "").split(",") if s.strip()]
-    if not asked or any(level not in QUANT_LEVELS for level in asked):
-        raise ValueError("levels must name builds from " + ", ".join(QUANT_LEVELS) + ", not " + json.dumps(str(params.get("levels")))[:80])
+    if not asked or any(level not in ALLOWED_LEVELS for level in asked):
+        raise ValueError("levels must name builds from " + ", ".join(ALLOWED_LEVELS) + ", not " + json.dumps(str(params.get("levels")))[:80])
     if CHECK_LEVEL not in asked:
         raise ValueError("levels must include " + CHECK_LEVEL + ", the build the template and channel checks run on")
     slug = str(params.get("slug") or "")
@@ -220,7 +315,7 @@ def read_quant_params(params):
         raise ValueError("trainChannel must be 0 or 1")
     return {
         "adapter_job_id": adapter,
-        "levels": [level for level in QUANT_LEVELS if level in asked],
+        "levels": [level for level in ALLOWED_LEVELS if level in asked],
         "slug": slug,
         "train_channel": int(channel),
         "publish": number(params, "publish", 1) != 0,
@@ -229,7 +324,7 @@ def read_quant_params(params):
 
 def gguf_name(slug, level):
     """A build's file name on the Hub (ggufFileName in lib/train/hub-cards.ts)."""
-    return "muse-glimmer-30b-" + slug + "-" + level + ".gguf"
+    return FILE_STEM + slug + "-" + level + ".gguf"
 
 
 def level_key(level):
@@ -391,12 +486,12 @@ def held_out(items):
 
 def system_line(role):
     """The system message a local app gets (the repo's system file): the role, a blank line, the reasoning line."""
-    return role + "\n\n" + REASONING_LINE
+    return role if QUANT_BASE else role + "\n\n" + REASONING_LINE
 
 
 def params_file(train_channel):
     """Ollama's params file for the repo (ggufParams in lib/train/hub-cards.ts, byte for byte)."""
-    stops = STOPS_CHANNEL if train_channel == 1 else STOPS_TUNED
+    stops = STOPS_SMALL if QUANT_BASE else STOPS_CHANNEL if train_channel == 1 else STOPS_TUNED
     return json.dumps({"temperature": 0, "num_ctx": 8192, "stop": stops}, indent=2) + "\n"
 
 
@@ -500,7 +595,8 @@ def install_meta_files(merged_dir, files):
     if os.path.exists(stray):
         os.remove(stray)
     with open(os.path.join(merged_dir, "tokenizer_config.json"), encoding="utf-8") as f:
-        if "chat_template" in json.load(f):
+        # A small base's tokenizer_config.json holds the same template as its chat_template.jinja, by their pinned bytes.
+        if "chat_template" in json.load(f) and not QUANT_BASE:
             raise RuntimeError("Meta's tokenizer_config.json has a chat_template key, which would replace its chat_template.jinja")
 
 
@@ -809,6 +905,8 @@ def template_problem(server, system, prompt, expected, bos):
         return "llama-server didn't render the prompt (HTTP " + str(status) + ")"
     if bos and got.startswith(bos):
         got = got[len(bos):]
+    if TEMPLATE_DATE_RE:
+        got, expected = TEMPLATE_DATE_RE.sub("Today Date:", got), TEMPLATE_DATE_RE.sub("Today Date:", expected)
     if got == expected:
         return None
     at = next((i for i, (a, b) in enumerate(zip(got, expected)) if a != b), min(len(got), len(expected)))
@@ -831,7 +929,7 @@ def final_text(body):
     return content.strip()
 
 
-def channel_check(server, system, evals, tuned, stop_at):
+def channel_check(server, system, evals, tuned, stop_at, max_tokens=CHANNEL_MAX_TOKENS):
     """(finals, answers): how many held-out prompts get a final answer under the prompt a stock app sends, each answered
     greedily with CHANNEL_MAX_TOKENS new tokens, SERVER_SLOTS at a time, and each answer (None when it had none)."""
     answers = [None] * len(evals)
@@ -852,7 +950,7 @@ def channel_check(server, system, evals, tuned, stop_at):
             body = {
                 "messages": [{"role": "system", "content": system}, {"role": "user", "content": evals[i]["prompt"]}],
                 "temperature": 0,
-                "max_tokens": CHANNEL_MAX_TOKENS,
+                "max_tokens": max_tokens,
                 "stream": False,
                 "chat_template_kwargs": {"reasoning_strength": "low"},
             }
@@ -932,8 +1030,61 @@ def upload(ctx, out_dir, adapter_job_id):
     return out
 
 
+def write_training_rows(ctx, path):
+    """The adapter's training conversations as JSON for the merge child, which renders them with training's tokenizer."""
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(train_examples(ctx.dataset("train")), f, ensure_ascii=False)
+
+
+def make_low_bit(ctx, tools, reference, bf16, path, work, chars, started):
+    """The importance matrix on Q8_0, then IQ1_S with it. Why it couldn't be made, or None. A failure here leaves out this
+    build only: the other builds don't depend on it."""
+    if chars < CALIBRATION_MIN_CHARS:
+        return "the adapter's training text is " + str(chars) + " characters, under the " + str(CALIBRATION_MIN_CHARS) + " an importance matrix needs"
+    if left(ctx, started) < NEED_LOW_BIT_SECONDS + NEED_CHECKS_SECONDS + NEED_UPLOAD_SECONDS:
+        return "only " + minutes(left(ctx, started)) + " are left before the job's time limit"
+    matrix = os.path.join(work, "imatrix.gguf")
+    ctx.progress(message="Making the importance matrix for " + LOW_BIT_LEVEL)
+    q = shlex.quote
+    cmd = (
+        q(tool(tools, "llama-imatrix")) + " -m " + q(reference) + " -f " + q(os.path.join(ctx.work_dir, "calibration.txt")) + " -o " + q(matrix)
+        + " -ngl 999 -c 512 -b 2048 -ub 512 --parse-special --no-ppl --output-format gguf"
+    )
+    out = ctx.run(cmd, timeout=timeout_for(ctx, started), env=tools["env"], stall_seconds=STALL_SECONDS)
+    if out.returncode != 0 or not os.path.isfile(matrix):
+        return "llama-imatrix failed: " + last_lines(out, 8)
+    ctx.progress(message="Quantizing to " + LOW_BIT_LEVEL)
+    cmd = q(tool(tools, "llama-quantize")) + " --imatrix " + q(matrix) + " " + q(bf16) + " " + q(path) + " " + LOW_BIT_LEVEL
+    out = ctx.run(cmd, timeout=timeout_for(ctx, started), env=tools["env"], stall_seconds=STALL_SECONDS)
+    remove(matrix)
+    if out.returncode != 0 or not os.path.isfile(path):
+        return "llama-quantize failed: " + last_lines(out, 8)
+    return None
+
+
+def low_bit_answers(ctx, tools, path, args, system, evals, expected, bos, tuned, stop_at, metrics):
+    """Template and answers on IQ1_S itself, whose answers can't be read from Q4_K_M's. Why it isn't published, or None."""
+    key = level_key(LOW_BIT_LEVEL)
+    some = evals[:LOW_BIT_CHECK_PROMPTS]
+    try:
+        with LlamaServer(ctx, tools, path, args, os.path.join(ctx.work_dir, "llama-server-low-bit.log")) as server:
+            problem = template_problem(server, system, some[0]["prompt"], expected, bos)
+            if problem:
+                return problem
+            finals, answers = channel_check(server, system, some, tuned, stop_at, LOW_BIT_MAX_TOKENS)
+    except RuntimeError as e:
+        return str(e)[:400]
+    same, total = agreement(answers, some)
+    metrics[key + "_final"], metrics[key + "_final_total"] = finals, len(some)
+    metrics[key + "_agreement"], metrics[key + "_agreement_total"] = same, total
+    if finals < QUANT_CHANNEL_MIN * len(some):
+        return "it gave a final answer to " + str(finals) + " of " + str(len(some)) + " held-out prompts, under the " + str(int(QUANT_CHANNEL_MIN * 100)) + "% a file needs"
+    return None
+
+
 def run(ctx):
     started = time.time()
+    quant_base = use_quant_base(ctx.params)
     p = read_quant_params(ctx.params)
     adapter_job_id = p["adapter_job_id"]
     base, cache_used = base_dir(ctx)
@@ -952,19 +1103,22 @@ def run(ctx):
     text = heldout_text(evals)
     if len(evals) < 2 or len(text) < KL_TEXT_MIN_CHARS:
         raise RuntimeError("The adapter's dataset holds out too little to check the files with: " + str(len(evals)) + " prompts, " + str(len(text)) + " characters")
-    tuned = p["train_channel"] == 0
+    tuned = p["train_channel"] == 0 and not quant_base
+    low_bit = LOW_BIT_LEVEL in p["levels"]
     system = system_line(role)
     ctx.log(
         "Making the local files of job " + adapter_job_id + " (" + ", ".join(p["levels"]) + "), checked under " + how
         + (", with tuned.jinja, since the adapter was trained before trainChannel" if tuned else "")
     )
     metrics = {"adapter_job_id": adapter_job_id, "llamacpp": LLAMACPP_TAG, "llamacpp_commit": LLAMACPP_COMMIT, "levels": ",".join(p["levels"])}
+    if quant_base:
+        metrics["quant_base"] = quant_base
 
     began = time.time()
     tools = llamacpp_tools(ctx, os.path.join(ctx.work_dir, "llamacpp"))
     meta = meta_files(ctx, os.path.join(ctx.work_dir, "meta"))
     with open(meta[META_TEMPLATE], encoding="utf-8") as f:
-        tuned_text = tuned_template(f.read())
+        tuned_text = None if quant_base else tuned_template(f.read())
     metrics["gpu"] = cuda_devices(ctx, tools)
     convert_python, convert_reused = ensure_convert_venv(ctx, base, started)
     python, venv_reused = ensure_venv(ctx, base)
@@ -982,10 +1136,18 @@ def run(ctx):
     remove(merged)
     ctx.progress(message="Merging the adapter into the 16-bit base")
     began = time.time()
+    extra = {}
+    if quant_base:
+        extra["family"] = ctx.params.get("baseFamily")
+    if low_bit:
+        extra["train_rows"] = os.path.join(ctx.work_dir, "train-rows.json")
+        extra["calibration_path"] = os.path.join(ctx.work_dir, "calibration.txt")
+        write_training_rows(ctx, extra["train_rows"])
     result = run_merge(
         ctx,
         python,
         {
+            **extra,
             "model": MODEL,
             "revision": MODEL_REVISION,
             "merge_base": MERGE_BASE,
@@ -1025,7 +1187,7 @@ def run(ctx):
     began = time.time()
     convert = (
         shlex.quote(convert_python) + " " + shlex.quote(tools["convert"]) + " " + shlex.quote(merged) + " --outtype bf16 --outfile "
-        + shlex.quote(bf16) + " --model-name " + shlex.quote("muse-glimmer-30b-" + p["slug"])
+        + shlex.quote(bf16) + " --model-name " + shlex.quote(FILE_STEM + p["slug"])
     )
     out = ctx.run(convert, timeout=timeout_for(ctx, started), env={"PYTHONDONTWRITEBYTECODE": "1"}, stall_seconds=STALL_SECONDS)
     if out.returncode != 0 or not os.path.isfile(bf16):
@@ -1037,19 +1199,28 @@ def run(ctx):
     began = time.time()
     reference = os.path.join(work, REFERENCE_LEVEL + ".gguf")
     paths = {level: os.path.join(out_dir, gguf_name(p["slug"], level)) for level in p["levels"]}
-    for level, path in [(REFERENCE_LEVEL, reference)] + [(level, paths[level]) for level in p["levels"]]:
+    standard = [level for level in p["levels"] if level != LOW_BIT_LEVEL]
+    for level, path in [(REFERENCE_LEVEL, reference)] + [(level, paths[level]) for level in standard]:
         ctx.progress(message="Quantizing to " + level)
         cmd = shlex.quote(tool(tools, "llama-quantize")) + " " + shlex.quote(bf16) + " " + shlex.quote(path) + " " + level
         out = ctx.run(cmd, timeout=timeout_for(ctx, started), env=tools["env"], stall_seconds=STALL_SECONDS)
         if out.returncode != 0 or not os.path.isfile(path):
             raise RuntimeError("llama-quantize failed for " + level + ":\n" + last_lines(out))
     metrics["quantize_seconds"] = round(time.time() - began, 1)
+    low_bit_problem = None
+    if low_bit:
+        began = time.time()
+        chars = int(result.get("calibration_chars") or 0)
+        metrics["calibration_chars"] = chars
+        low_bit_problem = make_low_bit(ctx, tools, reference, bf16, paths[LOW_BIT_LEVEL], work, chars, started)
+        metrics["low_bit_seconds"] = round(time.time() - began, 1)
     remove(bf16)
+    made = [level for level in p["levels"] if level != LOW_BIT_LEVEL or not low_bit_problem]
 
     # The file checks.
     need(ctx, started, NEED_CHECKS_SECONDS, "check the files")
     began = time.time()
-    for path in [reference] + [paths[level] for level in p["levels"]]:
+    for path in [reference] + [paths[level] for level in made]:
         problem = gguf_problem(gguf_meta(ctx, tools, convert_python, path), os.path.basename(path))
         if problem:
             raise RuntimeError(problem)
@@ -1061,7 +1232,7 @@ def run(ctx):
     kl_of(ctx, tools, reference, kld_base, started, text_path)
     remove(reference)
     passed = []
-    for level in p["levels"]:
+    for level in made:
         seen = kl_of(ctx, tools, paths[level], kld_base, started)
         key = level_key(level)
         metrics[key + "_kl_mean"] = round(seen["mean"], 6)
@@ -1069,12 +1240,13 @@ def run(ctx):
             metrics[key + "_kl_p99"] = round(seen["p99"], 6)
         if "top" in seen:
             metrics[key + "_top_token_pct"] = round(seen["top"], 3)
-        ok = seen["mean"] <= QUANT_KL_MAX[level]
+        limit = LOW_BIT_KL_MAX if level == LOW_BIT_LEVEL and not QUANT_BASE else QUANT_KL_MAX.get(level)
+        ok = limit is None or seen["mean"] <= limit
         metrics[key + "_passed"] = "yes" if ok else "no"
         if ok:
             passed.append(level)
         else:
-            ctx.log(level + " isn't published: its mean KL divergence from " + REFERENCE_LEVEL + " is " + str(round(seen["mean"], 6)) + ", over its limit of " + str(QUANT_KL_MAX[level]))
+            ctx.log(level + " isn't published: its mean KL divergence from " + REFERENCE_LEVEL + " is " + str(round(seen["mean"], 6)) + ", over its limit of " + str(limit))
     remove(kld_base)
 
     # Template and channel, on Q4_K_M under the prompt a stock app sends (tuned.jinja for an old adapter).
@@ -1105,6 +1277,13 @@ def run(ctx):
             + str(len(evals)) + " held-out prompts, under the " + str(int(QUANT_CHANNEL_MIN * 100)) + "% the files need, so nothing is published"
         )
     metrics["channel_passed"] = "yes"
+    if low_bit and not low_bit_problem:
+        low_bit_problem = low_bit_answers(ctx, tools, paths[LOW_BIT_LEVEL], args, system, evals, expected, result.get("bos") or "", tuned, job_deadline(ctx, started) - NEED_UPLOAD_SECONDS, metrics)
+    if low_bit and low_bit_problem:
+        ctx.log(LOW_BIT_LEVEL + " isn't published: " + low_bit_problem)
+        metrics[level_key(LOW_BIT_LEVEL) + "_passed"] = "no"
+        metrics[level_key(LOW_BIT_LEVEL) + "_problem"] = low_bit_problem[:300]
+        passed = [level for level in passed if level != LOW_BIT_LEVEL]
     for level in p["levels"]:
         if level not in passed:
             remove(paths[level])
@@ -1142,11 +1321,12 @@ def run(ctx):
         metrics[key + "_bytes"] = size
         metrics[key + "_sha256"] = digests.get(os.path.basename(paths[level])) or sha256_of(paths[level])
         gb += size / 1e9
-    left_out = [level for level in p["levels"] if level not in passed]
+    left_out = [level for level in p["levels"] if level not in passed and level != LOW_BIT_LEVEL]
     metrics["summary"] = (
         "Local files of job " + adapter_job_id[:8] + ": " + ", ".join(passed) + " (" + str(round(gb, 2)) + " GB)"
         + (" passed their checks" if p["publish"] else " passed their checks and weren't uploaded (publish 0)")
         + ("; " + ", ".join(left_out) + " left out over its closeness limit" if left_out else "")
+        + ("; " + LOW_BIT_LEVEL + " left out: " + low_bit_problem[:160] if low_bit and low_bit_problem else "")
         + ". " + CHECK_LEVEL + " answered " + str(finals) + " of " + str(len(evals)) + " held-out prompts in a stock app's prompt."
     )
     return metrics
@@ -1156,9 +1336,31 @@ def run(ctx):
 # The merge child: runs inside glimmer's venv, with the GPU.
 
 
+def write_calibration(tokenizer, head, bos, rows_path, out_path):
+    """The training conversations rendered as training rendered them, up to CALIBRATION_MAX_CHARS, for llama-imatrix. A
+    conversation that doesn't render is skipped. The characters written."""
+    with open(rows_path, encoding="utf-8") as f:
+        rows = json.load(f)
+    size = 0
+    with open(out_path, "w", encoding="utf-8") as out:
+        for row in rows:
+            turns = [m for m in row["messages"] if m.get("role") != "system"]
+            try:
+                text = render(tokenizer, head + turns, False, bos)
+            except Exception:
+                continue
+            if size + len(text) > CALIBRATION_MAX_CHARS:
+                break
+            out.write(text)
+            size += len(text)
+    return size
+
+
 def merge_child_main(config_path):
     with open(config_path) as f:
         cfg = json.load(f)
+    family = cfg.get("family")
+    use_family(family)
     # Unsloth patches transformers and peft, so it is imported first, as in glimmer-lora's child.
     from unsloth import FastModel
     import torch
@@ -1167,7 +1369,15 @@ def merge_child_main(config_path):
     emit("imported")
     result = {"merged": False}
     emit("phase", message="Loading " + cfg["model"] + " and the adapter of job " + cfg["adapter_job_id"])
-    model, tokenizer = FastModel.from_pretrained(model_name=cfg["model"], revision=cfg.get("revision"), max_seq_length=cfg["max_seq_length"])
+    if family:
+        # As glimmer-lora's child loads a family's 4-bit build: its own class, the exact repo and revision.
+        from unsloth import FastLanguageModel
+
+        model, tokenizer = FastLanguageModel.from_pretrained(
+            model_name=cfg["model"], revision=cfg.get("revision"), max_seq_length=cfg["max_seq_length"], use_exact_model_name=True, load_in_4bit=False
+        )
+    else:
+        model, tokenizer = FastModel.from_pretrained(model_name=cfg["model"], revision=cfg.get("revision"), max_seq_length=cfg["max_seq_length"])
     model = PeftModel.from_pretrained(model, cfg["adapter_dir"], is_trainable=False)
     text_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
     bos = getattr(tokenizer, "bos_token", None) or getattr(text_tokenizer, "bos_token", None) or ""
@@ -1176,6 +1386,8 @@ def merge_child_main(config_path):
     result["expected_prompt"] = render(tokenizer, head + [{"role": "user", "content": cfg["prompt"]}], True, bos)
     result["bos"] = bos
     result["gpu"] = torch.cuda.get_device_name(0)
+    if cfg.get("calibration_path"):
+        result["calibration_chars"] = write_calibration(tokenizer, head, bos, cfg["train_rows"], cfg["calibration_path"])
     write_result(cfg["result_path"], result)
     # Unsloth's own 16-bit merge: it downloads the 16-bit base and folds the adapter into it tensor by tensor in fp32.
     # Never the 4-bit merge, and never PEFT's merge of the 4-bit model itself, which would bake its rounding in.
@@ -1183,7 +1395,7 @@ def merge_child_main(config_path):
     if save is None:
         from unsloth.save import patch_saving_functions
 
-        patch_saving_functions(model, vision=True)
+        patch_saving_functions(model, vision=not family)
         save = model.save_pretrained_merged
     # Unsloth finds the 16-bit base from the config's _name_or_path (see MERGE_BASE): name r30b's BF16 repo, not the
     # nf4 build that was loaded.
