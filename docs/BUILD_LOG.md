@@ -1173,6 +1173,23 @@ because the sidebar showed a real account.
   pushed or deployed.
 - Checks: tsc clean; outputs, product, native, prove, MCP and sandbox tests 847 of 847 pass.
 
+### 23:40 Muse gadget output: review fixes on tg-gadget-out (4a05250, 9ad43e4)
+
+- Review verdict: approve with minor fixes. Fixed: prefixes are now one-to-one (`system` and `mm-system` shared
+  `mm_system`, so one pack could replace another's runner and delete its commands); a changed prefix is now
+  `mm_<slug, cut>_<hash of the slug>`, and plain ones never start with `mm_`. install.sh and uninstall.sh keep the slug
+  in `pack.txt` and refuse another product's pack, and install.sh refuses a commands folder root doesn't own.
+- Prove it now checks the sample as the SDK checks a call (required fields, JSON types, an optional null left out)
+  before running the runner, fails the pack when the product took an input the gadget would refuse, and waits at most
+  130 s for the gadget call. The Get it tab says Node 18+ is needed, recommends `--run-as`, says commands stop after
+  30 s, and words Meta's terms as the token's personal, non-commercial use with a link. Code comments cite the SDK's
+  README and its command loader.
+- Kept as is: the 30 s default when a manifest has no `timeoutMs`, as the task set it; raising it to the CLI's 120 s or
+  adding `timeoutMs` to the manifest schema is the owner's call.
+- Checks: tsc clean; the whole root suite (282 files) 4,798 tests, 4,790 pass, 0 fail, 8 skipped (no MODEL_API_KEY).
+  Screenshots of the Get it panel's Muse gadget tab at 1440 light and dark and 390 light, from a local PGlite product
+  with two public actions and one owner action (left out of the pack). Not pushed or deployed.
+
 ## Gaps
 
 What this record doesn't confirm:
