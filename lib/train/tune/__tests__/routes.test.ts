@@ -29,6 +29,9 @@ let startFailsWhen: () => boolean = () => false;
 let draft: Record<string, unknown> = {};
 let structuredFails = false;
 let runView: Record<string, unknown> | null = null;
+const BUILD_ID = "bbbbbbbb-0000-4000-8000-000000000001";
+const PRODUCT_ID = "cccccccc-0000-4000-8000-000000000001";
+let builds: Record<string, { buildId: string; productId: string; productName: string; ownerId: string; offers: boolean }> = {};
 
 const called = (fn: string) => calls.filter((c) => c.fn === fn);
 
@@ -138,6 +141,15 @@ describe("tune routes", { skip: canMock ? false : "needs --experimental-test-mod
         latestTuneJob: async () => null,
         readRunMarks: async () => ({ steps: null, stopped: false, ended: null, heartbeat: null }),
         saveRunSteps: async (...args: unknown[]) => void calls.push({ fn: "saveRunSteps", args }),
+        saveRunProduct: async (...args: unknown[]) => void calls.push({ fn: "saveRunProduct", args }),
+      },
+    });
+    mock.module(at("../build-source.ts"), {
+      namedExports: {
+        buildForTune: async (id: string) => {
+          calls.push({ fn: "buildForTune", args: [id] });
+          return builds[id] ?? null;
+        },
       },
     });
     // The tuneRun workflow is started, never run, here (lib/train/tune/__tests__/run-flow.test.ts runs it on PGlite).
@@ -179,6 +191,8 @@ describe("tune routes", { skip: canMock ? false : "needs --experimental-test-mod
     startFailsWhen = () => false;
     structuredFails = false;
     runView = { id: DATASET_ID, stage: "writing" };
+    delete process.env.TUNE_FROM_BUILDS;
+    builds = { [BUILD_ID]: { buildId: BUILD_ID, productId: PRODUCT_ID, productName: "Feeder Count", ownerId: "owner-1", offers: true } };
     draft = {
       reason: "A small, safe customer-service task.",
       refuse: false,
@@ -413,6 +427,68 @@ describe("tune routes", { skip: canMock ? false : "needs --experimental-test-mod
       paused = false;
       caller = null;
       assert.equal((await runsRoute(req("/api/train/runs", { plan }))).status, 403);
+      assert.equal(called("createDataset").length, 0);
+    });
+  });
+
+  describe("from a build (TUNE_FROM_BUILDS)", () => {
+    it("refuses fromBuildId with the flag off, before the model", async () => {
+      const res = await planRoute(req("/api/train/plan", { note: NOTE, fromBuildId: BUILD_ID }));
+      assert.equal(res.status, 404);
+      assert.deepEqual([called("buildForTune").length, called("respondStructured").length], [0, 0]);
+    });
+
+    it("plans for the build's product: the source is signed with the plan, for its owner or an admin", async () => {
+      process.env.TUNE_FROM_BUILDS = "1";
+      const plan = await draftOne({ fromBuildId: BUILD_ID });
+      assert.deepEqual(plan.source, { kind: "build", buildId: BUILD_ID, productId: PRODUCT_ID });
+      // The product's owner (were the composer open to them) may too; anyone else may not.
+      caller = { id: "owner-1", email: "maker@example.com", isAdmin: false };
+      assert.equal((await planRoute(req("/api/train/plan", { note: NOTE, fromBuildId: BUILD_ID }))).status, 200);
+      caller = { id: "someone-else", email: "someone@example.com", isAdmin: false };
+      const other = await planRoute(req("/api/train/plan", { note: NOTE, fromBuildId: BUILD_ID }));
+      assert.deepEqual([other.status, await other.json()], [403, { error: "not_owner" }]);
+      caller = { id: "admin-1", email: "owner@example.com", isAdmin: true };
+      const missing = await planRoute(req("/api/train/plan", { note: NOTE, fromBuildId: "bbbbbbbb-0000-4000-8000-0000000000ff" }));
+      assert.deepEqual([missing.status, await missing.json()], [404, { error: "build_not_found" }]);
+      assert.equal((await planRoute(req("/api/train/plan", { note: NOTE, fromBuildId: 7 }))).status, 404);
+      builds[BUILD_ID]!.offers = false;
+      const notReady = await planRoute(req("/api/train/plan", { note: NOTE, fromBuildId: BUILD_ID }));
+      assert.deepEqual([notReady.status, await notReady.json()], [409, { error: "build_not_ready" }]);
+      assert.equal(called("respondStructured").length, 2, "only the two good plans asked the model");
+    });
+
+    it("starts a build plan like a task plan, keeps its product with the run, once a product a day", async () => {
+      process.env.TUNE_FROM_BUILDS = "1";
+      const plan = await draftOne({ fromBuildId: BUILD_ID });
+      const res = await runsRoute(req("/api/train/runs", { plan }));
+      assert.equal(res.status, 201, await res.clone().text());
+      assert.equal(called("createDataset").length, 1);
+      assert.deepEqual(called("saveRunProduct")[0]!.args, [DATASET_ID, PRODUCT_ID, BUILD_ID]);
+      assert.equal(counters[`tune-product-day:${PRODUCT_ID}`], 1);
+
+      // A second plan for the same product the same day: 429, and that plan may still start tomorrow.
+      const again = await draftOne({ fromBuildId: BUILD_ID, note: `${NOTE} Gift boxes too.` });
+      const second = await runsRoute(req("/api/train/runs", { plan: again }));
+      assert.equal(second.status, 429);
+      const body = (await second.json()) as { error: string; retryAfterSeconds: number };
+      assert.equal(body.error, "product_daily");
+      assert.ok(body.retryAfterSeconds > 0 && body.retryAfterSeconds <= 86_400, String(body.retryAfterSeconds));
+      assert.equal(counters[`tune-run:${again.token as string}`], 0, "the plan's one start is given back");
+      assert.equal(called("createDataset").length, 1, "nothing more was written");
+
+      // A start that fails gives the product's day back.
+      counters = {};
+      startFails = true;
+      assert.equal((await runsRoute(req("/api/train/runs", { plan: again }))).status, 500);
+      assert.equal(counters[`tune-product-day:${PRODUCT_ID}`], 0);
+    });
+
+    it("refuses a build plan past the spend cap, as a task plan", async () => {
+      process.env.TUNE_FROM_BUILDS = "1";
+      const plan = await draftOne({ fromBuildId: BUILD_ID });
+      paused = true;
+      assert.equal((await runsRoute(req("/api/train/runs", { plan }))).status, 503);
       assert.equal(called("createDataset").length, 0);
     });
   });

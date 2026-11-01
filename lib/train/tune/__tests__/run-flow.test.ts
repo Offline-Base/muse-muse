@@ -481,5 +481,50 @@ describe("starting training for a run", { skip: canMock ? false : "needs --exper
       await start.startTuneRun({ datasetId: decision, callerId: admin });
       assert.deepEqual(started, [], "decision rows train from the full form");
     });
+
+    it("keeps the product a run is for (B, or unit 11's productId) under a window the hourly prune never reaches", async () => {
+      const PRODUCT = "cccccccc-0000-4000-8000-000000000001";
+      const BUILD = "bbbbbbbb-0000-4000-8000-000000000001";
+      const id = await dataset();
+      assert.equal(await runStore.readRunProduct(id), null);
+      await start.startTuneRun({ datasetId: id, callerId: admin, productId: PRODUCT });
+      assert.deepEqual(await runStore.readRunProduct(id), { productId: PRODUCT, buildId: null });
+
+      // A later save replaces it; a build is kept beside the product.
+      await runStore.saveRunProduct(id, PRODUCT, BUILD);
+      assert.deepEqual(await runStore.readRunProduct(id), { productId: PRODUCT, buildId: BUILD });
+      const other = await dataset();
+      await runStore.saveRunProduct(other, PRODUCT);
+      assert.deepEqual((await runStore.runsOfProduct(PRODUCT)).sort(), [id, other].sort());
+      assert.deepEqual(await runStore.runsOfProduct("cccccccc-0000-4000-8000-0000000000ff"), []);
+      // Not uuids: nothing kept.
+      await runStore.saveRunProduct(id, "not-a-product");
+      assert.deepEqual(await runStore.readRunProduct(id), { productId: PRODUCT, buildId: BUILD });
+
+      // The hourly prune (rows whose window started over an hour ago) leaves them.
+      const { deleteRateLimitsBefore } = await import("@/lib/gateway/store");
+      await deleteRateLimitsBefore(new Date(Date.now() + 3_600_000));
+      assert.deepEqual(await runStore.readRunProduct(id), { productId: PRODUCT, buildId: BUILD });
+    });
+
+    it("starts a build plan as a task plan, and keeps its product and build with the run", async () => {
+      const PRODUCT = "cccccccc-0000-4000-8000-000000000002";
+      const BUILD = "bbbbbbbb-0000-4000-8000-000000000002";
+      const plan = {
+        v: 1 as const,
+        kind: "chat" as const,
+        name: "a made-up feeder guide",
+        tagline: "Answers bird questions.",
+        task: "Answer bird questions the way a local guide would.",
+        samples: [],
+        examples: { given: 0, used: 0 },
+        settings: (await import("@/lib/train/tune/settings")).planSettings(200, { maxMinutes: 120, maxUsd: 5 }),
+        cost: { metaLowUsd: 1, metaHighUsd: 2, gpuMaxUsd: 5, scoreLowUsd: 0.1, scoreHighUsd: 0.5, minutes: 60, trainMinutes: 50 },
+        source: { kind: "build" as const, buildId: BUILD, productId: PRODUCT },
+      };
+      const run = await start.startTuneRun({ plan, callerId: admin });
+      assert.deepEqual(await runStore.readRunProduct(run.runId), { productId: PRODUCT, buildId: BUILD });
+      assert.deepEqual(started.map((s) => s.fn), ["makeDataset", "tuneRun"]);
+    });
   });
 });

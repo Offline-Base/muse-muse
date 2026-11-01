@@ -118,6 +118,9 @@ async function fails(page: Page, params: Record<string, string> = {}): Promise<s
   return "rendered";
 }
 
+/** A shipped build whose brief picked muse-glimmer, as buildForTune reads it (made up). */
+const FROM_BUILD = { buildId: "bbbbbbbb-0000-4000-8000-000000000001", productId: "cccccccc-0000-4000-8000-000000000001", productName: "Feeder Count", ownerId: "u-admin", offers: true };
+
 function clean(html: string) {
   assert.equal(html.includes(String.fromCharCode(0x2014)), false, "no em dash");
   assert.doesNotMatch(html, /203\.0\.113\.9|mm-train-/, "no instance details in the room");
@@ -148,6 +151,9 @@ describe("the new fine-tune pages", { skip: canMock ? false : "needs --experimen
     mock.module("@/components/camera/CameraCapture", { namedExports: { CameraCapture: () => null, useCameraSupported: () => camera } });
     mock.module(at("../../../app/fine-tuning/viewer.ts"), { namedExports: { pageViewer: async () => viewer } });
     mock.module(at("../../../lib/train/tune/store.ts"), { namedExports: { loadTuneRun: async (id: string) => (id === DS ? run : null) } });
+    mock.module(at("../../../lib/train/tune/build-source.ts"), {
+      namedExports: { buildForTune: async (id: string) => (id === FROM_BUILD.buildId ? FROM_BUILD : null) },
+    });
     mock.module(at("../../../app/fine-tuning/runs/live.ts"), {
       namedExports: {
         runLiveDemo: async (j: { id: string } | null) => {
@@ -342,6 +348,20 @@ describe("the new fine-tune pages", { skip: canMock ? false : "needs --experimen
       assert.equal(html.split("<img").length - 1, 1, "a card that won't change loads one picture");
     });
 
+    it("/fine-tuning/new?fromBuild= plans for that build's product with TUNE_FROM_BUILDS, and ignores it without", async () => {
+      const withBuild = async (id: string) =>
+        render(await (newPage as unknown as (p: object) => Promise<ReactNode>)({ params: Promise.resolve({}), searchParams: Promise.resolve({ fromBuild: id }) }));
+      delete process.env.TUNE_FROM_BUILDS;
+      const off = await withBuild(FROM_BUILD.buildId);
+      assert.equal(off, await open(newPage), "flag off: the page as without the query");
+      process.env.TUNE_FROM_BUILDS = "1";
+      const html = await withBuild(FROM_BUILD.buildId);
+      clean(html);
+      assert.match(html, /<h1>What should your model do\?<\/h1><p class="muted">For Feeder Count\. It keeps answering with Muse Wonder[^<]* until this model passes and a serving window is open\.<\/p>/);
+      assert.equal(await withBuild("bbbbbbbb-0000-4000-8000-0000000000ff"), await open(newPage), "an unknown build is ignored");
+      delete process.env.TUNE_FROM_BUILDS;
+    });
+
     it("says each refusal in a plain sentence", () => {
       const t = composer.tuneErrorText;
       assert.equal(t(422, { error: "refused", refusal: "Not this one." }), "Not this one.");
@@ -352,6 +372,10 @@ describe("the new fine-tune pages", { skip: canMock ? false : "needs --experimen
       assert.match(t(403, { error: "Admins only." }), /Only admins/);
       assert.equal(t(400, { error: "Say what the model should do." }), "Say what the model should do.");
       assert.equal(t(413, { error: "body_too_large" }), "Those examples are too long to send. Use shorter rows or fewer of them.");
+      assert.match(t(404, { error: "build_not_found" }), /isn't there any more/);
+      assert.match(t(409, { error: "build_not_ready" }), /needs to be live, with Muse Glimmer in its brief/);
+      assert.match(t(403, { error: "not_owner" }), /product's owner or an admin/);
+      assert.match(t(429, { error: "product_daily" }), /already started a run today/);
     });
   });
 });
