@@ -23,7 +23,7 @@ export const CAP_READY: Record<CapId, boolean> = {
   code: false,
   runtime: false,
   hardware: false,
-  extension: false,
+  extension: true,
   games: false,
 };
 /** Products with this cap need a signed-in builder (unit 1). Stateless caps stay open to guests. */

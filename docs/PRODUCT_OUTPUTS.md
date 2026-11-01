@@ -29,6 +29,7 @@ it step.
 | `PROVE_IT_CAP_USD` | What one run may spend at Meta (default 1.5) |
 | `PROVE_NIGHTLY=1` | Re-checks live products each night. Needs `PROVE_IT` |
 | `PROVE_NIGHTLY_PRODUCTS` | How many a night (default 5) |
+| `VERIFY_AGENTS=1` | The product page's "What was checked" panel and code's results for an agent product's judge. With `PROVE_IT`, it also grades an agent's reply from a call the run already makes (`agent_claims`, not an output): reply shape, a finished run, and links in the answer against its sources. It shows results and enforces nothing. A claims list isn't graded yet |
 | `PROVE_PUT_FILES=1` | A local run's knob: the stage writes the CLI, skill, plugin and gadget pack into its copy instead of downloading them, and says so in its results. For testing against a deployed site that doesn't have the routes yet |
 
 ## The files

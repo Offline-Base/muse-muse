@@ -20,6 +20,21 @@ describe("recipe skills", () => {
     }
   });
 
+  it("the verified agent carries nothing from a legal product or the workshop", () => {
+    const dir = join(ROOT, "recipe-verified-agent");
+    const texts = ["SKILL.md", ...readdirSync(join(dir, "helpers")).map((f) => `helpers/${f}`)].map((f) => readFileSync(join(dir, f), "utf8"));
+    for (const text of texts) {
+      assert.ok(!text.includes("\u2014"));
+      assert.doesNotMatch(text, /\b(legal|attorney|lawyer|plaintiff|defendant|privileged|court|memo|dispute|lawsuit)\b|legal-agent-workshop|northbridge|caldera|meta-models/i);
+    }
+  });
+
+  it("the case agent's wrap up turn doesn't force a tool, which Meta refuses with a 400", () => {
+    const text = readFileSync(join(ROOT, "recipe-case-agent", "SKILL.md"), "utf8");
+    assert.doesNotMatch(text, /`tool_choice` forcing/);
+    assert.match(text, /Don't send `tool_choice`/);
+  });
+
   it("helpers import nothing, so they work when copied into a product", () => {
     for (const id of skills) {
       const dir = join(ROOT, id, "helpers");

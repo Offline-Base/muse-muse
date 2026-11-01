@@ -210,6 +210,9 @@ const fakeSteps = {
     record("publishOffStep");
     return scenario.publish === false ? "VERCEL_TOKEN isn't set" : null;
   },
+  saveUnpublishedVersionStep: async (input: unknown) => {
+    record("saveUnpublishedVersionStep", input);
+  },
   startDeployStep: async (input: unknown) => {
     record("startDeployStep", input);
     return { projectId: "prj_1", deploymentId: "dpl_1", liveTokenId: "tok-live" };
@@ -294,6 +297,7 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
         },
       },
     });
+    mock.module(new URL("../package-step.ts", import.meta.url).href, { namedExports: { packageProductStep: async () => {} } });
     mock.module(new URL("../prove-start.ts", import.meta.url).href, {
       namedExports: {
         startProveStep: async (input: unknown) => {
@@ -318,6 +322,7 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
     mock.module(new URL("../../caps/ship.ts", import.meta.url).href, { namedExports: { CAPS_SHIPPING: ["extension"], capsShipping: () => scenario.capsShipping ?? false } });
     mock.module("workflow", {
       namedExports: {
+        FatalError: class FatalError extends Error {},
         sleep: async (d: unknown) => {
           slept.push(d);
         },
@@ -335,6 +340,7 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
     assert.deepEqual(await wf.buildProduct({ buildId: "b1" }), { status: "live" });
     assert.equal(named("startDeployStep").length, 0);
     assert.equal(named("pollDeployStep").length, 0);
+    assert.equal(named("saveUnpublishedVersionStep").length, 1, "the Code page still gets this version's files");
     const reg = named("registerStep")[0]!.args[0] as { liveUrl: unknown; projectId: unknown; liveTokenId: unknown; demoVideoUrl: string; demoPosterUrl: string };
     assert.deepEqual([reg.liveUrl, reg.projectId, reg.liveTokenId], [null, null, null]);
     assert.equal(reg.demoVideoUrl, "https://x/demo.mp4");
@@ -610,17 +616,17 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
     assert.equal(named("cleanupStep").length, 1);
   });
 
-  it("kills Muse Code at the 25-minute cap and fails the build", async () => {
+  it("kills Muse Code at the 60-minute cap and fails the build", async () => {
     reset({ musePolls: Infinity });
     assert.deepEqual(await wf.buildProduct({ buildId: "b7" }), { status: "failed" });
     // 100 polls, then one more after the kill to read (and charge) what the run wrote on its way out.
-    assert.equal(named("pollMuseStep").length, 101);
-    assert.equal((named("pollMuseStep")[100]!.args[0] as { offset: number }).offset, 10000);
+    assert.equal(named("pollMuseStep").length, 241);
+    assert.equal((named("pollMuseStep")[240]!.args[0] as { offset: number }).offset, 24000);
     assert.ok(calls.findIndex((c) => c.step === "killStep") < calls.findLastIndex((c) => c.step === "pollMuseStep"));
     assert.deepEqual(named("killStep")[0]!.args, ["product-shelf-scout", "cmd-0"]);
     assert.equal(
       (named("failStep")[0]!.args[0] as { message: string }).message,
-      "Muse Code ran past its 25-minute limit and was stopped.",
+      "Muse Code ran past its 60-minute limit and was stopped.",
     );
     assert.equal(named("cleanupStep").length, 1);
   });
@@ -996,7 +1002,7 @@ describe("engine (docs/CAPABILITIES.md, section 8)", { skip: canMock ? false : "
     reset({ musePollsByRun: [Infinity, 2], verifies: [{ passed: false }, { passed: true }] });
     assert.deepEqual(await wf.buildProduct({ buildId: "t1" }), { status: "live" });
     assert.equal(named("killStep").length, 1, "the capped run was killed");
-    assert.ok(logs().includes("Muse Code was stopped after 25 minutes."));
+    assert.ok(logs().includes("Muse Code was stopped after 60 minutes."));
     assert.ok(logs().includes("Muse Code was stopped at its time limit. Checking what it built."));
     assert.ok(!logs().some((t) => t?.startsWith("Muse Code ended with an error")), "a capped run isn't reported as an error");
     assert.deepEqual(starts().map((r) => [r.round, r.promptFile]), [[0, "brief.md"], [1, "fix-1.md"]]);

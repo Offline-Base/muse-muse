@@ -110,6 +110,8 @@ export interface ProveRunSpec {
   /** What the gadget pack's runner may call, or null when another call wouldn't fit the budget. */
   gadgetCall: ProveCall | null;
   downloads: { cli: string; skill: string; claudePlugin: string; gadget: string } | null;
+  /** VERIFY_AGENTS, on an agent product: the runner keeps each call's reply so judgeAgentClaims can read it. */
+  agentCheck?: boolean;
 }
 
 /** What the manifest says about whether an action changes anything: true when it only reads, undefined when it doesn't say. */
@@ -594,4 +596,100 @@ export function generatedFilesFor(product: OutputProduct, site: string, dir: str
     { path: `${dir}/${pluginFileName(product.slug)}`, content: pluginZip(product, site) },
     { path: `${dir}/${gadgetFileName(product.slug)}`, content: gadgetZip(product) },
   ];
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The agent claims check (VERIFY_AGENTS)
+
+const KIT_FIELDS = ["answer", "sources", "steps", "stopped", "status"] as const;
+
+const asObject = (value: unknown): Record<string, unknown> | null => (value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null);
+
+/** A reply as JSON, or null. */
+function replyObject(text: string): Record<string, unknown> | null {
+  try {
+    return asObject(JSON.parse(text));
+  } catch {
+    return null;
+  }
+}
+
+/** Which of the run's replies came from an agent: another action of the same product has none of the kit's fields. */
+export function pickAgentReply(replies: ReadonlyArray<{ name: string; text: string }>): { name: string; reply: Record<string, unknown> } | null {
+  for (const { name, text } of replies) {
+    const reply = replyObject(text);
+    if (reply && KIT_FIELDS.filter((f) => f in reply).length >= 2) return { name, reply };
+  }
+  return null;
+}
+
+/** So the same page written two ways is one page. Not a parse of what a page means: only its address. */
+function sameLink(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.host.toLowerCase()}${u.pathname.replace(/\/+$/, "")}${u.search}`;
+  } catch {
+    return url;
+  }
+}
+
+/** Every web address written anywhere in an answer, in text or in any field of a structured one. */
+function linksIn(value: unknown, out: string[] = []): string[] {
+  if (typeof value === "string") {
+    for (const m of value.match(/https?:\/\/[^\s<>"'`)\]]+/g) ?? []) out.push(m.replace(/[.,;:!?]+$/, ""));
+  } else if (Array.isArray(value)) value.forEach((v) => linksIn(v, out));
+  else if (value && typeof value === "object") Object.values(value).forEach((v) => linksIn(v, out));
+  return out;
+}
+
+/** One agent reply graded by code. Pure, and it reads only the reply itself, never what the agent says about it. */
+export interface AgentClaimsGrade {
+  state: Extract<ProveEventBody["state"], "failed" | "skipped">;
+  title: string;
+  detail?: string;
+  checks: ProveCheck[];
+  reported: string[];
+}
+
+/**
+ * Grades an agent's real reply. Nothing here decides whether an answer is true, and today no reply can be "done": a reply
+ * has either a problem or nothing that says which claim rests on what. Read-only with PROVE_IT, and shown, never enforced.
+ *
+ * A `claims` field is not graded: the recipe that will write it hasn't been proven by a test build, so grading a guess at
+ * its shape could show something as checked that wasn't. It says so, and doesn't pass.
+ */
+export function judgeAgentClaims(input: { action: string; reply: Record<string, unknown>; required?: readonly string[] }): AgentClaimsGrade {
+  const { action, reply, required = [] } = input;
+  const sources = Array.isArray(reply.sources) ? reply.sources.map(asObject) : null;
+  const steps = Array.isArray(reply.steps) ? reply.steps.map(asObject) : null;
+  const missingKit = KIT_FIELDS.filter((f) => !(f in reply));
+  const missingRequired = required.filter((f) => !(f in reply));
+  const shapeOk = !missingKit.length && !missingRequired.length && sources !== null && steps !== null && typeof reply.stopped === "boolean" && typeof reply.status === "string";
+
+  const openStep = (steps ?? []).some((s) => s?.state === "running" || s?.state === "waiting");
+  const finished = reply.status === "completed" && reply.stopped === false && !openStep;
+
+  const known = new Set((sources ?? []).flatMap((s) => (typeof s?.href === "string" ? [sameLink(s.href)] : [])));
+  const links = [...new Set(linksIn([reply.answer, reply.text]))];
+  const forged = links.filter((link) => !known.has(sameLink(link)));
+
+  const checks: ProveCheck[] = [
+    { label: `${action} replied with an agent's full record`, ok: shapeOk },
+    { label: "The run finished rather than stopping short", ok: finished },
+    // With no links there was nothing to compare, so no line says this passed.
+    ...(links.length ? [{ label: "Every link in the answer was in its sources", ok: !forged.length }] : []),
+  ];
+  const reported = (sources?.length ?? 0) > 0 ? ["What its source pages say: the test's firewall can't open them, so the passages are the product's own."] : [];
+
+  const problems = [
+    ...(shapeOk ? [] : [`The reply isn't an agent's full record${[...missingKit, ...missingRequired].length ? `: it leaves out ${list([...new Set([...missingKit, ...missingRequired])])}` : ""}.`]),
+    ...(finished ? [] : [`The run didn't finish: its status is ${typeof reply.status === "string" ? oneLine(reply.status, 40) : "missing"}.`]),
+    ...(forged.length ? [`The answer has links that aren't in its sources: ${oneLine(forged.slice(0, 3).join(", "), 300)}.`] : []),
+  ];
+  if (problems.length) return { state: "failed", title: "Agent reply: failed a check", detail: noEmDashes(problems.join(" ")), checks, reported };
+  // The kit's reply carries the recipe's answer under `answer`, so that's where its claims are.
+  if ("claims" in reply || (asObject(reply.answer) && "claims" in asObject(reply.answer)!)) {
+    return { state: "skipped", title: "Agent reply: its claims weren't graded", detail: "The reply has a claims list that this check can't read yet, so none of its claims were checked.", checks, reported };
+  }
+  return { state: "skipped", title: "Agent reply: no claims to check", detail: "The answer doesn't say which claim rests on which source, so its claims weren't checked.", checks, reported };
 }

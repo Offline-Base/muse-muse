@@ -13,6 +13,9 @@ export const OUTPUT_LABEL: Record<ProductOutput, string> = {
   gadget: "Muse gadget commands",
 };
 
+/** The agent claims check (VERIFY_AGENTS). It isn't an output, so it isn't in OUTPUT_LABEL. */
+export const AGENT_CLAIMS_LABEL = "Agent reply";
+
 /** A stage still "running" with no news for this long is gone: its workflow died or its events stopped. */
 export const PROVE_STALE_MS = 45 * 60_000;
 
@@ -32,7 +35,7 @@ export function settleProveView(view: ProveView | null, now: number): ProveView 
     active: false,
     items: view.items.map((i) =>
       PROVE_UNSETTLED.includes(i.state)
-        ? { ...i, state: "failed", title: i.item === "stage" ? "Prove it didn't finish" : `${OUTPUT_LABEL[i.item]}: the check never finished` }
+        ? { ...i, state: "failed", title: i.item === "stage" ? "Prove it didn't finish" : `${i.item === "agent_claims" ? AGENT_CLAIMS_LABEL : OUTPUT_LABEL[i.item]}: the check never finished` }
         : i,
     ),
   };

@@ -21,6 +21,7 @@ import { buildTokenBudgetFor } from "@/lib/gateway/policy";
 import { mintToken, revokeLiveTokensExcept, revokeTokens } from "@/lib/gateway/tokens";
 import { judgeBuild, pickScreenshots } from "@/lib/judge";
 import { nativeExtraFiles } from "@/lib/native/template-files";
+import { localGadgetFiles } from "@/lib/sandbox/local-gadget";
 import { recipeExtraFiles, recipeNotes } from "@/lib/recipes/registry";
 import { prepareToolFixtures } from "@/lib/tools/fixtures";
 import { rebuildTargetFor } from "@/lib/pipeline/catalog";
@@ -57,8 +58,9 @@ import { renderMilestonePrompt } from "@/lib/engine/prompts";
 // ---------- Wave 3, unit 3: cap readiness (docs/CAPABILITIES.md, 2.4a) ----------
 import { capDropLine, capsForBuild, readCapDrops, withoutCaps, type CapDrop } from "@/lib/caps/ready";
 // ---------- end Wave 3, unit 3 ----------
-import { pollDeploy, projectNameFor, startDeployFromSandbox, type DeployPoll } from "@/lib/publish/vercel";
+import { collectDeployFiles, pollDeploy, projectNameFor, startDeployFromSandbox, type DeployPoll } from "@/lib/publish/vercel";
 import { briefTargets } from "@/lib/native/targets";
+import { verifyProofText } from "@/lib/prompts/judge";
 import { demoNoteFor } from "@/lib/sandbox/artifacts";
 import * as sandbox from "@/lib/sandbox/builder";
 import { captureVersion } from "@/lib/versions/store";
@@ -542,7 +544,7 @@ export interface SandboxRef {
 
 /** The files this brief's targets add, as a field that isn't there at all for a web-only brief. */
 function extraFilesFor(brief: Brief | null): { extraFiles?: Array<{ path: string; content: string }> } {
-  const extraFiles = [...nativeExtraFiles(brief), ...recipeExtraFiles(brief)];
+  const extraFiles = [...nativeExtraFiles(brief), ...recipeExtraFiles(brief), ...localGadgetFiles(brief)];
   return extraFiles.length ? { extraFiles } : {};
 }
 
@@ -954,7 +956,10 @@ export async function judgeStep(input: {
   const fixedProof = briefCaps(brief).length ? capsProofText(await verifySummaryFor(input.buildId, input.round)) : null;
   // Wave 3, unit 11: the gateway's record of a build's Glimmer calls, which decides nothing. Null with GPU_GLIMMER_SHARED off.
   const gpuProof = await gpuProofText(brief, input.buildId);
-  const capsProof = gpuProof ? `${fixedProof ?? GPU_PROOF_FRAME}\n${gpuProof}` : fixedProof;
+  const proofBefore = gpuProof ? `${fixedProof ?? GPU_PROOF_FRAME}\n${gpuProof}` : fixedProof;
+  // VERIFY_AGENTS: code's results come first on an agent product, in the same channel. The judge runs before Live and Prove it after, so these are verify's.
+  const agentProof = env.verifyAgents && briefTargets(brief).includes("agent") ? verifyProofText(await verifySummaryFor(input.buildId, input.round)) : null;
+  const capsProof = agentProof ? [agentProof, proofBefore].filter(Boolean).join("\n") : proofBefore;
   const result = await judgeBuild({
     brief,
     references: await judgeReferences(build, input.productId),
@@ -1191,6 +1196,20 @@ export interface DeployStart {
 export async function publishOffStep(): Promise<string | null> {
   "use step";
   return env.publishOffReason;
+}
+
+/**
+ * With publishing off there's no deploy to hand files to captureVersion, so the Code page, source.zip and restore would
+ * have nothing. Saves the same files here. As on a deploy, a failed save logs and never stops the build.
+ */
+export async function saveUnpublishedVersionStep(input: { buildId: string; productId: string; sandboxName: string; restoredFrom?: string | null }): Promise<void> {
+  "use step";
+  try {
+    const { files } = await collectDeployFiles(input.sandboxName);
+    await captureVersion({ buildId: input.buildId, productId: input.productId, files, restoredFrom: input.restoredFrom ?? null });
+  } catch (err) {
+    console.error("[versions] unpublished save", input.buildId, err instanceof Error ? err.message : err);
+  }
 }
 
 export async function startDeployStep(input: {
