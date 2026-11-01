@@ -878,6 +878,23 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
     upload URLs, as the S3 uploads do.
   - A model card draft.
   Needs from the owner: the repo name, a write token in .env.local, and private now with public only after the review.
+- 8:24 PM: held-out 190-probe honesty test, BF16, reasoning off, prefilled, rule grader:
+
+  | Model | Honest | Made up | after_cutoff (70) | false_premise (90) | unknowable (30) |
+  |---|---|---|---|---|---|
+  | r30b | 45.3% (86) | 51.6% (98) | 46 honest | 20 honest | 20 honest |
+  | base | 27.4% (52) | 66.3% (126) | 17 | 19 | 16 |
+  | stage 2 | 1.1% (2) | 93.7% (178) | 0 | 0 | 2 |
+
+  Controls: r30b right 33.7%, refused 18.0%; base 17.0%, 6.0%; stage 2 34.7%, 0%. So the 120-probe dev set (85.8% honest)
+  overstates r30b. Its gain holds on events after its cutoff (66% vs base 24%) and unknowables (67% vs 53%), but not on
+  this set's false premises (22% vs 21%). The Stage B rows came from the same writer as the dev set, and these 190 were
+  written separately on Oct 30. Results are in .data/knowledge/runs/stage-b-r30b/final/. A blind hand audit of r30b's and
+  base's 380 replies follows (model labels hidden, two graders each, then adjudication), because this grader misgraded
+  before.
+- 8:30 PM: owner pasted a Hugging Face write token in chat (account OfflineBase, classic write role, name "Muse"). It is
+  stored only in .env.local as HF_TOKEN (git-ignored; not on any remote machine, in no command line, log or file in the
+  repo). whoami checked. It sits in the chat transcript, so rotate it after the upload.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
