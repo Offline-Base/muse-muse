@@ -339,6 +339,26 @@ describe("the build firewall", () => {
       { cap: "media", mirror: "http://plain.example/x" },
       { cap: "media", mirror: null },
     ] };
-    assert.deepEqual(mediaMirrorHosts(mirrored), ["abc.public.blob.vercel-storage.com"]);
+    assert.deepEqual(mediaMirrorHosts(mirrored, undefined), ["abc.public.blob.vercel-storage.com"]);
+  });
+
+  it("opens only a Vercel Blob public store, and only the platform's own when its id is known", async () => {
+    const { mediaMirrorHosts, ownBlobHost } = await import("@/lib/caps/media/hosts");
+    const at = (...mirrors: string[]) => ({ assets: mirrors.map((mirror) => ({ cap: "media", mirror })) });
+    for (const bad of [
+      "https://evil.example/assets/1",
+      "https://abc.public.blob.vercel-storage.com.evil.example/assets/1",
+      "https://a.b.public.blob.vercel-storage.com/assets/1",
+      "https://abc.blob.vercel-storage.com/assets/1",
+      "https://user:pw@abc.public.blob.vercel-storage.com/assets/1",
+      "https://abc.public.blob.vercel-storage.com:8443/assets/1",
+      "http://abc.public.blob.vercel-storage.com/assets/1",
+    ]) {
+      assert.deepEqual(mediaMirrorHosts(at(bad), undefined), [], bad);
+    }
+    assert.equal(ownBlobHost("store_AbC123"), "abc123.public.blob.vercel-storage.com");
+    assert.equal(ownBlobHost(undefined), null);
+    assert.deepEqual(mediaMirrorHosts(at("https://abc123.public.blob.vercel-storage.com/assets/1"), "store_AbC123"), ["abc123.public.blob.vercel-storage.com"]);
+    assert.deepEqual(mediaMirrorHosts(at("https://other9.public.blob.vercel-storage.com/assets/1"), "store_AbC123"), [], "another Blob store");
   });
 });
