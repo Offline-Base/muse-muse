@@ -42,6 +42,7 @@ import type {
   NativeSpendKind,
 } from "@/lib/native/types";
 import type { ToolFixtures, ToolPrincipal } from "@/lib/tools/ids";
+import type { VersionFile } from "@/lib/versions/policy";
 import type { BuildEventBody, BuildStatus, Manifest, NativeOrigin, ProductClip, ProductStatus, Reference } from "@/lib/types";
 import type {
   DatasetKind,
@@ -194,6 +195,23 @@ export const builds = pgTable(
     index("builds_user_started_idx").on(t.userId, t.startedAt),
     index("builds_rebuild_idx").on(t.rebuildOf),
   ],
+);
+
+/**
+ * 0028_versions: the source one build deployed, as a list of files in storage (docs/VERSIONS.md). A build with no row is
+ * a commit whose source wasn't kept. `restoredFrom` is the build a restore brought back.
+ */
+export const productVersions = pgTable(
+  "product_versions",
+  {
+    buildId: uuid("build_id").primaryKey().references(() => builds.id),
+    productId: uuid("product_id").notNull().references(() => products.id),
+    files: jsonb("files").$type<VersionFile[]>().notNull(),
+    bytes: bigint("bytes", { mode: "number" }).notNull().default(0),
+    restoredFrom: uuid("restored_from"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("product_versions_product_idx").on(t.productId)],
 );
 
 /** Append-only log the build room streams. `id` is the SSE cursor (Last-Event-ID). */
