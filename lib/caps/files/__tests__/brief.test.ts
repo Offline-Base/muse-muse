@@ -10,7 +10,7 @@ import { BriefSchema, type Brief } from "@/lib/brief/schema";
 import { capsWriterRules, writerBriefField } from "@/lib/caps/brief-fields";
 import { capsCatalogBlocks } from "@/lib/caps/catalog";
 import { filesCatalogBlock } from "@/lib/caps/files/catalog";
-import { FilesBriefBlock, filesRule, filesWriterBlock, filesWriterRules, normalizeFilesBlock } from "@/lib/caps/files/brief";
+import { FilesBriefBlock, filesRule, type FilesBrief, filesWriterBlock, filesWriterRules, normalizeFilesBlock } from "@/lib/caps/files/brief";
 import { filesJudgeNote } from "@/lib/caps/files/judge";
 import { FILES_RENDER } from "@/lib/caps/files/render";
 import { capsBuildLines } from "@/lib/caps/render";
@@ -25,7 +25,7 @@ const on = (...names: Array<(typeof SWITCHES)[number]>) => {
   for (const n of names) process.env[n] = "1";
 };
 
-const block = { holds: "Field notes as text files and photos", scope: "shared", uploads: "anyone", search: true, datasets: ["palmer-penguins"] } as const;
+const block: FilesBrief = { holds: "Field notes as text files and photos", scope: "shared", uploads: "anyone", search: true, datasets: ["palmer-penguins"] };
 const brief = (files: unknown = block) => ({ ...BRIEF, files }) as unknown as Brief;
 const noEmDash = (s: string) => assert.ok(!s.includes("—"), "no em dashes");
 
