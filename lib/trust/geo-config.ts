@@ -5,7 +5,7 @@
  * time on Vercel, so a change needs a redeploy (as any env change there does). Relative imports only: next.config.ts
  * loads this before the app's path aliases exist.
  */
-import { COUNTRY_HEADER, parseGeoCountries, REGION_HEADER } from "./geo";
+import { COUNTRY_HEADER, MODEL_RESTRICTED_COUNTRIES, parseGeoCountries, REGION_HEADER } from "./geo";
 
 /** Where a blocked request goes: a route that answers 451 with a short page (app/api/trust/unavailable/route.ts). */
 export const UNAVAILABLE_PATH = "/api/trust/unavailable";
@@ -15,6 +15,17 @@ export const UNAVAILABLE_PATH = "/api/trust/unavailable";
  * person's browser) and the unavailable page itself.
  */
 const SOURCE = "/:path((?!_next/|api/gateway/|api/cron/|api/trust/unavailable).*)";
+
+/**
+ * The platform's own routes that call a model with its own country rule (MODEL_RESTRICTED_COUNTRIES): the docs
+ * playground's image endpoints call Muse Image for whoever is visiting. A request to them from one of the model's
+ * countries goes to the unavailable route with ?model=, which answers in JSON. Not covered here, and listed for the
+ * owner in docs/CAPABILITIES.md 7a: the playground's /responses with model muse-image-1.0 (the model is in the body,
+ * which a rewrite can't see) and the fixture images a build makes for its builder.
+ */
+const MODEL_ROUTES: Readonly<Record<string, readonly string[]>> = {
+  "muse-image-1.0": ["/api/docs/v1/images/:path*"],
+};
 
 interface HasHeader {
   type: "header";
@@ -32,6 +43,7 @@ export function trustGeoRewrites(vars: Record<string, string | undefined>): GeoR
   const on = ["1", "true", "yes", "on"].includes((vars.TRUST_GEO_BLOCK ?? "").trim().toLowerCase());
   if (!on) return [];
   const codes = parseGeoCountries(vars.TRUST_GEO_COUNTRIES);
+  if (!codes.length) return [];
   const whole = codes.filter((c) => !c.includes("-"));
   const regions = new Map<string, string[]>();
   for (const c of codes.filter((x) => x.includes("-"))) {
@@ -44,6 +56,14 @@ export function trustGeoRewrites(vars: Record<string, string | undefined>): GeoR
   if (whole.length) out.push(rule([{ type: "header", key: COUNTRY_HEADER, value: `(${whole.join("|")})` }]));
   for (const [country, list] of regions) {
     out.push(rule([{ type: "header", key: COUNTRY_HEADER, value: country }, { type: "header", key: REGION_HEADER, value: `(${list.join("|")})` }]));
+  }
+  // With any list on, a model's own countries (Muse Image in India), as productGeoCountries adds them for products.
+  for (const [model, sources] of Object.entries(MODEL_ROUTES)) {
+    const countries = (MODEL_RESTRICTED_COUNTRIES[model] ?? []).filter((c) => !whole.includes(c));
+    if (!countries.length) continue;
+    for (const source of sources) {
+      out.push({ source, destination: `${UNAVAILABLE_PATH}?model=${encodeURIComponent(model)}`, has: [{ type: "header", key: COUNTRY_HEADER, value: `(${countries.join("|")})` }] });
+    }
   }
   return out;
 }

@@ -77,4 +77,31 @@ describe("the platform's rewrites (next.config.ts)", () => {
     assert.equal(await visit("/_next/static/chunks/main.js", { "x-vercel-ip-country": "IR" }), null);
     assert.equal(await visit(UNAVAILABLE_PATH, { "x-vercel-ip-country": "IR" }), null, "no loop");
   });
+
+  it("block the docs playground's Muse Image routes from India, with any list on, and nothing else from India", async () => {
+    for (const path of ["/api/docs/v1/images/generations", "/api/docs/v1/images/edits"]) {
+      const to = new URL((await visit(path, { "x-vercel-ip-country": "IN" }))!);
+      assert.equal(to.pathname, UNAVAILABLE_PATH, path);
+      assert.equal(to.searchParams.get("model"), "muse-image-1.0", path);
+    }
+    assert.equal(await visit("/api/docs/v1/responses", { "x-vercel-ip-country": "IN" }), null);
+    assert.equal(await visit("/", { "x-vercel-ip-country": "IN" }), null);
+    assert.equal(await visit("/api/docs/v1/images/generations", { "x-vercel-ip-country": "US" }), null);
+    // Not with the flag off or no list, and not twice when the list already names India.
+    assert.deepEqual(trustGeoRewrites({ TRUST_GEO_BLOCK: "1", TRUST_GEO_COUNTRIES: "" }), []);
+    const withIndia = trustGeoRewrites({ TRUST_GEO_BLOCK: "1", TRUST_GEO_COUNTRIES: "meta,IN" });
+    assert.ok(!withIndia.some((r) => r.destination.includes("?model=")), "India is blocked everywhere already");
+  });
+
+  it("the unavailable route answers 451 JSON for a model's own rule, and the page otherwise", async () => {
+    const { GET, POST } = await import("@/app/api/trust/unavailable/route");
+    const api = await POST(new Request(`https://musemuse.example${UNAVAILABLE_PATH}?model=muse-image-1.0`, { method: "POST" }));
+    assert.equal(api.status, 451);
+    const body = (await api.json()) as { error: { code: string; message: string } };
+    assert.equal(body.error.code, "unavailable_here");
+    assert.match(body.error.message, /^Muse Image isn't available where you are/);
+    const page = await GET(new Request(`https://musemuse.example${UNAVAILABLE_PATH}?model=constructor`));
+    assert.equal(page.status, 451);
+    assert.match(page.headers.get("content-type") ?? "", /text\/html/);
+  });
 });
