@@ -955,6 +955,22 @@ because the sidebar showed a real account.
 - Wave 3 agreed two marked slots for the new pages: /gadgets (its hardware unit's board list) and /models (its gpu unit's
   owner-tuned models), each behind wave 3's own flag.
 
+### 20:06 Preview database landed on tuned-model-options (381935f)
+
+- Combined with wave 3's pieces (wf_6ef8e23b-ff9): 0a75160 cherry-picked (the build firewall adds the protection-bypass
+  header for the platform host only), and from 9e09de8 the preview platform URL (https://VERCEL_BRANCH_URL, else
+  VERCEL_URL, only on a preview with its own database) and the bypass secret.
+- The review found two ways sandbox code could misuse the bypass (domain fronting with another Host, and asking Vercel
+  for a bypass cookie). Fixed in 55e5783 (Host pinned to the platform's host; the cookie request refused with 403 in any
+  spelling) and f35d3bb (the secret comes with its host and goes nowhere else). Full suite at 15af04c: 4,418 tests, 4,410
+  pass, 0 fail. Not yet tested on live Vercel: the README has a one-time check for after the owner's steps.
+- Found and queued: the older Meta-key firewall transform for api.meta.ai doesn't pin Host either (live today); fix with
+  one test build, shipped on its own.
+- After the merge: tsc exit 0; db, preview-bypass, vercelignore, policy and flags-off tests 82/82. Pushed to the
+  tuned-model-options branch only (no deploy; main unchanged).
+- Owner steps (README, Preview database): Neon branch "preview" with an empty database "preview"; PREVIEW_DATABASE_URL
+  for Preview; Protection Bypass for Automation. Then vercel.json's main-only rule can let previews build again.
+
 ## Gaps
 
 What this record doesn't confirm:
