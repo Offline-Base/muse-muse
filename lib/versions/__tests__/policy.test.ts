@@ -28,12 +28,14 @@ test("content shaped like a secret is caught, ordinary code isn't", () => {
   assert.equal(holdsSecret(Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0, 0])), true);
 });
 
-test("code follows the product's visibility", () => {
-  const open = { status: "live", takenDownAt: null };
-  assert.equal(canReadCode(open, false), true);
-  assert.equal(canReadCode({ status: "disabled", takenDownAt: null }, false), false);
-  assert.equal(canReadCode({ status: "disabled", takenDownAt: null }, true), true);
-  assert.equal(canReadCode({ status: "disabled", takenDownAt: new Date() }, true), false);
+test("code is private to editors until they make it public", () => {
+  const live = { status: "live", takenDownAt: null, sourcePublic: false };
+  assert.equal(canReadCode(live, false), false, "private by default");
+  assert.equal(canReadCode(live, true), true);
+  assert.equal(canReadCode({ ...live, sourcePublic: true }, false), true);
+  assert.equal(canReadCode({ ...live, status: "disabled", sourcePublic: true }, false), false);
+  assert.equal(canReadCode({ ...live, status: "disabled" }, true), true);
+  assert.equal(canReadCode({ ...live, sourcePublic: true, takenDownAt: new Date() }, true), false);
 });
 
 test("a restore never touches hidden or held files", () => {

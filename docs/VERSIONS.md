@@ -35,3 +35,5 @@ It writes the saved files to the sandbox, removes files that version didn't have
 - Saved data rows don't roll back, and the demo video stays the newer one.
 - The next change's prompt says the files were restored, because Muse Code's session remembers the later code.
 - A restore that fails puts the live version's files back in the sandbox, when they were saved. If they weren't, the next change starts from the restored files.
+
+Code is private to whoever can edit the product (owner, admin, or a guest's edit pass) until they choose Make public on the Code page (`products.source_public`). The owner decided this on Nov 1, 2026, because the secret check only knows key shapes.

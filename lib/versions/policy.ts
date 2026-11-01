@@ -69,10 +69,15 @@ export function holdsSecret(content: Buffer): boolean {
 
 export const sha1 = (b: Buffer) => createHash("sha1").update(b).digest("hex");
 
-/** Who may read a product's code. A taken-down product has no page for anyone; one its owner switched off stays theirs. */
-export function canReadCode(product: { status: string; takenDownAt: Date | null }, isOwner: boolean): boolean {
+/**
+ * Who may read a product's code: whoever can edit it, and everyone else only once they made it public. Private by default,
+ * since the secret check only knows key shapes and a password typed into code would be readable. A taken-down product has
+ * no page for anyone; one its owner switched off stays theirs.
+ */
+export function canReadCode(product: { status: string; takenDownAt: Date | null; sourcePublic: boolean }, canEdit: boolean): boolean {
   if (product.takenDownAt) return false;
-  return product.status !== "disabled" || isOwner;
+  if (canEdit) return true;
+  return product.sourcePublic && product.status !== "disabled";
 }
 
 /** The one file a request names, only ever found by exact match in the version's list, so a crafted path finds nothing. */

@@ -7,6 +7,8 @@ import { Icon } from "@/components/icons";
 import { RestoreVersion } from "@/components/product/RestoreVersion";
 import { EmptyCard, NotConnected, PageHeader, StatusPill } from "@/components/ui";
 import { canActAsOwner } from "@/lib/auth";
+import { CodeVisibility } from "@/components/product/CodeVisibility";
+import { canEditProduct } from "@/lib/edit-pass";
 import { db, schema } from "@/lib/db/client";
 import { relativeTime, statusLabel, truncate, usd } from "@/lib/format";
 import { currentUser, safeQuery } from "@/lib/queries";
@@ -141,7 +143,8 @@ export default async function CodePage({ params, searchParams }: { params: Promi
   if (!result.data) notFound();
   const { product, commits } = result.data;
   const isOwner = canActAsOwner(user, product.ownerId);
-  if (!canReadCode(product, isOwner)) notFound();
+  const canEdit = await canEditProduct(user, product);
+  if (!canReadCode(product, canEdit)) notFound();
 
   const asked = Number(one(query.v));
   const commit = commits.find((c) => c.number === asked) ?? commits.find((c) => c.id === product.latestBuildId) ?? commits.find((c) => c.kept) ?? commits[0] ?? null;
@@ -170,6 +173,7 @@ export default async function CodePage({ params, searchParams }: { params: Promi
         </Link>
       </div>
       <PageHeader title="Code" />
+      {canEdit ? <CodeVisibility slug={product.slug} isPublic={product.sourcePublic} /> : null}
       {!commit ? (
         <EmptyCard title="No code yet">This product has no builds yet, so there&apos;s no code to show.</EmptyCard>
       ) : (

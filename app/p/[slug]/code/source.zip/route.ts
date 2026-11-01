@@ -3,6 +3,7 @@ import { canActAsOwner, isCrossSite } from "@/lib/auth";
 import { db, schema } from "@/lib/db/client";
 import { adjustCounter, reserveCounter } from "@/lib/gateway/store";
 import { currentUser } from "@/lib/queries";
+import { canEditProduct } from "@/lib/edit-pass";
 import { canReadCode, commitsFrom } from "@/lib/versions/policy";
 import { keptBuildIds, productCommitBuilds, versionOf, versionZip } from "@/lib/versions/store";
 
@@ -23,7 +24,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
     if (isCrossSite(req.headers)) return text("Download the source from the product's Code page.", 403);
     const number = Number(new URL(req.url).searchParams.get("v"));
     const [product] = await db().select().from(schema.products).where(eq(schema.products.slug, slug)).limit(1);
-    if (!product || !canReadCode(product, canActAsOwner(await currentUser(), product.ownerId))) return text("There's no source here.", 404);
+    if (!product || !canReadCode(product, await canEditProduct(await currentUser(), product))) return text("There's no source here.", 404);
     const commit = commitsFrom(await productCommitBuilds(product.id), await keptBuildIds(product.id)).find((c) => c.number === number);
     const version = commit?.kept ? await versionOf(product.id, commit.id) : null;
     if (!commit || !version) return text("This version's source wasn't kept.", 404);

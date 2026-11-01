@@ -121,6 +121,8 @@ export const products = pgTable(
     transcriptUrl: text("transcript_url"),
     /** Clips of it on a real device that its owner uploaded, shown under the demo. */
     extraClips: jsonb("extra_clips").$type<ProductClip[]>().notNull().default([]),
+    /** 0028_versions: anyone may read its Code page. Off until an owner turns it on. */
+    sourcePublic: boolean("source_public").notNull().default(false),
     status: text("status").$type<ProductStatus>().notNull().default("building"),
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
