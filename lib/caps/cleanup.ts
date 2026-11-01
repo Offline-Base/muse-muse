@@ -1,4 +1,5 @@
 import { clearConnectBuild, sweepConnect } from "@/lib/caps/connect/cleanup";
+import { clearJobsBuild, sweepJobs } from "@/lib/caps/jobs/cleanup";
 import { clearCodeBuildRuns, sweepCodeBuildRuns } from "@/lib/caps/code/cleanup";
 import { clearBuildNamespace, sweepData } from "@/lib/caps/data/store";
 import { filesBuildEnded, filesProductOff, filesSweep } from "@/lib/caps/files/cleanup";
@@ -63,6 +64,22 @@ export const CAP_CLEANUPS: CapCleanup[] = [
     },
     get sweep() {
       return env.servedCaps.includes("connect") ? sweepConnect : undefined;
+    },
+  },
+  // Unit 6: a build's test runs, hooks and notices go when it ends. A product turned off pauses its schedules and empties
+  // its queue; a visit from the owner starts them again. Old finished runs, read notices and revoked hooks in the hourly
+  // sweep. Only while the jobs cap is served.
+  {
+    cap: "jobs",
+    get buildEnded() {
+      return env.servedCaps.includes("jobs") ? clearJobsBuild : undefined;
+    },
+    get productOff() {
+      if (!env.servedCaps.includes("jobs")) return undefined;
+      return async (productId: string) => (await import("@/lib/caps/jobs/store")).jobsProductOff(productId);
+    },
+    get sweep() {
+      return env.servedCaps.includes("jobs") ? sweepJobs : undefined;
     },
   },
   // Unit 9: a build's exec_runs rows (counts only, never code or output) go when it ends, and crashed builds' after two

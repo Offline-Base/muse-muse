@@ -32,6 +32,8 @@ export interface DataCollectionRule {
   scope: DataScope;
   /** Only for shared collections. Defaults to the owner. */
   writes?: DataWriters;
+  /** Unit 6: a background job may save here: the brief's jobs.results, and on a live product the manifest's "jobWrites" too. */
+  jobWrites?: boolean;
 }
 
 /**
@@ -57,7 +59,7 @@ export function collectionRules(block: unknown): DataCollectionRule[] | null {
     if (typeof name !== "string" || !COLLECTION_NAME.test(name) || !isDataScope(scope) || seen.has(name)) continue;
     seen.add(name);
     const writes = (c as { writes?: unknown }).writes;
-    out.push({ name, scope, ...(scope === "shared" && isDataWriters(writes) ? { writes } : {}) });
+    out.push({ name, scope, ...(scope === "shared" && isDataWriters(writes) ? { writes } : {}), ...((c as { jobWrites?: unknown }).jobWrites === true ? { jobWrites: true } : {}) });
   }
   return out;
 }
@@ -76,8 +78,10 @@ export function narrowCollectionRules(brief: DataCollectionRule[] | null, manife
   return brief.flatMap((rule) => {
     const m = manifest.find((r) => r.name === rule.name);
     if (!m || m.scope !== rule.scope) return [];
-    if (rule.scope !== "shared") return [rule];
+    // Unit 6: a job's write needs both: the brief's jobs.results and the manifest's "jobWrites".
+    const jobs = rule.jobWrites && !m.jobWrites ? (({ jobWrites: _, ...r }) => r)(rule) : rule;
+    if (rule.scope !== "shared") return [jobs];
     const writes = WRITES_RANK[m.writes ?? "owner"] < WRITES_RANK[rule.writes ?? "owner"] ? (m.writes ?? "owner") : (rule.writes ?? "owner");
-    return [{ ...rule, writes }];
+    return [{ ...jobs, writes }];
   });
 }

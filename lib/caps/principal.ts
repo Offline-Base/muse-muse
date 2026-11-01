@@ -1,4 +1,5 @@
 import { readTestUserSession, readUserSession } from "@/lib/caps/data/identity";
+import { readJobToken } from "@/lib/caps/jobs/token";
 import { clientIpKey } from "@/lib/gateway/extract";
 import { CLIENT_IP_HEADER, OWNER_HEADER, VISITOR_HEADER } from "@/lib/gateway/policy";
 import { resolvePrincipal } from "@/lib/tools/principal";
@@ -55,9 +56,13 @@ const VISITOR_ID = /^[A-Za-z0-9_-]{16,128}$/;
 export function resolveCapCaller(req: Request, token: CapTokenLike, now: Date): CapCaller {
   const base = resolvePrincipal(req, token, now);
   const build = token.scope === "build";
-  const rawVisitor = req.headers.get(VISITOR_HEADER)?.trim() ?? "";
+  // ---------- Wave 3, unit 6: jobs. A job token (x-musemuse-job) resolves here, and a job is nobody else: no visitor, no
+  // signed-in person and no owner pass travels with it, so it can never read a person's items ----------
+  const job = readJobToken(req.headers.get(JOB_HEADER), token, now)?.runId ?? null;
+  // ---------- end Wave 3, unit 6 ----------
+  const rawVisitor = job ? "" : (req.headers.get(VISITOR_HEADER)?.trim() ?? "");
   const visitor = VISITOR_ID.test(rawVisitor) ? rawVisitor : null;
-  const userHeader = req.headers.get(USER_HEADER)?.trim() ?? "";
+  const userHeader = job ? "" : (req.headers.get(USER_HEADER)?.trim() ?? "");
   let user: string | null = null;
   if (userHeader) {
     const session = build
@@ -68,10 +73,7 @@ export function resolveCapCaller(req: Request, token: CapTokenLike, now: Date): 
     user = session?.subject ?? null;
   }
   const testOwner = build && req.headers.get(OWNER_HEADER)?.trim() === BUILD_TEST_OWNER;
-  const owner = build ? (testOwner || (!rawVisitor && !userHeader) ? "build" : null) : base.kind === "owner" ? base.subject : null;
-  // ---------- Wave 3, unit 6: jobs. A job token (x-musemuse-job) resolves here ----------
-  const job: string | null = null;
-  // ---------- end Wave 3, unit 6 ----------
+  const owner = job ? null : build ? (testOwner || (!rawVisitor && !userHeader) ? "build" : null) : base.kind === "owner" ? base.subject : null;
   const kind: CapPrincipalKind = build ? "build" : job ? "job" : owner ? "owner" : user ? "user" : visitor ? "visitor" : "product";
   return { kind, owner, user, visitor, job, ip: clientIpKey(req.headers.get(CLIENT_IP_HEADER)) };
 }

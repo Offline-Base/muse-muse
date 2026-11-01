@@ -380,7 +380,7 @@ Muse Code design's `code_sessions` table belongs to the Muse Muse General sessio
 | 0020 | `0020_data` | 3 | tables `end_users`, `end_user_passkeys`, `product_rows`, `product_data_counts`; sequence `product_rows_seq`; `builds.caps_dropped` (2.4a) | 1793431790646 |
 | 0021 | `0021_files` | 4 | tables `product_files`, `product_search_docs`, `product_dataset_reads` (10a) | 1793431850646 |
 | 0022 | `0022_connect` | 5 | tables `product_secrets`, `product_sends`, `public_fetch_cache` | 1793431910646 |
-| 0023 | `0023_jobs` | 6 | tables `product_schedules`, `job_runs`, `product_webhooks`, `owner_notices`; `products.owner_seen_at` | 1793431970646 |
+| 0023 | `0023_jobs` | 6 | tables `product_schedules`, `job_runs`, `product_webhooks`, `owner_notices` (12a); `products.owner_seen_at` | 1793431970646 |
 | 0024 | `0024_code` | 9 | table `exec_runs` | 1793432030646 |
 | 0025 | `0025_gpu` | 11 | table `glimmer_windows`; `training_jobs.product_id` | 1793432090646 |
 | 0026 | `0026_hardware` | 13 | tables `devices`, `product_boards` (section 19) | 1793432150646 |
@@ -1716,7 +1716,7 @@ notify. Writes to the outside wait for a person. Schedules pause after 14 days w
 | `POST {GATEWAY_URL}/jobs/enqueue` `{name, input}` | `cap:jobs`, any principal | Queues a run for the next tick | 50 a day per product |
 | `POST {GATEWAY_URL}/jobs/notify` `{title, body}` | job | An owner notice in Muse Muse | 10 a day |
 | `POST {GATEWAY_URL}/hooks/<productId>/<name>?k=<secret>` | anyone with the secret | Stores the payload and queues the named job | 64 KB, 60 a minute, 1,000 a day |
-| `POST {GATEWAY_URL}/jobs/test-fire` `{name, input}` | build token only | A build job token for the test to call the product's own route | 10 per build |
+| `POST {GATEWAY_URL}/jobs/test-fire` `{name, input}` | build token only | A build job token for the test to call the product's own route | 100 per build, 30 a minute (12a) |
 | `POST /api/products/<slug>/webhooks`, `DELETE ...` | the builder | Makes a hook and shows its secret once | 2 per product |
 
 Every model call in a run carries `x-musemuse-job`, and the gateway holds and settles the run's dollars the way
@@ -1744,6 +1744,107 @@ the owner notices on the dashboard, `template/caps/jobs/**`, `vercel.json` (the 
 15 minutes at least. Paused after 14 days without the owner, and when the product is off. A job never runs on a build's
 product from the cron. Needs a signed-in builder. Meta 10.1(i) asks whether runs with nobody present count as access "on
 behalf of" a third party: see the owner questions.
+
+### 12a. As built (tg-cap-jobs, Nov 1)
+
+Built on `tg-cap-int` at d44d1db. Every flag is off and `CAP_READY.jobs` stays false: no real test build has run (below).
+
+**Decisions that changed the plan.**
+- Decision 10 wins over the table above: `/jobs/enqueue` takes the owner or a job (and a build), never a visitor, a signed-in
+  person or a product's bare call.
+- The brief block gains `results`, the data block's shared or owner collections jobs may save to. A manifest's `"jobWrites": true`
+  alone would let the product's own file widen a rule, so a write needs both: a build follows the brief, and a live product the
+  brief narrowed by its manifest (`withJobWrites`, then `narrowCollectionRules`). A dropped data cap takes `results` with it.
+- `every` is one string in the brief and the manifest: "15 minutes", "2 hours", "1 day at 07:30", "1 week at 09:00
+  America/New_York". Slots hang off local midnight in that time zone. Under 15 minutes parses as 15. A weekly slot counts days from
+  the epoch, so it lands on one weekday, which the words can't choose yet.
+- 0023 adds to the plan: `job_runs.rows_written` (what the data route saved for the run, which the fixed check reads and product code
+  can't write), `product_webhooks.namespace` and `owner_notices.namespace` (a build's stay out of the owner's view and go when it
+  ends), `owner_notices.payload` and `resolved_at` (a held send's message and its one answer), and one unfinished run per schedule
+  (`job_runs_active_schedule_idx`), so a slot is skipped while the last run goes on.
+- A held send is a `send_held` notice. The owner reads the whole message and presses Confirm on Muse Muse, not in the product:
+  `POST /api/products/<slug>/notices/<id>` claims it once and calls connect's `deliverHeldSend`, with the sends switch, the owner's
+  sealed key and the day's count all still applying. A failed send that may have gone stays answered, so it can't go twice. Nothing
+  sent is a retry. The notice's id is the send's nonce.
+- `x-musemuse-job` reaches every helper without touching them or the base template: `lib/platform/jobs.ts` wraps global `fetch`, and
+  inside a `jobHandler` (AsyncLocalStorage) it adds the token to calls to `GATEWAY_URL` only. That also means a job's token can't leak
+  to another address. A client made at the top of a file, before the wrap, would miss it; the skill says to make them in the handler.
+- `lib/gateway/handler.ts` gets more than one line: a marked block, a shared hold path, a `refused` call and a `spent` call. With no
+  `deps.jobCall` (the cap not served) the path is today's.
+- `CAPS_SHIPPING` gains `jobs`: schedules sync in the step after deploy (`capsShipStep`), and that counts as an owner visit.
+- A cron pass runs one tick per run: a run it just called waits for the next pass, for both a checkpoint and a retry.
+- A job's call to `/vault/call` must be GET, on a service visitors may use. Its `/send` is held. Personal tools refuse it, as they do any
+  caller who isn't the owner.
+
+**Money.** A model call with `x-musemuse-job` holds and settles through `holdRun` and `settleRun`, keyed by product and run and pinned to one
+window past the run's 48-hour age limit, so hours, a redeploy's new token or the hourly turnover can't start its dollars over. Measured
+estimates: 2,000 output tokens on Muse Wonder is $0.042, and a call naming none counts as 8,000, $0.162, above the $0.10 default. That
+call is refused and the run goes on. The run stops (`budget`) and tells the owner only as "After the review" below says. `JOBS_DAILY_USD` is
+platform-wide and is checked before each call, so it can be passed by what's already running, each within its run's dollars. The token's
+daily budget and the builder's cap (unit 1) still apply. A build's job calls count on the run but not on `JOBS_DAILY_USD`.
+
+**Who it runs for.** The cron's SQL requires status live or partial, a live link, no takedown, no ban and not the guest account. It only
+reads `live` namespace rows. A product whose owner has no visit is counted from its creation. A pause for being away or a product going
+off is lifted by the owner's visit, once the product is on.
+
+**After the review (Nov 1).** Every item has a test that failed before its fix.
+- **Test fires.** 10 a build ran out in a normal build: a smoke run repeats for Muse Code's own verify, the platform's verify and each fix round. Now
+  100 fires and 100 hook addresses a build, counted apart, and 30 a minute. The biggest brief fires 8 a run, over 4 rounds of 3 verifies. Each run keeps its
+  dollars and the build token's budget still applies. `fireJob` and `fireWebhook` fire nothing in the `demo` and `studio` projects, which replay what smoke saved.
+- **The owner away.** Past `JOBS_PAUSE_DAYS` everything stops, not only schedules: the claim skips the product, queued runs are cancelled, a job's enqueue and
+  live hooks answer 403 until a visit. An owner's enqueue still works, since their pass means they came. A build's test hook doesn't check.
+- **Fair shares.** Products take turns in the claim (every product's oldest run before anyone's second). New settings: `JOBS_PRODUCT_DAILY_RUNS` (400; three
+  15-minute schedules take 288) and `JOBS_PRODUCT_DAILY_USD` ($1). Over its ticks, a claimed run goes back unspent and the owner hears once. Over its
+  dollars, a model call gets `budget_exceeded` and the run isn't ended by it. At most 100 runs wait per product: hooks and enqueue get 429 past that.
+  **For the owner:** $1 a product is my number. A schedule making one 2,000-token call every 15 minutes costs about $4 a day and would stop at about a quarter of that.
+- **Deploys.** The ship step runs on every deploy while jobs is enabled. A brief with no jobs block deletes the product's schedules and empties its queue
+  (`clearSchedules`). That doesn't count as an owner visit, and a product that never had jobs is untouched. The import publish (`lib/promote/workflow.ts`) now runs
+  `capsShipStep` after its deploy event, sandbox still awake, so a locally built product gets its schedules. It also runs the extension's step, as a build does.
+- **Job tokens.** `jr1.<product>.<run>.<tick>.<attempt>.<exp>.<sig>`. `closeTick` matches tick and try, so a late answer gets 409 and changes nothing. Data, the vault call,
+  held sends and enqueue ask `jobRunRefusal` (`lib/caps/jobs/run-check.ts`): the run must be running, on this product, in this namespace. No way to read the run means refused.
+- **Dollars.** `holdRun` says which limit refused. A run stops only when settled spend plus $0.01 is over its limit, or after 60 model calls, with its own notice. Holds alone only
+  refuse the call. Tool-call refusals never stop a run. The skill says to make model calls one at a time.
+- **Notices.** 20 held sends a day per product (`jobs-held:`). A failing job leaves one unread notice per job. Unanswered held sends list first, and the dashboard says how
+  many more aren't shown. Held sends expire after 14 days in the sweep, losing their addresses and words, and confirming re-checks the age and that the product's rules still have that channel.
+- **Who counts as the owner.** Only the owner's own pass counts as a visit, and only the owner can answer a notice. An admin still gets a pass. A deploy still counts as a
+  visit, even an admin's refinement.
+- **Smaller.** Odd intervals round to the nearest that runs evenly from midnight (15, 20, 30 minutes; 1, 2, 3, 4, 6, 8, 12 hours; whole days, at most 30), with ties going longer. What's stored,
+  shown and written into the brief is the rounded one. NUL or broken text answers 400. A finished run drops its `input`. A queued run cancelled at 48 hours tells the owner. A brief with no `results` (only
+  possible with no usable data block, or a writer's slip) must leave a notice instead: fixed check `job-told-owner`.
+
+**Rejected or changed from the review.** The review suggested about 40 test fires: too few for the biggest brief (8 a run). It suggested one run per product per batch: turns keep the same
+fairness without leaving the other 9 slots idle for a lone product. It suggested a "more" link, but no page lists all notices, so it's a plain count.
+
+**The owner's pages.** `components/jobs/OwnerNotices` on the dashboard, `components/jobs/JobsPanel` on the product page (schedules, webhooks with
+Make, Replace and Remove, recent runs). Neither reads anything while the cap is off. Both use existing tokens and classes.
+
+**Tests** (all made-up data, no model call, $0).
+- `lib/caps/jobs/__tests__/schedule` (time zones, both clock changes, the floor), `brief` (block, writer, prompt, Budget line, drops), `budget`
+  (tokens, who they make the caller, the real model route), `jobs` (PGlite: every route's refusals, write rules, held sends, hooks, cron, pauses,
+  deploy sync, sweep, proof), `routes` (PGlite: webhooks' one-time secret, a held send confirmed once with a real sealed key against a fake
+  Resend, the cron route).
+- `e2e.scenario`: section 22's scenario with only Meta's answer faked. The template's real `jobHandler`, `metaClient` and `data` in a separate
+  product process, over HTTP, against the real gateway handlers on PGlite: a digest fired twice, the second resuming a checkpoint, a webhook
+  into a log, a job refused a collection it isn't marked for, the fixed checks on the gateway's own `/caps/proof`, and then the same product
+  run by the real cron, one tick a pass.
+- `template/scripts/__tests__/caps-jobs`, a 0023 case in the migrations test, `caps-off` and the flags-off lists.
+
+**Not proven.**
+- `fireJob` and `fireWebhook` have run under real Playwright only against a fake gateway and route. `checkResultShown` has never run.
+- The dashboard's "more not shown" line and the other panels have never rendered in a browser.
+- The import publish's step is tested with its steps faked. No real import has run it.
+- No real test build (section 22). As units 3 to 14 found, a local run's sandbox can't reach the gateway, and a credentialed run wasn't
+  available here, so Muse Code has never written a job from this prompt, and `tests/caps/jobs.ts` and the `caps` step haven't run in a
+  real verify. That's why `CAP_READY.jobs` is false. The one real call this leaves for Nov 3: a daily digest test-fired twice and a webhook
+  into a log, on `TEST_MODEL`, within section 6's $1.50 and $0.75.
+- Next's own `fetch` wrapper hasn't been tried with ours in a running Next server. The e2e runs the routes under plain Node. The wrapper keeps
+  Next's marker properties, so Next should leave it in place. A real build is what proves it.
+- The Vercel cron has never fired this route. `next build` hasn't run on this branch.
+- The owner's panels have tests for their data, not a browser screenshot.
+
+**For the owner.** Meta 10.1(i): whether runs with nobody present count as access "on behalf of" a third party (section 21). Until that's answered
+the rule stands: owner products only, visitors can't start jobs. `JOBS_WEBHOOKS` means a stranger with the address can queue runs on a product, at most 100 waiting and
+`JOBS_PRODUCT_DAILY_RUNS` ticks and `JOBS_PRODUCT_DAILY_USD` a day, each run up to `JOBS_RUN_USD`. Four busy products can still use up the platform's `JOBS_DAILY_USD`.
 
 ## 13. Unit 7: live (D)
 
@@ -3383,6 +3484,8 @@ Phaser game.
 
 ## Changes to this contract
 
+- Nov 1 (unit 6, review fixes): section 12's test-fire limit is 100 a build and 30 a minute, with hook addresses counted apart. Section 5 gains `JOBS_PRODUCT_DAILY_RUNS` (400) and `JOBS_PRODUCT_DAILY_USD` (1). `jr1` signs its tick and try (2.2's shape changes). `lib/promote/workflow.ts` runs `capsShipStep` when a cap has one. `lib/gateway/runs.ts`'s refusal carries a `reason`.
+
 - Nov 1 (unit 7, review fixes): section 13's table: a chunk's per-IP count has its own key (`live-ip:`), the stream has `event: caught-up`, and slots of 2 per ticket and 10 per address. 13a updated: caption minutes count new audio only, `checkLiveUpdate` takes `change(first, mark)` and `shows(mark, other)`, the notice promises only what the app does.
 
 - Oct 31: unit 13's table is the shared `devices` table (offline's shape); unit 10's kit reserves `mode: "offline"`.
@@ -3492,6 +3595,9 @@ Phaser game.
 - Nov 1 (unit 13): section 19a added. `devices` gains `url_iv` and `url_tag` (one IV can't seal two values) and `trust` gains `public_tls`; decision 16's admins only on every registry route; board tools need `cap:hardware` too; a new overlay route `app/api/musemuse/board/owner`; new setting `HARDWARE_BOARD_KEY`; `lib/pipeline/logic.ts`, `lib/caps/ready.ts`, `lib/brief/normalize.ts`, `lib/prompts/catalog.ts`, `app/p/[slug]/page.tsx`, `owner-pass/route.ts` and `lib/tools/deps.ts` get marked lines; 0028's snapshot chains on 0026, and `PENDING_WAVE3` is 23 and 27.
 
 - Oct 31: first version (unit 0).
+
+- Nov 1 (integrating unit 6): 0023 merged last, so the snapshots of 0024, 0025, 0026 and 0028 now carry its tables and `products.owner_seen_at`, and 0024's `prevId` is 0023's. `PENDING_WAVE3` is 27 only.
+- Nov 1 (unit 6): section 12a added. `/jobs/enqueue` follows decision 10: owner, job or build only. The brief block gains `results`; 0023 adds `job_runs.rows_written`, `product_webhooks.namespace`, `owner_notices.namespace`, `payload` and `resolved_at`; `lib/gateway/handler.ts` gets a marked block and a shared hold path, not one line; data's rules and `lib/caps/connect/handler.ts` (a held send, GET only) get marked edits; `CAPS_SHIPPING` gains `jobs`; a new route `POST /api/products/<slug>/notices/<id>`; `template/caps/connect/files/lib/platform/send.ts` answers `held`.
 
 - Nov 1 (unit 7): section 13a added. `/live/ticket` and `/live/stream` as written, plus a platform route the contract left unnamed, `app/api/musemuse/live-caption`; `lib/gateway/handler.ts` gets one marked block and one parameter on `checkRateLimits`, not one line, since caption minutes are checked after the rate limit; caption minutes also have a per-address allowance (5 times); `allowedModelsFor` adds the voice model for captions (one marked line in `lib/pipeline/logic.ts`); `liveOff` in `lib/caps/ready.ts`; data's `target` is exported for tickets; `template/playwright.config.ts` gives a cap's browser args to the demo and studio projects too, and unit 2's `caps-off` test says so; the judge note's screenshot is 'Second browser live', since data's 'Second browser' does reload; `lib/gateway/deps.ts` wires `liveCaptions`; `CAP_PROOF.live`.
 - Nov 1 (unit 11): section 17a added. No `GLIMMER_ENDPOINT_*`; a new flag `GPU_GLIMMER_ALL_PRODUCTS`; 0025 also adds `adapter_job_id`, `serve_job_id`, `spark_open` and `reservation_id` to `glimmer_windows`, one open row at a time, and an index on `training_jobs.product_id`; `usage.source` gains `glimmer`; `CapCleanup.cap` also takes `"gpu"`; `capBuildEnv`, `capDeployEnv`, `capsBuildLines`, `capsRefineLines`, `capsJudgeNotes`, `allowedModelsFor`, `catalogSummary` and `judgeStep` each get one marked line for GPU, which isn't a cap; `lib/train/tune/examples.ts` exports `objectRow`.

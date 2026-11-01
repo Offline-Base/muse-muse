@@ -2,6 +2,7 @@ import { TARGETS, type TargetId } from "@/lib/brief/schema";
 import { CAP_FLAG, CAP_IDS, CAP_NEEDS_BUILDER, CAP_READY, type CapId } from "@/lib/caps/ids";
 import { codePartsOn } from "@/lib/caps/code/parts";
 import { connectMoreToolsOn, connectSendsOn, connectVaultOn } from "@/lib/caps/connect/flags";
+import { jobsWebhooksOn } from "@/lib/caps/jobs/flags";
 import { dataSignInOn } from "@/lib/caps/data/types";
 import { filesDatasetsOn, filesSearchOn } from "@/lib/caps/files/types";
 import { liveUpdatesOn } from "@/lib/caps/live/parts";
@@ -1012,6 +1013,40 @@ export const env = {
    */
   get connectSends(): boolean {
     return connectSendsOn();
+  },
+
+  // ---------- Wave 3, unit 6: jobs (docs/CAPABILITIES.md) ----------
+
+  /**
+   * JOBS_WEBHOOKS: other services can start a product's jobs ({GATEWAY_URL}/hooks). JOBS_ENABLED, the cap's own flag, is
+   * read through enabledCaps above.
+   */
+  get jobsWebhooks(): boolean {
+    return jobsWebhooksOn();
+  },
+  /** JOBS_DAILY_RUNS: job ticks the cron starts in a UTC day, across all products. 0 pauses them. */
+  get jobsDailyRuns(): number {
+    return wholeCount("JOBS_DAILY_RUNS", 2000);
+  },
+  /** JOBS_DAILY_USD: what job runs may spend at Meta in a UTC day, across all products. 0 pauses them. */
+  get jobsDailyUsd(): number {
+    return dollars("JOBS_DAILY_USD", 5);
+  },
+  /** JOBS_PRODUCT_DAILY_RUNS: job ticks one product may start in a UTC day. Three 15-minute schedules take 288. */
+  get jobsProductDailyRuns(): number {
+    return wholeCount("JOBS_PRODUCT_DAILY_RUNS", 400);
+  },
+  /** JOBS_PRODUCT_DAILY_USD: what one product's job runs may spend at Meta in a UTC day. */
+  get jobsProductDailyUsd(): number {
+    return dollars("JOBS_PRODUCT_DAILY_USD", 1);
+  },
+  /** JOBS_RUN_USD: where one run stops, at most $0.50. 0 pauses new runs. */
+  get jobsRunUsd(): number {
+    return Math.min(dollars("JOBS_RUN_USD", 0.1), 0.5);
+  },
+  /** JOBS_PAUSE_DAYS: schedules pause after this many days with no visit from the owner. */
+  get jobsPauseDays(): number {
+    return number("JOBS_PAUSE_DAYS", 14);
   },
 
   // ---------- Wave 3, unit 7: live (docs/CAPABILITIES.md) ----------

@@ -115,6 +115,7 @@ export function sampleRows(over: { slug?: string; ownerId?: string } = {}): Loca
       takenDownAt: null,
       takedownReason: null,
       statusBeforeTakedown: null,
+      ownerSeenAt: null,
     },
     builds: [
       { ...build, id: buildId, kind: "build", message: null, status: "live", fixRounds: 1, costUsd: 3.75, error: null, startedAt: at(0), finishedAt: at(25) },

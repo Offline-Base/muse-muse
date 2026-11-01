@@ -1,3 +1,5 @@
+import { JOBS_LIMITS } from "@/lib/caps/jobs/limits";
+import { jobRunRefusal, type JobRunRead } from "@/lib/caps/jobs/run-check";
 import { createHash } from "node:crypto";
 import {
   KEY_NAME,
@@ -68,6 +70,10 @@ export interface ConnectDeps extends CapGateDeps {
   fetch: typeof fetch;
   /** What every outside call says it is, with a contact (the APIs' terms ask for one). */
   userAgent: string;
+  /** Unit 6: a job's send becomes a notice the owner confirms later. Unset while the jobs cap isn't served. */
+  holdSend?(input: { productId: string; namespace: string; send: SendArgs; lines: string[]; title: string }): Promise<string>;
+  /** Unit 6: a job's run, so a token only works while it's running. Unset while the jobs cap isn't served, and then a job is refused. */
+  jobRun?: JobRunRead;
 }
 
 const isBuild = (token: CapToken) => token.scope === "build";
@@ -388,6 +394,9 @@ function callRoute(deps: ConnectDeps): CapRoute<CallArgs> {
       const target = matchCall(service, typeof body.method === "string" ? body.method : "GET", body.path as string);
       if (typeof target === "string") return capError("invalid_arguments", target);
       if (!target.service.visitors && !stage.caller.owner) return capError("sign_in_required", `Only the product's owner can use ${target.service.label} here.`);
+      // Unit 6: jobs read and notify. A write to the outside waits for a person.
+      if (stage.caller.job && target.method !== "GET") return capError("cap_not_allowed", "A background job can only read from outside services. A write needs a person.");
+      { const ended = await jobRunRefusal(stage, deps.jobRun); if (ended) return ended; }
       if (target.method === "GET" && body.body !== undefined && body.body !== null) return capError("invalid_arguments", "A GET call has no body.");
       if (body.body !== undefined && body.body !== null && (typeof body.body !== "object" || Array.isArray(body.body))) return capError("invalid_arguments", "body is a JSON object.");
       return { name: body.name, target, body: body.body ?? null };
@@ -533,7 +542,8 @@ function sendRoute(deps: ConnectDeps): CapRoute<SendWork> {
     what: "/send",
     enabled: deps.sendsOn,
     // Every send is the owner's (Meta's Acceptable Use Policy: a person confirms anything consequential).
-    allow: ownerOnly("send messages"),
+    // Unit 6: a job can't send. Its send waits for the owner, in work below.
+    allow: (stage) => (stage.caller.job && deps.holdSend ? null : ownerOnly("send messages")(stage)),
     async args(stage) {
       const body = await readJsonBody(stage.req, CONNECT_LIMITS.sendBodyMaxBytes);
       if (body instanceof Response) return body;
@@ -546,9 +556,20 @@ function sendRoute(deps: ConnectDeps): CapRoute<SendWork> {
       if (!(rules?.sends ?? []).some((s) => s.channel === send.channel)) return capError("cap_not_allowed", `This product wasn't built to send ${send.channel === "chat" ? "chat messages" : "email"}.`);
       return { send, approval: (body.approval as string | undefined) ?? null };
     },
-    limits: (stage) => [minuteLimit(`send:token:${stage.token.id}`, CONNECT_LIMITS.sendsPerTokenPerMinute, "this product")],
+    limits: (stage) => [
+      minuteLimit(`send:token:${stage.token.id}`, CONNECT_LIMITS.sendsPerTokenPerMinute, "this product"),
+      // Unit 6: a job's drafts wait on the owner's page, so a flood can't hide the ones that matter.
+      ...(stage.caller.job ? [dayLimit(`jobs-held:${stage.token.buildId ?? stage.token.productId}`, JOBS_LIMITS.heldPerProductPerDay, "this product's drafted messages")] : []),
+    ],
     async work(ctx) {
       const { send } = ctx.args;
+      // ---------- Wave 3, unit 6: a job's send never goes. The whole message waits for the owner (docs/CAPABILITIES.md, section 12) ----------
+      if (ctx.caller.job && deps.holdSend) {
+        { const ended = await jobRunRefusal(ctx, deps.jobRun); if (ended) return ended; }
+        const id = await deps.holdSend({ productId: ctx.token.productId, namespace: ctx.namespace, send, lines: confirmationLines(send), title: SEND_TITLES[send.channel] });
+        return json({ ok: false, code: "held_for_owner", id, ...(isBuild(ctx.token) ? { simulated: true } : {}) });
+      }
+      // ---------- end Wave 3, unit 6 ----------
       const scope = { productId: ctx.token.productId, subject: ctx.caller.owner ?? "owner", slug: `send:${send.channel}`, args: send };
       const confirm = (stale: boolean) =>
         json({ ok: false, code: "needs_confirmation", confirmation: { id: mintApproval(scope, ctx.now), title: SEND_TITLES[send.channel], lines: confirmationLines(send), args: send }, ...(stale ? { stale: true } : {}) });
@@ -634,3 +655,48 @@ async function deliver(send: SendArgs, key: { service: Service; value: string },
   }
   return { ok: false, message: "Products can't send that kind of message yet." };
 }
+
+// ---------- Wave 3, unit 6: a send a job left for the owner, confirmed on Muse Muse (docs/CAPABILITIES.md, section 12) ----------
+
+/** What the owner's confirmation needs. The sends and vault switches, the owner's key and the day's count all still apply. */
+export type HeldSendDeps = Pick<ConnectDeps, "store" | "sendsOn" | "keyring" | "reserveCounter" | "recordUsage" | "fetch" | "userAgent">;
+
+export type HeldSendResult = { ok: true; id: string } | { ok: false; code: "sends_off" | "needs_key" | "day_limit" | "failed"; message: string; mayHaveGone?: boolean };
+
+/**
+ * Sends one held message, for the signed-in owner who just read it and pressed Confirm. `nonce` is the notice's id, so
+ * product_sends' unique nonce holds it to one. Called once a notice is claimed.
+ */
+export async function deliverHeldSend(input: { productId: string; send: SendArgs; nonce: string; now: Date }, deps: HeldSendDeps): Promise<HeldSendResult> {
+  const { productId, send, now } = input;
+  if (!deps.sendsOn()) return { ok: false, code: "sends_off", message: "Sending is switched off on Muse Muse right now." };
+  const ring = deps.keyring();
+  if (!ring) return { ok: false, code: "sends_off", message: "The key vault is paused, so nothing can send right now." };
+  const services = serviceForChannel(send.channel);
+  let key: { service: Service; value: string; name: string } | null = null;
+  for (const service of services) {
+    const sealed = await deps.store.sealedKey(productId, "live", service.id);
+    if (sealed && sealed.service === service.id) {
+      key = { service, name: service.id, value: openSecret(sealed, ring, vaultAad(productId, "live", service.id)) };
+      break;
+    }
+  }
+  if (!key) return { ok: false, code: "needs_key", message: `Add a ${services[0]?.label ?? "sending"} key in the product's settings first.` };
+  if ((await deps.reserveCounter(`sends-day:${productId}:live`, dayWindow(now), 1, CONNECT_LIMITS.sendsPerProductPerDay)) === null) {
+    return { ok: false, code: "day_limit", message: `This product has sent its ${CONNECT_LIMITS.sendsPerProductPerDay} messages for today. Try again after 00:00 UTC.` };
+  }
+  const sent = await deliver(send, key, deps as ConnectDeps);
+  await deps.store.recordSend({
+    productId,
+    namespace: "live",
+    channel: send.channel,
+    recipientHash: mac("send-recipients", [productId, ...send.to]).slice(0, 32),
+    recipients: Math.max(1, send.to.length),
+    approvalNonce: input.nonce,
+    status: sent.ok ? "sent" : "failed",
+    providerId: sent.ok ? sent.id : null,
+  });
+  await deps.recordUsage({ source: "sends", endpoint: "send", productId, buildId: null, tokenId: null } as UsageContext, [{ model: `send:${send.channel}`, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, units: 1, costUsd: 0 }]);
+  return sent.ok ? { ok: true, id: sent.id } : { ok: false, code: "failed", message: sent.message, mayHaveGone: true };
+}
+// ---------- end Wave 3, unit 6 ----------

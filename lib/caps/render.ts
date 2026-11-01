@@ -9,6 +9,7 @@ import { EXTENSION_RENDER } from "@/lib/caps/extension/render";
 import { FILES_RENDER } from "@/lib/caps/files/render";
 import { GAMES_RENDER } from "@/lib/caps/games/render";
 import { HARDWARE_RENDER } from "@/lib/caps/hardware/render";
+import { JOBS_RENDER } from "@/lib/caps/jobs/render";
 import { LIVE_RENDER } from "@/lib/caps/live/render";
 import { MEDIA_RENDER } from "@/lib/caps/media/render";
 import { RUNTIME_RENDER } from "@/lib/caps/runtime/render";
@@ -31,6 +32,7 @@ export const CAP_RENDER: Partial<Record<CapId, CapRenderEntry>> = {
   data: DATA_RENDER,
   files: FILES_RENDER,
   connect: CONNECT_RENDER,
+  jobs: JOBS_RENDER,
   live: LIVE_RENDER,
   media: MEDIA_RENDER,
   code: CODE_RENDER,

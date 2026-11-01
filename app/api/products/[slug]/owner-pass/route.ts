@@ -40,6 +40,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
   if (!product.liveUrl || product.status === "disabled" || product.status === "failed") {
     return Response.json({ error: "This product isn't live yet." }, { status: 409 });
   }
+  // Wave 3, unit 6: the owner's pass counts as a visit, so the product's schedules keep going (docs/CAPABILITIES.md, section 12).
+  // An admin's doesn't: looking at a product isn't its owner being there.
+  if (env.servedCaps.includes("jobs") && user.id === product.ownerId) await (await import("@/lib/caps/jobs/store")).noteOwnerSeen(product.id).catch((err: unknown) => console.error("[jobs] owner visit:", err));
   const code = mintOwnerCode({ productId: product.id, subject: ownerSubject(user.id) }, new Date());
   const target = new URL(await ownerLandingPath(product.latestBuildId), product.liveUrl);
   target.searchParams.set("code", code);

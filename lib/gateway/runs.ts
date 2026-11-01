@@ -56,7 +56,9 @@ export interface RunHold {
   micros: number;
 }
 
-export type RunHoldResult = { ok: true; hold: RunHold; toolCalls: number } | { ok: false; response: Response };
+export type RunLimitReason = "turns" | "tool_calls" | "usd";
+
+export type RunHoldResult = { ok: true; hold: RunHold; toolCalls: number } | { ok: false; reason: RunLimitReason; response: Response };
 
 function micros(usd: number): number {
   return Math.ceil(usd * 1e6);
@@ -95,7 +97,7 @@ export async function holdRun(
   const turns = opts.turns ?? 1;
   if (turns > 0) {
     if ((await deps.reserveCounter(hold.turnsKey, window, turns, limits.turns)) === null) {
-      return { ok: false, response: runLimit(`This run reached its limit of ${limits.turns} model turns. Finish with what it has, or start a new run.`) };
+      return { ok: false, reason: "turns", response: runLimit(`This run reached its limit of ${limits.turns} model turns. Finish with what it has, or start a new run.`) };
     }
     hold.turns = turns;
   }
@@ -111,6 +113,7 @@ export async function holdRun(
       await releaseRun(deps, hold);
       return {
         ok: false,
+        reason: "tool_calls",
         response: runLimit(
           `This run has none of its ${limits.toolCalls} built-in tool calls left, counting calls still running. Wait for them to finish, send the next turn without built-in tools, or start a new run.`,
         ),
@@ -128,6 +131,7 @@ export async function holdRun(
       await releaseRun(deps, hold);
       return {
         ok: false,
+        reason: "usd",
         response: runLimit(
           `This call could take this run past its $${limits.usd.toFixed(2)} limit. Ask for fewer output tokens, send it without built-in tools, finish with what it has, or start a new run.`,
         ),

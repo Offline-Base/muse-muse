@@ -6,6 +6,7 @@ import { EXTENSION_CATALOG } from "@/lib/caps/extension/catalog";
 import { FILES_CATALOG } from "@/lib/caps/files/catalog";
 import { GAMES_CATALOG } from "@/lib/caps/games/catalog";
 import { HARDWARE_CATALOG } from "@/lib/caps/hardware/catalog";
+import { JOBS_CATALOG } from "@/lib/caps/jobs/catalog";
 import { LIVE_CATALOG } from "@/lib/caps/live/catalog";
 import { MEDIA_CATALOG, mediaPartsOn, mediaWorkarounds } from "@/lib/caps/media/catalog";
 import { RUNTIME_CATALOG } from "@/lib/caps/runtime/catalog";
@@ -24,6 +25,7 @@ export const CAP_CATALOG: Partial<Record<CapId, CapCatalogEntry>> = {
   data: DATA_CATALOG,
   files: FILES_CATALOG,
   connect: CONNECT_CATALOG,
+  jobs: JOBS_CATALOG,
   live: LIVE_CATALOG,
   media: MEDIA_CATALOG,
   code: CODE_CATALOG,

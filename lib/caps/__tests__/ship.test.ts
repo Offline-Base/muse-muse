@@ -18,7 +18,7 @@ const input = (brief: Brief) => ({ buildId: "b1", productId: "p1", sandboxName: 
 
 describe("caps with a step after deploy", () => {
   it("are listed once, purely, and each has its step", () => {
-    assert.deepEqual([...CAPS_SHIPPING], ["extension"]);
+    assert.deepEqual([...CAPS_SHIPPING], ["jobs", "extension"]);
     assert.deepEqual(Object.keys(CAP_SHIP), [...CAPS_SHIPPING]);
     assert.ok(CAPS_SHIPPING.every((id) => (CAP_IDS as readonly string[]).includes(id)));
   });
@@ -46,6 +46,18 @@ describe("caps with a step after deploy", () => {
     const broken = await runCapsShip(input(WITH), ["extension"], { extension: async () => { throw new Error("sandbox gone"); } });
     assert.deepEqual(broken, ["The extension step after deploy didn't finish. The web product is live as usual."]);
     assert.deepEqual(await runCapsShip(input(WITH), ["extension"], { extension: async () => null }), []);
+  });
+
+  it("jobs runs on every deploy once enabled, even with no jobs block, so a refinement can clear its schedules; never with the cap off", async () => {
+    const seen: string[] = [];
+    const ships: Record<string, CapShip> = { jobs: async () => (seen.push("jobs"), null), extension: async () => (seen.push("extension"), null) };
+    await runCapsShip(input(BRIEF), ["jobs", "extension"], ships);
+    assert.deepEqual(seen, ["jobs"], "jobs, and not the extension");
+    seen.length = 0;
+    await runCapsShip(input(BRIEF), [], ships);
+    assert.deepEqual(seen, []);
+    await runCapsShip(input(BRIEF), ["extension"], ships);
+    assert.deepEqual(seen, []);
   });
 
   it("puts one line in the build room even when the step stops before a cap can say anything", async () => {

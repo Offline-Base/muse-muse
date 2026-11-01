@@ -9,6 +9,8 @@ import { capsBuildLines, capsMarkdown, capsRefineLines } from "@/lib/caps/render
 import { trustBuildLines } from "@/lib/trust/prompt";
 import type { Milestone } from "@/lib/engine/milestones";
 import { engineBudgetLines, milestoneBuildLines } from "@/lib/engine/prompts";
+import { jobsBlock } from "@/lib/caps/jobs/brief";
+import { JOBS_BUDGET_LINE } from "@/lib/caps/jobs/render";
 // ---------- end Wave 3 hooks ----------
 import type { JudgeVerdict, RebuildTarget, VerifySummary } from "@/lib/types";
 
@@ -492,7 +494,7 @@ export function renderBuildPrompt(
     models.includes("muse-wonder-1.0")
       ? "Muse Wonder is in preview and bills its reasoning as output, so even a short answer spends a few hundred output tokens."
       : "",
-    `The product's model calls during this build, every verify, fix round and the demo recording, share one $${buildTokenBudgetFor(models).toFixed(2)} Meta budget, and the gateway reserves each call's max_output_tokens up front. Keep those caps close to what an answer needs. If the gateway says the budget is used up, it stays used up for this build: never wait for it, retry it or schedule anything, since nothing runs after your session ends. Make the calls cheaper or stop and say so in BUILD_NOTES.md.`,
+    `The product's model calls during this build, every verify, fix round and the demo recording, share one $${buildTokenBudgetFor(models).toFixed(2)} Meta budget, and the gateway reserves each call's max_output_tokens up front. Keep those caps close to what an answer needs. If the gateway says the budget is used up, it stays used up for this build: ${jobsBlock(brief) ? JOBS_BUDGET_LINE : "never wait for it, retry it or schedule anything, since nothing runs after your session ends."} Make the calls cheaper or stop and say so in BUILD_NOTES.md.`,
   );
   // ---------- Wave 3, unit 2: big-build budget lines (empty unless verifyBudget) ----------
   out.push(...engineBudgetLines(opts.verifyBudget === true));
