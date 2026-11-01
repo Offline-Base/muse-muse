@@ -12,9 +12,11 @@
  * claim about the result or about Meta, or markup, so the template's story is used instead.
  */
 import { noEmDashes, slugify } from "@/lib/brief/normalize";
+import { decideJson, GLIMMER_REASONING, GLIMMER_TEMPLATE, LABELS_PER_PROMPT, labelGroups, NONE_OPTION, NONE_SHARE } from "@/lib/decide/format";
+import type { DecideJson, DecisionSideSummary, DecisionSpec, DecisionSummary, WilsonRate } from "@/lib/decide/types";
 import { plural } from "@/lib/format";
 import { QUANT_LEVELS, type LocalFile, type LocalFiles, type QuantLevel } from "@/lib/train/local-files";
-import { modelName, recordedModel, UNRECORDED_MODEL, writerModelOf } from "@/lib/train/models";
+import { isDecisionSummary, modelName, recordedModel, UNRECORDED_MODEL, writerModelOf } from "@/lib/train/models";
 import {
   datasetSystemPrompt,
   DECIDE_MODE,
@@ -1858,4 +1860,492 @@ export function quantRecord(f: GgufFacts): Record<string, unknown> {
     checks: { template: "passed", channel: f.channel, channelMin: QUANT_CHANNEL_MIN, agreement: f.agreement },
     files: f.small,
   };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The decision card (docs/DECISION_MODELS.md, "Publishing, local files and the other adapter paths")
+//
+// A decision model's own model card: what it decides, its scores on the held-out test rows, the format, T and how to
+// call it, every number from the records. Nothing publishes it yet: hubJobProblem still refuses decide jobs, since
+// adapter-only publishing (the adapter, decide.json and this card, never the person's rows) isn't built. That path
+// would commit decisionCard(facts) as README.md and decisionCardJson(facts) as DECIDE_JSON_PATH beside the adapter.
+
+/** The file the card's usage reads, beside the adapter: decide.json with the tuned model's T (decisionCardJson). */
+export const DECIDE_JSON_PATH = "decide.json";
+
+/** Labels with fewer test rows than this get a line in the card: one row moves their scores by 10 points or more. */
+export const DECISION_CARD_SMALL_LABEL_ROWS = 10;
+
+/** decide mode's trainer settings, read from GLIMMER_PY as glimmerTemplate reads chat mode's. */
+export interface DecideTrainer {
+  batchSize: number;
+  gradientAccumulation: number;
+  stepsMax: number;
+  groupByLength: boolean;
+}
+
+/** decide mode's batch, gradient accumulation and step cap, from GLIMMER_PY's DECIDE_* constants. Throws without them. */
+export function decideTrainer(source: string): DecideTrainer {
+  return {
+    batchSize: pyNumber(source, /^DECIDE_TRAIN_BATCH = (\d+)$/m, "DECIDE_TRAIN_BATCH"),
+    gradientAccumulation: pyNumber(source, /^DECIDE_GRAD_ACCUM = (\d+)$/m, "DECIDE_GRAD_ACCUM"),
+    stepsMax: pyNumber(source, /^DECIDE_STEPS_MAX = (\d+)$/m, "DECIDE_STEPS_MAX"),
+    groupByLength: /\bgroup_by_length=True\b/.test(source),
+  };
+}
+
+/** Everything a decision card says, from the records. Never a row of the dataset. */
+export interface DecisionCardFacts {
+  /** "<namespace>/<name>": modelRepoName of the dataset's title and the job, as for a chat adapter. */
+  modelRepo: string;
+  job: {
+    id: string;
+    title: string;
+    gpuLabel: string;
+    gpuMinutes: number;
+    costUsd: number;
+    finishedAt: string | null;
+    epochs: number | null;
+    learningRate: number | null;
+    loraRank: number | null;
+  };
+  /** The job's done metrics. */
+  metrics: Record<string, string | number>;
+  /** The job's eval_summary as scoreDecisionStep saved it. */
+  summary: DecisionSummary;
+  /** The dataset's decision: its question, labels and counts. Its seed and rows aren't needed. */
+  decision: Pick<DecisionSpec, "question" | "labels" | "split" | "perLabel" | "source">;
+  dataset: { id: string; title: string };
+  template: GlimmerTemplate;
+  trainer: DecideTrainer;
+  /** The base model's commit the adapter was trained on: adapter_config.json's revision, else the recipe's. */
+  revision: string;
+}
+
+/**
+ * Why a decide job can have no decision card, in a sentence, or null when it can: its summary must be a decision
+ * summary with scored test rows and the tuned model's scores, on the dataset's own labels.
+ */
+export function decisionCardProblem(f: Pick<DecisionCardFacts, "summary" | "decision">): string | null {
+  const s = f.summary;
+  if (!isDecisionSummary(s)) return "Its eval summary isn't a decision model's scores.";
+  if (!(s.items > 0)) return "No held-out row was scored, so the card would have no results.";
+  if (!s.tuned) return "Only base Glimmer was scored (score only, or the tuned pass failed), so there is no adapter's result to state.";
+  const labels = f.decision.labels ?? [];
+  if (labels.length < 2) return "The dataset's decision has fewer than 2 labels.";
+  const same = s.labels.length === labels.length && s.labels.every((l, i) => l.id === labels[i]!.id);
+  if (!same) return "The scores' labels aren't the dataset's labels, so the card can't name them.";
+  return null;
+}
+
+function checkedCard(f: Pick<DecisionCardFacts, "summary" | "decision">): DecisionSummary & { tuned: DecisionSideSummary } {
+  const problem = decisionCardProblem(f);
+  if (problem) throw new Error(`No decision card: ${problem}`);
+  return f.summary as DecisionSummary & { tuned: DecisionSideSummary };
+}
+
+/** decide.json to publish beside the adapter: the decision's question and labels with the tuned model's T. */
+export function decisionCardJson(f: Pick<DecisionCardFacts, "summary" | "decision">): DecideJson {
+  const s = checkedCard(f);
+  return decideJson({ question: f.decision.question, labels: f.decision.labels, T: s.tuned.T });
+}
+
+const wholePct = (rate: number) => `${Math.round(Math.max(0, Math.min(1, Number.isFinite(rate) ? rate : 0)) * 100)}%`;
+const countText = (n: number) => (Number.isFinite(n) ? n : 0).toLocaleString("en-US");
+const rightOf = (r: WilsonRate) => `${countText(r.right)} of ${countText(r.total)} (${wholePct(r.rate)})`;
+const intervalOf = (r: WilsonRate) => `${wholePct(r.low)} to ${wholePct(r.high)}`;
+const places2 = (x: number) => (Number.isFinite(x) ? x : 0).toFixed(2);
+const eceOf = (x: number) => `${((Number.isFinite(x) ? x : 0) * 100).toFixed(1)}%`;
+
+/** A person's text (the question, a label's name or description) on one line, Markdown and HTML shown as written. */
+const personText = (text: string | null | undefined) => mdText(String(text ?? ""));
+
+function decisionLabelName(s: DecisionSummary, id: string): string {
+  return s.labels.find((l) => l.id === id)?.name ?? id;
+}
+
+/** "Billing, Shipping and Account": a group of labels by name, the person's text escaped. */
+function labelList(names: string[]): string {
+  return andList(names.map(personText));
+}
+
+function decisionWhatSection(f: DecisionCardFacts): string {
+  const d = f.decision;
+  const rows = d.labels.map((l) => {
+    const n = d.perLabel?.[l.id] ?? { train: 0, dev: 0, test: 0 };
+    return `| ${personText(l.name)} | \`${l.id}\` | ${personText(l.description) || "(none given)"} | ${countText(n.train)} | ${countText(n.dev)} | ${countText(n.test)} |`;
+  });
+  return [
+    "## What it decides",
+    "",
+    `> ${personText(d.question)}`,
+    "",
+    `It picks one of these ${d.labels.length} labels, as the person who made it defined them:`,
+    "",
+    "| Label | Id | Description | Train rows | Dev rows | Test rows |",
+    "|---|---|---|---|---|---|",
+    ...rows,
+    "",
+    `Every prompt also shows "${NONE_OPTION}" as its last option, and the model learned to pick it when no label fits: on about ${Math.round(NONE_SHARE * 100)}% of its training renderings the right label was taken out. Read its answer as a label, never as a letter: the letters change from prompt to prompt.`,
+  ].join("\n");
+}
+
+function decisionResultsSection(f: DecisionCardFacts): string {
+  const s = checkedCard(f);
+  const t = s.tuned;
+  const b = s.base;
+  const row = (name: string, read: (x: DecisionSideSummary) => string) => `| ${name} | ${read(b)} | ${read(t)} |`;
+  const commonest = s.baselines.commonest;
+  const out = [
+    "## Results",
+    "",
+    `Scored, not judged: no model graded anything. Both models read the same ${countText(s.items)} held-out test rows, set aside before training and never trained on, and each pick is the label with the highest probability on the model's first answer token.`,
+    "",
+    `| | Base ${GLIMMER_NAME} | Tuned (this adapter) |`,
+    "|---|---|---|",
+    row("Right on", (x) => rightOf(x.accuracy)),
+    row("95% interval (Wilson)", (x) => intervalOf(x.accuracy)),
+    row("Macro F1", (x) => places2(x.macroF1)),
+    row("Calibration error (ECE), before T", (x) => eceOf(x.ece.raw)),
+    row("Calibration error (ECE), with T", (x) => eceOf(x.ece.withT)),
+    row("T, fit on dev rows only", (x) => (x.calibrated ? String(x.T) : "1 (not calibrated: under 20 dev rows scored)")),
+    row(`Answered "${NONE_OPTION}"`, (x) => wholePct(x.noneRate)),
+    row("Declined when the right label was taken out", (x) =>
+      x.decline ? `${countText(x.decline.declined)} of ${countText(x.decline.rows)} (${wholePct(x.decline.rate)})` : "not scored",
+    ),
+    row("Letter mass, median and lowest", (x) => `${places2(x.letterMass.median)} and ${places2(x.letterMass.min)}`),
+    "",
+    `For scale, on the same rows: always answering the commonest training label (${personText(decisionLabelName(s, commonest.id))}) was right on ${rightOf(commonest.accuracy)}, and a word-overlap rule (not a model) on ${rightOf(s.baselines.standIn.accuracy)}. Letter mass is the share of the first token's probability that lands on the shown letters. Base ${GLIMMER_NAME} was asked the same prompts with no training; it sometimes starts with a word instead of a letter, which shows as lower letter mass, so this read understates what a prompted base model could do.`,
+  ];
+  out.push(
+    "",
+    "### Per label (tuned)",
+    "",
+    "| Label | Test rows | Precision | Recall | F1 | Base F1 |",
+    "|---|---|---|---|---|---|",
+    ...t.perLabel.map((l) => {
+      const base = b.perLabel.find((x) => x.id === l.id);
+      return `| ${personText(l.name)} | ${countText(l.support)} | ${places2(l.precision)} | ${places2(l.recall)} | ${places2(l.f1)} | ${base ? places2(base.f1) : "n/a"} |`;
+    }),
+    "",
+    "### Confusion (tuned)",
+    "",
+    "Rows are the right label, columns what the tuned model picked.",
+    "",
+    `| Right label | ${s.labels.map((l) => personText(l.name)).join(" | ")} | None |`,
+    `|---|${s.labels.map(() => "---|").join("")}---|`,
+    ...s.labels.map((l, i) => `| ${personText(l.name)} | ${(t.confusion[i] ?? []).map((n) => countText(n)).join(" | ")} |`),
+  );
+  const notes: string[] = [];
+  if (s.unscoredRows > 0) {
+    notes.push(
+      `${countText(s.unscoredRows)} of the ${countText(s.testRows)} test rows had no usable score (too long, or not sent), so every number leaves them out.`,
+    );
+  }
+  if (s.tooLong > 0) {
+    notes.push(`${countText(s.tooLong)} ${s.tooLong === 1 ? "rendering was" : "renderings were"} over ${countText(f.template.maxSeqLength)} tokens, so the GPU couldn't score ${s.tooLong === 1 ? "it" : "them"}.`);
+  }
+  const small = t.perLabel.filter((l) => l.support < DECISION_CARD_SMALL_LABEL_ROWS);
+  if (small.length) {
+    notes.push(
+      `${labelList(small.map((l) => l.name))} ${small.length === 1 ? "has" : "have"} under ${DECISION_CARD_SMALL_LABEL_ROWS} test rows, so one row moves ${small.length === 1 ? "its" : "their"} scores by 10 points or more.`,
+    );
+  }
+  if (s.groups > 1) {
+    notes.push(
+      `With more than ${LABELS_PER_PROMPT} labels, each input is asked as ${s.groups} prompts and their answers are combined by a fixed rule (How it decides), so how well confidence is calibrated is only what the test rows show.`,
+    );
+  }
+  notes.push(
+    t.calibrated
+      ? `The tuned model's confidence is calibrated on the dev rows (T = ${t.T}): an answer at 90% was right about 9 times in 10 on rows like those, which is only as good as the test rows show.`
+      : "Fewer than 20 dev rows were scored, so the tuned model's probabilities are its own, not calibrated.",
+  );
+  notes.push(`Every number is from the run's records, and the same numbers are on [the run's public page](${labPageUrl(f.job.id)}). It can be wrong: check anything that matters.`);
+  out.push("", ...notes.map((n) => `- ${n}`));
+  return out.join("\n");
+}
+
+function decisionFormatSection(f: DecisionCardFacts): string {
+  const json = decisionCardJson(f);
+  const s = checkedCard(f);
+  const groups = labelGroups(f.decision.labels);
+  const shape =
+    groups.length > 1
+      ? `This model's ${f.decision.labels.length} labels are asked as ${groups.length} prompts: ${groups.map((g) => labelList(g.map((l) => l.name))).join("; ")}.`
+      : `One prompt shows all ${f.decision.labels.length} of this model's labels.`;
+  return [
+    "## How it decides",
+    "",
+    `Each input becomes a task, the JSON \`{"state": ..., "question": ..., "options": [...]}\`, whose options are the labels lettered from A in the order above, with "${NONE_OPTION}" last. A prompt shows at most ${LABELS_PER_PROMPT} labels. ${shape} The user message is the task, then "${json.separator.trim()}", then the task again, under this system message:`,
+    "",
+    fenced(json.system, "text"),
+    "",
+    `The prompt goes through the base model's chat template ([${GLIMMER_TEMPLATE.repo}](${HUB_SITE}/${GLIMMER_TEMPLATE.repo}) at revision \`${GLIMMER_TEMPLATE.revision}\`) at reasoning strength "${GLIMMER_REASONING}", with the final channel opened, so the first token the model writes is the letter. The probabilities are read from that one token, not from anything the model writes. \`${DECIDE_JSON_PATH}\` in this repo holds the exact text around the task (\`prompt.prefix\` and \`prompt.suffix\`), the labels, T, and these rules:`,
+    "",
+    ...json.rules.map((r) => `- ${r}`),
+    "",
+    s.tuned.calibrated
+      ? `The tuned model's T is ${s.tuned.T}, fit on the dev rows.`
+      : "The tuned model's T is 1: too few dev rows were scored to fit one.",
+  ].join("\n");
+}
+
+function decisionUsageSection(f: DecisionCardFacts): string {
+  const t = f.template;
+  const code = [
+    "import json",
+    "import math",
+    "",
+    "import torch",
+    "from huggingface_hub import hf_hub_download",
+    "from peft import PeftModel",
+    "from transformers import AutoModelForMultimodalLM, AutoProcessor",
+    "",
+    `BASE = ${JSON.stringify(t.model)}`,
+    `REVISION = ${JSON.stringify(f.revision)}`,
+    `ADAPTER = ${JSON.stringify(f.modelRepo)}`,
+    "",
+    `with open(hf_hub_download(ADAPTER, ${JSON.stringify(DECIDE_JSON_PATH)}), encoding="utf-8") as f:`,
+    "    SPEC = json.load(f)",
+    "",
+    "processor = AutoProcessor.from_pretrained(BASE, revision=REVISION)",
+    'tokenizer = getattr(processor, "tokenizer", processor)',
+    'model = AutoModelForMultimodalLM.from_pretrained(BASE, revision=REVISION, device_map="auto")',
+    "model = PeftModel.from_pretrained(model, ADAPTER)",
+    "model.eval()",
+    "",
+    "",
+    "def neutral(text):",
+    "    # No text may forge one of the chat template's tokens.",
+    '    return text.replace("<|", "< |")',
+    "",
+    "",
+    "def letter_probabilities(prompt, letters):",
+    "    # One forward pass, no generation. The tokenizer adds <|begin_of_text|> itself.",
+    '    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)',
+    "    with torch.no_grad():",
+    "        logits = model(**inputs).logits[0, -1].float()",
+    "    logp = torch.log_softmax(logits, dim=-1).tolist()",
+    "    shown = []",
+    "    for letter in letters:",
+    "        # A letter's probability is its bare token's plus its space-led token's.",
+    '        ids = {tokenizer.encode(text, add_special_tokens=False)[0] for text in (letter, " " + letter)}',
+    "        shown.append(sum(math.exp(logp[i]) for i in ids))",
+    "    total = sum(shown)",
+    "    return [p / total for p in shown]",
+    "",
+    "",
+    "def decide(state):",
+    '    labels = {label["id"]: label for label in SPEC["labels"]}',
+    "    found, none = {}, 1.0",
+    '    for group in SPEC["groups"]:',
+    "        options = []",
+    "        for k, label_id in enumerate(group):",
+    "            label = labels[label_id]",
+    '            option = {"letter": SPEC["letters"][k], "option": neutral(label["name"])}',
+    '            if label["description"]:',
+    '                option["description"] = neutral(label["description"])',
+    "            options.append(option)",
+    '        options.append({"letter": SPEC["letters"][len(group)], "option": SPEC["none"]})',
+    "        task = json.dumps(",
+    '            {"state": neutral(state), "question": neutral(SPEC["question"]), "options": options},',
+    "            ensure_ascii=False,",
+    '            separators=(",", ":"),',
+    "        )",
+    '        prompt = SPEC["prompt"]["prefix"] + task + SPEC["separator"] + task + SPEC["prompt"]["suffix"]',
+    '        p = letter_probabilities(prompt, [o["letter"] for o in options])',
+    "        found.update(zip(group, p))",
+    "        none *= p[-1]",
+    "    # A label keeps its probability in its own prompt, none is the product of every prompt's none,",
+    "    # and the labels are rescaled to share 1 - none.",
+    "    total = sum(found.values())",
+    "    p = {i: x * (1 - none) / total if total > 0 else 0.0 for i, x in found.items()}",
+    "    if total <= 0:",
+    "        none = 1.0",
+    '    order = [label["id"] for label in SPEC["labels"]]',
+    "    best = order[0]",
+    "    for i in order:",
+    "        if p[i] > p[best]:",
+    "            best = i",
+    "    pick = None if none > p[best] else best",
+    "    # T softens the numbers shown. It never changes the pick.",
+    '    soft = {i: p[i] ** (1 / SPEC["T"]) for i in order}',
+    '    soft_none = none ** (1 / SPEC["T"])',
+    "    z = sum(soft.values()) + soft_none",
+    "    return {",
+    '        "decision": None if pick is None else labels[pick]["name"],',
+    '        "confidence": (soft_none if pick is None else soft[pick]) / z,',
+    '        "probabilities": {labels[i]["name"]: soft[i] / z for i in order},',
+    '        "none": soft_none / z,',
+    "    }",
+    "",
+    "",
+    'print(decide("The input to decide on"))',
+  ];
+  return [
+    "## How to use it",
+    "",
+    `Load the 4-bit base at the revision it was trained on, put the adapter on it, and score each prompt with one forward pass: no text is generated. This reads the model the way Muse Muse scored it: the first token's log-probabilities over the whole vocabulary, in float32. \`${DECIDE_JSON_PATH}\` gives the question, the labels, T and the prompt's exact text, so nothing else is needed. It needs a CUDA GPU with room for the 4-bit base model, and \`bitsandbytes\`. It is not a chat model: in a chat app, Ollama or LM Studio it will misbehave.`,
+    "",
+    fenced(code.join("\n"), "python"),
+  ].join("\n");
+}
+
+function decisionTrainingSection(f: DecisionCardFacts): string {
+  const m = f.metrics;
+  const t = f.template;
+  const tr = f.trainer;
+  const j = f.job;
+  const rows: Array<[string, string]> = [
+    ["Base model", `[${t.model}](${HUB_SITE}/${t.model}) at revision \`${f.revision}\`, the 4-bit (bitsandbytes) quantization of [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN})`],
+    ["Method", "QLoRA with Unsloth and TRL's SFTTrainer in Muse Muse's decide mode: LoRA on the language model's attention and MLP layers, the vision layers frozen, trained only on the answer's letter and the end of the turn (train_on_responses_only)"],
+  ];
+  if (j.loraRank !== null) rows.push(["LoRA rank", `${j.loraRank} (alpha ${j.loraRank}, dropout ${t.loraDropout})`]);
+  if (j.learningRate !== null) rows.push(["Learning rate", `${j.learningRate}, ${t.scheduler} schedule, ${t.warmupSteps} warmup steps, ${t.optimizer}, weight decay ${t.weightDecay}`]);
+  rows.push(["Training rows", countText(f.decision.split.train)]);
+  if (j.epochs !== null) rows.push(["Epochs", String(j.epochs)]);
+  const renderings = metric("renderings", m);
+  if (renderings !== null) {
+    // Balancing copies exist only when the GPU was paged more renderings than rows times epochs (trainLayout).
+    const paged = Number(metric("train_renderings", m) ?? renderings);
+    const copies = j.epochs !== null && paged > f.decision.split.train * j.epochs;
+    const times = j.epochs === null ? "" : `each row ${j.epochs} ${j.epochs === 1 ? "time" : "times"}${copies ? ", plus copies of the smaller labels' rows toward at most 3 to 1" : ""}, `;
+    rows.push([
+      "Training renderings",
+      `${renderings}: ${times}each rendering with its own option order, about ${Math.round(NONE_SHARE * 100)}% of them with the right label taken out`,
+    ]);
+  }
+  const tooLong = metric("train_too_long", m);
+  if (tooLong !== null && Number(tooLong) > 0) rows.push(["Renderings left out as too long", `${tooLong} (over ${t.maxSeqLength} tokens)`]);
+  const steps = metric("steps", m);
+  const maxSteps = metric("max_steps", m);
+  if (steps !== null || maxSteps !== null) {
+    const done = steps ?? maxSteps;
+    const early = metric("stopped_early", m) === "yes" ? " (stopped early to finish within the time limit)" : "";
+    rows.push([
+      "Steps",
+      `${done}${maxSteps !== null && steps !== null && steps !== maxSteps ? ` of ${maxSteps}` : ""}${early}, batch ${tr.batchSize} with gradient accumulation ${tr.gradientAccumulation} (${tr.batchSize * tr.gradientAccumulation} renderings a step${tr.groupByLength ? ", grouped by length" : ""})`,
+    ]);
+  }
+  rows.push(["Max sequence length", String(t.maxSeqLength)]);
+  const gpu = metric("gpu", m);
+  rows.push(["GPU", `${gpu ? `${gpu}, ` : ""}${j.gpuLabel} on Lambda`]);
+  rows.push(["GPU time", `${j.gpuMinutes} minutes, from launch to shutdown, scoring included`]);
+  rows.push(["GPU cost", money(j.costUsd)]);
+  const loss = metric("train_loss_final", m);
+  if (loss !== null) rows.push(["Final training loss", String(loss)]);
+  const vram = metric("peak_vram_gb", m);
+  if (vram !== null) rows.push(["Peak GPU memory", `${vram} GB`]);
+  rows.push(["Seed", String(t.seed)]);
+  return [
+    "## How it was trained",
+    "",
+    "| Setting | Value |",
+    "|---|---|",
+    ...rows.map(([k, v]) => `| ${k} | ${v.replace(/\|/g, "\\|").replace(/\n/g, " ")} |`),
+    "",
+    "The same GPU run scored base Glimmer on the dev and test rows first, then trained, then scored the tuned model on the same prompts. The scores went to Muse Muse, which computed every number above after the GPU was shut down, with no model call.",
+  ].join("\n");
+}
+
+function decisionDataSection(f: DecisionCardFacts): string {
+  const d = f.decision;
+  const who = d.source === "person" ? "a person labeled" : `from public decision tasks (the mix \`${personText(d.source.replace(/^public:/, ""))}\`)`;
+  return [
+    "## Data",
+    "",
+    `Trained on ${countText(d.split.train)} rows ${who} for "${personText(f.dataset.title)}". ${countText(d.split.dev)} more rows fit T and ${countText(d.split.test)} were held out for the scores above; neither was trained on. Rows that shared at least ${Math.round(NEAR_DUPLICATE_JACCARD * 100)}% of their words were kept in one split, so no test row has a near-twin in training. The rows aren't published here or anywhere: this repo has the adapter, its tokenizer files, \`${DECIDE_JSON_PATH}\` and this card.`,
+  ].join("\n");
+}
+
+function decisionLimitsSection(f: DecisionCardFacts): string {
+  const s = checkedCard(f);
+  return [
+    "## Limits",
+    "",
+    `- It is a small adapter that learned one decision from ${countText(f.decision.split.train)} examples. It isn't a general improvement of ${GLIMMER_NAME}, and it answers only with a letter: as a chat model it will misbehave.`,
+    `- The test set is small: ${countText(s.items)} rows. The intervals in Results show how far the accuracy could be off, and a row unlike the examples may be decided worse than they show.`,
+    "- Its probabilities are calibrated only on rows like its dev rows. On inputs unlike its examples it is likely to be surer than it should be.",
+    "- Local GGUF files for decision models aren't made yet: they need a check that the quantized model makes the adapter's picks.",
+    `- It inherits the base model's limits and its Usage Policy: see [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN}). Check what it decides before you rely on it, and don't let it decide alone about people, such as hiring, credit, housing or health.`,
+  ].join("\n");
+}
+
+function decisionLicenseSection(f: DecisionCardFacts): string {
+  const data =
+    f.decision.source === "person"
+      ? "The training rows belong to the person who labeled them and aren't published."
+      : "The training rows come from public datasets under their own licenses and aren't republished here.";
+  return [
+    "## License",
+    "",
+    `Apache 2.0, the license of the base model: the full text is in \`LICENSE\`, as [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN}) ships it. The change from the base model is this LoRA adapter, trained as described above. Use it under the base model's [Usage Policy](${HUB_SITE}/${GLIMMER_ORIGIN}/blob/main/USAGE_POLICY.md), which says Muse Glimmer "is not intended for individuals under the age of 18".`,
+    "",
+    data,
+    "",
+    `Not an official Meta product. Meta made ${GLIMMER_NAME}; it didn't make, review or endorse this adapter. The model's name only says what the adapter is for.`,
+  ].join("\n");
+}
+
+function decisionProvenanceSection(f: DecisionCardFacts): string {
+  return [
+    "## Provenance",
+    "",
+    `- Made by [Muse Muse](${MUSE_MUSE_SITE}), job \`${f.job.id}\` ("${personText(f.job.title)}")${f.job.finishedAt ? `, finished ${f.job.finishedAt.slice(0, 10)}` : ""}.`,
+    `- The run's public page, with the same numbers: ${labPageUrl(f.job.id)}`,
+    `- \`${DECIDE_JSON_PATH}\` has the format, the labels, T and the prompt's text. The dataset's rows are not in this repo.`,
+  ].join("\n");
+}
+
+/**
+ * A decision model's README.md: YAML front matter in the chat card's shape, minus `datasets` and `model-index` (the
+ * rows are never published, so there is no dataset repo for either to cite; the numbers are in Results), then what it
+ * decides, its scores, the format, how to call it, how it was trained, its data, limits, license and provenance.
+ * Every number is from the records and every rule from lib/decide/format.ts. Throws when decisionCardProblem says no.
+ */
+export function decisionCard(f: DecisionCardFacts): string {
+  const s = checkedCard(f);
+  const [, name] = f.modelRepo.split("/");
+  const d = f.decision;
+  const english = looksEnglish(d.question, f.dataset.title, ...d.labels.flatMap((l) => [l.name, l.description ?? ""]));
+  const front = [
+    "---",
+    `base_model: ${f.template.model}`,
+    "base_model_relation: adapter",
+    "library_name: peft",
+    "pipeline_tag: text-generation",
+    "license: apache-2.0",
+    ...(english ? ["language:", "- en"] : []),
+    "tags:",
+    ...["lora", "peft", "unsloth", "trl", "muse-muse", "muse-decide", "decision-model", "classification"].map((t) => `- ${t}`),
+    "---",
+  ];
+  const lead = `A decision model: a small LoRA adapter for ${GLIMMER_NAME} (\`${f.template.model}\`) trained on ${countText(d.split.train)} labeled examples to answer one question. For each input it picks one of its ${d.labels.length} labels, or "${NONE_OPTION}", with a probability for each, read from the model's first answer token. On ${countText(s.items)} held-out examples it never saw, it was right on ${countText(s.tuned.accuracy.right)} (${wholePct(s.tuned.accuracy.rate)}); base ${GLIMMER_NAME} on ${countText(s.base.accuracy.right)} (${wholePct(s.base.accuracy.rate)}). It can be wrong: check anything that matters. Made with [Muse Muse](${MUSE_MUSE_SITE}). Not an official Meta product.`;
+  return [
+    front.join("\n"),
+    "",
+    `# ${name}`,
+    "",
+    lead,
+    "",
+    decisionWhatSection(f),
+    "",
+    decisionResultsSection(f),
+    "",
+    decisionFormatSection(f),
+    "",
+    decisionUsageSection(f),
+    "",
+    decisionTrainingSection(f),
+    "",
+    decisionDataSection(f),
+    "",
+    decisionLimitsSection(f),
+    "",
+    decisionLicenseSection(f),
+    "",
+    decisionProvenanceSection(f),
+    "",
+  ].join("\n");
 }

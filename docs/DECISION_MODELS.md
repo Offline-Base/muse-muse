@@ -4,14 +4,9 @@ The design for turning Muse Glimmer 30B into decision models inside Muse Muse: a
 labeled examples, and one general engine, **Muse Decide**, that picks from options given at run time. Written Oct 31,
 2026 for the owner's two asks that day: "I'd also want to be able to fine tune and create muse glimmer into a decision
 model from within muse muse", and, with github.com/sinanuozdemir/ai-experiments/tree/main/experiments/scion, "bring it
-into how it could be done here". Built so far: D0 to D7 of the build plan (`lib/decide/types.ts`,
-`lib/decide/format.ts`, the scoring in `lib/train/logic.ts`, decision datasets: migration 0017,
-`lib/train/decision-datasets.ts`, the datasets routes and the decision pages of the job dataset route, decide mode
-on the GPU: `GLIMMER_PY`, `ctx.decide` in the runner, the recipe's params, the run estimate and the decide callbacks,
-after the run: `scoreDecisionStep` in place of judging, the summary saved, and decision models kept off the Hub
-and out of local files, and the pages: the New decision dataset card, the dataset page, the mode and estimate on the
-New job card, `DecisionResults` and the Lab results line, and serving: `/decide` on the demo GPU, the Try it live box,
-`{GATEWAY_URL}/decide` and the template helper `decide()`). Nothing has run on a real GPU yet (D8 waits for the owner). Branch `tg-decide`, worktree
+into how it could be done here". Built: D0 to D7 and D9 of the build plan; D8, the real GPU runs, waits for the
+owner's approval. Nothing has run on a real GPU, Lambda, the Hub, Meta, Neon or Vercel: every test fakes them. "Where
+it stands" below says what is built, how it was checked and what is left. Branch `tg-decide`, worktree
 `~/mm-wt/decide`.
 
 This settles what `~/mm-wt/_plan/decision-models.md` left open and replaces one thing in it: the model answers with one
@@ -35,6 +30,64 @@ inferred or estimated, needs a test; **[R]** reported by a third party, not repr
 - **Backends:** Lambda, the existing lab, by default. Fireworks' free Glimmer SFT only after one export test passes.
 - **Scion** (the owner's reference) has no license, so all rights are reserved. This design uses its published ideas
   (listed under "What Scion contributed") and none of its code or text. Every name and sentence here is ours.
+
+## Where it stands (Oct 31)
+
+**Built,** on `tg-decide` (the design `ca953be`; D0 to D2 `96db7e7` to `d842328`, with their review; D3 `2dec882`; D4
+`02b1b32`; D5 `3ffa1ed`; D6 `531a541`; D7 `144f84f`; D9 the commit after it):
+
+| Unit | What | Mainly in |
+|---|---|---|
+| D0 to D2 | The contract, the task format and its exact Glimmer prompt (checked byte for byte against jinja2 with the real template and tokenizer files), deterministic scoring | `lib/decide/types.ts`, `lib/decide/format.ts`, `lib/train/logic.ts` |
+| D3 | Decision datasets: migration 0017, the upload checks, the split, the GPU's pages | `lib/train/decision-datasets.ts`, the datasets and job dataset routes |
+| D4 | Decide mode on the GPU, `ctx.decide`, the decide callbacks, the params and the run estimate | `GLIMMER_PY`, `RUNNER_PY`, the events route |
+| D5 | `scoreDecisionStep` in place of judging; decision models kept off the Hub and out of local files | `lib/train/decide-steps.ts`, `lib/train/workflow.ts` |
+| D6 | The pages: the New decision dataset card, the dataset page, the mode on the New job card, `DecisionResults`, the Lab results line | `components/train/` |
+| D7 | Serving: `/decide` on the demo GPU, the Try it live box, `{GATEWAY_URL}/decide`, the template's `decide()` | `SERVE_PY`, `lib/gateway/decide.ts`, `template/lib/meta/decide.ts` |
+| D9 | `docs/TRAINING.md`'s decide sections, this status, and the decision card (`decisionCard`, `decisionCardJson`), written but not wired to publishing | `docs/`, `lib/train/hub-cards.ts` |
+
+**How it was checked:** see "As built (D9)" in the build plan for the last full run's counts. Two local browser checks
+(D6, D7) ran on a fresh PGlite with made-up tickets and a stand-in GPU. Every test fakes Lambda, the Hub, Meta, Neon
+and Vercel, and the GPU's side ran on fake Unsloth and torch. Muse Glimmer never ran on the owner's laptop: only its
+tokenizer files were read, for the D1 fixture.
+
+**Left,** in order:
+
+1. **D8, the real runs (waits for the owner, decision 2).** One `dryRun: 1` decide job on a real GPU (a few minutes,
+   about $0.10 to $0.30), then the one real run: a made-up 4-label set of about 400 rows on an A100 SXM4 with `maxUsd`
+   5, expected about $0.83. To check there: that Unsloth's Glimmer forward takes `logits_to_keep` and `position_ids`
+   and returns logits with `UNSLOTH_RETURN_LOGITS` set at run time, and that `SFTConfig` takes `group_by_length`; the
+   training and scoring rates, which then replace `DECIDE_TRAIN_ROWS_PER_SECOND` and `DECIDE_SCORE_PROMPTS_PER_SECOND`
+   in `lib/train/logic.ts`. Its job id, minutes, cost and scores go in this file.
+2. **A serving window (owner decision 3).** One 10-minute `/decide` window after the real run (about $0.83): that
+   `PeftModel`'s `disable_adapter` gives base Glimmer's logits in the serve child, that one `/decide` answers well under
+   2 s, and the gateway's live path seen once.
+3. **At merge.** Rechain migration 0016 or 0017, whichever lands second (Migration above), and take 16 out of
+   `RESERVED` in `lib/db/__tests__/migrations.test.ts` once both are in.
+4. **After `tg-ui-brand` merges.** `muse-decide` in the brief's `PRODUCT_MODELS`, the manifest schema's enum, the
+   catalog text and the template skill, in marked blocks as wave 3 agreed, plus a `modelLabel` name for `muse-decide`
+   in `lib/format.ts` (shared). Until then no product's token holds the permission, so the gateway answers every real
+   product 403 `decide_not_allowed`.
+5. **Adapter-only publishing (owner decision 8, after Nov 4).** A publish path that commits the adapter, its tokenizer
+   files, `decisionCardJson` as `decide.json` and `decisionCard` as README.md, never a row. `decide.json` isn't in
+   `HUB_FILE_NAMES` today, and the GPU's copy holds T = 1, so the platform writes its own with the tuned T. Then
+   `hubJobProblem` and `hubJobBlock` lift their decide refusal. The card has never been through the Hub's validator.
+6. **Cut for now** (Cut order): decide quantize (5); Muse Decide's data build and run (2), for which the runner's
+   `DATASET_MAX_PAGES` (1,000 pages of 50 renderings) must rise before v1's 60,000; Fireworks (3); the Decision Index
+   (1).
+7. **Small things found on the way, not fixed:**
+   - The admin job page gets every decide event in full (up to about 80 of about 15 KB), though it uses only their
+     counts.
+   - A `/try` sent to a decision model's demo uses a slot and a rate-limit count, then gets 502 (the pages never send
+     one).
+   - The Try it live box has `/try`'s 5 inputs per IP in 10 minutes, stingy for a classifier.
+   - The gateway lets any product holding `muse-decide` call any public decision model by its job id; unit 11's
+     per-product models may want an ownership check.
+   - `modelLabel` in `lib/format.ts` reads `MODEL_LABELS[id]` without an own-property check, so
+     `modelLabel("toString")` returns a function.
+   - Device training (`app/api/device/train`) reads chat pages only, so a decision dataset gives it none.
+   - The public Lab lists a person's decision dataset's title, question and labels (never a row), which the owner may
+     want hidden.
 
 ## Words used here
 
@@ -697,6 +750,30 @@ server (below):
   local files need a decision check (Q4_K_M's picks against the adapter's) that isn't built yet."), in the jobs route
   and the quantize route alike. `adapterProblem` refuses it too except for glimmer-serve (D7), so this stays the gate.
 - **Live demo:** a decide adapter's `glimmer-serve` job serves `/decide` (below), not the chat box.
+- **The decision card, as built (D9):** `decisionCard(facts)` in `lib/train/hub-cards.ts` is a decision model's
+  README.md, ready for adapter-only publishing; nothing calls it yet. Its facts are the records only (the job, its
+  done metrics, its `DecisionSummary`, the dataset's spec without seed or rows, the recipe's template and decide
+  trainer read from `GLIMMER_PY` by `glimmerTemplate` and `decideTrainer`). Front matter as the chat card's, without
+  `datasets` or `model-index`, which would need a dataset repo to cite. Then: a lead that says it is a small adapter
+  trained on N labeled examples, how it scored on the held-out rows and "It can be wrong: check anything that
+  matters."; What it decides (the question, each label with its id, description and rows per split, and `none`);
+  Results (both models on the same rows: right on, the Wilson interval, macro F1, ECE before and with T, T, the
+  `none` and decline rates, letter mass, the two baselines, per label, the tuned confusion matrix, and notes on
+  unscored rows, small labels, groups and calibration); How it decides (the task, the system message, the template
+  at its pinned revision and `DECIDE_RULES` word for word); How to use it (a transformers and PEFT snippet that reads
+  `decide.json` from the repo and scores each prompt with one forward pass, no generation); How it was trained;
+  Data (the rows aren't published, here or anywhere); Limits (one decision, a small test set, calibration only on rows
+  like the dev rows, no GGUF yet, and not to decide alone about people); License; Provenance. The person's text
+  (question, labels, descriptions, title) is escaped, so it can't add a link, an image, HTML or a table cell.
+  `decisionCardProblem` refuses a summary with no scored row, base-only scores or labels that aren't the dataset's;
+  `decisionCardJson` is `decideJson` with the tuned T, the `decide.json` to publish beside it.
+- **The card's snippet is tested, on fakes:** `lib/train/__tests__/decision-card.test.ts` runs it in python3 against
+  fake torch, transformers, peft and huggingface_hub. The fake model answers only prompts the platform itself rendered
+  (`decidePrompt`), so the snippet's prompts must be the platform's bytes exactly (a forged turn, quotes, a tab, a
+  newline, accents, CJK, an emoji, a line separator and a control character in the states), one forward pass a prompt,
+  and its answers must equal `decisionFromScores`' to 1e-9, for 4 labels with the fit T and for 6 labels (2 groups) at
+  T 1, 0.6 and 2.5. Two deliberate breaks of the snippet (`none` not multiplied across groups, `<|` not neutralized)
+  each failed it. It has not run on the real model.
 
 ## 3. Serving and use
 
@@ -925,7 +1002,7 @@ dataset title (`lib/train/hub-cards.ts`).
 | same folder | `tokenizer.json`, `tokenizer_config.json` and the other files `tokenizer.save_pretrained` writes | the tokenizer, saved beside the adapter as today | same |
 | same folder | `decide.json` | the format's contract (`DecideJson`, built by `decideJson` in `lib/decide/format.ts`) | written by D4 |
 | the platform's database | `training_jobs.eval_summary` | `DecisionSummary`, with each model's fitted T | after `scoreDecisionStep` (D5) |
-| Hugging Face, only with `publish: 1` | `<namespace>/muse-glimmer-30b-<slug>-lora-<id8>` (`modelRepoName`) | adapter files and card; never the person's rows | off by default; adapter-only publishing is later work |
+| Hugging Face, only with `publish: 1` | `<namespace>/muse-glimmer-30b-<slug>-lora-<id8>` (`modelRepoName`) | adapter files, `decide.json` with the tuned T (`decisionCardJson`) and the decision card (`decisionCard`, D9); never the person's rows | off by default; adapter-only publishing is later work, the card is written |
 | Hugging Face, once decide quantize exists | `<namespace>/muse-glimmer-30b-<slug>-gguf-<id8>` (`ggufRepoName`), files `muse-glimmer-30b-<slug>-<LEVEL>.gguf` (`ggufFileName`), Q4_K_M first | merged GGUF builds, with `decide.json` beside them | cut for now (Cut order 5) |
 
 One thing for unit 12 to know: T is fit after the run, from dev scores the GPU sent, so the `decide.json` the GPU
@@ -1202,7 +1279,7 @@ sessions.
 | D6 (done) | Pages: the New decision dataset card, the dataset page, the mode on the New job card with its estimate, `DecisionResults` (strip, per label, confusion, reliability SVG, baselines, health, wrong answers for admins), the Lab results line | `components/train/NewDecisionCard.tsx`, `DatasetDetail.tsx`, `NewJobCard.tsx`, `DecisionResults.tsx`, `results.ts`, `format.ts`, `app/fine-tuning/...`, `components/train/__tests__/decision.test.tsx`; one browser check on the local site | 5 | yes (browser) |
 | D7 (done) | Serving: `/decide` on the demo GPU, `askDecide`, the try box, `{GATEWAY_URL}/decide` with the permission, limits, stand-in and `decide_offline`, the template helper and `isDecideOffline` | `lib/train/recipes/serve.ts` (shared), `lib/train/serve.ts`, `app/api/lab/[id]/decide/route.ts`, `lib/gateway/decide.ts`, `app/api/gateway/decide/route.ts`, `template/lib/meta/decide.ts`, tests in `runner.test.ts`, `lab-try.test.ts`, `lib/gateway/__tests__/decide.test.ts` | 4 | yes (TLS with openssl) |
 | D8 | Real runs: `dryRun: 1` on a real GPU, then the one real run (below); record times and rates, then set the estimate's constants from them | no code beyond constants; results in this doc | 2, plus GPU time | no |
-| D9 | Docs: `docs/TRAINING.md` decide sections, this file's status, the decision card section in `hub-cards.ts` if time allows | `docs/TRAINING.md`, `docs/DECISION_MODELS.md`, `lib/train/hub-cards.ts` | 2 | no |
+| D9 (done) | Docs: `docs/TRAINING.md` decide sections, this file's status, the decision card section in `hub-cards.ts` if time allows | `docs/TRAINING.md`, `docs/DECISION_MODELS.md`, `lib/train/hub-cards.ts`, `lib/train/__tests__/decision-card.test.ts` | 2 | no |
 
 About 32 hours. Order: Nov 1, D0 to D3; Nov 2, D4 to D6; Nov 3, D7 to D9, with the real run in the afternoon so a
 failure leaves time for one fix. Muse Decide's data build (`build-mix.ts` and the contamination filter), the Decision
@@ -1239,6 +1316,23 @@ Never cut: the held-out test split, base and tuned scored on the same rows, the 
   this file. A serving-window test, a Muse Decide run, the export test or a Decision Index sample are each a further
   spend and wait for the owner.
 - Nothing runs Glimmer on the laptop, and nothing SSHes to a Jetson from it.
+
+### As built (D9): the last full run
+
+Oct 31, on the tree D9 committed, with no Meta, Lambda, Hugging Face, Vercel or database credential in the
+environment, so nothing could reach a real service:
+
+- **Every root test** (`npx tsx --test --test-concurrency=2 --experimental-test-module-mocks $(find lib components app
+  -name "*.test.ts" -o -name "*.test.tsx")`, 265 files): 4,593 tests, 4,585 pass, 0 fail, 0 cancelled, 8 skipped. The 8
+  are the gateway's live tests (`lib/gateway/__tests__/live.test.ts`), which skip without `MODEL_API_KEY`. 168 s.
+- **The template's script tests** (`npx tsx --test template/scripts/__tests__/*.test.mjs`): 314 tests, 309 pass, 5
+  fail. `decide.test.mjs` passes 4 of 4. The 5 failures are in `xr.test.mjs` and `demo-fixtures.test.mjs`, which this
+  branch never touched: `@playwright/test` isn't in the shared `node_modules`, as D7 found.
+- **`npx tsc --noEmit -p .`:** exit 0.
+- **The workflow compile** (`npx tsx scripts/dev/pipeline-workflow-compile.ts <scratch>`): exit 0, 7 workflows and 163
+  steps compiled (158 in the manifest), `lib/train/decide-steps.ts#scoreDecisionStep` among them.
+- **New in D9:** `lib/train/__tests__/decision-card.test.ts`, 19 tests (the card, `decisionCardProblem`,
+  `decisionCardJson`, `decideTrainer`, and the snippet in python3 on fakes).
 
 ## 7. Owner decisions
 
