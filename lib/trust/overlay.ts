@@ -144,15 +144,17 @@ export function applyTrustScript(capsDir: string = CAPS_DIR, recordDir: string =
 }
 
 /**
- * Before every verify and demo, in a product with the trust overlay (TRUST_COMMIT in its history): puts its platform
- * files and the two records back, so an edit can't drop the footer links, the pages or the gate, or fake the spec. Does
- * nothing, and says nothing, anywhere else, which is every product built with the trust flags off.
+ * Before every verify and demo, in a product with the trust overlay: puts its platform files and the two records back,
+ * so an edit can't drop the footer links, the pages or the gate, or fake the spec. What says a product has the overlay
+ * is its root-owned record in TRUST_RECORD_DIR, which only applyTrust writes and Muse Code can't remove, never its git
+ * history, which a reset, squash or amend can rewrite. Does nothing, and says nothing, anywhere else, which is every
+ * product built with the trust flags off.
  */
 export function restoreTrustFilesScript(capsDir: string = CAPS_DIR, recordDir: string = TRUST_RECORD_DIR): string {
   const overlay = `${capsDir}/${TRUST_OVERLAY}`;
   const list = `for(const p of JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")))console.log(p)`;
   return [
-    `if [ -f ${q(`${overlay}/platform-files.json`)} ] && [ -f ${q(`${recordDir}/${TRUST_FILES[0]}`)} ] && [ -n "$(git log --format=%s --grep=${q(`^${TRUST_COMMIT}$`)} -1 2>/dev/null)" ]; then`,
+    `if [ -f ${q(`${overlay}/platform-files.json`)} ] && [ -f ${q(`${recordDir}/${TRUST_FILES[0]}`)} ]; then`,
     `  node -e ${q(list)} ${q(`${overlay}/platform-files.json`)} | while IFS= read -r p; do`,
     `    rm -rf -- "$p"`,
     `    mkdir -p -- "$(dirname -- "$p")"`,

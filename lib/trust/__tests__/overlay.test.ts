@@ -20,6 +20,7 @@ import {
   productTrustFor,
   restoreTrustFilesScript,
   TRUST_COMMIT,
+  TRUST_RECORD_DIR,
   withTrustEnv,
 } from "@/lib/trust/overlay";
 import { trustBuildLines } from "@/lib/trust/prompt";
@@ -147,8 +148,25 @@ describe("apply and restore, in bash", () => {
     assert.equal(readFileSync(path.join(product, "musemuse.trust.json"), "utf8"), '{"v":1}\n');
   });
 
+  it("restore still puts them back when the product's history was rewritten: the record says it has the overlay", () => {
+    const { caps, record, product } = setup();
+    bash(applyTrustScript(caps, record), product);
+    // A reset, squash or amend drops the overlay's commit message from the history. The record stays (root-owned).
+    git(product, "reset", "-q", "--soft", "HEAD~1");
+    git(product, "commit", "-qm", "Squashed");
+    assert.ok(!git(product, "log", "--format=%s").stdout.includes(TRUST_COMMIT));
+    rmSync(path.join(product, "proxy.ts"));
+    writeFileSync(path.join(product, "components/Footer.tsx"), "export const Footer = () => null;\n");
+    const res = bash(restoreTrustFilesScript(caps, record), product);
+    assert.equal(res.status, 0, res.stderr);
+    assert.equal(readFileSync(path.join(product, "proxy.ts"), "utf8"), "export const proxy = 1;\n");
+    assert.equal(readFileSync(path.join(product, "components/Footer.tsx"), "utf8"), "export const Footer = 'trust';\n");
+  });
+
   it("restore does nothing, and says nothing, in a product without it", () => {
     const { caps, record, product } = setup();
+    // Built with the trust flags off: provisioning never wrote a record.
+    rmSync(record, { recursive: true, force: true });
     const res = bash(restoreTrustFilesScript(caps, record), product);
     assert.equal(res.status, 0);
     assert.equal(res.stdout + res.stderr, "");
@@ -164,7 +182,7 @@ describe("apply and restore, in bash", () => {
     for (const task of ["verify", "demo"] as const) {
       const script = taskScript(task, "/x/out");
       assert.ok(script.includes(restoreTrustFilesScript()), task);
-      assert.ok(script.indexOf("/vercel/musemuse/caps/active.json") < script.indexOf(TRUST_COMMIT), task);
+      assert.ok(script.indexOf("/vercel/musemuse/caps/active.json") < script.indexOf(TRUST_RECORD_DIR), task);
     }
   });
 });
