@@ -32,7 +32,7 @@ export function OwnModelRow({ offer, brief, status, buildId }: { offer: OwnModel
         Muse Muse would have {WRITER_NAME} write about {offer.examples} examples, train on one GPU, and score the tuned model against the base.
       </p>
       <p className="muted">
-        It keeps answering with {WRITER_NAME} until its own model passes and a serving window is open. About {roughMinutes(cost.minutes)}, up to about{" "}
+        It keeps answering with {WRITER_NAME} until its own model passes and a serving window is open. It takes {roughMinutes(cost.minutes)} and costs up to about{" "}
         {usd(planMaxUsd(cost))}: an estimate, not a promise (the GPU stops at its limit; Meta&apos;s part isn&apos;t measured yet). Nothing starts until you press Start.
       </p>
       {offer.canPlan ? (

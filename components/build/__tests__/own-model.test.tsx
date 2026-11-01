@@ -101,6 +101,8 @@ describe("Its own model", { skip: canMock ? false : "needs --experimental-test-m
     assert.match(html, /write about 200 examples, train on one GPU, and score the tuned model against the base/);
     assert.match(html, /It keeps answering with Muse Wonder[^<]* until its own model passes and a serving window is open\./);
     assert.match(html, /an estimate, not a promise/);
+    assert.match(html, /It takes (<!-- -->)?about an hour(<!-- -->)? and costs up to about/);
+    assert.doesNotMatch(html, /[Aa]bout (<!-- -->)?about/, "never 'About about'");
     assert.match(html, /Nothing starts until you press Start\./);
     assert.match(html, new RegExp(`<a class="btn btn-outline" href="/fine-tuning/new\\?fromBuild=${f.build.id}">Plan it</a>`));
     assert.ok(!html.includes("—"), "no em dashes in the copy");
