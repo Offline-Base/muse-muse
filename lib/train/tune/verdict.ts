@@ -7,6 +7,7 @@
  * the test rows is above base's by more than the Wilson half-width of tuned's accuracy (95%).
  */
 import { scoreText } from "@/components/train/format";
+import type { DecisionSummary } from "@/lib/decide/types";
 import type { TuneVerdict } from "@/lib/train/tune/types";
 import type { EvalSummary } from "@/lib/train/types";
 
@@ -14,17 +15,6 @@ import type { EvalSummary } from "@/lib/train/types";
 export const VERDICT_MIN_ITEMS = 8;
 /** Points tuned's average score must beat base's by (scores are 1 to 10). */
 export const VERDICT_SCORE_MARGIN = 1;
-
-/**
- * The part of tg-decide's DecisionSummary (lib/decide/types.ts on that branch) the verdict reads, so this file needn't
- * wait for it: accuracy as right of total on the test rows, for base and, once scored, tuned.
- */
-export interface DecisionScores {
-  kind: "decision";
-  items: number;
-  base: { accuracy: { right: number; total: number } };
-  tuned: { accuracy: { right: number; total: number } } | null;
-}
 
 /** z for a two-sided 95% interval. */
 const Z95 = 1.96;
@@ -39,15 +29,21 @@ export function wilsonHalfWidth(right: number, total: number): number {
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 
-function isDecision(s: EvalSummary | DecisionScores): s is DecisionScores {
-  return (s as DecisionScores).kind === "decision";
+/** A decide job's summary (tg-decide's DecisionSummary, which extends EvalSummary with kind "decision"). */
+function isDecision(s: EvalSummary | DecisionSummary): s is DecisionSummary {
+  return (s as Partial<DecisionSummary>).kind === "decision";
 }
 
-/** Passed or not, with one sentence that says why. */
-export function evalVerdict(s: EvalSummary | DecisionScores): TuneVerdict {
+/**
+ * Passed or not, with one sentence that says why. A decision summary is read by its test rows' accuracy (base.accuracy
+ * and tuned.accuracy, right of total), never by its EvalSummary fields: tunedWins and baseWins there count the rows one
+ * got right and the other wrong, and its scores are 0.
+ */
+export function evalVerdict(s: EvalSummary | DecisionSummary): TuneVerdict {
   if (isDecision(s)) {
-    const base = s.base.accuracy;
+    const base = s.base?.accuracy;
     const tuned = s.tuned?.accuracy;
+    if (!base) return { passed: false, words: "Not scored yet, so it hasn't passed." };
     if (!tuned || !(tuned.total > 0) || !(base.total > 0)) return { passed: false, words: "Not scored yet, so it hasn't passed." };
     const tunedRate = tuned.right / tuned.total;
     const baseRate = base.right / base.total;

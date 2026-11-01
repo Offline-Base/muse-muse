@@ -15,6 +15,7 @@ import { planViewFromRun, roleTitle } from "@/components/train/room/plan";
 import { tuneArt, tuneCurrentStep, tuneRunning, tuneSteps, tuneStepsEnd } from "@/components/train/room/steps";
 import { WhereItRuns } from "@/components/train/room/WhereItRuns";
 import { usd } from "@/lib/format";
+import { endedText } from "@/lib/train/tune/marks";
 import type { TuneRunView } from "@/lib/train/tune/types";
 
 /** The steps panel, for the buttons that open it. */
@@ -60,7 +61,7 @@ export interface TrainRoomProps {
 /**
  * A fine-tuning run's room at /fine-tuning/runs/{id} (docs/TRAINING.md "Fine-tune like a build"), on the build room's
  * chat kit: the title chip, the person's words as a bubble, the working step while something runs (Show thinking once
- * it ended), the plan card with the mascot for the stage, then what's next: Ready to train (the full form, until U3),
+ * it ended), the plan card with the mascot for the stage, then what's next: Start training (with why it waits),
  * the verdict with the eval results, the live demo, the Hugging Face card and Where it runs, or why it stopped. The
  * steps panel lists the stages it reached. Polls GET /api/train/runs/{id} every 5 s while something runs.
  */
@@ -176,23 +177,15 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
             />
           </li>
 
-          {waiting && view.next?.kind === "full_form" ? (
+          {waiting && view.next?.kind === "start" ? (
             <li className="room-answer">
-              <p>{view.hold?.text ?? "The examples are ready."}</p>
-              {/* U3 replaces this one spot with Start training (POST /api/train/runs/{id}/start) once the tuneRun workflow lands. */}
-              <div className="row-actions" data-u3="ready-to-train">
-                <a className="btn btn-primary" href={view.next.href}>
-                  Ready to train
-                  <Icon name="chevronRight" size={18} />
-                </a>
-              </div>
-              <p className="muted small">
-                Opens the full New job form with these examples picked, Muse Glimmer LoRA and its defaults. Training starting on its own after Start comes next.
-              </p>
-              {/* The form's own defaults publish to Hugging Face and pick their own GPU and limits; the plan said Publish: Off. */}
-              <p className="muted small" data-u3="publish-note">
-                The form publishes to Hugging Face by default. To keep it on Muse Muse as the plan says, set Publish to Hugging Face to 0 there. Its GPU and limits are the form&apos;s own too, under the same caps.
-              </p>
+              <StartTraining
+                key={view.hold?.reason ?? ""}
+                start={view.next.start}
+                fullForm={admin ? view.next.fullForm : null}
+                hold={view.hold}
+                onStarted={refresh}
+              />
               <p className="room-meta">{usd(view.costSoFarUsd)} so far</p>
             </li>
           ) : null}
@@ -249,6 +242,100 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
         />
       </div>
     </div>
+  );
+}
+
+/** What Start training says when POST /api/train/runs/{id}/start refuses, from its status and body. */
+export function startTrainingErrorText(status: number, body: unknown): string {
+  const b = body && typeof body === "object" ? (body as { error?: unknown; reason?: unknown }) : {};
+  const code = typeof b.error === "string" ? b.error : "";
+  if (status === 422 && typeof b.reason === "string" && b.reason.trim()) return b.reason.trim();
+  if (code === "stopped") return "This run was stopped, so it won't train.";
+  if (code === "not_ready") return "The examples are still being written. Training starts on its own once they're ready.";
+  if (code === "forbidden") return "Only the person who started this run can train it.";
+  if (code === "lambda_not_configured" || code === "platform_not_public" || code === "sweep_not_configured" || code === "start_failed") {
+    return endedText(code);
+  }
+  if (status === 401 || status === 403) return "Only admins can train models here.";
+  if (status === 404) return "This run is gone, or fine-tuning from here isn't switched on.";
+  if (status === 400 && code && /\s/.test(code)) return code;
+  return "Something went wrong on our side. Try again in a moment.";
+}
+
+/**
+ * Start training, where the run waits with its examples ready: why it waits (the run's hold), the button that tries the
+ * launch now (POST /api/train/runs/{id}/start, under every cap a job has), and for admins a small link to the full New
+ * job form with the dataset picked. A launch that has to wait says why, and the tuneRun workflow keeps trying.
+ */
+export function StartTraining({
+  start,
+  fullForm,
+  hold,
+  onStarted,
+}: {
+  start: string;
+  fullForm: string | null;
+  hold: TuneRunView["hold"];
+  onStarted: () => Promise<void> | void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<{ text: string; problem: boolean } | null>(null);
+
+  async function press() {
+    if (busy) return;
+    setBusy(true);
+    setSaid(null);
+    try {
+      const res = await fetch(start, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      const data: unknown = await res.json().catch(() => null);
+      if (res.status === 201 || (res.status === 409 && (data as { error?: unknown } | null)?.error === "already_training")) {
+        await onStarted();
+      } else if (res.status === 202) {
+        const text = (data as { hold?: { text?: unknown } } | null)?.hold?.text;
+        setSaid({ text: typeof text === "string" ? text : "It has to wait for now, and tries again on its own.", problem: false });
+        await onStarted();
+      } else {
+        setSaid({ text: startTrainingErrorText(res.status, data), problem: true });
+      }
+    } catch {
+      setSaid({ text: "Couldn't reach Muse Muse. Check your connection and try again.", problem: true });
+    }
+    setBusy(false);
+  }
+
+  const trying = Boolean(hold && hold.reason !== "not_started" && hold.reason !== "stopped");
+  return (
+    <>
+      {/* While the workflow is trying, the working step above already says why it waits. */}
+      <p>
+        {said && !said.problem
+          ? said.text
+          : trying
+            ? "Training starts on its own as soon as it can. Try now asks again at once."
+            : (hold?.text ?? "The examples are ready. Training hasn't started yet.")}
+      </p>
+      {said?.problem ? (
+        <p className="form-error" role="alert">
+          <Icon name="alert" size={18} />
+          <span>{said.text}</span>
+        </p>
+      ) : null}
+      <div className="row-actions">
+        <button type="button" className={trying ? "btn btn-outline" : "btn btn-primary"} onClick={() => void press()} disabled={busy} aria-busy={busy}>
+          {busy ? <span className="spinner" aria-hidden /> : null}
+          {busy ? "Starting" : trying ? "Try now" : "Start training"}
+        </button>
+      </div>
+      <p className="muted small">
+        {GLIMMER_NAME} LoRA with the plan&apos;s settings, on one GPU with its time and dollar limits, kept on Muse Muse (publish is off).
+        {fullForm ? (
+          <>
+            {" "}
+            <Link href={fullForm}>Use the full form</Link> to change the settings.
+          </>
+        ) : null}
+      </p>
+    </>
   );
 }
 

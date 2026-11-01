@@ -8,7 +8,8 @@
  */
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
-import { DATASET_TASK_MAX } from "@/lib/train/logic";
+import type { DecisionSideSummary, DecisionSummary } from "@/lib/decide/types";
+import { DATASET_TASK_MAX, wilsonRate } from "@/lib/train/logic";
 import {
   EXAMPLE_ROWS_MAX,
   csvRecords,
@@ -331,11 +332,39 @@ describe("the verdict", () => {
   });
 
   it("passes a decision model only when its accuracy beats base's by more than the Wilson half-width", () => {
-    const d = (tuned: number, base: number, total = 100) => ({
-      kind: "decision" as const,
+    // A whole DecisionSummary, as tg-decide's scoreDecisionStep saves it: only the test rows' accuracy decides.
+    const side = (right: number, total: number): DecisionSideSummary => ({
+      accuracy: wilsonRate(right, total),
+      macroF1: 0.5,
+      perLabel: [],
+      confusion: [],
+      noneRate: 0,
+      decline: null,
+      T: 1,
+      calibrated: false,
+      ece: { raw: 0, withT: 0 },
+      reliability: [],
+      letterMass: { median: 1, min: 1 },
+    });
+    const d = (tuned: number, base: number, total = 100): DecisionSummary => ({
+      kind: "decision",
       items: total,
-      base: { accuracy: { right: base, total } },
-      tuned: { accuracy: { right: tuned, total } },
+      // As a decide job's summary has them: rows one side got right and the other wrong, and no judge scores.
+      tunedWins: Math.max(0, tuned - base),
+      baseWins: Math.max(0, base - tuned),
+      ties: total - Math.abs(tuned - base),
+      avgBaseScore: 0,
+      avgTunedScore: 0,
+      judgeCostUsd: 0,
+      labels: [{ id: "a", name: "Billing" }, { id: "b", name: "Bugs" }],
+      groups: 1,
+      devRows: 20,
+      testRows: total,
+      unscoredRows: 0,
+      tooLong: 0,
+      base: side(base, total),
+      tuned: side(tuned, total),
+      baselines: { commonest: { id: "a", accuracy: wilsonRate(Math.floor(total / 2), total) }, standIn: { accuracy: wilsonRate(Math.floor(total / 3), total) } },
     });
     const hw = verdict.wilsonHalfWidth(80, 100);
     assert.ok(hw > 0.07 && hw < 0.085, String(hw));
@@ -344,5 +373,10 @@ describe("the verdict", () => {
     assert.match(verdict.evalVerdict(d(80, 75)).words, /isn't clearly better/);
     assert.equal(verdict.evalVerdict({ ...d(80, 60), tuned: null }).passed, false);
     assert.equal(verdict.evalVerdict(d(7, 0, 7)).passed, false, "under 8 test rows");
+    // Its EvalSummary fields would pass the chat rule's counts, but a decision run is never read by them.
+    assert.equal(verdict.evalVerdict(d(80, 75)).passed, false, "5 points over base is inside the half-width");
+    // The real Wilson interval tg-decide saves agrees with the verdict's own half-width.
+    const saved = wilsonRate(80, 100);
+    assert.ok(Math.abs((saved.high - saved.low) / 2 - hw) < 1e-9);
   });
 });

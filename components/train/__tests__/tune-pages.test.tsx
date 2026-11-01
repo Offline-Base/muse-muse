@@ -1,7 +1,7 @@
 /**
  * The new fine-tune pages, server-rendered outside Next with the viewer and the run's reads faked: /fine-tuning/new
  * (the one box, the Training setup, the honest cost line) and /fine-tuning/runs/{id} (the room for a run that writes,
- * waits with Ready to train, is ready with its verdict, or failed). With TUNE_COMPOSER off both are a 404 for everyone;
+ * waits with Start training, is ready with its verdict, or failed). With TUNE_COMPOSER off both are a 404 for everyone;
  * on, non-admins go to /fine-tuning and its read-only Lab. Also the pieces they're built from: Composer's new props,
  * SetupPanel's rows, the training plan on the plan card, Where it runs, and the composer's error sentences. Made-up data.
  *
@@ -220,7 +220,7 @@ describe("the new fine-tune pages", { skip: canMock ? false : "needs --experimen
       assert.match(await open(newPage), /writes about 300 examples/);
     });
 
-    it("a waiting run's room has the plan card building and Ready to train, which opens the full form until U3", async () => {
+    it("a waiting run's room has the plan card building and Start training, with the full form a small link", async () => {
       const html = await open(runPage, { id: DS });
       clean(html);
       assert.match(html, /<h1 class="chat-title-chip">A made-up bakery&#x27;s counter helper<\/h1>/);
@@ -228,7 +228,8 @@ describe("the new fine-tune pages", { skip: canMock ? false : "needs --experimen
       assert.match(html, /<div class="plan-card" data-art="building">/);
       assert.match(html, /<h3>How it&#x27;s made<\/h3><ol><li>Muse Wonder writes 200 examples, and keeps 20 aside to score it\.<\/li>/);
       assert.match(html, /The examples and the scoring are estimates: what Muse Wonder costs per example hasn&#x27;t been measured yet\./);
-      assert.match(html, new RegExp(`<div class="row-actions" data-u3="ready-to-train"><a class="btn btn-primary" href="/fine-tuning\\?dataset=${DS}#new-job">Ready to train`));
+      assert.match(html, /<div class="row-actions"><button type="button" class="btn btn-primary" aria-busy="false">Start training<\/button><\/div>/);
+      assert.match(html, new RegExp(`<a href="/fine-tuning\\?dataset=${DS}#new-job">Use the full form</a>`));
       assert.doesNotMatch(html, /class="room-working"/, "nothing runs while it waits on a person");
     });
 
@@ -239,7 +240,7 @@ describe("the new fine-tune pages", { skip: canMock ? false : "needs --experimen
       assert.match(html, /<li class="room-working">[\s\S]*Writing examples[\s\S]*Muse Wonder has written 84 of 200\./);
       assert.match(html, /\$1\.40 so far/);
       assert.match(html, /aria-controls="tune-steps-panel">Show steps/);
-      assert.doesNotMatch(html, /Ready to train/);
+      assert.doesNotMatch(html, /Start training/);
     });
 
     it("a scored run is ready with the pair, the verdict, the eval results and where it runs", async () => {

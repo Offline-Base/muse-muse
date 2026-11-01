@@ -4,7 +4,8 @@
  * PlanView keeps the card as it was) and /fine-tuning render byte for byte
  * as they did before the composer's props, SetupPanel's rows and PlanView were added. Each render's SHA-256 and length
  * were taken from the code before those edits (fixtures/tune-flag-off.json) and every render must match them, with the
- * flag off and on, since none of these read it. The clock is frozen, so dates render the same. Made-up data only.
+ * flag off and on, since none of these read it but /fine-tuning, whose header gets New with the flag on (and nothing
+ * else: with that taken out it matches too). The clock is frozen, so dates render the same. Made-up data only.
  *
  *   npx tsx --test --experimental-test-module-mocks components/train/__tests__/tune-flag-off.test.tsx
  *
@@ -222,6 +223,17 @@ describe("with TUNE_COMPOSER off", { skip: canMock ? false : "needs --experiment
     assert.deepEqual(Object.keys(off), Object.keys(golden));
     for (const name of Object.keys(golden)) assert.deepEqual(off[name], golden[name], `${name} changed with the flag off`);
     process.env.TUNE_COMPOSER = "1";
-    for (const [name, fn] of renders) assert.deepEqual(sha(await fn()), golden[name], `${name} reads the flag`);
+    for (const [name, fn] of renders) {
+      let page = await fn();
+      if (name === "/fine-tuning: admin") {
+        // The one thing the flag adds to the lab page: the header's New, the primary button, before New dataset (with
+        // New job an outline button beside it). Without those it is the page as it was.
+        const added = /<a class="btn btn-primary" href="\/fine-tuning\/new">[\s\S]*?New<\/a>/;
+        assert.match(page, added, "the header has New with the flag on");
+        assert.ok(page.indexOf('href="/fine-tuning/new"') < page.indexOf('href="#new-dataset"'), "New comes first");
+        page = page.replace(added, "").replace('class="btn btn-outline" href="#new-job"', 'class="btn btn-primary" href="#new-job"');
+      }
+      assert.deepEqual(sha(page), golden[name], `${name} reads the flag`);
+    }
   });
 });

@@ -13,7 +13,7 @@ import { GLIMMER_NAME } from "@/components/train/results";
 import { planCostText, planViewFromTrainPlan, upperFirst } from "@/components/train/room/plan";
 import { KEPT_PLAN_KEY } from "@/components/train/room/TrainRoom";
 import { usd } from "@/lib/format";
-import { NOTE_MAX, NOTE_MIN, planCost, planMaxUsd, planSettings, TUNE_MAX_EXAMPLES, TUNE_MIN_EXAMPLES } from "@/lib/train/tune/cost";
+import { maxStepsFor, NOTE_MAX, NOTE_MIN, planCost, planMaxUsd, planSettings, TUNE_MAX_EXAMPLES, TUNE_MIN_EXAMPLES, TUNE_MIN_STEPS, TUNE_STEPS } from "@/lib/train/tune/cost";
 import { EXAMPLE_ACCEPT, EXAMPLE_FILE_MAX_BYTES, EXAMPLE_ROWS_MAX, parseExamples, planRows, splitNote } from "@/lib/train/tune/examples";
 import type { ExampleRow, TrainPlan } from "@/lib/train/tune/types";
 
@@ -57,6 +57,11 @@ export type Phase =
 /** Whether Advanced's number is one a run may ask for (40 to 1000). */
 function examplesOk(n: number): boolean {
   return Number.isInteger(n) && n >= TUNE_MIN_EXAMPLES && n <= TUNE_MAX_EXAMPLES;
+}
+
+/** Whether Advanced's training steps are ones the run may ask for: 10 to as many as fit in its time limit (maxStepsFor). */
+function stepsOk(n: number, max: number): boolean {
+  return Number.isInteger(n) && n >= TUNE_MIN_STEPS && n <= max;
 }
 
 /** What the composer says when a route refuses, from its status and code. */
@@ -123,6 +128,7 @@ export function TrainComposer({ defaultExamples, ceilings }: { defaultExamples: 
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>({ at: "compose" });
   const [examples, setExamples] = useState(defaultExamples);
+  const [steps, setSteps] = useState(TUNE_STEPS);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
 
@@ -132,6 +138,7 @@ export function TrainComposer({ defaultExamples, ceilings }: { defaultExamples: 
     if (kept?.at === "plan") {
       setPhase(kept);
       setExamples(kept.plan.settings.examples);
+      setSteps(kept.plan.settings.steps);
     }
   }, []);
 
@@ -178,6 +185,7 @@ export function TrainComposer({ defaultExamples, ceilings }: { defaultExamples: 
     }
     keep(PLAN_KEY, { note: raw, files: names, plan });
     setExamples(plan.settings.examples);
+    setSteps(plan.settings.steps);
     setPhase({ at: "plan", note: raw, files: names, plan });
     return null;
   }
@@ -190,7 +198,7 @@ export function TrainComposer({ defaultExamples, ceilings }: { defaultExamples: 
       const res = await fetch("/api/train/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ plan, settings: { examples } }),
+        body: JSON.stringify({ plan, settings: { examples, steps } }),
       });
       const data = (await res.json().catch(() => null)) as { runId?: string; href?: string } | null;
       if (res.status === 201 && data?.runId && data.href) {
@@ -247,7 +255,7 @@ export function TrainComposer({ defaultExamples, ceilings }: { defaultExamples: 
             (the GPU is a hard limit; Meta&apos;s part is an estimate).
           </p>
         </div>
-        <SetupPanel title="Training setup" rows={rows} note="Set by the platform for every run. Advanced on the plan changes the examples." />
+        <SetupPanel title="Training setup" rows={rows} note="Set by the platform for every run. Advanced on the plan changes the examples and the training steps." />
       </div>
 
       {phase.at !== "compose" ? (
@@ -255,6 +263,8 @@ export function TrainComposer({ defaultExamples, ceilings }: { defaultExamples: 
           phase={phase}
           examples={examples}
           onExamples={setExamples}
+          steps={steps}
+          onSteps={setSteps}
           ceilings={ceilings}
           starting={starting}
           startError={startError}
@@ -275,6 +285,8 @@ export function PlanStep({
   phase,
   examples,
   onExamples,
+  steps = TUNE_STEPS,
+  onSteps = () => {},
   ceilings,
   starting,
   startError,
@@ -285,6 +297,9 @@ export function PlanStep({
   /** Advanced's number of examples, which the card prices. */
   examples: number;
   onExamples: (n: number) => void;
+  /** Advanced's training steps, which the card prices and times. */
+  steps?: number;
+  onSteps?: (n: number) => void;
   ceilings: { maxMinutes: number; maxUsd: number };
   starting: boolean;
   startError: string | null;
@@ -292,7 +307,10 @@ export function PlanStep({
   onChange: () => void;
 }) {
   const countId = useId();
-  const shown = phase.at === "plan" ? { ...phase.plan, settings: planSettings(examples, ceilings) } : null;
+  const stepsId = useId();
+  const stepsMax = maxStepsFor(planSettings(examples, ceilings));
+  const stepsGood = stepsOk(steps, stepsMax);
+  const shown = phase.at === "plan" ? { ...phase.plan, settings: planSettings(examples, ceilings, stepsGood ? steps : TUNE_STEPS) } : null;
   const shownView = shown ? planViewFromTrainPlan({ ...shown, cost: planCost(shown.settings) }) : null;
   const countOk = examplesOk(examples);
   return (
@@ -329,8 +347,11 @@ export function PlanStep({
                 running
                 more={
                   shown.kind === "decision" ? (
-                    // tg-decide's decision models aren't on this branch yet: say so, and link its card once it lands.
-                    <span className="muted">It picks one of a few labels. Decision models are coming; Start trains it as a chat model.</span>
+                    // tg-decide's decision models train on a person's labeled rows, from their own card on the lab page.
+                    <span className="muted">
+                      It picks one of a few labels. Start trains it as a chat model; to train a decision model on your own labeled rows,{" "}
+                      <Link href="/fine-tuning#new-decision-dataset">make a decision dataset</Link>.
+                    </span>
                   ) : null
                 }
                 actions={
@@ -342,7 +363,7 @@ export function PlanStep({
                       </p>
                     ) : null}
                     <div className="row-actions">
-                      <button type="button" className="btn btn-primary" onClick={() => onStart(phase.plan)} disabled={starting || !countOk} aria-busy={starting}>
+                      <button type="button" className="btn btn-primary" onClick={() => onStart(phase.plan)} disabled={starting || !countOk || !stepsGood} aria-busy={starting}>
                         {starting ? <span className="spinner" aria-hidden /> : null}
                         {starting ? "Starting" : "Start"}
                       </button>
@@ -372,8 +393,27 @@ export function PlanStep({
                           {countOk ? planCostText(planCost(shown.settings)) : `Pick ${TUNE_MIN_EXAMPLES} to ${TUNE_MAX_EXAMPLES} examples.`}
                         </span>
                       </div>
+                      <div className="field">
+                        <label htmlFor={stepsId}>Training steps</label>
+                        <input
+                          id={stepsId}
+                          type="number"
+                          inputMode="numeric"
+                          min={TUNE_MIN_STEPS}
+                          max={stepsMax}
+                          step={10}
+                          value={Number.isFinite(steps) ? steps : ""}
+                          onChange={(e) => onSteps(Math.floor(Number(e.target.value)))}
+                          disabled={starting}
+                        />
+                        <span className="field-hint">
+                          {stepsGood
+                            ? `Each step trains on 4 examples. ${upperFirst(roughMinutes(planCost(shown.settings).trainMinutes))} on the GPU, within its ${shown.settings.maxMinutes}-minute limit.`
+                            : `Pick ${TUNE_MIN_STEPS} to ${stepsMax} steps: more don't fit in the run's ${shown.settings.maxMinutes}-minute limit.`}
+                        </span>
+                      </div>
                       <p className="muted small">
-                        Training steps: {shown.settings.steps}. To change them, the GPU or the limits, use the full form once the examples are ready, or{" "}
+                        To change the GPU or the limits, use the full form once the examples are ready, or{" "}
                         <Link href="/fine-tuning#new-dataset">make the dataset on the full form</Link> now.
                       </p>
                     </details>
