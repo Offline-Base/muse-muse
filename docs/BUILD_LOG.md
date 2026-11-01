@@ -1183,6 +1183,51 @@ because the sidebar showed a real account.
   equals quantize.ts's BASE_TENSORS_SHA256 (526660e0...) exactly, so the recipe's merge checks hold on r30b unchanged.
 - Plan once the 4-bit repo is public: switch MODEL on a branch, one dry run (about $0.13), one real run on an existing
   made-up dataset (about $1.60 to $2.10), inside the owner's $8 test budget. General launches them.
+### 22:16 Muse gadget commands output built on tg-gadget-out (ca384e2, 2e6bff8, 041ee67, docs in the next commit)
+
+- The owner's Oct 31 OK (`_plan/gadget-sdk.md`, item 2): a sixth product output, a zip at `/p/<slug>/get/gadget` with one
+  `/etc/musegadget/commands.d` file per public action for the person's own Muse gadget (Meta's Linux Gadget SDK), a new
+  small runner (stdin JSON in, POST to the live action, one JSON object out, the reason as one stderr line), install.sh
+  and uninstall.sh (root-owned, 0644/0755, refuse without sudo, never touch the SDK token, restart `musegadget`) and a
+  README with the data flow and Meta's terms. A new runner instead of the CLI: the gadget's stdin and stderr contract
+  differs from a terminal's, and a file root runs then holds no manifest text. A Muse gadget tab behind
+  `PRODUCT_OUTPUTS`, the native downloads' rate limits, and a Prove it check by machine with no gadget (SDK rules, bash
+  -n, a dry run under a made-up root, then the runner against the live product with the CLI's budget rule).
+- Facts taken from the SDK's README and its command loader (read only, nothing copied): name pattern
+  `[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+` up to 64 characters, `timeout_ms` 1 to 600,000, 5 s added at registration, 64 KiB a
+  file, unknown keys refused, each parameter exactly `{type, description}`, 96 KiB of output kept.
+- Not done: no real gadget, pairing or token was used, and nothing was installed on a device. Manifests have no
+  `timeoutMs` today, so every command waits the SDK's default 30 s; a slower action will time out on a gadget. Not
+  pushed or deployed.
+- Checks: tsc clean; outputs, product, native, prove, MCP and sandbox tests 847 of 847 pass.
+
+### 22:35 Muse gadget output: review fixes on tg-gadget-out (4a05250, 9ad43e4)
+
+- Review verdict: approve with minor fixes. Fixed: prefixes are now one-to-one (`system` and `mm-system` shared
+  `mm_system`, so one pack could replace another's runner and delete its commands); a changed prefix is now
+  `mm_<slug, cut>_<hash of the slug>`, and plain ones never start with `mm_`. install.sh and uninstall.sh keep the slug
+  in `pack.txt` and refuse another product's pack, and install.sh refuses a commands folder root doesn't own.
+- Prove it now checks the sample as the SDK checks a call (required fields, JSON types, an optional null left out)
+  before running the runner, fails the pack when the product took an input the gadget would refuse, and waits at most
+  130 s for the gadget call. The Get it tab says Node 18+ is needed, recommends `--run-as`, says commands stop after
+  30 s, and words Meta's terms as the token's personal, non-commercial use with a link. Code comments cite the SDK's
+  README and its command loader.
+- Kept as is: the 30 s default when a manifest has no `timeoutMs`, as the task set it; raising it to the CLI's 120 s or
+  adding `timeoutMs` to the manifest schema is the owner's call.
+- Checks: tsc clean; the whole root suite (282 files) 4,798 tests, 4,790 pass, 0 fail, 8 skipped (no MODEL_API_KEY).
+  Screenshots of the Get it panel's Muse gadget tab at 1440 light and dark and 390 light, from a local PGlite product
+  with two public actions and one owner action (left out of the pack). Not pushed or deployed.
+
+### 22:43 Muse gadget commands output landed on tuned-model-options
+
+- Merged tg-gadget-out (wf_0a28bc2a-87e). Each shipped product gets <slug>-muse-gadget.zip at /p/<slug>/get/gadget and a
+  "Muse gadget" tab in Get it, behind PRODUCT_OUTPUTS: one command file per public action for Meta's Linux Gadget SDK,
+  a small runner that POSTs to the live product, guarded install and uninstall scripts, and a README on the person's own
+  SDK, account and token and Meta's terms. Prove it checks the pack by machine (the SDK's rules, a dry install, the
+  runner on a sample input). Never run on a real gadget; Muse Muse never holds a gadget token.
+- Open for the owner: commands stop after 30 s (the SDK's default) while the CLI waits 120 s, so an action that takes 30
+  to 120 s works from the CLI but times out on a gadget.
+  ![Muse gadget tab](log/shots/2026-10-31/gadget-tab-1440.png)
 
 ## Gaps
 

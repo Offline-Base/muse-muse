@@ -256,7 +256,7 @@ export async function proveCollectChecksStep(ctx: ProveCtx, stopped: ProveStoppe
   const spec = specText ? (JSON.parse(specText) as ProveRunSpec) : null;
   const summaries: ProveChecksEnd["summaries"] = {};
   const passed: ProvedOutput[] = [];
-  for (const output of ["mcp", "cli", "claude_plugin"] as const) {
+  for (const output of ["mcp", "cli", "claude_plugin", "gadget"] as const) {
     const result = results?.outputs[output];
     const said = describeResult(output, result);
     const final = stopped && !result?.ok ? { ...said, state: "failed" as const, detail: stoppedDetail(stopped) } : said;

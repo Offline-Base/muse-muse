@@ -20,7 +20,13 @@ const render = (slots: GetItSlots) => renderToString(createElement(GetItPanel, {
 describe("GetItPanel", () => {
   it("has a slot for every target and every product output, and no others", () => {
     assert.deepEqual([...GET_IT_SLOTS], [...TARGETS, ...PRODUCT_OUTPUTS]);
-    assert.deepEqual([...PRODUCT_OUTPUTS], ["mcp", "cli", "skill", "claude_plugin", "chatgpt"]);
+    assert.deepEqual([...PRODUCT_OUTPUTS], ["mcp", "cli", "skill", "claude_plugin", "chatgpt", "gadget"]);
+  });
+
+  it("names the gadget tab Muse gadget", () => {
+    const html = render({ mcp: "MCP steps", gadget: "Gadget steps" });
+    const tabs = [...html.matchAll(/role="tab"[^>]*>([^<]+)</g)].map((m) => m[1]);
+    assert.deepEqual(tabs, ["MCP", "Muse gadget"]);
   });
 
   it("renders nothing at all when no slot has content", () => {
