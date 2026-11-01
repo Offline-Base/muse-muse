@@ -1239,6 +1239,16 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
     - IQ1_M: 3 / 5, 37 / 38;
     - iq1s-io-lowest: 17 / 16, 36 / 25. It loops more than IQ1_S's 9 / 10.
   - Cards updated: merged c0124123, -GGUF 502f30af, -LoRA c99be2d3.
+- 11:20 PM: r30b tool and cutoff tests finished (run5, Q4_K_M, graded by scratchpad tct/grade_r30b.sh).
+  - Tools, 40 items:
+    - medium strength: right function 30/30, args 30 (28 exact), no call 10/10, the same as base;
+    - low strength: 28/30, args 28 (27 exact), no call 10/10;
+    - no malformed calls.
+  - Cutoff line: default, kc 2026-10-29 or the training system prompt barely matters. Probes right 153 / 154 / 148 of
+    500; dev honest 101 / 102 / 104 of 120.
+  - Base on the same test: probes 90 / 94 / 95, dev honest 27 / 19 / 19.
+  - Cards updated, and the "tool calls" and "system line" pending items are closed: merged 61ac54ee, -GGUF 99daabe1,
+    -LoRA 659e5bd1.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
