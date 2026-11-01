@@ -29,7 +29,7 @@ export interface TrustGatewayDeps {
 
 /**
  * 403 product_disabled for a taken-down product or a banned owner's, and, with TRUST_SIGNED_IN_CAPS, 429
- * budget_exceeded for a live token whose signed-in owner's products have spent TRUST_BUILDER_DAILY_USD today. Admins
+ * budget_exceeded for a live or Muse Code session token whose signed-in owner's products have spent TRUST_BUILDER_DAILY_USD today. Admins
  * and the shared guest account have no builder cap: the guest's products are each held to their own daily budget and
  * the platform's cap, as today. Build tokens are left to their build's own budget, and checkBuildAllowed stops new
  * builds once the builder is over. Null lets the call go on.
@@ -40,7 +40,7 @@ export async function trustCheck(token: Pick<GatewayToken, "productId" | "scope"
   if (p.takenDownAt || p.ownerBannedAt) {
     return gatewayError(403, "permission_error", "product_disabled", "This product was taken down on Muse Muse.", { retry: false });
   }
-  if (!deps.signedInCaps || token.scope !== "live") return null;
+  if (!deps.signedInCaps || (token.scope !== "live" && (token.scope as string) !== "code_session")) return null;
   const tier = builderTier({ email: p.ownerEmail, isAdmin: p.ownerIsAdmin && deps.adminEmails.includes(p.ownerEmail) });
   if (tier !== "builder") return null;
   const cap = deps.builderDailyUsd;

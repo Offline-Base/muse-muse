@@ -167,3 +167,78 @@ export function codeSessionRefusal(endpoint: GatewayEndpoint, model: string | nu
   }
   return null;
 }
+
+/** Tool types a session may send: Muse Code's own, run in its sandbox. Meta runs no tool for a session. */
+const SESSION_TOOL_TYPES = new Set(["function", "custom", "namespace"]);
+/** Part fields that make Meta fetch something, or read a file stored under the platform's key. */
+const REMOTE_FIELDS = new Set(["file_url", "image_url", "video_url", "audio_url"]);
+const MEDIA_PART = /^input_(image|file|video|audio)$/;
+const WALK_DEPTH = 64;
+
+function sessionToolProblem(tool: unknown, depth = 0): string | null {
+  if (depth > WALK_DEPTH) return "tools nested too deep";
+  const type = (tool as { type?: unknown } | null)?.type;
+  if (typeof type !== "string" || !SESSION_TOOL_TYPES.has(type)) return `the tool type ${JSON.stringify(type ?? null).slice(0, 60)}`;
+  const inner = (tool as { tools?: unknown }).tools;
+  if (type === "namespace" && Array.isArray(inner)) {
+    for (const t of inner) {
+      const problem = sessionToolProblem(t, depth + 1);
+      if (problem) return problem;
+    }
+  }
+  return null;
+}
+
+const notInline = (url: unknown): boolean => typeof url === "string" && url !== "" && !url.startsWith("data:");
+
+/** What in a body's `input` points outside it. Plain text is never read as a link: a task may talk about URLs. */
+function remoteInput(value: unknown, depth = 0): string | null {
+  if (depth > WALK_DEPTH) return "input nested too deep";
+  if (Array.isArray(value)) {
+    for (const v of value) {
+      const problem = remoteInput(v, depth + 1);
+      if (problem) return problem;
+    }
+    return null;
+  }
+  if (!value || typeof value !== "object") return null;
+  const part = value as Record<string, unknown>;
+  if (part.type === "item_reference") return "a stored item";
+  for (const [key, field] of Object.entries(part)) {
+    if (key === "file_id" && field) return "a stored file";
+    if (REMOTE_FIELDS.has(key) && notInline(field && typeof field === "object" ? (field as { url?: unknown }).url : field)) return `a remote ${key}`;
+    if (key === "url" && typeof part.type === "string" && MEDIA_PART.test(part.type) && notInline(field)) return `a remote ${part.type}`;
+    const problem = remoteInput(field, depth + 1);
+    if (problem) return problem;
+  }
+  return null;
+}
+
+/**
+ * Why a session token's body is refused, or null. The firewall is a session's only boundary, and the agent's shell can
+ * read the token and call the one route it allows, so this route must not reach anywhere else for it. So no tool Meta
+ * runs itself (web search, tool search, MCP and the like), no media by URL, and nothing stored under the platform's one
+ * key (previous responses, conversations, files, prompts). The spike saw none of these in Muse Code's bodies (a
+ * `namespace` of its own tools, `store: false`, inline text and images).
+ */
+export function codeSessionBodyRefusal(json: Record<string, unknown>): { status: number; code: string; message: string } | null {
+  const refuse = (what: string) => ({ status: 400, code: "session_body", message: `A Muse Code session can't use ${what} here: it runs with no way out of its workspace but this route.` });
+  const set = (v: unknown) => v !== undefined && v !== null && v !== false && v !== "";
+  for (const field of ["background", "previous_response_id", "conversation", "prompt"]) if (set(json[field])) return refuse(field);
+  if (json.store === true) return refuse("store");
+  if (json.tools !== undefined && json.tools !== null) {
+    if (!Array.isArray(json.tools)) return refuse("tools in that shape");
+    for (const tool of json.tools) {
+      const problem = sessionToolProblem(tool);
+      if (problem) return refuse(problem);
+    }
+  }
+  const remote = remoteInput(json.input);
+  return remote ? refuse(remote) : null;
+}
+
+/** A session's body as Meta gets it: never stored, and with no name for the person but the one the platform holds. */
+export function codeSessionBody(json: Record<string, unknown>): Record<string, unknown> {
+  const { safety_identifier: _named, user: _alsoNamed, ...rest } = json;
+  return { ...rest, store: false };
+}

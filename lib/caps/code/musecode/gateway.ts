@@ -44,5 +44,5 @@ export async function findSessionGatewayToken(raw: string): Promise<GatewayToken
   if (!parent) return null;
   const [total, today, family] = await Promise.all([sessionSpendUsd(row.id), spentToday(row.id), familySpendToday(session.parentTokenId!)]);
   const left = sessionLeftUsd({ sessionBudgetUsd: row.dailyBudgetUsd, sessionSpentUsd: total, parentBudgetUsd: parent.dailyBudgetUsd, familySpentTodayUsd: family });
-  return { id: row.id, productId: row.productId, scope: row.scope, allowedModels: row.allowedModels, dailyBudgetUsd: today + left };
+  return { id: row.id, productId: row.productId, scope: row.scope, allowedModels: row.allowedModels, dailyBudgetUsd: today + left, sessionSubject: session.subjectKey ?? session.id };
 }
