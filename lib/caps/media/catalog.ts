@@ -1,7 +1,7 @@
 import type { CapCatalogEntry } from "@/lib/caps/catalog";
 import { MEDIA_PARTS, type MediaPart } from "@/lib/caps/media/brief";
 import { MEDIA_LIMITS } from "@/lib/caps/media/limits";
-import { env } from "@/lib/env";
+import { mediaPartsFromEnv } from "@/lib/caps/media/parts";
 
 /**
  * The brief writer's catalog section for the media cap (docs/CAPABILITIES.md, section 14), naming only the parts whose
@@ -23,9 +23,9 @@ const LINE: Record<MediaPart, string> = {
   samTiling: `  samTiling: SAM 3.1 returns at most ${MEDIA_LIMITS.samObjectsPerCall} objects a call, so a photo is split into up to ${MEDIA_LIMITS.samTilesMax} overlapping tiles (one call each, about $0.04 for a photo) and the matches are merged, for counts of crowds, birds, cells or cars. A long clip is sampled at ${MEDIA_LIMITS.samSampleFps} frames a second and sent in chunks, at most ${MEDIA_LIMITS.samVideoFramesMax} frames a run (about $0.18). Counts are estimates.`,
 };
 
-/** The parts whose flags are on, in plan order. */
+/** The parts whose flags are on, in plan order (env.mediaParts reads the same). */
 export function mediaPartsOn(): MediaPart[] {
-  return env.mediaParts.filter((p): p is MediaPart => (MEDIA_PARTS as readonly string[]).includes(p));
+  return mediaPartsFromEnv().filter((p): p is MediaPart => (MEDIA_PARTS as readonly string[]).includes(p));
 }
 
 export function mediaCatalog(parts: readonly MediaPart[]): CapCatalogEntry {

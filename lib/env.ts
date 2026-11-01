@@ -1,5 +1,6 @@
 import { TARGETS, type TargetId } from "@/lib/brief/schema";
 import { CAP_FLAG, CAP_IDS, CAP_NEEDS_BUILDER, CAP_READY, type CapId } from "@/lib/caps/ids";
+import { mediaPartsFromEnv, type MediaPartId } from "@/lib/caps/media/parts";
 import { databaseChoice, isPreview, previewHasOwnDatabase } from "@/lib/db/url";
 import { DRIVE_CARD_TERMS_VERSION, DRIVE_TERMS_DEFAULT_VERSION } from "@/lib/drive/terms";
 import { parseNativeTargets } from "@/lib/native/targets";
@@ -792,14 +793,8 @@ export const env = {
    * through enabledCaps above: MEDIA_SPEECH (speech in the page), MEDIA_VIDEO (video from pictures), MEDIA_MUSIC (MIDI)
    * and MEDIA_SAM_TILING (SAM past 16 objects, and long clips in chunks). The writer offers only the parts that are on.
    */
-  get mediaParts(): Array<"speech" | "video" | "music" | "samTiling"> {
-    const parts = [
-      ["speech", "MEDIA_SPEECH"],
-      ["video", "MEDIA_VIDEO"],
-      ["music", "MEDIA_MUSIC"],
-      ["samTiling", "MEDIA_SAM_TILING"],
-    ] as const;
-    return parts.filter(([, name]) => flag(name)).map(([part]) => part);
+  get mediaParts(): MediaPartId[] {
+    return mediaPartsFromEnv();
   },
 
   // ---------- Wave 3, unit 10: runtime (docs/CAPABILITIES.md) ----------
