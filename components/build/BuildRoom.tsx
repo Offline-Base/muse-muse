@@ -32,6 +32,8 @@ export interface BuildRoomProps {
   tokens: { input: number; cached: number; output: number };
   /** The viewer owns the product or is an admin. */
   canRefine: boolean;
+  /** Only this browser's edit pass lets the viewer refine (GUEST_EDITS), so the room says what ends that. */
+  editsByPass?: boolean;
   /** The viewer may steer the build while Muse Code runs: owner powers as for canRefine, with steering switched on. */
   canSteer?: boolean;
   signedIn: boolean;
@@ -525,12 +527,15 @@ export function BuildRoom(props: BuildRoomProps) {
               floating
               autoFocus={props.focusRefine}
             />
+            {props.editsByPass ? (
+              <p className="muted small center">Guests share one account, so only this browser can change this product. Clearing its cookies ends that.</p>
+            ) : null}
           </div>
         ) : refine.elsewhere ? (
           <p className="muted center room-elsewhere">
             {refine.elsewhere.running ? "A change to this product is building." : "This isn't the current version."}{" "}
-            <Link href={`/b/${refine.elsewhere.buildId}`}>
-              {refine.elsewhere.running ? "Open it to follow along." : "Open the current version to make more changes."}
+            <Link href={refine.elsewhere.running ? `/b/${refine.elsewhere.buildId}` : `/b/${refine.elsewhere.buildId}?refine=1#refine`}>
+              {refine.elsewhere.running ? "Open it to follow along." : "Keep editing the current version."}
             </Link>
           </p>
         ) : null}

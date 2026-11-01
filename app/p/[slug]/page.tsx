@@ -22,6 +22,7 @@ import { StatusControl } from "@/components/product/StatusControl";
 import { EmptyCard, ExternalLink, NotConnected, StatusPill } from "@/components/ui";
 import { FIT_LABEL, compact, connectorActions, modelLabel, plural, relativeTime, statusLabel, truncate, usd } from "@/lib/format";
 import { canActAsOwner } from "@/lib/auth";
+import { canEditProduct } from "@/lib/edit-pass";
 import type { Brief } from "@/lib/brief/schema";
 import { env } from "@/lib/env";
 import { downloadCounts, readProductNative } from "@/lib/native/queries";
@@ -71,6 +72,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const manifest = product.manifest;
   const shipped = product.status === "live" || product.status === "partial";
   const isOwner = canActAsOwner(user, product.ownerId);
+  const canEdit = await canEditProduct(user, product);
   const rebuild = rebuildRef(product.rebuildOf);
   const highlights = buildHighlights(events, latestBuild);
   const models: Array<{ id: string; usedFor: string }> = manifest?.models?.length
@@ -122,10 +124,10 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
               <span>Code</span>
             </Link>
           ) : null}
-          {isOwner && shipped && refineHref ? (
+          {canEdit && shipped && refineHref ? (
             <Link className="btn btn-primary" href={refineHref}>
-              <Icon name="sparkle" size={18} />
-              <span>Refine</span>
+              <Icon name="edit" size={18} />
+              <span>Keep editing</span>
             </Link>
           ) : null}
           {/* Wave 3, unit 9: an owner-only Muse Code product needs a way in. A plain link: each visit signs a one-time code, so it's never prefetched. */}
@@ -406,15 +408,15 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             </section>
           ) : null}
 
-          {isOwner && shipped && refineHref ? (
+          {canEdit && shipped && refineHref ? (
             <section className="panel-section">
-              <h2 className="panel-label">Refine</h2>
+              <h2 className="panel-label">Keep editing</h2>
               <p className="muted small">
                 Ask for a change. Muse Code resumes the same session, checks it again and redeploys.
               </p>
               <Link className="btn btn-primary" href={refineHref}>
-                <Icon name="sparkle" size={18} />
-                Refine this product
+                <Icon name="edit" size={18} />
+                Keep editing this product
               </Link>
             </section>
           ) : null}

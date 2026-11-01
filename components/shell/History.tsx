@@ -92,7 +92,7 @@ export function History({ onNavigate }: { onNavigate?: () => void }) {
       {closed ? null : (
         <ul className="nav-group">
           {rows.map((row) => (
-            <li key={row.id}>
+            <li key={row.id} className={row.editId ? "history-item" : undefined}>
               <Link
                 href={`/b/${row.id}`}
                 className="nav-link history-row"
@@ -102,6 +102,17 @@ export function History({ onNavigate }: { onNavigate?: () => void }) {
               >
                 <span>{row.title}</span>
               </Link>
+              {row.editId ? (
+                <Link
+                  href={`/b/${row.editId}?refine=1#refine`}
+                  className="history-edit"
+                  aria-label={`Keep editing ${row.title}`}
+                  title="Keep editing"
+                  onClick={onNavigate}
+                >
+                  <Icon name="edit" size={16} />
+                </Link>
+              ) : null}
             </li>
           ))}
         </ul>

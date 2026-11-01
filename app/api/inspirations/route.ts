@@ -1,5 +1,6 @@
 import { start } from "workflow/api";
 import { requireUser } from "@/lib/auth";
+import { grantEditPass } from "@/lib/edit-pass";
 import { env } from "@/lib/env";
 import { errorJson, readJson, route } from "@/lib/http";
 import { requestedTargetsFrom } from "@/lib/native/targets";
@@ -56,5 +57,6 @@ export const POST = route(async (req: Request) => {
     return errorJson(500, "start_failed");
   }
   await attachRun(buildId, runId).catch((err) => console.error("[inspirations] attachRun", err));
+  await grantEditPass(user, buildId);
   return Response.json({ buildId }, { status: 201 });
 });

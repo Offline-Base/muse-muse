@@ -56,6 +56,7 @@ export interface InspirationView {
 /** One row in a build list: /builds, the build room's History menu, the product page. */
 export interface BuildSummary {
   id: string;
+  productId?: string | null;
   kind: "build" | "refine";
   status: BuildStatus;
   startedAt: string;

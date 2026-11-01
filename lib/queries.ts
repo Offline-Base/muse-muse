@@ -195,6 +195,7 @@ export async function getBuildRoom(buildId: string): Promise<BuildRoomData | nul
 
 const summaryColumns = {
   id: schema.builds.id,
+  productId: schema.builds.productId,
   kind: schema.builds.kind,
   status: schema.builds.status,
   startedAt: schema.builds.startedAt,
@@ -211,6 +212,7 @@ const summaryColumns = {
 
 type SummaryRow = {
   id: string;
+  productId: string | null;
   kind: "build" | "refine";
   status: BuildView["status"];
   startedAt: Date;
@@ -228,6 +230,7 @@ type SummaryRow = {
 function toSummary(r: SummaryRow): BuildSummary {
   return {
     id: r.id,
+    productId: r.productId,
     kind: r.kind,
     status: r.status,
     startedAt: r.startedAt.toISOString(),
