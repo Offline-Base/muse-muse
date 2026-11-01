@@ -1267,6 +1267,28 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   - The fact checker confirmed each answer against a public source and every quote word for word. It dropped salient-025
     over an unsupported detail.
   - Added above "What it is" on all three cards: merged 2216498b, -GGUF 457985c9, -LoRA 4fbb9181.
+- 11:40 PM: card-compare-section (wf_51c1132d-6dd) is on the cards after Reasoning: the hand-audited 5-model table and
+  its caveats.
+  - The "side-by-side benchmark: pending" bullet is removed.
+  - Added a limitation: one AI reviewer, not blind to the models, did the comparison reads.
+  - New heads: merged 34d63b48, -GGUF ae706b6e, -LoRA 558ce8e2.
+- 11:45 PM: card-highlights (wf_34dc9d7a-bbe) applied. Each card now opens with a Highlights table:
+  - headline events 69.1% against 26.0%;
+  - the 2,500 at 29.0% against 18.4%;
+  - honesty 44.7% against 26.3%, and after-cutoff 67.1% against 24.3%.
+
+  Bullets cover the 5-model comparison, old facts and reasoning kept, and the small files. A plain "still makes things
+  up" paragraph follows. The reasoning row "Old facts with reasoning off" is relabelled "Multi-step, reasoning off (40
+  of the 150)".
+- 11:45 PM: phone test of this release on Device Farm (Galaxy S25 12 GB, CPU, llama.cpp b11669, same kit as stage 2).
+  - IQ2_XXS: 1.89 tok/s, peak 7.65 GiB, 3/3.
+  - IQ1_S: 1.94 tok/s, 7.09 GiB, 3/3 (stage 2 got 2/3); GPU 1.59 tok/s.
+  - No loops, no thermal cut. 50.1 device minutes, $8.52; the event total is $15.47 of $40.
+  - Files came from the public Hub.
+  - Harness change in ~/muse-muse-devices lib/devices/subjects.ts, uncommitted on branch devices. Results are in
+    devices/results/devicefarm/samsung-galaxy-s25-12gb/r30b-*.
+  - The cards' On devices section now names this release's phone numbers. New heads: merged e2b33cce, -GGUF eeb63821,
+    -LoRA 703820b8.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
