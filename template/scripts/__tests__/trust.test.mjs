@@ -152,13 +152,26 @@ const post = async (url: string, next: string) => {
   const r = await POST(new Request(url, { method: "POST", body: new URLSearchParams({ next }) }));
   return { status: r.status, location: r.headers.get("location"), cookie: r.headers.get("set-cookie") };
 };
-console.log(JSON.stringify({ https: await post("https://bird-count.example/api/musemuse/age", "/results?photo=2"), http: await post("http://localhost:3100/api/musemuse/age", "//evil.example") }));
+// Each of these would leave the product once a browser follows the Location: a tab or newline is dropped, a backslash
+// reads as a slash, so "/<tab>/evil.example" becomes "//evil.example".
+const escapes = ["/\\t/evil.example", "/\\n/evil.example", "/\\r\\n/evil.example", "/\\\\evil.example", "/\\\\/evil.example", "/\\u0000/evil.example", "https://evil.example/", "///evil.example"];
+const where = {};
+for (const next of escapes) {
+  const r = await post("https://bird-count.example/api/musemuse/age", next);
+  where[JSON.stringify(next)] = { location: r.location, lands: new URL(r.location, "https://bird-count.example/api/musemuse/age").origin };
+}
+console.log(JSON.stringify({ https: await post("https://bird-count.example/api/musemuse/age", "/results?photo=2"), http: await post("http://localhost:3100/api/musemuse/age", "//evil.example"), where, inside: await post("https://bird-count.example/api/musemuse/age", "/a/../results#top") }));
 `);
     assert.equal(out.https.status, 303);
     assert.equal(out.https.location, "/results?photo=2");
     assert.match(out.https.cookie, /^mm_age=2026-10-31; Path=\/; Max-Age=31536000; HttpOnly; Secure; SameSite=None; Partitioned$/);
     assert.equal(out.http.location, "/");
     assert.match(out.http.cookie, /SameSite=Lax$/);
+    for (const [next, { location, lands }] of Object.entries(out.where)) {
+      assert.equal(location, "/", next);
+      assert.equal(lands, "https://bird-count.example", next);
+    }
+    assert.equal(out.inside.location, "/results#top", "a path inside the product is kept, tidied");
   });
 
   test("renders the footer, privacy, terms and age pages from the platform's files", () => {

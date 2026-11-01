@@ -55,8 +55,21 @@ export function geoBlocked(countries: readonly string[], get: (name: string) => 
   return countries.includes(country) || (/^[A-Z0-9]{1,3}$/.test(region) && countries.includes(`${country}-${region}`));
 }
 
-/** A path inside this product to go back to after the age gate, or "/". Never another site. */
+/**
+ * A path inside this product to go back to after the age gate, or "/". Never another site: a backslash or a control
+ * character is refused outright (browsers drop a tab or newline, so "/<tab>/evil.example" would become "//evil.example"),
+ * and what's left must resolve to this same site.
+ */
 export function safeNext(raw: string | null | undefined): string {
-  if (!raw || !raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/\\")) return "/";
-  return raw.slice(0, 500);
+  // eslint-disable-next-line no-control-regex
+  if (!raw || !raw.startsWith("/") || /[\u0000-\u001f\u007f\\]/.test(raw)) return "/";
+  const base = "https://same-site.invalid";
+  let url: URL;
+  try {
+    url = new URL(raw, base);
+  } catch {
+    return "/";
+  }
+  if (url.origin !== base) return "/";
+  return `${url.pathname}${url.search}${url.hash}`.slice(0, 500);
 }
