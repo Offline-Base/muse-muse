@@ -1056,6 +1056,31 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   NOTICE) and in docs/model-licenses/. Sent keys and sha256s to Muse Muse General and Muse Privacy. Workflow bnb4-r30b
   (wf_89ef3ed9-be9) is building the bnb-4bit copy on writer-1, to match the reference's quantization_config. Its
   verifier loads it, runs a LoRA forward and backward step, and does a sanity check.
+- 10:07 PM: -GGUF and the merged repo pushed, private. Both pushes had 0 refused URLs and 0 restarts, and each big file's
+  sha256 and size matched writer-1's on the Hub.
+  - -GGUF: commit 25602c91, with Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S (38.5 GB).
+  - Merged: commit c06e38cc, with 13 shards plus configs and the tokenizer (59.6 GB).
+
+  -GGUF got its NOTICE from before the fix (the fix landed a minute after the push read it). Re-pushed: commit 3d3c48cd,
+  1 file.
+- 10:08 PM: shrink bench: iq1s-io-lowest is 5.75 GB, with 43/600 new facts, old facts 35/40 and 68.1 tok/s decode. Now
+  quantizing iq2-io-lowest.
+- 10:10 PM: checked every file in the three repos against the release folders and writer-1. Small files were compared by
+  git blob id, big files by LFS sha256 and size. All match. A scan of the cards for internal hosts, paths, keys, emails and
+  partner names came back clean; the only flags are honest "pending" rows.
+- 10:11 PM: made the three repos public, per the owner's order: private first, then public once the release review
+  passed (model-release-prep's review, 10:05 PM). The repos are ungated. Checked without a token:
+  - the API reports private false;
+  - README, a merged shard and IQ1_S download (200 and 302).
+- 10:11 PM: stopped the B2 waiter (bpf18v4q3). It kept looping on train-1's address after train-1 was terminated.
+- 10:12 PM: writer-1 was at 98% (11 GB free), with the shrink bench quantizing iq2-io-lowest from r30b's local BF16 GGUF.
+  copy_out finished at 01:50 UTC. I removed the local r30b Q8_0 (29.6 GB) after an exact size match with the NFS copy and a
+  check that no process had it open: 37 GB free. The local BF16 GGUF stays until the shrink bench is done, since it's the
+  bench's input.
+- 10:13 PM: sent Muse Muse General the three repo ids and revisions, the 13 shard sizes and sha256s, and the tokenizer and
+  GGUF sha256s. Also sent the tensor note: 1,436 tensors with base's names and shapes, so General checks
+  BASE_TENSORS_SHA256 itself. Asked how the owner's test fine-tune should launch. The bnb-4bit copy is on writer-1 (5
+  shards, about 21 GB), and its load and LoRA step check is running.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
