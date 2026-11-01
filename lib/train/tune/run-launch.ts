@@ -75,6 +75,8 @@ export type RunLaunch =
 export function waitReasonFor(r: LaunchRefusal): TuneWaitReason | null {
   if (r.code === "no_capacity") return "gpu_busy";
   if (r.code === "too_many_active" || r.code === "demo_running") return "too_many_active";
+  // Backed out for another start at the same moment: it may fit next time. Any other gpu_limit ends the run.
+  if (r.code === "gpu_limit" && r.body?.raced === true) return "too_many_active";
   if (r.code === "daily_cap") return "daily_cap";
   if (r.code === "sweep_not_running") return "sweep_not_running";
   if (r.code === "lambda_unavailable") return "lambda_unavailable";

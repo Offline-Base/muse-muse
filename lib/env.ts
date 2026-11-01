@@ -329,6 +329,17 @@ export const env = {
   get trainJobMaxUsd() {
     return number("TRAIN_JOB_MAX_USD", 5);
   },
+  /**
+   * The most one person's Lambda GPU jobs may ever cost, in USD, counting running jobs at their full dollar limit. Not a
+   * daily amount: it never resets. 0 stops them. The shared guest account would be one person here, so one pool.
+   */
+  get trainUserLimitUsd(): number {
+    return dollars("TRAIN_USER_LIMIT_USD", 100);
+  },
+  /** The same across everyone: the most the platform's Lambda GPU jobs may ever cost, in USD. 0 stops them all. */
+  get trainTotalLimitUsd(): number {
+    return dollars("TRAIN_TOTAL_LIMIT_USD", 3000);
+  },
   get trainJobMaxMinutes() {
     return number("TRAIN_JOB_MAX_MINUTES", 120);
   },
@@ -982,6 +993,51 @@ export const env = {
   /** The longest a full build may run, in minutes. Held to 90 (the engine's wall) through 150, which stays clear of the 3-hour sweep. */
   get fullBuildWallMinutes(): number {
     return Math.min(150, Math.max(90, number("FULL_BUILD_WALL_MINUTES", 120)));
+  },
+
+  // ---------- Chained builds (docs/CHAINED_BUILDS.md) ----------
+
+  /** CHAINED_BUILDS: a signed-in builder's big full build runs across many sessions through a milestone plan. Needs FULL_BUILDS. */
+  get chainedBuilds(): boolean {
+    return flag("CHAINED_BUILDS") && flag("FULL_BUILDS");
+  },
+  /** What one chained build may spend in all, in USD. */
+  get chainedTotalUsd(): number {
+    return dollars("CHAINED_TOTAL_USD", 60);
+  },
+  /** What one session of a chain may spend, in USD. */
+  get chainedSessionUsd(): number {
+    return dollars("CHAINED_SESSION_USD", 15);
+  },
+  /** How long one session runs, in minutes. Held to 45 through 120, so a session and its checks stay inside the sandbox's limits. */
+  get chainedSessionMinutes(): number {
+    return Math.min(120, Math.max(45, number("CHAINED_SESSION_MINUTES", 85)));
+  },
+  get chainedMaxSessions(): number {
+    return Math.min(40, Math.max(1, Math.floor(number("CHAINED_MAX_SESSIONS", 12))));
+  },
+  /** The longest a chain may take, in hours. Held to 3 through 72. The sweep gives a chain this long. */
+  get chainedMaxHours(): number {
+    return Math.min(72, Math.max(3, number("CHAINED_MAX_HOURS", 24)));
+  },
+
+  // ---------- Platform powers (docs/PLATFORM_POWERS.md) ----------
+
+  /** What one product's powers may commit per UTC day, in USD. Everything is counted at its worst case, when it starts. 0 pauses them. */
+  get powersProductDailyUsd(): number {
+    return dollars("PLATFORM_POWERS_PRODUCT_DAILY_USD", 20);
+  },
+  /** What all products' powers together may commit per UTC day, in USD. 0 pauses them. */
+  get powersAllDailyUsd(): number {
+    return dollars("PLATFORM_POWERS_ALL_DAILY_USD", 50);
+  },
+  /** The most one metered key may spend, in USD. */
+  get powersKeyMaxUsd(): number {
+    return dollars("PLATFORM_POWERS_KEY_MAX_USD", 5);
+  },
+  /** What a product's new build is counted at: above the build token's $10, for the brief and the judge. */
+  get powersBuildUsd(): number {
+    return dollars("PLATFORM_POWERS_BUILD_USD", 12);
   },
 
   // ---------- Wave 3, unit 2: engine (docs/CAPABILITIES.md) ----------

@@ -247,6 +247,11 @@ describe("starting training for a run", { skip: canMock ? false : "needs --exper
   });
 
   describe("launchForRun", () => {
+    it("waits and tries again after a race for the GPU limit, and ends on a plain refusal", () => {
+      assert.equal(launch.waitReasonFor({ ok: false, status: 429, code: "gpu_limit", body: { raced: true } }), "too_many_active");
+      assert.equal(launch.waitReasonFor({ ok: false, status: 429, code: "gpu_limit", body: {} }), null);
+    });
+
     it("starts one Muse Glimmer LoRA job with the run's settings and publish 0, through launchJob", async () => {
       const id = await dataset();
       const r = await launch.launchForRun({ datasetId: id, callerId: admin, steps: 300 });

@@ -48,6 +48,8 @@ const MAX_INSPO = 4;
 const MAX_SCREENSHOTS = 4;
 /** FULL_BUILDS: each requirement has its own screenshot. */
 export const MAX_FULL_SCREENSHOTS = 16;
+/** CHAINED_BUILDS: one for each requirement, up to this. A requirement beyond it can't be seen, so it stays unmet. */
+export const MAX_CHAIN_SCREENSHOTS = 48;
 
 function remote(url: string): boolean {
   return /^https?:\/\//i.test(url);
@@ -175,7 +177,7 @@ export function judgeContent(input: JudgeInput): { content: ContentPart[]; sourc
   if (input.capsProof) content.push(textPart(input.capsProof));
   const required = input.requirementTests !== undefined ? buildableRequirements(input.brief) : [];
   if (required.length) content.push(textPart(requirementTestsText(input.requirementTests, required)));
-  const shots = pickScreenshots(input.screenshots, required.length ? MAX_FULL_SCREENSHOTS : MAX_SCREENSHOTS);
+  const shots = pickScreenshots(input.screenshots, required.length ? (input.brief.chained === true ? Math.max(MAX_FULL_SCREENSHOTS, Math.min(MAX_CHAIN_SCREENSHOTS, required.length + 2)) : MAX_FULL_SCREENSHOTS) : MAX_SCREENSHOTS);
   content.push(textPart(`Screenshots, in order (${shots.length}${shots.length < input.screenshots.length ? ` of ${input.screenshots.length}` : ""}):`));
   shots.forEach((shot, i) => {
     const last = i === shots.length - 1 ? " (final screen)" : "";

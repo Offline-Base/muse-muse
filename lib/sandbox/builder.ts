@@ -2034,6 +2034,13 @@ export async function exportTranscript(input: {
   return { url: await putFile("transcripts", `${input.buildId}/transcript.json`, buf, "application/json"), highlights };
 }
 
+/** CHAINED_BUILDS: writes the chain's state file and commits the session's work, so the next session starts from the repo. */
+export async function saveChainState(sandboxName: string, stateFile: string, content: string, message: string): Promise<void> {
+  const sandbox = await openSandbox(sandboxName);
+  await sandbox.writeFiles([{ path: productPath(stateFile), content }]);
+  await sh(sandbox, `git add -A && (git diff --cached --quiet || git commit -qm ${q(message)})`, { cwd: PRODUCT_DIR, timeoutMs: 2 * MIN });
+}
+
 /** Stops the sandbox. Persistent sandboxes snapshot on stop, so refinements resume where they left off. */
 export async function hibernate(sandboxName: string): Promise<void> {
   let sandbox: Sandbox;

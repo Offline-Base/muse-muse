@@ -25,6 +25,8 @@ export type MilestoneState = "planned" | "building" | "passed" | "failed" | "ski
 export interface RoundPlanRecord {
   capMinutes: number;
   milestones: Array<{ title: string; state: MilestoneState }>;
+  /** CHAINED_BUILDS: how long the sweep gives this build, and the session it's on. */
+  chain?: { maxHours: number; session: number };
 }
 
 /** The milestones a brief really has: 2 or 3 with a title and what done means, or none. */
