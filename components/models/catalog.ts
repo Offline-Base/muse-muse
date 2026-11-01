@@ -2,7 +2,7 @@ import catalog from "@/catalog/meta-models.json";
 import type { ResultView } from "@/components/train/results";
 import { hubRepoUrl, isRepoId } from "@/components/vibe/apps";
 import { PRICES } from "@/lib/meta/pricing";
-import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
+import { SPARK_STANDIN } from "@/lib/meta/spark";
 import type { LocalFiles } from "@/lib/train/local-files";
 import { ADAPTER_RECIPE } from "@/lib/train/logic";
 
@@ -89,7 +89,7 @@ const HOSTED: ReadonlyArray<Omit<HostedModelView, "preview" | "calls">> = [
     use: "Muse Muse's model for tests and examples, which use made-up data. Meta may train on what it's sent, so new products can't pick it.",
     price: tokenPrice(PRICES[SPARK_STANDIN]),
     testOnly: true,
-    note: `Older products built on Muse Spark 1.3 are served by it, since Muse Muse doesn't call ${RETIRED_SPARK}.`,
+    note: "Older products built on Muse Spark 1.3 run on it instead, since Muse Muse doesn't call Spark 1.3 itself.",
   },
 ];
 

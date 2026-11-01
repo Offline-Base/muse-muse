@@ -57,7 +57,7 @@ export default async function ModelsPage() {
           Muse Muse and the products it ships call these through Meta&apos;s Model API. Prices are Muse Muse&apos;s
           estimates.
           {calls.ok
-            ? ` Calls count Muse Muse's usage records for the last ${CALL_DAYS} days.`
+            ? ` Calls are from Muse Muse's usage records for the last ${CALL_DAYS} days.`
             : " Call counts aren't available right now."}
         </p>
         <HostedModelsTable models={hosted} />

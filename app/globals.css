@@ -6422,3 +6422,19 @@ div.md.md-plain {
   font-weight: 600;
   line-height: 22px;
 }
+
+.gadgets-status {
+  border-top: 0;
+}
+
+.gadgets-status > div:last-child {
+  border-bottom: 0;
+}
+
+.gadgets-status dt {
+  color: var(--fg);
+}
+
+.gadgets-status dd {
+  flex: none;
+}
