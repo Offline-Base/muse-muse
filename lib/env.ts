@@ -391,6 +391,18 @@ export const env = {
     return flag("TUNE_COMPOSER");
   },
   /**
+   * TUNE_RESEARCH: "1", "true", "yes" or "on" lets admins research data for a fine-tune (lib/train/research). Off by
+   * default: the pages and /api/train/research routes answer 404, the New dataset card offers nothing new, and no dataset
+   * reads grounding notes.
+   */
+  get tuneResearch(): boolean {
+    return flag("TUNE_RESEARCH");
+  },
+  /** TUNE_RESEARCH_MAX_USD: the most one research run may spend on Meta, $2 by default. DAILY_SPEND_CAP_USD applies on top. */
+  get tuneResearchMaxUsd(): number {
+    return dollars("TUNE_RESEARCH_MAX_USD", 2);
+  },
+  /**
    * TUNE_DEFAULT_EXAMPLES: how many examples a new run's plan has Muse Wonder write, 200 by default, held to the
    * datasets route's 20 to 1000 (DATASET_MIN_COUNT and DATASET_MAX_COUNT in lib/train/logic.ts).
    */

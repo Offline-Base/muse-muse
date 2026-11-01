@@ -1519,3 +1519,8 @@ What this record doesn't confirm:
 - HF_TOKEN stays on the platform: a gated base's GPU gets short-lived links from POST /api/train/jobs/{id}/base-files.
 - Nothing on Llama has run on a GPU. Checked only: bases.test.ts and base.test.ts (26 pass), the recipe compiles and its family switch was exercised in Python. No tsc, no build, no browser.
 - Found: the Hub renamed r30b's repos to OfflineBase/Muse-Glimmer-30B-2026-Knowledge*; the old names redirect. isR30bRepo now takes both.
+## Nov 1: data research for fine-tunes (branch tg-tune-research, unmerged)
+
+- Built `TUNE_RESEARCH` (off): durable workflow on Muse Wonder with Meta's web_search only, a report whose sources can only point at the search's own links, picks as writer notes, and import of license-clear rows with the PII scan. Docs: TRAINING.md "Data research".
+- Decision: migration 0029 (additive), since a report needs a durable row. Any personal data the scan finds refuses the whole source, the strict reading of "sources with personal data are not importable".
+- Measured: only the rule tests (lib/train/research/__tests__/research.test.ts). No call to Meta or a real source has run, so the cost estimate is unmeasured.

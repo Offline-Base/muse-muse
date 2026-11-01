@@ -18,7 +18,7 @@ import { plural } from "@/lib/format";
 import { BUILT_WITH_SPARK_OPEN, isSparkOpenDerivative, licenseDuties, R30B_REPO, R30B_URL, USAGE_POINTS } from "@/lib/train/base";
 import { QUANT_LEVELS, type LocalFile, type LocalFiles, type QuantLevel } from "@/lib/train/local-files";
 import { SPARK_STANDIN } from "@/lib/meta/spark";
-import { isDecisionSummary, modelName, recordedModel, UNRECORDED_MODEL, writerModelOf } from "@/lib/train/models";
+import { isDecisionSummary, modelName, PUBLIC_WRITER, recordedModel, UNRECORDED_MODEL, writerModelOf } from "@/lib/train/models";
 import {
   datasetSystemPrompt,
   DECIDE_MODE,
@@ -1327,9 +1327,12 @@ export function hubJobProblem(job: Pick<TrainJobRow, "recipe" | "status" | "para
   return null;
 }
 
-/** True when Spark 1.3 Contributor wrote a dataset: the model may go to the Hub, its dataset repo stays private. */
+/**
+ * True when a dataset's repo stays private while its model may go to the Hub: Spark 1.3 Contributor wrote it, or its rows
+ * were imported from a public source (data research), whose own license and attribution the dataset card doesn't carry.
+ */
 export function keepDatasetPrivate(dataset: { writerModel?: string | null }): boolean {
-  return dataset.writerModel === SPARK_STANDIN;
+  return dataset.writerModel === SPARK_STANDIN || dataset.writerModel === PUBLIC_WRITER;
 }
 
 /**

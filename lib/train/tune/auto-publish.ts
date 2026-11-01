@@ -3,6 +3,7 @@
  * the plan card says about it. Pure and browser-safe. The signed plan keeps `publish: 0`, so plan hashes don't change:
  * Start keeps the choice with the run (saveRunAutoPublish) and launchForRun turns it into the job's publish param.
  */
+import { PUBLIC_WRITER } from "@/lib/train/models";
 import { FOLD_HEAD } from "@/lib/train/tune/examples";
 
 /** True when a dataset's task quotes a person's own rows (foldExamples), old datasets included: the card quotes the task. */
@@ -17,7 +18,7 @@ export interface AutoPublishInput {
   hubOff: string | null;
   /** An admin started the run and Advanced left it on. Visitors never get here. */
   asked: boolean;
-  dataset: { kind?: string | null; productId?: string | null; task?: string | null };
+  dataset: { kind?: string | null; productId?: string | null; task?: string | null; writerModel?: string | null };
   /** The product the run is for (saveRunProduct), or null. */
   runProductId: string | null;
 }
@@ -25,7 +26,7 @@ export interface AutoPublishInput {
 /** Fails closed: anything but an admin's run on a chat dataset with no product and no person's rows stays at publish 0. */
 export function autoPublishOk(i: AutoPublishInput): boolean {
   if (!i.flag || i.hubOff || !i.asked || i.runProductId) return false;
-  if (i.dataset.kind === "decision" || i.dataset.productId) return false;
+  if (i.dataset.kind === "decision" || i.dataset.productId || i.dataset.writerModel === PUBLIC_WRITER) return false;
   return !taskHoldsPersonRows(i.dataset.task);
 }
 

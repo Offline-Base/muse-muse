@@ -173,9 +173,9 @@ function pastedRows(text: string): { rows: ExampleRow[]; skipped: number } {
 
 /**
  * The rows in a file's text or a paste. `fileName` picks the format when it has a known extension; otherwise the text
- * decides (detectFormat). Rows past EXAMPLE_ROWS_MAX are counted in `total` but not kept.
+ * decides (detectFormat). Rows past `max` (EXAMPLE_ROWS_MAX by default) are counted in `total` but not kept.
  */
-export function parseExamples(text: string, fileName?: string | null): ParsedExamples {
+export function parseExamples(text: string, fileName?: string | null, max: number = EXAMPLE_ROWS_MAX): ParsedExamples {
   const format = detectFormat(text, fileName);
   let rows: ExampleRow[] = [];
   let skipped = 0;
@@ -214,9 +214,9 @@ export function parseExamples(text: string, fileName?: string | null): ParsedExa
   }
   const problems: string[] = [];
   if (skipped) problems.push(`${skipped} ${skipped === 1 ? "row has" : "rows have"} no prompt and answer, so ${skipped === 1 ? "it was" : "they were"} left out.`);
-  if (rows.length > EXAMPLE_ROWS_MAX) problems.push(`Only the first ${EXAMPLE_ROWS_MAX} of ${rows.length} rows are used.`);
+  if (rows.length > max) problems.push(`Only the first ${max} of ${rows.length} rows are used.`);
   if (!rows.length) problems.push("No examples found. Use a prompt and an answer per row, like Q: and A: lines.");
-  return { rows: rows.slice(0, EXAMPLE_ROWS_MAX), total: rows.length, format, problems };
+  return { rows: rows.slice(0, max), total: rows.length, format, problems };
 }
 
 /** The rows the plan route takes from a request body: plain objects with a prompt and an answer, at most EXAMPLE_ROWS_MAX. */

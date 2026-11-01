@@ -9,6 +9,7 @@ import { EmptyCard, NotConnected } from "@/components/ui";
 import { safeQuery } from "@/lib/queries";
 import type { DecisionRow, DecisionSpec } from "@/lib/decide/types";
 import { sampleRowIndexes } from "@/lib/train/decision-datasets";
+import { PUBLIC_WRITER } from "@/lib/train/models";
 import { toDatasetView } from "@/lib/train/logic";
 import { datasetPage, datasetProgress, decisionSplitRows, getDataset, getReadyDataset } from "@/lib/train/store";
 import type { EvalExample, TrainExample } from "@/lib/train/types";
@@ -37,7 +38,8 @@ async function readyDatasetPage(id: string) {
     // The store only answers ready ones. Checked again here, since the samples are read next.
     if (!row || row.status !== "ready") return null;
     // A decision dataset's page shows its labels and counts only: never a person's rows.
-    if (row.kind === "decision") return { dataset: toReadyDatasetView(row), sampleTrain: [], sampleEval: [] };
+    // Nor rows imported from a public source (data research), since this page can't show their license and attribution.
+    if (row.kind === "decision" || row.writerModel === PUBLIC_WRITER) return { dataset: toReadyDatasetView(row), sampleTrain: [], sampleEval: [] };
     const [train, held] = await Promise.all([
       datasetPage(row.id, "train", 0, LAB_SAMPLE_TRAIN),
       datasetPage(row.id, "eval", 0, LAB_SAMPLE_EVAL),
