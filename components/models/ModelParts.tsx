@@ -12,7 +12,7 @@ export function HostedModelsTable({ models }: { models: HostedModelView[] }) {
   const withCalls = models.some((m) => m.calls !== null);
   return (
     <div className="table-wrap">
-      <table className="data data-list">
+      <table className="data data-list models-hosted">
         <caption className="sr-only">Meta&apos;s hosted models that Muse Muse calls</caption>
         <thead>
           <tr>
@@ -87,7 +87,7 @@ export function GlimmerCard() {
 export function TunedModelsTable({ models }: { models: TunedModelView[] }) {
   return (
     <div className="table-wrap">
-      <table className="data data-list">
+      <table className="data data-list models-tuned">
         <caption className="sr-only">Tuned {GLIMMER_NAME} models, newest first</caption>
         <thead>
           <tr>

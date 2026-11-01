@@ -6423,6 +6423,23 @@ div.md.md-plain {
   line-height: 22px;
 }
 
+/*
+ * On phones the two tables keep room for each column and scroll in their box, as .train-eval-table does. Positioned, so
+ * an ExternalLink's absolute sr-only text stays inside the scroll box instead of widening the page.
+ */
+.models-hosted,
+.models-tuned {
+  position: relative;
+}
+
+.models-hosted {
+  min-width: 720px;
+}
+
+.models-tuned {
+  min-width: 540px;
+}
+
 .gadgets-status {
   border-top: 0;
 }
