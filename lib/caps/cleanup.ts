@@ -1,4 +1,4 @@
-import { clearConnectBuild, sweepConnect } from "@/lib/caps/connect/store";
+import { clearConnectBuild, sweepConnect } from "@/lib/caps/connect/cleanup";
 import { clearCodeBuildRuns, sweepCodeBuildRuns } from "@/lib/caps/code/cleanup";
 import { clearBuildNamespace, sweepData } from "@/lib/caps/data/store";
 import type { CapId } from "@/lib/caps/ids";

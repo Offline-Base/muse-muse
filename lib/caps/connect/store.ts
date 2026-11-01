@@ -1,6 +1,5 @@
-import { and, asc, count, eq, gte, isNotNull, isNull, like, lt, or, sql } from "drizzle-orm";
+import { and, asc, count, eq, gte, isNotNull, isNull, sql } from "drizzle-orm";
 import { connectBuildBlock } from "@/lib/caps/connect/brief";
-import { CONNECT_LIMITS } from "@/lib/caps/connect/limits";
 import { buildNamespace } from "@/lib/caps/proof";
 import { db, schema } from "@/lib/db/client";
 import type { SealedSecret } from "@/lib/secrets/box";
@@ -170,27 +169,4 @@ export async function connectProof(buildId: string, window: { since: Date | null
   for (const k of block?.keys ?? []) out[`brief:key:${k.service}`] = 1;
   for (const s of block?.sends ?? []) out[`brief:send:${s.channel}`] = 1;
   return out;
-}
-
-/** When a build ends: its test keys and simulated sends go. */
-export async function clearConnectBuild(buildId: string): Promise<void> {
-  const ns = buildNamespace(buildId);
-  await db().delete(schema.productSecrets).where(eq(schema.productSecrets.namespace, ns));
-  await db().delete(schema.productSends).where(eq(schema.productSends.namespace, ns));
-}
-
-/** The hourly sweep: expired cache rows, keys revoked over a day ago, and crashed builds' test keys and sends. */
-export async function sweepConnect(now: Date): Promise<number> {
-  const old = new Date(now.getTime() - CONNECT_LIMITS.revokedKeepMs);
-  const buildOld = new Date(now.getTime() - CONNECT_LIMITS.buildNamespaceMaxAgeMs);
-  const cache = await db().delete(schema.publicFetchCache).where(lt(schema.publicFetchCache.expiresAt, now)).returning({ k: schema.publicFetchCache.key });
-  const keys = await db()
-    .delete(schema.productSecrets)
-    .where(or(lt(schema.productSecrets.revokedAt, old), and(like(schema.productSecrets.namespace, "b:%"), lt(schema.productSecrets.createdAt, buildOld))))
-    .returning({ id: schema.productSecrets.id });
-  const sends = await db()
-    .delete(schema.productSends)
-    .where(and(like(schema.productSends.namespace, "b:%"), lt(schema.productSends.createdAt, buildOld)))
-    .returning({ id: schema.productSends.id });
-  return cache.length + keys.length + sends.length;
 }

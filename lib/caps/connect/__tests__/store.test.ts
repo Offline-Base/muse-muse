@@ -21,6 +21,7 @@ describe("connect on a database", { skip: canMock ? false : "needs --experimenta
   let client: import("@electric-sql/pglite").PGlite;
   let testDb: TestDb;
   let store: typeof import("../store");
+  let cleanup: typeof import("../cleanup");
   let handler: typeof import("../handler");
   let productId = "";
   let buildId = "";
@@ -41,6 +42,7 @@ describe("connect on a database", { skip: canMock ? false : "needs --experimenta
     };
     mock.module(new URL("../../../db/client.ts", import.meta.url).href, { namedExports: { db: () => testDb, schema: realSchema } });
     store = await import("../store");
+    cleanup = await import("../cleanup");
     handler = await import("../handler");
     const [user] = await testDb.insert(realSchema.users).values({ email: "maker@example.com" }).returning();
     const [muse] = await testDb.insert(realSchema.inspirations).values({ userId: user!.id }).returning();
@@ -142,7 +144,7 @@ describe("connect on a database", { skip: canMock ? false : "needs --experimenta
     await assert.rejects(async () =>
       testDb.insert(realSchema.productSends).values({ productId, namespace: `b:${buildId}`, channel: "email", recipientHash: "h", approvalNonce: (await testDb.select().from(realSchema.productSends))[0]!.approvalNonce, status: "simulated" }),
     );
-    await store.clearConnectBuild(buildId);
+    await cleanup.clearConnectBuild(buildId);
     assert.equal((await testDb.select().from(realSchema.productSends)).length, 0);
     assert.equal((await testDb.select().from(realSchema.productSecrets)).filter((r) => r.namespace.startsWith("b:")).length, 0);
   });
@@ -157,7 +159,7 @@ describe("connect on a database", { skip: canMock ? false : "needs --experimenta
       { ...sealed, name: "crashed", namespace: "b:00000000-0000-4000-8000-000000000000", createdAt: new Date(now.getTime() - 2 * day) },
       { ...sealed, name: "kept" },
     ]);
-    const removed = await store.sweepConnect(now);
+    const removed = await cleanup.sweepConnect(now);
     assert.ok(removed >= 3, String(removed));
     assert.ok(!(await testDb.select().from(realSchema.publicFetchCache)).some((r) => r.key === "old"));
     const names = (await testDb.select().from(realSchema.productSecrets)).map((r) => r.name);
