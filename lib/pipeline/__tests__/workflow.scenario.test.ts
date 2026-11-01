@@ -294,6 +294,7 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
         },
       },
     });
+    mock.module(new URL("../package-step.ts", import.meta.url).href, { namedExports: { packageProductStep: async () => {} } });
     mock.module(new URL("../prove-start.ts", import.meta.url).href, {
       namedExports: {
         startProveStep: async (input: unknown) => {
