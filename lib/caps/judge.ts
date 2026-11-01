@@ -3,6 +3,7 @@ import { briefCaps } from "@/lib/caps/brief-fields";
 import { extensionJudgeNote } from "@/lib/caps/extension/judge";
 import { gamesJudgeNote } from "@/lib/caps/games/judge";
 import type { CapId } from "@/lib/caps/ids";
+import { mediaJudgeNote } from "@/lib/caps/media/judge";
 import type { CapProof, VerifySummary } from "@/lib/types";
 
 /**
@@ -11,6 +12,7 @@ import type { CapProof, VerifySummary } from "@/lib/types";
  * plan order; the text lives in lib/caps/<id>/judge.ts.
  */
 export const CAP_JUDGE: Partial<Record<CapId, (brief: Brief) => string>> = {
+  media: mediaJudgeNote,
   extension: extensionJudgeNote,
   games: gamesJudgeNote,
 };

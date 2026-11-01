@@ -785,6 +785,23 @@ export const env = {
     return CAP_IDS.filter((c) => CAP_READY[c] && flag(CAP_FLAG[c]) && (!production || signedIn || !CAP_NEEDS_BUILDER[c]));
   },
 
+  // ---------- Wave 3, unit 8: media (docs/CAPABILITIES.md) ----------
+
+  /**
+   * The media cap's parts (lib/caps/media), each its own switch on top of MEDIA_ENABLED, which is CAP_FLAG.media, read
+   * through enabledCaps above: MEDIA_SPEECH (speech in the page), MEDIA_VIDEO (video from pictures), MEDIA_MUSIC (MIDI)
+   * and MEDIA_SAM_TILING (SAM past 16 objects, and long clips in chunks). The writer offers only the parts that are on.
+   */
+  get mediaParts(): Array<"speech" | "video" | "music" | "samTiling"> {
+    const parts = [
+      ["speech", "MEDIA_SPEECH"],
+      ["video", "MEDIA_VIDEO"],
+      ["music", "MEDIA_MUSIC"],
+      ["samTiling", "MEDIA_SAM_TILING"],
+    ] as const;
+    return parts.filter(([, name]) => flag(name)).map(([part]) => part);
+  },
+
   // ---------- Wave 3, unit 10: runtime (docs/CAPABILITIES.md) ----------
 
   /**

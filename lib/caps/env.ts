@@ -1,6 +1,7 @@
 import type { Brief } from "@/lib/brief/schema";
 import { briefCaps } from "@/lib/caps/brief-fields";
 import type { CapId } from "@/lib/caps/ids";
+import { mediaAssetsEnv, mediaBuildEnv } from "@/lib/caps/media/env";
 
 /**
  * Extra env a cap needs (docs/CAPABILITIES.md, 2.5): lines for the build's .env.local and settings for the product's
@@ -12,6 +13,8 @@ export interface CapEnvEntry {
 }
 
 export const CAP_ENV: Partial<Record<CapId, CapEnvEntry>> = {
+  // The page loads the media cap's large files (the speech model and its runtime) from the gateway's public /assets.
+  media: { build: () => mediaBuildEnv(), deploy: () => mediaAssetsEnv() },
   // A build's server runs the product's Python functions on the build machine (template/caps/runtime). On Vercel the
   // same helper calls the deployment's own /api/py routes, so the deploy needs nothing.
   runtime: { build: () => ({ MUSEMUSE_PYTHON: "local", MUSEMUSE_PYTHON_NOTES: "1" }) },

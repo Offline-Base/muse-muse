@@ -1,6 +1,7 @@
 import type { CapId } from "@/lib/caps/ids";
 import { EXTENSION_CATALOG } from "@/lib/caps/extension/catalog";
 import { GAMES_CATALOG } from "@/lib/caps/games/catalog";
+import { MEDIA_CATALOG, mediaPartsOn, mediaWorkarounds } from "@/lib/caps/media/catalog";
 import { RUNTIME_CATALOG } from "@/lib/caps/runtime/catalog";
 
 /**
@@ -14,6 +15,7 @@ export interface CapCatalogEntry {
 }
 
 export const CAP_CATALOG: Partial<Record<CapId, CapCatalogEntry>> = {
+  media: MEDIA_CATALOG,
   runtime: RUNTIME_CATALOG,
   extension: EXTENSION_CATALOG,
   games: GAMES_CATALOG,
@@ -50,4 +52,21 @@ export function capsCatalogBlocks(enabled: readonly CapId[]): string[] {
   const on = entries(enabled);
   if (!on.length) return [];
   return ["", "Platform services a product may use, when the brief picks them:", ...on.map(([, e]) => e.block)];
+}
+
+/**
+ * The catalog's "Not available on the Model API yet" lines a cap replaces while it is enabled, by key: "speech" and
+ * "video" (lib/prompts/catalog.ts). One line per cap, in plan order. A key no enabled cap replaces keeps today's line.
+ */
+export const CAP_WORKAROUNDS: Partial<Record<CapId, () => Partial<Record<"speech" | "video", string>>>> = {
+  media: () => mediaWorkarounds(mediaPartsOn()),
+};
+
+/** The line an enabled cap gives for a workaround key, or null for today's line. */
+export function capsWorkaround(enabled: readonly CapId[], key: "speech" | "video"): string | null {
+  for (const id of enabled) {
+    const line = CAP_WORKAROUNDS[id]?.()[key];
+    if (line) return line;
+  }
+  return null;
 }

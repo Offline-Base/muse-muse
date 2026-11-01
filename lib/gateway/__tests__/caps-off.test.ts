@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { CAPS_PROOF_PER_MINUTE, handleCapsProof, type CapsProofDeps } from "@/lib/caps/proof";
 import { CAP_FLAG, CAP_IDS } from "@/lib/caps/ids";
+import { handleAsset, type AssetsDeps } from "@/lib/caps/media/assets";
 import { env } from "@/lib/env";
 
 /** A dependency that fails the test if anything calls it. */
@@ -27,6 +28,16 @@ const ROUTES: Array<{ path: string; call(req: Request): Promise<Response> }> = [
         productStatus: untouched<CapsProofDeps["productStatus"]>("productStatus"),
         hitRateLimits: untouched<CapsProofDeps["hitRateLimits"]>("hitRateLimits"),
         counters: {},
+      }),
+  },
+  // Unit 8: vetted large files for products' pages, by sha256.
+  {
+    path: "assets/407375255d220d8ddf81e9a06d4100f80f870f8446e77d4f20951d2a4c08a156",
+    call: (req) =>
+      handleAsset(req, "407375255d220d8ddf81e9a06d4100f80f870f8446e77d4f20951d2a4c08a156", {
+        enabledCaps: () => env.enabledCaps,
+        hitRateLimits: untouched<AssetsDeps["hitRateLimits"]>("hitRateLimits"),
+        localPath: untouched<NonNullable<AssetsDeps["localPath"]>>("localPath"),
       }),
   },
 ];

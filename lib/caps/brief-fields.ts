@@ -2,6 +2,8 @@ import type { z } from "zod";
 import type { CapId } from "@/lib/caps/ids";
 import { EXTENSION_WRITER_RULES, ExtensionBriefBlock } from "@/lib/caps/extension/brief";
 import { GAMES_WRITER_RULES, GamesBriefBlock } from "@/lib/caps/games/brief";
+import { MediaBriefBlock, mediaWriterRules } from "@/lib/caps/media/brief";
+import { mediaPartsOn } from "@/lib/caps/media/catalog";
 import { RUNTIME_WRITER_RULES, RuntimeBriefBlock } from "@/lib/caps/runtime/brief";
 
 /**
@@ -14,6 +16,7 @@ import { RUNTIME_WRITER_RULES, RuntimeBriefBlock } from "@/lib/caps/runtime/brie
  * writer's schema (newBriefSchemaFor) requires the enabled caps' fields as nullable.
  */
 export const CAP_BRIEF_FIELDS = {
+  media: MediaBriefBlock,
   runtime: RuntimeBriefBlock,
   extension: ExtensionBriefBlock,
   games: GamesBriefBlock,
@@ -32,6 +35,10 @@ export function briefCaps(brief: object): CapId[] {
  * and how. One line per cap, in plan order.
  */
 export const CAP_WRITER_RULES: Partial<Record<CapId, readonly string[]>> = {
+  // The media cap names only the parts whose flags are on, read when the instructions are built.
+  get media() {
+    return mediaWriterRules(mediaPartsOn());
+  },
   runtime: RUNTIME_WRITER_RULES,
   extension: EXTENSION_WRITER_RULES,
   games: GAMES_WRITER_RULES,
