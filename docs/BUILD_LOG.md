@@ -1712,3 +1712,11 @@ scripts/dev/tune-harness.ts, on a Lambda gpu_1x_a10 named prove-tune-1, us-east-
 - Measured on Contributor with made-up data, flags as on production: a FULL_BUILDS brief with the look (8 requirements, scope check ran) and a full judge read with one image both returned valid replies. Spend about $0.002. The first attempt got a 401 from the key in ~/muse-muse/.env.local, so that key looks stale.
 - Tests: targeted suites pass. flags-off-surface was already failing on main on stale mocks; with those fixed its provision and deploy goldens match, and steps.json still differs on a timeout this branch doesn't touch. No golden file changed.
 - Not run: a whole build on production settings, a sandbox, the notice in a browser, whether Contributor's judge is as strict as Muse Wonder's.
+
+## Nov 1: prove results and submission write-up (branch tg-close-docs)
+
+- Added docs/PROVE_RESULTS.md: every item from the prove run with state, evidence and cost, the earlier local-site results, and spend by budget. States copied from each line of work's report and counted against them: 28 passed, 20 done, 6 failed, 6 blocked, 3 pending, 4 not run. None raised.
+- Spend recorded: Meta plus sandbox about $33.52 of $150, GPU about $8.16 of $50, AWS about $0.16 new of $150. Sandbox time, Muse Code sessions' own cost and four builds' final figures are not in these.
+- docs/SUBMISSION.md: added Nov 1 results, including what failed. Video shot 7 now shows recipes and devices, labeled test model; shot 10 adds the Nov 1 Glimmer run. Video link stays a placeholder. Fixed the stale checklist line saying the repo has no remote.
+- Decision: no Muse Privacy section added to this file, since nothing in it covered Muse Privacy and its docs live under privacy/docs.
+- Checked: https://muse-muse.vercel.app/ answered 200 to a plain request. #24, #25 and #26 show merge conflicts; #27 is mergeable. main still has the IPv6 firewall ranges; the fix is in #26. Spend $0. No tests run, docs only.
