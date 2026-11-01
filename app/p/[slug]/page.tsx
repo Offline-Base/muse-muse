@@ -207,8 +207,8 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             <TrainOnMyData slug={product.slug} />
           </section>
         ) : null}
-        {/* Wave 3, unit 6: renders and reads nothing while the jobs cap is off. */}
-        {shipped ? <JobsPanel productId={product.id} slug={product.slug} brief={brief} isOwner={isOwner} viewerIsOwner={Boolean(user && !user.openAccess && user.id === product.ownerId)} /> : null}
+        {/* Wave 3, unit 6: not in the tree at all while the jobs cap is off. */}
+        {shipped && env.servedCaps.includes("jobs") ? <JobsPanel productId={product.id} slug={product.slug} brief={brief} isOwner={isOwner} viewerIsOwner={Boolean(user && !user.openAccess && user.id === product.ownerId)} /> : null}
 
         <section className="card section-card" aria-labelledby="muse-title">
           <h2 id="muse-title">The muse</h2>
