@@ -28,3 +28,10 @@ export function boardKindOf(model: unknown): BoardKind {
   if (/raspberry\s*pi/.test(name)) return "raspberry_pi";
   return "other";
 }
+
+/** A file name from what a board's /v1/models calls its model, which llama-server gives as a path: the name only, never the board's folders. */
+export function servedModelName(id: unknown): string | null {
+  if (typeof id !== "string") return null;
+  const name = (id.split(/[\\/]/).pop() ?? "").replace(/\.gguf$/i, "");
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(name) ? name : null;
+}

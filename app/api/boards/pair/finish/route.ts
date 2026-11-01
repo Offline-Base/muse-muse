@@ -1,4 +1,4 @@
-import { requireBoardOwner } from "@/lib/caps/hardware/admin";
+import { refuseCrossSite, requireBoardOwner } from "@/lib/caps/hardware/admin";
 import { gadgetConnectOn } from "@/lib/caps/hardware/flags";
 import { PAIR_TRIES_PER_HOUR } from "@/lib/caps/hardware/limits";
 import { finishPairing, type PairRefusal } from "@/lib/caps/hardware/pairing";
@@ -13,6 +13,7 @@ const STATUS: Partial<Record<PairRefusal, number>> = { key_missing: 503, wrong_c
 
 export const POST = route(async (req: Request) => {
   if (!gadgetConnectOn()) return errorJson(404, "not_found");
+  refuseCrossSite(req);
   const user = await requireBoardOwner();
   const hour = new Date(Math.floor(Date.now() / 3_600_000) * 3_600_000);
   const key = `pair:${user.id}`;

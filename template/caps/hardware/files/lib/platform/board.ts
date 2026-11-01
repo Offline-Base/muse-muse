@@ -126,7 +126,7 @@ export interface BoardAnswer {
 }
 
 /**
- * Asks the model running on the owner's board. Nothing leaves their board but this call's answer. Use it through a route handler, with
+ * Asks the model running on the owner's board. No cloud model sees it, but it passes through this server and Muse Muse. Use it through a route handler, with
  * the request passed in. It can take over a minute on a small board: show that it's working. It throws BoardError when the board isn't
  * there: show boardMessage(err) and keep the rest of the product working, or use askBoardOrMessage below.
  */

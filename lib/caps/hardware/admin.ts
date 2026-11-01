@@ -1,4 +1,4 @@
-import { AuthError, GUEST_EMAIL, requireAdmin, requireUser, type SessionUser } from "@/lib/auth";
+import { AuthError, GUEST_EMAIL, isCrossSite, requireAdmin, requireUser, type SessionUser } from "@/lib/auth";
 import { gadgetConnectOn } from "@/lib/caps/hardware/flags";
 
 /**
@@ -29,4 +29,12 @@ export async function requireBoardOwner(): Promise<SessionUser> {
   const user = await requireUser();
   if (!canOwnBoard(user)) throw new AuthError(SHARED_ACCOUNT_MESSAGE, 403);
   return user;
+}
+
+/**
+ * With GADGET_CONNECT on, a change to someone's boards comes only from Muse Muse's own pages. A product on a nearby domain would get
+ * their Lax cookie, and readJson doesn't care about content type. With it off, nothing changes here.
+ */
+export function refuseCrossSite(req: Request): void {
+  if (gadgetConnectOn() && isCrossSite(req.headers)) throw new AuthError("Requests from other sites can't change a board.", 403);
 }

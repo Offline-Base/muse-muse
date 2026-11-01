@@ -15,7 +15,7 @@ import { after, before, describe, it } from "node:test";
 import { newBoxKey, parseKeyring } from "@/lib/secrets/box";
 import { BoardPinError, pairCheckNumber, pinnedFetch, readBoardPin } from "../pinned";
 import { boardOrigin, finishPairing, startPairing, type PairDeps } from "../pairing";
-import { boardKindOf, targetForBoardKind } from "../targets";
+import { boardKindOf, servedModelName, targetForBoardKind } from "../targets";
 import { canOwnBoard } from "../admin";
 
 const ring = parseKeyring(newBoxKey())!;
@@ -104,6 +104,12 @@ describe("pairing", () => {
     assert.deepEqual(await startPairing({ address: "board.example" }, OWNER, deps({ ring: () => null })), { ok: false, error: "key_missing" });
   });
 
+  it("a served model's name is a file name, never the board's folders", () => {
+    assert.equal(servedModelName("/home/me/models/Llama-3.2-3B-Q4_K_M.gguf"), "Llama-3.2-3B-Q4_K_M");
+    assert.equal(servedModelName("x".repeat(300)), null);
+    assert.equal(servedModelName(7), null);
+  });
+
   it("a board's kind picks its model: Jetson one-bit Glimmer, others a small Llama, and never anything else", () => {
     assert.equal(boardKindOf("NVIDIA Jetson Orin Nano Developer Kit"), "jetson_orin_nano");
     assert.equal(boardKindOf("Raspberry Pi 5 Model B"), "raspberry_pi");
@@ -133,6 +139,16 @@ describe("pinned TLS, on a real self-signed server", () => {
     execFileSync("openssl", ["req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes", "-keyout", path.join(dir, "k.pem"), "-out", path.join(dir, "c.pem"), "-days", "1", "-subj", "/CN=muse-device"], { stdio: "ignore" });
     server = https.createServer({ key: readFileSync(path.join(dir, "k.pem")), cert: readFileSync(path.join(dir, "c.pem")) }, (req, res) => {
       seen.push(String(req.headers.authorization));
+      if (req.url === "/huge") {
+        const chunk = Buffer.alloc(1024 * 1024);
+        res.writeHead(200);
+        const send = () => {
+          while (!res.destroyed && res.write(chunk));
+          if (!res.destroyed) res.once("drain", send);
+        };
+        res.on("error", () => {});
+        return send();
+      }
       if (req.url === "/moved") {
         res.writeHead(302, { location: "https://elsewhere.example/" });
         return res.end();
@@ -172,6 +188,11 @@ describe("pinned TLS, on a real self-signed server", () => {
     const before = seen.length;
     await assert.rejects(pinnedFetch("0".repeat(64))(`${origin}/v1/models`, { headers: { authorization: "Bearer secret" } }), BoardPinError);
     assert.equal(seen.length, before, "the server never saw the request");
+  });
+
+  it("cuts off a reply too large to hold", async () => {
+    const res = await pinnedFetch(realPin)(`${origin}/huge`);
+    await assert.rejects(res.arrayBuffer());
   });
 
   it("doesn't follow a redirect", async () => {

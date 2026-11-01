@@ -4,7 +4,7 @@ import { BOARD_CHECK_MS, BOARD_NAME_MAX_CHARS, BOARD_TOKEN_MIN_CHARS, BOARD_URL_
 import { pairCheckNumber, pinnedFetch, readBoardPin } from "@/lib/caps/hardware/pinned";
 import { looksLikeMuseDevice } from "@/lib/caps/hardware/registry";
 import { countBoards, insertPairedBoard, ownedBoardRow, type PairedFacts } from "@/lib/caps/hardware/store";
-import { boardKindOf, targetForBoardKind } from "@/lib/caps/hardware/targets";
+import { boardKindOf, servedModelName, targetForBoardKind } from "@/lib/caps/hardware/targets";
 import { callDeviceTool, type DeviceToolResult } from "@/lib/device/client";
 import { openSecret, sealSecret, type BoxKeyring, type SealedSecret } from "@/lib/secrets/box";
 
@@ -58,7 +58,7 @@ const defaultDeps: PairDeps = {
       const res = await pinnedFetch(pin)(`${origin}/v1/models`, { headers: { authorization: `Bearer ${token}` }, signal: timed(BOARD_CHECK_MS) });
       if (!res.ok) return [];
       const body = (await res.json()) as { data?: Array<{ id?: unknown }> };
-      return (body.data ?? []).map((m) => m.id).filter((id): id is string => typeof id === "string").slice(0, 20);
+      return (body.data ?? []).map((m) => servedModelName(m.id)).filter((id): id is string => id !== null).slice(0, 20);
     } catch {
       return [];
     }

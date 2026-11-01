@@ -15,6 +15,8 @@ const DOCS_MARKDOWN = ["./content/meta-docs/pages/**/*.md"];
 const GEO_REWRITES = trustGeoRewrites(process.env);
 
 const nextConfig: NextConfig = {
+  // The owner's yes to a robot action: a product must not be able to frame it and steer the click.
+  headers: async () => [{ source: "/gadgets/confirm", headers: [{ key: "Content-Security-Policy", value: "frame-ancestors 'none'" }, { key: "X-Frame-Options", value: "DENY" }] }],
   serverExternalPackages: ["@electric-sql/pglite", "@composio/core"],
   devIndicators: false,
   // Muse Privacy's files never ship with the site. .vercelignore keeps them out on Vercel; this keeps them out of any other

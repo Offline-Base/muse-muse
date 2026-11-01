@@ -184,6 +184,23 @@ describe("the robot", () => {
     assert.deepEqual(l.tools, []);
   });
 
+  it("live, a board that refused the stop isn't reported as reached", async () => {
+    const d = deps(link({ open: async () => ({ listTools: async () => [], callTool: async () => ({ isError: true, content: [{ type: "text", text: "no" }] }) }) }));
+    const res = await reply(await handleGadgetCall(post("live", { tool: "hard_stop" }, ownerHeaders()), d));
+    assert.equal(res.stopped, true);
+    assert.equal(res.reachedBoard, false);
+  });
+
+  it("a simulated answer's target says no model ran, and a real board's says what it's running", async () => {
+    const sim = await reply(await handleGadgetCall(post("live", { tool: "ask_board", arguments: { messages: MESSAGES } }, ownerHeaders()), deps(link())));
+    assert.match(String(sim.target), /no model ran/);
+    const real = { ...facts, simulated: false, robot: false };
+    const picked = await reply(await handleGadgetCall(post("live", { tool: "ask_board", arguments: { messages: MESSAGES } }, ownerHeaders()), deps(link({ facts: real }, () => ({ kind: "answer", text: "x", running: "muse-glimmer-30b-IQ1_S" })))));
+    assert.equal(picked.target, "Muse Glimmer, one bit");
+    const other = await reply(await handleGadgetCall(post("live", { tool: "ask_board", arguments: { messages: MESSAGES } }, ownerHeaders()), deps(link({ facts: real }, () => ({ kind: "answer", text: "x", running: "Llama-3.2-3B-Q4_K_M" })))));
+    assert.equal(other.target, "Llama-3.2-3B-Q4_K_M");
+  });
+
   it("live, a visitor let in can hard stop, and it's saved even if the board is gone", async () => {
     const d = deps(link({ visitors: true, open: async () => null }));
     const res = await reply(await handleGadgetCall(post("live", { tool: "hard_stop" }), d));

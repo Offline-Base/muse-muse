@@ -11,6 +11,9 @@ import { isPrivateAddress } from "@/lib/tools/args";
  * before a single byte of the request (with the token in it) is written.
  */
 
+/** The most a board may answer with. It's whoever the person pointed us at, so a huge reply must not fill this server's memory. */
+export const BOARD_REPLY_MAX_BYTES = 32 * 1024 * 1024;
+
 export class BoardPinError extends Error {
   constructor() {
     super("The board's certificate isn't the one that was paired.");
@@ -87,10 +90,13 @@ export function pinnedFetch(pin: string): typeof fetch {
     const url = new URL(request.url);
     if (url.protocol !== "https:") throw new BoardPinError();
     const socket = await connect(url, init?.signal ?? undefined);
-    if (peerSpki(socket) !== pin) {
-      socket.destroy();
-      throw new BoardPinError();
+    let matches = false;
+    try {
+      matches = peerSpki(socket) === pin;
+    } finally {
+      if (!matches) socket.destroy();
     }
+    if (!matches) throw new BoardPinError();
     const body = request.body ? Buffer.from(await request.arrayBuffer()) : null;
     return new Promise<Response>((resolve, reject) => {
       const outgoing = http.request(
@@ -112,6 +118,11 @@ export function pinnedFetch(pin: string): typeof fetch {
           }
           const empty = status === 204 || status === 202 || status === 304 || request.method === "HEAD";
           if (empty) res.resume();
+          let received = 0;
+          res.on("data", (chunk: Buffer) => {
+            received += chunk.length;
+            if (received > BOARD_REPLY_MAX_BYTES) res.destroy(new Error("The board's reply is too large."));
+          });
           resolve(new Response(empty ? null : (Readable.toWeb(res) as ReadableStream), { status, headers }));
         },
       );

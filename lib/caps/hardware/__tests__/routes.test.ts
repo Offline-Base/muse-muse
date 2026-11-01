@@ -76,7 +76,7 @@ describe("the board routes", { skip: canMock ? false : "needs --experimental-tes
       namedExports: {
         AuthError: FakeAuthError,
         GUEST_EMAIL: "guest@musemuse.invalid",
-        isCrossSite: () => false,
+        isCrossSite: (h: Headers) => h.get("sec-fetch-site") === "same-site",
         requireAdmin: async () => {
           if (!viewer) throw new FakeAuthError("Sign in to build.", 401);
           if (!viewer.isAdmin) throw new FakeAuthError("Admins only.", 403);
@@ -360,6 +360,16 @@ describe("the board routes", { skip: canMock ? false : "needs --experimental-tes
           assert.match(await res.text(), /Sign in to pair a board/);
         }
       }
+    });
+
+    it("a page on another site can't start or finish pairing, remove a board or link one", async () => {
+      process.env.GADGET_CONNECT = "1";
+      viewer = { id: admin, isAdmin: false, email: "a@example.com" };
+      const from = (url: string, method: string) => new Request(`https://mm.example${url}`, { method, headers: { "sec-fetch-site": "same-site", "content-type": "text/plain" }, body: method === "DELETE" ? undefined : "{}" });
+      assert.equal((await (await import("@/app/api/boards/pair/route")).POST(from("/api/boards/pair", "POST"))).status, 403);
+      assert.equal((await (await import("@/app/api/boards/pair/finish/route")).POST(from("/api/boards/pair/finish", "POST"))).status, 403);
+      assert.equal((await oneBoard.DELETE(from("/api/boards/x", "DELETE"), { params: Promise.resolve({ id: "x" }) })).status, 403);
+      assert.equal((await productBoard.POST(from("/api/products/corner/board", "POST"), slug("corner"))).status, 403);
     });
 
     it("a signed-in person who isn't an admin holds their own boards, and can't touch another's or stop it", async () => {

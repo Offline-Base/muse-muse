@@ -58,6 +58,8 @@ Lets a person pair their own board, lets its products run the model on it, and a
 - `hard_stop` needs no confirmation and no budget, and is open to anyone the link lets in. It's saved on the platform first and stays until the owner clears it. If the board didn't answer, the reply says so.
 - A board that didn't report `simulated: true` at pairing refuses every robot tool. `server.py` has no actuator tools at all: only `muse-device/sim_board.py` does.
 
+**Limits on what a board says.** A reply stops at 32 MB and an answer at 16,000 characters. `target` is the model the board's `/v1/models` names when that differs from the one picked for its kind. A simulated answer's `target` says no model ran. `simulated` is the board's own word at pairing, so a custom server could claim it: the label is only as good as the board you paired.
+
 **The simulated board.** `python3 muse-device/sim_board.py --state DIR` runs the real `server.py` (TLS, pairing, tokens, routes) with made-up sensors and a fixed rule in place of a model. It loads nothing and says it's simulated in every answer. A build's in-process simulator is `lib/gateway/gadget-sim.ts`, and a local build gets the same one (`localBoardFiles`).
 
 Tests: `lib/caps/hardware/__tests__/pairing.test.ts` (real TLS and a real self-signed certificate), `lib/gateway/__tests__/gadget-connect.test.ts`, the GADGET_CONNECT block in `routes.test.ts`, and `muse-device/test_pairing.py`.

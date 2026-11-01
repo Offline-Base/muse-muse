@@ -2,10 +2,11 @@ import { lookup } from "node:dns/promises";
 import { isPublicHttpUrl, resolvesToPublic } from "@/lib/tools/args";
 import { callDeviceTool, listDeviceTools, type DeviceConfig } from "@/lib/device/client";
 import type { DeviceTrust } from "@/lib/db/schema";
-import { BOARD_ANSWER_MS, BOARD_URL_MAX_CHARS } from "@/lib/caps/hardware/limits";
+import { ASK_BOARD_ANSWER_MAX_CHARS, BOARD_ANSWER_MS, BOARD_CHECK_MS, BOARD_URL_MAX_CHARS } from "@/lib/caps/hardware/limits";
 import type { BoardAnswer, BoardAsk, GadgetBoard, LinkedBoard } from "@/lib/gateway/gadget";
 import { env } from "@/lib/env";
 import { pinnedFetch } from "@/lib/caps/hardware/pinned";
+import { servedModelName } from "@/lib/caps/hardware/targets";
 import { linkedBoardRow, noteBoardHealth, pairedFactsOf, type LinkedBoardRow } from "@/lib/caps/hardware/store";
 import { openSecret, parseKeyring, type BoxKeyring, type SealedSecret } from "@/lib/secrets/box";
 
@@ -74,6 +75,7 @@ export function openBoardConfig(row: LinkedBoardRow, ring: BoxKeyring): DeviceCo
 
 /** One answer from the model running on the board, through its OpenAI-compatible route. Never streams, and never logs a body. */
 async function askOnBoard(config: DeviceConfig, request: BoardAsk, doFetch: typeof fetch): Promise<BoardAnswer> {
+  const running = await runningModel(config, doFetch);
   const res = await doFetch(new URL("/v1/chat/completions", config.url), {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${config.token}` },
@@ -85,7 +87,19 @@ async function askOnBoard(config: DeviceConfig, request: BoardAsk, doFetch: type
   const body = (await res.json()) as { choices?: Array<{ message?: { content?: unknown } }> };
   const text = body.choices?.[0]?.message?.content;
   if (typeof text !== "string") throw new Error("The board's answer has no text.");
-  return { kind: "answer", text };
+  return { kind: "answer", text: text.slice(0, ASK_BOARD_ANSWER_MAX_CHARS), running };
+}
+
+/** What the board says is running, so a product isn't told a model answered when another did. Null if it doesn't say. */
+async function runningModel(config: DeviceConfig, doFetch: typeof fetch): Promise<string | null> {
+  try {
+    const res = await doFetch(new URL("/v1/models", config.url), { headers: { authorization: `Bearer ${config.token}` }, signal: AbortSignal.timeout(BOARD_CHECK_MS) });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { data?: Array<{ id?: unknown }> };
+    return servedModelName(body.data?.[0]?.id);
+  } catch {
+    return null;
+  }
 }
 
 export interface LinkedBoardDeps {

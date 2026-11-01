@@ -3,7 +3,7 @@ import { clientIpKey, parseBearer } from "@/lib/gateway/extract";
 import { SIM_AUDIO_WAV_BASE64, SIM_PHOTO_JPEG_BASE64 } from "@/lib/gateway/gadget-sim-media";
 import type { GatewayToken } from "@/lib/gateway/handler";
 import { CLIENT_IP_HEADER } from "@/lib/gateway/policy";
-import { CONNECT_TOOLS, BOARD_TOOLS, BOARD_TOOLS_MARKER, DRIVE_TOOLS_MARKER, hardwareProofKey, PRODUCT_DRIVE_TOOLS, SENSOR_NAME_MAX_CHARS, SHOW_TEXT_MAX_CHARS, SHOW_TEXT_PER_MINUTE, type BoardTool, type ConnectTool, type ProductDriveTool } from "@/lib/caps/hardware/limits";
+import { ASK_BOARD_PER_MINUTE, CONNECT_TOOLS, BOARD_TOOLS, BOARD_TOOLS_MARKER, DRIVE_TOOLS_MARKER, hardwareProofKey, PRODUCT_DRIVE_TOOLS, SENSOR_NAME_MAX_CHARS, SHOW_TEXT_MAX_CHARS, SHOW_TEXT_PER_MINUTE, type BoardTool, type ConnectTool, type ProductDriveTool } from "@/lib/caps/hardware/limits";
 import { liveAsk, liveHardStop, liveRobotRequest, liveRobotStatus, offlineAnswer, simulatedCall } from "@/lib/gateway/gadget-connect";
 import { capMarker } from "@/lib/caps/ids";
 import { ownerSubject, resolvePrincipal } from "@/lib/tools/principal";
@@ -69,7 +69,7 @@ export interface BoardAsk {
   maxTokens: number;
 }
 
-export type BoardAnswer = { kind: "answer"; text: string } | { kind: "no_model" };
+export type BoardAnswer = { kind: "answer"; text: string; running?: string | null } | { kind: "no_model" };
 
 /** Set while GADGET_CONNECT is on. */
 export interface GadgetConnect {
@@ -355,6 +355,7 @@ async function rateLimited(req: Request, token: GadgetToken, deps: GadgetDeps, t
   const ip = part === "granted" ? null : clientIpKey(req.headers.get(CLIENT_IP_HEADER));
   if (ip) limits[`gadget:ip:${token.productId}:${ip}`] = GADGET_LIMITS.perIpPerMinute;
   if (part !== "ip" && tool === "show_text") limits[`gadget:show:${token.productId}`] = SHOW_TEXT_PER_MINUTE;
+  if (part !== "ip" && tool === "ask_board") limits[`gadget:ask:${token.productId}`] = ASK_BOARD_PER_MINUTE;
   if (!Object.keys(limits).length) return null;
   const counts = await deps.hitRateLimits(Object.keys(limits), windowStart);
   const over = Object.entries(limits).find(([key, limit]) => (counts[key] ?? 0) > limit);

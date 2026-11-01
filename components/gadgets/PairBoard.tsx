@@ -60,7 +60,7 @@ export function PairBoard({ onPaired }: { onPaired: () => void }) {
     setError(ok ? null : problem(data));
     if (ok) {
       setTicket(null);
-      setDone(`Paired. It runs ${String(data.target)}${data.simulated ? ", simulated" : ""}. Link it to one of your products below.`);
+      setDone(`Paired${data.simulated ? " with a simulated board, so no model runs on it" : `. It's set to use ${String(data.target)}, which you start on the board`}. Link it to one of your products below.`);
       onPaired();
     }
   }

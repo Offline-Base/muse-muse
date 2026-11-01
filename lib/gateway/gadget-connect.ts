@@ -1,7 +1,7 @@
 import { ASK_BOARD_MAX_CHARS, ASK_BOARD_MAX_MESSAGES, ASK_BOARD_MAX_TOKENS, type ConnectTool } from "@/lib/caps/hardware/limits";
 import { mintRobotRequest } from "@/lib/caps/hardware/robot";
 import { gatewayError } from "@/lib/gateway/errors";
-import { newSimRobot, robotActionLines, robotActionProblem, SIM_TARGET, simulatedAnswer } from "@/lib/gateway/gadget-sim";
+import { newSimRobot, robotActionLines, robotActionProblem, SIM_TARGET, SIMULATED_MODEL_LABEL, simulatedAnswer } from "@/lib/gateway/gadget-sim";
 import { checkApproval, mintApproval } from "@/lib/tools/sign";
 import type { BoardAsk, GadgetBoard, GadgetResult, LinkedBoard } from "@/lib/gateway/gadget";
 
@@ -97,7 +97,9 @@ export async function liveAsk(args: Record<string, unknown>, link: LinkedBoard):
     if (answer.kind === "no_model") {
       return gatewayError(503, "server_error", "gadget_no_model", `Your board is on, but ${link.facts.targetLabel} isn't running on it. Start it on the board, then try again.`, { retry: false });
     }
-    return text({ text: answer.text, target: link.facts.targetLabel }, link.facts.simulated);
+    // The board's own word beats what was expected: a Jetson can be running something other than its picked model.
+    const target = link.facts.simulated ? SIMULATED_MODEL_LABEL : answer.running && answer.running !== link.facts.target ? answer.running : link.facts.targetLabel;
+    return text({ text: answer.text, target }, link.facts.simulated);
   } catch {
     // No message: a board's client errors can carry its address.
     console.error("[gadget] a board's model didn't answer");
@@ -145,8 +147,7 @@ export async function liveHardStop(link: LinkedBoard, setStopped: (boardId: stri
   try {
     const board = await link.open();
     if (board) {
-      await board.callTool("hard_stop", {});
-      reached = true;
+      reached = !(await board.callTool("hard_stop", {})).isError;
     }
   } catch {
     console.error("[gadget] a hard stop didn't reach the board");

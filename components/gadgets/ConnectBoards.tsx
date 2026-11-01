@@ -121,7 +121,7 @@ export function ConnectBoards() {
     <section className="card section-card" aria-labelledby="boards-title">
       <h2 id="boards-title">Your boards</h2>
       <p className="muted small">
-        A paired board belongs to your account. A product reaches it only after you link it, and only you can use it there unless you open it to visitors. Each board runs the model that fits it: one-bit Muse Glimmer on a Jetson Orin Nano, a small Llama on anything else.
+        A paired board belongs to your account. A product reaches it only after you link it, and only you can use it there unless you open it to visitors. Each board kind is set to one model: one-bit Muse Glimmer on a Jetson Orin Nano, a small Llama on anything else. Neither has been measured on a real board yet.
       </p>
       <p className="muted small">Robot actions run on simulated boards only for now. You confirm every action on Muse Muse, and the hard stop needs no confirmation.</p>
       {line ? (

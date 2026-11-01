@@ -2,7 +2,7 @@ import { AuthError, isCrossSite } from "@/lib/auth";
 import { requireBoardOwner } from "@/lib/caps/hardware/admin";
 import { openLinkedBoard } from "@/lib/caps/hardware/board";
 import { gadgetConnectOn } from "@/lib/caps/hardware/flags";
-import { ownedBoardRow, setBoardStopped } from "@/lib/caps/hardware/store";
+import { ownedBoardRow, pairedFactsOf, setBoardStopped } from "@/lib/caps/hardware/store";
 import { errorJson, readJson, route } from "@/lib/http";
 
 // The owner's hard stop, and clearing it. The stop is saved before the board is called, so it holds even if the board doesn't answer,
@@ -19,6 +19,8 @@ export const POST = route(async (req: Request, { params }: { params: Promise<{ i
   const { id } = await params;
   const row = UUID.test(id) ? await ownedBoardRow(id, user.id) : null;
   if (!row) return errorJson(404, "not_found");
+  // A board with no robot has no stop to hold, and one could never be cleared.
+  if (!pairedFactsOf(row.models)?.robot) return errorJson(403, "robot_real_board_off");
   const body = await readJson(req, 1024);
   const clear = body.clear === true;
   if (!clear) await setBoardStopped(id, true);

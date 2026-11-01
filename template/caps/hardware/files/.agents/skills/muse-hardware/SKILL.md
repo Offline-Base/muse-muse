@@ -122,7 +122,7 @@ Nothing real is connected:
 - The gateway answers board tools from a simulated board: one sensor, `board-temp`, at 41.5 C, and `showText` returns what it was given.
 - The gateway answers the drive tools from a simulated stick, for a simulated owner. `exportToDrive` still asks first, and a confirmed export ends in `done` with `PASS` after about 8 seconds.
 
-Don't show the word "simulated". The live product gets the real device.
+Don't show the word "simulated". The live product gets the real device. The one exception is `askBoard` and the robot helpers, below: there, `simulated: true` has to show.
 
 ## The smoke test
 
@@ -163,11 +163,11 @@ One link session and one call of each board tool is enough. The first checks the
 
 ## The model on the owner's board (askBoard)
 
-`askBoard(messages, { request })` runs on the model on the owner's paired board: one-bit Muse Glimmer on a Jetson Orin Nano, a small Llama on anything else. The platform picks it from the board's kind. Nothing goes to a cloud model, so it suits private data. It can take over a minute, so show progress and which model answered (`target`).
+`askBoard(messages, { request })` runs on the model on the owner's paired board: one-bit Muse Glimmer on a Jetson Orin Nano, a small Llama on anything else. The platform picks it from the board's kind. No cloud model sees the messages, but they do pass through this product's server and Muse Muse on the way to the board, so never call that "stays on your device". It can take over a minute, so show progress and which model answered (`target`).
 
 When the board is off it throws. `askBoardOrMessage` gives `{ ok: false, message }` instead: show that line and keep the rest of the product working. Don't fall back to a cloud model on your own: the person chose their board for a reason, so ask them first.
 
-During the build, a fixed rule stands in for the model and its answers start with `[simulated ...]`. Test that your screen shows the answer, not what the answer says. When `simulated` is true, say on the answer's own card that it's simulated and no model wrote it. Don't strip the prefix and credit the model.
+During the build, a fixed rule stands in for the model and its answers start with `[simulated ...]`. Test that your screen shows the answer, not what the answer says. When `simulated` is true, say on the answer's own card that it's simulated and no model wrote it. Don't strip the prefix and credit the model. `target` already says no model ran, so show it as it comes.
 
 ## A robot (robotStatus, requestRobotAction, hardStop)
 

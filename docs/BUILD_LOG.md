@@ -1731,3 +1731,19 @@ Local site on port 3036, not 3031: another stream's site (github-export) already
 - Could not drive the product by hand: the sandbox stops when a local build ends (410), and during fix rounds its preview didn't respond to clicks. The evidence is its smoke tests, the judge and the demo video.
 - Spend: about $0.13 on TEST_MODEL across four builds ($0.001, $0.04 stopped by a site restart, $0.05, $0.035), Vercel Sandbox time extra. No GPU. Local site and simulated boards stopped, throwaway worktree removed.
 - Tests, run on touched code: `pairing`, `gadget-connect`, `routes`, `local-gadget`, `plan` and `brief` 99 pass; board, registry, store and gadgets-page tests 93 pass before the last edits; `test_pairing` 10, `test_server` 86 and `test_drive` pass. No full suite and no `next build` of the platform. `tsc` is clean after merging main.
+
+## Nov 1, 17:46: independent review of tg-gadget-connect
+
+Read the diff against main without relying on the branch's report. No paid GPU or endpoint in this code, no spend in the review, no secrets reaching browsers or logs found, flag-off paths unchanged apart from the guest-owned-row refusal and the merged health note. Both Llama license hashes and the model revision were checked against their sources.
+
+Fixed, tests only, no build and no rerun on a board or simulated board:
+
+- Pair, finish, remove and link took same-site requests, so a product on a nearby domain could use the owner's Lax cookie. Refused with GADGET_CONNECT on.
+- /gadgets/confirm could be framed. Now `frame-ancestors 'none'` and X-Frame-Options. The header wasn't seen in a running site.
+- The builder dropped the `[simulated ...]` prefix in the real run because `target` still credited Muse Glimmer, and an older line told it never to show "simulated". `target` now says no model ran, and the line has an exception.
+- A real board's `target` named the model picked for its kind, even if another was running. It now uses the name from /v1/models when that differs. The name is a file name only, so no board folders are stored.
+- A board's reply had no size limit: 32 MB now, answers cut at 16,000 characters. Asks are limited to 12 a minute per product.
+- A hard stop the board refused was reported as reached. A stop on a board with no robot could never be cleared, so it's refused.
+- Copy no longer says a board "runs" or "fits" a model that hasn't been measured, or that board answers suit private data: messages pass through the product's server and Muse Muse.
+
+Left for the owner: non-Meta student profiles in scripts/knowledge/aws/job/train_student.py, and WhereItRuns saying a Jetson can't run Muse Glimmer, which tg-quant-targets rewrites. `simulated` is what a board says about itself at pairing.

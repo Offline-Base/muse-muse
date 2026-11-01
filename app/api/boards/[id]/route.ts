@@ -1,4 +1,4 @@
-import { requireBoardOwner } from "@/lib/caps/hardware/admin";
+import { refuseCrossSite, requireBoardOwner } from "@/lib/caps/hardware/admin";
 import { forgetOnBoard } from "@/lib/caps/hardware/pairing";
 import { boardRegistryOn } from "@/lib/caps/hardware/flags";
 import { revokeBoard } from "@/lib/caps/hardware/store";
@@ -9,8 +9,9 @@ export const runtime = "nodejs";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** DELETE -> {ok}: removes the person's own board. Its address and token are wiped, and its product links go. */
-export const DELETE = route(async (_req: Request, { params }: { params: Promise<{ id: string }> }) => {
+export const DELETE = route(async (req: Request, { params }: { params: Promise<{ id: string }> }) => {
   if (!boardRegistryOn()) return errorJson(404, "not_found");
+  refuseCrossSite(req);
   const user = await requireBoardOwner();
   const { id } = await params;
   if (UUID.test(id)) await forgetOnBoard(id, user.id);

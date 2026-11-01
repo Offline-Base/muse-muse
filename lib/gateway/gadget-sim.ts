@@ -102,5 +102,8 @@ export function simulatedAnswer(target: string, messages: ReadonlyArray<{ role: 
   return `[simulated ${target}] ${advice}`;
 }
 
+/** What `target` says for a simulated answer. The name itself says it, so a screen that shows which model answered can't credit a model. */
+export const SIMULATED_MODEL_LABEL = "Simulated, no model ran (a fixed rule)";
+
 /** The model a simulated build's board runs: a build stands in for a Jetson, the owner's first target. */
-export const SIM_TARGET = { id: "muse-glimmer-30b-IQ1_S", label: "Muse Glimmer, one bit" };
+export const SIM_TARGET = { id: "muse-glimmer-30b-IQ1_S", label: SIMULATED_MODEL_LABEL };
