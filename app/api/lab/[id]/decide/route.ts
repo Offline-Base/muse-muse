@@ -41,7 +41,10 @@ function serveErrorReply(err: ServeError): Response {
     case "stopping":
       return errorJson(404, "no_live_demo");
     case "bad_prompt":
-      return errorJson(400, "The decision model couldn't take that input: it is too long once rendered. Try a shorter one.");
+      // Only the GPU's 422 means too long; its other refusals (a malformed request) shouldn't happen from this route.
+      return err.status === 422
+        ? errorJson(400, "The decision model couldn't take that input: it is too long once rendered. Try a shorter one.")
+        : errorJson(400, "The decision model refused that input. Try another one.");
     default:
       return errorJson(502, "demo_unavailable");
   }

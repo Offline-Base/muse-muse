@@ -639,6 +639,10 @@ describe("live demo proxy", { skip: openssl ? false : "needs openssl to make tes
         const long = await decideRoute(decideReq({ state: STATE }), ctx());
         assert.equal(long.status, 400);
         assert.match(((await long.json()) as { error: string }).error, /too long once rendered/);
+        answer = () => ({ status: 400, body: { error: "wrong_system" } });
+        const refusedInput = await decideRoute(decideReq({ state: STATE }), ctx());
+        assert.equal(refusedInput.status, 400);
+        assert.equal(((await refusedInput.json()) as { error: string }).error, "The decision model refused that input. Try another one.", "only a 422 is called too long");
 
         seen = [];
         live = { ...live!, certSha256: certB.sha256 };
