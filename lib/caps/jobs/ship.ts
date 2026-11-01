@@ -1,4 +1,5 @@
 import { jobsBlock } from "@/lib/caps/jobs/brief";
+import { parseEvery } from "@/lib/caps/jobs/schedule";
 import { syncSchedules } from "@/lib/caps/jobs/store";
 import type { CapShipInput } from "@/lib/caps/ship-run";
 import * as sandbox from "@/lib/sandbox/builder";
@@ -26,7 +27,7 @@ export function shippedSchedules(block: { schedules: Array<{ name: string; every
   return block.schedules.flatMap((s) => {
     const m = listed.find((l) => (l as { name?: unknown })?.name === s.name) as { every?: unknown } | undefined;
     if (!m) return [];
-    return [{ name: s.name, every: typeof m.every === "string" ? m.every : s.every }];
+    return [{ name: s.name, every: parseEvery(m.every) ? (m.every as string) : s.every }];
   });
 }
 

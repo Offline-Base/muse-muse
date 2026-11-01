@@ -95,6 +95,7 @@ describe("the jobs block", () => {
     assert.deepEqual(shippedSchedules(block, { jobs: {} }), block.schedules);
     assert.deepEqual(shippedSchedules(block, { jobs: { schedules: [{ name: "digest", every: "2 days" }, { name: "new", every: "1 hour" }] } }), [{ name: "digest", every: "2 days" }]);
     assert.deepEqual(shippedSchedules(block, { jobs: { schedules: [] } }), []);
+    assert.deepEqual(shippedSchedules(block, { jobs: { schedules: [{ name: "digest", every: "whenever" }] } }), [{ name: "digest", every: "1 day" }], "words it can't read keep the brief's");
   });
 });
 
