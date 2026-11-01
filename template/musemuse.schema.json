@@ -93,7 +93,8 @@
             "properties": {
               "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$" },
               "scope": { "enum": ["shared", "visitor", "owner", "user"] },
-              "writes": { "enum": ["owner", "signed_in", "anyone"], "description": "Shared collections only. Default owner." }
+              "jobWrites": { "type": "boolean", "description": "A background job may save here. Only for the brief's jobs results." },
+                "writes": { "enum": ["owner", "signed_in", "anyone"], "description": "Shared collections only. Default owner." }
             }
           }
         }
@@ -119,6 +120,36 @@
         "publicApis": { "type": "array", "maxItems": 4, "items": { "enum": ["nws", "wikipedia", "openlibrary", "usgs"] } },
         "keys": { "type": "array", "maxItems": 3, "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,39}$" } },
         "sends": { "type": "array", "maxItems": 2, "items": { "enum": ["email", "chat"] } }
+      }
+    },
+    "jobs": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Only for a product with background jobs: exactly the brief's schedules and webhooks, which verify checks. The platform reads the schedules at deploy.",
+      "properties": {
+        "schedules": {
+          "type": "array",
+          "maxItems": 3,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "every"],
+            "properties": {
+              "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,39}$" },
+              "every": { "type": "string", "description": "Like \"15 minutes\" (the shortest), \"2 hours\", \"1 day at 07:30\" or \"1 week at 09:00 America/New_York\"." }
+            }
+          }
+        },
+        "webhooks": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": { "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,39}$" } }
+          }
+        }
       }
     },
     "agent": {

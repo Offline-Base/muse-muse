@@ -29,12 +29,14 @@ export interface Confirmation {
   args: Message;
 }
 
-export type SendResult = { status: "needs_confirmation"; confirmation: Confirmation; stale?: boolean } | { status: "sent"; id: string; simulated?: boolean };
+/** "held": a background job asked. Nothing went: the owner reads it and confirms it later in Muse Muse. */
+export type SendResult = { status: "needs_confirmation"; confirmation: Confirmation; stale?: boolean } | { status: "sent"; id: string; simulated?: boolean } | { status: "held"; id: string; simulated?: boolean };
 
 /** Asks to send, or sends with `approval` from the confirmation. Throws CapError `needs_key` without the owner's key. */
 export async function send(request: RequestLike | null | undefined, message: Message & { approval?: string }): Promise<SendResult> {
   const reply = await gatewayCall<{ ok: boolean; code?: string; confirmation?: Confirmation; stale?: boolean; id?: string; simulated?: boolean; label?: string }>(request, "POST", "/send", message);
   if (reply.code === "needs_confirmation" && reply.confirmation) return { status: "needs_confirmation", confirmation: reply.confirmation, ...(reply.stale ? { stale: true } : {}) };
+  if (reply.code === "held_for_owner" && reply.id) return { status: "held", id: reply.id, ...(reply.simulated ? { simulated: true } : {}) };
   if (reply.code === "needs_key") throw new CapError("needs_key", 409, `Add a ${reply.label ?? "sending"} key in this product's settings first.`);
   if (reply.ok && reply.id) return { status: "sent", id: reply.id, ...(reply.simulated ? { simulated: true } : {}) };
   throw new CapError("cap_failed", 502, "That message didn't send. Nothing went out.");
