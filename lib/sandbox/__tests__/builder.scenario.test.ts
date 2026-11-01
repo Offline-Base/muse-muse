@@ -606,7 +606,7 @@ describe("product sandboxes", { skip: canMock ? false : "needs --experimental-te
   });
 
   describe(".env.local and TEST_MODEL", () => {
-    const NAMES = ["MODEL_API_KEY", "PLATFORM_URL", "VERCEL_URL", "VERCEL_PROJECT_PRODUCTION_URL", "VERCEL_ENV", "TEST_MODEL"] as const;
+    const NAMES = ["BUILDS_ON_CONTRIBUTOR", "MODEL_API_KEY", "PLATFORM_URL", "VERCEL_URL", "VERCEL_PROJECT_PRODUCTION_URL", "VERCEL_ENV", "TEST_MODEL"] as const;
     /** The .env.local reopenSandbox writes with these settings, the rest of NAMES unset. */
     async function envFile(set: Partial<Record<(typeof NAMES)[number], string>>): Promise<string> {
       const saved = Object.fromEntries(NAMES.map((n) => [n, process.env[n]]));
@@ -638,6 +638,13 @@ describe("product sandboxes", { skip: canMock ? false : "needs --experimental-te
       const text = await envFile({ PLATFORM_URL: "https://musemuse.example", TEST_MODEL: CONTRIBUTOR });
       assert.match(text, /^GATEWAY_URL=https:\/\/g$/m);
       assert.doesNotMatch(text, /TEST_MODEL/);
+    });
+
+    it("names it with BUILDS_ON_CONTRIBUTOR on a direct run, and never through the gateway", async () => {
+      const direct = await envFile({ PLATFORM_URL: "http://localhost:3000", BUILDS_ON_CONTRIBUTOR: "1" });
+      assert.match(direct, new RegExp(`^TEST_MODEL=${CONTRIBUTOR}\\n$`, "m"));
+      const gateway = await envFile({ PLATFORM_URL: "https://musemuse.example", BUILDS_ON_CONTRIBUTOR: "1", VERCEL_ENV: "production" });
+      assert.doesNotMatch(gateway, /TEST_MODEL/);
     });
 
     it("leaves it out when TEST_MODEL is unset, names another model, or the platform is production", async () => {

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { Icon } from "@/components/icons";
 import { Menu } from "@/components/Menu";
 import { CameraCapture, useCameraSupported } from "@/components/camera/CameraCapture";
+import { ContributorNotice } from "@/components/composer/ContributorNotice";
 import { AttachmentChip, type Attachment } from "@/components/composer/AttachmentChip";
 import { Starters, type StarterTab } from "@/components/composer/Starters";
 import { TargetPill } from "@/components/composer/TargetPill";
@@ -53,6 +54,8 @@ interface Props {
   context?: string;
   /** Sent as the note when the box is empty. Only with `context`: it lets the reader send without typing. */
   blankNote?: string;
+  /** BUILDS_ON_CONTRIBUTOR: says what this box's text and files go to, before they're sent. */
+  contributorNotice?: boolean;
   /** Keeps this composer's draft apart from the Make page's. */
   draftId?: string;
   /** Where to come back to after signing in. */
@@ -145,6 +148,7 @@ export function Composer({
   starters,
   context,
   blankNote,
+  contributorNotice,
   draftId,
   returnTo,
   targetOptions,
@@ -475,6 +479,7 @@ export function Composer({
 
   return (
     <div className={`composer-wrap${floating ? " composer-floating" : ""}`}>
+      {contributorNotice ? <ContributorNotice /> : null}
       <form
         className={`composer${dragging ? " is-dragging" : ""}`}
         aria-label={copy?.form ?? (isRefine ? "Ask for a change" : "Your muse")}

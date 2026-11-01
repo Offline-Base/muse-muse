@@ -145,7 +145,7 @@ describe("with every flag off, a product with no caps", { skip: canMock ? false 
       },
     });
     mock.module(at("../../storage.ts"), {
-      namedExports: {
+      namedExports: { putExactFile: async () => "https://blob.example/exact",
         fetchBytes: async () => Buffer.alloc(1000, 1),
         putFile: async (prefix: string, key: string) => `https://blob/${prefix}/${key}`,
         blobAuth: () => ({}),
@@ -162,7 +162,7 @@ describe("with every flag off, a product with no caps", { skip: canMock ? false 
       },
     });
     mock.module(at("../../publish/vercel.ts"), {
-      namedExports: {
+      namedExports: { collectDeployFiles: async () => [],
         startDeployFromSandbox: async (input: { env: Record<string, string> }) => {
           deployEnv = input.env;
           return { projectId: "prj_1", deploymentId: "dpl_1", url: "https://musemuse-bird-count.vercel.app" };

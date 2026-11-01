@@ -39,7 +39,9 @@ export function capsForBuilder(
   enabled: readonly CapId[] = env.enabledCaps,
   signedInCaps: boolean = env.trustSignedInCaps,
 ): CapId[] {
-  if (!signedInCaps || tierMayUseBuilderCaps(tier)) return [...enabled];
+  if (tierMayUseBuilderCaps(tier)) return [...enabled];
+  // Platform powers spend real money for their owner, so a guest never gets them, whatever TRUST_SIGNED_IN_CAPS says.
+  if (!signedInCaps) return enabled.filter((c) => c !== "platform");
   return enabled.filter((c) => !CAP_NEEDS_BUILDER[c]);
 }
 
@@ -61,7 +63,8 @@ export interface BriefTier {
  * off, which reads nothing and leaves the writer exactly as it is today.
  */
 export async function briefTierFor(userId: string): Promise<BriefTier | undefined> {
-  if (!env.trustSignedInCaps) return undefined;
+  const powers = env.enabledCaps.includes("platform");
+  if (!env.trustSignedInCaps && !powers) return undefined;
   const [row] = await db()
     .select({ email: schema.users.email, isAdmin: schema.users.isAdmin, bannedAt: schema.users.bannedAt })
     .from(schema.users)
@@ -69,5 +72,6 @@ export async function briefTierFor(userId: string): Promise<BriefTier | undefine
     .limit(1);
   // A user row that's gone is treated as the guest: the narrowest writer.
   const tier = row ? builderTier({ ...row, isAdmin: row.isAdmin && env.adminEmails.includes(row.email) }) : "guest";
-  return { caps: capsForBuilder(tier), guest: !tierMayUseBuilderCaps(tier) };
+  // With only PLATFORM_POWERS on, the writer loses just that cap: the guest rule is TRUST_SIGNED_IN_CAPS's.
+  return { caps: capsForBuilder(tier), guest: env.trustSignedInCaps && !tierMayUseBuilderCaps(tier) };
 }

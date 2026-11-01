@@ -441,6 +441,8 @@ export function startErrorText(status: number, body: unknown, limits: { maxActiv
             : `Training has spent ${usd(spent)} of the ${cap} daily cap today, and this job's dollar limit would pass it.`;
       return `${lead} Lower the dollar limit, or start it after midnight UTC.`;
     }
+    case "gpu_limit":
+      return field(body, "reason") ?? "Too little is left of the GPU limit to start this job.";
     case "platform_not_public":
       return NOT_PUBLIC_TEXT;
     case "sweep_not_configured":

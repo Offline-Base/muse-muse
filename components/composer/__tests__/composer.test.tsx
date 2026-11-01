@@ -38,6 +38,17 @@ describe("composer", () => {
     assert.doesNotMatch(html, /Thinking/, "no switch that does nothing");
   });
 
+  it("warns before sending only when told to, in either mode", () => {
+    camera = false;
+    const words = "This build runs on a model Meta may train on. Don&#x27;t enter personal, sensitive or confidential information or files.";
+    for (const mode of ["new", "refine"]) {
+      const html = render({ mode, buildId: "b1", signedIn: true, contributorNotice: true });
+      assert.ok(html.includes(words), mode);
+      assert.ok(html.indexOf(words) < html.indexOf("<form"), "above the box");
+      assert.ok(!render({ mode, buildId: "b1", signedIn: true }).includes("Meta may train on"), mode);
+    }
+  });
+
   it("lets a signed-out reader press send to sign in, and says so in the row", () => {
     camera = false;
     const html = render({ mode: "new", signedIn: false, layout: "playground" });

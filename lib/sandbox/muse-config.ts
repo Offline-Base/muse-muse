@@ -58,9 +58,9 @@ export function museSettings(capacity: number): string[] {
 }
 
 /**
- * The `-c` setting that turns every reminder agent off. Test builds use it (TEST_MODEL, lib/env.ts): `muse serve` turns a
+ * The `-c` setting that turns every reminder agent off. Every round on Contributor uses it (buildTestModel, lib/env.ts): `muse serve` turns a
  * Contributor id in background_agent_model back into muse-spark-1.3, which this platform never calls, so reminders can't
- * be trusted to stay on Contributor. Production builds never pass it.
+ * be trusted to stay on Contributor. Rounds on Muse Wonder don't pass it, unless a build's flag is on.
  */
 export function remindersOffSetting(): string {
   const off = Object.fromEntries(["scope", ...REMINDER_IDS].map((id) => [`plugin:tbh-reminders:reminder:${id}-reminder`, { enabled: false }]));

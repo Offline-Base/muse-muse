@@ -89,7 +89,7 @@ describe("with every target flag off", () => {
     const stored = strictJsonSchema(BriefSchema) as { properties: Record<string, unknown>; required: string[] };
     const written = strictJsonSchema(NewBriefSchema) as { properties: Record<string, unknown>; required: string[] };
     // Wave 3's optional fields, in the stored schema's order (wave3StoredFields): each cap's block, then unit 2's milestones.
-    const differsOnlyBy = ["targets", "agent", "askedLook", "recipes", ...Object.keys(CAP_BRIEF_FIELDS), "milestones", "requirements", "scopeCheck"];
+    const differsOnlyBy = ["targets", "agent", "askedLook", "recipes", ...Object.keys(CAP_BRIEF_FIELDS), "milestones", "requirements", "chained", "scopeCheck"];
     assert.deepEqual(Object.keys(stored.properties).filter((k) => !(k in written.properties)), differsOnlyBy);
     assert.deepEqual(Object.keys(written.properties).filter((k) => !(k in stored.properties)), []);
   });

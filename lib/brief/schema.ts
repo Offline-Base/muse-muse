@@ -2,7 +2,7 @@ import { z } from "zod";
 import { CAP_BRIEF_FIELDS, writerBriefField } from "@/lib/caps/brief-fields";
 import type { CapId } from "@/lib/caps/ids";
 import { MilestonesSchema } from "@/lib/engine/milestones";
-import { FULL_LIMITS, RequirementsSchema, ScopeRecordSchema } from "@/lib/full/requirements";
+import { ChainRequirementsSchema, FULL_LIMITS, RequirementsSchema, requirementsMax, ScopeRecordSchema } from "@/lib/full/requirements";
 import { PERSONAL_TOOL_IDS, PUBLIC_TOOL_IDS } from "@/lib/tools/ids";
 
 /**
@@ -126,7 +126,9 @@ export const BriefSchema = BriefFields.extend({
   // FULL_BUILDS (docs/FULL_BUILDS.md): a stored brief may run past the writer's usual limits, and carries its requirements.
   primaryFlow: z.array(z.string().min(1)).min(1).max(FULL_LIMITS.primaryFlow),
   screens: z.array(z.object({ name: z.string(), purpose: z.string() })).max(FULL_LIMITS.screens),
-  requirements: RequirementsSchema.nullable().optional(),
+  requirements: ChainRequirementsSchema.nullable().optional(),
+  /** CHAINED_BUILDS: set by code at the brief step, never by the writer. This build runs across sessions (docs/CHAINED_BUILDS.md). */
+  chained: z.boolean().nullable().optional(),
   scopeCheck: ScopeRecordSchema.nullable().optional(),
 });
 
@@ -199,7 +201,7 @@ export function newBriefSchemaFor(opts: {
   if (opts.milestones) extra.milestones = MilestonesSchema.nullable();
   if (opts.recipes?.length) extra.recipes = z.array(z.enum(opts.recipes as [string, ...string[]])).max(MAX_RECIPES).nullable();
   if (opts.fullBuilds) {
-    extra.requirements = RequirementsSchema;
+    extra.requirements = requirementsMax() > FULL_LIMITS.requirements ? ChainRequirementsSchema : RequirementsSchema;
     extra.primaryFlow = z.array(z.string().min(1)).min(1).max(FULL_LIMITS.primaryFlow);
     extra.screens = z.array(z.object({ name: z.string(), purpose: z.string() })).max(FULL_LIMITS.screens);
   }

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { LegalPage } from "@/components/trust/LegalPage";
-import { env } from "@/lib/env";
+import { contributorBuildsOn, env } from "@/lib/env";
 import { privacySections, TERMS_UPDATED, TERMS_VERSION } from "@/lib/trust/terms";
 
 export const metadata: Metadata = { title: "Privacy" };
@@ -12,5 +12,5 @@ export const metadata: Metadata = { title: "Privacy" };
 export default async function PrivacyPage() {
   await connection();
   if (!env.trustLegalPages) notFound();
-  return <LegalPage title="Privacy" updated={TERMS_UPDATED} version={TERMS_VERSION} sections={privacySections({ sparkToWonder: env.trustSparkToWonder })} />;
+  return <LegalPage title="Privacy" updated={TERMS_UPDATED} version={TERMS_VERSION} sections={privacySections({ sparkToWonder: env.trustSparkToWonder, buildsOnContributor: contributorBuildsOn() })} />;
 }

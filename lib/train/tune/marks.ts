@@ -139,6 +139,8 @@ export function endedText(code: string): string {
       return "Training didn't start: the GPU couldn't report back to this deployment over https.";
     case "sweep_not_configured":
       return "Training didn't start: the 5-minute check that shuts down lost GPUs can't run on this deployment.";
+    case "gpu_limit":
+      return "Training didn't start: too little is left of the GPU limit.";
     case "start_failed":
       return "Training didn't start: its workflow couldn't start, so nothing was launched.";
     case "stopped":
