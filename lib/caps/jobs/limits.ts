@@ -21,6 +21,8 @@ export const JOBS_LIMITS = {
   checkpointMaxBytes: 64 * 1024,
   inputMaxBytes: 64 * 1024,
   enqueuePerProductPerDay: 50,
+  /** Runs one product can have waiting. Hooks and enqueue are refused past this until some have run. */
+  queuedPerProduct: 100,
   notifyPerProductPerDay: 10,
   noticeTitleMax: 120,
   noticeBodyMax: 2_000,

@@ -12,12 +12,15 @@ import { dayWindow } from "@/lib/caps/gate";
  */
 export interface JobsCronDeps {
   dailyRuns(): number;
+  /** JOBS_PRODUCT_DAILY_RUNS: one product's share of those ticks. */
+  productDailyRuns(): number;
   runUsd(): number;
   pauseDays(): number;
   pauseAbsent(now: Date, days: number): Promise<number>;
   queueDueSchedules(now: Date, budgetUsd: number): Promise<number>;
   expireStale(now: Date): Promise<Array<{ id: string; productId: string; name: string }>>;
-  claimQueued(limit: number, now: Date, passStartedAt: Date): Promise<ClaimedRun[]>;
+  claimQueued(limit: number, now: Date, passStartedAt: Date, opts: { awayDays: number; skipProducts: readonly string[] }): Promise<ClaimedRun[]>;
+  unclaimRun(run: ClaimedRun): Promise<void>;
   retryOrFail(run: ClaimedRun, error: string, now: Date): Promise<"queued" | "failed" | "stale">;
   addNoticeOnce(input: NoticeInput): Promise<void>;
   reserveCounter(key: string, windowStart: Date, amount: number, limit: number): Promise<number | null>;
@@ -86,6 +89,7 @@ export async function runJobsCron(deps: JobsCronDeps): Promise<JobsCronResult> {
   out.queued = await deps.queueDueSchedules(startedAt, budget);
   for (const run of await deps.expireStale(startedAt)) await deps.addNoticeOnce(failedNotice(run, "It didn't finish in time."));
   const day = dayWindow(startedAt);
+  const overToday = new Set<string>();
   while (deps.now().getTime() - startedAt.getTime() < JOBS_LIMITS.cronBudgetMs) {
     // Each tick takes one of the day's runs before it's claimed, and a batch that came up short gives the rest back.
     let room = 0;
@@ -94,11 +98,23 @@ export async function runJobsCron(deps: JobsCronDeps): Promise<JobsCronResult> {
       out.capped = true;
       break;
     }
-    const batch = await deps.claimQueued(room, deps.now(), startedAt);
+    const batch = await deps.claimQueued(room, deps.now(), startedAt, { awayDays: deps.pauseDays(), skipProducts: [...overToday] });
     if (batch.length < room) await deps.adjustCounter("jobs-runs", day, batch.length - room);
     if (!batch.length) break;
-    const results = await Promise.all(batch.map((run) => fire(run, deps).catch(() => false)));
-    out.fired += batch.length;
+    // One product's share of the day. A run past it goes back unspent, for tomorrow, and its product sits out this pass.
+    const go: ClaimedRun[] = [];
+    for (const run of batch) {
+      if (!overToday.has(run.productId) && (await deps.reserveCounter(`jobs-runs:${run.productId}`, day, 1, deps.productDailyRuns())) !== null) {
+        go.push(run);
+        continue;
+      }
+      overToday.add(run.productId);
+      await deps.unclaimRun(run);
+      await deps.adjustCounter("jobs-runs", day, -1);
+      await deps.addNoticeOnce({ productId: run.productId, namespace: "live", kind: "job", title: "Background jobs reached today's limit", body: `This product started its ${deps.productDailyRuns()} job runs for today. What's waiting goes after 00:00 UTC.` });
+    }
+    const results = await Promise.all(go.map((run) => fire(run, deps).catch(() => false)));
+    out.fired += go.length;
     out.failed += results.filter((ok) => !ok).length;
   }
   return out;

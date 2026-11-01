@@ -163,6 +163,7 @@ describe("a background job, end to end", { skip }, () => {
       stopRun: store.stopRunForBudget,
       addNotice: store.jobsStore.addNotice,
       dailyUsd: () => 5,
+      productDailyUsd: () => 1,
       counterValue: async (k: string) => counters.get(k) ?? 0,
       adjustCounter: async (k: string, _w: Date, d: number) => void counters.set(k, (counters.get(k) ?? 0) + d),
     };
@@ -175,8 +176,8 @@ describe("a background job, end to end", { skip }, () => {
       const parts = url.pathname.replace(/^\/gw\//, "").split("/");
       const request = new Request(url, { method: req.method, headers: req.headers as HeadersInit, ...(body.length && req.method !== "GET" ? { body } : {}) });
       const answer = await (async () => {
-        if (parts[0] === "jobs") return jobs.handleJobs(request, parts.slice(1), { ...jobsDeps, gatewayUrl });
-        if (parts[0] === "hooks") return jobs.handleHook(request, parts.slice(1), { servedCaps: gate.servedCaps, product: capProduct, adminEmails: [], hitRateLimits, store: store.jobsStore, webhooksOn: () => true, runUsd: () => 0.1, liveToken: async () => tokenFor() });
+        if (parts[0] === "jobs") return jobs.handleJobs(request, parts.slice(1), { ...jobsDeps, pauseDays: () => 14, gatewayUrl });
+        if (parts[0] === "hooks") return jobs.handleHook(request, parts.slice(1), { servedCaps: gate.servedCaps, product: capProduct, adminEmails: [], hitRateLimits, store: store.jobsStore, webhooksOn: () => true, runUsd: () => 0.1, pauseDays: () => 14, liveToken: async () => tokenFor() });
         if (parts[0] === "data") return data.handleData(request, parts.slice(1), dataDeps);
         if (parts[0] === "v1") {
           const token = { ...fake.deps, findToken: async () => ({ ...tokenFor() }) as never, jobCall: (r: Request, t: { productId: string; scope: string; buildId?: string | null }, now: Date) => budget.jobCallOf(r, { productId: t.productId, scope: t.scope, buildId: (t as { buildId?: string | null }).buildId ?? null }, jobCallDeps, now) };
@@ -327,6 +328,8 @@ describe("a background job, end to end", { skip }, () => {
         queueDueSchedules: store.queueDueSchedules,
         expireStale: store.expireStale,
         claimQueued: store.claimQueued,
+        unclaimRun: store.unclaimRun,
+        productDailyRuns: () => 400,
         retryOrFail: store.retryOrFail,
         addNoticeOnce: store.addNoticeOnce,
         reserveCounter: async (k, _w, a, l) => {

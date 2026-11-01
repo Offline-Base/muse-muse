@@ -73,7 +73,7 @@ describe("a job's dollars in the gateway's model route", () => {
       body: JSON.stringify({ model: "muse-wonder-1.0", input: "made-up", max_output_tokens: maxOut }),
     });
   const run = { id: "33333333-3333-4333-8333-333333333333", productId, namespace: "live", status: "running", budgetUsd: 0.1, costUsd: 0, createdAt: NOW };
-  function harness(over: Partial<typeof run> = {}, dailyUsd = 5) {
+  function harness(over: Partial<typeof run> = {}, dailyUsd = 5, productUsd = 1) {
     const stopped: string[] = [];
     const notices: unknown[] = [];
     const costs: number[] = [];
@@ -91,6 +91,7 @@ describe("a job's dollars in the gateway's model route", () => {
         stopRun: async (id: string) => (stopped.push(id), true),
         addNotice: async (n: unknown) => void notices.push(n),
         dailyUsd: () => dailyUsd,
+        productDailyUsd: () => productUsd,
         counterValue: async (k: string) => daily.get(k) ?? 0,
         adjustCounter: async (k: string, _w: Date, d: number) => void daily.set(k, (daily.get(k) ?? 0) + d),
       },
@@ -208,6 +209,22 @@ describe("a job's dollars in the gateway's model route", () => {
     assert.equal(over.status, 429);
     assert.equal(((await over.json()) as { error: { code: string } }).error.code, "budget_exceeded");
     assert.equal(spent.gw.upstreamCalls.length + paused.gw.upstreamCalls.length + bad.gw.upstreamCalls.length, 0);
+  });
+
+  it("one product stops at its own dollars for the day, and the run isn't ended by it", async () => {
+    const h = harness({}, 5, 0.5);
+    h.daily.set(`jobs-usd:${productId}`, 500_000);
+    const over = await handleGateway(call(header()), ["responses"], await route(h));
+    assert.equal(over.status, 429);
+    assert.equal(((await over.json()) as { error: { code: string } }).error.code, "budget_exceeded");
+    assert.deepEqual([h.gw.upstreamCalls.length, h.stopped.length], [0, 0]);
+    const other = harness({ productId }, 5, 0.5);
+    const ok = await handleGateway(call(header()), ["responses"], await route(other));
+    assert.equal(ok.status, 200);
+    await ok.text();
+    await other.gw.settled();
+    assert.ok((other.daily.get(`jobs-usd:${productId}`) ?? 0) > 0, "what it spent counts on the product");
+    assert.ok((other.daily.get("jobs-usd") ?? 0) > 0, "and on the platform");
   });
 
   it("a run's counters stay in one window across hours, so a long run can't start its dollars over", async () => {

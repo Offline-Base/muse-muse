@@ -15,7 +15,8 @@ import type { RunLimitReason, RunLimits } from "@/lib/gateway/runs";
  *   doesn't fit next to other calls' holds, or asks for more than what's left, is only refused, and can ask for less.
  *
  * JOBS_DAILY_USD is what all job runs on the platform may spend in a UTC day. A call starts only with some left, so
- * the most it can go over is what the calls already running cost, each within its run's dollars.
+ * the most it can go over is what the calls already running cost, each within its run's dollars. JOBS_PRODUCT_DAILY_USD is
+ * one product's share, the same way, so a busy product can't use up the day for everyone.
  */
 export interface JobCall {
   runId: string;
@@ -36,6 +37,8 @@ export interface JobCallDeps {
   stopRun(runId: string, now: Date, why?: string): Promise<boolean>;
   addNotice(input: { productId: string; namespace: string; kind: "job_failed"; title: string; body: string }): Promise<unknown>;
   dailyUsd(): number;
+  /** JOBS_PRODUCT_DAILY_USD: one product's share of those dollars. */
+  productDailyUsd(): number;
   counterValue(key: string, windowStart: Date): Promise<number>;
   adjustCounter(key: string, windowStart: Date, delta: number): Promise<void>;
 }
@@ -58,6 +61,8 @@ export async function jobCallOf(req: Request, token: { productId: string; scope:
   if (daily === 0) return refuse(503, "server_error", "caps_paused", "Background jobs are paused on Muse Muse today.");
   const day = dayWindow(now);
   if (token.scope !== "build" && (await deps.counterValue(DAILY_KEY, day)) / 1e6 >= daily) return refuse(429, "insufficient_quota", "budget_exceeded", "Background jobs have used their daily budget on Muse Muse. It resets at 00:00 UTC.");
+  const productKey = `${DAILY_KEY}:${run.productId}`;
+  if (token.scope !== "build" && (await deps.counterValue(productKey, day)) / 1e6 >= deps.productDailyUsd()) return refuse(429, "insufficient_quota", "budget_exceeded", "This product's background jobs have used their daily budget. It resets at 00:00 UTC.");
   return {
     runId: run.id,
     limits: { turns: JOBS_LIMITS.runTurns, toolCalls: JOBS_LIMITS.runToolCalls, usd: run.budgetUsd },
@@ -80,7 +85,9 @@ export async function jobCallOf(req: Request, token: { productId: string; scope:
     },
     async spent(usd) {
       await deps.addRunCost(run.id, usd);
-      if (token.scope !== "build" && usd > 0) await deps.adjustCounter(DAILY_KEY, day, Math.ceil(usd * 1e6));
+      if (token.scope === "build" || usd <= 0) return;
+      await deps.adjustCounter(DAILY_KEY, day, Math.ceil(usd * 1e6));
+      await deps.adjustCounter(productKey, day, Math.ceil(usd * 1e6));
     },
   };
 }

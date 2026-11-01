@@ -105,7 +105,7 @@ describe("jobs on a database", { skip: canMock ? false : "needs --experimental-t
     hitRateLimits,
     now: () => NOW,
   });
-  const jobsDeps = (tok: CapToken): import("../handler").JobsDeps => ({ ...gate(tok), store: store.jobsStore, webhooksOn: () => true, runUsd: () => 0.1, gatewayUrl: "https://platform.example/api/gateway" });
+  const jobsDeps = (tok: CapToken): import("../handler").JobsDeps => ({ ...gate(tok), store: store.jobsStore, webhooksOn: () => true, runUsd: () => 0.1, pauseDays: () => 14, gatewayUrl: "https://platform.example/api/gateway" });
   const hookDeps = (over: Partial<import("../handler").HookDeps> = {}): import("../handler").HookDeps => ({
     servedCaps: () => ["jobs"],
     product: async () => product(),
@@ -114,6 +114,7 @@ describe("jobs on a database", { skip: canMock ? false : "needs --experimental-t
     store: store.jobsStore,
     webhooksOn: () => true,
     runUsd: () => 0.1,
+    pauseDays: () => 14,
     liveToken: async () => live(),
     now: () => NOW,
     ...over,
@@ -153,12 +154,14 @@ describe("jobs on a database", { skip: canMock ? false : "needs --experimental-t
     return {
       calls,
       dailyRuns: () => 2000,
+      productDailyRuns: () => 400,
       runUsd: () => 0.1,
       pauseDays: () => 14,
       pauseAbsent: store.pauseAbsent,
       queueDueSchedules: store.queueDueSchedules,
       expireStale: store.expireStale,
       claimQueued: store.claimQueued,
+      unclaimRun: store.unclaimRun,
       retryOrFail: store.retryOrFail,
       addNoticeOnce: store.addNoticeOnce,
       reserveCounter,
@@ -632,6 +635,125 @@ describe("jobs on a database", { skip: canMock ? false : "needs --experimental-t
       await testDb.insert(realSchema.jobRuns).values({ productId, name: "old", trigger: "enqueue", budgetUsd: 0.1, createdAt: new Date(NOW.getTime() - JOBS_LIMITS.runMaxAgeMs - 1000) });
       await cron.runJobsCron(cronDeps(async () => assert.fail("too old")));
       assert.equal((await allRuns())[0]!.status, "cancelled");
+    });
+  });
+
+  describe("one product can't take everyone's runs", () => {
+    const otherProduct = async () => {
+      const [other] = await testDb.insert(realSchema.products).values({ slug: "other", name: "Other", ownerId, status: "live", liveUrl: "https://other.example.app", ownerSeenAt: NOW, createdAt: NOW }).returning();
+      return other!.id;
+    };
+    const queue = (id: string, n: number, at: Date) => testDb.insert(realSchema.jobRuns).values(Array.from({ length: n }, (_, i) => ({ productId: id, name: `job-${i}`, trigger: "webhook" as const, budgetUsd: 0.1, createdAt: new Date(at.getTime() + i) })));
+    const closesAny = (seen: string[]) => async (u: string, init: RequestInit) => {
+      seen.push(new URL(u).host);
+      const token = new Headers(init.headers).get("x-musemuse-job")!;
+      await testDb.update(realSchema.jobRuns).set({ status: "done" }).where(eq(realSchema.jobRuns.id, token.split(".")[2]!));
+      return Response.json({ ok: true });
+    };
+    const anyProductDeps = (seen: string[], over: Partial<import("../cron").JobsCronDeps>) => ({ ...cronDeps(async () => assert.fail("unused")), fetch: (async (input: string, init: RequestInit) => closesAny(seen)(input, init)) as unknown as typeof fetch, ...over });
+
+    it("a backlog on one product doesn't starve another's newer run", async () => {
+      const other = await otherProduct();
+      await queue(productId, 50, new Date(NOW.getTime() - 60_000));
+      await queue(other, 1, NOW);
+      const seen: string[] = [];
+      const out = await cron.runJobsCron(anyProductDeps(seen, { dailyRuns: () => 2 }));
+      assert.deepEqual([out.fired, out.capped], [2, true]);
+      assert.deepEqual(seen.sort(), ["digest.example.app", "other.example.app"]);
+    });
+
+    it("takes turns across products in one batch, and uses spare room", async () => {
+      const other = await otherProduct();
+      await queue(productId, 30, new Date(NOW.getTime() - 60_000));
+      await queue(other, 2, NOW);
+      const batch = await store.claimQueued(10, NOW, NOW);
+      assert.equal(batch.length, 10);
+      assert.equal(batch.filter((r) => r.productId === other).length, 2, "the other product's two go in the first batch");
+      assert.equal(new Set(batch.map((r) => r.id)).size, 10);
+    });
+
+    it("a product stops at its own ticks for the day: the rest wait unspent, the owner hears once, and others go on", async () => {
+      const other = await otherProduct();
+      await queue(productId, 6, new Date(NOW.getTime() - 60_000));
+      await queue(other, 2, NOW);
+      const seen: string[] = [];
+      const out = await cron.runJobsCron(anyProductDeps(seen, { productDailyRuns: () => 3 }));
+      assert.equal(seen.filter((h) => h === "digest.example.app").length, 3);
+      assert.equal(seen.filter((h) => h === "other.example.app").length, 2);
+      assert.equal(out.fired, 5);
+      assert.equal(counters.get("jobs-runs"), 5, "the platform's count holds only what fired");
+      const waiting = (await allRuns()).filter((r) => r.status === "queued");
+      assert.equal(waiting.length, 3);
+      assert.ok(waiting.every((r) => r.tick === 0 && r.attempt === 0), "a run given back has used no tick");
+      assert.equal((await notices()).filter((n) => n.title === "Background jobs reached today's limit").length, 1);
+      const later = new Date(NOW.getTime() + 300_000);
+      const next = await cron.runJobsCron(anyProductDeps(seen, { productDailyRuns: () => 3, now: () => later }));
+      assert.equal(next.fired, 0, "still over, next pass too");
+      assert.equal((await notices()).filter((n) => n.title === "Background jobs reached today's limit").length, 1);
+    });
+
+    it("a hook is refused once the product has its queue full, and enqueue too", async () => {
+      const sha = (await import("node:crypto")).createHash("sha256").update("s").digest("hex");
+      await store.saveWebhook(productId, "log", sha, NOW);
+      await queue(productId, JOBS_LIMITS.queuedPerProduct, NOW);
+      const res = await handler.handleHook(new Request(`https://platform.example/api/gateway/hooks/${productId}/log?k=s`, { method: "POST", body: "{}" }), [productId, "log"], hookDeps());
+      assert.equal(res.status, 429);
+      assert.equal(res.headers.get("retry-after"), "300");
+      assert.equal((await handler.handleJobs(post("jobs/enqueue", { name: "digest" }, owner()), ["enqueue"], jobsDeps(live()))).status, 429);
+      assert.equal((await allRuns()).length, JOBS_LIMITS.queuedPerProduct);
+    });
+  });
+
+  describe("the owner away", () => {
+    const AWAY = new Date(NOW.getTime() + 15 * 86_400_000);
+    const awayJob = (runId: string) => ({ "x-musemuse-job": mintJobToken({ productId, runId, tick: 1, attempt: 1, expiresAt: new Date(AWAY.getTime() + 600_000) }) });
+    const awayDeps = () => ({ ...jobsDeps(live()), now: () => AWAY });
+    const hookAway = (k: string) => new Request(`https://platform.example/api/gateway/hooks/${productId}/log?k=${k}`, { method: "POST", body: "{}" });
+
+    it("the cron runs no queued work for a product whose owner stayed away, and empties its queue", async () => {
+      await testDb.insert(realSchema.jobRuns).values({ productId, name: "looper", trigger: "enqueue", budgetUsd: 0.1, createdAt: AWAY });
+      assert.deepEqual(await store.claimQueued(10, AWAY, AWAY), [], "the claim itself refuses");
+      const out = await cron.runJobsCron(cronDeps(async () => assert.fail("nobody's there"), { now: () => AWAY }));
+      assert.equal(out.fired, 0);
+      assert.equal((await allRuns())[0]!.status, "cancelled");
+      const [n] = await notices();
+      assert.equal(n!.kind, "schedule_paused");
+      await cron.runJobsCron(cronDeps(async () => assert.fail("nobody's there"), { now: () => new Date(AWAY.getTime() + 300_000) }));
+      assert.equal((await notices()).length, 1, "one notice, however long");
+    });
+
+    it("a job that enqueues itself stops: its token is refused past the cutoff, and works again after a visit", async () => {
+      const run = await runningRun({ name: "looper" });
+      const refused = await handler.handleJobs(post("jobs/enqueue", { name: "looper" }, awayJob(run.id)), ["enqueue"], awayDeps());
+      assert.equal(refused.status, 403);
+      assert.equal((await allRuns()).length, 1, "nothing queued");
+      await store.noteOwnerSeen(productId, AWAY);
+      assert.equal((await handler.handleJobs(post("jobs/enqueue", { name: "looper" }, awayJob(run.id)), ["enqueue"], awayDeps())).status, 202);
+      await testDb.update(realSchema.jobRuns).set({ createdAt: AWAY });
+      assert.equal((await store.claimQueued(10, AWAY, AWAY)).length, 1);
+    });
+
+    it("the owner's own enqueue isn't what's refused: a pass means they came", async () => {
+      assert.equal((await handler.handleJobs(post("jobs/enqueue", { name: "digest" }, { "x-musemuse-owner": mintOwnerSession({ productId, subject: "owner-sub" }, AWAY).session }), ["enqueue"], awayDeps())).status, 202);
+    });
+
+    it("a webhook is refused past the cutoff until a visit, and a build's test hook isn't", async () => {
+      const sha = (await import("node:crypto")).createHash("sha256").update("s").digest("hex");
+      await store.saveWebhook(productId, "log", sha, NOW);
+      const res = await handler.handleHook(hookAway("s"), [productId, "log"], hookDeps({ now: () => AWAY }));
+      assert.equal(res.status, 403);
+      assert.equal((await allRuns()).length, 0);
+      await testDb.update(realSchema.jobRuns).set({ status: "done" });
+      const made = (await (await handler.handleJobs(post("jobs/test-fire", { name: "log", hook: true }), ["test-fire"], jobsDeps(buildToken()))).json()) as { hook: { url: string } };
+      assert.equal((await handler.handleHook(new Request(made.hook.url, { method: "POST", body: "{}" }), [productId, "log"], hookDeps({ now: () => AWAY }))).status, 202, "a build's test hook");
+      await store.noteOwnerSeen(productId, AWAY);
+      assert.equal((await handler.handleHook(hookAway("s"), [productId, "log"], hookDeps({ now: () => AWAY }))).status, 202);
+    });
+
+    it("a product with no visit recorded counts from when it was made", async () => {
+      await testDb.update(realSchema.products).set({ ownerSeenAt: null, createdAt: new Date(NOW.getTime() - 20 * 86_400_000) }).where(eq(realSchema.products.id, productId));
+      await store.jobsStore.queueRun({ productId, namespace: "live", name: "looper", trigger: "enqueue", budgetUsd: 0.1 });
+      assert.deepEqual(await store.claimQueued(10, NOW, NOW), []);
     });
   });
 

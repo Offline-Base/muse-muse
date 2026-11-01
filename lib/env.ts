@@ -1032,6 +1032,14 @@ export const env = {
   get jobsDailyUsd(): number {
     return dollars("JOBS_DAILY_USD", 5);
   },
+  /** JOBS_PRODUCT_DAILY_RUNS: job ticks one product may start in a UTC day. Three 15-minute schedules take 288. */
+  get jobsProductDailyRuns(): number {
+    return wholeCount("JOBS_PRODUCT_DAILY_RUNS", 400);
+  },
+  /** JOBS_PRODUCT_DAILY_USD: what one product's job runs may spend at Meta in a UTC day. */
+  get jobsProductDailyUsd(): number {
+    return dollars("JOBS_PRODUCT_DAILY_USD", 1);
+  },
   /** JOBS_RUN_USD: where one run stops, at most $0.50. 0 pauses new runs. */
   get jobsRunUsd(): number {
     return Math.min(dollars("JOBS_RUN_USD", 0.1), 0.5);

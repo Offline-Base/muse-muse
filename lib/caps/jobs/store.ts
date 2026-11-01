@@ -69,6 +69,10 @@ export interface JobsStore {
   /** A build's fire: the queued run of this name goes on, or a new one starts. */
   fireTest(input: { productId: string; namespace: string; name: string; input: unknown; budgetUsd: number }, now: Date): Promise<JobRun>;
   addNotice(input: NoticeInput): Promise<string>;
+  /** True when the owner hasn't visited in `days`, counted from when the product was made if they never have. */
+  ownerAway(productId: string, days: number, now: Date): Promise<boolean>;
+  /** Runs waiting in this space, up to JOBS_LIMITS.queuedPerProduct. */
+  queuedCount(productId: string, namespace: string): Promise<number>;
   findWebhook(productId: string, name: string): Promise<WebhookRow | null>;
   findTestWebhook(productId: string, buildId: string, name: string): Promise<WebhookRow | null>;
   saveTestWebhook(productId: string, namespace: string, name: string, secretHash: string): Promise<void>;
@@ -97,6 +101,9 @@ const rowsOf = <T>(result: unknown): T[] => {
   const r = result as { rows?: T[] } | T[];
   return Array.isArray(r) ? r : (r.rows ?? []);
 };
+
+/** JOBS_PAUSE_DAYS's default, for a claim that doesn't name one. */
+const DEFAULT_AWAY_DAYS = 14;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -161,6 +168,25 @@ export const jobsStore: JobsStore = {
       .values({ productId: input.productId, namespace: input.namespace, kind: input.kind, title: input.title, body: input.body, payload: (input.payload ?? null) as never })
       .returning({ id: schema.ownerNotices.id });
     return row!.id;
+  },
+
+  async ownerAway(productId, days, now) {
+    const cutoff = new Date(now.getTime() - days * 86_400_000);
+    const [row] = await db()
+      .select({ id: schema.products.id })
+      .from(schema.products)
+      .where(and(eq(schema.products.id, productId), sql`coalesce(${schema.products.ownerSeenAt}, ${schema.products.createdAt}) < ${cutoff.toISOString()}::timestamptz`))
+      .limit(1);
+    return Boolean(row);
+  },
+
+  async queuedCount(productId, namespace) {
+    const rows = await db()
+      .select({ id: schema.jobRuns.id })
+      .from(schema.jobRuns)
+      .where(and(eq(schema.jobRuns.productId, productId), eq(schema.jobRuns.namespace, namespace), eq(schema.jobRuns.status, "queued")))
+      .limit(JOBS_LIMITS.queuedPerProduct);
+    return rows.length;
   },
 
   async findWebhook(productId, name) {
@@ -233,7 +259,11 @@ export async function noteRunWrote(runId: string): Promise<void> {
  */
 const runnable = () => sql`p.status in ('live', 'partial') and p.live_url is not null and p.taken_down_at is null and u.banned_at is null and u.email <> ${GUEST_EMAIL}`;
 
-/** Schedules whose owner hasn't visited in `days`: paused, with one notice per product. Returns how many. */
+/**
+ * Everything of a product whose owner hasn't visited in `days` stops: schedules pause, and queued runs are cancelled, whatever
+ * started them. One notice per product. Returns how many schedules paused. (The claim, enqueue and hooks refuse the same
+ * products, so nothing comes back until the owner does.)
+ */
 export async function pauseAbsent(now: Date, days: number): Promise<number> {
   const cutoff = new Date(now.getTime() - days * 86_400_000);
   const rows = rowsOf<{ product_id: string; name: string }>(
@@ -242,13 +272,19 @@ export async function pauseAbsent(now: Date, days: number): Promise<number> {
       where p.id = s.product_id and s.paused_at is null and coalesce(p.owner_seen_at, p.created_at) < ${cutoff.toISOString()}::timestamptz
       returning s.product_id, s.name`),
   );
-  for (const productId of new Set(rows.map((r) => r.product_id))) {
-    await jobsStore.addNotice({
+  const cancelled = rowsOf<{ product_id: string }>(
+    await db().execute(sql`update job_runs r set status = 'cancelled', error = 'The owner has been away.', finished_at = ${now.toISOString()}::timestamptz, input = null
+      from products p
+      where p.id = r.product_id and r.status = 'queued' and r.namespace = 'live' and coalesce(p.owner_seen_at, p.created_at) < ${cutoff.toISOString()}::timestamptz
+      returning r.product_id`),
+  );
+  for (const productId of new Set([...rows, ...cancelled].map((r) => r.product_id))) {
+    await addNoticeOnce({
       productId,
       namespace: "live",
       kind: "schedule_paused",
-      title: "Schedules paused",
-      body: `This product's schedules stopped because nobody has opened it as the owner in ${days} days. Open the product's page to start them again.`,
+      title: "Background jobs paused",
+      body: `This product's background jobs stopped because nobody has opened it as the owner in ${days} days. Open the product's page to start them again.`,
     });
   }
   return rows.length;
@@ -303,22 +339,36 @@ export async function expireStale(now: Date): Promise<Array<{ id: string; produc
 /**
  * Takes up to `limit` queued live runs of products the cron may run for, one conditional update. A first try of a tick
  * counts a tick. A run this pass already called waits for the next pass, so a tick's next step or retry is a pass away and
- * one run can't take a whole pass. Runs past their age limit are cancelled first, so an old queue never fires.
+ * one run can't take a whole pass. Products take turns: every product's oldest run comes before anyone's second, so a
+ * backlog on one can't hold up the rest. A product whose owner stayed away, or in `skipProducts`, gets none. Runs past their
+ * age limit are cancelled first, so an old queue never fires, and the owner hears.
  */
-export async function claimQueued(limit: number, now: Date, passStartedAt: Date = now): Promise<ClaimedRun[]> {
+export async function claimQueued(limit: number, now: Date, passStartedAt: Date = now, opts: { awayDays?: number; skipProducts?: readonly string[] } = {}): Promise<ClaimedRun[]> {
   if (limit <= 0) return [];
   const oldest = new Date(now.getTime() - JOBS_LIMITS.runMaxAgeMs);
-  await db()
+  const tooOld = await db()
     .update(schema.jobRuns)
-    .set({ status: "cancelled", error: "It waited too long to run.", finishedAt: now })
-    .where(and(eq(schema.jobRuns.status, "queued"), eq(schema.jobRuns.namespace, "live"), lt(schema.jobRuns.createdAt, oldest)));
+    .set({ status: "cancelled", error: "It waited too long to run.", finishedAt: now, input: null as never })
+    .where(and(eq(schema.jobRuns.status, "queued"), eq(schema.jobRuns.namespace, "live"), lt(schema.jobRuns.createdAt, oldest)))
+    .returning({ productId: schema.jobRuns.productId, name: schema.jobRuns.name });
+  for (const run of tooOld) {
+    await addNoticeOnce({ productId: run.productId, namespace: "live", kind: "job_failed", title: "A queued job waited too long", body: `The job ${run.name} waited over two days to run, so it was cancelled.` });
+  }
+  const cutoff = new Date(now.getTime() - (opts.awayDays ?? DEFAULT_AWAY_DAYS) * 86_400_000);
+  const skip = opts.skipProducts?.length ? sql`and r.product_id not in (${sql.join(opts.skipProducts.map((id) => sql`${id}::uuid`), sql`, `)})` : sql``;
   const rows = rowsOf<{ id: string; product_id: string; name: string; tick: number; attempt: number; live_url: string }>(
-    await db().execute(sql`with picked as (
-        select r.id, p.live_url from job_runs r
+    await db().execute(sql`with ranked as (
+        select r.id, p.live_url, row_number() over (partition by r.product_id order by r.created_at, r.id) as turn
+          from job_runs r
           join products p on p.id = r.product_id join users u on u.id = p.owner_id
         where r.status = 'queued' and r.namespace = 'live' and ${runnable()}
+          and coalesce(p.owner_seen_at, p.created_at) >= ${cutoff.toISOString()}::timestamptz
           and (r.started_at is null or r.started_at < ${passStartedAt.toISOString()}::timestamptz)
-        order by r.created_at limit ${limit} for update of r skip locked
+          ${skip}
+      ), picked as (
+        select j.id, ranked.live_url from ranked join job_runs j on j.id = ranked.id
+        where j.status = 'queued'
+        order by ranked.turn, j.created_at, j.id limit ${limit} for update of j skip locked
       )
       update job_runs r set status = 'running', started_at = ${now.toISOString()}::timestamptz,
         tick = case when r.attempt = 0 then r.tick + 1 else r.tick end, attempt = r.attempt + 1
@@ -326,6 +376,14 @@ export async function claimQueued(limit: number, now: Date, passStartedAt: Date 
       returning r.id, r.product_id, r.name, r.tick, r.attempt, picked.live_url`),
   );
   return rows.map((r) => ({ id: r.id, productId: r.product_id, name: r.name, tick: Number(r.tick), attempt: Number(r.attempt), liveUrl: r.live_url }));
+}
+
+/** A run claimed and not called, because its product is over its ticks for today: back in the queue, having used nothing. */
+export async function unclaimRun(run: ClaimedRun): Promise<void> {
+  await db()
+    .update(schema.jobRuns)
+    .set({ status: "queued", tick: sql`case when ${schema.jobRuns.attempt} = 1 then ${schema.jobRuns.tick} - 1 else ${schema.jobRuns.tick} end`, attempt: sql`${schema.jobRuns.attempt} - 1` })
+    .where(and(eq(schema.jobRuns.id, run.id), eq(schema.jobRuns.status, "running"), eq(schema.jobRuns.attempt, run.attempt), eq(schema.jobRuns.tick, run.tick)));
 }
 
 /** A tick the product didn't take: tried again next pass, or failed after its last try. Returns "failed" when it ended. */

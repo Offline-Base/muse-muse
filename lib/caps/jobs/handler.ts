@@ -44,6 +44,8 @@ export interface JobsDeps extends CapGateDeps {
   webhooksOn(): boolean;
   /** JOBS_RUN_USD, at most $0.50. */
   runUsd(): number;
+  /** JOBS_PAUSE_DAYS: past this with no visit from the owner, a job can't queue more. */
+  pauseDays(): number;
   /** The public {GATEWAY_URL}, for a build's test hook address. */
   gatewayUrl: string;
 }
@@ -51,6 +53,8 @@ export interface JobsDeps extends CapGateDeps {
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "no-store" } });
 const dayLimit = (key: string, limit: number, who: string): CapLimit => ({ key, limit, window: "day", who });
 const notRunning = jobNotRunning;
+const ownerAwayRefusal = () => capError("cap_not_allowed", "This product's background jobs are paused until its owner visits it on Muse Muse.");
+const queueFull = () => capError("rate_limited", `This product has ${JOBS_LIMITS.queuedPerProduct} background jobs waiting already. Try again later.`, { "retry-after": "300" });
 const tickOver = () => gatewayError(409, "invalid_request_error", "job_not_running", "This tick of the job is over, so nothing changed.", { retry: false });
 const jobOnly = (stage: CapStage) => (stage.caller.job ? null : capError("sign_in_required", "Only the platform's call to a job can do this. It needs the x-musemuse-job header."));
 
@@ -163,6 +167,9 @@ function enqueueRoute(deps: JobsDeps): CapRoute<EnqueueArgs> {
       const ended = await jobRunRefusal(ctx, deps.store.getRun);
       if (ended) return ended;
       if (deps.runUsd() === 0) return capError("caps_paused", "Background jobs are paused on Muse Muse today.");
+      // Nobody present: a job can't keep itself going past the owner's 14 days. An owner's pass means they came.
+      if (ctx.caller.job && ctx.namespace === "live" && (await deps.store.ownerAway(ctx.token.productId, deps.pauseDays(), ctx.now))) return ownerAwayRefusal();
+      if ((await deps.store.queuedCount(ctx.token.productId, ctx.namespace)) >= JOBS_LIMITS.queuedPerProduct) return queueFull();
       const runId = await deps.store.queueRun({ productId: ctx.token.productId, namespace: ctx.namespace, name: ctx.args.name, trigger: "enqueue", input: ctx.args.input, budgetUsd: deps.runUsd() });
       return json({ ok: true, runId, status: "queued" }, 202);
     },
@@ -238,9 +245,10 @@ function testFireRoute(deps: JobsDeps): CapRoute<TestFireArgs> {
 // Hooks
 
 export interface HookDeps extends Pick<CapGateDeps, "servedCaps" | "product" | "hitRateLimits" | "adminEmails" | "now"> {
-  store: Pick<JobsStore, "findWebhook" | "findTestWebhook" | "queueRun">;
+  store: Pick<JobsStore, "findWebhook" | "findTestWebhook" | "queueRun" | "ownerAway" | "queuedCount">;
   webhooksOn(): boolean;
   runUsd(): number;
+  pauseDays(): number;
   /** The live token's markers, for "this product was built with jobs". */
   liveToken(productId: string): Promise<Pick<CapToken, "scope" | "allowedModels"> | null>;
 }
@@ -294,11 +302,13 @@ export async function handleHook(req: Request, path: readonly string[], deps: Ho
       if (!token || !allowedCapIds(token, product.manifest).includes("jobs")) return capError("cap_not_allowed", "This product wasn't built with background jobs.");
     }
     const now = deps.now?.() ?? new Date();
+    if (!buildId && (await deps.store.ownerAway(productId, deps.pauseDays(), now))) return ownerAwayRefusal();
     const minute = new Date(Math.floor(now.getTime() / 60_000) * 60_000);
     const inMinute = await deps.hitRateLimits([`hook:${hook.id}`], minute);
     if ((inMinute[`hook:${hook.id}`] ?? 0) > JOBS_LIMITS.hookPerMinute) return capError("rate_limited", `This webhook takes ${JOBS_LIMITS.hookPerMinute} calls a minute. Try again in a minute.`, { "retry-after": "60" });
     const inDay = await deps.hitRateLimits([`hook-day:${hook.id}`], dayWindow(now));
     if ((inDay[`hook-day:${hook.id}`] ?? 0) > JOBS_LIMITS.hookPerDay) return capError("rate_limited", `This webhook takes ${JOBS_LIMITS.hookPerDay} calls a day. It resets at 00:00 UTC.`);
+    if ((await deps.store.queuedCount(productId, hook.namespace)) >= JOBS_LIMITS.queuedPerProduct) return queueFull();
     const raw = await readCappedBody(req, JOBS_LIMITS.hookBodyMaxBytes);
     if (raw === null) return capError("invalid_arguments", "A webhook's payload is at most 64 KB.");
     const text = new TextDecoder().decode(raw);
