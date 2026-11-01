@@ -17,7 +17,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { fileURLToPath } from "node:url";
 import type { BaseFamily, DriveKit } from "@/lib/drive/kit";
 import {
   buildForText,
@@ -92,8 +91,12 @@ export interface DrivePlan {
 
 // ---------- The templates in drive/ ----------
 
-/** The repo's drive/ folder: the launchers, Start Here.html and the README, as they were written. */
-export const DRIVE_SOURCE_DIR = fileURLToPath(new URL("../../drive", import.meta.url));
+/**
+ * The repo's drive/ folder: the launchers, Start Here.html and the README, as they were written. From the project root, as
+ * next.config.ts traces it. Not new URL(literal, import.meta.url): Next's bundler reads that as importing a file, and a
+ * folder fails the build.
+ */
+export const DRIVE_SOURCE_DIR = path.join(process.cwd(), "drive");
 
 export const TEMPLATE_NAMES = [
   "Start Here.html",
