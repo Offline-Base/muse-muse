@@ -1134,6 +1134,27 @@ because the sidebar showed a real account.
   CHANGES.md. Lab adapters unaffected. Wave 3's checks: 4,085 tests, 4,077 pass, 0 fail; template 455/455; tsc clean.
   The export works once the training session's license files are in S3; no code change needed.
 
+### 21:51 Decision models landed on tuned-model-options (88ac98e, 94324ca)
+
+- wf_50b3b2f5-c82 built D3 to D7 and D9 on tg-decide: decision datasets (a person's labeled rows, CSV or JSONL, split
+  once with the test rows held out and near-duplicates kept together; migration 0017), decide mode on the GPU,
+  deterministic scoring in place of judging, the decision pages and results, models served at /decide with a Try it live
+  box, {GATEWAY_URL}/decide and the template's decide(), and the docs. The review found 11 issues; 10 fixed (among them
+  the calibration sentence now says only what the records hold, the gateway's rate limits run before any lookup, a
+  gateway timeout frees the GPU slot), 1 rejected with reasons. D8, the real GPU runs (dry run, a $0.70 score-only run,
+  one real run), waits for the owner.
+- Landing: globals.css conflict resolved (both sides' blocks kept). 0016 (code_sessions, never built) is retired for good,
+  since 0017 landed first and the migrator would skip a later 0016. The schema marker for 0017 added; the decide fixture
+  added to the preview database guard's allowed list (it takes only a local PGlite folder). Full suite after landing:
+  4,754 tests, 4,746 pass, 0 fail, 8 skipped (live Meta tests). Pushed to the branch only.
+
+### 21:49 Owner: every new fine-tune trains on r30b
+
+- "Switch outright to r30b": plain Glimmer is no longer offered as a base. The training session is making a 4-bit copy
+  (OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit) and publishing the repos tonight, public, no token needed.
+  The recipe switches once that repo is public and one dry run passes on it (about 1 AM). Every r30b-based lab model is
+  a Derivative of Muse Spark Open, so its cards and pages get "Built with Muse Spark Open" and the Usage Policy points.
+
 ## Gaps
 
 What this record doesn't confirm:
