@@ -3,19 +3,19 @@
 import { Fragment, useState, type ReactNode } from "react";
 import { preload } from "react-dom";
 import type { RoomState } from "@/components/build/derive";
-import { VERDICT } from "@/components/build/turns";
-import { Icon } from "@/components/icons";
+import { BriefBody, VERDICT } from "@/components/build/turns";
 import type { Brief, BuildStatus } from "@/lib/types";
 
 /**
- * The plan, in the build room's conversation once the brief is written: the Muse mascot on the left and a short summary
- * on the right, the plan's name, its tagline, who it's for and how it works. The models, limits, inspo and cost stay in
- * the steps panel's "Read the brief", which the card links to, so the plan reads once in the conversation. Styles are in
- * components/build/plan-card.css, which the build room page loads.
+ * The plan, in the build room's conversation once the brief is written: the Muse mascot at the top left and the whole
+ * plan beside it, its name, tagline and every part of the brief (BriefBody, the same one the steps panel's "Read the
+ * brief" folds), so the plan reads once in the conversation. Owner, Oct 31: on a wide column the text wraps beside the
+ * picture and runs on full width under it; a narrow one keeps the small picture beside the name with the plan under
+ * both. Styles are in components/build/plan-card.css, which the build room page loads.
  *
  * The card draws a PlanView, so another plan can use it: the build room's comes from its brief (planViewFromBrief), and
  * the fine-tune room's from its training plan (components/train/room/plan.ts planViewFromTrainPlan), with its own
- * actions under the summary.
+ * actions under the summary and the grid layout it had.
  */
 
 export type PlanArt = "present" | "building" | "shield";
@@ -67,18 +67,17 @@ export function isDeclined(brief: Brief): boolean {
 
 /**
  * Whether the conversation shows the plan card, and with which picture. Only a build that wrote its brief has one: a
- * change (a refine) carries its product's brief without writing a plan, and has no "Read the brief" to open.
+ * change (a refine) carries its product's brief without writing a plan.
  *
  * A declined brief has no card. A presenting mascot beside "Can't build this" says two things at once, and the declined
  * message (BriefBody) has no plan to sum up: no one it's for and no steps, only the reason. So the room keeps that
  * message as it was, on its own.
  */
-export function planCardState(room: Pick<RoomState, "status" | "segments">): { brief: Brief; art: PlanArt; step: string } | null {
+export function planCardState(room: Pick<RoomState, "status" | "segments">): { brief: Brief; art: PlanArt } | null {
   const seg = room.segments.find((s) => s.type === "brief");
   if (seg?.type !== "brief" || isDeclined(seg.brief)) return null;
   const art = ART_FOR[room.status];
-  // `step` is the brief's row in the steps list (its data-step), where "Read the brief" folds the whole of it.
-  return art ? { brief: seg.brief, art, step: seg.key } : null;
+  return art ? { brief: seg.brief, art } : null;
 }
 
 /**
@@ -119,45 +118,23 @@ export function planViewFromBrief(brief: Brief): PlanView {
   };
 }
 
-export function PlanCard({
-  brief,
-  art,
-  running,
-  panelId,
-  onReadBrief,
-}: {
-  brief: Brief;
-  art: PlanArt;
-  /** The build can still change state. Then all three pictures load at once, so a swap fades with nothing to wait for. */
-  running: boolean;
-  /** The steps panel, which "Read the full brief" opens. */
-  panelId?: string;
-  onReadBrief?: () => void;
-}) {
-  return (
-    <PlanViewCard
-      view={planViewFromBrief(brief)}
-      art={art}
-      running={running}
-      more={
-        onReadBrief ? (
-          <button type="button" className="link-btn room-steps-link" aria-controls={panelId} onClick={onReadBrief}>
-            Read the full brief
-            <Icon name="chevronRight" size={16} />
-          </button>
-        ) : null
-      }
-    />
-  );
+export function PlanCard({ brief, art, running }: { brief: Brief; art: PlanArt; running: boolean }) {
+  // Under the card's own name, tagline and badge: the rest of the brief, written out in full.
+  return <PlanViewCard view={{ ...planViewFromBrief(brief), sections: [] }} art={art} running={running} wrap body={<BriefBody brief={brief} title={false} />} />;
 }
 
-/** The card itself, for any PlanView. `more` is the link under the summary; `actions` come after it. */
+/**
+ * The card itself, for any PlanView. `body` comes after the sections, `more` is the link under them and `actions` come
+ * last. `wrap` lets the text flow beside the picture and on under it where the column is wide (the build room's card).
+ */
 export function PlanViewCard({
   view,
   art,
   running,
   more,
   actions,
+  body,
+  wrap = false,
 }: {
   view: PlanView;
   art: PlanArt;
@@ -165,13 +142,15 @@ export function PlanViewCard({
   running: boolean;
   more?: ReactNode;
   actions?: ReactNode;
+  body?: ReactNode;
+  wrap?: boolean;
 }) {
   // Decided once: a plan that has finished keeps its picture, so it loads only that one.
   const [all] = useState(running);
   const arts = all ? ART_ORDER : [art];
   const tagline = view.tagline?.trim() ?? "";
   return (
-    <div className="plan-card" data-art={art}>
+    <div className={wrap ? "plan-card plan-card-wrap" : "plan-card"} data-art={art}>
       {/* Decorative: the room's own words, the working step above the card or the outcome under it, say the state. */}
       <div className="plan-card-art">
         <div className="plan-card-stack">
@@ -219,6 +198,7 @@ export function PlanViewCard({
             ) : null}
           </Fragment>
         ))}
+        {body}
         {more ? <p className="plan-card-more">{more}</p> : null}
         {actions}
       </div>

@@ -1,6 +1,6 @@
 /*
- * The plan card in the build room's conversation (components/build/PlanCard.tsx): the Muse mascot at the left, the
- * plan's summary at the right. All classes are new, so a room without a card looks as it did.
+ * The plan card in the build room's conversation (components/build/PlanCard.tsx): the Muse mascot at the top left and
+ * the whole plan beside it and on under it. All classes are new, so a room without a card looks as it did.
  *
  * Owner, Oct 31: no grey tile or border behind the mascot. The pictures are shown exactly as given, white background
  * included, straight on the page with the media card's rounded corners. In dark mode that white shows as a rounded
@@ -140,6 +140,67 @@
   .plan-card-head {
     align-self: start;
     padding-top: 4px;
+  }
+}
+
+/* The brief inside the card (BriefBody) at the card's own type: Body, stressed, for its headings. */
+.plan-card-body .rich h3 {
+  margin-top: 12px;
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.plan-card-body .rich h4 {
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.plan-card-body .rich > :first-child {
+  margin-top: 0;
+}
+
+/*
+ * Owner, Oct 31: the build room's card (.plan-card-wrap) lets the plan's text wrap beside the picture and run on full
+ * width under it. The picture floats at the wide card's 240 px, and the head, body and brief become plain blocks so
+ * their lines flow around it. Lists, the two columns, and the models table keep their own boxes, so they sit beside the
+ * picture narrower (a list's numbers never run under it) or, for the full-width table, start under it. Below 520 px of
+ * column the card keeps the small picture beside the name with the plan under both, as above.
+ */
+@container (min-width: 520px) {
+  .plan-card.plan-card-wrap {
+    display: flow-root;
+  }
+
+  .plan-card-wrap .plan-card-art {
+    float: left;
+    width: 240px;
+    margin: 0 24px 12px 0;
+  }
+
+  .plan-card-wrap .plan-card-head {
+    display: block;
+  }
+
+  .plan-card-wrap .plan-card-head > * + * {
+    margin-top: 4px;
+  }
+
+  .plan-card-wrap .plan-card-body,
+  .plan-card-wrap .plan-card-body .rich {
+    display: block;
+  }
+
+  .plan-card-wrap .plan-card-body {
+    margin-top: 12px;
+  }
+
+  .plan-card-wrap .plan-card-body .rich > * + * {
+    margin-top: 12px;
+  }
+
+  /* The 12 px gap and a heading's own 12 px, as the brief has them in its usual column layout. */
+  .plan-card-wrap .plan-card-body .rich > * + h3 {
+    margin-top: 24px;
   }
 }
 

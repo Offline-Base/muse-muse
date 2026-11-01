@@ -1,6 +1,7 @@
 /**
- * The plan card in the build room's conversation: the Muse mascot for the build's state on the left, the plan's name,
- * tagline, who it's for and how it works on the right, and the whole brief still in the steps panel.
+ * The plan card in the build room's conversation: the Muse mascot for the build's state at the top left, and the whole
+ * plan beside it and on under it (owner, Oct 31): its name and tagline, then every part of the brief, once in the
+ * conversation. The steps panel's "Read the brief" still folds the same brief.
  *   npx tsx --test --experimental-test-module-mocks components/build/__tests__/plan-card.test.tsx
  */
 import assert from "node:assert/strict";
@@ -82,7 +83,7 @@ const count = (html: string, s: string) => html.split(s).length - 1;
 const yes: Brief = { ...brief, verdict: "yes" };
 
 function card(over: Partial<Brief> = {}, props: Record<string, unknown> = {}) {
-  return render(PlanCard, { brief: { ...yes, ...over }, art: "building", running: false, onReadBrief() {}, panelId: "room-steps-panel", ...props });
+  return render(PlanCard, { brief: { ...yes, ...over }, art: "building", running: false, ...props });
 }
 
 describe("the mascot", () => {
@@ -157,22 +158,50 @@ describe("the mascot", () => {
   });
 });
 
-describe("the summary", () => {
-  it("names the plan and gives its tagline, who it's for and how it works, numbered", () => {
+describe("the full plan", () => {
+  it("names the plan and gives its tagline, then who it's for and how it works, numbered", () => {
     const html = card();
     assert.match(html, /<h2 class="plan-card-name"><span class="sr-only">The plan: <\/span>Feeder Count<\/h2>/);
     assert.match(html, /<p class="plan-card-tagline">Counts and outlines the birds in a short feeder video\.<\/p>/);
     assert.match(html, /<h3>Who it&#x27;s for<\/h3><p>Backyard bird watchers<\/p>/);
     assert.match(html, /<h3>How it works<\/h3><ol><li>Upload a clip<\/li><li>See each bird outlined<\/li><li>Get a count<\/li><\/ol>/);
-    assert.ok(html.indexOf("plan-card-art") < html.indexOf("plan-card-head"), "the picture first, on the left");
+    assert.ok(html.indexOf("plan-card-art") < html.indexOf("plan-card-head"), "the picture first, at the top left");
     assert.equal(html.includes(String.fromCharCode(0x2014)), false, "no em dash");
   });
 
-  it("leaves the models, limits, inspo and cost to the full brief", () => {
+  it("writes out every part of the brief once, in order: screens, what goes in and out, models and why, limits, inspo, cost", () => {
     const html = card();
-    for (const piece of ["<table", ">Models<", "Muse Wonder", "SAM 3.1", "Segments objects across frames", "Limits", "Species names are guesses.", "From your inspo", "The feeder brand logo", "Cost per run", "Screens"]) {
-      assert.ok(!html.includes(piece), piece);
+    const parts = [
+      "<h3>Who it&#x27;s for</h3>",
+      "<h3>How it works</h3>",
+      "<h3>Screens</h3><ul><li><strong>Upload.</strong> Pick a clip</li></ul>",
+      "<h3>What goes in</h3><ul><li><strong>Video</strong>: Under 30 s</li></ul>",
+      "<h3>What comes out</h3><ul><li><strong>Overlay</strong>: Masks</li></ul>",
+      "<h3>Models</h3>",
+      "<td><strong>SAM 3.1</strong></td><td>Find and track birds</td><td>Segments objects across frames</td>",
+      "<td><strong>Muse Wonder</strong></td><td>Name the species</td><td>Reads the frames</td>",
+      "<h3>Limits</h3><ul><li>Species names are guesses.</li></ul>",
+      "<h3>From your inspo</h3><p>A short phone video of birds at a feeder.</p>",
+      "<h4>Takes</h4><ul><li>The job: count birds</li><li>Calm green mood</li></ul>",
+      "<h4>Leaves out</h4><ul><li>The feeder brand logo</li></ul>",
+      "<strong>Cost per run:</strong> about $0.04 (est.). <span class=\"muted\">50 frames at the SAM minimum plus one Spark call.</span>",
+    ];
+    let at = -1;
+    for (const piece of parts) {
+      assert.equal(count(html, piece), 1, `once: ${piece}`);
+      assert.ok(html.indexOf(piece) > at, `in order: ${piece}`);
+      at = html.indexOf(piece);
     }
+    // The name and tagline are the card's own; the brief under them doesn't say them again.
+    assert.equal(count(html, "Feeder Count"), 1);
+    assert.equal(count(html, "Counts and outlines the birds"), 1);
+    assert.doesNotMatch(html, /class="lead"/);
+    assert.match(html, /<div class="plan-card-body"><div class="rich">/, "the steps panel's own brief, not a copy of it");
+  });
+
+  it("says when an input is optional", () => {
+    const html = card({ inputs: [{ kind: "image", required: false, notes: " " }, { kind: "text", required: true, notes: "A question" }] });
+    assert.match(html, /<h3>What goes in<\/h3><ul><li><strong>Image<\/strong> \(optional\)<\/li><li><strong>Text<\/strong>: A question<\/li><\/ul>/);
   });
 
   it("says when Muse can build only part of it, and nothing extra when it can build all of it", () => {
@@ -180,17 +209,31 @@ describe("the summary", () => {
     assert.doesNotMatch(card(), /class="pill/);
   });
 
-  it("drops a section that's empty instead of showing its heading alone", () => {
-    const html = card({ tagline: "  ", user: "", primaryFlow: [" ", ""] });
-    assert.doesNotMatch(html, /plan-card-tagline|Who it&#x27;s for|How it works|<ol/);
+  it("leaves out a part that's empty instead of showing its heading alone", () => {
+    const html = card({
+      tagline: "  ",
+      user: "",
+      primaryFlow: [" ", ""],
+      screens: [],
+      inputs: [],
+      outputs: [],
+      limits: [" "],
+      costNotes: " ",
+      inspiration: { summary: " ", references: [], borrow: [], dontCopy: [""] },
+    });
+    for (const gone of ["plan-card-tagline", "Who it&#x27;s for", "How it works", "<ol", "Screens", "What goes in", "What comes out", "Limits", "From your inspo", "two-col", "Takes", "Leaves out", 'class="muted"']) {
+      assert.ok(!html.includes(gone), gone);
+    }
     assert.match(html, /Feeder Count<\/h2>/);
-    const some = card({ primaryFlow: ["Upload a clip", "  ", "Get a count"] });
+    assert.match(html, /<h3>Models<\/h3>/);
+    assert.match(html, /<strong>Cost per run:<\/strong> about \$0\.04 \(est\.\)\. <\/p>/);
+    const some = card({ primaryFlow: ["Upload a clip", "  ", "Get a count"], inspiration: { ...yes.inspiration, borrow: [] } });
     assert.match(some, /<ol><li>Upload a clip<\/li><li>Get a count<\/li><\/ol>/, "blank steps are skipped, so the numbers run on");
+    assert.match(some, /<div class="two-col"><div><h4>Leaves out<\/h4>/, "one column of the inspo can stand alone");
   });
 
-  it("links to the whole brief in the steps panel", () => {
-    assert.match(card(), /<button type="button" class="link-btn room-steps-link" aria-controls="room-steps-panel">Read the full brief<svg/);
-    assert.doesNotMatch(card({}, { onReadBrief: undefined }), /Read the full brief/);
+  it("has no link to the brief, which is all in the card now", () => {
+    assert.doesNotMatch(card(), /Read the full brief|room-steps-link|<button/);
   });
 });
 
@@ -205,17 +248,19 @@ describe("the card in the room", () => {
     assert.ok(convo.indexOf('class="turn-user"') < cardAt, "after the person's message");
     assert.equal(count(convo, "Backyard bird watchers"), 1);
     assert.equal(count(convo, "Counts and outlines the birds in a short feeder video."), 1);
-    assert.equal(count(convo, 'class="rich"'), 0, "no second copy of the brief in the conversation");
-    assert.match(convo, /<div class="plan-card" data-art="building">/);
+    assert.equal(count(convo, "Species names are guesses."), 1, "the whole plan, once");
+    assert.equal(count(convo, 'class="rich"'), 1, "the brief once in the conversation: the card's");
+    assert.match(convo, /<li class="room-plan"><div class="plan-card plan-card-wrap" data-art="building">/);
+
   });
 
   it("sits above what a finished build made, with the pair, and above a failed build's words, presenting", () => {
     const done = conversation(page("finished"));
-    assert.match(done, /<div class="plan-card" data-art="shield">/);
+    assert.match(done, /<div class="plan-card plan-card-wrap" data-art="shield">/);
     assert.ok(done.indexOf("room-plan") < done.indexOf("<video"));
     assert.equal(count(done, 'src="/muse/'), 1, "only the pair loads on a finished build");
     const failed = conversation(page("failed"));
-    assert.match(failed, /<div class="plan-card" data-art="present">/);
+    assert.match(failed, /<div class="plan-card plan-card-wrap" data-art="present">/);
     assert.ok(failed.indexOf("room-plan") < failed.indexOf("This build didn&#x27;t ship."));
   });
 
@@ -236,11 +281,11 @@ describe("the card in the room", () => {
   it("keeps the whole brief, models and all, in the steps panel's Read the brief", () => {
     const room = roomOf("finished");
     const rows = steps.roomSteps({ room, rail: derive.railStates(room, "build"), isRefine: false });
-    const row = rows.find((r) => r.id === plan.planCardState(room)?.step);
-    assert.equal(row?.title, "Wrote the brief", "the card's link lands on the brief's row");
+    const row = rows.find((r) => r.id === "brief");
+    assert.equal(row?.title, "Wrote the brief");
     const html = render(StepList, { steps: rows });
     assert.match(html, /<li data-step="brief"[^>]*>.*?<details class="room-fold"><summary>Read the brief<\/summary><div class="rich">/);
-    for (const piece of ["Who it&#x27;s for", "How it works", "<table class=\"data\">", "SAM 3.1", "Muse Wonder", "Species names are guesses.", "From your inspo", "Cost per run"]) {
+    for (const piece of ["Who it&#x27;s for", "How it works", "<table class=\"data\">", "SAM 3.1", "Muse Wonder", "Species names are guesses.", "What goes in", "What comes out", "From your inspo", "Cost per run"]) {
       assert.ok(html.includes(piece), piece);
     }
     // Open beside a running build, the panel already holds it.
@@ -280,6 +325,33 @@ describe("the card's look", () => {
     assert.match(s, /\.room-plan \{[^}]*container-type: inline-size;/);
     assert.match(s, /\.plan-card \{[^}]*grid-template-columns: 112px minmax\(0, 1fr\);/);
     assert.match(s, /@container \(min-width: 520px\) \{\s*\.plan-card \{[^}]*grid-template-columns: 240px minmax\(0, 1fr\);/);
+  });
+
+  it("wraps the plan beside the picture and on under it on a wide column, and keeps the small layout on a narrow one", () => {
+    const s = css();
+    const wide = s.slice(s.indexOf("@container (min-width: 520px) {\n  .plan-card.plan-card-wrap"));
+    assert.ok(wide.length > 0 && s.includes("@container (min-width: 520px) {\n  .plan-card.plan-card-wrap"), "only where the column has room");
+    assert.match(wide, /\.plan-card\.plan-card-wrap \{\s*display: flow-root;\s*\}/, "its own box, so the float stays inside the card");
+    assert.match(wide, /\.plan-card-wrap \.plan-card-art \{\s*float: left;\s*width: 240px;/, "at the size the wide card had");
+    // A flex or grid box would sit beside the picture whole. Plain blocks let each line flow around it and under it.
+    assert.match(wide, /\.plan-card-wrap \.plan-card-head \{\s*display: block;/);
+    assert.match(wide, /\.plan-card-wrap \.plan-card-body,\s*\.plan-card-wrap \.plan-card-body \.rich \{\s*display: block;/);
+    // Below 520 px (a phone, a narrow column): the grid as it was, a 112 px picture beside the name and the plan under both.
+    assert.match(s, /\.plan-card \{[^}]*grid-template-columns: 112px minmax\(0, 1fr\);[^}]*"art head"\s*"body body";/);
+    assert.equal(s.indexOf("float:"), s.indexOf("float: left;"), "the picture floats only in the wide rule");
+    assert.ok(s.indexOf("float: left;") > s.indexOf("@container (min-width: 520px) {\n  .plan-card.plan-card-wrap"));
+  });
+
+  it("keeps the picture's box the same size, wrapped or not, so nothing jumps", () => {
+    const s = css();
+    assert.match(s, /\.plan-card-art \{[^}]*aspect-ratio: 564 \/ 640;/);
+    assert.doesNotMatch(s, /\.plan-card-wrap \.plan-card-art \{[^}]*(height|aspect-ratio)/, "the float takes the box's own ratio");
+  });
+
+  it("keeps the fine-tune room's card on its grid, with no wrap", () => {
+    const html = render(plan.PlanViewCard as ComponentType<never>, { view: plan.planViewFromBrief(yes), art: "present", running: false });
+    assert.match(html, /<div class="plan-card" data-art="present">/);
+    assert.doesNotMatch(html, /plan-card-wrap/);
   });
 
   it("loads with the build room page", () => {
