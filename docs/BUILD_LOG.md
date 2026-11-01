@@ -1249,6 +1249,15 @@ because the sidebar showed a real account.
   migrate against the Preview environment's database and found nothing to apply ("migrate: up to date"; knowledge holds
   0000 to 0008 only). They stay behind Vercel's preview protection.
 
+### 23:06 Owner: every live build uses the muse-app look; new builder snapshot made
+
+- Owner: "all live builds should use that skill" (muse-app-ui, the template/targets/muse-app overlay behind
+  MUSE_APP_LOOK). New snapshot from main 2146ae0: snap_SB9bO91OjbBU4n3Amdabfo8iY0CY (2,078 MB, template hash
+  fe8058aa261c, Muse Code 1.4.14; the 65 overlay files including muse-app checked against template/targets; pristine
+  verify files match). 81.5 s of sandbox time.
+- Left for the owner in Vercel (production): BUILDER_SNAPSHOT_ID to the new id and MUSE_APP_LOOK=1, then a redeploy.
+  Then one canary build on the live site. Once a muse-app product exists, MUSE_APP_LOOK stays on (BRAND.md).
+
 ## Gaps
 
 What this record doesn't confirm:
