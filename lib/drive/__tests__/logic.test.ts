@@ -285,6 +285,7 @@ describe("which models may be ordered", () => {
     assert.match(driveProblem({ ...ok, files: localFiles({ public: false }) })!, /aren't public/);
     assert.match(driveProblem({ ...ok, files: localFiles({ commit: null }) })!, /aren't public/);
     assert.match(driveProblem({ ...ok, files: localFiles({ files: [] }) })!, /passed their checks/);
+    assert.match(driveProblem({ ...ok, files: localFiles({ quantBase: "llama-3.2-3b" }) })!, /small Llama/, "a drive's license files are Muse Glimmer's");
   });
 
   it("puts every build that passed on an all-sizes drive, smallest first, and one build alone otherwise", () => {

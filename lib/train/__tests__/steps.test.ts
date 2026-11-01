@@ -67,6 +67,7 @@ type LaunchInput = {
   tags: Array<{ key: string; value: string }>;
   fileSystemNames?: string[];
   firewallRulesetIds?: string[];
+  imageFamily?: string;
 };
 type Filesystem = { id: string; name: string; region: string; mountPoint: string; inUse: boolean; bytesUsed: number | null };
 type Ruleset = { id: string; name: string; region: string; rules: unknown[]; instanceIds: string[] };
@@ -692,6 +693,20 @@ describe("training steps", { skip: canMock ? false : "needs --experimental-test-
         const input = called("launchInstance")[0]!.args[0] as LaunchInput;
         assert.equal(input.firewallRulesetIds, undefined);
         assert.equal(jobJson(input.userData).serveKey, undefined);
+      }
+    });
+
+    it("launches only a glimmer-quantize job on the image its llama.cpp binaries need", async () => {
+      const quantize = { recipe: "glimmer-quantize" as const, instanceName: "mm-train-1234abcd-glimmer-quantize", params: { adapterJobId: "00000000-0000-4000-8000-000000000001", levels: "Q4_K_M", slug: "made-up", trainChannel: 1 } };
+      for (const [over, family] of [
+        [quantize, "lambda-stack-24-04"],
+        [{ recipe: "glimmer-lora" as const, instanceName: "mm-train-1234abcd-glimmer-lora", params: { datasetId: "ds-1" } }, undefined],
+      ] as const) {
+        job = row(over as never);
+        listing = [];
+        calls = [];
+        await steps.launchStep(JOB_ID);
+        assert.equal((called("launchInstance")[0]!.args[0] as LaunchInput).imageFamily, family);
       }
     });
 

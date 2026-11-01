@@ -1875,7 +1875,6 @@ export function ggufSparkOpen(f: Pick<GgufFacts, "sparkOpen" | "mergeBase" | "ad
   return f.sparkOpen === true || isSparkOpenDerivative({ metrics: { merge_base: f.mergeBase.repo }, adapterBase: f.adapterBase.model });
 }
 
-/** The GGUF repo's README.md: YAML front matter the Hub's validator takes, then the sections in the design's order. */
 /** A small base's GGUF card: its license duties first, what was measured, and how to run it. Glimmer's sections don't apply. */
 function smallGgufCard(f: GgufFacts): string {
   const [, name] = f.repo.split("/");
@@ -1945,6 +1944,7 @@ function lowBitSection(f: GgufFacts): string[] {
   ];
 }
 
+/** The GGUF repo's README.md: YAML front matter the Hub's validator takes, then the sections in the design's order. */
 export function ggufCard(f: GgufFacts): string {
   if (quantBaseOf(f.params)) return smallGgufCard(f);
   const [, name] = f.repo.split("/");

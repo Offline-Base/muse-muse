@@ -230,11 +230,10 @@ FILE_STEM = "muse-glimmer-30b-"
 QUANT_BASE = None
 TEMPLATE_DATE_RE = None
 STOPS_SMALL = ["<|eot_id|>", "<|eom_id|>", "<|end_of_text|>"]
-LLAMA_32_3B_FILES = "https://huggingface.co/unsloth/Llama-3.2-3B-Instruct/resolve/006f5dcd1393c3add266de40994ba96225e9689d/"
 # The small bases a job may merge into (QUANT_BASES in lib/train/quant-targets.ts, a test keeps them equal). Read from the
 # Hub on 2026-11-01: the commit, each shard's LFS SHA-256, each small file's bytes, and the digest of the 254 "name:shape"
 # lines from the shards' safetensors headers. 255 GGUF tensors is what two published conversions of this model hold (their
-# headers, read the same day): the 254 and rope_freqs. Its limits are this size's, estimated: nothing has run them.
+# headers, read the same day): the 254 and rope_freqs. Its time and disk limits are estimates for this size; one real run on an A10 fit them (Nov 1 2026).
 QUANT_BASES = {
     "llama-3.2-3b": {
         "family": "llama3",

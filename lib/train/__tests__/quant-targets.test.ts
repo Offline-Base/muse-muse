@@ -5,7 +5,8 @@ import { createElement } from "react";
 import { WhereItRuns } from "@/components/train/room/WhereItRuns";
 import { makeFilesCostText, quantLowBitText, quantRows, quantRowText, type QuantState } from "@/components/train/format";
 import { adapterProblem, quantKlLimit, quantProblem, recipeDefaults, runEstimate } from "@/lib/train/logic";
-import { deviceModelTarget, LOW_BIT_FACTS, quantBaseForAdapter, quantBaseOf } from "@/lib/train/quant-targets";
+import { pickBuild } from "@/lib/vibe/device";
+import { deviceModelTarget, LOW_BIT_FACTS, quantBaseForAdapter, quantBaseOf, quantBaseOfFileName } from "@/lib/train/quant-targets";
 
 const LLAMA = { baseModel: "unsloth/Llama-3.2-3B-Instruct-bnb-4bit", baseRevision: "9".repeat(40), baseFamily: "llama3", studentPrompt: "short" };
 const summary = { items: 40, tunedWins: 40, baseWins: 0, ties: 0, avgBaseScore: 1.95, avgTunedScore: 8.88, judgeCostUsd: 0.15 };
@@ -32,6 +33,12 @@ describe("deviceModelTarget", () => {
     assert.equal(quantBaseForAdapter(LLAMA)?.name, "llama-3.2-3b");
     assert.equal(quantBaseForAdapter({ baseModel: "unsloth/Llama-3.2-1B-Instruct-bnb-4bit" }), null);
     assert.equal(quantBaseOf({ quantBase: "constructor" }), null);
+    assert.equal(quantBaseOfFileName("Llama-3.2-3B-made-up-Q4_K_M.gguf")?.name, "llama-3.2-3b");
+    assert.equal(quantBaseOfFileName("muse-glimmer-30b-made-up-Q4_K_M.gguf"), null);
+    // A phone isn't told a Llama file is too big for it, which nothing has tested, or that it's a 30B model.
+    const phone = { kind: "phone" as const, chip: null, memoryGb: null, gpu: null };
+    const verdict = pickBuild(phone, [{ level: "Q4_K_M", name: "Llama-3.2-3B-made-up-Q4_K_M.gguf", bytes: 2_019_377_312, sha256: "a".repeat(64) }])!;
+    assert.doesNotMatch(JSON.stringify(verdict), /30B/);
   });
 });
 

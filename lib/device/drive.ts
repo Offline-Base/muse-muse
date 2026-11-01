@@ -205,6 +205,7 @@ function labFiles(lf: LocalFiles, build: string) {
 async function labExport(ref: Extract<SourceRef, { kind: "lab" }>, deps: ExportDeps) {
   const lf = await deps.localFiles(ref.jobId);
   if (!lf || !lf.repo || !lf.commit || !lf.files.length) throw new ExportSourceMissing("That lab model has no checked GGUF files on the Hub yet.");
+  if (lf.quantBase) throw new ExportSourceMissing("That lab model is on a small Llama, and a drive's license files are Muse Glimmer's, so it can't be exported yet.");
   const files = labFiles(lf, ref.build);
   return { lf: { ...lf, repo: lf.repo, commit: lf.commit }, files };
 }

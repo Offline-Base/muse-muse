@@ -291,6 +291,8 @@ export function driveProblem(input: { enabled: boolean; judged: boolean; files: 
   if (!input.files) return "This model has no local files yet.";
   if (!input.files.public || !input.files.repo || !input.files.commit) return "This model's local files aren't public yet.";
   if (!input.files.files.length) return "None of this model's local files passed their checks.";
+  // A drive's license files and words are Muse Glimmer's (lib/drive/plan.ts): a Llama file needs its own first.
+  if (input.files.quantBase) return "This model is on a small Llama, and drives don't carry its license yet.";
   return null;
 }
 

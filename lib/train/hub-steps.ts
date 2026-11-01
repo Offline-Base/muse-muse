@@ -938,7 +938,8 @@ async function ggufFactsOf(job: TrainJobRow, hub: HubState, adapter: TrainJobRow
           total: num(metrics.iq1_s_final_total),
           agree: num(metrics.iq1_s_agreement),
           agreeTotal: num(metrics.iq1_s_agreement_total),
-          problem: typeof metrics.iq1_s_problem === "string" ? metrics.iq1_s_problem : null,
+          // The card is public, and the raw problem can quote a rendered prompt or a tool's output: the job's page keeps those.
+          problem: typeof metrics.iq1_s_problem === "string" ? "its own checks didn't pass" : null,
           calibrationChars: num(metrics.calibration_chars),
         }
       : null,

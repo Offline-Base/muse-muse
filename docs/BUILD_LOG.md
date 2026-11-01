@@ -1733,3 +1733,12 @@ scripts/dev/tune-harness.ts, on a Lambda gpu_1x_a10 named prove-tune-1, us-east-
 - Decision: `LOW_BIT_KL_MAX` stays null. One measurement from a mismatched adapter can't set a gate.
 - Decision: `QUANT_KL_MAX.Q4_K_M` stays 0.03 for now, and flagged. Two real values on made-up text are 0.035 (Llama, which has no limit) and 0.042, so a real r30b job may lose its Q4_K_M. Needs an r30b tune's number.
 - Not run: launch through the platform, https callbacks, Hub publish, a real board, the full suite, next build.
+
+## Nov 1, 2026: independent review of tg-quant-targets
+
+- Read the whole diff against origin/main, not the report. Checked: guest spend (routes are admin or automation; callers can't send quantBase, since validateParams refuses unknown params), limits (recipeDefaults runs after the platform writes levels), sha256 pins, shell quoting, secrets in the log folder, em dashes, Offline Base and Qwen in new copy. No issue in those.
+- Fixed: a Llama file with the flag on reached public pages as Muse Glimmer. The run-locally page called it "the tuned Muse Glimmer 30B" with Glimmer's under-18 line and "can't run a 30B model". Its Ollama steps used Glimmer's renderer and parser. It now names Llama and its license, with a Llama Modelfile and a note that its app steps are untried.
+- Fixed: a Llama file could be ordered or exported on a drive, whose words and license files say Muse Glimmer under Apache 2.0. `driveProblem` and the lab export now refuse it. Drives for Llama need their own license files first.
+- Fixed: the public GGUF card and record printed the raw IQ1_S problem, which can quote a rendered prompt or a tool's output. They now say its own checks didn't pass, and the job's page keeps the detail.
+- Added a test that only glimmer-quantize launches with QUANT_IMAGE_FAMILY in steps.ts. Removed an unused constant and updated stale docs.
+- Tests: tsc clean, 200 targeted tests pass (fakes). Not run: any page in a browser, the Llama Modelfile in Ollama, the full suite, next build. No spend.

@@ -48,6 +48,11 @@ export function quantBaseOf(params: Readonly<Record<string, unknown>> | null | u
   return typeof name === "string" && Object.hasOwn(QUANT_BASES, name) ? QUANT_BASES[name]! : null;
 }
 
+/** The small base a local file belongs to, from its name, or null for Glimmer's. */
+export function quantBaseOfFileName(name: string): QuantBase | null {
+  return Object.values(QUANT_BASES).find((b) => name.startsWith(b.fileStem)) ?? null;
+}
+
 /**
  * The one-bit file's facts, from the 2026-knowledge model on llama.cpp b11970 with a training-text importance matrix
  * (docs/KNOWLEDGE_RUN_LOG.md, Oct 30 and 31). The memory and speed were measured Nov 1 on that file on b11669 under a hard
