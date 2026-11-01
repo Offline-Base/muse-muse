@@ -215,6 +215,8 @@ Router finding for Ethan: a request headed outside the class that both the label
 
 **21:37** glimmer_labels ran (01:24Z to 01:35Z, exit 2: 2 and 1 fallbacks, under the 10% rule). Glimmer labeling Muse's requests with the policy deciding: fresh_200_b 47.0% (base 50.5%), tasks 45.0% (base 47.0%), 0 leaks, approval requests 52 and 20. The tuned file labels slightly worse than base. Next: shipped_answers.
 
+**21:47** shipped_answers ran (01:37Z to 01:45Z, exit 0, no fallbacks). Glimmer writing answers and summaries while the policy decides on LFM's labels: fresh_200_b 80.5% (policy_lfm 81.0%), tasks 81.0% (82.0%), 0 leaks against 0, approval requests 78 and 26. On the development sets this meets the prereg's bar for shipping Glimmer as the writer in `--mode answers` (no more leaks than the baseline); the summary screen's counts are in the report when it is copied back. Next: shipped_labels.
+
 ## Open items
 
 - Ethan: which mode the routing tune targets; whether to hand over stage 2 IQ1_S early.
