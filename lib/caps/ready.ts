@@ -100,7 +100,7 @@ export function capsForBuild<T extends Brief>(brief: T, opts: CapsForBuildOption
 }
 
 // ---------- Wave 3, unit 13 (docs/CAPABILITIES.md, section 19): a hardware block with nothing left ----------
-/** With HARDWARE_BOARD_TOOLS off, hardwareBlock leaves board tools out. A block with no links either goes as switched off. */
+/** With HARDWARE_BOARD_TOOLS or the owner check off, hardwareBlock leaves board tools out. A block with no links either goes as switched off. */
 function hardwareOff(brief: Brief, dropped: CapDrop[]): void {
   const record = brief as { hardware?: unknown };
   if (record.hardware === null || record.hardware === undefined || dropped.some((d) => d.cap === "hardware")) return;

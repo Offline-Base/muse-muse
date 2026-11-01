@@ -17,5 +17,11 @@ export const BOARD_CHECK_MS = 15_000;
 export const BOARD_TOOLS = ["read_sensor", "show_text"] as const;
 export type BoardTool = (typeof BOARD_TOOLS)[number];
 
+/**
+ * In a token's allowedModels: the brief asked for board tools. Its own marker, so a product that wants a sensor doesn't get the
+ * board's camera and microphone (those need muse-gadget), and a browser-links product (cap:hardware alone) gets neither.
+ */
+export const BOARD_TOOLS_MARKER = "board-tools";
+
 /** A count for /caps/proof: a rate_limits row per moment, so a verify's `since` counts exactly what happened after it. */
 export const hardwareProofKey = (tool: BoardTool, buildId: string) => `hardware-proof:${tool}:${buildId}`;

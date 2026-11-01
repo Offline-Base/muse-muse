@@ -22,8 +22,14 @@ const SERIAL = { links: ["serial"], boardTools: false, why: "Reads a thermometer
 const BOARD = { links: [], boardTools: true, why: "Shows a message on the shop's board." };
 const brief = (hardware: unknown) => ({ ...BRIEF, hardware }) as Brief;
 
+const toolsUsable = () => {
+  process.env.HARDWARE_BOARD_TOOLS = "1";
+  process.env.HARDWARE_GADGET_OWNER_CHECK = "1";
+};
+
 beforeEach(() => {
   delete process.env.HARDWARE_BOARD_TOOLS;
+  delete process.env.HARDWARE_GADGET_OWNER_CHECK;
 });
 
 describe("the hardware block", () => {
@@ -36,7 +42,7 @@ describe("the hardware block", () => {
   it("drops board tools while their flag is off, and is null with nothing left", () => {
     assert.deepEqual(hardwareBlock(brief({ ...SERIAL, boardTools: true })), SERIAL);
     assert.equal(hardwareBlock(brief(BOARD)), null);
-    process.env.HARDWARE_BOARD_TOOLS = "1";
+    toolsUsable();
     assert.deepEqual(hardwareBlock(brief(BOARD)), BOARD);
     assert.equal(hardwareBlock(BRIEF), null);
   });
@@ -72,7 +78,7 @@ describe("what the cap says", () => {
     const block = CAP_CATALOG.hardware!.block;
     assert.match(block, /Browser links work in Chrome and Edge on a computer or Android, after a click\. Not in Safari or on iPhone\./);
     assert.doesNotMatch(block, /board tools/);
-    process.env.HARDWARE_BOARD_TOOLS = "1";
+    toolsUsable();
     assert.match(CAP_CATALOG.hardware!.block, /board tools/);
   });
 
@@ -83,15 +89,15 @@ describe("what the cap says", () => {
     assert.match(text, /connectSerial`, `connectBluetooth/);
     assert.match(text, /checkDeviceLink/);
     assert.doesNotMatch(text, /readSensor|checkBoardTool/);
-    process.env.HARDWARE_BOARD_TOOLS = "1";
+    toolsUsable();
     const both = capsBuildLines(brief({ ...SERIAL, boardTools: true })).join("\n");
     assert.match(both, /readSensor/);
     assert.match(both, /checkBoardTool/);
-    assert.match(both, /isBoardOffline/);
+    assert.match(both, /boardMessage/);
   });
 
   it("no em dashes and no run_command promise in anything a person or the writer reads", () => {
-    process.env.HARDWARE_BOARD_TOOLS = "1";
+    toolsUsable();
     const b = brief({ links: ["serial"], boardTools: true, why: "A reason." });
     const text = [...capsBuildLines(b), ...capsRefineLines(b), ...capsMarkdown(b), ...hardwareWriterRules(true), CAP_CATALOG.hardware!.block, hardwareJudgeNote(b)].join("\n");
     assert.equal(text.includes(String.fromCharCode(0x2014)), false);
@@ -109,13 +115,53 @@ describe("what the cap says", () => {
 });
 
 describe("the token's markers", () => {
-  it("board tools bring the gadget's id even if the writer left it out, only while they're on", () => {
-    const models = (hardware: unknown) => allowedModelsFor(brief(hardware));
-    assert.ok(!models(BOARD).includes("muse-gadget"));
+  const models = (hardware: unknown, capabilities = BRIEF.capabilities) => allowedModelsFor({ ...brief(hardware), capabilities });
+
+  it("board tools have their own marker and never bring the camera and microphone", () => {
+    assert.ok(!models(BOARD).includes("board-tools"));
     assert.ok(models(BOARD).includes("cap:hardware"));
+    toolsUsable();
+    assert.ok(models(BOARD).includes("board-tools"));
+    assert.ok(!models(BOARD).includes("muse-gadget"), "only a brief that picked the gadget gets it");
+    assert.ok(!models(SERIAL).includes("board-tools"), "browser links never reach a board");
+    assert.ok(!models(SERIAL).includes("muse-gadget"));
+    assert.ok(models(BOARD, [...BRIEF.capabilities, { need: "see", model: "muse-gadget", why: "a board" }] as Brief["capabilities"]).includes("muse-gadget"));
+  });
+});
+
+describe("board tools with the owner check off", () => {
+  beforeEach(() => {
     process.env.HARDWARE_BOARD_TOOLS = "1";
-    assert.ok(models(BOARD).includes("muse-gadget"));
-    assert.ok(!models(SERIAL).includes("muse-gadget"), "browser links never reach a board");
+  });
+
+  it("nothing offers them, and nothing brings them to a token", () => {
+    assert.equal(hardwareBlock(brief(BOARD)), null);
+    assert.deepEqual(hardwareBlock(brief({ ...SERIAL, boardTools: true })), SERIAL);
+    assert.equal(normalizeHardwareBlock(BOARD), null);
+    assert.equal(hardwareWriterBlock().safeParse(BOARD).success, false);
+    assert.match(hardwareWriterRules().join("\n"), /boardTools: always false/);
+    assert.doesNotMatch(CAP_CATALOG.hardware!.block, /board tools/);
+    assert.deepEqual(allowedModelsFor(brief(BOARD)).filter((m) => m === "board-tools" || m === "muse-gadget"), []);
+  });
+
+  it("a build drops such a block as switched off", () => {
+    const enabled = ["hardware"] as const;
+    assert.deepEqual(capsForBuild(brief(BOARD), { enabled, onSite: enabled }).dropped, [{ cap: "hardware", reason: "off" }]);
+  });
+
+  it("the owner's link doesn't show, since there's no board for the pass to reach", () => {
+    assert.equal(hardwareOwnerLink({ isOwner: true, liveUrl: "https://x.example", slug: "x", status: "live", brief: brief(BOARD), served: true }), null);
+  });
+});
+
+describe("what a writer and a builder read about a board", () => {
+  it("the catalog's 'nothing else' stays true, and the prompt says the request has to go along", () => {
+    toolsUsable();
+    assert.match(CAP_CATALOG.hardware!.block, /Boards do nothing else for a product/);
+    const text = capsBuildLines(brief(BOARD)).join("\n");
+    assert.match(text, /always pass the incoming request/);
+    assert.match(text, /boardMessage/);
+    assert.match(text, /own tab/);
   });
 });
 
@@ -126,7 +172,7 @@ describe("what a build gets", () => {
     assert.deepEqual(dropped, [{ cap: "hardware", reason: "off" }]);
     assert.equal((working as { hardware?: unknown }).hardware, null);
     assert.deepEqual(capsForBuild(brief(SERIAL), { enabled, onSite: enabled }).dropped, []);
-    process.env.HARDWARE_BOARD_TOOLS = "1";
+    toolsUsable();
     assert.deepEqual(capsForBuild(brief(BOARD), { enabled, onSite: enabled }).dropped, []);
   });
 

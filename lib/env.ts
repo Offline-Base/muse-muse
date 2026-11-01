@@ -1165,6 +1165,10 @@ export const env = {
   get hardwareBoardTools(): boolean {
     return flag("HARDWARE_BOARD_TOOLS");
   },
+  /** Both HARDWARE_BOARD_TOOLS and HARDWARE_GADGET_OWNER_CHECK: products may be built with board tools. */
+  get hardwareBoardToolsUsable(): boolean {
+    return flag("HARDWARE_BOARD_TOOLS") && flag("HARDWARE_GADGET_OWNER_CHECK");
+  },
   /** HARDWARE_BOARD_REGISTRY: /api/boards, linking a board to a product, and the board lists on /device and /gadgets. Admins only (decision 16). */
   get hardwareBoardRegistry(): boolean {
     return flag("HARDWARE_BOARD_REGISTRY");

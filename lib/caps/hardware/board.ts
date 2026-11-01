@@ -89,13 +89,19 @@ const defaultDeps: LinkedBoardDeps = {
 };
 
 /**
- * The board this product's owner linked, ready for the gateway, or null. Null for no link, no key, a row that doesn't open
- * or an address that stopped being public: the gateway then answers 503 gadget_offline, as for no board at all.
+ * The link this product's owner made, or null. `open` opens the board's secrets and checks its address, and is called only for
+ * someone the link lets in. It gives null for no key, a row that doesn't open or an address that stopped being public: the
+ * gateway then answers 503 gadget_offline, as for no board at all.
  */
 export async function linkedBoardFor(productId: string, deps: LinkedBoardDeps = defaultDeps): Promise<LinkedBoard | null> {
   const row = await deps.row(productId);
-  const ring = row ? deps.ring() : null;
-  if (!row || !ring) return null;
+  if (!row) return null;
+  return { ownerUserId: row.ownerUserId, visitors: row.visitors, open: () => openLinkedBoard(row, deps) };
+}
+
+async function openLinkedBoard(row: LinkedBoardRow, deps: LinkedBoardDeps): Promise<GadgetBoard | null> {
+  const ring = deps.ring();
+  if (!ring) return null;
   let config: DeviceConfig;
   try {
     config = openBoardConfig(row, ring);
@@ -118,10 +124,7 @@ export async function linkedBoardFor(productId: string, deps: LinkedBoardDeps = 
     }
   };
   return {
-    visitors: row.visitors,
-    board: {
-      listTools: () => timed(() => deps.list(config)),
-      callTool: (name, args) => timed(() => deps.call(config, name, args)),
-    },
+    listTools: () => timed(() => deps.list(config)),
+    callTool: (name, args) => timed(() => deps.call(config, name, args)),
   };
 }

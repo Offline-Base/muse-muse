@@ -70,7 +70,7 @@ describe("against the real muse-device server", { skip: !canMock ? "needs --expe
     }
     mock.module(at("../../../auth.ts"), { namedExports: { AuthError, requireAdmin: async () => ({ id: userId, isAdmin: true }) } });
     mock.module(at("../../../gateway/tokens.ts"), {
-      namedExports: { findToken: async (t: string) => (t === LIVE ? { id: "tok", productId: product!.id, scope: "live", allowedModels: ["muse-gadget", "cap:hardware"], dailyBudgetUsd: 3 } : null) },
+      namedExports: { findToken: async (t: string) => (t === LIVE ? { id: "tok", productId: product!.id, scope: "live", allowedModels: ["muse-gadget", "cap:hardware", "board-tools"], dailyBudgetUsd: 3 } : null) },
     });
     process.env.HARDWARE_BOARD_REGISTRY = "1";
     process.env.HARDWARE_BOARD_TOOLS = "1";
@@ -80,8 +80,8 @@ describe("against the real muse-device server", { skip: !canMock ? "needs --expe
     boards = await import("@/app/api/boards/route");
     productBoard = await import("@/app/api/products/[slug]/board/route");
     gadget = await import("@/app/api/gateway/gadget/route");
-    const { mintOwnerSession } = await import("@/lib/tools/principal");
-    ownerPass = mintOwnerSession({ productId: product!.id, subject: "o" }, new Date()).session;
+    const { mintOwnerSession, ownerSubject } = await import("@/lib/tools/principal");
+    ownerPass = mintOwnerSession({ productId: product!.id, subject: ownerSubject(userId) }, new Date()).session;
   });
 
   after(async () => {

@@ -145,24 +145,46 @@ describe("linkedBoardFor", () => {
     return { d, health, calls };
   }
 
+  const opened = async (d: LinkedBoardDeps) => (await linkedBoardFor("p1", d))?.open();
+
   it("opens the row and reaches that board", async () => {
     const { d, calls, health } = linked();
     const found = await linkedBoardFor("p1", d);
     assert.equal(found?.visitors, false);
-    await found?.board.callTool("read_sensor", {});
+    assert.equal(found?.ownerUserId, OWNER);
+    await (await found?.open())?.callTool("read_sensor", {});
     assert.deepEqual(calls, [`${URL_OK} read_sensor`]);
     assert.deepEqual(health, [true]);
   });
 
+  it("opens nothing and looks nothing up until someone the link lets in asks", async () => {
+    let lookups = 0;
+    let rings = 0;
+    const { d } = linked({
+      ring: () => {
+        rings++;
+        return RING;
+      },
+      check: async () => {
+        lookups++;
+        return { ok: true, trust: "public_tls" };
+      },
+    });
+    const found = await linkedBoardFor("p1", d);
+    assert.deepEqual([rings, lookups], [0, 0]);
+    await found?.open();
+    assert.deepEqual([rings, lookups], [1, 1]);
+  });
+
   it("notes a failure, and gives the error back", async () => {
     const { d, health } = linked({ call: async () => { throw new Error("down"); } });
-    await assert.rejects(async () => (await linkedBoardFor("p1", d))?.board.callTool("read_sensor", {}), /down/);
+    await assert.rejects(async () => (await opened(d))?.callTool("read_sensor", {}), /down/);
     assert.deepEqual(health, [false]);
   });
 
   it("a health note that fails doesn't fail the call", async () => {
     const { d } = linked({ health: async () => { throw new Error("db down"); } });
-    assert.deepEqual(await (await linkedBoardFor("p1", d))?.board.callTool("read_sensor", {}), { isError: false, content: [] });
+    assert.deepEqual(await (await opened(d))?.callTool("read_sensor", {}), { isError: false, content: [] });
   });
 
   it("gives nothing with no link, no key, a row moved to another owner or board, or an address no longer public", async () => {
@@ -170,11 +192,11 @@ describe("linkedBoardFor", () => {
     console.error = () => undefined;
     try {
       assert.equal(await linkedBoardFor("p1", linked({ row: async () => null }).d), null);
-      assert.equal(await linkedBoardFor("p1", linked({ ring: () => null }).d), null);
-      assert.equal(await linkedBoardFor("p1", linked({ ring: () => parseKeyring(newBoxKey()) }).d), null, "another key");
-      assert.equal(await linkedBoardFor("p1", linked({ row: async () => ({ ...row(), ownerUserId: "00000000-0000-4000-8000-000000000002" }) }).d), null, "copied to another owner");
-      assert.equal(await linkedBoardFor("p1", linked({ row: async () => ({ ...row(), boardId: "00000000-0000-4000-8000-0000000000b2" }) }).d), null, "copied to another board");
-      assert.equal(await linkedBoardFor("p1", linked({ check: async () => ({ ok: false }) }).d), null);
+      assert.equal(await opened(linked({ ring: () => null }).d), null);
+      assert.equal(await opened(linked({ ring: () => parseKeyring(newBoxKey()) }).d), null, "another key");
+      assert.equal(await opened(linked({ row: async () => ({ ...row(), ownerUserId: "00000000-0000-4000-8000-000000000002" }) }).d), null, "copied to another owner");
+      assert.equal(await opened(linked({ row: async () => ({ ...row(), boardId: "00000000-0000-4000-8000-0000000000b2" }) }).d), null, "copied to another board");
+      assert.equal(await opened(linked({ check: async () => ({ ok: false }) }).d), null);
     } finally {
       console.error = quiet;
     }

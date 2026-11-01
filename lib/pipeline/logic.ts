@@ -9,6 +9,7 @@ import { SPARK_STANDIN, withoutRetiredSpark } from "@/lib/meta/spark";
 import { AGENT_MARKER, isToolId, toolMarker } from "@/lib/tools/ids";
 import { briefCaps } from "@/lib/caps/brief-fields";
 import { hardwareBlock } from "@/lib/caps/hardware/brief";
+import { BOARD_TOOLS_MARKER } from "@/lib/caps/hardware/limits";
 import { LIVE_CAPTION_MODEL, liveBlock } from "@/lib/caps/live/brief";
 import { gpuAllowedModels } from "@/lib/caps/gpu/marker";
 import { capMarker } from "@/lib/caps/ids";
@@ -114,8 +115,8 @@ export function allowedModelsFor(brief: Pick<Brief, "capabilities" | "agent">): 
   const live = liveBlock(brief)?.captions ? [LIVE_CAPTION_MODEL] : [];
   // Wave 3, unit 11: Muse Wonder and the `glimmer` marker while the shared Glimmer endpoint is on. None with it off.
   const gpu = gpuAllowedModels(brief);
-  // Wave 3, unit 13: board tools go through the /gadget route, which reads the gadget's id, even if the writer left it out.
-  const board = hardwareBlock(brief)?.boardTools ? ["muse-gadget"] : [];
+  // Wave 3, unit 13: board tools have their own marker, so they bring no camera or microphone. None with them off.
+  const board = hardwareBlock(brief)?.boardTools ? [BOARD_TOOLS_MARKER] : [];
   return [...new Set<string>([...models, ...live, ...gpu, ...board, ...(brief.agent ? [AGENT_MARKER] : []), ...tools]), ...briefCaps(brief).map(capMarker)];
 }
 

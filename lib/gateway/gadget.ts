@@ -3,9 +3,9 @@ import { clientIpKey, parseBearer } from "@/lib/gateway/extract";
 import { SIM_AUDIO_WAV_BASE64, SIM_PHOTO_JPEG_BASE64 } from "@/lib/gateway/gadget-sim-media";
 import type { GatewayToken } from "@/lib/gateway/handler";
 import { CLIENT_IP_HEADER } from "@/lib/gateway/policy";
-import { BOARD_TOOLS, hardwareProofKey, SENSOR_NAME_MAX_CHARS, SHOW_TEXT_MAX_CHARS, SHOW_TEXT_PER_MINUTE, type BoardTool } from "@/lib/caps/hardware/limits";
+import { BOARD_TOOLS, BOARD_TOOLS_MARKER, hardwareProofKey, SENSOR_NAME_MAX_CHARS, SHOW_TEXT_MAX_CHARS, SHOW_TEXT_PER_MINUTE, type BoardTool } from "@/lib/caps/hardware/limits";
 import { capMarker } from "@/lib/caps/ids";
-import { resolvePrincipal } from "@/lib/tools/principal";
+import { ownerSubject, resolvePrincipal } from "@/lib/tools/principal";
 import type { ProductStatus } from "@/lib/types";
 
 /**
@@ -18,9 +18,10 @@ import type { ProductStatus } from "@/lib/types";
  * lib/device/client.ts), or get 503 gadget_offline. Only the tools in PRODUCT_GADGET_TOOLS are served: never a shell.
  *
  * Wave 3, unit 13 (docs/CAPABILITIES.md, section 19). With HARDWARE_GADGET_OWNER_CHECK, a live token reaches only the board
- * its product's owner linked, and only with a verified owner pass unless the link opens it to visitors. Anything else gets
- * 503 gadget_offline, and DEVICE_MCP_URL's board isn't read at all. With HARDWARE_BOARD_TOOLS, a token whose brief asks for
- * the hardware cap also gets read_sensor and show_text.
+ * its product's owner linked, and only with an owner pass naming that owner unless the link opens it to visitors. Anything
+ * else gets 503 gadget_offline, and DEVICE_MCP_URL's board isn't read at all. With HARDWARE_BOARD_TOOLS, a token whose brief
+ * asks for board tools gets read_sensor and show_text, and nothing else unless the brief also picked muse-gadget. Board tools
+ * never reach DEVICE_MCP_URL's board: a live token with the owner check off doesn't get them.
  */
 
 /** findToken's row has the build's id, for the hardware proof. */
@@ -68,10 +69,16 @@ export interface GadgetDeps {
   boardTools?: boolean;
 }
 
-/** The board a product's owner linked, and whether the link lets visitors reach it. */
+/**
+ * The link a product's owner made. Nothing secret is opened until `open`, which is called only for someone the link lets in,
+ * so a refused caller costs a row read whether or not there's a link.
+ */
 export interface LinkedBoard {
-  board: GadgetBoard;
+  /** The board's owner, who is the product's owner: an owner pass must name them. */
+  ownerUserId: string;
   visitors: boolean;
+  /** The board, or null when it can't be reached safely right now. */
+  open(): Promise<GadgetBoard | null>;
 }
 
 const DEVICE_PROP = { device: { type: "string", description: "Which camera or microphone, from describe_device. Defaults to the first." } };
@@ -159,13 +166,21 @@ export const SIMULATED_BOARD: GadgetBoard = {
   },
 };
 
-/** The tools this token may call: the three every gadget product has, and the board tools for a hardware brief while they're on. */
+/** The brief asked for board tools, its manifest left the cap in, and they're switched on. */
+const asksForBoardTools = (token: GadgetToken, deps: GadgetDeps): boolean => Boolean(deps.boardTools) && token.allowedModels.includes(BOARD_TOOLS_MARKER) && token.allowedModels.includes(capMarker("hardware"));
+
+/**
+ * The tools this token may call: the three a brief gets by picking muse-gadget, and the board tools for a brief that asked
+ * for those. A live token gets board tools only with the owner check on, so they never reach DEVICE_MCP_URL's board.
+ */
 function toolsFor(token: GadgetToken, deps: GadgetDeps): readonly string[] {
-  return deps.boardTools && token.allowedModels.includes(capMarker("hardware")) ? [...PRODUCT_GADGET_TOOLS, ...BOARD_TOOLS] : PRODUCT_GADGET_TOOLS;
+  const media = token.allowedModels.includes(GADGET_ID) ? PRODUCT_GADGET_TOOLS : [];
+  return asksForBoardTools(token, deps) && (token.scope === "build" || deps.linkedBoard) ? [...media, ...BOARD_TOOLS] : media;
 }
 
 const isBoardTool = (name: string): name is BoardTool => (BOARD_TOOLS as readonly string[]).includes(name);
-const CONTROL = /\p{Cc}/u;
+/** Line and paragraph separators, bidi and other format controls, and half of a surrogate pair. ZWNJ and ZWJ stay: emoji and several scripts need them. */
+const NOT_PLAIN = /[\p{Cc}\p{Cs}\p{Zl}\p{Zp}]|(?![\u200c\u200d])\p{Cf}/u;
 
 /** A board tool's arguments are checked here as well as on the board: only known keys, and show_text's limit. */
 function boardToolProblem(tool: BoardTool, args: Record<string, unknown>): string | null {
@@ -179,7 +194,7 @@ function boardToolProblem(tool: BoardTool, args: Record<string, unknown>): strin
   if (keys.some((k) => k !== "text")) return "show_text takes only text.";
   const text = args.text;
   if (typeof text !== "string" || !text.trim() || text.length > SHOW_TEXT_MAX_CHARS) return `text must be 1 to ${SHOW_TEXT_MAX_CHARS} characters.`;
-  return CONTROL.test(text) ? "text must be one plain line." : null;
+  return NOT_PLAIN.test(text) ? "text must be one plain line." : null;
 }
 
 async function authorize(req: Request, deps: GadgetDeps): Promise<GadgetToken | Response> {
@@ -190,19 +205,21 @@ async function authorize(req: Request, deps: GadgetDeps): Promise<GadgetToken | 
   if (!status || status === "disabled" || status === "failed") {
     return gatewayError(403, "permission_error", "product_disabled", "This product is turned off on Muse Muse.", { retry: false });
   }
-  if (!token.allowedModels.includes(GADGET_ID)) {
+  if (!token.allowedModels.includes(GADGET_ID) && !asksForBoardTools(token, deps)) {
     return gatewayError(403, "permission_error", "gadget_not_allowed", "This product's brief doesn't use a gadget, so it can't call one.", { retry: false });
   }
   return token;
 }
 
-async function rateLimited(req: Request, token: GadgetToken, deps: GadgetDeps, tool?: string): Promise<Response | null> {
+/** `ip` counts the caller's address, `granted` the budgets a call uses up once it's let in, and with no owner check, all of them at once. */
+async function rateLimited(req: Request, token: GadgetToken, deps: GadgetDeps, tool?: string, part: "all" | "ip" | "granted" = "all"): Promise<Response | null> {
   const now = deps.now?.() ?? new Date();
   const windowStart = new Date(Math.floor(now.getTime() / GADGET_LIMITS.windowMs) * GADGET_LIMITS.windowMs);
-  const limits: Record<string, number> = { [`gadget:token:${token.id}`]: GADGET_LIMITS.perTokenPerMinute };
-  const ip = clientIpKey(req.headers.get(CLIENT_IP_HEADER));
+  const limits: Record<string, number> = part === "ip" ? {} : { [`gadget:token:${token.id}`]: GADGET_LIMITS.perTokenPerMinute };
+  const ip = part === "granted" ? null : clientIpKey(req.headers.get(CLIENT_IP_HEADER));
   if (ip) limits[`gadget:ip:${token.productId}:${ip}`] = GADGET_LIMITS.perIpPerMinute;
-  if (tool === "show_text") limits[`gadget:show:${token.productId}`] = SHOW_TEXT_PER_MINUTE;
+  if (part !== "ip" && tool === "show_text") limits[`gadget:show:${token.productId}`] = SHOW_TEXT_PER_MINUTE;
+  if (!Object.keys(limits).length) return null;
   const counts = await deps.hitRateLimits(Object.keys(limits), windowStart);
   const over = Object.entries(limits).find(([key, limit]) => (counts[key] ?? 0) > limit);
   if (!over) return null;
@@ -212,30 +229,33 @@ async function rateLimited(req: Request, token: GadgetToken, deps: GadgetDeps, t
   });
 }
 
-/** A verified owner pass for this product. A cookie alone, or a pass that doesn't verify, is nobody. */
-function isOwnerCall(req: Request, token: GadgetToken, now: Date): boolean {
+/** A verified owner pass for this product that names this person. A cookie alone, a pass that doesn't verify, or an admin's own pass is nobody. */
+function isOwnerCall(req: Request, token: GadgetToken, ownerUserId: string, now: Date): boolean {
   try {
-    return resolvePrincipal(req, token, now).kind === "owner";
+    const principal = resolvePrincipal(req, token, now);
+    return principal.kind === "owner" && principal.subject === ownerSubject(ownerUserId);
   } catch {
     return false;
   }
 }
 
+/** The same answer whatever the reason, so a caller can't tell a link from no link. */
+const noBoard = (): Response =>
+  gatewayError(503, "server_error", "gadget_offline", "No gadget is connected to this product right now. Connect one in Muse Muse, then try again.", {
+    retry: false,
+  });
+
+/** Wave 3, unit 13: the owner check. The link, if this caller may use it. */
+async function grantedLink(req: Request, token: GadgetToken, deps: GadgetDeps): Promise<LinkedBoard | null> {
+  const link = await deps.linkedBoard!(token.productId);
+  return link && (link.visitors || isOwnerCall(req, token, link.ownerUserId, deps.now?.() ?? new Date())) ? link : null;
+}
+
 /** The board this token reaches: the simulator for builds, the connected board for live products. */
 async function boardFor(req: Request, token: GadgetToken, deps: GadgetDeps): Promise<GadgetBoard | Response> {
   if (token.scope === "build") return SIMULATED_BOARD;
-  // Wave 3, unit 13: the owner check. The same answer whatever the reason, so a caller can't tell a link from no link.
-  let board: GadgetBoard | null;
-  if (deps.linkedBoard) {
-    const linked = await deps.linkedBoard(token.productId);
-    board = linked && (linked.visitors || isOwnerCall(req, token, deps.now?.() ?? new Date())) ? linked.board : null;
-  } else {
-    board = deps.board();
-  }
-  if (board) return board;
-  return gatewayError(503, "server_error", "gadget_offline", "No gadget is connected to this product right now. Connect one in Muse Muse, then try again.", {
-    retry: false,
-  });
+  const board = deps.linkedBoard ? ((await (await grantedLink(req, token, deps))?.open()) ?? null) : deps.board();
+  return board ?? noBoard();
 }
 
 /** A product gets from describe_device what a build's simulator tells it. A board's hostname, OS and USB list say where it sits. */
@@ -262,9 +282,10 @@ function offline(err: unknown): Response {
 export async function handleGadgetTools(req: Request, deps: GadgetDeps): Promise<Response> {
   const token = await authorize(req, deps);
   if (token instanceof Response) return token;
+  const allowed = toolsFor(token, deps);
+  if (!allowed.length) return noBoard();
   const board = await boardFor(req, token, deps);
   if (board instanceof Response) return board;
-  const allowed = toolsFor(token, deps);
   try {
     const tools = (await board.listTools()).filter((t) => allowed.includes(t.name));
     return Response.json({ tools, simulated: board === SIMULATED_BOARD });
@@ -277,13 +298,14 @@ export async function handleGadgetTools(req: Request, deps: GadgetDeps): Promise
 export async function handleGadgetCall(req: Request, deps: GadgetDeps): Promise<Response> {
   const token = await authorize(req, deps);
   if (token instanceof Response) return token;
+  const allowed = toolsFor(token, deps);
+  if (!allowed.length) return noBoard();
   let body: { tool?: unknown; arguments?: unknown };
   try {
     body = (await req.json()) as typeof body;
   } catch {
     return gatewayError(400, "invalid_request_error", "invalid_body", "The request body is not valid JSON.");
   }
-  const allowed = toolsFor(token, deps);
   if (typeof body?.tool !== "string" || !allowed.includes(body.tool)) {
     return gatewayError(400, "invalid_request_error", "unknown_tool", `Name one of the gadget's tools: ${allowed.join(", ")}.`, { retry: false });
   }
@@ -296,9 +318,21 @@ export async function handleGadgetCall(req: Request, deps: GadgetDeps): Promise<
     const problem = boardToolProblem(tool, args as Record<string, unknown>);
     if (problem) return gatewayError(400, "invalid_request_error", "invalid_arguments", problem, { retry: false });
   }
-  const limited = await rateLimited(req, token, deps, tool);
-  if (limited) return limited;
-  const board = await boardFor(req, token, deps);
+  let board: GadgetBoard | Response;
+  if (token.scope !== "build" && deps.linkedBoard) {
+    // The owner check: someone refused uses up only their own address's limit, never the owner's budgets.
+    const limitedIp = await rateLimited(req, token, deps, tool, "ip");
+    if (limitedIp) return limitedIp;
+    const link = await grantedLink(req, token, deps);
+    if (!link) return noBoard();
+    const limited = await rateLimited(req, token, deps, tool, "granted");
+    if (limited) return limited;
+    board = (await link.open()) ?? noBoard();
+  } else {
+    const limited = await rateLimited(req, token, deps, tool);
+    if (limited) return limited;
+    board = await boardFor(req, token, deps);
+  }
   if (board instanceof Response) return board;
   try {
     const result = await board.callTool(tool, args as Record<string, unknown>);

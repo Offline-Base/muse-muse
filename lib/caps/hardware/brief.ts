@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { boardToolsOn } from "@/lib/caps/hardware/flags";
+import { boardToolsUsable } from "@/lib/caps/hardware/flags";
 
 /**
  * The hardware cap's brief block (docs/CAPABILITIES.md, section 19):
@@ -19,11 +19,11 @@ export const HardwareBriefBlock = z.object({
 export type HardwareBrief = z.infer<typeof HardwareBriefBlock>;
 
 /**
- * The brief's hardware block as this platform can serve it, or null. Board tools go when HARDWARE_BOARD_TOOLS is off, so
- * the prompt, the judge and the checks never ask for a tool the gateway refuses. A block left with nothing is null, and
+ * The brief's hardware block as this platform can serve it, or null. Board tools go when HARDWARE_BOARD_TOOLS or
+ * HARDWARE_GADGET_OWNER_CHECK is off, so the prompt, the judge and the checks never ask for a tool the gateway refuses. A block left with nothing is null, and
  * capsForBuild drops the cap.
  */
-export function hardwareBlock(brief: object | null | undefined, boardTools: boolean = boardToolsOn()): HardwareBrief | null {
+export function hardwareBlock(brief: object | null | undefined, boardTools: boolean = boardToolsUsable()): HardwareBrief | null {
   const parsed = HardwareBriefBlock.safeParse((brief as { hardware?: unknown } | null | undefined)?.hardware);
   if (!parsed.success) return null;
   const tools = parsed.data.boardTools && boardTools;
@@ -45,7 +45,7 @@ const LINK_NAMES: Record<string, HardwareLink> = {
  * only while the flag is on, `why` clipped. A block that asks for nothing isn't a hardware block, so it becomes null.
  * Anything else is left for zod to report.
  */
-export function normalizeHardwareBlock(raw: unknown, boardTools: boolean = boardToolsOn()): unknown {
+export function normalizeHardwareBlock(raw: unknown, boardTools: boolean = boardToolsUsable()): unknown {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
   const b = { ...(raw as Record<string, unknown>) };
   if (Array.isArray(b.links)) {
@@ -60,12 +60,12 @@ export function normalizeHardwareBlock(raw: unknown, boardTools: boolean = board
 }
 
 /** The block the writer answers in: no board tools while their flag is off. */
-export function hardwareWriterBlock(boardTools: boolean = boardToolsOn()) {
+export function hardwareWriterBlock(boardTools: boolean = boardToolsUsable()) {
   return boardTools ? HardwareBriefBlock : HardwareBriefBlock.extend({ boardTools: z.literal(false) });
 }
 
 /** The writer's rules for the block (lib/caps/brief-fields.ts, CAP_WRITER_RULES). */
-export function hardwareWriterRules(boardTools: boolean = boardToolsOn()): string[] {
+export function hardwareWriterRules(boardTools: boolean = boardToolsUsable()): string[] {
   return [
     `hardware: fill it only when the muse asks for a physical device${boardTools ? " or a board" : ""}: a thermometer, a scale, a microcontroller, a Bluetooth sensor. Otherwise null. A camera or microphone in the browser needs no hardware block.`,
     "hardware.links: serial for a device on a USB cable that shows up as a serial port (Arduino, most microcontrollers); usb only for a device with its own USB protocol; bluetooth for a Bluetooth Low Energy sensor. Pick as few as the muse needs. Say in limits that these work in Chrome and Edge on a computer or Android, after a click, and not in Safari or on iPhone.",

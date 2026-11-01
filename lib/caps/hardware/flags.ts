@@ -7,6 +7,11 @@ const on = (name: string) => ["1", "true", "yes", "on"].includes((process.env[na
 
 /** HARDWARE_BOARD_TOOLS: read_sensor and show_text. */
 export const boardToolsOn = (): boolean => on("HARDWARE_BOARD_TOOLS");
+/**
+ * Whether a product may be built with board tools or told about them. They need the owner check too: without it there's no
+ * linked board for them to reach, and the writer would promise something the gateway refuses. Fails closed.
+ */
+export const boardToolsUsable = (): boolean => boardToolsOn() && gadgetOwnerCheckOn();
 /** HARDWARE_BOARD_REGISTRY: /api/boards, linking a board to a product, and the board list on /gadgets and /device. */
 export const boardRegistryOn = (): boolean => on("HARDWARE_BOARD_REGISTRY");
 /** HARDWARE_GADGET_OWNER_CHECK: a live token reaches only the board its product's owner linked. */

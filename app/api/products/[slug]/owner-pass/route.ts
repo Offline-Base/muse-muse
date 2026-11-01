@@ -47,7 +47,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
 }
 
 function boardToolsServed(): boolean {
-  return env.servedCaps.includes("hardware") && env.hardwareBoardTools;
+  return env.servedCaps.includes("hardware") && env.hardwareBoardToolsUsable;
 }
 
 // ---------- Wave 3, unit 9: Muse Code sessions are owner-only (docs/CAPABILITIES.md, 15b) ----------
