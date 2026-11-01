@@ -1437,6 +1437,131 @@ screenshots come from software rendering, so plain lighting and jagged edges are
 own origin only. Nothing goes to a store: Load unpacked only. Phaser and Babylon licenses (MIT, Apache 2.0) go in the
 product's notices.
 
+### 20a. As built (tg-cap-native, Oct 31)
+
+Built on `tg-cap-int` at 247ea04 (wave 2, the UI brand, units 0, 2, 10 and 12). Every flag is off, `CAP_READY.extension`
+and `CAP_READY.games` stay false, and no migration was needed. The shell bridge (notifications, Bluetooth LE) is not
+built: it waits for General's AWS Mac checks, so `NATIVE_BRIDGE_NOTIFY` and `NATIVE_BRIDGE_BLE` aren't in `lib/env.ts` yet.
+
+**Brief** (changed from the plan, by this unit). `extension: { does (up to 300), permissions: ("activeTab" | "storage" |
+"contextMenus" | "sidePanel")[] } | null`, as planned. The game engine's key is `games`, not `gameEngine`, since 8a keys
+a cap's block by its id: `games: { engine: "phaser" | "babylon", why (up to 200), controls (up to 200) } | null`.
+`normalizeRawBrief` cleans both in a marked block: permissions in Chrome's spelling, each once, in manifest order, broad
+ones dropped; engine names like "Babylon.js" become `babylon`; any other engine, or a brief with the `vr` target, makes
+`games` null (VR has its own 3D stack, which no wave 3 unit edits). Writer rules, catalog entries ("a browser extension",
+"game engines (Phaser for 2D, Babylon.js for 3D)"), build prompt sections `### Browser extension` and `### Game engine`
+in the order 2.6 gives, refine lines, markdown, and one judge note each.
+
+**Extension, in the build.** Overlay `extension`: `extension/manifest.json`, `popup.html`, `popup.ts`, `popup.css`
+(the product's tokens), `background.ts` as starting points; platform files `extension/platform.ts` (`productAction`,
+`currentPage`, `ProductError`), `extension/config.d.ts` (the shape of the platform's `config.js`, and the reference that
+brings in `@types/chrome`: this TypeScript, 6.0.3, includes no `@types` package on its own, measured),
+`scripts/extension-pack.mjs`, `scripts/caps/extension.mjs`, `tests/caps/extension.ts`, skill `muse-extension`.
+`deps.json` adds `@types/chrome` 0.3.5 (dev). Each `.ts` file is compiled on its own with the product's TypeScript
+(`transpileModule`), so no bundler and no packages, and imports end in `.js`. The packer checks what the platform will:
+the manifest keys it allows (refusing `host_permissions`, `content_scripts`, `content_security_policy`,
+`web_accessible_resources`, `externally_connectable`, `key` and others by name), only the four permissions and only
+those brief.md's `- Permissions:` line lists, Manifest V3 with a module service worker, and a file scan (no `eval`,
+`new Function`, `import()`, `importScripts`, inline scripts or `on*=` handlers, scripts or styles from other sites,
+frames, `chrome.scripting`, bare imports, and no `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource` or `sendBeacon`
+outside `platform.js`). The scan reads text, so it catches plain cases; the browser's policy below is the real guard.
+
+**Extension, the policy.** The platform writes the manifest's `host_permissions` (the product's own origin only) and
+`content_security_policy.extension_pages`: `script-src 'self'; object-src 'self'; connect-src <origin>; frame-src 'none';
+base-uri 'none'`. Measured in Chromium 143: Chrome accepts it, and a `fetch` to another origin fails from the popup and
+from the service worker, while the product's own action answers.
+
+**Extension, the checks.** Fixed (`scripts/caps/extension.mjs`): `manifest` (the packer's rules on the product's files
+as they are), `loaded` and `popup` (the platform builds the extension pointed at a closed port, loads it into its own
+Chromium with `--load-extension`, waits for the service worker and opens the popup, which must render with no script
+error and no product behind it), and `action` (from the test's record: `expectExtensionAction` saw the popup call one of
+the product's actions and get JSON). The test goes in `tests/extension.spec.ts`, not the smoke spec: the extension runs
+in a browser of its own, which the demo video can't show, and the demo runs only `tests/smoke.spec.ts`. No
+`scripts/caps/extension.browser.json`: the helper launches its own persistent context. Extensions need Chromium's full
+headless mode (`channel: "chromium"`); Playwright's headless shell never starts the service worker (measured).
+
+**Extension, after deploy.** A new generic hook: `lib/caps/ship.ts` (`CAPS_SHIPPING`, pure, read by the workflow) and
+`lib/caps/ship-run.ts` (`CAP_SHIP`, `runCapsShip`). `ship()` in `lib/pipeline/workflow.ts` calls `capsShipStep`
+(`lib/pipeline/build-steps.ts`) after the deploy and the live check and before register, both in marked blocks, only
+when an enabled cap ships, so with every flag off there's no extra step. For a brief with an extension, the step runs
+the platform's packer from `CAPS_DIR` in the sandbox (`bundle`), then the platform checks the bundle again
+(`lib/caps/extension/{manifest,scan,package}.ts`), keeps only the permissions the brief lists (saying which it left
+out), writes its own manifest and `config.js` for the live origin, zips it and saves it at
+`extensions/<productId>/latest.zip` (`putBlobAt`, replaced on each ship, the public store like the platform's other
+files). A refinement packages it again. Any failure is one build room line, and the product is live either way.
+
+**Extension, the download.** `GET /p/<slug>/get/extension` (`lib/caps/extension/download.ts`): with the cap off it
+answers exactly what `/p/[slug]/get/[kind]` answered this path before (checked against `answerDownload` in a test), and
+touches nothing. On: a shipped product whose newest brief has an extension and whose zip exists gets a 302 to the zip
+as a download; 20 an hour per address and 2,000 a day for the site, as the native downloads; HEAD isn't counted.
+`CAP_OUTPUTS = ["extension"]` in `lib/native/targets.ts` and an "Extension" tab in the Get it panel
+(`components/product/ExtensionPanel.tsx`): the link, the Load unpacked steps, that it's in no store, and what each
+permission lets it do, in plain words.
+
+**Games.** Overlays `games` (shared: `tests/caps/games.ts`, `scripts/caps/games.mjs`, `lib/platform/assets3d.ts`, skill
+`muse-games`), `games-phaser` (`phaser` 4.2.1, `components/game/PhaserGame.tsx`, `lib/platform/phaser-assets.ts`,
+`public/notices/phaser.txt`, skill `muse-phaser`) and `games-babylon` (`@babylonjs/core`, `@babylonjs/loaders` and
+`babylonjs-gltf2interface` 9.29.0, `components/game/BabylonScene.tsx`, `lib/platform/babylon-glb.ts`,
+`public/notices/babylonjs.txt` with the Apache 2.0 license and Babylon's NOTICE, skill `muse-babylon`).
+`CAP_OVERLAY_PICK.games` gives `["games", "games-<engine>"]`. Versions are at least two weeks old (Phaser 4.2.1, July 9;
+Babylon 9.29.0, Oct 1). No `games.browser.json`: Playwright 1.64 adds `--enable-unsafe-swiftshader` to every Chromium
+launch, so WebGL works in the smoke, demo and studio runs alike. `expectGameResponds(page, { key, shots })` reads canvas
+screenshots in Node (a small PNG reader, so the game's page is never touched): `canvas` passes when it shows 3 or more
+colors with some spread, `key-press` when at least 0.2% of it changes after the key, and it says when the canvas also
+changes with no key. Fixed checks: `engine` (exact version in package.json and node_modules, and imported by the
+product's code), `no-cdn` (no engine, decoder, model or script URL from another site), `notices` (the notice file, and
+a link to it from the page), then `canvas` and `key-press` from the record.
+
+**3D models, against General's GLB pipeline.** tg-3d's helpers aren't fixed yet (7f826bb is the spike), so these are
+written against "CC0 asset manifest, v1" in `~/mm-wt/_plan/3d.md`: `parseAssetManifest` keeps CC0-1.0 assets within the
+limits (GLB 5 MB, 50k triangles, previews 1 MB) and lists the rest with a reason; `fetchVerified` checks size and
+sha256 before anything uses a file; `glbInfo` and `checkGlb` read the GLB's header and JSON and refuse files that point
+outside themselves or need a decoder from another site. Babylon: `loadAssetModel(scene, asset, base)` and
+`loadOwnModel(scene, "/models/x.glb")`, both through `LoadAssetContainerAsync` only after the checks. Phaser draws 2D, so
+an asset shows as its preview picture (`addAssetPreview`). The set isn't reachable from a build yet, so the prompt says
+to build scenes from shapes until it is.
+
+**Measured** (Oct 31, on this laptop, no sandbox, no model call). The two starters, bundled with esbuild from the pinned
+packages and run in Playwright 1.64.1's headless shell (Chromium 156) on SwiftShader WebGL ("ANGLE (Google, Vulkan 1.3.0
+(SwiftShader Device (LLVM 10.0.0)))"): Phaser `canvas` and `key-press` pass (1.9% changed), Babylon pass (8.1%); a blank
+canvas fails `canvas` and a frozen one fails `key-press`. Minified client code: 1.58 MB (Phaser), 1.85 MB (Babylon).
+Real Babylon loaded a verified GLB (2 triangles), refused a wrong sha256, a Draco GLB and an off-site path, with no
+off-site request and no page error. The extension starter, built by the packer with TypeScript 6.0.3, loaded in a full
+Chromium 143 headless, its popup found the product page through `currentPage`, its action call arrived with
+`x-musemuse-client: extension`, and the policy blocked another origin. All overlays typecheck together with the
+template's tsconfig against `@types/chrome` 0.3.5, Phaser 4.2.1 and Babylon 9.29.0.
+
+**Not proven.**
+
+- No real test build. A credentialed local run (or a sandbox probe) needs Vercel credentials; reading the 3D spike's
+  credential script was refused by this session's permission checks, and the unit didn't work around it. So no brief
+  writer, Muse Code round, verify caps step in a sandbox, deploy or ship step has run for real.
+- That the builder snapshot has Playwright's full Chromium (`npx playwright install chromium` installs it beside the
+  headless shell since Playwright 1.49, so it should). Without it `loaded` and `popup` fail with "Chromium didn't start".
+- `npm install` time for `phaser` (112 MB unpacked) and Babylon (79 MB) through the build firewall, and the products'
+  `next build` with them.
+- A Vercel deploy that typechecks `extension/` (it needs `@types/chrome`, a devDependency, which Vercel installs).
+- `putBlobAt` and `head` for the zip on the real store; the route's redirect on Vercel.
+- Context menu and side panel flows: the helper exercises the popup only.
+- Meshopt GLBs: manifest v1 allows meshopt, but Babylon fetches its meshopt decoder from its own site, so the Babylon
+  helper refuses them until a decoder is vendored (General or unit 4).
+
+**Shared files this unit touched**, each small: `lib/pipeline/workflow.ts` and `lib/pipeline/build-steps.ts` (marked
+blocks), `lib/pipeline/__tests__/workflow.scenario.test.ts` (the fake step, a mock for `lib/caps/ship.ts`, three
+scenarios, and the flags-off sum), `lib/brief/normalize.ts` (marked block), the registries in `lib/caps/`,
+`lib/local-files.ts` (`extensions`), `lib/native/targets.ts` (`CAP_OUTPUTS`), `components/product/GetItPanel.tsx`
+(the slot), `app/p/[slug]/page.tsx` (one line), `components/product/__tests__/get-it.test.tsx` (two assertions) and
+`.env.example` (its block). No golden file changed; the flags-off tests pick up the two caps through `CAP_IDS` and
+`CAP_BRIEF_FIELDS`. No `muse-device/` changes.
+
+**For unit 2 and General.** The after-deploy hook is generic: another cap adds an id to `CAPS_SHIPPING` and an entry to
+`CAP_SHIP`. The cleanup registry has no hook for a deleted product, so a zip stays on Blob after its product is gone
+(the route refuses it, since the product isn't shipped); registering a sweep would change the cron's flags-off answer,
+so none is registered. When tg-3d fixes its helper names, `lib/platform/assets3d.ts` should match or import them.
+
+**For the owner.** Two test builds wait for a credentialed run: an extension that saves a page note through the
+product's action, and a small Phaser game (section 22). Spend so far: Meta $0, Vercel Sandbox $0, no GPU, no Composio.
+
 ## 21. Open questions only the owner can answer
 
 1. **Bug fixes under a flag.** The 10 MB deploy drop is a bug. Should its fix ship unflagged (it changes today's behavior
@@ -1602,6 +1727,11 @@ Phaser game.
 - Oct 31 (unit 10, review fixes on d35ef4a): 16a says Python endpoints are public and run with the deployment's env,
   adds the guard, the `safe`, `guard` and `size` checks, notes for every Python call (input kept up to 64 KB), no
   install on the call path, the kit's per-owner and site caps, and what the runtime checks rest on.
+- Oct 31 (unit 14): section 20a added. The game engine's brief key is `games` (`{engine, why, controls}`), per 8a; a shared
+  `games` overlay beside `games-phaser` and `games-babylon`; no `*.browser.json` (Playwright adds SwiftShader itself);
+  the extension's test is `tests/extension.spec.ts`; a generic after-deploy hook (`lib/caps/ship.ts`, marked blocks in
+  `workflow.ts` and `build-steps.ts`); `CAP_OUTPUTS` in `lib/native/targets.ts` for the Get it slot; the bridge flags
+  wait until the bridge is built.
 - Oct 31 (integration 1, tg-cap-int with the UI brand): build on these shapes. `judgeInstructions(brief, { museAppLook })`
   starts from the look's house style, then the target notes, then `capsJudgeNotes(brief)`. Provisioning applies the
   muse-app look, then a brief's targets, then its caps; every overlay sits in `TARGETS_DIR` through `installTargets`
