@@ -477,7 +477,7 @@ class FastLanguageModel:
 
 class FastModel:
     @staticmethod
-    def from_pretrained(model_name, revision=None, max_seq_length=None):
+    def from_pretrained(model_name, revision=None, max_seq_length=None, offload_layers=None):
         assert model_name == "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit" and revision, (model_name, revision)
         return FakeModel(), FakeTokenizer()
 `,
@@ -923,6 +923,19 @@ raises(lambda: q.run(ctx), "didn't reach the Hugging Face Hub's storage")
 ctx = fresh()
 ctx.hub_answer = {"uploaded": 0, "skipped": "Publishing to Hugging Face is off here: HF_TOKEN isn't set.", "failed": [], "repo": None, "files": 6, "bytes": 1}
 raises(lambda: q.run(ctx), "weren't sent to the Hugging Face Hub: Publishing to Hugging Face is off here")
+`);
+  });
+
+  it("counts an answer the token budget cut in half as unfinished, and any other 500 as a failed check", async () => {
+    await quantTest(String.raw`
+class S:
+    def __init__(self, message):
+        self.message = message
+    def call(self, *a):
+        return 500, {"error": {"message": self.message}}
+evals = [{"prompt": "a"}, {"prompt": "b"}]
+assert q.channel_check(S("The model produced output that does not match the expected peg-native format"), "s", evals, False, time.time() + 60) == (0, [None, None])
+raises(lambda: q.channel_check(S("boom"), "s", evals, False, time.time() + 60), "got HTTP 500")
 `);
   });
 

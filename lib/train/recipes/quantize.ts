@@ -599,6 +599,15 @@ def install_meta_files(merged_dir, files):
         # A small base's tokenizer_config.json holds the same template as its chat_template.jinja, by their pinned bytes.
         if "chat_template" in json.load(f) and not QUANT_BASE:
             raise RuntimeError("Meta's tokenizer_config.json has a chat_template key, which would replace its chat_template.jinja")
+    # Meta's file names transformers 5's tokenizer class, which the converter's pinned 4.57.6 can't load (seen Nov 1 2026). The
+    # vocabulary comes from tokenizer.json and the template from chat_template.jinja, and gguf_problem checks the template.
+    path = os.path.join(merged_dir, "tokenizer_config.json")
+    with open(path, encoding="utf-8") as f:
+        config = json.load(f)
+    if config.get("tokenizer_class") == "TokenizersBackend":
+        config["tokenizer_class"] = "PreTrainedTokenizerFast"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False)
 
 
 def downloaded_shards(merged_dir):
@@ -621,8 +630,8 @@ def downloaded_shards(merged_dir):
 
 
 def cached_shards(hf_home):
-    """{shard: (revision, sha256)} of the BASE_SHARDS one snapshot of an HF cache under hf_home holds: each a link to a
-    blob the cache names by its SHA-256."""
+    """{shard: (revision, sha256)} of the BASE_SHARDS one snapshot of an HF cache under hf_home holds. A blob's name is its
+    SHA-256 only in the older cache layout (the pinned hub's shared blobs aren't, seen Nov 1 2026), so any other is hashed."""
     snapshots = os.path.join(hf_home, "hub", "models--" + MERGE_BASE.replace("/", "--"), "snapshots")
     try:
         revisions = sorted(os.listdir(snapshots))
@@ -630,10 +639,11 @@ def cached_shards(hf_home):
         return {}
     for revision in revisions:
         found = {}
-        for name, _sha in BASE_SHARDS:
+        for name, sha in BASE_SHARDS:
             path = os.path.join(snapshots, revision, name)
             if os.path.exists(path):
-                found[name] = (revision, os.path.basename(os.path.realpath(path)))
+                blob = os.path.basename(os.path.realpath(path))
+                found[name] = (revision, blob if blob == sha else sha256_of(path))
         if len(found) == len(BASE_SHARDS):
             return found
     return {}
@@ -963,6 +973,10 @@ def channel_check(server, system, evals, tuned, stop_at, max_tokens=CHANNEL_MAX_
                 with lock:
                     failures.append("held-out prompt " + str(i + 1) + " got no answer: " + type(e).__name__)
                 return
+            # llama-server's chat parser answers 500 when the token budget cuts a message in half (seen on IQ1_S, Nov 1 2026).
+            # That is an unfinished answer, which this check counts, not a failed check.
+            if status == 500 and "does not match the expected" in json.dumps(answer):
+                continue
             if status != 200:
                 with lock:
                     failures.append("held-out prompt " + str(i + 1) + " got HTTP " + str(status))
@@ -1049,7 +1063,7 @@ def make_low_bit(ctx, tools, reference, bf16, path, work, chars, started):
     q = shlex.quote
     cmd = (
         q(tool(tools, "llama-imatrix")) + " -m " + q(reference) + " -f " + q(os.path.join(ctx.work_dir, "calibration.txt")) + " -o " + q(matrix)
-        + " -ngl 999 -c 512 -b 2048 -ub 512 --parse-special --no-ppl --output-format gguf"
+        + " -c 512 -b 2048 -ub 512 --parse-special --no-ppl --output-format gguf"
     )
     out = ctx.run(cmd, timeout=timeout_for(ctx, started), env=tools["env"], stall_seconds=STALL_SECONDS)
     if out.returncode != 0 or not os.path.isfile(matrix):
@@ -1378,7 +1392,9 @@ def merge_child_main(config_path):
             model_name=cfg["model"], revision=cfg.get("revision"), max_seq_length=cfg["max_seq_length"], use_exact_model_name=True, load_in_4bit=False
         )
     else:
-        model, tokenizer = FastModel.from_pretrained(model_name=cfg["model"], revision=cfg.get("revision"), max_seq_length=cfg["max_seq_length"])
+        # offload_layers: the merge never runs the model, and 24 GB can't hold r30b's 4-bit build whole (seen on an A10, Nov 1
+        # 2026). It changes nothing on a GPU that can.
+        model, tokenizer = FastModel.from_pretrained(model_name=cfg["model"], revision=cfg.get("revision"), max_seq_length=cfg["max_seq_length"], offload_layers="auto")
     model = PeftModel.from_pretrained(model, cfg["adapter_dir"], is_trainable=False)
     text_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
     bos = getattr(tokenizer, "bos_token", None) or getattr(text_tokenizer, "bos_token", None) or ""
