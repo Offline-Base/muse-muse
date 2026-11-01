@@ -1331,7 +1331,7 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
 - 12:25 AM: token count of the public dataset, with the r30b tokenizer on writer-1 (CPU, nice). The files came from the
   Hub without a token; the temp copy was removed after.
   - Text only, all 649,133 rows: 46,692,158 tokens.
-  - In chat format: 71,948,804 tokens for the 595,225 message rows, and about 74.8M with the other rows' text added.
+  - In chat format: 71,948,804 tokens for the 599,224 message rows, and about 74.8M with the other rows' text added.
   - Text tokens by split:
     - news-derived 17.9M
     - public-sources 16.7M
