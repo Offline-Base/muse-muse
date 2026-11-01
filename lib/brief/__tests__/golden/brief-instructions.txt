@@ -21,7 +21,7 @@ Models a product may call, all through the Muse Muse gateway (prices are estimat
 - muse-voice-transcribe-1.0: Speech to text with turn detection and speaker labels.
   in: audio; out: transcript with turn-level timing, no word-level timestamps. Price: $0.18 per audio hour.
   Speech to text from a recorded file. Only mono 16-bit WAV at 16 or 24 kHz is accepted, so the product converts recordings in the browser first (the template has a helper).
-  Returns a transcript. With mode DIARIZATION it also returns turns with anonymous speaker labels and timings, not yet checked through the gateway, so a product must still work with one plain block of text. Products transcribe recorded files, not live streams.
+  Returns one plain transcript: no speaker labels and no word timestamps. Products transcribe recorded files, not live streams.
 - muse-glimmer: open-weights model for local or offline use. Not on the Model API: it needs an endpoint someone hosts. Pick it only when the muse asks for local or offline use.
 
 Not available on the Model API yet, with the workaround a product uses instead:
@@ -29,7 +29,7 @@ Not available on the Model API yet, with the workaround a product uses instead:
 - Video generation: a short image sequence from muse-image-1.0.
 - Embeddings: put the documents in Muse Wonder's 1M-token context (fine for small document sets).
 - Realtime voice conversation: record, transcribe, then reply in text.
-- Named speakers in transcripts: mode DIARIZATION gives anonymous labels (A, B), not yet checked through the gateway. Ask the user to name them, and keep one plain transcript as the fallback.
+- Speaker labels in transcripts: none. Ask the user to label turns, or treat the transcript as one voice.
 
 How products run:
 - One Next.js app on Vercel with its own link. No database and no user accounts: anything saved stays in the user's browser (localStorage).

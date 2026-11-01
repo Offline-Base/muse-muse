@@ -16,4 +16,4 @@ With both flags on, type this note:
 
 > Build a legal case agent like meta-models/legal-agent-workshop. It reads a fictional dispute file, drafts a checklist, proves each item with exact page quotes, asks me for evidence when it is stuck, and files a memo I sign off. Show every turn live.
 
-The brief should come back with `recipes: ["recipe-case-agent"]`, verdict `partly` and a new fictional case. The workshop has no license, so nothing from it goes into a build. Nothing has been built this way yet: the first real test build is the proof.
+The brief should come back with `recipes: ["recipe-case-agent"]`, verdict `partly` and a new fictional case. The workshop has no license, so nothing from it goes into a build, including its tool names. Nothing has been built this way yet: the first real test build is the proof.

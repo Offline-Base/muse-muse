@@ -5,7 +5,7 @@ description: Use when a product leans on Model API basics, such as streaming, to
 
 # Model API patterns
 
-Everything runs on the server through `metaClient(request)` from `@/lib/meta/client`. The call details are in the meta-reasoning skill; this skill adds what it leaves out. Real products use `muse-wonder-1.0`. Tests use `muse-spark-1.3-contributor` (`TEST_MODEL`).
+Everything runs on the server through `metaClient(request)` from `@/lib/meta/client`. The call details are in the meta-reasoning skill; this skill adds what it leaves out. Product code and tests name `muse-wonder-1.0` and nothing else: a test build runs those calls on a cheaper model by itself, and a token refuses that model by name.
 
 The links are for people and BUILD_NOTES. The build firewall may block GitHub, so never fetch or clone them.
 

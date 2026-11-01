@@ -5,7 +5,7 @@ description: Use for Muse Image work beyond one call, such as editing a person's
 
 # Muse Image recipes
 
-Read `meta-image` first. It covers `images.generate`, `images.edit`, sizes, errors and cost. This skill adds the conversation patterns. Tests use `muse-spark-1.3-contributor` for text steps. Image calls are real calls, so keep tests to one or two, and use fixtures elsewhere.
+Read `meta-image` first. It covers `images.generate`, `images.edit`, sizes, errors and cost. This skill adds the conversation patterns. Text steps name `muse-wonder-1.0`, which a test build runs on a cheaper model by itself. Image calls are real calls, so keep tests to one or two, and use fixtures elsewhere.
 
 The links are for people and BUILD_NOTES. The build firewall may block GitHub, so never fetch or clone them.
 

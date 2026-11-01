@@ -5,7 +5,7 @@ description: Use for a chart explainer, research that becomes slides, a polished
 
 # Visual reports
 
-Real products use `muse-wonder-1.0`. Tests use `muse-spark-1.3-contributor`. The links are for people and BUILD_NOTES. The build firewall may block GitHub, so never fetch or clone them.
+Product code and tests name `muse-wonder-1.0` and nothing else: a test build runs those calls on a cheaper model by itself, and a token refuses that model by name. The links are for people and BUILD_NOTES. The build firewall may block GitHub, so never fetch or clone them.
 
 ## 03/01 Chart explainer
 

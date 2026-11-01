@@ -5,7 +5,7 @@ description: Use for validated find-and-replace edits, a triage copilot with mem
 
 # Agent patterns in a plain web product
 
-These run as hand-written TypeScript in route handlers with `metaClient(request)`, on the plain web target. Real products use `muse-wonder-1.0`. Tests use `muse-spark-1.3-contributor`.
+These run as hand-written TypeScript in route handlers with `metaClient(request)`, on the plain web target. Product code and tests name `muse-wonder-1.0` and nothing else: a test build runs those calls on a cheaper model by itself, and a token refuses that model by name.
 
 The links are for people and BUILD_NOTES. The build firewall may block GitHub, so never fetch or clone them.
 
