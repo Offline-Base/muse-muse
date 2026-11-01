@@ -73,7 +73,7 @@ describe("gadget facts", () => {
 });
 
 let viewer: SessionUser | null = null;
-let db: "ok" | "not_configured" = "ok";
+let db: "ok" | "not_configured" | "unreachable" = "ok";
 let products: ProductCardView[] = [];
 let reads: string[] = [];
 
@@ -96,10 +96,18 @@ describe("/gadgets", { skip: canMock ? false : "needs --experimental-test-module
     mock.module(at("../../../app/fine-tuning/viewer.ts"), { namedExports: { pageViewer: async () => viewer } });
     mock.module(at("../../../lib/queries.ts"), {
       namedExports: {
-        safeQuery: async <T,>(fn: () => Promise<T>) =>
-          db === "ok" ? { ok: true, data: await fn() } : { ok: false, reason: "not_configured", message: "" },
+        // As the real safeQuery: no database never runs the read, and a read that throws is "unreachable".
+        safeQuery: async <T,>(fn: () => Promise<T>) => {
+          if (db === "not_configured") return { ok: false, reason: "not_configured", message: "" };
+          try {
+            return { ok: true, data: await fn() };
+          } catch {
+            return { ok: false, reason: "unreachable", message: "The database didn't answer." };
+          }
+        },
         listShippedProducts: async (limit: number) => {
           reads.push(`listShippedProducts(${limit})`);
+          if (db === "unreachable") throw new Error(`connect ECONNREFUSED, board at ${BOARD_URL} token ${BOARD_TOKEN}`);
           return products;
         },
       },
@@ -205,5 +213,19 @@ describe("/gadgets", { skip: canMock ? false : "needs --experimental-test-module
     assert.match(html, /Not connected yet/);
     assert.match(html, /What a gadget is/);
     assert.match(html, /Live board/);
+  });
+
+  it("still explains gadgets and the status when the database doesn't answer, showing none of the error", async () => {
+    db = "unreachable";
+    viewer = admin;
+    const html = render(await page());
+    clean(html);
+    assert.match(html, /Can&#x27;t reach the database/);
+    assert.match(html, /so the products couldn&#x27;t load/);
+    assert.doesNotMatch(html, /ECONNREFUSED|No products use a gadget yet/);
+    assert.match(html, /What a gadget is/);
+    assert.match(html, /Live board.*?>Set up</s);
+    assert.match(html, /href="\/device"/);
+    assert.match(html, /Planned: connect your own board/);
   });
 });

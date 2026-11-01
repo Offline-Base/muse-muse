@@ -111,6 +111,8 @@ describe("tuned models", () => {
 // ---------- The page ----------
 
 let db: "ok" | "not_configured" = "ok";
+/** Reads that throw, as a database that doesn't answer makes them. */
+let failing = new Set<string>();
 let jobs: Array<Record<string, unknown>> = [];
 let quantSource: Record<string, unknown> | null = null;
 let calls: string[] = [];
@@ -157,6 +159,7 @@ function quantRow(over: { adapterPublic?: boolean } = {}) {
 function fake<A extends unknown[], R>(name: string, fn: (...args: A) => R) {
   return async (...args: A) => {
     calls.push(name);
+    if (failing.has(name)) throw new Error(`connect ECONNREFUSED ${SECRETS.instanceIp} ${SECRETS.tokenHash}`);
     return fn(...args);
   };
 }
@@ -174,8 +177,15 @@ describe("/models", { skip: canMock ? false : "needs --experimental-test-module-
     });
     mock.module(at("../../../lib/queries.ts"), {
       namedExports: {
-        safeQuery: async <T,>(fn: () => Promise<T>) =>
-          db === "ok" ? { ok: true, data: await fn() } : { ok: false, reason: "not_configured", message: "" },
+        // As the real safeQuery: no database never runs the read, and a read that throws is "unreachable".
+        safeQuery: async <T,>(fn: () => Promise<T>) => {
+          if (db === "not_configured") return { ok: false, reason: "not_configured", message: "" };
+          try {
+            return { ok: true, data: await fn() };
+          } catch {
+            return { ok: false, reason: "unreachable", message: "The database didn't answer." };
+          }
+        },
         modelCallCounts: fake("modelCallCounts", (since: Date) => {
           assert.ok(Math.abs(Date.now() - since.getTime() - CALL_DAYS * 86_400_000) < 60_000, "the last 30 days");
           return { "muse-wonder-1.0": 1234, "muse-spark-1.3-contributor": 56, "muse-spark-1.3": 999 };
@@ -215,6 +225,7 @@ describe("/models", { skip: canMock ? false : "needs --experimental-test-module-
     ];
     quantSource = quantRow();
     calls = [];
+    failing = new Set();
   });
 
   it("has its own title", () => {
@@ -298,5 +309,52 @@ describe("/models", { skip: canMock ? false : "needs --experimental-test-module-
     assert.match(html, /Call counts aren&#x27;t available right now\./);
     assert.match(html, /Not connected yet/);
     assert.deepEqual(calls, []);
+  });
+
+  it("still lists the hosted models when the database doesn't answer, showing none of the error", async () => {
+    failing = new Set(["modelCallCounts", "listResultJobs"]);
+    const html = render(await page());
+    clean(html);
+    assert.match(html, /<span class="row-title">Muse Wonder<\/span>/);
+    assert.match(html, /\$0\.01 per image/);
+    assert.doesNotMatch(html, /Calls, 30 days/);
+    assert.match(html, /Call counts aren&#x27;t available right now\./);
+    assert.match(html, /Can&#x27;t reach the database/);
+    assert.match(html, /so the tuned models couldn&#x27;t load/);
+    assert.match(html, /Muse Glimmer 30B/);
+    assert.match(html, /Where they run/);
+    assert.doesNotMatch(html, /ECONNREFUSED|No tuned models yet|Tuned won/);
+  });
+
+  it("keeps the tuned models when only the call counts fail, and the counts when only the tuned models fail", async () => {
+    failing = new Set(["modelCallCounts"]);
+    let html = render(await page());
+    clean(html);
+    assert.doesNotMatch(html, /Calls, 30 days/);
+    assert.match(html, /Tuned won <strong>1<\/strong> of 2/);
+    assert.doesNotMatch(html, /Can&#x27;t reach the database/);
+
+    failing = new Set(["listResultJobs"]);
+    html = render(await page());
+    clean(html);
+    assert.match(html, /Calls, 30 days/);
+    assert.match(html, />1,234</);
+    assert.match(html, /Can&#x27;t reach the database/);
+    assert.doesNotMatch(html, /Tuned won/);
+  });
+
+  it("leaves only the GGUF links out when their lookup fails", async () => {
+    failing = new Set(["latestQuantSource"]);
+    const savedError = console.error;
+    console.error = () => {};
+    try {
+      const html = render(await page());
+      clean(html);
+      assert.match(html, /Tuned won <strong>1<\/strong> of 2/);
+      assert.match(html, /href="https:\/\/huggingface\.co\/muse-muse\/bakery-lora"/);
+      assert.doesNotMatch(html, /bakery-lora-gguf|\/run"|ECONNREFUSED|Can&#x27;t reach the database/);
+    } finally {
+      console.error = savedError;
+    }
   });
 });
