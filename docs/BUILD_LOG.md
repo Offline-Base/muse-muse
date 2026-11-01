@@ -1076,6 +1076,27 @@ because the sidebar showed a real account.
   own gadget can use a Muse Muse product; muse-device boards as gadgets (Hussam's call); ESP32 custom hardware with
   browser flashing after Nov 4. Muse Muse still never holds anyone's gadget token.
 
+### 20:51 Fine-tune like a build: first units building (tg-tune, wf_e1fcae3d-58a)
+
+- The composer (/fine-tuning/new), the plan route with a signed plan token, the run room (/fine-tuning/runs/<id>) with
+  steps and the mascot, PlanCard generalized to PlanView, the eval verdict and "Where it runs", behind TUNE_COMPOSER (off
+  means nothing changes). Admins only until the visitor work lands. When a run's examples are ready, the room hands off
+  to the existing training form until launching is automated after tg-decide's D7. No Meta calls, no spend; review, fix
+  and screenshots follow.
+
+### 21:15 Owner answers: demo windows, $8 tests, visitors from day one, gadget commands
+
+- Hosted tuned Glimmer for products: demo windows only (off by default; one 30-minute window Nov 3 for filming plus any
+  an admin opens; $15 a day cap). Outside a window products answer with Muse Wonder and say so.
+- Test budget for this work: up to $8.
+- Visitors can fine-tune from day one: 1 run a day each, 60 minutes or $4 per run, a $15 daily total, nothing published
+  without an admin. They train on the lab's ready datasets or their own rows, not on Wonder-written data (Meta terms
+  10.1(ix), not asked, so it stays off). Being squared with wave 3's sign-in rule (GPU work needs a signed-in builder).
+- Build the "Muse gadget commands" output now (queued for the next free heavy slot).
+- Wave 3 notes: its 0018 and 0019 drizzle snapshot files share names with General's 0016 and 0017 (renumber on their side
+  when General's land). Local test builds can't get a Vercel OIDC token here, so the preview database steps are the only
+  path to test builds for everyone. That's also why a local build stops at "Could not get credentials from OIDC context".
+
 ## Gaps
 
 What this record doesn't confirm:
