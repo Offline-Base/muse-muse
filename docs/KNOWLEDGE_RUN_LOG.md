@@ -944,6 +944,14 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   review) and tonight-tests-and-dose (wf_4efc7d60-993: the measure_known and compare_stage_b gates, the test wave with A1
   and A2, the train_glimmer options, the dose set, dose_gate and queue_b2.sh, reviews). Muse Privacy's final rows on r30b
   IQ1_S are queued on gpu.lock, one config per lock session.
+- 8:57 PM: r30b's full channel check (BF16, all 260 items, no time cap, 43.5 min), against base's full run:
+  - well formed: 257/260 (base 259), chat endpoint 257/260;
+  - multi-step: 147/150 (base 150), and all 147 it answered were right;
+  - skills: 60/60 (base 60/60; r30 58/60), with python 20/20, json 15/15, instructions 15/15, multi-turn 10/10;
+  - reasoning off: 39/40 (base 38/40);
+  - P("=self") 0.999998.
+  This passes H2's channel parts (247 or more well formed, multi-step and skills within 3 of base, 35 or more off).
+  Vision and reasoning length against base are not measured. train-1's 8 GPUs are idle until B2's code is ready (about 10 PM).
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
