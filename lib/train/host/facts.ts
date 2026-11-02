@@ -21,9 +21,13 @@ function servingBase(job: Pick<TrainJobRow, "params">, metrics: DoneMetrics | nu
   return revision && COMMIT_RE.test(revision) ? { repo: asked, revision } : null;
 }
 
-/** Why it can't be hosted at all, or null. Only a real chat model that passed: decision models answer one letter. */
-function hostProblem(job: Pick<TrainJobRow, "recipe" | "status" | "params" | "evalSummary">, sparkOpen: boolean): string | null {
+/**
+ * Why it can't be hosted at all, or null. Only a real chat model that passed: decision models answer one letter. Only a
+ * Muse Glimmer adapter: the organizers ruled on Nov 2 that Llama doesn't count as a Meta model in this hackathon.
+ */
+function hostProblem(job: Pick<TrainJobRow, "recipe" | "status" | "params" | "evalSummary">, sparkOpen: boolean, family: string): string | null {
   if (job.recipe !== ADAPTER_RECIPE || job.status !== "succeeded") return "Only a finished tuned model can be hosted.";
+  if (family !== "glimmer") return "This model trained on Llama, and only Muse Glimmer models are hosted here.";
   if (Number(job.params?.dryRun) >= 1) return "A dry run's adapter is a stand-in, so it can't be hosted.";
   if (jobMode(job.params) !== CHAT_MODE) return "Decision models aren't chat models, so these endpoints can't serve them.";
   if (!job.evalSummary) return "This model hasn't been judged yet, so it hasn't passed.";
@@ -35,9 +39,10 @@ export function hostFacts(job: TrainJobRow, metrics: DoneMetrics | null): HostFa
   const asked = text(job.params?.[BASE_MODEL_PARAM]) ?? text(metrics?.base_model);
   const rank = Number(job.params?.loraRank);
   const hub = job.hub;
+  const family = familyOfRepo(asked) ?? "glimmer";
   return {
     adapterJobId: job.id,
-    family: familyOfRepo(asked) ?? "glimmer",
+    family,
     sparkOpen,
     rank: Number.isFinite(rank) && rank > 0 ? rank : null,
     hubRepo: text(hub?.modelRepo),
@@ -46,6 +51,6 @@ export function hostFacts(job: TrainJobRow, metrics: DoneMetrics | null): HostFa
     servingBase: servingBase(job, metrics, sparkOpen),
     lambdaProblem: adapterProblem(job, metrics),
     duties: licenseDuties({ params: job.params, metrics }),
-    problem: hostProblem(job, sparkOpen),
+    problem: hostProblem(job, sparkOpen, family),
   };
 }

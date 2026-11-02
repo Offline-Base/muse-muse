@@ -5,7 +5,8 @@
 // with no test.only and no skipped tests, and a last judge screenshot with no error or empty state, its result near the
 // top and a page that isn't too long, for a glasses product a photo taken through the fake glasses, and for a VR product
 // a screenshot from inside VR that isn't blank; see scripts/smoke-report.mjs), manifest (musemuse.json valid against
-// musemuse.schema.json, action routes and fixtures exist). A product with platform services (musemuse.caps.json) also
+// musemuse.schema.json, action routes and fixtures exist, and no model package in package.json or requirements.txt: every
+// model the product calls is a Meta model through the gateway, see modelPackageProblems). A product with platform services (musemuse.caps.json) also
 // gets a caps step after smoke: the platform's caps check runs each cap's fixed checks against what the smoke test
 // recorded and what the gateway saw.
 // Exits 0 only when every step passes. The LAST line of stdout is always one JSON summary for the platform:
@@ -32,6 +33,9 @@ let requirementsResult = null;
 const STARTED_AT = new Date().toISOString();
 // The platform's read-only copy of the caps check in a build sandbox. A product's own copy runs only outside one.
 const PLATFORM_CAPS_CHECK = "/vercel/musemuse/caps/core/files/scripts/caps-check.mjs";
+
+// Set only by the template's own tests, which import this file for modelPackageProblems: no step runs and no handler is set.
+const IMPORT_ONLY = process.env.MUSEMUSE_VERIFY_IMPORT_ONLY === "1";
 
 const steps = [];
 const failures = [];
@@ -195,16 +199,18 @@ async function finish() {
   process.stdout.write(`${JSON.stringify(summary)}\n`, () => process.exit(summary.passed ? 0 : 1));
 }
 
-for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+for (const signal of IMPORT_ONLY ? [] : ["SIGINT", "SIGTERM", "SIGHUP"]) {
   process.on(signal, () => {
     failures.push({ name: "verify", output: `verify was stopped by ${signal}` });
     void finish();
   });
 }
-process.on("uncaughtException", (err) => {
-  failures.push({ name: "verify", output: String(err?.stack ?? err) });
-  void finish();
-});
+if (!IMPORT_ONLY) {
+  process.on("uncaughtException", (err) => {
+    failures.push({ name: "verify", output: String(err?.stack ?? err) });
+    void finish();
+  });
+}
 
 async function main() {
   rmSync(path.join(ROOT, "test-results", "judge"), { recursive: true, force: true });
@@ -424,12 +430,73 @@ async function checkManifest() {
   for (const fixture of Array.isArray(manifest.fixtures) ? manifest.fixtures : []) {
     if (fixture?.path && !existsSync(path.join(ROOT, fixture.path))) problems.push(`fixture ${fixture.path} does not exist`);
   }
+  problems.push(...modelPackageProblems(readRootText));
   return problems.length
     ? { ok: false, detail: `${problems.length} problem(s): ${problems[0]}`, output: problems.join("\n") }
     : { ok: true, detail: `valid, ${manifest.actions.length} action(s), ${manifest.fixtures.length} fixture(s)` };
 }
 
-main().catch((err) => {
-  failures.push({ name: "verify", output: String(err?.stack ?? err) });
-  void finish();
-});
+/**
+ * npm packages that run a model in the product itself, or reach a model that isn't Meta's. The organizers ruled on Nov 2
+ * that every model a project calls must be a Meta model, so a product reaches models only through the Muse Muse gateway
+ * (lib/meta helpers). Each entry is an exact name, or a scope or prefix ending in "/" or "*".
+ */
+export const MODEL_NPM_PACKAGES = [
+  "@xenova/", "@huggingface/transformers", "@huggingface/inference", "transformers.js", "onnxruntime*", "tesseract.js*",
+  "@tensorflow/", "@tensorflow-models/", "@mediapipe/", "face-api.js", "@vladmandic/", "ml5", "@mlc-ai/", "node-llama-cpp",
+  "llama-node", "@llama-node/", "ollama", "@anthropic-ai/", "@google/generative-ai", "@google/genai", "@mistralai/",
+  "cohere-ai", "groq-sdk", "replicate", "@ai-sdk/",
+];
+/** Any npm name with whisper in it is a speech model port (whisper-node, nodejs-whisper, smart-whisper and the like). */
+const WHISPER_RE = /whisper/i;
+/** PyPI packages that run a model (the runtime cap's requirements.txt). Names compare lowercased, with _ and . as -. */
+export const MODEL_PYPI_PACKAGES = [
+  "transformers", "torch", "torchvision", "torchaudio", "tensorflow*", "tf-keras", "keras", "onnxruntime*", "onnx", "mediapipe",
+  "sentence-transformers", "pytesseract", "easyocr", "ultralytics", "llama-cpp-python", "tflite-runtime", "openai-whisper",
+  "faster-whisper", "whisper*", "diffusers", "accelerate", "vllm", "ollama", "anthropic", "google-generativeai", "google-genai",
+];
+
+const matchesList = (name, list) => list.some((p) => (p.endsWith("/") || p.endsWith("*") ? name.startsWith(p.replace(/\*$/, "")) : name === p));
+
+/**
+ * Why the product's packages aren't allowed: one plain line per model package in package.json (any dependency list) or
+ * requirements.txt, or none. `readText(file)` gives a file's text under the product, or null when it isn't there.
+ */
+export function modelPackageProblems(readText) {
+  const out = [];
+  const reason = "runs or reaches a model that isn't Meta's. Every model the product calls must be a Meta model through the Muse Muse gateway (the lib/meta helpers), so remove it";
+  const pkgText = readText("package.json");
+  if (pkgText !== null) {
+    let pkg = null;
+    try {
+      pkg = JSON.parse(pkgText);
+    } catch {
+      out.push("package.json isn't valid JSON, so its packages can't be checked");
+    }
+    const names = new Set();
+    for (const field of ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"]) {
+      const deps = pkg?.[field];
+      if (deps && typeof deps === "object" && !Array.isArray(deps)) for (const name of Object.keys(deps)) names.add(name.toLowerCase());
+    }
+    for (const name of [...names].sort()) {
+      if (matchesList(name, MODEL_NPM_PACKAGES) || WHISPER_RE.test(name)) out.push(`package.json pulls in ${name}, which ${reason}`);
+    }
+  }
+  const reqText = readText("requirements.txt");
+  if (reqText !== null) {
+    for (const raw of reqText.split(/\r?\n/)) {
+      const line = raw.replace(/#.*/, "").trim();
+      if (!line || line.startsWith("-")) continue;
+      const name = (/^[A-Za-z0-9][A-Za-z0-9._-]*/.exec(line)?.[0] ?? "").toLowerCase().replace(/[_.]/g, "-");
+      if (name && matchesList(name, MODEL_PYPI_PACKAGES)) out.push(`requirements.txt pulls in ${name}, which ${reason}`);
+    }
+  }
+  return out;
+}
+
+if (!IMPORT_ONLY) {
+  main().catch((err) => {
+    failures.push({ name: "verify", output: String(err?.stack ?? err) });
+    void finish();
+  });
+}
