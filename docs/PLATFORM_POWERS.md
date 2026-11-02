@@ -1,6 +1,6 @@
 # Platform powers
 
-The `platform` cap lets a product act as a small Muse Muse for its owner. It's behind `PLATFORM_POWERS`, off by default, and `CAP_READY.platform` is false, as every cap's is until one real test build. Not yet run for real.
+The `platform` cap lets a product act as a small Muse Muse for its owner. It's behind `PLATFORM_POWERS`, off by default. `CAP_READY.platform` is true so a Preview can turn it on with a snapshot that has the overlay; production stays off until its owner sets the flag. No product has been published through it yet.
 
 | Power | Route under `{GATEWAY_URL}` | What it is |
 |---|---|---|
@@ -16,6 +16,10 @@ The `platform` cap lets a product act as a small Muse Muse for its owner. It's b
 - Guests can't, two ways: the writer never gets the cap from a guest's build (`capsForBuilder`, whatever `TRUST_SIGNED_IN_CAPS` says), and the gate refuses a guest's product (check 4).
 - A product a power started can't have or use powers, at the writer and at the route, so it can't recurse. Its build also can't chain.
 - A build's own tests get `simulated: true`: no spend, no sandbox, no product.
+
+## A chatbot in what it makes
+
+The route is `startProduct(pass, noteWithChatbot(note, purpose))`: a child is a normal build, so it lists Muse Wonder and gets its own token and daily budget, and no key goes in anyone's source. Sandboxes return files with no link, and metered keys are short and can't use web search, so neither is the route to a lasting chatbot. Visitors of a builder product still can't build, and guests never get the cap.
 
 ## Why the limits are hard
 

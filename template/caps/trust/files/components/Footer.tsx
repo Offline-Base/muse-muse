@@ -25,6 +25,7 @@ export function Footer({ credit }: { credit?: string }) {
           .
         </p>
       ) : null}
+      {process.env.MUSE_CONTRIBUTOR_NOTICE === "1" ? <p style={{ margin: "0 0 8px" }}>This product runs on a model Meta may train on. Don't enter personal or sensitive information.</p> : null}
       <p style={{ margin: 0 }}>Built with Muse Muse. Not an official Meta product. It uses AI, which can make mistakes.</p>
       <nav aria-label="About this app" style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px", marginTop: 8 }}>
         {TRUST.legalPages ? (

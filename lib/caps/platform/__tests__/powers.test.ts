@@ -189,9 +189,11 @@ describe("who gets offered powers", () => {
     assert.deepEqual(capsForBuilder("builder", enabled, false), enabled);
     assert.deepEqual(capsForBuilder("admin", enabled, true), enabled);
   });
-  it("off by default: the flag alone doesn't serve an unready cap", () => {
-    process.env.PLATFORM_POWERS = "1";
+  it("off by default: ready, but served only with its flag", () => {
+    delete process.env.PLATFORM_POWERS;
     assert.deepEqual(env.servedCaps.filter((c) => c === "platform"), []);
+    process.env.PLATFORM_POWERS = "1";
+    assert.deepEqual(env.servedCaps.filter((c) => c === "platform"), ["platform"]);
     delete process.env.PLATFORM_POWERS;
   });
   it("a child's mark names its parent, and is unique", () => {

@@ -6,7 +6,7 @@ import { capsCatalogBlocks, capsWorkaround, howProductsRun } from "@/lib/caps/ca
 import { codePartsKey } from "@/lib/caps/code/parts";
 import { connectOptions } from "@/lib/caps/connect/flags";
 import type { CapId } from "@/lib/caps/ids";
-import { env } from "@/lib/env";
+import { contributorBuildsOn, env } from "@/lib/env";
 import { RETIRED_SPARK } from "@/lib/meta/spark";
 import { availableRecipes, recipesCatalogLines } from "@/lib/recipes/registry";
 import { RUN_LIMITS } from "@/lib/gateway/runs";
@@ -168,7 +168,9 @@ export function catalogSummary(caps: readonly CapId[] = env.enabledCaps): string
   // Wave 3, unit 13: the hardware cap's block names board tools only while they are on.
   const gpuOn = env.gpuGlimmerForBuilds;
   const key = `${gadgets}|${agents}|${personal}|${caps.join(",")}${gpuOn ? "|gpu" : ""}${caps.includes("data") ? `|${env.dataSignIn}` : ""}${caps.includes("live") ? `|live:${env.liveUpdates}` : ""}${caps.includes("media") ? `|${env.mediaParts.join(",")}` : ""}${connectKey}${caps.includes("code") ? `|code:${codePartsKey()}` : ""}${caps.includes("hardware") ? `|board:${env.hardwareBoardToolsUsable}` : ""}${caps.includes("hardware") && env.driveToolsUsable ? "|drive" : ""}${recipesCatalogLines(caps).length ? `|recipes:${availableRecipes(caps).map((r) => r.id).join(",")}` : ""}`;
-  const hit = cached.get(key);
+  // A product's own chatbot needs a snapshot with lib/meta/chat.ts. Both switches below come with one, so with them off the text is today's.
+  const chatOffered = contributorBuildsOn() || caps.includes("platform");
+  const hit = cached.get(`${key}${chatOffered ? "|chat" : ""}`);
   if (hit) return hit;
   const run = howProductsRun(caps, { gadgets, agents });
   const allowed = new Set<string>(PRODUCT_MODELS);
@@ -200,12 +202,13 @@ export function catalogSummary(caps: readonly CapId[] = env.enabledCaps): string
     run?.third ??
       `- Products reach only Meta's models${gadgets ? ", and a connected gadget when the brief picks muse-gadget" : ""}${agents ? ", and the agent tools below when the brief picks the agent target" : ""}. No other services or API keys: no WhatsApp, SMS, email, payments, maps, social networks or scraping other sites. When a muse needs one, build the web version and make that a limit.`,
     "- Each product has a small daily model budget, so one run should cost cents, not dollars.",
+    ...(chatOffered ? ["- Any product may include a chatbot: list muse-wonder-1.0 and the build uses the platform's chat helper and the product's metered token, with no key of its own."] : []),
     ...(availableRecipes(caps).length ? ["- Any Muse Wonder product may call web_search directly, with no agent target. Live replies carry no citation annotations, so footnotes come from the search results, and an answer with no sources says so."] : []),
     ...(agents ? agentToolsBlock(personal) : []),
     // Wave 3 (docs/CAPABILITIES.md, 2.6): each enabled cap's block follows the agent block. None with no caps on.
     ...capsCatalogBlocks(caps),
     ...recipesCatalogLines(caps),
   ].join("\n");
-  cached.set(key, summary);
+  cached.set(`${key}${chatOffered ? "|chat" : ""}`, summary);
   return summary;
 }
