@@ -94,6 +94,21 @@ const STARTERS: StarterTab[] = [
       { icon: "sparkle", label: "App with a connector", note: "Build a made-up notes app that other AI tools can use through its own connector, and show a test that proves it." },
     ],
   },
+  // Things people build to protect themselves: security, the edge, privacy (owner, Nov 2). Every one runs on made-up
+  // data, and none gives food-safety advice or claims to stop an attack (docs/MESSAGING.md, "Don't say").
+  {
+    id: "protect",
+    label: "Protect",
+    kind: "ideas",
+    ideas: [
+      { icon: "chip", label: "Watcher that keeps working offline", note: "Build a watcher for a simulated cold room that reads a made-up controller, an independent probe and the door, warns when the two temperatures disagree, and keeps answering on an edge board when the cloud is cut." },
+      { icon: "alert", label: "Spot a changed setting", note: "Build a tool that reads made-up equipment logs, flags settings changed at odd hours or pushed far past their usual range, and says which change to check first." },
+      { icon: "monitor", label: "Check my connected devices", note: "Build a page that reads a made-up list of a small shop's connected devices, flags old firmware and default passwords, and ranks which to take offline first." },
+      { icon: "shield", label: "Is this email a scam?", note: "Build a tool where I paste a made-up email and it lists the warning signs, rates the risk and explains why, without ever opening a link." },
+      { icon: "doc", label: "Private search on my device", note: "Build an app that searches my made-up documents and hides names, emails and account numbers before any text leaves the device." },
+      { icon: "clipboard", label: "Plan for when the cloud is down", note: "Build a checklist app for a small shop's plan when the internet or cloud is out, that keeps working offline once it has loaded." },
+    ],
+  },
   { id: "photos", label: "From a photo", kind: "photos", examples: PHOTO_EXAMPLES },
 ];
 
