@@ -1,3 +1,4 @@
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { connection } from "next/server";
 import { Composer, type Example } from "@/components/composer/Composer";
@@ -5,7 +6,11 @@ import type { StarterTab } from "@/components/composer/Starters";
 import { SetupPanel } from "@/components/composer/SetupPanel";
 import { Icon } from "@/components/icons";
 import { contributorBuildsOn, env } from "@/lib/env";
+import { makeChatAllOn } from "@/lib/make/switch";
 import { currentUser } from "@/lib/queries";
+
+/** MAKE_CHAT_ALL: loaded only with the switch on, so the page's code and styles are as they were with it off. */
+const MakeChat = dynamic(() => import("@/components/make/MakeChat").then((m) => m.MakeChat));
 
 /**
  * The starters under the Make page's composer, laid out like Meta AI's (docs/BRAND.md, "Starters under the composer"):
@@ -90,19 +95,36 @@ const STARTERS: StarterTab[] = [
 export default async function Home() {
   await connection();
   const user = await currentUser();
+  const toolbar = (
+    <div className="toolbar" aria-label="Page actions">
+      <Link className="btn" href="/how-it-works">
+        <Icon name="book" />
+        <span>How it works</span>
+      </Link>
+      <Link className="btn" href="/builds">
+        <Icon name="history" />
+        <span>History</span>
+      </Link>
+    </div>
+  );
+  if (makeChatAllOn()) {
+    const { makeTrainProps } = await import("@/lib/make/page-props");
+    return (
+      <MakeChat
+        signedIn={Boolean(user)}
+        starters={STARTERS}
+        targetOptions={env.enabledTargets}
+        contributorNotice={contributorBuildsOn()}
+        train={makeTrainProps(user)}
+        toolbar={toolbar}
+        setup={<SetupPanel facts={{ buildModel: env.buildModel, maxFixRounds: env.maxFixRounds, publishOff: env.publishOffReason }} />}
+      />
+    );
+  }
   return (
     <div className="play">
       <div className="play-main">
-        <div className="toolbar" aria-label="Page actions">
-          <Link className="btn" href="/how-it-works">
-            <Icon name="book" />
-            <span>How it works</span>
-          </Link>
-          <Link className="btn" href="/builds">
-            <Icon name="history" />
-            <span>History</span>
-          </Link>
-        </div>
+        {toolbar}
         <div className="play-intro">
           <h1>What should Muse make?</h1>
         </div>

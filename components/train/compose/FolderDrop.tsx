@@ -2,7 +2,7 @@
 
 import { useId, useRef, useState, type DragEvent } from "react";
 import { Icon } from "@/components/icons";
-import { SKIP_WORDS, type FolderDraft, type FolderReview } from "@/lib/train/tune/folder";
+import { SKIP_WORDS, type FolderDraft, type FolderReview, type FolderUpload } from "@/lib/train/tune/folder";
 import type { DroppedFile } from "@/lib/train/tune/folder-read";
 
 /** What POST /api/train/folder answered, ready for the plan and Start. */
@@ -37,7 +37,7 @@ async function walk(entry: FileSystemEntry, out: DroppedFile[]): Promise<void> {
  * server's scan comes back as a short review: the files used, the files skipped and why, and sample rows. Then the note
  * above goes on to the normal plan and Start.
  */
-export function FolderDrop({ ready, onReady }: { ready: ReadyFolder | null; onReady: (next: ReadyFolder | null) => void }) {
+export function FolderDrop({ ready, onReady, canLeaveOut = false }: { ready: ReadyFolder | null; onReady: (next: ReadyFolder | null) => void; /** MAKE_CHAT_ALL: each used file can be left out, and the folder is checked again without it. */ canLeaveOut?: boolean }) {
   const noticeId = useId();
   const folderInput = useRef<HTMLInputElement>(null);
   const zipInput = useRef<HTMLInputElement>(null);
@@ -45,6 +45,23 @@ export function FolderDrop({ ready, onReady }: { ready: ReadyFolder | null; onRe
   const [over, setOver] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  const lastUpload = useRef<FolderUpload | null>(null);
+
+  async function check(upload: FolderUpload) {
+    setBusy("Checking them");
+    const res = await fetch("/api/train/folder", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ confirmed: true, files: upload.files, skipped: upload.skipped }),
+    });
+    const data = (await res.json().catch(() => null)) as (ReadyFolder & { error?: string; message?: string }) | null;
+    if (res.ok && data?.draft) {
+      lastUpload.current = upload;
+      onReady({ draft: data.draft, hash: data.hash, review: data.review });
+    } else if (res.status === 413) setProblem("That's too much text to send at once. Try a smaller folder.");
+    else if (res.status === 429) setProblem("That's a lot of folders from this network this hour. Try again later.");
+    else setProblem(data?.message ?? (data?.error && /\s/.test(data.error) ? data.error : "Those files couldn't be checked. Try again."));
+  }
 
   async function take(files: DroppedFile[]) {
     if (!files.length) return;
@@ -53,20 +70,23 @@ export function FolderDrop({ ready, onReady }: { ready: ReadyFolder | null; onRe
     setBusy("Reading your files");
     try {
       const { readDropped } = await import("@/lib/train/tune/folder-read");
-      const upload = await readDropped(files, (done, total) => setBusy(`Reading your files, ${done} of ${total}`));
-      setBusy("Checking them");
-      const res = await fetch("/api/train/folder", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ confirmed: true, files: upload.files, skipped: upload.skipped }),
-      });
-      const data = (await res.json().catch(() => null)) as (ReadyFolder & { error?: string; message?: string }) | null;
-      if (res.ok && data?.draft) onReady({ draft: data.draft, hash: data.hash, review: data.review });
-      else if (res.status === 413) setProblem("That's too much text to send at once. Try a smaller folder.");
-      else if (res.status === 429) setProblem("That's a lot of folders from this network this hour. Try again later.");
-      else setProblem(data?.message ?? (data?.error && /\s/.test(data.error) ? data.error : "Those files couldn't be checked. Try again."));
+      await check(await readDropped(files, (done, total) => setBusy(`Reading your files, ${done} of ${total}`)));
     } catch {
       setProblem("Those files couldn't be read. Try again.");
+    }
+    setBusy(null);
+  }
+
+  /** Checks the same files again without this one: what's left is what the plan is signed for. */
+  async function leaveOut(path: string) {
+    const upload = lastUpload.current;
+    if (!upload) return;
+    setProblem(null);
+    onReady(null);
+    try {
+      await check({ ...upload, files: upload.files.filter((f) => f.path !== path) });
+    } catch {
+      setProblem("Those files couldn't be checked. Try again.");
     }
     setBusy(null);
   }
@@ -162,6 +182,14 @@ export function FolderDrop({ ready, onReady }: { ready: ReadyFolder | null; onRe
                   {f.path}
                   {f.rows ? ` (${f.rows} rows)` : ""}
                   {f.removedLines ? ` (${f.removedLines} lines taken out)` : ""}
+                  {canLeaveOut && review.used.length > 1 ? (
+                    <>
+                      {" "}
+                      <button type="button" className="link-btn" onClick={() => void leaveOut(f.path)} disabled={Boolean(busy)}>
+                        Leave out
+                      </button>
+                    </>
+                  ) : null}
                 </li>
               ))}
             </ul>
