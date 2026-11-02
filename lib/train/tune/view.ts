@@ -81,7 +81,7 @@ export function tuneStage(d: DatasetView, job: TrainJobView | null, evals: EvalR
     if (beat && isWaitReason(beat.state)) {
       return { stage: "waiting", problem: null, hold: { reason: beat.state, text: waitText(beat.state), since: beat.since.toISOString() } };
     }
-    const text = marks.ended ? `${endedText(marks.ended)} Start training tries again.` : "The examples are ready. Training hasn't started yet.";
+    const text = marks.ended ? `${endedText(marks.ended)} Start training tries again.` : marks.datasetOnly ? "Your dataset is ready. Nothing trains unless you start it." : "The examples are ready. Training hasn't started yet.";
     return { stage: "waiting", problem: null, hold: { reason: "not_started", text, since: d.finishedAt ?? d.createdAt } };
   }
   if (job.status === "failed") return { stage: "failed", problem: lastLine(job.error) || "Training failed.", ...none };
@@ -164,6 +164,7 @@ export function tuneRunView(rows: RunRows, now: Date, ceilings: { maxMinutes: nu
     job,
     evals,
     verdict: runVerdict(job, evals, now.getTime()),
+    ...(marks.datasetOnly ? { datasetOnly: true } : {}),
     hold,
     problem,
     costSoFarUsd: Math.round((dataset.costUsd + (job?.costUsd ?? 0) + (Number(judgeCost) || 0)) * 1e6) / 1e6,

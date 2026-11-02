@@ -215,9 +215,12 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
             />
           </li>
 
+          {view.datasetOnly && view.stage === "waiting" && !view.job ? <DatasetResult runId={view.id} /> : null}
+
           {waiting && view.next?.kind === "start" ? (
             <li className="room-answer">
               <StartTraining
+                startLabel={view.datasetOnly && view.hold?.reason === "not_started" ? "Tune a model on this" : undefined}
                 key={view.hold?.reason ?? ""}
                 start={view.next.start}
                 fullForm={admin ? view.next.fullForm : null}
@@ -301,6 +304,47 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
   );
 }
 
+/** MAKE_CHAT_ALL's Dataset: the first few examples and the download, from the owner-only examples route. Spends nothing. */
+function DatasetResult({ runId }: { runId: string }) {
+  const [got, setGot] = useState<{ total: number; rows: Array<{ messages?: Array<{ role: string; content: string }> }> } | null | "failed">(null);
+  useEffect(() => {
+    let live = true;
+    void fetch(`/api/train/runs/${runId}/examples?sample=5`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((d) => {
+        if (live) setGot(d);
+      })
+      .catch(() => {
+        if (live) setGot("failed");
+      });
+    return () => {
+      live = false;
+    };
+  }, [runId]);
+  const said = (row: { messages?: Array<{ role: string; content: string }> }, role: string) => row.messages?.find((m) => m.role === role)?.content?.slice(0, 240) ?? "";
+  return (
+    <li className="room-answer">
+      <p>
+        <strong>Your dataset.</strong> {got && got !== "failed" ? `${got.total} training examples, plus the ones kept aside for a test. The first few:` : got === "failed" ? "The examples are ready, but they couldn't be shown here." : "Loading the examples."}
+      </p>
+      {got && got !== "failed" ? (
+        <ul className="tune-folder-list">
+          {got.rows.map((r, i) => (
+            <li key={i}>
+              <strong>{said(r, "user")}</strong> {said(r, "assistant")}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <div className="row-actions">
+        <a className="btn btn-outline" href={`/api/train/runs/${runId}/examples`} download>
+          Download the examples
+        </a>
+      </div>
+    </li>
+  );
+}
+
 /** What Start training says when POST /api/train/runs/{id}/start refuses, from its status and body. */
 export function startTrainingErrorText(status: number, body: unknown): string {
   const b = body && typeof body === "object" ? (body as { error?: unknown; reason?: unknown }) : {};
@@ -333,7 +377,10 @@ export function StartTraining({
   hold,
   onStarted,
   needsCode = false,
+  startLabel = "Start training",
 }: {
+  /** A finished dataset's button (MAKE_CHAT_ALL). */
+  startLabel?: string;
   needsCode?: boolean;
   start: string;
   fullForm: string | null;
@@ -393,7 +440,7 @@ export function StartTraining({
       <div className="row-actions">
         <button type="button" className={trying ? "btn btn-outline" : "btn btn-primary"} onClick={() => void press()} disabled={busy || (needsCode && !code.trim())} aria-busy={busy}>
           {busy ? <span className="spinner" aria-hidden /> : null}
-          {busy ? "Starting" : trying ? "Try now" : "Start training"}
+          {busy ? "Starting" : trying ? "Try now" : startLabel}
         </button>
       </div>
       <p className="muted small">

@@ -447,7 +447,12 @@ export function PlanStep({
   above = null,
   below = null,
   problemActions = null,
+  startLabel = "Start",
+  codeHint = "Runs use real GPUs, so starting one takes the code.",
 }: {
+  /** MAKE_CHAT_ALL's Dataset: Start only writes the examples, so it says so. */
+  startLabel?: string;
+  codeHint?: string;
   /** Rows before and after the plan in the conversation (MAKE_CHAT_ALL: the app, the folder, ask for a change). */
   above?: ReactNode;
   below?: ReactNode;
@@ -552,13 +557,13 @@ export function PlanStep({
                       <div className="field tune-start-code">
                         <label htmlFor={codeId}>Start code</label>
                         <input id={codeId} type="text" autoComplete="off" autoCapitalize="off" spellCheck={false} value={startCode} onChange={(e) => onStartCode(e.target.value)} disabled={starting} />
-                        <span className="field-hint">Runs use real GPUs, so starting one takes the code.</span>
+                        <span className="field-hint">{codeHint}</span>
                       </div>
                     ) : null}
                     <div className="row-actions">
                       <button type="button" className="btn btn-primary" onClick={() => onStart(phase.plan)} disabled={starting || !countOk || !stepsGood || baseWaits || (visitor !== null && !startCode.trim())} aria-busy={starting}>
                         {starting ? <span className="spinner" aria-hidden /> : null}
-                        {starting ? "Starting" : "Start"}
+                        {starting ? "Starting" : startLabel}
                       </button>
                       <button type="button" className="btn btn-outline" onClick={onChange} disabled={starting}>
                         Change it

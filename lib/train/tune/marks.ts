@@ -47,6 +47,8 @@ export interface RunMarks {
   autoPublish?: boolean;
   /** The checked base the run trains on (TUNE_ANY_BASE), when one was picked. */
   base?: { repo: string; revision: string };
+  /** Set when the person asked only for the examples (MAKE_CHAT_ALL): nothing trains until they press Start training. */
+  datasetOnly?: boolean;
   /** Set when the run trains on Fireworks (FIREWORKS_TUNE). No mark: Lambda. */
   trainer?: "fireworks";
   /** Set when a visitor started the run (OPEN_TRAIN): who the visitor limits count, and never an upload. */
@@ -80,6 +82,7 @@ export function runMarks(datasetId: string, rows: ReadonlyArray<{ key: string; w
       if (revision) marks.base = { repo, revision };
     }
     else if (row.key === `tune-settings:${datasetId}:trainer:fireworks`) marks.trainer = "fireworks";
+    else if (row.key === `tune-settings:${datasetId}:dataset-only`) marks.datasetOnly = true;
     else if (row.key === `tune-run-stopped:${datasetId}`) marks.stopped = true;
     else if (row.key.startsWith(`tune-run-end:${datasetId}:`)) marks.ended = row.key.slice(`tune-run-end:${datasetId}:`.length) || null;
     else if (row.key.startsWith(`tune-run:${datasetId}:`)) beats.push({ state: row.key.slice(`tune-run:${datasetId}:`.length), at: row.windowStart });
