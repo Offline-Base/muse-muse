@@ -27,16 +27,16 @@ export function OwnModelsList({ view }: { view: OwnModelsView }) {
   return (
     <>
       <h3 className="models-sub">Your own models</h3>
-      <ul>
+      <ul className="models-grid models-own">
         {view.rows.map((r) => (
-          <li key={r.jobId}>
+          <li key={r.jobId} className="model-card">
             <strong>{r.title}</strong> for {r.product}. {r.kind} model. {r.passed ? "Passed." : "Hasn't passed."} {r.verdict}{" "}
             {r.serving ? "Open in a demo window now." : "Off outside demo windows, so its product answers with Muse Wonder."}
             {r.sparkOpen ? ` ${BUILT_WITH_SPARK_OPEN}.` : ""}
           </li>
         ))}
         {view.devices.map((d) => (
-          <li key={d.name}>
+          <li key={d.name} className="model-card">
             <strong>{d.name}</strong>: {d.status}.
           </li>
         ))}

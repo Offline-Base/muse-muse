@@ -6670,8 +6670,28 @@ div.md.md-plain {
 
 /* ---------- Models and Gadgets (/models, /gadgets) ---------- */
 
-.models-name .chips {
-  margin-top: 6px;
+.models-page {
+  gap: 32px;
+  --model-new-bg: #ffe6d9;
+  --model-new-fg: #8f3d14;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .models-page {
+    --model-new-bg: rgba(255, 170, 130, 0.2);
+    --model-new-fg: #ffc9ad;
+  }
+}
+
+:root[data-theme="dark"] .models-page {
+  --model-new-bg: rgba(255, 170, 130, 0.2);
+  --model-new-fg: #ffc9ad;
+}
+
+.models-page .page-head h1 {
+  font-size: 36px;
+  font-weight: 700;
+  line-height: 42px;
 }
 
 .models-sub {
@@ -6680,21 +6700,180 @@ div.md.md-plain {
   line-height: 22px;
 }
 
+/* One column on phones, two from tablets up. Grid rows give cards in a row one height. */
+.models-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 760px) {
+  .models-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.model-card {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+}
+
+@media (min-width: 760px) {
+  .model-card {
+    padding: 28px;
+  }
+}
+
+.model-card-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.model-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.model-card-head h3 {
+  min-width: 0;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 26px;
+  overflow-wrap: anywhere;
+}
+
+.model-card-head a {
+  color: inherit;
+}
+
+.model-new {
+  flex: none;
+  padding: 2px 10px;
+  border-radius: var(--pill);
+  background: var(--model-new-bg);
+  color: var(--model-new-fg);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.model-sub {
+  margin-top: -8px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.model-id {
+  align-self: flex-start;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.model-desc {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.model-desc:empty {
+  display: none;
+}
+
+.model-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Long button labels may wrap on a narrow phone rather than widen the card. */
+.model-actions .btn {
+  white-space: normal;
+  text-align: center;
+}
+
+.model-rows {
+  margin: auto 0 0;
+  padding-top: 8px;
+}
+
+.model-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.model-row:last-child {
+  padding-bottom: 0;
+}
+
+.model-row dt {
+  flex: none;
+  color: var(--muted);
+}
+
+.model-row dd {
+  margin: 0;
+  min-width: 0;
+  text-align: right;
+}
+
+.models-places .model-place {
+  padding: 20px;
+  border-radius: 24px;
+}
+
+@media (min-width: 760px) {
+  .models-places {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 /*
- * On phones the two tables keep room for each column and scroll in their box, as .train-eval-table does. Positioned, so
- * an ExternalLink's absolute sr-only text stays inside the scroll box instead of widening the page.
+ * The "All modalities" filter (components/models/ModelsFilter.tsx). The cards stay server rendered, so the choice only
+ * hides them, and a section with no card left for it goes too.
  */
-.models-hosted,
+.models-page[data-model-filter="text"] .model-card[data-mod]:not([data-mod~="text"]),
+.models-page[data-model-filter="image"] .model-card[data-mod]:not([data-mod~="image"]),
+.models-page[data-model-filter="video"] .model-card[data-mod]:not([data-mod~="video"]),
+.models-page[data-model-filter="audio"] .model-card[data-mod]:not([data-mod~="audio"]),
+.models-page[data-model-filter="text"] .models-filterable:not(:has(.model-card[data-mod~="text"])),
+.models-page[data-model-filter="image"] .models-filterable:not(:has(.model-card[data-mod~="image"])),
+.models-page[data-model-filter="video"] .models-filterable:not(:has(.model-card[data-mod~="video"])),
+.models-page[data-model-filter="audio"] .models-filterable:not(:has(.model-card[data-mod~="audio"])) {
+  display: none;
+}
+
+/* The versions table on /models/[id] keeps room for its columns and scrolls in its box on phones. */
 .models-tuned {
   position: relative;
-}
-
-.models-hosted {
-  min-width: 720px;
-}
-
-.models-tuned {
   min-width: 540px;
+}
+
+.models-own .model-card {
+  display: block;
 }
 
 .gadgets-status {

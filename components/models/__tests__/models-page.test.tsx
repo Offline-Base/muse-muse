@@ -9,7 +9,8 @@ import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it, mock } from "node:test";
 import { createElement, type ReactNode } from "react";
 import catalog from "@/catalog/meta-models.json";
-import { CALL_DAYS, dollars, hostedModelViews, tunedModelViews } from "@/components/models/catalog";
+import { existsSync, readFileSync } from "node:fs";
+import { CALL_DAYS, contextLabel, dollars, hostedModelViews, modalitiesOf, modalityCounts, modelCards, tunedModelViews } from "@/components/models/catalog";
 import type { ResultView } from "@/components/train/results";
 import { PRICES } from "@/lib/meta/pricing";
 import { ggufFileName, levelKey } from "@/lib/train/hub-cards";
@@ -69,12 +70,12 @@ describe("the hosted model catalog", () => {
   });
 
   it("prices from lib/meta/pricing.ts", () => {
-    const price = Object.fromEntries(hostedModelViews(null).map((m) => [m.id, m.price]));
-    assert.equal(price["muse-wonder-1.0"], "$4 in, $0.20 cached, $20 out per million tokens");
-    assert.equal(price["muse-spark-1.3-contributor"], "$0.10 in, $0.002 cached, $0.20 out per million tokens");
-    assert.equal(price["muse-image-1.0"], "$0.01 per image");
-    assert.equal(price["sam-3.1"], "$0.0025 per image, $0.0002 per video frame (50 frames at least)");
-    assert.equal(price["muse-voice-transcribe-1.0"], "$0.18 per audio hour");
+    const rows = Object.fromEntries(hostedModelViews(null).map((m) => [m.id, m.rows.map((r) => `${r.label}: ${r.value}`)]));
+    assert.deepEqual(rows["muse-wonder-1.0"], ["Input: $4 / 1M tokens", "Cached input: $0.20 / 1M tokens", "Output: $20 / 1M tokens"]);
+    assert.deepEqual(rows["muse-spark-1.3-contributor"], ["Input: $0.10 / 1M tokens", "Cached input: $0.002 / 1M tokens", "Output: $0.20 / 1M tokens"]);
+    assert.deepEqual(rows["muse-image-1.0"], ["Image: $0.01 per image"]);
+    assert.deepEqual(rows["sam-3.1"], ["Image: $0.0025 per image", "Video: $0.0002 per frame, 50 frames at least"]);
+    assert.deepEqual(rows["muse-voice-transcribe-1.0"], ["Audio: $0.18 per audio hour"]);
   });
 
   it("counts calls per model, zero for a model with none", () => {
@@ -82,6 +83,86 @@ describe("the hosted model catalog", () => {
     assert.equal(views.find((m) => m.id === "muse-wonder-1.0")?.calls, 12);
     assert.equal(views.find((m) => m.id === "sam-3.1")?.calls, 0);
     assert.equal(CALL_DAYS, 30);
+  });
+});
+
+describe("the model cards", () => {
+  const cards = modelCards(hostedModelViews({ "muse-wonder-1.0": 1234 }));
+  const card = (id: string) => {
+    const found = cards.find((c) => c.id === id);
+    assert.ok(found, id);
+    return found;
+  };
+
+  it("runs in the screenshot's order, with the rest after", () => {
+    assert.deepEqual(
+      cards.map((c) => c.name),
+      ["Muse Wonder", "Muse Spark Open", "SAM 3.1", "Muse Spark 1.3", "Muse Spark 1.3 Contributor", "Muse Voice Transcribe", "Muse Image", "Muse Glimmer 30B"],
+    );
+  });
+
+  it("writes the sublines from the repo's context and kind", () => {
+    assert.equal(contextLabel(1_048_576), "1M");
+    assert.equal(contextLabel(131_072), "128K");
+    assert.equal(card("muse-wonder-1.0").subline, "Context 1M · Chat");
+    assert.equal(card("muse-spark-1.3-contributor").subline, "Context 1M · Chat");
+    assert.equal(card("muse-spark-open").subline, "Context 1M · Open weights");
+    assert.equal(card("muse-glimmer").subline, "Context 128K · Open weights");
+    assert.equal(card("sam-3.1").subline, "Image and video segmentation");
+  });
+
+  it("marks New from the catalog's preview status", () => {
+    assert.deepEqual(cards.filter((c) => c.isNew).map((c) => c.id), ["muse-wonder-1.0"]);
+  });
+
+  it("gives Spark 1.3 its prices, no calls and no playground, and says Muse Muse doesn't call it", () => {
+    const spark = card("muse-spark-1.3");
+    assert.deepEqual(spark.rows.map((r) => r.value), ["$1.25 / 1M tokens", "$0.15 / 1M tokens", "$4.25 / 1M tokens"]);
+    assert.match(spark.description[0], /doesn't call it/);
+    assert.equal(spark.links.some((l) => l.label === "Try in playground"), false);
+  });
+
+  it("adds the calls row only when calls were read", () => {
+    assert.deepEqual(card("muse-wonder-1.0").rows.at(-1), { label: "Calls, 30 days", value: "1,234" });
+    assert.equal(modelCards(hostedModelViews(null)).some((c) => c.rows.some((r) => r.label.startsWith("Calls"))), false);
+  });
+
+  it("gives open-weight models Download, Access and License", () => {
+    for (const id of ["muse-spark-open", "muse-glimmer"]) {
+      const c = card(id);
+      assert.ok(c.links.some((l) => l.label === "Download"), id);
+      assert.deepEqual(c.rows.map((r) => r.label), ["Access", "License"]);
+    }
+    assert.equal(card("muse-glimmer").rows[1].value, "Apache 2.0");
+    assert.equal(card("muse-spark-open").rows[1].value, "Muse Model License");
+  });
+
+  it("links only to docs pages and anchors that exist, and playgrounds only on pages with a demo", async () => {
+    const { DEMO_GROUPS } = await import("@/lib/docs/demos/groups");
+    const demos = new Set(Object.values(DEMO_GROUPS).flat());
+    for (const c of cards) {
+      for (const l of c.links) {
+        if (!l.href.startsWith("/docs/")) continue;
+        const [slug, anchor] = l.href.slice("/docs/".length).split("#");
+        const file = new URL(`../../../content/meta-docs/pages/${slug}.md`, import.meta.url);
+        assert.ok(existsSync(file), l.href);
+        if (anchor === "try-it-live") assert.ok(demos.has(slug), `${slug} has a demo`);
+        else if (anchor) assert.ok(readFileSync(file, "utf8").includes(`{#${anchor}}`), l.href);
+      }
+    }
+  });
+
+  it("filters on the modalities in the catalog, and the stylesheet hides what a choice leaves out", () => {
+    assert.deepEqual(modalitiesOf({ input: ["text", "image (edits and composition, 1 to 10 images)"], output: ["image (b64_json default)"] }), ["text", "image"]);
+    const has = (k: "text" | "image" | "video" | "audio") => cards.filter((c) => c.modalities.includes(k)).map((c) => c.id);
+    assert.deepEqual(has("audio"), ["muse-wonder-1.0", "muse-spark-open", "muse-voice-transcribe-1.0"]);
+    assert.deepEqual(has("video"), ["muse-wonder-1.0", "muse-spark-open", "sam-3.1", "muse-spark-1.3", "muse-spark-1.3-contributor"]);
+    assert.equal(modalityCounts(cards.map((c) => c.modalities)).audio, 3);
+    const css = readFileSync(new URL("../../../app/globals.css", import.meta.url), "utf8");
+    for (const k of ["text", "image", "video", "audio"]) {
+      assert.ok(css.includes(`[data-model-filter="${k}"] .model-card[data-mod]:not([data-mod~="${k}"])`), k);
+      assert.ok(css.includes(`[data-model-filter="${k}"] .models-filterable:not(:has(.model-card[data-mod~="${k}"]))`), k);
+    }
   });
 });
 
@@ -241,23 +322,26 @@ describe("/models", { skip: canMock ? false : "needs --experimental-test-module-
     assert.equal(metadata.title, "Models");
   });
 
-  it("lists Meta's hosted models with their uses, prices and calls", async () => {
+  it("lists every model as a card with its uses, prices and calls", async () => {
     const html = render(await page());
     clean(html);
     assert.match(html, /<h1>Models<\/h1>/);
-    assert.match(html, /Meta&#x27;s hosted models/);
-    for (const name of ["Muse Wonder", "Muse Image", "SAM 3.1", "Muse Voice Transcribe", "Muse Spark 1.3 Contributor"]) {
-      assert.match(html, new RegExp(`<span class="row-title">${name}</span>`));
+    assert.match(html, /<option value="all"[^>]*>All modalities<\/option>/);
+    assert.match(html, /data-model-filter="all"/);
+    for (const name of ["Muse Wonder", "Muse Spark Open", "Muse Image", "SAM 3.1", "Muse Voice Transcribe", "Muse Spark 1.3", "Muse Spark 1.3 Contributor"]) {
+      assert.match(html, new RegExp(`<h3 id="model-[^"]+">${name}</h3>`));
     }
-    assert.match(html, /\$4 in, \$0\.20 cached, \$20 out per million tokens/);
+    assert.match(html, /<dt>Cached input<\/dt><dd>\$0\.20 \/ 1M tokens<\/dd>/);
     assert.match(html, /\$0\.18 per audio hour/);
-    assert.match(html, /Calls, 30 days/);
-    assert.match(html, />1,234</);
-    assert.match(html, />56</);
-    assert.doesNotMatch(html, /999/, "Spark 1.3's own calls aren't a row");
-    assert.doesNotMatch(html, /<code>muse-spark-1\.3<\/code>/);
-    // The test model is labeled as one, in its own row only.
-    const contributor = html.slice(html.indexOf("<code>muse-spark-1.3-contributor</code>")).split("</tr>")[0];
+    assert.match(html, /<dt>Calls, 30 days<\/dt><dd>1,234<\/dd>/);
+    assert.match(html, /<dd>56<\/dd>/);
+    assert.match(html, /class="model-new">New</);
+    assert.doesNotMatch(html, /999/, "Spark 1.3's own calls aren't shown");
+    assert.match(html, /data-mod="text image video audio"/);
+    assert.match(html, /href="\/docs\/overview#try-it-live"/);
+    assert.match(html, /href="\/docs\/models#sam-3"/);
+    // The test model is labeled as one, on its own card only.
+    const contributor = html.slice(html.indexOf("<code class=\"model-id\">muse-spark-1.3-contributor</code>")).split("</article>")[0];
     assert.match(contributor, /Tests and examples only/);
     assert.match(contributor, /tests and examples, which use made-up data/);
     assert.equal(html.match(/Tests and examples only/g)?.length, 1);
@@ -266,19 +350,21 @@ describe("/models", { skip: canMock ? false : "needs --experimental-test-module-
   it("shows Glimmer and the tuned models, linking only what is public", async () => {
     const html = render(await page());
     clean(html);
-    assert.match(html, /Open models/);
+    assert.match(html, /Tuned Glimmer models/);
     assert.match(html, /Muse Glimmer 30B/);
     assert.match(html, /Open weights/);
     assert.match(html, /Apache 2\.0/);
     assert.match(html, /href="\/docs\/muse-glimmer"/);
+    assert.match(html, /href="\/fine-tuning"/);
+    assert.match(html, /href="\/docs\/muse-glimmer\/get-the-model"/);
     assert.match(html, new RegExp(`href="/fine-tuning/${JOB}"[^>]*>Bakery LoRA`));
     assert.match(html, new RegExp(`href="/fine-tuning/${PRIVATE_JOB}"[^>]*>Florist LoRA`));
     assert.match(html, /Tuned won <strong>1<\/strong> of 2/);
     assert.match(html, /href="https:\/\/huggingface\.co\/muse-muse\/bakery-lora"[^>]*target="_blank"/);
     assert.match(html, /href="https:\/\/huggingface\.co\/muse-muse\/bakery-lora-gguf"/);
     assert.match(html, new RegExp(`href="/fine-tuning/${JOB}/run"`));
-    const florist = html.slice(html.indexOf("Florist LoRA")).split("</tr>")[0];
-    assert.match(florist, /<span class="muted">Not public<\/span>/);
+    const florist = html.slice(html.indexOf("Florist LoRA")).split("</article>")[0];
+    assert.match(florist, /<dt>Access<\/dt><dd>Not public<\/dd>/);
     assert.doesNotMatch(html, /Not public yet|coming/i, "no promise that a model goes public, or of more kinds");
     assert.doesNotMatch(html, /Still running|Dry run|Smoke test/);
     // GGUF files are looked up only for the model public on the Hub.
@@ -294,11 +380,11 @@ describe("/models", { skip: canMock ? false : "needs --experimental-test-module-
     assert.doesNotMatch(html, /<span class="chip">Built with Muse Spark Open<\/span>/, "the jobs from before the switch trained on plain Glimmer");
     jobs = jobs.map((j) => (j.id === JOB ? { ...j, params: { ...(j.params as object), baseModel: "OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit" } } : j));
     html = render(await page());
-    const bakery = html.slice(html.indexOf("Bakery LoRA")).split("</tr>")[0];
+    const bakery = html.slice(html.indexOf("Bakery LoRA")).split("</article>")[0];
     assert.match(bakery, /Muse Glimmer 30B with 2026 knowledge, tuned/);
     assert.match(bakery, /<span class="chip">Built with Muse Spark Open<\/span>/);
     assert.match(bakery, /against the 2026 Glimmer it started from/);
-    assert.doesNotMatch(html.slice(html.indexOf("Florist LoRA")).split("</tr>")[0], /Spark Open/);
+    assert.doesNotMatch(html.slice(html.indexOf("Florist LoRA")).split("</article>")[0], /Spark Open/);
   });
 
   it("leaves the GGUF links out while the adapter isn't public", async () => {
@@ -340,7 +426,7 @@ describe("/models", { skip: canMock ? false : "needs --experimental-test-module-
     failing = new Set(["modelCallCounts", "listResultJobs"]);
     const html = render(await page());
     clean(html);
-    assert.match(html, /<span class="row-title">Muse Wonder<\/span>/);
+    assert.match(html, /<h3 id="model-muse-wonder-1\.0">Muse Wonder<\/h3>/);
     assert.match(html, /\$0\.01 per image/);
     assert.doesNotMatch(html, /Calls, 30 days/);
     assert.match(html, /Call counts aren&#x27;t available right now\./);
