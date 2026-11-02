@@ -15,6 +15,15 @@ export async function productStatusById(productId: string): Promise<ProductStatu
   return row?.status ?? null;
 }
 
+export async function productSlugById(productId: string): Promise<string | null> {
+  const [row] = await db()
+    .select({ slug: schema.products.slug })
+    .from(schema.products)
+    .where(eq(schema.products.id, productId))
+    .limit(1);
+  return row?.slug ?? null;
+}
+
 /**
  * Fixed one-minute windows: one upsert that inserts each key at 1 or increments it, returning the new counts.
  * Keys must be distinct (Postgres won't update the same row twice in one statement).

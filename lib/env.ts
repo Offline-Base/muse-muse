@@ -97,8 +97,10 @@ export function testModel(): typeof SPARK_STANDIN | null {
  * information there, so every box that feeds a build shows ContributorNotice. testModel() keeps its production guard, and
  * contributorWriterOn its own switch for a person's files. Everything else with a model follows this: fine-tuning, the docs
  * and Muse Code too (defaultModel in lib/meta/spark.ts). A live product follows it when it was published under this flag and
- * shows the product notice. One that holds a person's connected accounts or personal tools (runtimeStaysOffContributor in
- * lib/pipeline/logic.ts), or shows no notice, can't use Contributor, and with no Wonder its model calls are refused in plain words.
+ * shows the product notice. Gadgets, boards, the device route and WONDER_DEMO_SLUGS stay on Muse Wonder (keepsWonderUnderSwitch in
+ * lib/gateway/policy.ts). Any other product that holds a person's connected accounts or personal tools (personalOffUnderSwitch in
+ * lib/pipeline/logic.ts), or shows no notice, has its model calls refused in plain words. Off, all of this ends and the platform
+ * is on Muse Wonder: docs/JUDGING_WEEK.md has the one command, and what it changes.
  */
 export function contributorBuildsOn(): boolean {
   return contributorSwitchOn();

@@ -145,6 +145,7 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
           judgeInputs.push(input);
           return judgeImpl();
         },
+        MAX_CHAIN_SCREENSHOTS: 48,
         // The real rule: the first screenshot, then the last three.
         pickScreenshots: <T>(s: T[]) => (s.length <= 4 ? s : [s[0]!, ...s.slice(-3)]),
       },
@@ -162,6 +163,7 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
     });
     mock.module(at("../../publish/vercel.ts"), {
       namedExports: {
+        collectDeployFiles: async () => ({ files: [] }),
         pollDeploy: async () => ({}),
         startDeployFromSandbox: async () => deployImpl(),
         projectNameFor: (slug: string) => `musemuse-${slug}`,
@@ -517,6 +519,22 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       process.env.ENGINE_MILESTONES = "1";
       selects = { builds: [[{ brief }]] };
       assert.deepEqual((await steps.briefStep("b1")).plan?.milestones, [{ title: "Play one level" }, { title: "Level maker" }]);
+    });
+
+    it("BUILDS_ON_CONTRIBUTOR: briefStep refuses a personal product in plain words, and a gadget product goes on", async () => {
+      process.env.BUILDS_ON_CONTRIBUTOR = "1";
+      try {
+        const yes = { ...(await FULL), verdict: "yes" as const, refusal: null };
+        selects = { builds: [[{ brief: { ...yes, agent: { connections: "owner", tools: [] } } }]] };
+        const personal = await steps.briefStep("b1");
+        assert.equal(personal.verdict, "no");
+        assert.match(personal.refusal ?? "", /a person's own accounts or personal tools/);
+        selects = { builds: [[{ brief: { ...yes, agent: undefined, capabilities: [{ need: "See the room", model: "muse-gadget", why: "made up" }] } }]] };
+        const gadget = await steps.briefStep("b1");
+        assert.equal(gadget.verdict, "yes");
+      } finally {
+        delete process.env.BUILDS_ON_CONTRIBUTOR;
+      }
     });
 
     it("writeMilestonePromptStep writes milestone-<n>.md with what the last strict check found", async () => {

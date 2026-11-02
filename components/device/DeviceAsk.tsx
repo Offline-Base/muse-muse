@@ -8,7 +8,6 @@ const ERRORS: Record<string, string> = {
   device_not_configured: "No board is set up. DEVICE_MCP_URL and DEVICE_MCP_TOKEN are missing.",
   device_unavailable: "Couldn't reach the board. Its server or tunnel may be down.",
   model_unavailable: "Couldn't reach Muse Wonder.",
-  device_off_on_contributor: "This is off for now. Muse Muse runs on a model Meta may train on, and a board's camera and microphone can pick up personal information.",
   paused: "Today's spend cap is reached, so model calls are paused.",
   rate_limited: "That's a lot of questions for one minute. Try again in a moment.",
 };

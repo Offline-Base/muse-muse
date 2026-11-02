@@ -5,7 +5,7 @@ import { DeviceBoards } from "@/components/device/DeviceBoards";
 import { DeviceDrive } from "@/components/device/DeviceDrive";
 import { DeviceTrain } from "@/components/device/DeviceTrain";
 import { EmptyCard, PageHeader } from "@/components/ui";
-import { contributorBuildsOn, env } from "@/lib/env";
+import { env } from "@/lib/env";
 import { pageViewer } from "../fine-tuning/viewer";
 
 export const metadata: Metadata = { title: "Device", robots: { index: false } };
@@ -33,7 +33,7 @@ export default async function DevicePage({ searchParams }: { searchParams: Promi
   }
   return (
     <div className="page">
-      <PageHeader title="Device" subtitle={contributorBuildsOn() ? "Off for now: a board's camera and microphone can pick up personal information, and the model Muse Muse runs on can't take that." : "Ask Muse Wonder something, and it uses the board's camera, microphone and sensors to answer."} />
+      <PageHeader title="Device" subtitle="Ask Muse Wonder something, and it uses the board's camera, microphone and sensors to answer." />
       <DeviceAsk />
       {env.hardwareBoardRegistry && !viewer.openAccess ? <DeviceBoards /> : null}
       <DeviceTrain driveExport={env.driveExportEnabled} />

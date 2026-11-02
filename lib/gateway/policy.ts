@@ -1,3 +1,4 @@
+import { BOARD_TOOLS_MARKER } from "@/lib/caps/hardware/limits";
 import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
 import type { GatewayEndpoint, MetaModelId } from "@/lib/types";
 
@@ -74,9 +75,27 @@ export const AGENT_LONG_MARKER = "agent-long";
 /**
  * The allowedModels entry on a live token published under BUILDS_ON_CONTRIBUTOR, from a product that shows the Contributor
  * notice and holds nothing personal (lib/pipeline/logic.ts). Not a model. A product published before has no notice, so
- * it has no marker, and its calls are refused (contributorSwitchRefusal). Without the flag the marker does nothing.
+ * it has no marker, and its calls are refused (contributorSwitchRefusal) unless keepsWonderUnderSwitch says otherwise. Without the flag the marker does nothing.
  */
 export const CONTRIBUTOR_RUNTIME_MARKER = "runtime:contributor";
+
+/**
+ * The three Wonder demo products, by slug. The owner's decision of Nov 1: they were made and shown on Muse Wonder, so they stay
+ * on it under BUILDS_ON_CONTRIBUTOR, audio input included. Every other product published before the switch gets the plain 403
+ * below until it's published again. This is the only list of its kind. Adding a slug spends Wonder's price, so it needs the owner.
+ */
+export const WONDER_DEMO_SLUGS: readonly string[] = ["voice-memo-tasks", "class-capture-notes", "gym-snap-coach"];
+
+/**
+ * BUILDS_ON_CONTRIBUTOR: a live token whose Muse Wonder calls stay on Wonder, the owner's two exceptions. A gadget or board product,
+ * since what a camera or microphone picks up is personal information that can't go to Contributor, and a Wonder demo. Live only: a
+ * build token always runs on Contributor, whatever its product. A person's own accounts and drive tools aren't exceptions, so
+ * those stay off Contributor by being refused.
+ */
+export function keepsWonderUnderSwitch(token: { scope: string; allowedModels: readonly string[] }, slug: string | null | undefined): boolean {
+  if (token.scope !== "live") return false;
+  return token.allowedModels.includes("muse-gadget") || token.allowedModels.includes(BOARD_TOOLS_MARKER) || (slug != null && WONDER_DEMO_SLUGS.includes(slug));
+}
 
 /** Audio input is a Muse Wonder ability Contributor doesn't list (catalog/meta-models.json). */
 export function needsWonderInput(json: { input?: unknown }): boolean {
@@ -85,7 +104,7 @@ export function needsWonderInput(json: { input?: unknown }): boolean {
 
 /**
  * BUILDS_ON_CONTRIBUTOR: why a call naming Muse Wonder can't run, or null when Contributor can serve it. There is no Wonder
- * to fall back to, so these say so plainly. Contributor doesn't list audio input. A live token without the marker holds
+ * to fall back to, outside keepsWonderUnderSwitch, so these say so plainly. Contributor doesn't list audio input. A live token without the marker holds
  * something personal, which Meta's terms (6.2) bar from Contributor, or its product shows no notice yet.
  */
 export function contributorSwitchRefusal(json: { input?: unknown }, token: { scope: string; allowedModels: readonly string[] }): { code: string; message: string } | null {

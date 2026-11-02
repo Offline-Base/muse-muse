@@ -1,6 +1,7 @@
 /**
- * BUILDS_ON_CONTRIBUTOR: no code path picks Muse Wonder. The one allowed call is WONDER_IN_LOOP's Wonder check, once it
- * merges. A new use of the id fails the scan below until someone says here why it isn't a model pick.
+ * BUILDS_ON_CONTRIBUTOR: no code path picks Muse Wonder but the owner's exceptions: WONDER_IN_LOOP's Wonder check once it merges,
+ * the device route, and live gadget, board and demo products (keepsWonderUnderSwitch). A new use of the id fails the scan below
+ * until someone says here why it isn't a model pick.
  *   npx tsx --test lib/__tests__/no-wonder.test.ts
  */
 import assert from "node:assert/strict";
@@ -21,7 +22,7 @@ const WONDER_CHECK = ["lib/wonder/loop.ts", "lib/pipeline/wonder-step.ts"];
 
 /** Every other file that names the id, and why that isn't a model pick. */
 const NOT_A_PICK: Record<string, string> = {
-  "lib/env.ts": "DEFAULT_PLATFORM_MODEL, read only behind the switch and by the device route's refusal",
+  "lib/env.ts": "DEFAULT_PLATFORM_MODEL, read behind the switch and by the device route, an owner's exception",
   "lib/meta/spark.ts": "defaultModel's flag-off answer, and telling a product's writer to keep the id",
   "lib/meta/pricing.ts": "its price",
   "lib/format.ts": "its display name",
@@ -29,7 +30,7 @@ const NOT_A_PICK: Record<string, string> = {
   "lib/brief/schema.ts": "the id a brief may list; the gateway serves it on Contributor",
   "lib/brief/render.ts": "the skill table, and whether a brief lists the id",
   "lib/gateway/policy.ts": "ids the gateway accepts, then swaps",
-  "lib/gateway/handler.ts": "recognizes the id in order to swap or refuse it, and TRUST_SPARK_TO_WONDER with the switch off",
+  "lib/gateway/handler.ts": "recognizes the id in order to swap, refuse or keep it for an exception, and TRUST_SPARK_TO_WONDER with the switch off",
   "lib/gateway/rewrite.ts": "flag-off refusal wording only",
   "lib/docs/proxy/rewrite.ts": "recognizes the id in order to swap it",
   "lib/docs/proxy/ask.ts": "recognizes the id in order to swap it",
@@ -38,7 +39,7 @@ const NOT_A_PICK: Record<string, string> = {
   "lib/docs/demos/muse-code.ts": "documentation of Meta's own models",
   "lib/docs/demos/start.ts": "documentation of Meta's own models",
   "lib/docs/demos/text.ts": "a docs demo's request, served through the proxy's swap",
-  "lib/prompts/catalog.ts": "its catalog row, replaced under the switch",
+  "lib/prompts/catalog.ts": "its catalog row, replaced under the switch, which names the gadget and board exception",
   "lib/prompts/brief.ts": "the id a brief lists",
   "lib/native/targets.ts": "the id a brief lists",
   "lib/recipes/registry.ts": "ids a recipe's token may name, served by the gateway's swap",
@@ -104,6 +105,42 @@ describe("with the switch on", () => {
     assert.equal(contributorSwitchRefusal({ input: "hi" }, { scope: "live", allowedModels: [WONDER, "runtime:contributor"] }), null);
     assert.equal(contributorSwitchRefusal({ input: [{ content: [{ type: "input_audio" }] }] }, { scope: "build", allowedModels: [WONDER] })?.code, "audio_input_off");
   });
+
+  it("the Wonder exceptions are exactly gadgets, boards and the three demos, live only", async () => {
+    const { keepsWonderUnderSwitch, WONDER_DEMO_SLUGS } = await import("@/lib/gateway/policy");
+    assert.deepEqual([...WONDER_DEMO_SLUGS], ["voice-memo-tasks", "class-capture-notes", "gym-snap-coach"]);
+    const live = (...extra: string[]) => ({ scope: "live", allowedModels: [WONDER, ...extra] });
+    assert.equal(keepsWonderUnderSwitch(live("muse-gadget"), "x"), true);
+    assert.equal(keepsWonderUnderSwitch(live("board-tools"), "x"), true);
+    for (const slug of WONDER_DEMO_SLUGS) assert.equal(keepsWonderUnderSwitch(live(), slug), true, slug);
+    assert.equal(keepsWonderUnderSwitch(live(), "another-product"), false);
+    assert.equal(keepsWonderUnderSwitch(live("drive-tools", "tool:gmail"), "another-product"), false);
+    assert.equal(keepsWonderUnderSwitch(live(), null), false);
+    assert.equal(keepsWonderUnderSwitch({ scope: "build", allowedModels: [WONDER, "muse-gadget"] }, "gym-snap-coach"), false);
+  });
+
+  it("a new gadget or board product is built and gets no Contributor marker, and a personal one isn't built", async () => {
+    const { contributorRuntimeMarkers, personalOffUnderSwitch } = await import("@/lib/pipeline/logic");
+    const gadget = { capabilities: [{ model: "muse-gadget" }], agent: null } as never;
+    assert.equal(personalOffUnderSwitch(gadget), false);
+    assert.deepEqual(contributorRuntimeMarkers(gadget, true, true), []);
+    assert.equal(personalOffUnderSwitch({ capabilities: [], agent: { connections: "owner", tools: [] } } as never), true);
+  });
+
+  it("switch off: the platform's answers are Muse Wonder, the flip docs/JUDGING_WEEK.md describes", async () => {
+    const { buildTestModel } = await import("@/lib/env");
+    const { contributorSwitchOn, defaultModel } = await import("@/lib/meta/spark");
+    const { sessionModelFor } = await import("@/lib/caps/code/musecode/handler");
+    process.env.BUILDS_ON_CONTRIBUTOR = "";
+    try {
+      assert.equal(contributorSwitchOn(), false);
+      assert.equal(defaultModel(), WONDER);
+      assert.equal(buildTestModel(), null);
+      assert.equal(sessionModelFor(false, null, false), WONDER);
+    } finally {
+      process.env.BUILDS_ON_CONTRIBUTOR = "1";
+    }
+  });
 });
 
 describe("results and new builds under the switch", () => {
@@ -136,8 +173,10 @@ describe("the id in code", () => {
     }
   });
 
-  it("DEFAULT_PLATFORM_MODEL reaches a call only behind the switch", () => {
-    assert.match(readFileSync(path.join(ROOT, "app/api/device/ask/route.ts"), "utf8"), /if \(contributorBuildsOn\(\)\) return errorJson\(503/);
+  it("DEFAULT_PLATFORM_MODEL reaches a call only behind the switch, or on the device route, an owner's exception", () => {
+    const device = readFileSync(path.join(ROOT, "app/api/device/ask/route.ts"), "utf8");
+    assert.match(device, /const model = DEFAULT_PLATFORM_MODEL/);
+    assert.doesNotMatch(device, /contributorBuildsOn/);
     assert.match(readFileSync(path.join(ROOT, "lib/caps/platform/deps.ts"), "utf8"), /buildTestModel\(\) \?\? DEFAULT_PLATFORM_MODEL/);
   });
 });

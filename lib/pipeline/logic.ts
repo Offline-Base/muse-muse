@@ -132,26 +132,26 @@ export function allowedModelsFor(brief: Pick<Brief, "capabilities" | "agent" | "
 }
 
 /**
- * True when a live product can't use Contributor under BUILDS_ON_CONTRIBUTOR, so it can't run: anything with a person's own connected accounts
+ * True when a live product can't use Contributor under BUILDS_ON_CONTRIBUTOR: anything with a person's own connected accounts
  * or personal tools, since Meta's terms (6.2) bar personal information on Contributor and Meta may train on it. That
- * means an agent's personal tools or owner connection, the owner's keys and sends through connect, a person's drive or
- * board, and a gadget's camera and microphone. Public web search, public APIs and a product's own chat follow the flag.
+ * means personalOffUnderSwitch below, a person's board, and a gadget's camera and microphone. Those last two stay on Muse Wonder
+ * (keepsWonderUnderSwitch, lib/gateway/policy.ts). Public web search, public APIs and a product's own chat follow the flag.
  */
 export function runtimeStaysOffContributor(brief: Pick<Brief, "capabilities" | "agent">): boolean {
+  const hardware = hardwareBlock(brief);
+  return personalOffUnderSwitch(brief) || Boolean(hardware?.boardTools) || brief.capabilities.some((c) => c.model === "muse-gadget");
+}
+
+/** True when BUILDS_ON_CONTRIBUTOR has nothing for it to run on, so it isn't built: an agent's personal tools or owner connection, the owner's keys and sends through connect, a person's drive. */
+export function personalOffUnderSwitch(brief: Pick<Brief, "capabilities" | "agent">): boolean {
   const personalTools = brief.agent ? brief.agent.connections === "owner" || brief.agent.tools.some((t) => (PERSONAL_TOOL_IDS as readonly string[]).includes(t.id)) : false;
   const connect = connectBlock(brief);
-  const hardware = hardwareBlock(brief);
-  return (
-    personalTools ||
-    Boolean(connect && (connect.keys.length || connect.sends.length)) ||
-    Boolean(hardware && (hardware.boardTools || hardware.driveExport)) ||
-    brief.capabilities.some((c) => c.model === "muse-gadget")
-  );
+  return personalTools || Boolean(connect && (connect.keys.length || connect.sends.length)) || Boolean(hardwareBlock(brief)?.driveExport);
 }
 
 /**
  * The marker a live token gets: only with the flag on, a brief to check, nothing personal in it, and a product whose own
- * code shows the notice (an older snapshot's, or one a build rewrote, doesn't, so its calls are refused).
+ * code shows the notice (an older snapshot's, or one a build rewrote, doesn't, so its calls are refused unless it's one of the exceptions).
  */
 export function contributorRuntimeMarkers(brief: Pick<Brief, "capabilities" | "agent"> | null, flagOn: boolean, showsNotice: boolean): string[] {
   return flagOn && showsNotice && brief && !runtimeStaysOffContributor(brief) ? [CONTRIBUTOR_RUNTIME_MARKER] : [];
@@ -159,7 +159,7 @@ export function contributorRuntimeMarkers(brief: Pick<Brief, "capabilities" | "a
 
 /** BUILDS_ON_CONTRIBUTOR: why a new product holding something personal isn't built. It could never run. */
 export const PERSONAL_OFF_MESSAGE =
-  "Muse Muse can't build this right now. It uses a person's own accounts, personal tools or a device's camera and microphone, and the model Muse Muse runs on for now can't be used with personal information.";
+  "Muse Muse can't build this right now. It uses a person's own accounts or personal tools, and the model Muse Muse runs on for now can't be used with personal information.";
 
 /** A live product's daily budget: AGENT_LONG_DAILY_USD for a long-run recipe, since one full run costs dollars, otherwise as its estimate says. */
 export function liveDailyBudgetFor(brief: Pick<Brief, "estimatedCostPerRunUsd" | "recipes"> | null | undefined): number {

@@ -37,6 +37,39 @@ Then merge anything to main, or `vercel redeploy https://muse-muse.vercel.app --
 
 **Emergency stop.** `DAILY_SPEND_CAP_USD=0` does not pause anything: `number()` in `lib/env.ts` ignores 0 and falls back to 100. Use `0.01`. The same goes for the build quota, where 0 means the default of 3.
 
+## Flip to Wonder (Nov 4 to Nov 9)
+
+`BUILDS_ON_CONTRIBUTOR` is the one switch. From a checkout linked to the project, this turns it off and rebuilds. Env changes on Vercel always need a new deployment, and `next.config.ts` inlines this one at build time, so the second half isn't optional:
+
+```bash
+vercel env rm BUILDS_ON_CONTRIBUTOR production --yes --scope ethan-6436s-projects && vercel redeploy https://muse-muse.vercel.app --scope ethan-6436s-projects
+```
+
+Back to Contributor: `printf '1' | vercel env add BUILDS_ON_CONTRIBUTOR production --force --scope ethan-6436s-projects && vercel redeploy https://muse-muse.vercel.app --scope ethan-6436s-projects`.
+
+**Check first.** `BRIEF_MODEL`, `JUDGE_MODEL`, `BUILD_MODEL` and `COMPLEX_BUILD_MODEL` are set on production and take over once the switch is off (`model()` in `lib/env.ts`). Each must be `muse-wonder-1.0`, or that step won't move to Wonder.
+
+**What the flip changes, from the code:**
+
+- Brief, build, fix rounds, judge, Muse Code sessions and a build's test calls: on those four settings, not Contributor.
+- Fine-tuning's writer, judge, story, plan and content check, research, fixtures, Prove it, and the docs demos with their menus: Muse Wonder. New results stop saying their scores don't compare. Earlier Contributor-judged results still do.
+- Gateway: every call naming Muse Wonder runs on Muse Wonder at its price. Products published before the switch work again, as do audio input, personal accounts, and Muse Code tasks in products that were refused. Tokens aren't touched. The `runtime:contributor` marker stays on tokens and does nothing.
+- New briefs: personal accounts are offered again and aren't refused. The build prompt and catalog go back to Wonder's wording and price.
+- The site: the notices on the build and fine-tune boxes go, and the privacy page's section goes back.
+
+**What it doesn't change:**
+
+- `MUSE_APP_LOOK` and `BUILD_RANGE` have their own settings on production, so the look stays if they're on. `TRAIN_CONTRIBUTOR_WRITER` stays on, so an admin can still choose Contributor for a made-up dataset. The prove-nightly cron stays on Contributor (`NIGHTLY_MODEL`, by design).
+- Products published under the switch keep showing their notice about Meta training until they're published again. Their code names Muse Wonder, so their calls do move.
+- Builds already running stay on the deployment they started on.
+- `docs/SUBMISSION.md` and the video script name Contributor. Change them by hand.
+
+**Money.** Wonder is $4 in and $20 out per million tokens, Contributor $0.10 and $0.20: 40 times the input and 100 times the output. Check `DAILY_SPEND_CAP_USD` before flipping. A product's cost estimate was written at Contributor's prices, and each live token's daily budget ($3 to $10) was set at publish from it, so busy products will hit their budget much sooner.
+
+**Flipping back.** A product published while the switch is off gets no marker, so it's refused on Contributor until it's published again. The exceptions aren't affected.
+
+Not run yet: this command, and the flip on any deployment. Try it on a Preview first.
+
 ## Why a $100 cap
 
 Judge traffic is not known, so this is an assumption: 20 visitors in a day, 10 of them start a build, and each runs a product 3 times.

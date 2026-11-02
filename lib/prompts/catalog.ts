@@ -91,6 +91,7 @@ function contributorBlock(): string {
     `  in: text, image, pdf, video; out: text. Price: $${p.input} per million input tokens, $${p.output} per million output tokens.`,
     "  Meta may train on what goes to it, and its terms bar personal, sensitive or confidential information, so every product shows a notice saying so. Don't plan a product around such information.",
     "  Audio input is off: transcribe with muse-voice-transcribe-1.0, then send the transcript.",
+    "  The exception: once live, a product using a gadget or board tools runs this id on muse-wonder-1.0, since a camera or microphone picks up personal information.",
   ].join("\n");
 }
 
@@ -167,9 +168,9 @@ const cached = new Map<string, string>();
  * on, the text is today's, byte for byte.
  */
 export function catalogSummary(caps: readonly CapId[] = env.enabledCaps): string {
-  // BUILDS_ON_CONTRIBUTOR: a person's own accounts and a device's camera and microphone can't use Contributor, so neither is offered.
+  // BUILDS_ON_CONTRIBUTOR: a person's own accounts can't use Contributor, so they aren't offered. Gadgets stay on, on Wonder once live.
   const switchOn = contributorBuildsOn();
-  const gadgets = env.gadgetsEnabled && !switchOn;
+  const gadgets = env.gadgetsEnabled;
   const agents = env.agentsEnabled;
   const personal = agents && env.composioPersonalEnabled && !switchOn;
   // Wave 3, unit 3: the data cap's block follows DATA_SIGN_IN, so it is part of the key only while data is on.

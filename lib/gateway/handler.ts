@@ -30,6 +30,7 @@ import {
   VISITOR_HEADER,
   CONTRIBUTOR_RUNTIME_MARKER,
   contributorSwitchRefusal,
+  keepsWonderUnderSwitch,
 } from "@/lib/gateway/policy";
 import { builtInToolCap, noteHeaderValue, rewriteResponsesRequest } from "@/lib/gateway/rewrite";
 import { holdRun, parseRunId, releaseRun, runLimitsFor, settleRun, type RunCounters, type RunHold } from "@/lib/gateway/runs";
@@ -49,6 +50,8 @@ export type GatewayToken = Pick<GatewayTokenRow, "id" | "productId" | "scope" | 
 export interface GatewayDeps extends RunCounters {
   findToken(token: string): Promise<GatewayToken | null>;
   productStatus(productId: string): Promise<ProductStatus | null>;
+  /** BUILDS_ON_CONTRIBUTOR: a product's slug, read only under the switch, for WONDER_DEMO_SLUGS. */
+  productSlug?(productId: string): Promise<string | null>;
   /** Spend today, counting the reservations of calls still running. */
   tokenSpendToday(tokenId: string): Promise<number>;
   platformSpendToday(): Promise<number>;
@@ -81,7 +84,7 @@ export interface GatewayDeps extends RunCounters {
   upstreamKey(): string;
   /** TEST_MODEL or BUILDS_ON_CONTRIBUTOR (buildTestModel, lib/env.ts): what a build token's Muse Wonder calls run on instead. Null or unset leaves them alone. */
   buildTestModel?: string | null;
-  /** BUILDS_ON_CONTRIBUTOR: no call runs on Muse Wonder. It's served by Contributor, or refused (contributorSwitchRefusal). */
+  /** BUILDS_ON_CONTRIBUTOR: a call naming Muse Wonder is served by Contributor or refused (contributorSwitchRefusal), but for keepsWonderUnderSwitch. */
   contributorRuntime?: boolean;
   upstreamBaseUrl?: string;
   /** Public {PLATFORM_URL}/api/gateway, for error messages that point at /uploads. */
@@ -237,8 +240,10 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
     rewritten = true;
   }
 
-  // BUILDS_ON_CONTRIBUTOR: what Contributor can't serve stops here, before any swap, and never reaches Wonder.
-  if (deps.contributorRuntime === true && model === "muse-wonder-1.0" && parsed.kind === "json") {
+  // BUILDS_ON_CONTRIBUTOR: the owner's exceptions keep Wonder. Otherwise what Contributor can't serve stops here, before any swap.
+  const switchApplies = deps.contributorRuntime === true && model === "muse-wonder-1.0" && parsed.kind === "json";
+  const keepsWonder = switchApplies && token.scope === "live" && keepsWonderUnderSwitch(token, await deps.productSlug?.(token.productId));
+  if (switchApplies && !keepsWonder && parsed.kind === "json") {
     const refusal = contributorSwitchRefusal(parsed.json, token);
     if (refusal) return gatewayError(403, "invalid_request_error", refusal.code, refusal.message, { retry: false });
   }
@@ -252,9 +257,9 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
     rewritten = true;
     notes.push(`Ran on ${deps.buildTestModel} instead of muse-wonder-1.0: this is a test build.`);
   }
-  // BUILDS_ON_CONTRIBUTOR: every token left, a live one with the marker included. Metered below at Contributor's price.
-  const liveOnContributor = token.scope === "live" && deps.contributorRuntime === true && token.allowedModels.includes(CONTRIBUTOR_RUNTIME_MARKER);
-  if (deps.contributorRuntime === true && model === "muse-wonder-1.0" && parsed.kind === "json") {
+  // BUILDS_ON_CONTRIBUTOR: every token left but the exceptions, a live one with the marker included. Metered below at Contributor's price.
+  const liveOnContributor = token.scope === "live" && deps.contributorRuntime === true && !keepsWonder && token.allowedModels.includes(CONTRIBUTOR_RUNTIME_MARKER);
+  if (deps.contributorRuntime === true && !keepsWonder && model === "muse-wonder-1.0" && parsed.kind === "json") {
     parsed = { ...parsed, json: { ...parsed.json, model: SPARK_STANDIN }, model: SPARK_STANDIN };
     model = SPARK_STANDIN;
     rewritten = true;
@@ -262,7 +267,7 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
   }
   if (endpoint === "responses" && parsed.kind === "json") {
     const visitorKey = codeSession ? (token.sessionSubject ?? token.id) : req.headers.get(VISITOR_HEADER)?.trim().slice(0, 128) || clientIpKey(req.headers.get(CLIENT_IP_HEADER));
-    const rewrite = rewriteResponsesRequest(codeSession ? codeSessionBody(parsed.json) : parsed.json, { token, visitorKey, testRun: testRun || liveOnContributor, noWonder: deps.contributorRuntime === true });
+    const rewrite = rewriteResponsesRequest(codeSession ? codeSessionBody(parsed.json) : parsed.json, { token, visitorKey, testRun: testRun || liveOnContributor, noWonder: deps.contributorRuntime === true && !keepsWonder });
     if (rewrite.refusal) {
       return gatewayError(rewrite.refusal.status, "invalid_request_error", rewrite.refusal.code, rewrite.refusal.message, {
         retry: false,

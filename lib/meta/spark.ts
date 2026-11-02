@@ -8,9 +8,10 @@ export function withoutRetiredSpark<T extends string>(model: T): T | typeof SPAR
 }
 
 /**
- * BUILDS_ON_CONTRIBUTOR, the owner's switch: everything on the platform runs on Spark 1.3 Contributor, no Muse Wonder. The
- * one source of truth. lib/env.ts reads it from here, and next.config.ts inlines the setting so pages in the browser can too.
- * The only exception is WONDER_IN_LOOP's Wonder check. lib/__tests__/no-wonder.test.ts fails on any other path to Wonder.
+ * BUILDS_ON_CONTRIBUTOR, the owner's switch: everything on the platform runs on Spark 1.3 Contributor. The one source of
+ * truth. lib/env.ts reads it from here, and next.config.ts inlines the setting at build time, so changing it takes a redeploy.
+ * What stays on Muse Wonder: WONDER_IN_LOOP's Wonder check, the device route, and keepsWonderUnderSwitch's live products (gadgets,
+ * boards, the three demos). lib/__tests__/no-wonder.test.ts fails on any other path to Wonder.
  */
 export function contributorSwitchOn(): boolean {
   return ["1", "true", "yes", "on"].includes((process.env.BUILDS_ON_CONTRIBUTOR ?? "").trim().toLowerCase());

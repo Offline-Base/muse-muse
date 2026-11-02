@@ -14,6 +14,7 @@ import {
   adjustCounter,
   counterValue,
   hitRateLimits,
+  productSlugById,
   productStatusById,
   releaseInFlight,
   reserveCounter,
@@ -29,6 +30,7 @@ export function gatewayDeps(defer: GatewayDeps["defer"]): GatewayDeps {
   return {
     findToken,
     productStatus: productStatusById,
+    ...(contributorBuildsOn() ? { productSlug: productSlugById } : {}),
     tokenSpendToday,
     // Wave 3, unit 9 (docs/CAPABILITIES.md, 15b): only while MUSE_CODE_ENABLED is on, so the deps are today's without it.
     ...museCodeDeps(),
