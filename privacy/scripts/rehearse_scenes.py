@@ -431,7 +431,7 @@ def run(args: argparse.Namespace) -> tuple[list[Row], dict]:
     copy_invented(root, args.essays)
     env = {**os.environ, "BASE_HOME": str(home), "WORKSPACE_ROOT": str(root), "SEARCH_EMBEDDINGS": "0", "RELAY_URL": "", "LIGHT_SERIAL": "", "CONTACTS_PATH": ""}
     if args.dry_run:
-        env |= {"DEVICE_ONLY": "1", "PRIMARY_MODEL": "lfm", "CHECKER_API_KEY": "dry-run", "DREAMING_BACKEND": "rules"}
+        env |= {"DEVICE_ONLY": "1", "PRIMARY_MODEL": "glimmer", "GLIMMER_BACKEND": "llama_server", "CHECKER_API_KEY": "dry-run", "DREAMING_BACKEND": "rules"}
     settings = load_settings(env)
     if not settings.device_only:
         raise SystemExit("this needs DEVICE_ONLY=1, so that no text leaves this device")

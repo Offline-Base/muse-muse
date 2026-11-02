@@ -143,6 +143,11 @@ def simulate(items: list[dict], current_path: Path, proposed_path: Path) -> list
                 "WORKSPACE_ROOT": tmp,
                 "BASE_DEVICE": "laptop",
                 "DEVICE_ONLY": "1",
+                "PRIMARY_MODEL": "glimmer",
+                "GLIMMER_BACKEND": "llama_server",
+                # Muse Glimmer does every step on this device, so every step goes to the one faked server below.
+                "ANSWER_URL": CHECKER,
+                "ROUTER_URL": CHECKER,
                 "CHECKER_URL": CHECKER,
                 "LIGHT_SERIAL": "",
                 "HEAVY_QUEUE": "0",

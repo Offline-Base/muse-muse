@@ -152,7 +152,7 @@ def export(items: list[dict], out: Path, *, keep_line: bool = False) -> dict:
         services.answer_llm = None
 
     with tempfile.TemporaryDirectory(prefix="routing-export-") as home:
-        settings = load_settings({"BASE_HOME": home, "DEVICE_ONLY": "1", "PRIMARY_MODEL": "lfm", "CHECKER_BACKEND": "lfm",
+        settings = load_settings({"BASE_HOME": home, "DEVICE_ONLY": "1", "PRIMARY_MODEL": "glimmer", "GLIMMER_BACKEND": "llama_server",
                                   "CHECKER_API_KEY": "none", "DREAMING_BACKEND": "prompt", "ROUTER_TRUST": "decide"})  # fmt: skip
         services = run_eval.services_for(settings, home, customize=customize)
         try:

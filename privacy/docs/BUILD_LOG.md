@@ -278,3 +278,8 @@ Router finding for Ethan: a request headed outside the class that both the label
 - Ethan: restart the live app (it is down); read the Oct 28 History row before deleting it; what the fine-tune trained on (decides sealing fresh_200_c or the templated set); restart window to move the live app to this code; Always approve is on in the live app.
 - Measure how often grading is refused for a never-share word in the model's own text.
 - Before submitting: check the `mlx-community/sam3.1-bf16` license in THIRD_PARTY_NOTICES.md.
+- **Nov 2, evening: three offline scripts brought to Muse Glimmer (PR #72's Python check).**
+  - CI on #72 failed 7 tests: `export_routing_training`, `rehearse_scenes --dry-run` and `simulate_policy` still loaded settings with `PRIMARY_MODEL=lfm`, or with DEVICE_ONLY and no Glimmer, which the Meta-only config now refuses.
+  - All three now load `PRIMARY_MODEL=glimmer` with `GLIMMER_BACKEND=llama_server`, still with no network. `simulate_policy` sends every step to its one faked server.
+  - 19 of 19 in those three test files pass locally.
+
