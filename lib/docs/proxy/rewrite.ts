@@ -6,7 +6,7 @@ import {
   OUTPUT_TOKEN_CLAMPS,
 } from "@/lib/docs/proxy/policy";
 import { isBuiltInTool } from "@/lib/gateway/search";
-import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
+import { contributorSwitchOn, RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
 
 export { isBuiltInTool };
 
@@ -22,6 +22,7 @@ export { isBuiltInTool };
  * Infinity as null, so leaving either would lift the cap the estimate counts on.
  */
 
+export const SWITCH_NOTE = `Ran on ${SPARK_STANDIN}: the live docs run on it for now.`;
 export const SPARK_NOTE = `Ran on ${SPARK_STANDIN}: the live docs never call ${RETIRED_SPARK}.`;
 
 export interface Rewrite<T> {
@@ -181,6 +182,12 @@ export function rewriteJson(
     json.model = SPARK_STANDIN;
     model = SPARK_STANDIN;
     notes.push(SPARK_NOTE);
+  }
+  // BUILDS_ON_CONTRIBUTOR: every demo that names Muse Wonder goes through here, whatever its playground's default.
+  if (model === "muse-wonder-1.0" && contributorSwitchOn()) {
+    json.model = SPARK_STANDIN;
+    model = SPARK_STANDIN;
+    notes.push(SWITCH_NOTE);
   }
   clampOutputTokens(endpoint, json, model, notes);
   if (endpoint.id === "responses.create") clampToolCalls(json, notes);

@@ -8,7 +8,9 @@ import { Icon } from "@/components/icons";
 import { KIND_ICON } from "@/components/composer/AttachmentChip";
 import "@/components/product/get-it.css";
 import { CheckedPanel } from "@/components/product/CheckedPanel";
-import { RequirementsChecklist } from "@/components/build/RequirementsChecklist";
+import { checksFailed, RequirementsChecklist, type CheckOutcome } from "@/components/build/RequirementsChecklist";
+import { DrillGroup } from "@/components/build/DrillGroup";
+import { DRILL_GROUP_TITLE, DRILLS_EARLIER_NOTE, latestDrills } from "@/lib/edge/drills";
 import { latestChecklist } from "@/lib/full/requirements";
 import { GetItPanel } from "@/components/product/GetItPanel";
 import { nativeSlots } from "@/components/product/NativeSlots";
@@ -23,7 +25,7 @@ import { JobsPanel } from "@/components/jobs/JobsPanel";
 import { AddClip, RemoveClip } from "@/components/product/OwnerClips";
 import { StatusControl } from "@/components/product/StatusControl";
 import { EmptyCard, ExternalLink, NotConnected, StatusPill } from "@/components/ui";
-import { FIT_LABEL, compact, connectorActions, modelLabel, plural, relativeTime, statusLabel, truncate, usd } from "@/lib/format";
+import { compact, connectorActions, modelLabel, plural, relativeTime, statusLabel, truncate, usd } from "@/lib/format";
 import { canActAsOwner } from "@/lib/auth";
 import { canEditProduct } from "@/lib/edit-pass";
 import type { Brief } from "@/lib/brief/schema";
@@ -78,6 +80,8 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const canEdit = await canEditProduct(user, product);
   const rebuild = rebuildRef(product.rebuildOf);
   const highlights = buildHighlights(events, latestBuild);
+  // An edge build's simulated outage drills, from the newest round that ran them. Null for every other build.
+  const drills = latestDrills(events.flatMap((e) => (e.type === "verify" ? [e.summary] : [])));
   const models: Array<{ id: string; usedFor: string }> = manifest?.models?.length
     ? manifest.models
     : (brief?.capabilities ?? []).map((c) => ({ id: c.model, usedFor: c.need }));
@@ -152,7 +156,8 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
         <header className="product-head">
           <div className="product-title">
             <h1>{product.name}</h1>
-            <StatusPill status={product.status} />
+            {/* A shipped product with no link never reads "Live" next to "Not published". */}
+            {shipped && !product.liveUrl ? <StatusPill status="disabled" label="Not published" /> : <StatusPill status={product.status} />}
           </div>
           {product.tagline ? <p className="subtitle">{product.tagline}</p> : null}
         </header>
@@ -182,8 +187,10 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             action={latestBuild ? { href: `/b/${latestBuild.id}`, label: "Open the build room" } : undefined}
           >
             <p>
-              It passed its checks, but publishing was off where it was built, such as a local run, so it has no live
-              link. Its recorded demo is in the panel.
+              {product.status === "partial"
+                ? "It shipped with some checks failing, and publishing was off where it was built, such as a local run, so it has no live link."
+                : "It passed its checks, but publishing was off where it was built, such as a local run, so it has no live link."}{" "}
+              Its recorded demo is in the panel.
             </p>
           </EmptyCard>
         ) : product.status === "disabled" ? (
@@ -196,7 +203,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             title="This product didn't ship"
             action={latestBuild ? { href: `/b/${latestBuild.id}`, label: "See what happened" } : undefined}
           >
-            <p>Its checks didn&apos;t pass, so it was never put live.</p>
+            <p>It never went live. The build room shows where it stopped.</p>
           </EmptyCard>
         ) : (
           <EmptyCard
@@ -215,7 +222,17 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
         {/* FULL_BUILDS: only a brief written with it has requirements. Nothing renders for any other product. */}
         {brief?.requirements?.length ? (
           <section className="card section-card">
-            <RequirementsChecklist items={latestChecklist(brief, events.flatMap((e): Parameters<typeof latestChecklist>[1][number][] => (e.type === "judge" ? [{ judge: e.verdict }] : e.type === "verify" ? [{ tests: e.summary.requirements ?? null }] : [])))} />
+            <RequirementsChecklist
+              items={latestChecklist(brief, events.flatMap((e): Parameters<typeof latestChecklist>[1][number][] => (e.type === "judge" ? [{ judge: e.verdict }] : e.type === "verify" ? [{ tests: e.summary.requirements ?? null }] : [])))}
+              failed={checksFailed(product.status, events.flatMap((e): CheckOutcome[] => (e.type === "judge" ? [{ judge: e.verdict }] : e.type === "verify" ? [{ verify: e.summary }] : [])))}
+            />
+          </section>
+        ) : null}
+
+        {/* EDGE_ENABLED: only a build that ran the simulated outage drill has these steps. Nothing renders for any other. */}
+        {drills ? (
+          <section className="card section-card" aria-label={DRILL_GROUP_TITLE}>
+            <DrillGroup drills={drills.drills} note={drills.later ? DRILLS_EARLIER_NOTE : undefined} why={isOwner} />
           </section>
         ) : null}
 
@@ -237,10 +254,21 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
           <h2 id="muse-title">The muse</h2>
           {rebuild ? (
             <p className="rebuild-tag">
-              <Icon name="rebuild" size={16} />
-              <span>Rebuild of Meta&apos;s video</span>
-              <ExternalLink href={rebuild.url}>{truncate(rebuild.title, 80)}</ExternalLink>
-              {rebuild.fit ? <span className="pill pill-neutral">{FIT_LABEL[rebuild.fit]}</span> : null}
+              <Icon name="cap" size={16} />
+              {rebuild.learnHref ? (
+                <>
+                  <span>Made for Meta&apos;s lesson</span>
+                  <ExternalLink href={rebuild.url}>{truncate(rebuild.title, 80)}</ExternalLink>
+                  {rebuild.verdict?.product === product.slug ? (
+                    <span className="pill pill-neutral">{rebuild.verdict.label}</span>
+                  ) : (
+                    <span className="pill pill-neutral">Not checked against the lesson yet</span>
+                  )}
+                  <Link href={rebuild.learnHref}>See it on Learn</Link>
+                </>
+              ) : (
+                <span>First demo: {truncate(rebuild.title, 80)}</span>
+              )}
             </p>
           ) : null}
           {inspiration?.references.length ? (
@@ -399,7 +427,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
               ) : null}
               {rebuild ? (
                 <li>
-                  <ExternalLink href={rebuild.url}>Meta&apos;s original video</ExternalLink>
+                  <ExternalLink href={rebuild.url}>{rebuild.learnHref ? "Meta's lesson" : "Meta's Videos page"}</ExternalLink>
                 </li>
               ) : null}
             </ul>

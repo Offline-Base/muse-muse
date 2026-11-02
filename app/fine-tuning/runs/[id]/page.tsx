@@ -6,6 +6,7 @@ import { TrainRoom } from "@/components/train/room/TrainRoom";
 import { TuneLoopCard } from "@/components/train/TuneLoop";
 import { NotConnected } from "@/components/ui";
 import { env } from "@/lib/env";
+import { makeChatAllOn } from "@/lib/make/switch";
 import { safeQuery } from "@/lib/queries";
 import { getDataset } from "@/lib/train/store";
 import { mayTouchRun, pageRunCaller, runCeilings } from "@/lib/train/tune/caller";
@@ -41,7 +42,7 @@ async function visitorRoom(id: string) {
     );
   }
   if (!result.data) notFound();
-  return <TrainRoom initial={result.data} admin={false} needsCode serverNow={now.getTime()} />;
+  return <TrainRoom initial={result.data} admin={false} needsCode serverNow={now.getTime()} story={makeChatAllOn()} />;
 }
 
 export default async function TuneRunPage({ params }: { params: Promise<{ id: string }> }) {
@@ -77,6 +78,7 @@ export default async function TuneRunPage({ params }: { params: Promise<{ id: st
         hub={{ offReason: env.hubOffReason, maxActive: env.trainMaxActive, dailyUsd: env.trainDailyUsd }}
         serverNow={now.getTime()}
         quantTargets={env.quantTargets}
+        story={makeChatAllOn()}
       />
       {loops ? <TuneLoopCard datasetId={result.data.run.id} loops={loops.map((l) => ({ id: l.id, running: !l.ended, startedAt: l.spec.startedAt }))} /> : null}
     </>

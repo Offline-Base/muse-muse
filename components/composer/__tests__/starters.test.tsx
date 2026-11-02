@@ -91,7 +91,7 @@ describe("the Make page's starters", () => {
   it("has four tabs, three of six ideas and five photos that exist", () => {
     assert.match(page, /starters=\{STARTERS\} layout="playground"/);
     const tabs = [...page.matchAll(/\{\s*id: "(\w+)",\s*label: "([^"]+)",\s*kind: "(ideas|photos)"/g)].map((m) => m[2]);
-    assert.deepEqual(tabs, ["Discover", "For school", "For work", "From a photo"]);
+    assert.deepEqual(tabs, ["Discover", "Tune a model", "Agents and tools", "From a photo"]);
     assert.equal(page.match(/\{ icon: "/g)?.length, 18);
     const photos = [...page.matchAll(/image: "(\/examples\/[a-z]+\.jpg)"/g)].map((m) => m[1]!);
     assert.equal(photos.length, 5);

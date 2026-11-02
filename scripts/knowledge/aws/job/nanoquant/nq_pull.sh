@@ -4,11 +4,11 @@
 set -euo pipefail
 NAME=${1:-stage1}; shift || true
 SETTINGS=${*:-0.8 0.55}
-H=ubuntu@192.222.56.131
+H=${GH200_HOST:?set GH200_HOST to the GH200 as ubuntu@<address>}
 KEY=~/.ssh/muse-muse-lambda
 R=/home/ubuntu/k/models/$NAME-nanoquant
-L=/Users/ethancastro/muse-muse/.data/knowledge/models/$NAME-nanoquant
-S3=s3://muse-knowledge-916979311153/knowledge/models/$NAME-nanoquant
+L=$HOME/muse-muse/.data/knowledge/models/$NAME-nanoquant
+S3=s3://${KNOWLEDGE_BUCKET:?set KNOWLEDGE_BUCKET to the knowledge bucket name}/knowledge/models/$NAME-nanoquant
 mkdir -p "$L/code" "$L/logs" "$L/calib"
 rsync -a -e "ssh -i $KEY" "$H:k/nq/code/" "$L/code/" --exclude __pycache__
 rsync -a -e "ssh -i $KEY" "$H:$R/logs/" "$L/logs/"
@@ -21,6 +21,6 @@ for B in $SETTINGS; do
   mkdir -p "$L/nq-$B"
   rsync -a -e "ssh -i $KEY" --exclude "work" --exclude "nq-full.pt" "$H:$R/nq-$B/" "$L/nq-$B/"
 done
-du -sh "$L"; df -h /Users/ethancastro | tail -1
+du -sh "$L"; df -h "$HOME" | tail -1
 aws s3 cp --recursive "$L" "$S3" --profile offlinebase --only-show-errors
 aws s3 ls --recursive "$S3" --profile offlinebase --summarize | tail -3

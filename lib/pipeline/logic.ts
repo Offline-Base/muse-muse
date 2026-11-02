@@ -5,13 +5,14 @@
 import type { Brief } from "@/lib/brief/schema";
 import type { BuildModel } from "@/lib/sandbox/muse";
 import type { Reference } from "@/lib/types";
-import { SPARK_STANDIN, withoutRetiredSpark } from "@/lib/meta/spark";
+import { defaultModel, SPARK_STANDIN, withoutRetiredSpark } from "@/lib/meta/spark";
 import { AGENT_MARKER, isToolId, PERSONAL_TOOL_IDS, toolMarker } from "@/lib/tools/ids";
 import { briefCaps } from "@/lib/caps/brief-fields";
 import { connectBlock } from "@/lib/caps/connect/brief";
 import { hardwareBlock } from "@/lib/caps/hardware/brief";
 import { BOARD_TOOLS_MARKER, DRIVE_TOOLS_MARKER } from "@/lib/caps/hardware/limits";
 import { LIVE_CAPTION_MODEL, liveBlock } from "@/lib/caps/live/brief";
+import { FLEET_BRIEF_MODEL, fleetAllowedModels } from "@/lib/caps/fleet/marker";
 import { gpuAllowedModels } from "@/lib/caps/gpu/marker";
 import { capMarker } from "@/lib/caps/ids";
 import { env } from "@/lib/env";
@@ -116,46 +117,52 @@ export function pollTimedOut(input: {
  * brings the agent marker: those products have no catalog tools.
  */
 export function allowedModelsFor(brief: Pick<Brief, "capabilities" | "agent" | "recipes">): string[] {
-  const models = brief.capabilities.map((c) => c.model).filter((m) => m !== "muse-glimmer");
+  const models = brief.capabilities.map((c) => c.model).filter((m) => m !== "muse-glimmer" && m !== FLEET_BRIEF_MODEL);
   const tools = brief.agent ? brief.agent.tools.map((t) => t.id).filter(isToolId).map(toolMarker) : [];
   // Wave 3, unit 7 (docs/CAPABILITIES.md, 13a): captions need the voice model, even if the writer left it out of capabilities.
   const live = liveBlock(brief)?.captions ? [LIVE_CAPTION_MODEL] : [];
   // Wave 3, unit 11: Muse Wonder and the `glimmer` marker while the shared Glimmer endpoint is on. None with it off.
   const gpu = gpuAllowedModels(brief);
+  // The Jetson fleet (docs/CAPABILITIES.md, 17b): only the `fleet` marker while FLEET_PRODUCTS is on. None with it off.
+  const fleet = fleetAllowedModels(brief);
   // Wave 3, unit 13: board tools have their own marker, so they bring no camera or microphone. None with them off.
   const board = hardwareBlock(brief)?.boardTools ? [BOARD_TOOLS_MARKER] : [];
   // The drive tools have their own marker too (docs/DRIVE_EXPORT.md, "From a product"). None with them off.
   const drive = hardwareBlock(brief)?.driveExport ? [DRIVE_TOOLS_MARKER] : [];
   const recipeModels = pickedRecipes(brief).flatMap((r) => r.models ?? []);
   const long = isLongRunBrief(brief) ? [AGENT_LONG_MARKER] : [];
-  return [...new Set<string>([...models, ...recipeModels, ...live, ...gpu, ...board, ...drive, ...(brief.agent ? [AGENT_MARKER] : []), ...long, ...tools]), ...briefCaps(brief).map(capMarker)];
+  return [...new Set<string>([...models, ...recipeModels, ...live, ...gpu, ...fleet, ...board, ...drive, ...(brief.agent ? [AGENT_MARKER] : []), ...long, ...tools]), ...briefCaps(brief).map(capMarker)];
 }
 
 /**
- * True when a live product stays on Muse Wonder under BUILDS_ON_CONTRIBUTOR: anything with a person's own connected accounts
+ * True when a live product can't use Contributor under BUILDS_ON_CONTRIBUTOR: anything with a person's own connected accounts
  * or personal tools, since Meta's terms (6.2) bar personal information on Contributor and Meta may train on it. That
- * means an agent's personal tools or owner connection, the owner's keys and sends through connect, a person's drive or
- * board, and a gadget's camera and microphone. Public web search, public APIs and a product's own chat follow the flag.
+ * means personalOffUnderSwitch below, a person's board, and a gadget's camera and microphone. Those last two stay on Muse Wonder
+ * (keepsWonderUnderSwitch, lib/gateway/policy.ts). Public web search, public APIs and a product's own chat follow the flag.
  */
 export function runtimeStaysOffContributor(brief: Pick<Brief, "capabilities" | "agent">): boolean {
+  const hardware = hardwareBlock(brief);
+  return personalOffUnderSwitch(brief) || Boolean(hardware?.boardTools) || brief.capabilities.some((c) => c.model === "muse-gadget");
+}
+
+/** True when BUILDS_ON_CONTRIBUTOR has nothing for it to run on, so it isn't built: an agent's personal tools or owner connection, the owner's keys and sends through connect, a person's drive. */
+export function personalOffUnderSwitch(brief: Pick<Brief, "capabilities" | "agent">): boolean {
   const personalTools = brief.agent ? brief.agent.connections === "owner" || brief.agent.tools.some((t) => (PERSONAL_TOOL_IDS as readonly string[]).includes(t.id)) : false;
   const connect = connectBlock(brief);
-  const hardware = hardwareBlock(brief);
-  return (
-    personalTools ||
-    Boolean(connect && (connect.keys.length || connect.sends.length)) ||
-    Boolean(hardware && (hardware.boardTools || hardware.driveExport)) ||
-    brief.capabilities.some((c) => c.model === "muse-gadget")
-  );
+  return personalTools || Boolean(connect && (connect.keys.length || connect.sends.length)) || Boolean(hardwareBlock(brief)?.driveExport);
 }
 
 /**
  * The marker a live token gets: only with the flag on, a brief to check, nothing personal in it, and a product whose own
- * code shows the notice (an older snapshot's, or one a build rewrote, doesn't, so it stays on Muse Wonder).
+ * code shows the notice (an older snapshot's, or one a build rewrote, doesn't, so its calls are refused unless it's one of the exceptions).
  */
 export function contributorRuntimeMarkers(brief: Pick<Brief, "capabilities" | "agent"> | null, flagOn: boolean, showsNotice: boolean): string[] {
   return flagOn && showsNotice && brief && !runtimeStaysOffContributor(brief) ? [CONTRIBUTOR_RUNTIME_MARKER] : [];
 }
+
+/** BUILDS_ON_CONTRIBUTOR: why a new product holding something personal isn't built. It could never run. */
+export const PERSONAL_OFF_MESSAGE =
+  "Muse Muse can't build this right now. It uses a person's own accounts or personal tools, and the model Muse Muse runs on for now can't be used with personal information.";
 
 /** A live product's daily budget: AGENT_LONG_DAILY_USD for a long-run recipe, since one full run costs dollars, otherwise as its estimate says. */
 export function liveDailyBudgetFor(brief: Pick<Brief, "estimatedCostPerRunUsd" | "recipes"> | null | undefined): number {
@@ -179,8 +186,8 @@ export function pickBuildModel(
   models: { buildModel: string; complexBuildModel: string },
 ): BuildModel {
   return complexity === "complex"
-    ? asBuildModel(models.complexBuildModel, "muse-wonder-1.0")
-    : asBuildModel(models.buildModel, "muse-wonder-1.0");
+    ? asBuildModel(models.complexBuildModel, defaultModel())
+    : asBuildModel(models.buildModel, defaultModel());
 }
 
 /**

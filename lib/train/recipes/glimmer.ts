@@ -156,6 +156,11 @@ TASK_PROMPT_START = "You are an assistant for this task: "
 GEN_BATCH = 8
 PROGRESS_EVERY = 10
 EVAL_MAX = 120
+# The general checks (lib/train/general-checks.ts, TUNE_GENERAL_CHECKS on the platform): their sets, and the eval
+# indexes they come back at, above any held-out prompt's.
+CHECK_SETS = ("general", "safety")
+CHECK_INDEX_MIN = 9000
+CHECK_INDEX_MAX = 9999
 EVENT_PREFIX = "MUSE_EVENT "
 UPLOAD_MAX_BYTES = 1024 * 1024 * 1024
 JOB_DIR = "/opt/muse"
@@ -476,6 +481,25 @@ def eval_examples(items):
         if isinstance(item, dict) and isinstance(item.get("prompt"), str) and item["prompt"].strip():
             out.append({"prompt": item["prompt"], "reference": str(item.get("reference") or "")})
     return out[:EVAL_MAX]
+
+
+def check_examples(raw, held_out):
+    """The general checks job.json carries (ctx.checks), as eval rows both models answer with no system message
+    ("bare"), each keeping the index it goes back at. Only as many as the room the eval cap leaves after the held_out
+    prompts, so none is answered that couldn't be sent, and none without a held-out prompt, since the platform judges
+    checks apart only beside the task's items. [] when there are none."""
+    room = EVAL_MAX - held_out if held_out > 0 else 0
+    out = []
+    for item in raw if isinstance(raw, list) else []:
+        if not isinstance(item, dict) or item.get("set") not in CHECK_SETS:
+            continue
+        index, prompt = item.get("index"), item.get("prompt")
+        if isinstance(index, bool) or not isinstance(index, int) or not CHECK_INDEX_MIN <= index <= CHECK_INDEX_MAX:
+            continue
+        if not isinstance(prompt, str) or not prompt.strip():
+            continue
+        out.append({"prompt": prompt, "reference": str(item.get("reference") or ""), "index": index, "set": item["set"], "bare": True})
+    return out[:max(0, room)]
 
 
 def write_jsonl(path, rows):
@@ -1112,20 +1136,23 @@ def real_run(ctx, p, base, train_path, eval_path, adapter_dir, started, system, 
     return result
 
 
-def finish(ctx, p, result, evals, train, adapter_dir, cache_used):
+def finish(ctx, p, result, evals, train, adapter_dir, cache_used, checks=None):
     """Sends the eval items, uploads the adapter, sends it to the Hugging Face Hub (publish_adapter) and returns the
-    metrics.
+    metrics. The general checks, when job.json had them, were answered after the eval prompts and go after them, at
+    their own indexes, with general_checks in the metrics.
 
     A result the child left unfinished fails the job with what it did get: with no adapter saved, at once; with the
     adapter saved but no tuned answers, after the adapter is uploaded, and with no eval items sent and nothing sent to
     the Hub (with no eval, nothing is judged or published).
     """
+    checks = checks or []
+    asked = len(evals) + len(checks)
     base_answers = result.get("base") or []
     tuned_answers = result.get("tuned")
     ended = str(result.get("ended") or "exited with 0")
     tail = str(result.get("tail") or "")
-    if len(base_answers) != len(evals):
-        raise RuntimeError("The base model answered " + str(len(base_answers)) + " of " + str(len(evals)) + " eval prompts")
+    if len(base_answers) != asked:
+        raise RuntimeError("The base model answered " + str(len(base_answers)) + " of " + str(asked) + " eval prompts")
     metrics = dict(result.get("metrics") or {})
     metrics["cache_used"] = "yes" if cache_used else "no"
     metrics["train_examples"] = len(train)
@@ -1138,9 +1165,9 @@ def finish(ctx, p, result, evals, train, adapter_dir, cache_used):
     if not result.get("adapter"):
         raise RuntimeError(
             "Training didn't finish (the child " + ended + "), so no adapter was saved. The base model had answered all "
-            + str(len(evals)) + " eval prompts." + ("\n" + tail if tail else "")
+            + str(asked) + " eval prompts." + ("\n" + tail if tail else "")
         )
-    if not isinstance(tuned_answers, list) or len(tuned_answers) != len(evals):
+    if not isinstance(tuned_answers, list) or len(tuned_answers) != asked:
         reason = str(result.get("tuned_error") or "the child " + ended + " during them")[:300]
         metrics["eval_items"] = 0
         upload_adapter(ctx, adapter_dir, metrics)
@@ -1149,12 +1176,20 @@ def finish(ctx, p, result, evals, train, adapter_dir, cache_used):
         raise RuntimeError(
             "The adapter was saved (" + kept + "), but the tuned model's answers failed (" + reason + "), so no eval items were sent"
         )
-    ctx.progress(message="Sending " + str(len(evals)) + " eval items")
+    also = " and " + str(len(checks)) + " general checks" if checks else ""
+    ctx.progress(message="Sending " + str(len(evals)) + " eval items" + also)
     sent = 0
     for i, item in enumerate(evals):
         if ctx.eval(i, item["prompt"], item["reference"], base_answers[i], tuned_answers[i]):
             sent += 1
     metrics["eval_items"] = sent
+    checked = 0
+    for k, item in enumerate(checks):
+        j = len(evals) + k
+        if ctx.eval(item["index"], item["prompt"], item["reference"], base_answers[j], tuned_answers[j]):
+            checked += 1
+    if checks:
+        metrics["general_checks"] = checked
     upload_adapter(ctx, adapter_dir, metrics)
     publish_adapter(ctx, p, adapter_dir, metrics)
     loss = metrics.get("train_loss_final")
@@ -1169,7 +1204,7 @@ def finish(ctx, p, result, evals, train, adapter_dir, cache_used):
         ("Dry run: " if p["dry_run"] else "")
         + "LoRA r=" + str(p["lora_rank"]) + " on " + (MODEL if TRIM_CONTENT else "Muse Glimmer 30B") + ", " + steps
         + (", final loss " + str(round(loss, 4)) if isinstance(loss, (int, float)) else "")
-        + ", " + str(sent) + " eval items" + note + "."
+        + ", " + str(sent) + " eval items" + (", " + str(checked) + " general checks" if checks else "") + note + "."
     )
     return metrics
 
@@ -1183,6 +1218,8 @@ def run(ctx):
     ctx.progress(message="Fetching the dataset")
     train = train_examples(ctx.dataset("train"))
     evals = eval_examples(ctx.dataset("eval"))
+    offered = getattr(ctx, "checks", None)
+    checks = check_examples(offered, len(evals))
     if not train:
         raise RuntimeError("The dataset has no usable training conversations")
     own = shared_system(train)
@@ -1204,19 +1241,24 @@ def run(ctx):
         "dataset " + p["dataset_id"] + ": " + str(len(train)) + " training conversations, " + str(len(evals))
         + " eval prompts. Student prompt " + p["student_prompt"] + ": " + how
     )
+    if offered:
+        ctx.log(
+            "General checks: " + str(len(checks)) + " of " + str(len(offered)) + " fixed prompts (general ability and safety),"
+            + " answered by both models after the eval prompts with no system message, and judged apart from them"
+        )
     base, cache_used = base_dir(ctx)
     adapter_dir = os.path.join(base, "models", str(ctx.job_id or "job"))
     train_path = os.path.join(ctx.work_dir, "train.jsonl")
     eval_path = os.path.join(ctx.work_dir, "eval.jsonl")
     write_jsonl(train_path, train)
-    write_jsonl(eval_path, evals)
+    write_jsonl(eval_path, evals + checks)
 
     if p["dry_run"]:
-        result = dry_run(ctx, p, evals, adapter_dir)
+        result = dry_run(ctx, p, evals + checks, adapter_dir)
         result["metrics"].update({"cached_weights": "no", "cached_venv": "no", "dry_run": "yes"})
     else:
         result = real_run(ctx, p, base, train_path, eval_path, adapter_dir, started, system)
-    return finish(ctx, p, result, evals, train, adapter_dir, cache_used)
+    return finish(ctx, p, result, evals, train, adapter_dir, cache_used, checks)
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -1750,7 +1792,8 @@ def child_main(config_path):
         if text_tokenizer.pad_token is None:
             text_tokenizer.pad_token = text_tokenizer.eos_token
         head = [{"role": "system", "content": cfg["system"]}] if cfg.get("system") else []
-        prompts = [eval_prompt(tokenizer, head + [{"role": "user", "content": r["prompt"]}], bos) for r in eval_rows]
+        # A general check ("bare") is answered with no system message, by both models alike.
+        prompts = [eval_prompt(tokenizer, ([] if r.get("bare") else head) + [{"role": "user", "content": r["prompt"]}], bos) for r in eval_rows]
         answers, unfinished = [], 0
         for start in range(0, len(prompts), GEN_BATCH):
             enc = text_tokenizer(prompts[start:start + GEN_BATCH], return_tensors="pt", padding=True)

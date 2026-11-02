@@ -5,16 +5,15 @@
 import { deviceConfig } from "@/lib/device/client";
 import { BoardOfflineError, type BoardDriver, type BoardKind } from "@/lib/board-loop/driver";
 import { deviceMcpBoard } from "@/lib/board-loop/device-mcp";
-import { fleetBoard, safeBoardUrl, type FleetConfig } from "@/lib/board-loop/fleet";
+import { fleetAccess, fleetBoard, type FleetConfig } from "@/lib/board-loop/fleet";
 import { runningSimBoard, startSimBoard } from "@/lib/board-loop/sim";
 
 /** The fleet's settings, or null when one is missing or the address would expose the token. */
 export function fleetConfig(): FleetConfig | null {
-  const url = process.env.BOARD_FLEET_URL?.trim();
-  const token = process.env.BOARD_FLEET_TOKEN?.trim();
+  const access = fleetAccess();
   const node = process.env.BOARD_FLEET_NODE?.trim();
-  if (!url || !token || !node || !safeBoardUrl(url)) return null;
-  return { url, token, node };
+  if (!access || !node) return null;
+  return { ...access, node };
 }
 
 /** The board for a loop's own stages, starting a simulated one if it isn't running. */

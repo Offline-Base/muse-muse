@@ -233,6 +233,29 @@ Router finding for Ethan: a request headed outside the class that both the label
 
 - 11:17: this repo came into Muse Muse as privacy/ with its history (git subtree at 5c458b3), on branch tg-privacy-main, not on main. pytest 3894 pass, 12 skipped, 15 xfailed; ruff clean; relay 58 of 58. CI moved to the host's .github/workflows/privacy.yml. The history scan now reads this folder's own changes (--relative). ~/muse-privacy stays the live copy through finals.
 
+## Nov 2
+
+- 10:30, on Muse Muse branch tg-messaging, docs only:
+  - README and CLAUDE.md now say this is part of Offline Base's one entry, by Ethan and Hussam, theme Push the Frontier. They used to say solo and Build for Your World.
+  - docs/PRIOR_WORK.md lists Meta's "Local agent that asks first" cookbook first. It's the closest prior work: local Glimmer, a person approves each string, then Muse Spark, with an egress log. Found while checking the owner's deep research (repo root docs/MESSAGING.md).
+  - Muse Muse put its knowledge-run Glimmer (r30b, IQ1_S, 5.75 GB) on jetson-02, outside Muse Privacy. It gave weak answers and no valid JSON on 40 invented receipts, and the board hung partway (Muse Muse PR #62). Muse Privacy itself still hasn't run on a board. `tests/test_claims.py` keeps device claims for Glimmer out of the README, so the README only points to the repo root's docs/OFFLINE.md, section 6.
+  - Tests: test_claims, test_secrets_scan, test_check_overlap and test_deploy_files, 275 of 275.
+  - Still to fix: README line 13 and docs/OTHER_APPS.md line 5 say the Claude and ChatGPT apps weren't tried, though this log's Oct 31 entries show both working (found in Muse Muse PR #61).
+- 13:00, on Muse Muse branch tg-no-spend-setup (agents in parallel, each reviewed; no model run, no spend):
+  - The Oct 30 run's 10 leaks (eval/reports/device_only_fresh_200.md) are explained from saved files in eval/reports/device_only_fresh_200_leaks.md. All 10 were off-roster names Spark invented: 6 reached Muse at once and 4 after a simulated approval. In device-only mode the 2B name pass was the only step that could find a name not on the roster, and the final check knows only roster names, identifiers and tag-map values. The device-only name-shape check (guard.Redaction.name_shapes) closes that gap. The 0-of-300 runs that afternoon are credited to it by COMPLIANCE_PLAN, but neither report records its commit, so that it was in those runs is inferred, not saved. The evidence is scripts/replay_null_names.py: a model-free replay with a name pass that finds nothing gives 0 leaks with the check on and 53, 53 and 3 with it off, and all 10 Oct 30 items leak again with it off (tests/test_oct30_leaks.py).
+  - Canary capture: tests/test_canary_capture.py plants an invented name, runs four tools through the real relay client and connector with a faked model and every socket refused, and finds the name in no relay frame, off-device request or tool output. It fails when the shape check is off and when a leak is planted by hand. scripts/canary_capture.py records the same way around a real run and reports PASS, FAIL or INCONCLUSIVE; it has not been run. The review fixed a false PASS (the llama-server key wasn't found, so every call would 401), unsalted host hashes in the log, a non-ASCII canary that could never match, and two overclaims. docs/CANARY.md says what it doesn't show: llama-server and the relay are outside the process it records.
+  - README line 13 and docs/OTHER_APPS.md now match this log's Oct 31 entries on the Claude and ChatGPT apps.
+  - Tests on the combined branch: test_claims, test_canary_capture and test_oct30_leaks, 130 of 130.
+  - Open: why the 2B pass missed those names (its replies weren't saved); names made only of common words ("Grace Hunter") or lowercase still depend on the 2B pass, a product call; a model rerun of fresh_200 and a real canary run, both written up, neither run.
+- Evening, on Muse Muse branch tg-privacy-sim (merged into tg-defense; agent built, adversarially reviewed; no model run, no spend):
+  - Simulator: `scripts/simulate_policy.py` runs each saved eval item through the real `Egress.release` under the current and a proposed policy, in one throwaway home with one shared tag map. It uses a fake model and refuses the sealed sets. Its report holds ids and reason codes only, never item text.
+  - Simulated (invented items, no model), the eval teacher's policy against relaxed_teacher's: fresh_200, 42 of 200 items go from ask to allow, none get stricter, 0 leaks under either. 34 of the 42 carry a hand label of ask_user or refuse. tasks, 8 of 100 go from ask to allow, all labeled ask_user or refuse. A policy against itself: 0 of 200 change. Reports in eval/reports/policy_sim/.
+  - Observe mode: a policy file may say `mode: observe`. `OBSERVE_POLICY` loads a candidate, and for each result egress writes one line to BASE_HOME/observe.jsonl (decisions and codes, no text). The candidate is rules-only with a model client that raises if called. Observe cannot change a release. Off by default.
+  - Review fixes: would_allow overstated how loose a candidate was (it now accounts for egress's later checks); a test wrote part of a result into the observe log; observe.jsonl is never purged by the retention toggles (now a limit in SIMULATE.md).
+  - Not built: replaying the device's own egress log, a reader for observe.jsonl, and request labels from the device model.
+  - Tests: 274 passed (observe, simulate_policy, egress, no_egress, claims, threat_model, prompt_guard). ruff check clean.
+  - The Nov 2 organizer ruling (Meta models only at runtime) puts the device model LFM3-VL-2B and Prompt Guard in question. The Muse Muse audit will decide what replaces them; this work uses no model, so it stands either way.
+
 ## Open items
 
 - Ethan: which mode the routing tune targets; whether to hand over stage 2 IQ1_S early.

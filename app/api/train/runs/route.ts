@@ -1,6 +1,7 @@
 import { contributorWriterOn, env } from "@/lib/env";
 import { adjustCounter, reserveCounter } from "@/lib/gateway/store";
 import { errorJson, readJson, route } from "@/lib/http";
+import { makeChatAllOn } from "@/lib/make/switch";
 import { spendPaused } from "@/lib/quota";
 import { buildForTune } from "@/lib/train/tune/build-source";
 import { runCaller, runCeilings, runExamplesMax, runOwnerId } from "@/lib/train/tune/caller";
@@ -38,6 +39,9 @@ const refusalReply = (r: { status: number; code: string; error: string; retryAft
  *
  * A build plan (B, source {kind: "build"}) starts like a task plan, keeps its product with the run, and is one a product
  * a day (429 product_daily with {retryAfterSeconds}, counted in startTuneRun), on top of every other cap.
+ *
+ * With MAKE_CHAT_ALL, settings.datasetOnly true writes the examples and stops: tuneRun never starts, nothing uploads, and
+ * the room offers Start training. Off: 404. A visitor's start takes the same code and limits as any run.
  *
  * A build plan is checked again at Start: 404 not_found with TUNE_FROM_BUILDS off, 404 build_not_found, 409
  * build_not_ready when the build no longer offers its own model.
@@ -93,6 +97,26 @@ export const POST = route(async (req: Request) => {
   // With no steps asked, the default has to fit this base's time too: launch would refuse it after the examples are paid for.
   if (picked && steps.value === undefined && TUNE_STEPS > maxStepsFor({ ...sized, base: picked, gpu: gpu! })) {
     return errorJson(400, "The default steps don't fit this base's time limit. Ask for fewer steps.");
+  }
+  // Train on Fireworks (FIREWORKS_TUNE), a describe or folder run on the plain base. Off: 404, as a base is. Checked live
+  // here too, before any examples are written and paid for: launch checks again.
+  const trainer = (body.settings as { trainer?: unknown } | undefined)?.trainer;
+  let fireworks = false;
+  if (trainer !== undefined && trainer !== null) {
+    if (!env.fireworksTune) return errorJson(404, "not_found");
+    if (trainer !== "fireworks") return errorJson(400, "That isn't a place a run can train.");
+    if (picked) return errorJson(400, "A picked base trains on Lambda.");
+    if (check.plan.source.kind !== "task" && check.plan.source.kind !== "folder") return errorJson(400, "Only a described or folder run can train on Fireworks.");
+    const { liveQuote, platformApi } = await import("@/lib/train/fireworks/api");
+    const quote = await liveQuote(platformApi());
+    if (!quote.ok) return errorJson(503, "fireworks_cost_unconfirmed", { reason: quote.reason });
+    fireworks = true;
+  }
+  // Only the examples (MAKE_CHAT_ALL): no tuneRun, so no GPU, until the person presses Start training in the room.
+  const datasetOnly = (body.settings as { datasetOnly?: unknown } | undefined)?.datasetOnly === true;
+  if (datasetOnly) {
+    if (!makeChatAllOn()) return errorJson(404, "not_found");
+    if (check.plan.source.kind !== "task" && check.plan.source.kind !== "folder") return errorJson(400, "Only a described or folder request can stop at its dataset.");
   }
   const settings = { ...planSettings(sized.examples, ceilings, caller.visitor ? Math.min(steps.value ?? TUNE_STEPS, caller.visitor.limits.job.maxSteps) : steps.value), ...(picked ? { base: picked, gpu: gpu! } : {}) };
   const plan: TrainPlanBody = { ...check.plan, settings, cost: planCost(settings) };
@@ -167,7 +191,9 @@ export const POST = route(async (req: Request) => {
     const run = await startTuneRun({
       plan,
       callerId: owner,
-      autoPublish: autoPublish && !folder,
+      autoPublish: autoPublish && !folder && !fireworks && !datasetOnly,
+      trainer: fireworks ? "fireworks" : null,
+      datasetOnly,
       visitor: caller.visitor ? { trainerId: caller.id, ip: caller.visitor.ip } : null,
       folder,
     });

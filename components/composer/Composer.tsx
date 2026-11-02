@@ -6,9 +6,11 @@ import { Icon } from "@/components/icons";
 import { Menu } from "@/components/Menu";
 import { CameraCapture, useCameraSupported } from "@/components/camera/CameraCapture";
 import { ContributorNotice } from "@/components/composer/ContributorNotice";
+import { buildSetupMessage } from "@/components/composer/BuildSetupBanner";
 import { AttachmentChip, type Attachment } from "@/components/composer/AttachmentChip";
 import { Starters, type StarterTab } from "@/components/composer/Starters";
 import { TargetPill } from "@/components/composer/TargetPill";
+import type { MakeWant } from "@/lib/make/want";
 import { VoiceInputButton } from "@/components/voice/VoiceInputButton";
 import {
   INSPO_ACCEPT,
@@ -67,7 +69,13 @@ interface Props {
    * with the note and the files, and resolves to a sentence to show when it couldn't go on, or null. The draft is kept,
    * so the caller clears it (writeComposerDraft) once it no longer needs it. Without it, "new" and "refine" are as they were.
    */
-  send?: (input: { note: string; files: File[] }) => Promise<string | null>;
+  send?: (input: { note: string; files: File[]; references: Reference[]; targets: TargetId[]; want: MakeWant }) => Promise<string | typeof BUILD_AS_USUAL | null>;
+  /** MAKE_CHAT_ALL's Make box: the menu also asks what to make, and `send` gets the answer. */
+  offerWants?: boolean;
+  /** With `send`: send may run with nobody signed in (OPEN_TRAIN's visitors, on the Make box). Files still wait for sign-in. */
+  signedOutMaySend?: boolean;
+  /** A drop some other handler on the page already took (the folder drop) isn't also attached here. */
+  ignoreHandledDrops?: boolean;
   /** The file picker's accept list, in place of the inspo types. */
   accept?: string;
   /** Checks each picked, dropped or pasted file in place of the inspo checks: its chip's kind, or why it can't be added. */
@@ -77,6 +85,9 @@ interface Props {
   /** The box's words, for a composer that isn't the muse box. Each one left out keeps the muse box's. */
   copy?: ComposerCopy;
 }
+
+/** What `send` answers to go on and start the build, exactly as a box without `send` does (MAKE_CHAT_ALL's Make box). */
+export const BUILD_AS_USUAL = Symbol("build as usual");
 
 /** The words a composer with `send` may change: its form's name, the field's label, "+", the hint and Send. */
 export interface ComposerCopy {
@@ -157,6 +168,9 @@ export function Composer({
   acceptFile,
   keepFilesLocal,
   copy,
+  signedOutMaySend,
+  ignoreHandledDrops,
+  offerWants,
 }: Props) {
   const router = useRouter();
   const inputId = useId();
@@ -177,6 +191,7 @@ export function Composer({
   const [loadingExample, setLoadingExample] = useState<string | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [targets, setTargets] = useState<TargetId[]>([]);
+  const [want, setWant] = useState<MakeWant>("auto");
   const canUseCamera = useCameraSupported();
   // Photos an example card attached: the reader's own photo takes their place.
   const examplePhotos = useRef(new Set<string>());
@@ -335,9 +350,11 @@ export function Composer({
     };
     const onDrop = (e: DragEvent) => {
       if (!hasFiles(e)) return;
+      const handled = e.defaultPrevented;
       e.preventDefault();
       dragDepth.current = 0;
       setDragging(false);
+      if (ignoreHandledDrops && handled) return;
       addFiles(Array.from(e.dataTransfer?.files ?? []));
     };
     window.addEventListener("dragenter", onEnter);
@@ -350,7 +367,7 @@ export function Composer({
       window.removeEventListener("dragleave", onLeave);
       window.removeEventListener("drop", onDrop);
     };
-  }, [addFiles]);
+  }, [addFiles, ignoreHandledDrops]);
 
   const pending = items.some((it) => it.state === "preparing" || it.state === "uploading");
   const failed = items.some((it) => it.state === "error");
@@ -407,7 +424,7 @@ export function Composer({
   }
 
   async function submit() {
-    if (!signedIn) {
+    if (!signedIn && !(send && signedOutMaySend)) {
       goSignIn();
       return;
     }
@@ -428,11 +445,20 @@ export function Composer({
     setSubmitting(true);
     setError(null);
     if (send) {
-      const problem = await send({ note: note.trim(), files: items.map((it) => it.file) }).catch(() => "Something went wrong. Try again in a moment.");
-      inFlight.current = false;
-      setSubmitting(false);
-      if (problem) setError(problem);
-      return;
+      const problem = await send({ note: note.trim(), files: items.map((it) => it.file), references, targets, want }).catch(() => "Something went wrong. Try again in a moment.");
+      if (problem !== BUILD_AS_USUAL) {
+        inFlight.current = false;
+        setSubmitting(false);
+        if (problem) setError(problem);
+        return;
+      }
+      // A build still needs an account, even where a visitor may plan a model.
+      if (!signedIn) {
+        inFlight.current = false;
+        setSubmitting(false);
+        goSignIn();
+        return;
+      }
     }
     const url = isRefine ? `/api/builds/${buildId}/messages` : "/api/inspirations";
     const body = isRefine
@@ -594,8 +620,8 @@ export function Composer({
           </p>
           <div className="composer-actions">
             {/* The Muse app's "Thinking" pill goes here too once builds have a model or effort switch to put in it. */}
-            {!isRefine && targetOptions?.length ? (
-              <TargetPill options={targetOptions} picked={targets} onChange={setTargets} disabled={submitting} />
+            {!isRefine && (targetOptions?.length || offerWants) ? (
+              <TargetPill options={targetOptions ?? []} picked={targets} onChange={setTargets} disabled={submitting} make={offerWants ? { value: want, onChange: setWant } : undefined} />
             ) : null}
             <VoiceInputButton target={() => textarea.current} className="composer-voice" disabled={submitting} size={22} />
             <button
@@ -702,8 +728,9 @@ export function Composer({
 }
 
 /** Routes send readable sentences for 400 and 403, and stable codes for the rest (see the route contracts). */
-function errorMessage(status: number, code: string | undefined, isRefine: boolean): string {
+export function errorMessage(status: number, code: string | undefined, isRefine: boolean): string {
   const sentence = code && /\s/.test(code) ? code : null;
+  if (code === "no_model_key" || code === "no_sandbox") return buildSetupMessage(code);
   if (code === "shared_limit")
     return "The shared guest account has used its builds for the last 24 hours. Try again later, or open a finished product from the Gallery.";
   if (status === 429 && sentence) return sentence;

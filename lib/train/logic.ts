@@ -39,6 +39,7 @@ import {
   SERVE_PORT,
   type DatasetKind,
   type DatasetView,
+  type EvalCheckSummary,
   type EvalSummary,
   type HubState,
   type HubView,
@@ -735,6 +736,41 @@ export function summarizeJudgements(items: JudgedItem[]): EvalSummary {
   };
 }
 
+/** What judging one general check set (lib/train/general-checks.ts) gave: its items, and how many were sent. */
+export interface JudgedChecks {
+  items: JudgedItem[];
+  asked: number;
+}
+
+/**
+ * The task's summary with the general checks' results beside it (EvalSummary.general and .safety, TUNE_GENERAL_CHECKS):
+ * each set summarized like the task, and the summary's judgeCostUsd raised by what judging them cost. The task's own
+ * numbers are untouched. A set that wasn't asked is left out.
+ */
+export function withCheckSummaries(summary: EvalSummary, checks: { general?: JudgedChecks; safety?: JudgedChecks }): EvalSummary {
+  const out: EvalSummary = { ...summary };
+  let extra = 0;
+  for (const set of ["general", "safety"] as const) {
+    const c = checks[set];
+    if (!c || c.asked <= 0) continue;
+    const s = summarizeJudgements(c.items);
+    const part: EvalCheckSummary = {
+      items: s.items,
+      asked: c.asked,
+      tunedWins: s.tunedWins,
+      baseWins: s.baseWins,
+      ties: s.ties,
+      avgBaseScore: s.avgBaseScore,
+      avgTunedScore: s.avgTunedScore,
+      judgeCostUsd: s.judgeCostUsd,
+    };
+    out[set] = part;
+    extra += s.judgeCostUsd;
+  }
+  out.judgeCostUsd = roundUsd(summary.judgeCostUsd + extra);
+  return out;
+}
+
 /**
  * The eval summary judging saves when it ends without a verdict (skipped, or none of the items could be judged): no
  * items, and `note` says why. The job page reads judging's outcome from the job's own eval summary, never from the log,
@@ -1083,6 +1119,7 @@ export function adapterProblem(
 ): string | null {
   if (!job) return "that job doesn't exist.";
   if (job.recipe !== ADAPTER_RECIPE) return "that job isn't a Muse Glimmer LoRA job, so it has no adapter to serve.";
+  if (job.params?.trainer === "fireworks") return "that adapter trained on Fireworks and is kept there, so this path can't use it yet.";
   if (job.status !== "succeeded") return "that job didn't succeed, so it has no adapter to serve.";
   if (Number(job.params?.dryRun) >= 1) return "that job was a dry run, so its adapter is a stand-in.";
   if (jobMode(job.params) === DECIDE_MODE && Number(job.params?.scoreOnly) >= 1) {

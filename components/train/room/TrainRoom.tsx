@@ -1,8 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { PlanViewCard } from "@/components/build/PlanCard";
+import { PlanChecklist } from "@/components/build/PlanChecklist";
+import { StepsFeed } from "@/components/build/StepsFeed";
+import { tuneChecklist } from "@/lib/steps-feed/checklist";
 import { ShowThinking, SourceList, StepList, StepsPanel, TitleChip, UserBubble, WorkingStep, type SourceItem } from "@/components/chat";
 import { Icon } from "@/components/icons";
 import { EvalResults } from "@/components/train/EvalResults";
@@ -18,6 +21,7 @@ import { tuneArt, tuneCurrentStep, tuneRunning, tuneSteps, tuneStepsEnd } from "
 import { WhereItRuns } from "@/components/train/room/WhereItRuns";
 import { usd } from "@/lib/format";
 import { isSparkOpenDerivative } from "@/lib/train/base";
+import { tuneFeed } from "@/lib/steps-feed/tune";
 import { endedText } from "@/lib/train/tune/marks";
 import type { TuneRunView } from "@/lib/train/tune/types";
 
@@ -63,6 +67,8 @@ export interface TrainRoomProps {
   quantTargets?: boolean;
   /** OPEN_TRAIN: a visitor's own run. Start training asks for the start code, and the room offers Stop. */
   needsCode?: boolean;
+  /** MAKE_CHAT_ALL: the simple story on the left (lib/steps-feed/tune.ts), the plan, scores and results on the right. */
+  story?: boolean;
 }
 
 /**
@@ -72,7 +78,7 @@ export interface TrainRoomProps {
  * the verdict with the eval results, the live demo, the Hugging Face card and Where it runs, or why it stopped. The
  * steps panel lists the stages it reached. Polls GET /api/train/runs/{id} every 5 s while something runs.
  */
-export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverNow, quantTargets = false, needsCode = false }: TrainRoomProps) {
+export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverNow, quantTargets = false, needsCode = false, story = false }: TrainRoomProps) {
   const [view, setView] = useState(initial);
   // A refresh of the page (Start a live demo does one) brings a newer run: take it.
   const [given, setGiven] = useState(initial);
@@ -139,7 +145,8 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
   const job = view.job;
   const jobHref = view.next?.kind === "job" ? view.next.href : null;
   const scored = job ? evalState(job, view.evals, now) : null;
-  const trained = job?.status === "succeeded";
+  const onFireworks = view.trainer === "fireworks";
+  const trained = job?.status === "succeeded" && !onFireworks;
   // A run trained from r30b is a Derivative of Muse Spark Open (lib/train/base.ts). Before its job exists, it will be.
   const sparkOpen = job ? isSparkOpenDerivative({ params: job.params }) : true;
   const sources: SourceItem[] = [
@@ -147,10 +154,28 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
     { id: "glimmer", title: sparkOpen ? R30B_NAME : GLIMMER_NAME, detail: "The model it tunes", kind: "model" },
   ];
   const togglePanel = () => setPanelOpen((o) => !o);
+  const wrap = (story_: ReactNode, results: ReactNode) =>
+    story ? (
+      <div className="room-columns">
+        <div className="room-feed-col">
+          <ol className="convo" aria-label="Fine-tuning run">
+            {story_}
+          </ol>
+        </div>
+        <aside className="room-stuff" aria-label="Scores and results">
+          <ol className="convo">{results}</ol>
+        </aside>
+      </div>
+    ) : (
+      <ol className="convo" aria-label="Fine-tuning run">
+        {story_}
+        {results}
+      </ol>
+    );
 
   return (
     <div className="room chat-split tune-room" data-settled="true">
-      <div className="room-main">
+      <div className={story ? "room-main room-main-feed" : "room-main"}>
         <div className="room-top">
           <TitleChip as="h1">{title}</TitleChip>
         </div>
@@ -158,7 +183,8 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
           {current ? (current.description ?? current.title) : ""}
         </p>
 
-        <ol className="convo" aria-label="Fine-tuning run">
+        {/* Off (the default): one column, the rows below in this order. MAKE_CHAT_ALL: the story left, the results right. */}
+        {wrap(<>
           <li className="turn-user">
             <UserBubble text={askedText(view.task)} />
           </li>
@@ -176,7 +202,13 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
               <ShowThinking onClick={() => setPanelOpen(true)} />
             </li>
           ) : null}
-
+          {story ? (
+            <li>
+              <PlanChecklist list={tuneChecklist(view)} />
+              <StepsFeed feed={tuneFeed(view)} label="What is happening to your model" />
+            </li>
+          ) : null}
+        </>, <>
           <li className="room-plan">
             <PlanViewCard
               view={planView}
@@ -186,9 +218,12 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
             />
           </li>
 
+          {view.datasetOnly && view.stage === "waiting" && !view.job ? <DatasetResult runId={view.id} /> : null}
+
           {waiting && view.next?.kind === "start" ? (
             <li className="room-answer">
               <StartTraining
+                startLabel={view.datasetOnly && view.hold?.reason === "not_started" ? "Tune a model on this" : undefined}
                 key={view.hold?.reason ?? ""}
                 start={view.next.start}
                 fullForm={admin ? view.next.fullForm : null}
@@ -215,6 +250,7 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
                 <span>{view.verdict ? `${view.verdict.passed ? "Ready. " : ""}${view.verdict.words}` : "Not scored."}</span>
               </p>
               {job && sparkOpen ? <SparkOpenNote /> : null}
+              {onFireworks ? <p className="muted">Trained on Fireworks. Its base is plain Muse Glimmer 30B, not the 2026 Glimmer (r30b), so both the tuned model and the base it&apos;s scored against lack r30b&apos;s 2026 knowledge. The adapter stays on Fireworks: Muse Muse&apos;s local files and live demo don&apos;t use it yet.</p> : null}
               {job && scored ? (
                 <EvalResults
                   state={scored}
@@ -226,10 +262,10 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
                 />
               ) : null}
               {job && liveDemo ? <AdapterLiveDemo jobId={job.id} live={liveDemo} serverNow={serverNow} /> : null}
-              {job && admin && hub ? <HubCard job={job} offReason={hub.offReason} maxActive={hub.maxActive} dailyUsd={hub.dailyUsd} /> : null}
+              {job && admin && hub && !onFireworks ? <HubCard job={job} offReason={hub.offReason} maxActive={hub.maxActive} dailyUsd={hub.dailyUsd} /> : null}
               {job && admin && hub && trained ? <MakeLocalFiles jobId={job.id} maxActive={hub.maxActive} dailyUsd={hub.dailyUsd} /> : null}
               {job && admin && hub && trained ? <SimTuneCard jobId={job.id} /> : null}
-              <WhereItRuns jobHref={jobHref} demoHere={Boolean(liveDemo)} localFilesHere={Boolean(admin && hub && trained)} admin={admin} quantTargets={quantTargets} />
+              {onFireworks ? null : <WhereItRuns jobHref={jobHref} demoHere={Boolean(liveDemo)} localFilesHere={Boolean(admin && hub && trained)} admin={admin} quantTargets={quantTargets} />}
               {jobHref ? <JobLink href={jobHref} /> : null}
               <p className="room-meta">{usd(view.costSoFarUsd)} in all</p>
             </li>
@@ -255,7 +291,7 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
               <p className="room-meta">{usd(view.costSoFarUsd)} in all</p>
             </li>
           ) : null}
-        </ol>
+        </>)}
       </div>
 
       <div className="room-panel">
@@ -268,6 +304,47 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
         />
       </div>
     </div>
+  );
+}
+
+/** MAKE_CHAT_ALL's Dataset: the first few examples and the download, from the owner-only examples route. Spends nothing. */
+function DatasetResult({ runId }: { runId: string }) {
+  const [got, setGot] = useState<{ total: number; rows: Array<{ messages?: Array<{ role: string; content: string }> }> } | null | "failed">(null);
+  useEffect(() => {
+    let live = true;
+    void fetch(`/api/train/runs/${runId}/examples?sample=5`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((d) => {
+        if (live) setGot(d);
+      })
+      .catch(() => {
+        if (live) setGot("failed");
+      });
+    return () => {
+      live = false;
+    };
+  }, [runId]);
+  const said = (row: { messages?: Array<{ role: string; content: string }> }, role: string) => row.messages?.find((m) => m.role === role)?.content?.slice(0, 240) ?? "";
+  return (
+    <li className="room-answer">
+      <p>
+        <strong>Your dataset.</strong> {got && got !== "failed" ? `${got.total} training examples, plus the ones kept aside for a test. The first few:` : got === "failed" ? "The examples are ready, but they couldn't be shown here." : "Loading the examples."}
+      </p>
+      {got && got !== "failed" ? (
+        <ul className="tune-folder-list">
+          {got.rows.map((r, i) => (
+            <li key={i}>
+              <strong>{said(r, "user")}</strong> {said(r, "assistant")}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <div className="row-actions">
+        <a className="btn btn-outline" href={`/api/train/runs/${runId}/examples`} download>
+          Download the examples
+        </a>
+      </div>
+    </li>
   );
 }
 
@@ -303,7 +380,10 @@ export function StartTraining({
   hold,
   onStarted,
   needsCode = false,
+  startLabel = "Start training",
 }: {
+  /** A finished dataset's button (MAKE_CHAT_ALL). */
+  startLabel?: string;
   needsCode?: boolean;
   start: string;
   fullForm: string | null;
@@ -363,7 +443,7 @@ export function StartTraining({
       <div className="row-actions">
         <button type="button" className={trying ? "btn btn-outline" : "btn btn-primary"} onClick={() => void press()} disabled={busy || (needsCode && !code.trim())} aria-busy={busy}>
           {busy ? <span className="spinner" aria-hidden /> : null}
-          {busy ? "Starting" : trying ? "Try now" : "Start training"}
+          {busy ? "Starting" : trying ? "Try now" : startLabel}
         </button>
       </div>
       <p className="muted small">

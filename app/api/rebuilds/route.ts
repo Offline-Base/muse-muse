@@ -3,15 +3,16 @@ import { requireAdminOrAutomation } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { badRequest, errorJson, readJson, route } from "@/lib/http";
 import { requestedTargetsFrom } from "@/lib/native/targets";
-import { catalogItem, catalogItems, itemId, rebuildNote, type CatalogItem } from "@/lib/pipeline/catalog";
+import { catalogItem, catalogItems, inDefaultBatch, itemId, rebuildNote, type CatalogItem } from "@/lib/pipeline/catalog";
 import { attachRun, insertBuild, markStartFailed, rebuildIdsTaken } from "@/lib/pipeline/records";
 import { buildProduct } from "@/lib/pipeline/workflow";
-import { spendPaused } from "@/lib/quota";
+import { buildSetupRefusal, spendPaused } from "@/lib/quota";
 
 /**
  * Admin. POST {ids?: string[], targets?: string[]} -> 200 {started: [{id, buildId}]}. Starts one build per catalog item
- * (Meta's videos and the missing demos). With no ids, it picks every item that has no live or partial product and no
- * build running. With ids, it rebuilds exactly those. `targets` is where each one runs, for showcase batches, and with
+ * (Meta's lessons and the missing demos, shown on /learn). With no ids, it picks every item that has no live or partial
+ * product and no build running, leaving out lessons marked autoBuild false (inDefaultBatch), whose plans wait on the
+ * owner's spend decision. With ids, it rebuilds exactly those. `targets` is where each one runs, for showcase batches, and with
  * every target flag off it is ignored.
  */
 export const POST = route(async (req: Request) => {
@@ -31,11 +32,15 @@ export const POST = route(async (req: Request) => {
       return item;
     });
   } else {
-    const all = catalogItems();
+    const all = catalogItems().filter(inDefaultBatch);
     const taken = await rebuildIdsTaken(all.map(itemId));
     items = all.filter((item) => !taken.has(itemId(item)));
   }
 
+  // The same preflight as checkBuildAllowed: with no Meta key or no Sandbox credentials every rebuild would pay for a
+  // brief and then fail at Provision. Production has both, so this never refuses there.
+  const setup = items.length ? buildSetupRefusal() : null;
+  if (setup) return errorJson(setup.status, setup.error);
   if (items.length && (await spendPaused())) return errorJson(503, "paused");
 
   const started: Array<{ id: string; buildId: string }> = [];

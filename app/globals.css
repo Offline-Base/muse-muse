@@ -2496,6 +2496,12 @@ pre {
   max-height: min(560px, 70vh);
 }
 
+.composer-actions .menu:has(.target-menu-list) {
+  max-height: min(640px, 80vh);
+  padding: 8px;
+  border-radius: 24px;
+}
+
 /* The pill sits mid-row on a phone, so its menu hangs off the row's right edge, not the pill's, to stay on screen. */
 @media (max-width: 560px) {
   .composer-row {
@@ -2542,21 +2548,102 @@ pre {
   }
 }
 
-.target-menu-note {
+.target-menu-head {
   margin: 0;
-  padding: 6px 12px 4px;
+  padding: 10px 14px 4px 40px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--muted, #6b6f76);
 }
 
-.target-menu-item {
+.target-menu-where {
+  margin-top: 4px;
+  border-top: 1px solid var(--hover-2);
+}
+
+.target-menu-where > summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px 10px 40px;
+  border-radius: 14px;
+  font-size: 0.9375rem;
+  list-style: none;
   cursor: pointer;
 }
 
-.target-menu-item input {
-  flex: none;
+.target-menu-where > summary::-webkit-details-marker {
+  display: none;
 }
 
-.target-menu-item input:disabled {
+.target-menu-where > summary:hover {
+  background: var(--hover);
+}
+
+/* The menu's rows: a check mark on the left, a name and a short line, and a soft grey row for what's picked. */
+.target-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 300px;
+}
+
+.target-menu-item {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px 10px 10px;
+  border-radius: 14px;
+  cursor: pointer;
+}
+
+.target-menu-item.is-picked,
+.target-menu-item.is-picked:hover {
+  background: var(--surface-2);
+}
+
+.target-menu-item.is-quiet {
   cursor: default;
+}
+
+.target-menu-item.is-quiet .target-menu-check {
+  opacity: 0.45;
+}
+
+/* Hidden from the eye only, so keyboards and screen readers still have the checkbox. */
+.target-menu-box {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+}
+
+.target-menu-item:has(.target-menu-box:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.target-menu-check {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+}
+
+.target-menu-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* A phone can't fit the fixed width. */
+@media (max-width: 480px) {
+  .target-menu-list {
+    min-width: 0;
+  }
 }
 
 /* The send button turned stop: a white rounded square. */

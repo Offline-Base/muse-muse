@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { PlanViewCard } from "@/components/build/PlanCard";
 import { UPLOAD_STAYS_TEXT, uploadPlanText, type UploadVisibility } from "@/lib/train/tune/auto-publish";
 import { TitleChip, UserBubble, WorkingStep } from "@/components/chat";
@@ -16,12 +16,15 @@ import { planCostText, planViewFromTrainPlan, upperFirst } from "@/components/tr
 import { KEPT_PLAN_KEY } from "@/components/train/room/TrainRoom";
 import { ExternalLink } from "@/components/ui";
 import { usd } from "@/lib/format";
+import { contributorSwitchOn } from "@/lib/meta/spark";
+import { CONTRIBUTOR_TUNE_NOTICE, ContributorNotice } from "@/components/composer/ContributorNotice";
 import { BUILT_WITH_SPARK_OPEN, R30B_URL } from "@/lib/train/base";
 import { tuneBaseOf } from "@/lib/train/bases";
 import { maxStepsFor, NOTE_MAX, NOTE_MIN, planCost, planMaxUsd, planSettings, TUNE_MAX_EXAMPLES, TUNE_MIN_EXAMPLES, TUNE_MIN_STEPS, TUNE_STEPS } from "@/lib/train/tune/cost";
 import { EXAMPLE_ACCEPT, EXAMPLE_FILE_MAX_BYTES, EXAMPLE_ROWS_MAX, parseExamples, planRows, splitNote } from "@/lib/train/tune/examples";
 import { TUNE_DRAFT_ID } from "@/lib/train/tune/from-build";
 import { FolderDrop, type ReadyFolder } from "@/components/train/compose/FolderDrop";
+import type { FireworksQuote } from "@/lib/train/fireworks/quote";
 import type { ExampleRow, TrainPlan } from "@/lib/train/tune/types";
 
 /** Keeps this composer's draft apart from the Make page's (the build room's "Its own model" fills it too). */
@@ -116,6 +119,47 @@ async function readRows(files: File[], pasted: ExampleRow[]): Promise<{ rows: Ex
   return { rows: planRows(rows) };
 }
 
+/**
+ * Where it trains, with FIREWORKS_TUNE on. What it costs comes from Fireworks' live pages through the quote route, never
+ * from this file: with no confirmed quote the choice is off and says why.
+ */
+function FireworksChoice({ on, onChange, disabled }: { on: boolean; onChange: (on: boolean) => void; disabled: boolean }) {
+  const [quote, setQuote] = useState<FireworksQuote | null>(null);
+  useEffect(() => {
+    let live = true;
+    fetch("/api/train/fireworks/quote")
+      .then((r) => r.json())
+      .then((q: FireworksQuote) => {
+        if (live) setQuote(q);
+      })
+      .catch(() => {
+        if (live) setQuote({ ok: false, reason: "Fireworks' prices couldn't be checked." });
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+  const usable = quote?.ok === true;
+  return (
+    <fieldset className="field">
+      <legend>Where it trains</legend>
+      <label>
+        <input type="radio" name="tune-trainer" checked={!on} onChange={() => onChange(false)} disabled={disabled} /> Lambda, on {R30B_NAME}
+      </label>
+      <label>
+        <input type="radio" name="tune-trainer" checked={on} onChange={() => onChange(true)} disabled={disabled || !usable} /> Train on Fireworks, on plain Muse Glimmer 30B
+      </label>
+      {quote === null ? <span className="field-hint">Checking Fireworks&apos; prices.</span> : null}
+      {quote && !quote.ok ? <span className="field-hint">{quote.reason}</span> : null}
+      {quote?.ok ? (
+        <span className="field-hint">
+          Its base is plain Muse Glimmer 30B, not r30b, so it lacks the 2026 knowledge. Fireworks&apos; pricing page says, as of now: &quot;{quote.words}&quot;. Answering the kept-aside prompts is billed separately at about ${quote.ratePerMTokens.toFixed(2)} per million tokens or less, and counts against your limits. Scoring and any examples written still use Meta&apos;s API.
+        </span>
+      ) : null}
+    </fieldset>
+  );
+}
+
 /** The plan kept before a reload, while it can still start and is for the same build (or none) as this page. */
 function readPlan(fromBuildId: string | null): Phase | null {
   try {
@@ -154,12 +198,15 @@ export function TrainComposer({
   anyBase = false,
   visitor = null,
   folder = false,
+  fireworks = false,
   codeUnset = false,
 }: {
   /** OPEN_TRAIN: a non-admin, with their limits. Start asks for the start code. */
   visitor?: { maxExamples: number; maxSteps: number } | null;
   /** TUNE_FOLDER: offer the folder drop. */
   folder?: boolean;
+  /** FIREWORKS_TUNE: offer Train on Fireworks beside Lambda. */
+  fireworks?: boolean;
   /** OPEN_TRAIN with no start code set: non-admins can't start, so the page says so. */
   codeUnset?: boolean;
   /** TUNE_ANY_BASE: Advanced offers a base. */
@@ -180,6 +227,7 @@ export function TrainComposer({
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [startCode, setStartCode] = useState("");
+  const [onFireworks, setOnFireworks] = useState(false);
   const [ready, setReady] = useState<ReadyFolder | null>(null);
 
   // A plan drafted before a reload comes back, while it can still start.
@@ -265,7 +313,7 @@ export function TrainComposer({
       const res = await fetch("/api/train/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ plan, ...(visitor ? { startCode } : {}), ...(ready && plan.source.kind === "folder" ? { folder: ready.draft } : {}), settings: { examples, steps, ...(autoUpload && !upload ? { autoPublish: false } : {}), ...(base.state === "ok" ? { base: { repo: base.base.repo, revision: base.base.revision } } : {}) } }),
+        body: JSON.stringify({ plan, ...(visitor ? { startCode } : {}), ...(ready && plan.source.kind === "folder" ? { folder: ready.draft } : {}), settings: { examples, steps, ...(onFireworks ? { trainer: "fireworks" } : {}), ...(autoUpload && !upload ? { autoPublish: false } : {}), ...(base.state === "ok" ? { base: { repo: base.base.repo, revision: base.base.revision } } : {}) } }),
       });
       const data = (await res.json().catch(() => null)) as { runId?: string; href?: string } | null;
       if (res.status === 201 && data?.runId && data.href) {
@@ -296,6 +344,7 @@ export function TrainComposer({
       {/* Kept mounted while the room shows, so Change it finds the note and the files as they were. */}
       <div className="play tune-compose" hidden={phase.at !== "compose"}>
         <div className="play-main">
+          {contributorSwitchOn() ? <ContributorNotice text={CONTRIBUTOR_TUNE_NOTICE} /> : null}
           <div className="toolbar" aria-label="Page actions">
             <Link className="btn" href="/fine-tuning">
               <Icon name="history" />
@@ -348,6 +397,9 @@ export function TrainComposer({
           upload={upload}
           onUpload={setUpload}
           anyBase={anyBase}
+          fireworks={fireworks}
+          onFireworks={onFireworks}
+          setOnFireworks={setOnFireworks}
           base={base}
           onBase={setBase}
           ceilings={ceilings}
@@ -370,6 +422,9 @@ export function TrainComposer({
  * Advanced, or why there's no plan with Change it. Exported for the tests, which render each phase.
  */
 export function PlanStep({
+  fireworks = false,
+  onFireworks = false,
+  setOnFireworks = () => {},
   phase,
   examples,
   onExamples,
@@ -389,7 +444,20 @@ export function PlanStep({
   visitor = null,
   startCode = "",
   onStartCode = () => {},
+  above = null,
+  below = null,
+  problemActions = null,
+  startLabel = "Start",
+  codeHint = "Runs use real GPUs, so starting one takes the code.",
 }: {
+  /** MAKE_CHAT_ALL's Dataset: Start only writes the examples, so it says so. */
+  startLabel?: string;
+  codeHint?: string;
+  /** Rows before and after the plan in the conversation (MAKE_CHAT_ALL: the app, the folder, ask for a change). */
+  above?: ReactNode;
+  below?: ReactNode;
+  /** Beside Change it when there's no plan (MAKE_CHAT_ALL: build just the app). */
+  problemActions?: ReactNode;
   /** OPEN_TRAIN: a non-admin, with their limits. Start asks for the start code. */
   visitor?: { maxExamples: number; maxSteps: number } | null;
   startCode?: string;
@@ -405,6 +473,9 @@ export function PlanStep({
   /** Advanced's upload choice for this run. */
   upload?: boolean;
   onUpload?: (on: boolean) => void;
+  fireworks?: boolean;
+  onFireworks?: boolean;
+  setOnFireworks?: (on: boolean) => void;
   anyBase?: boolean;
   base?: BaseChoice;
   onBase?: (next: BaseChoice) => void;
@@ -429,7 +500,7 @@ export function PlanStep({
   const uploadText = !autoUpload || !shown ? null : !canUpload ? UPLOAD_STAYS_TEXT : upload ? uploadPlanText(autoUpload) : "It stays on Muse Muse. Publish on its page uploads it later if you want.";
   const rowsOnly = phase.at === "plan" && phase.plan.source.kind === "folder" && phase.plan.source.mode === "rows";
   const costOf = (s: Parameters<typeof planCost>[0]) => (rowsOnly ? { ...planCost(s), metaLowUsd: 0, metaHighUsd: 0 } : planCost(s));
-  const shownView = shown ? planViewFromTrainPlan({ ...shown, cost: costOf(shown.settings) }, uploadText, visitor !== null) : null;
+  const shownView = shown ? planViewFromTrainPlan({ ...shown, cost: costOf(shown.settings) }, uploadText, visitor !== null, onFireworks) : null;
   const countOk = examplesOk(examples, examplesMax);
   return (
     <div className="room chat-split tune-room" data-settled="true">
@@ -454,9 +525,11 @@ export function PlanStep({
                   <Icon name="edit" size={18} />
                   Change it
                 </button>
+                {problemActions}
               </div>
             </li>
           ) : null}
+          {above}
           {phase.at === "plan" && shown && shownView ? (
             <li className="room-plan">
               <PlanViewCard
@@ -484,18 +557,19 @@ export function PlanStep({
                       <div className="field tune-start-code">
                         <label htmlFor={codeId}>Start code</label>
                         <input id={codeId} type="text" autoComplete="off" autoCapitalize="off" spellCheck={false} value={startCode} onChange={(e) => onStartCode(e.target.value)} disabled={starting} />
-                        <span className="field-hint">Runs use real GPUs, so starting one takes the code.</span>
+                        <span className="field-hint">{codeHint}</span>
                       </div>
                     ) : null}
                     <div className="row-actions">
                       <button type="button" className="btn btn-primary" onClick={() => onStart(phase.plan)} disabled={starting || !countOk || !stepsGood || baseWaits || (visitor !== null && !startCode.trim())} aria-busy={starting}>
                         {starting ? <span className="spinner" aria-hidden /> : null}
-                        {starting ? "Starting" : "Start"}
+                        {starting ? "Starting" : startLabel}
                       </button>
                       <button type="button" className="btn btn-outline" onClick={onChange} disabled={starting}>
                         Change it
                       </button>
                     </div>
+                    {fireworks && base.state !== "ok" ? <FireworksChoice on={onFireworks} onChange={setOnFireworks} disabled={starting} /> : null}
                     <details className="tune-advanced">
                       <summary>
                         Advanced
@@ -555,6 +629,7 @@ export function PlanStep({
               />
             </li>
           ) : null}
+          {below}
         </ol>
       </div>
     </div>

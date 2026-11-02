@@ -10,6 +10,7 @@ import { OUTPUT_LABEL } from "@/lib/outputs/labels";
 import type { ProductOutput } from "@/lib/native/targets";
 import type { BuildModel } from "@/lib/sandbox/muse";
 import type { ProveCheck, ProveEventBody } from "@/lib/types";
+import { defaultModel } from "@/lib/meta/spark";
 
 /** The most actions one run calls for real. */
 export const MAX_CALLS = 5;
@@ -18,7 +19,7 @@ export const SKILL_TEST_MAX_STEPS = 12;
 /** What must be left under the cap before the skill test starts: about what its step cap can spend on each model. */
 export const SKILL_TEST_RESERVE_USD: Record<BuildModel, number> = { "muse-wonder-1.0": 0.6, "muse-spark-1.3-contributor": 0.05 };
 /** The skill test's model after a build. */
-export const PROVE_MODEL: BuildModel = "muse-wonder-1.0";
+export const PROVE_MODEL: BuildModel = defaultModel();
 /** The model nightly re-checks run on. Never muse-spark-1.3. */
 export const NIGHTLY_MODEL: BuildModel = "muse-spark-1.3-contributor";
 /**

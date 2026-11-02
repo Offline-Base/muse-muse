@@ -4,6 +4,7 @@ import { connection } from "next/server";
 import { limitCeilings } from "@/app/api/train/shared";
 import { TrainComposer } from "@/components/train/compose/TrainComposer";
 import { env } from "@/lib/env";
+import { makeChatAllOn } from "@/lib/make/switch";
 import { visitorJobCeilings, visitorLimits } from "@/lib/train/public/limits";
 import { buildForTune } from "@/lib/train/tune/build-source";
 import { FROM_BUILD_PARAM } from "@/lib/train/tune/from-build";
@@ -24,6 +25,8 @@ export const metadata: Metadata = { title: "New fine-tune" };
 export default async function NewFineTunePage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   await connection();
   if (!env.tuneComposer) notFound();
+  // MAKE_CHAT_ALL: the Make box is where everything starts. A plan for a build's own model still opens here.
+  if (makeChatAllOn() && !(await searchParams)?.[FROM_BUILD_PARAM]) redirect("/");
   const user = await pageViewer();
   if (!user?.isAdmin) {
     if (!env.openTrain) redirect("/fine-tuning");
@@ -35,6 +38,7 @@ export default async function NewFineTunePage({ searchParams }: { searchParams?:
         visitor={{ maxExamples: limits.datasetMaxRows, maxSteps: limits.job.maxSteps }}
         folder={env.tuneFolder}
         codeUnset={!env.tuneStartCode}
+        fireworks={env.fireworksTune}
       />
     );
   }
@@ -42,5 +46,5 @@ export default async function NewFineTunePage({ searchParams }: { searchParams?:
   const asked = (await searchParams)?.[FROM_BUILD_PARAM];
   const build = env.tuneFromBuilds && typeof asked === "string" ? await buildForTune(asked).catch(() => null) : null;
   const fromBuild = build?.offers ? { id: build.buildId, name: build.productName } : null;
-  return <TrainComposer defaultExamples={env.tuneDefaultExamples} ceilings={limitCeilings()} fromBuild={fromBuild} folder={env.tuneFolder} anyBase={env.tuneAnyBase} autoUpload={env.tuneAutoPublish && !env.hubOffReason ? (env.hfPublicSet && env.hfPublic ? "public" : "private") : null} />;
+  return <TrainComposer fireworks={env.fireworksTune} defaultExamples={env.tuneDefaultExamples} ceilings={limitCeilings()} fromBuild={fromBuild} folder={env.tuneFolder} anyBase={env.tuneAnyBase} autoUpload={env.tuneAutoPublish && !env.hubOffReason ? (env.hfPublicSet && env.hfPublic ? "public" : "private") : null} />;
 }

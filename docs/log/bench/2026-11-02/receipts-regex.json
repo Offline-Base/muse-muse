@@ -1,0 +1,19 @@
+{
+ "board": "none",
+ "model": "regex",
+ "receipts": 40,
+ "valid_json": 1.0,
+ "all_six_right": 0.0,
+ "fields_right": 0.246,
+ "per_field": {
+  "merchant": 0.0,
+  "date": 0.0,
+  "subtotal": 0.475,
+  "tax": 0.5,
+  "total": 0.5,
+  "item_count": 0.0
+ },
+ "adds_up": 0.475,
+ "median_seconds": null,
+ "tokens_per_second": null
+}

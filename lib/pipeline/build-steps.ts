@@ -25,6 +25,9 @@ import { judgeBuild, MAX_CHAIN_SCREENSHOTS, pickScreenshots } from "@/lib/judge"
 import { APP_NAV_COMPONENT, FULL_PRODUCT_SKILL } from "@/lib/full/prompts";
 import { briefRequirements, buildableRequirements, fullMilestones, requirementsFile, unmetLines } from "@/lib/full/requirements";
 import { scopeLine } from "@/lib/full/scope";
+import { edgeExtraFiles } from "@/lib/edge/template-files";
+import { edgeBuildFiles, isEdgeBuild, withEdgeDrill, type EdgeDrillRun } from "@/lib/pipeline/edge-build";
+import { EDGE_DRILL_RESULTS, startEdgeDrill } from "@/lib/pipeline/edge-drill-sandbox";
 import { nativeExtraFiles } from "@/lib/native/template-files";
 import { localGadgetFiles } from "@/lib/sandbox/local-gadget";
 import { recipeExtraFiles, recipeNotes } from "@/lib/recipes/registry";
@@ -40,6 +43,8 @@ import {
   pickBuildModel,
   refineRoute,
   contributorRuntimeMarkers,
+  PERSONAL_OFF_MESSAGE,
+  personalOffUnderSwitch,
   SLUG_MAX,
   type JudgeCall,
 } from "@/lib/pipeline/logic";
@@ -386,18 +391,23 @@ export interface BriefSummary {
   plan?: RoundPlan;
   /** FAST_BUILDS on this build. */
   fast?: boolean;
+  /** EDGE_ENABLED and the edge target: verify is followed by the simulated outage drill (lib/pipeline/edge-build.ts). */
+  edge?: boolean;
 }
 
 function summarize(brief: Brief): BriefSummary {
   const plan = enginePlan(brief, "build");
+  // BUILDS_ON_CONTRIBUTOR: a product that could never run is refused here, as a brief refuses, rather than built.
+  const personalOff = contributorBuildsOn() && brief.verdict !== "no" && personalOffUnderSwitch(brief);
   return {
-    verdict: brief.verdict,
-    refusal: brief.refusal,
+    verdict: personalOff ? "no" : brief.verdict,
+    refusal: personalOff ? PERSONAL_OFF_MESSAGE : brief.refusal,
     name: brief.name,
     tagline: brief.tagline,
     model: pickBuildModel(brief.complexity, { buildModel: env.buildModel, complexBuildModel: env.complexBuildModel }),
     ...(plan ? { plan } : {}),
     ...(fastNote(brief).fastCapacity !== undefined ? { fast: true } : {}),
+    ...(isEdgeBuild(brief) ? { edge: true } : {}),
   };
 }
 
@@ -645,7 +655,7 @@ function fullExtraFiles(brief: Brief | null): Array<{ path: string; content: str
 
 /** The files this brief's targets add, as a field that isn't there at all for a web-only brief. */
 function extraFilesFor(brief: Brief | null): { extraFiles?: Array<{ path: string; content: string }> } {
-  const extraFiles = [...nativeExtraFiles(brief), ...recipeExtraFiles(brief), ...localGadgetFiles(brief), ...fullExtraFiles(brief)];
+  const extraFiles = [...nativeExtraFiles(brief), ...recipeExtraFiles(brief), ...localGadgetFiles(brief), ...fullExtraFiles(brief), ...edgeExtraFiles(brief), ...edgeBuildFiles(brief)];
   return extraFiles.length ? { extraFiles } : {};
 }
 
@@ -1021,16 +1031,24 @@ export interface VerifyResult {
   recheck?: string[];
 }
 
-/** Parses verify's summary line, uploads the judge screenshots, and tells the build room. */
+/**
+ * Parses verify's summary line, uploads the judge screenshots, and tells the build room. An edge build's outage drill,
+ * when one ran, adds a step per drill to the summary before anyone reads it, so a failed drill is a failed check.
+ */
 export async function collectVerifyStep(input: {
   buildId: string;
   sandboxName: string;
   round: number;
   exitCode: number | null;
   outputTail: string;
+  /** The edge drill's run (startEdgeDrillStep). Only an edge build has one. */
+  edgeDrill?: Omit<EdgeDrillRun, "json">;
 }): Promise<VerifyResult> {
   "use step";
-  const { summary, screenshots } = await sandbox.collectVerifyResult({ ...input, ...(env.fullBuilds ? { maxScreenshots: MAX_CHAIN_SCREENSHOTS + 2 } : {}) });
+  const { edgeDrill, ...verify } = input;
+  const collected = await sandbox.collectVerifyResult({ ...verify, ...(env.fullBuilds ? { maxScreenshots: MAX_CHAIN_SCREENSHOTS + 2 } : {}) });
+  const screenshots = collected.screenshots;
+  const summary = edgeDrill ? withEdgeDrill(collected.summary, { ...edgeDrill, json: await sandbox.readSandboxText(input.sandboxName, EDGE_DRILL_RESULTS) }) : collected.summary;
   await emit(input.buildId, { type: "verify", round: input.round, summary, screenshots });
   // A product with platform services: each fixed check as its own line in the build room (docs/CAPABILITIES.md, 2.8).
   for (const c of summary.caps ?? []) {
@@ -1044,6 +1062,17 @@ export async function collectVerifyStep(input: {
   };
 }
 collectVerifyStep.maxRetries = 1;
+
+/**
+ * An edge build's simulated outage drill, after a verify that passed: a second `next start` on loopback with GATEWAY_URL
+ * at the blackhole and EDGE_URL at the fake (lib/pipeline/edge-build.ts). No Meta call. Never retried, like verify.
+ */
+export async function startEdgeDrillStep(sandboxName: string): Promise<string> {
+  "use step";
+  const { cmdId } = await startEdgeDrill(sandboxName);
+  return cmdId;
+}
+startEdgeDrillStep.maxRetries = 0;
 
 /** FAST_BUILDS: tells the room and the next fix round what the changed checks found. It never decides the build. */
 export async function recheckFailedStep(input: { buildId: string; round: number; output: string }): Promise<VerifyResult> {
@@ -1472,10 +1501,10 @@ export async function startDeployStep(input: {
   const product = await loadProduct(input.productId);
   const brief = build.brief ?? (await latestWorkingBrief(input.productId));
   const allowed = brief ? allowedModelsFor(brief) : await liveModels(input.productId);
-  // Under BUILDS_ON_CONTRIBUTOR, if nothing personal is in it and its code shows the notice. Else it stays on Wonder.
+  // Under BUILDS_ON_CONTRIBUTOR, if nothing personal is in it and its code shows the notice. Else it's an exception on Wonder, or its calls are refused.
   const flagOn = contributorBuildsOn();
   const runtime = contributorRuntimeMarkers(brief, flagOn, flagOn && (await sandbox.productShowsContributorNotice(input.sandboxName).catch(() => false)));
-  if (flagOn && brief && !runtime.length) console.warn(`Product ${input.productId} stays on Muse Wonder when live: it holds something personal or doesn't show the notice.`);
+  if (flagOn && brief && !runtime.length) console.warn(`Product ${input.productId} has no Contributor marker: when live, a gadget, board or Wonder demo stays on Muse Wonder and anything else is refused.`);
   const live = await mintToken({
     productId: input.productId,
     scope: "live",
@@ -1627,6 +1656,8 @@ export interface RefineContext {
   refineIndex: number;
   /** The engine's round plan, only with ENGINE_ROUND_SCALING. Refinements have no milestones. */
   plan?: RoundPlan;
+  /** EDGE_ENABLED and the edge target: verify is followed by the simulated outage drill. */
+  edge?: boolean;
 }
 
 /**
@@ -1721,6 +1752,7 @@ export async function loadRefineStep(buildId: string, opts: { restore?: boolean 
     freshSession,
     refineIndex: Math.max(1, Number(n)),
     ...(plan ? { plan } : {}),
+    ...(brief && isEdgeBuild(brief) ? { edge: true } : {}),
   };
 }
 

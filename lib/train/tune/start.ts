@@ -19,7 +19,7 @@ import { TUNE_STEPS } from "@/lib/train/tune/settings";
 import { freshHeartbeat } from "@/lib/train/tune/marks";
 import { tuneRun } from "@/lib/train/tune/run";
 import { autoPublishOk } from "@/lib/train/tune/auto-publish";
-import { latestTuneJob, readRunMarks, saveRunAutoPublish, saveRunBase, saveRunProduct, saveRunSteps, saveRunVisitor } from "@/lib/train/tune/run-store";
+import { latestTuneJob, readRunMarks, saveRunAutoPublish, saveRunDatasetOnly, saveRunBase, saveRunProduct, saveRunSteps, saveRunTrainer, saveRunVisitor } from "@/lib/train/tune/run-store";
 import type { FolderDraft } from "@/lib/train/tune/folder";
 import type { TrainPlanBody } from "@/lib/train/tune/types";
 
@@ -102,6 +102,10 @@ export async function startTuneRun(i: {
   visitor?: { trainerId: string; ip: string } | null;
   /** A folder plan's checked draft (checkDraft). */
   folder?: FolderDraft | null;
+  /** Train on Fireworks (FIREWORKS_TUNE, checked by the route): kept with the run before anything runs. */
+  trainer?: "fireworks" | null;
+  /** Only the examples (MAKE_CHAT_ALL): tuneRun never starts, so nothing trains until Start training in the room. */
+  datasetOnly?: boolean;
 }): Promise<{ runId: string; href: string; trainingStarted?: boolean }> {
   if (!env.tuneComposer) throw new TuneStartError(404, "not_found");
   const source = i.plan?.source ?? (i.datasetId ? { kind: "dataset" as const, datasetId: i.datasetId } : null);
@@ -149,7 +153,7 @@ export async function startTuneRun(i: {
     return { runId: existing.id, href: runHref(existing.id) };
   }
   const plan = i.plan!;
-  if (source.kind === "folder") return startFolderRun(plan, i.folder, i.callerId, i.visitor ?? null);
+  if (source.kind === "folder") return startFolderRun(plan, i.folder, i.callerId, i.visitor ?? null, i.trainer ?? null, i.datasetOnly === true);
   const day = productId ? await takeProductDay(productId, now) : null;
   let dataset: Awaited<ReturnType<typeof createDataset>>;
   try {
@@ -170,6 +174,7 @@ export async function startTuneRun(i: {
     if (i.visitor) await saveRunVisitor(dataset.id, i.visitor);
     // Before anything runs: a run that lost its base would train on another model.
     if (plan.settings.base) await saveRunBase(dataset.id, plan.settings.base);
+    if (i.trainer) await saveRunTrainer(dataset.id);
     workflowRunId = (await start(makeDataset, [{ datasetId: dataset.id }])).runId;
   } catch (err) {
     console.error("[train/tune] start", err);
@@ -182,6 +187,10 @@ export async function startTuneRun(i: {
   await attachDatasetRun(dataset.id, workflowRunId).catch((err) => console.error("[train/tune] attachRun", err));
   await keepProduct(dataset.id);
   await saveRunSteps(dataset.id, plan.settings.steps).catch((err) => console.error("[train/tune] save steps", err));
+  if (i.datasetOnly) {
+    await keepDatasetOnly(dataset.id);
+    return { runId: dataset.id, href: runHref(dataset.id) };
+  }
   if (uploads({ task: plan.task, productId })) {
     await saveRunAutoPublish(dataset.id, true).catch((err) => console.error("[train/tune] save auto publish", err));
   }
@@ -193,12 +202,20 @@ export async function startTuneRun(i: {
  * A folder plan (TUNE_FOLDER). Rows train as they are: a ready dataset with nothing written. Anything else is written by
  * Spark 1.3 Contributor from the files as grounding, never Muse Wonder (folderWriterProblem). Neither ever uploads by itself.
  */
-async function startFolderRun(plan: TrainPlanBody, folder: FolderDraft | null | undefined, callerId: string, visitor: { trainerId: string; ip: string } | null) {
+async function startFolderRun(plan: TrainPlanBody, folder: FolderDraft | null | undefined, callerId: string, visitor: { trainerId: string; ip: string } | null, trainer: "fireworks" | null, datasetOnly: boolean) {
+  const train = async (id: string) => {
+    if (datasetOnly) await keepDatasetOnly(id);
+    else await startTraining(id, callerId, plan.settings.steps);
+    return { runId: id, href: runHref(id) };
+  };
   if (!folder) throw new TuneStartError(400, "folder_changed");
   if (folder.mode === "write") {
     const dataset = await createDataset({ title: plan.name, task: plan.task, requested: plan.settings.examples, writerModel: SPARK_STANDIN, createdBy: callerId, grounding: folder.grounding });
     try {
       if (visitor) await saveRunVisitor(dataset.id, visitor);
+      // Before anything runs, as in the described-task path: a folder run that lost its base would train on another model.
+      if (plan.settings.base) await saveRunBase(dataset.id, plan.settings.base);
+      if (trainer) await saveRunTrainer(dataset.id);
       await saveRunSteps(dataset.id, plan.settings.steps);
       const { runId } = await start(makeDataset, [{ datasetId: dataset.id }]);
       await attachDatasetRun(dataset.id, runId).catch((err) => console.error("[train/tune] attachRun", err));
@@ -207,8 +224,7 @@ async function startFolderRun(plan: TrainPlanBody, folder: FolderDraft | null | 
       await failDataset(dataset.id, "The dataset's workflow could not start, so nothing was written.").catch((e) => console.error("[train/tune] markStartFailed", e));
       throw new TuneStartError(500, "start_failed");
     }
-    await startTraining(dataset.id, callerId, plan.settings.steps);
-    return { runId: dataset.id, href: runHref(dataset.id) };
+    return train(dataset.id);
   }
   const dataset = await createImportedDataset({
     title: plan.name,
@@ -222,12 +238,18 @@ async function startFolderRun(plan: TrainPlanBody, folder: FolderDraft | null | 
   if (!dataset) throw new TuneStartError(500, "start_failed");
   try {
     if (visitor) await saveRunVisitor(dataset.id, visitor);
+    if (plan.settings.base) await saveRunBase(dataset.id, plan.settings.base);
+    if (trainer) await saveRunTrainer(dataset.id);
     await saveRunSteps(dataset.id, plan.settings.steps);
   } catch (err) {
     console.error("[train/tune] keep folder run", err);
     await failDataset(dataset.id, "The run could not start.").catch((e) => console.error("[train/tune] markStartFailed", e));
     throw new TuneStartError(500, "start_failed");
   }
-  await startTraining(dataset.id, callerId, plan.settings.steps);
-  return { runId: dataset.id, href: runHref(dataset.id) };
+  return train(dataset.id);
+}
+
+/** Only the room's words depend on this, so a failure is logged and the examples go on. */
+async function keepDatasetOnly(id: string): Promise<void> {
+  await saveRunDatasetOnly(id).catch((err) => console.error("[train/tune] save dataset only", err));
 }

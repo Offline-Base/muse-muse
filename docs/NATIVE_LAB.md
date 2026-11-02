@@ -17,7 +17,7 @@ under `app/api/native/agent/`, the `native_jobs` queue and the sweep. "The platf
 | `native/lab/setup/` | `mac.sh`, `mac-finish.sh`, `mac-checks.sh`, `windows.ps1`, `imds-credentials.sh`, `publish-bundle.sh`, and the LaunchAgent plist |
 | `native/lab/tools/check.mjs` | Runs one real job on a box with a local stand-in for the platform |
 | `native/lab/tools/glasses-check.html` | A small page with the glasses template's contract, for checking `glasses_sim` without a product |
-| `native/lab/iam/` | The instance role's two inline policies, as they are in the account |
+| `native/lab/iam/` | The instance role's two inline policies, with the account id (`000000000000`) and the two instance ids (`i-00000000000000001` for the Mac, `i-00000000000000002` for Windows) as placeholders. The real ones are filled in at apply time (below) |
 
 The agent needs Node 22 and has no npm dependencies. If `@aws-sdk/client-ssm` is installed it reads its token with that,
 and otherwise with the `aws` CLI.
@@ -516,7 +516,7 @@ The document exists in the account as `MuseLab-Control` version 1, and it matche
 AWS_PROFILE=offlinebase AWS_REGION=us-east-1 bash native/lab/setup/publish-bundle.sh
 ```
 
-That puts the bundle in `s3://muse-knowledge-916979311153/lab/bundles/` and pins it for both lanes. The box checks the checksum.
+That puts the bundle in `s3://muse-knowledge-<account id>/lab/bundles/` and pins it for both lanes. The box checks the checksum.
 Blob URLs work too, but the lab has no Blob upload of its own. Both boxes ran `update-agent` this way, and it left the old release
 in place. A stopped Windows box can't take a control call, so start it first. On Windows, `update-agent` runs as SYSTEM, so the
 bundle waits in `C:\MuseLab\control`, which only SYSTEM and Administrators can write to. In `C:\MuseLab\data` the lab user could
@@ -530,11 +530,15 @@ each reads its own lane, and the other lane's `token-sha256` and `bundle` answer
 `get-parameters`. Don't check this with `iam simulate-principal-policy`: given `ec2:SourceInstanceARN`, it reports a deny even for a
 box reading its own lane, which the real calls and the agents' claims show is wrong. `lab-files` allows reading `lab/bundles/*` and `lab/shells/*` and
 writing `lab/checks/*` in the bucket. Each lane also has `/musemuse/lab/<lane>/token-sha256`, which is the value `native_labs`
-needs. Apply a change to the policies with:
+needs. The files in the repo hold placeholders, not the real account and instance ids, so apply a change by filling them in first:
 
 ```
-aws iam put-role-policy --profile offlinebase --role-name musemuse-lab --policy-name lab-token-read --policy-document file://native/lab/iam/lab-token-read.json
-aws iam put-role-policy --profile offlinebase --role-name musemuse-lab --policy-name lab-files --policy-document file://native/lab/iam/lab-files.json
+ACCOUNT="$(aws sts get-caller-identity --profile offlinebase --query Account --output text)"
+MAC_ID=<the Mac instance id>; WIN_ID=<the Windows instance id>   # from the EC2 console
+fill() { sed -e "s/000000000000/$ACCOUNT/g" -e "s/i-00000000000000001/$MAC_ID/g" -e "s/i-00000000000000002/$WIN_ID/g" "native/lab/iam/$1.json" > "$TMPDIR/$1.json"; }
+fill lab-token-read && fill lab-files
+aws iam put-role-policy --profile offlinebase --role-name musemuse-lab --policy-name lab-token-read --policy-document "file://$TMPDIR/lab-token-read.json"
+aws iam put-role-policy --profile offlinebase --role-name musemuse-lab --policy-name lab-files --policy-document "file://$TMPDIR/lab-files.json"
 ```
 
 **The platform role, `musemuse-platform-native`,** can send only `MuseLab-Control` to the two instances, read command results and
@@ -542,12 +546,12 @@ instance state, and start and stop only the Windows instance.
 
 ## What's on the boxes
 
-As of Oct 31, about 19:30 UTC. Account 916979311153, us-east-1, tagged `Project=musemuse-lab`. No inbound ports, and SSM Run Command is
+As of Oct 31, about 19:30 UTC. Account <account id>, us-east-1, tagged `Project=musemuse-lab`. No inbound ports, and SSM Run Command is
 the only way in.
 
 | | Mac | Windows |
 |---|---|---|
-| Instance | `i-0a5866df305e83d40`, `mac2.metal` on host `h-06879f600be8541ed` | `i-066609c3dc74c9f18`, `t3.large` |
+| Instance | `<mac instance id>`, `mac2.metal` on host `<mac host id>` | `<windows instance id>`, `t3.large` |
 | State | Running. Never stop it: stopping scrubs the host for up to 4.5 hours | Stopped, on release `0.1.1-50123fa`. It stopped itself after 20 idle minutes at about 19:15 UTC, then ran once more for that release and was stopped from a laptop at 19:24 UTC |
 | OS | macOS 26.7, 300 GB gp3, about 224 GB free | Windows Server 2022, 60 GB gp3, about 38 GB free |
 | Session | `ec2-user` signed in by auto-login | `musemuse`, a standard user, signed in by auto sign-in, 1920x1080 |
@@ -557,7 +561,7 @@ the only way in.
 | Left running | The simulator `Muse Lab iPhone` and the emulator `emulator-5554`, which the agent keeps up between jobs | |
 | Files | `~/musemuse-lab/shells/`: `mac-template.zip`, `lab-ios-sim.tar.gz`, `lab-android.apk`, `glasses-ios-sim.tar.gz` (the builds in `native/releases.json`), `mock-photo.jpg` | `C:\MuseLab\shells\windows-template.zip` |
 
-**The bucket** has this under `s3://muse-knowledge-916979311153/lab/`:
+**The bucket** has this under `s3://muse-knowledge-<account id>/lab/`:
 
 - `bundles/`: the pinned agent bundle.
 - `shells/`: `mac-template.zip` (217 MB) and `windows-template.zip` (158 MB), the desktop shell built on the boxes from `native/shell-desktop`
@@ -597,10 +601,10 @@ Nothing stops the Mac host by itself. It bills $15.60 a day, so left running the
 the hackathon closes at 9 PM ET on Nov 4, from a laptop with the lab's AWS profile:
 
 1. Terminate both instances:
-   `aws ec2 terminate-instances --profile offlinebase --region us-east-1 --instance-ids i-0a5866df305e83d40 i-066609c3dc74c9f18`
+   `aws ec2 terminate-instances --profile offlinebase --region us-east-1 --instance-ids <mac instance id> <windows instance id>`
 2. Release the host once its scrub is done and its 24 h minimum has passed. Until then the call is refused, so try again later:
-   `aws ec2 release-hosts --profile offlinebase --region us-east-1 --host-ids h-06879f600be8541ed`
-3. Clear the lab's files: `aws s3 rm --profile offlinebase --recursive s3://muse-knowledge-916979311153/lab/`
+   `aws ec2 release-hosts --profile offlinebase --region us-east-1 --host-ids <mac host id>`
+3. Clear the lab's files: `aws s3 rm --profile offlinebase --recursive s3://muse-knowledge-<account id>/lab/`
 4. Delete the parameters under `/musemuse/lab/`, the `MuseLab-Control` document and the two roles, if nothing else will use them.
 
 ## The licenses
@@ -624,7 +628,7 @@ screen sharing password. Run without the flag on Oct 31, it kept Xcode and the f
 This runs the three phone checks on the shell builds on the box, accepts nothing and spends nothing:
 
 ```
-aws ssm send-command --profile offlinebase --region us-east-1 --instance-ids i-0a5866df305e83d40 \
+aws ssm send-command --profile offlinebase --region us-east-1 --instance-ids <mac instance id> \
   --document-name AWS-RunShellScript --parameters '{"executionTimeout":["1800"],"commands":["sudo -u ec2-user -H env AWS_REGION=us-east-1 bash /Users/ec2-user/musemuse-lab/current/setup/mac-checks.sh"]}' \
   --query Command.CommandId --output text
 ```

@@ -24,7 +24,7 @@ import { textPart } from "@/lib/brief/media";
 import { cleanStrings, noEmDashes } from "@/lib/brief/normalize";
 import { respondStructured, StructuredOutputError, type StructuredResult } from "@/lib/brief/structured";
 import { contributorWriterOn, env } from "@/lib/env";
-import { SPARK_STANDIN } from "@/lib/meta/spark";
+import { defaultModel, SPARK_STANDIN } from "@/lib/meta/spark";
 import { metaPlatform } from "@/lib/meta/platform";
 import { modelLabel } from "@/lib/format";
 import { fromResponsesUsage } from "@/lib/meta/pricing";
@@ -40,7 +40,7 @@ import { recordUsage } from "@/lib/usage";
  * The model that writes the prompts and the reference answers of a new dataset, saved on it as its writer_model. Muse
  * Spark 1.3 wrote every dataset before Oct 29, 2026 and is never used for new ones.
  */
-export const DATASET_MODEL = "muse-wonder-1.0";
+export const DATASET_MODEL = defaultModel();
 const WRITER = modelLabel(DATASET_MODEL);
 
 /**

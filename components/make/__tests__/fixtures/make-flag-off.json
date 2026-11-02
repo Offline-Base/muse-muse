@@ -1,0 +1,46 @@
+{
+  "make page: signed out": {
+    "sha256": "b5574e91f369ed8fd186f72795788120f064749650fff054d3c8568f16010eae",
+    "length": 7799
+  },
+  "make page: signed in": {
+    "sha256": "a0e6f4c4643fb00b960de8b5428233cde32f08391ac187fcd7aea9469b6d3702",
+    "length": 7812
+  },
+  "run room: writing": {
+    "sha256": "69c07b81b753c7440d985b6fdb837673e8dd317069acf8d23d3df89aaaa4a07a",
+    "length": 4289
+  },
+  "run room: training": {
+    "sha256": "8de47fd6e031f13c2325c0d546a9b657155a09429c3d7dcb15b8e0a7a2cc1eaa",
+    "length": 4393
+  },
+  "run room: ready": {
+    "sha256": "f9b0c45ed70bf4784747f4207094b7fe89c75c1c86689df4a72b9fe9d477ed32",
+    "length": 19368
+  },
+  "plan step: drafting": {
+    "sha256": "873d2aa3cab7a42c8d210fe4780f7d2a52ec752b453f80b3f09baa139db6fef0",
+    "length": 2111
+  },
+  "plan step: plan": {
+    "sha256": "329ae7eaba81434b54259c89348ef27d63a5301e0d6fae5b7fb33ab9113bd788",
+    "length": 3337
+  },
+  "plan step: visitor plan": {
+    "sha256": "a42dc57372901364938d2791a003d4d665b0be4f2e8d21e7e354d5e2dd5416ef",
+    "length": 3246
+  },
+  "plan step: problem": {
+    "sha256": "a0ff8b3b631a81c5161ee9cccc0855e5be5be5d7b7b2ccfee0688219c91b55b3",
+    "length": 839
+  },
+  "folder drop: empty": {
+    "sha256": "a6f1f9dad1ec425a71093c169c614120e2baddf7feb5089c945ae7baa35f5e16",
+    "length": 1402
+  },
+  "folder drop: reviewed": {
+    "sha256": "f69a3837ff6a1bab673fd5ec78a7c9507fbb262b263b001fa99bd1a39ad0a4c3",
+    "length": 2300
+  }
+}

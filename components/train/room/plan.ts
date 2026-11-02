@@ -59,7 +59,7 @@ export function howItsMade(s: Pick<TuneSettings, "examples" | "base">, c: Pick<T
   ];
 }
 
-export function planViewFromTrainPlan(p: Pick<TrainPlanBody, "name" | "tagline" | "samples" | "examples" | "settings" | "cost"> & Partial<Pick<TrainPlanBody, "source">>, upload?: string | null, visitor = false): PlanView {
+export function planViewFromTrainPlan(p: Pick<TrainPlanBody, "name" | "tagline" | "samples" | "examples" | "settings" | "cost"> & Partial<Pick<TrainPlanBody, "source">>, upload?: string | null, visitor = false, fireworks = false): PlanView {
   const sample = p.samples.find((s) => s.trim());
   const steps = howItsMade(p.settings, p.cost, p.examples.used, p.examples.given);
   // A folder's rows train as they are, and anything else is written by Contributor from its files.
@@ -72,6 +72,7 @@ export function planViewFromTrainPlan(p: Pick<TrainPlanBody, "name" | "tagline" 
   }
   // Trying it live and publishing are for admins.
   if (visitor) steps[steps.length - 1] = "It stays on Muse Muse, private to you. Its scores show here.";
+  if (fireworks) fireworksSteps(steps);
   return {
     name: roleTitle(p.name),
     tagline: p.tagline,
@@ -80,16 +81,25 @@ export function planViewFromTrainPlan(p: Pick<TrainPlanBody, "name" | "tagline" 
       ...(sample ? [{ heading: "It might be asked", text: `"${sample.trim()}"` }] : []),
       ...(p.settings.base?.dutiesText ? [{ heading: "Its license", text: p.settings.base.dutiesText }] : []),
       ...(upload ? [{ heading: "Where it goes", text: upload }] : []),
-      { heading: "What it costs", text: `${planCostText(p.cost)} ${upperFirst(roughMinutes(p.cost.minutes))} in all.` },
+      { heading: "What it costs", text: fireworks ? FIREWORKS_COST : `${planCostText(p.cost)} ${upperFirst(roughMinutes(p.cost.minutes))} in all.` },
     ],
   };
+}
+
+const FIREWORKS_COST = `Training and answering are priced from Fireworks' live pages, shown under Where it trains, and a run they don't confirm is refused. Writing and scoring are estimates at ${WRITER_NAME}'s prices. How long it takes depends on Fireworks' queue.`;
+
+/** The plan's steps when it trains on Fireworks: on plain Muse Glimmer 30B, never r30b, and said so. */
+function fireworksSteps(steps: string[]): void {
+  steps[2] = "Plain Muse Glimmer 30B, not the 2026 Glimmer (r30b), trains on Fireworks' managed training.";
+  steps[3] = steps[3]!.replace(/^(The base|The 2026 Glimmer it started from)/, "Plain Muse Glimmer 30B");
+  steps[steps.length - 1] = "Its adapter stays on Fireworks. Muse Muse's local files and live demo don't use it yet.";
 }
 
 /**
  * A started run's plan, from the run itself. The tagline and the sample come from the browser that started it
  * (sessionStorage), when it still has them; the rest is the run's own.
  */
-export function planViewFromRun(v: Pick<TuneRunView, "title" | "plan">, kept?: { tagline?: string; samples?: string[]; used?: number } | null): PlanView {
+export function planViewFromRun(v: Pick<TuneRunView, "title" | "plan"> & Partial<Pick<TuneRunView, "trainer">>, kept?: { tagline?: string; samples?: string[]; used?: number } | null): PlanView {
   return planViewFromTrainPlan({
     name: v.title,
     tagline: kept?.tagline ?? "",
@@ -97,5 +107,5 @@ export function planViewFromRun(v: Pick<TuneRunView, "title" | "plan">, kept?: {
     examples: { given: kept?.used ?? 0, used: kept?.used ?? 0 },
     settings: v.plan,
     cost: v.plan,
-  });
+  }, undefined, false, v.trainer === "fireworks");
 }

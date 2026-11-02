@@ -270,7 +270,7 @@ export const usage = pgTable(
     // Wave 3, unit 9: "exec" and "browse" are the code cap's sandboxes. A type change only, no migration.
     // Wave 3, unit 9: "code_session" is a Muse Code session's sandbox time (0027). A type change only.
     // Wave 3, unit 11: "glimmer" is the shared Glimmer endpoint (0025). A type change only.
-    source: text("source").$type<"gateway" | "muse_code" | "platform" | "docs" | "tools" | "fetch" | "vault" | "sends" | "exec" | "browse" | "code_session" | "glimmer" | "hosted">().notNull(),
+    source: text("source").$type<"gateway" | "muse_code" | "platform" | "docs" | "tools" | "fetch" | "vault" | "sends" | "exec" | "browse" | "code_session" | "glimmer" | "hosted" | "fleet">().notNull(),
     productId: uuid("product_id").references(() => products.id),
     buildId: uuid("build_id").references(() => builds.id),
     tokenId: uuid("token_id").references(() => gatewayTokens.id),

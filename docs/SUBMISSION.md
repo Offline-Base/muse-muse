@@ -1,282 +1,349 @@
 # Muse Muse submission
 
-Meta Global AI Developer Hackathon, Startup track. Due Nov 4, 2026, 9 PM ET.
+Rewritten Nov 2, 2026, on branch tg-submission-fields (from `e4beadc1`, main plus the edge track), around the real form. The field drafts came from a read of the public event pages and every doc they cite; the form itself needs a sign-in, so Ethan checks the order and wording when opening it and adds anything missing here.
 
-- **Live site:** https://muse-muse.vercel.app (open to anyone, no sign-in)
-- **Repo:** https://github.com/Offline-Base/muse-muse (private until the owner makes it public)
-- **Video:** PLACEHOLDER: the link, once recorded
+Meta Global AI Developer Hackathon. Startup track ("Judged on technical execution and whether it holds up in production"). Due Wed Nov 4, 2026, 9 PM ET; Ethan submits by noon ET.
 
-This file has three parts: the write-up, the video script and the submission checklist.
+Every answer below names its source. A claim is allowed only if a Checked row in [MESSAGING.md](MESSAGING.md), a mark in [STORY.md](STORY.md) or a logged run in [BUILD_LOG.md](BUILD_LOG.md) allows it. Anything that hasn't run says "is built so". Answers that must change later carry one of these tags:
 
-## 1. Write-up
+- **[after the chain run]**: change it once the approved chain run (O2 in [EDGE_PLAN.md](EDGE_PLAN.md)) is logged in BUILD_LOG.
+- **[after the board take]**: change it once the board runs (M10, M11, M12 in EDGE_PLAN.md) are logged.
+- **[owner]**: only Ethan or Hussam can answer it.
 
-### One line
+## What the organizers said
 
-Give it a muse and Muse makes it: drop in an example, and get a tested, deployed product built by Muse Code on Meta's models.
+Nov 2, from the organizers:
+
+> "Judges mainly work from your 3-minute demo video and your public GitHub repo, so the video is the core of the demo. Judges may also try the project themselves, using their own keys if needed, so the repo must run from its setup instructions. A hosted demo is optional."
+
+What that means for us:
+
+1. **The video carries the score.** The script is [VIDEO.md](VIDEO.md), with the edge act approved (O1 and O6, yes).
+2. **The repo has to be public by submission**, and has to run from the README. The going-public plan is in [HANDOFF.md](HANDOFF.md), "Going public".
+3. **The README's setup has gaps** (a clean-clone test on Nov 2):
+   - The first Quickstart command is Docker, and the README itself says the image "has not been built or run yet".
+   - With no keys, `npm ci && npm run dev:local` opens the site (every page returned 200, but a local run starts empty), and the Node and Muse Privacy test suites pass.
+   - To make one product, a judge needs a Meta key (`MODEL_API_KEY`) **and** a Vercel account linked for Vercel Sandbox. With only a Meta key, the build pays for a brief and then fails at provisioning. `BUILDER_SNAPSHOT_ID` is optional locally (a slower first build).
+   - The edge drills are now in the repo (`template/scripts/edge-drill.mjs`) and run with no keys against a fake edge server; the README doesn't mention them yet. Each test file's header has its command, for example `npx tsx --test template/scripts/__tests__/edge-drill.test.mjs`.
+   - Fixing the README is a separate unit. Until it lands, don't write in any field that a judge can build a product with only a Meta key.
+4. **The live site is optional.** It stays up as a bonus: https://muse-muse.vercel.app
+
+## Two headlines
+
+Both go in the description and the video, side by side.
+
+**The frontier.** Muse Muse is built so one sentence becomes a tuned model you keep, inside an app built for it, with marks that show what was proven. (STORY.md, the frontier claim. "Is built so" until the chain has run as one.)
+
+**The edge, and defending infrastructure.** Muse Muse is built so the app it makes can keep answering on a Jetson when the cloud is cut, and flag a controller reading that disagrees with an independent probe. Our scenario is a simulated cold room. (EDGE_PLAN.md, "When each claim may be said"; MESSAGING.md, "Edge facts, Nov 2".)
+
+The why, in our words: infrastructure has to be ready for any scenario, including the day the cloud is out of reach or a controller can't be trusted. Never say the app stops hacks, is attack-proof, works offline in general, or answers privately or on-device.
+
+## The form, field by field
+
+### 1. Team Name
+
+> Offline Base
+
+Source: CLAUDE.md ("Offline Base's entry"). "Muse Muse" is the project's codename, not the team name.
+
+### 2. Team Members  [owner]
+
+> Ethan Castro (Representative, submits)
+> Hussam Ali (GitHub hussam2444)
+
+- **Both names must be listed.** When the owner opened the form, only Hussam showed. Add Ethan too, or the form lists one of two members.
+- Confirm Hussam's surname with Hussam before submitting. The docs say only "Hussam"; "Ali" comes from the author name on one of Hussam's commits.
+- Source: the Official Rules ask the Representative to "identify all other team members in the project submission", and on the startup track the Representative "must be an active employee of the startup" (MESSAGING.md, "What the rules say").
+
+### 3. Track
+
+> Startup
+
+Source: the event page; README.md.
+
+### 4. Which problem statement did you build towards?
+
+> Push the Frontier
+
+Why: the pages never say "problem statement". The rules' Impact line asks "whether it fits one of the problem statements", and the only candidates are the two themes. Both headlines land on Push the Frontier's own words: "Give a machine a new capability" (a sentence becomes a tuned model on a small board) and "unlock a better way to understand and control a physical system ... when these models meet the real world" (the cold-room watcher). Build for Your World fits only Muse Privacy. Source: MESSAGING.md, the Push the Frontier row (Checked).
+
+### 5. Most Viral: X post link  [owner] [after the board take]
+
+> PLACEHOLDER: the X post's URL
+
+- **What it is.** The public pages name a "most viral project award" only inside the Bonus Prizes clause (up to $50,000 in all, announced on or about Nov 10). There are no published rules on what counts, no tags or handles, and no deadline for the post. The rules say a project enters "one (1) track only", so this reads as a bonus award, not a second track. Ask on Discord if the form makes it look like one.
+- **The post has to exist before Ethan submits** (Wed noon ET), since its link goes in the form.
+- **The video.** The 60-second cut in [VIDEO.md](VIDEO.md), "The 60-second X cut": shot 1 (or its fallback), E2 if the tune ran, E3a (cables out), then shot 12's URL card, with the same labels and lower third. If the take (M12) hasn't happened, E3a falls back down the ladder in EDGE_PLAN.md: at level 4, shot 10 plus a "Simulated outage" card.
+- **Post text, before the take:**
+
+  > One sentence becomes a tuned model you keep, and an app built for it. We built Muse Muse for Meta's AI Developer Hackathon. Its edge act: a simulated cold-room watcher that is built so it keeps answering on a Jetson when the cloud is cut. Code: https://github.com/Offline-Base/muse-muse
+
+- **Post text, after the take** (N and X from that take only):
+
+  > One sentence becomes a cold-room watcher. Muse Muse built it on Meta's cloud models, and this app kept answering on one Jetson with its network unplugged, N of 5 drills, X tokens a second. Simulated cold room, real board, real unplug. Code: https://github.com/Offline-Base/muse-muse
+
+- Check the post against every line of MESSAGING.md "Don't say", the edge lines included. No news logos or footage; the rights grant (section "Before you tick the rights box") covers the post too.
+
+### 6. Project Description  [after the chain run] [after the board take]
+
+Paste version A today. Swap in each B line only after its run is logged in BUILD_LOG.md.
+
+> Muse Muse is built so one sentence becomes a tuned model you keep, inside an app built for it, with marks that show what was proven.
+>
+> **The frontier.** Meta now offers frontier cloud models and open models for local use. Muse Muse explores whether one person can move between them, shape the result, and leave with something they control. Muse Code writes each app headless in a Vercel Sandbox microVM, and the platform runs typecheck, build, a smoke test and a screenshot judge on it, with up to three fix rounds. On a test harness, a Llama 3.2 3B tuned on a rented A10 beat base 95 to 5 in a blind check judged by Muse Wonder, on an invented topic, which is an easy test. The real quantize recipe made a 2.02 GB file that passed every check. By hand, a one-bit Muse Glimmer (5.75 GB, about a third the size of Meta's smallest 16.8 GB file) runs on a Jetson Orin Nano 8GB, at 5 to 6 tokens a second with weak answers. Built with Muse Spark Open.
+>
+> **The edge, and defending infrastructure.** Building for any scenario includes the day the cloud is out of reach or a controller can't be trusted. On Nov 2, supermarkets across Europe reported suspected freezer hacks, and the Pentagon is treating freezer failures at at least six commissaries as a suspected cyberattack. Muse Muse is built so a sentence like "watch this cold room" becomes an app that reads a controller, an independent probe, the door, defrost and power, flags a reading that disagrees with the probe, and falls back from Meta's cloud models to a Llama 3.2 3B on a Jetson when the cloud fails. Meta describes Llama 3.2's 1B and 3B models as ones "that fit onto edge and mobile devices". The cold room and its readings are simulated.
+>
+> **What is true today.** The cloud-to-edge fallback, the edge target, four outage drills (cloud refused, cloud hung, both down, tampered reply rejected) built to run inside each edge build, the board build script and the drill data (900 training rows, 50 kept aside, 100 sealed) are built and unit-tested, with flags off. None has run in a real build or on a board yet.
+>
+> **What isn't proven.** The chain hasn't run as one, and nothing the one-sentence flow made has run on a board. Muse Privacy is a separate connector, measured only on invented items: 0 leaks of names or identifiers on 300, and an earlier run had 10 on 200.
+
+B lines (EDGE_PLAN.md, "When each claim may be said"), each replacing the matching "is built so" or "isn't proven" words:
+
+- After the chain run (O2): the frontier paragraph's harness numbers become the chain run's own, and "The chain hasn't run as one" comes out. Use STORY.md's marks as they stand after the run.
+- After one real edge build has run its drills (M7 with M5): "Every edge build runs four simulated outage drills before it ships."
+- After M8: "Tuned on the scenario's invented data, Llama 3.2 3B scored [X] against base [Y] on 100 sealed held-out items, scored by code." If tuned didn't beat base, say both numbers.
+- After M10 or M11: "On [board], Llama 3.2 3B ([tuned or base]) scored [X] on 100 invented held-out items, at [N] tokens a second."
+- After M12: "This app kept answering on one Jetson with its network unplugged, [N] of 5 drills, [X] tokens a second." Then STORY.md's "On your own hardware" mark may move up, and "nothing the one-sentence flow made has run on a board" comes out.
+- Optional, after Hussam's PR #67 is merged and its numbers are logged in BUILD_LOG.md and marked in MESSAGING.md: one line on the Llama 3.2 1B that Hussam fine-tuned on jetson-04 itself. Not before.
+
+Sources: SUBMISSION "One line" (STORY.md); MESSAGING.md point 4 and rows 16 and 23; STORY.md marks; MESSAGING.md "Edge facts, Nov 2" (Bloomberg's "suspected", Reuters' "at least six commissaries", the Meta Llama 3.2 row); EDGE_PLAN.md unit status; commits `a4e191b1`, `e81e6f66`, `193a1c30`, `5c679d87`. Muse Privacy gets one line here so both headlines fit; its full write-up is under "Muse Privacy, in full" below. STORY.md and MESSAGING.md still say the Oct 30 leaks' cause isn't recorded, though #66 added an account in `privacy/eval/reports/device_only_fresh_200_leaks.md`. Update those marks first if you want to say the cause.
+
+### 7. Public GitHub Repository  [owner]
+
+> https://github.com/Offline-Base/muse-muse
+
+- **Still private.** Make it public before submitting, by the plan in HANDOFF.md, "Going public": a fresh public repo with history rewritten by `git filter-repo`. The owner runs the commands.
+- Before that, owner to-dos 4 to 7 in HANDOFF.md (LICENSE, ngrok domain and GPU machines, data rights, Hugging Face visibility).
+- Merge the edge track (`tg-edge`) first, or the edge lines have no code behind them in the public repo.
+- Judges may run it with their own keys, so fix the README gaps above first.
+
+### 8. 3-Minute Demo Video  [owner] [after the chain run] [after the board take]
+
+> PLACEHOLDER: the YouTube link
+
+The cut with the edge act runs about 2:54 (VIDEO.md, "Proposed revision: the edge act", now approved). Every edge shot says "Simulated" somewhere on screen.
+
+### 9. Describe your use of Meta products
+
+> **Muse Wonder 1.0** writes briefs, builds, fix rounds and judging, and judged the blind check (100 of 100, $1.54). **Muse Spark 1.3 Contributor** is the test model for builds with made-up data. **Muse Spark 1.3** wrote the lab's first dataset and judged the lab runs. **Muse Code** writes every app headless (`muse exec --json`, `--session-id` for fix rounds, `--image` for screenshots, `muse export --redacted` for each app's build story). **Muse Glimmer 30B** was QLoRA-tuned on rented GPUs, judged blind against base and cut to one-bit files, one of which runs on a Jetson. **Muse Spark Open** wrote training data, so that Glimmer (r30b) is a Derivative of it. **Llama 3.2 3B** is the small tuned model (a 2.02 GB file) and the edge model the cold-room watcher is built to fall back to. **Muse Image 1.0, SAM 3.1 and Muse Voice Transcribe 1.0** run inside apps. The **Meta Model API** (`responses`, `images/generations`, `images/edits`, `files`, `asr/transcribe`) is reached only through a metered gateway, and generated code never sees the key. **Meta's docs:** the blind check follows the post-training guide's held-out comparison.
+
+Source: the model table under "How it uses Meta's models" below; EDGE_PLAN.md for Llama's edge role. Before submitting, check whether production is on Wonder or Contributor (HANDOFF.md, to-do 9). [after the chain run]: add what the chain run used.
+
+### 10. Why are Meta's models important to your solution?
+
+> The project works only because Meta offers both ends. The cloud models (Muse Wonder, Muse Code) do the heavy work once: planning, writing the app, judging. The open models (Glimmer, Llama 3.2) are what comes out, a file you keep. Meta's Glimmer docs put it as "you own the weights, the runtime, and the data". For infrastructure that has to keep working when the cloud doesn't, that matters: Meta describes Llama 3.2's 1B and 3B models as ones "that fit onto edge and mobile devices", and the app is built to fall back to the 3B on a Jetson. One vendor's models on both sides means one prompt style, one tool-call shape and one set of licenses, from the sentence to the board.
+
+Source: MESSAGING.md rows 13 and 23 and the Llama row; STORY.md, alignment paragraph. The last sentence is our framing, not a measured claim; cut it if you prefer.
+
+### 11. Partner feedback: Fireworks, Modal, Baseten
+
+> All three hosted Muse Spark Open, which wrote training data for our 2026-knowledge Glimmer. A 45-passage test batch passed on all three at about $0.005 a passage. Estimated spend from list prices: Fireworks about $100, Baseten $49, Modal $16.
+>
+> **Fireworks** carried the most, but rate-limited at about 96 concurrent requests, so about 290 passages were retried at lower concurrency. For training, it can't run our recipe or take our chat template, it refuses r30b adapters and regex target modules, and it has no plan or dry-run call: estimatedCost exists only on a created job. Free Glimmer SFT until Nov 30 is generous. Clearer terms would help: 2.2(c) and 3.3(v) (no "machine-generated content" in Input) are hard to square with distillation-style data.
+>
+> **Modal:** our plan credits didn't cover shared endpoints, so it rejected requests mid-run and Fireworks took its share. For hosting a tune, `modal app stop` exits 1 for an app that is already gone, and CLI output wraps at 80 columns, which can split the endpoint address. GPU Sandboxes can be preempted.
+>
+> **Baseten** handled its share (32,731 published rows) without a logged failure. Its deploy needs the Truss CLI, so we run it in a short-lived sandbox. It refuses a plain Glimmer adapter without a pinned full-weights commit.
+
+Source: KNOWLEDGE_RUN_LOG.md (the batch, spend, rate limit and Modal credits); BUILD_LOG.md (the training and hosting notes); DATA_RIGHTS.md (Fireworks' terms and Baseten's rows). The logs don't say whether the $100 partner credits were used; add it if they were. [owner]
+
+### 12. How likely are you to build with Meta Model API?  [owner]
+
+An opinion, so pick it yourself. Facts that bear on it: about $33.52 of Meta plus sandbox spend of $150, in one Oct 31 entry (BUILD_LOG.md); a 64-minute Wonder build for $16.55 that didn't finish (BUILD_LOG.md); 9 of 10 catalog rebuilds went live for $24.70 ("Results" below).
+
+### 13. Overall opinion of Meta Model API  [owner]
+
+An opinion. Supporting facts: the scoped per-app tokens and the gateway worked as designed. The pain points are in the survey answers below.
+
+### 14. Optional survey
+
+- **Recommend Meta Model API / Muse Code:** [owner] scores.
+- **Biggest obstacle:**
+  > Running Muse Code with nobody watching. Its launcher tries to self-update from a blocked host and may start a device sign-in, its own sandbox can't run in a microVM, and 15 bundled skills fought our template. Also, `run.usage` counts only the main agent, while reminder agents were 31% to 43% of real spend.
+- **How Meta's models compared:**
+  > Tuned Glimmer won 40 of 40 against base. On an 8 GB Jetson, one-bit Glimmer gave no valid JSON on 40 invented receipts, against 88% of fields right for Bolt and 82% for LFM3-VL (both non-Meta). Meta's model is the right size in the cloud, but not yet on 8 GB, which is why the edge plan uses Llama 3.2 3B.
+
+  Source: STORY.md; MESSAGING.md point 3. [after the board take]: add the Llama 3.2 3B board numbers from M10 or M11, and #67's 1B numbers if they are logged by then.
+- **What matters most when choosing:** [owner]. Suggested: a license we can ship, weights we own, and cost we can see per call.
+- **What makes switching hardest:**
+  > Chat templates and output channels. Our first Glimmer eval lost 28 to 11 because answers stayed on the reasoning channel, and hosts differ on whether they take a template.
+- **What would stop production use:**
+  > Model API Terms 10.1(ix) leave "competes" undefined for tuning Meta's own open models on API outputs, and the Contributor tier may train on prompts.
+
+  Source: DATA_RIGHTS.md Q2; the Muse Spark 1.3 Contributor row below.
+
+### Before you tick the rights box  [owner]
+
+The grant is perpetual, irrevocable, worldwide and royalty-free, and covers "the Submission for any purpose without restriction", marketing included (DATA_RIGHTS.md; the event rules). The repo, the video and the X post all count. Before ticking:
+
+- Settle DATA_RIGHTS.md Q1 to Q3 for any model the video or description features. If Q2 is no, drop the Nov 1 Glimmer result (7.93 against 2.5).
+- Pick a LICENSE (HANDOFF.md, to-do 4).
+- Keep news logos and footage out of the video and the post. Quote the news as text, with credit and "suspected".
+- Don't name any judge.
+
+### Lines left out, and why
+
+- An "Open Weights prize" naming Glimmer or Spark Open: no such prize is on the public pages. Find its source before saying it anywhere.
+- "Works offline", "private" or "on-device" for board answers, "stops hacks", "attack-proof", and anything about surviving a power loss (MESSAGING.md, "Don't say").
+- The DC substation outage as an attack. Pepco: "no indication of foul play".
+- Hussam's on-board fine-tune numbers (PR #67): reported in an open PR, not yet logged or marked.
+
+## Reference for the answers
+
+The longer write-up the fields draw on. Same rules: if a mark changes, change the line here.
 
 ### The problem
 
-Meta's Model API reads photos, video and PDFs, makes and edits images, outlines and tracks objects, and transcribes speech. Few developers build on it.
+> "People are starting to be able to manifest ideas themselves without having to raise money or build large teams."
+> Mark Zuckerberg, "The Future is for Everyone", Aug 10, 2026
 
-- On OpenRouter's rankings for the week of Oct 19, 2026, Meta wasn't among the top nine model authors.
-- Meta's own Videos page still shows Llama-era demos. All six on the first page use Llama (checked Oct 26). None shows Muse Spark, SAM 3.1, Muse Image or Voice Transcribe.
+Meta now offers frontier cloud models and open models for local use. Muse Muse explores whether one person can move between them, shape the result, and leave with something they control. Going from a sentence to a model that's yours still takes data, a GPU, a fair test against the base model, a file small enough for a device, and an app around it.
 
-App builders also start from a text prompt. People usually know what they want by pointing at it: a photo, a screenshot of an app, a sketch on a napkin.
+Some of that work can't go to any cloud. Johns Hopkins Bayview notified 3,182 patients after a worker uploaded a patient spreadsheet to an AI tool the hospital hadn't approved. GAO found that "all 12 selected agencies that allow the use of generative AI reported that the agency limits or restricts that use in some capacity" (GAO-25-107653, July 2025).
 
-### What it does
+Source: MESSAGING.md, all Checked.
 
-1. **Muse.** You drop in inspo (photos, screenshots, sketches, a short video, a voice memo or a PDF) and an optional note, like "make this, but for my bakery."
-2. **Brief.** Muse Wonder reads the inspo and writes a structured brief: the product, who it's for, the Meta models it needs and why, honest limits, cost per use, and what it takes from the inspo and leaves out. It refuses requests that impersonate people or organizations, clone a real brand, or involve weapons, malware or scams.
-3. **Build.** Muse Code runs headless on Muse Wonder in a Vercel Sandbox microVM and writes a Next.js product from a starter template. Every product shares a Meta-family look (Facebook's design tokens, Inter and Montserrat, an app bar, segmented choices, a composer, AI result cards) that the template's `meta-ui` skill teaches. You watch the log and a live preview in the build room.
-4. **Check.** Typecheck, build, the smoke test Muse Code wrote, a screen check, then Muse Wonder judging screenshots against the brief. Failures go back to the same Muse Code session with the judge's screenshots, up to three rounds.
-5. **Demo video.** Demo Studio replays the smoke test with a recorder, then edits a 1920×1080 launch clip: an intro card, the app in a browser window with its real URL, a cursor that glides to each control, typing key by key, a camera that zooms in on what is typed and on each result, model waits sped up with a badge that says by how much ("Waited 14 s, sped up"), captions below the window, and an outro with the live link.
-6. **Ship.** The product deploys as its own Vercel project. It calls Meta only through the platform's metered gateway, with its own scoped, budgeted token.
-7. **Use in Muse.** Its actions become an MCP connector that the Muse app (or Claude Code) can add.
+### The chain, step by step [after the chain run]
 
-Every product it ships is new, metered Meta API usage. The dashboard's headline number is "Meta tokens driven."
+| Step | Mark | What ran |
+|---|---|---|
+| One sentence to a plan and data | Proven, by harness | 900 rows to train on and 100 kept aside, for an invented hobby, $0.22. The one-box page hasn't started a real run |
+| A tuned model on a rented GPU | Proven, by harness | Llama 3.2 3B on a Lambda A10, about 18 minutes. Separately, the lab's own flow tuned Muse Glimmer 30B on an A100 in 42 minutes for $1.39 |
+| A blind check against base | Proven, by harness | Muse Wonder judged 100 of 100 blind: tuned 6.67, base 2.55, tuned won 95 to 5. The topic is invented, so base starts knowing nothing, which makes it an easy test. The Glimmer run won 40 of 40, 8.88 to 1.95, judged by Muse Spark 1.3 |
+| A file small enough for a device | Proven, by harness | The real quantize recipe, made-up data: a tuned small Llama became a 2.02 GB file and passed every check; a tuned Glimmer became a 6.53 GB one-bit file |
+| On your own hardware | Simulated | A simulated board only, for this flow [after the board take] |
+| An app built for it | Proven | Test builds on the test model with made-up data, on a local site with no live link |
+| That app answering with its tuned model | Not run yet | Planned behind a flag. Products answer on Muse Wonder until their model passes and is served |
+| Checks showing what was proven | Proven | Typecheck, build, a smoke test Muse Code wrote, and a judge reading screenshots. The judge is one check of four |
 
-Two more parts sit on top:
+The steps haven't run as one chain yet. Source: STORY.md.
 
-- **Rebuilds.** One command rebuilds Meta's Llama-era demo videos on current Muse models, plus first demos for the models Meta has no video for: SAM 3.1, Muse Image, Voice Transcribe and Muse Wonder.
-- **Fine-tuning lab, "Spark teaches Glimmer."** Muse Wonder writes a training set, Muse Glimmer 30B learns it with a LoRA adapter on the owner's Lambda GPUs, and Muse Wonder judges base against tuned, blind. The name comes from the runs so far: Muse Spark 1.3 wrote their dataset and judged them. Results are public and read-only at `/fine-tuning`. Each judged adapter then publishes itself to Hugging Face with its training data and a card that tells why it was made.
+### The edge track [after the board take]
+
+| Piece | State on `e4beadc1` |
+|---|---|
+| Cloud-to-edge fallback (`template/lib/meta/edge.ts`) | Built, unit-tested. The cloud first with a 10 s limit, then an OpenAI-compatible edge server, checked against a schema. A cloud that turns a request down is the answer; the board isn't asked around it |
+| Outage drills (`template/scripts/edge-fake.mjs`, `edge-blackhole.mjs`, `edge-drill.mjs`) | Built, unit-tested on loopback with a fake model: cloud refused, cloud hung, both down, tampered reply rejected |
+| Edge target and a drill inside every edge build | Built, unit-tested with the sandbox faked. Not run in a real build |
+| Board build (`scripts/edge/build-arm64.sh`, `docs/EDGE_DEMO.md`) | Built. Syntax-checked only; the Docker build hasn't run |
+| Drill data (`scripts/dev/drill-bench.py`) | Built. Simulated cold-room windows written by code from a fixed seed: 900 training rows, 50 kept aside, 100 sealed held-out, scored per field by code, with a rule that a controller that disagrees with the probe by more than 3.0 C is never trusted |
+| Llama 3.2 3B on a board, tuned or base | Not run |
+| The cut on camera | Not run |
+
+All behind `EDGE_ENABLED` and `EDGE_BUILDS`, off by default. Source: EDGE_PLAN.md, EDGE_DEMO.md.
+
+### Muse Privacy, in full
+
+Muse can reach your files through connectors, but what it reads lands in its cloud computer, names and all. Muse Privacy is a connector that runs on hardware you own. Muse plans with tags like [Student A] and never gets the documents. A model on the device does every step that touches them, a policy file decides what can leave, and a final check runs on every result before it leaves.
+
+- On 300 invented items on a laptop, with today's router: 0 leaks of names or identifiers.
+- An earlier run, Oct 30, had 10 leaks on 200 items (`privacy/eval/reports/device_only_fresh_200.md`). STORY.md still says its cause isn't recorded; see the note under field 6.
+- It agreed with the expected decision 82.0% of the time on 200 items and 81.0% on 100 tasks, but 65.0% (13 of 20) on the holdout items inside those tasks.
+- It asks too often: 76 approval requests on the 200 items, 28 needless. 5 results were shared that should have waited.
+- "Leaks" counts names and identifiers. A summary can still point at someone without naming them.
+- No real users, the sealed test set hasn't been scored, the attacks are hand-written, and the device model is Liquid's LFM3-VL-2B, not a Meta model.
+
+Meta's cookbook already has a local agent that asks before each send ("Local agent that asks first"). The difference here is that a policy file decides, and a router learns from what was approved before. It shares the idea in Meta Engineering's PrivacyLib post: "The access decision does not depend on the agent behaving as intended." The check sits at the exit, outside the model. A toggle doesn't make anyone legally covered.
+
+Source: STORY.md, privacy paragraph; MESSAGING.md, Checked rows and point 1.
+
+### On a Jetson
+
+Meta's smallest Glimmer files are 16.8 GB and 19.7 GB. By hand, the knowledge run's Glimmer (r30b), cut to one-bit size (IQ1_S, 5.75 GB), runs on a real Jetson Orin Nano 8GB, about a third the size of Meta's smallest file. Here's the cost: 5 to 6 tokens a second with weak answers. On 40 invented receipts it gave no valid JSON, and the board stopped answering at receipt 23. r30b is a Derivative of Muse Spark Open: Built with Muse Spark Open, 18 and over. Nothing the one-sentence flow made has run on a board.
+
+Source: MESSAGING.md, quantization row (Checked) and point 3; STORY.md, device-file row.
+
+### Under all of it: the build platform
+
+Muse Code runs headless in a Vercel Sandbox microVM and writes a Next.js app from a template. The checks run, and failures go back to the same Muse Code session with the judge's screenshots, up to three rounds. Apps reach Meta only through a metered gateway, each with its own scoped, budgeted token, and the sandbox firewall adds the Meta key only on Muse Code's own routes. Every app gets a demo video cut from its own passing test, with model waits sped up and labeled. Source: README.md and BUILD_LOG.md.
 
 ### How it uses Meta's models
 
-| Model or tool | Where Muse Muse uses it |
+| Model or tool | Where |
 |---|---|
-| **Muse Wonder 1.0** | The default for every platform role. Reads every reference (images, video, PDFs) and writes the brief with strict JSON-schema output, or refuses, and checks each refinement request against the same policy. Muse Code's model for every build and its fix rounds. Judges each build's screenshots. The default model inside products, for their own text and vision calls. For new fine-tuning runs, writes the dataset, judges base against tuned Glimmer, and writes the "Why this exists" story on each Hugging Face card. |
-| **Muse Spark 1.3** | Not used since Oct 29, and the brief writer no longer offers it. Before that it was the default for briefs, builds, judging and products. It wrote the lab's dataset (400 examples for $1.51) and judged both runs. |
-| **Muse Spark 1.3 Contributor** | Runs wherever Spark 1.3 is still forced. A refinement of a product built on Spark 1.3 resumes Muse Code on it, and the gateway serves any live product that still asks for `muse-spark-1.3` with it, metered at its price ($0.10 in and $0.20 out per million tokens). It is also the test model: nearly all of the Nov 1 test builds ran on it, with made-up data. A flag, `BUILDS_ON_CONTRIBUTOR`, can run every build on it; check its production value before submitting, because this table says Muse Wonder builds. Meta may train on contributor prompts. |
-| **Muse Image 1.0** | Inside products, for generating and editing images. It also made the three example photos on the Make page. |
-| **SAM 3.1** | Inside products, to find, outline and count things in photos and video, such as the first SAM 3.1 demo. Results are parsed with Meta's `@meta-sam/parser`. |
-| **Muse Voice Transcribe 1.0** | Turns a voice-memo muse into text before the brief. Inside products, after the browser converts audio to 16 kHz mono WAV, the only format the API accepts. |
-| **Muse Code** | Writes every product, headless in a Vercel Sandbox: `muse exec --json` with hardened flags, `--session-id` to resume for fix rounds and refinements, `--image` for inspo and judge screenshots, `muse skills disable` for 15 bundled skills that fight a headless build, and `muse export --redacted` for each product's "How it was built." |
-| **Muse Glimmer 30B** | The fine-tuning lab's student: a QLoRA fine-tune on Lambda GPUs, judged by Muse Wonder (Muse Spark 1.3 judged the runs so far), served live for side-by-side answers, and published to Hugging Face as a PEFT adapter with its data and card. Products can also call a hosted Glimmer endpoint through `GLIMMER_URL` when a brief asks for a local or private model. |
-| **Meta Model API endpoints** | `responses`, `images/generations`, `images/edits`, `files` and `asr/transcribe`, which products reach only through the platform's gateway. Muse Code also calls `models` and `/muse-code/models` through the sandbox firewall. |
-| **Meta's Videos page** | The rebuild set: `catalog/meta-resources.json` links each video and never copies it. |
-
-### What's novel
-
-- **Inspo first.** You show it what you mean instead of writing a long prompt. The brief records what it takes from the inspo and what it leaves out, and the judge fails a build that copies a brand or logo.
-- **Real products, not mockups.** Each one passed its own tests, has a recorded demo, a Muse Code transcript, its own deploy and an MCP connector. A product that fails is never shown as working.
-- **Untrusted code never holds a Meta key.** The sandbox firewall adds the key only on Muse Code's own routes. Products get scoped, budgeted, revocable tokens through a metered gateway.
-- **Meta's own demos as the test set.** The rebuilds turn Meta's Llama-era videos into current demos on Muse models, with honest fit labels: clean, reframe or partial.
-- **Measured, including what didn't work.** Muse Code's hidden reminder spend is found and charged. Product quality is scored blind, and a polish round that scored lower was not merged.
-- **Spark teaches Glimmer.** The hosted model writes the data, the open model learns it, the hosted model judges blind, and the results are public, on the site and on Hugging Face.
-- **Demos that edit themselves.** Every product's video is cut from its own passing test, with the waits sped up and labeled honestly, so a judge sees the product work instead of a spinner.
+| **Muse Wonder 1.0** | The default for briefs, builds, fix rounds, judging and products when `BUILDS_ON_CONTRIBUTOR` is off. It judged the harness's blind check (100 of 100, $1.54). Check production before submitting: the site runs on Contributor until someone flips it (docs/JUDGING_WEEK.md) |
+| **Muse Spark 1.3 Contributor** | The live site's model while `BUILDS_ON_CONTRIBUTOR` is on, and the test model for test builds with made-up data. Meta may train on contributor prompts, so products on it show a notice |
+| **Muse Spark 1.3** | Wrote the lab's first dataset (400 examples for $1.51) and judged both lab runs. Not used since Oct 29 |
+| **Muse Code** | Writes every app headless: `muse exec --json` with hardened flags, `--session-id` to resume for fix rounds, `--image` for screenshots, and `muse export --redacted` for each app's "How it was built" |
+| **Muse Glimmer 30B** | The tuned student: QLoRA on rented GPUs, judged blind against base, quantized to one-bit files. Its knowledge-run version runs on a Jetson |
+| **Muse Spark Open** | r30b is a Derivative of it |
+| **Llama 3.2 3B** | The harness's small model, tuned and quantized to a 2.02 GB file, and the edge model the cold-room watcher is built to fall back to |
+| **Muse Image 1.0, SAM 3.1, Muse Voice Transcribe 1.0** | Inside apps: making and editing images, finding and outlining things in photos and video, and speech to text |
+| **Meta Model API** | `responses`, `images/generations`, `images/edits`, `files` and `asr/transcribe`, which apps reach only through the gateway |
+| **Meta's docs** | The post-training guide's check against base on a held-out set, which the blind check follows (its general-benchmark half isn't built yet). The quantization docs for the 16.8 GB size. The cookbook's "Local agent that asks first", the closest Meta pattern to Muse Privacy |
 
 ### What was hard
 
-1. **Keeping the key away from generated code while Muse Code still works.** A blanket key transform would give any code in the VM the key's power. Now Muse Code holds a per-sandbox placeholder, and the firewall swaps it for the real key on four routes only. Every other request to `api.meta.ai` gets the firewall's 403.
-2. **Muse Code with nobody watching.** Its launcher tries to self-update from a host the firewall blocks and may start a device sign-in, so the runner sets `MUSE_NO_AUTO_UPDATE=1` and `MUSE_LOGIN=0`. Its own bubblewrap sandbox can't run in the microVM, so `--yolo` is used and the VM is the boundary. Fifteen bundled skills fought the template, so the snapshot turns them off and checks. Flags differ between versions, so the runner adds optional ones only when `muse exec --help` lists them.
-3. **Honest cost.** `run.usage` counts only the main agent. Reminder agents were 31% to 43% of each build's real Muse Code spend. The platform now reads the usage records in Muse Code's session logs, drops the records that reminder agents' own logs repeat, counts only the current run, and charges the rest.
-4. **Media limits.** Voice Transcribe takes only mono 16-bit PCM WAV at 16 or 24 kHz, so products convert audio in the browser. Vercel Functions cap request bodies at 4.5 MB, so large files go straight to Vercel Blob with short-lived upload tickets. Meta fetches media by URL, so the Blob store has to be public.
-5. **Products that work but look generic.** A blind review averaged 5.5 out of 10. A template polish raised a canary from 5.14 to 5.91. A second round scored 5.50 and cost 64% more, so it stayed on a branch. What worked was a design system: Meta's look, researched from public sources and taught as a skill. Three judges compared 11 builds of the same muses blind, and the Meta-look builds won 30 of 33 votes (7.17 against 5.53).
-6. **Demo videos that were half spinner.** The first videos replayed the test with Playwright's recorder: a static "Working…" screen for half the clip, captions over the app's buttons, no cursor, blurry text. Demo Studio records a timeline of every action, change on screen and wait, and edits from it: actions and results at real speed, waits sped up with a badge, and each new result scrolled into view and held.
-7. **GPUs that bill by the hour.** Three things terminate every instance: the job's workflow, the instance's done callback, and a sweep every 5 minutes. Jobs won't launch unless that sweep ran in the last 15 minutes. The first real run then lost 28 to 11, and the cause was an eval bug, not the training (see Results).
+1. **Keeping the key away from generated code while Muse Code still works.** Muse Code holds a per-sandbox placeholder, and the firewall swaps it for the real key on four routes only. Every other request to `api.meta.ai` gets a 403.
+2. **Muse Code with nobody watching.** Its launcher tries to self-update from a blocked host and may start a device sign-in, so the runner turns both off. Its own sandbox can't run in the microVM, so the VM is the boundary. Fifteen bundled skills fought the template, so the snapshot turns them off.
+3. **Honest cost.** `run.usage` counts only the main agent. Reminder agents were 31% to 43% of each build's real Muse Code spend, so the platform reads Muse Code's session logs and charges them.
+4. **A fair blind check.** The first real Glimmer run lost 28 to 11. The cause was an eval bug: training put every answer on Glimmer's final channel, but the eval let the model choose, and the tuned answers never left the reasoning channel. After the fix, tuned won 40 of 40.
+5. **GPUs that bill by the hour.** Three things terminate every instance: the job's workflow, the instance's done callback, and a sweep every 5 minutes. Jobs won't launch unless the sweep ran in the last 15 minutes.
+6. **One-bit files that still answer.** One-bit size costs a lot: tuned Glimmer at IQ1_S answered 8.1% of new-knowledge probes, against 29.9% at Q4_K_M. A KL limit leaves out a file that drifts too far from its source.
+7. **A fallback that doesn't route around a refusal.** The edge fallback is built to answer only when the cloud can't be reached or sent a reply that doesn't match its schema. A cloud that turned a request down (a refusal, a budget limit) is the answer, so the board isn't asked around it. And a cloud drill fails if the product never tried the cloud first, so a product can't pass the outage drills by skipping the cloud. Both are unit-tested, not run in a real build.
 
-### Results from the Oct 27 test runs
+Source: BUILD_LOG.md and README.md; item 6, STORY.md and `lib/story/flow.ts`; item 7, commit `5c679d87` and EDGE_DEMO.md.
 
-**Builds**
+### Results
 
-- 24 product builds in a local batch: 24 of 24 went live. The first batch of 17 covered all 10 catalog rebuilds and every model: Spark, Muse Image, SAM 3.1, Voice and Wonder. Then came 7 more.
-- 3 to 9 minutes each, about $0.30 to $1.80 in Meta credits each.
-- Every product got a recorded MP4 demo, a Muse Code transcript and an MCP manifest with actions.
-- Local runs stop before the deploy step, so these 24 are not on the live Gallery yet.
+**Tuning and files** (STORY.md and `lib/story/flow.ts`)
 
-**Cost accounting**
+- Llama 3.2 3B, through the test harness: tuned 6.67 against base 2.55, won 95 of 100, judged blind by Muse Wonder for $1.54. An invented topic, which is an easy test.
+- Muse Glimmer 30B, the lab's own flow: A100, 42 minutes, $1.39. Tuned won all 40 held-out prompts, 8.88 against 1.95, judged by Muse Spark 1.3. Results are public and read-only at `/fine-tuning`.
+- A Nov 1 Glimmer run through the harness also won 40 of 40, 7.93 against 2.5 (PROVE_RESULTS.md). Hold this one until the owner settles the training-data question (docs/DATA_RIGHTS.md): its rows were written by Muse Spark 1.3 Contributor.
+- Quantized, made-up data: a 2.02 GB Llama file that passed every check, and a 6.53 GB one-bit Glimmer file.
 
-- Muse Code's `run.usage` left out its reminder agents. They were 31% to 43% of each build's real Muse Code spend. The platform now reads Muse Code's session logs and charges them.
+**Builds** (README.md, BUILD_LOG.md, PROVE_RESULTS.md)
 
-**Product quality**
+- Oct 27, a local batch: 24 of 24 builds passed their checks, at 3 to 9 minutes and about $0.30 to $1.80 each. Local runs stop before the deploy step, so none of these 24 was deployed.
+- Oct 28, on the live site: 9 of 10 catalog rebuilds went live, including all 6 of Meta's videos, for $24.70 in total. The Muse Wonder first demo failed its smoke test in all 3 fix rounds. A Nov 2 audit found that none of those six fully teaches its lesson (2 wrong, 4 partly), so they now sit on the Learn page (/learn) with a plan to redo each, and are not claimed as rebuilds.
+- Oct 28, the Meta look: the same 11 ideas rebuilt on a Meta-style template. Three judges compared each pair blind, and the new builds won 30 of 33 votes, 7.17 against 5.53.
+- Nov 1, on the test model with made-up data: 11 recipes across 8 builds passed their smoke tests and the judge. Previews don't publish, so they have no live link.
 
-- A judge-style blind review of 24 products' screenshots averaged 5.5 out of 10.
-- After the template polish (themes, shared parts, a screen check in each product's own tests, copy rules), an 11-build canary of the same muses scored 5.91, up from 5.14 for those 11. All 11 went live.
-- A second polish round scored lower (5.50) and cost 64% more, so it was not merged.
-- Oct 28, the Meta look: the same 11 muses rebuilt on the Meta-family template, all 11 live with no fix rounds, for $13.99 against $11.81. Three judges saw each pair side by side, with the sides shuffled and nothing saying which was new. The Meta-look builds won 30 of 33 votes and 10 of 11 pairs, scoring 7.17 against 5.53 overall and 7.94 against 2.39 for looking like a Meta app. The one loss was a spreadsheet whose chart drew no bars, which led to a check that fails a build whose last screen shows an error or an empty state.
+### What isn't proven yet [after the chain run] [after the board take]
 
-**Fine-tuning**
+- The chain as one run, from a sentence to an app answering with its own tuned model.
+- Anything the one-sentence flow made, running on a real board. Its board step is simulated.
+- Any edge build in a real sandbox, any edge drill on a board, and Llama 3.2 3B on a board.
+- Platform launch of a tune, https callbacks, the sweep and Hugging Face upload from the site. The upload is built and tested against a fake Hub only.
+- A general-capability or safety check on a tune. The blind check covers the task only.
+- Muse Privacy with real users, on its sealed test set, or inside the real Muse app.
+- A finished long build on Muse Wonder.
 
-- Smoke test on a real Lambda A10: about 3 minutes, $0.06.
-- Dry run of the full loop on an A100: $0.13.
-- Dataset "Muse Muse brief writer," written by Muse Spark 1.3: 400 examples (360 to train on, 40 held out) for $1.51.
-- First real Glimmer 30B QLoRA run: A100 40 GB, 120 steps, final loss 0.47, 47 minutes, $1.59. Base won 28 to 11. That exposed an eval bug: training put every answer on Glimmer's final channel, but the eval prompt let the model choose, and the tuned answers never left the reasoning channel.
-- The fix and a "short prompt" distillation setup are deployed. Eval prompts now continue on the final channel, as training does. Both models train and answer under a one-line role prompt instead of the teacher's full task prompt, so the score measures what training taught.
-- Second run, with the fix and the short prompt: A100 40 GB, 120 steps, final loss 0.52, 42 minutes, $1.39 on the GPU plus $0.15 for judging. **Tuned Glimmer won all 40 held-out prompts**, average score 8.88 against 1.95 for base. Under the one-line role prompt, base Glimmer answers like a general assistant ("I can't see any photo attached, could you upload it again?"); the tuned model writes a full Muse Muse brief with the right models, honest limits and a cost per run.
-
-### Results from the Nov 1 test runs
-
-Full table with ids and costs: [PROVE_RESULTS.md](PROVE_RESULTS.md). Nearly all of these ran on a low-cost test model (Muse Spark 1.3 Contributor) with made-up data, and Previews don't publish, so these products have no live link.
-
-**What passed, on the test model**
-
-- 11 recipes across 8 builds went live, with smoke tests and the judge passing: verified agent, case agent, API, agent patterns, code sessions, visual reports, image, voice, SAM media, games and simulated loops. Most hand tests were shallow. Clip Scribe's transcription and Lantern Run's game were not finished by hand.
-- A product with saved data kept its rows after a reload, seen from a second browser by the platform's own checks.
-- Real Muse Code tasks ran inside a built product, confirmed at the gateway.
-- Keep editing, restore, source download and the Code page. A restored version was byte-identical to the original in all 79 files.
-- VR on an emulated Quest, glasses on a fake bridge, an extension loaded in real Chromium, a gadget on a simulated board, an agent with real web search, and Android, Mac and Windows packages from an admin route.
-
-**Device lab, run directly on the boxes**
-
-- A live product opened on Mac, Windows, an Android emulator and an iPhone simulator.
-- On a real Samsung Galaxy S25 through Device Farm, it loaded in 1.3 seconds.
-- Mock glasses connected on iOS 18.4, on a test page. They still fail on iOS 26.5, and the cause isn't known.
-
-**Fine-tuning, run directly on rented GPUs through a test harness**
-
-- Muse Glimmer 30B: tuned won 40 of 40 kept-aside prompts, 7.93 against 2.5, for about $1.86 of GPU. A short run on an invented subject, which is an easy test.
-- Llama 3.2 3B: tuned 6.67 against base 2.55, won 95 of 100. A two-round tuning loop on top of it ran but did not improve the score (6.67, 6.67, 6.54).
-- A short reinforcement learning run: tuned 40 of 40, base 27 of 40, on easy arithmetic. It also exposed a scoring bug, now fixed, that had reported 16 of 40 for the same adapter.
-- A tuned Llama model became a 2 GB GGUF that answered at 168.8 tokens a second on the GPU.
-
-**What did not work**
-
-- A long build on Muse Wonder ran 64 minutes and $16.55 and did not finish. Its first five milestones failed, each round cut at 5 to 8 minutes, and no subagents started.
-- The case agent never stopped to ask a person for evidence in a live run, and Larkfield's stop-and-ask was not seen.
-- Sandbox previews don't respond in a browser without a config line that isn't in the template yet.
-
-**Found and fixed along the way**
-
-- Vercel's sandbox API refuses IPv6 ranges, so Muse Code sessions could not start on Vercel at all. Only real builds showed this.
+Source: STORY.md marks; PROVE_RESULTS.md, "Not proven anywhere"; MESSAGING.md, Gaps; EDGE_PLAN.md.
 
 ### What's next
 
-- Serve a tuned Glimmer adapter as a product backend through `GLIMMER_URL`, so a product can run on an open model the lab trained.
-- Spoken replies and realtime voice once the Model API has text-to-speech and speech-to-speech. Products use browser speech synthesis until then.
-- More lab tasks, each judged the same way against its own held-out prompts.
-- Chained builds and platform powers, so one product can span many sessions and products can start their own. Both are built behind flags, tested with fakes only, and have never run for real.
-- A time cap that lets big milestone builds finish on Muse Wonder.
-- Check whether Muse app connectors work inside scheduled jobs.
+- One paid end-to-end chain run, so the steps above run as one (approved: O2).
+- The cold-room watcher on a real board with its network unplugged (M12).
+- A tuned model served as an app's own backend, and that app answering from it.
+- A general set and a safety set in the blind check, to follow Meta's guide in full.
 - A name of its own. Muse is Meta's brand, so Muse Muse is a hackathon codename.
 
 ### Built during the event
 
-Before kickoff there was only a scaffold, committed exactly as received in `e3ba154`: design docs, the Meta model catalog, prompt drafts, the product template's rules and skills, types, the database schema, config, and route stubs that returned 501. All working code was written from Oct 26 on. An Oct 27 audit found five small scaffold helpers still in use and rewrote them the same day. The README's Status section has the details.
+Before kickoff there was only a scaffold, committed exactly as received in `e3ba154`: design docs, the Meta model catalog, prompt drafts, the template's rules and skills, types, the database schema, config, and route stubs that returned 501. All working code was written from Oct 26 on. An Oct 27 audit found five small scaffold helpers still in use and rewrote them the same day. The README's Status section has the details. The going-public plan keeps commit dates, so this stays provable. Also before the event and not in this repo: Offline Base's Jetson fleet and its control software (`jetson-infra`, created Sep 29), the models the boards run, and Base Drive (June). The README's "Before the event" lists them, and the video's opening line says so, as the organizers require (Discord, Nov 2).
 
-## 2. Video script
-
-Target length 2:50. Shot 7 is the first cut if it runs long, which brings it to 2:35. The narration is about 440 words, which needs about 155 words a minute, slightly brisk. Cutting shot 7 brings it to about 400.
-
-### Before you record
-
-- The public Blob store is connected and the live site can build.
-- `npm run rebuild-all` has run against the live site, so Rebuilds and Gallery are full of published products with recorded demos.
-- The second fine-tuning run is judged (tuned won 40 of 40), and its placeholders are filled in.
-- Decide which model the live site builds on (`BUILDS_ON_CONTRIBUTOR`). Shots 2 to 4 say Muse Wonder. If the flag is on, change those lines to match what is on screen.
-- The Nov 1 fine-tuning run was through a test harness, so it is not on the public page. Show its numbers as a labeled title card.
-- Download the recipe demo clips linked in [PROVE_RESULTS.md](PROVE_RESULTS.md) for shot 7. Their Previews are behind a sign-in, so don't film those pages. Label every clip "Test model."
-- Take dated screenshots of OpenRouter's rankings and Meta's Videos page on the day you record. The numbers move.
-- Record one real build from the Make page to the end. Speed it up in editing and label it "Sped up. Real build."
-- Browser at 1280×720 or 1440×900, light theme, 100% zoom, a clean profile with no other tabs or bookmarks. Stay signed out, so the site shows what judges see: "Guest, Builder, sign-in off."
-- Never show `.env.local`, the Vercel or Lambda consoles, or an admin job page, which shows the instance's IP and region. Film the Lab's public, read-only view.
-
-### Timing
-
-| # | Time | Shot |
-|---|---|---|
-| 1 | 0:00-0:13 | The problem |
-| 2 | 0:13-0:25 | Make page |
-| 3 | 0:25-0:44 | Build room: brief and build |
-| 4 | 0:44-0:59 | Build room: checks and fix rounds |
-| 5 | 0:59-1:16 | Product page and its recorded demo |
-| 6 | 1:16-1:35 | Rebuilds |
-| 7 | 1:35-1:50 | What it can build (cut first) |
-| 8 | 1:50-2:05 | Dashboard and the connector |
-| 9 | 2:05-2:20 | Usage |
-| 10 | 2:20-2:42 | Fine-tuning lab |
-| 11 | 2:42-2:50 | Close |
-
-### Shots
-
-**1. The problem (0:00-0:13)**
-
-- On screen: the dated OpenRouter rankings screenshot, slow zoom on the list of top model authors. Cut to the dated screenshot of Meta's Videos page, every card a Llama demo.
-- Say: "Meta's models read photos, video and PDFs, make images, outline objects and transcribe speech. Yet Meta isn't in OpenRouter's top nine model authors, and every demo on its own Videos page still shows Llama."
-
-**2. Make page (0:13-0:25)**
-
-- On screen: open https://muse-muse.vercel.app. The sidebar, the "What should Muse make?" headline, the composer and three cards show. Click **Receipt to spreadsheet**. The receipt photo attaches as a chip and the note fills in. Open **Build setup** under the cards: Model `muse-wonder-1.0`, Builder Muse Code, Fix rounds Up to 3. Click the blue send button.
-- Say: "Muse Muse starts from an example instead of a long prompt. Drop in a photo, a sketch, a video, a voice memo or a PDF, and Muse Code builds the product."
-
-**3. Build room: brief and build (0:25-0:44)**
-
-- On screen: the build room opens with the muse as the user turn. The brief turn renders: product name, the models table, limits, cost per use, and what it takes and leaves out. Start the time-lapse, labeled "Sped up. Real build." Muse Code's log lines scroll, "Edited N files" lines appear, and a "Muse Code started its ... reminder" line passes. The step rail moves through Brief, Provision, Build and Preview, and the live preview card appears in the right panel.
-- Say: "Muse Wonder reads the inspo and writes a brief: the models it needs, honest limits and the cost. Then Muse Code runs headless in a Vercel Sandbox microVM. The firewall adds the Meta key only on Muse Code's own routes, so the code it writes never sees the key."
-
-**4. Build room: checks and fix rounds (0:44-0:59)**
-
-- On screen: the check results turn: verify, the smoke test, the judge's screenshots and its verdict. If this build had a fix round, show the fix turn with the attached screenshots. The rail reaches Check, Record and Deploy. Hold on the metadata line with time, tokens and cost.
-- Say: "Then it checks its own work: typecheck, build, the smoke test Muse Code wrote, and Muse Wonder judging screenshots against the brief. A failure goes back to the same Muse Code session with the judge's screenshots attached. Three rounds at most."
-
-**5. Product page and its recorded demo (0:59-1:16)**
-
-- On screen: in the right panel's Links, click **Product page**. The live product shows in the frame. Click **Open**, drop the receipt photo into the product and show the CSV it returns. Go back and play the **Recorded demo** for about 5 seconds, through the "Waited ... sped up" badge and the zoom onto the result. Move the pointer over Models, Limits, the Muse app connector URL and **How it was built**.
-- Say: "Every product ships as its own Vercel project with its own link. It reaches Meta only through our gateway, with a scoped, budgeted token. Its demo video is cut from its own passing test: the cursor, the typing, the result, and the model's wait sped up and labeled. Plus the Muse Code transcript of how it was built."
-
-**6. Rebuilds (1:16-1:35)**
-
-- On screen: click **Rebuilds** in the sidebar. Hold on the header with the "N of 6 rebuilt for $Y" total. Scroll the cards: Meta's original video link, the fit pill (Clean, Reframe or Partial), the rebuilt product, its demo, build time and cost. Scroll to "Demos Meta doesn't have yet." Click one card's original video link, then its rebuilt product.
-- Say: "We pointed it at Meta's own demo videos and rebuilt them on current Muse models, plus first demos for SAM 3.1, Muse Image, Voice Transcribe and Muse Wonder. In our test batch, 24 of 24 builds went live, in 3 to 9 minutes, for about 30 cents to $1.80 each."
-
-**7. What it can build (1:35-1:50, cut first)**
-
-- On screen: quick cuts of the recorded demos: Harbor Report Studio, Mill Floor Sim, Lantern Run, Brief Desk. Corner label on each: "Test model." Then the VR shot at Score 3 of 3, labeled "Emulated Quest," and the phone on Device Farm, labeled "Galaxy S25."
-- Say: "It also builds more than web pages. In our Nov 1 tests on a low-cost model, eleven recipes went live, from report studios to a 3D maze. VR passed on an emulated headset, and a product opened on a real Galaxy phone."
-
-**8. Dashboard and the connector (1:50-2:05)**
-
-- On screen: click **Dashboard**. The "Use your products in Muse" card shows. Click the **Muse app** tab, pick a product tab, and click copy on the connector URL. Cut to the Muse app: add it as a custom connector, ask Muse to run the product's main action, and show the answer. If the Muse app connector isn't tested by recording day, use the **Claude Code** tab and show Claude Code calling the product's tool instead, or the **cURL** tab listing its tools.
-- Say: "Each product's actions become an MCP connector. Copy the URL from the dashboard, add it to the Muse app, and Muse can use the product."
-
-**9. Usage (2:05-2:20)**
-
-- On screen: click **Usage**. Hold on "Meta tokens driven" with its stacked Products and Building bars. Pan down to Spend (est.) and Builds, then the By product table.
-- Say: "Every Meta call is metered, and the headline is Meta tokens driven. Muse Code's own usage report left out its reminder agents, 31 to 43 percent of a build's real spend. We read its session logs and charge them."
-
-**10. Fine-tuning lab (2:20-2:42)**
-
-- On screen: click **Fine-tuning**. Show the three steps: Write, Train, Judge. Show the Results table with both runs. Click the second run: the summary strip, then scroll the side-by-side items (prompt, Spark's reference, base answer, tuned answer, verdict). End on a title card: "Nov 1, short run, invented subject: tuned 7.93, base 2.5, 40 of 40."
-- Say: "And Spark teaches Glimmer. The hosted model writes the training set, Muse Glimmer 30B learns it on a rented GPU, and the hosted model judges blind. Our first run lost 28 to 11, which exposed an eval bug. After the fix, tuned won all 40, 8.9 against 2. A Nov 1 run on a made-up subject also won 40 of 40."
-
-**11. Close (2:42-2:50)**
-
-- On screen: back to the Make page. Hold on the sidebar's mark, the Concept pill and "Not an official Meta product." Overlay the live URL and the repo URL.
-- Say: "Muse Muse. Give it a muse, and Meta's models make it."
-
-## 3. Submission checklist
-
-From [BUILD_PLAN.md](BUILD_PLAN.md#submission-checklist), updated Nov 1.
+## Checklist
 
 ### Done
 
-- [x] **Live platform URL.** https://muse-muse.vercel.app, open with no sign-in (`OPEN_ACCESS=guest`). The Oct 27 rules answer was that we spend our own credit. Every visitor shares one guest account with a daily build cap, and a platform-wide daily spend cap stops builds and gateway calls.
-- [x] **Rebuilds and Gallery pages live**, with each product's recorded demo, build time and cost on its card. All 10 catalog rebuilds went live in the Oct 27 local batch, each with a recorded MP4.
-- [x] **Repo docs.** The README has what it does, an architecture diagram, setup, and the note on what existed before kickoff (its Status section).
-- [x] **Every Meta model and tool used, and where.** See "How it uses Meta's models" above.
-- [x] **Fine-tuning lab** with public, read-only results at `/fine-tuning`.
-- [x] **Video script.** Section 2 above, updated Nov 1 from real results.
-- [x] **Test results.** [PROVE_RESULTS.md](PROVE_RESULTS.md) lists every Nov 1 item with its state, evidence and cost.
-- [x] **Rules answers** on pre-kickoff code, credits and Meta's brand (Oct 27, in BUILD_PLAN.md).
-- [x] **A public Blob store on the live site.** "muse-blob" is connected through OIDC (`BLOB_STORE_ID`, no read-write token). The server signs in with the request's OIDC token and browsers upload through presigned URLs. `npm run rebuild-all` then ran against the live site on Oct 28: 9 of 10 catalog rebuilds went live, including all 6 of Meta's videos, for $24.70 in total. The Muse Wonder first demo failed its smoke test in all 3 fix rounds.
-- [x] **Try tuned Glimmer live.** A time-boxed GPU demo answers visitors' app ideas with base and tuned Muse Glimmer side by side on the run's public page. Tested in production on Oct 28: about 90 seconds per answer pair, about $1.50 for a 30-minute window.
+- [x] **Live site**, open with no sign-in (`OPEN_ACCESS=guest`). Every visitor shares one guest account with a daily build cap, and a platform-wide daily spend cap stops builds and gateway calls.
+- [x] **Fine-tuning results**, public and read-only at `/fine-tuning`.
+- [x] **Outside quotes checked** on their primary sources (MESSAGING.md, Nov 2), edge facts included.
+- [x] **Video script and shot list**, with the edge act (VIDEO.md; O1 and O6 yes).
+- [x] **Every form field drafted** (this file).
+- [x] **Edge track code**, built and unit-tested, flags off (`e4beadc1`).
+- [x] **Lambda key rotated** (Nov 2).
 
-- [x] **Demo Studio.** Launch-clip demo videos for every product: cursor, camera, sped-up waits with a badge, captions below the window, intro and outro cards, and a poster on the result.
-- [x] **The Meta look for products**, with the `meta-ui` skill, and measured blind: 30 of 33 votes against the old template.
-- [x] **Hugging Face export** of tuned adapters, their training data and a card story, built and tested against a fake Hub. Waiting on a write token.
+### Left (steps in docs/HANDOFF.md)
 
-### Left
-
-- [ ] **Make the repo public, if the rules need it.** It is on GitHub and private. Only an owner can change that. Check that the scaffold commit `e3ba154` is still visible first.
-- [ ] **Merge the open PRs** (#24 to #27). #24, #25 and #26 have conflicts. Until #26 lands, Muse Code sessions can't start on Vercel from main.
-- [ ] **Answer the open plan items:** track, company and team, and Silly Doodle Pages.
-- [ ] **Replace the rented GPU addresses** still in 5 finished knowledge scripts, if you want them gone before the repo goes public.
-- [ ] **Record the video** from section 2, including the dated OpenRouter and Meta Videos page screenshots for the opening.
-- [ ] **Hugging Face:** set `HF_TOKEN` and `HF_NAMESPACE` on Vercel, then publish run 2 with a `glimmer-publish` job and check both repos and cards on the Hub.
-- [ ] **Rebuild the catalog on the live site** with the new snapshot, so Rebuilds and Gallery show the Meta look and Demo Studio videos.
-- [x] Fill in the second fine-tuning run's result (tuned won 40 of 40).
-- [ ] **After the event, rotate the Vercel token and the Lambda API key.**
-
-### Worth checking before you submit
-
-- The rules questions still open in BUILD_PLAN.md: more than one project per person, what the submission must include (video length, public repo, write-up, live link, judge access), and limits on open-source use.
-- Every visitor shares the guest account's daily build cap (`MAX_BUILDS_PER_USER_PER_DAY`). Set it for the number of judges you expect, and keep `DAILY_SPEND_CAP_USD` above what those builds cost.
+- [ ] Add Ethan to Team Members, and confirm Hussam's surname.
+- [ ] Fix the README's setup gaps, since judges may run the repo with their own keys.
+- [ ] Merge the edge track, then make the repo public by the plan in HANDOFF.md, "Going public".
+- [ ] Pick a LICENSE; settle DATA_RIGHTS.md Q1 to Q3; Hugging Face visibility.
+- [ ] The chain run (O2) and the board runs (M10 to M12), then swap the tagged answers.
+- [ ] Production settings for judging: Contributor or Wonder, and the daily spend cap. Turn on `STORY_PAGES` before recording.
+- [ ] Record and upload the video; post the 60-second cut on X before Wed noon ET.
+- [ ] Fill in the form from this file, field by field.

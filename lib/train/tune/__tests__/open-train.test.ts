@@ -267,6 +267,58 @@ describe("anyone can fine-tune", { skip: canMock ? false : "needs --experimental
       assert.ok(!body.includes(`/fine-tuning/`));
     });
 
+    it("keeps Train on Fireworks behind its flag, and a visitor's run within the same one-run limit", async () => {
+      const v = visitor("203.0.113.91");
+      delete process.env.FIREWORKS_TUNE;
+      const p = await planned(v);
+      const off = await runs(v.req("/api/train/runs", { plan: p, startCode: CODE, settings: { trainer: "fireworks" } }));
+      assert.equal(off.status, 404);
+      process.env.FIREWORKS_TUNE = "1";
+      process.env.FIREWORKS_API_KEY = "made-up";
+      const realFetch = globalThis.fetch;
+      globalThis.fetch = (async (url: string | URL | Request) => {
+        const u = String(url);
+        if (u.includes("/models/muse-glimmer-30b")) return Response.json({ supervisedLoraTunable: true });
+        if (u.includes("fine-tuning/models")) return new Response("Muse Glimmer 30B SFT is free to train until November 30, 2099.");
+        if (u.includes("fireworks.ai/pricing")) return new Response("Muse Glimmer 30B SFT is free via UI until 11/30");
+        return new Response("| More than 16B parameters | \\$0.90 |");
+      }) as typeof fetch;
+      try {
+        const res = await runs(v.req("/api/train/runs", { plan: p, startCode: CODE, settings: { trainer: "fireworks" } }));
+        assert.equal(res.status, 201, await res.clone().text());
+        const { runId } = (await res.json()) as { runId: string };
+        const marks = await (await import("@/lib/train/tune/run-store")).readRunMarks(runId);
+        assert.equal(marks.trainer, "fireworks");
+        const again = await planned(v).catch(() => null);
+        if (again) {
+          const second = await runs(v.req("/api/train/runs", { plan: again, startCode: CODE, settings: { trainer: "fireworks" } }));
+          assert.equal(second.status, 409);
+        }
+      } finally {
+        globalThis.fetch = realFetch;
+        delete process.env.FIREWORKS_TUNE;
+        delete process.env.FIREWORKS_API_KEY;
+      }
+    });
+
+    it("refuses Train on Fireworks at Start when its pages don't confirm the cost, before anything is written", async () => {
+      const v = visitor("203.0.113.92");
+      process.env.FIREWORKS_TUNE = "1";
+      process.env.FIREWORKS_API_KEY = "made-up";
+      const p = await planned(v);
+      const realFetch = globalThis.fetch;
+      globalThis.fetch = (async () => new Response("no offer here")) as typeof fetch;
+      try {
+        const res = await runs(v.req("/api/train/runs", { plan: p, startCode: CODE, settings: { trainer: "fireworks" } }));
+        assert.equal(res.status, 503);
+        assert.equal(((await res.json()) as { error?: string }).error, "fireworks_cost_unconfirmed");
+      } finally {
+        globalThis.fetch = realFetch;
+        delete process.env.FIREWORKS_TUNE;
+        delete process.env.FIREWORKS_API_KEY;
+      }
+    });
+
     it("keeps a build plan and another base to admins", async () => {
       process.env.TUNE_FROM_BUILDS = "1";
       process.env.TUNE_ANY_BASE = "1";
@@ -376,6 +428,59 @@ describe("anyone can fine-tune", { skip: canMock ? false : "needs --experimental
       assert.equal(job.maxMinutes, 60);
       assert.equal(job.userId, owner);
       delete process.env.TUNE_AUTO_PUBLISH;
+    });
+
+    it("a visitor's Fireworks run reserves its real hold, writes it on the job, and a run with no confirmed cost never starts", async () => {
+      process.env.FIREWORKS_TUNE = "1";
+      process.env.FIREWORKS_API_KEY = "made-up";
+      const realFetch = globalThis.fetch;
+      let offer = true;
+      globalThis.fetch = (async (url: string | URL | Request) => {
+        const u = String(url);
+        if (u.includes("/models/muse-glimmer-30b")) return Response.json({ supervisedLoraTunable: true });
+        if (!offer) return new Response("no offer");
+        if (u.includes("fine-tuning/models")) return new Response("Muse Glimmer 30B SFT is free to train until November 30, 2099.");
+        if (u.includes("fireworks.ai/pricing")) return new Response("Muse Glimmer 30B SFT is free via UI until 11/30");
+        return new Response("| More than 16B parameters | \\$0.90 |");
+      }) as typeof fetch;
+      // PGlite has no batch; createJob's statements run in order, as launch.test.ts does it.
+      (testDb as unknown as { batch: (q: PromiseLike<unknown>[]) => Promise<unknown[]> }).batch = async (q) => {
+        const out: unknown[] = [];
+        for (const one of q) out.push(await one);
+        return out;
+      };
+      try {
+        const { saveRunTrainer } = await import("@/lib/train/tune/run-store");
+        const { counterValue } = await import("@/lib/gateway/store");
+        const { dayWindow } = await import("@/lib/docs/proxy/limits");
+        const unconfirmed = await readyRun(visitor("203.0.113.93"));
+        await saveRunTrainer(unconfirmed.id);
+        offer = false;
+        const refused = await launchForRun({ datasetId: unconfirmed.id, callerId: unconfirmed.owner, steps: 120 });
+        assert.equal(refused.kind, "refused");
+        assert.equal(await counterValue(limits.USD_KEY, dayWindow(new Date())), 0);
+        offer = true;
+        const { id, owner } = await readyRun(visitor("203.0.113.94"));
+        await saveRunTrainer(id);
+        const r = await launchForRun({ datasetId: id, callerId: owner, steps: 120 });
+        assert.equal(r.kind, "launched", JSON.stringify(r));
+        assert.equal(launches.length, 0, "never through the Lambda launch");
+        const jobs = realSchema.trainingJobs;
+        const [job] = await testDb.select().from(jobs).where(eq(jobs.createdBy, owner));
+        assert.equal((job!.params as Record<string, unknown>).trainer, "fireworks");
+        assert.equal(job!.maxUsd, 0.1);
+        assert.equal(job!.priceCentsPerHour, 0);
+        assert.equal((job!.params as Record<string, unknown>).publish, 0);
+        assert.equal(await counterValue(limits.USD_KEY, dayWindow(new Date())), 10);
+        // That job holds the visitors' one slot, as a GPU job does.
+        const second = await readyRun(visitor("203.0.113.95"));
+        await saveRunTrainer(second.id);
+        assert.equal((await launchForRun({ datasetId: second.id, callerId: second.owner, steps: 120 })).kind, "wait");
+      } finally {
+        globalThis.fetch = realFetch;
+        delete process.env.FIREWORKS_TUNE;
+        delete process.env.FIREWORKS_API_KEY;
+      }
     });
 
     it("one visitor GPU at a time: the second waits and holds nothing", async () => {
@@ -517,6 +622,143 @@ describe("anyone can fine-tune", { skip: canMock ? false : "needs --experimental
       delete process.env.TEST_MODEL;
       delete process.env.TRAIN_CONTRIBUTOR_WRITER;
       assert.equal((await plan(v.req("/api/train/plan", { note: NOTE, folder: { hash: f.hash, mode: "write" } }))).status, 503);
+    });
+
+    // Straight into startTuneRun as an admin's start would reach it: the runs route keeps another base to admins (above).
+    describe("keeps the picked base on a folder run", () => {
+      const LLAMA = { repo: "unsloth/Llama-3.2-3B-Instruct-bnb-4bit", revision: "bb1d317a108579fb40e646af8924a5e7ec5604b1" };
+      const adminId = async () => (await testDb.select().from(realSchema.users).where(eq(realSchema.users.email, ADMIN)))[0]!.id;
+      async function folderStart(files: Array<{ path: string; text: string }>, mode: "rows" | "write", base: typeof LLAMA | null) {
+        const v = visitor();
+        const up = await folderRoute(v.req("/api/train/folder", upload(files)));
+        assert.equal(up.status, 200, await up.clone().text());
+        const f = (await up.json()) as { draft: import("@/lib/train/tune/folder").FolderDraft; hash: string };
+        assert.equal(f.draft.mode, mode);
+        const p = (await planned(v, mode === "rows" ? { folder: { hash: f.hash, mode, rows: 60 }, settings: { examples: 60 } } : { folder: { hash: f.hash, mode } })) as unknown as import("@/lib/train/tune/types").TrainPlanBody;
+        assert.equal(p.source.kind, "folder");
+        const withBase = { ...p, settings: { ...p.settings, ...(base ? { base } : {}) } };
+        const { startTuneRun } = await import("@/lib/train/tune/start");
+        const { runId } = await startTuneRun({ plan: withBase, folder: f.draft, callerId: await adminId() });
+        const { readRunMarks } = await import("@/lib/train/tune/run-store");
+        return (await readRunMarks(runId)).base;
+      }
+
+      it("rows: a Llama base picked is saved on the run, and no base saves nothing", async () => {
+        assert.deepEqual(await folderStart([{ path: "r.csv", text: rowsCsv(60) }], "rows", LLAMA), LLAMA);
+        await testDb.delete(realSchema.rateLimits);
+        assert.equal(await folderStart([{ path: "r.csv", text: rowsCsv(60) }], "rows", null), undefined);
+      });
+
+      it("write: a Llama base picked is saved on the run, and no base saves nothing", async () => {
+        assert.deepEqual(await folderStart([{ path: "guide.md", text: "Ferns like shade." }], "write", LLAMA), LLAMA);
+        await testDb.delete(realSchema.rateLimits);
+        assert.equal(await folderStart([{ path: "guide.md", text: "Ferns like shade." }], "write", null), undefined);
+      });
+    });
+  });
+
+  describe("Dataset, from the Make box", () => {
+    const d = realSchema.trainingDatasets;
+    let examples: Handler;
+    before(async () => {
+      examples = (await import("@/app/api/train/runs/[id]/examples/route")).GET as Handler;
+    });
+    beforeEach(() => {
+      process.env.MAKE_CHAT_ALL = "1";
+    });
+    after(() => {
+      delete process.env.MAKE_CHAT_ALL;
+    });
+    const ready = async (id: string) =>
+      testDb
+        .update(d)
+        .set({ status: "ready", trainCount: 80, evalCount: 10, train: [{ messages: [{ role: "user", content: "Made-up question" }, { role: "assistant", content: "Made-up answer" }] }, { messages: [{ role: "user", content: "Second" }, { role: "assistant", content: "Reply" }] }], eval: [{ prompt: "Kept aside", reference: "Reference" }] } as never)
+        .where(eq(d.id, id));
+
+    it("writes the examples and starts no training, and the room says so", async () => {
+      const v = visitor();
+      const id = await started201(v, { settings: { datasetOnly: true } });
+      assert.deepEqual(started.map((s) => s.fn), ["makeDataset"], "no tuneRun");
+      assert.equal(launches.length, 0, "no GPU");
+      await ready(id);
+      const res = await run(v.req(`/api/train/runs/${id}`), ctx(id));
+      const view = ((await res.json()) as { run: { datasetOnly?: boolean; stage: string; hold: { reason: string; text: string } } }).run;
+      assert.equal(view.datasetOnly, true);
+      assert.equal(view.stage, "waiting");
+      assert.equal(view.hold.reason, "not_started");
+      assert.match(view.hold.text, /dataset is ready/);
+      assert.equal(launches.length, 0);
+    });
+
+    it("still takes the start code", async () => {
+      const v = visitor();
+      const p = await planned(v);
+      assert.equal((await runs(v.req("/api/train/runs", { plan: p, settings: { datasetOnly: true } }))).status, 403);
+      assert.equal((await runs(v.req("/api/train/runs", { plan: p, startCode: "wrong", settings: { datasetOnly: true } }))).status, 403);
+      assert.equal(started.length, 0);
+    });
+
+    it("is off without the switch, and starts nothing", async () => {
+      delete process.env.MAKE_CHAT_ALL;
+      const v = visitor();
+      const p = await planned(v);
+      assert.equal((await runs(v.req("/api/train/runs", { plan: p, startCode: CODE, settings: { datasetOnly: true } }))).status, 404);
+      assert.equal(started.length, 0);
+    });
+
+    it("trains only when its owner presses the button, with the code", async () => {
+      const v = visitor();
+      const id = await started201(v, { settings: { datasetOnly: true } });
+      await ready(id);
+      assert.equal((await startRoute(v.req(`/api/train/runs/${id}/start`, {}), ctx(id))).status, 403, "no code");
+      assert.equal((await startRoute(visitor("203.0.113.8").req(`/api/train/runs/${id}/start`, { startCode: CODE }), ctx(id))).status, 403, "someone else");
+      assert.equal(launches.length, 0);
+    });
+
+    it("gives its examples only to whoever may touch the run", async () => {
+      const v = visitor();
+      const id = await started201(v, { settings: { datasetOnly: true } });
+      assert.equal((await examples(v.req(`/api/train/runs/${id}/examples`), ctx(id))).status, 409, "still writing");
+      await ready(id);
+      const stranger = visitor("203.0.113.8");
+      await planned(stranger);
+      assert.equal((await examples(stranger.req(`/api/train/runs/${id}/examples`), ctx(id))).status, 403);
+      assert.notEqual((await examples(visitor("203.0.113.9").req(`/api/train/runs/${id}/examples`), ctx(id))).status, 200, "no cookie");
+      const file = await examples(v.req(`/api/train/runs/${id}/examples`), ctx(id));
+      assert.equal(file.status, 200);
+      assert.match(file.headers.get("content-disposition") ?? "", /attachment/);
+      const lines = (await file.text()).trim().split("\n").map((l) => JSON.parse(l) as { split: string });
+      assert.deepEqual(lines.map((l) => l.split), ["train", "train", "eval"]);
+      const sample = await examples(v.req(`/api/train/runs/${id}/examples?sample=1`), ctx(id));
+      const body = (await sample.json()) as { total: number; rows: unknown[] };
+      assert.equal(body.total, 2);
+      assert.equal(body.rows.length, 1);
+      delete process.env.MAKE_CHAT_ALL;
+      assert.equal((await examples(v.req(`/api/train/runs/${id}/examples`), ctx(id))).status, 404);
+    });
+
+    it("stops a dropped folder's rows at the dataset too", async () => {
+      const v = visitor();
+      const rows = `prompt,answer\n${Array.from({ length: 60 }, (_, i) => `"Made-up fern question ${i}?","Made-up fern answer ${i}."`).join("\n")}`;
+      const up = await folderRoute(v.req("/api/train/folder", { confirmed: true, files: [{ path: "r.csv", text: rows }], skipped: [] }));
+      const f = (await up.json()) as { draft: { mode: string }; hash: string };
+      const p = await planned(v, { folder: { hash: f.hash, mode: "rows", rows: 60 }, settings: { examples: 60 } });
+      const res = await runs(v.req("/api/train/runs", { plan: p, startCode: CODE, folder: f.draft, settings: { examples: 60, datasetOnly: true } }));
+      assert.equal(res.status, 201, await res.clone().text());
+      assert.deepEqual(started, [], "nothing written and no tuneRun");
+      assert.equal(launches.length, 0);
+      const { runId } = (await res.json()) as { runId: string };
+      const seen = await run(v.req(`/api/train/runs/${runId}`), ctx(runId));
+      assert.equal(((await seen.json()) as { run: { datasetOnly?: boolean } }).run.datasetOnly, true);
+    });
+
+    it("lets a visitor with a finished dataset start another", async () => {
+      const v = visitor();
+      const id = await started201(v, { settings: { datasetOnly: true } });
+      await ready(id);
+      await testDb.delete(realSchema.rateLimits);
+      const next = await planned(v);
+      assert.equal((await runs(v.req("/api/train/runs", { plan: next, startCode: CODE, settings: { datasetOnly: true } }))).status, 201);
     });
   });
 });

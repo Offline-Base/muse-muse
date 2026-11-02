@@ -4,6 +4,7 @@
  */
 import { MAX_AGENT_STEPS, TARGETS, type Brief, type TargetId } from "@/lib/brief/schema";
 import { isToolId, PERSONAL_TOOL_IDS, toolLabel } from "@/lib/tools/ids";
+import { contributorSwitchOn } from "@/lib/meta/spark";
 
 /**
  * What every product comes with, made from musemuse.json. These are not targets: a person who asks for a Claude or
@@ -39,13 +40,15 @@ export const TARGET_GUIDE: Record<TargetId, string> = {
     "works with the wearer's Meta AI glasses (Ray-Ban Meta, Oakley Meta) through the Muse Muse iPhone app: the glasses take a photo of what the wearer is looking at, their microphone hears a short question, and the answer is spoken in the glasses. They have no screen, so answers are one to three short sentences, and the phone shows the photo and the answer. In a browser without the app it uses the phone's camera or a sample view. Pick it only when the muse asks for smart glasses, hands-free use, or 'what am I looking at'. The app must be open on the phone, since the glasses can't start it, and their microphone is phone-call quality.",
   agent:
     "an agent that works in several steps: it looks things up with Meta's web search and the listed tools, then answers with its sources. Pick it only when the product must look things up or work in several steps, and pick the fewest tools.",
+  edge:
+    "a backup for when the cloud is cut. The product asks Meta's cloud models for its main answer first, and when they can't be reached it asks a small model on an edge board, such as a Jetson, and labels which one answered. Pick it only when the muse asks to keep answering when the cloud or the network is down, or names an edge board or a Jetson. Only the main structured answer has the backup: the page, saved data, files, connections, images, voice and the other models still need the network. The board's model is small, so the answer must be short and flat: a status, a few short lines, a short list. Data in a demo is invented and labeled Simulated.",
 };
 
 /** Added to the agent's guide only with COMPOSIO_PERSONAL_ENABLED on, since the writer is offered no personal tool without it. */
 export const PERSONAL_TOOLS_GUIDE =
   "Pick it too when the product must act in other apps. Public tools work for everyone. Personal tools work only for the product's owner for now.";
 
-/** The targets NATIVE_TARGETS may name. vr, glasses and agent have switches of their own. */
+/** The targets NATIVE_TARGETS may name. vr, glasses, agent and edge have switches of their own. */
 const NATIVE_LANE: readonly TargetId[] = ["phone", "desktop"];
 
 /** NATIVE_TARGETS as targets, in TARGETS order. Anything else in the list is ignored, and web is never in it. */
@@ -113,6 +116,11 @@ export const TARGET_LIMITS: Partial<Record<TargetId, Array<{ text: string; said:
     { text: "Needs the Muse Muse iPhone app and Meta glasses. Without them it uses your phone's camera.", said: /(without|no) (the app|them|glasses)\b.*camera/i },
     { text: "Start it on your phone. The glasses can't open it.", said: /glasses (can't|cannot|can not) (start|open)/i },
   ],
+  // What still reaches the network on an edge build, as the self-host kit lists what reaches Muse Muse (lib/outputs/selfhost.ts).
+  edge: [
+    { text: "Only the main answer has a backup model. Saved data, files, connections, images and voice go through Muse Muse, so they stop when the cloud is cut.", said: /only (the|its) main answer|stop when the cloud is (cut|down)/i },
+    { text: "A backup answer comes from a small model on an edge board, and is labeled with the board and the model.", said: /labeled with the board|answered on/i },
+  ],
 };
 
 const OWNER_LIMIT = /only (this app's |the product's |the product |the )?owner/i;
@@ -150,7 +158,7 @@ function withAgentFacts(brief: Brief, agent: NonNullable<Brief["agent"]>): Brief
   const hasWonder = brief.capabilities.some((c) => c.model === "muse-wonder-1.0");
   const capabilities = hasWonder
     ? brief.capabilities
-    : [{ need: "Run the agent: plan each step, use the tools and write the answer", model: "muse-wonder-1.0" as const, why: "Every agent runs on Muse Wonder." }, ...brief.capabilities];
+    : [{ need: "Run the agent: plan each step, use the tools and write the answer", model: "muse-wonder-1.0" as const, why: contributorSwitchOn() ? "Every agent names this id, which runs on Spark 1.3 Contributor for now." : "Every agent runs on Muse Wonder." }, ...brief.capabilities];
   if (agent.connections !== "owner") return { ...brief, capabilities, agent };
   const labels = agent.tools.filter((t) => isPersonal(t.id)).map((t) => toolLabel(t.id));
   const limit = `Only this app's owner can connect an account for now. That covers: ${labels.join(", ")}.`;

@@ -1,0 +1,22 @@
+{
+ "board": "jetson-05",
+ "model": "hf.co/LiquidAI/LFM3-VL-2B-GGUF:Q4_K_M",
+ "seed_file": "heldout.jsonl",
+ "receipts": 40,
+ "valid_json": 1.0,
+ "all_six_right": 0.35,
+ "fields_right": 0.817,
+ "per_field": {
+  "merchant": 0.675,
+  "date": 0.9,
+  "subtotal": 0.875,
+  "tax": 1.0,
+  "total": 0.875,
+  "item_count": 0.575
+ },
+ "adds_up": 1.0,
+ "median_seconds": 2.1,
+ "tokens_per_second": 30.4,
+ "errors": 0,
+ "cut_off": 0
+}

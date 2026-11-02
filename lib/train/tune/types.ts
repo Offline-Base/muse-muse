@@ -130,6 +130,8 @@ export interface RunVerdict extends TuneVerdict {
 /** GET /api/train/runs/{id}: a run as its room shows it. Admins only today, so the job is the full admin view. */
 export interface TuneRunView {
   id: string;
+  /** Set when it trains on Fireworks, on plain Muse Glimmer 30B rather than r30b. */
+  trainer?: "fireworks";
   title: string;
   task: string;
   stage: TuneStage;
@@ -143,6 +145,8 @@ export interface TuneRunView {
   job: TrainJobView | null;
   evals: EvalRow[];
   verdict: RunVerdict | null;
+  /** The person asked only for the examples (MAKE_CHAT_ALL): nothing trains unless they start it. */
+  datasetOnly?: boolean;
   hold: { reason: TuneHoldReason; text: string; since: string } | null;
   /** Why it failed or stopped, in a sentence, else null. */
   problem: string | null;

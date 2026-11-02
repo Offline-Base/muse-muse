@@ -2,6 +2,8 @@ import { Icon } from "@/components/icons";
 
 export interface SetupFacts {
   buildModel: string;
+  /** The model that judges the screenshots (env.judgeModel). Without it the row names no model. */
+  judgeModel?: string;
   maxFixRounds: number;
   /** Why products aren't published here (env.publishOffReason), or null when they are. */
   publishOff: string | null;
@@ -16,7 +18,7 @@ function buildRows(facts: SetupFacts): SetupRow[] {
     ["Model", facts.buildModel],
     ["Builder", "Muse Code"],
     ["Fix rounds", `Up to ${facts.maxFixRounds}`],
-    ["Screenshot judge", "On", "Muse Wonder checks the screenshots against the brief"],
+    ["Screenshot judge", "On", !facts.judgeModel ? "Checks the screenshots against the brief" : facts.judgeModel === facts.buildModel ? "Checks the screenshots against the brief, on the model above" : `${facts.judgeModel} checks the screenshots against the brief`],
     ["Demo video", "On", "Each product's smoke test is recorded as an MP4"],
     ["Publish", publish ? "On" : "Off", facts.publishOff ? `Off here: ${facts.publishOff}` : "Ships to its own link"],
     ["Muse app connector", publish ? "On" : "Off", "Serves the product's actions over MCP"],

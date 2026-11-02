@@ -19,6 +19,8 @@ import { briefRequirements, fullMilestones } from "@/lib/full/requirements";
 import { fastAgentLines } from "@/lib/fast/fast";
 import { RANGE_AGENT_LINES, RANGE_AGENTS_NOTES, RANGE_COST_LINE, RANGE_DEPTH_LINES, RANGE_FIX_AGENT_LINE, RANGE_FIX_LOOK, RANGE_FIX_SHOTS, RANGE_FLOW_LINE, RANGE_LOOK_LINE, RANGE_READ_FIRST, RANGE_SHOTS_LINE, RANGE_SIMPLER_LINE, rangeDirectionLines } from "@/lib/range/prompts";
 import type { JudgeVerdict, RebuildTarget, VerifySummary } from "@/lib/types";
+import { CONTRIBUTOR_PRODUCT_LINE } from "@/lib/meta/spark";
+import { contributorBuildsOn, env } from "@/lib/env";
 
 /**
  * CONTRACT (owned by the brief agent). Pure functions that render prompts 2, 3 and 5 from docs/PROMPTS.md.
@@ -32,6 +34,7 @@ const SKILLS: Record<Brief["capabilities"][number]["model"], string> = {
   "muse-voice-transcribe-1.0": ".agents/skills/meta-voice",
   "muse-glimmer": ".agents/skills/meta-glimmer",
   "muse-gadget": ".agents/skills/muse-gadget",
+  "jetson-fleet": ".agents/skills/jetson-fleet",
 };
 
 /** The skill that goes with a target. */
@@ -41,6 +44,7 @@ const TARGET_SKILLS: Record<Exclude<TargetId, "web">, string> = {
   vr: ".agents/skills/muse-vr",
   glasses: ".agents/skills/muse-glasses",
   agent: ".agents/skills/muse-agent",
+  edge: ".agents/skills/muse-edge",
 };
 
 /** What each target asks of the build, on top of its skill. */
@@ -71,6 +75,12 @@ const TARGET_RULES: Record<Exclude<TargetId, "web">, string[]> = {
   agent: [
     "One person starts each run and sees its steps and any sources as they arrive, in the parts the skill lists. Never show raw tool output.",
     "See the Agent section below for the task, the tools and the limits.",
+  ],
+  edge: [
+    "Ask for the product's main answer through `respondJsonOrEdge` in `lib/meta/edge.ts`, with a small flat schema, and show its `label` next to every answer, word for word.",
+    "When both sides are down, show its `message` on the page and keep the person's input. Never log an expected fallback with console.error.",
+    "Write `edge-drill.json` naming that route and a simulated body. After verify, the build runs four simulated outage drills against it (cloud refused, cloud hung, both down, a tampered reply), and a failed drill fails the checks.",
+    "Label invented data \"Simulated\". Never say the product works offline, and never call a board answer private or on-device.",
   ],
 };
 
@@ -110,9 +120,13 @@ function uniqueModels(brief: Brief): Brief["capabilities"][number]["model"][] {
   return [...new Set(brief.capabilities.map((c) => c.model))];
 }
 
-/** The targets a brief adds to web. Empty for a web-only brief, which renders as it always did. */
+/**
+ * The targets a brief adds to web. Empty for a web-only brief, which renders as it always did. Edge counts only while
+ * EDGE_ENABLED is on (isEdgeBuild): a stored or imported brief that lists it gets no edge files without the flags, so
+ * nothing here may name its skill or ask for its drill.
+ */
 function addedTargets(brief: Pick<Brief, "targets">): Exclude<TargetId, "web">[] {
-  return briefTargets(brief).filter((t): t is Exclude<TargetId, "web"> => t !== "web");
+  return briefTargets(brief).filter((t): t is Exclude<TargetId, "web"> => t !== "web" && (t !== "edge" || env.edgeEnabled));
 }
 
 /** The build prompt's "Where it runs", from the brief's targets. */
@@ -550,7 +564,7 @@ export function renderBuildPrompt(
     "",
     `Stay under ${opts.maxModelSteps} steps. ${direction ? RANGE_SIMPLER_LINE : "If an approach fails twice, pick a simpler one and write the limit in BUILD_NOTES.md."}`,
     models.includes("muse-wonder-1.0")
-      ? "Muse Wonder is in preview and bills its reasoning as output, so even a short answer spends a few hundred output tokens."
+      ? contributorBuildsOn() ? CONTRIBUTOR_PRODUCT_LINE : "Muse Wonder is in preview and bills its reasoning as output, so even a short answer spends a few hundred output tokens."
       : "",
     `The product's model calls during this build, every verify, fix round and the demo recording, share one $${buildTokenBudgetFor(models).toFixed(2)} Meta budget, and the gateway reserves each call's max_output_tokens up front. Keep those caps close to what an answer needs. If the gateway says the budget is used up, it stays used up for this build: ${jobsBlock(brief) ? JOBS_BUDGET_LINE : "never wait for it, retry it or schedule anything, since nothing runs after your session ends."} Make the calls cheaper or stop and say so in BUILD_NOTES.md.`,
   );

@@ -1,0 +1,45 @@
+# docker compose up --build, then open http://localhost:3000. See "Quickstart" in README.md.
+#
+# Secrets stay in .env.local (copied from .env.example, every variable is explained there) and reach the container only at
+# run time. The file is optional: with no keys the site still starts, and builds won't run.
+#
+# There is no postgres service on purpose. lib/db/client.ts talks to Postgres through Neon's HTTP driver, which can't reach a
+# stock Postgres server, so the database here is PGlite, Postgres in-process, kept in the "data" volume. To use a Neon
+# database instead, set COMPOSE_DATABASE_URL in your shell to its connection string.
+name: muse-muse
+
+services:
+  site:
+    build:
+      context: .
+      args:
+        STORY_PAGES: ${STORY_PAGES:-}
+    init: true
+    ports:
+      # Loopback only. OPEN_ACCESS=admin below trusts a localhost Host header, so this must not face the network.
+      - "127.0.0.1:3000:3000"
+    env_file:
+      - path: .env.local
+        required: false
+    # These win over .env.local, so a file pulled from Vercel can't point a local run at production's database or Blob store.
+    environment:
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:-pglite:.data/pglite}
+      # Sign-in is off, as admin, for requests to localhost only (effectiveOpenAccess in lib/auth.ts).
+      OPEN_ACCESS: admin
+      PLATFORM_URL: http://localhost:3000
+      # Files stay in .data/files. The image is built for that (NEXT_PUBLIC_LOCAL_FILES in the Dockerfile).
+      BLOB_READ_WRITE_TOKEN: ""
+      BLOB_STORE_ID: ""
+      # This is not Vercel, whatever `vercel env pull` wrote.
+      VERCEL: ""
+      VERCEL_ENV: ""
+      VERCEL_URL: ""
+      VERCEL_BRANCH_URL: ""
+      VERCEL_PROJECT_PRODUCTION_URL: ""
+    volumes:
+      - data:/app/.data
+      - workflow:/app/.workflow-data
+
+volumes:
+  data:
+  workflow:

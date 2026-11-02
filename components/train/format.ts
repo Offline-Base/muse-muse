@@ -1,6 +1,7 @@
 import type { IconName } from "@/components/icons";
 import { bytes, dayLabel, elapsedMs, groupThousands, modelLabel, plural, truncate, usd, type Tone } from "@/lib/format";
 import { tokenCost } from "@/lib/meta/pricing";
+import { defaultModel, SPARK_STANDIN } from "@/lib/meta/spark";
 import { BUILD_LEVELS as ALL_BUILD_LEVELS, LOW_BIT_LEVEL, type BuildLevel, type LocalFiles } from "@/lib/train/local-files";
 import type { DecideTryAnswer, DecideTryPick, DecisionRow, DecisionSpec, DecisionSummary, WilsonRate } from "@/lib/decide/types";
 import { NONE_OPTION } from "@/lib/decide/format";
@@ -833,7 +834,7 @@ export function datasetOptionText(
  * does next names it. Muse Spark 1.3 did all three before Oct 29, 2026, so copy about a record names the model from the
  * record instead (writerName, judgeName, storyModelOf).
  */
-export const WRITER_MODEL = "muse-wonder-1.0";
+export const WRITER_MODEL = defaultModel();
 export const WRITER_NAME = modelLabel(WRITER_MODEL);
 
 /**
@@ -850,6 +851,14 @@ export function writerName(dataset: { writerModel?: string | null } | null | und
  */
 export function judgeName(job: { judgeModel?: string | null; evalSummary?: EvalSummary | null }): string {
   return modelLabel(judgeModelOf(job) ?? WRITER_MODEL);
+}
+
+/**
+ * What a result judged on Contributor needs beside its scores: judges differ, so they don't compare with runs Muse Wonder
+ * judged. Null for any other judge. Base against tuned in one run is still fair, since one judge scored both.
+ */
+export function judgeComparabilityNote(judge: string): string | null {
+  return judge === modelLabel(SPARK_STANDIN) ? `Judged by ${judge}. These scores don't compare with runs judged by Muse Wonder.` : null;
 }
 
 /**

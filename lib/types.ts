@@ -423,7 +423,25 @@ export type GatewayEndpoint = "responses" | "images/generations" | "images/edits
 /** How well one of Meta's videos maps onto a rebuild with current Muse models. */
 export type RebuildFit = "clean" | "reframe" | "partial";
 
-/** Mirrors an entry in catalog/meta-resources.json. */
+/** The Nov 2, 2026 audit's verdict on Muse Muse's version of one of Meta's lessons. */
+export type LessonVerdict = "wrong" | "partly wrong" | "not built";
+
+export type LessonKind = "tutorial" | "talk" | "course" | "case study";
+
+/** The improved plan for a lesson on the Learn page. It says planned until it runs. */
+export interface LessonPlan {
+  title: string;
+  plan: string;
+  models: string[];
+  /** The fine-tune the plan uses, or null when the lesson has none. */
+  tune: string | null;
+  /** Estimated cost to redo it, in words. Nothing is spent until the owner says so. */
+  estimate: string;
+  status: "planned";
+  unverified?: string[];
+}
+
+/** Mirrors an entry in catalog/meta-resources.json. The lesson fields are optional so a synthetic target still fits. */
 export interface RebuildTarget {
   id: string;
   title: string;
@@ -436,4 +454,23 @@ export interface RebuildTarget {
     plan: string;
     note: string;
   };
+  kind?: LessonKind;
+  presenter?: string | null;
+  /** Set when the presenter is unconfirmed or spelled oddly on Meta's page. */
+  presenterNote?: string;
+  /** The date on Meta's page, YYYY-MM-DD. */
+  date?: string;
+  /** An earlier upload, such as the YouTube date, when Meta's page shows a later one. */
+  firstPublished?: string;
+  event?: string;
+  length?: string;
+  links?: { video?: string; code?: string; course?: string };
+  pageNote?: string;
+  teaches?: string;
+  verdict?: LessonVerdict;
+  /** The product the audit judged, or null when nothing was built. */
+  current?: { product: string; builtOn: string; state: string } | null;
+  learn?: LessonPlan;
+  /** False keeps the lesson out of the no-ids batch. It is built only when named by id. */
+  autoBuild?: boolean;
 }

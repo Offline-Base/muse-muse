@@ -31,7 +31,7 @@ describe("trust routes", { skip: canMock ? false : "needs --experimental-test-mo
   let banRoute: typeof import("@/app/api/admin/users/[id]/ban/route");
   let confirmRoute: typeof import("@/app/api/account/confirm/route");
   let TERMS_VERSION = "";
-  const ENV = ["TRUST_REPORTS", "TRUST_AGE_GATE"];
+  const ENV = ["TRUST_REPORTS", "TRUST_AGE_GATE", "TRUST_LEGAL_PAGES"];
   const saved = { ...process.env };
 
   const json = (url: string, body: unknown, method = "POST", headers: Record<string, string> = {}) =>
@@ -109,6 +109,22 @@ describe("trust routes", { skip: canMock ? false : "needs --experimental-test-mo
       assert.equal((await testDb.select().from(realSchema.abuseReports)).length, 0);
     });
 
+    it("takes a privacy request from the Privacy page with TRUST_REPORTS off, limits it the same way, and keeps only an HMAC of the IP", async () => {
+      const ip = { "x-forwarded-for": "203.0.113.44" };
+      const send = () => reports.POST(json("/api/reports", { slug: "data-request", reason: "privacy", detail: "Delete my made-up note." }, "POST", ip));
+      assert.equal((await send()).status, 404, "nothing while the Privacy page is off too");
+      process.env.TRUST_LEGAL_PAGES = "1";
+      assert.equal((await send()).status, 200);
+      const [row] = await testDb.select().from(realSchema.abuseReports).where(eq(realSchema.abuseReports.productSlug, "data-request"));
+      assert.equal(row!.reason, "privacy");
+      assert.equal(row!.productId, null);
+      assert.ok(!JSON.stringify(row).includes("203.0.113.44"));
+      for (let i = 0; i < 2; i++) await send();
+      assert.equal((await send()).status, 429);
+      await testDb.delete(realSchema.abuseReports);
+      assert.equal((await reports.POST(json("/api/reports", { slug: "data-request", reason: "harm" }))).status, 404, "other reasons stay off");
+    });
+
     it("refuses a bad report with 400 and a sentence, files a good one under an HMAC of the IP, and limits a minute to 3", async () => {
       process.env.TRUST_REPORTS = "1";
       const owner = await maker();
@@ -135,6 +151,13 @@ describe("trust routes", { skip: canMock ? false : "needs --experimental-test-mo
       const res = await adminReport.POST(json("/api/admin/reports/x", { status: "closed" }), params({ id: randomUUID() }));
       assert.equal(res.status, 404);
       assert.equal(authCalls, 0);
+    });
+
+    it("still needs an admin while only the Privacy page is on", async () => {
+      process.env.TRUST_LEGAL_PAGES = "1";
+      viewer = builder();
+      const res = await adminReport.POST(json("/api/admin/reports/x", { status: "closed" }), params({ id: randomUUID() }));
+      assert.equal(res.status, 403);
     });
 
     it("refuses a builder and a signed-out visitor, a bad status and an unknown report, and closes one for an admin", async () => {

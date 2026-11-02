@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { LegalPage } from "@/components/trust/LegalPage";
 import { env } from "@/lib/env";
-import { TERMS_SECTIONS, TERMS_UPDATED, TERMS_VERSION } from "@/lib/trust/terms";
+import { termsSections, TERMS_UPDATED, TERMS_VERSION } from "@/lib/trust/terms";
 
 export const metadata: Metadata = { title: "Terms" };
 
@@ -13,5 +13,5 @@ export default async function TermsPage() {
   // Rendered per request, so the flag is read at run time like the others.
   await connection();
   if (!env.trustLegalPages) notFound();
-  return <LegalPage title="Terms" updated={TERMS_UPDATED} version={TERMS_VERSION} sections={TERMS_SECTIONS} />;
+  return <LegalPage title="Terms" updated={TERMS_UPDATED} version={TERMS_VERSION} sections={termsSections({ reports: env.trustReports })} />;
 }

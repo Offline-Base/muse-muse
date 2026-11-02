@@ -82,7 +82,7 @@ function GlimmerText() {
       <p>
         Meta&apos;s open model: 30B parameters, reads text and images. Its license is Apache 2.0, with Meta&apos;s usage
         policy. It isn&apos;t on Meta&apos;s Model API, so Muse Muse&apos;s lab runs it on rented GPUs to tune it and to
-        run live demos. A product can pick it for local or offline use, through a server someone hosts.
+        run live demos. A product can pick it only through a GPU server someone hosts: Meta&apos;s smallest file of it is 16.8 GB.
       </p>
       <p>
         New fine-tunes start from Muse Muse&apos;s 2026-knowledge Glimmer,{" "}

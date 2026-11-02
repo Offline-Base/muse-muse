@@ -19,7 +19,8 @@ export const NAV_GROUPS: NavItem[][] = [
   [
     { href: "/", label: "Make", icon: "sparkle" },
     { href: "/builds", label: "Builds", icon: "layers", also: ["/b/"] },
-    { href: "/rebuilds", label: "Rebuilds", icon: "rebuild" },
+    // Meta's lessons with Muse Muse's versions and plans (app/learn). The old /rebuilds redirects there.
+    { href: "/learn", label: "Learn", icon: "cap", also: ["/rebuilds"] },
     { href: "/gallery", label: "Gallery", icon: "image", also: ["/p/"] },
   ],
   [

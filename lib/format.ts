@@ -131,6 +131,7 @@ const MODEL_LABELS: Record<string, string> = {
   "muse-voice-transcribe-1.0": "Voice Transcribe",
   "muse-glimmer": "Muse Glimmer",
   "muse-gadget": "Muse Gadget",
+  "jetson-fleet": "Jetson fleet",
 };
 
 export function modelLabel(id: string): string {
@@ -144,6 +145,7 @@ const TARGET_LABELS: Record<TargetId, string> = {
   vr: "VR",
   glasses: "Glasses",
   agent: "Agent",
+  edge: "Edge",
 };
 
 /** What a person calls a target. */

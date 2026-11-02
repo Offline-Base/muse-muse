@@ -57,7 +57,7 @@ function writingText(v: TuneRunView): string {
 
 function trainingText(v: TuneRunView): string {
   const job = v.job;
-  const limits = `${v.gpuLabel}, up to ${v.plan.maxMinutes} minutes and ${usd(v.plan.maxUsd)}`;
+  const limits = v.trainer === "fireworks" ? `${v.gpuLabel}, up to ${v.plan.maxMinutes} minutes` : `${v.gpuLabel}, up to ${v.plan.maxMinutes} minutes and ${usd(v.plan.maxUsd)}`;
   if (!job) return limits;
   if (job.status === "succeeded") return `${v.gpuLabel} · ${usd(job.costUsd)}`;
   if (job.status === "failed" || job.status === "stopped") return v.problem ?? jobWorkingText(job);
@@ -68,7 +68,8 @@ function trainingText(v: TuneRunView): string {
 function scoringText(v: TuneRunView): string {
   if (v.verdict) return v.verdict.words;
   const judged = v.evals.filter((r) => r.judgement).length;
-  return v.evals.length ? `Judged ${judged} of ${v.evals.length} kept-aside prompts` : "The 2026 Glimmer and the tuned model answer the kept-aside prompts";
+  const before = v.trainer === "fireworks" ? "Plain Muse Glimmer 30B" : "The 2026 Glimmer";
+  return v.evals.length ? `Judged ${judged} of ${v.evals.length} kept-aside prompts` : `${before} and the tuned model answer the kept-aside prompts`;
 }
 
 /** The steps panel's rows. */
@@ -77,7 +78,7 @@ export function tuneSteps(v: TuneRunView): StepItem[] {
     {
       id: "plan",
       title: "Plan approved",
-      description: `${v.dataset.requested} examples, ${v.plan.steps} training steps, up to ${usd(v.plan.maxUsd)} for the GPU`,
+      description: v.trainer === "fireworks" ? `${v.dataset.requested} examples, trained on Fireworks, on plain Muse Glimmer 30B` : `${v.dataset.requested} examples, ${v.plan.steps} training steps, up to ${usd(v.plan.maxUsd)} for the GPU`,
       state: "done",
     },
   ];
@@ -103,7 +104,7 @@ export function tuneSteps(v: TuneRunView): StepItem[] {
   const ended = job.status === "succeeded" || job.status === "failed" || job.status === "stopped";
   rows.push({
     id: "training",
-    title: "Training on a GPU",
+    title: v.trainer === "fireworks" ? "Training on Fireworks" : "Training on a GPU",
     description: trainingText(v),
     state: !ended ? "running" : job.status === "succeeded" ? "done" : "failed",
   });

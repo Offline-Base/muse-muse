@@ -30,6 +30,7 @@ import {
   type LambdaFirewallRuleset,
   type LambdaInstance,
 } from "@/lib/train/lambda";
+import { launchChecks } from "@/lib/train/general-checks";
 import { decideCheck, isServeRecipe, usableMinutes, type TrainJobRow } from "@/lib/train/logic";
 import { recipeById } from "@/lib/train/recipes";
 import { serveKeyFor } from "@/lib/train/serve";
@@ -360,6 +361,8 @@ export async function launchStep(jobId: string): Promise<LaunchResult> {
   // than the dollar limit when that runs out first at the job's price.
   const runnable = usableMinutes({ maxMinutes: job.maxMinutes, maxUsd: job.maxUsd }, job.priceCentsPerHour);
   const deadlineEpoch = deadlineEpochFor(runnable);
+  // TUNE_GENERAL_CHECKS: the fixed general-ability and safety prompts, for a glimmer-lora chat job only.
+  const checks = launchChecks(recipe.id, job.params, env.tuneGeneralChecks);
   let userData: string;
   try {
     userData = buildUserData({
@@ -372,6 +375,7 @@ export async function launchStep(jobId: string): Promise<LaunchResult> {
       deadlineEpoch,
       ...(cache ? { cacheDir: cache.mountPoint } : {}),
       ...(serveKey ? { serveKey } : {}),
+      ...(checks ? { checks } : {}),
     });
   } catch (err) {
     throw new FatalError(`The instance's setup script could not be built: ${message(err)}`);

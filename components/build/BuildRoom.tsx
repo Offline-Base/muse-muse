@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { FloatButton, ScrollButton, ShowThinking, SourceList, StepList, StepsPanel, TitleChip, WorkingStep, type StepsTab } from "@/components/chat";
 import { SegmentedTabs } from "@/components/chat/SegmentedTabs";
 import { Composer } from "@/components/composer/Composer";
@@ -14,14 +14,16 @@ import { BuildDetails } from "@/components/build/BuildDetails";
 import { OwnModelRow, type OwnModelOffer } from "@/components/build/OwnModelRow";
 import { deriveRoom, railStates, refineSpot } from "@/components/build/derive";
 import { PlanCard, planCardState, preloadPlanArt } from "@/components/build/PlanCard";
-import { RequirementsChecklist } from "@/components/build/RequirementsChecklist";
+import { checksFailed, RequirementsChecklist } from "@/components/build/RequirementsChecklist";
 import { latestChecklist } from "@/lib/full/requirements";
 import { QuestionCard, SteerNote } from "@/components/build/session";
 import { appsLine, nativeRows } from "@/components/build/apps";
 import { proveRows } from "@/components/build/prove-rows";
 import { conversationItems, currentStep, finalWords, roomSources, roomSteps, shareLink, stepsEnd, type ConvoItem } from "@/components/build/steps";
 import { SteerBox } from "@/components/build/SteerBox";
+import { PlanChecklist } from "@/components/build/PlanChecklist";
 import { StepsFeed } from "@/components/build/StepsFeed";
+import { buildChecklist } from "@/lib/steps-feed/checklist";
 import { buildFeed } from "@/lib/steps-feed/facts";
 import { BriefBody, BuildOutput, LivePreview, ShipBody, UserTurn, tokensText } from "@/components/build/turns";
 import { duration, elapsedMs, isTerminalStatus, parseManifest, statusLabel, usd } from "@/lib/format";
@@ -55,6 +57,9 @@ export interface BuildRoomProps {
   ownModel?: OwnModelOffer | null;
   /** BUILD_ROOM_STEPS: two columns, a feed of simple steps on the left and the actual stuff on the right. */
   stepsFeed?: boolean;
+  /** MAKE_CHAT_ALL: the model started with this build, for whoever may see it: its story on the left, its results on the right. */
+  pairFeed?: ReactNode;
+  pairPanel?: ReactNode;
 }
 
 /** Below this the steps panel covers the conversation, so it starts closed (components/chat/StepsPanel.tsx). */
@@ -383,7 +388,10 @@ export function BuildRoom(props: BuildRoomProps) {
   const planRow = plan ? (
     <li className="room-plan">
       <PlanCard brief={plan.brief} art={plan.art} running={!room.terminal} artUrl={room.planArtUrl} />
-      <RequirementsChecklist items={latestChecklist(plan.brief, room.segments.flatMap((s) => (s.type === "check" ? [{ judge: s.judge, tests: s.verify?.summary.requirements ?? null }] : [])))} />
+      <RequirementsChecklist
+        items={latestChecklist(plan.brief, room.segments.flatMap((s) => (s.type === "check" ? [{ judge: s.judge, tests: s.verify?.summary.requirements ?? null }] : [])))}
+        failed={checksFailed(room.status, room.segments.flatMap((s) => (s.type === "check" ? [{ verify: s.verify?.summary ?? null, judge: s.judge }] : [])))}
+      />
     </li>
   ) : null;
   const previewRow = room.previewUrl && !room.terminal ? (
@@ -509,8 +517,12 @@ export function BuildRoom(props: BuildRoomProps) {
                   </p>
                 </li>
                 <li>
+                  <PlanChecklist list={buildChecklist(room.status, events, "Making your product", feed.unpublished)} />
+                </li>
+                <li>
                   <StepsFeed feed={feed} />
                 </li>
+                {props.pairFeed}
                 {notes.map((item) => (
                   <ConvoRow key={item.key} item={item} buildId={build.id} canAnswer={Boolean(props.canSteer)} onShow={showSteps} />
                 ))}
@@ -545,6 +557,7 @@ export function BuildRoom(props: BuildRoomProps) {
 
             <aside className="room-stuff" aria-label="The build">
               <ol className="convo">
+                {props.pairPanel}
                 {/* What's real comes first, then the plan it came from. Each keeps its place, so a preview doesn't reload. */}
                 {previewRow}
                 {outputRow}

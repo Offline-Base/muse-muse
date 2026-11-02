@@ -99,6 +99,12 @@ export async function markRunStopped(datasetId: string): Promise<void> {
   await db().insert(limits).values({ key: stoppedKey(datasetId), windowStart: TUNE_KEEP_WINDOW, count: 1 }).onConflictDoNothing();
 }
 
+/** Keeps that the person asked only for the examples, for the room's words. Nothing starts training either way: start.ts just doesn't. */
+export async function saveRunDatasetOnly(datasetId: string): Promise<void> {
+  if (!UUID_RE.test(datasetId)) return;
+  await db().insert(limits).values({ key: `tune-settings:${datasetId}:dataset-only`, windowStart: TUNE_KEEP_WINDOW, count: 1 }).onConflictDoNothing();
+}
+
 /** Keeps the training steps the run was started with. */
 export async function saveRunSteps(datasetId: string, steps: number): Promise<void> {
   if (!UUID_RE.test(datasetId)) return;
@@ -121,6 +127,12 @@ export async function saveRunBase(datasetId: string, base: { repo: string; revis
 export async function saveRunVisitor(datasetId: string, visitor: { trainerId: string; ip: string }): Promise<void> {
   if (!UUID_RE.test(datasetId)) throw new Error("not a run id");
   await db().insert(limits).values({ key: `tune-settings:${datasetId}:visitor:${visitor.trainerId}@${visitor.ip}`, windowStart: TUNE_KEEP_WINDOW, count: 1 }).onConflictDoNothing();
+}
+
+/** Marks the run to train on Fireworks. Before anything runs: a run that lost its mark would train on Lambda instead. */
+export async function saveRunTrainer(datasetId: string): Promise<void> {
+  if (!UUID_RE.test(datasetId)) throw new Error("not a run id");
+  await db().insert(limits).values({ key: `tune-settings:${datasetId}:trainer:fireworks`, windowStart: TUNE_KEEP_WINDOW, count: 1 }).onConflictDoNothing();
 }
 
 /** Keeps whether the run uploads by itself. No row, or 0, means it doesn't, so a write that failed fails closed. */
@@ -162,7 +174,7 @@ export async function readRunMarkRows(datasetId: string, now: Date = new Date())
       or(
         and(like(limits.key, `tune-run:${datasetId}:%`), gte(limits.windowStart, hourAgo), lt(limits.windowStart, TUNE_KEEP_WINDOW)),
         and(
-          or(like(limits.key, `tune-run-end:${datasetId}:%`), eq(limits.key, stoppedKey(datasetId)), eq(limits.key, stepsKey(datasetId)), eq(limits.key, autoPublishKey(datasetId)), like(limits.key, `${basePrefix(datasetId)}%`), like(limits.key, `tune-settings:${datasetId}:visitor:%`)),
+          or(like(limits.key, `tune-run-end:${datasetId}:%`), eq(limits.key, stoppedKey(datasetId)), eq(limits.key, stepsKey(datasetId)), eq(limits.key, `tune-settings:${datasetId}:dataset-only`), eq(limits.key, autoPublishKey(datasetId)), like(limits.key, `${basePrefix(datasetId)}%`), like(limits.key, `tune-settings:${datasetId}:visitor:%`), eq(limits.key, `tune-settings:${datasetId}:trainer:fireworks`)),
           eq(limits.windowStart, TUNE_KEEP_WINDOW),
         ),
       ),

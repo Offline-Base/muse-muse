@@ -15,7 +15,7 @@ import type { MuseEngine } from "@/lib/sandbox/bridge-protocol";
 import { agentCapacity } from "@/lib/sandbox/agent-capacity";
 import { snapshotCapOverlays } from "@/lib/sandbox/snapshots";
 import { type PlatformBypass, publicHost } from "@/lib/sandbox/policy";
-import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
+import { contributorSwitchOn, RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
 import { parseGeoCountries } from "@/lib/trust/geo";
 
 /**
@@ -94,12 +94,16 @@ export function testModel(): typeof SPARK_STANDIN | null {
 /**
  * BUILDS_ON_CONTRIBUTOR: the owner's decision to run every build on Spark 1.3 Contributor, on production too, with real
  * people's notes and files. Meta may train on that tier and its terms (6.2) bar sensitive, confidential or personal
- * information there, so every box that feeds a build shows ContributorNotice. Fine-tuning keeps testModel(). A live product
- * follows it too when it was published under this flag and shows the product notice, unless it holds a person's connected
- * accounts or personal tools (runtimeStaysOffContributor in lib/pipeline/logic.ts), which stay on Muse Wonder.
+ * information there, so every box that feeds a build shows ContributorNotice. testModel() keeps its production guard, and
+ * contributorWriterOn its own switch for a person's files. Everything else with a model follows this: fine-tuning, the docs
+ * and Muse Code too (defaultModel in lib/meta/spark.ts). A live product follows it when it was published under this flag and
+ * shows the product notice. Gadgets, boards, the device route and WONDER_DEMO_SLUGS stay on Muse Wonder (keepsWonderUnderSwitch in
+ * lib/gateway/policy.ts). Any other product that holds a person's connected accounts or personal tools (personalOffUnderSwitch in
+ * lib/pipeline/logic.ts), or shows no notice, has its model calls refused in plain words. Off, all of this ends and the platform
+ * is on Muse Wonder: docs/JUDGING_WEEK.md has the one command, and what it changes.
  */
 export function contributorBuildsOn(): boolean {
-  return flag("BUILDS_ON_CONTRIBUTOR");
+  return contributorSwitchOn();
 }
 
 /** What a build runs on instead of its usual models: Contributor with BUILDS_ON_CONTRIBUTOR, else TEST_MODEL's guarded answer. */
@@ -463,6 +467,14 @@ export const env = {
     return flag("TUNE_COMPOSER");
   },
   /**
+   * MAKE_CHAT_ALL: "1", "true", "yes" or "on" makes the Make page's box the one place to start a product, a tuned model
+   * or both (docs/TRAINING.md "One box for everything"). It needs TUNE_COMPOSER too (lib/make/switch.ts). Off by default:
+   * the Make page, the build room and the run room render as before, and /api/make/* answers 404.
+   */
+  get makeChatAll(): boolean {
+    return flag("MAKE_CHAT_ALL");
+  },
+  /**
    * STORY_PAGES: "1", "true", "yes" or "on" shows /offline, the clearer /private and the frontier section on
    * /how-it-works (docs/STORY.md). Off: /offline answers 404 and the other two are as they were.
    * All three are static, so this is read at build time and a change takes a deploy.
@@ -555,6 +567,15 @@ export const env = {
     return flag("TUNE_RL");
   },
 
+  /**
+   * TUNE_GENERAL_CHECKS: a glimmer-lora chat job also answers the fixed general-ability and safety prompts
+   * (lib/train/general-checks.ts), and the judge scores them apart from the task (docs/TRAINING.md "General checks").
+   * Off: job.json, the GPU's prompts, judging and the eval summary are exactly as without it.
+   */
+  get tuneGeneralChecks(): boolean {
+    return flag("TUNE_GENERAL_CHECKS");
+  },
+
   // ---------- Anyone can fine-tune (General; lib/train/public, open-train.md) ----------
 
   /**
@@ -588,6 +609,18 @@ export const env = {
    */
   get tuneFolder(): boolean {
     return flag("TUNE_FOLDER");
+  },
+  /**
+   * FIREWORKS_TUNE: "1", "true", "yes" or "on" offers "Train on Fireworks" for Muse Glimmer 30B beside Lambda on the
+   * describe and folder flows (docs/TRAINING.md "Train on Fireworks"). Needs TUNE_COMPOSER and FIREWORKS_API_KEY. Off by
+   * default: its routes answer 404 and the page offers nothing new.
+   */
+  get fireworksTune(): boolean {
+    return flag("FIREWORKS_TUNE");
+  },
+  /** The most answering a Fireworks run's kept-aside prompts may cost. Over it, or at 0, the run trains and isn't scored. */
+  get fireworksEvalMaxUsd(): number {
+    return Math.max(0, number("FIREWORKS_EVAL_MAX_USD", 1));
   },
   /** Runs one visitor may start per hour. One IP gets PUBLIC_TRAIN_IP_FACTOR times this. */
   get openTrainStartsPerHour(): number {
@@ -749,7 +782,8 @@ export const env = {
         native.includes(t) ||
         (t === "vr" && env.vrEnabled) ||
         (t === "glasses" && env.glassesEnabled) ||
-        (t === "agent" && env.agentsEnabled),
+        (t === "agent" && env.agentsEnabled) ||
+        (t === "edge" && env.edgeEnabled),
     );
   },
 
@@ -1094,6 +1128,23 @@ export const env = {
   /** True while any trust flag a product carries is on, so new builds get the trust overlay (template/caps/trust). */
   get trustProductOverlay(): boolean {
     return env.trustAgeGate || env.trustLegalPages || env.trustGeoBlock || env.trustReports;
+  },
+
+  // ---------- Edge builds (docs/EDGE_DEMO.md) ----------
+
+  /**
+   * EDGE_BUILDS: with EDGE_ENABLED on too, provisioning writes lib/meta/edge.ts, the muse-edge skill and the outage drill
+   * kit into a build whose brief has the edge target (lib/edge/template-files.ts). Alone it changes nothing.
+   */
+  get edgeBuilds(): boolean {
+    return flag("EDGE_BUILDS");
+  },
+  /**
+   * EDGE_ENABLED: the brief writer may pick the edge target, and an edge build runs the simulated outage drill after
+   * verify. Needs EDGE_BUILDS too, since the fallback helper and the drill kit come into builds with it.
+   */
+  get edgeEnabled(): boolean {
+    return flag("EDGE_ENABLED") && env.edgeBuilds;
   },
 
   // ---------- Full builds (docs/FULL_BUILDS.md) ----------
@@ -1464,6 +1515,33 @@ export const env = {
    */
   get gpuTrainOnData(): boolean {
     return flag("GPU_TRAIN_ON_DATA");
+  },
+
+  // ---------- The Jetson fleet for products (docs/CAPABILITIES.md, 17b) ----------
+
+  /**
+   * FLEET_PRODUCTS: products whose brief picks jetson-fleet answer from the fleet's boards at {GATEWAY_URL}/fleet/v1. Off: that
+   * route answers 404 and touches nothing, and the brief, tokens and catalog are today's.
+   */
+  get fleetProducts(): boolean {
+    return flag("FLEET_PRODUCTS");
+  },
+  /**
+   * FLEET_PRODUCTS, for what a new build is told and given: also needs a builder snapshot made from a checkout with
+   * askFleetOrMessage in its template. template/caps/fleet ships no files, only its deps.json, so a snapshot lists `fleet` in
+   * lib/sandbox/snapshots.json exactly when that's true. Local runs too: a product's template/ comes from the snapshot there
+   * as well, and provisioning copies in only cap overlays, so it never adds the helper from this checkout.
+   */
+  get fleetProductsForBuilds(): boolean {
+    if (!flag("FLEET_PRODUCTS")) return false;
+    // snapshotCaps is null locally, which means "copy any missing overlay", not "has the helper". Quiet, since locally an id
+    // missing from the manifest still gets its caps, so snapshotCapOverlays' warning would be wrong.
+    const overlays = env.snapshotCaps ?? snapshotCapOverlays(process.env.BUILDER_SNAPSHOT_ID || undefined, undefined, () => {});
+    return overlays.includes("fleet");
+  },
+  /** FLEET_ALL_PRODUCTS: signed-in builders' products may use the fleet too. Off, only products an admin owns may. */
+  get fleetAllProducts(): boolean {
+    return flag("FLEET_ALL_PRODUCTS");
   },
 
   // ---------- Hosting a tuned model on a provider the platform pays for (lib/train/host) ----------

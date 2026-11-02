@@ -16,9 +16,10 @@ import { decideJson, GLIMMER_REASONING, GLIMMER_TEMPLATE, LABELS_PER_PROMPT, lab
 import type { DecideJson, DecisionSideSummary, DecisionSpec, DecisionSummary, WilsonRate } from "@/lib/decide/types";
 import { plural } from "@/lib/format";
 import { BUILT_WITH_SPARK_OPEN, isSparkOpenDerivative, licenseDuties, R30B_REPO, R30B_URL, USAGE_POINTS } from "@/lib/train/base";
+import { checkSetOf } from "@/lib/train/general-checks";
 import { BUILD_LEVELS, LOW_BIT_LEVEL, QUANT_LEVELS, type BuildLevel, type LocalFile, type LocalFiles, type LowBitFile, type QuantLevel } from "@/lib/train/local-files";
 import { LOW_BIT_FACTS, quantBaseForAdapter, quantBaseOf } from "@/lib/train/quant-targets";
-import { SPARK_STANDIN } from "@/lib/meta/spark";
+import { defaultModel, SPARK_STANDIN } from "@/lib/meta/spark";
 import { isDecisionSummary, modelName, PUBLIC_WRITER, recordedModel, UNRECORDED_MODEL, writerModelOf } from "@/lib/train/models";
 import {
   datasetSystemPrompt,
@@ -59,7 +60,7 @@ export const GLIMMER_ORIGIN = "meta-models/Muse-Glimmer-30B";
  * The model that writes a new story, saved with it as the hub state's storyModel. Muse Spark 1.3 wrote every story
  * before Oct 29, 2026 and is never used for new ones.
  */
-export const STORY_MODEL = "muse-wonder-1.0";
+export const STORY_MODEL = defaultModel();
 /** The tuned model, as the cards name it. */
 export const GLIMMER_NAME = "Muse Glimmer 30B";
 /** A dataset title's slug in a repo name: lowercase letters, digits and dashes, at most this long. */
@@ -625,7 +626,7 @@ export function resultText(f: Pick<CardFacts, "summary" | "dataset" | "judgeMode
   const s = f.summary;
   const d = f.dataset;
   const derived = f.template ? cardSparkOpen({ sparkOpen: f.sparkOpen, template: f.template }) : f.sparkOpen === true;
-  return `${writerName(d)} wrote the dataset's ${d.trainCount + d.evalCount} examples: ${d.trainCount} to train on and ${d.evalCount} held out. On ${s.items} held-out prompts, judged blind by ${modelName(judgeId(f))}, the tuned model was ${wins(s)}, with an average score of ${score(s.avgTunedScore)} out of 10 against ${score(s.avgBaseScore)} for ${baseInLine(derived)}.`;
+  return `${writerName(d)} wrote the dataset's ${d.trainCount + d.evalCount} examples: ${d.trainCount} to train on and ${d.evalCount} held out. On ${s.items} held-out prompts, judged blind by ${modelName(judgeId(f))}, the tuned model was ${wins(s)}, with an average score of ${score(s.avgTunedScore)} out of 10 against ${score(s.avgBaseScore)} for ${baseInLine(derived)}.${judgeId(f) === SPARK_STANDIN ? ` These scores don't compare with runs judged by ${modelName("muse-wonder-1.0")}.` : ""}`;
 }
 
 /** The card's "Why this exists": a line saying whose story it is (`lead`, the dataset card's), the admin's reason, the story, then the records' result. */
@@ -1270,7 +1271,10 @@ function storyOf(why: string | null, storyBy: "spark" | "template", storyModel: 
   return { why, by: model === UNRECORDED_MODEL ? "spark" : "model", model };
 }
 
-/** The eval items with their verdicts, in index order, from a judged job's eval and judgement events. */
+/**
+ * The eval items with their verdicts, in index order, from a judged job's eval and judgement events. The general checks
+ * (lib/train/general-checks.ts) are left out: the cards and the run's record are about the task.
+ */
 export function runItems(events: TrainEventView[]): RunItem[] {
   const items = new Map<number, RunItem>();
   const verdicts = new Map<number, NonNullable<RunItem["judgement"]>>();
@@ -1278,7 +1282,7 @@ export function runItems(events: TrainEventView[]): RunItem[] {
   const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
   for (const ev of events) {
     const p = ev.payload;
-    if (p?.type === "eval" && Number.isInteger(p.index) && !items.has(p.index)) {
+    if (p?.type === "eval" && Number.isInteger(p.index) && checkSetOf(p.index) === null && !items.has(p.index)) {
       items.set(p.index, {
         index: p.index,
         prompt: text(p.prompt),

@@ -11,6 +11,11 @@
  * makes judgeStep safe to run again: an item already judged isn't sent to Meta twice. How judging ended is saved on the
  * job as its eval summary, including when it was skipped or judged nothing (unjudgedSummary, with the reason), so the
  * job page never has to read it from the log, which the job's runner can write to.
+ *
+ * With TUNE_GENERAL_CHECKS on at launch, a job also sends the fixed general-ability and safety checks as eval items
+ * (lib/train/general-checks.ts). The plan sets them apart, each with its own task line for the judge, judgeStep scores
+ * them like any item, and the summary keeps them beside the task's result (EvalSummary.general and .safety). A job
+ * without them is judged exactly as before.
  */
 import { FatalError, RetryableError } from "workflow";
 import { z } from "zod";
@@ -19,7 +24,16 @@ import { cleanStrings } from "@/lib/brief/normalize";
 import { respondStructured, StructuredOutputError, type StructuredResult } from "@/lib/brief/structured";
 import { modelLabel } from "@/lib/format";
 import { spendPaused } from "@/lib/quota";
-import { betterOf, judgeScore, summarizeJudgements, unjudgedSummary, type JudgedItem } from "@/lib/train/logic";
+import { checkTask, splitCheckIndexes, type CheckSet } from "@/lib/train/general-checks";
+import {
+  betterOf,
+  judgeScore,
+  summarizeJudgements,
+  unjudgedSummary,
+  withCheckSummaries,
+  type JudgedChecks,
+  type JudgedItem,
+} from "@/lib/train/logic";
 import {
   getDataset,
   getEvalItem,
@@ -33,12 +47,13 @@ import {
 import type { EvalSummary } from "@/lib/train/types";
 import type { ModelUsage } from "@/lib/types";
 import { recordUsage } from "@/lib/usage";
+import { defaultModel } from "@/lib/meta/spark";
 
 /**
  * The model that judges a job's eval items, saved on the job as its judge_model when judging starts. Muse Spark 1.3
  * judged every job before Oct 29, 2026 and is never used for new judging.
  */
-export const JUDGE_MODEL = "muse-wonder-1.0";
+export const JUDGE_MODEL = defaultModel();
 
 /** The note is cut to this many words. */
 const NOTE_WORDS = 30;
@@ -105,6 +120,21 @@ function recordJudgeUsage(usage: ModelUsage[]): Promise<void> {
 
 const usd = (usage: ModelUsage[]) => Math.round(usage.reduce((s, u) => s + (u.costUsd || 0), 0) * 1e6) / 1e6;
 
+/** A general check set to judge: its eval indexes and the task line the judge sees for it (checkTask). */
+export interface CheckPlan {
+  indexes: number[];
+  task: string;
+}
+
+/** What judgePlanStep hands the workflow. `checks` only for a job that sent general checks beside its task items. */
+export interface JudgePlan {
+  indexes: number[];
+  task: string | null;
+  checks?: Partial<Record<CheckSet, CheckPlan>>;
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
 // ---------------------------------------------------------------------------------------------------------------
 // Steps
 
@@ -112,13 +142,15 @@ const usd = (usage: ModelUsage[]) => Math.round(usage.reduce((s, u) => s + (u.co
  * What to judge: the indexes of the job's eval items, and the task of its dataset (params.datasetId) when it has one.
  * Nothing when it has no eval items or a summary already, and nothing when MODEL_API_KEY isn't set or the platform's
  * daily spend cap is reached: then it saves an unjudged summary that says why, and logs it. Otherwise it saves
- * JUDGE_MODEL as the job's judge_model before it logs that judging started.
+ * JUDGE_MODEL as the job's judge_model before it logs that judging started. When the job sent general checks
+ * (indexes from lib/train/general-checks.ts) beside its task items, `indexes` holds only the task items and `checks`
+ * the rest, each set with its task line; a job without them gets no `checks`, and the plan is exactly as before.
  */
-export async function judgePlanStep(jobId: string): Promise<{ indexes: number[]; task: string | null }> {
+export async function judgePlanStep(jobId: string): Promise<JudgePlan> {
   "use step";
   const none = { indexes: [], task: null };
-  const indexes = await fromDb(() => listEvalIndexes(jobId));
-  if (!indexes.length) return none;
+  const all = await fromDb(() => listEvalIndexes(jobId));
+  if (!all.length) return none;
   const job = await fromDb(() => getJob(jobId));
   if (!job || job.evalSummary) return none;
   const skip = !process.env.MODEL_API_KEY
@@ -134,10 +166,19 @@ export async function judgePlanStep(jobId: string): Promise<{ indexes: number[];
   }
   const datasetId = typeof job.params?.datasetId === "string" ? job.params.datasetId : null;
   const dataset = datasetId ? await fromDb(() => getDataset(datasetId)) : null;
+  // Checks are set apart only beside task items, so a job that sent none of them is judged as before.
+  const split = splitCheckIndexes(all);
+  const hasChecks = split.task.length > 0 && split.general.length + split.safety.length > 0;
+  const indexes = hasChecks ? split.task : all;
+  const checks: Partial<Record<CheckSet, CheckPlan>> = {};
+  for (const set of ["general", "safety"] as const) {
+    if (hasChecks && split[set].length) checks[set] = { indexes: split[set], task: checkTask(set) };
+  }
   const n = indexes.length;
+  const also = hasChecks ? `, ${plural(split.general.length, "general check")} and ${plural(split.safety.length, "safety check")}` : "";
   await fromDb(() => setJudgeModel(jobId, JUDGE_MODEL));
-  await fromDb(() => recordEvent(jobId, { type: "log", text: `${modelLabel(JUDGE_MODEL)} is judging ${n} eval item${n === 1 ? "" : "s"}.` }));
-  return { indexes, task: dataset?.task ?? null };
+  await fromDb(() => recordEvent(jobId, { type: "log", text: `${modelLabel(JUDGE_MODEL)} is judging ${plural(n, "eval item")}${also}.` }));
+  return hasChecks ? { indexes, task: dataset?.task ?? null, checks } : { indexes, task: dataset?.task ?? null };
 }
 judgePlanStep.maxRetries = 3;
 
@@ -195,11 +236,26 @@ export async function judgeStep(jobId: string, index: number, task: string | nul
 }
 judgeStep.maxRetries = 2;
 
+/** The log's sentence for one judged check set. */
+function checkLine(label: string, c: NonNullable<EvalSummary["general"]>): string {
+  if (!c.items) return ` ${label}: none of the ${c.asked} could be judged.`;
+  return (
+    ` ${label}: judged ${c.items} of ${c.asked}, the tuned model better on ${c.tunedWins}, the base model on ${c.baseWins}, ` +
+    `${c.ties} tied, average ${c.avgTunedScore} tuned, ${c.avgBaseScore} base.`
+  );
+}
+
 /**
  * Writes the job's eval summary from the judged items and logs it. When none could be judged it saves an unjudged
- * summary that says so, logs that and returns null. Never touches the job's status.
+ * summary that says so, logs that and returns null. `checks`, only for a job that sent general checks, go beside the
+ * task's numbers (withCheckSummaries) and into the log line. Never touches the job's status.
  */
-export async function saveEvalSummaryStep(jobId: string, items: JudgedItem[], asked: number): Promise<EvalSummary | null> {
+export async function saveEvalSummaryStep(
+  jobId: string,
+  items: JudgedItem[],
+  asked: number,
+  checks?: { general?: JudgedChecks; safety?: JudgedChecks },
+): Promise<EvalSummary | null> {
   "use step";
   if (!items.length) {
     const note = `Judging failed: none of the ${asked} eval items could be judged.`;
@@ -207,12 +263,14 @@ export async function saveEvalSummaryStep(jobId: string, items: JudgedItem[], as
     await fromDb(() => recordEvent(jobId, { type: "log", text: note }));
     return null;
   }
-  const s = summarizeJudgements(items);
+  const s = checks ? withCheckSummaries(summarizeJudgements(items), checks) : summarizeJudgements(items);
   await fromDb(() => setEvalSummary(jobId, s));
   const text =
     `Judged ${s.items} of ${asked} eval items: the tuned model was better on ${s.tunedWins}, the base model on ` +
-    `${s.baseWins}, and ${s.ties} tied. Average score ${s.avgTunedScore} tuned, ${s.avgBaseScore} base. ` +
-    `Judging cost $${s.judgeCostUsd.toFixed(4)}.`;
+    `${s.baseWins}, and ${s.ties} tied. Average score ${s.avgTunedScore} tuned, ${s.avgBaseScore} base.` +
+    (s.general ? checkLine("General checks", s.general) : "") +
+    (s.safety ? checkLine("Safety checks", s.safety) : "") +
+    ` Judging cost $${s.judgeCostUsd.toFixed(4)}.`;
   await fromDb(() => recordEvent(jobId, { type: "log", text }));
   return s;
 }

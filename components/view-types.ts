@@ -89,6 +89,8 @@ export interface ProductCardView {
   costUsd: number | null;
   fixRounds: number | null;
   rebuildOf: string | null;
+  /** The build that made the current version, for a "Watch the build" link. */
+  latestBuildId?: string | null;
 }
 
 /** Rebuild catalog entry joined with its latest build and product. */
@@ -127,4 +129,8 @@ export interface RebuildRef {
   title: string;
   url: string;
   fit: RebuildFit | null;
+  /** The lesson's card on /learn, or null for a first demo, which has no Meta lesson. */
+  learnHref: string | null;
+  /** The Nov 2 audit's verdict and the product it judged, so a page can say how that product measured up. */
+  verdict: { label: string; product: string } | null;
 }

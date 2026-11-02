@@ -1701,7 +1701,7 @@ All through scripts/dev/tune-harness.ts on a PGlite copy, so training, cost and 
 
 ### 20:47Z to 21:20Z All five kinds on the real boxes, and Device Farm
 
-Direct runs with native/lab/tools/check.mjs and its local stand-in, from origin/main 0674a863 lab code unpacked next to the box's release. Not through the queue: the claim route answers 404 on the live site. Target: https://musemuse-dinner-split-helper.vercel.app/. Clips are in s3://muse-knowledge-916979311153/lab/checks/direct-1101-2047/.
+Direct runs with native/lab/tools/check.mjs and its local stand-in, from origin/main 0674a863 lab code unpacked next to the box's release. Not through the queue: the claim route answers 404 on the live site. Target: https://musemuse-dinner-split-helper.vercel.app/. Clips are in s3://muse-knowledge-<account id>/lab/checks/direct-1101-2047/.
 
 | Kind | Result | Evidence |
 |---|---|---|
@@ -1731,7 +1731,7 @@ Direct runs with native/lab/tools/check.mjs and its local stand-in, from origin/
 ## Nov 1: first real full builds started on a Preview (branch tg-full-builds, results pending)
 
 - Snapshot snap_6VHCNtYcvSoeLpd4uOYI0IQ1kUOj made and recorded in lib/sandbox/snapshots.json, because the template's verify and wording changed. Passed to this Preview only; production's setting is untouched.
-- Preview https://muse-muse-4ohfoi9fy-ethan-6436s-projects.vercel.app (dpl_2DMKBTPMB1KZgTxjmud67vKwYnxa) on commit 431e78b7, with the switches passed at deploy, on Muse Wonder with no TEST_MODEL. NATIVE_EXTENSION is the one ready cap. Without a Vercel login: GET / answered 302 to Vercel sign-in, POST /api/inspirations answered 401.
+- A preview deployment (URL left out, dpl_2DMKBTPMB1KZgTxjmud67vKwYnxa) on commit 431e78b7, with the switches passed at deploy, on Muse Wonder with no TEST_MODEL. NATIVE_EXTENSION is the one ready cap. Without a Vercel login: GET / answered 302 to Vercel sign-in, POST /api/inspirations answered 401.
 - Database: the owner's main database, by the owner's choice. This branch adds no migration, so the deploy changed no tables.
 - Builds, made-up data: detailed note bf7a2e2e-55c2-4238-bdb8-89ce03d7db2f, one-liner b500a0b8-c4e3-4bca-8e65-9d9c07311097. Not waited on, per the owner.
 - Briefs seen in a real run: detailed 21 requirements, 6 screens, flow of 10; one-liner 16 requirements, 10 screens, flow of 10. The scope check ran on both and accepted both, with nothing left uncovered and nothing added by code. It sent the detailed brief back once (18 asks) and the one-liner never (8 asks). Both builds use muse-wonder-1.0. These are the first real brief and scope check calls.
@@ -2249,6 +2249,21 @@ Owner asked to upload every dataset and fine-tuned model. List and hold reasons 
 - Draft card: docs/model-cards/muse-glimmer-30b-zubrelian-moss-guide-lora-1898e46c.md, from the real modelCard generator, edited for the harness, the current repo name (the adapter config's old name redirects, 307) and the honest limits. Not uploaded.
 - Spend: $0 Meta, no GPU. One Preview deploy. No production changes.
 
+## Nov 1: Train on Fireworks, flag off (branch tg-fw-tune)
+
+Behind FIREWORKS_TUNE, off by default. Design in docs/TRAINING.md "Train on Fireworks".
+
+- **Spend:** Fireworks $0, Meta $0, Lambda $0. No Preview, no deploy, no real job, no build. The owner's mid-task instruction stopped Meta calls and builds to save money. A run through the site makes a Meta plan call, so the real job was not run. Nothing was created on Fireworks, so nothing needs cleaning up.
+- **Read:** docs.fireworks.ai and fireworks.ai/pricing without a key, on Nov 1. They state "Muse Glimmer 30B SFT is free to train until November 30, 2026" and "free via UI and Serverless Training API until 11/30. No credit card required." The API's model entry answered 401 without a key, as expected.
+- **Env, names only:** FIREWORKS_API_KEY is listed for Preview. FIREWORKS_ACCOUNT_ID did not show in the filtered Preview list, so the code looks up the key's account if it is unset. No value read.
+- **Finding:** Fireworks documents no plan or dry-run call. estimatedCost exists only on a created job, and the cookbook's `plan` prints $0 from a date in its own script. So the gate reads the live pages, then the job's own estimatedCost, and deletes the job above $0.
+- **Finding:** a managed SFT adapter can't use serverless inference. The docs list trained models as batch compatible, so base and tuned answer through batch jobs and no deployment is made. Batch on this base and on a trained LoRA is untested, and the results file's row shape isn't documented, so the parser is tolerant.
+- **Decision:** answering isn't covered by the offer, so its ceiling is held on the job, and FIREWORKS_EVAL_MAX_USD can turn it off.
+- **Decision:** the job's time limit bounds training and answering together, so the sweep's orphan rule doesn't end a live one. Abandoned answers count at the job's whole hold.
+- **Decision:** adapterProblem refuses a Fireworks job for publish, local files and serve, since its adapter isn't on our cache.
+- **Fix:** the routes test's run-store mock needed the new export.
+- **Tests:** tsc clean, after copying fflate and unpdf into this worktree's node_modules from another worktree. fireworks.test 24 of 24, open-train 33 of 33 with 3 new, routes 25, run-flow 24, view 14, plan 23, sweep 36, launch 16, limits 20, tune-pages 15. tune-room has 2 plan-card failures that also fail on origin/main.
+- **Not proven:** every call to the real Fireworks API, the page parsers once the pages change, batch on Glimmer and on the trained adapter, whether REST-created jobs are really $0, estimatedCost's real value, billing with no payment method, and the UI in a browser.
 ## Nov 1: steering from the build room, behind STEER_CHAT
 
 - **Why a new flag.** env.steeringEnabled follows MUSE_FULL or MUSE_ENGINE=serve and already answers as on in production, so it can't gate this. STEER_CHAT needs it too.
@@ -2281,3 +2296,368 @@ Owner asked to upload every dataset and fine-tuned model to private repos, then 
 - **Recheck:** sizes match, text and JSON scan 0 hits for tokens, keys, IPs and local paths. Cards still say "private", which is now false.
 - **Decision:** merge of origin/main kept both sides of the BUILD_LOG conflict.
 - **Spend:** Lambda device-loop-inv-1, 01:32:09Z to 02:10:07Z, about $0.82 of $25, list price. Terminated. No training, merging or quantizing.
+## Nov 1: everything on Contributor under BUILDS_ON_CONTRIBUTOR, no Wonder but the Wonder check (branch tg-all-contributor)
+
+Owner: "change anything in the product now to use muse spark 1.3 contributor, no muse wonder except for the muse wonder check."
+
+- **One source of truth.** `contributorSwitchOn()` and `defaultModel()` in lib/meta/spark.ts. lib/env.ts reads the switch from there. next.config.ts inlines the setting so browser pages can name the real model. Flag off: every answer is today's.
+- **Moved under the switch:** tuning judge, dataset writer, Hub story, tune plan, content check, research, tool fixtures, Prove it default, the session usage fallback label, the exec default, the build model fallback, the docs proxy and Ask, the docs menus, the tune cost estimates, and page copy that names the model.
+- **Gateway.** A request naming Wonder is served by Contributor and metered at its price, on every token. TRUST_SPARK_TO_WONDER can't take a call to Wonder under the switch.
+- **Decision, disabled with a plain message (no Wonder to fall back to, Meta terms 6.2 bar personal information on Contributor):** live tokens without the marker get 403 `off_for_now`; audio input gets 403 `audio_input_off`; /api/device/ask gets 503 `device_off_on_contributor`; a Muse Code task from such a product is refused; a new brief holding something personal ends as a refusal; the brief writer isn't offered personal tools or gadgets.
+- **Decision, kept:** contributorWriterOn stays behind its own switch, so a person's dropped files still don't go to Contributor without TRAIN_CONTRIBUTOR_WRITER. testModel keeps its production guard. The Knowledge run writer and scripts/knowledge are untouched.
+- **Decision, kept:** the template is unchanged and so is the snapshot. Product code keeps naming the id, the gateway serves it, and the build prompt tells the writer not to say Muse Wonder on screen. The template's own text, such as ModelChip and askGlimmer's note, still says Muse Wonder until a change to it and a new snapshot.
+- **Judge label.** Results and Hub cards judged on Contributor now say their scores don't compare with runs judged by Muse Wonder. judge_model was already saved on each job.
+- **Guard.** lib/__tests__/no-wonder.test.ts checks every pick under the switch and scans the code: a new use of the id fails until it says why. lib/wonder/loop.ts and lib/pipeline/wonder-step.ts are named as the only allowed Wonder callers. Their branch isn't merged and its Wonder call is untouched.
+- **Docs.** docs/SUBMISSION.md and the video script now name the real model.
+- **Tests.** tsc clean. no-wonder 8 of 8, handler 58, musecode 87, and the other suites for touched modules pass. build-steps.scenario can't load: its mock of lib/judge lacks MAX_CHAIN_SCREENSHOTS, in a file this branch doesn't touch.
+- **Owner's change of instruction, mid-task:** no builds or Meta calls, to save money. So NOT RUN: the real build on a Preview, usage rows, and the vision, video, PDF and JSON calls on Contributor. No Preview deployed and no project linked. Web search on Contributor (fine-tune research, products using web_search) is also unmeasured: it may fail.
+- **Spend:** $0 Meta, no GPUs, no deploys, no production changes.
+## Nov 2, 01:47 UTC: tuned one-bit file uploaded to a private Hub repo (branch tg-one-bit-upload)
+
+The owner asked for it after I advised against it. Repo: https://huggingface.co/OfflineBase/Muse-Glimmer-30B-Moss-Test-IQ1_S-GGUF, **private** (read back with the token; anonymous gets 401). Commit d1c0a13f. No training ran: this merged, quantized and checked the existing adapter 1898e46c through the real recipe, publish 0, unchanged, then uploaded by hand.
+
+- File: `muse-glimmer-30b-zubrelian-moss-IQ1_S.gguf`, 6,526,418,944 bytes, sha256 `abbe0f2bbf0263a708e0a20ef65074a1bcd41f4854763c9216d65257920c8c63`. Hub LFS sha256 equals it, read by the uploader and again from the laptop. **The same sha256 as the Nov 1 build**, so that run's stand-in numbers are this file's.
+- This run: answer check 30 of 30 (needs 90%), template check passed, KL 0.942644 (p99 3.857), same top token 57.56%, agreement 0 of 30. Q4_K_M again missed its limit, KL 0.030453, and was not uploaded. Whole job 01:12 to 01:43 UTC. `tuned.jinja` sha256 ee776687...
+- Also in the repo: `tuned.jinja`, `LICENSE`, `MUSE_MODEL_LICENSE.md`, `USAGE_POLICY.md`, `NOTICE` (from the 2026 Knowledge GGUF repo at 1c966004), and a card.
+- **Flagged for the owner:** the 900 moss rows were written by `muse-spark-1.3-contributor` through Meta's Model API. Model API Terms 10.1(ix) bar training a competing model on Outputs and systematically collecting them for datasets, and `docs/KNOWLEDGE_UPDATE.md` lists that source as "Never" for the knowledge model. The card says so and says whether it applies here is unsettled. Nobody has read this legally. Keep it private until then.
+- Two slips, both fixed in the run: the first upload refused the card because `license_link` was a relative path, so it now points to the public 2026 Knowledge copy of the license. That failure came after the repo was created, so the retry used `exist_ok=True` on the repo this run had just made. The token went through the remote process's stdin and environment only; `upload.log` has no token in it. The machine's disk was not otherwise checked, and it is gone.
+- Watchdog: the earlier 4-hour timer had died with the crashed session, so a detached 2.5-hour one covered this instance, stopped once it was gone.
+- Spend: device-loop-upload-1, gpu_1x_a10, launched 01:00:32Z, terminate sent about 01:47:30Z, off the list by 01:49:57Z. At most 49.4 minutes at $1.29, about $1.06 by list price, not read from an invoice. Limit $10. Lambda reports its id as terminated. Another session's device-loop-inv-1 was left alone.
+- Not run: the file on a Jetson, a download back from the Hub, the card's serve command on this copy, a judge on the answers, any tests (docs only). The stand-in numbers and the 1 of 5 on stock are from the Nov 1 run, not repeated.
+
+## Nov 1: repo ready for judges, Docker, Quickstart, eval/, CI (branch tg-repo-ready)
+
+- **Added:** `Dockerfile`, `.dockerignore`, `compose.yaml`, a Quickstart and a new opening in README.md (Domain Agents, team Ethan and Hussam, a marked diagram, which device step still uses LFM), `eval/README.md`, `.github/workflows/ci.yml`. `/eval` joined `.vercelignore`, and `.env.example` got a note on `DATABASE_URL` under compose.
+- **Docker not available:** the CLI and compose are installed, the daemon wasn't running, and I didn't start Docker Desktop. **The image has not been built or run.** The README says so. `docker compose config` parsed the file.
+- **Decision:** PGlite only, with no postgres service. `lib/db/client.ts` uses Neon's HTTP driver, which can't reach a stock Postgres server, and a new driver wasn't worth adding unproven this close to the deadline. `COMPOSE_DATABASE_URL` takes a Neon string.
+- **Decision:** compose overrides the database, Blob and VERCEL variables from `.env.local`, so a file from `vercel env pull` can't point a local container at production. The port is on 127.0.0.1 only, because OPEN_ACCESS=admin trusts a localhost Host header.
+- **Found:** `privacy/eval/reports/device_only_fresh_200.md`, Oct 30, shows 10 leaks on `fresh_200` with no cause in the report. eval/README.md lists it. The "0 leaks on 300 items" line holds for `fresh_200_b` and `tasks` on Oct 31 only.
+- **Left as is, for the owner:** `privacy/README.md` and `privacy/CLAUDE.md` still say "solo", against the entrant being a team, and `docs/STORY.md` still says to keep the company name out of the privacy paragraph.
+- **Checks:** the migrations on an empty PGlite folder passed. `lib/__tests__/vercelignore.test.ts` and `components/story/__tests__/story.test.tsx` 15 of 15. eval/ and README links checked by script. Not run here: typecheck, the full tests and `next build`; CI runs the first two on the PR. The Mermaid diagram wasn't rendered locally.
+- **Spend:** $0. No Meta calls, deploys or production changes.
+- **First CI run on PR #53, red, nothing in it from this branch's code (no TypeScript changed):** Typecheck ran out of memory at Node's default 2 GB heap, so it reported no type result; `ci.yml` now gives it 6 GB. Unit tests: 6240 tests, 6143 pass, 5 fail, 81 cancelled. Failing or stopped at load: `flags-off-surface`, `ready-provision`, `no-direct-database` (names `scripts/dev/tune-harness.ts`), `drive-product-route`, `build-steps`, `workflow.scenario` (2), `bundle`, `datasets`. Three of them (`no-direct-database`, `bundle`, `flags-off-surface`) rerun locally on this branch also fail, 30 of 33 pass. Not fixed here: it's outside this task.
+- **Second CI run (41379171424):** Typecheck passes with the 6 GB heap. Unit tests still fail, on the existing tests above. Worktree removed after this; branch kept.
+## Nov 1: owner's decisions on BUILDS_ON_CONTRIBUTOR, PR #52 updated (branch tg-all-contributor)
+
+Merged origin/main (#50, #51). The only conflict was this log; both entries kept. #51's Fireworks code doesn't name Wonder.
+
+- **Decision, gadgets and boards stay on.** `/api/device/ask` has no refusal again. Live tokens with `muse-gadget` or `board-tools` keep Muse Wonder (`keepsWonderUnderSwitch`, lib/gateway/policy.ts). New gadget and board briefs are offered and built. My reading, flagged to the owner: "stay on" means on Wonder as they are today, since a camera or microphone can't go to Contributor under terms 6.2. Build tokens still run on Contributor with the simulated board.
+- **Decision, three demos stay on Wonder.** `WONDER_DEMO_SLUGS`: voice-memo-tasks, class-capture-notes, gym-snap-coach, checked by slug at the gateway, live tokens only, marker or not, audio included. Other products published before #37 get the existing 403 `off_for_now`. Read-only check: each `/p/<slug>` on production answers 200, and a made-up slug 404, so a stranger can't claim these slugs while they exist.
+- **Decision, personal accounts stay off Contributor.** No marker, calls refused, new briefs refused. My reading, flagged: refused, not moved back to Wonder, as this PR already had it. Drive tools stay in this group; flagged too. Muse Code tasks stay refused for the exceptions, since sessions run on Contributor.
+- **The flip.** `BUILDS_ON_CONTRIBUTOR` off does put the platform on Wonder, read from the code, with limits. docs/JUDGING_WEEK.md "Flip to Wonder" has the one command and the full list. It needs a redeploy, since next.config.ts inlines it. `BRIEF_MODEL`, `JUDGE_MODEL`, `BUILD_MODEL` and `COMPLEX_BUILD_MODEL` are set on production (names read with `vercel env ls`, values not read) and take over once it's off, so each must be Wonder. Wonder is 40 times the input price and 100 times the output.
+- **Tests.** tsc clean. no-wonder 11 of 11, handler 61 of 61, terms, build-models, flags-off, gadget-option, ask-route, agent-option, targets, tiers, musecode and engine pass. build-steps.scenario loads now, after adding `MAX_CHAIN_SCREENSHOTS` and `collectDeployFiles` to its mocks, and its new test of the brief refusal passes: 48 of 50. The two left aren't from this work and I left them: a plan's `buildMs` expects 30 minutes and gets 60, and "copies the product's brief onto the refine row". They were hidden while the file couldn't load.
+- **Not run:** any build, Meta call, deployment, the flip command, or env change. TERMS_VERSION not changed, though the privacy text under the switch did change; the owner should say if it needs a bump.
+- **Spend:** $0.
+
+## Nov 2: a real board through the permanent address, gadget not yet live (branch gadget-board-autostart)
+
+- **Chosen board: jetson-02.** It alone has a camera and mic (C920). About 450 MB is free beside the test Glimmer on jetson-llama.service, and the tools still work, so nothing has to stop. It has 393 MB of disk. jetson-04 is the fallback: about 1.8 GB free, no camera.
+- **Direct, on the board, through the fleet (muse-device 0.3.0):** `describe_device` 0.6 s; `capture_image` three times, 1.8 to 2.4 s, about 149 KB each; `record_audio` 3 s of sound, 3.2 s, 96 KB. Free memory stayed at about 440 MB. `run_command` answers "Unknown tool".
+- **Through the address production would use:** Muse Muse's client, `https://<fleet ngrok address>/admin/device/jetson-02/mcp`: tools 2.9 s, `describe_device` 1.7 s, `capture_image` 4.5 s (147 KB), `record_audio` of 2 s 3.7 s (64 KB). That route is `Offline-Base/jetson-infra` branch `muse-device-proxy`, which jetson-05 runs and which isn't merged.
+- **Production, read by name only:** `GADGETS_ENABLED` is set, and so is `BUILDER_SNAPSHOT_ID`, whose log entry above names snap_SB9bO91OjbBU4n3Amdabfo8iY0CY from 2146ae0, which holds the gadget helper and skill. I didn't read the live value, so a newer snapshot is possible. `DEVICE_MCP_URL`, `DEVICE_MCP_TOKEN` and `GADGET_CONNECT` aren't set. `/gadgets` says "Not set up" and "No products use a gadget yet".
+- **Stays up:** `muse-device/autostart.sh`, run by cron every minute as the board's user, restarted a killed server in 20 to 60 s on jetson-04. The ngrok address doesn't change, and the leader's own script restarts it. A full power cut hasn't been tested since this script went in.
+- **Open, for the owner:** the 13:38 device review still applies. With the board settings in production and `HARDWARE_GADGET_OWNER_CHECK` off, any guest-built live product with the gadget option can use the real camera and mic.
+- **Not run:** a live product through the gateway, since none has the option yet, and the clean `gadget_offline` test. Those need the production settings first. **Spend:** $0.
+## Nov 2, 2026: Make chat as one start point (`MAKE_CHAT_ALL`, off), branch tg-make-chat
+
+- **Picked up** an unfinished agent's work (stalled Nov 1 about 9:50 PM with nothing committed): the box, intent and pair routes, paired room.
+- **Fixed:** a signed-out visitor asking for a plain product got a raw 401 instead of sign-in. A "both" request could start the model when its app was blocked, so Start now refuses before anything runs.
+- **Found on main, fixed here:** `tune-flag-off.test.tsx` could not start (its fake store lacked `gpuBudgetFor` and `listOwnRuns`) and its fixture was stale. The fixture was regenerated from clean origin/main, and the branch then matched it with the switch off.
+- **Tests:** `lib/make/__tests__/make.test.ts` 20 of 20, make-flag-off 2 of 2, tune-flag-off 2 of 2, tsc clean. Full suite not run.
+- **Preview, guest** (muse-muse-rd86lw01g): plain product answered with no model call, both and model recognized, "3D models of furniture" stayed a product, wrong start code 403, /fine-tuning/new redirects, /fine-tuning 200. The shared guest account was at its build limit, so the app was blocked for a guest (`shared_limit`).
+- **Preview, admin** (muse-muse-ndrpb7q5s, OPEN_ACCESS=admin, not for sharing), one made-up bakery sentence, through the routes the page calls: intent both, plan, run 635cd05e, build 2360700c, pair 200. Build live on muse-spark-1.3-contributor in about 10.5 minutes, $0.034 as reported. Run wrote its 40 examples for $0.0056, then held at `not_started` because the lost-GPU check can't run on a Preview, as expected. GPU spend $0.
+- **Privacy:** the owner's room showed the model's story and results. The same room on the guest Preview showed no trace of the run or its id.
+- **Not proven:** a GPU run from this box, so no tuned model, score or link. Linking the run to a product (needs `TUNE_FROM_BUILDS` and the GPU capability; `link` answered `off` here). Clicking through the page in a browser (extension disconnected, so these were route calls and rendered HTML, with no screenshots). A folder through the box. A signed-in non-admin's both request end to end.
+- **Slip:** `vercel link` wrote an unrequested `.env.local` into this worktree. It was deleted unread, and the `.gitignore` edit undone.
+
+## Nov 2, 2026: Make options menu restyled from the owner's Meta AI screenshot (branch tg-make-options)
+
+- The target menu lost its checkboxes and intro line. Each row now has a check mark on the left, a name and a short line, with a soft grey row for what's picked and a rounder card. New Auto row at the top, picked when nothing else is; picking anything moves off it, and choosing it clears the picks. Web keeps a faint locked check. Several can still be picked, and real checkboxes stay underneath for keyboards and screen readers.
+- Tests: composer 10 of 10, both flag-off tests, tsc clean. One flag-off fingerprint changed on purpose, "composer: Make page", the only one that moved. Full suite not run.
+- Look checked by rendering the real component with the real CSS: docs/log/shots/2026-11-02/make-options-menu.png. Not clicked through on a live page.
+
+## Nov 2, 2026: What to make in the Make menu, Dataset as a result, new starters (branch tg-make-kinds)
+
+- Menu: Auto, App, Model, App and model, Dataset, with Where it runs folded under it. Dataset writes examples and never starts tuneRun. Room gets samples, a download and "Tune a model on this". Starters rewritten around tuning, private data, agents and judging AI, using made-up data.
+- A real-route test caught the dataset mark not being read back (the mark reader lists its keys). Fixed.
+- Tests: open-train 40 of 40 (start code, no tuneRun, folder rows, owner-only download, switch off), make, composer, starters, both flag-off tests, tsc. Full suite not run.
+- Preview muse-muse-hkozbza3a: intent recognized a dataset sentence; want both split a plain sentence; run 15c422b2 wrote 40 examples for $0.0062, held at "Your dataset is ready", no job, download 40 lines. That Preview inherited its own OPEN_ACCESS (value hidden, behaved as admin), so its no-code start was 201. Preview muse-muse-kpsbvt1ln (guest): new starters show, a stranger's download 403, but its plan answered 429, so the no-code refusal is proven by tests only, not live.
+- Not run: clicking the menu in a browser, Tune a model on this through a GPU.
+
+## Nov 2, 2026: reading receipts on the Jetsons, and a tune on one (branch doc-bench)
+
+- **What:** `scripts/dev/receipt-bench.py` invents receipts from a seed with the right answers computed in code: merchant, date, subtotal, tax, total and the number of purchased lines, as one JSON object. `make` writes 300 training rows in three layouts, in train_model's format, and 40 held-out receipts in two other layouts, a quarter with scanner noise. `ask` sends the held-out set to one board's loaded model through the fleet gateway, pinned to that board, at temperature 0, and scores it field by field with no judge model. Everything is invented, and the text crosses ngrok and the lead board (lib/inference/reach.ts on its own branch).
+- **Scores, 40 held-out receipts each:**
+
+| | Valid JSON | Fields right | All six right | Median s | Tokens/s |
+|---|---|---|---|---|---|
+| Regex, written for the training layouts | 100% | 25% | 0% | | |
+| jetson-04, Nemotron 3.5 Bolt E4B Q4_K_M | 100% | 88% | 30% | 5.9 | 12.4 |
+| jetson-05, LFM3-VL 2B Q4_K_M | 100% | 82% | 35% | 2.1 | 30.4 |
+| jetson-02, test Glimmer IQ1_S | 0% | 0% | 0% | 14.7 | 4.7 |
+
+- **Where they miss:** Bolt got every amount and date right and the count of purchased lines in 30%. It over-counts, by 3 or more in 17 of 40. LFM3-VL got the count in 58%, the merchant in 68% and dates in 90%. So a tune has one clear target, the line count, and the cheap fix is also there: count lines in code. Reports: docs/log/bench/2026-11-02/.
+- **jetson-02 stopped answering during this run.** Glimmer wrote no JSON in 22 answers (5 cut off at 200 tokens), then from receipt 23 every request failed (17 at 503, 1 at 502), and the board went offline to the fleet. It still answered ping, but ssh timed out at the banner and its tool server didn't answer, which reads as memory exhaustion: before the run it had 451 MB available with Glimmer's 6.4 GB server loaded and a 256 MB prompt cache allowed. That's inferred, not read from its logs, since nothing on it would answer. Nothing was restarted from here: it needs a power cycle. One request at a time was enough to do this, so a board this full shouldn't serve products or benches.
+- **Then a tune on jetson-04 (JETSON_TODO G8's first run, on receipts):** jetson-04 into maintenance, Bolt stopped and its 6.18 GB GGUF deleted, since setup-train.sh needs 8 GB and the board had 5. Hugging Face's copy has the same size and sha256 (c8af2b8a...), checked first. jetson-03 was the first choice, as jetson-04's twin, but its Wi-Fi timed out on Hugging Face and PyTorch's index, and jetson-04 downloaded at 14 MB/s. setup-train.sh took about 9 minutes and left 3.9 GB free (venv 4.4 GB, Llama 3.2 1B 2.4 GB).
+- **Training:** train.py on the 300 training receipts, 300 steps (one pass), rank 8, lr 2e-4: 200 s, about 0.67 s a step, 2.55 GiB peak GPU, 0 skipped, loss from 0.047 at step 5 to about 0.006. The adapter converted to GGUF (22 MB) with llama.cpp b11970's converter.
+- **Scores on the same 40 held-out receipts,** answered on the board by `scripts/dev/receipt-eval-board.py` (one load, the adapter switched off for base, greedy, train.py's prompt), scored by `receipt-bench.py score`:
+
+| | Valid JSON | Fields right | All six right | Merchant | Date | Subtotal | Total | Line count | Median s |
+|---|---|---|---|---|---|---|---|---|---|
+| Llama 3.2 1B, base | 88% | 47% | 5% | 23% | 45% | 55% | 55% | 15% | 3.6 |
+| Llama 3.2 1B, tuned on the board | 100% | 81% | 25% | 100% | 98% | 58% | 100% | 33% | 4.3 |
+
+- **Where the tuned model still misses:** the table layout's "Net / VAT / Gross" words never appear in training, and it takes Gross as the subtotal in 17 of those 20 receipts. It over-counts lines by 1 to 3 in 27 of 40, probably counting the header row. Both point at the training set, not the board: three layouts with one wording each are too narrow, and the loss was near 0 within 15 steps. The noisy quarter are all the footer-first layout (an odd id), so noise and layout can't be told apart here.
+- **For comparison:** the 1B tuned model is now about level with LFM3-VL 2B (82%) and behind Bolt (88%) on the same set, while still missing what the bigger models get right.
+- **Restored:** the training venv and model deleted, Bolt downloaded again with that sha256 checked before it took the file's name, jetson-llama started (healthy in about 50 s), maintenance off, and a chat through the fleet pinned to jetson-04 answered in 1.6 s. Disk is back to 5 GB free. The adapter, answers and log stay in ~/receipt-tune (44 MB). Reports: docs/log/bench/2026-11-02/receipts-llama-tune-*.
+- **Served on the board, through the fleet:** unsloth's Llama-3.2-1B-Instruct-Q8_0.gguf (sha256 checked) plus the adapter's GGUF, in jetson-04's own llama-server (b11574, `--lora`) as `Llama-3.2-1B-Instruct-receipts`, by a systemd drop-in, `/etc/systemd/system/jetson-llama.service.d/zz-receipts.conf`. The fleet listed it within seconds. The same 40 receipts through the gateway: 100% valid JSON, 81% of fields, 25% all six, median 1.6 s at 25 tokens/s. That matches the transformers run, so the GGUF conversion lost nothing measurable, and it's the fastest of the four boards' models on this set.
+- **Through a product's route:** 10 receipts through `handleFleetChat` from branch fleet-products (#63), as a live admin-owned product with `FLEET_PRODUCTS_MODEL` set to that model and real fetch: 10 of 10 answered 200, 82% of fields, median 1.7 s, one $0 `jetson-fleet` usage row each. The token, product and limits were faked, and the key was the admin `jpt_`.
+- **Back to Bolt:** the drop-in renamed to `zz-receipts.conf.off`, the service restarted, and the fleet lists Bolt on jetson-04 again, answering in 1.9 s. To serve the receipt reader again: rename it back, `systemctl daemon-reload`, `systemctl restart jetson-llama`. Both GGUFs stay in /opt/jetson-gguf/models (1.34 GB), and jetson-04 has 4 GB free.
+- **Not done:** a second round with more wordings, and `start_model` on muse-device, which wants the base GGUF in ~/train/models.
+- **Spend:** $0, about 125 of ngrok's monthly requests, and about 9 GB of downloads on jetson-04.
+
+## Nov 2, 2026: plan checklist in the rooms, after the owner's Meta AI research screenshots (branch tg-room-plan)
+
+- A card that ticks off big steps, in build rooms and model rooms, under BUILD_ROOM_STEPS (builds) and MAKE_CHAT_ALL (model rooms). It reads only the run's own status, and never ticks a step still running or one where a run stopped. Datasets show no training step.
+- The Steps and Sources panel and the live working line already existed. Site chips under steps were not built: most build steps have no web sources to show.
+- Tests: checklist 7 of 7, feed, room and both flag-off tests, tsc. Not run in a browser or a live build. Look checked by rendering the component with the real CSS.
+## Nov 2, 2026: What we can say, checked against Meta's docs (branch tg-messaging)
+
+- The owner's three deep-research reports, checked against `content/meta-docs/` and web search, are now in docs/MESSAGING.md. Docs only, no code.
+- Checked word for word in Meta's docs:
+  - Glimmer's "you own the weights, the runtime, and the data".
+  - The post-training advice to compare against base on a held-out set and also track a general benchmark.
+  - The 16.8 GB smallest Glimmer.
+  - The "Local agent that asks first" cookbook.
+- Checked across news outlets: Johns Hopkins Bayview, 3,182 patients.
+- Not confirmed:
+  - The Zuckerberg "manifest ideas" line: no search hit.
+  - The private-mode sentence: reported in different words.
+  - GAO's 12 of 12.
+- Found: Meta's cookbook (local Glimmer, approve, then Muse Spark, with an egress log) is the closest prior work to Muse Privacy, and privacy/docs/PRIOR_WORK.md doesn't list it.
+- Found stale: privacy/README.md "Built solo" and the Build for Your World theme, Glimmer "not run" on the Jetson in privacy/README.md and docs/STORY.md, and jetson-02's model in docs/OFFLINE.md. Left for the submission-ready item.
+- Follow-up, 10:30, same branch, on the owner's ask that every point be logged or applied and that CLAUDE.md know where to look:
+  - New root `CLAUDE.md`: imports AGENTS.md, has a read-first table and the standing rules.
+  - New `docs/HANDOFF.md`: current state, open PRs (Hussam's #60 to #63 included), what waits on the owner (the five overnight items, keys, terms, limits, Prompt Guard, ngrok), the jetson-02 and jetson-05 changes made through the fleet tools, and gotchas.
+  - Applied the stale lines: privacy README and CLAUDE.md (team, theme), the jetson-02 row in docs/OFFLINE.md, docs/STORY.md (Jetson marks, the lifted name rule, the Oct 30 run with 10 leaks), the `/offline` sentence in `lib/story/flow.ts`, and Meta's cookbook in privacy/docs/PRIOR_WORK.md.
+  - Hussam's #62 changes the Jetson claim: r30b on jetson-02 gave 0% valid JSON on 40 receipts, and the board hung at receipt 23. Every new line says so.
+  - The fleet shows jetson-02 back online at 10:20 with the model loaded.
+  - Tests: story 11 of 11, and Muse Privacy's claims and doc tests 275 of 275. My first wording named the company in STORY's privacy paragraph and failed the test that still enforces the lifted rule, so I reworded it.
+## Nov 2, 2026: CI unit tests green on main's own failures (branch tg-ci-green)
+
+- Why: every PR's Unit tests check was red, Hussam's #61 to #63 included, but no PR added a failure. The same 7 tests failed on main, 4 broken test setups cancelled 57 more, and because step 1 failed, steps 2 and 3 had never run on CI.
+- Step 1, library and component tests. Test files only:
+  - Four module fakes lacked exports that newer code imports: `putExactFile`, `GUEST_EMAIL` and `isCrossSite`, `datasetGrounding`, and `saveRunDatasetOnly` (the last from #58).
+  - The one-hour build step (#10) left three expectations at 25 or 30 minutes and the `steps.json` golden at 1500000; the golden's build timeout is now 3600000.
+  - The refine-row test queued its selects without the session lookup added later.
+  - `products.sourcePublic` is listed as left out of a promote bundle on purpose: an imported product starts private.
+  - `scripts/dev/tune-harness.ts` is allowed to read DATABASE_URL, like the other pglite-only dev scripts.
+- Step 2, fine-tuning view tests:
+  - The pages test's fake store gets `gpuBudgetFor` and `listOwnRuns`.
+  - The two plan-card tests now describe the short plan from #37: at most 4 steps, "Won't do" last for a partial build, and the whole brief under "See the full plan".
+- Step 3, the template's scripts: they import the template's own packages (openai, next, react, typescript, @playwright/test), which CI never installed. CI now runs `npm ci --prefix template --ignore-scripts` before them. Not run here in full, to spare the laptop; with only @playwright/test linked, the rest failed for those packages alone.
+- Local results:
+  - Step 1's eleven failing files: all pass.
+  - Step 2: 207 of 207.
+  - Typecheck and step 3 are left to CI.
+- Follow-up: #65's first CI run failed 5 tests in `lib/caps/jobs/__tests__/jobs.test.ts`, which fail on main too.
+  - Cause: the test's fake fetch read the cron's job token with the wall clock, but the token was minted from the test's fixed NOW (Nov 2, 12:00 UTC) with a 10-minute life. So the test started failing at 12:10 UTC today. It now reads the token on NOW: 69 of 69.
+  - Checked for other date traps: ran the 10 test files that mix fixed November dates with the real clock, with the clock moved to Nov 9, 23:00 UTC (the end of judging). 216 of 216 pass.
+
+## Nov 2, 2026: Who can read the text, one enforced table (branch inference-reach)
+
+- **Built:** `lib/inference/reach.ts`, four rows: Muse Privacy on a laptop, a paired board, the fleet gateway, board tools through `/device`. Each has its code, tier, who can read the text, the sentence a product may show, and what runs today. `lib/__tests__/reach-claims.test.ts` fails on "stays on your device", "on-device" or "private" style words in the three non-private rows or in 24 listed gadget and fleet files, and if `docs/GADGETS.md`'s table differs from the data.
+- **Words only:** a limit on `/private` saying fleet and board answers aren't private, the table in `docs/GADGETS.md`, and `docs/SUBMISSION.md` line 54 loses "local or private model".
+- **Checked and added to the brief's facts:** on the fleet the board that answers can read the text too (`hub.py` sends it the body), a combo model can reach a cloud provider (`llm.py`), and Muse Wonder reads tool results on `/device` (`lib/device/agent.ts`).
+- **Left for a snapshot or the other repo:** `template/.agents/skills/meta-glimmer/SKILL.md` lines 3 and 14, `lib/prompts/catalog.ts` line 201, and the stale "not tried" lines in `privacy/README.md` and `privacy/docs/OTHER_APPS.md`. The test leaves these out and says why. It also allows `components/gadgets/info.ts`'s "On-device vision" for the Coral board, which wasn't in this change's copy list.
+- **Not proven:** port 4040's 50 of 50 is the Nov 2 measurement as given, not taken again here: no board or fleet was reached. Production was not read: GADGET_CONNECT and DEVICE_MCP_URL being unset comes from the earlier log entry. The jetson-infra facts were read by hand, and nothing here keeps them true. Whether the link from the lead board to an answering board is plain http isn't settled: `scripts/fleet-up.sh` says the LAN, and `docs/serving-over-ngrok.md` shows ngrok. The test reads for phrases, so a paraphrase gets past it.
+
+## Nov 2, 2026: Who can read the text, after review (branch inference-reach)
+
+- **Rows say more:** Muse Privacy names Cloudflare, Muse's requests and any name typed into Muse, from `privacy/docs/THREAT_MODEL.md` rows R and A2. The fleet row names a combo model's cloud provider, the Vercel rewrite at offlinebase.com/admin, and that a chat may cross the office network unencrypted, since `fleet-up.sh` enrolls boards over http. Board tools and the paired board cover photos and recordings coming back, and board tools gets the ngrok inspector and its bearer token, since `/device` sits behind the same `ngrok http 8080`. The paired-board sentence names a tunnel in front of a hand-added board. The 50 requests on port 4040 are now "a Nov 2 report, not reproduced". `docs/GADGETS.md` says `home` there stretches OFFLINE.md's word to a board at a public address.
+- **Test holds more:** the doc's rows must equal the data, with no extra row, and the words around the table may claim only that Muse Privacy is the only private path. A claim wrapped onto a second line is caught. The hosted-site claim calls `checkBoardAddress` instead of reading a comment, the autostart check reads the line that starts the server, and `.env.example` is no longer taken as evidence about production. Each was checked by breaking it on purpose and seeing the test fail.
+- **Not proven:** still no board, fleet or production reached. Whether any board actually uses the plain LAN link, and whether ngrok's inspector is holding bodies today, weren't looked at. The jetson-infra facts were read by hand on its `muse-device-proxy` branch, and nothing keeps them true. A claim over three lines or split across a string concatenation still gets past the test.
+
+## Nov 2, 2026: Products can answer from the Jetson fleet (`FLEET_PRODUCTS`, off), branch fleet-products
+
+- **Built:** `POST {GATEWAY_URL}/fleet/v1/chat/completions`, a clone of the hosted Glimmer path with no windows and no fallback (docs/CAPABILITIES.md, 17b). Brief model `jetson-fleet`, marker `fleet`. `FLEET_ALL_PRODUCTS` for anything past admin-owned products. `FLEET_PRODUCTS_URL`, `_KEY` (`jik_` only, so `jpt_` is refused) and `_MODEL` (`combo/` refused, no default), or 503 `fleet_closed`. Whole replies, text only, 8000 characters, 1024 tokens, redirects refused, a cloud `X-JCP-Served-By` is an error, and no fleet address or text reaches a caller. A build gets a labeled simulated reply. One $0 row per answer. 100 a day per product, 10 a minute per IP, one in flight per product and two across the platform, on the existing `acquireInFlight`. `askFleetOrMessage`, a skill with the exact label, and an empty `template/caps/fleet` overlay that tells a snapshot apart.
+- **Beyond the brief, small:** `X-JCP-Route: local` on the call, `fleetProductsForBuilds` so an older snapshot isn't told about a helper it lacks, and judge, build and refine lines. `ModelChip` and `musemuse.schema.json` learned the id, since a product's manifest couldn't name it otherwise. A privacy-facts line, so it isn't listed as a Meta model.
+- **After review:** a build token with no `buildId`, which is what a brief with no cap blocks gets, now gets the simulated reply instead of a 403 the helper showed as offline. `fleetProductsForBuilds` reads the snapshot's manifest on a local run too, since a product's template/ comes from the snapshot there as well. `_MODEL` also refuses an Ollama cloud tag (`-cloud`, `:cloud`), which a board's Ollama forwards to ollama.com. The helper sends only `role` and `content` and logs a failure's status and code, the skill names the gateway's message rules, and the self-host kit lists the fleet as a part that doesn't work there.
+- **Against the real fleet:** `handleFleetChat` with real fetch and faked token, product and limits, to the ngrok address with Bolt as the model. A live admin product got real answers from jetson-04 in 3.2 s and 1.8 s, with no `X-JCP-Served-By` header. A build token got the simulated reply in 5 ms and never fetched. The key was an admin `jpt_` passed straight to the handler, which `fleetSettings` would refuse: no `jik_` key exists yet.
+- **With a model tuned on a board:** `FLEET_PRODUCTS_MODEL` set to `Llama-3.2-1B-Instruct-receipts`, the Llama 3.2 1B that jetson-04 fine-tuned on invented receipts and served for the test (#62). 10 receipts as a live admin product: 10 of 10 answered 200, 82% of fields right, median 1.7 s, a $0 usage row each. jetson-04 went back to Bolt afterwards.
+- **Not proven:** a slow whole reply through ngrok, and the route on a deployment. No build has run, and no snapshot has been made, so no real product has the helper yet. Which model products get is still open, so no model is named or defaulted.
+- **Open, for the owner:** the model. A total cap: seven products at 100 a day pass ngrok's 20,000 a month. The fixed "Meta's models" wording on a product's privacy page. A non-admin's product on this model only ever shows the offline words while `FLEET_ALL_PRODUCTS` is off. Busy and over-limit answers also show those words, as asked.
+## Nov 2, 2026: the fleet on /device and in Wonder (branch fleet-integration)
+
+- **Built:** `lib/device/fleet.ts`, `GET /api/device/fleet` (admins only), a fleet card on `/device`, and Wonder's `fleet_status` and `fleet_ask_model`, offered only when `BOARD_FLEET_URL` and `BOARD_FLEET_TOKEN` are set, and never to an `OPEN_ACCESS=admin` preview. Wonder now also answers with the fleet alone, when no single board is set up. Nothing new is needed on the boards.
+- **The tunnel's cap:** ngrok's free plan allows 20,000 requests a month across the whole fleet, so the card asks once a minute only while its tab is showing, stops 30 minutes after someone last came back, slows to 5 minutes during an outage, and stops at a refused token or address. The route shares one read for 30 seconds, per server instance.
+- **Read-only:** no other fleet call is reachable from Wonder. `fleet_ask_model` asks only a model a board reports as loaded, pinned to that board, so it can't make a board load one or send a chat to a combo's cloud model. It picks by model name and never a d1 model, which covers jetson-05 (systemone and a chat model) and naming the Pi. A model that spends its limit thinking and answers nothing now comes back as an error Wonder can read.
+- **Run against the real fleet (Nov 2, through the ngrok address, an admin `jpt_` token):** `fleetBoards` read all 9 boards, 8 online and jetson-01 offline, and the Pi, both Corals and the UNO Q report memory and temperature with the same fields as a Jetson. `fleetAsk` answered from jetson-02 (Glimmer, 4.9 to 5.1 s), jetson-04 (Bolt, 1.1 s) and jetson-05 (LFM3-VL, 1.5 s), each a real reply with finish `stop`. Naming the Pi refused with no chat call, and both Corals and the UNO Q said they have no model loaded. With no board named it picked jetson-02, the first by name with a chat model.
+- **The card, locally:** `next dev` on this branch with a local database and a local admin account, against the real fleet. It listed all 9 boards with real numbers: docs/log/shots/2026-11-02/device-fleet-card.jpg. Refresh, the once-a-minute poll and the 30-minute stop were not watched in a browser.
+- **Not proven:** Wonder's two tools with the real model, since this ran with no `MODEL_API_KEY`, and the route on a Vercel preview. A preview without `PREVIEW_DATABASE_URL` answers 500 at sign-in now (README.md, Preview database), so a preview deployment (URL left out) can't open `/device`.
+- **Found in passing, not changed:** jetson-05's ngrok agent keeps recent requests in memory. Port 4040 on that board held 50 of 50 with raw bodies, counted without reading them, and these carry prompts, photos and bearer tokens. It's loopback only. `inspect_db_size: -1` in ngrok's config is the documented off switch, and it takes a tunnel restart.
+- **Spend:** $0.
+
+## Nov 2, 2026: Set up for judging with no spend (branch tg-no-spend-setup)
+
+- **How:** the owner asked for everything that needs no input from Ethan or Hussam and no Meta or Lambda money. Seven agents worked in parallel worktrees from main at `e290545d`, one per unit. Reviewers then tried to break the site, Muse Privacy and training changes and fixed what they found. The seven branches merged here with no conflicts, and the leftovers were finished by hand. Spend: $0. The only outside requests were GETs to public pages: the live site, Meta's pages, the event rules, Fireworks' terms, GAO and public Hugging Face files.
+- **What a judge clicks (tg-judge-ready, reviewed):**
+  - The gallery lists only products with a live link. `listShippedProducts` gained a published filter, applied in SQL before the limit. On the live site 39 of the 60 gallery cards opened a "Not published" page; those drop out. The dashboard read is unchanged.
+  - A product page shows "Not published" instead of "Live" when there is no link. A partial or failed product no longer says it passed its checks.
+  - A failure wins on the checklist: a failed, refused or partial status, or a newest verify or judge that failed, replaces "N of N checked and working" with "Checks found problems, so none of these count as working yet".
+  - Ported from two Nov 1 branches that were committed but never opened as PRs (`tg-judge-path`, `tg-trust-killers`):
+    - the hidden base answer to prompt 40 of job 83d71f74, checked on the live page first;
+    - `/media` redirects to `/gallery`;
+    - model copy that matches the gateway while `BUILDS_ON_CONTRIBUTOR` is on;
+    - the screenshot-judge row names `env.judgeModel`;
+    - featured products on the Make page, live and published only;
+    - a delete request form on `/privacy`, which stays behind `TRUST_LEGAL_PAGES`.
+  - The review dropped one featured product, rate-change-tutor. It calls Muse Wonder with no Contributor notice, so the gateway answers it with "This product is off for now" while `BUILDS_ON_CONTRIBUTOR` is on.
+  - The Terms and Privacy draft (`lib/trust/terms.ts`) now matches the code: screenshots are kept 30 days (not 7), Lambda is named, and there's a guest-mode section. `TERMS_VERSION` is 2026-11-02. It stays off until the owner reads it.
+- **Copy and scrub (tg-copy-scrub):**
+  - README and `eval/README.md`: the Oct 27 batch's 24 builds "passed their checks", and none was deployed.
+  - The README names the model that writes the brief, builds and judges: Spark 1.3 Contributor while `BUILDS_ON_CONTRIBUTOR` is on, Wonder with it off.
+  - `/private`: the 5 of 300 wrong shares come first, and the 0 of 300 leaks sit beside the Oct 30 run's 10 of 200.
+  - `/fine-tuning`: anyone with the start code can start a run, and visitor runs can't reach Hugging Face, which matches the code. With `TUNE_COMPOSER` off, its link points at the form on the page instead of a 404.
+  - Glimmer is no longer pitched for "local or offline" use anywhere: the brief writer, the skill, `template/AGENTS.md` and its two copies, the GPU catalog line, `/models` and `docs/META_CATALOG.md`. Meta's smallest file is 16.8 GB, and our one-bit cut on an 8 GB board gave poor answers. The template's words reach builds only with a new snapshot.
+  - Scrub: the fleet's ngrok host, the rented machines' IPs, the AWS account id, EC2 instance ids and a host id became placeholders or env vars (`KNOWLEDGE_BUCKET`, `IDLE_ALERT_HOST_<NAME>`, `TRAIN_HOST` and others). Left: `native/lab/` still holds the account id and instance ids in applied IAM policies and setup scripts. Every value is still in git history.
+- **Muse Privacy proof (tg-privacy-proof, reviewed):** the Oct 30 leaks are explained and a canary network capture is added. Details are in privacy/docs/BUILD_LOG.md, Nov 2, 13:00.
+- **General and safety checks (tg-general-safety, reviewed):**
+  - What it is: Meta's post-training guide says to track a general-capability benchmark beside the task metric. `lib/train/general-checks.ts` adds 20 general and 20 mild safety prompts, written for Muse Muse.
+  - With `TUNE_GENERAL_CHECKS` on: glimmer-lora answers them with base and tuned, they're judged blind, and they're saved as their own results. It's off by default, and with it off nothing sent, stored or spent changes.
+  - The review fixed several things:
+    - check verdicts counting toward the tuning loop's stop decision;
+    - the public result page dropping them;
+    - all 40 being judged as task items for a dataset with no held-out prompts;
+    - one reference answer.
+  - I swapped a translation prompt, since the judge marks down answers in another language.
+  - Estimated cost with it on: $0.55 to $1.25 a run. Not run on a GPU.
+- **Submission kit (tg-submission-kit):**
+  - `docs/MESSAGING.md`: every outside line was opened on its primary source and marked Checked with a URL. That includes both Zuckerberg sentences on meta.com/thefutureisforeveryone (signed "Mark", Aug 10, 2026), which a second fetch confirmed word for word. GAO's wording is narrower than the old row.
+  - New `docs/VIDEO.md`: the script as three acts, a draft until the owners pick.
+  - `docs/SUBMISSION.md` was rewritten to match.
+  - `docs/HANDOFF.md` has twelve owner to-dos with steps and times.
+  - The story test that checked a script row moved to `docs/VIDEO.md`'s Act 2. It had been passing on a row that no longer existed.
+- **Data rights (tg-data-rights):**
+  - `docs/DATA_RIGHTS.md` quotes Fireworks' terms 2.2(c) (July 10, 2026) and Meta's Model API Terms 10.1(ix) (Oct 9, 2026), with three yes or no questions and what each answer rules out.
+  - r30b has Fireworks-written rows in its lineage and trained on some NC rows. The moss tunes trained on Contributor rows from Meta's API.
+  - `scripts/data-rights/filter.mjs` writes a copy without NC, ND, no-reuse or model-written rows (7 tests).
+  - Found: several OfflineBase Hugging Face repos are public while their cards say private.
+- **Judge-path checker (tg-judge-check):**
+  - `node scripts/judge-check.mjs` walks the live site with GETs only, at most 200 requests. Today's report is `docs/log/judge-check-2026-11-02.md`.
+  - It found 37 "Live" pills over "Not published" cards, fixed above.
+  - It also found a build room linking a taken-down product's 404 page. `getBuildRoom` now drops a taken-down product, with a PGlite test.
+  - All 21 published links returned 200.
+- **Also by hand:**
+  - A partial build's plan card no longer ticks "Try everything out" (checklist test).
+  - `/admin/reports` opens when `TRUST_LEGAL_PAGES` is on, so delete requests can be read.
+  - The shared privacy venv's editable install, which one agent's `uv run` had pointed at its own worktree, points back at `messaging`.
+- **Found, not changed:**
+  - Production runs #59 (`12a362a1`). Vercel blocked the deploys of #60, #61 and #62 because their author isn't on the Vercel team. The next merge authored by Ethan deploys all of main.
+  - `components/models/__tests__/models-page.test.tsx` fails one case on main, and CI doesn't run it.
+- **Tests:**
+  - Each unit ran its own; the reviewers ran theirs and the full typecheck (clean) on the site and training branches.
+  - On this branch, after the hand fixes:
+    - checklist, story, reach-claims and general-checks: 37 of 37;
+    - pages, tune-flag-off and models-page: 66 of 67, the one is the old failure;
+    - the GPU catalog tests: 131 of 131;
+    - the PGlite gallery test: 4 of 4;
+    - Muse Privacy: 130 of 130.
+  - The full typecheck is left to CI.
+- **Screenshots:** none yet. Nothing here is deployed, and a local run needs a database. The judge-check report stands in until the merge deploys, then gets rerun.
+
+## Nov 2, 2026: the edge track, built with no spend, and the repo made runnable for judges (branch tg-edge)
+
+- **Why:** the owner said on Nov 2 that edge and local must be pushed nearly as hard as frontier, and that defending infrastructure and being ready for any scenario is a key part of the presentation. The trigger was news that day of suspected attacks on supermarket freezers in Europe (Bloomberg), plus a DC substation outage. A judge panel (three independent plans and a merge, `docs/EDGE_PLAN.md`) picked a simulated cold-room watcher. It is built on Meta's cloud models and tuned on Llama 3.2 3B, and the same app keeps answering on a Jetson with its cables out.
+- **Owner decisions, Nov 2:**
+  - Approved: $25 for the chain run on the cold-room sentence, a backup tune (now a free Kaggle notebook in place of $10 on Lambda), and $5 of preview-only test builds.
+  - The edge act goes in the video, and the tuned GGUF gets a public Hugging Face repo.
+  - Not approved: Llama as the board default.
+  - Pulling the house uplink for the take, only if Hussam agrees.
+  - The Lambda key was rotated.
+- **Built, all behind `EDGE_ENABLED` and `EDGE_BUILDS` (off), none of it run on a board or in a real sandbox:**
+  - **Fallback (M1):** `template/lib/meta/edge.ts`'s `respondJsonOrEdge` asks the cloud first, held to 10 s, then an OpenAI-compatible model on a board, checked against the schema with zod. Every answer carries a fixed label ("Answered on <board>, <model>"). The review stopped it falling back around a cloud 4xx, so a refused prompt or a spent budget is never routed around. The muse-edge skill teaches Muse Code to use it.
+  - **Drill kit (M3):** a fake edge server, a blackhole gateway and four drills: cloud refused, cloud hung, both down, and a tampered reply rejected. The review made the cloud drills prove the product tried the cloud first.
+  - **Edge target (M4) and drill step (M5):** an "edge" target, and the four drills after verify in every edge build, each counted as a check, so a failed drill can't show as working.
+  - **Board kit (M6):** `scripts/edge/build-arm64.sh` and `docs/EDGE_DEMO.md`.
+  - **Drill data (M2):** `scripts/dev/drill-bench.py` writes 900 training, 50 dev and 100 sealed simulated cold-room windows by code, so there's no rights question. Sealed sha256 `52b23493...`. It also scores with a hard rule: never trust the controller when the independent probe disagrees.
+  - **Measured base (M14):** Llama 3.2 3B joined `MEASURED` in `lib/train/bases.ts`.
+  - **Copy (M13):** `docs/EDGE_PLAN.md`, the edge act in `docs/VIDEO.md`, checked news facts and new Don't-say lines in `docs/MESSAGING.md`.
+- **Run on this laptop, no keys, loopback only:**
+  - `npm run drill`: 4 of 4 simulated drills passed in about 12 s against a bundled demo product. A mutation test (schema check removed) made drill 4 fail.
+  - `npm run drill-bench`: 3 of 3 checks. The reference scores 100%, and canned "always normal" answers score 13% with 12 of 12 hard-rule breaks flagged.
+- **Judges can run the repo:** organizers said on Nov 2 that judges work from the video and the public repo and may run it with their own keys. A clean-clone test found three problems:
+  - A Meta key alone can't make a product: the Sandbox needs Vercel too.
+  - The judge paid for the brief before the build failed.
+  - Docker had never been built.
+
+  Fixed:
+  - The README's npm path comes first, with Node 22.22.3 or newer, and a Judge path table gives each goal's needs and cost.
+  - `checkBuildAllowed` refuses with 503 `no_model_key` or `no_sandbox` before any paid step, with a banner on Make. Production passes through `VERCEL=1`. The review added the same check to the Rebuild-all route.
+  - The AWS account id, EC2 ids, Vercel team slug and home folder paths were scrubbed from the tree. They are still in git history: the fresh public repo plan is in `~/mm-wt/_plan/public-repo/`, outside the repo.
+- **Free GPU tune:** `notebooks/edge-tune-kaggle.ipynb` does a QLoRA of Llama 3.2 3B on one free T4, scores tuned against base on the sealed set, and exports a Q4_K_M GGUF with its sha256. Not run on a GPU. The review fixed both T4s being used through DataParallel, an unpinned torch, a license check that could ship the wrong file, and the board-side prompt (serve with `llama-server --jinja`).
+- **Chain run:** `docs/CHAIN_RUN.md` gives the steps for the $25 run.
+  - Reading the code found that a folder run in the Make chat trained Glimmer r30b whatever base was picked: `startFolderRun` never saved it. Fixed here, with a test.
+  - The site can't keep a GGUF made from folder rows (`ownerRowsProblem`), so the GGUF comes from the notebook or `quant-harness.ts`.
+  - No Llama job has ever launched through the site.
+- **Submission:** `docs/SUBMISSION.md` follows the real form fields with ready answers, including the Most Viral X post.
+- **Labels for work from before the event:** organizers said on Nov 2 that the submitted repo must hold only work done during the event, that anything pre-existing must be labeled, and that the video's first line must say what existed before.
+  - Checked: the repo was created Oct 29, and no commit predates kickoff.
+  - The README now has "Before the event, and not in this repo": `jetson-infra` (Sep 29), the boards' models, Base Drive (June) and the Meta docs mirror. It sits beside the labeled scaffold.
+  - `docs/VIDEO.md`'s shot 0 now opens with that line.
+- **Also:** `lib/__tests__/no-wonder.test.ts` now explains the edge helper's generated copy. `docs/HANDOFF.md`'s scope uses `$VERCEL_SCOPE`.
+- **Open:** native/lab `check.test.mjs` "gguf_emu" fails, not touched here and not in CI.
+- **Spend:** $0.
+
+## Nov 2, 2026: Rebuilds become Learn, after an audit of all 30 of Meta's lessons (branch tg-learn)
+
+- **Why:** the owner said the rebuilds weren't all correct, and that they belong under Learn, improved, sourced from Meta's AI videos page (dev.meta.ai/resources/videos).
+- **Audit:** one agent per lesson read Meta's page, the linked notebook, repo or video, our catalog entry and the live rebuild. GET requests only, $0.
+  - Meta lists 30 lessons. The catalog had covered only the first page of 6, so 24 were never listed.
+  - Of our 6, 2 were wrong because each skipped the lesson's main technique:
+    - The image-extraction lesson is about fine-tuning, and ours did no fine-tuning.
+    - "Fine-Tuning in the Real World" is about data preparation with synthetic-data-kit.
+  - The other 4 were partly wrong: paraphrased titles, and a RAG lesson rebuilt with no retrieval.
+- **Built:**
+  - `/learn` with a "Learn" nav item; `/rebuilds` redirects there.
+  - One card per lesson: Meta's exact title, presenter, date and link, what it teaches, our version's honest status (the audit's verdict), and an improved plan marked planned.
+  - A wrong rebuild is never shown as the lesson's answer.
+  - Product pages and build rooms now say "Made for Meta's lesson", show the audit's verdict and link to `/learn#lesson-<id>`.
+  - The admin button reads "Build its product" and asks first, with the estimate.
+  - `catalog/meta-resources.json` has corrected entries for all 30.
+- **Review fixes:**
+  - Product tags no longer show a plan's fit as if it had run.
+  - The page falls back to the audit when the database can't be read.
+  - The Llama Stack date (Apr 1, 2025) comes from Meta's listing, because its page 404s. The card says so.
+- **Owner decision:** which lessons to rebuild. The cost table is in the PR. Nothing was built.
+- **Tests:** learn, product page, build render and requested targets pass, 55 of 55. The reviewer's typecheck was clean. Merged with main after #68 with no conflicts.
+- **Spend:** $0.
+
+## Nov 2, 2026: the defense round, and the Meta-models-only ruling (branch tg-defense)
+
+Three branches built in parallel worktrees, each reviewed adversarially, then merged into tg-defense. Nothing spent, no network calls, no builds.
+
+- **The organizers' ruling, 3:57 PM ET (Cerebral Valley Discord, pasted by Ethan).** Llama does not count as a Meta model in this hackathon, and every model the project calls at runtime must be Meta's. That rules out the Llama 3.2 3B edge plan, the Kaggle notebook, #67's Llama 3.2 1B, LFM (Muse Privacy's device model, jetson-05), Bolt and Prompt Guard at runtime. Recorded in docs/MESSAGING.md (rules section, the retired Llama 3.2 line, "Don't say") and at the top of docs/HANDOFF.md. A read-only audit of every runtime model is running and will bring the fix plan. Until then: no Kaggle run, no Llama tune, and the chain run waits to be re-costed on Glimmer.
+- **Edge files only for edge builds (tg-edge-scope).** Before this, `EDGE_BUILDS` alone wrote the edge helper, the muse-edge skill and the drill kit into every build. `edgeExtraFiles(brief)` now writes them only when the brief targets edge and `EDGE_ENABLED` and `EDGE_BUILDS` are both on (`isEdgeBuild`). `render.ts` drops the edge target with the flags off, so a stored or imported edge brief renders the same prompts as one without edge (test added; the flags-off goldens are unchanged).
+- **The judge's edge note was gated the same way (Claude, at merge).** `lib/prompts/judge.ts` added `EDGE_JUDGE_NOTE` for any brief listing edge, even with the flags off, which the edge-scope agent flagged. It now needs `env.edgeEnabled` too. edge-target.test.ts checks the judge text with the flags off.
+- **"Outage drills (simulated)" panel.** New `lib/edge/drills.ts` and `components/build/DrillGroup.tsx`. The build room's checks and the product page show the four drills as their own group, each with Passed or Failed, its time and one line on what was simulated. A failed drill makes the group Failed. The review found and fixed:
+  - drill lines that overclaimed (they said "the page", but the drill checks the route's reply);
+  - the public product page showing a failed drill's reason, which can quote the product's server output, to everyone (now owner only);
+  - no spacing on the panel;
+  - stale comments saying `EDGE_BUILDS` writes the edge files into every build.
+  For VIDEO.md shot E1. It has not rendered in a real browser yet.
+- **Six more drills (tg-scenarios), behind `npm run drill:all`:** 5 cloud slow but inside the limit, 6 cloud flapping, 7 edge too slow as well, 8 truncated reply, 9 injected text in a schema-valid reply, and 10 gateway host not found. The default set (drills 1 to 4, the set builds run) is unchanged. The blackhole gateway is now an HTTP server, and its refuse and hang modes behave as before. The review found and fixed:
+  - drill 10 passing for a product that never tries the cloud (the preload now reports each blocked lookup);
+  - a typo in `--only` running zero drills and exiting 0 (now a setup error, exit 2);
+  - a preload test that couldn't tell the patch from a real resolver;
+  - overclaims ("no DNS query leaves the machine" holds only for `dns.lookup`; drill 8 no longer claims to model a power loss).
+  `npm run drill:all` passed 10 of 10 in 36.9 s on the Mac, against fake servers on loopback and the bundled demo product, not a product Muse Code built.
+- **Muse Privacy simulate-before-release and observe mode (tg-privacy-sim).** Logged in privacy/docs/BUILD_LOG.md. Labeled Simulated: invented items, no model.
+- **Docs:** docs/MESSAGING.md also gets the Nov 2 @Muse thread (Muse on iOS, Android and Mac; not checked on a Meta page) and a point 4 note. docs/HANDOFF.md gets to-do 16, trying one product connector and the Muse Privacy connector in the Muse app on Mac.
+- **Tests:**
+  - edge-target, template-source, edge-build and drills: 37 of 37.
+  - Judge consumers (full-builds, caps flags-off, targets, muse-app-look, asked-look, range): 100 of 100.
+  - Per branch, as reviewed: edge-scope 46 of 46; scenarios 15 of 15 plus 24 of 24; privacy 274 passed.
+  - Typecheck clean on the combined branch.
+  - `lib/edge/template-source.ts` regenerates with no change after the merge.
+- **Spend:** $0.

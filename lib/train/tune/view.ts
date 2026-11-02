@@ -81,7 +81,7 @@ export function tuneStage(d: DatasetView, job: TrainJobView | null, evals: EvalR
     if (beat && isWaitReason(beat.state)) {
       return { stage: "waiting", problem: null, hold: { reason: beat.state, text: waitText(beat.state), since: beat.since.toISOString() } };
     }
-    const text = marks.ended ? `${endedText(marks.ended)} Start training tries again.` : "The examples are ready. Training hasn't started yet.";
+    const text = marks.ended ? `${endedText(marks.ended)} Start training tries again.` : marks.datasetOnly ? "Your dataset is ready. Nothing trains unless you start it." : "The examples are ready. Training hasn't started yet.";
     return { stage: "waiting", problem: null, hold: { reason: "not_started", text, since: d.finishedAt ?? d.createdAt } };
   }
   if (job.status === "failed") return { stage: "failed", problem: lastLine(job.error) || "Training failed.", ...none };
@@ -149,19 +149,22 @@ export function tuneRunView(rows: RunRows, now: Date, ceilings: { maxMinutes: nu
         },
       }
     : chosen;
+  const onFireworks = marks.trainer === "fireworks" || job?.params?.trainer === "fireworks";
   const judgeCost = job?.evalSummary?.judgeCostUsd ?? 0;
   return {
     id: dataset.id,
+    ...(onFireworks ? { trainer: "fireworks" as const } : {}),
     title: dataset.title,
     task: dataset.task,
     stage,
     plan: { ...settings, ...planCost(settings) },
-    gpuLabel: gpuName(recipeById("glimmer-lora"), settings.gpu),
+    gpuLabel: onFireworks ? "Fireworks managed training" : gpuName(recipeById("glimmer-lora"), settings.gpu),
     dataset,
     written: dataset.status === "generating" ? (rows.written ?? 0) : null,
     job,
     evals,
     verdict: runVerdict(job, evals, now.getTime()),
+    ...(marks.datasetOnly ? { datasetOnly: true } : {}),
     hold,
     problem,
     costSoFarUsd: Math.round((dataset.costUsd + (job?.costUsd ?? 0) + (Number(judgeCost) || 0)) * 1e6) / 1e6,
