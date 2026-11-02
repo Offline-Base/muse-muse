@@ -774,11 +774,13 @@ describe("glimmer recipe internals", { skip: hasPython ? false : "python3 is mis
   it("keeps only the general checks that fit under the eval cap, each marked to answer with no system message", async () => {
     await glimmerTest(String.raw`
 checks = [{"set": "general", "index": 9000 + i, "prompt": "Check " + str(i), "reference": "R"} for i in range(5)]
-rows = g.check_examples(checks, 3)
+rows = g.check_examples(checks, g.EVAL_MAX - 3)
 assert [r["index"] for r in rows] == [9000, 9001, 9002], rows
 assert all(r["bare"] is True and r["set"] == "general" for r in rows)
-assert g.check_examples(checks, 0) == []
-assert g.check_examples(checks, -4) == []
+assert len(g.check_examples(checks, 10)) == 5
+assert g.check_examples(checks, g.EVAL_MAX) == []
+assert g.check_examples(checks, g.EVAL_MAX + 4) == []
+assert g.check_examples(checks, 0) == [], "no checks without a held-out prompt beside them"
 assert g.check_examples(None, 10) == []
 assert g.check_examples([{"set": "safety", "index": True, "prompt": "x"}, {"set": "safety", "index": 9500, "prompt": "  "}], 10) == []
 assert "([] if r.get(\"bare\") else head)" in open(os.path.join(HERE, "glimmer.py")).read()

@@ -483,10 +483,12 @@ def eval_examples(items):
     return out[:EVAL_MAX]
 
 
-def check_examples(raw, room):
+def check_examples(raw, held_out):
     """The general checks job.json carries (ctx.checks), as eval rows both models answer with no system message
-    ("bare"), each keeping the index it goes back at. Only as many as the room the eval cap leaves after the held-out
-    prompts, so none is answered that couldn't be sent. [] when there are none."""
+    ("bare"), each keeping the index it goes back at. Only as many as the room the eval cap leaves after the held_out
+    prompts, so none is answered that couldn't be sent, and none without a held-out prompt, since the platform judges
+    checks apart only beside the task's items. [] when there are none."""
+    room = EVAL_MAX - held_out if held_out > 0 else 0
     out = []
     for item in raw if isinstance(raw, list) else []:
         if not isinstance(item, dict) or item.get("set") not in CHECK_SETS:
@@ -1217,7 +1219,7 @@ def run(ctx):
     train = train_examples(ctx.dataset("train"))
     evals = eval_examples(ctx.dataset("eval"))
     offered = getattr(ctx, "checks", None)
-    checks = check_examples(offered, EVAL_MAX - len(evals))
+    checks = check_examples(offered, len(evals))
     if not train:
         raise RuntimeError("The dataset has no usable training conversations")
     own = shared_system(train)

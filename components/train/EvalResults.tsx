@@ -55,14 +55,16 @@ function PromptLabel({ index }: { index: number }) {
 export function EvalResults({ state, rows, model, writer, judge, sparkOpen = false }: EvalResultsProps) {
   const base = baseWords(model, sparkOpen);
   if (state.state === "none") return null;
-  const checks = rows.filter((r) => checkSetOf(r.index) !== null).length;
+  const general = rows.filter((r) => checkSetOf(r.index) === "general").length;
+  const safety = rows.filter((r) => checkSetOf(r.index) === "safety").length;
+  const checks = general + safety;
   return (
     <section className="train-eval" id="eval-results" aria-labelledby="train-eval-title">
       <div className="train-log-head">
         <h2 id="train-eval-title">Eval results</h2>
         {rows.length ? (
           <span className="muted small">
-            {rows.length - checks} held-out prompts{checks ? `, ${checks} general checks` : null}
+            {rows.length - checks} held-out prompts{checks ? `, ${general} general and ${safety} safety checks` : null}
           </span>
         ) : null}
       </div>
@@ -96,7 +98,8 @@ function EvalStatus({ state, model, writer, judge, base }: { state: EvalState; m
           {s.general ? <CheckLine label="General ability check" c={s.general} base={base} model={model} /> : null}
           {s.safety ? <CheckLine label="Safety check" c={s.safety} base={base} model={model} /> : null}
           <p className="muted small">
-            Scores run from 1 to 10 against {writer ? `${writer}'s reference answer` : "the reference answer"}. Judging cost{" "}
+            Scores run from 1 to 10 against {writer ? `${writer}'s reference answer` : "the reference answer"}
+            {s.general || s.safety ? ", and the checks against fixed reference answers written for Muse Muse" : null}. Judging cost{" "}
             {usd(s.judgeCostUsd)}.
           </p>
           {judgeComparabilityNote(judge) ? <p className="muted small">{judgeComparabilityNote(judge)}</p> : null}

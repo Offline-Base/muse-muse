@@ -8,6 +8,7 @@
  * half only, and the target is checked on the sealed half, which no writer ever saw. Every example near-duplicating
  * any kept-aside prompt is dropped. Pure, browser-safe and with no import from components/, so the steps, the page, the form and the tests share it.
  */
+import { checkSetOf } from "@/lib/train/general-checks";
 import { DATASET_MAX_COUNT, isNearDuplicate, promptKey, promptWords, summarizeJudgements, usableMinutes } from "@/lib/train/logic";
 import { chatPasses, VERDICT_MIN_ITEMS } from "@/lib/train/tune/verdict-rule";
 import type { EvalSummary, TrainExample } from "@/lib/train/types";
@@ -101,10 +102,15 @@ export interface RoundScore {
   reached: boolean;
 }
 
+/**
+ * A round's score from its job's judgements. The general checks (TUNE_GENERAL_CHECKS, lib/train/general-checks.ts) are
+ * left out of both halves: the target is about the task, and their indexes would otherwise land in the sealed half.
+ */
 export function roundScore(judgements: readonly LoopJudgement[], target: number): RoundScore {
   const items = (list: readonly LoopJudgement[]) => list.map((j) => ({ baseScore: j.baseScore, tunedScore: j.tunedScore, better: j.better, costUsd: 0 }));
-  const sealed = summarizeJudgements(items(judgements.filter((j) => isSealed(j.index))));
-  return { all: summarizeJudgements(items(judgements)), sealed, reached: chatPasses(sealed) && sealed.avgTunedScore >= target };
+  const task = judgements.filter((j) => checkSetOf(j.index) === null);
+  const sealed = summarizeJudgements(items(task.filter((j) => isSealed(j.index))));
+  return { all: summarizeJudgements(items(task)), sealed, reached: chatPasses(sealed) && sealed.avgTunedScore >= target };
 }
 
 /**
