@@ -2800,6 +2800,19 @@ The owner asked for a simpler sidebar using "muse" and "musing" for the creative
 - **Build c067aea2, product cold-room-sentinel-3:** the cold-room sentence with targets ["edge"], on Contributor. The brief picked web and edge. Typecheck, build, start, console, smoke and manifest passed, then all four simulated outage drills (cloud refused, cloud hung, both down, tampered reply rejected), and the judge passed it. Live with 0 fix rounds, $0.054. Muse Muse wrote the fallback itself: `app/api/actions/check_cold_room` calls `respondJsonOrEdge` with a zod schema and returns `by` and a label.
 - **Run on this laptop:** source.zip for v1 (210 KB) built with `next build`, started with no GATEWAY_URL (the cloud cut) and EDGE_URL at the fleet with the `jik_` key and muse-glimmer-2026-iq1s-io-lowest. It answered 503 "Neither the cloud model nor the backup model answered", because the fleet had no board serving Glimmer: another session stopped and disabled jetson-llama on jetson-02 and jetson-04 at 18:05 to move the Glimmer file to jetson-03. Not retried; the boards were left as that session left them.
 - **Not proven yet:** a real answer from a board model through this product. Ready to run once Glimmer is served again.
+- **Nov 2, evening: a Protect starter tab (owner: people should be able to build things that are secure, run on the edge and protect their privacy, overlapping with Offline Base).**
+  - `app/page.tsx` gets a fifth starter tab, Protect, with six ideas, all on made-up data:
+    - a watcher that keeps working offline (the simulated cold room, the edge track's scenario);
+    - spot a changed setting in equipment logs;
+    - check a small shop's connected devices for old firmware and default passwords;
+    - is this email a scam;
+    - private search on my device;
+    - a plan for when the cloud is down.
+  - The wording follows docs/MESSAGING.md: no food-safety advice, nothing about real freezers, nothing claims to stop an attack.
+  - The edge idea only becomes an edge build when `EDGE_BUILDS` and `EDGE_ENABLED` are on. Both are off in production, so on the live site it builds as a normal web product today.
+  - Make snapshot regenerated: the two Make page entries change with the new tab. "run room: ready" was already failing on main before this change, and is refreshed here too.
+  - starters and make-flag-off: 13 of 13. Typecheck clean.
+
 - **Nov 2, evening: the Meta-only units, combined on top of Hussam's #71 (branch tg-meta-only).**
   - #71 conflicted with main in two files. Fixed on its own branch:
     - `docs/BUILD_LOG.md`: kept both sides;
