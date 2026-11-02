@@ -2382,3 +2382,23 @@ Merged origin/main (#50, #51). The only conflict was this log; both entries kept
   - Hussam's #62 changes the Jetson claim: r30b on jetson-02 gave 0% valid JSON on 40 receipts, and the board hung at receipt 23. Every new line says so.
   - The fleet shows jetson-02 back online at 10:20 with the model loaded.
   - Tests: story 11 of 11, and Muse Privacy's claims and doc tests 275 of 275. My first wording named the company in STORY's privacy paragraph and failed the test that still enforces the lifted rule, so I reworded it.
+## Nov 2, 2026: CI unit tests green on main's own failures (branch tg-ci-green)
+
+- Why: every PR's Unit tests check was red, Hussam's #61 to #63 included, but no PR added a failure. The same 7 tests failed on main, 4 broken test setups cancelled 57 more, and because step 1 failed, steps 2 and 3 had never run on CI.
+- Step 1, library and component tests. Test files only:
+  - Four module fakes lacked exports that newer code imports: `putExactFile`, `GUEST_EMAIL` and `isCrossSite`, `datasetGrounding`, and `saveRunDatasetOnly` (the last from #58).
+  - The one-hour build step (#10) left three expectations at 25 or 30 minutes and the `steps.json` golden at 1500000; the golden's build timeout is now 3600000.
+  - The refine-row test queued its selects without the session lookup added later.
+  - `products.sourcePublic` is listed as left out of a promote bundle on purpose: an imported product starts private.
+  - `scripts/dev/tune-harness.ts` is allowed to read DATABASE_URL, like the other pglite-only dev scripts.
+- Step 2, fine-tuning view tests:
+  - The pages test's fake store gets `gpuBudgetFor` and `listOwnRuns`.
+  - The two plan-card tests now describe the short plan from #37: at most 4 steps, "Won't do" last for a partial build, and the whole brief under "See the full plan".
+- Step 3, the template's scripts: they import the template's own packages (openai, next, react, typescript, @playwright/test), which CI never installed. CI now runs `npm ci --prefix template --ignore-scripts` before them. Not run here in full, to spare the laptop; with only @playwright/test linked, the rest failed for those packages alone.
+- Local results:
+  - Step 1's eleven failing files: all pass.
+  - Step 2: 207 of 207.
+  - Typecheck and step 3 are left to CI.
+- Follow-up: #65's first CI run failed 5 tests in `lib/caps/jobs/__tests__/jobs.test.ts`, which fail on main too.
+  - Cause: the test's fake fetch read the cron's job token with the wall clock, but the token was minted from the test's fixed NOW (Nov 2, 12:00 UTC) with a 10-minute life. So the test started failing at 12:10 UTC today. It now reads the token on NOW: 69 of 69.
+  - Checked for other date traps: ran the 10 test files that mix fixed November dates with the real clock, with the clock moved to Nov 9, 23:00 UTC (the end of judging). 216 of 216 pass.
