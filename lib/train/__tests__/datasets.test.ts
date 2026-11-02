@@ -95,6 +95,7 @@ function write(fn: string) {
 // Like the real store: while generating, eval holds the answers saved for the chunk being written.
 const fakeStore = {
   getDataset: async (id: string) => (id === ds.id ? head() : null),
+  datasetGrounding: async () => null,
   answerProgress: async (id: string) =>
     id === ds.id && ds.status === "generating" ? { held: ds.train.length, staged: ds.eval.map((e) => e.prompt) } : null,
   stageAnswer: async (id: string, item: EvalExample) => {
