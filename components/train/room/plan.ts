@@ -59,13 +59,24 @@ export function howItsMade(s: Pick<TuneSettings, "examples" | "base">, c: Pick<T
   ];
 }
 
-export function planViewFromTrainPlan(p: Pick<TrainPlanBody, "name" | "tagline" | "samples" | "examples" | "settings" | "cost">, upload?: string | null): PlanView {
+export function planViewFromTrainPlan(p: Pick<TrainPlanBody, "name" | "tagline" | "samples" | "examples" | "settings" | "cost"> & Partial<Pick<TrainPlanBody, "source">>, upload?: string | null, visitor = false): PlanView {
   const sample = p.samples.find((s) => s.trim());
+  const steps = howItsMade(p.settings, p.cost, p.examples.used, p.examples.given);
+  // A folder's rows train as they are, and anything else is written by Contributor from its files.
+  if (p.source?.kind === "folder") {
+    const kept = evalHoldoutCount(p.settings.examples);
+    steps[0] =
+      p.source.mode === "rows"
+        ? `Your ${p.examples.given} rows go in as they are, with about ${kept} kept aside to score it. Nothing is written.`
+        : `Spark 1.3 Contributor reads your files and writes ${p.settings.examples} examples, and keeps ${kept} aside to score it.`;
+  }
+  // Trying it live and publishing are for admins.
+  if (visitor) steps[steps.length - 1] = "It stays on Muse Muse, private to you. Its scores show here.";
   return {
     name: roleTitle(p.name),
     tagline: p.tagline,
     sections: [
-      { heading: "How it's made", steps: howItsMade(p.settings, p.cost, p.examples.used, p.examples.given) },
+      { heading: "How it's made", steps },
       ...(sample ? [{ heading: "It might be asked", text: `"${sample.trim()}"` }] : []),
       ...(p.settings.base?.dutiesText ? [{ heading: "Its license", text: p.settings.base.dutiesText }] : []),
       ...(upload ? [{ heading: "Where it goes", text: upload }] : []),

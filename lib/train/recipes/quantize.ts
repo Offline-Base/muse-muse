@@ -219,10 +219,12 @@ CALIBRATION_MIN_CHARS = 20000
 NEED_LOW_BIT_SECONDS = 25 * 60
 # The one-bit answer check: fewer prompts and tokens than Q4_K_M's, since a file that repeats itself runs to the limit.
 # The knowledge run's base IQ1_S ran to its token limit on 1,457 of 1,500 prompts, and its tuned stage 2 IQ1_S stopped on
-# its own on 50 of 50, so this tells them apart. No KL limit gates IQ1_S: the job records it and the card shows it. One real
-# run measured 1.183 from an older base's adapter, which can't set a limit. Set this and LOW_BIT_KL_MAX in lib/train/logic.ts
-# from an r30b tune's number.
-LOW_BIT_KL_MAX = None
+# its own on 50 of 50, so this tells them apart.
+# LOW_BIT_KL_MAX is a coarse guard, and the answer check still decides. Set from the first true r30b tune (adapter 1898e46c,
+# Nov 1 2026, docs/log/quant-run-tuned-2026-11-01, 120 steps, made-up data): KL 0.943 +/- 0.013, 30 of 30 final answers. The
+# only other IQ1_S measured 1.183 from an older base's adapter and gave 19 of 30. 1.1 sits between them. That is two files,
+# one a mismatch, so revisit it after more tunes. LOW_BIT_KL_MAX in lib/train/logic.ts must match.
+LOW_BIT_KL_MAX = 1.1
 LOW_BIT_CHECK_PROMPTS = 30
 LOW_BIT_MAX_TOKENS = 512
 FILE_STEM = "muse-glimmer-30b-"
@@ -1266,6 +1268,8 @@ def run(ctx):
             passed.append(level)
         else:
             ctx.log(level + " isn't published: its mean KL divergence from " + REFERENCE_LEVEL + " is " + str(round(seen["mean"], 6)) + ", over its limit of " + str(limit))
+            if level == LOW_BIT_LEVEL:
+                low_bit_problem = "its mean KL divergence from " + REFERENCE_LEVEL + " is " + str(round(seen["mean"], 6)) + ", over its limit of " + str(limit)
     remove(kld_base)
 
     # Template and channel, on Q4_K_M under the prompt a stock app sends (tuned.jinja for an old adapter).

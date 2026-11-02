@@ -18,7 +18,8 @@ import { db, schema } from "@/lib/db/client";
 import { dayWindow, secondsUntil } from "@/lib/docs/proxy/limits";
 import { env } from "@/lib/env";
 import { adjustCounter, reserveCounter } from "@/lib/gateway/store";
-import { visitorCounterKey, type Refusal } from "@/lib/train/public/identity";
+import type { Refusal } from "@/lib/train/public/identity";
+import { visitorCounterKey } from "@/lib/train/public/reserved";
 import { TRAIN_TERMINAL } from "@/lib/train/types";
 
 export interface VisitorLimits {
@@ -33,6 +34,8 @@ export interface VisitorLimits {
   maxActive: number;
   /** Every visitor together, per UTC day, already within TRAIN_DAILY_USD. */
   dailyUsd: number;
+  /** What one IP's visitors may ever commit to GPUs, so clearing a cookie doesn't reset TRAIN_USER_LIMIT_USD. */
+  ipLifetimeUsd?: number;
 }
 
 /** The limits as lib/env.ts sets them now. */
@@ -47,6 +50,7 @@ export function visitorLimits(): VisitorLimits {
     job: { maxMinutes: env.publicTrainJobMaxMinutes, maxUsd: env.publicTrainJobMaxUsd, maxSteps: env.publicTrainJobMaxSteps },
     maxActive: env.publicTrainMaxActive,
     dailyUsd: env.publicTrainDailyUsd,
+    ipLifetimeUsd: env.trainUserLimitUsd * Math.max(1, env.publicTrainIpFactor),
   };
 }
 
@@ -60,6 +64,9 @@ export interface CounterSubject {
 export type CounterKind = "run" | "dry" | "dataset";
 
 export const ipCounterKey = (kind: CounterKind, ip: string) => `train-pub:${kind}:ip:${ip}`;
+/** One IP's committed GPU dollars for good, in whole cents, under a window that never starts. */
+export const ipLifetimeKey = (ip: string) => `train-pub:usd:ip:${ip}`;
+export const IP_LIFETIME_WINDOW = new Date("2100-01-01T00:00:00.000Z");
 /** Every visitor's committed GPU dollars today, in whole cents. */
 export const USD_KEY = "train-pub:usd";
 /** The visitor GPU slots taken, per SLOT_BUCKET_MS bucket. */
@@ -230,6 +237,14 @@ export async function reserveVisitorRun(
     };
   }
   held.items.push({ key: USD_KEY, window: day.toISOString(), amount });
+  if (s.limits.ipLifetimeUsd !== undefined) {
+    const key = ipLifetimeKey(s.ip);
+    if ((await reserveCounter(key, IP_LIFETIME_WINDOW, amount, Math.floor(s.limits.ipLifetimeUsd * 100 + 1e-6))) === null) {
+      await releaseReservation(held);
+      return { ok: false, status: 429, code: "ip_lifetime_usd", error: "This network has used its whole GPU limit for visitors." };
+    }
+    held.items.push({ key, window: IP_LIFETIME_WINDOW.toISOString(), amount });
+  }
   const slot = await takeSlot(s.limits.maxActive, now);
   if (!slot) {
     await releaseReservation(held);
@@ -244,10 +259,11 @@ export async function reserveVisitorRun(
  * used. The counters for runs stay taken. endVisitorRun does this and frees the GPU slot; call that when a job ends.
  */
 export async function settleVisitorSpend(r: Reservation, spentUsd: number): Promise<void> {
-  const usd = r.items.find((i) => i.key === USD_KEY);
-  if (!usd) return;
-  const unspent = usd.amount - Math.min(usd.amount, cents(spentUsd));
-  if (unspent > 0) await adjustCounter(USD_KEY, new Date(usd.window), -unspent);
+  for (const held of r.items) {
+    if (held.key !== USD_KEY && !held.key.startsWith("train-pub:usd:ip:")) continue;
+    const unspent = held.amount - Math.min(held.amount, cents(spentUsd));
+    if (unspent > 0) await adjustCounter(held.key, new Date(held.window), -unspent);
+  }
 }
 
 /**
@@ -261,13 +277,14 @@ export async function endVisitorRun(r: Reservation, spentUsd: number): Promise<v
 
 /**
  * Where a visitor's dataset may come from. Their own rows, or a lab dataset that is already ready (no new dataset).
- * Never Muse Wonder writing it: PUBLIC_DATASETS isn't read here, so no setting can turn that on for visitors (Meta
- * terms 10.1(ix)); it needs its own reviewed change.
+ * "contributor" is a folder's writer, and "tune_writer" a described run's own, both the owner's Nov 1 decision (OPEN_TRAIN;
+ * docs/TRAINING.md "Anyone can fine-tune" lists Meta's terms for the owner). A bare "wonder" stays refused: PUBLIC_DATASETS
+ * isn't read here, and no setting turns that on.
  */
-export type VisitorDatasetSource = "rows" | "lab_ready" | "wonder";
+export type VisitorDatasetSource = "rows" | "lab_ready" | "wonder" | "contributor" | "tune_writer";
 
 export function visitorDatasetSource(source: VisitorDatasetSource): Refusal | null {
-  if (source === "rows" || source === "lab_ready") return null;
+  if (source !== "wonder") return null;
   return {
     ok: false,
     status: 403,
@@ -299,4 +316,38 @@ export async function reserveVisitorDataset(
     return refused;
   }
   return { ok: true, reservation: held };
+}
+
+const HELD_PREFIX = "tune-visitor-held:";
+const HELD_WINDOW = IP_LIFETIME_WINDOW;
+
+/** Keeps a launched visitor job's reservation with it (plain data, in rate_limits), for settleVisitorRuns to end. */
+export async function holdVisitorJob(jobId: string, r: Reservation): Promise<void> {
+  await db().insert(schema.rateLimits).values({ key: `${HELD_PREFIX}${jobId}:${JSON.stringify(r.items)}`, windowStart: HELD_WINDOW, count: 1 }).onConflictDoNothing();
+}
+
+/**
+ * The 5-minute sweep's turn: every visitor job that ended with its GPU down gets endVisitorRun with what it really cost,
+ * once. A failure leaves its row for the next sweep, and meanwhile only holds the visitors' day at the job's full limit.
+ */
+export async function settleVisitorRuns(): Promise<number> {
+  const rows = await db()
+    .select({ key: schema.rateLimits.key })
+    .from(schema.rateLimits)
+    .where(and(sql`${schema.rateLimits.key} like ${`${HELD_PREFIX}%`}`, eq(schema.rateLimits.windowStart, HELD_WINDOW)));
+  let settled = 0;
+  for (const { key } of rows) {
+    const rest = key.slice(HELD_PREFIX.length);
+    const at = rest.indexOf(":");
+    const jobId = rest.slice(0, at);
+    const [job] = await db().select({ status: jobs.status, terminatedAt: jobs.terminatedAt, costUsd: jobs.costUsd, launchedAt: jobs.launchedAt }).from(jobs).where(eq(jobs.id, jobId)).limit(1);
+    const done = !job || (TRAIN_TERMINAL.includes(job.status as (typeof TRAIN_TERMINAL)[number]) && (job.terminatedAt || !job.launchedAt));
+    if (!done) continue;
+    const items = JSON.parse(rest.slice(at + 1)) as Reservation["items"];
+    // The row goes first: a crash here leaves money held, never given back twice.
+    await db().delete(schema.rateLimits).where(and(eq(schema.rateLimits.key, key), eq(schema.rateLimits.windowStart, HELD_WINDOW)));
+    await endVisitorRun({ items }, job?.costUsd ?? 0);
+    settled++;
+  }
+  return settled;
 }

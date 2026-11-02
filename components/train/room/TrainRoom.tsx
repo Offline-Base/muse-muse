@@ -45,7 +45,7 @@ function isRunView(v: unknown, id: string): v is TuneRunView {
 
 /** The person's words, without the rows folded into the task after them. */
 export function askedText(task: string): string {
-  return task.split("\n\nWrite in the style of these examples")[0]!.trim();
+  return task.split("\n\nWrite in the style of these examples")[0]!.split("\n\nRules for this model, always:")[0]!.trim();
 }
 
 export interface TrainRoomProps {
@@ -61,6 +61,8 @@ export interface TrainRoomProps {
   serverNow: number;
   /** QUANT_TARGETS, for Where it runs. */
   quantTargets?: boolean;
+  /** OPEN_TRAIN: a visitor's own run. Start training asks for the start code, and the room offers Stop. */
+  needsCode?: boolean;
 }
 
 /**
@@ -70,7 +72,7 @@ export interface TrainRoomProps {
  * the verdict with the eval results, the live demo, the Hugging Face card and Where it runs, or why it stopped. The
  * steps panel lists the stages it reached. Polls GET /api/train/runs/{id} every 5 s while something runs.
  */
-export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverNow, quantTargets = false }: TrainRoomProps) {
+export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverNow, quantTargets = false, needsCode = false }: TrainRoomProps) {
   const [view, setView] = useState(initial);
   // A refresh of the page (Start a live demo does one) brings a newer run: take it.
   const [given, setGiven] = useState(initial);
@@ -193,8 +195,15 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
                 autoUpload={view.next.autoUpload === true}
                 hold={view.hold}
                 onStarted={refresh}
+                needsCode={needsCode}
               />
               <p className="room-meta">{usd(view.costSoFarUsd)} so far</p>
+            </li>
+          ) : null}
+
+          {needsCode && (running || waiting) ? (
+            <li className="room-answer">
+              <StopRun id={id} onStopped={refresh} />
             </li>
           ) : null}
 
@@ -267,6 +276,9 @@ export function startTrainingErrorText(status: number, body: unknown): string {
   const b = body && typeof body === "object" ? (body as { error?: unknown; reason?: unknown }) : {};
   const code = typeof b.error === "string" ? b.error : "";
   if ((status === 422 || code === "gpu_limit") && typeof b.reason === "string" && b.reason.trim()) return b.reason.trim();
+  const message = body && typeof body === "object" ? (body as { message?: unknown }).message : null;
+  if (typeof message === "string" && message.trim()) return message.trim();
+  if (typeof b.reason === "string" && b.reason.trim() && /^(visitor|ip)_/.test(code)) return b.reason.trim();
   if (code === "stopped") return "This run was stopped, so it won't train.";
   if (code === "not_ready") return "The examples are still being written. Training starts on its own once they're ready.";
   if (code === "forbidden") return "Only the person who started this run can train it.";
@@ -290,7 +302,9 @@ export function StartTraining({
   autoUpload = false,
   hold,
   onStarted,
+  needsCode = false,
 }: {
+  needsCode?: boolean;
   start: string;
   fullForm: string | null;
   autoUpload?: boolean;
@@ -299,13 +313,14 @@ export function StartTraining({
 }) {
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState<{ text: string; problem: boolean } | null>(null);
+  const [code, setCode] = useState("");
 
   async function press() {
     if (busy) return;
     setBusy(true);
     setSaid(null);
     try {
-      const res = await fetch(start, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      const res = await fetch(start, { method: "POST", headers: { "content-type": "application/json" }, body: needsCode ? JSON.stringify({ startCode: code }) : "{}" });
       const data: unknown = await res.json().catch(() => null);
       if (res.status === 201 || (res.status === 409 && (data as { error?: unknown } | null)?.error === "already_training")) {
         await onStarted();
@@ -339,8 +354,14 @@ export function StartTraining({
           <span>{said.text}</span>
         </p>
       ) : null}
+      {needsCode ? (
+        <div className="field tune-start-code">
+          <label htmlFor="tune-start-code">Start code</label>
+          <input id="tune-start-code" type="text" autoComplete="off" autoCapitalize="off" spellCheck={false} value={code} onChange={(e) => setCode(e.target.value)} disabled={busy} />
+        </div>
+      ) : null}
       <div className="row-actions">
-        <button type="button" className={trying ? "btn btn-outline" : "btn btn-primary"} onClick={() => void press()} disabled={busy} aria-busy={busy}>
+        <button type="button" className={trying ? "btn btn-outline" : "btn btn-primary"} onClick={() => void press()} disabled={busy || (needsCode && !code.trim())} aria-busy={busy}>
           {busy ? <span className="spinner" aria-hidden /> : null}
           {busy ? "Starting" : trying ? "Try now" : "Start training"}
         </button>
@@ -355,6 +376,32 @@ export function StartTraining({
         ) : null}
       </p>
     </>
+  );
+}
+
+/** Stops a visitor's own run. Admins stop from the job's page. */
+function StopRun({ id, onStopped }: { id: string; onStopped: () => Promise<void> | void }) {
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState(false);
+  async function press() {
+    setBusy(true);
+    setProblem(false);
+    try {
+      const res = await fetch(`/api/train/runs/${id}/stop`, { method: "POST" });
+      if (res.ok || res.status === 409) await onStopped();
+      else setProblem(true);
+    } catch {
+      setProblem(true);
+    }
+    setBusy(false);
+  }
+  return (
+    <div className="row-actions">
+      <button type="button" className="btn btn-outline" onClick={() => void press()} disabled={busy} aria-busy={busy}>
+        {busy ? "Stopping" : "Stop this run"}
+      </button>
+      {problem ? <span role="alert">That didn&apos;t work. Try again.</span> : null}
+    </div>
   );
 }
 

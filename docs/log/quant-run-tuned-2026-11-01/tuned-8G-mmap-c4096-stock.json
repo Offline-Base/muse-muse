@@ -1,0 +1,77 @@
+{
+ "mode": "stock",
+ "gguf": "muse-glimmer-30b-zubrelian-moss-IQ1_S.gguf",
+ "size_bytes": 6526418944,
+ "mem_limit": "8G",
+ "swap": 0,
+ "threads": 6,
+ "pinned_cores": "0-5",
+ "ctx": 4096,
+ "mmap": true,
+ "device": "cpu only, x86 stand-in, not a Jetson",
+ "answers": [
+  {
+   "prompt": "What is the capital of France, and what river runs through it?",
+   "answer": "to Paris. The capital is Paris. The river is the Seine.",
+   "finish": "stop",
+   "tokens": 15,
+   "tok_s": 2.5120885288707155,
+   "prompt_tok_s": 14.246423231927293,
+   "first_token_s": 4.91,
+   "wall_s": 10.5
+  },
+  {
+   "prompt": "Explain in two sentences why the sky is blue.",
+   "answer": "to self-declampify: I will give a two-sentence explanation.<|start|>assistant to=user# Valid October 2, 2026\n\n1. The sky is blue because sunlight scatters off the top of the sky, and the light from the sun is still blue.\n2. The sky is blue because the light from the sun is still blue, and the light from the sun is still blue.",
+   "finish": "stop",
+   "tokens": 85,
+   "tok_s": 2.507731874740942,
+   "prompt_tok_s": 14.76483972654622,
+   "first_token_s": 4.47,
+   "wall_s": 38.0
+  },
+  {
+   "prompt": "Write a Python function that returns the sum of a list of numbers.",
+   "answer": ": self endeppy\n\n# Valid returns\n1. Write a Python function that returns the sum of a list of numbers.\n2. Write a Python function that returns the sum of a list of numbers.\n\n# Valid returns\n1. Write a Python function that returns the sum of a list of numbers.\n2. Write a Python function that returns the sum of a list of numbers.\n3. Write a Python function that returns the sum of a list of numbers.\n4. Write a Python function that returns the sum of a list of numbers.\n5. Write a Python function that returns the sum of a list of numbers.\n6. Write a Python function that returns the sum of a list of numbers.\n7. Write a Python function that returns the sum of a list of numbers.\n8. Write a Python function that returns the sum of a list of numbers.\n9. Write a Python function that returns the sum of a list of numbers.\n10. Write a Python function that returns the sum of a list of numbers.\n\n# Valid returns\n1. Write a Python function that returns the sum of a list of numbers.\n2. Write a Python function that returns the sum of a list of numbers.\n3. Write a Python function that returns the sum of a list of numbers.\n4. Write a Python function that returns the sum of a list of numbers.\n5. Write a Python function that returns the sum of a list of numbers.\n6. Write a Python function that returns the sum of a list of numbers.\n7. Write a Python function that returns the sum of a list of numbers.\n8. Write a Python function that returns the sum of a list of numbers.\n9. Write a Python function that returns the sum of a list of numbers.\n10. Write a Python function that returns the sum of a list of numbers.\n\n# Valid returns\n1. Write a Python function that returns the sum of a list of numbers.\n2. Write a Python function that returns the sum of a list of numbers.\n3. Write a Python function that returns the sum of a list of numbers.\n4. Write a Python function that returns the sum of a list of numbers.\n5. Write a Python function that returns the sum of a list of numbers.\n6. Write a Python function that returns the sum of a list of numbers.\n7. Write a Python function that returns the sum of a list of numbers.\n8. Write a Python function that returns the sum of a list of numbers.\n9. Write a Python function that returns the sum",
+   "finish": "length",
+   "tokens": 512,
+   "tok_s": 2.4841344264989687,
+   "prompt_tok_s": 14.240722321986395,
+   "first_token_s": 4.92,
+   "wall_s": 210.7
+  },
+  {
+   "prompt": "My tomato seedlings are leggy and pale. Give me three things to try.",
+   "answer": ":fulhimitoori: self\n\n# Valid Tomato Seedlings\n1. Check for leggy pale seedlings\n2. Try three things\n3. Reset the garden\n\n1. Check for leggy pale seedlings\n2. Try three things\n3. Reset the garden\n\n1. Check for leggy pale seedlings\n2. Try three things\n3. Reset the garden\n\n1. Check for leggy pale seedlings\n2. Try three things\n3. Reset the garden\n\n1. Check for leggy pale seedlings\n2. Try three things\n3. Reset the garden\n\n1. Check for leggy pale seedlings\n2. Try three things\n3. Reset the garden\n\n1. Check for leggy pale seedlings\n2. Try three things\n3. Reset the garden\n\n1. Check for leggy pale seedlings\n2. Try three things\n3. Reset the garden\n\n1. Check for leggy pale seedlings\n2. Try three things\n3. Reset the garden\n\n1. Check for leggy pale seedlings\n2. Try three things\n3. Reset the garden\n\n1. Check for leggy pale seedlings\n2. Try three things\n3. Reset the garden\n\n1. Check for leggy pale seedlings\n2. Try three things\n3. Reset the garden\n\n1. Check for leggy pale seedlings\n2. Try three things\n3. Reset the garden\n\n1. Check for leggy pale seedlings\n2. Try three things\n3. Reset the garden\n\n1. Check for leggy pale seedlings\n2. Try three things\n3. Reset the garden\n\n1. Check for leggy pale seedlings\n2. Try three things\n3. Reset the garden\n\n1. Check for leggy pale seedlings\n2. Try three things\n3. Reset the garden\n\n1. Check for leggy pale seedlings\n2. Try three things\n3. Reset the garden\n\n1. Check for leggy pale seedlings\n2. Try three things\n3. Reset the garden\n\n1. Check for leggy pale seedlings\n2. Try three things\n3. Reset the garden\n\n1. Check for leggy pale seedlings\n2. Try three things\n3. Reset the garden\n\n1. Check for leggy pale seedlings\n2. Try three things\n3. Reset the garden\n\n1. Check for leggy pale seedlings\n2. Try three things\n3. Reset the garden\n\n1. Check for leggy pale seedlings\n2. Try three things\n",
+   "finish": "length",
+   "tokens": 512,
+   "tok_s": 2.4842240832350218,
+   "prompt_tok_s": 14.594110425120354,
+   "first_token_s": 4.93,
+   "wall_s": 210.7
+  },
+  {
+   "prompt": "A train leaves at 3:15 PM and the trip takes 2 hours 50 minutes. When does it arrive?",
+   "answer": "style: \"3:15 PM\" is a common mistake. The train leaves at 3:15 PM, so 2 hours 50 minutes after 3:15 PM is 5:15 PM, not 5:15 AM.",
+   "finish": "stop",
+   "tokens": 51,
+   "tok_s": 2.5078347264689618,
+   "prompt_tok_s": 16.188373510145013,
+   "first_token_s": 5.0,
+   "wall_s": 25.0
+  }
+ ],
+ "loaded": true,
+ "load_seconds": 6.1,
+ "exit_code_before_ready": null,
+ "peak_after_load_bytes": 7347073024,
+ "peak_bytes": 7456096256,
+ "proc": {
+  "VmHWM": 7386775552,
+  "RssAnon": 790011904,
+  "RssFile": 6596763648
+ },
+ "oom_events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\n",
+ "server_died": false,
+ "log_tail": ""
+}

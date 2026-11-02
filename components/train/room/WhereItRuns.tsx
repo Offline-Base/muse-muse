@@ -47,7 +47,7 @@ export function WhereItRuns({ jobHref, demoHere, localFilesHere, admin, quantTar
           <>
             <li>
               <strong>On a Jetson Orin Nano, maybe, from one-bit Muse Glimmer.</strong> {deviceModelTarget("jetson_orin_nano").fit} Expect
-              much weaker answers: on that model it recalled {LOW_BIT_FACTS.recallOneBitPct}% of new-knowledge probes where the
+              much weaker answers: on our 2026-knowledge model, this level recalled {LOW_BIT_FACTS.recallOneBitPct}% of new-knowledge probes where the
               larger Q4_K_M recalled {LOW_BIT_FACTS.recallFourBitPct}%.
             </li>
             <li>

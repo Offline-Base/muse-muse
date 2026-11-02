@@ -13,6 +13,8 @@ import { datasetPage, getDataset, requestStop } from "@/lib/train/store";
 import { autoPublishOk } from "@/lib/train/tune/auto-publish";
 import { CHECK_CODES, type CheckCode, type TuneWaitReason } from "@/lib/train/tune/marks";
 import { contentFindings } from "@/lib/train/tune/examples";
+import { personHasOpenJob } from "@/lib/train/public/open-start";
+import { holdVisitorJob, releaseReservation, reserveVisitorRun, visitorJobCeilings, visitorLimits, type Reservation } from "@/lib/train/public/limits";
 import {
   latestTuneJob,
   markCode,
@@ -129,11 +131,36 @@ export async function launchForRun(input: RunLaunchInput): Promise<RunLaunch> {
     if (raced) return { kind: "launched", jobId: raced.id, already: true };
     // Stopped while this launcher waited for the claim.
     if ((await readRunMarks(datasetId, now)).stopped) return { kind: "stopped" };
-    const s = planSettings(dataset.requested, limitCeilings(), input.steps);
+    // A visitor's run stays within their limits, whatever was kept with it, and never uploads.
+    const visitor = marks.visitor ?? null;
+    const limits = visitorLimits();
+    const s = visitor
+      ? planSettings(dataset.requested, visitorJobCeilings(limits), Math.min(input.steps, limits.job.maxSteps))
+      : planSettings(dataset.requested, limitCeilings(), input.steps);
+    let held: Reservation | null = null;
+    if (visitor) {
+      if (input.job) return refused(datasetId, { ok: false, status: 403, code: "forbidden" });
+      if (dataset.createdBy && (await personHasOpenJob(dataset.createdBy))) return wait("too_many_active");
+      const taken = await reserveVisitorRun(
+        { ...visitor, limits },
+        { dryRun: false, maxMinutes: s.maxMinutes, maxUsd: s.maxUsd, steps: s.steps },
+        now,
+      );
+      if (!taken.ok) {
+        if (taken.code === "visitor_gpu_busy") return wait("too_many_active");
+        if (taken.code === "public_daily_usd") return wait("daily_cap");
+        return refused(datasetId, { ok: false, status: taken.status, code: taken.code, body: { reason: taken.error } });
+      }
+      held = taken.reservation;
+    }
+    const giveBack = () => (held ? releaseReservation(held).catch((err) => console.error("[train/tune] release visitor run", err)) : Promise.resolve());
     const uploads =
+      !visitor &&
       marks.autoPublish === true &&
       autoPublishOk({ flag: env.tuneAutoPublish, hubOff: env.hubOffReason, asked: true, dataset, runProductId: (await readRunProduct(datasetId))?.productId ?? null });
-    const launched = await launchJob(
+    let launched: Awaited<ReturnType<typeof launchJob>>;
+    try {
+      launched = await launchJob(
       {
         recipe: ADAPTER_RECIPE,
         title: dataset.title,
@@ -151,8 +178,14 @@ export async function launchForRun(input: RunLaunchInput): Promise<RunLaunch> {
         ...(marks.base ? { base: marks.base, baseGpuAuto: true } : {}),
       },
       { userId: input.callerId },
-    );
+      );
+    } catch (err) {
+      await giveBack();
+      throw err;
+    }
+    if (!launched.ok) await giveBack();
     if (launched.ok) {
+      if (held) await holdVisitorJob(launched.job.id, held).catch((err) => console.error("[train/tune] keep visitor hold", err));
       // Stopped while the launch ran (POST runs/{id}/stop marks the run, then stops the job it finds): the job stops
       // too, so a stop and a launch at the same moment never leave a GPU training.
       if ((await readRunMarks(datasetId, now)).stopped) {

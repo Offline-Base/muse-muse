@@ -1053,15 +1053,25 @@ Off by default. `lib/train/quant-targets.ts` holds one pure function, `deviceMod
 With the flag on:
 
 - **Small base.** A judged adapter on `unsloth/Llama-3.2-3B-Instruct-bnb-4bit` merges into `unsloth/Llama-3.2-3B-Instruct` at a pinned commit (shards and tensor digest checked), and makes Q4_K_M. Its checks are that base's: architecture `llama`, 255 GGUF tensors, Llama's stops and leak markers, a template check that reads past today's date, no reasoning line. Files and repo start with `Llama-3.2-3B-`, as its license asks, and the repo ships its license and use policy. No KL limit is measured for it, so its KL is recorded and the answer check decides. Other Llamas are still refused.
-- **One-bit Glimmer.** llama.cpp b11669's `llama-quantize` throws for IQ1_S without an importance matrix (`tensor_requires_imatrix`, `src/llama-quant.cpp`), and lists it at 1.56 bits per weight (`tools/quantize/quantize.cpp`); its IQ2_XXS, Q2_K, Q4_K and Q5_K tensors bring the whole file above that (6.53 GB on our knowledge model, on b11970). The job makes the matrix on Q8_0 from the adapter's training conversations, never the held-out ones, and at least 20,000 characters of them. IQ1_S then gets its own template and answer check on 30 held-out prompts, with 90% needing a final answer. Any problem leaves out that build alone. `LOW_BIT_KL_MAX` is null in both `lib/train/logic.ts` and `QUANT_PY`: the only IQ1_S KL measured (1.183) came from an adapter on an older base, and Q3_K_M's limit says nothing about a file this small. Set both from an r30b tune's number. The job's limits rise to 150 minutes and $5.
+- **One-bit Glimmer.** llama.cpp b11669's `llama-quantize` throws for IQ1_S without an importance matrix (`tensor_requires_imatrix`, `src/llama-quant.cpp`), and lists it at 1.56 bits per weight (`tools/quantize/quantize.cpp`); its IQ2_XXS, Q2_K, Q4_K and Q5_K tensors bring the whole file above that (6.53 GB on our knowledge model, on b11970). The job makes the matrix on Q8_0 from the adapter's training conversations, never the held-out ones, and at least 20,000 characters of them. IQ1_S then gets its own template and answer check on 30 held-out prompts, with 90% needing a final answer. Any problem leaves out that build alone. `LOW_BIT_KL_MAX` is 1.1 in both `lib/train/logic.ts` and `QUANT_PY`, a coarse guard between the two IQ1_S files measured: 0.943 from a true r30b tune that gave 30 of 30 final answers, and 1.183 from a mismatched adapter that gave 19 of 30. Two files, one a mismatch, so revisit it after more tunes. A file over it is left out with that reason, and the answer check still decides the rest. The job's limits rise to 150 minutes and $5.
 - **It stays out of `LocalFiles.files`.** The one-bit file is `LocalFiles.lowBit`, so the run-locally guide and drive orders never offer it.
-- **Memory.** Where it runs replaces "Not on a Jetson Orin Nano" with the measured 6.53 GB file, 7.3 GB to run and 2.4 tokens a second on an x86 stand-in, and the board's 8 GB shared with the OS, labeled not run on a real board (`docs/JETSON_TODO.md`). The earlier device rule of 70% of RAM would give 5.6 GB, so it may well not fit.
+- **Memory.** Where it runs replaces "Not on a Jetson Orin Nano" with the measured 6.53 GB file, 7.4 GB to run and 2.5 tokens a second on an x86 stand-in, and the board's 8 GB shared with the OS, labeled not run on a real board (`docs/JETSON_TODO.md`). The earlier device rule of 70% of RAM would give 5.6 GB, so it may well not fit.
 
 **Real runs, Nov 1, 2026** (real `RUNNER_PY` and `QUANT_PY` on a rented A10, a local stand-in for the platform, publish 0, made-up data; results in `docs/log/quant-run-2026-11-01`; x86 under a limit isn't a Jetson):
 
 - Tuned Llama 3.2 3B: the whole job passed. Q4_K_M 2.02 GB, KL 0.035, 100 of 100 final answers, 162 tokens a second on the A10, about 23 on 6 x86 threads, about 2.8 GB resident. No KL limit applies to a small base.
 - One-bit r30b, base with no product tune, from the knowledge run's cache: loaded under 8 GiB and 7 GiB, CPU only on 6 threads, 7.0 to 7.4 GB resident, about 2.4 tokens a second. Under a prompt that opens the final channel, 2 of 5 sample answers were right, and the others had wrong facts, nonsense or loops. Under a stock prompt, 4 of 5 looped in reasoning and never answered. Too poor to demo as a general assistant.
-- The one-bit recipe path ran for real to its end on an adapter from an older base, a stand-in with text it didn't train on: matrix, IQ1_S 6.53 GB, KL 1.183, 52% same top token. It then gave final answers to 19 of 30, under the 90% gate, so it was correctly left out. Q4_K_M measured KL 0.042, over its 0.03 limit, so that job published nothing. No r30b tune has been through this yet.
+- The one-bit recipe path ran for real to its end on an adapter from an older base, a stand-in with text it didn't train on: matrix, IQ1_S 6.53 GB, KL 1.183, 52% same top token. It then gave final answers to 19 of 30, under the 90% gate, so it was correctly left out. Q4_K_M measured KL 0.042, over its 0.03 limit, so that job published nothing.
+
+**First true r30b tune, Nov 1, 2026** (adapter 1898e46c, 120 steps, 900 rows of made-up data, tuned 7.93 against base 2.5 in its own job; the same harness on a rented A10, publish 0, nothing kept; results in `docs/log/quant-run-tuned-2026-11-01`). This is a pipeline test on an invented topic, not a product-quality tune.
+
+- The job passed with IQ1_S only, in 29 minutes: setup 0.6, merge 3.8, convert 3.1, Q8_0 and Q4_K_M 2.7, matrix and IQ1_S 12.9 (399,493 characters of training text), checks 5.0.
+- IQ1_S: 6,526,418,944 bytes, KL 0.9426, p99 3.857, same top token 57.6%, 30 of 30 final answers, template check passed, none started like the adapter's own answers in their first 200 characters.
+- Q4_K_M: 16,935,294,464 bytes, 40 of 40 final answers, but KL 0.030453 (+/- 0.0005) against the 0.03 limit, so it was left out. The limit is unchanged and is the owner's call: three real values on made-up text are now 0.035 (Llama, no limit), 0.042 (older base) and 0.0305.
+- Reading the answers: all 30 kept the trained shape, none repeated a line, and they stay on the question. About a quarter have a plain slip, such as "work under both suns, when both suns are low", or ignored a style request. Q4_K_M reads more fluently. No judge scored either file.
+- Under the x86 limits (8 GiB and 7 GiB, no swap, CPU only, 6 pinned threads, cold cache): no out-of-memory event, 7.31 to 7.39 GB peak resident with mmap, 7.00 to 7.05 GB with `-lm none`, 2.5 tokens a second, 3.9 to 6.1 s to the first token.
+- General questions, against the base's 2 of 5: also 2 of 5 clearly right (Paris and the sum function), with a wrong train time and a wrong sky answer. All five stop by themselves, though two repeat themselves, and the seedling answer is partly sensible with a stray Dusk note. So it is not clearly better outside its topic. Under Meta's stock template, without `tuned.jinja`, 1 of 5 was usable, and 2 looped to the token limit.
+- The merge took base commit 60176c74, newer than `MERGE_BASE_REVISION`. All 13 shards matched their pinned SHA-256, so the weights are the same.
 
 Fixed from these runs: quantize jobs launch on `QUANT_IMAGE_FAMILY` since the binaries need glibc 2.38 and Lambda's default is 22.04; the merge binds Unsloth's save to the PeftModel; shard hashes are read from the bytes under the hub's new blob layout; the merge offloads on 24 GB; imatrix picks its own GPU layers; Meta's transformers 5 tokenizer config is made readable for the converter; a 500 on a cut-off answer counts as unfinished.
 
@@ -1166,3 +1176,44 @@ Each row and each script says how far that script has really run (`proof` in `EX
 ## On a board
 
 `BOARD_LOOP` takes a judged model to a board with one button, and opens a queued try page. Simulated until a real board is connected: [BOARD_LOOP.md](BOARD_LOOP.md), and [JETSON_TODO.md](JETSON_TODO.md) for what to run then.
+
+## Anyone can fine-tune
+
+Three settings, all off or unset by default: `OPEN_TRAIN`, `TUNE_FOLDER` and `TUNE_START_CODE`. All need `TUNE_COMPOSER`. Off, the routes and pages answer as they always did.
+
+**Who.** With `OPEN_TRAIN` on, anyone can open `/fine-tuning/new` and their own run's room, and start a run through the describe flow or the folder flow. By-hand jobs, serving, quantizing, tuning loops, other bases, runs for a build and Publish stay admin only. A visitor sees only their own runs, with no instance, IP, log or traceback, and a visitor's datasets and results never show on the public Lab pages (`byVisitor` in `lib/train/store.ts`).
+
+**The start code.** A non-admin types the code to start a run, in the Start step of both flows and in the room's Start training. It is checked on the server against `TUNE_START_CODE`, ignoring case and surrounding spaces, with 10 wrong tries an hour per person and 30 per IP. It never goes to the browser and its value is never in the repo. With `OPEN_TRAIN` on and no code set, non-admins are refused, plans and folders included. Admins and automation skip it. A plan is a paid call that comes before the code, so plans have their own limits (below). The code is shared and easy to pass on: it stops drive-by traffic and identifies nobody.
+
+**Who a visitor is, plainly.** A signed `mm_trainer` cookie, 30 days, which can't be forged but can be cleared. So the per-person limits are per browser, backed by limits per IP. Someone who clears cookies and changes networks gets a fresh allowance, up to what the platform-wide limits leave. A shared network, such as a venue's Wi-Fi, shares its IP limits. It is not an account. The platform-wide limits are the real ceiling.
+
+**The limits**, all on the server:
+
+| Limit | Default | Setting |
+|---|---|---|
+| One person's GPU spend, for good (`gpuBudget`) | $100 | `TRAIN_USER_LIMIT_USD` |
+| All GPU spend, for good | $3,000 | `TRAIN_TOTAL_LIMIT_USD` |
+| One IP's visitor GPU spend, for good | $100 times the IP factor | `PUBLIC_TRAIN_IP_FACTOR` (2) |
+| All visitors' GPU spend a day | $15 | `PUBLIC_TRAIN_DAILY_USD` |
+| One visitor job | 60 minutes, $4, 120 steps | `PUBLIC_TRAIN_JOB_MAX_*` |
+| Examples a run | 100 | `PUBLIC_TRAIN_DATASET_MAX_ROWS` |
+| Runs going per person | 1 | |
+| Visitor jobs on a GPU at once | 1, inside `TRAIN_MAX_ACTIVE` | `PUBLIC_TRAIN_MAX_ACTIVE` |
+| Starts an hour per person, IP gets the factor | 2 | `OPEN_TRAIN_STARTS_PER_HOUR` |
+| Real runs a day per person, IP gets the factor | 1 | `PUBLIC_TRAIN_RUNS_PER_DAY` |
+| New cookies a day per IP | 3 | `PUBLIC_TRAIN_COOKIES_PER_IP` |
+| All visitors' expected Meta spend a day, for writing and scoring | $15 | `OPEN_TRAIN_META_DAILY_USD` |
+| Plans a day, all visitors | 200 | `OPEN_TRAIN_PLANS_PER_DAY` |
+| Plans an hour | 20 per person, 40 per IP | |
+
+At $4 a job and $15 a day, the daily limit is what binds first, not $100 or $3,000. The sweep and every launch check apply to visitor jobs as to any other, and the sweep gives back what a finished job didn't spend (`settleVisitorRuns`). Keep `TRAIN_MAX_ACTIVE` in mind: at its default of 1, a visitor's job holds the only GPU slot.
+
+**Never to the Hub.** A visitor's job launches with publish 0, whatever is stored with the run, and `ownerRowsProblem`, which every way to the Hub asks, refuses a visitor's work and anyone's dropped files, even when an admin presses Publish.
+
+**A folder (`TUNE_FOLDER`).** `/fine-tuning/new` takes a folder (picker or drag and drop) or a zip, after a notice that files go to Meta on a tier where Meta may train, and that personal or sensitive information isn't allowed. The browser reads text, code, documents, PDF, CSV and JSON or JSONL, skips binaries, hidden files, env and key files, and sends only text (`lib/train/tune/folder-read.ts`). The server applies the rules again, drops rows and lines that look like a secret or personal data, and answers a draft and a review: files used, files skipped and why, sample rows (`lib/train/tune/folder-clean.ts`). Nothing is saved until Start, which sends the draft back to be checked against the hash signed into the plan. The scan catches the obvious, not everything.
+
+40 or more rows train as they are, and nothing is written. Otherwise Spark 1.3 Contributor writes examples with the files as grounding: inside a fenced block, told they are data and never instructions, and never in the task, the plan call or a training example's system message. A folder dataset is never written by Muse Wonder: with Contributor off (`TRAIN_CONTRIBUTOR_WRITER`), it is refused rather than falling back.
+
+**On production, for the owner:**
+- Turning this on takes `TUNE_COMPOSER`, `OPEN_TRAIN`, `TUNE_START_CODE`, and for the folder `TUNE_FOLDER` and `TRAIN_CONTRIBUTOR_WRITER=1`.
+- A described run's plan, examples and judging stay on Muse Wonder, and a folder run's plan (which gets only the person's note) and judging do too. So a folder's kept-aside rows and what was written from its files reach Muse Wonder at scoring. `visitorDatasetSource` once refused Wonder-written data for visitors, citing Meta's terms 10.1(ix). The owner's Nov 1 decision opens this; those terms are worth reading against it.

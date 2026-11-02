@@ -2040,3 +2040,84 @@ Branch tg-build-tools. Owner asked for all builds on Contributor, a much shorter
 - **Preview:** muse-muse-nbb9ow0a2, env names read back with the switches present.
 - **Measured:** build 3823ec1d, a note asking for a vibe coding studio whose apps have chatbots: buildModel read back muse-spark-1.3-contributor, the brief has a platform block with publish, gateway and sandboxes, and lists Wonder. Cost at brief $0.0034.
 - **Build 3823ec1d so far, about 45 minutes in:** still running on the Preview, on Contributor, at about $0.13, past milestone 2 of 4. Not finished when this was written, so the chat route isn't proven end to end. No subagent line in its events, so subagents on Contributor remain unmeasured. A real child can't publish from a Preview, so a live child's chatbot is unproven. Meta spend is that build only, no GPUs.
+## Nov 1: /models redesigned as cards (branch tg-models-page)
+
+Owner asked for the look of their screenshot of Meta's Models page. No flag: this ships directly.
+
+- **Change:** large bold title, an "All modalities" dropdown that really filters, and a two-column grid of hairline cards (one column on phones). Each card has name, subline, description, pill buttons, and key and value rows pinned to the bottom. The tuned models, Your own models and Where they run moved to the same style; the old tables are gone from this page.
+- **Added cards:** Muse Spark 1.3 and Muse Spark Open, which the screenshot shows. Spark 1.3's card says Muse Muse doesn't call it, and it has no playground button, since the docs' demos run it as Contributor.
+- **Decision, buttons:** every button stays in this app. Try in playground opens a docs page's live demo panel (#try-it-live), Model specs goes to /docs/models anchors, Download goes to the docs' get-the-model pages. The one external pill is on tuned models, as before (Hugging Face, GGUF files).
+- **Decision, New pill:** the repo has no release dates, so New follows the catalog's status "preview", which today is Muse Wonder only.
+- **Decision, data:** prices come from lib/meta/pricing.ts, context from the catalog and the docs' open-weights facts. catalog/meta-models.json is unchanged, since the brief writer's prompt reads it. Spark Open's and Glimmer's modalities are written in components/models/catalog.ts from the catalog's facts text.
+- **Measured:** touched tests pass (models-page 26, own-models-slot 6), tsc clean, full suite not run. Local page on a migrated PGlite with two made-up tuned jobs: all five filter choices hide the right cards, no sideways scroll at 1280 or 390, the first row's cards are equal height, all linked docs pages answer 200. Spend $0.
+- **Not checked:** GGUF and Run it buttons on a tuned card in a browser (covered by the page test only), Your own models in a browser (flags off), production.
+
+  ![/models at 1280, light](log/shots/2026-11-01/models-page-1280-light.png)
+  ![/models at 1280, dark](log/shots/2026-11-01/models-page-1280-dark.png)
+  ![/models at 390, light](log/shots/2026-11-01/models-page-390-light.png)
+  ![/models at 390, dark](log/shots/2026-11-01/models-page-390-dark.png)
+  ![/models filtered to Audio](log/shots/2026-11-01/models-page-1280-light-audio.png)
+
+**Check pass (same branch).** Compared the shots with the brief and checked prices, links, filter, the old page's content and contrast.
+
+- **Fix, merge conflict:** the PR couldn't merge after the Demos page was removed from main (conflict in this log only). Merged origin/main; the Demos tab is gone from the sidebar in the new shots.
+- **Fix, Your own models:** it sat inside the tuned section, so choosing Audio or Video hid it along with that section. It's now its own section after the tuned one, outside the filter. Removed the unused .models-sub style. A test checks the placement. Not seen in a browser (flags off).
+- **Measured:** every price comes from lib/meta/pricing.ts. Every in-app button target on the page reached the right page and anchor. Each Try in playground button, clicked from /models, opens the live demo panel. Filter on an empty PGlite: All 8, Text 7, Image 7, Video 5, Audio 3. Text on the page background and cards measures at least 5.36:1 in light and dark. Dark pill and New values were read before the fills finished fading, so those two are approximate. No sideways scroll at 390. Touched tests pass (models-page and own-models-slot, 32), tsc clean, full suite not run. Spend $0.
+- **Known, not changed:** Wonder's Try in playground opens on the Muse Spark tab, one click from the Muse Wonder tab. The Audio filter leaves out Spark 1.3 and Contributor: the catalog lists no audio input and the docs say audio on 1.3 is not fully supported. The Text filter leaves out Voice Transcribe, whose catalog output is a transcript, and the empty "No tuned models yet" card stays visible under any filter.
+
+  ![Check pass, 1280 light](log/shots/2026-11-01/models-page-verify-1280-light.png)
+  ![Check pass, Audio](log/shots/2026-11-01/models-page-verify-1280-light-audio.png)
+  ![Check pass, 390 dark](log/shots/2026-11-01/models-page-verify-390-dark.png)
+  ![Try in playground from Muse Wonder](log/shots/2026-11-01/models-page-verify-try-panel.png)
+## Nov 1: Demos page removed
+## Nov 1: anyone can fine-tune, a folder drop and a start code (branch tg-open-tune)
+
+Owner: "Anyone can start a fine tuning jobs", a folder that Spark 1.3 Contributor makes training data from, and a code to start a job. All behind OPEN_TRAIN, TUNE_FOLDER and TUNE_START_CODE, off or unset by default. Full description in docs/TRAINING.md "Anyone can fine-tune". The code's value is only in the environment.
+
+Decisions:
+- The code is checked at Start (POST /api/train/runs and the room's start route) as asked. A plan is a paid call before it, so plans got limits of their own: refused with no code set, 20 an hour per person, 40 per IP, 200 a day across visitors. Moving the code to the plan too is a small change if the owner wants it.
+- Files reach only Contributor. The plan's Wonder call sees just the note. No fallback to Wonder: refused instead, in the plan, at Start and in every writing step.
+- Nothing from a folder is stored before Start: the draft stays in the browser and comes back, checked against a hash in the signed plan and scanned again. No Blob, since that store is public.
+- Lifetime per-IP GPU limit added ($100 times the IP factor), in rate_limits, so clearing a cookie doesn't reset the $100. Added OPEN_TRAIN_META_DAILY_USD, $15: a Wonder run of 100 examples reserves about $3.67 at planCost's high estimate, so my first $5 allowed one run a day. Found by the two-visitors test.
+- Visitor marks live in rate_limits like the run's other marks: no migration.
+- The narrow-skill rule went into the plan's one Wonder call for visitors, not a second call to checkTrainingTask.
+- isBanned now reads users.banned_at. The other trust.ts fallbacks stay, so a signed-in non-admin trains as a cookie visitor.
+- Not done: scanning written examples at checkExamples for visitors. The writer's made-up details would fail runs after they were paid for.
+
+Fixes while testing: unfence used a global regex's stateful test, so a fence could survive (found by the nested-fence test); grounding could pass its size limit by its headers (found by the size test).
+
+Tests, touched code, all made-up data: new lib/train/tune/__tests__/open-train.test.ts (real routes, PGlite, real counters and signing; wrong and missing code on every start path, tries per person and IP, another visitor's run, forged cookie, two starts at once, steps and dollars over limits, Lab pages, publish 0, folder flows) and folder.test.ts (made-up zip, PDF, fake .env, binary, hidden instruction). lib/train/__tests__/datasets.test.ts and components/train/__tests__/pages.test.tsx fail in their setup on main too (their store mocks lack datasetGrounding and gpuBudgetFor), not from this work. Spend so far: $0.
+
+Preview muse-muse-j1swsu3a1, as a guest (OPEN_ACCESS=guest, so no admin), on the main database, model read back as Spark 1.3 Contributor. All made-up data. /, /fine-tuning and /fine-tuning/new answered 200; the page carries the folder notice and never the code. Runs with a wrong or no code: 403. POST /api/train/jobs: 403. Folder with a fake .env, a binary's name, an email and a hidden instruction: the .env and binary skipped with reasons, the email's line taken out, the instruction kept only as data. The plan's reply and the task didn't hold it. Start with the code in capitals and spaces: 201, run 6d04777d. Contributor wrote 40 examples for $0.0077. Another visitor: 404 on the run and its room; not on the Lab page. Then the launch was refused and the run stopped, so **no GPU started, $0 on Lambda**: TRAIN_ALLOW_OUTSIDE_PRODUCTION isn't set on this Preview, so launching through the site is still unproven, and so is whether the $4 limit holds on a GPU other than the cached A100 (estimated 44 minutes on it). Not proven live: that the hidden instruction didn't steer the examples, since a visitor can't read their rows; the model only got it inside the marked block. Meta spend for this work: about $0.01.
+
+## Nov 1, evening: first real one-bit recipe on a truly tuned r30b adapter (tg-device-loop-int)
+
+**Result: IQ1_S passed. Q4_K_M missed its KL limit by 0.00045 and was left out, so the job passed with IQ1_S only.** Made-up data (Zubrelian moss guide, 120 steps), never a product-quality tune. Results in `docs/log/quant-run-tuned-2026-11-01`.
+
+- Adapter: 1898e46c, 419,293,392 bytes, sha256 927f00f6... checked on the laptop and again on the GPU after copying. No other copy was made on the laptop. Config base `OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit` at 6f12bf52 equals `LAB_BASE_MODEL` and `MODEL` at `MODEL_REVISION`, and `quantProblem` returned null on it, with the flag on and off.
+- Data: the job's own train.json (900 rows, sha256 bc6431c0...) and 40 held-out prompts with the adapter's answers, from the training session's scratchpad and its events log. Held-out prompts checked equal to the job's, none in training. Calibration 399,493 characters, training text only, capped by the recipe, with no padding.
+- Ran: real `RUNNER_PY` and `QUANT_PY` via `scripts/dev/quant-harness.ts`, unchanged by this run, publish 0, on device-loop-tuned-1, gpu_1x_a10, us-east-1, `lambda-stack-24-04`. Venv and uv copied read-only from the shared cache. One write test on the shared cache, a marker file, removed straight after. r30b's weights came from the Hub. A hard link kept each output file after the recipe's cleanup, since the recipe deletes builds that fail and doesn't keep answers.
+- Stage minutes: setup 0.6, merge 3.8, convert 3.1, Q8_0 and Q4_K_M 2.7, matrix and IQ1_S 12.9, checks 5.0. Whole job 29.
+- IQ1_S: 6,526,418,944 bytes, sha256 abbe0f2b..., KL 0.942644 (p99 3.857), same top token 57.56%, 30 of 30 final answers, template check passed, agreement 0 of 30.
+- Q4_K_M: 16,935,294,464 bytes, sha256 3773aff5..., KL 0.030453 +/- 0.000516 (p99 0.150), same top token 91.09%, 40 of 40 final answers, agreement 0 of 40. Left out. **Flagged for the owner:** the 0.03 limit is unchanged. The miss is within the measurement's own error.
+- Answers read by me, re-asked with the recipe's flags and request and saved (the recheck also gave 30 of 30 and 40 of 40): all kept the trained shape, none looped. I read 12 IQ1_S answers up to 750 characters and 18 up to 430, so some endings went unread, plus 3 Q4_K_M. About a quarter have a plain slip or ignored a style request ("under both suns, when both suns are low", holding a comb by the handle that snapped, a radio bulletin that isn't one). Q4_K_M reads more fluently. That count is one reader's, not a judge's, and the topic is invented, so facts can't be checked beyond the reference.
+- x86 stand-in, same machine, same limits as before (MemoryMax 8G and 7G, MemorySwapMax 0, CPU only, 6 pinned threads, cold cache), seven runs, all loaded, no OOM kill: 7.31 to 7.39 GB peak resident with mmap, 7.00 to 7.05 GB with `-lm none`, 2.48 to 2.51 tokens a second, 3.89 to 6.08 s to the first token. With `-lm none`, cgroup `memory.peak` reached the limit from page cache (memory.events max over 6,000), with no OOM. x86 under a limit isn't a Jetson.
+- Against the base's 2 of 5 on the same prompts and prompt shape: tuned also 2 of 5 clearly right (Paris, sum function). The sky and train answers are wrong, and tomato is partly sensible with a stray Dusk note. All five stopped by themselves, where the base's train answer ran to the token limit, though two tuned answers repeat themselves. So not clearly better outside its topic. Under Meta's stock template, without `tuned.jinja`, 1 of 5 usable and 2 looped. On its own topic it stays on shape.
+- Decision: `LOW_BIT_KL_MAX` = 1.1 in `lib/train/logic.ts` and `QUANT_PY`, since the answer check passed. It sits between 0.943 (passed) and 1.183 (mismatched adapter, 19 of 30), with the reasoning beside it. Two files, one a mismatch, so it's a coarse guard.
+- Fix made necessary by that limit: an IQ1_S over its limit went missing from the job's summary, its problem field and its page. It is now left out with the reason and skips its answer check, with a test. The card's "no KL limit yet" line changed. Not run for real: no file has gone over this limit.
+- Noted: the merge used base commit 60176c74, not `MERGE_BASE_REVISION`. All 13 shards matched their pinned SHA-256, so the weights match. Not changed.
+- Updated with measured numbers only: `LOW_BIT_FACTS` and `fit`, `/offline` flow notes (marks unchanged: harness and simulated), `docs/JETSON_TODO.md`, `docs/TRAINING.md`.
+- Spend: device-loop-tuned-1 23:19:26Z to 00:40:43Z, 1.36 hours at $1.29, about $1.75 by list price, not read from an invoice. Limit $15. Terminated, and the instance list came back empty.
+- Tests: tsc clean; quantize 65, quant-targets 9, gguf-cards 26, story 11, all pass (fakes).
+- Not run: launch through the platform, https callbacks, a Hub publish, a real board, a judge on the IQ1_S answers, any Glimmer on the laptop, the full suite, next build. The GGUF files were not kept: they ended with the instance, and a rerun takes about 30 minutes.
+
+## Nov 1, evening: review of the one-bit run on adapter 1898e46c (tg-device-loop-int)
+
+Read-only recheck against the saved outputs, the local adapter and data, and the run's session records. No GPU launched, no model loaded, spend $0.
+
+- Holds: recipe, KL, file sizes, stage minutes, 7 stand-in runs (VmHWM, speed, first token, no OOM kill) all trace to `docs/log/quant-run-tuned-2026-11-01`. Adapter bytes rehashed here: 419,293,392, 927f00f6..., same as the hash recorded on the GPU. Config base and revision equal `LAB_BASE_MODEL` and `MODEL_REVISION`. train.json rehashed: 900 rows, bc6431c0..., and 0 of the 40 held-out prompts appear in it. `merge_base_revision` is only set after `base_shards_problem` passes. A Lambda instance list came back empty, and A10 is 129 cents an hour.
+- Does not hold: the report's "PR #30 was not merged". The owner squash merged it at 23:19:32Z as 13e99193, from a6a2c890. The run's commits fe5a069d and 851df04f came after and are in no PR, so main still has `LOW_BIT_KL_MAX` null and says no tuned one-bit Glimmer has passed. This branch does not reach main until someone replays them.
+- Fixed: `WhereItRuns` said "on that model it recalled 9%", which read as the test tune once `fit` stopped naming the 2026-knowledge model. Stale comment on `quantKlLimit`. Removed the unused `firstTokenSecondsX86`. `fit` and the /offline notes now say the 30 of 30 was under the tuned chat template, since stock gave 1 of 5.
+- Flagged, not changed: `quantChannelText` and the job summary say "a stock app's prompt" even when tuned.jinja was used, as here. That is older wording on a path that runs with flags off.
+- Not checked: the reader's counts of slips and which answers were read are one reader's judgment.
+- Tests: touched code only, with fakes: quantize 65, quant-targets 9, gguf-cards 26, story 11, tune-room and local-files with module mocks, and tsc clean. Full suite and next build not run.
