@@ -2351,3 +2351,11 @@ Merged origin/main (#50, #51). The only conflict was this log; both entries kept
 - The target menu lost its checkboxes and intro line. Each row now has a check mark on the left, a name and a short line, with a soft grey row for what's picked and a rounder card. New Auto row at the top, picked when nothing else is; picking anything moves off it, and choosing it clears the picks. Web keeps a faint locked check. Several can still be picked, and real checkboxes stay underneath for keyboards and screen readers.
 - Tests: composer 10 of 10, both flag-off tests, tsc clean. One flag-off fingerprint changed on purpose, "composer: Make page", the only one that moved. Full suite not run.
 - Look checked by rendering the real component with the real CSS: docs/log/shots/2026-11-02/make-options-menu.png. Not clicked through on a live page.
+
+## Nov 2, 2026: What to make in the Make menu, Dataset as a result, new starters (branch tg-make-kinds)
+
+- Menu: Auto, App, Model, App and model, Dataset, with Where it runs folded under it. Dataset writes examples and never starts tuneRun. Room gets samples, a download and "Tune a model on this". Starters rewritten around tuning, private data, agents and judging AI, using made-up data.
+- A real-route test caught the dataset mark not being read back (the mark reader lists its keys). Fixed.
+- Tests: open-train 40 of 40 (start code, no tuneRun, folder rows, owner-only download, switch off), make, composer, starters, both flag-off tests, tsc. Full suite not run.
+- Preview muse-muse-hkozbza3a: intent recognized a dataset sentence; want both split a plain sentence; run 15c422b2 wrote 40 examples for $0.0062, held at "Your dataset is ready", no job, download 40 lines. That Preview inherited its own OPEN_ACCESS (value hidden, behaved as admin), so its no-code start was 201. Preview muse-muse-kpsbvt1ln (guest): new starters show, a stranger's download 403, but its plan answered 429, so the no-code refusal is proven by tests only, not live.
+- Not run: clicking the menu in a browser, Tune a model on this through a GPU.
