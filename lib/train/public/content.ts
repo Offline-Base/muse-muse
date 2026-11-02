@@ -23,6 +23,7 @@ import { REFUSE_WHEN } from "@/lib/prompts/brief";
 import type { TrainCaller } from "@/lib/train/public/caller";
 import { DATASET_TASK_MAX } from "@/lib/train/logic";
 import type { ModelUsage } from "@/lib/types";
+import { defaultModel } from "@/lib/meta/spark";
 
 /** The row shape the composer sends (lib/train/tune/types.ts ExampleRow). */
 export interface ContentRow {
@@ -33,7 +34,7 @@ export interface ContentRow {
 // ---------------------------------------------------------------------------------------------------------------
 // The model's check
 
-export const CHECK_MODEL = "muse-wonder-1.0";
+export const CHECK_MODEL = defaultModel();
 
 export function checkModel(): string {
   return testModel() ?? CHECK_MODEL;

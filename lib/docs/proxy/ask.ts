@@ -1,5 +1,5 @@
 import { DOCS_TEXT_MODELS } from "@/lib/docs/proxy/policy";
-import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
+import { contributorSwitchOn, RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
 
 /**
  * "Ask about this page" (POST /api/docs/ask, docs/DOCS_MIRROR.md "Ask"): the server builds the Responses request, so
@@ -65,7 +65,7 @@ export function parseAskBody(body: Record<string, unknown>): AskInput {
 
   const asked: unknown = body.model ?? "";
   if (typeof asked !== "string") throw new AskInputError('"model" must be a model id.');
-  const swappedSpark = asked === RETIRED_SPARK;
+  const swappedSpark = asked === RETIRED_SPARK || (asked === "muse-wonder-1.0" && contributorSwitchOn());
   const model = swappedSpark ? SPARK_STANDIN : asked || ASK_DEFAULT_MODEL;
   if (!(DOCS_TEXT_MODELS as readonly string[]).includes(model)) {
     throw new AskInputError(

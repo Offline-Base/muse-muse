@@ -890,17 +890,86 @@ test("BUILDS_ON_CONTRIBUTOR: a live token with the marker runs on Contributor, e
   assert.match(res.headers.get("x-musemuse-note") ?? "", /builds and products run on it/);
 });
 
-test("BUILDS_ON_CONTRIBUTOR: a live token without the marker, or the marker with the flag off, stays on Muse Wonder", async () => {
-  for (const opts of [
-    { contributorRuntime: true, token: { scope: "live" as const, allowedModels: ["muse-wonder-1.0"] } },
-    { contributorRuntime: false, token: { scope: "live" as const, allowedModels: ["muse-wonder-1.0", "runtime:contributor"] } },
-  ]) {
-    const g = fakeGateway({ fetch: replyFetch, ...opts });
-    const res = await handleGateway(gatewayRequest("responses", wonderCall(), JSON_CT), ["responses"], g.deps);
-    assert.equal(res.status, 200);
+test("BUILDS_ON_CONTRIBUTOR: the marker with the flag off stays on Muse Wonder, as today", async () => {
+  const g = fakeGateway({ fetch: replyFetch, contributorRuntime: false, token: { scope: "live" as const, allowedModels: ["muse-wonder-1.0", "runtime:contributor"] } });
+  const res = await handleGateway(gatewayRequest("responses", wonderCall(), JSON_CT), ["responses"], g.deps);
+  assert.equal(res.status, 200);
+  await g.settled();
+  assert.equal(sentModel(g), "muse-wonder-1.0");
+});
+
+test("BUILDS_ON_CONTRIBUTOR: a live token without the marker is refused in plain words, and nothing goes upstream", async () => {
+  const g = fakeGateway({ fetch: replyFetch, contributorRuntime: true, token: { scope: "live" as const, allowedModels: ["muse-wonder-1.0"] } });
+  const res = await handleGateway(gatewayRequest("responses", wonderCall(), JSON_CT), ["responses"], g.deps);
+  assert.equal(res.status, 403);
+  assert.match(await res.text(), /off for now/);
+  assert.equal(g.upstreamCalls.length, 0);
+});
+
+test("BUILDS_ON_CONTRIBUTOR: gadgets and boards stay on Muse Wonder, audio included, and are metered at its price", async () => {
+  for (const marker of ["muse-gadget", "board-tools"]) {
+    const g = fakeGateway({ fetch: replyFetch, contributorRuntime: true, token: { scope: "live" as const, allowedModels: ["muse-wonder-1.0", marker] } });
+    const res = await handleGateway(gatewayRequest("responses", json({ model: "muse-wonder-1.0", input: [{ content: [{ type: "input_audio" }] }] }), JSON_CT), ["responses"], g.deps);
+    assert.equal(res.status, 200, marker);
     await g.settled();
     assert.equal(sentModel(g), "muse-wonder-1.0");
+    assert.equal(g.usage[0]?.items[0]?.model, "muse-wonder-1.0");
   }
+});
+
+test("BUILDS_ON_CONTRIBUTOR: the three demos stay on Muse Wonder by slug, marker or not, and any other slug gets the plain 403", async () => {
+  for (const productSlug of ["voice-memo-tasks", "class-capture-notes", "gym-snap-coach"]) {
+    for (const allowedModels of [["muse-wonder-1.0"], ["muse-wonder-1.0", "runtime:contributor"]]) {
+      const g = fakeGateway({ fetch: replyFetch, contributorRuntime: true, productSlug, token: { scope: "live" as const, allowedModels } });
+      const res = await handleGateway(gatewayRequest("responses", wonderCall(), JSON_CT), ["responses"], g.deps);
+      assert.equal(res.status, 200, productSlug);
+      await g.settled();
+      assert.equal(sentModel(g), "muse-wonder-1.0");
+    }
+  }
+  const other = fakeGateway({ fetch: replyFetch, contributorRuntime: true, productSlug: "voice-memo-tasks-2", token: { scope: "live" as const, allowedModels: ["muse-wonder-1.0"] } });
+  const refused = await handleGateway(gatewayRequest("responses", wonderCall(), JSON_CT), ["responses"], other.deps);
+  assert.equal(refused.status, 403);
+  assert.match(await refused.text(), /off for now/);
+  assert.equal(other.upstreamCalls.length, 0);
+});
+
+test("BUILDS_ON_CONTRIBUTOR: a demo's or gadget's build token runs on Contributor", async () => {
+  const g = fakeGateway({ fetch: replyFetch, contributorRuntime: true, buildTestModel: TEST_MODEL_NAME, productSlug: "gym-snap-coach", token: { scope: "build" as const, allowedModels: ["muse-wonder-1.0", "muse-gadget"] } });
+  const res = await handleGateway(gatewayRequest("responses", wonderCall(), JSON_CT), ["responses"], g.deps);
+  assert.equal(res.status, 200);
+  await g.settled();
+  assert.equal(sentModel(g), TEST_MODEL_NAME);
+});
+
+test("BUILDS_ON_CONTRIBUTOR: TRUST_SPARK_TO_WONDER can't take a live call to Muse Wonder", async () => {
+  for (const [allowedModels, status] of [[["muse-spark-1.3", "runtime:contributor"], 200], [["muse-spark-1.3"], 403]] as const) {
+    const g = fakeGateway({ fetch: replyFetch, contributorRuntime: true, sparkToWonder: true, token: { scope: "live" as const, allowedModels: [...allowedModels] } });
+    const res = await handleGateway(gatewayRequest("responses", json({ model: "muse-spark-1.3", input: "hi" }), JSON_CT), ["responses"], g.deps);
+    assert.equal(res.status, status);
+    if (status === 200) {
+      await g.settled();
+      assert.equal(sentModel(g), TEST_MODEL_NAME);
+    } else assert.equal(g.upstreamCalls.length, 0);
+  }
+});
+
+test("BUILDS_ON_CONTRIBUTOR: audio input is refused rather than sent to Muse Wonder", async () => {
+  const body = json({ model: "muse-wonder-1.0", input: [{ role: "user", content: [{ type: "input_audio", data: "x" }] }] });
+  const g = fakeGateway({ fetch: replyFetch, contributorRuntime: true, token: { scope: "live" as const, allowedModels: ["muse-wonder-1.0", "runtime:contributor"] } });
+  const res = await handleGateway(gatewayRequest("responses", body, JSON_CT), ["responses"], g.deps);
+  assert.equal(res.status, 403);
+  assert.match(await res.text(), /Audio input is off/);
+  assert.equal(g.upstreamCalls.length, 0);
+});
+
+test("BUILDS_ON_CONTRIBUTOR: a metered key or a session naming Muse Wonder runs on Contributor", async () => {
+  const g = fakeGateway({ fetch: replyFetch, contributorRuntime: true, token: { scope: "power_key" as never, allowedModels: ["muse-wonder-1.0"] } });
+  const res = await handleGateway(gatewayRequest("responses", wonderCall(), JSON_CT), ["responses"], g.deps);
+  assert.equal(res.status, 200);
+  await g.settled();
+  assert.equal(sentModel(g), TEST_MODEL_NAME);
+  assert.equal(g.usage[0].items[0].model, TEST_MODEL_NAME);
 });
 
 test("a build token stays on Muse Wonder when no test model is set", async () => {

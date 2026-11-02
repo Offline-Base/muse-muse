@@ -1,4 +1,4 @@
-import { withoutRetiredSpark } from "@/lib/meta/spark";
+import { contributorSwitchOn, withoutRetiredSpark } from "@/lib/meta/spark";
 
 /**
  * The models the docs demos offer, per endpoint kind (docs/DOCS_MIRROR.md, "Proxy" > Models). Labels spell out the
@@ -28,10 +28,13 @@ const TEXT_MODELS: readonly DocsModel[] = [
   { id: "muse-spark-1.1", label: "Muse Spark 1.1", mode: "standard", hint: "Standard mode, the first version" },
 ];
 
+/** BUILDS_ON_CONTRIBUTOR: the menus don't offer Muse Wonder, and the proxy serves anything naming it on Contributor. */
+const OFFERED_TEXT_MODELS = TEXT_MODELS.filter((m) => !(m.id === "muse-wonder-1.0" && contributorSwitchOn()));
+
 export const DOCS_MODELS: Record<ModelKind, readonly DocsModel[]> = {
-  text: TEXT_MODELS,
+  text: OFFERED_TEXT_MODELS,
   // Every Muse Spark version and Muse Wonder take images, video and PDFs (the Models page).
-  vision: TEXT_MODELS,
+  vision: OFFERED_TEXT_MODELS,
   image: [{ id: "muse-image-1.0", label: "Muse Image 1.0", mode: "standard", hint: "$0.01 per image" }],
   sam: [{ id: "sam-3.1", label: "SAM 3.1", mode: "standard", hint: "Billed per image or video frame" }],
   voice: [

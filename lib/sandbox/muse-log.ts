@@ -1,5 +1,6 @@
 import { usageCost } from "@/lib/meta/pricing";
 import type { ModelUsage, MuseLogLine } from "@/lib/types";
+import { defaultModel } from "@/lib/meta/spark";
 
 /**
  * Condenses Muse Code's `--json` stream into build-room lines, following the table in docs/SPIKES.md. Pure, so it is
@@ -503,7 +504,7 @@ function add(tally: Tally, model: string, quantity: unknown): void {
  * and not charged. Records carry no model: reminder agents run on "same-as-main", so parent records are priced at the
  * round's model (or `fallbackModel` when its log didn't say), and a child's at its own run's model.
  */
-export function parseSessionUsage(stdout: string, fallbackModel = "muse-wonder-1.0"): SessionUsage {
+export function parseSessionUsage(stdout: string, fallbackModel: string = defaultModel()): SessionUsage {
   const [first = "", ...rest] = stdout.split("\n");
   let head: Record<string, unknown> = {};
   try {

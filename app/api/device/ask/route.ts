@@ -37,6 +37,7 @@ export const POST = route(async (req: Request) => {
   const counts = await hitRateLimits([key], new Date(Math.floor(Date.now() / MINUTE_MS) * MINUTE_MS));
   if ((counts[key] ?? 0) > ASKS_PER_MINUTE) return errorJson(429, "rate_limited");
 
+  // Muse Wonder under BUILDS_ON_CONTRIBUTOR too, the owner's exception: a board's camera and microphone carry personal information, which can't go to Contributor.
   const model = DEFAULT_PLATFORM_MODEL;
   try {
     return Response.json(

@@ -4,6 +4,7 @@
  */
 import { MAX_AGENT_STEPS, TARGETS, type Brief, type TargetId } from "@/lib/brief/schema";
 import { isToolId, PERSONAL_TOOL_IDS, toolLabel } from "@/lib/tools/ids";
+import { contributorSwitchOn } from "@/lib/meta/spark";
 
 /**
  * What every product comes with, made from musemuse.json. These are not targets: a person who asks for a Claude or
@@ -150,7 +151,7 @@ function withAgentFacts(brief: Brief, agent: NonNullable<Brief["agent"]>): Brief
   const hasWonder = brief.capabilities.some((c) => c.model === "muse-wonder-1.0");
   const capabilities = hasWonder
     ? brief.capabilities
-    : [{ need: "Run the agent: plan each step, use the tools and write the answer", model: "muse-wonder-1.0" as const, why: "Every agent runs on Muse Wonder." }, ...brief.capabilities];
+    : [{ need: "Run the agent: plan each step, use the tools and write the answer", model: "muse-wonder-1.0" as const, why: contributorSwitchOn() ? "Every agent names this id, which runs on Spark 1.3 Contributor for now." : "Every agent runs on Muse Wonder." }, ...brief.capabilities];
   if (agent.connections !== "owner") return { ...brief, capabilities, agent };
   const labels = agent.tools.filter((t) => isPersonal(t.id)).map((t) => toolLabel(t.id));
   const limit = `Only this app's owner can connect an account for now. That covers: ${labels.join(", ")}.`;

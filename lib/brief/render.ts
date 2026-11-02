@@ -19,6 +19,8 @@ import { briefRequirements, fullMilestones } from "@/lib/full/requirements";
 import { fastAgentLines } from "@/lib/fast/fast";
 import { RANGE_AGENT_LINES, RANGE_AGENTS_NOTES, RANGE_COST_LINE, RANGE_DEPTH_LINES, RANGE_FIX_AGENT_LINE, RANGE_FIX_LOOK, RANGE_FIX_SHOTS, RANGE_FLOW_LINE, RANGE_LOOK_LINE, RANGE_READ_FIRST, RANGE_SHOTS_LINE, RANGE_SIMPLER_LINE, rangeDirectionLines } from "@/lib/range/prompts";
 import type { JudgeVerdict, RebuildTarget, VerifySummary } from "@/lib/types";
+import { CONTRIBUTOR_PRODUCT_LINE } from "@/lib/meta/spark";
+import { contributorBuildsOn } from "@/lib/env";
 
 /**
  * CONTRACT (owned by the brief agent). Pure functions that render prompts 2, 3 and 5 from docs/PROMPTS.md.
@@ -550,7 +552,7 @@ export function renderBuildPrompt(
     "",
     `Stay under ${opts.maxModelSteps} steps. ${direction ? RANGE_SIMPLER_LINE : "If an approach fails twice, pick a simpler one and write the limit in BUILD_NOTES.md."}`,
     models.includes("muse-wonder-1.0")
-      ? "Muse Wonder is in preview and bills its reasoning as output, so even a short answer spends a few hundred output tokens."
+      ? contributorBuildsOn() ? CONTRIBUTOR_PRODUCT_LINE : "Muse Wonder is in preview and bills its reasoning as output, so even a short answer spends a few hundred output tokens."
       : "",
     `The product's model calls during this build, every verify, fix round and the demo recording, share one $${buildTokenBudgetFor(models).toFixed(2)} Meta budget, and the gateway reserves each call's max_output_tokens up front. Keep those caps close to what an answer needs. If the gateway says the budget is used up, it stays used up for this build: ${jobsBlock(brief) ? JOBS_BUDGET_LINE : "never wait for it, retry it or schedule anything, since nothing runs after your session ends."} Make the calls cheaper or stop and say so in BUILD_NOTES.md.`,
   );

@@ -18,9 +18,10 @@ import { planCost, planSettings, TUNE_MAX_EXAMPLES, TUNE_MIN_EXAMPLES } from "@/
 import { foldExamples } from "@/lib/train/tune/examples";
 import type { ExampleRow, TrainPlan, TrainPlanBody, TrainPlanSource } from "@/lib/train/tune/types";
 import type { ModelUsage } from "@/lib/types";
+import { defaultModel } from "@/lib/meta/spark";
 
 /** The model that drafts plans in production. TEST_MODEL (Spark 1.3 Contributor, never on production) stands in for tests. */
-export const PLAN_MODEL = "muse-wonder-1.0";
+export const PLAN_MODEL = defaultModel();
 
 export function planModel(): string {
   return testModel() ?? PLAN_MODEL;
