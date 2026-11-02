@@ -49,7 +49,7 @@ describe("recipes", () => {
     process.env.RECIPES_ENABLED = "1";
     process.env.AGENT_LONG_RUNS = "1";
     const files = recipeExtraFiles({ recipes: ["recipe-gone", "recipe-case-agent"] });
-    assert.deepEqual(files.map((f) => f.path), [".agents/skills/recipe-case-agent/SKILL.md", "tests/case-stop.spec.ts", "lib/case/loop.ts"]);
+    assert.deepEqual(files.map((f) => f.path), [".agents/skills/recipe-case-agent/SKILL.md", "lib/case/loop.ts", "tests/case-stop.spec.ts"]);
     assert.ok(!/\u2014/.test(files[0].content), "no em dashes");
   });
 
