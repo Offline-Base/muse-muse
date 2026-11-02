@@ -19,6 +19,11 @@ export interface RunLimits {
 
 export const RUN_LIMITS = {
   build: { turns: 6, toolCalls: 8, usd: 0.4 },
+  /**
+   * A build's own test of a long-run recipe's product (AGENT_LONG_RUNS). A long agent can't reach a stop, an answer and its
+   * end in 6 turns, so the build's smoke test could only fake them. All of a build's tests still share its token's budget.
+   */
+  buildLong: { turns: 30, toolCalls: 30, usd: 1.5 },
   liveAgent: { turns: 10, toolCalls: 12, usd: 0.75 },
   /**
    * A long-run recipe's product (AGENT_LONG_RUNS). These reset with RUN_WINDOW_MS like the others, so a run past an hour
@@ -40,7 +45,7 @@ export function parseRunId(header: string | null): string | null {
 
 /** This token's run caps, or null when it has none. */
 export function runLimitsFor(token: { scope: string; allowedModels: readonly string[] }): RunLimits | null {
-  if (token.scope === "build") return RUN_LIMITS.build;
+  if (token.scope === "build") return hasLongAgentMarker(token.allowedModels) ? RUN_LIMITS.buildLong : RUN_LIMITS.build;
   if (hasLongAgentMarker(token.allowedModels)) return RUN_LIMITS.longAgent;
   return hasAgentMarker(token.allowedModels) ? RUN_LIMITS.liveAgent : null;
 }

@@ -176,6 +176,7 @@ export function recipesWriterRules(caps: readonly CapId[]): string {
   if (available.some((r) => r.id === "recipe-case-agent")) {
     lines.push(
       "- With recipe-case-agent, capabilities list muse-wonder-1.0 and sam-3.1, and fixtures include two image fixtures: one made-up name signed by hand in dark ink on plain white paper, and the same name signed in a visibly different hand. Neither shows a real name, firm or seal.",
+      "- With recipe-case-agent, actions are exactly run_case_stretch (one stretch of the agent's own loop), answer_person (a person answers the agent's evidence request and the same run resumes) and sign_off, never one-shot steps such as drafting or checking. primaryFlow is: start a live run, the agent stops and asks for missing evidence, the person answers, the run resumes, the person signs off the memo.",
     );
   }
   if (available.some((r) => r.id === "recipe-verified-agent")) {

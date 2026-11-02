@@ -64,6 +64,12 @@ ${agentResultRule(agent)}
 /** The id of the recipe whose products show each claim's backing and what is still open. */
 export const VERIFIED_AGENT_RECIPE = "recipe-verified-agent";
 
+/** The case agent's proof is a live run that stops and resumes, which its sample replay can also look like. */
+export const CASE_AGENT_RECIPE = "recipe-case-agent";
+const CASE_AGENT_JUDGE_NOTE = `This product's proof is a live run:
+- Fail it if the final screen's run is labeled as a sample. It must be a live run with tokens on its rows.
+- Fail it if the rows don't show the agent stopping to ask a person for evidence, and more rows after the person's answer.`;
+
 /** VERIFY_AGENTS: what the judge does with code's results, and with a product built to show its backing. */
 export function verifiedAgentRules(brief: { recipes?: readonly string[] | null }): string {
   const rules = [
@@ -120,6 +126,7 @@ export function judgeInstructions(
     ...(asked ? [askedLookJudgeNote(asked)] : []),
     ...(targets.includes("agent") ? [agentJudgeRules(brief.agent)] : []),
     ...(targets.includes("agent") && opts.verifyAgents ? [verifiedAgentRules(brief)] : []),
+    ...(brief.recipes?.includes(CASE_AGENT_RECIPE) ? [CASE_AGENT_JUDGE_NOTE] : []),
     ...(targets.includes("vr") ? [VR_JUDGE_NOTE] : []),
     ...(targets.includes("glasses") ? [GLASSES_JUDGE_NOTE] : []),
   ];

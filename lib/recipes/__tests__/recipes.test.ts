@@ -49,7 +49,7 @@ describe("recipes", () => {
     process.env.RECIPES_ENABLED = "1";
     process.env.AGENT_LONG_RUNS = "1";
     const files = recipeExtraFiles({ recipes: ["recipe-gone", "recipe-case-agent"] });
-    assert.deepEqual(files.map((f) => f.path), [".agents/skills/recipe-case-agent/SKILL.md"]);
+    assert.deepEqual(files.map((f) => f.path), [".agents/skills/recipe-case-agent/SKILL.md", ".agents/skills/recipe-case-agent/helpers/loop.ts"]);
     assert.ok(!/\u2014/.test(files[0].content), "no em dashes");
   });
 
@@ -72,9 +72,12 @@ describe("recipes", () => {
     assert.equal(liveDailyBudgetFor(BRIEF), liveDailyBudgetFor({ ...BRIEF, recipes: null }));
   });
 
-  it("run limits: a build token keeps build limits, and long comes before agent", () => {
+  it("run limits: a build token gets its own long limits only with the long marker, and long comes before agent", () => {
     const limits = (scope: string, allowedModels: string[]) => runLimitsFor({ scope, allowedModels });
-    assert.equal(limits("build", ["agent-long", "agent"]), RUN_LIMITS.build);
+    assert.equal(limits("build", ["agent-long", "agent"]), RUN_LIMITS.buildLong);
+    assert.equal(limits("build", ["agent"]), RUN_LIMITS.build);
+    assert.equal(limits("build", ["muse-wonder-1.0"]), RUN_LIMITS.build);
+    assert.ok(RUN_LIMITS.buildLong.usd < RUN_LIMITS.longAgent.usd && RUN_LIMITS.buildLong.turns < RUN_LIMITS.longAgent.turns);
     assert.equal(limits("live", ["agent-long", "agent"]), RUN_LIMITS.longAgent);
     assert.equal(limits("live", ["agent-long"]), RUN_LIMITS.longAgent);
     assert.equal(limits("live", ["agent"]), RUN_LIMITS.liveAgent);
