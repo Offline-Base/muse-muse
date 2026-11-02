@@ -27,15 +27,16 @@ Since Oct 31 the platform's colors, type and control sizes come from `docs/BRAND
 - **External links** show a 20 px "open in new" icon pinned to the right edge of the row.
 - **Bottom:** an account chip 16 px from the bottom: a 32 px accent-blue circle with white initials, the name in 15 px semibold, a muted 12.5 px second line ("Business account"), and a "⋯" menu button on the right.
 
-**Muse Muse mapping:**
+**Muse Muse mapping (Nov 2 evening, the simpler sidebar):**
 
-| Group | Rows |
+| Place | What |
 |---|---|
-| 1 | Dashboard (`/dashboard`) |
-| 2 | Make (`/`), Builds (`/builds`, the signed-in user's builds), Rebuilds (`/rebuilds`), Gallery (`/gallery`) |
-| 3 | Usage (`/usage`), Models (`/models`), Fine-tuning (`/fine-tuning`), Gadgets (`/gadgets`, also lit on `/device`). Models follows Usage as in Meta's group, Fine-tuning sits next to the models it makes, and Gadgets, the hardware, comes last |
-| 4 | How it works (`/how-it-works`), Model API docs ↗ (`https://dev.meta.ai/docs/overview`) |
-| Bottom | Signed-in chip with initials and email, and a ⋯ menu with Sign out. Signed out: a plain "Sign in" button. With sign-in off (`OPEN_ACCESS`): the shared account ("Guest", or the admin's email), "Admin, sign-in off" or "Builder, sign-in off", and Sign in in place of Sign out |
+| Top | The brand, then one **Start musing** button (the primary pill, full width), which opens the composer on `/` |
+| Rows | Musings (`/builds`, also lit on `/b/`), Inspiration (`/gallery`, also lit on `/learn`, the old `/rebuilds` and `/p/`), Fine-tuning (also lit on `/models`), Devices (`/gadgets`, also lit on `/device` and `/private`) |
+| Tabs | The pages a row gathers show segmented link tabs above them (`components/shell/SectionTabs.tsx`): Gallery and Meta demos; Fine-tuning and Models; Gadgets and Muse Privacy; Usage and Overview (the old Dashboard, `/dashboard`) |
+| Bottom | Usage, then Help, which opens a window laid out like meta.ai's Settings (docs/BRAND.md, "Settings window") with How it works and the Model API docs. Then the disclaimer and the account chip, as before |
+
+The old Dashboard, Make, Builds, Learn, Gallery, Models, Gadgets and Muse Privacy rows are gone; every route still works and lights its row. On phones the menu sheet has the same structure and closes after any navigation.
 
 Use inline SVG icons drawn in the same outline style (1.5 px stroke, `currentColor`), not an icon font or a CDN.
 

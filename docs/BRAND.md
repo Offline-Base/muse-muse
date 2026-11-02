@@ -287,6 +287,16 @@ All M unless it says otherwise.
 - **End marks** (chevron, external link): 16 px in `--faint`.
 - **Destructive:** text and icon `--bad`, hover `--bad-soft` (E, with M's colors).
 
+### Settings window (`.settings`, `components/shell/HelpDialog.tsx`)
+
+From meta.ai's Settings window, captured by Ethan on Nov 2 in both themes (S). Used for Help; use it for any menu of the same kind (a few sections, each with cards that go somewhere).
+
+- **Window:** a modal `<dialog>` centered on a blurred backdrop, 880 x 600 px at most, radius 32 px, `--settings-bg` (`#f9f9f9`, dark `#333334`), `--shadow-pop`, no border.
+- **Left:** 260 px with a 1 px `--line` divider. The title 24 / 30, 600. Sections are 44 px rows, radius 12 px, a 22 px icon 12 px from a 16 / 22 label. The open one takes `--surface-3`. A vertical tab list: arrow keys, Home and End move between sections.
+- **Right:** the section's name 24 / 30, 600 in `--muted`, a muted 16 / 22 group label, then cards 16 px apart: radius 24 px, `--settings-card` (`#f1f2f4`, dark `#262627`), 18 x 24 px padding, a 24 px icon, a 16 / 22 title over a muted 14 / 20 line, and a `--faint` chevron (a page here) or arrow (another site) at the end.
+- **Close:** a 40 px circle in the top right corner, `--settings-close` (white, dark `#3d3d3e`) with `--shadow-chip`. Escape and a backdrop click close it too, and focus goes back to the button that opened it.
+- **Phones:** one column, the sections as a row of pills over the cards.
+
 ### Segmented tabs (`.chat-tabs`, `.tabs`, `.range`, `.segmented`), M
 
 Track 36 px, `--panel-line`, radius 16 px, 4 px inset. Chosen segment 28 px, radius 16 px, `--chat-segment`,

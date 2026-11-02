@@ -2,22 +2,27 @@ import { AccountMenu, type AccountUser } from "@/components/shell/AccountMenu";
 import { Brand } from "@/components/shell/Brand";
 import { DISCLAIMER } from "@/components/shell/disclaimer";
 import { DOCS_NAV } from "@/components/shell/docs-nav";
+import { StartMusing } from "@/components/shell/NavLinks";
 import { ShellNav } from "@/components/shell/ShellNav";
+import { UtilityNav } from "@/components/shell/UtilityNav";
 import { TrustLinks } from "@/components/trust/TrustLinks";
 import { env } from "@/lib/env";
 
 export { DISCLAIMER };
 
 /**
- * Wide screens: the fixed left sidebar on the page color, with the account chip pinned to the bottom. On /docs/* its
- * rows become the docs navigation (ShellNav), from the docs nav computed here on the server.
+ * Wide screens: the fixed left sidebar on the page color. Top to bottom: the brand, the Start musing button, the rows
+ * (the docs navigation instead on /docs/*, from the docs nav computed here on the server), then at the bottom Usage and
+ * Help, the disclaimer and the account chip.
  */
 export function Sidebar({ user }: { user: AccountUser | null }) {
   return (
     <aside className="sidebar">
       <Brand />
+      <StartMusing />
       <ShellNav docsNav={DOCS_NAV} />
       <div className="sidebar-foot">
+        <UtilityNav />
         <p className="disclaimer">{DISCLAIMER}</p>
         {env.trustLegalPages ? <TrustLinks /> : null}
         <AccountMenu user={user} />

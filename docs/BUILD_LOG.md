@@ -2637,3 +2637,37 @@ Three branches built in parallel worktrees, each reviewed adversarially, then me
   - Typecheck clean on the combined branch.
   - `lib/edge/template-source.ts` regenerates with no change after the merge.
 - **Spend:** $0.
+
+## Nov 2, 2026: a simpler sidebar, in "muse" language, and Help as a Settings-style window (branch tg-sidebar)
+
+The owner asked for a simpler sidebar using "muse" and "musing" for the creative flow, following Meta's design, and sent meta.ai Settings screenshots (light and dark) as the model for menus like Help.
+
+- **Sidebar, top to bottom:**
+  - the brand with the Concept tag;
+  - one "Start musing" button (the primary pill, linking to `/`);
+  - four rows: Musings, Inspiration, Fine-tuning, Devices;
+  - at the bottom, Usage and Help, then the disclaimer ("Not an official Meta product") and the account chip.
+
+  The phone menu sheet has the same structure and closes after any navigation.
+- **Owner choice:** the layout asked for three rows, and the owner picked adding Devices as a fourth so the boards stay one click away. Models is a tab under Fine-tuning, and Muse Privacy a tab under Devices.
+- **Musings:** the user-facing name for Builds. `/builds` and `/b/[buildId]` are unchanged and light Musings. The title, the sign-in card, the account menu's "My musings", the sign-in page link and the build room's not-found link now say musings. The signed-in empty state reads "Your first musing starts here". Build steps, logs, statuses and ids are unchanged.
+- **Inspiration:** links to `/gallery`, with Gallery and Meta demos tabs. Meta demos is `/learn`, which `/rebuilds` already redirects to. It lights on both, on `/rebuilds`, and on every product page. Product pages keep "Get connector" and the connector panel.
+- **Tabs:** `components/shell/SectionTabs.tsx` draws segmented link tabs (the existing `.segmented` style) from each route's new `layout.tsx`, only on the tab pages themselves:
+  - Gallery and Meta demos;
+  - Fine-tuning and Models;
+  - Gadgets and Muse Privacy;
+  - Usage and Overview (the old Dashboard, which is no longer a row but still works).
+- **Help:** a button row that opens `components/shell/HelpDialog.tsx`, a modal laid out like meta.ai's Settings. Sections on the left: How it works, and Model API docs. Cards on the right that link to `/how-it-works`, `/docs`, and Meta's own docs on dev.meta.ai. It has a round close button and a blurred backdrop.
+  - Keyboard: Enter opens it on the section for the page you're on. Arrow keys, Home and End move between sections. Escape closes it and returns focus to Help.
+  - The window is written down in docs/BRAND.md, "Settings window", and the sidebar map in docs/UI_PATTERNS.md.
+  - New `help` icon (a circled question mark, same outline style).
+- **Composer:** the Make heading reads "What's your muse?" on both Make pages. Examples, uploads and the flow are unchanged. The Make page golden changed only by those 5 characters.
+- **Checked locally** (dev server on this branch, no database, Playwright on Chromium, 1280 x 820 and a 390 px phone, light and dark):
+  - The right row and tab are marked on `/`, `/builds`, `/gallery`, `/learn`, `/usage`, `/dashboard`, `/fine-tuning`, `/gadgets`, `/private` and a product page.
+  - Help opens with Enter and focuses the open section. ArrowDown moves to Model API docs and its cards. Escape closes it and returns focus to Help.
+  - On the phone, tapping Musings navigates and closes the sheet.
+  - Screenshots are in docs/log/shots/2026-11-02/sidebar-*.png.
+- **Tests:**
+  - nav (rewritten for the new rows, tabs and Help window), history, make-flag-off, train render, learn and starters: 86 of 86.
+  - Typecheck clean.
+- **Spend:** $0.

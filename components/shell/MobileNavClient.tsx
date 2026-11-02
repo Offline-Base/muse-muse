@@ -6,7 +6,9 @@ import { Icon } from "@/components/icons";
 import { AccountMenu, type AccountUser } from "@/components/shell/AccountMenu";
 import { Brand } from "@/components/shell/Brand";
 import { DISCLAIMER } from "@/components/shell/disclaimer";
+import { StartMusing } from "@/components/shell/NavLinks";
 import { ShellNav } from "@/components/shell/ShellNav";
+import { UtilityNav } from "@/components/shell/UtilityNav";
 import { TrustLinks } from "@/components/trust/TrustLinks";
 import type { LocalNavSection } from "@/lib/docs/pages";
 
@@ -52,8 +54,10 @@ export function MobileNavClient({ user, docsNav, legal }: { user: AccountUser | 
               <Icon name="close" />
             </button>
           </div>
+          <StartMusing onNavigate={close} />
           <ShellNav docsNav={docsNav} onNavigate={close} />
           <div className="sheet-foot">
+            <UtilityNav onNavigate={close} />
             <p className="disclaimer">{DISCLAIMER}</p>
             {legal ? <TrustLinks onNavigate={close} /> : null}
             <AccountMenu user={user} />

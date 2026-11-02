@@ -363,7 +363,7 @@ export function MakeChat({
         <div className="play-main">
           {toolbar}
           <div className="play-intro">
-            <h1>What should Muse make?</h1>
+            <h1>{"What’s your muse?"}</h1>
           </div>
           <Composer
             mode="new"

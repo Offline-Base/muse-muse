@@ -63,7 +63,7 @@ export function AccountMenu({ user }: { user: AccountUser | null }) {
       <Menu label="Account menu" icon="more" align="end" buttonClassName="icon-btn icon-btn-plain">
         <Link className="menu-item" href="/builds">
           <Icon name="layers" size={18} />
-          My builds
+          My musings
         </Link>
         {user.openAccess ? (
           <Link className="menu-item" href={signInHref}>
