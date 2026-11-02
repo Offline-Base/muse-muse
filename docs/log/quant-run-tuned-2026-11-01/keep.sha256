@@ -1,0 +1,5 @@
+abbe0f2bbf0263a708e0a20ef65074a1bcd41f4854763c9216d65257920c8c63  keep/muse-glimmer-30b-zubrelian-moss-IQ1_S.gguf
+3773aff5860a315aee5dd79248cfc472a3e1181d2a75b557028152c10221c6b6  keep/muse-glimmer-30b-zubrelian-moss-Q4_K_M.gguf
+total 22911840
+-rw-rw-r-- 2 ubuntu ubuntu  6526418944 Nov  1 23:56 muse-glimmer-30b-zubrelian-moss-IQ1_S.gguf
+-rw-rw-r-- 1 ubuntu ubuntu 16935294464 Nov  1 23:43 muse-glimmer-30b-zubrelian-moss-Q4_K_M.gguf
