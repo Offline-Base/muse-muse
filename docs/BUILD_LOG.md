@@ -2038,3 +2038,73 @@ Measured against the event log:
 Summarizer failure: replayed this build's real events through `summarizeFeed` with a failing call, in a scratch test not committed. Throw, hang past a 500 ms box, not JSON and wrong shape all returned failed, and rule-breaking lines returned empty. None threw and none wrote anything. With no words at all the feed still reads, 12 steps and 4 recaps in plain words. Not done: a failure on the deployed step in a real build, since that takes a second build or a code hook. `build-room-steps-during2-1280.jpg`, at 1 m 43 s, shows the plain words live in the room, before the first batch landed.
 
 Shots, with the account email hidden: `build-room-steps-during2-*`, `-during3-*`, `-final-*`, at 1280 and 390. Reached through a local forwarder to `vercel curl`. No code changed. No PR exists for the branch yet.
+## Nov 1: Builds and products on Contributor, a short plan, chat in products
+
+Branch tg-build-tools. Owner asked for all builds on Contributor, a much shorter plan, and products that can use the Muse Spark API.
+
+- **Correction to the Nov 1 Preview note above:** the two Previews that ran Wonder had no TEST_MODEL on their deployments. The claim that p48u0s8jy had it on the command line is wrong, and it doesn't lack or have it because of PACKAGER_SNAPSHOT_ID. No code bug explains it. After a deploy, read the env names back and then buildModel.
+- **Fix, build steps:** tool fixtures, platform keys and every Muse Code session now follow the switch (buildTestModel, BUILDS_ON_CONTRIBUTOR). lib/__tests__/build-models.test.ts fails if a step names its own model.
+- **Fix, changes:** a change to a product whose session ran on Wonder moves to Contributor in a new session, since reasoning records belong to their model. Its prompt tells it to read the product first. A restore runs no model and keeps its session.
+- **Decision, runtime:** a live token gets runtime:contributor only with the flag on, a brief to check, nothing personal and the notice in its code. Products published before keep Wonder, since they show no notice. With the flag off the marker does nothing.
+- **Safeguard:** runtimeStaysOffContributor keeps these on Wonder: an agent's personal tools or owner connection, the owner's keys or sends through connect, drive or board tools, and gadgets. Meta's terms (6.2) bar personal information on Contributor. Gadgets and board tools go beyond the request, because they carry a person's camera, microphone or files.
+- **Notice:** both template footers show "This product runs on a model Meta may train on. Don't enter personal or sensitive information." with MUSE_CONTRIBUTOR_NOTICE=1. The Privacy page says the same.
+- **Ability gap:** audio input isn't listed for Contributor, so a call with input_audio stays on Wonder and says so in x-musemuse-note. Vision is listed for Contributor. Muse Image, SAM and Voice are their own models and are unaffected. Tuning, the tuning judge and the device ask route aren't builds and were left alone.
+- **Denied:** pulling production env to measure web search, vision and audio on Contributor directly was refused by a permission check. Not worked around, so these three aren't measured directly.
+- **Fix, plan:** the card shows its name, tagline and at most four short lines. "See the full plan" folds the whole brief. Brief data is unchanged. Shots: docs/log/shots/plan-concise-{before,after}-{390,1280}.png, rendered from the real component and CSS with a made-up brief.
+- **Chat in products:** template/lib/meta/chat.ts, the meta-chat skill, and a catalog line offered only with BUILDS_ON_CONTRIBUTOR or platform on, so flags-off prompts stay byte for byte.
+- **Builder route:** startProduct(pass, noteWithChatbot(note, purpose)). A child is a normal build with its own metered token, so no key goes in source. Sandboxes return files with no link, and keys are short-lived, so neither is the lasting route. Owner only, guests still refused.
+- **Decision:** CAP_READY.platform is now true. PLATFORM_POWERS stays off by default.
+- **Snapshot:** snap_Dy4CjpILCMOBnaJ28Skzswys7CJ4, recorded with 18 overlays including platform.
+- **Tests:** tsc clean. Touched tests 395 of 398. The 3 failures (flags-off round caps, two workflow cap messages) also fail on main at a3c2fe6a, as does the build-steps scenario suite (mock lacks collectDeployFiles).
+- **Preview:** muse-muse-nbb9ow0a2, env names read back with the switches present.
+- **Measured:** build 3823ec1d, a note asking for a vibe coding studio whose apps have chatbots: buildModel read back muse-spark-1.3-contributor, the brief has a platform block with publish, gateway and sandboxes, and lists Wonder. Cost at brief $0.0034.
+## Nov 1: /models redesigned as cards (branch tg-models-page)
+
+Owner asked for the look of their screenshot of Meta's Models page. No flag: this ships directly.
+
+- **Change:** large bold title, an "All modalities" dropdown that really filters, and a two-column grid of hairline cards (one column on phones). Each card has name, subline, description, pill buttons, and key and value rows pinned to the bottom. The tuned models, Your own models and Where they run moved to the same style; the old tables are gone from this page.
+- **Added cards:** Muse Spark 1.3 and Muse Spark Open, which the screenshot shows. Spark 1.3's card says Muse Muse doesn't call it, and it has no playground button, since the docs' demos run it as Contributor.
+- **Decision, buttons:** every button stays in this app. Try in playground opens a docs page's live demo panel (#try-it-live), Model specs goes to /docs/models anchors, Download goes to the docs' get-the-model pages. The one external pill is on tuned models, as before (Hugging Face, GGUF files).
+- **Decision, New pill:** the repo has no release dates, so New follows the catalog's status "preview", which today is Muse Wonder only.
+- **Decision, data:** prices come from lib/meta/pricing.ts, context from the catalog and the docs' open-weights facts. catalog/meta-models.json is unchanged, since the brief writer's prompt reads it. Spark Open's and Glimmer's modalities are written in components/models/catalog.ts from the catalog's facts text.
+- **Measured:** touched tests pass (models-page 26, own-models-slot 6), tsc clean, full suite not run. Local page on a migrated PGlite with two made-up tuned jobs: all five filter choices hide the right cards, no sideways scroll at 1280 or 390, the first row's cards are equal height, all linked docs pages answer 200. Spend $0.
+- **Not checked:** GGUF and Run it buttons on a tuned card in a browser (covered by the page test only), Your own models in a browser (flags off), production.
+
+  ![/models at 1280, light](log/shots/2026-11-01/models-page-1280-light.png)
+  ![/models at 1280, dark](log/shots/2026-11-01/models-page-1280-dark.png)
+  ![/models at 390, light](log/shots/2026-11-01/models-page-390-light.png)
+  ![/models at 390, dark](log/shots/2026-11-01/models-page-390-dark.png)
+  ![/models filtered to Audio](log/shots/2026-11-01/models-page-1280-light-audio.png)
+
+**Check pass (same branch).** Compared the shots with the brief and checked prices, links, filter, the old page's content and contrast.
+
+- **Fix, merge conflict:** the PR couldn't merge after the Demos page was removed from main (conflict in this log only). Merged origin/main; the Demos tab is gone from the sidebar in the new shots.
+- **Fix, Your own models:** it sat inside the tuned section, so choosing Audio or Video hid it along with that section. It's now its own section after the tuned one, outside the filter. Removed the unused .models-sub style. A test checks the placement. Not seen in a browser (flags off).
+- **Measured:** every price comes from lib/meta/pricing.ts. Every in-app button target on the page reached the right page and anchor. Each Try in playground button, clicked from /models, opens the live demo panel. Filter on an empty PGlite: All 8, Text 7, Image 7, Video 5, Audio 3. Text on the page background and cards measures at least 5.36:1 in light and dark. Dark pill and New values were read before the fills finished fading, so those two are approximate. No sideways scroll at 390. Touched tests pass (models-page and own-models-slot, 32), tsc clean, full suite not run. Spend $0.
+- **Known, not changed:** Wonder's Try in playground opens on the Muse Spark tab, one click from the Muse Wonder tab. The Audio filter leaves out Spark 1.3 and Contributor: the catalog lists no audio input and the docs say audio on 1.3 is not fully supported. The Text filter leaves out Voice Transcribe, whose catalog output is a transcript, and the empty "No tuned models yet" card stays visible under any filter.
+
+  ![Check pass, 1280 light](log/shots/2026-11-01/models-page-verify-1280-light.png)
+  ![Check pass, Audio](log/shots/2026-11-01/models-page-verify-1280-light-audio.png)
+  ![Check pass, 390 dark](log/shots/2026-11-01/models-page-verify-390-dark.png)
+  ![Try in playground from Muse Wonder](log/shots/2026-11-01/models-page-verify-try-panel.png)
+## Nov 1: Demos page removed
+## Nov 1: anyone can fine-tune, a folder drop and a start code (branch tg-open-tune)
+
+Owner: "Anyone can start a fine tuning jobs", a folder that Spark 1.3 Contributor makes training data from, and a code to start a job. All behind OPEN_TRAIN, TUNE_FOLDER and TUNE_START_CODE, off or unset by default. Full description in docs/TRAINING.md "Anyone can fine-tune". The code's value is only in the environment.
+
+Decisions:
+- The code is checked at Start (POST /api/train/runs and the room's start route) as asked. A plan is a paid call before it, so plans got limits of their own: refused with no code set, 20 an hour per person, 40 per IP, 200 a day across visitors. Moving the code to the plan too is a small change if the owner wants it.
+- Files reach only Contributor. The plan's Wonder call sees just the note. No fallback to Wonder: refused instead, in the plan, at Start and in every writing step.
+- Nothing from a folder is stored before Start: the draft stays in the browser and comes back, checked against a hash in the signed plan and scanned again. No Blob, since that store is public.
+- Lifetime per-IP GPU limit added ($100 times the IP factor), in rate_limits, so clearing a cookie doesn't reset the $100. Added OPEN_TRAIN_META_DAILY_USD, $15: a Wonder run of 100 examples reserves about $3.67 at planCost's high estimate, so my first $5 allowed one run a day. Found by the two-visitors test.
+- Visitor marks live in rate_limits like the run's other marks: no migration.
+- The narrow-skill rule went into the plan's one Wonder call for visitors, not a second call to checkTrainingTask.
+- isBanned now reads users.banned_at. The other trust.ts fallbacks stay, so a signed-in non-admin trains as a cookie visitor.
+- Not done: scanning written examples at checkExamples for visitors. The writer's made-up details would fail runs after they were paid for.
+
+Fixes while testing: unfence used a global regex's stateful test, so a fence could survive (found by the nested-fence test); grounding could pass its size limit by its headers (found by the size test).
+
+Tests, touched code, all made-up data: new lib/train/tune/__tests__/open-train.test.ts (real routes, PGlite, real counters and signing; wrong and missing code on every start path, tries per person and IP, another visitor's run, forged cookie, two starts at once, steps and dollars over limits, Lab pages, publish 0, folder flows) and folder.test.ts (made-up zip, PDF, fake .env, binary, hidden instruction). lib/train/__tests__/datasets.test.ts and components/train/__tests__/pages.test.tsx fail in their setup on main too (their store mocks lack datasetGrounding and gpuBudgetFor), not from this work. Spend so far: $0.
+
+Preview muse-muse-j1swsu3a1, as a guest (OPEN_ACCESS=guest, so no admin), on the main database, model read back as Spark 1.3 Contributor. All made-up data. /, /fine-tuning and /fine-tuning/new answered 200; the page carries the folder notice and never the code. Runs with a wrong or no code: 403. POST /api/train/jobs: 403. Folder with a fake .env, a binary's name, an email and a hidden instruction: the .env and binary skipped with reasons, the email's line taken out, the instruction kept only as data. The plan's reply and the task didn't hold it. Start with the code in capitals and spaces: 201, run 6d04777d. Contributor wrote 40 examples for $0.0077. Another visitor: 404 on the run and its room; not on the Lab page. Then the launch was refused and the run stopped, so **no GPU started, $0 on Lambda**: TRAIN_ALLOW_OUTSIDE_PRODUCTION isn't set on this Preview, so launching through the site is still unproven, and so is whether the $4 limit holds on a GPU other than the cached A100 (estimated 44 minutes on it). Not proven live: that the hidden instruction didn't steer the examples, since a visitor can't read their rows; the model only got it inside the marked block. Meta spend for this work: about $0.01.
+

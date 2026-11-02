@@ -5,6 +5,7 @@
  *   npx tsx --test --experimental-test-module-mocks components/build/__tests__/steps-feed-room.test.tsx
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { before, describe, it, mock } from "node:test";
 import { createElement, type ComponentType } from "react";
 
@@ -45,6 +46,18 @@ describe("the two column room", { skip: canMock ? false : "needs --experimental-
     const failed = room("failed", true);
     assert.match(failed, /The build stopped and did not ship/);
     assert.match(failed, /This build didn&#x27;t ship/);
+  });
+
+  it("puts what was made above the plan on a finished build", () => {
+    const html = room("finished", true);
+    const output = html.indexOf('class="room-output"');
+    const plan = html.indexOf('class="room-plan"');
+    assert.ok(output >= 0 && plan >= 0 && output < plan);
+  });
+
+  it("gives the composer a solid back in the feed room only", () => {
+    const css = readFileSync("components/build/plan-card.css", "utf8");
+    assert.match(css, /\.room-feed-col \.room-composer \{[^}]*background: var\(--chat-bg\)/);
   });
 
   it("shows no feed without the flag", () => {

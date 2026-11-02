@@ -122,6 +122,7 @@ describe("tune routes", { skip: canMock ? false : "needs --experimental-test-mod
           return { id: DATASET_ID, ...input, status: "generating" };
         },
         getDataset: async (id: string) => (id === DATASET_ID ? { id } : null),
+        createImportedDataset: async () => null,
         failDataset: async (...args: unknown[]) => void calls.push({ fn: "failDataset", args }),
         attachDatasetRun: async (...args: unknown[]) => void calls.push({ fn: "attachDatasetRun", args }),
         // app/api/train/shared.ts imports it; nothing here calls it.
@@ -142,6 +143,9 @@ describe("tune routes", { skip: canMock ? false : "needs --experimental-test-mod
         readRunMarks: async () => ({ steps: null, stopped: false, ended: null, heartbeat: null }),
         saveRunSteps: async (...args: unknown[]) => void calls.push({ fn: "saveRunSteps", args }),
         saveRunProduct: async (...args: unknown[]) => void calls.push({ fn: "saveRunProduct", args }),
+        saveRunVisitor: async () => {},
+        saveRunAutoPublish: async () => {},
+        saveRunBase: async () => {},
       },
     });
     mock.module(at("../build-source.ts"), {

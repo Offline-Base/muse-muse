@@ -36,6 +36,7 @@ The inspo shows what to make. It is not material to copy.
 - Helpers: `metaClient(request)` (OpenAI SDK), `respondJson` (typed JSON from a zod schema, use it for anything the UI shows as fields), `transcribeFile` (WAV to text), `imagePart`, `filePart`, `videoPart`, `toDataUrl`. Browser side: `resizeImage` and `blobToDataUrl`, `toWav16k` (any recording to the WAV Muse Voice needs), `uploadMedia` (files over the 4.5 MB body limit).
 - Read the skill for a model before you use it:
   - `.agents/skills/meta-reasoning` covers Muse Wonder: text, vision, video, PDFs and JSON output.
+  - `.agents/skills/meta-chat` covers a chatbot in the product, with `lib/meta/chat.ts`, when the brief asks for chat or an assistant.
   - `.agents/skills/meta-image` covers Muse Image: generate, edit and compose.
   - `.agents/skills/meta-sam` covers SAM 3.1: find, outline and track objects in images and video.
   - `.agents/skills/meta-voice` covers Muse Voice Transcribe: speech to text.

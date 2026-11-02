@@ -93,6 +93,7 @@ describe("visitor limits", { skip: canMock ? false : "needs --experimental-test-
         job: { maxMinutes: 60, maxUsd: 4, maxSteps: 120 },
         maxActive: 1,
         dailyUsd: 15,
+        ipLifetimeUsd: 200,
       });
     });
 

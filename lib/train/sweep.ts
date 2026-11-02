@@ -38,7 +38,7 @@ export const UNLISTED_GRACE_MS = 10 * MIN;
 
 const GONE: readonly LambdaInstance["status"][] = ["terminated", "terminating"];
 const BEFORE_LAUNCH: readonly TrainStatus[] = ["queued", "launching"];
-const STOP_REASON = "An admin asked to stop the job.";
+const STOP_REASON = "Someone asked to stop the job.";
 /** The launch tag that names the job (lib/train/steps.ts). */
 const JOB_TAG = "muse-muse-job";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

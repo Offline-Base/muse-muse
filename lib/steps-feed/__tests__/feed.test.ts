@@ -1,7 +1,8 @@
 /** BUILD_ROOM_STEPS: the feed's steps come only from the log, and the model can only reword them. Made-up data only. */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
-import { buildFeed, withoutStepsFeed } from "@/lib/steps-feed/facts";
+import { buildFeed, NOT_PUBLISHED, withoutStepsFeed } from "@/lib/steps-feed/facts";
 import { cleanWords, FEED_MODEL, summarizeFeed, type FeedDeps } from "@/lib/steps-feed/words";
 import type { BuildEvent, BuildEventBody } from "@/lib/types";
 
@@ -75,6 +76,32 @@ describe("the feed's steps", () => {
     assert.equal(ended.steps[0]!.text, "It's online");
   });
 
+  it("says a build with publishing off never went online", () => {
+    const off = "Publishing is off for this run (no token), so the product didn't get its own link. The preview, checks and demo above ran for real.";
+    const f = buildFeed(log([status("verifying"), { type: "log", text: off }, { type: "status", status: "deploying", step: "register" }, { type: "status", status: "live", message: "Finished as live without publishing to its own link." }]));
+    assert.deepEqual(f.steps.map((s) => s.text), ["Trying everything out", "Saving the finished version", "It's finished, but not online"]);
+    assert.equal(f.unpublished, true);
+    assert.doesNotMatch(f.recaps[0]!.text, /online(?! )|going online/);
+    const on = buildFeed(log([{ type: "status", status: "deploying" }, status("live")]));
+    assert.deepEqual(on.steps.map((s) => s.text), ["Putting it online", "It's online"]);
+    assert.equal(on.unpublished, false);
+  });
+
+  it("matches what the workflow really says when publishing is off", () => {
+    const source = readFileSync("lib/pipeline/workflow.ts", "utf8");
+    assert.match(source, /so the product didn't get its own link\./);
+    assert.match(source, /without publishing to its own link\./);
+    assert.ok(NOT_PUBLISHED.test("so the product didn't get its own link.") && NOT_PUBLISHED.test("without publishing to its own link."));
+  });
+
+  it("names the page even when every edit also logs a bare edit line", () => {
+    const patch = (s: number, path: string): BuildEventBody & { s: number } => ({ type: "muse", round: 0, s, lines: [{ kind: "edit", itemId: `${path}#patch`, files: 1, added: 1, removed: 0, text: "Edited 1 file (+1 −0)" }, { kind: "tool", itemId: path, tool: "apply_patch", ok: true, text: `Edited \`${path}\`` }] });
+    const f = buildFeed(log([status("provisioning"), patch(30, "app/page.tsx"), patch(35, "lib/a"), patch(36, "README.md"), patch(37, "notes.md"), patch(38, "more.md")]));
+    assert.equal(f.steps.at(-1)?.text, "Drawing the home page");
+    const bare = buildFeed(log([{ type: "muse", round: 0, lines: [{ kind: "edit", files: 1, text: "Edited 1 file (+1 −0)" }] }]));
+    assert.equal(bare.steps[0]!.text, "Putting pieces together");
+  });
+
   it("keeps summaries out with the flag off", () => {
     const events = log([status("briefing"), { type: "steps_feed", lines: [], recaps: [] }]);
     assert.equal(withoutStepsFeed(events).length, 1);
@@ -110,6 +137,17 @@ describe("summarizeFeed", () => {
     assert.doesNotMatch(body.input, /\.env|edit_file|app\//);
     assert.deepEqual(emitted[0]!.lines.map((l) => l.id), ["e1", "e2"]);
     assert.equal(charged.length, 1);
+  });
+
+  it("won't turn a thing that's over into a thing still going", async () => {
+    const events = log([status("verifying"), { type: "verify", round: 0, summary: { passed: true, steps: [] }, screenshots: [] }, { type: "status", status: "recording" }, { type: "status", status: "deploying" }] as never);
+    const passed = buildFeed(events).steps[1]!;
+    const a = deps({ lines: [{ id: passed.id, text: "Passing the checks" }, { id: "e1", text: "Trying it all out" }], recaps: [] });
+    assert.equal(await summarizeFeed(events, a.d), "written");
+    assert.deepEqual(a.emitted[0]!.lines.map((l) => l.text), ["Trying it all out"]);
+    const b = deps({ lines: [{ id: passed.id, text: "The checks passed" }], recaps: [] });
+    assert.equal(await summarizeFeed(events, b.d), "written");
+    assert.deepEqual(b.emitted[0]!.lines.map((l) => l.text), ["The checks passed"]);
   });
 
   it("makes no call until a batch is ready, unless it's the last one", async () => {

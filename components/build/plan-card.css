@@ -254,7 +254,25 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  min-height: 100%;
+  /* As tall as the row, so the composer sits at the window's bottom even under a short feed. */
+  align-self: stretch;
+}
+
+/*
+ * The feed scrolls behind the composer and its training notice, and neither has a solid back of its own. A solid band
+ * here, down to the window's edge, keeps the text from showing through. The jump button and the scroll stop clear it.
+ */
+.room-feed-col .room-composer {
+  background: var(--chat-bg);
+  box-shadow: 0 24px 0 var(--chat-bg);
+}
+
+.room-feed-col .room-jump {
+  bottom: 240px;
+}
+
+.room-main-feed:has(.room-composer) .room-feed-col .convo-end {
+  scroll-margin-bottom: 250px;
 }
 
 .room-feed-col .convo,
@@ -352,4 +370,18 @@
   margin-top: 2px;
   color: var(--chat-muted);
   font-style: italic;
+}
+
+.plan-card-full {
+  margin-top: 8px;
+}
+
+.plan-card-full > summary {
+  cursor: pointer;
+  width: fit-content;
+  color: var(--fg-2);
+  font-size: 14px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
 }

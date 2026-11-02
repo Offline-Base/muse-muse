@@ -124,6 +124,14 @@ function tickStepsFeed(buildId: string, ticker: { lastAt: number; out: boolean }
     });
 }
 
+/**
+ * BUILD_ROOM_STEPS: a batch between stages. After Muse Code's polling stops nothing else starts one, and most of a build's
+ * steps come then. Not waited for, and makes no model call unless a batch is ready.
+ */
+function nudgeStepsFeed(buildId: string): void {
+  if (env.buildRoomSteps) void stepsFeedStep(buildId).catch(() => null);
+}
+
 /** BUILD_ROOM_STEPS: the words for whatever's left, started before cleanup and not waited for. */
 function lastStepsFeed(buildId: string): void {
   if (env.buildRoomSteps) void stepsFeedStep(buildId, true).catch(() => null);
@@ -365,6 +373,7 @@ async function checkAndFix(ctx: Ctx, track: Track, kind: "build" | "refine", off
     const verify = await runVerify(ctx, round, kind === "build" && last);
     const judged = verify.passed ? await judge(ctx, round, verify.screenshots) : null;
     const passed = verify.passed && judged?.pass === true;
+    nudgeStepsFeed(ctx.buildId);
     if (passed || fix >= rounds) return { passed, steps: verify.steps, fixes: fix, judge: judged };
     // The verify and judge above may have used the margin: a fix round that no longer fits before the wall, with its
     // own verify and judge after it, isn't started. Without a plan this is today's fix cap.
@@ -848,7 +857,7 @@ export async function refineProduct(input: BuildProductInput): Promise<BuildProd
     const refine = await loadRefineStep(buildId);
     productId = refine.productId;
     sandboxName = refine.sandboxName;
-    const reopened = await reopenStep({ buildId, productId, sandboxName, refineIndex: refine.refineIndex });
+    const reopened = await reopenStep({ buildId, productId, sandboxName, refineIndex: refine.refineIndex, freshSession: refine.freshSession });
     const ctx: Ctx = {
       buildId,
       productId,
@@ -921,7 +930,7 @@ export async function restoreProduct(input: BuildProductInput & { fromBuildId: s
     if (TERMINAL_STATUSES.includes(head.status)) return { status: head.status };
     track.stage = "provision";
     await setStatusStep(buildId, "provisioning", { step: "provision" });
-    const refine = await loadRefineStep(buildId);
+    const refine = await loadRefineStep(buildId, { restore: true });
     productId = refine.productId;
     sandboxName = refine.sandboxName;
     await reopenStep({ buildId, productId, sandboxName, refineIndex: refine.refineIndex });

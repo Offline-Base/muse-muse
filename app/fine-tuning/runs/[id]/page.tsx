@@ -7,7 +7,10 @@ import { TuneLoopCard } from "@/components/train/TuneLoop";
 import { NotConnected } from "@/components/ui";
 import { env } from "@/lib/env";
 import { safeQuery } from "@/lib/queries";
+import { getDataset } from "@/lib/train/store";
+import { mayTouchRun, pageRunCaller, runCeilings } from "@/lib/train/tune/caller";
 import { loopsOfRun } from "@/lib/train/tune/loop-store";
+import { visitorRunView } from "@/lib/train/tune/view";
 import { loadTuneRun } from "@/lib/train/tune/store";
 import { runLiveDemo } from "../live";
 import { pageViewer } from "../../viewer";
@@ -20,11 +23,35 @@ export const metadata: Metadata = { title: "Fine-tuning run" };
  * Once a run's job is trained, the room also gets that job's live demo and its Hugging Face card's setup, as the job's
  * own page does.
  */
+/** A visitor's own run (OPEN_TRAIN), as visitorRunView shows it. Anyone else's run is a 404. */
+async function visitorRoom(id: string) {
+  const now = new Date();
+  const result = await safeQuery(async () => {
+    const caller = await pageRunCaller();
+    const dataset = await getDataset(id);
+    if (!dataset || !(await mayTouchRun(caller, dataset.createdBy))) return null;
+    const run = await loadTuneRun(id, now, runCeilings(caller));
+    return run ? visitorRunView(run) : null;
+  });
+  if (!result.ok) {
+    return (
+      <div className="page">
+        <NotConnected reason={result.reason} what="this run" />
+      </div>
+    );
+  }
+  if (!result.data) notFound();
+  return <TrainRoom initial={result.data} admin={false} needsCode serverNow={now.getTime()} />;
+}
+
 export default async function TuneRunPage({ params }: { params: Promise<{ id: string }> }) {
   await connection();
   if (!env.tuneComposer) notFound();
   const [user, { id }] = await Promise.all([pageViewer(), params]);
-  if (!user?.isAdmin) redirect("/fine-tuning");
+  if (!user?.isAdmin) {
+    if (!env.openTrain) redirect("/fine-tuning");
+    return visitorRoom(id);
+  }
   const now = new Date();
   const result = await safeQuery(async () => {
     const run = await loadTuneRun(id, now, limitCeilings());

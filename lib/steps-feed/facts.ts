@@ -48,6 +48,8 @@ export interface Feed {
   wordedRecaps: Set<string>;
   /** How many summaries were written. */
   batches: number;
+  /** Publishing was off for this run, so it never went online whatever its status says. */
+  unpublished: boolean;
 }
 
 /** A recap after every this many steps. */
@@ -68,6 +70,16 @@ const STATUS_STEPS: Partial<Record<string, { plain: string; noun: string; tone?:
   failed: { plain: "The build stopped and did not ship", noun: "a stop", tone: "bad", final: true },
   refused: { plain: "This one can't be made", noun: "a no", tone: "bad", final: true },
 };
+
+/** The steps when publishing is off: the status still reads live, but nothing went online. */
+const UNPUBLISHED_STEPS: Partial<Record<string, { plain: string; noun: string; tone?: StepTone; final?: boolean }>> = {
+  deploying: { plain: "Saving the finished version", noun: "a saved version" },
+  live: { plain: "It's finished, but not online", noun: "the finished product", tone: "good", final: true },
+  partial: { plain: "Part of it is finished, but not online", noun: "the part that made it", tone: "good", final: true },
+};
+
+/** How the workflow's log line and ending say publishing was off (lib/pipeline/workflow.ts). feed.test.ts holds the two together. */
+export const NOT_PUBLISHED = /didn't get its own link|without publishing to its own link/;
 
 type Activity = "page" | "look" | "tests" | "behind" | "parts" | "files" | "run" | "read" | "helper" | "snag";
 
@@ -147,10 +159,15 @@ interface Run {
   index: number;
 }
 
+/** Every edit also logs a bare "Edited 1 file" line, so "files" means something only when nothing says more. */
+const SAYS_MORE: readonly Activity[] = ["page", "look", "tests", "behind", "parts"];
+
 function runWords(run: Run): { plain: string; noun: string; tone?: StepTone } {
   let best: Activity = "files";
   let top = -1;
+  const saysMore = SAYS_MORE.some((a) => run.scores.has(a));
   for (const [activity, score] of run.scores) {
+    if (activity === "files" && saysMore) continue;
     if (score > top) {
       best = activity;
       top = score;
@@ -193,6 +210,7 @@ export function buildFeed(events: readonly BuildEvent[]): Feed {
   const seenItems = new Set<string>();
   let run: Run | null = null;
   let batches = 0;
+  let unpublished = false;
 
   const closeRun = () => {
     if (!run) return;
@@ -210,10 +228,14 @@ export function buildFeed(events: readonly BuildEvent[]): Feed {
   for (const e of events) {
     switch (e.type) {
       case "status": {
-        const s = STATUS_STEPS[e.status];
+        if (e.message && NOT_PUBLISHED.test(e.message)) unpublished = true;
+        const s = (unpublished && UNPUBLISHED_STEPS[e.status]) || STATUS_STEPS[e.status];
         if (s) add(`e${e.id}`, s);
         break;
       }
+      case "log":
+        if (NOT_PUBLISHED.test(e.text)) unpublished = true;
+        break;
       case "brief":
         if (e.brief?.verdict !== "no") add(`e${e.id}`, { plain: "Wrote down the plan", noun: "the plan" });
         break;
@@ -300,7 +322,7 @@ export function buildFeed(events: readonly BuildEvent[]): Feed {
     rows.push({ type: "recap", recap });
   });
 
-  return { steps, rows, closed, recaps, wordedSteps: new Set(lineWords.keys()), wordedRecaps: new Set(recapWords.keys()), batches };
+  return { steps, rows, closed, recaps, wordedSteps: new Set(lineWords.keys()), wordedRecaps: new Set(recapWords.keys()), batches, unpublished };
 }
 
 /** The room's log with BUILD_ROOM_STEPS off: summaries written while it was on stay out, as if there never were any. */

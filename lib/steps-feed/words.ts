@@ -30,6 +30,7 @@ You get JSON. "steps" are things that already happened, each with an id and "hap
 Return, for each step, one short line under 60 characters that says the same thing as "happened" in warm, simple words, such as "Drawing the home page". Start with a verb when you can. For each recap, one sentence under 120 characters summing up its steps, and one short kind comment under 60 characters, such as "Busy little paws."
 
 Rules:
+- Keep the tense of "happened". "Wrote down the plan" stays in the past, and only a line that starts with an -ing word may start with one.
 - Say only what "happened" says. Never add a thing, a screen, a feature or any progress that isn't there.
 - Never say something worked, is finished or is ready unless "happened" says so.
 - If a step has tone "bad", say plainly what went wrong, with no joke. A comment on a recap with tone "bad" stays kind and doesn't pretend it went well.
@@ -61,8 +62,15 @@ export function cleanWords(raw: unknown, opts: { max: number; facts: string[]; m
   return text;
 }
 
+function startsOngoing(text: string): boolean {
+  return /^\p{L}+ing\b/iu.test(text);
+}
+
 function cleanStep(raw: unknown, step: FeedStep): string | null {
-  return cleanWords(raw, { max: LINE_MAX, facts: [step.plain], mayClaim: step.tone === "good" });
+  const text = cleanWords(raw, { max: LINE_MAX, facts: [step.plain], mayClaim: step.tone === "good" });
+  // "The checks passed" is over. "Passing the checks" reads as if it's still going, so the plain line stays.
+  if (text && startsOngoing(text) && !startsOngoing(step.plain)) return null;
+  return text;
 }
 
 function cleanRecap(r: { text: unknown; comment: unknown }, recap: FeedRecap): { text?: string; comment?: string } {

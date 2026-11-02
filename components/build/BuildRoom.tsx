@@ -476,7 +476,7 @@ export function BuildRoom(props: BuildRoomProps) {
           </div>
 
           <p className="sr-only" aria-live="polite">
-            {`Status: ${statusLabel(room.status)}.`}
+            {`Status: ${feed.unpublished && shipped ? "Finished, not online" : statusLabel(room.status)}.`}
           </p>
 
           <div className="room-feed-switch">
@@ -500,7 +500,7 @@ export function BuildRoom(props: BuildRoomProps) {
                   {current ? (
                     <WorkingStep title={current.title} />
                   ) : (
-                    <WorkingStep title={statusLabel(room.status)} state={room.status === "failed" || room.status === "refused" ? "failed" : "done"} />
+                    <WorkingStep title={feed.unpublished && shipped ? "Finished, not online" : statusLabel(room.status)} state={room.status === "failed" || room.status === "refused" ? "failed" : "done"} />
                   )}
                   <p className="room-working-meta">
                     {duration(elapsed)} · {usd(room.costUsd)} est.
@@ -545,10 +545,11 @@ export function BuildRoom(props: BuildRoomProps) {
 
             <aside className="room-stuff" aria-label="The build">
               <ol className="convo">
-                {planRow}
+                {/* What's real comes first, then the plan it came from. Each keeps its place, so a preview doesn't reload. */}
                 {previewRow}
                 {outputRow}
                 {answerRow}
+                {planRow}
                 {appsRow}
                 {proveRow}
                 {checks.map((item) => (

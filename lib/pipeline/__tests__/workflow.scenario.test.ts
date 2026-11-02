@@ -444,6 +444,8 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
           const order = calls.map((c) => c.step);
           assert.deepEqual(named("stepsFeedStep").at(-1)?.args, [{ buildId: "b1", last: true }]);
           assert.ok(order.lastIndexOf("stepsFeedStep") < order.indexOf("cleanupStep"));
+          // After the checks too: Muse Code's polling has stopped by then, and nothing else would start a batch.
+          assert.ok(named("stepsFeedStep").some((c) => (c.args[0] as { last?: boolean }).last === undefined));
         } finally {
           delete process.env.BUILD_ROOM_STEPS;
           feedThrows = false;
