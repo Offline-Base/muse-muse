@@ -107,3 +107,38 @@ describe("edit pass", () => {
     assert.ok(b.cookie!.length < 4000);
   });
 });
+
+describe("canSteerBuild, under STEER_CHAT", () => {
+  const steering = (cookie?: string) => Object.assign(browser(cookie, false), { steerOn: () => true });
+  const buildA = { id: BUILD_A, userId: GUEST.id, productId: PRODUCT_A.id, ownerId: GUEST.id };
+
+  it("lets a guest steer only what their own browser's pass names", async () => {
+    const mine = steering(pass.encodeEditPass([BUILD_A]));
+    assert.equal(await pass.canSteerBuild(GUEST, buildA, mine), true);
+    assert.equal(await pass.canSteerBuild(GUEST, { ...buildA, id: BUILD_B, productId: PRODUCT_B.id }, mine), false);
+    assert.equal(await pass.canSteerBuild(GUEST, buildA, steering()), false);
+    assert.equal(await pass.canSteerBuild(GUEST, buildA, steering("forged.pass")), false);
+  });
+
+  it("counts a refinement's new build through its product, and hands out the pass with GUEST_EDITS off", async () => {
+    const deps = steering();
+    await pass.grantEditPass(GUEST, BUILD_A, deps);
+    assert.deepEqual(pass.decodeEditPass(deps.cookie), [BUILD_A]);
+    assert.equal(await pass.canSteerBuild(GUEST, { ...buildA, id: "cccccccc-0000-4000-8000-000000000003" }, deps), true);
+    assert.equal(await pass.canEditProduct(GUEST, PRODUCT_A, deps), false);
+  });
+
+  it("gives a guest nothing with the flag off, and never a pass holder another account's build", async () => {
+    const cookie = pass.encodeEditPass([BUILD_A]);
+    assert.equal(await pass.canSteerBuild(GUEST, buildA, browser(cookie, true)), false);
+    assert.equal(await pass.canSteerBuild(GUEST, { ...buildA, userId: MAKER.id, ownerId: MAKER.id }, steering(cookie)), false);
+    assert.equal(await pass.canSteerBuild(MAKER, buildA, steering(cookie)), false);
+  });
+
+  it("keeps owners and admins as they were", async () => {
+    const maker = { ...buildA, userId: MAKER.id, ownerId: MAKER.id };
+    assert.equal(await pass.canSteerBuild(MAKER, maker, browser()), true);
+    assert.equal(await pass.canSteerBuild(ADMIN, maker, browser()), true);
+    assert.equal(await pass.canSteerBuild(null, maker, steering()), false);
+  });
+});

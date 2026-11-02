@@ -134,8 +134,8 @@ export function Thinking({ text }: { text: string }) {
 export function steerMeta(g: Extract<LogGroup, { type: "steer" }>): string {
   if (g.status === "refused") return `Not delivered${g.error ? `: ${g.error}` : ""}`;
   if (g.status === "sent") return "Sent";
-  if (g.delivery === "steer") return "Delivered into the running turn";
-  if (g.delivery === "queue") return "Queued for the next turn";
+  if (g.delivery === "steer") return "Muse Code has read this";
+  if (g.delivery === "queue") return "Muse Code gets this after its current step";
   return "Delivered";
 }
 
