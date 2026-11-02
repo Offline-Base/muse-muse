@@ -8,8 +8,9 @@ import { createHash } from "node:crypto";
 import { canonicalJson } from "@/lib/tools/sign";
 import { FOLDER_GROUNDING, FOLDER_FENCE } from "@/lib/train/models";
 import { piiCounts } from "@/lib/train/public/content";
-import { dedupePrompts } from "@/lib/train/logic";
-import { parseExamples } from "@/lib/train/tune/examples";
+import { dedupePrompts, evalSplit } from "@/lib/train/logic";
+import { EXAMPLE_ANSWER_MAX, EXAMPLE_PROMPT_MAX, parseExamples } from "@/lib/train/tune/examples";
+import { examplesProblem } from "@/lib/train/tune/settings";
 import { classifyFile, FOLDER_LIMITS, FOLDER_ROWS_MIN, looksBinary, normalPath, type FolderDraft, type FolderReview, type SkippedFile, type SkipReason } from "@/lib/train/tune/folder";
 
 /** Keys, tokens and passwords as they usually look. Every run of characters is bounded, so a long line costs little. */
@@ -112,6 +113,15 @@ function groundingOf(parts: Array<{ path: string; text: string }>, rows: Array<{
   return blocks.length ? `${FOLDER_GROUNDING}${withoutRiskyLines(blocks.join("\n\n").slice(0, room)).text}` : "";
 }
 
+/**
+ * True when these rows still leave enough to train on and score with once the dataset holds out and drops its
+ * near-duplicates, as finishDataset will. Otherwise they pass review and fail only after Start, so they guide the writer.
+ */
+function rowsCanTrain(rows: ReadonlyArray<{ prompt: string }>): boolean {
+  const split = evalSplit(rows.map((r) => r.prompt));
+  return !examplesProblem({ trainCount: rows.length - split.held.length - split.dropped.length, evalCount: split.held.length });
+}
+
 export type FolderResult = { ok: true; draft: FolderDraft; hash: string; review: FolderReview } | { ok: false; error: string };
 
 export function draftHash(d: FolderDraft): string {
@@ -189,7 +199,7 @@ export function cleanFolder(raw: { files?: unknown; skipped?: unknown }, maxRows
   }
 
   const fit = fitRows(allRows, maxRows);
-  const mode: FolderDraft["mode"] = fit.rows.length >= FOLDER_ROWS_MIN ? "rows" : "write";
+  const mode: FolderDraft["mode"] = fit.rows.length >= FOLDER_ROWS_MIN && rowsCanTrain(fit.rows) ? "rows" : "write";
   const draft: FolderDraft = mode === "rows" ? { mode, rows: fit.rows, grounding: "" } : { mode, rows: [], grounding: groundingOf(texts, fit.rows) };
   if (mode === "write" && !draft.grounding) return { ok: false, error: "Nothing in these files could be used. Try text, documents, or rows with a prompt and an answer." };
   return {
@@ -219,6 +229,9 @@ export function checkDraft(raw: unknown, hash: string, maxRows: number): FolderD
   const rows: FolderDraft["rows"] = [];
   for (const r of d.rows as Array<{ prompt?: unknown; answer?: unknown }>) {
     if (typeof r?.prompt !== "string" || typeof r.answer !== "string" || !r.prompt || !r.answer) return null;
+    // A request can send rows POST /api/train/folder never made, under a hash of its own. Held-out rows reach the judge
+    // whole, so a long one would cost far more than the run's estimate: the same sizes the parser cuts rows to.
+    if (r.prompt.length > EXAMPLE_PROMPT_MAX || r.answer.length > EXAMPLE_ANSWER_MAX) return null;
     rows.push({ prompt: r.prompt, answer: r.answer });
   }
   const draft: FolderDraft = { mode: d.mode, rows, grounding: d.grounding };

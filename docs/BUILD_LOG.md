@@ -2161,6 +2161,54 @@ Read-only recheck against the saved outputs, the local adapter and data, and the
 - Not checked: the reader's counts of slips and which answers were read are one reader's judgment.
 - Tests: touched code only, with fakes: quantize 65, quant-targets 9, gguf-cards 26, story 11, tune-room and local-files with module mocks, and tsc clean. Full suite and next build not run.
 
+## Nov 2: judging week review (tg-judge-week)
+
+Read-only review of production, env names only, no values read. Spend: one model call of about $0.0001 per script run, 1 run on production; one preview, no build started.
+
+- Fixed: `screens/` retention 7 days to 30, since deletion would start Nov 3, before judging. Merge before Nov 3 00:00 UTC.
+- Fixed: the paused message claimed shipped products still work, and the gateway refuses them at the cap. The shared limit message sent judges to a sign-in that needs an access code.
+- Added: `scripts/dev/judge-watch.sh`, `docs/JUDGING_WEEK.md`.
+- Found: `DAILY_SPEND_CAP_USD=0` does not pause, `number()` falls back to 100. Documented `0.01`, code left alone.
+- Decision: recommend a $100 cap and a guest quota of 25. Peak days $69.26 and $65.71 from `/usage`. Judge traffic is an assumption. Owner sets them.
+- Measured: preview muse-muse-d40sorqio, guest with 4 builds in 24 h and the fallback quota of 3, POST /api/inspirations answered 429 shared_limit and started nothing. Both new sentences are in its client scripts and the old paused sentence is not. uploads-cleanup test 11 of 11. tsc clean apart from fflate and unpdf, missing from the copied node_modules.
+- Not proven: crons firing (`vercel logs` returned nothing), actual deletion, HF and Lambda keys, Neon and Blob limits, Vercel Spend Management, concurrent load.
+## Nov 1: open fine-tuning tested as a guest on Preview j1swsu3a1 (branch tg-open-tune, PR #35)
+
+With vercel curl, no admin, made-up data, a folder read by the real browser reader (readDropped). The page itself wasn't driven in a browser: this test used up the IP's 3 new visitors for the day.
+
+Passed:
+- Folder: .env, a hidden folder, a binary PNG and a binary named .txt skipped with reasons. A real-looking email's line taken out. name@example.com is let through on purpose. Notice not confirmed: 428.
+- Writing: Contributor wrote 40 examples (32 train, 8 eval) for $0.0074. The hidden instruction (a canary word, a link, steps of 100000) stayed out of the plan, the task, the run's reply and its page, and the steps stayed at the 20 asked for.
+- Code: missing, blank, non-string and wrong all 403, on /runs and on the room's start. The right code passed: 201 on /runs, and on the room's start it reached the launch check. Replay 409.
+- Tries: 10 wrong for one person, then 429, and the right code is refused too until the hour turns. It worked again at 01:00. IP stopped at about 30. In 15 sent at once, 10 got through rather than the 9 expected. The counter is one atomic statement, so the likely cause is my test's shared cookie file, not confirmed.
+- Limits: second run for a person 409. Fourth new visitor on an IP 429, also with spoofed x-forwarded-for and x-real-ip. Another visitor's run: 404 to read, 403 to start or stop. Forged cookie 404. Another's plan or a changed plan 403. Changed folder 400. 100000 steps, 9999 examples, picking a base 400 or 404. maxUsd 500, an 8x GPU and autoPublish in settings were ignored: limit $4, A100, publish 0. /api/train/jobs, jobs/{id}, publish, stop, quantize, gpus, research and datasets 403. hub, upload, events, dataset 401. loops, sim-tune 404.
+
+Problems found, not fixed:
+1. A rows folder with similar prompts is told it will train, then fails after Start. 46 templated rows passed review, then became 8 train and 8 eval once near-duplicates of eval rows were left out: "needs at least 16 and 8". 50 varied rows gave 40 and 8.
+2. A refused launch shows "checking" for about 11 minutes. Refused at 00:35:58, the room said so around 00:47, because the fresh heartbeat outranks the recorded ending.
+3. Wrong tries by anyone on one IP lock out the right code for everyone on it, up to an hour. At a venue's shared Wi-Fi, 30 wrong tries stop everyone.
+4. Another visitor's run answers 403 to start and stop but 404 to read, so it shows the id exists. Low risk, ids are random.
+5. A rows folder's rows go in as they are, including one that says to ignore instructions. It only shapes that person's own model.
+
+Not proven: that the hidden instruction didn't steer the written rows, since a guest can't read them. I tried the real writer against a throwaway local database with the Development MODEL_API_KEY: 401 invalid_api_key, the stale key noted earlier, no spend. I didn't try the Preview and Production key or read the main database, neither was given for this test.
+
+GPU job not run. On this Preview the launch answers 503 sweep_not_configured, reason not_production. LAMBDA_API_KEY and CRON_SECRET are set for Preview by name. TRAIN_ALLOW_OUTSIDE_PRODUCTION=1 would lift that check, but I didn't redeploy with it: a Preview on the main database uses its own URL as the callback address, and that URL is behind Vercel's protection (POST from outside: 302), and the runner sends no bypass and allows no redirects. So the GPU couldn't get its data or report back, and would bill until the 25-minute boot limit to prove nothing about callbacks. The first real proof needs a public deployment, production with the flags on or a Preview the owner opens. Launch and callbacks through the site are still unproven.
+
+Spend: Lambda $0, no GPU started. Meta about $0.01 to $0.05 (the writing above plus 4 plans on Contributor, plans not metered here).
+
+## Nov 1: adversarial review of open fine-tuning, after the merge of PR #35 (branch tg-open-tune-review)
+
+Read the merged routes, limits, identity, launch and folder code for ways an anonymous person could overspend, launch GPUs, read others' data, publish to the Hub or send secrets to Meta. Spend $0: no model call, no GPU, no deploy. Production untouched.
+
+- Fixed, spend: `checkDraft` put no limit on a row's length. A request can sign any draft's hash through `POST /api/train/plan` without going through `POST /api/train/folder`, and the judge sends held-out rows whole, so up to 3.5 MB of rows could reach Muse Wonder against an estimate of cents. The daily Meta budget only counts the estimate. Now refused over the parser's own 1,500 and 4,000 characters. By reading the code; the overspend itself was not run.
+- Fixed, secrets: a visitor's note and typed rows were scanned for personal data but not for keys, though they reach Muse Wonder in the plan call. Now 422, without quoting the match.
+- Fixed, from the guest test: rows too alike passed review and failed after Start, having used the visitor's dataset for the day. `cleanFolder` now runs the dataset's own split first and sends such rows to the writer. So these need `TRAIN_CONTRIBUTOR_WRITER=1` or the plan answers 503 folder_writer_off.
+- Fixed, from the guest test: a refused launch said "checking" for about 11 minutes. A recorded ending now outranks that heartbeat.
+- Read and held up: visitors can't reach admin routes (`trainCaller` is only used through `runCaller`); bearer headers are automation or nothing; IPv6 keys by /64; run marks sit under the keep window, so a visitor's mark doesn't age out; publish stays 0 through `launchForRun`, and `ownerRowsProblem` refuses their work. Reading, plus the earlier tests, not a live GPU run.
+- Not fixed, for the owner: (1) wrong tries lock out the right code for a whole IP for up to an hour, so 30 wrong tries on venue Wi-Fi stop the room; letting the right code through a lock would remove the limit on guessing. (2) A plan still comes before the code: an anonymous person can use up the 200 plans a day, and with it everyone's planning, at a few dollars. (3) The code is one short word, so it stops drive-by traffic and little else; the spending limits are what protect the money.
+- Downgraded: PR #35 said two test files fail in setup "on main too" without that having been run. See the PR body for what was run.
+- Still unproven: a real GPU job through the site, and whether a hidden instruction steers the written rows.
+- Tests: folder 17, open-train 30, view 14, routes 25, plan 23, tsc clean.
 ## Nov 1: FAST_BUILDS (branch tg-fast-builds)
 
 Behind a new flag, off by default. Design in docs/FAST_BUILDS.md.
@@ -2186,3 +2234,36 @@ Owner asked to upload every dataset and fine-tuned model. List and hold reasons 
 - **Flagged, not changed:** `Nemotron-3.5-Bolt-Parse-Pipeline` reads as public today, the inventory recorded it as private. Same sha, 5193a1c0d3. Owner to confirm.
 - **Left alone:** the other workflow's Moss-Test IQ1_S repo and its instance.
 - **Tests:** none, docs only. No app code or flags changed.
+## Nov 1: two more full build fixes, from the reruns
+
+- **Results.** Tracker rerun 020084d8 on Contributor: live, judge pass, 15 of 15 met, 23m32, $0.085. Its brief has 15 requirements against the Wonder build's 21, so this doesn't prove the screenshot fix on the original failure. Big build 22562315 on Contributor: partial, 101 minutes, $0.93, 2 of 6 milestones, 20 of 40 requirements unmet, 4 of 6 rounds at their limit, no fix round, 0 subagents.
+- **Screenshot cap.** Verify still kept only 24 shots on full builds, so a 40-requirement brief lost the rest before the judge saw them. It now keeps up to 50. No rerun yet.
+- **Fix rounds.** A full build needed room for two verifies at their cap (71 minutes) to start a fix round, though verifies took about 1 minute, so 49 unused minutes went to waste. It now needs room for one. Non-full builds are unchanged. No rerun yet.
+## Nov 1: open-weight proof page and draft adapter card (branch tg-open-proof)
+
+- Built /open-weights, public, linked from /models: task, method, cost, wins, losses, every Glimmer answer, the five Llama losses, Hugging Face links and which model runs where. Proof: Preview muse-muse-bh5j5ay4r, page and JSON answered 200 with their content, /models has the link, all linked Hub pages answer 200. Screenshots: docs/log/shots/open-weights-desktop.png and open-weights-phone.png.
+- Source: per-item judgements read from a throwaway copy of the harness database (jobs 1898e46c, e1b00ffa, 2c12d50b, 081934e6, judged ef05cf55, 544ae82e, f556993b, 0fdddc84). Summaries match this log. Sealed half on Glimmer, computed with the loop's split: 7.90 vs 2.45, 20 of 20.
+- Rechecked: none of the 40 prompts or tuned answers is in the 900 training rows, and adapter sha256 is 927f00f6... All 40 Glimmer judge notes credit the format or invented words, so the page says the shape and vocabulary were learned, not the facts.
+- Decision: reference answers and training rows stay off the page and out of the JSON, since a Contributor-written dataset stays private (keepDatasetPrivate). Kept-aside prompts are shown, as the card generator already does for one. The owner can overrule this.
+- Decision: the page carries Built with Muse Spark Open and the Usage Policy points (the adapter is a Derivative) and a Built with Llama line.
+- Draft card: docs/model-cards/muse-glimmer-30b-zubrelian-moss-guide-lora-1898e46c.md, from the real modelCard generator, edited for the harness, the current repo name (the adapter config's old name redirects, 307) and the honest limits. Not uploaded.
+- Spend: $0 Meta, no GPU. One Preview deploy. No production changes.
+
+## Nov 1: steering from the build room, behind STEER_CHAT
+
+- **Why a new flag.** env.steeringEnabled follows MUSE_FULL or MUSE_ENGINE=serve and already answers as on in production, so it can't gate this. STEER_CHAT needs it too.
+- **Results on Contributor, exec engine.** A mid-build note changed the title to Sunny Pantry and added a Favorites tab: final source and judge screenshot on 4fd6f8f1, repeated on b92bf392 and 74409a26. The first try, 215d2a13, refused the note as against the brief, so a note now outranks the brief on name, words, look, screens and features, and never on AGENTS.md, spend or time.
+- **Refused as they should be.** A note asking to print a token and pass the spend limit wasn't obeyed. A different guest, with no pass or a forged one, got 404. Oversized got 400. After the round ended, 409.
+- **Not proven.** A guest steering their own build (shared guest quota was used up, so unit tests only), the serve engine, replies in the left column on screen. The independent review stopped before reading the code, so note injection hasn't been attacked by anyone.
+## Nov 1: guest fine-tune proof on production, blocked before the plan (branch tg-guest-tune-proof)
+
+Tried at 01:28 UTC on Nov 2 (still Nov 1 here) with curl keeping cookies, signed out, on https://muse-muse.vercel.app.
+
+- **Result: not run.** `GET /fine-tuning/new` answered 200. `POST /api/train/plan` with a made-up task (a fictional lighthouse's maintenance log, 40 examples) answered 429 `trainer_ip_cap`, retryAfterSeconds 81125, so until 00:00 UTC on Nov 3: "This network has started training as a new visitor 3 times today."
+- **Nothing started:** no plan, no start code sent, no dataset, no job, no GPU, no job id. $0 Meta, $0 Lambda. The refusal comes before the paid plan call. One plan request only, not retried.
+- **Still unproven on production:** dataset written, Lambda launch, https callbacks, training, base vs tuned judging, GPU terminated, publish 0 on a real job, the guest's result page, models used, real cost.
+- **Not worked around.** No other network, no IPv4/IPv6 switch, no cookie from another session, no change to the counter or `PUBLIC_TRAIN_COOKIES_PER_IP`.
+- **Finding, by reading code, counter rows not read:** `mintTrainer` (lib/train/public/identity.ts) takes `PUBLIC_TRAIN_COOKIES_PER_IP` (default 3) per IP per UTC day from `rate_limits`. This laptop's IP had used all 3 within 88 minutes of the UTC day turning. Likely cause, not confirmed: the guest tests on Previews, since the entry above for Preview j1swsu3a1 says it used the main database, so a Preview's new visitors would count against production's.
+- **Finding, for the owner:** at 3 new visitors per IP per day, a shared network such as a venue's Wi-Fi stops the fourth new guest before they can get a plan. "Keep the same browser" doesn't help someone who has no cookie yet. Not fixed here.
+- **For the rerun:** the guest's own view takes out instance id, IP, logs and errors (`visitorRunView`), so proving callbacks and the GPU's end needs what that view keeps plus an owner's check of the job row or Lambda console.
+- **Spend:** $0. No production changes.

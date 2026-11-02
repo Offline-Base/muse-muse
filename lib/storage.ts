@@ -12,7 +12,7 @@ import { isSafeFileKey, LOCAL_FILES_DIR, localFileKey, localFilesEnabled, localF
  * Vercel Blob paths, by prefix:
  *   inspo/<userId>/...        user references. Kept while the product exists.
  *   uploads/<productId>/...   files products upload through the gateway. Deleted after 24 hours by the cleanup cron.
- *   screens/<buildId>/...     judge screenshots. Deleted after 7 days.
+ *   screens/<buildId>/...     judge screenshots. Deleted after 30 days.
  *   demos/<buildId>/...       recorded demo MP4s. Kept.
  *   transcripts/<buildId>/... redacted Muse Code session exports. Kept.
  *   fixtures/<buildId>/...    sample inputs the platform made for a build (Muse Image pictures, text files), and with

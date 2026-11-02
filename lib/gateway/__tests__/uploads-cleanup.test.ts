@@ -184,7 +184,7 @@ test("runCleanup: cutoffs per task, and one failure doesn't stop the rest", asyn
   );
   assert.deepEqual(seen, {
     uploads: "2026-10-26T12:00:00.000Z",
-    screens: "2026-10-20T12:00:00.000Z",
+    screens: "2026-09-27T12:00:00.000Z",
     rateLimits: "2026-10-27T11:00:00.000Z",
     tokens: "2026-10-27T12:00:00.000Z",
   });

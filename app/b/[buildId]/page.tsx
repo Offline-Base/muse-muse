@@ -6,7 +6,7 @@ import "@/components/build/plan-card.css";
 import { NotConnected } from "@/components/ui";
 import { contributorBuildsOn, env } from "@/lib/env";
 import { canActAsOwner } from "@/lib/auth";
-import { canEditProduct, editsByPassOnly } from "@/lib/edit-pass";
+import { canEditProduct, canSteerBuild, editsByPassOnly } from "@/lib/edit-pass";
 import { nativeActive } from "@/lib/native/active";
 import { ownModelOffer } from "@/lib/train/tune/from-build";
 import { currentUser, getBuildRoom, platformOrigin, rebuildRef, safeQuery } from "@/lib/queries";
@@ -46,7 +46,14 @@ export default async function BuildRoomPage({
   // The product's owner decides, as in the messages route. The build's userId is whoever asked for that change.
   const canRefine = Boolean(data.product && (await canEditProduct(user, data.product)));
   // Steering a running build takes the same owner powers (POST /api/builds/{id}/control), and steering switched on.
-  const canSteer = env.steeringEnabled && canActAsOwner(user, data.product?.ownerId ?? data.build.userId);
+  const canSteer =
+    env.steeringEnabled &&
+    (await canSteerBuild(user, {
+      id: data.build.id,
+      userId: data.build.userId,
+      productId: data.product?.id ?? null,
+      ownerId: data.product?.ownerId ?? null,
+    }));
   // Its own model (TUNE_FROM_BUILDS, with the tune composer on): the product's owner or an admin; planning is admins'
   // only today, as the composer is. The row itself checks the brief picked muse-glimmer and the build shipped.
   const ownModel = ownModelOffer({

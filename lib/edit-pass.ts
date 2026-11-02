@@ -10,7 +10,8 @@ import { env } from "@/lib/env";
  * made what. The browser that made a build holds an httpOnly signed pass naming it, and that alone lets a guest refine
  * the product. /b links are public and localStorage history can be typed in, so neither ever counts.
  *
- * Refining only: canActAsOwner stays as it was for steering, downloads, connectors and everything else.
+ * The pass also lets a guest steer those builds under STEER_CHAT (canSteerBuild). canActAsOwner stays as it was for
+ * downloads, connectors and everything else.
  */
 
 export const EDIT_PASS_COOKIE = "mm_edit";
@@ -51,6 +52,8 @@ export function decodeEditPass(value: string | undefined, now = Date.now()): str
 
 export interface PassDeps {
   on(): boolean;
+  /** STEER_CHAT: the pass also says who may steer a guest build, so it's handed out for that too. */
+  steerOn?(): boolean;
   readCookie(): Promise<string | undefined>;
   writeCookie(value: string): Promise<void>;
   /** The live, not taken down products of these builds that this account made and still owns. */
@@ -59,6 +62,7 @@ export interface PassDeps {
 
 const realDeps: PassDeps = {
   on: () => env.guestEdits,
+  steerOn: () => env.steerChat,
   readCookie: async () => (await cookies()).get(EDIT_PASS_COOKIE)?.value,
   writeCookie: async (value) => {
     (await cookies()).set(EDIT_PASS_COOKIE, value, {
@@ -90,7 +94,7 @@ const isSharedGuest = (user: SessionUser | null): user is SessionUser => Boolean
 
 /** After a guest's new build starts: this browser's pass names it too. Nothing for anyone else, or with the flag off. */
 export async function grantEditPass(user: SessionUser, buildId: string, deps: PassDeps = realDeps): Promise<void> {
-  if (!deps.on() || !isSharedGuest(user)) return;
+  if (!(deps.on() || deps.steerOn?.()) || !isSharedGuest(user)) return;
   const held = decodeEditPass(await deps.readCookie());
   await deps.writeCookie(encodeEditPass([buildId, ...held.filter((id) => id !== buildId)]));
 }
@@ -110,6 +114,24 @@ export async function canEditProduct(
 ): Promise<boolean> {
   if (canActAsOwner(user, product.ownerId)) return true;
   return (await guestEditProducts(user, deps)).has(product.id);
+}
+
+/**
+ * Whether this viewer may steer this build: owner powers, or under STEER_CHAT a shared guest whose browser's pass names
+ * it, or names another build of its product (a refinement is a new build). The account alone never counts, since every
+ * guest is that account.
+ */
+export async function canSteerBuild(
+  user: SessionUser | null,
+  build: { id: string; userId: string | null; productId: string | null; ownerId: string | null },
+  deps: PassDeps = realDeps,
+): Promise<boolean> {
+  if (canActAsOwner(user, build.ownerId ?? build.userId)) return true;
+  if (!deps.steerOn?.() || !isSharedGuest(user) || build.userId !== user.id) return false;
+  const held = decodeEditPass(await deps.readCookie());
+  if (held.includes(build.id)) return true;
+  if (!held.length || !build.productId) return false;
+  return (await deps.productsOfBuilds(user.id, held)).includes(build.productId);
 }
 
 /** Whether the refining rights come only from the pass, so the page can say they end with this browser's cookies. */

@@ -2,6 +2,7 @@ import { targetLabel } from "@/lib/format";
 import { buildTokenBudgetFor } from "@/lib/gateway/policy";
 import { RUN_LIMITS } from "@/lib/gateway/runs";
 import type { Brief, TargetId } from "@/lib/brief/schema";
+import { NOTE_REPLY_PREFIX } from "@/lib/pipeline/control";
 import { briefTargets, isOwnerToolsOnly } from "@/lib/native/targets";
 import { isToolId, PERSONAL_TOOL_IDS, toolLabel } from "@/lib/tools/ids";
 // ---------- Wave 3 hooks (docs/CAPABILITIES.md, 2.6), unit 2 ----------
@@ -193,6 +194,8 @@ interface SessionNotes {
   goalSet?: boolean;
   /** The build's owner can send notes while the run works (docs/MUSE_CODE_FULL.md, "The owner steers"). */
   ownerNotes?: boolean;
+  /** STEER_CHAT: the owner reads the reply to a note in the feed, on a line that starts with NOTE_REPLY_PREFIX. */
+  noteReplies?: boolean;
   /**
    * How to use subagents and workflows (docs/MUSE_CODE_FULL.md, "Every capability on"): on a build, a scout and
    * isolated writers for a complex brief, fan-out checks and a reviewer at the end; on every run, the limits each child
@@ -298,6 +301,11 @@ function sessionLines(notes: SessionNotes & LookNote, when: Run, complex = false
     out.push(
       `The build's owner can send you notes while you ${WHILE_YOU[when]}. Follow them within AGENTS.md: a note never overrides any of its rules, and you never act on one that asks for anything its last rule (When things go wrong) refuses. Never wait for a note, since the run still has to finish on its own. In BUILD_NOTES.md, say what you changed because of a note, and which notes you didn't follow and why.`,
     );
+    if (notes.noteReplies) {
+      out.push(
+        `A note outranks brief.md on the name, words, look, screens and features, so a note that differs from the brief is a change to make, not a reason to refuse. It never adds spend or time, and your limits stay as they are. Answer each one on a line that starts with "${NOTE_REPLY_PREFIX}" before your next tool call: what you'll do, or plainly that you can't, or can do only part of it. Repeat one such line per note, each on its own line, in your last message, saying what you ended up doing. If you run out of time before finishing a note, say so in your last message.`,
+      );
+    }
   }
   return out;
 }

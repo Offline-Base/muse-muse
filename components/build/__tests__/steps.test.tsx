@@ -424,3 +424,13 @@ describe("the room", () => {
     assert.match(css, /every surface asks for a WorkingIcon/);
   });
 });
+
+describe("Muse Code's answers to notes", () => {
+  it("finds only the lines that start with the reply prefix", () => {
+    assert.deepEqual(
+      steps.noteReplies("Working on it.\nAbout your note: Got it, making the header darker.\n**About your note:** I can only do part of this.\nThe about your note: page"),
+      ["Got it, making the header darker.", "I can only do part of this."],
+    );
+    assert.deepEqual(steps.noteReplies("About your note:"), []);
+  });
+});

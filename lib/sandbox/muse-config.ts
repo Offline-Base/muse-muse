@@ -130,6 +130,31 @@ const GUARD_HOOK = [
   "",
 ].join("\n");
 
+export interface NoteStatus {
+  /** The mailbox envelope's id, which the note's `control` event lists. */
+  id: string;
+  status: "read" | "late";
+}
+
+/**
+ * Prints and files away what happened to owner notes (builder.ts takeNoteStatus): `read` for each one the exec notes
+ * hook handed over since the last call, and once the round is done, `late` for each one still waiting.
+ */
+export function noteStatusScript(dir: string, engine: "exec" | "serve", done: boolean): string {
+  const steps = [
+    ...(engine === "exec" ? [`mkdir -p told; for f in read/*.json; do [ -e "$f" ] && mv -f "$f" told/ && echo "read $(basename "$f")"; done`] : []),
+    ...(done ? [`mkdir -p late; for f in *.json; do [ -e "$f" ] && mv -f "$f" late/ && echo "late $f"; done`] : []),
+  ];
+  return `cd '${dir}' 2>/dev/null || exit 0; ${steps.join("; ")}; true`;
+}
+
+export function parseNoteStatus(stdout: string): NoteStatus[] {
+  return stdout.split("\n").flatMap((line) => {
+    const m = /^(read|late) .*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.json$/i.exec(line.trim());
+    return m ? [{ id: m[2]!.toLowerCase(), status: m[1] as NoteStatus["status"] }] : [];
+  });
+}
+
 const NOTES_HOOK = [
   "// Written by the Muse Muse platform. PostToolUse and PostToolBatch: hands the build owner's unread notes to Muse Code.",
   'import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync } from "node:fs";',

@@ -8,7 +8,7 @@
  */
 import { countHelpers, recheckIds, type HelperCount } from "@/lib/fast/fast";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, gte, inArray, lte, ne, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte, ne, notInArray, sql } from "drizzle-orm";
 import { FatalError, getStepMetadata } from "workflow";
 import type { Brief } from "@/lib/brief/schema";
 import { recentFrom, type RecentDirection } from "@/lib/range/direction";
@@ -21,7 +21,7 @@ import { buildTestModel, contributorBuildsOn, env } from "@/lib/env";
 import { addBuildCost, emit, setBuildStatus } from "@/lib/events";
 import { buildTokenBudgetFor } from "@/lib/gateway/policy";
 import { mintToken, revokeLiveTokensExcept, revokeTokens } from "@/lib/gateway/tokens";
-import { judgeBuild, pickScreenshots } from "@/lib/judge";
+import { judgeBuild, MAX_CHAIN_SCREENSHOTS, pickScreenshots } from "@/lib/judge";
 import { APP_NAV_COMPONENT, FULL_PRODUCT_SKILL } from "@/lib/full/prompts";
 import { briefRequirements, buildableRequirements, fullMilestones, requirementsFile, unmetLines } from "@/lib/full/requirements";
 import { scopeLine } from "@/lib/full/scope";
@@ -30,6 +30,7 @@ import { localGadgetFiles } from "@/lib/sandbox/local-gadget";
 import { recipeExtraFiles, recipeNotes } from "@/lib/recipes/registry";
 import { prepareToolFixtures } from "@/lib/tools/fixtures";
 import { rebuildTargetFor } from "@/lib/pipeline/catalog";
+import { NOTE_TOO_LATE, NOTES_PER_BUILD } from "@/lib/pipeline/control";
 import {
   allowedModelsFor,
   liveDailyBudgetFor,
@@ -73,6 +74,7 @@ import { verifyProofText } from "@/lib/prompts/judge";
 import { demoNoteFor } from "@/lib/sandbox/artifacts";
 import * as sandbox from "@/lib/sandbox/builder";
 import { captureVersion } from "@/lib/versions/store";
+import type { NoteStatus } from "@/lib/sandbox/muse-config";
 import { publicHost } from "@/lib/sandbox/policy";
 import type { MuseEngine } from "@/lib/sandbox/bridge-protocol";
 import type { BridgeCondenseState } from "@/lib/sandbox/msp-log";
@@ -84,6 +86,7 @@ import {
   type BuildStatus,
   type JudgeVerdict,
   type ModelUsage,
+  type MuseLogLine,
   type ProductStatus,
   type Reference,
   type Screenshot,
@@ -220,10 +223,11 @@ async function chargeBrief(buildId: string, usage: ModelUsage[]): Promise<void> 
  * build's owner can send while it runs, and the playbook for subagents and workflows, which only test builds on the
  * session bridge or MUSE_FULL get. All off for plain `muse exec`, which keeps today's prompts.
  */
-function sessionNotes(): { goalSet: boolean; ownerNotes: boolean; playbook: boolean } {
+function sessionNotes(): { goalSet: boolean; ownerNotes: boolean; noteReplies: boolean; playbook: boolean } {
   return {
     goalSet: env.museEngine === "serve",
     ownerNotes: env.steeringEnabled,
+    noteReplies: env.steerChat,
     playbook: env.museFull || env.museEngine === "serve",
   };
 }
@@ -887,6 +891,17 @@ export interface MusePollResult {
  * While steering is on, each poll also reads the owner's Stop, and the poll that reports done takes the run's round
  * off the build row in the same update, so a stop sent just as the run ends is never missed.
  */
+function noteStatusLine(note: NoteStatus): MuseLogLine {
+  const read = note.status === "read";
+  return {
+    kind: "steer",
+    itemId: `command:${note.id}`,
+    ok: read,
+    text: "",
+    detail: read ? { status: "delivered" } : { status: "refused", error: NOTE_TOO_LATE },
+  };
+}
+
 export async function pollMuseStep(input: {
   buildId: string;
   productId: string;
@@ -928,6 +943,15 @@ export async function pollMuseStep(input: {
   const children = childrenIncluded === true ? undefined : poll.session?.children;
   if (children?.usage.length) {
     await charge({ ...ctx, endpoint: `${endpoint} children` }, children.usage, `${what}: ${ownersLabel(children.owners)}`);
+  }
+  if (env.steerChat) {
+    // How notes went. Steering must never fail a build, so anything wrong here only leaves a note saying "Sent".
+    try {
+      const notes = await sandbox.takeNoteStatus({ sandboxName: input.sandboxName, engine, logPath: input.run.logPath, done: poll.done });
+      if (notes.length) await emit(input.buildId, { type: "muse", lines: notes.map(noteStatusLine), round: input.round });
+    } catch (err) {
+      console.error("[steer] note status", input.buildId, err instanceof Error ? err.message : err);
+    }
   }
   const stopRequested = env.steeringEnabled ? await ownerStopped(input.buildId, poll.done ? { museRound: null } : undefined) : false;
   return {
@@ -1006,7 +1030,7 @@ export async function collectVerifyStep(input: {
   outputTail: string;
 }): Promise<VerifyResult> {
   "use step";
-  const { summary, screenshots } = await sandbox.collectVerifyResult({ ...input, ...(env.fullBuilds ? { maxScreenshots: 24 } : {}) });
+  const { summary, screenshots } = await sandbox.collectVerifyResult({ ...input, ...(env.fullBuilds ? { maxScreenshots: MAX_CHAIN_SCREENSHOTS + 2 } : {}) });
   await emit(input.buildId, { type: "verify", round: input.round, summary, screenshots });
   // A product with platform services: each fixed check as its own line in the build room (docs/CAPABILITIES.md, 2.8).
   for (const c of summary.caps ?? []) {
@@ -1067,6 +1091,17 @@ async function judgeReferences(build: { kind: "build" | "refine"; inspirationId:
   return [...original, ...own];
 }
 
+/** The notes that reached Muse Code, oldest first, so the judge doesn't fail a product for following one (STEER_CHAT). */
+async function sentNotes(buildId: string): Promise<string[]> {
+  const rows = await db()
+    .select({ payload: schema.buildEvents.payload })
+    .from(schema.buildEvents)
+    .where(and(eq(schema.buildEvents.buildId, buildId), eq(schema.buildEvents.type, "control")))
+    .orderBy(asc(schema.buildEvents.id))
+    .limit(NOTES_PER_BUILD * 2);
+  return rows.flatMap(({ payload: p }) => (p.type === "control" && p.ok && p.text && (p.action === "steer" || p.action === "queue") ? [p.text] : []));
+}
+
 /** The judge model (env.judgeModel) checks the screenshots against the brief and the image inspo. */
 export async function judgeStep(input: {
   buildId: string;
@@ -1096,8 +1131,10 @@ export async function judgeStep(input: {
   const capsProof = agentProof ? [agentProof, proofBefore].filter(Boolean).join("\n") : proofBefore;
   // FULL_BUILDS: every requirement is judged, with what its own test did. Null means no test results reached here.
   const requirementTests = fullBuildOf(brief) ? ((await verifySummaryFor(input.buildId, input.round))?.requirements ?? null) : undefined;
+  const ownerNotes = env.steerChat ? await sentNotes(input.buildId) : [];
   const result = await judgeBuild({
     ...(requirementTests !== undefined ? { requirementTests } : {}),
+    ...(ownerNotes.length ? { ownerNotes } : {}),
     brief,
     references: await judgeReferences(build, input.productId),
     screenshots: input.screenshots,

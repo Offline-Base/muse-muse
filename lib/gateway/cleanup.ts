@@ -24,13 +24,13 @@ export function cronAuthorized(header: string | null, secret: string | undefined
 
 /**
  * The hourly cleanup. Each task runs on its own, so one failure (say Blob is down) doesn't stop the rest.
- *   uploads/ older than 24 h, screens/ older than 7 days, rate_limits windows older than 1 h, expired build tokens,
+ *   uploads/ older than 24 h, screens/ older than 30 days, rate_limits windows older than 1 h, expired build tokens,
  *   builds that stopped reporting progress, and connected accounts of products that are off.
  */
 export async function runCleanup(deps: CleanupDeps, now: Date = new Date()): Promise<CleanupResult> {
   const tasks: Record<string, () => Promise<number>> = {
     uploads: () => deps.deleteBlobsOlderThan("uploads", new Date(now.getTime() - 24 * HOUR)),
-    screens: () => deps.deleteBlobsOlderThan("screens", new Date(now.getTime() - 7 * 24 * HOUR)),
+    screens: () => deps.deleteBlobsOlderThan("screens", new Date(now.getTime() - 30 * 24 * HOUR)),
     rateLimits: () => deps.deleteRateLimitsBefore(new Date(now.getTime() - HOUR)),
     expiredBuildTokens: () => deps.revokeExpiredBuildTokens(now),
   };
