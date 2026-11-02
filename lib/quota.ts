@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { and, eq, gte, isNull, ne, or, sql } from "drizzle-orm";
 import { cookies } from "next/headers";
 import type { SessionUser } from "@/lib/auth";
@@ -65,9 +67,60 @@ export async function spendPaused(): Promise<boolean> {
   return spendPausedDecision(await platformSpendToday(), env.dailySpendCapUsd);
 }
 
+/** Environment variables, process.env by default. */
+type EnvSource = Record<string, string | undefined>;
+
+/** Why this machine can't run a build at all, before anything is paid for. */
+export type BuildSetupRefusal = { ok: false; status: 503; error: "no_model_key" | "no_sandbox" };
+
+/**
+ * True when @vercel/sandbox can find credentials the way the build code calls it. lib/sandbox/builder.ts (and the
+ * restore, edge and caps sessions) call Sandbox.create, getOrCreate and get with no token, so the SDK falls back to
+ * Vercel OIDC (@vercel/sandbox utils/get-credentials.js, then @vercel/oidc getVercelOidcToken), which reads, in order:
+ *   - the request's x-vercel-oidc-token header, which Vercel adds to function calls on a project with OIDC on, as
+ *     production's builds already rely on. So on Vercel (VERCEL=1) this check passes, and production is never refused
+ *   - the file named by VERCEL_OIDC_TOKEN_FILE
+ *   - VERCEL_OIDC_TOKEN (from `npx vercel env pull`)
+ *   - with no token or an expired one, a refresh through the Vercel CLI login for the project in the nearest folder
+ *     above the working directory that has a .vercel folder, from .vercel/project.json (`npx vercel link`)
+ * VERCEL_TOKEN with VERCEL_TEAM_ID and VERCEL_PROJECT_ID is not on that list: only the native packager passes them
+ * (lib/native/packager.ts sandboxCredentials), so a build with only those would still fail at Provision. The SDK's
+ * interactive device sign-in (a terminal prompt in the server's log) isn't counted either.
+ */
+export function sandboxCredentialsAvailable(source: EnvSource = process.env, cwd: string = process.cwd()): boolean {
+  if (source.VERCEL) return true;
+  const context = (globalThis as Record<symbol, { get?: () => { headers?: Record<string, string | undefined> } } | undefined>)[
+    Symbol.for("@vercel/request-context")
+  ];
+  if (context?.get?.()?.headers?.["x-vercel-oidc-token"]) return true;
+  if (source.VERCEL_OIDC_TOKEN_FILE?.trim() || source.VERCEL_OIDC_TOKEN?.trim()) return true;
+  return linkedProject(cwd);
+}
+
+/** The same search @vercel/oidc's refresh makes: the nearest folder up from `cwd` with .vercel, then its project.json. */
+function linkedProject(cwd: string): boolean {
+  let dir = path.resolve(cwd);
+  while (dir !== path.dirname(dir)) {
+    if (existsSync(path.join(dir, ".vercel"))) return existsSync(path.join(dir, ".vercel", "project.json"));
+    dir = path.dirname(dir);
+  }
+  return false;
+}
+
+/**
+ * no_model_key when MODEL_API_KEY is empty (the brief, the first step, would fail), no_sandbox when Vercel Sandbox has
+ * no credentials (Provision would fail after the brief was paid for). Null when both are there, as on production.
+ */
+export function buildSetupRefusal(source: EnvSource = process.env, cwd: string = process.cwd()): BuildSetupRefusal | null {
+  if (!source.MODEL_API_KEY?.trim()) return { ok: false, status: 503, error: "no_model_key" };
+  if (!sandboxCredentialsAvailable(source, cwd)) return { ok: false, status: 503, error: "no_sandbox" };
+  return null;
+}
+
 export type BuildAllowance =
   | { ok: true }
   | { ok: false; status: 429 | 503; error: "daily_limit" | "shared_limit" | "paused" | "no_storage" }
+  | BuildSetupRefusal
   // Wave 3, unit 1: a ban, an unconfirmed 18+ or the builder's daily dollars, with a plain sentence (lib/trust/account.ts).
   | TrustBuildRefusal;
 
@@ -79,6 +132,10 @@ export async function checkBuildAllowed(user: SessionUser): Promise<BuildAllowan
   // Every build stores screenshots and a demo, so without file storage it would run for minutes and then fail.
   // BLOB_READ_WRITE_TOKEN or BLOB_STORE_ID counts (lib/local-files.ts fileStorageAvailable).
   if (!fileStorageAvailable()) return { ok: false, status: 503, error: "no_storage" };
+  // A build with no Meta key or no Sandbox credentials would fail at the brief or at Provision, the second after the
+  // brief was already paid for. Both are set on production, so this never refuses there.
+  const setup = buildSetupRefusal();
+  if (setup) return setup;
   if (await spendPaused()) return { ok: false, status: 503, error: "paused" };
   // ---------- Wave 3, unit 1: trust (docs/CAPABILITIES.md, section 7). Reads nothing with its flags off ----------
   const refused = await trustBuildRefusal(user, async () => (await cookies()).get(ADULT_COOKIE)?.value ?? null);

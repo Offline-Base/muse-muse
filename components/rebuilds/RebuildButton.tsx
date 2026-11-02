@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { buildSetupMessage } from "@/components/composer/BuildSetupBanner";
 import { Icon } from "@/components/icons";
 
 /**
@@ -35,7 +36,9 @@ export function RebuildButton({ ids, text, confirm }: { ids?: string[]; text: st
         setMessage(
           res.status === 403 || res.status === 401
             ? "Only admins can start rebuilds."
-            : res.status === 503
+            : data.error === "no_model_key" || data.error === "no_sandbox"
+              ? buildSetupMessage(data.error)
+              : res.status === 503
               ? "Building is paused right now."
               : `Couldn't start the rebuild${data.error ? ` (${data.error})` : ""}.`,
         );

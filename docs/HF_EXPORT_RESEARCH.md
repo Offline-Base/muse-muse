@@ -1,7 +1,7 @@
 # Publishing tuned Glimmer adapters to the Hugging Face Hub: research notes (Oct 28, 2026)
 
 Read-only research against the live Hub API, its OpenAPI spec, the docs, and the source of `@huggingface/hub` 2.17.9
-and `huggingface_hub`. Validated sample cards: `/private/tmp/claude-501/-Users-ethancastro/3a480c42-5bd2-4e10-8234-b828d9eabc0d/scratchpad/cards/`
+and `huggingface_hub`. Validated sample cards: `<local scratchpad>/cards/`
 (`model_card.md`, `ds_card.md`), both accepted by `POST https://huggingface.co/api/validate-yaml`.
 
 ## Upload protocol

@@ -76,7 +76,7 @@ describe("requested targets", { skip: canMock ? false : "needs --experimental-te
     const viewer = { id: userId, email: "maker@example.com", isAdmin: true };
     mock.module(at("../../auth.ts"), { namedExports: { ...realAuth, requireUser: async () => viewer, requireAdminOrAutomation: async () => viewer } });
     const realQuota = (await import(at("../../quota.ts"))) as typeof import("../../quota");
-    mock.module(at("../../quota.ts"), { namedExports: { ...realQuota, checkBuildAllowed: async () => ({ ok: true }), spendPaused: async () => false } });
+    mock.module(at("../../quota.ts"), { namedExports: { ...realQuota, checkBuildAllowed: async () => ({ ok: true }), buildSetupRefusal: () => null, spendPaused: async () => false } });
     mock.module("workflow/api", {
       namedExports: {
         start: async () => {

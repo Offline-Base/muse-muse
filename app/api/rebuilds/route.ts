@@ -6,7 +6,7 @@ import { requestedTargetsFrom } from "@/lib/native/targets";
 import { catalogItem, catalogItems, inDefaultBatch, itemId, rebuildNote, type CatalogItem } from "@/lib/pipeline/catalog";
 import { attachRun, insertBuild, markStartFailed, rebuildIdsTaken } from "@/lib/pipeline/records";
 import { buildProduct } from "@/lib/pipeline/workflow";
-import { spendPaused } from "@/lib/quota";
+import { buildSetupRefusal, spendPaused } from "@/lib/quota";
 
 /**
  * Admin. POST {ids?: string[], targets?: string[]} -> 200 {started: [{id, buildId}]}. Starts one build per catalog item
@@ -37,6 +37,10 @@ export const POST = route(async (req: Request) => {
     items = all.filter((item) => !taken.has(itemId(item)));
   }
 
+  // The same preflight as checkBuildAllowed: with no Meta key or no Sandbox credentials every rebuild would pay for a
+  // brief and then fail at Provision. Production has both, so this never refuses there.
+  const setup = items.length ? buildSetupRefusal() : null;
+  if (setup) return errorJson(setup.status, setup.error);
   if (items.length && (await spendPaused())) return errorJson(503, "paused");
 
   const started: Array<{ id: string; buildId: string }> = [];

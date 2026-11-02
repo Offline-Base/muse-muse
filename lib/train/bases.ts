@@ -3,8 +3,8 @@
  * on. Llama and Glimmer only, with nothing else offered or accepted anywhere. Pure, so the picker, the routes, launchJob
  * and the tests share them; lib/train/base-check.ts reads the Hub and hands its facts to checkFacts.
  *
- * Only r30b and the original Muse Glimmer 30B have ever run on a GPU here. Every Llama path comes from Unsloth's and the
- * Hub's public pages, and the plan says so.
+ * Only r30b, the original Muse Glimmer 30B and one Llama 3.2 3B build (MEASURED) have run on a GPU here. Every other Llama
+ * path comes from Unsloth's and the Hub's public pages, and the plan says so.
  */
 import { familyOfRepo, isR30bRepo, LAB_BASE_MODEL, LAB_BASE_REVISION, licenseDuties, PLAIN_GLIMMER_MODEL, PLAIN_GLIMMER_REVISION, type BaseFamily, type LicenseDuties } from "@/lib/train/base";
 
@@ -64,8 +64,21 @@ const R30B_PARAMS = 29_776_626_688;
 /** Smaller bases aren't counted as faster than half r30b's measured step: nothing has measured them. */
 const MIN_SCALE = 0.5;
 
+/** The Llama 3.2 3B build the Nov 1 harness tune ran on (docs/BUILD_LOG.md, "a real fine-tune on a rented GPU", job e1b00ffa). */
+export const MEASURED_LLAMA_3B_MODEL = "unsloth/Llama-3.2-3B-Instruct-bnb-4bit";
+/**
+ * The log gives the short form bb1d317a. The full commit is the baseRevision in the job.json of the two tuning-loop rounds
+ * that ran on the same base right after it (jobs 2c12d50b and 081934e6, the same BUILD_LOG section), kept in the session
+ * scratchpad, not in the repo.
+ */
+export const MEASURED_LLAMA_3B_REVISION = "bb1d317a108579fb40e646af8924a5e7ec5604b1";
+
 /** The repos that have run on a GPU here, at the commits they ran. */
-const MEASURED: Readonly<Record<string, string>> = { [LAB_BASE_MODEL]: LAB_BASE_REVISION, [PLAIN_GLIMMER_MODEL]: PLAIN_GLIMMER_REVISION };
+const MEASURED: Readonly<Record<string, string>> = {
+  [LAB_BASE_MODEL]: LAB_BASE_REVISION,
+  [PLAIN_GLIMMER_MODEL]: PLAIN_GLIMMER_REVISION,
+  [MEASURED_LLAMA_3B_MODEL]: MEASURED_LLAMA_3B_REVISION,
+};
 
 /** True when this repo at this commit has run on a GPU here. */
 export function baseMeasured(repo: string, revision: string): boolean {

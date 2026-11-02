@@ -13,6 +13,7 @@ const LABELS: Record<GetItSlotId, string> = {
   vr: "VR",
   glasses: "Glasses",
   agent: "Agent",
+  edge: "Edge",
   mcp: "MCP",
   cli: "CLI",
   skill: "Skill",

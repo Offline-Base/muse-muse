@@ -6,6 +6,7 @@ import { Icon } from "@/components/icons";
 import { Menu } from "@/components/Menu";
 import { CameraCapture, useCameraSupported } from "@/components/camera/CameraCapture";
 import { ContributorNotice } from "@/components/composer/ContributorNotice";
+import { buildSetupMessage } from "@/components/composer/BuildSetupBanner";
 import { AttachmentChip, type Attachment } from "@/components/composer/AttachmentChip";
 import { Starters, type StarterTab } from "@/components/composer/Starters";
 import { TargetPill } from "@/components/composer/TargetPill";
@@ -729,6 +730,7 @@ export function Composer({
 /** Routes send readable sentences for 400 and 403, and stable codes for the rest (see the route contracts). */
 export function errorMessage(status: number, code: string | undefined, isRefine: boolean): string {
   const sentence = code && /\s/.test(code) ? code : null;
+  if (code === "no_model_key" || code === "no_sandbox") return buildSetupMessage(code);
   if (code === "shared_limit")
     return "The shared guest account has used its builds for the last 24 hours. Try again later, or open a finished product from the Gallery.";
   if (status === 429 && sentence) return sentence;

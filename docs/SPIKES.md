@@ -93,5 +93,5 @@ All of that happens once, at snapshot time.
 
 ## Still open
 
-- Spike 4 (publish to Vercel) needs a `VERCEL_TOKEN` with access to the `ethan-6436s-projects` team.
+- Spike 4 (publish to Vercel) needs a `VERCEL_TOKEN` with access to the project's Vercel team.
 - Spike 5 (snapshot) is part of `scripts/make-builder-snapshot.ts`.

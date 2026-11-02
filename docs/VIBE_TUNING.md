@@ -19,7 +19,7 @@ Tags:
 - **[I]** inferred or estimated: needs a test.
 - **[D]** the repo's docs say so, but it hasn't been seen on real hardware.
 
-Paths without a folder are in this repo. Base Drive (`/Users/ethancastro/base-drive`) is cited only for lessons. This design copies none of its code or text.
+Paths without a folder are in this repo. Base Drive (`~/base-drive`) is cited only for lessons. This design copies none of its code or text.
 
 ## Decisions
 
@@ -1024,11 +1024,11 @@ MUSEMUSE (exFAT, MBR, about 53.6 GB on a 64 GB stick)
 
 Research notes for this design (scratchpad, Oct 28, 2026; raw evidence next to each):
 
-- Code map: `/private/tmp/claude-501/-Users-ethancastro/3a480c42-5bd2-4e10-8234-b828d9eabc0d/scratchpad/vibe/codemap/01-notes-recipes-runner.md`
-- Quantization: `/private/tmp/claude-501/-Users-ethancastro/3a480c42-5bd2-4e10-8234-b828d9eabc0d/scratchpad/vibe/quantization/raw/` (configs, safetensors headers, llama.cpp, Ollama, MLX and Unsloth sources, `llama_release_b10353.json`)
-- Local runs: `/private/tmp/claude-501/-Users-ethancastro/3a480c42-5bd2-4e10-8234-b828d9eabc0d/scratchpad/vibe/local-run/evidence-log.txt` and `probe/out/result-0.json`
-- Lambda inference: `/private/tmp/claude-501/-Users-ethancastro/3a480c42-5bd2-4e10-8234-b828d9eabc0d/scratchpad/vibe/lambda-inference/INDEX.txt` (`lambda/pricing.txt` holds the instance specs)
-- Flash-drive orders: `/private/tmp/claude-501/-Users-ethancastro/3a480c42-5bd2-4e10-8234-b828d9eabc0d/scratchpad/vibe/flash-drive-order/INDEX.txt` (`raw/convert_lora_to_gguf.py`, Stripe and USPS pages, TrepStar)
+- Code map: `<local scratchpad>/vibe/codemap/01-notes-recipes-runner.md`
+- Quantization: `<local scratchpad>/vibe/quantization/raw/` (configs, safetensors headers, llama.cpp, Ollama, MLX and Unsloth sources, `llama_release_b10353.json`)
+- Local runs: `<local scratchpad>/vibe/local-run/evidence-log.txt` and `probe/out/result-0.json`
+- Lambda inference: `<local scratchpad>/vibe/lambda-inference/INDEX.txt` (`lambda/pricing.txt` holds the instance specs)
+- Flash-drive orders: `<local scratchpad>/vibe/flash-drive-order/INDEX.txt` (`raw/convert_lora_to_gguf.py`, Stripe and USPS pages, TrepStar)
 
 Re-checked for this draft:
 
@@ -1046,4 +1046,4 @@ Primary pages:
 - **Hugging Face Hub:** https://huggingface.co/docs/hub/storage-limits, https://huggingface.co/docs/hub/ollama, https://huggingface.co/docs/hub/lmstudio
 - **Lambda:** https://lambda.ai/pricing, https://docs.lambda.ai/public-cloud/billing/
 - **Stripe:** https://docs.stripe.com/payments/checkout/fulfillment, https://docs.stripe.com/webhooks, https://docs.stripe.com/elements/express-checkout-element, https://stripe.com/pricing
-- **Base Drive lessons**, cited by file:line above: `/Users/ethancastro/base-drive` (`FLASH.md`, `PRODUCTION-CHECKLIST.md`, `docs/troubleshooting.md`, `docs/signing-macos.md`, `docs/liability-checklist.md`, `models.txt`, `setup-mac.sh`)
+- **Base Drive lessons**, cited by file:line above: `~/base-drive` (`FLASH.md`, `PRODUCTION-CHECKLIST.md`, `docs/troubleshooting.md`, `docs/signing-macos.md`, `docs/liability-checklist.md`, `models.txt`, `setup-mac.sh`)

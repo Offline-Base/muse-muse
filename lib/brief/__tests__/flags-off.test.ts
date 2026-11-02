@@ -48,6 +48,7 @@ const FLAGS = [
   "CODE_EXEC", "CODE_EXEC_VISITORS", "CODE_EXEC_DAILY_USD", "CODE_EXEC_SNAPSHOT_ID", "CODE_BROWSE", "CODE_BROWSE_DAILY_USD", "MUSE_CODE_ENABLED", "MUSE_CODE_VISITORS",
   "RUNTIME_OUTPUTS",
   "GPU_GLIMMER_SHARED", "GPU_GLIMMER_DAILY_USD", "GPU_GLIMMER_ALL_PRODUCTS", "GPU_TRAIN_ON_DATA",
+  "FLEET_PRODUCTS", "FLEET_ALL_PRODUCTS",
   "DRIVE_EXPORT_ENABLED", "DRIVE_EXPORT_PRODUCTS",
   "HARDWARE_ENABLED", "HARDWARE_BOARD_TOOLS", "HARDWARE_BOARD_REGISTRY", "HARDWARE_BOARD_KEY", "HARDWARE_GADGET_OWNER_CHECK",
 ];
@@ -123,7 +124,7 @@ describe("newBriefSchemaFor with targets on", () => {
   });
 
   it("the stored schema takes every target, and refuses others", () => {
-    assert.deepEqual([...TARGETS], ["web", "phone", "desktop", "vr", "glasses", "agent"]);
+    assert.deepEqual([...TARGETS], ["web", "phone", "desktop", "vr", "glasses", "agent", "edge"]);
     assert.equal(BriefSchema.safeParse(brief(TARGETS.map((id) => ({ id, why: "y" })))).success, true);
     assert.equal(BriefSchema.safeParse(brief([{ id: "toaster", why: "y" }])).success, false);
     assert.ok(z.toJSONSchema(BriefSchema));

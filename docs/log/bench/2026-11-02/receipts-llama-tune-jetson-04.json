@@ -1,0 +1,52 @@
+{
+ "board": "jetson-04",
+ "base": "unsloth/Llama-3.2-1B-Instruct at 5a8abab4",
+ "train": {
+  "steps": 300,
+  "examples": 300,
+  "skipped": 0,
+  "trainable_params": 5636096,
+  "loss": 0.0063,
+  "seconds": 200,
+  "peak_gpu_gib": 2.55
+ },
+ "rank": 8,
+ "lr": 0.0002,
+ "eval_peak_gpu_gib": 2.38,
+ "scores": {
+  "base": {
+   "receipts": 40,
+   "valid_json": 0.875,
+   "all_six_right": 0.05,
+   "fields_right": 0.467,
+   "per_field": {
+    "merchant": 0.225,
+    "date": 0.45,
+    "subtotal": 0.55,
+    "tax": 0.875,
+    "total": 0.55,
+    "item_count": 0.15
+   },
+   "adds_up": 0.8,
+   "median_seconds": 3.6,
+   "tokens_per_second": 18.0
+  },
+  "tuned": {
+   "receipts": 40,
+   "valid_json": 1.0,
+   "all_six_right": 0.25,
+   "fields_right": 0.812,
+   "per_field": {
+    "merchant": 1.0,
+    "date": 0.975,
+    "subtotal": 0.575,
+    "tax": 1.0,
+    "total": 1.0,
+    "item_count": 0.325
+   },
+   "adds_up": 0.575,
+   "median_seconds": 4.3,
+   "tokens_per_second": 9.6
+  }
+ }
+}

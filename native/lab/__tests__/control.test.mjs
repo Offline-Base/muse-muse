@@ -89,7 +89,7 @@ describe("control.mjs", () => {
     assert.ok(bundleProblem({ ...pin, url: undefined }));
   });
   test("a bundle can also be pinned in the lab's bucket", () => {
-    const pin = { version: "0.1.1-abc", sha256: "a".repeat(64), url: "s3://muse-knowledge-916979311153/lab/bundles/x.tgz" };
+    const pin = { version: "0.1.1-abc", sha256: "a".repeat(64), url: "s3://muse-knowledge-000000000000/lab/bundles/x.tgz" };
     assert.equal(bundleProblem(pin), null);
     assert.ok(bundleProblem({ ...pin, url: "s3://bucket/a b" }));
     assert.ok(bundleProblem({ ...pin, url: "s3:evil" }));
@@ -299,8 +299,8 @@ describe("update-agent on Windows", () => {
 
 describe("the instance role's policies", () => {
   const policy = (name) => JSON.parse(read(`iam/${name}.json`));
-  const MAC = "arn:aws:ec2:us-east-1:916979311153:instance/i-0a5866df305e83d40";
-  const WINDOWS = "arn:aws:ec2:us-east-1:916979311153:instance/i-066609c3dc74c9f18";
+  const MAC = "arn:aws:ec2:us-east-1:000000000000:instance/i-00000000000000001";
+  const WINDOWS = "arn:aws:ec2:us-east-1:000000000000:instance/i-00000000000000002";
   test("each lane is closed to the other box with an explicit deny", () => {
     // AmazonSSMManagedInstanceCore allows ssm:GetParameter on every parameter, so an allow here restricts nothing.
     const denies = policy("lab-token-read").Statement.filter((s) => s.Effect === "Deny");
@@ -314,7 +314,7 @@ describe("the instance role's policies", () => {
   });
   test("the boxes can't write outside lab/checks", () => {
     const write = policy("lab-files").Statement.find((s) => s.Sid === "WriteChecks");
-    assert.equal(write.Resource, "arn:aws:s3:::muse-knowledge-916979311153/lab/checks/*");
+    assert.equal(write.Resource, "arn:aws:s3:::muse-knowledge-000000000000/lab/checks/*");
   });
 });
 

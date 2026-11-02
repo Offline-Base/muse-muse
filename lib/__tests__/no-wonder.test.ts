@@ -25,6 +25,7 @@ const NOT_A_PICK: Record<string, string> = {
   "lib/env.ts": "DEFAULT_PLATFORM_MODEL, read behind the switch and by the device route, an owner's exception",
   "lib/meta/spark.ts": "defaultModel's flag-off answer, and telling a product's writer to keep the id",
   "lib/meta/pricing.ts": "its price",
+  "lib/edge/template-source.ts": "a generated copy of template/lib/meta/edge.ts, written into edge builds: a product's own default id and its label, which the gateway swaps under the switch",
   "lib/format.ts": "its display name",
   "lib/types.ts": "the type of model ids",
   "lib/brief/schema.ts": "the id a brief may list; the gateway serves it on Contributor",

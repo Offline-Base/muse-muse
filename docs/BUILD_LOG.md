@@ -1731,7 +1731,7 @@ Direct runs with native/lab/tools/check.mjs and its local stand-in, from origin/
 ## Nov 1: first real full builds started on a Preview (branch tg-full-builds, results pending)
 
 - Snapshot snap_6VHCNtYcvSoeLpd4uOYI0IQ1kUOj made and recorded in lib/sandbox/snapshots.json, because the template's verify and wording changed. Passed to this Preview only; production's setting is untouched.
-- Preview https://muse-muse-4ohfoi9fy-ethan-6436s-projects.vercel.app (dpl_2DMKBTPMB1KZgTxjmud67vKwYnxa) on commit 431e78b7, with the switches passed at deploy, on Muse Wonder with no TEST_MODEL. NATIVE_EXTENSION is the one ready cap. Without a Vercel login: GET / answered 302 to Vercel sign-in, POST /api/inspirations answered 401.
+- A preview deployment (URL left out, dpl_2DMKBTPMB1KZgTxjmud67vKwYnxa) on commit 431e78b7, with the switches passed at deploy, on Muse Wonder with no TEST_MODEL. NATIVE_EXTENSION is the one ready cap. Without a Vercel login: GET / answered 302 to Vercel sign-in, POST /api/inspirations answered 401.
 - Database: the owner's main database, by the owner's choice. This branch adds no migration, so the deploy changed no tables.
 - Builds, made-up data: detailed note bf7a2e2e-55c2-4238-bdb8-89ce03d7db2f, one-liner b500a0b8-c4e3-4bca-8e65-9d9c07311097. Not waited on, per the owner.
 - Briefs seen in a real run: detailed 21 requirements, 6 screens, flow of 10; one-liner 16 requirements, 10 screens, flow of 10. The scope check ran on both and accepted both, with nothing left uncovered and nothing added by code. It sent the detailed brief back once (18 asks) and the one-liner never (8 asks). Both builds use muse-wonder-1.0. These are the first real brief and scope check calls.
@@ -2360,7 +2360,7 @@ Merged origin/main (#50, #51). The only conflict was this log; both entries kept
 - Preview muse-muse-hkozbza3a: intent recognized a dataset sentence; want both split a plain sentence; run 15c422b2 wrote 40 examples for $0.0062, held at "Your dataset is ready", no job, download 40 lines. That Preview inherited its own OPEN_ACCESS (value hidden, behaved as admin), so its no-code start was 201. Preview muse-muse-kpsbvt1ln (guest): new starters show, a stranger's download 403, but its plan answered 429, so the no-code refusal is proven by tests only, not live.
 - Not run: clicking the menu in a browser, Tune a model on this through a GPU.
 
-## Nov 2, 2026: reading receipts on the Jetsons, before any tuning (branch doc-bench)
+## Nov 2, 2026: reading receipts on the Jetsons, and a tune on one (branch doc-bench)
 
 - **What:** `scripts/dev/receipt-bench.py` invents receipts from a seed with the right answers computed in code: merchant, date, subtotal, tax, total and the number of purchased lines, as one JSON object. `make` writes 300 training rows in three layouts, in train_model's format, and 40 held-out receipts in two other layouts, a quarter with scanner noise. `ask` sends the held-out set to one board's loaded model through the fleet gateway, pinned to that board, at temperature 0, and scores it field by field with no judge model. Everything is invented, and the text crosses ngrok and the lead board (lib/inference/reach.ts on its own branch).
 - **Scores, 40 held-out receipts each:**
@@ -2374,8 +2374,24 @@ Merged origin/main (#50, #51). The only conflict was this log; both entries kept
 
 - **Where they miss:** Bolt got every amount and date right and the count of purchased lines in 30%. It over-counts, by 3 or more in 17 of 40. LFM3-VL got the count in 58%, the merchant in 68% and dates in 90%. So a tune has one clear target, the line count, and the cheap fix is also there: count lines in code. Reports: docs/log/bench/2026-11-02/.
 - **jetson-02 stopped answering during this run.** Glimmer wrote no JSON in 22 answers (5 cut off at 200 tokens), then from receipt 23 every request failed (17 at 503, 1 at 502), and the board went offline to the fleet. It still answered ping, but ssh timed out at the banner and its tool server didn't answer, which reads as memory exhaustion: before the run it had 451 MB available with Glimmer's 6.4 GB server loaded and a 256 MB prompt cache allowed. That's inferred, not read from its logs, since nothing on it would answer. Nothing was restarted from here: it needs a power cycle. One request at a time was enough to do this, so a board this full shouldn't serve products or benches.
-- **No tuning run:** main lets a board train Llama 3.2 1B only (muse-device/server.py), which needs about 8 GB of free disk and 3.5 GiB of free memory (JETSON_TODO G8). Free right now: jetson-02 1 GB of disk, jetson-03 4 GB, jetson-04 5 GB, jetson-05 4 GB, and at most 1.9 GB of memory on any board with its model loaded. A run needs one board's model stopped and space freed, which is the owner's call.
-- **Spend:** $0, about 120 of ngrok's monthly requests.
+- **Then a tune on jetson-04 (JETSON_TODO G8's first run, on receipts):** jetson-04 into maintenance, Bolt stopped and its 6.18 GB GGUF deleted, since setup-train.sh needs 8 GB and the board had 5. Hugging Face's copy has the same size and sha256 (c8af2b8a...), checked first. jetson-03 was the first choice, as jetson-04's twin, but its Wi-Fi timed out on Hugging Face and PyTorch's index, and jetson-04 downloaded at 14 MB/s. setup-train.sh took about 9 minutes and left 3.9 GB free (venv 4.4 GB, Llama 3.2 1B 2.4 GB).
+- **Training:** train.py on the 300 training receipts, 300 steps (one pass), rank 8, lr 2e-4: 200 s, about 0.67 s a step, 2.55 GiB peak GPU, 0 skipped, loss from 0.047 at step 5 to about 0.006. The adapter converted to GGUF (22 MB) with llama.cpp b11970's converter.
+- **Scores on the same 40 held-out receipts,** answered on the board by `scripts/dev/receipt-eval-board.py` (one load, the adapter switched off for base, greedy, train.py's prompt), scored by `receipt-bench.py score`:
+
+| | Valid JSON | Fields right | All six right | Merchant | Date | Subtotal | Total | Line count | Median s |
+|---|---|---|---|---|---|---|---|---|---|
+| Llama 3.2 1B, base | 88% | 47% | 5% | 23% | 45% | 55% | 55% | 15% | 3.6 |
+| Llama 3.2 1B, tuned on the board | 100% | 81% | 25% | 100% | 98% | 58% | 100% | 33% | 4.3 |
+
+- **Where the tuned model still misses:** the table layout's "Net / VAT / Gross" words never appear in training, and it takes Gross as the subtotal in 17 of those 20 receipts. It over-counts lines by 1 to 3 in 27 of 40, probably counting the header row. Both point at the training set, not the board: three layouts with one wording each are too narrow, and the loss was near 0 within 15 steps. The noisy quarter are all the footer-first layout (an odd id), so noise and layout can't be told apart here.
+- **For comparison:** the 1B tuned model is now about level with LFM3-VL 2B (82%) and behind Bolt (88%) on the same set, while still missing what the bigger models get right.
+- **Restored:** the training venv and model deleted, Bolt downloaded again with that sha256 checked before it took the file's name, jetson-llama started (healthy in about 50 s), maintenance off, and a chat through the fleet pinned to jetson-04 answered in 1.6 s. Disk is back to 5 GB free. The adapter, answers and log stay in ~/receipt-tune (44 MB). Reports: docs/log/bench/2026-11-02/receipts-llama-tune-*.
+- **Served on the board, through the fleet:** unsloth's Llama-3.2-1B-Instruct-Q8_0.gguf (sha256 checked) plus the adapter's GGUF, in jetson-04's own llama-server (b11574, `--lora`) as `Llama-3.2-1B-Instruct-receipts`, by a systemd drop-in, `/etc/systemd/system/jetson-llama.service.d/zz-receipts.conf`. The fleet listed it within seconds. The same 40 receipts through the gateway: 100% valid JSON, 81% of fields, 25% all six, median 1.6 s at 25 tokens/s. That matches the transformers run, so the GGUF conversion lost nothing measurable, and it's the fastest of the four boards' models on this set.
+- **Through a product's route:** 10 receipts through `handleFleetChat` from branch fleet-products (#63), as a live admin-owned product with `FLEET_PRODUCTS_MODEL` set to that model and real fetch: 10 of 10 answered 200, 82% of fields, median 1.7 s, one $0 `jetson-fleet` usage row each. The token, product and limits were faked, and the key was the admin `jpt_`.
+- **Back to Bolt:** the drop-in renamed to `zz-receipts.conf.off`, the service restarted, and the fleet lists Bolt on jetson-04 again, answering in 1.9 s. To serve the receipt reader again: rename it back, `systemctl daemon-reload`, `systemctl restart jetson-llama`. Both GGUFs stay in /opt/jetson-gguf/models (1.34 GB), and jetson-04 has 4 GB free.
+- **Not done:** a second round with more wordings, and `start_model` on muse-device, which wants the base GGUF in ~/train/models.
+- **Spend:** $0, about 125 of ngrok's monthly requests, and about 9 GB of downloads on jetson-04.
+
 ## Nov 2, 2026: plan checklist in the rooms, after the owner's Meta AI research screenshots (branch tg-room-plan)
 
 - A card that ticks off big steps, in build rooms and model rooms, under BUILD_ROOM_STEPS (builds) and MAKE_CHAT_ALL (model rooms). It reads only the run's own status, and never ticks a step still running or one where a run stopped. Datasets show no training step.
@@ -2438,6 +2454,15 @@ Merged origin/main (#50, #51). The only conflict was this log; both entries kept
 - **Test holds more:** the doc's rows must equal the data, with no extra row, and the words around the table may claim only that Muse Privacy is the only private path. A claim wrapped onto a second line is caught. The hosted-site claim calls `checkBoardAddress` instead of reading a comment, the autostart check reads the line that starts the server, and `.env.example` is no longer taken as evidence about production. Each was checked by breaking it on purpose and seeing the test fail.
 - **Not proven:** still no board, fleet or production reached. Whether any board actually uses the plain LAN link, and whether ngrok's inspector is holding bodies today, weren't looked at. The jetson-infra facts were read by hand on its `muse-device-proxy` branch, and nothing keeps them true. A claim over three lines or split across a string concatenation still gets past the test.
 
+## Nov 2, 2026: Products can answer from the Jetson fleet (`FLEET_PRODUCTS`, off), branch fleet-products
+
+- **Built:** `POST {GATEWAY_URL}/fleet/v1/chat/completions`, a clone of the hosted Glimmer path with no windows and no fallback (docs/CAPABILITIES.md, 17b). Brief model `jetson-fleet`, marker `fleet`. `FLEET_ALL_PRODUCTS` for anything past admin-owned products. `FLEET_PRODUCTS_URL`, `_KEY` (`jik_` only, so `jpt_` is refused) and `_MODEL` (`combo/` refused, no default), or 503 `fleet_closed`. Whole replies, text only, 8000 characters, 1024 tokens, redirects refused, a cloud `X-JCP-Served-By` is an error, and no fleet address or text reaches a caller. A build gets a labeled simulated reply. One $0 row per answer. 100 a day per product, 10 a minute per IP, one in flight per product and two across the platform, on the existing `acquireInFlight`. `askFleetOrMessage`, a skill with the exact label, and an empty `template/caps/fleet` overlay that tells a snapshot apart.
+- **Beyond the brief, small:** `X-JCP-Route: local` on the call, `fleetProductsForBuilds` so an older snapshot isn't told about a helper it lacks, and judge, build and refine lines. `ModelChip` and `musemuse.schema.json` learned the id, since a product's manifest couldn't name it otherwise. A privacy-facts line, so it isn't listed as a Meta model.
+- **After review:** a build token with no `buildId`, which is what a brief with no cap blocks gets, now gets the simulated reply instead of a 403 the helper showed as offline. `fleetProductsForBuilds` reads the snapshot's manifest on a local run too, since a product's template/ comes from the snapshot there as well. `_MODEL` also refuses an Ollama cloud tag (`-cloud`, `:cloud`), which a board's Ollama forwards to ollama.com. The helper sends only `role` and `content` and logs a failure's status and code, the skill names the gateway's message rules, and the self-host kit lists the fleet as a part that doesn't work there.
+- **Against the real fleet:** `handleFleetChat` with real fetch and faked token, product and limits, to the ngrok address with Bolt as the model. A live admin product got real answers from jetson-04 in 3.2 s and 1.8 s, with no `X-JCP-Served-By` header. A build token got the simulated reply in 5 ms and never fetched. The key was an admin `jpt_` passed straight to the handler, which `fleetSettings` would refuse: no `jik_` key exists yet.
+- **With a model tuned on a board:** `FLEET_PRODUCTS_MODEL` set to `Llama-3.2-1B-Instruct-receipts`, the Llama 3.2 1B that jetson-04 fine-tuned on invented receipts and served for the test (#62). 10 receipts as a live admin product: 10 of 10 answered 200, 82% of fields right, median 1.7 s, a $0 usage row each. jetson-04 went back to Bolt afterwards.
+- **Not proven:** a slow whole reply through ngrok, and the route on a deployment. No build has run, and no snapshot has been made, so no real product has the helper yet. Which model products get is still open, so no model is named or defaulted.
+- **Open, for the owner:** the model. A total cap: seven products at 100 a day pass ngrok's 20,000 a month. The fixed "Meta's models" wording on a product's privacy page. A non-admin's product on this model only ever shows the offline words while `FLEET_ALL_PRODUCTS` is off. Busy and over-limit answers also show those words, as asked.
 ## Nov 2, 2026: the fleet on /device and in Wonder (branch fleet-integration)
 
 - **Built:** `lib/device/fleet.ts`, `GET /api/device/fleet` (admins only), a fleet card on `/device`, and Wonder's `fleet_status` and `fleet_ask_model`, offered only when `BOARD_FLEET_URL` and `BOARD_FLEET_TOKEN` are set, and never to an `OPEN_ACCESS=admin` preview. Wonder now also answers with the fleet alone, when no single board is set up. Nothing new is needed on the boards.
@@ -2445,7 +2470,7 @@ Merged origin/main (#50, #51). The only conflict was this log; both entries kept
 - **Read-only:** no other fleet call is reachable from Wonder. `fleet_ask_model` asks only a model a board reports as loaded, pinned to that board, so it can't make a board load one or send a chat to a combo's cloud model. It picks by model name and never a d1 model, which covers jetson-05 (systemone and a chat model) and naming the Pi. A model that spends its limit thinking and answers nothing now comes back as an error Wonder can read.
 - **Run against the real fleet (Nov 2, through the ngrok address, an admin `jpt_` token):** `fleetBoards` read all 9 boards, 8 online and jetson-01 offline, and the Pi, both Corals and the UNO Q report memory and temperature with the same fields as a Jetson. `fleetAsk` answered from jetson-02 (Glimmer, 4.9 to 5.1 s), jetson-04 (Bolt, 1.1 s) and jetson-05 (LFM3-VL, 1.5 s), each a real reply with finish `stop`. Naming the Pi refused with no chat call, and both Corals and the UNO Q said they have no model loaded. With no board named it picked jetson-02, the first by name with a chat model.
 - **The card, locally:** `next dev` on this branch with a local database and a local admin account, against the real fleet. It listed all 9 boards with real numbers: docs/log/shots/2026-11-02/device-fleet-card.jpg. Refresh, the once-a-minute poll and the 30-minute stop were not watched in a browser.
-- **Not proven:** Wonder's two tools with the real model, since this ran with no `MODEL_API_KEY`, and the route on a Vercel preview. A preview without `PREVIEW_DATABASE_URL` answers 500 at sign-in now (README.md, Preview database), so preview https://muse-muse-f8wu4m4y5-ethan-6436s-projects.vercel.app can't open `/device`.
+- **Not proven:** Wonder's two tools with the real model, since this ran with no `MODEL_API_KEY`, and the route on a Vercel preview. A preview without `PREVIEW_DATABASE_URL` answers 500 at sign-in now (README.md, Preview database), so a preview deployment (URL left out) can't open `/device`.
 - **Found in passing, not changed:** jetson-05's ngrok agent keeps recent requests in memory. Port 4040 on that board held 50 of 50 with raw bodies, counted without reading them, and these carry prompts, photos and bearer tokens. It's loopback only. `inspect_db_size: -1` in ngrok's config is the documented off switch, and it takes a tunnel restart.
 - **Spend:** $0.
 
@@ -2516,3 +2541,46 @@ Merged origin/main (#50, #51). The only conflict was this log; both entries kept
     - Muse Privacy: 130 of 130.
   - The full typecheck is left to CI.
 - **Screenshots:** none yet. Nothing here is deployed, and a local run needs a database. The judge-check report stands in until the merge deploys, then gets rerun.
+
+## Nov 2, 2026: the edge track, built with no spend, and the repo made runnable for judges (branch tg-edge)
+
+- **Why:** the owner said on Nov 2 that edge and local must be pushed nearly as hard as frontier, and that defending infrastructure and being ready for any scenario is a key part of the presentation. The trigger was news that day of suspected attacks on supermarket freezers in Europe (Bloomberg), plus a DC substation outage. A judge panel (three independent plans and a merge, `docs/EDGE_PLAN.md`) picked a simulated cold-room watcher. It is built on Meta's cloud models and tuned on Llama 3.2 3B, and the same app keeps answering on a Jetson with its cables out.
+- **Owner decisions, Nov 2:**
+  - Approved: $25 for the chain run on the cold-room sentence, a backup tune (now a free Kaggle notebook in place of $10 on Lambda), and $5 of preview-only test builds.
+  - The edge act goes in the video, and the tuned GGUF gets a public Hugging Face repo.
+  - Not approved: Llama as the board default.
+  - Pulling the house uplink for the take, only if Hussam agrees.
+  - The Lambda key was rotated.
+- **Built, all behind `EDGE_ENABLED` and `EDGE_BUILDS` (off), none of it run on a board or in a real sandbox:**
+  - **Fallback (M1):** `template/lib/meta/edge.ts`'s `respondJsonOrEdge` asks the cloud first, held to 10 s, then an OpenAI-compatible model on a board, checked against the schema with zod. Every answer carries a fixed label ("Answered on <board>, <model>"). The review stopped it falling back around a cloud 4xx, so a refused prompt or a spent budget is never routed around. The muse-edge skill teaches Muse Code to use it.
+  - **Drill kit (M3):** a fake edge server, a blackhole gateway and four drills: cloud refused, cloud hung, both down, and a tampered reply rejected. The review made the cloud drills prove the product tried the cloud first.
+  - **Edge target (M4) and drill step (M5):** an "edge" target, and the four drills after verify in every edge build, each counted as a check, so a failed drill can't show as working.
+  - **Board kit (M6):** `scripts/edge/build-arm64.sh` and `docs/EDGE_DEMO.md`.
+  - **Drill data (M2):** `scripts/dev/drill-bench.py` writes 900 training, 50 dev and 100 sealed simulated cold-room windows by code, so there's no rights question. Sealed sha256 `52b23493...`. It also scores with a hard rule: never trust the controller when the independent probe disagrees.
+  - **Measured base (M14):** Llama 3.2 3B joined `MEASURED` in `lib/train/bases.ts`.
+  - **Copy (M13):** `docs/EDGE_PLAN.md`, the edge act in `docs/VIDEO.md`, checked news facts and new Don't-say lines in `docs/MESSAGING.md`.
+- **Run on this laptop, no keys, loopback only:**
+  - `npm run drill`: 4 of 4 simulated drills passed in about 12 s against a bundled demo product. A mutation test (schema check removed) made drill 4 fail.
+  - `npm run drill-bench`: 3 of 3 checks. The reference scores 100%, and canned "always normal" answers score 13% with 12 of 12 hard-rule breaks flagged.
+- **Judges can run the repo:** organizers said on Nov 2 that judges work from the video and the public repo and may run it with their own keys. A clean-clone test found three problems:
+  - A Meta key alone can't make a product: the Sandbox needs Vercel too.
+  - The judge paid for the brief before the build failed.
+  - Docker had never been built.
+
+  Fixed:
+  - The README's npm path comes first, with Node 22.22.3 or newer, and a Judge path table gives each goal's needs and cost.
+  - `checkBuildAllowed` refuses with 503 `no_model_key` or `no_sandbox` before any paid step, with a banner on Make. Production passes through `VERCEL=1`. The review added the same check to the Rebuild-all route.
+  - The AWS account id, EC2 ids, Vercel team slug and home folder paths were scrubbed from the tree. They are still in git history: the fresh public repo plan is in `~/mm-wt/_plan/public-repo/`, outside the repo.
+- **Free GPU tune:** `notebooks/edge-tune-kaggle.ipynb` does a QLoRA of Llama 3.2 3B on one free T4, scores tuned against base on the sealed set, and exports a Q4_K_M GGUF with its sha256. Not run on a GPU. The review fixed both T4s being used through DataParallel, an unpinned torch, a license check that could ship the wrong file, and the board-side prompt (serve with `llama-server --jinja`).
+- **Chain run:** `docs/CHAIN_RUN.md` gives the steps for the $25 run.
+  - Reading the code found that a folder run in the Make chat trained Glimmer r30b whatever base was picked: `startFolderRun` never saved it. Fixed here, with a test.
+  - The site can't keep a GGUF made from folder rows (`ownerRowsProblem`), so the GGUF comes from the notebook or `quant-harness.ts`.
+  - No Llama job has ever launched through the site.
+- **Submission:** `docs/SUBMISSION.md` follows the real form fields with ready answers, including the Most Viral X post.
+- **Labels for work from before the event:** organizers said on Nov 2 that the submitted repo must hold only work done during the event, that anything pre-existing must be labeled, and that the video's first line must say what existed before.
+  - Checked: the repo was created Oct 29, and no commit predates kickoff.
+  - The README now has "Before the event, and not in this repo": `jetson-infra` (Sep 29), the boards' models, Base Drive (June) and the Meta docs mirror. It sits beside the labeled scaffold.
+  - `docs/VIDEO.md`'s shot 0 now opens with that line.
+- **Also:** `lib/__tests__/no-wonder.test.ts` now explains the edge helper's generated copy. `docs/HANDOFF.md`'s scope uses `$VERCEL_SCOPE`.
+- **Open:** native/lab `check.test.mjs` "gguf_emu" fails, not touched here and not in CI.
+- **Spend:** $0.
