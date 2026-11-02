@@ -2377,3 +2377,6 @@ Merged origin/main (#50, #51). The only conflict was this log; both entries kept
   - Step 1's eleven failing files: all pass.
   - Step 2: 207 of 207.
   - Typecheck and step 3 are left to CI.
+- Follow-up: #65's first CI run failed 5 tests in `lib/caps/jobs/__tests__/jobs.test.ts`, which fail on main too.
+  - Cause: the test's fake fetch read the cron's job token with the wall clock, but the token was minted from the test's fixed NOW (Nov 2, 12:00 UTC) with a 10-minute life. So the test started failing at 12:10 UTC today. It now reads the token on NOW: 69 of 69.
+  - Checked for other date traps: ran the 10 test files that mix fixed November dates with the real clock, with the clock moved to Nov 9, 23:00 UTC (the end of judging). 216 of 216 pass.
