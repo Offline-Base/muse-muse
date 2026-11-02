@@ -7,11 +7,11 @@ import { BriefBody, VERDICT } from "@/components/build/turns";
 import type { Brief, BuildStatus } from "@/lib/types";
 
 /**
- * The plan, in the build room's conversation once the brief is written: the Muse mascot at the top left and the whole
- * plan beside it, its name, tagline and every part of the brief (BriefBody, the same one the steps panel's "Read the
- * brief" folds), so the plan reads once in the conversation. Owner, Oct 31: on a wide column the text wraps beside the
- * picture and runs on full width under it; a narrow one keeps the small picture beside the name with the plan under
- * both. Styles are in components/build/plan-card.css, which the build room page loads.
+ * The plan, in the build room's conversation once the brief is written: the Muse mascot at the top left and a short plan
+ * beside it, its name, tagline and at most four short lines of what will be built (owner, Nov 1: much more concise). The
+ * whole brief folds under "See the full plan" (BriefBody, the same one the steps panel's "Read the brief" folds). On a
+ * wide column the text wraps beside the picture and runs on full width under it; a narrow one keeps the small picture
+ * beside the name with the plan under both. Styles are in components/build/plan-card.css, which the build room page loads.
  *
  * The card draws a PlanView, so another plan can use it: the build room's comes from its brief (planViewFromBrief), and
  * the fine-tune room's from its training plan (components/train/room/plan.ts planViewFromTrainPlan), with its own
@@ -107,15 +107,32 @@ export interface PlanView {
   sections: readonly PlanSection[];
 }
 
-/** A brief's plan: who it's for and how it works, with "Can build part of it" when that's the verdict. */
+/** The lines the plan shows under its name and tagline, so the two together stay at about five. */
+export const PLAN_LINES = 4;
+const PLAN_LINE_CHARS = 90;
+
+/** One step as a short line: its first sentence, cut at a word when that's still long. */
+export function shortPlanLine(text: string): string {
+  const first = text.trim().split(/(?<=[.!?])\s+/)[0] ?? "";
+  if (first.length <= PLAN_LINE_CHARS) return first.replace(/\.$/, "");
+  const cut = first.slice(0, PLAN_LINE_CHARS);
+  return `${cut.slice(0, cut.lastIndexOf(" ")).replace(/[,;:]$/, "")}...`;
+}
+
+/**
+ * A brief's plan: what will be built, in at most PLAN_LINES short lines, with "Can build part of it" when that's the
+ * verdict. Then the last line is the first limit, the part it can't do. Only this view is short: the brief is untouched.
+ */
 export function planViewFromBrief(brief: Brief): PlanView {
-  const user = brief.user.trim();
-  const flow = brief.primaryFlow.map((s) => s.trim()).filter(Boolean);
+  const partly = brief.verdict === "partly";
+  const flow = brief.primaryFlow.map((s) => s.trim()).filter(Boolean).map(shortPlanLine);
+  const limit = partly ? brief.limits.map((l) => l.trim()).find(Boolean) : undefined;
+  const steps = flow.slice(0, limit ? PLAN_LINES - 1 : PLAN_LINES);
   return {
     name: brief.name,
     tagline: brief.tagline.trim(),
-    badge: brief.verdict === "partly" ? VERDICT.partly : null,
-    sections: [...(user ? [{ heading: "Who it's for", text: user }] : []), ...(flow.length ? [{ heading: "How it works", steps: flow }] : [])],
+    badge: partly ? VERDICT.partly : null,
+    sections: [...(steps.length ? [{ steps }] : []), ...(limit ? [{ text: `Won't do: ${shortPlanLine(limit)}` }] : [])],
   };
 }
 
@@ -131,15 +148,19 @@ export function PlanCard({
   /** PLAN_ART: the picture made for this build (RoomState.planArtUrl), shown instead of the stock mascot once it's in. */
   artUrl?: string | null;
 }) {
-  // Under the card's own name, tagline and badge: the rest of the brief, written out in full.
   return (
     <PlanViewCard
-      view={{ ...planViewFromBrief(brief), sections: [] }}
+      view={planViewFromBrief(brief)}
       art={art}
       artUrl={artUrl}
       running={running}
       wrap
-      body={<BriefBody brief={brief} title={false} />}
+      body={
+        <details className="plan-card-full">
+          <summary>See the full plan</summary>
+          <BriefBody brief={brief} title={false} />
+        </details>
+      }
     />
   );
 }

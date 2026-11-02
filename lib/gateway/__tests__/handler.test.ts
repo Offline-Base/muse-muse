@@ -880,6 +880,29 @@ test("a live product's Muse Wonder call stays on Muse Wonder when the test model
   assert.equal(sentModel(g), "muse-wonder-1.0");
 });
 
+test("BUILDS_ON_CONTRIBUTOR: a live token with the marker runs on Contributor, even as an agent, and says so", async () => {
+  const g = fakeGateway({ fetch: replyFetch, contributorRuntime: true, token: { scope: "live", allowedModels: ["muse-wonder-1.0", "agent", "runtime:contributor"] } });
+  const res = await handleGateway(gatewayRequest("responses", wonderCall(), JSON_CT), ["responses"], g.deps);
+  assert.equal(res.status, 200);
+  await g.settled();
+  assert.equal(sentModel(g), TEST_MODEL_NAME);
+  assert.equal(g.usage[0].items[0].model, TEST_MODEL_NAME);
+  assert.match(res.headers.get("x-musemuse-note") ?? "", /builds and products run on it/);
+});
+
+test("BUILDS_ON_CONTRIBUTOR: a live token without the marker, or the marker with the flag off, stays on Muse Wonder", async () => {
+  for (const opts of [
+    { contributorRuntime: true, token: { scope: "live" as const, allowedModels: ["muse-wonder-1.0"] } },
+    { contributorRuntime: false, token: { scope: "live" as const, allowedModels: ["muse-wonder-1.0", "runtime:contributor"] } },
+  ]) {
+    const g = fakeGateway({ fetch: replyFetch, ...opts });
+    const res = await handleGateway(gatewayRequest("responses", wonderCall(), JSON_CT), ["responses"], g.deps);
+    assert.equal(res.status, 200);
+    await g.settled();
+    assert.equal(sentModel(g), "muse-wonder-1.0");
+  }
+});
+
 test("a build token stays on Muse Wonder when no test model is set", async () => {
   const g = fakeGateway({ fetch: replyFetch, token: { scope: "build", allowedModels: ["muse-wonder-1.0"] } });
   const res = await handleGateway(gatewayRequest("responses", wonderCall(), JSON_CT), ["responses"], g.deps);

@@ -6,7 +6,7 @@ import { secretValues } from "@/lib/caps/code/musecode/redact";
 import { briefOfToken, codeSessionStore, familySpendToday, sessionSpendUsd } from "@/lib/caps/code/musecode/store";
 import { launchLongSession, openSession } from "@/lib/caps/code/session";
 import { capProduct, capToken } from "@/lib/caps/store";
-import { buildTestModel, env } from "@/lib/env";
+import { buildTestModel, contributorBuildsOn, env } from "@/lib/env";
 import { acquireInFlight, hitRateLimits, releaseInFlight, reserveSpend, settleSpend } from "@/lib/gateway/store";
 import { revokeTokenById, storeCodeSessionToken } from "@/lib/gateway/tokens";
 import { localFilesEnabled } from "@/lib/local-files";
@@ -37,6 +37,7 @@ export function museCodeDeps(): MuseCodeDeps {
     bypass: () => env.previewBypass ?? null,
     pepper: () => env.gatewayTokenPepper,
     testModel: buildTestModel,
+    contributorBuilds: contributorBuildsOn,
     secrets: (extra) => secretValues(extra),
     briefAllows: async (token) => codeBlock((await briefOfToken(token)) as object | null)?.museCode === true,
     sessions: codeSessionStore,

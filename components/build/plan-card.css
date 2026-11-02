@@ -219,3 +219,17 @@
     transition: none;
   }
 }
+
+.plan-card-full {
+  margin-top: 8px;
+}
+
+.plan-card-full > summary {
+  cursor: pointer;
+  width: fit-content;
+  color: var(--fg-2);
+  font-size: 14px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}

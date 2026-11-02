@@ -42,5 +42,13 @@ export const revokeKey = (ownerPass: string, id: string) => call<{ revoked: bool
 
 /** Builds and publishes a new product for the owner. It takes minutes to hours: poll productStatus. */
 export const startProduct = (ownerPass: string, note: string) => call<{ buildId: string; status: string; simulated?: boolean }>("/products", ownerPass, { note });
+
+/**
+ * The note for a new product with a working chatbot in it: the platform builds it with its own metered token, so no key
+ * ever goes in its source. `purpose` is what the chatbot does, in the owner's words. Pass the result to startProduct.
+ */
+export function noteWithChatbot(note: string, purpose: string): string {
+  return `${note.trim()}\n\nIt has a built-in chatbot, using muse-wonder-1.0 through this product's own gateway token. The chatbot: ${purpose.trim()}`;
+}
 export const productStatus = (ownerPass: string, buildId: string) =>
   call<{ buildId: string; status: string; liveUrl: string | null; costUsd: number; error: string | null; simulated?: boolean }>(`/products/${buildId}`, ownerPass);

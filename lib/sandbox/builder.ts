@@ -320,7 +320,9 @@ function envLocal(sandboxName: string, gatewayUrl: string, token: string): strin
   const direct = productsCallMetaDirectly();
   const [url, key] = direct ? ["https://api.meta.ai", sandboxPlaceholder(sandboxName)] : [gatewayUrl, token];
   const test = direct ? buildTestModel() : null;
-  return `# Written by the Muse Muse platform for this build. Never commit this file.\nGATEWAY_URL=${url}\nPRODUCT_TOKEN=${key}\n${test ? `TEST_MODEL=${test}\n` : ""}`;
+  // A build's own test runs are on Contributor, so its screens show the notice a live product on it shows.
+  const notice = buildTestModel() ? "MUSE_CONTRIBUTOR_NOTICE=1\n" : "";
+  return `# Written by the Muse Muse platform for this build. Never commit this file.\nGATEWAY_URL=${url}\nPRODUCT_TOKEN=${key}\n${test ? `TEST_MODEL=${test}\n` : ""}${notice}`;
 }
 
 async function download(items: Array<{ dir: "inspo" | "fixtures"; fileName: string; url: string }>) {
@@ -1950,6 +1952,13 @@ export async function readManifest(sandboxName: string): Promise<Manifest | null
   const sandbox = await openSandbox(sandboxName);
   const manifest = await readJson<Manifest>(sandbox, `${PRODUCT_DIR}/musemuse.json`);
   return manifest && typeof manifest === "object" && !Array.isArray(manifest) ? manifest : null;
+}
+
+/** True when the product's footer still shows the Contributor notice (template/components/Footer.tsx) for its env switch. */
+export async function productShowsContributorNotice(sandboxName: string): Promise<boolean> {
+  const sandbox = await openSandbox(sandboxName);
+  const buf = await sandbox.readFileToBuffer({ path: `${PRODUCT_DIR}/components/Footer.tsx` }).catch(() => null);
+  return Boolean(buf?.toString("utf8").includes("MUSE_CONTRIBUTOR_NOTICE"));
 }
 
 /** Reads BUILD_NOTES.md, trimmed. Null when missing. */

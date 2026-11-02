@@ -25,7 +25,7 @@ export const CAP_READY: Record<CapId, boolean> = {
   hardware: true,
   extension: true,
   games: true,
-  platform: false,
+  platform: true,
 };
 /** Products with this cap need a signed-in builder (unit 1). Stateless caps stay open to guests. */
 export const CAP_NEEDS_BUILDER: Record<CapId, boolean> = {

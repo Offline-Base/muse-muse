@@ -20,6 +20,7 @@ export function Footer({ credit }: { credit?: string }) {
           .
         </p>
       ) : null}
+      {process.env.MUSE_CONTRIBUTOR_NOTICE === "1" ? <p style={{ margin: "0 0 8px" }}>This product runs on a model Meta may train on. Don't enter personal or sensitive information.</p> : null}
       Built with Muse Muse. Not an official Meta product.
     </footer>
   );

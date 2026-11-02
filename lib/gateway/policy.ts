@@ -71,6 +71,18 @@ export function hasAgentMarker(allowedModels: readonly string[]): boolean {
  */
 export const AGENT_LONG_MARKER = "agent-long";
 
+/**
+ * The allowedModels entry on a live token published under BUILDS_ON_CONTRIBUTOR, from a product that shows the Contributor
+ * notice and holds nothing personal (lib/pipeline/logic.ts). Not a model. A product published before has no notice, so
+ * it has no marker and stays on Muse Wonder. Without the flag the marker does nothing.
+ */
+export const CONTRIBUTOR_RUNTIME_MARKER = "runtime:contributor";
+
+/** Audio input is a Muse Wonder ability Contributor doesn't list (catalog/meta-models.json), so that call stays on Wonder. */
+export function needsWonderInput(json: { input?: unknown }): boolean {
+  return JSON.stringify(json.input ?? "").includes('"input_audio"');
+}
+
 export function hasLongAgentMarker(allowedModels: readonly string[]): boolean {
   return allowedModels.includes(AGENT_LONG_MARKER);
 }

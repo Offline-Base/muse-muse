@@ -94,8 +94,9 @@ export function testModel(): typeof SPARK_STANDIN | null {
 /**
  * BUILDS_ON_CONTRIBUTOR: the owner's decision to run every build on Spark 1.3 Contributor, on production too, with real
  * people's notes and files. Meta may train on that tier and its terms (6.2) bar sensitive, confidential or personal
- * information there, so every box that feeds a build shows ContributorNotice. It covers builds only: fine-tuning keeps
- * testModel(), and a live product's calls stay on Muse Wonder.
+ * information there, so every box that feeds a build shows ContributorNotice. Fine-tuning keeps testModel(). A live product
+ * follows it too when it was published under this flag and shows the product notice, unless it holds a person's connected
+ * accounts or personal tools (runtimeStaysOffContributor in lib/pipeline/logic.ts), which stay on Muse Wonder.
  */
 export function contributorBuildsOn(): boolean {
   return flag("BUILDS_ON_CONTRIBUTOR");

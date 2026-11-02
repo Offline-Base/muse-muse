@@ -12,7 +12,17 @@ description: How this product runs its own build sandboxes, hands out metered mo
 - `powers(pass)`: which powers this product has, `spentTodayUsd` and `dailyLimitUsd`.
 - `startSandbox(pass, task)`, `sandboxEvents`, `sandboxResult`, `stopSandbox`: a build task in a private sandbox, with no product code in it. It has a time and spending limit, then it stops and keeps what it made.
 - `makeKey(pass, {label, budgetUsd, hours})`, `revokeKey`: a metered key for `POST {GATEWAY_URL}/v1/responses` on one model. It ends at its budget or its expiry.
-- `startProduct(pass, note)`, `productStatus`: builds and publishes a new product for the owner. A build takes minutes to hours, so show its status and let the owner leave the page.
+- `startProduct(pass, note)`, `noteWithChatbot(note, purpose)`, `productStatus`: builds and publishes a new product for the owner. A build takes minutes to hours, so show its status and let the owner leave the page.
+
+## A chatbot in what it makes
+
+When the owner wants a chatbot in what this product makes, use `startProduct(pass, noteWithChatbot(note, purpose))`. The new product is a real one, with its own link, its own metered token and a daily budget, so its chat keeps working and nothing here pays for it. Show its status and link when it's live. Say that first: it's the route that works.
+
+- Code from `startSandbox` comes back as files. It can include chat code that reads `GATEWAY_URL` and `PRODUCT_TOKEN` from the server's env, but it has no link of its own, so it can't chat until it's published through `startProduct`. Say that plainly on screen.
+- A key from `makeKey` is for trying something for a short while: at most 24 hours and $5. It answers on `POST /v1/responses` only, with no web search, stored items or remote files. Never write one into generated code.
+- If this product has a chatbot of its own, use `lib/meta/chat.ts` and read `.agents/skills/meta-chat`.
+
+Only the owner can start any of this. A public site where visitors make their own apps isn't possible, so say that in the product's limits.
 
 ## Limits
 
