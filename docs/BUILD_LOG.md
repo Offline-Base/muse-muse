@@ -2284,3 +2284,14 @@ The owner asked for it after I advised against it. Repo: https://huggingface.co/
 - Watchdog: the earlier 4-hour timer had died with the crashed session, so a detached 2.5-hour one covered this instance, stopped once it was gone.
 - Spend: device-loop-upload-1, gpu_1x_a10, launched 01:00:32Z, terminate sent about 01:47:30Z, off the list by 01:49:57Z. At most 49.4 minutes at $1.29, about $1.06 by list price, not read from an invoice. Limit $10. Lambda reports its id as terminated. Another session's device-loop-inv-1 was left alone.
 - Not run: the file on a Jetson, a download back from the Hub, the card's serve command on this copy, a judge on the answers, any tests (docs only). The stand-in numbers and the 1 of 5 on stock are from the Nov 1 run, not repeated.
+
+## Nov 1: repo ready for judges, Docker, Quickstart, eval/, CI (branch tg-repo-ready)
+
+- **Added:** `Dockerfile`, `.dockerignore`, `compose.yaml`, a Quickstart and a new opening in README.md (Domain Agents, team Ethan and Hussam, a marked diagram, which device step still uses LFM), `eval/README.md`, `.github/workflows/ci.yml`. `/eval` joined `.vercelignore`, and `.env.example` got a note on `DATABASE_URL` under compose.
+- **Docker not available:** the CLI and compose are installed, the daemon wasn't running, and I didn't start Docker Desktop. **The image has not been built or run.** The README says so. `docker compose config` parsed the file.
+- **Decision:** PGlite only, with no postgres service. `lib/db/client.ts` uses Neon's HTTP driver, which can't reach a stock Postgres server, and a new driver wasn't worth adding unproven this close to the deadline. `COMPOSE_DATABASE_URL` takes a Neon string.
+- **Decision:** compose overrides the database, Blob and VERCEL variables from `.env.local`, so a file from `vercel env pull` can't point a local container at production. The port is on 127.0.0.1 only, because OPEN_ACCESS=admin trusts a localhost Host header.
+- **Found:** `privacy/eval/reports/device_only_fresh_200.md`, Oct 30, shows 10 leaks on `fresh_200` with no cause in the report. eval/README.md lists it. The "0 leaks on 300 items" line holds for `fresh_200_b` and `tasks` on Oct 31 only.
+- **Left as is, for the owner:** `privacy/README.md` and `privacy/CLAUDE.md` still say "solo", against the entrant being a team, and `docs/STORY.md` still says to keep the company name out of the privacy paragraph.
+- **Checks:** the migrations on an empty PGlite folder passed. `lib/__tests__/vercelignore.test.ts` and `components/story/__tests__/story.test.tsx` 15 of 15. eval/ and README links checked by script. Not run here: typecheck, the full tests and `next build`; CI runs the first two on the PR. The Mermaid diagram wasn't rendered locally.
+- **Spend:** $0. No Meta calls, deploys or production changes.

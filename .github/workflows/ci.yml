@@ -1,0 +1,54 @@
+# The site's typecheck and unit tests, the commands in README.md's Tests section. Muse Privacy has its own workflow, privacy.yml.
+# No secrets: nothing in these tests calls Meta, Vercel, Lambda or Neon.
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["privacy/**"]
+  pull_request:
+    paths-ignore: ["privacy/**"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install from the lock file
+        run: npm ci --no-audit --no-fund
+      - name: Generate Next.js types
+        run: npx next typegen
+      - name: Type check
+        run: npm run typecheck
+
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install from the lock file
+        run: npm ci --no-audit --no-fund
+      - name: Library and component tests
+        run: npx tsx --test --experimental-test-module-mocks $(find lib components -name '*.test.ts')
+      - name: Fine-tuning view tests
+        run: npx tsx --test --experimental-test-module-mocks components/train/__tests__/*.test.tsx
+      - name: The template's own scripts
+        run: npx tsx --test template/scripts/__tests__/*.test.mjs
