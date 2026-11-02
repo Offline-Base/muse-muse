@@ -2360,6 +2360,11 @@ Merged origin/main (#50, #51). The only conflict was this log; both entries kept
 - Preview muse-muse-hkozbza3a: intent recognized a dataset sentence; want both split a plain sentence; run 15c422b2 wrote 40 examples for $0.0062, held at "Your dataset is ready", no job, download 40 lines. That Preview inherited its own OPEN_ACCESS (value hidden, behaved as admin), so its no-code start was 201. Preview muse-muse-kpsbvt1ln (guest): new starters show, a stranger's download 403, but its plan answered 429, so the no-code refusal is proven by tests only, not live.
 - Not run: clicking the menu in a browser, Tune a model on this through a GPU.
 
+## Nov 2, 2026: plan checklist in the rooms, after the owner's Meta AI research screenshots (branch tg-room-plan)
+
+- A card that ticks off big steps, in build rooms and model rooms, under BUILD_ROOM_STEPS (builds) and MAKE_CHAT_ALL (model rooms). It reads only the run's own status, and never ticks a step still running or one where a run stopped. Datasets show no training step.
+- The Steps and Sources panel and the live working line already existed. Site chips under steps were not built: most build steps have no web sources to show.
+- Tests: checklist 7 of 7, feed, room and both flag-off tests, tsc. Not run in a browser or a live build. Look checked by rendering the component with the real CSS.
 ## Nov 2, 2026: What we can say, checked against Meta's docs (branch tg-messaging)
 
 - The owner's three deep-research reports, checked against `content/meta-docs/` and web search, are now in docs/MESSAGING.md. Docs only, no code.
