@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
-import { CALL_DAYS, hostedModelViews, tunedModelViews, type TunedModelView } from "@/components/models/catalog";
-import { GlimmerCard, HostedModelsTable, TunedModelsTable, WhereTheyRun } from "@/components/models/ModelParts";
+import { CALL_DAYS, GLIMMER_MODALITIES, hostedModelViews, modalityCounts, modelCards, tunedModelViews, type TunedModelView } from "@/components/models/catalog";
+import { ModelCards, TunedModelCards, WhereTheyRun } from "@/components/models/ModelParts";
+import { ModelsFilter } from "@/components/models/ModelsFilter";
 import { OwnModelsSlot } from "@/components/models/OwnModelsSlot";
 import { toRecipeView } from "@/components/train/format";
 import { toResultView, type ResultView } from "@/components/train/results";
-import { EmptyCard, NotConnected, PageHeader } from "@/components/ui";
+import { EmptyCard, NotConnected } from "@/components/ui";
 import { linkedLocalFiles } from "@/components/vibe/RunLocallyLink";
 import { contributorBuildsOn } from "@/lib/env";
 import { modelCallCounts, safeQuery } from "@/lib/queries";
@@ -43,34 +44,35 @@ export default async function ModelsPage() {
   const since = new Date(Date.now() - CALL_DAYS * 86_400_000);
   const [calls, tuned] = await Promise.all([safeQuery(() => modelCallCounts(since)), safeQuery(loadTuned)]);
   const hosted = hostedModelViews(calls.ok ? calls.data : null, { buildsOnContributor: contributorBuildsOn() });
+  const cards = modelCards(hosted);
+  const tunedCards = tuned.ok ? tuned.data : [];
+  const counts = modalityCounts([...cards.map((c) => c.modalities), ...tunedCards.map(() => GLIMMER_MODALITIES)]);
 
   return (
-    <div className="page">
-      <PageHeader
-        title="Models"
-        subtitle="What Muse Muse builds with: Meta's hosted models, and the open model its lab tunes."
-      />
-
-      <section className="section" aria-labelledby="hosted-title">
-        <div className="section-head">
-          <h2 id="hosted-title">Meta&apos;s hosted models</h2>
-        </div>
+    <ModelsFilter
+      title="Models"
+      subtitle="What Muse Muse builds with: Meta's hosted models, and the open model its lab tunes."
+      total={cards.length + tunedCards.length}
+      counts={counts}
+    >
+      <section className="section models-filterable" aria-labelledby="all-title">
+        <h2 id="all-title" className="sr-only">
+          Meta&apos;s models
+        </h2>
+        <ModelCards cards={cards} />
         <p className="muted">
-          Muse Muse and the products it ships call these through Meta&apos;s Model API. Prices are Muse Muse&apos;s
-          estimates.
+          Muse Muse and the products it ships call the hosted models through Meta&apos;s Model API. Prices are Muse
+          Muse&apos;s estimates.
           {calls.ok
             ? ` Calls are from Muse Muse's usage records for the last ${CALL_DAYS} days.`
             : " Call counts aren't available right now."}
         </p>
-        <HostedModelsTable models={hosted} />
       </section>
 
-      <section className="section" aria-labelledby="open-title">
+      <section className={tunedCards.length ? "section models-filterable" : "section"} aria-labelledby="tuned-title">
         <div className="section-head">
-          <h2 id="open-title">Open models</h2>
+          <h2 id="tuned-title">Tuned Glimmer models</h2>
         </div>
-        <GlimmerCard />
-        <h3 className="models-sub">Tuned Glimmer models</h3>
         {!tuned.ok ? (
           <NotConnected reason={tuned.reason} what="the tuned models" />
         ) : tuned.data.length === 0 ? (
@@ -78,10 +80,11 @@ export default async function ModelsPage() {
             <p>A tuned model shows up here once the lab has trained it and judged it against the base.</p>
           </EmptyCard>
         ) : (
-          <TunedModelsTable models={tuned.data} />
+          <TunedModelCards models={tuned.data} />
         )}
-        <OwnModelsSlot />
       </section>
+
+      <OwnModelsSlot />
 
       <section className="section" aria-labelledby="where-title">
         <div className="section-head">
@@ -89,6 +92,6 @@ export default async function ModelsPage() {
         </div>
         <WhereTheyRun />
       </section>
-    </div>
+    </ModelsFilter>
   );
 }

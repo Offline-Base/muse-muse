@@ -2019,6 +2019,36 @@ Behind a new flag, off by default. Design and limits are in docs/BUILD_RANGE.md.
 
 Owner asked. Took Media out of the sidebar in components/shell/nav.ts. The /media page stays at its address and nothing else links to it. Touched test only: nav.test.tsx.
 
+## Nov 1: /models redesigned as cards (branch tg-models-page)
+
+Owner asked for the look of their screenshot of Meta's Models page. No flag: this ships directly.
+
+- **Change:** large bold title, an "All modalities" dropdown that really filters, and a two-column grid of hairline cards (one column on phones). Each card has name, subline, description, pill buttons, and key and value rows pinned to the bottom. The tuned models, Your own models and Where they run moved to the same style; the old tables are gone from this page.
+- **Added cards:** Muse Spark 1.3 and Muse Spark Open, which the screenshot shows. Spark 1.3's card says Muse Muse doesn't call it, and it has no playground button, since the docs' demos run it as Contributor.
+- **Decision, buttons:** every button stays in this app. Try in playground opens a docs page's live demo panel (#try-it-live), Model specs goes to /docs/models anchors, Download goes to the docs' get-the-model pages. The one external pill is on tuned models, as before (Hugging Face, GGUF files).
+- **Decision, New pill:** the repo has no release dates, so New follows the catalog's status "preview", which today is Muse Wonder only.
+- **Decision, data:** prices come from lib/meta/pricing.ts, context from the catalog and the docs' open-weights facts. catalog/meta-models.json is unchanged, since the brief writer's prompt reads it. Spark Open's and Glimmer's modalities are written in components/models/catalog.ts from the catalog's facts text.
+- **Measured:** touched tests pass (models-page 26, own-models-slot 6), tsc clean, full suite not run. Local page on a migrated PGlite with two made-up tuned jobs: all five filter choices hide the right cards, no sideways scroll at 1280 or 390, the first row's cards are equal height, all linked docs pages answer 200. Spend $0.
+- **Not checked:** GGUF and Run it buttons on a tuned card in a browser (covered by the page test only), Your own models in a browser (flags off), production.
+
+  ![/models at 1280, light](log/shots/2026-11-01/models-page-1280-light.png)
+  ![/models at 1280, dark](log/shots/2026-11-01/models-page-1280-dark.png)
+  ![/models at 390, light](log/shots/2026-11-01/models-page-390-light.png)
+  ![/models at 390, dark](log/shots/2026-11-01/models-page-390-dark.png)
+  ![/models filtered to Audio](log/shots/2026-11-01/models-page-1280-light-audio.png)
+
+**Check pass (same branch).** Compared the shots with the brief and checked prices, links, filter, the old page's content and contrast.
+
+- **Fix, merge conflict:** the PR couldn't merge after the Demos page was removed from main (conflict in this log only). Merged origin/main; the Demos tab is gone from the sidebar in the new shots.
+- **Fix, Your own models:** it sat inside the tuned section, so choosing Audio or Video hid it along with that section. It's now its own section after the tuned one, outside the filter. Removed the unused .models-sub style. A test checks the placement. Not seen in a browser (flags off).
+- **Measured:** every price comes from lib/meta/pricing.ts. Every in-app button target on the page reached the right page and anchor. Each Try in playground button, clicked from /models, opens the live demo panel. Filter on an empty PGlite: All 8, Text 7, Image 7, Video 5, Audio 3. Text on the page background and cards measures at least 5.36:1 in light and dark. Dark pill and New values were read before the fills finished fading, so those two are approximate. No sideways scroll at 390. Touched tests pass (models-page and own-models-slot, 32), tsc clean, full suite not run. Spend $0.
+- **Known, not changed:** Wonder's Try in playground opens on the Muse Spark tab, one click from the Muse Wonder tab. The Audio filter leaves out Spark 1.3 and Contributor: the catalog lists no audio input and the docs say audio on 1.3 is not fully supported. The Text filter leaves out Voice Transcribe, whose catalog output is a transcript, and the empty "No tuned models yet" card stays visible under any filter.
+
+  ![Check pass, 1280 light](log/shots/2026-11-01/models-page-verify-1280-light.png)
+  ![Check pass, Audio](log/shots/2026-11-01/models-page-verify-1280-light-audio.png)
+  ![Check pass, 390 dark](log/shots/2026-11-01/models-page-verify-390-dark.png)
+  ![Try in playground from Muse Wonder](log/shots/2026-11-01/models-page-verify-try-panel.png)
+## Nov 1: Demos page removed
 ## Nov 1: anyone can fine-tune, a folder drop and a start code (branch tg-open-tune)
 
 Owner: "Anyone can start a fine tuning jobs", a folder that Spark 1.3 Contributor makes training data from, and a code to start a job. All behind OPEN_TRAIN, TUNE_FOLDER and TUNE_START_CODE, off or unset by default. Full description in docs/TRAINING.md "Anyone can fine-tune". The code's value is only in the environment.
