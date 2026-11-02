@@ -1,4 +1,5 @@
 import { briefMilestones, type Milestone } from "@/lib/engine/milestones";
+import { RANGE_MILESTONE_AGENT_LINES } from "@/lib/range/prompts";
 import type { VerifySummary } from "@/lib/types";
 
 /**
@@ -60,6 +61,8 @@ export function renderMilestonePrompt(input: {
   milestone: Milestone;
   /** The strict verify run after the last milestone, or null when it couldn't run. */
   verify: VerifySummary | null;
+  /** BUILD_RANGE on a complex build: subagents are required in this round too. */
+  requiredAgents?: boolean;
 }): string {
   const { index, of, milestone, verify } = input;
   const out: string[] = [
@@ -75,6 +78,7 @@ export function renderMilestonePrompt(input: {
       "Don't delete, skip or weaken tests, and don't mock or stub Meta calls.",
       `Run \`npm run verify\` until it exits 0, at most twice in this round, then update BUILD_NOTES.md and stop.${index < of ? " The platform sends the next milestone after that." : ""}`,
     ]),
+    ...(input.requiredAgents ? RANGE_MILESTONE_AGENT_LINES : []),
   ];
   if (verify && !verify.passed) {
     const failing = verify.steps.filter((s) => !s.ok);

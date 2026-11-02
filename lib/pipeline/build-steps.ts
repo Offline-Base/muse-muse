@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 import { and, desc, eq, gte, inArray, lte, ne, notInArray, sql } from "drizzle-orm";
 import { FatalError, getStepMetadata } from "workflow";
 import type { Brief } from "@/lib/brief/schema";
+import { recentFrom, type RecentDirection } from "@/lib/range/direction";
 import { checkChange } from "@/lib/brief/policy";
 import { goalObjective, renderBuildPrompt, renderFixPrompt, renderRefinePrompt } from "@/lib/brief/render";
 import { StructuredOutputError } from "@/lib/brief/structured";
@@ -232,6 +233,25 @@ function sessionNotes(): { goalSet: boolean; ownerNotes: boolean; playbook: bool
  */
 function lookNote(): { museAppLook: boolean } {
   return { museAppLook: env.museAppLook };
+}
+
+/** BUILD_RANGE (docs/BUILD_RANGE.md): a brief written with it has a direction. Nothing for any other brief, or with it off. */
+function rangeNote(brief: Brief | null | undefined): { buildRange?: boolean } {
+  return env.buildRange && brief?.direction ? { buildRange: true } : {};
+}
+
+function requiredAgentsOf(brief: Brief | null | undefined): boolean {
+  return rangeNote(brief).buildRange === true && brief?.complexity === "complex";
+}
+
+/** BUILD_RANGE: what other products just used, so this one can differ. A failed read only loses that hint. */
+async function recentDirections(): Promise<RecentDirection[]> {
+  const direction = sql<unknown>`${schema.builds.brief}->'direction'`;
+  const rows = await db().select({ direction }).from(schema.builds).where(sql`${schema.builds.brief}->'direction' is not null`).orderBy(desc(schema.builds.startedAt)).limit(8).catch((err: unknown) => {
+    console.warn(`[build range] recent directions: ${String(err)}`);
+    return [];
+  });
+  return recentFrom(rows.map((r) => r.direction));
 }
 
 /**
@@ -463,6 +483,7 @@ export async function briefStep(buildId: string): Promise<BriefSummary> {
     rebuildOf: rebuildTargetFor(build.rebuildOf),
     requestedTargets: build.requestedTargets,
     ...(builder ? { builder } : {}),
+    ...(env.buildRange ? { range: { seed: buildId, recent: await recentDirections() } } : {}),
   }).catch(async (err: unknown) => {
     // A brief that failed both attempts still cost something. Record it before the step retries.
     if (err instanceof StructuredOutputError) await chargeBrief(buildId, err.usage);
@@ -649,6 +670,7 @@ export async function provisionStep(input: {
       recipes: recipeNotes(b),
       ...(fullBuildOf(b) ? { fullBuild: true } : {}),
       ...look,
+      ...rangeNote(b),
     });
   const promptMarkdown = promptFor(brief);
   const allowedModels = allowedModelsFor(brief);
@@ -684,6 +706,7 @@ export async function provisionStep(input: {
     buildToken: token,
     gatewayUrl: env.gatewayUrl,
     ...look,
+    ...rangeNote(brief),
     ...extraFilesFor(brief),
     targets: briefTargets(brief),
     ...(caps ? { caps, capEnv: capBuildEnv(brief), capHosts: capBuildHosts(caps.caps), dropCaps } : {}),
@@ -777,7 +800,7 @@ export async function startMuseStep(input: {
     round: input.round,
     maxModelSteps: MAX_MODEL_STEPS,
     engine,
-    goal: build?.brief ? goalObjective(build.brief, fullBuildOf(build.brief) ? { fullBuild: true } : {}) : null,
+    goal: build?.brief ? goalObjective(build.brief, { ...(fullBuildOf(build.brief) ? { fullBuild: true } : {}), ...(requiredAgentsOf(build.brief) ? { requiredAgents: true } : {}) }) : null,
     ...(buildId ? { buildId } : {}),
     ...(input.capMs ? { capMs: input.capMs } : {}),
   });
@@ -1105,6 +1128,7 @@ export async function writeFixPromptStep(input: {
       })
     : [];
   const promptFile = `fix-${input.fix}.md`;
+  const range = env.buildRange ? rangeNote((await loadBuild(input.buildId)).brief) : {};
   // FULL_BUILDS: from the first fix round on, verify holds every requirement, including any from a milestone that was skipped.
   if (env.fullBuilds) {
     const fixing = await loadBuild(input.buildId);
@@ -1113,7 +1137,7 @@ export async function writeFixPromptStep(input: {
   await sandbox.writeProductFile(
     input.sandboxName,
     promptFile,
-    renderFixPrompt({ verify, judge, round: input.fix, screenshots: images, ...sessionNotes(), ...lookNote(), ...(judge?.requirements?.length ? { fullBuild: true } : {}) }),
+    renderFixPrompt({ verify, judge, round: input.fix, screenshots: images, ...sessionNotes(), ...lookNote(), ...range, ...(judge?.requirements?.length ? { fullBuild: true } : {}) }),
   );
   return { promptFile, images };
 }
@@ -1145,7 +1169,7 @@ export async function writeMilestonePromptStep(input: {
   const promptFile = `milestone-${input.index}.md`;
   // FULL_BUILDS: verify now holds the product to this milestone's requirements as well as the earlier ones.
   if (full) await sandbox.writeProductFile(input.sandboxName, "musemuse.requirements.json", requirementsFile(brief, input.index));
-  const prompt = renderMilestonePrompt({ index: input.index, of: input.of, milestone, verify });
+  const prompt = renderMilestonePrompt({ index: input.index, of: input.of, milestone, verify, ...(requiredAgentsOf(brief) ? { requiredAgents: true } : {}) });
   await sandbox.writeProductFile(input.sandboxName, promptFile, input.newSession ? `${chainSessionPreface(input.newSession)}\n${prompt}` : prompt);
   return { promptFile };
 }

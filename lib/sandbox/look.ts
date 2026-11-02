@@ -79,6 +79,52 @@ export function applyLookScript(dir: string = OVERLAYS_DIR): string {
   ].join("\n");
 }
 
+/** BUILD_RANGE (docs/BUILD_RANGE.md): template/targets/build-range, laid over the muse-app look. */
+export const RANGE_OVERLAY = "build-range";
+
+/** The commit applyRangeScript makes in the product. restoreRangeFilesScript reads it. */
+export const RANGE_COMMIT = "Look: build range";
+
+/**
+ * Puts the build-range overlay's files over the muse-app look's, in the current directory, after applyLookScript. Only
+ * the rules change: the tokens and parts stay, and the build sets the tokens from its brief's direction. A retry that
+ * finds the commit does nothing.
+ */
+export function applyRangeScript(dir: string = OVERLAYS_DIR): string {
+  const files = q(`${dir}/${RANGE_OVERLAY}/files`);
+  return [
+    "set -eo pipefail",
+    `if [ -n "$(git log --format=%s --grep=${q(`^${RANGE_COMMIT}$`)} -1 2>/dev/null)" ]; then exit 0; fi`,
+    `[ -d ${files} ] || { echo "musemuse: the ${RANGE_OVERLAY} overlay isn't in this sandbox" >&2; exit 1; }`,
+    `(cd ${files} && find . -type f) | while IFS= read -r f; do`,
+    `  mkdir -p -- "$(dirname -- "$f")"`,
+    `  rm -f -- "$f"`,
+    `  cat ${files}/"$f" > "$f"`,
+    `  git add -- "$f"`,
+    "done",
+    `git diff --cached --quiet || git commit -qm ${q(RANGE_COMMIT)}`,
+  ].join("\n");
+}
+
+/**
+ * Before every verify and demo, after the look's and the template's own restores, in a product with RANGE_COMMIT: puts its
+ * platform files back, so its skill's rules and its wider final-screen limits outlast those restores. Nothing, and no
+ * output, in any other product, so a flag-off product runs what it always ran.
+ */
+export function restoreRangeFilesScript(dir: string = OVERLAYS_DIR): string {
+  const overlay = `${dir}/${RANGE_OVERLAY}`;
+  const list = `for(const p of JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")))console.log(p)`;
+  return [
+    `if [ -f ${q(`${overlay}/platform-files.json`)} ] && [ -n "$(git log --format=%s --grep=${q(`^${RANGE_COMMIT}$`)} -1 2>/dev/null)" ]; then`,
+    `  node -e ${q(list)} ${q(`${overlay}/platform-files.json`)} | while IFS= read -r p; do`,
+    `    rm -f -- "$p"`,
+    `    mkdir -p -- "$(dirname -- "$p")"`,
+    `    cp -- ${q(`${overlay}/files`)}/"$p" "$p" && chmod u+w "./$p" || echo "musemuse: couldn't restore $p" >&2`,
+    `  done`,
+    `fi`,
+  ].join("\n");
+}
+
 /**
  * Before every verify and demo, in a product with the look (LOOK_COMMIT in its history): puts the overlay's platform files
  * (platform-files.json, the muse-app-ui skill) back from the read-only copy, so a build can't rewrite the look's
