@@ -202,6 +202,8 @@ export type BuildEventBody =
   | { type: "recording"; url: string; posterUrl?: string | null }
   /** PLAN_ART: the plan card's own picture, the mascot doing something that fits this build (lib/pipeline/plan-art.ts). */
   | { type: "plan_art"; url: string }
+  /** BUILD_ROOM_STEPS: Contributor's simple words for steps the feed worked out from this log (lib/steps-feed/facts.ts). */
+  | { type: "steps_feed"; lines: Array<{ id: string; text: string }>; recaps: Array<{ after: string; text?: string; comment?: string }> }
   | { type: "deploy"; url: string }
   | { type: "cost"; totalUsd: number; addedUsd: number; what: string }
   | { type: "log"; text: string }

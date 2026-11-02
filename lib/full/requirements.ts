@@ -82,7 +82,7 @@ export interface RequirementRead {
   evidence: string;
 }
 
-type WithRequirements = { requirements?: Requirement[] | null; chained?: boolean | null };
+type WithRequirements = { requirements?: Requirement[] | null; chained?: boolean | null; fast?: boolean | null };
 
 export function briefRequirements(brief: WithRequirements | null | undefined): Requirement[] {
   return Array.isArray(brief?.requirements) ? brief.requirements : [];
@@ -182,7 +182,8 @@ export function wordsLeftOut(note: string | null, planText: string): string[] {
 export function fullMilestones(brief: WithRequirements): Array<{ title: string; doneMeans: string; requirementIds: string[] }> {
   const list = buildableRequirements(brief);
   if (!list.length) return [];
-  const count = Math.min(brief.chained === true ? CHAIN_MILESTONES_MAX : FULL_MILESTONES_MAX, Math.ceil(list.length / REQUIREMENTS_PER_MILESTONE));
+  // FAST_BUILDS: one round, with parallel writers doing what milestones did one after another.
+  const count = brief.fast === true ? 1 : Math.min(brief.chained === true ? CHAIN_MILESTONES_MAX : FULL_MILESTONES_MAX, Math.ceil(list.length / REQUIREMENTS_PER_MILESTONE));
   const size = Math.ceil(list.length / count);
   const out: Array<{ title: string; doneMeans: string; requirementIds: string[] }> = [];
   for (let i = 0; i < count; i++) {
