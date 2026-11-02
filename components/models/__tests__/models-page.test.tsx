@@ -52,6 +52,18 @@ describe("the hosted model catalog", () => {
     assert.equal(hostedModelViews(null).find((m) => m.id === "muse-spark-1.3-contributor")?.testOnly, true);
   });
 
+  it("says live products published under BUILDS_ON_CONTRIBUTOR run on it, and what Wonder still serves", () => {
+    const on = hostedModelViews(null, { buildsOnContributor: true });
+    const contributor = on.find((m) => m.id === "muse-spark-1.3-contributor")?.use ?? "";
+    assert.doesNotMatch(contributor, /Live products don't run on it/, "the gateway serves them on Contributor");
+    assert.match(contributor, /keeps running on it and says so/);
+    const wonder = on.find((m) => m.id === "muse-wonder-1.0")?.use ?? "";
+    assert.doesNotMatch(wonder, /Every platform role/);
+    assert.match(wonder, /three demo products/);
+    assert.match(hostedModelViews(null).find((m) => m.id === "muse-wonder-1.0")?.use ?? "", /Every platform role/, "unchanged with the switch off");
+    for (const m of on) assert.ok(!m.use.includes("\u2014"));
+  });
+
   it("lists the models Muse Muse calls, Wonder first and Contributor last, each priced and in the catalog", () => {
     const views = hostedModelViews(null);
     assert.deepEqual(

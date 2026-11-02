@@ -21,18 +21,21 @@ const saved = Object.fromEntries(FLAGS.map((k) => [k, process.env[k]]));
 const PLATFORM = "https://muse-muse.example";
 
 let briefTargets: string[] = [];
+let productOver: Record<string, unknown> = {};
+let pageExtra: Record<string, unknown> = {};
 let userAgent = "Mozilla/5.0";
 let page: (props: { params: Promise<{ slug: string }> }) => Promise<ReactNode>;
 
 function pageData() {
   return {
-    product: { id: "p1", slug: "demo", name: "Demo", tagline: "", status: "live", ownerId: "someone", liveUrl: "https://demo.vercel.app", manifest: null, rebuildOf: null, demoVideoUrl: null, demoPosterUrl: null, transcriptUrl: null },
+    product: { id: "p1", slug: "demo", name: "Demo", tagline: "", status: "live", ownerId: "someone", liveUrl: "https://demo.vercel.app", manifest: null, rebuildOf: null, demoVideoUrl: null, demoPosterUrl: null, transcriptUrl: null, ...productOver },
     latestBuild: { id: "b1", costUsd: 0 },
     brief: { capabilities: [], limits: [], estimatedCostPerRunUsd: null, inspiration: { summary: "", borrow: [], dontCopy: [] }, targets: briefTargets.map((id) => ({ id, why: "A test." })) },
     inspiration: null,
     history: [],
     events: [],
     runs: { calls: 0, tokens: 0, costUsd: 0 },
+    ...pageExtra,
   };
 }
 
@@ -47,7 +50,7 @@ describe("the product page", { skip: canMock ? false : "needs --experimental-tes
     // The page imports its stylesheet, which Node can't load and mock.module can't replace.
     register("data:text/javascript,export const load = (url, context, next) => url.endsWith('.css') ? { format: 'module', source: '', shortCircuit: true } : next(url, context);", import.meta.url);
     mock.module("next/server", { namedExports: { connection: async () => {}, after: () => {} } });
-    mock.module("next/headers", { namedExports: { headers: async () => new Headers({ "user-agent": userAgent }) } });
+    mock.module("next/headers", { namedExports: { headers: async () => new Headers({ "user-agent": userAgent }), cookies: async () => ({ get: () => undefined, getAll: () => [], has: () => false }) } });
     mock.module("next/navigation", { namedExports: { notFound: () => { throw new Error("not found"); }, useRouter: () => ({ push() {}, refresh() {} }), usePathname: () => "/p/demo" } });
     mock.module("next/link", { defaultExport: (props: Record<string, unknown>) => createElement("a", { ...props, href: String(props.href) }) });
     mock.module(at("../../../lib/auth.ts"), { namedExports: { canActAsOwner: () => false, GUEST_EMAIL: "guest@musemuse.invalid" } });
@@ -82,6 +85,42 @@ describe("the product page", { skip: canMock ? false : "needs --experimental-tes
     for (const k of FLAGS) delete process.env[k];
     briefTargets = ["web"];
     userAgent = "Mozilla/5.0";
+    productOver = {};
+    pageExtra = {};
+  });
+
+  describe("its status", () => {
+    const pill = (html: string) => html.match(/<div class="product-title"><h1>Demo<\/h1><span class="pill [^"]*"><span class="pill-dot" aria-hidden="true"><\/span>([^<]*)<\/span>/)?.[1];
+
+    it("never reads Live next to Not published", async () => {
+      productOver = { liveUrl: null };
+      const html = await render();
+      assert.equal(pill(html), "Not published");
+      assert.match(html, /passed its checks, but publishing was off/);
+      productOver = { liveUrl: null, status: "partial" };
+      const partial = await render();
+      assert.equal(pill(partial), "Not published");
+      assert.match(partial, /shipped with some checks failing/);
+      assert.doesNotMatch(partial, /passed its checks/);
+      productOver = {};
+      assert.equal(pill(await render()), "Live");
+    });
+
+    it("lets a failed check win over the requirements' checked and working", async () => {
+      const requirement = { id: "R1", text: "Adds a cake order", kind: "asked", words: "", savesData: false, canDo: true, cantDoWhy: null };
+      const met = { requirements: [{ id: "R1", text: "Adds a cake order", state: "met" }] };
+      pageExtra = {
+        brief: { capabilities: [], limits: [], estimatedCostPerRunUsd: null, inspiration: { summary: "", borrow: [], dontCopy: [] }, targets: [{ id: "web", why: "A test." }], requirements: [requirement] },
+        events: [{ id: 1, at: "2026-11-02T00:00:00.000Z", type: "judge", round: 0, verdict: { pass: true, reasons: [], mismatches: [], ...met } }],
+      };
+      assert.match(await render(), /1 of 1 checked and working/);
+      pageExtra = { ...pageExtra, events: [{ id: 1, at: "2026-11-02T00:00:00.000Z", type: "judge", round: 0, verdict: { pass: false, reasons: ["Copies a brand."], mismatches: [], ...met } }] };
+      productOver = { status: "partial" };
+      const failed = await render();
+      assert.doesNotMatch(failed, /checked and working/);
+      assert.match(failed, /Checks found problems, so none of these count as working yet/);
+      assert.doesNotMatch(failed, /> Works</);
+    });
   });
 
   describe("the live frame", () => {

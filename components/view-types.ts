@@ -89,6 +89,8 @@ export interface ProductCardView {
   costUsd: number | null;
   fixRounds: number | null;
   rebuildOf: string | null;
+  /** The build that made the current version, for a "Watch the build" link. */
+  latestBuildId?: string | null;
 }
 
 /** Rebuild catalog entry joined with its latest build and product. */

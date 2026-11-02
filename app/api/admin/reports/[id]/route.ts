@@ -8,10 +8,11 @@ const STATUSES = ["open", "closed", "dismissed"] as const;
 
 /**
  * POST {status: "closed" | "dismissed" | "open"} -> 200 {ok, id, status}. An admin closes a report (it was acted on),
- * dismisses it, or opens it again (TRUST_REPORTS). 404 with the flag off or for an unknown report.
+ * dismisses it, or opens it again (TRUST_REPORTS). 404 for an unknown report, and with both TRUST_REPORTS and
+ * TRUST_LEGAL_PAGES off, since the Privacy page's delete requests arrive here with only the second on.
  */
 export const POST = route(async (req: Request, { params }: { params: Promise<{ id: string }> }) => {
-  if (!env.trustReports) return errorJson(404, "not_found");
+  if (!env.trustReports && !env.trustLegalPages) return errorJson(404, "not_found");
   const admin = await requireAdmin();
   const { id } = await params;
   if (!isUuid(id)) return errorJson(404, "not_found");

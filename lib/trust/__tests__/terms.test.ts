@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
 import { refineBuildModel } from "@/lib/pipeline/logic";
-import { privacySections, TERMS_SECTIONS, TERMS_VERSION } from "@/lib/trust/terms";
+import { privacySections, TERMS_SECTIONS, TERMS_VERSION, termsSections } from "@/lib/trust/terms";
 
 const PRIVACY_SECTIONS = privacySections({ sparkToWonder: false });
 
@@ -49,5 +49,29 @@ describe("the platform's Terms and Privacy", () => {
       assert.equal(privacy.includes("what people type into those products"), !sparkToWonder, String(sparkToWonder));
       assert.ok(!privacy.includes("\u2014"));
     }
+  });
+
+  it("name the Report link only while TRUST_REPORTS is on, and point to the Privacy page's form otherwise", () => {
+    assert.ok(text(termsSections({ reports: true })).includes("Report link on it"));
+    const off = text(termsSections({ reports: false }));
+    assert.ok(!off.includes("Report link on it"));
+    assert.ok(off.includes("use the form on the Privacy page"));
+    assert.ok(!text(privacySections({ sparkToWonder: false, reports: false })).includes("Report link on the product"));
+    assert.ok(text(privacySections({ sparkToWonder: false, reports: true })).includes("Report link on the product"));
+    for (const t of [off, text(privacySections({ sparkToWonder: false, guestMode: true }))]) assert.ok(!t.includes("\u2014"));
+  });
+
+  it("say what the site really keeps: sign-in only if you sign in, retention as the cleanup cron has it, and a delete by hand", () => {
+    const privacy = text(privacySections({ sparkToWonder: false }));
+    assert.ok(privacy.includes("If you sign in: your email address"));
+    assert.ok(privacy.includes("deleted after 24 hours"));
+    assert.ok(privacy.includes("judge reads are deleted after 30 days"), "lib/gateway/cleanup.ts deletes screens/ after 30 days");
+    assert.ok(privacy.includes("use the form below"));
+    assert.ok(privacy.includes("deletes by hand"));
+    assert.ok(privacy.includes("Lambda"));
+    assert.ok(!privacy.includes("Guest mode"));
+    const guest = text(privacySections({ sparkToWonder: false, guestMode: true }));
+    assert.ok(guest.startsWith("Guest mode"));
+    assert.ok(guest.includes("anyone can read yours"));
   });
 });

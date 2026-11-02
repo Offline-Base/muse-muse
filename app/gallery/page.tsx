@@ -12,7 +12,8 @@ export const metadata: Metadata = { title: "Gallery" };
 
 export default async function Gallery() {
   await connection();
-  const result = await safeQuery(() => listShippedProducts(60));
+  // Only products with a live link: one built where publishing was off has only a "Not published" page to open.
+  const result = await safeQuery(() => listShippedProducts(60, { published: true }));
   return (
     <div className="page gx-page">
       <h1 className="sr-only">Gallery</h1>
@@ -21,7 +22,7 @@ export default async function Gallery() {
         <NotConnected reason={result.reason} what="the gallery" />
       ) : result.data.length === 0 ? (
         <EmptyCard title="Nothing shipped yet" action={{ href: "/", label: "Start a muse" }}>
-          <p>Products show up here once they pass their checks and go live.</p>
+          <p>Products show up here once they ship and are published at their own link.</p>
         </EmptyCard>
       ) : (
         <ProductBrowser products={result.data} />
