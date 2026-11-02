@@ -13,7 +13,8 @@ import {
   datasetStartErrorText,
 } from "@/components/train/format";
 import { groupThousands, modelLabel, usd } from "@/lib/format";
-import { SPARK_STANDIN } from "@/lib/meta/spark";
+import { contributorSwitchOn, SPARK_STANDIN } from "@/lib/meta/spark";
+import { CONTRIBUTOR_TUNE_NOTICE, ContributorNotice } from "@/components/composer/ContributorNotice";
 import { researchEstimate } from "@/lib/train/research/estimate";
 import { DATASET_MAX_COUNT, DATASET_MIN_COUNT, DATASET_TASK_MAX, DATASET_TASK_MIN } from "@/lib/train/logic";
 
@@ -161,6 +162,7 @@ export function NewDatasetCard({ blocked = null, contributorWriter = false, rese
     <section className="card train-new" id="new-dataset" aria-labelledby={`${id}-title`}>
       <div className="train-new-head">
         <h2 id={`${id}-title`}>New dataset</h2>
+        {contributorSwitchOn() ? <ContributorNotice text={CONTRIBUTOR_TUNE_NOTICE} /> : null}
         <p className="muted small">
           {WRITER_NAME} writes realistic prompts for the task and answers them. Jobs train on the answers.
           {researchMaxUsd !== null ? (

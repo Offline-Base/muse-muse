@@ -2272,6 +2272,22 @@ Tried at 01:28 UTC on Nov 2 (still Nov 1 here) with curl keeping cookies, signed
 - **For the rerun:** the guest's own view takes out instance id, IP, logs and errors (`visitorRunView`), so proving callbacks and the GPU's end needs what that view keeps plus an owner's check of the job row or Lambda console.
 - **Spend:** $0. No production changes.
 
+## Nov 1: everything on Contributor under BUILDS_ON_CONTRIBUTOR, no Wonder but the Wonder check (branch tg-all-contributor)
+
+Owner: "change anything in the product now to use muse spark 1.3 contributor, no muse wonder except for the muse wonder check."
+
+- **One source of truth.** `contributorSwitchOn()` and `defaultModel()` in lib/meta/spark.ts. lib/env.ts reads the switch from there. next.config.ts inlines the setting so browser pages can name the real model. Flag off: every answer is today's.
+- **Moved under the switch:** tuning judge, dataset writer, Hub story, tune plan, content check, research, tool fixtures, Prove it default, the session usage fallback label, the exec default, the build model fallback, the docs proxy and Ask, the docs menus, the tune cost estimates, and page copy that names the model.
+- **Gateway.** A request naming Wonder is served by Contributor and metered at its price, on every token. TRUST_SPARK_TO_WONDER can't take a call to Wonder under the switch.
+- **Decision, disabled with a plain message (no Wonder to fall back to, Meta terms 6.2 bar personal information on Contributor):** live tokens without the marker get 403 `off_for_now`; audio input gets 403 `audio_input_off`; /api/device/ask gets 503 `device_off_on_contributor`; a Muse Code task from such a product is refused; a new brief holding something personal ends as a refusal; the brief writer isn't offered personal tools or gadgets.
+- **Decision, kept:** contributorWriterOn stays behind its own switch, so a person's dropped files still don't go to Contributor without TRAIN_CONTRIBUTOR_WRITER. testModel keeps its production guard. The Knowledge run writer and scripts/knowledge are untouched.
+- **Decision, kept:** the template is unchanged and so is the snapshot. Product code keeps naming the id, the gateway serves it, and the build prompt tells the writer not to say Muse Wonder on screen. The template's own text, such as ModelChip and askGlimmer's note, still says Muse Wonder until a change to it and a new snapshot.
+- **Judge label.** Results and Hub cards judged on Contributor now say their scores don't compare with runs judged by Muse Wonder. judge_model was already saved on each job.
+- **Guard.** lib/__tests__/no-wonder.test.ts checks every pick under the switch and scans the code: a new use of the id fails until it says why. lib/wonder/loop.ts and lib/pipeline/wonder-step.ts are named as the only allowed Wonder callers. Their branch isn't merged and its Wonder call is untouched.
+- **Docs.** docs/SUBMISSION.md and the video script now name the real model.
+- **Tests.** tsc clean. no-wonder 8 of 8, handler 58, musecode 87, and the other suites for touched modules pass. build-steps.scenario can't load: its mock of lib/judge lacks MAX_CHAIN_SCREENSHOTS, in a file this branch doesn't touch.
+- **Owner's change of instruction, mid-task:** no builds or Meta calls, to save money. So NOT RUN: the real build on a Preview, usage rows, and the vision, video, PDF and JSON calls on Contributor. No Preview deployed and no project linked. Web search on Contributor (fine-tune research, products using web_search) is also unmeasured: it may fail.
+- **Spend:** $0 Meta, no GPUs, no deploys, no production changes.
 ## Nov 2, 01:47 UTC: tuned one-bit file uploaded to a private Hub repo (branch tg-one-bit-upload)
 
 The owner asked for it after I advised against it. Repo: https://huggingface.co/OfflineBase/Muse-Glimmer-30B-Moss-Test-IQ1_S-GGUF, **private** (read back with the token; anonymous gets 401). Commit d1c0a13f. No training ran: this merged, quantized and checked the existing adapter 1898e46c through the real recipe, publish 0, unchanged, then uploaded by hand.
@@ -2284,3 +2300,15 @@ The owner asked for it after I advised against it. Repo: https://huggingface.co/
 - Watchdog: the earlier 4-hour timer had died with the crashed session, so a detached 2.5-hour one covered this instance, stopped once it was gone.
 - Spend: device-loop-upload-1, gpu_1x_a10, launched 01:00:32Z, terminate sent about 01:47:30Z, off the list by 01:49:57Z. At most 49.4 minutes at $1.29, about $1.06 by list price, not read from an invoice. Limit $10. Lambda reports its id as terminated. Another session's device-loop-inv-1 was left alone.
 - Not run: the file on a Jetson, a download back from the Hub, the card's serve command on this copy, a judge on the answers, any tests (docs only). The stand-in numbers and the 1 of 5 on stock are from the Nov 1 run, not repeated.
+
+## Nov 1: owner's decisions on BUILDS_ON_CONTRIBUTOR, PR #52 updated (branch tg-all-contributor)
+
+Merged origin/main (#50, #51). The only conflict was this log; both entries kept. #51's Fireworks code doesn't name Wonder.
+
+- **Decision, gadgets and boards stay on.** `/api/device/ask` has no refusal again. Live tokens with `muse-gadget` or `board-tools` keep Muse Wonder (`keepsWonderUnderSwitch`, lib/gateway/policy.ts). New gadget and board briefs are offered and built. My reading, flagged to the owner: "stay on" means on Wonder as they are today, since a camera or microphone can't go to Contributor under terms 6.2. Build tokens still run on Contributor with the simulated board.
+- **Decision, three demos stay on Wonder.** `WONDER_DEMO_SLUGS`: voice-memo-tasks, class-capture-notes, gym-snap-coach, checked by slug at the gateway, live tokens only, marker or not, audio included. Other products published before #37 get the existing 403 `off_for_now`. Read-only check: each `/p/<slug>` on production answers 200, and a made-up slug 404, so a stranger can't claim these slugs while they exist.
+- **Decision, personal accounts stay off Contributor.** No marker, calls refused, new briefs refused. My reading, flagged: refused, not moved back to Wonder, as this PR already had it. Drive tools stay in this group; flagged too. Muse Code tasks stay refused for the exceptions, since sessions run on Contributor.
+- **The flip.** `BUILDS_ON_CONTRIBUTOR` off does put the platform on Wonder, read from the code, with limits. docs/JUDGING_WEEK.md "Flip to Wonder" has the one command and the full list. It needs a redeploy, since next.config.ts inlines it. `BRIEF_MODEL`, `JUDGE_MODEL`, `BUILD_MODEL` and `COMPLEX_BUILD_MODEL` are set on production (names read with `vercel env ls`, values not read) and take over once it's off, so each must be Wonder. Wonder is 40 times the input price and 100 times the output.
+- **Tests.** tsc clean. no-wonder 11 of 11, handler 61 of 61, terms, build-models, flags-off, gadget-option, ask-route, agent-option, targets, tiers, musecode and engine pass. build-steps.scenario loads now, after adding `MAX_CHAIN_SCREENSHOTS` and `collectDeployFiles` to its mocks, and its new test of the brief refusal passes: 48 of 50. The two left aren't from this work and I left them: a plan's `buildMs` expects 30 minutes and gets 60, and "copies the product's brief onto the refine row". They were hidden while the file couldn't load.
+- **Not run:** any build, Meta call, deployment, the flip command, or env change. TERMS_VERSION not changed, though the privacy text under the switch did change; the owner should say if it needs a bump.
+- **Spend:** $0.

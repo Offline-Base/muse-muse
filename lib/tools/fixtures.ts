@@ -7,6 +7,7 @@ import { buildTestModel } from "@/lib/env";
 import { TOOL_POLICIES } from "@/lib/tools/catalog.source";
 import type { ToolFixtures } from "@/lib/tools/ids";
 import type { ModelUsage } from "@/lib/types";
+import { defaultModel } from "@/lib/meta/spark";
 
 /**
  * Canned tool outputs for one build's tests (docs/AGENT_TOOLS.md). Builds never call Composio, so a product's tests see
@@ -14,7 +15,7 @@ import type { ModelUsage } from "@/lib/types";
  * have something real to show. Only read tools get any. A write tool's output is an id, so its catalog sample does.
  */
 
-const FIXTURE_MODEL = "muse-wonder-1.0";
+const FIXTURE_MODEL = defaultModel();
 const OUTPUTS_PER_TOOL = 2;
 /** A longer output would be cut by the gateway's trim, and would only make the screen harder to judge. */
 const MAX_OUTPUT_CHARS = 6_000;

@@ -31,7 +31,8 @@ describe("the platform's Terms and Privacy", () => {
     const on = text(privacySections({ sparkToWonder: true, buildsOnContributor: true }));
     assert.ok(on.includes("Every build right now"));
     assert.ok(on.includes("what its visitors type goes there too"));
-    assert.ok(on.includes("personal tools, which stay on Muse Wonder"));
+    assert.ok(on.includes("personal tools, which can't run on this model"));
+    assert.ok(on.includes("three demo products, stay on Muse Wonder"));
     assert.ok(!on.includes("\u2014"));
   });
 

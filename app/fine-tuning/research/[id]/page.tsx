@@ -10,6 +10,8 @@ import { safeQuery } from "@/lib/queries";
 import { getResearch } from "@/lib/train/research/store";
 import { toResearchView } from "@/lib/train/research/view";
 import { pageViewer } from "../../viewer";
+import { defaultModel } from "@/lib/meta/spark";
+import { modelLabel } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Data research" };
 
@@ -30,7 +32,7 @@ export default async function ResearchPage({ params }: { params: Promise<{ id: s
   const view = toResearchView(result.data);
   return (
     <div className="page">
-      <PageHeader title="Data research" subtitle={`${usd(view.costUsd)} spent of its ${usd(view.maxUsd)} cap, on Muse Wonder and Meta's web search.`} />
+      <PageHeader title="Data research" subtitle={`${usd(view.costUsd)} spent of its ${usd(view.maxUsd)} cap, on ${modelLabel(defaultModel())} and Meta's web search.`} />
       <RefreshWhileActive active={view.status === "running"} />
       <ResearchReport research={view} />
     </div>

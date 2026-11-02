@@ -1,6 +1,7 @@
 import { LongText } from "@/components/train/LongText";
 import {
   itemNumber,
+  judgeComparabilityNote,
   scoreText,
   verdictLabel,
   verdictTone,
@@ -79,6 +80,7 @@ function EvalStatus({ state, model, writer, judge, base }: { state: EvalState; m
             Scores run from 1 to 10 against {writer ? `${writer}'s reference answer` : "the reference answer"}. Judging cost{" "}
             {usd(s.judgeCostUsd)}.
           </p>
+          {judgeComparabilityNote(judge) ? <p className="muted small">{judgeComparabilityNote(judge)}</p> : null}
         </div>
       );
     }
