@@ -2324,3 +2324,15 @@ Merged origin/main (#50, #51). The only conflict was this log; both entries kept
 - **Tests.** tsc clean. no-wonder 11 of 11, handler 61 of 61, terms, build-models, flags-off, gadget-option, ask-route, agent-option, targets, tiers, musecode and engine pass. build-steps.scenario loads now, after adding `MAX_CHAIN_SCREENSHOTS` and `collectDeployFiles` to its mocks, and its new test of the brief refusal passes: 48 of 50. The two left aren't from this work and I left them: a plan's `buildMs` expects 30 minutes and gets 60, and "copies the product's brief onto the refine row". They were hidden while the file couldn't load.
 - **Not run:** any build, Meta call, deployment, the flip command, or env change. TERMS_VERSION not changed, though the privacy text under the switch did change; the owner should say if it needs a bump.
 - **Spend:** $0.
+
+## Nov 2, 2026: Make chat as one start point (`MAKE_CHAT_ALL`, off), branch tg-make-chat
+
+- **Picked up** an unfinished agent's work (stalled Nov 1 about 9:50 PM with nothing committed): the box, intent and pair routes, paired room.
+- **Fixed:** a signed-out visitor asking for a plain product got a raw 401 instead of sign-in. A "both" request could start the model when its app was blocked, so Start now refuses before anything runs.
+- **Found on main, fixed here:** `tune-flag-off.test.tsx` could not start (its fake store lacked `gpuBudgetFor` and `listOwnRuns`) and its fixture was stale. The fixture was regenerated from clean origin/main, and the branch then matched it with the switch off.
+- **Tests:** `lib/make/__tests__/make.test.ts` 20 of 20, make-flag-off 2 of 2, tune-flag-off 2 of 2, tsc clean. Full suite not run.
+- **Preview, guest** (muse-muse-rd86lw01g): plain product answered with no model call, both and model recognized, "3D models of furniture" stayed a product, wrong start code 403, /fine-tuning/new redirects, /fine-tuning 200. The shared guest account was at its build limit, so the app was blocked for a guest (`shared_limit`).
+- **Preview, admin** (muse-muse-ndrpb7q5s, OPEN_ACCESS=admin, not for sharing), one made-up bakery sentence, through the routes the page calls: intent both, plan, run 635cd05e, build 2360700c, pair 200. Build live on muse-spark-1.3-contributor in about 10.5 minutes, $0.034 as reported. Run wrote its 40 examples for $0.0056, then held at `not_started` because the lost-GPU check can't run on a Preview, as expected. GPU spend $0.
+- **Privacy:** the owner's room showed the model's story and results. The same room on the guest Preview showed no trace of the run or its id.
+- **Not proven:** a GPU run from this box, so no tuned model, score or link. Linking the run to a product (needs `TUNE_FROM_BUILDS` and the GPU capability; `link` answered `off` here). Clicking through the page in a browser (extension disconnected, so these were route calls and rendered HTML, with no screenshots). A folder through the box. A signed-in non-admin's both request end to end.
+- **Slip:** `vercel link` wrote an unrequested `.env.local` into this worktree. It was deleted unread, and the `.gitignore` edit undone.
