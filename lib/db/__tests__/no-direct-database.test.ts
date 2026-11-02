@@ -33,6 +33,7 @@ const MAY_READ: Record<string, string> = {
   "scripts/dev/native-fixtures.ts": "accepts only DATABASE_URL=pglite:<folder> (localDbDir), and throws otherwise",
   "scripts/dev/room-fixtures.ts": "accepts only DATABASE_URL=pglite:<folder> (localDbDir), and throws otherwise",
   "scripts/dev/ui-smoke.tsx": "unsets DATABASE_URL to render pages with no database, then puts it back",
+  "scripts/dev/tune-harness.ts": "accepts only DATABASE_URL=pglite: on a copy of the site's folder (never .data/prove), and throws otherwise",
 };
 
 /** Drivers that read PG* variables for a missing address, and the Drizzle adapters built on them. Never imported. */

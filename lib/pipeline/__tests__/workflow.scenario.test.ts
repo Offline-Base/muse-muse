@@ -952,7 +952,7 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
       ],
     );
     assert.ok(calls.findLastIndex((c) => c.step === "pollMuseStep") < calls.findLastIndex((c) => c.step === "museRoundStep"));
-    assert.equal((named("failStep")[0]!.args[0] as { message: string }).message, "Muse Code ran past its 25-minute limit and was stopped.");
+    assert.equal((named("failStep")[0]!.args[0] as { message: string }).message, "Muse Code ran past its 60-minute limit and was stopped.");
   });
 
   it("takes exactly today's steps while steering is off", async () => {
@@ -1152,7 +1152,7 @@ describe("engine (docs/CAPABILITIES.md, section 8)", { skip: canMock ? false : "
     flags({ ENGINE_CHECK_ON_TIMEOUT: "1" });
     reset({ head: { kind: "refine", status: "queued", productId: "prod-1" }, musePollsByRun: [Infinity], verifies: [{ passed: true }] });
     assert.deepEqual(await wf.refineProduct({ buildId: "t3" }), { status: "failed" });
-    assert.match((named("failStep")[0]!.args[0] as { message: string }).message, /past its 25-minute limit and was stopped\. The live version was kept\./);
+    assert.match((named("failStep")[0]!.args[0] as { message: string }).message, /past its 60-minute limit and was stopped\. The live version was kept\./);
     assert.equal(named("collectVerifyStep").length, 0);
     assert.equal(named("judgeStep").length, 0);
     assert.equal(named("registerStep").length, 0, "nothing shipped");
