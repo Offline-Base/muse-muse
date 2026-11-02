@@ -76,7 +76,8 @@ export function tuneStage(d: DatasetView, job: TrainJobView | null, evals: EvalR
   if (!job) {
     if (marks.ended && isCheckCode(marks.ended)) return { stage: "failed", problem: checkText(marks.ended), ...none };
     const beat = freshHeartbeat(marks, now);
-    if (beat?.state === "checking") return { stage: "checking", problem: null, ...none };
+    // A recorded ending outranks "checking": a refused launch leaves that heartbeat fresh for minutes, with nothing still trying.
+    if (beat?.state === "checking" && !marks.ended) return { stage: "checking", problem: null, ...none };
     if (beat && isWaitReason(beat.state)) {
       return { stage: "waiting", problem: null, hold: { reason: beat.state, text: waitText(beat.state), since: beat.since.toISOString() } };
     }
