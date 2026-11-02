@@ -7,6 +7,8 @@ import { KIND_ICON } from "@/components/composer/AttachmentChip";
 import { ExternalLink } from "@/components/ui";
 import type { InspirationView, RebuildRef } from "@/components/view-types";
 import { groupLog, type LogGroup, type Segment } from "@/components/build/derive";
+import { DrillGroup } from "@/components/build/DrillGroup";
+import { splitDrillSteps } from "@/lib/edge/drills";
 import { splitBuildNote } from "@/lib/docs/build-note";
 import { FIT_LABEL, compact, duration, modelLabel, plural, truncate, usd } from "@/lib/format";
 import type { Brief, Reference } from "@/lib/types";
@@ -305,6 +307,8 @@ export const VERIFY_LABEL: Record<string, string> = {
 /** What the checks ran and what the judge said. Their screenshots are the step's thumbnails (roomSteps). */
 export function CheckBody({ seg, live }: { seg: Extract<Segment, { type: "check" }>; live: boolean }) {
   const { verify, judge } = seg;
+  // An edge build's simulated outage drills show as their own group. For any other build `checks` is verify's steps.
+  const { checks, drills } = splitDrillSteps(verify?.summary.steps ?? []);
   return (
     <div className="check">
       {verify ? (
@@ -317,7 +321,7 @@ export function CheckBody({ seg, live }: { seg: Extract<Segment, { type: "check"
             </span>
           </p>
           <ul className="vsteps">
-            {verify.summary.steps.map((s) => (
+            {checks.map((s) => (
               <li key={s.name} className={s.ok ? "ok" : "bad"}>
                 <Icon name={s.ok ? "check" : "close"} size={16} title={s.ok ? "Passed" : "Failed"} />
                 <span className="vstep-name">{VERIFY_LABEL[s.name] ?? s.name}</span>
@@ -326,6 +330,7 @@ export function CheckBody({ seg, live }: { seg: Extract<Segment, { type: "check"
               </li>
             ))}
           </ul>
+          <DrillGroup drills={drills} />
           {!verify.summary.passed && verify.summary.failureOutput ? (
             <details className="fold">
               <summary>Failing output</summary>
