@@ -1806,7 +1806,7 @@ All made-up data. Code: tg-caps-ready fa692f3e, builder snapshot snap_XXT4qDZEWL
 
 Preview muse-muse-5qowrscqp (dpl_B93NHQwXDZzJqDm4tN3xKmB16g6B), same note as Wonder build b2996b46, made-up data. Build 22562315-2739-4397-b640-03d5ea690054, product harborlight-ferry-operations. buildModel read back as muse-spark-1.3-contributor.
 
-- Result: partial, not finished. 23:02:34 to 00:43:41 UTC, 101 minutes of the 150 wall. $0.93. 40 requirements, 6 milestones. Milestones passed 2 of 6 (R1 to R7, R8 to R14). The other 4 failed. Judge did not pass: 15 or so requirements unmet, including the passenger chat, admin and cross-part checks. Most say no test has that id.
+- Result: partial, not finished. 23:02:34 to 00:43:41 UTC, 101 minutes of the 150 wall. $0.93. 40 requirements, 6 milestones. Milestones passed 2 of 6 (R1 to R7, R8 to R14). The other 4 failed. Judge did not pass: 20 of 40 requirements unmet (R18, R22 to R40), including the passenger chat, admin and cross-part checks. Most say no test has that id.
 - Round time: 11m07, 18m45, 18m43, 18m17, 17m59, 6m36. Earlier the Wonder build got 5 to 8 minutes, so the new split gives the longer rounds the Nov 1 fix aimed for.
 - Time limit: 4 of 6 rounds ended at it (rounds 2 to 5). The first and last ended on their own. The last stopped after 6m36 with requirements still unmet.
 - Not proof for Wonder: the test model is much faster than Muse Wonder, so this timing doesn't show the split is enough at Wonder's pace. Only a Wonder rerun can.
