@@ -7,7 +7,7 @@ export type BuildSetupCode = "no_model_key" | "no_sandbox";
 export function buildSetupMessage(code: BuildSetupCode): string {
   return code === "no_model_key"
     ? "Builds are off on this machine: MODEL_API_KEY is empty. Add a Meta Model API key to .env.local and restart. Browsing, the tests and the outage drills need no key."
-    : "Builds are off on this machine: Vercel Sandbox has no credentials. Run npx vercel link, then npx vercel env pull, and restart. Builds run only in Vercel Sandbox.";
+    : "Builds are off on this machine: Vercel Sandbox has no credentials. Run npx vercel link and npx vercel env pull .env.vercel.local, copy its VERCEL_OIDC_TOKEN line into .env.local, and restart. Builds run only in Vercel Sandbox.";
 }
 
 /**

@@ -9,7 +9,8 @@
  *             download from localhost goes inline (lib/brief/media.ts inlineMedia).
  *
  * Browsing needs nothing. A build needs MODEL_API_KEY and Vercel Sandbox credentials: VERCEL_OIDC_TOKEN in .env.local
- * (`npx vercel link`, then `npx vercel env pull`, good for 12 hours). Without either, the Make page says so and builds
+ * (`npx vercel link`, then `npx vercel env pull .env.vercel.local` and copy the line over, good for 12 hours; a plain
+ * `vercel env pull` writes over .env.local). Without either, the Make page says so and builds
  * are refused before anything is paid for (lib/quota.ts buildSetupRefusal). BUILDER_SNAPSHOT_ID is optional here:
  * without it the first build installs the toolchain itself, which is slower (lib/sandbox/builder.ts provisionSandbox).
  * Products aren't published to their own link from here, even with VERCEL_TOKEN set (env.publishOffReason).
@@ -26,7 +27,7 @@ childEnv.PLATFORM_URL = `http://localhost:${PORT}`;
 if (!childEnv.BLOB_READ_WRITE_TOKEN?.trim() && !childEnv.BLOB_STORE_ID?.trim()) childEnv.NEXT_PUBLIC_LOCAL_FILES = "1";
 if (!childEnv.MODEL_API_KEY?.trim()) console.warn("dev:local: MODEL_API_KEY is not set in .env.local, so builds are off. Browsing works.");
 if (!childEnv.VERCEL_OIDC_TOKEN?.trim() && !childEnv.VERCEL_OIDC_TOKEN_FILE?.trim() && !linkedVercelProject()) {
-  console.warn("dev:local: no Vercel Sandbox credentials (npx vercel link, then npx vercel env pull), so builds are off.");
+  console.warn("dev:local: no Vercel Sandbox credentials, so builds are off. See the README's Judge path (npx vercel link, then npx vercel env pull .env.vercel.local).");
 }
 if (!childEnv.BUILDER_SNAPSHOT_ID) console.log("dev:local: no BUILDER_SNAPSHOT_ID, so the first build installs its toolchain itself (slower).");
 

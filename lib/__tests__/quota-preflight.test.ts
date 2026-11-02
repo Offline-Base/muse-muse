@@ -70,10 +70,10 @@ describe("buildSetupRefusal", () => {
     assert.deepEqual(quota.buildSetupRefusal({ MODEL_API_KEY: "  ", VERCEL_OIDC_TOKEN: FAKE_OIDC }, bareDir())?.error, "no_model_key");
   });
 
-  it("refuses with no_sandbox when the SDK would find no credentials", () => {
+  it("refuses with no_sandbox when the SDK would find no credentials", (t) => {
     const dir = bareDir();
     // tmpdir() itself could sit under a folder with .vercel on some machines; the check is only meaningful when it doesn't.
-    if (quota.sandboxCredentialsAvailable({}, dir)) return;
+    if (quota.sandboxCredentialsAvailable({}, dir)) return t.skip("the temp folder sits under a linked Vercel project");
     assert.deepEqual(quota.buildSetupRefusal({ MODEL_API_KEY: FAKE_KEY }, dir), { ok: false, status: 503, error: "no_sandbox" });
     // The packager's token triple is not what builds use, so it doesn't count.
     assert.equal(
