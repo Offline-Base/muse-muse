@@ -1,4 +1,8 @@
-# Edge tune on a free GPU
+# Edge tune on a free GPU (retired)
+
+> **Retired on Nov 2, 2026. Do not run.** The organizers ruled that day (Cerebral Valley Discord, 3:57 PM ET; docs/MESSAGING.md, rules section) that Llama of any version does not count as a Meta model in this hackathon, and that every model the project runs must be a Meta model. This notebook tunes Llama 3.2 3B, so it is an earlier experiment, not part of the submitted project. Swapping in Muse Glimmer isn't realistic: Glimmer 30B in 4-bit needs about 17 GB or more before activations, so it doesn't fit one free 16 GB T4.
+>
+> The edge tune is now an r30b Muse Glimmer tune on a rented A100, about $1.39 to $1.86, with its one-bit IQ1_S file made on an A10 (docs/CHAIN_RUN.md, docs/EDGE_PLAN.md M8). The files here stay in place until the owner decides whether to delete or gate the Llama code. Everything below describes the notebook as it was built, for the record.
 
 `edge-tune-kaggle.ipynb` tunes Llama 3.2 3B Instruct for the Simulated cold-room drill on Kaggle's free T4 (or Colab's free T4), so the edge tune (docs/EDGE_PLAN.md, M8) doesn't need a rented GPU. It scores the base and the tuned model on the 100 sealed held-out rows with drill-bench's own scorer, then exports a Q4_K_M GGUF with its sha256 for `gguf-serve.sh`.
 
