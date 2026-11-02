@@ -76,6 +76,7 @@ export async function GET(req: Request, { params }: Ctx): Promise<Response> {
             cursor = event.id;
             // PLAN_ART off: a plan picture made while it was on stays out of the room, as the page leaves it out.
             if (event.type === "plan_art" && !env.planArt) continue;
+            if (event.type === "steps_feed" && !env.buildRoomSteps) continue;
             write(formatSseEvent(event));
             if (endedAt === null && isTerminalEvent(event)) endedAt = Date.now();
           }

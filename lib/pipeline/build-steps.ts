@@ -6,6 +6,7 @@
  * Plaintext gateway tokens are minted inside the step that hands them to the sandbox or to Vercel, so they never
  * appear in a step's return value (step results are persisted in the workflow's event log).
  */
+import { countHelpers, recheckIds, type HelperCount } from "@/lib/fast/fast";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, gte, inArray, lte, ne, notInArray, sql } from "drizzle-orm";
 import { FatalError, getStepMetadata } from "workflow";
@@ -240,7 +241,13 @@ function rangeNote(brief: Brief | null | undefined): { buildRange?: boolean } {
   return env.buildRange && brief?.direction ? { buildRange: true } : {};
 }
 
+/** FAST_BUILDS: a brief marked fast when it was written. Nothing with the flag off, whatever the stored brief holds. */
+function fastNote(brief: Brief | null | undefined): { fastCapacity?: number } {
+  return env.fastBuilds && brief?.fast === true ? { fastCapacity: env.museAgentCapacity } : {};
+}
+
 function requiredAgentsOf(brief: Brief | null | undefined): boolean {
+  if (fastNote(brief).fastCapacity !== undefined) return true;
   return rangeNote(brief).buildRange === true && brief?.complexity === "complex";
 }
 
@@ -373,6 +380,8 @@ export interface BriefSummary {
   model: BuildModel;
   /** The engine's round plan, only when ENGINE_ROUND_SCALING or ENGINE_MILESTONES gives one (enginePlan). */
   plan?: RoundPlan;
+  /** FAST_BUILDS on this build. */
+  fast?: boolean;
 }
 
 function summarize(brief: Brief): BriefSummary {
@@ -384,6 +393,7 @@ function summarize(brief: Brief): BriefSummary {
     tagline: brief.tagline,
     model: pickBuildModel(brief.complexity, { buildModel: env.buildModel, complexBuildModel: env.complexBuildModel }),
     ...(plan ? { plan } : {}),
+    ...(fastNote(brief).fastCapacity !== undefined ? { fast: true } : {}),
   };
 }
 
@@ -490,7 +500,9 @@ export async function briefStep(buildId: string): Promise<BriefSummary> {
     throw err;
   });
   await chargeBrief(buildId, written.usage);
-  const result = (await chainFor(build, written.brief)) ? { ...written, brief: { ...written.brief, chained: true } } : written;
+  const chained = (await chainFor(build, written.brief)) ? { ...written, brief: { ...written.brief, chained: true } } : written;
+  // FAST_BUILDS: complex builds only. Marked before the plan is made, so the plan has one round. Not for a chain, which has its own rounds.
+  const result = env.fastBuilds && chained.brief.complexity === "complex" && chained.brief.verdict !== "no" && !chained.brief.chained ? { ...chained, brief: { ...chained.brief, fast: true } } : chained;
   const summary = summarize(result.brief);
   await db()
     .update(schema.builds)
@@ -537,7 +549,7 @@ export async function createProductStep(buildId: string): Promise<ProductRef> {
       base,
       taken.map((t) => t.slug),
     );
-    const productId = randomUUID();
+    const productId = env.fastBuilds ? buildId : randomUUID();
     try {
       await db().batch([
         db().insert(schema.products).values({
@@ -671,6 +683,7 @@ export async function provisionStep(input: {
       ...(fullBuildOf(b) ? { fullBuild: true } : {}),
       ...look,
       ...rangeNote(b),
+      ...fastNote(b),
     });
   const promptMarkdown = promptFor(brief);
   const allowedModels = allowedModelsFor(brief);
@@ -707,6 +720,7 @@ export async function provisionStep(input: {
     gatewayUrl: env.gatewayUrl,
     ...look,
     ...rangeNote(brief),
+    ...(env.fastBuilds ? { warm: true } : {}),
     ...extraFilesFor(brief),
     targets: briefTargets(brief),
     ...(caps ? { caps, capEnv: capBuildEnv(brief), capHosts: capBuildHosts(caps.caps), dropCaps } : {}),
@@ -840,6 +854,8 @@ export async function museRoundStep(buildId: string, round: number | null): Prom
 museRoundStep.maxRetries = 2;
 
 export interface MusePollResult {
+  /** FAST_BUILDS: the helper count so far. Pass it to the next poll. */
+  helpers?: HelperCount;
   done: boolean;
   exitCode: number | null;
   offset: number;
@@ -883,6 +899,7 @@ export async function pollMuseStep(input: {
   announced?: string[];
   childrenIncluded?: boolean | null;
   bridgeState?: BridgeCondenseState;
+  helpers?: HelperCount;
 }): Promise<MusePollResult> {
   "use step";
   const engine = input.run.engine ?? "exec";
@@ -897,6 +914,9 @@ export async function pollMuseStep(input: {
     bridgeState: input.bridgeState,
   });
   if (poll.lines.length) await emit(input.buildId, { type: "muse", lines: poll.lines, round: input.round });
+  // FAST_BUILDS: the story says when helpers are at work.
+  const counted = input.helpers ? countHelpers(input.helpers, poll.lines) : null;
+  if (counted?.line) await emit(input.buildId, { type: "log", text: counted.line });
   const endpoint = engine === "serve" ? "muse serve" : "muse exec";
   const ctx = { source: "muse_code" as const, endpoint, buildId: input.buildId, productId: input.productId };
   const what = input.round === 0 ? "Muse Code build" : `Muse Code round ${input.round}`;
@@ -918,6 +938,7 @@ export async function pollMuseStep(input: {
     announced: poll.announced,
     childrenIncluded,
     ...(poll.bridgeState ? { bridgeState: poll.bridgeState } : {}),
+    ...(counted ? { helpers: { active: counted.active, wave: counted.wave, said: counted.said } } : {}),
     stopRequested,
   };
 }
@@ -972,6 +993,8 @@ export interface VerifyResult {
   passed: boolean;
   steps: Array<{ name: string; ok: boolean }>;
   screenshots: Screenshot[];
+  /** FAST_BUILDS: what the next fix round can recheck alone. */
+  recheck?: string[];
 }
 
 /** Parses verify's summary line, uploads the judge screenshots, and tells the build room. */
@@ -993,9 +1016,32 @@ export async function collectVerifyStep(input: {
     passed: summary.passed,
     steps: summary.steps.map((s) => ({ name: s.name, ok: s.ok })),
     screenshots,
+    ...(env.fastBuilds ? { recheck: recheckIds(summary) } : {}),
   };
 }
 collectVerifyStep.maxRetries = 1;
+
+/** FAST_BUILDS: tells the room and the next fix round what the changed checks found. It never decides the build. */
+export async function recheckFailedStep(input: { buildId: string; round: number; output: string }): Promise<VerifyResult> {
+  "use step";
+  const summary: VerifySummary = { passed: false, steps: [], failureOutput: `The tests for what failed last time still fail:\n${input.output}` };
+  await emit(input.buildId, { type: "verify", round: input.round, summary, screenshots: [] });
+  return { passed: false, steps: [], screenshots: [] };
+}
+
+/** FAST_BUILDS: starts the sandbox beside the brief. A failure only loses the head start, since provisioning makes it then. */
+export async function warmSandboxStep(buildId: string): Promise<void> {
+  "use step";
+  await sandbox.warmSandbox(buildId, env.museAppLook).catch((err: unknown) => console.warn(`[fast builds] warm sandbox: ${String(err)}`));
+}
+warmSandboxStep.maxRetries = 0;
+
+/** FAST_BUILDS: a build that ended before provisioning doesn't leave its warm sandbox running. */
+export async function dropWarmSandboxStep(buildId: string): Promise<void> {
+  "use step";
+  await sandbox.hibernate(sandbox.warmSandboxName(buildId)).catch((err: unknown) => console.warn(`[fast builds] warm sandbox stop: ${String(err)}`));
+}
+dropWarmSandboxStep.maxRetries = 1;
 
 /** Records a verify run that hit its time cap as a failed check, so the fix round sees why. */
 export async function verifyTimedOutStep(input: { buildId: string; round: number; minutes: number }): Promise<VerifyResult> {

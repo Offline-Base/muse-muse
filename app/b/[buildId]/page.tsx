@@ -11,8 +11,16 @@ import { nativeActive } from "@/lib/native/active";
 import { ownModelOffer } from "@/lib/train/tune/from-build";
 import { currentUser, getBuildRoom, platformOrigin, rebuildRef, safeQuery } from "@/lib/queries";
 import { withoutPlanArt } from "@/lib/pipeline/plan-art";
+import { withoutStepsFeed } from "@/lib/steps-feed/facts";
+import type { BuildEvent } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Build room" };
+
+/** What a switched off PLAN_ART or BUILD_ROOM_STEPS wrote stays out of the room. */
+function withoutFlagged<E extends Pick<BuildEvent, "type">>(events: E[]): E[] {
+  const art = env.planArt ? events : withoutPlanArt(events);
+  return env.buildRoomSteps ? art : withoutStepsFeed(art);
+}
 
 export default async function BuildRoomPage({
   params,
@@ -57,7 +65,8 @@ export default async function BuildRoomPage({
       build={data.build}
       product={data.product}
       inspiration={data.inspiration}
-      events={env.planArt ? data.events : withoutPlanArt(data.events)}
+      events={withoutFlagged(data.events)}
+      stepsFeed={env.buildRoomSteps}
       history={data.history}
       tokens={data.tokens}
       canRefine={canRefine}

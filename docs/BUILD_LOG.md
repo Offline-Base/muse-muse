@@ -2019,6 +2019,25 @@ Behind a new flag, off by default. Design and limits are in docs/BUILD_RANGE.md.
 
 Owner asked. Took Media out of the sidebar in components/shell/nav.ts. The /media page stays at its address and nothing else links to it. Touched test only: nav.test.tsx.
 
+## Nov 1: build room steps feed, one real build on a Preview
+
+Preview muse-muse-c14vetvrn, branch tg-build-room-steps at 35c08fb2, made-up note (a tip calculator for a made-up cafe, Moss and Mug). Build 580a9987-1c7f-42f0-8b40-61d4948bbe82, product moss-and-mug-tips, final status live in 6 m 6 s. buildModel read back as muse-spark-1.3-contributor. Total $0.0193. Summarizer two calls, $0.0002251 and $0.000273, $0.0004981 in all, about 2.6% of the build.
+
+Feed at the end, as rendered: Reading what you asked for / Writing down the plan / Setting up a little workspace / recap "Reading your ask, writing the plan, and tidying a workspace", "A calm little start" / Trying out a few things / Putting pieces together / Opening a first look / recap "Trying a few things out, putting pieces together, and opening a first look.", "Still humming along." / Trying everything out / Passing the checks / Looking at screens and they look right / recap "Trying everything out, passing checks, and seeing the screens look right.", "Careful and happy checking" / Recording a short demo / Putting it online / It's online / recap "That covered a demo, going online and the finished product.", "Here it is."
+
+Measured against the event log:
+
+- Every line has a real event behind it. 12 steps, 4 recaps. Recaps first showed at 51 s, 4 m 24 s, 5 m 0 s and 6 m 5 s, so not evenly: Muse Code's 3.5 minutes are 2 steps, and the last 2 minutes are 7.
+- Wrong on this Preview: "Putting it online" and "It's online". The log says publishing is off and the product got no link of its own, and the status message says "Finished as live without publishing to its own link." The feed reads only the status.
+- Vague: "Putting pieces together" stands for 8 edits, including the page and an action route. Each edit line adds 2 to "files", so it outscores the single "page" line and "Drawing the home page" never shows.
+- Tense: the model turned finished steps into "Writing down the plan" and "Passing the checks".
+- Words landed twice, at 1 m 50 s and at 6 m 5 s. Between them too few steps were finished while Muse Code polled, and polling stops when it ends, so steps 4 to 10 kept plain words until 0.2 s before the end. The last recap is never worded, since the last call runs before the ending. One recap kept its plain comment because the model's was missing or rejected.
+- Bug: on the finished room the training notice and the composer sit over the feed with no background, and the text overlaps, at both widths and worst at 390 px. `build-room-steps-final-390.jpg`.
+- No sideways scroll at 1280 or 390.
+
+Summarizer failure: replayed this build's real events through `summarizeFeed` with a failing call, in a scratch test not committed. Throw, hang past a 500 ms box, not JSON and wrong shape all returned failed, and rule-breaking lines returned empty. None threw and none wrote anything. With no words at all the feed still reads, 12 steps and 4 recaps in plain words. Not done: a failure on the deployed step in a real build, since that takes a second build or a code hook. `build-room-steps-during2-1280.jpg`, at 1 m 43 s, shows the plain words live in the room, before the first batch landed.
+
+Shots, with the account email hidden: `build-room-steps-during2-*`, `-during3-*`, `-final-*`, at 1280 and 390. Reached through a local forwarder to `vercel curl`. No code changed. No PR exists for the branch yet.
 ## Nov 1: Builds and products on Contributor, a short plan, chat in products
 
 Branch tg-build-tools. Owner asked for all builds on Contributor, a much shorter plan, and products that can use the Muse Spark API.
@@ -2039,6 +2058,7 @@ Branch tg-build-tools. Owner asked for all builds on Contributor, a much shorter
 - **Tests:** tsc clean. Touched tests 395 of 398. The 3 failures (flags-off round caps, two workflow cap messages) also fail on main at a3c2fe6a, as does the build-steps scenario suite (mock lacks collectDeployFiles).
 - **Preview:** muse-muse-nbb9ow0a2, env names read back with the switches present.
 - **Measured:** build 3823ec1d, a note asking for a vibe coding studio whose apps have chatbots: buildModel read back muse-spark-1.3-contributor, the brief has a platform block with publish, gateway and sandboxes, and lists Wonder. Cost at brief $0.0034.
+- **Build 3823ec1d so far, about 45 minutes in:** still running on the Preview, on Contributor, at about $0.13, past milestone 2 of 4. Not finished when this was written, so the chat route isn't proven end to end. No subagent line in its events, so subagents on Contributor remain unmeasured. A real child can't publish from a Preview, so a live child's chatbot is unproven. Meta spend is that build only, no GPUs.
 ## Nov 1: /models redesigned as cards (branch tg-models-page)
 
 Owner asked for the look of their screenshot of Meta's Models page. No flag: this ships directly.
@@ -2089,6 +2109,26 @@ Tests, touched code, all made-up data: new lib/train/tune/__tests__/open-train.t
 
 Preview muse-muse-j1swsu3a1, as a guest (OPEN_ACCESS=guest, so no admin), on the main database, model read back as Spark 1.3 Contributor. All made-up data. /, /fine-tuning and /fine-tuning/new answered 200; the page carries the folder notice and never the code. Runs with a wrong or no code: 403. POST /api/train/jobs: 403. Folder with a fake .env, a binary's name, an email and a hidden instruction: the .env and binary skipped with reasons, the email's line taken out, the instruction kept only as data. The plan's reply and the task didn't hold it. Start with the code in capitals and spaces: 201, run 6d04777d. Contributor wrote 40 examples for $0.0077. Another visitor: 404 on the run and its room; not on the Lab page. Then the launch was refused and the run stopped, so **no GPU started, $0 on Lambda**: TRAIN_ALLOW_OUTSIDE_PRODUCTION isn't set on this Preview, so launching through the site is still unproven, and so is whether the $4 limit holds on a GPU other than the cached A100 (estimated 44 minutes on it). Not proven live: that the hidden instruction didn't steer the examples, since a visitor can't read their rows; the model only got it inside the marked block. Meta spend for this work: about $0.01.
 
+## Nov 1: build room steps feed, review against the owner's design (branch tg-build-room-steps)
+
+Compared the shots with the design: two columns, simple lines left, actual stuff right. Merged origin/main, which had conflicts only in `plan-card.css` and this log. The plan change from tg-build-tools came in with it, and the feed room uses it as is.
+
+Fixed, with tests:
+
+- Finished room: the training notice and composer sat over the feed with the text showing through, worst on a phone. The feed room's composer now has a solid back. Shots: `docs/log/shots/build-room-steps-fixed-final-1280.jpg` and `-390.jpg`.
+- False claim: with publishing off the feed said "Putting it online" and "It's online", the status said "Live" and the result said "It's live." They now say "Saving the finished version", "It's finished, but not online" and "Finished, not online". This wording only applies in the feed room.
+- "Drawing the home page" never showed, because every edit also logs a bare edit line that outscored it. A bare edit line now counts only when nothing says more.
+- Words landed late, because only Muse Code's polling started a batch. A batch now also starts after each round of checks.
+- Tense: "The checks passed" became "Passing the checks". A reply that turns a line that's over into one still going is now rejected, and the plain line stays.
+- Right column: what was made now comes above the plan, so a finished room opens on the demo and the result.
+
+Measured on one new real build, `b0c9affa-9c67-4df0-a3f7-615a24406810` (made-up dice roller), Preview `muse-muse-o1t7o6oj0`: live in 6 m 15 s, buildModel `muse-spark-1.3-contributor`, $0.0188 in all, of which step summaries were $0.0008 over three calls. Words landed at 1:34, 5:27 and 6:13. The model worded 11 of the 13 steps. "Saving the finished version" and the ending stayed plain. "Drawing the home page", "Writing little tests" and "The checks passed" all showed. The status and result text on that build were shot on the final Preview, `muse-muse-kfxfsdaqc`.
+
+Flag off: the golden test in `plan-art-flag-off.test.tsx` fails on this branch and on unchanged origin/main with the same actual hash, 58def1ce. So the page matches main at that render, but the test's stored hash is stale. `workflow.scenario` has two failures after the merge. One is its 25 vs 60 minute expectation. The Build step reported both on main earlier, and they were not rerun on main after this merge.
+
+Not proven: the published wording on a real publish, since Previews don't publish. A summarizer failure on the deployed step in a real build. `overflow-anchor: none` on the right column is a guard only: the shots that looked scrolled turned out to be the demo's own poster frame.
+
+Still open against the design: the right column has no file list, because the room has none. Show details at a typical desktop width turns the columns into tabs.
 ## Nov 1, evening: first real one-bit recipe on a truly tuned r30b adapter (tg-device-loop-int)
 
 **Result: IQ1_S passed. Q4_K_M missed its KL limit by 0.00045 and was left out, so the job passed with IQ1_S only.** Made-up data (Zubrelian moss guide, 120 steps), never a product-quality tune. Results in `docs/log/quant-run-tuned-2026-11-01`.
@@ -2158,3 +2198,16 @@ Read the merged routes, limits, identity, launch and folder code for ways an ano
 - Downgraded: PR #35 said two test files fail in setup "on main too" without that having been run. See the PR body for what was run.
 - Still unproven: a real GPU job through the site, and whether a hidden instruction steers the written rows.
 - Tests: folder 17, open-train 30, view 14, routes 25, plan 23, tsc clean.
+## Nov 1: FAST_BUILDS (branch tg-fast-builds)
+
+Behind a new flag, off by default. Design in docs/FAST_BUILDS.md.
+
+- **Measured, real subagent count (build events, Preview muse-muse-qmd000un6, BUILD_RANGE, Contributor, still running when read):** not 0. Plotline Garden Exchange 1c2eb3f0: 8 subagents and 1 workflow. Fork and Folio b021d5fc: 9 and 1. Midnight Vinyl Ledger d855f033: 7 and 1. Chore Quest Cove 619db593: 8 and 1. Each milestone ran a scout, 2 writers side by side and a reviewer. The 0 of 6 came from the Wonder build b2996b46, before BUILD_RANGE, and no Wonder build has been read with BUILD_RANGE on. So no fix was needed to start them on Contributor.
+- **Finding:** the time goes to milestones run one after another with a strict verify between them, and only 2 writers each. One milestone took about 12 minutes. Brief 80 s, provisioning 3.4 s on 1c2eb3f0.
+- **Decision:** a fast complex build is one round (fullMilestones gives 1), which the task didn't name. Without it, writers stay limited to a milestone's few requirements.
+- **Decision:** the recheck is a new task, not a change to verify.mjs, so no new snapshot. Only the full check and judge can pass a build.
+- **Decision:** with the flag on a product's id is its build id, because the warm sandbox needs its name before the brief, and promotion checks the name ends in the product id. Warm setup can save at most the 3.4 s measured, so expect little from it.
+- **Limit:** writer deadlines and worktree isolation are instructions to the main agent. Nothing in the platform enforces them.
+- **Tests:** tsc clean apart from missing fflate and unpdf in this worktree's copied node_modules. flags-off, full-builds and tasks tests pass. workflow.scenario has 2 failures expecting a 25-minute cap and getting 60, in code this change doesn't touch; not rerun on main to confirm. No new tests: recheck and helper lines have none.
+- **Previews:** FAST_BUILDS=1 muse-muse-lofxtn17n, without it muse-muse-k1fp4y15n, same code and snapshot snap_Dy4CjpILCMOBnaJ28Skzswys7CJ4. A stray line in my deploy command also made one extra unused Preview with the flag on.
+- **Builds on the flag Preview:** small e50989ff, complex 399f7255 and 0b90ec23. Without it: small 4b97d2c4, complex 654b4711 and a6275cc8. Same notes each way.
