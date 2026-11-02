@@ -2222,3 +2222,13 @@ Behind a new flag, off by default. Design in docs/FAST_BUILDS.md.
 - **Tests:** tsc clean apart from missing fflate and unpdf in this worktree's copied node_modules. flags-off, full-builds and tasks tests pass. workflow.scenario has 2 failures expecting a 25-minute cap and getting 60, in code this change doesn't touch; not rerun on main to confirm. No new tests: recheck and helper lines have none.
 - **Previews:** FAST_BUILDS=1 muse-muse-lofxtn17n, without it muse-muse-k1fp4y15n, same code and snapshot snap_Dy4CjpILCMOBnaJ28Skzswys7CJ4. A stray line in my deploy command also made one extra unused Preview with the flag on.
 - **Builds on the flag Preview:** small e50989ff, complex 399f7255 and 0b90ec23. Without it: small 4b97d2c4, complex 654b4711 and a6275cc8. Same notes each way.
+
+## Nov 1: open-weight proof page and draft adapter card (branch tg-open-proof)
+
+- Built /open-weights, public, linked from /models: task, method, cost, wins, losses, every Glimmer answer, the five Llama losses, Hugging Face links and which model runs where. Proof: Preview muse-muse-bh5j5ay4r, page and JSON answered 200 with their content, /models has the link, all linked Hub pages answer 200. Screenshots: docs/log/shots/open-weights-desktop.png and open-weights-phone.png.
+- Source: per-item judgements read from a throwaway copy of the harness database (jobs 1898e46c, e1b00ffa, 2c12d50b, 081934e6, judged ef05cf55, 544ae82e, f556993b, 0fdddc84). Summaries match this log. Sealed half on Glimmer, computed with the loop's split: 7.90 vs 2.45, 20 of 20.
+- Rechecked: none of the 40 prompts or tuned answers is in the 900 training rows, and adapter sha256 is 927f00f6... All 40 Glimmer judge notes credit the format or invented words, so the page says the shape and vocabulary were learned, not the facts.
+- Decision: reference answers and training rows stay off the page and out of the JSON, since a Contributor-written dataset stays private (keepDatasetPrivate). Kept-aside prompts are shown, as the card generator already does for one. The owner can overrule this.
+- Decision: the page carries Built with Muse Spark Open and the Usage Policy points (the adapter is a Derivative) and a Built with Llama line.
+- Draft card: docs/model-cards/muse-glimmer-30b-zubrelian-moss-guide-lora-1898e46c.md, from the real modelCard generator, edited for the harness, the current repo name (the adapter config's old name redirects, 307) and the honest limits. Not uploaded.
+- Spend: $0 Meta, no GPU. One Preview deploy. No production changes.
