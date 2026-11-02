@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { requireAdminOrAutomation } from "@/lib/auth";
 import { ASKS_PER_MINUTE, runDeviceAgent } from "@/lib/device/agent";
 import { callDeviceTool, deviceConfig, listDeviceTools } from "@/lib/device/client";
+import { cachedFleetBoards, fleetAsk, fleetConfigured } from "@/lib/device/fleet";
 import { DEFAULT_PLATFORM_MODEL } from "@/lib/env";
 import { hitRateLimits } from "@/lib/gateway/store";
 import { badRequest, errorJson, readJson, route } from "@/lib/http";
@@ -20,9 +21,9 @@ const MINUTE_MS = 60_000;
 class PausedError extends Error {}
 
 /**
- * POST {prompt} -> {answer, steps}: Muse Wonder answers using the board's tools. Admins only, since it uses a real camera
- * and microphone and spends model credits. 503 device_not_configured or paused, 429 rate_limited, 502
- * device_unavailable or model_unavailable.
+ * POST {prompt} -> {answer, steps}: Muse Wonder answers using the board's tools and, when it's set up, the fleet's read-only
+ * tools. Either is enough. Admins only, since it uses a real camera and microphone and spends model credits. 503
+ * device_not_configured (neither is set up) or paused, 429 rate_limited, 502 device_unavailable or model_unavailable.
  */
 export const POST = route(async (req: Request) => {
   const user = await requireAdminOrAutomation(req);
@@ -31,7 +32,9 @@ export const POST = route(async (req: Request) => {
   if (!prompt) throw badRequest("Ask something.");
   if (prompt.length > MAX_PROMPT_CHARS) throw badRequest(`Keep it under ${MAX_PROMPT_CHARS} characters.`);
   const config = deviceConfig();
-  if (!config) return errorJson(503, "device_not_configured");
+  // OPEN_ACCESS=admin on a preview acts as an admin for anyone who opens it, and these use the fleet's token.
+  const fleet = fleetConfigured() && !user.openAccess;
+  if (!config && !fleet) return errorJson(503, "device_not_configured");
   if (await spendPaused()) return errorJson(503, "paused");
   const key = `device:ask:${user.id}`;
   const counts = await hitRateLimits([key], new Date(Math.floor(Date.now() / MINUTE_MS) * MINUTE_MS));
@@ -49,8 +52,10 @@ export const POST = route(async (req: Request) => {
           await recordUsage({ source: "platform", endpoint: "device_ask" }, [fromResponsesUsage(model, res.usage)]);
           return res;
         },
-        listTools: () => listDeviceTools(config),
-        callTool: (name, args) => callDeviceTool(config, name, args),
+        listTools: async () => (config ? listDeviceTools(config) : []),
+        callTool: async (name, args) =>
+          config ? callDeviceTool(config, name, args) : { content: [{ type: "text", text: `No board is set up, so ${name} didn't run.` }], isError: true },
+        ...(fleet ? { fleet: { boards: () => cachedFleetBoards(), ask: (input) => fleetAsk(input) } } : {}),
       }),
     );
   } catch (err) {

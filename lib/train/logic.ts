@@ -39,6 +39,7 @@ import {
   SERVE_PORT,
   type DatasetKind,
   type DatasetView,
+  type EvalCheckSummary,
   type EvalSummary,
   type HubState,
   type HubView,
@@ -733,6 +734,41 @@ export function summarizeJudgements(items: JudgedItem[]): EvalSummary {
     avgTunedScore: avg((i) => i.tunedScore),
     judgeCostUsd: roundUsd(items.reduce((s, i) => s + (i.costUsd || 0), 0)),
   };
+}
+
+/** What judging one general check set (lib/train/general-checks.ts) gave: its items, and how many were sent. */
+export interface JudgedChecks {
+  items: JudgedItem[];
+  asked: number;
+}
+
+/**
+ * The task's summary with the general checks' results beside it (EvalSummary.general and .safety, TUNE_GENERAL_CHECKS):
+ * each set summarized like the task, and the summary's judgeCostUsd raised by what judging them cost. The task's own
+ * numbers are untouched. A set that wasn't asked is left out.
+ */
+export function withCheckSummaries(summary: EvalSummary, checks: { general?: JudgedChecks; safety?: JudgedChecks }): EvalSummary {
+  const out: EvalSummary = { ...summary };
+  let extra = 0;
+  for (const set of ["general", "safety"] as const) {
+    const c = checks[set];
+    if (!c || c.asked <= 0) continue;
+    const s = summarizeJudgements(c.items);
+    const part: EvalCheckSummary = {
+      items: s.items,
+      asked: c.asked,
+      tunedWins: s.tunedWins,
+      baseWins: s.baseWins,
+      ties: s.ties,
+      avgBaseScore: s.avgBaseScore,
+      avgTunedScore: s.avgTunedScore,
+      judgeCostUsd: s.judgeCostUsd,
+    };
+    out[set] = part;
+    extra += s.judgeCostUsd;
+  }
+  out.judgeCostUsd = roundUsd(summary.judgeCostUsd + extra);
+  return out;
 }
 
 /**

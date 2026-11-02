@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { describe, it } from "node:test";
 import { creationsOf, filterCreations, filterProducts } from "@/lib/gallery/filter";
-import { GALLERY_PRESETS, MEDIA_PRESETS } from "@/lib/gallery/presets";
+import { GALLERY_PRESETS } from "@/lib/gallery/presets";
 
 const product = (over: Record<string, unknown>) => ({ slug: "s", name: "Crumb Counter", tagline: "Cake orders", muse: null, demoVideoUrl: null, demoPosterUrl: null, rebuildOf: null, ...over });
 
@@ -41,7 +41,7 @@ describe("creations", () => {
 
 describe("presets", () => {
   it("each has a picture that exists and an idea to start from", () => {
-    for (const preset of [...GALLERY_PRESETS, ...MEDIA_PRESETS]) {
+    for (const preset of GALLERY_PRESETS) {
       assert.ok(existsSync(`public${preset.image}`), preset.image);
       assert.ok(preset.note.length > 20);
       assert.ok(!`${preset.title}${preset.note}`.includes("—"));

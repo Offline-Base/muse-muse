@@ -4,10 +4,13 @@ import { connection } from "next/server";
 import { Composer, type Example } from "@/components/composer/Composer";
 import type { StarterTab } from "@/components/composer/Starters";
 import { SetupPanel } from "@/components/composer/SetupPanel";
+import { FeaturedProducts } from "@/components/gallery/FeaturedProducts";
 import { Icon } from "@/components/icons";
 import { contributorBuildsOn, env } from "@/lib/env";
 import { makeChatAllOn } from "@/lib/make/switch";
-import { currentUser } from "@/lib/queries";
+import { FEATURED_SLUGS, pickFeatured } from "@/lib/gallery/featured";
+import { LIVE_FRAME_SANDBOX, liveFrameAllow } from "@/lib/product-frame";
+import { currentUser, listShippedProducts, safeQuery } from "@/lib/queries";
 
 /** MAKE_CHAT_ALL: loaded only with the switch on, so the page's code and styles are as they were with it off. */
 const MakeChat = dynamic(() => import("@/components/make/MakeChat").then((m) => m.MakeChat));
@@ -117,21 +120,25 @@ export default async function Home() {
         contributorNotice={contributorBuildsOn()}
         train={makeTrainProps(user)}
         toolbar={toolbar}
-        setup={<SetupPanel facts={{ buildModel: env.buildModel, maxFixRounds: env.maxFixRounds, publishOff: env.publishOffReason }} />}
+        setup={<SetupPanel facts={{ buildModel: env.buildModel, judgeModel: env.judgeModel, maxFixRounds: env.maxFixRounds, publishOff: env.publishOffReason }} />}
       />
     );
   }
+  // Hand-picked live products to try on the spot. A failed read only leaves the row out.
+  const shipped = await safeQuery(() => listShippedProducts(FEATURED_SLUGS.length, { published: true, slugs: FEATURED_SLUGS }));
+  const featured = shipped.ok ? pickFeatured(shipped.data) : [];
   return (
     <div className="play">
       <div className="play-main">
         {toolbar}
-        <div className="play-intro">
+        {featured.length ? <FeaturedProducts products={featured} frameAllow={liveFrameAllow(null)} frameSandbox={LIVE_FRAME_SANDBOX} /> : null}
+        <div className="play-intro" id="make">
           <h1>What should Muse make?</h1>
         </div>
         <Composer mode="new" signedIn={Boolean(user)} starters={STARTERS} layout="playground" targetOptions={env.enabledTargets} contributorNotice={contributorBuildsOn()} />
       </div>
       <SetupPanel
-        facts={{ buildModel: env.buildModel, maxFixRounds: env.maxFixRounds, publishOff: env.publishOffReason }}
+        facts={{ buildModel: env.buildModel, judgeModel: env.judgeModel, maxFixRounds: env.maxFixRounds, publishOff: env.publishOffReason }}
       />
     </div>
   );

@@ -9,6 +9,8 @@ import {
   type EvalState,
 } from "@/components/train/format";
 import { usd } from "@/lib/format";
+import { checkNumber, checkSetOf } from "@/lib/train/general-checks";
+import type { EvalCheckSummary } from "@/lib/train/types";
 
 export interface EvalResultsProps {
   state: EvalState;
@@ -36,18 +38,35 @@ function baseWords(model: string, sparkOpen: boolean) {
     : { inLine: "base", column: `Base ${model}`, short: "Base" };
 }
 
+/** A row's label: "Prompt N" for a held-out prompt, or which general check it is (lib/train/general-checks.ts). */
+function PromptLabel({ index }: { index: number }) {
+  const set = checkSetOf(index);
+  if (set === "general") return <>General check {checkNumber(index)}</>;
+  if (set === "safety") return <>Safety check {checkNumber(index)}</>;
+  return <>Prompt {itemNumber(index)}</>;
+}
+
 /**
  * The job page's eval results: a summary strip once the job's judge has judged the held-out prompts ("Judging..."
- * until then), and every item with the reference, the base and the tuned answer and the verdict. Long text folds.
+ * until then), and every item with the reference, the base and the tuned answer and the verdict. Long text folds. A
+ * job that also answered the general checks (TUNE_GENERAL_CHECKS) gets their results as lines of their own, and their
+ * rows after the held-out prompts; a job without them shows exactly what it did before.
  */
 export function EvalResults({ state, rows, model, writer, judge, sparkOpen = false }: EvalResultsProps) {
   const base = baseWords(model, sparkOpen);
   if (state.state === "none") return null;
+  const general = rows.filter((r) => checkSetOf(r.index) === "general").length;
+  const safety = rows.filter((r) => checkSetOf(r.index) === "safety").length;
+  const checks = general + safety;
   return (
     <section className="train-eval" id="eval-results" aria-labelledby="train-eval-title">
       <div className="train-log-head">
         <h2 id="train-eval-title">Eval results</h2>
-        {rows.length ? <span className="muted small">{rows.length} held-out prompts</span> : null}
+        {rows.length ? (
+          <span className="muted small">
+            {rows.length - checks} held-out prompts{checks ? `, ${general} general and ${safety} safety checks` : null}
+          </span>
+        ) : null}
       </div>
       <div aria-live="polite">
         <EvalStatus state={state} model={model} writer={writer} judge={judge} base={base} />
@@ -76,8 +95,11 @@ function EvalStatus({ state, model, writer, judge, base }: { state: EvalState; m
             Average score {base.short === "Base" ? "base" : base.short} <strong>{scoreText(s.avgBaseScore)}</strong>, tuned{" "}
             <strong>{scoreText(s.avgTunedScore)}</strong>, judged by {judge}.
           </p>
+          {s.general ? <CheckLine label="General ability check" c={s.general} base={base} model={model} /> : null}
+          {s.safety ? <CheckLine label="Safety check" c={s.safety} base={base} model={model} /> : null}
           <p className="muted small">
-            Scores run from 1 to 10 against {writer ? `${writer}'s reference answer` : "the reference answer"}. Judging cost{" "}
+            Scores run from 1 to 10 against {writer ? `${writer}'s reference answer` : "the reference answer"}
+            {s.general || s.safety ? ", and the checks against fixed reference answers written for Muse Muse" : null}. Judging cost{" "}
             {usd(s.judgeCostUsd)}.
           </p>
           {judgeComparabilityNote(judge) ? <p className="muted small">{judgeComparabilityNote(judge)}</p> : null}
@@ -105,6 +127,25 @@ function EvalStatus({ state, model, writer, judge, base }: { state: EvalState; m
     default:
       return null;
   }
+}
+
+/** One general check set's result, as its own line in the judged strip. */
+function CheckLine({ label, c, base, model }: { label: string; c: EvalCheckSummary; base: BaseWords; model: string }) {
+  const short = base.short === "Base" ? "base" : base.short;
+  if (!c.items) {
+    return (
+      <p className="train-eval-sub">
+        {label}: none of its {c.asked} prompts could be judged.
+      </p>
+    );
+  }
+  return (
+    <p className="train-eval-sub">
+      {label}, {c.items} fixed prompts outside the task: tuned {model} better on <strong>{c.tunedWins}</strong>, {short} on{" "}
+      <strong>{c.baseWins}</strong>, ties <strong>{c.ties}</strong>. Average {short} <strong>{scoreText(c.avgBaseScore)}</strong>, tuned{" "}
+      <strong>{scoreText(c.avgTunedScore)}</strong>.
+    </p>
+  );
 }
 
 function EvalTable({ rows, model, writer, judging, base }: { rows: EvalRow[]; model: string; writer: string | null; judging: boolean; base: BaseWords }) {
@@ -135,7 +176,9 @@ function EvalTable({ rows, model, writer, judging, base }: { rows: EvalRow[]; mo
             <tbody key={r.index}>
               <tr className="train-eval-prompt">
                 <th scope="rowgroup" colSpan={4}>
-                  <span className="train-eval-num">Prompt {itemNumber(r.index)}</span>
+                  <span className="train-eval-num">
+                    <PromptLabel index={r.index} />
+                  </span>
                   <LongText text={r.prompt} foldAt={480} preview={300} />
                 </th>
               </tr>

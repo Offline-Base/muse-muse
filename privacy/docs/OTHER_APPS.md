@@ -2,7 +2,14 @@
 
 The connector is a remote MCP server behind the relay's OAuth (dynamic client registration, client ID metadata documents, PKCE S256 only), so it is not tied to Muse. Claude's custom connectors and ChatGPT's developer mode both take that kind of server. Muse stays the main app for this project; this page is for anyone who uses Claude or ChatGPT instead, or as well.
 
-**Status, Oct 31.** Not tried in either app yet. `RUN_INTEGRATION=1 uv run pytest tests/test_relay_e2e.py` runs the whole link on this machine with a script that registers as Claude, as ChatGPT and as Muse: discovery, registration, the pairing page, the token, then MCP initialize, tools/list and a tools/call that comes back tagged. All three pass. That shows nothing in the relay or the device is tied to Muse. It does not show how those apps' real clients behave. Update this page when a session in either app has a report.
+**Status, Oct 31.** Both apps were linked for real on Oct 31 ([build log](BUILD_LOG.md), 18:38 to 19:04):
+
+- **Claude** linked through its custom connectors with its published client ID metadata document, so nothing was registered by hand. Its first tool call, an ask on the invented essays folder, finished on the device in about 40 s, but Claude polled `get_result` about a dozen times inside that window and stopped to say it was still working. On "check again" it fetched the result, which the device shared. The running message still gives no wait time.
+- **ChatGPT** linked in developer mode. Its first chat failed with a 400 on every call: the MCP library answers 400 when a request lacks the `Mcp-Method` and `Mcp-Name` headers, and the relay dropped them. The relay client now forwards them and fills a missing one from the body. After a device restart, ChatGPT ran a search and two asks, all answered 200, and the device kept all three answers back. One ask was about a real resume that had been left in the demo workspace; it was moved out and replaced with an invented one. As of that log entry, the deployed relay itself still dropped the two headers, which needs a redeploy.
+
+That is a few calls in each app, not a measured session, and there's no report for either in `eval/reports`.
+
+`RUN_INTEGRATION=1 uv run pytest tests/test_relay_e2e.py` runs the whole link on this machine with a script that registers as Claude, as ChatGPT and as Muse: discovery, registration, the pairing page, the token, then MCP initialize, tools/list and a tools/call that comes back tagged. All three pass. That shows nothing in the relay or the device is tied to Muse. It does not by itself show how those apps' real clients behave; the calls above do, for a few requests. Update this page when a session in either app has a report.
 
 ## On the device
 

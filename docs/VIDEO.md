@@ -1,0 +1,154 @@
+# The video
+
+**DRAFT until the owners pick the story.** This is the recommended one. Written Nov 2, 2026, on branch tg-submission-kit.
+
+Where it came from: this replaces the three-minute table that was in docs/STORY.md and the inspo-first script that was section 2 of docs/SUBMISSION.md. If the owners want the inspo-first story instead, it is at `git show e290545d:docs/SUBMISSION.md`, but fix its "24 of 24 builds went live" line first: that was a local batch that never deployed.
+
+## The rules for this script
+
+- **Length.** The Official Rules and the event page don't state a limit (read Nov 2, docs/MESSAGING.md, "What the rules say"). Check the portal's form. This cut runs 2:50. The 2:30 cut is at the end.
+- **Demo is 25% of the score**, and it covers "the quality of the demo video" (Official Rules, Checked). Impact is 30%, Meta tooling 25%, technical depth 20%.
+- **Only Checked lines** from docs/MESSAGING.md, and only steps with a proven mark in docs/STORY.md, unless a shot is tagged and labeled.
+- **No em dashes** in captions or cards. They/them for people.
+- Never say the whole chain runs end to end, or that data never leaves. Say how many leaks on how many invented items.
+
+### Tags
+
+- **[needs the chain run]**: needs footage from one paid end-to-end run, from the sentence to the app, which hasn't happened (docs/HANDOFF.md, owner to-do 2). Each has a fallback that is true today.
+- **[Hussam films]**: Jetson footage. Hussam owns the boards.
+- **[film now]**: can be filmed on the live site today, signed out.
+
+## Before you record
+
+- Production needs `STORY_PAGES` on for `/offline`, the longer `/private` and the frontier section. It's read at build time, so it needs a redeploy.
+- Stay signed out, so the site shows what judges see. Browser at 1440×900, light theme, 100% zoom, a clean profile.
+- Never show `.env.local`, the Vercel, Lambda or AWS consoles, an admin job page (it shows the instance's address), the fleet console, or any ngrok domain or board address.
+- Builds on the test model get a corner label "Test model". Sped-up footage gets "Sped up".
+- If the Oct 30 privacy run (10 leaks on 200 items) has been rerun by recording day, use its result in shot 9 instead of "we haven't found why yet", and fix the card.
+
+## Timing
+
+| # | Time | Act | Shot | Tag |
+|---|---|---|---|---|
+| 0 | 0:00 to 0:10 | Open | Zuckerberg's line | film now |
+| 1 | 0:10 to 0:22 | 1 | One sentence on the Make page | needs the chain run |
+| 2 | 0:22 to 0:34 | 1 | The plan and the data | needs the chain run |
+| 3 | 0:34 to 0:58 | 1 | The tune and the blind check | film now |
+| 4 | 0:58 to 1:08 | 1 | A file you keep | needs the chain run |
+| 5 | 1:08 to 1:22 | 1 | An app built around it | film now, plus needs the chain run |
+| 6 | 1:22 to 1:32 | 1 | The marks on `/offline` | film now |
+| 7 | 1:32 to 1:44 | 2 | Why some files can't go to a cloud | film now |
+| 8 | 1:44 to 2:04 | 2 | Muse Privacy: tags, not documents | film now |
+| 9 | 2:04 to 2:17 | 2 | The numbers, both runs | film now |
+| 10 | 2:17 to 2:27 | 3 | Glimmer on the Jetson | Hussam films |
+| 11 | 2:27 to 2:37 | 3 | What that costs | film now |
+| 12 | 2:37 to 2:50 | Close | The claim, and its marks | film now |
+
+Narration is about 400 words, about 140 a minute. Read it aloud once with a timer before recording.
+
+## Shots
+
+### Open
+
+**0. Zuckerberg's line (0:00 to 0:10)** [film now]
+
+- On screen: a title card. "People are starting to be able to manifest ideas themselves without having to raise money or build large teams." Under it: "Mark Zuckerberg, The Future is for Everyone, Aug 10, 2026."
+- Say: "Mark Zuckerberg wrote that people are starting to build their ideas without raising money or a big team. How far can one sentence go with Meta's models?"
+- Source: docs/MESSAGING.md, Checked.
+
+### Act 1: one sentence becomes a model you keep, and an app around it
+
+**1. One sentence on the Make page (0:10 to 0:22)** [needs the chain run]
+
+- On screen: https://muse-muse.vercel.app, the Make chat. Type one sentence, for example "A helper that turns my bakery's receipts into a weekly cost sheet." Send it.
+- Say: "You type what you want in one sentence. Muse Muse is built to turn it into a plan, training data, a tuned model and an app."
+- Fallback: film typing only, don't send, and cut to shot 2's fallback card.
+- Mark: one sentence to a plan and data is "Proven, by harness". The one-box page has not started a real run.
+
+**2. The plan and the data (0:22 to 0:34)** [needs the chain run]
+
+- On screen: the plan the Meta model wrote, then a few training rows scrolling.
+- Say: "A Meta model writes the plan and the training data, with prompts kept aside that the tune never sees."
+- Fallback card: "Test harness, invented hobby. 900 rows to train on, 100 kept aside. $0.22. Not started from the site."
+
+**3. The tune and the blind check (0:34 to 0:58)** [film now]
+
+- On screen: `/fine-tuning`, the public read-only page. Open the Glimmer run that won 40 of 40. The summary strip, then scroll two or three side-by-side items: prompt, base answer, tuned answer, verdict. Overlay, from Meta's post-training docs: "Compare your fine-tuned model against the base model on a held-out test set before deploying."
+- Say: "Muse Glimmer 30B learned a task on a rented GPU in 42 minutes for $1.39. Then a judge compared it with base Glimmer, blind, on 40 prompts it never saw. Tuned won all 40. That's the check Meta's own guide asks for. The guide also asks for a general benchmark, and we don't run that yet."
+- Source: docs/STORY.md, "A tuned model" and "A blind check", Proven by harness; this Glimmer run was the lab's own flow, judged by Muse Spark 1.3. docs/MESSAGING.md, the post-training row.
+- Don't say the run came from shot 1's sentence. If the chain run happens, show its own blind check here instead.
+
+**4. A file you keep (0:58 to 1:08)** [needs the chain run]
+
+- On screen: the run's download, the file name and its size. Overlay, credited to Meta's Muse Glimmer docs: "you own the weights, the runtime, and the data".
+- Say: "What comes out is a file you keep. In Meta's words, you own the weights, the runtime, and the data."
+- Fallback card: "Test harness, made-up data: a tuned small Llama became a 2.02 GB file and passed every check. A tuned Glimmer became a 6.53 GB one-bit file."
+
+**5. An app built around it (1:08 to 1:22)** [film now, plus needs the chain run]
+
+- On screen: a finished build's room on the live site, if a signed-out visitor can open one, sped up and labeled "Sped up. Real build." Otherwise a Nov 1 recipe demo clip from docs/PROVE_RESULTS.md, labeled "Test model, made-up data". The checks turn: typecheck, build, smoke test, the judge's screenshots.
+- Say: "Muse Code builds an app around it and checks it: types, a build, a smoke test and a judge. The app answering with its own tuned model hasn't run yet."
+- With the chain run: end on the app answering from its tuned model, and drop the last sentence only if docs/STORY.md marks that step proven.
+- Source: docs/STORY.md, "An app built for it" and "Checks", Proven; "That app answering with its tuned model", Not run yet.
+
+**6. The marks on `/offline` (1:22 to 1:32)** [film now]
+
+- On screen: `/offline`, the step list with each mark.
+- Say: "Every step on this page carries a mark: proven, proven by our test harness, simulated, or not run yet. Running on your own board is simulated in this flow today."
+
+### Act 2: Muse Privacy
+
+Keep the company's name out of this act (`components/story/__tests__/story.test.tsx` still enforces it).
+
+**7. Why some files can't go to a cloud (1:32 to 1:44)** [film now]
+
+- On screen: two cards. "Johns Hopkins Bayview notified 3,182 patients after a worker uploaded a patient spreadsheet to an AI tool the hospital hadn't approved." Source line: "Reported by WMAR, HealthExec and the Baltimore Banner." Then: "All 12 agencies GAO selected that allow generative AI limit or restrict that use. GAO-25-107653, July 2025."
+- Say: "Some files can't go to any cloud. One spreadsheet in an unapproved AI tool meant a hospital notified 3,182 patients. GAO found all 12 agencies it selected that allow generative AI restrict it."
+- Source: docs/MESSAGING.md, both Checked. Say "a patient spreadsheet", nothing more about its contents.
+
+**8. Muse Privacy: tags, not documents (1:44 to 2:04)** [film now]
+
+- On screen: `/private`, before and after, then the replay, labeled "Recorded replay. A script plays Muse." Optional overlay: "'The access decision does not depend on the agent behaving as intended.' Meta Engineering, on PrivacyLib, Oct 27, 2026."
+- Say: "Muse Privacy is a connector on hardware you own. Muse plans with tags like Student A and never gets the documents. A model on the device does every step that touches them, your policy file decides what can leave, and a last check runs on every result before it goes."
+- Source: docs/STORY.md, privacy paragraph; privacy/README.md.
+
+**9. The numbers, both runs (2:04 to 2:17)** [film now]
+
+- On screen: a card. "Invented items, on a laptop. Today: 0 leaks of names or identifiers on 300 items. Oct 30: 10 leaks on 200 items, cause not found. 76 approval requests on 200 items, 28 needless. Device model: Liquid's LFM3-VL-2B, not a Meta model. No real users."
+- Say: "On 300 invented items, no names or identifiers leaked. An earlier run leaked 10 on 200, and we haven't found why yet. The model on the device today is Liquid's, not Meta's."
+- Source: docs/STORY.md, privacy paragraph; `privacy/eval/reports/device_only_fresh_200.md`.
+
+### Act 3: the Jetson
+
+**10. Glimmer on the Jetson (2:17 to 2:27)** [Hussam films]
+
+- On screen: about 10 seconds of jetson-02, a Jetson Orin Nano 8GB, answering one short chat question in real time, not sped up. Lower third: "Muse Glimmer 30B, one-bit (IQ1_S), 5.75 GB. Meta's smallest Glimmer file: 16.8 GB. Built with Muse Spark Open. 18 and over."
+- Say: "This is Muse Glimmer on an 8 GB Jetson, a third the size of Meta's smallest file. We made it by hand, not yet from the flow."
+- For Hussam: a short chat only, never a receipt or other document task. jetson-02, not jetson-05. No addresses, ngrok domain or fleet console in frame. Say "offline" on screen only if the board is filmed with its network unplugged.
+- Source: docs/MESSAGING.md, quantization row (Checked) and point 3; docs/STORY.md, device-file row.
+
+**11. What that costs (2:27 to 2:37)** [film now]
+
+- On screen: a card. "5 to 6 tokens a second. Weak answers. 40 invented receipts: no valid JSON, and the board hung at receipt 23."
+- Say: "The cost: 5 to 6 tokens a second, weak answers, and no valid output on a receipt test. That's the frontier we're working on."
+- Source: docs/STORY.md, device-file row (PR #62).
+
+### Close
+
+**12. The claim, and its marks (2:37 to 2:50)** [film now]
+
+- On screen: back on `/offline`, the frontier claim above the step list. Overlay the live URL, the repo URL once it's public, and "Not an official Meta product."
+- Say: "Muse Muse is built so one sentence becomes a tuned model on your own hardware, in an app built for it. Part of that is proven today, and the page shows which part."
+- Source: docs/STORY.md, the frontier claim. Keep "is built so" until docs/STORY.md marks every step proven.
+
+## The 2:30 cut
+
+Drop shot 0 (open on shot 1 and fold "one sentence" into its line), and cut shot 6 to its last sentence. That saves about 15 seconds. To go shorter still, drop shot 4 and say "a file you keep" in shot 3.
+
+## Who films what
+
+| Shots | Who | When |
+|---|---|---|
+| 0, 3, 5 (recorded build), 6, 7, 8, 9, 11, 12 | Ethan, or whoever records | Any time once `STORY_PAGES` is on |
+| 1, 2, 4, 5 (tuned app) | Whoever runs the chain | Only during the approved chain run. Otherwise use the fallbacks |
+| 10 | Hussam | 1 to 2 hours, on jetson-02 |

@@ -49,7 +49,7 @@ The Mac has about 17 GB free (1:45 AM; swap had grown to 8 GB). The train_multi 
 
 ## Datasets
 
-All in `.data/knowledge/dataset/` on this Mac (gitignored) and in s3://muse-knowledge-916979311153/knowledge/corpus/dataset/.
+All in `.data/knowledge/dataset/` on this Mac (gitignored) and in s3://muse-knowledge-<account id>/knowledge/corpus/dataset/.
 The two selected CC-NEWS sets (s3-ccnews-ai-meta and s3-ccnews-general, about 80% of stage 2) were made on AWS: see the
 1:46 PM and 5:56 PM entries in the log.
 
@@ -193,7 +193,7 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
 - 1:51 AM: owner asked to collect the data and fine-tune Glimmer overnight.
 - 2:05 AM: AWS GPU quota requested in us-east-1 (192 vCPUs P, 64 G).
 - 2:15 AM: owner set the AWS limit at $750 for this work.
-- 2:18 AM: bucket muse-knowledge-916979311153 and roles MuseKnowledgeSageMaker and MuseKnowledgeScheduler created
+- 2:18 AM: bucket muse-knowledge-<account id> and roles MuseKnowledgeSageMaker and MuseKnowledgeScheduler created
   (scripts/knowledge/aws/setup.py).
 - 2:21 AM: Spark Open SageMaker endpoint muse-spark-open-knowledge deployed (ml.g7e.48xlarge, 8 RTX PRO 6000,
   $41.43/h, SGLang 0.5.21, auto-delete 8:21 AM). Writer settings: reasoning low, temperature 0.4.
@@ -209,7 +209,7 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   set to auto-delete at 7:15 PM and 9:16 PM.
 - 1:27 PM: Meta sources collected: 154 docs pages, 169 Newsroom posts, 61 engineering posts, 141 PyTorch posts, 4
   model cards, 155 cookbook docs.
-- 1:28 PM: AWS collector box started, streaming into s3://muse-knowledge-916979311153 (shuts off after 72 hours).
+- 1:28 PM: AWS collector box started, streaming into s3://muse-knowledge-<account id> (shuts off after 72 hours).
 - 1:40 PM: five helpers started collectors for the rest of the source list.
 - 1:46 PM: S3 pull workflow started: CC-NEWS extraction on a 16-machine Spot fleet (3,895 WARCs, $200 cap), open
   datasets ($40), research and law on m7i.8xlarge ($80), collectors moved to AWS ($20).

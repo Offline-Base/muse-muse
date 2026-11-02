@@ -14,7 +14,7 @@ import { BuildDetails } from "@/components/build/BuildDetails";
 import { OwnModelRow, type OwnModelOffer } from "@/components/build/OwnModelRow";
 import { deriveRoom, railStates, refineSpot } from "@/components/build/derive";
 import { PlanCard, planCardState, preloadPlanArt } from "@/components/build/PlanCard";
-import { RequirementsChecklist } from "@/components/build/RequirementsChecklist";
+import { checksFailed, RequirementsChecklist } from "@/components/build/RequirementsChecklist";
 import { latestChecklist } from "@/lib/full/requirements";
 import { QuestionCard, SteerNote } from "@/components/build/session";
 import { appsLine, nativeRows } from "@/components/build/apps";
@@ -388,7 +388,10 @@ export function BuildRoom(props: BuildRoomProps) {
   const planRow = plan ? (
     <li className="room-plan">
       <PlanCard brief={plan.brief} art={plan.art} running={!room.terminal} artUrl={room.planArtUrl} />
-      <RequirementsChecklist items={latestChecklist(plan.brief, room.segments.flatMap((s) => (s.type === "check" ? [{ judge: s.judge, tests: s.verify?.summary.requirements ?? null }] : [])))} />
+      <RequirementsChecklist
+        items={latestChecklist(plan.brief, room.segments.flatMap((s) => (s.type === "check" ? [{ judge: s.judge, tests: s.verify?.summary.requirements ?? null }] : [])))}
+        failed={checksFailed(room.status, room.segments.flatMap((s) => (s.type === "check" ? [{ verify: s.verify?.summary ?? null, judge: s.judge }] : [])))}
+      />
     </li>
   ) : null;
   const previewRow = room.previewUrl && !room.terminal ? (

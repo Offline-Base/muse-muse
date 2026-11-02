@@ -4,7 +4,7 @@
 # Glimmer base snapshot; stage 2's training run lives in ~/k/runs/stage2 and writes out/adapter and out/metrics.json.
 # Set STAGE2_TRAIN to the stage 2 training file on the box (the calibration text; never the probes).
 set -euo pipefail
-H=ubuntu@192.222.56.131
+H=${GH200_HOST:?set GH200_HOST to the GH200 as ubuntu@<address>}
 KEY=~/.ssh/muse-muse-lambda
 J=scripts/knowledge/aws/job
 STAGE2_TRAIN=${STAGE2_TRAIN:?set STAGE2_TRAIN to the stage 2 train.jsonl path on the box}

@@ -62,7 +62,7 @@ KEY = os.path.expanduser("~/.ssh/muse-muse-lambda")
 SSH_KEY_NAME = "muse-muse-platform"
 PROFILE = "offlinebase"
 REGION = "us-east-1"
-BUCKET = "muse-knowledge-916979311153"
+BUCKET = os.environ.get("KNOWLEDGE_BUCKET", "<set KNOWLEDGE_BUCKET>")  # the knowledge bucket; its name holds the AWS account id, so it stays out of the repo
 S3_PREFIX = "knowledge/corpus/qa-glimmer/"
 PREFIX = "muse-knowledge-gw-"
 EXTRA_LAMBDA_ID = "07f6e9e9a7fc4e549b2a0a109b264c34"  # muse-knowledge-glimmer-writer, the A10 this lane owns
@@ -245,7 +245,7 @@ def track_extra(state):
     if "muse-knowledge-glimmer-writer" not in state["machines"]:
         state["machines"]["muse-knowledge-glimmer-writer"] = {
             "provider": "lambda", "id": EXTRA_LAMBDA_ID, "type": "gpu_1x_a10", "gpu": "a10", "region": "us-east-1",
-            "usd_per_hour": 1.29, "launched": EXTRA_LAMBDA_LAUNCHED, "ip": "129.80.18.43", "served": True}
+            "usd_per_hour": 1.29, "launched": EXTRA_LAMBDA_LAUNCHED, "ip": os.environ.get("EXTRA_LAMBDA_IP", ""), "served": True}
 
 
 def launch(provider, itype, region, count):

@@ -1701,7 +1701,7 @@ All through scripts/dev/tune-harness.ts on a PGlite copy, so training, cost and 
 
 ### 20:47Z to 21:20Z All five kinds on the real boxes, and Device Farm
 
-Direct runs with native/lab/tools/check.mjs and its local stand-in, from origin/main 0674a863 lab code unpacked next to the box's release. Not through the queue: the claim route answers 404 on the live site. Target: https://musemuse-dinner-split-helper.vercel.app/. Clips are in s3://muse-knowledge-916979311153/lab/checks/direct-1101-2047/.
+Direct runs with native/lab/tools/check.mjs and its local stand-in, from origin/main 0674a863 lab code unpacked next to the box's release. Not through the queue: the claim route answers 404 on the live site. Target: https://musemuse-dinner-split-helper.vercel.app/. Clips are in s3://muse-knowledge-<account id>/lab/checks/direct-1101-2047/.
 
 | Kind | Result | Evidence |
 |---|---|---|
@@ -2329,7 +2329,7 @@ Merged origin/main (#50, #51). The only conflict was this log; both entries kept
 
 - **Chosen board: jetson-02.** It alone has a camera and mic (C920). About 450 MB is free beside the test Glimmer on jetson-llama.service, and the tools still work, so nothing has to stop. It has 393 MB of disk. jetson-04 is the fallback: about 1.8 GB free, no camera.
 - **Direct, on the board, through the fleet (muse-device 0.3.0):** `describe_device` 0.6 s; `capture_image` three times, 1.8 to 2.4 s, about 149 KB each; `record_audio` 3 s of sound, 3.2 s, 96 KB. Free memory stayed at about 440 MB. `run_command` answers "Unknown tool".
-- **Through the address production would use:** Muse Muse's client, `https://creative-linoleum-retake.ngrok-free.dev/admin/device/jetson-02/mcp`: tools 2.9 s, `describe_device` 1.7 s, `capture_image` 4.5 s (147 KB), `record_audio` of 2 s 3.7 s (64 KB). That route is `Offline-Base/jetson-infra` branch `muse-device-proxy`, which jetson-05 runs and which isn't merged.
+- **Through the address production would use:** Muse Muse's client, `https://<fleet ngrok address>/admin/device/jetson-02/mcp`: tools 2.9 s, `describe_device` 1.7 s, `capture_image` 4.5 s (147 KB), `record_audio` of 2 s 3.7 s (64 KB). That route is `Offline-Base/jetson-infra` branch `muse-device-proxy`, which jetson-05 runs and which isn't merged.
 - **Production, read by name only:** `GADGETS_ENABLED` is set, and so is `BUILDER_SNAPSHOT_ID`, whose log entry above names snap_SB9bO91OjbBU4n3Amdabfo8iY0CY from 2146ae0, which holds the gadget helper and skill. I didn't read the live value, so a newer snapshot is possible. `DEVICE_MCP_URL`, `DEVICE_MCP_TOKEN` and `GADGET_CONNECT` aren't set. `/gadgets` says "Not set up" and "No products use a gadget yet".
 - **Stays up:** `muse-device/autostart.sh`, run by cron every minute as the board's user, restarted a killed server in 20 to 60 s on jetson-04. The ngrok address doesn't change, and the leader's own script restarts it. A full power cut hasn't been tested since this script went in.
 - **Open, for the owner:** the 13:38 device review still applies. With the board settings in production and `HARDWARE_GADGET_OWNER_CHECK` off, any guest-built live product with the gadget option can use the real camera and mic.
@@ -2439,3 +2439,96 @@ Merged origin/main (#50, #51). The only conflict was this log; both entries kept
 - Follow-up: #65's first CI run failed 5 tests in `lib/caps/jobs/__tests__/jobs.test.ts`, which fail on main too.
   - Cause: the test's fake fetch read the cron's job token with the wall clock, but the token was minted from the test's fixed NOW (Nov 2, 12:00 UTC) with a 10-minute life. So the test started failing at 12:10 UTC today. It now reads the token on NOW: 69 of 69.
   - Checked for other date traps: ran the 10 test files that mix fixed November dates with the real clock, with the clock moved to Nov 9, 23:00 UTC (the end of judging). 216 of 216 pass.
+
+## Nov 2, 2026: Who can read the text, one enforced table (branch inference-reach)
+
+- **Built:** `lib/inference/reach.ts`, four rows: Muse Privacy on a laptop, a paired board, the fleet gateway, board tools through `/device`. Each has its code, tier, who can read the text, the sentence a product may show, and what runs today. `lib/__tests__/reach-claims.test.ts` fails on "stays on your device", "on-device" or "private" style words in the three non-private rows or in 24 listed gadget and fleet files, and if `docs/GADGETS.md`'s table differs from the data.
+- **Words only:** a limit on `/private` saying fleet and board answers aren't private, the table in `docs/GADGETS.md`, and `docs/SUBMISSION.md` line 54 loses "local or private model".
+- **Checked and added to the brief's facts:** on the fleet the board that answers can read the text too (`hub.py` sends it the body), a combo model can reach a cloud provider (`llm.py`), and Muse Wonder reads tool results on `/device` (`lib/device/agent.ts`).
+- **Left for a snapshot or the other repo:** `template/.agents/skills/meta-glimmer/SKILL.md` lines 3 and 14, `lib/prompts/catalog.ts` line 201, and the stale "not tried" lines in `privacy/README.md` and `privacy/docs/OTHER_APPS.md`. The test leaves these out and says why. It also allows `components/gadgets/info.ts`'s "On-device vision" for the Coral board, which wasn't in this change's copy list.
+- **Not proven:** port 4040's 50 of 50 is the Nov 2 measurement as given, not taken again here: no board or fleet was reached. Production was not read: GADGET_CONNECT and DEVICE_MCP_URL being unset comes from the earlier log entry. The jetson-infra facts were read by hand, and nothing here keeps them true. Whether the link from the lead board to an answering board is plain http isn't settled: `scripts/fleet-up.sh` says the LAN, and `docs/serving-over-ngrok.md` shows ngrok. The test reads for phrases, so a paraphrase gets past it.
+
+## Nov 2, 2026: Who can read the text, after review (branch inference-reach)
+
+- **Rows say more:** Muse Privacy names Cloudflare, Muse's requests and any name typed into Muse, from `privacy/docs/THREAT_MODEL.md` rows R and A2. The fleet row names a combo model's cloud provider, the Vercel rewrite at offlinebase.com/admin, and that a chat may cross the office network unencrypted, since `fleet-up.sh` enrolls boards over http. Board tools and the paired board cover photos and recordings coming back, and board tools gets the ngrok inspector and its bearer token, since `/device` sits behind the same `ngrok http 8080`. The paired-board sentence names a tunnel in front of a hand-added board. The 50 requests on port 4040 are now "a Nov 2 report, not reproduced". `docs/GADGETS.md` says `home` there stretches OFFLINE.md's word to a board at a public address.
+- **Test holds more:** the doc's rows must equal the data, with no extra row, and the words around the table may claim only that Muse Privacy is the only private path. A claim wrapped onto a second line is caught. The hosted-site claim calls `checkBoardAddress` instead of reading a comment, the autostart check reads the line that starts the server, and `.env.example` is no longer taken as evidence about production. Each was checked by breaking it on purpose and seeing the test fail.
+- **Not proven:** still no board, fleet or production reached. Whether any board actually uses the plain LAN link, and whether ngrok's inspector is holding bodies today, weren't looked at. The jetson-infra facts were read by hand on its `muse-device-proxy` branch, and nothing keeps them true. A claim over three lines or split across a string concatenation still gets past the test.
+
+## Nov 2, 2026: the fleet on /device and in Wonder (branch fleet-integration)
+
+- **Built:** `lib/device/fleet.ts`, `GET /api/device/fleet` (admins only), a fleet card on `/device`, and Wonder's `fleet_status` and `fleet_ask_model`, offered only when `BOARD_FLEET_URL` and `BOARD_FLEET_TOKEN` are set, and never to an `OPEN_ACCESS=admin` preview. Wonder now also answers with the fleet alone, when no single board is set up. Nothing new is needed on the boards.
+- **The tunnel's cap:** ngrok's free plan allows 20,000 requests a month across the whole fleet, so the card asks once a minute only while its tab is showing, stops 30 minutes after someone last came back, slows to 5 minutes during an outage, and stops at a refused token or address. The route shares one read for 30 seconds, per server instance.
+- **Read-only:** no other fleet call is reachable from Wonder. `fleet_ask_model` asks only a model a board reports as loaded, pinned to that board, so it can't make a board load one or send a chat to a combo's cloud model. It picks by model name and never a d1 model, which covers jetson-05 (systemone and a chat model) and naming the Pi. A model that spends its limit thinking and answers nothing now comes back as an error Wonder can read.
+- **Run against the real fleet (Nov 2, through the ngrok address, an admin `jpt_` token):** `fleetBoards` read all 9 boards, 8 online and jetson-01 offline, and the Pi, both Corals and the UNO Q report memory and temperature with the same fields as a Jetson. `fleetAsk` answered from jetson-02 (Glimmer, 4.9 to 5.1 s), jetson-04 (Bolt, 1.1 s) and jetson-05 (LFM3-VL, 1.5 s), each a real reply with finish `stop`. Naming the Pi refused with no chat call, and both Corals and the UNO Q said they have no model loaded. With no board named it picked jetson-02, the first by name with a chat model.
+- **The card, locally:** `next dev` on this branch with a local database and a local admin account, against the real fleet. It listed all 9 boards with real numbers: docs/log/shots/2026-11-02/device-fleet-card.jpg. Refresh, the once-a-minute poll and the 30-minute stop were not watched in a browser.
+- **Not proven:** Wonder's two tools with the real model, since this ran with no `MODEL_API_KEY`, and the route on a Vercel preview. A preview without `PREVIEW_DATABASE_URL` answers 500 at sign-in now (README.md, Preview database), so preview https://muse-muse-f8wu4m4y5-ethan-6436s-projects.vercel.app can't open `/device`.
+- **Found in passing, not changed:** jetson-05's ngrok agent keeps recent requests in memory. Port 4040 on that board held 50 of 50 with raw bodies, counted without reading them, and these carry prompts, photos and bearer tokens. It's loopback only. `inspect_db_size: -1` in ngrok's config is the documented off switch, and it takes a tunnel restart.
+- **Spend:** $0.
+
+## Nov 2, 2026: Set up for judging with no spend (branch tg-no-spend-setup)
+
+- **How:** the owner asked for everything that needs no input from Ethan or Hussam and no Meta or Lambda money. Seven agents worked in parallel worktrees from main at `e290545d`, one per unit. Reviewers then tried to break the site, Muse Privacy and training changes and fixed what they found. The seven branches merged here with no conflicts, and the leftovers were finished by hand. Spend: $0. The only outside requests were GETs to public pages: the live site, Meta's pages, the event rules, Fireworks' terms, GAO and public Hugging Face files.
+- **What a judge clicks (tg-judge-ready, reviewed):**
+  - The gallery lists only products with a live link. `listShippedProducts` gained a published filter, applied in SQL before the limit. On the live site 39 of the 60 gallery cards opened a "Not published" page; those drop out. The dashboard read is unchanged.
+  - A product page shows "Not published" instead of "Live" when there is no link. A partial or failed product no longer says it passed its checks.
+  - A failure wins on the checklist: a failed, refused or partial status, or a newest verify or judge that failed, replaces "N of N checked and working" with "Checks found problems, so none of these count as working yet".
+  - Ported from two Nov 1 branches that were committed but never opened as PRs (`tg-judge-path`, `tg-trust-killers`):
+    - the hidden base answer to prompt 40 of job 83d71f74, checked on the live page first;
+    - `/media` redirects to `/gallery`;
+    - model copy that matches the gateway while `BUILDS_ON_CONTRIBUTOR` is on;
+    - the screenshot-judge row names `env.judgeModel`;
+    - featured products on the Make page, live and published only;
+    - a delete request form on `/privacy`, which stays behind `TRUST_LEGAL_PAGES`.
+  - The review dropped one featured product, rate-change-tutor. It calls Muse Wonder with no Contributor notice, so the gateway answers it with "This product is off for now" while `BUILDS_ON_CONTRIBUTOR` is on.
+  - The Terms and Privacy draft (`lib/trust/terms.ts`) now matches the code: screenshots are kept 30 days (not 7), Lambda is named, and there's a guest-mode section. `TERMS_VERSION` is 2026-11-02. It stays off until the owner reads it.
+- **Copy and scrub (tg-copy-scrub):**
+  - README and `eval/README.md`: the Oct 27 batch's 24 builds "passed their checks", and none was deployed.
+  - The README names the model that writes the brief, builds and judges: Spark 1.3 Contributor while `BUILDS_ON_CONTRIBUTOR` is on, Wonder with it off.
+  - `/private`: the 5 of 300 wrong shares come first, and the 0 of 300 leaks sit beside the Oct 30 run's 10 of 200.
+  - `/fine-tuning`: anyone with the start code can start a run, and visitor runs can't reach Hugging Face, which matches the code. With `TUNE_COMPOSER` off, its link points at the form on the page instead of a 404.
+  - Glimmer is no longer pitched for "local or offline" use anywhere: the brief writer, the skill, `template/AGENTS.md` and its two copies, the GPU catalog line, `/models` and `docs/META_CATALOG.md`. Meta's smallest file is 16.8 GB, and our one-bit cut on an 8 GB board gave poor answers. The template's words reach builds only with a new snapshot.
+  - Scrub: the fleet's ngrok host, the rented machines' IPs, the AWS account id, EC2 instance ids and a host id became placeholders or env vars (`KNOWLEDGE_BUCKET`, `IDLE_ALERT_HOST_<NAME>`, `TRAIN_HOST` and others). Left: `native/lab/` still holds the account id and instance ids in applied IAM policies and setup scripts. Every value is still in git history.
+- **Muse Privacy proof (tg-privacy-proof, reviewed):** the Oct 30 leaks are explained and a canary network capture is added. Details are in privacy/docs/BUILD_LOG.md, Nov 2, 13:00.
+- **General and safety checks (tg-general-safety, reviewed):**
+  - What it is: Meta's post-training guide says to track a general-capability benchmark beside the task metric. `lib/train/general-checks.ts` adds 20 general and 20 mild safety prompts, written for Muse Muse.
+  - With `TUNE_GENERAL_CHECKS` on: glimmer-lora answers them with base and tuned, they're judged blind, and they're saved as their own results. It's off by default, and with it off nothing sent, stored or spent changes.
+  - The review fixed several things:
+    - check verdicts counting toward the tuning loop's stop decision;
+    - the public result page dropping them;
+    - all 40 being judged as task items for a dataset with no held-out prompts;
+    - one reference answer.
+  - I swapped a translation prompt, since the judge marks down answers in another language.
+  - Estimated cost with it on: $0.55 to $1.25 a run. Not run on a GPU.
+- **Submission kit (tg-submission-kit):**
+  - `docs/MESSAGING.md`: every outside line was opened on its primary source and marked Checked with a URL. That includes both Zuckerberg sentences on meta.com/thefutureisforeveryone (signed "Mark", Aug 10, 2026), which a second fetch confirmed word for word. GAO's wording is narrower than the old row.
+  - New `docs/VIDEO.md`: the script as three acts, a draft until the owners pick.
+  - `docs/SUBMISSION.md` was rewritten to match.
+  - `docs/HANDOFF.md` has twelve owner to-dos with steps and times.
+  - The story test that checked a script row moved to `docs/VIDEO.md`'s Act 2. It had been passing on a row that no longer existed.
+- **Data rights (tg-data-rights):**
+  - `docs/DATA_RIGHTS.md` quotes Fireworks' terms 2.2(c) (July 10, 2026) and Meta's Model API Terms 10.1(ix) (Oct 9, 2026), with three yes or no questions and what each answer rules out.
+  - r30b has Fireworks-written rows in its lineage and trained on some NC rows. The moss tunes trained on Contributor rows from Meta's API.
+  - `scripts/data-rights/filter.mjs` writes a copy without NC, ND, no-reuse or model-written rows (7 tests).
+  - Found: several OfflineBase Hugging Face repos are public while their cards say private.
+- **Judge-path checker (tg-judge-check):**
+  - `node scripts/judge-check.mjs` walks the live site with GETs only, at most 200 requests. Today's report is `docs/log/judge-check-2026-11-02.md`.
+  - It found 37 "Live" pills over "Not published" cards, fixed above.
+  - It also found a build room linking a taken-down product's 404 page. `getBuildRoom` now drops a taken-down product, with a PGlite test.
+  - All 21 published links returned 200.
+- **Also by hand:**
+  - A partial build's plan card no longer ticks "Try everything out" (checklist test).
+  - `/admin/reports` opens when `TRUST_LEGAL_PAGES` is on, so delete requests can be read.
+  - The shared privacy venv's editable install, which one agent's `uv run` had pointed at its own worktree, points back at `messaging`.
+- **Found, not changed:**
+  - Production runs #59 (`12a362a1`). Vercel blocked the deploys of #60, #61 and #62 because their author isn't on the Vercel team. The next merge authored by Ethan deploys all of main.
+  - `components/models/__tests__/models-page.test.tsx` fails one case on main, and CI doesn't run it.
+- **Tests:**
+  - Each unit ran its own; the reviewers ran theirs and the full typecheck (clean) on the site and training branches.
+  - On this branch, after the hand fixes:
+    - checklist, story, reach-claims and general-checks: 37 of 37;
+    - pages, tune-flag-off and models-page: 66 of 67, the one is the old failure;
+    - the GPU catalog tests: 131 of 131;
+    - the PGlite gallery test: 4 of 4;
+    - Muse Privacy: 130 of 130.
+  - The full typecheck is left to CI.
+- **Screenshots:** none yet. Nothing here is deployed, and a local run needs a database. The judge-check report stands in until the merge deploys, then gets rerun.

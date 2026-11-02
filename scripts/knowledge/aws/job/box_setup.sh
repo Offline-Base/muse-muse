@@ -48,7 +48,7 @@ $PY -c "import torch; assert torch.cuda.is_available(); print('MUSE gpu', torch.
 
 if [ "${KNOWLEDGE_NO_S3:-0}" != 1 ]; then
   step data
-  B=s3://muse-knowledge-916979311153/knowledge/corpus/dataset
+  B=s3://${KNOWLEDGE_BUCKET:?set KNOWLEDGE_BUCKET to the knowledge bucket name}/knowledge/corpus/dataset
   aws s3 cp --only-show-errors $B/train-stage1.jsonl $FAST/data/train.jsonl
   aws s3 cp --only-show-errors $B/eval-probes.jsonl $FAST/data/probes.jsonl
   aws s3 cp --only-show-errors $B/forget.jsonl $FAST/data/forget.jsonl

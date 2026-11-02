@@ -57,10 +57,14 @@ describe("/offline", () => {
 describe("docs/STORY.md", () => {
   const story = readFileSync("docs/STORY.md", "utf8");
 
-  it("keeps the company out of the privacy paragraph and the privacy segment", () => {
+  it("keeps the company out of the privacy paragraph and the video's privacy act", () => {
     const paragraph = story.split("## Privacy paragraph")[1]!.split("## Three-minute video")[0]!;
-    const segment = story.split("\n").find((line) => line.startsWith("| 2:10 to 2:40"))!;
-    assert.ok(!/offline.?base/i.test(paragraph + segment));
+    // The script moved to docs/VIDEO.md on Nov 2: its Act 2 rows in the timing table, and the Act 2 shots.
+    const video = readFileSync("docs/VIDEO.md", "utf8");
+    const rows = video.split("\n").filter((line) => /^\| \d+ \| [^|]+ \| 2 \|/.test(line));
+    const shots = video.split("### Act 2: Muse Privacy")[1]?.split("\n### ")[0] ?? "";
+    assert.ok(paragraph.trim().length > 0 && rows.length > 0 && shots.trim().length > 0, "the privacy paragraph, Act 2 rows and Act 2 shots exist");
+    assert.ok(!/offline.?base/i.test([paragraph, ...rows, shots].join("\n")));
   });
 
   it("gives the holdout result beside the better numbers", () => {

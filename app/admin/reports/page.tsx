@@ -19,7 +19,8 @@ export const metadata: Metadata = { title: "Reports" };
  */
 export default async function AdminReportsPage() {
   await connection();
-  if (!env.trustReports) notFound();
+  // Delete requests from /privacy land here too, so the page is on whenever either flag is.
+  if (!env.trustReports && !env.trustLegalPages) notFound();
   try {
     await requireAdmin();
   } catch {

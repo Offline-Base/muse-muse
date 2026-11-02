@@ -3,7 +3,7 @@ import type { DecisionSideSummary, DecisionSpec, DecisionSummary, LabelScore, Re
 import { isSparkOpenDerivative } from "@/lib/train/base";
 import { isDecisionSummary, recordedModel, writerModelOf } from "@/lib/train/models";
 import type { ReadyDatasetRow, ResultJobRow } from "@/lib/train/store";
-import type { DatasetView, EvalSummary, LiveDemoView, PublicHubLinks, RecipeView } from "@/lib/train/types";
+import type { DatasetView, EvalCheckSummary, EvalSummary, LiveDemoView, PublicHubLinks, RecipeView } from "@/lib/train/types";
 
 /**
  * The Lab results: what anyone may see of fine-tuning at /fine-tuning (docs/TRAINING.md "Lab results"). Judged jobs and
@@ -99,9 +99,27 @@ export function resultSettings(
   return out;
 }
 
-/** The eval summary's numbers only, so nothing else saved with it is passed on. */
+/**
+ * The eval summary's numbers only, so nothing else saved with it is passed on. The general checks' sets
+ * (TUNE_GENERAL_CHECKS) come along, as numbers only, when the summary has them; a summary without them is as before.
+ */
 function summaryOf(s: EvalSummary): EvalSummary {
   const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+  const check = (c: EvalCheckSummary | undefined) =>
+    c && typeof c === "object"
+      ? {
+          items: n(c.items),
+          asked: n(c.asked),
+          tunedWins: n(c.tunedWins),
+          baseWins: n(c.baseWins),
+          ties: n(c.ties),
+          avgBaseScore: n(c.avgBaseScore),
+          avgTunedScore: n(c.avgTunedScore),
+          judgeCostUsd: n(c.judgeCostUsd),
+        }
+      : null;
+  const general = check(s.general);
+  const safety = check(s.safety);
   return {
     items: n(s.items),
     tunedWins: n(s.tunedWins),
@@ -110,6 +128,8 @@ function summaryOf(s: EvalSummary): EvalSummary {
     avgBaseScore: n(s.avgBaseScore),
     avgTunedScore: n(s.avgTunedScore),
     judgeCostUsd: n(s.judgeCostUsd),
+    ...(general ? { general } : {}),
+    ...(safety ? { safety } : {}),
   };
 }
 
