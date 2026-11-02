@@ -83,6 +83,8 @@ const datasetRow = {
 };
 
 const fakeStore = {
+  listOwnRuns: async () => [],
+      gpuBudgetFor: async () => ({ capUsd: 0, spentUsd: 0, remainingUsd: 0 }),
   listResultJobs: async () => [jobRow],
   getResultJob: async () => jobRow,
   listResultEvents: async () => [],

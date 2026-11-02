@@ -446,6 +446,13 @@ export function Composer({
         if (problem) setError(problem);
         return;
       }
+      // A build still needs an account, even where a visitor may plan a model.
+      if (!signedIn) {
+        inFlight.current = false;
+        setSubmitting(false);
+        goSignIn();
+        return;
+      }
     }
     const url = isRefine ? `/api/builds/${buildId}/messages` : "/api/inspirations";
     const body = isRefine
