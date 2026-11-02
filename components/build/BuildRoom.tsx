@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FloatButton, ScrollButton, ShowThinking, SourceList, StepList, StepsPanel, TitleChip, WorkingStep, type StepsTab } from "@/components/chat";
+import { SegmentedTabs } from "@/components/chat/SegmentedTabs";
 import { Composer } from "@/components/composer/Composer";
 import { copyText } from "@/components/CopyButton";
 import { Icon } from "@/components/icons";
@@ -20,6 +21,8 @@ import { appsLine, nativeRows } from "@/components/build/apps";
 import { proveRows } from "@/components/build/prove-rows";
 import { conversationItems, currentStep, finalWords, roomSources, roomSteps, shareLink, stepsEnd, type ConvoItem } from "@/components/build/steps";
 import { SteerBox } from "@/components/build/SteerBox";
+import { StepsFeed } from "@/components/build/StepsFeed";
+import { buildFeed } from "@/lib/steps-feed/facts";
 import { BriefBody, BuildOutput, LivePreview, ShipBody, UserTurn, tokensText } from "@/components/build/turns";
 import { duration, elapsedMs, isTerminalStatus, parseManifest, statusLabel, usd } from "@/lib/format";
 import { proveRunning } from "@/lib/outputs/labels";
@@ -50,6 +53,8 @@ export interface BuildRoomProps {
   nativeActive?: boolean;
   /** TUNE_FROM_BUILDS: the "Its own model" row's offer (components/build/OwnModelRow.tsx), or null. */
   ownModel?: OwnModelOffer | null;
+  /** BUILD_ROOM_STEPS: two columns, a feed of simple steps on the left and the actual stuff on the right. */
+  stepsFeed?: boolean;
 }
 
 /** Below this the steps panel covers the conversation, so it starts closed (components/chat/StepsPanel.tsx). */
@@ -238,7 +243,9 @@ export function BuildRoom(props: BuildRoomProps) {
   // The steps panel opens beside a running build, where it has the room, and from "Show thinking" otherwise. The server
   // can't know the window's width: until this effect has run, the stylesheet hides an open panel that would cover the
   // conversation (.room[data-settled="false"]), so a phone never sees it flash.
-  const [panelOpen, setPanelOpen] = useState(!isTerminalStatus(props.build.status));
+  // In the two column room the raw steps wait behind Show details.
+  const [panelOpen, setPanelOpen] = useState(!props.stepsFeed && !isTerminalStatus(props.build.status));
+  const [feedTab, setFeedTab] = useState<"steps" | "stuff">("steps");
   const [settled, setSettled] = useState(false);
   const [panelTab, setPanelTab] = useState<StepsTab>("steps");
   const [focusStep, setFocusStep] = useState<string | null>(null);
@@ -370,6 +377,208 @@ export function BuildRoom(props: BuildRoomProps) {
   const lastCheck = [...room.segments].reverse().find((s) => s.type === "check" && s.verify?.screenshots.length);
   const lastShot = lastCheck?.type === "check" ? lastCheck.verify?.screenshots.at(-1)?.url : undefined;
   const apps = shipped ? appsLine(nativeRuns, nativeLive) : null;
+  const feed = useMemo(() => (props.stepsFeed ? buildFeed(events) : null), [props.stepsFeed, events]);
+
+  // The same rows in either room. Each keeps its own place in the list, since React's ids follow places.
+  const planRow = plan ? (
+    <li className="room-plan">
+      <PlanCard brief={plan.brief} art={plan.art} running={!room.terminal} artUrl={room.planArtUrl} />
+      <RequirementsChecklist items={latestChecklist(plan.brief, room.segments.flatMap((s) => (s.type === "check" ? [{ judge: s.judge, tests: s.verify?.summary.requirements ?? null }] : [])))} />
+    </li>
+  ) : null;
+  const previewRow = room.previewUrl && !room.terminal ? (
+    <li className="room-output">
+      <LivePreview url={room.previewUrl} name={name} />
+    </li>
+  ) : null;
+  const outputRow = shipped ? (
+    <li className="room-output">
+      <BuildOutput name={name} demoUrl={demoUrl} demoPosterUrl={demoPosterUrl} screenshotUrl={lastShot} />
+    </li>
+  ) : null;
+  const answerRow = shipped ? (
+    <li className="room-answer">
+      {answer ? <MarkdownText className="say" text={answer} /> : null}
+      <ShipBody status={room.status as "live" | "partial"} liveUrl={liveUrl} slug={slug} />
+      <p className="room-meta">{[duration(elapsed), tokensText(props.tokens), `${usd(room.costUsd)} est.`].filter(Boolean).join(" · ")}</p>
+    </li>
+  ) : null;
+  const appsRow = apps ? (
+    <li className="room-working">
+      <WorkingStep title={apps.title} description={apps.description} state={apps.state} />
+      <p className="room-working-meta">
+        {apps.costUsd ? `${usd(apps.costUsd)} est.` : null}
+        <StepsToggle open={panelOpen} onClick={() => (panelOpen ? closePanel() : showSteps(`apps:${apps.runId}`, nativeLive))} />
+      </p>
+    </li>
+  ) : null;
+  const proveRow = shipped && proveStep ? (
+    <li className="room-working">
+      <WorkingStep title={proveStep.title} description={proveStep.description} state={proveStep.state} />
+      <p className="room-working-meta">
+        <StepsToggle open={panelOpen} onClick={() => (panelOpen ? closePanel() : showSteps(proveStep.id, proveStep.state === "running"))} />
+      </p>
+    </li>
+  ) : null;
+  const failedRow = room.status === "failed" ? (
+    <li className="room-answer">
+      <p>This build didn&apos;t ship.</p>
+      <p>{room.lastError ?? room.lastStatusMessage ?? "The checks didn't pass after the last fix round."}</p>
+      <p className="muted">A broken product is never shown as working. Muse Code&apos;s notes are in its steps.</p>
+      <div className="row-actions">
+        <Link className="btn btn-outline" href="/">
+          <Icon name="plus" size={18} />
+          Try another muse
+        </Link>
+      </div>
+      <p className="room-meta">{[duration(elapsed), `${usd(room.costUsd)} est.`].join(" · ")}</p>
+    </li>
+  ) : null;
+  const refusedRow = room.status === "refused" ? (
+    <li className="room-answer">
+      {brief ? <BriefBody brief={brief} /> : <p>{room.lastError ?? room.lastStatusMessage ?? "Muse Muse can't make this one."}</p>}
+    </li>
+  ) : null;
+
+  if (feed) {
+    const checks = items.filter((item) => item.type === "step");
+    const notes = items.filter((item) => item.type === "owner" || (item.type === "question" && !item.live));
+    const panelToggle = <StepsToggle label="details" open={panelOpen} onClick={() => (panelOpen ? closePanel() : showSteps(null, !room.terminal))} />;
+    return (
+      <div className="room chat-split" data-settled={settled}>
+        <div className="room-main room-main-feed">
+          <div className="room-top">
+            <TitleChip as="h1">{name}</TitleChip>
+            <div className="room-top-actions">
+              <ShareButton url={shareLink({ liveUrl, origin: props.origin, buildId: build.id })} />
+              <Menu label="Build details" icon="more" iconSize={20} iconStrokeWidth={3} buttonClassName="chat-float">
+                <BuildDetails
+                  name={name}
+                  room={room}
+                  rail={rail}
+                  models={models}
+                  buildModel={build.buildModel}
+                  sessionId={build.museSessionId}
+                  maxFixRounds={props.maxFixRounds}
+                  elapsedMs={elapsed}
+                  tokens={props.tokens}
+                  liveUrl={liveUrl}
+                  demoUrl={demoUrl}
+                  productSlug={slug}
+                  connectorUrl={connectorUrl}
+                  openUrl={openUrl}
+                  buildId={build.id}
+                  history={props.history}
+                  now={now}
+                />
+              </Menu>
+            </div>
+          </div>
+
+          <p className="sr-only" aria-live="polite">
+            {`Status: ${statusLabel(room.status)}.`}
+          </p>
+
+          <div className="room-feed-switch">
+            <SegmentedTabs
+              label="What to show"
+              idBase="room-feed"
+              value={feedTab}
+              onChange={setFeedTab}
+              tabs={[
+                { id: "steps", label: "Steps" },
+                { id: "stuff", label: "The build" },
+              ]}
+            />
+          </div>
+
+          <div className="room-columns" data-show={feedTab}>
+            <div className="room-feed-col">
+              <ol ref={convo} className="convo" aria-label="Build conversation">
+                <UserTurn inspiration={props.inspiration} message={isRefineBuild ? build.message : null} rebuild={props.rebuild} showReferences={showRefs} />
+                <li className="room-working">
+                  {current ? (
+                    <WorkingStep title={current.title} />
+                  ) : (
+                    <WorkingStep title={statusLabel(room.status)} state={room.status === "failed" || room.status === "refused" ? "failed" : "done"} />
+                  )}
+                  <p className="room-working-meta">
+                    {duration(elapsed)} · {usd(room.costUsd)} est.
+                    {conn === "reconnecting" ? " · reconnecting to the live log" : ""}
+                    {panelToggle}
+                  </p>
+                </li>
+                <li>
+                  <StepsFeed feed={feed} />
+                </li>
+                {notes.map((item) => (
+                  <ConvoRow key={item.key} item={item} buildId={build.id} canAnswer={Boolean(props.canSteer)} onShow={showSteps} />
+                ))}
+                {failedRow}
+                {refusedRow}
+                {liveQuestions.map((item) => (
+                  <ConvoRow key={item.key} item={item} buildId={build.id} canAnswer={Boolean(props.canSteer)} onShow={showSteps} />
+                ))}
+              </ol>
+              <div ref={end} className="convo-end" />
+              {!atBottom ? <ScrollButton className="room-jump" onClick={() => end.current?.scrollIntoView({ block: "end", behavior: smooth() })} /> : null}
+              {steering ? (
+                <div className="room-composer">
+                  <SteerBox buildId={build.id} contributorNotice={props.contributorNotice} />
+                </div>
+              ) : refine.show ? (
+                <div id="refine" className="room-composer">
+                  <Composer mode="refine" buildId={build.id} signedIn={props.signedIn} floating autoFocus={props.focusRefine} contributorNotice={props.contributorNotice} />
+                  {props.editsByPass ? (
+                    <p className="muted small center">Guests share one account, so only this browser can change this product. Clearing its cookies ends that.</p>
+                  ) : null}
+                </div>
+              ) : refine.elsewhere ? (
+                <p className="muted center room-elsewhere">
+                  {refine.elsewhere.running ? "A change to this product is building." : "This isn't the current version."}{" "}
+                  <Link href={refine.elsewhere.running ? `/b/${refine.elsewhere.buildId}` : `/b/${refine.elsewhere.buildId}?refine=1#refine`}>
+                    {refine.elsewhere.running ? "Open it to follow along." : "Keep editing the current version."}
+                  </Link>
+                </p>
+              ) : null}
+            </div>
+
+            <aside className="room-stuff" aria-label="The build">
+              <ol className="convo">
+                {planRow}
+                {previewRow}
+                {outputRow}
+                {answerRow}
+                {appsRow}
+                {proveRow}
+                {checks.map((item) => (
+                  <ConvoRow key={item.key} item={item} buildId={build.id} canAnswer={Boolean(props.canSteer)} onShow={showSteps} />
+                ))}
+                <OwnModelRow offer={props.ownModel} brief={brief} status={room.status} buildId={build.id} />
+                {!plan && !shipped ? <li className="room-stuff-empty muted">The plan, preview and demo show up here as they&apos;re made.</li> : null}
+              </ol>
+            </aside>
+          </div>
+        </div>
+
+        <div ref={panelRef} className="room-panel">
+          <StepsPanel
+            id={PANEL_ID}
+            open={panelOpen}
+            onClose={closePanel}
+            tab={panelTab}
+            onTabChange={setPanelTab}
+            steps={
+              <div role={logRunning ? "log" : undefined} aria-relevant={logRunning ? "additions" : undefined} aria-label={logRunning ? "Muse Code activity" : undefined}>
+                {panelList}
+              </div>
+            }
+            sources={panelSources}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="room chat-split" data-settled={settled}>
@@ -440,72 +649,21 @@ export function BuildRoom(props: BuildRoomProps) {
           ) : null}
 
           {/* The plan once the brief is written, under what the build is doing: the whole brief, once in the conversation. */}
-          {plan ? (
-            <li className="room-plan">
-              <PlanCard brief={plan.brief} art={plan.art} running={!room.terminal} artUrl={room.planArtUrl} />
-              <RequirementsChecklist items={latestChecklist(plan.brief, room.segments.flatMap((s) => (s.type === "check" ? [{ judge: s.judge, tests: s.verify?.summary.requirements ?? null }] : [])))} />
-            </li>
-          ) : null}
+          {planRow}
 
-          {room.previewUrl && !room.terminal ? (
-            <li className="room-output">
-              <LivePreview url={room.previewUrl} name={name} />
-            </li>
-          ) : null}
+          {previewRow}
 
-          {shipped ? (
-            <li className="room-output">
-              <BuildOutput name={name} demoUrl={demoUrl} demoPosterUrl={demoPosterUrl} screenshotUrl={lastShot} />
-            </li>
-          ) : null}
+          {outputRow}
 
-          {shipped ? (
-            <li className="room-answer">
-              {answer ? <MarkdownText className="say" text={answer} /> : null}
-              <ShipBody status={room.status as "live" | "partial"} liveUrl={liveUrl} slug={slug} />
-              <p className="room-meta">{[duration(elapsed), tokensText(props.tokens), `${usd(room.costUsd)} est.`].filter(Boolean).join(" · ")}</p>
-            </li>
-          ) : null}
+          {answerRow}
 
-          {apps ? (
-            <li className="room-working">
-              <WorkingStep title={apps.title} description={apps.description} state={apps.state} />
-              <p className="room-working-meta">
-                {apps.costUsd ? `${usd(apps.costUsd)} est.` : null}
-                <StepsToggle open={panelOpen} onClick={() => (panelOpen ? closePanel() : showSteps(`apps:${apps.runId}`, nativeLive))} />
-              </p>
-            </li>
-          ) : null}
+          {appsRow}
 
-          {shipped && proveStep ? (
-            <li className="room-working">
-              <WorkingStep title={proveStep.title} description={proveStep.description} state={proveStep.state} />
-              <p className="room-working-meta">
-                <StepsToggle open={panelOpen} onClick={() => (panelOpen ? closePanel() : showSteps(proveStep.id, proveStep.state === "running"))} />
-              </p>
-            </li>
-          ) : null}
+          {proveRow}
 
-          {room.status === "failed" ? (
-            <li className="room-answer">
-              <p>This build didn&apos;t ship.</p>
-              <p>{room.lastError ?? room.lastStatusMessage ?? "The checks didn't pass after the last fix round."}</p>
-              <p className="muted">A broken product is never shown as working. Muse Code&apos;s notes are in its steps.</p>
-              <div className="row-actions">
-                <Link className="btn btn-outline" href="/">
-                  <Icon name="plus" size={18} />
-                  Try another muse
-                </Link>
-              </div>
-              <p className="room-meta">{[duration(elapsed), `${usd(room.costUsd)} est.`].join(" · ")}</p>
-            </li>
-          ) : null}
+          {failedRow}
 
-          {room.status === "refused" ? (
-            <li className="room-answer">
-              {brief ? <BriefBody brief={brief} /> : <p>{room.lastError ?? room.lastStatusMessage ?? "Muse Muse can't make this one."}</p>}
-            </li>
-          ) : null}
+          {refusedRow}
 
           {liveQuestions.map((item) => (
             <ConvoRow key={item.key} item={item} buildId={build.id} canAnswer={Boolean(props.canSteer)} onShow={showSteps} />
@@ -567,10 +725,10 @@ export function BuildRoom(props: BuildRoomProps) {
 }
 
 /** Opens and closes the steps panel from the running step. It stays on the page, so the panel can give focus back to it. */
-export function StepsToggle({ open, onClick }: { open: boolean; onClick: () => void }) {
+export function StepsToggle({ open, onClick, label = "steps" }: { open: boolean; onClick: () => void; label?: string }) {
   return (
     <button type="button" className="link-btn room-steps-link" aria-expanded={open} aria-controls={PANEL_ID} onClick={onClick}>
-      {open ? "Hide steps" : "Show steps"}
+      {open ? `Hide ${label}` : `Show ${label}`}
       <Icon name="chevronRight" size={16} />
     </button>
   );
