@@ -1,0 +1,22 @@
+{
+ "board": "jetson-04",
+ "model": "hf.co/nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-4GB:Q4_K_M",
+ "seed_file": "heldout.jsonl",
+ "receipts": 40,
+ "valid_json": 1.0,
+ "all_six_right": 0.3,
+ "fields_right": 0.879,
+ "per_field": {
+  "merchant": 0.975,
+  "date": 1.0,
+  "subtotal": 1.0,
+  "tax": 1.0,
+  "total": 1.0,
+  "item_count": 0.3
+ },
+ "adds_up": 1.0,
+ "median_seconds": 5.9,
+ "tokens_per_second": 12.4,
+ "errors": 0,
+ "cut_off": 0
+}

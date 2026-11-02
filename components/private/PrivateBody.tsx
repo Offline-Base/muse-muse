@@ -32,6 +32,7 @@ const NOT_DONE: string[] = [
   "Whatever you type into Muse reaches Meta before the device sees it.",
   "A privacy toggle doesn't make anyone legally covered. Your school, clinic, agency or company decides whether Muse may be used.",
   "It runs on a laptop. The Jetson path is designed and tested in simulation, not run on a board in this setup.",
+  "Answers from the Jetson fleet or a paired board aren't private. The text passes through other servers on the way, and only this path, on your own laptop, keeps your files with you.",
 ];
 
 /** With `story` (STORY_PAGES), the page opens with what it protects, from whom, and a before and after. */

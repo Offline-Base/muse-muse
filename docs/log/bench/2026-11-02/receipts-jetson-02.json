@@ -1,0 +1,22 @@
+{
+ "board": "jetson-02",
+ "model": "muse-glimmer-2026-iq1s-io-lowest",
+ "seed_file": "heldout.jsonl",
+ "receipts": 40,
+ "valid_json": 0.0,
+ "all_six_right": 0.0,
+ "fields_right": 0.0,
+ "per_field": {
+  "merchant": 0.0,
+  "date": 0.0,
+  "subtotal": 0.0,
+  "tax": 0.0,
+  "total": 0.0,
+  "item_count": 0.0
+ },
+ "adds_up": 0.0,
+ "median_seconds": 14.7,
+ "tokens_per_second": 4.7,
+ "errors": 18,
+ "cut_off": 5
+}
