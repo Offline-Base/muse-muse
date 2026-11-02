@@ -3,6 +3,8 @@
  * shows. Pure and client-safe. tick.ts runs the stages and try.ts runs the queue.
  */
 import { SIM_TUNE_PROMPTS } from "@/lib/train/sim-tune";
+import { META_NAME_PATTERNS } from "@/lib/meta/models";
+import { BASE_MODEL_PARAM } from "@/lib/train/base";
 import { quantBaseForAdapter } from "@/lib/train/quant-targets";
 import type { BoardFile, BoardKind } from "@/lib/board-loop/driver";
 
@@ -197,7 +199,9 @@ export function judgedProblem(
 ): string | null {
   if (!job) return "There's no such job.";
   if (job.recipe !== ADAPTER_RECIPE_ID) return "Only a tuned model can go to a board.";
-  if (quantBaseForAdapter(job.params)) return LLAMA_TUNE_PROBLEM;
+  // The small-base list no longer has a Llama (lib/train/quant-targets.ts), so the base's own name is checked too.
+  const base = job.params?.[BASE_MODEL_PARAM];
+  if (quantBaseForAdapter(job.params) || (typeof base === "string" && META_NAME_PATTERNS.other.test(base.toLowerCase()))) return LLAMA_TUNE_PROBLEM;
   if (job.status !== "succeeded") return "This tune hasn't finished well.";
   if (!job.evalSummary || job.evalSummary.items < 1) return "This tune hasn't been judged yet.";
   return null;

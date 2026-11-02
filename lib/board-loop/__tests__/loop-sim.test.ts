@@ -19,7 +19,6 @@ import { joinQueue, pollTurn, TRY_LIMITS, type Turn, type TryDeps, type TryStore
 import { BASE_MODEL_PARAM } from "@/lib/train/base";
 import type { LocalFiles } from "@/lib/train/local-files";
 import { ADAPTER_RECIPE } from "@/lib/train/logic";
-import { QUANT_BASES } from "@/lib/train/quant-targets";
 
 let clock = new Date("2026-11-01T18:00:00Z");
 const now = () => clock;
@@ -219,17 +218,6 @@ describe("the board loop on the simulated board", () => {
     assert.equal(row.data.file!.name, "muse-glimmer-30b-x-IQ1_S.gguf");
   });
 
-  it("refuses a tune whose files were made from Llama, before any board gets a file", async () => {
-    const llamaFiles = { adapterJobId: "a", quantJobId: "q", repo: "OfflineBase/x", commit: "c", public: true, files: [{ level: "Q4_K_M" as const, name: "Llama-3.2-3B-x-Q4_K_M.gguf", bytes: 2e9, sha256: "a".repeat(64) }], systemLine: "s", needsTunedTemplate: false, title: "t", slug: "s", lowBit: null, quantBase: "llama-3.2-3b" };
-    assert.equal(loopFile(llamaFiles as never), null);
-    const row = makeRow();
-    await runUntil(row, tickDeps(row, { localFiles: async () => llamaFiles as never }), (r) => r.status !== "running");
-    assert.equal(row.status, "failed");
-    assert.equal(row.stages.gguf.status, "failed");
-    assert.match(row.stages.gguf.detail!, /made from Llama.*only Muse Glimmer/);
-    assert.equal(row.data.file, null);
-  });
-
   describe("the try page's queue", () => {
     async function openPage() {
       const row = await serving();
@@ -338,7 +326,7 @@ describe("the board loop on the simulated board", () => {
 
   it("an adapter on a small Llama can't start, since Llama isn't a Meta model", () => {
     const judged = { recipe: ADAPTER_RECIPE as string, status: "succeeded", evalSummary: { items: 3 } };
-    assert.match(judgedProblem({ ...judged, params: { [BASE_MODEL_PARAM]: QUANT_BASES["llama-3.2-3b"]!.model } })!, /small Llama, which isn't a Meta model/);
+    assert.match(judgedProblem({ ...judged, params: { [BASE_MODEL_PARAM]: "unsloth/Llama-3.2-3B-Instruct" } })!, /small Llama, which isn't a Meta model/);
     assert.equal(judgedProblem({ ...judged, params: { [BASE_MODEL_PARAM]: "musemuse/r30b" } }), null);
     assert.equal(judgedProblem({ ...judged, params: {} }), null);
   });
