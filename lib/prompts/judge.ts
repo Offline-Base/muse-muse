@@ -6,6 +6,7 @@ import { capsJudgeNotes } from "@/lib/caps/judge";
 import { fullJudgeNote } from "@/lib/full/prompts";
 import { buildableRequirements } from "@/lib/full/requirements";
 import { briefTargets, isOwnerToolsOnly } from "@/lib/native/targets";
+import { RANGE_HOUSE_STYLE, rangeJudgeNote } from "@/lib/range/prompts";
 import { PERSONAL_TOOL_IDS } from "@/lib/tools/ids";
 
 /** Prompt 4 in docs/PROMPTS.md: the screenshot judge, for products with the template's meta-ui look. */
@@ -108,18 +109,21 @@ export function askedLookJudgeNote(asked: string): string {
  */
 export function judgeInstructions(
   brief: Pick<Brief, "targets" | "agent" | "askedLook"> & Partial<Brief>,
-  opts: { museAppLook?: boolean; verifyAgents?: boolean; fullBuilds?: boolean } = {},
+  opts: { museAppLook?: boolean; buildRange?: boolean; verifyAgents?: boolean; fullBuilds?: boolean } = {},
 ): string {
   const targets = briefTargets(brief);
   const asked = askedLookOf(brief, opts);
+  // BUILD_RANGE (docs/BUILD_RANGE.md): a product with a direction is judged against it. One without keeps the house styles.
+  const direction = opts.buildRange ? (brief.direction ?? null) : null;
   const notes = [
+    ...(direction ? [rangeJudgeNote(direction)] : []),
     ...(asked ? [askedLookJudgeNote(asked)] : []),
     ...(targets.includes("agent") ? [agentJudgeRules(brief.agent)] : []),
     ...(targets.includes("agent") && opts.verifyAgents ? [verifiedAgentRules(brief)] : []),
     ...(targets.includes("vr") ? [VR_JUDGE_NOTE] : []),
     ...(targets.includes("glasses") ? [GLASSES_JUDGE_NOTE] : []),
   ];
-  const base = opts.museAppLook ? withBothHouseStyles(JUDGE_INSTRUCTIONS) : JUDGE_INSTRUCTIONS;
+  const base = direction ? withHouseStyle(JUDGE_INSTRUCTIONS, RANGE_HOUSE_STYLE) : opts.museAppLook ? withHouseStyle(JUDGE_INSTRUCTIONS, BOTH_HOUSE_STYLES) : JUDGE_INSTRUCTIONS;
   const text = notes.length ? `${base}\n\n${notes.join("\n\n")}` : base;
   // ---------- Wave 3, unit 2 (docs/CAPABILITIES.md, 2.6): each cap's note after the glasses note, empty with no cap blocks ----------
   const required = opts.fullBuilds ? buildableRequirements(brief) : [];
@@ -127,8 +131,8 @@ export function judgeInstructions(
   // ---------- end Wave 3, unit 2 ----------
 }
 
-/** JUDGE_INSTRUCTIONS with its one house style sentence widened to the two that MUSE_APP_LOOK makes expected. */
-function withBothHouseStyles(text: string): string {
+/** JUDGE_INSTRUCTIONS with its one house style sentence swapped for what MUSE_APP_LOOK or BUILD_RANGE makes expected. */
+function withHouseStyle(text: string, style: string): string {
   if (text.split(META_HOUSE_STYLE).length !== 2) throw new Error("The judge's house style sentence changed: update lib/prompts/judge.ts.");
-  return text.replace(META_HOUSE_STYLE, BOTH_HOUSE_STYLES);
+  return text.replace(META_HOUSE_STYLE, style);
 }

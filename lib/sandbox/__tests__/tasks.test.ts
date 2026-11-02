@@ -8,7 +8,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, 
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
-import { MUSE_APP_OVERLAY, restoreLookFilesScript } from "@/lib/sandbox/look";
+import { MUSE_APP_OVERLAY, RANGE_OVERLAY, restoreLookFilesScript } from "@/lib/sandbox/look";
 import { PLATFORM_FILES, TARGET_OVERLAYS } from "@/lib/sandbox/paths";
 import { writeRunner } from "@/lib/sandbox/shell";
 import {
@@ -495,7 +495,7 @@ test("every platform file exists in template/", () => {
 test("every overlay the platform lists is in template/targets, with its platform files", () => {
   const root = path.join(process.cwd(), "template", "targets");
   // The brief's targets, and the muse-app look (lib/sandbox/look.ts), which MUSE_APP_LOOK applies rather than a target.
-  const overlays = [...TARGET_OVERLAYS, MUSE_APP_OVERLAY];
+  const overlays = [...TARGET_OVERLAYS, MUSE_APP_OVERLAY, RANGE_OVERLAY];
   assert.deepEqual(readdirSync(root).sort(), overlays.sort());
   for (const t of overlays) {
     const deps = JSON.parse(readFileSync(path.join(root, t, "deps.json"), "utf8")) as Record<string, Record<string, string>>;
