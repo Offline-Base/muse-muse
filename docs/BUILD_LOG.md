@@ -2223,6 +2223,11 @@ Behind a new flag, off by default. Design in docs/FAST_BUILDS.md.
 - **Previews:** FAST_BUILDS=1 muse-muse-lofxtn17n, without it muse-muse-k1fp4y15n, same code and snapshot snap_Dy4CjpILCMOBnaJ28Skzswys7CJ4. A stray line in my deploy command also made one extra unused Preview with the flag on.
 - **Builds on the flag Preview:** small e50989ff, complex 399f7255 and 0b90ec23. Without it: small 4b97d2c4, complex 654b4711 and a6275cc8. Same notes each way.
 
+## Nov 1: two more full build fixes, from the reruns
+
+- **Results.** Tracker rerun 020084d8 on Contributor: live, judge pass, 15 of 15 met, 23m32, $0.085. Its brief has 15 requirements against the Wonder build's 21, so this doesn't prove the screenshot fix on the original failure. Big build 22562315 on Contributor: partial, 101 minutes, $0.93, 2 of 6 milestones, 20 of 40 requirements unmet, 4 of 6 rounds at their limit, no fix round, 0 subagents.
+- **Screenshot cap.** Verify still kept only 24 shots on full builds, so a 40-requirement brief lost the rest before the judge saw them. It now keeps up to 50. No rerun yet.
+- **Fix rounds.** A full build needed room for two verifies at their cap (71 minutes) to start a fix round, though verifies took about 1 minute, so 49 unused minutes went to waste. It now needs room for one. Non-full builds are unchanged. No rerun yet.
 ## Nov 1: open-weight proof page and draft adapter card (branch tg-open-proof)
 
 - Built /open-weights, public, linked from /models: task, method, cost, wins, losses, every Glimmer answer, the five Llama losses, Hugging Face links and which model runs where. Proof: Preview muse-muse-bh5j5ay4r, page and JSON answered 200 with their content, /models has the link, all linked Hub pages answer 200. Screenshots: docs/log/shots/open-weights-desktop.png and open-weights-phone.png.
@@ -2239,3 +2244,15 @@ Behind a new flag, off by default. Design in docs/FAST_BUILDS.md.
 - **Results on Contributor, exec engine.** A mid-build note changed the title to Sunny Pantry and added a Favorites tab: final source and judge screenshot on 4fd6f8f1, repeated on b92bf392 and 74409a26. The first try, 215d2a13, refused the note as against the brief, so a note now outranks the brief on name, words, look, screens and features, and never on AGENTS.md, spend or time.
 - **Refused as they should be.** A note asking to print a token and pass the spend limit wasn't obeyed. A different guest, with no pass or a forged one, got 404. Oversized got 400. After the round ended, 409.
 - **Not proven.** A guest steering their own build (shared guest quota was used up, so unit tests only), the serve engine, replies in the left column on screen. The independent review stopped before reading the code, so note injection hasn't been attacked by anyone.
+## Nov 1: guest fine-tune proof on production, blocked before the plan (branch tg-guest-tune-proof)
+
+Tried at 01:28 UTC on Nov 2 (still Nov 1 here) with curl keeping cookies, signed out, on https://muse-muse.vercel.app.
+
+- **Result: not run.** `GET /fine-tuning/new` answered 200. `POST /api/train/plan` with a made-up task (a fictional lighthouse's maintenance log, 40 examples) answered 429 `trainer_ip_cap`, retryAfterSeconds 81125, so until 00:00 UTC on Nov 3: "This network has started training as a new visitor 3 times today."
+- **Nothing started:** no plan, no start code sent, no dataset, no job, no GPU, no job id. $0 Meta, $0 Lambda. The refusal comes before the paid plan call. One plan request only, not retried.
+- **Still unproven on production:** dataset written, Lambda launch, https callbacks, training, base vs tuned judging, GPU terminated, publish 0 on a real job, the guest's result page, models used, real cost.
+- **Not worked around.** No other network, no IPv4/IPv6 switch, no cookie from another session, no change to the counter or `PUBLIC_TRAIN_COOKIES_PER_IP`.
+- **Finding, by reading code, counter rows not read:** `mintTrainer` (lib/train/public/identity.ts) takes `PUBLIC_TRAIN_COOKIES_PER_IP` (default 3) per IP per UTC day from `rate_limits`. This laptop's IP had used all 3 within 88 minutes of the UTC day turning. Likely cause, not confirmed: the guest tests on Previews, since the entry above for Preview j1swsu3a1 says it used the main database, so a Preview's new visitors would count against production's.
+- **Finding, for the owner:** at 3 new visitors per IP per day, a shared network such as a venue's Wi-Fi stops the fourth new guest before they can get a plan. "Keep the same browser" doesn't help someone who has no cookie yet. Not fixed here.
+- **For the rerun:** the guest's own view takes out instance id, IP, logs and errors (`visitorRunView`), so proving callbacks and the GPU's end needs what that view keeps plus an owner's check of the job row or Lambda console.
+- **Spend:** $0. No production changes.

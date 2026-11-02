@@ -379,7 +379,8 @@ async function checkAndFix(ctx: Ctx, track: Track, kind: "build" | "refine", off
     await setStatusStep(ctx.buildId, "verifying", { step: "verify" });
     const verifyMs = capFor(ctx, "verify");
     // Room for this verify and its judge, a fix round, and the verify and judge after it.
-    const roomForFix = !ctx.plan || capInWall(ctx, capFor(ctx, "fix"), 2 * (verifyMs + JUDGE_RESERVE_MS)) !== null;
+    // A full build's verify cap grows with its requirements and is rarely reached, so it keeps room for one verify and judge after the fix.
+    const roomForFix = !ctx.plan || capInWall(ctx, capFor(ctx, "fix"), (ctx.plan.full ? 1 : 2) * (verifyMs + JUDGE_RESERVE_MS)) !== null;
     const last = fix >= rounds || !roomForFix;
     let verify: VerifyResult | null = null;
     if (recheck.length && !last) {
