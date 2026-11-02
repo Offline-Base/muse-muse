@@ -297,6 +297,17 @@ From meta.ai's Settings window, captured by Ethan on Nov 2 in both themes (S). U
 - **Close:** a 40 px circle in the top right corner, `--settings-close` (white, dark `#3d3d3e`) with `--shadow-chip`. Escape and a backdrop click close it too, and focus goes back to the button that opened it.
 - **Phones:** one column, the sections as a row of pills over the cards.
 
+### Muse, the mascot (`components/mascot/Mascot.tsx`, `public/muse/muse-*`)
+
+Muse Muse's own character, from the owner's videos (Nov 2). Not a Meta mark. Built so far: the walk along the bottom and the climb up the right side. Following the cursor and walkthroughs come with their own assets.
+
+- **Clips:** transparent loops cut from the owner's videos by `scripts/dev/mascot/walk.sh` and `climb.sh`: a 1.75 s stride and a 2.25 s climb (plus that climb reversed for coming down). VP9 WebM with alpha for Chrome and Firefox, HEVC with alpha for Safari, about 80 to 120 KB each. White is keyed out. Light neutral greys become a soft black shadow, so it works on both themes.
+- **Size:** 96 px tall on the desktop view, 72 px on a phone.
+- **The walk:** across the bottom of the content area, never behind the sidebar. It turns at each edge and stops now and then.
+- **The climb:** desktop view only. At the right edge it sometimes climbs the window's edge (the clip is cut flush, so its hands grip the edge) to between a quarter and half the window's height, hangs a moment, comes back down and walks off left.
+- **Layering:** fixed at z-index 15, under docks (20), menus (40) and dialogs. Pointer events pass through, so it never blocks a click. It's hidden from screen readers and in print.
+- **Choice:** Settings, General, "Muse on screen" (on by default, kept in this browser). With reduced motion it stands still in the corner.
+
 ### Segmented tabs (`.chat-tabs`, `.tabs`, `.range`, `.segmented`), M
 
 Track 36 px, `--panel-line`, radius 16 px, 4 px inset. Chosen segment 28 px, radius 16 px, `--chat-segment`,

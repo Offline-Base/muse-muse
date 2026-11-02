@@ -7,6 +7,7 @@ import type { AccountUser } from "@/components/shell/AccountMenu";
 import { DISCLAIMER } from "@/components/shell/disclaimer";
 import { SettingsWindow, type SettingsWindowHandle } from "@/components/shell/SettingsWindow";
 import { initials } from "@/lib/format";
+import { readMascotOn, setMascotOn } from "@/lib/mascot";
 import { THEME_CHOICES, applyTheme, isThemeChoice, readTheme, type ThemeChoice } from "@/lib/theme";
 
 /** Theme: System, Light or Dark, as a row in a settings list (meta.ai's Settings, "Theme  System ⌄"). */
@@ -37,6 +38,29 @@ function ThemeRow() {
         </select>
         <Icon name="chevronDown" size={18} aria-hidden />
       </span>
+    </div>
+  );
+}
+
+/** Muse on screen: the mascot walking along the bottom (components/mascot/Mascot.tsx), on unless switched off here. */
+function MascotRow() {
+  const id = useId();
+  const [on, setOn] = useState(true);
+  useEffect(() => setOn(readMascotOn()), []);
+  return (
+    <div className="settings-row">
+      <span id={id}>Muse on screen</span>
+      <button
+        type="button"
+        role="switch"
+        className="switch"
+        aria-checked={on}
+        aria-labelledby={id}
+        onClick={() => {
+          setOn(!on);
+          setMascotOn(!on);
+        }}
+      />
     </div>
   );
 }
@@ -83,6 +107,7 @@ export function SiteSettings({ user, signInHref, ref }: { user: AccountUser | nu
               )}
               <div className="settings-list">
                 <ThemeRow />
+                <MascotRow />
               </div>
             </>
           ),

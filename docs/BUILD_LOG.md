@@ -2693,3 +2693,24 @@ The owner asked for a simpler sidebar using "muse" and "musing" for the creative
     - no console errors.
   - Tests: theme 4 of 4 (including the inline script run against a fake page), nav 12 of 12. Typecheck clean.
   - The mascot's on and off switch will go in General once the mascot exists.
+- **Later, same branch: Muse on screen, walking and climbing.**
+  - From the owner's two videos ("muse video for bottom" and "climbing the right side", Nov 2), `scripts/dev/mascot/walk.sh` and `climb.sh` cut transparent loops into `public/muse/`, each about 80 to 120 KB:
+    - a 1.75 s stride: the most similar pair of frames, 42 apart;
+    - a 2.25 s climb, the cleanest seam found by comparing every start and length;
+    - the climb reversed, for coming down.
+  - Each comes as VP9 WebM with alpha and HEVC with alpha. White is keyed out, and light neutral greys become a soft black shadow, so it reads on both themes.
+  - Two problems found by looking, then fixed:
+    - the source's near-white background left a faint box on light cards; it is now fully transparent (half of each frame is alpha 0, half 255, about 2% soft edge);
+    - an 8-frame cross-fade on the climb ghosted his face, so the loop uses the cleanest seam instead.
+  - Each climb frame is cropped at the wall's own edge, measured per frame, so the window's right edge is the wall and his hands grip it.
+  - `components/mascot/Mascot.tsx`:
+    - it walks along the bottom of the content area, turning at each edge and stopping now and then;
+    - on the desktop view it sometimes climbs the right edge, hangs, climbs down and walks off left;
+    - it sits under docks, menus and dialogs and passes clicks through;
+    - it stands still with reduced motion, and Settings has "Muse on screen".
+  - Checked in Chromium on the seeded local site, with the page clock sped up:
+    - the full cycle ran in light and dark: walk, edge, up to about 205 px, hang, down, walk back;
+    - the right clip played at each stage and all three loaded;
+    - zoomed shots show no box and a clean grip at the edge.
+  - The Safari (HEVC) files have not been opened in Safari yet.
+  - Tests: mascot 4 of 4 (the walk, the climb, the switch), theme 4 of 4. Typecheck clean. Spend $0.

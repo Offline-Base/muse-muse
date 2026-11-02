@@ -7888,3 +7888,60 @@ div.md.md-plain {
   flex: 1;
   width: auto;
 }
+
+/* Muse, the mascot (components/mascot/Mascot.tsx): fixed to the bottom edge, under docks, menus and dialogs, and never
+   in the way of a click. The transform is set each frame from script. */
+.mascot {
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  z-index: 15;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.mascot-figure {
+  transform-origin: 50% 50%;
+}
+
+.mascot-walk {
+  display: block;
+  width: auto;
+  height: 72px;
+}
+
+@media (min-width: 760px) {
+  .mascot-walk {
+    height: 96px;
+  }
+}
+
+/* On the window's right edge: the clip is cut flush at the wall, so it grips the edge. Raised from script while it climbs. */
+.mascot-climb {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  z-index: 15;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.mascot-climb[hidden],
+.mascot[hidden],
+.mascot video[hidden],
+.mascot-climb video[hidden] {
+  display: none;
+}
+
+.mascot-climb-clip {
+  display: block;
+  width: auto;
+  height: 96px;
+}
+
+@media print {
+  .mascot,
+  .mascot-climb {
+    display: none;
+  }
+}
