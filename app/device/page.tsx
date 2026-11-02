@@ -38,7 +38,7 @@ export default async function DevicePage({ searchParams }: { searchParams: Promi
       <DeviceAsk />
       {viewer.openAccess ? null : <DeviceFleet />}
       {env.hardwareBoardRegistry && !viewer.openAccess ? <DeviceBoards /> : null}
-      <DeviceTrain driveExport={env.driveExportEnabled} />
+      <DeviceTrain driveExport={env.driveExportEnabled} training={env.deviceLlamaTraining} />
       {env.driveExportEnabled ? <DeviceDrive initialSource={typeof sp.export === "string" && /^(board|lab):[A-Za-z0-9._:-]{1,120}$/.test(sp.export) ? sp.export : null} /> : null}
     </div>
   );

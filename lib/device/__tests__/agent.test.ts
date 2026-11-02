@@ -140,11 +140,15 @@ describe("runDeviceAgent", () => {
 
   const READ_ONLY = ["describe_device", "capture_image", "training_status"];
   const ALL_OFFERED = [...READ_ONLY, "train_model", "stop_training", "start_model"];
-  const withEveryTool = (replies: ModelResponse[] | (() => ModelResponse)) => {
-    const h = harness(replies);
+  const withEveryTool = (replies: ModelResponse[] | (() => ModelResponse), results: Record<string, DeviceToolResult> = {}) => {
+    const h = harness(replies, results);
     h.deps.listTools = async () => everyTool.map((name) => ({ name, inputSchema: { type: "object" } }));
     return h;
   };
+  /** What list_models says while this file is running on the board. */
+  const runningOnBoard = (model: string): DeviceToolResult => ({ content: [{ type: "text", text: JSON.stringify({ files: [{ name: model, gib: 1 }], running: { model, adapter: null } }) }], isError: false });
+  const GLIMMER_FILE = "muse-glimmer-30b-bakery-helper-IQ1_S.gguf";
+  const LLAMA_FILE = "Llama-3.2-1B-Instruct-Q4_K_M.gguf";
 
   it("doesn't take everyday words or a refusal as asking to change the board", async () => {
     for (const prompt of [
@@ -173,12 +177,12 @@ describe("runDeviceAgent", () => {
 
   it("stops offering what changes the board once a photo or a model's answer is in the conversation", async () => {
     for (const source of ["capture_image", "ask_model"]) {
-      const h = withEveryTool([reply("r1", [toolCall(source)]), reply("r2", [toolCall("stop_training")]), reply("r3", [], "Done.")]);
+      const h = withEveryTool([reply("r1", [toolCall(source)]), reply("r2", [toolCall("stop_training")]), reply("r3", [], "Done.")], { list_models: runningOnBoard(GLIMMER_FILE) });
       const result = await runDeviceAgent("train a model on bakery", h.deps);
       assert.deepEqual(offered(h.bodies[0]!), ALL_OFFERED, source);
       assert.deepEqual(offered(h.bodies[1]!), READ_ONLY, source);
-      // Asking anyway does nothing, including later in the same reply.
-      assert.deepEqual(h.called.map((c) => c.name), [source]);
+      // Asking anyway does nothing, including later in the same reply. ask_model checks what's running first.
+      assert.deepEqual(h.called.map((c) => c.name), source === "ask_model" ? ["list_models", source] : [source]);
       assert.equal(result.steps[1]!.isError, true);
     }
     const same = withEveryTool([reply("r1", [toolCall("capture_image", "{}", "c1"), toolCall("train_model", "{}", "c2")]), reply("r2", [], "Done.")]);
@@ -204,9 +208,46 @@ describe("runDeviceAgent", () => {
       assert.deepEqual(h.called, [], args);
       assert.equal(result.steps[0]!.isError, true);
     }
-    const h = withEveryTool([reply("r1", [toolCall("train_model", '{"dataset":"d","name":"n","steps":100}')]), reply("r2", [], "Started.")]);
-    await runDeviceAgent("train a model on bakery", h.deps);
+    const h = withEveryTool([reply("r1", [toolCall("start_model", JSON.stringify({ model: GLIMMER_FILE, context: 4096 }))]), reply("r2", [], "Started.")]);
+    await runDeviceAgent("start the bakery model", h.deps);
     assert.equal(h.called.length, 1);
+    const trained = withEveryTool([reply("r1", [toolCall("train_model", '{"dataset":"d","name":"n","steps":100}')]), reply("r2", [], "Started.")]);
+    trained.deps.llamaTraining = true;
+    await runDeviceAgent("train a model on bakery", trained.deps);
+    assert.equal(trained.called.length, 1, "with DEVICE_LLAMA_TRAINING on");
+  });
+
+  it("starts only a Meta model's file, and never calls the board for any other", async () => {
+    for (const model of [LLAMA_FILE, "nemotron-3.5-bolt-e4b.gguf", "glimmer-bolt-merge.gguf"]) {
+      const h = withEveryTool([reply("r1", [toolCall("start_model", JSON.stringify({ model, adapter: "receipts.gguf" }))]), reply("r2", [], "It isn't Meta's.")]);
+      const result = await runDeviceAgent("start the receipts model and read the total off this photo", h.deps);
+      assert.deepEqual(h.called, [], model);
+      assert.equal(result.steps[0]!.isError, true);
+      assert.match(JSON.stringify(outputOf(h.bodies[1]!).output), /isn't a Meta model's file, so nothing started\. Muse Muse only runs Meta models\./);
+    }
+  });
+
+  it("asks the board's model only while a Meta model is running, with or without action words", async () => {
+    for (const prompt of ["ask the board's model what this says", "start the receipts model and read the total"]) {
+      const h = withEveryTool([reply("r1", [toolCall("ask_model", '{"prompt":"What is the total?"}')]), reply("r2", [], "No.")], { list_models: runningOnBoard(LLAMA_FILE) });
+      const result = await runDeviceAgent(prompt, h.deps);
+      assert.deepEqual(h.called.map((c) => c.name), ["list_models"], "ask_model never reached the board");
+      assert.equal(result.steps[0]!.isError, true);
+      assert.match(JSON.stringify(outputOf(h.bodies[1]!).output), /isn't running a Meta model, so nothing was asked/);
+      // Nothing untrusted came back, so a request about the model keeps its tools.
+      if (prompt.startsWith("start")) assert.deepEqual(offered(h.bodies[1]!), ALL_OFFERED);
+    }
+    const meta = withEveryTool([reply("r1", [toolCall("ask_model", '{"prompt":"What is the total?"}')]), reply("r2", [], "12.50.")], { list_models: runningOnBoard(GLIMMER_FILE) });
+    await runDeviceAgent("ask the board's model what this says", meta.deps);
+    assert.deepEqual(meta.called.map((c) => c.name), ["list_models", "ask_model"]);
+  });
+
+  it("refuses train_model before the board unless DEVICE_LLAMA_TRAINING is on, and says why", async () => {
+    const h = withEveryTool([reply("r1", [toolCall("train_model", '{"dataset":"bakery","name":"bakery","base":"Muse-Glimmer-30B"}')]), reply("r2", [], "Off.")]);
+    const result = await runDeviceAgent("fine-tune Muse Glimmer on the bakery dataset", h.deps);
+    assert.deepEqual(h.called, []);
+    assert.equal(result.steps[0]!.isError, true);
+    assert.match(JSON.stringify(outputOf(h.bodies[1]!).output), /A board can only train Llama 3\.x, which isn't a Meta model for this project/);
   });
 
   it("limits the tool calls of one question, however a model bunches them", async () => {

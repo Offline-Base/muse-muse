@@ -13,7 +13,8 @@ import { fleetSettings } from "@/lib/caps/fleet/settings";
 const NOW = new Date("2026-11-03T15:00:00Z");
 const ADDRESS = "https://fleet.example/admin";
 const KEY = "jik_madeup";
-const MODEL = "made-up-board-model";
+/** A Meta model, as FLEET_PRODUCTS_MODEL must be: Muse Muse's one-bit Glimmer, as the fleet serves it. */
+const MODEL = "muse-glimmer-2026-iq1s-io-lowest";
 const SETTINGS = { FLEET_PRODUCTS_URL: ADDRESS, FLEET_PRODUCTS_KEY: KEY, FLEET_PRODUCTS_MODEL: MODEL };
 
 let sent: Array<{ url: string; init: RequestInit; body: Record<string, unknown>; headers: Headers }>;
@@ -119,13 +120,27 @@ describe("the flag and the settings", () => {
   });
 
   it("refuses an Ollama cloud tag in any case, since a board's Ollama forwards it to ollama.com", async () => {
-    for (const model of ["gpt-oss:120b-cloud", "qwen3-coder:480b-cloud", "glm-4.6:cloud", "GPT-OSS:20B-CLOUD", " minimax-m2:Cloud "]) {
+    for (const model of ["gpt-oss:120b-cloud", "qwen3-coder:480b-cloud", "glm-4.6:cloud", "GPT-OSS:20B-CLOUD", " minimax-m2:Cloud ", "muse-glimmer:cloud"]) {
       assert.equal(fleetSettings({ ...SETTINGS, FLEET_PRODUCTS_MODEL: model }), null, model);
       const res = await handleFleetChat(call(), deps({ settings: () => fleetSettings({ ...SETTINGS, FLEET_PRODUCTS_MODEL: model }) }));
       assert.equal(await code(res), "fleet_closed", model);
     }
     assert.equal(sent.length, 0);
-    for (const model of ["gemma3:4b", "llama3.2:3b-instruct-q4_K_M", "cloudy:1b"]) assert.equal(fleetSettings({ ...SETTINGS, FLEET_PRODUCTS_MODEL: model })?.model, model, model);
+    for (const model of [MODEL, "hf.co/meta-models/Muse-Glimmer-30B-GGUF:IQ1_S", "muse-glimmer:cloudy"]) assert.equal(fleetSettings({ ...SETTINGS, FLEET_PRODUCTS_MODEL: model })?.model, model, model);
+  });
+
+  it("refuses any model that isn't Meta's, Bolt and Llama included, since the organizers ruled Llama out on Nov 2", async () => {
+    const others = ["bolt", "nemotron-3.5-bolt-e4b", "hf.co/LiquidAI/LFM2.5-VL-3B-GGUF:Q4_K_M", "d1-omni-600M", "Llama-3.2-1B-Instruct-receipts", "llama3.2:3b-instruct-q4_K_M", "llama-muse-glimmer", "gemma3:4b", "made-up-board-model"];
+    for (const model of others) {
+      assert.equal(fleetSettings({ ...SETTINGS, FLEET_PRODUCTS_MODEL: model }), null, model);
+      const res = await handleFleetChat(call(), deps({ settings: () => fleetSettings({ ...SETTINGS, FLEET_PRODUCTS_MODEL: model }) }));
+      assert.equal(res.status, 503, model);
+      assert.equal(await code(res), "fleet_closed", model);
+    }
+    assert.equal(sent.length, 0);
+    assert.equal(counts["fleet:product:p1"] ?? 0, 0, "a refused model costs a product none of its day");
+    assert.equal((await handleFleetChat(call(), deps())).status, 200, "Muse Glimmer answers");
+    assert.equal(sent[0]!.body.model, MODEL);
   });
 
   it("wants https, with /admin, and no credentials or query in the address", () => {
@@ -384,7 +399,7 @@ describe("a live token", () => {
 });
 
 describe("what a failure says", () => {
-  const SECRET = "no online node can serve model made-up-board-model at fleet.example/admin on nd_123";
+  const SECRET = `no online node can serve model ${MODEL} at fleet.example/admin on nd_123`;
   const cases: Array<[string, () => Response | Promise<Response>, number, string]> = [
     ["the fleet's own error", () => fleetJson({ error: { message: SECRET, type: "no_capacity" } }, { status: 503 }), 502, "fleet_unavailable"],
     ["the fleet being busy", () => fleetJson({ error: { message: SECRET, code: "fleet_busy" } }, { status: 429, headers: { "retry-after": "5" } }), 502, "fleet_unavailable"],

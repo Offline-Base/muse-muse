@@ -264,8 +264,8 @@ describe("the new fine-tune pages", { skip: canMock ? false : "needs --experimen
       assert.deepEqual(liveDemoAsked, [JOB], "the page reads the job's live demo");
       assert.doesNotMatch(html, /id="live-demo"/, "none to show");
       assert.match(html, /Not on a Jetson Orin Nano\.<\/strong> Muse Glimmer 30B needs more memory than the board&#x27;s 8 GB\./);
-      assert.match(html, /Llama 3\.2 1B, Meta&#x27;s small model, on the same\s+examples, on the board&#x27;s GPU\. It isn&#x27;t Muse Glimmer, and this hasn&#x27;t been measured on a board yet\./);
-      assert.match(html, /href="\/device">Open the board/);
+      assert.doesNotMatch(html, /Llama|Meta&#x27;s small model/, "no Llama: the organizers ruled on Nov 2 that it isn't a Meta model");
+      assert.doesNotMatch(html, /href="\/device">Open the board/);
       assert.match(html, /\$5\.95 in all/);
       liveDemo = { kind: "start", adapterTitle: "a made-up bakery's counter helper", ceilings: { maxMinutes: 120, maxUsd: 5 }, maxActive: 1, dailyUsd: 20, blocked: null, publicPage: true };
       assert.match(await open(runPage, { id: DS }), /<section class="card section-card lab-try" id="live-demo"[\s\S]*Start a live demo/);

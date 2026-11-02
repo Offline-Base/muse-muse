@@ -3015,6 +3015,12 @@ ollama.com and the fleet lists as a board model). A model made from a cloud tag 
 the board agent to keep Ollama's `remote_host` so the fleet can refuse it. A caller never picks the model. Any one missing or refused is 503 `fleet_closed`.
 There is no default model: which model products get is still the owner's choice. Give the key an `rpm_limit`, a `daily_token_limit` and `cloud_daily_limit` 0.
 
+**Meta models only (Nov 2).** The hackathon's organizers answered on Nov 2 at 3:57 PM that Llama doesn't count as a Meta model however it runs, and
+that every model a project calls at runtime must be Meta's. So `fleetSettings` also refuses any `FLEET_PRODUCTS_MODEL` that `isMetaModelName`
+(`lib/meta/models.ts`) doesn't take, the same way as `combo/`: 503 `fleet_closed`. Bolt, LFM3-VL, d1 and every Llama, the board-tuned
+`Llama-3.2-1B-Instruct-receipts` included, are refused. On an 8 GB board the only Meta language model is Muse Muse's one-bit Glimmer, which the fleet
+serves as `muse-glimmer-2026-iq1s-io-lowest`, so that is the only model this can be set to today. The catalog line and the skill say a Meta model.
+
 **Its guards.** `redirect: "error"`, a 100 s timeout under the route's 120 s, and `X-JCP-Route: local` as well as the plain model. An `X-JCP-Served-By`
 header of anything but `local` is an error, never an answer. The messages are never logged or stored. Logs carry only a code, and the caller gets fixed
 words, never the fleet's address or text. The slots use `acquireInFlight`: a call killed before it gives its slots back holds them for 10 to 20 minutes.

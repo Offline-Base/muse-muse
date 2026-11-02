@@ -26,6 +26,8 @@ import train
 HERE = os.path.dirname(os.path.abspath(__file__))
 EXAMPLE = {"messages": [{"role": "user", "content": "Hi"}, {"role": "assistant", "content": "Hello"}]}
 BAD_NAMES = ["", ".", "..", "../up", "a/b", "a\\b", ".hidden", "-flag", "a b", "a\n", "a\0b", None, 5]
+# A Meta model's file, as a Glimmer tune's one-bit build is named: start_model loads nothing else.
+GLIMMER_FILE = "muse-glimmer-30b-bakery-helper-IQ1_S.gguf"
 
 # What FAKE_TRAIN_MODE asks for: "hold" trains until signalled, "die" exits without a word, "finish" succeeds at once.
 FAKE_TRAIN = """
@@ -367,7 +369,11 @@ class TrainingTests(unittest.TestCase):
         self.assert_refused("no dataset called", "train_model", name="run1", dataset="never")
         self.save()
         self.assert_refused("isn't in", "train_model", name="run1", dataset="data", base="Llama-3.2-never")
-        self.assert_refused("only small Meta models", "train_model", name="run1", dataset="data", base="SomeOtherModel-1B")
+        self.assert_refused("can only train Llama 3.x", "train_model", name="run1", dataset="data", base="SomeOtherModel-1B")
+        error, reply = call("train_model", name="run1", dataset="data", base="Muse-Glimmer-30B")
+        self.assertTrue(error)
+        self.assertIn("isn't a Meta model for this project", reply)
+        self.assertNotIn("small Meta models", reply)
         os.remove(server.CONVERTER)
         self.assert_refused("setup-train.sh", "train_model", name="run1", dataset="data")
 
@@ -452,9 +458,9 @@ class TrainingTests(unittest.TestCase):
         with server.model_lock, mock.patch.object(server, "MODEL_LOCK_WAIT_S", 0.01):
             self.assert_refused("Try again", "train_model", name="run1", dataset="data")
             self.assert_refused("Try again", "stop_model")
-            open(os.path.join(server.MODEL_DIR, "base.gguf"), "w").close()
+            open(os.path.join(server.MODEL_DIR, GLIMMER_FILE), "w").close()
             with mock.patch.object(server, "find_llama_server", return_value=("llama-server", {})):
-                self.assert_refused("Try again", "start_model", model="base.gguf")
+                self.assert_refused("Try again", "start_model", model=GLIMMER_FILE)
         self.assertEqual(server.run_names(), [])
 
     def test_a_full_disk_still_reports_a_dead_run_as_failed(self):
@@ -629,7 +635,8 @@ class TrainingTests(unittest.TestCase):
 
     def test_a_model_that_will_not_fit_in_memory_is_refused(self):
         # A failed GPU allocation has frozen and rebooted these boards (train.py), so this is checked before llama-server starts.
-        model = f"{server.DEFAULT_BASE}-Q4_K_M.gguf"
+        model = GLIMMER_FILE
+        open(os.path.join(server.MODEL_DIR, model), "w").close()
         self.memory.return_value = 0.1
         with mock.patch.object(server, "find_llama_server", return_value=("/fake/llama-server", {})), mock.patch.object(server.subprocess, "Popen") as started:
             self.assert_refused("free memory", "start_model", model=model)
@@ -644,11 +651,46 @@ class TrainingTests(unittest.TestCase):
         self.assertAlmostEqual(server.model_memory_gib([path], 4096), small + 1, places=3)
 
     def test_a_model_with_room_starts(self):
-        model = f"{server.DEFAULT_BASE}-Q4_K_M.gguf"
+        model = GLIMMER_FILE
+        open(os.path.join(server.MODEL_DIR, model), "w").close()
         self.memory.return_value = 4.4
         with mock.patch.object(server, "find_llama_server", return_value=("/fake/llama-server", {})), mock.patch.object(server.subprocess, "Popen", side_effect=OSError("stop here")) as started:
             self.assertTrue(call("start_model", model=model)[0])
             started.assert_called_once()
+
+    def test_only_a_meta_model_starts(self):
+        # The organizers ruled on Nov 2 that Llama isn't a Meta model, and every model a project calls must be one.
+        others = [f"{server.DEFAULT_BASE}-Q4_K_M.gguf", "nemotron-3.5-bolt-e4b.gguf", "glimmer-bolt-merge.gguf", "LFM2.5-VL-3B-Q4_K_M.gguf"]
+        for name in others[1:]:
+            open(os.path.join(server.MODEL_DIR, name), "w").close()
+        with mock.patch.object(server, "find_llama_server", return_value=("/fake/llama-server", {})), mock.patch.object(server.subprocess, "Popen") as started:
+            for name in others:
+                with self.subTest(model=name):
+                    self.assert_refused("isn't a Meta model", "start_model", model=name)
+            # An adapter doesn't make a base Meta's.
+            self.assert_refused("isn't a Meta model", "start_model", model=others[0], adapter="glimmer-bolt-merge.gguf")
+            started.assert_not_called()
+        self.assertIsNone(server.model_loaded)
+
+    def test_ask_model_asks_only_a_meta_model(self):
+        running = mock.Mock(poll=mock.Mock(return_value=None))
+        with mock.patch.object(server, "model_process", running), mock.patch.object(server, "model_request") as asked:
+            with mock.patch.object(server, "model_loaded", {"model": f"{server.DEFAULT_BASE}-Q4_K_M.gguf", "adapter": "receipts.gguf"}):
+                self.assert_refused("isn't a Meta model", "ask_model", prompt="What is the total?")
+            asked.assert_not_called()
+            asked.return_value = {"choices": [{"message": {"content": "12.50"}, "finish_reason": "stop"}], "timings": {}}
+            with mock.patch.object(server, "model_loaded", {"model": GLIMMER_FILE, "adapter": None}):
+                error, reply = call("ask_model", prompt="What is the total?")
+            self.assertFalse(error, reply)
+            self.assertEqual(json.loads(reply)["answer"], "12.50")
+
+    def test_meta_models_are_known_by_name(self):
+        for name in (GLIMMER_FILE, "muse-glimmer-2026-iq1s-io-lowest", "muse-glimmer-30b-llama-ranch-helper-IQ1_S.gguf", "Muse_Glimmer_30B-IQ1_S.gguf", "muse-spark-open"):
+            with self.subTest(name=name):
+                self.assertTrue(server.is_meta_model(name))
+        for name in ("Llama-3.2-1B-Instruct-receipts.gguf", "muse-glimmer-llama.gguf", "glimmer-bolt", "muse-spark-qwen-distill", "bolt-glimmer", "combo/glimmer-gemini", "", None, 5):
+            with self.subTest(name=name):
+                self.assertFalse(server.is_meta_model(name))
 
     def test_a_second_run_is_refused(self):
         self.start()
@@ -660,10 +702,10 @@ class TrainingTests(unittest.TestCase):
     def test_a_model_cannot_start_during_training(self):
         self.start()
         self.wait_for_state("training")
-        with open(os.path.join(os.makedirs(server.MODEL_DIR, exist_ok=True) or server.MODEL_DIR, "base.gguf"), "w") as f:
+        with open(os.path.join(os.makedirs(server.MODEL_DIR, exist_ok=True) or server.MODEL_DIR, GLIMMER_FILE), "w") as f:
             f.write("GGUF")
         with mock.patch.object(server, "find_llama_server", return_value=("llama-server", {})), mock.patch.object(server.subprocess, "Popen") as popen:
-            self.assert_refused("stop_training", "start_model", model="base.gguf")
+            self.assert_refused("stop_training", "start_model", model=GLIMMER_FILE)
             popen.assert_not_called()
 
     def test_status_of_a_dead_process_is_failed(self):

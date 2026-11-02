@@ -1,6 +1,8 @@
 import { requireAdminOrAutomation } from "@/lib/auth";
 import { callDeviceTool, deviceConfig, listDeviceTools } from "@/lib/device/client";
 import { BOARD_TOOL_NAMES, genericDeviceTool } from "@/lib/device/drive-tools";
+import { boardModelProblem } from "@/lib/device/meta-only";
+import { env } from "@/lib/env";
 import { badRequest, errorJson, HttpError, readJson, route } from "@/lib/http";
 
 // A photo takes a few seconds and a recording up to 30, but ask_model and install_model can wait for minutes on the board.
@@ -30,7 +32,9 @@ export const GET = route(async (req: Request) => {
 
 /**
  * POST {tool, arguments?} -> {content, isError}: one tool call on the board. Admins only, with the same errors as GET, and
- * 403 drive_route_only for a drive tool, before the board is reached.
+ * 403 drive_route_only for a drive tool, before the board is reached. 403 meta_models_only with {message} for start_model on
+ * a file that isn't a Meta model's, ask_model while one that isn't runs (one list_models first), and train_model unless
+ * DEVICE_LLAMA_TRAINING is on (lib/device/meta-only.ts).
  */
 export const POST = route(async (req: Request) => {
   await requireAdminOrAutomation(req);
@@ -46,6 +50,8 @@ export const POST = route(async (req: Request) => {
   const args = body.arguments ?? {};
   if (typeof args !== "object" || Array.isArray(args)) throw badRequest("arguments must be an object.");
   try {
+    const problem = await boardModelProblem(body.tool, args as Record<string, unknown>, (name, a) => callDeviceTool(config, name, a), { training: env.deviceLlamaTraining });
+    if (problem) return errorJson(403, "meta_models_only", { message: problem });
     return Response.json(await callDeviceTool(config, body.tool, args as Record<string, unknown>));
   } catch (err) {
     if (err instanceof HttpError) throw err;

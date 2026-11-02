@@ -107,8 +107,17 @@ DATASET_DIR = os.path.join(TRAIN_DIR, "datasets")
 RUN_DIR = os.path.join(TRAIN_DIR, "runs")
 TRAIN_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 DEFAULT_BASE = "Llama-3.2-1B-Instruct"
-# Meta models only: a board trains small Llama 3 text models, and nothing else.
+# A board trains small Llama 3 text models, and nothing else. Llama isn't a Meta model for this project: the hackathon's
+# organizers ruled on Nov 2 that every model a project calls must be Meta's, and that Llama isn't. So the platform keeps
+# train_model off (DEVICE_LLAMA_TRAINING), and start_model loads none of what this trains.
 BOARD_BASE_NAME = re.compile(r"Llama-3\.[123]-[A-Za-z0-9._-]+")
+# Which models count as Meta's, the same three patterns as lib/meta/models.ts, which lib/device/__tests__/meta-only.test.ts
+# holds equal: a Meta family's word at the start, no other family's or maker's word anywhere, except in the title of Muse
+# Muse's own Glimmer tunes. start_model and ask_model refuse anything else.
+META_FAMILY = re.compile(r"^(?:muse-?glimmer|glimmer|muse-?spark|spark-open|v-?jepa)(?![a-z])")
+NOT_META = re.compile(r"llama|(?:^|[^a-z])(?:bolt|nemotron|nvidia|lfm|liquid(?:ai)?|qwen|gemma|google|gpt|openai|mistral(?:ai)?|mixtral|phi|microsoft|deepseek|granite|smollm|olmo|d1)(?![a-z])")
+OWN_GLIMMER_TUNE = re.compile(r"^muse-glimmer-30b-[a-z0-9-]+?-(?:(?:gguf|lora)-[a-z0-9]{8}|i?q\d[a-z0-9-]*(?:\.gguf)?)$")
+ONLY_META = "Muse Muse only runs Meta models, such as Muse Glimmer."
 # What setup-train.sh's LLAMA_CPP_TAG puts in ~/train/llama.cpp, which turns a run's adapter into its GGUF. A drive names it.
 CONVERTER_NAME = "llama.cpp b11970 convert_lora_to_gguf.py, f32"
 ACTIVE_STATES = ("loading", "training", "converting")
@@ -357,6 +366,21 @@ def model_file(name, kind="model"):
     return os.path.join(MODEL_DIR, name)
 
 
+def is_meta_model(name):
+    """Whether a model's file or served name is a Meta model's, as isMetaModelName in lib/meta/models.ts decides."""
+    if not isinstance(name, str):
+        return False
+    lower = re.sub(r"[\s_]+", "-", name.strip().lower())
+    if not lower or lower.startswith("combo/"):
+        return False
+    *path, last = lower.split("/")
+    own, *tag = last.split(":")
+    if not META_FAMILY.search(own):
+        return False
+    checked = "/".join([*path, *tag, "" if OWN_GLIMMER_TUNE.search(own) else own])
+    return not NOT_META.search(checked)
+
+
 def find_llama_server():
     """llama-server on PATH, or the newest build the fleet installed, with the library folders it needs."""
     found = shutil.which("llama-server")
@@ -520,6 +544,8 @@ def model_memory_gib(paths, context):
 def start_model(args):
     global model_process, model_loaded
     model = model_file(args.get("model"))
+    if not is_meta_model(args["model"]):
+        raise ToolError(f"{args['model']} isn't a Meta model, so it didn't start. {ONLY_META}")
     adapter = args.get("adapter")
     adapter_path = model_file(adapter, "adapter") if adapter is not None else None
     binary, env = find_llama_server()
@@ -571,6 +597,9 @@ def ask_model(args):
         raise ToolError("prompt must be a non-empty string.")
     if not model_loaded or model_process.poll() is not None:
         raise ToolError("No model is running. Call start_model first.")
+    # start_model loads only a Meta model, so this holds for anything it started. Checked again, since it's the last step.
+    if not is_meta_model(model_loaded["model"]):
+        raise ToolError(f"The model running isn't a Meta model, so nothing was asked. {ONLY_META}")
     use_adapter = args.get("use_adapter", True)
     if not isinstance(use_adapter, bool):
         raise ToolError("use_adapter must be true or false.")
@@ -761,7 +790,7 @@ def train_model(args):
     dataset = name_arg(args, "dataset")
     base = name_arg(args, "base", DEFAULT_BASE)
     if not BOARD_BASE_NAME.fullmatch(base):
-        raise ToolError(f"A board trains only small Meta models, such as {DEFAULT_BASE}, not {base}.")
+        raise ToolError(f"A board can only train Llama 3.x, such as {DEFAULT_BASE}, not {base}. Llama isn't a Meta model for this project, and no Meta model is small enough to train on a board yet.")
     steps = int_arg(args, "steps", 60, 1, 5000)
     rank = int_arg(args, "rank", 8, 1, 64)
     max_length = int_arg(args, "max_length", 512, 64, 4096)
@@ -1050,7 +1079,7 @@ TOOLS = {
     "start_model": (
         start_model,
         {
-            "description": "Runs a model from list_models on this board's GPU, with a LoRA adapter if one is named, in place of any model this server started. Takes up to 2 minutes.",
+            "description": "Runs a model from list_models on this board's GPU, with a LoRA adapter if one is named, in place of any model this server started. Only a Meta model's file starts, such as Muse Glimmer's. Takes up to 2 minutes.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -1066,7 +1095,7 @@ TOOLS = {
     "ask_model": (
         ask_model,
         {
-            "description": "Asks the model start_model is running, and returns its answer and its speed on this board. With use_adapter false, a tuned model answers as its base model, to compare the two.",
+            "description": "Asks the Meta model start_model is running, and returns its answer and its speed on this board. With use_adapter false, a tuned model answers as its base model, to compare the two.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -1111,7 +1140,7 @@ TOOLS = {
     "train_model": (
         train_model,
         {
-            "description": "Fine-tunes a LoRA adapter on this board's GPU from a saved dataset, in the background, and returns at once. Follow it with training_status. When done, the adapter is <name>.gguf: load it with start_model, on the base model's GGUF. Refuses while a model is running: call stop_model first. Examples longer than max_length tokens are skipped.",
+            "description": "Fine-tunes a LoRA adapter on this board's GPU from a saved dataset, in the background, and returns at once. Follow it with training_status. It trains only Llama 3.x, which isn't a Meta model, so start_model won't load the result and Muse Muse keeps this off. Refuses while a model is running: call stop_model first. Examples longer than max_length tokens are skipped.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -1379,6 +1408,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def pass_to_model(self, method, body=None):
         """Hands a paired site's call to the model start_model has running, on loopback. Logs no bodies: log_message has only the status."""
+        # Off without --tls and a pairing. start_model loads only a Meta model, so one started here answers. A llama-server
+        # left on MODEL_PORT from before this server restarted isn't checked, so stop it before pairing.
         request = urllib.request.Request(f"http://127.0.0.1:{MODEL_PORT}{self.path}", data=body, method=method, headers={"Content-Type": "application/json"})
         try:
             with urllib.request.urlopen(request, timeout=MODEL_ANSWER_TIMEOUT_S) as res:

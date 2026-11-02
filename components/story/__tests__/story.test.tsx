@@ -52,6 +52,12 @@ describe("/offline", () => {
     assert.ok(!/qwen/i.test(page));
     assert.ok(!/\d+\.\d+\.\d+\.\d+|ngrok|\.local\b/.test(page));
   });
+
+  it("plans only Muse Glimmer offline, since the organizers ruled on Nov 2 that Llama isn't a Meta model", () => {
+    const stage = page.slice(page.indexOf("Run it offline"));
+    assert.ok(stage.includes("one-bit Muse Glimmer on a Jetson"));
+    assert.ok(!/small Llama on most devices/.test(page));
+  });
 });
 
 describe("docs/STORY.md", () => {

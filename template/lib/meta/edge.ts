@@ -13,8 +13,8 @@ import { plainDeep } from "./text";
  *   EDGE_URL         the server's /v1 base URL
  *   EDGE_MODEL       the served model's name (default "edge")
  *   EDGE_API_KEY     only when the server asks for one
- *   EDGE_BOARD       the board's name for the label, like "jetson-04" (default "the edge board")
- *   EDGE_MODEL_NAME  the model's name for the label, like "Llama 3.2 3B (tuned)" (default EDGE_MODEL)
+ *   EDGE_BOARD       the board's name for the label, like "jetson-02" (default "the edge board")
+ *   EDGE_MODEL_NAME  the model's name for the label, like "Muse Glimmer one-bit (tuned)" (default EDGE_MODEL)
  *   EDGE_TIMEOUT_MS  the longest one edge answer may take (default 60000)
  *   EDGE_CLOUD_TIMEOUT_MS  the longest the cloud gets before the edge answers (default 10000)
  *   EDGE_FIRST=1     ask the edge model first and the cloud second

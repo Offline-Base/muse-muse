@@ -26,6 +26,8 @@ describe("/api/device", { skip: typeof mock.module !== "function" }, () => {
   let calls: Array<{ name: string; args: unknown }> = [];
   let boardDown = false;
   let boardTools: string[] = ["describe_device"];
+  /** What list_models says is running. */
+  let running: string | null = null;
   let handlers: typeof import("@/app/api/device/route");
 
   const post = (body: unknown) =>
@@ -48,6 +50,7 @@ describe("/api/device", { skip: typeof mock.module !== "function" }, () => {
         callDeviceTool: async (_config: unknown, name: string, args: unknown) => {
           if (boardDown) throw new Error(`fetch failed for ${URL_VALUE} with ${TOKEN_VALUE}`);
           calls.push({ name, args });
+          if (name === "list_models") return { content: [{ type: "text", text: JSON.stringify({ files: [], running: running ? { model: running, adapter: null } : null }) }], isError: false };
           return { content: [{ type: "text", text: "ok" }], isError: false };
         },
       },
@@ -59,16 +62,56 @@ describe("/api/device", { skip: typeof mock.module !== "function" }, () => {
     admin = true;
     boardDown = false;
     boardTools = ["describe_device"];
+    running = null;
     calls = [];
     process.env.DEVICE_MCP_URL = URL_VALUE;
     process.env.DEVICE_MCP_TOKEN = TOKEN_VALUE;
+    delete process.env.DEVICE_LLAMA_TRAINING;
   });
 
   after(() => {
     delete process.env.DEVICE_MCP_URL;
     delete process.env.DEVICE_MCP_TOKEN;
     delete process.env.DRIVE_EXPORT_ENABLED;
+    delete process.env.DEVICE_LLAMA_TRAINING;
     mock.reset();
+  });
+
+  const refusal = async (res: Response) => {
+    assert.equal(res.status, 403);
+    const body = (await res.json()) as { error: string; message: string };
+    assert.equal(body.error, "meta_models_only");
+    return body.message;
+  };
+
+  it("starts only a Meta model's file, and never reaches the board for another", async () => {
+    for (const model of ["Llama-3.2-1B-Instruct-Q4_K_M.gguf", "nemotron-3.5-bolt-e4b.gguf", "glimmer-bolt.gguf"]) {
+      assert.match(await refusal(await post({ tool: "start_model", arguments: { model, adapter: "receipts.gguf" } })), /isn't a Meta model's file/, model);
+    }
+    assert.equal(calls.length, 0);
+    assert.equal((await post({ tool: "start_model", arguments: { model: "muse-glimmer-30b-bakery-helper-IQ1_S.gguf" } })).status, 200);
+    assert.deepEqual(calls.map((call) => call.name), ["start_model"]);
+  });
+
+  it("asks the board's model only while list_models says a Meta model is running", async () => {
+    for (const model of [null, "Llama-3.2-1B-Instruct-Q4_K_M.gguf"]) {
+      running = model;
+      calls.splice(0);
+      assert.match(await refusal(await post({ tool: "ask_model", arguments: { prompt: "What is the total?" } })), /isn't running a Meta model/, String(model));
+      assert.deepEqual(calls.map((call) => call.name), ["list_models"]);
+    }
+    running = "muse-glimmer-30b-bakery-helper-IQ1_S.gguf";
+    calls.splice(0);
+    assert.equal((await post({ tool: "ask_model", arguments: { prompt: "What is the total?" } })).status, 200);
+    assert.deepEqual(calls.map((call) => call.name), ["list_models", "ask_model"]);
+  });
+
+  it("refuses train_model before the board unless DEVICE_LLAMA_TRAINING is on", async () => {
+    assert.match(await refusal(await post({ tool: "train_model", arguments: { dataset: "d", name: "n" } })), /only train Llama 3\.x, which isn't a Meta model/);
+    assert.equal(calls.length, 0);
+    process.env.DEVICE_LLAMA_TRAINING = "1";
+    assert.equal((await post({ tool: "train_model", arguments: { dataset: "d", name: "n" } })).status, 200);
+    assert.deepEqual(calls.map((call) => call.name), ["train_model"]);
   });
 
   it("refuses anyone but an admin before touching the board", async () => {
