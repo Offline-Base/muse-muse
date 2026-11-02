@@ -1,8 +1,10 @@
 import catalog from "@/catalog/meta-models.json";
-import type { ResultView } from "@/components/train/results";
+import { GLIMMER, SPARK } from "@/components/docs/playgrounds/open-weights/facts";
+import { GLIMMER_NAME, type ResultView } from "@/components/train/results";
 import { hubRepoUrl, isRepoId } from "@/components/vibe/apps";
+import { groupThousands } from "@/lib/format";
 import { PRICES } from "@/lib/meta/pricing";
-import { SPARK_STANDIN } from "@/lib/meta/spark";
+import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
 import type { LocalFiles } from "@/lib/train/local-files";
 import { ADAPTER_RECIPE } from "@/lib/train/logic";
 
@@ -15,14 +17,30 @@ import { ADAPTER_RECIPE } from "@/lib/train/logic";
 /** The call counts cover this many days of usage records. */
 export const CALL_DAYS = 30;
 
+/** What a model takes in or gives back, as the "All modalities" filter on /models names it. */
+export type Modality = "text" | "image" | "video" | "audio";
+
+/** One key and value row at the bottom of a card. */
+export interface ModelRow {
+  label: string;
+  value: string;
+}
+
+/** A pill button on a card. Only links to a real place. */
+export interface ModelLink {
+  label: string;
+  href: string;
+  external?: boolean;
+}
+
 /** A hosted model as /models shows it. */
 export interface HostedModelView {
   id: string;
   name: string;
   /** What Muse Muse uses it for. */
   use: string;
-  /** Its price, as Muse Muse estimates it. */
-  price: string;
+  /** Its prices as key and value rows, as Muse Muse estimates them. */
+  rows: ModelRow[];
   /** In preview on Meta's side. */
   preview: boolean;
   /** For tests and examples only. */
@@ -39,8 +57,12 @@ export function dollars(n: number): string {
   return Math.abs(Math.round(n * 100) - n * 100) < 1e-9 ? `$${n.toFixed(2)}` : `$${n}`;
 }
 
-function tokenPrice(p: { input: number; cachedInput: number; output: number }): string {
-  return `${dollars(p.input)} in, ${dollars(p.cachedInput)} cached, ${dollars(p.output)} out per million tokens`;
+function tokenRows(p: { input: number; cachedInput: number; output: number }): ModelRow[] {
+  return [
+    { label: "Input", value: `${dollars(p.input)} / 1M tokens` },
+    { label: "Cached input", value: `${dollars(p.cachedInput)} / 1M tokens` },
+    { label: "Output", value: `${dollars(p.output)} / 1M tokens` },
+  ];
 }
 
 const sam = PRICES["sam-3.1"];
@@ -55,7 +77,7 @@ const HOSTED: ReadonlyArray<Omit<HostedModelView, "preview" | "calls">> = [
     id: "muse-wonder-1.0",
     name: "Muse Wonder",
     use: "Every platform role: writing briefs and checking them, Muse Code's builds and fixes, and judging screenshots. The default for a product's own text and vision calls, and the fine-tuning lab's writer and judge.",
-    price: tokenPrice(PRICES["muse-wonder-1.0"]),
+    rows: tokenRows(PRICES["muse-wonder-1.0"]),
     testOnly: false,
     note: "Reasoning is billed as output, so even short answers cost a few hundred tokens.",
   },
@@ -63,7 +85,7 @@ const HOSTED: ReadonlyArray<Omit<HostedModelView, "preview" | "calls">> = [
     id: "muse-image-1.0",
     name: "Muse Image",
     use: "Inside products, to make and edit images.",
-    price: `${dollars(PRICES["muse-image-1.0"].perImage)} per image`,
+    rows: [{ label: "Image", value: `${dollars(PRICES["muse-image-1.0"].perImage)} per image` }],
     testOnly: false,
     note: null,
   },
@@ -71,7 +93,10 @@ const HOSTED: ReadonlyArray<Omit<HostedModelView, "preview" | "calls">> = [
     id: "sam-3.1",
     name: "SAM 3.1",
     use: "Inside products, to find, outline and track objects in photos and video.",
-    price: `${dollars(sam.perImage)} per image, ${dollars(sam.perVideoFrame)} per video frame (${sam.minVideoFrames} frames at least)`,
+    rows: [
+      { label: "Image", value: `${dollars(sam.perImage)} per image` },
+      { label: "Video", value: `${dollars(sam.perVideoFrame)} per frame, ${sam.minVideoFrames} frames at least` },
+    ],
     testOnly: false,
     note: null,
   },
@@ -79,7 +104,7 @@ const HOSTED: ReadonlyArray<Omit<HostedModelView, "preview" | "calls">> = [
     id: "muse-voice-transcribe-1.0",
     name: "Muse Voice Transcribe",
     use: "Turns a voice memo into text before the brief, and transcribes recordings inside products.",
-    price: `${dollars(PRICES["muse-voice-transcribe-1.0"].perAudioHour)} per audio hour`,
+    rows: [{ label: "Audio", value: `${dollars(PRICES["muse-voice-transcribe-1.0"].perAudioHour)} per audio hour` }],
     testOnly: false,
     note: null,
   },
@@ -87,7 +112,7 @@ const HOSTED: ReadonlyArray<Omit<HostedModelView, "preview" | "calls">> = [
     id: SPARK_STANDIN,
     name: "Muse Spark 1.3 Contributor",
     use: "Muse Muse's model for tests and examples, which use made-up data. Meta may train on what it's sent, so new products can't pick it.",
-    price: tokenPrice(PRICES[SPARK_STANDIN]),
+    rows: tokenRows(PRICES[SPARK_STANDIN]),
     testOnly: true,
     note: "Older products built on Muse Spark 1.3 run on it instead, since Muse Muse doesn't call Spark 1.3 itself.",
   },
@@ -95,8 +120,15 @@ const HOSTED: ReadonlyArray<Omit<HostedModelView, "preview" | "calls">> = [
 
 interface CatalogModel {
   id: string | null;
+  name?: string;
+  role?: string;
   hosted?: boolean;
   status?: string;
+  input?: string[];
+  output?: string[];
+  contextTokens?: number;
+  facts?: string[];
+  license?: string;
 }
 
 /** Spark 1.3 Contributor's row while BUILDS_ON_CONTRIBUTOR is on, when "tests and examples" would no longer be true. */
@@ -114,6 +146,161 @@ export function hostedModelViews(calls: Record<string, number> | null, opts: { b
     const view = { ...m, preview: entry.status === "preview", calls: calls ? (calls[m.id] ?? 0) : null };
     return [opts.buildsOnContributor && m.id === SPARK_STANDIN ? { ...view, ...CONTRIBUTOR_ON_BUILDS } : view];
   });
+}
+
+/** A card in the main grid of /models. */
+export interface ModelCardView {
+  id: string;
+  name: string;
+  /** Meta's API id, shown under the subline. Open-weight models have none. */
+  apiId: string | null;
+  /** The peach pill. See cardFromHosted. */
+  isNew: boolean;
+  subline: string;
+  description: string[];
+  tags: string[];
+  modalities: Modality[];
+  links: ModelLink[];
+  rows: ModelRow[];
+}
+
+/** "1M", "128K", as the docs' models page and Glimmer's own page write them. */
+export function contextLabel(tokens: number): string {
+  return tokens >= 2 ** 20 ? `${Math.round(tokens / 2 ** 20)}M` : `${Math.round(tokens / 2 ** 10)}K`;
+}
+
+/** The modalities named in a catalog entry's input and output. PDFs and SAM's masks aren't filter options. */
+export function modalitiesOf(m: Pick<CatalogModel, "input" | "output">): Modality[] {
+  const words = [...(m.input ?? []), ...(m.output ?? [])].map((w) => w.split(" ")[0]);
+  return (["text", "image", "video", "audio"] as const).filter((k) => words.includes(k));
+}
+
+/** How many cards each filter option shows, for the words a screen reader hears when the filter changes. */
+export function modalityCounts(cards: ReadonlyArray<ReadonlyArray<Modality>>): Record<Modality, number> {
+  const count = (k: Modality) => cards.filter((c) => c.includes(k)).length;
+  return { text: count("text"), image: count("image"), video: count("video"), audio: count("audio") };
+}
+
+/** The modalities the catalog writes out in Muse Spark Open's and Glimmer's facts, since those entries have no input list. */
+const SPARK_OPEN_MODALITIES: Modality[] = ["text", "image", "video", "audio"];
+export const GLIMMER_MODALITIES: Modality[] = ["text", "image"];
+
+const specs = (anchor: string): ModelLink => ({ label: "Model specs", href: `/docs/models#${anchor}` });
+const docs = (href: string): ModelLink => ({ label: "Documentation", href });
+const tryIt = (slug: string): ModelLink => ({ label: "Try in playground", href: `/docs/${slug}#try-it-live` });
+
+/**
+ * What each hosted card says and links to. The playground is the live demo panel on a docs page (lib/docs/demos). Spark
+ * 1.3 has no playground link: the docs' demos run it as Spark 1.3 Contributor (lib/docs/proxy/policy.ts).
+ */
+const CARD_FACTS: Record<string, { kind: string; links: ModelLink[] }> = {
+  "muse-wonder-1.0": { kind: "Chat", links: [tryIt("overview"), specs("muse-wonder"), docs("/docs/quickstart")] },
+  [RETIRED_SPARK]: { kind: "Chat", links: [specs("muse-spark"), docs("/docs/quickstart")] },
+  [SPARK_STANDIN]: { kind: "Chat", links: [tryIt("overview"), specs("muse-spark"), docs("/docs/pricing-rate-limits#contributor-mode")] },
+  "muse-image-1.0": { kind: "Image generation", links: [tryIt("image-generation"), specs("muse-image"), docs("/docs/image-generation")] },
+  "sam-3.1": { kind: "Image and video segmentation", links: [tryIt("media-segmentation"), specs("sam-3"), docs("/docs/sam/overview")] },
+  "muse-voice-transcribe-1.0": { kind: "Speech to text", links: [tryIt("speech-to-text"), specs("muse-voice-transcribe"), docs("/docs/speech-to-text")] },
+};
+
+/** The grid's order, from the owner's screenshot of Meta's page. Models it didn't show come after. */
+const CARD_ORDER = ["muse-wonder-1.0", "muse-spark-open", "sam-3.1", RETIRED_SPARK, SPARK_STANDIN, "muse-voice-transcribe-1.0", "muse-image-1.0", "muse-glimmer"];
+
+function hostedSubline(entry: CatalogModel | undefined, kind: string, contextTokens: number | undefined): string {
+  const context = entry?.contextTokens ?? contextTokens;
+  return context ? `Context ${contextLabel(context)} · ${kind}` : kind;
+}
+
+function openEntry(name: string): CatalogModel | undefined {
+  return (catalog.models as CatalogModel[]).find((m) => !m.hosted && m.name === name);
+}
+
+/**
+ * Every card in the main grid: the hosted models with their calls, Spark 1.3, which Muse Muse doesn't call but Meta
+ * offers, and the two open-weight models. A model the catalog drops loses its card. The repo has no release dates, so
+ * "New" follows the one thing it does record: the catalog's status "preview".
+ */
+export function modelCards(hosted: HostedModelView[]): ModelCardView[] {
+  const models = catalog.models as CatalogModel[];
+  const entryOf = (id: string) => models.find((m) => m.id === id);
+  const spark = entryOf(RETIRED_SPARK);
+  const cards: ModelCardView[] = hosted.map((m) => {
+    const entry = entryOf(m.id);
+    const facts = CARD_FACTS[m.id];
+    return {
+      id: m.id,
+      name: m.name,
+      apiId: m.id,
+      isNew: m.preview,
+      // The docs give every Muse Spark version the same context; the catalog writes it on Spark 1.3 alone.
+      subline: hostedSubline(entry, facts.kind, m.id === SPARK_STANDIN ? spark?.contextTokens : undefined),
+      description: m.note ? [m.use, m.note] : [m.use],
+      tags: [...(m.testOnly ? ["Tests and examples only"] : []), ...(m.preview ? ["Preview"] : [])],
+      modalities: modalitiesOf(entry ?? {}),
+      links: facts.links,
+      rows: m.calls === null ? m.rows : [...m.rows, { label: `Calls, ${CALL_DAYS} days`, value: groupThousands(m.calls) }],
+    };
+  });
+  if (spark?.hosted) {
+    cards.push({
+      id: RETIRED_SPARK,
+      name: "Muse Spark 1.3",
+      apiId: RETIRED_SPARK,
+      isNew: spark.status === "preview",
+      subline: hostedSubline(spark, CARD_FACTS[RETIRED_SPARK].kind, undefined),
+      description: ["Meta's model for agentic and coding work. Muse Muse doesn't call it: anything that would run on it runs on Muse Spark 1.3 Contributor."],
+      tags: [],
+      modalities: modalitiesOf(spark),
+      links: CARD_FACTS[RETIRED_SPARK].links,
+      rows: tokenRows(PRICES[RETIRED_SPARK]),
+    });
+  }
+  const sparkOpen = openEntry("Muse Spark Open");
+  if (sparkOpen) {
+    cards.push({
+      id: "muse-spark-open",
+      name: "Muse Spark Open",
+      apiId: null,
+      isNew: false,
+      subline: `Context ${contextLabel(SPARK.contextTokens)} · Open weights`,
+      description: [`${sparkOpen.role}: ${(sparkOpen.facts ?? []).join("; ")}.`],
+      tags: [],
+      modalities: SPARK_OPEN_MODALITIES,
+      links: [
+        { label: "Download", href: "/docs/muse-spark-open/get-the-model" },
+        specs("muse-spark-open"),
+        docs("/docs/muse-spark-open"),
+      ],
+      rows: [
+        { label: "Access", value: "Download and self-host" },
+        { label: "License", value: "Muse Model License" },
+      ],
+    });
+  }
+  const glimmer = openEntry("Muse Glimmer");
+  if (glimmer) {
+    cards.push({
+      id: "muse-glimmer",
+      name: GLIMMER_NAME,
+      apiId: null,
+      isNew: false,
+      subline: `Context ${contextLabel(GLIMMER.contextTokens)} · Open weights`,
+      description: [],
+      tags: [],
+      modalities: GLIMMER_MODALITIES,
+      links: [
+        { label: "Download", href: "/docs/muse-glimmer/get-the-model" },
+        specs("muse-glimmer"),
+        { label: "Glimmer docs", href: "/docs/muse-glimmer" },
+        { label: "Lab results", href: "/fine-tuning" },
+      ],
+      rows: [
+        { label: "Access", value: "Download and self-host" },
+        { label: "License", value: glimmer.license ?? "" },
+      ].filter((r) => r.value),
+    });
+  }
+  const rank = (id: string) => CARD_ORDER.indexOf(id);
+  return cards.sort((a, b) => rank(a.id) - rank(b.id));
 }
 
 /** A tuned Glimmer model as /models lists it. Links are there only when the Lab data says they're public. */
