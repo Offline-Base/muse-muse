@@ -206,6 +206,9 @@ class Settings:
     # How the relay client reaches the relay: "system" uses the system or environment proxy (the
     # default), "direct" bypasses every proxy (RELAY_PROXY=direct, for a proxy the relay refuses).
     relay_proxy: Literal["system", "direct"] = "system"
+    # OBSERVE_POLICY: a candidate policy file (it must say mode: observe) that egress only watches,
+    # writing what it would decide to BASE_HOME/observe.jsonl (base/observe.py). None: off.
+    observe_policy_path: Path | None = None
     extra: dict[str, str] = field(default_factory=dict, compare=False, repr=False)
 
     @property
@@ -409,6 +412,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         router_max_tokens=int(router_max_tokens),
         contacts_path=contacts,
         relay_proxy=relay_proxy,  # type: ignore[arg-type]
+        observe_policy_path=Path(get("OBSERVE_POLICY")).expanduser() if get("OBSERVE_POLICY") else None,
     )
 
 
