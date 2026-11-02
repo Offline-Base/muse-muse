@@ -655,7 +655,7 @@ function fullExtraFiles(brief: Brief | null): Array<{ path: string; content: str
 
 /** The files this brief's targets add, as a field that isn't there at all for a web-only brief. */
 function extraFilesFor(brief: Brief | null): { extraFiles?: Array<{ path: string; content: string }> } {
-  const extraFiles = [...nativeExtraFiles(brief), ...recipeExtraFiles(brief), ...localGadgetFiles(brief), ...fullExtraFiles(brief), ...edgeExtraFiles(), ...edgeBuildFiles(brief)];
+  const extraFiles = [...nativeExtraFiles(brief), ...recipeExtraFiles(brief), ...localGadgetFiles(brief), ...fullExtraFiles(brief), ...edgeExtraFiles(brief), ...edgeBuildFiles(brief)];
   return extraFiles.length ? { extraFiles } : {};
 }
 
