@@ -505,7 +505,9 @@ def bench_settings(kind: str, url: str, key: str | None, home: Path, workspace: 
                 "CHECKER_URL": url, "CHECKER_MODEL": ALIAS, "CHECKER_API_KEY": key or "", "SEARCH_EMBEDDINGS": "0",
                 "RELAY_URL": "", "DREAMING_BACKEND": "rules", "PRIMARY_MODEL": kind})  # fmt: skip
     if kind == "glimmer":
-        env.update({"GLIMMER_BACKEND": "llama_server", "ANSWER_URL": url, "ROUTER_URL": url, "LLAMA_API_KEY": key or ""})
+        # Glimmer for the checks too: no LFM beside it (the Nov 2 ruling; load_settings refuses --kind lfm).
+        env.update({"GLIMMER_BACKEND": "llama_server", "ANSWER_URL": url, "ROUTER_URL": url, "LLAMA_API_KEY": key or "",
+                    "CHECKER_BACKEND": "glimmer"})  # fmt: skip
     settings = load_settings(env)
     settings.ensure_home()
     return settings

@@ -226,7 +226,7 @@ def test_services_refuse_an_observe_policy_as_user_policy_and_an_enforce_one_as_
 
     def settings(**env):
         base = {"BASE_HOME": str(tmp_path / "home"), "WORKSPACE_ROOT": str(tmp_path), "BASE_DEVICE": "laptop",
-                "DEVICE_ONLY": "1", "LIGHT_SERIAL": "", "HEAVY_QUEUE": "0"}  # fmt: skip
+                "DEVICE_ONLY": "1", "GLIMMER_BACKEND": "llama_server", "LIGHT_SERIAL": "", "HEAVY_QUEUE": "0"}  # fmt: skip
         with mock.patch.object(config, "read_dotenv", lambda path: {}):
             return config.load_settings({**base, **env})
 

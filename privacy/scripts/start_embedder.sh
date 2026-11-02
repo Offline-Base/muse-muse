@@ -14,6 +14,10 @@ PY="$ROOT/.venv/bin/python"
 
 die() { printf 'start_embedder.sh: %s\n' "$*" >&2; exit 1; }
 
+# Off since the organizers' ruling on Nov 2, 2026: Muse Privacy may call only Meta models, with no
+# non-Meta helper. The rest of this script stays until the owner decides whether to delete it.
+die "Google's EmbeddingGemma 2 is not a Meta model, and the hackathon organizers ruled on Nov 2, 2026 that Muse Privacy may call only Meta models. Search uses keywords only now (SEARCH_EMBEDDINGS=0), so there is nothing to start."
+
 [ -x "$PY" ] || die "no virtualenv at $ROOT/.venv. Run: uv sync"
 SETTINGS="$(cd "$ROOT" && "$PY" - <<'PY'
 import os

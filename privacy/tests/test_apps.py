@@ -8,7 +8,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from base import apps, ui_app
-from base.config import load_settings
+from base.config import (
+    _load_settings_for_tests as load_settings,  # pre-ruling loader: LFM code load_settings now refuses
+)
 from base.egress import RAW_REQUEST_NOTE, Egress
 from base.services import Services
 from base.ui_app import create_app

@@ -26,7 +26,7 @@ uv run python -m base.connector.relay_client register --name "Laptop"   # once; 
 scripts/start.sh                                                        # starts the models, the page and the relay client
 ```
 
-Device-only needs llama-server (set `CHECKER_SERVER_BIN` if it is not on your PATH) and the model files listed in the README's [device-only setup](../README.md#laptop-device-only-the-default-setup).
+The default `.env` is cloud mode (since Nov 2, when the hackathon organizers ruled that every model the project calls must be a Meta model): Muse Glimmer 30B on OpenRouter does every model step, so fill in `OPENROUTER_API_KEY`, and the device reads only folders marked `.synthetic` (invented data), such as `demo/`. Muse Glimmer on the device is the target; see "Plugging in your own model" below. The privacy toggles need every model on the device, so they stay off in cloud mode.
 
 The relay client reaches the relay through your system or environment proxy, as it always has. If a proxy on your network is what the relay refuses (Cloudflare answers with error 1010), and your network rules allow a direct connection, set `RELAY_PROXY=direct` in `.env` and restart the relay client: the socket and the pair and unlink calls then skip every proxy. The connection to the local connector on 127.0.0.1 never uses a proxy either way.
 
@@ -36,17 +36,17 @@ On a Jetson the same steps run as services; see "Jetson Orin Nano" in the [READM
 
 ### Plugging in your own model
 
-To use a tuned, quantized Muse Glimmer instead of LFM3-VL-2B for answers and routing (not done yet: no Glimmer has been measured on the device, and the tuned file at about 1.6-bit (IQ1_S) has not landed):
+To run a quantized Muse Glimmer on the device for every model step (not done yet: no Glimmer has been measured on the device in Muse Privacy, and the tuned file at about 1.6-bit (IQ1_S) has not landed):
 
 ```sh
 uv run python -m scripts.plug_in_model /path/to/model.gguf --check   # checks the file, changes nothing
 uv run python -m scripts.plug_in_model /path/to/model.gguf --mode decide  # sets the model's lines in .env; --mode: answers, labels, tighten or decide
-scripts/start.sh                                                     # restart: one copy of your model, plus LFM for scans and search
+scripts/start.sh                                                     # restart: one copy of your model, for every step
 uv run python -m scripts.device_smoke --name my_model                # Muse's tools, 24 essays, private-value checks
 uv run python -m scripts.compare_modes --name my_model               # each router mode on 200 invented items
 ```
 
-`--mode` says how far the file's privacy work goes: answers (it writes, the policy decides on LFM's labels), labels (it also labels Muse's requests), tighten (it can only make the policy stricter) or decide (it decides, under the floors). A choice on the Dreaming page overrides it. `uv run python -m scripts.plug_in_model --undo` puts `.env` back. Nothing is downloaded, and your other `.env` lines stay as they are.
+`--mode` says how far the file's privacy work goes: answers or labels (it writes and labels Muse's requests, and the policy decides on those labels), tighten (it can only make the policy stricter) or decide (it decides, under the floors). Plugging in sets `CHECKER_BACKEND=glimmer` and turns off any setting the Nov 2 ruling refuses (LFM, EmbeddingGemma, Prompt Guard, the Jetson's LFM), so no other model runs beside Glimmer. A choice on the Dreaming page overrides it. `uv run python -m scripts.plug_in_model --undo` puts `.env` back. Nothing is downloaded, and your other `.env` lines stay as they are.
 
 `--check` reads the file's header and writes `eval/reports/model_file_<label>.md` (`--label NAME`, default the file's name): the architecture, the quant type and the type of every tensor, the parameter count, the effective bits per weight (file bytes x 8 / parameters, and text only when the file holds vision tensors), the sha256, the KV cache at ANSWER_CTX, free disk and the memory it needs. It refuses a file llama.cpp cannot load, a cut-off copy, less than 2 GB of disk left, or a model that does not fit in memory, and says why. Run it from the repo the app runs from: plugging in writes that repo's `.env`.
 
@@ -54,7 +54,7 @@ To speed Glimmer up with Meta's DFlash drafter, add `--draft /path/to/drafter.gg
 
 #### Measuring a model before you plug it in
 
-`scripts/model_matrix.py` scores several router setups on the same invented items in one command, and pairs each one against today's "policy decides, LFM labels" (`policy_lfm`). A Glimmer file can be measured while the app keeps running: start a second llama-server for it on a free port on 127.0.0.1, then point the matrix there.
+Not usable since Nov 2: every setup in `scripts/model_matrix.py` starts from device-only LFM settings, which `load_settings` now refuses, so the matrix needs setups with Glimmer as the checker before it can run again. As built, it scores several router setups on the same invented items in one command, and pairs each one against "policy decides, LFM labels" (`policy_lfm`). A Glimmer file can be measured while the app keeps running: start a second llama-server for it on a free port on 127.0.0.1, then point the matrix there.
 
 ```sh
 uv run python -m scripts.model_matrix --name my_model --preflight \
@@ -102,7 +102,7 @@ The page sends you back to Muse, which should now list eight Muse Privacy tools:
 |---|---|---|
 | list_documents | Read | Tagged titles of the documents in a folder |
 | search_documents | Read | Up to 5 short tagged snippets. An optional purpose says who they are for. A check that needs more time or your OK returns a job id for get_result |
-| ask_device | Read | The device's own model searches, reads and answers a question; returns the answer and up to 3 short quotes, as tags. Needs the local model (CHECKER_BACKEND=lfm) |
+| ask_device | Read | The device's own model searches, reads and answers a question; returns the answer and up to 3 short quotes, as tags. Off since Nov 2: it needs LFM (CHECKER_BACKEND=lfm), which is not a Meta model and which `load_settings` refuses |
 | run_private_task | Write | Starts a private job on the device, returns a job id. The instructions say who the result is for. A task that is not grading also saves its full answer with real names on the device, in `output/<job id>/result.md` under BASE_HOME |
 | save_on_device | Write | Muse writes files with tags (for example a note home for each `[Student X]`); the device fills in the real names and, with `address_to` "guardians", writes one email draft (`.eml`, unsent) for each guardian on the contact sheet (`CONTACTS_PATH`, default `records/parent_contacts.md` in the workspace), under `output/<job id>/` in BASE_HOME with a `merge.csv`. Muse gets back counts only. A tag the device does not know, or a contact sheet in a folder the controls hide, saves nothing |
 | get_result | Read | The status of a job or a search, then its tagged or summarized result. With wait_seconds (up to 40) it waits on the device until the job is done or you press Share it or Keep it here |
@@ -194,6 +194,6 @@ The demo scenes, in this order, in one Muse chat over the invented demo folders.
 | E, scheduled night | The two scheduled jobs in section 6. | At 2 AM run_dreaming starts a night; at 8 AM dreaming_report gives the numbers, including yesterday's approval requests and how many the new rules would still ask. |
 | F, CUI | Turn on **CUI** on the Controls page, then: "Write a one-page brief of the open cases in my casework folder for the program office, for my supervisor." | The device writes the brief from the invented case notes (`demo/casework/`, an invented office whose invented agreement marks them CUI). Muse gets only "Kept on your device. A privacy toggle keeps everything on this device. The full result is saved on the device in output/<job id>." and the fixed last sentence. Turn CUI off afterwards. |
 
-Rehearse them without the Muse app first, on a scratch home with the invented data only: `uv run python -m scripts.rehearse_scenes` (needs `DEVICE_ONLY=1` and the device model running; `--dry-run` fakes the model). It writes `eval/reports/muse_app/rehearsal_<date>.md` with statuses only. In the [latest one](../eval/reports/muse_app/rehearsal_2026-10-31.md) all six scenes reach their expected statuses and 0 of 18 tool outputs hold a private value, with a script in Muse's place. It never touches your BASE_HOME, so nothing it does reaches tonight's dreaming.
+Rehearse them without the Muse app first, on a scratch home with the invented data only: `uv run python -m scripts.rehearse_scenes` (needs `DEVICE_ONLY=1` and the device model running; `--dry-run` fakes the model). The rehearsal below ran on Liquid's LFM3-VL-2B, which the Nov 2 ruling took out; it has not been run again on Muse Glimmer, and the script does not take cloud mode yet. It writes `eval/reports/muse_app/rehearsal_<date>.md` with statuses only. In the [latest one](../eval/reports/muse_app/rehearsal_2026-10-31.md) all six scenes reach their expected statuses and 0 of 18 tool outputs hold a private value, with a script in Muse's place. It never touches your BASE_HOME, so nothing it does reaches tonight's dreaming.
 
 When the device is offline, asleep or slow, the relay answers a tool call with a plain sentence Muse can repeat ("The user's Muse Privacy device is offline right now...") instead of an HTTP error, once the relay is redeployed with that change.
