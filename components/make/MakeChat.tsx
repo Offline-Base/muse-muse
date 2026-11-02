@@ -202,9 +202,14 @@ export function MakeChat({
 
   async function start(plan: TrainPlan) {
     if (starting) return;
+    const both = intent?.kind === "both";
+    // Never pay for half of a request that can't finish: the model would run with no app beside it.
+    if (both && intent?.appBlock) {
+      setStartError(`Nothing has started, because the app can't start right now: ${errorMessage(intent.appBlock === "paused" || intent.appBlock === "no_storage" ? 503 : 429, intent.appBlock, false)}`);
+      return;
+    }
     setStarting(true);
     setStartError(null);
-    const both = intent?.kind === "both";
     try {
       const res = await fetch("/api/train/runs", {
         method: "POST",
