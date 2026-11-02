@@ -7810,3 +7810,81 @@ div.md.md-plain {
     right: 16px;
   }
 }
+
+/* Settings rows (SiteSettings): a list card of label-and-control rows, like meta.ai's Theme, Style and Accent rows. */
+.settings-list {
+  margin-top: 16px;
+  padding: 0 24px;
+  border-radius: 24px;
+  background: var(--settings-card);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 64px;
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.settings-row + .settings-row {
+  border-top: 1px solid var(--line);
+}
+
+.settings-select {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.settings-select select {
+  appearance: none;
+  padding: 6px 30px 6px 10px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 16px;
+  text-align: right;
+  cursor: pointer;
+}
+
+.settings-select select:hover {
+  background: var(--hover);
+}
+
+.settings-select select:focus-visible {
+  outline: 0;
+  box-shadow: inset 0 0 0 2px var(--fg);
+}
+
+.settings-select svg {
+  position: absolute;
+  right: 6px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.settings-card-static,
+.settings-card-static:hover {
+  background: var(--settings-card);
+  cursor: default;
+}
+
+.settings-card-static .avatar {
+  width: 40px;
+  height: 40px;
+  font-size: 14px;
+}
+
+.account-out {
+  padding: 0;
+}
+
+.account-out .account-signin {
+  flex: 1;
+  width: auto;
+}

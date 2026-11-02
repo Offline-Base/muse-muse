@@ -2681,3 +2681,15 @@ The owner asked for a simpler sidebar using "muse" and "musing" for the creative
   - The run steps are in its header. It runs after scripts/dev/room-fixtures.ts, whose user it reuses, so those build rooms show under Musings.
   - It caught a real layout bug: a long History list pushed Usage, Help and the account chip below the window. History now scrolls on its own with its heading pinned, and the bottom stays put, as on meta.ai.
   - Typecheck clean. Spend $0.
+- **Later, same branch: Settings and a theme choice.**
+  - The account chip's menu has Settings, and signed-out visitors get a settings button beside Sign in. It opens the same Settings-style window as Help, now a shared `SettingsWindow` component:
+    - General has your account and a Theme row (System, Light, Dark);
+    - About Muse Muse has the disclaimer and How it works.
+  - The theme is kept in this browser (`lib/theme.ts`). An inline script in `<head>` applies a saved choice before first paint, and System follows the device as before.
+  - Checked in Chromium:
+    - picking Dark sets it at once and keeps it after a reload, with no flash;
+    - Light can be forced on a dark-mode system;
+    - the window opens with focus on General;
+    - no console errors.
+  - Tests: theme 4 of 4 (including the inline script run against a fake page), nav 12 of 12. Typecheck clean.
+  - The mascot's on and off switch will go in General once the mascot exists.

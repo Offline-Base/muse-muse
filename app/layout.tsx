@@ -6,6 +6,7 @@ import { MobileNav } from "@/components/shell/MobileNav";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { VoiceInputLayer } from "@/components/voice/VoiceInputLayer";
 import { currentUser } from "@/lib/queries";
+import { THEME_SCRIPT } from "@/lib/theme";
 import "./globals.css";
 import "@/components/chat/chat.css";
 
@@ -32,7 +33,11 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
     ? { email: session.email, isAdmin: session.isAdmin, openAccess: Boolean(session.openAccess) }
     : null;
   return (
-    <html lang="en" className={interFont.variable}>
+    // The theme script sets data-theme before React hydrates, so <html> is allowed to differ (lib/theme.ts).
+    <html lang="en" className={interFont.variable} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body className={docsFont.variable}>
         <a className="skip-link" href="#main">
           Skip to content
