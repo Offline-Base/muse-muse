@@ -2000,3 +2000,18 @@ Read-only audit, no code changed. Spend $0, no builds, made-up data only.
 - **Finding, look:** the default look is enforced by wording in the prompt, AGENTS.md, skills, brief writer and fix prompts. verify has no color or font check. The judge has no fail line for a different look, but its house style sentence only expects two looks.
 - **Decision:** keep the kit's parts and accessibility, relax the fixed look. Safety, terms, network and spend rules stay. Proposed changes come next, none made here.
 - **Not checked:** values of MUSE_FULL and MUSE_ENGINE. Their names exist in the production and preview env lists; values were not read.
+
+## Nov 1: BUILD_RANGE, so builds stop looking alike (branch tg-build-range)
+
+Behind a new flag, off by default. Design and limits are in docs/BUILD_RANGE.md.
+
+- **Fix, look:** every brief must pick a direction (palette, type pairing from npm, density, layout, shape, motion, imagery). A starting idea picked by build id, the last 8 directions' colors and face, and a repair check on white and blue keep them apart. The kit stays for parts, states and accessibility.
+- **Fix, scope:** up to 12 screens without full builds, a Depth section, and "simpler" only after three real failures.
+- **Fix, agents:** a required How you must work section on complex builds, near the top of brief.md, plus milestone and fix prompts, which never had it. The reviewer now runs once the main path passes, because rounds get cut before the end. The flag also turns on MUSE_FULL's capacity and workflow skill.
+- **Fix, judge:** a product with a direction is judged on craft and fit, with no house style expected. Rules on copying and Meta's marks are unchanged.
+- **Decision:** a new overlay, template/targets/build-range, instead of editing the template or muse-app. Off, no file in a product changes. That includes the wider final-screen limits (2,400 and 12,000 px), which live in the overlay's copy of smoke-report.mjs and are restored after the platform restore.
+- **Decision:** the agent section is an instruction, with no check that fails a build for skipping it. visual-coding stays off, not retested.
+- **Measured:** touched tests pass: lib/brief, look, tasks, setup, full-builds, test-model, engine, range, and the template's muse-app and smoke-report tests. tsc is clean. The full suite was not run.
+- **Snapshot:** snap_8Kbh3lX7zSAAHsL3nT9TEdUNxaK3, template hash 03cefe634a24, recorded in lib/sandbox/snapshots.json, 72 target files matched. Vercel sandbox time only.
+- **Preview:** muse-muse-qmd000un6 with BUILD_RANGE=1, the snapshot, PREVIEW_USE_MAIN_DB=1, OPEN_ACCESS=admin, FULL_BUILDS=1, TEST_MODEL=muse-spark-1.3-contributor, BUILDS_ON_CONTRIBUTOR=1 and MUSE_APP_LOOK=1.
+- **Not proven:** no build has run with this flag, so no direction, varied look or subagent use has been seen on a real product. Meta spend $0, no GPUs.
