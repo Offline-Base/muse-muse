@@ -10,7 +10,9 @@ Offline Base's entry in the Meta Global AI Developer Hackathon: startup track, t
 |---|---|
 | Where things stand: open PRs, what waits on the owner, fleet changes, gotchas | docs/HANDOFF.md |
 | Anything said in public: submission, video, posts, page copy | docs/MESSAGING.md, then the marks in docs/STORY.md and docs/PROVE_RESULTS.md |
-| The submission text | docs/SUBMISSION.md |
+| The submission text and form answers | docs/SUBMISSION.md |
+| The video script and shot list | docs/VIDEO.md |
+| Training-data rights: who wrote each set, Meta's terms, what may be published | docs/DATA_RIGHTS.md |
 | What happened and why: every merge, review, fix, measurement, spend and decision | docs/BUILD_LOG.md |
 | Training, tune runs, the Make chat | docs/TRAINING.md |
 | The knowledge run (r30b), quantizing, one-bit files | docs/KNOWLEDGE_RUN_LOG.md |
@@ -23,7 +25,7 @@ Offline Base's entry in the Meta Global AI Developer Hackathon: startup track, t
 
 - Log as you go in docs/BUILD_LOG.md (Muse Privacy work in privacy/docs/BUILD_LOG.md), with screenshots in docs/log/shots/<date>/. Update docs/HANDOFF.md when a fact in it changes.
 - Before writing a claim, check it against docs/MESSAGING.md and the story marks. Say "is built so" for anything that hasn't run.
-- Run tests only for the code you touched: `npx tsx --experimental-test-module-mocks --test <files>`. Unit tests already fail on main (docs/HANDOFF.md, Gotchas).
+- Run tests only for the code you touched: `npx tsx --experimental-test-module-mocks --test <files>`. #65 fixed the unit tests main failed on Nov 2 (docs/HANDOFF.md, Gotchas).
 - Test builds and examples use `TEST_MODEL` (muse-spark-1.3-contributor) with made-up data, never muse-spark-1.3 standard. Real products run on Muse Wonder.
 - No em dashes in anything a user or judge reads.
 - Never print, copy or reuse keys or tokens. Don't read `.env.local`, and never `vercel env pull` over it.
