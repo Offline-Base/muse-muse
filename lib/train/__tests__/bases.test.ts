@@ -156,6 +156,11 @@ describe("the recipe", () => {
     assert.ok(GLIMMER_PY.includes("use_exact_model_name=True"));
     assert.ok(!/lfm/i.test(GLIMMER_PY));
   });
+  it("stops a job that names any family but Glimmer, before a Llama family's markers are used", () => {
+    const body = GLIMMER_PY.slice(GLIMMER_PY.indexOf("def use_family(family):"), GLIMMER_PY.indexOf("def use_base(params):"));
+    const gate = body.indexOf(`raise ValueError("Only Muse Glimmer trains here, so baseFamily "`);
+    assert.ok(gate > 0 && gate < body.indexOf("FAMILIES.get(family)"), body);
+  });
 });
 
 describe("the review's rules", () => {
