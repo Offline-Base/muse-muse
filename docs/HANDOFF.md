@@ -10,6 +10,7 @@ Change a line here when its fact changes. History goes in docs/BUILD_LOG.md.
 - **Deadline:** due Nov 4, 9 PM ET, and Ethan submits by noon ET. Whoever is awake switches judges to Muse Wonder on Nov 4.
 - **What we can say in public:** docs/MESSAGING.md (outside quotes, each marked checked or not, what the rules say, and what not to say). Then the marks in docs/STORY.md and docs/PROVE_RESULTS.md.
 - **Submission kit:** the draft write-up and form answers in docs/SUBMISSION.md, the video script and shot list in docs/VIDEO.md.
+- **Edge track (Nov 2):** a simulated cold-room watcher that is built so it keeps answering on a Jetson when the cloud is cut. Units, owner decisions O1 to O8, Hussam's asks H1 to H5, the clock and when each claim may be said: docs/EDGE_PLAN.md. All flags off.
 
 ## Open PRs, Nov 2 midday
 
@@ -71,6 +72,15 @@ In order. To-do 1 decides 2 and 10. To-do 2 has to finish by Nov 3 afternoon, or
 12. **The submission form.** About 30 minutes, Ethan, by noon ET Nov 4.
     - The portal (https://cerebralvalley.ai/e/meta-ai-developer-hackathon/hackathon/submit) needs a sign-in, and its fields aren't published.
     - Open it early, compare it with docs/SUBMISSION.md section 1, and add any field that's missing. The Representative names every team member.
+13. **The edge track: O1 to O8.** About 15 minutes to answer, Ethan (O8 with Hussam). Each is a yes or no; the full questions are in docs/EDGE_PLAN.md, "Owner decisions". Nothing in the edge track spends or turns a flag on until its answer is yes.
+    - O1, $0: reverse the Oct 31 "No Jetson or fleet endpoint in the Nov 4 demo" for an edge act, keeping the Glimmer shot.
+    - O2, $25 (to-do 2's estimate): the chain run on the cold-room sentence with M2's code-written rows, done by Tue 3 PM, after the rotated Lambda key (to-do 8).
+    - O3, $10 cap: a backup harness tune on an A10 if O2's tune misses Tue 3 PM.
+    - O4, $5 of the $20 Contributor cap: `EDGE_BUILDS` and `EDGE_ENABLED` on a preview only, for 2 to 3 test builds.
+    - O5, $0: create the public Hugging Face repo `OfflineBase/Llama-3.2-3B-ColdRoom-Watch-GGUF`.
+    - O6, $0: approve the video re-cut in docs/VIDEO.md, "Proposed revision: the edge act".
+    - O7, $0: after M10, point `deviceModelTarget("jetson_orin_nano")` at Llama 3.2 3B Q4_K_M, flags still off.
+    - O8, $0: allow fallback level 2, which pulls the house uplink and takes jetson-05's tunnel and remote fleet access down during the take.
 
 Also waiting, from the Nov 2 audit. None is approved or started, except that item 5's docs (SUBMISSION.md and the shot list) are drafted on tg-submission-kit.
 - Hero tune: a longer Glimmer tune for redaction and private spreadsheet analysis, scored on the sealed test against base. Up to $300 of GPU. Blocked on the rotated Lambda key.
@@ -83,6 +93,16 @@ Still open from before:
 - **Gadget:** `DEVICE_MCP_URL` and `DEVICE_MCP_TOKEN` are unset in production, so the gadget isn't live there.
 - **Prompt Guard 2 on jetson-05:** accept Meta's license on Hugging Face, then run `/opt/prompt-guard/fetch.sh` on the board.
 - **Before quoting "0 leaks":** rerun `device_only_fresh_200` (Oct 30, 10 leaks, no cause recorded) or say both numbers.
+
+## Waiting on Hussam: the edge track
+
+Steps for each are in docs/EDGE_PLAN.md, "Hussam's asks". The drill board is jetson-04, or jetson-03 with Bolt unloaded, never jetson-02 or jetson-05. Everything goes through the fleet control plane.
+
+- **H1, Mon night, about 1.5 h:** say what the "Musetesthussamshouse" exec jobs did on jetson-04, pick the drill board, install a public Llama-3.2-3B-Instruct Q4_K_M with `gguf-serve.sh --model-url` and its sha256, take it out of maintenance, and report tokens a second, memory and time to first token. Stop if it freezes once.
+- **H2, about 0.5 h:** a `jik_` key with `cloud_daily_limit` 0, no `combo/` models and no `/v1/route`.
+- **H3, Tue morning, about 1 h:** Node 20 on the drill board, confirm the USB-C device-link address, run M7's arm64 build there with EDGE_URL on loopback, check free memory with both running.
+- **H4, Tue 3 to 5 PM, about 1 h:** install the tuned file, rerun the held-out set, report either way.
+- **H5, Tue 7 to 9 PM, about 2 h:** two rehearsals and one take of the cut, no power cuts, nothing identifying in frame. Hard stop at 9 PM.
 
 ## Fleet changes made Nov 2, through the fleet control plane
 
