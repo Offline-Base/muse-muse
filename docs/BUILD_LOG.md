@@ -2839,4 +2839,16 @@ The owner asked for a simpler sidebar using "muse" and "musing" for the creative
   - Regenerated `lib/recipes/generated.json`.
   - The recipe and registry changes ship with the site. The muse-agent skill lives in the builder snapshot (`template/targets/agent`), so it reaches production builds only after `npm run snapshot`.
   - Tests: recipes and registry 333 of 333, agent option 26 of 26, the template's agent run 119 of 119. Typecheck clean.
+- **Nov 2, night: read-only audit of how products get built, checked and kept safe (owner: "truly audit ... ensure there are no leaks, don't run any tests").**
+  - Four read-only reviews of main at 588c5920: build speed, build checks, secret and data leaks, spend and abuse. No tests, builds or network calls were run, and no env files were opened.
+  - Top findings re-read in code before reporting:
+    - a judge outage counts as not passed but not blocking, so the last round can ship as partial (lib/pipeline/workflow.ts:362, logic.ts:87);
+    - `musemuse.requirements.json` isn't in PLATFORM_FILES, so the building agent can edit the list it's checked against (lib/sandbox/paths.ts:24);
+    - the "verify at most twice a round" line reaches only big builds (lib/pipeline/build-steps.ts:470);
+    - the Meta key placeholder sits in Muse Code's env, and the firewall swaps in the real key for any request carrying it, so the agent's own shell calls likely bypass metering (lib/sandbox/muse.ts:146, policy.ts:132);
+    - the build quota is count-then-insert with no lock (app/api/inspirations/route.ts:42);
+    - the Muse Code transcript is a public Blob linked on every product page, whatever the source setting (lib/sandbox/builder.ts:2103, app/p/[slug]/page.tsx:423);
+    - under guest mode /builds lists every guest's muses, since all guests are one user (app/builds/page.tsx:30).
+  - Found sound: no platform keys in sandboxes or products, no committed secrets, admin-only paid work, fail-closed daily cap on DB errors, Lambda sweeps, atomic counters.
+  - Full ranked lists and the fix order were reported to the owner. Nothing was changed by the audit.
 
