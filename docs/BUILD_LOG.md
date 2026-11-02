@@ -2120,3 +2120,17 @@ Read-only recheck against the saved outputs, the local adapter and data, and the
 - Flagged, not changed: `quantChannelText` and the job summary say "a stock app's prompt" even when tuned.jinja was used, as here. That is older wording on a path that runs with flags off.
 - Not checked: the reader's counts of slips and which answers were read are one reader's judgment.
 - Tests: touched code only, with fakes: quantize 65, quant-targets 9, gguf-cards 26, story 11, tune-room and local-files with module mocks, and tsc clean. Full suite and next build not run.
+
+## Nov 1: FAST_BUILDS (branch tg-fast-builds)
+
+Behind a new flag, off by default. Design in docs/FAST_BUILDS.md.
+
+- **Measured, real subagent count (build events, Preview muse-muse-qmd000un6, BUILD_RANGE, Contributor, still running when read):** not 0. Plotline Garden Exchange 1c2eb3f0: 8 subagents and 1 workflow. Fork and Folio b021d5fc: 9 and 1. Midnight Vinyl Ledger d855f033: 7 and 1. Chore Quest Cove 619db593: 8 and 1. Each milestone ran a scout, 2 writers side by side and a reviewer. The 0 of 6 came from the Wonder build b2996b46, before BUILD_RANGE, and no Wonder build has been read with BUILD_RANGE on. So no fix was needed to start them on Contributor.
+- **Finding:** the time goes to milestones run one after another with a strict verify between them, and only 2 writers each. One milestone took about 12 minutes. Brief 80 s, provisioning 3.4 s on 1c2eb3f0.
+- **Decision:** a fast complex build is one round (fullMilestones gives 1), which the task didn't name. Without it, writers stay limited to a milestone's few requirements.
+- **Decision:** the recheck is a new task, not a change to verify.mjs, so no new snapshot. Only the full check and judge can pass a build.
+- **Decision:** with the flag on a product's id is its build id, because the warm sandbox needs its name before the brief, and promotion checks the name ends in the product id. Warm setup can save at most the 3.4 s measured, so expect little from it.
+- **Limit:** writer deadlines and worktree isolation are instructions to the main agent. Nothing in the platform enforces them.
+- **Tests:** tsc clean apart from missing fflate and unpdf in this worktree's copied node_modules. flags-off, full-builds and tasks tests pass. workflow.scenario has 2 failures expecting a 25-minute cap and getting 60, in code this change doesn't touch; not rerun on main to confirm. No new tests: recheck and helper lines have none.
+- **Previews:** FAST_BUILDS=1 muse-muse-lofxtn17n, without it muse-muse-k1fp4y15n, same code and snapshot snap_Dy4CjpILCMOBnaJ28Skzswys7CJ4. A stray line in my deploy command also made one extra unused Preview with the flag on.
+- **Builds on the flag Preview:** small e50989ff, complex 399f7255 and 0b90ec23. Without it: small 4b97d2c4, complex 654b4711 and a6275cc8. Same notes each way.
