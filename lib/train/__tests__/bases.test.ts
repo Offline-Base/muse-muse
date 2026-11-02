@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { isSparkOpenDerivative, licenseDuties, PLAIN_GLIMMER_MODEL } from "../base";
 import { gatedBaseFiles, resolveBase } from "../base-check";
-import { askedBase, checkFacts, GATED_REFUSAL, repoProblem, type HubFacts } from "../bases";
+import { askedBase, baseMeasured, checkFacts, GATED_REFUSAL, MEASURED_LLAMA_3B_MODEL, MEASURED_LLAMA_3B_REVISION, repoProblem, type HubFacts } from "../bases";
 import { GLIMMER_PY } from "../recipes/glimmer";
 
 const SHA = "a".repeat(40);
@@ -78,6 +78,14 @@ describe("the Hub's facts", () => {
     assert.ok(small.ok && small.base.scale === 0.5 && !small.base.measured);
     const big = checkFacts(facts({ id: "unsloth/Llama-3.3-70B-Instruct-bnb-4bit", license: "llama3.3", bytes: 39.5e9, params: 70.5e9 }));
     assert.ok(big.ok && big.base.scale > 2);
+  });
+  it("counts the Llama 3.2 3B build as measured only at the commit the Nov 1 harness tune ran", () => {
+    assert.match(MEASURED_LLAMA_3B_REVISION, /^bb1d317a[0-9a-f]{32}$/);
+    assert.equal(baseMeasured(MEASURED_LLAMA_3B_MODEL, MEASURED_LLAMA_3B_REVISION), true);
+    assert.equal(baseMeasured(MEASURED_LLAMA_3B_MODEL, SHA), false);
+    assert.equal(baseMeasured("meta-llama/Llama-3.2-3B-Instruct", MEASURED_LLAMA_3B_REVISION), false);
+    const ran = checkFacts(facts({ sha: MEASURED_LLAMA_3B_REVISION }));
+    assert.ok(ran.ok && ran.base.measured);
   });
 });
 
