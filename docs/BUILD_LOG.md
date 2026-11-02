@@ -2223,6 +2223,17 @@ Behind a new flag, off by default. Design in docs/FAST_BUILDS.md.
 - **Previews:** FAST_BUILDS=1 muse-muse-lofxtn17n, without it muse-muse-k1fp4y15n, same code and snapshot snap_Dy4CjpILCMOBnaJ28Skzswys7CJ4. A stray line in my deploy command also made one extra unused Preview with the flag on.
 - **Builds on the flag Preview:** small e50989ff, complex 399f7255 and 0b90ec23. Without it: small 4b97d2c4, complex 654b4711 and a6275cc8. Same notes each way.
 
+## Nov 1: Hugging Face inventory, no uploads (branch tg-hub-inventory)
+
+Owner asked to upload every dataset and fine-tuned model. List and hold reasons in docs/HUB_INVENTORY.md.
+
+- **Result:** 0 repos created, 0 bytes uploaded. The inventory step stopped when reads of KNOWLEDGE_RUN_LOG.md and PROVE_RESULTS.md were denied, and it marked nothing for upload. 7 existing repos listed, 15 items on hold.
+- **Spend:** $0. No instance rented, 0 left running. The Lambda cache was not inspected.
+- **Denied, not worked around:** the two log reads above, and `s3:ListAllMyBuckets` for the local AWS identity.
+- **Measured (Hub API, read-only):** the dataset repo has 34 files and 105.9 MB, not the 0 the inventory listing returned. Overlap with local knowledge data still not compared.
+- **Flagged, not changed:** `Nemotron-3.5-Bolt-Parse-Pipeline` reads as public today, the inventory recorded it as private. Same sha, 5193a1c0d3. Owner to confirm.
+- **Left alone:** the other workflow's Moss-Test IQ1_S repo and its instance.
+- **Tests:** none, docs only. No app code or flags changed.
 ## Nov 1: two more full build fixes, from the reruns
 
 - **Results.** Tracker rerun 020084d8 on Contributor: live, judge pass, 15 of 15 met, 23m32, $0.085. Its brief has 15 requirements against the Wonder build's 21, so this doesn't prove the screenshot fix on the original failure. Big build 22562315 on Contributor: partial, 101 minutes, $0.93, 2 of 6 milestones, 20 of 40 requirements unmet, 4 of 6 rounds at their limit, no fix round, 0 subagents.
@@ -2272,6 +2283,19 @@ Tried at 01:28 UTC on Nov 2 (still Nov 1 here) with curl keeping cookies, signed
 - **For the rerun:** the guest's own view takes out instance id, IP, logs and errors (`visitorRunView`), so proving callbacks and the GPU's end needs what that view keeps plus an owner's check of the job row or Lambda console.
 - **Spend:** $0. No production changes.
 
+
+## Nov 1: Hugging Face inventory finished, partial upload, repos found public (branch tg-hub-inventory)
+
+Owner asked to upload every dataset and fine-tuned model to private repos, then "dont retrain anything". Full list in docs/HUB_INVENTORY.md.
+
+- **Uploaded, 25.51 GB in 18 new repos.** 3 moss datasets, 8 Knowledge-family or lab adapters plus 2 moss adapters, 1 LoRA GGUF, 2 IQ1_S GGUFs; 2 repos hold only cards and licenses. Created private, confirmed at creation.
+- **Found public at 02:08:55 UTC.** The upload's check stopped on it. All OfflineBase repos, including the new datasets, answer without a token with `private: false`. This job made no visibility call. Who did isn't established. Not changed back, as instructed. Owner decision.
+- **Meta terms 10.1(ix) hold arrived mid-run.** Moss data and tunes already up stay in place for the owner; nothing more of them went up. Llama GGUF not uploaded.
+- **Decision:** Exhibit C question on hosted Spark Open flagged, Knowledge family not held for it.
+- **Not uploaded:** 7 passed GGUFs (stopped by the visibility change), larger GGUFs and merges (over the 100 GB private budget), everything naming real people.
+- **Recheck:** sizes match, text and JSON scan 0 hits for tokens, keys, IPs and local paths. Cards still say "private", which is now false.
+- **Decision:** merge of origin/main kept both sides of the BUILD_LOG conflict.
+- **Spend:** Lambda device-loop-inv-1, 01:32:09Z to 02:10:07Z, about $0.82 of $25, list price. Terminated. No training, merging or quantizing.
 ## Nov 1: everything on Contributor under BUILDS_ON_CONTRIBUTOR, no Wonder but the Wonder check (branch tg-all-contributor)
 
 Owner: "change anything in the product now to use muse spark 1.3 contributor, no muse wonder except for the muse wonder check."
