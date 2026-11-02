@@ -2015,3 +2015,6 @@ Behind a new flag, off by default. Design and limits are in docs/BUILD_RANGE.md.
 - **Snapshot:** snap_8Kbh3lX7zSAAHsL3nT9TEdUNxaK3, template hash 03cefe634a24, recorded in lib/sandbox/snapshots.json, 72 target files matched. Vercel sandbox time only.
 - **Preview:** muse-muse-qmd000un6 with BUILD_RANGE=1, the snapshot, PREVIEW_USE_MAIN_DB=1, OPEN_ACCESS=admin, FULL_BUILDS=1, TEST_MODEL=muse-spark-1.3-contributor, BUILDS_ON_CONTRIBUTOR=1 and MUSE_APP_LOOK=1.
 - **Not proven:** no build has run with this flag, so no direction, varied look or subagent use has been seen on a real product. Meta spend $0, no GPUs.
+## Nov 1: Media tab removed
+
+Owner asked. Took Media out of the sidebar in components/shell/nav.ts. The /media page stays at its address and nothing else links to it. Touched test only: nav.test.tsx.
