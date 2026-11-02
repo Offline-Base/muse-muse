@@ -2692,3 +2692,11 @@ Three branches built in parallel worktrees, each reviewed adversarially, then me
   - Typecheck clean on the combined branch.
   - `lib/edge/template-source.ts` regenerates with no change after the merge.
 - **Spend:** $0.
+
+## Nov 2, 2026, 18:08: M7, the first real Muse Muse edge build (preview, branch edge-m7)
+
+- **Preview:** current main (ee493e69) as muse-muse-g59xelwdt, deployed with `--env`/`--build-env` only: EDGE_BUILDS, EDGE_ENABLED, PREVIEW_USE_MAIN_DB, OPEN_ACCESS=admin, TEST_MODEL=muse-spark-1.3-contributor, and FULL_BUILDS, BUILDS_ON_CONTRIBUTOR, MUSE_APP_LOOK and BUILD_RANGE set to 0. No project setting changed.
+- **Two failed tries first, both from switches the builder snapshot can't carry:** MUSE_APP_LOOK (and BUILDS_ON_CONTRIBUTOR, which turns the look on) stopped provisioning, since no snapshot in lib/sandbox/snapshots.json has the muse-app or build-range overlay ($0.013). FULL_BUILDS then failed 3 fix rounds ($0.14), because the snapshot's verify has no requirements step, so every requirement read "No test ran for it". Its four outage drills passed in all three rounds anyway.
+- **Build c067aea2, product cold-room-sentinel-3:** the cold-room sentence with targets ["edge"], on Contributor. The brief picked web and edge. Typecheck, build, start, console, smoke and manifest passed, then all four simulated outage drills (cloud refused, cloud hung, both down, tampered reply rejected), and the judge passed it. Live with 0 fix rounds, $0.054. Muse Muse wrote the fallback itself: `app/api/actions/check_cold_room` calls `respondJsonOrEdge` with a zod schema and returns `by` and a label.
+- **Run on this laptop:** source.zip for v1 (210 KB) built with `next build`, started with no GATEWAY_URL (the cloud cut) and EDGE_URL at the fleet with the `jik_` key and muse-glimmer-2026-iq1s-io-lowest. It answered 503 "Neither the cloud model nor the backup model answered", because the fleet had no board serving Glimmer: another session stopped and disabled jetson-llama on jetson-02 and jetson-04 at 18:05 to move the Glimmer file to jetson-03. Not retried; the boards were left as that session left them.
+- **Not proven yet:** a real answer from a board model through this product. Ready to run once Glimmer is served again.
