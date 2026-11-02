@@ -1,6 +1,6 @@
 #!/bin/bash
 # Mac side of quantize.sh's storage step: bring a run's small outputs from the GPU machine to this Mac under
-# .data/knowledge/models/<run>/ and put them, with the adapter, in s3://muse-knowledge-916979311153/knowledge/models/<run>/.
+# .data/knowledge/models/<run>/ and put them, with the adapter, in s3://$KNOWLEDGE_BUCKET/knowledge/models/<run>/.
 # Credentials stay on this Mac (the offlinebase profile); the GPU machines never see them.
 #
 #   store_run.sh <run> [gguf ...]    e.g. store_run.sh stage1 IQ1_S IQ1_M
@@ -15,7 +15,7 @@ REPO=$(cd "$(dirname "$0")/../../../.." && pwd)
 WR=ubuntu@$(cat "$REPO/.data/aws/writer1.ip")
 Q=/home/ubuntu/q
 LOCAL=$REPO/.data/knowledge/models/$RUN
-S3=s3://muse-knowledge-916979311153/knowledge/models/$RUN
+S3=s3://${KNOWLEDGE_BUCKET:?set KNOWLEDGE_BUCKET to the knowledge bucket name}/knowledge/models/$RUN
 AWS=(aws --profile offlinebase)
 mkdir -p "$LOCAL/scores"
 
@@ -41,6 +41,6 @@ for t in "$@"; do
   else
     ssh -i $KEY $WR "cat $Q/$RUN/$f" | "${AWS[@]}" s3 cp --only-show-errors --expected-size "$size" - "$S3/$f"
   fi
-  got=$("${AWS[@]}" s3api head-object --bucket muse-knowledge-916979311153 --key "knowledge/models/$RUN/$f" --query ContentLength --output text)
+  got=$("${AWS[@]}" s3api head-object --bucket "$KNOWLEDGE_BUCKET" --key "knowledge/models/$RUN/$f" --query ContentLength --output text)
   [ "$got" = "$size" ] && echo "$f in S3 ($size bytes)" || { echo "$f size mismatch: $got vs $size"; exit 1; }
 done

@@ -21,6 +21,10 @@ describe("a build's plan card", () => {
     assert.equal(states(buildChecklist("failed", st("building", "verifying", "failed"), "t")), "done done bad todo todo");
     assert.equal(states(buildChecklist("refused", st("briefing", "refused"), "t")), "bad todo todo todo todo");
   });
+  it("never ticks the checks of a partial build, which shipped with some failing", () => {
+    assert.equal(states(buildChecklist("partial", st("building", "verifying", "deploying", "partial"), "t")), "done done bad done done");
+    assert.equal(states(buildChecklist("partial", st("building", "verifying", "partial"), "t", true)), "done done bad done");
+  });
   it("ticks everything only once live, and drops going online when publishing was off", () => {
     assert.equal(states(buildChecklist("live", st("building", "deploying", "live"), "t")), "done done done done done");
     const off = buildChecklist("live", st("building", "live"), "t", true);

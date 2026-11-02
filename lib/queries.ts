@@ -183,7 +183,8 @@ export async function getBuildRoom(buildId: string): Promise<BuildRoomData | nul
   return {
     build: toBuildView(b),
     inspiration: inspirationRows[0] ? toInspirationView(inspirationRows[0]) : null,
-    product: productRows[0] ? toProductView(productRows[0]) : null,
+    // A taken-down product's page is a 404 (getProductPage), so its build room doesn't link to it or show it.
+    product: productRows[0] && !productRows[0].takenDownAt ? toProductView(productRows[0]) : null,
     events: eventRows.map((r) => ({ ...r.payload, id: r.id, at: r.at.toISOString() }) as BuildEvent),
     history,
     tokens: {
@@ -307,7 +308,27 @@ async function latestBriefs(productIds: string[]): Promise<Map<string, Brief>> {
   return new Map(rows.flatMap((r) => (r.productId && r.brief ? [[r.productId, r.brief] as const] : [])));
 }
 
-export async function listShippedProducts(limit = 60): Promise<ProductCardView[]> {
+/** What listShippedProducts can narrow to: only products with a published link, or only these slugs. */
+export interface ShippedFilter {
+  /**
+   * Only products with a live link. One built where publishing was off (a local run, a Preview) has only a "Not
+   * published" page, so the gallery and the Make page's featured row leave it out. The gadgets page doesn't ask yet.
+   */
+  published?: boolean;
+  slugs?: readonly string[];
+}
+
+/** The shipped products (live or partial), newest first. Filters apply before the limit, so a page still fills up. */
+export async function listShippedProducts(limit = 60, filter: ShippedFilter = {}): Promise<ProductCardView[]> {
+  if (filter.slugs && !filter.slugs.length) return [];
+  const shown = [
+    inArray(schema.products.status, ["live", "partial"]),
+    // Wave 3, unit 1 (TRUST_REPORTS): a taken-down product is "disabled" as well, and its card stays gone even if an
+    // admin turns it back on with the kill switch before undoing the takedown. The query is today's with the flag off.
+    ...(env.trustReports ? [isNull(schema.products.takenDownAt)] : []),
+    ...(filter.published ? [isNotNull(schema.products.liveUrl), sql`${schema.products.liveUrl} <> ''`] : []),
+    ...(filter.slugs ? [inArray(schema.products.slug, [...filter.slugs])] : []),
+  ];
   const rows = await db()
     .select({
       product: schema.products,
@@ -321,13 +342,7 @@ export async function listShippedProducts(limit = 60): Promise<ProductCardView[]
     .from(schema.products)
     .leftJoin(schema.builds, eq(schema.products.latestBuildId, schema.builds.id))
     .leftJoin(schema.inspirations, eq(schema.products.inspirationId, schema.inspirations.id))
-    // Wave 3, unit 1 (TRUST_REPORTS): a taken-down product is "disabled" as well, and its card stays gone even if an
-    // admin turns it back on with the kill switch before undoing the takedown. The query is today's with the flag off.
-    .where(
-      env.trustReports
-        ? and(inArray(schema.products.status, ["live", "partial"]), isNull(schema.products.takenDownAt))
-        : inArray(schema.products.status, ["live", "partial"]),
-    )
+    .where(shown.length === 1 ? shown[0] : and(...shown))
     .orderBy(desc(schema.products.updatedAt))
     .limit(limit);
   const briefs = await latestBriefs(rows.filter((r) => !r.brief).map((r) => r.product.id));
@@ -351,6 +366,7 @@ export async function listShippedProducts(limit = 60): Promise<ProductCardView[]
       costUsd: r.costUsd == null ? null : num(r.costUsd),
       fixRounds: r.fixRounds ?? null,
       rebuildOf: p.rebuildOf,
+      latestBuildId: p.latestBuildId,
     };
   });
   return newestPerRebuild(cards);

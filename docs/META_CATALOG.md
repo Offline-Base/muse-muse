@@ -71,7 +71,7 @@ For scale, DeepSeek V4.1 Flash processed 123T in the last 30 days. Meta isn't am
 
 | Model | Facts | How Muse Muse uses it |
 |---|---|---|
-| Muse Glimmer | 30B dense, Apache 2.0, multimodal per Meta's docs, under 20 GB quantized. Runs on vLLM, SGLang, llama.cpp, ExecuTorch | Optional. Only when a brief asks for local or offline use, through an endpoint you host. Also the fine-tuning lab's student ([TRAINING.md](TRAINING.md)) |
+| Muse Glimmer | 30B dense, Apache 2.0, multimodal per Meta's docs, under 20 GB quantized. Runs on vLLM, SGLang, llama.cpp, ExecuTorch | Optional. Only when a brief picks it, through an endpoint someone hosts on a GPU server (Meta's smallest file is 16.8 GB). Also the fine-tuning lab's student ([TRAINING.md](TRAINING.md)) |
 | Muse Spark Open | 816B total, 42B active MoE. Text, images, audio and video in. SGLang or vLLM | Not in v1 |
 
 ## Muse Code

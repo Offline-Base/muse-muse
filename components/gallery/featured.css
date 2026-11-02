@@ -1,0 +1,21 @@
+/* The Make page's featured products. Three across on a wide page, two on a phone, so the composer stays a short scroll away. */
+.ft { width: 100%; max-width: 1040px; margin: 12px auto 0; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.ft-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.ft-head h2 { font-size: 24px; font-weight: 600; line-height: 30px; }
+.ft-head p { font-size: 14px; line-height: 20px; }
+.ft-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ft-card { display: flex; flex-direction: column; gap: 2px; width: 100%; height: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.ft-media { position: relative; display: block; aspect-ratio: 2 / 1; overflow: hidden; margin-bottom: 6px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-3); }
+.ft-card[aria-pressed="true"] .ft-media, .ft-card:hover .ft-media { border-color: var(--fg); }
+.ft-media img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top; }
+.ft-kind { position: absolute; left: 8px; top: 8px; padding: 2px 8px; border-radius: 999px; background: var(--fg); color: var(--bg); font-size: 12px; line-height: 18px; }
+.ft-name { font-size: 15px; font-weight: 600; line-height: 20px; }
+.ft-tag, .ft-how { font-size: 13px; line-height: 18px; }
+.ft-player { display: flex; flex-direction: column; gap: 10px; scroll-margin-top: 64px; padding: 12px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface-1, var(--bg)); }
+.ft-player-bar { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; font-size: 14px; line-height: 20px; }
+.ft-player iframe { display: block; width: 100%; height: min(70dvh, 680px); border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.ft-built { display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
+.ft-built h3 { font-size: 15px; font-weight: 600; }
+.ft-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+#make { scroll-margin-top: 64px; }
+@media (min-width: 760px) { .ft-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

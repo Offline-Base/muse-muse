@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { PrivateBody } from "@/components/private/PrivateBody";
+import { EARLIER_RUN, PrivateBody } from "@/components/private/PrivateBody";
 import { Replay } from "@/components/private/Replay";
 import { PRIVATE_NUMBERS, REPLAY_SCENES } from "@/lib/private/replay";
 
@@ -47,6 +47,19 @@ describe("/private", () => {
     const { fresh, tasks } = PRIVATE_NUMBERS;
     assert.deepEqual(row("fresh_200_b"), { accuracy: `${fresh.percent} (${fresh.right}/${fresh.items})`, leaks: fresh.leaks, unsafe: fresh.unsafeShares });
     assert.deepEqual(row("tasks"), { accuracy: `${tasks.percent} (${tasks.right}/${tasks.items})`, leaks: tasks.leaks, unsafe: tasks.unsafeShares });
+  });
+
+  it("never shows the 0 leaks without the Oct 30 run's 10, or above the wrong shares (docs/MESSAGING.md, Don't say)", () => {
+    const earlier = readFileSync(`${REPORTS}/${EARLIER_RUN.report}`, "utf8");
+    assert.match(earlier, new RegExp(`\\| Items \\| ${EARLIER_RUN.items} \\|`));
+    assert.match(earlier, new RegExp(`\\| Leaks \\| ${EARLIER_RUN.leaks} \\|`));
+    assert.match(earlier, /\| Date \| 2026-10-30 /);
+    const { fresh, tasks } = PRIVATE_NUMBERS;
+    const items = fresh.items + tasks.items;
+    const tileList = renderToStaticMarkup(<PrivateBody />).split('<dl class="pv-tiles">')[1]!.split("</dl>")[0]!;
+    const tiles = [...tileList.matchAll(/<dd>(.*?)<\/dd>/g)].map((m) => text(m[1]!).trim());
+    assert.equal(tiles[0], `${fresh.unsafeShares + tasks.unsafeShares} of ${items}`, "the first tile is the wrong shares");
+    assert.equal(tiles[1], `${fresh.leaks + tasks.leaks} of ${items}, ${EARLIER_RUN.leaks} of ${EARLIER_RUN.items}`, "the leak tile carries both runs");
   });
 
   it("says plainly what it is and what hasn't been done", () => {

@@ -293,7 +293,10 @@ async function labPage(signedIn: boolean) {
         <>
           <OwnRuns />
           <p className="muted small">
-            Anyone can start a run. <Link href="/fine-tuning/new">Start a fine-tune</Link> with the start code. Your runs stay private, and they never go to Hugging Face.
+            Anyone with the start code can start a run:{" "}
+            {env.tuneComposer ? <Link href="/fine-tuning/new">start a fine-tune</Link> : <a href="#new-dataset">start one below</a>}. Your runs aren&apos;t listed on this
+            site&apos;s public pages, and they can&apos;t go to Hugging Face. Only an admin&apos;s own runs upload there, when an admin presses Publish or
+            when auto upload is on.
           </p>
         </>
       ) : (

@@ -48,6 +48,17 @@ describe("score", () => {
     assert.equal(roundScore(Array.from({ length: 16 }, (_, i) => j(i, isSealed(i) ? 2 : 10)), 8).reached, false, "a high working half doesn't count");
     assert.equal(roundScore(Array.from({ length: 12 }, (_, i) => j(i, 9)), 8).reached, false, "6 sealed are too few");
   });
+
+  it("leaves the general checks (TUNE_GENERAL_CHECKS) out of both halves", () => {
+    const task = Array.from({ length: 12 }, (_, i) => j(i, 9));
+    // 40 checks, half of whose indexes isSealed would call sealed, all scoring high.
+    const checks = [...Array.from({ length: 20 }, (_, i) => j(9000 + i, 10)), ...Array.from({ length: 20 }, (_, i) => j(9500 + i, 10))];
+    const score = roundScore([...task, ...checks], 8);
+    assert.equal(score.reached, false, "6 sealed task items are still too few");
+    assert.equal(score.all.items, 12);
+    assert.equal(score.sealed.items, 6);
+    assert.deepEqual(roundScore([...task, ...checks], 8), roundScore(task, 8));
+  });
 });
 
 describe("merge", () => {

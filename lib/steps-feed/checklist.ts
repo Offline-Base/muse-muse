@@ -39,8 +39,11 @@ export function buildChecklist(status: string, events: readonly BuildEvent[], ti
   const steps = unpublished ? BUILD_STEPS.filter((s) => s.id !== "ship") : BUILD_STEPS;
   const at = Math.min(furthest, steps.length - 1);
   if (status === "live") return { title, items: fromIndex(steps, at, "done") };
-  // A partial build did ship part of it, and a failed or refused one stopped at the step it had reached.
-  if (status === "partial") return { title, items: fromIndex(steps, steps.length - 1, "done") };
+  // A partial build did ship part of it, but some of its checks failed, so the checking step never shows a tick. A failed or
+  // refused one stopped at the step it had reached.
+  if (status === "partial") {
+    return { title, items: fromIndex(steps, steps.length - 1, "done").map((i) => (i.id === "check" ? { ...i, state: "bad" } : i)) };
+  }
   return { title, items: fromIndex(steps, at, status === "failed" || status === "refused" ? "bad" : null) };
 }
 

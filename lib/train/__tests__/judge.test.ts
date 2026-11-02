@@ -205,6 +205,29 @@ describe("judging eval items", { skip: canMock ? false : "needs --experimental-t
       assert.deepEqual(await judge.judgePlanStep(JOB_ID), { indexes: [0, 1], task: null });
     });
 
+    it("sets the general checks apart, each with its own task line, only when the job sent them beside its task items", async () => {
+      evals = { 0: item(0), 1: item(1), 9000: item(9000), 9001: item(9001), 9500: item(9500) };
+      const plan = await judge.judgePlanStep(JOB_ID);
+      assert.deepEqual(plan.indexes, [0, 1], "the task's items only");
+      assert.equal(plan.task, "Explain Python errors.");
+      assert.deepEqual(plan.checks?.general?.indexes, [9000, 9001]);
+      assert.deepEqual(plan.checks?.safety?.indexes, [9500]);
+      assert.match(plan.checks!.general!.task, /^General ability check/);
+      assert.match(plan.checks!.safety!.task, /^Safety check/);
+      assert.deepEqual(called("recordEvent")[0]!.args[1], {
+        type: "log",
+        text: "Muse Wonder is judging 2 eval items, 2 general checks and 1 safety check.",
+      });
+
+      // Without checks the plan has no checks key at all, as before the flag.
+      calls = [];
+      evals = { 0: item(0), 1: item(1) };
+      assert.equal("checks" in (await judge.judgePlanStep(JOB_ID)), false);
+      // Checks with no task item beside them are judged as plain items, as before.
+      evals = { 9000: item(9000) };
+      assert.deepEqual(await judge.judgePlanStep(JOB_ID), { indexes: [9000], task: "Explain Python errors." });
+    });
+
     it("plans nothing without eval items or once a summary exists", async () => {
       evals = {};
       assert.deepEqual(await judge.judgePlanStep(JOB_ID), { indexes: [], task: null });
@@ -249,6 +272,30 @@ describe("judging eval items", { skip: canMock ? false : "needs --experimental-t
       assert.equal(
         (called("recordEvent")[0]!.args[1] as { text: string }).text,
         "Judged 2 of 3 eval items: the tuned model was better on 1, the base model on 0, and 1 tied. Average score 7 tuned, 5 base. Judging cost $0.0030.",
+      );
+    });
+
+    it("keeps the general checks beside the task's numbers, adds their cost, and logs them", async () => {
+      const items = [{ baseScore: 4, tunedScore: 8, better: "tuned" as const, costUsd: 0.002 }];
+      const general = { items: [{ baseScore: 9, tunedScore: 7, better: "base" as const, costUsd: 0.001 }], asked: 2 };
+      const safety = { items: [] as typeof items, asked: 1 };
+      const summary = await judge.saveEvalSummaryStep(JOB_ID, items, 1, { general, safety });
+      assert.deepEqual(summary, {
+        items: 1,
+        tunedWins: 1,
+        baseWins: 0,
+        ties: 0,
+        avgBaseScore: 4,
+        avgTunedScore: 8,
+        judgeCostUsd: 0.003,
+        general: { items: 1, asked: 2, tunedWins: 0, baseWins: 1, ties: 0, avgBaseScore: 9, avgTunedScore: 7, judgeCostUsd: 0.001 },
+        safety: { items: 0, asked: 1, tunedWins: 0, baseWins: 0, ties: 0, avgBaseScore: 0, avgTunedScore: 0, judgeCostUsd: 0 },
+      });
+      assert.equal(
+        (called("recordEvent")[0]!.args[1] as { text: string }).text,
+        "Judged 1 of 1 eval items: the tuned model was better on 1, the base model on 0, and 0 tied. Average score 8 tuned, 4 base." +
+          " General checks: judged 1 of 2, the tuned model better on 0, the base model on 1, 0 tied, average 7 tuned, 9 base." +
+          " Safety checks: none of the 1 could be judged. Judging cost $0.0030.",
       );
     });
 

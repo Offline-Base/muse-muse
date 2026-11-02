@@ -56,3 +56,5 @@ Rows are the expected decision, columns what the router decided.
 | share_summary | 5 | 41 | 13 | 1 |
 
 Raw rows: raw/device_only_fresh_200.jsonl next to this report (ids and decisions only, no result text).
+
+The 10 leaks are explained, item by item, in [device_only_fresh_200_leaks.md](device_only_fresh_200_leaks.md) (written Nov 2): names off the roster that the 2B name pass missed, fixed the same day by the device-only name-shape check.

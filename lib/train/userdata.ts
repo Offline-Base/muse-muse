@@ -1,4 +1,5 @@
 import { publicHost } from "@/lib/sandbox/policy";
+import type { CheckPrompt } from "@/lib/train/general-checks";
 import { recipeById } from "@/lib/train/recipes";
 import { RUNNER_PY } from "@/lib/train/recipes/runner";
 import type { Recipe, RecipeId } from "@/lib/train/types";
@@ -33,6 +34,11 @@ export interface UserDataInput {
    * Bearer <serveKey>". Like the token it goes only into job.json, and only for that recipe.
    */
   serveKey?: string;
+  /**
+   * The general checks a glimmer-lora chat job answers beside its held-out prompts (launchChecks in
+   * lib/train/general-checks.ts, TUNE_GENERAL_CHECKS). Left out of job.json when not given or empty.
+   */
+  checks?: CheckPrompt[];
 }
 
 /** The deadline a launch stamped `now` gives the runner: `minutes` later, rounded down to the second. */
@@ -64,7 +70,7 @@ function b64(text: string): string {
 /**
  * The #cloud-config user data for a job's instance: job.json (0600, the only place the job token goes), runner.py and
  * the recipe's script as recipe.py, all base64 encoded, then a runcmd that starts the runner. job.json always has
- * deadlineEpoch, and cacheDir and serveKey only when given. Nothing from the platform's env goes in. Throws for an
+ * deadlineEpoch, and cacheDir, serveKey and checks only when given. Nothing from the platform's env goes in. Throws for an
  * unknown recipe or a document over 1 MB.
  */
 export function buildUserData(input: UserDataInput): string {
@@ -80,6 +86,7 @@ export function buildUserData(input: UserDataInput): string {
     recipe: recipe.id,
     deadlineEpoch: input.deadlineEpoch ?? deadlineEpochFor(input.maxMinutes),
     ...(input.cacheDir ? { cacheDir: input.cacheDir } : {}),
+    ...(input.checks?.length ? { checks: input.checks } : {}),
   };
   const files = [
     { path: `${JOB_DIR}/job.json`, permissions: "0600", content: JSON.stringify(job) },
