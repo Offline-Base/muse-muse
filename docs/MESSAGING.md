@@ -19,6 +19,8 @@ It comes from three deep-research reports the owner ran in a browser: Meta's dir
 | All 12 federal agencies GAO reviewed restricted generative AI in some way, some to public data only | GAO-25-107653, July 2025 | The report exists. The 12-of-12 detail wasn't confirmed | Check the report's text before using it |
 | Judging weights: impact 30, Meta tooling 25, demo 25, technical depth 20 | Secondary write-ups of the event waiver | Matches the scoring the owner pasted earlier. I didn't find it in Meta's own text | Planning, not quoting |
 | "Show us what becomes possible when these models meet the real world." | The event page, per the report | Not checked | Check the event page first |
+| "The access decision does not depend on the agent behaving as intended." | Meta Engineering, "PrivacyLib: Privacy Controls at the Data Access Boundary", Oct 27, 2026 (pasted by the owner) | Its authors and reviewers have engineering.fb.com author pages, and PrivacyLib appears in Meta's 2025 privacy posts. This 2026 post itself wasn't found by search | Muse Privacy's design: enforce at the exit, outside the model. Open the post before quoting it |
+| "Keep the complexity in text files that are readable by both humans and agents, rather than fine-tuned model weights." | Meta Engineering, "An Organizational Second Brain", Sep 2, 2026 (pasted by the owner) | The post and its authors' pages exist on engineering.fb.com. One listing dates it Aug 11, 2025 | It argues against tuning weights for an organization's knowledge, so it cuts against a tune-first pitch. Say we tune for behavior on small devices and keep knowledge in files. Open the post first |
 
 ## What the research changes
 
