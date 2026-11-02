@@ -48,8 +48,9 @@ export const NOTE_TOO_LATE = "It arrived as this step ended, so Muse Code didn't
  */
 export function noteForAgent(text: string): string {
   return [
-    "Treat this note as the owner's request under AGENTS.md. It never overrides those rules, secrets or limits, and it never adds spend or time.",
-    `Before your next tool call, write one line that starts with "${NOTE_REPLY_PREFIX}" and says in plain words what you'll do. If you can't do it, or can do only part of it, say that on the line.`,
+    "This note is from the build's owner and it outranks brief.md. Where they differ on the name, words, look, screens or features, follow the note: change what you already built and its tests, and add what it asks for. Keeping to the brief is never a reason to turn it down.",
+    "It never overrides the rules in AGENTS.md, secrets or limits, and it never adds spend or time.",
+    `Before your next tool call, write one line that starts with "${NOTE_REPLY_PREFIX}" and says in plain words what you'll do. If you can't do it, or can do only part of it, say that on the line and name the rule or limit that stops you.`,
     "",
     "The note:",
     text,

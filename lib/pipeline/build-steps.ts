@@ -7,7 +7,7 @@
  * appear in a step's return value (step results are persisted in the workflow's event log).
  */
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, gte, inArray, lte, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte, notInArray, sql } from "drizzle-orm";
 import { FatalError, getStepMetadata } from "workflow";
 import type { Brief } from "@/lib/brief/schema";
 import { recentFrom, type RecentDirection } from "@/lib/range/direction";
@@ -29,7 +29,7 @@ import { localGadgetFiles } from "@/lib/sandbox/local-gadget";
 import { recipeExtraFiles, recipeNotes } from "@/lib/recipes/registry";
 import { prepareToolFixtures } from "@/lib/tools/fixtures";
 import { rebuildTargetFor } from "@/lib/pipeline/catalog";
-import { NOTE_TOO_LATE } from "@/lib/pipeline/control";
+import { NOTE_TOO_LATE, NOTES_PER_BUILD } from "@/lib/pipeline/control";
 import {
   allowedModelsFor,
   liveDailyBudgetFor,
@@ -1044,6 +1044,17 @@ async function judgeReferences(build: { kind: "build" | "refine"; inspirationId:
   return [...original, ...own];
 }
 
+/** The notes that reached Muse Code, oldest first, so the judge doesn't fail a product for following one (STEER_CHAT). */
+async function sentNotes(buildId: string): Promise<string[]> {
+  const rows = await db()
+    .select({ payload: schema.buildEvents.payload })
+    .from(schema.buildEvents)
+    .where(and(eq(schema.buildEvents.buildId, buildId), eq(schema.buildEvents.type, "control")))
+    .orderBy(asc(schema.buildEvents.id))
+    .limit(NOTES_PER_BUILD * 2);
+  return rows.flatMap(({ payload: p }) => (p.type === "control" && p.ok && p.text && (p.action === "steer" || p.action === "queue") ? [p.text] : []));
+}
+
 /** The judge model (env.judgeModel) checks the screenshots against the brief and the image inspo. */
 export async function judgeStep(input: {
   buildId: string;
@@ -1073,8 +1084,10 @@ export async function judgeStep(input: {
   const capsProof = agentProof ? [agentProof, proofBefore].filter(Boolean).join("\n") : proofBefore;
   // FULL_BUILDS: every requirement is judged, with what its own test did. Null means no test results reached here.
   const requirementTests = fullBuildOf(brief) ? ((await verifySummaryFor(input.buildId, input.round))?.requirements ?? null) : undefined;
+  const ownerNotes = env.steerChat ? await sentNotes(input.buildId) : [];
   const result = await judgeBuild({
     ...(requirementTests !== undefined ? { requirementTests } : {}),
+    ...(ownerNotes.length ? { ownerNotes } : {}),
     brief,
     references: await judgeReferences(build, input.productId),
     screenshots: input.screenshots,

@@ -408,6 +408,7 @@ describe("POST /api/builds/{id}/control", { skip: canMock ? false : "needs --exp
       const command = sent()[0]!.envelope.command as { text: string };
       assert.match(command.text, /About your note:/);
       assert.match(command.text, /never adds spend or time/);
+      assert.match(command.text, /outranks brief\.md/);
       assert.ok(command.text.endsWith("Make the header darker."));
       assert.equal(checked()[0]!.message, "Make the header darker.");
       assert.equal(events()[0]!.text, "Make the header darker.");
