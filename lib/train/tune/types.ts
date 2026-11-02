@@ -130,6 +130,8 @@ export interface RunVerdict extends TuneVerdict {
 /** GET /api/train/runs/{id}: a run as its room shows it. Admins only today, so the job is the full admin view. */
 export interface TuneRunView {
   id: string;
+  /** Set when it trains on Fireworks, on plain Muse Glimmer 30B rather than r30b. */
+  trainer?: "fireworks";
   title: string;
   task: string;
   stage: TuneStage;

@@ -1083,6 +1083,7 @@ export function adapterProblem(
 ): string | null {
   if (!job) return "that job doesn't exist.";
   if (job.recipe !== ADAPTER_RECIPE) return "that job isn't a Muse Glimmer LoRA job, so it has no adapter to serve.";
+  if (job.params?.trainer === "fireworks") return "that adapter trained on Fireworks and is kept there, so this path can't use it yet.";
   if (job.status !== "succeeded") return "that job didn't succeed, so it has no adapter to serve.";
   if (Number(job.params?.dryRun) >= 1) return "that job was a dry run, so its adapter is a stand-in.";
   if (jobMode(job.params) === DECIDE_MODE && Number(job.params?.scoreOnly) >= 1) {

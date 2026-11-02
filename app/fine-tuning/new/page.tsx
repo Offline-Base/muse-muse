@@ -35,6 +35,7 @@ export default async function NewFineTunePage({ searchParams }: { searchParams?:
         visitor={{ maxExamples: limits.datasetMaxRows, maxSteps: limits.job.maxSteps }}
         folder={env.tuneFolder}
         codeUnset={!env.tuneStartCode}
+        fireworks={env.fireworksTune}
       />
     );
   }
@@ -42,5 +43,5 @@ export default async function NewFineTunePage({ searchParams }: { searchParams?:
   const asked = (await searchParams)?.[FROM_BUILD_PARAM];
   const build = env.tuneFromBuilds && typeof asked === "string" ? await buildForTune(asked).catch(() => null) : null;
   const fromBuild = build?.offers ? { id: build.buildId, name: build.productName } : null;
-  return <TrainComposer defaultExamples={env.tuneDefaultExamples} ceilings={limitCeilings()} fromBuild={fromBuild} folder={env.tuneFolder} anyBase={env.tuneAnyBase} autoUpload={env.tuneAutoPublish && !env.hubOffReason ? (env.hfPublicSet && env.hfPublic ? "public" : "private") : null} />;
+  return <TrainComposer fireworks={env.fireworksTune} defaultExamples={env.tuneDefaultExamples} ceilings={limitCeilings()} fromBuild={fromBuild} folder={env.tuneFolder} anyBase={env.tuneAnyBase} autoUpload={env.tuneAutoPublish && !env.hubOffReason ? (env.hfPublicSet && env.hfPublic ? "public" : "private") : null} />;
 }
