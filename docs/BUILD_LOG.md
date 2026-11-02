@@ -2345,3 +2345,9 @@ Merged origin/main (#50, #51). The only conflict was this log; both entries kept
 - **Privacy:** the owner's room showed the model's story and results. The same room on the guest Preview showed no trace of the run or its id.
 - **Not proven:** a GPU run from this box, so no tuned model, score or link. Linking the run to a product (needs `TUNE_FROM_BUILDS` and the GPU capability; `link` answered `off` here). Clicking through the page in a browser (extension disconnected, so these were route calls and rendered HTML, with no screenshots). A folder through the box. A signed-in non-admin's both request end to end.
 - **Slip:** `vercel link` wrote an unrequested `.env.local` into this worktree. It was deleted unread, and the `.gitignore` edit undone.
+
+## Nov 2, 2026: Make options menu restyled from the owner's Meta AI screenshot (branch tg-make-options)
+
+- The target menu lost its checkboxes and intro line. Each row now has a check mark on the left, a name and a short line, with a soft grey row for what's picked and a rounder card. New Auto row at the top, picked when nothing else is; picking anything moves off it, and choosing it clears the picks. Web keeps a faint locked check. Several can still be picked, and real checkboxes stay underneath for keyboards and screen readers.
+- Tests: composer 10 of 10, both flag-off tests, tsc clean. One flag-off fingerprint changed on purpose, "composer: Make page", the only one that moved. Full suite not run.
+- Look checked by rendering the real component with the real CSS: docs/log/shots/2026-11-02/make-options-menu.png. Not clicked through on a live page.

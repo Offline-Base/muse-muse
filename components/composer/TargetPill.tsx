@@ -21,9 +21,42 @@ export function targetPillText(picked: readonly TargetId[]): string {
   return ["web" as const, ...picked].map(targetLabel).join(" + ");
 }
 
+/** One row: a check mark beside its name and a short line, grey when picked. The checkbox stays for keyboards and screen readers. */
+function targetRow({ title, note, checked, locked, quiet, onToggle }: { title: string; note: string; checked: boolean; locked?: boolean; quiet?: boolean; onToggle: (on: boolean) => void }) {
+  return (
+    <label className={`menu-item target-menu-item${checked && !quiet ? " is-picked" : ""}${quiet ? " is-quiet" : ""}`}>
+      <input
+        type="checkbox"
+        className="target-menu-box"
+        checked={checked}
+        disabled={locked}
+        onChange={(e) => onToggle(e.target.checked)}
+        onKeyDown={(e) => {
+          // Enter in a form's checkbox would send the form, and start a build on half-made picks. Here it toggles, as Space does.
+          if (e.key === "Enter") {
+            e.preventDefault();
+            e.currentTarget.click();
+          }
+        }}
+      />
+      <span className="target-menu-check" aria-hidden="true">
+        {checked ? (
+          <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 10.5 8.2 15 16 5.5" />
+          </svg>
+        ) : null}
+      </span>
+      <span className="menu-item-text target-menu-text">
+        <span>{title}</span>
+        <span className="muted small">{note}</span>
+      </span>
+    </label>
+  );
+}
+
 /**
  * Where a build runs, in the composer's pill slot, left of the mic. Auto lets the brief writer choose, and any pick
- * becomes exactly what the build makes. Web is always on, so it stays checked and locked.
+ * becomes exactly what the build makes. Web is always on, so it stays checked and locked. Several can be picked.
  */
 export function TargetPill({
   options,
@@ -40,29 +73,22 @@ export function TargetPill({
   const text = targetPillText(picked);
   return (
     <Menu text={text} label={`Where it runs: ${text}`} textIsLabel={false} align="end" buttonClassName="composer-pill target-pill" disabled={disabled}>
-      <p className="target-menu-note muted small">Auto lets Muse choose where it runs.</p>
-      <ul className="menu-list">
+      <ul className="menu-list target-menu-list">
+        {options.length ? (
+          <li>
+            {targetRow({ title: "Auto", note: "Muse chooses where it runs", checked: !picked.length, locked: !picked.length, onToggle: () => onChange([]) })}
+          </li>
+        ) : null}
         {(["web", ...options] as TargetId[]).map((id) => (
           <li key={id}>
-            <label className="menu-item target-menu-item">
-              <input
-                type="checkbox"
-                checked={id === "web" || picked.includes(id)}
-                disabled={id === "web"}
-                onChange={(e) => onChange(options.filter((t) => (t === id ? e.target.checked : picked.includes(t))))}
-                onKeyDown={(e) => {
-                  // Enter in a form's checkbox would send the form, and start a build on half-made picks. Here it toggles, as Space does.
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    e.currentTarget.click();
-                  }
-                }}
-              />
-              <span className="menu-item-text">
-                <span>{targetLabel(id)}</span>
-                <span className="muted small">{TARGET_NOTES[id]}</span>
-              </span>
-            </label>
+            {targetRow({
+              title: targetLabel(id),
+              note: TARGET_NOTES[id],
+              checked: id === "web" || picked.includes(id),
+              locked: id === "web",
+              quiet: id === "web",
+              onToggle: (on) => onChange(options.filter((t) => (t === id ? on : picked.includes(t)))),
+            })}
           </li>
         ))}
       </ul>
