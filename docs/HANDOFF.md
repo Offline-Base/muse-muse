@@ -38,7 +38,7 @@ In order. To-do 2 has to finish by Nov 3 afternoon (Tue 3 PM for the edge tune),
 3. **Read the `/privacy` and `/terms` draft, then turn on `TRUST_LEGAL_PAGES`.** About 40 minutes.
    - Read `lib/trust/terms.ts` (146 lines). It says it's a draft for the owner and counsel, not legal advice, dated Oct 31.
    - Send changes to the lead, or edit it yourself and bump `TERMS_VERSION` (signed-in builders are asked to accept a new version).
-   - Turn it on: `printf '1' | vercel env add TRUST_LEGAL_PAGES production --force --scope ethan-6436s-projects && vercel redeploy https://muse-muse.vercel.app --scope ethan-6436s-projects`. Env changes need a new deployment.
+   - Turn it on: `printf '1' | vercel env add TRUST_LEGAL_PAGES production --force --scope "$VERCEL_SCOPE" && vercel redeploy https://muse-muse.vercel.app --scope "$VERCEL_SCOPE"`. Env changes need a new deployment.
    - Check `/privacy` and `/terms` signed out. With the flag off, both pages call `notFound()`, which is today's `/privacy` 404. The flag also gives new products their own privacy and terms pages.
 4. **Pick a LICENSE.** About 10 minutes to choose; the lead adds the file in a PR.
    - The repo has none. The Official Rules allow open source "provided applicable open source licenses are followed", and the entrant keeps ownership while granting the organizers a license to use the submission (docs/MESSAGING.md, "What the rules say").

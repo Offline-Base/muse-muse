@@ -323,7 +323,7 @@ Source: STORY.md marks; PROVE_RESULTS.md, "Not proven anywhere"; MESSAGING.md, G
 
 ### Built during the event
 
-Before kickoff there was only a scaffold, committed exactly as received in `e3ba154`: design docs, the Meta model catalog, prompt drafts, the template's rules and skills, types, the database schema, config, and route stubs that returned 501. All working code was written from Oct 26 on. An Oct 27 audit found five small scaffold helpers still in use and rewrote them the same day. The README's Status section has the details. The going-public plan keeps commit dates, so this stays provable.
+Before kickoff there was only a scaffold, committed exactly as received in `e3ba154`: design docs, the Meta model catalog, prompt drafts, the template's rules and skills, types, the database schema, config, and route stubs that returned 501. All working code was written from Oct 26 on. An Oct 27 audit found five small scaffold helpers still in use and rewrote them the same day. The README's Status section has the details. The going-public plan keeps commit dates, so this stays provable. Also before the event and not in this repo: Offline Base's Jetson fleet and its control software (`jetson-infra`, created Sep 29), the models the boards run, and Base Drive (June). The README's "Before the event" lists them, and the video's opening line says so, as the organizers require (Discord, Nov 2).
 
 ## Checklist
 

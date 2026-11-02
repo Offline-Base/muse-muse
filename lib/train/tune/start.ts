@@ -213,6 +213,8 @@ async function startFolderRun(plan: TrainPlanBody, folder: FolderDraft | null | 
     const dataset = await createDataset({ title: plan.name, task: plan.task, requested: plan.settings.examples, writerModel: SPARK_STANDIN, createdBy: callerId, grounding: folder.grounding });
     try {
       if (visitor) await saveRunVisitor(dataset.id, visitor);
+      // Before anything runs, as in the described-task path: a folder run that lost its base would train on another model.
+      if (plan.settings.base) await saveRunBase(dataset.id, plan.settings.base);
       if (trainer) await saveRunTrainer(dataset.id);
       await saveRunSteps(dataset.id, plan.settings.steps);
       const { runId } = await start(makeDataset, [{ datasetId: dataset.id }]);
@@ -236,6 +238,7 @@ async function startFolderRun(plan: TrainPlanBody, folder: FolderDraft | null | 
   if (!dataset) throw new TuneStartError(500, "start_failed");
   try {
     if (visitor) await saveRunVisitor(dataset.id, visitor);
+    if (plan.settings.base) await saveRunBase(dataset.id, plan.settings.base);
     if (trainer) await saveRunTrainer(dataset.id);
     await saveRunSteps(dataset.id, plan.settings.steps);
   } catch (err) {

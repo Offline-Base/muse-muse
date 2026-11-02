@@ -2,7 +2,7 @@
 
 **DRAFT until the owners pick the story.** This is the recommended one. Written Nov 2, 2026, on branch tg-submission-kit.
 
-**Proposed revision, Nov 2:** an edge act, at the end of this file ("Proposed revision: the edge act"). It is pending the owner's O1 and O6 (docs/EDGE_PLAN.md). Until both are yes, the script below is the current draft and nothing in it changes.
+**Revision approved Nov 2:** the owner said yes to O1 and O6 (docs/EDGE_PLAN.md), so the edge act at the end of this file ("Proposed revision: the edge act") is the script to film, and edge and defense is a headline beside frontier. The script just below stays as the fallback. Organizer rule (Discord, Nov 2): the video's opening line must say what existed before the event and what was built this week, so every cut opens with shot 0 as revised below.
 
 Where it came from: this replaces the three-minute table that was in docs/STORY.md and the inspo-first script that was section 2 of docs/SUBMISSION.md. If the owners want the inspo-first story instead, it is at `git show e290545d:docs/SUBMISSION.md`, but fix its "24 of 24 builds went live" line first: that was a local batch that never deployed.
 
@@ -157,7 +157,7 @@ Drop shot 0 (open on shot 1 and fold "one sentence" into its line), and cut shot
 
 ## Proposed revision: the edge act
 
-**DRAFT, pending the owner's O1 and O6** (docs/EDGE_PLAN.md, "Owner decisions"). O1 reverses the Oct 31 line "No Jetson or fleet endpoint in the Nov 4 demo". O6 approves this re-cut. If either is no, use the script above as it stands. Written Nov 2 on branch tg-edge-copy, from the merged edge plan.
+**Approved by the owner on Nov 2 (O1 and O6 yes, docs/EDGE_PLAN.md).** O1 reverses the Oct 31 line "No Jetson or fleet endpoint in the Nov 4 demo". O6 approves this re-cut. Shots tagged with a unit still wait on that unit's run. Written Nov 2 on branch tg-edge-copy, from the merged edge plan.
 
 What changes:
 - Act 1 runs on the cold-room sentence, if the chain run (O2) happens. Otherwise Act 1 stays as above.
@@ -174,8 +174,8 @@ What changes:
 
 | # | Time | Act | Shot | Tag |
 |---|---|---|---|---|
-| 0 | 0:00 to 0:10 | Open | Zuckerberg's line | film now |
-| 1 | 0:10 to 0:22 | 1 | One sentence on the Make page: the cold-room sentence | needs the chain run |
+| 0 | 0:00 to 0:12 | Open | What existed before, what we built this week, then Zuckerberg's line | film now |
+| 1 | 0:12 to 0:22 | 1 | One sentence on the Make page: the cold-room sentence | needs the chain run |
 | 2 | 0:22 to 0:34 | 1 | The plan and the data | needs the chain run |
 | 3 | 0:34 to 0:58 | 1 | The tune and the blind check | film now |
 | 4 | 0:58 to 1:08 | 1 | A file you keep | needs the chain run |
@@ -195,11 +195,24 @@ About 2:54. Shot 11's card ("What that costs") is dropped; its numbers stay in t
 
 ### Revised shots
 
-**1. One sentence (0:10 to 0:22)** [needs the chain run]
+**0. The opening line (0:00 to 0:12)** [film now]
+
+- Required by the organizers (Discord, Nov 2): the first line says what existed before and what was built this week.
+- Say first: "Before this week, Offline Base had a fleet of Jetson boards and the software that runs them, plus a scaffold of design notes and stubs for Muse Muse. Everything Muse Muse does in this video, we built this week."
+- On screen while it's said: a plain card with two columns, "Before Oct 26" (the Jetson fleet and its control software, the boards' models, a Muse Muse scaffold with no working code) and "Built this week" (Muse Muse, Muse Privacy, the edge track).
+- Then Zuckerberg's line from shot 0 above, as a 4-second title card with no narration over it.
+- Source: README.md, "Before the event"; docs/MESSAGING.md for the quote.
+
+**1. One sentence (0:12 to 0:22)** [needs the chain run]
 
 - Only if O2 is yes and the chain run uses this sentence. Type: "A watcher for my cold room that reads the controller, a second probe, the door, defrost and power, and keeps answering when the cloud is down." Corner label: "Simulated cold room. Test model."
 - Say: as shot 1 above.
 - Fallback: shot 1 as written above, with its own sentence.
+
+**2, for the cold-room run (0:22 to 0:34)** [needs the chain run]
+
+- On screen: the plan, then a few of the 900 training rows scrolling, each marked Simulated.
+- Say: "A Meta model writes the plan. The training rows are simulated cold-room logs our own code wrote, with 100 sealed away that the tune never sees." (Not "a Meta model writes the training data": for this run it doesn't. docs/CHAIN_RUN.md.)
 
 **8, shorter (1:44 to 1:56)** [film now]
 
