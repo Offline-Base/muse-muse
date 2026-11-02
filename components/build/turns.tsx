@@ -8,7 +8,7 @@ import { ExternalLink } from "@/components/ui";
 import type { InspirationView, RebuildRef } from "@/components/view-types";
 import { groupLog, type LogGroup, type Segment } from "@/components/build/derive";
 import { splitBuildNote } from "@/lib/docs/build-note";
-import { FIT_LABEL, compact, duration, modelLabel, plural, truncate, usd } from "@/lib/format";
+import { compact, duration, modelLabel, plural, truncate, usd } from "@/lib/format";
 import type { Brief, Reference } from "@/lib/types";
 
 /** The building blocks of the build room's conversation column. */
@@ -49,10 +49,16 @@ export function UserTurn({
       <h2 className="sr-only">Your muse</h2>
       {rebuild ? (
         <p className="rebuild-tag">
-          <Icon name="rebuild" size={16} />
-          <span>Rebuild of</span>
-          <ExternalLink href={rebuild.url}>{truncate(rebuild.title, 70)}</ExternalLink>
-          {rebuild.fit ? <span className="pill pill-neutral">{FIT_LABEL[rebuild.fit]}</span> : null}
+          <Icon name="cap" size={16} />
+          {rebuild.learnHref ? (
+            <>
+              <span>For Meta&apos;s lesson</span>
+              <ExternalLink href={rebuild.url}>{truncate(rebuild.title, 70)}</ExternalLink>
+              <Link href={rebuild.learnHref}>How it measures up</Link>
+            </>
+          ) : (
+            <span>First demo: {truncate(rebuild.title, 70)}</span>
+          )}
         </p>
       ) : null}
       {text || refs.length ? (

@@ -5,15 +5,19 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Icon } from "@/components/icons";
 
-/** Admin only: POST /api/rebuilds with every catalog id (ids omitted) or just the given ones. */
-export function RebuildButton({ ids, text }: { ids?: string[]; text: string }) {
+/**
+ * Admin only: POST /api/rebuilds with every catalog id (ids omitted) or just the given ones. `confirm` asks before a
+ * named build starts, since each one spends model credits.
+ */
+export function RebuildButton({ ids, text, confirm }: { ids?: string[]; text: string; confirm?: string }) {
   const router = useRouter();
   const [state, setState] = useState<"idle" | "busy" | "done" | "error">("idle");
   const [started, setStarted] = useState<Array<{ id: string; buildId: string }>>([]);
   const [message, setMessage] = useState<string | null>(null);
 
   async function run() {
-    if (!ids && !window.confirm("Start a rebuild for every item that isn't rebuilt or building yet? Each one spends model credits.")) return;
+    if (!ids && !window.confirm("Start a build for every item that isn't built or building yet? Each one spends model credits.")) return;
+    if (ids && confirm && !window.confirm(confirm)) return;
     setState("busy");
     setMessage(null);
     try {
@@ -30,10 +34,10 @@ export function RebuildButton({ ids, text }: { ids?: string[]; text: string }) {
         setState("error");
         setMessage(
           res.status === 403 || res.status === 401
-            ? "Only admins can start rebuilds."
+            ? "Only admins can start these builds."
             : res.status === 503
               ? "Building is paused right now."
-              : `Couldn't start the rebuild${data.error ? ` (${data.error})` : ""}.`,
+              : `Couldn't start the build${data.error ? ` (${data.error})` : ""}.`,
         );
         return;
       }

@@ -74,6 +74,10 @@ function Today({ lesson, card, state }: { lesson: RebuildTarget; card: RebuildCa
       </>
     );
   }
+  if (state === "partly" && lesson.current) {
+    // The rows couldn't be read, so this is the audit's record, with no product link or demo.
+    return <p className="small">{lesson.current.state}</p>;
+  }
   if (state === "redo") {
     return (
       <p className="small">
@@ -84,12 +88,21 @@ function Today({ lesson, card, state }: { lesson: RebuildTarget; card: RebuildCa
   return <p className="small muted">Nothing built for this lesson yet.</p>;
 }
 
-function LessonCard({ lesson, card, admin }: { lesson: RebuildTarget; card: RebuildCardView | undefined; admin: boolean }) {
-  const state = lessonState(lesson, card);
+function LessonCard({
+  lesson,
+  card,
+  state,
+  admin,
+}: {
+  lesson: RebuildTarget;
+  card: RebuildCardView | undefined;
+  state: LessonState;
+  admin: boolean;
+}) {
   const demo = showsProduct(state) ? card?.product?.demoVideoUrl : null;
   const plan = lesson.learn;
   return (
-    <article className="pcard rcard" data-lesson={lesson.id} data-state={state}>
+    <article className="pcard rcard" id={`lesson-${lesson.id}`} data-lesson={lesson.id} data-state={state}>
       {demo ? (
         <div className="pcard-media">
           <video
@@ -134,7 +147,13 @@ function LessonCard({ lesson, card, admin }: { lesson: RebuildTarget; card: Rebu
             {plan.unverified?.length ? <p className="pcard-meta">Not checked yet: {plan.unverified.join("; ")}.</p> : null}
           </div>
         ) : null}
-        {admin ? <RebuildButton ids={[lesson.id]} text={card?.attempts ? "Build the plan again" : "Build the plan"} /> : null}
+        {admin ? (
+          <RebuildButton
+            ids={[lesson.id]}
+            text={card?.attempts ? "Build its product again" : "Build its product"}
+            confirm={`Start a product build for "${lesson.title}"? It spends model credits${plan ? ` (plan estimate: ${plan.estimate})` : ""}. Any tune in the plan runs separately in the fine-tuning lab.`}
+          />
+        ) : null}
       </div>
     </article>
   );
@@ -207,7 +226,7 @@ export function LearnView({ lessons, data, connected, admin, source, checkedOn }
   const cards = new Map(data.videos.map((c) => [c.id, c] as const));
   const rows = lessons.map((lesson) => {
     const card = cards.get(lesson.id);
-    return { lesson, card, state: lessonState(lesson, card) };
+    return { lesson, card, state: lessonState(lesson, card, connected.ok) };
   });
   const counts = lessonCounts(rows.map((r) => r.state));
   const t = data.totals;
@@ -252,7 +271,7 @@ export function LearnView({ lessons, data, connected, admin, source, checkedOn }
             </div>
             <div className="grid-cards">
               {group.map((r) => (
-                <LessonCard key={r.lesson.id} lesson={r.lesson} card={r.card} admin={admin} />
+                <LessonCard key={r.lesson.id} lesson={r.lesson} card={r.card} state={r.state} admin={admin} />
               ))}
             </div>
           </section>

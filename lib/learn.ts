@@ -1,6 +1,6 @@
 import resources from "@/catalog/meta-resources.json";
 import type { RebuildCardView } from "@/components/view-types";
-import type { LessonKind, RebuildTarget } from "@/lib/types";
+import type { LessonKind, LessonVerdict, RebuildTarget } from "@/lib/types";
 
 /**
  * The Learn page's lessons (app/learn): every one of Meta's videos in catalog/meta-resources.json, in Meta's order,
@@ -41,6 +41,13 @@ export const LESSON_SECTION_TITLE: Record<LessonState, string> = {
   "not-built": "Not built yet",
 };
 
+/** How a product page or build room names the audit's verdict on the product it judged. */
+export const VERDICT_LABEL: Record<LessonVerdict, string> = {
+  wrong: "Doesn't teach the lesson",
+  "partly wrong": "Partly teaches the lesson",
+  "not built": "Not built",
+};
+
 export const KIND_LABEL: Record<LessonKind, string> = {
   tutorial: "Tutorial",
   talk: "Talk",
@@ -50,12 +57,25 @@ export const KIND_LABEL: Record<LessonKind, string> = {
 
 const SHIPPED = new Set(["live", "partial"]);
 
-export function lessonState(lesson: RebuildTarget, card: Pick<RebuildCardView, "product"> | null | undefined): LessonState {
+/**
+ * `known` is false when the build and product rows couldn't be read. A partly-wrong lesson then keeps the audit's
+ * "partly there" state instead of claiming nothing was built.
+ */
+export function lessonState(
+  lesson: RebuildTarget,
+  card: Pick<RebuildCardView, "product"> | null | undefined,
+  known = true,
+): LessonState {
   const product = card?.product && SHIPPED.has(card.product.status) ? card.product : null;
   if (product && product.slug !== lesson.current?.product) return "new-build";
   if (lesson.verdict === "wrong") return "redo";
-  if (lesson.verdict === "partly wrong" && product) return "partly";
+  if (lesson.verdict === "partly wrong" && (product || (!known && lesson.current))) return "partly";
   return "not-built";
+}
+
+/** The lesson's card on the Learn page, for links from a product page or a build room. */
+export function lessonHref(id: string): string {
+  return `/learn#lesson-${id}`;
 }
 
 /** Whether the card may show the product and its demo as the lesson's version. Never for a product judged wrong. */

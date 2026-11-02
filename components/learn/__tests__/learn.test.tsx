@@ -9,9 +9,9 @@ import assert from "node:assert/strict";
 import { before, describe, it, mock } from "node:test";
 import { createElement } from "react";
 import resources from "@/catalog/meta-resources.json";
-import { LESSONS, lessonCounts, lessonState, longDate, showsProduct } from "@/lib/learn";
+import { LESSONS, lessonCounts, lessonHref, lessonState, longDate, showsProduct } from "@/lib/learn";
 import { catalogItems, inDefaultBatch, itemId } from "@/lib/pipeline/catalog";
-import { joinRebuilds } from "@/lib/queries";
+import { joinRebuilds, rebuildRef } from "@/lib/queries";
 
 const canMock = typeof (mock as { module?: unknown }).module === "function";
 
@@ -101,6 +101,14 @@ describe("where a lesson stands", () => {
     assert.equal(lessonState(none, null), "not-built");
   });
 
+  it("keeps the audit's partly-there state when the rows can't be read", () => {
+    assert.equal(lessonState(partly, null, false), "partly");
+    assert.equal(lessonState(wrong, null, false), "redo");
+    assert.equal(lessonState(none, null, false), "not-built");
+    const counts = lessonCounts(LESSONS.map((l) => lessonState(l, null, false)));
+    assert.deepEqual(counts, { "new-build": 0, partly: 4, redo: 2, "not-built": 24 });
+  });
+
   it("counts the catalog as the audit found it", () => {
     const counts = lessonCounts(LESSONS.map((l) => lessonState(l, null)));
     // With no products read, partly-there lessons fall back to not built.
@@ -113,6 +121,24 @@ describe("where a lesson stands", () => {
   });
 });
 
+describe("links back to a lesson", () => {
+  it("names the lesson and the audit's verdict on the product it judged, and none for a first demo", () => {
+    const ref = rebuildRef("structured-image-extraction");
+    assert.equal(ref?.learnHref, "/learn#lesson-structured-image-extraction");
+    assert.deepEqual(ref?.verdict, { label: "Doesn't teach the lesson", product: "receipt-form-reader" });
+    assert.deepEqual(rebuildRef("docs-to-blog-rag")?.verdict, { label: "Partly teaches the lesson", product: "doc-to-blog-drafts" });
+    assert.equal(rebuildRef("github-issue-triage")?.verdict, null);
+    assert.equal(rebuildRef("sam-first-demo")?.learnHref, null);
+    assert.equal(lessonHref("x"), "/learn#lesson-x");
+  });
+
+  it("lists the llama stack lesson with the listing's date, since Meta's page 404s", () => {
+    const l = LESSONS.find((x) => x.id === "llama-stack-rag-agent")!;
+    assert.equal(l.date, "2025-04-01");
+    assert.match(l.pageNote ?? "", /404/);
+  });
+});
+
 describe("the no-ids batch", () => {
   it("leaves every planned lesson out and keeps the first demos in", () => {
     const picked = catalogItems().filter(inDefaultBatch).map(itemId);
@@ -121,7 +147,7 @@ describe("the no-ids batch", () => {
 });
 
 describe("pages", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
-  let render: (data: ReturnType<typeof joinRebuilds>, admin?: boolean) => string;
+  let render: (data: ReturnType<typeof joinRebuilds>, admin?: boolean, connected?: boolean) => string;
   const redirects: string[] = [];
 
   before(async () => {
@@ -139,12 +165,12 @@ describe("pages", { skip: canMock ? false : "needs --experimental-test-module-mo
     });
     const { renderToStaticMarkup } = await import("react-dom/server");
     const { LearnView } = await import("@/components/learn/LearnView");
-    render = (data, admin = false) =>
+    render = (data, admin = false, connected = true) =>
       renderToStaticMarkup(
         createElement(LearnView, {
           lessons: LESSONS,
           data,
-          connected: { ok: true },
+          connected: connected ? { ok: true } : { ok: false, reason: "not_configured" },
           admin,
           source: resources.source,
           checkedOn: resources.checkedOn,
@@ -176,7 +202,9 @@ describe("pages", { skip: canMock ? false : "needs --experimental-test-module-mo
     assert.match(c, /Estimated cost to redo: About \$3 to \$6/);
     assert.match(html, /<strong>30 lessons<\/strong>: 2 being redone, 28 not built yet/);
     assert.doesNotMatch(html, /6 of 6|rebuilt in/);
-    assert.doesNotMatch(html, /Build the plan/, "no build buttons for visitors");
+    assert.doesNotMatch(html, /Build its product/, "no build buttons for visitors");
+    assert.match(c, /^data-lesson="whatsapp-multimodal-chatbot"/);
+    assert.match(html, /id="lesson-whatsapp-multimodal-chatbot"/);
   });
 
   it("shows a partly-there product with its demo, and hides the one judged wrong", () => {
@@ -202,7 +230,16 @@ describe("pages", { skip: canMock ? false : "needs --experimental-test-module-mo
     assert.match(partly, /href="\/p\/doc-to-blog-drafts"/);
     assert.match(partly, /no retrieval at all/);
     assert.match(partly, /1 attempt, 10 m and \$1\.66 est\. in all/);
-    assert.match(partly, /Build the plan again/);
+    assert.match(partly, /Build its product again/);
     assert.match(html, /<strong>30 lessons<\/strong>: 1 partly there, 2 being redone, 27 not built yet/);
+  });
+
+  it("shows the audit's record, without products, when the rows can't be read", () => {
+    const html = render(joinRebuilds([], []), false, false);
+    const partly = cardOf(html, "docs-to-blog-rag");
+    assert.match(partly, /data-state="partly"/);
+    assert.match(partly, /no retrieval at all/);
+    assert.doesNotMatch(partly, /Nothing built for this lesson yet|href="\/p\//);
+    assert.match(html, /<strong>30 lessons<\/strong>: 4 partly there, 2 being redone, 24 not built yet/);
   });
 });
