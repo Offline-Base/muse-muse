@@ -246,6 +246,14 @@ describe("a run's stage", () => {
     assert.deepEqual(runMarks(DS, []), NO_MARKS);
   });
 
+  it("says why a refused launch ended, not \"checking\", while that heartbeat is still fresh", () => {
+    const marks = runMarks(DS, [...beats("checking", 1, 0), { key: `tune-run-end:${DS}:start_failed`, windowStart: new Date("2100-01-01T00:00:00.000Z"), count: 1 }]);
+    const v = view(ready(), null, [], null, NOW, marks);
+    assert.equal(v.stage, "waiting");
+    assert.equal(v.hold?.reason, "not_started");
+    assert.equal(v.next?.kind, "start");
+  });
+
   it("checks, then waits for a GPU with the reason the workflow's heartbeat gives, and takes the run's own steps", () => {
     const checking = view(ready(), null, [], null, NOW, runMarks(DS, beats("checking", 1, 0)));
     assert.equal(checking.stage, "checking");

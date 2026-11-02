@@ -306,6 +306,17 @@ describe("anyone can fine-tune", { skip: canMock ? false : "needs --experimental
       assert.equal(contentSeen.length, 0);
     });
 
+    it("refuses a plan with a key or password in the note or a row, before Meta and without quoting it", async () => {
+      const v = visitor();
+      const fake = ["sk-", "madeupmadeupmadeup1234"].join("");
+      const inNote = await plan(v.req("/api/train/plan", { note: `${NOTE} My key is ${fake} so use it.` }));
+      assert.equal(inNote.status, 422);
+      assert.ok(!JSON.stringify(await inNote.json()).includes(fake));
+      const inRow = await plan(v.req("/api/train/plan", { note: NOTE, examples: [{ prompt: "What is the login?", answer: `password: ${fake}` }] }));
+      assert.equal(inRow.status, 422);
+      assert.equal(contentSeen.length, 0);
+    });
+
     it("two starts at once make one run", async () => {
       const v = visitor();
       const [p1, p2] = [await planned(v), await planned(v)];
