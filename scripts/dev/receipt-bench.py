@@ -289,9 +289,18 @@ def main():
     a.add_argument("--max-tokens", type=int, default=200)
     a.add_argument("--limit", type=int, default=0)
     a.add_argument("--out")
+    s = sub.add_parser("score")
+    s.add_argument("--heldout", required=True)
+    s.add_argument("--answers", required=True, help="receipt-eval-board.py's output")
     args = parser.parse_args()
     if args.command == "make":
         make(args.out, args.seed, args.train, args.heldout)
+    elif args.command == "score":
+        held = {row["id"]: row for row in read_rows(args.heldout)}
+        answers = read_rows(args.answers)
+        for which in dict.fromkeys(a["which"] for a in answers):
+            rows = [{**held[a["id"]], **a, "answer": parse_answer(a["raw"])} for a in answers if a["which"] == which]
+            print(json.dumps({"model": which, **score(rows)}))
     elif args.command == "regex":
         rows = [{**held, "answer": regex_answer(held["text"])} for held in read_rows(args.heldout)]
         print(json.dumps({"board": "none", "model": "regex", **score(rows)}, indent=1))
