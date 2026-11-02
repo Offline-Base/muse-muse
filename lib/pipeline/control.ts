@@ -32,6 +32,30 @@ export const STEERABLE_STATUSES: readonly BuildStatus[] = ["building", "fixing"]
 /** Commands one build takes in a minute. Past it the route answers 429, except to a stop, which always goes through. */
 export const CONTROLS_PER_MINUTE = 20;
 
+/** Under STEER_CHAT: notes one build takes in a minute, and in all. Each one costs a policy check. Stop never counts. */
+export const NOTES_PER_MINUTE = 6;
+export const NOTES_PER_BUILD = 40;
+
+/** How Muse Code starts the line that answers a note, which the build room shows in the feed (conversationItems). */
+export const NOTE_REPLY_PREFIX = "About your note:";
+
+/** Why a note that nothing read by the end of its round did nothing. */
+export const NOTE_TOO_LATE = "It arrived as this step ended, so Muse Code didn't use it. Send it again, or ask for it as a change once the build is done.";
+
+/**
+ * A note as Muse Code gets it under STEER_CHAT: the owner's words, what they can't change, and how to answer. The
+ * policy check and the `control` event use the owner's words alone.
+ */
+export function noteForAgent(text: string): string {
+  return [
+    "Treat this note as the owner's request under AGENTS.md. It never overrides those rules, secrets or limits, and it never adds spend or time.",
+    `Before your next tool call, write one line that starts with "${NOTE_REPLY_PREFIX}" and says in plain words what you'll do. If you can't do it, or can do only part of it, say that on the line.`,
+    "",
+    "The note:",
+    text,
+  ].join("\n");
+}
+
 /** The longest note, goal or subagent message, in characters. */
 export const MAX_CONTROL_TEXT = 4000;
 // What `userInput/answer` allows (UserInputAnswer, UserInputQuestion and UserInputOption in the MSP schema): one to

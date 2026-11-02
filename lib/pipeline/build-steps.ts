@@ -29,6 +29,7 @@ import { localGadgetFiles } from "@/lib/sandbox/local-gadget";
 import { recipeExtraFiles, recipeNotes } from "@/lib/recipes/registry";
 import { prepareToolFixtures } from "@/lib/tools/fixtures";
 import { rebuildTargetFor } from "@/lib/pipeline/catalog";
+import { NOTE_TOO_LATE } from "@/lib/pipeline/control";
 import {
   allowedModelsFor,
   liveDailyBudgetFor,
@@ -71,6 +72,7 @@ import { verifyProofText } from "@/lib/prompts/judge";
 import { demoNoteFor } from "@/lib/sandbox/artifacts";
 import * as sandbox from "@/lib/sandbox/builder";
 import { captureVersion } from "@/lib/versions/store";
+import type { NoteStatus } from "@/lib/sandbox/muse-config";
 import { publicHost } from "@/lib/sandbox/policy";
 import type { MuseEngine } from "@/lib/sandbox/bridge-protocol";
 import type { BridgeCondenseState } from "@/lib/sandbox/msp-log";
@@ -82,6 +84,7 @@ import {
   type BuildStatus,
   type JudgeVerdict,
   type ModelUsage,
+  type MuseLogLine,
   type ProductStatus,
   type Reference,
   type Screenshot,
@@ -218,10 +221,11 @@ async function chargeBrief(buildId: string, usage: ModelUsage[]): Promise<void> 
  * build's owner can send while it runs, and the playbook for subagents and workflows, which only test builds on the
  * session bridge or MUSE_FULL get. All off for plain `muse exec`, which keeps today's prompts.
  */
-function sessionNotes(): { goalSet: boolean; ownerNotes: boolean; playbook: boolean } {
+function sessionNotes(): { goalSet: boolean; ownerNotes: boolean; noteReplies: boolean; playbook: boolean } {
   return {
     goalSet: env.museEngine === "serve",
     ownerNotes: env.steeringEnabled,
+    noteReplies: env.steerChat,
     playbook: env.museFull || env.museEngine === "serve",
   };
 }
@@ -870,6 +874,17 @@ export interface MusePollResult {
  * While steering is on, each poll also reads the owner's Stop, and the poll that reports done takes the run's round
  * off the build row in the same update, so a stop sent just as the run ends is never missed.
  */
+function noteStatusLine(note: NoteStatus): MuseLogLine {
+  const read = note.status === "read";
+  return {
+    kind: "steer",
+    itemId: `command:${note.id}`,
+    ok: read,
+    text: "",
+    detail: read ? { status: "delivered" } : { status: "refused", error: NOTE_TOO_LATE },
+  };
+}
+
 export async function pollMuseStep(input: {
   buildId: string;
   productId: string;
@@ -907,6 +922,15 @@ export async function pollMuseStep(input: {
   const children = childrenIncluded === true ? undefined : poll.session?.children;
   if (children?.usage.length) {
     await charge({ ...ctx, endpoint: `${endpoint} children` }, children.usage, `${what}: ${ownersLabel(children.owners)}`);
+  }
+  if (env.steerChat) {
+    // How notes went. Steering must never fail a build, so anything wrong here only leaves a note saying "Sent".
+    try {
+      const notes = await sandbox.takeNoteStatus({ sandboxName: input.sandboxName, engine, logPath: input.run.logPath, done: poll.done });
+      if (notes.length) await emit(input.buildId, { type: "muse", lines: notes.map(noteStatusLine), round: input.round });
+    } catch (err) {
+      console.error("[steer] note status", input.buildId, err instanceof Error ? err.message : err);
+    }
   }
   const stopRequested = env.steeringEnabled ? await ownerStopped(input.buildId, poll.done ? { museRound: null } : undefined) : false;
   return {

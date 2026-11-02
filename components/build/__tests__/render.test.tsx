@@ -184,7 +184,7 @@ describe("a session bridge round", () => {
     assert.match(html, /Subagent scout finished: Found 3 pages\.<\/p><p class="chat-steplist-desc">Done<\/p>/);
     assert.match(html, /class="chat-steplist-row is-failed is-nested">.*?PreToolUse hook blocked: \.env belongs to the platform/);
     assert.match(html, /compacted its context from 812k to 41k tokens/);
-    assert.match(html, /Note from the owner<\/p><p class="chat-steplist-desc">Use a grid, not a list\. \(Delivered into the running turn\)<\/p>/);
+    assert.match(html, /Note from the owner<\/p><p class="chat-steplist-desc">Use a grid, not a list\. \(Muse Code has read this\)<\/p>/);
     assert.match(html, /Note from the owner.*?<p class="chat-steplist-desc">Too late\? \(Not delivered: no turn is running\)<\/p>/);
     const order = ["thinking", "Starting with the layout", "Install the packages", "Use a grid", "Too late"].map((s) => html.indexOf(s));
     assert.deepEqual(order, [...order].sort((a, b) => a - b), "in the order they happened");
@@ -219,7 +219,7 @@ describe("a session bridge round", () => {
     const groups = steps.conversationItems(room(bridgeLines, OWNER)).flatMap((i) => (i.type === "owner" ? [i.group] : []));
     assert.deepEqual(groups.map((g) => g.text), ["Use a grid, not a list.", "Too late?"]);
     const sent = render(SteerNote, { group: groups[0] });
-    assert.match(sent, /<div class="steer"><div class="chat-bubble"><p class="chat-bubble-text"><span class="sr-only">From the owner: <\/span>Use a grid, not a list\.<\/p><\/div><p class="steer-meta">Delivered into the running turn<\/p><\/div>/);
+    assert.match(sent, /<div class="steer"><div class="chat-bubble"><p class="chat-bubble-text"><span class="sr-only">From the owner: <\/span>Use a grid, not a list\.<\/p><\/div><p class="steer-meta">Muse Code has read this<\/p><\/div>/);
     assert.match(render(SteerNote, { group: groups[1] }), /<div class="steer steer-refused">.*?Too late\?<\/p><\/div><p class="steer-meta">Not delivered: no turn is running<\/p>/);
   });
 

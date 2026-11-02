@@ -1,14 +1,24 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
-import { canActAsOwner, isCrossSite, requireUser } from "@/lib/auth";
+import { isCrossSite, requireUser } from "@/lib/auth";
 import { checkChange } from "@/lib/brief/policy";
 import { StructuredOutputError } from "@/lib/brief/structured";
 import { db, schema } from "@/lib/db/client";
+import { canSteerBuild } from "@/lib/edit-pass";
 import { env } from "@/lib/env";
 import { addBuildCost, emit } from "@/lib/events";
 import { hitRateLimits } from "@/lib/gateway/store";
 import { errorJson, isUuid, readJson, route } from "@/lib/http";
-import { controlRound, CONTROLS_PER_MINUTE, parseControl, STEERABLE_STATUSES, type ControlAction } from "@/lib/pipeline/control";
+import {
+  controlRound,
+  CONTROLS_PER_MINUTE,
+  noteForAgent,
+  NOTES_PER_BUILD,
+  NOTES_PER_MINUTE,
+  parseControl,
+  STEERABLE_STATUSES,
+  type ControlAction,
+} from "@/lib/pipeline/control";
 import { spendPaused } from "@/lib/quota";
 import type { MuseCommandEnvelope } from "@/lib/sandbox/bridge-protocol";
 import { MuseRoundEndedError, sendMuseCommand } from "@/lib/sandbox/builder";
@@ -103,7 +113,9 @@ async function tell(
  * next Muse Code poll ("Stopped by you") even when the session never hears them. Words the owner wrote (a note, a goal,
  * a subagent message, typed answers) first pass the same change policy as a refinement, charged to the build.
  *
- * The owner is decided as in the messages route: the product's owner or an admin, never the shared guest. 403
+ * The owner is decided as in the messages route: the product's owner or an admin. The shared guest only under STEER_CHAT,
+ * and only for a build their browser's pass names (canSteerBuild). Under STEER_CHAT a note also goes to Muse Code with
+ * how to answer it (noteForAgent), and past 6 notes a minute or 40 a build it gets 429. 403
  * cross_site from another site, 503 steering_off unless steering is on (env.steeringEnabled), 401 signed out, 404 for
  * everyone else and for unknown builds, 400 with a sentence for a bad body (lib/pipeline/control.ts) or with the
  * policy's refusal, 409 no_round while no Muse Code round runs (the build row names none, or the sandbox says the round
@@ -123,7 +135,9 @@ export const POST = route(async (req: Request, { params }: Ctx) => {
 
   const build = await lookUp(buildId);
   // The product's owner decides, as for refinements. Anyone else gets the same answer as a build that doesn't exist.
-  if (!build || !canActAsOwner(user, build.ownerId ?? build.userId)) return errorJson(404, "not_found");
+  if (!build) return errorJson(404, "not_found");
+  const allowed = await canSteerBuild(user, { id: buildId, userId: build.userId, productId: build.productId, ownerId: build.ownerId });
+  if (!allowed) return errorJson(404, "not_found");
   let round = runningRound(build);
   if (!round) return errorJson(409, "no_round");
 
@@ -133,6 +147,17 @@ export const POST = route(async (req: Request, { params }: Ctx) => {
   const hits = await hitRateLimits([key], new Date(windowStart));
   if (action !== "stop" && (hits[key] ?? 0) > CONTROLS_PER_MINUTE) {
     return errorJson(429, "rate_limited", { retryAfterSeconds: Math.max(1, Math.ceil((windowStart + WINDOW_MS - now) / 1000)) });
+  }
+
+  const isNote = action === "steer" || action === "queue";
+  if (env.steerChat && isNote) {
+    const minute = `build-notes:${buildId}`;
+    const total = `build-notes-all:${buildId}`;
+    const [perMinute, perBuild] = await Promise.all([hitRateLimits([minute], new Date(windowStart)), hitRateLimits([total], new Date(0))]);
+    if ((perBuild[total] ?? 0) > NOTES_PER_BUILD) return errorJson(429, "note_limit");
+    if ((perMinute[minute] ?? 0) > NOTES_PER_MINUTE) {
+      return errorJson(429, "rate_limited", { retryAfterSeconds: Math.max(1, Math.ceil((windowStart + WINDOW_MS - now) / 1000)) });
+    }
   }
 
   if (ownerText) {
@@ -179,7 +204,7 @@ export const POST = route(async (req: Request, { params }: Ctx) => {
     id: randomUUID(),
     at: new Date(at + i).toISOString(),
     by: "owner",
-    command,
+    command: env.steerChat && (command.type === "steer" || command.type === "queue") ? { ...command, text: noteForAgent(command.text) } : command,
   }));
   // museRound is the round's log number, the one startMuse got (roundBase + round), which names its mailbox; the event
   // takes the build room's (controlRound). No MuseRun is at hand here, so sendMuseCommand reads the round's engine from

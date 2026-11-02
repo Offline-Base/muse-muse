@@ -42,6 +42,8 @@ let later: Array<Record<string, unknown> | null> = [];
 /** What the Stop's update returns: the build, when it was still in a round. */
 let marked: Record<string, unknown>[] = [];
 let viewer: SessionUser | null = OWNER;
+/** The browser's edit pass (lib/edit-pass.ts). */
+let passCookie: string | undefined;
 let sendFails = false;
 /** sendMuseCommand finds the round has finished (MuseRoundEndedError). */
 let roundEnded = false;
@@ -130,6 +132,13 @@ async function send(body: unknown, headers?: Record<string, string>): Promise<{ 
 describe("POST /api/builds/{id}/control", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
   before(async () => {
     const at = (rel: string) => new URL(rel, import.meta.url).href;
+    process.env.SESSION_SECRET ||= "test-session-secret";
+    mock.module("next/headers", {
+      namedExports: {
+        headers: async () => new Headers(),
+        cookies: async () => ({ get: () => (passCookie ? { value: passCookie } : undefined), set() {} }),
+      },
+    });
     mock.module(at("../../db/client.ts"), { namedExports: { db: fakeDb, schema: realSchema } });
     // lib/auth as it is (canActAsOwner and the same-origin check included), with a requireUser the test sets.
     const realAuth = (await import(at("../../auth.ts"))) as typeof import("../../auth");
@@ -207,6 +216,7 @@ describe("POST /api/builds/{id}/control", { skip: canMock ? false : "needs --exp
     later = [];
     marked = [];
     viewer = OWNER;
+    passCookie = undefined;
     sendFails = false;
     roundEnded = false;
     checkImpl = async () => ({ refusal: null, usage: [] });
@@ -382,6 +392,60 @@ describe("POST /api/builds/{id}/control", { skip: canMock ? false : "needs --exp
     // MUSE_FULL's hook hands notes to `muse exec`, so it turns steering on too.
     process.env.MUSE_FULL = "1";
     assert.equal((await send({ action: "steer", text: "Hello" })).status, 200);
+  });
+
+  describe("under STEER_CHAT", () => {
+    beforeEach(() => {
+      process.env.STEER_CHAT = "1";
+    });
+    after(() => {
+      delete process.env.STEER_CHAT;
+    });
+
+    it("sends the note with how to answer it, and shows and checks only the owner's words", async () => {
+      const res = await send({ action: "steer", text: "Make the header darker." });
+      assert.equal(res.status, 200);
+      const command = sent()[0]!.envelope.command as { text: string };
+      assert.match(command.text, /About your note:/);
+      assert.match(command.text, /never adds spend or time/);
+      assert.ok(command.text.endsWith("Make the header darker."));
+      assert.equal(checked()[0]!.message, "Make the header darker.");
+      assert.equal(events()[0]!.text, "Make the header darker.");
+    });
+
+    it("takes 6 notes a minute and 40 a build, and always a stop", async () => {
+      hits = { [`build-notes:${BUILD_ID}`]: 6 };
+      const fast = await send({ action: "steer", text: "One more." });
+      assert.equal(fast.status, 429);
+      assert.equal(fast.json.error, "rate_limited");
+      hits = { [`build-notes-all:${BUILD_ID}`]: 40 };
+      const many = await send({ action: "queue", text: "One more." });
+      assert.equal(many.status, 429);
+      assert.equal(many.json.error, "note_limit");
+      assert.equal(checked().length + sent().length, 0);
+      marked = [{ museRound: 0, status: "building", fixRounds: 0 }];
+      assert.equal((await send({ action: "stop" })).status, 200);
+    });
+
+    it("still turns away a guest with no pass, as for a build that doesn't exist", async () => {
+      viewer = GUEST;
+      assert.equal((await send({ action: "steer", text: "Hello" })).status, 404);
+      const { encodeEditPass } = await import("@/lib/edit-pass");
+      passCookie = encodeEditPass(["aaaaaaaa-0000-4000-8000-000000000001"]);
+      row = inRound({ productId: null });
+      assert.equal((await send({ action: "steer", text: "Hello" })).status, 404);
+    });
+
+    it("takes a note and a stop from the guest whose pass names the build, and from nobody with the flag off", async () => {
+      const { encodeEditPass } = await import("@/lib/edit-pass");
+      viewer = GUEST;
+      passCookie = encodeEditPass([BUILD_ID]);
+      assert.equal((await send({ action: "steer", text: "Hello" })).status, 200);
+      marked = [{ museRound: 0, status: "building", fixRounds: 0 }];
+      assert.equal((await send({ action: "stop" })).status, 200);
+      delete process.env.STEER_CHAT;
+      assert.equal((await send({ action: "steer", text: "Hello" })).status, 404);
+    });
   });
 
   it("answers 409 while no Muse Code round runs", async () => {

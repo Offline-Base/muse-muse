@@ -42,6 +42,7 @@ export async function sendSteer(buildId: string, body: SteerBody, fetcher: Fetch
 export function steerErrorText(status: number, code: string | undefined): string {
   if (status === 400) return code && /\s/.test(code) ? code : "That note couldn't be sent. Check it and try again.";
   if (code === "not_checked") return "Muse Muse couldn't check that note, so it wasn't sent. Try again in a moment.";
+  if (code === "note_limit") return "This build has taken all the notes it can. Stop still works, and you can ask for changes once it's done.";
   if (code === "paused") return "Muse Muse reached today's spending cap, so it can't take notes right now. Stop still works.";
   if (status === 401) return "Sign in again to steer this build.";
   if (status === 404) return "Only the person who made this build can steer it.";
@@ -62,7 +63,7 @@ export function steerErrorText(status: number, code: string | undefined): string
  * Send turns into stop while the box is empty, as in the app. With a note written, Stop moves beside Send, so it's
  * always one press away.
  */
-export function SteerBox({ buildId, contributorNotice }: { buildId: string; contributorNotice?: boolean }) {
+export function SteerBox({ buildId, contributorNotice, inline }: { buildId: string; contributorNotice?: boolean; /** Sits in a column instead of floating at the foot of the room. */ inline?: boolean }) {
   const inputId = useId();
   const hintId = useId();
   const textarea = useRef<HTMLTextAreaElement>(null);
@@ -100,7 +101,7 @@ export function SteerBox({ buildId, contributorNotice }: { buildId: string; cont
 
   const disabled = busy !== null || stopped;
   return (
-    <div className="composer-wrap composer-floating">
+    <div className={inline ? "composer-wrap" : "composer-wrap composer-floating"}>
       {contributorNotice ? <ContributorNotice /> : null}
       <form
         className="composer"

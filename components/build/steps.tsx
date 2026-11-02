@@ -6,6 +6,7 @@ import { BriefBody, CheckBody, VERIFY_LABEL, groupSummary, museUsageText, segmen
 import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { InspirationView } from "@/components/view-types";
 import { modelLabel, plural, truncate } from "@/lib/format";
+import { NOTE_REPLY_PREFIX } from "@/lib/pipeline/control";
 import type { BuildStatus, MuseLineDetail, MuseLogLine } from "@/lib/types";
 
 /**
@@ -472,6 +473,16 @@ export function finalWords(room: RoomState): string | undefined {
 }
 
 /** The conversation between the person's message and the build's outcome: each round folded, with what it said, and whatever needs an answer. */
+/** Muse Code's answers to the owner's notes, from the lines of a message that start with NOTE_REPLY_PREFIX. */
+export function noteReplies(text: string): string[] {
+  return text.split("\n").flatMap((line) => {
+    const words = line.trim().replace(/^[*_]+/, "");
+    if (!words.startsWith(NOTE_REPLY_PREFIX)) return [];
+    const reply = words.slice(NOTE_REPLY_PREFIX.length).replace(/^[*_\s]+/, "").trim();
+    return reply ? [reply] : [];
+  });
+}
+
 export function conversationItems(room: RoomState): ConvoItem[] {
   const liveKey = liveSegmentKey(room);
   const items: ConvoItem[] = [];
@@ -485,6 +496,7 @@ export function conversationItems(room: RoomState): ConvoItem[] {
       if (!live) items.push({ type: "thinking", key: `${seg.key}/thinking`, step: seg.round === 0 ? null : seg.key });
       groups.forEach((g, i) => {
         if (g.type === "steer") items.push({ type: "owner", key: `${seg.key}/owner/${i}`, group: g });
+        if (g.type === "say") noteReplies(g.text).forEach((text, n) => items.push({ type: "say", key: `${seg.key}/reply/${i}/${n}`, text }));
       });
       if (!live && !(shipped && seg.key === lastRound)) {
         const text = roundWords(seg);
