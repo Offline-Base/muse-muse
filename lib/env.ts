@@ -299,7 +299,8 @@ export const env = {
    * hooks and build MCP server (lib/sandbox/muse-config.ts). Off by default.
    */
   get museFull(): boolean {
-    return ["1", "true", "yes", "on"].includes((process.env.MUSE_FULL ?? "").trim().toLowerCase());
+    // BUILD_RANGE's required subagents need the capacity setting and the workflow skill that MUSE_FULL turns on.
+    return ["1", "true", "yes", "on"].includes((process.env.MUSE_FULL ?? "").trim().toLowerCase()) || flag("BUILD_RANGE");
   },
   /** MUSE_AGENT_CAPACITY: Muse Code's agents.execution_capacity under MUSE_FULL. Default 6, held to 1 through 64. */
   get museAgentCapacity(): number {
@@ -628,7 +629,15 @@ export const env = {
    */
   get museAppLook(): boolean {
     // Builds on Contributor always get the look (BUILDS_ON_CONTRIBUTOR, the owner's Nov 1 decision).
-    return flag("MUSE_APP_LOOK") || contributorBuildsOn();
+    return flag("MUSE_APP_LOOK") || contributorBuildsOn() || flag("BUILD_RANGE");
+  },
+  /**
+   * BUILD_RANGE (docs/BUILD_RANGE.md): every brief picks its own design direction, the kit's look rules become defaults,
+   * products go deeper and complex builds must use subagents and workflows. Needs a builder snapshot with the build-range
+   * overlay, on top of the muse-app look and MUSE_FULL's settings, which it turns on. Off by default.
+   */
+  get buildRange(): boolean {
+    return flag("BUILD_RANGE");
   },
   /**
    * PLAN_ART: once a new build's brief is written, one Muse Image edit of the owner's mascot (public/muse/muse-present.jpg)

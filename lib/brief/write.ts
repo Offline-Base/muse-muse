@@ -8,6 +8,7 @@ import { sentBackText } from "@/lib/full/prompts";
 import { nameWhatItCantDo, requirementProblems } from "@/lib/full/requirements";
 import { checkScope, enforceScope } from "@/lib/full/scope";
 import { metaPlatform } from "@/lib/meta/platform";
+import { directionProblems, directionStart, type RecentDirection } from "@/lib/range/direction";
 import { usageCost } from "@/lib/meta/pricing";
 import { applyTargets, targetProblems } from "@/lib/native/targets";
 import { briefInstructions, briefRequestText, rebuildRequestText } from "@/lib/prompts/brief";
@@ -31,6 +32,8 @@ export interface BriefInput {
    * caps replace env.enabledCaps, and a guest gets the guest rule. Missing leaves the writer as it is today.
    */
   builder?: BriefTier | null;
+  /** BUILD_RANGE: picks this build's starting idea for its direction, and what other products just used. */
+  range?: { seed: string; recent: readonly RecentDirection[] };
 }
 
 export interface BriefResult {
@@ -79,17 +82,21 @@ export async function writeBrief(input: BriefInput): Promise<BriefResult> {
   // FULL_BUILDS: only what the person typed can be checked word for word, so a note with references or a rebuild isn't.
   const full = env.fullBuilds;
   const quotable = !rebuild && !references.length ? input.note : null;
+  // BUILD_RANGE (docs/BUILD_RANGE.md). Off, none of these reaches the writer, its schema or its check.
+  const buildRange = env.buildRange;
+  const recent = input.range?.recent ?? [];
+  const range = buildRange ? { start: directionStart(input.range?.seed ?? `${input.note ?? ""}${references.map((r) => r.fileName).join()}`), recent } : null;
   const write = (parts: ContentPart[]) => respondStructured({
     model,
-    instructions: briefInstructions({ ...writer, museAppLook: env.museAppLook, ...(full ? { fullBuilds: true } : {}) }),
+    instructions: briefInstructions({ ...writer, museAppLook: env.museAppLook, ...(full ? { fullBuilds: true } : {}), ...(range ? { range } : {}) }),
     content: parts,
     sources: prepared.sources,
     // With no targets, caps, milestones or MUSE_APP_LOOK this is NewBriefSchema or NewBriefSchemaNoGadget, as it always was.
-    schema: newBriefSchemaFor({ gadgets: env.gadgetsEnabled, targets: enabled, personalTools, caps, milestones: env.engineMilestones, museAppLook: env.museAppLook, recipes: availableRecipes(caps).map((r) => r.id), ...(full ? { fullBuilds: true } : {}) }),
+    schema: newBriefSchemaFor({ gadgets: env.gadgetsEnabled, targets: enabled, personalTools, caps, milestones: env.engineMilestones, museAppLook: env.museAppLook, recipes: availableRecipes(caps).map((r) => r.id), ...(full ? { fullBuilds: true } : {}), ...(buildRange ? { buildRange: true } : {}) }),
     schemaName: "muse_brief",
     effort: "medium",
-    normalize: (raw) => normalizeRawBrief(raw, references, full ? { fullBuilds: true } : {}),
-    check: (brief) => [...briefProblems(brief, references), ...targetProblems(brief, { enabled, requested }), ...(full ? requirementProblems(brief, quotable) : [])],
+    normalize: (raw) => normalizeRawBrief(raw, references, { ...(full ? { fullBuilds: true } : {}), ...(buildRange ? { buildRange: true } : {}) }),
+    check: (brief) => [...briefProblems(brief, references), ...targetProblems(brief, { enabled, requested }), ...(full ? requirementProblems(brief, quotable) : []), ...(buildRange && brief.verdict !== "no" ? directionProblems(brief.direction, { asked: brief.askedLook, recent }) : [])],
   }).catch((err: unknown) => {
     // Keep the transcription spend on the error too, so the caller can record everything.
     if (err instanceof StructuredOutputError) throw new StructuredOutputError(err.message, [...prepared.usage, ...err.usage]);

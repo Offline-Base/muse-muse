@@ -18,7 +18,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { Sandbox } from "@vercel/sandbox";
-import { MUSE_APP_OVERLAY } from "@/lib/sandbox/look";
+import { MUSE_APP_OVERLAY, RANGE_OVERLAY } from "@/lib/sandbox/look";
 import { execFlags, flagsMissingFromHelp, SANDBOX_ENV } from "@/lib/sandbox/muse";
 import { PLATFORM_FILES, PRISTINE_DIR, TARGET_OVERLAYS, TARGETS_DIR, WORK_DIR } from "@/lib/sandbox/paths";
 import { SNAPSHOT_POLICY } from "@/lib/sandbox/policy";
@@ -63,7 +63,7 @@ async function checkPristine(sandbox: Sandbox, files: TemplateFile[]): Promise<v
 
 /** Throws unless TARGETS_DIR has every overlay, matches template/targets, and is root-owned with no write bits. */
 async function checkTargets(sandbox: Sandbox, targets: TemplateFile[]): Promise<void> {
-  const missing = [...TARGET_OVERLAYS, MUSE_APP_OVERLAY].filter((t) => !targets.some((f) => f.path === `targets/${t}/deps.json`));
+  const missing = [...TARGET_OVERLAYS, MUSE_APP_OVERLAY, RANGE_OVERLAY].filter((t) => !targets.some((f) => f.path === `targets/${t}/deps.json`));
   if (missing.length) throw new Error(`template/targets has no overlay for ${missing.join(", ")}, but TARGET_OVERLAYS in lib/sandbox/paths.ts or MUSE_APP_OVERLAY in lib/sandbox/look.ts names it.`);
   const want = targets.map((f) => `${createHash("sha1").update(f.content).digest("hex")}  ${f.path.slice("targets/".length)}`).sort();
   const sums = await sh(sandbox, `cd ${q(TARGETS_DIR)} && find . -type f -printf '%P\\0' | xargs -0 sha1sum`);

@@ -3,6 +3,7 @@ import { CAP_BRIEF_FIELDS, writerBriefField } from "@/lib/caps/brief-fields";
 import type { CapId } from "@/lib/caps/ids";
 import { MilestonesSchema } from "@/lib/engine/milestones";
 import { ChainRequirementsSchema, FULL_LIMITS, RequirementsSchema, requirementsMax, ScopeRecordSchema } from "@/lib/full/requirements";
+import { DirectionSchema, RANGE_LIMITS } from "@/lib/range/direction";
 import { PERSONAL_TOOL_IDS, PUBLIC_TOOL_IDS } from "@/lib/tools/ids";
 
 /**
@@ -130,6 +131,8 @@ export const BriefSchema = BriefFields.extend({
   /** CHAINED_BUILDS: set by code at the brief step, never by the writer. This build runs across sessions (docs/CHAINED_BUILDS.md). */
   chained: z.boolean().nullable().optional(),
   scopeCheck: ScopeRecordSchema.nullable().optional(),
+  /** BUILD_RANGE (docs/BUILD_RANGE.md): this product's own design direction. Never read with the flag off. */
+  direction: DirectionSchema.nullable().optional(),
 });
 
 /**
@@ -188,6 +191,8 @@ export function newBriefSchemaFor(opts: {
   recipes?: readonly string[];
   /** FULL_BUILDS: requires requirements, and raises the flow and screen limits. */
   fullBuilds?: boolean;
+  /** BUILD_RANGE: requires a direction, and raises the flow and screen limits unless fullBuilds has already. */
+  buildRange?: boolean;
 }): z.ZodType<Brief> {
   const base = opts.gadgets ? NewBriefSchema : NewBriefSchemaNoGadget;
   const look = opts.museAppLook ? { askedLook: z.string().max(ASKED_LOOK_MAX).nullable() } : {};
@@ -204,6 +209,13 @@ export function newBriefSchemaFor(opts: {
     extra.requirements = requirementsMax() > FULL_LIMITS.requirements ? ChainRequirementsSchema : RequirementsSchema;
     extra.primaryFlow = z.array(z.string().min(1)).min(1).max(FULL_LIMITS.primaryFlow);
     extra.screens = z.array(z.object({ name: z.string(), purpose: z.string() })).max(FULL_LIMITS.screens);
+  }
+  if (opts.buildRange) {
+    extra.direction = DirectionSchema;
+    if (!opts.fullBuilds) {
+      extra.primaryFlow = z.array(z.string().min(1)).min(1).max(RANGE_LIMITS.primaryFlow);
+      extra.screens = z.array(z.object({ name: z.string(), purpose: z.string() })).max(RANGE_LIMITS.screens);
+    }
   }
   if (ids.length === 1 && !Object.keys(extra).length && !opts.museAppLook) return base;
   const shape: Record<string, z.ZodTypeAny> = {};
