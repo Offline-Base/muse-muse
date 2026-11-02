@@ -2027,14 +2027,14 @@ Feed at the end, as rendered: Reading what you asked for / Writing down the plan
 
 Measured against the event log:
 
-- Every line has a real event behind it. 12 steps, 4 recaps. Recaps first showed at 51 s, 4 m 24 s, 5 m 0 s and 6 m 5 s, so not evenly: Muse Code's 3.5 minutes are 2 steps, and the last 2 minutes are 8.
+- Every line has a real event behind it. 12 steps, 4 recaps. Recaps first showed at 51 s, 4 m 24 s, 5 m 0 s and 6 m 5 s, so not evenly: Muse Code's 3.5 minutes are 2 steps, and the last 2 minutes are 7.
 - Wrong on this Preview: "Putting it online" and "It's online". The log says publishing is off and the product got no link of its own, and the status message says "Finished as live without publishing to its own link." The feed reads only the status.
 - Vague: "Putting pieces together" stands for 8 edits, including the page and an action route. Each edit line adds 2 to "files", so it outscores the single "page" line and "Drawing the home page" never shows.
 - Tense: the model turned finished steps into "Writing down the plan" and "Passing the checks".
-- Words landed twice, at 1 m 50 s and at 6 m 5 s. Between them too few steps were finished while Muse Code polled, and polling stops when it ends, so steps 4 to 9 kept plain words until 0.2 s before the end. The last recap is never worded, since the last call runs before the ending. One recap kept its plain comment because the model's was missing or rejected.
+- Words landed twice, at 1 m 50 s and at 6 m 5 s. Between them too few steps were finished while Muse Code polled, and polling stops when it ends, so steps 4 to 10 kept plain words until 0.2 s before the end. The last recap is never worded, since the last call runs before the ending. One recap kept its plain comment because the model's was missing or rejected.
 - Bug: on the finished room the training notice and the composer sit over the feed with no background, and the text overlaps, at both widths and worst at 390 px. `build-room-steps-final-390.jpg`.
 - No sideways scroll at 1280 or 390.
 
-Summarizer failure: replayed this build's real events through `summarizeFeed` with a failing call, in a scratch test not committed. Throw, hang past a 500 ms box, not JSON and wrong shape all returned failed, and rule-breaking lines returned empty. None threw and none wrote anything. With no words at all the feed still reads, 12 steps and 4 recaps in plain words. Not done: a failure on the deployed step in a real build, since that takes a second build or a code hook. The first shots of this build show the plain state live in the room for its first 1 m 50 s.
+Summarizer failure: replayed this build's real events through `summarizeFeed` with a failing call, in a scratch test not committed. Throw, hang past a 500 ms box, not JSON and wrong shape all returned failed, and rule-breaking lines returned empty. None threw and none wrote anything. With no words at all the feed still reads, 12 steps and 4 recaps in plain words. Not done: a failure on the deployed step in a real build, since that takes a second build or a code hook. `build-room-steps-during2-1280.jpg`, at 1 m 43 s, shows the plain words live in the room, before the first batch landed.
 
 Shots, with the account email hidden: `build-room-steps-during2-*`, `-during3-*`, `-final-*`, at 1280 and 390. Reached through a local forwarder to `vercel curl`. No code changed. No PR exists for the branch yet.
