@@ -399,7 +399,7 @@ export function BuildRoom(props: BuildRoomProps) {
   const answerRow = shipped ? (
     <li className="room-answer">
       {answer ? <MarkdownText className="say" text={answer} /> : null}
-      <ShipBody status={room.status as "live" | "partial"} liveUrl={liveUrl} slug={slug} />
+      <ShipBody status={room.status as "live" | "partial"} liveUrl={liveUrl} slug={slug} unpublished={feed?.unpublished} />
       <p className="room-meta">{[duration(elapsed), tokensText(props.tokens), `${usd(room.costUsd)} est.`].filter(Boolean).join(" · ")}</p>
     </li>
   ) : null;

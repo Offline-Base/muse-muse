@@ -305,6 +305,8 @@
 
   /* The right side stays in view while the feed grows on the left. */
   .room-stuff {
+    /* A demo above the plan loads after it. Without this the browser scrolls to hold the plan still. */
+    overflow-anchor: none;
     position: sticky;
     top: 64px;
     flex-direction: column;

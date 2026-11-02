@@ -10,7 +10,7 @@ import { before, describe, it, mock } from "node:test";
 import { createElement, type ComponentType } from "react";
 
 const canMock = typeof (mock as { module?: unknown }).module === "function";
-let room: (name: "running" | "failed" | "finished", feed: boolean) => string;
+let room: (name: "running" | "failed" | "finished", feed: boolean, more?: unknown[]) => string;
 
 describe("the two column room", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
   before(async () => {
@@ -19,11 +19,11 @@ describe("the two column room", { skip: canMock ? false : "needs --experimental-
     const { renderToString } = await import("react-dom/server");
     const { BuildRoom } = await import("@/components/build/BuildRoom");
     const { FIXTURES, inspiration, tokens } = await import("@/components/build/__tests__/room-fixture");
-    room = (name, feed) => {
+    room = (name, feed, more = []) => {
       const f = FIXTURES[name];
       return renderToString(
         createElement(BuildRoom as ComponentType<never>, {
-          build: f.build, product: f.product, inspiration, events: f.events, history: [], tokens, canRefine: false, canSteer: false, signedIn: true,
+          build: f.build, product: f.product, inspiration, events: [...more, ...f.events], history: [], tokens, canRefine: false, canSteer: false, signedIn: true,
           origin: "https://musemuse.example", serverNow: Date.parse(f.build.startedAt) + 60_000, focusRefine: false, rebuild: null, maxFixRounds: 3, stepsFeed: feed,
         } as never),
       );
@@ -53,6 +53,15 @@ describe("the two column room", { skip: canMock ? false : "needs --experimental-
     const output = html.indexOf('class="room-output"');
     const plan = html.indexOf('class="room-plan"');
     assert.ok(output >= 0 && plan >= 0 && output < plan);
+  });
+
+  it("doesn't call a run with publishing off live, and leaves the room without the flag alone", () => {
+    const off = [{ id: 0, at: new Date(0).toISOString(), type: "log", text: "Publishing is off for this run (made up), so the product didn't get its own link." }];
+    const html = room("finished", true, off);
+    assert.match(html, /Finished, not online/);
+    assert.match(html, /It&#x27;s finished, but not online\./);
+    assert.doesNotMatch(html, /It&#x27;s live\.|It&#x27;s online/);
+    assert.match(room("finished", false, off), /It&#x27;s live\./);
   });
 
   it("gives the composer a solid back in the feed room only", () => {
