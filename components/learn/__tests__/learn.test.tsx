@@ -13,6 +13,9 @@ import { LESSONS, lessonCounts, lessonHref, lessonState, longDate, showsProduct 
 import { catalogItems, inDefaultBatch, itemId } from "@/lib/pipeline/catalog";
 import { joinRebuilds, rebuildRef } from "@/lib/queries";
 
+/** The Muse API models a lesson may name (the Nov 2 ruling: only Meta models run). */
+const META_API_MODELS = new Set(["muse-wonder-1.0", "muse-spark-1.3-contributor", "muse-image-1.0", "muse-voice-transcribe-1.0", "sam-3.1"]);
+
 const canMock = typeof (mock as { module?: unknown }).module === "function";
 
 const t0 = Date.parse("2026-10-28T12:00:00Z");
@@ -91,6 +94,13 @@ describe("the lessons catalog", () => {
       }
       // Build muses never ask for a Llama.
       assert.doesNotMatch(l.rebuild.note, /Llama/, l.id);
+      // Every model a plan or a build names is a Muse API model.
+      for (const m of [...plan.models, ...l.rebuild.models]) assert.ok(META_API_MODELS.has(m), `${l.id}: ${m}`);
+      // A build muse that asks for a model on the person's own machine names Muse Glimmer, so a builder never picks
+      // a non-Meta local model (an Ollama default, a small open model) for it.
+      if (/ollama|localhost|no internet|internet is cut|offline|own (Mac|Linux|Windows)|small model|Windows laptop/i.test(l.rebuild.note)) {
+        assert.match(l.rebuild.note, /Muse Glimmer/, `${l.id}: ${l.rebuild.note}`);
+      }
     }
     const protection = LESSONS.find((l) => l.id === "protection-tools")!;
     assert.equal(protection.learn?.tune, null);

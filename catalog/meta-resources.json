@@ -334,7 +334,7 @@
         "fit": "clean",
         "models": ["muse-spark-1.3-contributor", "muse-wonder-1.0"],
         "plan": "Muse Muse's fine-tuning lab already does the video's steps and then trains on the result. A folder of documents is read in the browser, cleaned of secrets and personal details on the server, and Spark 1.3 Contributor writes examples from it in varied styles. Near-duplicates are dropped and a held-out set is kept aside. A LoRA fine-tune then runs on a rented GPU, and Muse Wonder judges the base and the tuned model blind on the held-out prompts.",
-        "note": "Turn a folder of my team's how-to docs into question and answer training data I can review and download, then fine-tune a small model on it and show me whether it beats the model it started from"
+        "note": "Turn a folder of my team's how-to docs into question and answer training data I can review and download, then fine-tune Muse Glimmer on it and show me whether it beats the model it started from"
       },
       "autoBuild": false
     },
@@ -737,7 +737,7 @@
         "fit": "reframe",
         "models": ["muse-spark-1.3-contributor", "muse-wonder-1.0"],
         "plan": "Same steps, on a model you tuned. Tune Muse Glimmer 30B (r30b) with LoRA on a rented A100, check it blind against the base with Muse Wonder, make its 6.53 GB one-bit IQ1_S file, then run it in Ollama on a Mac with at least 16 GB and call it with the video's curl and Python requests.",
-        "note": "A chat page that sends each question to the model running in Ollama on my own Mac at localhost:11434, shows which model answered and how fast, and lets me ask the same question to the stock model side by side"
+        "note": "A chat page that sends each question to my tuned Muse Glimmer file running in Ollama on my own Mac at localhost:11434, shows which model answered and how fast, and lets me ask the same question to the stock Muse Glimmer file side by side"
       },
       "autoBuild": false
     },
@@ -920,7 +920,7 @@
       "current": null,
       "learn": {
         "title": "Run a tuned Glimmer file on a Windows PC",
-        "plan": "Tune Muse Glimmer 30B (r30b), make its 6.53 GB one-bit IQ1_S file, run it on Windows with the generated PowerShell script, and ask the video's prompt to base and tuned side by side. The script has never run on Windows.",
+        "plan": "Tune Muse Glimmer 30B (r30b), make its 6.53 GB one-bit IQ1_S file, run it on Windows with llama.cpp's Windows build, and ask the video's prompt to base and tuned side by side. The generated PowerShell script doesn't offer one-bit or unpublished files yet, and has never run on Windows.",
         "models": ["muse-wonder-1.0"],
         "tune": "Muse Glimmer 30B (r30b) LoRA on a Lambda A100, about $1.39 to $1.86 a run (measured on earlier Glimmer runs)",
         "estimate": "About $4 to $10 in all",
@@ -931,7 +931,7 @@
         "fit": "reframe",
         "models": ["muse-wonder-1.0"],
         "plan": "Same job, a model answering on your own Windows PC, but a Meta model you tuned and keep: Muse Glimmer 30B as a one-bit file. The app runs on Muse Wonder online and falls back to the local model offline.",
-        "note": "A dinner helper: tell it what's in your fridge and it suggests a recipe, and it keeps working on a Windows laptop with no internet"
+        "note": "A dinner helper: tell it what's in your fridge and it suggests a recipe on Muse Wonder, and when the internet is cut it answers from my Muse Glimmer file running on the same Windows laptop, with a label on every answer saying which one answered"
       },
       "autoBuild": false
     },
