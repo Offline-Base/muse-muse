@@ -16,6 +16,7 @@ import { decideJson, GLIMMER_REASONING, GLIMMER_TEMPLATE, LABELS_PER_PROMPT, lab
 import type { DecideJson, DecisionSideSummary, DecisionSpec, DecisionSummary, WilsonRate } from "@/lib/decide/types";
 import { plural } from "@/lib/format";
 import { BUILT_WITH_SPARK_OPEN, isSparkOpenDerivative, licenseDuties, R30B_REPO, R30B_URL, USAGE_POINTS } from "@/lib/train/base";
+import { checkSetOf } from "@/lib/train/general-checks";
 import { BUILD_LEVELS, LOW_BIT_LEVEL, QUANT_LEVELS, type BuildLevel, type LocalFile, type LocalFiles, type LowBitFile, type QuantLevel } from "@/lib/train/local-files";
 import { LOW_BIT_FACTS, quantBaseForAdapter, quantBaseOf } from "@/lib/train/quant-targets";
 import { defaultModel, SPARK_STANDIN } from "@/lib/meta/spark";
@@ -1270,7 +1271,10 @@ function storyOf(why: string | null, storyBy: "spark" | "template", storyModel: 
   return { why, by: model === UNRECORDED_MODEL ? "spark" : "model", model };
 }
 
-/** The eval items with their verdicts, in index order, from a judged job's eval and judgement events. */
+/**
+ * The eval items with their verdicts, in index order, from a judged job's eval and judgement events. The general checks
+ * (lib/train/general-checks.ts) are left out: the cards and the run's record are about the task.
+ */
 export function runItems(events: TrainEventView[]): RunItem[] {
   const items = new Map<number, RunItem>();
   const verdicts = new Map<number, NonNullable<RunItem["judgement"]>>();
@@ -1278,7 +1282,7 @@ export function runItems(events: TrainEventView[]): RunItem[] {
   const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
   for (const ev of events) {
     const p = ev.payload;
-    if (p?.type === "eval" && Number.isInteger(p.index) && !items.has(p.index)) {
+    if (p?.type === "eval" && Number.isInteger(p.index) && checkSetOf(p.index) === null && !items.has(p.index)) {
       items.set(p.index, {
         index: p.index,
         prompt: text(p.prompt),

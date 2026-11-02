@@ -567,6 +567,15 @@ export const env = {
     return flag("TUNE_RL");
   },
 
+  /**
+   * TUNE_GENERAL_CHECKS: a glimmer-lora chat job also answers the fixed general-ability and safety prompts
+   * (lib/train/general-checks.ts), and the judge scores them apart from the task (docs/TRAINING.md "General checks").
+   * Off: job.json, the GPU's prompts, judging and the eval summary are exactly as without it.
+   */
+  get tuneGeneralChecks(): boolean {
+    return flag("TUNE_GENERAL_CHECKS");
+  },
+
   // ---------- Anyone can fine-tune (General; lib/train/public, open-train.md) ----------
 
   /**

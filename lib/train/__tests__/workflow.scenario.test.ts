@@ -44,6 +44,8 @@ interface Scenario {
   evals?: number[] | Error;
   /** Indexes whose judgeStep throws. */
   judgeFails?: number[];
+  /** The general checks judgePlanStep sets apart (TUNE_GENERAL_CHECKS), when the job sent any. */
+  planChecks?: Record<string, { indexes: number[]; task: string }>;
   /** Whether saveEvalSummaryStep throws. */
   summaryFails?: boolean;
   /** What hubPlanStep answers (nothing to publish by default), or an error it throws. */
@@ -135,7 +137,7 @@ const fakeJudge = {
   judgePlanStep: async (jobId: string) => {
     record("judgePlanStep", jobId);
     if (scenario.evals instanceof Error) throw scenario.evals;
-    return { indexes: scenario.evals ?? [], task: "Explain errors." };
+    return { indexes: scenario.evals ?? [], task: "Explain errors.", ...(scenario.planChecks ? { checks: scenario.planChecks } : {}) };
   },
   judgeStep: async (jobId: string, index: number, task: string | null) => {
     record("judgeStep", jobId, index, task);
@@ -146,8 +148,8 @@ const fakeJudge = {
     if (scenario.judgeFails?.includes(index)) throw new Error('Step "judgeStep" failed after 2 retries: bad JSON');
     return { baseScore: 5, tunedScore: 7, better: "tuned", costUsd: 0.001 };
   },
-  saveEvalSummaryStep: async (jobId: string, items: unknown[], asked: number) => {
-    record("saveEvalSummaryStep", jobId, items, asked);
+  saveEvalSummaryStep: async (jobId: string, items: unknown[], asked: number, ...rest: unknown[]) => {
+    record("saveEvalSummaryStep", jobId, items, asked, ...rest);
     if (scenario.summaryFails) throw new Error("database down");
     return null;
   },
@@ -421,6 +423,28 @@ describe("training workflow orchestration", { skip: canMock ? false : "needs --e
       assert.equal(items.length, 10);
       assert.equal(asked, 10);
       assert.equal(steps.at(-1), "saveEvalSummaryStep");
+    });
+
+    it("judges the general checks after the task items, under their own task lines, and passes them apart to the summary", async () => {
+      const planChecks = { general: { indexes: [9000, 9001], task: "General task." }, safety: { indexes: [9500], task: "Safety task." } };
+      reset({ checks: [done()], evals: [0, 1], planChecks, judgeFails: [9001] });
+      assert.deepEqual(await wf.trainJob({ jobId: "j26" }), { status: "succeeded" });
+      assert.deepEqual(
+        named("judgeStep").map((c) => c.args),
+        [["j26", 0, "Explain errors."], ["j26", 1, "Explain errors."], ["j26", 9000, "General task."], ["j26", 9001, "General task."], ["j26", 9500, "Safety task."]],
+      );
+      const args = named("saveEvalSummaryStep")[0]!.args as [string, unknown[], number, { general: { items: unknown[]; asked: number }; safety: { items: unknown[]; asked: number } }];
+      assert.equal(args[1].length, 2);
+      assert.equal(args[2], 2, "asked counts the task items only");
+      assert.equal(args[3].general.items.length, 1, "a check whose judge step failed is left out");
+      assert.equal(args[3].general.asked, 2);
+      assert.equal(args[3].safety.items.length, 1);
+
+      // Without checks in the plan, the summary step gets exactly the three arguments it always did.
+      reset({ checks: [done()], evals: [0, 1] });
+      await wf.trainJob({ jobId: "j27" });
+      assert.equal(named("saveEvalSummaryStep")[0]!.args.length, 3);
+      assert.ok(named("judgeStep").every((c) => c.args[2] === "Explain errors."));
     });
 
     it("leaves out items whose judge step failed", async () => {

@@ -779,8 +779,8 @@ def http_once(method, url, headers, open_body=None, timeout=HUB_TIMEOUT, stop_at
 
 class Context:
     """What recipe.run(ctx) gets: params, cache_dir, work_dir, deadline, log, progress, run, upload, hub_upload,
-    get_json, dataset, dataset_title, dataset_kind, dataset_decide, eval, decide, and for a glimmer-serve job serve_key
-    and serving."""
+    get_json, dataset, dataset_title, dataset_kind, dataset_decide, eval, decide, checks, and for a glimmer-serve job
+    serve_key and serving."""
 
     def __init__(self, job, platform, work_dir, settings, cache_dir=None, activity=None):
         self.params = dict(job.get("params") or {})
@@ -803,6 +803,10 @@ class Context:
         # None for any other job. Never log it; the runner blanks it out of log lines as it does the job token.
         serve_key = job.get("serveKey")
         self.serve_key = serve_key if isinstance(serve_key, str) and serve_key else None
+        # The general checks job.json carries for a glimmer-lora chat job when the platform's TUNE_GENERAL_CHECKS is on
+        # (lib/train/general-checks.ts): a list of {set, index, prompt, reference}, or None.
+        checks = job.get("checks")
+        self.checks = checks if isinstance(checks, list) and checks else None
         self._platform = platform
         self._settings = settings
         self._activity = activity
