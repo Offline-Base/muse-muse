@@ -33,6 +33,7 @@ import {
   collectVerifyStep,
   createProductStep,
   demoSpecStep,
+  dropWarmSandboxStep,
   emitStep,
   failStep,
   finishDemoStep,
@@ -51,6 +52,7 @@ import {
   publishOffStep,
   saveUnpublishedVersionStep,
   provisionStep,
+  recheckFailedStep,
   refineCheckStep,
   registerStep,
   reopenStep,
@@ -61,6 +63,7 @@ import {
   startTaskStep,
   startTaskWithEnvStep,
   verifyTimedOutStep,
+  warmSandboxStep,
   writeFixPromptStep,
   writeMilestonePromptStep,
   type MusePollResult,
@@ -77,6 +80,7 @@ import {
   type Outcome,
   type VerifyStepResult,
 } from "@/lib/pipeline/logic";
+import { NO_HELPERS, type HelperCount } from "@/lib/fast/fast";
 import { planArtStep } from "@/lib/pipeline/plan-art-step";
 import { restoreFilesStep, restoreOutcomeStep } from "@/lib/pipeline/restore-steps";
 import { packageProductStep } from "@/lib/pipeline/package-step";
@@ -129,6 +133,8 @@ interface Ctx {
   startedAt?: number;
   /** CHAINED_BUILDS: where the chain is. */
   chain?: ChainPosition;
+  /** FAST_BUILDS on this build: helper lines in the story, and fix rounds recheck what failed before the full check. */
+  fast?: boolean;
 }
 
 /** What the build room says when a round that hit its cap goes on to the checks (ENGINE_CHECK_ON_TIMEOUT). */
@@ -192,6 +198,7 @@ async function runMuse(
   let childrenIncluded: boolean | null = null;
   // The session bridge's condenser state (serve rounds only), so an item's update replaces its line instead of repeating it.
   let bridgeState: MusePollResult["bridgeState"];
+  let helpers: HelperCount | undefined = ctx.fast ? NO_HELPERS : undefined;
   const poll = () =>
     pollMuseStep({
       buildId: ctx.buildId,
@@ -204,6 +211,7 @@ async function runMuse(
       announced,
       childrenIncluded,
       ...(bridgeState ? { bridgeState } : {}),
+      ...(helpers ? { helpers } : {}),
     });
   for (let polls = 1; ; polls++) {
     await sleep(MUSE_POLL_MS);
@@ -213,6 +221,7 @@ async function runMuse(
     announced = read.announced ?? announced;
     childrenIncluded = read.childrenIncluded ?? childrenIncluded;
     bridgeState = read.bridgeState ?? bridgeState;
+    helpers = read.helpers ?? helpers;
     // The owner pressed Stop (POST /api/builds/{id}/control). The session was told to end too, so a run that hasn't
     // ended yet is killed, and nothing more runs after this poll.
     if (read.stopRequested) {
@@ -250,7 +259,7 @@ async function endRun(ctx: Ctx, cmdId: string, poll: () => Promise<MusePollResul
 /** The verify or demo task (lib/sandbox/tasks.ts), polled until done or the cap (then it's killed). */
 async function runTask(
   sandboxName: string,
-  task: "verify" | "demo",
+  task: "verify" | "demo" | "recheck",
   capMs: number,
   taskEnv?: Record<string, string>,
 ): Promise<TaskPollResult & { timedOut: boolean }> {
@@ -324,6 +333,8 @@ interface Checks {
  * plan, a fix round that wouldn't fit before the build's wall isn't started, and the verify before it counts as the last.
  */
 async function checkAndFix(ctx: Ctx, track: Track, kind: "build" | "refine", offset = 0): Promise<Checks> {
+  // FAST_BUILDS: the requirement tests the last full check failed. Only the full check below can pass a build.
+  let recheck: string[] = [];
   // A chain's rounds run past the stride on purpose (docs/CHAINED_BUILDS.md). startMuse keeps an earlier round's log.
   const rounds = ctx.chain ? maxFixRounds() : Math.min(maxFixRounds(), REFINE_ROUND_STRIDE - 1 - offset);
   for (let fix = 0; ; ) {
@@ -334,7 +345,19 @@ async function checkAndFix(ctx: Ctx, track: Track, kind: "build" | "refine", off
     // Room for this verify and its judge, a fix round, and the verify and judge after it.
     const roomForFix = !ctx.plan || capInWall(ctx, capFor(ctx, "fix"), 2 * (verifyMs + JUDGE_RESERVE_MS)) !== null;
     const last = fix >= rounds || !roomForFix;
-    const verify = await runVerify(ctx, round, kind === "build" && last);
+    let verify: VerifyResult | null = null;
+    if (recheck.length && !last) {
+      const changed = await runTask(ctx.sandboxName, "recheck", verifyMs, { MUSEMUSE_RECHECK: recheck.join("|") });
+      // A failure skips the full check only when another fix round still fits. A pass, or anything else, goes on to it.
+      if (!changed.timedOut && changed.exitCode !== 0 && capInWall(ctx, capFor(ctx, "fix"), verifyMs + JUDGE_RESERVE_MS) !== null) {
+        verify = await recheckFailedStep({ buildId: ctx.buildId, round, output: changed.outputTail });
+      } else {
+        await emitStep(ctx.buildId, { type: "log", text: "Running the full check before this can go live." });
+      }
+    }
+    const scoped = verify !== null;
+    verify ??= await runVerify(ctx, round, kind === "build" && last);
+    if (ctx.fast && !scoped) recheck = verify.recheck ?? [];
     const judged = verify.passed ? await judge(ctx, round, verify.screenshots) : null;
     const passed = verify.passed && judged?.pass === true;
     if (passed || fix >= rounds) return { passed, steps: verify.steps, fixes: fix, judge: judged };
@@ -699,17 +722,21 @@ export async function buildProduct(input: BuildProductInput): Promise<BuildProdu
   let sandboxName: string | null = null;
   let ending: Ending;
   let art: Promise<unknown> | null = null;
+  let warm: Promise<void> | null = null;
   try {
     const head = await loadBuildStep(buildId);
     if (TERMINAL_STATUSES.includes(head.status)) return { status: head.status };
     if (head.kind !== "build") throw new BuildStop("This build is a refinement, not a new product.");
     await assertSpendOk();
+    // FAST_BUILDS: setup starts beside the brief. Its step never throws.
+    if (env.fastBuilds) warm = warmSandboxStep(buildId);
 
     track.stage = "brief";
     await setStatusStep(buildId, "briefing", { step: "brief" });
     const brief = await briefStep(buildId);
     if (brief.verdict === "no") {
       const message = brief.refusal?.trim() || "Muse Muse can't build this one.";
+      if (warm) await warm.then(() => dropWarmSandboxStep(buildId));
       await setStatusStep(buildId, "refused", { message, error: message });
       return { status: "refused" };
     }
@@ -723,6 +750,7 @@ export async function buildProduct(input: BuildProductInput): Promise<BuildProdu
 
     track.stage = "provision";
     await setStatusStep(buildId, "provisioning", { step: "provision" });
+    if (warm) await warm;
     const fixtures = await fixturesStep(buildId);
     const box = await provisionStep({ buildId, productId, slug: product.slug, fixtures });
     sandboxName = box.sandboxName;
@@ -735,6 +763,7 @@ export async function buildProduct(input: BuildProductInput): Promise<BuildProdu
       roundBase: 0,
       ...(brief.plan ? { plan: brief.plan, startedAt } : {}),
       ...(brief.plan?.chain ? { chain: { session: 1, chainStartedAt: startedAt, sessionStartedAt: startedAt, sessionStartUsd: 0 } } : {}),
+      ...(brief.fast ? { fast: true } : {}),
     };
     const milestones = brief.plan?.milestones ?? [];
 
@@ -782,6 +811,7 @@ export async function buildProduct(input: BuildProductInput): Promise<BuildProdu
   // Bounded, so a picture that hangs (or a step that never runs) can't hold the end. A failed build doesn't wait at all:
   // its cleanup and failure come first, and a picture that lands after them is still in the log on the next load.
   if (art && ending.status !== "failed") await Promise.race([art, sleep(PLAN_ART_GRACE_MS)]);
+  if (warm && !sandboxName) await warm.then(() => dropWarmSandboxStep(buildId));
   if (productId || sandboxName) await cleanup({ buildId, productId, sandboxName });
   const proof = await planProof(buildId, ending);
   const result = await end(buildId, productId, ending);
