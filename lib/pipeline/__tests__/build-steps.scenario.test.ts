@@ -514,7 +514,8 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       process.env.ENGINE_ROUND_SCALING = "1";
       selects = { builds: [[{ brief }]] };
       const scaled = await steps.briefStep("b1");
-      assert.equal(scaled.plan?.buildMs, 30 * 60_000);
+      // A first round's floor is the one-hour build step (#10), above the scaled 25 plus 5 for a complex brief.
+      assert.equal(scaled.plan?.buildMs, 60 * 60_000);
       assert.deepEqual(scaled.plan?.milestones, [], "milestones need their own flag");
       process.env.ENGINE_MILESTONES = "1";
       selects = { builds: [[{ brief }]] };
@@ -704,6 +705,7 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
           [{ id: "r1", kind: "refine", productId: "prod-1", brief: null, startedAt: new Date() }],
           [{ n: 2 }],
           [{ buildModel: "muse-spark-1.3" }],
+          [], // no other row holds the product's session, so it resumes on the first build's model
           [{ brief: BRIEF }],
         ],
         products: [[{ id: "prod-1", name: "Bird Count", tagline: "Count birds", sandboxName: "sb", museSessionId: "sess" }]],

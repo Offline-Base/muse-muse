@@ -389,17 +389,23 @@ describe("the fine-tune room", { skip: canMock ? false : "needs --experimental-t
       ];
     };
 
-    it("is the card PlanCard draws, which adds the whole brief under it and wraps it beside the picture", async () => {
-      // tg-plan-art: the build room's card writes out the whole brief (BriefBody) and wraps it beside the picture; the
-      // fine-tune room keeps PlanView's own sections on the plain grid. They share the card, art and head.
+    it("is the card PlanCard draws, which keeps the whole brief behind See the full plan and wraps it beside the picture", async () => {
+      // tg-plan-art, then the short plan (#37): the build room's card shows the short plan, keeps the whole brief
+      // (BriefBody) folded under it, and wraps beside the picture; the fine-tune room's card doesn't wrap. They share the
+      // card, art and head.
       const PlanCard = card.PlanCard as ComponentType<never>;
       const PlanViewCard = card.PlanViewCard as ComponentType<never>;
       const { BriefBody } = await import("@/components/build/turns");
       for (const [name, brief] of await variants()) {
         for (const art of ["present", "building", "shield"] as const) {
           for (const running of [true, false]) {
-            const view = { ...card.planViewFromBrief(brief), sections: [] };
-            const body = createElement(BriefBody as ComponentType<never>, { brief, title: false } as never);
+            const view = card.planViewFromBrief(brief);
+            const body = createElement(
+              "details",
+              { className: "plan-card-full" },
+              createElement("summary", null, "See the full plan"),
+              createElement(BriefBody as ComponentType<never>, { brief, title: false } as never),
+            );
             assert.equal(
               render(PlanCard, { brief, art, running }),
               render(PlanViewCard, { view, art, running, wrap: true, body }),
@@ -412,16 +418,24 @@ describe("the fine-tune room", { skip: canMock ? false : "needs --experimental-t
       }
     });
 
-    it("maps a brief to its name, tagline, badge and sections, dropping the empty ones", async () => {
+    it("maps a brief to its name, tagline, badge and a short plan, ending on the first limit when it can build part of it", async () => {
+      // The short plan (#37): at most PLAN_LINES short steps, and for "partly" the last line is what it won't do.
       const [[, partly], [, b], [, noUser], [, noFlow]] = await variants();
+      type Section = { steps?: readonly string[]; text?: string };
+      const kinds = (brief: Brief) => (card.planViewFromBrief(brief).sections as readonly Section[]).map((s) => (s.steps ? "steps" : "text"));
       const v = card.planViewFromBrief(b!);
       assert.equal(v.name, b!.name);
       assert.equal(v.tagline, b!.tagline.trim());
       assert.equal(v.badge, null);
-      assert.deepEqual(v.sections.map((s) => s.heading), ["Who it's for", "How it works"]);
-      assert.deepEqual(card.planViewFromBrief(partly!).badge, { label: "Can build part of it", tone: "partial" });
-      assert.deepEqual(card.planViewFromBrief(noUser!).sections.map((s) => s.heading), ["How it works"]);
-      assert.deepEqual(card.planViewFromBrief(noFlow!).sections.map((s) => s.heading), ["Who it's for"]);
+      assert.deepEqual(kinds(b!), ["steps"]);
+      assert.ok((v.sections[0] as Section).steps!.length <= card.PLAN_LINES);
+      const p = card.planViewFromBrief(partly!);
+      assert.deepEqual(p.badge, { label: "Can build part of it", tone: "partial" });
+      assert.deepEqual(kinds(partly!), ["steps", "text"]);
+      assert.match((p.sections[1] as Section).text!, /^Won't do: /);
+      assert.ok((p.sections[0] as Section).steps!.length <= card.PLAN_LINES - 1);
+      assert.deepEqual(kinds(noUser!), kinds(partly!), "who it's for isn't on the short card");
+      assert.deepEqual(kinds(noFlow!), ["text"]);
     });
   });
 

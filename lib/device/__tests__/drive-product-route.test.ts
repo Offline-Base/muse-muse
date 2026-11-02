@@ -109,6 +109,9 @@ describe("the drive tools, through the real gadget route", { skip: canMock ? fal
         },
         requireUser: async () => viewer,
         canActAsOwner: () => true,
+        GUEST_EMAIL: "guest@musemuse.invalid",
+        // These requests carry no Origin or Sec-Fetch-Site header, so the real check says same site too.
+        isCrossSite: () => false,
       },
     });
     mock.module(at("../client.ts"), {
