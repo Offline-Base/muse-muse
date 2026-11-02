@@ -15,10 +15,10 @@ export const DRILLS_EARLIER_NOTE = "These ran on an earlier try, not on the newe
 
 /** The four drills, by id, with one plain line of what each simulated. */
 export const EDGE_DRILLS: ReadonlyArray<{ id: number; name: string; simulated: string }> = [
-  { id: 1, name: "cloud refused", simulated: "The cloud refused every connection, so the answer had to come from a simulated board, with its label." },
-  { id: 2, name: "cloud hung", simulated: "The cloud never answered, so the product had to wait out its 10 s limit and then answer from a simulated board." },
-  { id: 3, name: "both down", simulated: "The cloud and the simulated board were both down, so the page had to show its plain both-down message." },
-  { id: 4, name: "tampered reply rejected", simulated: "A simulated board sent a reply with the wrong types, and none of it was allowed to reach the page." },
+  { id: 1, name: "cloud refused", simulated: "The cloud refused every connection, so after trying it the product had to answer from a simulated board, with its label." },
+  { id: 2, name: "cloud hung", simulated: "The cloud never answered, so after trying it the product had to answer from a simulated board, with its label, within 15 s." },
+  { id: 3, name: "both down", simulated: "The cloud and the simulated board were both down, so the product had to reply with its plain both-down message and no server error." },
+  { id: 4, name: "tampered reply rejected", simulated: "A simulated board sent a reply with the wrong types, and none of it was allowed into the product's reply." },
 ];
 
 /** One drill's result as the build room and the product page show it. */

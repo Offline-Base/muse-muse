@@ -232,7 +232,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
         {/* EDGE_ENABLED: only a build that ran the simulated outage drill has these steps. Nothing renders for any other. */}
         {drills ? (
           <section className="card section-card" aria-label={DRILL_GROUP_TITLE}>
-            <DrillGroup drills={drills.drills} note={drills.later ? DRILLS_EARLIER_NOTE : undefined} />
+            <DrillGroup drills={drills.drills} note={drills.later ? DRILLS_EARLIER_NOTE : undefined} why={isOwner} />
           </section>
         ) : null}
 

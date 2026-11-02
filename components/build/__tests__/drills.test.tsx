@@ -101,6 +101,15 @@ describe("DrillGroup", () => {
     assert.match(html, /data-drills="failed"/);
   });
 
+  it("still shows a failure without the reason, as the product page does for anyone but the owner", () => {
+    const html = renderToStaticMarkup(<DrillGroup drills={splitDrillSteps(drillSteps([true, true, false, true])).drills} why={false} />);
+    const t = text(html);
+    assert.ok(t.startsWith(`${DRILL_GROUP_TITLE} Failed 3 of 4 passed`), t);
+    assert.match(t, /Drill 3: both down Failed 3\.2 s/);
+    assert.equal(html.match(/class="bad"/g)?.length, 1);
+    assert.ok(!t.includes("the reply has no plain both-down message"));
+  });
+
   it("fails all four when the drill wrote nothing", () => {
     const steps = edgeDrillSteps({ exitCode: null, timedOut: true, outputTail: "", json: null }).steps;
     const t = text(renderToStaticMarkup(<DrillGroup drills={splitDrillSteps(steps).drills} />));

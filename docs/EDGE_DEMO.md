@@ -12,13 +12,13 @@ Status, Nov 2: built, and off behind flags. Nothing in this file has run on a bo
 | Blackhole gateway | `template/scripts/edge-blackhole.mjs` | Stands in for `GATEWAY_URL`: drops or holds every connection. |
 | Drill runner | `template/scripts/edge-drill.mjs` | Four simulated drills against a running product: cloud refused, cloud hung, both down, tampered reply rejected. The two cloud drills fail when the product never tried the gateway first. |
 | Board build | `scripts/edge/build-arm64.sh` | Builds the product's Next standalone server in a linux/arm64 Docker container on the Mac and packs it with a `run.sh`. |
-| Provisioning | `lib/edge/template-files.ts` | With `EDGE_BUILDS` on, every new build gets the helper, the skill and the drill kit as written files, so no new builder snapshot is needed. |
+| Provisioning | `lib/edge/template-files.ts` | With `EDGE_BUILDS` and `EDGE_ENABLED` on, a build whose brief has the edge target gets the helper, the skill and the drill kit as written files, so no new builder snapshot is needed. Other builds get none of them. |
 
 Each script documents its CLI, env and exit codes at the top of the file.
 
 ## Flags
 
-- `EDGE_BUILDS` (platform): provisioning writes the five edge files into each build. Off by default. With it off, builds get nothing new.
+- `EDGE_BUILDS` (platform): with `EDGE_ENABLED` on too, provisioning writes the five edge files into an edge build, and only that one. Off by default. With it off, builds get nothing new.
 - `EDGE_ENABLED` (platform, units M4 and M5): "edge" as a target in the brief, `output: "standalone"` for an edge build, and the four drills after each passing verify (`lib/pipeline/edge-build.ts`). It counts only with `EDGE_BUILDS` on too.
 - In the product: `EDGE_URL`, `EDGE_MODEL`, `EDGE_API_KEY`, `EDGE_BOARD`, `EDGE_MODEL_NAME`, `EDGE_FIRST`, `EDGE_TIMEOUT_MS`, `EDGE_CLOUD_TIMEOUT_MS`. All read at run time on the server.
 
