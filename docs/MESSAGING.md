@@ -74,7 +74,7 @@ Read Nov 2 in the Official Rules (https://cerebralvalley.ai/e/meta-ai-developer-
    - The claim: one sentence becomes a plan, data, a tune, a blind check against the base model, and a file you keep, plus an app built around it.
 3. **The Jetson result is the honest frontier.** Meta's smallest Glimmer is 16.8 GB. The knowledge run's r30b, cut to 5.75 GB, now runs on a real Jetson Orin Nano 8GB (`jetson-02`, llama.cpp).
    - On the board: 5 to 6 tokens a second with poor answers. Its card reports loops on 17 of 60 prompts.
-   - On Hussam's 40-receipt bench (PR #62) it gave 0% valid JSON, and the board stopped answering at receipt 23 and needed a power cycle. Bolt on jetson-04 got 88% of fields right and LFM3-VL on jetson-05 82%. So don't film it doing a document task.
+   - On Hussam's 40-receipt bench (PR #62), run without a JSON schema, it gave 0% valid JSON, and the board stopped answering at receipt 23 and needed a power cycle. So don't film it doing a document task unless Hussam's $0 schema gate on jetson-02 has passed (valid JSON on 10 of 10 receipts with a JSON schema, no hang, readable verdicts). That gate hasn't run. If it fails, the board fallback is fixed code (thresholds plus the probe-disagreement rule, no model). The same bench ran other companies' models on other boards; those numbers aren't project results and stay out of public copy.
    - Show it as "a third the size of Meta's smallest file, and here's what that costs", never as the model doing the reasoning in a demo.
    - r30b is a Derivative of Muse Spark Open (BUILD_LOG, Oct 31, "r30b is a Derivative of Muse Spark Open"). So "Built with Muse Spark Open" goes on screen with it, and its Usage Policy means 18 and over.
 4. **Don't pitch a gap in Meta's lineup.** Meta already has Muse (a personal agent with a Secure VM and audit trail), Muse Code, Glimmer and the cookbook above. Replit and Lovable already turn a sentence into an app.
@@ -114,12 +114,22 @@ Still stale, found by Hussam's PR #61 and left for later because they need a new
 - HIPAA, FERPA or COPPA compliant, or compliant because it's offline.
 - That the judge proves an app works.
 - That most non-developers now build software.
-- That Muse Spark Open is unrestricted open source, or that LFM is free for any company. LFM's free license covers companies under $10M a year in revenue.
+- That Muse Spark Open is unrestricted open source. (The LFM license note that was here is moot: LFM is out of the project under the Nov 2 ruling.)
 - That Meta is going closed, or that everything Meta makes will be open.
 - Any judge's name. None has been made public.
 - That Muse Privacy is the "fully private mode" from Zuckerberg's letter, or that Meta Engineering reviewed or endorses anything here.
 - "Every federal agency restricts AI." GAO's line is about the 12 agencies it selected that allow generative AI.
 - That Llama, LFM, Bolt or Prompt Guard is part of the project, or that Llama is a Meta model for this hackathon. The organizers ruled on Nov 2 that only Meta models may run (see the rules section).
+
+Meta-models-only lines, added Nov 2 evening from the Meta-models audit:
+- "Built with Llama", anywhere. Llama of any version, Llama Guard and Prompt Guard are not Meta models in this hackathon.
+- That a non-Meta model (LFM, Bolt, EmbeddingGemma, SpeechT5, any ONNX or transformers.js model) does work in Muse Muse or Muse Privacy. Labeling one "not a Meta model" doesn't make it allowed.
+- Bolt, LFM or Llama numbers as project results, including the Llama harness tune (6.67 to 2.55, 95 to 5), the 2.02 GB Llama file, and the receipt-bench numbers for Bolt and LFM.
+- "Nothing leaves the device", "device-only" or "on the device" for Muse Privacy while its submitted path is Muse Glimmer in the cloud. Say Glimmer runs in the cloud on invented data, and that device Glimmer is the target.
+- That one-bit Glimmer reads documents reliably on 8 GB. Don't film it on a document task unless the schema gate passed.
+- That anything was tuned on a board. PR #67 tuned Llama on jetson-04, which isn't a Meta model, and an 8 GB board can't tune Glimmer.
+- That the d1 router, System One, combos or the fleet console's assistant are part of Muse Muse. Muse Muse never calls them.
+- Keep the fleet console and jetson-03, 04 and 05 out of frame, along with the Claude and ChatGPT connector labels. Show only the Muse app connector.
 
 Edge lines, added Nov 2 (docs/EDGE_PLAN.md):
 - That AI "stops hacks", or that anything is "attack-proof".
