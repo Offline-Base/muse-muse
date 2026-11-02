@@ -2039,3 +2039,27 @@ Tests, touched code, all made-up data: new lib/train/tune/__tests__/open-train.t
 
 Preview muse-muse-j1swsu3a1, as a guest (OPEN_ACCESS=guest, so no admin), on the main database, model read back as Spark 1.3 Contributor. All made-up data. /, /fine-tuning and /fine-tuning/new answered 200; the page carries the folder notice and never the code. Runs with a wrong or no code: 403. POST /api/train/jobs: 403. Folder with a fake .env, a binary's name, an email and a hidden instruction: the .env and binary skipped with reasons, the email's line taken out, the instruction kept only as data. The plan's reply and the task didn't hold it. Start with the code in capitals and spaces: 201, run 6d04777d. Contributor wrote 40 examples for $0.0077. Another visitor: 404 on the run and its room; not on the Lab page. Then the launch was refused and the run stopped, so **no GPU started, $0 on Lambda**: TRAIN_ALLOW_OUTSIDE_PRODUCTION isn't set on this Preview, so launching through the site is still unproven, and so is whether the $4 limit holds on a GPU other than the cached A100 (estimated 44 minutes on it). Not proven live: that the hidden instruction didn't steer the examples, since a visitor can't read their rows; the model only got it inside the marked block. Meta spend for this work: about $0.01.
 
+
+## Nov 1: open fine-tuning tested as a guest on Preview j1swsu3a1 (branch tg-open-tune, PR #35)
+
+With vercel curl, no admin, made-up data, a folder read by the real browser reader (readDropped). The page itself wasn't driven in a browser: this test used up the IP's 3 new visitors for the day.
+
+Passed:
+- Folder: .env, a hidden folder, a binary PNG and a binary named .txt skipped with reasons. A real-looking email's line taken out. name@example.com is let through on purpose. Notice not confirmed: 428.
+- Writing: Contributor wrote 40 examples (32 train, 8 eval) for $0.0074. The hidden instruction (a canary word, a link, steps of 100000) stayed out of the plan, the task, the run's reply and its page, and the steps stayed at the 20 asked for.
+- Code: missing, blank, non-string and wrong all 403, on /runs and on the room's start. The right code passed: 201 on /runs, and on the room's start it reached the launch check. Replay 409.
+- Tries: 10 wrong for one person, then 429, and the right code is refused too until the hour turns. It worked again at 01:00. IP stopped at about 30. In 15 sent at once, 10 got through rather than the 9 expected. The counter is one atomic statement, so the likely cause is my test's shared cookie file, not confirmed.
+- Limits: second run for a person 409. Fourth new visitor on an IP 429, also with spoofed x-forwarded-for and x-real-ip. Another visitor's run: 404 to read, 403 to start or stop. Forged cookie 404. Another's plan or a changed plan 403. Changed folder 400. 100000 steps, 9999 examples, picking a base 400 or 404. maxUsd 500, an 8x GPU and autoPublish in settings were ignored: limit $4, A100, publish 0. /api/train/jobs, jobs/{id}, publish, stop, quantize, gpus, research and datasets 403. hub, upload, events, dataset 401. loops, sim-tune 404.
+
+Problems found, not fixed:
+1. A rows folder with similar prompts is told it will train, then fails after Start. 46 templated rows passed review, then became 8 train and 8 eval once near-duplicates of eval rows were left out: "needs at least 16 and 8". 50 varied rows gave 40 and 8.
+2. A refused launch shows "checking" for about 11 minutes. Refused at 00:35:58, the room said so around 00:47, because the fresh heartbeat outranks the recorded ending.
+3. Wrong tries by anyone on one IP lock out the right code for everyone on it, up to an hour. At a venue's shared Wi-Fi, 30 wrong tries stop everyone.
+4. Another visitor's run answers 403 to start and stop but 404 to read, so it shows the id exists. Low risk, ids are random.
+5. A rows folder's rows go in as they are, including one that says to ignore instructions. It only shapes that person's own model.
+
+Not proven: that the hidden instruction didn't steer the written rows, since a guest can't read them. I tried the real writer against a throwaway local database with the Development MODEL_API_KEY: 401 invalid_api_key, the stale key noted earlier, no spend. I didn't try the Preview and Production key or read the main database, neither was given for this test.
+
+GPU job not run. On this Preview the launch answers 503 sweep_not_configured, reason not_production. LAMBDA_API_KEY and CRON_SECRET are set for Preview by name. TRAIN_ALLOW_OUTSIDE_PRODUCTION=1 would lift that check, but I didn't redeploy with it: a Preview on the main database uses its own URL as the callback address, and that URL is behind Vercel's protection (POST from outside: 302), and the runner sends no bypass and allows no redirects. So the GPU couldn't get its data or report back, and would bill until the 25-minute boot limit to prove nothing about callbacks. The first real proof needs a public deployment, production with the flags on or a Preview the owner opens. Launch and callbacks through the site are still unproven.
+
+Spend: Lambda $0, no GPU started. Meta about $0.01 to $0.05 (the writing above plus 4 plans on Contributor, plans not metered here).
