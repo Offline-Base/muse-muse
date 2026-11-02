@@ -185,6 +185,7 @@ describe("tuned models", () => {
       hubUrl: "https://huggingface.co/mm/bakery",
       gguf: { repoUrl: "https://huggingface.co/mm/bakery-gguf", runHref: `/fine-tuning/${JOB}/run` },
       sparkOpen: false,
+      decision: null,
     });
     assert.equal(tunedModelViews([result({ sparkOpen: true })], new Map())[0].sparkOpen, true, "a model trained from r30b");
     assert.equal(tunedModelViews([result()], new Map([[JOB, files({ public: false })]]))[0].gguf, null);
@@ -198,6 +199,16 @@ describe("tuned models", () => {
 
   it("keeps only tuned Glimmer models", () => {
     assert.deepEqual(tunedModelViews([result({ recipe: "smoke" }), result({ id: "b" })], new Map()).map((m) => m.id), ["b"]);
+  });
+
+  it("shows accuracy instead of wins for a decide-kind result", () => {
+    type Decision = NonNullable<ResultView["decision"]>;
+    const side = (right: number) => ({ accuracy: { right } });
+    const decision = { kind: "decision", tuned: side(78), base: side(78) } as unknown as Decision;
+    const [m] = tunedModelViews([result({ decision })], new Map());
+    assert.deepEqual(m.decision, { tuned: true, right: 78 });
+    const [baseOnly] = tunedModelViews([result({ decision: { ...decision, tuned: null } })], new Map());
+    assert.deepEqual(baseOnly.decision, { tuned: false, right: 78 });
   });
 });
 
@@ -372,6 +383,15 @@ describe("/models", { skip: canMock ? false : "needs --experimental-test-module-
     assert.doesNotMatch(html, /Still running|Dry run|Smoke test/);
     // GGUF files are looked up only for the model public on the Hub.
     assert.deepEqual(calls.filter((c) => c === "latestQuantSource"), ["latestQuantSource"]);
+  });
+
+  it("shows accuracy for a decide-kind tuned model, matching fine-tuning", async () => {
+    const side = { accuracy: { right: 78, total: 78, rate: 1, low: 0.9, high: 1 } };
+    jobs = [jobRow({ evalSummary: { ...summary, items: 78, tunedWins: 0, baseWins: 0, ties: 78, kind: "decision", base: side, tuned: side } })];
+    const html = render(await page());
+    clean(html);
+    assert.match(html, /Tuned right on <strong>78<\/strong> of 78/);
+    assert.doesNotMatch(html, /Tuned won 0/);
   });
 
   it("says new fine-tunes start from the 2026 Glimmer, and marks a model tuned from it Built with Muse Spark Open", async () => {
