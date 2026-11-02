@@ -37,7 +37,7 @@ from concurrent.futures import ThreadPoolExecutor
 import boto3
 from botocore.config import Config
 
-BUCKET = "muse-knowledge-916979311153"
+BUCKET = os.environ.get("KNOWLEDGE_BUCKET", "<set KNOWLEDGE_BUCKET>")  # the knowledge bucket; its name holds the AWS account id, so it stays out of the repo
 ROOT = "knowledge/filtered"
 TMP = "/opt/muse/tmp"
 LOGS = "/opt/muse/logs"

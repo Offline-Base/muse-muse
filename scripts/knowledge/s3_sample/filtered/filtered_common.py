@@ -1,6 +1,6 @@
 """Shared helpers for the knowledge/filtered/ sample writers: counted S3 reads, text cleanup, record checks and output.
 
-Run these scripts with a private venv and `python -I`. They read from s3://muse-knowledge-916979311153/knowledge/filtered/
+Run these scripts with a private venv and `python -I`. They read from s3://$KNOWLEDGE_BUCKET/knowledge/filtered/
 and write .data/knowledge/sources/s3-<set>.jsonl. Every byte read from S3 goes through get_range, so the 8 GB limit is measured.
 """
 
@@ -17,7 +17,7 @@ from collections import Counter
 import boto3
 from botocore.config import Config
 
-BUCKET = "muse-knowledge-916979311153"
+BUCKET = os.environ.get("KNOWLEDGE_BUCKET", "<set KNOWLEDGE_BUCKET>")  # the knowledge bucket; its name holds the AWS account id, so it stays out of the repo
 ROOT = "knowledge/filtered"
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
 OUT_DIR = os.path.join(REPO, ".data", "knowledge", "sources")

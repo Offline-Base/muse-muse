@@ -22,7 +22,7 @@ Models a product may call, all through the Muse Muse gateway (prices are estimat
   in: audio; out: transcript with turn-level timing, no word-level timestamps. Price: $0.18 per audio hour.
   Speech to text from a recorded file. Only mono 16-bit WAV at 16 or 24 kHz is accepted, so the product converts recordings in the browser first (the template has a helper).
   Returns one plain transcript: no speaker labels and no word timestamps. Products transcribe recorded files, not live streams.
-- muse-glimmer: open-weights model for local or offline use. Not on the Model API: it needs an endpoint someone hosts. Pick it only when the muse asks for local or offline use.
+- muse-glimmer: Meta's open-weights 30B model. Not on the Model API: it needs an endpoint someone hosts on a GPU server, and Meta's smallest file of it is 16.8 GB, so never promise it runs on a phone, a laptop or a small board. Pick it only when the muse asks for an open-weights model someone hosts.
 
 Not available on the Model API yet, with the workaround a product uses instead:
 - Text-to-speech: the browser's built-in speech synthesis.
