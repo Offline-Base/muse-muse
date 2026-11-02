@@ -2325,6 +2325,15 @@ Merged origin/main (#50, #51). The only conflict was this log; both entries kept
 - **Not run:** any build, Meta call, deployment, the flip command, or env change. TERMS_VERSION not changed, though the privacy text under the switch did change; the owner should say if it needs a bump.
 - **Spend:** $0.
 
+## Nov 2: a real board through the permanent address, gadget not yet live (branch gadget-board-autostart)
+
+- **Chosen board: jetson-02.** It alone has a camera and mic (C920). About 450 MB is free beside the test Glimmer on jetson-llama.service, and the tools still work, so nothing has to stop. It has 393 MB of disk. jetson-04 is the fallback: about 1.8 GB free, no camera.
+- **Direct, on the board, through the fleet (muse-device 0.3.0):** `describe_device` 0.6 s; `capture_image` three times, 1.8 to 2.4 s, about 149 KB each; `record_audio` 3 s of sound, 3.2 s, 96 KB. Free memory stayed at about 440 MB. `run_command` answers "Unknown tool".
+- **Through the address production would use:** Muse Muse's client, `https://creative-linoleum-retake.ngrok-free.dev/admin/device/jetson-02/mcp`: tools 2.9 s, `describe_device` 1.7 s, `capture_image` 4.5 s (147 KB), `record_audio` of 2 s 3.7 s (64 KB). That route is `Offline-Base/jetson-infra` branch `muse-device-proxy`, which jetson-05 runs and which isn't merged.
+- **Production, read by name only:** `GADGETS_ENABLED` is set, and so is `BUILDER_SNAPSHOT_ID`, whose log entry above names snap_SB9bO91OjbBU4n3Amdabfo8iY0CY from 2146ae0, which holds the gadget helper and skill. I didn't read the live value, so a newer snapshot is possible. `DEVICE_MCP_URL`, `DEVICE_MCP_TOKEN` and `GADGET_CONNECT` aren't set. `/gadgets` says "Not set up" and "No products use a gadget yet".
+- **Stays up:** `muse-device/autostart.sh`, run by cron every minute as the board's user, restarted a killed server in 20 to 60 s on jetson-04. The ngrok address doesn't change, and the leader's own script restarts it. A full power cut hasn't been tested since this script went in.
+- **Open, for the owner:** the 13:38 device review still applies. With the board settings in production and `HARDWARE_GADGET_OWNER_CHECK` off, any guest-built live product with the gadget option can use the real camera and mic.
+- **Not run:** a live product through the gateway, since none has the option yet, and the clean `gadget_offline` test. Those need the production settings first. **Spend:** $0.
 ## Nov 2, 2026: Make chat as one start point (`MAKE_CHAT_ALL`, off), branch tg-make-chat
 
 - **Picked up** an unfinished agent's work (stalled Nov 1 about 9:50 PM with nothing committed): the box, intent and pair routes, paired room.
