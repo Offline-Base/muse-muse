@@ -12,6 +12,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { register } from "node:module";
 import { after, before, describe, it, mock } from "node:test";
 import { createElement, type ComponentType, type ReactNode } from "react";
 
@@ -47,7 +48,10 @@ describe("with MAKE_CHAT_ALL off", { skip: canMock ? false : "needs --experiment
     mock.module("next/server", { namedExports: { connection: async () => {}, after: () => {} } });
     mock.module("next/link", { defaultExport: (props: Record<string, unknown>) => createElement("a", { ...props, href: String(props.href) }) });
     mock.module("@/components/camera/CameraCapture", { namedExports: { CameraCapture: () => null, useCameraSupported: () => false } });
-    mock.module(at("../../../lib/queries.ts"), { namedExports: { currentUser: async () => user, safeQuery: async (fn: () => unknown) => ({ ok: true, data: await fn() }) } });
+    // The Make page's featured row (components/gallery/FeaturedProducts.tsx) imports a stylesheet, which Node can't load.
+    register("data:text/javascript,export const load = (url, context, next) => url.endsWith('.css') ? { format: 'module', source: '', shortCircuit: true } : next(url, context);", import.meta.url);
+    // No featured products here, so the row stays out and the page is the one the hashes stand for.
+    mock.module(at("../../../lib/queries.ts"), { namedExports: { currentUser: async () => user, listShippedProducts: async () => [], safeQuery: async (fn: () => unknown) => ({ ok: true, data: await fn() }) } });
 
     const { renderToString } = await import("react-dom/server");
     const node = (n: ReactNode) => renderToString(n as never);

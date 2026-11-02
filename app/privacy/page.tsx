@@ -20,7 +20,7 @@ export default async function PrivacyPage() {
       version={TERMS_VERSION}
       sections={privacySections({ sparkToWonder: env.trustSparkToWonder, buildsOnContributor: contributorBuildsOn(), guestMode: env.openAccess === "guest", reports: env.trustReports })}
     >
-      {/* Posts a privacy request to /api/reports, which takes one while this page is on, and admins read at /admin/reports. */}
+      {/* Posts a privacy request to /api/reports, which takes one while this page is on. Admins read them at /admin/reports, which needs TRUST_REPORTS today, or in the abuse_reports table. */}
       <DataRequestForm />
     </LegalPage>
   );

@@ -311,7 +311,7 @@ async function latestBriefs(productIds: string[]): Promise<Map<string, Brief>> {
 export interface ShippedFilter {
   /**
    * Only products with a live link. One built where publishing was off (a local run, a Preview) has only a "Not
-   * published" page, so the gallery, the gadgets page and the Make page's featured row leave it out.
+   * published" page, so the gallery and the Make page's featured row leave it out. The gadgets page doesn't ask yet.
    */
   published?: boolean;
   slugs?: readonly string[];
