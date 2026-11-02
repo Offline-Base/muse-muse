@@ -65,6 +65,9 @@ import {
   museSettings,
   remindersOffSetting,
   NOTES_DIR,
+  noteStatusScript,
+  parseNoteStatus,
+  type NoteStatus,
   NOTES_SESSION_FILE,
   WORKFLOW_SKILL_OFF,
   WORKFLOW_SKILL_PRELUDE,
@@ -1394,6 +1397,25 @@ export async function sendMuseCommand(input: {
   if (stop) return killCommand(input.sandboxName, cmdId);
   const { id, at, by } = input.envelope;
   return dropFile(sandbox, NOTES_DIR, name, JSON.stringify({ id, at, by, kind: command.type, text: note }));
+}
+
+/**
+ * How owner notes went, for the build room, each told once (STEER_CHAT). On exec the notes hook moves a note to `read/`
+ * as it hands it over, and nothing else would ever say so. On the session bridge the log's `command` record says that
+ * already. Once a round is done, a note still waiting on either engine will never be read: it goes to `late/`.
+ */
+export async function takeNoteStatus(input: {
+  sandboxName: string;
+  engine: MuseEngine;
+  logPath: string;
+  done: boolean;
+}): Promise<NoteStatus[]> {
+  const round = Number(/muse-r(\d+)/.exec(input.logPath)?.[1] ?? 0);
+  const dir = input.engine === "serve" ? bridgePaths(round).mailbox : NOTES_DIR;
+  if (input.engine === "serve" && !input.done) return [];
+  const sandbox = await openSandbox(input.sandboxName);
+  const { stdout } = await sh(sandbox, noteStatusScript(dir, input.engine, input.done));
+  return parseNoteStatus(stdout);
 }
 
 export interface MusePoll {

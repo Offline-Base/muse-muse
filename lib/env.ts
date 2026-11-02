@@ -315,6 +315,15 @@ export const env = {
   get steeringEnabled(): boolean {
     return env.museEngine === "serve" || env.museFull;
   },
+  /**
+   * STEER_CHAT: "1", "true", "yes" or "on" turns steering into a conversation (docs/MUSE_CODE_FULL.md, "The owner steers"):
+   * Muse Code answers each note in the feed, a note that came too late says so, notes have tighter limits, and a guest
+   * can steer the builds their own browser started. Needs steeringEnabled too. Off by default: steering stays as it was,
+   * for owners and admins only.
+   */
+  get steerChat(): boolean {
+    return env.steeringEnabled && flag("STEER_CHAT");
+  },
   /** Lambda Cloud API key for fine-tuning jobs (lib/train). Platform only: never sent to an instance or a sandbox. */
   get lambdaApiKey() {
     return required("LAMBDA_API_KEY");

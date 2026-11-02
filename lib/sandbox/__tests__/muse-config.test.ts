@@ -4,7 +4,7 @@
  *   npx tsx --test lib/sandbox/__tests__/muse-config.test.ts
  */
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -19,6 +19,8 @@ import {
   museConfigFiles,
   museSettings,
   NOTES_DIR,
+  noteStatusScript,
+  parseNoteStatus,
 } from "@/lib/sandbox/muse-config";
 import { PLATFORM_FILES } from "@/lib/sandbox/paths";
 
@@ -270,5 +272,39 @@ describe("the event logger hook", () => {
 
   it("has no em dashes in any script", () => {
     for (const [name, source] of Object.entries(HOOK_SCRIPTS)) assert.ok(!source.includes("\u2014"), name);
+  });
+});
+
+describe("noteStatusScript", () => {
+  const ID = "6f1d2c3b-4a5e-4f60-8a7b-9c0d1e2f3a4b";
+  const OTHER = "01a18fef-c533-74a3-b49d-da9cf5ff74b8";
+  const run = (dir: string, engine: "exec" | "serve", done: boolean) =>
+    parseNoteStatus(execFileSync("bash", ["-c", noteStatusScript(dir, engine, done)], { encoding: "utf8" }));
+
+  it("tells each read note once, and waiting notes only once the round is done", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "notes-"));
+    try {
+      mkdirSync(path.join(dir, "read"));
+      writeFileSync(path.join(dir, "read", `2026-11-01T10-00-00-${ID}.json`), "{}");
+      writeFileSync(path.join(dir, `2026-11-01T10-00-01-${OTHER}.json`), "{}");
+      assert.deepEqual(run(dir, "exec", false), [{ id: ID, status: "read" }]);
+      assert.deepEqual(run(dir, "exec", false), []);
+      assert.deepEqual(run(dir, "exec", true), [{ id: OTHER, status: "late" }]);
+      assert.deepEqual(run(dir, "exec", true), []);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves the bridge's done folder alone, and says nothing for a folder that isn't there", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "mailbox-"));
+    try {
+      mkdirSync(path.join(dir, "done"));
+      writeFileSync(path.join(dir, "done", `a-${ID}.json`), "{}");
+      assert.deepEqual(run(dir, "serve", true), []);
+      assert.deepEqual(run(path.join(dir, "missing"), "exec", true), []);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

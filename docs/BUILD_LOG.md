@@ -2223,6 +2223,11 @@ Behind a new flag, off by default. Design in docs/FAST_BUILDS.md.
 - **Previews:** FAST_BUILDS=1 muse-muse-lofxtn17n, without it muse-muse-k1fp4y15n, same code and snapshot snap_Dy4CjpILCMOBnaJ28Skzswys7CJ4. A stray line in my deploy command also made one extra unused Preview with the flag on.
 - **Builds on the flag Preview:** small e50989ff, complex 399f7255 and 0b90ec23. Without it: small 4b97d2c4, complex 654b4711 and a6275cc8. Same notes each way.
 
+## Nov 1: two more full build fixes, from the reruns
+
+- **Results.** Tracker rerun 020084d8 on Contributor: live, judge pass, 15 of 15 met, 23m32, $0.085. Its brief has 15 requirements against the Wonder build's 21, so this doesn't prove the screenshot fix on the original failure. Big build 22562315 on Contributor: partial, 101 minutes, $0.93, 2 of 6 milestones, 20 of 40 requirements unmet, 4 of 6 rounds at their limit, no fix round, 0 subagents.
+- **Screenshot cap.** Verify still kept only 24 shots on full builds, so a 40-requirement brief lost the rest before the judge saw them. It now keeps up to 50. No rerun yet.
+- **Fix rounds.** A full build needed room for two verifies at their cap (71 minutes) to start a fix round, though verifies took about 1 minute, so 49 unused minutes went to waste. It now needs room for one. Non-full builds are unchanged. No rerun yet.
 ## Nov 1: open-weight proof page and draft adapter card (branch tg-open-proof)
 
 - Built /open-weights, public, linked from /models: task, method, cost, wins, losses, every Glimmer answer, the five Llama losses, Hugging Face links and which model runs where. Proof: Preview muse-muse-bh5j5ay4r, page and JSON answered 200 with their content, /models has the link, all linked Hub pages answer 200. Screenshots: docs/log/shots/open-weights-desktop.png and open-weights-phone.png.
@@ -2248,3 +2253,34 @@ Behind FIREWORKS_TUNE, off by default. Design in docs/TRAINING.md "Train on Fire
 - **Fix:** the routes test's run-store mock needed the new export.
 - **Tests:** tsc clean, after copying fflate and unpdf into this worktree's node_modules from another worktree. fireworks.test 24 of 24, open-train 33 of 33 with 3 new, routes 25, run-flow 24, view 14, plan 23, sweep 36, launch 16, limits 20, tune-pages 15. tune-room has 2 plan-card failures that also fail on origin/main.
 - **Not proven:** every call to the real Fireworks API, the page parsers once the pages change, batch on Glimmer and on the trained adapter, whether REST-created jobs are really $0, estimatedCost's real value, billing with no payment method, and the UI in a browser.
+## Nov 1: steering from the build room, behind STEER_CHAT
+
+- **Why a new flag.** env.steeringEnabled follows MUSE_FULL or MUSE_ENGINE=serve and already answers as on in production, so it can't gate this. STEER_CHAT needs it too.
+- **Results on Contributor, exec engine.** A mid-build note changed the title to Sunny Pantry and added a Favorites tab: final source and judge screenshot on 4fd6f8f1, repeated on b92bf392 and 74409a26. The first try, 215d2a13, refused the note as against the brief, so a note now outranks the brief on name, words, look, screens and features, and never on AGENTS.md, spend or time.
+- **Refused as they should be.** A note asking to print a token and pass the spend limit wasn't obeyed. A different guest, with no pass or a forged one, got 404. Oversized got 400. After the round ended, 409.
+- **Not proven.** A guest steering their own build (shared guest quota was used up, so unit tests only), the serve engine, replies in the left column on screen. The independent review stopped before reading the code, so note injection hasn't been attacked by anyone.
+## Nov 1: guest fine-tune proof on production, blocked before the plan (branch tg-guest-tune-proof)
+
+Tried at 01:28 UTC on Nov 2 (still Nov 1 here) with curl keeping cookies, signed out, on https://muse-muse.vercel.app.
+
+- **Result: not run.** `GET /fine-tuning/new` answered 200. `POST /api/train/plan` with a made-up task (a fictional lighthouse's maintenance log, 40 examples) answered 429 `trainer_ip_cap`, retryAfterSeconds 81125, so until 00:00 UTC on Nov 3: "This network has started training as a new visitor 3 times today."
+- **Nothing started:** no plan, no start code sent, no dataset, no job, no GPU, no job id. $0 Meta, $0 Lambda. The refusal comes before the paid plan call. One plan request only, not retried.
+- **Still unproven on production:** dataset written, Lambda launch, https callbacks, training, base vs tuned judging, GPU terminated, publish 0 on a real job, the guest's result page, models used, real cost.
+- **Not worked around.** No other network, no IPv4/IPv6 switch, no cookie from another session, no change to the counter or `PUBLIC_TRAIN_COOKIES_PER_IP`.
+- **Finding, by reading code, counter rows not read:** `mintTrainer` (lib/train/public/identity.ts) takes `PUBLIC_TRAIN_COOKIES_PER_IP` (default 3) per IP per UTC day from `rate_limits`. This laptop's IP had used all 3 within 88 minutes of the UTC day turning. Likely cause, not confirmed: the guest tests on Previews, since the entry above for Preview j1swsu3a1 says it used the main database, so a Preview's new visitors would count against production's.
+- **Finding, for the owner:** at 3 new visitors per IP per day, a shared network such as a venue's Wi-Fi stops the fourth new guest before they can get a plan. "Keep the same browser" doesn't help someone who has no cookie yet. Not fixed here.
+- **For the rerun:** the guest's own view takes out instance id, IP, logs and errors (`visitorRunView`), so proving callbacks and the GPU's end needs what that view keeps plus an owner's check of the job row or Lambda console.
+- **Spend:** $0. No production changes.
+
+## Nov 2, 01:47 UTC: tuned one-bit file uploaded to a private Hub repo (branch tg-one-bit-upload)
+
+The owner asked for it after I advised against it. Repo: https://huggingface.co/OfflineBase/Muse-Glimmer-30B-Moss-Test-IQ1_S-GGUF, **private** (read back with the token; anonymous gets 401). Commit d1c0a13f. No training ran: this merged, quantized and checked the existing adapter 1898e46c through the real recipe, publish 0, unchanged, then uploaded by hand.
+
+- File: `muse-glimmer-30b-zubrelian-moss-IQ1_S.gguf`, 6,526,418,944 bytes, sha256 `abbe0f2bbf0263a708e0a20ef65074a1bcd41f4854763c9216d65257920c8c63`. Hub LFS sha256 equals it, read by the uploader and again from the laptop. **The same sha256 as the Nov 1 build**, so that run's stand-in numbers are this file's.
+- This run: answer check 30 of 30 (needs 90%), template check passed, KL 0.942644 (p99 3.857), same top token 57.56%, agreement 0 of 30. Q4_K_M again missed its limit, KL 0.030453, and was not uploaded. Whole job 01:12 to 01:43 UTC. `tuned.jinja` sha256 ee776687...
+- Also in the repo: `tuned.jinja`, `LICENSE`, `MUSE_MODEL_LICENSE.md`, `USAGE_POLICY.md`, `NOTICE` (from the 2026 Knowledge GGUF repo at 1c966004), and a card.
+- **Flagged for the owner:** the 900 moss rows were written by `muse-spark-1.3-contributor` through Meta's Model API. Model API Terms 10.1(ix) bar training a competing model on Outputs and systematically collecting them for datasets, and `docs/KNOWLEDGE_UPDATE.md` lists that source as "Never" for the knowledge model. The card says so and says whether it applies here is unsettled. Nobody has read this legally. Keep it private until then.
+- Two slips, both fixed in the run: the first upload refused the card because `license_link` was a relative path, so it now points to the public 2026 Knowledge copy of the license. That failure came after the repo was created, so the retry used `exist_ok=True` on the repo this run had just made. The token went through the remote process's stdin and environment only; `upload.log` has no token in it. The machine's disk was not otherwise checked, and it is gone.
+- Watchdog: the earlier 4-hour timer had died with the crashed session, so a detached 2.5-hour one covered this instance, stopped once it was gone.
+- Spend: device-loop-upload-1, gpu_1x_a10, launched 01:00:32Z, terminate sent about 01:47:30Z, off the list by 01:49:57Z. At most 49.4 minutes at $1.29, about $1.06 by list price, not read from an invoice. Limit $10. Lambda reports its id as terminated. Another session's device-loop-inv-1 was left alone.
+- Not run: the file on a Jetson, a download back from the Hub, the card's serve command on this copy, a judge on the answers, any tests (docs only). The stand-in numbers and the 1 of 5 on stock are from the Nov 1 run, not repeated.
