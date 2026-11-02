@@ -2036,3 +2036,6 @@ Owner asked for the look of their screenshot of Meta's Models page. No flag: thi
   ![/models at 390, light](log/shots/2026-11-01/models-page-390-light.png)
   ![/models at 390, dark](log/shots/2026-11-01/models-page-390-dark.png)
   ![/models filtered to Audio](log/shots/2026-11-01/models-page-1280-light-audio.png)
+## Nov 1: Demos page removed
+
+Owner asked. Took Demos out of the sidebar, deleted app/demos/page.tsx and the DemoWall component only it used, plus the wall styles. /demos now 404s; the only in-repo link was the sidebar row. ComposerDock stays, gallery and media use it. Touched test only: nav.test.tsx.
