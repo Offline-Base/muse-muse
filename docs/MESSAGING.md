@@ -106,7 +106,7 @@ Still stale, found by Hussam's PR #61 and left for later because they need a new
 - That Meta hasn't built private AI, fine-tuning or local agents.
 - That Muse Privacy solves Meta's local-and-cloud problem.
 - That data never leaves the device. Say how many leaks on how many invented items, and what that tested.
-- "0 leaks on 300 items" alone. An Oct 30 run (`privacy/eval/reports/device_only_fresh_200.md`) had 10 leaks on 200 items, with no cause recorded and no rerun. Give both, or rerun that set first.
+- "0 leaks on 300 items", or the Oct 30 run's 10 leaks on 200 items (`privacy/eval/reports/device_only_fresh_200.md`), as Muse Privacy results. Both were measured with LFM3-VL-2B, which isn't a Meta model, so neither goes in public copy. Muse Privacy's public numbers come only from runs on Glimmer (the Oct 27 cloud run, or the pending rerun on Glimmer), with every leak given.
 - That fleet or board answers are private. They pass through the product's server, Muse Muse, ngrok and the lead board, and jetson-05's ngrok agent keeps recent request bodies in memory (PR #61).
 - That Glimmer 30B runs well on 8 GB.
 - That one-bit or 4-bit costs nothing.

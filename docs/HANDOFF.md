@@ -106,7 +106,7 @@ Also waiting, from the Nov 2 audit. None is approved or started, except that ite
 Still open from before:
 - **Gadget:** `DEVICE_MCP_URL` and `DEVICE_MCP_TOKEN` are unset in production, so the gadget isn't live there.
 - **Prompt Guard 2 on jetson-05:** dropped. It is a Llama-family model, so don't fetch or enable it. Whether Hussam deletes `/opt/prompt-guard` and its unit waits on owner question 11 below.
-- **Before quoting "0 leaks":** rerun `device_only_fresh_200` (Oct 30, 10 leaks, no cause recorded) or say both numbers.
+- **Before quoting "0 leaks":** the "0 leaks on 300" and Oct 30 `device_only_fresh_200` numbers were measured with LFM3-VL-2B, so they are out of public copy. Quote only Glimmer runs: the Oct 27 cloud run (0 leaks on 100), or the Glimmer rerun of `fresh_200_b` once the owner approves it (owner question 6 below) and it is logged, giving every leak it finds.
 
 ## Open owner questions from the Meta-models audit
 

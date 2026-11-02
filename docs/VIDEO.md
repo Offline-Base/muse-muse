@@ -100,6 +100,7 @@ Narration is about 400 words, about 140 a minute. Read it aloud once with a time
 
 - On screen: `/offline`, the step list with each mark.
 - Say: "Every step on this page carries a mark: proven, proven by our test harness, simulated, or not run yet. Running on your own board is simulated in this flow today."
+- Before filming: the live `/offline` page's "Run it offline" step still says "a small Llama on most devices" (`components/story/OfflineBody.tsx`, another unit's fix). Film shots 6 and 12 only after that line is gone, or keep it out of frame. Llama is not a Meta model here.
 
 ### Act 2: Muse Privacy
 
@@ -116,6 +117,7 @@ Keep the company's name out of this act (`components/story/__tests__/story.test.
 - On screen: `/private`, before and after, then the replay, labeled "Recorded replay. A script plays Muse. Muse Glimmer 30B in the cloud, invented data." The replay on the site today was recorded with a model that isn't Meta's, so re-record it on Glimmer before filming this shot. Optional overlay: "'The access decision does not depend on the agent behaving as intended.' Meta Engineering, on PrivacyLib, Oct 27, 2026."
 - Say: "Muse Privacy is a connector you run yourself. Muse plans with tags like Student A and never gets the documents. For this demo, Meta's Muse Glimmer does every step that touches them, in the cloud, on invented data. Your policy file decides what can leave, and a last check runs on every result before it goes. Glimmer on your own device is the target."
 - Never "device-only", "on the device" or "nothing leaves the device" for this act while the path is cloud Glimmer.
+- `/private` itself still names LFM3-VL-2B and shows LFM-measured numbers (`components/private/PrivateBody.tsx`, `lib/private/replay.ts`, the privacy unit's fix). Film it only after that page is changed to Glimmer, or keep those lines out of frame.
 - Source: docs/STORY.md, privacy paragraph; privacy/README.md.
 
 **9. The numbers, on Glimmer (2:04 to 2:17)** [needs re-record on Glimmer]
@@ -189,8 +191,8 @@ What changes:
 | 5 | 1:08 to 1:22 | 1 | An app built around it | film now, plus needs the chain run |
 | 6 | 1:22 to 1:32 | 1 | The marks on `/offline` | film now |
 | 7 | 1:32 to 1:44 | 2 | Why some files can't go to a cloud | film now |
-| 8 | 1:44 to 1:56 | 2 | Muse Privacy: tags, not documents, shorter | film now |
-| 9 | 1:56 to 2:04 | 2 | The numbers, both runs, shorter | film now |
+| 8 | 1:44 to 1:56 | 2 | Muse Privacy: tags, not documents, shorter | needs re-record on Glimmer |
+| 9 | 1:56 to 2:04 | 2 | The numbers, on Glimmer, shorter | needs re-record on Glimmer |
 | 10 | 2:04 to 2:09 | 3 | Glimmer on the Jetson, shorter | Hussam films |
 | E1 | 2:09 to 2:17 | 3 | Drills passing on the build screen | needs M5, needs M7 |
 | E2 | 2:17 to 2:23 | 3 | The tune card | needs the schema gate, needs M8 |
