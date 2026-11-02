@@ -1,11 +1,11 @@
 {
   "make page: signed out": {
-    "sha256": "b5574e91f369ed8fd186f72795788120f064749650fff054d3c8568f16010eae",
-    "length": 7799
+    "sha256": "6a8bc834ecf5c72e9cc709d5ca364d73739b435b8559efe514c778594d583751",
+    "length": 7794
   },
   "make page: signed in": {
-    "sha256": "a0e6f4c4643fb00b960de8b5428233cde32f08391ac187fcd7aea9469b6d3702",
-    "length": 7812
+    "sha256": "239ed23d4707f72138e5ee3e8ae9be9b94bfe1466efedc834287889895c624b4",
+    "length": 7807
   },
   "run room: writing": {
     "sha256": "69c07b81b753c7440d985b6fdb837673e8dd317069acf8d23d3df89aaaa4a07a",
@@ -16,8 +16,8 @@
     "length": 4393
   },
   "run room: ready": {
-    "sha256": "f9b0c45ed70bf4784747f4207094b7fe89c75c1c86689df4a72b9fe9d477ed32",
-    "length": 19368
+    "sha256": "af7e1401b1af705ab7cf6cc74b15dede75a419ae30ffc013c833c9e4c9c719f6",
+    "length": 19090
   },
   "plan step: drafting": {
     "sha256": "873d2aa3cab7a42c8d210fe4780f7d2a52ec752b453f80b3f09baa139db6fef0",

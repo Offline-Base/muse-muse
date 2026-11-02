@@ -50,7 +50,7 @@ export default async function SignInPage({
                 Continue
               </Link>
               <Link className="btn btn-outline" href="/builds">
-                My builds
+                My musings
               </Link>
             </div>
           </>

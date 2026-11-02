@@ -287,6 +287,29 @@ All M unless it says otherwise.
 - **End marks** (chevron, external link): 16 px in `--faint`.
 - **Destructive:** text and icon `--bad`, hover `--bad-soft` (E, with M's colors).
 
+### Settings window (`.settings`, `components/shell/HelpDialog.tsx`)
+
+From meta.ai's Settings window, captured by Ethan on Nov 2 in both themes (S). Used for Help; use it for any menu of the same kind (a few sections, each with cards that go somewhere).
+
+- **Window:** a modal `<dialog>` centered on a blurred backdrop, 880 x 600 px at most, radius 32 px, `--settings-bg` (`#f9f9f9`, dark `#333334`), `--shadow-pop`, no border.
+- **Left:** 260 px with a 1 px `--line` divider. The title 24 / 30, 600. Sections are 44 px rows, radius 12 px, a 22 px icon 12 px from a 16 / 22 label. The open one takes `--surface-3`. A vertical tab list: arrow keys, Home and End move between sections.
+- **Right:** the section's name 24 / 30, 600 in `--muted`, a muted 16 / 22 group label, then cards 16 px apart: radius 24 px, `--settings-card` (`#f1f2f4`, dark `#262627`), 18 x 24 px padding, a 24 px icon, a 16 / 22 title over a muted 14 / 20 line, and a `--faint` chevron (a page here) or arrow (another site) at the end.
+- **Close:** a 40 px circle in the top right corner, `--settings-close` (white, dark `#3d3d3e`) with `--shadow-chip`. Escape and a backdrop click close it too, and focus goes back to the button that opened it.
+- **Phones:** one column, the sections as a row of pills over the cards.
+
+### Muse, the mascot (`components/mascot/Mascot.tsx`, `public/muse/muse-*`)
+
+Muse Muse's own character, from the owner's videos (Nov 2). Not a Meta mark. Built so far: the walk along the bottom and the climb up the right side. Following the cursor and walkthroughs come with their own assets.
+
+- **Clips:** transparent loops cut from the owner's videos by `scripts/dev/mascot/walk.sh` and `climb.sh`: a 1.75 s stride and a 2.25 s climb (plus that climb reversed for coming down). VP9 WebM with alpha for Chrome and Firefox, HEVC with alpha for Safari, about 80 to 120 KB each. White is keyed out. Light neutral greys become a soft black shadow, so it works on both themes.
+- **Size:** 96 px tall on the desktop view, 72 px on a phone.
+- **The walk:** across the bottom of the content area, never behind the sidebar. It turns at each edge and stops now and then.
+- **The walk starts** in the middle of the open space, heading right.
+- **The climb:** desktop view only (760 px and wider). The first time it reaches the right edge it always climbs; after that, 6 times in 10. It climbs the window's edge (the clip is cut flush, so its hands grip the edge) to between a quarter and half the window's height, hangs a moment, comes back down and walks off left.
+- **Layering:** fixed at z-index 15, under docks (20), menus (40) and dialogs. Only the figure itself takes the pointer; the page around it stays clickable. The videos are hidden from screen readers, and it's hidden in print.
+- **Close:** pointing at it stops it and shows a round X just above its head ("Hide Muse"; always shown on touch screens, and reachable with Tab). The X hides it, saves that in this browser and shows a note for 5 s: "Muse is hidden. Bring him back in Settings, under Muse on screen."
+- **Choice:** Settings, General, "Muse on screen" (on by default, kept in this browser). With reduced motion it stands still in the corner.
+
 ### Segmented tabs (`.chat-tabs`, `.tabs`, `.range`, `.segmented`), M
 
 Track 36 px, `--panel-line`, radius 16 px, 4 px inset. Chosen segment 28 px, radius 16 px, `--chat-segment`,

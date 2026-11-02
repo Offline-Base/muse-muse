@@ -7,7 +7,7 @@ import { dateTimeUtc, elapsedMs, isTerminalStatus, relativeTime, shortDuration, 
 import { editTargets } from "@/lib/edit-pass";
 import { currentUser, listUserBuilds, safeQuery } from "@/lib/queries";
 
-export const metadata: Metadata = { title: "Builds" };
+export const metadata: Metadata = { title: "Musings" };
 
 export default async function BuildsPage() {
   await connection();
@@ -15,13 +15,13 @@ export default async function BuildsPage() {
   if (!user) {
     return (
       <div className="page">
-        <PageHeader title="Builds" subtitle="Every muse you've sent, with its status, time and cost." />
+        <PageHeader title="Musings" subtitle="Every muse you've sent, with its status, time and cost." />
         <EmptyCard
           icon="user"
-          title="Sign in to see your builds"
+          title="Sign in to see your musings"
           action={{ href: "/sign-in?next=%2Fbuilds", label: "Sign in" }}
         >
-          <p>Browsing is open to everyone. Your own builds show up here once you sign in.</p>
+          <p>Browsing is open to everyone. Your own musings show up here once you sign in.</p>
         </EmptyCard>
       </div>
     );
@@ -36,7 +36,7 @@ export default async function BuildsPage() {
   return (
     <div className="page">
       <PageHeader
-        title="Builds"
+        title="Musings"
         subtitle={
           user.openAccess && !user.isAdmin
             ? "Every muse sent from the shared guest account, with its status, time and cost."
@@ -45,14 +45,14 @@ export default async function BuildsPage() {
         actions={
           <Link className="btn btn-primary" href="/">
             <Icon name="plus" size={18} />
-            New muse
+            Start musing
           </Link>
         }
       />
       {!result.ok ? (
         <NotConnected reason={result.reason} what="your build list" />
       ) : result.data.length === 0 ? (
-        <EmptyCard title="No builds yet" action={{ href: "/", label: "Start a muse" }}>
+        <EmptyCard title="Your first musing starts here" action={{ href: "/", label: "Start musing" }}>
           <p>Drop in a photo, a sketch, a short video, a voice memo or a PDF and Muse Code builds it.</p>
         </EmptyCard>
       ) : (

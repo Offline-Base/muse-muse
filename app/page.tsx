@@ -140,7 +140,7 @@ export default async function Home() {
         {toolbar}
         {featured.length ? <FeaturedProducts products={featured} frameAllow={liveFrameAllow(null)} frameSandbox={LIVE_FRAME_SANDBOX} /> : null}
         <div className="play-intro" id="make">
-          <h1>What should Muse make?</h1>
+          <h1>{"What’s your muse?"}</h1>
         </div>
         <Composer mode="new" signedIn={Boolean(user)} starters={STARTERS} layout="playground" targetOptions={env.enabledTargets} contributorNotice={contributorBuildsOn()} />
       </div>

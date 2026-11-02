@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Icon } from "@/components/icons";
 import { Menu } from "@/components/Menu";
+import type { SettingsWindowHandle } from "@/components/shell/SettingsWindow";
+import { SiteSettings } from "@/components/shell/SiteSettings";
 import { initials } from "@/lib/format";
 
 export interface AccountUser {
@@ -22,14 +24,21 @@ export function AccountMenu({ user }: { user: AccountUser | null }) {
   const pathname = usePathname() ?? "/";
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  const settings = useRef<SettingsWindowHandle>(null);
   const signInHref = `/sign-in?next=${encodeURIComponent(pathname.startsWith("/sign-in") ? "/" : pathname)}`;
 
   if (!user) {
     return (
-      <Link className="btn btn-outline account-signin" href={signInHref}>
-        <Icon name="user" size={18} />
-        <span>Sign in</span>
-      </Link>
+      <div className="account account-out">
+        <Link className="btn btn-outline account-signin" href={signInHref}>
+          <Icon name="user" size={18} />
+          <span>Sign in</span>
+        </Link>
+        <button type="button" className="icon-btn icon-btn-plain" aria-label="Settings" aria-haspopup="dialog" onClick={() => settings.current?.show()}>
+          <Icon name="sliders" size={20} />
+        </button>
+        <SiteSettings ref={settings} user={null} signInHref={signInHref} />
+      </div>
     );
   }
 
@@ -60,11 +69,21 @@ export function AccountMenu({ user }: { user: AccountUser | null }) {
         </span>
         <span className="account-sub">{user.openAccess ? `${role}, sign-in off` : role}</span>
       </span>
-      <Menu label="Account menu" icon="more" align="end" buttonClassName="icon-btn icon-btn-plain">
+      <Menu label="Account menu" icon="more" align="end" buttonClassName="icon-btn icon-btn-plain" closeOnSelect>
         <Link className="menu-item" href="/builds">
           <Icon name="layers" size={18} />
-          My builds
+          My musings
         </Link>
+        <button
+          type="button"
+          className="menu-item"
+          aria-haspopup="dialog"
+          // The menu closes first and hands focus back to its button, then the window opens and takes focus.
+          onClick={() => setTimeout(() => settings.current?.show())}
+        >
+          <Icon name="sliders" size={18} />
+          Settings
+        </button>
         {user.openAccess ? (
           <Link className="menu-item" href={signInHref}>
             <Icon name="user" size={18} />
@@ -77,6 +96,7 @@ export function AccountMenu({ user }: { user: AccountUser | null }) {
           </button>
         )}
       </Menu>
+      <SiteSettings ref={settings} user={user} signInHref={signInHref} />
     </div>
   );
 }
