@@ -22,9 +22,10 @@ export const PRODUCT_MODELS = [
 
 /**
  * Where a product runs (docs/NATIVE.md). Every product is a web product, so "web" is always in; a brief adds the others,
- * each behind its flag (env.enabledTargets).
+ * each behind its flag (env.enabledTargets). edge (docs/EDGE_DEMO.md) is offered only with EDGE_ENABLED on, and is last,
+ * so a schema for the other targets is the same as before it.
  */
-export const TARGETS = ["web", "phone", "desktop", "vr", "glasses", "agent"] as const;
+export const TARGETS = ["web", "phone", "desktop", "vr", "glasses", "agent", "edge"] as const;
 export type TargetId = (typeof TARGETS)[number];
 
 const MediaKind = z.enum(["text", "image", "video", "audio", "pdf"]);

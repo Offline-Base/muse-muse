@@ -13,6 +13,7 @@ const TARGET_NOTES: Record<TargetId, string> = {
   vr: "Meta Quest, from its link",
   glasses: "Meta glasses, through the iPhone app",
   agent: "Looks things up and works in steps",
+  edge: "A backup model on a board when the cloud is cut",
 };
 
 /** What the pill says: "Auto" with nothing picked, the name for one pick, a count past that, which stays short on a phone. */

@@ -123,7 +123,7 @@ describe("newBriefSchemaFor with targets on", () => {
   });
 
   it("the stored schema takes every target, and refuses others", () => {
-    assert.deepEqual([...TARGETS], ["web", "phone", "desktop", "vr", "glasses", "agent"]);
+    assert.deepEqual([...TARGETS], ["web", "phone", "desktop", "vr", "glasses", "agent", "edge"]);
     assert.equal(BriefSchema.safeParse(brief(TARGETS.map((id) => ({ id, why: "y" })))).success, true);
     assert.equal(BriefSchema.safeParse(brief([{ id: "toaster", why: "y" }])).success, false);
     assert.ok(z.toJSONSchema(BriefSchema));

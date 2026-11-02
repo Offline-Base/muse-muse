@@ -62,6 +62,10 @@ interface Scenario {
   advance?: Partial<Record<"previewStep" | "collectVerifyStep" | "judgeStep", number>>;
   /** PLAN_ART's step: settles once the build registers ("late"), never ("hangs"), throws, or answers at once (the default). */
   art?: "late" | "hangs" | "throws";
+  /** EDGE_ENABLED: briefStep and loadRefineStep say this is an edge build. */
+  edge?: boolean;
+  /** The edge drill's exit code, or "hang" for a drill that never finishes. Defaults to 0. */
+  drill?: number | "hang";
 }
 
 /** The fake clock the workflow reads with Date.now while a scenario sets `advance`. */
@@ -116,6 +120,7 @@ const fakeSteps = {
       tagline: "Find the book you saw",
       model: "muse-spark-1.3",
       ...(scenario.plan ? { plan: scenario.plan } : {}),
+      ...(scenario.edge ? { edge: true } : {}),
     };
   },
   createProductStep: async (buildId: string) => {
@@ -175,12 +180,17 @@ const fakeSteps = {
     if (task === "verify") verifyRuns += 1;
     return `${task}-cmd-${verifyRuns}`;
   },
+  startEdgeDrillStep: async (sandboxName: string) => {
+    record("startEdgeDrillStep", sandboxName);
+    return `edge-drill-cmd-${verifyRuns}`;
+  },
   startTaskWithEnvStep: (sandboxName: string, task: string, env: Record<string, string>) => fakeSteps.startTaskStep(sandboxName, task, env),
   pollTaskStep: async (sandboxName: string, cmdId: string) => {
     record("pollTaskStep", sandboxName, cmdId);
     const v = currentVerify();
     if (cmdId.startsWith("verify") && v.timeout) return { done: false, exitCode: null, outputTail: "" };
     if (cmdId.startsWith("demo") && scenario.demoTimeout) return { done: false, exitCode: null, outputTail: "" };
+    if (cmdId.startsWith("edge-drill")) return scenario.drill === "hang" ? { done: false, exitCode: null, outputTail: "" } : { done: true, exitCode: scenario.drill ?? 0, outputTail: "drill tail" };
     return { done: true, exitCode: 0, outputTail: "tail" };
   },
   collectVerifyStep: async (input: { round: number }) => {
@@ -249,6 +259,7 @@ const fakeSteps = {
       model: "muse-spark-1.3",
       refineIndex: 1,
       ...(scenario.plan ? { plan: { ...scenario.plan, milestones: [] } } : {}),
+      ...(scenario.edge ? { edge: true } : {}),
     };
   },
   reopenStep: async (input: unknown) => {
@@ -1271,6 +1282,47 @@ describe("engine (docs/CAPABILITIES.md, section 8)", { skip: canMock ? false : "
     assert.deepEqual(await wf.buildProduct({ buildId: "t10" }), { status: "live" });
     assert.equal(named("liveCheckStep").length + named("milestoneStep").length + named("writeMilestonePromptStep").length + named("capsShipStep").length, 0);
     assert.ok(starts().every((r) => !("capMs" in r)));
+  });
+
+  describe("the edge drill after verify (EDGE_ENABLED)", () => {
+    const collected = () => named("collectVerifyStep").map((c) => c.args[0] as { edgeDrill?: { exitCode: number | null; timedOut: boolean; outputTail: string } });
+
+    it("isn't a step at all for a build that isn't an edge build", async () => {
+      reset({});
+      assert.deepEqual(await wf.buildProduct({ buildId: "e0" }), { status: "live" });
+      assert.equal(named("startEdgeDrillStep").length, 0);
+      assert.ok(collected().every((c) => !("edgeDrill" in c)));
+    });
+
+    it("runs after a passing verify, on the build's sandbox, and hands its run to collectVerifyStep", async () => {
+      reset({ edge: true });
+      assert.deepEqual(await wf.buildProduct({ buildId: "e1" }), { status: "live" });
+      assert.deepEqual(named("startEdgeDrillStep").map((c) => c.args[0]), ["product-shelf-scout"]);
+      const order = calls.map((c) => c.step).filter((s) => ["startTaskStep", "startEdgeDrillStep", "collectVerifyStep", "judgeStep"].includes(s));
+      assert.deepEqual(order.slice(0, 4), ["startTaskStep", "startEdgeDrillStep", "collectVerifyStep", "judgeStep"]);
+      assert.deepEqual(collected()[0]!.edgeDrill, { exitCode: 0, timedOut: false, outputTail: "drill tail" });
+      assert.ok(named("emitStep").some((c) => /simulated outage drills/.test(JSON.stringify(c.args[1]))));
+    });
+
+    it("hands a failed drill on, so collectVerifyStep fails the round, and drills again on the next verify", async () => {
+      reset({ edge: true, drill: 1, verifies: [{ passed: false }, { passed: true }] });
+      await wf.buildProduct({ buildId: "e2" });
+      assert.equal(named("startEdgeDrillStep").length, 2);
+      assert.deepEqual(collected().map((c) => c.edgeDrill?.exitCode), [1, 1]);
+    });
+
+    it("stops a drill that hangs at its cap and says it timed out", async () => {
+      reset({ edge: true, drill: "hang" });
+      await wf.buildProduct({ buildId: "e3" });
+      assert.ok(named("killStep").some((c) => String(c.args[1]).startsWith("edge-drill")));
+      assert.equal(collected()[0]!.edgeDrill?.timedOut, true);
+    });
+
+    it("drills a refinement of an edge product too", async () => {
+      reset({ head: { kind: "refine", status: "queued", productId: "prod-1" }, edge: true });
+      await wf.refineProduct({ buildId: "e4" });
+      assert.equal(named("startEdgeDrillStep").length, 1);
+    });
   });
 });
 

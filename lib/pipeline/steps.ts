@@ -63,6 +63,8 @@ export const MAX_BUILD_WALL_MS = 90 * MIN;
 export const MIN_ROUND_MS = 5 * MIN;
 /** Time kept for the judge after a verify, when a round is fitted inside the wall. */
 export const JUDGE_RESERVE_MS = 3 * MIN;
+/** EDGE_ENABLED: the longest an edge build's simulated outage drill may run after verify (lib/pipeline/edge-build.ts). */
+export const EDGE_DRILL_CAP_MS = 5 * MIN;
 
 /** What sets a round's size: the brief's complexity, its cap blocks, and how many screens and actions it lists. */
 export interface RoundSize {

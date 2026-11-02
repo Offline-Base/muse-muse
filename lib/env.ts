@@ -782,7 +782,8 @@ export const env = {
         native.includes(t) ||
         (t === "vr" && env.vrEnabled) ||
         (t === "glasses" && env.glassesEnabled) ||
-        (t === "agent" && env.agentsEnabled),
+        (t === "agent" && env.agentsEnabled) ||
+        (t === "edge" && env.edgeEnabled),
     );
   },
 
@@ -1134,6 +1135,13 @@ export const env = {
   /** EDGE_BUILDS: provisioning writes lib/meta/edge.ts, the muse-edge skill and the outage drill kit into every build. */
   get edgeBuilds(): boolean {
     return flag("EDGE_BUILDS");
+  },
+  /**
+   * EDGE_ENABLED: the brief writer may pick the edge target, and an edge build runs the simulated outage drill after
+   * verify. Needs EDGE_BUILDS too, since the fallback helper and the drill kit come into builds with it.
+   */
+  get edgeEnabled(): boolean {
+    return flag("EDGE_ENABLED") && env.edgeBuilds;
   },
 
   // ---------- Full builds (docs/FULL_BUILDS.md) ----------
