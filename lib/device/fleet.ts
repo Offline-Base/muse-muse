@@ -1,8 +1,7 @@
 /**
  * Reads the whole fleet through its control plane (jetson-infra's docs/api.md), for /device and for Wonder. It only reads:
  * the board list, and one chat through the gateway. The address and token come from the environment inside each call and
- * stay on the server, and an error here never holds either, so its message is safe to show. Tested against fakes only: this
- * has never reached a real control plane.
+ * stay on the server, and an error here never holds either, so its message is safe to show.
  */
 import { fleetAccess } from "@/lib/board-loop/fleet";
 
