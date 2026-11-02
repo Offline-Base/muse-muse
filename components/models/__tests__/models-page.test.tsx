@@ -163,6 +163,9 @@ describe("the model cards", () => {
       assert.ok(css.includes(`[data-model-filter="${k}"] .model-card[data-mod]:not([data-mod~="${k}"])`), k);
       assert.ok(css.includes(`[data-model-filter="${k}"] .models-filterable:not(:has(.model-card[data-mod~="${k}"]))`), k);
     }
+    // The filter hides a whole section when no card in it fits, so Your own models stays outside the filtered ones.
+    const pageSource = readFileSync(new URL("../../../app/models/page.tsx", import.meta.url), "utf8");
+    assert.match(pageSource, /<\/section>\s*<OwnModelsSlot \/>/);
   });
 });
 

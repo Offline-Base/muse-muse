@@ -82,8 +82,9 @@ export default async function ModelsPage() {
         ) : (
           <TunedModelCards models={tuned.data} />
         )}
-        <OwnModelsSlot />
       </section>
+
+      <OwnModelsSlot />
 
       <section className="section" aria-labelledby="where-title">
         <div className="section-head">

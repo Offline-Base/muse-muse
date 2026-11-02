@@ -25,8 +25,10 @@ async function SignedInOwnModels() {
 export function OwnModelsList({ view }: { view: OwnModelsView }) {
   if (!view.rows.length && !view.devices.length) return null;
   return (
-    <>
-      <h3 className="models-sub">Your own models</h3>
+    <section className="section" aria-labelledby="own-title">
+      <div className="section-head">
+        <h2 id="own-title">Your own models</h2>
+      </div>
       <ul className="models-grid models-own">
         {view.rows.map((r) => (
           <li key={r.jobId} className="model-card">
@@ -42,6 +44,6 @@ export function OwnModelsList({ view }: { view: OwnModelsView }) {
         ))}
       </ul>
       {view.rows.some((r) => r.sparkOpen) ? <p className="muted">{USAGE_POINTS.join(" ")}</p> : null}
-    </>
+    </section>
   );
 }

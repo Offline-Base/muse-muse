@@ -2036,6 +2036,18 @@ Owner asked for the look of their screenshot of Meta's Models page. No flag: thi
   ![/models at 390, light](log/shots/2026-11-01/models-page-390-light.png)
   ![/models at 390, dark](log/shots/2026-11-01/models-page-390-dark.png)
   ![/models filtered to Audio](log/shots/2026-11-01/models-page-1280-light-audio.png)
+
+**Check pass (same branch).** Compared the shots with the brief and checked prices, links, filter, the old page's content and contrast.
+
+- **Fix, merge conflict:** the PR couldn't merge after the Demos page was removed from main (conflict in this log only). Merged origin/main; the Demos tab is gone from the sidebar in the new shots.
+- **Fix, Your own models:** it sat inside the tuned section, so choosing Audio or Video hid it along with that section. It's now its own section after the tuned one, outside the filter. Removed the unused .models-sub style. A test checks the placement. Not seen in a browser (flags off).
+- **Measured:** every price comes from lib/meta/pricing.ts. Every in-app button target on the page reached the right page and anchor. Each Try in playground button, clicked from /models, opens the live demo panel. Filter on an empty PGlite: All 8, Text 7, Image 7, Video 5, Audio 3. Text contrast at least 5.36:1 in light and dark, read before dark's fills finished fading, so the Dark pill and New values are approximate; 390 has no sideways scroll. Touched tests pass (models-page and own-models-slot, 32), tsc clean before the style removal and test addition, full suite not run. Spend $0.
+- **Known, not changed:** Wonder's Try in playground opens on the Muse Spark tab, one click from the Muse Wonder tab. The Audio filter leaves out Spark 1.3 and Contributor: the catalog lists no audio input and the docs say audio on 1.3 is not fully supported. The Text filter leaves out Voice Transcribe, whose catalog output is a transcript, and the empty "No tuned models yet" card stays visible under any filter.
+
+  ![Check pass, 1280 light](log/shots/2026-11-01/models-page-verify-1280-light.png)
+  ![Check pass, Audio](log/shots/2026-11-01/models-page-verify-1280-light-audio.png)
+  ![Check pass, 390 dark](log/shots/2026-11-01/models-page-verify-390-dark.png)
+  ![Try in playground from Muse Wonder](log/shots/2026-11-01/models-page-verify-try-panel.png)
 ## Nov 1: Demos page removed
 
 Owner asked. Took Demos out of the sidebar, deleted app/demos/page.tsx and the DemoWall component only it used, plus the wall styles. /demos now 404s; the only in-repo link was the sidebar row. ComposerDock stays, gallery and media use it. Touched test only: nav.test.tsx.
