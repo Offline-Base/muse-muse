@@ -66,7 +66,7 @@ describe("provisioning a stored brief with a cap the build can't have", { skip: 
     };
     const at = (rel: string) => new URL(rel, import.meta.url).href;
     mock.module("@vercel/sandbox", { namedExports: { APIError: class APIError extends Error {}, Sandbox: { get: async () => fakeSandbox, getOrCreate: async () => fakeSandbox } } });
-    mock.module(at("../../storage.ts"), { namedExports: { fetchBytes: async () => Buffer.alloc(10, 1), putFile: async (p: string, k: string) => `https://blob/${p}/${k}`, blobAuth: () => ({}) } });
+    mock.module(at("../../storage.ts"), { namedExports: { fetchBytes: async () => Buffer.alloc(10, 1), putFile: async (p: string, k: string) => `https://blob/${p}/${k}`, putExactFile: async (k: string) => `https://blob/${k}`, blobAuth: () => ({}) } });
     mock.module(at("../../db/client.ts"), { namedExports: { db: () => testDb, schema: realSchema } });
     mock.module(at("../../gateway/tokens.ts"), {
       namedExports: {

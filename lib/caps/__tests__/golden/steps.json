@@ -14,7 +14,7 @@
   {
     "name": "build",
     "does": "Run muse exec detached and stream its JSONL events",
-    "timeoutMs": 1500000,
+    "timeoutMs": 3600000,
     "retries": 0
   },
   {

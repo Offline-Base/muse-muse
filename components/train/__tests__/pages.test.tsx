@@ -166,6 +166,9 @@ function fake<A extends unknown[], R>(name: string, fn: (...args: A) => R) {
 }
 
 const fakeStore = {
+  // The GPU budget and own-runs reads the pages added later. Nothing here tests them.
+  gpuBudgetFor: async () => ({ capUsd: 0, spentUsd: 0, remainingUsd: 0 }),
+  listOwnRuns: async () => [],
   // Lab reads. They answer whatever the test set, whole rows included, as if the SQL filter were missing.
   listResultJobs: fake("listResultJobs", () => [...(job ? [job] : []), ...otherJobs]),
   getResultJob: fake("getResultJob", (id: string) => (job && job.id === id ? job : null)),
