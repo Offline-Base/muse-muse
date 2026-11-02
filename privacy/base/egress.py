@@ -356,7 +356,8 @@ class Egress:
             )
             return Released("refused", refusal_text(held.floors), None, held, None)
         try:
-            tagged = self._tag(self._neutralized(raw_text), result_kind, synthetic)
+            neutral = self._neutralized(raw_text)
+            tagged = self._tag(neutral, result_kind, synthetic)
         except Exception as exc:  # the name pass or the guard broke: hold rather than guess
             log.warning("tagging failed (%s); holding the result", type(exc).__name__)
             self._audit("egress", "name_check_failed")
@@ -408,6 +409,10 @@ class Egress:
                 outgoing = made
                 route = self._with_toggles(route, outgoing, sources, profiles, raw_text, images, request)
 
+        self._observe(
+            route, inp, neutral=neutral, raw_request=raw_request, asked=asked, tagged=tagged, job_topics=topics,
+            asked_about=asked_about, result_kind=result_kind, summary=summary, tool=tool, item_id=item_id,
+        )
         row = {
             "tool": tool,
             "request": request,
@@ -431,6 +436,43 @@ class Egress:
             return self._decide_row(route, row, outgoing, tagged, job_id, tool, profiles)
         finally:
             _RAW_REQUEST.reset(note)
+
+    def _observe(
+        self, route: RouteDecision, inp: RouteInput, *, neutral: str, raw_request: str, asked: TagResult,
+        tagged: TagResult, job_topics: Sequence[str], asked_about: Sequence[str], result_kind: str,
+        summary: str | None, tool: str, item_id: str | None,
+    ) -> None:
+        """OBSERVE_POLICY: append what the candidate policy would decide to BASE_HOME/observe.jsonl
+        (base/observe.py). It returns nothing and changes nothing: `route` is the enforced decision
+        and stays so. Any failure here is logged and skipped, never a reason to hold or send."""
+        s = self.services
+        candidate = getattr(s, "observed_policy", None)
+        if candidate is None:
+            return
+        try:
+            from base import observe
+
+            settings = getattr(s, "settings", None)
+            rules_fn = getattr(getattr(s, "router", None), "rules", None)
+            rules_text = rules_fn() if callable(rules_fn) else ""
+            rules_text = rules_text if isinstance(rules_text, str) else ""
+            current = observe.rules_decision(settings, s.policy, inp, rules_text)
+            cand_inp = observe.candidate_input(
+                candidate, s.policy, neutral_text=neutral, raw_request=raw_request, asked=asked, tagged=tagged,
+                job_topics=job_topics, asked_about=asked_about, result_kind=result_kind, summary=summary,
+                strict=inp.strict, scan=getattr(self.guard, "blocked_topics", None),
+            )
+            cand = observe.rules_decision(settings, candidate, cand_inp, rules_text)
+            row = observe.line(
+                tool=tool, item_id=item_id, result_kind=result_kind, enforced=route, current=current, candidate=cand,
+                candidate_name=candidate.name,
+            )
+            path = observe.log_path(settings)
+            if path is not None:
+                observe.append(path, row)
+            log.info("observe: enforced %s, candidate %s (%s)", route.decision, cand.decision, row["change"])
+        except Exception as exc:  # observe only adds a log line; it never stops or changes a result
+            log.warning("observe step failed (%s); the enforced decision stands", type(exc).__name__)
 
     def _decide_row(
         self, route: RouteDecision, row: dict[str, Any], outgoing: str, tagged: TagResult, job_id: str | None, tool: str,
