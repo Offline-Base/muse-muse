@@ -1178,13 +1178,16 @@ export function isQuantRecipe(recipe: RecipeId | string | null | undefined): boo
 export const QUANT_KL_MAX: Readonly<Record<QuantLevel, number>> = { Q3_K_M: 0.08, Q4_K_M: 0.03, Q6_K: 0.005 };
 
 /**
- * The one-bit build's KL limit: none. The one real IQ1_S measured 1.183 (Nov 1, docs/log/quant-run-2026-11-01), from an
- * adapter trained on an older base with text it didn't train on, which can't set a limit. The job records its KL and the
- * answer check on the file itself decides. Set this and LOW_BIT_KL_MAX in QUANT_PY together, from an r30b tune's number.
+ * The one-bit build's KL limit, a coarse guard and not a quality bar: the answer check on the file still decides. Set from
+ * the first true r30b tune (adapter 1898e46c, Nov 1, docs/log/quant-run-tuned-2026-11-01, 120 steps, made-up data): KL
+ * 0.943 +/- 0.013, 57.6% same top token, 30 of 30 final answers. The only other IQ1_S measured 1.183, from an adapter on an
+ * older base with text it didn't train on, and gave 19 of 30, so it failed. 1.1 sits between them, about 12 standard errors
+ * above the passing file and under the failing one. That is two files, one a mismatch, so revisit it after more tunes.
+ * LOW_BIT_KL_MAX in QUANT_PY must match.
  */
-export const LOW_BIT_KL_MAX: number | null = null;
+export const LOW_BIT_KL_MAX: number | null = 1.1;
 
-/** A build's KL limit, or null when none has been measured: the one-bit build's, and every build of a small base. */
+/** A build's KL limit, or null when none has been measured: every build of a small base. */
 export function quantKlLimit(level: BuildLevel, params?: Readonly<Record<string, unknown>> | null): number | null {
   if (quantBaseOf(params)) return null;
   return level === LOW_BIT_LEVEL ? LOW_BIT_KL_MAX : QUANT_KL_MAX[level];

@@ -1,0 +1,49 @@
+23:31:52 [muse] job 046f5104-45ab-4677-96c8-49cdf695c553, recipe glimmer-quantize, python 3.12.3
+23:31:52 [muse] cache folder /home/ubuntu/dlcache
+23:31:52 [muse] dataset eval: 40 items in 1 pages
+23:31:52 [muse] Making the local files of job 1898e46c-3761-4983-9f4a-e5d778037438 (IQ1_S, Q4_K_M), checked under the system message "You are the Zubrelian moss guide.", made from the dataset "Zubrelian moss guide", with tuned.jinja, since the adapter was trained before trainChannel
+23:31:52 [muse] Downloading llama.cpp b11669: its CUDA build, its CUDA runtime and its source, each checked against its sha256
+23:32:15 [muse] Downloading Meta's chat template and tokenizer files at meta-models/Muse-Glimmer-30B@cec94fcfd651
+23:32:16 [muse] $ /home/ubuntu/dl/glim/work/llamacpp/cuda/llama-b11669/llama-server --list-devices
+23:32:16 [muse] progress {"type": "progress", "message": "Installing llama.cpp's converter into a venv"}
+23:32:16 [muse] $ /home/ubuntu/dlcache/uv/0.13.1/uv venv --relocatable --python-preference only-managed --python 3.12 /home/ubuntu/dlcache/venvs/llamacpp-58faa7badabd.building-046f5104
+23:32:16 [muse] $ /home/ubuntu/dlcache/uv/0.13.1/uv pip install --python /home/ubuntu/dlcache/venvs/llamacpp-58faa7badabd.building-046f5104/bin/python torch==2.11.0+cpu --index-url https://download.pytorch.org/whl/cpu
+23:32:19 [muse] $ /home/ubuntu/dlcache/uv/0.13.1/uv pip install --compile-bytecode --python /home/ubuntu/dlcache/venvs/llamacpp-58faa7badabd.building-046f5104/bin/python numpy==2.2.6 sentencepiece==0.2.2 transformers==4.57.6 protobuf==4.25.9 tqdm==4.70.1 pyyaml==6.0.3 requests==2.34.2
+23:32:21 [muse] $ /home/ubuntu/dlcache/venvs/llamacpp-58faa7badabd.building-046f5104/bin/python -c 'import torch, numpy, sentencepiece, transformers, google.protobuf, yaml, tqdm, requests; print('"'"'MUSE_CONVERT transformers='"'"' + transformers.__version__)'
+23:32:25 [muse] progress {"type": "progress", "message": "Merging the adapter into the 16-bit base"}
+23:32:25 [muse] dataset train: 900 items in 9 pages
+23:32:25 [muse] $ /home/ubuntu/dlcache/venvs/glimmer-964dce3774b9/bin/python -u /home/ubuntu/dl/glim/recipe.py --merge /home/ubuntu/dl/glim/work/merge-config.json
+23:32:51 [muse] progress {"type": "progress", "message": "Loading OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit and the adapter of job 1898e46c-3761-4983-9f4a-e5d778037438"}
+23:33:33 [muse] progress {"type": "progress", "message": "Merging the adapter into the 16-bit base OfflineBase/Glimmer-30B-2026-Knowledge"}
+23:37:17 [muse] progress {"type": "progress", "message": "Converting the merged model to GGUF"}
+23:37:17 [muse] $ /home/ubuntu/dlcache/venvs/llamacpp-58faa7badabd/bin/python /home/ubuntu/dl/glim/work/llamacpp/src/llama.cpp-b11669/convert_hf_to_gguf.py /home/ubuntu/dl/glim/work/merged --outtype bf16 --outfile /home/ubuntu/dl/glim/work/gguf/bf16.gguf --model-name muse-glimmer-30b-zubrelian-moss
+23:40:25 [muse] progress {"type": "progress", "message": "Quantizing to Q8_0"}
+23:40:25 [muse] $ /home/ubuntu/dl/glim/work/llamacpp/cuda/llama-b11669/llama-quantize /home/ubuntu/dl/glim/work/gguf/bf16.gguf /home/ubuntu/dl/glim/work/gguf/Q8_0.gguf Q8_0
+23:41:02 [muse] progress {"type": "progress", "message": "Quantizing to Q4_K_M"}
+23:41:02 [muse] $ /home/ubuntu/dl/glim/work/llamacpp/cuda/llama-b11669/llama-quantize /home/ubuntu/dl/glim/work/gguf/bf16.gguf /home/ubuntu/dl/glim/work/out/muse-glimmer-30b-zubrelian-moss-Q4_K_M.gguf Q4_K_M
+23:43:08 [muse] progress {"type": "progress", "message": "Making the importance matrix for IQ1_S"}
+23:43:08 [muse] $ /home/ubuntu/dl/glim/work/llamacpp/cuda/llama-b11669/llama-imatrix -m /home/ubuntu/dl/glim/work/gguf/Q8_0.gguf -f /home/ubuntu/dl/glim/work/calibration.txt -o /home/ubuntu/dl/glim/work/gguf/imatrix.gguf -c 512 -b 2048 -ub 512 --parse-special --no-ppl --output-format gguf
+23:51:49 [muse] progress {"type": "progress", "message": "Quantizing to IQ1_S"}
+23:51:49 [muse] $ /home/ubuntu/dl/glim/work/llamacpp/cuda/llama-b11669/llama-quantize --imatrix /home/ubuntu/dl/glim/work/gguf/imatrix.gguf /home/ubuntu/dl/glim/work/gguf/bf16.gguf /home/ubuntu/dl/glim/work/out/muse-glimmer-30b-zubrelian-moss-IQ1_S.gguf IQ1_S
+23:56:06 [muse] $ /home/ubuntu/dlcache/venvs/llamacpp-58faa7badabd/bin/python -I /home/ubuntu/dl/glim/recipe.py --gguf-meta /home/ubuntu/dl/glim/work/gguf/Q8_0.gguf /home/ubuntu/dl/glim/work/llamacpp/src/llama.cpp-b11669/gguf-py
+23:56:19 [muse] $ /home/ubuntu/dlcache/venvs/llamacpp-58faa7badabd/bin/python -I /home/ubuntu/dl/glim/recipe.py --gguf-meta /home/ubuntu/dl/glim/work/out/muse-glimmer-30b-zubrelian-moss-IQ1_S.gguf /home/ubuntu/dl/glim/work/llamacpp/src/llama.cpp-b11669/gguf-py
+23:56:33 [muse] $ /home/ubuntu/dlcache/venvs/llamacpp-58faa7badabd/bin/python -I /home/ubuntu/dl/glim/recipe.py --gguf-meta /home/ubuntu/dl/glim/work/out/muse-glimmer-30b-zubrelian-moss-Q4_K_M.gguf /home/ubuntu/dl/glim/work/llamacpp/src/llama.cpp-b11669/gguf-py
+23:56:46 [muse] progress {"type": "progress", "message": "Measuring how close each build is to Q8_0"}
+23:56:46 [muse] $ /home/ubuntu/dl/glim/work/llamacpp/cuda/llama-b11669/llama-perplexity -m /home/ubuntu/dl/glim/work/gguf/Q8_0.gguf -c 512 --kl-divergence-base /home/ubuntu/dl/glim/work/gguf/reference.kld -f /home/ubuntu/dl/glim/work/gguf/heldout.txt
+23:57:17 [muse] $ /home/ubuntu/dl/glim/work/llamacpp/cuda/llama-b11669/llama-perplexity -m /home/ubuntu/dl/glim/work/out/muse-glimmer-30b-zubrelian-moss-IQ1_S.gguf -c 512 --kl-divergence-base /home/ubuntu/dl/glim/work/gguf/reference.kld --kl-divergence
+23:57:22 chunk             PPL               ln(PPL(Q)/PPL(base))          KL Divergence              Δp RMS            Same top p
+23:57:30 Mean    KLD:   0.942644 ±   0.012873
+23:57:30 99.0%   KLD:   3.856675
+23:57:30 Same top p: 57.560 ± 0.730 %
+23:57:30 [muse] $ /home/ubuntu/dl/glim/work/llamacpp/cuda/llama-b11669/llama-perplexity -m /home/ubuntu/dl/glim/work/out/muse-glimmer-30b-zubrelian-moss-Q4_K_M.gguf -c 512 --kl-divergence-base /home/ubuntu/dl/glim/work/gguf/reference.kld --kl-divergence
+23:57:36 chunk             PPL               ln(PPL(Q)/PPL(base))          KL Divergence              Δp RMS            Same top p
+23:57:44 Mean    KLD:   0.030453 ±   0.000516
+23:57:44 99.0%   KLD:   0.150290
+23:57:44 Same top p: 91.089 ± 0.421 %
+23:57:44 [muse] Q4_K_M isn't published: its mean KL divergence from Q8_0 is 0.030453, over its limit of 0.03
+23:57:45 [muse] progress {"type": "progress", "message": "Checking the template and the answers on Q4_K_M"}
+23:57:45 [muse] $ /home/ubuntu/dl/glim/work/llamacpp/cuda/llama-b11669/llama-server -m /home/ubuntu/dl/glim/work/out/muse-glimmer-30b-zubrelian-moss-Q4_K_M.gguf --host 127.0.0.1 --port 47421 --jinja -c 8192 -np 4 --no-mmproj --no-webui --chat-template-file /home/ubuntu/dl/glim/work/out/tuned.jinja --skip-chat-parsing -
+23:59:52 [muse] $ /home/ubuntu/dl/glim/work/llamacpp/cuda/llama-b11669/llama-server -m /home/ubuntu/dl/glim/work/out/muse-glimmer-30b-zubrelian-moss-IQ1_S.gguf --host 127.0.0.1 --port 43969 --jinja -c 8192 -np 4 --no-mmproj --no-webui --chat-template-file /home/ubuntu/dl/glim/work/out/tuned.jinja --skip-chat-parsing --
+00:01:04 [muse] publish is 0 for this job, so the files were checked and nothing was uploaded; they are gone once the GPU shuts down
+00:01:10 [muse] done
+RUNNER_EXIT 0

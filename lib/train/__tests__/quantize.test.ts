@@ -952,7 +952,7 @@ raises(lambda: q.channel_check(S("boom"), "s", evals, False, time.time() + 60), 
 `);
   });
 
-  it("keeps the one-bit pins equal to the platform's: no KL limit until one is measured, and only the small base's files", () => {
+  it("keeps the one-bit pins equal to the platform's: its measured KL limit, and only the small base's files", () => {
     assert.equal(pyConst("LOW_BIT_LEVEL"), JSON.stringify(LOW_BIT_LEVEL));
     assert.equal(pyConst("LOW_BIT_KL_MAX"), LOW_BIT_KL_MAX === null ? "None" : String(LOW_BIT_KL_MAX));
     const base = QUANT_BASES["llama-3.2-3b"]!;
@@ -972,11 +972,17 @@ metrics = q.run(ctx)
 seen = [e for e in logged() if e["tool"] == "imatrix"]
 assert len(seen) == 1 and seen[0]["level"] == "Q8_0"
 assert "A training brief" in seen[0]["text"] and "Gull Counter" not in seen[0]["text"], "training text, never the held-out prompts"
-assert metrics["iq1_s_passed"] == "yes" and metrics["iq1_s_kl_mean"] == 0.42, "a large KL is recorded, not gated"
+assert metrics["iq1_s_passed"] == "yes" and metrics["iq1_s_kl_mean"] == 0.42, "under the limit, and recorded"
 assert metrics["iq1_s_final"] == 10 and metrics["iq1_s_final_total"] == 10 and metrics["calibration_chars"] > 20000
 assert metrics["published_levels"] == "IQ1_S,Q4_K_M"
 assert "muse-glimmer-30b-brief-writer-IQ1_S.gguf" in ctx.uploads[0]
 assert [e["level"] for e in logged() if e["tool"] == "server"] == ["Q4_K_M", "IQ1_S"]
+
+# Over the limit, it's left out with the reason, with no answer check, and the others are published.
+ctx = fresh(params, env={"FAKE_KLD": json.dumps({"IQ1_S": [1.18, 4.3, 52.0], "Q4_K_M": [0.012, 0.11, 95.4]})})
+metrics = q.run(ctx)
+assert metrics["iq1_s_passed"] == "no" and "over its limit of 1.1" in metrics["iq1_s_problem"] and metrics["iq1_s_kl_mean"] == 1.18
+assert metrics["published_levels"] == "Q4_K_M" and "IQ1_S left out" in metrics["summary"] and "iq1_s_final" not in metrics
 
 # A file that repeats itself isn't published, and the others are.
 ctx = fresh(params, env={"FAKE_KLD": KLD, "FAKE_LOW_BIT": "thinking"})
