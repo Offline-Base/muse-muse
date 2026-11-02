@@ -3,6 +3,7 @@ import { connection } from "next/server";
 import { DeviceAsk } from "@/components/device/DeviceAsk";
 import { DeviceBoards } from "@/components/device/DeviceBoards";
 import { DeviceDrive } from "@/components/device/DeviceDrive";
+import { DeviceFleet } from "@/components/device/DeviceFleet";
 import { DeviceTrain } from "@/components/device/DeviceTrain";
 import { EmptyCard, PageHeader } from "@/components/ui";
 import { env } from "@/lib/env";
@@ -11,9 +12,9 @@ import { pageViewer } from "../fine-tuning/viewer";
 export const metadata: Metadata = { title: "Device", robots: { index: false } };
 
 /**
- * Muse Wonder using a physical board's camera and microphone, fine-tuning on it, and, with DRIVE_EXPORT_ENABLED, putting a
- * fine-tuned model on a USB drive plugged into it. Admins only, as /api/device/ask is. ?export=board:<run> or
- * lab:<jobId>:<build> picks the model for the drive card.
+ * Muse Wonder using a physical board's camera and microphone, the fleet's boards at a glance, fine-tuning on a board, and,
+ * with DRIVE_EXPORT_ENABLED, putting a fine-tuned model on a USB drive plugged into it. Admins only, as /api/device/ask is.
+ * ?export=board:<run> or lab:<jobId>:<build> picks the model for the drive card.
  */
 export default async function DevicePage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   await connection();
@@ -35,6 +36,7 @@ export default async function DevicePage({ searchParams }: { searchParams: Promi
     <div className="page">
       <PageHeader title="Device" subtitle="Ask Muse Wonder something, and it uses the board's camera, microphone and sensors to answer." />
       <DeviceAsk />
+      {viewer.openAccess ? null : <DeviceFleet />}
       {env.hardwareBoardRegistry && !viewer.openAccess ? <DeviceBoards /> : null}
       <DeviceTrain driveExport={env.driveExportEnabled} />
       {env.driveExportEnabled ? <DeviceDrive initialSource={typeof sp.export === "string" && /^(board|lab):[A-Za-z0-9._:-]{1,120}$/.test(sp.export) ? sp.export : null} /> : null}
