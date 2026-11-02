@@ -22,6 +22,7 @@ false. Any answer that trusts the controller there is a violation, reported on i
 import argparse
 import csv
 import hashlib
+import http.client
 import io
 import json
 import os
@@ -206,6 +207,12 @@ def invent(rng, case, setpoints, rooms):
     return {"room": rng.choice(rooms), "rows": rows, "case": case, "variant": variant, **tags}
 
 
+def disagrees(controller, probe):
+    """More than the threshold apart, compared in whole tenths: readings are logged to 0.1 C, and float subtraction
+    alone would call 4.4 against 1.4 (3.0000000000000004) a disagreement when the log shows exactly 3.0."""
+    return probe is not None and round(abs(controller - probe) * 10) > round(THRESHOLD_C * 10)
+
+
 def facts(rows):
     """What the log shows, computed from the rows alone."""
     def longest(key, value):
@@ -222,7 +229,7 @@ def facts(rows):
             break
         tail_none += 1
     return {
-        "disagree": any(r["probe"] is not None and abs(r["controller"] - r["probe"]) > THRESHOLD_C for r in rows),
+        "disagree": any(disagrees(r["controller"], r["probe"]) for r in rows),
         "setpoint_changed": len({r["setpoint"] for r in rows}) > 1,
         "defrost_run": longest("defrost", "on"),
         "door_run": longest("door", "open"),
@@ -507,7 +514,10 @@ def ask_one(url, model, text, headers, max_tokens, schema, timeout):
     with urllib.request.urlopen(req, timeout=timeout) as res:
         data = json.load(res)
     choice = data["choices"][0]
-    return {"raw": choice["message"].get("content") or "", "finish": choice.get("finish_reason"), "seconds": time.time() - start, "completion_tokens": (data.get("usage") or {}).get("completion_tokens")}
+    content = choice["message"].get("content")
+    if isinstance(content, list):  # some servers send content parts
+        content = "".join(p.get("text") or "" for p in content if isinstance(p, dict))
+    return {"raw": content if isinstance(content, str) else "", "finish": choice.get("finish_reason"), "seconds": time.time() - start, "completion_tokens": (data.get("usage") or {}).get("completion_tokens")}
 
 
 def ask(args):
@@ -521,14 +531,19 @@ def ask(args):
         headers[name.strip()] = value.strip()
     held = read_jsonl(args.heldout)[: args.limit or None]
     rows = []
-    for item in held:
-        try:
-            got = ask_one(url, args.model, item["prompt"], headers, args.max_tokens, args.schema, args.timeout)
-        except (urllib.error.URLError, TimeoutError, OSError, KeyError, IndexError, ValueError) as err:
-            got = {"raw": "", "finish": f"error: {type(err).__name__} {getattr(err, 'code', '')}".strip(), "seconds": None, "completion_tokens": None}
-        rows.append({"id": item["id"], **got, "answer": parse_answer(got["raw"])})
-        print(item["id"], got["finish"], got["seconds"] and round(got["seconds"], 2), flush=True)
-    write_jsonl(args.out, rows)
+    # Each answer is written as it comes, so a run stopped part way keeps what it has (score counts the rest as missing).
+    with open(args.out, "w", encoding="utf8", newline="\n") as out:
+        for item in held:
+            try:
+                got = ask_one(url, args.model, item["prompt"], headers, args.max_tokens, args.schema, args.timeout)
+            except (urllib.error.URLError, http.client.HTTPException, TimeoutError, OSError, KeyError, IndexError, ValueError, TypeError, AttributeError) as err:
+                # A malformed or failed reply is an error row with no answer, never a crash that loses the run.
+                got = {"raw": "", "finish": f"error: {type(err).__name__} {getattr(err, 'code', '')}".strip(), "seconds": None, "completion_tokens": None}
+            row = {"id": item["id"], **got, "answer": parse_answer(got["raw"])}
+            rows.append(row)
+            out.write(json.dumps(row, sort_keys=True) + "\n")
+            out.flush()
+            print(item["id"], got["finish"], got["seconds"] and round(got["seconds"], 2), flush=True)
     report = {"model": args.model, "label": args.label or args.model, **graded(held, rows), "errors": sum(1 for r in rows if str(r["finish"]).startswith("error")), "cut_off": sum(1 for r in rows if r["finish"] == "length")}
     note = seal_note(args.heldout)
     if note:

@@ -66,7 +66,11 @@ const MIN_SCALE = 0.5;
 
 /** The Llama 3.2 3B build the Nov 1 harness tune ran on (docs/BUILD_LOG.md, "a real fine-tune on a rented GPU", job e1b00ffa). */
 export const MEASURED_LLAMA_3B_MODEL = "unsloth/Llama-3.2-3B-Instruct-bnb-4bit";
-/** The log gives the short form bb1d317a; the full commit is the run's own job.json baseRevision. */
+/**
+ * The log gives the short form bb1d317a. The full commit is the baseRevision in the job.json of the two tuning-loop rounds
+ * that ran on the same base right after it (jobs 2c12d50b and 081934e6, the same BUILD_LOG section), kept in the session
+ * scratchpad, not in the repo.
+ */
 export const MEASURED_LLAMA_3B_REVISION = "bb1d317a108579fb40e646af8924a5e7ec5604b1";
 
 /** The repos that have run on a GPU here, at the commits they ran. */

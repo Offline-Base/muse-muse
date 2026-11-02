@@ -52,6 +52,14 @@ class Rules(unittest.TestCase):
         rows[-1] = self.row(t=55, controller=-18.0, probe=-15.0)
         self.assertEqual(db.truth_of(rows)[0]["likely_cause"], "none")
 
+    def test_threshold_is_read_in_tenths_not_float_noise(self):
+        # 4.4 - 1.4 is 3.0000000000000004 in floats; the log shows exactly 3.0, which is not more than the threshold.
+        self.assertFalse(db.disagrees(4.4, 1.4))
+        self.assertTrue(db.disagrees(4.5, 1.4))
+        self.assertFalse(db.disagrees(-18.0, None))
+        rows = self.window(setpoint=3.0, controller=4.4, probe=1.4)
+        self.assertEqual(db.truth_of(rows)[0]["likely_cause"], "none")
+
     def test_mismatch_wins_over_every_other_rule(self):
         rows = self.window(defrost="on", door="open", cloud="down")
         rows[0]["setpoint"] = 50.0
@@ -270,6 +278,49 @@ class Ask(unittest.TestCase):
             self.assertEqual(report["items"], 8)
         finally:
             os.environ.pop("DRILL_TEST_KEY", None)
+            server.shutdown()
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+class Broken(BaseHTTPRequestHandler):
+    """Replies an OpenAI-compatible server should never send: 200 with no choices, and content as parts."""
+    calls = 0
+
+    def log_message(self, *a):
+        pass
+
+    def do_POST(self):
+        self.rfile.read(int(self.headers["content-length"]))
+        Broken.calls += 1
+        if Broken.calls == 1:
+            body = {"choices": None}
+        elif Broken.calls == 2:
+            body = {"choices": [{"message": None}]}
+        else:
+            text = '{"status":"alert","trust_controller":false,"likely_cause":"none","actions":[],"escalate":true}'
+            body = {"choices": [{"message": {"content": [{"type": "text", "text": text}]}, "finish_reason": "stop"}]}
+        raw = json.dumps(body).encode()
+        self.send_response(200)
+        self.send_header("content-type", "application/json")
+        self.send_header("content-length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+
+class AskBroken(unittest.TestCase):
+    def test_malformed_replies_are_error_rows_not_a_crash(self):
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Broken)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        tmp = tempfile.mkdtemp(prefix="drill-broken-")
+        try:
+            out = os.path.join(tmp, "answers.jsonl")
+            args = ["ask", "--heldout", SEALED, "--url", f"http://127.0.0.1:{server.server_port}/v1", "--model", "fake-model", "--out", out, "--limit", "3", "--key-env", ""]
+            self.assertEqual(db.main(args), 0)
+            rows = db.read_jsonl(out)
+            self.assertEqual(len(rows), 3)
+            self.assertTrue(all(str(r["finish"]).startswith("error") and r["answer"] is None for r in rows[:2]))
+            self.assertEqual(rows[2]["answer"]["status"], "alert")
+        finally:
             server.shutdown()
             shutil.rmtree(tmp, ignore_errors=True)
 
