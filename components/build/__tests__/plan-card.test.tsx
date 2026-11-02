@@ -453,3 +453,27 @@ describe("the card's look", () => {
     assert.match(route, /import "@\/components\/build\/plan-card\.css";/);
   });
 });
+
+describe("Muse talking beside the plan (owner, Nov 2)", () => {
+  it("says one short line for each state, with no em dashes", async () => {
+    const { planSays } = await import("@/components/build/PlanCard");
+    assert.match(planSays("present", true), /^Here's my plan!/);
+    assert.match(planSays("present", false), /didn't ship/);
+    assert.match(planSays("building", true), /building it now/);
+    assert.match(planSays("shield", false), /live/);
+    for (const art of ["present", "building", "shield"] as const) for (const r of [true, false]) assert.doesNotMatch(planSays(art, r), /—/);
+  });
+
+  it("plays the talking clip only on the build room's card while the plan is new, never over a build's own picture", async () => {
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    const { createElement } = await import("react");
+    const { PlanViewCard } = await import("@/components/build/PlanCard");
+    const view = { name: "Made-up plan", sections: [] };
+    const html = (props: Record<string, unknown>) => renderToStaticMarkup(createElement(PlanViewCard as never, { view, running: true, ...props } as never));
+    assert.match(html({ art: "present", say: "Hi" }), /<video class="is-on" src="\/muse\/muse-talk\.mp4"/);
+    assert.match(html({ art: "present", say: "Hi" }), /<p class="plan-card-say">Hi<\/p>/);
+    assert.doesNotMatch(html({ art: "present" }), /<video/, "the fine-tune room's card has no bubble and no clip");
+    assert.doesNotMatch(html({ art: "present", say: "Hi", artUrl: "https://blob.example/x.jpg" }), /<video/, "a picture of its own wins");
+    assert.doesNotMatch(html({ art: "building", say: "Hi" }), /<video class="is-on"/);
+  });
+});

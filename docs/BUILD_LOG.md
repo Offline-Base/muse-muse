@@ -2839,4 +2839,19 @@ The owner asked for a simpler sidebar using "muse" and "musing" for the creative
   - Regenerated `lib/recipes/generated.json`.
   - The recipe and registry changes ship with the site. The muse-agent skill lives in the builder snapshot (`template/targets/agent`), so it reaches production builds only after `npm run snapshot`.
   - Tests: recipes and registry 333 of 333, agent option 26 of 26, the template's agent run 119 of 119. Typecheck clean.
+- **Nov 2, evening: Muse talks beside the plan, with a speech bubble (owner: show the talking video when the plan is made, with a text bubble, like the screenshot).**
+  - From the owner's clip (`generated_video (2).mp4`, 10 s, 960 x 960): cropped to the card's 564 x 640 box on the same white the pictures use, H.264 with no sound, 192 KB (`public/muse/muse-talk.mp4`), its first frame as the poster.
+  - It loops as it is: a search over every start and end pair found the clip's own last frame closest to its first (mean difference 0.32, under a normal frame step of 0.73).
+  - `components/build/PlanCard.tsx`:
+    - while the plan is new (the presenting state), the card plays the clip in place of the presenting picture, in the same box and crossfade;
+    - a build's own picture still wins;
+    - the fine-tune room's card is unchanged;
+    - it plays only while shown, and stays on its first frame with reduced motion.
+  - A speech bubble beside him, above the plan's name, says one line by state (`planSays`):
+    - new: "Here's my plan! I'm getting set up to build it.";
+    - building: "I'm building it now. Follow along in the steps.";
+    - live: "It's live! Open it and give it a try.";
+    - didn't ship: "This one didn't ship, but the plan still stands."
+  - Rendered with sample data in light and dark and looked at (docs/log/shots/2026-11-02/plan-talk-*.png). Two fixes from looking: the bubble slid under the floated picture in the wide card (now its own block), and the tail smudged in dark (now a clean point).
+  - Tests: plan-card 36 of 37 and tune-room pass. The one failure, raw colors in plan-card.css, was already on main (#59) and isn't from this change. Typecheck clean.
 

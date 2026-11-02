@@ -33,6 +33,13 @@ export const PLAN_ART: Record<PlanArt, string> = {
   shield: "/muse/muse-shield.jpg",
 };
 const ART_ORDER: readonly PlanArt[] = ["present", "building", "shield"];
+
+/**
+ * Muse talking (owner, Nov 2), shown in place of the presenting picture while the plan is new: the owner's 10 s clip,
+ * cropped to the card's 564 x 640 box on the same white, which loops on its own (its last frame differs from its first
+ * by less than one frame step). H.264, no sound, about 190 KB. The poster is its first frame.
+ */
+export const PLAN_TALK = { video: "/muse/muse-talk.mp4", poster: "/muse/muse-talk.jpg" };
 const ART_SIZE = { width: 564, height: 640 };
 
 /**
@@ -136,6 +143,13 @@ export function planViewFromBrief(brief: Brief): PlanView {
   };
 }
 
+/** What Muse says in the bubble beside the plan, by the picture's state, and whether the build can still change. */
+export function planSays(art: PlanArt, running: boolean): string {
+  if (art === "shield") return "It's live! Open it and give it a try.";
+  if (art === "building") return "I'm building it now. Follow along in the steps.";
+  return running ? "Here's my plan! I'm getting set up to build it." : "This one didn't ship, but the plan still stands.";
+}
+
 export function PlanCard({
   brief,
   art,
@@ -154,6 +168,7 @@ export function PlanCard({
       art={art}
       artUrl={artUrl}
       running={running}
+      say={planSays(art, running)}
       wrap
       body={
         <details className="plan-card-full">
@@ -178,8 +193,11 @@ export function PlanViewCard({
   body,
   wrap = false,
   artUrl = null,
+  say,
 }: {
   view: PlanView;
+  /** A short line Muse says in a speech bubble beside the picture, above the plan's name. */
+  say?: string;
   art: PlanArt;
   /**
    * A picture made for this plan, shown instead of the stock mascot for every state. One there from the first render is
@@ -208,6 +226,9 @@ export function PlanViewCard({
     setOwnLoaded(false);
   };
   const tagline = view.tagline?.trim() ?? "";
+  // The build room's card only (it has a bubble): while the plan is new and has no picture of its own, Muse talks.
+  const talks = Boolean(say) && arts.includes("present");
+  const talking = talks && art === "present" && !own;
   return (
     <div className={wrap ? "plan-card plan-card-wrap" : "plan-card"} data-art={art}>
       {/* Decorative: the room's own words, the working step above the card or the outcome under it, say the state. */}
@@ -226,6 +247,28 @@ export function PlanViewCard({
               {...(a === art ? {} : { fetchPriority: "low" as const })}
             />
           ))}
+          {talks ? (
+            <video
+              key="talk"
+              className={talking ? "is-on" : undefined}
+              src={PLAN_TALK.video}
+              poster={PLAN_TALK.poster}
+              width={ART_SIZE.width}
+              height={ART_SIZE.height}
+              muted
+              loop
+              playsInline
+              autoPlay={talking}
+              preload="auto"
+              // It plays only while it's the one shown, and with reduced motion it stays on its first frame.
+              ref={(v) => {
+                if (!v || typeof window === "undefined") return;
+                const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+                if (talking && !still) void v.play().catch(() => {});
+                else v.pause();
+              }}
+            />
+          ) : null}
           {ownUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -247,6 +290,7 @@ export function PlanViewCard({
         </div>
       </div>
       <div className="plan-card-head">
+        {say ? <p className="plan-card-say">{say}</p> : null}
         <h2 className="plan-card-name">
           <span className="sr-only">The plan: </span>
           {view.name}
