@@ -427,7 +427,9 @@ export function PlanStep({
   const shown = phase.at === "plan" ? { ...phase.plan, settings: { ...planSettings(examples, ceilings, stepsGood ? steps : TUNE_STEPS), ...baseSettings } } : null;
   const canUpload = Boolean(autoUpload && shown && shown.examples.used === 0 && shown.source.kind !== "build" && !isFolder);
   const uploadText = !autoUpload || !shown ? null : !canUpload ? UPLOAD_STAYS_TEXT : upload ? uploadPlanText(autoUpload) : "It stays on Muse Muse. Publish on its page uploads it later if you want.";
-  const shownView = shown ? planViewFromTrainPlan({ ...shown, cost: planCost(shown.settings) }, uploadText) : null;
+  const rowsOnly = phase.at === "plan" && phase.plan.source.kind === "folder" && phase.plan.source.mode === "rows";
+  const costOf = (s: Parameters<typeof planCost>[0]) => (rowsOnly ? { ...planCost(s), metaLowUsd: 0, metaHighUsd: 0 } : planCost(s));
+  const shownView = shown ? planViewFromTrainPlan({ ...shown, cost: costOf(shown.settings) }, uploadText, visitor !== null) : null;
   const countOk = examplesOk(examples, examplesMax);
   return (
     <div className="room chat-split tune-room" data-settled="true">
@@ -500,6 +502,7 @@ export function PlanStep({
                         <Icon name="chevronDown" size={16} />
                       </summary>
                       {anyBase && !visitor ? <BasePicker value={base} onChange={onBase} disabled={starting} /> : null}
+                      {rowsOnly ? null : (
                       <div className="field">
                         <label htmlFor={countId}>Examples to write</label>
                         <input
@@ -517,6 +520,7 @@ export function PlanStep({
                           {countOk ? planCostText(planCost(shown.settings)) : `Pick ${TUNE_MIN_EXAMPLES} to ${examplesMax} examples.`}
                         </span>
                       </div>
+                      )}
                       <div className="field">
                         <label htmlFor={stepsId}>Training steps</label>
                         <input
@@ -541,10 +545,10 @@ export function PlanStep({
                           <input type="checkbox" checked={upload} onChange={(e) => onUpload(e.target.checked)} disabled={starting} /> Upload to Hugging Face when it is judged
                         </label>
                       ) : null}
-                      <p className="muted small">
+                      {visitor ? null : <p className="muted small">
                         To change the GPU or the limits, use the full form once the examples are ready, or{" "}
                         <Link href="/fine-tuning#new-dataset">make the dataset on the full form</Link> now.
-                      </p>
+                      </p>}
                     </details>
                   </div>
                 }

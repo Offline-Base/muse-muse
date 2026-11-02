@@ -332,9 +332,11 @@ describe("the new fine-tune pages", { skip: canMock ? false : "needs --experimen
       const props = { phase: { at: "plan", note: "made up", files: [], plan }, examples: 100, onExamples: () => {}, ceilings: { maxMinutes: 60, maxUsd: 4 }, starting: false, startError: null, onStart: () => {}, onChange: () => {} };
       const visitorHtml = renderC(composer.PlanStep as ComponentType<never>, { ...props, visitor: { maxExamples: 100, maxSteps: 120 } });
       assert.match(visitorHtml, /Start code/);
-      assert.match(visitorHtml, /<button type="button" class="btn btn-primary" disabled="">Start<\/button>/);
+      assert.match(visitorHtml, /<button type="button" class="btn btn-primary" disabled="" aria-busy="false">Start<\/button>/);
       assert.match(visitorHtml, /Your 60 rows go in as they are/);
-      assert.match(visitorHtml, /max="100"/);
+      assert.match(visitorHtml, /max="120"/);
+      assert.match(visitorHtml, /It stays on Muse Muse, private to you/);
+      assert.doesNotMatch(visitorHtml, /full form|publish it|Examples to write/);
       const adminHtml = renderC(composer.PlanStep as ComponentType<never>, props);
       assert.doesNotMatch(adminHtml, /Start code/);
     });
