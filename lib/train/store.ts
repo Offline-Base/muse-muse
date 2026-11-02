@@ -31,7 +31,7 @@ import { env } from "@/lib/env";
 import { gpuBudget, jobHoldUsd, type GpuBudget } from "@/lib/train/gpu-budget";
 import type { DecideScoreItem, DecisionRow, DecisionRows, DecisionSpec } from "@/lib/decide/types";
 import type { QuantSource } from "@/lib/train/hub-cards";
-import { PERSON_WRITER, PUBLIC_WRITER } from "@/lib/train/models";
+import { FOLDER_GROUNDING, PERSON_WRITER, PUBLIC_WRITER } from "@/lib/train/models";
 import { taskHoldsPersonRows } from "@/lib/train/tune/auto-publish";
 import {
   isTrainTerminal,
@@ -964,6 +964,8 @@ export async function createImportedDataset(input: {
   rows: ReadonlyArray<{ prompt: string; answer: string }>;
   note: string;
   createdBy?: string | null;
+  /** Who wrote the rows, as writer_model: public data by default, PERSON_WRITER for a person's own. */
+  writerModel?: string;
 }): Promise<DatasetHead | null> {
   const train: TrainExample[] = input.rows.map((r) => ({
     messages: [
@@ -979,7 +981,7 @@ export async function createImportedDataset(input: {
       task: input.task.trim(),
       requested: train.length,
       train,
-      writerModel: PUBLIC_WRITER,
+      writerModel: input.writerModel ?? PUBLIC_WRITER,
       createdBy: input.createdBy ?? null,
     })
     .returning({ id: datasets.id });
@@ -1000,11 +1002,45 @@ export const OWNER_ROWS_REASON = "It was trained on a product owner's private ro
  * OWNER_ROWS_REASON when `job` trained on a dataset a product owns or whose task quotes a person's own rows, else null. Every way to the Hub asks this: Publish,
  * launching glimmer-publish, the runner's upload plan and the publishing claim. A read that fails throws, so nothing publishes.
  */
-export async function ownerRowsProblem(job: { params?: unknown }): Promise<string | null> {
+export async function ownerRowsProblem(job: { params?: unknown; createdBy?: string | null }): Promise<string | null> {
   const params = job.params as Record<string, unknown> | null | undefined;
   const datasetId = typeof params?.datasetId === "string" ? params.datasetId : null;
   const dataset = datasetId ? await getDataset(datasetId) : null;
-  return dataset?.productId || taskHoldsPersonRows(dataset?.task) ? OWNER_ROWS_REASON : null;
+  if (dataset?.productId || taskHoldsPersonRows(dataset?.task)) return OWNER_ROWS_REASON;
+  // OPEN_TRAIN and TUNE_FOLDER: a visitor's work, and anyone's dropped files, stay on Muse Muse. Rows a person gave for a chat dataset too.
+  if (dataset && dataset.kind !== "decision" && dataset.writerModel === PERSON_WRITER) return OWNER_ROWS_REASON;
+  if (dataset?.createdBy && (await isVisitorUser(dataset.createdBy))) return OWNER_ROWS_REASON;
+  if (job.createdBy && (await isVisitorUser(job.createdBy))) return OWNER_ROWS_REASON;
+  if (dataset && (await datasetGrounding(dataset.id))?.startsWith(FOLDER_GROUNDING)) return OWNER_ROWS_REASON;
+  return null;
+}
+
+/** True when this user row isn't an admin's: a visitor's hidden row or a builder's. Automation's row counts as an admin's. */
+export async function isVisitorUser(userId: string): Promise<boolean> {
+  if (!isUuid(userId)) return false;
+  const [row] = await db().select({ email: schema.users.email, isAdmin: schema.users.isAdmin }).from(schema.users).where(eq(schema.users.id, userId)).limit(1);
+  return Boolean(row && !row.isAdmin && !env.adminEmails.includes(row.email));
+}
+
+/**
+ * SQL: this created_by is a visitor's (isVisitorUser), so its row never shows on a public Lab page, whose readers can't
+ * be asked who they are. Admins and rows with no author show as before.
+ */
+const byVisitor = (createdBy: SQL | typeof datasets.createdBy | typeof jobs.createdBy) => {
+  const admins = env.adminEmails;
+  const notListed = admins.length ? sql`and vu.email not in (${sql.join(admins.map((a) => sql`${a}`), sql`, `)})` : sql``;
+  return sql`exists (select 1 from users vu where vu.id = ${createdBy} and vu.is_admin = false ${notListed})`;
+};
+
+/** A person's own runs, newest first, for the Lab page: only their ids, titles and states. */
+export async function listOwnRuns(ownerId: string, limit = 20): Promise<Array<{ id: string; title: string; status: string; createdAt: Date }>> {
+  if (!isUuid(ownerId)) return [];
+  return db()
+    .select({ id: datasets.id, title: datasets.title, status: datasets.status, createdAt: datasets.createdAt })
+    .from(datasets)
+    .where(eq(datasets.createdBy, ownerId))
+    .orderBy(desc(datasets.createdAt))
+    .limit(limit);
 }
 
 /** The newest datasets first, without their examples. */
@@ -1339,6 +1375,8 @@ const hasResults = () =>
     sql`(${jobs.evalSummary}->>'items')::numeric > 0`,
     sql`(case when ${jobs.params}->>'dryRun' ~ '^[0-9]+([.][0-9]+)?$' then (${jobs.params}->>'dryRun')::numeric else 0 end) < 1`,
     sql`not exists (select 1 from training_datasets pd where pd.id::text = ${jobs.params}->>'datasetId' and pd.product_id is not null)`,
+    sql`not ${byVisitor(jobs.createdBy)}`,
+    sql`not exists (select 1 from training_datasets vd where vd.id::text = ${jobs.params}->>'datasetId' and ${byVisitor(sql`vd.created_by`)})`,
   );
 
 /** Judged jobs, newest first. */
@@ -1446,7 +1484,7 @@ export async function listReadyDatasets(limit = 50): Promise<ReadyDatasetRow[]> 
   return db()
     .select(readyDatasetColumns)
     .from(datasets)
-    .where(and(eq(datasets.status, "ready"), isNull(datasets.productId)))
+    .where(and(eq(datasets.status, "ready"), isNull(datasets.productId), sql`not ${byVisitor(datasets.createdBy)}`))
     .orderBy(desc(datasets.createdAt))
     .limit(n);
 }
@@ -1457,7 +1495,7 @@ export async function getReadyDataset(datasetId: string): Promise<ReadyDatasetRo
   const [row] = await db()
     .select(readyDatasetColumns)
     .from(datasets)
-    .where(and(eq(datasets.id, datasetId), eq(datasets.status, "ready"), isNull(datasets.productId)))
+    .where(and(eq(datasets.id, datasetId), eq(datasets.status, "ready"), isNull(datasets.productId), sql`not ${byVisitor(datasets.createdBy)}`))
     .limit(1);
   return row ?? null;
 }

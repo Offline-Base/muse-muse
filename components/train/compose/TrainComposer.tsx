@@ -21,12 +21,15 @@ import { tuneBaseOf } from "@/lib/train/bases";
 import { maxStepsFor, NOTE_MAX, NOTE_MIN, planCost, planMaxUsd, planSettings, TUNE_MAX_EXAMPLES, TUNE_MIN_EXAMPLES, TUNE_MIN_STEPS, TUNE_STEPS } from "@/lib/train/tune/cost";
 import { EXAMPLE_ACCEPT, EXAMPLE_FILE_MAX_BYTES, EXAMPLE_ROWS_MAX, parseExamples, planRows, splitNote } from "@/lib/train/tune/examples";
 import { TUNE_DRAFT_ID } from "@/lib/train/tune/from-build";
+import { FolderDrop, type ReadyFolder } from "@/components/train/compose/FolderDrop";
 import type { ExampleRow, TrainPlan } from "@/lib/train/tune/types";
 
 /** Keeps this composer's draft apart from the Make page's (the build room's "Its own model" fills it too). */
 const DRAFT_ID = TUNE_DRAFT_ID;
 /** The plan before Start, so a reload keeps the card (it's good for two hours, and the server checks that). */
 const PLAN_KEY = "mm:tune-plan";
+/** The folder a plan is for: Start sends it back. Too big for some browsers' storage, and then the folder is dropped again. */
+const FOLDER_KEY = "mm:tune-folder";
 
 const EXAMPLES: Example[] = [
   { label: "Bakery helper", note: "Answer questions for a small neighborhood bakery: opening hours, allergens, custom cake orders and pickup. Warm, short answers, like the counter staff." },
@@ -61,8 +64,8 @@ export type Phase =
   | { at: "problem"; note: string; files: string[]; text: string };
 
 /** Whether Advanced's number is one a run may ask for (40 to 1000). */
-function examplesOk(n: number): boolean {
-  return Number.isInteger(n) && n >= TUNE_MIN_EXAMPLES && n <= TUNE_MAX_EXAMPLES;
+function examplesOk(n: number, max: number = TUNE_MAX_EXAMPLES): boolean {
+  return Number.isInteger(n) && n >= TUNE_MIN_EXAMPLES && n <= max;
 }
 
 /** Whether Advanced's training steps are ones the run may ask for: 10 to as many as fit in its time limit (maxStepsFor). */
@@ -75,6 +78,11 @@ export function tuneErrorText(status: number, body: unknown): string {
   const code = errorCode(body);
   const refusal = body && typeof body === "object" ? (body as { refusal?: unknown }).refusal : null;
   if (status === 422 && typeof refusal === "string" && refusal.trim()) return refusal.trim();
+  // The visitor limits' and the start code's own sentences.
+  const message = body && typeof body === "object" ? (body as { message?: unknown }).message : null;
+  if (typeof message === "string" && message.trim()) return message.trim();
+  if (code === "folder_changed") return "This folder changed after the plan was drafted. Drop it again.";
+  if (code === "folder_writer_off") return "Spark 1.3 Contributor isn't on here, so these files can't be written from. Rows with a prompt and an answer still work.";
   if (code === "rate_limited") {
     const s = Number((body as { retryAfterSeconds?: unknown }).retryAfterSeconds);
     return `That's 20 plans this hour. Try again in ${Number.isFinite(s) ? roughMinutes(Math.ceil(s / 60)) : "a little while"}.`;
@@ -144,7 +152,16 @@ export function TrainComposer({
   fromBuild = null,
   autoUpload = null,
   anyBase = false,
+  visitor = null,
+  folder = false,
+  codeUnset = false,
 }: {
+  /** OPEN_TRAIN: a non-admin, with their limits. Start asks for the start code. */
+  visitor?: { maxExamples: number; maxSteps: number } | null;
+  /** TUNE_FOLDER: offer the folder drop. */
+  folder?: boolean;
+  /** OPEN_TRAIN with no start code set: non-admins can't start, so the page says so. */
+  codeUnset?: boolean;
   /** TUNE_ANY_BASE: Advanced offers a base. */
   anyBase?: boolean;
   /** How this run's model uploads by itself (TUNE_AUTO_PUBLISH), or null when it doesn't. */
@@ -162,18 +179,29 @@ export function TrainComposer({
   const [base, setBase] = useState<BaseChoice>({ state: "default" });
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  const [startCode, setStartCode] = useState("");
+  const [ready, setReady] = useState<ReadyFolder | null>(null);
 
   // A plan drafted before a reload comes back, while it can still start.
   const fromBuildId = fromBuild?.id ?? null;
   useEffect(() => {
     const kept = readPlan(fromBuildId);
+    let keptFolder: ReadyFolder | null = null;
+    try {
+      keptFolder = JSON.parse(window.sessionStorage.getItem(FOLDER_KEY) ?? "null") as ReadyFolder | null;
+    } catch {
+      // No folder kept: a folder plan below is left out.
+    }
+    if (kept?.at === "plan" && kept.plan.source.kind === "folder" && !keptFolder) return;
     if (kept?.at === "plan") {
+      if (keptFolder) setReady(keptFolder);
       setPhase(kept);
       setExamples(kept.plan.settings.examples);
       setSteps(kept.plan.settings.steps);
     }
   }, [fromBuildId]);
 
+  const examplesMax = visitor?.maxExamples ?? TUNE_MAX_EXAMPLES;
   const defaults = useMemo(() => planSettings(defaultExamples, ceilings), [defaultExamples, ceilings]);
   const defaultCost = useMemo(() => planCost(defaults), [defaults]);
   const rows: SetupRow[] = [
@@ -191,9 +219,9 @@ export function TrainComposer({
     const note = split.note;
     if (note.length < NOTE_MIN) return `Say what the model should do in at least ${NOTE_MIN} characters.`;
     if (note.length > NOTE_MAX) return `Keep it under ${NOTE_MAX} characters. Add the rest as examples.`;
-    const read = await readRows(files, split.rows);
+    const read = ready ? { rows: [] } : await readRows(files, split.rows);
     if ("problem" in read) return read.problem;
-    const names = files.map((f) => f.name);
+    const names = ready ? ready.review.used.map((f) => f.path).slice(0, 5) : files.map((f) => f.name);
     setPhase({ at: "drafting", note: raw, files: names });
     setStartError(null);
     let res: Response;
@@ -206,8 +234,9 @@ export function TrainComposer({
         body: JSON.stringify({
           note,
           examples: read.rows,
-          ...(examplesOk(examples) ? { settings: { examples } } : {}),
+          ...(examplesOk(examples, examplesMax) ? { settings: { examples: ready?.draft.mode === "rows" ? Math.max(TUNE_MIN_EXAMPLES, Math.min(examplesMax, ready.draft.rows.length)) : examples } } : {}),
           ...(fromBuildId ? { fromBuildId } : {}),
+          ...(ready ? { folder: { hash: ready.hash, mode: ready.draft.mode, rows: ready.draft.rows.length } } : {}),
         }),
       });
       data = await res.json().catch(() => null);
@@ -221,6 +250,7 @@ export function TrainComposer({
       return null;
     }
     keep(PLAN_KEY, { note: raw, files: names, plan });
+    keep(FOLDER_KEY, ready);
     setExamples(plan.settings.examples);
     setSteps(plan.settings.steps);
     setPhase({ at: "plan", note: raw, files: names, plan });
@@ -235,12 +265,13 @@ export function TrainComposer({
       const res = await fetch("/api/train/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ plan, settings: { examples, steps, ...(autoUpload && !upload ? { autoPublish: false } : {}), ...(base.state === "ok" ? { base: { repo: base.base.repo, revision: base.base.revision } } : {}) } }),
+        body: JSON.stringify({ plan, ...(visitor ? { startCode } : {}), ...(ready && plan.source.kind === "folder" ? { folder: ready.draft } : {}), settings: { examples, steps, ...(autoUpload && !upload ? { autoPublish: false } : {}), ...(base.state === "ok" ? { base: { repo: base.base.repo, revision: base.base.revision } } : {}) } }),
       });
       const data = (await res.json().catch(() => null)) as { runId?: string; href?: string } | null;
       if (res.status === 201 && data?.runId && data.href) {
         keep(KEPT_PLAN_KEY(data.runId), { tagline: plan.tagline, samples: plan.samples, used: plan.examples.used });
         keep(PLAN_KEY, null);
+        keep(FOLDER_KEY, null);
         writeComposerDraft(DRAFT_ID, "");
         // Stays starting until the room replaces this page.
         router.push(data.href);
@@ -255,6 +286,7 @@ export function TrainComposer({
 
   function changeIt() {
     keep(PLAN_KEY, null);
+    keep(FOLDER_KEY, null);
     setStartError(null);
     setPhase({ at: "compose" });
   }
@@ -287,6 +319,13 @@ export function TrainComposer({
             keepFilesLocal
             copy={COPY}
           />
+          {codeUnset ? (
+            <p className="form-error" role="alert">
+              <Icon name="alert" size={18} />
+              <span>Starting a run isn&apos;t open right now.</span>
+            </p>
+          ) : null}
+          {folder ? <FolderDrop ready={ready} onReady={setReady} /> : null}
           <p className="tune-intro-note muted">
             {WRITER_NAME} writes about {defaults.examples} examples, {R30B_NAME} trains on one GPU, and the tuned model is
             scored against the 2026 Glimmer it started from. {upperFirst(roughMinutes(defaultCost.minutes))}, up to about{" "}
@@ -312,6 +351,9 @@ export function TrainComposer({
           base={base}
           onBase={setBase}
           ceilings={ceilings}
+          visitor={visitor}
+          startCode={startCode}
+          onStartCode={setStartCode}
           starting={starting}
           startError={startError}
           onStart={(plan) => void start(plan)}
@@ -344,7 +386,14 @@ export function PlanStep({
   startError,
   onStart,
   onChange,
+  visitor = null,
+  startCode = "",
+  onStartCode = () => {},
 }: {
+  /** OPEN_TRAIN: a non-admin, with their limits. Start asks for the start code. */
+  visitor?: { maxExamples: number; maxSteps: number } | null;
+  startCode?: string;
+  onStartCode?: (code: string) => void;
   phase: Exclude<Phase, { at: "compose" }>;
   /** Advanced's number of examples, which the card prices. */
   examples: number;
@@ -366,16 +415,20 @@ export function PlanStep({
   onChange: () => void;
 }) {
   const countId = useId();
+  const codeId = useId();
   const stepsId = useId();
   const baseSettings = base.state === "ok" ? { base: tuneBaseOf(base.base), gpu: base.base.gpus[0]! } : {};
   const baseWaits = base.state === "checking" || base.state === "refused";
-  const stepsMax = maxStepsFor({ ...planSettings(examples, ceilings), ...baseSettings });
+  const stepsFit = maxStepsFor({ ...planSettings(examples, ceilings), ...baseSettings });
+  const stepsMax = visitor ? Math.min(stepsFit, visitor.maxSteps) : stepsFit;
+  const examplesMax = visitor?.maxExamples ?? TUNE_MAX_EXAMPLES;
+  const isFolder = phase.at === "plan" && phase.plan.source.kind === "folder";
   const stepsGood = stepsOk(steps, stepsMax);
   const shown = phase.at === "plan" ? { ...phase.plan, settings: { ...planSettings(examples, ceilings, stepsGood ? steps : TUNE_STEPS), ...baseSettings } } : null;
-  const canUpload = Boolean(autoUpload && shown && shown.examples.used === 0 && shown.source.kind !== "build");
+  const canUpload = Boolean(autoUpload && shown && shown.examples.used === 0 && shown.source.kind !== "build" && !isFolder);
   const uploadText = !autoUpload || !shown ? null : !canUpload ? UPLOAD_STAYS_TEXT : upload ? uploadPlanText(autoUpload) : "It stays on Muse Muse. Publish on its page uploads it later if you want.";
   const shownView = shown ? planViewFromTrainPlan({ ...shown, cost: planCost(shown.settings) }, uploadText) : null;
-  const countOk = examplesOk(examples);
+  const countOk = examplesOk(examples, examplesMax);
   return (
     <div className="room chat-split tune-room" data-settled="true">
       <div className="room-main">
@@ -425,8 +478,15 @@ export function PlanStep({
                         <span>{startError}</span>
                       </p>
                     ) : null}
+                    {visitor ? (
+                      <div className="field tune-start-code">
+                        <label htmlFor={codeId}>Start code</label>
+                        <input id={codeId} type="text" autoComplete="off" autoCapitalize="off" spellCheck={false} value={startCode} onChange={(e) => onStartCode(e.target.value)} disabled={starting} />
+                        <span className="field-hint">Runs use real GPUs, so starting one takes the code.</span>
+                      </div>
+                    ) : null}
                     <div className="row-actions">
-                      <button type="button" className="btn btn-primary" onClick={() => onStart(phase.plan)} disabled={starting || !countOk || !stepsGood || baseWaits} aria-busy={starting}>
+                      <button type="button" className="btn btn-primary" onClick={() => onStart(phase.plan)} disabled={starting || !countOk || !stepsGood || baseWaits || (visitor !== null && !startCode.trim())} aria-busy={starting}>
                         {starting ? <span className="spinner" aria-hidden /> : null}
                         {starting ? "Starting" : "Start"}
                       </button>
@@ -439,7 +499,7 @@ export function PlanStep({
                         Advanced
                         <Icon name="chevronDown" size={16} />
                       </summary>
-                      {anyBase ? <BasePicker value={base} onChange={onBase} disabled={starting} /> : null}
+                      {anyBase && !visitor ? <BasePicker value={base} onChange={onBase} disabled={starting} /> : null}
                       <div className="field">
                         <label htmlFor={countId}>Examples to write</label>
                         <input
@@ -447,14 +507,14 @@ export function PlanStep({
                           type="number"
                           inputMode="numeric"
                           min={TUNE_MIN_EXAMPLES}
-                          max={TUNE_MAX_EXAMPLES}
+                          max={examplesMax}
                           step={10}
                           value={Number.isFinite(examples) ? examples : ""}
                           onChange={(e) => onExamples(Math.floor(Number(e.target.value)))}
                           disabled={starting}
                         />
                         <span className="field-hint">
-                          {countOk ? planCostText(planCost(shown.settings)) : `Pick ${TUNE_MIN_EXAMPLES} to ${TUNE_MAX_EXAMPLES} examples.`}
+                          {countOk ? planCostText(planCost(shown.settings)) : `Pick ${TUNE_MIN_EXAMPLES} to ${examplesMax} examples.`}
                         </span>
                       </div>
                       <div className="field">

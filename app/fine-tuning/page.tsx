@@ -27,6 +27,7 @@ import {
   listAdapterOptions,
   listDatasets,
   listJobs,
+  listOwnRuns,
   listReadyDatasets,
   listResultJobs,
   trainingSpendToday,
@@ -34,6 +35,7 @@ import {
 import { isTrainTerminal, PUBLISH_RECIPE, type DatasetView, type RecipeView, type TrainJobView } from "@/lib/train/types";
 import { callbackOrigin } from "@/lib/train/userdata";
 import { sweepOffReason, sweepRunning } from "@/app/api/train/shared";
+import { pageRunCaller, runReaderId } from "@/lib/train/tune/caller";
 import { pageViewer } from "./viewer";
 
 export const metadata: Metadata = { title: "Fine-tuning" };
@@ -287,8 +289,40 @@ async function labPage(signedIn: boolean) {
           </section>
         </>
       )}
-      <AdminsOnly signedIn={signedIn} />
+      {env.openTrain ? (
+        <>
+          <OwnRuns />
+          <p className="muted small">
+            Anyone can start a run. <Link href="/fine-tuning/new">Start a fine-tune</Link> with the start code. Your runs stay private, and they never go to Hugging Face.
+          </p>
+        </>
+      ) : (
+        <AdminsOnly signedIn={signedIn} />
+      )}
     </div>
+  );
+}
+
+/** This visitor's own runs (OPEN_TRAIN), so a closed tab doesn't lose them. Nothing for someone who has none. */
+async function OwnRuns() {
+  const runs = await safeQuery(async () => {
+    const owner = await runReaderId(await pageRunCaller());
+    return owner ? listOwnRuns(owner) : [];
+  });
+  if (!runs.ok || runs.data.length === 0) return null;
+  return (
+    <section className="section" aria-labelledby="own-runs-title">
+      <div className="section-head">
+        <h2 id="own-runs-title">Your runs</h2>
+      </div>
+      <ul>
+        {runs.data.map((r) => (
+          <li key={r.id}>
+            <Link href={`/fine-tuning/runs/${r.id}`}>{r.title}</Link> <span className="muted small">{r.status}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

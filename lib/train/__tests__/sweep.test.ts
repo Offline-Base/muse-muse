@@ -168,7 +168,7 @@ describe("sweepReason", () => {
 
   it("terminates the instance of a job an admin asked to stop", () => {
     const { row, inst } = launched({ stopRequested: true, maxMinutes: 300, launchedAt: ago(20) });
-    assert.equal(sweepReason(inst, row, NOW), "An admin asked to stop the job.");
+    assert.equal(sweepReason(inst, row, NOW), "Someone asked to stop the job.");
   });
 
   it("holds a job whose workflow is gone to the boot grace and the silence rule", () => {
@@ -443,9 +443,9 @@ describe("sweepTraining", () => {
     const result = await sweepTraining(f.deps, NOW);
     assert.deepEqual(f.terminatedIds(), [asked.inst.id]);
     assert.deepEqual(f.finished(asked.row.id), [
-      { status: "stopped", reason: "The sweep terminated the instance: An admin asked to stop the job.", terminatedAt: NOW },
+      { status: "stopped", reason: "The sweep terminated the instance: Someone asked to stop the job.", terminatedAt: NOW },
     ]);
-    assert.deepEqual(result.stoppedJobs, [{ jobId: asked.row.id, reason: "An admin asked to stop the job." }]);
+    assert.deepEqual(result.stoppedJobs, [{ jobId: asked.row.id, reason: "Someone asked to stop the job." }]);
     assert.deepEqual(result.failedJobs, []);
   });
 

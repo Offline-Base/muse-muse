@@ -58,7 +58,7 @@ export interface TrainPlanCost {
 }
 
 /** Where a plan's examples come from: a task Muse Wonder writes for, a dataset that already exists, or a build (later). */
-export type TrainPlanSource = { kind: "task" } | { kind: "dataset"; datasetId: string } | { kind: "build"; buildId: string; productId: string };
+export type TrainPlanSource = { kind: "task" } | { kind: "dataset"; datasetId: string } | { kind: "build"; buildId: string; productId: string } | { kind: "folder"; hash: string; mode: "rows" | "write" };
 
 /** A plan as POST /api/train/plan answers it, before `token` and `exp` are added. */
 export interface TrainPlanBody {

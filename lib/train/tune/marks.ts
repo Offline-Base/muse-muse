@@ -47,6 +47,8 @@ export interface RunMarks {
   autoPublish?: boolean;
   /** The checked base the run trains on (TUNE_ANY_BASE), when one was picked. */
   base?: { repo: string; revision: string };
+  /** Set when a visitor started the run (OPEN_TRAIN): who the visitor limits count, and never an upload. */
+  visitor?: { trainerId: string; ip: string };
   /** Stopped before training: nothing launches for it any more. */
   stopped: boolean;
   /** Why the workflow ended without a job (a check code, a launch refusal, "waited_<reason>"), or null. */
@@ -65,6 +67,11 @@ export function runMarks(datasetId: string, rows: ReadonlyArray<{ key: string; w
     if (row.key === `tune-settings:${datasetId}:steps`) marks.steps = row.count > 0 ? row.count : null;
     else if (row.key === `tune-settings:${datasetId}:auto-publish`) {
       if (row.count > 0) marks.autoPublish = true;
+    }
+    else if (row.key.startsWith(`tune-settings:${datasetId}:visitor:`)) {
+      const held = row.key.slice(`tune-settings:${datasetId}:visitor:`.length);
+      const at = held.indexOf("@");
+      if (at > 0) marks.visitor = { trainerId: held.slice(0, at), ip: held.slice(at + 1) };
     }
     else if (row.key.startsWith(`tune-settings:${datasetId}:base:`)) {
       const [repo, revision] = row.key.slice(`tune-settings:${datasetId}:base:`.length).split("@") as [string, string | undefined];
@@ -145,6 +152,11 @@ export function endedText(code: string): string {
       return "Training didn't start: its workflow couldn't start, so nothing was launched.";
     case "stopped":
       return "This run was stopped before training.";
+    case "visitor_daily_run":
+    case "ip_daily_run":
+      return "Training didn't start: that's today's runs for visitors from here. Try again tomorrow.";
+    case "ip_lifetime_usd":
+      return "Training didn't start: this network has used its whole GPU limit for visitors.";
     case "error":
       return "Training didn't start: the platform's database stopped answering partway.";
     default:
