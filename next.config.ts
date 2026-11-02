@@ -15,6 +15,8 @@ const DOCS_MARKDOWN = ["./content/meta-docs/pages/**/*.md"];
 const GEO_REWRITES = trustGeoRewrites(process.env);
 
 const nextConfig: NextConfig = {
+  // Pages in the browser name the model the platform really runs on (contributorSwitchOn in lib/meta/spark.ts). Not a secret.
+  env: { BUILDS_ON_CONTRIBUTOR: process.env.BUILDS_ON_CONTRIBUTOR ?? "" },
   // The owner's yes to a robot action: a product must not be able to frame it and steer the click.
   headers: async () => [{ source: "/gadgets/confirm", headers: [{ key: "Content-Security-Policy", value: "frame-ancestors 'none'" }, { key: "X-Frame-Options", value: "DENY" }] }],
   serverExternalPackages: ["@electric-sql/pglite", "@composio/core"],

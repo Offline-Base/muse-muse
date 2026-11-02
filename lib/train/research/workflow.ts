@@ -25,9 +25,10 @@ import { QuestionsSchema, reportLinks, ReportSchema, reportSources, searchCitati
 import { addResearchCost, addResearchFinding, failResearch, finishResearch, getResearch, saveResearchQuestions } from "@/lib/train/research/store";
 import type { ModelUsage } from "@/lib/types";
 import { recordUsage } from "@/lib/usage";
+import { defaultModel } from "@/lib/meta/spark";
 
 /** Muse Wonder, or TEST_MODEL where that is on (never on production). */
-const researchModel = () => testModel() ?? "muse-wonder-1.0";
+const researchModel = () => testModel() ?? defaultModel();
 const PAUSED = "The platform's daily spend cap is reached, so the research stopped.";
 const SEARCH_TIMEOUT_MS = 240_000;
 const FINDING_MAX = 6000;

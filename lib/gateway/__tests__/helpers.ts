@@ -35,6 +35,8 @@ export function fakeGateway(
     upstreamKey?: string;
     buildTestModel?: string | null;
     contributorRuntime?: boolean;
+    sparkToWonder?: boolean;
+    productSlug?: string | null;
   } = {},
 ): FakeGateway {
   const usage: FakeGateway["usage"] = [];
@@ -61,6 +63,7 @@ export function fakeGateway(
   const deps: GatewayDeps = {
     findToken: async (t) => (t === TEST_TOKEN ? token : null),
     productStatus: async () => (opts.productStatus === undefined ? "live" : opts.productStatus),
+    productSlug: async () => opts.productSlug ?? null,
     tokenSpendToday: async (tokenId) => (opts.tokenSpend ?? 0) + spend((ctx) => ctx.tokenId === tokenId),
     platformSpendToday: async () => (opts.platformSpend ?? 0) + spend(() => true),
     dailySpendCapUsd: 40,
@@ -108,6 +111,7 @@ export function fakeGateway(
     upstreamKey: () => opts.upstreamKey ?? "test-master-key",
     buildTestModel: opts.buildTestModel,
     contributorRuntime: opts.contributorRuntime,
+    sparkToWonder: opts.sparkToWonder,
     gatewayUrl: "https://platform.example/api/gateway",
     defer: (task) => {
       deferred.push(task());

@@ -9,11 +9,12 @@ import { evalHoldoutCount, runEstimate } from "@/lib/train/logic";
 import type { TrainPlanCost, TuneSettings } from "@/lib/train/tune/types";
 
 import { baseEstimateParams } from "@/lib/train/tune/settings";
+import { defaultModel } from "@/lib/meta/spark";
 
 export * from "@/lib/train/tune/settings";
 
 /** The model whose prices the estimates use: Muse Wonder writes the examples and scores the run. */
-const PRICED_MODEL = "muse-wonder-1.0";
+const PRICED_MODEL = defaultModel();
 /** Minutes the platform takes to score base against tuned after the GPU shuts down. */
 const SCORE_MINUTES = 5;
 /** Rough tokens to judge one kept-aside prompt (the prompt, the reference and both answers in; a verdict out), low and high. */

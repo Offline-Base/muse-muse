@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { q } from "@/lib/sandbox/shell";
+import { defaultModel } from "@/lib/meta/spark";
 
 /**
  * Arguments for running Muse Code headless inside a builder sandbox. Flags confirmed in docs/SPIKES.md (spike 1) and
@@ -25,7 +26,7 @@ export const DEFAULT_MAX_MODEL_STEPS = 200;
 export const DEFAULT_REASONING_EFFORT: ReasoningEffort = "high";
 
 /** What a run uses when the caller doesn't choose. Muse Wonder is the build default (lib/env.ts). */
-const EXEC_DEFAULTS = { model: "muse-wonder-1.0", reasoningEffort: DEFAULT_REASONING_EFFORT, maxModelSteps: DEFAULT_MAX_MODEL_STEPS } as const;
+const EXEC_DEFAULTS = { reasoningEffort: DEFAULT_REASONING_EFFORT, maxModelSteps: DEFAULT_MAX_MODEL_STEPS } as const;
 
 /**
  * Hardening flags the runner adds only when `muse exec --help` lists them (optionalFlagsPrelude). A headless run has
@@ -68,7 +69,7 @@ export function museExecArgs(opts: MuseExecOptions): string[] {
   const valued: Record<string, string> = {
     "--session-id": opts.sessionId,
     "--prompt-file": opts.promptFile,
-    "--model": opts.model ?? EXEC_DEFAULTS.model,
+    "--model": opts.model ?? defaultModel(),
     "--reasoning-effort": opts.reasoningEffort ?? EXEC_DEFAULTS.reasoningEffort,
     "--max-model-steps": `${opts.maxModelSteps ?? EXEC_DEFAULTS.maxModelSteps}`,
   };
