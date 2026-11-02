@@ -4,6 +4,7 @@ import { connection } from "next/server";
 import { limitCeilings } from "@/app/api/train/shared";
 import { TrainComposer } from "@/components/train/compose/TrainComposer";
 import { env } from "@/lib/env";
+import { makeChatAllOn } from "@/lib/make/switch";
 import { visitorJobCeilings, visitorLimits } from "@/lib/train/public/limits";
 import { buildForTune } from "@/lib/train/tune/build-source";
 import { FROM_BUILD_PARAM } from "@/lib/train/tune/from-build";
@@ -24,6 +25,8 @@ export const metadata: Metadata = { title: "New fine-tune" };
 export default async function NewFineTunePage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   await connection();
   if (!env.tuneComposer) notFound();
+  // MAKE_CHAT_ALL: the Make box is where everything starts. A plan for a build's own model still opens here.
+  if (makeChatAllOn() && !(await searchParams)?.[FROM_BUILD_PARAM]) redirect("/");
   const user = await pageViewer();
   if (!user?.isAdmin) {
     if (!env.openTrain) redirect("/fine-tuning");

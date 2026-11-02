@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { PlanViewCard } from "@/components/build/PlanCard";
 import { UPLOAD_STAYS_TEXT, uploadPlanText, type UploadVisibility } from "@/lib/train/tune/auto-publish";
 import { TitleChip, UserBubble, WorkingStep } from "@/components/chat";
@@ -444,7 +444,15 @@ export function PlanStep({
   visitor = null,
   startCode = "",
   onStartCode = () => {},
+  above = null,
+  below = null,
+  problemActions = null,
 }: {
+  /** Rows before and after the plan in the conversation (MAKE_CHAT_ALL: the app, the folder, ask for a change). */
+  above?: ReactNode;
+  below?: ReactNode;
+  /** Beside Change it when there's no plan (MAKE_CHAT_ALL: build just the app). */
+  problemActions?: ReactNode;
   /** OPEN_TRAIN: a non-admin, with their limits. Start asks for the start code. */
   visitor?: { maxExamples: number; maxSteps: number } | null;
   startCode?: string;
@@ -512,9 +520,11 @@ export function PlanStep({
                   <Icon name="edit" size={18} />
                   Change it
                 </button>
+                {problemActions}
               </div>
             </li>
           ) : null}
+          {above}
           {phase.at === "plan" && shown && shownView ? (
             <li className="room-plan">
               <PlanViewCard
@@ -614,6 +624,7 @@ export function PlanStep({
               />
             </li>
           ) : null}
+          {below}
         </ol>
       </div>
     </div>

@@ -1,0 +1,32 @@
+/* MAKE_CHAT_ALL's Make box and the model beside a build (components/make). Loaded only with the switch on. */
+.make-folder {
+  max-width: var(--composer-w);
+  margin: 12px auto 0;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.make-folder > summary {
+  cursor: pointer;
+}
+
+.make-row p {
+  margin: 0 0 8px;
+}
+
+.make-change {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+
+.make-change input {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.make-story-head {
+  font-weight: 600;
+  margin-top: 8px;
+}

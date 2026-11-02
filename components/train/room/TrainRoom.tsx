@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { PlanViewCard } from "@/components/build/PlanCard";
+import { StepsFeed } from "@/components/build/StepsFeed";
 import { ShowThinking, SourceList, StepList, StepsPanel, TitleChip, UserBubble, WorkingStep, type SourceItem } from "@/components/chat";
 import { Icon } from "@/components/icons";
 import { EvalResults } from "@/components/train/EvalResults";
@@ -18,6 +19,7 @@ import { tuneArt, tuneCurrentStep, tuneRunning, tuneSteps, tuneStepsEnd } from "
 import { WhereItRuns } from "@/components/train/room/WhereItRuns";
 import { usd } from "@/lib/format";
 import { isSparkOpenDerivative } from "@/lib/train/base";
+import { tuneFeed } from "@/lib/steps-feed/tune";
 import { endedText } from "@/lib/train/tune/marks";
 import type { TuneRunView } from "@/lib/train/tune/types";
 
@@ -63,6 +65,8 @@ export interface TrainRoomProps {
   quantTargets?: boolean;
   /** OPEN_TRAIN: a visitor's own run. Start training asks for the start code, and the room offers Stop. */
   needsCode?: boolean;
+  /** MAKE_CHAT_ALL: the simple story on the left (lib/steps-feed/tune.ts), the plan, scores and results on the right. */
+  story?: boolean;
 }
 
 /**
@@ -72,7 +76,7 @@ export interface TrainRoomProps {
  * the verdict with the eval results, the live demo, the Hugging Face card and Where it runs, or why it stopped. The
  * steps panel lists the stages it reached. Polls GET /api/train/runs/{id} every 5 s while something runs.
  */
-export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverNow, quantTargets = false, needsCode = false }: TrainRoomProps) {
+export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverNow, quantTargets = false, needsCode = false, story = false }: TrainRoomProps) {
   const [view, setView] = useState(initial);
   // A refresh of the page (Start a live demo does one) brings a newer run: take it.
   const [given, setGiven] = useState(initial);
@@ -148,10 +152,28 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
     { id: "glimmer", title: sparkOpen ? R30B_NAME : GLIMMER_NAME, detail: "The model it tunes", kind: "model" },
   ];
   const togglePanel = () => setPanelOpen((o) => !o);
+  const wrap = (story_: ReactNode, results: ReactNode) =>
+    story ? (
+      <div className="room-columns">
+        <div className="room-feed-col">
+          <ol className="convo" aria-label="Fine-tuning run">
+            {story_}
+          </ol>
+        </div>
+        <aside className="room-stuff" aria-label="Scores and results">
+          <ol className="convo">{results}</ol>
+        </aside>
+      </div>
+    ) : (
+      <ol className="convo" aria-label="Fine-tuning run">
+        {story_}
+        {results}
+      </ol>
+    );
 
   return (
     <div className="room chat-split tune-room" data-settled="true">
-      <div className="room-main">
+      <div className={story ? "room-main room-main-feed" : "room-main"}>
         <div className="room-top">
           <TitleChip as="h1">{title}</TitleChip>
         </div>
@@ -159,7 +181,8 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
           {current ? (current.description ?? current.title) : ""}
         </p>
 
-        <ol className="convo" aria-label="Fine-tuning run">
+        {/* Off (the default): one column, the rows below in this order. MAKE_CHAT_ALL: the story left, the results right. */}
+        {wrap(<>
           <li className="turn-user">
             <UserBubble text={askedText(view.task)} />
           </li>
@@ -177,7 +200,12 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
               <ShowThinking onClick={() => setPanelOpen(true)} />
             </li>
           ) : null}
-
+          {story ? (
+            <li>
+              <StepsFeed feed={tuneFeed(view)} label="What is happening to your model" />
+            </li>
+          ) : null}
+        </>, <>
           <li className="room-plan">
             <PlanViewCard
               view={planView}
@@ -257,7 +285,7 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
               <p className="room-meta">{usd(view.costSoFarUsd)} in all</p>
             </li>
           ) : null}
-        </ol>
+        </>)}
       </div>
 
       <div className="room-panel">

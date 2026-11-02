@@ -5,10 +5,10 @@ import type { Feed } from "@/lib/steps-feed/facts";
  * after every three (lib/steps-feed/facts.ts). A finished build keeps it as its history. The raw steps stay behind Show
  * details.
  */
-export function StepsFeed({ feed }: { feed: Feed }) {
+export function StepsFeed({ feed, label = "What Muse Code is doing" }: { feed: Pick<Feed, "rows">; label?: string }) {
   if (!feed.rows.length) return null;
   return (
-    <ul className="steps-feed" aria-label="What Muse Code is doing">
+    <ul className="steps-feed" aria-label={label}>
       {feed.rows.map((row) =>
         row.type === "step" ? (
           <li key={row.step.id} className="steps-feed-step" data-tone={row.step.tone} data-running={row.running}>
