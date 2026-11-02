@@ -190,6 +190,9 @@ const fakeSteps = {
     const steps = Object.entries(v.steps ?? all).map(([name, ok]) => ({ name, ok }));
     return { passed: v.passed, steps, screenshots: [{ url: "https://x/s.png", caption: "home" }] };
   },
+  warmSandboxStep: async () => {},
+  dropWarmSandboxStep: async () => {},
+  recheckFailedStep: async () => ({ passed: false, steps: [], screenshots: [] }),
   verifyTimedOutStep: async (input: unknown) => {
     record("verifyTimedOutStep", input);
     return { passed: false, steps: [], screenshots: [] };

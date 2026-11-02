@@ -15,6 +15,7 @@ import { JOBS_BUDGET_LINE } from "@/lib/caps/jobs/render";
 import { CHAIN_BUILD_LINES } from "@/lib/chain/plan";
 import { FULL_COST_LINE, FULL_DONE_LINE, FULL_FIX_SHOTS, FULL_FLOW_LINE, FULL_GOAL_LINE, FULL_SCOPE_LINE, fullBuildLines } from "@/lib/full/prompts";
 import { briefRequirements, fullMilestones } from "@/lib/full/requirements";
+import { fastAgentLines } from "@/lib/fast/fast";
 import { RANGE_AGENT_LINES, RANGE_AGENTS_NOTES, RANGE_COST_LINE, RANGE_DEPTH_LINES, RANGE_FIX_AGENT_LINE, RANGE_FIX_LOOK, RANGE_FIX_SHOTS, RANGE_FLOW_LINE, RANGE_LOOK_LINE, RANGE_READ_FIRST, RANGE_SHOTS_LINE, RANGE_SIMPLER_LINE, rangeDirectionLines } from "@/lib/range/prompts";
 import type { JudgeVerdict, RebuildTarget, VerifySummary } from "@/lib/types";
 
@@ -209,6 +210,8 @@ interface LookNote {
   museAppLook?: boolean;
   /** BUILD_RANGE (docs/BUILD_RANGE.md): the brief's direction drives the look, and a complex build must use its agents. */
   buildRange?: boolean;
+  /** FAST_BUILDS on a complex build: the run's agent capacity, for How you must work. */
+  fastCapacity?: number;
 }
 
 /** The direction this prompt follows: BUILD_RANGE on, a brief that has one and isn't refused. */
@@ -346,7 +349,8 @@ export function renderBuildPrompt(
 ): string {
   const full = opts.fullBuild === true && briefRequirements(brief).length > 0;
   const direction = rangeDirection(brief, opts);
-  const requiredAgents = direction !== null && brief.complexity === "complex";
+  const fastLines = opts.fastCapacity !== undefined && brief.complexity === "complex" ? fastAgentLines(opts.fastCapacity) : null;
+  const requiredAgents = fastLines !== null || (direction !== null && brief.complexity === "complex");
   const out: string[] = [];
   out.push(
     "# Build this product",
@@ -362,7 +366,7 @@ export function renderBuildPrompt(
     "",
     "Then stop.",
     ...(direction ? RANGE_DEPTH_LINES : []),
-    ...(requiredAgents ? RANGE_AGENT_LINES : []),
+    ...(fastLines ?? (requiredAgents ? RANGE_AGENT_LINES : [])),
   );
   if (full && brief.verdict !== "no") out.push(...fullBuildLines(briefRequirements(brief), fullMilestones(brief)), ...(brief.chained === true ? CHAIN_BUILD_LINES : []));
   // ---------- Wave 3, unit 2: milestones (empty for a brief without them) ----------
