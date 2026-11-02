@@ -50,7 +50,7 @@ Every env change needs a redeploy. After a redeploy that changes `LAMBDA_API_KEY
 
 ## 3. Money
 
-The cap is $25 (O2). Expected spend is about $5 to $8, which leaves room for one full retry and still stays under the cap. Re-estimated Nov 2 from the Meta-models audit: the r30b tune is about $1.39 on an A100 (42 to 48 minutes), against the earlier Llama plan's $1 to $2 on the same GPU, and the one-bit file costs about $1.75 on an A10 against $0.40 to $1.30 for the 2 GB Llama file.
+The cap is $25 (O2). Expected spend is about $4.60 to $7.70 (table below), which leaves room for one full retry and still stays under the cap. Re-estimated Nov 2 from the Meta-models audit: the r30b tune is about $1.39 on an A100 (42 to 48 minutes), against the earlier Llama plan's $1 to $2 on the same GPU, and the one-bit file costs about $1.75 on an A10 against $0.40 to $1.30 for the 2 GB Llama file.
 
 | Part | Expected | Hard limit | Source |
 |---|---|---|---|
@@ -241,6 +241,6 @@ From docs/MESSAGING.md and the marks in docs/STORY.md. Change a mark in `lib/sto
 - That the public result page shows an admin's folder-dataset job.
 - The exact commands to start the bundle on a hand-launched A10, and where the GGUF, the chat template and `llama-server` land on it.
 - One-bit Glimmer's speed and score on the A10 under `--schema`.
-- Whether a 6.53 GB tuned IQ1_S fits jetson-02 next to its stock file (about 400 MB of disk free) and in its memory.
+- Whether a 6.53 GB tuned IQ1_S fits jetson-02: its disk is 94% full (25.4 of 27 GB, about 1.6 GB free, fleet alert Nov 2), so not next to the 5.75 GB stock file, and about 450 MB of memory is free with the stock file loaded.
 - That the brief picks the edge target from this sentence, with O9 on.
 - Every time in section 4 not marked measured.

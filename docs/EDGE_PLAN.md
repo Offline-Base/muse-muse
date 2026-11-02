@@ -81,7 +81,7 @@ The boards are Hussam's. Nobody else changes them, and nobody SSHes from the lap
 4. This changes the "every cable out" framing to "every uplink out": the wire between the product's machine and the board stays.
 
 **H4. Tue 3 to 5 PM, about 1 h. The tuned file on the board, only if H1 passed.**
-1. Install the tuned IQ1_S with `gguf-serve.sh` and its sha256. It is 6.53 GB, larger than the 5.75 GB stock file, and jetson-02 has about 400 MB of disk free, so the stock file moves first. Whether 6.53 GB fits jetson-02's memory is unverified.
+1. Install the tuned IQ1_S with `gguf-serve.sh` and its sha256. It is 6.53 GB, larger than the 5.75 GB stock file, and jetson-02's disk is 94% full (25.4 of 27 GB, about 1.6 GB free, fleet alert Nov 2), so the stock file moves first. Whether 6.53 GB fits jetson-02's memory is unverified and doubtful: about 450 MB was free with the 5.75 GB file loaded.
 2. Rerun the held-out set.
 3. Report the result either way.
 
