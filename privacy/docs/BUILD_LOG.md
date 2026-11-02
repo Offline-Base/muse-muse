@@ -233,6 +233,15 @@ Router finding for Ethan: a request headed outside the class that both the label
 
 - 11:17: this repo came into Muse Muse as privacy/ with its history (git subtree at 5c458b3), on branch tg-privacy-main, not on main. pytest 3894 pass, 12 skipped, 15 xfailed; ruff clean; relay 58 of 58. CI moved to the host's .github/workflows/privacy.yml. The history scan now reads this folder's own changes (--relative). ~/muse-privacy stays the live copy through finals.
 
+## Nov 2
+
+- 10:30, on Muse Muse branch tg-messaging, docs only:
+  - README and CLAUDE.md now say this is part of Offline Base's one entry, by Ethan and Hussam, theme Push the Frontier. They used to say solo and Build for Your World.
+  - docs/PRIOR_WORK.md lists Meta's "Local agent that asks first" cookbook first. It's the closest prior work: local Glimmer, a person approves each string, then Muse Spark, with an egress log. Found while checking the owner's deep research (repo root docs/MESSAGING.md).
+  - Muse Muse put its knowledge-run Glimmer (r30b, IQ1_S, 5.75 GB) on jetson-02, outside Muse Privacy. It gave weak answers and no valid JSON on 40 invented receipts, and the board hung partway (Muse Muse PR #62). Muse Privacy itself still hasn't run on a board. `tests/test_claims.py` keeps device claims for Glimmer out of the README, so the README only points to the repo root's docs/OFFLINE.md, section 6.
+  - Tests: test_claims, test_secrets_scan, test_check_overlap and test_deploy_files, 275 of 275.
+  - Still to fix: README line 13 and docs/OTHER_APPS.md line 5 say the Claude and ChatGPT apps weren't tried, though this log's Oct 31 entries show both working (found in Muse Muse PR #61).
+
 ## Open items
 
 - Ethan: which mode the routing tune targets; whether to hand over stage 2 IQ1_S early.

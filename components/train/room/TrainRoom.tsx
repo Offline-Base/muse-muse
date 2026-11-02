@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { PlanViewCard } from "@/components/build/PlanCard";
+import { PlanChecklist } from "@/components/build/PlanChecklist";
 import { StepsFeed } from "@/components/build/StepsFeed";
+import { tuneChecklist } from "@/lib/steps-feed/checklist";
 import { ShowThinking, SourceList, StepList, StepsPanel, TitleChip, UserBubble, WorkingStep, type SourceItem } from "@/components/chat";
 import { Icon } from "@/components/icons";
 import { EvalResults } from "@/components/train/EvalResults";
@@ -202,6 +204,7 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
           ) : null}
           {story ? (
             <li>
+              <PlanChecklist list={tuneChecklist(view)} />
               <StepsFeed feed={tuneFeed(view)} label="What is happening to your model" />
             </li>
           ) : null}

@@ -21,7 +21,9 @@ import { appsLine, nativeRows } from "@/components/build/apps";
 import { proveRows } from "@/components/build/prove-rows";
 import { conversationItems, currentStep, finalWords, roomSources, roomSteps, shareLink, stepsEnd, type ConvoItem } from "@/components/build/steps";
 import { SteerBox } from "@/components/build/SteerBox";
+import { PlanChecklist } from "@/components/build/PlanChecklist";
 import { StepsFeed } from "@/components/build/StepsFeed";
+import { buildChecklist } from "@/lib/steps-feed/checklist";
 import { buildFeed } from "@/lib/steps-feed/facts";
 import { BriefBody, BuildOutput, LivePreview, ShipBody, UserTurn, tokensText } from "@/components/build/turns";
 import { duration, elapsedMs, isTerminalStatus, parseManifest, statusLabel, usd } from "@/lib/format";
@@ -510,6 +512,9 @@ export function BuildRoom(props: BuildRoomProps) {
                     {conn === "reconnecting" ? " · reconnecting to the live log" : ""}
                     {panelToggle}
                   </p>
+                </li>
+                <li>
+                  <PlanChecklist list={buildChecklist(room.status, events, "Making your product", feed.unpublished)} />
                 </li>
                 <li>
                   <StepsFeed feed={feed} />

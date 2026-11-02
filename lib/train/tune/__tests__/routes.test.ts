@@ -147,6 +147,7 @@ describe("tune routes", { skip: canMock ? false : "needs --experimental-test-mod
         saveRunVisitor: async () => {},
         saveRunAutoPublish: async () => {},
         saveRunBase: async () => {},
+        saveRunDatasetOnly: async () => {},
       },
     });
     mock.module(at("../build-source.ts"), {

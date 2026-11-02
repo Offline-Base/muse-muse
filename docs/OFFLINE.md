@@ -509,7 +509,7 @@ From the fleet tools, Oct 31 [V]: 8 machines enrolled, 3 online.
 |---|---|---|---|---|
 | jetson-03, jetson-04 | Online, model loaded | NVIDIA Nemotron 3.5 Bolt E4B, Q4_K_M (6.18 GB file, 4.6 to 4.9 GB peak) | Text, tools, 8K context, one chat at a time | OpenMDW-1.1: commercial use allowed, ship the license with the weights [V, fleet.md] |
 | jetson-05 | Online, model loaded; also runs the control plane and the d1-2B router | Liquid LFM3-VL-2B, Q4_K_M plus vision projector (about 2.9 GB resident) | Text and vision, 4 chats | Liquid's own license, not recorded in the fleet docs |
-| jetson-02 | Offline | Liquid LFM3-1.7B, Q4_K_M | Text | Liquid's own license |
+| jetson-02 | Online since Nov 2 [V, fleet tools]; also runs Hussam's `muse-device` on port 8765 | Since Nov 2: Muse Muse's knowledge-run Glimmer, r30b at IQ1_S (5.75 GB, `OfflineBase/Muse-Glimmer-30B-2026-Knowledge-GGUF`), llama.cpp b11970 on 127.0.0.1:11435. About 5 to 6 tokens a second, about 6.95 of 7.5 GB memory in use, weak answers. On Hussam's 40-receipt bench (PR #62) it gave 0% valid JSON, and from receipt 23 the board stopped answering and needed a power cycle; low memory (about 450 MB free) is the likely cause, inferred. The LFM3-1.7B setup it replaced is backed up on the board; docs/HANDOFF.md has the config | Text, one chat, 4K context | Muse Model License: a Derivative of Muse Spark Open, so "Built with Muse Spark Open", 18 and over |
 | jetson-01 | Offline for about 20 days | Liquid LFM2.5-VL-3B on Ollama (2.26 GB) | Text and vision | Liquid's own license |
 | decision-tree (Pi 5) | Offline, in maintenance | d1-omni-600M | Decisions only | Liquid's own license |
 | coral-01, coral-02 | Offline | none | NPU vision only | |

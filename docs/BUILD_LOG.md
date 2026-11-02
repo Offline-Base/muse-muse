@@ -2360,6 +2360,54 @@ Merged origin/main (#50, #51). The only conflict was this log; both entries kept
 - Preview muse-muse-hkozbza3a: intent recognized a dataset sentence; want both split a plain sentence; run 15c422b2 wrote 40 examples for $0.0062, held at "Your dataset is ready", no job, download 40 lines. That Preview inherited its own OPEN_ACCESS (value hidden, behaved as admin), so its no-code start was 201. Preview muse-muse-kpsbvt1ln (guest): new starters show, a stranger's download 403, but its plan answered 429, so the no-code refusal is proven by tests only, not live.
 - Not run: clicking the menu in a browser, Tune a model on this through a GPU.
 
+## Nov 2, 2026: plan checklist in the rooms, after the owner's Meta AI research screenshots (branch tg-room-plan)
+
+- A card that ticks off big steps, in build rooms and model rooms, under BUILD_ROOM_STEPS (builds) and MAKE_CHAT_ALL (model rooms). It reads only the run's own status, and never ticks a step still running or one where a run stopped. Datasets show no training step.
+- The Steps and Sources panel and the live working line already existed. Site chips under steps were not built: most build steps have no web sources to show.
+- Tests: checklist 7 of 7, feed, room and both flag-off tests, tsc. Not run in a browser or a live build. Look checked by rendering the component with the real CSS.
+## Nov 2, 2026: What we can say, checked against Meta's docs (branch tg-messaging)
+
+- The owner's three deep-research reports, checked against `content/meta-docs/` and web search, are now in docs/MESSAGING.md. Docs only, no code.
+- Checked word for word in Meta's docs:
+  - Glimmer's "you own the weights, the runtime, and the data".
+  - The post-training advice to compare against base on a held-out set and also track a general benchmark.
+  - The 16.8 GB smallest Glimmer.
+  - The "Local agent that asks first" cookbook.
+- Checked across news outlets: Johns Hopkins Bayview, 3,182 patients.
+- Not confirmed:
+  - The Zuckerberg "manifest ideas" line: no search hit.
+  - The private-mode sentence: reported in different words.
+  - GAO's 12 of 12.
+- Found: Meta's cookbook (local Glimmer, approve, then Muse Spark, with an egress log) is the closest prior work to Muse Privacy, and privacy/docs/PRIOR_WORK.md doesn't list it.
+- Found stale: privacy/README.md "Built solo" and the Build for Your World theme, Glimmer "not run" on the Jetson in privacy/README.md and docs/STORY.md, and jetson-02's model in docs/OFFLINE.md. Left for the submission-ready item.
+- Follow-up, 10:30, same branch, on the owner's ask that every point be logged or applied and that CLAUDE.md know where to look:
+  - New root `CLAUDE.md`: imports AGENTS.md, has a read-first table and the standing rules.
+  - New `docs/HANDOFF.md`: current state, open PRs (Hussam's #60 to #63 included), what waits on the owner (the five overnight items, keys, terms, limits, Prompt Guard, ngrok), the jetson-02 and jetson-05 changes made through the fleet tools, and gotchas.
+  - Applied the stale lines: privacy README and CLAUDE.md (team, theme), the jetson-02 row in docs/OFFLINE.md, docs/STORY.md (Jetson marks, the lifted name rule, the Oct 30 run with 10 leaks), the `/offline` sentence in `lib/story/flow.ts`, and Meta's cookbook in privacy/docs/PRIOR_WORK.md.
+  - Hussam's #62 changes the Jetson claim: r30b on jetson-02 gave 0% valid JSON on 40 receipts, and the board hung at receipt 23. Every new line says so.
+  - The fleet shows jetson-02 back online at 10:20 with the model loaded.
+  - Tests: story 11 of 11, and Muse Privacy's claims and doc tests 275 of 275. My first wording named the company in STORY's privacy paragraph and failed the test that still enforces the lifted rule, so I reworded it.
+## Nov 2, 2026: CI unit tests green on main's own failures (branch tg-ci-green)
+
+- Why: every PR's Unit tests check was red, Hussam's #61 to #63 included, but no PR added a failure. The same 7 tests failed on main, 4 broken test setups cancelled 57 more, and because step 1 failed, steps 2 and 3 had never run on CI.
+- Step 1, library and component tests. Test files only:
+  - Four module fakes lacked exports that newer code imports: `putExactFile`, `GUEST_EMAIL` and `isCrossSite`, `datasetGrounding`, and `saveRunDatasetOnly` (the last from #58).
+  - The one-hour build step (#10) left three expectations at 25 or 30 minutes and the `steps.json` golden at 1500000; the golden's build timeout is now 3600000.
+  - The refine-row test queued its selects without the session lookup added later.
+  - `products.sourcePublic` is listed as left out of a promote bundle on purpose: an imported product starts private.
+  - `scripts/dev/tune-harness.ts` is allowed to read DATABASE_URL, like the other pglite-only dev scripts.
+- Step 2, fine-tuning view tests:
+  - The pages test's fake store gets `gpuBudgetFor` and `listOwnRuns`.
+  - The two plan-card tests now describe the short plan from #37: at most 4 steps, "Won't do" last for a partial build, and the whole brief under "See the full plan".
+- Step 3, the template's scripts: they import the template's own packages (openai, next, react, typescript, @playwright/test), which CI never installed. CI now runs `npm ci --prefix template --ignore-scripts` before them. Not run here in full, to spare the laptop; with only @playwright/test linked, the rest failed for those packages alone.
+- Local results:
+  - Step 1's eleven failing files: all pass.
+  - Step 2: 207 of 207.
+  - Typecheck and step 3 are left to CI.
+- Follow-up: #65's first CI run failed 5 tests in `lib/caps/jobs/__tests__/jobs.test.ts`, which fail on main too.
+  - Cause: the test's fake fetch read the cron's job token with the wall clock, but the token was minted from the test's fixed NOW (Nov 2, 12:00 UTC) with a 10-minute life. So the test started failing at 12:10 UTC today. It now reads the token on NOW: 69 of 69.
+  - Checked for other date traps: ran the 10 test files that mix fixed November dates with the real clock, with the clock moved to Nov 9, 23:00 UTC (the end of judging). 216 of 216 pass.
+
 ## Nov 2, 2026: Products can answer from the Jetson fleet (`FLEET_PRODUCTS`, off), branch fleet-products
 
 - **Built:** `POST {GATEWAY_URL}/fleet/v1/chat/completions`, a clone of the hosted Glimmer path with no windows and no fallback (docs/CAPABILITIES.md, 17b). Brief model `jetson-fleet`, marker `fleet`. `FLEET_ALL_PRODUCTS` for anything past admin-owned products. `FLEET_PRODUCTS_URL`, `_KEY` (`jik_` only, so `jpt_` is refused) and `_MODEL` (`combo/` refused, no default), or 503 `fleet_closed`. Whole replies, text only, 8000 characters, 1024 tokens, redirects refused, a cloud `X-JCP-Served-By` is an error, and no fleet address or text reaches a caller. A build gets a labeled simulated reply. One $0 row per answer. 100 a day per product, 10 a minute per IP, one in flight per product and two across the platform, on the existing `acquireInFlight`. `askFleetOrMessage`, a skill with the exact label, and an empty `template/caps/fleet` overlay that tells a snapshot apart.

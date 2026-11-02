@@ -210,6 +210,8 @@ describe("the bundle and the tables", () => {
     // The live site gives every row to its guest account, and sets the link once it publishes.
     products: [
       "ownerId", "vercelProjectId", "liveUrl",
+      // 0028_versions: a public Code page is the owner's choice on each site, so an imported product starts private.
+      "sourcePublic",
       // Wave 3, unit 1 (0018_trust): a takedown belongs to the site that made it (docs/CAPABILITIES.md, section 4).
       "takenDownAt", "takedownReason", "statusBeforeTakedown",
       // Wave 3, unit 6 (0023_jobs): an owner's visits belong to the site they visited.

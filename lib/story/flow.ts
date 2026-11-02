@@ -102,8 +102,9 @@ export const OFFLINE_BASE_FACTS: string[] = [
 
 export const OFFLINE_LIMITS: string[] = [
   "The fleet has real boards, but this flow has not run on them. Everything here about a board is simulated.",
-  "The fleet and Base Drive run their own model setups today, such as Liquid AI's models on the boards. Running Meta's models from this flow on them is the plan, not a result.",
-  "One-bit Muse Glimmer has not been shown to fit or run on an 8 GB Jetson. The file is about 6.5 GB. On an x86 CPU under 8 GB and 7 GB limits, a file from a short test tune on made-up data loaded, at about 2.5 tokens a second. Under its tuned chat template it answered its own made-up topic in the trained shape with some muddled steps, and general questions stayed poor, 2 of 5 clearly right. That x86 test is not a Jetson.",
+  "The fleet and Base Drive run their own model setups today, such as Liquid AI's models on most boards. Running Meta's models from this flow on them is the plan, not a result.",
+  "A one-bit Muse Glimmer made by hand, not by this flow, now fits on an 8 GB Jetson and answers short chats: the 2026-knowledge tune at about 1.6-bit, a 5.75 GB file, at 5 to 6 tokens a second with weak answers. On 40 invented receipts it gave no valid JSON, and the board stopped answering partway through. Meta's smallest published Glimmer file is 16.8 GB. Built with Muse Spark Open, for people 18 and over.",
+  "Before that, on an x86 CPU under 8 GB and 7 GB limits, a file from a short test tune on made-up data loaded, at about 2.5 tokens a second. Under its tuned chat template it answered its own made-up topic in the trained shape with some muddled steps, and general questions stayed poor, 2 of 5 clearly right. That x86 test is not a Jetson.",
   "Muse Muse's USB export is its own kit, not a Base Drive, and it has not been written from a board.",
   "A cloud step means your sentence, your data and your training run go through Muse Muse and a rented GPU. Offline starts after the file is on your device.",
 ];

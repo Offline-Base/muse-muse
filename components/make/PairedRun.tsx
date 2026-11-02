@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { PlanChecklist } from "@/components/build/PlanChecklist";
 import { StepsFeed } from "@/components/build/StepsFeed";
+import { tuneChecklist } from "@/lib/steps-feed/checklist";
 import "@/components/make/make.css";
 import "@/components/train/tune.css";
 import { EvalResults } from "@/components/train/EvalResults";
@@ -66,6 +68,7 @@ export function PairedFeed() {
     <>
       <li className="make-story-head">The model</li>
       <li>
+        <PlanChecklist list={tuneChecklist(v.run)} />
         <StepsFeed feed={tuneFeed(v.run)} label="What is happening to your model" />
       </li>
     </>
