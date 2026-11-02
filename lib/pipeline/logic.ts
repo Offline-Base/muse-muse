@@ -5,7 +5,7 @@
 import type { Brief } from "@/lib/brief/schema";
 import type { BuildModel } from "@/lib/sandbox/muse";
 import type { Reference } from "@/lib/types";
-import { SPARK_STANDIN, withoutRetiredSpark } from "@/lib/meta/spark";
+import { defaultModel, SPARK_STANDIN, withoutRetiredSpark } from "@/lib/meta/spark";
 import { AGENT_MARKER, isToolId, PERSONAL_TOOL_IDS, toolMarker } from "@/lib/tools/ids";
 import { briefCaps } from "@/lib/caps/brief-fields";
 import { connectBlock } from "@/lib/caps/connect/brief";
@@ -132,7 +132,7 @@ export function allowedModelsFor(brief: Pick<Brief, "capabilities" | "agent" | "
 }
 
 /**
- * True when a live product stays on Muse Wonder under BUILDS_ON_CONTRIBUTOR: anything with a person's own connected accounts
+ * True when a live product can't use Contributor under BUILDS_ON_CONTRIBUTOR, so it can't run: anything with a person's own connected accounts
  * or personal tools, since Meta's terms (6.2) bar personal information on Contributor and Meta may train on it. That
  * means an agent's personal tools or owner connection, the owner's keys and sends through connect, a person's drive or
  * board, and a gadget's camera and microphone. Public web search, public APIs and a product's own chat follow the flag.
@@ -151,11 +151,15 @@ export function runtimeStaysOffContributor(brief: Pick<Brief, "capabilities" | "
 
 /**
  * The marker a live token gets: only with the flag on, a brief to check, nothing personal in it, and a product whose own
- * code shows the notice (an older snapshot's, or one a build rewrote, doesn't, so it stays on Muse Wonder).
+ * code shows the notice (an older snapshot's, or one a build rewrote, doesn't, so its calls are refused).
  */
 export function contributorRuntimeMarkers(brief: Pick<Brief, "capabilities" | "agent"> | null, flagOn: boolean, showsNotice: boolean): string[] {
   return flagOn && showsNotice && brief && !runtimeStaysOffContributor(brief) ? [CONTRIBUTOR_RUNTIME_MARKER] : [];
 }
+
+/** BUILDS_ON_CONTRIBUTOR: why a new product holding something personal isn't built. It could never run. */
+export const PERSONAL_OFF_MESSAGE =
+  "Muse Muse can't build this right now. It uses a person's own accounts, personal tools or a device's camera and microphone, and the model Muse Muse runs on for now can't be used with personal information.";
 
 /** A live product's daily budget: AGENT_LONG_DAILY_USD for a long-run recipe, since one full run costs dollars, otherwise as its estimate says. */
 export function liveDailyBudgetFor(brief: Pick<Brief, "estimatedCostPerRunUsd" | "recipes"> | null | undefined): number {
@@ -179,8 +183,8 @@ export function pickBuildModel(
   models: { buildModel: string; complexBuildModel: string },
 ): BuildModel {
   return complexity === "complex"
-    ? asBuildModel(models.complexBuildModel, "muse-wonder-1.0")
-    : asBuildModel(models.buildModel, "muse-wonder-1.0");
+    ? asBuildModel(models.complexBuildModel, defaultModel())
+    : asBuildModel(models.buildModel, defaultModel());
 }
 
 /**

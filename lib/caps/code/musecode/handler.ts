@@ -18,6 +18,7 @@ import { newSessionId } from "@/lib/sandbox/muse";
 import { publicHost } from "@/lib/sandbox/policy";
 import type { UsageContext } from "@/lib/usage";
 import type { ModelUsage } from "@/lib/types";
+import { contributorSwitchRefusal } from "@/lib/gateway/policy";
 
 /**
  * Muse Code sessions in products (docs/CAPABILITIES.md, 15b; ~/mm-wt/_plan/muse-code-products.md), behind the cap gate
@@ -317,6 +318,8 @@ function sessionRoute(deps: MuseCodeDeps, id: string, action: SessionAction): Ca
 async function startSession(ctx: CapContext<StartArgs>, deps: MuseCodeDeps): Promise<Response> {
   const L = MUSE_CODE_LIMITS;
   const build = isBuild(ctx);
+  // BUILDS_ON_CONTRIBUTOR: a product that can't use Contributor can't start a task on it, and there's no Wonder to start one on.
+  if (deps.contributorBuilds?.() === true && contributorSwitchRefusal({}, ctx.token)) return capError("invalid_arguments", "Muse Code tasks are off for this product for now. Muse Muse runs on a model Meta may train on, which can't be used with personal accounts or personal tools, and this product either holds those or needs publishing again.");
   const now = ctx.now;
   const snapshotId = deps.snapshotId();
   const host = publicHost(deps.platformUrl());

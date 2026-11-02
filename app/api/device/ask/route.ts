@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import { requireAdminOrAutomation } from "@/lib/auth";
 import { ASKS_PER_MINUTE, runDeviceAgent } from "@/lib/device/agent";
 import { callDeviceTool, deviceConfig, listDeviceTools } from "@/lib/device/client";
-import { DEFAULT_PLATFORM_MODEL } from "@/lib/env";
+import { contributorBuildsOn, DEFAULT_PLATFORM_MODEL } from "@/lib/env";
 import { hitRateLimits } from "@/lib/gateway/store";
 import { badRequest, errorJson, readJson, route } from "@/lib/http";
 import { metaPlatform } from "@/lib/meta/platform";
@@ -26,6 +26,8 @@ class PausedError extends Error {}
  */
 export const POST = route(async (req: Request) => {
   const user = await requireAdminOrAutomation(req);
+  // BUILDS_ON_CONTRIBUTOR: a board's camera and microphone carry personal information, which can't go to Contributor.
+  if (contributorBuildsOn()) return errorJson(503, "device_off_on_contributor");
   const body = await readJson(req);
   const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
   if (!prompt) throw badRequest("Ask something.");

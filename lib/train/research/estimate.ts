@@ -3,8 +3,9 @@
  * same range the route's budget uses. These are estimates at Muse Wonder's prices, not measurements.
  */
 import { tokenCost, WEB_SEARCH_USD_PER_QUERY } from "@/lib/meta/pricing";
+import { defaultModel } from "@/lib/meta/spark";
 
-const PRICED_MODEL = "muse-wonder-1.0";
+const PRICED_MODEL = defaultModel();
 
 /** Narrow sub-questions a run searches, one Meta call each. */
 export const RESEARCH_QUESTIONS = 4;

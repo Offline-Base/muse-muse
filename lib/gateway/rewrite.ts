@@ -81,7 +81,7 @@ export function productSafetyIdentifier(productId: string, subject: string): str
 /** Rewrites a Responses JSON body. The input is not changed. `visitorKey` names the person when the body doesn't. */
 export function rewriteResponsesRequest(
   input: Record<string, unknown>,
-  opts: { token: RewriteToken; visitorKey?: string | null; testRun?: boolean },
+  opts: { token: RewriteToken; visitorKey?: string | null; testRun?: boolean; noWonder?: boolean },
 ): ResponsesRewrite {
   const refuse = (code: string, message: string): ResponsesRewrite => ({
     json: input,
@@ -98,7 +98,7 @@ export function rewriteResponsesRequest(
   if (!opts.testRun && hasAgentMarker(token.allowedModels) && (input.model === SPARK_STANDIN || input.model === RETIRED_SPARK)) {
     return refuse(
       "model_not_for_agents",
-      `Agents can't run on ${SPARK_STANDIN}: Meta may train on that tier, and agents read other people's pages. Use muse-wonder-1.0 instead.`,
+      `Agents can't run on ${SPARK_STANDIN}: Meta may train on that tier, and agents read other people's pages.${opts.noWonder ? "" : " Use muse-wonder-1.0 instead."}`,
     );
   }
   const json = { ...input };

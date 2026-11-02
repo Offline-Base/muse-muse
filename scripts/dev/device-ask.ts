@@ -7,10 +7,12 @@
 import { writeFileSync } from "node:fs";
 import { runDeviceAgent } from "@/lib/device/agent";
 import { callDeviceTool, deviceConfig, listDeviceTools } from "@/lib/device/client";
-import { DEFAULT_PLATFORM_MODEL } from "@/lib/env";
+import { contributorBuildsOn, DEFAULT_PLATFORM_MODEL } from "@/lib/env";
 import { metaPlatform } from "@/lib/meta/platform";
 
 const [prompt, photoPath] = process.argv.slice(2);
+if (contributorBuildsOn()) throw new Error("Off while BUILDS_ON_CONTRIBUTOR is on: a board's camera and microphone can pick up personal information.");
+if (contributorBuildsOn()) throw new Error("Off while BUILDS_ON_CONTRIBUTOR is on: a board's camera and microphone can pick up personal information.");
 if (!prompt) throw new Error("Ask something.");
 const config = deviceConfig();
 if (!config) throw new Error("Set DEVICE_MCP_URL and DEVICE_MCP_TOKEN.");

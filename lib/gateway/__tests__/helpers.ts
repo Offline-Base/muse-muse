@@ -35,6 +35,7 @@ export function fakeGateway(
     upstreamKey?: string;
     buildTestModel?: string | null;
     contributorRuntime?: boolean;
+    sparkToWonder?: boolean;
   } = {},
 ): FakeGateway {
   const usage: FakeGateway["usage"] = [];
@@ -108,6 +109,7 @@ export function fakeGateway(
     upstreamKey: () => opts.upstreamKey ?? "test-master-key",
     buildTestModel: opts.buildTestModel,
     contributorRuntime: opts.contributorRuntime,
+    sparkToWonder: opts.sparkToWonder,
     gatewayUrl: "https://platform.example/api/gateway",
     defer: (task) => {
       deferred.push(task());

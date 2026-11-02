@@ -87,7 +87,7 @@ function contributorSection(sparkToWonder: boolean, buildsOnContributor: boolean
     paragraphs: ["Some work runs on Muse Spark 1.3 Contributor, a lower-cost Meta model that Meta may use to improve its models:"],
     bullets: [
       ...(buildsOnContributor
-        ? ["Every build right now. Your note, the files you add, your change requests and answers, and the product's code and test runs go to this model, so don't include personal, sensitive or confidential information. A product published this way keeps running on this model and says so, so what its visitors type goes there too, unless it uses a person's connected accounts or personal tools, which stay on Muse Wonder."]
+        ? ["Every build right now. Your note, the files you add, your change requests and answers, and the product's code and test runs go to this model, so don't include personal, sensitive or confidential information. A product published this way keeps running on this model and says so, so what its visitors type goes there too, unless it uses a person's connected accounts or personal tools, which can't run on this model and are off for now. Fine-tunes and the live docs demos run on it too."]
         : []),
       "Test builds the Muse Muse team runs. They use made-up data only.",
       "Changes to a product first built on Muse Spark 1.3. A change carries on with the model that built the product, so your change request and the product's code go to this model.",

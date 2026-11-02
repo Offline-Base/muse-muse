@@ -40,6 +40,8 @@ import {
   pickBuildModel,
   refineRoute,
   contributorRuntimeMarkers,
+  PERSONAL_OFF_MESSAGE,
+  runtimeStaysOffContributor,
   SLUG_MAX,
   type JudgeCall,
 } from "@/lib/pipeline/logic";
@@ -390,9 +392,11 @@ export interface BriefSummary {
 
 function summarize(brief: Brief): BriefSummary {
   const plan = enginePlan(brief, "build");
+  // BUILDS_ON_CONTRIBUTOR: a product that could never run is refused here, as a brief refuses, rather than built.
+  const personalOff = contributorBuildsOn() && brief.verdict !== "no" && runtimeStaysOffContributor(brief);
   return {
-    verdict: brief.verdict,
-    refusal: brief.refusal,
+    verdict: personalOff ? "no" : brief.verdict,
+    refusal: personalOff ? PERSONAL_OFF_MESSAGE : brief.refusal,
     name: brief.name,
     tagline: brief.tagline,
     model: pickBuildModel(brief.complexity, { buildModel: env.buildModel, complexBuildModel: env.complexBuildModel }),
@@ -1472,10 +1476,10 @@ export async function startDeployStep(input: {
   const product = await loadProduct(input.productId);
   const brief = build.brief ?? (await latestWorkingBrief(input.productId));
   const allowed = brief ? allowedModelsFor(brief) : await liveModels(input.productId);
-  // Under BUILDS_ON_CONTRIBUTOR, if nothing personal is in it and its code shows the notice. Else it stays on Wonder.
+  // Under BUILDS_ON_CONTRIBUTOR, if nothing personal is in it and its code shows the notice. Else its calls are refused.
   const flagOn = contributorBuildsOn();
   const runtime = contributorRuntimeMarkers(brief, flagOn, flagOn && (await sandbox.productShowsContributorNotice(input.sandboxName).catch(() => false)));
-  if (flagOn && brief && !runtime.length) console.warn(`Product ${input.productId} stays on Muse Wonder when live: it holds something personal or doesn't show the notice.`);
+  if (flagOn && brief && !runtime.length) console.warn(`Product ${input.productId} can't make model calls when live: it holds something personal or doesn't show the notice.`);
   const live = await mintToken({
     productId: input.productId,
     scope: "live",

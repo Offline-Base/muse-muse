@@ -7,7 +7,7 @@ import { codePartsKey } from "@/lib/caps/code/parts";
 import { connectOptions } from "@/lib/caps/connect/flags";
 import type { CapId } from "@/lib/caps/ids";
 import { contributorBuildsOn, env } from "@/lib/env";
-import { RETIRED_SPARK } from "@/lib/meta/spark";
+import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
 import { availableRecipes, recipesCatalogLines } from "@/lib/recipes/registry";
 import { RUN_LIMITS } from "@/lib/gateway/runs";
 import { WEB_SEARCH_USD_PER_QUERY } from "@/lib/meta/pricing";
@@ -83,8 +83,20 @@ function priceLine(id: string): string {
   }
 }
 
+/** BUILDS_ON_CONTRIBUTOR: the Wonder id's row, which says what really serves it. */
+function contributorBlock(): string {
+  const p = PRICES[SPARK_STANDIN];
+  return [
+    `- muse-wonder-1.0: the id a product names for its own text and vision calls. For now Muse Muse serves every call naming it on ${SPARK_STANDIN}.`,
+    `  in: text, image, pdf, video; out: text. Price: $${p.input} per million input tokens, $${p.output} per million output tokens.`,
+    "  Meta may train on what goes to it, and its terms bar personal, sensitive or confidential information, so every product shows a notice saying so. Don't plan a product around such information.",
+    "  Audio input is off: transcribe with muse-voice-transcribe-1.0, then send the transcript.",
+  ].join("\n");
+}
+
 function modelBlock(m: CatalogModel, voiceRecipe: boolean): string {
   const id = m.id as string;
+  if (id === "muse-wonder-1.0" && contributorBuildsOn()) return contributorBlock();
   const io = [m.input?.length ? `in: ${m.input.join(", ")}` : "", m.output?.length ? `out: ${m.output.join(", ")}` : ""]
     .filter(Boolean)
     .join("; ");
@@ -155,9 +167,11 @@ const cached = new Map<string, string>();
  * on, the text is today's, byte for byte.
  */
 export function catalogSummary(caps: readonly CapId[] = env.enabledCaps): string {
-  const gadgets = env.gadgetsEnabled;
+  // BUILDS_ON_CONTRIBUTOR: a person's own accounts and a device's camera and microphone can't use Contributor, so neither is offered.
+  const switchOn = contributorBuildsOn();
+  const gadgets = env.gadgetsEnabled && !switchOn;
   const agents = env.agentsEnabled;
-  const personal = agents && env.composioPersonalEnabled;
+  const personal = agents && env.composioPersonalEnabled && !switchOn;
   // Wave 3, unit 3: the data cap's block follows DATA_SIGN_IN, so it is part of the key only while data is on.
   // Unit 8: the media cap names only its parts that are on, so they are part of the key only while media is on.
   // Wave 3, unit 5 (connect): its block names keys and sends only while they are on, so they are part of the key only
@@ -170,7 +184,7 @@ export function catalogSummary(caps: readonly CapId[] = env.enabledCaps): string
   const key = `${gadgets}|${agents}|${personal}|${caps.join(",")}${gpuOn ? "|gpu" : ""}${caps.includes("data") ? `|${env.dataSignIn}` : ""}${caps.includes("live") ? `|live:${env.liveUpdates}` : ""}${caps.includes("media") ? `|${env.mediaParts.join(",")}` : ""}${connectKey}${caps.includes("code") ? `|code:${codePartsKey()}` : ""}${caps.includes("hardware") ? `|board:${env.hardwareBoardToolsUsable}` : ""}${caps.includes("hardware") && env.driveToolsUsable ? "|drive" : ""}${recipesCatalogLines(caps).length ? `|recipes:${availableRecipes(caps).map((r) => r.id).join(",")}` : ""}`;
   // A product's own chatbot needs a snapshot with lib/meta/chat.ts. Both switches below come with one, so with them off the text is today's.
   const chatOffered = contributorBuildsOn() || caps.includes("platform");
-  const hit = cached.get(`${key}${chatOffered ? "|chat" : ""}`);
+  const hit = cached.get(`${key}${chatOffered ? "|chat" : ""}${switchOn ? "|switch" : ""}`);
   if (hit) return hit;
   const run = howProductsRun(caps, { gadgets, agents });
   const allowed = new Set<string>(PRODUCT_MODELS);
@@ -190,7 +204,7 @@ export function catalogSummary(caps: readonly CapId[] = env.enabledCaps): string
     // Wave 3, unit 8 (docs/CAPABILITIES.md, section 14): the media cap replaces these two while its part is on.
     capsWorkaround(caps, "speech") ?? "- Text-to-speech: the browser's built-in speech synthesis.",
     capsWorkaround(caps, "video") ?? "- Video generation: a short image sequence from muse-image-1.0.",
-    "- Embeddings: put the documents in Muse Wonder's 1M-token context (fine for small document sets).",
+    `- Embeddings: put the documents in ${switchOn ? "the model's" : "Muse Wonder's 1M-token"} context (fine for small document sets).`,
     "- Realtime voice conversation: record, transcribe, then reply in text.",
     voiceRecipe
       ? "- Named speakers in transcripts: recipe-voice's mode DIARIZATION gives anonymous labels (A, B), not yet checked through the gateway. Ask the user to name them, and keep one plain transcript as the fallback."
@@ -202,6 +216,7 @@ export function catalogSummary(caps: readonly CapId[] = env.enabledCaps): string
     run?.third ??
       `- Products reach only Meta's models${gadgets ? ", and a connected gadget when the brief picks muse-gadget" : ""}${agents ? ", and the agent tools below when the brief picks the agent target" : ""}. No other services or API keys: no WhatsApp, SMS, email, payments, maps, social networks or scraping other sites. When a muse needs one, build the web version and make that a limit.`,
     "- Each product has a small daily model budget, so one run should cost cents, not dollars.",
+    ...(switchOn ? ["- Nothing that uses a person's own accounts, personal tools, connected keys, a drive or a board can be built right now. When a muse needs one, say so as a refusal."] : []),
     ...(chatOffered ? ["- Any product may include a chatbot: list muse-wonder-1.0 and the build uses the platform's chat helper and the product's metered token, with no key of its own."] : []),
     ...(availableRecipes(caps).length ? ["- Any Muse Wonder product may call web_search directly, with no agent target. Live replies carry no citation annotations, so footnotes come from the search results, and an answer with no sources says so."] : []),
     ...(agents ? agentToolsBlock(personal) : []),
@@ -209,6 +224,6 @@ export function catalogSummary(caps: readonly CapId[] = env.enabledCaps): string
     ...capsCatalogBlocks(caps),
     ...recipesCatalogLines(caps),
   ].join("\n");
-  cached.set(`${key}${chatOffered ? "|chat" : ""}`, summary);
+  cached.set(`${key}${chatOffered ? "|chat" : ""}${switchOn ? "|switch" : ""}`, summary);
   return summary;
 }

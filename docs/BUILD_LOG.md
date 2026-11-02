@@ -2256,3 +2256,20 @@ Tried at 01:28 UTC on Nov 2 (still Nov 1 here) with curl keeping cookies, signed
 - **Finding, for the owner:** at 3 new visitors per IP per day, a shared network such as a venue's Wi-Fi stops the fourth new guest before they can get a plan. "Keep the same browser" doesn't help someone who has no cookie yet. Not fixed here.
 - **For the rerun:** the guest's own view takes out instance id, IP, logs and errors (`visitorRunView`), so proving callbacks and the GPU's end needs what that view keeps plus an owner's check of the job row or Lambda console.
 - **Spend:** $0. No production changes.
+
+## Nov 1: everything on Contributor under BUILDS_ON_CONTRIBUTOR, no Wonder but the Wonder check (branch tg-all-contributor)
+
+Owner: "change anything in the product now to use muse spark 1.3 contributor, no muse wonder except for the muse wonder check."
+
+- **One source of truth.** `contributorSwitchOn()` and `defaultModel()` in lib/meta/spark.ts. lib/env.ts reads the switch from there. next.config.ts inlines the setting so browser pages can name the real model. Flag off: every answer is today's.
+- **Moved under the switch:** tuning judge, dataset writer, Hub story, tune plan, content check, research, tool fixtures, Prove it default, the session usage fallback label, the exec default, the build model fallback, the docs proxy and Ask, the docs menus, the tune cost estimates, and page copy that names the model.
+- **Gateway.** A request naming Wonder is served by Contributor and metered at its price, on every token. TRUST_SPARK_TO_WONDER can't take a call to Wonder under the switch.
+- **Decision, disabled with a plain message (no Wonder to fall back to, Meta terms 6.2 bar personal information on Contributor):** live tokens without the marker get 403 `off_for_now`; audio input gets 403 `audio_input_off`; /api/device/ask gets 503 `device_off_on_contributor`; a Muse Code task from such a product is refused; a new brief holding something personal ends as a refusal; the brief writer isn't offered personal tools or gadgets.
+- **Decision, kept:** contributorWriterOn stays behind its own switch, so a person's dropped files still don't go to Contributor without TRAIN_CONTRIBUTOR_WRITER. testModel keeps its production guard. The Knowledge run writer and scripts/knowledge are untouched.
+- **Decision, kept:** the template is unchanged and so is the snapshot. Product code keeps naming the id, the gateway serves it, and the build prompt tells the writer not to say Muse Wonder on screen. The template's own text, such as ModelChip and askGlimmer's note, still says Muse Wonder until a change to it and a new snapshot.
+- **Judge label.** Results and Hub cards judged on Contributor now say their scores don't compare with runs judged by Muse Wonder. judge_model was already saved on each job.
+- **Guard.** lib/__tests__/no-wonder.test.ts checks every pick under the switch and scans the code: a new use of the id fails until it says why. lib/wonder/loop.ts and lib/pipeline/wonder-step.ts are named as the only allowed Wonder callers. Their branch isn't merged and its Wonder call is untouched.
+- **Docs.** docs/SUBMISSION.md and the video script now name the real model.
+- **Tests.** tsc clean. no-wonder 8 of 8, handler 62, musecode 87, and the other suites for touched modules pass. build-steps.scenario can't load: its mock of lib/judge lacks MAX_CHAIN_SCREENSHOTS, in a file this branch doesn't touch.
+- **Owner's change of instruction, mid-task:** no builds or Meta calls, to save money. So NOT RUN: the real build on a Preview, usage rows, and the vision, video, PDF and JSON calls on Contributor. No Preview deployed and no project linked. Web search on Contributor (fine-tune research, products using web_search) is also unmeasured: it may fail.
+- **Spend:** $0 Meta, no GPUs, no deploys, no production changes.

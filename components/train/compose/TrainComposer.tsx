@@ -16,6 +16,8 @@ import { planCostText, planViewFromTrainPlan, upperFirst } from "@/components/tr
 import { KEPT_PLAN_KEY } from "@/components/train/room/TrainRoom";
 import { ExternalLink } from "@/components/ui";
 import { usd } from "@/lib/format";
+import { contributorSwitchOn } from "@/lib/meta/spark";
+import { CONTRIBUTOR_TUNE_NOTICE, ContributorNotice } from "@/components/composer/ContributorNotice";
 import { BUILT_WITH_SPARK_OPEN, R30B_URL } from "@/lib/train/base";
 import { tuneBaseOf } from "@/lib/train/bases";
 import { maxStepsFor, NOTE_MAX, NOTE_MIN, planCost, planMaxUsd, planSettings, TUNE_MAX_EXAMPLES, TUNE_MIN_EXAMPLES, TUNE_MIN_STEPS, TUNE_STEPS } from "@/lib/train/tune/cost";
@@ -296,6 +298,7 @@ export function TrainComposer({
       {/* Kept mounted while the room shows, so Change it finds the note and the files as they were. */}
       <div className="play tune-compose" hidden={phase.at !== "compose"}>
         <div className="play-main">
+          {contributorSwitchOn() ? <ContributorNotice text={CONTRIBUTOR_TUNE_NOTICE} /> : null}
           <div className="toolbar" aria-label="Page actions">
             <Link className="btn" href="/fine-tuning">
               <Icon name="history" />

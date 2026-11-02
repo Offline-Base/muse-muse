@@ -33,12 +33,13 @@ import {
 import type { EvalSummary } from "@/lib/train/types";
 import type { ModelUsage } from "@/lib/types";
 import { recordUsage } from "@/lib/usage";
+import { defaultModel } from "@/lib/meta/spark";
 
 /**
  * The model that judges a job's eval items, saved on the job as its judge_model when judging starts. Muse Spark 1.3
  * judged every job before Oct 29, 2026 and is never used for new judging.
  */
-export const JUDGE_MODEL = "muse-wonder-1.0";
+export const JUDGE_MODEL = defaultModel();
 
 /** The note is cut to this many words. */
 const NOTE_WORDS = 30;

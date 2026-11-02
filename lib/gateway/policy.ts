@@ -74,13 +74,29 @@ export const AGENT_LONG_MARKER = "agent-long";
 /**
  * The allowedModels entry on a live token published under BUILDS_ON_CONTRIBUTOR, from a product that shows the Contributor
  * notice and holds nothing personal (lib/pipeline/logic.ts). Not a model. A product published before has no notice, so
- * it has no marker and stays on Muse Wonder. Without the flag the marker does nothing.
+ * it has no marker, and its calls are refused (contributorSwitchRefusal). Without the flag the marker does nothing.
  */
 export const CONTRIBUTOR_RUNTIME_MARKER = "runtime:contributor";
 
-/** Audio input is a Muse Wonder ability Contributor doesn't list (catalog/meta-models.json), so that call stays on Wonder. */
+/** Audio input is a Muse Wonder ability Contributor doesn't list (catalog/meta-models.json). */
 export function needsWonderInput(json: { input?: unknown }): boolean {
   return JSON.stringify(json.input ?? "").includes('"input_audio"');
+}
+
+/**
+ * BUILDS_ON_CONTRIBUTOR: why a call naming Muse Wonder can't run, or null when Contributor can serve it. There is no Wonder
+ * to fall back to, so these say so plainly. Contributor doesn't list audio input. A live token without the marker holds
+ * something personal, which Meta's terms (6.2) bar from Contributor, or its product shows no notice yet.
+ */
+export function contributorSwitchRefusal(json: { input?: unknown }, token: { scope: string; allowedModels: readonly string[] }): { code: string; message: string } | null {
+  if (needsWonderInput(json)) return { code: "audio_input_off", message: "Audio input is off for now, since the model Muse Muse runs on doesn't take it. Transcribe the audio first with muse-voice-transcribe-1.0." };
+  if (token.scope === "live" && !token.allowedModels.includes(CONTRIBUTOR_RUNTIME_MARKER)) {
+    return {
+      code: "off_for_now",
+      message: "This product is off for now. Muse Muse runs on a model Meta may train on, which can't be used with personal accounts or personal tools, and this product either holds those or needs publishing again to show people the notice.",
+    };
+  }
+  return null;
 }
 
 export function hasLongAgentMarker(allowedModels: readonly string[]): boolean {

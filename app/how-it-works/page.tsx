@@ -6,6 +6,8 @@ import { FrontierSection } from "@/components/story/FrontierSection";
 import "@/components/story/story.css";
 import { PageHeader } from "@/components/ui";
 import { env } from "@/lib/env";
+import { defaultModel } from "@/lib/meta/spark";
+import { modelLabel } from "@/lib/format";
 
 export const metadata: Metadata = { title: "How it works" };
 
@@ -30,7 +32,7 @@ const STEPS: Step[] = [
   {
     icon: "brief",
     title: "Get a plan",
-    text: "Muse Wonder turns it into a short plan, called a brief.",
+    text: `${modelLabel(defaultModel())} turns it into a short plan, called a brief.`,
     details:
       "The brief comes back as strict JSON: the screens, what goes in and comes out, which Meta models the app calls and why, honest limits and a cost per use. If an idea can't be built safely, the brief says so and the build stops there.",
     docs: [
@@ -68,7 +70,7 @@ const STEPS: Step[] = [
     details: (
       <>
         In the same sandbox: a typecheck, a production build, the app started for real, and a browser test that clicks
-        through the main flow on a phone-size screen. Then Muse Wonder judges screenshots of every screen. Problems go
+        through the main flow on a phone-size screen. Then {modelLabel(defaultModel())} judges screenshots of every screen. Problems go
         back to the same Muse Code session (resumed with <code>--session-id</code>), for up to 3 fix rounds.
       </>
     ),

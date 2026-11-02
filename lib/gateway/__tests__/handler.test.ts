@@ -890,17 +890,50 @@ test("BUILDS_ON_CONTRIBUTOR: a live token with the marker runs on Contributor, e
   assert.match(res.headers.get("x-musemuse-note") ?? "", /builds and products run on it/);
 });
 
-test("BUILDS_ON_CONTRIBUTOR: a live token without the marker, or the marker with the flag off, stays on Muse Wonder", async () => {
-  for (const opts of [
-    { contributorRuntime: true, token: { scope: "live" as const, allowedModels: ["muse-wonder-1.0"] } },
-    { contributorRuntime: false, token: { scope: "live" as const, allowedModels: ["muse-wonder-1.0", "runtime:contributor"] } },
-  ]) {
-    const g = fakeGateway({ fetch: replyFetch, ...opts });
-    const res = await handleGateway(gatewayRequest("responses", wonderCall(), JSON_CT), ["responses"], g.deps);
-    assert.equal(res.status, 200);
-    await g.settled();
-    assert.equal(sentModel(g), "muse-wonder-1.0");
+test("BUILDS_ON_CONTRIBUTOR: the marker with the flag off stays on Muse Wonder, as today", async () => {
+  const g = fakeGateway({ fetch: replyFetch, contributorRuntime: false, token: { scope: "live" as const, allowedModels: ["muse-wonder-1.0", "runtime:contributor"] } });
+  const res = await handleGateway(gatewayRequest("responses", wonderCall(), JSON_CT), ["responses"], g.deps);
+  assert.equal(res.status, 200);
+  await g.settled();
+  assert.equal(sentModel(g), "muse-wonder-1.0");
+});
+
+test("BUILDS_ON_CONTRIBUTOR: a live token without the marker is refused in plain words, and nothing goes upstream", async () => {
+  const g = fakeGateway({ fetch: replyFetch, contributorRuntime: true, token: { scope: "live" as const, allowedModels: ["muse-wonder-1.0"] } });
+  const res = await handleGateway(gatewayRequest("responses", wonderCall(), JSON_CT), ["responses"], g.deps);
+  assert.equal(res.status, 403);
+  assert.match(await res.text(), /off for now/);
+  assert.equal(g.upstreamCalls.length, 0);
+});
+
+test("BUILDS_ON_CONTRIBUTOR: TRUST_SPARK_TO_WONDER can't take a live call to Muse Wonder", async () => {
+  for (const [allowedModels, status] of [[["muse-spark-1.3", "runtime:contributor"], 200], [["muse-spark-1.3"], 403]] as const) {
+    const g = fakeGateway({ fetch: replyFetch, contributorRuntime: true, sparkToWonder: true, token: { scope: "live" as const, allowedModels: [...allowedModels] } });
+    const res = await handleGateway(gatewayRequest("responses", json({ model: "muse-spark-1.3", input: "hi" }), JSON_CT), ["responses"], g.deps);
+    assert.equal(res.status, status);
+    if (status === 200) {
+      await g.settled();
+      assert.equal(sentModel(g), TEST_MODEL_NAME);
+    } else assert.equal(g.upstreamCalls.length, 0);
   }
+});
+
+test("BUILDS_ON_CONTRIBUTOR: audio input is refused rather than sent to Muse Wonder", async () => {
+  const body = json({ model: "muse-wonder-1.0", input: [{ role: "user", content: [{ type: "input_audio", data: "x" }] }] });
+  const g = fakeGateway({ fetch: replyFetch, contributorRuntime: true, token: { scope: "live" as const, allowedModels: ["muse-wonder-1.0", "runtime:contributor"] } });
+  const res = await handleGateway(gatewayRequest("responses", body, JSON_CT), ["responses"], g.deps);
+  assert.equal(res.status, 403);
+  assert.match(await res.text(), /Audio input is off/);
+  assert.equal(g.upstreamCalls.length, 0);
+});
+
+test("BUILDS_ON_CONTRIBUTOR: a metered key or a session naming Muse Wonder runs on Contributor", async () => {
+  const g = fakeGateway({ fetch: replyFetch, contributorRuntime: true, token: { scope: "power_key" as never, allowedModels: ["muse-wonder-1.0"] } });
+  const res = await handleGateway(gatewayRequest("responses", wonderCall(), JSON_CT), ["responses"], g.deps);
+  assert.equal(res.status, 200);
+  await g.settled();
+  assert.equal(sentModel(g), TEST_MODEL_NAME);
+  assert.equal(g.usage[0].items[0].model, TEST_MODEL_NAME);
 });
 
 test("a build token stays on Muse Wonder when no test model is set", async () => {
