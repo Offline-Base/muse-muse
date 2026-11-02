@@ -14,13 +14,13 @@ Updated Oct 31, 1:55 AM.
 
 | Machine | What it does | Price | Stops how |
 |---|---|---|---|
-| muse-knowledge-train-1 (Lambda 8x A100 80GB, us-midwest-1, 36517e6c25ed4bccb6db6dde54f5a610) | Stage 2 (run stage2-multi, started 11:00 PM; 59% at 1:45 AM, training done about 3:30 AM, answers about 4 AM). Stage 1 (stage1-multi) finished 10:58 PM | $22.32/h since Oct 30 8:20 PM; $120.90 of its $450 cap at 1:44 AM | `train_multi.py watch` on this Mac: at $450 or Oct 31 10:00 AM (14:00 UTC). By hand: `.data/aws/venv/bin/python scripts/knowledge/aws/train_multi.py stop --name muse-knowledge-train-1` |
-| muse-knowledge-glimmer-gh200 (Lambda GH200, us-east-3, c3ff7180e6c2415d8a491de7a5978fa8) | NanoQuant on the GH200's stage 1 adapter, 0.55 and 0.8 bits side by side (since 12:05 AM; 0.55 done about 3:50 AM, 0.8 about 4:35 AM). Stage 1 outputs only on its local disk (~/k/runs/stage1/; the adapter, metrics and answers are also on this Mac and in S3 knowledge/models/stage1/) | $2.29/h since Oct 30 5:44 PM | By hand through the Lambda API only: no watch covers it, so it bills until someone terminates it |
-| muse-knowledge-writer-1 (Lambda A100 40GB SXM4, us-east-1, e39f1fcd8fa9401bbed6a870fa236b83) | llama.cpp quantize and scoring pipeline (cache filesystem muse-muse-cache-us-east-1). Stage 1 table done 1:04 AM; GPU idle and 256 GB free, waiting for stage 2's adapter | $1.99/h since Oct 30 2:02 PM | By hand through the Lambda API only: no watch covers it, so it bills until someone terminates it |
+| muse-knowledge-train-1 (Lambda 8x A100 80GB, us-midwest-1) | Stage 2 (run stage2-multi, started 11:00 PM; 59% at 1:45 AM, training done about 3:30 AM, answers about 4 AM). Stage 1 (stage1-multi) finished 10:58 PM | $22.32/h since Oct 30 8:20 PM; $120.90 of its $450 cap at 1:44 AM | `train_multi.py watch` on this Mac: at $450 or Oct 31 10:00 AM (14:00 UTC). By hand: `.data/aws/venv/bin/python scripts/knowledge/aws/train_multi.py stop --name muse-knowledge-train-1` |
+| muse-knowledge-glimmer-gh200 (Lambda GH200, us-east-3) | NanoQuant on the GH200's stage 1 adapter, 0.55 and 0.8 bits side by side (since 12:05 AM; 0.55 done about 3:50 AM, 0.8 about 4:35 AM). Stage 1 outputs only on its local disk (~/k/runs/stage1/; the adapter, metrics and answers are also on this Mac and in S3 knowledge/models/stage1/) | $2.29/h since Oct 30 5:44 PM | By hand through the Lambda API only: no watch covers it, so it bills until someone terminates it |
+| muse-knowledge-writer-1 (Lambda A100 40GB SXM4, us-east-1) | llama.cpp quantize and scoring pipeline (cache filesystem muse-muse-cache-us-east-1). Stage 1 table done 1:04 AM; GPU idle and 256 GB free, waiting for stage 2's adapter | $1.99/h since Oct 30 2:02 PM | By hand through the Lambda API only: no watch covers it, so it bills until someone terminates it |
 | muse-knowledge-gw-1 to gw-16, 15 live (9 A100 and 5 A10 on Lambda; gw-4 is an AWS g6e.xlarge L40S) | Glimmer writer fleet, on the government batches (archive only, not in a training set) | $26.22/h together; $189.47 of $333 at 1:44 AM | `writer_fleet.py watch`: at $333 (about Oct 31 7:13 AM) or Oct 31 8:00 AM (12:00 UTC). By hand: `.data/aws/venv/bin/python scripts/knowledge/aws/writer_fleet.py stop`. gw-4 also shuts itself down at 8:00 AM |
 | muse-knowledge-student-1 (Lambda, rented by the student workflow) | Student smoke test | | The workflow's watch on this Mac: at $15 or 3 h |
-| AWS collector i-025c6d3ca38400591 (m7i.2xlarge, us-east-1) | Wikimedia, bulk and collector pulls into S3 | about $0.40/h since Oct 30 1:28 PM | Shuts itself off Nov 2, 1:28 PM |
-| AWS research and law box i-0f0188876ffe09600 (m7i.8xlarge) | PMC, OpenAlex, bioRxiv, medRxiv, arXiv, CourtListener into knowledge/filtered/ | on demand | Shuts itself off Oct 31, 1:53 PM |
+| AWS collector (m7i.2xlarge, us-east-1) | Wikimedia, bulk and collector pulls into S3 | about $0.40/h since Oct 30 1:28 PM | Shuts itself off Nov 2, 1:28 PM |
+| AWS research and law box (m7i.8xlarge) | PMC, OpenAlex, bioRxiv, medRxiv, arXiv, CourtListener into knowledge/filtered/ | on demand | Shuts itself off Oct 31, 1:53 PM |
 
 The CC-NEWS Spot fleet and the 3 ccnews-select machines are finished and gone.
 
@@ -212,12 +212,12 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
 - 1:28 PM: AWS collector box started, streaming into s3://muse-knowledge-916979311153 (shuts off after 72 hours).
 - 1:40 PM: five helpers started collectors for the rest of the source list.
 - 1:46 PM: S3 pull workflow started: CC-NEWS extraction on a 16-machine Spot fleet (3,895 WARCs, $200 cap), open
-  datasets ($40), research and law on m7i.8xlarge i-0f0188876ffe09600 ($80), collectors moved to AWS ($20).
+  datasets ($40), research and law on m7i.8xlarge ($80), collectors moved to AWS ($20).
 - 1:48 PM: both AWS writer endpoints failed (InsufficientInstanceCapacity). Glimmer retried on ml.g6e.12xlarge
   ($13.12/h).
 - 1:59 PM: test launches of 8x H100, H200, B200 and 2x RTX PRO in every us-east-1 zone all failed for capacity.
   Nothing launched, no cost. Quota requested in us-west-2 and us-east-2, then in all 16 other regions by 2:18 PM.
-- 2:02 PM: Lambda A100 40GB muse-knowledge-writer-1 launched (us-east-1, e39f1fcd8fa9401bbed6a870fa236b83, $1.99/h,
+- 2:02 PM: Lambda A100 40GB muse-knowledge-writer-1 launched (us-east-1, $1.99/h,
   cache filesystem muse-muse-cache-us-east-1). The prebuilt llama.cpp server needed a newer Linux and Docker had no GPU
   runtime, so the server was built from source.
 - 2:24 PM: owner sent the hosted Spark Open keys, $50 cap per host.
@@ -260,7 +260,7 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   s3-ccnews-general.jsonl (39,859, English, max 50 per site a month), in corpus/ccnews-select/. Known leaks: some
   press-release and wire copy, and 138 URLs repeated from s3-ccnews.jsonl. IAM role MuseCCNewsSelect left in place.
 - 6:09 PM: base Glimmer (4-bit) 18.1% on 1,500 probes, 40/40 old facts.
-- 6:12 PM: writer fleet launching: gw-1 to gw-3 (A100), gw-4 (AWS g6e.xlarge L40S, i-046936e9495460cc1, shuts down
+- 6:12 PM: writer fleet launching: gw-1 to gw-3 (A100), gw-4 (AWS g6e.xlarge L40S, shuts down
   at 8:00 AM). Writing from about 6:14 PM.
 - 6:15 PM: the fleet watch terminated the test A10 as "never served" (rule fixed).
 - 6:17 PM: Fireworks' last batch done at $92.05 of its $105 cap. The lowest-priority batch was stopped as planned; the
@@ -562,7 +562,7 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   unmatched, none in student files. From stage2-multi's adapter, lr 5e-5, base answers reused from stage 2. Final-channel
   labels, so it can't repair reasoning.
 - 12:02 PM: owner asked for an audit that everything is necessary. Independent read-only workflow wba29bgj0 started.
-  Found while scouting: AWS mac2.metal i-0a5866df305e83d40 "musemuse-lab-mac", launched Oct 31 2:01 AM on a dedicated host,
+  Found while scouting: AWS mac2.metal "musemuse-lab-mac", launched Oct 31 2:01 AM on a dedicated host,
   not in this log. Not touched; origin being checked.
 - About 12:10 PM: owner: "You have my okay to get anything here needed done. I do want to serve with reasoning at some
   point." So: reasoning off (option A) for a working model first, and a reasoning repair stays a goal. Next attempt at
