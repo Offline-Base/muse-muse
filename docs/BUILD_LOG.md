@@ -2671,3 +2671,13 @@ The owner asked for a simpler sidebar using "muse" and "musing" for the creative
   - nav (rewritten for the new rows, tabs and Help window), history, make-flag-off, train render, learn and starters: 86 of 86.
   - Typecheck clean.
 - **Spend:** $0.
+- **Later, same branch: a local preview full of made-up data.**
+  - New `scripts/dev/ui-fixtures.ts` seeds a local PGlite database with invented data, so every page can be looked at with no keys and no spend:
+    - 12 musings in every status (live, partial, failed, building, queued), 9 of them in the gallery with the repo's own example photos as posters;
+    - two Learn builds tied to real lesson ids;
+    - 14 days of usage;
+    - two fine-tuning datasets and one finished tune.
+  - Links are example.com, so each product's live preview frame stays empty.
+  - The run steps are in its header. It runs after scripts/dev/room-fixtures.ts, whose user it reuses, so those build rooms show under Musings.
+  - It caught a real layout bug: a long History list pushed Usage, Help and the account chip below the window. History now scrolls on its own with its heading pinned, and the bottom stays put, as on meta.ai.
+  - Typecheck clean. Spend $0.

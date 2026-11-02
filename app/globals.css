@@ -621,6 +621,23 @@ pre {
   margin-top: 16px;
 }
 
+/* A long History scrolls on its own, so Usage, Help and the account chip stay pinned at the bottom (as on meta.ai). */
+.sidebar > .history,
+.sheet-inner > .history {
+  flex: 0 1 auto;
+  min-height: 64px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.sidebar > .history .history-head,
+.sheet-inner > .history .history-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg);
+}
+
 .history-head {
   display: flex;
   align-items: center;
