@@ -92,7 +92,7 @@ export async function writeBrief(input: BriefInput): Promise<BriefResult> {
     content: parts,
     sources: prepared.sources,
     // With no targets, caps, milestones or MUSE_APP_LOOK this is NewBriefSchema or NewBriefSchemaNoGadget, as it always was.
-    schema: newBriefSchemaFor({ gadgets: env.gadgetsEnabled, targets: enabled, personalTools, caps, milestones: env.engineMilestones, museAppLook: env.museAppLook, recipes: availableRecipes(caps).map((r) => r.id), ...(full ? { fullBuilds: true } : {}), ...(buildRange ? { buildRange: true } : {}) }),
+    schema: newBriefSchemaFor({ gadgets: env.gadgetsEnabled, targets: enabled, personalTools, caps, milestones: env.engineMilestones, museAppLook: env.museAppLook, recipes: availableRecipes(caps).map((r) => r.id), ...(full ? { fullBuilds: true } : {}), ...(buildRange ? { buildRange: true } : {}), ...(env.fleetProductsForBuilds ? { fleet: true } : {}) }),
     schemaName: "muse_brief",
     effort: "medium",
     normalize: (raw) => normalizeRawBrief(raw, references, { ...(full ? { fullBuilds: true } : {}), ...(buildRange ? { buildRange: true } : {}) }),

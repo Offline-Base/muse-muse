@@ -34,6 +34,7 @@ const SKILLS: Record<Brief["capabilities"][number]["model"], string> = {
   "muse-voice-transcribe-1.0": ".agents/skills/meta-voice",
   "muse-glimmer": ".agents/skills/meta-glimmer",
   "muse-gadget": ".agents/skills/muse-gadget",
+  "jetson-fleet": ".agents/skills/jetson-fleet",
 };
 
 /** The skill that goes with a target. */
