@@ -88,36 +88,23 @@ describe("the GGUF repo's names", () => {
   });
 });
 
-describe("one-bit Glimmer and small bases (QUANT_TARGETS)", () => {
+describe("one-bit Glimmer, and no small base (QUANT_TARGETS)", () => {
   const SMALL = { quantBase: "llama-3.2-3b", levels: "Q4_K_M", slug: "brief-writer", trainChannel: 1 };
   const llamaAdapter = { id: JOB, params: { baseModel: "unsloth/Llama-3.2-3B-Instruct-bnb-4bit", baseRevision: "9".repeat(40), baseFamily: "llama3" }, hub: null };
 
-  it("writes the one-bit build on r30b's jobs and a small base's own pins on Llama's, only with the flag", () => {
+  it("writes the one-bit build on r30b's jobs, and no small base's pins on a Llama adapter, flag on or off", () => {
     const r30b = { id: JOB, params: {}, hub: null };
     assert.equal(cards.quantParams(r30b, "Brief writer").levels, "Q3_K_M,Q4_K_M,Q6_K");
     assert.equal(cards.quantParams(r30b, "Brief writer", { targets: true }).levels, "IQ1_S,Q3_K_M,Q4_K_M,Q6_K");
-    assert.deepEqual(cards.quantParams(llamaAdapter, "Brief writer", { targets: true }), {
-      levels: "Q4_K_M",
-      slug: "brief-writer",
-      trainChannel: 1,
-      quantBase: "llama-3.2-3b",
-      baseFamily: "llama3",
-      baseModel: "unsloth/Llama-3.2-3B-Instruct-bnb-4bit",
-      baseRevision: "9".repeat(40),
-    });
-    assert.ok(!("quantBase" in cards.quantParams(llamaAdapter, "Brief writer")), "flag off: as before");
+    assert.ok(!("quantBase" in cards.quantParams(llamaAdapter, "Brief writer", { targets: true })), "no small Llama: the Nov 2 ruling");
+    assert.ok(!("quantBase" in cards.quantParams(llamaAdapter, "Brief writer")));
   });
 
-  it("names a small base's repo and files for its license, and gives it Llama's system line and stops", () => {
-    assert.equal(cards.ggufRepoName("brief-writer", JOB, SMALL), "Llama-3.2-3B-brief-writer-gguf-83d71f74");
-    assert.equal(cards.ggufFileName("brief-writer", "Q4_K_M", SMALL), "Llama-3.2-3B-brief-writer-Q4_K_M.gguf");
-    assert.equal(cards.ggufSystemLine("You are x.", SMALL), "You are x.");
-    assert.ok(!cards.ggufParams(1, SMALL).includes("<|eot|>") && cards.ggufParams(1, SMALL).includes("<|eot_id|>"));
+  it("never names a Llama repo or file, and refuses a Llama file name on the Hub", () => {
+    assert.match(cards.ggufRepoName("brief-writer", JOB, SMALL), /^muse-glimmer-30b-brief-writer-gguf-/);
+    assert.equal(cards.ggufFileName("brief-writer", "Q4_K_M", SMALL), "muse-glimmer-30b-brief-writer-Q4_K_M.gguf");
     const job = { recipe: "glimmer-quantize" as const, params: SMALL };
-    assert.equal(cards.hubNameProblem(job, "Llama-3.2-3B-brief-writer-Q4_K_M.gguf"), null);
-    assert.ok(cards.hubNameProblem(job, "muse-glimmer-30b-brief-writer-Q4_K_M.gguf"));
-    assert.ok(cards.hubNameProblem(job, "Llama-3.2-3B-brief-writer-IQ1_S.gguf"), "its levels don't name it");
-    assert.equal(cards.ggufSmallProblem("system", Buffer.from("You are x."), "", { role: "You are x.", trainChannel: 1, params: SMALL }), null);
+    assert.ok(cards.hubNameProblem(job, "Llama-3.2-3B-brief-writer-Q4_K_M.gguf"));
   });
 
   it("keeps the one-bit file out of LocalFiles.files, so the guide and drives never offer it", () => {
@@ -126,15 +113,13 @@ describe("one-bit Glimmer and small bases (QUANT_TARGETS)", () => {
     assert.deepEqual(made.files.map((f) => f.level), ["Q4_K_M"]);
     assert.equal(made.lowBit?.name, "muse-glimmer-30b-brief-writer-IQ1_S.gguf");
     assert.equal(fileForDevice("jetson_orin_nano", made)?.level, "IQ1_S");
-    assert.equal(fileForDevice("mac", made), null, "this tune made no small Llama");
+    assert.equal(fileForDevice("mac", made)?.level, "IQ1_S", "every device gets the one-bit file");
     const left = cards.localFilesOf({ job: { id: QUANT, title: "t", hub: null, params: { adapterJobId: JOB, slug: "brief-writer", levels: "IQ1_S,Q4_K_M", trainChannel: 1 } }, metrics: { ...metrics, iq1_s_passed: "no" }, datasetTitle: "d", adapterPublic: false })!;
     assert.equal(left.lowBit, undefined);
     assert.equal(fileForDevice("jetson_orin_nano", left), null);
     const llama = cards.localFilesOf({ job: { id: QUANT, title: "t", hub: null, params: { adapterJobId: JOB, ...SMALL } }, metrics, datasetTitle: "d", adapterPublic: false })!;
-    assert.equal(llama.quantBase, "llama-3.2-3b");
-    assert.equal(llama.systemLine.includes("Reasoning"), false);
-    assert.equal(fileForDevice("phone", llama)?.name, "Llama-3.2-3B-brief-writer-Q4_K_M.gguf");
-    assert.equal(fileForDevice("jetson_orin_nano", llama), null);
+    assert.ok(!llama.quantBase, "a Llama quantBase param is no small base");
+    assert.doesNotMatch(JSON.stringify(llama), /Llama-3\.2-3B/);
   });
 
   it("the card says what the one-bit file measured, what it weakens, and that no board has run it", () => {
@@ -150,13 +135,10 @@ describe("one-bit Glimmer and small bases (QUANT_TARGETS)", () => {
     assert.match(cards.ggufCard(base), /No importance matrix/, "as before without it");
   });
 
-  it("a small base's card carries Built with Llama and no Glimmer sections", () => {
-    const b = { level: "Q4_K_M" as const, name: "Llama-3.2-3B-brief-writer-Q4_K_M.gguf", bytes: 2e9, sha256: "b".repeat(64), klMean: 0.9, klP99: null, topTokenPct: null };
-    const card = cards.ggufCard(facts({ repo: "OfflineBase/Llama-3.2-3B-brief-writer-gguf-83d71f74", params: SMALL, builds: [b], leftOut: [], trainChannel: 1, role: "You are x." }));
-    assert.match(card, /Built with Llama/);
-    assert.match(card, /base_model: unsloth\/Llama-3\.2-3B-Instruct/);
-    assert.doesNotMatch(card, /Glimmer|Reasoning strength|tuned\.jinja/);
-    assert.match(JSON.stringify(cards.quantRecord(facts({ params: SMALL, builds: [b], leftOut: [] }))), /"klMax":null/);
+  it("a Llama quantBase param never gets a Llama card", () => {
+    const b = { level: "Q4_K_M" as const, name: "muse-glimmer-30b-brief-writer-Q4_K_M.gguf", bytes: 2e9, sha256: "b".repeat(64), klMean: 0.01, klP99: null, topTokenPct: null };
+    const card = cards.ggufCard(facts({ params: SMALL, builds: [b], leftOut: [], trainChannel: 1, role: "You are x." }));
+    assert.doesNotMatch(card, /Built with Llama|base_model: unsloth\/Llama/);
   });
 });
 

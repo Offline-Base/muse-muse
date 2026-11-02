@@ -9,9 +9,21 @@ otherwise), all 10 leak again.
 
 from __future__ import annotations
 
+import pytest
+
+from base import config as base_config
 from base.config import REPO_ROOT
 from eval import run_eval
 from scripts import replay_null_names as replay
+
+
+@pytest.fixture(autouse=True)
+def _pre_ruling_settings(monkeypatch):
+    """The Oct 30 replay runs on the device-only LFM setup. The Nov 2 ruling made load_settings refuse LFM settings
+    (tests/test_config.py); these tests keep that code tested with the pre-ruling loader until the
+    owner decides whether to delete it."""
+    monkeypatch.setattr(base_config, "load_settings", base_config._load_settings_for_tests)
+
 
 LEAKED_OCT_30 = [
     "syn-0533", "syn-1560", "syn-1599", "syn-0390", "syn-0177",

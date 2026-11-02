@@ -1771,9 +1771,11 @@ def flow_facts(services: Any, settings: Any, c: Any, pending: int) -> dict[str, 
     names of settings only: never a file name or anything from a document."""
     try:
         count = len(services.index._files(Path(settings.workspace_root)))
-        files = f"{count} {'file' if count == 1 else 'files'} {linked_app()} can see. They never leave."
+        files = f"{count} {'file' if count == 1 else 'files'} {linked_app()} can see. {linked_app()} never gets them."
     except Exception:
-        files = "Read only on this device. They never leave."
+        files = f"Read on this device. {linked_app()} never gets them."
+    if settings.is_cloud_backend:  # the model step sends invented text to OpenRouter
+        files += " Invented files only, read with Glimmer on OpenRouter."
     if getattr(settings, "device_only", False):
         model = ("LFM3-VL-2B" if settings.primary_model == "lfm" else "Muse Glimmer") + " on this device, no fallback"
         if settings.primary_model != "lfm" and settings.checker_backend == "lfm":
@@ -1798,7 +1800,10 @@ def flow_facts(services: Any, settings: Any, c: Any, pending: int) -> dict[str, 
         "tagging": "Names and identifiers become tags" + (", plus places, dates and more" if c.profiles else ""),
         "rules": f"{mode}. Toggles: {toggles}.",
         "check": "Looks again for anything private",
-        "you": "Ask on this device: answers never leave",
+        # Asking on the device needs the document reader the Nov 2 ruling took out (LFM3-VL-2B).
+        "you": "Ask on this device: answers never go to Muse"
+        if getattr(services, "ask_runner", None) is not None
+        else "Ask on this device: off for now, it needs a reader on this device",
         "kept": "Stays here, with a reason",
         "approvals": f"{pending} waiting for you" if pending else "Nothing waiting",
         "muse": muse,

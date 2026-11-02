@@ -3,9 +3,6 @@ import Link from "next/link";
 import { SparkOpenNote } from "@/components/train/SparkOpenNote";
 import { ExternalLink, PageHeader } from "@/components/ui";
 import glimmer from "@/public/open-weights/glimmer-r30b.json";
-import source from "@/public/open-weights/llama-source.json";
-import round1 from "@/public/open-weights/llama-round-1.json";
-import round2 from "@/public/open-weights/llama-round-2.json";
 import "./open-weights.css";
 
 export const metadata: Metadata = {
@@ -21,11 +18,9 @@ const TASK =
 
 const HF = "https://huggingface.co/";
 
+/** Meta's models only (organizer ruling, Nov 2): runs on any other model family are not part of this page. */
 const RUNS: { name: string; run: Run; training: string; cost: string }[] = [
   { name: "Muse Glimmer 30B, 2026 knowledge", run: glimmer, training: "120 steps on an H100", cost: "GPU about $1.86, judge $0.52" },
-  { name: "Llama 3.2 3B", run: source as Run, training: "450 steps on an A10", cost: "GPU about $0.39, judge $1.54" },
-  { name: "Llama 3.2 3B, loop round 1", run: round1 as Run, training: "450 steps on an A10, 100 rows swapped", cost: "GPU about $0.43, writer $1.42, judge $1.49" },
-  { name: "Llama 3.2 3B, loop round 2", run: round2 as Run, training: "450 steps on an A10, 100 more swapped", cost: "GPU about $0.41, writer $1.36, judge $1.49" },
 ];
 
 const WEIGHTS: { id: string; what: string; kind?: "dataset" }[] = [
@@ -37,7 +32,6 @@ const WEIGHTS: { id: string; what: string; kind?: "dataset" }[] = [
   { id: "OfflineBase/Muse-Glimmer-30B-2026-Knowledge-GGUF", what: "Its local files." },
   { id: "OfflineBase/Muse-Glimmer-30B-2026-Knowledge-LoRA", what: "Its adapter." },
   { id: "OfflineBase/Muse-Glimmer-30B-2026-Knowledge-Data", what: "Its dataset.", kind: "dataset" },
-  { id: "OfflineBase/Nemotron-3.5-Bolt-E4B-Vision-GGUF", what: "Also on this account. Not a Meta model and not part of these results." },
 ];
 
 function Answer({ item, baseLabel }: { item: Item; baseLabel: string }) {
@@ -73,7 +67,6 @@ const byTunedScore = (a: Item, b: Item) => a.tunedScore - b.tunedScore || a.inde
 export default function OpenWeightsPage() {
   const sealed = glimmer.items.filter((i) => i.sealed).sort(byTunedScore);
   const rest = glimmer.items.filter((i) => !i.sealed).sort(byTunedScore);
-  const losses = (source as Run).items.filter((i) => i.better === "base");
   return (
     <div className="page ow">
       <PageHeader
@@ -104,7 +97,7 @@ export default function OpenWeightsPage() {
 
       <div className="note">
         <p>
-          <strong>Read this first.</strong> These runs went through a test harness, on made-up data. The topic is invented, so the
+          <strong>Read this first.</strong> This run went through a test harness, on made-up data. The topic is invented, so the
           starting model knows nothing about it, which makes this an easy test. The Glimmer run is short: 120 steps, 40 prompts.
         </p>
       </div>
@@ -158,16 +151,10 @@ export default function OpenWeightsPage() {
             </tbody>
           </table>
         </div>
-        <p>
-          <strong>The tuning loop stayed flat.</strong> Two more rounds aimed at a score of 9 went 6.67, 6.67, 6.54 overall and 6.50,
-          6.48, 6.38 on the sealed half. That is within the judge&apos;s noise. It did not improve the model, and it stopped at its
-          round limit.
-        </p>
         <p className="muted small">
-          The first Llama row also used the $0.22 dataset, and its full GPU rental came to $1.80 at most. GPU figures are each job&apos;s
-          time at the hourly price. Two RL runs shared the H100 for much of the Glimmer job. An earlier plain Glimmer run on another task,
-          judged by Muse Spark 1.3, scored 8.88 vs 1.95 on 40 prompts. Different task and judge, so it isn&apos;t comparable. Built with
-          Llama: Llama 3.2 is licensed under the Llama 3.2 Community License, Copyright (c) Meta Platforms, Inc. All Rights Reserved.
+          GPU figures are the job&apos;s time at the hourly price. Two RL runs shared the H100 for much of the Glimmer job. An earlier
+          plain Glimmer run on another task, judged by Muse Spark 1.3, scored 8.88 vs 1.95 on 40 prompts. Different task and judge, so
+          it isn&apos;t comparable.
         </p>
       </section>
 
@@ -180,8 +167,8 @@ export default function OpenWeightsPage() {
             model first on even items and second on odd ones.
           </li>
           <li>
-            The sealed half is prompts 2, 3, 6, 7 and so on. The loop&apos;s writer is never shown them, so a round can&apos;t aim at them.
-            The Glimmer run wasn&apos;t a loop, and the same split is shown so the numbers line up.
+            The sealed half is prompts 2, 3, 6, 7 and so on. A tuning loop&apos;s writer is never shown them, so a round can&apos;t aim at
+            them. The Glimmer run wasn&apos;t a loop, and the split is shown so a later loop&apos;s numbers line up.
           </li>
           <li>
             Harness means the real training and scoring code ran on a rented GPU, and the results were replayed through the real judge in a
@@ -201,7 +188,7 @@ export default function OpenWeightsPage() {
             That it helps outside its topic. On five general questions, the tuned one-bit file was clearly right on 2, the same as the
             starting model.
           </li>
-          <li>That a tuning loop climbs. The only real loop run stayed flat.</li>
+          <li>That a tuning loop climbs. This page shows no loop run.</li>
           <li>That this adapter ran on someone&apos;s own device. It hasn&apos;t been uploaded or shown here on one.</li>
         </ul>
       </section>
@@ -220,13 +207,7 @@ export default function OpenWeightsPage() {
         {rest.map((i) => (
           <Answer key={i.index} item={i} baseLabel="Started from" />
         ))}
-        <h3>Where tuning lost: Llama 3.2 3B ({losses.length} of 100)</h3>
-        <p className="muted">
-          Tuned Glimmer lost none of its 40, on far fewer prompts. In these five, the judge found the tuned Llama kept the format but gave the wrong call against the reference.
-        </p>
-        {losses.map((i) => (
-          <Answer key={i.index} item={i} baseLabel="Started from" />
-        ))}
+        <p className="muted">Tuned Glimmer lost none of its 40. That is a small set on an invented topic, so it isn&apos;t a sign it never loses.</p>
       </section>
 
       <section className="section">
@@ -247,9 +228,8 @@ export default function OpenWeightsPage() {
       <section className="section">
         <h2>Which model runs where</h2>
         <p>
-          The results above are on Meta&apos;s open weights. Muse Privacy is different: its device default is Liquid&apos;s LFM3-VL-2B, which
-          isn&apos;t a Meta model, unless someone changes its settings. A tuned Glimmer can be plugged in there, but that isn&apos;t the
-          default today.
+          The results above are on Meta&apos;s open weights. For the submission, Muse Privacy is built to run Muse Glimmer 30B in the
+          cloud, through OpenRouter, on invented data only. A Glimmer file on your own device is the target there, not a result.
         </p>
         <p className="muted">
           <Link href="/models">All models</Link>

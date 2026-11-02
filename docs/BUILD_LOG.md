@@ -2693,6 +2693,106 @@ Three branches built in parallel worktrees, each reviewed adversarially, then me
   - `lib/edge/template-source.ts` regenerates with no change after the merge.
 - **Spend:** $0.
 
+## Nov 2, 2026: a simpler sidebar, in "muse" language, and Help as a Settings-style window (branch tg-sidebar)
+
+The owner asked for a simpler sidebar using "muse" and "musing" for the creative flow, following Meta's design, and sent meta.ai Settings screenshots (light and dark) as the model for menus like Help.
+
+- **Sidebar, top to bottom:**
+  - the brand with the Concept tag;
+  - one "Start musing" button (the primary pill, linking to `/`);
+  - four rows: Musings, Inspiration, Fine-tuning, Devices;
+  - at the bottom, Usage and Help, then the disclaimer ("Not an official Meta product") and the account chip.
+
+  The phone menu sheet has the same structure and closes after any navigation.
+- **Owner choice:** the layout asked for three rows, and the owner picked adding Devices as a fourth so the boards stay one click away. Models is a tab under Fine-tuning, and Muse Privacy a tab under Devices.
+- **Musings:** the user-facing name for Builds. `/builds` and `/b/[buildId]` are unchanged and light Musings. The title, the sign-in card, the account menu's "My musings", the sign-in page link and the build room's not-found link now say musings. The signed-in empty state reads "Your first musing starts here". Build steps, logs, statuses and ids are unchanged.
+- **Inspiration:** links to `/gallery`, with Gallery and Meta demos tabs. Meta demos is `/learn`, which `/rebuilds` already redirects to. It lights on both, on `/rebuilds`, and on every product page. Product pages keep "Get connector" and the connector panel.
+- **Tabs:** `components/shell/SectionTabs.tsx` draws segmented link tabs (the existing `.segmented` style) from each route's new `layout.tsx`, only on the tab pages themselves:
+  - Gallery and Meta demos;
+  - Fine-tuning and Models;
+  - Gadgets and Muse Privacy;
+  - Usage and Overview (the old Dashboard, which is no longer a row but still works).
+- **Help:** a button row that opens `components/shell/HelpDialog.tsx`, a modal laid out like meta.ai's Settings. Sections on the left: How it works, and Model API docs. Cards on the right that link to `/how-it-works`, `/docs`, and Meta's own docs on dev.meta.ai. It has a round close button and a blurred backdrop.
+  - Keyboard: Enter opens it on the section for the page you're on. Arrow keys, Home and End move between sections. Escape closes it and returns focus to Help.
+  - The window is written down in docs/BRAND.md, "Settings window", and the sidebar map in docs/UI_PATTERNS.md.
+  - New `help` icon (a circled question mark, same outline style).
+- **Composer:** the Make heading reads "What's your muse?" on both Make pages. Examples, uploads and the flow are unchanged. The Make page golden changed only by those 5 characters.
+- **Checked locally** (dev server on this branch, no database, Playwright on Chromium, 1280 x 820 and a 390 px phone, light and dark):
+  - The right row and tab are marked on `/`, `/builds`, `/gallery`, `/learn`, `/usage`, `/dashboard`, `/fine-tuning`, `/gadgets`, `/private` and a product page.
+  - Help opens with Enter and focuses the open section. ArrowDown moves to Model API docs and its cards. Escape closes it and returns focus to Help.
+  - On the phone, tapping Musings navigates and closes the sheet.
+  - Screenshots are in docs/log/shots/2026-11-02/sidebar-*.png.
+- **Tests:**
+  - nav (rewritten for the new rows, tabs and Help window), history, make-flag-off, train render, learn and starters: 86 of 86.
+  - Typecheck clean.
+- **Spend:** $0.
+- **Later, same branch: a local preview full of made-up data.**
+  - New `scripts/dev/ui-fixtures.ts` seeds a local PGlite database with invented data, so every page can be looked at with no keys and no spend:
+    - 12 musings in every status (live, partial, failed, building, queued), 9 of them in the gallery with the repo's own example photos as posters;
+    - two Learn builds tied to real lesson ids;
+    - 14 days of usage;
+    - two fine-tuning datasets and one finished tune.
+  - Links are example.com, so each product's live preview frame stays empty.
+  - The run steps are in its header. It runs after scripts/dev/room-fixtures.ts, whose user it reuses, so those build rooms show under Musings.
+  - It caught a real layout bug: a long History list pushed Usage, Help and the account chip below the window. History now scrolls on its own with its heading pinned, and the bottom stays put, as on meta.ai.
+  - Typecheck clean. Spend $0.
+- **Later, same branch: Settings and a theme choice.**
+  - The account chip's menu has Settings, and signed-out visitors get a settings button beside Sign in. It opens the same Settings-style window as Help, now a shared `SettingsWindow` component:
+    - General has your account and a Theme row (System, Light, Dark);
+    - About Muse Muse has the disclaimer and How it works.
+  - The theme is kept in this browser (`lib/theme.ts`). An inline script in `<head>` applies a saved choice before first paint, and System follows the device as before.
+  - Checked in Chromium:
+    - picking Dark sets it at once and keeps it after a reload, with no flash;
+    - Light can be forced on a dark-mode system;
+    - the window opens with focus on General;
+    - no console errors.
+  - Tests: theme 4 of 4 (including the inline script run against a fake page), nav 12 of 12. Typecheck clean.
+  - The mascot's on and off switch will go in General once the mascot exists.
+- **Later, same branch: Muse on screen, walking and climbing.**
+  - From the owner's two videos ("muse video for bottom" and "climbing the right side", Nov 2), `scripts/dev/mascot/walk.sh` and `climb.sh` cut transparent loops into `public/muse/`, each about 80 to 120 KB:
+    - a 1.75 s stride: the most similar pair of frames, 42 apart;
+    - a 2.25 s climb, the cleanest seam found by comparing every start and length;
+    - the climb reversed, for coming down.
+  - Each comes as VP9 WebM with alpha and HEVC with alpha. White is keyed out, and light neutral greys become a soft black shadow, so it reads on both themes.
+  - Two problems found by looking, then fixed:
+    - the source's near-white background left a faint box on light cards; it is now fully transparent (half of each frame is alpha 0, half 255, about 2% soft edge);
+    - an 8-frame cross-fade on the climb ghosted his face, so the loop uses the cleanest seam instead.
+  - Each climb frame is cropped at the wall's own edge, measured per frame, so the window's right edge is the wall and his hands grip it.
+  - `components/mascot/Mascot.tsx`:
+    - it walks along the bottom of the content area, turning at each edge and stopping now and then;
+    - on the desktop view it sometimes climbs the right edge, hangs, climbs down and walks off left;
+    - it sits under docks, menus and dialogs and passes clicks through;
+    - it stands still with reduced motion, and Settings has "Muse on screen".
+  - Checked in Chromium on the seeded local site, with the page clock sped up:
+    - the full cycle ran in light and dark: walk, edge, up to about 205 px, hang, down, walk back;
+    - the right clip played at each stage and all three loaded;
+    - zoomed shots show no box and a clean grip at the edge.
+  - The Safari (HEVC) files have not been opened in Safari yet.
+  - Tests: mascot 4 of 4 (the walk, the climb, the switch), theme 4 of 4. Typecheck clean. Spend $0.
+- **Later, same branch: an X to hide Muse, and a climb you can see (owner: "I should be able to x out the muse mascot", "how do i get him to climb").**
+  - Why the climb wasn't seen: it only happened on 6 of 10 trips to the right edge, and the first trip took about 30 s from the left.
+  - Now:
+    - it starts in the middle of the open space, heading right;
+    - the first right-edge arrival always climbs on the desktop view; after that, 6 times in 10.
+  - Close: pointing at it stops it and shows a round X just above its head ("Hide Muse", always shown on touch screens, reachable with Tab). The X turns "Muse on screen" off in this browser and shows a 5 s note saying how to bring it back. The figure now takes the pointer; the rest of the page doesn't change.
+  - Checked in Chromium on the seeded local site (clock sped up):
+    - hovering held it in place (moved 0 px in 2 s), with the X showing;
+    - it climbed 11 s and 17.5 s after load in two runs;
+    - the X on the climbing clip hid it, saved "off" and showed the note, which went away after 5 s;
+    - no page errors.
+  - The first shot had the X over his face, so it moved above his head.
+  - Typecheck clean. Spend $0.
+- **Later, same branch: "What you asked for" drawn as Muse Code's todo card (owner: "this to do list is what should be shown where you see what you asked for").**
+  - `components/build/RequirementsChecklist.tsx` now uses the todo card's markup and styles: a box per requirement and the count beside the title.
+  - What each line shows:
+    - checked and working: a ticked box;
+    - not met: a red box with an X and "Not met";
+    - can't be done: struck through;
+    - looked right but other checks failed: the box stays empty, with the amber words;
+    - not checked yet: an empty box.
+  - "Works" and "Not checked yet" are said only to screen readers; the rule that nothing reads "Works" next to a failed check is unchanged.
+  - Same component in the build room and on the product page.
+  - Rendered with sample requirements in light and dark and looked at. requirements-checklist 4 of 4, typecheck clean.
 ## Nov 2, 2026, 18:08: M7, the first real Muse Muse edge build (preview, branch edge-m7)
 
 - **Preview:** current main (ee493e69) as muse-muse-g59xelwdt, deployed with `--env`/`--build-env` only: EDGE_BUILDS, EDGE_ENABLED, PREVIEW_USE_MAIN_DB, OPEN_ACCESS=admin, TEST_MODEL=muse-spark-1.3-contributor, and FULL_BUILDS, BUILDS_ON_CONTRIBUTOR, MUSE_APP_LOOK and BUILD_RANGE set to 0. No project setting changed.
@@ -2713,3 +2813,17 @@ Three branches built in parallel worktrees, each reviewed adversarially, then me
   - Make snapshot regenerated: the two Make page entries change with the new tab. "run room: ready" was already failing on main before this change, and is refreshed here too.
   - starters and make-flag-off: 13 of 13. Typecheck clean.
 
+- **Nov 2, evening: the Meta-only units, combined on top of Hussam's #71 (branch tg-meta-only).**
+  - #71 conflicted with main in two files. Fixed on its own branch:
+    - `docs/BUILD_LOG.md`: kept both sides;
+    - `lib/edge/template-source.ts`: regenerated with `scripts/edge/gen-edge-template.ts`.
+  - On top of #71, cherry-picked four of the five units from the evening's Meta-only workflow:
+    - guards-train;
+    - privacy-swap;
+    - copy-public;
+    - learn-plans, with the Learn plan commit (192dd7cf) it builds on.
+  - guards-runtime was left out: #71 covers the same fleet, board and device paths (18 of its 28 files).
+  - Where guards-train and #71 overlapped (`lib/board-loop/device-mcp.ts`, `tick.ts`, the quant-targets test), #71's code was kept.
+  - Since the small-base list no longer has a Llama, `judgedProblem` also refuses an adapter whose base name matches another family's word.
+  - Old tests that still expected a small Llama for other devices were brought to the ruling: the Modelfile test, the run page test and the pairing test.
+  - Typecheck clean. 594 of 594 tests pass in the files the branch touches, and 47 of 47 in the downstream files.

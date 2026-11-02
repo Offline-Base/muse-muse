@@ -9,7 +9,9 @@ import pytest
 import respx
 
 from base import guard
-from base.config import load_settings
+from base.config import (
+    _load_settings_for_tests as load_settings,  # pre-ruling loader: LFM code load_settings now refuses
+)
 from base.egress import Egress
 from base.guard import TagMap
 from base.local_llm import LocalLLM

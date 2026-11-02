@@ -15,9 +15,19 @@ import httpx
 import pytest
 import respx
 
+from base import config as base_config
 from base.config import REPO_ROOT
 from scripts import bench_device as bd
 from tests.gguf_helpers import glimmer_like
+
+
+@pytest.fixture(autouse=True)
+def _pre_ruling_settings(monkeypatch):
+    """The bench's LFM runs (--kind lfm) start from LFM settings. The Nov 2 ruling made load_settings refuse LFM settings
+    (tests/test_config.py); these tests keep that code tested with the pre-ruling loader until the
+    owner decides whether to delete it."""
+    monkeypatch.setattr(bd, "load_settings", base_config._load_settings_for_tests)
+
 
 MAC_LOG = """\
 load_tensors: offloading 16 repeating layers to GPU
@@ -355,3 +365,14 @@ def test_every_command_in_the_runbook_exists_and_the_labels_are_listed():
     assert "—" not in text and "unverified" in text.lower() and "ssh" in text.lower()
     assert not re.search(r"(?<![\d.])(?!127\.0\.0\.1)\d{1,3}(?:\.\d{1,3}){3}(?![\d.])", text)
     assert not re.search(r"\b[\w-]+\.(?:local|lan)\b|jetson-\d", text)
+
+
+def test_bench_device_lfm_is_refused(tmp_path, monkeypatch):
+    """With the real load_settings (the Nov 2 ruling), --kind lfm cannot start, and --kind glimmer
+    sets no LFM beside Glimmer."""
+    monkeypatch.setattr(bd, "load_settings", base_config.load_settings)
+    url = "http://127.0.0.1:8091/v1"
+    with pytest.raises(base_config.NonMetaModelRefused, match="not a Meta model"):
+        bd.bench_settings("lfm", url, "k", tmp_path / "h", tmp_path, environ={})
+    s = bd.bench_settings("glimmer", url, "k", tmp_path / "h2", tmp_path, environ={})
+    assert s.primary_model == s.checker_backend == "glimmer" and s.device_only

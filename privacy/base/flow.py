@@ -41,12 +41,12 @@ ICONS = {
     "muse": '<path d="M6 15.5h8.5a3.5 3.5 0 0 0 .4-7 5 5 0 0 0-9.6 1.2A3 3 0 0 0 6 15.5z"/>',
 }
 SITE_FACTS = {
-    "files": "Read only on the device. They never leave.",
-    "model": "LFM3-VL-2B today, or your own Muse Glimmer",
+    "files": "Muse never gets them. This demo reads invented files only",
+    "model": "Muse Glimmer: on OpenRouter in this demo, planned for your device",
     "tagging": "Names and identifiers become tags like [Student A]",
     "rules": "Your policy, what you taught it, and toggles like FERPA or HIPAA",
     "check": "Looks again for anything private",
-    "you": "Ask on this device: answers never leave",
+    "you": "Ask on this device: off for now, it needs a reader on the device",
     "kept": "Stays on the device, with a reason",
     "approvals": "You see the exact text first",
     "muse": "Gets tags only, through the relay",

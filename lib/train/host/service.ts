@@ -287,8 +287,11 @@ export async function chatOnEndpoint(row: HostEndpoint, input: Omit<HostChatInpu
     }
     throw new HostError(503, "endpoint_closed", "This model's endpoint reached a limit and stopped.");
   }
+  const family = (current.ref?.family as HostChatInput["family"] | undefined) ?? "glimmer";
+  // An endpoint started on a Llama adapter before the Nov 2 ruling answers nothing: only Meta's models run here. The sweep
+  // stops it at its idle limit, since nothing touches it.
+  if (family !== "glimmer") throw new HostError(409, "cant_host", "This model trained on Llama, and only Muse Glimmer models are served here.");
   // Touched before the call: a slow answer is still use, and the idle clock must not stop it mid-answer.
   await deps.touch(current.id, now);
-  const family = (current.ref?.family as HostChatInput["family"] | undefined) ?? "glimmer";
   return deps.adapter(current.provider).chat(current.ref ?? {}, { ...input, family, adapterJobId: current.adapterJobId, trainChannel: current.ref?.trainChannel === "1" ? 1 : 0 });
 }

@@ -1,6 +1,6 @@
 # Handoff
 
-Where Muse Muse stands, for whoever picks it up next. Last written Nov 2, 2026, 10:24 AM ET. The PR list and owner to-dos were updated at midday on tg-submission-kit, and again in the evening on tg-submission-fields (the owner's edge answers, the going-public plan, the real form).
+Where Muse Muse stands, for whoever picks it up next. Last written Nov 2, 2026, 10:24 AM ET. The PR list and owner to-dos were updated at midday on tg-submission-kit, and again in the evening on tg-submission-fields (the owner's edge answers, the going-public plan, the real form). Updated Nov 2 night on tg-mo-copy-public for the Meta-models-only ruling: O3, O5, O7, #67, to-do 2, to-do 4, H1, Prompt Guard, and the owner questions from the audit.
 
 Change a line here when its fact changes. History goes in docs/BUILD_LOG.md.
 
@@ -26,7 +26,7 @@ Nobody but the owner or Hussam merges. Hussam's PRs all say "Don't merge until t
 | PR | Who | What | State |
 |---|---|---|---|
 | #63 | Hussam | A product can answer from the Jetson fleet, behind `FLEET_PRODUCTS` | Open. Turning the flag on needs a new builder snapshot, the owner's model choice, a `jik_` key and a total cap. Checks pass and it's up to date with main (Nov 2, 1 PM) |
-| #67 | Hussam | Fine-tune Llama 3.2 1B on jetson-04 itself to read invented receipts, and serve it through the fleet and #63's product route | Open. Related edge work: an on-board tune of a Meta model, $0. Its numbers aren't in docs/BUILD_LOG.md yet, so don't quote them in public until it's merged and logged (docs/EDGE_PLAN.md, "Related edge work") |
+| #67 | Hussam | Fine-tune Llama 3.2 1B on jetson-04 itself to read invented receipts, and serve it through the fleet and #63's product route | Merged Nov 2, 3:31 PM ET. Llama is not a Meta model here, so #67 is dropped from the submission and its numbers never go in public copy. Hussam removes the Llama files on jetson-04 (the 1B GGUF, the adapter and the drop-in, plus any Llama-3.2-3B), pending owner question 11 below. One fact stays useful: llama.cpp `--lora` over a GGUF base works on these boards |
 | tg-edge | Ethan (Claude) | The edge track at `e4beadc1`: fallback, drills, edge target, board build, drill data, docs | Branch only, no PR yet. Merge before the repo goes public, or the edge lines have no code behind them |
 | #54 | Ethan (Claude) | Hero tune: sealed test and tooling | Draft, blocked before training |
 | #46 | Ethan (Claude) | Hugging Face inventory | Open. Found every OfflineBase repo answering as public (owner to-do 7) |
@@ -37,10 +37,10 @@ In order. To-do 2 has to finish by Nov 3 afternoon (Tue 3 PM for the edge tune),
 
 1. **Pick the demo story.** Mostly settled Nov 2: O1 and O6 are yes, so the recommended script plus its edge act in docs/VIDEO.md ("Proposed revision: the edge act") is the plan. About 5 minutes left, Ethan and Hussam: confirm it, then take "DRAFT" off docs/VIDEO.md.
    - docs/VIDEO.md's three acts (one sentence to a model and an app, Muse Privacy, the Jetson) now end in the edge act, about 2:54. The inspo-first script it replaced is at `git show e290545d:docs/SUBMISSION.md`.
-2. **The end-to-end chain run: approved Nov 2, $25 (O2).** It runs on the cold-room sentence with M2's code-written rows and should finish by Tue 3 PM. The rotated Lambda key is in place (to-do 8). If its tune misses Tue 3 PM, the backup is a free Kaggle notebook on branch tg-kaggle-tune (O3), not a $10 A10 tune. The run itself takes about 1 to 2 hours, by the lead.
+2. **The end-to-end chain run: approved Nov 2, $25 (O2), on hold for a re-cost.** Under the Meta-models-only ruling it moves to the default r30b Muse Glimmer base with `TUNE_ANY_BASE` kept off (owner question 2 below). It runs on the cold-room sentence with M2's code-written rows and should finish by Tue 3 PM. The rotated Lambda key is in place (to-do 8). The run itself takes about 1 to 2 hours, by the lead. Nothing has run.
    - What it buys: real footage for the shots tagged [needs the chain run] in docs/VIDEO.md, and maybe moving marks in docs/STORY.md up.
-   - What the parts cost when run separately: data $0.22, a small Llama tune about 18 minutes on a Lambda A10, a blind judge $1.54 on Muse Wonder, a Glimmer tune $1.39 plus judging, a build $0.30 to $1.80 on Contributor (about $4 on Wonder).
-   - Cap: $25 on the small Llama, which leaves room for one retry.
+   - Re-cost, to be confirmed before launch: the audit estimates the r30b tune at about $1.39 on an A100 (42 to 48 minutes, from the lab's 40 of 40 run), plus about $2 on an A10 to requantize to IQ1_S for jetson-02, about $3.40 in all, which fits the $25 cap. Other parts: data $0.22, judging on Muse Wonder ($0.52 for the harness's 40-prompt Glimmer check), a build $0.30 to $1.80 on Contributor (about $4 on Wonder). No spend until the owner approves the new estimate.
+   - The old backup, the Kaggle notebook on branch tg-kaggle-tune (O3), tunes Llama, so it is out. A backup is a second r30b tune on Lambda (about $1.39), or the stock IQ1_S already on jetson-02 labeled without "tuned".
 3. **Read the `/privacy` and `/terms` draft, then turn on `TRUST_LEGAL_PAGES`.** About 40 minutes.
    - Read `lib/trust/terms.ts` (146 lines). It says it's a draft for the owner and counsel, not legal advice, dated Oct 31.
    - Send changes to the lead, or edit it yourself and bump `TERMS_VERSION` (signed-in builders are asked to accept a new version).
@@ -49,7 +49,7 @@ In order. To-do 2 has to finish by Nov 3 afternoon (Tue 3 PM for the edge tune),
 4. **Pick a LICENSE.** About 10 minutes to choose; the lead adds the file in a PR.
    - The repo has none. The Official Rules allow open source "provided applicable open source licenses are followed", and the entrant keeps ownership while granting the organizers a license to use the submission (docs/MESSAGING.md, "What the rules say").
    - Choices: MIT, Apache-2.0 (adds a patent grant), or no license, which leaves a public repo readable but not reusable.
-   - Whatever you pick, say what it doesn't cover: `content/meta-docs/` is Meta's text, `privacy/` comes from another repo, and model files carry Muse Spark Open's and Llama's own terms.
+   - Whatever you pick, say what it doesn't cover: `content/meta-docs/` is Meta's text, `privacy/` comes from another repo, and model files carry their own terms (Muse Glimmer's, and Muse Spark Open's for r30b, a Derivative of it).
 5. **Change the fleet's ngrok domain, and confirm the rented GPU machines are terminated.** About 40 minutes, with Hussam. Both addresses stay in git history unless the rewrite in "Going public" runs, so do this either way.
    - ngrok: make a new domain in the ngrok dashboard. Hussam points jetson-05's tunnel at it through the fleet control plane. In the same restart, turn off the agent's request-body retention (PR #61). Set `BOARD_FLEET_URL` on production to the new domain and redeploy. Check `/device` signed out, then delete the old domain.
    - AWS: in the console for the knowledge run's account, check EC2 instances in us-east-1 and every other region used, plus SageMaker training jobs, endpoints and notebooks. Terminate anything still running. Delete storage nobody needs, because it bills too.
@@ -83,11 +83,11 @@ In order. To-do 2 has to finish by Nov 3 afternoon (Tue 3 PM for the edge tune),
 13. **The edge track: O1 to O8, answered Nov 2.** The full questions are in docs/EDGE_PLAN.md, "Owner decisions". Nothing spends or turns a flag on until the unit that needs it starts, and then only inside these caps.
     - O1, yes: reverse the Oct 31 "No Jetson or fleet endpoint in the Nov 4 demo" for an edge act in the video, keeping the Glimmer shot.
     - O2, yes, $25: the chain run on the cold-room sentence with M2's code-written rows, done by Tue 3 PM. The rotated Lambda key is in place.
-    - O3, yes, changed: the backup tune is a free Kaggle notebook on branch tg-kaggle-tune, $0, instead of a $10 A10 tune.
+    - O3, yes, changed: the backup tune was a free Kaggle notebook on branch tg-kaggle-tune. It tunes Llama, so it is out under the Nov 2 ruling. See to-do 2 for the Glimmer backup.
     - O4, yes, $5 of the $20 Contributor cap: `EDGE_BUILDS` and `EDGE_ENABLED` on a preview only, for 2 to 3 test builds.
-    - O5, yes: the public Hugging Face repo `OfflineBase/Llama-3.2-3B-ColdRoom-Watch-GGUF`, once M8 has a file.
+    - O5, yes, changed by the Nov 2 ruling (owner question 1 below): the public Hugging Face repo will hold a Glimmer file, the tuned r30b IQ1_S, once M8 has one, not `Llama-3.2-3B-ColdRoom-Watch-GGUF`. Folder-row tunes can't be published to the Hub from the site (docs/CHAIN_RUN.md), so that file may be a hand upload.
     - O6, yes: the video re-cut in docs/VIDEO.md, "Proposed revision: the edge act".
-    - O7, no: `deviceModelTarget` stays as it is.
+    - O7, no, but it conflicts with the Nov 2 ruling (owner question 1 below): `deviceModelTarget` gives every device but a Jetson a small Llama today. The fix gives a Jetson one-bit Glimmer and other devices Glimmer or no model ("no Meta model fits this device"). Until then `QUANT_TARGETS` stays off.
     - O8, only if Hussam agrees: fallback level 2, which pulls the house uplink and takes jetson-05's tunnel and remote fleet access down during the take. Off until Hussam says yes.
 14. **Merge the edge track (tg-edge) into main.** Owner or Hussam, before the repo goes public.
 15. **Make the repo public.** About 1 hour, owner. See "Going public" below.
@@ -105,8 +105,25 @@ Also waiting, from the Nov 2 audit. None is approved or started, except that ite
 
 Still open from before:
 - **Gadget:** `DEVICE_MCP_URL` and `DEVICE_MCP_TOKEN` are unset in production, so the gadget isn't live there.
-- **Prompt Guard 2 on jetson-05:** accept Meta's license on Hugging Face, then run `/opt/prompt-guard/fetch.sh` on the board.
-- **Before quoting "0 leaks":** rerun `device_only_fresh_200` (Oct 30, 10 leaks, no cause recorded) or say both numbers.
+- **Prompt Guard 2 on jetson-05:** dropped. It is a Llama-family model, so don't fetch or enable it. Whether Hussam deletes `/opt/prompt-guard` and its unit waits on owner question 11 below.
+- **Before quoting "0 leaks":** the "0 leaks on 300" and Oct 30 `device_only_fresh_200` numbers were measured with LFM3-VL-2B, so they are out of public copy. Quote only Glimmer runs: the Oct 27 cloud run (0 leaks on 100), or the Glimmer rerun of `fresh_200_b` once the owner approves it (owner question 6 below) and it is logged, giving every leak it finds.
+
+## Open owner questions from the Meta-models audit
+
+Nov 2 night, from the audit's fix plan. Yes or no each. Until answered, agents take the safe default: refuse, gate or hide, never delete.
+
+1. Reverse O5 (the Llama cold-room Hugging Face repo) and O7 (keep `deviceModelTarget` as is)?
+2. Run the chain run on r30b Glimmer with `TUNE_ANY_BASE` kept off?
+3. Approve about $3.40 for the tuned cold-room Glimmer IQ1_S, only if Hussam's $0 schema gate passes?
+4. Lift the "never jetson-02" rule for edge takes?
+5. If the gate fails, accept a no-model, fixed-rule board fallback plus the shot-10 Glimmer clip as the edge act?
+6. Muse Privacy's submission mode: Glimmer 30B on OpenRouter on invented data, with the "device-only" wording dropped?
+7. If the Muse Privacy swap misses Tue 6 PM, cut Muse Privacy from the video and submission and take `privacy/` off the public branch?
+8. Delete, rather than just flag off, the Llama, LFM, SpeechT5, EmbeddingGemma and Prompt Guard code before the repo goes public?
+9. Drop read-aloud entirely, including the browser's own speech fallback?
+10. Unset `BOARD_FLEET_URL` and `BOARD_FLEET_TOKEN` on production for judging, on top of the model allowlist?
+11. Hussam deletes the Llama files on jetson-04 and Prompt Guard on jetson-05?
+12. Send Cerebral Valley a one-line check that Glimmer on OpenRouter and a no-model fallback are fine?
 
 ## Going public
 
@@ -140,15 +157,15 @@ The single-branch clone is small (the full mirror was 60 MB), so it fits the lap
 
 ## Waiting on Hussam: the edge track
 
-Steps for each are in docs/EDGE_PLAN.md, "Hussam's asks". The drill board is jetson-04, or jetson-03 with Bolt unloaded, never jetson-02 or jetson-05. Everything goes through the fleet control plane.
+Steps for each are in docs/EDGE_PLAN.md, "Hussam's asks". Under the Nov 2 ruling the edge model is Muse Glimmer 30B one-bit (IQ1_S) on jetson-02 (alias `muse-glimmer-2026-iq1s-io-lowest`), which needs the owner to lift "never jetson-02" for edge takes (owner question 4 below). Never jetson-05. Everything goes through the fleet control plane. Nothing below has run yet.
 
-- **H1, Mon night, about 1.5 h:** say what the "Musetesthussamshouse" exec jobs did on jetson-04, pick the drill board, install a public Llama-3.2-3B-Instruct Q4_K_M with `gguf-serve.sh --model-url` and its sha256, take it out of maintenance, and report tokens a second, memory and time to first token. Stop if it freezes once.
+- **H1, replaced: the $0 schema gate on jetson-02, about 15 to 30 min.** Don't install Llama. Set `-c 2048` and prompt cache 0, desktop off, `muse-device` stopped. Rerun `receipt-bench.py` on 10 receipts with `response_format: json_schema` and `max_tokens` of about 400, and watch memory. Pass means valid JSON on 10 of 10, no hang and readable verdicts. If it passes, the cold-room Glimmer tune is planned (owner question 3). If it fails, the board fallback is fixed code, thresholds plus the probe-disagreement rule, with no model. Stop if it freezes once.
 - **H2, about 0.5 h:** a `jik_` key with `cloud_daily_limit` 0, no `combo/` models and no `/v1/route`.
 - **H3, Tue morning, about 1 h:** Node 20 on the drill board, confirm the USB-C device-link address, run M7's arm64 build there with EDGE_URL on loopback, check free memory with both running.
 - **H4, Tue 3 to 5 PM, about 1 h:** install the tuned file, rerun the held-out set, report either way.
 - **H5, Tue 7 to 9 PM, about 2 h:** two rehearsals and one take of the cut, no power cuts, nothing identifying in frame. Hard stop at 9 PM.
 - **O8:** the owner allowed fallback level 2 (pulling the house uplink, which takes jetson-05's tunnel and remote fleet access down during the take) only if Hussam agrees. Say yes or no.
-- **PR #67** (Hussam's on-board Llama 3.2 1B tune on jetson-04) is related edge work. Log its numbers in docs/BUILD_LOG.md when it merges, so the write-up can mention it. It left jetson-04 serving Bolt with 4 GB of disk free, which matters for H1's drill board.
+- **PR #67** (Hussam's on-board Llama 3.2 1B tune on jetson-04) is out of the submission: Llama isn't a Meta model here. Removing its files from jetson-04 waits on owner question 11. Bolt on jetson-03 and 04 can stay on the boards but never in frame.
 
 ## Fleet changes made Nov 2, through the fleet control plane
 

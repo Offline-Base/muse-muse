@@ -16,6 +16,7 @@ Offline Base's entry in the Meta Global AI Developer Hackathon: startup track, t
 | Training-data rights: who wrote each set, Meta's terms, what may be published | docs/DATA_RIGHTS.md |
 | What happened and why: every merge, review, fix, measurement, spend and decision | docs/BUILD_LOG.md |
 | Training, tune runs, the Make chat | docs/TRAINING.md |
+| Redoing Meta's 30 lessons on /learn: batches, shared builds and tunes, costs, run steps, how a card moves from planned to run | docs/LEARN_PLAN.md |
 | The knowledge run (r30b), quantizing, one-bit files | docs/KNOWLEDGE_RUN_LOG.md |
 | Boards, offline use, the fleet | docs/OFFLINE.md, docs/JETSON_TODO.md, docs/BOARD_LOOP.md, docs/DRIVE_EXPORT.md, docs/GADGETS.md |
 | Spikes | docs/SPIKES.md and docs/spikes/ |

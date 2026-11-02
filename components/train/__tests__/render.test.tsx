@@ -686,7 +686,9 @@ describe("Lab results", () => {
     const { NAV_GROUPS } = await import("@/components/shell/nav");
     const item = NAV_GROUPS.flat().find((i) => i.href === "/fine-tuning");
     assert.equal(item?.label, "Fine-tuning");
-    assert.deepEqual(Object.keys(item!).sort(), ["href", "icon", "label"], "no role or flag hides it");
+    // `also` only lists the pages that light the row (Models); no role or flag key may hide it.
+    assert.deepEqual(Object.keys(item!).sort(), ["also", "href", "icon", "label"], "no role or flag hides it");
+    assert.deepEqual(item!.also, ["/models"]);
   });
 
   it("explains the lab in three steps", () => {

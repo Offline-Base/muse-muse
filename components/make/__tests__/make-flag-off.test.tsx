@@ -100,7 +100,7 @@ describe("with MAKE_CHAT_ALL off", { skip: canMock ? false : "needs --experiment
     const off: Record<string, { sha256: string; length: number }> = {};
     const html: Record<string, string> = {};
     for (const [name, fn] of renders) off[name] = sha((html[name] = await fn()));
-    assert.match(html["make page: signed in"]!, /What should Muse make\?/);
+    assert.match(html["make page: signed in"]!, /What’s your muse\?/);
     assert.match(html["make page: signed in"]!, /aria-label="Make it"/);
     if (process.env.MAKE_GOLDEN_WRITE === "1") {
       writeFileSync(FIXTURE, `${JSON.stringify(off, null, 2)}\n`);

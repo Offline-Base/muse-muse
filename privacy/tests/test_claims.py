@@ -79,8 +79,6 @@ CLAUSE_BREAK = re.compile(r"[,;:]|\s(?:and|but|so|while|because|then|which|or)\s
 # already says. Add to this only after reading the sentence, and only if it is true today.
 REVIEWED = frozenset(
     {
-        "cp .env.example .env # then set DEVICE_ONLY=0, CHECKER_BACKEND=glimmer and OPENROUTER_API_KEY",
-        "LFM3-VL-2B, Liquid's model and not Meta's, does the model steps on the device until the tuned Glimmer lands.",
         "Other entries in this hackathon also put Glimmer redaction in front of Meta's models, through the Meta Model API rather than the Muse app.",
         "Glimmer runs on OpenRouter, so the device reads only folders marked .synthetic, such as demo/.",
         "### Laptop with your own Glimmer file (not run or measured yet)",
@@ -96,27 +94,46 @@ REVIEWED = frozenset(
         "Would do grading, the name pass, summaries and the privacy router (Glimmer is its own router;",
         "Muse Glimmer i1-IQ1_S, about 1.6-bit (6.5 GB, mradermacher/Muse-Glimmer-30B-i1-GGUF)",
         "A tuned Muse Glimmer, about 1.6-bit (IQ1_S)",
-        "Not measured yet on the device: Glimmer of any size, and grade quality.",
         "118.8 s on a first day (the job itself 102.2 s, 28 Glimmer calls), with an instant approval;",
         "Same total for 21 of 24 essays between two Glimmer runs;",
-        "Not measured yet: Glimmer's speed on the laptop and on a Jetson, the Jetson's memory use, quantization quality (Q4_K_M against i1-IQ1_S), a router LoRA, how often Glimmer's name pass reports only part of a name, and the author's own grading spot-check ([eval/reports/grading_spotcheck.md](eval/reports/grading_spotcheck.md) is ready for those scores).",
         "Earlier, Glimmer over-labeled whole-text requests (precision 0.50 on held-out requests), so asking for one paragraph can be treated as asking for a whole essay.",
-        "Muse LFM3-VL-2B on your device Muse Spark 1.3 Muse Glimmer",
         "Muse Glimmer 30B",
-        "Local model LFM3-VL-2B today, or your own Muse Glimmer",
+        "Local model Muse Glimmer: on OpenRouter in this demo, planned for your device",
         "84% of held-out requests meant for someone outside the class found by Glimmer, at precision 0.75;",
         "23 of 24 essays where Muse Spark's total was within one point of Glimmer's",
         "The installer builds llama.cpp, fetches an about 1.6-bit (IQ1_S) Muse Glimmer and sets up three services.",
         "In an earlier test, Muse Glimmer spotted class-level requests with precision and recall of 0.94, against a keyword list's 0.92 and 0.67.\",",
-        "To use a tuned, quantized Muse Glimmer instead of LFM3-VL-2B for answers and routing (not done yet: no Glimmer has been measured on the device, and the tuned file at about 1.6-bit (IQ1_S) has not landed):",
         "To speed Glimmer up with Meta's DFlash drafter, add --draft /path/to/drafter.gguf (it must share the model's vocabulary;",
         "auto and --reasoning-budget N (-1 unrestricted, 0 none) are written to .env the same way, and scripts/start.sh passes all of them to Glimmer's llama-server only.",
         "A Glimmer file can be measured while the app keeps running: start a second llama-server for it on a free port on 127.0.0.1, then point the matrix there.",
         "[Muse Glimmer docs](https://dev.meta.ai/docs/muse-glimmer/)",
         "Glimmer's license (Apache 2.0)",
         "- The Rules require building with Meta AI products: \"Muse Spark, Glimmer, SAM 3, and any other Meta AI products identified on the Event page.\" They do not name the Muse app, its Secure VM or connectors.",
-        "Device-only today: Liquid's LFM on the laptop does the model steps, so the Meta tooling in use is the Muse app (no session has a report in eval/reports/muse_app yet), Spark's invented data and the earlier Glimmer measurements on OpenRouter.",
         "Whether a tuned Glimmer at about 1.6-bit (IQ1_S) lands and passes its pre-registered test (eval/reports/glimmer_prereg.md), so its device numbers can join the README's \"What Meta's models do here\" section",
+        "Muse plans the work with tags, Muse Glimmer does every model step that touches the documents, and only tagged or summarized results go back to Muse: names and identifiers are swapped for tags on the device, and a final leak check runs on every text before it leaves.",
+        "In this hackathon demo the model is Muse Glimmer 30B in the cloud, on OpenRouter, and the device reads only invented data.",
+        "Glimmer on the device is the target, planned and not measured yet.",
+        "The setup it ships now (.env.example) is cloud mode: Muse Glimmer 30B (meta/muse-glimmer-30b on OpenRouter) does every model step, on invented data only, because in this mode the device refuses any folder without a .synthetic marker.",
+        "The last full Glimmer run, on Oct 27 over 100 invented items, had [0 leaks of names or identifiers and 76% decision accuracy, with 48 approval requests](eval/reports/final_cloud.md).",
+        "That run is older than later router changes (the ROUTER_LOOSEN default of Oct 31 among them), and today's defaults have not been scored on Glimmer.",
+        "Keeping the essays on the laptop needs Muse Glimmer on the device, which is planned and not measured yet.",
+        "In this demo Glimmer runs on OpenRouter, so the device reads only an invented class.",
+        "On the device, the agent swaps tags back to names only to choose what to do, and gives Muse Glimmer the documents with every name and identifier already swapped for tags, so in cloud mode OpenRouter sees tagged invented text.",
+        "Every result goes through base/egress.py: exact checks for names on the roster and identifiers (phones, emails, SSNs, Luhn-checked cards, student ids, addresses, dates of birth), and a second pass where Muse Glimmer finds names the roster misses.",
+        "Then the device reads Muse's request: a keyword scan for never-share topics, and one Glimmer call that labels who the result is for and what it asks (for a student's family, for someone outside the class, a whole text, who a tag really is, a class-level question).",
+        "in cloud mode Muse Glimmer is the router, under floors it cannot loosen.",
+        "The only page reader was LFM3-VL-2B, and the Glimmer files have no vision tensors ([model_file_r30b_iq1s.md](eval/reports/model_file_r30b_iq1s.md)), so page images are not read now and SAM has nothing to cover.",
+        "The router runs are dated Oct 27, before later router changes (the ROUTER_LOOSEN default of Oct 31 among them), so today's defaults have not been scored on Glimmer yet.",
+        "Not measured yet: Glimmer of any size on the device, grade quality, Glimmer's speed on the laptop and on a Jetson, the Jetson's memory use, quantization quality (Q4_K_M against i1-IQ1_S), a router LoRA, how often Glimmer's name pass reports only part of a name, and the author's own grading spot-check ([eval/reports/grading_spotcheck.md](eval/reports/grading_spotcheck.md) is ready for those scores).",
+        "LFM3-VL-2B read them, and the Glimmer files have no vision tensors, so an image is no longer a document.",
+        "Every model step is now a cloud call: in the Glimmer bench the name pass averaged 7521 ms and the request labels 3031 ms, and a 24-essay grading job took 118.8 s, slower than the device-only setup it replaces.",
+        "In the 100-item Glimmer run it asked about 21 and refused 1 of the 25 results the simulated teacher would share tagged without asking ([final_cloud.md](eval/reports/final_cloud.md)), and all of that is one simulated teacher's policy over 100 items.",
+        "Muse Muse Spark 1.3 Muse Glimmer",
+        "The default .env is cloud mode (since Nov 2, when the hackathon organizers ruled that every model the project calls must be a Meta model): Muse Glimmer 30B on OpenRouter does every model step, so fill in OPENROUTER_API_KEY, and the device reads only folders marked .synthetic (invented data), such as demo/.",
+        "Muse Glimmer on the device is the target;",
+        "Plugging in sets CHECKER_BACKEND=glimmer and turns off any setting the Nov 2 ruling refuses (LFM, EmbeddingGemma, Prompt Guard, the Jetson's LFM), so no other model runs beside Glimmer.",
+        "Not usable since Nov 2: every setup in scripts/model_matrix.py starts from device-only LFM settings, which load_settings now refuses, so the matrix needs setups with Glimmer as the checker before it can run again.",
+        "Held back by: today's defaults not scored on Glimmer, the sealed set not scored yet, and no Glimmer on the device",
     }
 )
 
@@ -315,23 +332,39 @@ def clean_clone_settings(monkeypatch, tmp_path, changes: dict[str, str]) -> conf
     return config.load_settings(values | changes | {"BASE_HOME": str(tmp_path / "home")})
 
 
-def test_the_readme_device_only_steps_load_on_a_clean_clone(monkeypatch, tmp_path):
+def meta_models_only(settings: config.Settings) -> bool:
+    """The organizers' Nov 2 ruling: Muse Glimmer for every model step, and no model that is not Meta's."""
+    return (
+        settings.primary_model == settings.checker_backend == "glimmer"
+        and not (settings.search_embeddings or settings.prompt_guard or settings.has_jetson_lfm)
+    )
+
+
+def test_the_readme_cloud_steps_load_on_meta_models_only(monkeypatch, tmp_path):
     readme = raw_doc("README.md")
-    steps = readme.split("### Laptop, device-only")[1].split("\n### ")[0]
+    steps = readme.split("### Laptop, cloud mode (what `.env.example` sets")[1].split("\n### ")[0]
     told = re.search(r"cp \.env\.example \.env\s+# then set (.*)", steps).group(1)
-    assert told.strip() == "CHECKER_SERVER_BIN"
-    settings = clean_clone_settings(monkeypatch, tmp_path, {"CHECKER_SERVER_BIN": "/x/llama-server"})
-    assert settings.device_only and settings.primary_model == "lfm" and settings.checker_backend == "lfm"
-    assert not settings.is_cloud_backend
+    assert told.strip() == "OPENROUTER_API_KEY"
+    settings = clean_clone_settings(monkeypatch, tmp_path, {"OPENROUTER_API_KEY": "k"})
+    assert meta_models_only(settings) and not settings.device_only
+    assert settings.is_cloud_backend and settings.answer_model == "meta/muse-glimmer-30b"
 
 
-def test_the_muse_setup_device_only_steps_load_on_a_clean_clone(monkeypatch, tmp_path):
+def test_the_muse_setup_steps_load_on_meta_models_only(monkeypatch, tmp_path):
     section = raw_doc("docs/MUSE_SETUP.md").split("## 2. Connect the device to the relay")[1].split("\n## ")[0]
     changes = dict(re.findall(r"echo '([A-Z_]+)=([^']*)'\s*>> \.env", section))
     assert "DEVICE_ONLY" not in changes  # the example file sets it
     settings = clean_clone_settings(monkeypatch, tmp_path, changes)
-    assert settings.device_only and settings.primary_model == "lfm" and settings.checker_backend == "lfm"
-    assert not settings.is_cloud_backend
+    assert meta_models_only(settings) and not settings.device_only and settings.is_cloud_backend
+
+
+@pytest.mark.parametrize("name", SCANNED)
+def test_no_model_that_is_not_metas_is_said_to_do_the_work(name):
+    """Nov 2 ruling: the public docs never present LFM, EmbeddingGemma or Prompt Guard as today's
+    setup, and never call Llama Prompt Guard a Meta model."""
+    text = doc(name)
+    for bad in (r"LFM3-VL-2B (?:on|does|runs|answers)\b[^.]*\btoday", r"LFM3-VL-2B today", r"today's (?:default|setup)[^.|]*LFM", r"Meta's (?:Llama )?Prompt Guard", r"Meta's 22M classifier"):
+        assert not re.search(bad, text, re.I), bad
 
 
 def test_the_muse_app_status_lines_rest_on_the_reports_that_exist():
@@ -470,7 +503,7 @@ def test_html_blocks_still_end_a_sentence():
         "No Glimmer has been measured on the device, so nothing here says it helps.",
         "A tuned Glimmer at about 1.6-bit (IQ1_S) is planned for the device.",
         "Glimmer runs on OpenRouter.",
-        "LFM3-VL-2B runs on the laptop today.",
+        "The keyword list runs on the laptop today.",
         "Muse Glimmer 30B is used for the earlier benchmarks.",
         "Would use Glimmer on the board.",
         "The service is muse-privacy-glimmer and the setting is GLIMMER_GGUF.",

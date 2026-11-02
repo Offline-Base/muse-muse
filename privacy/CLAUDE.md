@@ -22,6 +22,8 @@ Read docs/CONTRACTS.md before writing or changing any module. It is the shared i
 
 - Oct 30, Ethan's call: "use Liquid for now, ignore Glimmer." `DEVICE_ONLY=1` is set in .env, so LFM3-VL-2B on this laptop answers every step, the router included, and no model off the device can be reached. This overrides the Oct 27 "cloud only" and the Oct 29 Jetson fallback. Eval numbers measured with Glimmer on OpenRouter do not describe this setup; use eval/reports/device_only_lfm.md and eval/reports/compliance*.md. No Glimmer download without asking. docs/COMPLIANCE_PLAN.md has the plan and its status.
 
+- Nov 2, the hackathon organizers' ruling (Cerebral Valley Discord, 3:57 PM ET): every model the project calls at runtime must be a Meta model, with no non-Meta helper, and Llama does not count. This overrides the Oct 29 and Oct 30 calls above. Liquid's LFM3-VL-2B and LFM3-1.7B, Google's EmbeddingGemma 2 and Llama Prompt Guard 2 are out. `.env.example` now sets `DEVICE_ONLY=0`, `GLIMMER_BACKEND=openrouter` (`meta/muse-glimmer-30b`) and `CHECKER_BACKEND=glimmer`, and `load_settings` refuses `PRIMARY_MODEL=lfm`, `CHECKER_BACKEND=lfm`, `SEARCH_EMBEDDINGS=1`, `PROMPT_GUARD=1` and any `JETSON_LFM_` line (`config.refuse_non_meta`). The code behind them stays until the owner decides whether to delete it; tests of that code use `config._load_settings_for_tests`, which nothing outside tests/ may call. Numbers measured on LFM are history, not results. Glimmer on the device is the target; it has not run in Muse Privacy.
+
 ## Devices
 - BASE_DEVICE selects laptop or jetson. Never hardcode a device, URL, hostname or path to one machine.
 - The Mac is a managed work laptop: never bind anything on it to 0.0.0.0, scan the network, or start Tailscale. Servers on the laptop bind 127.0.0.1. The laptop reaches the Jetson by dialing out (base/heavy/worker.py); the Jetson never connects in to the laptop.
@@ -46,4 +48,4 @@ This folder sits inside the Muse Muse repo as `privacy/`, so run these from here
 - `uv run pytest -q` runs the unit tests. `uv run ruff check .` lints.
 - `uv run python -m base.server` starts the approval page and connector for BASE_DEVICE.
 
-Ports: answer model 8081, router 8082, checker (LFM3-VL-2B) 8083, embedder (EmbeddingGemma 2, SEARCH_EMBEDDINGS=1) 8084, approval page 8787, Muse connector 8790.
+Ports: answer model 8081, router 8082, approval page 8787, Muse connector 8790. 8083 (the LFM3-VL-2B checker) and 8084 (the EmbeddingGemma 2 embedder) are off since the Nov 2 ruling.
