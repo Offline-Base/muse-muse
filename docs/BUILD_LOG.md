@@ -2359,3 +2359,19 @@ Merged origin/main (#50, #51). The only conflict was this log; both entries kept
 - Tests: open-train 40 of 40 (start code, no tuneRun, folder rows, owner-only download, switch off), make, composer, starters, both flag-off tests, tsc. Full suite not run.
 - Preview muse-muse-hkozbza3a: intent recognized a dataset sentence; want both split a plain sentence; run 15c422b2 wrote 40 examples for $0.0062, held at "Your dataset is ready", no job, download 40 lines. That Preview inherited its own OPEN_ACCESS (value hidden, behaved as admin), so its no-code start was 201. Preview muse-muse-kpsbvt1ln (guest): new starters show, a stranger's download 403, but its plan answered 429, so the no-code refusal is proven by tests only, not live.
 - Not run: clicking the menu in a browser, Tune a model on this through a GPU.
+
+## Nov 2, 2026: What we can say, checked against Meta's docs (branch tg-messaging)
+
+- The owner's three deep-research reports, checked against `content/meta-docs/` and web search, are now in docs/MESSAGING.md. Docs only, no code.
+- Checked word for word in Meta's docs:
+  - Glimmer's "you own the weights, the runtime, and the data".
+  - The post-training advice to compare against base on a held-out set and also track a general benchmark.
+  - The 16.8 GB smallest Glimmer.
+  - The "Local agent that asks first" cookbook.
+- Checked across news outlets: Johns Hopkins Bayview, 3,182 patients.
+- Not confirmed:
+  - The Zuckerberg "manifest ideas" line: no search hit.
+  - The private-mode sentence: reported in different words.
+  - GAO's 12 of 12.
+- Found: Meta's cookbook (local Glimmer, approve, then Muse Spark, with an egress log) is the closest prior work to Muse Privacy, and privacy/docs/PRIOR_WORK.md doesn't list it.
+- Found stale: privacy/README.md "Built solo" and the Build for Your World theme, Glimmer "not run" on the Jetson in privacy/README.md and docs/STORY.md, and jetson-02's model in docs/OFFLINE.md. Left for the submission-ready item.
