@@ -689,6 +689,14 @@ export const env = {
   get planArt(): boolean {
     return flag("PLAN_ART");
   },
+  /**
+   * BUILD_ROOM_STEPS: the build room in two columns, the person's message and a feed of simple steps on the left, the
+   * plan, preview, demo and checks on the right (docs/BUILD_ROOM_STEPS.md). Contributor words the feed in small batches
+   * beside the build, counted in its costs. Off by default: no call, and the room as it was.
+   */
+  get buildRoomSteps(): boolean {
+    return flag("BUILD_ROOM_STEPS");
+  },
 
   // ---------- Where a product runs (docs/NATIVE.md). Every switch is off by default ----------
 

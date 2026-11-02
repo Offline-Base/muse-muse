@@ -80,6 +80,7 @@ let verifyRuns = 0;
 let musePolled = 0;
 let polledTotal = 0;
 let museRuns = 0;
+let feedThrows = false;
 
 function record(step: string, ...args: unknown[]) {
   calls.push({ step, args });
@@ -323,6 +324,15 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
         },
       },
     });
+    mock.module(new URL("../steps-feed-step.ts", import.meta.url).href, {
+      namedExports: {
+        stepsFeedStep: async (buildId: string, last?: boolean) => {
+          record("stepsFeedStep", { buildId, last });
+          if (feedThrows) throw new Error("Contributor is down");
+          return "written";
+        },
+      },
+    });
     mock.module(new URL("../plan-art-step.ts", import.meta.url).href, {
       namedExports: {
         planArtStep: async (buildId: string) => {
@@ -418,6 +428,33 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
         assert.deepEqual(await wf.refineProduct({ buildId: "r1" }), { status: "live" });
         assert.deepEqual(order().slice(-3), ["provePlanStep", "status:live", "startProveStep"]);
       }));
+  });
+
+  describe("the feed's words (BUILD_ROOM_STEPS)", () => {
+    it("makes no call with the flag off", async () => {
+      delete process.env.BUILD_ROOM_STEPS;
+      reset({});
+      await wf.buildProduct({ buildId: "b1" });
+      assert.equal(named("stepsFeedStep").length, 0);
+    });
+    it("asks for the last words before cleanup, and a step that throws changes nothing", async () => {
+      for (const throws of [false, true]) {
+        process.env.BUILD_ROOM_STEPS = "1";
+        feedThrows = throws;
+        try {
+          reset({});
+          assert.deepEqual(await wf.buildProduct({ buildId: "b1" }), { status: "live" });
+          const order = calls.map((c) => c.step);
+          assert.deepEqual(named("stepsFeedStep").at(-1)?.args, [{ buildId: "b1", last: true }]);
+          assert.ok(order.lastIndexOf("stepsFeedStep") < order.indexOf("cleanupStep"));
+          // After the checks too: Muse Code's polling has stopped by then, and nothing else would start a batch.
+          assert.ok(named("stepsFeedStep").some((c) => (c.args[0] as { last?: boolean }).last === undefined));
+        } finally {
+          delete process.env.BUILD_ROOM_STEPS;
+          feedThrows = false;
+        }
+      }
+    });
   });
 
   describe("the plan card's picture (PLAN_ART)", () => {

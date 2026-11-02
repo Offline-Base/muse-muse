@@ -82,6 +82,7 @@ import {
 } from "@/lib/pipeline/logic";
 import { NO_HELPERS, type HelperCount } from "@/lib/fast/fast";
 import { planArtStep } from "@/lib/pipeline/plan-art-step";
+import { stepsFeedStep } from "@/lib/pipeline/steps-feed-step";
 import { restoreFilesStep, restoreOutcomeStep } from "@/lib/pipeline/restore-steps";
 import { packageProductStep } from "@/lib/pipeline/package-step";
 import { startProveStep } from "@/lib/pipeline/prove-start";
@@ -107,6 +108,39 @@ const DEPLOY_POLL_MS = 10_000;
  * its stream is open. The picture has had the whole build to land, and its own time box is about a minute.
  */
 const PLAN_ART_GRACE_MS = 15_000;
+/** BUILD_ROOM_STEPS: how often Muse Code's polling starts a batch of the feed's words, at most. */
+const STEPS_FEED_TICK_MS = 60_000;
+
+/**
+ * BUILD_ROOM_STEPS: starts a batch of the feed's words beside the build, and never waits for it (lib/pipeline/steps-feed-step.ts).
+ * One at a time. Nothing is held up, and a batch that fails leaves the feed's plain lines.
+ */
+function tickStepsFeed(buildId: string, ticker: { lastAt: number; out: boolean }): void {
+  if (!env.buildRoomSteps || ticker.out) return;
+  const now = Date.now();
+  if (now - ticker.lastAt < STEPS_FEED_TICK_MS) return;
+  ticker.lastAt = now;
+  ticker.out = true;
+  void stepsFeedStep(buildId)
+    .catch(() => null)
+    .then(() => {
+      ticker.out = false;
+    });
+}
+
+/**
+ * BUILD_ROOM_STEPS: a batch between stages. After Muse Code's polling stops nothing else starts one, and most of a build's
+ * steps come then. Not waited for, and makes no model call unless a batch is ready.
+ */
+function nudgeStepsFeed(buildId: string): void {
+  if (env.buildRoomSteps) void stepsFeedStep(buildId).catch(() => null);
+}
+
+/** BUILD_ROOM_STEPS: the words for whatever's left, started before cleanup and not waited for. */
+function lastStepsFeed(buildId: string): void {
+  if (env.buildRoomSteps) void stepsFeedStep(buildId, true).catch(() => null);
+}
+
 function maxFixRounds(): number {
   return Math.min(REFINE_ROUND_STRIDE - 1, Math.floor(env.maxFixRounds));
 }
@@ -213,9 +247,11 @@ async function runMuse(
       ...(bridgeState ? { bridgeState } : {}),
       ...(helpers ? { helpers } : {}),
     });
+  const feedTicker = { lastAt: startedAt, out: false };
   for (let polls = 1; ; polls++) {
     await sleep(MUSE_POLL_MS);
     const read = await poll();
+    tickStepsFeed(ctx.buildId, feedTicker);
     offset = read.offset;
     usageRecorded = read.usageRecorded;
     announced = read.announced ?? announced;
@@ -360,6 +396,7 @@ async function checkAndFix(ctx: Ctx, track: Track, kind: "build" | "refine", off
     if (ctx.fast && !scoped) recheck = verify.recheck ?? [];
     const judged = verify.passed ? await judge(ctx, round, verify.screenshots) : null;
     const passed = verify.passed && judged?.pass === true;
+    nudgeStepsFeed(ctx.buildId);
     if (passed || fix >= rounds) return { passed, steps: verify.steps, fixes: fix, judge: judged };
     // The verify and judge above may have used the margin: a fix round that no longer fits before the wall, with its
     // own verify and judge after it, isn't started. Without a plan this is today's fix cap.
@@ -811,6 +848,7 @@ export async function buildProduct(input: BuildProductInput): Promise<BuildProdu
   // Bounded, so a picture that hangs (or a step that never runs) can't hold the end. A failed build doesn't wait at all:
   // its cleanup and failure come first, and a picture that lands after them is still in the log on the next load.
   if (art && ending.status !== "failed") await Promise.race([art, sleep(PLAN_ART_GRACE_MS)]);
+  lastStepsFeed(buildId);
   if (warm && !sandboxName) await warm.then(() => dropWarmSandboxStep(buildId));
   if (productId || sandboxName) await cleanup({ buildId, productId, sandboxName });
   const proof = await planProof(buildId, ending);
@@ -896,6 +934,7 @@ export async function refineProduct(input: BuildProductInput): Promise<BuildProd
   } catch (err) {
     ending = { status: "failed", message: failureMessage(track.stage, err) };
   }
+  lastStepsFeed(buildId);
   if (sandboxName) await cleanup({ buildId, productId, sandboxName });
   const proof = await planProof(buildId, ending);
   const result = await end(buildId, null, ending);
