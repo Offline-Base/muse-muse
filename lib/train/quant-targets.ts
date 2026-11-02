@@ -64,7 +64,6 @@ export const LOW_BIT_FACTS = {
   fileGb: 6.53,
   runGbMeasured: 7.4,
   tokensPerSecondX86: 2.5,
-  firstTokenSecondsX86: 5,
   tunedFinalAnswers: "30 of 30",
   boardGb: 8,
   recallOneBitPct: 9.0,
@@ -105,7 +104,7 @@ export function deviceModelTarget(kind: string): DeviceModelTarget {
       quantBase: null,
       level: LOW_BIT_LEVEL,
       fileStem: "muse-glimmer-30b-",
-      fit: `Not run on a real board yet. On an x86 CPU under a memory limit, the ${LOW_BIT_FACTS.fileGb} GB file from a short test tune on made-up data used up to ${LOW_BIT_FACTS.runGbMeasured} GB and made about ${LOW_BIT_FACTS.tokensPerSecondX86} tokens a second. The board's ${LOW_BIT_FACTS.boardGb} GB is shared with the operating system, so it may not fit. That file finished ${LOW_BIT_FACTS.tunedFinalAnswers} answers on the topic it was tuned for, with some muddled steps, and stayed poor on general questions.`,
+      fit: `Not run on a real board yet. On an x86 CPU under a memory limit, the ${LOW_BIT_FACTS.fileGb} GB file from a short test tune on made-up data used up to ${LOW_BIT_FACTS.runGbMeasured} GB and made about ${LOW_BIT_FACTS.tokensPerSecondX86} tokens a second. The board's ${LOW_BIT_FACTS.boardGb} GB is shared with the operating system, so it may not fit. That file finished ${LOW_BIT_FACTS.tunedFinalAnswers} answers on the topic it was tuned for, using its tuned chat template, with some muddled steps, and stayed poor on general questions.`,
       provenOnDevice: false,
     };
   }

@@ -1187,7 +1187,7 @@ export const QUANT_KL_MAX: Readonly<Record<QuantLevel, number>> = { Q3_K_M: 0.08
  */
 export const LOW_BIT_KL_MAX: number | null = 1.1;
 
-/** A build's KL limit, or null when none has been measured: the one-bit build's, and every build of a small base. */
+/** A build's KL limit, or null when none has been measured: every build of a small base. */
 export function quantKlLimit(level: BuildLevel, params?: Readonly<Record<string, unknown>> | null): number | null {
   if (quantBaseOf(params)) return null;
   return level === LOW_BIT_LEVEL ? LOW_BIT_KL_MAX : QUANT_KL_MAX[level];
