@@ -52,5 +52,9 @@ jobs:
         run: npx tsx --test --experimental-test-module-mocks $(find lib components -name '*.test.ts')
       - name: Fine-tuning view tests
         run: npx tsx --test --experimental-test-module-mocks components/train/__tests__/*.test.tsx
+      # The template's tests import its own packages (openai, next, react, typescript, @playwright/test), which the
+      # root lock file doesn't have. No scripts run, so no browser is downloaded.
+      - name: Install the template's own packages
+        run: npm ci --prefix template --no-audit --no-fund --ignore-scripts
       - name: The template's own scripts
         run: npx tsx --test template/scripts/__tests__/*.test.mjs
