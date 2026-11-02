@@ -4,7 +4,7 @@ Checks notebooks/edge-tune-kaggle.ipynb with no GPU and no model:
   python3 -I -B -m unittest discover -s notebooks -p 'test_*.py'
 
 - the file is valid nbformat 4.5 JSON (nbformat's own validator too, when it is installed) and matches build_notebook.py
-- every code cell parses with ast
+- every code cell parses with ast, and reads no name that only a later cell sets
 - the helpers and scoring cells run against the committed sealed set and small fake answer files, agree with
   drill-bench's scorer, write scores.json, and refuse a sealed file with the wrong hash or a training row with no
   system line
@@ -85,6 +85,30 @@ class NotebookShape(unittest.TestCase):
             src = "".join(c["source"])
             ast.parse(src, filename=c["id"])
             self.assertNotRegex(src, r"(?m)^\s*[!%]", c["id"] + " uses a shell or magic line")
+
+    def test_cells_run_in_order(self):
+        # Every name a code cell reads is a builtin, or bound by that cell or an earlier one, so Run All never meets a
+        # NameError from cell order.
+        import builtins
+
+        defined = set(dir(builtins))
+        for c in [c for c in notebook()["cells"] if c["cell_type"] == "code"]:
+            tree = ast.parse("".join(c["source"]))
+            bound = set()
+            for n in ast.walk(tree):
+                if isinstance(n, ast.Name) and isinstance(n.ctx, (ast.Store, ast.Del)):
+                    bound.add(n.id)
+                elif isinstance(n, (ast.FunctionDef, ast.Lambda)):
+                    if isinstance(n, ast.FunctionDef):
+                        bound.add(n.name)
+                    bound |= {a.arg for a in n.args.args + n.args.kwonlyargs}
+                elif isinstance(n, (ast.Import, ast.ImportFrom)):
+                    bound |= {(a.asname or a.name).split(".")[0] for a in n.names}
+                elif isinstance(n, ast.ExceptHandler) and n.name:
+                    bound.add(n.name)
+            used = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
+            self.assertEqual(used - defined - bound, set(), c["id"] + " reads names no earlier cell sets")
+            defined |= bound
 
     def test_safety_and_copy(self):
         nb = notebook()

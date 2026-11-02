@@ -45,7 +45,7 @@ On kaggle.com: Datasets, New Dataset, drop the four files from `~/cold-room-dril
 
 No Hugging Face token is needed: the base model is ungated. Leave Kaggle Secrets empty unless you turn on the upload (section 6).
 
-**Colab instead:** Runtime, Change runtime type, T4 GPU. Upload the four files to `/content/drill` (or set `DRILL_DATA` to their folder). Outputs go to `/content/edge-tune-out`. A free Colab session can drop; the answer files are written as they come, and the scoring cell reruns alone from them.
+**Colab instead:** Runtime, Change runtime type, T4 GPU. Upload the four files to `/content/drill` (or set `DRILL_DATA` to their folder). Outputs go to `/content/edge-tune-out`. A free Colab session can drop; the answer files are written as they come, and after a restart the scoring cell reruns from them once the settings and helpers cells have run (a dropped answer run starts over, it doesn't resume).
 
 ## What it does
 
@@ -55,7 +55,7 @@ No Hugging Face token is needed: the base model is ungated. Leave Kaggle Secrets
 | Check data hashes, the system line on all 900 rows, no sealed prompt in training | `data` | seconds |
 | Load the 4-bit model (about 2.3 GB) and a rank-16 LoRA, fp16 | `model` | 2 to 4 min |
 | Base answers, 100 sealed rows, one at a time, greedy (temperature 0), at most 200 new tokens | `base-answers` | 5 to 12 min |
-| QLoRA on 900 rows, 2 epochs = 225 steps of 8 rows (rows run about 1,000 to 1,300 tokens), answers only, eval loss on the 50 dev rows | `train` | 30 to 60 min (about half with `EPOCHS = 1`) |
+| QLoRA on 900 rows, 2 epochs = about 225 steps of 8 rows (rows run about 1,000 to 1,300 tokens), answers only, eval loss on the 50 dev rows | `train` | 30 to 60 min (about half with `EPOCHS = 1`) |
 | Tuned answers, same 100 rows, same prompt | `tuned-answers` | 5 to 12 min |
 | Score and write `scores.json` (no GPU) | `score` | seconds |
 | Merge, build llama.cpp, write the Q4_K_M GGUF (about 2 GB) and its sha256, fetch the license files | `export` | 10 to 25 min |
@@ -72,7 +72,7 @@ The printed table has, for base and tuned: valid JSON, all five right, each fiel
 
 `answers-base.jsonl` and `answers-tuned.jsonl` (drill-bench ask's row format, so `drill-bench.py score --heldout eval/drill/sealed.jsonl --answers <file>` regrades them on the laptop), `scores.json`, `versions.json` (what pip actually installed), `adapter/` (the LoRA, about 90 MB), and with the export on: `Llama-3.2-3B-ColdRoom-Watch-Q4_K_M.gguf`, `Llama-3.2-3B-ColdRoom-Watch-Q4_K_M.gguf.sha256`, `MODEL_CARD.md`, `LICENSE.txt`, `USE_POLICY.md`.
 
-**For the board:** put the GGUF somewhere it can be pulled, then hand Hussam its address and the `.sha256` line for `gguf-serve.sh --model-url` (docs/EDGE_PLAN.md H4). The notebook scores the 4-bit model before conversion, not the Q4_K_M file, so score the file again where it is served: `python3 scripts/dev/drill-bench.py ask --heldout eval/drill/sealed.jsonl --url <board base ending in /v1> --model <id> --label "Llama 3.2 3B tuned, Q4_K_M" --out answers.jsonl`.
+**For the board:** put the GGUF somewhere it can be pulled, then hand Hussam its address and the `.sha256` line for `gguf-serve.sh --model-url` (docs/EDGE_PLAN.md H4). The notebook scores the 4-bit model before conversion, not the Q4_K_M file, so score the file again where it is served. Serve it with the GGUF's own chat template (`llama-server --jinja`): training rendered Llama 3.2's template, whose system turn starts with "Cutting Knowledge Date" and "Today Date" lines, and llama.cpp's built-in llama3 fallback leaves those lines out, so without `--jinja` the board's prompt differs from training by more than the date. Then: `python3 scripts/dev/drill-bench.py ask --heldout eval/drill/sealed.jsonl --url <board base ending in /v1> --model <id> --label "Llama 3.2 3B tuned, Q4_K_M" --out answers.jsonl`.
 
 ## If the install fails
 

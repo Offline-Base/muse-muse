@@ -44,27 +44,30 @@ model as a Q4_K_M GGUF with its sha256.
 - **Safety:** no keys or tokens live in this notebook. Hugging Face upload is off by default and reads `HF_TOKEN` from
   Kaggle Secrets (or Colab's secrets) only when turned on. Nothing here opens a tunnel or a public endpoint.
 
-Run the cells in order. The scoring cell needs no GPU and no model, so after a restart it can be rerun on its own from
-the saved answer files.
+Run the cells in order. The scoring cell needs no GPU and no model, so after a restart it can be rerun from the saved
+answer files once the settings and helpers cells have run.
 """)
 
 code("config", "config", r"""
 # Settings. Change these here, then run every cell below in order.
 import os
 
-os.environ.setdefault("CUDA_VISIBLE_DEVICES", "0")  # Kaggle's 2x T4: train on one card, before torch is imported
+# Kaggle's 2x T4: train on one card. Set before torch is imported, and set outright: with two cards visible the
+# Trainer wraps the model in DataParallel, which a 4-bit Unsloth model doesn't run under.
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 MODEL_ID = "unsloth/Llama-3.2-3B-Instruct-bnb-4bit"  # ungated, so no Hugging Face token is needed to download it
 LORA_RANK = 16
-EPOCHS = 2  # 900 rows x 2 = 225 steps of 8 rows. 1 roughly halves the training time
+EPOCHS = 2  # 900 rows x 2 = about 225 steps of 8 rows. 1 roughly halves the training time
 LEARNING_RATE = 2e-4
 BATCH_SIZE = 2
 GRAD_ACCUM = 4
 MAX_SEQ_LENGTH = 2048  # the longest training row is about 3,500 characters, well under this
 MAX_NEW_TOKENS = 200  # the same cap drill-bench ask uses (--max-tokens 200)
 # Llama 3.2's chat template writes "Today Date: ..." in the system turn. Pinned so training and scoring render the
-# same text on any day. A server fills in its own date there, which is the one difference on a board.
+# same text on any day. llama-server --jinja fills in its own date there, the one difference on a board (without
+# --jinja, llama.cpp's built-in llama3 template drops the date lines altogether; notebooks/README.md).
 DATE_STRING = "26 Jul 2024"
 SCORE_LIMIT = 0  # 0 answers all 100 sealed rows; a small number gives a quick smoke run (not a score to report)
 
@@ -102,7 +105,9 @@ md("install-md", r"""
 Pinned to the set docs/TRAINING.md records for the repo's Lambda tunes (resolved Oct 27, 2026 for Python 3.12 on x86_64
 Linux). That set has not run on a T4 or on Kaggle's image yet. If the install or the GPU check below fails, set
 `PIN_SET = "keep-torch"` in the settings and rerun from the top; if that fails too, see "If the install fails" in
-`notebooks/README.md`. The cell skips whatever is already at the pinned version, and it never imports torch, so a fresh
+`notebooks/README.md`. After the torch step, every later step holds the installed torch with a pip constraint, so a
+package that wants another torch fails here instead of swapping it. The cell skips whatever is already at the pinned
+version, and it never imports torch, so a fresh
 torch loads in the next cell. If torch was already imported in this session, restart and run from the top.
 """)
 
@@ -136,16 +141,30 @@ def pip(args, constraints=None):
     subprocess.run(cmd, check=True)
 
 
-constraints = None
+def hold_torch():
+    # A pip constraint on the torch now installed, so no later step swaps it for a PyPI build. A step that needs another
+    # torch then fails loudly instead.
+    held = []
+    for name in ("torch", "torchvision", "torchaudio"):
+        try:
+            held.append(name + "==" + md.version(name))
+        except md.PackageNotFoundError:
+            pass
+    if not held or not held[0].startswith("torch=="):
+        raise RuntimeError("No torch installed. Use PIN_SET = 'repo', or an image that has torch.")
+    path = os.path.join(OUT_DIR, "torch-constraints.txt")
+    with open(path, "w") as f:
+        f.write("\n".join(held) + "\n")
+    print("holding", ", ".join(held))
+    return path
+
+
 if PIN_SET == "repo":
     if not all(have(s) for s in TORCH):
         pip(TORCH + ["--index-url", TORCH_INDEX])
-elif PIN_SET == "keep-torch":
-    constraints = os.path.join(OUT_DIR, "keep-torch.txt")
-    with open(constraints, "w") as f:
-        f.write("torch==" + md.version("torch") + "\n")
-else:
+elif PIN_SET != "keep-torch":
     raise ValueError("PIN_SET is 'repo' or 'keep-torch', not " + repr(PIN_SET))
+constraints = hold_torch()
 for step in STEPS:
     specs = [s for s in step if not s.startswith("--")]
     if not all(have(s) for s in specs):
@@ -388,8 +407,13 @@ import unsloth  # noqa: F401  (Unsloth patches transformers when imported first)
 import torch
 from unsloth import FastLanguageModel
 
+installed_torch = RUN_FACTS.get("versions", {}).get("torch")
+if installed_torch and str(torch.__version__) != installed_torch:
+    raise RuntimeError("torch " + str(torch.__version__) + " is loaded but " + installed_torch + " is installed. Restart the session and run from the top.")
 if not torch.cuda.is_available():
     raise RuntimeError("No GPU. On Kaggle: Settings, Accelerator, GPU T4 x2. On Colab: Runtime, Change runtime type, T4 GPU.")
+if torch.cuda.device_count() != 1:
+    raise RuntimeError(str(torch.cuda.device_count()) + " GPUs are visible, not 1. Restart the session and run from the top, so the settings cell sets CUDA_VISIBLE_DEVICES first.")
 cap = torch.cuda.get_device_capability(0)
 if f"sm_{cap[0]}{cap[1]}" not in torch.cuda.get_arch_list():
     raise RuntimeError(f"This torch build has no kernels for sm_{cap[0]}{cap[1]}. Set PIN_SET = 'keep-torch' and rerun from the top.")
@@ -630,23 +654,41 @@ if EXPORT_GGUF:
     # The license travels with the file: Meta's text from the base repo, else from meta-llama/llama-models on GitHub.
     from huggingface_hub import hf_hub_download
 
-    LICENSE_FILES = {"LICENSE.txt": ["LICENSE.txt", "LICENSE"], "USE_POLICY.md": ["USE_POLICY.md"]}
+    # A file is kept only when it reads as Meta's Llama 3.2 text, so a repo's own LICENSE (Apache, MIT) is never
+    # passed off as the Llama license.
+    def llama_text(path, must):
+        with open(path, encoding="utf8", errors="replace") as f:
+            head = f.read(8000).lower()
+        return "llama 3.2" in head and must in head
+
+    LICENSE_FILES = {
+        "LICENSE.txt": (["LICENSE.txt", "LICENSE"], "LICENSE", "community license"),
+        "USE_POLICY.md": (["USE_POLICY.md"], "USE_POLICY.md", "acceptable use policy"),
+    }
     GITHUB = "https://raw.githubusercontent.com/meta-llama/llama-models/main/models/llama3_2/"
-    for dest, names in LICENSE_FILES.items():
-        target = os.path.join(OUT_DIR, dest)
+    for dest, (names, github_name, must) in LICENSE_FILES.items():
+        got = None
         for name in names:
             try:
-                shutil.copyfile(hf_hub_download(MODEL_ID, name), target)
-                break
+                path = hf_hub_download(MODEL_ID, name)
             except Exception:
                 continue
-        else:
+            if llama_text(path, must):
+                got = (path, MODEL_ID)
+                break
+        if got is None:
             try:
-                urllib.request.urlretrieve(GITHUB + ("LICENSE" if dest == "LICENSE.txt" else "USE_POLICY.md"), target)
+                path = os.path.join(GGUF_DIR, "github-" + github_name)
+                urllib.request.urlretrieve(GITHUB + github_name, path)
+                if llama_text(path, must):
+                    got = (path, "meta-llama/llama-models on GitHub")
             except Exception as err:
-                print("Couldn't fetch", dest, "(" + type(err).__name__ + "). Add Meta's Llama 3.2", dest, "by hand before sharing the file.")
-                continue
-        print("license file:", dest)
+                print("GitHub fetch of", github_name, "failed:", type(err).__name__)
+        if got is None:
+            print("Couldn't fetch Meta's Llama 3.2", dest + ". Add it by hand before sharing the file.")
+            continue
+        shutil.copyfile(got[0], os.path.join(OUT_DIR, dest))
+        print("license file:", dest, "from", got[1])
 else:
     print("EXPORT_GGUF is off")
 """)
