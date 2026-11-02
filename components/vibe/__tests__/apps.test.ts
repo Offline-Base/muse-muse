@@ -107,9 +107,8 @@ describe("commands", () => {
       ].join("\n"),
     );
     const llama = modelfile({ ...Q4, name: "Llama-3.2-3B-made-up-Q4_K_M.gguf" }, "You are made up.", false)!;
-    assert.doesNotMatch(llama, /glimmer/i, "a Llama file gets no Glimmer renderer");
-    assert.match(llama, /^FROM \.\/Llama-3\.2-3B-made-up-Q4_K_M\.gguf\nSYSTEM """You are made up\."""\n/);
-    assert.match(llama, /PARAMETER stop <\|eot_id\|>/);
+    // No small Llama builds since the Nov 2 ruling (Llama isn't a Meta model), so no Llama template or stops either.
+    assert.doesNotMatch(llama, /eot_id/);
     assert.equal(modelfile(Q4, 'You are """ a trap.', false), null, "a system message that would end the SYSTEM block early");
     // An adapter trained before trainChannel gets the TEMPLATE that opens the final channel, and its stops, for the
     // build being set up, not the card's Q4_K_M.

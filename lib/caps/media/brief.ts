@@ -2,24 +2,25 @@ import { z } from "zod";
 
 /**
  * The media cap's brief block (docs/CAPABILITIES.md, section 14): media made in the product's page, in the browser, with
- * no model call of its own. Four parts, each behind its own flag (MEDIA_SPEECH, MEDIA_VIDEO, MEDIA_MUSIC,
- * MEDIA_SAM_TILING) on top of MEDIA_ENABLED:
- *   speech     speak(text): an open-weights speech model (SpeechT5, MIT) in the page, else the browser's own voice
+ * no model call of its own. Three parts, each behind its own flag (MEDIA_VIDEO, MEDIA_MUSIC, MEDIA_SAM_TILING) on top
+ * of MEDIA_ENABLED:
  *   video      imagesToVideo(frames): a real MP4 video from a sequence of pictures, made with WebCodecs
  *   music      toMidi(notes) and playNotes(notes), and notesFromAudio for a hummed tune
  *   samTiling  findAll(image, phrase): SAM 3.1 on overlapping tiles, so a photo can hold more than 16 matches, and
  *              videoChunks(file) for clips longer than SAM takes
- * The contract named only the four switches. `why` was added (as the other caps have one) so the build prompt can say
- * what the media is for.
+ * The contract named only the switches. `why` was added (as the other caps have one) so the build prompt can say what
+ * the media is for.
+ *
+ * The speech part is gone (Nov 2): it read aloud with SpeechT5, which isn't a Meta model, and the organizers ruled that
+ * every model a project calls must be Meta's. A brief's old `speech` key is dropped when it is read.
  */
 
-export const MEDIA_PARTS = ["speech", "video", "music", "samTiling"] as const;
+export const MEDIA_PARTS = ["video", "music", "samTiling"] as const;
 export type MediaPart = (typeof MEDIA_PARTS)[number];
 
 export const MediaBriefBlock = z.object({
   /** What the product makes with media, in one plain sentence. */
   why: z.string().min(1).max(200),
-  speech: z.boolean(),
   video: z.boolean(),
   music: z.boolean(),
   samTiling: z.boolean(),
@@ -29,7 +30,6 @@ export type MediaBrief = z.infer<typeof MediaBriefBlock>;
 
 /** What each part is called in the build prompt, the catalog and the product's page. */
 export const MEDIA_PART_LABEL: Record<MediaPart, string> = {
-  speech: "speech read aloud in the browser",
   video: "videos made from pictures",
   music: "music as MIDI",
   samTiling: "counting past 16 objects with SAM",
@@ -61,6 +61,7 @@ function bool(v: unknown): unknown {
 export function normalizeMediaBlock(raw: unknown, partsOn: readonly MediaPart[]): unknown {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
   const b = { ...(raw as Record<string, unknown>) };
+  delete b.speech;
   for (const p of MEDIA_PARTS) {
     b[p] = bool(b[p]);
     if (!partsOn.includes(p)) b[p] = false;
@@ -71,8 +72,6 @@ export function normalizeMediaBlock(raw: unknown, partsOn: readonly MediaPart[])
 }
 
 const RULE: Record<MediaPart, string> = {
-  speech:
-    "media.speech: true when the product reads text aloud (a story read to a child, directions spoken while cooking). The voice is an open model that runs in the page, in English only, and sounds plain; the browser's own voice is the fallback. Never for a voice conversation.",
   video:
     "media.video: true when the product turns pictures into a short video the user can play and save (a slideshow, a flipbook, a time-lapse from Muse Image frames). No sound track, at most 120 frames, made in the browser.",
   music:
@@ -89,7 +88,7 @@ export function mediaWriterRules(partsOn: readonly MediaPart[]): readonly string
   const on = MEDIA_PARTS.filter((p) => partsOn.includes(p));
   if (!on.length) return [];
   return [
-    `media: fill it only when the product makes speech, video, music or many-object counts in the page, with the helpers below. Otherwise null. Set each part true only when the product's main flow needs it, and every other part false.${on.length < MEDIA_PARTS.length ? ` Only ${on.map((p) => `media.${p}`).join(", ")} can be true here; leave the others false.` : ""}`,
+    `media: fill it only when the product makes video, music or many-object counts in the page, with the helpers below. Otherwise null. Set each part true only when the product's main flow needs it, and every other part false.${on.length < MEDIA_PARTS.length ? ` Only ${on.map((p) => `media.${p}`).join(", ")} can be true here; leave the others false.` : ""}`,
     "media.why: what the product makes with media, in one plain sentence, like \"Turns the four comic panels into a short video to share\".",
     ...on.map((p) => RULE[p]),
   ];

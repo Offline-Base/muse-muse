@@ -41,6 +41,68 @@ class CloudBackendRefused(RuntimeError):
     """Raised when private data would reach a cloud model endpoint."""
 
 
+class NonMetaModelRefused(ValueError):
+    """Raised by load_settings for a setting that would call a model that is not a Meta model."""
+
+
+# The organizers' ruling on the Cerebral Valley Discord, Nov 2, 2026: every model the project calls
+# at runtime must be a Meta model (Muse Glimmer, Muse Spark, SAM and the Muse API models), with no
+# non-Meta helper beside it, and Llama does not count as a Meta model however it is run.
+RULING = (
+    "The hackathon organizers ruled on Nov 2, 2026 that every model Muse Privacy calls must be a Meta "
+    "model, with no non-Meta helper beside it, and that Llama models do not count."
+)
+
+
+META_CLOUD_PREFIX = "meta/muse-"  # OpenRouter ids of Meta's Muse models, such as meta/muse-glimmer-30b
+
+
+def refuse_non_meta(values: Mapping[str, str]) -> None:
+    """Refuse every setting that would reach a model that is not a Meta model, with a plain reason.
+
+    The code behind these settings stays in the repo (the owner has not decided whether to delete
+    it), but nothing that starts from load_settings can reach it.
+    """
+    get = values.get
+    for key in ("PRIMARY_MODEL", "CHECKER_BACKEND"):
+        if (get(key) or "").strip().lower() == "lfm":
+            raise NonMetaModelRefused(
+                f"{key}=lfm runs Liquid's LFM3-VL-2B, which is not a Meta model. {RULING} "
+                f"Set {key}=glimmer or leave it unset, so Muse Glimmer does the work."
+            )
+    if (get("SEARCH_EMBEDDINGS") or "0").strip() == "1":
+        raise NonMetaModelRefused(
+            f"SEARCH_EMBEDDINGS=1 runs Google's EmbeddingGemma 2, which is not a Meta model. {RULING} "
+            "Set SEARCH_EMBEDDINGS=0 or leave it unset; search then uses keywords only."
+        )
+    if (get("PROMPT_GUARD") or "0").strip() == "1":
+        raise NonMetaModelRefused(
+            f"PROMPT_GUARD=1 runs Llama Prompt Guard 2. {RULING} "
+            "Set PROMPT_GUARD=0 or leave it unset; the floors, the final leak check and the approval page still hold."
+        )
+    # On OpenRouter GLIMMER_MODEL picks the model itself, so it must be one of Meta's Muse models
+    # (meta/muse-glimmer-30b by default); on llama_server it is only the alias of the local file.
+    backend = (get("GLIMMER_BACKEND") or "openrouter").strip().lower()
+    cloud_model = (get("GLIMMER_MODEL") or "").strip()
+    if backend == "openrouter" and cloud_model and not cloud_model.lower().startswith(META_CLOUD_PREFIX):
+        raise NonMetaModelRefused(
+            f"GLIMMER_MODEL={cloud_model} on OpenRouter is not one of Meta's Muse models. {RULING} "
+            f"Set GLIMMER_MODEL=meta/muse-glimmer-30b or leave it unset."
+        )
+    spark_model = (get("SPARK_MODEL") or "").strip()
+    if spark_model and not spark_model.lower().startswith("muse-"):
+        raise NonMetaModelRefused(
+            f"SPARK_MODEL={spark_model} is not one of Meta's Muse models. {RULING} "
+            "Set SPARK_MODEL=muse-spark-1.3 or leave it unset."
+        )
+    jetson = sorted(k for k, v in values.items() if k.startswith("JETSON_LFM_") and (v or "").strip())
+    if jetson:
+        raise NonMetaModelRefused(
+            f"{', '.join(jetson)} point Muse Privacy at Liquid's LFM3-1.7B on a Jetson, which is not a Meta "
+            f"model. {RULING} Remove the JETSON_LFM_ lines from .env."
+        )
+
+
 def read_dotenv(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     if not path.is_file():
@@ -148,8 +210,8 @@ class Settings:
     # the page and the /heavy routes are served over TLS and the session cookie is Secure.
     approval_tls_cert: Path | None = None
     approval_tls_key: Path | None = None
-    # The model for the checks and search: "glimmer" uses the answer model, "lfm" a small Liquid
-    # model on this device's own llama-server (always local, so it never needs the .synthetic rule).
+    # The model for the checks and search: "glimmer" uses the answer model. "lfm" (a small Liquid
+    # model on this device's own llama-server) is refused by load_settings since the Nov 2 ruling.
     checker_backend: Literal["glimmer", "lfm"] = "glimmer"
     # GLIMMER_REASONING=off: no reasoning line or reasoning_strength in Glimmer's requests and a stop
     # at <|eot|>, for a file whose reasoning is broken. start.sh then serves it with --reasoning-format
@@ -161,11 +223,12 @@ class Settings:
     # Who labels Muse's requests: the checker, or Glimmer with its labels checked the same way
     # (LABELS_BACKEND=glimmer, which needs PRIMARY_MODEL=glimmer and CHECKER_BACKEND=lfm).
     labels_backend: Literal["checker", "glimmer"] = "checker"
-    # "lfm" runs every model step but the router on the checker's LFM3-VL-2B first, with the
-    # Jetson's LFM (below) as the fallback when it is set, else Glimmer.
+    # "lfm" ran every model step but the router on the checker's LFM3-VL-2B first, with the
+    # Jetson's LFM (below) as the fallback. Refused by load_settings since the Nov 2 ruling.
     primary_model: Literal["glimmer", "lfm"] = "glimmer"
     # LFM3-1.7B on the user's Jetson through an OpenAI-compatible gateway on the internet: a remote
-    # endpoint, so it is treated like a cloud model and only sees invented data.
+    # endpoint, so it is treated like a cloud model and only sees invented data. JETSON_LFM_* is
+    # refused by load_settings since the Nov 2 ruling.
     jetson_lfm_url: str | None = None
     jetson_lfm_model: str = "hf.co/LiquidAI/LFM3-1.7B-GGUF:Q4_K_M"
     jetson_lfm_key: str | None = None
@@ -173,7 +236,8 @@ class Settings:
     checker_model: str = "lfm3-vl-2b"
     checker_api_key: str | None = None
     rag_candidates: int = 20
-    # Search adds EmbeddingGemma 2 on this device's llama-server to BM25 (SEARCH_EMBEDDINGS=1).
+    # Search adds EmbeddingGemma 2 on this device's llama-server to BM25 (SEARCH_EMBEDDINGS=1, refused
+    # by load_settings since the Nov 2 ruling: not a Meta model).
     search_embeddings: bool = False
     embed_url: str = f"http://127.0.0.1:{EMBED_PORT}/v1"
     embed_model: str = "embeddinggemma-2"
@@ -183,13 +247,14 @@ class Settings:
     # barcodes before the local model reads an image, and an image it cannot check is not read.
     sam_enabled: bool = False
     sam_url: str = f"http://127.0.0.1:{SAM_PORT}"
-    # PROMPT_GUARD=1: Meta's Llama Prompt Guard 2 (22M, onnxruntime on the CPU) reads each source
-    # document and Muse's request for text that tries to give the model orders; a hit asks the user.
+    # PROMPT_GUARD=1: Llama Prompt Guard 2 (22M, onnxruntime on the CPU) reads each source document
+    # and Muse's request for text that tries to give the model orders; a hit asks the user. Refused
+    # by load_settings since the Nov 2 ruling (Llama does not count as a Meta model).
     prompt_guard: bool = False
     prompt_guard_dir: Path = REPO_ROOT / "models" / "prompt-guard-2-22m"
     prompt_guard_threshold: float = 0.5
     # DEVICE_ONLY=1: every model is on this device. No OpenRouter, no Jetson gateway, no Spark key.
-    # With PRIMARY_MODEL=lfm (its default) LFM3-VL-2B answers every step, the router included.
+    # Since the Nov 2 ruling that means Muse Glimmer on this device's llama-server.
     device_only: bool = False
     # daily: every tag day gives each person a new tag, and an old tag restores until
     # tag_grace_hours after its day ends, however often it is sent. off: one tag per value, forever.
@@ -240,9 +305,29 @@ class Settings:
 
 
 def load_settings(env: Mapping[str, str] | None = None) -> Settings:
-    """Build settings from .env in the repo root, overridden by `env` (default: os.environ)."""
+    """Build settings from .env in the repo root, overridden by `env` (default: os.environ).
+
+    Refuses any setting that would call a model that is not a Meta model (refuse_non_meta)."""
+    merged = _merged(env)
+    refuse_non_meta(merged)
+    return _build(merged)
+
+
+def _load_settings_for_tests(env: Mapping[str, str] | None = None) -> Settings:
+    """load_settings as it was before the Nov 2 ruling: no Meta-models-only refusal, and
+    DEVICE_ONLY=1 defaults to PRIMARY_MODEL=lfm. Only for unit tests of the code the refused
+    settings used to reach, which stays in the repo until the owner decides whether to delete it.
+    Never called outside tests/ (tests/test_config.py checks)."""
+    return _build(_merged(env), lfm_device_default=True)
+
+
+def _merged(env: Mapping[str, str] | None) -> dict[str, str]:
     merged: dict[str, str] = read_dotenv(REPO_ROOT / ".env")
     merged.update(os.environ if env is None else env)
+    return merged
+
+
+def _build(merged: Mapping[str, str], *, lfm_device_default: bool = False) -> Settings:
     get = merged.get
 
     device = get("BASE_DEVICE", "laptop")
@@ -279,7 +364,8 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     if trust not in ("tighten", "decide"):
         raise ValueError(f"ROUTER_TRUST must be tighten or decide, not {trust!r}")
     loosen = _router_loosen(get("ROUTER_LOOSEN", ROUTER_LOOSEN_DEFAULT))
-    primary = get("PRIMARY_MODEL", "lfm" if device_only else "glimmer")
+    # Muse Glimmer by default, device-only included (Nov 2 ruling: LFM was the device-only default).
+    primary = get("PRIMARY_MODEL", "lfm" if device_only and lfm_device_default else "glimmer")
     if dreaming == "local_lora" and primary == "lfm":
         raise ValueError("DREAMING_BACKEND=local_lora trains Glimmer: set PRIMARY_MODEL=glimmer and GLIMMER_GGUF")
     if primary not in ("glimmer", "lfm"):
@@ -297,7 +383,12 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     if glimmer_reasoning not in ("on", "off"):
         raise ValueError(f"GLIMMER_REASONING must be on or off, not {glimmer_reasoning!r}")
     if labels == "glimmer" and (primary != "glimmer" or checker != "lfm"):
-        raise ValueError("LABELS_BACKEND=glimmer needs PRIMARY_MODEL=glimmer and CHECKER_BACKEND=lfm")
+        # With load_settings this always fails: CHECKER_BACKEND=lfm is refused (Nov 2 ruling), and with
+        # CHECKER_BACKEND=glimmer Glimmer already labels Muse's requests.
+        raise ValueError(
+            "LABELS_BACKEND=glimmer needs PRIMARY_MODEL=glimmer and CHECKER_BACKEND=lfm, and LFM is not a Meta "
+            "model. With CHECKER_BACKEND=glimmer, Muse Glimmer already labels Muse's requests: leave LABELS_BACKEND unset."
+        )
     embed_url = get("EMBED_URL", f"http://127.0.0.1:{EMBED_PORT}/v1").rstrip("/")
     if not _is_loopback_url(embed_url):
         raise ValueError("EMBED_URL must be this device (127.0.0.1 or localhost): it reads raw documents")
@@ -338,7 +429,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
             answer_model = router_model = checker_model
             api_key = checker_key
         elif backend != "llama_server" or not (_is_loopback_url(answer_url) and _is_loopback_url(router_url)):
-            raise ValueError("DEVICE_ONLY=1 needs PRIMARY_MODEL=lfm, or Glimmer on llama-server on this device")
+            raise ValueError(
+                "DEVICE_ONLY=1 needs Muse Glimmer on llama-server on this device (GLIMMER_BACKEND=llama_server, "
+                "ANSWER_URL and ROUTER_URL on 127.0.0.1). For the cloud demo on invented data set DEVICE_ONLY=0."
+            )
     rotation = get("TAG_ROTATION", "daily")
     if rotation not in ("daily", "off"):
         raise ValueError(f"TAG_ROTATION must be daily or off, not {rotation!r}")

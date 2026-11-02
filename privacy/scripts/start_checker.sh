@@ -19,6 +19,10 @@ PY="$ROOT/.venv/bin/python"
 
 die() { printf 'start_checker.sh: %s\n' "$*" >&2; exit 1; }
 
+# Off since the organizers' ruling on Nov 2, 2026: Muse Privacy may call only Meta models, with no
+# non-Meta helper. The rest of this script stays until the owner decides whether to delete it.
+die "Liquid's LFM3-VL-2B is not a Meta model, and the hackathon organizers ruled on Nov 2, 2026 that Muse Privacy may call only Meta models. The checks run on Muse Glimmer now (CHECKER_BACKEND=glimmer), so there is nothing to start."
+
 [ -x "$PY" ] || die "no virtualenv at $ROOT/.venv. Run: uv sync"
 SETTINGS="$(cd "$ROOT" && "$PY" - <<'PY'
 import os

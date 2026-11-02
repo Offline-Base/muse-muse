@@ -2,14 +2,19 @@
  * Which device gets which tuned model file (QUANT_TARGETS, off by default; docs/TRAINING.md "Device targets"). Pure and
  * client-safe, so the local files card, Where it runs, the routes and later units all ask this one place.
  *
- * Owner's decision, Nov 1 2026: a Jetson Orin Nano gets one-bit Muse Glimmer (IQ1_S of an adapter on r30b), and every
- * other device gets a small Llama (Q4_K_M of an adapter on Llama 3.2 3B). Meta models only. One adapter makes one base's
- * files, so a device's file exists only when a tune on that device's base made it: fileForDevice says null otherwise.
+ * Every device gets one-bit Muse Glimmer (IQ1_S of an adapter on r30b). The owner's Nov 1 decision gave other devices a
+ * small Llama, but the organizers ruled on Nov 2 that Llama doesn't count as a Meta model in this hackathon, however it is
+ * run, so no small Llama is offered here (docs/MESSAGING.md, the rules section). A device too small for the one-bit file has
+ * no on-device model and stays on the cloud. fileForDevice says null when a tune made no file for a device.
  */
 import { BASE_MODEL_PARAM } from "@/lib/train/base";
 import { LOW_BIT_LEVEL, type BuildLevel, type LocalFile, type LocalFiles, type LowBitFile, type QuantLevel } from "@/lib/train/local-files";
 
-/** A small base an adapter may merge into instead of r30b. QUANT_BASES in QUANT_PY holds its pins, and a test keeps them equal. */
+/**
+ * A small base an adapter may merge into instead of r30b. QUANT_BASES in QUANT_PY holds its pins, and a test keeps them
+ * equal. None is offered: the only one was Llama 3.2 3B, which the Nov 2 ruling takes out. The shape stays so the code
+ * that reads it refuses cleanly.
+ */
 export interface QuantBase {
   /** The quantBase param. */
   name: string;
@@ -24,17 +29,7 @@ export interface QuantBase {
   levels: readonly QuantLevel[];
 }
 
-export const QUANT_BASES: Readonly<Record<string, QuantBase>> = {
-  "llama-3.2-3b": {
-    name: "llama-3.2-3b",
-    label: "Llama 3.2 3B",
-    family: "llama3",
-    model: "unsloth/Llama-3.2-3B-Instruct-bnb-4bit",
-    mergeBase: "unsloth/Llama-3.2-3B-Instruct",
-    fileStem: "Llama-3.2-3B-",
-    levels: ["Q4_K_M"],
-  },
-};
+export const QUANT_BASES: Readonly<Record<string, QuantBase>> = {};
 
 /** The small base a glimmer-lora job's adapter can merge into, from the base it trained on, or null. */
 export function quantBaseForAdapter(params: Readonly<Record<string, unknown>> | null | undefined): QuantBase | null {
@@ -77,11 +72,14 @@ export const DEVICE_TARGET_KINDS = [
   { kind: "other", label: "Every other device" },
 ] as const;
 
+/** What a device that isn't a Jetson Orin Nano is told: the same file, and no smaller model in its place. */
+const OTHER_DEVICE_FIT = `The same one-bit Muse Glimmer file as the board. On an x86 CPU it used up to ${LOW_BIT_FACTS.runGbMeasured} GB of memory, so a device without that much free can't hold it and stays on the cloud. No smaller model is offered: only Meta's models run here. Not run on any device yet.`;
+
 export interface DeviceModelTarget {
   /** The kind that was asked about. */
   device: string;
-  model: "one-bit-glimmer" | "small-llama";
-  /** "Muse Glimmer, one bit" or "Llama 3.2 3B". */
+  model: "one-bit-glimmer";
+  /** "Muse Glimmer, one bit". */
   label: string;
   /** The adapter must have trained on this repo family: null is r30b, otherwise the QUANT_BASES name. */
   quantBase: string | null;
@@ -94,29 +92,19 @@ export interface DeviceModelTarget {
   provenOnDevice: false;
 }
 
-/** The model file a device kind gets: one-bit Glimmer for jetson_orin_nano, the small Llama for everything else. */
+/** The model file a device kind gets: one-bit Glimmer for every kind. Meta models only, so there is no small fallback. */
 export function deviceModelTarget(kind: string): DeviceModelTarget {
-  if (kind === "jetson_orin_nano") {
-    return {
-      device: kind,
-      model: "one-bit-glimmer",
-      label: "Muse Glimmer, one bit",
-      quantBase: null,
-      level: LOW_BIT_LEVEL,
-      fileStem: "muse-glimmer-30b-",
-      fit: `Not run on a real board yet. On an x86 CPU under a memory limit, the ${LOW_BIT_FACTS.fileGb} GB file from a short test tune on made-up data used up to ${LOW_BIT_FACTS.runGbMeasured} GB and made about ${LOW_BIT_FACTS.tokensPerSecondX86} tokens a second. The board's ${LOW_BIT_FACTS.boardGb} GB is shared with the operating system, so it may not fit. That file finished ${LOW_BIT_FACTS.tunedFinalAnswers} answers on the topic it was tuned for, using its tuned chat template, with some muddled steps, and stayed poor on general questions.`,
-      provenOnDevice: false,
-    };
-  }
-  const base = QUANT_BASES["llama-3.2-3b"]!;
   return {
     device: kind,
-    model: "small-llama",
-    label: base.label,
-    quantBase: base.name,
-    level: base.levels[0]!,
-    fileStem: base.fileStem,
-    fit: "A 2 GB file that used about 2.8 GB and made about 23 tokens a second on an x86 CPU in our one test run. Not run on a real device yet.",
+    model: "one-bit-glimmer",
+    label: "Muse Glimmer, one bit",
+    quantBase: null,
+    level: LOW_BIT_LEVEL,
+    fileStem: "muse-glimmer-30b-",
+    fit:
+      kind === "jetson_orin_nano"
+        ? `Not run on a real board yet. On an x86 CPU under a memory limit, the ${LOW_BIT_FACTS.fileGb} GB file from a short test tune on made-up data used up to ${LOW_BIT_FACTS.runGbMeasured} GB and made about ${LOW_BIT_FACTS.tokensPerSecondX86} tokens a second. The board's ${LOW_BIT_FACTS.boardGb} GB is shared with the operating system, so it may not fit. That file finished ${LOW_BIT_FACTS.tunedFinalAnswers} answers on the topic it was tuned for, using its tuned chat template, with some muddled steps, and stayed poor on general questions.`
+        : OTHER_DEVICE_FIT,
     provenOnDevice: false,
   };
 }

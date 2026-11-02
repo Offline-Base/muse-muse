@@ -13,6 +13,9 @@ import { LESSONS, lessonCounts, lessonHref, lessonState, longDate, showsProduct 
 import { catalogItems, inDefaultBatch, itemId } from "@/lib/pipeline/catalog";
 import { joinRebuilds, rebuildRef } from "@/lib/queries";
 
+/** The Muse API models a lesson may name (the Nov 2 ruling: only Meta models run). */
+const META_API_MODELS = new Set(["muse-wonder-1.0", "muse-spark-1.3-contributor", "muse-image-1.0", "muse-voice-transcribe-1.0", "sam-3.1"]);
+
 const canMock = typeof (mock as { module?: unknown }).module === "function";
 
 const t0 = Date.parse("2026-10-28T12:00:00Z");
@@ -77,6 +80,35 @@ describe("the lessons catalog", () => {
       assert.ok(!l.rebuild.models.includes("muse-spark-1.3"), l.id);
       assert.ok(!l.learn?.models.includes("muse-spark-1.3"), l.id);
     }
+  });
+
+  it("plans only Meta models: every tune is Muse Glimmer, and no plan runs Llama, a guard model or a non-Meta helper", () => {
+    // The organizers' Nov 2 ruling: Llama (Llama Guard and Prompt Guard too), LFM, Bolt, SpeechT5 and the like don't
+    // count as Meta models. Meta's own titles and what its videos teach may name Llama; what Muse Muse plans to run may not.
+    const nonMeta = /Llama 3\.2|\b[13]B\b|Prompt Guard 2 score|LFM|Bolt|Nemotron|SpeechT5|open speech model|Kaggle/i;
+    for (const l of LESSONS) {
+      const plan = l.learn!;
+      if (plan.tune) assert.match(plan.tune, /Muse Glimmer 30B/, l.id);
+      for (const text of [plan.title, plan.plan, plan.tune ?? "", plan.estimate, ...(plan.unverified ?? []), l.rebuild.plan, l.rebuild.note]) {
+        assert.doesNotMatch(text, nonMeta, `${l.id}: ${text}`);
+      }
+      // Build muses never ask for a Llama.
+      assert.doesNotMatch(l.rebuild.note, /Llama/, l.id);
+      // Every model a plan or a build names is a Muse API model.
+      for (const m of [...plan.models, ...l.rebuild.models]) assert.ok(META_API_MODELS.has(m), `${l.id}: ${m}`);
+      // A build muse that asks for a model on the person's own machine names Muse Glimmer, so a builder never picks
+      // a non-Meta local model (an Ollama default, a small open model) for it.
+      if (/ollama|localhost|no internet|internet is cut|offline|own (Mac|Linux|Windows)|small model|Windows laptop/i.test(l.rebuild.note)) {
+        assert.match(l.rebuild.note, /Muse Glimmer/, `${l.id}: ${l.rebuild.note}`);
+      }
+    }
+    const protection = LESSONS.find((l) => l.id === "protection-tools")!;
+    assert.equal(protection.learn?.tune, null);
+    assert.doesNotMatch(protection.rebuild.note, /Prompt Guard/);
+    assert.equal(LESSONS.find((l) => l.id === "llama-protections")?.learn?.tune, null, "the optional guard tune is dropped");
+    const run = (id: string) => LESSONS.find((l) => l.id === id)?.learn?.title;
+    assert.equal(run("running-llama-3-on-linux"), "Run a tuned Glimmer file on Linux");
+    assert.equal(run("run-llama-on-mac"), "Run a tuned Glimmer file on your Mac");
   });
 });
 

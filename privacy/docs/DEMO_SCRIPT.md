@@ -4,21 +4,20 @@ About two and a half minutes, and never over three: other participants report a 
 
 ## Say which model ran
 
-As of Oct 30 the device runs Liquid's LFM3-VL-2B for every step (`DEVICE_ONLY=1`), and the user's policy makes the sharing decision. Older sections of this script mention Glimmer: use the first row unless Glimmer is running on the device. Pick one and say it on screen:
+On Nov 2 the hackathon organizers ruled that every model the project calls must be a Meta model, with no non-Meta helper. Liquid's LFM3-VL-2B, the device setup from Oct 30, is out: do not film it as the working model, and do not use the Oct 31 rehearsal, which ran on it. Record with Muse Glimmer 30B on OpenRouter, the default in `.env.example` (cloud mode, invented students only), and say on screen which model ran. Do not say "device-only" or "no model is reached off this device" in cloud mode: tagged invented text goes to OpenRouter.
 
 | If you record with | Caption for scenes 0:45 to 1:25 |
 |---|---|
-| `DEVICE_ONLY=1` (today's setup) | "Liquid's LFM3-VL-2B on this laptop. No model is reached off this device." |
-| `GLIMMER_BACKEND=llama_server` on the laptop (Q4_K_M) | "Muse Glimmer Q4_K_M grading on this laptop." |
-| A Jetson with the laptop worker | "Jetson Orin Nano, 1-bit Glimmer, grading handed to the laptop's 4-bit Glimmer." |
-| `GLIMMER_BACKEND=openrouter` (today's only tested mode) | "Development mode: Glimmer on OpenRouter, invented students only. On a real class it runs on the device." |
+| `GLIMMER_BACKEND=openrouter` (the demo's mode) | "Muse Glimmer 30B on OpenRouter, invented students only. Glimmer on the device is the target." |
+| `GLIMMER_BACKEND=llama_server` on a laptop (Q4_K_M), only if it ran and was measured before recording | "Muse Glimmer Q4_K_M grading on this laptop." |
+| A Jetson with the laptop worker, only if it ran and was measured before recording | "Jetson Orin Nano, Muse Glimmer one-bit (IQ1_S), grading handed to the laptop's Glimmer." |
 
 ## The privacy scene (add it to the video)
 
-1. On Controls, turn on FERPA, and point out that the Always approve and opt-out controls are now locked.
+1. The privacy toggles need every model on the device (`DEVICE_ONLY=1`), so they are off in cloud mode. Film this step only if you record with Glimmer on the device: on Controls, turn on FERPA, and point out that the Always approve and opt-out controls are now locked.
 2. In Muse, ask for something with a place, a date and an organization. Show the tags that come back.
 3. Ask for something about three students. Show it kept on the device, with the plain reason.
-4. Open History, then Receipt: what was removed, the checks, "On this device only".
+4. Open History, then Receipt: what was removed and the checks. In cloud mode the receipt says "Includes a model off this device"; leave it on screen.
 5. Say the limits out loud: Muse sees whatever you type into it, which is what Prepare a question is for, and a toggle does not make anyone compliant.
 
 ## Before recording
@@ -65,12 +64,12 @@ For scene 1:45, set up the two scheduled jobs from [MUSE_SETUP.md](MUSE_SETUP.md
 | 0:00 | The problem | Finder on `demo/essays`: 24 essays. Text: "24 essays, a student's name in every one. Same for clinics and city casework." | "Muse could read these essays, but only by copying them, names and all, into its cloud computer." |
 | 0:15 | The ask | The Muse app, a new chat | Type: "Grade each essay in my essays folder against rubric.md and draft feedback for each student." |
 | 0:30 | Muse plans | Muse's plan and its list_documents call, showing `[Student A]`, `[Student B]`... | "Muse plans the job with tags. In this run every name it gets is a tag." |
-| 0:45 | The device works | The light (or plush) green; the Device tab showing working; terminal 1 quiet | With llama_server: "Every step that reads an essay runs on this laptop, with Muse Glimmer." With OpenRouter: "Every step that reads an essay runs with Muse Glimmer, here on OpenRouter with invented students; on a real class it runs on the device." Caption from the table above. |
+| 0:45 | The device works | The light (or plush) green; the Device tab showing working; terminal 1 quiet | With llama_server: "Every step that reads an essay runs on this laptop, with Muse Glimmer." With OpenRouter: "Every step that reads an essay runs with Muse Glimmer, here on OpenRouter with invented students. Glimmer on the device is the target." Caption from the table above. |
 | 1:05 | Her OK | The light pulses amber; the Approvals tab with the card: Muse's request, the exact tagged per-student table and the router's reason | Ask Muse "Is the grading done?" It says it is waiting for her OK. Press **Share it** (with remember ticked). The light flashes blue. |
 | 1:25 | The result | Muse's answer with class results by tag; then Finder on `~/.base/output/<job id>/` with 24 `<Name> feedback.md` files; open one | "Muse got tags. The feedback files with real names were written only on her laptop." |
 | 1:45 | Dreaming | The 8 AM message from Muse (or the Dreaming tab after **Dream now**), then `eval/reports/final/five_nights.png` with the caption "Simulated teacher, invented items." | Read the one-sentence morning message. Then the chart: approval requests per day and holdout agreement per night. Say only what the chart and final.md show (see the note below). |
 | 2:10 | Why it matters | Text: "12% of consumers fully trust organizations with their identity data (Ping Identity, 2026). 77% worry about AI agents acting for them (Thales, 2026)." Then: "Schools. Healthcare. City agencies." | "These are the places where records have to stay with whoever holds them. Muse Privacy lets Muse help without taking them." If Ethan has a teacher's quote and a minutes-saved estimate (HANDOFF row 18), use them here instead of the survey figures. |
-| 2:25 | Close | The leak line from final.md, as it stands when you record (see below). "Built on Muse and Muse Glimmer", then the Glimmer that actually graded in this video, from the caption table above. Name the Jetson's i1-IQ1_S only if it ran before recording. | "Personal superintelligence that can work on your private life." |
+| 2:25 | Close | The leak line from final.md, as it stands when you record (see below). "Built on Muse and Muse Glimmer", then the Glimmer that actually graded in this video, from the caption table above. Name the Jetson's one-bit (IQ1_S) Glimmer only if it ran before recording. | "Personal superintelligence that can work on your private life." |
 
 The two survey figures in scene 2:10 are not measured here and are not in eval/reports. They come from Ping Identity's 2026 consumer survey (12% of consumers fully trust organizations to manage their identity data) and Thales's 2026 Digital Trust Index (77% uneasy about AI agents acting on their behalf; [cpl.thalesgroup.com/digital-trust-index](https://cpl.thalesgroup.com/digital-trust-index)). They were checked only against press coverage on Oct 27. Before recording, open each published report, confirm the number and its wording, and put the Ping Identity link here.
 

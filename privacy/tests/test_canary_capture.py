@@ -27,9 +27,20 @@ import pytest
 import respx
 
 from base import config
-from base.config import load_settings
+from base.config import (
+    _load_settings_for_tests as load_settings,  # pre-ruling loader: LFM code load_settings now refuses
+)
 from base.egress import Egress
 from scripts import canary_capture as cc
+
+
+@pytest.fixture(autouse=True)
+def _pre_ruling_settings(monkeypatch):
+    """The canary capture runs on the device-only LFM setup. The Nov 2 ruling made load_settings refuse LFM settings
+    (tests/test_config.py); these tests keep that code tested with the pre-ruling loader until the
+    owner decides whether to delete it."""
+    monkeypatch.setattr(config, "load_settings", config._load_settings_for_tests)
+
 
 CHECKER = "http://127.0.0.1:8083/v1"
 

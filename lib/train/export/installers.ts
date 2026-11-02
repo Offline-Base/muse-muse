@@ -66,8 +66,10 @@ export function exportPlan(kind: ExportKind, files: LocalFiles | null, notice: E
   const none = (problem: string) => ({ ok: false as const, problem });
   if (!files) return none("This version has no published files yet.");
   if (!files.public) return none("This version's files aren't public.");
+  // Only Meta's models: files merged into a small base were Llama's (the Nov 2 ruling), so none gets a script.
+  if (files.quantBase) return none("This version's files were made from Llama, and only Muse Glimmer files are offered.");
   const file = fileForDevice(kind, files);
-  if (!file) return none(`This version didn't make the ${target.label} file. It takes a tune on that base.`);
+  if (!file) return none(`This version didn't make the ${target.label} file.`);
   if (!files.repo || !REPO_RE.test(files.repo)) return none("This version's Hugging Face repo can't be used here.");
   if (!files.commit || !COMMIT_RE.test(files.commit)) return none("This version's files have no pinned commit.");
   if (!SHA_RE.test(file.sha256) || !FILE_RE.test(file.name) || !(file.bytes > 0)) return none("This file's details can't be checked.");

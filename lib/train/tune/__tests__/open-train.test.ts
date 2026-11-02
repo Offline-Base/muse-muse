@@ -325,7 +325,7 @@ describe("anyone can fine-tune", { skip: canMock ? false : "needs --experimental
       const v = visitor();
       assert.equal((await plan(v.req("/api/train/plan", { note: NOTE, fromBuildId: "bbbbbbbb-0000-4000-8000-000000000001" }))).status, 403);
       const p = await planned(v);
-      assert.equal((await runs(v.req("/api/train/runs", { plan: p, startCode: CODE, settings: { base: { repo: "unsloth/Llama-3.2-3B-Instruct-bnb-4bit" } } }))).status, 403);
+      assert.equal((await runs(v.req("/api/train/runs", { plan: p, startCode: CODE, settings: { base: { repo: "unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit" } } }))).status, 403);
       delete process.env.TUNE_FROM_BUILDS;
       delete process.env.TUNE_ANY_BASE;
     });
@@ -626,9 +626,9 @@ describe("anyone can fine-tune", { skip: canMock ? false : "needs --experimental
 
     // Straight into startTuneRun as an admin's start would reach it: the runs route keeps another base to admins (above).
     describe("keeps the picked base on a folder run", () => {
-      const LLAMA = { repo: "unsloth/Llama-3.2-3B-Instruct-bnb-4bit", revision: "bb1d317a108579fb40e646af8924a5e7ec5604b1" };
+      const GLIMMER = { repo: "unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit", revision: "ecedda395d4d099b477d135a9a573eedaa5a7aad" };
       const adminId = async () => (await testDb.select().from(realSchema.users).where(eq(realSchema.users.email, ADMIN)))[0]!.id;
-      async function folderStart(files: Array<{ path: string; text: string }>, mode: "rows" | "write", base: typeof LLAMA | null) {
+      async function folderStart(files: Array<{ path: string; text: string }>, mode: "rows" | "write", base: typeof GLIMMER | null) {
         const v = visitor();
         const up = await folderRoute(v.req("/api/train/folder", upload(files)));
         assert.equal(up.status, 200, await up.clone().text());
@@ -643,14 +643,14 @@ describe("anyone can fine-tune", { skip: canMock ? false : "needs --experimental
         return (await readRunMarks(runId)).base;
       }
 
-      it("rows: a Llama base picked is saved on the run, and no base saves nothing", async () => {
-        assert.deepEqual(await folderStart([{ path: "r.csv", text: rowsCsv(60) }], "rows", LLAMA), LLAMA);
+      it("rows: a Glimmer base picked is saved on the run, and no base saves nothing", async () => {
+        assert.deepEqual(await folderStart([{ path: "r.csv", text: rowsCsv(60) }], "rows", GLIMMER), GLIMMER);
         await testDb.delete(realSchema.rateLimits);
         assert.equal(await folderStart([{ path: "r.csv", text: rowsCsv(60) }], "rows", null), undefined);
       });
 
-      it("write: a Llama base picked is saved on the run, and no base saves nothing", async () => {
-        assert.deepEqual(await folderStart([{ path: "guide.md", text: "Ferns like shade." }], "write", LLAMA), LLAMA);
+      it("write: a Glimmer base picked is saved on the run, and no base saves nothing", async () => {
+        assert.deepEqual(await folderStart([{ path: "guide.md", text: "Ferns like shade." }], "write", GLIMMER), GLIMMER);
         await testDb.delete(realSchema.rateLimits);
         assert.equal(await folderStart([{ path: "guide.md", text: "Ferns like shade." }], "write", null), undefined);
       });

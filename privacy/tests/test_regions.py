@@ -25,7 +25,9 @@ import respx
 from fastapi.testclient import TestClient
 
 from base import compliance, regions, retention
-from base.config import load_settings
+from base.config import (
+    _load_settings_for_tests as load_settings,  # pre-ruling loader: LFM code load_settings now refuses
+)
 from base.controls import Controls, ControlStore
 from base.egress import Egress
 from base.regions import (

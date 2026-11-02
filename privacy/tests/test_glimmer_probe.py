@@ -117,7 +117,7 @@ def test_final_channel_keeps_only_the_answer():
 
 def test_reasoning_off_sends_no_reasoning_at_all(tmp_path):
     settings = gp.load_settings({"BASE_HOME": str(tmp_path), "DEVICE_ONLY": "1", "PRIMARY_MODEL": "glimmer", "GLIMMER_BACKEND": "llama_server",
-                                 "CHECKER_BACKEND": "lfm", "GLIMMER_REASONING": "off", "LLAMA_API_KEY": "k"})  # fmt: skip
+                                 "CHECKER_BACKEND": "glimmer", "GLIMMER_REASONING": "off", "LLAMA_API_KEY": "k"})  # fmt: skip
     llm = gp.LocalLLM(settings, "router")
     body = llm.build_body([{"role": "system", "content": "Reasoning strength: low\n\nDecide."}, {"role": "user", "content": "x"}], reasoning="high")
     assert "chat_template_kwargs" not in body

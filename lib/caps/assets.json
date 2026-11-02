@@ -1,56 +1,5 @@
 {
   "version": 1,
-  "about": "Vetted large files the gateway serves at GET {GATEWAY_URL}/assets/<sha256> (docs/CAPABILITIES.md, section 14). Each one is mirrored to Blob at assets/<sha256> by scripts/caps/mirror-assets.ts, which also fills in mirror. Licenses are checked before a file is listed.",
-  "assets": [
-    {
-      "name": "onnxruntime-web/1.30.0/ort.wasm.bundle.min.mjs",
-      "cap": "media",
-      "bytes": 73054,
-      "sha256": "11e64bd8ffe11bd1a2a2f0d6275fdfbbba7262f0b76b99b53d228a8a22ef3d90",
-      "contentType": "text/javascript",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.30.0.tgz#package/dist/ort.wasm.bundle.min.mjs",
-      "mirror": null
-    },
-    {
-      "name": "onnxruntime-web/1.30.0/ort-wasm-simd-threaded.wasm",
-      "cap": "media",
-      "bytes": 14239897,
-      "sha256": "3398c10d07d229bd91b364548e130e0e51a8e5704b88c7c083ebbeb78842dee2",
-      "contentType": "application/wasm",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.30.0.tgz#package/dist/ort-wasm-simd-threaded.wasm",
-      "mirror": null
-    },
-    {
-      "name": "speecht5_tts/encoder_model_quantized.onnx",
-      "cap": "media",
-      "bytes": 88402301,
-      "sha256": "407375255d220d8ddf81e9a06d4100f80f870f8446e77d4f20951d2a4c08a156",
-      "contentType": "application/octet-stream",
-      "license": "MIT",
-      "source": "https://huggingface.co/Xenova/speecht5_tts/resolve/1723781b8ce2d02f0400c8337be04ae8ee3d6d56/onnx/encoder_model_quantized.onnx",
-      "mirror": null
-    },
-    {
-      "name": "speecht5_tts/decoder_model_merged_quantized.onnx",
-      "cap": "media",
-      "bytes": 71087100,
-      "sha256": "6afe602f82ecdb34a2db003f45ccc1419c77aaf0032c263b4f6a0f8bf5835798",
-      "contentType": "application/octet-stream",
-      "license": "MIT",
-      "source": "https://huggingface.co/Xenova/speecht5_tts/resolve/1723781b8ce2d02f0400c8337be04ae8ee3d6d56/onnx/decoder_model_merged_quantized.onnx",
-      "mirror": null
-    },
-    {
-      "name": "speecht5_hifigan/model_quantized.onnx",
-      "cap": "media",
-      "bytes": 18251672,
-      "sha256": "d092ea63bbc7839f7317657b5f531ebb68377ee05ec866ec096dba25911f9feb",
-      "contentType": "application/octet-stream",
-      "license": "MIT",
-      "source": "https://huggingface.co/Xenova/speecht5_hifigan/resolve/cf980c3610d7b7f20919960031066ef7905737bd/onnx/model_quantized.onnx",
-      "mirror": null
-    }
-  ]
+  "about": "Vetted large files the gateway serves at GET {GATEWAY_URL}/assets/<sha256> (docs/CAPABILITIES.md, section 14). Each one is mirrored to Blob at assets/<sha256> by scripts/caps/mirror-assets.ts, which also fills in mirror. Licenses are checked before a file is listed. Empty since Nov 2: the only files were SpeechT5 text to speech and the ONNX runtime that ran it, and the organizers ruled that every model a project calls must be a Meta model. List no model file here that isn't Meta's.",
+  "assets": []
 }
