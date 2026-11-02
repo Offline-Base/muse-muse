@@ -2996,6 +2996,48 @@ the decision path, `/decide` from its own product and another, and a shared Try 
 then. The Nov 3 filming window is one `POST` from `/admin/glimmer`, at most `TRAIN_JOB_MAX_USD` and about $1.50 measured per 30
 minutes. `TRAIN_MAX_ACTIVE` 1 means a window and a training run block each other.
 
+### 17b. The Jetson fleet for products (Nov 2, flags off)
+
+A product can answer from the fleet's boards through the gateway. Off by default: with `FLEET_PRODUCTS` off the route answers 404
+`unknown_endpoint`, and the catalog, the writer's schema, tokens, prompts and judge are today's. It clones the hosted Glimmer path, with no demo
+windows and no fallback model.
+
+**The route.** `POST {GATEWAY_URL}/fleet/v1/chat/completions` (`lib/caps/fleet/handler.ts`), brief model `jetson-fleet`, token marker `fleet`. Checks in
+order: flag, token, product, marker, 10 a minute per IP, arguments, then a build's stand-in, or for a live token the owner's tier (`builderTier`: only an
+admin's products unless `FLEET_ALL_PRODUCTS`, never a guest's), the settings, one in flight per product and two across the platform, then 100 answers per
+product per UTC day. Whole replies, text only: image or audio parts, or any field beside `role` and `content`, are a 400. At most about 8000 characters of
+messages, and `max_tokens` is capped at 1024. Answers: 503 `fleet_closed`, 409 `busy`, 429 `rate_limited`, 504 `timeout`, 502 `fleet_unavailable`, 400 for
+the caller's mistakes.
+
+**Settings.** `FLEET_PRODUCTS_URL` (https, including `/admin`), `FLEET_PRODUCTS_KEY` (`jik_` only, so a `jpt_` admin token is refused),
+`FLEET_PRODUCTS_MODEL` (a plain name: `combo/` is refused, and so is an Ollama cloud tag ending `-cloud` or `:cloud`, which a board's Ollama forwards to
+ollama.com and the fleet lists as a board model). A model made from a cloud tag under another name isn't caught, so don't pick one: the lasting fix is for
+the board agent to keep Ollama's `remote_host` so the fleet can refuse it. A caller never picks the model. Any one missing or refused is 503 `fleet_closed`.
+There is no default model: which model products get is still the owner's choice. Give the key an `rpm_limit`, a `daily_token_limit` and `cloud_daily_limit` 0.
+
+**Its guards.** `redirect: "error"`, a 100 s timeout under the route's 120 s, and `X-JCP-Route: local` as well as the plain model. An `X-JCP-Served-By`
+header of anything but `local` is an error, never an answer. The messages are never logged or stored. Logs carry only a code, and the caller gets fixed
+words, never the fleet's address or text. The slots use `acquireInFlight`: a call killed before it gives its slots back holds them for 10 to 20 minutes.
+
+**A build and money.** A build token gets `FLEET_SIMULATED_REPLY` with `simulated: true`, needs no settings and never reaches the fleet. It needn't be tied
+to a build: a brief with no cap blocks, the usual fleet brief, gets a build token with no `buildId`, and its row then has none. Each answer is one
+`fleet` usage row at $0 (`jetson-fleet`, or `fleet-canned` for a build). A failed try leaves no row but does use one of the day's 100, since it used a request.
+
+**Template.** `askFleetOrMessage({ messages, request })` in `template/lib/meta/fleet.ts` returns `{ text, answered, label }`. On any failure it returns fixed
+words saying the fleet is offline or busy, with `label` null, and it has no way to another model. The skill is `.agents/skills/jetson-fleet`.
+`ModelChip` and `musemuse.schema.json` also know `jetson-fleet`. `template/AGENTS.md` is unchanged, so the build prompt names the skill. `template/caps/fleet`
+ships no files, only its deps.json, so a snapshot lists `fleet` exactly when it has the helper. `env.fleetProductsForBuilds` keeps the catalog, the
+writer's schema, the marker and the prompts off until `BUILDER_SNAPSHOT_ID` names such a snapshot, on a local run too: a product's template/ comes from the
+snapshot there as well, and provisioning copies in only cap overlays, never the helper. None has been made.
+
+**Other seams.** `lib/format.ts` labels it Jetson fleet, so `app/p/[slug]/page.tsx` shows that chip. `productPrivacyFor` leaves it out of the list under
+"What goes to Meta's models" and adds a line under "Other services". That page's own fixed heading and text still say Meta's models, so a product with only
+this model needs its wording settled before `TRUST_LEGAL_PAGES` applies to it.
+
+**Limits to know before turning it on.** ngrok's free plan allows 20,000 requests a month, shared with everything else on that address, and 100 a day from
+seven products already passes that. Nothing here caps the platform's total but the key's own limits. With `FLEET_ALL_PRODUCTS` off, a non-admin's brief can
+still pick this model, and that product will only ever show the offline words.
+
 ## 18. Unit 12: drive export (owner ask)
 
 The detailed design is `docs/DRIVE_EXPORT.md` (committed 62a5a06). This section only fixes how it meets the rest of

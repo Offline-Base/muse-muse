@@ -1514,6 +1514,33 @@ export const env = {
     return flag("GPU_TRAIN_ON_DATA");
   },
 
+  // ---------- The Jetson fleet for products (docs/CAPABILITIES.md, 17b) ----------
+
+  /**
+   * FLEET_PRODUCTS: products whose brief picks jetson-fleet answer from the fleet's boards at {GATEWAY_URL}/fleet/v1. Off: that
+   * route answers 404 and touches nothing, and the brief, tokens and catalog are today's.
+   */
+  get fleetProducts(): boolean {
+    return flag("FLEET_PRODUCTS");
+  },
+  /**
+   * FLEET_PRODUCTS, for what a new build is told and given: also needs a builder snapshot made from a checkout with
+   * askFleetOrMessage in its template. template/caps/fleet ships no files, only its deps.json, so a snapshot lists `fleet` in
+   * lib/sandbox/snapshots.json exactly when that's true. Local runs too: a product's template/ comes from the snapshot there
+   * as well, and provisioning copies in only cap overlays, so it never adds the helper from this checkout.
+   */
+  get fleetProductsForBuilds(): boolean {
+    if (!flag("FLEET_PRODUCTS")) return false;
+    // snapshotCaps is null locally, which means "copy any missing overlay", not "has the helper". Quiet, since locally an id
+    // missing from the manifest still gets its caps, so snapshotCapOverlays' warning would be wrong.
+    const overlays = env.snapshotCaps ?? snapshotCapOverlays(process.env.BUILDER_SNAPSHOT_ID || undefined, undefined, () => {});
+    return overlays.includes("fleet");
+  },
+  /** FLEET_ALL_PRODUCTS: signed-in builders' products may use the fleet too. Off, only products an admin owns may. */
+  get fleetAllProducts(): boolean {
+    return flag("FLEET_ALL_PRODUCTS");
+  },
+
   // ---------- Hosting a tuned model on a provider the platform pays for (lib/train/host) ----------
 
   /** HOST_TUNED: the Run it section on a tuned model's page and its routes. Off: they answer 404, and the sweep only stops what still runs. */

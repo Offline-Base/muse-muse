@@ -21,6 +21,12 @@ export const PRODUCT_MODELS = [
 ] as const;
 
 /**
+ * The Jetson fleet's boards, through the gateway's /fleet route (docs/CAPABILITIES.md, 17b). Not in PRODUCT_MODELS, so the
+ * writer's schemas stay as they are: a stored brief may hold it, and the writer may pick it only with FLEET_PRODUCTS on.
+ */
+export const FLEET_BRIEF_MODEL = "jetson-fleet";
+
+/**
  * Where a product runs (docs/NATIVE.md). Every product is a web product, so "web" is always in; a brief adds the others,
  * each behind its flag (env.enabledTargets). edge (docs/EDGE_DEMO.md) is offered only with EDGE_ENABLED on, and is last,
  * so a schema for the other targets is the same as before it.
@@ -112,6 +118,8 @@ const agentFields = (toolIds: z.ZodType<string>) =>
  * can leave the catalog after a brief was stored; the writer's schema below limits them.
  */
 export const BriefSchema = BriefFields.extend({
+  // A brief written with FLEET_PRODUCTS on must still parse after it goes off.
+  capabilities: z.array(z.object({ need: z.string(), model: z.enum([...PRODUCT_MODELS, FLEET_BRIEF_MODEL]), why: z.string() })).min(1),
   targets: targetPicks(TARGETS).optional(),
   agent: agentFields(z.string().min(1)).nullable().optional(),
   /**
@@ -195,6 +203,8 @@ export function newBriefSchemaFor(opts: {
   fullBuilds?: boolean;
   /** BUILD_RANGE: requires a direction, and raises the flow and screen limits unless fullBuilds has already. */
   buildRange?: boolean;
+  /** FLEET_PRODUCTS: the writer may also pick jetson-fleet. */
+  fleet?: boolean;
 }): z.ZodType<Brief> {
   const base = opts.gadgets ? NewBriefSchema : NewBriefSchemaNoGadget;
   const look = opts.museAppLook ? { askedLook: z.string().max(ASKED_LOOK_MAX).nullable() } : {};
@@ -206,6 +216,10 @@ export function newBriefSchemaFor(opts: {
     if (block) extra[cap] = block.nullable();
   }
   if (opts.milestones) extra.milestones = MilestonesSchema.nullable();
+  if (opts.fleet) {
+    const models = [...(opts.gadgets ? NEW_PRODUCT_MODELS : NEW_PRODUCT_MODELS_NO_GADGET), FLEET_BRIEF_MODEL] as [string, ...string[]];
+    extra.capabilities = z.array(z.object({ need: z.string(), model: z.enum(models), why: z.string() })).min(1);
+  }
   if (opts.recipes?.length) extra.recipes = z.array(z.enum(opts.recipes as [string, ...string[]])).max(MAX_RECIPES).nullable();
   if (opts.fullBuilds) {
     extra.requirements = requirementsMax() > FULL_LIMITS.requirements ? ChainRequirementsSchema : RequirementsSchema;
@@ -231,4 +245,4 @@ export function newBriefSchemaFor(opts: {
   return base.extend({ ...shape, ...look, ...extra }) as unknown as z.ZodType<Brief>;
 }
 
-export type ProductModelId = (typeof PRODUCT_MODELS)[number];
+export type ProductModelId = (typeof PRODUCT_MODELS)[number] | typeof FLEET_BRIEF_MODEL;

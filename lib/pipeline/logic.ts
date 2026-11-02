@@ -12,6 +12,7 @@ import { connectBlock } from "@/lib/caps/connect/brief";
 import { hardwareBlock } from "@/lib/caps/hardware/brief";
 import { BOARD_TOOLS_MARKER, DRIVE_TOOLS_MARKER } from "@/lib/caps/hardware/limits";
 import { LIVE_CAPTION_MODEL, liveBlock } from "@/lib/caps/live/brief";
+import { FLEET_BRIEF_MODEL, fleetAllowedModels } from "@/lib/caps/fleet/marker";
 import { gpuAllowedModels } from "@/lib/caps/gpu/marker";
 import { capMarker } from "@/lib/caps/ids";
 import { env } from "@/lib/env";
@@ -116,19 +117,21 @@ export function pollTimedOut(input: {
  * brings the agent marker: those products have no catalog tools.
  */
 export function allowedModelsFor(brief: Pick<Brief, "capabilities" | "agent" | "recipes">): string[] {
-  const models = brief.capabilities.map((c) => c.model).filter((m) => m !== "muse-glimmer");
+  const models = brief.capabilities.map((c) => c.model).filter((m) => m !== "muse-glimmer" && m !== FLEET_BRIEF_MODEL);
   const tools = brief.agent ? brief.agent.tools.map((t) => t.id).filter(isToolId).map(toolMarker) : [];
   // Wave 3, unit 7 (docs/CAPABILITIES.md, 13a): captions need the voice model, even if the writer left it out of capabilities.
   const live = liveBlock(brief)?.captions ? [LIVE_CAPTION_MODEL] : [];
   // Wave 3, unit 11: Muse Wonder and the `glimmer` marker while the shared Glimmer endpoint is on. None with it off.
   const gpu = gpuAllowedModels(brief);
+  // The Jetson fleet (docs/CAPABILITIES.md, 17b): only the `fleet` marker while FLEET_PRODUCTS is on. None with it off.
+  const fleet = fleetAllowedModels(brief);
   // Wave 3, unit 13: board tools have their own marker, so they bring no camera or microphone. None with them off.
   const board = hardwareBlock(brief)?.boardTools ? [BOARD_TOOLS_MARKER] : [];
   // The drive tools have their own marker too (docs/DRIVE_EXPORT.md, "From a product"). None with them off.
   const drive = hardwareBlock(brief)?.driveExport ? [DRIVE_TOOLS_MARKER] : [];
   const recipeModels = pickedRecipes(brief).flatMap((r) => r.models ?? []);
   const long = isLongRunBrief(brief) ? [AGENT_LONG_MARKER] : [];
-  return [...new Set<string>([...models, ...recipeModels, ...live, ...gpu, ...board, ...drive, ...(brief.agent ? [AGENT_MARKER] : []), ...long, ...tools]), ...briefCaps(brief).map(capMarker)];
+  return [...new Set<string>([...models, ...recipeModels, ...live, ...gpu, ...fleet, ...board, ...drive, ...(brief.agent ? [AGENT_MARKER] : []), ...long, ...tools]), ...briefCaps(brief).map(capMarker)];
 }
 
 /**

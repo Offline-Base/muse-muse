@@ -5,6 +5,7 @@ import { codeJudgeNote } from "@/lib/caps/code/judge";
 import { dataJudgeNote } from "@/lib/caps/data/judge";
 import { extensionJudgeNote } from "@/lib/caps/extension/judge";
 import { filesJudgeNote } from "@/lib/caps/files/judge";
+import { fleetJudgeNote } from "@/lib/caps/fleet/render";
 import { gamesJudgeNote } from "@/lib/caps/games/judge";
 import { gpuJudgeNote } from "@/lib/caps/gpu/judge";
 import { hardwareJudgeNote } from "@/lib/caps/hardware/judge";
@@ -44,6 +45,9 @@ export function capsJudgeNotes(brief: Partial<Brief>): string {
   // Wave 3, unit 11: GPU isn't a cap, so its note has no block. Empty with GPU_GLIMMER_SHARED off.
   const gpu = gpuJudgeNote(brief);
   if (gpu) notes.push(gpu);
+  // The Jetson fleet isn't a cap either (section 17b). Empty with FLEET_PRODUCTS off.
+  const fleet = fleetJudgeNote(brief);
+  if (fleet) notes.push(fleet);
   if (!notes.length) return "";
   return `\n\nPlatform services in this product. Fixed checks the platform ran decide whether each one works, not you. Check only what the screenshots show:\n${notes.map((n) => `- ${n}`).join("\n")}`;
 }
