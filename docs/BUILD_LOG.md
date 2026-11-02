@@ -2359,3 +2359,20 @@ Merged origin/main (#50, #51). The only conflict was this log; both entries kept
 - Tests: open-train 40 of 40 (start code, no tuneRun, folder rows, owner-only download, switch off), make, composer, starters, both flag-off tests, tsc. Full suite not run.
 - Preview muse-muse-hkozbza3a: intent recognized a dataset sentence; want both split a plain sentence; run 15c422b2 wrote 40 examples for $0.0062, held at "Your dataset is ready", no job, download 40 lines. That Preview inherited its own OPEN_ACCESS (value hidden, behaved as admin), so its no-code start was 201. Preview muse-muse-kpsbvt1ln (guest): new starters show, a stranger's download 403, but its plan answered 429, so the no-code refusal is proven by tests only, not live.
 - Not run: clicking the menu in a browser, Tune a model on this through a GPU.
+
+## Nov 2, 2026: reading receipts on the Jetsons, before any tuning (branch doc-bench)
+
+- **What:** `scripts/dev/receipt-bench.py` invents receipts from a seed with the right answers computed in code: merchant, date, subtotal, tax, total and the number of purchased lines, as one JSON object. `make` writes 300 training rows in three layouts, in train_model's format, and 40 held-out receipts in two other layouts, a quarter with scanner noise. `ask` sends the held-out set to one board's loaded model through the fleet gateway, pinned to that board, at temperature 0, and scores it field by field with no judge model. Everything is invented, and the text crosses ngrok and the lead board (lib/inference/reach.ts on its own branch).
+- **Scores, 40 held-out receipts each:**
+
+| | Valid JSON | Fields right | All six right | Median s | Tokens/s |
+|---|---|---|---|---|---|
+| Regex, written for the training layouts | 100% | 25% | 0% | | |
+| jetson-04, Nemotron 3.5 Bolt E4B Q4_K_M | 100% | 88% | 30% | 5.9 | 12.4 |
+| jetson-05, LFM3-VL 2B Q4_K_M | 100% | 82% | 35% | 2.1 | 30.4 |
+| jetson-02, test Glimmer IQ1_S | 0% | 0% | 0% | 14.7 | 4.7 |
+
+- **Where they miss:** Bolt got every amount and date right and the count of purchased lines in 30%. It over-counts, by 3 or more in 17 of 40. LFM3-VL got the count in 58%, the merchant in 68% and dates in 90%. So a tune has one clear target, the line count, and the cheap fix is also there: count lines in code. Reports: docs/log/bench/2026-11-02/.
+- **jetson-02 stopped answering during this run.** Glimmer wrote no JSON in 22 answers (5 cut off at 200 tokens), then from receipt 23 every request failed (17 at 503, 1 at 502), and the board went offline to the fleet. It still answered ping, but ssh timed out at the banner and its tool server didn't answer, which reads as memory exhaustion: before the run it had 451 MB available with Glimmer's 6.4 GB server loaded and a 256 MB prompt cache allowed. That's inferred, not read from its logs, since nothing on it would answer. Nothing was restarted from here: it needs a power cycle. One request at a time was enough to do this, so a board this full shouldn't serve products or benches.
+- **No tuning run:** main lets a board train Llama 3.2 1B only (muse-device/server.py), which needs about 8 GB of free disk and 3.5 GiB of free memory (JETSON_TODO G8). Free right now: jetson-02 1 GB of disk, jetson-03 4 GB, jetson-04 5 GB, jetson-05 4 GB, and at most 1.9 GB of memory on any board with its model loaded. A run needs one board's model stopped and space freed, which is the owner's call.
+- **Spend:** $0, about 120 of ngrok's monthly requests.
