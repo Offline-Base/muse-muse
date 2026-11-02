@@ -2174,3 +2174,15 @@ Behind a new flag, off by default. Design in docs/FAST_BUILDS.md.
 - **Tests:** tsc clean apart from missing fflate and unpdf in this worktree's copied node_modules. flags-off, full-builds and tasks tests pass. workflow.scenario has 2 failures expecting a 25-minute cap and getting 60, in code this change doesn't touch; not rerun on main to confirm. No new tests: recheck and helper lines have none.
 - **Previews:** FAST_BUILDS=1 muse-muse-lofxtn17n, without it muse-muse-k1fp4y15n, same code and snapshot snap_Dy4CjpILCMOBnaJ28Skzswys7CJ4. A stray line in my deploy command also made one extra unused Preview with the flag on.
 - **Builds on the flag Preview:** small e50989ff, complex 399f7255 and 0b90ec23. Without it: small 4b97d2c4, complex 654b4711 and a6275cc8. Same notes each way.
+
+## Nov 1: Hugging Face inventory, no uploads (branch tg-hub-inventory)
+
+Owner asked to upload every dataset and fine-tuned model. List and hold reasons in docs/HUB_INVENTORY.md.
+
+- **Result:** 0 repos created, 0 bytes uploaded. The inventory step stopped when reads of KNOWLEDGE_RUN_LOG.md and PROVE_RESULTS.md were denied, and it marked nothing for upload. 7 existing repos listed, 15 items on hold.
+- **Spend:** $0. No instance rented, 0 left running. The Lambda cache was not inspected.
+- **Denied, not worked around:** the two log reads above, and `s3:ListAllMyBuckets` for the local AWS identity.
+- **Measured (Hub API, read-only):** the dataset repo has 34 files and 105.9 MB, not the 0 the inventory listing returned. Overlap with local knowledge data still not compared.
+- **Flagged, not changed:** `Nemotron-3.5-Bolt-Parse-Pipeline` reads as public today, the inventory recorded it as private. Same sha, 5193a1c0d3. Owner to confirm.
+- **Left alone:** the other workflow's Moss-Test IQ1_S repo and its instance.
+- **Tests:** none, docs only. No app code or flags changed.
