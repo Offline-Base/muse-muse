@@ -1801,3 +1801,31 @@ All made-up data. Code: tg-caps-ready fa692f3e, builder snapshot snap_XXT4qDZEWL
 - Database: the owner's main database, by the owner's choice.
 - Checked: vercel curl GET / answered 200 and shows "Admin, sign-in off". Without a Vercel login, GET / answered 302. No build started. Spend $0.
 - Not checked: that a build really runs on Contributor. That needs a build.
+
+## Nov 1: big test model build and the sandbox preview proof (branch tg-caps-main)
+
+Preview muse-muse-5qowrscqp (dpl_B93NHQwXDZzJqDm4tN3xKmB16g6B), same note as Wonder build b2996b46, made-up data. Build 22562315-2739-4397-b640-03d5ea690054, product harborlight-ferry-operations. buildModel read back as muse-spark-1.3-contributor.
+
+- Result: partial, not finished. 23:02:34 to 00:43:41 UTC, 101 minutes of the 150 wall. $0.93. 40 requirements, 6 milestones. Milestones passed 2 of 6 (R1 to R7, R8 to R14). The other 4 failed. Judge did not pass: 15 or so requirements unmet, including the passenger chat, admin and cross-part checks. Most say no test has that id.
+- Round time: 11m07, 18m45, 18m43, 18m17, 17m59, 6m36. Earlier the Wonder build got 5 to 8 minutes, so the new split gives the longer rounds the Nov 1 fix aimed for.
+- Time limit: 4 of 6 rounds ended at it (rounds 2 to 5). The first and last ended on their own. The last stopped after 6m36 with requirements still unmet.
+- Not proof for Wonder: the test model is much faster than Muse Wonder, so this timing doesn't show the split is enough at Wonder's pace. Only a Wonder rerun can.
+- Subagents: 0 started, though the note asked and 6 slots were offered, the same as b2996b46.
+- Found, not fixed: no fix round ran, with 49 minutes of wall unused. At the final verify about 53 minutes were left, and `roomForFix` (lib/pipeline/workflow.ts line 335) wants a 15 minute fix plus 2 verifies and judges at their caps, 71 minutes. The Nov 1 reserve change lowered `fullChecksReserveMs` only, so a full build with a 40-requirement brief won't get a fix round after using its round share. Each verify here took about 1 minute against a 25 minute cap. From reading the code, not tested.
+- Found, not explained: the last verify's requirements step passed while the judge listed R18 and others as not met, and the refine below reported 20 of 40 not passing on the same product.
+
+### allowedDevOrigins proof
+
+Headless Chrome through Playwright, directly to https://sb-4swcs05g2hf1.vercel.run, no Vercel login. Snapshot snap_GbHWNK8snp0fecU1qs9kKgspR9K3.
+
+- During the build's final checks, 00:40:38 UTC: status 200, React on all 50 sampled elements, the button has an onClick, /_next/hmr socket open with 7 frames. The click test here proved nothing: the button only reset fields to the values they already held. By 00:51 the sandbox answered 410.
+- To wake it I sent a small refine, a5bebdaf-80f7-4cea-ad55-0ffb71f7c857, one sentence of copy. This wasn't in the plan, and it was made only for this test.
+- During its verify, 01:05:16 and again 01:05:37: picked Heron Bay Shuttle, the fares heading changed to it, clicked Try the sample, route and heading went back to Saltmere Loop. onClick present. /_next/hmr sockets stayed open on both page loads (9 and 6 frames, then 10 and 6), no socket errors, and no cross-origin or allowedDevOrigins message in the console. Passed both times. Shot: docs/log/shots/harborlight-sandbox-after-click.png.
+- Still in the console: one 404 and a hydration attribute mismatch warning on every load, which leaves the "1 Issue" badge. Which attribute wasn't captured. Interaction works anyway.
+- Limit: no run without the fix was made for comparison, so the before side is the earlier note that next dev refused its socket and buttons stayed dead.
+
+### The refine itself failed
+
+3 fix rounds, then "did not pass its checks", because of the build's unmet requirements, not the copy change: the same 1 smoke failure and 20 of 40 not passing each time. So a partial full build can't take even a one-line change. The product stays partial. Its recorded cost is $0.0001, the change check only, so its Muse Code rounds (about 1 minute each, 4 rounds) aren't in that figure.
+
+Spend: about $0.93 Meta recorded, plus the refine's unrecorded rounds, which at this build's rate would be cents. Limit $10. No GPU. No production deploy or env change. No code changed.
