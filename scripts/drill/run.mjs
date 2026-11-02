@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
  * `npm run drill`: the four simulated outage drills, with no key, no build, no model and no network past loopback.
+ * `npm run drill:all`: those four and six more scenarios (template/scripts/edge-drill.mjs lists all ten).
  *
  * It runs template/scripts/edge-drill.mjs, which starts the blackhole gateway (edge-blackhole.mjs, standing in for a
  * cloud that can't be reached) and the fake edge server (edge-fake.mjs, standing in for a board's model), then starts
@@ -9,13 +10,22 @@
  *
  *   1. cloud refused    2. cloud hung (waits out the real 10 s cloud deadline)    3. both down    4. tampered reply rejected
  *
- * Usage: npm run drill [-- --only 1,3]
- * Output: the four results on stdout, and JSON in .data/drill/ (git-ignored). Exit 0 when all four pass, 1 when one
- * fails, 2 when setup fails (a port, or the product never came up).
+ * and with --all:
+ *
+ *   5. cloud slow, inside the limit (about 8 s)    6. cloud flapping (503, OK, 503)    7. edge too slow as well (about
+ *   15 s: the 10 s cloud limit plus the 5 s edge limit the runner gives the product)    8. truncated reply rejected
+ *   9. injected text shown as data    10. gateway host not found (the product is restarted for it, with every .invalid
+ *   lookup failing inside the product, so no DNS query leaves the machine)
+ *
+ * Usage: npm run drill [-- --only 1,3], npm run drill:all [-- --only 5,9]
+ * Output: each result on stdout, and JSON in .data/drill/ (git-ignored). Exit 0 when every drill run passes, 1 when
+ * one fails, 2 when setup fails (a port, or the product never came up).
  *
  * What a pass shows, and only this: with the gateway cut on loopback, the product's fallback answered from a fake
- * server, labelled it, showed a plain message when both were down, and refused a reply with the wrong types. It says
- * nothing about a real model or a real board.
+ * server, labelled it, showed a plain message when both were down, and refused a reply with the wrong types. With
+ * --all, also: it waited for a slow cloud, labelled each answer while the cloud flapped, gave up on a slow edge in
+ * time, refused a cut-off reply, kept planted instructions as data, and fell back when the gateway's name didn't
+ * resolve. It says nothing about a real model, a real board or a real network.
  */
 import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
