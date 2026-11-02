@@ -6,7 +6,7 @@ BUCKET = os.environ.get("KNOWLEDGE_BUCKET", "<set KNOWLEDGE_BUCKET>")  # the kno
 PREFIX = "knowledge/raw/"
 SP = os.environ["S3S_SP"]
 LEDGER = os.path.join(SP, "ledger.tsv")
-OUT = os.environ.get("S3S_OUT", "/Users/ethancastro/muse-muse/.data/knowledge/sources")
+OUT = os.environ.get("S3S_OUT", os.path.expanduser("~/muse-muse/.data/knowledge/sources"))
 SEED = 20261030
 WINDOW = ("2026-01-04", "2026-10-29")
 

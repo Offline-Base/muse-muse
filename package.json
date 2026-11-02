@@ -10,6 +10,8 @@
     "build": "tsx scripts/migrate.ts && next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
+    "drill": "node scripts/drill/run.mjs",
+    "drill-bench": "node scripts/drill/bench.mjs",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx --env-file-if-exists=.env.local scripts/migrate.ts",
     "db:push": "drizzle-kit push",
@@ -56,6 +58,6 @@
     "typescript": "6.0.3"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.22.3"
   }
 }

@@ -3,7 +3,8 @@
 # the update-agent action installs it. Run it from a laptop with the lab's AWS profile. The bucket and the pin hold no secret.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BUCKET="${MUSE_LAB_BUCKET:-muse-knowledge-916979311153}"
+# The lab bucket is muse-knowledge-<account id>, with the id read from the profile in use, so it stays out of the repo.
+BUCKET="${MUSE_LAB_BUCKET:-muse-knowledge-$(aws sts get-caller-identity --query Account --output text)}"
 REGION="${AWS_REGION:-us-east-1}"
 BASE="$(node -p "require('$HERE/package.json').version")"
 HASH="$(git -C "$HERE" rev-parse --short HEAD 2>/dev/null || echo local)"

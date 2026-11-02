@@ -8,10 +8,16 @@
  *             the build firewall's brokered key instead of the gateway (env.gatewayUrl), and media Meta can't
  *             download from localhost goes inline (lib/brief/media.ts inlineMedia).
  *
- * Needs MODEL_API_KEY, VERCEL_OIDC_TOKEN (from `vercel env pull`, good for 12 hours) and BUILDER_SNAPSHOT_ID in
- * .env.local. Products aren't published to their own link from here, even with VERCEL_TOKEN set (env.publishOffReason).
+ * Browsing needs nothing. A build needs MODEL_API_KEY and Vercel Sandbox credentials: VERCEL_OIDC_TOKEN in .env.local
+ * (`npx vercel link`, then `npx vercel env pull .env.vercel.local` and copy the line over, good for 12 hours; a plain
+ * `vercel env pull` writes over .env.local). Without either, the Make page says so and builds
+ * are refused before anything is paid for (lib/quota.ts buildSetupRefusal). BUILDER_SNAPSHOT_ID is optional here:
+ * without it the first build installs the toolchain itself, which is slower (lib/sandbox/builder.ts provisionSandbox).
+ * Products aren't published to their own link from here, even with VERCEL_TOKEN set (env.publishOffReason).
  */
 import { spawn, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import path from "node:path";
 
 const PORT = Number(process.env.PORT || 3000);
 const childEnv: NodeJS.ProcessEnv = { ...process.env, PORT: String(PORT) };
@@ -19,8 +25,20 @@ childEnv.DATABASE_URL ||= "pglite:.data/pglite";
 childEnv.OPEN_ACCESS ||= "admin";
 childEnv.PLATFORM_URL = `http://localhost:${PORT}`;
 if (!childEnv.BLOB_READ_WRITE_TOKEN?.trim() && !childEnv.BLOB_STORE_ID?.trim()) childEnv.NEXT_PUBLIC_LOCAL_FILES = "1";
-for (const name of ["MODEL_API_KEY", "VERCEL_OIDC_TOKEN", "BUILDER_SNAPSHOT_ID"]) {
-  if (!childEnv[name]) console.warn(`dev:local: ${name} is not set in .env.local, so builds won't run.`);
+if (!childEnv.MODEL_API_KEY?.trim()) console.warn("dev:local: MODEL_API_KEY is not set in .env.local, so builds are off. Browsing works.");
+if (!childEnv.VERCEL_OIDC_TOKEN?.trim() && !childEnv.VERCEL_OIDC_TOKEN_FILE?.trim() && !linkedVercelProject()) {
+  console.warn("dev:local: no Vercel Sandbox credentials, so builds are off. See the README's Judge path (npx vercel link, then npx vercel env pull .env.vercel.local).");
+}
+if (!childEnv.BUILDER_SNAPSHOT_ID) console.log("dev:local: no BUILDER_SNAPSHOT_ID, so the first build installs its toolchain itself (slower).");
+
+/** A .vercel/project.json in the nearest folder up with .vercel, the same search lib/quota.ts sandboxCredentialsAvailable makes. */
+function linkedVercelProject(): boolean {
+  let dir = process.cwd();
+  while (dir !== path.dirname(dir)) {
+    if (existsSync(path.join(dir, ".vercel"))) return existsSync(path.join(dir, ".vercel", "project.json"));
+    dir = path.dirname(dir);
+  }
+  return false;
 }
 
 const migrate = spawnSync("npx", ["tsx", "scripts/migrate.ts"], { env: childEnv, stdio: "inherit" });
