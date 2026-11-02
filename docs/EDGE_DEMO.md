@@ -1,6 +1,6 @@
 # Edge demo: a product that keeps answering when the cloud is cut
 
-Status, Nov 2: built, and off behind flags. Nothing in this file has run on a board yet. The one-command laptop drill (section 0) ran on Nov 2 on the build machine against the bundled demo product, not a product Muse Code built: 4 of 4 simulated drills passed. Say "is built so" for all of it until the runs in `docs/BUILD_LOG.md` say otherwise. The scenario is a simulated cold room: invented readings from a controller, an independent probe, the door, defrost, power and cloud status. It is not about any real freezer or store, and the product gives no food-safety advice.
+Status, Nov 2: built, and off behind flags. Nothing in this file has run on a board yet. The one-command laptop drill (section 0) ran on Nov 2 on the build machine against the bundled demo product, not a product Muse Code built: 4 of 4 simulated drills passed. `npm run drill:all` (the four plus six more scenarios) ran on Nov 2 on the Mac against the same demo product: 10 of 10 passed in about 37 s. Say "is built so" for all of it until the runs in `docs/BUILD_LOG.md` say otherwise. The scenario is a simulated cold room: invented readings from a controller, an independent probe, the door, defrost, power and cloud status. It is not about any real freezer or store, and the product gives no food-safety advice.
 
 ## The pieces
 
@@ -8,9 +8,9 @@ Status, Nov 2: built, and off behind flags. Nothing in this file has run on a bo
 |---|---|---|
 | Fallback helper | `template/lib/meta/edge.ts` | `respondJsonOrEdge()`: the cloud first (`respondJson`, held to 10 s), then the board's model through `chat.completions` with a `json_schema` response format, checked with zod. `EDGE_FIRST=1` flips the order. Returns `by` (`"cloud"` or `"edge"`) and a fixed label, or a typed failure with a plain message. The board answers only when the cloud can't be reached (refused, timed out, a 5xx) or sent JSON that didn't match: a cloud that turns a request down (a 4xx: a refusal, a limit, a stopped product) is the answer, and the board isn't asked around it. Never sends `enable_thinking` with a schema. |
 | Skill | `template/.agents/skills/muse-edge/SKILL.md` | Tells Muse Code when to use the helper, how to show "Answered on <board>, <model>" and what never to say. |
-| Fake edge server | `template/scripts/edge-fake.mjs` | OpenAI-compatible, schema-valid replies, modes `ok`, `refuse`, `hang`, `garbage`, `tamper`. Logs to `test-results/caps/edge.json`. |
-| Blackhole gateway | `template/scripts/edge-blackhole.mjs` | Stands in for `GATEWAY_URL`: drops or holds every connection. |
-| Drill runner | `template/scripts/edge-drill.mjs` | Four simulated drills against a running product: cloud refused, cloud hung, both down, tampered reply rejected. The two cloud drills fail when the product never tried the gateway first. |
+| Fake edge server | `template/scripts/edge-fake.mjs` | OpenAI-compatible, schema-valid replies, modes `ok`, `refuse`, `hang`, `garbage`, `tamper`, and for the scenarios `slow`, `truncate`, `inject`. Logs to `test-results/caps/edge.json`. |
+| Blackhole gateway | `template/scripts/edge-blackhole.mjs` | Stands in for `GATEWAY_URL`: drops or holds every connection, and for the scenarios answers like the gateway with Simulated JSON, late (`slow`) or every other time (`flap`). |
+| Drill runner | `template/scripts/edge-drill.mjs` | Four simulated drills against a running product: cloud refused, cloud hung, both down, tampered reply rejected. The two cloud drills fail when the product never tried the gateway first. `--all` adds six scenarios (section 0). |
 | Board build | `scripts/edge/build-arm64.sh` | Builds the product's Next standalone server in a linux/arm64 Docker container on the Mac and packs it with a `run.sh`. |
 | Provisioning | `lib/edge/template-files.ts` | With `EDGE_BUILDS` and `EDGE_ENABLED` on, a build whose brief has the edge target gets the helper, the skill and the drill kit as written files, so no new builder snapshot is needed. Other builds get none of them. |
 
@@ -38,6 +38,26 @@ npm run drill-bench    # the cold-room drill bench, made and scored with no mode
 `npm run drill-bench` (`scripts/drill/bench.mjs`) runs `scripts/dev/drill-bench.py make` into `.data/drill-bench/` (900 training, 50 kept aside, 100 sealed held-out), checks that the sealed file is byte for byte `eval/drill/sealed.jsonl`, scores the right answers (they must get 100% with the hard rule passed), then scores `scripts/drill/always-normal-answers.jsonl`. Those are canned answers written by a script, not a model: "normal, trust the controller" for every window. They get 13% all right, and the scorer must flag all 12 hard-rule breaks. To score a real model, use `ask` and `score` as in `eval/drill/README.md`.
 
 Both show only the code paths on invented data. They say nothing about a real model, a real board or a real outage.
+
+### More scenarios: `npm run drill:all`
+
+```bash
+npm run drill:all      # the four above plus six scenarios, about 37 seconds on the Mac (10 of 10 passed, Nov 2)
+npm run drill:all -- --only 5,9   # numbers 1 to 10; anything else stops with exit 2
+```
+
+The four drills above stay the default set: they are what a build runs, so build time doesn't grow. `--all` adds the six below, all Simulated, on loopback, with no key. With `--all` the runner gives the product a 5 s edge limit (`EDGE_TIMEOUT_MS`, set by `EDGE_DRILL_EDGE_LIMIT_MS`) and the 10 s cloud limit, so drill 7 knows how long it may take. Each drill has a test in `template/scripts/__tests__/edge-drill-scenarios.test.mjs` that shows it passes for a product that uses the helper and fails, by name, for one that gets it wrong.
+
+| # | Drill | What it simulates | Passes when | What it proves | What it doesn't |
+|---|---|---|---|---|---|
+| 5 | cloud slow, inside the limit | The gateway answers after about 8 s, inside the 10 s cloud limit. | The reply is a 2xx with "Answered in the cloud", the gateway sent the answer, and the edge was never asked. | The product doesn't give up on a slow cloud early, and labels the cloud's answer. | Anything about real cloud latency or a real Muse Wonder answer. |
+| 6 | cloud flapping | Three asks while the gateway answers 503, then OK, then 503. | Each reply is a 2xx labeled with whoever answered it (edge, cloud, edge), none takes over 15 s, and both sides answered at least once. | Labels follow the side that answered on each request, and the product tries the cloud again after a 503. | Behavior under real, uneven outages, or many visitors at once. |
+| 7 | edge too slow as well | The gateway hangs, and the edge answers only after 8 s, past its 5 s limit. | The plain both-down message arrives within both limits plus 3 s (18 s), the late edge answer is never shown, and the server printed no error. | Nothing hangs when both sides are too slow: the visitor gets the plain message in time. | How long a real board's model takes, or what limit suits it. |
+| 8 | truncated reply rejected | The gateway drops, and the edge reply is JSON cut off part way, marked TRUNCATED. | Nothing marked TRUNCATED reaches the reply, no edge label is shown, and the reply carries the both-down message. | A reply cut off part way (like a board that ran out of tokens) is refused, not shown in pieces. | That every malformed reply is caught: only this cut, from this fake. |
+| 9 | injected text shown as data | The gateway drops, and the edge reply is schema-valid, but every free text field says (marked INJECTED) to ignore the rules, say the cloud answered, and fetch a URL on the fake. | The reply is a 2xx that still says "Answered on", the text sits inside a JSON string value (or is escaped in an HTML reply), and nothing fetched the URL. | The product treats model text as data: it doesn't let it write the label, follow its links, or run as markup in the reply. | How a page renders that text in a browser, or that a real model can't be talked into a wrong verdict. A planted answer can still be wrong inside the schema. |
+| 10 | gateway host not found | The gateway's host name (`muse-gateway.drill.invalid`) can't be resolved. | The product looked up the gateway's name first (the preload reports each lookup), then the reply is a 2xx with "Answered on", the edge was asked, and the gateway was never reached. | A name lookup failure falls back to the edge like a refused connection does. | Real resolver behavior: the runner restarts the product for this drill (it runs last) with a preload that fails every `dns.lookup` of a `.invalid` name inside the product (the lookup Node's fetch and http use) before any resolver is asked. Without `--start`, point `EDGE_DRILL_DNS_BASE_URL` at a second copy of the product started with such a `GATEWAY_URL`: that copy uses the real resolver, and the drill can't see whether it tried the gateway's name, or the drill fails and says why. |
+
+Like the four above, these show only the code paths on invented data, against fake servers on loopback. They don't show that a real board, a real model or a real network behaves this way.
 
 ## 1. The laptop drill on a built product (no board, no model, no spend)
 
