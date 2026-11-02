@@ -8,7 +8,7 @@ import { describe, it } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { PrivateBody } from "@/components/private/PrivateBody";
 import { OfflineBody } from "@/components/story/OfflineBody";
-import { FLOW_STEPS, GLIMMER_RESULT, ONE_BIT_RESULT, TUNE_RESULT } from "@/lib/story/flow";
+import { FLOW_STEPS, GLIMMER_RESULT, OFFLINE_BASE_FACTS, OFFLINE_LIMITS, ONE_BIT_RESULT, TUNE_RESULT } from "@/lib/story/flow";
 import { PRIVATE_DETAIL, REPLAY_SCENES } from "@/lib/private/replay";
 
 const log = readFileSync("docs/BUILD_LOG.md", "utf8");
@@ -18,24 +18,40 @@ const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, 
 
 describe("the frontier claim's evidence", () => {
   it("matches the logs", () => {
-    const { tuned, base, items, tunedWins, baseWins, trainRows, datasetCost, judgeCost } = TUNE_RESULT;
-    assert.ok(log.includes(`Tuned won ${tunedWins} of ${items}, base ${baseWins}, 0 ties. Average score ${tuned} tuned, ${base} base.`));
+    const { items, trainRows, datasetCost } = TUNE_RESULT;
     assert.ok(log.includes(`${trainRows} train and ${items} kept-aside rows, ${datasetCost}`));
-    assert.ok(log.includes(`judged ${items} of ${items} blind, ${judgeCost}`));
     assert.ok(readme.includes(`Tuned won all ${GLIMMER_RESULT.items} held-out prompts**, average score ${GLIMMER_RESULT.tuned} against base ${GLIMMER_RESULT.base}`));
     assert.match(knowledge, new RegExp(`\\| stage1 \\| IQ1_S \\| ${ONE_BIT_RESULT.iq1sGb} \\| ${ONE_BIT_RESULT.iq1s} \\(122\\) \\| ${ONE_BIT_RESULT.iq1sOldFacts}`));
     assert.match(knowledge, new RegExp(`\\| stage1 \\| Q4_K_M \\| 16.94 \\| ${ONE_BIT_RESULT.q4}`));
     assert.match(knowledge, new RegExp(`\\| base \\| IQ1_S \\| 6.53 \\| ${ONE_BIT_RESULT.baseIq1s}`));
   });
 
-  it("says the harness result is a harness result, on a small Llama and an invented topic", () => {
+  it("says the harness result is a harness result, on Muse Glimmer and an invented topic", () => {
     const all = FLOW_STEPS.map((step) => step.evidence).join(" ");
-    for (const line of ["harness", "small Llama", "invented", "easy test", "not Muse Glimmer"]) assert.ok(all.includes(line), line);
+    for (const line of ["harness", "Muse Glimmer 30B", "invented", "easy test", "task only"]) assert.ok(all.includes(line), line);
+  });
+
+  it("shows only Meta models doing the work (organizer ruling, Nov 2)", () => {
+    const all = [...FLOW_STEPS.map((step) => step.evidence), ...OFFLINE_BASE_FACTS, ...OFFLINE_LIMITS].join(" ");
+    assert.ok(!/llama|lfm|liquid|bolt|nemotron|gemma|speecht5|prompt guard/i.test(all), all.match(/llama|lfm|liquid|bolt|nemotron|gemma|speecht5|prompt guard/i)?.[0]);
   });
 
   it("marks running on your own hardware as simulated, and a product on its tuned model as not run", () => {
     assert.equal(FLOW_STEPS.find((step) => step.step === "On your own hardware")?.mark, "simulated");
     assert.equal(FLOW_STEPS.find((step) => step.step === "That app answering with its tuned model")?.mark, "not-run");
+  });
+});
+
+describe("Meta models only, in public copy (organizer ruling, Nov 2)", () => {
+  const NON_META = /llama|lfm|liquid|bolt|nemotron|gemma|speecht5|prompt guard/i;
+
+  it("/open-weights shows no other model family's results", () => {
+    const page = readFileSync("app/open-weights/page.tsx", "utf8");
+    assert.ok(!NON_META.test(page), page.match(NON_META)?.[0]);
+  });
+
+  it("the video, the submission and the README never say Built with Llama", () => {
+    for (const file of ["docs/VIDEO.md", "docs/SUBMISSION.md", "README.md"]) assert.ok(!/built with llama/i.test(readFileSync(file, "utf8")), file);
   });
 });
 

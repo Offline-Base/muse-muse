@@ -4,6 +4,8 @@
 
 **Revision approved Nov 2:** the owner said yes to O1 and O6 (docs/EDGE_PLAN.md), so the edge act at the end of this file ("Proposed revision: the edge act") is the script to film, and edge and defense is a headline beside frontier. The script just below stays as the fallback. Organizer rule (Discord, Nov 2): the video's opening line must say what existed before the event and what was built this week, so every cut opens with shot 0 as revised below.
 
+**Meta models only (organizer ruling, Discord, Nov 2, 3:57 PM; docs/MESSAGING.md, "What the rules say").** Every model that does work on screen is Meta's. The edge act is built to run on Muse Glimmer one-bit on jetson-02, with a no-model fallback as plan B. Muse Privacy runs Muse Glimmer in the cloud on invented data, so its replay is re-recorded on Glimmer. No Llama, LFM or Bolt in any shot, card or caption, and no Llama credit line.
+
 Where it came from: this replaces the three-minute table that was in docs/STORY.md and the inspo-first script that was section 2 of docs/SUBMISSION.md. If the owners want the inspo-first story instead, it is at `git show e290545d:docs/SUBMISSION.md`, but fix its "24 of 24 builds went live" line first: that was a local batch that never deployed.
 
 ## The rules for this script
@@ -26,7 +28,8 @@ Where it came from: this replaces the three-minute table that was in docs/STORY.
 - Stay signed out, so the site shows what judges see. Browser at 1440×900, light theme, 100% zoom, a clean profile.
 - Never show `.env.local`, the Vercel, Lambda or AWS consoles, an admin job page (it shows the instance's address), the fleet console, or any ngrok domain or board address.
 - Builds on the test model get a corner label "Test model". Sped-up footage gets "Sped up".
-- If the Oct 30 privacy run (10 leaks on 200 items) has been rerun by recording day, use its result in shot 9 instead of "we haven't found why yet", and fix the card.
+- Muse Privacy's numbers in shot 9 must come from runs on Muse Glimmer. The Oct 30 and "0 leaks on 300" numbers were measured with a model that isn't Meta's, so they don't go on screen. If the Glimmer rerun is approved and logged by recording day, use its numbers; until then the card carries "[pending rerun on Glimmer]" and only the Oct 27 Glimmer run.
+- Keep the fleet console and jetson-03, 04 and 05 out of frame. Show only the Muse app connector, never the Claude or ChatGPT connector labels.
 
 ## Timing
 
@@ -40,8 +43,8 @@ Where it came from: this replaces the three-minute table that was in docs/STORY.
 | 5 | 1:08 to 1:22 | 1 | An app built around it | film now, plus needs the chain run |
 | 6 | 1:22 to 1:32 | 1 | The marks on `/offline` | film now |
 | 7 | 1:32 to 1:44 | 2 | Why some files can't go to a cloud | film now |
-| 8 | 1:44 to 2:04 | 2 | Muse Privacy: tags, not documents | film now |
-| 9 | 2:04 to 2:17 | 2 | The numbers, both runs | film now |
+| 8 | 1:44 to 2:04 | 2 | Muse Privacy: tags, not documents | needs re-record on Glimmer |
+| 9 | 2:04 to 2:17 | 2 | The numbers, on Glimmer | needs re-record on Glimmer |
 | 10 | 2:17 to 2:27 | 3 | Glimmer on the Jetson | Hussam films |
 | 11 | 2:27 to 2:37 | 3 | What that costs | film now |
 | 12 | 2:37 to 2:50 | Close | The claim, and its marks | film now |
@@ -84,7 +87,7 @@ Narration is about 400 words, about 140 a minute. Read it aloud once with a time
 
 - On screen: the run's download, the file name and its size. Overlay, credited to Meta's Muse Glimmer docs: "you own the weights, the runtime, and the data".
 - Say: "What comes out is a file you keep. In Meta's words, you own the weights, the runtime, and the data."
-- Fallback card: "Test harness, made-up data: a tuned small Llama became a 2.02 GB file and passed every check. A tuned Glimmer became a 6.53 GB one-bit file."
+- Fallback card: "Test harness, made-up data: a tuned Muse Glimmer 30B became a 6.53 GB one-bit file. Built with Muse Spark Open. 18 and over."
 
 **5. An app built around it (1:08 to 1:22)** [film now, plus needs the chain run]
 
@@ -108,17 +111,19 @@ Keep the company's name out of this act (`components/story/__tests__/story.test.
 - Say: "Some files can't go to any cloud. One spreadsheet in an unapproved AI tool meant a hospital notified 3,182 patients. GAO found all 12 agencies it selected that allow generative AI restrict it."
 - Source: docs/MESSAGING.md, both Checked. Say "a patient spreadsheet", nothing more about its contents.
 
-**8. Muse Privacy: tags, not documents (1:44 to 2:04)** [film now]
+**8. Muse Privacy: tags, not documents (1:44 to 2:04)** [needs re-record on Glimmer]
 
-- On screen: `/private`, before and after, then the replay, labeled "Recorded replay. A script plays Muse." Optional overlay: "'The access decision does not depend on the agent behaving as intended.' Meta Engineering, on PrivacyLib, Oct 27, 2026."
-- Say: "Muse Privacy is a connector on hardware you own. Muse plans with tags like Student A and never gets the documents. A model on the device does every step that touches them, your policy file decides what can leave, and a last check runs on every result before it goes."
+- On screen: `/private`, before and after, then the replay, labeled "Recorded replay. A script plays Muse. Muse Glimmer 30B in the cloud, invented data." The replay on the site today was recorded with a model that isn't Meta's, so re-record it on Glimmer before filming this shot. Optional overlay: "'The access decision does not depend on the agent behaving as intended.' Meta Engineering, on PrivacyLib, Oct 27, 2026."
+- Say: "Muse Privacy is a connector you run yourself. Muse plans with tags like Student A and never gets the documents. For this demo, Meta's Muse Glimmer does every step that touches them, in the cloud, on invented data. Your policy file decides what can leave, and a last check runs on every result before it goes. Glimmer on your own device is the target."
+- Never "device-only", "on the device" or "nothing leaves the device" for this act while the path is cloud Glimmer.
 - Source: docs/STORY.md, privacy paragraph; privacy/README.md.
 
-**9. The numbers, both runs (2:04 to 2:17)** [film now]
+**9. The numbers, on Glimmer (2:04 to 2:17)** [needs re-record on Glimmer]
 
-- On screen: a card. "Invented items, on a laptop. Today: 0 leaks of names or identifiers on 300 items. Oct 30: 10 leaks on 200 items, cause not found. 76 approval requests on 200 items, 28 needless. Device model: Liquid's LFM3-VL-2B, not a Meta model. No real users."
-- Say: "On 300 invented items, no names or identifiers leaked. An earlier run leaked 10 on 200, and we haven't found why yet. The model on the device today is Liquid's, not Meta's."
-- Source: docs/STORY.md, privacy paragraph; `privacy/eval/reports/device_only_fresh_200.md`.
+- On screen: a card. "Invented items. Muse Glimmer 30B in the cloud, through OpenRouter. Oct 27, an earlier code state: 0 leaks of names or identifiers on 100 items, the router right 76% of the time. Today's setup: [pending rerun on Glimmer]. No real users."
+- Say: "On 100 invented items, Muse Glimmer's run leaked no names or identifiers, and the router was right about three times in four. That was an earlier version, and the rerun on today's setup is pending."
+- Swap in the rerun's numbers only once it is logged, and give every leak it finds.
+- Source: `privacy/eval/reports/final.md` (final_cloud, Glimmer on OpenRouter, Oct 27); eval/README.md, "Muse Privacy".
 
 ### Act 3: the Jetson
 
@@ -151,7 +156,8 @@ Drop shot 0 (open on shot 1 and fold "one sentence" into its line), and cut shot
 
 | Shots | Who | When |
 |---|---|---|
-| 0, 3, 5 (recorded build), 6, 7, 8, 9, 11, 12 | Ethan, or whoever records | Any time once `STORY_PAGES` is on |
+| 0, 3, 5 (recorded build), 6, 7, 11, 12 | Ethan, or whoever records | Any time once `STORY_PAGES` is on |
+| 8, 9 | Ethan, or whoever records | After the replay is re-recorded on Glimmer |
 | 1, 2, 4, 5 (tuned app) | Whoever runs the chain | Only during the approved chain run. Otherwise use the fallbacks |
 | 10 | Hussam | 1 to 2 hours, on jetson-02 |
 
@@ -162,12 +168,13 @@ Drop shot 0 (open on shot 1 and fold "one sentence" into its line), and cut shot
 What changes:
 - Act 1 runs on the cold-room sentence, if the chain run (O2) happens. Otherwise Act 1 stays as above.
 - Act 2 (Muse Privacy) goes from about 33 s (shots 8 and 9) to about 20 s. Shot 7 stays.
-- Shots 10 and 11 become a Glimmer shot of about 5 s and an edge act of about 30 s. The Glimmer shot stays because the Open Weights prize names Glimmer or Spark Open, not Llama.
+- Shots 10 and 11 become a Glimmer shot of about 5 s and an edge act of about 30 s. Every model doing work in the edge act is Muse Glimmer, under the organizers' Nov 2 ruling.
 - The 60-second X cut uses E3a.
 
 ### More tags
 
 - **[needs M5]**, **[needs M7]**, **[needs M8]**, **[needs M10]**, **[needs M12]**: needs that unit from docs/EDGE_PLAN.md to have run, with a log entry. Each shot has a fallback.
+- **[needs the schema gate]**: Hussam's $0 check on jetson-02 (valid JSON on 10 of 10 receipts with a JSON schema, no hang, readable verdicts). Nothing has run yet. If it passes, the cold-room tune of Glimmer is planned. If it fails, plan B: the board fallback is fixed code (thresholds plus the probe-disagreement rule, no model), and Glimmer appears only in shot 10.
 - The scenario is a simulated cold room with invented readings. Every edge shot carries "Simulated" somewhere on screen. No food-safety advice and nothing about real freezers, in captions or narration.
 
 ### Revised timing
@@ -186,8 +193,8 @@ What changes:
 | 9 | 1:56 to 2:04 | 2 | The numbers, both runs, shorter | film now |
 | 10 | 2:04 to 2:09 | 3 | Glimmer on the Jetson, shorter | Hussam films |
 | E1 | 2:09 to 2:17 | 3 | Drills passing on the build screen | needs M5, needs M7 |
-| E2 | 2:17 to 2:23 | 3 | The tune card | needs M8 |
-| E3a | 2:23 to 2:33 | 3 | Cables out, the app still answers | needs M12, Hussam films |
+| E2 | 2:17 to 2:23 | 3 | The tune card | needs the schema gate, needs M8 |
+| E3a | 2:23 to 2:33 | 3 | Cables out, the app still answers | needs the schema gate, needs M12, Hussam films |
 | E3b | 2:33 to 2:41 | 3 | A reading that doesn't add up | needs M12, Hussam films |
 | 12 | 2:41 to 2:54 | Close | The claim, and its marks | film now |
 
@@ -199,7 +206,7 @@ About 2:54. Shot 11's card ("What that costs") is dropped; its numbers stay in t
 
 - Required by the organizers (Discord, Nov 2): the first line says what existed before and what was built this week.
 - Say first: "Before this week, Offline Base had a fleet of Jetson boards and the software that runs them, plus a scaffold of design notes and stubs for Muse Muse. Everything Muse Muse does in this video, we built this week."
-- On screen while it's said: a plain card with two columns, "Before Oct 26" (the Jetson fleet and its control software, the boards' models, a Muse Muse scaffold with no working code) and "Built this week" (Muse Muse, Muse Privacy, the edge track).
+- On screen while it's said: a plain card with two columns, "Before Oct 26" (the Jetson fleet and its control software, a Muse Muse scaffold with no working code) and "Built this week" (Muse Muse, Muse Privacy, the edge track). The fleet's older models were made by others and are not part of Muse Muse, so they don't go on the card as ours.
 - Then Zuckerberg's line from shot 0 above, as a 4-second title card with no narration over it.
 - Source: README.md, "Before the event"; docs/MESSAGING.md for the quote.
 
@@ -214,15 +221,15 @@ About 2:54. Shot 11's card ("What that costs") is dropped; its numbers stay in t
 - On screen: the plan, then a few of the 900 training rows scrolling, each marked Simulated.
 - Say: "A Meta model writes the plan. The training rows are simulated cold-room logs our own code wrote, with 100 sealed away that the tune never sees." (Not "a Meta model writes the training data": for this run it doesn't. docs/CHAIN_RUN.md.)
 
-**8, shorter (1:44 to 1:56)** [film now]
+**8, shorter (1:44 to 1:56)** [needs re-record on Glimmer]
 
-- On screen: `/private`, before and after, then a few seconds of the replay, labeled "Recorded replay. A script plays Muse."
-- Say: "Muse Privacy plans with tags like Student A and never gets the documents. Your policy file decides what can leave, and a last check runs on every result."
+- On screen: `/private`, before and after, then a few seconds of the replay re-recorded on Glimmer, labeled "Recorded replay. A script plays Muse. Muse Glimmer 30B in the cloud, invented data."
+- Say: "Muse Privacy plans with tags like Student A and never gets the documents. For this demo, Muse Glimmer reads them in the cloud, on invented data. Your policy file decides what can leave, and a last check runs on every result."
 
-**9, shorter (1:56 to 2:04)** [film now]
+**9, shorter (1:56 to 2:04)** [needs re-record on Glimmer]
 
 - On screen: shot 9's card, unchanged.
-- Say: "On 300 invented items, no names or identifiers leaked. An earlier run leaked 10 on 200. The device model today is Liquid's."
+- Say: "On 100 invented items, Muse Glimmer's run leaked no names or identifiers. The rerun on today's setup is pending."
 
 **10, shorter (2:04 to 2:09)** [Hussam films]
 
@@ -235,18 +242,21 @@ About 2:54. Shot 11's card ("What that costs") is dropped; its numbers stay in t
 - Say: "Every edge build is drilled before it ships. We cut its cloud four ways and check it still answers, or says plainly that it can't."
 - Fallback: M3's drills on the laptop, captioned "Simulated outage drills, on a laptop", and the narration says "is built so every edge build is drilled". If M5 hasn't run, never say "every edge build".
 
-**E2. The tune card (2:17 to 2:23)** [needs M8]
+**E2. The tune card (2:17 to 2:23)** [needs the schema gate] [needs M8]
 
-- On screen: the tune result, tuned against base on the 100 held-out invented items, scored by drill-bench. "Llama 3.2 3B. Built with Llama." Caption: "Invented data. Scored by code, not a judge."
-- Say: "Muse Muse tuned a Llama 3.2 3B for this one job, and checked it against the base model on 100 items it never saw."
+- Planned only: the cold-room tune of Muse Glimmer 30B (r30b, the default base, `TUNE_ANY_BASE` off), cut to one bit (IQ1_S) for jetson-02, runs only if the schema gate passes and the owner approves its spend. Nothing has run yet.
+- On screen: the tune result, tuned against base on the 100 held-out invented items, scored by drill-bench. "Muse Glimmer 30B, tuned, one-bit (IQ1_S). Built with Muse Spark Open. 18 and over." Caption: "Invented data. Scored by code, not a judge."
+- Say: "Muse Muse tuned Muse Glimmer for this one job, and checked it against the base model on 100 items it never saw."
 - Fill the numbers from docs/BUILD_LOG.md only. If tuned didn't beat base, show both numbers and say so.
-- Fallback: drop E2 and give its 6 seconds to E3a. Label the board model "base" everywhere after it.
+- Fallback: drop E2 and give its 6 seconds to E3a. Label the board model without "tuned" everywhere after it.
 
 **E3a. Cables out (2:23 to 2:33)** [needs M12] [Hussam films]
 
-- On screen: one take, not sped up. The board's Ethernet and Wi-Fi out, the laptop's Wi-Fi off, a terminal where `api.meta.ai` fails. The app answers. Answer label: "Answered on jetson-0X, Llama 3.2 3B (tuned)", or "(base)" at ladder level 3. Lower third: "Simulated cold room. Real board, real unplug."
-- Say: "Now every cable comes out. The same app keeps answering on the Jetson, from the model we tuned for it. N of 5 drills passed, at X tokens a second."
-- N and X come from that take only. Never "works offline" in general, never "private" or "on-device", never that anything survives a power loss. No power cuts on camera.
+- Is built so the board answers with Muse Glimmer one-bit on jetson-02 (alias `muse-glimmer-2026-iq1s-io-lowest`). Nothing has run yet. Filming on jetson-02 needs the owner to lift the "never jetson-02" rule for edge takes.
+- On screen: one take, not sped up. The board's Ethernet and Wi-Fi out, the laptop's Wi-Fi off, a terminal where `api.meta.ai` fails. The app answers. Answer label: "Answered on jetson-02, Muse Glimmer 30B one-bit (IQ1_S)". Add "tuned" only once a tuned run is logged in docs/BUILD_LOG.md. Lower third: "Simulated cold room. Real board, real unplug. Built with Muse Spark Open. 18 and over."
+- Say: "Now every cable comes out. The same app keeps answering on the Jetson, slowly, from Muse Glimmer cut to one bit. N of 5 drills passed, at X tokens a second." Say "the model we tuned for it" only if the tuned run is logged.
+- N and X come from that take only. Expect about 5 tokens a second and 20 to 35 seconds a verdict, and say "kept answering, slowly", never "as good as the cloud". Never "works offline" in general, never "private" or "on-device", never that anything survives a power loss. No power cuts on camera. Don't film Glimmer on this task unless the schema gate passed.
+- Plan B, if the schema gate fails: the board fallback is fixed code, thresholds plus the probe-disagreement rule, with no model. Answer label: "Answered on the board by fixed rules, no model". Say "the app keeps answering from fixed rules on the board", and show Glimmer only in shot 10.
 - Fallback: the ladder in docs/EDGE_PLAN.md. At level 4, use shot 10 as written above plus a "Simulated outage" card from M3, and say "is built so it keeps answering when the cloud is cut".
 
 **E3b. A reading that doesn't add up (2:33 to 2:41)** [needs M12] [Hussam films]
@@ -254,6 +264,7 @@ About 2:54. Shot 11's card ("What that costs") is dropped; its numbers stay in t
 - On screen: the same take. A spoofed log from M2's demo CSV: the controller reads -18 C while the independent probe reads +9 C and rising. The app flags it, says not to trust the controller, and lists its actions. Lower third, as E3a.
 - Say: "Here the controller says minus 18 and the second probe says plus 9 and climbing. The app doesn't trust the controller, and flags it."
 - Don't read the actions aloud and don't call them advice. Never say it stops hacks or is attack-proof.
+- Under plan B the flag comes from the fixed probe-disagreement rule, and the label says "fixed rules, no model".
 - Fallback: drop E3b and end E3a at 2:41.
 
 **12. Close (2:41 to 2:54)** [film now]
@@ -270,4 +281,4 @@ Shot 1 (or its fallback), E2 if it ran, E3a, then shot 12's URL card. Same label
 |---|---|---|
 | E1 | Whoever runs M7 | Tue, during the M7 build on a preview (O4) |
 | E2 | The lead | Tue afternoon, after M8 is logged |
-| 10 (5 s), E3a, E3b | Hussam, with Ethan | Tue 7 to 9 PM (H5): two rehearsals, one take. No addresses, ngrok domain or console in frame |
+| 10 (5 s), E3a, E3b | Hussam, with Ethan | Tue 7 to 9 PM (H5), on jetson-02 once the owner lifts "never jetson-02" for edge takes: two rehearsals, one take. No addresses, ngrok domain, fleet console, or jetson-03, 04 or 05 in frame |
