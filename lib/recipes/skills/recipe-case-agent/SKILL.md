@@ -5,7 +5,7 @@ description: Use to build a legal case agent on a new fictional dispute, with a 
 
 # Legal case agent
 
-You are building a long-running agent as an ordinary web product, in TypeScript. The agent kit (`lib/agent/run.ts`) doesn't apply and may not be here. Copy `.agents/skills/recipe-case-agent/helpers/loop.ts` to `lib/case/loop.ts` unchanged, and write the tools and the route around it.
+You are building a long-running agent as an ordinary web product, in TypeScript. The agent kit (`lib/agent/run.ts`) doesn't apply and may not be here. The platform has already written `lib/case/loop.ts` and `tests/case-stop.spec.ts`. Change neither. Write the tools and the routes around the loop first, before any other screen.
 
 The idea comes from https://github.com/meta-models/legal-agent-workshop, which is Python and has no license. You can't read it from here, so never fetch or clone it. Copy nothing from it: no names, facts, documents, prompts or code. Mention it only in BUILD_NOTES.md, as inspiration, and say it has no license.
 
@@ -126,7 +126,8 @@ The memo is a demo's output, not legal work. Its card, the sign-off card and any
 
 - `lib/case/scripted.ts` is a fake model that plays a fixed sequence of tool calls. It throws unless `process.env.CASE_SCRIPTED === "1"` and `process.env.VERCEL` is unset. No route can select it. It is for the tool checks below and for the sample replay, and it never replaces the real call in the smoke test.
 - `tests/case.spec.ts` sets `CASE_SCRIPTED` itself, imports `lib/case/` directly and runs the real tools, proving: a made-up quote is refused; feedback never reveals an item; a flagged document can't be cited; `ask_attorney` stops the loop with no model call; release makes the document visible; resume from the sealed blob goes on; a changed blob is refused; sign-off finishes the run. Don't use the `server-only` package in anything it imports. It also checks that `lib/case/sample-replay.json` matches the scripted run, and rewrites it when `UPDATE_SAMPLE=1`.
-- `tests/smoke.spec.ts` runs one real case from the page, never the sample: click Start, wait for `handoff-card` with `test.setTimeout(170_000)`, assert no request went to the run route for 3 s, release the evidence, wait for new rows with tokens after the answer, then sign off, and take the final judge screenshot of that signed memo. A build's run stops at 30 turns or $1.50, and all its tests share $10, so this one test is the only full run. If it can't finish, it fails: it must not fall back to the sample.
+- `tests/case-stop.spec.ts` is the platform's check of the four promises, on a real run. It fails until the page has these test ids: `start-live`, `live-row` on each live turn, `handoff-card`, `release-evidence`, `sign-off`, `signed-memo`. Build to pass it, never around it.
+- `tests/smoke.spec.ts` runs one real case from the page, never the sample: click Start, wait for `handoff-card` with `test.setTimeout(170_000)`, assert no request went to the run route for 3 s, release the evidence, wait for new rows with tokens after the answer, then sign off, and take the final judge screenshot of that signed memo. A build's run stops at 30 turns or $1.50, and all its tests share $10, so no other test runs a full case. If it can't finish, it fails: it must not fall back to the sample.
 - Don't list `file_memo`'s or `ask_attorney`'s work as actions. The manifest's actions are `run_case_stretch`, `answer_person` and `sign_off`, on the routes above.
 - `tests/actions.spec.ts` spends as little as it can: send each action a changed record, which is refused before any model call.
 

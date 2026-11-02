@@ -14,6 +14,8 @@ export interface Recipe {
   oneLine: string;
   /** The honest limit, repeated in the build prompt. */
   limit: string;
+  /** Skill files also written straight into the product, source path to product path, so a build can't skip them. */
+  provides?: Readonly<Record<string, string>>;
   /** Needs AGENT_LONG_RUNS, and gets the long run limits and its own daily budget. */
   longRun: boolean;
   /** The cap it can't work without. Offered only while that cap is served. */
@@ -86,6 +88,7 @@ export const RECIPES: readonly Recipe[] = [
     limit: "The case is made up and this isn't legal advice. Closing the tab pauses a run, and the run is saved in this browser only. A full run costs dollars, not cents.",
     longRun: true,
     models: ["muse-wonder-1.0", "sam-3.1"],
+    provides: { "helpers/loop.ts": "lib/case/loop.ts", "platform/case-stop.spec.ts.txt": "tests/case-stop.spec.ts" },
   },
   {
     id: "recipe-verified-agent",
@@ -137,7 +140,9 @@ export function isLongRunBrief(brief: RecipeBrief): boolean {
 
 /** The files a brief's recipes add to its product. */
 export function recipeExtraFiles(brief: RecipeBrief): RecipeFile[] {
-  return pickedRecipes(brief).flatMap((r) => (SKILLS[r.id]?.files ?? []).map((f) => ({ path: `.agents/skills/${r.id}/${f.path}`, content: f.content })));
+  return pickedRecipes(brief).flatMap((r) =>
+    (SKILLS[r.id]?.files ?? []).map((f) => ({ path: r.provides?.[f.path] ?? `.agents/skills/${r.id}/${f.path}`, content: f.content })),
+  );
 }
 
 /** What the build and change prompts say about a brief's recipes (render.ts stays pure and takes this as an option). */

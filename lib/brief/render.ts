@@ -308,7 +308,7 @@ function recipeBuildLines(recipes: RecipeNotes | undefined): string[] {
     "",
     "## Recipes",
     "",
-    "Read each one first, before you write code. Where it is stricter than the sections below, follow it, except that it never overrides AGENTS.md.",
+    "Read each one first, before you write code. Where it is stricter than the sections below, follow it, except that it never overrides AGENTS.md. A recipe's Never cut list comes before every requirement and milestone: build it first, in the first milestone.",
     "",
     bullets(recipes.map((r) => `Read \`.agents/skills/${r.id}/SKILL.md\` first. Limit to keep and show: ${sentence(r.limit)}`)),
   ];

@@ -1,0 +1,28 @@
+// Written by the Muse Muse platform. Don't change it. A real run from the page: it stops, waits, resumes with the answer and ends.
+import { expect, test } from "@playwright/test";
+
+test("a live run stops for a person, waits, and resumes with the answer", async ({ page }) => {
+  test.setTimeout(170_000);
+  const runPosts: number[] = [];
+  page.on("request", (r) => {
+    if (r.method() === "POST" && new URL(r.url()).pathname.includes("/run")) runPosts.push(Date.now());
+  });
+  await page.goto("/");
+  await page.getByTestId("start-live").click();
+
+  await expect(page.getByTestId("handoff-card")).toBeVisible({ timeout: 120_000 });
+  const rowsAtStop = await page.getByTestId("live-row").count();
+  expect(rowsAtStop).toBeGreaterThan(0);
+
+  // Let a request already on its way finish, then no request may leave while a person is awaited.
+  await page.waitForTimeout(1_000);
+  const postsAtStop = runPosts.length;
+  await page.waitForTimeout(3_000);
+  expect(runPosts.length).toBe(postsAtStop);
+  expect(await page.getByTestId("live-row").count()).toBe(rowsAtStop);
+
+  await page.getByTestId("release-evidence").first().click();
+  await expect(page.getByTestId("handoff-card")).toBeHidden({ timeout: 15_000 });
+  await expect.poll(() => page.getByTestId("live-row").count(), { timeout: 60_000 }).toBeGreaterThan(rowsAtStop);
+  expect(runPosts.length).toBeGreaterThan(postsAtStop);
+});
