@@ -304,8 +304,10 @@ Muse Muse's own character, from the owner's videos (Nov 2). Not a Meta mark. Bui
 - **Clips:** transparent loops cut from the owner's videos by `scripts/dev/mascot/walk.sh` and `climb.sh`: a 1.75 s stride and a 2.25 s climb (plus that climb reversed for coming down). VP9 WebM with alpha for Chrome and Firefox, HEVC with alpha for Safari, about 80 to 120 KB each. White is keyed out. Light neutral greys become a soft black shadow, so it works on both themes.
 - **Size:** 96 px tall on the desktop view, 72 px on a phone.
 - **The walk:** across the bottom of the content area, never behind the sidebar. It turns at each edge and stops now and then.
-- **The climb:** desktop view only. At the right edge it sometimes climbs the window's edge (the clip is cut flush, so its hands grip the edge) to between a quarter and half the window's height, hangs a moment, comes back down and walks off left.
-- **Layering:** fixed at z-index 15, under docks (20), menus (40) and dialogs. Pointer events pass through, so it never blocks a click. It's hidden from screen readers and in print.
+- **The walk starts** in the middle of the open space, heading right.
+- **The climb:** desktop view only (760 px and wider). The first time it reaches the right edge it always climbs; after that, 6 times in 10. It climbs the window's edge (the clip is cut flush, so its hands grip the edge) to between a quarter and half the window's height, hangs a moment, comes back down and walks off left.
+- **Layering:** fixed at z-index 15, under docks (20), menus (40) and dialogs. Only the figure itself takes the pointer; the page around it stays clickable. The videos are hidden from screen readers, and it's hidden in print.
+- **Close:** pointing at it stops it and shows a round X just above its head ("Hide Muse"; always shown on touch screens, and reachable with Tab). The X hides it, saves that in this browser and shows a note for 5 s: "Muse is hidden. Bring him back in Settings, under Muse on screen."
 - **Choice:** Settings, General, "Muse on screen" (on by default, kept in this browser). With reduced motion it stands still in the corner.
 
 ### Segmented tabs (`.chat-tabs`, `.tabs`, `.range`, `.segmented`), M

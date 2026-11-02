@@ -1,7 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CLIMB_SPEED_PER_HEIGHT, MASCOT_EVENT, WALK_FRAME, WALK_SPEED_PER_HEIGHT, climbStep, readMascotOn, walkStep } from "@/lib/mascot";
+import { Icon } from "@/components/icons";
+import {
+  CLIMB_SPEED_PER_HEIGHT,
+  MASCOT_EVENT,
+  WALK_FRAME,
+  WALK_SPEED_PER_HEIGHT,
+  climbStep,
+  readMascotOn,
+  setMascotOn,
+  walkStep,
+} from "@/lib/mascot";
 
 /** The drawn height: smaller on phones. */
 const heightFor = (vw: number) => (vw < 760 ? 72 : 96);
@@ -32,10 +42,20 @@ export function Mascot() {
   const [on, setOn] = useState(false);
   const [still, setStill] = useState(false);
   const [src, setSrc] = useState<Record<Clip, { src: string; type: string }> | null>(null);
+  // Shown for a few seconds after the close button hides it, so the person knows how to bring it back.
+  const [bye, setBye] = useState(false);
   const walker = useRef<HTMLDivElement>(null);
   const figure = useRef<HTMLDivElement>(null);
   const climber = useRef<HTMLDivElement>(null);
   const videos = useRef<Partial<Record<Clip, HTMLVideoElement | null>>>({});
+  // While the pointer is on it (or its close button has focus), it stops, so the close button is easy to hit.
+  const held = useRef(false);
+
+  useEffect(() => {
+    if (!bye) return;
+    const t = setTimeout(() => setBye(false), 5000);
+    return () => clearTimeout(t);
+  }, [bye]);
 
   // Everything it reads lives in the browser, so it starts after mount and the server renders nothing.
   useEffect(() => {
@@ -93,22 +113,35 @@ export function Mascot() {
     }
 
     let mode: "walk" | "up" | "hang" | "down" = "walk";
-    let x = bounds().left + 40;
+    // It starts in the middle of the open space, heading right, so the first climb comes within seconds.
+    let x = (bounds().left + bounds().right) / 2;
     let dir: 1 | -1 = 1;
     let y = 0;
     let top = 0;
+    let climbs = 0;
     let last = performance.now();
     let restUntil = 0;
+    let wasHeld = false;
     let raf = 0;
+    const clipFor = (): Clip => (mode === "walk" ? "walk" : mode === "down" ? "climb-down" : "climb-up");
     const rest = (now: number, ms: number) => {
       restUntil = now + ms;
-      show(mode === "walk" ? "walk" : mode === "down" ? "climb-down" : "climb-up", false);
+      show(clipFor(), false);
     };
 
     const tick = (now: number) => {
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
       raf = requestAnimationFrame(tick);
+      if (held.current) {
+        if (!wasHeld) show(clipFor(), false);
+        wasHeld = true;
+        return;
+      }
+      if (wasHeld) {
+        wasHeld = false;
+        if (now >= restUntil && mode !== "hang") show(clipFor(), true);
+      }
       if (now < restUntil) return;
       const h = height();
 
@@ -118,7 +151,8 @@ export function Mascot() {
         x = next.x;
         dir = next.dir;
         placeWalk(x, dir);
-        if (next.turned && dir === -1 && canClimb(window.innerWidth) && Math.random() < 0.6) {
+        // The first time it reaches the right edge it always climbs; after that, more often than not.
+        if (next.turned && dir === -1 && canClimb(window.innerWidth) && (climbs++ === 0 || Math.random() < 0.6)) {
           // At the right edge: up the side of the window, to somewhere between a quarter and half its height.
           mode = "up";
           y = 0;
@@ -158,13 +192,19 @@ export function Mascot() {
     return () => cancelAnimationFrame(raf);
   }, [on, still, src]);
 
-  if (!on || !src) return null;
+  if (!on || !src)
+    return bye ? (
+      <p className="mascot-note" role="status">
+        Muse is hidden. Bring him back in Settings, under Muse on screen.
+      </p>
+    ) : null;
   const clip = (name: Clip, poster: string) => (
     <video
       ref={(el) => {
         videos.current[name] = el;
       }}
       className={name === "walk" ? "mascot-walk" : "mascot-climb-clip"}
+      aria-hidden
       muted
       loop
       playsInline
@@ -174,16 +214,40 @@ export function Mascot() {
       <source src={src[name].src} type={src[name].type} />
     </video>
   );
+  // Pointer on it, or its close button focused: it stops where it is.
+  const hold = {
+    onPointerEnter: () => (held.current = true),
+    onPointerLeave: () => (held.current = false),
+    onFocus: () => (held.current = true),
+    onBlur: () => (held.current = false),
+  };
+  const close = (
+    <button
+      type="button"
+      className="mascot-close"
+      aria-label="Hide Muse"
+      title="Hide Muse"
+      onClick={() => {
+        held.current = false;
+        setBye(true);
+        setMascotOn(false);
+      }}
+    >
+      <Icon name="close" size={14} aria-hidden />
+    </button>
+  );
   return (
     <>
-      <div className="mascot" ref={walker} aria-hidden>
+      <div className="mascot" ref={walker} {...hold}>
         <div className="mascot-figure" ref={figure}>
           {clip("walk", "/muse/muse-walk.png")}
         </div>
+        {close}
       </div>
-      <div className="mascot-climb" ref={climber} aria-hidden hidden>
+      <div className="mascot-climb" ref={climber} hidden {...hold}>
         {clip("climb-up", "/muse/muse-climb.png")}
         {clip("climb-down", "/muse/muse-climb.png")}
+        {close}
       </div>
     </>
   );

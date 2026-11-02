@@ -2714,3 +2714,16 @@ The owner asked for a simpler sidebar using "muse" and "musing" for the creative
     - zoomed shots show no box and a clean grip at the edge.
   - The Safari (HEVC) files have not been opened in Safari yet.
   - Tests: mascot 4 of 4 (the walk, the climb, the switch), theme 4 of 4. Typecheck clean. Spend $0.
+- **Later, same branch: an X to hide Muse, and a climb you can see (owner: "I should be able to x out the muse mascot", "how do i get him to climb").**
+  - Why the climb wasn't seen: it only happened on 6 of 10 trips to the right edge, and the first trip took about 30 s from the left.
+  - Now:
+    - it starts in the middle of the open space, heading right;
+    - the first right-edge arrival always climbs on the desktop view; after that, 6 times in 10.
+  - Close: pointing at it stops it and shows a round X just above its head ("Hide Muse", always shown on touch screens, reachable with Tab). The X turns "Muse on screen" off in this browser and shows a 5 s note saying how to bring it back. The figure now takes the pointer; the rest of the page doesn't change.
+  - Checked in Chromium on the seeded local site (clock sped up):
+    - hovering held it in place (moved 0 px in 2 s), with the X showing;
+    - it climbed 11 s and 17.5 s after load in two runs;
+    - the X on the climbing clip hid it, saved "off" and showed the note, which went away after 5 s;
+    - no page errors.
+  - The first shot had the X over his face, so it moved above his head.
+  - Typecheck clean. Spend $0.

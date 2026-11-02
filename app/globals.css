@@ -7939,9 +7939,74 @@ div.md.md-plain {
   height: 96px;
 }
 
+/* Only the figure itself takes the pointer (to stop it and show the close button); the rest of the page stays clickable
+   around it, and docks, menus and dialogs still sit on top. */
+.mascot,
+.mascot-climb {
+  pointer-events: auto;
+}
+
+.mascot-close {
+  position: absolute;
+  top: -14px;
+  right: 0;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: var(--shadow-pop);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.mascot-climb .mascot-close {
+  right: auto;
+  left: 0;
+}
+
+.mascot:hover .mascot-close,
+.mascot-climb:hover .mascot-close,
+.mascot-close:focus-visible {
+  opacity: 1;
+}
+
+.mascot-close:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (hover: none) {
+  /* No hover on touch screens: the close button stays visible. */
+  .mascot-close {
+    opacity: 1;
+  }
+}
+
+.mascot-note {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  z-index: 15;
+  margin: 0;
+  padding: 8px 14px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: var(--fg);
+  color: var(--bg);
+  font-size: 13px;
+  box-shadow: var(--shadow-pop);
+}
+
 @media print {
   .mascot,
-  .mascot-climb {
+  .mascot-climb,
+  .mascot-note {
     display: none;
   }
 }
