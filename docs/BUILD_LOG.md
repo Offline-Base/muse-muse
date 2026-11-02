@@ -2018,3 +2018,7 @@ Behind a new flag, off by default. Design and limits are in docs/BUILD_RANGE.md.
 ## Nov 1: Media tab removed
 
 Owner asked. Took Media out of the sidebar in components/shell/nav.ts. The /media page stays at its address and nothing else links to it. Touched test only: nav.test.tsx.
+
+## Nov 1: Demos page removed
+
+Owner asked. Took Demos out of the sidebar, deleted app/demos/page.tsx and the DemoWall component only it used, plus the wall styles. /demos now 404s; the only in-repo link was the sidebar row. ComposerDock stays, gallery and media use it. Touched test only: nav.test.tsx.
