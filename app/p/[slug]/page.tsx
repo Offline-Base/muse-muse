@@ -9,6 +9,8 @@ import { KIND_ICON } from "@/components/composer/AttachmentChip";
 import "@/components/product/get-it.css";
 import { CheckedPanel } from "@/components/product/CheckedPanel";
 import { checksFailed, RequirementsChecklist, type CheckOutcome } from "@/components/build/RequirementsChecklist";
+import { DrillGroup } from "@/components/build/DrillGroup";
+import { DRILL_GROUP_TITLE, DRILLS_EARLIER_NOTE, latestDrills } from "@/lib/edge/drills";
 import { latestChecklist } from "@/lib/full/requirements";
 import { GetItPanel } from "@/components/product/GetItPanel";
 import { nativeSlots } from "@/components/product/NativeSlots";
@@ -78,6 +80,8 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const canEdit = await canEditProduct(user, product);
   const rebuild = rebuildRef(product.rebuildOf);
   const highlights = buildHighlights(events, latestBuild);
+  // An edge build's simulated outage drills, from the newest round that ran them. Null for every other build.
+  const drills = latestDrills(events.flatMap((e) => (e.type === "verify" ? [e.summary] : [])));
   const models: Array<{ id: string; usedFor: string }> = manifest?.models?.length
     ? manifest.models
     : (brief?.capabilities ?? []).map((c) => ({ id: c.model, usedFor: c.need }));
@@ -222,6 +226,13 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
               items={latestChecklist(brief, events.flatMap((e): Parameters<typeof latestChecklist>[1][number][] => (e.type === "judge" ? [{ judge: e.verdict }] : e.type === "verify" ? [{ tests: e.summary.requirements ?? null }] : [])))}
               failed={checksFailed(product.status, events.flatMap((e): CheckOutcome[] => (e.type === "judge" ? [{ judge: e.verdict }] : e.type === "verify" ? [{ verify: e.summary }] : [])))}
             />
+          </section>
+        ) : null}
+
+        {/* EDGE_ENABLED: only a build that ran the simulated outage drill has these steps. Nothing renders for any other. */}
+        {drills ? (
+          <section className="card section-card" aria-label={DRILL_GROUP_TITLE}>
+            <DrillGroup drills={drills.drills} note={drills.later ? DRILLS_EARLIER_NOTE : undefined} why={isOwner} />
           </section>
         ) : null}
 

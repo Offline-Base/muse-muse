@@ -15,6 +15,7 @@ import { freeProductPortsScript } from "@/lib/sandbox/tasks";
 import { q } from "@/lib/sandbox/shell";
 import type { VerifySummary } from "@/lib/types";
 import { EDGE_DRILL_CAP_MS } from "@/lib/pipeline/steps";
+import { EDGE_DRILL_STEP, EDGE_DRILLS } from "@/lib/edge/drills";
 
 /** True for a brief with the edge target while EDGE_ENABLED is on. */
 export function isEdgeBuild(brief: Parameters<typeof briefTargets>[0]): boolean {
@@ -47,7 +48,7 @@ export function withStandaloneOutput(src: string): string | null {
   return next === src ? null : next;
 }
 
-/** The files an edge build gets on top of edgeExtraFiles: its Next config. Empty for any other build. */
+/** The files an edge build gets on top of edgeExtraFiles (the helper, the skill, the drill kit): its Next config. Empty for any other build. */
 export function edgeBuildFiles(brief: Parameters<typeof briefTargets>[0]): Array<{ path: string; content: string }> {
   if (!isEdgeBuild(brief)) return [];
   const config = withStandaloneOutput(TEMPLATE_NEXT_CONFIG);
@@ -63,7 +64,7 @@ export const EDGE_DRILL_OUT = "test-results/caps/edge-drill.json";
 /** The longest the drill may take: the server's start, about 12 s for the hang drill and the other three. */
 export { EDGE_DRILL_CAP_MS };
 /** The drill's step names start with this, so the fix prompt and the product page show them as one group. */
-export const EDGE_DRILL_STEP = "Simulated outage drill";
+export { EDGE_DRILL_STEP };
 
 /** The drill kit's scripts. They are written fresh before each drill, so an edit in the build can't change what runs. */
 export const EDGE_DRILL_KIT = EDGE_TEMPLATE_FILES.filter((f) => f.path.startsWith("scripts/edge-"));
@@ -110,12 +111,7 @@ interface DrillResult {
 }
 
 /** The four drills, by id, so a drill missing from the results still shows as failed. */
-const DRILLS: ReadonlyArray<{ id: number; name: string }> = [
-  { id: 1, name: "cloud refused" },
-  { id: 2, name: "cloud hung" },
-  { id: 3, name: "both down" },
-  { id: 4, name: "tampered reply rejected" },
-];
+const DRILLS = EDGE_DRILLS;
 
 function readResults(json: string | null): DrillResult[] | null {
   if (!json) return null;

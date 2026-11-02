@@ -1113,10 +1113,15 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       await provision(EDGE_BRIEF);
       const files = provisioned[0]!.extraFiles as Array<{ path: string; content: string }>;
       assert.match(files.find((f) => f.path === "next.config.ts")!.content, /output: "standalone"/);
-      assert.ok(files.some((f) => f.path === "scripts/edge-drill.mjs"), "the drill kit comes with EDGE_BUILDS");
+      assert.ok(files.some((f) => f.path === "scripts/edge-drill.mjs"), "the drill kit comes with the edge target");
+      assert.ok(files.some((f) => f.path === "lib/meta/edge.ts"), "and the fallback helper");
       provisioned = [];
       await provision(FULL_BRIEF);
-      assert.ok(!(provisioned[0]!.extraFiles as Array<{ path: string }>).some((f) => f.path === "next.config.ts"));
+      const other = (provisioned[0]!.extraFiles ?? []) as Array<{ path: string }>;
+      assert.ok(!other.some((f) => f.path === "next.config.ts"));
+      for (const want of ["lib/meta/edge.ts", ".agents/skills/muse-edge/SKILL.md", "scripts/edge-drill.mjs", "scripts/edge-fake.mjs", "scripts/edge-blackhole.mjs"]) {
+        assert.ok(!other.some((f) => f.path === want), `a build without the edge target gets no ${want}`);
+      }
     });
 
     it("starts the drill on the build's sandbox", async () => {
