@@ -183,7 +183,8 @@ export async function getBuildRoom(buildId: string): Promise<BuildRoomData | nul
   return {
     build: toBuildView(b),
     inspiration: inspirationRows[0] ? toInspirationView(inspirationRows[0]) : null,
-    product: productRows[0] ? toProductView(productRows[0]) : null,
+    // A taken-down product's page is a 404 (getProductPage), so its build room doesn't link to it or show it.
+    product: productRows[0] && !productRows[0].takenDownAt ? toProductView(productRows[0]) : null,
     events: eventRows.map((r) => ({ ...r.payload, id: r.id, at: r.at.toISOString() }) as BuildEvent),
     history,
     tokens: {

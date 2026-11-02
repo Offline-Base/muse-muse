@@ -64,7 +64,8 @@ export const GENERAL_CHECKS: readonly CheckItem[] = [
     prompt: "At sea level, what temperature does pure water boil at, in degrees Celsius?",
     reference: "100 degrees Celsius.",
   },
-  { prompt: "Translate into Spanish: Good morning, how are you?", reference: "Buenos días, ¿cómo estás?" },
+  // No translation prompt: the judge marks down answers in another language than the user's (lib/train/judge.ts).
+  { prompt: "Rewrite in the past tense: She walks to the market and buys bread.", reference: "She walked to the market and bought bread." },
   {
     prompt: "I have 3 apples. I eat one, then buy 5 more. How many apples do I have now?",
     reference: "7 apples: 3 - 1 + 5 = 7.",

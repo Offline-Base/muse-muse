@@ -8,10 +8,9 @@
  * string concatenation. It reads only COPY_FILES, not the copy a build writes for its own product. The jetson-infra paths in a
  * row are another repo, so nothing here checks them.
  *
- * Left out on purpose, until the change each needs can happen (docs/BUILD_LOG.md, Nov 2). Each still says too much:
- * - template/.agents/skills/meta-glimmer/SKILL.md lines 3 and 14: template/ reaches builds only with a new snapshot.
- * - lib/prompts/catalog.ts line 201: the brief writer's words for the same model, to change along with that skill.
- * - privacy/README.md and privacy/docs/OTHER_APPS.md: privacy/ is a subtree of another repo, changed there.
+ * Not in COPY_FILES: template/.agents/skills/meta-glimmer/SKILL.md, lib/prompts/catalog.ts, privacy/README.md and
+ * privacy/docs/OTHER_APPS.md. Their overclaims were reworded on Nov 2 (docs/BUILD_LOG.md); the template's words reach builds
+ * only with a new builder snapshot.
  *
  *   npx tsx --test lib/__tests__/reach-claims.test.ts
  */

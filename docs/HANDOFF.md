@@ -6,7 +6,7 @@ Change a line here when its fact changes. History goes in docs/BUILD_LOG.md.
 
 ## Now
 
-- **Production** runs main at PR #58 (`492975dd`), with the Make chat on (`MAKE_CHAT_ALL`).
+- **Production** runs main at PR #59 (`12a362a1`), with the Make chat on (`MAKE_CHAT_ALL`). Vercel blocked the deploys of #60, #61 and #62 because Hussam's commits aren't from a Vercel team member (checked Nov 2 from GitHub's commit statuses). The next merge authored by Ethan deploys all of main, theirs included.
 - **Deadline:** due Nov 4, 9 PM ET, and Ethan submits by noon ET. Whoever is awake switches judges to Muse Wonder on Nov 4.
 - **What we can say in public:** docs/MESSAGING.md (outside quotes, each marked checked or not, what the rules say, and what not to say). Then the marks in docs/STORY.md and docs/PROVE_RESULTS.md.
 - **Submission kit:** the draft write-up and form answers in docs/SUBMISSION.md, the video script and shot list in docs/VIDEO.md.
@@ -17,7 +17,8 @@ Nobody but the owner or Hussam merges. Hussam's PRs all say "Don't merge until t
 
 | PR | Who | What | State |
 |---|---|---|---|
-| #63 | Hussam | A product can answer from the Jetson fleet, behind `FLEET_PRODUCTS` | Open. Turning the flag on needs a new builder snapshot, the owner's model choice, a `jik_` key and a total cap |
+| #63 | Hussam | A product can answer from the Jetson fleet, behind `FLEET_PRODUCTS` | Open. Turning the flag on needs a new builder snapshot, the owner's model choice, a `jik_` key and a total cap. Checks pass and it's up to date with main (Nov 2, 1 PM) |
+| this PR | Ethan (Claude) | Set up for judging with no spend: judge path, copy and scrub, Muse Privacy proof, general and safety checks (off), submission kit, data rights, judge-path checker | Open. Merging it also deploys #60 to #62 |
 | #54 | Ethan (Claude) | Hero tune: sealed test and tooling | Draft, blocked before training |
 | #46 | Ethan (Claude) | Hugging Face inventory | Open. Found every OfflineBase repo answering as public (owner to-do 7) |
 
@@ -114,6 +115,8 @@ Everything on the boards goes through the fleet control plane, never SSH from th
   - Command: `npx tsx --experimental-test-module-mocks --test <files>`, only for the code you touched.
   - The real-route PGlite test is `lib/train/tune/__tests__/open-train.test.ts`.
   - Regenerate goldens with `TUNE_GOLDEN_WRITE=1` or `MAKE_GOLDEN_WRITE=1`, from a clean tree.
+- **Not in CI:** `.tsx` tests outside `components/train/` don't run in CI. `components/models/__tests__/models-page.test.tsx` fails one case on main ("shows accuracy for a decide-kind tuned model", the 78 of 78 line is missing) and nobody has fixed it yet.
+- **Judge-path checker:** `node scripts/judge-check.mjs` walks the live site with GETs only and writes a report. Rerun it after each deploy.
 - **Company name:** the story tests still keep it out of the privacy paragraph and `/private`, though the owner lifted that rule on Nov 1.
 - **ngrok's free plan** allows 20,000 requests a month across the fleet.
 - **This laptop:**

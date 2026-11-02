@@ -1,6 +1,7 @@
 /**
  * listShippedProducts' filters on a real schema (PGlite): the gallery's published-only read leaves out a product with no
- * live link, before the limit, and the Make page's read takes only the slugs it asks for.
+ * live link, before the limit, and the Make page's read takes only the slugs it asks for. getBuildRoom drops a taken-down
+ * product.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/gallery/__tests__/shipped.test.ts
  *
@@ -56,5 +57,19 @@ describe("listShippedProducts", { skip: canMock ? false : "needs --experimental-
   it("takes only the slugs asked for, and nothing for an empty list", async () => {
     assert.deepEqual((await queries.listShippedProducts(6, { published: true, slugs: ["published-live", "no-link", "failed-one"] })).map((p) => p.slug), ["published-live"]);
     assert.deepEqual(await queries.listShippedProducts(6, { slugs: [] }), []);
+  });
+
+  it("gives a build room no product once that product is taken down, since its page is a 404", async () => {
+    const [user] = await testDb.insert(realSchema.users).values({ email: `${randomUUID()}@example.com` }).returning();
+    const [muse] = await testDb.insert(realSchema.inspirations).values({ userId: user!.id }).returning();
+    const room = async (slug: string, takenDownAt: Date | null) => {
+      const [p] = await testDb.insert(realSchema.products).values({ slug, name: slug, ownerId: user!.id, inspirationId: muse!.id, status: "live", liveUrl: `https://musemuse-${slug}.vercel.app`, takenDownAt }).returning();
+      const [b] = await testDb.insert(realSchema.builds).values({ inspirationId: muse!.id, userId: user!.id, productId: p!.id }).returning();
+      return queries.getBuildRoom(b!.id);
+    };
+    assert.equal((await room("still-up", null))?.product?.slug, "still-up");
+    const down = await room("taken-down", new Date(Date.UTC(2026, 10, 1)));
+    assert.ok(down, "the room itself still opens");
+    assert.equal(down!.product, null);
   });
 });

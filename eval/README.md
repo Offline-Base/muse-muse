@@ -40,7 +40,7 @@ Read this first.
 
 | What | Number | Label | Source |
 |---|---|---|---|
-| Local batch, Oct 27 | 24 of 24 live, 3 to 9 minutes, about $0.30 to $1.80 each. Local runs stop before deploy | Real run | [README](../README.md#results-from-the-oct-27-test-runs) |
+| Local batch, Oct 27 | 24 of 24 passed their checks (none deployed), 3 to 9 minutes, about $0.30 to $1.80 each. Local runs stop before deploy | Real run | [README](../README.md#results-from-the-oct-27-test-runs) |
 | Blind product quality, Oct 27 | 5.5 of 10 average on 24 products. After a template polish, an 11-build canary scored 5.91, up from 5.14 for those 11 | Real run, judged on screenshots | [README](../README.md#results-from-the-oct-27-test-runs) |
 | Muse Code spend `run.usage` left out | Reminder agents were 31% to 43% of each build's real Muse Code spend | Real run | [README](../README.md#results-from-the-oct-27-test-runs) |
 | Tracker rerun 020084d8 | Live, judge pass, 15 of 15 met, 23m32, $0.085. Its brief has 15 requirements against the Wonder build's 21, so it doesn't prove the screenshot fix on the original failure | Test model | [BUILD_LOG](../docs/BUILD_LOG.md) |

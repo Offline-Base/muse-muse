@@ -40,7 +40,7 @@ The inspo shows what to make. It is not material to copy.
   - `.agents/skills/meta-image` covers Muse Image: generate, edit and compose.
   - `.agents/skills/meta-sam` covers SAM 3.1: find, outline and track objects in images and video.
   - `.agents/skills/meta-voice` covers Muse Voice Transcribe: speech to text.
-  - `.agents/skills/meta-glimmer` covers Muse Glimmer, only when the brief asks for local or offline use.
+  - `.agents/skills/meta-glimmer` covers Muse Glimmer, only when the brief picks muse-glimmer, an open-weights model someone hosts on a GPU server.
   - `.agents/skills/muse-agent` covers a product that works in steps with Meta's web search and other tools, only when the brief's targets list agent.
   - `.agents/skills/muse-gadget` covers a physical board's camera and microphone, only when the brief lists `muse-gadget`.
   - `.agents/skills/muse-vr` covers VR on Meta Quest, only when the brief says it runs there.
