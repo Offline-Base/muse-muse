@@ -13,7 +13,9 @@ from fastapi.testclient import TestClient
 
 from base import retention
 from base.approvals import AutoApprove
-from base.config import load_settings
+from base.config import (
+    _load_settings_for_tests as load_settings,  # pre-ruling loader: LFM code load_settings now refuses
+)
 from base.controls import Controls, ControlStore
 from base.egress import RAW_REQUEST_NOTE, Egress
 from base.services import Services

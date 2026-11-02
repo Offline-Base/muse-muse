@@ -17,6 +17,15 @@ from base.router import lfm_labels, routing_mode
 from eval import run_eval
 from scripts import model_matrix as mm
 
+
+@pytest.fixture(autouse=True)
+def _pre_ruling_settings(monkeypatch):
+    """Every matrix config starts from device-only LFM settings. The Nov 2 ruling made load_settings refuse LFM settings
+    (tests/test_config.py); these tests keep that code tested with the pre-ruling loader until the
+    owner decides whether to delete it."""
+    monkeypatch.setattr(mm, "load_settings", base_config._load_settings_for_tests)
+
+
 LFM = "http://127.0.0.1:8083/v1"
 SIDE = "http://127.0.0.1:8091/v1"
 TASKS = REPO_ROOT / "eval" / "tasks.jsonl"
@@ -471,3 +480,12 @@ def test_replies_cut_off_at_the_token_cap_are_counted():
     lines = mm.cutoff_lines({"policy_lfm": report([None, None]), "glimmer_decide": report(["stop", "length", "length", None])})
     assert "| glimmer_decide | 3 | 2 |" in lines and "| policy_lfm | 0 | 0 |" in lines
     assert mm.cutoff_lines({"policy_lfm": report([None])}) == []
+
+
+def test_model_matrix_lfm_is_refused(environ, monkeypatch):
+    """With the real load_settings (the Nov 2 ruling), no matrix config can start: each one loads
+    device-only LFM settings."""
+    monkeypatch.setattr(mm, "load_settings", base_config.load_settings)
+    for config in mm.CONFIGS.values():
+        with pytest.raises(base_config.NonMetaModelRefused, match="not a Meta model"):
+            mm.settings_for(config, opts(), environ)

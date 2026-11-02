@@ -3,8 +3,9 @@
  * switch. A plain file with no imports, like lib/caps/ids.ts, so lib/env.ts and the cap registries can both read it
  * without an import cycle (lib/env.ts imports lib/brief/schema.ts, which reads the registries at load).
  */
+// No speech part: it read text aloud with SpeechT5, which isn't a Meta model, and the organizers ruled on Nov 2 that every
+// model a project calls must be Meta's. MEDIA_SPEECH turns nothing on. The browser's own voice stays the catalog's line.
 export const MEDIA_PART_FLAGS = [
-  ["speech", "MEDIA_SPEECH"],
   ["video", "MEDIA_VIDEO"],
   ["music", "MEDIA_MUSIC"],
   ["samTiling", "MEDIA_SAM_TILING"],

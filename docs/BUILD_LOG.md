@@ -2700,3 +2700,17 @@ Three branches built in parallel worktrees, each reviewed adversarially, then me
 - **Build c067aea2, product cold-room-sentinel-3:** the cold-room sentence with targets ["edge"], on Contributor. The brief picked web and edge. Typecheck, build, start, console, smoke and manifest passed, then all four simulated outage drills (cloud refused, cloud hung, both down, tampered reply rejected), and the judge passed it. Live with 0 fix rounds, $0.054. Muse Muse wrote the fallback itself: `app/api/actions/check_cold_room` calls `respondJsonOrEdge` with a zod schema and returns `by` and a label.
 - **Run on this laptop:** source.zip for v1 (210 KB) built with `next build`, started with no GATEWAY_URL (the cloud cut) and EDGE_URL at the fleet with the `jik_` key and muse-glimmer-2026-iq1s-io-lowest. It answered 503 "Neither the cloud model nor the backup model answered", because the fleet had no board serving Glimmer: another session stopped and disabled jetson-llama on jetson-02 and jetson-04 at 18:05 to move the Glimmer file to jetson-03. Not retried; the boards were left as that session left them.
 - **Not proven yet:** a real answer from a board model through this product. Ready to run once Glimmer is served again.
+- **Nov 2, evening: the Meta-only units, combined on top of Hussam's #71 (branch tg-meta-only).**
+  - #71 conflicted with main in two files. Fixed on its own branch:
+    - `docs/BUILD_LOG.md`: kept both sides;
+    - `lib/edge/template-source.ts`: regenerated with `scripts/edge/gen-edge-template.ts`.
+  - On top of #71, cherry-picked four of the five units from the evening's Meta-only workflow:
+    - guards-train;
+    - privacy-swap;
+    - copy-public;
+    - learn-plans, with the Learn plan commit (192dd7cf) it builds on.
+  - guards-runtime was left out: #71 covers the same fleet, board and device paths (18 of its 28 files).
+  - Where guards-train and #71 overlapped (`lib/board-loop/device-mcp.ts`, `tick.ts`, the quant-targets test), #71's code was kept.
+  - Since the small-base list no longer has a Llama, `judgedProblem` also refuses an adapter whose base name matches another family's word.
+  - Old tests that still expected a small Llama for other devices were brought to the ruling: the Modelfile test, the run page test and the pairing test.
+  - Typecheck clean. 594 of 594 tests pass in the files the branch touches, and 47 of 47 in the downstream files.

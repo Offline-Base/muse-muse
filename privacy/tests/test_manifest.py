@@ -28,7 +28,9 @@ def cloud(tmp_path, root):
 
 
 def device_only(tmp_path, root):
-    return load_settings({"BASE_HOME": str(tmp_path / "h"), "WORKSPACE_ROOT": str(root), "DEVICE_ONLY": "1"})
+    return load_settings(
+        {"BASE_HOME": str(tmp_path / "h"), "WORKSPACE_ROOT": str(root), "DEVICE_ONLY": "1", "GLIMMER_BACKEND": "llama_server"}
+    )
 
 
 def test_marker_names_agree():

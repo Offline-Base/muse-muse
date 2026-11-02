@@ -9,17 +9,20 @@
 Checks the file first: it reads the GGUF header (architecture, tensor types, parameters, bits per
 weight, the KV cache at ANSWER_CTX, vision tensors, the vocabulary), hashes it, compares its tensor
 types with what llama.cpp can load, and checks free disk and memory with the drafter included. The
-memory check keeps 4 GB for the rest on a laptop (LFM, the embedder, the app, the system) and 1 GB
+memory check keeps 4 GB for the rest on a laptop (the app and the system) and 1 GB
 on a Jetson (BASE_DEVICE=jetson, a headless board that runs only the model), with a warning; --margin
 sets it. The KV cache is counted at ANSWER_CTX, else 16384 on a laptop and the Jetson unit's 4096.
 It writes eval/reports/model_file_<label>.md and refuses a file that cannot work, with a plain reason.
 
-Then it sets the model's lines in .env: every model on this device, your GGUF for answers and
-routing, LFM3-VL-2B for scans and search, plus the drafter and server knobs scripts/start.sh reads
-(GLIMMER_DRAFT_GGUF, GLIMMER_DRAFT_N, GLIMMER_FA, GLIMMER_REASONING_BUDGET). The other lines stay
-as they are, and the old file is kept as .env.before-plug-in. --mode says how far the file's privacy
-work goes: answers (it writes; the policy decides on LFM's labels), labels (it also labels Muse's
-requests), tighten (it can only make the policy stricter) or decide (it decides, under the floors).
+Then it sets the model's lines in .env: every model on this device, your Glimmer GGUF for every
+model step (answers, routing, the name pass and the request labels; CHECKER_BACKEND=glimmer, since
+the organizers' Nov 2 ruling allows only Meta models, so no LFM3-VL-2B beside it), plus the drafter
+and server knobs scripts/start.sh reads (GLIMMER_DRAFT_GGUF, GLIMMER_DRAFT_N, GLIMMER_FA,
+GLIMMER_REASONING_BUDGET). A SEARCH_EMBEDDINGS=1, PROMPT_GUARD=1 or JETSON_LFM_ line, which
+load_settings refuses, is turned off. The other lines stay as they are, and the old file is kept as
+.env.before-plug-in. --mode says how far the file's privacy work goes: answers or labels (it writes
+and labels Muse's requests; the policy decides on those labels), tighten (it can only make the
+policy stricter) or decide (it decides, under the floors).
 Without --mode those lines stay as they are, and a choice on the Dreaming page still overrides them. Restart scripts/start.sh afterwards,
 then run scripts.compare_modes to score it. Nothing is downloaded, and no value in .env is printed.
 A .env that is a link to another checkout's (a lane worktree) is never changed; --check still works.
@@ -52,7 +55,7 @@ LINKED_ENV = (
     "checkout the app runs from, or use --check."
 )
 DEVICES = ("laptop", "jetson")
-# Memory kept for everything but the model: LFM, the embedder, the app and the system on a laptop;
+# Memory kept for everything but the model: the app and the system on a laptop;
 # on a headless Jetson only the system and the small Python services (deploy/jetson).
 MARGIN_GB = {"laptop": 4.0, "jetson": 1.0}
 MIN_FREE_GB = 2  # free disk left on the model's volume, for logs, the database and swap
@@ -64,7 +67,9 @@ JETSON_WARNING = (
 )
 MODES = {
     "answers": {"DREAMING_BACKEND": "rules", "LABELS_BACKEND": "checker"},
-    "labels": {"DREAMING_BACKEND": "rules", "LABELS_BACKEND": "glimmer"},
+    # The same as answers since the Nov 2 ruling: Glimmer is the checker too, so it labels Muse's
+    # requests (LABELS_BACKEND=glimmer needed CHECKER_BACKEND=lfm, which load_settings refuses).
+    "labels": {"DREAMING_BACKEND": "rules", "LABELS_BACKEND": "checker"},
     "tighten": {"DREAMING_BACKEND": "prompt", "ROUTER_TRUST": "tighten", "LABELS_BACKEND": "checker"},
     "decide": {"DREAMING_BACKEND": "prompt", "ROUTER_TRUST": "decide", "LABELS_BACKEND": "checker"},
 }
@@ -292,8 +297,17 @@ def plug_in(
         "PRIMARY_MODEL": "glimmer",
         "GLIMMER_BACKEND": "llama_server",
         "GLIMMER_GGUF": str(model.resolve()),
-        "CHECKER_BACKEND": "lfm",
+        # Glimmer for the checks too: no LFM3-VL-2B beside it (the organizers' Nov 2 ruling).
+        "CHECKER_BACKEND": "glimmer",
     }
+    # Settings load_settings refuses (non-Meta models) are turned off, so the new .env loads.
+    for key in ("SEARCH_EMBEDDINGS", "PROMPT_GUARD"):
+        if env.get(key, "0").strip() == "1":
+            values[key] = "0"
+    for key in sorted(k for k, v in env.items() if k.startswith("JETSON_LFM_") and v.strip()):
+        values[key] = ""
+    if env.get("LABELS_BACKEND") == "glimmer":
+        values["LABELS_BACKEND"] = "checker"
     server = env.get("LLAMA_SERVER_BIN") or env.get("CHECKER_SERVER_BIN")
     if server:
         values["LLAMA_SERVER_BIN"] = server

@@ -1,10 +1,11 @@
 /**
  * Any Meta base (TUNE_ANY_BASE, docs/TRAINING.md "Any Meta base"): the rules for which Hugging Face repos a job may train
- * on. Llama and Glimmer only, with nothing else offered or accepted anywhere. Pure, so the picker, the routes, launchJob
+ * on. Muse Glimmer builds only, with nothing else offered or accepted anywhere. Pure, so the picker, the routes, launchJob
  * and the tests share them; lib/train/base-check.ts reads the Hub and hands its facts to checkFacts.
  *
- * Only r30b, the original Muse Glimmer 30B and one Llama 3.2 3B build (MEASURED) have run on a GPU here. Every other Llama
- * path comes from Unsloth's and the Hub's public pages, and the plan says so.
+ * The organizers ruled on Nov 2 that Llama doesn't count as a Meta model in this hackathon, however it is run, so no Llama
+ * repo is offered or accepted here (docs/MESSAGING.md, the rules section). Only r30b and the original Muse Glimmer 30B
+ * (MEASURED) have run on a GPU here.
  */
 import { familyOfRepo, isR30bRepo, LAB_BASE_MODEL, LAB_BASE_REVISION, licenseDuties, PLAIN_GLIMMER_MODEL, PLAIN_GLIMMER_REVISION, type BaseFamily, type LicenseDuties } from "@/lib/train/base";
 
@@ -17,31 +18,21 @@ export const GATED_REFUSAL = "Hugging Face won't give this token that gated mode
 /** The one thing the picker says about untried bases. */
 export const NEVER_RUN_TEXT = "This base has never been run on a GPU here, so its template, cost and time are from public documentation and estimates. The first run may fail, and the job's limits still hold.";
 
-const ALLOWED_LLAMA = /^llama-(3\.[123]|4)-/i;
-const LLAMA_NOT_TEXT = /guard|vision|prompt/i;
+/** The sentence for any repo that isn't a Muse Glimmer build. */
+export const GLIMMER_ONLY_REFUSAL = "Only Muse Glimmer trains here, from a build by unsloth or OfflineBase. Llama and other model families aren't offered.";
 
-/** Why a pasted repo id isn't accepted, before anything asks the Hub. Null when its org and name are on the allowlist. */
+/** Why a pasted repo id isn't accepted, before anything asks the Hub. Null when it names a Muse Glimmer build from an allowed org. */
 export function repoProblem(id: unknown): string | null {
-  if (typeof id !== "string" || !REPO_ID_RE.test(id) || id.includes("..")) return "Paste a Hugging Face repo id, like unsloth/Llama-3.2-3B-Instruct-bnb-4bit.";
+  if (typeof id !== "string" || !REPO_ID_RE.test(id) || id.includes("..")) return "Paste a Hugging Face repo id, like unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit.";
   const [org, name] = id.split("/") as [string, string];
-  const orgs = ["meta-llama", "unsloth", "OfflineBase"];
-  const refuse = "Only Meta's models train here: Llama or Muse Glimmer builds from meta-llama, unsloth or OfflineBase.";
-  if (!orgs.includes(org)) return refuse;
+  if (!["unsloth", "OfflineBase"].includes(org)) return GLIMMER_ONLY_REFUSAL;
   if (/-(gguf|lora)$|-gguf-|-lora-/i.test(name)) return "That repo holds GGUF files or an adapter, and training needs safetensors weights.";
-  if (/^llama-/i.test(name)) {
-    if (LLAMA_NOT_TEXT.test(name)) return "Llama Guard, Prompt Guard and the Llama vision models don't fit this recipe's chat training.";
-    if (!ALLOWED_LLAMA.test(name)) return "Only Llama 3.1, 3.2, 3.3 and 4 are mapped to their templates and licenses here.";
-    return null;
-  }
-  if (org !== "meta-llama" && familyOfRepo(id) === "glimmer") return null;
-  return refuse;
+  return familyOfRepo(id) === "glimmer" ? null : GLIMMER_ONLY_REFUSAL;
 }
 
-/** Architectures the recipe trains, each with its family (FAMILIES in the recipe, plus Glimmer's own markers). */
+/** Architectures a picked base may have, each with its family. Glimmer's alone: the recipe's Llama families take no new job. */
 const ARCHITECTURES: Readonly<Record<string, BaseFamily>> = {
   MuseGlimmerForConditionalGeneration: "glimmer",
-  LlamaForCausalLM: "llama3",
-  Llama4ForConditionalGeneration: "llama4",
 };
 
 /** The recipe's GPUs, smallest memory first, in GB. */
@@ -64,20 +55,10 @@ const R30B_PARAMS = 29_776_626_688;
 /** Smaller bases aren't counted as faster than half r30b's measured step: nothing has measured them. */
 const MIN_SCALE = 0.5;
 
-/** The Llama 3.2 3B build the Nov 1 harness tune ran on (docs/BUILD_LOG.md, "a real fine-tune on a rented GPU", job e1b00ffa). */
-export const MEASURED_LLAMA_3B_MODEL = "unsloth/Llama-3.2-3B-Instruct-bnb-4bit";
-/**
- * The log gives the short form bb1d317a. The full commit is the baseRevision in the job.json of the two tuning-loop rounds
- * that ran on the same base right after it (jobs 2c12d50b and 081934e6, the same BUILD_LOG section), kept in the session
- * scratchpad, not in the repo.
- */
-export const MEASURED_LLAMA_3B_REVISION = "bb1d317a108579fb40e646af8924a5e7ec5604b1";
-
-/** The repos that have run on a GPU here, at the commits they ran. */
+/** The pickable repos that have run on a GPU here, at the commits they ran. The Nov 1 Llama harness tune isn't one: Llama isn't offered. */
 const MEASURED: Readonly<Record<string, string>> = {
   [LAB_BASE_MODEL]: LAB_BASE_REVISION,
   [PLAIN_GLIMMER_MODEL]: PLAIN_GLIMMER_REVISION,
-  [MEASURED_LLAMA_3B_MODEL]: MEASURED_LLAMA_3B_REVISION,
 };
 
 /** True when this repo at this commit has run on a GPU here. */
@@ -135,11 +116,9 @@ export function checkFacts(f: HubFacts): BaseCheck {
   if (!COMMIT_RE.test(f.sha)) return no("The Hub didn't give a full commit for that repo, so it can't be pinned.");
   if (f.private) return no("That repo is private, so a run couldn't be repeated from it.");
   const family = f.architectures.map((a) => ARCHITECTURES[a]).find(Boolean);
-  if (!family) return no(`Its architecture (${f.architectures.join(", ") || "none listed"}) isn't one the training script supports: Llama 3, Llama 4 or Muse Glimmer.`);
+  if (!family) return no(`Its architecture (${f.architectures.join(", ") || "none listed"}) isn't Muse Glimmer's, and only Muse Glimmer trains here.`);
   if (family !== familyOfRepo(f.id)) return no("Its name and its architecture don't agree, so it isn't accepted.");
   const license = f.license?.toLowerCase() ?? null;
-  if (family === "llama3" && !license?.startsWith("llama3")) return no(`Its Hub page says the license is ${license ?? "unknown"}, not a Llama license.`);
-  if (family === "llama4" && license !== "other" && !license?.startsWith("llama4")) return no(`Its Hub page says the license is ${license ?? "unknown"}, not a Llama license.`);
   // Only r30b's builds carry the Muse Spark Open duties, so any other Glimmer has to be what the plain duties say it is.
   if (family === "glimmer" && !isR30bRepo(f.id) && license !== "apache-2.0") return no(`Its Hub page says the license is ${license ?? "unknown"}, and a Muse Glimmer build here is r30b or Apache 2.0.`);
   if (!f.bytes || !f.params) return no("It has no safetensors weights, and training needs them.");
@@ -182,14 +161,9 @@ export interface CuratedBase {
   note: string;
 }
 
+/** Muse Glimmer builds only: every row here must pass repoProblem, and a test keeps it so. */
 export const CURATED_BASES: readonly CuratedBase[] = [
   { repo: PLAIN_GLIMMER_MODEL, revision: PLAIN_GLIMMER_REVISION, label: "Muse Glimmer 30B (original)", note: "Meta's, in 4-bit. Has run on a GPU here. Apache 2.0." },
-  { repo: "unsloth/Llama-3.2-3B-Instruct-bnb-4bit", revision: null, label: "Llama 3.2 3B Instruct", note: "Unsloth's 4-bit build, no gate. Never run here." },
-  { repo: "meta-llama/Llama-3.2-3B-Instruct", revision: null, label: "Llama 3.2 3B Instruct (Meta's repo)", note: "Gated: needs HF_TOKEN's access. Never run here." },
-  { repo: "unsloth/Llama-3.1-8B-Instruct-bnb-4bit", revision: null, label: "Llama 3.1 8B Instruct", note: "Unsloth's 4-bit build, no gate. Never run here." },
-  { repo: "meta-llama/Llama-3.1-8B-Instruct", revision: null, label: "Llama 3.1 8B Instruct (Meta's repo)", note: "Gated: needs HF_TOKEN's access. Never run here." },
-  { repo: "unsloth/Llama-3.3-70B-Instruct-bnb-4bit", revision: null, label: "Llama 3.3 70B Instruct", note: "H100 only, and costs more. Never run here." },
-  { repo: "unsloth/Llama-4-Scout-17B-16E-Instruct-unsloth-bnb-4bit", revision: null, label: "Llama 4 Scout", note: "H100 only, about 71 GB of its 80. Text only. Never run here." },
 ];
 
 /** A body's `base`, as {repo, revision?}, or the sentence that refuses it. Undefined when there is none. */

@@ -9,7 +9,9 @@ import pytest
 
 from base import compliance, guard
 from base.approvals import AutoApprove
-from base.config import load_settings
+from base.config import (
+    _load_settings_for_tests as load_settings,  # pre-ruling loader: LFM code load_settings now refuses
+)
 from base.controls import Controls, ControlStore
 from base.egress import Egress
 from base.guard import Redaction, TagMap, load_roster

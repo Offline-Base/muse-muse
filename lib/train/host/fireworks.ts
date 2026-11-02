@@ -19,15 +19,19 @@ const SCALE_TO_ZERO_WINDOW = "300s";
 const ADAPTER_FILES = new Set(["adapter_config.json", "adapter_model.safetensors", "adapter_model.bin"]);
 
 /**
- * The Fireworks-owned bases an adapter may name. Neither is on Fireworks' list of addon bases (peft-addon/requirements-and-limits),
- * which says others need an enterprise account, though Glimmer's model page offers LoRA. So these are unproven.
+ * The Fireworks-owned base an adapter may name: Muse Glimmer 30B only. It isn't on Fireworks' list of addon bases
+ * (peft-addon/requirements-and-limits), which says others need an enterprise account, though Glimmer's model page offers
+ * LoRA. So it is unproven. A Llama adapter gets no base: the organizers ruled on Nov 2 that Llama doesn't count as a Meta
+ * model in this hackathon, so it is never served.
  */
 function fireworksBase(f: HostFacts): string | null {
   if (f.sparkOpen) return null;
   if (f.family === "glimmer") return "accounts/fireworks/models/muse-glimmer-30b";
-  if (f.family === "llama3" && f.servingBase && /llama-3\.2-3b/i.test(f.servingBase.repo)) return "accounts/fireworks/models/llama-v3p2-3b-instruct";
   return null;
 }
+
+/** The sentence for an adapter trained on Llama, on every host. */
+export const LLAMA_HOST_REFUSAL = "This model trained on Llama, and only Muse Glimmer models are served here.";
 
 export function fireworksAdapter(deps: { fetch?: Fetcher; apiKey: () => string | undefined; accountId: () => string | undefined; source: AdapterSource; pollMs?: number }): HostAdapter {
   const send = deps.fetch ?? fetch;
@@ -44,6 +48,7 @@ export function fireworksAdapter(deps: { fetch?: Fetcher; apiKey: () => string |
     label: "Fireworks",
     missingKeys: () => [...(deps.apiKey() ? [] : ["FIREWORKS_API_KEY"]), ...(deps.accountId() ? [] : ["FIREWORKS_ACCOUNT_ID"])],
     cantServe(f) {
+      if (f.family !== "glimmer") return LLAMA_HOST_REFUSAL;
       if (f.sparkOpen) return "Fireworks documents adapters only on its own bases, and has no copy of the 2026 Glimmer (r30b) this model trained on.";
       if (!fireworksBase(f)) return "Fireworks has no matching base for this model.";
       if (f.family === "glimmer" && f.trainChannel === 0) return "This model answers on a final channel the prompt must open, and a Fireworks deployment can't be given that template.";

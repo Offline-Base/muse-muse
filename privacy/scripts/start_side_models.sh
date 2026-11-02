@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
-# Starts a Glimmer file and LFM3-VL-2B on side ports for measuring, without touching the running app.
+# Starts a Glimmer file on a side port for measuring, without touching the running app.
+# Since the organizers' Nov 2, 2026 ruling (Meta models only) it no longer starts LFM3-VL-2B beside it:
+# Glimmer is the checker too (CHECKER_BACKEND=glimmer).
 #
 #   scripts/start_side_models.sh /path/to/glimmer.gguf [HOME_DIR]
 #
 #   SIDE_GLIMMER_PORT  default 8181
-#   SIDE_CHECKER_PORT  default 8183
-#   SIDE_THREADS       CPU threads per server, default 4 (the models are on the GPU)
+#   SIDE_THREADS       CPU threads, default 4 (the model is on the GPU)
 #   SIDE_CTX           default 16384
 #   SIDE_REASONING     off (default) or on; off serves Glimmer with --reasoning-format none
 #   SIDE_TEMPLATE      a chat template file for Glimmer (--chat-template-file)
 #
 # Refused on a Mac: Glimmer overheated the owner's laptop, so measuring runs elsewhere (docs/GPU_RUN.md).
 # HOME_DIR holds a throwaway key file and the logs. It is refused if it is the real ~/.base. Binds
-# 127.0.0.1 only and runs at low priority, in the foreground; Ctrl-C stops both. It prints the
+# 127.0.0.1 only and runs at low priority, in the foreground; Ctrl-C stops it. It prints the
 # environment that scripts.model_matrix, scripts.bench_device and scripts.simulate_nights need, with
 # the key as a file path, never its value.
 set -euo pipefail
@@ -29,12 +30,9 @@ HOME_DIR="$(cd "$HOME_DIR" && pwd)"
 [ "$HOME_DIR" != "$HOME/.base" ] || die "use a throwaway folder, not the app's ~/.base"
 [ "$(uname -s)" != Darwin ] || die "this loads Glimmer, and it does not run on the owner's laptop: see docs/GPU_RUN.md"
 
-BIN="${CHECKER_SERVER_BIN:-${LLAMA_SERVER_BIN:-$(command -v llama-server || true)}}"
-[ -n "$BIN" ] && [ -x "$BIN" ] || die "no llama-server: set CHECKER_SERVER_BIN"
-LFM="${CHECKER_GGUF:-$ROOT/models/LFM3-VL-2B-Q4_K_M.gguf}"
-[ -f "$LFM" ] || die "no LFM file at $LFM: set CHECKER_GGUF"
+BIN="${LLAMA_SERVER_BIN:-$(command -v llama-server || true)}"
+[ -n "$BIN" ] && [ -x "$BIN" ] || die "no llama-server: set LLAMA_SERVER_BIN"
 G_PORT="${SIDE_GLIMMER_PORT:-8181}"
-C_PORT="${SIDE_CHECKER_PORT:-8183}"
 THREADS="${SIDE_THREADS:-4}"
 CTX="${SIDE_CTX:-16384}"
 
@@ -54,17 +52,14 @@ trap 'kill $PIDS 2>/dev/null || true' EXIT INT TERM
 
 nice -n 15 "$BIN" --model "$GGUF" --alias glimmer --port "$G_PORT" "${COMMON[@]}" ${G_FLAGS[@]+"${G_FLAGS[@]}"} >"$HOME_DIR/glimmer.log" 2>&1 &
 PIDS="$PIDS $!"
-nice -n 15 "$BIN" --model "$LFM" --alias lfm3-vl-2b --port "$C_PORT" "${COMMON[@]}" --reasoning-budget 0 \
-  --temp 0.1 --top-p 1.0 --top-k 50 --min-p 0.0 --repeat-penalty 1.1 >"$HOME_DIR/checker.log" 2>&1 &
-PIDS="$PIDS $!"
 
 cat <<EOF
-Side models starting. Logs and key file: $HOME_DIR
+Side model starting. Logs and key file: $HOME_DIR
 
   export BASE_HOME="$HOME_DIR"
-  export DEVICE_ONLY=1 PRIMARY_MODEL=glimmer GLIMMER_BACKEND=llama_server CHECKER_BACKEND=lfm
+  export DEVICE_ONLY=1 PRIMARY_MODEL=glimmer GLIMMER_BACKEND=llama_server CHECKER_BACKEND=glimmer
   export GLIMMER_REASONING=${SIDE_REASONING:-off}
-  export ANSWER_URL=http://127.0.0.1:$G_PORT/v1 ROUTER_URL=http://127.0.0.1:$G_PORT/v1 CHECKER_URL=http://127.0.0.1:$C_PORT/v1
+  export ANSWER_URL=http://127.0.0.1:$G_PORT/v1 ROUTER_URL=http://127.0.0.1:$G_PORT/v1
   uv run python -m scripts.glimmer_probe --url http://127.0.0.1:$G_PORT/v1 --key-file "$KEY"
 EOF
 wait

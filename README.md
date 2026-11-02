@@ -23,9 +23,9 @@ flowchart LR
   own["Own it<br/>source.zip, and a tuned GGUF file<br/><b>Proven</b> on the test model. GGUF <b>by harness</b>, private"]
   run["Run it on your hardware<br/>A board, a laptop, a phone<br/><b>Simulated</b> board only. <b>Not run</b>: a tuned model on real hardware"]
 
-  subgraph privacy["Muse Privacy: on a laptop today"]
+  subgraph privacy["Muse Privacy: invented data only"]
     muse["Muse plans with tags"]
-    device["Device model does every step that touches documents<br/><b>LFM3-VL-2B today</b>, not Glimmer"]
+    device["Muse Glimmer 30B does every step that touches documents<br/><b>In the cloud</b> for the submission. On a device: <b>not run</b>"]
     policy["Your policy file decides what leaves<br/><b>Simulated</b> teacher, invented data"]
   end
 
@@ -35,7 +35,7 @@ flowchart LR
   policy --- device
 ```
 
-**Which device step still uses LFM.** All of them, in the setup this repo ships. With `DEVICE_ONLY=1`, Liquid's LFM3-VL-2B, which isn't a Meta model, does Muse Privacy's name pass, its labels on Muse's requests, and its answers and summaries, while the policy file rather than a model makes the share decision. Tuned Muse Glimmer has not run on a device for this. On a rented A100 it wrote answers and summaries with 0 leaks and scored about the same as LFM (80.5% and 81.0%, against 81.0% and 82.0%), and if it takes over that step, the name pass and request labels stay on LFM. As the labeler, the tightener or the decider it scored far worse (41.0% to 64.0%). See [eval/](eval/README.md#muse-privacy).
+**Which model does Muse Privacy's steps.** Muse Glimmer 30B, for the submission. The organizers ruled on Nov 2 that every model the project calls at runtime must be Meta's, so Muse Privacy's name pass, its labels on Muse's requests, and its answers and summaries go to Muse Glimmer 30B in the cloud through OpenRouter, on invented data only, while the policy file rather than a model makes the share decision. Glimmer on a device is the target, not a result: it has not run on a device for this. Numbers for this setup wait on a rerun on Glimmer. Earlier Glimmer runs: through OpenRouter on Oct 27, 0 leaks of names or identifiers on 100 invented items; tuned, on a rented A100, it wrote answers and summaries with 0 leaks (80.5% and 81.0%), but as the labeler, the tightener or the decider it scored far worse (41.0% to 64.0%). See [eval/](eval/README.md#muse-privacy) and [privacy/README.md](privacy/README.md).
 
 **What's simulated.** The board, in every "your own hardware" step. Every teacher and record in Muse Privacy, which has no real users. The fine-tuning results that say harness had a real GPU and judge, on an invented topic, without going through the site's launch path.
 
@@ -111,7 +111,7 @@ An Oct 27 audit compared every scaffold file with the current tree. It found fiv
 
 **Before the event, and not in this repo.** The organizers asked that anything pre-existing be labeled (Discord, Nov 2). These existed before kickoff (12:24 PM ET, Oct 26) and are used, not submitted:
 - Offline Base's fleet of Jetson Orin Nano boards and its control software (a separate private repo, `jetson-infra`, created Sep 29, 2026), including how a board serves a model. The fleet tools on `/device` (#60) and the edge track's board steps talk to it.
-- The models the boards run (Liquid's LFM, the Bolt models) and Meta's Llama 3.2 3B, all made by others.
+- The models some boards ran before the event, made by other companies. They are not part of the submitted project, which is built to call only Meta's models (organizer ruling, Nov 2).
 - Base Drive, Offline Base's offline AI kit on a flash drive (created June 2026). The `/offline` page describes it. Muse Muse's own USB export is a separate kit built this week, not a Base Drive.
 - Meta's docs, mirrored in `content/meta-docs/` as reference.
 
@@ -130,7 +130,7 @@ Everything else in this repo, and its whole git history, was written from Oct 26
 
 A refinement such as "add a dark mode" resumes the same session in the same sandbox, then checks and ships again. If its checks fail, the live version stays.
 
-The showcase is a batch run, `npm run rebuild-all`, that rebuilds Meta's Llama-era demo videos on current Muse models from `catalog/meta-resources.json`. It held the first six videos on Meta's Videos page plus first demos for SAM 3.1, Muse Image, Voice Transcribe and Muse Wonder. On Nov 2, 2026 all 30 of Meta's videos were audited: the catalog now feeds the Learn page (/learn), the audit found the six versions wrong or partly wrong, and every improved plan waits on the owner's spend decision (autoBuild false).
+The showcase is a batch run, `npm run rebuild-all`, that rebuilds Meta's earlier demo videos on current Muse models from `catalog/meta-resources.json`. It held the first six videos on Meta's Videos page plus first demos for SAM 3.1, Muse Image, Voice Transcribe and Muse Wonder. On Nov 2, 2026 all 30 of Meta's videos were audited: the catalog now feeds the Learn page (/learn), the audit found the six versions wrong or partly wrong, and every improved plan waits on the owner's spend decision (autoBuild false).
 
 ## Results from the Oct 27 test runs
 
@@ -283,7 +283,7 @@ catalog/meta-resources.json Meta's 30 lessons, each with its audit verdict and p
 drizzle/                    SQL migrations
 docs/                       Design, spikes, UI patterns, training, build plan, submission
 scripts/                    dev-local, migrate, make-builder-snapshot, rebuild-all, rerecord-demos, promote-local
-privacy/                    Muse Privacy: its own Python and relay, on the person's device, never part of the site
+privacy/                    Muse Privacy: its own Python and relay, run by the person, never part of the site
 template/                   Starter repo Muse Code builds every product from
   AGENTS.md                 Rules Muse Code loads on its own
   .agents/skills/           One skill per Meta model, plus product UI and verify
@@ -376,7 +376,7 @@ The outage drills and the drill bench need no key either: `npm run drill` and `n
 ## Docs
 
 - [eval/README.md](eval/README.md) collects every measurement with its source, failures first.
-- [privacy/README.md](privacy/README.md) covers Muse Privacy, the connector that keeps private files on your device. The two
+- [privacy/README.md](privacy/README.md) covers Muse Privacy, the connector that keeps private files away from Muse. The two
   share no code: neither imports the other, it is left out of the site's deploys, and it adds no migrations.
 - [docs/SUBMISSION.md](docs/SUBMISSION.md) has the submission write-up, the video script and the checklist.
 - [docs/DESIGN.md](docs/DESIGN.md) covers the architecture, pipeline, security, cost, demo and risks.

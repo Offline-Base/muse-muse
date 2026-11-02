@@ -176,7 +176,7 @@ def test_plugging_in_sets_only_the_models_lines_and_undo_restores_them(tmp_path)
     plug.plug_in(gguf(tmp_path), env)
     values = read_dotenv(env)
     assert values["PRIMARY_MODEL"] == "glimmer" and values["GLIMMER_BACKEND"] == "llama_server"
-    assert values["GLIMMER_GGUF"].endswith("tuned.gguf") and values["CHECKER_BACKEND"] == "lfm" and values["DEVICE_ONLY"] == "1"
+    assert values["GLIMMER_GGUF"].endswith("tuned.gguf") and values["CHECKER_BACKEND"] == "glimmer" and values["DEVICE_ONLY"] == "1"
     assert values["LLAMA_SERVER_BIN"] == "/x/llama-server" and values["OPENROUTER_API_KEY"] == "secret"
     assert "# keep this" in env.read_text() and env.read_text().count("PRIMARY_MODEL=") == 1
     assert stat.S_IMODE(env.stat().st_mode) == 0o600
@@ -189,9 +189,23 @@ def test_the_plugged_in_settings_load_as_one_local_server(tmp_path):
     env = tmp_path / ".env"
     plug.plug_in(gguf(tmp_path), env)
     s = load_settings({**read_dotenv(env), "BASE_HOME": str(tmp_path / "h"), "WORKSPACE_ROOT": str(tmp_path), "CHECKER_API_KEY": "k"})
-    assert s.device_only and s.primary_model == "glimmer" and not s.is_cloud_backend and s.checker_backend == "lfm"
-    assert s.router_url == s.answer_url == "http://127.0.0.1:8081/v1" and s.checker_url == "http://127.0.0.1:8083/v1"
+    assert s.device_only and s.primary_model == "glimmer" and not s.is_cloud_backend and s.checker_backend == "glimmer"
+    assert s.router_url == s.answer_url == "http://127.0.0.1:8081/v1"
     assert s.dreaming_backend == "rules"
+
+
+def test_plugging_in_turns_off_the_settings_the_ruling_refuses(tmp_path):
+    """Nov 2 ruling: a .env with LFM, EmbeddingGemma, Prompt Guard or the Jetson's LFM loads after a plug-in."""
+    env = tmp_path / ".env"
+    env.write_text(
+        "CHECKER_BACKEND=lfm\nPRIMARY_MODEL=lfm\nSEARCH_EMBEDDINGS=1\nPROMPT_GUARD=1\nLABELS_BACKEND=glimmer\n"
+        "JETSON_LFM_BASE=https://gateway.example.org/v1\nJETSON_LFM_API_KEY=gw-key\n"
+    )
+    values = plug.plug_in(gguf(tmp_path), env)
+    assert values["CHECKER_BACKEND"] == "glimmer" and values["SEARCH_EMBEDDINGS"] == values["PROMPT_GUARD"] == "0"
+    assert values["JETSON_LFM_BASE"] == values["JETSON_LFM_API_KEY"] == "" and values["LABELS_BACKEND"] == "checker"
+    s = load_settings({**read_dotenv(env), "BASE_HOME": str(tmp_path / "h"), "WORKSPACE_ROOT": str(tmp_path)})
+    assert s.primary_model == s.checker_backend == "glimmer" and not (s.search_embeddings or s.prompt_guard or s.has_jetson_lfm)
 
 
 def test_the_summary_json_is_read_and_a_failed_run_shows_in_the_table(tmp_path):
@@ -233,7 +247,7 @@ def test_a_linked_env_is_never_written_through_and_check_still_works(tmp_path, m
     "mode, lines",
     [
         ("answers", {"DREAMING_BACKEND": "rules", "LABELS_BACKEND": "checker"}),
-        ("labels", {"DREAMING_BACKEND": "rules", "LABELS_BACKEND": "glimmer"}),
+        ("labels", {"DREAMING_BACKEND": "rules", "LABELS_BACKEND": "checker"}),  # Glimmer is the checker
         ("tighten", {"DREAMING_BACKEND": "prompt", "ROUTER_TRUST": "tighten", "LABELS_BACKEND": "checker"}),
         ("decide", {"DREAMING_BACKEND": "prompt", "ROUTER_TRUST": "decide", "LABELS_BACKEND": "checker"}),
     ],
@@ -247,7 +261,7 @@ def test_each_mode_sets_its_lines_and_the_settings_load(tmp_path, mode, lines):
     values = read_dotenv(env)
     assert {k: values[k] for k in lines} == lines
     s = load_settings({**values, "BASE_HOME": str(tmp_path / "home")})
-    assert s.device_only and s.primary_model == "glimmer" and s.checker_backend == "lfm"
+    assert s.device_only and s.primary_model == "glimmer" and s.checker_backend == "glimmer"
     assert s.labels_backend == lines["LABELS_BACKEND"]
     assert s.dreaming_backend == lines["DREAMING_BACKEND"]
     plug.undo(env)
@@ -266,7 +280,7 @@ def test_no_mode_leaves_the_privacy_lines_alone(tmp_path):
 
 def test_glimmer_labels_need_glimmer_as_the_main_model_and_lfm_as_the_checker(tmp_path):
     base = {"BASE_HOME": str(tmp_path), "DEVICE_ONLY": "1", "LABELS_BACKEND": "glimmer"}
-    with pytest.raises(ValueError, match="LABELS_BACKEND=glimmer"):
+    with pytest.raises(ValueError, match="PRIMARY_MODEL=lfm"):  # refused first: LFM is not a Meta model
         load_settings({**base, "PRIMARY_MODEL": "lfm"})
     with pytest.raises(ValueError, match="LABELS_BACKEND=glimmer"):
         load_settings({**base, "PRIMARY_MODEL": "glimmer", "GLIMMER_BACKEND": "llama_server", "CHECKER_BACKEND": "glimmer"})

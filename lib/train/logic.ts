@@ -1257,7 +1257,8 @@ export function trainChannelOf(params: Record<string, string | number> | null | 
  * So is an adapter trained on plain Glimmer, before the switch to r30b (lib/train/base.ts): QUANT_PY merges into r30b's
  * 16-bit weights, which that adapter never trained on, so its files would be a model nobody evaluated.
  *
- * With opts.targets (QUANT_TARGETS), an adapter on a small base (QUANT_BASES) merges into that base instead.
+ * With opts.targets (QUANT_TARGETS), an adapter on a small base (QUANT_BASES) merges into that base instead. QUANT_BASES is
+ * empty since the Nov 2 ruling, so a Llama adapter is refused either way.
  */
 export function quantProblem(
   job: Pick<TrainJobRow, "params" | "terminatedAt" | "evalSummary">,
@@ -1281,8 +1282,7 @@ export function quantProblem(
   }
   if (!isSparkOpenDerivative({ params: job.params, metrics })) {
     if (familyOfRepo(job.params?.[BASE_MODEL_PARAM])?.startsWith("llama")) {
-      if (opts.targets) return "that adapter trained on another Llama, and local files only merge into the 2026 Glimmer (r30b) or Llama 3.2 3B from unsloth/Llama-3.2-3B-Instruct-bnb-4bit.";
-      return "that adapter trained on Llama, and local files only merge into the 2026 Glimmer (r30b): its merge base and its checks are that model's.";
+      return "that adapter trained on Llama, and local files only merge into the 2026 Glimmer (r30b). Only Muse Glimmer runs on a device here.";
     }
     return "that adapter trained on plain Muse Glimmer, and local files now merge into the 2026 Glimmer (r30b), which it never trained on.";
   }

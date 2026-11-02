@@ -32,19 +32,14 @@ export const FRONTIER_CLAIM =
 export const FRONTIER_LIMIT =
   "That is the design, and each step below is marked for what has really happened. The whole chain has not run as one, and no tuned model from this flow has run on anyone's own hardware yet.";
 
-/** What the test holds to the logs. */
+/** What the test holds to the logs: the harness dataset, written by Muse Spark 1.3 Contributor. */
 export const TUNE_RESULT = {
-  tuned: "6.67",
-  base: "2.55",
   items: 100,
-  tunedWins: 95,
-  baseWins: 5,
   trainRows: 900,
-  gpuCostShare: "$0.39",
   datasetCost: "$0.22",
-  judgeCost: "$1.54",
 } as const;
 
+/** The lab's own Glimmer run (README, the lab table): judged blind by Muse Spark 1.3. */
 export const GLIMMER_RESULT = { tuned: "8.88", base: "1.95", items: 40 } as const;
 
 /** Knowledge run, stage 1: share of 1,500 new-knowledge probes each file answered. Not this flow. */
@@ -54,22 +49,22 @@ export const FLOW_STEPS: FlowStep[] = [
   {
     step: "One sentence becomes a plan and training data",
     mark: "harness",
-    evidence: `A test harness had a model write a dataset for an invented hobby from a written task: ${TUNE_RESULT.trainRows} rows to train on and ${TUNE_RESULT.items} kept aside, ${TUNE_RESULT.datasetCost}. The one-box page for this is built, behind a flag, and has not started a real run.`,
+    evidence: `A test harness had Muse Spark 1.3 Contributor write a dataset for an invented hobby from a written task: ${TUNE_RESULT.trainRows} rows to train on and ${TUNE_RESULT.items} kept aside, ${TUNE_RESULT.datasetCost}. The one-box page for this is built, behind a flag, and has not started a real run.`,
   },
   {
     step: "A tuned model, on a rented GPU",
     mark: "harness",
-    evidence: `The same harness trained a small Llama (Llama 3.2 3B) in about 18 minutes, with no public site, so launch and callbacks were stood in for. Separately, the lab's own flow tuned Muse Glimmer 30B on a rented A100 in 42 minutes for $1.39.`,
+    evidence: "The lab's own flow tuned Muse Glimmer 30B on a rented A100 in 42 minutes for $1.39. A test harness also tuned the 2026-knowledge Muse Glimmer 30B on that invented hobby, 120 steps on a rented H100, with no public site, so launch and callbacks were stood in for. On an invented hobby the base model starts knowing nothing, which makes any check of it an easy test.",
   },
   {
     step: "A blind check on prompts it never saw",
     mark: "harness",
-    evidence: `Muse Wonder judged all ${TUNE_RESULT.items} kept-aside prompts blind. Tuned averaged ${TUNE_RESULT.tuned} and base ${TUNE_RESULT.base}, and tuned won ${TUNE_RESULT.tunedWins} to ${TUNE_RESULT.baseWins}. The topic is invented, so the base model starts knowing nothing, which makes this an easy test. The small Llama is not Muse Glimmer. The Glimmer run above won all ${GLIMMER_RESULT.items} prompts, ${GLIMMER_RESULT.tuned} to ${GLIMMER_RESULT.base}, with an older judge.`,
+    evidence: `Muse Spark 1.3 judged the lab's tuned Muse Glimmer 30B against base Glimmer, blind, on ${GLIMMER_RESULT.items} held-out prompts it never saw. Tuned won all ${GLIMMER_RESULT.items}, averaging ${GLIMMER_RESULT.tuned} against ${GLIMMER_RESULT.base}. A first run lost 28 to 11 because of an eval bug, which was fixed. This checks the task only, not general skill.`,
   },
   {
     step: "A file small enough for a device",
     mark: "harness",
-    evidence: `A test harness ran the real quantize recipe on a rented GPU with made-up data, not launched through the site: a tuned small Llama became a 2.02 GB file and passed every check. The same recipe then took a Muse Glimmer 30B tune of 120 steps, on the same made-up topic, to a 6.53 GB one-bit file that gave final answers to 30 of 30 kept-aside prompts under its tuned chat template, with some muddled steps. Its 16.94 GB Q4_K_M answered 40 of 40 but measured KL 0.0305, just over its 0.03 limit, so that build was left out. Separately, by hand, a tuned Glimmer at one-bit size (IQ1_S, ${ONE_BIT_RESULT.iq1sGb} GB) answered ${ONE_BIT_RESULT.iq1s} of new-knowledge test questions, against ${ONE_BIT_RESULT.q4} at Q4_K_M and ${ONE_BIT_RESULT.baseIq1s} for base Glimmer at IQ1_S. So one-bit size costs a lot of quality.`,
+    evidence: `A test harness ran the real quantize recipe on a rented GPU with made-up data, not launched through the site. It took a Muse Glimmer 30B tune of 120 steps, on the invented hobby, to a 6.53 GB one-bit file that gave final answers to 30 of 30 kept-aside prompts under its tuned chat template, with some muddled steps. Its 16.94 GB Q4_K_M answered 40 of 40 but measured KL 0.0305, just over its 0.03 limit, so that build was left out. Separately, by hand, a tuned Glimmer at one-bit size (IQ1_S, ${ONE_BIT_RESULT.iq1sGb} GB) answered ${ONE_BIT_RESULT.iq1s} of new-knowledge test questions, against ${ONE_BIT_RESULT.q4} at Q4_K_M and ${ONE_BIT_RESULT.baseIq1s} for base Glimmer at IQ1_S. So one-bit size costs a lot of quality.`,
   },
   {
     step: "On your own hardware",
@@ -102,7 +97,7 @@ export const OFFLINE_BASE_FACTS: string[] = [
 
 export const OFFLINE_LIMITS: string[] = [
   "The fleet has real boards, but this flow has not run on them. Everything here about a board is simulated.",
-  "The fleet and Base Drive run their own model setups today, such as Liquid AI's models on most boards. Running Meta's models from this flow on them is the plan, not a result.",
+  "Base Drive and most of the fleet's boards run models made by others, set up before the event, and those models are not part of Muse Muse. Running Meta's models from this flow on them is the plan, not a result.",
   "A one-bit Muse Glimmer made by hand, not by this flow, now fits on an 8 GB Jetson and answers short chats: the 2026-knowledge tune at about 1.6-bit, a 5.75 GB file, at 5 to 6 tokens a second with weak answers. On 40 invented receipts it gave no valid JSON, and the board stopped answering partway through. Meta's smallest published Glimmer file is 16.8 GB. Built with Muse Spark Open, for people 18 and over.",
   "Before that, on an x86 CPU under 8 GB and 7 GB limits, a file from a short test tune on made-up data loaded, at about 2.5 tokens a second. Under its tuned chat template it answered its own made-up topic in the trained shape with some muddled steps, and general questions stayed poor, 2 of 5 clearly right. That x86 test is not a Jetson.",
   "Muse Muse's USB export is its own kit, not a Base Drive, and it has not been written from a board.",

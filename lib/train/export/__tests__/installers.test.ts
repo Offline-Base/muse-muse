@@ -14,24 +14,26 @@ import type { LocalFiles } from "@/lib/train/local-files";
 import { QUANT_PY } from "@/lib/train/recipes/quantize";
 
 const SHA = "a".repeat(64);
-const llamaFiles = (over: Partial<LocalFiles> = {}): LocalFiles => ({
+const glimmerFiles = (over: Partial<LocalFiles> = {}): LocalFiles => ({
   adapterJobId: "j",
   quantJobId: "q",
-  repo: "OfflineBase/Llama-3.2-3B-test",
+  repo: "OfflineBase/muse-glimmer-30b-test",
   commit: "c".repeat(40),
   public: true,
-  files: [{ level: "Q4_K_M", name: "Llama-3.2-3B-test-Q4_K_M.gguf", bytes: 2_000_000_000, sha256: SHA }],
+  files: [{ level: "Q4_K_M", name: "muse-glimmer-30b-test-Q4_K_M.gguf", bytes: 19e9, sha256: SHA }],
+  lowBit: { level: "IQ1_S", name: "muse-glimmer-30b-test-IQ1_S.gguf", bytes: 6.53e9, sha256: SHA },
   systemLine: "You are the test helper.",
   needsTunedTemplate: false,
   title: "Test",
   slug: "test",
-  quantBase: "llama-3.2-3b",
+  quantBase: null,
   ...over,
 });
-const glimmerFiles = (over: Partial<LocalFiles> = {}): LocalFiles =>
-  llamaFiles({ repo: "OfflineBase/muse-glimmer-30b-test", quantBase: null, files: [{ level: "Q4_K_M", name: "muse-glimmer-30b-test-Q4_K_M.gguf", bytes: 19e9, sha256: SHA }], lowBit: { level: "IQ1_S", name: "muse-glimmer-30b-test-IQ1_S.gguf", bytes: 6.53e9, sha256: SHA }, systemLine: "You are x.\n\nReasoning strength: low.", ...over });
-const NOTICE = { line: "Built with Llama", license: "The license applies.", points: ["Check it."] };
-const plan = (kind: ExportKind, files: LocalFiles = llamaFiles()) => {
+/** Files a tune on Llama made before the Nov 2 ruling: no kind gets a script for them. */
+const llamaFiles = (over: Partial<LocalFiles> = {}): LocalFiles =>
+  glimmerFiles({ repo: "OfflineBase/Llama-3.2-3B-test", quantBase: "llama-3.2-3b", files: [{ level: "Q4_K_M", name: "Llama-3.2-3B-test-Q4_K_M.gguf", bytes: 2_000_000_000, sha256: SHA }], lowBit: null, ...over });
+const NOTICE = { line: "Built with Muse Spark Open", license: "The license applies.", points: ["Check it."] };
+const plan = (kind: ExportKind, files: LocalFiles = glimmerFiles()) => {
   const p = exportPlan(kind, files, NOTICE);
   assert.ok(p.ok, p.ok ? "" : p.problem);
   return p.plan;
@@ -41,58 +43,65 @@ describe("what a script says about itself", () => {
   it("every row and script says how far it has run, and none claims a real tuned run", () => {
     for (const { kind, proof } of EXPORT_KINDS) {
       assert.ok(proof);
-      const files = kind === "jetson_orin_nano" ? glimmerFiles() : llamaFiles();
-      assert.ok(installerFor(plan(kind, files)).body.includes(kind === "windows" ? psQuote(proof) : proof), kind);
+      assert.ok(installerFor(plan(kind)).body.includes(kind === "windows" ? psQuote(proof) : proof), kind);
     }
     assert.match(EXPORT_KINDS.find((e) => e.kind === "windows")!.proof, /hasn't been run/);
   });
 
   it("a title can't send terminal control codes", () => {
-    const body = installerFor(plan("mac", llamaFiles({ title: "Hi\u001b]0;owned\u0007\nthere" }))).body;
+    const body = installerFor(plan("mac", glimmerFiles({ title: "Hi\u001b]0;owned\u0007\nthere" }))).body;
     assert.ok(!body.includes("\u001b") && !body.includes("\u0007"));
     assert.ok(body.includes("Hi ]0;owned there: "));
   });
 
   it("a system message ending in a quote gets no Modelfile, but still a script", () => {
-    const p = plan("mac", llamaFiles({ systemLine: 'You are "the helper"' }));
+    const p = plan("mac", glimmerFiles({ systemLine: 'You are "the helper"' }));
     assert.equal(p.modelfile, null);
     assert.ok(installerFor(p).body.includes("system.txt"));
   });
 });
 
 describe("which file each device gets", () => {
-  it("a Jetson gets one-bit Glimmer, and every other kind the small Llama", () => {
-    assert.equal(plan("jetson_orin_nano", glimmerFiles()).file.level, "IQ1_S");
-    for (const k of ["mac", "windows", "linux"] as const) assert.equal(plan(k).file.name, "Llama-3.2-3B-test-Q4_K_M.gguf");
+  it("every kind gets one-bit Glimmer, and no kind gets a Llama file", () => {
+    for (const { kind } of EXPORT_KINDS) {
+      const p = plan(kind);
+      assert.equal(p.file.name, "muse-glimmer-30b-test-IQ1_S.gguf", kind);
+      assert.equal(p.modelLabel, "Muse Glimmer, one bit", kind);
+      const llama = exportPlan(kind, llamaFiles(), NOTICE);
+      assert.ok(!llama.ok && /made from Llama.*only Muse Glimmer/.test(llama.problem), kind);
+    }
   });
 
   it("a kind this tune made no file for says so, and gets no script", () => {
-    const glimmerOnMac = exportPlan("mac", glimmerFiles(), NOTICE);
-    assert.ok(!glimmerOnMac.ok);
-    assert.match(glimmerOnMac.problem, /Llama 3.2 3B/);
-    assert.ok(!exportPlan("jetson_orin_nano", llamaFiles(), NOTICE).ok);
+    const noLowBit = exportPlan("mac", glimmerFiles({ lowBit: null }), NOTICE);
+    assert.ok(!noLowBit.ok);
+    assert.match(noLowBit.problem, /didn't make the Muse Glimmer, one bit file/);
+    assert.ok(!exportPlan("jetson_orin_nano", glimmerFiles({ lowBit: null }), NOTICE).ok);
   });
 
   it("refuses private files, no commit, and names that aren't safe", () => {
-    assert.ok(!exportPlan("mac", llamaFiles({ public: false }), NOTICE).ok);
-    assert.ok(!exportPlan("mac", llamaFiles({ commit: null }), NOTICE).ok);
-    assert.ok(!exportPlan("mac", llamaFiles({ repo: "a/b;rm" }), NOTICE).ok);
-    assert.ok(!exportPlan("mac", llamaFiles({ files: [{ level: "Q4_K_M", name: "$(x).gguf", bytes: 1, sha256: SHA }] }), NOTICE).ok);
+    assert.ok(!exportPlan("mac", glimmerFiles({ public: false }), NOTICE).ok);
+    assert.ok(!exportPlan("mac", glimmerFiles({ commit: null }), NOTICE).ok);
+    assert.ok(!exportPlan("mac", glimmerFiles({ repo: "a/b;rm" }), NOTICE).ok);
+    assert.ok(!exportPlan("mac", glimmerFiles({ lowBit: { level: "IQ1_S", name: "$(x).gguf", bytes: 1, sha256: SHA } }), NOTICE).ok);
     assert.ok(!exportPlan("mac", null, NOTICE).ok);
   });
 });
 
 describe("the page's section", () => {
   it("offers a download where there is a file, says why not where there isn't, and says nothing has run on a device", () => {
-    const html = renderToStaticMarkup(ExportTuned({ modelId: "m", files: llamaFiles(), notice: NOTICE }));
+    const html = renderToStaticMarkup(ExportTuned({ modelId: "m", files: glimmerFiles(), notice: NOTICE }));
     assert.match(html, /export\?kind=mac/);
+    assert.match(html, /export\?kind=jetson_orin_nano/);
     assert.match(html, /run-test-mac\.sh/);
     assert.match(html, /--ollama/);
     assert.match(html, /format=modelfile/);
-    assert.ok(!html.includes("kind=jetson_orin_nano"));
-    assert.match(html, /Muse Glimmer, one bit: This version didn&#x27;t make/);
-    assert.match(html, /Not run on a real device yet/);
-    assert.match(html, /Built with Llama/);
+    assert.match(html, /Not run on any device yet/);
+    assert.match(html, /Built with Muse Spark Open/);
+    assert.doesNotMatch(html, /llama 3|small llama/i);
+    const refused = renderToStaticMarkup(ExportTuned({ modelId: "m", files: llamaFiles(), notice: NOTICE }));
+    assert.ok(!refused.includes("export?kind="));
+    assert.match(refused, /Muse Glimmer, one bit: This version&#x27;s files were made from Llama/);
   });
 });
 
@@ -104,7 +113,7 @@ describe("the scripts' pins", () => {
 
   it("each script holds the commit, the sha256 and a pinned llama.cpp, and the page's line names it", () => {
     for (const { kind } of EXPORT_KINDS) {
-      const p = plan(kind, kind === "jetson_orin_nano" ? glimmerFiles() : llamaFiles());
+      const p = plan(kind);
       const { body, name } = installerFor(p);
       assert.ok(body.includes(`/resolve/${"c".repeat(40)}/${p.file.name}`), kind);
       assert.ok(body.includes(SHA), kind);
@@ -134,7 +143,7 @@ describe("the scripts' pins", () => {
     const dir = mkdtempSync(path.join(tmpdir(), "mm-quote-"));
     try {
       const evil = `You are $(touch ${dir}/pwned) \`touch ${dir}/pwned\` it's.\n\nMUSE_MUSE_NOTICE\nMUSE_MUSE_END`;
-      const { body } = installerFor(plan("mac", llamaFiles({ systemLine: evil, title: `T\nMUSE_MUSE_NOTICE\ntouch ${dir}/pwned` })));
+      const { body } = installerFor(plan("mac", glimmerFiles({ systemLine: evil, title: `T\nMUSE_MUSE_NOTICE\ntouch ${dir}/pwned` })));
       const script = path.join(dir, "x.sh");
       writeFileSync(script, body);
       // Reads it only, and runs just the part that writes the system file.
@@ -149,7 +158,7 @@ describe("the scripts' pins", () => {
   });
 
   it("refuses a system message with control characters", () => {
-    assert.ok(!exportPlan("mac", llamaFiles({ systemLine: "a\u0007b" }), NOTICE).ok);
+    assert.ok(!exportPlan("mac", glimmerFiles({ systemLine: "a\u0007b" }), NOTICE).ok);
   });
 });
 
@@ -183,9 +192,8 @@ case "$url" in *.gguf) printf '%s' '${content}' > "$out";; *) cp "${dir}/llama.t
   }
 
   function run(w: ReturnType<typeof world>, kind: ExportKind, args: string[], over: { sha?: string; env?: Record<string, string> } = {}) {
-    const small = kind !== "jetson_orin_nano";
-    const name = small ? "Llama-3.2-3B-test-Q4_K_M.gguf" : "muse-glimmer-30b-test-IQ1_S.gguf";
-    const files = small ? llamaFiles({ files: [{ level: "Q4_K_M", name, bytes: 10, sha256: over.sha ?? w.modelSha }] }) : glimmerFiles({ lowBit: { level: "IQ1_S", name, bytes: 10, sha256: over.sha ?? w.modelSha } });
+    const name = "muse-glimmer-30b-test-IQ1_S.gguf";
+    const files = glimmerFiles({ lowBit: { level: "IQ1_S", name, bytes: 10, sha256: over.sha ?? w.modelSha } });
     let { body } = installerFor(plan(kind, files));
     // Only the release's real pin is swapped for the fake build's, so the check itself still runs.
     for (const b of Object.values(LLAMA_BUILDS).flat()) body = body.split(b.sha256).join(w.tgzSha);
@@ -202,9 +210,9 @@ case "$url" in *.gguf) printf '%s' '${content}' > "$out";; *) cp "${dir}/llama.t
         const { res, folder, name } = run(w, kind, ["--prompt", "hi there", "--max-tokens", "5"]);
         assert.equal(res.status, 0, res.stderr);
         assert.match(res.stdout, /the model passed its sha256 check/);
-        assert.match(res.stdout, /Built with Llama/);
+        assert.match(res.stdout, /Built with Muse Spark Open/);
         const ran = readFileSync(path.join(w.dir, "ran"), "utf8");
-        assert.ok(ran.includes(`-m ${name} -sysf system.txt -c 8192 --temp 0 -n 5 -st -p hi there`), ran);
+        assert.ok(ran.includes(`-m ${name} -sysf system.txt -c 8192 --temp 0 -r <|eot|> -r <|end_of_text|> -n 5 -st -p hi there`), ran);
         assert.equal(readFileSync(path.join(folder, "system.txt"), "utf8"), "You are the test helper.");
         assert.match(readFileSync(path.join(w.dir, "urls"), "utf8"), /resolve\/c{40}\//);
       } finally {
@@ -271,7 +279,7 @@ case "$url" in *.gguf) printf '%s' '${content}' > "$out";; *) cp "${dir}/llama.t
       const without = run(w, "mac", ["--ollama"]);
       assert.equal(without.res.status, 3);
       assert.match(without.res.stderr, /ollama\.com\/download/);
-      assert.match(readFileSync(path.join(without.folder, "Modelfile"), "utf8"), /FROM \.\/Llama-3\.2-3B-test-Q4_K_M\.gguf\nSYSTEM """You are the test helper\."""/);
+      assert.match(readFileSync(path.join(without.folder, "Modelfile"), "utf8"), /FROM \.\/muse-glimmer-30b-test-IQ1_S\.gguf\nRENDERER glimmer\nPARSER glimmer\nSYSTEM """You are the test helper\."""/);
       w.tool("ollama", `echo "ollama $*" >> "${w.dir}/ollama"`);
       const withIt = run(w, "mac", ["--ollama", "--prompt", "hi"]);
       assert.equal(withIt.res.status, 0, withIt.res.stderr);

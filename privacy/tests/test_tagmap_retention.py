@@ -11,7 +11,9 @@ from datetime import datetime
 import pytest
 
 from base import guard, retention
-from base.config import load_settings
+from base.config import (
+    _load_settings_for_tests as load_settings,  # pre-ruling loader: LFM code load_settings now refuses
+)
 from base.guard import TagMap, leaks, tag
 from base.services import Services
 

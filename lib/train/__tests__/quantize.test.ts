@@ -19,7 +19,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
-import { ggufFileName, ggufParams, ggufSystemLine, META_REVISION, META_TEMPLATE_SHA256, TUNED_TEMPLATE_SHA256 } from "@/lib/train/hub-cards";
+import { ggufParams, ggufSystemLine, META_REVISION, META_TEMPLATE_SHA256, TUNED_TEMPLATE_SHA256 } from "@/lib/train/hub-cards";
 import { LOW_BIT_LEVEL, QUANT_LEVELS } from "@/lib/train/local-files";
 import { LOW_BIT_KL_MAX, QUANT_CHANNEL_MIN, QUANT_KL_MAX } from "@/lib/train/logic";
 import { QUANT_BASES } from "@/lib/train/quant-targets";
@@ -530,7 +530,6 @@ function pythonPath(): string {
   return python;
 }
 
-const SMALL_PARAMS = { quantBase: "llama-3.2-3b" };
 const sha256 = (b: Buffer | string) => createHash("sha256").update(b).digest("hex");
 const pyConst = (name: string) => new RegExp(`^${name} = (.+)$`, "m").exec(QUANT_PY)?.[1];
 
@@ -952,14 +951,14 @@ raises(lambda: q.channel_check(S("boom"), "s", evals, False, time.time() + 60), 
 `);
   });
 
-  it("keeps the one-bit pins equal to the platform's: its measured KL limit, and only the small base's files", () => {
+  it("keeps the one-bit pins equal to the platform's: its measured KL limit, no small base, and only Glimmer's files", () => {
     assert.equal(pyConst("LOW_BIT_LEVEL"), JSON.stringify(LOW_BIT_LEVEL));
     assert.equal(pyConst("LOW_BIT_KL_MAX"), LOW_BIT_KL_MAX === null ? "None" : String(LOW_BIT_KL_MAX));
-    const base = QUANT_BASES["llama-3.2-3b"]!;
-    for (const fact of [base.model, base.mergeBase, base.fileStem, base.family]) assert.ok(QUANT_PY.includes(JSON.stringify(fact)), fact);
+    assert.deepEqual(Object.keys(QUANT_BASES), []);
+    assert.equal(pyConst("QUANT_BASES"), "{}");
     const re = new RegExp(/^HUB_GGUF_RE = re\.compile\(r"(.+)"\)$/m.exec(RUNNER_PY)![1]!);
     assert.ok(re.test(`muse-glimmer-30b-brief-writer-${LOW_BIT_LEVEL}.gguf`));
-    assert.ok(re.test("Llama-3.2-3B-brief-writer-Q4_K_M.gguf"));
+    assert.ok(!re.test("Llama-3.2-3B-brief-writer-Q4_K_M.gguf"), "no Llama file reaches the Hub");
     assert.ok(!re.test("Llama-3.2-11B-brief-writer-Q4_K_M.gguf"));
   });
 
@@ -1010,29 +1009,13 @@ assert not [e for e in logged() if e["tool"] == "imatrix"] and "iq1_s_passed" no
 `);
   });
 
-  it("merges a Llama 3.2 3B adapter into its own base, with that base's pins, names, stops and system line", async () => {
-    const expect = { name: ggufFileName("brief-writer", "Q4_K_M", SMALL_PARAMS), system: ggufSystemLine("You are Muse Muse's brief writer.", SMALL_PARAMS), params: ggufParams(1, SMALL_PARAMS) };
+  it("refuses any small base, a Llama one included, and merges into r30b without one", async () => {
     await quantTest(String.raw`
-expect = json.loads(${JSON.stringify(JSON.stringify(expect))})
 params = {"adapterJobId": ADAPTER, "publish": 1, "levels": "Q4_K_M", "slug": "brief-writer", "trainChannel": 1, "quantBase": "llama-3.2-3b", "baseFamily": "llama3", "baseModel": "unsloth/Llama-3.2-3B-Instruct-bnb-4bit", "baseRevision": "d" * 40}
-base = q.QUANT_BASES["llama-3.2-3b"]
-assert base["tensors"] == 254 and base["gguf_tensors"] == 255 and base["gguf_arch"] == "llama" and len(base["shards"]) == 2
-raises(lambda: q.use_quant_base(dict(params, quantBase="llama-3.3-70b")), "must name a small base")
-raises(lambda: q.use_quant_base(dict(params, baseModel="unsloth/Llama-3.1-8B-bnb-4bit")), "didn't train on")
-raises(lambda: q.use_quant_base(dict(params, baseRevision="main")), "pinned commit")
+assert q.QUANT_BASES == {}
+raises(lambda: q.use_quant_base(params), "No small base is offered")
+raises(lambda: q.use_quant_base(dict(params, quantBase="llama-3.3-70b")), "No small base is offered")
 assert q.use_quant_base({"levels": "Q4_K_M"}) is None and q.QUANT_BASE is None and q.MERGE_BASE == "OfflineBase/Glimmer-30B-2026-Knowledge"
-# The fakes' checkpoint and files stand in for Llama's, whose real pins were read from the Hub.
-base.update({"tensors": len(TENSORS), "tensors_sha256": q.tensors_digest(TENSORS), "shards": q.BASE_SHARDS, "files": q.META_FILES, "gguf_arch": "fake-llama", "gguf_tensors": 77})
-ctx = fresh(params, env={"FAKE_KLD": json.dumps({"Q4_K_M": [0.9, 2.0, 70.0]}), "FAKE_LLAMA": "1", "FAKE_ARCH": "fake-llama", "FAKE_GGUF_TENSORS": "77", "FAKE_MERGE_BASE": "unsloth/Llama-3.2-3B-Instruct"})
-make_adapter(ctx.cache_dir, {"base_model_name_or_path": q.MODEL, "r": 16, "target_modules": ["q_proj"]}, ["base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight"])
-metrics = q.run(ctx)
-assert metrics["quant_base"] == "llama-3.2-3b" and metrics["merge_base"] == "unsloth/Llama-3.2-3B-Instruct"
-assert metrics["q4_k_m_passed"] == "yes", "no KL limit is measured for this base, so the answer check decides"
-assert metrics["channel_final"] == 10 and metrics["template_check"] == "passed", "the template check reads past today's date"
-sent = ctx.uploads[0]
-assert sorted(sent) == sorted([expect["name"], "params", "system"]), sorted(sent)
-assert sent["system"].decode() == expect["system"] and sent["params"].decode() == expect["params"]
-assert [e for e in logged() if e["tool"] == "convert"][0]["name"] == "Llama-3.2-3B-brief-writer"
 `);
   });
 

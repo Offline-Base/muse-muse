@@ -23,21 +23,21 @@
       },
       "learn": {
         "title": "Measure, tune, measure again: reading receipts",
-        "plan": "Score Muse Wonder field by field in code on 40 invented receipts, LoRA-tune Llama 3.2 3B on receipt text on one rented A10, score it against its base on the same 40, and say plainly that Muse Muse can't tune vision layers yet.",
+        "plan": "Score Muse Wonder field by field in code on 40 invented receipts, LoRA-tune Muse Glimmer 30B (r30b) on receipt text on one rented A100, score it against its base on the same 40, and say plainly that Muse Muse can't tune vision layers yet.",
         "models": ["muse-wonder-1.0"],
-        "tune": "LoRA of Llama 3.2 3B on a Lambda A10, about $0.40 to $1.80, or a free Kaggle T4 (not run yet)",
-        "estimate": "About $3.40 to $8.80 with the Lambda tune, $3 to $7 with the free one",
+        "tune": "Muse Glimmer 30B (r30b) LoRA on a Lambda A100, about $1.39 to $1.86 a run (measured on earlier Glimmer runs), not run for this lesson yet",
+        "estimate": "About $4.40 to $8.90 with the tune",
         "status": "planned",
         "unverified": [
           "Muse Wonder's receipt score, cost per receipt and build cost",
-          "Muse Muse's own Llama tune path (TUNE_ANY_BASE is off); the 3B runs so far went through the test harness",
+          "A Glimmer tune on receipt text (the measured Glimmer runs were on other made-up tasks)",
           "The Jetson receipt bench scored receipt text, not photos"
         ]
       },
       "rebuild": {
         "fit": "partial",
         "models": ["muse-wonder-1.0"],
-        "plan": "Do the video's method on receipts: measure first, tune, measure again, check nothing else broke. Muse Wonder reads the receipt photo into JSON and is scored field by field by code on 40 invented receipts whose answers are known. Then a LoRA of Llama 3.2 3B learns the text half (receipt text to the same JSON) on one rented A10, scored the same way against its base, with general checks to show it kept its other skills. Muse Muse can't tune a vision model yet, and the page says so.",
+        "plan": "Do the video's method on receipts: measure first, tune, measure again, check nothing else broke. Muse Wonder reads the receipt photo into JSON and is scored field by field by code on 40 invented receipts whose answers are known. Then a LoRA of Muse Glimmer 30B (r30b) learns the text half (receipt text to the same JSON) on one rented A100, scored the same way against its base, with general checks to show it kept its other skills. Muse Muse can't tune a vision model yet, and the page says so.",
         "note": "Read a photo of a receipt and give me the shop, date, subtotal, tax, total and how many items I bought as JSON, and show me how often each field comes out right"
       },
       "autoBuild": false
@@ -63,22 +63,22 @@
       },
       "learn": {
         "title": "A messaging bot: webhook in, route by type, reply",
-        "plan": "Rebuild the shop chat on Muse Wonder with its own webhook route, a simulator that posts sample WhatsApp Cloud API messages to it and shows the reply it would send, and spoken replies in the browser. Real WhatsApp stays unconnected.",
+        "plan": "Rebuild the shop chat on Muse Wonder with its own webhook route, a simulator that posts sample WhatsApp Cloud API messages to it and shows the reply it would send, and spoken replies in the browser's own voice. Real WhatsApp stays unconnected.",
         "models": ["muse-wonder-1.0", "muse-voice-transcribe-1.0"],
         "tune": null,
         "estimate": "About $3 to $6 to build; no tune, since the video has none",
         "status": "planned",
         "unverified": [
           "Whether a build can ship a public webhook route that answers WhatsApp's verify handshake",
-          "Whether the in-browser speech capability (MEDIA_SPEECH) is on in production",
+          "Spoken replies use the browser's own voice only; the platform's in-page speech model is not a Meta model, so the lesson doesn't use it",
           "Any real WhatsApp send"
         ]
       },
       "rebuild": {
         "fit": "partial",
         "models": ["muse-wonder-1.0", "muse-voice-transcribe-1.0"],
-        "plan": "A shop helper chat on Muse Wonder that answers typed questions, photos and voice notes, and can read a voice-note answer out loud in the browser. A webhook simulator posts sample WhatsApp Cloud API messages to the app's own webhook route and shows the reply it would send. Sending real WhatsApp messages needs the owner's own WhatsApp Business account, so it is not connected.",
-        "note": "Make a chat helper for a small shop that answers typed questions, photos and voice notes from the shop's own details, can read a voice-note answer back out loud, and includes a WhatsApp webhook simulator that sends sample Cloud API messages to its own webhook route and shows the reply it would send"
+        "plan": "A shop helper chat on Muse Wonder that answers typed questions, photos and voice notes, and can read a voice-note answer out loud in the browser's own voice. A webhook simulator posts sample WhatsApp Cloud API messages to the app's own webhook route and shows the reply it would send. Sending real WhatsApp messages needs the owner's own WhatsApp Business account, so it is not connected.",
+        "note": "Make a chat helper for a small shop that answers typed questions, photos and voice notes from the shop's own details, can read a voice-note answer back out loud in the browser's own voice, and includes a WhatsApp webhook simulator that sends sample Cloud API messages to its own webhook route and shows the reply it would send"
       },
       "autoBuild": false
     },
@@ -181,10 +181,10 @@
       },
       "learn": {
         "title": "Fine-tune in the real world: data first, smallest model first, baseline first",
-        "plan": "Pick a starting point, score a quick few-shot baseline, write a small clean dataset, LoRA-tune Llama 3.2 3B on one A10 with a blind check against its base, and step up to Muse Glimmer 30B only if the small model misses.",
+        "plan": "Pick a starting point, score a quick few-shot baseline, write a small clean dataset, and LoRA-tune Muse Glimmer 30B (r30b) on one A100 with a blind check against its base. Glimmer is the one open Meta model Muse Muse tunes, so the video's smallest-model-first habit is explained, not done.",
         "models": ["muse-wonder-1.0"],
-        "tune": "LoRA of Llama 3.2 3B on a Lambda A10; Muse Glimmer 30B on an H100 only if the 3B misses",
-        "estimate": "About $5.20 for the 3B path, $2.40 more to step up to Glimmer, $1.20 to $3 for the helper app",
+        "tune": "Muse Glimmer 30B (r30b) LoRA on a Lambda A100, about $1.39 to $1.86 a run (measured on earlier Glimmer runs)",
+        "estimate": "About $3 to $3.50 for the Glimmer tune and its blind check, $1.20 to $3 for the helper app",
         "status": "planned",
         "unverified": [
           "Launching a tune through the site (the measured runs used the test harness)",
@@ -194,8 +194,8 @@
       "rebuild": {
         "fit": "partial",
         "models": ["muse-wonder-1.0"],
-        "plan": "A planning helper on Muse Wonder that asks what data the person has, scores a quick few-shot baseline on their examples, and hands them a ready-to-start Llama 3.2 3B tune with a blind check against the base model. Muse Muse's fine-tuning lab runs the tune.",
-        "note": "Help me pick a fine-tuning plan for my task: ask what data I have, score a quick few-shot baseline on my examples, and hand me a ready-to-start Llama 3.2 3B tune with a blind check against the base model"
+        "plan": "A planning helper on Muse Wonder that asks what data the person has, scores a quick few-shot baseline on their examples, and hands them a ready-to-start Muse Glimmer 30B tune with a blind check against the base model. Muse Muse's fine-tuning lab runs the tune.",
+        "note": "Help me pick a fine-tuning plan for my task: ask what data I have, score a quick few-shot baseline on my examples, and hand me a ready-to-start Muse Glimmer 30B tune with a blind check against the base model"
       },
       "autoBuild": false
     },
@@ -221,15 +221,15 @@
         "title": "Guards in layers, measured",
         "plan": "Rebuild on Muse Wonder as separate calls (an injection check, a hazard-list check on prompts and replies, a code check on replies) returning allow, needs review or block, with a made-up red-team set that counts catches and false blocks.",
         "models": ["muse-wonder-1.0"],
-        "tune": "Optional: a Llama 3.2 3B LoRA that answers one JSON verdict, on a Lambda A10, about $2.20. The platform can't tune Llama Guard or Prompt Guard themselves.",
-        "estimate": "About $3 to $6 to build; about $2.20 more for the optional tune",
+        "tune": null,
+        "estimate": "About $3 to $6 to build; no tune",
         "status": "planned",
         "unverified": ["Build cost on Muse Wonder", "Catch rate and false blocks, until Prove it records them"]
       },
       "rebuild": {
         "fit": "reframe",
         "models": ["muse-wonder-1.0"],
-        "plan": "A layered safety gate in front of a chatbot on Muse Wonder: an injection check, a hazard-list check on prompts and replies, a code check on replies, and allow, review or block with the reason. Meta's open protection models stay the self-hosted option.",
+        "plan": "A layered safety gate in front of a chatbot on Muse Wonder: an injection check, a hazard-list check on prompts and replies, a code check on replies, and allow, review or block with the reason. Every layer is Muse Wonder. Meta's Llama Protections pages are linked as reading; Muse Muse doesn't run them.",
         "note": "A layered safety gate for a chatbot that runs each prompt through an injection check, checks prompts and replies against a published list of hazard categories, scans any code in a reply for insecure patterns, and shows allow, needs review or block with the layer and reason that caught it, plus a built-in red-team test set and a pass table"
       },
       "autoBuild": false
@@ -256,10 +256,10 @@
         "title": "Triage a repo's issues with Muse Wonder",
         "plan": "The same three passes on Muse Wonder with strict schemas, every label and cited issue number checked in code, themes from the repo's own labels, likely duplicates linked, and suggested labels shown, never posted.",
         "models": ["muse-wonder-1.0"],
-        "tune": "Optional edge add-on: a Llama 3.2 3B LoRA on the per-issue schema for offline labeling, about $3 to $11",
-        "estimate": "About $2 to $4 to build; $3 to $11 more for the optional tune",
+        "tune": "Optional edge add-on: a Muse Glimmer 30B (r30b) LoRA on the per-issue schema on a Lambda A100, about $1.39 to $1.86, run from its one-bit IQ1_S file for offline labeling",
+        "estimate": "About $2 to $4 to build; $3 to $5 more for the optional tune, its blind check and its file",
         "status": "planned",
-        "unverified": ["The GitHub connect vault in production", "Cost per use", "Triage quality of a small tuned model"]
+        "unverified": ["The GitHub connect vault in production", "Cost per use", "Triage quality of a tuned one-bit Glimmer file"]
       },
       "rebuild": {
         "fit": "clean",
@@ -284,10 +284,10 @@
       "current": null,
       "learn": {
         "title": "From a PDF to a two-host podcast",
-        "plan": "Muse Wonder reads the PDF and writes a two-host script with page references in one call; the page reads it aloud with the platform's open speech model or the browser's voices and always shows the transcript.",
+        "plan": "Muse Wonder reads the PDF and writes a two-host script with page references in one call; the page reads it aloud with the browser's own voices and always shows the transcript.",
         "models": ["muse-wonder-1.0", "muse-image-1.0"],
-        "tune": "Optional: tune Llama 3.2 3B as the script rewriter on a Lambda A10, about $2, reporting whatever the blind check shows",
-        "estimate": "About $0.30 to $1.80 to build (local batch figure); about $2 more for the optional tune",
+        "tune": "Optional: tune Muse Glimmer 30B (r30b) as the script rewriter on a Lambda A100, about $1.39 to $1.86, reporting whatever the blind check shows",
+        "estimate": "About $0.30 to $1.80 to build (local batch figure); about $3 to $3.50 more for the optional tune and its blind check",
         "status": "planned",
         "unverified": [
           "Meta's API has no text-to-speech; two distinct voices depend on the device",
@@ -298,8 +298,8 @@
       "rebuild": {
         "fit": "partial",
         "models": ["muse-wonder-1.0", "muse-image-1.0"],
-        "plan": "Muse Wonder reads the PDF directly and writes a two-host script as turns with page references in one call, so there is no cleanup model. Meta's API has no text-to-speech, so the page reads the script aloud with the platform's in-page open speech model or the browser's own voices, and always shows the transcript. Muse Image makes cover art.",
-        "note": "Turn any PDF into a short two-host podcast: read the whole PDF, write a lively conversation that explains it with page references, and play it aloud with a transcript you can read along with"
+        "plan": "Muse Wonder reads the PDF directly and writes a two-host script as turns with page references in one call, so there is no cleanup model. Meta's API has no text-to-speech, so the page reads the script aloud with the browser's own voices and always shows the transcript. Muse Image makes cover art.",
+        "note": "Turn any PDF into a short two-host podcast: read the whole PDF, write a lively conversation that explains it with page references, and play it aloud in the browser's own voice with a transcript you can read along with"
       },
       "autoBuild": false
     },
@@ -321,8 +321,8 @@
         "title": "Make training data from your documents, then prove it helped",
         "plan": "Walk the same four steps in Muse Muse's fine-tuning lab, then do the two the video skips: train a LoRA on the data and have Muse Wonder judge it blind against its base.",
         "models": ["muse-spark-1.3-contributor", "muse-wonder-1.0"],
-        "tune": "LoRA of Llama 3.2 3B on a Lambda A10, or Muse Glimmer 30B on an H100",
-        "estimate": "Under $1 per run on Llama 3.2 3B with 100 examples; about $2.50 on Glimmer",
+        "tune": "Muse Glimmer 30B (r30b) LoRA on a Lambda A100, about $1.39 to $1.86 a run (measured on earlier Glimmer runs)",
+        "estimate": "About $1.39 to $1.86 per run on Muse Glimmer 30B, about $3 to $3.50 with its blind check",
         "status": "planned",
         "unverified": [
           "Launching a tune from the site (both measured runs used the test harness)",
@@ -334,7 +334,7 @@
         "fit": "clean",
         "models": ["muse-spark-1.3-contributor", "muse-wonder-1.0"],
         "plan": "Muse Muse's fine-tuning lab already does the video's steps and then trains on the result. A folder of documents is read in the browser, cleaned of secrets and personal details on the server, and Spark 1.3 Contributor writes examples from it in varied styles. Near-duplicates are dropped and a held-out set is kept aside. A LoRA fine-tune then runs on a rented GPU, and Muse Wonder judges the base and the tuned model blind on the held-out prompts.",
-        "note": "Turn a folder of my team's how-to docs into question and answer training data I can review and download, then fine-tune a small model on it and show me whether it beats the model it started from"
+        "note": "Turn a folder of my team's how-to docs into question and answer training data I can review and download, then fine-tune Muse Glimmer on it and show me whether it beats the model it started from"
       },
       "autoBuild": false
     },
@@ -354,10 +354,10 @@
       "current": null,
       "learn": {
         "title": "Move a prompt to a new model, and prove it got better",
-        "plan": "Muse Wonder proposes rewrites, each is scored by exact field match in code on a search set, and only the winner is scored on a sealed set; an optional Llama 3.2 3B tune shows when a prompt is enough.",
+        "plan": "Muse Wonder proposes rewrites, each is scored by exact field match in code on a search set, and only the winner is scored on a sealed set; an optional Muse Glimmer 30B (r30b) tune shows when a prompt is enough.",
         "models": ["muse-wonder-1.0", "muse-spark-1.3-contributor"],
-        "tune": "Optional: Llama 3.2 3B LoRA on a Lambda A10, about $3 to $5",
-        "estimate": "About $0.30 to $1.80 to build; $3 to $5 more for the optional tune",
+        "tune": "Optional: Muse Glimmer 30B (r30b) LoRA on a Lambda A100, about $1.39 to $1.86 a run (measured on earlier Glimmer runs)",
+        "estimate": "About $0.30 to $1.80 to build; about $3 to $3.50 more for the optional tune and its blind check",
         "status": "planned",
         "unverified": ["Cost of an optimize run", "Contributor model prices", "Tune result on this task"]
       },
@@ -387,7 +387,7 @@
         "title": "Building with Llama 4, redone on Muse",
         "plan": "Walk the course's topics on Muse Muse, say plainly that it has no prompt optimizer, then finish past the course: train on the synthetic data and check the result blind.",
         "models": ["muse-wonder-1.0", "sam-3.1"],
-        "tune": "LoRA of Muse Glimmer 30B on an H100 (about $1.86 measured for 120 steps), or Llama 3.2 3B on an A10",
+        "tune": "LoRA of Muse Glimmer 30B (r30b) on a Lambda A100 or H100, about $1.39 to $1.86 measured ($1.86 for 120 steps on an H100)",
         "estimate": "About $10 to $20 in all, inside the $20 cap only at the low end",
         "status": "planned",
         "unverified": ["The course's gated lesson contents", "SAM 3.1 counting shelf products", "Build cost for this muse"]
@@ -417,18 +417,18 @@
       "current": null,
       "learn": {
         "title": "Big model to small model",
-        "plan": "A talk card with links, plus one hands-on lesson on the one technique it names: tune a small Llama 3.2 3B on one job and check it blind against its base.",
+        "plan": "A talk card with links, plus one hands-on lesson on the one technique it names: tune the open Muse Glimmer 30B (r30b) on one job and check it blind against its base.",
         "models": ["muse-wonder-1.0"],
-        "tune": "Llama 3.2 3B LoRA on a Lambda A10, trained on rows a person or code wrote until data-rights question Q2 is answered",
-        "estimate": "About $2 to $3.50; $6.50 to $13.50 if Muse Wonder writes 300 examples",
+        "tune": "Muse Glimmer 30B (r30b) LoRA on a Lambda A100, about $1.39 to $1.86, trained on rows a person or code wrote until data-rights question Q2 is answered",
+        "estimate": "About $3 to $3.50 with its blind check; $7.60 to $13.70 if Muse Wonder writes 300 examples",
         "status": "planned",
         "unverified": ["What the talk says (no transcript read)", "Training on Muse Wonder output (DATA_RIGHTS Q2)"]
       },
       "rebuild": {
         "fit": "reframe",
         "models": ["muse-wonder-1.0"],
-        "plan": "No product rebuild: the talk teaches no app. The Learn lesson does the one technique it names. Fine-tune Llama 3.2 3B with LoRA on a rented A10 on a small task, then have Muse Wonder judge it blind against the base model on held-out prompts.",
-        "note": "Teach a small model one job and check it blind against the base model"
+        "plan": "No product rebuild: the talk teaches no app. The Learn lesson does the one technique it names. Fine-tune Muse Glimmer 30B (r30b) with LoRA on a rented A100 on a small task, then have Muse Wonder judge it blind against the base model on held-out prompts.",
+        "note": "Teach the open Muse Glimmer model one job and check it blind against the base model"
       },
       "autoBuild": false
     },
@@ -447,17 +447,17 @@
       "current": null,
       "learn": {
         "title": "Ask your codebase, online and offline",
-        "plan": "Drop in a code folder and ask about it on Muse Wonder, with file and line citations and a visible list of files read, plus a local Llama 3.2 3B fallback as the offline half, said to be far weaker than a 70B.",
+        "plan": "Drop in a code folder and ask about it on Muse Wonder, with file and line citations and a visible list of files read, plus the edge track's planned one-bit Muse Glimmer 30B file (IQ1_S) as the offline half, said to be slow and far weaker than the cloud.",
         "models": ["muse-wonder-1.0"],
-        "tune": "Optional: a folder-run Llama 3.2 3B LoRA on a Lambda A10, about $1 to $3",
-        "estimate": "About $2 to $5 to build; $1 to $3 more for the optional tune",
+        "tune": "Optional: a folder-run Muse Glimmer 30B (r30b) LoRA on a Lambda A100, about $1.39 to $1.86 a run (measured on earlier Glimmer runs)",
+        "estimate": "About $2 to $5 to build; $1.40 to $1.90 more for the optional tune",
         "status": "planned",
         "unverified": ["The video's spoken content", "How large a repo Muse Wonder handles well", "Any Jetson numbers for code"]
       },
       "rebuild": {
         "fit": "partial",
         "models": ["muse-wonder-1.0"],
-        "plan": "Drop in a code folder or zip and ask about it. Muse Wonder answers with file and line citations, explains old code and writes unit tests and docs. A simple file index picks what to send, and the app shows which files it read. It runs on Meta's hosted API, so it is not air-gapped; the edge track's local Llama 3.2 3B fallback is the offline half, and it is much weaker than a 70B model.",
+        "plan": "Drop in a code folder or zip and ask about it. Muse Wonder answers with file and line citations, explains old code and writes unit tests and docs. A simple file index picks what to send, and the app shows which files it read. It runs on Meta's hosted API, so it is not air-gapped; the edge track's planned one-bit Muse Glimmer 30B file is the offline half, and it is slow and much weaker than the cloud.",
         "note": "Drop in a code folder or zip and ask questions about it: get answers that cite file and line, explanations of old code, unit tests and docs for a function you pick"
       },
       "autoBuild": false
@@ -508,18 +508,18 @@
       "current": null,
       "learn": {
         "title": "The Llama toolbox, done on Muse Muse",
-        "plan": "Walk the likely recipe chain as steps that have run here: try a prompt first, write a dataset, LoRA-tune Llama 3.2 3B, judge it blind against its base, and keep a Q4_K_M file for the edge.",
+        "plan": "Walk the likely recipe chain as steps that have run here: try a prompt first, write a dataset, LoRA-tune Muse Glimmer 30B (r30b), judge it blind against its base, and keep a one-bit IQ1_S file for the edge.",
         "models": ["muse-wonder-1.0"],
-        "tune": "Llama 3.2 3B LoRA on a Lambda A10, or Muse Glimmer 30B on an H100",
-        "estimate": "About $2.20 to $3 per run on Llama 3.2 3B; $4 to $5 on Glimmer; about $2 for the optional helper app",
+        "tune": "Muse Glimmer 30B (r30b) LoRA on a Lambda A100, about $1.39 to $1.86 a run (measured on earlier Glimmer runs)",
+        "estimate": "About $3 to $5 per run on Muse Glimmer 30B with its blind check and file; about $2 for the optional helper app",
         "status": "planned",
         "unverified": ["What the video shows step by step", "Dataset cost on Muse Wonder"]
       },
       "rebuild": {
         "fit": "reframe",
         "models": ["muse-wonder-1.0"],
-        "plan": "Teach the toolbox as steps that have run on Muse Muse: try a prompt first, have Muse Wonder write a dataset, LoRA-tune Llama 3.2 3B on an A10 (or Glimmer 30B on an H100), check tuned against base blind with Muse Wonder as judge, then keep a Q4_K_M file for the edge.",
-        "note": "Paste my task and a few examples and tell me whether to fix the prompt, make synthetic data, or fine-tune a small Llama or Glimmer, with the time and cost of each step"
+        "plan": "Teach the toolbox as steps that have run on Muse Muse: try a prompt first, have Muse Wonder write a dataset, LoRA-tune Muse Glimmer 30B (r30b) on an A100, check tuned against base blind with Muse Wonder as judge, then keep a one-bit IQ1_S file for the edge.",
+        "note": "Paste my task and a few examples and tell me whether to fix the prompt, make synthetic data, or fine-tune Muse Glimmer, with the time and cost of each step"
       },
       "autoBuild": false
     },
@@ -539,18 +539,18 @@
       "current": null,
       "learn": {
         "title": "Guard models in front of an app",
-        "plan": "Show what Prompt Guard 2 caught in Muse Muse's own Nov 1 laptop run (blunt injections yes, subtle ones no), then build a two-layer chat: the Prompt Guard score plus a Muse Wonder check, with a log of which layer stopped each message.",
+        "plan": "Explain each of Meta's April 2025 releases in plain words with links to Meta's pages, then build a chat guarded by Muse Wonder alone, with a log of what it stopped and why. Muse Muse doesn't run Prompt Guard 2 or Llama Guard 4.",
         "models": ["muse-wonder-1.0"],
         "tune": null,
-        "estimate": "About $3 to $6 to build; Prompt Guard runs on a CPU with no API cost",
+        "estimate": "About $3 to $6 to build on Muse Wonder",
         "status": "planned",
-        "unverified": ["What the talk covers minute by minute", "Prompt Guard 2 inside a built product or on a board"]
+        "unverified": ["What the talk covers minute by minute", "Muse Wonder's catch rate and false blocks, until a bench records them"]
       },
       "rebuild": {
         "fit": "reframe",
         "models": ["muse-wonder-1.0"],
-        "plan": "A lesson, not a copy of the talk. It explains each tool in plain words, shows Muse Muse's own Nov 1 measurement of Prompt Guard 2 (22M and 86M on a laptop CPU, made-up attack lines and 643 ordinary texts), then builds a chat with two layers: the Prompt Guard score and a Muse Wonder check, with a log of which layer stopped each message.",
-        "note": "Put Meta's Prompt Guard 2 in front of my support chat, add a second safety check with Muse Wonder, and show for every message the guard's score, the verdict and which layer stopped it"
+        "plan": "A lesson, not a copy of the talk. It explains each tool in plain words and links Meta's pages as reading, then builds a chat guarded by a Muse Wonder check, with a log of what it stopped and why. Muse Muse doesn't run Meta's guard models.",
+        "note": "Put a Muse Wonder safety check in front of my support chat that screens each message for jailbreaks and injected instructions, and show for every message the verdict, the reason and whether it was stopped"
       },
       "autoBuild": false
     },
@@ -570,18 +570,18 @@
       "current": null,
       "learn": {
         "title": "Tailor a small model to your workflow, then prove it",
-        "plan": "Bring rows or have Muse Wonder write them, hold prompts out, LoRA-tune Llama 3.2 3B on an A10, judge it blind against the base with every answer side by side, and keep a Q4_K_M file.",
+        "plan": "Bring rows or have Muse Wonder write them, hold prompts out, LoRA-tune Muse Glimmer 30B (r30b) on an A100, judge it blind against the base with every answer side by side, and keep a one-bit IQ1_S file.",
         "models": ["muse-wonder-1.0"],
-        "tune": "LoRA of Llama 3.2 3B on a Lambda A10 (Muse Muse has no Llama 3.3 8B base)",
-        "estimate": "About $2 to $3 with your own data; $5 to $9 with 200 written examples",
+        "tune": "Muse Glimmer 30B (r30b) LoRA on a Lambda A100, about $1.39 to $1.86 a run (measured on earlier Glimmer runs)",
+        "estimate": "About $3 to $3.50 with your own data; $6 to $10 with 200 written examples",
         "status": "planned",
-        "unverified": ["General and safety checks (TUNE_GENERAL_CHECKS, off)", "Llama 3.1 8B as a base", "The 3B file on a Jetson board"]
+        "unverified": ["General and safety checks (TUNE_GENERAL_CHECKS, off)", "A tuned one-bit Glimmer file on a Jetson board"]
       },
       "rebuild": {
         "fit": "clean",
         "models": ["muse-wonder-1.0"],
-        "plan": "A real fine-tune on Muse Muse's lab. Bring your rows or have Muse Wonder write them, hold prompts out, train a LoRA on Llama 3.2 3B on a rented A10, have Muse Wonder judge base against tuned without knowing which is which, and keep a Q4_K_M file.",
-        "note": "Tune a small Llama on these 300 past support replies so it answers our shop's inbox in our style, and show me it beats the base model on replies it never saw"
+        "plan": "A real fine-tune on Muse Muse's lab. Bring your rows or have Muse Wonder write them, hold prompts out, train a LoRA on Muse Glimmer 30B (r30b) on a rented A100, have Muse Wonder judge base against tuned without knowing which is which, and keep a one-bit IQ1_S file.",
+        "note": "Tune Muse Glimmer on these 300 past support replies so it answers our shop's inbox in our style, and show me it beats the base model on replies it never saw"
       },
       "autoBuild": false
     },
@@ -600,10 +600,10 @@
       "current": null,
       "learn": {
         "title": "Watch, then apply: own an open model",
-        "plan": "Link the talk, then try both topics: fine-tune an open Llama 3.2 3B and keep the file, and build a founder's planner on Muse Wonder that never quotes or speaks for either presenter.",
+        "plan": "Link the talk, then try both topics: fine-tune the open Muse Glimmer 30B (r30b) and keep its file, and build a founder's planner on Muse Wonder that never quotes or speaks for either presenter.",
         "models": ["muse-wonder-1.0"],
-        "tune": "Llama 3.2 3B LoRA on a Lambda A10, or Muse Glimmer 30B on an H100",
-        "estimate": "About $2.15 to $2.60 for the tune; about $2.50 for the planner, capped at $5",
+        "tune": "Muse Glimmer 30B (r30b) LoRA on a Lambda A100, about $1.39 to $1.86 a run (measured on earlier Glimmer runs)",
+        "estimate": "About $3 to $3.50 for the tune and its blind check; about $2.50 for the planner, capped at $5",
         "status": "planned",
         "unverified": ["What the talk says beyond its two topics", "Launching a tune through the site"]
       },
@@ -631,9 +631,9 @@
       "current": null,
       "learn": {
         "title": "What LlamaCon announced, done today",
-        "plan": "A then-and-now lesson: a playground that sends one question to two Muse models side by side, a Llama 3.2 3B tune with a blind check in place of the Llama API's 8B tuning, and a link to the protections lesson.",
+        "plan": "A then-and-now lesson: a playground that sends one question to two Muse models side by side, a Muse Glimmer 30B (r30b) tune with a blind check in place of the Llama API's 8B tuning, and a link to the protections lesson.",
         "models": ["muse-wonder-1.0", "muse-spark-1.3-contributor"],
-        "tune": "Llama 3.2 3B LoRA on a Lambda A10, about $2 to $3",
+        "tune": "Muse Glimmer 30B (r30b) LoRA on a Lambda A100, about $1.39 to $1.86 a run (measured on earlier Glimmer runs)",
         "estimate": "About $4 to $12 in all",
         "status": "planned",
         "unverified": ["What the keynote itself covers", "Build cost of the playground", "A tune launched through the site"]
@@ -641,7 +641,7 @@
       "rebuild": {
         "fit": "reframe",
         "models": ["muse-wonder-1.0", "muse-spark-1.3-contributor"],
-        "plan": "A keynote has no single product to rebuild. The Learn lesson walks through what it announced and does the parts Muse Muse really does today: call current Muse models from an app it builds, and fine-tune a small Llama with a blind check against the base.",
+        "plan": "A keynote has no single product to rebuild. The Learn lesson walks through what it announced and does the parts Muse Muse really does today: call current Muse models from an app it builds, and fine-tune Muse Glimmer 30B with a blind check against the base.",
         "note": "A one-page playground that sends the same question to Muse Wonder and Muse Spark 1.3 Contributor and shows both answers side by side with how long each took"
       },
       "autoBuild": false
@@ -662,18 +662,18 @@
       "current": null,
       "learn": {
         "title": "Fine-tune faster with Unsloth, measured",
-        "plan": "Run the Unsloth QLoRA Muse Muse already uses on Llama 3.2 3B, then Glimmer 30B, and show peak memory, time and cost next to Unsloth's claims, which stay labeled as theirs.",
+        "plan": "Run the Unsloth QLoRA Muse Muse already uses on Muse Glimmer 30B (r30b), and show peak memory, time and cost next to Unsloth's claims, which stay labeled as theirs.",
         "models": ["muse-spark-1.3-contributor", "muse-wonder-1.0"],
-        "tune": "Llama 3.2 3B on a Lambda A10, then Muse Glimmer 30B on an H100",
-        "estimate": "About $2.15 for the 3B; about $2.40 more for Glimmer",
+        "tune": "Muse Glimmer 30B (r30b) LoRA on a Lambda A100, about $1.39 to $1.86 a run (measured on earlier Glimmer runs)",
+        "estimate": "About $1.39 to $1.86 for the tune; about $1.40 more for its blind check",
         "status": "planned",
-        "unverified": ["Any speedup measured by us (needs a plain baseline run)", "Llama 4 Scout as a base (never run here)"]
+        "unverified": ["Any speedup measured by us (needs a plain baseline run)", "Unsloth's Llama 4 claims, which Muse Muse can't check: it tunes no Llama"]
       },
       "rebuild": {
         "fit": "partial",
         "models": ["muse-spark-1.3-contributor", "muse-wonder-1.0"],
-        "plan": "Run the same Unsloth QLoRA the talk is about, on a base that has run here: Llama 3.2 3B on one A10, then Muse Glimmer 30B on an H100 or A100. Spark 1.3 Contributor writes made-up training data, Muse Wonder judges base against tuned blind, and the page shows peak GPU memory, time and cost. Llama 4 has not been tuned here yet, and the page says so.",
-        "note": "Teach a small Llama to answer questions about a made-up hobby shop in its own short style, and show me the GPU memory, time and cost it took"
+        "plan": "Run the same Unsloth QLoRA the talk is about, on a base that has run here: Muse Glimmer 30B (r30b) on one A100. Spark 1.3 Contributor writes made-up training data, Muse Wonder judges base against tuned blind, and the page shows peak GPU memory, time and cost. Muse Muse tunes no Llama, so Llama 4 is not tuned here, and the page says so.",
+        "note": "Teach Muse Glimmer to answer questions about a made-up hobby shop in its own short style, and show me the GPU memory, time and cost it took"
       },
       "autoBuild": false
     },
@@ -693,19 +693,19 @@
       "verdict": "not built",
       "current": null,
       "learn": {
-        "title": "Run your own Llama on Linux, and keep answering from it",
-        "plan": "Tune Llama 3.2 3B, take its 2 GB Q4_K_M file, serve it with llama-server on Linux, and build a receipt reader that falls back to it when the cloud is cut, shown in an outage drill.",
+        "title": "Run a tuned Glimmer file on Linux",
+        "plan": "Tune Muse Glimmer 30B (r30b), take its 6.53 GB one-bit IQ1_S file, serve it with llama-server on Linux, and build a receipt reader that falls back to it when the cloud is cut, shown in an outage drill.",
         "models": ["muse-wonder-1.0"],
-        "tune": "Llama 3.2 3B LoRA on a Lambda A10, about $4.50 with 100 examples",
-        "estimate": "About $4.50 for the tune; $2 to $5 for the product",
+        "tune": "Muse Glimmer 30B (r30b) LoRA on a Lambda A100, about $1.39 to $1.86, then its IQ1_S file on a rented A10, about $1.75 measured",
+        "estimate": "About $3 to $5 for the tune and its file; $2 to $5 for the product",
         "status": "planned",
-        "unverified": ["The Linux export script on a real Linux PC", "Edge builds in a real sandbox", "Whether Meta's old download flow still works"]
+        "unverified": ["The Linux export script on a real Linux PC", "Edge builds in a real sandbox", "Speed and answer quality of a tuned one-bit file, which is slow and weaker than the cloud"]
       },
       "rebuild": {
         "fit": "reframe",
         "models": ["muse-wonder-1.0"],
-        "plan": "A hosted rebuild can't teach this, since the Muse models run only in the cloud. The lesson runs a Llama model you own on your own Linux machine instead: tune Llama 3.2 3B in the lab, take its checked Q4_K_M file, serve it with llama-server, and make a product that asks Muse Wonder first and falls back to it when the cloud is cut.",
-        "note": "Paste a receipt's text and get its six fields back as JSON from Muse Wonder, and when the cloud can't be reached, from the Llama 3.2 receipt reader running on my own Linux box, with a label on every answer saying which one answered"
+        "plan": "A hosted rebuild can't teach this, since the Muse models run only in the cloud. The lesson runs a Meta model you own on your own Linux machine instead: tune Muse Glimmer 30B (r30b) in the lab, take its checked one-bit IQ1_S file, serve it with llama-server, and make a product that asks Muse Wonder first and falls back to it when the cloud is cut.",
+        "note": "Paste a receipt's text and get its six fields back as JSON from Muse Wonder, and when the cloud can't be reached, from my tuned Muse Glimmer file running on my own Linux box, with a label on every answer saying which one answered"
       },
       "autoBuild": false
     },
@@ -725,19 +725,19 @@
       "verdict": "not built",
       "current": null,
       "learn": {
-        "title": "Run your own tuned model on your Mac",
-        "plan": "The video's four steps on a model the learner tuned: a Llama 3.2 3B LoRA, its 2 GB Q4_K_M file in Ollama, the same curl and Python calls, and the stock model side by side.",
+        "title": "Run a tuned Glimmer file on your Mac",
+        "plan": "The video's four steps on a model the learner tuned: a Muse Glimmer 30B (r30b) LoRA, its 6.53 GB one-bit IQ1_S file in Ollama on a Mac with at least 16 GB, the same curl and Python calls, and the stock one-bit Glimmer side by side.",
         "models": ["muse-wonder-1.0"],
-        "tune": "Llama 3.2 3B LoRA on a Lambda A10",
-        "estimate": "About $2.20 to $4 for the tune; $1.50 to $5 for the optional app",
+        "tune": "Muse Glimmer 30B (r30b) LoRA on a Lambda A100, about $1.39 to $1.86 a run (measured on earlier Glimmer runs)",
+        "estimate": "About $3 to $5 for the tune and its file; $1.50 to $5 for the optional app",
         "status": "planned",
-        "unverified": ["No tuned file has run on a Mac yet", "The small-base local files path is off (QUANT_TARGETS)", "A page calling localhost:11434"]
+        "unverified": ["No tuned Glimmer file has run on a Mac yet", "Speed of a one-bit Glimmer on a 16 GB Mac", "A page calling localhost:11434"]
       },
       "rebuild": {
         "fit": "reframe",
         "models": ["muse-spark-1.3-contributor", "muse-wonder-1.0"],
-        "plan": "Same steps, on a model you tuned. Tune Llama 3.2 3B with LoRA on a rented A10, check it blind against the base with Muse Wonder, make a 2 GB Q4_K_M file, then run it in Ollama on your Mac and call it with the video's curl and Python requests.",
-        "note": "A chat page that sends each question to the model running in Ollama on my own Mac at localhost:11434, shows which model answered and how fast, and lets me ask the same question to the stock model side by side"
+        "plan": "Same steps, on a model you tuned. Tune Muse Glimmer 30B (r30b) with LoRA on a rented A100, check it blind against the base with Muse Wonder, make its 6.53 GB one-bit IQ1_S file, then run it in Ollama on a Mac with at least 16 GB and call it with the video's curl and Python requests.",
+        "note": "A chat page that sends each question to my tuned Muse Glimmer file running in Ollama on my own Mac at localhost:11434, shows which model answered and how fast, and lets me ask the same question to the stock Muse Glimmer file side by side"
       },
       "autoBuild": false
     },
@@ -758,18 +758,18 @@
       "current": null,
       "learn": {
         "title": "Own your model: open weights against a cloud API, tried for real",
-        "plan": "Do the talk's one hands-on idea: a Muse model writes the data, Llama 3.2 3B is tuned on an A10, a blind check scores it against its base, and you keep the file.",
+        "plan": "Do the talk's one hands-on idea: a Muse model writes the data, Muse Glimmer 30B (r30b) is tuned on an A100, a blind check scores it against its base, and you keep the file.",
         "models": ["muse-wonder-1.0", "muse-spark-1.3-contributor"],
-        "tune": "Llama 3.2 3B LoRA on a Lambda A10; Muse Glimmer 30B on an H100 as an option",
-        "estimate": "About $2.15 per practice run; $17 to $36 with a 1,000-example Muse Wonder dataset",
+        "tune": "Muse Glimmer 30B (r30b) LoRA on a Lambda A100, about $1.39 to $1.86 a run (measured on earlier Glimmer runs)",
+        "estimate": "About $3 to $3.50 per practice run with its blind check; $17 to $36 with a 1,000-example Muse Wonder dataset",
         "status": "planned",
         "unverified": ["The talk's case-study numbers (no transcript)", "A 1,000-example Muse Wonder dataset", "Training on Muse output (DATA_RIGHTS)"]
       },
       "rebuild": {
         "fit": "reframe",
         "models": ["muse-wonder-1.0", "muse-spark-1.3-contributor"],
-        "plan": "There is no app in the talk to rebuild. Its one hands-on idea is a big model writing training data and a small open model tuned on it. Muse Muse does that for real: a Muse model writes the examples, Llama 3.2 3B is tuned on a rented GPU, a blind check scores it against the base, and you keep the file.",
-        "note": "Ask one question and see three answers side by side: the cloud model, the small open model before tuning, and the one I tuned and keep, with cost and speed for each"
+        "plan": "There is no app in the talk to rebuild. Its one hands-on idea is a big model writing training data and a small open model tuned on it. Muse Muse does that for real: a Muse model writes the examples, Muse Glimmer 30B (r30b) is tuned on a rented GPU, a blind check scores it against the base, and you keep the file.",
+        "note": "Ask one question and see three answers side by side: the cloud model, the open Muse Glimmer model before tuning, and the one I tuned and keep, with cost and speed for each"
       },
       "autoBuild": false
     },
@@ -822,18 +822,18 @@
       "current": null,
       "learn": {
         "title": "Where your model can run",
-        "plan": "A tour of where a Muse Muse model runs, each stop labeled by how far it has really run: Muse Wonder through the API, your own tuned 3B in llama.cpp or Ollama, a Jetson board fallback, and hosted GPUs marked not yet tried.",
+        "plan": "A tour of where a Muse Muse model runs, each stop labeled by how far it has really run: Muse Wonder through the API, your own tuned Muse Glimmer file in llama.cpp or Ollama, a Jetson board fallback, and hosted GPUs marked not yet tried.",
         "models": ["muse-wonder-1.0"],
-        "tune": "Optional: Llama 3.2 3B LoRA on a Lambda A10, about $1.50",
-        "estimate": "About $0.05 for the receipt reader build; about $1.50 for the optional tune",
+        "tune": "Optional: Muse Glimmer 30B (r30b) LoRA on a Lambda A100, about $1.39 to $1.86 a run (measured on earlier Glimmer runs)",
+        "estimate": "About $0.05 for the receipt reader build; about $1.40 to $1.90 for the optional tune",
         "status": "planned",
-        "unverified": ["Hosted GPU routes against a real provider", "A tuned Llama file on a Jetson", "The export scripts with a tuned file"]
+        "unverified": ["Hosted GPU routes against a real provider", "A tuned one-bit Glimmer file on a Jetson", "The export scripts with a tuned file"]
       },
       "rebuild": {
         "fit": "reframe",
         "models": ["muse-wonder-1.0"],
         "plan": "The video is a tour of places to run a model, so the lesson is a tour of where a Muse Muse model can run, with each stop marked by how far it has really run.",
-        "note": "Make a receipt reader that answers on Muse Wonder and, when the network is cut, answers on a small model on a Jetson board, and always says which one answered"
+        "note": "Make a receipt reader that answers on Muse Wonder and, when the network is cut, answers on a one-bit Muse Glimmer on a Jetson board, and always says which one answered"
       },
       "autoBuild": false
     },
@@ -855,18 +855,18 @@
       "current": null,
       "learn": {
         "title": "Distill a big model into a small one",
-        "plan": "Muse Wonder writes the data, a Llama 3.2 3B student trains on one A10 with only a one-line prompt, a blind judge compares it with the untrained student, and a second round shows where more synthetic data stops helping.",
+        "plan": "Muse Wonder writes the data, a Muse Glimmer 30B (r30b) student trains on one A100 with only a one-line prompt, a blind judge compares it with the untrained student, and a second round shows where more synthetic data stops helping.",
         "models": ["muse-wonder-1.0"],
-        "tune": "Llama 3.2 3B LoRA on a Lambda A10; Muse Glimmer 30B on an H100 as the larger student",
-        "estimate": "About $4 to $9 for a 200-example run",
+        "tune": "Muse Glimmer 30B (r30b) LoRA on a Lambda A100, about $1.39 to $1.86 a run (measured on earlier Glimmer runs)",
+        "estimate": "About $5 to $10 for a 200-example run",
         "status": "planned",
-        "unverified": ["Training on Muse Wonder output (DATA_RIGHTS Q2)", "A Llama student through the platform's own launch"]
+        "unverified": ["Training on Muse Wonder output (DATA_RIGHTS Q2)", "A Glimmer student on Muse Wonder-written data through the platform's own launch"]
       },
       "rebuild": {
         "fit": "clean",
         "models": ["muse-wonder-1.0"],
-        "plan": "Do the distillation the video talks about. Muse Wonder is the teacher and writes the data, a Llama 3.2 3B student trains on it on a rented A10, and a blind judge compares it with the untrained student.",
-        "note": "Teach a small model to write our support replies the way Muse Wonder does, so it runs offline on a laptop"
+        "plan": "Do the distillation the video talks about. Muse Wonder is the teacher and writes the data, a Muse Glimmer 30B (r30b) student trains on it on a rented A100, and a blind judge compares it with the untrained student.",
+        "note": "Teach Muse Glimmer to write our support replies the way Muse Wonder does, in a model file we keep"
       },
       "autoBuild": false
     },
@@ -888,10 +888,10 @@
       "current": null,
       "learn": {
         "title": "Watch guide: AI and the next platforms",
-        "plan": "A watch guide that links the talk, then three try-its that point at runs Muse Muse already logged: a Llama 3.2 3B tune you keep, a chat helper for a made-up business labeled as AI, and the edge track.",
+        "plan": "A watch guide that links the talk, then three try-its that point at runs Muse Muse already logged: a Muse Glimmer 30B tune you keep, a chat helper for a made-up business labeled as AI, and the edge track.",
         "models": ["muse-wonder-1.0", "sam-3.1"],
-        "tune": "Llama 3.2 3B LoRA on a Lambda A10, about $2.15",
-        "estimate": "$0 for the page; about $2.15 for a tune; $3 to $8 for the optional build",
+        "tune": "Muse Glimmer 30B (r30b) LoRA on a Lambda A100, about $1.39 to $1.86 a run (measured on earlier Glimmer runs)",
+        "estimate": "$0 for the page; about $1.40 to $1.90 for a tune; $3 to $8 for the optional build",
         "status": "planned",
         "unverified": ["Chapter times and quotes (no transcript)", "Build cost for this muse"]
       },
@@ -919,10 +919,10 @@
       "verdict": "not built",
       "current": null,
       "learn": {
-        "title": "Run your own tuned Llama on a Windows PC",
-        "plan": "Tune Llama 3.2 3B, make its 2 GB Q4_K_M file, run it on Windows with the generated PowerShell script, and ask the video's prompt to base and tuned side by side. The script has never run on Windows.",
+        "title": "Run a tuned Glimmer file on a Windows PC",
+        "plan": "Tune Muse Glimmer 30B (r30b), make its 6.53 GB one-bit IQ1_S file, run it on Windows with llama.cpp's Windows build, and ask the video's prompt to base and tuned side by side. The generated PowerShell script doesn't offer one-bit or unpublished files yet, and has never run on Windows.",
         "models": ["muse-wonder-1.0"],
-        "tune": "Llama 3.2 3B LoRA on a Lambda A10",
+        "tune": "Muse Glimmer 30B (r30b) LoRA on a Lambda A100, about $1.39 to $1.86 a run (measured on earlier Glimmer runs)",
         "estimate": "About $4 to $10 in all",
         "status": "planned",
         "unverified": ["The Windows script on a Windows PC", "The Ollama path", "Speed on Windows hardware"]
@@ -930,8 +930,8 @@
       "rebuild": {
         "fit": "reframe",
         "models": ["muse-wonder-1.0"],
-        "plan": "Same job, a Llama answering on your own Windows PC, but with a model you tuned and keep. The app runs on Muse Wonder online and falls back to the local model offline.",
-        "note": "A dinner helper: tell it what's in your fridge and it suggests a recipe, and it keeps working on a Windows laptop with no internet"
+        "plan": "Same job, a model answering on your own Windows PC, but a Meta model you tuned and keep: Muse Glimmer 30B as a one-bit file. The app runs on Muse Wonder online and falls back to the local model offline.",
+        "note": "A dinner helper: tell it what's in your fridge and it suggests a recipe on Muse Wonder, and when the internet is cut it answers from my Muse Glimmer file running on the same Windows laptop, with a label on every answer saying which one answered"
       },
       "autoBuild": false
     },
@@ -956,8 +956,8 @@
         "title": "A docs agent that looks things up before it answers",
         "plan": "Split docs into chunks with page numbers, give Muse Wonder a keyword search tool it calls before answering, quote the passage and page for every answer, and check it against no docs and all docs.",
         "models": ["muse-wonder-1.0"],
-        "tune": "Optional: a Llama 3.2 3B LoRA that answers only from given passages, on a Lambda A10, about $2 to $4",
-        "estimate": "About $2 to $5 to build; $2 to $4 more for the optional tune",
+        "tune": "Optional: a Muse Glimmer 30B (r30b) LoRA that answers only from given passages, on a Lambda A100, about $1.39 to $1.86",
+        "estimate": "About $2 to $5 to build; about $3 to $3.50 more for the optional tune and its blind check",
         "status": "planned",
         "unverified": ["The video's model, provider and code", "Whether the tune beats its base"]
       },

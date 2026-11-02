@@ -31,6 +31,11 @@ export const ASSETS_PER_MINUTE = 120;
 
 const SHA = /^[0-9a-f]{64}$/;
 const LICENSES = new Set(["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "CC0-1.0", "ISC", "MPL-2.0"]);
+/**
+ * Model weight files. None may be listed: the organizers ruled on Nov 2 that every model a project calls must be a Meta
+ * model, and products reach Meta's models through the gateway's API, never as files in the page. SpeechT5 was the only one.
+ */
+const MODEL_WEIGHTS = /\.(onnx|ort|tflite|safetensors|gguf|pt|pth|ckpt|h5)$/i;
 
 /** The list, checked: every entry has a sha256, a size, a known permissive license and an https source, each once. */
 export function vettedAssets(raw: unknown = list): VettedAsset[] {
@@ -41,6 +46,7 @@ export function vettedAssets(raw: unknown = list): VettedAsset[] {
     const x = a as VettedAsset;
     const where = `lib/caps/assets.json entry ${i} (${String(x?.name)})`;
     if (typeof x?.name !== "string" || !x.name || x.name.includes("..")) throw new Error(`${where} has no plain name.`);
+    if (MODEL_WEIGHTS.test(x.name)) throw new Error(`${where} is model weights, and only Meta's models run here, through the gateway's API.`);
     if (typeof x.sha256 !== "string" || !SHA.test(x.sha256)) throw new Error(`${where} has no sha256.`);
     if (seen.has(x.sha256)) throw new Error(`${where} lists a sha256 twice.`);
     seen.add(x.sha256);

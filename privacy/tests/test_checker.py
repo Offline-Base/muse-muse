@@ -15,7 +15,10 @@ import pytest
 import respx
 
 from base import guard
-from base.config import CloudBackendRefused, load_settings
+from base.config import CloudBackendRefused
+from base.config import (
+    _load_settings_for_tests as load_settings,  # pre-ruling loader: LFM code load_settings now refuses
+)
 from base.local_llm import CHECKER_SAMPLING, FallbackLLM, LocalLLM
 from base.services import Services
 from base.workspace.index import DocumentIndex

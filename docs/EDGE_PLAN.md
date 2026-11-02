@@ -4,11 +4,13 @@
 
 The living plan for the edge track. Written Mon Nov 2, 2026, afternoon ET, on branch tg-edge-copy, from the judge panel's merged plan. Updated Nov 2 evening on tg-submission-fields: unit status from what is built on `e4beadc1` (branch tg-edge), and the owner's answers to O1 to O8. Change a unit's status here when it changes; history goes in docs/BUILD_LOG.md.
 
+**Meta models only (Nov 2, evening, branch `tg-mo-learn-plans`).** The organizers ruled on Nov 2 (3:57 PM ET, Cerebral Valley Discord; docs/MESSAGING.md, rules section) that Llama of any version does not count as a Meta model, and that every model the project runs must be a Meta model, with no non-Meta helper and no hybrid with Llama as the default. So the edge model is no longer Llama 3.2 3B. The target is **Muse Glimmer 30B, one-bit (IQ1_S)**, served on jetson-02 at the alias `muse-glimmer-2026-iq1s-io-lowest`. A cold-room tune of it is planned only if Hussam's $0 JSON-schema gate on jetson-02 (H1) passes. If the gate fails, the board's fallback is deterministic code (thresholds plus the probe-disagreement rule, no model). Nothing in this section has run. The on-screen label is "Answered on jetson-02, Muse Glimmer 30B one-bit (IQ1_S)", with "tuned" added only once a tuned run is logged. Bolt, LFM and Llama never appear as project rows.
+
 **Why now.** On Nov 2 supermarkets across Europe reported suspected freezer hacks, and a DC substation event cut power downtown (docs/MESSAGING.md, "Edge facts, Nov 2": use only the rows marked Checked). The owner wants the edge and defense story as a headline beside frontier: defending infrastructure, and being ready for any scenario, including the day the cloud is out of reach or a controller can't be trusted. Nothing here says those events were attacks, or that this app would have stopped one.
 
 **The scenario.** A simulated cold room. A watcher app reads a controller, an independent probe, the door, defrost, power and cloud status, and is built so it keeps answering on a Jetson when the cloud is cut. All data is invented. It gives no food-safety advice and says nothing about real freezers.
 
-**One-line story.** "One sentence becomes a cold-room watcher: Muse Muse builds it on Meta's cloud models, tunes a Llama 3.2 3B for it, and the same app keeps answering on a Jetson with every cable out." Until M12 has run, that line is said as "is built so".
+**One-line story.** "One sentence becomes a cold-room watcher: Muse Muse builds it on Meta's cloud models, tunes Muse Glimmer 30B for it, and the same app keeps answering from a one-bit Glimmer file on a Jetson with every uplink cut." (Not "every cable": the product's machine stays wired to the board, H3.) Until M12 has run, that line is said as "is built so". If the gate fails, the line becomes "...and the same app falls back to rules written in code when the cloud is cut", and no model is claimed on the board. One-bit answers are slow (about 4.7 tokens a second on jetson-02) and weaker than the cloud, so the honest claim is "kept answering, slowly", never "as good as the cloud".
 
 **Flags.** Everything stays off by default. `EDGE_ENABLED` adds the edge target to the brief. `EDGE_BUILDS` writes the fallback files into builds. With both off, behavior, prompts, goldens and stored data are exactly as today.
 
@@ -27,17 +29,17 @@ Status is one of: **not started**, **built** (code or docs exist, tests pass, no
 | M5 | A drill inside every edge build. A step after verify in `lib/pipeline/build-steps.ts`: a second `next start` on loopback with GATEWAY_URL at the blackhole and EDGE_URL at the fake. M3's files go in as extraFiles, so no new builder snapshot. No Meta calls | agent | 3 | 0 | M3, M4 | Every edge build is drilled before it ships | 2 | built, not run (`193a1c30`). Unit-tested with the sandbox faked; no real edge build has drilled yet |
 | M6 | Board run kit. `docs/EDGE_DEMO.md` plus a script that builds Next standalone in a linux/arm64 Docker container on the Mac. Env: `EDGE_URL=http://127.0.0.1:11435/v1`, `EDGE_FIRST=1`, GATEWAY_URL optional. The offline `KitMode` waits until after Nov 4 | agent | 2.5 | 0 | M1 | Nothing until M12 | 4 | built, not run (`a4e191b1`). `build-arm64.sh` checked with `bash -n` only; the Docker build hasn't run |
 | M7 | One real Muse Muse edge build. Flags on for a preview only. The cold-room sentence on muse-spark-1.3-contributor. Download `/p/<slug>/code/source.zip`, run M3 on it, build it with M6 | agent 2 h, Ethan 0.5 h | 2 | 2 (Contributor, inside the $20 cap) | M1, M3, M4, M5, O4 (yes) | Muse Muse wrote the fallback itself, and its drills ran in a real sandbox | keep (fix the skill once, then hand-patch and label it) | not started. Unblocked: O4 is yes |
-| M8 | Scenario tune. Preferred: to-do 2's chain run uses the cold-room sentence and M2's rows through `TUNE_FOLDER`. Backup (O3, changed Nov 2): a free Kaggle notebook, `notebooks/edge-tune-kaggle.ipynb` (built and reviewed, not run on a GPU), tunes unsloth/Llama-3.2-3B-Instruct-bnb-4bit on the same rows and makes a Q4_K_M, in place of the $10 harness tune on a Lambda A10. Not run. The held-out set is scored by drill-bench, tuned against base, no Wonder judge. Logged in docs/BUILD_LOG.md and docs/KNOWLEDGE_RUN_LOG.md | agent | 3 wall | 0 extra (inside the $25); the Kaggle backup is $0 | M2, O2 (yes) or O3 (yes), the rotated Lambda key (done Nov 2) | Tuned against base lift, on a rented GPU (or a free notebook) | 6 (stock model, labeled "base") | not started. Unblocked: O2 and O3 are yes. docs/CHAIN_RUN.md has the steps: the site trains and blind-checks the Llama tune, and the GGUF comes from the notebook or `quant-harness.ts`, since the site can't keep a GGUF made from folder rows. The bug that trained Glimmer for a folder run whatever base was picked is fixed in `startFolderRun` (Nov 2) |
-| M9 | Publish the GGUF as `OfflineBase/Llama-3.2-3B-ColdRoom-Watch-GGUF`, with LICENSE, USE_POLICY, "Built with Llama" and a limits card. Uploaded by hand (the proven path) | Ethan | 0.5 | 0 | M8, O5 (yes) | The file can be pulled | with M8 | not started. O5 is yes |
-| M10 | Stock Llama on a board, benched. H1, then drill-bench ask at temperature 0 through the gateway. Contributor and Bolt (labeled non-Meta) as comparison rows. Results in `docs/log/bench/2026-11-03/` | Hussam 1.5 h, agent 1 h | 2.5 | cents | M2, H1, H2 | The first Llama 3.2 3B on a board: speed and base score. (Hussam's PR #67 reports a Llama 3.2 1B on jetson-04, so this is no longer the first Meta model on a board once #67 is logged.) | keep | not started |
-| M11 | The tuned file on the board (H4) | Hussam | 1 | 0 | M9, M10 | Tuned score on the board | 6 | not started |
-| M12 | The cut, on camera (H3 and H5) | Hussam 3 h, Ethan 0.5 h | 3.5 | 0 | M6, M7, M10, O1 (yes), O6 (yes) | One board kept answering with its network out | keep (see the fallback ladder) | not started. O1 and O6 are yes |
+| M8 | Scenario tune. To-do 2's chain run uses the cold-room sentence and M2's rows through `TUNE_FOLDER`, on the default r30b Glimmer base with `TUNE_ANY_BASE` off (docs/CHAIN_RUN.md). Then the one-bit IQ1_S file is made by hand on an A10 with `quant-harness.ts`, since the site can't keep a GGUF made from folder rows. The chain run's tune goes ahead either way (it is the frontier act); making its IQ1_S file and putting it on the board are planned only if H1's gate passes. Backup: a second r30b tune on Lambda (about $1.39) under the $25 cap, or the stock IQ1_S already on jetson-02, labeled "base". The Kaggle notebook is retired (it tunes Llama, and Glimmer 30B doesn't fit a free T4). The held-out set is scored by drill-bench, tuned against base. Logged in docs/BUILD_LOG.md and docs/KNOWLEDGE_RUN_LOG.md | agent | 3 wall | About $1.39 to $1.86 tune plus about $1.75 to $2.60 for the file (A10), inside the $25 | M2, O2 (yes), the rotated Lambda key (done Nov 2) | Tuned against base lift, on a rented GPU | 6 (stock model, labeled "base") | not started. Planned on r30b; nothing has run |
+| M9 | ~~Publish the GGUF as a Llama repo~~. Dropped by the Nov 2 ruling: Llama isn't a Meta model here. The tuned IQ1_S file is a hand transfer to the board (folder rows are the person's own, `PERSON_WRITER`, and can't be published), not a public repo | Ethan | 0 | 0 | none | Nothing | cut | **dropped** (Nov 2 ruling; O5's reversal waits on the owner) |
+| M10 | Stock one-bit Glimmer on a board, benched. H1's gate, then drill-bench ask at temperature 0 with the `json_schema` response format, on jetson-02. Contributor is the only comparison row (a Meta model). Results in `docs/log/bench/2026-11-03/` | Hussam 1.5 h, agent 1 h | 2.5 | cents | M2, H1, H2 | Speed and base score of Muse Glimmer 30B one-bit on an 8 GB board | keep | not started |
+| M11 | The tuned IQ1_S file on the board (H4), only if H1's gate passed | Hussam | 1 | 0 | M8, M10 | Tuned score on the board | 6 | not started |
+| M12 | The cut, on camera (H3 and H5). If the gate failed, the take shows the deterministic no-model fallback, labeled as rules in code | Hussam 3 h, Ethan 0.5 h | 3.5 | 0 | M6, M7, M10, O1 (yes), O6 (yes) | One board kept answering with its network out | keep (see the fallback ladder) | not started. O1 and O6 are yes |
 | M13 | Copy, claims and log. The edge act in docs/VIDEO.md, edge facts and Don't-say lines in docs/MESSAGING.md, this plan, the to-dos in docs/HANDOFF.md. docs/STORY.md's "On your own hardware" mark moves only after M12. `lib/__tests__/reach-claims.test.ts` stays green. One docs/BUILD_LOG.md entry per unit | agent | 2 | 0 | runs | Copy matches the runs | keep | built (`1fc2a029`, merged in `e4beadc1`; the submission fields in docs/SUBMISSION.md on tg-submission-fields). Marks wait for the runs |
-| M14 | Code matches the evidence. Add Llama 3.2 3B to `MEASURED` (`lib/train/bases.ts`, citing docs/BUILD_LOG.md lines 1668 to 1681). Swap `deviceModelTarget` after M10 if O7 is yes | agent | 1 | 0 | M10 | Defaults match the measurements | 1 | `MEASURED` half built (`e81e6f66`, `33c9c140`: unsloth/Llama-3.2-3B-Instruct-bnb-4bit counts as measured). `deviceModelTarget` half dropped: O7 is no |
+| M14 | Code matches the evidence. Under the Nov 2 ruling, Llama comes out of `MEASURED` and the base list in `lib/train/bases.ts` (the training-code unit owns that change), and `deviceModelTarget("jetson_orin_nano")` stays one-bit Glimmer (O7 no) | agent | 1 | 0 | none | Defaults name only Meta models | 1 | Reversed: the Llama `MEASURED` half (`e81e6f66`, `33c9c140`) is to be taken out by the training-code unit. `deviceModelTarget` stays Glimmer |
 
 **Done so far** (no spend, no decision, no Hussam): M1 to M6, M13 and the `MEASURED` part of M14, all built on tg-edge, merged at `e4beadc1`. Tests ran only for the files each agent touched.
 
-**Next:** merge tg-edge into main (owner or Hussam), then M7 on a preview (O4), the chain run (O2) with M8, and Hussam's H1 to H5.
+**Next:** merge tg-edge into main (owner or Hussam), then Hussam's H1 gate on jetson-02, M7 on a preview (O4), the chain run (O2) on r30b with M8, and H2 to H5.
 
 ## Owner decisions
 
@@ -47,38 +49,39 @@ Each was a yes or no; dollar amounts are the most it can cost. The owner answere
 |---|---|---|---|---|
 | O1 | Reverse the Oct 31 line "No Jetson or fleet endpoint in the Nov 4 demo" (docs/BUILD_LOG.md, Oct 31, 16:20) for an edge act, keeping the house-machine Glimmer shot? | $0 | The edge act in docs/VIDEO.md, M12 | **Yes** (Nov 2). The edge act goes in the video, and the house-machine Glimmer shot stays |
 | O2 | Run to-do 2's chain run on the cold-room sentence, training on M2's code-written rows, finished by Tue 3 PM, with a rotated Lambda key in place first (to-do 8)? | $25 (to-do 2's existing Lambda estimate) | M8 preferred path, Act 1 footage | **Yes**, $25 (Nov 2). The Lambda key was rotated Nov 2 |
-| O3 | If the chain-run tune misses Tue 3 PM, run the harness tune on an A10 as a backup? | $10 cap | M8 backup path | **Yes, changed** (Nov 2): the backup is a free Kaggle notebook on branch tg-kaggle-tune instead of the $10 A10 tune. $0 |
+| O3 | If the chain-run tune misses Tue 3 PM, run the harness tune on an A10 as a backup? | $10 cap | M8 backup path | **Yes, changed** (Nov 2): the backup was a free Kaggle notebook. **Retired the same evening by the ruling:** the notebook tunes Llama. Planned backup: a second r30b tune on Lambda (about $1.39) inside the $25, or the stock IQ1_S labeled "base". The owner confirms |
 | O4 | Turn on `EDGE_BUILDS` and `EDGE_ENABLED` on a preview, not production, for 2 to 3 test builds? | $5, from the $20 Contributor cap | M7 | **Yes**, $5 (Nov 2). Preview only, never production |
-| O5 | Create the public Hugging Face repo `OfflineBase/Llama-3.2-3B-ColdRoom-Watch-GGUF`? | $0 | M9, M11 | **Yes** (Nov 2). Create it when M8 has a file worth publishing |
+| O5 | Create the public Hugging Face repo for a Llama cold-room GGUF? | $0 | M9 | **Yes** (Nov 2), then **moot** after the ruling: Llama isn't a Meta model here, and M9 is dropped. The owner confirms the reversal |
 | O6 | Approve the video re-cut: Act 2 from 33 s to about 20 s, shots 10 and 11 become an edge act of about 30 s, the Glimmer shot stays at about 5 s (docs/VIDEO.md, "Proposed revision: the edge act")? | $0 | The edge act | **Yes** (Nov 2). The edge act in docs/VIDEO.md is approved |
-| O7 | After M10, point `deviceModelTarget("jetson_orin_nano")` at Llama 3.2 3B Q4_K_M instead of one-bit Glimmer, with flags still off? | $0 | M14 second half | **No** (Nov 2). `deviceModelTarget` stays as it is; M14's second half is dropped |
+| O7 | After M10, point `deviceModelTarget("jetson_orin_nano")` at a Llama file instead of one-bit Glimmer, with flags still off? | $0 | M14 second half | **No** (Nov 2), and the ruling makes it required: the board target stays one-bit Glimmer |
 | O8 | Allow fallback level 2, which pulls the house uplink and takes jetson-05's tunnel and remote fleet access down during the take? Hussam must agree too | $0 | Ladder level 2 | **Only if Hussam agrees** (Nov 2). Until Hussam says yes, ladder level 2 is off |
 
 ## Hussam's asks
 
 The boards are Hussam's. Nobody else changes them, and nobody SSHes from the laptop.
 
-**H1. Tonight (Mon), about 1.5 h. Drill board and stock Llama.**
-1. Say what the "Musetesthussamshouse" exec jobs did on jetson-04. PR #67's "What ran on jetson-04" may already answer it; confirm.
-2. Pick the drill board: jetson-04, or jetson-03 with Bolt unloaded. Never jetson-02 or jetson-05.
-3. Install a public Llama-3.2-3B-Instruct Q4_K_M with `gguf-serve.sh --model-url`, and check its sha256.
-4. Take the board out of maintenance.
-5. Report tokens a second, memory in use and time to first token.
-6. If it freezes the board once, stop and say so.
+**H1. Tonight (Mon), 15 to 30 minutes, $0. The JSON-schema gate on jetson-02.** Nothing here has run. It decides whether a model answers on the board at all.
+1. Board: jetson-02, which already serves the stock one-bit Glimmer (`muse-glimmer-2026-iq1s-io-lowest` on 127.0.0.1:11435). The old "never jetson-02" rule has to be lifted by the owner or Hussam first. Never jetson-05.
+2. Settings: `-c 2048`, prompt cache off, the desktop off, `muse-device` stopped, so memory is as free as it gets (6.95 of 7.5 GB was in use with the model loaded).
+3. Ask 10 receipts with the `json_schema` response format (the one `respondJsonOrEdge` sends) and an explicit `max_tokens` of about 400, through the fleet. `receipt-bench.py ask` has no schema option yet; `drill-bench.py ask` has one (`--schema --max-tokens 400 --limit 10`), so until receipt-bench gets the same option, run the gate as 10 sealed cold-room rows with drill-bench, which is the edge act's own shape anyway. Keep the 10 answers as receipts and watch memory.
+4. **Pass:** 10 of 10 answers are valid JSON, and the board doesn't hang. Also note whether the verdicts read sensibly.
+5. If it freezes the board once, stop and say so: the gate failed.
+6. **If it fails:** the board fallback is deterministic code, thresholds plus the probe-disagreement rule, with no model (ladder level 4). Never Llama or another non-Meta model.
+7. Report tokens a second, memory in use and time to first token either way. Hussam decides, separately, whether the Llama files on jetson-04 and Prompt Guard on jetson-05 are deleted (an owner question).
 
 **H2. About 0.5 h. A key for the bench.**
 1. Make a `jik_` key with `cloud_daily_limit` 0.
 2. No `combo/` models and no `/v1/route` on it.
 3. Hand it over without pasting it in chat, a doc or a commit.
 
-**H3. Tue morning, about 1 h. The product on the board.**
-1. Install Node 20 on the drill board.
-2. Confirm the USB-C device-link address (probably 192.168.55.1).
-3. Run M7's arm64 build there with EDGE_URL on loopback.
-4. Check free memory with both the product and the model running.
+**H3. Tue morning, about 1 h. The product beside the board.** The product and one-bit Glimmer won't both fit in 8 GB, so the product runs on a second machine wired straight to the board, with no uplink. That machine serves only the product, never a model, and it isn't the owner's laptop if anything else heavy runs on it.
+1. Confirm the board's wired address (the USB-C device link is probably 192.168.55.1).
+2. Run M7's build on the second machine with `EDGE_URL` at jetson-02's llama-server, `EDGE_MODEL=muse-glimmer-2026-iq1s-io-lowest` and `EDGE_TIMEOUT_MS=90000` (a 100 to 150 token verdict takes about 20 to 35 s at 4.7 tokens a second).
+3. Check the board's free memory while it answers.
+4. This changes the "every cable out" framing to "every uplink out": the wire between the product's machine and the board stays.
 
-**H4. Tue 3 to 5 PM, about 1 h. The tuned file on the board.**
-1. Install the tuned file with `pull_model hf.co/...` (never tried) or `gguf-serve.sh`.
+**H4. Tue 3 to 5 PM, about 1 h. The tuned file on the board, only if H1 passed.**
+1. Install the tuned IQ1_S with `gguf-serve.sh` and its sha256. It is 6.53 GB, larger than the 5.75 GB stock file, and jetson-02's disk is 94% full (25.4 of 27 GB, about 1.6 GB free, fleet alert Nov 2), so the stock file moves first. Whether 6.53 GB fits jetson-02's memory is unverified and doubtful: about 450 MB was free with the 5.75 GB file loaded.
 2. Rerun the held-out set.
 3. Report the result either way.
 
@@ -96,7 +99,7 @@ At most 3 heavy jobs at once: Lambda, one sandbox build, one board.
 |---|---|
 | Mon evening | Frontier judge-path cleanup, alongside H1 and M10 |
 | Tue 8 AM to 3 PM | Chain run (O2), M7 build, H3 |
-| Tue 3 to 7 PM | M8 backup if needed, M9, H4 |
+| Tue 3 to 7 PM | M8 backup if needed, the IQ1_S file (only if H1 passed), H4 |
 | Tue 7 to 9 PM | H5. Hard cut at 9 PM |
 | Wed morning | Copy and marks from the log only, edit, submit by noon. No new runs |
 
@@ -107,10 +110,10 @@ At most 3 heavy jobs at once: Lambda, one sandbox build, one board.
 
 Use the highest level that has run by Tue 7 PM.
 
-1. The tuned Llama, with the product and the model both on the board, reached over USB-C. The house uplink and jetson-05 aren't touched.
-2. The product on the house machine through `jetson-05.local:8080/admin/v1`, with the uplink pulled. Only if Hussam agrees (O8); until then, skip this level.
-3. Either of those with the stock model, labeled "base".
-4. No Llama on a board by Tue 7 PM: shot 10 as written, plus a "Simulated outage" card from M3.
+1. H1 passed: the tuned one-bit Glimmer on jetson-02, the product on a second machine wired to it. Label: "Answered on jetson-02, Muse Glimmer 30B one-bit (IQ1_S), tuned", only if the tuned run is logged. The house uplink and jetson-05 aren't touched.
+2. The product on the house machine through `jetson-05.local:8080/admin/v1`, with the uplink pulled, and `EDGE_MODEL` pinned to `muse-glimmer-2026-iq1s-io-lowest` (a default pick can land on a non-Meta model). Only if Hussam agrees (O8); until then, skip this level.
+3. Either of those with the stock one-bit Glimmer, labeled "Answered on jetson-02, Muse Glimmer 30B one-bit (IQ1_S)".
+4. H1 failed, or no Glimmer answer on a board by Tue 7 PM: the deterministic no-model fallback (thresholds plus the probe-disagreement rule, in code; planned, not built), labeled as rules, not a model. Shot 10's Glimmer clip as written, plus a "Simulated outage" card from M3. **Never Llama, and never any non-Meta model.**
 
 ## When each claim may be said
 
@@ -118,6 +121,8 @@ Use the highest level that has run by Tue 7 PM.
 |---|---|---|
 | "Every edge build runs a simulated outage drill" | M5 is built and one edge build has shown the drill in its log | "Edge builds are built so they run a simulated outage drill" |
 | Speed and score on a named board, over 100 invented items | M10 (base) or M11 (tuned), with results in `docs/log/bench/` | Nothing about speed or score on a board |
+| The label "Answered on jetson-02, Muse Glimmer 30B one-bit (IQ1_S)" | H1 passed and the take used it; "tuned" only after M11 is logged | Nothing on screen names a board model |
+| "The board fell back to rules in code" | Ladder level 4 ran on camera | "Is built so" (the fallback is planned, not built) |
 | Tuned against base on the held-out set | M8, logged in docs/BUILD_LOG.md and docs/KNOWLEDGE_RUN_LOG.md | Nothing about a lift |
 | "This app kept answering on one Jetson with its network unplugged, N of 5 drills, X tokens a second" | M12, on camera, with N and X from that take | "Is built so it keeps answering on a Jetson when the cloud is cut" |
 | docs/STORY.md "On your own hardware" mark moves up | M12 | It stays "Simulated" |
@@ -125,12 +130,12 @@ Use the highest level that has run by Tue 7 PM.
 
 Never, at any level: the lines in docs/MESSAGING.md, "Don't say", including the edge lines added Nov 2. In short: no "works offline" in general, no "private" or "on-device" for board answers, nothing "attack-proof", no claim that an incident was a confirmed cyberattack, nothing survives a power loss, no food-safety advice, nothing about real freezers. Label simulated things "Simulated".
 
-## Related edge work: Hussam's PR #67
+## Related edge work: Hussam's PR #67 (not in the submission)
 
-Hussam's PR #67 (open, Nov 2, branch `doc-bench`) fine-tunes Llama 3.2 1B on jetson-04 itself, to read invented receipts, and serves the tuned model through the fleet and a product's route (#63). It is separate from this plan's units, and not merged or logged in docs/BUILD_LOG.md yet, so none of its numbers may be said in public until it is. What it means here:
+Hussam's PR #67 (merged as `9c6d54ad`, branch `doc-bench`) fine-tuned Llama 3.2 1B on jetson-04 to read invented receipts, and served it through the fleet and a product's route (#63). Under the Nov 2 ruling Llama is not a Meta model, so #67 is an earlier experiment, not part of the submitted project:
 
-- It is the on-board training path: the board trained a Meta model with no rented GPU. The PR reports the tuned 1B at 100% valid JSON and 81% of fields right on 40 held-out invented receipts, against 88% and 47% for base, all on invented data at $0.
-- M10's "first Meta model on a board" is no longer true once #67 is logged. M10 stays the first Llama 3.2 3B on a board.
-- jetson-04 is H1's first-choice drill board. #67 left it serving Bolt with 4 GB of disk free, and the base 1B GGUF and adapter (1.34 GB) kept beside a disabled drop-in. Hussam decides whether the 3B fits next to them or what moves.
-- A possible later line for the write-up, after it is logged and marked in docs/MESSAGING.md: one sentence on a Llama tuned on the board itself. The owner decides.
+- None of its numbers go in the write-up, the video or any page, and it is never "a Meta model tuned on the board".
+- Its files on jetson-04 (the 1B GGUF and adapter, 1.34 GB) stay behind a disabled drop-in through judging. Whether to delete them, and the Llama-3.2-3B file on jetson-04, is Hussam's call (an owner question).
+- One technical fact carries over to the Glimmer path: llama.cpp `--lora` over a GGUF base works on these boards (b11574 on jetson-04).
+- No on-board tune of Glimmer 30B is planned: an 8 GB Orin Nano can't train it.
 

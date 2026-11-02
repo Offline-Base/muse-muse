@@ -5,13 +5,11 @@ import type { CapRenderEntry } from "@/lib/caps/render";
 
 /**
  * The media cap's part of the prompts (docs/CAPABILITIES.md, 2.6 and section 14). Its text names the platform files in
- * template/caps/media: the skill, the helpers in lib/platform/, tests/caps/media.ts and public/notices/media.txt.
+ * template/caps/media: the skill, the helpers in lib/platform/, tests/caps/media.ts and public/notices/media.txt. No
+ * speech part since Nov 2: lib/platform/speech.ts ran SpeechT5, which isn't a Meta model.
  */
 
 const HELPERS: Record<MediaPart, string[]> = {
-  speech: [
-    `- Speech: \`speak(text)\` from \`lib/platform/speech.ts\` (browser only) reads up to ${MEDIA_LIMITS.speechCharsMax} characters aloud with an open model in the page, and falls back to the browser's own voice. It answers \`{ by: "model" | "browser" | "none", durationMs }\`. Call \`prepareSpeech()\` on the first tap so the model's one download (about 190 MB, kept by the browser) shows progress with \`onProgress\`. Show a Stop button (\`stopSpeech()\`), and say in one line when it fell back to the browser's voice. English only.`,
-  ],
   video: [
     `- Video: \`imagesToVideo(frames, { fps })\` from \`lib/platform/video.ts\` (browser only) makes an MP4 from up to ${MEDIA_LIMITS.videoFramesMax} pictures (image URLs, data URLs, Blobs, canvases or bitmaps), at most ${MEDIA_LIMITS.videoSideMax} px on the long side. It answers \`{ blob, url, mimeType, durationMs, width, height, frames }\`. Show it in a \`<video controls playsInline>\` with a Save link (\`download="name.mp4"\`). No sound track.`,
   ],
@@ -26,14 +24,12 @@ const HELPERS: Record<MediaPart, string[]> = {
 };
 
 const LIMITS: Record<MediaPart, string> = {
-  speech: "the voice is plain and English only, and the first use downloads the model",
   video: `videos have no sound and at most ${MEDIA_LIMITS.videoFramesMax} pictures`,
   music: "music plays with simple tones, not real instruments",
   samTiling: `one photo uses at most ${MEDIA_LIMITS.samTilesMax} SAM calls and one clip at most ${MEDIA_LIMITS.samVideoFramesMax} frames, so very crowded photos give "at least" counts`,
 };
 
 const SMOKE: Record<MediaPart, string> = {
-  speech: "`expectSpeech(page, { click })`: clicks the button that reads aloud and checks audio was made (by the model, or the browser's voice when the model isn't reachable)",
   video: "`expectVideoPlays(page, { make, video })`: clicks the button that makes the video, then checks the `<video>` has a duration over 0 and plays, and saves the file for the platform's check",
   music: "`expectMidi(page, { click })`: clicks the button that saves the MIDI file and checks it starts with `MThd` and has notes, and saves it for the platform's check",
   samTiling: `\`expectTiles(page)\`: reads what the last \`findAll\` did (more than one tile, merged without duplicates). The smoke test may run at most ${MEDIA_LIMITS.samTilesSmoke} tiles in all (\`findAll\` holds itself to that in a build), so test one sample photo with \`{ tiles: ${MEDIA_LIMITS.samTilesSmoke} }\``,
@@ -52,9 +48,9 @@ export const MEDIA_RENDER: CapRenderEntry = {
       "- Read `.agents/skills/muse-media/SKILL.md` first.",
       ...parts.flatMap((p) => HELPERS[p]),
       "- Each helper throws a `MediaError` with plain words. Show its message, never a raw error.",
-      `- Privacy: ${parts.includes("samTiling") ? "only SAM's tiles leave the page, as the meta-sam skill says; " : ""}speech, video and music are made in the page and nothing is uploaded for them. Don't store what the user makes beyond the browser.`,
+      `- Privacy: ${parts.includes("samTiling") ? "only SAM's tiles leave the page, as the meta-sam skill says; " : ""}video and music are made in the page and nothing is uploaded for them. Don't store what the user makes beyond the browser.`,
       `- Limits the user sees, each once: ${parts.map((p) => LIMITS[p]).join("; ")}.`,
-      "- Large files (the speech model and its runtime) come from the Muse Muse gateway's `/assets`, checked by sha256 before use. Never load a model, wasm or script from another site, and don't copy those files into the product.",
+      "- Every model the product calls is a Meta model through the Muse Muse gateway. Never load a model, wasm or script from another site, and don't add a model package. `lib/platform/speech.ts` isn't offered: don't call `speak()` or `prepareSpeech()`.",
       "- No stand-in: these run for real in the test browser. Keep test media small: a few frames, a few notes, one short sentence.",
       `- Smoke test, from \`tests/caps/media.ts\`: ${parts.map((p) => SMOKE[p]).join("; ")}. Take a judge screenshot of each result with a plain caption.`,
       "- `template/AGENTS.md` says the build machine reaches only npm, the Meta API and the Muse Muse gateway: the media files come from the gateway, so that holds.",

@@ -110,12 +110,12 @@ describe("pairing", () => {
     assert.equal(servedModelName(7), null);
   });
 
-  it("a board's kind picks its model: Jetson one-bit Glimmer, others a small Llama, and never anything else", () => {
+  it("a board's kind picks its model: one-bit Glimmer on every kind, since Llama isn't a Meta model (Nov 2 ruling)", () => {
     assert.equal(boardKindOf("NVIDIA Jetson Orin Nano Developer Kit"), "jetson_orin_nano");
     assert.equal(boardKindOf("Raspberry Pi 5 Model B"), "raspberry_pi");
     assert.equal(boardKindOf(undefined), "other");
     assert.equal(targetForBoardKind("jetson_orin_nano").id, "muse-glimmer-30b-IQ1_S");
-    for (const kind of ["raspberry_pi", "other"] as const) assert.match(targetForBoardKind(kind).id, /^Llama-/);
+    for (const kind of ["raspberry_pi", "other"] as const) assert.equal(targetForBoardKind(kind).id, "muse-glimmer-30b-IQ1_S");
   });
 
   it("the shared guest can never own a board", () => {
