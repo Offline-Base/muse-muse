@@ -24,7 +24,7 @@ describe("sidebar rows", () => {
       NAV_GROUPS.map((group) => group.map((item) => item.label)),
       [
         ["Dashboard"],
-        ["Make", "Builds", "Rebuilds", "Gallery"],
+        ["Make", "Builds", "Learn", "Gallery"],
         ["Usage", "Models", "Fine-tuning", "Gadgets", "Muse Privacy"],
         ["How it works", "Docs"],
       ],
@@ -53,6 +53,15 @@ describe("sidebar rows", () => {
     assert.equal(activeLabel("/device/train"), "Gadgets");
     assert.equal(activeLabel("/devices"), null);
     assert.equal(activeLabel("/device-farm"), null);
+  });
+
+  it("lights Learn on /learn and on the old /rebuilds, which redirects there", () => {
+    assert.equal(activeLabel("/learn"), "Learn");
+    assert.equal(activeLabel("/rebuilds"), "Learn");
+    assert.equal(activeLabel("/learning"), null);
+    const learn = NAV_GROUPS.flat().find((item) => item.label === "Learn");
+    assert.deepEqual(learn, { href: "/learn", label: "Learn", icon: "cap", also: ["/rebuilds"] });
+    assert.ok(!NAV_GROUPS.flat().some((item) => item.label === "Rebuilds"));
   });
 
   it("keeps the other rows lighting as before", () => {
@@ -120,5 +129,6 @@ describe("NavLinks", { skip: canMock ? false : "needs --experimental-test-module
     assert.deepEqual(current("/device"), ["Gadgets"]);
     assert.deepEqual(current("/fine-tuning"), ["Fine-tuning"]);
     assert.deepEqual(current("/devices"), []);
+    assert.deepEqual(current("/learn"), ["Learn"]);
   });
 });

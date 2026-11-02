@@ -47,7 +47,8 @@ For the edge track (docs/EDGE_PLAN.md). Each page below was opened on Nov 2, 202
 | CISA ICSA-25-140-03, "Danfoss AK-SM 8xxA Series (Update A)": improper authentication, command injection, external control of system or configuration setting. Mitigations include keeping control system devices "not accessible from the Internet". First published May 20, 2025, revised Aug 26, 2025 | CISA | Checked: https://www.cisa.gov/news-events/ics-advisories/icsa-25-140-03 . The advisory says no known public exploitation had been reported. Neither news page above names this advisory number, so don't say it is the cause | The known weakness in this controller family |
 | "The late August malfunctions in the United States affected at least six commissaries." Headline: "Pentagon treating military base freezer malfunctions as suspected cyberattack, officials say" | Reuters, Oct 29, 2026, by Raphael Satter, AJ Vicens and Phil Stewart, reprinted by ThePrint | Checked on the reprint: https://theprint.in/world/exclusive-pentagon-treating-military-base-freezer-malfunctions-as-suspected-cyberattack-officials-say/3085028/ . "Suspected cyberattack" is in the headline; the body says "suspected hack" | US: "at least six commissaries", treated as a suspected cyberattack |
 | "The Pentagon is investigating a suspected cyberattack behind freezer malfunctions"; "some six commissaries" | Nextgov/FCW, Oct 29, 2026, by David DiMolfetta, from one US official speaking anonymously | Checked: https://www.nextgov.com/cybersecurity/2026/10/pentagon-investigates-suspected-cyberattack-behind-military-freezer-failures/416926/ | A second outlet for the Reuters line |
-| Llama 3.2's "lightweight, text-only models (1B and 3B) that fit onto edge and mobile devices" | Meta AI blog, "Llama 3.2: Revolutionizing edge AI and vision with open, customizable models", Sep 25, 2024 | Checked: https://ai.meta.com/blog/llama-3-2-connect-2024-vision-edge-mobile-devices/ (first Takeaways bullet) | Why the edge model is Llama 3.2 3B, credited to Meta |
+| Llama 3.2's "lightweight, text-only models (1B and 3B) that fit onto edge and mobile devices" | Meta AI blog, "Llama 3.2: Revolutionizing edge AI and vision with open, customizable models", Sep 25, 2024 | Checked: https://ai.meta.com/blog/llama-3-2-connect-2024-vision-edge-mobile-devices/ (first Takeaways bullet). **Retired Nov 2:** the organizers ruled that Llama does not count as a Meta model in this hackathon (see the rules section below) | Don't use. The edge model must be a Meta model, such as Glimmer |
+| Muse is out on iOS and Android, with Invite Codes, Muse for Mac, and Canada | A thread from the @Muse account on X, Nov 2, pasted by Ethan | Not checked on a Meta page. Look it up on a Meta page (meta.com or about.fb.com) before saying it | Point 4: Meta's own Muse now reaches phones and the Mac. Muse Muse products are web apps plus connectors, so test one connector in the Muse app on Mac before saying it works there (docs/HANDOFF.md) |
 
 ## What the rules say about the submission
 
@@ -59,7 +60,8 @@ Read Nov 2 in the Official Rules (https://cerebralvalley.ai/e/meta-ai-developer-
 - **Startup track:** "Judged on technical execution and whether it holds up in production."
 - **Open source:** "Participants may also include open source software or hardware, provided applicable open source licenses are followed and the Submission enhances or builds upon the underlying open source product."
 - **Ownership:** "the entrant retains ownership of all intellectual and industrial property rights", and grants the Organizers a perpetual, royalty-free license to use the Submission, marketing included.
-- **Public repo:** the rules say nothing about it.
+- **Public repo:** the rules say nothing about it. The organizers' later answers (docs/SUBMISSION.md) ask for a fresh public repo created Oct 26 or later, with pre-existing material labeled.
+- **Meta models only, at runtime (organizer answer in the Cerebral Valley Discord, Nov 2, 3:57 PM, as pasted by Ethan):** Llama is not part of this hackathon and does not count as a Meta model, however it is run. Open Meta models anyone can get count: Muse Glimmer, Muse Spark Open, SAM, V-JEPA 2. Every model the project calls at runtime must be a Meta model, so no non-Meta helper either (their example was an embedding model, even beside a Meta chat model). A hybrid with Llama as the default is not allowed. An optional Muse Spark API mode is fine if Meta models do real work in it, and the demo must show that path working. Faster local builds of Glimmer, such as a quantized one, still count. For us this rules out Llama 3.2 (the edge plan and #67's receipt reader), LFM (Muse Privacy's device model, jetson-05), Bolt (jetson-03 and 04) and Prompt Guard at runtime.
 
 ## What the research changes
 
@@ -77,6 +79,7 @@ Read Nov 2 in the Official Rules (https://cerebralvalley.ai/e/meta-ai-developer-
    - r30b is a Derivative of Muse Spark Open (BUILD_LOG, Oct 31, "r30b is a Derivative of Muse Spark Open"). So "Built with Muse Spark Open" goes on screen with it, and its Usage Policy means 18 and over.
 4. **Don't pitch a gap in Meta's lineup.** Meta already has Muse (a personal agent with a Secure VM and audit trail), Muse Code, Glimmer and the cookbook above. Replit and Lovable already turn a sentence into an app.
    - The safe contrast, from the report: "Meta now offers frontier cloud models and open models for local use. Muse Muse explores whether one person can move between them, shape the result, and leave with something they control."
+   - Nov 2, unchecked: an @Muse thread on X says Muse is now on iOS, Android and Mac, with Invite Codes, and in Canada. If a Meta page confirms it, Muse Muse's connectors are a way into Meta's own app on those devices. Say so only after one connector has run in the Muse app on Mac.
 5. **Compliance.** The privacy toggles already say none of them makes anyone legally covered. Keep it that way.
 
 ## Gaps the research points at
@@ -116,6 +119,7 @@ Still stale, found by Hussam's PR #61 and left for later because they need a new
 - Any judge's name. None has been made public.
 - That Muse Privacy is the "fully private mode" from Zuckerberg's letter, or that Meta Engineering reviewed or endorses anything here.
 - "Every federal agency restricts AI." GAO's line is about the 12 agencies it selected that allow generative AI.
+- That Llama, LFM, Bolt or Prompt Guard is part of the project, or that Llama is a Meta model for this hackathon. The organizers ruled on Nov 2 that only Meta models may run (see the rules section).
 
 Edge lines, added Nov 2 (docs/EDGE_PLAN.md):
 - That AI "stops hacks", or that anything is "attack-proof".

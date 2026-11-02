@@ -251,7 +251,7 @@ const nc = await safeQuery(async () => 1);
 assert.deepEqual(nc.ok ? null : nc.reason, "not_configured");
 if (saved) process.env.DATABASE_URL = saved;
 const empty = joinRebuilds([], []);
-assert.equal(empty.totals.of, 6);
+assert.equal(empty.totals.of, 30);
 assert.equal(empty.totals.rebuilt, 0);
 assert.equal(empty.missing.length, 4);
 const joined = joinRebuilds(

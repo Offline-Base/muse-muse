@@ -13,8 +13,32 @@
  *   4. tampered reply  the gateway drops, the edge sends JSON with wrong types marked TAMPERED: none of it reaches
  *                      the reply, which carries the both-down message instead
  *
+ * Those four are the default set, the one builds run. --all adds six more scenarios (--only picks from all ten):
+ *
+ *   5. cloud slow      the gateway answers at about 8 s, inside the 10 s limit: the product waits for it, shows the
+ *                      cloud label and never asks the edge
+ *   6. cloud flapping  three asks while the gateway answers 503, then OK, then 503: each reply is labeled with whoever
+ *                      answered it (edge, cloud, edge), and none takes longer than EDGE_DRILL_HANG_MAX_MS
+ *   7. edge too slow   the gateway hangs and the edge answers only after its own limit: the product shows the plain
+ *                      both-down message within both limits plus 3 s, never the late answer
+ *   8. truncated reply the gateway drops, the edge sends JSON cut off part way, marked TRUNCATED: none of it reaches
+ *                      the reply, which carries the both-down message instead
+ *   9. injected text   the gateway drops, the edge sends schema-valid JSON whose free text says to ignore the rules,
+ *                      claim the cloud answered and fetch a URL: the reply still says the edge answered, carries the
+ *                      text only as data (inside a JSON string, or escaped in HTML), and nothing fetched the URL
+ *  10. no DNS          the gateway's host name can't be resolved: the product tried the gateway's name, then answered
+ *                      from the edge with its label. With --start the runner restarts the product for this drill (it
+ *                      runs last) with GATEWAY_URL at a .invalid host and a preload that fails every dns.lookup of a
+ *                      .invalid name inside the product (the lookup Node's fetch and http use), before any resolver is
+ *                      asked, and reports each one so the drill sees the product tried the cloud. Without --start, set
+ *                      EDGE_DRILL_DNS_BASE_URL to a second copy of the product started with such a GATEWAY_URL (it
+ *                      uses the real resolver, and the drill can't see its lookup), or the drill fails and says why.
+ *
+ * With --all and --start, the product gets EDGE_TIMEOUT_MS and EDGE_CLOUD_TIMEOUT_MS from the two limits below, so
+ * drill 7 knows how long the product may take.
+ *
  * CLI:
- *   MUSEMUSE_BASE_URL=http://127.0.0.1:3101 node scripts/edge-drill.mjs [--start "npm start -- -p 3101"] [--only 1,3]
+ *   MUSEMUSE_BASE_URL=http://127.0.0.1:3101 node scripts/edge-drill.mjs [--start "npm start -- -p 3101"] [--only 1,3] [--all]
  *
  * --start runs the product itself with GATEWAY_URL, EDGE_URL and PORT set for the drill and watches its output for
  * errors. Without it, start the product first with
@@ -27,6 +51,10 @@
  *   EDGE_DRILL_BODY         the JSON body to send. Else edge-drill.json's "body", else {}.
  *   EDGE_DRILL_METHOD       default POST, or edge-drill.json's "method"
  *   EDGE_DRILL_HANG_MAX_MS  default 15000
+ *   EDGE_DRILL_CLOUD_LIMIT_MS  the product's cloud limit, default 10000 (drills 5 and 7)
+ *   EDGE_DRILL_EDGE_LIMIT_MS   the product's edge limit, default 5000 (drill 7)
+ *   EDGE_DRILL_SLOW_MS      how long the slow cloud takes in drill 5, default 8000. Keep it under the cloud limit.
+ *   EDGE_DRILL_DNS_BASE_URL a product started with GATEWAY_URL at a host that can't be resolved (drill 10, no --start)
  *   EDGE_FAKE_PORT          default 18435
  *   EDGE_BLACKHOLE_PORT     default 18436
  *   EDGE_DRILL_OUT          default test-results/caps/edge-drill.json. The fake's own log goes to
@@ -43,11 +71,61 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { DEFAULT_BLACKHOLE_PORT, startBlackhole } from "./edge-blackhole.mjs";
-import { DEFAULT_FAKE_PORT, startEdgeFake, TAMPER_MARK } from "./edge-fake.mjs";
+import { DEFAULT_FAKE_PORT, INJECT_MARK, startEdgeFake, TAMPER_MARK, TRUNCATE_MARK } from "./edge-fake.mjs";
 
 /** The start of lib/meta/edge.ts's BOTH_DOWN_MESSAGE. */
 export const BOTH_DOWN_PHRASE = "Neither the cloud model nor the backup model answered";
 export const EDGE_LABEL_PHRASE = "Answered on";
+/** The start of lib/meta/edge.ts's cloudLabel(). */
+export const CLOUD_LABEL_PHRASE = "Answered in the cloud";
+/** The default set, the one builds run. --all adds the rest. */
+export const DEFAULT_DRILL_IDS = [1, 2, 3, 4];
+/** Drill 10's gateway: a host under .invalid, a name reserved never to resolve (RFC 6761). */
+export const DNS_DRILL_HOST = "muse-gateway.drill.invalid";
+
+/** Every drill id, default set and --all together. --only takes these and nothing else. */
+export const ALL_DRILL_IDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+/**
+ * Makes every dns.lookup of a .invalid host fail with ENOTFOUND, the error a real resolver gives, without asking one.
+ * `onBlocked(host)`, when given, is told of each blocked lookup, so drill 10 can see the product tried the gateway.
+ * Self-contained, so it can run as a preload in the product (noDnsImport). Returns a function that undoes it.
+ */
+export function blockInvalidHosts(dns, onBlocked = null) {
+  const blocked = (host) => typeof host === "string" && /\.invalid\.?$/i.test(host);
+  const notFound = (host) => {
+    try {
+      if (onBlocked) onBlocked(host);
+    } catch {
+      // A report that can't be written never changes the lookup's result.
+    }
+    return Object.assign(new Error(`getaddrinfo ENOTFOUND ${host}`), { code: "ENOTFOUND", errno: -3008, syscall: "getaddrinfo", hostname: host });
+  };
+  const lookup = dns.lookup;
+  const promised = dns.promises.lookup;
+  dns.lookup = function (host, options, callback) {
+    if (!blocked(host)) return lookup.apply(this, arguments);
+    process.nextTick(typeof options === "function" ? options : callback, notFound(host));
+    return {};
+  };
+  dns.promises.lookup = function (host) {
+    return blocked(host) ? Promise.reject(notFound(host)) : promised.apply(this, arguments);
+  };
+  return () => {
+    dns.lookup = lookup;
+    dns.promises.lookup = promised;
+  };
+}
+
+/**
+ * A NODE_OPTIONS entry that runs blockInvalidHosts in a product's server before its own code. With `reportFile`, each
+ * blocked lookup appends the host name to that file as one line.
+ */
+export function noDnsImport(reportFile = null) {
+  const report = reportFile ? `(host) => appendFileSync(${JSON.stringify(reportFile)}, String(host) + "\\n")` : "null";
+  const source = `import dns from "node:dns";\nimport { appendFileSync } from "node:fs";\n(${blockInvalidHosts.toString()})(dns, ${report});\n`;
+  return `--import=data:text/javascript;base64,${Buffer.from(source).toString("base64")}`;
+}
 /** Drills 1 and 2 test the fallback, so an edge answer that never tried the cloud (edge only, or EDGE_FIRST) fails them. */
 const NO_CLOUD_TRY = "the product never tried the cloud first (the blackhole gateway got no connection)";
 const ERROR_LINE = /\berror\b|⨯|unhandled|uncaught/i;
@@ -74,7 +152,7 @@ async function ask(baseUrl, target, timeoutMs) {
       ...(target.method === "GET" ? {} : { body: JSON.stringify(target.body) }),
       signal: AbortSignal.timeout(timeoutMs),
     });
-    return { status: res.status, text: await res.text(), ms: Date.now() - started };
+    return { status: res.status, text: await res.text(), ms: Date.now() - started, type: res.headers.get("content-type") ?? "" };
   } catch (err) {
     return { status: 0, text: "", ms: Date.now() - started, error: err?.name === "TimeoutError" ? "no reply in time" : String(err?.message ?? err) };
   }
@@ -84,7 +162,26 @@ async function ask(baseUrl, target, timeoutMs) {
  * Runs the drills. `product.errors()` (optional) returns the error lines the product's server printed so far.
  * Returns [{ id, name, pass, ms, status, why }].
  */
-export async function runDrills({ baseUrl, target, fake, hole, product = null, hangMaxMs = 15_000, only = null, log = () => {} }) {
+export async function runDrills({
+  baseUrl,
+  target,
+  fake,
+  hole,
+  product = null,
+  hangMaxMs = 15_000,
+  only = null,
+  all = false,
+  cloudLimitMs = 10_000,
+  edgeLimitMs = 5_000,
+  slowMs = 8_000,
+  dnsBase = null,
+  dnsLookups = null,
+  log = () => {},
+}) {
+  // A typo in --only would otherwise run nothing, and "0 of 0 passed" would exit 0.
+  if (only && (!only.length || only.some((id) => !ALL_DRILL_IDS.includes(id)))) {
+    throw new SetupError(`--only takes drill numbers from ${ALL_DRILL_IDS[0]} to ${ALL_DRILL_IDS[ALL_DRILL_IDS.length - 1]}, comma separated.`);
+  }
   const drills = [
     {
       id: 1,
@@ -151,25 +248,219 @@ export async function runDrills({ baseUrl, target, fake, hole, product = null, h
                 ? "the reply has no plain both-down message"
                 : null,
     },
-  ].filter((d) => !only || only.includes(d.id));
+    ...moreDrills({ hangMaxMs, cloudLimitMs, edgeLimitMs, slowMs }),
+  ].filter((d) => (only ? only.includes(d.id) : all || DEFAULT_DRILL_IDS.includes(d.id)));
 
   const results = [];
   for (const d of drills) {
-    hole.setMode(d.hole);
-    fake.setMode(d.edge);
-    const asked = fake.requests.length;
-    const holeBefore = hole.connections;
-    const errorsBefore = product?.errors().length ?? 0;
-    const r = await ask(baseUrl, target, d.timeoutMs ?? 40_000);
-    // Give the server a moment to print anything it prints after replying.
-    await new Promise((res) => setTimeout(res, 200));
-    const ctx = { edgeAsked: fake.requests.length > asked, cloudAsked: hole.connections > holeBefore, errors: product ? product.errors().slice(errorsBefore) : [] };
-    const why = d.check(r, ctx);
-    const result = { id: d.id, name: d.name, pass: !why, ms: r.ms, status: r.status, why: why ?? null };
+    hole.setMode(d.hole, d.holeOptions);
+    fake.setMode(d.edge, d.edgeOptions);
+    let url = baseUrl;
+    if (d.dns) {
+      try {
+        url = dnsBase ? await dnsBase() : null;
+      } catch (err) {
+        url = null;
+        d.setupWhy = `couldn't start the product with a gateway host that can't be resolved: ${err?.message ?? err}`;
+      }
+      if (!url) {
+        const why = d.setupWhy ?? "needs a product whose GATEWAY_URL names a host that can't be resolved: run with --start, or set EDGE_DRILL_DNS_BASE_URL";
+        results.push({ id: d.id, name: d.name, about: d.about, pass: false, ms: 0, status: 0, why });
+        log(`FAIL ${d.id}. ${d.name} (0.0 s): ${why}`);
+        continue;
+      }
+    }
+    const rounds = [];
+    for (let i = 0; i < (d.asks ?? 1); i++) {
+      const asked = fake.requests.length;
+      const holeBefore = hole.connections;
+      const holeRequests = hole.requests ?? 0;
+      const holeAnswered = hole.answered ?? 0;
+      const hits = fake.injectedHits ?? 0;
+      const lookupsBefore = dnsLookups ? dnsLookups() : 0;
+      const errorsBefore = product?.errors().length ?? 0;
+      const r = await ask(url, target, d.timeoutMs ?? 40_000);
+      // Give the server a moment to print anything it prints after replying.
+      await new Promise((res) => setTimeout(res, 200));
+      const ctx = {
+        edgeAsked: fake.requests.length > asked,
+        cloudAsked: hole.connections > holeBefore,
+        cloudRequested: (hole.requests ?? 0) > holeRequests,
+        cloudAnswered: (hole.answered ?? 0) > holeAnswered,
+        injectedHits: (fake.injectedHits ?? 0) - hits,
+        // Lookups of the gateway's .invalid host the product made, when the preload reports them (drill 10), else null.
+        gatewayLookups: dnsLookups ? dnsLookups() - lookupsBefore : null,
+        errors: product ? product.errors().slice(errorsBefore) : [],
+      };
+      rounds.push({ r, ctx });
+    }
+    const why = d.asks ? d.checkAll(rounds) : d.check(rounds[0].r, rounds[0].ctx);
+    const ms = rounds.reduce((sum, x) => sum + x.r.ms, 0);
+    const last = rounds[rounds.length - 1].r;
+    const result = { id: d.id, name: d.name, ...(d.about ? { about: d.about } : {}), pass: !why, ms, status: last.status, why: why ?? null };
     results.push(result);
-    log(`${result.pass ? "PASS" : "FAIL"} ${d.id}. ${d.name} (${(r.ms / 1000).toFixed(1)} s)${why ? `: ${why}` : ""}`);
+    log(`${result.pass ? "PASS" : "FAIL"} ${d.id}. ${d.name} (${(ms / 1000).toFixed(1)} s)${why ? `: ${why}` : ""}`);
   }
   return results;
+}
+
+const secs = (ms) => `${(ms / 1000).toFixed(1)} s`;
+const bad = (r) => (r.status === 0 ? `no reply (${r.error})` : `status ${r.status}${r.error ? ` (${r.error})` : ""}`);
+const ok2xx = (r) => r.status >= 200 && r.status < 300;
+
+/** Every string in a parsed JSON reply, keys apart. */
+function stringsIn(value, out = []) {
+  if (typeof value === "string") out.push(value);
+  else if (Array.isArray(value)) for (const v of value) stringsIn(v, out);
+  else if (value && typeof value === "object") for (const v of Object.values(value)) stringsIn(v, out);
+  return out;
+}
+
+/** Why the injected text wasn't kept as data, or null when it was. */
+function injectedAsData(r) {
+  if (/json/i.test(r.type)) {
+    let parsed;
+    try {
+      parsed = JSON.parse(r.text);
+    } catch {
+      return "the reply says it is JSON but doesn't parse";
+    }
+    if (!stringsIn(parsed).some((s) => s.includes(INJECT_MARK))) return "the injected text sits outside a JSON string value";
+    return null;
+  }
+  if (/<script>\s*INJECTED/i.test(r.text)) return "the injected <script> tag reached the page unescaped";
+  return null;
+}
+
+/** The six scenarios --all adds. Each has a name, a one-line plain description and a pass rule. */
+function moreDrills({ hangMaxMs, cloudLimitMs, edgeLimitMs, slowMs }) {
+  const bothLimitMs = cloudLimitMs + edgeLimitMs + 3_000;
+  return [
+    {
+      id: 5,
+      name: "cloud slow, inside the limit",
+      about: `Simulated: the gateway answers after ${secs(slowMs)}, inside the ${secs(cloudLimitMs)} cloud limit.`,
+      hole: "slow",
+      holeOptions: { delayMs: slowMs },
+      edge: "ok",
+      timeoutMs: cloudLimitMs + 5_000,
+      check: (r, ctx) =>
+        !ok2xx(r)
+          ? bad(r)
+          : ctx.edgeAsked || r.text.includes(EDGE_LABEL_PHRASE)
+            ? "the product fell back to the edge although the cloud answered inside its limit"
+            : !r.text.includes(CLOUD_LABEL_PHRASE)
+              ? `the reply has no "${CLOUD_LABEL_PHRASE}" label`
+              : !ctx.cloudAnswered
+                ? "the reply says the cloud answered, but the gateway sent no answer"
+                : null,
+    },
+    {
+      id: 6,
+      name: "cloud flapping",
+      about: "Simulated: three asks while the gateway answers 503, then OK, then 503.",
+      hole: "flap",
+      edge: "ok",
+      asks: 3,
+      timeoutMs: hangMaxMs + 5_000,
+      checkAll: (rounds) => {
+        for (const [i, { r, ctx }] of rounds.entries()) {
+          const n = `answer ${i + 1} of ${rounds.length}`;
+          if (!ok2xx(r)) return `${n}: ${bad(r)}`;
+          if (r.ms > hangMaxMs) return `${n} took ${secs(r.ms)}, over ${secs(hangMaxMs)}`;
+          const edgeSaid = r.text.includes(EDGE_LABEL_PHRASE);
+          const cloudSaid = r.text.includes(CLOUD_LABEL_PHRASE);
+          if (ctx.edgeAsked && (!edgeSaid || cloudSaid)) return `${n} came from the edge but its label doesn't say so`;
+          if (!ctx.edgeAsked && ctx.cloudAnswered && (!cloudSaid || edgeSaid)) return `${n} came from the cloud but its label doesn't say so`;
+          if (!ctx.edgeAsked && !ctx.cloudAnswered) return `${n}: neither the cloud nor the edge answered, but the reply is a success`;
+        }
+        if (!rounds.some((x) => !x.ctx.edgeAsked && x.ctx.cloudAnswered)) return "the cloud never answered: the product didn't try the gateway again after a 503";
+        if (!rounds.some((x) => x.ctx.edgeAsked)) return "the edge never answered, though the gateway sent 503";
+        return null;
+      },
+    },
+    {
+      id: 7,
+      name: "edge too slow as well",
+      about: `Simulated: the gateway hangs and the edge answers only after ${secs(edgeLimitMs + 3_000)}, past its ${secs(edgeLimitMs)} limit.`,
+      hole: "hang",
+      edge: "slow",
+      edgeOptions: { delayMs: edgeLimitMs + 3_000 },
+      timeoutMs: bothLimitMs + 5_000,
+      check: (r, ctx) =>
+        r.status === 0
+          ? `no reply (${r.error})`
+          : r.text.includes(EDGE_LABEL_PHRASE)
+            ? "the product waited past its edge limit and showed the late answer"
+            : !r.text.includes(BOTH_DOWN_PHRASE)
+              ? "the reply has no plain both-down message"
+              : !ctx.cloudAsked || !ctx.edgeAsked
+                ? `the product didn't try ${!ctx.cloudAsked ? "the cloud" : "the edge"}`
+                : r.ms > bothLimitMs
+                  ? `the both-down message took ${secs(r.ms)}, over ${secs(bothLimitMs)} (both limits plus 3 s)`
+                  : ctx.errors.length
+                    ? `the server printed an error: ${ctx.errors[0].slice(0, 160)}`
+                    : null,
+    },
+    {
+      id: 8,
+      name: "truncated reply rejected",
+      about: "Simulated: the gateway drops and the edge reply is cut off part way through its JSON.",
+      hole: "refuse",
+      edge: "truncate",
+      check: (r, ctx) =>
+        r.status === 0
+          ? `no reply (${r.error})`
+          : r.text.includes(TRUNCATE_MARK)
+            ? "part of the truncated reply reached the page"
+            : !ctx.edgeAsked
+              ? "the fake edge got no request"
+              : r.text.includes(EDGE_LABEL_PHRASE)
+                ? "the reply claims an edge answer, but the only edge reply was cut off"
+                : !r.text.includes(BOTH_DOWN_PHRASE)
+                  ? "the reply has no plain both-down message"
+                  : null,
+    },
+    {
+      id: 9,
+      name: "injected text shown as data",
+      about: "Simulated: the gateway drops and the edge reply's free text tells the product to ignore its rules.",
+      hole: "refuse",
+      edge: "inject",
+      check: (r, ctx) =>
+        !ok2xx(r)
+          ? bad(r)
+          : !ctx.edgeAsked
+            ? "the fake edge got no request"
+            : ctx.injectedHits > 0
+              ? "the product fetched the URL the injected text asked for"
+              : !r.text.includes(EDGE_LABEL_PHRASE) || r.text.includes(CLOUD_LABEL_PHRASE)
+                ? "the label no longer says the edge answered"
+                : !r.text.includes(INJECT_MARK)
+                  ? "the injected text never reached the reply, so this drill can't tell how it is shown"
+                  : injectedAsData(r),
+    },
+    {
+      id: 10,
+      name: "gateway host not found",
+      about: `Simulated: the gateway's host name (${DNS_DRILL_HOST}) can't be resolved.`,
+      dns: true,
+      hole: "refuse",
+      edge: "ok",
+      check: (r, ctx) =>
+        !ok2xx(r)
+          ? bad(r)
+          : !r.text.includes(EDGE_LABEL_PHRASE)
+            ? `the reply has no "${EDGE_LABEL_PHRASE}" label`
+            : !ctx.edgeAsked
+              ? "the reply has the label but the fake edge got no request"
+              : ctx.cloudAsked
+                ? "the gateway was reached, so the host name did resolve: this product isn't the one started for the DNS drill"
+                : ctx.gatewayLookups === 0
+                  ? "the product never tried the cloud first (it never looked up the gateway's host name)"
+                  : null,
+    },
+  ];
 }
 
 /** Starts the product with the drill's env and collects the error lines it prints. */
@@ -188,7 +479,34 @@ function startProduct(command, baseUrl, env) {
   };
   watch(child.stdout);
   watch(child.stderr);
-  return { child, errors: () => errors, stop: () => child.kill("SIGTERM") };
+  const exited = new Promise((resolve) => child.once("exit", resolve));
+  return {
+    child,
+    errors: () => errors,
+    stop: () => child.kill("SIGTERM"),
+    /** Stops it and waits for it to exit, with SIGKILL after 10 s. */
+    async stopAndWait() {
+      if (child.exitCode !== null || child.signalCode !== null) return;
+      child.kill("SIGTERM");
+      const timer = setTimeout(() => child.kill("SIGKILL"), 10_000);
+      await exited;
+      clearTimeout(timer);
+    },
+  };
+}
+
+/** True once nothing answers at baseUrl, so a restarted product can't be confused with the old one. */
+async function waitDown(baseUrl, ms) {
+  const until = Date.now() + ms;
+  while (Date.now() < until) {
+    try {
+      await fetch(baseUrl, { signal: AbortSignal.timeout(1_000) });
+    } catch {
+      return true;
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return false;
 }
 
 async function waitUp(baseUrl, ms) {
@@ -208,10 +526,17 @@ async function waitUp(baseUrl, ms) {
 function parseFlags(argv) {
   const out = {};
   for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--all") {
+      out.all = true;
+      continue;
+    }
     const [key, inline] = argv[i].split("=", 2);
     const value = inline ?? argv[++i];
     if (key === "--start") out.start = value;
-    else if (key === "--only") out.only = value.split(",").map(Number);
+    else if (key === "--only") {
+      out.only = String(value ?? "").split(",").map(Number);
+      if (!out.only.every((id) => ALL_DRILL_IDS.includes(id))) throw new SetupError(`--only takes drill numbers from 1 to 10, comma separated, not "${value ?? ""}".`);
+    }
     else throw new SetupError(`Unknown flag ${argv[i]}`);
   }
   return out;
@@ -233,9 +558,51 @@ async function main() {
     throw new SetupError(`Couldn't start the drill servers: ${err.message}`);
   }
   let product = null;
+  const limits = {
+    cloudLimitMs: Number(process.env.EDGE_DRILL_CLOUD_LIMIT_MS || 10_000),
+    edgeLimitMs: Number(process.env.EDGE_DRILL_EDGE_LIMIT_MS || 5_000),
+    slowMs: Number(process.env.EDGE_DRILL_SLOW_MS || 8_000),
+  };
+  // Only a run past the default set changes the product's env, so the default set runs exactly as it always has.
+  const beyondDefault = flags.only ? flags.only.some((id) => !DEFAULT_DRILL_IDS.includes(id)) : !!flags.all;
+  const productEnv = {
+    GATEWAY_URL: hole.url,
+    EDGE_URL: fake.url,
+    PRODUCT_TOKEN: process.env.PRODUCT_TOKEN || "drill",
+    ...(beyondDefault ? { EDGE_TIMEOUT_MS: String(limits.edgeLimitMs), EDGE_CLOUD_TIMEOUT_MS: String(limits.cloudLimitMs) } : {}),
+  };
+  /** Where drill 10's preload writes each blocked lookup, one line each, so the drill sees the product tried the gateway. */
+  const dnsReport = path.join(path.dirname(outFile), "edge-drill-dns.log");
+  let dnsReporting = false;
+  const dnsLookups = () => {
+    if (!dnsReporting) return 0;
+    try {
+      return readFileSync(dnsReport, "utf8").split("\n").filter(Boolean).length;
+    } catch {
+      return 0;
+    }
+  };
+  /** Drill 10's product: the same one, restarted with a gateway host that can't be resolved. It runs last. */
+  const dnsBase = flags.start
+    ? async () => {
+        await product.stopAndWait();
+        if (!(await waitDown(baseUrl, 15_000))) throw new Error(`the product kept answering at ${baseUrl} after it was stopped`);
+        mkdirSync(path.dirname(dnsReport), { recursive: true });
+        writeFileSync(dnsReport, "");
+        dnsReporting = true;
+        const nodeOptions = [process.env.NODE_OPTIONS, noDnsImport(dnsReport)].filter(Boolean).join(" ");
+        const next = startProduct(flags.start, baseUrl, { ...productEnv, GATEWAY_URL: `http://${DNS_DRILL_HOST}:${hole.port}`, NODE_OPTIONS: nodeOptions });
+        const before = product.errors();
+        product = { ...next, errors: () => [...before, ...next.errors()] };
+        if (!(await waitUp(baseUrl, 60_000))) throw new Error(`the product never answered at ${baseUrl} after the restart`);
+        return baseUrl;
+      }
+    : process.env.EDGE_DRILL_DNS_BASE_URL?.trim()
+      ? async () => process.env.EDGE_DRILL_DNS_BASE_URL.trim()
+      : null;
   try {
     if (flags.start) {
-      product = startProduct(flags.start, baseUrl, { GATEWAY_URL: hole.url, EDGE_URL: fake.url, PRODUCT_TOKEN: process.env.PRODUCT_TOKEN || "drill" });
+      product = startProduct(flags.start, baseUrl, productEnv);
       if (!(await waitUp(baseUrl, 60_000))) throw new SetupError(`The product never answered at ${baseUrl}.`);
     }
     console.log(`Simulated outage drills against ${baseUrl}${target.path}. GATEWAY_URL=${hole.url} EDGE_URL=${fake.url}`);
@@ -244,9 +611,15 @@ async function main() {
       target,
       fake,
       hole,
-      product,
+      // A view that follows the product across drill 10's restart.
+      product: product ? { errors: () => product.errors() } : null,
       hangMaxMs: Number(process.env.EDGE_DRILL_HANG_MAX_MS || 15_000),
       only: flags.only ?? null,
+      all: !!flags.all,
+      ...limits,
+      dnsBase,
+      // Only the --start restart has the reporting preload. A product started by hand for EDGE_DRILL_DNS_BASE_URL doesn't.
+      dnsLookups: flags.start ? dnsLookups : null,
       log: (line) => console.log(line),
     });
     mkdirSync(path.dirname(outFile), { recursive: true });

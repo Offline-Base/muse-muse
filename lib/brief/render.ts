@@ -20,7 +20,7 @@ import { fastAgentLines } from "@/lib/fast/fast";
 import { RANGE_AGENT_LINES, RANGE_AGENTS_NOTES, RANGE_COST_LINE, RANGE_DEPTH_LINES, RANGE_FIX_AGENT_LINE, RANGE_FIX_LOOK, RANGE_FIX_SHOTS, RANGE_FLOW_LINE, RANGE_LOOK_LINE, RANGE_READ_FIRST, RANGE_SHOTS_LINE, RANGE_SIMPLER_LINE, rangeDirectionLines } from "@/lib/range/prompts";
 import type { JudgeVerdict, RebuildTarget, VerifySummary } from "@/lib/types";
 import { CONTRIBUTOR_PRODUCT_LINE } from "@/lib/meta/spark";
-import { contributorBuildsOn } from "@/lib/env";
+import { contributorBuildsOn, env } from "@/lib/env";
 
 /**
  * CONTRACT (owned by the brief agent). Pure functions that render prompts 2, 3 and 5 from docs/PROMPTS.md.
@@ -120,9 +120,13 @@ function uniqueModels(brief: Brief): Brief["capabilities"][number]["model"][] {
   return [...new Set(brief.capabilities.map((c) => c.model))];
 }
 
-/** The targets a brief adds to web. Empty for a web-only brief, which renders as it always did. */
+/**
+ * The targets a brief adds to web. Empty for a web-only brief, which renders as it always did. Edge counts only while
+ * EDGE_ENABLED is on (isEdgeBuild): a stored or imported brief that lists it gets no edge files without the flags, so
+ * nothing here may name its skill or ask for its drill.
+ */
 function addedTargets(brief: Pick<Brief, "targets">): Exclude<TargetId, "web">[] {
-  return briefTargets(brief).filter((t): t is Exclude<TargetId, "web"> => t !== "web");
+  return briefTargets(brief).filter((t): t is Exclude<TargetId, "web"> => t !== "web" && (t !== "edge" || env.edgeEnabled));
 }
 
 /** The build prompt's "Where it runs", from the brief's targets. */
