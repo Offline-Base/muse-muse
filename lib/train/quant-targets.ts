@@ -54,15 +54,18 @@ export function quantBaseOfFileName(name: string): QuantBase | null {
 }
 
 /**
- * The one-bit file's facts, from the 2026-knowledge model on llama.cpp b11970 with a training-text importance matrix
- * (docs/KNOWLEDGE_RUN_LOG.md, Oct 30 and 31). The memory and speed were measured Nov 1 on that file on b11669 under a hard
- * memory limit, CPU only on 6 x86 threads (docs/log/quant-run-2026-11-01). x86 under a limit isn't a Jetson. Nothing has run
- * on a real board, and no tuned adapter has passed the one-bit answer check yet.
+ * The one-bit file's facts. File size, memory and speed are from the first true r30b tune's IQ1_S on b11669 (Nov 1, docs/log/
+ * quant-run-tuned-2026-11-01; adapter 1898e46c, 120 steps, made-up data, never a product-quality tune), under a hard memory
+ * limit, CPU only on 6 x86 threads: 7.39 GB peak resident with mmap, 7.05 GB with -lm none. x86 under a limit isn't a Jetson.
+ * The recall figures are from the 2026-knowledge model (docs/KNOWLEDGE_RUN_LOG.md, Oct 30 and 31). That tune's file passed the
+ * answer check, 30 of 30 final answers on its own topic. Nothing has run on a real board.
  */
 export const LOW_BIT_FACTS = {
   fileGb: 6.53,
-  runGbMeasured: 7.3,
-  tokensPerSecondX86: 2.4,
+  runGbMeasured: 7.4,
+  tokensPerSecondX86: 2.5,
+  firstTokenSecondsX86: 5,
+  tunedFinalAnswers: "30 of 30",
   boardGb: 8,
   recallOneBitPct: 9.0,
   recallFourBitPct: 29.5,
@@ -102,7 +105,7 @@ export function deviceModelTarget(kind: string): DeviceModelTarget {
       quantBase: null,
       level: LOW_BIT_LEVEL,
       fileStem: "muse-glimmer-30b-",
-      fit: `Not run on a real board yet. On an x86 CPU under a memory limit, the ${LOW_BIT_FACTS.fileGb} GB file on our 2026-knowledge model used up to ${LOW_BIT_FACTS.runGbMeasured} GB and made about ${LOW_BIT_FACTS.tokensPerSecondX86} tokens a second. The board's ${LOW_BIT_FACTS.boardGb} GB is shared with the operating system, so it may not fit, and its answers are often poor.`,
+      fit: `Not run on a real board yet. On an x86 CPU under a memory limit, the ${LOW_BIT_FACTS.fileGb} GB file from a short test tune on made-up data used up to ${LOW_BIT_FACTS.runGbMeasured} GB and made about ${LOW_BIT_FACTS.tokensPerSecondX86} tokens a second. The board's ${LOW_BIT_FACTS.boardGb} GB is shared with the operating system, so it may not fit. That file finished ${LOW_BIT_FACTS.tunedFinalAnswers} answers on the topic it was tuned for, with some muddled steps, and stayed poor on general questions.`,
       provenOnDevice: false,
     };
   }

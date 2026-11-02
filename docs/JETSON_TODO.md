@@ -1,6 +1,6 @@
 # Jetson to-do
 
-What to run when the owner gives Jetson access. **Nothing here has been run on a real board.** The board loop and gadget connect have only seen simulated boards (`docs/BOARD_LOOP.md`, `docs/GADGETS.md`). The numbers quoted from `docs/log/quant-run-2026-11-01` are from an x86 stand-in, not a Jetson. Start with Part A, stop at the first step that fails, and record it in `docs/BUILD_LOG.md`, with the numbers, even when the answer is no.
+What to run when the owner gives Jetson access. **Nothing here has been run on a real board.** The board loop and gadget connect have only seen simulated boards (`docs/BOARD_LOOP.md`, `docs/GADGETS.md`). The numbers quoted from `docs/log/quant-run-2026-11-01` and `docs/log/quant-run-tuned-2026-11-01` are from an x86 stand-in, not a Jetson. Start with Part A, stop at the first step that fails, and record it in `docs/BUILD_LOG.md`, with the numbers, even when the answer is no.
 
 Use a board with no other job (jetson-03 or jetson-04 hold Bolt today, so say which is being taken off it). Never SSH from the laptop. Everything goes through the fleet control plane or the board's own MCP server, and no Glimmer file runs on the laptop.
 
@@ -18,7 +18,7 @@ The `offline-fleet` MCP connection fails today (endpoint not found at www.offlin
 
 Needs a tuned adapter's real IQ1_S from `QUANT_TARGETS` (`docs/TRAINING.md`, "Device targets"), public on the OfflineBase Hub namespace.
 
-- Run: the local files job on a rented GPU, not here.
+- Run: the local files job on a rented GPU, not here. Done once through the harness with publish 0 (Nov 1, adapter 1898e46c, made-up data): IQ1_S passed, 30 of 30 final answers, KL 0.943, and `LOW_BIT_KL_MAX` is now 1.1. That file was not kept or published, so this step still needs a public one.
 - **Pass:** `fileForDevice("jetson_orin_nano", files)` returns a file, `files.public` is true, and `LOW_BIT_KL_MAX` has been set from a measured run.
 
 ## 2b. Send
@@ -32,8 +32,8 @@ Needs a tuned adapter's real IQ1_S from `QUANT_TARGETS` (`docs/TRAINING.md`, "De
 
 - **Check the release first:** the file was quantized on b11669 and must load on the board's build.
 - If it runs out of memory, try in order: smaller context (1024), mmap, partial GPU layers. An 8 GB board rebooted once from a GPU out of memory (`gguf-serve.sh` header), so have someone able to power cycle it.
-- **Pass:** the board lists the name in `loaded_models`, and `metrics.mem.used_mb` stays under 7,200 MB of 7,620 MB with the model loaded and one chat running, with no OOM in `logs_query` `dmesg` and swap at or near 0. **Fail is a real result:** the 6.53 GB file on the knowledge model loaded under 8 GiB and 7 GiB limits on an x86 CPU with 6 threads and no swap (Nov 1, `docs/log/quant-run-2026-11-01`): 7.3 GB resident with mmap at a 4K context, 7.0 GB with `-lm none`, about 2.4 tokens a second and about 5 seconds to the first token. x86 under a limit isn't a Jetson, and the earlier 70% device rule would allow only 5.6 GB. Then record it, and the board gets the small Llama instead.
-- On b11669 `--no-mmap` is gone: it's `-lm none`. No tuned adapter has passed the one-bit answer check yet, so tune on r30b first.
+- **Pass:** the board lists the name in `loaded_models`, and `metrics.mem.used_mb` stays under 7,200 MB of 7,620 MB with the model loaded and one chat running, with no OOM in `logs_query` `dmesg` and swap at or near 0. **Fail is a real result:** the 6.53 GB file on the knowledge model loaded under 8 GiB and 7 GiB limits on an x86 CPU with 6 threads and no swap (Nov 1, `docs/log/quant-run-2026-11-01`): 7.3 GB resident with mmap at a 4K context, 7.0 GB with `-lm none`, about 2.4 tokens a second and about 5 seconds to the first token. x86 under a limit isn't a Jetson, and the earlier 70% device rule would allow only 5.6 GB. Then record it, and the board gets the small Llama instead. The tuned file (same size, adapter 1898e46c, made-up data, Nov 1, `docs/log/quant-run-tuned-2026-11-01`) also loaded under both limits with no out-of-memory event: 7.31 to 7.39 GB peak resident with mmap, 7.00 to 7.05 GB with `-lm none`, 2.5 tokens a second, 3.9 to 6.1 seconds to the first token.
+- On b11669 `--no-mmap` is gone: it's `-lm none`. It needs `tuned.jinja` for a trainChannel 0 adapter: on the tuned file under Meta's stock template, 1 of 5 answers was usable, and 2 looped to the token limit.
 
 ## 4. Thermal watch
 
@@ -99,7 +99,7 @@ From `EXPORT_TUNED` (`docs/TRAINING.md`, "Export a tuned model"). Tested only on
 G1. **Copy the files and start it.** `muse-device/server.py`, `drive.py`, `train.py` to a board, then `python3 server.py --tls`. Proves: it makes a certificate, and `python3 server.py pair` prints a code and a check number. `server.py` needs `openssl` on the board, which nobody has checked on JetPack 7.
 G2. **Reach it from a hosted site.** A hosted site can't call a private address, on purpose. A board needs a public address that keeps its own TLS: a TCP passthrough tunnel, not one that ends TLS itself, or the pin would be the tunnel's certificate. Open: which tunnel. On a local site, a board on the same network works.
 G3. **Pair it from `/gadgets`.** Proves: both screens show the same check number, and the board's kind comes out `jetson_orin_nano`. `boardKindOf` matches the text of `describe_device`'s `model`. A real board's text has never been read by this code.
-G4. **Put one-bit Muse Glimmer on it and start it.** From a tuned model's IQ1_S file (Part A, step 2), with `install_model` and `start_model`. Proves: it fits and answers. The file is about 6.5 GB and the estimate to run it is 7.7 GB against 8 GB of memory, with no measurement. A failed GPU allocation has frozen and rebooted these boards (`train.py`), so watch it, and be ready for it not to fit. Its answers may also be poor: the knowledge run's one-bit recall was 9.0% against 29.5% at four bits.
+G4. **Put one-bit Muse Glimmer on it and start it.** From a tuned model's IQ1_S file (Part A, step 2), with `install_model` and `start_model`. Proves: it fits and answers. The file is about 6.5 GB and the estimate to run it is 7.7 GB against 8 GB of memory, with no measurement. A failed GPU allocation has frozen and rebooted these boards (`train.py`), so watch it, and be ready for it not to fit. Its answers may also be poor: the knowledge run's one-bit recall was 9.0% against 29.5% at four bits, and the tuned test file was clearly right on 2 of 5 general questions.
 G5. **Ask from a product.** `askBoard` from a linked product. Proves: the answer comes from the board, in under `BOARD_ANSWER_MS` (100 seconds), and it's what `/v1/chat/completions` returned. If one-bit is slower than that, the limit needs to change. `server.py`'s `ask_model` adds `enable_thinking`, and `/v1` doesn't: check Glimmer's template behaves. Also confirm what the real `llama-server` reports at `/v1/models`, since the answer's `target` uses that name when it differs from the picked model.
 G6. **Turn the owner check on first.** `HARDWARE_GADGET_OWNER_CHECK` before `DEVICE_MCP_URL` or any real board reaches production.
 
