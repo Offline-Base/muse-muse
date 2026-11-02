@@ -137,13 +137,22 @@ export async function launchForRun(input: RunLaunchInput): Promise<RunLaunch> {
     const s = visitor
       ? planSettings(dataset.requested, visitorJobCeilings(limits), Math.min(input.steps, limits.job.maxSteps))
       : planSettings(dataset.requested, limitCeilings(), input.steps);
+    // Fireworks (FIREWORKS_TUNE): the cost is read live, and a run it doesn't confirm ends here. Its hold is what visitors reserve.
+    let fireworks: import("@/lib/train/fireworks/launch").FwPlan | null = null;
+    if (marks.trainer === "fireworks") {
+      if (input.job) return refused(datasetId, { ok: false, status: 403, code: "forbidden" });
+      const [{ planFromQuote }, { liveQuote, platformApi }] = await Promise.all([import("@/lib/train/fireworks/launch"), import("@/lib/train/fireworks/api")]);
+      const planned = planFromQuote(await liveQuote(platformApi()), dataset.evalCount);
+      if (!planned.ok) return refused(datasetId, planned);
+      fireworks = planned.plan;
+    }
     let held: Reservation | null = null;
     if (visitor) {
       if (input.job) return refused(datasetId, { ok: false, status: 403, code: "forbidden" });
       if (dataset.createdBy && (await personHasOpenJob(dataset.createdBy))) return wait("too_many_active");
       const taken = await reserveVisitorRun(
         { ...visitor, limits },
-        { dryRun: false, maxMinutes: s.maxMinutes, maxUsd: s.maxUsd, steps: s.steps },
+        { dryRun: false, maxMinutes: s.maxMinutes, maxUsd: fireworks?.holdUsd ?? s.maxUsd, steps: s.steps },
         now,
       );
       if (!taken.ok) {
@@ -160,7 +169,12 @@ export async function launchForRun(input: RunLaunchInput): Promise<RunLaunch> {
       autoPublishOk({ flag: env.tuneAutoPublish, hubOff: env.hubOffReason, asked: true, dataset, runProductId: (await readRunProduct(datasetId))?.productId ?? null });
     let launched: Awaited<ReturnType<typeof launchJob>>;
     try {
-      launched = await launchJob(
+      launched = fireworks
+        ? await (await import("@/lib/train/fireworks/launch")).launchFireworksJob(
+            { datasetId, title: dataset.title, loraRank: s.loraRank, learningRate: s.learningRate, maxMinutes: s.maxMinutes, plan: fireworks },
+            { userId: input.callerId },
+          )
+        : await launchJob(
       {
         recipe: ADAPTER_RECIPE,
         title: dataset.title,

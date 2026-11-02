@@ -94,6 +94,20 @@ export const POST = route(async (req: Request) => {
   if (picked && steps.value === undefined && TUNE_STEPS > maxStepsFor({ ...sized, base: picked, gpu: gpu! })) {
     return errorJson(400, "The default steps don't fit this base's time limit. Ask for fewer steps.");
   }
+  // Train on Fireworks (FIREWORKS_TUNE), a describe or folder run on the plain base. Off: 404, as a base is. Checked live
+  // here too, before any examples are written and paid for: launch checks again.
+  const trainer = (body.settings as { trainer?: unknown } | undefined)?.trainer;
+  let fireworks = false;
+  if (trainer !== undefined && trainer !== null) {
+    if (!env.fireworksTune) return errorJson(404, "not_found");
+    if (trainer !== "fireworks") return errorJson(400, "That isn't a place a run can train.");
+    if (picked) return errorJson(400, "A picked base trains on Lambda.");
+    if (check.plan.source.kind !== "task" && check.plan.source.kind !== "folder") return errorJson(400, "Only a described or folder run can train on Fireworks.");
+    const { liveQuote, platformApi } = await import("@/lib/train/fireworks/api");
+    const quote = await liveQuote(platformApi());
+    if (!quote.ok) return errorJson(503, "fireworks_cost_unconfirmed", { reason: quote.reason });
+    fireworks = true;
+  }
   const settings = { ...planSettings(sized.examples, ceilings, caller.visitor ? Math.min(steps.value ?? TUNE_STEPS, caller.visitor.limits.job.maxSteps) : steps.value), ...(picked ? { base: picked, gpu: gpu! } : {}) };
   const plan: TrainPlanBody = { ...check.plan, settings, cost: planCost(settings) };
 
@@ -167,7 +181,8 @@ export const POST = route(async (req: Request) => {
     const run = await startTuneRun({
       plan,
       callerId: owner,
-      autoPublish: autoPublish && !folder,
+      autoPublish: autoPublish && !folder && !fireworks,
+      trainer: fireworks ? "fireworks" : null,
       visitor: caller.visitor ? { trainerId: caller.id, ip: caller.visitor.ip } : null,
       folder,
     });

@@ -2238,6 +2238,21 @@ Behind a new flag, off by default. Design in docs/FAST_BUILDS.md.
 - Draft card: docs/model-cards/muse-glimmer-30b-zubrelian-moss-guide-lora-1898e46c.md, from the real modelCard generator, edited for the harness, the current repo name (the adapter config's old name redirects, 307) and the honest limits. Not uploaded.
 - Spend: $0 Meta, no GPU. One Preview deploy. No production changes.
 
+## Nov 1: Train on Fireworks, flag off (branch tg-fw-tune)
+
+Behind FIREWORKS_TUNE, off by default. Design in docs/TRAINING.md "Train on Fireworks".
+
+- **Spend:** Fireworks $0, Meta $0, Lambda $0. No Preview, no deploy, no real job, no build. The owner's mid-task instruction stopped Meta calls and builds to save money. A run through the site makes a Meta plan call, so the real job was not run. Nothing was created on Fireworks, so nothing needs cleaning up.
+- **Read:** docs.fireworks.ai and fireworks.ai/pricing without a key, on Nov 1. They state "Muse Glimmer 30B SFT is free to train until November 30, 2026" and "free via UI and Serverless Training API until 11/30. No credit card required." The API's model entry answered 401 without a key, as expected.
+- **Env, names only:** FIREWORKS_API_KEY is listed for Preview. FIREWORKS_ACCOUNT_ID did not show in the filtered Preview list, so the code looks up the key's account if it is unset. No value read.
+- **Finding:** Fireworks documents no plan or dry-run call. estimatedCost exists only on a created job, and the cookbook's `plan` prints $0 from a date in its own script. So the gate reads the live pages, then the job's own estimatedCost, and deletes the job above $0.
+- **Finding:** a managed SFT adapter can't use serverless inference. The docs list trained models as batch compatible, so base and tuned answer through batch jobs and no deployment is made. Batch on this base and on a trained LoRA is untested, and the results file's row shape isn't documented, so the parser is tolerant.
+- **Decision:** answering isn't covered by the offer, so its ceiling is held on the job, and FIREWORKS_EVAL_MAX_USD can turn it off.
+- **Decision:** the job's time limit bounds training and answering together, so the sweep's orphan rule doesn't end a live one. Abandoned answers count at the job's whole hold.
+- **Decision:** adapterProblem refuses a Fireworks job for publish, local files and serve, since its adapter isn't on our cache.
+- **Fix:** the routes test's run-store mock needed the new export.
+- **Tests:** tsc clean, after copying fflate and unpdf into this worktree's node_modules from another worktree. fireworks.test 24 of 24, open-train 33 of 33 with 3 new, routes 25, run-flow 24, view 14, plan 23, sweep 36, launch 16, limits 20, tune-pages 15. tune-room has 2 plan-card failures that also fail on origin/main.
+- **Not proven:** every call to the real Fireworks API, the page parsers once the pages change, batch on Glimmer and on the trained adapter, whether REST-created jobs are really $0, estimatedCost's real value, billing with no payment method, and the UI in a browser.
 ## Nov 1: steering from the build room, behind STEER_CHAT
 
 - **Why a new flag.** env.steeringEnabled follows MUSE_FULL or MUSE_ENGINE=serve and already answers as on in production, so it can't gate this. STEER_CHAT needs it too.
@@ -2273,3 +2288,15 @@ Owner: "change anything in the product now to use muse spark 1.3 contributor, no
 - **Tests.** tsc clean. no-wonder 8 of 8, handler 58, musecode 87, and the other suites for touched modules pass. build-steps.scenario can't load: its mock of lib/judge lacks MAX_CHAIN_SCREENSHOTS, in a file this branch doesn't touch.
 - **Owner's change of instruction, mid-task:** no builds or Meta calls, to save money. So NOT RUN: the real build on a Preview, usage rows, and the vision, video, PDF and JSON calls on Contributor. No Preview deployed and no project linked. Web search on Contributor (fine-tune research, products using web_search) is also unmeasured: it may fail.
 - **Spend:** $0 Meta, no GPUs, no deploys, no production changes.
+## Nov 2, 01:47 UTC: tuned one-bit file uploaded to a private Hub repo (branch tg-one-bit-upload)
+
+The owner asked for it after I advised against it. Repo: https://huggingface.co/OfflineBase/Muse-Glimmer-30B-Moss-Test-IQ1_S-GGUF, **private** (read back with the token; anonymous gets 401). Commit d1c0a13f. No training ran: this merged, quantized and checked the existing adapter 1898e46c through the real recipe, publish 0, unchanged, then uploaded by hand.
+
+- File: `muse-glimmer-30b-zubrelian-moss-IQ1_S.gguf`, 6,526,418,944 bytes, sha256 `abbe0f2bbf0263a708e0a20ef65074a1bcd41f4854763c9216d65257920c8c63`. Hub LFS sha256 equals it, read by the uploader and again from the laptop. **The same sha256 as the Nov 1 build**, so that run's stand-in numbers are this file's.
+- This run: answer check 30 of 30 (needs 90%), template check passed, KL 0.942644 (p99 3.857), same top token 57.56%, agreement 0 of 30. Q4_K_M again missed its limit, KL 0.030453, and was not uploaded. Whole job 01:12 to 01:43 UTC. `tuned.jinja` sha256 ee776687...
+- Also in the repo: `tuned.jinja`, `LICENSE`, `MUSE_MODEL_LICENSE.md`, `USAGE_POLICY.md`, `NOTICE` (from the 2026 Knowledge GGUF repo at 1c966004), and a card.
+- **Flagged for the owner:** the 900 moss rows were written by `muse-spark-1.3-contributor` through Meta's Model API. Model API Terms 10.1(ix) bar training a competing model on Outputs and systematically collecting them for datasets, and `docs/KNOWLEDGE_UPDATE.md` lists that source as "Never" for the knowledge model. The card says so and says whether it applies here is unsettled. Nobody has read this legally. Keep it private until then.
+- Two slips, both fixed in the run: the first upload refused the card because `license_link` was a relative path, so it now points to the public 2026 Knowledge copy of the license. That failure came after the repo was created, so the retry used `exist_ok=True` on the repo this run had just made. The token went through the remote process's stdin and environment only; `upload.log` has no token in it. The machine's disk was not otherwise checked, and it is gone.
+- Watchdog: the earlier 4-hour timer had died with the crashed session, so a detached 2.5-hour one covered this instance, stopped once it was gone.
+- Spend: device-loop-upload-1, gpu_1x_a10, launched 01:00:32Z, terminate sent about 01:47:30Z, off the list by 01:49:57Z. At most 49.4 minutes at $1.29, about $1.06 by list price, not read from an invoice. Limit $10. Lambda reports its id as terminated. Another session's device-loop-inv-1 was left alone.
+- Not run: the file on a Jetson, a download back from the Hub, the card's serve command on this copy, a judge on the answers, any tests (docs only). The stand-in numbers and the 1 of 5 on stock are from the Nov 1 run, not repeated.

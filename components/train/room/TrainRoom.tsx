@@ -139,7 +139,8 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
   const job = view.job;
   const jobHref = view.next?.kind === "job" ? view.next.href : null;
   const scored = job ? evalState(job, view.evals, now) : null;
-  const trained = job?.status === "succeeded";
+  const onFireworks = view.trainer === "fireworks";
+  const trained = job?.status === "succeeded" && !onFireworks;
   // A run trained from r30b is a Derivative of Muse Spark Open (lib/train/base.ts). Before its job exists, it will be.
   const sparkOpen = job ? isSparkOpenDerivative({ params: job.params }) : true;
   const sources: SourceItem[] = [
@@ -215,6 +216,7 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
                 <span>{view.verdict ? `${view.verdict.passed ? "Ready. " : ""}${view.verdict.words}` : "Not scored."}</span>
               </p>
               {job && sparkOpen ? <SparkOpenNote /> : null}
+              {onFireworks ? <p className="muted">Trained on Fireworks. Its base is plain Muse Glimmer 30B, not the 2026 Glimmer (r30b), so both the tuned model and the base it&apos;s scored against lack r30b&apos;s 2026 knowledge. The adapter stays on Fireworks: Muse Muse&apos;s local files and live demo don&apos;t use it yet.</p> : null}
               {job && scored ? (
                 <EvalResults
                   state={scored}
@@ -226,10 +228,10 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
                 />
               ) : null}
               {job && liveDemo ? <AdapterLiveDemo jobId={job.id} live={liveDemo} serverNow={serverNow} /> : null}
-              {job && admin && hub ? <HubCard job={job} offReason={hub.offReason} maxActive={hub.maxActive} dailyUsd={hub.dailyUsd} /> : null}
+              {job && admin && hub && !onFireworks ? <HubCard job={job} offReason={hub.offReason} maxActive={hub.maxActive} dailyUsd={hub.dailyUsd} /> : null}
               {job && admin && hub && trained ? <MakeLocalFiles jobId={job.id} maxActive={hub.maxActive} dailyUsd={hub.dailyUsd} /> : null}
               {job && admin && hub && trained ? <SimTuneCard jobId={job.id} /> : null}
-              <WhereItRuns jobHref={jobHref} demoHere={Boolean(liveDemo)} localFilesHere={Boolean(admin && hub && trained)} admin={admin} quantTargets={quantTargets} />
+              {onFireworks ? null : <WhereItRuns jobHref={jobHref} demoHere={Boolean(liveDemo)} localFilesHere={Boolean(admin && hub && trained)} admin={admin} quantTargets={quantTargets} />}
               {jobHref ? <JobLink href={jobHref} /> : null}
               <p className="room-meta">{usd(view.costSoFarUsd)} in all</p>
             </li>

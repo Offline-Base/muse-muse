@@ -591,6 +591,18 @@ export const env = {
   get tuneFolder(): boolean {
     return flag("TUNE_FOLDER");
   },
+  /**
+   * FIREWORKS_TUNE: "1", "true", "yes" or "on" offers "Train on Fireworks" for Muse Glimmer 30B beside Lambda on the
+   * describe and folder flows (docs/TRAINING.md "Train on Fireworks"). Needs TUNE_COMPOSER and FIREWORKS_API_KEY. Off by
+   * default: its routes answer 404 and the page offers nothing new.
+   */
+  get fireworksTune(): boolean {
+    return flag("FIREWORKS_TUNE");
+  },
+  /** The most answering a Fireworks run's kept-aside prompts may cost. Over it, or at 0, the run trains and isn't scored. */
+  get fireworksEvalMaxUsd(): number {
+    return Math.max(0, number("FIREWORKS_EVAL_MAX_USD", 1));
+  },
   /** Runs one visitor may start per hour. One IP gets PUBLIC_TRAIN_IP_FACTOR times this. */
   get openTrainStartsPerHour(): number {
     return wholeCount("OPEN_TRAIN_STARTS_PER_HOUR", 2);

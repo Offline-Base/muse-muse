@@ -267,6 +267,58 @@ describe("anyone can fine-tune", { skip: canMock ? false : "needs --experimental
       assert.ok(!body.includes(`/fine-tuning/`));
     });
 
+    it("keeps Train on Fireworks behind its flag, and a visitor's run within the same one-run limit", async () => {
+      const v = visitor("203.0.113.91");
+      delete process.env.FIREWORKS_TUNE;
+      const p = await planned(v);
+      const off = await runs(v.req("/api/train/runs", { plan: p, startCode: CODE, settings: { trainer: "fireworks" } }));
+      assert.equal(off.status, 404);
+      process.env.FIREWORKS_TUNE = "1";
+      process.env.FIREWORKS_API_KEY = "made-up";
+      const realFetch = globalThis.fetch;
+      globalThis.fetch = (async (url: string | URL | Request) => {
+        const u = String(url);
+        if (u.includes("/models/muse-glimmer-30b")) return Response.json({ supervisedLoraTunable: true });
+        if (u.includes("fine-tuning/models")) return new Response("Muse Glimmer 30B SFT is free to train until November 30, 2099.");
+        if (u.includes("fireworks.ai/pricing")) return new Response("Muse Glimmer 30B SFT is free via UI until 11/30");
+        return new Response("| More than 16B parameters | \\$0.90 |");
+      }) as typeof fetch;
+      try {
+        const res = await runs(v.req("/api/train/runs", { plan: p, startCode: CODE, settings: { trainer: "fireworks" } }));
+        assert.equal(res.status, 201, await res.clone().text());
+        const { runId } = (await res.json()) as { runId: string };
+        const marks = await (await import("@/lib/train/tune/run-store")).readRunMarks(runId);
+        assert.equal(marks.trainer, "fireworks");
+        const again = await planned(v).catch(() => null);
+        if (again) {
+          const second = await runs(v.req("/api/train/runs", { plan: again, startCode: CODE, settings: { trainer: "fireworks" } }));
+          assert.equal(second.status, 409);
+        }
+      } finally {
+        globalThis.fetch = realFetch;
+        delete process.env.FIREWORKS_TUNE;
+        delete process.env.FIREWORKS_API_KEY;
+      }
+    });
+
+    it("refuses Train on Fireworks at Start when its pages don't confirm the cost, before anything is written", async () => {
+      const v = visitor("203.0.113.92");
+      process.env.FIREWORKS_TUNE = "1";
+      process.env.FIREWORKS_API_KEY = "made-up";
+      const p = await planned(v);
+      const realFetch = globalThis.fetch;
+      globalThis.fetch = (async () => new Response("no offer here")) as typeof fetch;
+      try {
+        const res = await runs(v.req("/api/train/runs", { plan: p, startCode: CODE, settings: { trainer: "fireworks" } }));
+        assert.equal(res.status, 503);
+        assert.equal(((await res.json()) as { error?: string }).error, "fireworks_cost_unconfirmed");
+      } finally {
+        globalThis.fetch = realFetch;
+        delete process.env.FIREWORKS_TUNE;
+        delete process.env.FIREWORKS_API_KEY;
+      }
+    });
+
     it("keeps a build plan and another base to admins", async () => {
       process.env.TUNE_FROM_BUILDS = "1";
       process.env.TUNE_ANY_BASE = "1";
@@ -376,6 +428,59 @@ describe("anyone can fine-tune", { skip: canMock ? false : "needs --experimental
       assert.equal(job.maxMinutes, 60);
       assert.equal(job.userId, owner);
       delete process.env.TUNE_AUTO_PUBLISH;
+    });
+
+    it("a visitor's Fireworks run reserves its real hold, writes it on the job, and a run with no confirmed cost never starts", async () => {
+      process.env.FIREWORKS_TUNE = "1";
+      process.env.FIREWORKS_API_KEY = "made-up";
+      const realFetch = globalThis.fetch;
+      let offer = true;
+      globalThis.fetch = (async (url: string | URL | Request) => {
+        const u = String(url);
+        if (u.includes("/models/muse-glimmer-30b")) return Response.json({ supervisedLoraTunable: true });
+        if (!offer) return new Response("no offer");
+        if (u.includes("fine-tuning/models")) return new Response("Muse Glimmer 30B SFT is free to train until November 30, 2099.");
+        if (u.includes("fireworks.ai/pricing")) return new Response("Muse Glimmer 30B SFT is free via UI until 11/30");
+        return new Response("| More than 16B parameters | \\$0.90 |");
+      }) as typeof fetch;
+      // PGlite has no batch; createJob's statements run in order, as launch.test.ts does it.
+      (testDb as unknown as { batch: (q: PromiseLike<unknown>[]) => Promise<unknown[]> }).batch = async (q) => {
+        const out: unknown[] = [];
+        for (const one of q) out.push(await one);
+        return out;
+      };
+      try {
+        const { saveRunTrainer } = await import("@/lib/train/tune/run-store");
+        const { counterValue } = await import("@/lib/gateway/store");
+        const { dayWindow } = await import("@/lib/docs/proxy/limits");
+        const unconfirmed = await readyRun(visitor("203.0.113.93"));
+        await saveRunTrainer(unconfirmed.id);
+        offer = false;
+        const refused = await launchForRun({ datasetId: unconfirmed.id, callerId: unconfirmed.owner, steps: 120 });
+        assert.equal(refused.kind, "refused");
+        assert.equal(await counterValue(limits.USD_KEY, dayWindow(new Date())), 0);
+        offer = true;
+        const { id, owner } = await readyRun(visitor("203.0.113.94"));
+        await saveRunTrainer(id);
+        const r = await launchForRun({ datasetId: id, callerId: owner, steps: 120 });
+        assert.equal(r.kind, "launched", JSON.stringify(r));
+        assert.equal(launches.length, 0, "never through the Lambda launch");
+        const jobs = realSchema.trainingJobs;
+        const [job] = await testDb.select().from(jobs).where(eq(jobs.createdBy, owner));
+        assert.equal((job!.params as Record<string, unknown>).trainer, "fireworks");
+        assert.equal(job!.maxUsd, 0.1);
+        assert.equal(job!.priceCentsPerHour, 0);
+        assert.equal((job!.params as Record<string, unknown>).publish, 0);
+        assert.equal(await counterValue(limits.USD_KEY, dayWindow(new Date())), 10);
+        // That job holds the visitors' one slot, as a GPU job does.
+        const second = await readyRun(visitor("203.0.113.95"));
+        await saveRunTrainer(second.id);
+        assert.equal((await launchForRun({ datasetId: second.id, callerId: second.owner, steps: 120 })).kind, "wait");
+      } finally {
+        globalThis.fetch = realFetch;
+        delete process.env.FIREWORKS_TUNE;
+        delete process.env.FIREWORKS_API_KEY;
+      }
     });
 
     it("one visitor GPU at a time: the second waits and holds nothing", async () => {
