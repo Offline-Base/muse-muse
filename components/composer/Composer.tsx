@@ -705,11 +705,11 @@ export function Composer({
 function errorMessage(status: number, code: string | undefined, isRefine: boolean): string {
   const sentence = code && /\s/.test(code) ? code : null;
   if (code === "shared_limit")
-    return "The shared guest account has used today's builds. Sign in to build under your own account.";
+    return "The shared guest account has used its builds for the last 24 hours. Try again later, or open a finished product from the Gallery.";
   if (status === 429 && sentence) return sentence;
   if (status === 429 || code === "daily_limit") return "You've used your builds for the last 24 hours. Try again a little later.";
   if (status === 503 || code === "paused")
-    return "Building is paused right now. Everything that already shipped still works.";
+    return "Muse Muse reached today's spending cap, so building and model calls are paused until 00:00 UTC. Finished products may not answer until then.";
   if (code === "not_shipped") return "This product hasn't shipped yet, so it can't be changed.";
   if (status === 409 || code === "busy") return "A change is already building. Wait for it to finish, then try again.";
   if (status === 403)

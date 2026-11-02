@@ -2120,3 +2120,15 @@ Read-only recheck against the saved outputs, the local adapter and data, and the
 - Flagged, not changed: `quantChannelText` and the job summary say "a stock app's prompt" even when tuned.jinja was used, as here. That is older wording on a path that runs with flags off.
 - Not checked: the reader's counts of slips and which answers were read are one reader's judgment.
 - Tests: touched code only, with fakes: quantize 65, quant-targets 9, gguf-cards 26, story 11, tune-room and local-files with module mocks, and tsc clean. Full suite and next build not run.
+
+## Nov 2: judging week review (tg-judge-week)
+
+Read-only review of production, env names only, no values read. Spend: one model call of about $0.0001 per script run, 1 run on production; one preview, no build started.
+
+- Fixed: `screens/` retention 7 days to 30, since deletion would start Nov 3, before judging. Merge before Nov 3 00:00 UTC.
+- Fixed: the paused message claimed shipped products still work, and the gateway refuses them at the cap. The shared limit message sent judges to a sign-in that needs an access code.
+- Added: `scripts/dev/judge-watch.sh`, `docs/JUDGING_WEEK.md`.
+- Found: `DAILY_SPEND_CAP_USD=0` does not pause, `number()` falls back to 100. Documented `0.01`, code left alone.
+- Decision: recommend a $100 cap and a guest quota of 25. Peak days $69.26 and $65.71 from `/usage`. Judge traffic is an assumption. Owner sets them.
+- Measured: preview muse-muse-d40sorqio, guest with 4 builds in 24 h and the fallback quota of 3, POST /api/inspirations answered 429 shared_limit and started nothing. Both new sentences are in its client scripts and the old paused sentence is not. uploads-cleanup test 11 of 11. tsc clean apart from fflate and unpdf, missing from the copied node_modules.
+- Not proven: crons firing (`vercel logs` returned nothing), actual deletion, HF and Lambda keys, Neon and Blob limits, Vercel Spend Management, concurrent load.
