@@ -1,6 +1,7 @@
 /**
  * The fleet's read-only client against a fake control plane, and Wonder's fleet tools with a scripted model: only safe fields
- * come back, a down fleet reveals nothing, and no write reaches the fleet. Nothing here has reached a real control plane.
+ * come back, a down fleet reveals nothing, no write reaches the fleet, and only a Meta model is ever asked. Nothing here has
+ * reached a real control plane.
  *
  *   npx tsx --test lib/device/__tests__/fleet.test.ts
  */
@@ -10,12 +11,15 @@ import type { Response as ModelResponse, ResponseCreateParamsNonStreaming } from
 import { fleetConfig } from "@/lib/board-loop/boards";
 import { runDeviceAgent, type DeviceAgentDeps } from "@/lib/device/agent";
 import { cachedFleetBoards, FLEET_MAX_TOKENS, fleetAsk, fleetBoards, fleetChat, fleetConfigured, FleetError, FleetNotConfiguredError, resetFleetCache } from "@/lib/device/fleet";
+import { isMetaModelName } from "@/lib/meta/models";
 
 const URL_VALUE = "https://fleet.example.com/admin/";
 /** A test value, not a real token. */
 const TOKEN_VALUE = "jpt_made_up_token";
+/** Muse Muse's one-bit Glimmer, as jetson-02 serves it: the one Meta language model that fits a board. */
+const GLIMMER = "muse-glimmer-2026-iq1s-io-lowest";
 
-/** A NodeSummary as docs/api.md and protocol.md give it, with the fields that must never come back. */
+/** A NodeSummary as docs/api.md and protocol.md give it, with the fields that must never come back. Bolt isn't a Meta model. */
 const NODE = {
   id: "nd_secret_id",
   name: "jetson-03",
@@ -36,6 +40,8 @@ const NODE = {
   containers_running: 1,
   open_alerts: 0,
 };
+/** The board that may be asked. */
+const META = { ...NODE, id: "nd_glimmer", name: "jetson-02", loaded_models: [GLIMMER] };
 const OFFLINE = { ...NODE, id: "nd_off", name: "jetson-01", status: "offline", metrics: null, loaded_models: [], pool: null };
 const TREE = { ...NODE, id: "nd_tree", name: "decision-tree", capabilities: ["systemone"], loaded_models: ["d1-omni-600M"] };
 /** jetson-05: it advertises systemone for its own d1, which isn't in its loaded models, and serves an ordinary model. */
@@ -176,42 +182,50 @@ describe("the fleet client", () => {
   });
 
   it("reads the list fresh for an ask, so it can't pick a model that has since unloaded", async () => {
-    let nodes: unknown[] = [NODE];
+    let nodes: unknown[] = [META];
     const f = fake((url) => (url.endsWith("/api/nodes") ? json(nodes) : json(CHAT)));
     await cachedFleetBoards(f.doFetch);
-    nodes = [{ ...NODE, loaded_models: [] }];
-    await assert.rejects(fleetAsk({ prompt: "hi" }, f.doFetch), /No board has a chat model loaded/);
+    nodes = [{ ...META, loaded_models: [] }];
+    await assert.rejects(fleetAsk({ prompt: "hi" }, f.doFetch), /No board has a Meta model loaded/);
     assert.ok(f.calls.every((call) => call.url.endsWith("/api/nodes")));
   });
 
   it("makes one bounded, non-streaming chat, with the node header only when there's a node", async () => {
     const f = fake(() => json(CHAT));
-    assert.deepEqual(await fleetChat({ model: "bolt", prompt: "hi" }, f.doFetch), { text: "Hello.", finish: "stop" });
+    assert.deepEqual(await fleetChat({ model: GLIMMER, prompt: "hi" }, f.doFetch), { text: "Hello.", finish: "stop" });
     assert.equal(f.calls[0]!.url, "https://fleet.example.com/admin/v1/chat/completions");
     assert.equal(f.calls[0]!.init.method, "POST");
     assert.equal(headersOf(f.calls[0]!.init)["x-jcp-node"], undefined);
     assert.ok(f.calls[0]!.init.signal);
-    assert.deepEqual(bodyOf(f.calls[0]!.init), { model: "bolt", messages: [{ role: "user", content: "hi" }], max_tokens: FLEET_MAX_TOKENS, stream: false });
+    assert.deepEqual(bodyOf(f.calls[0]!.init), { model: GLIMMER, messages: [{ role: "user", content: "hi" }], max_tokens: FLEET_MAX_TOKENS, stream: false });
 
-    await fleetChat({ model: "bolt", prompt: "hi", nodeId: "nd_1", maxTokens: 1e9 }, f.doFetch);
+    await fleetChat({ model: GLIMMER, prompt: "hi", nodeId: "nd_1", maxTokens: 1e9 }, f.doFetch);
     assert.equal(headersOf(f.calls[1]!.init)["x-jcp-node"], "nd_1");
     assert.equal(bodyOf(f.calls[1]!.init).max_tokens, FLEET_MAX_TOKENS);
 
-    await fleetChat({ model: "bolt", prompt: "hi", maxTokens: -5 }, f.doFetch);
+    await fleetChat({ model: GLIMMER, prompt: "hi", maxTokens: -5 }, f.doFetch);
     assert.equal(bodyOf(f.calls[2]!.init).max_tokens, 1);
   });
 
   it("refuses an empty or huge prompt before the fleet", async () => {
     const f = fake(() => json(CHAT));
-    await assert.rejects(fleetChat({ model: "bolt", prompt: "  " }, f.doFetch), FleetError);
-    await assert.rejects(fleetChat({ model: "bolt", prompt: "x".repeat(8001) }, f.doFetch), FleetError);
+    await assert.rejects(fleetChat({ model: GLIMMER, prompt: "  " }, f.doFetch), FleetError);
+    await assert.rejects(fleetChat({ model: GLIMMER, prompt: "x".repeat(8001) }, f.doFetch), FleetError);
+    assert.deepEqual(f.calls, []);
+  });
+
+  it("refuses a model that isn't Meta's before the fleet, whoever names it", async () => {
+    const f = fake(() => json(CHAT));
+    for (const model of ["bolt", "Llama-3.2-1B-Instruct-receipts", "llama3.2:3b", "hf.co/LiquidAI/LFM2.5-VL-3B-GGUF:Q4_K_M", "d1-omni-600M", "combo/glimmer-gemini", ""]) {
+      await assert.rejects(fleetChat({ model, prompt: "hi" }, f.doFetch), /isn't a Meta model, so nothing ran\. Muse Muse only asks Meta models\./, model);
+    }
     assert.deepEqual(f.calls, []);
   });
 
   it("gives its own words for a gateway error, not the fleet's", async () => {
     for (const status of [429, 503, 500]) {
       const f = fake(() => json({ error: { message: `no online node on nd_secret at ${URL_VALUE}` } }, status));
-      await assert.rejects(fleetChat({ model: "bolt", prompt: "hi" }, f.doFetch), (err: Error) => {
+      await assert.rejects(fleetChat({ model: GLIMMER, prompt: "hi" }, f.doFetch), (err: Error) => {
         assert.ok(err instanceof FleetError);
         assert.doesNotMatch(err.message, /nd_secret|fleet\.example/);
         return true;
@@ -221,80 +235,181 @@ describe("the fleet client", () => {
 
   it("says why when a model spends its whole limit thinking, rather than returning nothing", async () => {
     const thinking = { choices: [{ message: { role: "assistant", content: "", reasoning: "Let me think" }, finish_reason: "length" }] };
-    await assert.rejects(fleetChat({ model: "gemma", prompt: "hi", maxTokens: 64 }, fake(() => json(thinking)).doFetch), (err: Error) => {
+    await assert.rejects(fleetChat({ model: GLIMMER, prompt: "hi", maxTokens: 64 }, fake(() => json(thinking)).doFetch), (err: Error) => {
       assert.ok(err instanceof FleetError);
       assert.match(err.message, /whole limit of 64 tokens thinking/);
       assert.match(err.message, new RegExp(`give it ${FLEET_MAX_TOKENS}`));
       return true;
     });
-    await assert.rejects(fleetChat({ model: "gemma", prompt: "hi" }, fake(() => json(thinking)).doFetch), new RegExp(`limit of ${FLEET_MAX_TOKENS} tokens thinking.*the most one ask can use`));
-    await assert.rejects(fleetAsk({ prompt: "hi" }, fleetOf([NODE], json(thinking)).doFetch), /thinking/);
+    await assert.rejects(fleetChat({ model: GLIMMER, prompt: "hi" }, fake(() => json(thinking)).doFetch), new RegExp(`limit of ${FLEET_MAX_TOKENS} tokens thinking.*the most one ask can use`));
+    await assert.rejects(fleetAsk({ prompt: "hi" }, fleetOf([META], json(thinking)).doFetch), /thinking/);
     for (const content of ["", "  \n", null]) {
       const empty = { choices: [{ message: { content }, finish_reason: "stop" }] };
-      await assert.rejects(fleetChat({ model: "gemma", prompt: "hi" }, fake(() => json(empty)).doFetch), /empty answer/);
+      await assert.rejects(fleetChat({ model: GLIMMER, prompt: "hi" }, fake(() => json(empty)).doFetch), /empty answer/);
     }
   });
 
   it("returns a cut-off answer that has text, with why it stopped", async () => {
     const cut = { choices: [{ message: { content: "Partly" }, finish_reason: "length" }] };
-    assert.deepEqual(await fleetChat({ model: "bolt", prompt: "hi" }, fake(() => json(cut)).doFetch), { text: "Partly", finish: "length" });
+    assert.deepEqual(await fleetChat({ model: GLIMMER, prompt: "hi" }, fake(() => json(cut)).doFetch), { text: "Partly", finish: "length" });
   });
 
-  it("pins a named board by its id, whatever the case, and uses a model it has loaded", async () => {
-    const f = fleetOf([OFFLINE, NODE]);
-    const answer = await fleetAsk({ prompt: "hi", node: "JETSON-03" }, f.doFetch);
-    assert.deepEqual(answer, { board: "jetson-03", model: "bolt", text: "Hello.", finish: "stop" });
-    assert.equal(headersOf(f.calls[1]!.init)["x-jcp-node"], "nd_secret_id");
-    assert.equal(bodyOf(f.calls[1]!.init).model, "bolt");
+  it("pins a named board by its id, whatever the case, and uses a Meta model it has loaded", async () => {
+    const f = fleetOf([OFFLINE, NODE, META]);
+    const answer = await fleetAsk({ prompt: "hi", node: "JETSON-02" }, f.doFetch);
+    assert.deepEqual(answer, { board: "jetson-02", model: GLIMMER, text: "Hello.", finish: "stop" });
+    assert.equal(headersOf(f.calls[1]!.init)["x-jcp-node"], "nd_glimmer");
+    assert.equal(bodyOf(f.calls[1]!.init).model, GLIMMER);
   });
 
-  it("with no board named, pins an online one that can chat, past the Decision Tree and maintenance", async () => {
-    const f = fleetOf([OFFLINE, TREE, { ...NODE, id: "nd_held", maintenance: true }, { ...NODE, id: "nd_quiet", status: "stale" }, { ...NODE, id: "nd_good" }]);
+  it("refuses a named board with no Meta model loaded, Llama included, and calls no chat", async () => {
+    for (const loaded of [["bolt", "other"], ["Llama-3.2-1B-Instruct-receipts"], ["hf.co/LiquidAI/LFM2.5-VL-3B-GGUF:Q4_K_M", "d1-omni-600M"]]) {
+      const f = fleetOf([{ ...NODE, loaded_models: loaded }]);
+      await assert.rejects(fleetAsk({ prompt: "hi", node: "jetson-03" }, f.doFetch), /jetson-03 has no Meta model loaded, so nothing ran\. Muse Muse only asks Meta models\./, loaded.join());
+      await assert.rejects(fleetAsk({ prompt: "hi" }, f.doFetch), /No board has a Meta model loaded right now\. Muse Muse only asks Meta models\./, loaded.join());
+      assert.ok(f.calls.every((call) => call.url.endsWith("/api/nodes")));
+    }
+  });
+
+  it("asks a board's Meta model even when another model is loaded first", async () => {
+    const f = fleetOf([{ ...META, loaded_models: ["bolt", GLIMMER] }]);
+    assert.equal((await fleetAsk({ prompt: "hi", node: "jetson-02" }, f.doFetch)).model, GLIMMER);
+    assert.equal(bodyOf(f.calls[1]!.init).model, GLIMMER);
+  });
+
+  it("with no board named, pins an online one with a Meta model, past other models, the Decision Tree and maintenance", async () => {
+    const f = fleetOf([OFFLINE, TREE, NODE, { ...META, id: "nd_held", maintenance: true }, { ...META, id: "nd_quiet", status: "stale" }, { ...META, id: "nd_good" }]);
     await fleetAsk({ prompt: "hi" }, f.doFetch);
     assert.equal(headersOf(f.calls[1]!.init)["x-jcp-node"], "nd_good");
   });
 
-  it("with no board named, can reach a chat board that also advertises systemone", async () => {
-    const f = fleetOf([OFFLINE, TREE, CHAT_AND_SYSTEMONE]);
+  it("with no board named, can reach a Meta model on a board that also advertises systemone", async () => {
+    const f = fleetOf([OFFLINE, TREE, { ...CHAT_AND_SYSTEMONE, loaded_models: [...CHAT_AND_SYSTEMONE.loaded_models, GLIMMER] }]);
     const answer = await fleetAsk({ prompt: "hi" }, f.doFetch);
     assert.equal(answer.board, "jetson-05");
-    assert.equal(answer.model, CHAT_AND_SYSTEMONE.loaded_models[0]);
+    assert.equal(answer.model, GLIMMER);
     assert.equal(headersOf(f.calls[1]!.init)["x-jcp-node"], "nd_05");
+    await assert.rejects(fleetAsk({ prompt: "hi" }, fleetOf([CHAT_AND_SYSTEMONE]).doFetch), /No board has a Meta model loaded/, "LFM isn't Meta's");
   });
 
   it("refuses a Decision Tree model by name, even when asked for that board, and calls no chat", async () => {
     const f = fleetOf([TREE]);
     await assert.rejects(fleetAsk({ prompt: "hi", node: "decision-tree" }, f.doFetch), /decision-tree only answers System One calls, so nothing ran/);
     await assert.rejects(fleetAsk({ prompt: "hi", node: "nd_tree" }, f.doFetch), /only answers System One calls/);
-    await assert.rejects(fleetAsk({ prompt: "hi" }, f.doFetch), /No board has a chat model loaded/);
+    await assert.rejects(fleetAsk({ prompt: "hi" }, f.doFetch), /No board has a Meta model loaded/);
     assert.ok(f.calls.every((call) => call.url.endsWith("/api/nodes")));
   });
 
   it("knows a Decision Tree model as the control plane does, and uses the board's other model", async () => {
-    for (const d1 of ["d1", "D1-omni-600M", "d1-3B-Q4_K_M", "d1-3B:latest", "hf.co/acme/d1-3B-GGUF:Q4", "acme/d1"]) {
-      const f = fleetOf([{ ...NODE, loaded_models: [d1, "bolt"] }]);
-      assert.equal((await fleetAsk({ prompt: "hi", node: "jetson-03" }, f.doFetch)).model, "bolt", d1);
-      assert.equal(bodyOf(f.calls[1]!.init).model, "bolt", d1);
+    for (const d1 of ["d1", "D1-omni-600M", "d1-3B-Q4_K_M", "d1-3B:latest", "hf.co/acme/d1-3B-GGUF:Q4", "acme/d1", "d1-glimmer"]) {
+      const f = fleetOf([{ ...NODE, loaded_models: [d1, GLIMMER] }]);
+      assert.equal((await fleetAsk({ prompt: "hi", node: "jetson-03" }, f.doFetch)).model, GLIMMER, d1);
+      assert.equal(bodyOf(f.calls[1]!.init).model, GLIMMER, d1);
     }
+    // Not d1, so these are refused as models that aren't Meta's, not as System One's.
     for (const chat of ["d10", "bold1-small", "hf.co/acme/nd1-model", "d1x"]) {
-      assert.equal((await fleetAsk({ prompt: "hi" }, fleetOf([{ ...NODE, loaded_models: [chat] }]).doFetch)).model, chat);
+      await assert.rejects(fleetAsk({ prompt: "hi", node: "jetson-03" }, fleetOf([{ ...NODE, loaded_models: [chat] }]).doFetch), /jetson-03 has no Meta model loaded/, chat);
     }
   });
 
   it("never asks the gateway when no model is loaded, so it can't load one", async () => {
     const f = fleetOf([{ ...NODE, loaded_models: [] }]);
     await assert.rejects(fleetAsk({ prompt: "hi", node: "jetson-03" }, f.doFetch), /no model loaded/);
-    await assert.rejects(fleetAsk({ prompt: "hi" }, f.doFetch), /No board has a chat model loaded/);
+    await assert.rejects(fleetAsk({ prompt: "hi" }, f.doFetch), /No board has a Meta model loaded/);
     await assert.rejects(fleetAsk({ prompt: "hi", node: "jetson-99" }, f.doFetch), /no board by that name/);
     assert.ok(f.calls.every((call) => call.url.endsWith("/api/nodes")));
   });
 
   it("only ever calls the board list and the chat gateway", async () => {
-    const f = fleetOf([NODE]);
+    const f = fleetOf([META]);
     await fleetBoards(f.doFetch);
     await fleetAsk({ prompt: "hi" }, f.doFetch);
     for (const call of f.calls) assert.match(call.url, /\/(api\/nodes|v1\/chat\/completions)$/);
     for (const call of f.calls) assert.ok((call.init.method ?? "GET") === "GET" ? call.url.endsWith("/api/nodes") : call.url.endsWith("/v1/chat/completions"));
+  });
+});
+
+describe("which models count as Meta's", () => {
+  it("takes Muse Glimmer, Muse Spark and V-JEPA builds by their own names", () => {
+    const meta = [
+      GLIMMER,
+      " MUSE-GLIMMER-2026-IQ1S-IO-LOWEST ",
+      "Muse-Glimmer-30B",
+      "hf.co/meta-models/Muse-Glimmer-30B-GGUF:IQ1_S",
+      "musemuse/muse-glimmer-30b-bakery-helper-gguf-8f1d2c3b",
+      "glimmer-r30b:iq1s",
+      "muse-spark-open",
+      "meta-models/Muse-Spark-Open-816B-A42B-NVFP4",
+      "spark-open-816b",
+      "muse-spark-1.3",
+      "v-jepa-2",
+      "facebook/vjepa2-vitl-fpc64-256",
+    ];
+    for (const name of meta) assert.equal(isMetaModelName(name), true, name);
+  });
+
+  it("refuses Llama however it's named, and every other model the fleet serves", () => {
+    const others = [
+      "Llama-3.2-1B-Instruct-receipts",
+      "llama3.2:3b-instruct-q4_K_M",
+      "meta-llama/Llama-3.2-3B-Instruct",
+      "OfflineBase/Llama-3.2-3B-ColdRoom-Watch-GGUF",
+      "llama-muse-glimmer",
+      "muse-glimmer-llama",
+      "bolt",
+      "nemotron-3.5-bolt-e4b",
+      "OfflineBase/Nemotron-3.5-Bolt-E4B-Vision-GGUF",
+      "hf.co/LiquidAI/LFM2.5-VL-3B-GGUF:Q4_K_M",
+      "lfm3-vl-1.7b",
+      "d1-omni-600M",
+      "combo/glimmer-gemini",
+      "gemma3:4b",
+    ];
+    for (const name of others) assert.equal(isMetaModelName(name), false, name);
+  });
+
+  it("wants the Meta word at the start of the model's own name, and leaves SAM out", () => {
+    for (const name of ["bolt-glimmer", "qwen-muse-glimmer-distill", "glimmering-7b", "muse-sparkle", "spark-opener", "glimmer/bolt", "sam-3.1", "samantha-7b", "", "  "]) {
+      assert.equal(isMetaModelName(name), false, name);
+    }
+    for (const name of [undefined, null, 42, ["muse-glimmer"]]) assert.equal(isMetaModelName(name), false, String(name));
+  });
+
+  it("refuses another family's or maker's word after the Meta word too, in the name, its org or its tag", () => {
+    const others = [
+      "glimmer-bolt",
+      "glimmer-lfm3-vl-receipts",
+      "muse-glimmer-nemotron-merge",
+      "muse-spark-qwen-distill",
+      "hf.co/LiquidAI/glimmer-lfm:Q4",
+      "hf.co/LiquidAI/glimmer-receipts",
+      "nvidia/muse-glimmer-30b",
+      "glimmer-r30b:bolt",
+      "glimmer-gemma3-merge",
+      "muse-glimmer-gpt-oss-20b",
+      "glimmer-phi4",
+      "muse-glimmer-30b-tinyllama",
+    ];
+    for (const name of others) assert.equal(isMetaModelName(name), false, name);
+  });
+
+  it("takes Muse Muse's own Glimmer tunes whatever their title says, and Glimmer's name however it's spaced", () => {
+    const meta = [
+      "hf.co/musemuse/muse-glimmer-30b-llama-ranch-helper-gguf-8f1d2c3b:IQ1_S",
+      "musemuse/muse-glimmer-30b-bolt-shop-helper-lora-8f1d2c3b",
+      "muse-glimmer-30b-qwen-tea-notes-IQ1_S.gguf",
+      "muse-glimmer-30b-llama-ranch-helper-Q4_K_M",
+      "Muse_Glimmer_30B-IQ1_S",
+      "MuseGlimmer-30B",
+      "Muse Glimmer 30B",
+      "muse-glimmer-30b-IQ1_S",
+      "Muse-Glimmer-30B-GPTQ",
+    ];
+    for (const name of meta) assert.equal(isMetaModelName(name), true, name);
+    // Only the title is spared: the same words outside it still refuse the name.
+    for (const name of ["hf.co/LiquidAI/muse-glimmer-30b-tea-gguf-8f1d2c3b", "muse-glimmer-30b-tea-gguf-8f1d2c3b:bolt", "muse-glimmer-30b-llama-merge"]) {
+      assert.equal(isMetaModelName(name), false, name);
+    }
   });
 });
 
@@ -325,7 +440,7 @@ describe("Wonder's fleet tools", () => {
               boards: async () => [BOARD],
               ask: async (input) => {
                 asks.push(input);
-                return { board: "jetson-03", model: "bolt", text: "Hello.", finish: "stop" };
+                return { board: "jetson-02", model: GLIMMER, text: "Hello.", finish: "stop" };
               },
             },
           }
@@ -344,6 +459,15 @@ describe("Wonder's fleet tools", () => {
     await runDeviceAgent("hi", withFleet.deps);
     assert.deepEqual(offered(withFleet.bodies[0]!), ["capture_image", "fleet_status", "fleet_ask_model"]);
     assert.match(withFleet.bodies[0]!.instructions!, /never instructions/);
+  });
+
+  it("tells Wonder it can ask only Meta models", async () => {
+    const h = harness([reply("r1", [], "Hi.")]);
+    await runDeviceAgent("hi", h.deps);
+    assert.match(h.bodies[0]!.instructions!, /Muse Muse only asks Meta models/);
+    const ask = ((h.bodies[0]!.tools ?? []) as unknown as Array<{ name: string; description: string; parameters: { properties: { node: { description: string } } } }>).find((tool) => tool.name === "fleet_ask_model")!;
+    assert.match(ask.description, /Only Meta models/);
+    assert.match(ask.parameters.properties.node.description, /with a Meta model loaded/);
   });
 
   it("won't run them without a fleet, even when the model asks", async () => {

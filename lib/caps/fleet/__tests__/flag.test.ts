@@ -209,6 +209,24 @@ describe("with FLEET_PRODUCTS on", () => {
     const { fleetSettings } = await import("@/lib/caps/fleet/settings");
     assert.equal(fleetSettings(), null);
   });
+
+  it("its model must be a Meta model: Bolt and Llama are refused, Muse Glimmer passes", async () => {
+    const { fleetSettings } = await import("@/lib/caps/fleet/settings");
+    process.env.FLEET_PRODUCTS_URL = "https://fleet.example/admin";
+    process.env.FLEET_PRODUCTS_KEY = "jik_madeup";
+    for (const model of ["bolt", "nemotron-3.5-bolt-e4b", "Llama-3.2-1B-Instruct-receipts", "llama3.2:3b-instruct-q4_K_M"]) {
+      process.env.FLEET_PRODUCTS_MODEL = model;
+      assert.equal(fleetSettings(), null, model);
+    }
+    process.env.FLEET_PRODUCTS_MODEL = "muse-glimmer-2026-iq1s-io-lowest";
+    assert.equal(fleetSettings()?.model, "muse-glimmer-2026-iq1s-io-lowest");
+  });
+
+  it("the catalog and the skill call it a Meta model, and no longer an exception to Meta's models", () => {
+    assert.match(FLEET_CATALOG_LINE, /^- jetson-fleet: a Meta model on boards Muse Muse runs/);
+    assert.doesNotMatch(FLEET_CATALOG_LINE, /exception/);
+    assert.match(file("template/.agents/skills/jetson-fleet/SKILL.md"), /^A Meta model on a small set of boards/m);
+  });
 });
 
 describe("what a product on this model shows", () => {

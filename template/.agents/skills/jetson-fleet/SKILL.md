@@ -1,13 +1,13 @@
 ---
 name: jetson-fleet
-description: Use only when the brief lists jetson-fleet. A model on boards Muse Muse runs, reached through the gateway, for text only.
+description: Use only when the brief lists jetson-fleet. A Meta model on boards Muse Muse runs, reached through the gateway, for text only.
 ---
 
 # Jetson fleet
 
 ## What it is
 
-A model on a small set of boards Muse Muse runs. The platform chooses the model, and the product never names one. It takes text only and sends one whole reply at a time, at about 13 to 15 tokens a second.
+A Meta model on a small set of boards Muse Muse runs. The platform chooses which, and the product never names one. It takes text only and sends one whole reply at a time, at about 13 to 15 tokens a second.
 
 ## The one helper
 

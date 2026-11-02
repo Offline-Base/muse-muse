@@ -1,9 +1,10 @@
 /**
  * Reads the whole fleet through its control plane (jetson-infra's docs/api.md), for /device and for Wonder. It only reads:
- * the board list, and one chat through the gateway. The address and token come from the environment inside each call and
- * stay on the server, and an error here never holds either, so its message is safe to show.
+ * the board list, and one chat with a Meta model through the gateway. The address and token come from the environment inside
+ * each call and stay on the server, and an error here never holds either, so its message is safe to show.
  */
 import { fleetAccess } from "@/lib/board-loop/fleet";
+import { isMetaModelName } from "@/lib/meta/models";
 
 const CALL_MS = 15_000;
 /** A chat on a board that's already busy can take a while to start. Under the ask route's limit. */
@@ -13,6 +14,7 @@ export const FLEET_MAX_TOKENS = 1024;
 const MAX_PROMPT_CHARS = 8000;
 /** Names come from the boards and go to a model, so a strange one stops here. */
 const MAX_NAME_CHARS = 200;
+const ONLY_META = "Muse Muse only asks Meta models.";
 /** How long several admins, or a model asking repeatedly, share one read of the list. Each read spends the tunnel's monthly requests. */
 const LIST_CACHE_MS = 30_000;
 
@@ -124,6 +126,8 @@ function isDecisionModel(model: string): boolean {
 }
 
 const chatModelsOf = (node: FleetNode): string[] => loadedOf(node).filter((model) => !isDecisionModel(model));
+/** The only ones that may be asked (lib/meta/models.ts). The list still shows every model, since listing asks none. */
+const metaModelsOf = (node: FleetNode): string[] => chatModelsOf(node).filter(isMetaModelName);
 
 /** Only the fields a person or a model may see. The hottest of a board's sensors, as the control plane's own max_temp takes it. */
 function safeBoard(node: FleetNode): FleetBoard {
@@ -169,8 +173,9 @@ export function resetFleetCache(): void {
   listCache = null;
 }
 
-/** One non-streaming chat through the gateway, of at most FLEET_MAX_TOKENS. Throws FleetNotConfiguredError or FleetError. */
+/** One non-streaming chat with a Meta model through the gateway, of at most FLEET_MAX_TOKENS. Throws FleetNotConfiguredError or FleetError. */
 export async function fleetChat({ model, prompt, nodeId, maxTokens }: FleetChat, doFetch: typeof fetch = fetch): Promise<{ text: string; finish: string | null }> {
+  if (!isMetaModelName(model)) throw new FleetError(`That isn't a Meta model, so nothing ran. ${ONLY_META}`);
   if (!prompt.trim()) throw new FleetError("That prompt is empty.");
   if (prompt.length > MAX_PROMPT_CHARS) throw new FleetError(`Keep a prompt under ${MAX_PROMPT_CHARS} characters.`);
   const limit = Math.min(FLEET_MAX_TOKENS, Math.max(1, Math.floor(numberOrNull(maxTokens) ?? FLEET_MAX_TOKENS)));
@@ -208,20 +213,21 @@ export async function fleetChat({ model, prompt, nodeId, maxTokens }: FleetChat,
 }
 
 /**
- * One answer from a model a board already has loaded, always pinned to that board. Left to itself the gateway can send a
+ * One answer from a Meta model a board already has loaded, always pinned to that board. Left to itself the gateway can send a
  * chat to a board with the model installed but not loaded, which would load it, and a combo's name can reach the cloud, so
- * this picks both. It never picks a Decision Tree model, named board or not: those answer the public sites' live System One
- * calls, on a machine a free-form chat would slow down.
+ * this picks both. A board with only other models loaded is refused, named or not. It never picks a Decision Tree model
+ * either: those answer the public sites' live System One calls, on a machine a free-form chat would slow down.
  */
 export async function fleetAsk({ prompt, node, maxTokens }: FleetAsk, doFetch: typeof fetch = fetch): Promise<FleetAnswer> {
   const nodes = await listNodes(doFetch);
   const wanted = node?.trim().toLowerCase();
   const target = wanted
     ? nodes.find((n) => n.id === node?.trim() || (typeof n.name === "string" && n.name.toLowerCase() === wanted))
-    : nodes.find((n) => n.status === "online" && n.maintenance !== true && chatModelsOf(n).length > 0);
-  if (!target) throw new FleetError(wanted ? "The fleet has no board by that name." : "No board has a chat model loaded right now.");
+    : nodes.find((n) => n.status === "online" && n.maintenance !== true && metaModelsOf(n).length > 0);
+  if (!target) throw new FleetError(wanted ? "The fleet has no board by that name." : `No board has a Meta model loaded right now. ${ONLY_META}`);
   const board = nameOf(target.name);
-  const model = chatModelsOf(target)[0];
+  const model = metaModelsOf(target)[0];
+  if (!model && chatModelsOf(target).length > 0) throw new FleetError(`${board} has no Meta model loaded, so nothing ran. ${ONLY_META}`);
   if (!model && loadedOf(target).length > 0) throw new FleetError(`${board} only answers System One calls, so nothing ran.`);
   if (!model || typeof target.id !== "string") throw new FleetError(`${board} has no model loaded, so nothing ran. This doesn't load one.`);
   return { board, model, ...(await fleetChat({ model, prompt, nodeId: target.id, maxTokens }, doFetch)) };

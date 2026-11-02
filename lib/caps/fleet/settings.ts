@@ -1,7 +1,9 @@
+import { isMetaModelName } from "@/lib/meta/models";
+
 /**
  * Where the fleet is, and which of its models products get (docs/CAPABILITIES.md, 17b). The server's choice: a caller never
- * names a model. There is no default model, since the owner hasn't chosen one. Null, and so 503 fleet_closed, when any of the
- * three is missing or refused.
+ * names a model. There is no default model, since the owner hasn't chosen one, and it must be a Meta model. Null, and so 503
+ * fleet_closed, when any of the three is missing or refused.
  */
 export interface FleetSettings {
   /** https, including /admin, with no slash at the end. */
@@ -28,5 +30,7 @@ export function fleetSettings(source: Record<string, string | undefined> = proce
   // gpt-oss:120b-cloud or glm-4.6:cloud: it forwards those to ollama.com, and the fleet reports them as board models. A
   // model made FROM a cloud tag under another name isn't caught here, so the key's cloud_daily_limit 0 still matters.
   if (!model || /^combo\//i.test(model) || /[:-]cloud$/i.test(model)) return null;
+  // The organizers ruled on Nov 2 that every model a project calls must be Meta's, and that Llama isn't (lib/meta/models.ts).
+  if (!isMetaModelName(model)) return null;
   return { url, key, model };
 }

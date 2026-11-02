@@ -39,7 +39,7 @@ return Response.json({ ...answer.data, by: answer.by, label: answer.label });
 Show `answer.label` next to every answer, in small text, word for word. It is fixed by the platform, never written by a model:
 
 - the cloud: "Answered in the cloud, Muse Wonder"
-- the board: "Answered on <board>, <model>", for example "Answered on jetson-04, Llama 3.2 3B"
+- the board: "Answered on <board>, <model>", for example "Answered on jetson-02, Muse Glimmer one-bit"
 
 The board and model names come from `EDGE_BOARD` and `EDGE_MODEL_NAME`. Never invent your own wording for who answered.
 

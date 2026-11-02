@@ -6,7 +6,7 @@ import { OFFLINE_BASE_FACTS, OFFLINE_LIMITS } from "@/lib/story/flow";
 const STAGES = [
   { title: "Build in the cloud", text: "Muse Muse writes the training data, tunes a Meta model on a rented GPU, checks it blind and builds the app. The heavy work happens where the GPUs are." },
   { title: "Own it", text: "The result is files: a tuned model and an app's code. The plan is that they are yours to keep and move, including onto a USB drive." },
-  { title: "Run it offline", text: "The plan is a small Llama on most devices and one-bit Muse Glimmer on a Jetson, with no cloud in the loop. This stage is simulated so far." },
+  { title: "Run it offline", text: "The plan is the tuned Muse Glimmer itself, with no cloud in the loop: its local files on a computer with 24 GB of memory or more, and one-bit Muse Glimmer on a Jetson. This stage is simulated so far." },
 ];
 
 export function OfflineBody() {

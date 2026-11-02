@@ -117,6 +117,19 @@ describe("the model on the owner's board", () => {
     assert.doesNotMatch(text, /10\.0\.0\.5/);
   });
 
+  it("asks only a Meta model: a board picked a small Llama is refused before it's opened, and one running another model before the prompt goes", async () => {
+    let opened = 0;
+    const llama = link({ visitors: true, facts: { ...facts, simulated: false, target: "Llama-3.2-3B-Q4_K_M", targetLabel: "Llama 3.2 3B" }, open: async () => (opened++, null) });
+    const res = await handleGadgetCall(post("live", { tool: "ask_board", arguments: { messages: MESSAGES } }), deps(llama));
+    assert.equal(res.status, 403);
+    const body = (await res.json()) as { error: { code: string; message: string } };
+    assert.equal(body.error.code, "board_model_not_meta");
+    assert.match(body.error.message, /isn't a Meta model, so it wasn't asked/);
+    assert.equal(opened, 0, "the board was never opened");
+    const bolt = link({ visitors: true, facts: { ...facts, simulated: false } }, () => ({ kind: "not_meta" }));
+    assert.equal(await code(await handleGadgetCall(post("live", { tool: "ask_board", arguments: { messages: MESSAGES } }), deps(bolt))), "board_model_not_meta");
+  });
+
   it("a board added by hand has no known model", async () => {
     assert.equal(await code(await handleGadgetCall(post("live", { tool: "ask_board", arguments: { messages: MESSAGES } }), deps(link({ visitors: true, facts: null })))), "board_not_paired");
   });
@@ -197,8 +210,9 @@ describe("the robot", () => {
     const real = { ...facts, simulated: false, robot: false };
     const picked = await reply(await handleGadgetCall(post("live", { tool: "ask_board", arguments: { messages: MESSAGES } }, ownerHeaders()), deps(link({ facts: real }, () => ({ kind: "answer", text: "x", running: "muse-glimmer-30b-IQ1_S" })))));
     assert.equal(picked.target, "Muse Glimmer, one bit");
-    const other = await reply(await handleGadgetCall(post("live", { tool: "ask_board", arguments: { messages: MESSAGES } }, ownerHeaders()), deps(link({ facts: real }, () => ({ kind: "answer", text: "x", running: "Llama-3.2-3B-Q4_K_M" })))));
-    assert.equal(other.target, "Llama-3.2-3B-Q4_K_M");
+    // Another Meta build than the picked one; anything that isn't Meta's never gets this far (askOnBoard).
+    const other = await reply(await handleGadgetCall(post("live", { tool: "ask_board", arguments: { messages: MESSAGES } }, ownerHeaders()), deps(link({ facts: real }, () => ({ kind: "answer", text: "x", running: "muse-glimmer-30b-bakery-helper-IQ1_S" })))));
+    assert.equal(other.target, "muse-glimmer-30b-bakery-helper-IQ1_S");
   });
 
   it("live, a visitor let in can hard stop, and it's saved even if the board is gone", async () => {

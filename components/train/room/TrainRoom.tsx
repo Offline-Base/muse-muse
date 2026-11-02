@@ -265,7 +265,7 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
               {job && admin && hub && !onFireworks ? <HubCard job={job} offReason={hub.offReason} maxActive={hub.maxActive} dailyUsd={hub.dailyUsd} /> : null}
               {job && admin && hub && trained ? <MakeLocalFiles jobId={job.id} maxActive={hub.maxActive} dailyUsd={hub.dailyUsd} /> : null}
               {job && admin && hub && trained ? <SimTuneCard jobId={job.id} /> : null}
-              {onFireworks ? null : <WhereItRuns jobHref={jobHref} demoHere={Boolean(liveDemo)} localFilesHere={Boolean(admin && hub && trained)} admin={admin} quantTargets={quantTargets} />}
+              {onFireworks ? null : <WhereItRuns jobHref={jobHref} demoHere={Boolean(liveDemo)} localFilesHere={Boolean(admin && hub && trained)} quantTargets={quantTargets} />}
               {jobHref ? <JobLink href={jobHref} /> : null}
               <p className="room-meta">{usd(view.costSoFarUsd)} in all</p>
             </li>

@@ -3,7 +3,7 @@ import { requireAdminOrAutomation } from "@/lib/auth";
 import { ASKS_PER_MINUTE, runDeviceAgent } from "@/lib/device/agent";
 import { callDeviceTool, deviceConfig, listDeviceTools } from "@/lib/device/client";
 import { cachedFleetBoards, fleetAsk, fleetConfigured } from "@/lib/device/fleet";
-import { DEFAULT_PLATFORM_MODEL } from "@/lib/env";
+import { DEFAULT_PLATFORM_MODEL, env } from "@/lib/env";
 import { hitRateLimits } from "@/lib/gateway/store";
 import { badRequest, errorJson, readJson, route } from "@/lib/http";
 import { metaPlatform } from "@/lib/meta/platform";
@@ -55,6 +55,7 @@ export const POST = route(async (req: Request) => {
         listTools: async () => (config ? listDeviceTools(config) : []),
         callTool: async (name, args) =>
           config ? callDeviceTool(config, name, args) : { content: [{ type: "text", text: `No board is set up, so ${name} didn't run.` }], isError: true },
+        llamaTraining: env.deviceLlamaTraining,
         ...(fleet ? { fleet: { boards: () => cachedFleetBoards(), ask: (input) => fleetAsk(input) } } : {}),
       }),
     );

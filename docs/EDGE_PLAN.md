@@ -1,5 +1,7 @@
 # The edge plan
 
+**Llama ruled out, Nov 2, 3:57 PM.** The hackathon's organizers answered that Llama is not part of this hackathon and does not count as a Meta model however it runs, and that every model the project calls at runtime must be a Meta model. So M8 to M12's Llama 3.2 3B and Hussam's Llama 3.2 1B receipt tune (PR #67) can't be the model the project calls. The only Meta language model that fits an 8 GB board is Muse Muse's one-bit Glimmer (`muse-glimmer-2026-iq1s-io-lowest` on the fleet). The units below are unchanged until the owner re-plans them.
+
 The living plan for the edge track. Written Mon Nov 2, 2026, afternoon ET, on branch tg-edge-copy, from the judge panel's merged plan. Updated Nov 2 evening on tg-submission-fields: unit status from what is built on `e4beadc1` (branch tg-edge), and the owner's answers to O1 to O8. Change a unit's status here when it changes; history goes in docs/BUILD_LOG.md.
 
 **Why now.** On Nov 2 supermarkets across Europe reported suspected freezer hacks, and a DC substation event cut power downtown (docs/MESSAGING.md, "Edge facts, Nov 2": use only the rows marked Checked). The owner wants the edge and defense story as a headline beside frontier: defending infrastructure, and being ready for any scenario, including the day the cloud is out of reach or a controller can't be trusted. Nothing here says those events were attacks, or that this app would have stopped one.

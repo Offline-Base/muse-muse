@@ -94,8 +94,8 @@ describe("limits and words", () => {
     assert.match(makeFilesCostText(state({ targets: true, smallBase: "Llama 3.2 3B" })), /45 minutes.*Llama 3\.2 3B.*by estimate/);
   });
 
-  it("Where it runs names no Qwen, keeps its old Jetson line with the flag off, and labels the board unproven with it on", () => {
-    const render = (quantTargets: boolean) => renderToStaticMarkup(createElement(WhereItRuns, { jobHref: "/fine-tuning/x", demoHere: false, localFilesHere: false, admin: true, quantTargets }));
+  it("Where it runs names no Qwen or Llama, keeps its old Jetson line with the flag off, and labels the board unproven with it on", () => {
+    const render = (quantTargets: boolean) => renderToStaticMarkup(createElement(WhereItRuns, { jobHref: "/fine-tuning/x", demoHere: false, localFilesHere: false, quantTargets }));
     const off = render(false);
     assert.match(off, /Not on a Jetson Orin Nano\./);
     assert.doesNotMatch(off, /qwen/i);
@@ -105,6 +105,8 @@ describe("limits and words", () => {
     assert.match(on, /Not run on a real board yet/);
     assert.match(on, /6\.53 GB/);
     assert.match(on, /much weaker answers/);
-    assert.match(on, /Llama 3\.2 3B/);
+    // The organizers ruled on Nov 2 that Llama isn't a Meta model, so other devices get no small Llama here.
+    assert.doesNotMatch(on, /Llama 3\.2/);
+    assert.doesNotMatch(off, /Llama 3\.2/);
   });
 });

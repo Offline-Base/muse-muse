@@ -1,5 +1,6 @@
 /**
  * Which model a board runs (the owner's decision, Nov 1): a Jetson Orin Nano gets one-bit Muse Glimmer, anything else a small Llama.
+ * The organizers ruled on Nov 2 that Llama isn't a Meta model, so ask_board refuses every board but the Jetson (lib/gateway/gadget-connect.ts).
  *
  * Kept to this one function on purpose: deviceModelTarget in lib/train/quant-targets.ts decides it, and this only names the file.
  */
