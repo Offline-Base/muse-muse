@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, test } from "node:test";
 import { z } from "zod";
-import { BOTH_DOWN_MESSAGE, edgeClient, respondJsonOrEdge } from "../../lib/meta/edge";
+import { BOTH_DOWN_MESSAGE, CLOUD_DECLINED_MESSAGE, edgeClient, respondJsonOrEdge } from "../../lib/meta/edge";
 
 const saved = { ...process.env };
 const realFetch = globalThis.fetch;
@@ -86,6 +86,29 @@ test("cloud refused: the edge answers, with its fixed label and a json_schema re
   assert.equal(JSON.stringify(sent).includes("enable_thinking"), false);
 });
 
+test("a cloud that turns the request down (a 4xx) is the answer: the edge is never asked around it", async () => {
+  for (const status of [400, 401, 403, 429]) {
+    fake({ cloud: () => Response.json({ error: { message: "no", code: "made_up" } }, { status }), edge: () => chatOk(JSON.stringify(GOOD)) });
+    const res = await ask();
+    assert.equal(res.ok, false, `status ${status}`);
+    assert.equal(res.message, CLOUD_DECLINED_MESSAGE);
+    assert.equal(res.reasons.cloud.kind, "http");
+    assert.equal(res.reasons.cloud.status, status);
+    assert.equal(res.reasons.edge.kind, "skipped");
+    assert.deepEqual(calls.map((c) => c.side), ["cloud"], `status ${status}`);
+  }
+});
+
+test("a cloud 5xx or 408 still falls back to the edge", async () => {
+  for (const status of [408, 502, 503]) {
+    fake({ cloud: () => Response.json({ error: { message: "upstream" } }, { status }), edge: () => chatOk(JSON.stringify(GOOD)) });
+    const res = await ask();
+    assert.equal(res.by, "edge", `status ${status}`);
+    assert.equal(res.fellBack.kind, "http");
+    assert.equal(res.fellBack.status, status);
+  }
+});
+
 test("cloud hung: the edge answers once the cloud's deadline passes", async () => {
   fake({ cloud: (init) => hang(init), edge: () => chatOk(JSON.stringify(GOOD)) });
   const started = Date.now();
@@ -156,4 +179,5 @@ test("no EDGE_URL keeps today's behavior: the cloud, or a plain failure", async 
 
 test("nothing it writes has an em dash", () => {
   assert.equal(BOTH_DOWN_MESSAGE.includes("\u2014"), false);
+  assert.equal(CLOUD_DECLINED_MESSAGE.includes("\u2014"), false);
 });

@@ -6,11 +6,11 @@ Status, Nov 2: built, not run. Everything here is off behind flags, and nothing 
 
 | Piece | Where | What it does |
 |---|---|---|
-| Fallback helper | `template/lib/meta/edge.ts` | `respondJsonOrEdge()`: the cloud first (`respondJson`, held to 10 s), then the board's model through `chat.completions` with a `json_schema` response format, checked with zod. `EDGE_FIRST=1` flips the order. Returns `by` (`"cloud"` or `"edge"`) and a fixed label, or a typed failure with a plain message. Never sends `enable_thinking` with a schema. |
+| Fallback helper | `template/lib/meta/edge.ts` | `respondJsonOrEdge()`: the cloud first (`respondJson`, held to 10 s), then the board's model through `chat.completions` with a `json_schema` response format, checked with zod. `EDGE_FIRST=1` flips the order. Returns `by` (`"cloud"` or `"edge"`) and a fixed label, or a typed failure with a plain message. The board answers only when the cloud can't be reached (refused, timed out, a 5xx) or sent JSON that didn't match: a cloud that turns a request down (a 4xx: a refusal, a limit, a stopped product) is the answer, and the board isn't asked around it. Never sends `enable_thinking` with a schema. |
 | Skill | `template/.agents/skills/muse-edge/SKILL.md` | Tells Muse Code when to use the helper, how to show "Answered on <board>, <model>" and what never to say. |
 | Fake edge server | `template/scripts/edge-fake.mjs` | OpenAI-compatible, schema-valid replies, modes `ok`, `refuse`, `hang`, `garbage`, `tamper`. Logs to `test-results/caps/edge.json`. |
 | Blackhole gateway | `template/scripts/edge-blackhole.mjs` | Stands in for `GATEWAY_URL`: drops or holds every connection. |
-| Drill runner | `template/scripts/edge-drill.mjs` | Four simulated drills against a running product: cloud refused, cloud hung, both down, tampered reply rejected. |
+| Drill runner | `template/scripts/edge-drill.mjs` | Four simulated drills against a running product: cloud refused, cloud hung, both down, tampered reply rejected. The two cloud drills fail when the product never tried the gateway first. |
 | Board build | `scripts/edge/build-arm64.sh` | Builds the product's Next standalone server in a linux/arm64 Docker container on the Mac and packs it with a `run.sh`. |
 | Provisioning | `lib/edge/template-files.ts` | With `EDGE_BUILDS` on, every new build gets the helper, the skill and the drill kit as written files, so no new builder snapshot is needed. |
 
@@ -19,7 +19,7 @@ Each script documents its CLI, env and exit codes at the top of the file.
 ## Flags
 
 - `EDGE_BUILDS` (platform): provisioning writes the five edge files into each build. Off by default. With it off, builds get nothing new.
-- `EDGE_ENABLED` (platform, unit M4): "edge" as a target in the brief. Not part of this kit.
+- `EDGE_ENABLED` (platform, units M4 and M5): "edge" as a target in the brief, `output: "standalone"` for an edge build, and the four drills after each passing verify (`lib/pipeline/edge-build.ts`). It counts only with `EDGE_BUILDS` on too.
 - In the product: `EDGE_URL`, `EDGE_MODEL`, `EDGE_API_KEY`, `EDGE_BOARD`, `EDGE_MODEL_NAME`, `EDGE_FIRST`, `EDGE_TIMEOUT_MS`, `EDGE_CLOUD_TIMEOUT_MS`. All read at run time on the server.
 
 Turning either platform flag on, even on a preview, is the owner's call (O4 in the plan).
@@ -83,13 +83,12 @@ Then for the take (H5): board Ethernet and Wi-Fi out, laptop Wi-Fi off, the USB-
 ## 4. Lines and labels
 
 - Label every demo screen "Simulated cold room". The lower third is "Simulated cold room. Real board, real unplug." only after the take really happened.
-- After the laptop drill: "simulated outage drills pass on the build machine". After M5: "every edge build runs a simulated outage drill".
+- After the laptop drill: "simulated outage drills pass on the build machine". "Every edge build runs a simulated outage drill" only after a real edge build (M7) has run the drill in its sandbox and `docs/BUILD_LOG.md` says so. Until then it is "is built so".
 - After the take: "this app kept answering on one Jetson with its network unplugged, N of 5 drills, X tokens a second". Use the real numbers.
 - Never: "works offline" in general, "private" or "on-device" for board answers, "attack-proof", that anything stops hacks, that anything survives a power loss, food-safety advice, or anything about real freezers. See `docs/MESSAGING.md`, Don't say.
 
 ## 5. Not built yet
 
-- The drill inside every edge build (M5): a step after verify that runs `edge-drill.mjs` against a second `next start`.
-- "edge" as a brief target and `output: "standalone"` from the target (M4). Until then `build-arm64.sh` adds `output: "standalone"` to the build copy itself.
+- The drill inside every edge build (M5) and the edge target (M4) are built and unit tested with the sandbox faked, but have not run in a real sandbox. `build-arm64.sh` still adds `output: "standalone"` to its build copy for products built before the target.
 - The self-host kit's `"offline"` mode, after Nov 4.
 - A browser console check in the drill: the runner checks the server's output only.

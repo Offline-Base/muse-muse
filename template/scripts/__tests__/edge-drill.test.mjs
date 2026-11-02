@@ -155,6 +155,21 @@ describe("runDrills against a product", () => {
     assert.ok(hole.connections >= 3, "the product tried the cloud");
   });
 
+  test("a product that skips the cloud and asks only the edge fails the two cloud drills", async () => {
+    process.env.EDGE_FIRST = "1";
+    try {
+      route = async () => {
+        const a = await respondJsonOrEdge({ schema: Status, schemaName: "status", input: "Simulated cold room rows" });
+        return a.ok ? { status: 200, json: { ...a.data, by: a.by, label: a.label } } : { status: 503, json: { message: a.message } };
+      };
+      const results = await runDrills({ baseUrl, target, fake, hole, hangMaxMs: 4000, only: [1, 2] });
+      assert.deepEqual(results.map((r) => r.pass), [false, false]);
+      for (const r of results) assert.match(r.why, /never tried the cloud/);
+    } finally {
+      delete process.env.EDGE_FIRST;
+    }
+  });
+
   test("a product that shows no label or crashes fails by name", async () => {
     route = async () => ({ status: 500, json: { error: "TypeError: x is undefined" } });
     const results = await runDrills({ baseUrl, target, fake, hole, hangMaxMs: 4000 });

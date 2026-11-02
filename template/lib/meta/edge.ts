@@ -55,7 +55,9 @@ export type EdgeFailureKind =
   /** The reply wasn't JSON. */
   | "garbage"
   /** JSON that didn't match the schema, even after one retry. A tampered reply lands here. */
-  | "schema";
+  | "schema"
+  /** Not asked: the cloud was reached and turned the request down, so the backup model isn't used to get around it. */
+  | "skipped";
 
 export interface EdgeFailureReason {
   kind: EdgeFailureKind;
@@ -85,6 +87,18 @@ export type EdgeAnswer<T> =
 /** What a page shows when neither side answered. */
 export const BOTH_DOWN_MESSAGE = "Neither the cloud model nor the backup model answered just now. Try again in a minute.";
 
+/** What a page shows when the cloud was reached and turned the request down (a limit, a refusal, a stopped product). */
+export const CLOUD_DECLINED_MESSAGE = "The cloud model turned this request down just now. Try again later, or change what you asked.";
+
+/**
+ * True when the cloud was reached and said no with a 4xx (a refused prompt, a visitor's or the product's limit, a token
+ * that was turned off). The backup model is for a cloud that can't be reached, never a way around the cloud's own
+ * answer, so the edge isn't asked. 408 is a timeout, so it still falls back.
+ */
+function cloudDeclined(reason: EdgeFailureReason): boolean {
+  return reason.kind === "http" && typeof reason.status === "number" && reason.status >= 400 && reason.status < 500 && reason.status !== 408;
+}
+
 const DISPLAY: Record<string, string> = {
   "muse-wonder-1.0": "Muse Wonder",
   "muse-spark-1.3-contributor": "Muse Spark 1.3 Contributor",
@@ -112,6 +126,8 @@ export function edgeFirst(): boolean {
  *
  * It never throws for a model failure: read `ok`. When both fail it returns `message`, a plain line to show as it is.
  * A reply that doesn't match the schema is never returned, from either side, so a tampered edge reply is rejected.
+ * The edge answers only when the cloud can't be reached (refused, timed out, a 5xx, not set) or its JSON didn't match.
+ * When the cloud was reached and turned the request down (a 4xx), that is the answer: the edge isn't asked after it.
  */
 export async function respondJsonOrEdge<T>(opts: RespondJsonOptions<T>): Promise<EdgeAnswer<T>> {
   const edge = edgeClient();
@@ -128,6 +144,10 @@ export async function respondJsonOrEdge<T>(opts: RespondJsonOptions<T>): Promise
       return { ok: true, data, by: "edge", label: edgeLabel(edge), fellBack: reasons.cloud ?? null };
     } catch (err) {
       reasons[side] = reasonOf(err);
+      if (side === "cloud" && cloudDeclined(reasons.cloud!)) {
+        reasons.edge ??= { kind: "skipped", detail: "The cloud turned the request down, so the backup model was not asked." };
+        return { ok: false, by: null, message: CLOUD_DECLINED_MESSAGE, reasons: { cloud: reasons.cloud!, edge: reasons.edge } };
+      }
     }
   }
   return { ok: false, by: null, message: BOTH_DOWN_MESSAGE, reasons: { cloud: reasons.cloud!, edge: reasons.edge! } };

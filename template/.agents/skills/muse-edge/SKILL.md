@@ -29,7 +29,7 @@ if (!answer.ok) return Response.json({ message: answer.message }, { status: 503 
 return Response.json({ ...answer.data, by: answer.by, label: answer.label });
 ```
 
-- It never throws for a model failure. Read `ok`. When both sides fail, show `answer.message` as it is, in the page, not only in the console, and keep the person's input on screen.
+- It never throws for a model failure. Read `ok`. When it is false, show `answer.message` as it is, in the page, not only in the console, and keep the person's input on screen. That happens when both sides are down, and also when the cloud was reached and turned the request down (a limit or a refusal): the backup model answers only when the cloud can't be reached, never to get around the cloud's answer.
 - `answer.by` is `"cloud"` or `"edge"`. `answer.fellBack` says why the first side didn't answer, for your logs only.
 - Keep the schema small and flat: an enum for status, a few short strings, a short list. A small board model handles that far better than deep nesting or free text.
 - Don't log raw answers or inputs from the edge path to the console. Never write `console.error` for an expected fallback: the smoke test fails on console errors.

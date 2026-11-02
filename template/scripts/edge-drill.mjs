@@ -4,9 +4,10 @@
  * (scripts/edge-blackhole.mjs) and a fake edge server (scripts/edge-fake.mjs) on loopback, asks the product one question
  * per drill, and checks what came back. No real model and no Meta call is involved.
  *
- *   1. cloud refused   the gateway drops connections, the fake edge answers: a 2xx reply with "Answered on"
- *   2. cloud hung      the gateway never answers: the edge answer arrives within EDGE_DRILL_HANG_MAX_MS (about 12 s
- *                      is expected: the 10 s cloud deadline plus the edge)
+ *   1. cloud refused   the gateway drops connections, the fake edge answers: a 2xx reply with "Answered on", after
+ *                      the product tried the gateway
+ *   2. cloud hung      the gateway never answers: the product tried it, and the edge answer arrives within
+ *                      EDGE_DRILL_HANG_MAX_MS (about 12 s is expected: the 10 s cloud deadline plus the edge)
  *   3. both down       gateway and edge both drop: the product shows the plain both-down message, and (with --start)
  *                      its server printed no error
  *   4. tampered reply  the gateway drops, the edge sends JSON with wrong types marked TAMPERED: none of it reaches
@@ -47,6 +48,8 @@ import { DEFAULT_FAKE_PORT, startEdgeFake, TAMPER_MARK } from "./edge-fake.mjs";
 /** The start of lib/meta/edge.ts's BOTH_DOWN_MESSAGE. */
 export const BOTH_DOWN_PHRASE = "Neither the cloud model nor the backup model answered";
 export const EDGE_LABEL_PHRASE = "Answered on";
+/** Drills 1 and 2 test the fallback, so an edge answer that never tried the cloud (edge only, or EDGE_FIRST) fails them. */
+const NO_CLOUD_TRY = "the product never tried the cloud first (the blackhole gateway got no connection)";
 const ERROR_LINE = /\berror\b|⨯|unhandled|uncaught/i;
 
 export class SetupError extends Error {}
@@ -91,9 +94,11 @@ export async function runDrills({ baseUrl, target, fake, hole, product = null, h
       check: (r, ctx) =>
         r.status >= 200 && r.status < 300
           ? r.text.includes(EDGE_LABEL_PHRASE)
-            ? ctx.edgeAsked
-              ? null
-              : "the reply has the label but the fake edge got no request"
+            ? !ctx.edgeAsked
+              ? "the reply has the label but the fake edge got no request"
+              : !ctx.cloudAsked
+                ? NO_CLOUD_TRY
+                : null
             : `the reply has no "${EDGE_LABEL_PHRASE}" label`
           : `status ${r.status}${r.error ? ` (${r.error})` : ""}`,
     },
@@ -110,7 +115,9 @@ export async function runDrills({ baseUrl, target, fake, hole, product = null, h
             ? `the reply has no "${EDGE_LABEL_PHRASE}" label`
             : !ctx.edgeAsked
               ? "the fake edge got no request"
-              : r.ms > hangMaxMs
+              : !ctx.cloudAsked
+                ? NO_CLOUD_TRY
+                : r.ms > hangMaxMs
                 ? `the edge answer took ${(r.ms / 1000).toFixed(1)} s, over ${(hangMaxMs / 1000).toFixed(0)} s`
                 : null,
     },
@@ -151,11 +158,12 @@ export async function runDrills({ baseUrl, target, fake, hole, product = null, h
     hole.setMode(d.hole);
     fake.setMode(d.edge);
     const asked = fake.requests.length;
+    const holeBefore = hole.connections;
     const errorsBefore = product?.errors().length ?? 0;
     const r = await ask(baseUrl, target, d.timeoutMs ?? 40_000);
     // Give the server a moment to print anything it prints after replying.
     await new Promise((res) => setTimeout(res, 200));
-    const ctx = { edgeAsked: fake.requests.length > asked, errors: product ? product.errors().slice(errorsBefore) : [] };
+    const ctx = { edgeAsked: fake.requests.length > asked, cloudAsked: hole.connections > holeBefore, errors: product ? product.errors().slice(errorsBefore) : [] };
     const why = d.check(r, ctx);
     const result = { id: d.id, name: d.name, pass: !why, ms: r.ms, status: r.status, why: why ?? null };
     results.push(result);
