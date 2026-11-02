@@ -52,6 +52,9 @@ describe("with MAKE_CHAT_ALL off", { skip: canMock ? false : "needs --experiment
     register("data:text/javascript,export const load = (url, context, next) => url.endsWith('.css') ? { format: 'module', source: '', shortCircuit: true } : next(url, context);", import.meta.url);
     // No featured products here, so the row stays out and the page is the one the hashes stand for.
     mock.module(at("../../../lib/queries.ts"), { namedExports: { currentUser: async () => user, listShippedProducts: async () => [], safeQuery: async (fn: () => unknown) => ({ ok: true, data: await fn() }) } });
+    // As on production: a Meta key and Sandbox credentials, so the setup banner (components/composer/BuildSetupBanner.tsx) stays out.
+    const realQuota = (await import(at("../../../lib/quota.ts"))) as typeof import("../../../lib/quota");
+    mock.module(at("../../../lib/quota.ts"), { namedExports: { ...realQuota, buildSetupRefusal: () => null } });
 
     const { renderToString } = await import("react-dom/server");
     const node = (n: ReactNode) => renderToString(n as never);

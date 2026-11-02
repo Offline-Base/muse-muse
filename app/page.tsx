@@ -3,11 +3,13 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { Composer, type Example } from "@/components/composer/Composer";
 import type { StarterTab } from "@/components/composer/Starters";
+import { BuildSetupBanner } from "@/components/composer/BuildSetupBanner";
 import { SetupPanel } from "@/components/composer/SetupPanel";
 import { FeaturedProducts } from "@/components/gallery/FeaturedProducts";
 import { Icon } from "@/components/icons";
 import { contributorBuildsOn, env } from "@/lib/env";
 import { makeChatAllOn } from "@/lib/make/switch";
+import { buildSetupRefusal } from "@/lib/quota";
 import { FEATURED_SLUGS, pickFeatured } from "@/lib/gallery/featured";
 import { LIVE_FRAME_SANDBOX, liveFrameAllow } from "@/lib/product-frame";
 import { currentUser, listShippedProducts, safeQuery } from "@/lib/queries";
@@ -98,17 +100,22 @@ const STARTERS: StarterTab[] = [
 export default async function Home() {
   await connection();
   const user = await currentUser();
+  // A build that would be refused for a missing Meta key or Sandbox credentials says so before anyone starts one.
+  const setupBlock = buildSetupRefusal()?.error ?? null;
   const toolbar = (
-    <div className="toolbar" aria-label="Page actions">
-      <Link className="btn" href="/how-it-works">
-        <Icon name="book" />
-        <span>How it works</span>
-      </Link>
-      <Link className="btn" href="/builds">
-        <Icon name="history" />
-        <span>History</span>
-      </Link>
-    </div>
+    <>
+      <div className="toolbar" aria-label="Page actions">
+        <Link className="btn" href="/how-it-works">
+          <Icon name="book" />
+          <span>How it works</span>
+        </Link>
+        <Link className="btn" href="/builds">
+          <Icon name="history" />
+          <span>History</span>
+        </Link>
+      </div>
+      <BuildSetupBanner code={setupBlock} />
+    </>
   );
   if (makeChatAllOn()) {
     const { makeTrainProps } = await import("@/lib/make/page-props");

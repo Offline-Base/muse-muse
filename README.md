@@ -43,25 +43,57 @@ Offline Base also makes Base Drive, an offline AI kit on a flash drive, and runs
 
 ## Quickstart
 
+You need Node 22.22.3 or newer (`node -v`; the `@composio/*` packages warn on anything older).
+
 ```bash
 git clone https://github.com/Offline-Base/muse-muse.git && cd muse-muse
-cp .env.example .env.local      # optional for browsing; every variable is explained in the file
-docker compose up --build       # then open http://localhost:3000
+npm ci && cp .env.example .env.local && npm run dev:local   # then open http://localhost:3000
 ```
 
-`compose.yaml` runs a production build on PGlite, Postgres in-process, in a Docker volume. Files stay in the same volume, sign-in is off for localhost, and the port is published on 127.0.0.1 only. No secrets go in the image: `.env.local` is read when the container starts, and compose overrides anything in it that would point at production's database or Blob store. There's no Postgres container, because the site uses Neon's HTTP driver, which can't reach a stock Postgres server. To use a Neon database, set `COMPOSE_DATABASE_URL` in your shell. Set `STORY_PAGES=1` in your shell before building to include `/offline`.
+`npm run dev:local` sets up a local database (PGlite in `.data/pglite`), keeps files in `.data/files` and turns sign-in off for localhost. It needs no keys. **A local run starts empty:** the Gallery, Models and Fine-tuning pages say "Nothing shipped yet" and "No results yet". The judged results and the shipped products are on the live site, https://muse-muse.vercel.app, which anyone can browse with no sign-in.
 
-The Dockerfile was written without a Docker daemon to test it on, so the image has **not been built or run yet**. What has run nearby: the migrations on an empty PGlite folder, `npx next build` with no database on a laptop, and `npm run dev:local`. `next start` on PGlite has not.
+### Judge path
+
+| Goal | What it needs | Command | Time and cost |
+|---|---|---|---|
+| Open the site | Nothing | https://muse-muse.vercel.app | None |
+| Run the tests | Nothing. Muse Privacy's tests also need [uv](https://docs.astral.sh/uv/) (`brew install uv`) | See [Tests](#tests) | About 3 minutes for the Node tests, and about 3 for Muse Privacy's. No spend |
+| Run the outage drills | Nothing | `npm run drill` | About 12 seconds, all on loopback. No key, no model, no spend |
+| Score the drill bench | `python3` | `npm run drill-bench` | About 2 seconds. No model |
+| Make one product | A Meta Model API key in `MODEL_API_KEY`, and a free Vercel account for Vercel Sandbox (below) | Make page, after `npm run dev:local` | 3 to 9 minutes, and about $0.30 to $1.80 in Meta credits per build, plus Sandbox minutes on your Vercel account |
+
+To make a product, put your Meta key in `MODEL_API_KEY` in `.env.local`, then give Vercel Sandbox its credentials. Muse Code runs only in a Sandbox microVM, so there is no build without them:
+
+```bash
+npx vercel link                                       # a free Hobby account works; links this folder to a project of yours
+npx vercel env pull .env.vercel.local                 # writes VERCEL_OIDC_TOKEN (good for 12 hours) to its own file
+grep '^VERCEL_OIDC_TOKEN=' .env.vercel.local >> .env.local
+npm run dev:local
+```
+
+Pull into its own file as above: a plain `vercel env pull` writes over `.env.local`. Without a Meta key or Sandbox credentials, the Make page says which one is missing and a build is refused before any paid step (a 503 with `no_model_key` or `no_sandbox`), so nothing is spent on a build that can't finish. `BUILDER_SNAPSHOT_ID` is optional locally: without it, the first build installs Muse Code, Playwright and ffmpeg in the sandbox itself, which is slower. A local build stops after its demo video and gets no link of its own (see [Run it on your machine](#run-it-on-your-machine)).
+
+**The outage drills.** `npm run drill` starts a stand-in gateway that drops or holds every connection (`template/scripts/edge-blackhole.mjs`), a fake edge model server (`template/scripts/edge-fake.mjs`) and a tiny bundled product that answers through the product template's cloud-to-edge fallback (`scripts/drill/demo-product.ts`, using `template/lib/meta/edge.ts`). Then `template/scripts/edge-drill.mjs` runs four simulated drills: cloud refused, cloud hung, both down, and a tampered reply rejected. It prints each result, writes JSON to `.data/drill/`, and exits non-zero if any drill fails. A pass shows the fallback logic on loopback with invented cold-room data, and nothing about a real model or board. `npm run drill-bench` remakes the Simulated cold-room set from its seed (`scripts/dev/drill-bench.py make`: 900 training, 50 kept aside, 100 sealed held-out), checks the sealed file matches `eval/drill/sealed.jsonl`, and scores canned answers with no model. See [docs/EDGE_DEMO.md](docs/EDGE_DEMO.md).
 
 | To do this | You need |
 |---|---|
 | Start the site and browse it | Nothing |
 | Write a brief, or anything else that calls a model | `MODEL_API_KEY`, a Meta Model API key |
-| Build a product | `MODEL_API_KEY`, plus `VERCEL_OIDC_TOKEN` (from `vercel env pull`, good for 12 hours) and `BUILDER_SNAPSHOT_ID` (from `npm run snapshot`), since builds run in Vercel Sandbox |
+| Build a product | `MODEL_API_KEY`, plus Vercel Sandbox credentials: `VERCEL_OIDC_TOKEN` (from `npx vercel link` and `npx vercel env pull`, good for 12 hours). `BUILDER_SNAPSHOT_ID` (from `npm run snapshot`) is optional locally and makes builds start faster |
 | Publish a product to its own link | Not possible from a local run: a product couldn't reach this machine's gateway. Use a Vercel deployment (see [Setup](#setup)) |
 | Train a model | Not from a local run as it stands. Training starts only on production unless `TRAIN_ALLOW_OUTSIDE_PRODUCTION=1`, and a rented GPU has to reach the site to report back. See [docs/TRAINING.md](docs/TRAINING.md) |
+| Run the outage drills or the drill bench | Nothing (`python3` for the bench) |
 
-Without Docker, `npm install && npm run dev:local` does the same on Node 22 or newer. See [Run it on your machine](#run-it-on-your-machine).
+### Docker (not yet built)
+
+```bash
+cp .env.example .env.local
+docker compose up --build       # then open http://localhost:3000
+```
+
+The Dockerfile was written without a Docker daemon to test it on, so the image has **not been built or run yet**. Use the npm path above. What has run nearby: the migrations on an empty PGlite folder, `npx next build` with no database on a laptop, and `npm run dev:local`. `next start` on PGlite has not.
+
+`compose.yaml` runs a production build on PGlite, Postgres in-process, in a Docker volume. Files stay in the same volume, sign-in is off for localhost, and the port is published on 127.0.0.1 only. No secrets go in the image: `.env.local` is read when the container starts, and compose overrides anything in it that would point at production's database or Blob store. There's no Postgres container, because the site uses Neon's HTTP driver, which can't reach a stock Postgres server. To use a Neon database, set `COMPOSE_DATABASE_URL` in your shell. Set `STORY_PAGES=1` in your shell before building to include `/offline`.
 
 ## What Muse Muse is
 
@@ -253,13 +285,13 @@ template/                   Starter repo Muse Code builds every product from
 
 ## Setup
 
-You need Node 22 or newer, a Vercel account, a Neon Postgres database from the Vercel Marketplace and a Meta Model API key. Muse Code is installed in the builder snapshot, so you don't need it on your machine.
+You need Node 22.22.3 or newer, a Vercel account, a Neon Postgres database from the Vercel Marketplace and a Meta Model API key. Muse Code is installed in the builder snapshot, so you don't need it on your machine.
 
 ```bash
-npm install
+npm ci
 cp .env.example .env.local      # fill in the values; each one is explained in the file
-vercel link && vercel env pull  # gives VERCEL_OIDC_TOKEN for Sandbox locally (good for 12 hours)
-npm run snapshot                # makes the warm builder snapshot; put the printed id in BUILDER_SNAPSHOT_ID
+npx vercel link && npx vercel env pull .env.vercel.local   # VERCEL_OIDC_TOKEN for Sandbox locally (good for 12 hours); copy it into .env.local
+npm run snapshot                # makes the warm builder snapshot; put the printed id in BUILDER_SNAPSHOT_ID (required on Vercel)
 npm run db:migrate              # applies drizzle/ to DATABASE_URL (npm run build runs it too)
 npm run dev                     # http://localhost:3000
 ```
@@ -314,7 +346,7 @@ The branch URL follows the branch's newest deployment, so a build still running 
 npm run dev:local               # then open http://localhost:3000
 ```
 
-This needs only `MODEL_API_KEY`, `VERCEL_OIDC_TOKEN` (from `vercel env pull`, good for 12 hours) and `BUILDER_SNAPSHOT_ID` in `.env.local`. The database is PGlite in `.data/pglite`, files go to `.data/files`, and sign-in is off for localhost. Builds still run in Vercel Sandbox. The sandbox can't reach your machine, so products call Meta directly through the build firewall instead of the gateway, and their file uploads don't work. A local build stops after the demo video and isn't published to its own link, even with `VERCEL_TOKEN` set: the product would call this machine's gateway, which Vercel can't reach. The live preview in the build room works while the build runs.
+Browsing needs nothing. A build needs `MODEL_API_KEY` and `VERCEL_OIDC_TOKEN` (from `npx vercel link` and `npx vercel env pull`, good for 12 hours) in `.env.local`; without either, the Make page says so and builds are refused before anything is paid for. `BUILDER_SNAPSHOT_ID` is optional here: without it, the first build installs its toolchain in the sandbox, which is slower. The database is PGlite in `.data/pglite`, files go to `.data/files`, and sign-in is off for localhost. Builds still run in Vercel Sandbox. The sandbox can't reach your machine, so products call Meta directly through the build firewall instead of the gateway, and their file uploads don't work. A local build stops after the demo video and isn't published to its own link, even with `VERCEL_TOKEN` set: the product would call this machine's gateway, which Vercel can't reach. The live preview in the build room works while the build runs.
 
 To put local products on the live site, run `npx tsx --env-file=.env.local scripts/promote-local.ts --db .data/pglite --slug <slug>,<slug>` (add `--dry-run` first to see what it would upload and send). It reads a copy of the PGlite folder and asks the live site whether it takes each bundle (`POST /api/admin/import-product?check=1`), so nothing is uploaded for a product it would refuse. Then it uploads each product's files from `.data/files` to the live Blob store at the same paths with your `VERCEL_OIDC_TOKEN`, and sends the rows to `POST /api/admin/import-product` with the `AUTOMATION_SECRET` bearer. The live site saves them under its guest account (its builds don't count against the guest's daily builds) and publishes each product from its sandbox the way a live build does, then the script waits up to 10 minutes for the links. Only live products whose latest build is live go; the rest are skipped with the reason. When a publish ends without a link, run the same command with `--republish`: the live site publishes it again, once its last try has ended, with nothing uploaded again.
 
@@ -327,9 +359,11 @@ npx tsx --test --experimental-test-module-mocks components/train/__tests__/*.tes
 npx tsx --test template/scripts/__tests__/*.test.mjs   # the template's own scripts and theme contrast
 ```
 
-Nothing in the tests calls Meta, Vercel, Lambda or Neon. The fine-tuning runner test also needs `python3`. CI runs the typecheck and these tests on every pull request ([.github/workflows/ci.yml](.github/workflows/ci.yml)).
+Nothing in the tests calls Meta, Vercel, Lambda or Neon, and none needs a key. The Node tests take about 3 minutes. The fine-tuning runner test also needs `python3`. CI runs the typecheck and these tests on every pull request ([.github/workflows/ci.yml](.github/workflows/ci.yml)).
 
-Muse Privacy has its own setup and tests in `privacy/`: `cd privacy && uv sync --locked && uv run pytest -q`.
+Muse Privacy has its own setup and tests in `privacy/`: `cd privacy && uv sync --locked && uv run pytest -q`. They need [uv](https://docs.astral.sh/uv/) (`brew install uv`, or the installer on astral.sh), which fetches Python 3.12 itself, and take about 3 minutes.
+
+The outage drills and the drill bench need no key either: `npm run drill` and `npm run drill-bench` (see the [Judge path](#judge-path)).
 
 ## Docs
 

@@ -10,7 +10,8 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 ROOT="$HOME/musemuse-lab"
 SHELLS="$ROOT/shells"
-BUCKET="s3://muse-knowledge-916979311153"
+# The lab bucket is muse-knowledge-<account id>. The id is read from the box's own credentials, so it stays out of the repo.
+BUCKET="s3://${MUSE_LAB_BUCKET:-muse-knowledge-$(aws sts get-caller-identity --query Account --output text 2>/dev/null)}"
 TARGET="${MUSE_LAB_CHECK_TARGET:-https://muse-muse.vercel.app/}"
 OUT="${1:-$ROOT/checks/$(date -u +%Y%m%dT%H%M%SZ)}"
 mkdir -p "$OUT"

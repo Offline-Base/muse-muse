@@ -361,6 +361,9 @@ describe("import-product route", { skip: canMock ? false : "needs --experimental
   describe("the guest's daily builds", () => {
     it("aren't used up by an import, however recently its builds started", async () => {
       process.env.BLOB_STORE_ID = "store_test";
+      // Fakes for the build preflight (lib/quota.ts buildSetupRefusal).
+      process.env.MODEL_API_KEY = "test-value-not-a-key";
+      process.env.VERCEL_OIDC_TOKEN = "header.payload.signature-not-a-token";
       process.env.MAX_BUILDS_PER_USER_PER_DAY = "3";
       process.env.DAILY_SPEND_CAP_USD = "100";
       for (const slug of ["bird-count", "shelf-scout"]) assert.equal((await postRoute(post(recent(sampleBundle({ slug })), bot))).status, 201);

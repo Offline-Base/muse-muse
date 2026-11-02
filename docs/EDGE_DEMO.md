@@ -1,6 +1,6 @@
 # Edge demo: a product that keeps answering when the cloud is cut
 
-Status, Nov 2: built, not run. Everything here is off behind flags, and nothing in this file has run on a board yet. Say "is built so" for all of it until the runs in `docs/BUILD_LOG.md` say otherwise. The scenario is a simulated cold room: invented readings from a controller, an independent probe, the door, defrost, power and cloud status. It is not about any real freezer or store, and the product gives no food-safety advice.
+Status, Nov 2: built, and off behind flags. Nothing in this file has run on a board yet. The one-command laptop drill (section 0) ran on Nov 2 on the build machine against the bundled demo product, not a product Muse Code built: 4 of 4 simulated drills passed. Say "is built so" for all of it until the runs in `docs/BUILD_LOG.md` say otherwise. The scenario is a simulated cold room: invented readings from a controller, an independent probe, the door, defrost, power and cloud status. It is not about any real freezer or store, and the product gives no food-safety advice.
 
 ## The pieces
 
@@ -24,7 +24,22 @@ Each script documents its CLI, env and exit codes at the top of the file.
 
 Turning either platform flag on, even on a preview, is the owner's call (O4 in the plan).
 
-## 1. The laptop drill (no board, no model, no spend)
+## 0. One command, no keys (for judges)
+
+From the repo root, after `npm ci`:
+
+```bash
+npm run drill          # the four simulated outage drills, about 12 seconds
+npm run drill-bench    # the cold-room drill bench, made and scored with no model, about 2 seconds (needs python3)
+```
+
+`npm run drill` (`scripts/drill/run.mjs`) picks three free loopback ports and runs `template/scripts/edge-drill.mjs`, which starts the blackhole gateway and the fake edge server, then starts `scripts/drill/demo-product.ts`. That is a tiny Node server with one route, `POST /api/actions/status`, that asks for a verdict on the Simulated window in `eval/drill/demo-spoofed-controller.csv` through `respondJsonOrEdge()` from `template/lib/meta/edge.ts`, the same helper an edge build gets. Each drill's PASS or FAIL is printed, the JSON goes to `.data/drill/edge-drill.json` (git-ignored), and the exit code is 0 only when all four pass (1 for a failed drill, 2 for setup). `npm run drill -- --only 1,3` runs some of them. The cloud-hung drill waits out the helper's real 10 s cloud deadline. No key, `GATEWAY_URL` or model from your environment reaches the demo product.
+
+`npm run drill-bench` (`scripts/drill/bench.mjs`) runs `scripts/dev/drill-bench.py make` into `.data/drill-bench/` (900 training, 50 kept aside, 100 sealed held-out), checks that the sealed file is byte for byte `eval/drill/sealed.jsonl`, scores the right answers (they must get 100% with the hard rule passed), then scores `scripts/drill/always-normal-answers.jsonl`. Those are canned answers written by a script, not a model: "normal, trust the controller" for every window. They get 13% all right, and the scorer must flag all 12 hard-rule breaks. To score a real model, use `ask` and `score` as in `eval/drill/README.md`.
+
+Both show only the code paths on invented data. They say nothing about a real model, a real board or a real outage.
+
+## 1. The laptop drill on a built product (no board, no model, no spend)
 
 From a product's folder, after `npm run build`:
 

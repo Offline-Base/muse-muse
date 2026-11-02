@@ -165,6 +165,9 @@ describe("blob credentials", { skip: canMock ? false : "needs --experimental-tes
   });
 
   it("checkBuildAllowed: no_storage only when neither credential is set on Vercel", async () => {
+    // The build preflight (lib/__tests__/quota-preflight.test.ts) needs a Meta key and Sandbox credentials. Fakes.
+    process.env.MODEL_API_KEY = "test-value-not-a-key";
+    process.env.VERCEL_OIDC_TOKEN = "header.payload.signature-not-a-token";
     setCredentials({ vercel: true });
     assert.deepEqual(await quota.checkBuildAllowed(ADMIN), { ok: false, status: 503, error: "no_storage" });
     setCredentials({ storeId: FAKE_STORE_ID, vercel: true });

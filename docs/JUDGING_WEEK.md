@@ -28,12 +28,14 @@ Both are production changes, for the owner. A new value only reaches a new produ
 | `DAILY_SPEND_CAP_USD` | **100** | See below. The last value in the build log is 150, so confirm what's set |
 | `MAX_BUILDS_PER_USER_PER_DAY` | **25** | Every visitor shares one guest. The code default is 3 |
 
+Set `VERCEL_SCOPE` in your shell to the team slug first (it is in the project's Vercel dashboard URL). It is left out of the repo on purpose.
+
 ```bash
-printf '100' | vercel env add DAILY_SPEND_CAP_USD production --force --scope ethan-6436s-projects
-printf '25' | vercel env add MAX_BUILDS_PER_USER_PER_DAY production --force --scope ethan-6436s-projects
+printf '100' | vercel env add DAILY_SPEND_CAP_USD production --force --scope "$VERCEL_SCOPE"
+printf '25' | vercel env add MAX_BUILDS_PER_USER_PER_DAY production --force --scope "$VERCEL_SCOPE"
 ```
 
-Then merge anything to main, or `vercel redeploy https://muse-muse.vercel.app --scope ethan-6436s-projects`.
+Then merge anything to main, or `vercel redeploy https://muse-muse.vercel.app --scope "$VERCEL_SCOPE"`.
 
 **Emergency stop.** `DAILY_SPEND_CAP_USD=0` does not pause anything: `number()` in `lib/env.ts` ignores 0 and falls back to 100. Use `0.01`. The same goes for the build quota, where 0 means the default of 3.
 
@@ -42,10 +44,10 @@ Then merge anything to main, or `vercel redeploy https://muse-muse.vercel.app --
 `BUILDS_ON_CONTRIBUTOR` is the one switch. From a checkout linked to the project, this turns it off and rebuilds. Env changes on Vercel always need a new deployment, and `next.config.ts` inlines this one at build time, so the second half isn't optional:
 
 ```bash
-vercel env rm BUILDS_ON_CONTRIBUTOR production --yes --scope ethan-6436s-projects && vercel redeploy https://muse-muse.vercel.app --scope ethan-6436s-projects
+vercel env rm BUILDS_ON_CONTRIBUTOR production --yes --scope "$VERCEL_SCOPE" && vercel redeploy https://muse-muse.vercel.app --scope "$VERCEL_SCOPE"
 ```
 
-Back to Contributor: `printf '1' | vercel env add BUILDS_ON_CONTRIBUTOR production --force --scope ethan-6436s-projects && vercel redeploy https://muse-muse.vercel.app --scope ethan-6436s-projects`.
+Back to Contributor: `printf '1' | vercel env add BUILDS_ON_CONTRIBUTOR production --force --scope "$VERCEL_SCOPE" && vercel redeploy https://muse-muse.vercel.app --scope "$VERCEL_SCOPE"`.
 
 **Check first.** `BRIEF_MODEL`, `JUDGE_MODEL`, `BUILD_MODEL` and `COMPLEX_BUILD_MODEL` are set on production and take over once the switch is off (`model()` in `lib/env.ts`). Each must be `muse-wonder-1.0`, or that step won't move to Wonder.
 

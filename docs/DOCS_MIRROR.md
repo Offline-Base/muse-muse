@@ -1,6 +1,6 @@
 # Docs: a live mirror of Meta's Model API docs
 
-Ethan's ask (Oct 29, 2026): a **Docs** page in the sidebar that is a near clone of https://dev.meta.ai/docs, with **every page** mirrored, an **interactive way to try what each page lists** on the real API, and a **button to copy a custom prompt for your coding agent**. UI references: the four screenshots in `/private/tmp/claude-501/-Users-ethancastro/fe5f77e3-8ea1-43b7-b033-a8419e6a5382/images/` (`1.png` overview top, `2.png` code blocks and the callout, `3.png` the "Explore the docs" cards, `4.png` a long JSON block and a callout). Read them before touching the UI.
+Ethan's ask (Oct 29, 2026): a **Docs** page in the sidebar that is a near clone of https://dev.meta.ai/docs, with **every page** mirrored, an **interactive way to try what each page lists** on the real API, and a **button to copy a custom prompt for your coding agent**. UI references: the four screenshots in `<local scratchpad>/images/` (`1.png` overview top, `2.png` code blocks and the callout, `3.png` the "Explore the docs" cards, `4.png` a long JSON block and a callout). Read them before touching the UI.
 
 Branch `docs` in `~/muse-muse-builds`. This file is the contract every part is built against. If the code and this file disagree, fix one of them in the same change.
 
