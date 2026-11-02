@@ -30,8 +30,8 @@ import { allowedModelsFor } from "@/lib/pipeline/logic";
 import { BRIEF } from "@/lib/promote/__tests__/fixtures";
 
 const TEMPLATE = path.join(import.meta.dirname, "../../../../template");
-const ALL: MediaBrief = { why: "Turns comic panels into a short video and reads the captions aloud.", speech: true, video: true, music: true, samTiling: true };
-const VIDEO: MediaBrief = { why: "Turns four photos into a slideshow video.", speech: false, video: true, music: false, samTiling: false };
+const ALL: MediaBrief = { why: "Turns comic panels into a short video with a tune.", video: true, music: true, samTiling: true };
+const VIDEO: MediaBrief = { why: "Turns four photos into a slideshow video.", video: true, music: false, samTiling: false };
 const withMedia = (media: MediaBrief) => ({ ...BRIEF, media }) as Brief;
 const render = { inspoFiles: [], fixtures: [], maxModelSteps: 40 };
 const PART_FLAGS = ["MEDIA_SPEECH", "MEDIA_VIDEO", "MEDIA_MUSIC", "MEDIA_SAM_TILING"];
@@ -53,15 +53,16 @@ describe("the media brief block", () => {
   });
 
   it("is cleaned before zod: string booleans, missing parts false, parts whose flag is off false, and null with none left", () => {
-    assert.deepEqual(normalizeMediaBlock({ why: " A video ", video: "true", speech: "no" }, ["video", "speech"]), { why: "A video", video: true, speech: false, music: false, samTiling: false });
+    assert.deepEqual(normalizeMediaBlock({ why: " A video ", video: "true", speech: "no" }, ["video"]), { why: "A video", video: true, music: false, samTiling: false });
     assert.equal(normalizeMediaBlock({ ...ALL, video: true }, []), null);
-    assert.deepEqual(normalizeMediaBlock(ALL, ["music"]), { ...ALL, speech: false, video: false, samTiling: false });
-    assert.equal(normalizeMediaBlock({ why: "x", speech: false, video: false, music: false, samTiling: false }, ["speech"]), null);
+    assert.deepEqual(normalizeMediaBlock(ALL, ["music"]), { ...ALL, video: false, samTiling: false });
+    // An old brief's speech part is dropped: SpeechT5 isn't a Meta model (the Nov 2 ruling).
+    assert.equal(normalizeMediaBlock({ why: "x", speech: true, video: false, music: false, samTiling: false }, ["video", "music", "samTiling"]), null);
     assert.ok(((normalizeMediaBlock({ ...VIDEO, why: "x".repeat(300) }, ["video"]) as MediaBrief).why.length) <= 200);
     // Through normalizeRawBrief, the part flags come from the env.
     process.env.MEDIA_VIDEO = "1";
     const kept = normalizeRawBrief({ ...BRIEF, media: { ...ALL } }, []) as { media: MediaBrief };
-    assert.deepEqual(kept.media, { ...ALL, speech: false, music: false, samTiling: false });
+    assert.deepEqual(kept.media, { ...ALL, music: false, samTiling: false });
     delete process.env.MEDIA_VIDEO;
     assert.equal((normalizeRawBrief({ ...BRIEF, media: { ...ALL } }, []) as { media: unknown }).media, null);
   });
@@ -74,9 +75,10 @@ describe("the writer's rules, catalog and judge note", () => {
     assert.match(one, /media\.video: true when the product turns pictures into a short video/);
     assert.match(one, /Only media\.video can be true here/);
     assert.doesNotMatch(one, /media\.speech:/);
-    const all = mediaWriterRules(["speech", "video", "music", "samTiling"]).join("\n");
+    const all = mediaWriterRules(["video", "music", "samTiling"]).join("\n");
     assert.doesNotMatch(all, /can be true here/);
-    for (const p of ["speech", "video", "music", "samTiling"]) assert.match(all, new RegExp(`media\\.${p}: true when`));
+    assert.doesNotMatch(all, /media\.speech|SpeechT5|reads text aloud/);
+    for (const p of ["video", "music", "samTiling"]) assert.match(all, new RegExp(`media\\.${p}: true when`));
     process.env.MEDIA_MUSIC = "1";
     assert.match(capsWriterRules(["media"]), /media\.music: true when/);
     assert.doesNotMatch(capsWriterRules(["media"]), /media\.speech: true/);
@@ -85,9 +87,9 @@ describe("the writer's rules, catalog and judge note", () => {
   });
 
   it("gives a catalog block and a How products run name for the parts on", () => {
-    const c = mediaCatalog(["speech", "samTiling"]);
-    assert.equal(c.name, "media made in the browser (speech and SAM counts past 16 objects)");
-    assert.match(c.block, /SpeechT5, MIT license/);
+    const c = mediaCatalog(["video", "samTiling"]);
+    assert.equal(c.name, "media made in the browser (video from pictures and SAM counts past 16 objects)");
+    assert.doesNotMatch(c.block, /SpeechT5|speech/i);
     assert.match(c.block, /up to 16 overlapping tiles/);
     assert.doesNotMatch(c.block, /MIDI/);
     process.env.MEDIA_VIDEO = "1";
@@ -95,15 +97,18 @@ describe("the writer's rules, catalog and judge note", () => {
     assert.match(howProductsRun(["media", "runtime"], { gadgets: false })!.first, /add media made in the browser \(video from pictures\) and small Python functions/);
   });
 
-  it("replaces the speech and video workarounds only while their part is on", () => {
+  it("replaces the video workaround only while its part is on, and never offers a speech model", () => {
     assert.deepEqual(mediaWorkarounds([]), {});
-    assert.deepEqual(Object.keys(mediaWorkarounds(["speech", "video", "music"])), ["speech", "video"]);
+    assert.deepEqual(Object.keys(mediaWorkarounds(["video", "music"])), ["video"]);
     assert.equal(capsWorkaround([], "speech"), null);
+    // MEDIA_SPEECH turns nothing on: SpeechT5 isn't a Meta model (the Nov 2 ruling).
     process.env.MEDIA_SPEECH = "1";
-    assert.match(capsWorkaround(["media"], "speech")!, /open speech model in the page/);
+    assert.equal(capsWorkaround(["media"], "speech"), null);
     assert.equal(capsWorkaround(["media"], "video"), null);
+    assert.equal(capsWriterRules(["media"]), "");
     const summary = catalogSummary(["media"]);
-    assert.match(summary, /- Text-to-speech: the media service's open speech model/);
+    assert.match(summary, /- Text-to-speech: the browser's built-in speech synthesis\./);
+    assert.doesNotMatch(summary, /SpeechT5|open speech model/);
     assert.match(summary, /- Video generation: a short image sequence from muse-image-1.0\./);
     assert.doesNotMatch(catalogSummary([]), /media service/);
   });
@@ -116,9 +121,9 @@ describe("the writer's rules, catalog and judge note", () => {
 
   it("has no em dash anywhere a person or Muse Code reads", () => {
     const texts = [
-      mediaWriterRules(["speech", "video", "music", "samTiling"]).join("\n"),
-      mediaCatalog(["speech", "video", "music", "samTiling"]).block,
-      Object.values(mediaWorkarounds(["speech", "video"])).join("\n"),
+      mediaWriterRules(["video", "music", "samTiling"]).join("\n"),
+      mediaCatalog(["video", "music", "samTiling"]).block,
+      Object.values(mediaWorkarounds(["video"])).join("\n"),
       capsBuildLines(withMedia(ALL)).join("\n"),
       capsJudgeNotes(withMedia(ALL)),
     ];
@@ -129,11 +134,12 @@ describe("the writer's rules, catalog and judge note", () => {
 describe("the build prompt", () => {
   it("has a Media in the browser section with the parts line, the skill, each part's helpers, privacy, limits and smoke rules", () => {
     const lines = capsBuildLines(withMedia(ALL)).join("\n");
-    assert.match(lines, /^\n## Platform services\n\n### Media in the browser\n\nThe brief asks for speech read aloud in the browser, videos made from pictures, music as MIDI, counting past 16 objects with SAM: /);
+    assert.match(lines, /^\n## Platform services\n\n### Media in the browser\n\nThe brief asks for videos made from pictures, music as MIDI, counting past 16 objects with SAM: /);
+    assert.doesNotMatch(lines, /speak\(text\)|SpeechT5|expectSpeech|the speech model/);
+    assert.match(lines, /Every model the product calls is a Meta model through the Muse Muse gateway/);
     for (const want of [
-      "- Media parts: speech, video, music, samTiling",
+      "- Media parts: video, music, samTiling",
       ".agents/skills/muse-media/SKILL.md",
-      "lib/platform/speech.ts",
       "imagesToVideo(frames, { fps })",
       "toMidi(notes, { bpm })",
       "findAll(image, phrase, { tiles, segment })",
@@ -141,7 +147,6 @@ describe("the build prompt", () => {
       "videoChunks(file)",
       "expectVideoPlays",
       "expectMidi",
-      "expectSpeech",
       "expectTiles",
       "/notices/media.txt",
       "`template/AGENTS.md` says the build machine reaches only npm",
@@ -200,15 +205,18 @@ describe("the limits and the asset list", () => {
     assert.equal(+samVideoCostUsd([10]).toFixed(4), 0.01, "a clip is billed for at least 50 frames");
   });
 
-  it("lists every file the template's media helpers load, by name, size and sha256, each with a permissive license", async () => {
+  it("serves none of the speech helper's files, so no SpeechT5 model reaches a product's page", async () => {
     const assets = vettedAssets();
+    assert.deepEqual(assets, [], "the list is empty since the Nov 2 ruling");
     const T = (await import(pathToFileURL(path.join(TEMPLATE, "caps/media/files/lib/platform/media-assets.ts")).href)) as { MEDIA_ASSETS: Array<{ name: string; bytes: number; sha256: string }> };
-    for (const a of T.MEDIA_ASSETS) {
-      const listed = assets.find((x) => x.sha256 === a.sha256);
-      assert.ok(listed, a.name);
-      assert.deepEqual({ name: listed.name, bytes: listed.bytes, cap: listed.cap }, { name: a.name, bytes: a.bytes, cap: "media" });
+    for (const a of T.MEDIA_ASSETS) assert.ok(!assets.some((x) => x.sha256 === a.sha256), `${a.name} isn't served`);
+  });
+
+  it("refuses model weights in the list: every model a product calls is Meta's, through the gateway's API", () => {
+    const good = { name: "x/y.bin", cap: "media", bytes: 3, sha256: "a".repeat(64), contentType: "application/octet-stream", license: "MIT", source: "https://example.invalid/y.bin", mirror: null };
+    for (const name of ["speecht5_tts/encoder_model_quantized.onnx", "x/model.tflite", "x/model.safetensors", "x/m.gguf"]) {
+      assert.throws(() => vettedAssets({ version: 1, assets: [{ ...good, name }] }), /model weights/, name);
     }
-    for (const a of assets) assert.ok(["MIT", "Apache-2.0"].includes(a.license), `${a.name}: ${a.license}`);
   });
 
   it("refuses a list with a bad entry", () => {

@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { basetenAdapter, HF_SECRET, trussConfig } from "@/lib/train/host/baseten";
 import { scrubSecrets, type CliRunner } from "@/lib/train/host/cli-runner";
-import { fireworksAdapter } from "@/lib/train/host/fireworks";
+import { fireworksAdapter, LLAMA_HOST_REFUSAL } from "@/lib/train/host/fireworks";
+import { hostFacts } from "@/lib/train/host/facts";
+import type { TrainJobRow } from "@/lib/train/logic";
 import { lambdaAdapter } from "@/lib/train/host/lambda";
 import { modalAdapter, modalApp } from "@/lib/train/host/modal";
 import { openAiChat } from "@/lib/train/host/openai-chat";
@@ -86,6 +88,14 @@ describe("fireworks", () => {
     assert.match(a.cantServe(facts({ sparkOpen: false, rank: 128 }))!, /rank 128/);
     assert.match(a.cantServe(facts({ sparkOpen: false, hubCommit: null }))!, /Publish/);
     assert.equal(a.cantServe(plain), null);
+  });
+  it("refuses a Llama adapter, even one on Llama 3.2 3B with a pinned base", () => {
+    const llama = facts({ sparkOpen: false, family: "llama3", servingBase: { repo: "unsloth/Llama-3.2-3B-Instruct-bnb-4bit", revision: "9".repeat(40) } });
+    assert.equal(adapter(fetch).cantServe(llama), LLAMA_HOST_REFUSAL);
+  });
+  it("hostFacts refuses a Llama adapter for every host", () => {
+    const job = { id: "j", recipe: "glimmer-lora", status: "succeeded", params: { baseModel: "unsloth/Llama-3.2-3B-Instruct-bnb-4bit" }, evalSummary: null, hub: null } as unknown as TrainJobRow;
+    assert.match(hostFacts(job, null).problem ?? "", /trained on Llama, and only Muse Glimmer models are hosted here/);
   });
   it("names its missing keys only", () => {
     assert.deepEqual(fireworksAdapter({ apiKey: () => undefined, accountId: () => undefined, source }).missingKeys(), ["FIREWORKS_API_KEY", "FIREWORKS_ACCOUNT_ID"]);
