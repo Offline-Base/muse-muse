@@ -7,7 +7,7 @@
  * appear in a step's return value (step results are persisted in the workflow's event log).
  */
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, gte, inArray, lte, notInArray, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, ne, notInArray, sql } from "drizzle-orm";
 import { FatalError, getStepMetadata } from "workflow";
 import type { Brief } from "@/lib/brief/schema";
 import { recentFrom, type RecentDirection } from "@/lib/range/direction";
@@ -16,7 +16,7 @@ import { goalObjective, renderBuildPrompt, renderFixPrompt, renderRefinePrompt }
 import { StructuredOutputError } from "@/lib/brief/structured";
 import { prepareFixtures, writeBrief, type PreparedFixture } from "@/lib/brief/write";
 import { db, schema } from "@/lib/db/client";
-import { env } from "@/lib/env";
+import { buildTestModel, contributorBuildsOn, env } from "@/lib/env";
 import { addBuildCost, emit, setBuildStatus } from "@/lib/events";
 import { buildTokenBudgetFor } from "@/lib/gateway/policy";
 import { mintToken, revokeLiveTokensExcept, revokeTokens } from "@/lib/gateway/tokens";
@@ -36,7 +36,8 @@ import {
   nextFreeSlug,
   normalizeSlug,
   pickBuildModel,
-  refineBuildModel,
+  refineRoute,
+  contributorRuntimeMarkers,
   SLUG_MAX,
   type JudgeCall,
 } from "@/lib/pipeline/logic";
@@ -1388,12 +1389,16 @@ export async function startDeployStep(input: {
   const product = await loadProduct(input.productId);
   const brief = build.brief ?? (await latestWorkingBrief(input.productId));
   const allowed = brief ? allowedModelsFor(brief) : await liveModels(input.productId);
+  // Under BUILDS_ON_CONTRIBUTOR, if nothing personal is in it and its code shows the notice. Else it stays on Wonder.
+  const flagOn = contributorBuildsOn();
+  const runtime = contributorRuntimeMarkers(brief, flagOn, flagOn && (await sandbox.productShowsContributorNotice(input.sandboxName).catch(() => false)));
+  if (flagOn && brief && !runtime.length) console.warn(`Product ${input.productId} stays on Muse Wonder when live: it holds something personal or doesn't show the notice.`);
   const live = await mintToken({
     productId: input.productId,
     scope: "live",
     // A product with caps: its musemuse.json may narrow them, never widen them (docs/CAPABILITIES.md, 2.3). Without
     // caps the manifest isn't read here, as before.
-    allowedModels: brief && briefCaps(brief).length ? narrowCapMarkers(allowed, await sandbox.readManifest(input.sandboxName).catch(() => null)) : allowed,
+    allowedModels: brief && briefCaps(brief).length ? [...narrowCapMarkers(allowed, await sandbox.readManifest(input.sandboxName).catch(() => null)), ...runtime] : [...allowed, ...runtime],
     // Room for about 20 runs a day at the brief's estimate (Muse Wonder runs cost more than Spark's did).
     dailyBudgetUsd: liveDailyBudgetFor(brief),
   });
@@ -1401,7 +1406,7 @@ export async function startDeployStep(input: {
     sandboxName: input.sandboxName,
     slug: product.slug,
     productName: product.name,
-    env: { GATEWAY_URL: env.gatewayUrl, PRODUCT_TOKEN: live.token, ...(brief ? capDeployEnv(brief, live.token) : {}) },
+    env: { GATEWAY_URL: env.gatewayUrl, PRODUCT_TOKEN: live.token, ...(flagOn ? { MUSE_CONTRIBUTOR_NOTICE: runtime.length ? "1" : "0" } : {}), ...(brief ? capDeployEnv(brief, live.token) : {}) },
     projectId: product.vercelProjectId,
     onFiles: (files) => captureVersion({ buildId: input.buildId, productId: input.productId, files, restoredFrom: input.restoredFrom ?? null }),
   }).catch(async (err: unknown) => {
@@ -1533,6 +1538,8 @@ export interface RefineContext {
   sandboxName: string;
   sessionId: string;
   model: BuildModel;
+  /** A new Muse Code session on Contributor (refineRoute), so its prompt says to read the product first. */
+  freshSession: boolean;
   /** 1 for the product's first refinement, 2 for the next, and so on. */
   refineIndex: number;
   /** The engine's round plan, only with ENGINE_ROUND_SCALING. Refinements have no milestones. */
@@ -1570,7 +1577,7 @@ refineCheckStep.maxRetries = stepRetries("brief");
  * Loads what a refinement resumes: the product's sandbox, Muse Code session and build model. Also copies the product's
  * brief onto the refine row, so the judge, the product page and the gallery always have one for the shipped build.
  */
-export async function loadRefineStep(buildId: string): Promise<RefineContext> {
+export async function loadRefineStep(buildId: string, opts: { restore?: boolean } = {}): Promise<RefineContext> {
   "use step";
   const build = await loadBuild(buildId);
   if (build.kind !== "refine" || !build.productId) throw new FatalError("This build is not a refinement.");
@@ -1594,8 +1601,18 @@ export async function loadRefineStep(buildId: string): Promise<RefineContext> {
     .where(and(eq(schema.builds.productId, product.id), eq(schema.builds.kind, "build")))
     .orderBy(desc(schema.builds.startedAt))
     .limit(1);
-  // The session resumes on the model that started it, never on today's default: a Spark session never goes to Wonder.
-  const model = refineBuildModel(previous?.buildModel);
+  // The product's session resumes on the model it ran on, never on today's default: a Spark session never goes to Wonder.
+  // That's the newest other row holding that session, since a change may have moved it. buildTestModel() moves a change
+  // to Contributor in a new session. A restore runs no model and keeps the session it has.
+  const [sessionRow] = await db()
+    .select({ buildModel: schema.builds.buildModel })
+    .from(schema.builds)
+    .where(and(eq(schema.builds.productId, product.id), eq(schema.builds.museSessionId, product.museSessionId), ne(schema.builds.id, buildId)))
+    .orderBy(desc(schema.builds.startedAt))
+    .limit(1);
+  const { model, freshSession } = refineRoute(sessionRow?.buildModel ?? previous?.buildModel, opts.restore ? null : buildTestModel());
+  // A retried step keeps the new session it already chose.
+  const sessionId = freshSession ? (build.museSessionId && build.museSessionId !== product.museSessionId ? build.museSessionId : newSessionId()) : product.museSessionId;
   // Wave 3, unit 3: the row gets the brief as stored, every cap block kept; the plan uses the working copy (2.4a).
   const stored = build.storedBrief ?? (await latestBrief(product.id));
   const brief = stored ? capsForBuild(stored, { kind: "refine" }).brief : null;
@@ -1603,7 +1620,7 @@ export async function loadRefineStep(buildId: string): Promise<RefineContext> {
     .update(schema.builds)
     .set({
       sandboxName: product.sandboxName,
-      museSessionId: product.museSessionId,
+      museSessionId: sessionId,
       buildModel: model,
       ...(stored ? { brief: stored } : {}),
       // A change's tests see the same tool samples as the first build's.
@@ -1616,8 +1633,9 @@ export async function loadRefineStep(buildId: string): Promise<RefineContext> {
     name: product.name,
     tagline: product.tagline,
     sandboxName: product.sandboxName,
-    sessionId: product.museSessionId,
+    sessionId,
     model,
+    freshSession,
     refineIndex: Math.max(1, Number(n)),
     ...(plan ? { plan } : {}),
   };
@@ -1645,6 +1663,7 @@ export async function reopenStep(input: {
   productId: string;
   sandboxName: string;
   refineIndex: number;
+  freshSession?: boolean;
 }): Promise<{ promptFile: string; images: string[] }> {
   "use step";
   const build = await loadBuild(input.buildId);
@@ -1681,7 +1700,7 @@ export async function reopenStep(input: {
   });
   const prompt = renderRefinePrompt({
     brief,
-    message: `${await restoredNote(input.productId).catch(() => "")}${build.message ?? inspiration.note ?? ""}`,
+    message: `${input.freshSession ? "Note: this is a new session, so you have no memory of this product. Read AGENTS.md, BUILD_NOTES.md and the code before you edit.\n\n" : ""}${await restoredNote(input.productId).catch(() => "")}${build.message ?? inspiration.note ?? ""}`,
     newReferences: newReferences.map((r) => ({
       fileName: r.fileName,
       describes: `${/^[aeiou]/.test(r.kind) ? "An" : "A"} ${r.kind === "pdf" ? "PDF" : r.kind} the user attached with this change (inspo/${r.fileName}).`,

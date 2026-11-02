@@ -92,5 +92,29 @@
       "runtime",
       "trust"
     ]
+  },
+  "snap_Dy4CjpILCMOBnaJ28Skzswys7CJ4": {
+    "createdAt": "2026-11-02T00:20:53.065Z",
+    "templateHash": "dc42929a44e0",
+    "capOverlays": [
+      "code",
+      "connect",
+      "core",
+      "data",
+      "extension",
+      "files",
+      "games",
+      "games-babylon",
+      "games-phaser",
+      "gpu",
+      "hardware",
+      "jobs",
+      "live",
+      "media",
+      "musecode",
+      "platform",
+      "runtime",
+      "trust"
+    ]
   }
 }

@@ -6,15 +6,16 @@ import type { Brief } from "@/lib/brief/schema";
 import type { BuildModel } from "@/lib/sandbox/muse";
 import type { Reference } from "@/lib/types";
 import { SPARK_STANDIN, withoutRetiredSpark } from "@/lib/meta/spark";
-import { AGENT_MARKER, isToolId, toolMarker } from "@/lib/tools/ids";
+import { AGENT_MARKER, isToolId, PERSONAL_TOOL_IDS, toolMarker } from "@/lib/tools/ids";
 import { briefCaps } from "@/lib/caps/brief-fields";
+import { connectBlock } from "@/lib/caps/connect/brief";
 import { hardwareBlock } from "@/lib/caps/hardware/brief";
 import { BOARD_TOOLS_MARKER, DRIVE_TOOLS_MARKER } from "@/lib/caps/hardware/limits";
 import { LIVE_CAPTION_MODEL, liveBlock } from "@/lib/caps/live/brief";
 import { gpuAllowedModels } from "@/lib/caps/gpu/marker";
 import { capMarker } from "@/lib/caps/ids";
 import { env } from "@/lib/env";
-import { AGENT_LONG_MARKER, liveTokenDailyBudgetFor } from "@/lib/gateway/policy";
+import { AGENT_LONG_MARKER, CONTRIBUTOR_RUNTIME_MARKER, liveTokenDailyBudgetFor } from "@/lib/gateway/policy";
 import { isLongRunBrief, pickedRecipes } from "@/lib/recipes/registry";
 
 /** BriefSchema caps slugs at 40 characters. */
@@ -130,6 +131,32 @@ export function allowedModelsFor(brief: Pick<Brief, "capabilities" | "agent" | "
   return [...new Set<string>([...models, ...recipeModels, ...live, ...gpu, ...board, ...drive, ...(brief.agent ? [AGENT_MARKER] : []), ...long, ...tools]), ...briefCaps(brief).map(capMarker)];
 }
 
+/**
+ * True when a live product stays on Muse Wonder under BUILDS_ON_CONTRIBUTOR: anything with a person's own connected accounts
+ * or personal tools, since Meta's terms (6.2) bar personal information on Contributor and Meta may train on it. That
+ * means an agent's personal tools or owner connection, the owner's keys and sends through connect, a person's drive or
+ * board, and a gadget's camera and microphone. Public web search, public APIs and a product's own chat follow the flag.
+ */
+export function runtimeStaysOffContributor(brief: Pick<Brief, "capabilities" | "agent">): boolean {
+  const personalTools = brief.agent ? brief.agent.connections === "owner" || brief.agent.tools.some((t) => (PERSONAL_TOOL_IDS as readonly string[]).includes(t.id)) : false;
+  const connect = connectBlock(brief);
+  const hardware = hardwareBlock(brief);
+  return (
+    personalTools ||
+    Boolean(connect && (connect.keys.length || connect.sends.length)) ||
+    Boolean(hardware && (hardware.boardTools || hardware.driveExport)) ||
+    brief.capabilities.some((c) => c.model === "muse-gadget")
+  );
+}
+
+/**
+ * The marker a live token gets: only with the flag on, a brief to check, nothing personal in it, and a product whose own
+ * code shows the notice (an older snapshot's, or one a build rewrote, doesn't, so it stays on Muse Wonder).
+ */
+export function contributorRuntimeMarkers(brief: Pick<Brief, "capabilities" | "agent"> | null, flagOn: boolean, showsNotice: boolean): string[] {
+  return flagOn && showsNotice && brief && !runtimeStaysOffContributor(brief) ? [CONTRIBUTOR_RUNTIME_MARKER] : [];
+}
+
 /** A live product's daily budget: AGENT_LONG_DAILY_USD for a long-run recipe, since one full run costs dollars, otherwise as its estimate says. */
 export function liveDailyBudgetFor(brief: Pick<Brief, "estimatedCostPerRunUsd" | "recipes"> | null | undefined): number {
   return isLongRunBrief(brief) ? env.agentLongDailyUsd : liveTokenDailyBudgetFor(brief?.estimatedCostPerRunUsd);
@@ -163,6 +190,17 @@ export function pickBuildModel(
  */
 export function refineBuildModel(previous: string | null | undefined): BuildModel {
   return asBuildModel(previous, SPARK_STANDIN);
+}
+
+/**
+ * The model and session of a change. With buildTestModel() on, a change to a product whose session ran on another model
+ * moves to Contributor in a new session, since a session's reasoning records belong to its model and can't carry over.
+ * The new session has no memory of the product, so its prompt tells it to read the code first.
+ */
+export function refineRoute(sessionModel: string | null | undefined, test: string | null): { model: BuildModel; freshSession: boolean } {
+  const model = refineBuildModel(sessionModel);
+  if (test !== SPARK_STANDIN || model === SPARK_STANDIN) return { model, freshSession: false };
+  return { model: SPARK_STANDIN, freshSession: true };
 }
 
 /** Paths inside the product (inspo/<file>) of the image references, for `muse exec --image`. */

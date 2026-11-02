@@ -3,7 +3,7 @@
  * live in tg-cap-int's lib/trust/tiers.ts (builderTier, tierMayUseBuilderCaps) with users.banned_at (0018_trust) and
  * TRUST_SIGNED_IN_CAPS / TRUST_REPORTS in lib/env.ts, none of which is on tuned-model-options yet. Until they merge,
  * this is the fallback: nobody counts as a signed-in builder (only admins train as their own id, and caller.ts finds
- * them without this file) and nobody is banned, because there is no ban to read.
+ * them without this file). The ban is real now (isBanned).
  *
  * When tg-cap-int lands, swap the bodies for (and nothing else in lib/train/public changes):
  *   signedInCapsOn  -> env.trustSignedInCaps
@@ -15,6 +15,8 @@
  *   isBanned        -> env.trustReports && Boolean(row?.bannedAt), one read by id (lib/auth.ts bannedNow)
  */
 
+import { eq } from "drizzle-orm";
+import { env } from "@/lib/env";
 import { isReservedEmail } from "@/lib/train/public/reserved";
 
 export type TrainerTier = "admin" | "builder" | "guest" | "banned";
@@ -38,7 +40,10 @@ export function mayTrainAsSelf(tier: TrainerTier): boolean {
   return tier === "admin" || tier === "builder";
 }
 
-/** True when an admin banned this account. Fallback: there is no ban column yet, so nobody is. */
-export async function isBanned(_userId: string): Promise<boolean> {
-  return false;
+/** True when an admin banned this account: users.banned_at, read only while TRUST_REPORTS is on, as lib/auth.ts does. */
+export async function isBanned(userId: string): Promise<boolean> {
+  if (!env.trustReports) return false;
+  const { db, schema } = await import("@/lib/db/client");
+  const [row] = await db().select({ bannedAt: schema.users.bannedAt }).from(schema.users).where(eq(schema.users.id, userId)).limit(1);
+  return Boolean(row?.bannedAt);
 }

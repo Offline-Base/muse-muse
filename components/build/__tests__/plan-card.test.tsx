@@ -1,7 +1,6 @@
 /**
- * The plan card in the build room's conversation: the Muse mascot for the build's state at the top left, and the whole
- * plan beside it and on under it (owner, Oct 31): its name and tagline, then every part of the brief, once in the
- * conversation. The steps panel's "Read the brief" still folds the same brief.
+ * The plan card in the build room's conversation: the Muse mascot for the build's state at the top left, and a short
+ * plan beside it (owner, Nov 1), its name, tagline and at most four lines, with every part of the brief folded under it. The steps panel's "Read the brief" still folds the same brief.
  *   npx tsx --test --experimental-test-module-mocks components/build/__tests__/plan-card.test.tsx
  */
 import assert from "node:assert/strict";
@@ -263,7 +262,25 @@ describe("the full plan", () => {
     assert.equal(count(html, "Feeder Count"), 1);
     assert.equal(count(html, "Counts and outlines the birds"), 1);
     assert.doesNotMatch(html, /class="lead"/);
-    assert.match(html, /<div class="plan-card-body"><div class="rich">/, "the steps panel's own brief, not a copy of it");
+    assert.match(html, /<details class="plan-card-full"><summary>See the full plan<\/summary><div class="rich">/, "the steps panel's own brief, folded");
+  });
+
+  it("shows at most four short lines above the fold, and leaves the brief itself whole", () => {
+    const long = { ...yes, primaryFlow: ["Paste a long description of the harbor schedule, the boats, the tide tables and everything else it should know about. Then wait.", "Two", "Three", "Four", "Five", "Six"] };
+    const before = JSON.stringify(long);
+    const view = plan.planViewFromBrief(long);
+    const lines = view.sections.flatMap((s) => [...(s.steps ?? []), ...(s.text ? [s.text] : [])]);
+    assert.equal(lines.length, plan.PLAN_LINES);
+    assert.ok(lines.every((l) => l.length <= 93), lines.join("|"));
+    assert.equal(JSON.stringify(long), before);
+    const html = render(PlanCard, { brief: long, art: "present", running: false });
+    assert.ok(html.indexOf("<summary>") < html.indexOf("Six"), "the rest folds");
+    assert.ok(!html.slice(0, html.indexOf("<summary>")).includes("Who it&#x27;s for"));
+  });
+
+  it("gives its last line to what it won't do when it can build only part", () => {
+    const view = plan.planViewFromBrief({ ...yes, verdict: "partly", primaryFlow: ["A", "B", "C", "D", "E"], limits: ["No payments."] });
+    assert.deepEqual(view.sections, [{ steps: ["A", "B", "C"] }, { text: "Won't do: No payments" }]);
   });
 
   it("says when an input is optional", () => {

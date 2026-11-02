@@ -6,7 +6,7 @@ import { platformBlock } from "@/lib/caps/platform/brief";
 import type { PlatformDeps } from "@/lib/caps/platform/handler";
 import { capProduct, capToken } from "@/lib/caps/store";
 import { db, schema } from "@/lib/db/client";
-import { DEFAULT_PLATFORM_MODEL, env, testModel } from "@/lib/env";
+import { buildTestModel, DEFAULT_PLATFORM_MODEL, env } from "@/lib/env";
 import { adjustCounter, counterValue, hitRateLimits, reserveCounter } from "@/lib/gateway/store";
 import { hashToken } from "@/lib/gateway/tokens";
 import { buildProduct } from "@/lib/pipeline/workflow";
@@ -35,7 +35,7 @@ export function platformDeps(): PlatformDeps {
     adjustCounter,
     counterValue,
     sessions: museCodeDeps,
-    keyModel: () => testModel() ?? DEFAULT_PLATFORM_MODEL,
+    keyModel: () => buildTestModel() ?? DEFAULT_PLATFORM_MODEL,
     briefPowers: async (token) => {
       const [row] = await db().select({ brief: schema.builds.brief }).from(schema.builds).where(eq(schema.builds.productId, token.productId)).orderBy(schema.builds.startedAt).limit(1);
       return platformBlock(row?.brief);

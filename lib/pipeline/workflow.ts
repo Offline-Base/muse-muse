@@ -819,7 +819,7 @@ export async function refineProduct(input: BuildProductInput): Promise<BuildProd
     const refine = await loadRefineStep(buildId);
     productId = refine.productId;
     sandboxName = refine.sandboxName;
-    const reopened = await reopenStep({ buildId, productId, sandboxName, refineIndex: refine.refineIndex });
+    const reopened = await reopenStep({ buildId, productId, sandboxName, refineIndex: refine.refineIndex, freshSession: refine.freshSession });
     const ctx: Ctx = {
       buildId,
       productId,
@@ -891,7 +891,7 @@ export async function restoreProduct(input: BuildProductInput & { fromBuildId: s
     if (TERMINAL_STATUSES.includes(head.status)) return { status: head.status };
     track.stage = "provision";
     await setStatusStep(buildId, "provisioning", { step: "provision" });
-    const refine = await loadRefineStep(buildId);
+    const refine = await loadRefineStep(buildId, { restore: true });
     productId = refine.productId;
     sandboxName = refine.sandboxName;
     await reopenStep({ buildId, productId, sandboxName, refineIndex: refine.refineIndex });
