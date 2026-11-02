@@ -3,6 +3,7 @@ import { briefCaps } from "@/lib/caps/brief-fields";
 import { CONNECT_RENDER } from "@/lib/caps/connect/render";
 import { CODE_RENDER } from "@/lib/caps/code/render";
 import { DATA_RENDER } from "@/lib/caps/data/render";
+import { fleetBuildLines, fleetRefineLines } from "@/lib/caps/fleet/render";
 import { gpuBuildLines, gpuRefineLines } from "@/lib/caps/gpu/render";
 import type { CapId } from "@/lib/caps/ids";
 import { EXTENSION_RENDER } from "@/lib/caps/extension/render";
@@ -53,13 +54,15 @@ export function capsBuildLines(brief: Brief): string[] {
   const on = rendered(brief);
   // Wave 3, unit 11: GPU isn't a cap, so its section has no block. Nothing with GPU_GLIMMER_SHARED off.
   const gpu = gpuBuildLines(brief);
-  if (!on.length && !gpu.length) return [];
-  return ["", "## Platform services", ...on.flatMap(([, e]) => ["", `### ${e.title}`, "", ...e.build(brief)]), ...gpu];
+  // The Jetson fleet isn't a cap either (section 17b). Nothing with FLEET_PRODUCTS off.
+  const fleet = fleetBuildLines(brief);
+  if (!on.length && !gpu.length && !fleet.length) return [];
+  return ["", "## Platform services", ...on.flatMap(([, e]) => ["", `### ${e.title}`, "", ...e.build(brief)]), ...gpu, ...fleet];
 }
 
 /** What a change request adds for the product's caps. Empty for a product with none. */
 export function capsRefineLines(brief: Brief): string[] {
-  return [...rendered(brief).flatMap(([, e]) => e.refine?.(brief) ?? []), ...gpuRefineLines(brief)];
+  return [...rendered(brief).flatMap(([, e]) => e.refine?.(brief) ?? []), ...gpuRefineLines(brief), ...fleetRefineLines(brief)];
 }
 
 /** The product page's brief markdown, after the Agent section. Empty for a brief with no cap blocks. */

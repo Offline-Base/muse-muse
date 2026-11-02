@@ -1,3 +1,4 @@
+import { FLEET_CATALOG_LINE } from "@/lib/caps/fleet/render";
 import { GLIMMER_CATALOG_LINE } from "@/lib/caps/gpu/catalog";
 import catalog from "@/catalog/meta-models.json";
 import { PRICES } from "@/lib/meta/pricing";
@@ -182,7 +183,9 @@ export function catalogSummary(caps: readonly CapId[] = env.enabledCaps): string
   // Wave 3, unit 9: the code cap's block names only its parts that are on, so they are part of the key while code is on.
   // Wave 3, unit 13: the hardware cap's block names board tools only while they are on.
   const gpuOn = env.gpuGlimmerForBuilds;
-  const key = `${gadgets}|${agents}|${personal}|${caps.join(",")}${gpuOn ? "|gpu" : ""}${caps.includes("data") ? `|${env.dataSignIn}` : ""}${caps.includes("live") ? `|live:${env.liveUpdates}` : ""}${caps.includes("media") ? `|${env.mediaParts.join(",")}` : ""}${connectKey}${caps.includes("code") ? `|code:${codePartsKey()}` : ""}${caps.includes("hardware") ? `|board:${env.hardwareBoardToolsUsable}` : ""}${caps.includes("hardware") && env.driveToolsUsable ? "|drive" : ""}${recipesCatalogLines(caps).length ? `|recipes:${availableRecipes(caps).map((r) => r.id).join(",")}` : ""}`;
+  // The Jetson fleet (docs/CAPABILITIES.md, 17b): its line and the key's part only with FLEET_PRODUCTS on.
+  const fleetOn = env.fleetProductsForBuilds;
+  const key = `${gadgets}|${agents}|${personal}|${caps.join(",")}${gpuOn ? "|gpu" : ""}${fleetOn ? "|fleet" : ""}${caps.includes("data") ? `|${env.dataSignIn}` : ""}${caps.includes("live") ? `|live:${env.liveUpdates}` : ""}${caps.includes("media") ? `|${env.mediaParts.join(",")}` : ""}${connectKey}${caps.includes("code") ? `|code:${codePartsKey()}` : ""}${caps.includes("hardware") ? `|board:${env.hardwareBoardToolsUsable}` : ""}${caps.includes("hardware") && env.driveToolsUsable ? "|drive" : ""}${recipesCatalogLines(caps).length ? `|recipes:${availableRecipes(caps).map((r) => r.id).join(",")}` : ""}`;
   // A product's own chatbot needs a snapshot with lib/meta/chat.ts. Both switches below come with one, so with them off the text is today's.
   const chatOffered = contributorBuildsOn() || caps.includes("platform");
   const hit = cached.get(`${key}${chatOffered ? "|chat" : ""}${switchOn ? "|switch" : ""}`);
@@ -200,6 +203,7 @@ export function catalogSummary(caps: readonly CapId[] = env.enabledCaps): string
     // Wave 3, unit 11 (docs/CAPABILITIES.md, section 17): the shared endpoint's line while it's on.
     gpuOn ? GLIMMER_CATALOG_LINE : "- muse-glimmer: open-weights model for local or offline use. Not on the Model API: it needs an endpoint someone hosts. Pick it only when the muse asks for local or offline use.",
     ...(gadgets ? ["- muse-gadget: a physical board connected to Muse Muse, with a camera and a microphone. The product can take a photo or record a few seconds of sound on the board, then pass it to a model, for example a counter that photographs a shelf. Pick it only when the muse asks for hardware: a device that watches, listens or reacts in the real world. It isn't a model, so pair it with the model that reads what it captures. A product must still work when no board is connected, with a clear message and a way to upload instead."] : []),
+    ...(fleetOn ? [FLEET_CATALOG_LINE] : []),
     "",
     "Not available on the Model API yet, with the workaround a product uses instead:",
     // Wave 3, unit 8 (docs/CAPABILITIES.md, section 14): the media cap replaces these two while its part is on.
