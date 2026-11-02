@@ -2267,3 +2267,17 @@ Tried at 01:28 UTC on Nov 2 (still Nov 1 here) with curl keeping cookies, signed
 - **Finding, for the owner:** at 3 new visitors per IP per day, a shared network such as a venue's Wi-Fi stops the fourth new guest before they can get a plan. "Keep the same browser" doesn't help someone who has no cookie yet. Not fixed here.
 - **For the rerun:** the guest's own view takes out instance id, IP, logs and errors (`visitorRunView`), so proving callbacks and the GPU's end needs what that view keeps plus an owner's check of the job row or Lambda console.
 - **Spend:** $0. No production changes.
+
+
+## Nov 1: Hugging Face inventory finished, partial upload, repos found public (branch tg-hub-inventory)
+
+Owner asked to upload every dataset and fine-tuned model to private repos, then "dont retrain anything". Full list in docs/HUB_INVENTORY.md.
+
+- **Uploaded, 25.51 GB in 18 new repos.** 3 moss datasets, 8 Knowledge-family or lab adapters plus 2 moss adapters, 1 LoRA GGUF, 2 IQ1_S GGUFs; 2 repos hold only cards and licenses. Created private, confirmed at creation.
+- **Found public at 02:08:55 UTC.** The upload's check stopped on it. All OfflineBase repos, including the new datasets, answer without a token with `private: false`. This job made no visibility call. Who did isn't established. Not changed back, as instructed. Owner decision.
+- **Meta terms 10.1(ix) hold arrived mid-run.** Moss data and tunes already up stay in place for the owner; nothing more of them went up. Llama GGUF not uploaded.
+- **Decision:** Exhibit C question on hosted Spark Open flagged, Knowledge family not held for it.
+- **Not uploaded:** 7 passed GGUFs (stopped by the visibility change), larger GGUFs and merges (over the 100 GB private budget), everything naming real people.
+- **Recheck:** sizes match, text and JSON scan 0 hits for tokens, keys, IPs and local paths. Cards still say "private", which is now false.
+- **Decision:** merge of origin/main kept both sides of the BUILD_LOG conflict.
+- **Spend:** Lambda device-loop-inv-1, 01:32:09Z to 02:10:07Z, about $0.82 of $25, list price. Terminated. No training, merging or quantizing.
