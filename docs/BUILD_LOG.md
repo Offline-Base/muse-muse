@@ -2011,3 +2011,14 @@ All made-up data. Code: tg-caps-ready fa692f3e, builder snapshot snap_XXT4qDZEWL
 - Spend: device-loop-tuned-1 23:19:26Z to 00:40:43Z, 1.36 hours at $1.29, about $1.75 by list price, not read from an invoice. Limit $15. Terminated, and the instance list came back empty.
 - Tests: tsc clean; quantize 65, quant-targets 9, gguf-cards 26, story 11, all pass (fakes).
 - Not run: launch through the platform, https callbacks, a Hub publish, a real board, a judge on the IQ1_S answers, any Glimmer on the laptop, the full suite, next build. The GGUF files were not kept: they ended with the instance, and a rerun takes about 30 minutes.
+
+## Nov 1, evening: review of the one-bit run on adapter 1898e46c (tg-device-loop-int)
+
+Read-only recheck against the saved outputs, the local adapter and data, and the run's session records. No GPU launched, no model loaded, spend $0.
+
+- Holds: recipe, KL, file sizes, stage minutes, 7 stand-in runs (VmHWM, speed, first token, no OOM kill) all trace to `docs/log/quant-run-tuned-2026-11-01`. Adapter bytes rehashed here: 419,293,392, 927f00f6..., same as the hash recorded on the GPU. Config base and revision equal `LAB_BASE_MODEL` and `MODEL_REVISION`. train.json rehashed: 900 rows, bc6431c0..., and 0 of the 40 held-out prompts appear in it. `merge_base_revision` is only set after `base_shards_problem` passes. A Lambda instance list came back empty, and A10 is 129 cents an hour.
+- Does not hold: the report's "PR #30 was not merged". The owner squash merged it at 23:19:32Z as 13e99193, from a6a2c890. The run's commits fe5a069d and 851df04f came after and are in no PR, so main still has `LOW_BIT_KL_MAX` null and says no tuned one-bit Glimmer has passed. This branch does not reach main until someone replays them.
+- Fixed: `WhereItRuns` said "on that model it recalled 9%", which read as the test tune once `fit` stopped naming the 2026-knowledge model. Stale comment on `quantKlLimit`. Removed the unused `firstTokenSecondsX86`. `fit` and the /offline notes now say the 30 of 30 was under the tuned chat template, since stock gave 1 of 5.
+- Flagged, not changed: `quantChannelText` and the job summary say "a stock app's prompt" even when tuned.jinja was used, as here. That is older wording on a path that runs with flags off.
+- Not checked: the reader's counts of slips and which answers were read are one reader's judgment.
+- Tests: touched code only, with fakes: quantize 65, quant-targets 9, gguf-cards 26, story 11, tune-room and local-files with module mocks, and tsc clean. Full suite and next build not run.
