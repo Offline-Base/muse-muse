@@ -1,104 +1,1024 @@
 {
-  "$comment": "Meta's developer videos as muses for rebuilds on current Muse models. First page of https://dev.meta.ai/resources/videos/ checked Oct 26, 2026. A Load more button may hide more. Rebuilds link to Meta's videos and never copy them.",
+  "$comment": "Meta's developer lessons for the Learn section (/learn). All 30 videos listed in the data behind https://dev.meta.ai/resources/videos/ were audited on Nov 2, 2026 with read-only GETs: 6 show before the Load more button and the rest sit behind it. Each entry keeps what the lesson teaches, the audit's verdict on Muse Muse's version today, and the improved plan, which is planned until it runs. autoBuild false keeps a lesson out of the no-ids batch (npm run rebuild-all with no ids); build one by its id once the owner approves the spend. Lessons link to Meta's pages and never copy them.",
   "source": "https://dev.meta.ai/resources/videos/",
-  "checkedOn": "2026-10-26",
+  "checkedOn": "2026-11-02",
   "videos": [
     {
       "id": "structured-image-extraction",
-      "title": "Fine-tuning Llama models for structured image data extraction",
+      "title": "How to fine-tune Llama models for structured extraction of data from images",
       "url": "https://dev.meta.ai/llama/resources/videos/llama-fine-tune-structured-image-extraction",
-      "era": "Llama",
-      "demonstrates": "Customizing Llama to pull structured data out of images",
-      "rebuild": {
-        "fit": "reframe",
+      "era": "Llama 3.2",
+      "kind": "tutorial",
+      "presenter": "Beto de Paola",
+      "presenterNote": "From the card on Meta's listing. Meta's video page names no presenter, so this is unconfirmed.",
+      "date": "2025-11-04",
+      "links": { "code": "https://github.com/meta-llama/llama-cookbook/tree/main/getting-started/finetuning/vision" },
+      "demonstrates": "Fine-tuning a Llama vision model to turn document photos into JSON, measuring the base model first, and checking the tune didn't cost it other skills",
+      "teaches": "Fine-tunes Llama 3.2 11B Vision to turn photos of made-up W-2 tax forms into JSON. It scores the base model first, tunes with LoRA and with a full fine-tune, scores again, and checks the model kept its other skills. Meta reports W-2 accuracy of 58 for the base, 72 for LoRA and 98 for the full tune.",
+      "verdict": "wrong",
+      "current": {
+        "product": "receipt-form-reader",
+        "builtOn": "muse-spark-1.3",
+        "state": "Receipt Form Reader has been live since Oct 28 as a schema-prompt app on Muse Spark 1.3. It runs no fine-tune, no baseline and no accuracy check, so it skips the lesson's method."
+      },
+      "learn": {
+        "title": "Measure, tune, measure again: reading receipts",
+        "plan": "Score Muse Wonder field by field in code on 40 invented receipts, LoRA-tune Llama 3.2 3B on receipt text on one rented A10, score it against its base on the same 40, and say plainly that Muse Muse can't tune vision layers yet.",
         "models": ["muse-wonder-1.0"],
-        "plan": "Same job without fine-tuning. Muse Wonder reads the image and returns JSON that matches a schema. Upload a receipt or a form and get validated fields back.",
-        "note": "Make a tool that pulls structured fields out of photos of receipts and forms, with no fine-tuning"
-      }
+        "tune": "LoRA of Llama 3.2 3B on a Lambda A10, about $0.40 to $1.80, or a free Kaggle T4 (not run yet)",
+        "estimate": "About $3.40 to $8.80 with the Lambda tune, $3 to $7 with the free one",
+        "status": "planned",
+        "unverified": [
+          "Muse Wonder's receipt score, cost per receipt and build cost",
+          "Muse Muse's own Llama tune path (TUNE_ANY_BASE is off); the 3B runs so far went through the test harness",
+          "The Jetson receipt bench scored receipt text, not photos"
+        ]
+      },
+      "rebuild": {
+        "fit": "partial",
+        "models": ["muse-wonder-1.0"],
+        "plan": "Do the video's method on receipts: measure first, tune, measure again, check nothing else broke. Muse Wonder reads the receipt photo into JSON and is scored field by field by code on 40 invented receipts whose answers are known. Then a LoRA of Llama 3.2 3B learns the text half (receipt text to the same JSON) on one rented A10, scored the same way against its base, with general checks to show it kept its other skills. Muse Muse can't tune a vision model yet, and the page says so.",
+        "note": "Read a photo of a receipt and give me the shop, date, subtotal, tax, total and how many items I bought as JSON, and show me how often each field comes out right"
+      },
+      "autoBuild": false
     },
     {
       "id": "whatsapp-multimodal-chatbot",
-      "title": "Building a multimodal WhatsApp chatbot with Llama 4",
+      "title": "How to build your own multi-modal WhatsApp chatbot with Llama 4",
       "url": "https://dev.meta.ai/llama/resources/videos/build-multi-modal-whatsapp-chatbot-with-llama-4",
       "era": "Llama 4",
-      "demonstrates": "A business chatbot on WhatsApp that handles text and images",
+      "kind": "tutorial",
+      "presenter": "Nilesh Pandey, Partner Engineer at Meta",
+      "presenterNote": "Read from the caption in the video's first frame. Meta's page names no one.",
+      "date": "2025-11-04",
+      "length": "7:01",
+      "links": { "code": "https://github.com/meta-llama/llama-cookbook/tree/main/end-to-end-use-cases/whatsapp_llama_4_bot" },
+      "demonstrates": "A WhatsApp chatbot that answers text, reasons over photos, and answers voice notes with voice notes",
+      "teaches": "A webhook takes each WhatsApp message, routes text, photos and voice notes to their own handlers, and replies through the Cloud API with Llama 4 Maverick. Voice notes are transcribed, answered and sent back as voice notes.",
+      "verdict": "partly wrong",
+      "current": {
+        "product": "corner-shop-chat-2",
+        "builtOn": "muse-spark-1.3",
+        "state": "Corner Shop Chat is a live web chat on Muse Spark 1.3 that takes text, photos and voice notes. It answers voice notes in text only, its webhook is a page of text rather than a route, and it adds reply pictures the video doesn't have."
+      },
+      "learn": {
+        "title": "A messaging bot: webhook in, route by type, reply",
+        "plan": "Rebuild the shop chat on Muse Wonder with its own webhook route, a simulator that posts sample WhatsApp Cloud API messages to it and shows the reply it would send, and spoken replies in the browser. Real WhatsApp stays unconnected.",
+        "models": ["muse-wonder-1.0", "muse-voice-transcribe-1.0"],
+        "tune": null,
+        "estimate": "About $3 to $6 to build; no tune, since the video has none",
+        "status": "planned",
+        "unverified": [
+          "Whether a build can ship a public webhook route that answers WhatsApp's verify handshake",
+          "Whether the in-browser speech capability (MEDIA_SPEECH) is on in production",
+          "Any real WhatsApp send"
+        ]
+      },
       "rebuild": {
         "fit": "partial",
-        "models": ["muse-wonder-1.0", "muse-image-1.0", "muse-voice-transcribe-1.0"],
-        "plan": "A web chat for a small business that understands photos and voice notes and can reply with images. Connecting it to WhatsApp needs a WhatsApp Business account, so the rebuild shows the web version and documents the webhook.",
-        "note": "Make a customer chat for a small shop that understands photos and voice notes"
-      }
+        "models": ["muse-wonder-1.0", "muse-voice-transcribe-1.0"],
+        "plan": "A shop helper chat on Muse Wonder that answers typed questions, photos and voice notes, and can read a voice-note answer out loud in the browser. A webhook simulator posts sample WhatsApp Cloud API messages to the app's own webhook route and shows the reply it would send. Sending real WhatsApp messages needs the owner's own WhatsApp Business account, so it is not connected.",
+        "note": "Make a chat helper for a small shop that answers typed questions, photos and voice notes from the shop's own details, can read a voice-note answer back out loud, and includes a WhatsApp webhook simulator that sends sample Cloud API messages to its own webhook route and shows the reply it would send"
+      },
+      "autoBuild": false
     },
     {
       "id": "docs-to-blog-rag",
-      "title": "Generating technical blogs from your docs with Llama and RAG",
+      "title": "How to quickly generate technical blogs from your docs with Llama and RAG",
       "url": "https://dev.meta.ai/llama/resources/videos/generate-technical-blogs-from-your-docs-with-Llama-and-RAG",
-      "era": "Llama",
-      "demonstrates": "Drafting blog posts from existing documentation with retrieval",
-      "rebuild": {
-        "fit": "clean",
+      "era": "Llama 4",
+      "kind": "tutorial",
+      "presenter": "Nilesh, Partner Engineer at Meta",
+      "date": "2025-09-24",
+      "length": "about 5 min",
+      "links": { "code": "https://github.com/meta-llama/llama-cookbook/tree/main/end-to-end-use-cases/blog_generator" },
+      "demonstrates": "Writing a technical blog post from your docs with retrieval: chunk the docs, embed and search them in Qdrant, rerank, then prompt Llama 4 with the best chunks",
+      "teaches": "Retrieval for writing: split docs at headings into chunks, embed and search them in Qdrant, rerank, then have Llama 4 Maverick write a post from the best five chunks with a technical-writer prompt.",
+      "verdict": "partly wrong",
+      "current": {
+        "product": "doc-to-blog-drafts",
+        "builtOn": "muse-spark-1.3",
+        "state": "Doc to Blog Drafts is a live doc-to-post writer on Muse Spark 1.3 with no retrieval at all. It caps input at 200,000 characters, and nobody has checked that its posts are true to the docs."
+      },
+      "learn": {
+        "title": "Write a technical blog post from your docs, with retrieval",
+        "plan": "Chunk the docs, find the top chunks with keyword search in code, have Muse Wonder pick and cite them, flag claims the docs don't back up, and compare retrieval with sending all the docs, tokens and cost side by side.",
         "models": ["muse-wonder-1.0", "muse-image-1.0"],
-        "plan": "Upload or paste docs and get a draft post with a header image. Most doc sets fit in Muse Wonder's 1M-token context, so there is no retrieval pipeline to build.",
-        "note": "Turn my product docs into a technical blog post with a header image"
-      }
+        "tune": null,
+        "estimate": "About $3 to $6 to build; about $0.25 a post on Muse Wonder",
+        "status": "planned",
+        "unverified": [
+          "Keyword search plus a Muse Wonder pick has not been measured against the video's embedding search",
+          "The estimates come from prices marked verify and from past builds"
+        ]
+      },
+      "rebuild": {
+        "fit": "reframe",
+        "models": ["muse-wonder-1.0", "muse-image-1.0"],
+        "plan": "Keeps the video's retrieval. The docs are split at headings, keyword search finds the top 20 chunks in code (the Model API has no embeddings model), Muse Wonder picks the best 6 and writes a post that cites them, a second Muse Wonder call flags anything the docs don't support, and Muse Image adds a header image, which the video doesn't have. A switch compares sending all the docs with retrieval, with tokens and cost for each.",
+        "note": "Turn my docs into a technical blog post that finds the right sections first, cites them, flags anything the docs don't back up, and adds a header image"
+      },
+      "autoBuild": false
     },
     {
       "id": "rich-documents",
       "title": "Llama Best Practices: Unlock Rich Insights from Rich Documents",
       "url": "https://dev.meta.ai/resources/videos/unlock-rich-insights-from-rich-documents",
-      "era": "Llama",
-      "demonstrates": "Extracting data from PDFs, invoices and reports with the DocumentLens recipe",
-      "rebuild": {
-        "fit": "clean",
+      "era": "Llama 4",
+      "kind": "tutorial",
+      "presenter": null,
+      "presenterNote": "Meta's page names no one. The DocumentLens recipe was merged by GitHub user subramen, who may or may not be the speaker.",
+      "date": "2025-09-18",
+      "event": "Connect 2025",
+      "links": { "code": "https://github.com/meta-llama/llama-cookbook/tree/main/end-to-end-use-cases/structured_parser" },
+      "demonstrates": "Turning PDFs, invoices and reports into structured data with the DocumentLens recipe",
+      "teaches": "DocumentLens reads each PDF page as an image and pulls text, tables, images and charts in separate passes, each held to its own JSON schema at a low, fixed temperature. Results go to CSV, Excel, SQL and a vector index.",
+      "verdict": "partly wrong",
+      "current": {
+        "product": "report-insight-lens-2",
+        "builtOn": "muse-spark-1.3",
+        "state": "Report Insight Lens is live on Muse Spark 1.3 as one whole-PDF call, with SAM 3.1 boxes around charts and a JSON download. It has no schema per artifact type, no chart-to-data step, no CSV, Excel or SQL export and no accuracy check."
+      },
+      "learn": {
+        "title": "Turn a PDF into checked, structured data",
+        "plan": "Read each page with one pass per artifact type against a schema the person can edit, let SAM 3.1 crop each figure so the chart pass turns it into data, keep a page number on every value, export CSV, Excel and SQLite, and score it on a made-up paper with known answers.",
         "models": ["muse-wonder-1.0", "sam-3.1"],
-        "plan": "Upload a PDF report. Muse Wonder reads it directly and answers with tables and page references, and SAM 3.1 outlines the charts and figures on page images.",
-        "note": "Upload a PDF report and pull out the key numbers, tables and charts"
-      }
+        "tune": null,
+        "estimate": "About $2 to $5 to build on Muse Wonder; cost per run not measured",
+        "status": "planned",
+        "unverified": [
+          "Image token counts and the structured-output request format",
+          "Any run on a real PDF from Meta's session"
+        ]
+      },
+      "rebuild": {
+        "fit": "partial",
+        "models": ["muse-wonder-1.0", "sam-3.1"],
+        "plan": "Upload a PDF, or try the made-up sample paper whose right answers are known. Each page is read on its own by Muse Wonder, once for text, once for tables and once for charts and figures, and each answer has to match a JSON schema the user can see and edit. SAM 3.1 boxes each figure so the chart pass reads a tight crop and turns the chart into data. Every value keeps its page number. Results download as JSON, CSV per table, one Excel workbook and a SQLite file. On the sample paper the page shows how many fields came out right.",
+        "note": "Turn a PDF research paper into checked, structured data: read each page, pull text, tables and charts into JSON that matches a schema I can edit, keep the page number for every value, export CSV, Excel and SQLite, and show how many fields it gets right on a sample paper whose answers are known"
+      },
+      "autoBuild": false
     },
     {
       "id": "fine-tuning-real-world",
       "title": "Llama Best Practices: Fine-Tuning Llama Models in the Real World",
       "url": "https://dev.meta.ai/llama/resources/videos/fine-tuning-llama-models-in-the-real-world",
       "era": "Llama",
-      "demonstrates": "Fine-tuning strategies for domain-specific problems",
-      "rebuild": {
-        "fit": "reframe",
+      "kind": "talk",
+      "presenter": "Sanyam Bhutani, Partner Engineer, Meta",
+      "presenterNote": "Named on Meta's developers.facebook.com copy of the session. The dev.meta.ai page names no one.",
+      "date": "2025-09-18",
+      "event": "Meta Connect 2025",
+      "length": "8:52",
+      "links": { "code": "https://github.com/meta-llama/synthetic-data-kit" },
+      "demonstrates": "Preparing fine-tuning data with Meta's synthetic-data-kit, choosing a data strategy from what you start with, and three habits: smallest model first, baselines first, overfit on 100 examples",
+      "teaches": "Data comes first: Meta's synthetic-data-kit ingests documents, writes QA pairs, curates them by a quality score and saves them for tuning. A decision tree picks a data strategy, and three habits close it: start with the smallest model, set a baseline first, and overfit on 100 examples to check the setup learns.",
+      "verdict": "wrong",
+      "current": {
+        "product": "few-shot-tune-check",
+        "builtOn": "muse-spark-1.3",
+        "state": "Few Shot Tune Check is live on Muse Spark 1.3 and scores a few-shot classifier on a handful of rows. The video never mentions classification, and the app runs no tune."
+      },
+      "learn": {
+        "title": "Fine-tune in the real world: data first, smallest model first, baseline first",
+        "plan": "Pick a starting point, score a quick few-shot baseline, write a small clean dataset, LoRA-tune Llama 3.2 3B on one A10 with a blind check against its base, and step up to Muse Glimmer 30B only if the small model misses.",
         "models": ["muse-wonder-1.0"],
-        "plan": "Muse Muse builds apps, not training runs, and the hosted Muse models aren't fine-tuned through the API. The rebuild checks a few-shot Muse Wonder setup against the user's labeled examples and says when fine-tuning open weights like Glimmer would still be worth it.",
-        "note": "Tell me whether my classification task still needs fine-tuning, using a few labeled examples"
-      }
+        "tune": "LoRA of Llama 3.2 3B on a Lambda A10; Muse Glimmer 30B on an H100 only if the 3B misses",
+        "estimate": "About $5.20 for the 3B path, $2.40 more to step up to Glimmer, $1.20 to $3 for the helper app",
+        "status": "planned",
+        "unverified": [
+          "Launching a tune through the site (the measured runs used the test harness)",
+          "Adding chain-of-thought rationales, a quality-score filter and a one-click overfit check are not built"
+        ]
+      },
+      "rebuild": {
+        "fit": "partial",
+        "models": ["muse-wonder-1.0"],
+        "plan": "A planning helper on Muse Wonder that asks what data the person has, scores a quick few-shot baseline on their examples, and hands them a ready-to-start Llama 3.2 3B tune with a blind check against the base model. Muse Muse's fine-tuning lab runs the tune.",
+        "note": "Help me pick a fine-tuning plan for my task: ask what data I have, score a quick few-shot baseline on my examples, and hand me a ready-to-start Llama 3.2 3B tune with a blind check against the base model"
+      },
+      "autoBuild": false
     },
     {
       "id": "llama-protections",
-      "title": "Implementing Llama Protections in GenAI applications",
+      "title": "How to implement Llama Protections to your GenAI applications",
       "url": "https://dev.meta.ai/llama/resources/videos/implement-llama-protections-to-genAI-applications",
       "era": "Llama Protections",
-      "demonstrates": "Safeguards for content moderation, jailbreak defense and code security",
+      "kind": "talk",
+      "presenter": "Spencer, Product Manager, Llama Protections Team, Meta",
+      "presenterNote": "Meta's page gives only the first name.",
+      "date": "2025-09-10",
+      "links": { "code": "https://github.com/meta-llama/llama-cookbook/tree/main/getting-started/responsible_ai" },
+      "demonstrates": "Layers of open, self-hostable safeguards around a GenAI app: Llama Guard, Prompt Guard, Code Shield and Llama Firewall",
+      "teaches": "Small, separate guard models you can host yourself sit around the main model: Llama Guard checks prompts and replies, Prompt Guard catches injections and jailbreaks, Code Shield checks the code the model writes, and Llama Firewall runs them together and returns allow, review or block.",
+      "verdict": "partly wrong",
+      "current": {
+        "product": "shield-chat-guard",
+        "builtOn": "muse-spark-1.3",
+        "state": "Shield Chat Guard is a live guarded chat on Muse Spark 1.3 where one model checks itself. It has no separate layers, no scan of code the model writes, no needs-review outcome and no measured catch rate."
+      },
+      "learn": {
+        "title": "Guards in layers, measured",
+        "plan": "Rebuild on Muse Wonder as separate calls (an injection check, a hazard-list check on prompts and replies, a code check on replies) returning allow, needs review or block, with a made-up red-team set that counts catches and false blocks.",
+        "models": ["muse-wonder-1.0"],
+        "tune": "Optional: a Llama 3.2 3B LoRA that answers one JSON verdict, on a Lambda A10, about $2.20. The platform can't tune Llama Guard or Prompt Guard themselves.",
+        "estimate": "About $3 to $6 to build; about $2.20 more for the optional tune",
+        "status": "planned",
+        "unverified": ["Build cost on Muse Wonder", "Catch rate and false blocks, until Prove it records them"]
+      },
       "rebuild": {
         "fit": "reframe",
         "models": ["muse-wonder-1.0"],
-        "plan": "A safety check in front of a chatbot that screens prompts and replies with Muse Wonder and shows why something was blocked. Meta's open protection models stay the self-hosted option.",
-        "note": "Put a safety check in front of my chatbot that blocks jailbreaks and explains why"
-      }
+        "plan": "A layered safety gate in front of a chatbot on Muse Wonder: an injection check, a hazard-list check on prompts and replies, a code check on replies, and allow, review or block with the reason. Meta's open protection models stay the self-hosted option.",
+        "note": "A layered safety gate for a chatbot that runs each prompt through an injection check, checks prompts and replies against a published list of hazard categories, scans any code in a reply for insecure patterns, and shows allow, needs review or block with the layer and reason that caught it, plus a built-in red-team test set and a pass table"
+      },
+      "autoBuild": false
+    },
+    {
+      "id": "github-issue-triage",
+      "title": "How to automatically analyze and triage issues on GitHub repos with Llama",
+      "url": "https://dev.meta.ai/llama/resources/videos/auto-analyze-triage-github-issues-with-llama",
+      "era": "Llama 3.1",
+      "kind": "tutorial",
+      "presenter": null,
+      "presenterNote": "Not named. The cookbook code is by Suraj Subramanian; whether he presents is unverified.",
+      "date": "2025-09-03",
+      "length": "4:44",
+      "links": {
+        "video": "https://www.youtube.com/watch?v=VMMFSTGnlmU",
+        "code": "https://github.com/meta-llama/llama-cookbook/tree/main/end-to-end-use-cases/github_triage"
+      },
+      "demonstrates": "Reading a repo's GitHub issues with an off-the-shelf Llama and turning them into labels, themes and a maintainer report",
+      "teaches": "Fetch a repo's issues and threads, label each one against a JSON schema (type, severity, component, causes, fixes), group them into themes and write a maintainer summary, all with an off-the-shelf Llama 3.1 70B. The code only reads the repo.",
+      "verdict": "not built",
+      "current": null,
+      "learn": {
+        "title": "Triage a repo's issues with Muse Wonder",
+        "plan": "The same three passes on Muse Wonder with strict schemas, every label and cited issue number checked in code, themes from the repo's own labels, likely duplicates linked, and suggested labels shown, never posted.",
+        "models": ["muse-wonder-1.0"],
+        "tune": "Optional edge add-on: a Llama 3.2 3B LoRA on the per-issue schema for offline labeling, about $3 to $11",
+        "estimate": "About $2 to $4 to build; $3 to $11 more for the optional tune",
+        "status": "planned",
+        "unverified": ["The GitHub connect vault in production", "Cost per use", "Triage quality of a small tuned model"]
+      },
+      "rebuild": {
+        "fit": "clean",
+        "models": ["muse-wonder-1.0"],
+        "plan": "The same three passes on Muse Wonder with strict JSON schemas. The code checks every label and every cited issue number. Issues come from a pasted or uploaded export, a made-up sample, or a builder's own read-only GitHub token. Themes come from the repo's own labels, likely duplicates are linked, and suggested labels are shown, never posted.",
+        "note": "Load a GitHub repo's issues from a pasted or uploaded export, or from my own read-only token, and give me a triage board that shows each issue's type, severity, component, likely causes and two suggested fixes, groups them by theme, flags likely duplicates, and writes a one-page summary for maintainers with open questions and the issue numbers behind every claim"
+      },
+      "autoBuild": false
+    },
+    {
+      "id": "notebookllama-pdf-podcast",
+      "title": "How to use Llama to convert PDFs into a podcast with NotebookLlama",
+      "url": "https://dev.meta.ai/llama/resources/videos/convert-pdfs-to-podcast-with-notebookllama",
+      "era": "Llama 3.1 and 3.2",
+      "kind": "tutorial",
+      "presenter": "Sanyam Bhutani, Partner Engineer at Meta",
+      "date": "2025-07-16",
+      "links": { "code": "https://github.com/meta-llama/llama-cookbook/tree/main/end-to-end-use-cases/NotebookLlama" },
+      "demonstrates": "Turning a PDF into a two-host podcast by chaining Llama models of different sizes with open text-to-speech",
+      "teaches": "Llama models of different sizes split the work: a 1B model cleans the PDF's text, a 70B writes a podcast script, an 8B rewrites it as a livelier two-host talk, and Parler TTS and Suno's Bark read it aloud. Meta's page says Llama 4 writes the script, but the notebooks use Llama 3.1.",
+      "verdict": "not built",
+      "current": null,
+      "learn": {
+        "title": "From a PDF to a two-host podcast",
+        "plan": "Muse Wonder reads the PDF and writes a two-host script with page references in one call; the page reads it aloud with the platform's open speech model or the browser's voices and always shows the transcript.",
+        "models": ["muse-wonder-1.0", "muse-image-1.0"],
+        "tune": "Optional: tune Llama 3.2 3B as the script rewriter on a Lambda A10, about $2, reporting whatever the blind check shows",
+        "estimate": "About $0.30 to $1.80 to build (local batch figure); about $2 more for the optional tune",
+        "status": "planned",
+        "unverified": [
+          "Meta's API has no text-to-speech; two distinct voices depend on the device",
+          "A downloadable audio file",
+          "Whether a tune helps this task"
+        ]
+      },
+      "rebuild": {
+        "fit": "partial",
+        "models": ["muse-wonder-1.0", "muse-image-1.0"],
+        "plan": "Muse Wonder reads the PDF directly and writes a two-host script as turns with page references in one call, so there is no cleanup model. Meta's API has no text-to-speech, so the page reads the script aloud with the platform's in-page open speech model or the browser's own voices, and always shows the transcript. Muse Image makes cover art.",
+        "note": "Turn any PDF into a short two-host podcast: read the whole PDF, write a lively conversation that explains it with page references, and play it aloud with a transcript you can read along with"
+      },
+      "autoBuild": false
+    },
+    {
+      "id": "synthetic-datasets",
+      "title": "How to create synthetic datasets for fine-tuning Llama",
+      "url": "https://dev.meta.ai/llama/resources/videos/synthetic-datasets-for-fine-tuning-llama",
+      "era": "Llama",
+      "kind": "tutorial",
+      "presenter": "Sanyam Bhutani, Partner Engineer at Meta",
+      "date": "2025-07-10",
+      "length": "2:51",
+      "links": { "code": "https://github.com/meta-llama/synthetic-data-kit" },
+      "demonstrates": "Making fine-tuning data from your own documents with Meta's Synthetic-data-kit CLI",
+      "teaches": "A short intro to Meta's synthetic-data-kit: ingest documents, create QA pairs or reasoning examples with Llama, curate them with Llama as a judge, and save them in a fine-tuning format. It stops at the dataset and never trains.",
+      "verdict": "not built",
+      "current": null,
+      "learn": {
+        "title": "Make training data from your documents, then prove it helped",
+        "plan": "Walk the same four steps in Muse Muse's fine-tuning lab, then do the two the video skips: train a LoRA on the data and have Muse Wonder judge it blind against its base.",
+        "models": ["muse-spark-1.3-contributor", "muse-wonder-1.0"],
+        "tune": "LoRA of Llama 3.2 3B on a Lambda A10, or Muse Glimmer 30B on an H100",
+        "estimate": "Under $1 per run on Llama 3.2 3B with 100 examples; about $2.50 on Glimmer",
+        "status": "planned",
+        "unverified": [
+          "Launching a tune from the site (both measured runs used the test harness)",
+          "The folder flow is off in production",
+          "A per-example quality score before training is not built"
+        ]
+      },
+      "rebuild": {
+        "fit": "clean",
+        "models": ["muse-spark-1.3-contributor", "muse-wonder-1.0"],
+        "plan": "Muse Muse's fine-tuning lab already does the video's steps and then trains on the result. A folder of documents is read in the browser, cleaned of secrets and personal details on the server, and Spark 1.3 Contributor writes examples from it in varied styles. Near-duplicates are dropped and a held-out set is kept aside. A LoRA fine-tune then runs on a rented GPU, and Muse Wonder judges the base and the tuned model blind on the held-out prompts.",
+        "note": "Turn a folder of my team's how-to docs into question and answer training data I can review and download, then fine-tune a small model on it and show me whether it beats the model it started from"
+      },
+      "autoBuild": false
+    },
+    {
+      "id": "optimize-llama-prompts",
+      "title": "How to optimize your prompt for Llama",
+      "url": "https://dev.meta.ai/llama/resources/videos/optimize-llama-prompts",
+      "era": "Llama",
+      "kind": "tutorial",
+      "presenter": "Justin Lee, Partner Engineer, Meta",
+      "date": "2025-06-26",
+      "links": { "code": "https://github.com/meta-llama/prompt-ops" },
+      "pageNote": "The repo in the video, llama-prompt-ops, has moved to prompt-ops.",
+      "demonstrates": "Moving a prompt written for another model to Llama with llama-prompt-ops, which optimizes it against labeled examples instead of by hand",
+      "teaches": "llama-prompt-ops moves a prompt written for another model to Llama by rewriting it against about 50 labeled examples and comparing scores before and after, instead of tweaking it by hand.",
+      "verdict": "not built",
+      "current": null,
+      "learn": {
+        "title": "Move a prompt to a new model, and prove it got better",
+        "plan": "Muse Wonder proposes rewrites, each is scored by exact field match in code on a search set, and only the winner is scored on a sealed set; an optional Llama 3.2 3B tune shows when a prompt is enough.",
+        "models": ["muse-wonder-1.0", "muse-spark-1.3-contributor"],
+        "tune": "Optional: Llama 3.2 3B LoRA on a Lambda A10, about $3 to $5",
+        "estimate": "About $0.30 to $1.80 to build; $3 to $5 more for the optional tune",
+        "status": "planned",
+        "unverified": ["Cost of an optimize run", "Contributor model prices", "Tune result on this task"]
+      },
+      "rebuild": {
+        "fit": "reframe",
+        "models": ["muse-wonder-1.0", "muse-spark-1.3-contributor"],
+        "plan": "Same technique on Muse models. Muse Wonder suggests rewrites of a pasted prompt, each one is scored by exact field match on labeled examples, and the best one is checked on a sealed set the search never saw. Tests use muse-spark-1.3-contributor with made-up data.",
+        "note": "Paste a prompt written for another model and about 50 labeled examples, and get a rewritten prompt for a Muse model with its score before and after on examples it never saw"
+      },
+      "autoBuild": false
+    },
+    {
+      "id": "building-with-llama-4",
+      "title": "Building with Llama 4",
+      "url": "https://dev.meta.ai/llama/resources/videos/building-with-llama-4",
+      "era": "Llama 4",
+      "kind": "course",
+      "presenter": "Amit Sangani, Senior Director of Partner Engineering at Meta",
+      "presenterNote": "From the DeepLearning.AI course page. Meta's page names no one.",
+      "date": "2025-06-20",
+      "links": { "course": "https://www.deeplearning.ai/short-courses/building-with-llama-4/" },
+      "demonstrates": "A free short course on building multimodal and long-context apps with Llama 4 models, the Llama API and Llama tools",
+      "teaches": "Not a video: Meta's page links a free 9-lesson DeepLearning.AI course on Llama 4, covering mixture of experts, the Llama API, image grounding, the prompt format, long context, a prompt optimization tool and a synthetic data kit.",
+      "verdict": "not built",
+      "current": null,
+      "learn": {
+        "title": "Building with Llama 4, redone on Muse",
+        "plan": "Walk the course's topics on Muse Muse, say plainly that it has no prompt optimizer, then finish past the course: train on the synthetic data and check the result blind.",
+        "models": ["muse-wonder-1.0", "sam-3.1"],
+        "tune": "LoRA of Muse Glimmer 30B on an H100 (about $1.86 measured for 120 steps), or Llama 3.2 3B on an A10",
+        "estimate": "About $10 to $20 in all, inside the $20 cap only at the low end",
+        "status": "planned",
+        "unverified": ["The course's gated lesson contents", "SAM 3.1 counting shelf products", "Build cost for this muse"]
+      },
+      "rebuild": {
+        "fit": "reframe",
+        "models": ["muse-wonder-1.0", "sam-3.1"],
+        "plan": "Not a single video: Meta's page links out to a 9-lesson DeepLearning.AI course. Teach it as a Learn lesson that redoes each part on Muse Muse, and finish where the course stops: use the data it makes to train and check a model.",
+        "note": "Make a shelf checker for a hardware shop: upload shelf photos, box and count each product, and answer questions about the parts catalog I paste in"
+      },
+      "autoBuild": false
+    },
+    {
+      "id": "zuckerberg-nadella-llamacon",
+      "title": "A conversation with Mark Zuckerberg and Satya Nadella",
+      "url": "https://dev.meta.ai/resources/videos/mark-zuckerberg-and-satya-nadella",
+      "era": "LlamaCon 2025",
+      "kind": "talk",
+      "presenter": "Mark Zuckerberg (Meta) and Satya Nadella (Microsoft)",
+      "date": "2025-04-29",
+      "event": "LlamaCon 2025",
+      "length": "31:50",
+      "links": { "video": "https://www.youtube.com/watch?v=WaJOONFllLc" },
+      "demonstrates": "A fireside talk on AI from development to deployment",
+      "teaches": "A fireside talk with no code. Press write-ups say it covers AI writing code, distilling big open models into small task models, and open and closed models; none of that is checked against the video yet.",
+      "verdict": "not built",
+      "current": null,
+      "learn": {
+        "title": "Big model to small model",
+        "plan": "A talk card with links, plus one hands-on lesson on the one technique it names: tune a small Llama 3.2 3B on one job and check it blind against its base.",
+        "models": ["muse-wonder-1.0"],
+        "tune": "Llama 3.2 3B LoRA on a Lambda A10, trained on rows a person or code wrote until data-rights question Q2 is answered",
+        "estimate": "About $2 to $3.50; $6.50 to $13.50 if Muse Wonder writes 300 examples",
+        "status": "planned",
+        "unverified": ["What the talk says (no transcript read)", "Training on Muse Wonder output (DATA_RIGHTS Q2)"]
+      },
+      "rebuild": {
+        "fit": "reframe",
+        "models": ["muse-wonder-1.0"],
+        "plan": "No product rebuild: the talk teaches no app. The Learn lesson does the one technique it names. Fine-tune Llama 3.2 3B with LoRA on a rented A10 on a small task, then have Muse Wonder judge it blind against the base model on held-out prompts.",
+        "note": "Teach a small model one job and check it blind against the base model"
+      },
+      "autoBuild": false
+    },
+    {
+      "id": "leidos-sourcegraph-code-assistant",
+      "title": "Leidos boosts developer efficiency with Llama and Sourcegraph",
+      "url": "https://dev.meta.ai/llama/resources/videos/llama-and-sourcegraph",
+      "era": "Llama 3.1",
+      "kind": "case study",
+      "presenter": "Beyang Liu, CTO and Co-Founder, Sourcegraph",
+      "date": "2025-04-29",
+      "event": "LlamaCon 2025",
+      "demonstrates": "A code assistant for large legacy codebases: Sourcegraph's Cody on self-hosted Llama 3.1 70B in an air-gapped AWS setup",
+      "teaches": "A customer story: Sourcegraph's Cody on self-hosted Llama 3.1 70B inside an isolated AWS network, with retrieval over a code graph. The 20% and 33% gains are Leidos's own self-reported numbers.",
+      "verdict": "not built",
+      "current": null,
+      "learn": {
+        "title": "Ask your codebase, online and offline",
+        "plan": "Drop in a code folder and ask about it on Muse Wonder, with file and line citations and a visible list of files read, plus a local Llama 3.2 3B fallback as the offline half, said to be far weaker than a 70B.",
+        "models": ["muse-wonder-1.0"],
+        "tune": "Optional: a folder-run Llama 3.2 3B LoRA on a Lambda A10, about $1 to $3",
+        "estimate": "About $2 to $5 to build; $1 to $3 more for the optional tune",
+        "status": "planned",
+        "unverified": ["The video's spoken content", "How large a repo Muse Wonder handles well", "Any Jetson numbers for code"]
+      },
+      "rebuild": {
+        "fit": "partial",
+        "models": ["muse-wonder-1.0"],
+        "plan": "Drop in a code folder or zip and ask about it. Muse Wonder answers with file and line citations, explains old code and writes unit tests and docs. A simple file index picks what to send, and the app shows which files it read. It runs on Meta's hosted API, so it is not air-gapped; the edge track's local Llama 3.2 3B fallback is the offline half, and it is much weaker than a 70B model.",
+        "note": "Drop in a code folder or zip and ask questions about it: get answers that cite file and line, explanations of old code, unit tests and docs for a function you pick"
+      },
+      "autoBuild": false
+    },
+    {
+      "id": "llama-4-herd",
+      "title": "Unpack the latest Llama 4 herd",
+      "url": "https://dev.meta.ai/llama/resources/videos/llama-4-herd",
+      "era": "Llama 4",
+      "kind": "talk",
+      "presenter": "Rangaprabhu Parthasarathy, Director of Product, GenAI, Meta",
+      "date": "2025-04-29",
+      "event": "LlamaCon 2025",
+      "demonstrates": "A LlamaCon tour of the Llama 4 models: long context, understanding several images at once, and the Llama 4 Cookbook",
+      "teaches": "A tour of Llama 4 Scout and Maverick: a long context window, understanding several images at once, and the Llama 4 Cookbook. The talk itself wasn't watched; the steps come from the cookbook notebook we think it names.",
+      "verdict": "not built",
+      "current": null,
+      "learn": {
+        "title": "Meet the Muse models: long context, many images, tool calls",
+        "plan": "Run the cookbook's tasks on Muse Wonder: a getting-started guide from a pasted repo with its token count and cost shown first, a guess at where four photos were taken, and the booking call a model would make, shown and never run.",
+        "models": ["muse-wonder-1.0"],
+        "tune": null,
+        "estimate": "About $2 to $5 to build; about $1 to $1.20 per 200k-token run",
+        "status": "planned",
+        "unverified": ["What the talk says", "Muse Wonder's prices", "Multi-image and tool-call quality"]
+      },
+      "rebuild": {
+        "fit": "reframe",
+        "models": ["muse-wonder-1.0"],
+        "plan": "Not a rebuild. A Learn lesson that runs the same cookbook tasks on today's Muse models: one long document set, several photos at once, and photos to a function call.",
+        "note": "Make a page where I paste a long code repo and get a getting-started guide, drop in a few photos and hear where they were taken, and see the booking request a model would send for that place"
+      },
+      "autoBuild": false
+    },
+    {
+      "id": "llama-toolbox",
+      "title": "The Llama toolbox: a collection of practical tools and recipes",
+      "url": "https://dev.meta.ai/llama/resources/videos/llama-toolbox",
+      "era": "LlamaCon 2025",
+      "kind": "talk",
+      "presenter": "Hamid Shojanazeri, AI Partner Engineering Lead, Meta",
+      "date": "2025-04-29",
+      "event": "LlamaCon 2025",
+      "length": "21:26",
+      "demonstrates": "A tour of practical tools, techniques and recipes for getting more out of Llama models",
+      "teaches": "A LlamaCon tour of practical tools and recipes for Llama. The page gives only a summary and links no code, so which tools it shows is unverified until someone watches it.",
+      "verdict": "not built",
+      "current": null,
+      "learn": {
+        "title": "The Llama toolbox, done on Muse Muse",
+        "plan": "Walk the likely recipe chain as steps that have run here: try a prompt first, write a dataset, LoRA-tune Llama 3.2 3B, judge it blind against its base, and keep a Q4_K_M file for the edge.",
+        "models": ["muse-wonder-1.0"],
+        "tune": "Llama 3.2 3B LoRA on a Lambda A10, or Muse Glimmer 30B on an H100",
+        "estimate": "About $2.20 to $3 per run on Llama 3.2 3B; $4 to $5 on Glimmer; about $2 for the optional helper app",
+        "status": "planned",
+        "unverified": ["What the video shows step by step", "Dataset cost on Muse Wonder"]
+      },
+      "rebuild": {
+        "fit": "reframe",
+        "models": ["muse-wonder-1.0"],
+        "plan": "Teach the toolbox as steps that have run on Muse Muse: try a prompt first, have Muse Wonder write a dataset, LoRA-tune Llama 3.2 3B on an A10 (or Glimmer 30B on an H100), check tuned against base blind with Muse Wonder as judge, then keep a Q4_K_M file for the edge.",
+        "note": "Paste my task and a few examples and tell me whether to fix the prompt, make synthetic data, or fine-tune a small Llama or Glimmer, with the time and cost of each step"
+      },
+      "autoBuild": false
+    },
+    {
+      "id": "protection-tools",
+      "title": "New Protection tools for Llama developers",
+      "url": "https://dev.meta.ai/resources/videos/protection-tools",
+      "era": "Llama Protections",
+      "kind": "talk",
+      "presenter": "Lauren Deason, Software Engineer, Machine Learning, Meta",
+      "date": "2025-04-29",
+      "event": "LlamaCon 2025",
+      "length": "11:15",
+      "demonstrates": "Meta's April 2025 protection releases: Llama Guard 4, Prompt Guard 2, LlamaFirewall and CyberSecEval 4",
+      "teaches": "Meta's April 2025 protection releases: Llama Guard 4 for text and images, Prompt Guard 2 for jailbreaks and injections, LlamaFirewall to run guards together, and CyberSecEval 4. No code; the list comes from Meta's blog post that day.",
+      "verdict": "not built",
+      "current": null,
+      "learn": {
+        "title": "Guard models in front of an app",
+        "plan": "Show what Prompt Guard 2 caught in Muse Muse's own Nov 1 laptop run (blunt injections yes, subtle ones no), then build a two-layer chat: the Prompt Guard score plus a Muse Wonder check, with a log of which layer stopped each message.",
+        "models": ["muse-wonder-1.0"],
+        "tune": null,
+        "estimate": "About $3 to $6 to build; Prompt Guard runs on a CPU with no API cost",
+        "status": "planned",
+        "unverified": ["What the talk covers minute by minute", "Prompt Guard 2 inside a built product or on a board"]
+      },
+      "rebuild": {
+        "fit": "reframe",
+        "models": ["muse-wonder-1.0"],
+        "plan": "A lesson, not a copy of the talk. It explains each tool in plain words, shows Muse Muse's own Nov 1 measurement of Prompt Guard 2 (22M and 86M on a laptop CPU, made-up attack lines and 643 ordinary texts), then builds a chat with two layers: the Prompt Guard score and a Muse Wonder check, with a log of which layer stopped each message.",
+        "note": "Put Meta's Prompt Guard 2 in front of my support chat, add a second safety check with Muse Wonder, and show for every message the guard's score, the verdict and which layer stopped it"
+      },
+      "autoBuild": false
+    },
+    {
+      "id": "fine-tuning-and-evaluation",
+      "title": "Tailoring Llama for your needs: Fine-tuning & Evaluation",
+      "url": "https://dev.meta.ai/resources/videos/fine-tuning-and-evaluation",
+      "era": "Llama 3.3",
+      "kind": "talk",
+      "presenter": "Micheal Slater, Product Manager, Meta",
+      "presenterNote": "Spelled this way on Meta's page.",
+      "date": "2025-04-29",
+      "event": "LlamaCon 2025",
+      "demonstrates": "Bringing your own data to fine-tune a smaller Llama model for one workflow, then evaluating it",
+      "teaches": "Bring your own examples, hold some out, fine-tune a smaller Llama for one workflow and evaluate it against the base. The steps come from Meta's Llama API fine-tuning docs, which tuned Llama 3.3 8B, not from watching the talk.",
+      "verdict": "not built",
+      "current": null,
+      "learn": {
+        "title": "Tailor a small model to your workflow, then prove it",
+        "plan": "Bring rows or have Muse Wonder write them, hold prompts out, LoRA-tune Llama 3.2 3B on an A10, judge it blind against the base with every answer side by side, and keep a Q4_K_M file.",
+        "models": ["muse-wonder-1.0"],
+        "tune": "LoRA of Llama 3.2 3B on a Lambda A10 (Muse Muse has no Llama 3.3 8B base)",
+        "estimate": "About $2 to $3 with your own data; $5 to $9 with 200 written examples",
+        "status": "planned",
+        "unverified": ["General and safety checks (TUNE_GENERAL_CHECKS, off)", "Llama 3.1 8B as a base", "The 3B file on a Jetson board"]
+      },
+      "rebuild": {
+        "fit": "clean",
+        "models": ["muse-wonder-1.0"],
+        "plan": "A real fine-tune on Muse Muse's lab. Bring your rows or have Muse Wonder write them, hold prompts out, train a LoRA on Llama 3.2 3B on a rented A10, have Muse Wonder judge base against tuned without knowing which is which, and keep a Q4_K_M file.",
+        "note": "Tune a small Llama on these 300 past support replies so it answers our shop's inbox in our style, and show me it beats the base model on replies it never saw"
+      },
+      "autoBuild": false
+    },
+    {
+      "id": "zuckerberg-ghodsi-open-source",
+      "title": "A conversation with Mark Zuckerberg and Ali Ghodsi",
+      "url": "https://dev.meta.ai/resources/videos/mark-zuckerberg-and-ali-ghodsi",
+      "era": "LlamaCon 2025",
+      "kind": "talk",
+      "presenter": "Mark Zuckerberg (Meta) and Ali Ghodsi (Databricks)",
+      "date": "2025-04-29",
+      "event": "LlamaCon 2025",
+      "demonstrates": "A fireside chat on why open source AI matters and advice for founders building AI apps",
+      "teaches": "A fireside chat with no code. Meta's page says it covers why open source AI matters and advice for founders building AI apps, and nothing more is claimed here.",
+      "verdict": "not built",
+      "current": null,
+      "learn": {
+        "title": "Watch, then apply: own an open model",
+        "plan": "Link the talk, then try both topics: fine-tune an open Llama 3.2 3B and keep the file, and build a founder's planner on Muse Wonder that never quotes or speaks for either presenter.",
+        "models": ["muse-wonder-1.0"],
+        "tune": "Llama 3.2 3B LoRA on a Lambda A10, or Muse Glimmer 30B on an H100",
+        "estimate": "About $2.15 to $2.60 for the tune; about $2.50 for the planner, capped at $5",
+        "status": "planned",
+        "unverified": ["What the talk says beyond its two topics", "Launching a tune through the site"]
+      },
+      "rebuild": {
+        "fit": "reframe",
+        "models": ["muse-wonder-1.0"],
+        "plan": "A talk has no technique to rebuild, so it goes under Learn as a watch-then-apply lesson. The companion app is inspired by the topic, not a summary of the talk.",
+        "note": "A planner for founders that takes an AI product idea and lays out which parts need a hosted model and which could run on open weights they own, with a cost line for each part and a first week of steps"
+      },
+      "autoBuild": false
+    },
+    {
+      "id": "llamacon-2025-keynote",
+      "title": "LlamaCon 2025 Keynote",
+      "url": "https://dev.meta.ai/llama/resources/videos/llamacon-2025-keynote",
+      "era": "Llama 4",
+      "kind": "talk",
+      "presenter": "Chris Cox, Manohar Paluri and Angela Fan, Meta",
+      "presenterNote": "Meta's page spells Paluri's first name Manor.",
+      "date": "2025-04-29",
+      "event": "LlamaCon 2025",
+      "demonstrates": "LlamaCon's opening keynote: Meta's news on the Llama models and tools, and what developers built with them",
+      "teaches": "LlamaCon's opening keynote on the Llama models and tools. Meta's post that day lists the Llama API preview, Llama 3.3 8B fine-tuning, fast inference partners and new protection tools; which of these the talk covers is unverified.",
+      "verdict": "not built",
+      "current": null,
+      "learn": {
+        "title": "What LlamaCon announced, done today",
+        "plan": "A then-and-now lesson: a playground that sends one question to two Muse models side by side, a Llama 3.2 3B tune with a blind check in place of the Llama API's 8B tuning, and a link to the protections lesson.",
+        "models": ["muse-wonder-1.0", "muse-spark-1.3-contributor"],
+        "tune": "Llama 3.2 3B LoRA on a Lambda A10, about $2 to $3",
+        "estimate": "About $4 to $12 in all",
+        "status": "planned",
+        "unverified": ["What the keynote itself covers", "Build cost of the playground", "A tune launched through the site"]
+      },
+      "rebuild": {
+        "fit": "reframe",
+        "models": ["muse-wonder-1.0", "muse-spark-1.3-contributor"],
+        "plan": "A keynote has no single product to rebuild. The Learn lesson walks through what it announced and does the parts Muse Muse really does today: call current Muse models from an app it builds, and fine-tune a small Llama with a blind check against the base.",
+        "note": "A one-page playground that sends the same question to Muse Wonder and Muse Spark 1.3 Contributor and shows both answers side by side with how long each took"
+      },
+      "autoBuild": false
+    },
+    {
+      "id": "unsloth-faster-finetune",
+      "title": "Finetune Llama 4 faster with Unsloth",
+      "url": "https://dev.meta.ai/resources/videos/fine-tune-with-unsloth",
+      "era": "Llama 4",
+      "kind": "talk",
+      "presenter": "Daniel Han-Chen, CTO and Co-Founder, Unsloth",
+      "date": "2025-04-29",
+      "event": "LlamaCon 2025",
+      "length": "2:45",
+      "demonstrates": "Unsloth's claims for fine-tuning Llama 4: 1.5x faster, 50% less VRAM and 8x longer context",
+      "teaches": "A short clip with Unsloth's own claims for fine-tuning Llama 4: 1.5x faster, half the memory and 8x longer context, measured against Flash Attention 2. No steps or code.",
+      "verdict": "not built",
+      "current": null,
+      "learn": {
+        "title": "Fine-tune faster with Unsloth, measured",
+        "plan": "Run the Unsloth QLoRA Muse Muse already uses on Llama 3.2 3B, then Glimmer 30B, and show peak memory, time and cost next to Unsloth's claims, which stay labeled as theirs.",
+        "models": ["muse-spark-1.3-contributor", "muse-wonder-1.0"],
+        "tune": "Llama 3.2 3B on a Lambda A10, then Muse Glimmer 30B on an H100",
+        "estimate": "About $2.15 for the 3B; about $2.40 more for Glimmer",
+        "status": "planned",
+        "unverified": ["Any speedup measured by us (needs a plain baseline run)", "Llama 4 Scout as a base (never run here)"]
+      },
+      "rebuild": {
+        "fit": "partial",
+        "models": ["muse-spark-1.3-contributor", "muse-wonder-1.0"],
+        "plan": "Run the same Unsloth QLoRA the talk is about, on a base that has run here: Llama 3.2 3B on one A10, then Muse Glimmer 30B on an H100 or A100. Spark 1.3 Contributor writes made-up training data, Muse Wonder judges base against tuned blind, and the page shows peak GPU memory, time and cost. Llama 4 has not been tuned here yet, and the page says so.",
+        "note": "Teach a small Llama to answer questions about a made-up hobby shop in its own short style, and show me the GPU memory, time and cost it took"
+      },
+      "autoBuild": false
+    },
+    {
+      "id": "running-llama-3-on-linux",
+      "title": "Running Llama 3 on Linux",
+      "url": "https://dev.meta.ai/llama/resources/videos/running-llama-3-on-linux",
+      "era": "Llama 3",
+      "kind": "tutorial",
+      "presenter": "Navyata Bawa, Meta",
+      "date": "2025-04-10",
+      "firstPublished": "2024-05-23",
+      "length": "12:23",
+      "links": { "video": "https://www.youtube.com/watch?v=XYoI6u0TMxI" },
+      "demonstrates": "Downloading Llama 3 8B weights and running the example text and chat scripts on a Linux PC with an NVIDIA GPU",
+      "teaches": "Download Llama 3 8B weights and run Meta's example text and chat scripts with torchrun on a Linux PC with a 16 GB or larger NVIDIA GPU. The llama3 repo it clones is now archived.",
+      "verdict": "not built",
+      "current": null,
+      "learn": {
+        "title": "Run your own Llama on Linux, and keep answering from it",
+        "plan": "Tune Llama 3.2 3B, take its 2 GB Q4_K_M file, serve it with llama-server on Linux, and build a receipt reader that falls back to it when the cloud is cut, shown in an outage drill.",
+        "models": ["muse-wonder-1.0"],
+        "tune": "Llama 3.2 3B LoRA on a Lambda A10, about $4.50 with 100 examples",
+        "estimate": "About $4.50 for the tune; $2 to $5 for the product",
+        "status": "planned",
+        "unverified": ["The Linux export script on a real Linux PC", "Edge builds in a real sandbox", "Whether Meta's old download flow still works"]
+      },
+      "rebuild": {
+        "fit": "reframe",
+        "models": ["muse-wonder-1.0"],
+        "plan": "A hosted rebuild can't teach this, since the Muse models run only in the cloud. The lesson runs a Llama model you own on your own Linux machine instead: tune Llama 3.2 3B in the lab, take its checked Q4_K_M file, serve it with llama-server, and make a product that asks Muse Wonder first and falls back to it when the cloud is cut.",
+        "note": "Paste a receipt's text and get its six fields back as JSON from Muse Wonder, and when the cloud can't be reached, from the Llama 3.2 receipt reader running on my own Linux box, with a label on every answer saying which one answered"
+      },
+      "autoBuild": false
+    },
+    {
+      "id": "run-llama-on-mac",
+      "title": "Running Llama 3 on Mac",
+      "url": "https://dev.meta.ai/llama/resources/videos/running-llama-3-on-mac",
+      "era": "Llama 3",
+      "kind": "tutorial",
+      "presenter": "Navyata Bawa, Meta",
+      "date": "2025-04-10",
+      "firstPublished": "2024-05-23",
+      "length": "7:24",
+      "links": { "video": "https://www.youtube.com/watch?v=aJ064KCr7OU" },
+      "demonstrates": "Installing Ollama on macOS and running Llama 3 locally from Terminal, curl and Python",
+      "teaches": "Install Ollama on macOS, run Llama 3 8B in Terminal, then call it at localhost:11434 from curl and from a short Python script.",
+      "verdict": "not built",
+      "current": null,
+      "learn": {
+        "title": "Run your own tuned model on your Mac",
+        "plan": "The video's four steps on a model the learner tuned: a Llama 3.2 3B LoRA, its 2 GB Q4_K_M file in Ollama, the same curl and Python calls, and the stock model side by side.",
+        "models": ["muse-wonder-1.0"],
+        "tune": "Llama 3.2 3B LoRA on a Lambda A10",
+        "estimate": "About $2.20 to $4 for the tune; $1.50 to $5 for the optional app",
+        "status": "planned",
+        "unverified": ["No tuned file has run on a Mac yet", "The small-base local files path is off (QUANT_TARGETS)", "A page calling localhost:11434"]
+      },
+      "rebuild": {
+        "fit": "reframe",
+        "models": ["muse-spark-1.3-contributor", "muse-wonder-1.0"],
+        "plan": "Same steps, on a model you tuned. Tune Llama 3.2 3B with LoRA on a rented A10, check it blind against the base with Muse Wonder, make a 2 GB Q4_K_M file, then run it in Ollama on your Mac and call it with the video's curl and Python requests.",
+        "note": "A chat page that sends each question to the model running in Ollama on my own Mac at localhost:11434, shows which model answered and how fast, and lets me ask the same question to the stock model side by side"
+      },
+      "autoBuild": false
+    },
+    {
+      "id": "break-free-open-source",
+      "title": "Break Free from Closed Models: Unlock the Power of Open Source Now",
+      "url": "https://dev.meta.ai/resources/videos/break-free-from-closed-models-unlock-the-power-of-open-source-now",
+      "era": "Llama 3.1",
+      "kind": "talk",
+      "presenter": "Amit Sangani, Director of Partner Engineering for Llama, Meta",
+      "date": "2025-04-10",
+      "firstPublished": "2025-04-01",
+      "length": "26:19",
+      "links": { "video": "https://www.youtube.com/watch?v=U8onau0gkf0" },
+      "demonstrates": "Why a business might pick open models over closed ones, told through customer case studies",
+      "teaches": "A talk on why a business might pick open models over closed APIs, told through customer stories. In one of them, a big Llama writes training data to tune smaller ones.",
+      "verdict": "not built",
+      "current": null,
+      "learn": {
+        "title": "Own your model: open weights against a cloud API, tried for real",
+        "plan": "Do the talk's one hands-on idea: a Muse model writes the data, Llama 3.2 3B is tuned on an A10, a blind check scores it against its base, and you keep the file.",
+        "models": ["muse-wonder-1.0", "muse-spark-1.3-contributor"],
+        "tune": "Llama 3.2 3B LoRA on a Lambda A10; Muse Glimmer 30B on an H100 as an option",
+        "estimate": "About $2.15 per practice run; $17 to $36 with a 1,000-example Muse Wonder dataset",
+        "status": "planned",
+        "unverified": ["The talk's case-study numbers (no transcript)", "A 1,000-example Muse Wonder dataset", "Training on Muse output (DATA_RIGHTS)"]
+      },
+      "rebuild": {
+        "fit": "reframe",
+        "models": ["muse-wonder-1.0", "muse-spark-1.3-contributor"],
+        "plan": "There is no app in the talk to rebuild. Its one hands-on idea is a big model writing training data and a small open model tuned on it. Muse Muse does that for real: a Muse model writes the examples, Llama 3.2 3B is tuned on a rented GPU, a blind check scores it against the base, and you keep the file.",
+        "note": "Ask one question and see three answers side by side: the cloud model, the small open model before tuning, and the one I tuned and keep, with cost and speed for each"
+      },
+      "autoBuild": false
+    },
+    {
+      "id": "llama-3-tokenizer",
+      "title": "Understanding the Llama 3 Tokenizer",
+      "url": "https://dev.meta.ai/llama/resources/videos/understanding-the-llama-3-tokenizer",
+      "era": "Llama 3",
+      "kind": "talk",
+      "presenter": "Aston Zhang, research scientist on Llama, Meta",
+      "date": "2025-04-10",
+      "firstPublished": "2024-06-28",
+      "length": "24:50",
+      "links": { "video": "https://www.youtube.com/watch?v=Tmdk_H2WDj4" },
+      "demonstrates": "How the Llama 3 tokenizer changed: Tiktoken in place of SentencePiece, a larger vocabulary and a higher compression ratio",
+      "teaches": "Llama 3 moved from SentencePiece to a Tiktoken-based tokenizer with a vocabulary of about 128K, so text takes fewer tokens. The bigger embedding layers cost memory, and Grouped Query Attention offsets that.",
+      "verdict": "not built",
+      "current": null,
+      "learn": {
+        "title": "Tokenizers, Llama 3 to Muse",
+        "plan": "A concept lesson with the tokenizer facts and bugs Muse Muse logged in its own lab, plus a token counter that counts the same text on two Muse models through Meta's count endpoint.",
+        "models": ["muse-wonder-1.0", "muse-spark-1.3-contributor"],
+        "tune": null,
+        "estimate": "About $2 to $5 to build; no GPU",
+        "status": "planned",
+        "unverified": ["Whether a built product may call the token counting endpoint", "Whether that endpoint is free"]
+      },
+      "rebuild": {
+        "fit": "reframe",
+        "models": ["muse-wonder-1.0", "muse-spark-1.3-contributor"],
+        "plan": "A talk, not a build, so it becomes a Learn lesson with one hands-on tool. Paste the same text in English, Spanish and code and see its token count on Muse Wonder and Muse Spark 1.3 Contributor from Meta's token counting endpoint, with tokens per word and the share of each context window. Counts include Meta's hidden scaffolding, and hosted models don't show token boundaries.",
+        "note": "Make a token counter that takes the same text in English, Spanish and code, counts it on Muse Wonder and Muse Spark 1.3 Contributor, and shows tokens per word and how much of each model's context window it fills"
+      },
+      "autoBuild": false
+    },
+    {
+      "id": "ways-to-run",
+      "title": "More ways to run Llama 3",
+      "url": "https://dev.meta.ai/llama/resources/videos/more-ways-to-run-llama-3",
+      "era": "Llama 3",
+      "kind": "talk",
+      "presenter": "Navyata Bawa, Meta",
+      "date": "2025-04-10",
+      "firstPublished": "2024-05-23",
+      "length": "11:10",
+      "links": { "video": "https://www.youtube.com/watch?v=dmXBFoYRPo4" },
+      "demonstrates": "A tour of places to host or run Llama 3: AWS, Kaggle, Google Cloud, API providers, TorchServe, vLLM and TGI",
+      "teaches": "A tour of places to host or run Llama 3: AWS, Kaggle, Google Cloud, API providers, TorchServe, vLLM and TGI. No code and no fine-tuning.",
+      "verdict": "not built",
+      "current": null,
+      "learn": {
+        "title": "Where your model can run",
+        "plan": "A tour of where a Muse Muse model runs, each stop labeled by how far it has really run: Muse Wonder through the API, your own tuned 3B in llama.cpp or Ollama, a Jetson board fallback, and hosted GPUs marked not yet tried.",
+        "models": ["muse-wonder-1.0"],
+        "tune": "Optional: Llama 3.2 3B LoRA on a Lambda A10, about $1.50",
+        "estimate": "About $0.05 for the receipt reader build; about $1.50 for the optional tune",
+        "status": "planned",
+        "unverified": ["Hosted GPU routes against a real provider", "A tuned Llama file on a Jetson", "The export scripts with a tuned file"]
+      },
+      "rebuild": {
+        "fit": "reframe",
+        "models": ["muse-wonder-1.0"],
+        "plan": "The video is a tour of places to run a model, so the lesson is a tour of where a Muse Muse model can run, with each stop marked by how far it has really run.",
+        "note": "Make a receipt reader that answers on Muse Wonder and, when the network is cut, answers on a small model on a Jetson board, and always says which one answered"
+      },
+      "autoBuild": false
+    },
+    {
+      "id": "knowledge-distillation-405b",
+      "title": "Knowledge Distillation with Llama 3.1 405B",
+      "url": "https://dev.meta.ai/llama/resources/videos/knowledge-distillation-with-llama-3-1-405B",
+      "era": "Llama 3.1",
+      "kind": "talk",
+      "presenter": "Hamid and Suraj, AI at Meta",
+      "presenterNote": "First names only on Meta's page and the YouTube description.",
+      "date": "2025-04-10",
+      "firstPublished": "2024-10-18",
+      "length": "29:18",
+      "links": { "video": "https://www.youtube.com/watch?v=kxx6TfpAkEU" },
+      "demonstrates": "Using a big model to write synthetic training data and distill what it knows into a smaller model",
+      "teaches": "A talk on fine-tuning, curating data, using a big model like Llama 3.1 405B to write synthetic data, the risk of model collapse, and distilling into a smaller model. No code.",
+      "verdict": "not built",
+      "current": null,
+      "learn": {
+        "title": "Distill a big model into a small one",
+        "plan": "Muse Wonder writes the data, a Llama 3.2 3B student trains on one A10 with only a one-line prompt, a blind judge compares it with the untrained student, and a second round shows where more synthetic data stops helping.",
+        "models": ["muse-wonder-1.0"],
+        "tune": "Llama 3.2 3B LoRA on a Lambda A10; Muse Glimmer 30B on an H100 as the larger student",
+        "estimate": "About $4 to $9 for a 200-example run",
+        "status": "planned",
+        "unverified": ["Training on Muse Wonder output (DATA_RIGHTS Q2)", "A Llama student through the platform's own launch"]
+      },
+      "rebuild": {
+        "fit": "clean",
+        "models": ["muse-wonder-1.0"],
+        "plan": "Do the distillation the video talks about. Muse Wonder is the teacher and writes the data, a Llama 3.2 3B student trains on it on a rented A10, and a blind judge compares it with the untrained student.",
+        "note": "Teach a small model to write our support replies the way Muse Wonder does, so it runs offline on a laptop"
+      },
+      "autoBuild": false
+    },
+    {
+      "id": "jensen-zuckerberg-next-platforms",
+      "title": "AI and The Next Computing Platforms With Jensen Huang and Mark Zuckerberg",
+      "url": "https://dev.meta.ai/resources/videos/ai-and-the-next-computing-platforms-with-jensen-huang-and-mark-zuckerberg",
+      "era": "Llama 3.1",
+      "kind": "talk",
+      "presenter": "Jensen Huang (NVIDIA) and Mark Zuckerberg (Meta)",
+      "date": "2025-04-10",
+      "firstPublished": "2024-07-29",
+      "event": "SIGGRAPH 2024",
+      "length": "58:37",
+      "links": { "video": "https://www.youtube.com/watch?v=w-cmMcMZoZ4" },
+      "demonstrates": "A conversation on research, open source for developers and creators, and virtual worlds for AI and robots",
+      "teaches": "A SIGGRAPH 2024 conversation on how research drives AI, open-source models for developers and creators, and virtual worlds for training AI and robots. No code, and no quotes are checked yet.",
+      "verdict": "not built",
+      "current": null,
+      "learn": {
+        "title": "Watch guide: AI and the next platforms",
+        "plan": "A watch guide that links the talk, then three try-its that point at runs Muse Muse already logged: a Llama 3.2 3B tune you keep, a chat helper for a made-up business labeled as AI, and the edge track.",
+        "models": ["muse-wonder-1.0", "sam-3.1"],
+        "tune": "Llama 3.2 3B LoRA on a Lambda A10, about $2.15",
+        "estimate": "$0 for the page; about $2.15 for a tune; $3 to $8 for the optional build",
+        "status": "planned",
+        "unverified": ["Chapter times and quotes (no transcript)", "Build cost for this muse"]
+      },
+      "rebuild": {
+        "fit": "reframe",
+        "models": ["muse-wonder-1.0"],
+        "plan": "No rebuild: the video teaches no technique. A watch guide links the video, then three try-its link to runs Muse Muse already logged.",
+        "note": "Make a chat helper for a made-up pottery studio that answers class questions in the owner's friendly voice, says it is an AI on every reply, and hands off to email for bookings"
+      },
+      "autoBuild": false
+    },
+    {
+      "id": "llama-3-on-windows",
+      "title": "Running Llama 3 on Windows",
+      "url": "https://dev.meta.ai/llama/resources/videos/running-llama-3-on-windows",
+      "era": "Llama 3",
+      "kind": "tutorial",
+      "presenter": "Navyata Bawa, Meta",
+      "date": "2025-04-10",
+      "firstPublished": "2024-05-23",
+      "length": "10:28",
+      "links": { "video": "https://www.youtube.com/watch?v=a_HHryXoDjM" },
+      "demonstrates": "Running Llama 3 8B Instruct locally on a Windows PC with Hugging Face Transformers",
+      "teaches": "Run Llama 3 8B Instruct on a Windows PC with an RTX 4090 through Hugging Face Transformers: request access, install PyTorch, write a short pipeline script and run one prompt.",
+      "verdict": "not built",
+      "current": null,
+      "learn": {
+        "title": "Run your own tuned Llama on a Windows PC",
+        "plan": "Tune Llama 3.2 3B, make its 2 GB Q4_K_M file, run it on Windows with the generated PowerShell script, and ask the video's prompt to base and tuned side by side. The script has never run on Windows.",
+        "models": ["muse-wonder-1.0"],
+        "tune": "Llama 3.2 3B LoRA on a Lambda A10",
+        "estimate": "About $4 to $10 in all",
+        "status": "planned",
+        "unverified": ["The Windows script on a Windows PC", "The Ollama path", "Speed on Windows hardware"]
+      },
+      "rebuild": {
+        "fit": "reframe",
+        "models": ["muse-wonder-1.0"],
+        "plan": "Same job, a Llama answering on your own Windows PC, but with a model you tuned and keep. The app runs on Muse Wonder online and falls back to the local model offline.",
+        "note": "A dinner helper: tell it what's in your fridge and it suggests a recipe, and it keeps working on a Windows laptop with no internet"
+      },
+      "autoBuild": false
+    },
+    {
+      "id": "llama-stack-rag-agent",
+      "title": "Llama Stack RAG walkthrough",
+      "url": "https://dev.meta.ai/llama/resources/videos/llama-stack-rag-walkthrough",
+      "era": "Llama",
+      "kind": "tutorial",
+      "presenter": null,
+      "presenterNote": "Not named; posted by the Meta Developers channel.",
+      "date": "2025-04-10",
+      "firstPublished": "2024-12-19",
+      "length": "3:09",
+      "links": { "video": "https://www.youtube.com/watch?v=FhEboUKsDD8" },
+      "pageNote": "Meta's page returned 404 on Nov 2, 2026. The video is on YouTube as Building Agents with Llama Stack.",
+      "demonstrates": "Building a RAG agent with Llama Stack: setting up the stack, ingesting documents and writing the agent app code",
+      "teaches": "Build a RAG agent with Llama Stack: set up the stack, ingest documents, and write the agent that retrieves passages and answers from them. The model and vector store it uses are unverified.",
+      "verdict": "not built",
+      "current": null,
+      "learn": {
+        "title": "A docs agent that looks things up before it answers",
+        "plan": "Split docs into chunks with page numbers, give Muse Wonder a keyword search tool it calls before answering, quote the passage and page for every answer, and check it against no docs and all docs.",
+        "models": ["muse-wonder-1.0"],
+        "tune": "Optional: a Llama 3.2 3B LoRA that answers only from given passages, on a Lambda A10, about $2 to $4",
+        "estimate": "About $2 to $5 to build; $2 to $4 more for the optional tune",
+        "status": "planned",
+        "unverified": ["The video's model, provider and code", "Whether the tune beats its base"]
+      },
+      "rebuild": {
+        "fit": "reframe",
+        "models": ["muse-wonder-1.0"],
+        "plan": "Teach when retrieval is needed even with Muse Wonder's 1M-token context, then build it: split docs into chunks with page numbers, give the agent a keyword search tool it calls before answering, quote the passage and page for every answer, and say so when the docs don't cover it.",
+        "note": "Answer questions about my team's docs by searching them first, quote the passage and page for every answer, and say plainly when the docs don't cover it"
+      },
+      "autoBuild": false
+    },
+    {
+      "id": "open-approach-trust-safety",
+      "title": "Open Approach to Trust & Safety: Llama Guard 3, Prompt Guard & More",
+      "url": "https://dev.meta.ai/resources/videos/open-approach-to-trust-and-safety",
+      "era": "Llama 3.1",
+      "kind": "talk",
+      "presenter": "Zacharie Delpierre Coudert and Spencer Whitman, Llama Trust & Safety, Meta",
+      "date": "2025-04-10",
+      "firstPublished": "2024-08-09",
+      "length": "27 min",
+      "links": { "video": "https://www.youtube.com/watch?v=IvjLXGR7-vM" },
+      "demonstrates": "System-level safety for Llama apps: separate checks on prompts, replies and generated code, measured with a benchmark",
+      "teaches": "Safety as a system, not one model: separate checks on prompts (Llama Guard 3 and Prompt Guard), on replies (Llama Guard 3) and on generated code (CodeShield), measured with CyberSecEval.",
+      "verdict": "not built",
+      "current": null,
+      "learn": {
+        "title": "Safety as a system: checks around the model",
+        "plan": "A lesson with one diagram, and a Muse Wonder lab that checks prompts, replies and code against a written hazard list, flags instructions hidden in pasted pages, and counts catches, misses and false flags on 40 made-up prompts.",
+        "models": ["muse-wonder-1.0"],
+        "tune": null,
+        "estimate": "About $2 to $5 to build; $0.50 to $1.50 per 40-prompt bench run",
+        "status": "planned",
+        "unverified": ["Build and bench cost", "Any accuracy claim"]
+      },
+      "rebuild": {
+        "fit": "reframe",
+        "models": ["muse-wonder-1.0"],
+        "plan": "A talk with no code, so it is taught under Learn with a lab rather than rebuilt as one product.",
+        "note": "A safety lab for my chatbot that checks each prompt, each reply and any code it writes against a written list of hazard categories, flags hidden instructions inside pasted pages or files, and shows a test bench that counts what it caught, what it missed and what it flagged by mistake"
+      },
+      "autoBuild": false
     }
   ],
   "missing": [
     {
       "id": "sam-first-demo",
       "model": "sam-3.1",
-      "why": "No video for SAM 3.1 on the first page",
+      "why": "None of Meta's 30 videos shows SAM 3.1",
       "note": "Count and outline things in a photo or a short video"
     },
     {
       "id": "image-first-demo",
       "model": "muse-image-1.0",
-      "why": "No video for Muse Image on the first page",
+      "why": "None of Meta's 30 videos shows Muse Image",
       "note": "Restyle my product photos and put them in new scenes"
     },
     {
       "id": "voice-first-demo",
       "model": "muse-voice-transcribe-1.0",
-      "why": "No video for Muse Voice Transcribe on the first page",
+      "why": "None of Meta's 30 videos shows Muse Voice Transcribe",
       "note": "Turn a recorded class or meeting into notes that show who said what"
     },
     {

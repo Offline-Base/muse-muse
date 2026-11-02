@@ -173,7 +173,7 @@ export default function HowItWorksPage() {
       <p className="muted">
         No sign-up and no API keys. Most builds take a few minutes. Apps reach Meta&apos;s models only through Muse
         Muse, which keeps the keys and caps what each app can spend. See <Link href="/gallery">the gallery</Link> for apps people made,{" "}
-        <Link href="/rebuilds">Rebuilds</Link> for Meta&apos;s older demos rebuilt on today&apos;s models, and{" "}
+        <Link href="/learn">Learn</Link> for Meta&apos;s lessons with what Muse Muse has built for each and a plan to do it better, and{" "}
         <Link href="/usage">Usage</Link> for every Meta token used.
       </p>
 
