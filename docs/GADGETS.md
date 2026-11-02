@@ -32,7 +32,7 @@ Tests: `lib/gateway/__tests__/gadget.test.ts`, `lib/brief/__tests__/gadget-optio
 2. **A board per owner.** Done behind flags: the wave 3 registry and owner check, and gadget connect below.
 3. **More tools on `muse-device`.** Show something on a screen or the e-ink tablet, set a pin on the UNO Q, read a sensor. Add each one to `PRODUCT_GADGET_TOOLS`, the simulator and the skill.
 4. **Where it shows.** "Uses your gadget" on product pages, and a Make-page example that asks for hardware.
-5. **A real board end to end.** The live path is covered by unit tests with a fake board only.
+5. **A real board end to end.** The live path is covered by unit tests with a fake board only. A real board answers through Muse Muse's client (Nov 2, BUILD_LOG), but not yet through the gateway from a live product. `muse-device/autostart.sh` keeps a board's server up.
 
 **Wave 3 (behind flags, `docs/CAPABILITIES.md` section 19).** `HARDWARE_GADGET_OWNER_CHECK` closes the one-board-for-everyone finding: a live token reaches only the board its product's owner linked, and only with an owner pass unless the link opens it to visitors. `HARDWARE_BOARD_REGISTRY` lets admins add their own `muse-device` boards on `/device`. `HARDWARE_BOARD_TOOLS`, with the owner check on, lets a brief ask for `read_sensor` and `show_text`, which bring no camera or microphone.
 
