@@ -33,6 +33,8 @@ jobs:
         run: npx next typegen
       - name: Type check
         run: npm run typecheck
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
 
   unit:
     name: Unit tests
