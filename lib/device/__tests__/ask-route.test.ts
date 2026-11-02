@@ -25,10 +25,12 @@ class FakeAuthError extends Error {
 
 describe("/api/device/ask", { skip: typeof mock.module !== "function" }, () => {
   let admin = true;
+  let openAccess = false;
   let paused = false;
   let boardDown = false;
   let modelDown = false;
   let modelCalls = 0;
+  let offered: string[][] = [];
   let recorded: Array<{ ctx: { source: string; endpoint: string }; items: Array<{ model: string; outputTokens: number }> }> = [];
   let boardCalls = 0;
   let hits = 0;
@@ -43,7 +45,7 @@ describe("/api/device/ask", { skip: typeof mock.module !== "function" }, () => {
         AuthError: FakeAuthError,
         requireAdminOrAutomation: async () => {
           if (!admin) throw new FakeAuthError("Admins only.", 403);
-          return { id: "u", email: "a@example.com", isAdmin: true };
+          return { id: "u", email: "a@example.com", isAdmin: true, ...(openAccess ? { openAccess } : {}) };
         },
       },
     });
@@ -73,8 +75,9 @@ describe("/api/device/ask", { skip: typeof mock.module !== "function" }, () => {
       namedExports: {
         metaPlatform: () => ({
           responses: {
-            create: async () => {
+            create: async (body: { tools?: Array<{ name: string }> }) => {
               modelCalls++;
+              offered.push((body.tools ?? []).map((tool) => tool.name));
               if (modelDown) throw new OpenAI.APIConnectionError({ message: "model down" });
               return modelCalls === 1
                 ? { id: "r1", output: [{ type: "function_call", name: "capture_image", arguments: "{}", call_id: "c1" }], usage: { output_tokens: 5 } }
@@ -93,6 +96,7 @@ describe("/api/device/ask", { skip: typeof mock.module !== "function" }, () => {
     boardDown = false;
     modelDown = false;
     modelCalls = 0;
+    offered = [];
     boardCalls = 0;
     hits = 0;
     pauseAfterModelCalls = Infinity;
@@ -123,6 +127,49 @@ describe("/api/device/ask", { skip: typeof mock.module !== "function" }, () => {
     const res = await post({ prompt: "look" });
     assert.equal(res.status, 503);
     assert.equal((await res.json()).error, "device_not_configured");
+  });
+
+  it("answers with the fleet alone when no single board is set up, and never touches a board", async () => {
+    delete process.env.DEVICE_MCP_URL;
+    process.env.BOARD_FLEET_URL = "https://fleet.example.com/admin";
+    process.env.BOARD_FLEET_TOKEN = "jpt_made_up_token";
+    try {
+      const res = await post({ prompt: "what's on the fleet?" });
+      assert.equal(res.status, 200);
+      const data = await res.json();
+      assert.deepEqual(offered[0], ["fleet_status", "fleet_ask_model"]);
+      assert.equal(boardCalls, 0);
+      // The fake model asks for capture_image, which isn't there to reach.
+      assert.equal(data.steps[0].isError, true);
+      assert.equal(data.answer, "A desk.");
+    } finally {
+      delete process.env.BOARD_FLEET_URL;
+      delete process.env.BOARD_FLEET_TOKEN;
+    }
+  });
+
+  it("offers Wonder the fleet only when the fleet is set up", async () => {
+    await post({ prompt: "look" });
+    assert.deepEqual(offered[0], ["capture_image"]);
+  });
+
+  it("doesn't give OPEN_ACCESS=admin's stand-in admin the fleet, with or without a board", async () => {
+    process.env.BOARD_FLEET_URL = "https://fleet.example.com/admin";
+    process.env.BOARD_FLEET_TOKEN = "jpt_made_up_token";
+    openAccess = true;
+    try {
+      assert.equal((await post({ prompt: "what's on the fleet?" })).status, 200);
+      assert.deepEqual(offered[0], ["capture_image"]);
+
+      delete process.env.DEVICE_MCP_URL;
+      const res = await post({ prompt: "what's on the fleet?" });
+      assert.equal(res.status, 503);
+      assert.equal((await res.json()).error, "device_not_configured");
+    } finally {
+      openAccess = false;
+      delete process.env.BOARD_FLEET_URL;
+      delete process.env.BOARD_FLEET_TOKEN;
+    }
   });
 
   it("spends nothing once the platform is paused", async () => {

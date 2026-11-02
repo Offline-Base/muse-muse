@@ -132,6 +132,14 @@ export function safeBoardUrl(url: string): boolean {
   return protocol === "https:" || (protocol === "http:" && ["localhost", "127.0.0.1"].includes(hostname));
 }
 
+/** The control plane's address and token, or null when one is missing or the address would expose the token. */
+export function fleetAccess(): Pick<FleetConfig, "url" | "token"> | null {
+  const url = process.env.BOARD_FLEET_URL?.trim();
+  const token = process.env.BOARD_FLEET_TOKEN?.trim();
+  if (!url || !token || !safeBoardUrl(url)) return null;
+  return { url, token };
+}
+
 export function fleetBoard(config: FleetConfig, kind: BoardKind = "fleet", doFetch: typeof fetch = fetch, stopWaitMs: number = STOP_WAIT_MS): BoardDriver {
   const base = config.url.replace(/\/+$/, "");
 

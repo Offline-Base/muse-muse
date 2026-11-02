@@ -5,7 +5,7 @@ import { Icon } from "@/components/icons";
 import type { DeviceAgentResult, DeviceAgentStep } from "@/lib/device/agent";
 
 const ERRORS: Record<string, string> = {
-  device_not_configured: "No board is set up. DEVICE_MCP_URL and DEVICE_MCP_TOKEN are missing.",
+  device_not_configured: "No board or fleet is set up. It takes DEVICE_MCP_URL and DEVICE_MCP_TOKEN, or BOARD_FLEET_URL and BOARD_FLEET_TOKEN.",
   device_unavailable: "Couldn't reach the board. Its server or tunnel may be down.",
   model_unavailable: "Couldn't reach Muse Wonder.",
   paused: "Today's spend cap is reached, so model calls are paused.",
