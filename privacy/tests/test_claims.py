@@ -98,7 +98,7 @@ REVIEWED = frozenset(
         "Same total for 21 of 24 essays between two Glimmer runs;",
         "Earlier, Glimmer over-labeled whole-text requests (precision 0.50 on held-out requests), so asking for one paragraph can be treated as asking for a whole essay.",
         "Muse Glimmer 30B",
-        "Local model LFM3-VL-2B today, or your own Muse Glimmer",
+        "Local model Muse Glimmer: on OpenRouter in this demo, planned for your device",
         "84% of held-out requests meant for someone outside the class found by Glimmer, at precision 0.75;",
         "23 of 24 essays where Muse Spark's total was within one point of Glimmer's",
         "The installer builds llama.cpp, fetches an about 1.6-bit (IQ1_S) Muse Glimmer and sets up three services.",
@@ -363,7 +363,7 @@ def test_no_model_that_is_not_metas_is_said_to_do_the_work(name):
     """Nov 2 ruling: the public docs never present LFM, EmbeddingGemma or Prompt Guard as today's
     setup, and never call Llama Prompt Guard a Meta model."""
     text = doc(name)
-    for bad in (r"LFM3-VL-2B (?:on|does|runs|answers)\b[^.]*\btoday", r"today's (?:default|setup)[^.|]*LFM", r"Meta's (?:Llama )?Prompt Guard", r"Meta's 22M classifier"):
+    for bad in (r"LFM3-VL-2B (?:on|does|runs|answers)\b[^.]*\btoday", r"LFM3-VL-2B today", r"today's (?:default|setup)[^.|]*LFM", r"Meta's (?:Llama )?Prompt Guard", r"Meta's 22M classifier"):
         assert not re.search(bad, text, re.I), bad
 
 

@@ -49,6 +49,12 @@ def sha256(path: Path) -> str:
 
 
 def main() -> int:
+    # Off since the organizers' Nov 2, 2026 ruling: Muse Privacy may call only Meta models, and Llama
+    # models (Prompt Guard 2 among them) do not count. The code stays until the owner decides on it.
+    raise SystemExit(
+        "Llama Prompt Guard 2 is not allowed: the hackathon organizers ruled on Nov 2, 2026 that Muse Privacy "
+        "may call only Meta models, and Llama models do not count. PROMPT_GUARD stays off."
+    )
     ap = argparse.ArgumentParser()
     ap.add_argument("--src", type=Path, required=True)
     ap.add_argument("--out", type=Path, required=True)

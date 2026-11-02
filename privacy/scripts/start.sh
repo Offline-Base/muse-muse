@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Starts Muse Privacy on the laptop (BASE_DEVICE=laptop). One command for everything.
 #
-#   DEVICE_ONLY=1 with PRIMARY_MODEL=lfm: LFM3-VL-2B is the only model. Glimmer is not started.
+#   Meta models only (the organizers' Nov 2, 2026 ruling): settings are read through load_settings,
+#     which refuses PRIMARY_MODEL=lfm, CHECKER_BACKEND=lfm, SEARCH_EMBEDDINGS=1, PROMPT_GUARD=1 and any
+#     JETSON_LFM_ line, so the LFM3-VL-2B checker and the embedder below never start.
 #   GLIMMER_BACKEND=llama_server: starts two llama-servers from LLAMA_SERVER_BIN with the GGUF in
 #     GLIMMER_GGUF, answer on 127.0.0.1:8081 and router on 127.0.0.1:8082 (the router loads
 #     BASE_HOME/adapters/router.gguf as a LoRA when it exists), then the server. With DEVICE_ONLY=1
@@ -12,9 +14,8 @@
 #       GLIMMER_TEMPLATE          a chat template file for Glimmer (--chat-template-file)
 #       GLIMMER_REASONING_BUDGET  --reasoning-budget: -1 unrestricted (default), 0 none, N tokens
 #   GLIMMER_BACKEND=openrouter: no local models (development mode, invented data only).
-#   CHECKER_BACKEND=lfm: also starts the local checker, LFM3-VL-2B on 127.0.0.1:8083
-#     (scripts/start_checker.sh), for the checks, search passage picking and scans.
-#   SEARCH_EMBEDDINGS=1: also starts the embedder on 127.0.0.1:8084 (scripts/start_embedder.sh).
+#   CHECKER_BACKEND=lfm (refused since Nov 2): started the local checker, LFM3-VL-2B on 127.0.0.1:8083.
+#   SEARCH_EMBEDDINGS=1 (refused since Nov 2): started the EmbeddingGemma 2 embedder on 127.0.0.1:8084.
 #   SAM_ENABLED=1: also starts the SAM 3.1 region finder on 127.0.0.1:8085 (scripts/start_sam.sh).
 #     It is optional: if it does not start or stops later, images are not read (the device fails
 #     closed) and everything else keeps running.

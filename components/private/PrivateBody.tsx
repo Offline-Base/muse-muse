@@ -26,21 +26,21 @@ const WHO: string[] = [
   "Clinic front desks: counts, referral lists and reminders, with HIPAA and 42 CFR Part 2 toggles. Not measured as a full job yet.",
   "Finance and tax offices: summaries over client files, with GLBA, PCI DSS and tax preparer toggles. Not measured yet.",
   "Law offices and HR: summaries over client or employee files. Not measured yet.",
-  "City casework: the government toggles send nothing to Muse, so the caseworker asks on the device. Not measured yet.",
+  "City casework: the government toggles send nothing to Muse, so the caseworker would ask on the device, which is off for now. Not measured yet.",
 ];
 
 const NOT_DONE: string[] = [
   "No real users yet. Every person, essay and record used here is invented, and the teacher's answers are simulated.",
   "The numbers above are from one Oct 27 run, before later changes to the router. Today's settings haven't been scored on Muse Glimmer, and the sealed test set hasn't been scored, so there's no unseen result yet.",
   "In this demo Muse Glimmer 30B runs in the cloud, on OpenRouter, so tagged invented text leaves the device, and the privacy toggles, which need every model on the device, are off. Muse Glimmer hasn't been measured on a device for this. That is the target.",
-  "Since the Nov 2 ruling that only Meta models may run, scanned page images aren't read, search is keyword search only, and the classifier for planted orders is off.",
+  "Since the Nov 2 ruling that only Meta models may run, scanned page images aren't read, search is keyword search only, asking on the device is off, and the classifier for planted orders is off.",
   "The recorded replay of the scenes ran on a model that isn't Meta's, before the ruling, so it's off this page until it's recorded again on Muse Glimmer.",
   "In the real Muse app it paired, listed its tools and ran one search. The full scenes have only run with a script playing Muse.",
   "Tagging can miss things, such as a name written in lower case that the model also misses, and a summary can point at someone without naming them.",
   "Whatever you type into Muse reaches Meta before the device sees it.",
   "A privacy toggle doesn't make anyone legally covered. Your school, clinic, agency or company decides whether Muse may be used.",
   "It runs on a laptop. The Jetson path is designed and tested in simulation, not run on a board in this setup.",
-  "Answers from the Jetson fleet or a paired board aren't private. The text passes through other servers on the way, and only this path, on your own laptop, keeps your files with you.",
+  "Answers from the Jetson fleet or a paired board aren't private. The text passes through other servers on the way. Only this path with Muse Glimmer on your own laptop would keep your files with you, and that is planned, not measured.",
 ];
 
 /**

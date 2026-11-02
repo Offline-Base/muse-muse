@@ -54,6 +54,9 @@ RULING = (
 )
 
 
+META_CLOUD_PREFIX = "meta/muse-"  # OpenRouter ids of Meta's Muse models, such as meta/muse-glimmer-30b
+
+
 def refuse_non_meta(values: Mapping[str, str]) -> None:
     """Refuse every setting that would reach a model that is not a Meta model, with a plain reason.
 
@@ -76,6 +79,21 @@ def refuse_non_meta(values: Mapping[str, str]) -> None:
         raise NonMetaModelRefused(
             f"PROMPT_GUARD=1 runs Llama Prompt Guard 2. {RULING} "
             "Set PROMPT_GUARD=0 or leave it unset; the floors, the final leak check and the approval page still hold."
+        )
+    # On OpenRouter GLIMMER_MODEL picks the model itself, so it must be one of Meta's Muse models
+    # (meta/muse-glimmer-30b by default); on llama_server it is only the alias of the local file.
+    backend = (get("GLIMMER_BACKEND") or "openrouter").strip().lower()
+    cloud_model = (get("GLIMMER_MODEL") or "").strip()
+    if backend == "openrouter" and cloud_model and not cloud_model.lower().startswith(META_CLOUD_PREFIX):
+        raise NonMetaModelRefused(
+            f"GLIMMER_MODEL={cloud_model} on OpenRouter is not one of Meta's Muse models. {RULING} "
+            f"Set GLIMMER_MODEL=meta/muse-glimmer-30b or leave it unset."
+        )
+    spark_model = (get("SPARK_MODEL") or "").strip()
+    if spark_model and not spark_model.lower().startswith("muse-"):
+        raise NonMetaModelRefused(
+            f"SPARK_MODEL={spark_model} is not one of Meta's Muse models. {RULING} "
+            "Set SPARK_MODEL=muse-spark-1.3 or leave it unset."
         )
     jetson = sorted(k for k, v in values.items() if k.startswith("JETSON_LFM_") and (v or "").strip())
     if jetson:
