@@ -26,11 +26,13 @@
  *   9. injected text   the gateway drops, the edge sends schema-valid JSON whose free text says to ignore the rules,
  *                      claim the cloud answered and fetch a URL: the reply still says the edge answered, carries the
  *                      text only as data (inside a JSON string, or escaped in HTML), and nothing fetched the URL
- *  10. no DNS          the gateway's host name can't be resolved: the product answers from the edge with its label.
- *                      With --start the runner restarts the product for this drill (it runs last) with GATEWAY_URL at
- *                      a .invalid host and a preload that fails every .invalid lookup in the product, so no DNS query
- *                      leaves the machine. Without --start, set EDGE_DRILL_DNS_BASE_URL to a second copy of the
- *                      product started that way, or the drill fails and says why.
+ *  10. no DNS          the gateway's host name can't be resolved: the product tried the gateway's name, then answered
+ *                      from the edge with its label. With --start the runner restarts the product for this drill (it
+ *                      runs last) with GATEWAY_URL at a .invalid host and a preload that fails every dns.lookup of a
+ *                      .invalid name inside the product (the lookup Node's fetch and http use), before any resolver is
+ *                      asked, and reports each one so the drill sees the product tried the cloud. Without --start, set
+ *                      EDGE_DRILL_DNS_BASE_URL to a second copy of the product started with such a GATEWAY_URL (it
+ *                      uses the real resolver, and the drill can't see its lookup), or the drill fails and says why.
  *
  * With --all and --start, the product gets EDGE_TIMEOUT_MS and EDGE_CLOUD_TIMEOUT_MS from the two limits below, so
  * drill 7 knows how long the product may take.
@@ -81,13 +83,24 @@ export const DEFAULT_DRILL_IDS = [1, 2, 3, 4];
 /** Drill 10's gateway: a host under .invalid, a name reserved never to resolve (RFC 6761). */
 export const DNS_DRILL_HOST = "muse-gateway.drill.invalid";
 
+/** Every drill id, default set and --all together. --only takes these and nothing else. */
+export const ALL_DRILL_IDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
 /**
- * Makes every lookup of a .invalid host fail with ENOTFOUND, the error a real resolver gives, without asking one.
+ * Makes every dns.lookup of a .invalid host fail with ENOTFOUND, the error a real resolver gives, without asking one.
+ * `onBlocked(host)`, when given, is told of each blocked lookup, so drill 10 can see the product tried the gateway.
  * Self-contained, so it can run as a preload in the product (noDnsImport). Returns a function that undoes it.
  */
-export function blockInvalidHosts(dns) {
+export function blockInvalidHosts(dns, onBlocked = null) {
   const blocked = (host) => typeof host === "string" && /\.invalid\.?$/i.test(host);
-  const notFound = (host) => Object.assign(new Error(`getaddrinfo ENOTFOUND ${host}`), { code: "ENOTFOUND", errno: -3008, syscall: "getaddrinfo", hostname: host });
+  const notFound = (host) => {
+    try {
+      if (onBlocked) onBlocked(host);
+    } catch {
+      // A report that can't be written never changes the lookup's result.
+    }
+    return Object.assign(new Error(`getaddrinfo ENOTFOUND ${host}`), { code: "ENOTFOUND", errno: -3008, syscall: "getaddrinfo", hostname: host });
+  };
   const lookup = dns.lookup;
   const promised = dns.promises.lookup;
   dns.lookup = function (host, options, callback) {
@@ -104,9 +117,13 @@ export function blockInvalidHosts(dns) {
   };
 }
 
-/** A NODE_OPTIONS entry that runs blockInvalidHosts in a product's server before its own code. */
-export function noDnsImport() {
-  const source = `import dns from "node:dns";\n(${blockInvalidHosts.toString()})(dns);\n`;
+/**
+ * A NODE_OPTIONS entry that runs blockInvalidHosts in a product's server before its own code. With `reportFile`, each
+ * blocked lookup appends the host name to that file as one line.
+ */
+export function noDnsImport(reportFile = null) {
+  const report = reportFile ? `(host) => appendFileSync(${JSON.stringify(reportFile)}, String(host) + "\\n")` : "null";
+  const source = `import dns from "node:dns";\nimport { appendFileSync } from "node:fs";\n(${blockInvalidHosts.toString()})(dns, ${report});\n`;
   return `--import=data:text/javascript;base64,${Buffer.from(source).toString("base64")}`;
 }
 /** Drills 1 and 2 test the fallback, so an edge answer that never tried the cloud (edge only, or EDGE_FIRST) fails them. */
@@ -158,8 +175,13 @@ export async function runDrills({
   edgeLimitMs = 5_000,
   slowMs = 8_000,
   dnsBase = null,
+  dnsLookups = null,
   log = () => {},
 }) {
+  // A typo in --only would otherwise run nothing, and "0 of 0 passed" would exit 0.
+  if (only && (!only.length || only.some((id) => !ALL_DRILL_IDS.includes(id)))) {
+    throw new SetupError(`--only takes drill numbers from ${ALL_DRILL_IDS[0]} to ${ALL_DRILL_IDS[ALL_DRILL_IDS.length - 1]}, comma separated.`);
+  }
   const drills = [
     {
       id: 1,
@@ -255,6 +277,7 @@ export async function runDrills({
       const holeRequests = hole.requests ?? 0;
       const holeAnswered = hole.answered ?? 0;
       const hits = fake.injectedHits ?? 0;
+      const lookupsBefore = dnsLookups ? dnsLookups() : 0;
       const errorsBefore = product?.errors().length ?? 0;
       const r = await ask(url, target, d.timeoutMs ?? 40_000);
       // Give the server a moment to print anything it prints after replying.
@@ -265,6 +288,8 @@ export async function runDrills({
         cloudRequested: (hole.requests ?? 0) > holeRequests,
         cloudAnswered: (hole.answered ?? 0) > holeAnswered,
         injectedHits: (fake.injectedHits ?? 0) - hits,
+        // Lookups of the gateway's .invalid host the product made, when the preload reports them (drill 10), else null.
+        gatewayLookups: dnsLookups ? dnsLookups() - lookupsBefore : null,
         errors: product ? product.errors().slice(errorsBefore) : [],
       };
       rounds.push({ r, ctx });
@@ -431,7 +456,9 @@ function moreDrills({ hangMaxMs, cloudLimitMs, edgeLimitMs, slowMs }) {
               ? "the reply has the label but the fake edge got no request"
               : ctx.cloudAsked
                 ? "the gateway was reached, so the host name did resolve: this product isn't the one started for the DNS drill"
-                : null,
+                : ctx.gatewayLookups === 0
+                  ? "the product never tried the cloud first (it never looked up the gateway's host name)"
+                  : null,
     },
   ];
 }
@@ -506,7 +533,10 @@ function parseFlags(argv) {
     const [key, inline] = argv[i].split("=", 2);
     const value = inline ?? argv[++i];
     if (key === "--start") out.start = value;
-    else if (key === "--only") out.only = value.split(",").map(Number);
+    else if (key === "--only") {
+      out.only = String(value ?? "").split(",").map(Number);
+      if (!out.only.every((id) => ALL_DRILL_IDS.includes(id))) throw new SetupError(`--only takes drill numbers from 1 to 10, comma separated, not "${value ?? ""}".`);
+    }
     else throw new SetupError(`Unknown flag ${argv[i]}`);
   }
   return out;
@@ -541,12 +571,26 @@ async function main() {
     PRODUCT_TOKEN: process.env.PRODUCT_TOKEN || "drill",
     ...(beyondDefault ? { EDGE_TIMEOUT_MS: String(limits.edgeLimitMs), EDGE_CLOUD_TIMEOUT_MS: String(limits.cloudLimitMs) } : {}),
   };
+  /** Where drill 10's preload writes each blocked lookup, one line each, so the drill sees the product tried the gateway. */
+  const dnsReport = path.join(path.dirname(outFile), "edge-drill-dns.log");
+  let dnsReporting = false;
+  const dnsLookups = () => {
+    if (!dnsReporting) return 0;
+    try {
+      return readFileSync(dnsReport, "utf8").split("\n").filter(Boolean).length;
+    } catch {
+      return 0;
+    }
+  };
   /** Drill 10's product: the same one, restarted with a gateway host that can't be resolved. It runs last. */
   const dnsBase = flags.start
     ? async () => {
         await product.stopAndWait();
         if (!(await waitDown(baseUrl, 15_000))) throw new Error(`the product kept answering at ${baseUrl} after it was stopped`);
-        const nodeOptions = [process.env.NODE_OPTIONS, noDnsImport()].filter(Boolean).join(" ");
+        mkdirSync(path.dirname(dnsReport), { recursive: true });
+        writeFileSync(dnsReport, "");
+        dnsReporting = true;
+        const nodeOptions = [process.env.NODE_OPTIONS, noDnsImport(dnsReport)].filter(Boolean).join(" ");
         const next = startProduct(flags.start, baseUrl, { ...productEnv, GATEWAY_URL: `http://${DNS_DRILL_HOST}:${hole.port}`, NODE_OPTIONS: nodeOptions });
         const before = product.errors();
         product = { ...next, errors: () => [...before, ...next.errors()] };
@@ -574,6 +618,8 @@ async function main() {
       all: !!flags.all,
       ...limits,
       dnsBase,
+      // Only the --start restart has the reporting preload. A product started by hand for EDGE_DRILL_DNS_BASE_URL doesn't.
+      dnsLookups: flags.start ? dnsLookups : null,
       log: (line) => console.log(line),
     });
     mkdirSync(path.dirname(outFile), { recursive: true });

@@ -3,13 +3,17 @@
 // wrong. No real model, no Meta call, and no DNS query: drill 10's lookups fail in this process.
 //   npx tsx --test --experimental-test-module-mocks template/scripts/__tests__/edge-drill-scenarios.test.mjs
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import dns from "node:dns";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { after, before, describe, test } from "node:test";
 import { z } from "zod";
 import { respondJsonOrEdge } from "../../lib/meta/edge";
 import { startBlackhole } from "../edge-blackhole.mjs";
-import { blockInvalidHosts, DEFAULT_DRILL_IDS, DNS_DRILL_HOST, noDnsImport, runDrills } from "../edge-drill.mjs";
+import { blockInvalidHosts, DEFAULT_DRILL_IDS, DNS_DRILL_HOST, noDnsImport, runDrills, SetupError } from "../edge-drill.mjs";
 import { INJECT_MARK, injectionText, sampleWithText, startEdgeFake, truncatedText, TRUNCATE_MARK } from "../edge-fake.mjs";
 
 const Status = z.object({
@@ -126,6 +130,39 @@ describe("the no-DNS preload", () => {
     }
     assert.match(noDnsImport(), /^--import=data:text\/javascript;base64,[A-Za-z0-9+/=]+$/);
   });
+
+  test("a .invalid fetch goes through the patch and never reaches the resolver underneath", async () => {
+    const real = dns.lookup;
+    let reached = 0;
+    let reported = 0;
+    dns.lookup = function () {
+      reached++;
+      return real.apply(this, arguments);
+    };
+    const undo = blockInvalidHosts(dns, () => reported++);
+    try {
+      const err = await fetch(`http://${DNS_DRILL_HOST}:18436/v1/responses`).catch((e) => e);
+      assert.equal(err.cause?.code, "ENOTFOUND");
+      assert.equal(reached, 0, "the lookup reached the resolver");
+      assert.equal(reported, 1);
+    } finally {
+      undo();
+      dns.lookup = real;
+    }
+  });
+
+  test("as a preload in another process, it fails the lookup and reports the host", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "edge-drill-dns-"));
+    const report = path.join(dir, "dns.log");
+    try {
+      const child = `import dns from "node:dns"; const e = await fetch("http://${DNS_DRILL_HOST}:18436/x").catch((x) => x); console.log(e.cause?.code, dns.lookup.name === "");`;
+      const r = spawnSync(process.execPath, ["--input-type=module", "-e", child], { env: { PATH: process.env.PATH, NODE_OPTIONS: noDnsImport(report) }, encoding: "utf8", timeout: 20_000 });
+      assert.equal(r.stdout.trim(), "ENOTFOUND true", r.stderr);
+      assert.equal(readFileSync(report, "utf8"), `${DNS_DRILL_HOST}\n`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("runDrills: the six scenarios", () => {
@@ -136,11 +173,13 @@ describe("runDrills: the six scenarios", () => {
   let baseUrl;
   let dnsUrl;
   let undoDns;
+  /** Lookups of a .invalid host made in this process, as drill 10's preload reports them in a product. */
+  let lookups = 0;
   /** What the product route does with the helper's answer. Swapped per test. */
   let route;
 
   before(async () => {
-    undoDns = blockInvalidHosts(dns);
+    undoDns = blockInvalidHosts(dns, () => lookups++);
     fake = await startEdgeFake({ port: 0, log: null });
     hole = await startBlackhole({ port: 0, log: null });
     for (const k of Object.keys(process.env)) if (k.startsWith("EDGE_") || k === "TEST_MODEL") delete process.env[k];
@@ -174,14 +213,15 @@ describe("runDrills: the six scenarios", () => {
     process.env = { ...saved };
   });
 
-  const drill = (only, extra = {}) => runDrills({ baseUrl, target, fake, hole, ...LIMITS, dnsBase: async () => dnsUrl, only, ...extra });
+  const dnsLookups = () => lookups;
+  const drill = (only, extra = {}) => runDrills({ baseUrl, target, fake, hole, ...LIMITS, dnsBase: async () => dnsUrl, dnsLookups, only, ...extra });
 
   test("without --all only the default four run; with it all ten pass for a product that follows the skill", async () => {
     route = skillRoute;
     assert.deepEqual(DEFAULT_DRILL_IDS, [1, 2, 3, 4]);
     const plain = await runDrills({ baseUrl, target, fake, hole, ...LIMITS, dnsBase: async () => dnsUrl });
     assert.deepEqual(plain.map((r) => r.id), [1, 2, 3, 4]);
-    const results = await runDrills({ baseUrl, target, fake, hole, ...LIMITS, dnsBase: async () => dnsUrl, all: true });
+    const results = await runDrills({ baseUrl, target, fake, hole, ...LIMITS, dnsBase: async () => dnsUrl, dnsLookups, all: true });
     assert.deepEqual(results.map((r) => [r.id, r.pass, r.why]), [
       [1, true, null],
       [2, true, null],
@@ -285,5 +325,17 @@ describe("runDrills: the six scenarios", () => {
     assert.match(noDns.why, /run with --start, or set EDGE_DRILL_DNS_BASE_URL/);
     const [wrongProduct] = await drill([10], { dnsBase: async () => baseUrl });
     assert.match(wrongProduct.why ?? "", /the host name did resolve/);
+  });
+
+  test("10. a product that asks the edge first never tries the gateway's name and fails", async () => {
+    route = () => withEnv({ EDGE_FIRST: "1" }, skillRoute);
+    const [r] = await drill([10]);
+    assert.equal(r.pass, false);
+    assert.match(r.why, /never tried the cloud first/);
+  });
+
+  test("an --only with no known drill is a setup error, not 0 of 0 passed", async () => {
+    route = skillRoute;
+    for (const only of [[11], [Number.NaN], []]) await assert.rejects(drill(only), SetupError);
   });
 });

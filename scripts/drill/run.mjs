@@ -14,8 +14,8 @@
  *
  *   5. cloud slow, inside the limit (about 8 s)    6. cloud flapping (503, OK, 503)    7. edge too slow as well (about
  *   15 s: the 10 s cloud limit plus the 5 s edge limit the runner gives the product)    8. truncated reply rejected
- *   9. injected text shown as data    10. gateway host not found (the product is restarted for it, with every .invalid
- *   lookup failing inside the product, so no DNS query leaves the machine)
+ *   9. injected text shown as data    10. gateway host not found (the product is restarted for it, with every dns.lookup
+ *   of a .invalid name failing inside the product before any resolver is asked)
  *
  * Usage: npm run drill [-- --only 1,3], npm run drill:all [-- --only 5,9]
  * Output: each result on stdout, and JSON in .data/drill/ (git-ignored). Exit 0 when every drill run passes, 1 when
