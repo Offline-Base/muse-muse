@@ -1935,7 +1935,7 @@ function lowBitSection(f: GgufFacts): string[] {
     "",
     `## The one-bit file (${LOW_BIT_LEVEL})`,
     "",
-    `Expect much weaker answers than the larger builds. On our 2026-knowledge model, this level recalled ${LOW_BIT_FACTS.recallOneBitPct}% of new-knowledge probes where Q4_K_M recalled ${LOW_BIT_FACTS.recallFourBitPct}%. It has no KL limit yet: its KL above is recorded, not judged.`,
+    `Expect much weaker answers than the larger builds. On our 2026-knowledge model, this level recalled ${LOW_BIT_FACTS.recallOneBitPct}% of new-knowledge probes where Q4_K_M recalled ${LOW_BIT_FACTS.recallFourBitPct}%. Its KL limit is a coarse guard from two measured files, and the answer check below decides.`,
     "",
     l.final !== null && l.total !== null ? `Its own check on this model: ${l.final} of ${l.total} held-out prompts got a final answer${l.agree !== null && l.agreeTotal ? `, and ${l.agree} of ${l.agreeTotal} start like the adapter's own answers` : ""}.` : "Its own answer check didn't run.",
     ...(l.problem ? ["", `It isn't published: ${mdText(l.problem)}.`] : []),

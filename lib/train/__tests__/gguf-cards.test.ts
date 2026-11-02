@@ -141,7 +141,7 @@ describe("one-bit Glimmer and small bases (QUANT_TARGETS)", () => {
     const lowBit = { level: "IQ1_S" as const, name: cards.ggufFileName("brief-writer", "IQ1_S"), bytes: 6_530_000_000, sha256: "e".repeat(64), klMean: 0.42, klP99: 1.9, topTokenPct: 61 };
     const base = facts();
     const card = cards.ggufCard({ ...base, builds: [lowBit, ...base.builds], lowBit: { final: 28, total: 30, agree: 3, agreeTotal: 30, problem: null, calibrationChars: 200000 } });
-    assert.match(card, /\| IQ1_S \| 0\.4200 \| none yet \|/);
+    assert.match(card, /\| IQ1_S \| 0\.4200 \| 1\.1000 \|/);
     assert.match(card, /Expect much weaker answers/);
     assert.match(card, /28 of 30 held-out prompts/);
     assert.match(card, /not run on a real board yet/i);
