@@ -19,7 +19,7 @@ const HOUR_MS = 60 * 60_000;
 const product = (extra: Record<string, unknown> = {}) => Response.json({ kind: "product", appNote: null, modelNote: null, ...extra });
 
 /**
- * POST {note, hasFolder?} -> 200 {kind: "product" | "model" | "both", appNote, modelNote, modelOff?, appBlock?, connect?}.
+ * POST {note, hasFolder?, want?: "both"} -> 200 {kind: "product" | "model" | "both" | "dataset", appNote, modelNote, modelOff?, appBlock?, connect?}.
  * MAKE_CHAT_ALL (docs/TRAINING.md "One box for everything"). Off: 404.
  *
  * Nothing starts from this. A note with no word about a model and no folder answers product with no sign-in, no counter
@@ -37,7 +37,9 @@ export const POST = route(async (req: Request) => {
   const note = body.note.trim();
   if (note.length > INTENT_NOTE_MAX) return errorJson(400, `Keep it under ${INTENT_NOTE_MAX} characters.`);
   const hasFolder = body.hasFolder === true && env.tuneFolder;
-  if (!hasFolder && !mayAskForModel(note)) return product();
+  // The menu's "App and model": skip the guess about whether it's wanted, and split the sentence into the two notes.
+  const forceBoth = body.want === "both";
+  if (!forceBoth && !hasFolder && !mayAskForModel(note)) return product();
 
   let caller: RunCaller;
   try {
@@ -69,7 +71,7 @@ export const POST = route(async (req: Request) => {
 
   let decided: Awaited<ReturnType<typeof decideIntent>>;
   try {
-    decided = await decideIntent({ note, hasFolder }, { respond: respondStructured, model: planModel });
+    decided = await decideIntent({ note, hasFolder, forceBoth }, { respond: respondStructured, model: planModel });
   } catch (err) {
     if (!(err instanceof StructuredOutputError)) throw err;
     await recordUsage({ source: "platform", endpoint: "responses" }, err.usage).catch((e) => console.error("[make/intent] usage", e));

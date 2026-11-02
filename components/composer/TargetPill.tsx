@@ -3,6 +3,7 @@
 import { Menu } from "@/components/Menu";
 import { targetLabel } from "@/lib/format";
 import type { TargetId } from "@/lib/brief/schema";
+import { MAKE_WANTS, wantHasApp, WANT_WORDS, type MakeWant } from "@/lib/make/want";
 
 /** One short line per target in the menu. */
 const TARGET_NOTES: Record<TargetId, string> = {
@@ -22,11 +23,12 @@ export function targetPillText(picked: readonly TargetId[]): string {
 }
 
 /** One row: a check mark beside its name and a short line, grey when picked. The checkbox stays for keyboards and screen readers. */
-function targetRow({ title, note, checked, locked, quiet, onToggle }: { title: string; note: string; checked: boolean; locked?: boolean; quiet?: boolean; onToggle: (on: boolean) => void }) {
+function targetRow({ title, note, checked, locked, quiet, group, onToggle }: { title: string; note: string; checked: boolean; locked?: boolean; quiet?: boolean; group?: string; onToggle: (on: boolean) => void }) {
   return (
     <label className={`menu-item target-menu-item${checked && !quiet ? " is-picked" : ""}${quiet ? " is-quiet" : ""}`}>
       <input
-        type="checkbox"
+        type={group ? "radio" : "checkbox"}
+        name={group}
         className="target-menu-box"
         checked={checked}
         disabled={locked}
@@ -63,17 +65,21 @@ export function TargetPill({
   picked,
   onChange,
   disabled,
+  make,
 }: {
+  /** MAKE_CHAT_ALL: what to make, above where it runs. Without it, this is only where it runs. */
+  make?: { value: MakeWant; onChange: (next: MakeWant) => void };
   /** The targets whose flags are on. Never web. */
   options: readonly TargetId[];
   picked: readonly TargetId[];
   onChange: (next: TargetId[]) => void;
   disabled?: boolean;
 }) {
-  const text = targetPillText(picked);
-  return (
-    <Menu text={text} label={`Where it runs: ${text}`} textIsLabel={false} align="end" buttonClassName="composer-pill target-pill" disabled={disabled}>
-      <ul className="menu-list target-menu-list">
+  const want = make?.value ?? "auto";
+  const text = want === "auto" || want === "app" ? (want === "app" && !picked.length ? "App" : targetPillText(picked)) : WANT_WORDS[want].title;
+  const showWhere = wantHasApp(want) && (!make || options.length > 0);
+  const where = (
+<ul className="menu-list target-menu-list">
         {options.length ? (
           <li>
             {targetRow({ title: "Auto", note: "Muse chooses where it runs", checked: !picked.length, locked: !picked.length, onToggle: () => onChange([]) })}
@@ -92,6 +98,30 @@ export function TargetPill({
           </li>
         ))}
       </ul>
+  );
+  return (
+    <Menu text={text} label={`${make ? "What to make and where it runs" : "Where it runs"}: ${text}`} textIsLabel={false} align="end" buttonClassName="composer-pill target-pill" disabled={disabled}>
+      {make ? (
+        <>
+          <p className="target-menu-head">What to make</p>
+          <ul className="menu-list target-menu-list">
+            {MAKE_WANTS.map((id) => (
+              <li key={id}>{targetRow({ title: WANT_WORDS[id].title, note: WANT_WORDS[id].note, checked: want === id, group: "make-want", onToggle: () => make.onChange(id) })}</li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+      {!showWhere ? null : make ? (
+        <details className="target-menu-where" open={picked.length > 0}>
+          <summary>
+            <span>Where it runs</span>
+            <span className="muted small">{targetPillText(picked)}</span>
+          </summary>
+          {where}
+        </details>
+      ) : (
+        where
+      )}
     </Menu>
   );
 }

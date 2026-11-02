@@ -16,6 +16,7 @@ import { askedText, KEPT_PLAN_KEY } from "@/components/train/room/TrainRoom";
 import type { TargetId } from "@/lib/brief/schema";
 import { connectWords, WHILE_TRAINING, type ConnectMode } from "@/lib/make/connect";
 import type { MakeKind } from "@/lib/make/intent";
+import type { MakeWant } from "@/lib/make/want";
 import type { MakeTrain } from "@/lib/make/page-props";
 import { SKIP_WORDS } from "@/lib/train/tune/folder";
 import { planRows, splitNote } from "@/lib/train/tune/examples";
@@ -32,6 +33,7 @@ interface Asked {
   raw: string;
   references: Reference[];
   targets: TargetId[];
+  want: MakeWant;
 }
 
 interface Intent {
@@ -106,30 +108,36 @@ export function MakeChat({
     setAsked(input);
     setStartError(null);
     setAppOnly(false);
-    let res: Response;
+    // The menu said exactly what it wants: nothing to work out, so no model call.
+    if (input.want === "app") return BUILD_AS_USUAL;
     let said: Record<string, unknown> | null = null;
-    try {
-      res = await fetch("/api/make/intent", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ note: split.note || input.raw, hasFolder: Boolean(ready) }),
-      });
-      said = (await res.json().catch(() => null)) as Record<string, unknown> | null;
-    } catch {
-      return "Couldn't reach Muse Muse. Check your connection and try again.";
+    if (input.want === "model" || input.want === "dataset") {
+      said = { kind: input.want, modelNote: split.note || input.raw };
+    } else {
+      let res: Response;
+      try {
+        res = await fetch("/api/make/intent", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ note: split.note || input.raw, hasFolder: Boolean(ready), ...(input.want === "both" ? { want: "both" } : {}) }),
+        });
+        said = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+      } catch {
+        return "Couldn't reach Muse Muse. Check your connection and try again.";
+      }
+      if (!res.ok) {
+        if (res.status === 400 && typeof said?.error === "string" && /\s/.test(said.error)) return said.error;
+        fail(input.raw, res.status === 502 ? "Muse Muse couldn't tell what this asks for. Try saying it another way, or build it as an app." : tuneErrorText(res.status, said), res.status !== 422);
+        return null;
+      }
+      if (said?.modelOff) {
+        fail(input.raw, "Tuning a model isn't open on this account. If you only want an app, build it as one.", true);
+        return null;
+      }
+      if (said?.kind === "product") return BUILD_AS_USUAL;
     }
-    if (!res.ok) {
-      if (res.status === 400 && typeof said?.error === "string" && /\s/.test(said.error)) return said.error;
-      fail(input.raw, res.status === 502 ? "Muse Muse couldn't tell what this asks for. Try saying it another way, or build it as an app." : tuneErrorText(res.status, said), res.status !== 422);
-      return null;
-    }
-    if (said?.modelOff) {
-      fail(input.raw, "Tuning a model isn't open on this account. If you only want an app, build it as one.", true);
-      return null;
-    }
-    if (said?.kind === "product") return BUILD_AS_USUAL;
     const next: Intent = {
-      kind: said?.kind === "both" ? "both" : "model",
+      kind: said?.kind === "both" ? "both" : said?.kind === "dataset" ? "dataset" : "model",
       appNote: typeof said?.appNote === "string" ? said.appNote : null,
       modelNote: String(said?.modelNote ?? split.note),
       connect: said?.connect === "window" ? "window" : "none",
@@ -208,6 +216,7 @@ export function MakeChat({
       setStartError(`Nothing has started, because the app can't start right now: ${errorMessage(intent.appBlock === "paused" || intent.appBlock === "no_storage" ? 503 : 429, intent.appBlock, false)}`);
       return;
     }
+    const dataOnly = intent?.kind === "dataset";
     setStarting(true);
     setStartError(null);
     try {
@@ -223,7 +232,8 @@ export function MakeChat({
             steps,
             ...(onFireworks ? { trainer: "fireworks" } : {}),
             // A run for a product never uploads by itself (the pair route holds it to that too).
-            ...(both || (train?.autoUpload && !upload) ? { autoPublish: false } : {}),
+            ...(both || dataOnly || (train?.autoUpload && !upload) ? { autoPublish: false } : {}),
+            ...(dataOnly ? { datasetOnly: true } : {}),
             ...(base.state === "ok" ? { base: { repo: base.base.repo, revision: base.base.revision } } : {}),
           },
         }),
@@ -272,6 +282,13 @@ export function MakeChat({
           <strong>The task.</strong> {askedText(plan.task)}
         </p>
       </li>
+      {intent?.kind === "dataset" ? (
+        <li className="room-answer make-row">
+          <p>
+            <strong>Just the dataset.</strong> Start writes the examples and stops. No GPU starts and nothing trains. You can download them, or tune a model on them later. The training numbers on this card only apply if you do.
+          </p>
+        </li>
+      ) : null}
       {intent?.kind === "both" ? (
         <li className="room-answer make-row">
           <p>
@@ -356,7 +373,8 @@ export function MakeChat({
             targetOptions={targetOptions}
             contributorNotice={contributorNotice}
             placeholder="Ask for a product, a tuned model, or both..."
-            send={({ note, references, targets }) => draft({ raw: note, references, targets })}
+            send={({ note, references, targets, want }) => draft({ raw: note, references, targets, want })}
+            offerWants={Boolean(train)}
             signedOutMaySend={Boolean(train?.visitor)}
             ignoreHandledDrops
             copy={COPY}
@@ -410,7 +428,9 @@ export function MakeChat({
           onExamples={setExamples}
           steps={steps}
           onSteps={setSteps}
-          autoUpload={intent?.kind === "both" ? null : (train?.autoUpload ?? null)}
+          autoUpload={intent?.kind === "both" || intent?.kind === "dataset" ? null : (train?.autoUpload ?? null)}
+          startLabel={intent?.kind === "dataset" ? "Write the examples" : "Start"}
+          codeHint={intent?.kind === "dataset" ? "Writing examples costs real money, so starting takes the code." : undefined}
           upload={upload}
           onUpload={setUpload}
           anyBase={train?.anyBase ?? false}

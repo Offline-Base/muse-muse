@@ -13,7 +13,7 @@ const WAITS: Partial<Record<NonNullable<TuneRunView["hold"]>["reason"], string>>
   lambda_unavailable: "Waiting to reach the big computers",
 };
 
-export function tuneFeed(v: Pick<TuneRunView, "stage" | "dataset" | "job" | "written" | "hold" | "verdict">): { rows: FeedRow[] } {
+export function tuneFeed(v: Pick<TuneRunView, "stage" | "dataset" | "job" | "written" | "hold" | "verdict" | "datasetOnly">): { rows: FeedRow[] } {
   const steps: FeedStep[] = [];
   const add = (id: string, plain: string, tone: StepTone = "plain", final = false) => steps.push({ id: `tune-${id}`, text: plain, plain, noun: plain, tone, final });
   const d = v.dataset;
@@ -28,6 +28,10 @@ export function tuneFeed(v: Pick<TuneRunView, "stage" | "dataset" | "job" | "wri
     if (v.stage === "checking") add("check", "Checking there are enough examples");
     else if (v.stage === "failed" && !job) add("check", "There weren't enough good examples to learn from", "bad");
     else add("check", `Kept ${d.evalCount} examples aside for a test`);
+  }
+  if (v.stage === "waiting" && v.datasetOnly && v.hold?.reason === "not_started") {
+    add("end", "Your dataset is ready", "good", true);
+    return { rows: steps.map((step) => ({ type: "step" as const, step, running: false })) };
   }
   if (v.stage === "waiting") add("wait", (v.hold && WAITS[v.hold.reason]) ?? "Waiting for a big computer to be free");
   if (job) {

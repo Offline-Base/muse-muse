@@ -15,7 +15,7 @@ import type { RunCaller } from "@/lib/train/tune/caller";
 import type { TuneRunView } from "@/lib/train/tune/types";
 
 const NOTE = "Answer questions for a made-up bakery, warm and short.";
-const reply = (kind: "product" | "model" | "both", appNote: string | null, modelNote: string | null) => ({ reason: "made up", kind, appNote, modelNote });
+const reply = (kind: "product" | "model" | "both" | "dataset", appNote: string | null, modelNote: string | null) => ({ reason: "made up", kind, appNote, modelNote });
 
 describe("which way a sentence goes", () => {
   it("makes no model call for a sentence with no word about a model", () => {
@@ -35,6 +35,18 @@ describe("which way a sentence goes", () => {
     const d = settleIntent(reply("model", "ignored", "short"), NOTE, false);
     assert.equal(d.appNote, null);
     assert.equal(d.modelNote, NOTE);
+  });
+
+  it("asks when a sentence might mean a dataset, and gives a dataset no app", () => {
+    assert.equal(mayAskForModel("Write me a dataset of made-up bakery questions"), true);
+    const d = settleIntent(reply("dataset", "ignored", NOTE), NOTE, false);
+    assert.equal(d.kind, "dataset");
+    assert.equal(d.appNote, null);
+  });
+
+  it("holds the menu's App and model to both, whatever the reply says", () => {
+    assert.equal(settleIntent(reply("product", null, null), NOTE, false, true).kind, "both");
+    assert.equal(settleIntent(reply("model", null, NOTE), NOTE, false, true).kind, "both");
   });
 
   it("falls back to the person's words for both", () => {
