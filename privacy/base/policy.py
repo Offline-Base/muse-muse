@@ -34,8 +34,11 @@ from base.types import DECISIONS, IDENTIFIER_KINDS, RESULT_KINDS, Decision
 MATCH_KEYS = ("kinds", "topics_any", "topics_all", "request_any")
 RULE_KEYS = frozenset({"id", *MATCH_KEYS, "wants", "pre_approved", "on_ask", "note"})
 TOP_KEYS = frozenset(
-    {"name", "description", "never_share", "ask_first", "request_topics", "identifier_topics", "rules", "default"}
+    {"name", "description", "never_share", "ask_first", "request_topics", "identifier_topics", "rules", "default", "mode"}
 )
+# enforce (the default): egress routes on this policy. observe: a candidate egress only watches
+# (OBSERVE_POLICY, base/observe.py); it never decides anything, and is refused as USER_POLICY.
+MODES = ("enforce", "observe")
 DEFAULT_KEYS = frozenset({"wants", "on_ask"})
 ON_ASK_KEYS = frozenset({"approve", "remember"})
 SHARE_FORMS = frozenset({"share_tagged", "share_summary"})
@@ -98,8 +101,10 @@ class UserPolicy:
         default: Rule,
         request_topics: dict[str, str] | None = None,
         identifier_topics: dict[str, str] | None = None,
+        mode: str = "enforce",
     ):
         self.name = name
+        self.mode = mode
         self._never_share = never_share
         self._ask_first = set(ask_first)
         self._request_topics = dict(request_topics or {})
@@ -170,7 +175,10 @@ class UserPolicy:
 
         default = _parse_default(data.get("default"), source)
         name = str(data.get("name") or Path(source).stem)
-        return cls(name, never_share, ask_first, rules, default, request_topics, identifier_topics)
+        mode = data.get("mode", "enforce")
+        if mode not in MODES:
+            raise PolicyError(f"{source}: mode must be one of {list(MODES)}, not {mode!r}")
+        return cls(name, never_share, ask_first, rules, default, request_topics, identifier_topics, mode)
 
     # Matching
 

@@ -5,7 +5,7 @@ export type ProductFilter = "all" | "video" | "rebuild";
 export const PRODUCT_FILTERS: { id: ProductFilter; label: string }[] = [
   { id: "all", label: "All" },
   { id: "video", label: "With a demo" },
-  { id: "rebuild", label: "Rebuilds" },
+  { id: "rebuild", label: "From Meta's lessons" },
 ];
 
 /** The products that match the search box and the filter menu. */

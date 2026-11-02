@@ -6,6 +6,12 @@ Change a line here when its fact changes. History goes in docs/BUILD_LOG.md.
 
 ## Now
 
+- **Meta models only (organizer ruling, Nov 2, 3:57 PM; docs/MESSAGING.md, "What the rules say").** Llama does not count as a Meta model here, and every model the project calls at runtime must be Meta's. Until the fix plan from the Nov 2 audit lands, this overrides every line below that names Llama, LFM, Bolt or Prompt Guard:
+  - Don't run the Kaggle notebook (it tunes Llama 3.2 3B), and don't start a Llama tune on the site. `TUNE_ANY_BASE` stays off.
+  - The chain run (to-do 2) is on hold until it's re-costed on the default Glimmer base.
+  - O5's Hugging Face repo will hold a Glimmer file, not `Llama-3.2-3B-ColdRoom-Watch-GGUF`.
+  - The edge board model, Muse Privacy's device model (LFM3-VL-2B), #67's Llama 3.2 1B on jetson-04, Bolt on jetson-03 and 04, and Prompt Guard on jetson-05 all need a Meta model or must stay off in the demo.
+- **Merged Nov 2 afternoon:** #67 (3:31 PM ET), #63, #68 (the edge track, 3:40 PM, deployed at `ee493e69`) and #69 (Learn, 4:07 PM). The tg-edge rows in the tables below are now on main.
 - **Production** ran main at PR #59 (`12a362a1`) as of midday, with the Make chat on (`MAKE_CHAT_ALL`). Vercel blocked the deploys of #60, #61 and #62 because Hussam's commits aren't from a Vercel team member (checked Nov 2 from GitHub's commit statuses). #66, authored by Ethan, merged at 2:09 PM ET and should deploy all of main, theirs included; check its deploy on Vercel, since this file hasn't.
 - **Deadline:** due Nov 4, 9 PM ET, and Ethan submits by noon ET. Whoever is awake switches judges to Muse Wonder on Nov 4.
 - **What we can say in public:** docs/MESSAGING.md (outside quotes, each marked checked or not, what the rules say, and what not to say). Then the marks in docs/STORY.md and docs/PROVE_RESULTS.md.
@@ -85,6 +91,10 @@ In order. To-do 2 has to finish by Nov 3 afternoon (Tue 3 PM for the edge tune),
     - O8, only if Hussam agrees: fallback level 2, which pulls the house uplink and takes jetson-05's tunnel and remote fleet access down during the take. Off until Hussam says yes.
 14. **Merge the edge track (tg-edge) into main.** Owner or Hussam, before the repo goes public.
 15. **Make the repo public.** About 1 hour, owner. See "Going public" below.
+16. **Try Muse Muse in Meta's Muse app on Mac.** About 20 minutes, Ethan, only if the @Muse thread of Nov 2 (Muse on iOS, Android and Mac) checks out on a Meta page (docs/MESSAGING.md).
+    - Add one live product's connector (`/api/mcp/<slug>`) and the Muse Privacy connector in the Muse app on Mac.
+    - Run 3 prompts that use each. Record what worked and what didn't, with a screenshot, in docs/BUILD_LOG.md.
+    - Until that's logged, don't say Muse Muse products work in the Muse app.
 
 Also waiting, from the Nov 2 audit. None is approved or started, except that item 5's docs (SUBMISSION.md and the shot list) are drafted on tg-submission-kit.
 - Hero tune: a longer Glimmer tune for redaction and private spreadsheet analysis, scored on the sealed test against base. Up to $300 of GPU. Was blocked on the rotated Lambda key, which is now in place; still not approved.

@@ -129,4 +129,8 @@ export interface RebuildRef {
   title: string;
   url: string;
   fit: RebuildFit | null;
+  /** The lesson's card on /learn, or null for a first demo, which has no Meta lesson. */
+  learnHref: string | null;
+  /** The Nov 2 audit's verdict and the product it judged, so a page can say how that product measured up. */
+  verdict: { label: string; product: string } | null;
 }

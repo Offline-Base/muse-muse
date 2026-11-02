@@ -29,7 +29,7 @@ from base.egress import Egress
 from base.heavy.queue import HeavyQueue
 from base.light import start_light
 from base.local_llm import FallbackLLM, LabelsFrom, LocalLLM
-from base.policy import UserPolicy
+from base.policy import PolicyError, UserPolicy
 from base.regions import RegionClient
 from base.router import Router
 from base.workspace.agent import Agent
@@ -129,7 +129,8 @@ class Services:
     """Attributes: settings, events, roster, tagmap, policy, answer_llm, router_llm, checker_llm
     (answer_llm unless CHECKER_BACKEND=lfm), scans and rag (None unless lfm), regions (a
     RegionClient with lfm and SAM_ENABLED=1, else None), router, approvals, jobs, index, heavy
-    (HeavyQueue or None), agent, audit, egress, night, light."""
+    (HeavyQueue or None), agent, audit, egress, night, light, and observed_policy (the OBSERVE_POLICY
+    candidate egress only watches, or None)."""
 
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -156,6 +157,13 @@ class Services:
             log.info("copied base.db before its first schema change on this version")
         s.tagmap = guard.TagMap.for_settings(settings)
         s.policy = UserPolicy.load(settings.policy_path)
+        if s.policy.mode != "enforce":
+            raise PolicyError(f"{settings.policy_path}: USER_POLICY must enforce; watch a candidate with OBSERVE_POLICY")
+        s.observed_policy = None
+        if settings.observe_policy_path is not None:
+            s.observed_policy = UserPolicy.load(settings.observe_policy_path)
+            if s.observed_policy.mode != "observe":
+                raise PolicyError(f"{settings.observe_policy_path}: OBSERVE_POLICY needs mode: observe in the file")
         s.answer_llm = LocalLLM(settings, role="answer")
         s.router_llm = LocalLLM(settings, role="router")
         s.checker_llm = s.answer_llm

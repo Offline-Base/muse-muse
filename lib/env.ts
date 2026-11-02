@@ -1132,7 +1132,10 @@ export const env = {
 
   // ---------- Edge builds (docs/EDGE_DEMO.md) ----------
 
-  /** EDGE_BUILDS: provisioning writes lib/meta/edge.ts, the muse-edge skill and the outage drill kit into every build. */
+  /**
+   * EDGE_BUILDS: with EDGE_ENABLED on too, provisioning writes lib/meta/edge.ts, the muse-edge skill and the outage drill
+   * kit into a build whose brief has the edge target (lib/edge/template-files.ts). Alone it changes nothing.
+   */
   get edgeBuilds(): boolean {
     // Keep it off while EDGE_URL can name any model: the plan's Llama 3.2 3B isn't a Meta model (lib/meta/models.ts, Nov 2).
     return flag("EDGE_BUILDS");

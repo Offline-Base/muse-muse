@@ -7,7 +7,7 @@
  */
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { renderBuildPrompt } from "@/lib/brief/render";
+import { briefToMarkdown, renderBuildPrompt, renderRefinePrompt } from "@/lib/brief/render";
 import { newBriefSchemaFor, NewBriefSchemaNoGadget, type Brief } from "@/lib/brief/schema";
 import { strictJsonSchema } from "@/lib/brief/strict-schema";
 import { env } from "@/lib/env";
@@ -70,7 +70,29 @@ describe("the edge target", () => {
     assert.deepEqual(applyTargets(edgeBrief(), { enabled: ["agent"] }).targets?.map((t) => t.id), ["web"], "edge off, edge dropped");
   });
 
+  it("names nothing edge in a stored or imported edge brief's prompts while the flags are off", () => {
+    const webOnly = (): Brief => ({ ...BRIEF, targets: [{ id: "web", why: "Always" }] });
+    const refine = (brief: Brief) => renderRefinePrompt({ message: "Make the button bigger.", newReferences: [], brief });
+    for (const flags of [[], ["EDGE_BUILDS"], ["EDGE_ENABLED"]]) {
+      for (const f of FLAGS) delete process.env[f];
+      for (const f of flags) process.env[f] = "1";
+      const prompt = renderBuildPrompt(edgeBrief(), RENDER);
+      assert.ok(!prompt.includes("### Edge") && !/muse-edge|respondJsonOrEdge|edge-drill/.test(prompt), flags.join(","));
+      assert.equal(prompt, renderBuildPrompt(webOnly(), RENDER), "the same prompt as the brief without edge");
+      assert.equal(refine(edgeBrief()), refine(webOnly()));
+      assert.equal(briefToMarkdown(edgeBrief()), briefToMarkdown(webOnly()));
+      assert.equal(judgeInstructions(edgeBrief()), JUDGE_INSTRUCTIONS, `judge, ${flags.join(",")}`);
+    }
+  });
+
+  it("gives a non-edge brief no Edge section with the flags on", () => {
+    on();
+    const prompt = renderBuildPrompt(BRIEF, RENDER);
+    assert.ok(!prompt.includes("### Edge") && !prompt.includes("muse-edge"));
+  });
+
   it("tells the build about the skill, the label and the drill", () => {
+    on();
     const prompt = renderBuildPrompt(edgeBrief(), RENDER);
     assert.match(prompt, /### Edge\n\nKeep answering when the cloud is cut\. Skill: `\.agents\/skills\/muse-edge`\./);
     assert.match(prompt, /respondJsonOrEdge/);
@@ -79,11 +101,13 @@ describe("the edge target", () => {
   });
 
   it("gives the judge one line about labeled answers, only for an edge product", () => {
+    on();
     assert.equal(judgeInstructions({ ...BRIEF, targets: undefined }), JUDGE_INSTRUCTIONS);
     assert.equal(judgeInstructions(edgeBrief()), `${JUDGE_INSTRUCTIONS}\n\n${EDGE_JUDGE_NOTE}`);
   });
 
   it("says nothing a person reads that the messaging rules rule out", () => {
+    on();
     const copy = [TARGET_GUIDE.edge, ...TARGET_LIMITS.edge!.map((l) => l.text), EDGE_JUDGE_NOTE, renderBuildPrompt(edgeBrief(), RENDER)].join("\n");
     assert.ok(!copy.includes("\u2014"), "no em dashes");
     assert.ok(!/attack-proof|stops hacks|food.safe/i.test(copy));
