@@ -442,7 +442,7 @@ export function BuildRoom(props: BuildRoomProps) {
 
   if (feed) {
     const checks = items.filter((item) => item.type === "step");
-    const notes = items.filter((item) => item.type === "owner" || (item.type === "question" && !item.live));
+    const notes = items.filter((item) => item.type === "owner" || (item.type === "say" && item.reply) || (item.type === "question" && !item.live));
     const panelToggle = <StepsToggle label="details" open={panelOpen} onClick={() => (panelOpen ? closePanel() : showSteps(null, !room.terminal))} />;
     return (
       <div className="room chat-split" data-settled={settled}>

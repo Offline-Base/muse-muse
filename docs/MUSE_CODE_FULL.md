@@ -129,7 +129,7 @@ can't answer. On the exec engine, notes travel through the PostToolUse hook inst
   (`canSteerBuild`). The pass is handed out under this flag too, without `GUEST_EDITS` giving refine rights.
 
 `env.steeringEnabled` follows `MUSE_ENGINE=serve` or `MUSE_FULL`, so it has no switch of its own, which is why this
-has one. `SteerBox` takes `inline` to sit in a column rather than float at the foot of the room.
+has one. Under `BUILD_ROOM_STEPS` the box sits in the left column and the answers show there with the notes.
 
 ### 5. Every product as an MCP server, a CLI, a skill and a connector (phase 3)
 

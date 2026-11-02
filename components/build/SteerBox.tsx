@@ -63,7 +63,7 @@ export function steerErrorText(status: number, code: string | undefined): string
  * Send turns into stop while the box is empty, as in the app. With a note written, Stop moves beside Send, so it's
  * always one press away.
  */
-export function SteerBox({ buildId, contributorNotice, inline }: { buildId: string; contributorNotice?: boolean; /** Sits in a column instead of floating at the foot of the room. */ inline?: boolean }) {
+export function SteerBox({ buildId, contributorNotice }: { buildId: string; contributorNotice?: boolean }) {
   const inputId = useId();
   const hintId = useId();
   const textarea = useRef<HTMLTextAreaElement>(null);
@@ -101,7 +101,7 @@ export function SteerBox({ buildId, contributorNotice, inline }: { buildId: stri
 
   const disabled = busy !== null || stopped;
   return (
-    <div className={inline ? "composer-wrap" : "composer-wrap composer-floating"}>
+    <div className="composer-wrap composer-floating">
       {contributorNotice ? <ContributorNotice /> : null}
       <form
         className="composer"
