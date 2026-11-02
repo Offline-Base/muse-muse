@@ -128,6 +128,11 @@ export interface TunedModelView {
   gguf: { repoUrl: string; runHref: string } | null;
   /** True for a model trained from r30b, a Derivative of Muse Spark Open (ResultView.sparkOpen, lib/train/base.ts). */
   sparkOpen: boolean;
+  /**
+   * For decide-kind results: show accuracy instead of wins (lib/decide/types.ts: kind tells pages to show these
+   * numbers instead). Mirrors JobPanel and LabResults "(Tuned|Base) right on X of Y". Null for judged chat jobs.
+   */
+  decision: { tuned: boolean; right: number } | null;
 }
 
 /** The judged glimmer-lora jobs, in the order given. Other recipes' results aren't models. */
@@ -145,6 +150,7 @@ export function tunedModelViews(results: ResultView[], localFiles: Map<string, L
         hubUrl: r.hub?.modelUrl ?? null,
         gguf: linkable ? { repoUrl: hubRepoUrl(files.repo as string), runHref: `/fine-tuning/${r.id}/run` } : null,
         sparkOpen: r.sparkOpen === true,
+        decision: r.decision ? { tuned: Boolean(r.decision.tuned), right: (r.decision.tuned ?? r.decision.base).accuracy.right } : null,
       };
     });
 }

@@ -122,7 +122,8 @@ export function TunedModelsTable({ models }: { models: TunedModelView[] }) {
                 ) : null}
               </td>
               <td className="train-nowrap">
-                Tuned won <strong>{m.tunedWins}</strong> of {m.items}
+                {m.decision ? `${m.decision.tuned ? "Tuned" : "Base"} right on` : "Tuned won"}{" "}
+                <strong>{m.decision ? m.decision.right : m.tunedWins}</strong> of {m.items}
                 {m.sparkOpen ? <span className="row-sub muted">against the 2026 Glimmer it started from</span> : null}
               </td>
               <td>
