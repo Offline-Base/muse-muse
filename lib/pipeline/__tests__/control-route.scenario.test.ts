@@ -409,6 +409,7 @@ describe("POST /api/builds/{id}/control", { skip: canMock ? false : "needs --exp
       assert.match(command.text, /About your note:/);
       assert.match(command.text, /never adds spend or time/);
       assert.match(command.text, /outranks brief\.md/);
+      assert.match(command.text, /in your last message/);
       assert.ok(command.text.endsWith("Make the header darker."));
       assert.equal(checked()[0]!.message, "Make the header darker.");
       assert.equal(events()[0]!.text, "Make the header darker.");

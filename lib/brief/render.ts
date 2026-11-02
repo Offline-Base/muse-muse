@@ -300,7 +300,7 @@ function sessionLines(notes: SessionNotes & LookNote, when: Run, complex = false
     );
     if (notes.noteReplies) {
       out.push(
-        `A note outranks brief.md on the name, words, look, screens and features, so a note that differs from the brief is a change to make, not a reason to refuse. It never adds spend or time, and your limits stay as they are. Answer each one on a line that starts with "${NOTE_REPLY_PREFIX}" before your next tool call: what you'll do, or plainly that you can't, or can do only part of it. If you run out of time before finishing a note, say so in your last message.`,
+        `A note outranks brief.md on the name, words, look, screens and features, so a note that differs from the brief is a change to make, not a reason to refuse. It never adds spend or time, and your limits stay as they are. Answer each one on a line that starts with "${NOTE_REPLY_PREFIX}" before your next tool call: what you'll do, or plainly that you can't, or can do only part of it. Repeat one such line per note, each on its own line, in your last message, saying what you ended up doing. If you run out of time before finishing a note, say so in your last message.`,
       );
     }
   }
