@@ -247,6 +247,14 @@ Router finding for Ethan: a request headed outside the class that both the label
   - README line 13 and docs/OTHER_APPS.md now match this log's Oct 31 entries on the Claude and ChatGPT apps.
   - Tests on the combined branch: test_claims, test_canary_capture and test_oct30_leaks, 130 of 130.
   - Open: why the 2B pass missed those names (its replies weren't saved); names made only of common words ("Grace Hunter") or lowercase still depend on the 2B pass, a product call; a model rerun of fresh_200 and a real canary run, both written up, neither run.
+- Evening, on Muse Muse branch tg-privacy-sim (merged into tg-defense; agent built, adversarially reviewed; no model run, no spend):
+  - Simulator: `scripts/simulate_policy.py` runs each saved eval item through the real `Egress.release` under the current and a proposed policy, in one throwaway home with one shared tag map. It uses a fake model and refuses the sealed sets. Its report holds ids and reason codes only, never item text.
+  - Simulated (invented items, no model), the eval teacher's policy against relaxed_teacher's: fresh_200, 42 of 200 items go from ask to allow, none get stricter, 0 leaks under either. 34 of the 42 carry a hand label of ask_user or refuse. tasks, 8 of 100 go from ask to allow, all labeled ask_user or refuse. A policy against itself: 0 of 200 change. Reports in eval/reports/policy_sim/.
+  - Observe mode: a policy file may say `mode: observe`. `OBSERVE_POLICY` loads a candidate, and for each result egress writes one line to BASE_HOME/observe.jsonl (decisions and codes, no text). The candidate is rules-only with a model client that raises if called. Observe cannot change a release. Off by default.
+  - Review fixes: would_allow overstated how loose a candidate was (it now accounts for egress's later checks); a test wrote part of a result into the observe log; observe.jsonl is never purged by the retention toggles (now a limit in SIMULATE.md).
+  - Not built: replaying the device's own egress log, a reader for observe.jsonl, and request labels from the device model.
+  - Tests: 274 passed (observe, simulate_policy, egress, no_egress, claims, threat_model, prompt_guard). ruff check clean.
+  - The Nov 2 organizer ruling (Meta models only at runtime) puts the device model LFM3-VL-2B and Prompt Guard in question. The Muse Muse audit will decide what replaces them; this work uses no model, so it stands either way.
 
 ## Open items
 

@@ -81,6 +81,7 @@ describe("the edge target", () => {
       assert.equal(prompt, renderBuildPrompt(webOnly(), RENDER), "the same prompt as the brief without edge");
       assert.equal(refine(edgeBrief()), refine(webOnly()));
       assert.equal(briefToMarkdown(edgeBrief()), briefToMarkdown(webOnly()));
+      assert.equal(judgeInstructions(edgeBrief()), JUDGE_INSTRUCTIONS, `judge, ${flags.join(",")}`);
     }
   });
 
@@ -100,6 +101,7 @@ describe("the edge target", () => {
   });
 
   it("gives the judge one line about labeled answers, only for an edge product", () => {
+    on();
     assert.equal(judgeInstructions({ ...BRIEF, targets: undefined }), JUDGE_INSTRUCTIONS);
     assert.equal(judgeInstructions(edgeBrief()), `${JUDGE_INSTRUCTIONS}\n\n${EDGE_JUDGE_NOTE}`);
   });

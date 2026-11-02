@@ -2608,3 +2608,32 @@ Merged origin/main (#50, #51). The only conflict was this log; both entries kept
 - **Owner decision:** which lessons to rebuild. The cost table is in the PR. Nothing was built.
 - **Tests:** learn, product page, build render and requested targets pass, 55 of 55. The reviewer's typecheck was clean. Merged with main after #68 with no conflicts.
 - **Spend:** $0.
+
+## Nov 2, 2026: the defense round, and the Meta-models-only ruling (branch tg-defense)
+
+Three branches built in parallel worktrees, each reviewed adversarially, then merged into tg-defense. Nothing spent, no network calls, no builds.
+
+- **The organizers' ruling, 3:57 PM ET (Cerebral Valley Discord, pasted by Ethan).** Llama does not count as a Meta model in this hackathon, and every model the project calls at runtime must be Meta's. That rules out the Llama 3.2 3B edge plan, the Kaggle notebook, #67's Llama 3.2 1B, LFM (Muse Privacy's device model, jetson-05), Bolt and Prompt Guard at runtime. Recorded in docs/MESSAGING.md (rules section, the retired Llama 3.2 line, "Don't say") and at the top of docs/HANDOFF.md. A read-only audit of every runtime model is running and will bring the fix plan. Until then: no Kaggle run, no Llama tune, and the chain run waits to be re-costed on Glimmer.
+- **Edge files only for edge builds (tg-edge-scope).** Before this, `EDGE_BUILDS` alone wrote the edge helper, the muse-edge skill and the drill kit into every build. `edgeExtraFiles(brief)` now writes them only when the brief targets edge and `EDGE_ENABLED` and `EDGE_BUILDS` are both on (`isEdgeBuild`). `render.ts` drops the edge target with the flags off, so a stored or imported edge brief renders the same prompts as one without edge (test added; the flags-off goldens are unchanged).
+- **The judge's edge note was gated the same way (Claude, at merge).** `lib/prompts/judge.ts` added `EDGE_JUDGE_NOTE` for any brief listing edge, even with the flags off, which the edge-scope agent flagged. It now needs `env.edgeEnabled` too. edge-target.test.ts checks the judge text with the flags off.
+- **"Outage drills (simulated)" panel.** New `lib/edge/drills.ts` and `components/build/DrillGroup.tsx`. The build room's checks and the product page show the four drills as their own group, each with Passed or Failed, its time and one line on what was simulated. A failed drill makes the group Failed. The review found and fixed:
+  - drill lines that overclaimed (they said "the page", but the drill checks the route's reply);
+  - the public product page showing a failed drill's reason, which can quote the product's server output, to everyone (now owner only);
+  - no spacing on the panel;
+  - stale comments saying `EDGE_BUILDS` writes the edge files into every build.
+  For VIDEO.md shot E1. It has not rendered in a real browser yet.
+- **Six more drills (tg-scenarios), behind `npm run drill:all`:** 5 cloud slow but inside the limit, 6 cloud flapping, 7 edge too slow as well, 8 truncated reply, 9 injected text in a schema-valid reply, and 10 gateway host not found. The default set (drills 1 to 4, the set builds run) is unchanged. The blackhole gateway is now an HTTP server, and its refuse and hang modes behave as before. The review found and fixed:
+  - drill 10 passing for a product that never tries the cloud (the preload now reports each blocked lookup);
+  - a typo in `--only` running zero drills and exiting 0 (now a setup error, exit 2);
+  - a preload test that couldn't tell the patch from a real resolver;
+  - overclaims ("no DNS query leaves the machine" holds only for `dns.lookup`; drill 8 no longer claims to model a power loss).
+  `npm run drill:all` passed 10 of 10 in 36.9 s on the Mac, against fake servers on loopback and the bundled demo product, not a product Muse Code built.
+- **Muse Privacy simulate-before-release and observe mode (tg-privacy-sim).** Logged in privacy/docs/BUILD_LOG.md. Labeled Simulated: invented items, no model.
+- **Docs:** docs/MESSAGING.md also gets the Nov 2 @Muse thread (Muse on iOS, Android and Mac; not checked on a Meta page) and a point 4 note. docs/HANDOFF.md gets to-do 16, trying one product connector and the Muse Privacy connector in the Muse app on Mac.
+- **Tests:**
+  - edge-target, template-source, edge-build and drills: 37 of 37.
+  - Judge consumers (full-builds, caps flags-off, targets, muse-app-look, asked-look, range): 100 of 100.
+  - Per branch, as reviewed: edge-scope 46 of 46; scenarios 15 of 15 plus 24 of 24; privacy 274 passed.
+  - Typecheck clean on the combined branch.
+  - `lib/edge/template-source.ts` regenerates with no change after the merge.
+- **Spend:** $0.
