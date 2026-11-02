@@ -3,6 +3,7 @@ import { textPart } from "@/lib/brief/media";
 import { noEmDashes } from "@/lib/brief/normalize";
 import type { Brief } from "@/lib/brief/schema";
 import { respondStructured } from "@/lib/brief/structured";
+import { buildTestModel } from "@/lib/env";
 import { TOOL_POLICIES } from "@/lib/tools/catalog.source";
 import type { ToolFixtures } from "@/lib/tools/ids";
 import type { ModelUsage } from "@/lib/types";
@@ -83,14 +84,14 @@ export function usableOutputs(sample: unknown, outputs: string[]): unknown[] {
 }
 
 /**
- * One Muse Wonder call (about $0.04) for a brief's read tools. Null with nothing to write: no agent, or only web search,
+ * One call (Muse Wonder, about $0.04, or Contributor with buildTestModel()) for a brief's read tools. Null with nothing to write: no agent, or only web search,
  * which stays live during builds. A tool the reply leaves out or gets wrong falls back to its catalog sample.
  */
 export async function prepareToolFixtures(brief: Pick<Brief, "agent" | "name" | "tagline">): Promise<{ fixtures: ToolFixtures | null; usage: ModelUsage[] }> {
   const functions = readFunctions(brief);
   if (!functions.length || !brief.agent) return { fixtures: null, usage: [] };
   const result = await respondStructured({
-    model: FIXTURE_MODEL,
+    model: buildTestModel() ?? FIXTURE_MODEL,
     instructions: INSTRUCTIONS,
     content: [
       textPart(

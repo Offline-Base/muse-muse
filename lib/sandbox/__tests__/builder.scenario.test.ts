@@ -631,7 +631,7 @@ describe("product sandboxes", { skip: canMock ? false : "needs --experimental-te
     it("names the test model when products call Meta directly, the gateway's swap doesn't happen there", async () => {
       const text = await envFile({ PLATFORM_URL: "http://localhost:3000", TEST_MODEL: CONTRIBUTOR });
       assert.match(text, /^GATEWAY_URL=https:\/\/api\.meta\.ai$/m);
-      assert.match(text, new RegExp(`^TEST_MODEL=${CONTRIBUTOR}\\n$`, "m"));
+      assert.match(text, new RegExp(`^TEST_MODEL=${CONTRIBUTOR}$`, "m"));
     });
 
     it("leaves it out through the gateway, which swaps the model itself", async () => {
@@ -642,9 +642,11 @@ describe("product sandboxes", { skip: canMock ? false : "needs --experimental-te
 
     it("names it with BUILDS_ON_CONTRIBUTOR on a direct run, and never through the gateway", async () => {
       const direct = await envFile({ PLATFORM_URL: "http://localhost:3000", BUILDS_ON_CONTRIBUTOR: "1" });
-      assert.match(direct, new RegExp(`^TEST_MODEL=${CONTRIBUTOR}\\n$`, "m"));
+      assert.match(direct, new RegExp(`^TEST_MODEL=${CONTRIBUTOR}$`, "m"));
+      assert.match(direct, /^MUSE_CONTRIBUTOR_NOTICE=1$/m);
       const gateway = await envFile({ PLATFORM_URL: "https://musemuse.example", BUILDS_ON_CONTRIBUTOR: "1", VERCEL_ENV: "production" });
       assert.doesNotMatch(gateway, /TEST_MODEL/);
+      assert.match(gateway, /^MUSE_CONTRIBUTOR_NOTICE=1$/m);
     });
 
     it("leaves it out when TEST_MODEL is unset, names another model, or the platform is production", async () => {

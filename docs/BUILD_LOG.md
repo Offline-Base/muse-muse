@@ -2018,3 +2018,159 @@ Behind a new flag, off by default. Design and limits are in docs/BUILD_RANGE.md.
 ## Nov 1: Media tab removed
 
 Owner asked. Took Media out of the sidebar in components/shell/nav.ts. The /media page stays at its address and nothing else links to it. Touched test only: nav.test.tsx.
+
+## Nov 1: build room steps feed, one real build on a Preview
+
+Preview muse-muse-c14vetvrn, branch tg-build-room-steps at 35c08fb2, made-up note (a tip calculator for a made-up cafe, Moss and Mug). Build 580a9987-1c7f-42f0-8b40-61d4948bbe82, product moss-and-mug-tips, final status live in 6 m 6 s. buildModel read back as muse-spark-1.3-contributor. Total $0.0193. Summarizer two calls, $0.0002251 and $0.000273, $0.0004981 in all, about 2.6% of the build.
+
+Feed at the end, as rendered: Reading what you asked for / Writing down the plan / Setting up a little workspace / recap "Reading your ask, writing the plan, and tidying a workspace", "A calm little start" / Trying out a few things / Putting pieces together / Opening a first look / recap "Trying a few things out, putting pieces together, and opening a first look.", "Still humming along." / Trying everything out / Passing the checks / Looking at screens and they look right / recap "Trying everything out, passing checks, and seeing the screens look right.", "Careful and happy checking" / Recording a short demo / Putting it online / It's online / recap "That covered a demo, going online and the finished product.", "Here it is."
+
+Measured against the event log:
+
+- Every line has a real event behind it. 12 steps, 4 recaps. Recaps first showed at 51 s, 4 m 24 s, 5 m 0 s and 6 m 5 s, so not evenly: Muse Code's 3.5 minutes are 2 steps, and the last 2 minutes are 7.
+- Wrong on this Preview: "Putting it online" and "It's online". The log says publishing is off and the product got no link of its own, and the status message says "Finished as live without publishing to its own link." The feed reads only the status.
+- Vague: "Putting pieces together" stands for 8 edits, including the page and an action route. Each edit line adds 2 to "files", so it outscores the single "page" line and "Drawing the home page" never shows.
+- Tense: the model turned finished steps into "Writing down the plan" and "Passing the checks".
+- Words landed twice, at 1 m 50 s and at 6 m 5 s. Between them too few steps were finished while Muse Code polled, and polling stops when it ends, so steps 4 to 10 kept plain words until 0.2 s before the end. The last recap is never worded, since the last call runs before the ending. One recap kept its plain comment because the model's was missing or rejected.
+- Bug: on the finished room the training notice and the composer sit over the feed with no background, and the text overlaps, at both widths and worst at 390 px. `build-room-steps-final-390.jpg`.
+- No sideways scroll at 1280 or 390.
+
+Summarizer failure: replayed this build's real events through `summarizeFeed` with a failing call, in a scratch test not committed. Throw, hang past a 500 ms box, not JSON and wrong shape all returned failed, and rule-breaking lines returned empty. None threw and none wrote anything. With no words at all the feed still reads, 12 steps and 4 recaps in plain words. Not done: a failure on the deployed step in a real build, since that takes a second build or a code hook. `build-room-steps-during2-1280.jpg`, at 1 m 43 s, shows the plain words live in the room, before the first batch landed.
+
+Shots, with the account email hidden: `build-room-steps-during2-*`, `-during3-*`, `-final-*`, at 1280 and 390. Reached through a local forwarder to `vercel curl`. No code changed. No PR exists for the branch yet.
+## Nov 1: Builds and products on Contributor, a short plan, chat in products
+
+Branch tg-build-tools. Owner asked for all builds on Contributor, a much shorter plan, and products that can use the Muse Spark API.
+
+- **Correction to the Nov 1 Preview note above:** the two Previews that ran Wonder had no TEST_MODEL on their deployments. The claim that p48u0s8jy had it on the command line is wrong, and it doesn't lack or have it because of PACKAGER_SNAPSHOT_ID. No code bug explains it. After a deploy, read the env names back and then buildModel.
+- **Fix, build steps:** tool fixtures, platform keys and every Muse Code session now follow the switch (buildTestModel, BUILDS_ON_CONTRIBUTOR). lib/__tests__/build-models.test.ts fails if a step names its own model.
+- **Fix, changes:** a change to a product whose session ran on Wonder moves to Contributor in a new session, since reasoning records belong to their model. Its prompt tells it to read the product first. A restore runs no model and keeps its session.
+- **Decision, runtime:** a live token gets runtime:contributor only with the flag on, a brief to check, nothing personal and the notice in its code. Products published before keep Wonder, since they show no notice. With the flag off the marker does nothing.
+- **Safeguard:** runtimeStaysOffContributor keeps these on Wonder: an agent's personal tools or owner connection, the owner's keys or sends through connect, drive or board tools, and gadgets. Meta's terms (6.2) bar personal information on Contributor. Gadgets and board tools go beyond the request, because they carry a person's camera, microphone or files.
+- **Notice:** both template footers show "This product runs on a model Meta may train on. Don't enter personal or sensitive information." with MUSE_CONTRIBUTOR_NOTICE=1. The Privacy page says the same.
+- **Ability gap:** audio input isn't listed for Contributor, so a call with input_audio stays on Wonder and says so in x-musemuse-note. Vision is listed for Contributor. Muse Image, SAM and Voice are their own models and are unaffected. Tuning, the tuning judge and the device ask route aren't builds and were left alone.
+- **Denied:** pulling production env to measure web search, vision and audio on Contributor directly was refused by a permission check. Not worked around, so these three aren't measured directly.
+- **Fix, plan:** the card shows its name, tagline and at most four short lines. "See the full plan" folds the whole brief. Brief data is unchanged. Shots: docs/log/shots/plan-concise-{before,after}-{390,1280}.png, rendered from the real component and CSS with a made-up brief.
+- **Chat in products:** template/lib/meta/chat.ts, the meta-chat skill, and a catalog line offered only with BUILDS_ON_CONTRIBUTOR or platform on, so flags-off prompts stay byte for byte.
+- **Builder route:** startProduct(pass, noteWithChatbot(note, purpose)). A child is a normal build with its own metered token, so no key goes in source. Sandboxes return files with no link, and keys are short-lived, so neither is the lasting route. Owner only, guests still refused.
+- **Decision:** CAP_READY.platform is now true. PLATFORM_POWERS stays off by default.
+- **Snapshot:** snap_Dy4CjpILCMOBnaJ28Skzswys7CJ4, recorded with 18 overlays including platform.
+- **Tests:** tsc clean. Touched tests 395 of 398. The 3 failures (flags-off round caps, two workflow cap messages) also fail on main at a3c2fe6a, as does the build-steps scenario suite (mock lacks collectDeployFiles).
+- **Preview:** muse-muse-nbb9ow0a2, env names read back with the switches present.
+- **Measured:** build 3823ec1d, a note asking for a vibe coding studio whose apps have chatbots: buildModel read back muse-spark-1.3-contributor, the brief has a platform block with publish, gateway and sandboxes, and lists Wonder. Cost at brief $0.0034.
+- **Build 3823ec1d so far, about 45 minutes in:** still running on the Preview, on Contributor, at about $0.13, past milestone 2 of 4. Not finished when this was written, so the chat route isn't proven end to end. No subagent line in its events, so subagents on Contributor remain unmeasured. A real child can't publish from a Preview, so a live child's chatbot is unproven. Meta spend is that build only, no GPUs.
+## Nov 1: /models redesigned as cards (branch tg-models-page)
+
+Owner asked for the look of their screenshot of Meta's Models page. No flag: this ships directly.
+
+- **Change:** large bold title, an "All modalities" dropdown that really filters, and a two-column grid of hairline cards (one column on phones). Each card has name, subline, description, pill buttons, and key and value rows pinned to the bottom. The tuned models, Your own models and Where they run moved to the same style; the old tables are gone from this page.
+- **Added cards:** Muse Spark 1.3 and Muse Spark Open, which the screenshot shows. Spark 1.3's card says Muse Muse doesn't call it, and it has no playground button, since the docs' demos run it as Contributor.
+- **Decision, buttons:** every button stays in this app. Try in playground opens a docs page's live demo panel (#try-it-live), Model specs goes to /docs/models anchors, Download goes to the docs' get-the-model pages. The one external pill is on tuned models, as before (Hugging Face, GGUF files).
+- **Decision, New pill:** the repo has no release dates, so New follows the catalog's status "preview", which today is Muse Wonder only.
+- **Decision, data:** prices come from lib/meta/pricing.ts, context from the catalog and the docs' open-weights facts. catalog/meta-models.json is unchanged, since the brief writer's prompt reads it. Spark Open's and Glimmer's modalities are written in components/models/catalog.ts from the catalog's facts text.
+- **Measured:** touched tests pass (models-page 26, own-models-slot 6), tsc clean, full suite not run. Local page on a migrated PGlite with two made-up tuned jobs: all five filter choices hide the right cards, no sideways scroll at 1280 or 390, the first row's cards are equal height, all linked docs pages answer 200. Spend $0.
+- **Not checked:** GGUF and Run it buttons on a tuned card in a browser (covered by the page test only), Your own models in a browser (flags off), production.
+
+  ![/models at 1280, light](log/shots/2026-11-01/models-page-1280-light.png)
+  ![/models at 1280, dark](log/shots/2026-11-01/models-page-1280-dark.png)
+  ![/models at 390, light](log/shots/2026-11-01/models-page-390-light.png)
+  ![/models at 390, dark](log/shots/2026-11-01/models-page-390-dark.png)
+  ![/models filtered to Audio](log/shots/2026-11-01/models-page-1280-light-audio.png)
+
+**Check pass (same branch).** Compared the shots with the brief and checked prices, links, filter, the old page's content and contrast.
+
+- **Fix, merge conflict:** the PR couldn't merge after the Demos page was removed from main (conflict in this log only). Merged origin/main; the Demos tab is gone from the sidebar in the new shots.
+- **Fix, Your own models:** it sat inside the tuned section, so choosing Audio or Video hid it along with that section. It's now its own section after the tuned one, outside the filter. Removed the unused .models-sub style. A test checks the placement. Not seen in a browser (flags off).
+- **Measured:** every price comes from lib/meta/pricing.ts. Every in-app button target on the page reached the right page and anchor. Each Try in playground button, clicked from /models, opens the live demo panel. Filter on an empty PGlite: All 8, Text 7, Image 7, Video 5, Audio 3. Text on the page background and cards measures at least 5.36:1 in light and dark. Dark pill and New values were read before the fills finished fading, so those two are approximate. No sideways scroll at 390. Touched tests pass (models-page and own-models-slot, 32), tsc clean, full suite not run. Spend $0.
+- **Known, not changed:** Wonder's Try in playground opens on the Muse Spark tab, one click from the Muse Wonder tab. The Audio filter leaves out Spark 1.3 and Contributor: the catalog lists no audio input and the docs say audio on 1.3 is not fully supported. The Text filter leaves out Voice Transcribe, whose catalog output is a transcript, and the empty "No tuned models yet" card stays visible under any filter.
+
+  ![Check pass, 1280 light](log/shots/2026-11-01/models-page-verify-1280-light.png)
+  ![Check pass, Audio](log/shots/2026-11-01/models-page-verify-1280-light-audio.png)
+  ![Check pass, 390 dark](log/shots/2026-11-01/models-page-verify-390-dark.png)
+  ![Try in playground from Muse Wonder](log/shots/2026-11-01/models-page-verify-try-panel.png)
+## Nov 1: Demos page removed
+## Nov 1: anyone can fine-tune, a folder drop and a start code (branch tg-open-tune)
+
+Owner: "Anyone can start a fine tuning jobs", a folder that Spark 1.3 Contributor makes training data from, and a code to start a job. All behind OPEN_TRAIN, TUNE_FOLDER and TUNE_START_CODE, off or unset by default. Full description in docs/TRAINING.md "Anyone can fine-tune". The code's value is only in the environment.
+
+Decisions:
+- The code is checked at Start (POST /api/train/runs and the room's start route) as asked. A plan is a paid call before it, so plans got limits of their own: refused with no code set, 20 an hour per person, 40 per IP, 200 a day across visitors. Moving the code to the plan too is a small change if the owner wants it.
+- Files reach only Contributor. The plan's Wonder call sees just the note. No fallback to Wonder: refused instead, in the plan, at Start and in every writing step.
+- Nothing from a folder is stored before Start: the draft stays in the browser and comes back, checked against a hash in the signed plan and scanned again. No Blob, since that store is public.
+- Lifetime per-IP GPU limit added ($100 times the IP factor), in rate_limits, so clearing a cookie doesn't reset the $100. Added OPEN_TRAIN_META_DAILY_USD, $15: a Wonder run of 100 examples reserves about $3.67 at planCost's high estimate, so my first $5 allowed one run a day. Found by the two-visitors test.
+- Visitor marks live in rate_limits like the run's other marks: no migration.
+- The narrow-skill rule went into the plan's one Wonder call for visitors, not a second call to checkTrainingTask.
+- isBanned now reads users.banned_at. The other trust.ts fallbacks stay, so a signed-in non-admin trains as a cookie visitor.
+- Not done: scanning written examples at checkExamples for visitors. The writer's made-up details would fail runs after they were paid for.
+
+Fixes while testing: unfence used a global regex's stateful test, so a fence could survive (found by the nested-fence test); grounding could pass its size limit by its headers (found by the size test).
+
+Tests, touched code, all made-up data: new lib/train/tune/__tests__/open-train.test.ts (real routes, PGlite, real counters and signing; wrong and missing code on every start path, tries per person and IP, another visitor's run, forged cookie, two starts at once, steps and dollars over limits, Lab pages, publish 0, folder flows) and folder.test.ts (made-up zip, PDF, fake .env, binary, hidden instruction). lib/train/__tests__/datasets.test.ts and components/train/__tests__/pages.test.tsx fail in their setup on main too (their store mocks lack datasetGrounding and gpuBudgetFor), not from this work. Spend so far: $0.
+
+Preview muse-muse-j1swsu3a1, as a guest (OPEN_ACCESS=guest, so no admin), on the main database, model read back as Spark 1.3 Contributor. All made-up data. /, /fine-tuning and /fine-tuning/new answered 200; the page carries the folder notice and never the code. Runs with a wrong or no code: 403. POST /api/train/jobs: 403. Folder with a fake .env, a binary's name, an email and a hidden instruction: the .env and binary skipped with reasons, the email's line taken out, the instruction kept only as data. The plan's reply and the task didn't hold it. Start with the code in capitals and spaces: 201, run 6d04777d. Contributor wrote 40 examples for $0.0077. Another visitor: 404 on the run and its room; not on the Lab page. Then the launch was refused and the run stopped, so **no GPU started, $0 on Lambda**: TRAIN_ALLOW_OUTSIDE_PRODUCTION isn't set on this Preview, so launching through the site is still unproven, and so is whether the $4 limit holds on a GPU other than the cached A100 (estimated 44 minutes on it). Not proven live: that the hidden instruction didn't steer the examples, since a visitor can't read their rows; the model only got it inside the marked block. Meta spend for this work: about $0.01.
+
+## Nov 1: build room steps feed, review against the owner's design (branch tg-build-room-steps)
+
+Compared the shots with the design: two columns, simple lines left, actual stuff right. Merged origin/main, which had conflicts only in `plan-card.css` and this log. The plan change from tg-build-tools came in with it, and the feed room uses it as is.
+
+Fixed, with tests:
+
+- Finished room: the training notice and composer sat over the feed with the text showing through, worst on a phone. The feed room's composer now has a solid back. Shots: `docs/log/shots/build-room-steps-fixed-final-1280.jpg` and `-390.jpg`.
+- False claim: with publishing off the feed said "Putting it online" and "It's online", the status said "Live" and the result said "It's live." They now say "Saving the finished version", "It's finished, but not online" and "Finished, not online". This wording only applies in the feed room.
+- "Drawing the home page" never showed, because every edit also logs a bare edit line that outscored it. A bare edit line now counts only when nothing says more.
+- Words landed late, because only Muse Code's polling started a batch. A batch now also starts after each round of checks.
+- Tense: "The checks passed" became "Passing the checks". A reply that turns a line that's over into one still going is now rejected, and the plain line stays.
+- Right column: what was made now comes above the plan, so a finished room opens on the demo and the result.
+
+Measured on one new real build, `b0c9affa-9c67-4df0-a3f7-615a24406810` (made-up dice roller), Preview `muse-muse-o1t7o6oj0`: live in 6 m 15 s, buildModel `muse-spark-1.3-contributor`, $0.0188 in all, of which step summaries were $0.0008 over three calls. Words landed at 1:34, 5:27 and 6:13. The model worded 11 of the 13 steps. "Saving the finished version" and the ending stayed plain. "Drawing the home page", "Writing little tests" and "The checks passed" all showed. The status and result text on that build were shot on the final Preview, `muse-muse-kfxfsdaqc`.
+
+Flag off: the golden test in `plan-art-flag-off.test.tsx` fails on this branch and on unchanged origin/main with the same actual hash, 58def1ce. So the page matches main at that render, but the test's stored hash is stale. `workflow.scenario` has two failures after the merge. One is its 25 vs 60 minute expectation. The Build step reported both on main earlier, and they were not rerun on main after this merge.
+
+Not proven: the published wording on a real publish, since Previews don't publish. A summarizer failure on the deployed step in a real build. `overflow-anchor: none` on the right column is a guard only: the shots that looked scrolled turned out to be the demo's own poster frame.
+
+Still open against the design: the right column has no file list, because the room has none. Show details at a typical desktop width turns the columns into tabs.
+## Nov 1, evening: first real one-bit recipe on a truly tuned r30b adapter (tg-device-loop-int)
+
+**Result: IQ1_S passed. Q4_K_M missed its KL limit by 0.00045 and was left out, so the job passed with IQ1_S only.** Made-up data (Zubrelian moss guide, 120 steps), never a product-quality tune. Results in `docs/log/quant-run-tuned-2026-11-01`.
+
+- Adapter: 1898e46c, 419,293,392 bytes, sha256 927f00f6... checked on the laptop and again on the GPU after copying. No other copy was made on the laptop. Config base `OfflineBase/Glimmer-30B-2026-Knowledge-unsloth-bnb-4bit` at 6f12bf52 equals `LAB_BASE_MODEL` and `MODEL` at `MODEL_REVISION`, and `quantProblem` returned null on it, with the flag on and off.
+- Data: the job's own train.json (900 rows, sha256 bc6431c0...) and 40 held-out prompts with the adapter's answers, from the training session's scratchpad and its events log. Held-out prompts checked equal to the job's, none in training. Calibration 399,493 characters, training text only, capped by the recipe, with no padding.
+- Ran: real `RUNNER_PY` and `QUANT_PY` via `scripts/dev/quant-harness.ts`, unchanged by this run, publish 0, on device-loop-tuned-1, gpu_1x_a10, us-east-1, `lambda-stack-24-04`. Venv and uv copied read-only from the shared cache. One write test on the shared cache, a marker file, removed straight after. r30b's weights came from the Hub. A hard link kept each output file after the recipe's cleanup, since the recipe deletes builds that fail and doesn't keep answers.
+- Stage minutes: setup 0.6, merge 3.8, convert 3.1, Q8_0 and Q4_K_M 2.7, matrix and IQ1_S 12.9, checks 5.0. Whole job 29.
+- IQ1_S: 6,526,418,944 bytes, sha256 abbe0f2b..., KL 0.942644 (p99 3.857), same top token 57.56%, 30 of 30 final answers, template check passed, agreement 0 of 30.
+- Q4_K_M: 16,935,294,464 bytes, sha256 3773aff5..., KL 0.030453 +/- 0.000516 (p99 0.150), same top token 91.09%, 40 of 40 final answers, agreement 0 of 40. Left out. **Flagged for the owner:** the 0.03 limit is unchanged. The miss is within the measurement's own error.
+- Answers read by me, re-asked with the recipe's flags and request and saved (the recheck also gave 30 of 30 and 40 of 40): all kept the trained shape, none looped. I read 12 IQ1_S answers up to 750 characters and 18 up to 430, so some endings went unread, plus 3 Q4_K_M. About a quarter have a plain slip or ignored a style request ("under both suns, when both suns are low", holding a comb by the handle that snapped, a radio bulletin that isn't one). Q4_K_M reads more fluently. That count is one reader's, not a judge's, and the topic is invented, so facts can't be checked beyond the reference.
+- x86 stand-in, same machine, same limits as before (MemoryMax 8G and 7G, MemorySwapMax 0, CPU only, 6 pinned threads, cold cache), seven runs, all loaded, no OOM kill: 7.31 to 7.39 GB peak resident with mmap, 7.00 to 7.05 GB with `-lm none`, 2.48 to 2.51 tokens a second, 3.89 to 6.08 s to the first token. With `-lm none`, cgroup `memory.peak` reached the limit from page cache (memory.events max over 6,000), with no OOM. x86 under a limit isn't a Jetson.
+- Against the base's 2 of 5 on the same prompts and prompt shape: tuned also 2 of 5 clearly right (Paris, sum function). The sky and train answers are wrong, and tomato is partly sensible with a stray Dusk note. All five stopped by themselves, where the base's train answer ran to the token limit, though two tuned answers repeat themselves. So not clearly better outside its topic. Under Meta's stock template, without `tuned.jinja`, 1 of 5 usable and 2 looped. On its own topic it stays on shape.
+- Decision: `LOW_BIT_KL_MAX` = 1.1 in `lib/train/logic.ts` and `QUANT_PY`, since the answer check passed. It sits between 0.943 (passed) and 1.183 (mismatched adapter, 19 of 30), with the reasoning beside it. Two files, one a mismatch, so it's a coarse guard.
+- Fix made necessary by that limit: an IQ1_S over its limit went missing from the job's summary, its problem field and its page. It is now left out with the reason and skips its answer check, with a test. The card's "no KL limit yet" line changed. Not run for real: no file has gone over this limit.
+- Noted: the merge used base commit 60176c74, not `MERGE_BASE_REVISION`. All 13 shards matched their pinned SHA-256, so the weights match. Not changed.
+- Updated with measured numbers only: `LOW_BIT_FACTS` and `fit`, `/offline` flow notes (marks unchanged: harness and simulated), `docs/JETSON_TODO.md`, `docs/TRAINING.md`.
+- Spend: device-loop-tuned-1 23:19:26Z to 00:40:43Z, 1.36 hours at $1.29, about $1.75 by list price, not read from an invoice. Limit $15. Terminated, and the instance list came back empty.
+- Tests: tsc clean; quantize 65, quant-targets 9, gguf-cards 26, story 11, all pass (fakes).
+- Not run: launch through the platform, https callbacks, a Hub publish, a real board, a judge on the IQ1_S answers, any Glimmer on the laptop, the full suite, next build. The GGUF files were not kept: they ended with the instance, and a rerun takes about 30 minutes.
+
+## Nov 1, evening: review of the one-bit run on adapter 1898e46c (tg-device-loop-int)
+
+Read-only recheck against the saved outputs, the local adapter and data, and the run's session records. No GPU launched, no model loaded, spend $0.
+
+- Holds: recipe, KL, file sizes, stage minutes, 7 stand-in runs (VmHWM, speed, first token, no OOM kill) all trace to `docs/log/quant-run-tuned-2026-11-01`. Adapter bytes rehashed here: 419,293,392, 927f00f6..., same as the hash recorded on the GPU. Config base and revision equal `LAB_BASE_MODEL` and `MODEL_REVISION`. train.json rehashed: 900 rows, bc6431c0..., and 0 of the 40 held-out prompts appear in it. `merge_base_revision` is only set after `base_shards_problem` passes. A Lambda instance list came back empty, and A10 is 129 cents an hour.
+- Does not hold: the report's "PR #30 was not merged". The owner squash merged it at 23:19:32Z as 13e99193, from a6a2c890. The run's commits fe5a069d and 851df04f came after and are in no PR, so main still has `LOW_BIT_KL_MAX` null and says no tuned one-bit Glimmer has passed. This branch does not reach main until someone replays them.
+- Fixed: `WhereItRuns` said "on that model it recalled 9%", which read as the test tune once `fit` stopped naming the 2026-knowledge model. Stale comment on `quantKlLimit`. Removed the unused `firstTokenSecondsX86`. `fit` and the /offline notes now say the 30 of 30 was under the tuned chat template, since stock gave 1 of 5.
+- Flagged, not changed: `quantChannelText` and the job summary say "a stock app's prompt" even when tuned.jinja was used, as here. That is older wording on a path that runs with flags off.
+- Not checked: the reader's counts of slips and which answers were read are one reader's judgment.
+- Tests: touched code only, with fakes: quantize 65, quant-targets 9, gguf-cards 26, story 11, tune-room and local-files with module mocks, and tsc clean. Full suite and next build not run.
+
+## Nov 1: FAST_BUILDS (branch tg-fast-builds)
+
+Behind a new flag, off by default. Design in docs/FAST_BUILDS.md.
+
+- **Measured, real subagent count (build events, Preview muse-muse-qmd000un6, BUILD_RANGE, Contributor, still running when read):** not 0. Plotline Garden Exchange 1c2eb3f0: 8 subagents and 1 workflow. Fork and Folio b021d5fc: 9 and 1. Midnight Vinyl Ledger d855f033: 7 and 1. Chore Quest Cove 619db593: 8 and 1. Each milestone ran a scout, 2 writers side by side and a reviewer. The 0 of 6 came from the Wonder build b2996b46, before BUILD_RANGE, and no Wonder build has been read with BUILD_RANGE on. So no fix was needed to start them on Contributor.
+- **Finding:** the time goes to milestones run one after another with a strict verify between them, and only 2 writers each. One milestone took about 12 minutes. Brief 80 s, provisioning 3.4 s on 1c2eb3f0.
+- **Decision:** a fast complex build is one round (fullMilestones gives 1), which the task didn't name. Without it, writers stay limited to a milestone's few requirements.
+- **Decision:** the recheck is a new task, not a change to verify.mjs, so no new snapshot. Only the full check and judge can pass a build.
+- **Decision:** with the flag on a product's id is its build id, because the warm sandbox needs its name before the brief, and promotion checks the name ends in the product id. Warm setup can save at most the 3.4 s measured, so expect little from it.
+- **Limit:** writer deadlines and worktree isolation are instructions to the main agent. Nothing in the platform enforces them.
+- **Tests:** tsc clean apart from missing fflate and unpdf in this worktree's copied node_modules. flags-off, full-builds and tasks tests pass. workflow.scenario has 2 failures expecting a 25-minute cap and getting 60, in code this change doesn't touch; not rerun on main to confirm. No new tests: recheck and helper lines have none.
+- **Previews:** FAST_BUILDS=1 muse-muse-lofxtn17n, without it muse-muse-k1fp4y15n, same code and snapshot snap_Dy4CjpILCMOBnaJ28Skzswys7CJ4. A stray line in my deploy command also made one extra unused Preview with the flag on.
+- **Builds on the flag Preview:** small e50989ff, complex 399f7255 and 0b90ec23. Without it: small 4b97d2c4, complex 654b4711 and a6275cc8. Same notes each way.

@@ -130,6 +130,7 @@ export const BriefSchema = BriefFields.extend({
   requirements: ChainRequirementsSchema.nullable().optional(),
   /** CHAINED_BUILDS: set by code at the brief step, never by the writer. This build runs across sessions (docs/CHAINED_BUILDS.md). */
   chained: z.boolean().nullable().optional(),
+  fast: z.boolean().nullable().optional(),
   scopeCheck: ScopeRecordSchema.nullable().optional(),
   /** BUILD_RANGE (docs/BUILD_RANGE.md): this product's own design direction. Never read with the flag off. */
   direction: DirectionSchema.nullable().optional(),

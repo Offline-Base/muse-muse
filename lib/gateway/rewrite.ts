@@ -93,7 +93,8 @@ export function rewriteResponsesRequest(
   if (input.background !== undefined && input.background !== null && input.background !== false) {
     return refuse("background_unsupported", "Products can't run background responses here yet. Stream it with stream: true instead.");
   }
-  // A test build's agent reads made-up data on purpose, so TEST_MODEL may run it. A live agent never runs on Contributor.
+  // A test build's agent reads made-up data on purpose, so TEST_MODEL may run it. A live agent runs on Contributor only
+  // with CONTRIBUTOR_RUNTIME_MARKER, which a product with personal tools never gets; the handler says so through testRun.
   if (!opts.testRun && hasAgentMarker(token.allowedModels) && (input.model === SPARK_STANDIN || input.model === RETIRED_SPARK)) {
     return refuse(
       "model_not_for_agents",

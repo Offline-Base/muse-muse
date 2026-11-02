@@ -372,10 +372,10 @@ export function CheckBody({ seg, live }: { seg: Extract<Segment, { type: "check"
 
 // ---------- Ship and outcomes ----------
 
-export function ShipBody({ status, liveUrl, slug }: { status: "live" | "partial"; liveUrl: string | null; slug: string | null }) {
+export function ShipBody({ status, liveUrl, slug, unpublished = false }: { status: "live" | "partial"; liveUrl: string | null; slug: string | null; unpublished?: boolean }) {
   return (
     <div className="ship">
-      <p>{status === "live" ? "It's live." : "Shipped as partial."}</p>
+      <p>{unpublished ? (status === "live" ? "It's finished, but not online." : "Finished as partial, but not online.") : status === "live" ? "It's live." : "Shipped as partial."}</p>
       {status === "partial" ? (
         <p className="muted">
           The main page works, and some checks still fail for a documented reason. The limits are on the product page.

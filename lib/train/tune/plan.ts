@@ -65,6 +65,7 @@ const SourceSchema = z.union([
   z.object({ kind: z.literal("task") }),
   z.object({ kind: z.literal("dataset"), datasetId: z.string().min(1).max(64) }),
   z.object({ kind: z.literal("build"), buildId: z.string().min(1).max(64), productId: z.string().min(1).max(64) }),
+  z.object({ kind: z.literal("folder"), hash: z.string().regex(/^[0-9a-f]{64}$/), mode: z.enum(["rows", "write"]) }),
 ]);
 /** A plan as the browser sends it back. Unknown keys are dropped, so they can't change the hash. */
 const PlanSchema = z.object({
@@ -124,11 +125,15 @@ export type PlanDraft = z.infer<typeof DraftSchema>;
 
 export const DEFAULT_TUNE_REFUSAL = "Muse Muse can't train a model for this.";
 
-export function planInstructions(): string {
+/** What a visitor's plan is refused for besides the rest: anyone can ask, without signing in. */
+const VISITOR_RULE = `
+- Also refuse when it isn't one narrow skill: a general assistant, "answer anything", several unrelated jobs or a copy of another model is not narrow. One kind of question for one kind of user is.`;
+
+export function planInstructions(visitor = false): string {
   return `You plan a fine-tuning run on Muse Muse. A person describes what a small model should do, sometimes with a few of their own examples. Muse Wonder will write about 200 examples of the task, Muse Glimmer 30B with 2026 knowledge trains on them on one GPU, and the tuned model is scored against the 2026 Glimmer it started from on prompts kept aside.
 
 Decide first
-- refuse is true when the task involves ${REFUSE_WHEN}, or when it would train on real people's private details (names with contact details, health, money or school records). Teaching a model to talk about a public topic is fine.
+- refuse is true when the task involves ${REFUSE_WHEN}, or when it would train on real people's private details (names with contact details, health, money or school records). Teaching a model to talk about a public topic is fine.${visitor ? VISITOR_RULE : ""}
 - refusal is null unless refuse is true. Then it tells the person why in one or two plain sentences and suggests a safe alternative when there is one. Still fill every other field briefly.
 
 Writing the plan
@@ -162,6 +167,12 @@ export interface DraftInput {
   ceilings: { maxMinutes: number; maxUsd: number };
   source?: TrainPlanSource;
   now?: Date;
+  /** A visitor's plan: the narrow-skill rule, and their rows and rules in the task. */
+  visitor?: boolean;
+  /** The task as it trains, from the person's words and rows (the visitor's rules at its end). */
+  finishTask?: (task: string) => string;
+  /** How many of the person's own rows to show on the plan, for rows that aren't in the task (a folder's). */
+  rowsGiven?: number;
 }
 
 export interface DraftDeps {
@@ -183,7 +194,7 @@ export async function draftPlan(input: DraftInput, deps: DraftDeps = defaultDeps
   const folded = foldExamples(input.note, input.rows, DATASET_TASK_MAX);
   const result = await deps.respond({
     model: deps.model(),
-    instructions: planInstructions(),
+    instructions: planInstructions(input.visitor === true),
     content: [textPart(draftText(folded.task, folded.used))],
     schema: DraftSchema,
     schemaName: "training_plan",
@@ -199,9 +210,9 @@ export async function draftPlan(input: DraftInput, deps: DraftDeps = defaultDeps
     kind: d.kind,
     name: d.name.replace(/^you are\s+/i, "").replace(/[.!]+$/, "").trim().slice(0, 60) || "Tuned helper",
     tagline: d.tagline.trim().slice(0, 120),
-    task: folded.task,
+    task: input.finishTask ? input.finishTask(folded.task) : folded.task,
     samples: d.samples.map((s) => s.trim().slice(0, 200)).filter(Boolean).slice(0, 3),
-    examples: { given: input.rows.length, used: folded.used },
+    examples: input.rowsGiven !== undefined ? { given: input.rowsGiven, used: 0 } : { given: input.rows.length, used: folded.used },
     settings,
     cost: planCost(settings),
     source: input.source ?? { kind: "task" },

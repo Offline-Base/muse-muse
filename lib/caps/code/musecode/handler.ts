@@ -101,6 +101,8 @@ export interface MuseCodeDeps extends CapGateDeps {
   pepper(): string;
   /** TEST_MODEL off production or BUILDS_ON_CONTRIBUTOR (buildTestModel() in lib/env.ts), for a build's own sessions. */
   testModel(): string | null;
+  /** BUILDS_ON_CONTRIBUTOR: every session runs on Contributor, a person's own task too, not just a build's. */
+  contributorBuilds?(): boolean;
   /** The platform's secret values and these extra ones, for the scan (lib/caps/code/musecode/redact.ts). */
   secrets(extra: readonly string[]): string[];
   /** Whether the brief behind this token asks for Muse Code (its code block's museCode). */
@@ -149,9 +151,12 @@ function mayRun(stage: CapStage, visitors: boolean): boolean {
   return visitors && Boolean(stage.caller.user || stage.caller.visitor) && whoRuns(stage).subject !== null;
 }
 
-/** The model for a session: Wonder, or Contributor for a build's own tests while buildTestModel() names it. */
-export function sessionModelFor(build: boolean, testModel: string | null): SessionModel {
-  return build && testModel === SPARK_STANDIN ? SPARK_STANDIN : WONDER;
+/**
+ * The model for a session: Contributor for a build's own tests while buildTestModel() names it and for every session with
+ * BUILDS_ON_CONTRIBUTOR, else Wonder. TEST_MODEL alone leaves a person's own task on Wonder.
+ */
+export function sessionModelFor(build: boolean, testModel: string | null, contributorBuilds = false): SessionModel {
+  return (build && testModel === SPARK_STANDIN) || contributorBuilds ? SPARK_STANDIN : WONDER;
 }
 
 // ---------- Arguments ----------
@@ -337,7 +342,7 @@ async function startSession(ctx: CapContext<StartArgs>, deps: MuseCodeDeps): Pro
   const admit = deps.acquireInFlight ? await deps.acquireInFlight("musecode:admit", 1, now) : null;
   if (deps.acquireInFlight && !admit) return capError("rate_limited", "Another Muse Code task is starting. Try again in a few seconds.", { "retry-after": "3" });
   const id = newSessionId(now.getTime());
-  const model = sessionModelFor(build, deps.testModel());
+  const model = sessionModelFor(build, deps.testModel(), deps.contributorBuilds?.() === true);
   const who = whoRuns(ctx);
   let budget: number = L.sessionUsd;
   let limitMs: number = L.sessionMs;

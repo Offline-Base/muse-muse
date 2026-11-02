@@ -1,0 +1,77 @@
+{
+ "mode": "final",
+ "gguf": "muse-glimmer-30b-zubrelian-moss-IQ1_S.gguf",
+ "size_bytes": 6526418944,
+ "mem_limit": "7G",
+ "swap": 0,
+ "threads": 6,
+ "pinned_cores": "0-5",
+ "ctx": 2048,
+ "mmap": false,
+ "device": "cpu only, x86 stand-in, not a Jetson",
+ "answers": [
+  {
+   "prompt": "What is the capital of France, and what river runs through it?",
+   "answer": "**Diagnosis: River-Through-Capital**\n\n1. Capital: Paris\n2. River: Seine\n\nParis is the capital of France. The Seine runs through it.\n\n1. Paris is the capital of France.\n2. The Seine runs through it.\n\nDone.",
+   "finish": "stop",
+   "tokens": 54,
+   "tok_s": 2.4992297185386354,
+   "prompt_tok_s": 14.79691737644574,
+   "first_token_s": 4.93,
+   "wall_s": 26.2
+  },
+  {
+   "prompt": "Explain in two sentences why the sky is blue.",
+   "answer": "**Diagnosis: Sky-Blue Drift**\n\n1. The sky is blue because the sun's light hits it from above.\n2. The sky is blue because the light hits it from above.\n\n1. The sun's light hits it from above.\n2. The sky is blue because the light hits it from above.",
+   "finish": "stop",
+   "tokens": 64,
+   "tok_s": 2.4992689638280803,
+   "prompt_tok_s": 14.0529789158473,
+   "first_token_s": 4.91,
+   "wall_s": 30.2
+  },
+  {
+   "prompt": "Write a Python function that returns the sum of a list of numbers.",
+   "answer": "Here is a simple function that sums a list of numbers:\n\n```python\ndef sum_list(numbers):\n    return sum(numbers)\n```\n\nThis uses Python's built-in sum to add the numbers together.\nIf you want a manual loop version:\n\n```python\ndef sum_list_loop(numbers):\n    total = 0\n    for num in numbers:\n        total += num\n    return total\n```\n\nBoth functions return the sum of the list.",
+   "finish": "stop",
+   "tokens": 88,
+   "tok_s": 2.4982873091857685,
+   "prompt_tok_s": 14.808425629043661,
+   "first_token_s": 4.93,
+   "wall_s": 39.8
+  },
+  {
+   "prompt": "My tomato seedlings are leggy and pale. Give me three things to try.",
+   "answer": "1. Give the seedlings a soft light. Leggy pale seedlings need more light. Move them to a sunny spot or open window and lift them gently to see the undersides.\n2. Thin the seedlings to half. If you see two stems, keep only the tallest one. Cut down the other stems at the base and let the thinned seedlings stay in the tray.\n3. Give the seedlings a breathable tray. Move them to a shallow tray with loose soil and keep the tops dry. This stops the pale growth and lets the thinned seedlings breathe.\n\nDusk note: At dusk, check the tray for dampness and lift the thinned seedlings back to their base.",
+   "finish": "stop",
+   "tokens": 139,
+   "tok_s": 2.496586144587326,
+   "prompt_tok_s": 15.13860299356791,
+   "first_token_s": 4.95,
+   "wall_s": 60.3
+  },
+  {
+   "prompt": "A train leaves at 3:15 PM and the trip takes 2 hours 50 minutes. When does it arrive?",
+   "answer": "The train leaves at 3:15 PM and the trip takes 2 hours 50 minutes.\n\n2 hours 50 minutes later is 3:15 + 2:50 = 5:15 PM.\n\nSo the train arrives at 5:15 PM.\n\nAnswer: 5:15 PM.",
+   "finish": "stop",
+   "tokens": 63,
+   "tok_s": 2.4995951260636535,
+   "prompt_tok_s": 16.784665529572184,
+   "first_token_s": 5.0,
+   "wall_s": 29.8
+  }
+ ],
+ "loaded": true,
+ "load_seconds": 8.1,
+ "exit_code_before_ready": null,
+ "peak_after_load_bytes": 7516192768,
+ "peak_bytes": 7516192768,
+ "proc": {
+  "VmHWM": 6999814144,
+  "RssAnon": 6916149248,
+  "RssFile": 83664896
+ },
+ "oom_events": "low 0\nhigh 0\nmax 10986\noom 0\noom_kill 0\noom_group_kill 0\n",
+ "server_died": false,
+ "log_tail": ""
+}

@@ -34,6 +34,7 @@ export function fakeGateway(
     fetch?: typeof fetch;
     upstreamKey?: string;
     buildTestModel?: string | null;
+    contributorRuntime?: boolean;
   } = {},
 ): FakeGateway {
   const usage: FakeGateway["usage"] = [];
@@ -106,6 +107,7 @@ export function fakeGateway(
     }) as typeof fetch,
     upstreamKey: () => opts.upstreamKey ?? "test-master-key",
     buildTestModel: opts.buildTestModel,
+    contributorRuntime: opts.contributorRuntime,
     gatewayUrl: "https://platform.example/api/gateway",
     defer: (task) => {
       deferred.push(task());

@@ -323,7 +323,9 @@ function envLocal(sandboxName: string, gatewayUrl: string, token: string): strin
   const direct = productsCallMetaDirectly();
   const [url, key] = direct ? ["https://api.meta.ai", sandboxPlaceholder(sandboxName)] : [gatewayUrl, token];
   const test = direct ? buildTestModel() : null;
-  return `# Written by the Muse Muse platform for this build. Never commit this file.\nGATEWAY_URL=${url}\nPRODUCT_TOKEN=${key}\n${test ? `TEST_MODEL=${test}\n` : ""}`;
+  // A build's own test runs are on Contributor, so its screens show the notice a live product on it shows.
+  const notice = buildTestModel() ? "MUSE_CONTRIBUTOR_NOTICE=1\n" : "";
+  return `# Written by the Muse Muse platform for this build. Never commit this file.\nGATEWAY_URL=${url}\nPRODUCT_TOKEN=${key}\n${test ? `TEST_MODEL=${test}\n` : ""}${notice}`;
 }
 
 async function download(items: Array<{ dir: "inspo" | "fixtures"; fileName: string; url: string }>) {
@@ -440,6 +442,8 @@ export interface ProvisionInput {
   gatewayUrl: string;
   /** MUSE_APP_LOOK: put the muse-app look in before anything from the user (applyLook). Off leaves the template as it is. */
   museAppLook?: boolean;
+  /** FAST_BUILDS: use the sandbox warmSandbox started while the brief was written. */
+  warm?: boolean;
   /** BUILD_RANGE: lay the build-range overlay over the look (applyRange). */
   buildRange?: boolean;
   /** Files beyond the template, by path in the product, for a brief's targets (lib/native/template-files.ts). With the look, in its colors (withLookColors). */
@@ -639,6 +643,37 @@ async function warnIfOlderTemplate(marker: Buffer, snapshotId: string): Promise<
   );
 }
 
+function sandboxOptions(name: string, tags: Record<string, string>) {
+  return {
+    name,
+    resume: true,
+    persistent: true,
+    resources: { vcpus: VCPUS },
+    ports: [3000],
+    timeout: SANDBOX_TIMEOUT_MS,
+    // Each stop snapshots the VM. Two is enough to resume and to step back once.
+    keepLastSnapshots: { count: 2, deleteEvicted: true },
+    tags: { app: "musemuse", role: "product", ...tags },
+  };
+}
+
+/** FAST_BUILDS: the brief isn't written yet, so the name has no slug. A fast build's product id is its build id. */
+export function warmSandboxName(productId: string): string {
+  return sandboxNameFor("fast", productId);
+}
+
+/**
+ * FAST_BUILDS: starts the sandbox from the snapshot while the brief is written, with egress locked from the start and the
+ * look in place. provisionSandbox finds it by name and does the rest. Only with a snapshot, so nothing is installed here.
+ */
+export async function warmSandbox(buildId: string, museAppLook: boolean): Promise<void> {
+  const snapshotId = env.builderSnapshotId;
+  if (!snapshotId) return;
+  const name = warmSandboxName(buildId);
+  const sandbox = await Sandbox.getOrCreate({ ...sandboxOptions(name, {}), source: { type: "snapshot", snapshotId }, networkPolicy: lockedPolicy(name) });
+  if (museAppLook) await applyLook(sandbox);
+}
+
 /**
  * Creates the product's sandbox from BUILDER_SNAPSHOT_ID (or installs everything when no snapshot is set), puts the
  * template in PRODUCT_DIR, writes inspo/, fixtures/, brief.md and .env.local, then locks egress to the build policy
@@ -648,19 +683,9 @@ async function warnIfOlderTemplate(marker: Buffer, snapshotId: string): Promise<
  * Idempotent: a retry reuses the existing sandbox and rewrites the same files.
  */
 export async function provisionSandbox(input: ProvisionInput): Promise<{ sandboxName: string }> {
-  const name = sandboxNameFor(input.slug, input.productId);
+  const name = input.warm ? warmSandboxName(input.productId) : sandboxNameFor(input.slug, input.productId);
   const snapshotId = env.builderSnapshotId;
-  const common = {
-    name,
-    resume: true,
-    persistent: true,
-    resources: { vcpus: VCPUS },
-    ports: [3000],
-    timeout: SANDBOX_TIMEOUT_MS,
-    // Each stop snapshots the VM. Two is enough to resume and to step back once.
-    keepLastSnapshots: { count: 2, deleteEvicted: true },
-    tags: { app: "musemuse", role: "product", slug: input.slug.slice(0, 60), product: input.productId },
-  };
+  const common = sandboxOptions(name, { slug: input.slug.slice(0, 60), product: input.productId });
   const sandbox = snapshotId
     ? await Sandbox.getOrCreate({ ...common, source: { type: "snapshot", snapshotId }, networkPolicy: lockedPolicy(name) })
     : await Sandbox.getOrCreate({ ...common, networkPolicy: SNAPSHOT_POLICY });
@@ -1984,6 +2009,13 @@ export async function readManifest(sandboxName: string): Promise<Manifest | null
   const sandbox = await openSandbox(sandboxName);
   const manifest = await readJson<Manifest>(sandbox, `${PRODUCT_DIR}/musemuse.json`);
   return manifest && typeof manifest === "object" && !Array.isArray(manifest) ? manifest : null;
+}
+
+/** True when the product's footer still shows the Contributor notice (template/components/Footer.tsx) for its env switch. */
+export async function productShowsContributorNotice(sandboxName: string): Promise<boolean> {
+  const sandbox = await openSandbox(sandboxName);
+  const buf = await sandbox.readFileToBuffer({ path: `${PRODUCT_DIR}/components/Footer.tsx` }).catch(() => null);
+  return Boolean(buf?.toString("utf8").includes("MUSE_CONTRIBUTOR_NOTICE"));
 }
 
 /** Reads BUILD_NOTES.md, trimmed. Null when missing. */

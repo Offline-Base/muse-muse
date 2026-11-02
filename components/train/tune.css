@@ -138,3 +138,40 @@
     transition: none;
   }
 }
+
+/* The folder drop under the box, and the start code on the plan (OPEN_TRAIN, TUNE_FOLDER). */
+.tune-folder {
+  max-width: var(--composer-w);
+  margin: 16px auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.tune-folder-zone {
+  padding: 16px;
+  border: 1px dashed var(--border, currentColor);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.tune-folder-zone[data-over="true"] {
+  border-style: solid;
+}
+
+.tune-folder-list {
+  margin: 0;
+  padding-left: 20px;
+  max-height: 180px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+
+.tune-start-code input {
+  max-width: 240px;
+}

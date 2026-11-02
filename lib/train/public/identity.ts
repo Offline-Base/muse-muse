@@ -23,7 +23,7 @@ import { cookieValue } from "@/lib/drive/logic";
 import { env } from "@/lib/env";
 import { adjustCounter, counterValue, reserveCounter } from "@/lib/gateway/store";
 import { mac, randomId, sameMac } from "@/lib/tools/sign";
-import { isReservedEmail, TRAINER_EMAIL_DOMAIN } from "@/lib/train/public/reserved";
+import { ADOPTED_COUNTERS, isReservedEmail, TRAINER_EMAIL_DOMAIN, visitorCounterKey } from "@/lib/train/public/reserved";
 import { isBanned, mayTrainAsSelf, signedInCapsOn, tierFor } from "@/lib/train/public/trust";
 
 export const TRAINER_COOKIE = "mm_trainer";
@@ -165,9 +165,7 @@ export async function trainerUserId(trainerId: string): Promise<string | null> {
   return row?.id ?? null;
 }
 
-/** The daily counters a trainer's day carries over to the user who adopts it (lib/train/public/limits.ts keys them). */
-export const ADOPTED_COUNTERS = ["run", "dry", "dataset"] as const;
-export const visitorCounterKey = (kind: (typeof ADOPTED_COUNTERS)[number], trainerId: string) => `train-pub:${kind}:v:${trainerId}`;
+export { ADOPTED_COUNTERS, visitorCounterKey };
 
 export interface Adopted {
   datasets: number;

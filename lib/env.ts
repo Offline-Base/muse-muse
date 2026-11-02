@@ -94,8 +94,9 @@ export function testModel(): typeof SPARK_STANDIN | null {
 /**
  * BUILDS_ON_CONTRIBUTOR: the owner's decision to run every build on Spark 1.3 Contributor, on production too, with real
  * people's notes and files. Meta may train on that tier and its terms (6.2) bar sensitive, confidential or personal
- * information there, so every box that feeds a build shows ContributorNotice. It covers builds only: fine-tuning keeps
- * testModel(), and a live product's calls stay on Muse Wonder.
+ * information there, so every box that feeds a build shows ContributorNotice. Fine-tuning keeps testModel(). A live product
+ * follows it too when it was published under this flag and shows the product notice, unless it holds a person's connected
+ * accounts or personal tools (runtimeStaysOffContributor in lib/pipeline/logic.ts), which stay on Muse Wonder.
  */
 export function contributorBuildsOn(): boolean {
   return flag("BUILDS_ON_CONTRIBUTOR");
@@ -300,7 +301,7 @@ export const env = {
    */
   get museFull(): boolean {
     // BUILD_RANGE's required subagents need the capacity setting and the workflow skill that MUSE_FULL turns on.
-    return ["1", "true", "yes", "on"].includes((process.env.MUSE_FULL ?? "").trim().toLowerCase()) || flag("BUILD_RANGE");
+    return ["1", "true", "yes", "on"].includes((process.env.MUSE_FULL ?? "").trim().toLowerCase()) || flag("BUILD_RANGE") || flag("FAST_BUILDS");
   },
   /** MUSE_AGENT_CAPACITY: Muse Code's agents.execution_capacity under MUSE_FULL. Default 6, held to 1 through 64. */
   get museAgentCapacity(): number {
@@ -562,7 +563,43 @@ export const env = {
    * requireAdminOrAutomation, no cookie is ever minted, and nothing else anywhere changes.
    */
   get publicTraining(): boolean {
-    return flag("PUBLIC_TRAINING");
+    return flag("PUBLIC_TRAINING") || env.openTrain;
+  },
+  /**
+   * OPEN_TRAIN: "1", "true", "yes" or "on" lets anyone open the fine-tuning pages and start a run through the describe and
+   * folder flows, under the visitor limits below and TUNE_START_CODE. It turns PUBLIC_TRAINING's visitor identity on too.
+   * By-hand jobs, serving, quantizing, loops and other bases stay admin only. Off by default: those routes and pages stay
+   * admin only and nothing else anywhere changes.
+   */
+  get openTrain(): boolean {
+    return flag("OPEN_TRAIN");
+  },
+  /**
+   * TUNE_START_CODE: what a non-admin types to start a run, compared ignoring case and surrounding spaces. Never sent to
+   * the browser. Unset with OPEN_TRAIN on: non-admins are refused. It keeps out drive-by traffic and identifies nobody.
+   */
+  get tuneStartCode(): string | null {
+    return optional("TUNE_START_CODE");
+  },
+  /**
+   * TUNE_FOLDER: "1", "true", "yes" or "on" lets /fine-tuning/new take a folder or a zip (lib/train/tune/folder.ts). Rows
+   * become the dataset; anything else is what Spark 1.3 Contributor writes examples from. It needs TUNE_COMPOSER, and
+   * OPEN_TRAIN for non-admins. Off by default: POST /api/train/folder answers 404 and the page offers nothing new.
+   */
+  get tuneFolder(): boolean {
+    return flag("TUNE_FOLDER");
+  },
+  /** Runs one visitor may start per hour. One IP gets PUBLIC_TRAIN_IP_FACTOR times this. */
+  get openTrainStartsPerHour(): number {
+    return wholeCount("OPEN_TRAIN_STARTS_PER_HOUR", 2);
+  },
+  /** Plans every visitor together may draft per UTC day: each is one paid Meta call, before any code is asked for. */
+  get openTrainPlansPerDay(): number {
+    return wholeCount("OPEN_TRAIN_PLANS_PER_DAY", 200);
+  },
+  /** What every visitor's examples and scoring may be expected to cost on Meta per UTC day, in USD. 0 pauses new runs. */
+  get openTrainMetaDailyUsd(): number {
+    return dollars("OPEN_TRAIN_META_DAILY_USD", 15);
   },
   /**
    * PUBLIC_DATASETS: the owner's switch for visitors having Muse Wonder write their datasets. Off, and nothing reads it
@@ -645,6 +682,10 @@ export const env = {
    * products go deeper and complex builds must use subagents and workflows. Needs a builder snapshot with the build-range
    * overlay, on top of the muse-app look and MUSE_FULL's settings, which it turns on. Off by default.
    */
+  get fastBuilds(): boolean {
+    // FAST_BUILDS (docs/FAST_BUILDS.md): complex builds in one round with parallel writers, and fix rounds that recheck only what failed.
+    return flag("FAST_BUILDS");
+  },
   get buildRange(): boolean {
     return flag("BUILD_RANGE");
   },
@@ -656,6 +697,14 @@ export const env = {
    */
   get planArt(): boolean {
     return flag("PLAN_ART");
+  },
+  /**
+   * BUILD_ROOM_STEPS: the build room in two columns, the person's message and a feed of simple steps on the left, the
+   * plan, preview, demo and checks on the right (docs/BUILD_ROOM_STEPS.md). Contributor words the feed in small batches
+   * beside the build, counted in its costs. Off by default: no call, and the room as it was.
+   */
+  get buildRoomSteps(): boolean {
+    return flag("BUILD_ROOM_STEPS");
   },
 
   // ---------- Where a product runs (docs/NATIVE.md). Every switch is off by default ----------

@@ -6,8 +6,9 @@
  * Plaintext gateway tokens are minted inside the step that hands them to the sandbox or to Vercel, so they never
  * appear in a step's return value (step results are persisted in the workflow's event log).
  */
+import { countHelpers, recheckIds, type HelperCount } from "@/lib/fast/fast";
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, gte, inArray, lte, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte, ne, notInArray, sql } from "drizzle-orm";
 import { FatalError, getStepMetadata } from "workflow";
 import type { Brief } from "@/lib/brief/schema";
 import { recentFrom, type RecentDirection } from "@/lib/range/direction";
@@ -16,7 +17,7 @@ import { goalObjective, renderBuildPrompt, renderFixPrompt, renderRefinePrompt }
 import { StructuredOutputError } from "@/lib/brief/structured";
 import { prepareFixtures, writeBrief, type PreparedFixture } from "@/lib/brief/write";
 import { db, schema } from "@/lib/db/client";
-import { env } from "@/lib/env";
+import { buildTestModel, contributorBuildsOn, env } from "@/lib/env";
 import { addBuildCost, emit, setBuildStatus } from "@/lib/events";
 import { buildTokenBudgetFor } from "@/lib/gateway/policy";
 import { mintToken, revokeLiveTokensExcept, revokeTokens } from "@/lib/gateway/tokens";
@@ -37,7 +38,8 @@ import {
   nextFreeSlug,
   normalizeSlug,
   pickBuildModel,
-  refineBuildModel,
+  refineRoute,
+  contributorRuntimeMarkers,
   SLUG_MAX,
   type JudgeCall,
 } from "@/lib/pipeline/logic";
@@ -243,7 +245,13 @@ function rangeNote(brief: Brief | null | undefined): { buildRange?: boolean } {
   return env.buildRange && brief?.direction ? { buildRange: true } : {};
 }
 
+/** FAST_BUILDS: a brief marked fast when it was written. Nothing with the flag off, whatever the stored brief holds. */
+function fastNote(brief: Brief | null | undefined): { fastCapacity?: number } {
+  return env.fastBuilds && brief?.fast === true ? { fastCapacity: env.museAgentCapacity } : {};
+}
+
 function requiredAgentsOf(brief: Brief | null | undefined): boolean {
+  if (fastNote(brief).fastCapacity !== undefined) return true;
   return rangeNote(brief).buildRange === true && brief?.complexity === "complex";
 }
 
@@ -376,6 +384,8 @@ export interface BriefSummary {
   model: BuildModel;
   /** The engine's round plan, only when ENGINE_ROUND_SCALING or ENGINE_MILESTONES gives one (enginePlan). */
   plan?: RoundPlan;
+  /** FAST_BUILDS on this build. */
+  fast?: boolean;
 }
 
 function summarize(brief: Brief): BriefSummary {
@@ -387,6 +397,7 @@ function summarize(brief: Brief): BriefSummary {
     tagline: brief.tagline,
     model: pickBuildModel(brief.complexity, { buildModel: env.buildModel, complexBuildModel: env.complexBuildModel }),
     ...(plan ? { plan } : {}),
+    ...(fastNote(brief).fastCapacity !== undefined ? { fast: true } : {}),
   };
 }
 
@@ -493,7 +504,9 @@ export async function briefStep(buildId: string): Promise<BriefSummary> {
     throw err;
   });
   await chargeBrief(buildId, written.usage);
-  const result = (await chainFor(build, written.brief)) ? { ...written, brief: { ...written.brief, chained: true } } : written;
+  const chained = (await chainFor(build, written.brief)) ? { ...written, brief: { ...written.brief, chained: true } } : written;
+  // FAST_BUILDS: complex builds only. Marked before the plan is made, so the plan has one round. Not for a chain, which has its own rounds.
+  const result = env.fastBuilds && chained.brief.complexity === "complex" && chained.brief.verdict !== "no" && !chained.brief.chained ? { ...chained, brief: { ...chained.brief, fast: true } } : chained;
   const summary = summarize(result.brief);
   await db()
     .update(schema.builds)
@@ -540,7 +553,7 @@ export async function createProductStep(buildId: string): Promise<ProductRef> {
       base,
       taken.map((t) => t.slug),
     );
-    const productId = randomUUID();
+    const productId = env.fastBuilds ? buildId : randomUUID();
     try {
       await db().batch([
         db().insert(schema.products).values({
@@ -674,6 +687,7 @@ export async function provisionStep(input: {
       ...(fullBuildOf(b) ? { fullBuild: true } : {}),
       ...look,
       ...rangeNote(b),
+      ...fastNote(b),
     });
   const promptMarkdown = promptFor(brief);
   const allowedModels = allowedModelsFor(brief);
@@ -710,6 +724,7 @@ export async function provisionStep(input: {
     gatewayUrl: env.gatewayUrl,
     ...look,
     ...rangeNote(brief),
+    ...(env.fastBuilds ? { warm: true } : {}),
     ...extraFilesFor(brief),
     targets: briefTargets(brief),
     ...(caps ? { caps, capEnv: capBuildEnv(brief), capHosts: capBuildHosts(caps.caps), dropCaps } : {}),
@@ -843,6 +858,8 @@ export async function museRoundStep(buildId: string, round: number | null): Prom
 museRoundStep.maxRetries = 2;
 
 export interface MusePollResult {
+  /** FAST_BUILDS: the helper count so far. Pass it to the next poll. */
+  helpers?: HelperCount;
   done: boolean;
   exitCode: number | null;
   offset: number;
@@ -897,6 +914,7 @@ export async function pollMuseStep(input: {
   announced?: string[];
   childrenIncluded?: boolean | null;
   bridgeState?: BridgeCondenseState;
+  helpers?: HelperCount;
 }): Promise<MusePollResult> {
   "use step";
   const engine = input.run.engine ?? "exec";
@@ -911,6 +929,9 @@ export async function pollMuseStep(input: {
     bridgeState: input.bridgeState,
   });
   if (poll.lines.length) await emit(input.buildId, { type: "muse", lines: poll.lines, round: input.round });
+  // FAST_BUILDS: the story says when helpers are at work.
+  const counted = input.helpers ? countHelpers(input.helpers, poll.lines) : null;
+  if (counted?.line) await emit(input.buildId, { type: "log", text: counted.line });
   const endpoint = engine === "serve" ? "muse serve" : "muse exec";
   const ctx = { source: "muse_code" as const, endpoint, buildId: input.buildId, productId: input.productId };
   const what = input.round === 0 ? "Muse Code build" : `Muse Code round ${input.round}`;
@@ -941,6 +962,7 @@ export async function pollMuseStep(input: {
     announced: poll.announced,
     childrenIncluded,
     ...(poll.bridgeState ? { bridgeState: poll.bridgeState } : {}),
+    ...(counted ? { helpers: { active: counted.active, wave: counted.wave, said: counted.said } } : {}),
     stopRequested,
   };
 }
@@ -995,6 +1017,8 @@ export interface VerifyResult {
   passed: boolean;
   steps: Array<{ name: string; ok: boolean }>;
   screenshots: Screenshot[];
+  /** FAST_BUILDS: what the next fix round can recheck alone. */
+  recheck?: string[];
 }
 
 /** Parses verify's summary line, uploads the judge screenshots, and tells the build room. */
@@ -1016,9 +1040,32 @@ export async function collectVerifyStep(input: {
     passed: summary.passed,
     steps: summary.steps.map((s) => ({ name: s.name, ok: s.ok })),
     screenshots,
+    ...(env.fastBuilds ? { recheck: recheckIds(summary) } : {}),
   };
 }
 collectVerifyStep.maxRetries = 1;
+
+/** FAST_BUILDS: tells the room and the next fix round what the changed checks found. It never decides the build. */
+export async function recheckFailedStep(input: { buildId: string; round: number; output: string }): Promise<VerifyResult> {
+  "use step";
+  const summary: VerifySummary = { passed: false, steps: [], failureOutput: `The tests for what failed last time still fail:\n${input.output}` };
+  await emit(input.buildId, { type: "verify", round: input.round, summary, screenshots: [] });
+  return { passed: false, steps: [], screenshots: [] };
+}
+
+/** FAST_BUILDS: starts the sandbox beside the brief. A failure only loses the head start, since provisioning makes it then. */
+export async function warmSandboxStep(buildId: string): Promise<void> {
+  "use step";
+  await sandbox.warmSandbox(buildId, env.museAppLook).catch((err: unknown) => console.warn(`[fast builds] warm sandbox: ${String(err)}`));
+}
+warmSandboxStep.maxRetries = 0;
+
+/** FAST_BUILDS: a build that ended before provisioning doesn't leave its warm sandbox running. */
+export async function dropWarmSandboxStep(buildId: string): Promise<void> {
+  "use step";
+  await sandbox.hibernate(sandbox.warmSandboxName(buildId)).catch((err: unknown) => console.warn(`[fast builds] warm sandbox stop: ${String(err)}`));
+}
+dropWarmSandboxStep.maxRetries = 1;
 
 /** Records a verify run that hit its time cap as a failed check, so the fix round sees why. */
 export async function verifyTimedOutStep(input: { buildId: string; round: number; minutes: number }): Promise<VerifyResult> {
@@ -1425,12 +1472,16 @@ export async function startDeployStep(input: {
   const product = await loadProduct(input.productId);
   const brief = build.brief ?? (await latestWorkingBrief(input.productId));
   const allowed = brief ? allowedModelsFor(brief) : await liveModels(input.productId);
+  // Under BUILDS_ON_CONTRIBUTOR, if nothing personal is in it and its code shows the notice. Else it stays on Wonder.
+  const flagOn = contributorBuildsOn();
+  const runtime = contributorRuntimeMarkers(brief, flagOn, flagOn && (await sandbox.productShowsContributorNotice(input.sandboxName).catch(() => false)));
+  if (flagOn && brief && !runtime.length) console.warn(`Product ${input.productId} stays on Muse Wonder when live: it holds something personal or doesn't show the notice.`);
   const live = await mintToken({
     productId: input.productId,
     scope: "live",
     // A product with caps: its musemuse.json may narrow them, never widen them (docs/CAPABILITIES.md, 2.3). Without
     // caps the manifest isn't read here, as before.
-    allowedModels: brief && briefCaps(brief).length ? narrowCapMarkers(allowed, await sandbox.readManifest(input.sandboxName).catch(() => null)) : allowed,
+    allowedModels: brief && briefCaps(brief).length ? [...narrowCapMarkers(allowed, await sandbox.readManifest(input.sandboxName).catch(() => null)), ...runtime] : [...allowed, ...runtime],
     // Room for about 20 runs a day at the brief's estimate (Muse Wonder runs cost more than Spark's did).
     dailyBudgetUsd: liveDailyBudgetFor(brief),
   });
@@ -1438,7 +1489,7 @@ export async function startDeployStep(input: {
     sandboxName: input.sandboxName,
     slug: product.slug,
     productName: product.name,
-    env: { GATEWAY_URL: env.gatewayUrl, PRODUCT_TOKEN: live.token, ...(brief ? capDeployEnv(brief, live.token) : {}) },
+    env: { GATEWAY_URL: env.gatewayUrl, PRODUCT_TOKEN: live.token, ...(flagOn ? { MUSE_CONTRIBUTOR_NOTICE: runtime.length ? "1" : "0" } : {}), ...(brief ? capDeployEnv(brief, live.token) : {}) },
     projectId: product.vercelProjectId,
     onFiles: (files) => captureVersion({ buildId: input.buildId, productId: input.productId, files, restoredFrom: input.restoredFrom ?? null }),
   }).catch(async (err: unknown) => {
@@ -1570,6 +1621,8 @@ export interface RefineContext {
   sandboxName: string;
   sessionId: string;
   model: BuildModel;
+  /** A new Muse Code session on Contributor (refineRoute), so its prompt says to read the product first. */
+  freshSession: boolean;
   /** 1 for the product's first refinement, 2 for the next, and so on. */
   refineIndex: number;
   /** The engine's round plan, only with ENGINE_ROUND_SCALING. Refinements have no milestones. */
@@ -1607,7 +1660,7 @@ refineCheckStep.maxRetries = stepRetries("brief");
  * Loads what a refinement resumes: the product's sandbox, Muse Code session and build model. Also copies the product's
  * brief onto the refine row, so the judge, the product page and the gallery always have one for the shipped build.
  */
-export async function loadRefineStep(buildId: string): Promise<RefineContext> {
+export async function loadRefineStep(buildId: string, opts: { restore?: boolean } = {}): Promise<RefineContext> {
   "use step";
   const build = await loadBuild(buildId);
   if (build.kind !== "refine" || !build.productId) throw new FatalError("This build is not a refinement.");
@@ -1631,8 +1684,18 @@ export async function loadRefineStep(buildId: string): Promise<RefineContext> {
     .where(and(eq(schema.builds.productId, product.id), eq(schema.builds.kind, "build")))
     .orderBy(desc(schema.builds.startedAt))
     .limit(1);
-  // The session resumes on the model that started it, never on today's default: a Spark session never goes to Wonder.
-  const model = refineBuildModel(previous?.buildModel);
+  // The product's session resumes on the model it ran on, never on today's default: a Spark session never goes to Wonder.
+  // That's the newest other row holding that session, since a change may have moved it. buildTestModel() moves a change
+  // to Contributor in a new session. A restore runs no model and keeps the session it has.
+  const [sessionRow] = await db()
+    .select({ buildModel: schema.builds.buildModel })
+    .from(schema.builds)
+    .where(and(eq(schema.builds.productId, product.id), eq(schema.builds.museSessionId, product.museSessionId), ne(schema.builds.id, buildId)))
+    .orderBy(desc(schema.builds.startedAt))
+    .limit(1);
+  const { model, freshSession } = refineRoute(sessionRow?.buildModel ?? previous?.buildModel, opts.restore ? null : buildTestModel());
+  // A retried step keeps the new session it already chose.
+  const sessionId = freshSession ? (build.museSessionId && build.museSessionId !== product.museSessionId ? build.museSessionId : newSessionId()) : product.museSessionId;
   // Wave 3, unit 3: the row gets the brief as stored, every cap block kept; the plan uses the working copy (2.4a).
   const stored = build.storedBrief ?? (await latestBrief(product.id));
   const brief = stored ? capsForBuild(stored, { kind: "refine" }).brief : null;
@@ -1640,7 +1703,7 @@ export async function loadRefineStep(buildId: string): Promise<RefineContext> {
     .update(schema.builds)
     .set({
       sandboxName: product.sandboxName,
-      museSessionId: product.museSessionId,
+      museSessionId: sessionId,
       buildModel: model,
       ...(stored ? { brief: stored } : {}),
       // A change's tests see the same tool samples as the first build's.
@@ -1653,8 +1716,9 @@ export async function loadRefineStep(buildId: string): Promise<RefineContext> {
     name: product.name,
     tagline: product.tagline,
     sandboxName: product.sandboxName,
-    sessionId: product.museSessionId,
+    sessionId,
     model,
+    freshSession,
     refineIndex: Math.max(1, Number(n)),
     ...(plan ? { plan } : {}),
   };
@@ -1682,6 +1746,7 @@ export async function reopenStep(input: {
   productId: string;
   sandboxName: string;
   refineIndex: number;
+  freshSession?: boolean;
 }): Promise<{ promptFile: string; images: string[] }> {
   "use step";
   const build = await loadBuild(input.buildId);
@@ -1718,7 +1783,7 @@ export async function reopenStep(input: {
   });
   const prompt = renderRefinePrompt({
     brief,
-    message: `${await restoredNote(input.productId).catch(() => "")}${build.message ?? inspiration.note ?? ""}`,
+    message: `${input.freshSession ? "Note: this is a new session, so you have no memory of this product. Read AGENTS.md, BUILD_NOTES.md and the code before you edit.\n\n" : ""}${await restoredNote(input.productId).catch(() => "")}${build.message ?? inspiration.note ?? ""}`,
     newReferences: newReferences.map((r) => ({
       fileName: r.fileName,
       describes: `${/^[aeiou]/.test(r.kind) ? "An" : "A"} ${r.kind === "pdf" ? "PDF" : r.kind} the user attached with this change (inspo/${r.fileName}).`,

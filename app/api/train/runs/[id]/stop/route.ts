@@ -1,13 +1,13 @@
 import { env } from "@/lib/env";
 import { errorJson, route } from "@/lib/http";
 import { getDataset, requestStop } from "@/lib/train/store";
-import { tuneCaller } from "@/lib/train/tune/caller";
+import { mayTouchRun, runCaller } from "@/lib/train/tune/caller";
 import { latestTuneJob, markRunStopped } from "@/lib/train/tune/run-store";
 import { isTrainTerminal } from "@/lib/train/types";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-const jobHref = (jobId: string) => `/fine-tuning/${jobId}`;
+const adminJobHref = (jobId: string) => `/fine-tuning/${jobId}`;
 
 /**
  * POST -> stops a run (docs/TRAINING.md "Fine-tune like a build", "Starting training"). Admins or automation
@@ -24,11 +24,12 @@ const jobHref = (jobId: string) => `/fine-tuning/${jobId}`;
  */
 export const POST = route(async (req: Request, { params }: Ctx) => {
   if (!env.tuneComposer) return errorJson(404, "not_found");
-  const caller = await tuneCaller(req);
+  const caller = await runCaller(req);
   const { id } = await params;
   const dataset = await getDataset(id);
   if (!dataset) return errorJson(404, "not_found");
-  if (!caller.isAdmin && dataset.createdBy !== caller.id) return errorJson(403, "forbidden");
+  if (!(await mayTouchRun(caller, dataset.createdBy))) return errorJson(403, "forbidden");
+  const jobHref = caller.visitor ? () => `/fine-tuning/runs/${id}` : adminJobHref;
 
   const before = await latestTuneJob(id);
   if (before && isTrainTerminal(before.status)) return errorJson(409, "already_ended", { jobId: before.id, href: jobHref(before.id) });

@@ -23,7 +23,7 @@ describe("deviceModelTarget", () => {
   });
 
   it("keeps the memory visible and never claims a device has run a file", () => {
-    assert.match(deviceModelTarget("jetson_orin_nano").fit, /Not run on a real board yet.*x86.*6\.53 GB.*7\.3 GB.*2\.4 tokens.*8 GB is shared/);
+    assert.match(deviceModelTarget("jetson_orin_nano").fit, /Not run on a real board yet.*x86.*6\.53 GB.*7\.4 GB.*2\.5 tokens.*8 GB is shared/);
     assert.equal(deviceModelTarget("jetson_orin_nano").provenOnDevice, false);
     assert.equal(deviceModelTarget("mac").provenOnDevice, false);
     assert.ok(LOW_BIT_FACTS.runGbMeasured < LOW_BIT_FACTS.boardGb);
@@ -74,13 +74,13 @@ describe("limits and words", () => {
     assert.equal(estimate({ levels: "Q4_K_M", quantBase: "llama-3.2-3b" }), 45);
   });
 
-  it("shows no KL limit where none is measured, and reports the one-bit check", () => {
-    assert.equal(quantKlLimit("IQ1_S"), null);
+  it("shows the measured KL limits, none for a small base, and reports the one-bit check", () => {
+    assert.equal(quantKlLimit("IQ1_S"), 1.1);
     assert.equal(quantKlLimit("Q4_K_M"), 0.03);
     assert.equal(quantKlLimit("Q4_K_M", { quantBase: "llama-3.2-3b" }), null);
     const rows = quantRows({ levels: "IQ1_S,Q4_K_M" }, { iq1_s_passed: "yes", iq1_s_bytes: 6_530_000_000, iq1_s_kl_mean: 0.42, q4_k_m_passed: "yes", q4_k_m_kl_mean: 0.01 });
     assert.deepEqual(rows.map((r) => r.level), ["IQ1_S", "Q4_K_M"]);
-    assert.match(quantRowText(rows[0]!), /Passed · 6\.53 GB · mean KL 0\.4200, no limit yet/);
+    assert.match(quantRowText(rows[0]!), /Passed · 6\.53 GB · mean KL 0\.4200, limit 1\.1000/);
     assert.match(quantRowText(rows[1]!), /limit 0\.0300/);
     assert.match(quantLowBitText({ iq1_s_final: 28, iq1_s_final_total: 30 }) ?? "", /28 of 30.*much weaker/);
     assert.match(quantLowBitText({ iq1_s_problem: "llama-imatrix failed" }) ?? "", /isn't published: llama-imatrix failed/);
