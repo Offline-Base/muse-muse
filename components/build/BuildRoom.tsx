@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { FloatButton, ScrollButton, ShowThinking, SourceList, StepList, StepsPanel, TitleChip, WorkingStep, type StepsTab } from "@/components/chat";
 import { SegmentedTabs } from "@/components/chat/SegmentedTabs";
 import { Composer } from "@/components/composer/Composer";
@@ -55,6 +55,9 @@ export interface BuildRoomProps {
   ownModel?: OwnModelOffer | null;
   /** BUILD_ROOM_STEPS: two columns, a feed of simple steps on the left and the actual stuff on the right. */
   stepsFeed?: boolean;
+  /** MAKE_CHAT_ALL: the model started with this build, for whoever may see it: its story on the left, its results on the right. */
+  pairFeed?: ReactNode;
+  pairPanel?: ReactNode;
 }
 
 /** Below this the steps panel covers the conversation, so it starts closed (components/chat/StepsPanel.tsx). */
@@ -511,6 +514,7 @@ export function BuildRoom(props: BuildRoomProps) {
                 <li>
                   <StepsFeed feed={feed} />
                 </li>
+                {props.pairFeed}
                 {notes.map((item) => (
                   <ConvoRow key={item.key} item={item} buildId={build.id} canAnswer={Boolean(props.canSteer)} onShow={showSteps} />
                 ))}
@@ -545,6 +549,7 @@ export function BuildRoom(props: BuildRoomProps) {
 
             <aside className="room-stuff" aria-label="The build">
               <ol className="convo">
+                {props.pairPanel}
                 {/* What's real comes first, then the plan it came from. Each keeps its place, so a preview doesn't reload. */}
                 {previewRow}
                 {outputRow}

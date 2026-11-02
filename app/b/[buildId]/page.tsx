@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import dynamic from "next/dynamic";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
+import type { ReactNode } from "react";
 import { BuildRoom } from "@/components/build/BuildRoom";
 import "@/components/build/plan-card.css";
 import { NotConnected } from "@/components/ui";
@@ -12,7 +14,13 @@ import { ownModelOffer } from "@/lib/train/tune/from-build";
 import { currentUser, getBuildRoom, platformOrigin, rebuildRef, safeQuery } from "@/lib/queries";
 import { withoutPlanArt } from "@/lib/pipeline/plan-art";
 import { withoutStepsFeed } from "@/lib/steps-feed/facts";
+import { makeChatAllOn } from "@/lib/make/switch";
 import type { BuildEvent } from "@/lib/types";
+
+/** MAKE_CHAT_ALL: loaded only for a build with a paired model, so this page's code is as it was with the switch off. */
+const PairedRun = dynamic(() => import("@/components/make/PairedRun").then((m) => m.PairedRun));
+const PairedFeed = dynamic(() => import("@/components/make/PairedRun").then((m) => m.PairedFeed));
+const PairedPanel = dynamic(() => import("@/components/make/PairedRun").then((m) => m.PairedPanel));
 
 export const metadata: Metadata = { title: "Build room" };
 
@@ -67,8 +75,12 @@ export default async function BuildRoomPage({
     ceilings: { maxMinutes: env.trainJobMaxMinutes, maxUsd: env.trainJobMaxUsd },
   });
 
-  return (
+  // MAKE_CHAT_ALL: the model started with this build, only for whoever may see it. Needs BUILD_ROOM_STEPS's two columns.
+  const paired = makeChatAllOn() && env.buildRoomSteps ? await (await import("@/lib/make/paired-run")).pairedRunFor(data.build.id).catch(() => null) : null;
+  const native = await nativeActive(data.build.id);
+  const room = (extra: { pairFeed?: ReactNode; pairPanel?: ReactNode }) => (
     <BuildRoom
+      {...extra}
       build={data.build}
       product={data.product}
       inspiration={data.inspiration}
@@ -85,9 +97,15 @@ export default async function BuildRoomPage({
       focusRefine={sp.refine === "1"}
       rebuild={rebuildRef(data.build.rebuildOf)}
       maxFixRounds={env.maxFixRounds}
-      nativeActive={await nativeActive(data.build.id)}
+      nativeActive={native}
       ownModel={ownModel}
       contributorNotice={contributorBuildsOn()}
     />
+  );
+  if (!paired) return room({});
+  return (
+    <PairedRun run={paired.run} canLink={paired.canLink} buildId={data.build.id}>
+      {room({ pairFeed: <PairedFeed />, pairPanel: <PairedPanel /> })}
+    </PairedRun>
   );
 }

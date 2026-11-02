@@ -1,6 +1,6 @@
 {
   "composer: Make page": {
-    "sha256": "b5ca5a9cf38aa54bab669b42b5d9867bbb93a3898a565aa6edc5ae05929e4e16",
+    "sha256": "701d2dc03b630544f67e63bed455df774f188969afb8edbc17c9d9ad77e1041c",
     "length": 3410
   },
   "composer: signed out": {
@@ -24,36 +24,36 @@
     "length": 1277
   },
   "build room: running": {
-    "sha256": "d094e8a072ea92b58a945091225e630596853fe6e9699abd7beb68ae062e66f7",
-    "length": 48245
+    "sha256": "f74533b5c8e68122fcf9d46e5300bcd2dff6cd3a148b23515d2b6434f62032f9",
+    "length": 48436
   },
   "build room: failed": {
-    "sha256": "b8eb6561c0a32a8fb1c438b3976496b1245bdf0c71e80ea72f7b4e81f3806308",
-    "length": 17660
+    "sha256": "9e3750d13465d53a29a2533524537df24c1b02542b1ee20a8b33390a72ee23db",
+    "length": 17867
   },
   "build room: finished": {
-    "sha256": "5e3272a5054214e0b863e4265f086a21282484ac743aa32661414431eab1e2e6",
-    "length": 20266
+    "sha256": "8f5afc0a4b60d454e54280572bfdb96955f940a447fc1dc63263606409051769",
+    "length": 20469
   },
   "plan card: part of it, running, with the brief link": {
-    "sha256": "01c95fd193413b297fd22d94644dcf2a155cf48417f2b4fb8fb2e04033815181",
-    "length": 2162
+    "sha256": "bb99436f4ceb43d7e758796584c410e62c75e88fcf51a45397a0de2feaff32b4",
+    "length": 2369
   },
   "plan card: all of it, finished": {
-    "sha256": "70e65a9679776f394ae636c678605838c3669f95ffe20029bbd63a8052019e6a",
-    "length": 1808
+    "sha256": "8aab1754d21649d7c39aa274945ac838ce7aa1c27a815120c8faae810490ff2d",
+    "length": 1968
   },
   "plan card: no one it's for": {
-    "sha256": "22b06afdaf7b41d46791121477a9d442c5f959383a4afbca2e697b25f42ba113",
-    "length": 2105
+    "sha256": "6aba934d35ebe97e258733d71c183aa2cd9743b2e0fec0513e552f0e283ce83a",
+    "length": 2312
   },
   "plan card: no steps or tagline": {
-    "sha256": "9eab1f86035c7cda49fa658283795e09430363c3b52d1602cc58a194640e81a9",
-    "length": 1621
+    "sha256": "0c00d11e27392c2e28be9c72d4faa153f6314189e12f1eb3612548dba74e1f2a",
+    "length": 1699
   },
   "/fine-tuning: admin": {
-    "sha256": "818d7e16d59aade356875539641ef48383bdd3b6cfb811a12a60a13aa58b2534",
-    "length": 18968
+    "sha256": "692a54a1880508cc1bf59c30e1cb327886c5d02e40c45df7cc584bb4758fe0a4",
+    "length": 19204
   },
   "/fine-tuning: guest": {
     "sha256": "88c6d99a31835fb5c3d6010fc33453eea235d3ec1f4c46ec83c7a309099822d7",
