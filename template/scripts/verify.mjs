@@ -476,7 +476,13 @@ export function modelPackageProblems(readText) {
     const names = new Set();
     for (const field of ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"]) {
       const deps = pkg?.[field];
-      if (deps && typeof deps === "object" && !Array.isArray(deps)) for (const name of Object.keys(deps)) names.add(name.toLowerCase());
+      if (!deps || typeof deps !== "object" || Array.isArray(deps)) continue;
+      for (const [name, spec] of Object.entries(deps)) {
+        names.add(name.toLowerCase());
+        // An alias ("my-ocr": "npm:tesseract.js@5") pulls in the package it names, so that name is checked too.
+        const alias = typeof spec === "string" ? /^npm:((?:@[^/@\s]+\/)?[^@\s]+)/i.exec(spec.trim())?.[1] : undefined;
+        if (alias) names.add(alias.toLowerCase());
+      }
     }
     for (const name of [...names].sort()) {
       if (matchesList(name, MODEL_NPM_PACKAGES) || WHISPER_RE.test(name)) out.push(`package.json pulls in ${name}, which ${reason}`);

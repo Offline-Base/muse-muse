@@ -300,6 +300,12 @@ describe("chatOnEndpoint", () => {
     rows = [row({ status: "stopping" })];
     await assert.rejects(chatOnEndpoint(rows[0]!, ask, deps(), NOW), code("endpoint_closed"));
   });
+  it("never calls a live endpoint that serves a Llama adapter (the Nov 2 ruling)", async () => {
+    let called = false;
+    rows = [row({ ref: { url: "https://secret-host--x.modal.run", endpointId: ID, family: "llama3", sparkOpen: "0" } })];
+    await assert.rejects(chatOnEndpoint(rows[0]!, ask, deps({}, adapter({ chat: async () => ((called = true), { text: "", finish: "stop", usage: { input: 0, output: 0 } }) })), NOW), code("cant_host"));
+    assert.equal(called, false);
+  });
 });
 
 describe("handleHostedChat", () => {

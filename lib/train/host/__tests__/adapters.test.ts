@@ -96,6 +96,10 @@ describe("fireworks", () => {
   it("hostFacts refuses a Llama adapter for every host", () => {
     const job = { id: "j", recipe: "glimmer-lora", status: "succeeded", params: { baseModel: "unsloth/Llama-3.2-3B-Instruct-bnb-4bit" }, evalSummary: null, hub: null } as unknown as TrainJobRow;
     assert.match(hostFacts(job, null).problem ?? "", /trained on Llama, and only Muse Glimmer models are hosted here/);
+    for (const baseModel of ["unsloth/Meta-Llama-3.1-8B-Instruct", "LiquidAI/LFM2.5-1.2B"]) {
+      const other = { ...job, params: { baseModel } } as unknown as TrainJobRow;
+      assert.match(hostFacts(other, null).problem ?? "", /base isn't Muse Glimmer, and only Muse Glimmer models are hosted here/, baseModel);
+    }
   });
   it("names its missing keys only", () => {
     assert.deepEqual(fireworksAdapter({ apiKey: () => undefined, accountId: () => undefined, source }).missingKeys(), ["FIREWORKS_API_KEY", "FIREWORKS_ACCOUNT_ID"]);

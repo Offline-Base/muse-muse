@@ -55,6 +55,15 @@ describe("verify's model package check", () => {
     }
   });
 
+  test("fails a model package hidden behind an npm alias", () => {
+    for (const spec of ["npm:tesseract.js@5.1.1", "npm:@xenova/transformers@2.17.2"]) {
+      const problems = modelPackageProblems(files({ "package.json": pkg({ "my-helper": spec }) }));
+      assert.equal(problems.length, 1, `${spec}: ${problems.join(" | ")}`);
+      assert.match(problems[0], /^package\.json pulls in (tesseract\.js|@xenova\/transformers), which/);
+    }
+    assert.deepEqual(modelPackageProblems(files({ "package.json": pkg({ "my-zod": "npm:zod@4.6.7" }) })), []);
+  });
+
   test("fails Python model packages in requirements.txt, however the name is written", () => {
     const req = ["# comment", "numpy==2.3.4", "Torch==2.5.0", "sentence_transformers>=3", "onnxruntime-gpu", "faster-whisper==1.0", "-r other.txt", ""].join("\n");
     const problems = modelPackageProblems(files({ "requirements.txt": req }));

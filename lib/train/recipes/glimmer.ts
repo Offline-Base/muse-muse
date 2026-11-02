@@ -240,6 +240,9 @@ def use_family(family):
     global INSTRUCTION_PART, RESPONSE_PART, GENERATION_PROMPT, FINAL_CHANNEL, FINAL_ENDS, PAD_TOKEN, CONTROL_TOKENS, TRIM_CONTENT, NEXT_MESSAGE
     if family in (None, "", "glimmer"):
         return
+    # The organizers ruled on Nov 2 that Llama doesn't count as a Meta model in this hackathon, so FAMILIES takes no job:
+    # the platform writes only glimmer (lib/train/bases.ts), and a job that names another family stops here.
+    raise ValueError("Only Muse Glimmer trains here, so baseFamily " + json.dumps(str(family))[:40] + " isn't offered")
     f = FAMILIES.get(family)
     if not f:
         raise ValueError("baseFamily must be glimmer, llama3 or llama4")

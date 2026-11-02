@@ -73,7 +73,7 @@ export const DEVICE_TARGET_KINDS = [
 ] as const;
 
 /** What a device that isn't a Jetson Orin Nano is told: the same file, and no smaller model in its place. */
-const OTHER_DEVICE_FIT = `The same one-bit Muse Glimmer file as the board. It needs about ${LOW_BIT_FACTS.runGbMeasured} GB of memory free, so a phone or a small computer can't hold it and stays on the cloud. No smaller model is offered: only Meta's models run here. Not run on any device yet.`;
+const OTHER_DEVICE_FIT = `The same one-bit Muse Glimmer file as the board. On an x86 CPU it used up to ${LOW_BIT_FACTS.runGbMeasured} GB of memory, so a device without that much free can't hold it and stays on the cloud. No smaller model is offered: only Meta's models run here. Not run on any device yet.`;
 
 export interface DeviceModelTarget {
   /** The kind that was asked about. */
