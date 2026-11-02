@@ -2058,6 +2058,7 @@ Branch tg-build-tools. Owner asked for all builds on Contributor, a much shorter
 - **Tests:** tsc clean. Touched tests 395 of 398. The 3 failures (flags-off round caps, two workflow cap messages) also fail on main at a3c2fe6a, as does the build-steps scenario suite (mock lacks collectDeployFiles).
 - **Preview:** muse-muse-nbb9ow0a2, env names read back with the switches present.
 - **Measured:** build 3823ec1d, a note asking for a vibe coding studio whose apps have chatbots: buildModel read back muse-spark-1.3-contributor, the brief has a platform block with publish, gateway and sandboxes, and lists Wonder. Cost at brief $0.0034.
+- **Build 3823ec1d so far, about 45 minutes in:** still running on the Preview, on Contributor, at about $0.13, past milestone 2 of 4. Not finished when this was written, so the chat route isn't proven end to end. No subagent line in its events, so subagents on Contributor remain unmeasured. A real child can't publish from a Preview, so a live child's chatbot is unproven. Meta spend is that build only, no GPUs.
 ## Nov 1: /models redesigned as cards (branch tg-models-page)
 
 Owner asked for the look of their screenshot of Meta's Models page. No flag: this ships directly.
