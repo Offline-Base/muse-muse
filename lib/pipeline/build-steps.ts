@@ -25,6 +25,7 @@ import { judgeBuild, MAX_CHAIN_SCREENSHOTS, pickScreenshots } from "@/lib/judge"
 import { APP_NAV_COMPONENT, FULL_PRODUCT_SKILL } from "@/lib/full/prompts";
 import { briefRequirements, buildableRequirements, fullMilestones, requirementsFile, unmetLines } from "@/lib/full/requirements";
 import { scopeLine } from "@/lib/full/scope";
+import { edgeExtraFiles } from "@/lib/edge/template-files";
 import { nativeExtraFiles } from "@/lib/native/template-files";
 import { localGadgetFiles } from "@/lib/sandbox/local-gadget";
 import { recipeExtraFiles, recipeNotes } from "@/lib/recipes/registry";
@@ -649,7 +650,7 @@ function fullExtraFiles(brief: Brief | null): Array<{ path: string; content: str
 
 /** The files this brief's targets add, as a field that isn't there at all for a web-only brief. */
 function extraFilesFor(brief: Brief | null): { extraFiles?: Array<{ path: string; content: string }> } {
-  const extraFiles = [...nativeExtraFiles(brief), ...recipeExtraFiles(brief), ...localGadgetFiles(brief), ...fullExtraFiles(brief)];
+  const extraFiles = [...nativeExtraFiles(brief), ...recipeExtraFiles(brief), ...localGadgetFiles(brief), ...fullExtraFiles(brief), ...edgeExtraFiles()];
   return extraFiles.length ? { extraFiles } : {};
 }
 

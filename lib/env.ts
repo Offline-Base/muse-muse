@@ -1129,6 +1129,13 @@ export const env = {
     return env.trustAgeGate || env.trustLegalPages || env.trustGeoBlock || env.trustReports;
   },
 
+  // ---------- Edge builds (docs/EDGE_DEMO.md) ----------
+
+  /** EDGE_BUILDS: provisioning writes lib/meta/edge.ts, the muse-edge skill and the outage drill kit into every build. */
+  get edgeBuilds(): boolean {
+    return flag("EDGE_BUILDS");
+  },
+
   // ---------- Full builds (docs/FULL_BUILDS.md) ----------
 
   /** FULL_BUILDS: briefs list every requirement, a separate check holds them to the note, and every requirement is tested and judged. */
