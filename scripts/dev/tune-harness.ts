@@ -18,6 +18,9 @@
  *
  * A run that reported "failed", or stopped with no "done", is recorded as failed and isn't judged; ingest then exits 1.
  *
+ * HARNESS_JUDGE=muse-spark-1.3-contributor has ingest judge on Contributor, with the same prompt. Scores from it don't compare
+ * with Wonder-judged runs. No other model is taken.
+ *
  * Never point it at the site's own folder: two PGlites on one folder corrupt it. Made-up data only.
  */
 import { randomBytes, randomUUID } from "node:crypto";
@@ -145,16 +148,21 @@ async function ingest(dir: string, metaPath: string) {
     console.log(JSON.stringify({ jobId: job.id, status: "failed", evals, reason: outcome.reason }, null, 1));
     throw new Error(`The harness run failed: ${outcome.reason}`);
   }
-  const { indexes, task } = await judgePlanStep(job.id);
+  const { SPARK_STANDIN } = await import("@/lib/meta/spark");
+  const named = process.env.HARNESS_JUDGE?.trim();
+  if (named && named !== SPARK_STANDIN) throw new Error(`HARNESS_JUDGE takes only ${SPARK_STANDIN}`);
+  const { JUDGE_MODEL } = await import("@/lib/train/judge");
+  const judge = named || JUDGE_MODEL;
+  const { indexes, task } = await judgePlanStep(job.id, judge);
   const judged: Awaited<ReturnType<typeof judgeStep>>[] = [];
   for (let i = 0; i < indexes.length; i += 4) {
-    judged.push(...(await Promise.all(indexes.slice(i, i + 4).map((n) => judgeStep(job.id, n, task)))));
+    judged.push(...(await Promise.all(indexes.slice(i, i + 4).map((n) => judgeStep(job.id, n, task, judge)))));
     process.stderr.write(`judged ${judged.length}/${indexes.length}\n`);
   }
   const items = judged.filter((x): x is NonNullable<typeof x> => Boolean(x));
   const summary = await saveEvalSummaryStep(job.id, items, indexes.length);
   const cost = items.reduce((s, x) => s + x.costUsd, 0);
-  console.log(JSON.stringify({ jobId: job.id, evals, judged: items.length, judgeCostUsd: cost, summary, verdict: summary ? evalVerdict(summary, false) : null }, null, 1));
+  console.log(JSON.stringify({ jobId: job.id, judge, evals, judged: items.length, judgeCostUsd: cost, summary, verdict: summary ? evalVerdict(summary, false) : null }, null, 1));
 }
 
 async function loopStart(sourceJobId: string, target: number, capUsd: number, maxRounds: number, examples: number) {

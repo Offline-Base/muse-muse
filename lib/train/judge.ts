@@ -112,9 +112,9 @@ const usd = (usage: ModelUsage[]) => Math.round(usage.reduce((s, u) => s + (u.co
  * What to judge: the indexes of the job's eval items, and the task of its dataset (params.datasetId) when it has one.
  * Nothing when it has no eval items or a summary already, and nothing when MODEL_API_KEY isn't set or the platform's
  * daily spend cap is reached: then it saves an unjudged summary that says why, and logs it. Otherwise it saves
- * JUDGE_MODEL as the job's judge_model before it logs that judging started.
+ * JUDGE_MODEL as the job's judge_model before it logs that judging started. Only scripts/dev/tune-harness.ts names another judge.
  */
-export async function judgePlanStep(jobId: string): Promise<{ indexes: number[]; task: string | null }> {
+export async function judgePlanStep(jobId: string, judgeModel: string = JUDGE_MODEL): Promise<{ indexes: number[]; task: string | null }> {
   "use step";
   const none = { indexes: [], task: null };
   const indexes = await fromDb(() => listEvalIndexes(jobId));
@@ -135,8 +135,8 @@ export async function judgePlanStep(jobId: string): Promise<{ indexes: number[];
   const datasetId = typeof job.params?.datasetId === "string" ? job.params.datasetId : null;
   const dataset = datasetId ? await fromDb(() => getDataset(datasetId)) : null;
   const n = indexes.length;
-  await fromDb(() => setJudgeModel(jobId, JUDGE_MODEL));
-  await fromDb(() => recordEvent(jobId, { type: "log", text: `${modelLabel(JUDGE_MODEL)} is judging ${n} eval item${n === 1 ? "" : "s"}.` }));
+  await fromDb(() => setJudgeModel(jobId, judgeModel));
+  await fromDb(() => recordEvent(jobId, { type: "log", text: `${modelLabel(judgeModel)} is judging ${n} eval item${n === 1 ? "" : "s"}.` }));
   return { indexes, task: dataset?.task ?? null };
 }
 judgePlanStep.maxRetries = 3;
@@ -146,7 +146,7 @@ judgePlanStep.maxRetries = 3;
  * usage, then logs the verdict as a "judgement" event, and returns it with what it cost. An item that already has a
  * judgement (an earlier attempt logged it) is returned as it is, at no cost; a missing item is null.
  */
-export async function judgeStep(jobId: string, index: number, task: string | null): Promise<JudgedItem | null> {
+export async function judgeStep(jobId: string, index: number, task: string | null, judgeModel: string = JUDGE_MODEL): Promise<JudgedItem | null> {
   "use step";
   const done = await fromDb(() => getJudgement(jobId, index));
   if (done) return { baseScore: done.baseScore, tunedScore: done.tunedScore, better: done.better, costUsd: 0 };
@@ -157,7 +157,7 @@ export async function judgeStep(jobId: string, index: number, task: string | nul
   let result: StructuredResult<Verdict>;
   try {
     result = await respondStructured({
-      model: JUDGE_MODEL,
+      model: judgeModel,
       instructions: JUDGE_INSTRUCTIONS,
       content: [
         textPart(
