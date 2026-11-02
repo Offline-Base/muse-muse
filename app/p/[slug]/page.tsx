@@ -8,7 +8,7 @@ import { Icon } from "@/components/icons";
 import { KIND_ICON } from "@/components/composer/AttachmentChip";
 import "@/components/product/get-it.css";
 import { CheckedPanel } from "@/components/product/CheckedPanel";
-import { RequirementsChecklist } from "@/components/build/RequirementsChecklist";
+import { checksFailed, RequirementsChecklist, type CheckOutcome } from "@/components/build/RequirementsChecklist";
 import { latestChecklist } from "@/lib/full/requirements";
 import { GetItPanel } from "@/components/product/GetItPanel";
 import { nativeSlots } from "@/components/product/NativeSlots";
@@ -152,7 +152,8 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
         <header className="product-head">
           <div className="product-title">
             <h1>{product.name}</h1>
-            <StatusPill status={product.status} />
+            {/* A shipped product with no link never reads "Live" next to "Not published". */}
+            {shipped && !product.liveUrl ? <StatusPill status="disabled" label="Not published" /> : <StatusPill status={product.status} />}
           </div>
           {product.tagline ? <p className="subtitle">{product.tagline}</p> : null}
         </header>
@@ -182,8 +183,10 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             action={latestBuild ? { href: `/b/${latestBuild.id}`, label: "Open the build room" } : undefined}
           >
             <p>
-              It passed its checks, but publishing was off where it was built, such as a local run, so it has no live
-              link. Its recorded demo is in the panel.
+              {product.status === "partial"
+                ? "It shipped with some checks failing, and publishing was off where it was built, such as a local run, so it has no live link."
+                : "It passed its checks, but publishing was off where it was built, such as a local run, so it has no live link."}{" "}
+              Its recorded demo is in the panel.
             </p>
           </EmptyCard>
         ) : product.status === "disabled" ? (
@@ -196,7 +199,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             title="This product didn't ship"
             action={latestBuild ? { href: `/b/${latestBuild.id}`, label: "See what happened" } : undefined}
           >
-            <p>Its checks didn&apos;t pass, so it was never put live.</p>
+            <p>It never went live. The build room shows where it stopped.</p>
           </EmptyCard>
         ) : (
           <EmptyCard
@@ -215,7 +218,10 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
         {/* FULL_BUILDS: only a brief written with it has requirements. Nothing renders for any other product. */}
         {brief?.requirements?.length ? (
           <section className="card section-card">
-            <RequirementsChecklist items={latestChecklist(brief, events.flatMap((e): Parameters<typeof latestChecklist>[1][number][] => (e.type === "judge" ? [{ judge: e.verdict }] : e.type === "verify" ? [{ tests: e.summary.requirements ?? null }] : [])))} />
+            <RequirementsChecklist
+              items={latestChecklist(brief, events.flatMap((e): Parameters<typeof latestChecklist>[1][number][] => (e.type === "judge" ? [{ judge: e.verdict }] : e.type === "verify" ? [{ tests: e.summary.requirements ?? null }] : [])))}
+              failed={checksFailed(product.status, events.flatMap((e): CheckOutcome[] => (e.type === "judge" ? [{ judge: e.verdict }] : e.type === "verify" ? [{ verify: e.summary }] : [])))}
+            />
           </section>
         ) : null}
 

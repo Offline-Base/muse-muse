@@ -131,11 +131,17 @@ interface CatalogModel {
   license?: string;
 }
 
-/** Spark 1.3 Contributor's row while BUILDS_ON_CONTRIBUTOR is on, when "tests and examples" would no longer be true. */
+/**
+ * Spark 1.3 Contributor's row while BUILDS_ON_CONTRIBUTOR is on, when "tests and examples" would no longer be true. A
+ * product published under the switch keeps running on it (lib/gateway/handler.ts), as the Privacy text says.
+ */
 const CONTRIBUTOR_ON_BUILDS = {
-  use: "The model Muse Muse builds on right now: the brief, the build, the checks and a build's own test calls. Meta may train on what it's sent, so don't put personal, sensitive or confidential information in a build. Live products don't run on it.",
+  use: "The model Muse Muse builds on right now: the brief, the build, the checks and a build's own test calls. Meta may train on what it's sent, so don't put personal, sensitive or confidential information in a build. A product published this way keeps running on it and says so.",
   testOnly: false,
 };
+
+/** Muse Wonder's row while BUILDS_ON_CONTRIBUTOR is on, when it no longer does every platform role (lib/meta/spark.ts). */
+const WONDER_ON_BUILDS = "Builds run on Spark 1.3 Contributor right now. Muse Wonder still serves live products that use a gadget's or board's camera or microphone, and three demo products.";
 
 /** The hosted models with their calls, each one only while the catalog still lists it as hosted. */
 export function hostedModelViews(calls: Record<string, number> | null, opts: { buildsOnContributor?: boolean } = {}): HostedModelView[] {
@@ -144,7 +150,8 @@ export function hostedModelViews(calls: Record<string, number> | null, opts: { b
     const entry = listed.get(m.id);
     if (!entry) return [];
     const view = { ...m, preview: entry.status === "preview", calls: calls ? (calls[m.id] ?? 0) : null };
-    return [opts.buildsOnContributor && m.id === SPARK_STANDIN ? { ...view, ...CONTRIBUTOR_ON_BUILDS } : view];
+    if (!opts.buildsOnContributor) return [view];
+    return [m.id === SPARK_STANDIN ? { ...view, ...CONTRIBUTOR_ON_BUILDS } : m.id === "muse-wonder-1.0" ? { ...view, use: WONDER_ON_BUILDS } : view];
   });
 }
 

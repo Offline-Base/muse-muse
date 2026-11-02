@@ -7,6 +7,7 @@ import { and, asc, desc, eq, getTableColumns, gt, gte, isNotNull, isNull, ne, no
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { db, schema } from "@/lib/db/client";
 import { hashToken } from "@/lib/gateway/tokens";
+import { withoutHiddenAnswers } from "@/lib/train/hidden-answers";
 import {
   ADAPTER_RECIPE,
   capEventBody,
@@ -165,7 +166,7 @@ export async function listEvents(jobId: string, afterId = 0, limit = 500): Promi
     .where(and(eq(events.jobId, jobId), gt(events.id, Math.max(0, Math.floor(afterId) || 0))))
     .orderBy(asc(events.id))
     .limit(Math.max(1, Math.min(1000, limit)));
-  return rows.map((r) => ({ id: r.id, type: r.type, payload: r.payload, at: r.at.toISOString() }));
+  return rows.map((r) => ({ id: r.id, type: r.type, payload: withoutHiddenAnswers(jobId, r.payload), at: r.at.toISOString() }));
 }
 
 /** Appends one row to a job's log, with its text cut to size first (capEventBody). */
@@ -1450,7 +1451,7 @@ export async function listResultEvents(jobId: string): Promise<TrainEventView[]>
     .where(and(eq(events.jobId, jobId), or(eq(events.type, "eval"), eq(events.type, "judgement")), sql`exists (${judged})`))
     .orderBy(asc(events.id))
     .limit(RESULT_EVENTS_MAX);
-  return rows.map((r) => ({ id: r.id, type: r.type, payload: r.payload, at: r.at.toISOString() }));
+  return rows.map((r) => ({ id: r.id, type: r.type, payload: withoutHiddenAnswers(jobId, r.payload), at: r.at.toISOString() }));
 }
 
 const readyDatasetColumns = {
