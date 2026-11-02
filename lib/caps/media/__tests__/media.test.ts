@@ -209,7 +209,7 @@ describe("the limits and the asset list", () => {
     const assets = vettedAssets();
     assert.deepEqual(assets, [], "the list is empty since the Nov 2 ruling");
     const T = (await import(pathToFileURL(path.join(TEMPLATE, "caps/media/files/lib/platform/media-assets.ts")).href)) as { MEDIA_ASSETS: Array<{ name: string; bytes: number; sha256: string }> };
-    for (const a of T.MEDIA_ASSETS) assert.ok(!assets.some((x) => x.sha256 === a.sha256), `${a.name} isn't served`);
+    for (const a of T.MEDIA_ASSETS) assert.ok(!(assets as Array<{ sha256: string }>).some((x) => x.sha256 === a.sha256), `${a.name} isn't served`);
   });
 
   it("refuses model weights in the list: every model a product calls is Meta's, through the gateway's API", () => {

@@ -33,7 +33,7 @@ describe("the frontier claim's evidence", () => {
 
   it("shows only Meta models doing the work (organizer ruling, Nov 2)", () => {
     const all = [...FLOW_STEPS.map((step) => step.evidence), ...OFFLINE_BASE_FACTS, ...OFFLINE_LIMITS].join(" ");
-    assert.ok(!/llama|lfm|liquid|bolt|nemotron|gemma|speecht5|prompt guard/i.test(all), all.match(/llama|lfm|liquid|bolt|nemotron|gemma|speecht5|prompt guard/i)?.[0]);
+    assert.ok(!/llama|lfm|liquid|bolt|nemotron|gemma|speecht5|prompt guard/i.test(all), all.match(/llama|lfm|liquid|bolt|nemotron|gemma|speecht5|prompt guard/i)?.[0] ?? "");
   });
 
   it("marks running on your own hardware as simulated, and a product on its tuned model as not run", () => {
@@ -47,7 +47,7 @@ describe("Meta models only, in public copy (organizer ruling, Nov 2)", () => {
 
   it("/open-weights shows no other model family's results", () => {
     const page = readFileSync("app/open-weights/page.tsx", "utf8");
-    assert.ok(!NON_META.test(page), page.match(NON_META)?.[0]);
+    assert.ok(!NON_META.test(page), page.match(NON_META)?.[0] ?? "");
   });
 
   it("the video, the submission and the README never say Built with Llama", () => {
