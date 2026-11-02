@@ -12,9 +12,9 @@
 # of the 1.7 GB adapter takes about 11 minutes.
 set -euo pipefail
 OPTS=(-i ~/.ssh/muse-muse-lambda -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=30 -o ServerAliveCountMax=6)
-TRAIN=ubuntu@163.192.200.51
-WR=ubuntu@132.145.195.77
-GH=ubuntu@192.222.56.131
+TRAIN=${TRAIN_HOST:?set TRAIN_HOST to train-1 as ubuntu@<address>}
+WR=${WRITER_HOST:?set WRITER_HOST to writer-1 as ubuntu@<address>}
+GH=${GH200_HOST:?set GH200_HOST to the GH200 as ubuntu@<address>}
 REPO=$(cd "$(dirname "$0")/../../.." && pwd)
 LOCAL=$REPO/.data/knowledge/runs/stage2-multi/out/adapter
 SRC=/home/ubuntu/k/runs/stage2-multi/out/adapter

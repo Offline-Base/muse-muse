@@ -198,7 +198,7 @@ export function catalogSummary(caps: readonly CapId[] = env.enabledCaps): string
     "Models a product may call, all through the Muse Muse gateway (prices are estimates):",
     ...hosted.map((m) => modelBlock(m, voiceRecipe)),
     // Wave 3, unit 11 (docs/CAPABILITIES.md, section 17): the shared endpoint's line while it's on.
-    gpuOn ? GLIMMER_CATALOG_LINE : "- muse-glimmer: open-weights model for local or offline use. Not on the Model API: it needs an endpoint someone hosts. Pick it only when the muse asks for local or offline use.",
+    gpuOn ? GLIMMER_CATALOG_LINE : "- muse-glimmer: Meta's open-weights 30B model. Not on the Model API: it needs an endpoint someone hosts on a GPU server, and Meta's smallest file of it is 16.8 GB, so never promise it runs on a phone, a laptop or a small board. Pick it only when the muse asks for an open-weights model someone hosts.",
     ...(gadgets ? ["- muse-gadget: a physical board connected to Muse Muse, with a camera and a microphone. The product can take a photo or record a few seconds of sound on the board, then pass it to a model, for example a counter that photographs a shelf. Pick it only when the muse asks for hardware: a device that watches, listens or reacts in the real world. It isn't a model, so pair it with the model that reads what it captures. A product must still work when no board is connected, with a clear message and a way to upload instead."] : []),
     "",
     "Not available on the Model API yet, with the workaround a product uses instead:",

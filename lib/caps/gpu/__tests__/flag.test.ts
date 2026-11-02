@@ -36,7 +36,7 @@ describe("with GPU_GLIMMER_SHARED off", () => {
     assert.deepEqual(capsBuildLines(GLIMMER_BRIEF), []);
     assert.deepEqual(capsRefineLines(GLIMMER_BRIEF), []);
     assert.equal(capsJudgeNotes(GLIMMER_BRIEF), "");
-    assert.match(catalogSummary([]), /Pick it only when the muse asks for local or offline use\./);
+    assert.match(catalogSummary([]), /Pick it only when the muse asks for an open-weights model someone hosts\./);
   });
 });
 

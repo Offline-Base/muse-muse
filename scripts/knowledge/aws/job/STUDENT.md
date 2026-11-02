@@ -67,7 +67,7 @@ test's slice and `base.json` still apply; `--exclude` and the lineage check now 
 with the new `--exclude` drops the same row, but one row fewer reshuffles the file and redraws `--cap-low`'s picks (10,871
 rows in five capped sources), which is why this set wasn't rebuilt.
 `train-student.jsonl.gz` is `gzip -nc` of the file. The set, its report and its lineage report are in
-`s3://muse-knowledge-916979311153/knowledge/corpus/dataset/`.
+`s3://$KNOWLEDGE_BUCKET/knowledge/corpus/dataset/`.
 
 ## CPU check on this Mac
 
@@ -251,13 +251,13 @@ run_student.sh refuses while any GPU is busy, so one job runs at a time.
    ```
 
    The sync brings `~/k/runs/student-bolt` (logs, metrics, answers, scores: no weights) to
-   `.data/knowledge/runs/student-bolt/` every 10 minutes and puts it in `s3://muse-knowledge-916979311153/knowledge/runs/student-bolt/`.
+   `.data/knowledge/runs/student-bolt/` every 10 minutes and puts it in `s3://$KNOWLEDGE_BUCKET/knowledge/runs/student-bolt/`.
 
 5. Before 10:00 AM, the adapter (and the Q4_K_M if the link allows) to S3, streamed through this Mac without touching
    its disk; the AWS profile stays here:
 
    ```
-   S3=s3://muse-knowledge-916979311153/knowledge/models/student-bolt
+   S3=s3://$KNOWLEDGE_BUCKET/knowledge/models/student-bolt
    k 'cd ~/k/models/student-bolt && tar -cf - adapter' | aws --profile offlinebase s3 cp --only-show-errors - $S3/adapter.tar
    f=student-bolt-Q4_K_M.gguf
    k "cat ~/k/models/student-bolt/$f" | aws --profile offlinebase s3 cp --only-show-errors - $S3/$f

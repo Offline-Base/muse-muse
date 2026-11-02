@@ -1,6 +1,6 @@
 ---
 name: meta-glimmer
-description: Use only when the brief asks for a local, private or offline model. Muse Glimmer is Meta's open-weights model for local agents and is not served by the Meta Model API.
+description: Use only when the brief picks muse-glimmer, an open-weights model someone hosts. Muse Glimmer is Meta's open-weights 30B model. The Meta Model API doesn't serve it, and it needs a GPU server, not a phone, a laptop or a small board.
 ---
 
 # Muse Glimmer
@@ -11,7 +11,7 @@ Glimmer is a 30B dense model distilled from Muse Spark and released under Apache
 
 ## When a product can use it
 
-A product deployed on Vercel can't run Glimmer itself. It can call Glimmer only when `GLIMMER_URL` points at an OpenAI-compatible endpoint someone hosts, such as vLLM on Modal or Baseten, or a home device exposed through a relay.
+A product deployed on Vercel can't run Glimmer itself. It can call Glimmer only when `GLIMMER_URL` points at an OpenAI-compatible endpoint someone hosts on a GPU server, such as vLLM on Modal or Baseten. Meta's smallest Glimmer file is 16.8 GB, and a one-bit cut on an 8 GB board gave poor answers, so never promise in the UI or BUILD_NOTES.md that it runs on a phone, a laptop or a small board.
 
 ```ts
 import { glimmer } from "@/lib/meta/glimmer";
@@ -25,7 +25,7 @@ if (local) {
 }
 ```
 
-If `GLIMMER_URL` isn't set, use Muse Wonder and say in the UI and in BUILD_NOTES.md that the local mode needs a Glimmer endpoint.
+If `GLIMMER_URL` isn't set, use Muse Wonder and say in the UI and in BUILD_NOTES.md that the Glimmer mode needs a Glimmer endpoint.
 
 <!-- Wave 3, unit 11: the hosted Glimmer -->
 ## When the build prompt says "Hosted Muse Glimmer"

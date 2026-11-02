@@ -36,7 +36,7 @@ import { CACHE, FROM, get, LIMIT, pauseRequested, runAll, save, TO } from "./com
 const SAMPLING = LIMIT !== Infinity;
 const CONTACT_UA = "OfflineBase MuseMuse-knowledge team@offlinebase.com";
 const HEADERS = { "User-Agent": CONTACT_UA };
-const BUCKET = process.env.KNOWLEDGE_BUCKET ?? "muse-knowledge-916979311153";
+const BUCKET = process.env.KNOWLEDGE_BUCKET ?? "<set KNOWLEDGE_BUCKET>";
 const RETRIEVED = new Date().toISOString().slice(0, 10);
 const MAX_DOC_WORDS = 4000;
 

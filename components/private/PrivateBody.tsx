@@ -35,9 +35,16 @@ const NOT_DONE: string[] = [
   "Answers from the Jetson fleet or a paired board aren't private. The text passes through other servers on the way, and only this path, on your own laptop, keeps your files with you.",
 ];
 
+/**
+ * The Oct 30 run on another 200 invented items, which leaked 10 times with no cause recorded and no rerun
+ * (privacy/eval/reports/device_only_fresh_200.md). docs/MESSAGING.md: the 0 from the Oct 31 run is never shown without it.
+ */
+export const EARLIER_RUN = { report: "device_only_fresh_200.md", date: "Oct 30", items: 200, leaks: 10 } as const;
+
 /** With `story` (STORY_PAGES), the page opens with what it protects, from whom, and a before and after. */
 export function PrivateBody({ story = false }: { story?: boolean }) {
   const { fresh, tasks, rehearsal } = PRIVATE_NUMBERS;
+  const items = fresh.items + tasks.items;
   return (
     <div className="page how-page">
       <PageHeader
@@ -71,9 +78,18 @@ export function PrivateBody({ story = false }: { story?: boolean }) {
       <h2 className="how-heading">What the tests show</h2>
       <dl className="pv-tiles">
         <div className="pv-tile">
-          <dd>{fresh.leaks + tasks.leaks}</dd>
+          <dd>
+            {fresh.unsafeShares + tasks.unsafeShares} of {items}
+          </dd>
+          <dt>results on invented items were shared when they should have waited for you or stayed on the device, in the Oct 31 run</dt>
+        </div>
+        <div className="pv-tile">
+          <dd>
+            {fresh.leaks + tasks.leaks} of {items}, {EARLIER_RUN.leaks} of {EARLIER_RUN.items}
+          </dd>
           <dt>
-            leaks of names or identifiers across {fresh.items + tasks.items} invented items on the device
+            results held a name or identifier the checker looks for: {fresh.leaks + tasks.leaks} in the Oct 31 run, and {EARLIER_RUN.leaks} in an{" "}
+            {EARLIER_RUN.date} run on another set, with no cause recorded and no rerun yet
           </dt>
         </div>
         <div className="pv-tile">
@@ -88,9 +104,9 @@ export function PrivateBody({ story = false }: { story?: boolean }) {
         </div>
       </dl>
       <p className="muted">
-        &quot;Leaks&quot; counts names and identifiers found in released text, and doesn&apos;t cover everything. {fresh.unsafeShares + tasks.unsafeShares} of those {fresh.items + tasks.items} results
-        were shared when they should have waited or stayed on the device. The reports are in <code>privacy/eval/reports</code> in this project&apos;s
-        repository.
+        &quot;Leaks&quot; counts names and identifiers our own checker finds in released text, and doesn&apos;t cover everything: a result shared when it
+        should have waited counts as a wrong share, not a leak. So no run here shows that nothing gets out. The reports are in{" "}
+        <code>privacy/eval/reports</code> in this project&apos;s repository.
       </p>
 
       {story ? <PrivateStoryNumbers /> : null}

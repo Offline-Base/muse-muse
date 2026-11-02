@@ -48,11 +48,18 @@ LOCK = os.path.join(LOGS, "idle-alert.lock")
 KEY = os.path.expanduser("~/.ssh/muse-muse-lambda")
 
 EDT = dt.timezone(dt.timedelta(hours=-4))
+
+
+def machine_host(name):
+    """ssh target for a machine, such as ubuntu@<address>, from IDLE_ALERT_HOST_<NAME> (train-1 reads
+    IDLE_ALERT_HOST_TRAIN_1). The rented machines' addresses stay out of the repo. None when unset: it isn't watched."""
+    return os.environ.get("IDLE_ALERT_HOST_" + re.sub(r"[^A-Z0-9]", "_", name.upper()), "").strip() or None
+
 # Launch times and prices from docs/KNOWLEDGE_RUN_LOG.md ("Now"); Lambda bills from launch until terminate.
 MACHINES = {
-    "train-1": {"host": "ubuntu@163.192.200.51", "usd_per_hour": 22.32, "launched": dt.datetime(2026, 10, 30, 20, 20, tzinfo=EDT)},
-    "writer-1": {"host": "ubuntu@132.145.195.77", "usd_per_hour": 1.99, "launched": dt.datetime(2026, 10, 30, 14, 2, tzinfo=EDT)},
-    "gh200": {"host": "ubuntu@192.222.56.131", "usd_per_hour": 2.29, "launched": dt.datetime(2026, 10, 30, 17, 44, tzinfo=EDT)},
+    "train-1": {"host": machine_host("train-1"), "usd_per_hour": 22.32, "launched": dt.datetime(2026, 10, 30, 20, 20, tzinfo=EDT)},
+    "writer-1": {"host": machine_host("writer-1"), "usd_per_hour": 1.99, "launched": dt.datetime(2026, 10, 30, 14, 2, tzinfo=EDT)},
+    "gh200": {"host": machine_host("gh200"), "usd_per_hour": 2.29, "launched": dt.datetime(2026, 10, 30, 17, 44, tzinfo=EDT)},
 }
 
 INTERVAL_S = 300
@@ -293,7 +300,9 @@ def run(args):
     signal.signal(signal.SIGINT, finish)
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
 
-    names = [n for n in MACHINES if n not in (args.skip or [])]
+    names = [n for n in MACHINES if n not in (args.skip or []) and MACHINES[n]["host"]]
+    if not names:
+        sys.exit("no machine to watch: set IDLE_ALERT_HOST_<NAME> for each, such as IDLE_ALERT_HOST_TRAIN_1=ubuntu@<address>")
     state = load_state()
     log(f"started pid {os.getpid()}: {', '.join(names)} every {INTERVAL_S} s; alerts at {IDLE_ALERT_S // 60} min at 0%; "
         f"it never stops or terminates anything")
@@ -378,7 +387,9 @@ def status(_args):
 
 
 def read_once(_args):
-    names = list(MACHINES)
+    names = [n for n in MACHINES if MACHINES[n]["host"]]
+    if not names:
+        sys.exit("no machine to read: set IDLE_ALERT_HOST_<NAME> for each, such as IDLE_ALERT_HOST_TRAIN_1=ubuntu@<address>")
     with concurrent.futures.ThreadPoolExecutor(len(names)) as pool:
         got = zip(names, pool.map(lambda n: read_machine(MACHINES[n]["host"]), names))
         for name, (reading, why) in got:
