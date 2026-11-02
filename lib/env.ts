@@ -301,7 +301,7 @@ export const env = {
    */
   get museFull(): boolean {
     // BUILD_RANGE's required subagents need the capacity setting and the workflow skill that MUSE_FULL turns on.
-    return ["1", "true", "yes", "on"].includes((process.env.MUSE_FULL ?? "").trim().toLowerCase()) || flag("BUILD_RANGE");
+    return ["1", "true", "yes", "on"].includes((process.env.MUSE_FULL ?? "").trim().toLowerCase()) || flag("BUILD_RANGE") || flag("FAST_BUILDS");
   },
   /** MUSE_AGENT_CAPACITY: Muse Code's agents.execution_capacity under MUSE_FULL. Default 6, held to 1 through 64. */
   get museAgentCapacity(): number {
@@ -673,6 +673,10 @@ export const env = {
    * products go deeper and complex builds must use subagents and workflows. Needs a builder snapshot with the build-range
    * overlay, on top of the muse-app look and MUSE_FULL's settings, which it turns on. Off by default.
    */
+  get fastBuilds(): boolean {
+    // FAST_BUILDS (docs/FAST_BUILDS.md): complex builds in one round with parallel writers, and fix rounds that recheck only what failed.
+    return flag("FAST_BUILDS");
+  },
   get buildRange(): boolean {
     return flag("BUILD_RANGE");
   },

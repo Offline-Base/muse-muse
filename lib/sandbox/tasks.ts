@@ -24,7 +24,7 @@ import { restoreLookFilesScript, restoreRangeFilesScript } from "@/lib/sandbox/l
 import { restoreTrustFilesScript } from "@/lib/trust/overlay";
 import { q } from "@/lib/sandbox/shell";
 
-export type SandboxTask = "verify" | "demo";
+export type SandboxTask = "verify" | "demo" | "recheck";
 
 /** The copy of the smoke test the demo runs, with its Playwright imports pointed at the recorder (demoSpecCopyScript). */
 export const DEMO_SPEC_COPY = "tests/smoke.demo.spec.ts";
@@ -53,6 +53,8 @@ export interface TaskPaths {
  */
 export const TASK_COMMANDS: Record<SandboxTask, string> = {
   verify: "node scripts/verify.mjs",
+  // FAST_BUILDS: what one fix round changed, a build then only the requirement tests in MUSEMUSE_RECHECK. Never counts as the full check.
+  recheck: `./node_modules/.bin/next build && CI=1 ./node_modules/.bin/playwright test tests/requirements.spec.ts --project=smoke --forbid-only --grep "\\b($MUSEMUSE_RECHECK):"`,
   demo: `./node_modules/.bin/playwright test ${DEMO_SPEC_COPY} --project=${STUDIO_PROJECT} --workers=1`,
 };
 
@@ -326,7 +328,7 @@ export function taskScript(task: SandboxTask, outPath: string, opts: TaskPaths =
     restoreTrustFilesScript(opts.capsDir),
     ...(task === "demo"
       ? [freeProductPortsScript(), demoScript(outPath, opts)]
-      : [`{ ${TASK_COMMANDS[task]} 2>&3 | tee ${q(outPath)}; } 3>&1`]),
+      : [...(task === "recheck" ? [freeProductPortsScript()] : []), `{ ${TASK_COMMANDS[task]} 2>&3 | tee ${q(outPath)}; } 3>&1`]),
   ].join("\n");
 }
 
