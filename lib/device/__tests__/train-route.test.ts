@@ -93,11 +93,27 @@ describe("/api/device/train", { skip: typeof mock.module !== "function" }, () =>
     calls = [];
     replies = {};
     process.env.DEVICE_MCP_URL = URL_VALUE;
+    // On for the rest: a board trains only Llama 3.x, so it's off by default (lib/device/meta-only.ts).
+    process.env.DEVICE_LLAMA_TRAINING = "1";
   });
 
   after(() => {
     delete process.env.DEVICE_MCP_URL;
+    delete process.env.DEVICE_LLAMA_TRAINING;
     mock.reset();
+  });
+
+  it("with DEVICE_LLAMA_TRAINING off, refuses a start before the store or the board, and still follows and stops a run", async () => {
+    delete process.env.DEVICE_LLAMA_TRAINING;
+    const start = await post(START);
+    assert.equal(start.status, 403);
+    const body = (await start.json()) as { error: string; message: string };
+    assert.equal(body.error, "meta_models_only");
+    assert.match(body.message, /A board can only train Llama 3\.x, which isn't a Meta model for this project/);
+    assert.equal(calls.length, 0);
+    assert.equal((await get()).status, 200);
+    assert.equal((await del()).status, 200);
+    assert.deepEqual(calls.map((call) => call.name), ["training_status", "stop_training"]);
   });
 
   it("refuses anyone but an admin before touching the board", async () => {

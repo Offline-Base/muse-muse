@@ -3,10 +3,10 @@ import { FLEET_LABEL, usesFleet } from "@/lib/caps/fleet/marker";
 
 /**
  * The catalog's line while FLEET_PRODUCTS is on (docs/CAPABILITIES.md, 17b). It names no model, since the platform's setting
- * chooses it and the owner hasn't yet.
+ * chooses it and the owner hasn't yet. Whichever it is, it's a Meta model (lib/caps/fleet/settings.ts).
  */
 export const FLEET_CATALOG_LINE =
-  "- jetson-fleet: a model on boards Muse Muse runs, through the gateway, and the one exception to reaching only Meta's models. Text only, one whole reply at a time, about 13 to 15 tokens a second, at most 100 answers a day per product. When the boards can't answer, the product says the fleet is offline: nothing answers in its place. The text passes through the product's server, Muse Muse, ngrok and the lead board. Pick it only when the muse asks for answers from Muse Muse's own boards. Never pick it for health, student, legal, money or other personal data.";
+  "- jetson-fleet: a Meta model on boards Muse Muse runs, reached through the gateway rather than Meta's API. Text only, one whole reply at a time, about 13 to 15 tokens a second, at most 100 answers a day per product. When the boards can't answer, the product says the fleet is offline: nothing answers in its place. The text passes through the product's server, Muse Muse, ngrok and the lead board. Pick it only when the muse asks for answers from Muse Muse's own boards. Never pick it for health, student, legal, money or other personal data.";
 
 /** The build prompt's section for a brief that picks jetson-fleet while the endpoint is on. In capsBuildLines. */
 export function fleetBuildLines(brief: Brief): string[] {

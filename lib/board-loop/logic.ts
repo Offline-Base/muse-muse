@@ -3,6 +3,9 @@
  * shows. Pure and client-safe. tick.ts runs the stages and try.ts runs the queue.
  */
 import { SIM_TUNE_PROMPTS } from "@/lib/train/sim-tune";
+import { META_NAME_PATTERNS } from "@/lib/meta/models";
+import { BASE_MODEL_PARAM } from "@/lib/train/base";
+import { quantBaseForAdapter } from "@/lib/train/quant-targets";
 import type { BoardFile, BoardKind } from "@/lib/board-loop/driver";
 
 export const STAGES = ["tune", "gguf", "send", "serve", "test", "demo", "try"] as const;
@@ -184,10 +187,21 @@ export function loopView(row: LoopRow): LoopView {
 /** ADAPTER_RECIPE in lib/train/logic.ts, which a client file shouldn't import for one string. A test keeps them equal. */
 export const ADAPTER_RECIPE_ID = "glimmer-lora";
 
-/** Why this job can't start a loop, in plain words, or null. Only a judged adapter can. */
-export function judgedProblem(job: { recipe: string; status: string; evalSummary: { items: number } | null } | null): string | null {
+/** A tune on a small Llama, refused before a loop starts and again if its files turn up (tick.ts). */
+export const LLAMA_TUNE_PROBLEM = "This tune is on a small Llama, which isn't a Meta model, so it can't go to a board. Muse Muse only runs Meta models.";
+
+/**
+ * Why this job can't start a loop, in plain words, or null. Only a judged adapter can, and only on Muse Glimmer: the
+ * organizers ruled on Nov 2 that Llama isn't a Meta model (lib/meta/models.ts), so an adapter on a small Llama can't.
+ */
+export function judgedProblem(
+  job: { recipe: string; status: string; evalSummary: { items: number } | null; params?: Readonly<Record<string, unknown>> | null } | null,
+): string | null {
   if (!job) return "There's no such job.";
   if (job.recipe !== ADAPTER_RECIPE_ID) return "Only a tuned model can go to a board.";
+  // The small-base list no longer has a Llama (lib/train/quant-targets.ts), so the base's own name is checked too.
+  const base = job.params?.[BASE_MODEL_PARAM];
+  if (quantBaseForAdapter(job.params) || (typeof base === "string" && META_NAME_PATTERNS.other.test(base.toLowerCase()))) return LLAMA_TUNE_PROBLEM;
   if (job.status !== "succeeded") return "This tune hasn't finished well.";
   if (!job.evalSummary || job.evalSummary.items < 1) return "This tune hasn't been judged yet.";
   return null;

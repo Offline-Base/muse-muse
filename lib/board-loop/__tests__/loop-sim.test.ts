@@ -14,8 +14,10 @@ import type { BoardDriver } from "@/lib/board-loop/driver";
 import { boardLabel, currentStage, judgedProblem, loopView, newData, newStages, SIMULATED_NOTE, TEST_SET, type LoopRow } from "@/lib/board-loop/logic";
 import { clipCaption, clipScene } from "@/lib/board-loop/clip";
 import { runningSimBoard, startSimBoard, stopSimBoard } from "@/lib/board-loop/sim";
-import { tickLoop, type TickDeps } from "@/lib/board-loop/tick";
+import { loopFile, tickLoop, type TickDeps } from "@/lib/board-loop/tick";
 import { joinQueue, pollTurn, TRY_LIMITS, type Turn, type TryDeps, type TryStore } from "@/lib/board-loop/try";
+import { BASE_MODEL_PARAM } from "@/lib/train/base";
+import type { LocalFiles } from "@/lib/train/local-files";
 import { ADAPTER_RECIPE } from "@/lib/train/logic";
 
 let clock = new Date("2026-11-01T18:00:00Z");
@@ -320,5 +322,51 @@ describe("the board loop on the simulated board", () => {
     assert.ok(judgedProblem({ ...judged, status: "running" }));
     assert.ok(judgedProblem({ ...judged, evalSummary: null }));
     assert.ok(judgedProblem({ ...judged, recipe: "glimmer-quantize" }));
+  });
+
+  it("an adapter on a small Llama can't start, since Llama isn't a Meta model", () => {
+    const judged = { recipe: ADAPTER_RECIPE as string, status: "succeeded", evalSummary: { items: 3 } };
+    assert.match(judgedProblem({ ...judged, params: { [BASE_MODEL_PARAM]: "unsloth/Llama-3.2-3B-Instruct" } })!, /small Llama, which isn't a Meta model/);
+    assert.equal(judgedProblem({ ...judged, params: { [BASE_MODEL_PARAM]: "musemuse/r30b" } }), null);
+    assert.equal(judgedProblem({ ...judged, params: {} }), null);
+  });
+
+  it("fails a tune on a small Llama at the file, on any board, without installing, serving or asking", async () => {
+    const llamaFiles: LocalFiles = {
+      adapterJobId: "22222222-2222-4222-8222-222222222222",
+      quantJobId: "33333333-3333-4333-8333-333333333333",
+      repo: "OfflineBase/Llama-3.2-3B-made-up-tutor-gguf-22222222",
+      commit: "c".repeat(40),
+      public: true,
+      files: [{ level: "Q4_K_M", name: "Llama-3.2-3B-made-up-tutor-Q4_K_M.gguf", bytes: 2_020_000_000, sha256: "a".repeat(64) }],
+      systemLine: "You are a made-up tutor.\n\nReasoning strength: low.",
+      needsTunedTemplate: false,
+      title: "Made-up tutor",
+      slug: "made-up-tutor",
+      quantBase: "llama-3.2-3b",
+    };
+    assert.equal(loopFile(llamaFiles), null, "no file for a Llama tune");
+    for (const target of ["fleet", "simulated"] as const) {
+      const used: string[] = [];
+      const note = <T>(name: string, value: T) => async () => (used.push(name), value);
+      const spy: BoardDriver = {
+        kind: target,
+        status: note("status", { online: true, name: "jetson-03", loadedModels: [] }),
+        metrics: note("metrics", { memUsedMb: null, memTotalMb: null, tempC: null, powerW: null }),
+        install: note("install", "h"),
+        serve: note("serve", "h"),
+        workState: note("workState", { state: "done" as const }),
+        isServing: note("isServing", true),
+        ask: note("ask", { text: "x", tokens: 1, ms: 1, firstTokenMs: 1, tokensPerSecond: 1, finish: "stop" }),
+        stop: note("stop", undefined),
+      };
+      const row = { ...makeRow(), target };
+      await runUntil(row, tickDeps(row, { board: async () => spy, localFiles: async () => llamaFiles }), (r) => r.status !== "running");
+      assert.equal(row.status, "failed", target);
+      assert.equal(row.stages.gguf.status, "failed", target);
+      assert.match(row.stages.gguf.detail!, /small Llama, which isn't a Meta model, so it can't go to a board/);
+      assert.equal(row.data.file, null);
+      assert.deepEqual(used, [], `${target}: the board was never reached`);
+    }
   });
 });

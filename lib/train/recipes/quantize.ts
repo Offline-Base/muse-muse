@@ -232,40 +232,10 @@ FILE_STEM = "muse-glimmer-30b-"
 QUANT_BASE = None
 TEMPLATE_DATE_RE = None
 STOPS_SMALL = ["<|eot_id|>", "<|eom_id|>", "<|end_of_text|>"]
-# The small bases a job may merge into (QUANT_BASES in lib/train/quant-targets.ts, a test keeps them equal). Read from the
-# Hub on 2026-11-01: the commit, each shard's LFS SHA-256, each small file's bytes, and the digest of the 254 "name:shape"
-# lines from the shards' safetensors headers. 255 GGUF tensors is what two published conversions of this model hold (their
-# headers, read the same day): the 254 and rope_freqs. Its time and disk limits are estimates for this size; one real run on an A10 fit them (Nov 1 2026).
-QUANT_BASES = {
-    "llama-3.2-3b": {
-        "family": "llama3",
-        "model": "unsloth/Llama-3.2-3B-Instruct-bnb-4bit",
-        "merge_base": "unsloth/Llama-3.2-3B-Instruct",
-        "merge_revision": "006f5dcd1393c3add266de40994ba96225e9689d",
-        "shards": (
-            ("model-00001-of-00002.safetensors", "13cbd6d16e927a0c5bad54102514e6e18b4a47b3a6eb911e39d678d328d19f55"),
-            ("model-00002-of-00002.safetensors", "7b770216613ac5c34d7c54bdff1fa616bc4e338a9d0b20af6303e48c295ee23c"),
-        ),
-        "tensors": 254,
-        "tensors_sha256": "9e2e2a40cf61bf85e557be01663d05281e976ab8aeb01854f87aaa8aa63a2bab",
-        "gguf_arch": "llama",
-        "gguf_tensors": 255,
-        "files": (
-            ("chat_template.jinja", "5816fce10444e03c2e9ee1ef8a4a1ea61ae7e69e438613f3b17b69d0426223a4"),
-            ("tokenizer.json", "6b9e4e7fb171f92fd137b777cc2714bf87d11576700a1dcd7a399e7bbe39537b"),
-            ("tokenizer_config.json", "9ddd255c19fe319c8d4e891163540382e9fbda99f394674f2a929efc47d57458"),
-            ("generation_config.json", "8bab06a398ca622f8b941eb0b5f425d71d007080436cfa4f37d6c03c23b756a9"),
-            ("special_tokens_map.json", "94e708c3f5e64acf85bbe5ad01467a1248faadb73e83b41793087ecced586e8f"),
-        ),
-        "levels": ("Q4_K_M",),
-        "file_stem": "Llama-3.2-3B-",
-        "leaked": ("<|start_header_id|>", "<|end_header_id|>", "<|eot_id|>"),
-        "min_disk": 40 * 10 ** 9,
-        "min_ram": 24 * 1024 ** 3,
-        "min_start": 15 * 60,
-        "need": {"merge": 8 * 60, "convert": 5 * 60, "quantize": 5 * 60, "checks": 8 * 60, "upload": 3 * 60},
-    },
-}
+# The small bases a job may merge into (QUANT_BASES in lib/train/quant-targets.ts, a test keeps them equal). None: the only
+# one was Llama 3.2 3B, and the organizers ruled on Nov 2 that Llama doesn't count as a Meta model in this hackathon. Every
+# job merges into r30b. use_quant_base stays so a job that still names a small base fails in seconds with a plain reason.
+QUANT_BASES = {}
 
 
 def use_quant_base(params):
@@ -279,7 +249,7 @@ def use_quant_base(params):
         return None
     base = QUANT_BASES.get(str(name))
     if not base:
-        raise ValueError("quantBase must name a small base from " + ", ".join(sorted(QUANT_BASES)) + ", not " + json.dumps(str(name))[:60])
+        raise ValueError("No small base is offered, so quantBase " + json.dumps(str(name))[:60] + " isn't one: local files merge into the 2026 Glimmer (r30b) only")
     if params.get("baseFamily") != base["family"] or params.get("baseModel") != base["model"]:
         raise ValueError("The adapter didn't train on " + base["model"] + ", so it can't merge into " + base["merge_base"])
     use_base(params)

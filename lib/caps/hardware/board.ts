@@ -7,6 +7,7 @@ import type { BoardAnswer, BoardAsk, GadgetBoard, LinkedBoard } from "@/lib/gate
 import { env } from "@/lib/env";
 import { pinnedFetch } from "@/lib/caps/hardware/pinned";
 import { servedModelName } from "@/lib/caps/hardware/targets";
+import { isMetaModelName } from "@/lib/meta/models";
 import { linkedBoardRow, noteBoardHealth, pairedFactsOf, type LinkedBoardRow } from "@/lib/caps/hardware/store";
 import { openSecret, parseKeyring, type BoxKeyring, type SealedSecret } from "@/lib/secrets/box";
 
@@ -73,9 +74,15 @@ export function openBoardConfig(row: LinkedBoardRow, ring: BoxKeyring): DeviceCo
   };
 }
 
-/** One answer from the model running on the board, through its OpenAI-compatible route. Never streams, and never logs a body. */
+/**
+ * One answer from the model running on the board, through its OpenAI-compatible route. Never streams, and never logs a body.
+ * The board's /v1/models is read first, and the prompt goes only to a Meta model (lib/meta/models.ts): a board that runs
+ * another, or doesn't say what it runs, is never sent it.
+ */
 async function askOnBoard(config: DeviceConfig, request: BoardAsk, doFetch: typeof fetch): Promise<BoardAnswer> {
   const running = await runningModel(config, doFetch);
+  if (!running) return { kind: "no_model" };
+  if (!isMetaModelName(running)) return { kind: "not_meta" };
   const res = await doFetch(new URL("/v1/chat/completions", config.url), {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${config.token}` },

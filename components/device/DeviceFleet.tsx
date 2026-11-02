@@ -76,7 +76,7 @@ export function DeviceFleet() {
   return (
     <section className="card section-card" aria-labelledby={`${id}-title`}>
       <h2 id={`${id}-title`}>Fleet</h2>
-      <p className="muted small">Every board on the fleet&apos;s control plane. Muse Wonder can read this list and ask a model a board already has loaded, and can&apos;t change anything on them.</p>
+      <p className="muted small">Every board on the fleet&apos;s control plane. Muse Wonder can read this list and ask a Meta model a board already has loaded, and can&apos;t change anything on them.</p>
       <p>
         <button type="button" className="btn btn-outline btn-sm" onClick={() => refresh.current()}>
           <Icon name="refresh" size={16} />

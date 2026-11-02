@@ -8,6 +8,8 @@ import {
   startDeviceTraining,
   stopDeviceTraining,
 } from "@/lib/device/train";
+import { BOARD_TRAINING_OFF } from "@/lib/device/meta-only";
+import { env } from "@/lib/env";
 import { badRequest, errorJson, HttpError, readJson, route } from "@/lib/http";
 import { datasetPage } from "@/lib/train/store";
 
@@ -45,12 +47,14 @@ function wholeNumber(value: unknown, field: string): number | undefined {
  * POST {datasetId, name, steps?, rank?, maxLength?} -> {run, state}: copies a dataset's train examples to the board and starts
  * fine-tuning there, on the board's own GPU. Admins only, like the rest of /api/device. 400 bad input, 404
  * dataset_not_found, 409 dataset_not_ready, 409 device_refused with {message}, 503 device_not_configured, 502
- * device_unavailable.
+ * device_unavailable. With DEVICE_LLAMA_TRAINING off, 403 meta_models_only with {message} before the store or the board:
+ * a board trains only Llama 3.x, which isn't a Meta model. GET and DELETE still follow and stop a run.
  */
 export const POST = route(async (req: Request) => {
   await requireAdminOrAutomation(req);
   const config = deviceConfig();
   if (!config) return errorJson(503, "device_not_configured");
+  if (!env.deviceLlamaTraining) return errorJson(403, "meta_models_only", { message: BOARD_TRAINING_OFF });
   const body = await readJson(req);
   if (typeof body.datasetId !== "string" || !body.datasetId) throw badRequest("Choose a dataset.");
   if (!isRunName(body.name)) throw badRequest(NAME_RULE);

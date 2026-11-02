@@ -1137,6 +1137,7 @@ export const env = {
    * kit into a build whose brief has the edge target (lib/edge/template-files.ts). Alone it changes nothing.
    */
   get edgeBuilds(): boolean {
+    // Keep it off while EDGE_URL can name any model: the plan's Llama 3.2 3B isn't a Meta model (lib/meta/models.ts, Nov 2).
     return flag("EDGE_BUILDS");
   },
   /**
@@ -1590,6 +1591,17 @@ export const env = {
   /** EXPORT_TUNED: one-click installers on a tuned model's public page, and their route. Off: the route answers 404. */
   get exportTuned(): boolean {
     return flag("EXPORT_TUNED");
+  },
+
+  // ---------- A board's own training (/device, lib/device/meta-only.ts) ----------
+
+  /**
+   * DEVICE_LLAMA_TRAINING: train_model on DEVICE_MCP_URL's board, from the training card, /api/device and Wonder. Off by
+   * default, and kept off for the hackathon: a board can only train Llama 3.x, and the organizers ruled on Nov 2 that Llama
+   * isn't a Meta model (lib/meta/models.ts). Off, each refuses before the board, in BOARD_TRAINING_OFF's words.
+   */
+  get deviceLlamaTraining(): boolean {
+    return flag("DEVICE_LLAMA_TRAINING");
   },
 
   // ---------- Wave 3, unit 12: drive export (docs/CAPABILITIES.md) ----------

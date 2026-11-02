@@ -1,0 +1,69 @@
+{
+ "model": "muse-glimmer-2026-iq1s-io-lowest",
+ "label": "Muse Glimmer one-bit, jetson-02",
+ "items": 20,
+ "simulated": true,
+ "valid_json": 1.0,
+ "all_right": 0.0,
+ "per_field": {
+  "status": 0.25,
+  "trust_controller": 0.65,
+  "likely_cause": 0.15,
+  "actions": 0.05,
+  "escalate": 0.6
+ },
+ "actions_jaccard": 0.255,
+ "hard_rule": {
+  "rule": "trust_controller is false whenever controller and probe disagree beyond the threshold",
+  "rows": 2,
+  "violations": 2,
+  "passed": false
+ },
+ "by_case": {
+  "cloud_down": {
+   "items": 2,
+   "all_right": 0,
+   "rate": 0.0
+  },
+  "controller_probe_mismatch": {
+   "items": 2,
+   "all_right": 0,
+   "rate": 0.0
+  },
+  "defrost_stuck": {
+   "items": 3,
+   "all_right": 0,
+   "rate": 0.0
+  },
+  "door_open": {
+   "items": 3,
+   "all_right": 0,
+   "rate": 0.0
+  },
+  "none": {
+   "items": 3,
+   "all_right": 0,
+   "rate": 0.0
+  },
+  "power_gap": {
+   "items": 2,
+   "all_right": 0,
+   "rate": 0.0
+  },
+  "probe_dropout": {
+   "items": 2,
+   "all_right": 0,
+   "rate": 0.0
+  },
+  "setpoint_changed": {
+   "items": 3,
+   "all_right": 0,
+   "rate": 0.0
+  }
+ },
+ "median_seconds": 18.52,
+ "tokens_per_second": 3.3,
+ "errors": 0,
+ "cut_off": 0,
+ "note": "The sealed file's sha256 differs only by this Windows checkout's CRLF line endings; with LF it is 52b23493..., the sealed set's."
+}

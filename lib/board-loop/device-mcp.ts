@@ -1,9 +1,11 @@
 /**
  * The board loop's driver for a board's own MCP server (muse-device/server.py, through lib/device/client.ts). install_model
- * waits about 5 minutes at most, by its own description, so a 6.5 GB one-bit file won't finish here: this path suits the
- * small Llama. Never run against a real board yet (docs/JETSON_TODO.md).
+ * waits about 5 minutes at most, by its own description, so a 6.5 GB one-bit file won't finish here, and that file is the
+ * only Meta model the loop makes for a board: a tune on the small Llama is refused (lib/meta/models.ts, Nov 2). So this
+ * path suits a one-bit file already on the board. Never run against a real board yet (docs/JETSON_TODO.md).
  */
 import { callDeviceTool, type DeviceConfig } from "@/lib/device/client";
+import { boardModelProblem } from "@/lib/device/meta-only";
 import { boardText, DeviceRefusedError } from "@/lib/device/train";
 import { BoardOfflineError, type BoardDriver, type BoardFile, type BoardMetrics, type BoardStatus } from "@/lib/board-loop/driver";
 
@@ -23,7 +25,12 @@ async function reach<T>(work: () => Promise<T>): Promise<T> {
 
 export function deviceMcpBoard(config: DeviceConfig, call: Caller = callDeviceTool): BoardDriver {
   const tool = async <T>(name: string, args: Record<string, unknown> = {}): Promise<T> =>
-    reach(async () => JSON.parse(boardText(await call(config, name, args))) as T);
+    reach(async () => {
+      // Only Meta models start or answer here, as on /api/device and for Wonder. The board refuses the same itself.
+      const problem = await boardModelProblem(name, args, (n, a) => call(config, n, a));
+      if (problem) throw new DeviceRefusedError(problem);
+      return JSON.parse(boardText(await call(config, name, args))) as T;
+    });
   /** Its tools finish before they answer, so a handle is only its result. */
   const finished = "done";
 

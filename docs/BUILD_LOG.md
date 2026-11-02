@@ -2223,6 +2223,17 @@ Behind a new flag, off by default. Design in docs/FAST_BUILDS.md.
 - **Previews:** FAST_BUILDS=1 muse-muse-lofxtn17n, without it muse-muse-k1fp4y15n, same code and snapshot snap_Dy4CjpILCMOBnaJ28Skzswys7CJ4. A stray line in my deploy command also made one extra unused Preview with the flag on.
 - **Builds on the flag Preview:** small e50989ff, complex 399f7255 and 0b90ec23. Without it: small 4b97d2c4, complex 654b4711 and a6275cc8. Same notes each way.
 
+## Nov 1: Hugging Face inventory, no uploads (branch tg-hub-inventory)
+
+Owner asked to upload every dataset and fine-tuned model. List and hold reasons in docs/HUB_INVENTORY.md.
+
+- **Result:** 0 repos created, 0 bytes uploaded. The inventory step stopped when reads of KNOWLEDGE_RUN_LOG.md and PROVE_RESULTS.md were denied, and it marked nothing for upload. 7 existing repos listed, 15 items on hold.
+- **Spend:** $0. No instance rented, 0 left running. The Lambda cache was not inspected.
+- **Denied, not worked around:** the two log reads above, and `s3:ListAllMyBuckets` for the local AWS identity.
+- **Measured (Hub API, read-only):** the dataset repo has 34 files and 105.9 MB, not the 0 the inventory listing returned. Overlap with local knowledge data still not compared.
+- **Flagged, not changed:** `Nemotron-3.5-Bolt-Parse-Pipeline` reads as public today, the inventory recorded it as private. Same sha, 5193a1c0d3. Owner to confirm.
+- **Left alone:** the other workflow's Moss-Test IQ1_S repo and its instance.
+- **Tests:** none, docs only. No app code or flags changed.
 ## Nov 1: two more full build fixes, from the reruns
 
 - **Results.** Tracker rerun 020084d8 on Contributor: live, judge pass, 15 of 15 met, 23m32, $0.085. Its brief has 15 requirements against the Wonder build's 21, so this doesn't prove the screenshot fix on the original failure. Big build 22562315 on Contributor: partial, 101 minutes, $0.93, 2 of 6 milestones, 20 of 40 requirements unmet, 4 of 6 rounds at their limit, no fix round, 0 subagents.
@@ -2272,6 +2283,19 @@ Tried at 01:28 UTC on Nov 2 (still Nov 1 here) with curl keeping cookies, signed
 - **For the rerun:** the guest's own view takes out instance id, IP, logs and errors (`visitorRunView`), so proving callbacks and the GPU's end needs what that view keeps plus an owner's check of the job row or Lambda console.
 - **Spend:** $0. No production changes.
 
+
+## Nov 1: Hugging Face inventory finished, partial upload, repos found public (branch tg-hub-inventory)
+
+Owner asked to upload every dataset and fine-tuned model to private repos, then "dont retrain anything". Full list in docs/HUB_INVENTORY.md.
+
+- **Uploaded, 25.51 GB in 18 new repos.** 3 moss datasets, 8 Knowledge-family or lab adapters plus 2 moss adapters, 1 LoRA GGUF, 2 IQ1_S GGUFs; 2 repos hold only cards and licenses. Created private, confirmed at creation.
+- **Found public at 02:08:55 UTC.** The upload's check stopped on it. All OfflineBase repos, including the new datasets, answer without a token with `private: false`. This job made no visibility call. Who did isn't established. Not changed back, as instructed. Owner decision.
+- **Meta terms 10.1(ix) hold arrived mid-run.** Moss data and tunes already up stay in place for the owner; nothing more of them went up. Llama GGUF not uploaded.
+- **Decision:** Exhibit C question on hosted Spark Open flagged, Knowledge family not held for it.
+- **Not uploaded:** 7 passed GGUFs (stopped by the visibility change), larger GGUFs and merges (over the 100 GB private budget), everything naming real people.
+- **Recheck:** sizes match, text and JSON scan 0 hits for tokens, keys, IPs and local paths. Cards still say "private", which is now false.
+- **Decision:** merge of origin/main kept both sides of the BUILD_LOG conflict.
+- **Spend:** Lambda device-loop-inv-1, 01:32:09Z to 02:10:07Z, about $0.82 of $25, list price. Terminated. No training, merging or quantizing.
 ## Nov 1: everything on Contributor under BUILDS_ON_CONTRIBUTOR, no Wonder but the Wonder check (branch tg-all-contributor)
 
 Owner: "change anything in the product now to use muse spark 1.3 contributor, no muse wonder except for the muse wonder check."
@@ -2585,6 +2609,37 @@ Merged origin/main (#50, #51). The only conflict was this log; both entries kept
 - **Open:** native/lab `check.test.mjs` "gguf_emu" fails, not touched here and not in CI.
 - **Spend:** $0.
 
+## Nov 2, 2026: Meta models only on the fleet (branch meta-only-fleet)
+
+- **Why:** the hackathon's organizers (Cerebral Valley) answered on Nov 2 at 3:57 PM that Llama is not part of this hackathon and does not count as a Meta model however it runs, and that every model a project calls at runtime must be a Meta model, a small local helper too. Open-source Meta models anyone can access count: Muse Glimmer (quantized builds too), Muse Spark Open, SAM and V-JEPA 2. Meta's smallest official Glimmer build is 17 GB and Spark Open's 537 GB, so on an 8 GB Jetson the only Meta language model is Muse Muse's one-bit Glimmer, `muse-glimmer-2026-iq1s-io-lowest` on jetson-02. The fleet's other models (Nemotron 3.5 Bolt, LFM3-VL, d1 and the `combo/` models) aren't Meta's.
+- **Built:**
+  - `isMetaModelName` in `lib/meta/models.ts`. A model's own name, after any org or `hf.co/` path and with spaces and underscores as hyphens, must start with `muse-glimmer`, `glimmer`, `muse-spark`, `spark-open` or `v-jepa` (`MuseGlimmer` and `Muse_Glimmer` too). Then another family's or maker's word anywhere in the name, its org or its tag refuses it (`llama` inside any word, and `bolt`, `nemotron`, `lfm`, `liquid`, `qwen`, `gemma`, `gpt`, `mistral`, `phi`, `deepseek`, `d1` and a few more as words), so `glimmer-bolt` and `hf.co/LiquidAI/glimmer-lfm` are refused. The one exception is the title inside Muse Muse's own Glimmer tune names (`muse-glimmer-30b-<title>-gguf-<job>`, `-lora-<job>`, `-<LEVEL>.gguf`), so a tune titled "Llama Ranch Helper" still counts. `combo/` is refused. SAM is left out: every fleet and board path here is a text chat, which SAM can't answer, and "sam" is part of too many other names.
+  - `lib/device/fleet.ts`: Wonder's `fleet_ask_model` asks only a Meta model. A named board without one says "jetson-04 has no Meta model loaded, so nothing ran. Muse Muse only asks Meta models." and makes no chat call. The default pick takes only boards with a Meta model, and `fleetChat` refuses any other name as well. `fleet_status` and the card still list every board and model. The d1 rule is unchanged.
+  - `lib/caps/fleet/settings.ts`: `FLEET_PRODUCTS_MODEL` must be a Meta model, or 503 `fleet_closed`. The board-tuned `Llama-3.2-1B-Instruct-receipts` from the fleet-products entry above, and Bolt, are now refused.
+  - `DEVICE_MCP_URL`'s board (`lib/device/meta-only.ts`, `boardModelProblem`): Wonder, `/api/device` (403 `meta_models_only`) and the board loop's MCP driver refuse `start_model` unless its file is a Meta model's, and `ask_model` unless `list_models` says a Meta model is running, before the board gets the call. `muse-device/server.py` refuses both itself too (`is_meta_model`, the same three patterns, which `lib/device/__tests__/meta-only.test.ts` holds equal), so no caller gets past it, `pass_to_model` included.
+  - Training on a board is off behind `DEVICE_LLAMA_TRAINING` (off): a board can only train Llama 3.x. Wonder, `/api/device` and `POST /api/device/train` refuse `train_model` before the store or the board (403 `meta_models_only`), and the `/device` card says why and turns Start off. Following and stopping a run still work. The board's own refusal no longer calls Llama a Meta model.
+  - The board loop: `judgedProblem` refuses an adapter on a small Llama, `loopFile` gives a Llama tune no file, and the gguf stage fails one whose files turn up anyway, on any board, before install, serve or ask. On a real board the fleet driver serves and asks only a Meta model by name. The simulated board's stand-in isn't checked, since it holds no model.
+  - `GADGET_CONNECT`'s `ask_board` (still off): a board whose picked model isn't Meta's (every non-Jetson) is refused before it's opened, and `askOnBoard` reads `/v1/models` and sends the prompt only to a Meta model, so a Jetson left running Bolt is refused too (403 `board_model_not_meta`).
+  - Copy: Wonder's tool descriptions and fleet instructions, the `/device` fleet card, the brief writer's catalog line (no longer "the one exception to reaching only Meta's models") and the jetson-fleet skill now say a Meta model. The train room's Where it runs no longer offers Llama 3.2 1B on a board ("Meta's small model") or, under `QUANT_TARGETS`, Llama 3.2 3B on other devices. `/gadgets`' boards card, `/offline`'s plan and the muse-edge skill's label example name only Muse Glimmer. CAPABILITIES.md 17b, BOARD_LOOP.md, TRAINING.md's Where it runs and a dated note at the top of EDGE_PLAN.md say why.
+- **Not changed, for the owner:** with flags off, `EDGE_BUILDS`' `EDGE_URL`, which can name any model and whose plan names Llama 3.2 3B, and `QUANT_TARGETS`, which still offers Llama 3.2 3B as a tune base and makes its files (`lib/train/quant-targets.ts`). On the board, `server.py`'s `train_model` still trains Llama for a caller that skips the platform, though `start_model` won't load what it makes, and `pass_to_model` doesn't check a llama-server left on its port from before a restart. Older docs (OFFLINE_HARNESS.md, the fleet-train spike) still plan Llama as a small Meta model.
+- **Tests:** `lib/device/__tests__/fleet*.test.ts`, `ask-route`, `agent` and `lib/caps/fleet/__tests__/*.test.ts`, 180 of 180. The other files this touches (`meta-only`, `route`, `train-route`, `train`, `client`, `lib/board-loop/__tests__/fleet` and `loop-sim`, `gadget-connect`, `registry`, `pairing`, `tune-room`, `tune-pages`, `story`, `quant-targets`), 224 of 224. `muse-device/test_server.py`'s training, board-tool and encode classes on Windows with `os.geteuid` stubbed, 64 tests, with one Windows-only failure that was there before (a home folder path in an error). `lib/edge/__tests__/template-source.test.ts` fails on a CRLF checkout before and after; the generated source matches the template files once CRLF is stripped. `npx tsc --noEmit` passes. Nothing reached the fleet or a board.
+- **Spend:** $0.
+
+## Nov 2, 2026, evening: what the ruling leaves on a board (Hussam's boards, branch meta-only-fleet)
+
+- **H1 before the ruling:** jetson-04 into maintenance, Bolt's `mode.conf` drop-in moved aside (it would have overridden the new unit), and `gguf-serve.sh --model-url` with unsloth's Llama-3.2-3B-Instruct-Q4_K_M, one chat slot, thinking off. sha256 6c99cc00... matched Hugging Face. On the board, straight to llama-server: about 21 tokens a second, 47 to 92 ms to the first token, 3 GB of memory still free. Then the ruling, so the file was deleted, `mode.conf` put back, Bolt healthy and listed by the fleet again, and maintenance off. These numbers can't be used for the project.
+- **The "Musetesthussamshouse" exec jobs (H1.1):** that's the personal token Hussam made for this session's agent. Its 30 jobs on the fleet were the disk and memory checks, the receipt tune and Bolt's restore (#67), the served receipt reader, and this install.
+- **jetson-02's freeze, likely found:** its Glimmer server set no `--cache-ram`, so llama.cpp's prompt cache could grow into the last ~650 MB of the board's memory. `--cache-ram 0` added to `glimmer.conf` (backup in /root/glimmer.conf.bak-nov2), the setting jetson-04's Bolt already has. 20 drills in a row afterwards: lowest MemAvailable 461 MB, no freeze. Before, 22 receipts in a row froze it.
+- **The one Meta model that fits a board, on the cold-room drills:** muse-glimmer-2026-iq1s-io-lowest on jetson-02 through the fleet, `drill-bench.py ask --schema`, 20 of the 100 sealed rows, a `jik_` key with cloud_daily_limit 0. Valid JSON 100% (the schema forces it), all five fields right 0%, status 25%, trust_controller 65%, escalate 60%, the hard rule broken in 2 of 2 rows, median 18.5 s at 3.3 tokens a second. It runs on the board and is too weak for this task as it stands. docs/log/bench/2026-11-02/drill-glimmer-jetson-02*.
+- **A key for products and benches (H2):** `jik_` key ak_3738e883, cloud_daily_limit 0, 30 a minute, 300,000 tokens a day, kept in a local file outside every repo and never printed. A first one, whose secret was lost before it was saved, was revoked.
+- **M7, the first real edge build:** a preview of main (ee493e69) deployed by Hussam with `EDGE_BUILDS`, `EDGE_ENABLED`, `TEST_MODEL=muse-spark-1.3-contributor`, `FULL_BUILDS`, `PREVIEW_USE_MAIN_DB` and `OPEN_ACCESS=admin` (preview muse-muse-eibdbbze1). A first preview with `MUSE_APP_LOOK`, `BUILD_RANGE` and `BUILDS_ON_CONTRIBUTOR` on failed at sandbox setup, because no snapshot in lib/sandbox/snapshots.json has the muse-app or build-range overlay, and `BUILDS_ON_CONTRIBUTOR` turns the look on too ($0.013).
+  - Build 625cfa62 on the cold-room sentence, targets edge: brief, 3 milestones (R1 to R12), product cold-room-sentinel-2. Muse Code wrote the app around `lib/meta/edge.ts` itself.
+  - **The simulated outage drills ran in a real sandbox and passed:** cloud refused, cloud hung, both down, tampered reply rejected, 4 of 4, in each of verify rounds 2, 3 and 4. Typecheck, build, start, console, smoke (17 passed) and manifest passed in those rounds too.
+  - **It failed anyway,** after 3 fix rounds, $0.142 in all: in every judged round the judge's screenshots read right (statuses, the five signals, the edge answer labeled Simulated and by board), but every requirement R1 to R12 came back "No test ran for it", and in round 5 one smoke test failed (16 of 17). So it wasn't deployed. The judge's requirement-to-test match, under `FULL_BUILDS`, is what to look at next; the edge parts passed.
+  - Not run: the product on a board (H3), since it never deployed. The edge model it would use is the one-bit Glimmer now, not Llama.
+- **M7 passed on the second preview:** with `FULL_BUILDS` off (preview muse-muse-g59xelwdt). The first try's failure was the snapshot: verify's requirements step came in with #17 on Nov 1, a build restores `scripts/verify.mjs` from the snapshot's pristine copy, and this snapshot's copy has no such step, so under `FULL_BUILDS` every requirement read "No test ran for it". Build 7210f71d, product cold-room-watcher: brief, build, verify, record, live in 12 minutes, $0.046, 0 fix rounds. Typecheck, build, start, console, smoke, manifest and the four simulated outage drills (cloud refused, cloud hung, both down, tampered reply) all passed in its sandbox, and the judge passed it. Its source (`/p/cold-room-watcher/code/source.zip?v=1`, 52 files) has `lib/meta/edge.ts`, a `check_cold_room` action, `/api/edge-status` and `edge-drill.json`, all written by Muse Code.
+- **The product on a Jetson, not yet:** built and started locally with no `GATEWAY_URL` (so it never tries the cloud), `EDGE_URL` at the fleet's /v1, `EDGE_MODEL=muse-glimmer-2026-iq1s-io-lowest`, the `jik_` key and `EDGE_BOARD=jetson-02`. `/api/edge-status` reported the edge board and model, but the check answered 503 because the fleet had no Glimmer: another session had stopped the model servers on jetson-02, -03 and -04 at 17:56 to 17:59 and is setting up Glimmer training on jetson-03. Left alone; the run waits for jetson-02's Glimmer to be back.
+
 ## Nov 2, 2026: Rebuilds become Learn, after an audit of all 30 of Meta's lessons (branch tg-learn)
 
 - **Why:** the owner said the rebuilds weren't all correct, and that they belong under Learn, improved, sourced from Meta's AI videos page (dev.meta.ai/resources/videos).
@@ -2738,3 +2793,24 @@ The owner asked for a simpler sidebar using "muse" and "musing" for the creative
   - "Works" and "Not checked yet" are said only to screen readers; the rule that nothing reads "Works" next to a failed check is unchanged.
   - Same component in the build room and on the product page.
   - Rendered with sample requirements in light and dark and looked at. requirements-checklist 4 of 4, typecheck clean.
+## Nov 2, 2026, 18:08: M7, the first real Muse Muse edge build (preview, branch edge-m7)
+
+- **Preview:** current main (ee493e69) as muse-muse-g59xelwdt, deployed with `--env`/`--build-env` only: EDGE_BUILDS, EDGE_ENABLED, PREVIEW_USE_MAIN_DB, OPEN_ACCESS=admin, TEST_MODEL=muse-spark-1.3-contributor, and FULL_BUILDS, BUILDS_ON_CONTRIBUTOR, MUSE_APP_LOOK and BUILD_RANGE set to 0. No project setting changed.
+- **Two failed tries first, both from switches the builder snapshot can't carry:** MUSE_APP_LOOK (and BUILDS_ON_CONTRIBUTOR, which turns the look on) stopped provisioning, since no snapshot in lib/sandbox/snapshots.json has the muse-app or build-range overlay ($0.013). FULL_BUILDS then failed 3 fix rounds ($0.14), because the snapshot's verify has no requirements step, so every requirement read "No test ran for it". Its four outage drills passed in all three rounds anyway.
+- **Build c067aea2, product cold-room-sentinel-3:** the cold-room sentence with targets ["edge"], on Contributor. The brief picked web and edge. Typecheck, build, start, console, smoke and manifest passed, then all four simulated outage drills (cloud refused, cloud hung, both down, tampered reply rejected), and the judge passed it. Live with 0 fix rounds, $0.054. Muse Muse wrote the fallback itself: `app/api/actions/check_cold_room` calls `respondJsonOrEdge` with a zod schema and returns `by` and a label.
+- **Run on this laptop:** source.zip for v1 (210 KB) built with `next build`, started with no GATEWAY_URL (the cloud cut) and EDGE_URL at the fleet with the `jik_` key and muse-glimmer-2026-iq1s-io-lowest. It answered 503 "Neither the cloud model nor the backup model answered", because the fleet had no board serving Glimmer: another session stopped and disabled jetson-llama on jetson-02 and jetson-04 at 18:05 to move the Glimmer file to jetson-03. Not retried; the boards were left as that session left them.
+- **Not proven yet:** a real answer from a board model through this product. Ready to run once Glimmer is served again.
+- **Nov 2, evening: the Meta-only units, combined on top of Hussam's #71 (branch tg-meta-only).**
+  - #71 conflicted with main in two files. Fixed on its own branch:
+    - `docs/BUILD_LOG.md`: kept both sides;
+    - `lib/edge/template-source.ts`: regenerated with `scripts/edge/gen-edge-template.ts`.
+  - On top of #71, cherry-picked four of the five units from the evening's Meta-only workflow:
+    - guards-train;
+    - privacy-swap;
+    - copy-public;
+    - learn-plans, with the Learn plan commit (192dd7cf) it builds on.
+  - guards-runtime was left out: #71 covers the same fleet, board and device paths (18 of its 28 files).
+  - Where guards-train and #71 overlapped (`lib/board-loop/device-mcp.ts`, `tick.ts`, the quant-targets test), #71's code was kept.
+  - Since the small-base list no longer has a Llama, `judgedProblem` also refuses an adapter whose base name matches another family's word.
+  - Old tests that still expected a small Llama for other devices were brought to the ruling: the Modelfile test, the run page test and the pairing test.
+  - Typecheck clean. 594 of 594 tests pass in the files the branch touches, and 47 of 47 in the downstream files.

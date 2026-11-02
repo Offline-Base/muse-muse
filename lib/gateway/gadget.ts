@@ -69,7 +69,8 @@ export interface BoardAsk {
   maxTokens: number;
 }
 
-export type BoardAnswer = { kind: "answer"; text: string; running?: string | null } | { kind: "no_model" };
+/** not_meta: the board runs a model that isn't Meta's, so the prompt wasn't sent (lib/meta/models.ts). */
+export type BoardAnswer = { kind: "answer"; text: string; running?: string | null } | { kind: "no_model" } | { kind: "not_meta" };
 
 /** Set while GADGET_CONNECT is on. */
 export interface GadgetConnect {
@@ -167,7 +168,7 @@ const SIM_TOOLS: GadgetToolInfo[] = [
 const CONNECT_TOOL_INFO: GadgetToolInfo[] = [
   {
     name: "ask_board",
-    description: "One answer from the model running on the owner's board. Which model depends on the board.",
+    description: "One answer from the model running on the owner's board. Which model depends on the board, and only a Meta model answers: any other board says so.",
     inputSchema: { type: "object", properties: { messages: { type: "array" }, max_tokens: { type: "integer", minimum: 1, maximum: 512 } }, required: ["messages"], additionalProperties: false },
   },
   { name: "robot_status", description: "A simulated board's sensors, actuators and hard stop. Read only.", inputSchema: { type: "object", properties: {}, additionalProperties: false } },

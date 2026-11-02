@@ -182,6 +182,32 @@ describe("linkedBoardFor", () => {
     assert.deepEqual(health, [false]);
   });
 
+  it("sends a prompt only to a Meta model, reading what the board runs first", async () => {
+    const asked = (id: string | null) => {
+      const paths: string[] = [];
+      const doFetch = (async (url: URL | string) => {
+        const { pathname } = new URL(url);
+        paths.push(pathname);
+        if (pathname === "/v1/models") return id ? Response.json({ data: [{ id }] }) : new Response("{}", { status: 503 });
+        return Response.json({ choices: [{ message: { content: "pump on" } }] });
+      }) as unknown as typeof fetch;
+      const { d } = linked({ row: async () => row({ certSpkiSha256: "p".repeat(64) }), pinned: () => doFetch });
+      return { d, paths };
+    };
+    const request = { model: "muse-glimmer-30b-IQ1_S", messages: [{ role: "user", content: "soil 22" }], maxTokens: 16 };
+    for (const id of ["/home/x/models/Llama-3.2-3B-Q4_K_M.gguf", "nemotron-3.5-bolt-e4b", "glimmer-bolt-merge.gguf"]) {
+      const { d, paths } = asked(id);
+      assert.deepEqual(await (await opened(d))!.ask!(request), { kind: "not_meta" }, id);
+      assert.deepEqual(paths, ["/v1/models"], `${id}: the prompt never went`);
+    }
+    const quiet = asked(null);
+    assert.deepEqual(await (await opened(quiet.d))!.ask!(request), { kind: "no_model" }, "a board that doesn't say what it runs isn't asked");
+    assert.deepEqual(quiet.paths, ["/v1/models"]);
+    const meta = asked("/home/x/models/muse-glimmer-30b-IQ1_S.gguf");
+    assert.deepEqual(await (await opened(meta.d))!.ask!(request), { kind: "answer", text: "pump on", running: "muse-glimmer-30b-IQ1_S" });
+    assert.deepEqual(meta.paths, ["/v1/models", "/v1/chat/completions"]);
+  });
+
   it("a health note that fails doesn't fail the call", async () => {
     const { d } = linked({ health: async () => { throw new Error("db down"); } });
     assert.deepEqual(await (await opened(d))?.callTool("read_sensor", {}), { isError: false, content: [] });

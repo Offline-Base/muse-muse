@@ -17,6 +17,7 @@ import {
   type BoardStatus,
   type BoardWork,
 } from "@/lib/board-loop/driver";
+import { isMetaModelName } from "@/lib/meta/models";
 
 export interface FleetConfig {
   /** Including the base path, like https://example.com/admin. */
@@ -140,6 +141,14 @@ export function fleetAccess(): Pick<FleetConfig, "url" | "token"> | null {
   return { url, token };
 }
 
+/**
+ * A real board serves and answers only a Meta model (lib/meta/models.ts): the organizers ruled on Nov 2 that every model a
+ * project calls must be Meta's. Checked before anything is sent. The simulated board holds no model, so its stand-in passes.
+ */
+function onlyMeta(kind: BoardKind, alias: string): void {
+  if (kind !== "simulated" && !isMetaModelName(alias)) throw new Error("That isn't a Meta model, so nothing was sent to the board. Muse Muse only runs Meta models.");
+}
+
 export function fleetBoard(config: FleetConfig, kind: BoardKind = "fleet", doFetch: typeof fetch = fetch, stopWaitMs: number = STOP_WAIT_MS): BoardDriver {
   const base = config.url.replace(/\/+$/, "");
 
@@ -212,6 +221,7 @@ export function fleetBoard(config: FleetConfig, kind: BoardKind = "fleet", doFet
     },
     install: (file) => exec(installCommand(file), INSTALL_TIMEOUT_S),
     async serve(file) {
+      onlyMeta(kind, file.alias);
       await setMaintenance(true);
       return exec(serveCommand(file, base), SERVE_TIMEOUT_S);
     },
@@ -231,6 +241,7 @@ export function fleetBoard(config: FleetConfig, kind: BoardKind = "fleet", doFet
       return up;
     },
     async ask(input) {
+      onlyMeta(kind, input.alias);
       return askFleet(call, (await nodeOrThrow()).id, input);
     },
     /** Maintenance comes off only once the board says the model left. Otherwise it stays on, and this throws to say so. */

@@ -2,13 +2,14 @@ import { ASK_BOARD_MAX_CHARS, ASK_BOARD_MAX_MESSAGES, ASK_BOARD_MAX_TOKENS, type
 import { mintRobotRequest } from "@/lib/caps/hardware/robot";
 import { gatewayError } from "@/lib/gateway/errors";
 import { newSimRobot, robotActionLines, robotActionProblem, SIM_TARGET, SIMULATED_MODEL_LABEL, simulatedAnswer } from "@/lib/gateway/gadget-sim";
+import { isMetaModelName } from "@/lib/meta/models";
 import { checkApproval, mintApproval } from "@/lib/tools/sign";
 import type { BoardAsk, GadgetBoard, GadgetResult, LinkedBoard } from "@/lib/gateway/gadget";
 
 /**
  * What GADGET_CONNECT adds to {GATEWAY_URL}/gadget (docs/GADGETS.md). gadget.ts decides who gets through and hands the call here.
  *
- *  - ask_board: one answer from the model running on the owner's board, picked by the board's kind at pairing.
+ *  - ask_board: one answer from the model running on the owner's board, picked by the board's kind at pairing, and only a Meta model.
  *  - robot_status, robot_action, hard_stop: a simulated board's sensors and allow-listed actions. A real board refuses these today.
  *  - A build gets all of it from the simulator here. It confirms with a card, since no owner is there.
  *  - Live, robot_action only ever answers with a link to Muse Muse's own page, where the owner says yes under their own session.
@@ -85,11 +86,21 @@ export async function simulatedCall(call: BuildCall): Promise<Response> {
   return typeof done === "string" ? text({ ok: false, code: "stopped", message: done }, true) : text({ ok: true, status: done }, true);
 }
 
-/** ask_board on a paired board, for someone the link already let in. */
+/** A board whose model isn't Meta's: the organizers ruled on Nov 2 that every model a project calls must be (lib/meta/models.ts). */
+const notMetaAnswer = (): Response =>
+  gatewayError(403, "permission_error", "board_model_not_meta", "Your board runs a model that isn't a Meta model, so it wasn't asked. Muse Muse only runs Meta models, such as one-bit Muse Glimmer on a Jetson Orin Nano.", { retry: false });
+
+/**
+ * ask_board on a paired board, for someone the link already let in. Only with GADGET_CONNECT, off. Only a Meta model is
+ * asked, twice over: a board whose picked model isn't Meta's is refused before it's opened (deviceModelTarget picks a small
+ * Llama for anything but a Jetson), and the board's own word on what it runs is read before the prompt goes (askOnBoard),
+ * since a Jetson can be running something other than its picked model.
+ */
 export async function liveAsk(args: Record<string, unknown>, link: LinkedBoard): Promise<Response> {
   const problem = askProblem(args);
   if (problem) return bad(problem);
   if (!link.facts) return gatewayError(409, "invalid_request_error", "board_not_paired", "This board was added by hand, so Muse Muse doesn't know which model it runs. Pair it, then try again.", { retry: false });
+  if (!isMetaModelName(link.facts.target)) return notMetaAnswer();
   const board = await link.open();
   if (!board?.ask) return offlineAnswer();
   try {
@@ -97,7 +108,8 @@ export async function liveAsk(args: Record<string, unknown>, link: LinkedBoard):
     if (answer.kind === "no_model") {
       return gatewayError(503, "server_error", "gadget_no_model", `Your board is on, but ${link.facts.targetLabel} isn't running on it. Start it on the board, then try again.`, { retry: false });
     }
-    // The board's own word beats what was expected: a Jetson can be running something other than its picked model.
+    if (answer.kind === "not_meta") return notMetaAnswer();
+    // The board's own word beats what was expected: a Jetson can be running another Meta build than its picked one.
     const target = link.facts.simulated ? SIMULATED_MODEL_LABEL : answer.running && answer.running !== link.facts.target ? answer.running : link.facts.targetLabel;
     return text({ text: answer.text, target }, link.facts.simulated);
   } catch {

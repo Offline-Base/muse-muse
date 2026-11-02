@@ -13,7 +13,11 @@ import { DeviceRefusedError } from "@/lib/device/train";
 import { testPassed, newData } from "@/lib/board-loop/logic";
 
 const SHA = "a".repeat(64);
-const FILE: BoardFile = { url: "https://huggingface.co/OfflineBase/x-GGUF/resolve/abc/muse-glimmer-30b-x-IQ1_S.gguf", name: "muse-glimmer-30b-x-IQ1_S.gguf", bytes: 7e9, sha256: SHA, alias: aliasFor("OfflineBase/x-GGUF", "IQ1_S"), standIn: false };
+/** A Glimmer tune's one-bit file, named as Muse Muse names its repos (lib/train/hub-cards.ts). A Meta model. */
+const REPO = "OfflineBase/muse-glimmer-30b-x-gguf-8f1d2c3b";
+const FILE: BoardFile = { url: `https://huggingface.co/${REPO}/resolve/abc/muse-glimmer-30b-x-IQ1_S.gguf`, name: "muse-glimmer-30b-x-IQ1_S.gguf", bytes: 7e9, sha256: SHA, alias: aliasFor(REPO, "IQ1_S"), standIn: false };
+/** A small Llama's file, as a tune on Llama 3.2 3B names it. Not a Meta model. */
+const LLAMA: BoardFile = { ...FILE, url: "https://huggingface.co/OfflineBase/Llama-3.2-3B-x-gguf-8f1d2c3b/resolve/abc/Llama-3.2-3B-x-Q4_K_M.gguf", name: "Llama-3.2-3B-x-Q4_K_M.gguf", alias: aliasFor("OfflineBase/Llama-3.2-3B-x-gguf-8f1d2c3b", "Q4_K_M") };
 const NODE = { id: "nd_1", name: "jetson-03", status: "online", maintenance: false, loaded_models: [], metrics: { mem: { used_mb: 7000, total_mb: 7620 }, temps_c: { tj: 61.5 }, power_mw: { total: 12000 } } };
 const config = { url: "https://fleet.example.com/admin/", token: "jpt_made_up_token", node: "jetson-03" };
 
@@ -46,6 +50,22 @@ describe("the board MCP driver, against a fake caller", () => {
     }) as unknown as Parameters<typeof deviceMcpBoard>[1];
     await assert.rejects(deviceMcpBoard(device, gone).install(FILE), BoardOfflineError);
     assert.equal((await deviceMcpBoard(device, gone).status()).online, false);
+  });
+
+  it("starts and asks only a Meta model, refusing before start_model or ask_model reaches the board", async () => {
+    const calls: string[] = [];
+    let running = LLAMA.name;
+    const board = (async (_config: unknown, name: string) => {
+      calls.push(name);
+      return { content: [{ type: "text", text: JSON.stringify(name === "list_models" ? { files: [], running: { model: running, adapter: null } } : { answer: "Hi", tokens: 1 }) }], isError: false };
+    }) as unknown as Parameters<typeof deviceMcpBoard>[1];
+    await assert.rejects(deviceMcpBoard(device, board).serve(LLAMA), (err: Error) => err instanceof DeviceRefusedError && /isn't a Meta model's file/.test(err.message));
+    await assert.rejects(deviceMcpBoard(device, board).ask({ alias: LLAMA.alias, messages: [{ role: "user", content: "Hi" }], maxTokens: 8 }), /isn't running a Meta model/);
+    assert.deepEqual(calls, ["list_models"], "neither start_model nor ask_model ran");
+    running = FILE.name;
+    assert.equal(await deviceMcpBoard(device, board).serve(FILE), "done");
+    assert.equal((await deviceMcpBoard(device, board).ask({ alias: FILE.alias, messages: [{ role: "user", content: "Hi" }], maxTokens: 8 })).text, "Hi");
+    assert.deepEqual(calls, ["list_models", "start_model", "list_models", "ask_model"]);
   });
 });
 
@@ -155,7 +175,19 @@ describe("the fleet driver", () => {
     assert.equal(answer.finish, "stop");
     assert.equal((calls.at(-1)!.init.headers as Record<string, string>)["x-jcp-node"], "nd_1");
     const busy = fake((url) => (url.endsWith("/api/nodes") ? json([NODE]) : json({}, 429, { "retry-after": "5" })));
-    await assert.rejects(fleetBoard(config, "fleet", busy.doFetch).ask({ alias: "x", messages: [], maxTokens: 1 }), BoardBusyError);
+    await assert.rejects(fleetBoard(config, "fleet", busy.doFetch).ask({ alias: FILE.alias, messages: [], maxTokens: 1 }), BoardBusyError);
+  });
+
+  it("serves and asks only a Meta model on a real board, before anything is sent", async () => {
+    const { doFetch, calls } = fake(() => json([NODE]));
+    for (const alias of [LLAMA.alias, "bolt", "hf.co/LiquidAI/LFM2.5-VL-3B-GGUF:Q4_K_M", "glimmer-bolt"]) {
+      await assert.rejects(fleetBoard(config, "fleet", doFetch).ask({ alias, messages: [{ role: "user", content: "Hi" }], maxTokens: 8 }), /isn't a Meta model, so nothing was sent/, alias);
+    }
+    await assert.rejects(fleetBoard(config, "fleet", doFetch).serve(LLAMA), /isn't a Meta model/);
+    assert.deepEqual(calls, []);
+    // The simulated board holds no model, so its stand-in's name doesn't matter.
+    const sim = fake((url) => (url.endsWith("/api/nodes") ? json([NODE]) : new Response('data: {"choices":[{"delta":{"content":"canned"},"finish_reason":"stop"}]}\n\n')));
+    assert.equal((await fleetBoard(config, "simulated", sim.doFetch).ask({ alias: "simulated/11111111:IQ1_S", messages: [], maxTokens: 1 })).text, "canned");
   });
 
   it("a real board's set passes only with its memory under the board's own", () => {

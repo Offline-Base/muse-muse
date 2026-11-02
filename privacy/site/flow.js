@@ -20,7 +20,7 @@
       { moves: [["muse", "model", "[Student A]"]], at: ["muse"], tone: "send",
         text: "Muse asks with a tag: how did [Student A] do on the garden essay? It never sees the real name." },
       { moves: [["files", "model", "24 essays"]], at: ["files", "model"], tone: "ok",
-        text: "On this device only, the tag becomes the name again, and the local model reads the essays." },
+        text: "On this device only, the tag becomes the name again, and Muse Glimmer reads the essays." },
       { moves: [["model", "tagging", "answer"]], at: ["tagging"], tone: "ok",
         text: "Every name and identifier in the answer becomes a tag again." },
       { moves: [["tagging", "rules", "[Student A]: 3 of 4"]], at: ["rules"], tone: "ok",
@@ -34,7 +34,7 @@
       { moves: [["muse", "model", "[Student A]"]], at: ["muse"], tone: "send",
         text: "Muse asks: draft a note to [Student A]'s family about the essay." },
       { moves: [["files", "model", "essay"]], at: ["files", "model"], tone: "ok",
-        text: "The local model reads the essay and drafts the note on this device." },
+        text: "Muse Glimmer reads the essay and drafts the note." },
       { moves: [["model", "tagging", "note"]], at: ["tagging"], tone: "ok",
         text: "Names in the note become tags." },
       { moves: [["tagging", "rules", "note"]], at: ["rules"], tone: "wait",
@@ -50,7 +50,7 @@
       { moves: [["muse", "model", "[Student A]"]], at: ["muse"], tone: "send",
         text: "Muse asks: what are [Student A]'s IEP accommodations?" },
       { moves: [["files", "model", "record"]], at: ["files", "model"], tone: "ok",
-        text: "The local model finds the record on this device." },
+        text: "Muse Glimmer finds the record." },
       { moves: [["model", "tagging", "answer"], ["tagging", "rules", "answer"]], at: ["rules"], tone: "danger",
         text: "Names become tags, but the answer is about a topic you never share." },
       { moves: [["rules", "kept", "answer"]], at: ["kept"], tone: "danger",
@@ -62,7 +62,7 @@
       { moves: [["muse", "model", "question"]], at: ["muse"], tone: "send",
         text: "With FERPA on, Muse asks: how many students missed the field trip?" },
       { moves: [["files", "model", "forms"]], at: ["files", "model"], tone: "ok",
-        text: "The local model counts the forms on this device." },
+        text: "Muse Glimmer counts the forms." },
       { moves: [["model", "tagging", "answer"]], at: ["tagging"], tone: "ok",
         text: "The toggle tags more: places, dates, schools and record numbers too." },
       { moves: [["tagging", "rules", "3 students"]], at: ["rules"], tone: "danger",
@@ -76,7 +76,7 @@
       { moves: [["you", "model", "question"]], at: ["you"], tone: "ok",
         text: "You ask on this device: which essays mention bees?" },
       { moves: [["files", "model", "essays"]], at: ["files", "model"], tone: "ok",
-        text: "The local model searches and reads your documents." },
+        text: "A model on the device would search and read your documents. This is off for now." },
       { moves: [["model", "you", "answer"]], at: ["you"], tone: "ok",
         text: "The answer, with real names, shows only on that page." },
       { moves: [], at: ["muse"], tone: "off",
@@ -86,7 +86,7 @@
 
   var LIVE = {
     idle: "Live: the device is idle.",
-    working: "Live: the local model is working now.",
+    working: "Live: the model is working now.",
     waiting: "Live: a result is waiting for your OK.",
     sending: "Live: a tagged result is going to Muse."
   };

@@ -39,13 +39,12 @@ tar xzf muse-gpu-run.tar.gz && cd muse-gpu-run
 sha256sum -c SHA256SUMS
 uv sync --frozen --no-dev
 
-export CHECKER_SERVER_BIN=/path/to/llama-server
-export CHECKER_GGUF=/path/to/LFM3-VL-2B-Q4_K_M.gguf
+export LLAMA_SERVER_BIN=/path/to/llama-server
 export SIDE_TEMPLATE=/path/to/tuned-reasoning-off.jinja
 scripts/start_side_models.sh /path/to/glimmer.gguf "$PWD/.side"
 ```
 
-That runs in the foreground, binds 127.0.0.1 only and prints the environment. In a second shell, use the `export` lines it printed, then:
+That runs in the foreground, binds 127.0.0.1 only and prints the environment. Since the organizers' Nov 2 ruling (Meta models only) it starts Glimmer alone, with no LFM3-VL-2B beside it, and the matrix below is refused until its setups use Glimmer as the checker (the `policy_lfm` row cannot run). In a second shell, use the `export` lines it printed, then:
 
 ```
 uv run python -m scripts.plug_in_model /path/to/glimmer.gguf --check --label tuned

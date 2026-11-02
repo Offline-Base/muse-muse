@@ -6,6 +6,7 @@
 import { aliasFor, BoardOfflineError, type BoardDriver, type BoardFile } from "@/lib/board-loop/driver";
 import {
   currentStage,
+  LLAMA_TUNE_PROBLEM,
   meanTokensPerSecond,
   SIMULATED_NOTE,
   STAGE_LABEL,
@@ -65,9 +66,12 @@ function standInFile(row: LoopRow, realName: string | null, bytes: number | null
   };
 }
 
-/** The file for this adapter's tune: one-bit Glimmer for an r30b adapter, the small Llama for a Llama one. */
+/**
+ * The file for this adapter's tune: one-bit Glimmer for an r30b adapter. None for a tune on a small Llama, which isn't a
+ * Meta model (lib/meta/models.ts, Nov 2): the gguf stage fails it instead.
+ */
 export function loopFile(files: LocalFiles | null): ReturnType<typeof fileForDevice> {
-  return fileForDevice(files?.quantBase ? "other" : "jetson_orin_nano", files);
+  return files?.quantBase ? null : fileForDevice("jetson_orin_nano", files);
 }
 
 function begin(row: LoopRow, stage: StageId, now: Date): boolean {
@@ -193,6 +197,8 @@ async function tune(row: LoopRow, deps: TickDeps): Promise<TickResult> {
 
 async function gguf(row: LoopRow, deps: TickDeps): Promise<TickResult> {
   const files = await deps.localFiles(row.adapterJobId);
+  // The start route refuses these already (judgedProblem). This catches a loop started before, on any board.
+  if (files?.quantBase) return failLoop(row, "gguf", deps, LLAMA_TUNE_PROBLEM);
   const made = loopFile(files);
   const quant = row.data.quantJobId ? await deps.job(row.data.quantJobId) : files ? await deps.job(files.quantJobId) : null;
   const cost = quant?.costUsd ?? null;

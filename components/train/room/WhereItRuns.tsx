@@ -9,9 +9,7 @@ export interface WhereItRunsProps {
   demoHere: boolean;
   /** The room shows the Local files card above (admins). */
   localFilesHere: boolean;
-  /** Admins can open /device; nobody else can today. */
-  admin: boolean;
-  /** QUANT_TARGETS is on: say what is known about one-bit Glimmer on the board and a small Llama elsewhere. */
+  /** QUANT_TARGETS is on: say what is known about one-bit Glimmer on the board. */
   quantTargets?: boolean;
 }
 
@@ -19,10 +17,10 @@ export interface WhereItRunsProps {
  * Where a tuned Muse Glimmer can run, honestly (docs/TRAINING.md "Fine-tune like a build", "Where it runs"): in its live
  * demo, on a computer with enough memory from its local files, and not on a Jetson Orin Nano, whose 8 GB is too little
  * for Muse Glimmer 30B, unless QUANT_TARGETS is on, when it says what the one-bit file measured and that it is unproven
- * on a real board. A board can train a small model on the same examples instead, which is a different model.
- * The board's link is for admins, who are the only ones who can open /device today.
+ * on a real board. It offers no other model: the organizers ruled on Nov 2 that Llama isn't a Meta model, so neither a
+ * small Llama on other devices nor a Llama trained on a board is offered here (lib/meta/models.ts).
  */
-export function WhereItRuns({ jobHref, demoHere, localFilesHere, admin, quantTargets = false }: WhereItRunsProps) {
+export function WhereItRuns({ jobHref, demoHere, localFilesHere, quantTargets = false }: WhereItRunsProps) {
   const onJobPage = (what: string) =>
     jobHref ? (
       <>
@@ -44,31 +42,16 @@ export function WhereItRuns({ jobHref, demoHere, localFilesHere, admin, quantTar
           {localFilesHere ? ", once Local files above has made them" : onJobPage("made from Local files")}.
         </li>
         {quantTargets ? (
-          <>
-            <li>
-              <strong>On a Jetson Orin Nano, maybe, from one-bit Muse Glimmer.</strong> {deviceModelTarget("jetson_orin_nano").fit} Expect
-              much weaker answers: on our 2026-knowledge model, this level recalled {LOW_BIT_FACTS.recallOneBitPct}% of new-knowledge probes where the
-              larger Q4_K_M recalled {LOW_BIT_FACTS.recallFourBitPct}%.
-            </li>
-            <li>
-              <strong>On other devices, from a tune on Llama 3.2 3B.</strong> {deviceModelTarget("other").fit}
-            </li>
-          </>
+          <li>
+            <strong>On a Jetson Orin Nano, maybe, from one-bit Muse Glimmer.</strong> {deviceModelTarget("jetson_orin_nano").fit} Expect
+            much weaker answers: on our 2026-knowledge model, this level recalled {LOW_BIT_FACTS.recallOneBitPct}% of new-knowledge probes where the
+            larger Q4_K_M recalled {LOW_BIT_FACTS.recallFourBitPct}%.
+          </li>
         ) : (
           <li>
             <strong>Not on a Jetson Orin Nano.</strong> Muse Glimmer 30B needs more memory than the board&apos;s 8 GB.
           </li>
         )}
-        <li>
-          <strong>Train a small model on your board instead:</strong> Llama 3.2 1B, Meta&apos;s small model, on the same
-          examples, on the board&apos;s GPU. It isn&apos;t Muse Glimmer, and this hasn&apos;t been measured on a board yet.
-          {admin ? (
-            <>
-              {" "}
-              <Link href="/device">Open the board</Link>
-            </>
-          ) : null}
-        </li>
       </ul>
     </section>
   );

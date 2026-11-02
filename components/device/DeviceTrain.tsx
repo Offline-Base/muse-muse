@@ -35,9 +35,11 @@ const statusUrl = (run: string | null) => `/api/device/train${run ? `?run=${enco
 
 /**
  * Admin only: fine-tunes a model on the board's own GPU from a platform dataset, and follows the run until it ends. With
- * `driveExport` (DRIVE_EXPORT_ENABLED), a finished run links to the Flash drive card with it picked.
+ * `driveExport` (DRIVE_EXPORT_ENABLED), a finished run links to the Flash drive card with it picked. Without `training`
+ * (DEVICE_LLAMA_TRAINING), Start is off and says why, since a board trains only Llama 3.x, and a run already on the board
+ * still shows with its Stop button.
  */
-export function DeviceTrain({ driveExport = false }: { driveExport?: boolean }) {
+export function DeviceTrain({ driveExport = false, training = false }: { driveExport?: boolean; training?: boolean }) {
   const id = useId();
   const [datasets, setDatasets] = useState<DatasetView[] | null>(null);
   const [datasetId, setDatasetId] = useState("");
@@ -149,6 +151,12 @@ export function DeviceTrain({ driveExport = false }: { driveExport?: boolean }) 
   return (
     <section className="card section-card">
       <h2>Fine-tune on this board</h2>
+      {training ? null : (
+        <p className="muted small">
+          Off for now. A board can only train Llama 3.x, which isn&apos;t a Meta model for this project, and no Meta model is
+          small enough to train on one yet. A run already on the board still shows here.
+        </p>
+      )}
       <form onSubmit={start}>
         <label className="field-label" htmlFor={`${id}-dataset`}>
           Dataset
@@ -196,7 +204,7 @@ export function DeviceTrain({ driveExport = false }: { driveExport?: boolean }) 
           onChange={(event) => setSteps(event.target.value)}
           placeholder="60"
         />
-        <button type="submit" className="btn btn-primary" disabled={busy || active || !datasetId || !name}>
+        <button type="submit" className="btn btn-primary" disabled={!training || busy || active || !datasetId || !name}>
           {busy ? <span className="spinner" aria-hidden /> : <Icon name="play" size={16} />}
           <span>{busy ? "Sending the dataset" : "Start"}</span>
         </button>
