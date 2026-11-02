@@ -5,6 +5,7 @@ import { spendPaused } from "@/lib/quota";
 import { runCaller, runCallerToCreate, runCeilings, runExamplesMax, withCookies } from "@/lib/train/tune/caller";
 import { buildForTune } from "@/lib/train/tune/build-source";
 import { examplesFromBody } from "@/lib/train/tune/examples";
+import { hasSecret } from "@/lib/train/tune/folder-clean";
 import { askedExamples, clampExamples, contentFindings, draftPlan, NOTE_MAX, NOTE_MIN, StructuredOutputError } from "@/lib/train/tune/plan";
 import { contentFindings as visitorFindings, withVisitorRules } from "@/lib/train/public/content";
 import { recordUsage } from "@/lib/usage";
@@ -86,6 +87,10 @@ export const POST = route(async (req: Request) => {
 
   const findings = caller.visitor ? visitorFindings({ note, rows }) : contentFindings({ note, rows });
   if (findings.length) return errorJson(422, "refused", { refusal: findings.join(" ") });
+  // As a folder's files are scanned: this text goes to Meta in the plan call. Says nothing about what it matched.
+  if (caller.visitor && (hasSecret(note) || rows.some((r) => hasSecret(r.prompt) || hasSecret(r.answer)))) {
+    return errorJson(422, "refused", { refusal: "This looks like it holds a key, token or password. Take it out and try again." });
+  }
   if (!process.env.MODEL_API_KEY) return errorJson(503, "meta_not_configured");
   if (await spendPaused()) return errorJson(503, "paused");
 

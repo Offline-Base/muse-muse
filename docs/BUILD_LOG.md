@@ -2161,6 +2161,43 @@ Read-only recheck against the saved outputs, the local adapter and data, and the
 - Not checked: the reader's counts of slips and which answers were read are one reader's judgment.
 - Tests: touched code only, with fakes: quantize 65, quant-targets 9, gguf-cards 26, story 11, tune-room and local-files with module mocks, and tsc clean. Full suite and next build not run.
 
+## Nov 1: open fine-tuning tested as a guest on Preview j1swsu3a1 (branch tg-open-tune, PR #35)
+
+With vercel curl, no admin, made-up data, a folder read by the real browser reader (readDropped). The page itself wasn't driven in a browser: this test used up the IP's 3 new visitors for the day.
+
+Passed:
+- Folder: .env, a hidden folder, a binary PNG and a binary named .txt skipped with reasons. A real-looking email's line taken out. name@example.com is let through on purpose. Notice not confirmed: 428.
+- Writing: Contributor wrote 40 examples (32 train, 8 eval) for $0.0074. The hidden instruction (a canary word, a link, steps of 100000) stayed out of the plan, the task, the run's reply and its page, and the steps stayed at the 20 asked for.
+- Code: missing, blank, non-string and wrong all 403, on /runs and on the room's start. The right code passed: 201 on /runs, and on the room's start it reached the launch check. Replay 409.
+- Tries: 10 wrong for one person, then 429, and the right code is refused too until the hour turns. It worked again at 01:00. IP stopped at about 30. In 15 sent at once, 10 got through rather than the 9 expected. The counter is one atomic statement, so the likely cause is my test's shared cookie file, not confirmed.
+- Limits: second run for a person 409. Fourth new visitor on an IP 429, also with spoofed x-forwarded-for and x-real-ip. Another visitor's run: 404 to read, 403 to start or stop. Forged cookie 404. Another's plan or a changed plan 403. Changed folder 400. 100000 steps, 9999 examples, picking a base 400 or 404. maxUsd 500, an 8x GPU and autoPublish in settings were ignored: limit $4, A100, publish 0. /api/train/jobs, jobs/{id}, publish, stop, quantize, gpus, research and datasets 403. hub, upload, events, dataset 401. loops, sim-tune 404.
+
+Problems found, not fixed:
+1. A rows folder with similar prompts is told it will train, then fails after Start. 46 templated rows passed review, then became 8 train and 8 eval once near-duplicates of eval rows were left out: "needs at least 16 and 8". 50 varied rows gave 40 and 8.
+2. A refused launch shows "checking" for about 11 minutes. Refused at 00:35:58, the room said so around 00:47, because the fresh heartbeat outranks the recorded ending.
+3. Wrong tries by anyone on one IP lock out the right code for everyone on it, up to an hour. At a venue's shared Wi-Fi, 30 wrong tries stop everyone.
+4. Another visitor's run answers 403 to start and stop but 404 to read, so it shows the id exists. Low risk, ids are random.
+5. A rows folder's rows go in as they are, including one that says to ignore instructions. It only shapes that person's own model.
+
+Not proven: that the hidden instruction didn't steer the written rows, since a guest can't read them. I tried the real writer against a throwaway local database with the Development MODEL_API_KEY: 401 invalid_api_key, the stale key noted earlier, no spend. I didn't try the Preview and Production key or read the main database, neither was given for this test.
+
+GPU job not run. On this Preview the launch answers 503 sweep_not_configured, reason not_production. LAMBDA_API_KEY and CRON_SECRET are set for Preview by name. TRAIN_ALLOW_OUTSIDE_PRODUCTION=1 would lift that check, but I didn't redeploy with it: a Preview on the main database uses its own URL as the callback address, and that URL is behind Vercel's protection (POST from outside: 302), and the runner sends no bypass and allows no redirects. So the GPU couldn't get its data or report back, and would bill until the 25-minute boot limit to prove nothing about callbacks. The first real proof needs a public deployment, production with the flags on or a Preview the owner opens. Launch and callbacks through the site are still unproven.
+
+Spend: Lambda $0, no GPU started. Meta about $0.01 to $0.05 (the writing above plus 4 plans on Contributor, plans not metered here).
+
+## Nov 1: adversarial review of open fine-tuning, after the merge of PR #35 (branch tg-open-tune-review)
+
+Read the merged routes, limits, identity, launch and folder code for ways an anonymous person could overspend, launch GPUs, read others' data, publish to the Hub or send secrets to Meta. Spend $0: no model call, no GPU, no deploy. Production untouched.
+
+- Fixed, spend: `checkDraft` put no limit on a row's length. A request can sign any draft's hash through `POST /api/train/plan` without going through `POST /api/train/folder`, and the judge sends held-out rows whole, so up to 3.5 MB of rows could reach Muse Wonder against an estimate of cents. The daily Meta budget only counts the estimate. Now refused over the parser's own 1,500 and 4,000 characters. By reading the code; the overspend itself was not run.
+- Fixed, secrets: a visitor's note and typed rows were scanned for personal data but not for keys, though they reach Muse Wonder in the plan call. Now 422, without quoting the match.
+- Fixed, from the guest test: rows too alike passed review and failed after Start, having used the visitor's dataset for the day. `cleanFolder` now runs the dataset's own split first and sends such rows to the writer. So these need `TRAIN_CONTRIBUTOR_WRITER=1` or the plan answers 503 folder_writer_off.
+- Fixed, from the guest test: a refused launch said "checking" for about 11 minutes. A recorded ending now outranks that heartbeat.
+- Read and held up: visitors can't reach admin routes (`trainCaller` is only used through `runCaller`); bearer headers are automation or nothing; IPv6 keys by /64; run marks sit under the keep window, so a visitor's mark doesn't age out; publish stays 0 through `launchForRun`, and `ownerRowsProblem` refuses their work. Reading, plus the earlier tests, not a live GPU run.
+- Not fixed, for the owner: (1) wrong tries lock out the right code for a whole IP for up to an hour, so 30 wrong tries on venue Wi-Fi stop the room; letting the right code through a lock would remove the limit on guessing. (2) A plan still comes before the code: an anonymous person can use up the 200 plans a day, and with it everyone's planning, at a few dollars. (3) The code is one short word, so it stops drive-by traffic and little else; the spending limits are what protect the money.
+- Downgraded: PR #35 said two test files fail in setup "on main too" without that having been run. See the PR body for what was run.
+- Still unproven: a real GPU job through the site, and whether a hidden instruction steers the written rows.
+- Tests: folder 17, open-train 30, view 14, routes 25, plan 23, tsc clean.
 ## Nov 1: FAST_BUILDS (branch tg-fast-builds)
 
 Behind a new flag, off by default. Design in docs/FAST_BUILDS.md.
