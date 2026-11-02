@@ -23,6 +23,13 @@ export async function GET(req: Request) {
       result.errors.push(`Noting the sweep's run failed: ${err instanceof Error ? err.message : String(err)}`);
     });
   }
+  // OPEN_TRAIN: visitor jobs that ended give back the part of their dollars they didn't use, and their GPU slot.
+  if (env.openTrain) {
+    const { settleVisitorRuns } = await import("@/lib/train/public/limits");
+    await settleVisitorRuns().catch((err) => {
+      result.errors.push(`Settling visitor runs failed: ${err instanceof Error ? err.message : String(err)}`);
+    });
+  }
   const ok = result.errors.length === 0;
   if (!ok) console.error("[cron/train-sweep] some tasks failed:", result.errors);
   if (result.terminated.length) console.log("[cron/train-sweep] terminated:", result.terminated);

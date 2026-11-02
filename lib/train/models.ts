@@ -21,6 +21,11 @@ export const PERSON_WRITER = "person";
 /** writer_model of Muse Decide's mix: public datasets under their own licenses, not a Muse model's output. */
 export const PUBLIC_WRITER = "public";
 
+/** A dataset's grounding starts with this when it holds a person's dropped files (TUNE_FOLDER), never web notes. */
+export const FOLDER_GROUNDING = "[files a person dropped]\n";
+/** What marks the files for the writer. folder-clean.ts takes it out of every file, so a file can't close its own block. */
+export const FOLDER_FENCE = "PERSON_FILES_BLOCK";
+
 /** How the pages and the cards name a dataset's writer that isn't a model. */
 const NOT_A_MODEL: Record<string, string> = {
   [PERSON_WRITER]: "The person who uploaded it",

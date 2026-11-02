@@ -117,6 +117,12 @@ export async function saveRunBase(datasetId: string, base: { repo: string; revis
   await db().insert(limits).values({ key: `${basePrefix(datasetId)}${base.repo}@${base.revision}`, windowStart: TUNE_KEEP_WINDOW, count: 1 }).onConflictDoNothing();
 }
 
+/** Marks the run as a visitor's (OPEN_TRAIN), before anything runs: launchForRun holds it to the visitor limits. */
+export async function saveRunVisitor(datasetId: string, visitor: { trainerId: string; ip: string }): Promise<void> {
+  if (!UUID_RE.test(datasetId)) throw new Error("not a run id");
+  await db().insert(limits).values({ key: `tune-settings:${datasetId}:visitor:${visitor.trainerId}@${visitor.ip}`, windowStart: TUNE_KEEP_WINDOW, count: 1 }).onConflictDoNothing();
+}
+
 /** Keeps whether the run uploads by itself. No row, or 0, means it doesn't, so a write that failed fails closed. */
 export async function saveRunAutoPublish(datasetId: string, on: boolean): Promise<void> {
   if (!UUID_RE.test(datasetId)) return;
@@ -156,7 +162,7 @@ export async function readRunMarkRows(datasetId: string, now: Date = new Date())
       or(
         and(like(limits.key, `tune-run:${datasetId}:%`), gte(limits.windowStart, hourAgo), lt(limits.windowStart, TUNE_KEEP_WINDOW)),
         and(
-          or(like(limits.key, `tune-run-end:${datasetId}:%`), eq(limits.key, stoppedKey(datasetId)), eq(limits.key, stepsKey(datasetId)), eq(limits.key, autoPublishKey(datasetId)), like(limits.key, `${basePrefix(datasetId)}%`)),
+          or(like(limits.key, `tune-run-end:${datasetId}:%`), eq(limits.key, stoppedKey(datasetId)), eq(limits.key, stepsKey(datasetId)), eq(limits.key, autoPublishKey(datasetId)), like(limits.key, `${basePrefix(datasetId)}%`), like(limits.key, `tune-settings:${datasetId}:visitor:%`)),
           eq(limits.windowStart, TUNE_KEEP_WINDOW),
         ),
       ),

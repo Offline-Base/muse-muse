@@ -325,6 +325,29 @@ describe("the new fine-tune pages", { skip: canMock ? false : "needs --experimen
       assert.match(html, /<p class="panel-note">Set for every run\.<\/p>/);
     });
 
+    it("the plan's Start asks a visitor for the code, holds it until there is one, and names a folder's way of making", async () => {
+      const { planCost, planSettings } = await import("@/lib/train/tune/cost");
+      const settings = planSettings(100, { maxMinutes: 60, maxUsd: 4 });
+      const plan = { v: 1, kind: "chat", name: "a fern helper", tagline: "Helps with made-up ferns.", samples: ["Why brown?"], examples: { given: 60, used: 0 }, settings, cost: planCost(settings), source: { kind: "folder", hash: "a".repeat(64), mode: "rows" }, task: "made up", token: "t", exp: "2030-01-01T00:00:00.000Z" };
+      const props = { phase: { at: "plan", note: "made up", files: [], plan }, examples: 100, onExamples: () => {}, ceilings: { maxMinutes: 60, maxUsd: 4 }, starting: false, startError: null, onStart: () => {}, onChange: () => {} };
+      const visitorHtml = renderC(composer.PlanStep as ComponentType<never>, { ...props, visitor: { maxExamples: 100, maxSteps: 120 } });
+      assert.match(visitorHtml, /Start code/);
+      assert.match(visitorHtml, /<button type="button" class="btn btn-primary" disabled="" aria-busy="false">Start<\/button>/);
+      assert.match(visitorHtml, /Your 60 rows go in as they are/);
+      assert.match(visitorHtml, /max="120"/);
+      assert.match(visitorHtml, /It stays on Muse Muse, private to you/);
+      assert.doesNotMatch(visitorHtml, /full form|publish it|Examples to write/);
+      const adminHtml = renderC(composer.PlanStep as ComponentType<never>, props);
+      assert.doesNotMatch(adminHtml, /Start code/);
+    });
+
+    it("the folder drop says where files go before anything can be picked", async () => {
+      const { FolderDrop } = await import("@/components/train/compose/FolderDrop");
+      const html = renderC(FolderDrop as ComponentType<never>, { ready: null, onReady: () => {} });
+      assert.match(html, /Your files go to Meta on a tier where Meta may train on them\. Personal or sensitive information isn&#x27;t allowed/);
+      assert.match(html, /<button type="button" class="btn btn-outline" disabled="">/);
+    });
+
     it("puts a training plan on the plan card: how it's made, a sample, and the cost with its estimates named", async () => {
       const { planCost, planSettings } = await import("@/lib/train/tune/cost");
       const settings = planSettings(200, { maxMinutes: 120, maxUsd: 5 });

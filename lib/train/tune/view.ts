@@ -171,3 +171,13 @@ export function tuneRunView(rows: RunRows, now: Date, ceilings: { maxMinutes: nu
         : null,
   };
 }
+
+/**
+ * A run as its visitor sees it (OPEN_TRAIN): what they asked for and how it went, with no instance, IP, region, log,
+ * traceback or link to the job's page, which is for admins.
+ */
+export function visitorRunView(run: TuneRunView): TuneRunView {
+  const next = run.next?.kind === "start" ? { kind: "start" as const, start: run.next.start, fullForm: "" } : null;
+  const job = run.job ? { ...run.job, instanceId: null, instanceIp: null, region: "", artifacts: [], summary: null, error: null, serving: null, hub: null } : null;
+  return { ...run, job, next };
+}

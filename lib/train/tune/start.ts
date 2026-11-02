@@ -11,12 +11,16 @@ import { start } from "workflow/api";
 import { env, testModel } from "@/lib/env";
 import { adjustCounter, reserveCounter } from "@/lib/gateway/store";
 import { DATASET_MODEL, makeDataset } from "@/lib/train/datasets";
-import { attachDatasetRun, createDataset, failDataset, getDataset } from "@/lib/train/store";
+import { SPARK_STANDIN } from "@/lib/meta/spark";
+import { datasetSystemPrompt } from "@/lib/train/logic";
+import { PERSON_WRITER } from "@/lib/train/models";
+import { attachDatasetRun, createDataset, createImportedDataset, failDataset, getDataset } from "@/lib/train/store";
 import { TUNE_STEPS } from "@/lib/train/tune/settings";
 import { freshHeartbeat } from "@/lib/train/tune/marks";
 import { tuneRun } from "@/lib/train/tune/run";
 import { autoPublishOk } from "@/lib/train/tune/auto-publish";
-import { latestTuneJob, readRunMarks, saveRunAutoPublish, saveRunBase, saveRunProduct, saveRunSteps } from "@/lib/train/tune/run-store";
+import { latestTuneJob, readRunMarks, saveRunAutoPublish, saveRunBase, saveRunProduct, saveRunSteps, saveRunVisitor } from "@/lib/train/tune/run-store";
+import type { FolderDraft } from "@/lib/train/tune/folder";
 import type { TrainPlanBody } from "@/lib/train/tune/types";
 
 /** A refusal startTuneRun's caller turns into a JSON reply with this status and code. */
@@ -94,6 +98,10 @@ export async function startTuneRun(i: {
   productId?: string | null;
   /** An admin's run with Advanced's upload left on. Only POST /api/train/runs passes it; anything else stays at publish 0. */
   autoPublish?: boolean;
+  /** A visitor's run: kept with it before anything runs, so launchForRun holds it to their limits. */
+  visitor?: { trainerId: string; ip: string } | null;
+  /** A folder plan's checked draft (checkDraft). */
+  folder?: FolderDraft | null;
 }): Promise<{ runId: string; href: string; trainingStarted?: boolean }> {
   if (!env.tuneComposer) throw new TuneStartError(404, "not_found");
   const source = i.plan?.source ?? (i.datasetId ? { kind: "dataset" as const, datasetId: i.datasetId } : null);
@@ -141,6 +149,7 @@ export async function startTuneRun(i: {
     return { runId: existing.id, href: runHref(existing.id) };
   }
   const plan = i.plan!;
+  if (source.kind === "folder") return startFolderRun(plan, i.folder, i.callerId, i.visitor ?? null);
   const day = productId ? await takeProductDay(productId, now) : null;
   let dataset: Awaited<ReturnType<typeof createDataset>>;
   try {
@@ -157,6 +166,8 @@ export async function startTuneRun(i: {
   }
   let workflowRunId: string;
   try {
+    // Fails the start, not quietly: a visitor's run without its mark would launch under an admin's limits.
+    if (i.visitor) await saveRunVisitor(dataset.id, i.visitor);
     // Before anything runs: a run that lost its base would train on another model.
     if (plan.settings.base) await saveRunBase(dataset.id, plan.settings.base);
     workflowRunId = (await start(makeDataset, [{ datasetId: dataset.id }])).runId;
@@ -175,5 +186,48 @@ export async function startTuneRun(i: {
     await saveRunAutoPublish(dataset.id, true).catch((err) => console.error("[train/tune] save auto publish", err));
   }
   await startTraining(dataset.id, i.callerId, plan.settings.steps);
+  return { runId: dataset.id, href: runHref(dataset.id) };
+}
+
+/**
+ * A folder plan (TUNE_FOLDER). Rows train as they are: a ready dataset with nothing written. Anything else is written by
+ * Spark 1.3 Contributor from the files as grounding, never Muse Wonder (folderWriterProblem). Neither ever uploads by itself.
+ */
+async function startFolderRun(plan: TrainPlanBody, folder: FolderDraft | null | undefined, callerId: string, visitor: { trainerId: string; ip: string } | null) {
+  if (!folder) throw new TuneStartError(400, "folder_changed");
+  if (folder.mode === "write") {
+    const dataset = await createDataset({ title: plan.name, task: plan.task, requested: plan.settings.examples, writerModel: SPARK_STANDIN, createdBy: callerId, grounding: folder.grounding });
+    try {
+      if (visitor) await saveRunVisitor(dataset.id, visitor);
+      await saveRunSteps(dataset.id, plan.settings.steps);
+      const { runId } = await start(makeDataset, [{ datasetId: dataset.id }]);
+      await attachDatasetRun(dataset.id, runId).catch((err) => console.error("[train/tune] attachRun", err));
+    } catch (err) {
+      console.error("[train/tune] start folder", err);
+      await failDataset(dataset.id, "The dataset's workflow could not start, so nothing was written.").catch((e) => console.error("[train/tune] markStartFailed", e));
+      throw new TuneStartError(500, "start_failed");
+    }
+    await startTraining(dataset.id, callerId, plan.settings.steps);
+    return { runId: dataset.id, href: runHref(dataset.id) };
+  }
+  const dataset = await createImportedDataset({
+    title: plan.name,
+    task: plan.task,
+    system: datasetSystemPrompt(plan.task),
+    rows: folder.rows,
+    note: `From ${folder.rows.length} rows in a folder the person dropped. Nothing was written.`,
+    createdBy: callerId,
+    writerModel: PERSON_WRITER,
+  });
+  if (!dataset) throw new TuneStartError(500, "start_failed");
+  try {
+    if (visitor) await saveRunVisitor(dataset.id, visitor);
+    await saveRunSteps(dataset.id, plan.settings.steps);
+  } catch (err) {
+    console.error("[train/tune] keep folder run", err);
+    await failDataset(dataset.id, "The run could not start.").catch((e) => console.error("[train/tune] markStartFailed", e));
+    throw new TuneStartError(500, "start_failed");
+  }
+  await startTraining(dataset.id, callerId, plan.settings.steps);
   return { runId: dataset.id, href: runHref(dataset.id) };
 }
