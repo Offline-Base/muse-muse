@@ -4,7 +4,7 @@ Owner ask (Oct 31, ~15:15 EDT): "build out just about everything you listed ther
 to be unnecessary", and keep "fine tune, then plug a flashdrive into a jetson and have it export the fine tuned model whether it
 be fine tuned on the jetson or one of the cloud gpus".
 
-Evidence: /private/tmp/claude-501/-Users-ethancastro/92498a9b-7e37-4123-a1e6-d24f91e9b55e/scratchpad/hack/ (all.json, rubric.md,
+Evidence: <local scratchpad>/hack/ (all.json, rubric.md,
 the reviewers' journal wf_667a6674-954). 8 real one-shot builds on Contributor: 6 live, 1 failed at the 25-minute round limit
 (tile game with generated levels), 1 still running at time of writing.
 

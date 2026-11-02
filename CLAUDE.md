@@ -12,6 +12,7 @@ Offline Base's entry in the Meta Global AI Developer Hackathon: startup track, t
 | Anything said in public: submission, video, posts, page copy | docs/MESSAGING.md, then the marks in docs/STORY.md and docs/PROVE_RESULTS.md |
 | The submission text and form answers | docs/SUBMISSION.md |
 | The video script and shot list | docs/VIDEO.md |
+| The edge track: units and their status, owner decisions O1 to O8, Hussam's asks H1 to H5, when each edge claim may be said | docs/EDGE_PLAN.md |
 | Training-data rights: who wrote each set, Meta's terms, what may be published | docs/DATA_RIGHTS.md |
 | What happened and why: every merge, review, fix, measurement, spend and decision | docs/BUILD_LOG.md |
 | Training, tune runs, the Make chat | docs/TRAINING.md |

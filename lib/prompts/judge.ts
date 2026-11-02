@@ -94,6 +94,13 @@ export const GLASSES_JUDGE_NOTE =
   "The glasses were simulated with sample photos and a sample spoken question, so a sample photo under 'What your glasses saw' is the product working.";
 
 /**
+ * An edge product (docs/EDGE_DEMO.md) labels every model answer with where it was answered. In the test the cloud answers,
+ * so the cloud's label is the product working. The outage drills after verify check the backup itself.
+ */
+export const EDGE_JUDGE_NOTE =
+  "This product is built so its main answer comes from a backup model on an edge board when the cloud is cut. In this test the cloud answered. Every model answer carries a small label saying where it was answered, \"Answered in the cloud, <model>\" or \"Answered on <board>, <model>\", and either label is the product working. Fail it when a model answer has no such label, or when the page says it works offline or calls an answer private or on-device.";
+
+/**
  * The person asked for their own look (askedLook): following it instead of the house style is the product working. The
  * rules about Meta's marks and a real product's exact look still hold.
  */
@@ -102,7 +109,7 @@ export function askedLookJudgeNote(asked: string): string {
 }
 
 /**
- * The judge's instructions for this brief. A brief with no agent, VR or glasses target and no cap blocks gets
+ * The judge's instructions for this brief. A brief with no agent, VR, glasses or edge target and no cap blocks gets
  * JUDGE_INSTRUCTIONS itself, and each of those targets adds its note after it, then each cap's note. With MUSE_APP_LOOK
  * (docs/BRAND.md) new builds get the muse-app look, while products built before it keep meta-ui, so the house style
  * sentence names both. Off, that part is JUDGE_INSTRUCTIONS exactly.
@@ -122,6 +129,7 @@ export function judgeInstructions(
     ...(targets.includes("agent") && opts.verifyAgents ? [verifiedAgentRules(brief)] : []),
     ...(targets.includes("vr") ? [VR_JUDGE_NOTE] : []),
     ...(targets.includes("glasses") ? [GLASSES_JUDGE_NOTE] : []),
+    ...(targets.includes("edge") ? [EDGE_JUDGE_NOTE] : []),
   ];
   const base = direction ? withHouseStyle(JUDGE_INSTRUCTIONS, RANGE_HOUSE_STYLE) : opts.museAppLook ? withHouseStyle(JUDGE_INSTRUCTIONS, BOTH_HOUSE_STYLES) : JUDGE_INSTRUCTIONS;
   const text = notes.length ? `${base}\n\n${notes.join("\n\n")}` : base;

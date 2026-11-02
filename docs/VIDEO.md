@@ -2,6 +2,8 @@
 
 **DRAFT until the owners pick the story.** This is the recommended one. Written Nov 2, 2026, on branch tg-submission-kit.
 
+**Revision approved Nov 2:** the owner said yes to O1 and O6 (docs/EDGE_PLAN.md), so the edge act at the end of this file ("Proposed revision: the edge act") is the script to film, and edge and defense is a headline beside frontier. The script just below stays as the fallback. Organizer rule (Discord, Nov 2): the video's opening line must say what existed before the event and what was built this week, so every cut opens with shot 0 as revised below.
+
 Where it came from: this replaces the three-minute table that was in docs/STORY.md and the inspo-first script that was section 2 of docs/SUBMISSION.md. If the owners want the inspo-first story instead, it is at `git show e290545d:docs/SUBMISSION.md`, but fix its "24 of 24 builds went live" line first: that was a local batch that never deployed.
 
 ## The rules for this script
@@ -152,3 +154,120 @@ Drop shot 0 (open on shot 1 and fold "one sentence" into its line), and cut shot
 | 0, 3, 5 (recorded build), 6, 7, 8, 9, 11, 12 | Ethan, or whoever records | Any time once `STORY_PAGES` is on |
 | 1, 2, 4, 5 (tuned app) | Whoever runs the chain | Only during the approved chain run. Otherwise use the fallbacks |
 | 10 | Hussam | 1 to 2 hours, on jetson-02 |
+
+## Proposed revision: the edge act
+
+**Approved by the owner on Nov 2 (O1 and O6 yes, docs/EDGE_PLAN.md).** O1 reverses the Oct 31 line "No Jetson or fleet endpoint in the Nov 4 demo". O6 approves this re-cut. Shots tagged with a unit still wait on that unit's run. Written Nov 2 on branch tg-edge-copy, from the merged edge plan.
+
+What changes:
+- Act 1 runs on the cold-room sentence, if the chain run (O2) happens. Otherwise Act 1 stays as above.
+- Act 2 (Muse Privacy) goes from about 33 s (shots 8 and 9) to about 20 s. Shot 7 stays.
+- Shots 10 and 11 become a Glimmer shot of about 5 s and an edge act of about 30 s. The Glimmer shot stays because the Open Weights prize names Glimmer or Spark Open, not Llama.
+- The 60-second X cut uses E3a.
+
+### More tags
+
+- **[needs M5]**, **[needs M7]**, **[needs M8]**, **[needs M10]**, **[needs M12]**: needs that unit from docs/EDGE_PLAN.md to have run, with a log entry. Each shot has a fallback.
+- The scenario is a simulated cold room with invented readings. Every edge shot carries "Simulated" somewhere on screen. No food-safety advice and nothing about real freezers, in captions or narration.
+
+### Revised timing
+
+| # | Time | Act | Shot | Tag |
+|---|---|---|---|---|
+| 0 | 0:00 to 0:12 | Open | What existed before, what we built this week, then Zuckerberg's line | film now |
+| 1 | 0:12 to 0:22 | 1 | One sentence on the Make page: the cold-room sentence | needs the chain run |
+| 2 | 0:22 to 0:34 | 1 | The plan and the data | needs the chain run |
+| 3 | 0:34 to 0:58 | 1 | The tune and the blind check | film now |
+| 4 | 0:58 to 1:08 | 1 | A file you keep | needs the chain run |
+| 5 | 1:08 to 1:22 | 1 | An app built around it | film now, plus needs the chain run |
+| 6 | 1:22 to 1:32 | 1 | The marks on `/offline` | film now |
+| 7 | 1:32 to 1:44 | 2 | Why some files can't go to a cloud | film now |
+| 8 | 1:44 to 1:56 | 2 | Muse Privacy: tags, not documents, shorter | film now |
+| 9 | 1:56 to 2:04 | 2 | The numbers, both runs, shorter | film now |
+| 10 | 2:04 to 2:09 | 3 | Glimmer on the Jetson, shorter | Hussam films |
+| E1 | 2:09 to 2:17 | 3 | Drills passing on the build screen | needs M5, needs M7 |
+| E2 | 2:17 to 2:23 | 3 | The tune card | needs M8 |
+| E3a | 2:23 to 2:33 | 3 | Cables out, the app still answers | needs M12, Hussam films |
+| E3b | 2:33 to 2:41 | 3 | A reading that doesn't add up | needs M12, Hussam films |
+| 12 | 2:41 to 2:54 | Close | The claim, and its marks | film now |
+
+About 2:54. Shot 11's card ("What that costs") is dropped; its numbers stay in the write-up.
+
+### Revised shots
+
+**0. The opening line (0:00 to 0:12)** [film now]
+
+- Required by the organizers (Discord, Nov 2): the first line says what existed before and what was built this week.
+- Say first: "Before this week, Offline Base had a fleet of Jetson boards and the software that runs them, plus a scaffold of design notes and stubs for Muse Muse. Everything Muse Muse does in this video, we built this week."
+- On screen while it's said: a plain card with two columns, "Before Oct 26" (the Jetson fleet and its control software, the boards' models, a Muse Muse scaffold with no working code) and "Built this week" (Muse Muse, Muse Privacy, the edge track).
+- Then Zuckerberg's line from shot 0 above, as a 4-second title card with no narration over it.
+- Source: README.md, "Before the event"; docs/MESSAGING.md for the quote.
+
+**1. One sentence (0:12 to 0:22)** [needs the chain run]
+
+- Only if O2 is yes and the chain run uses this sentence. Type: "A watcher for my cold room that reads the controller, a second probe, the door, defrost and power, and keeps answering when the cloud is down." Corner label: "Simulated cold room. Test model."
+- Say: as shot 1 above.
+- Fallback: shot 1 as written above, with its own sentence.
+
+**2, for the cold-room run (0:22 to 0:34)** [needs the chain run]
+
+- On screen: the plan, then a few of the 900 training rows scrolling, each marked Simulated.
+- Say: "A Meta model writes the plan. The training rows are simulated cold-room logs our own code wrote, with 100 sealed away that the tune never sees." (Not "a Meta model writes the training data": for this run it doesn't. docs/CHAIN_RUN.md.)
+
+**8, shorter (1:44 to 1:56)** [film now]
+
+- On screen: `/private`, before and after, then a few seconds of the replay, labeled "Recorded replay. A script plays Muse."
+- Say: "Muse Privacy plans with tags like Student A and never gets the documents. Your policy file decides what can leave, and a last check runs on every result."
+
+**9, shorter (1:56 to 2:04)** [film now]
+
+- On screen: shot 9's card, unchanged.
+- Say: "On 300 invented items, no names or identifiers leaked. An earlier run leaked 10 on 200. The device model today is Liquid's."
+
+**10, shorter (2:04 to 2:09)** [Hussam films]
+
+- On screen: 5 seconds of jetson-02 answering one short chat, with shot 10's lower third above, unchanged.
+- Say: "Muse Glimmer, cut to a third of Meta's smallest file, on an 8 GB Jetson."
+
+**E1. Drills passing on the build screen (2:09 to 2:17)** [needs M5] [needs M7]
+
+- On screen: an edge build's room on a preview, the drill step turning green: cloud refused, cloud hangs, both down, tampered reply rejected. Corner label: "Test build on Muse Spark 1.3 Contributor". Caption: "Simulated outage drills".
+- Say: "Every edge build is drilled before it ships. We cut its cloud four ways and check it still answers, or says plainly that it can't."
+- Fallback: M3's drills on the laptop, captioned "Simulated outage drills, on a laptop", and the narration says "is built so every edge build is drilled". If M5 hasn't run, never say "every edge build".
+
+**E2. The tune card (2:17 to 2:23)** [needs M8]
+
+- On screen: the tune result, tuned against base on the 100 held-out invented items, scored by drill-bench. "Llama 3.2 3B. Built with Llama." Caption: "Invented data. Scored by code, not a judge."
+- Say: "Muse Muse tuned a Llama 3.2 3B for this one job, and checked it against the base model on 100 items it never saw."
+- Fill the numbers from docs/BUILD_LOG.md only. If tuned didn't beat base, show both numbers and say so.
+- Fallback: drop E2 and give its 6 seconds to E3a. Label the board model "base" everywhere after it.
+
+**E3a. Cables out (2:23 to 2:33)** [needs M12] [Hussam films]
+
+- On screen: one take, not sped up. The board's Ethernet and Wi-Fi out, the laptop's Wi-Fi off, a terminal where `api.meta.ai` fails. The app answers. Answer label: "Answered on jetson-0X, Llama 3.2 3B (tuned)", or "(base)" at ladder level 3. Lower third: "Simulated cold room. Real board, real unplug."
+- Say: "Now every cable comes out. The same app keeps answering on the Jetson, from the model we tuned for it. N of 5 drills passed, at X tokens a second."
+- N and X come from that take only. Never "works offline" in general, never "private" or "on-device", never that anything survives a power loss. No power cuts on camera.
+- Fallback: the ladder in docs/EDGE_PLAN.md. At level 4, use shot 10 as written above plus a "Simulated outage" card from M3, and say "is built so it keeps answering when the cloud is cut".
+
+**E3b. A reading that doesn't add up (2:33 to 2:41)** [needs M12] [Hussam films]
+
+- On screen: the same take. A spoofed log from M2's demo CSV: the controller reads -18 C while the independent probe reads +9 C and rising. The app flags it, says not to trust the controller, and lists its actions. Lower third, as E3a.
+- Say: "Here the controller says minus 18 and the second probe says plus 9 and climbing. The app doesn't trust the controller, and flags it."
+- Don't read the actions aloud and don't call them advice. Never say it stops hacks or is attack-proof.
+- Fallback: drop E3b and end E3a at 2:41.
+
+**12. Close (2:41 to 2:54)** [film now]
+
+- As shot 12 above. With M12 run, the claim may add: "and this app kept answering on one Jetson with its network unplugged". Keep "is built so" for the rest.
+
+### The 60-second X cut
+
+Shot 1 (or its fallback), E2 if it ran, E3a, then shot 12's URL card. Same labels and lower third.
+
+### Who films the edge act
+
+| Shots | Who | When |
+|---|---|---|
+| E1 | Whoever runs M7 | Tue, during the M7 build on a preview (O4) |
+| E2 | The lead | Tue afternoon, after M8 is logged |
+| 10 (5 s), E3a, E3b | Hussam, with Ethan | Tue 7 to 9 PM (H5): two rehearsals, one take. No addresses, ngrok domain or console in frame |

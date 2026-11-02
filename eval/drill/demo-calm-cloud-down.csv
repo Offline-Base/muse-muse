@@ -1,0 +1,13 @@
+source,record,time,setpoint_c,controller_c,probe_c,door,defrost,power,cloud
+Simulated,40112,14:00,-18.0,-17.8,-18.2,shut,off,on,up
+Simulated,40113,14:05,-18.0,-18.1,-18.5,shut,off,on,up
+Simulated,40114,14:10,-18.0,-18.0,-18.4,shut,off,on,up
+Simulated,40115,14:15,-18.0,-17.8,-18.2,shut,off,on,up
+Simulated,40116,14:20,-18.0,-18.1,-18.5,shut,off,on,up
+Simulated,40117,14:25,-18.0,-18.0,-18.4,shut,off,on,up
+Simulated,40118,14:30,-18.0,-17.8,-18.2,shut,off,on,up
+Simulated,40119,14:35,-18.0,-18.1,-18.5,shut,off,on,up
+Simulated,40120,14:40,-18.0,-18.0,-18.4,shut,off,on,down
+Simulated,40121,14:45,-18.0,-17.8,-18.2,shut,off,on,down
+Simulated,40122,14:50,-18.0,-18.1,-18.5,shut,off,on,down
+Simulated,40123,14:55,-18.0,-18.0,-18.4,shut,off,on,down

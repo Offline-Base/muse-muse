@@ -17,7 +17,7 @@ under `app/api/native/agent/`, the `native_jobs` queue and the sweep. "The platf
 | `native/lab/setup/` | `mac.sh`, `mac-finish.sh`, `mac-checks.sh`, `windows.ps1`, `imds-credentials.sh`, `publish-bundle.sh`, and the LaunchAgent plist |
 | `native/lab/tools/check.mjs` | Runs one real job on a box with a local stand-in for the platform |
 | `native/lab/tools/glasses-check.html` | A small page with the glasses template's contract, for checking `glasses_sim` without a product |
-| `native/lab/iam/` | The instance role's two inline policies, as they are in the account |
+| `native/lab/iam/` | The instance role's two inline policies, with the account id (`000000000000`) and the two instance ids (`i-00000000000000001` for the Mac, `i-00000000000000002` for Windows) as placeholders. The real ones are filled in at apply time (below) |
 
 The agent needs Node 22 and has no npm dependencies. If `@aws-sdk/client-ssm` is installed it reads its token with that,
 and otherwise with the `aws` CLI.
@@ -530,11 +530,15 @@ each reads its own lane, and the other lane's `token-sha256` and `bundle` answer
 `get-parameters`. Don't check this with `iam simulate-principal-policy`: given `ec2:SourceInstanceARN`, it reports a deny even for a
 box reading its own lane, which the real calls and the agents' claims show is wrong. `lab-files` allows reading `lab/bundles/*` and `lab/shells/*` and
 writing `lab/checks/*` in the bucket. Each lane also has `/musemuse/lab/<lane>/token-sha256`, which is the value `native_labs`
-needs. Apply a change to the policies with:
+needs. The files in the repo hold placeholders, not the real account and instance ids, so apply a change by filling them in first:
 
 ```
-aws iam put-role-policy --profile offlinebase --role-name musemuse-lab --policy-name lab-token-read --policy-document file://native/lab/iam/lab-token-read.json
-aws iam put-role-policy --profile offlinebase --role-name musemuse-lab --policy-name lab-files --policy-document file://native/lab/iam/lab-files.json
+ACCOUNT="$(aws sts get-caller-identity --profile offlinebase --query Account --output text)"
+MAC_ID=<the Mac instance id>; WIN_ID=<the Windows instance id>   # from the EC2 console
+fill() { sed -e "s/000000000000/$ACCOUNT/g" -e "s/i-00000000000000001/$MAC_ID/g" -e "s/i-00000000000000002/$WIN_ID/g" "native/lab/iam/$1.json" > "$TMPDIR/$1.json"; }
+fill lab-token-read && fill lab-files
+aws iam put-role-policy --profile offlinebase --role-name musemuse-lab --policy-name lab-token-read --policy-document "file://$TMPDIR/lab-token-read.json"
+aws iam put-role-policy --profile offlinebase --role-name musemuse-lab --policy-name lab-files --policy-document "file://$TMPDIR/lab-files.json"
 ```
 
 **The platform role, `musemuse-platform-native`,** can send only `MuseLab-Control` to the two instances, read command results and

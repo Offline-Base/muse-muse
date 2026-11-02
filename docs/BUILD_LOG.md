@@ -1731,7 +1731,7 @@ Direct runs with native/lab/tools/check.mjs and its local stand-in, from origin/
 ## Nov 1: first real full builds started on a Preview (branch tg-full-builds, results pending)
 
 - Snapshot snap_6VHCNtYcvSoeLpd4uOYI0IQ1kUOj made and recorded in lib/sandbox/snapshots.json, because the template's verify and wording changed. Passed to this Preview only; production's setting is untouched.
-- Preview https://muse-muse-4ohfoi9fy-ethan-6436s-projects.vercel.app (dpl_2DMKBTPMB1KZgTxjmud67vKwYnxa) on commit 431e78b7, with the switches passed at deploy, on Muse Wonder with no TEST_MODEL. NATIVE_EXTENSION is the one ready cap. Without a Vercel login: GET / answered 302 to Vercel sign-in, POST /api/inspirations answered 401.
+- A preview deployment (URL left out, dpl_2DMKBTPMB1KZgTxjmud67vKwYnxa) on commit 431e78b7, with the switches passed at deploy, on Muse Wonder with no TEST_MODEL. NATIVE_EXTENSION is the one ready cap. Without a Vercel login: GET / answered 302 to Vercel sign-in, POST /api/inspirations answered 401.
 - Database: the owner's main database, by the owner's choice. This branch adds no migration, so the deploy changed no tables.
 - Builds, made-up data: detailed note bf7a2e2e-55c2-4238-bdb8-89ce03d7db2f, one-liner b500a0b8-c4e3-4bca-8e65-9d9c07311097. Not waited on, per the owner.
 - Briefs seen in a real run: detailed 21 requirements, 6 screens, flow of 10; one-liner 16 requirements, 10 screens, flow of 10. The scope check ran on both and accepted both, with nothing left uncovered and nothing added by code. It sent the detailed brief back once (18 asks) and the one-liner never (8 asks). Both builds use muse-wonder-1.0. These are the first real brief and scope check calls.
@@ -2470,7 +2470,7 @@ Merged origin/main (#50, #51). The only conflict was this log; both entries kept
 - **Read-only:** no other fleet call is reachable from Wonder. `fleet_ask_model` asks only a model a board reports as loaded, pinned to that board, so it can't make a board load one or send a chat to a combo's cloud model. It picks by model name and never a d1 model, which covers jetson-05 (systemone and a chat model) and naming the Pi. A model that spends its limit thinking and answers nothing now comes back as an error Wonder can read.
 - **Run against the real fleet (Nov 2, through the ngrok address, an admin `jpt_` token):** `fleetBoards` read all 9 boards, 8 online and jetson-01 offline, and the Pi, both Corals and the UNO Q report memory and temperature with the same fields as a Jetson. `fleetAsk` answered from jetson-02 (Glimmer, 4.9 to 5.1 s), jetson-04 (Bolt, 1.1 s) and jetson-05 (LFM3-VL, 1.5 s), each a real reply with finish `stop`. Naming the Pi refused with no chat call, and both Corals and the UNO Q said they have no model loaded. With no board named it picked jetson-02, the first by name with a chat model.
 - **The card, locally:** `next dev` on this branch with a local database and a local admin account, against the real fleet. It listed all 9 boards with real numbers: docs/log/shots/2026-11-02/device-fleet-card.jpg. Refresh, the once-a-minute poll and the 30-minute stop were not watched in a browser.
-- **Not proven:** Wonder's two tools with the real model, since this ran with no `MODEL_API_KEY`, and the route on a Vercel preview. A preview without `PREVIEW_DATABASE_URL` answers 500 at sign-in now (README.md, Preview database), so preview https://muse-muse-f8wu4m4y5-ethan-6436s-projects.vercel.app can't open `/device`.
+- **Not proven:** Wonder's two tools with the real model, since this ran with no `MODEL_API_KEY`, and the route on a Vercel preview. A preview without `PREVIEW_DATABASE_URL` answers 500 at sign-in now (README.md, Preview database), so a preview deployment (URL left out) can't open `/device`.
 - **Found in passing, not changed:** jetson-05's ngrok agent keeps recent requests in memory. Port 4040 on that board held 50 of 50 with raw bodies, counted without reading them, and these carry prompts, photos and bearer tokens. It's loopback only. `inspect_db_size: -1` in ngrok's config is the documented off switch, and it takes a tunnel restart.
 - **Spend:** $0.
 
@@ -2541,3 +2541,46 @@ Merged origin/main (#50, #51). The only conflict was this log; both entries kept
     - Muse Privacy: 130 of 130.
   - The full typecheck is left to CI.
 - **Screenshots:** none yet. Nothing here is deployed, and a local run needs a database. The judge-check report stands in until the merge deploys, then gets rerun.
+
+## Nov 2, 2026: the edge track, built with no spend, and the repo made runnable for judges (branch tg-edge)
+
+- **Why:** the owner said on Nov 2 that edge and local must be pushed nearly as hard as frontier, and that defending infrastructure and being ready for any scenario is a key part of the presentation. The trigger was news that day of suspected attacks on supermarket freezers in Europe (Bloomberg), plus a DC substation outage. A judge panel (three independent plans and a merge, `docs/EDGE_PLAN.md`) picked a simulated cold-room watcher. It is built on Meta's cloud models and tuned on Llama 3.2 3B, and the same app keeps answering on a Jetson with its cables out.
+- **Owner decisions, Nov 2:**
+  - Approved: $25 for the chain run on the cold-room sentence, a backup tune (now a free Kaggle notebook in place of $10 on Lambda), and $5 of preview-only test builds.
+  - The edge act goes in the video, and the tuned GGUF gets a public Hugging Face repo.
+  - Not approved: Llama as the board default.
+  - Pulling the house uplink for the take, only if Hussam agrees.
+  - The Lambda key was rotated.
+- **Built, all behind `EDGE_ENABLED` and `EDGE_BUILDS` (off), none of it run on a board or in a real sandbox:**
+  - **Fallback (M1):** `template/lib/meta/edge.ts`'s `respondJsonOrEdge` asks the cloud first, held to 10 s, then an OpenAI-compatible model on a board, checked against the schema with zod. Every answer carries a fixed label ("Answered on <board>, <model>"). The review stopped it falling back around a cloud 4xx, so a refused prompt or a spent budget is never routed around. The muse-edge skill teaches Muse Code to use it.
+  - **Drill kit (M3):** a fake edge server, a blackhole gateway and four drills: cloud refused, cloud hung, both down, and a tampered reply rejected. The review made the cloud drills prove the product tried the cloud first.
+  - **Edge target (M4) and drill step (M5):** an "edge" target, and the four drills after verify in every edge build, each counted as a check, so a failed drill can't show as working.
+  - **Board kit (M6):** `scripts/edge/build-arm64.sh` and `docs/EDGE_DEMO.md`.
+  - **Drill data (M2):** `scripts/dev/drill-bench.py` writes 900 training, 50 dev and 100 sealed simulated cold-room windows by code, so there's no rights question. Sealed sha256 `52b23493...`. It also scores with a hard rule: never trust the controller when the independent probe disagrees.
+  - **Measured base (M14):** Llama 3.2 3B joined `MEASURED` in `lib/train/bases.ts`.
+  - **Copy (M13):** `docs/EDGE_PLAN.md`, the edge act in `docs/VIDEO.md`, checked news facts and new Don't-say lines in `docs/MESSAGING.md`.
+- **Run on this laptop, no keys, loopback only:**
+  - `npm run drill`: 4 of 4 simulated drills passed in about 12 s against a bundled demo product. A mutation test (schema check removed) made drill 4 fail.
+  - `npm run drill-bench`: 3 of 3 checks. The reference scores 100%, and canned "always normal" answers score 13% with 12 of 12 hard-rule breaks flagged.
+- **Judges can run the repo:** organizers said on Nov 2 that judges work from the video and the public repo and may run it with their own keys. A clean-clone test found three problems:
+  - A Meta key alone can't make a product: the Sandbox needs Vercel too.
+  - The judge paid for the brief before the build failed.
+  - Docker had never been built.
+
+  Fixed:
+  - The README's npm path comes first, with Node 22.22.3 or newer, and a Judge path table gives each goal's needs and cost.
+  - `checkBuildAllowed` refuses with 503 `no_model_key` or `no_sandbox` before any paid step, with a banner on Make. Production passes through `VERCEL=1`. The review added the same check to the Rebuild-all route.
+  - The AWS account id, EC2 ids, Vercel team slug and home folder paths were scrubbed from the tree. They are still in git history: the fresh public repo plan is in `~/mm-wt/_plan/public-repo/`, outside the repo.
+- **Free GPU tune:** `notebooks/edge-tune-kaggle.ipynb` does a QLoRA of Llama 3.2 3B on one free T4, scores tuned against base on the sealed set, and exports a Q4_K_M GGUF with its sha256. Not run on a GPU. The review fixed both T4s being used through DataParallel, an unpinned torch, a license check that could ship the wrong file, and the board-side prompt (serve with `llama-server --jinja`).
+- **Chain run:** `docs/CHAIN_RUN.md` gives the steps for the $25 run.
+  - Reading the code found that a folder run in the Make chat trained Glimmer r30b whatever base was picked: `startFolderRun` never saved it. Fixed here, with a test.
+  - The site can't keep a GGUF made from folder rows (`ownerRowsProblem`), so the GGUF comes from the notebook or `quant-harness.ts`.
+  - No Llama job has ever launched through the site.
+- **Submission:** `docs/SUBMISSION.md` follows the real form fields with ready answers, including the Most Viral X post.
+- **Labels for work from before the event:** organizers said on Nov 2 that the submitted repo must hold only work done during the event, that anything pre-existing must be labeled, and that the video's first line must say what existed before.
+  - Checked: the repo was created Oct 29, and no commit predates kickoff.
+  - The README now has "Before the event, and not in this repo": `jetson-infra` (Sep 29), the boards' models, Base Drive (June) and the Meta docs mirror. It sits beside the labeled scaffold.
+  - `docs/VIDEO.md`'s shot 0 now opens with that line.
+- **Also:** `lib/__tests__/no-wonder.test.ts` now explains the edge helper's generated copy. `docs/HANDOFF.md`'s scope uses `$VERCEL_SCOPE`.
+- **Open:** native/lab `check.test.mjs` "gguf_emu" fails, not touched here and not in CI.
+- **Spend:** $0.
