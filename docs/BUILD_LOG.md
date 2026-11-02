@@ -2018,3 +2018,24 @@ Behind a new flag, off by default. Design and limits are in docs/BUILD_RANGE.md.
 ## Nov 1: Media tab removed
 
 Owner asked. Took Media out of the sidebar in components/shell/nav.ts. The /media page stays at its address and nothing else links to it. Touched test only: nav.test.tsx.
+
+## Nov 1: Builds and products on Contributor, a short plan, chat in products
+
+Branch tg-build-tools. Owner asked for all builds on Contributor, a much shorter plan, and products that can use the Muse Spark API.
+
+- **Correction to the Nov 1 Preview note above:** the two Previews that ran Wonder had no TEST_MODEL on their deployments. The claim that p48u0s8jy had it on the command line is wrong, and it doesn't lack or have it because of PACKAGER_SNAPSHOT_ID. No code bug explains it. After a deploy, read the env names back and then buildModel.
+- **Fix, build steps:** tool fixtures, platform keys and every Muse Code session now follow the switch (buildTestModel, BUILDS_ON_CONTRIBUTOR). lib/__tests__/build-models.test.ts fails if a step names its own model.
+- **Fix, changes:** a change to a product whose session ran on Wonder moves to Contributor in a new session, since reasoning records belong to their model. Its prompt tells it to read the product first. A restore runs no model and keeps its session.
+- **Decision, runtime:** a live token gets runtime:contributor only with the flag on, a brief to check, nothing personal and the notice in its code. Products published before keep Wonder, since they show no notice. With the flag off the marker does nothing.
+- **Safeguard:** runtimeStaysOffContributor keeps these on Wonder: an agent's personal tools or owner connection, the owner's keys or sends through connect, drive or board tools, and gadgets. Meta's terms (6.2) bar personal information on Contributor. Gadgets and board tools go beyond the request, because they carry a person's camera, microphone or files.
+- **Notice:** both template footers show "This product runs on a model Meta may train on. Don't enter personal or sensitive information." with MUSE_CONTRIBUTOR_NOTICE=1. The Privacy page says the same.
+- **Ability gap:** audio input isn't listed for Contributor, so a call with input_audio stays on Wonder and says so in x-musemuse-note. Vision is listed for Contributor. Muse Image, SAM and Voice are their own models and are unaffected. Tuning, the tuning judge and the device ask route aren't builds and were left alone.
+- **Denied:** pulling production env to measure web search, vision and audio on Contributor directly was refused by a permission check. Not worked around, so these three aren't measured directly.
+- **Fix, plan:** the card shows its name, tagline and at most four short lines. "See the full plan" folds the whole brief. Brief data is unchanged. Shots: docs/log/shots/plan-concise-{before,after}-{390,1280}.png, rendered from the real component and CSS with a made-up brief.
+- **Chat in products:** template/lib/meta/chat.ts, the meta-chat skill, and a catalog line offered only with BUILDS_ON_CONTRIBUTOR or platform on, so flags-off prompts stay byte for byte.
+- **Builder route:** startProduct(pass, noteWithChatbot(note, purpose)). A child is a normal build with its own metered token, so no key goes in source. Sandboxes return files with no link, and keys are short-lived, so neither is the lasting route. Owner only, guests still refused.
+- **Decision:** CAP_READY.platform is now true. PLATFORM_POWERS stays off by default.
+- **Snapshot:** snap_Dy4CjpILCMOBnaJ28Skzswys7CJ4, recorded with 18 overlays including platform.
+- **Tests:** tsc clean. Touched tests 395 of 398. The 3 failures (flags-off round caps, two workflow cap messages) also fail on main at a3c2fe6a, as does the build-steps scenario suite (mock lacks collectDeployFiles).
+- **Preview:** muse-muse-nbb9ow0a2, env names read back with the switches present.
+- **Measured:** build 3823ec1d, a note asking for a vibe coding studio whose apps have chatbots: buildModel read back muse-spark-1.3-contributor, the brief has a platform block with publish, gateway and sandboxes, and lists Wonder. Cost at brief $0.0034.
