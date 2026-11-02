@@ -113,5 +113,22 @@ class TheSet(unittest.TestCase):
         self.assertEqual(score.mcnemar(a, a)["p"], 1.0)
 
 
+class TrainRows(unittest.TestCase):
+    def test_targets_hold_no_private_detail_and_phones_stay_in_range(self):
+        import make_train
+        import re
+        red, sh = make_train.rows()
+        words = {w.lower() for w in make_train.FIRST} | {p.lower() for n in make_train.LAST for p in n.split("-")}
+        for prompt, target in red:
+            self.assertFalse(set(re.findall(r"[a-z]+", target.lower())) & words, target)
+            self.assertNotRegex(target, r"555\D{0,3}01|@|example")
+            self.assertTrue(target.count("["), target)
+        for prompt, target in red + sh:
+            for digits in re.findall(r"555-01(\d\d)", prompt):
+                self.assertLess(int(digits), 50)
+        for prompt, target in sh:
+            self.assertNotRegex(target, r"555-01")
+
+
 if __name__ == "__main__":
     unittest.main()

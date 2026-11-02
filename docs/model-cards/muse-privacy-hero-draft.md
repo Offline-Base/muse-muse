@@ -24,16 +24,15 @@ A fine-tune for two jobs, on made-up data: redacting private details from short 
 | Redaction passed, of 60 | TBD | TBD | TBD | TBD |
 | Spreadsheet right, of 40 | TBD | TBD | TBD | TBD |
 | Unfinished | TBD | TBD | TBD | TBD |
-| Judge, on Contributor | TBD | TBD | TBD | TBD |
 
 ## Limits
 
 - **It can miss a private item. Check its output before sharing it.** Don't rely on it alone for anything that matters.
 - Every test and training row is invented. Nothing here was measured on real documents, real records or real people.
 - The sealed set was written by the same person who set the training categories, so it shares their shape. Documents are short, at most about 250 tokens. Scanned or long files, and other languages, are untested.
-- Judge scores came from Muse Spark 1.3 Contributor and don't compare with runs judged by Muse Wonder. The leak count is checked by code.
+- Scored by code only, with no model judge, so these numbers don't compare with judged runs.
 - Scores come from a rented GPU unless a board's result is linked here. x86 under a memory limit isn't a Jetson. Speed, memory and heat on a real board: TBD.
-- Training rows were written through Meta's Model API on Contributor. Model API Terms 10.1(ix) bar training a competing model on Outputs and systematically collecting them for datasets. Whether that applies here is unsettled and nobody has read it legally.
+- Training rows came from templates written in code, with no model involved, in the same categories as the test. A good score may say less about documents unlike these.
 
 ## Run it
 
@@ -45,11 +44,11 @@ Apache 2.0 from the base, plus the Muse Model License, as a Derivative of Muse S
 
 ## The upload step, for the owner, not done
 
-Only after the legal question above is answered:
+Only when the owner decides:
 
 ```bash
 hf repo create OfflineBase/Muse-Glimmer-30B-Private-Docs-IQ1_S-GGUF --private --repo-type model
 hf upload OfflineBase/Muse-Glimmer-30B-Private-Docs-IQ1_S-GGUF ./out . --private
 ```
 
-`./out` holds the GGUF, `tuned.jinja`, this card as `README.md`, and the four license files. Keep it private until someone has read 10.1(ix).
+`./out` holds the GGUF, `tuned.jinja`, this card as `README.md`, and the four license files.

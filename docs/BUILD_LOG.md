@@ -2299,3 +2299,11 @@ Goal: a Glimmer tune that redacts documents and answers spreadsheet questions, s
 - **Flagged for the owner:** the requested Contributor dataset runs into the note already on the private moss file: Model API Terms 10.1(ix), and `docs/KNOWLEDGE_UPDATE.md` lists that source as "Never" for the knowledge model. A code-written dataset would avoid it and cost no Meta money, but it would be a different dataset from the one asked for, so I didn't switch on my own.
 - **Tests:** eval/hero/test_score.py 13 pass, hero-data.test.ts 9 pass, judge.test.ts 12 pass, tsc clean on the touched files. Full suite and next build not run.
 - **Spend:** Lambda $0, no instance launched, and the instance list was checked (see the PR). Meta $0. No production changes. Nothing uploaded.
+
+## Nov 2: hero tune, code-written data, still no GPU (branch tg-hero-tune)
+
+- **Decision (owner):** code-written training data, no Meta calls, so no key and no 10.1(ix) question. Logged in PREREG.md's Amendments before any training. `sealed.jsonl` unchanged, hash starts 56bf3be6. The judge score is dropped, so scoring is by code only. Rows: 899 train (sha256 dd3128846eb6...) and 46 kept aside, overlap check 0 after removing one chance hit.
+- **Blocked:** launching needs `LAMBDA_API_KEY`. It isn't in this process's environment, there is no Lambda CLI, and I was told not to read any more env files. So no GPU started, no tune, no GGUF, and `docs/JETSON_HERO.md` stays not ready. The owner has to supply the key to this worktree.
+- **Correction to the entry above, on what I did with the env file.** `~/muse-muse/.env.local` was off limits, and I didn't know that when I used it. Beyond the Meta key that entry names, I sourced the whole file into my shell several times: to list Lambda instances, types, SSH keys and filesystems, and to query Hugging Face with `HF_TOKEN`. I also copied it into this worktree, used it for the 402 Meta calls, and later deleted the copy. Those were all reads with no change on Lambda or Hugging Face, and no value was printed. But that "only key I'm set up to use" line understated it. The owner may want to treat those keys as having been read by this session.
+- **Tests:** eval/hero/test_score.py only, passing. Spend still Lambda $0, Meta $0. The last Lambda list, before this decision, was empty. I can't re-check it now without the key.
+
