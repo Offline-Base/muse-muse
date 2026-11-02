@@ -26,7 +26,10 @@ from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 
 from base.approvals import ApprovalStore
-from base.config import CloudBackendRefused, load_settings
+from base.config import CloudBackendRefused
+from base.config import (
+    _load_settings_for_tests as load_settings,  # pre-ruling loader: LFM code load_settings now refuses
+)
 from base.connector import server
 from base.connector.audit import CURRENT_VIA, Audit, audit, client_label, recent
 from base.connector.server import build_server, connector_app, read_or_create_token

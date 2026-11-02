@@ -69,8 +69,10 @@ def test_env_example_loads_as_a_dotenv():
     """Copying .env.example to .env must give working settings."""
     example = read_dotenv(Path(__file__).resolve().parent.parent / ".env.example")
     s = load_settings({**example, "BASE_HOME": "/tmp/base-example-home"})
-    assert s.device == "laptop" and s.device_only and s.primary_model == "lfm" and s.checker_backend == "lfm"
-    assert s.dreaming_backend == "rules"  # the policy decides, as the reports measure
+    # Since the Nov 2 ruling: Muse Glimmer 30B on OpenRouter for every step, invented data only.
+    assert s.device == "laptop" and not s.device_only and s.primary_model == "glimmer" and s.checker_backend == "glimmer"
+    assert s.is_cloud_backend and s.answer_model == "meta/muse-glimmer-30b"
+    assert s.dreaming_backend == "prompt"  # Glimmer is the router, as final_cloud measured
 
 
 def test_marker_above_the_workspace_root_does_not_count(tmp_path):
@@ -126,3 +128,94 @@ def test_router_reasoning_and_token_budget(tmp_path):
                 {"ROUTER_MAX_TOKENS": "lots"}, {"ROUTER_MAX_TOKENS": "10"}, {"ROUTER_MAX_TOKENS": "99999"}):  # fmt: skip
         with pytest.raises(ValueError, match="ROUTER_"):
             load_settings({"BASE_HOME": str(tmp_path), **bad})
+
+
+# The organizers' ruling, Nov 2, 2026: every model Muse Privacy calls must be a Meta model.
+
+
+@pytest.mark.parametrize(
+    "env, named",
+    [
+        ({"CHECKER_BACKEND": "lfm"}, "CHECKER_BACKEND=lfm"),
+        ({"PRIMARY_MODEL": "lfm"}, "PRIMARY_MODEL=lfm"),
+        ({"PRIMARY_MODEL": "LFM", "CHECKER_BACKEND": "lfm"}, "PRIMARY_MODEL=lfm"),
+        ({"DEVICE_ONLY": "1", "PRIMARY_MODEL": "lfm", "CHECKER_BACKEND": "lfm"}, "LFM3-VL-2B"),
+        ({"SEARCH_EMBEDDINGS": "1"}, "EmbeddingGemma"),
+        ({"PROMPT_GUARD": "1"}, "Llama Prompt Guard"),
+        ({"JETSON_LFM_BASE": "https://gateway.example.org/v1"}, "JETSON_LFM_BASE"),
+        ({"JETSON_LFM_API_KEY": "gw-key"}, "JETSON_LFM_API_KEY"),
+        ({"JETSON_LFM_MODEL": "hf.co/LiquidAI/LFM3-1.7B-GGUF:Q4_K_M"}, "LFM3-1.7B"),
+    ],
+)
+def test_non_meta_models_are_refused_with_the_ruling(tmp_path, env, named):
+    from base.config import NonMetaModelRefused
+
+    with pytest.raises(NonMetaModelRefused) as err:
+        load_settings({"BASE_HOME": str(tmp_path), **env})
+    message = str(err.value)
+    assert named in message and "Nov 2, 2026" in message and "Meta model" in message
+    assert "gw-key" not in message  # a refusal never prints a value
+
+
+def test_a_refused_setting_in_dotenv_is_refused_too(tmp_path, monkeypatch):
+    from base import config
+
+    (tmp_path / ".env").write_text("CHECKER_BACKEND=lfm\n")
+    monkeypatch.setattr(config, "REPO_ROOT", tmp_path)
+    with pytest.raises(config.NonMetaModelRefused):
+        config.load_settings({"BASE_HOME": str(tmp_path / "home")})
+
+
+@pytest.mark.parametrize(
+    "env",
+    [
+        {"SEARCH_EMBEDDINGS": "0", "PROMPT_GUARD": "0", "JETSON_LFM_BASE": "", "JETSON_LFM_API_KEY": ""},
+        {"CHECKER_BACKEND": "glimmer", "PRIMARY_MODEL": "glimmer"},
+    ],
+)
+def test_the_off_values_still_load(tmp_path, env):
+    s = load_settings({"BASE_HOME": str(tmp_path), **env})
+    assert s.checker_backend == s.primary_model == "glimmer"
+    assert not (s.search_embeddings or s.prompt_guard or s.has_jetson_lfm)
+
+
+def test_defaults_are_meta_models_only(tmp_path):
+    s = load_settings({"BASE_HOME": str(tmp_path)})
+    assert s.primary_model == s.checker_backend == "glimmer"
+    assert s.answer_model == s.router_model == "meta/muse-glimmer-30b"
+    assert not (s.search_embeddings or s.prompt_guard or s.has_jetson_lfm or s.device_only)
+
+
+def test_device_only_now_needs_glimmer_on_this_device(tmp_path):
+    with pytest.raises(ValueError, match="Muse Glimmer on llama-server on this device"):
+        load_settings({"BASE_HOME": str(tmp_path), "DEVICE_ONLY": "1"})
+    s = load_settings({"BASE_HOME": str(tmp_path), "DEVICE_ONLY": "1", "GLIMMER_BACKEND": "llama_server"})
+    assert s.device_only and s.primary_model == s.checker_backend == "glimmer" and not s.is_cloud_backend
+    assert s.answer_url == s.router_url  # one copy of the model on a laptop
+
+
+def test_labels_from_glimmer_is_refused_with_a_plain_reason(tmp_path):
+    with pytest.raises(ValueError, match="already labels"):
+        load_settings({"BASE_HOME": str(tmp_path), "LABELS_BACKEND": "glimmer"})
+
+
+def test_the_example_env_loads_on_meta_models_only(tmp_path, monkeypatch):
+    from base import config
+
+    monkeypatch.setattr(config, "REPO_ROOT", tmp_path)  # no .env from this checkout
+    values = read_dotenv(Path(__file__).resolve().parent.parent / ".env.example")
+    assert values["DEVICE_ONLY"] == "0" and values["CHECKER_BACKEND"] == "glimmer"
+    assert values["GLIMMER_BACKEND"] == "openrouter" and values["GLIMMER_MODEL"] == "meta/muse-glimmer-30b"
+    s = config.load_settings(values | {"BASE_HOME": str(tmp_path / "home")})
+    assert s.is_cloud_backend and s.primary_model == s.checker_backend == "glimmer"
+
+
+def test_the_unchecked_loader_is_used_only_by_tests():
+    root = Path(__file__).resolve().parent.parent
+    users = [
+        p.relative_to(root).as_posix()
+        for folder in ("base", "scripts", "eval", "deploy", "sidecars")
+        for p in (root / folder).rglob("*.py")
+        if "_load_settings_for_tests" in p.read_text(encoding="utf-8")
+    ]
+    assert users == ["base/config.py"]

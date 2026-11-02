@@ -58,7 +58,7 @@ class Row:
 
 def client(url: str, key: str, reasoning: str = "on") -> LocalLLM:
     settings = load_settings({"GLIMMER_REASONING": reasoning, "DEVICE_ONLY": "1", "PRIMARY_MODEL": "glimmer", "GLIMMER_BACKEND": "llama_server",
-                              "CHECKER_BACKEND": "lfm", "ROUTER_URL": url, "ANSWER_URL": url, "LLAMA_API_KEY": key})  # fmt: skip
+                              "CHECKER_BACKEND": "glimmer", "ROUTER_URL": url, "ANSWER_URL": url, "LLAMA_API_KEY": key})  # fmt: skip
     return LocalLLM(replace(settings, router_url=url.rstrip("/")), "router")
 
 

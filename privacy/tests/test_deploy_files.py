@@ -253,6 +253,20 @@ def test_start_needs_gguf(tmp_path):
 
 
 @pytest.mark.skipif(not (REPO / ".venv" / "bin" / "python").exists(), reason="needs the uv virtualenv")
+def test_start_refuses_lfm_with_the_ruling(tmp_path):
+    """Nov 2 ruling: start.sh loads settings through load_settings, so an LFM checker never starts."""
+    r = run_start(tmp_path, BASE_DEVICE="laptop", GLIMMER_BACKEND="openrouter", CHECKER_BACKEND="lfm")
+    assert r.returncode != 0 and "not a Meta model" in r.stderr
+
+
+def test_the_checker_and_embedder_scripts_refuse_to_start():
+    """Nov 2 ruling: LFM3-VL-2B and EmbeddingGemma 2 are not Meta models; each script stops at once."""
+    for name in ("start_checker.sh", "start_embedder.sh"):
+        r = subprocess.run(["bash", str(REPO / "scripts" / name)], capture_output=True, text=True, timeout=10)
+        assert r.returncode == 1 and "not a Meta model" in r.stderr and "Nov 2, 2026" in r.stderr, name
+
+
+@pytest.mark.skipif(not (REPO / ".venv" / "bin" / "python").exists(), reason="needs the uv virtualenv")
 def test_start_refuses_lan_bind_on_laptop(tmp_path):
     r = run_start(tmp_path, BASE_DEVICE="laptop", GLIMMER_BACKEND="openrouter", APPROVAL_HOST="192.0.2.11")
     assert r.returncode != 0 and "127.0.0.1" in r.stderr
@@ -293,7 +307,7 @@ def glimmer_start(tmp_path, **knobs):
     fake.chmod(0o755)
     (tmp_path / "model.gguf").write_bytes(b"GGUF")
     env = {"BASE_DEVICE": "laptop", "DEVICE_ONLY": "1", "PRIMARY_MODEL": "glimmer", "GLIMMER_BACKEND": "llama_server",
-           "CHECKER_BACKEND": "lfm", "LLAMA_SERVER_BIN": str(fake), "GLIMMER_GGUF": str(tmp_path / "model.gguf"),
+           "CHECKER_BACKEND": "glimmer", "LLAMA_SERVER_BIN": str(fake), "GLIMMER_GGUF": str(tmp_path / "model.gguf"),
            "ANSWER_URL": "http://127.0.0.1:8081/v1", "ROUTER_URL": "http://127.0.0.1:8081/v1", "ANSWER_CTX": "4096",
            "WORKSPACE_ROOT": str(tmp_path), "SEARCH_EMBEDDINGS": "0", "RELAY_URL": "", "GLIMMER_DRAFT_GGUF": "",
            "GLIMMER_DRAFT_N": "", "GLIMMER_FA": "", "GLIMMER_REASONING_BUDGET": "", **knobs}  # fmt: skip

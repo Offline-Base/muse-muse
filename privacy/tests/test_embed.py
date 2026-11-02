@@ -8,7 +8,9 @@ import httpx
 import pytest
 import respx
 
-from base.config import load_settings
+from base.config import (
+    _load_settings_for_tests as load_settings,  # pre-ruling loader: LFM code load_settings now refuses
+)
 from base.workspace.embed import Embedder, EmbedError
 
 EMBED = "http://127.0.0.1:8084/v1"

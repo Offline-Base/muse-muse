@@ -23,7 +23,10 @@ import httpx
 from mcp import Client
 
 from base import guard
-from base.config import REPO_ROOT, load_settings
+from base.config import REPO_ROOT
+from base.config import (
+    _load_settings_for_tests as load_settings,  # pre-ruling loader: LFM code load_settings now refuses
+)
 from base.connector.server import build_server
 from base.services import Services
 
