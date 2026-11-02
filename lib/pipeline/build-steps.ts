@@ -21,7 +21,7 @@ import { buildTestModel, contributorBuildsOn, env } from "@/lib/env";
 import { addBuildCost, emit, setBuildStatus } from "@/lib/events";
 import { buildTokenBudgetFor } from "@/lib/gateway/policy";
 import { mintToken, revokeLiveTokensExcept, revokeTokens } from "@/lib/gateway/tokens";
-import { judgeBuild, pickScreenshots } from "@/lib/judge";
+import { judgeBuild, MAX_CHAIN_SCREENSHOTS, pickScreenshots } from "@/lib/judge";
 import { APP_NAV_COMPONENT, FULL_PRODUCT_SKILL } from "@/lib/full/prompts";
 import { briefRequirements, buildableRequirements, fullMilestones, requirementsFile, unmetLines } from "@/lib/full/requirements";
 import { scopeLine } from "@/lib/full/scope";
@@ -1006,7 +1006,7 @@ export async function collectVerifyStep(input: {
   outputTail: string;
 }): Promise<VerifyResult> {
   "use step";
-  const { summary, screenshots } = await sandbox.collectVerifyResult({ ...input, ...(env.fullBuilds ? { maxScreenshots: 24 } : {}) });
+  const { summary, screenshots } = await sandbox.collectVerifyResult({ ...input, ...(env.fullBuilds ? { maxScreenshots: MAX_CHAIN_SCREENSHOTS + 2 } : {}) });
   await emit(input.buildId, { type: "verify", round: input.round, summary, screenshots });
   // A product with platform services: each fixed check as its own line in the build room (docs/CAPABILITIES.md, 2.8).
   for (const c of summary.caps ?? []) {
