@@ -355,7 +355,25 @@ export interface EvalSummary {
   ties: number;
   avgBaseScore: number;
   avgTunedScore: number;
-  /** What judging cost on Meta's API. */
+  /** What judging cost on Meta's API, the general checks included when there are any. */
+  judgeCostUsd: number;
+  /**
+   * The fixed general-ability and safety checks (TUNE_GENERAL_CHECKS, lib/train/general-checks.ts), judged the same way
+   * but kept out of the task's numbers above. Absent for a job that didn't answer them.
+   */
+  general?: EvalCheckSummary;
+  safety?: EvalCheckSummary;
+}
+
+/** One check set's results: like the task's, plus how many of its prompts the job sent to be judged. */
+export interface EvalCheckSummary {
+  items: number;
+  asked: number;
+  tunedWins: number;
+  baseWins: number;
+  ties: number;
+  avgBaseScore: number;
+  avgTunedScore: number;
   judgeCostUsd: number;
 }
 

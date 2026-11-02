@@ -580,6 +580,33 @@ describe("training steps", { skip: canMock ? false : "needs --experimental-test-
       assert.equal(jobJson(input.userData).cacheDir, "/lambda/nfs/muse-muse-cache-us-west-1");
     });
 
+    it("puts the general checks in job.json only with TUNE_GENERAL_CHECKS on, and only for a glimmer-lora chat job", async () => {
+      const lora = { recipe: "glimmer-lora" as const, instanceName: "mm-train-1234abcd-glimmer-lora", params: { datasetId: "ds-1" } };
+      const sentChecks = async (over: Partial<TrainJobRow>, flag: string | undefined) => {
+        if (flag === undefined) delete process.env.TUNE_GENERAL_CHECKS;
+        else process.env.TUNE_GENERAL_CHECKS = flag;
+        calls = [];
+        listing = [];
+        job = row(over);
+        await steps.launchStep(JOB_ID);
+        const sent = jobJson((called("launchInstance")[0]!.args[0] as LaunchInput).userData) as { checks?: Array<{ set: string; index: number; prompt: string }> };
+        return sent.checks;
+      };
+      try {
+        assert.equal(await sentChecks(lora, undefined), undefined, "off by default: job.json has no checks key");
+        assert.equal(await sentChecks(lora, "0"), undefined);
+        const checks = (await sentChecks(lora, "1"))!;
+        assert.equal(checks.filter((c) => c.set === "general").length, 20);
+        assert.equal(checks.filter((c) => c.set === "safety").length, 20);
+        assert.deepEqual([checks[0]!.index, checks[20]!.index], [9000, 9500]);
+        assert.ok(checks.every((c) => c.prompt.trim()));
+        assert.equal(await sentChecks({ ...lora, params: { datasetId: "ds-1", mode: "decide" } }, "1"), undefined, "never for decide mode");
+        assert.equal(await sentChecks({}, "1"), undefined, "never for another recipe");
+      } finally {
+        delete process.env.TUNE_GENERAL_CHECKS;
+      }
+    });
+
     it("stamps the runner's deadline before the launch, so it is never after launchedAt plus maxMinutes", async () => {
       const before = Date.now();
       let sentAt = 0;

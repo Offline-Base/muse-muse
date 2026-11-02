@@ -4,7 +4,8 @@
  *
  *   trainJob: launch (idempotent; save the instance if the database didn't take it) -> check every 30 s until
  *             decideCheck says terminate, or maxMinutes + 15 minutes pass -> terminate
- *             -> for a job that succeeded with eval items: judge them, 4 at a time, then save the eval summary
+ *             -> for a job that succeeded with eval items: judge them, 4 at a time, then any general checks it sent
+ *                (TUNE_GENERAL_CHECKS, lib/train/general-checks.ts) the same way, then save the eval summary
  *                (a decide job, input mode "decide", is scored instead, after any ending: scoreDecisionStep in
  *                ./decide-steps.ts, docs/DECISION_MODELS.md "Scoring")
  *             -> publish to the Hugging Face Hub: a judged glimmer-lora job whose adapter files are on the Hub, the
@@ -41,7 +42,7 @@ import {
   hubStoryStep,
 } from "@/lib/train/hub-steps";
 import { judgePlanStep, judgeStep, saveEvalSummaryStep } from "@/lib/train/judge";
-import { DECIDE_MODE, POLL_MS, type JobMode, type JudgedItem } from "@/lib/train/logic";
+import { DECIDE_MODE, POLL_MS, type JobMode, type JudgedChecks, type JudgedItem } from "@/lib/train/logic";
 import { abandonStep, checkStep, launchStep, saveLaunchStep, terminateStep, type TrainEnding } from "@/lib/train/steps";
 import type { TrainCheck, TrainStatus } from "@/lib/train/types";
 
@@ -106,21 +107,37 @@ async function terminate(jobId: string, ending: TrainEnding, instanceId: string 
   }
 }
 
+/** Judges `indexes` under `task`, JUDGE_CONCURRENCY at a time. An item whose judge step fails is left out. */
+async function judgeAll(jobId: string, indexes: number[], task: string | null): Promise<JudgedItem[]> {
+  const judged: JudgedItem[] = [];
+  for (let i = 0; i < indexes.length; i += JUDGE_CONCURRENCY) {
+    const group = indexes.slice(i, i + JUDGE_CONCURRENCY);
+    const verdicts = await Promise.all(group.map((index) => judgeStep(jobId, index, task).catch(() => null)));
+    for (const verdict of verdicts) if (verdict) judged.push(verdict);
+  }
+  return judged;
+}
+
 /**
- * Judges the job's eval items with JUDGE_MODEL (Muse Wonder), JUDGE_CONCURRENCY at a time, then saves the eval summary.
- * An item whose judge step fails is left out of the summary. Never throws.
+ * Judges the job's eval items with JUDGE_MODEL (Muse Wonder), JUDGE_CONCURRENCY at a time, then the general checks the
+ * plan found (only for a job that sent them), each set under its own task line, then saves the eval summary. An item
+ * whose judge step fails is left out of the summary. Never throws.
  */
 async function judge(jobId: string): Promise<void> {
   try {
     const plan = await judgePlanStep(jobId);
     if (!plan.indexes.length) return;
-    const judged: JudgedItem[] = [];
-    for (let i = 0; i < plan.indexes.length; i += JUDGE_CONCURRENCY) {
-      const group = plan.indexes.slice(i, i + JUDGE_CONCURRENCY);
-      const verdicts = await Promise.all(group.map((index) => judgeStep(jobId, index, plan.task).catch(() => null)));
-      for (const verdict of verdicts) if (verdict) judged.push(verdict);
+    const judged = await judgeAll(jobId, plan.indexes, plan.task);
+    if (!plan.checks) {
+      await saveEvalSummaryStep(jobId, judged, plan.indexes.length);
+      return;
     }
-    await saveEvalSummaryStep(jobId, judged, plan.indexes.length);
+    const checks: { general?: JudgedChecks; safety?: JudgedChecks } = {};
+    for (const set of ["general", "safety"] as const) {
+      const c = plan.checks[set];
+      if (c?.indexes.length) checks[set] = { items: await judgeAll(jobId, c.indexes, c.task), asked: c.indexes.length };
+    }
+    await saveEvalSummaryStep(jobId, judged, plan.indexes.length, checks);
   } catch {
     // Judging is an extra: the instance is already terminated and the job's status is settled.
   }
