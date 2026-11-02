@@ -34,7 +34,7 @@ describe("RequirementsChecklist", () => {
   it("counts what was seen working while nothing failed", () => {
     const html = text(renderToStaticMarkup(<RequirementsChecklist items={items} />));
     assert.match(html, /1 of 2 checked and working/);
-    assert.match(html, /R1: Adds a cake order Works/);
+    assert.match(html, /R1: Adds a cake order \(Works\)/, "a ticked box, said to screen readers");
   });
 
   it("puts the failure first and shows no Works while a check failed", () => {

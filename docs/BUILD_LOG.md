@@ -2727,3 +2727,14 @@ The owner asked for a simpler sidebar using "muse" and "musing" for the creative
     - no page errors.
   - The first shot had the X over his face, so it moved above his head.
   - Typecheck clean. Spend $0.
+- **Later, same branch: "What you asked for" drawn as Muse Code's todo card (owner: "this to do list is what should be shown where you see what you asked for").**
+  - `components/build/RequirementsChecklist.tsx` now uses the todo card's markup and styles: a box per requirement and the count beside the title.
+  - What each line shows:
+    - checked and working: a ticked box;
+    - not met: a red box with an X and "Not met";
+    - can't be done: struck through;
+    - looked right but other checks failed: the box stays empty, with the amber words;
+    - not checked yet: an empty box.
+  - "Works" and "Not checked yet" are said only to screen readers; the rule that nothing reads "Works" next to a failed check is unchanged.
+  - Same component in the build room and on the product page.
+  - Rendered with sample requirements in light and dark and looked at. requirements-checklist 4 of 4, typecheck clean.

@@ -3114,6 +3114,30 @@ pre {
   text-decoration: line-through;
 }
 
+/* What you asked for (components/build/RequirementsChecklist.tsx), drawn as the todo card. */
+.todo-state {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.todo-detail {
+  display: block;
+  font-size: 13px;
+}
+
+.todo-unmet .todo-box {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+
+.todo-unmet .todo-state {
+  color: var(--bad);
+}
+
+.todo-held .todo-state {
+  color: var(--warn-text);
+}
+
 .thinking > summary {
   cursor: pointer;
   padding: 2px 0;

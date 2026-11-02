@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { Icon } from "@/components/icons";
 import type { RequirementResult, RequirementState } from "@/lib/full/requirements";
 
@@ -30,15 +31,20 @@ export function checksFailed(status: string | null | undefined, checks: readonly
  * FULL_BUILDS: the person's list, one line for each requirement, in the build room and on the product page. Shows only
  * what was seen in a real run: nothing reads "Works" until its test passed and the judge saw it on screen, and nothing
  * reads "Works" or "checked and working" while `failed` (checksFailed) says a check failed.
+ *
+ * Drawn as the same card as Muse Code's todo list (components/build/session.tsx, owner, Nov 2): a box per line, ticked
+ * once it's checked and working, with the count beside the title. "Works" (the ticked box) and "Not checked yet" (the
+ * empty box) are said only to screen readers; every other state is also written beside the line.
  */
 export function RequirementsChecklist({ items, title = "What you asked for", failed = false }: { items: RequirementResult[]; title?: string; failed?: boolean }) {
+  const headingId = useId();
   if (!items.length) return null;
   const counted = items.filter((r) => r.state !== "cant");
   const met = counted.filter((r) => r.state === "met").length;
   return (
-    <div className="requirements">
-      <p className="lead">
-        <strong>{title}</strong>{" "}
+    <section className="todo-card requirements" aria-labelledby={headingId}>
+      <div className="todo-head">
+        <h3 id={headingId}>{title}</h3>
         {failed ? (
           <span className="muted">Checks found problems, so none of these count as working yet</span>
         ) : (
@@ -46,20 +52,26 @@ export function RequirementsChecklist({ items, title = "What you asked for", fai
             {met} of {counted.length} checked and working
           </span>
         )}
-      </p>
-      <ul className="vsteps">
+      </div>
+      <ul className="todos">
         {items.map((r) => {
           const shownMet = r.state === "met" && !failed;
+          const tone = shownMet ? "completed" : r.state === "unmet" ? "unmet" : r.state === "cant" ? "cancelled" : r.state === "met" ? "held" : "pending";
+          const words = r.state === "met" && failed ? MET_BUT_FAILED : WORDS[r.state];
           return (
-            <li key={r.id} className={shownMet ? "ok" : r.state === "unmet" ? "bad" : undefined}>
-              {shownMet || r.state === "unmet" ? <Icon name={shownMet ? "check" : "close"} size={16} title={WORDS[r.state]} /> : null}
-              <span className="vstep-name">{r.id}: {r.text}</span>
-              <span className="muted"> {r.state === "met" && failed ? MET_BUT_FAILED : WORDS[r.state]}</span>
-              {r.detail ? <span className="vstep-detail muted"> {r.detail}</span> : null}
+            <li key={r.id} className={`todo todo-${tone}`}>
+              <span className="todo-box" aria-hidden>
+                {shownMet ? <Icon name="check" size={12} /> : r.state === "unmet" ? <Icon name="close" size={12} /> : null}
+              </span>
+              <span className="todo-text">
+                {r.id}: {r.text}
+                {r.state === "unchecked" || shownMet ? <span className="sr-only"> ({words})</span> : <span className="todo-state"> {words}</span>}
+                {r.detail ? <span className="todo-detail muted"> {r.detail}</span> : null}
+              </span>
             </li>
           );
         })}
       </ul>
-    </div>
+    </section>
   );
 }
