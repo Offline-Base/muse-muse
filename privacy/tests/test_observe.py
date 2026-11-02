@@ -75,7 +75,7 @@ def fake_blocked_topics(text, never_share):
 GUARD = SimpleNamespace(tag=fake_tag, leaks=fake_leaks, blocked_topics=fake_blocked_topics)
 
 
-def build(tmp_path: Path, name: str, candidate: dict | None):
+def build(tmp_path: Path, name: str, candidate: dict | None, **extra):
     home = tmp_path / name
     home.mkdir()
     settings = SimpleNamespace(device_only=True, dreaming_backend="rules", home=home)
@@ -84,15 +84,15 @@ def build(tmp_path: Path, name: str, candidate: dict | None):
     services = SimpleNamespace(
         roster="ROSTER", tagmap="TAGMAP", policy=policy, router=Router(settings, None, policy, rules_text=""),
         approvals=store, answer_llm=None, audit=None, settings=settings,
-        observed_policy=UserPolicy.from_dict(candidate) if candidate is not None else None,
+        observed_policy=UserPolicy.from_dict(candidate) if candidate is not None else None, **extra,
     )
     return Egress(services, guard=GUARD), services
 
 
 def release_all(egress):
     out = []
-    for request, raw, kind, topics in CASES:
-        r = egress.release("get_result", request, raw, kind, topics=topics, item_id=raw[:8])
+    for i, (request, raw, kind, topics) in enumerate(CASES):
+        r = egress.release("get_result", request, raw, kind, topics=topics, item_id=f"item{i}")
         out.append((r.status, r.text, r.decision.decision, r.decision.code, list(r.decision.floors), r.approval_id))
     return out
 
@@ -168,8 +168,27 @@ def test_an_observe_line_holds_no_text(runs):
         assert value not in log
     assert set(json.loads(log.splitlines()[0])) == {
         "ts", "tool", "item_id", "result_kind", "candidate", "enforced", "enforced_code", "current_rules",
-        "current_code", "candidate_decision", "candidate_code", "change", "would_block", "would_allow", "path",
+        "current_code", "candidate_decision", "candidate_code", "change", "would_block", "would_allow",
+        "later_checks", "path",
     }
+
+
+def test_a_result_a_later_check_held_is_never_counted_as_would_allow(tmp_path):
+    """Prompt Guard (or a toggle) holds a result after the router and would hold it under the
+    candidate too, so the loose candidate's rules-path share is not logged as would_allow."""
+    flagged = SimpleNamespace(floors=["prompt_attack:request"], flagged_sources=[], request_flagged=True)
+    scanner = SimpleNamespace(check=lambda sources, request: flagged)
+    plain, plain_services = build(tmp_path, "pg_enforce", None, prompt_guard=scanner)
+    watched, services = build(tmp_path, "pg_loose", LOOSE, prompt_guard=scanner)
+    try:
+        assert release_all(watched) == release_all(plain)
+        lines = observe.read_log(services.settings.home / observe.LOG_NAME)
+        assert len(lines) == len(CASES) and all(x["later_checks"] for x in lines)
+        assert not any(x["would_allow"] for x in lines)
+        assert [x["candidate_decision"] for x in lines][:5] == ["share_tagged"] * 5  # what the rules path says
+    finally:
+        plain_services.approvals.close()
+        services.approvals.close()
 
 
 def test_a_broken_observe_step_changes_nothing(tmp_path, runs):

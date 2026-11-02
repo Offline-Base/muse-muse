@@ -100,9 +100,13 @@ def change(before: str, after: str) -> str:
 
 def line(
     *, tool: str, item_id: str | None, result_kind: str, enforced: RouteDecision, current: RouteDecision,
-    candidate: RouteDecision, candidate_name: str,
+    candidate: RouteDecision, candidate_name: str, later_checks: bool = False,
 ) -> dict[str, Any]:
-    """One observe line: kinds, decisions and fixed codes, never text."""
+    """One observe line: kinds, decisions and fixed codes, never text.
+
+    `later_checks`: egress's own checks after the router (a privacy toggle, Prompt Guard, SAM, the
+    summary) were on or changed the enforced decision. They only tighten, and the candidate's
+    rules-path decision does not include them, so such a line never counts as would_allow."""
     return {
         "ts": int(time.time()),
         "tool": tool,
@@ -119,7 +123,8 @@ def line(
         # the candidate keeps it on the device where the enforced decision let it out or asked
         "would_block": candidate.decision == "refuse" and enforced.decision != "refuse",
         # the candidate would let out what the enforced decision kept or asked about (not done here)
-        "would_allow": candidate.decision in SHARED and enforced.decision not in SHARED,
+        "would_allow": candidate.decision in SHARED and enforced.decision not in SHARED and not later_checks,
+        "later_checks": bool(later_checks),
         "path": "rules",
     }
 

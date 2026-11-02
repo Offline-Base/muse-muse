@@ -23,7 +23,7 @@ What has run (Nov 2, Simulated, invented data, no model). The eval teacher's pol
 
 ## 2. Observe: `mode: observe` and `OBSERVE_POLICY`
 
-A policy file may say `mode: observe` (the default, and the only mode `USER_POLICY` accepts, is `enforce`). Set `OBSERVE_POLICY` to such a file and, for each result egress releases, the device works out what that candidate would decide and appends one line to `BASE_HOME/observe.jsonl`: the enforced decision, what the current policy decides on the rules path, what the candidate decides, their reason codes, whether the change is stricter or looser, and whether the candidate would block or allow what the enforced decision did not. `base/observe.py` `totals()` counts a log. Unset, nothing is loaded and nothing is written.
+A policy file may say `mode: observe` (the default, and the only mode `USER_POLICY` accepts, is `enforce`). Set `OBSERVE_POLICY` to such a file and, for each result egress releases, the device works out what that candidate would decide and appends one line to `BASE_HOME/observe.jsonl`: the enforced decision, what the current policy decides on the rules path, what the candidate decides, their reason codes, whether the change is stricter or looser, and whether the candidate would block or allow what the enforced decision did not. `later_checks` marks a line where egress's own checks after the router (a privacy toggle, Prompt Guard, SAM, the summary) were on or changed the enforced decision; those checks would hold the candidate's result too, so such a line never counts as would_allow. `base/observe.py` `totals()` counts a log. Unset, nothing is loaded and nothing is written.
 
 How it is built so it cannot loosen anything:
 
@@ -41,6 +41,7 @@ The intended rollout: simulate on saved items, then observe on real use for a wh
 - **Rules path only.** Both tools decide in code (the policy, learned rules and floors). If the device routes with a model (`ROUTER_TRUST=decide` or tighten, or not device-only), its live decisions can differ; observe's lines compare the two policies on the rules path and also record what was enforced.
 - **The name pass finds nothing in simulate.** That is the worst case for leaks, which the guard and the final check must still catch; it is not how the device behaves with a model up.
 - **Not every hold is covered.** Results egress holds on its own (a privacy toggle without device-only, a failed name, topic or summary check) get no observe line. Simulate runs with the toggles off and answers no approval card, so it says nothing about what happens after the user taps Share.
+- **The observe log is not purged.** BASE_HOME/observe.jsonl holds no text, but it keeps a time, a tool and decisions for every result, and the retention toggles (base/retention.py) do not delete it. Delete it by hand when the trial ends.
 - **Saved items, not a saved egress log.** Simulate reads JSONL items in the eval format. The device's decision log keeps only tagged text, never the raw result, so replaying it would route already-tagged text rather than what the device saw; that import is not built.
 - **Sealed sets are refused** (`eval/splits/fresh_200_c.jsonl` and the pool it is drawn from), as in `scripts/replay_null_names.py`.
 - The numbers above are from invented items and two invented policies. They describe those files, not any real teacher's use.
