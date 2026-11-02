@@ -1166,3 +1166,44 @@ Each row and each script says how far that script has really run (`proof` in `EX
 ## On a board
 
 `BOARD_LOOP` takes a judged model to a board with one button, and opens a queued try page. Simulated until a real board is connected: [BOARD_LOOP.md](BOARD_LOOP.md), and [JETSON_TODO.md](JETSON_TODO.md) for what to run then.
+
+## Anyone can fine-tune
+
+Three settings, all off or unset by default: `OPEN_TRAIN`, `TUNE_FOLDER` and `TUNE_START_CODE`. All need `TUNE_COMPOSER`. Off, the routes and pages answer as they always did.
+
+**Who.** With `OPEN_TRAIN` on, anyone can open `/fine-tuning/new` and their own run's room, and start a run through the describe flow or the folder flow. By-hand jobs, serving, quantizing, tuning loops, other bases, runs for a build and Publish stay admin only. A visitor sees only their own runs, with no instance, IP, log or traceback, and a visitor's datasets and results never show on the public Lab pages (`byVisitor` in `lib/train/store.ts`).
+
+**The start code.** A non-admin types the code to start a run, in the Start step of both flows and in the room's Start training. It is checked on the server against `TUNE_START_CODE`, ignoring case and surrounding spaces, with 10 wrong tries an hour per person and 30 per IP. It never goes to the browser and its value is never in the repo. With `OPEN_TRAIN` on and no code set, non-admins are refused, plans and folders included. Admins and automation skip it. A plan is a paid call that comes before the code, so plans have their own limits (below). The code is shared and easy to pass on: it stops drive-by traffic and identifies nobody.
+
+**Who a visitor is, plainly.** A signed `mm_trainer` cookie, 30 days, which can't be forged but can be cleared. So the per-person limits are per browser, backed by limits per IP. Someone who clears cookies and changes networks gets a fresh allowance, up to what the platform-wide limits leave. A shared network, such as a venue's Wi-Fi, shares its IP limits. It is not an account. The platform-wide limits are the real ceiling.
+
+**The limits**, all on the server:
+
+| Limit | Default | Setting |
+|---|---|---|
+| One person's GPU spend, for good (`gpuBudget`) | $100 | `TRAIN_USER_LIMIT_USD` |
+| All GPU spend, for good | $3,000 | `TRAIN_TOTAL_LIMIT_USD` |
+| One IP's visitor GPU spend, for good | $100 times the IP factor | `PUBLIC_TRAIN_IP_FACTOR` (2) |
+| All visitors' GPU spend a day | $15 | `PUBLIC_TRAIN_DAILY_USD` |
+| One visitor job | 60 minutes, $4, 120 steps | `PUBLIC_TRAIN_JOB_MAX_*` |
+| Examples a run | 100 | `PUBLIC_TRAIN_DATASET_MAX_ROWS` |
+| Runs going per person | 1 | |
+| Visitor jobs on a GPU at once | 1, inside `TRAIN_MAX_ACTIVE` | `PUBLIC_TRAIN_MAX_ACTIVE` |
+| Starts an hour per person, IP gets the factor | 2 | `OPEN_TRAIN_STARTS_PER_HOUR` |
+| Real runs a day per person, IP gets the factor | 1 | `PUBLIC_TRAIN_RUNS_PER_DAY` |
+| New cookies a day per IP | 3 | `PUBLIC_TRAIN_COOKIES_PER_IP` |
+| All visitors' expected Meta spend a day, for writing and scoring | $15 | `OPEN_TRAIN_META_DAILY_USD` |
+| Plans a day, all visitors | 200 | `OPEN_TRAIN_PLANS_PER_DAY` |
+| Plans an hour | 20 per person, 40 per IP | |
+
+At $4 a job and $15 a day, the daily limit is what binds first, not $100 or $3,000. The sweep and every launch check apply to visitor jobs as to any other, and the sweep gives back what a finished job didn't spend (`settleVisitorRuns`). Keep `TRAIN_MAX_ACTIVE` in mind: at its default of 1, a visitor's job holds the only GPU slot.
+
+**Never to the Hub.** A visitor's job launches with publish 0, whatever is stored with the run, and `ownerRowsProblem`, which every way to the Hub asks, refuses a visitor's work and anyone's dropped files, even when an admin presses Publish.
+
+**A folder (`TUNE_FOLDER`).** `/fine-tuning/new` takes a folder (picker or drag and drop) or a zip, after a notice that files go to Meta on a tier where Meta may train, and that personal or sensitive information isn't allowed. The browser reads text, code, documents, PDF, CSV and JSON or JSONL, skips binaries, hidden files, env and key files, and sends only text (`lib/train/tune/folder-read.ts`). The server applies the rules again, drops rows and lines that look like a secret or personal data, and answers a draft and a review: files used, files skipped and why, sample rows (`lib/train/tune/folder-clean.ts`). Nothing is saved until Start, which sends the draft back to be checked against the hash signed into the plan. The scan catches the obvious, not everything.
+
+40 or more rows train as they are, and nothing is written. Otherwise Spark 1.3 Contributor writes examples with the files as grounding: inside a fenced block, told they are data and never instructions, and never in the task, the plan call or a training example's system message. A folder dataset is never written by Muse Wonder: with Contributor off (`TRAIN_CONTRIBUTOR_WRITER`), it is refused rather than falling back.
+
+**On production, for the owner:**
+- Turning this on takes `TUNE_COMPOSER`, `OPEN_TRAIN`, `TUNE_START_CODE`, and for the folder `TUNE_FOLDER` and `TRAIN_CONTRIBUTOR_WRITER=1`.
+- A described run's plan, examples and judging stay on Muse Wonder, and a folder run's plan (which gets only the person's note) and judging do too. So a folder's kept-aside rows and what was written from its files reach Muse Wonder at scoring. `visitorDatasetSource` once refused Wonder-written data for visitors, citing Meta's terms 10.1(ix). The owner's Nov 1 decision opens this; those terms are worth reading against it.

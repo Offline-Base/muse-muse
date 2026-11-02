@@ -553,7 +553,43 @@ export const env = {
    * requireAdminOrAutomation, no cookie is ever minted, and nothing else anywhere changes.
    */
   get publicTraining(): boolean {
-    return flag("PUBLIC_TRAINING");
+    return flag("PUBLIC_TRAINING") || env.openTrain;
+  },
+  /**
+   * OPEN_TRAIN: "1", "true", "yes" or "on" lets anyone open the fine-tuning pages and start a run through the describe and
+   * folder flows, under the visitor limits below and TUNE_START_CODE. It turns PUBLIC_TRAINING's visitor identity on too.
+   * By-hand jobs, serving, quantizing, loops and other bases stay admin only. Off by default: those routes and pages stay
+   * admin only and nothing else anywhere changes.
+   */
+  get openTrain(): boolean {
+    return flag("OPEN_TRAIN");
+  },
+  /**
+   * TUNE_START_CODE: what a non-admin types to start a run, compared ignoring case and surrounding spaces. Never sent to
+   * the browser. Unset with OPEN_TRAIN on: non-admins are refused. It keeps out drive-by traffic and identifies nobody.
+   */
+  get tuneStartCode(): string | null {
+    return optional("TUNE_START_CODE");
+  },
+  /**
+   * TUNE_FOLDER: "1", "true", "yes" or "on" lets /fine-tuning/new take a folder or a zip (lib/train/tune/folder.ts). Rows
+   * become the dataset; anything else is what Spark 1.3 Contributor writes examples from. It needs TUNE_COMPOSER, and
+   * OPEN_TRAIN for non-admins. Off by default: POST /api/train/folder answers 404 and the page offers nothing new.
+   */
+  get tuneFolder(): boolean {
+    return flag("TUNE_FOLDER");
+  },
+  /** Runs one visitor may start per hour. One IP gets PUBLIC_TRAIN_IP_FACTOR times this. */
+  get openTrainStartsPerHour(): number {
+    return wholeCount("OPEN_TRAIN_STARTS_PER_HOUR", 2);
+  },
+  /** Plans every visitor together may draft per UTC day: each is one paid Meta call, before any code is asked for. */
+  get openTrainPlansPerDay(): number {
+    return wholeCount("OPEN_TRAIN_PLANS_PER_DAY", 200);
+  },
+  /** What every visitor's examples and scoring may be expected to cost on Meta per UTC day, in USD. 0 pauses new runs. */
+  get openTrainMetaDailyUsd(): number {
+    return dollars("OPEN_TRAIN_META_DAILY_USD", 15);
   },
   /**
    * PUBLIC_DATASETS: the owner's switch for visitors having Muse Wonder write their datasets. Off, and nothing reads it
