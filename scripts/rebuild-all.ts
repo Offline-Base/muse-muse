@@ -1,14 +1,18 @@
 /**
- * Rebuilds Meta's demo videos (catalog/meta-resources.json) unattended, then prints the pitch headline.
+ * Builds Muse Muse's versions of Meta's lessons (catalog/meta-resources.json, shown on /learn) unattended, then prints
+ * a table and a total.
  *
- *   npm run rebuild-all                 every catalog item without a live or partial product yet
+ *   npm run rebuild-all                 every catalog item without a live or partial product yet, except lessons
+ *                                       marked autoBuild false, which wait on the owner's spend decision
  *   npm run rebuild-all -- <id> <id>    exactly these catalog ids
  *   npm run rebuild-all -- --targets=phone,desktop <id>    these also run there, if their flags are on at PLATFORM_URL
+ *
+ * Every lesson is marked autoBuild false today, so name the ids to build them.
  *
  * Starts the batch through POST /api/rebuilds at PLATFORM_URL with the AUTOMATION_SECRET bearer (acting as the first
  * ADMIN_EMAILS user, who must have signed in once or opened a preview once while it had OPEN_ACCESS=admin), polls each
  * build every 20 s until all are finished, and prints a table plus
- * "N of M rebuilt in X for $Y".
+ * "N of M built in X for $Y" with a pointer to /learn.
  */
 import { env } from "@/lib/env";
 import { catalogItem, itemTitle } from "@/lib/pipeline/catalog";
@@ -76,7 +80,7 @@ async function main(): Promise<void> {
     if (!catalogItem(id)) throw new Error(`${id} isn't in catalog/meta-resources.json.`);
   }
 
-  console.log(`Starting rebuilds at ${base} ...`);
+  console.log(`Starting builds for Learn at ${base} ...`);
   const res = await fetch(`${base}/api/rebuilds`, {
     method: "POST",
     headers: { "content-type": "application/json", ...automationHeaders() },
@@ -85,7 +89,9 @@ async function main(): Promise<void> {
   if (!res.ok) throw new Error(`POST /api/rebuilds failed (${res.status}): ${await res.text()}`);
   const { started } = (await res.json()) as { started: Array<{ id: string; buildId: string }> };
   if (!started.length) {
-    console.log("Nothing to rebuild: every catalog item already has a live or partial product, or a build running.");
+    console.log(
+      "Nothing to build: every catalog item already has a live or partial product or a build running, or waits for its id (autoBuild false). Name the lesson ids to build them.",
+    );
     return;
   }
 
@@ -104,7 +110,7 @@ async function main(): Promise<void> {
       error: null,
     };
   });
-  console.log(`Started ${rows.length} rebuilds. Checking every ${POLL_MS / 1000} s.`);
+  console.log(`Started ${rows.length} builds. Checking every ${POLL_MS / 1000} s.`);
 
   const done = (r: Tracked) => TERMINAL_STATUSES.includes(r.status as BuildStatus);
   while (rows.some((r) => !done(r)) && Date.now() - batchStartedAt < GIVE_UP_MS) {
@@ -142,8 +148,9 @@ async function main(): Promise<void> {
   const cost = rows.reduce((sum, r) => sum + r.costUsd, 0);
   const unfinished = rows.filter((r) => !done(r)).length;
   console.log(
-    `\n${shipped.length} of ${rows.length} rebuilt in ${formatDuration(Date.now() - batchStartedAt)} for $${cost.toFixed(2)}`,
+    `\n${shipped.length} of ${rows.length} built in ${formatDuration(Date.now() - batchStartedAt)} for $${cost.toFixed(2)}`,
   );
+  console.log(`See them on ${base}/learn. A lesson stays planned until someone checks the build against it.`);
   if (partial) console.log(`(${partial} shipped as partial, with their limits in the build notes)`);
   if (unfinished) console.log(`(${unfinished} still running after ${formatDuration(GIVE_UP_MS)}; check them in the build room)`);
 }

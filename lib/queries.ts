@@ -7,7 +7,8 @@ import { db, schema } from "@/lib/db/client";
 import { databaseUrl } from "@/lib/db/url";
 import { env } from "@/lib/env";
 import { newestPerRebuild, parseManifest } from "@/lib/format";
-import type { Brief, BuildEvent, MuseLogLine, RebuildFit } from "@/lib/types";
+import { VERDICT_LABEL, lessonHref } from "@/lib/learn";
+import type { Brief, BuildEvent, MuseLogLine, RebuildFit, RebuildTarget } from "@/lib/types";
 import type {
   BuildSummary,
   BuildView,
@@ -135,9 +136,19 @@ function toInspirationView(i: InspirationRow): InspirationView {
 export function rebuildRef(id: string | null | undefined): RebuildRef | null {
   if (!id) return null;
   const video = resources.videos.find((v) => v.id === id);
-  if (video) return { id, title: video.title, url: video.url, fit: video.rebuild.fit as RebuildFit };
+  if (video) {
+    const { current, verdict } = video as RebuildTarget;
+    return {
+      id,
+      title: video.title,
+      url: video.url,
+      fit: video.rebuild.fit as RebuildFit,
+      learnHref: lessonHref(id),
+      verdict: current && verdict ? { label: VERDICT_LABEL[verdict], product: current.product } : null,
+    };
+  }
   const missing = resources.missing.find((m) => m.id === id);
-  if (missing) return { id, title: missing.note, url: resources.source, fit: null };
+  if (missing) return { id, title: missing.note, url: resources.source, fit: null, learnHref: null, verdict: null };
   return null;
 }
 

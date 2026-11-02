@@ -130,7 +130,7 @@ Everything else in this repo, and its whole git history, was written from Oct 26
 
 A refinement such as "add a dark mode" resumes the same session in the same sandbox, then checks and ships again. If its checks fail, the live version stays.
 
-The showcase is a batch run, `npm run rebuild-all`, that rebuilds Meta's Llama-era demo videos on current Muse models from `catalog/meta-resources.json`. That is six videos from Meta's Videos page plus first demos for SAM 3.1, Muse Image, Voice Transcribe and Muse Wonder.
+The showcase is a batch run, `npm run rebuild-all`, that rebuilds Meta's Llama-era demo videos on current Muse models from `catalog/meta-resources.json`. It held the first six videos on Meta's Videos page plus first demos for SAM 3.1, Muse Image, Voice Transcribe and Muse Wonder. On Nov 2, 2026 all 30 of Meta's videos were audited: the catalog now feeds the Learn page (/learn), the audit found the six versions wrong or partly wrong, and every improved plan waits on the owner's spend decision (autoBuild false).
 
 ## Results from the Oct 27 test runs
 
@@ -143,7 +143,7 @@ The showcase is a batch run, `npm run rebuild-all`, that rebuilds Meta's Llama-e
 
 The platform is laid out like another tab in Meta's Model API dashboard. The layout was measured from screenshots of Meta's pages ([docs/UI_PATTERNS.md](docs/UI_PATTERNS.md)).
 
-- **Sidebar.** Dashboard; Make, Builds, Rebuilds, Gallery; Usage, Models, Fine-tuning, Gadgets; How it works and Model API docs.
+- **Sidebar.** Dashboard; Make, Builds, Learn, Gallery; Usage, Models, Fine-tuning, Gadgets; How it works and Model API docs.
 - **Make** follows Meta's Image playground: example cards, a composer that is the muse box, and a right panel that shows the build setup (model, builder, fix rounds, judge, demo video, publish, connector) as disabled controls.
 - **Build room** follows the Chat playground. The muse is the user turn. The brief, Muse Code's log, the check results and the shipped result are assistant turns, each ending with a time, tokens and cost line. The right panel has a step rail (Brief, Provision, Build, Preview, Check, Record, Deploy), the Muse Code session id, fix rounds, running cost, links and the live preview.
 - **Dashboard** leads with "Use your products in Muse": tabs for the Muse app, Claude Code and cURL, a tab per published product, and its connector in a copy box. Below it are Requests, Input tokens, Output tokens, Products and Spend (est.).
@@ -251,7 +251,7 @@ app/                        Platform UI and API routes (Next.js App Router)
   b/[buildId]/              Build room
   p/[slug]/                 Product page
   gallery/                  Shipped products
-  rebuilds/                 Meta's videos and their rebuilds
+  learn/                    Meta's lessons, Muse Muse's version of each and the plan (/rebuilds redirects here)
   dashboard/                Connectors, requests, tokens and spend
   usage/                    Meta tokens driven, spend and builds
   fine-tuning/              The lab: datasets, jobs and judged results
@@ -279,7 +279,7 @@ lib/
   train/                    Lambda client, training workflow, sweep, recipes, datasets, judge
   db/schema.ts              Postgres schema (Drizzle)
 catalog/meta-models.json    Every Meta model, endpoint, limit and price we know of
-catalog/meta-resources.json Meta's demo videos, each with a rebuild plan
+catalog/meta-resources.json Meta's 30 lessons, each with its audit verdict and plan
 drizzle/                    SQL migrations
 docs/                       Design, spikes, UI patterns, training, build plan, submission
 scripts/                    dev-local, migrate, make-builder-snapshot, rebuild-all, rerecord-demos, promote-local

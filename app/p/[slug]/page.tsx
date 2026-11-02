@@ -23,7 +23,7 @@ import { JobsPanel } from "@/components/jobs/JobsPanel";
 import { AddClip, RemoveClip } from "@/components/product/OwnerClips";
 import { StatusControl } from "@/components/product/StatusControl";
 import { EmptyCard, ExternalLink, NotConnected, StatusPill } from "@/components/ui";
-import { FIT_LABEL, compact, connectorActions, modelLabel, plural, relativeTime, statusLabel, truncate, usd } from "@/lib/format";
+import { compact, connectorActions, modelLabel, plural, relativeTime, statusLabel, truncate, usd } from "@/lib/format";
 import { canActAsOwner } from "@/lib/auth";
 import { canEditProduct } from "@/lib/edit-pass";
 import type { Brief } from "@/lib/brief/schema";
@@ -243,10 +243,21 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
           <h2 id="muse-title">The muse</h2>
           {rebuild ? (
             <p className="rebuild-tag">
-              <Icon name="rebuild" size={16} />
-              <span>Rebuild of Meta&apos;s video</span>
-              <ExternalLink href={rebuild.url}>{truncate(rebuild.title, 80)}</ExternalLink>
-              {rebuild.fit ? <span className="pill pill-neutral">{FIT_LABEL[rebuild.fit]}</span> : null}
+              <Icon name="cap" size={16} />
+              {rebuild.learnHref ? (
+                <>
+                  <span>Made for Meta&apos;s lesson</span>
+                  <ExternalLink href={rebuild.url}>{truncate(rebuild.title, 80)}</ExternalLink>
+                  {rebuild.verdict?.product === product.slug ? (
+                    <span className="pill pill-neutral">{rebuild.verdict.label}</span>
+                  ) : (
+                    <span className="pill pill-neutral">Not checked against the lesson yet</span>
+                  )}
+                  <Link href={rebuild.learnHref}>See it on Learn</Link>
+                </>
+              ) : (
+                <span>First demo: {truncate(rebuild.title, 80)}</span>
+              )}
             </p>
           ) : null}
           {inspiration?.references.length ? (
@@ -405,7 +416,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
               ) : null}
               {rebuild ? (
                 <li>
-                  <ExternalLink href={rebuild.url}>Meta&apos;s original video</ExternalLink>
+                  <ExternalLink href={rebuild.url}>{rebuild.learnHref ? "Meta's lesson" : "Meta's Videos page"}</ExternalLink>
                 </li>
               ) : null}
             </ul>

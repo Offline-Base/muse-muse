@@ -2584,3 +2584,27 @@ Merged origin/main (#50, #51). The only conflict was this log; both entries kept
 - **Also:** `lib/__tests__/no-wonder.test.ts` now explains the edge helper's generated copy. `docs/HANDOFF.md`'s scope uses `$VERCEL_SCOPE`.
 - **Open:** native/lab `check.test.mjs` "gguf_emu" fails, not touched here and not in CI.
 - **Spend:** $0.
+
+## Nov 2, 2026: Rebuilds become Learn, after an audit of all 30 of Meta's lessons (branch tg-learn)
+
+- **Why:** the owner said the rebuilds weren't all correct, and that they belong under Learn, improved, sourced from Meta's AI videos page (dev.meta.ai/resources/videos).
+- **Audit:** one agent per lesson read Meta's page, the linked notebook, repo or video, our catalog entry and the live rebuild. GET requests only, $0.
+  - Meta lists 30 lessons. The catalog had covered only the first page of 6, so 24 were never listed.
+  - Of our 6, 2 were wrong because each skipped the lesson's main technique:
+    - The image-extraction lesson is about fine-tuning, and ours did no fine-tuning.
+    - "Fine-Tuning in the Real World" is about data preparation with synthetic-data-kit.
+  - The other 4 were partly wrong: paraphrased titles, and a RAG lesson rebuilt with no retrieval.
+- **Built:**
+  - `/learn` with a "Learn" nav item; `/rebuilds` redirects there.
+  - One card per lesson: Meta's exact title, presenter, date and link, what it teaches, our version's honest status (the audit's verdict), and an improved plan marked planned.
+  - A wrong rebuild is never shown as the lesson's answer.
+  - Product pages and build rooms now say "Made for Meta's lesson", show the audit's verdict and link to `/learn#lesson-<id>`.
+  - The admin button reads "Build its product" and asks first, with the estimate.
+  - `catalog/meta-resources.json` has corrected entries for all 30.
+- **Review fixes:**
+  - Product tags no longer show a plan's fit as if it had run.
+  - The page falls back to the audit when the database can't be read.
+  - The Llama Stack date (Apr 1, 2025) comes from Meta's listing, because its page 404s. The card says so.
+- **Owner decision:** which lessons to rebuild. The cost table is in the PR. Nothing was built.
+- **Tests:** learn, product page, build render and requested targets pass, 55 of 55. The reviewer's typecheck was clean. Merged with main after #68 with no conflicts.
+- **Spend:** $0.

@@ -297,7 +297,7 @@ Source: BUILD_LOG.md and README.md; item 6, STORY.md and `lib/story/flow.ts`; it
 **Builds** (README.md, BUILD_LOG.md, PROVE_RESULTS.md)
 
 - Oct 27, a local batch: 24 of 24 builds passed their checks, at 3 to 9 minutes and about $0.30 to $1.80 each. Local runs stop before the deploy step, so none of these 24 was deployed.
-- Oct 28, on the live site: 9 of 10 catalog rebuilds went live, including all 6 of Meta's videos, for $24.70 in total. The Muse Wonder first demo failed its smoke test in all 3 fix rounds.
+- Oct 28, on the live site: 9 of 10 catalog rebuilds went live, including all 6 of Meta's videos, for $24.70 in total. The Muse Wonder first demo failed its smoke test in all 3 fix rounds. A Nov 2 audit found that none of those six fully teaches its lesson (2 wrong, 4 partly), so they now sit on the Learn page (/learn) with a plan to redo each, and are not claimed as rebuilds.
 - Oct 28, the Meta look: the same 11 ideas rebuilt on a Meta-style template. Three judges compared each pair blind, and the new builds won 30 of 33 votes, 7.17 against 5.53.
 - Nov 1, on the test model with made-up data: 11 recipes across 8 builds passed their smoke tests and the judge. Previews don't publish, so they have no live link.
 

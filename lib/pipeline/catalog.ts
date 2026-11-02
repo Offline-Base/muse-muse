@@ -21,6 +21,14 @@ export function catalogItems(): CatalogItem[] {
   ];
 }
 
+/**
+ * Whether the no-ids batch (POST /api/rebuilds with no ids, npm run rebuild-all with no ids) may pick this item. Lessons
+ * marked autoBuild false are planned and wait on the owner's spend decision, so they are built only when named by id.
+ */
+export function inDefaultBatch(item: CatalogItem): boolean {
+  return item.kind === "missing" || item.video.autoBuild !== false;
+}
+
 export function catalogItem(id: string): CatalogItem | null {
   return catalogItems().find((item) => itemId(item) === id) ?? null;
 }
@@ -64,7 +72,7 @@ export function rebuildNote(item: CatalogItem): string {
     const v = item.video;
     return [
       sentence(v.rebuild.note),
-      `This rebuilds Meta's video "${v.title}" (${v.url}) on current Muse models.`,
+      `This is Muse Muse's version of Meta's lesson "${v.title}" (${v.url}) on current Muse models, for the Learn section.`,
       `It demonstrates: ${sentence(v.demonstrates)} Plan: ${sentence(v.rebuild.plan)}`,
     ].join("\n\n");
   }
