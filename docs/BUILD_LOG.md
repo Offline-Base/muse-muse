@@ -2388,6 +2388,7 @@ Merged origin/main (#50, #51). The only conflict was this log; both entries kept
 - **Restored:** the training venv and model deleted, Bolt downloaded again with that sha256 checked before it took the file's name, jetson-llama started (healthy in about 50 s), maintenance off, and a chat through the fleet pinned to jetson-04 answered in 1.6 s. Disk is back to 5 GB free. The adapter, answers and log stay in ~/receipt-tune (44 MB). Reports: docs/log/bench/2026-11-02/receipts-llama-tune-*.
 - **Not done:** serving the adapter through `start_model`, which needs a Llama 3.2 1B GGUF on the board, and a second round with more wordings.
 - **Spend:** $0, about 125 of ngrok's monthly requests, and about 9 GB of downloads on jetson-04.
+
 ## Nov 2, 2026: plan checklist in the rooms, after the owner's Meta AI research screenshots (branch tg-room-plan)
 
 - A card that ticks off big steps, in build rooms and model rooms, under BUILD_ROOM_STEPS (builds) and MAKE_CHAT_ALL (model rooms). It reads only the run's own status, and never ticks a step still running or one where a run stopped. Datasets show no training step.
