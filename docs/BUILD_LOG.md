@@ -2827,3 +2827,16 @@ The owner asked for a simpler sidebar using "muse" and "musing" for the creative
   - Since the small-base list no longer has a Llama, `judgedProblem` also refuses an adapter whose base name matches another family's word.
   - Old tests that still expected a small Llama for other devices were brought to the ruling: the Modelfile test, the run page test and the pairing test.
   - Typecheck clean. 594 of 594 tests pass in the files the branch touches, and 47 of 47 in the downstream files.
+- **Nov 2, evening: why the "Cited Steps Agent" build took 33 minutes, and the fix (owner: "why do the builds take so long", "figure out ways to speed that up").**
+  - Read from its build room: the plan, the shared core, the screens and the tests took about 15 minutes, with helper agents writing in parallel.
+  - The other 15 or so went to one loop. The product followed the verified-agent design: receipts for reading a source, recording evidence and reviewing a draft before submitting. That needs at least four model turns per answer.
+  - It was a web research product, so no source text was held in code, and a build's run stops at 6 turns. Its live probes kept ending in `no_answer`.
+  - Muse Code redesigned five times, each with another real Muse Wonder run (a minute or more each, plus retries), while deep research in the agent kit already does exactly what the muse asked: narrow searches, numbered citations, what wasn't found.
+  - Changes (no code paths change):
+    - `lib/recipes/registry.ts`: the brief writer's rule now says the verified-agent recipe is never for research on the web, even with citations and a "couldn't confirm" list. Its one-line catalog text says so too.
+    - `recipe-verified-agent/SKILL.md`: opens with "Not for web research", and counts the turns (at least four per answer, `maxTurns: 6` in a build, read `stopped` before redesigning).
+    - `muse-agent/SKILL.md`: a "Pick the shortest path" section. Web research means `deepResearchResponse` with the couldn't-confirm part asked for in `instructions`, never a home-made planner, citation checker or submit protocol. Probe the route by hand at most twice.
+  - Regenerated `lib/recipes/generated.json`.
+  - The recipe and registry changes ship with the site. The muse-agent skill lives in the builder snapshot (`template/targets/agent`), so it reaches production builds only after `npm run snapshot`.
+  - Tests: recipes and registry 333 of 333, agent option 26 of 26, the template's agent run 119 of 119. Typecheck clean.
+

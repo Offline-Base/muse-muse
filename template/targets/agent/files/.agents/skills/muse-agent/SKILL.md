@@ -9,6 +9,16 @@ A normal web product whose main action is a run: Muse Wonder works in steps, the
 
 `lib/agent/`, `lib/platform/` and `app/api/musemuse/` are platform files. Use them, don't edit them. The parts in `components/agent/` are yours to restyle.
 
+## Pick the shortest path
+
+Most agent products need one helper from `lib/agent/`, not a loop of your own. Decide before writing code:
+
+- **Research on the web** (a question in, a cited answer out, with what couldn't be confirmed): `deepResearchResponse`, below, with `<AgentRun agent={agent} numberedSources />`. Ask for the "couldn't confirm" part in `instructions`, like "End with a Could not confirm list of claims the findings don't back." Don't write your own planner, search loop, citation checker or submit protocol: deep research already plans narrow searches, cites by number and says what wasn't found.
+- **Steps with the brief's tools** (look things up, then act): `agentResponse` with `tools`.
+- **Checking quotes against text the product holds**: the `recipe-verified-agent` recipe, only when the brief names it.
+
+Probe the route by hand at most twice. Each probe is a real run on Muse Wonder and takes a minute or more. If a run stops short, read its `stopped` reason and change `limits` or the instructions; don't rebuild the design around one run.
+
 ## The route
 
 One route per run, on the server. `export const maxDuration = 300` is what lets it run for minutes.

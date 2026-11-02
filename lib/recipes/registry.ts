@@ -89,7 +89,7 @@ export const RECIPES: readonly Recipe[] = [
   },
   {
     id: "recipe-verified-agent",
-    oneLine: "An agent whose answer someone will act on: code checks each quote against the source it read, a separate model call reviews the claims, the answer can't finish without passing, and it stops to ask a person when evidence is missing. Not for a quick lookup.",
+    oneLine: "An agent whose answer someone will act on: code checks each quote against the source it read, a separate model call reviews the claims, the answer can't finish without passing, and it stops to ask a person when evidence is missing. Not for a quick lookup, and not for web research: its checks need source text the product holds.",
     limit: "A pass means the quotes are in the sources and a model read the claims as backed by them, not that the answer is true. Web pages seen only through search can't be checked by code.",
     longRun: false,
     verifyAgents: true,
@@ -179,7 +179,7 @@ export function recipesWriterRules(caps: readonly CapId[]): string {
     );
   }
   if (available.some((r) => r.id === "recipe-verified-agent")) {
-    lines.push("- With recipe-verified-agent, targets include agent, and agent is written. Pick it only when someone will act on the answer and the product holds the source text.");
+    lines.push("- With recipe-verified-agent, targets include agent, and agent is written. Pick it only when someone will act on the answer and the product holds the source text: an upload, a paste, its own data or bundled files. Never for research on the web, even with citations and a \"couldn't confirm\" list: the agent target's deep research does that, in a few turns.");
   }
   return lines.join("\n");
 }
