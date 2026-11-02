@@ -21,7 +21,6 @@ export const NAV_GROUPS: NavItem[][] = [
     { href: "/builds", label: "Builds", icon: "layers", also: ["/b/"] },
     { href: "/rebuilds", label: "Rebuilds", icon: "rebuild" },
     { href: "/gallery", label: "Gallery", icon: "image", also: ["/p/"] },
-    { href: "/demos", label: "Demos", icon: "video" },
   ],
   [
     { href: "/usage", label: "Usage", icon: "usage" },

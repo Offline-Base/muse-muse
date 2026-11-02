@@ -24,7 +24,7 @@ describe("sidebar rows", () => {
       NAV_GROUPS.map((group) => group.map((item) => item.label)),
       [
         ["Dashboard"],
-        ["Make", "Builds", "Rebuilds", "Gallery", "Demos"],
+        ["Make", "Builds", "Rebuilds", "Gallery"],
         ["Usage", "Models", "Fine-tuning", "Gadgets", "Muse Privacy"],
         ["How it works", "Docs"],
       ],
