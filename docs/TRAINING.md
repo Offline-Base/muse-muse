@@ -1217,3 +1217,22 @@ At $4 a job and $15 a day, the daily limit is what binds first, not $100 or $3,0
 **On production, for the owner:**
 - Turning this on takes `TUNE_COMPOSER`, `OPEN_TRAIN`, `TUNE_START_CODE`, and for the folder `TUNE_FOLDER` and `TRAIN_CONTRIBUTOR_WRITER=1`.
 - A described run's plan, examples and judging stay on Muse Wonder, and a folder run's plan (which gets only the person's note) and judging do too. So a folder's kept-aside rows and what was written from its files reach Muse Wonder at scoring. `visitorDatasetSource` once refused Wonder-written data for visitors, citing Meta's terms 10.1(ix). The owner's Nov 1 decision opens this; those terms are worth reading against it.
+
+## Train on Fireworks
+
+`FIREWORKS_TUNE`, off by default. With it off, the routes answer 404, `settings.trainer` is refused and the page offers nothing new. It needs `TUNE_COMPOSER` and `FIREWORKS_API_KEY`. `FIREWORKS_ACCOUNT_ID` is optional: the key's own account is looked up without it. Code: `lib/train/fireworks/`.
+
+The describe and folder flows offer "Train on Fireworks" for `accounts/fireworks/models/muse-glimmer-30b` beside Lambda. The run uses the same dataset and plan, and the room says the base is plain Muse Glimmer 30B, not r30b. The run keeps a `tune-settings:<id>:trainer:fireworks` mark, so no migration. Its job is a normal `training_jobs` row with `params.trainer = "fireworks"`, price 0 an hour, and its hold as `maxUsd`.
+
+Flow (workflow `fireworksTrain`, polling every minute, no callbacks):
+
+1. Upload the rows as chat JSONL under the short student prompt, then create a managed LoRA SFT job by REST: 1 epoch, the plan's rank and learning rate.
+2. When it completes, base and tuned answer the held-out prompts as two batch inference jobs, so no deployment of ours bills per GPU-second.
+3. The answers are recorded as eval events, and the existing judge scores them on Muse Wonder.
+4. Rows and batch jobs are removed. The adapter stays on Fireworks for export until an admin sends `DELETE /api/train/fireworks/{jobId}`.
+
+Cost. Fireworks has no call that prices a job before it exists. `liveQuote` reads the models page, the pricing page, the serverless pricing page and the model's catalog entry, fresh at Start and again at launch and at job creation. Training counts as $0 only while both pages state the Muse Glimmer offer, agree on its date, and the date hasn't passed. Otherwise the job is refused with `fireworks_cost_unconfirmed`. The job's own `estimatedCost` is read after create and on every poll, and any value above $0 deletes the job. As of Nov 1, 2026 the pages say "free via UI and Serverless Training API until 11/30". They don't name the REST route, though Fireworks' training skill says the same managed job through the API is covered. The first real job has to confirm that.
+
+Answering is billed, and the promotion excludes it. The ceiling is 2 models x prompts x 2,524 tokens at the page's rate (full rate, ignoring the batch discount), held on the job's row with a $0.10 minimum, so it counts against `TRAIN_MAX_ACTIVE`, the lifetime limits, `TRAIN_DAILY_USD` and the visitors' daily dollars. Over `FIREWORKS_EVAL_MAX_USD` (default 1, 0 turns scoring off), the run trains and says it wasn't scored. Writing and judging stay on Meta's API under the existing caps.
+
+Export. The adapter can be downloaded: `GET /v1/accounts/{a}/models/{id}:getDownloadEndpoint` gives signed file addresses, and `GET /api/train/fireworks/{jobId}` lists the file names for admins. Fireworks warns that an adapter may be trained on a vendor checkpoint that differs from the public Hugging Face weights, so pair it with the exact base. Fireworks' docs describe merging base and adapter off-platform with PEFT. Our Lambda quantize path doesn't take these adapters (`adapterProblem` refuses them) and nothing here has been merged or quantized. So the open-weight and on-device story is possible but unbuilt and unproven for this path, and these models lack r30b's 2026 knowledge.

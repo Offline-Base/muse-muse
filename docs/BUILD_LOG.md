@@ -2238,6 +2238,21 @@ Behind a new flag, off by default. Design in docs/FAST_BUILDS.md.
 - Draft card: docs/model-cards/muse-glimmer-30b-zubrelian-moss-guide-lora-1898e46c.md, from the real modelCard generator, edited for the harness, the current repo name (the adapter config's old name redirects, 307) and the honest limits. Not uploaded.
 - Spend: $0 Meta, no GPU. One Preview deploy. No production changes.
 
+## Nov 1: Train on Fireworks, flag off (branch tg-fw-tune)
+
+Behind FIREWORKS_TUNE, off by default. Design in docs/TRAINING.md "Train on Fireworks".
+
+- **Spend:** Fireworks $0, Meta $0, Lambda $0. No Preview, no deploy, no real job, no build. The owner's mid-task instruction stopped Meta calls and builds to save money. A run through the site makes a Meta plan call, so the real job was not run. Nothing was created on Fireworks, so nothing needs cleaning up.
+- **Read:** docs.fireworks.ai and fireworks.ai/pricing without a key, on Nov 1. They state "Muse Glimmer 30B SFT is free to train until November 30, 2026" and "free via UI and Serverless Training API until 11/30. No credit card required." The API's model entry answered 401 without a key, as expected.
+- **Env, names only:** FIREWORKS_API_KEY is listed for Preview. FIREWORKS_ACCOUNT_ID did not show in the filtered Preview list, so the code looks up the key's account if it is unset. No value read.
+- **Finding:** Fireworks documents no plan or dry-run call. estimatedCost exists only on a created job, and the cookbook's `plan` prints $0 from a date in its own script. So the gate reads the live pages, then the job's own estimatedCost, and deletes the job above $0.
+- **Finding:** a managed SFT adapter can't use serverless inference. The docs list trained models as batch compatible, so base and tuned answer through batch jobs and no deployment is made. Batch on this base and on a trained LoRA is untested, and the results file's row shape isn't documented, so the parser is tolerant.
+- **Decision:** answering isn't covered by the offer, so its ceiling is held on the job, and FIREWORKS_EVAL_MAX_USD can turn it off.
+- **Decision:** the job's time limit bounds training and answering together, so the sweep's orphan rule doesn't end a live one. Abandoned answers count at the job's whole hold.
+- **Decision:** adapterProblem refuses a Fireworks job for publish, local files and serve, since its adapter isn't on our cache.
+- **Fix:** the routes test's run-store mock needed the new export.
+- **Tests:** tsc clean, after copying fflate and unpdf into this worktree's node_modules from another worktree. fireworks.test 24 of 24, open-train 33 of 33 with 3 new, routes 25, run-flow 24, view 14, plan 23, sweep 36, launch 16, limits 20, tune-pages 15. tune-room has 2 plan-card failures that also fail on origin/main.
+- **Not proven:** every call to the real Fireworks API, the page parsers once the pages change, batch on Glimmer and on the trained adapter, whether REST-created jobs are really $0, estimatedCost's real value, billing with no payment method, and the UI in a browser.
 ## Nov 1: steering from the build room, behind STEER_CHAT
 
 - **Why a new flag.** env.steeringEnabled follows MUSE_FULL or MUSE_ENGINE=serve and already answers as on in production, so it can't gate this. STEER_CHAT needs it too.

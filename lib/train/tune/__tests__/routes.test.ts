@@ -139,6 +139,7 @@ describe("tune routes", { skip: canMock ? false : "needs --experimental-test-mod
     });
     mock.module(at("../run-store.ts"), {
       namedExports: {
+        saveRunTrainer: async () => {},
         latestTuneJob: async () => null,
         readRunMarks: async () => ({ steps: null, stopped: false, ended: null, heartbeat: null }),
         saveRunSteps: async (...args: unknown[]) => void calls.push({ fn: "saveRunSteps", args }),

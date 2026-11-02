@@ -898,6 +898,12 @@ export async function setEvalSummary(jobId: string, summary: EvalSummary): Promi
 }
 
 /** Saves the model that judges the job's eval items (judge_model), as judging starts. */
+/** A Fireworks job's real cost, once it ended: its row has no GPU hours to work it out from. */
+export async function setJobCost(jobId: string, usd: number): Promise<void> {
+  if (!isUuid(jobId)) return;
+  await db().update(jobs).set({ costUsd: usd }).where(eq(jobs.id, jobId));
+}
+
 export async function setJudgeModel(jobId: string, model: string): Promise<void> {
   if (!isUuid(jobId)) return;
   await db().update(jobs).set({ judgeModel: model }).where(eq(jobs.id, jobId));

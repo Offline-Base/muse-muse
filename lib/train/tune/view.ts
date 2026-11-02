@@ -149,14 +149,16 @@ export function tuneRunView(rows: RunRows, now: Date, ceilings: { maxMinutes: nu
         },
       }
     : chosen;
+  const onFireworks = marks.trainer === "fireworks" || job?.params?.trainer === "fireworks";
   const judgeCost = job?.evalSummary?.judgeCostUsd ?? 0;
   return {
     id: dataset.id,
+    ...(onFireworks ? { trainer: "fireworks" as const } : {}),
     title: dataset.title,
     task: dataset.task,
     stage,
     plan: { ...settings, ...planCost(settings) },
-    gpuLabel: gpuName(recipeById("glimmer-lora"), settings.gpu),
+    gpuLabel: onFireworks ? "Fireworks managed training" : gpuName(recipeById("glimmer-lora"), settings.gpu),
     dataset,
     written: dataset.status === "generating" ? (rows.written ?? 0) : null,
     job,
