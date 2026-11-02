@@ -15,6 +15,7 @@ import { JOBS_BUDGET_LINE } from "@/lib/caps/jobs/render";
 import { CHAIN_BUILD_LINES } from "@/lib/chain/plan";
 import { FULL_COST_LINE, FULL_DONE_LINE, FULL_FIX_SHOTS, FULL_FLOW_LINE, FULL_GOAL_LINE, FULL_SCOPE_LINE, fullBuildLines } from "@/lib/full/prompts";
 import { briefRequirements, fullMilestones } from "@/lib/full/requirements";
+import { RANGE_AGENT_LINES, RANGE_AGENTS_NOTES, RANGE_COST_LINE, RANGE_DEPTH_LINES, RANGE_FIX_AGENT_LINE, RANGE_FIX_LOOK, RANGE_FIX_SHOTS, RANGE_FLOW_LINE, RANGE_LOOK_LINE, RANGE_READ_FIRST, RANGE_SHOTS_LINE, RANGE_SIMPLER_LINE, rangeDirectionLines } from "@/lib/range/prompts";
 import type { JudgeVerdict, RebuildTarget, VerifySummary } from "@/lib/types";
 
 /**
@@ -169,14 +170,14 @@ function extensionKind(fileName: string): string {
  * "Done means", written as one objective with its test oracle, so the goal and verify observers keep the agent going
  * until each part is really done. At most 1,000 characters.
  */
-export function goalObjective(brief: Pick<Brief, "name" | "slug">, opts: { fullBuild?: boolean } = {}): string {
+export function goalObjective(brief: Pick<Brief, "name" | "slug">, opts: { fullBuild?: boolean; requiredAgents?: boolean } = {}): string {
   const name = brief.name.replace(/\s+/g, " ").trim().slice(0, 120);
   return [
     `Build ${name} (slug ${brief.slug}) as brief.md describes, in this workspace.`,
     `The goal is complete only when all ${opts.fullBuild ? "four" : "three"} hold:`,
     "1. `npm run verify` exits 0 (run it and read its output; don't assume).",
     "2. `musemuse.json` is filled in from the brief and valid against `musemuse.schema.json`.",
-    "3. `BUILD_NOTES.md` says what you built, what you took from the inspo, which Meta models it calls and where, its limits, and anything from the brief you couldn't do.",
+    `3. \`BUILD_NOTES.md\` says what you built, what you took from the inspo, which Meta models it calls and where, its limits, and anything from the brief you couldn't do${opts.requiredAgents ? RANGE_AGENTS_NOTES : ""}.`,
     ...(opts.fullBuild ? [FULL_GOAL_LINE] : []),
   ].join("\n");
 }
@@ -206,6 +207,13 @@ interface SessionNotes {
  */
 interface LookNote {
   museAppLook?: boolean;
+  /** BUILD_RANGE (docs/BUILD_RANGE.md): the brief's direction drives the look, and a complex build must use its agents. */
+  buildRange?: boolean;
+}
+
+/** The direction this prompt follows: BUILD_RANGE on, a brief that has one and isn't refused. */
+function rangeDirection(brief: Brief, note: LookNote): NonNullable<Brief["direction"]> | null {
+  return note.buildRange && brief.verdict !== "no" ? (brief.direction ?? null) : null;
 }
 
 /** The skill a build prompt sends Muse Code to for the look. */
@@ -267,11 +275,12 @@ const PARALLEL_LINE = [
  * The goal, playbook and owner-notes lines for a prompt, or none when nothing applies, so plain `muse exec` keeps its
  * prompt. `complex` is the brief's complexity, which only the build prompt uses.
  */
-function sessionLines(notes: SessionNotes & LookNote, when: Run, complex = false): string[] {
+function sessionLines(notes: SessionNotes & LookNote, when: Run, complex = false, requiredAgents = false): string[] {
   const out: string[] = [];
   if (notes.goalSet) out.push(GOAL_LINE[when]);
   if (notes.playbook) {
-    if (when === "build") {
+    // BUILD_RANGE's How you must work holds these as required steps on a complex build.
+    if (when === "build" && !requiredAgents) {
       if (complex) out.push(PARALLEL_LINE);
       out.push(
         `Use a workflow for checks that fan out, like one child per screen comparing it with brief.md and the ${lookSkill(notes)} skill.`,
@@ -336,26 +345,30 @@ export function renderBuildPrompt(
     LookNote,
 ): string {
   const full = opts.fullBuild === true && briefRequirements(brief).length > 0;
+  const direction = rangeDirection(brief, opts);
+  const requiredAgents = direction !== null && brief.complexity === "complex";
   const out: string[] = [];
   out.push(
     "# Build this product",
     "",
-    `Follow AGENTS.md. Before you write code, read this whole brief, look at every file in \`inspo/\`, read \`.agents/skills/${lookSkill(opts)}\` for the look, and read the skill for each model listed below.`,
+    direction ? RANGE_READ_FIRST(lookSkill(opts)) : `Follow AGENTS.md. Before you write code, read this whole brief, look at every file in \`inspo/\`, read \`.agents/skills/${lookSkill(opts)}\` for the look, and read the skill for each model listed below.`,
     "",
     "## Done means",
     "",
     "1. `npm run verify` exits 0.",
     "2. `musemuse.json` is filled in from this brief and valid against `musemuse.schema.json`.",
-    "3. `BUILD_NOTES.md` says what you built, what you took from the inspo, which Meta models it calls and where, its limits, and anything from the brief you couldn't do.",
+    `3. \`BUILD_NOTES.md\` says what you built, what you took from the inspo, which Meta models it calls and where, its limits, and anything from the brief you couldn't do${requiredAgents ? RANGE_AGENTS_NOTES : ""}.`,
     ...(full ? [FULL_DONE_LINE] : []),
     "",
     "Then stop.",
+    ...(direction ? RANGE_DEPTH_LINES : []),
+    ...(requiredAgents ? RANGE_AGENT_LINES : []),
   );
   if (full && brief.verdict !== "no") out.push(...fullBuildLines(briefRequirements(brief), fullMilestones(brief)), ...(brief.chained === true ? CHAIN_BUILD_LINES : []));
   // ---------- Wave 3, unit 2: milestones (empty for a brief without them) ----------
   if (brief.verdict !== "no" && !full) out.push(...milestoneBuildLines({ milestones: opts.milestones ?? null }));
   // ---------- end Wave 3, unit 2 ----------
-  const session = sessionLines(opts, "build", brief.complexity === "complex").map((l) => (full ? l.replace("all three parts", "all four parts") : l));
+  const session = sessionLines(opts, "build", brief.complexity === "complex", requiredAgents).map((l) => (full ? l.replace("all three parts", "all four parts") : l));
   if (session.length) out.push("", "## While you work", "", bullets(session));
   out.push(
     "",
@@ -375,17 +388,19 @@ export function renderBuildPrompt(
     return out.join("\n") + "\n";
   }
 
+  if (direction) out.push(...rangeDirectionLines(direction, askedLookOf(brief, opts)));
   out.push(...whereItRunsLines(brief));
 
   out.push(
     "",
     "## Primary flow",
     "",
-    full ? FULL_FLOW_LINE : "Build this first and make it work end to end with the files in `fixtures/`. Extra screens come after that, if at all.",
+    full ? FULL_FLOW_LINE : direction ? RANGE_FLOW_LINE : "Build this first and make it work end to end with the files in `fixtures/`. Extra screens come after that, if at all.",
     "",
     ...brief.primaryFlow.map((step, i) => `${i + 1}. ${step}`),
     "",
     `The smoke test's judge screenshots must prove the tagline ("${brief.tagline}"): each feature it or these steps name shown working at least once, and the last step's result finished on the final screen (verify skill, Screenshots for the judge).`,
+    ...(direction && !full ? ["", RANGE_SHOTS_LINE] : []),
   );
   if (brief.screens.length) {
     out.push("", "## Screens", "", bullets(brief.screens.map((s) => `**${s.name}**: ${s.purpose}`)));
@@ -443,7 +458,9 @@ export function renderBuildPrompt(
       ? "Put this number in `musemuse.json` as `estimatedCostPerRunUsd`. Keep all the tests to at most 3 agent runs, each with `maxTurns` 3 or 4."
       : full
         ? FULL_COST_LINE
-        : "Put this number in `musemuse.json` as `estimatedCostPerRunUsd`, and keep the smoke test under 5 model calls.",
+        : direction
+          ? RANGE_COST_LINE
+          : "Put this number in `musemuse.json` as `estimatedCostPerRunUsd`, and keep the smoke test under 5 model calls.",
   );
 
   out.push("", "## Inspiration", "", brief.inspiration.summary);
@@ -463,7 +480,7 @@ export function renderBuildPrompt(
     "",
     bullets(brief.inspiration.borrow),
     "",
-    lookLine(brief, opts),
+    direction ? RANGE_LOOK_LINE : lookLine(brief, opts),
     "",
     "Leave out:",
     "",
@@ -519,7 +536,7 @@ export function renderBuildPrompt(
     "",
     "## Budget",
     "",
-    `Stay under ${opts.maxModelSteps} steps. If an approach fails twice, pick a simpler one and write the limit in BUILD_NOTES.md.`,
+    `Stay under ${opts.maxModelSteps} steps. ${direction ? RANGE_SIMPLER_LINE : "If an approach fails twice, pick a simpler one and write the limit in BUILD_NOTES.md."}`,
     models.includes("muse-wonder-1.0")
       ? "Muse Wonder is in preview and bills its reasoning as output, so even a short answer spends a few hundred output tokens."
       : "",
@@ -573,8 +590,9 @@ export function renderFixPrompt(
     "- Don't delete, skip, weaken or loosen tests to make them pass, and don't mock or stub Meta calls. Fix the product instead.",
     "- If a model call fails, check the request against the skill for that model before changing anything else.",
     "- Keep the primary flow from brief.md working, and keep the footer.",
-    `${keepLookLine(input)} Fix what the judge saw with those, not with new colors, fonts or styles.`,
+    `${keepLookLine(input)} ${input.buildRange ? RANGE_FIX_LOOK : "Fix what the judge saw with those, not with new colors, fonts or styles."}`,
     "- When you're done, run `npm run verify` again until it exits 0, and update BUILD_NOTES.md.",
+    ...(input.buildRange ? [`- ${RANGE_FIX_AGENT_LINE}`] : []),
     ...sessionLines(input, "fix").map((line) => `- ${line}`),
   ];
 
@@ -624,7 +642,9 @@ export function renderFixPrompt(
       "",
       input.fullBuild
         ? FULL_FIX_SHOTS
-        : "Change the product so the screens show what the brief promises. The last screenshot must show the finished result, with no error, invalid field, spinner or empty state anywhere on it. Keep saving 2 to 4 numbered screenshots as the verify skill says.",
+        : input.buildRange
+          ? RANGE_FIX_SHOTS
+          : "Change the product so the screens show what the brief promises. The last screenshot must show the finished result, with no error, invalid field, spinner or empty state anywhere on it. Keep saving 2 to 4 numbered screenshots as the verify skill says.",
     );
   }
   return out.join("\n") + "\n";
@@ -697,6 +717,7 @@ export function briefToMarkdown(brief: Brief): string {
   if (brief.inspiration.borrow.length) out.push("", "**Takes from it:**", "", bullets(brief.inspiration.borrow));
   if (brief.inspiration.dontCopy.length) out.push("", "**Leaves out:**", "", bullets(brief.inspiration.dontCopy));
   if (brief.askedLook?.trim()) out.push("", `**The look they asked for:** ${brief.askedLook.trim()}`);
+  if (brief.direction) out.push("", `**Design direction:** ${brief.direction.summary}`);
   if (brief.verdict === "no") return out.join("\n") + "\n";
 
   const samples = brief.fixtures.filter((f) => f.fromUserSample);

@@ -117,7 +117,7 @@ export async function judgeBuild(input: JudgeInput): Promise<{ verdict: JudgeRes
   if (required.length) {
     const result = await respondStructured({
       model: env.judgeModel,
-      instructions: judgeInstructions(input.brief, { museAppLook: env.museAppLook, fullBuilds: true, ...(env.verifyAgents ? { verifyAgents: true } : {}) }),
+      instructions: judgeInstructions(input.brief, { museAppLook: env.museAppLook, fullBuilds: true, ...(env.buildRange ? { buildRange: true } : {}), ...(env.verifyAgents ? { verifyAgents: true } : {}) }),
       content,
       sources,
       schema: FullVerdictSchema,
@@ -130,7 +130,7 @@ export async function judgeBuild(input: JudgeInput): Promise<{ verdict: JudgeRes
   }
   const result = await respondStructured({
     model: env.judgeModel,
-    instructions: judgeInstructions(input.brief, { museAppLook: env.museAppLook, ...(env.verifyAgents ? { verifyAgents: true } : {}) }),
+    instructions: judgeInstructions(input.brief, { museAppLook: env.museAppLook, ...(env.buildRange ? { buildRange: true } : {}), ...(env.verifyAgents ? { verifyAgents: true } : {}) }),
     content,
     sources,
     schema: VerdictSchema,

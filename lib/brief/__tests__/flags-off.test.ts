@@ -34,6 +34,7 @@ const FLAGS = [
   "GADGETS_ENABLED",
   "MUSE_APP_LOOK",
   "FULL_BUILDS", "FULL_BUILD_WALL_MINUTES",
+  "BUILD_RANGE",
   // Wave 3 (docs/CAPABILITIES.md): one line per unit, in plan order.
   "TRUST_SIGNED_IN_CAPS", "TRUST_BUILDER_DAILY_USD", "TRUST_AGE_GATE", "TRUST_LEGAL_PAGES", "TRUST_GEO_BLOCK", "TRUST_GEO_COUNTRIES", "TRUST_REPORTS", "TRUST_SPARK_TO_WONDER",
   "ENGINE_CHECK_ON_TIMEOUT", "ENGINE_ROUND_SCALING", "ENGINE_MILESTONES", "ENGINE_LIVE_SMOKE", "ENGINE_EXACT_LOGIC", "ENGINE_FIT_OUTPUT",
@@ -89,7 +90,7 @@ describe("with every target flag off", () => {
     const stored = strictJsonSchema(BriefSchema) as { properties: Record<string, unknown>; required: string[] };
     const written = strictJsonSchema(NewBriefSchema) as { properties: Record<string, unknown>; required: string[] };
     // Wave 3's optional fields, in the stored schema's order (wave3StoredFields): each cap's block, then unit 2's milestones.
-    const differsOnlyBy = ["targets", "agent", "askedLook", "recipes", ...Object.keys(CAP_BRIEF_FIELDS), "milestones", "requirements", "chained", "scopeCheck"];
+    const differsOnlyBy = ["targets", "agent", "askedLook", "recipes", ...Object.keys(CAP_BRIEF_FIELDS), "milestones", "requirements", "chained", "scopeCheck", "direction"];
     assert.deepEqual(Object.keys(stored.properties).filter((k) => !(k in written.properties)), differsOnlyBy);
     assert.deepEqual(Object.keys(written.properties).filter((k) => !(k in stored.properties)), []);
   });

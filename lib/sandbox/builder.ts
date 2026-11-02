@@ -93,7 +93,7 @@ import { capsMissingOverlays } from "@/lib/caps/ready";
 import { localHardwareOverlay, usesLocalHardwareOverlay } from "@/lib/sandbox/local-gadget";
 import { builderNetworkPolicy, placeholderKey, publicHost, SNAPSHOT_POLICY } from "@/lib/sandbox/policy";
 import { q, readBytes, sh, tailText, writeRunner } from "@/lib/sandbox/shell";
-import { applyLookScript, LOOK_CSS, MUSE_APP_OVERLAY, OVERLAYS_DIR, withLookColors } from "@/lib/sandbox/look";
+import { applyLookScript, applyRangeScript, LOOK_CSS, MUSE_APP_OVERLAY, OVERLAYS_DIR, RANGE_OVERLAY, withLookColors } from "@/lib/sandbox/look";
 import {
   applyTrustScript,
   TRUST_FILES,
@@ -437,6 +437,8 @@ export interface ProvisionInput {
   gatewayUrl: string;
   /** MUSE_APP_LOOK: put the muse-app look in before anything from the user (applyLook). Off leaves the template as it is. */
   museAppLook?: boolean;
+  /** BUILD_RANGE: lay the build-range overlay over the look (applyRange). */
+  buildRange?: boolean;
   /** Files beyond the template, by path in the product, for a brief's targets (lib/native/template-files.ts). With the look, in its colors (withLookColors). */
   extraFiles?: Array<{ path: string; content: string }>;
   /** Where the product runs (briefTargets). Nothing, or web alone, leaves the sandbox exactly as the template made it. */
@@ -600,6 +602,15 @@ async function applyLook(sandbox: Sandbox): Promise<void> {
   await sh(sandbox, applyLookScript(), { cwd: PRODUCT_DIR, timeoutMs: 5 * MIN });
 }
 
+/** BUILD_RANGE: fails rather than build with a direction and no overlay, since the look's old rules would fight the prompt. */
+async function applyRange(sandbox: Sandbox): Promise<void> {
+  const found = await sh(sandbox, `[ -f ${q(`${OVERLAYS_DIR}/${RANGE_OVERLAY}/platform-files.json`)} ]`, { allowFail: true });
+  if (found.exitCode !== 0) {
+    throw new Error("This builder snapshot doesn't have the build-range overlay. Make a new one with npm run snapshot before turning BUILD_RANGE on.");
+  }
+  await sh(sandbox, applyRangeScript(), { cwd: PRODUCT_DIR, timeoutMs: 2 * MIN });
+}
+
 /**
  * On a local run, says when the snapshot was made from a different template than this checkout's. A product gets
  * template/ from the snapshot (only PLATFORM_FILES are refreshed), so a change there, such as lib/meta/client.ts's
@@ -680,6 +691,7 @@ export async function provisionSandbox(input: ProvisionInput): Promise<{ sandbox
   await sandbox.update({ networkPolicy: lockedPolicy(name, input.capHosts) });
 
   if (input.museAppLook) await applyLook(sandbox);
+  if (input.buildRange) await applyRange(sandbox);
   const targets = input.targets ?? [];
   if (targets.some((t) => t !== "web")) await applyTargets(sandbox, name, targets);
   // ---------- Wave 3, unit 2: a brief's cap overlays, right after its targets and before the user's files, so their
