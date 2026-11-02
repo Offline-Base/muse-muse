@@ -9,6 +9,7 @@ import { ContributorNotice } from "@/components/composer/ContributorNotice";
 import { AttachmentChip, type Attachment } from "@/components/composer/AttachmentChip";
 import { Starters, type StarterTab } from "@/components/composer/Starters";
 import { TargetPill } from "@/components/composer/TargetPill";
+import type { MakeWant } from "@/lib/make/want";
 import { VoiceInputButton } from "@/components/voice/VoiceInputButton";
 import {
   INSPO_ACCEPT,
@@ -67,7 +68,9 @@ interface Props {
    * with the note and the files, and resolves to a sentence to show when it couldn't go on, or null. The draft is kept,
    * so the caller clears it (writeComposerDraft) once it no longer needs it. Without it, "new" and "refine" are as they were.
    */
-  send?: (input: { note: string; files: File[]; references: Reference[]; targets: TargetId[] }) => Promise<string | typeof BUILD_AS_USUAL | null>;
+  send?: (input: { note: string; files: File[]; references: Reference[]; targets: TargetId[]; want: MakeWant }) => Promise<string | typeof BUILD_AS_USUAL | null>;
+  /** MAKE_CHAT_ALL's Make box: the menu also asks what to make, and `send` gets the answer. */
+  offerWants?: boolean;
   /** With `send`: send may run with nobody signed in (OPEN_TRAIN's visitors, on the Make box). Files still wait for sign-in. */
   signedOutMaySend?: boolean;
   /** A drop some other handler on the page already took (the folder drop) isn't also attached here. */
@@ -166,6 +169,7 @@ export function Composer({
   copy,
   signedOutMaySend,
   ignoreHandledDrops,
+  offerWants,
 }: Props) {
   const router = useRouter();
   const inputId = useId();
@@ -186,6 +190,7 @@ export function Composer({
   const [loadingExample, setLoadingExample] = useState<string | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [targets, setTargets] = useState<TargetId[]>([]);
+  const [want, setWant] = useState<MakeWant>("auto");
   const canUseCamera = useCameraSupported();
   // Photos an example card attached: the reader's own photo takes their place.
   const examplePhotos = useRef(new Set<string>());
@@ -439,7 +444,7 @@ export function Composer({
     setSubmitting(true);
     setError(null);
     if (send) {
-      const problem = await send({ note: note.trim(), files: items.map((it) => it.file), references, targets }).catch(() => "Something went wrong. Try again in a moment.");
+      const problem = await send({ note: note.trim(), files: items.map((it) => it.file), references, targets, want }).catch(() => "Something went wrong. Try again in a moment.");
       if (problem !== BUILD_AS_USUAL) {
         inFlight.current = false;
         setSubmitting(false);
@@ -614,8 +619,8 @@ export function Composer({
           </p>
           <div className="composer-actions">
             {/* The Muse app's "Thinking" pill goes here too once builds have a model or effort switch to put in it. */}
-            {!isRefine && targetOptions?.length ? (
-              <TargetPill options={targetOptions} picked={targets} onChange={setTargets} disabled={submitting} />
+            {!isRefine && (targetOptions?.length || offerWants) ? (
+              <TargetPill options={targetOptions ?? []} picked={targets} onChange={setTargets} disabled={submitting} make={offerWants ? { value: want, onChange: setWant } : undefined} />
             ) : null}
             <VoiceInputButton target={() => textarea.current} className="composer-voice" disabled={submitting} size={22} />
             <button

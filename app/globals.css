@@ -2497,7 +2497,7 @@ pre {
 }
 
 .composer-actions .menu:has(.target-menu-list) {
-  max-height: min(600px, 75vh);
+  max-height: min(640px, 80vh);
   padding: 8px;
   border-radius: 24px;
 }
@@ -2546,6 +2546,39 @@ pre {
     overflow: hidden;
     text-overflow: ellipsis;
   }
+}
+
+.target-menu-head {
+  margin: 0;
+  padding: 10px 14px 4px 40px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--muted, #6b6f76);
+}
+
+.target-menu-where {
+  margin-top: 4px;
+  border-top: 1px solid var(--hover-2);
+}
+
+.target-menu-where > summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px 10px 40px;
+  border-radius: 14px;
+  font-size: 0.9375rem;
+  list-style: none;
+  cursor: pointer;
+}
+
+.target-menu-where > summary::-webkit-details-marker {
+  display: none;
+}
+
+.target-menu-where > summary:hover {
+  background: var(--hover);
 }
 
 /* The menu's rows: a check mark on the left, a name and a short line, and a soft grey row for what's picked. */

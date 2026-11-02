@@ -145,6 +145,8 @@ export interface TuneRunView {
   job: TrainJobView | null;
   evals: EvalRow[];
   verdict: RunVerdict | null;
+  /** The person asked only for the examples (MAKE_CHAT_ALL): nothing trains unless they start it. */
+  datasetOnly?: boolean;
   hold: { reason: TuneHoldReason; text: string; since: string } | null;
   /** Why it failed or stopped, in a sentence, else null. */
   problem: string | null;
