@@ -17,10 +17,12 @@ loopback. Off-device sockets are blocked as well as recorded (with --block all, 
 The device's own model calls on 127.0.0.1 stay on the device: the name pass is meant to read raw
 text, so the canary is expected there, and seeing it there shows the run read the document.
 
-PASS: the canary (the whole name or any one of its words, any case, URL-decoded too) is in no
-off-device URL, header or body, nothing else tried to leave, and the canary did reach the device's
-model. FAIL: it is in one, or something tried to leave. INCONCLUSIVE: the canary never reached the
-device's model, so its absence says nothing.
+PASS: the canary (the whole name or any word of it of four letters or more, any case, URL-decoded
+too) is in no off-device URL, header or body, nothing else tried to leave, the device's model
+answered a request that held the canary, and the device shared at least one result. FAIL: it is in one, or something
+tried to leave. INCONCLUSIVE: the model never answered a request holding the canary (not running,
+or a wrong key), the device shared nothing, or the run stopped with an error, so the canary's
+absence says nothing.
 
     uv run python -m scripts.canary_capture --log eval/reports/raw/canary_capture.jsonl
     uv run python -m scripts.canary_capture --checker-url http://127.0.0.1:8083/v1 --embed-url http://127.0.0.1:8084/v1
@@ -28,10 +30,11 @@ device's model, so its absence says nothing.
 Needs DEVICE_ONLY=1 and the device's models already serving on loopback (scripts/start.sh), from
 .env or the flags. It reads nothing from the real workspace: the canary document goes in a new
 temporary folder marked `.synthetic`, with a throwaway BASE_HOME, so the live tag map and decision
-log are not touched. Each waiting result is approved the way a user would tap Share it, the worst
-case. The log never holds a header value, an off-device address or a document; the canary is
-invented and is printed. Exit 0 pass, 1 fail, 2 inconclusive. tests/test_canary_capture.py runs
-the same path with fake models; docs/CANARY.md says what it proves.
+log are not touched; only the llama-server key is read from the real BASE_HOME, so the model
+answers. Each waiting result is approved the way a user would tap Share it, the worst case. The
+log never holds a header value, an off-device address or a document; the canary is invented, in
+ASCII letters, and is printed. Exit 0 pass, 1 fail, 2 inconclusive. tests/test_canary_capture.py
+runs the same path with fake models; docs/CANARY.md says what it proves.
 """
 
 from __future__ import annotations
@@ -136,6 +139,11 @@ class Sent:
     op: str = ""  # socket: connect, lookup or sendto
     port: int | None = None
     blocked: bool = False
+    status: int | None = None  # http: the reply's status code, None when no reply came back
+
+    @property
+    def answered(self) -> bool:
+        return self.status is not None and 200 <= self.status < 300
 
     def canary_in(self, canary: str) -> list[str]:
         """Which parts hold the canary: url, a header (by name), body."""
@@ -143,8 +151,9 @@ class Sent:
         where += [f"header {k}" for k, v in self.headers if found_in(k, canary) or found_in(v, canary)]
         return where + (["body"] if self.body and found_in(self.body, canary) else [])
 
-    def log_row(self, n: int, canary: str) -> dict:
-        """The log line: no header value, no off-device address, no body."""
+    def log_row(self, n: int, canary: str, salt: bytes = b"") -> dict:
+        """The log line: no header value, no off-device address, no body. An off-device host is a
+        short hash salted per log, so it tells hosts apart within one log and cannot be looked up."""
         row: dict[str, Any] = {"n": n, "channel": self.channel, "on_device": self.on_device}
         if self.channel == "http":
             parts = urlsplit(self.url)
@@ -152,11 +161,12 @@ class Sent:
             shown = (
                 "loopback"
                 if self.on_device
-                else "off-device host " + hashlib.sha256(host.encode()).hexdigest()[:8]
+                else "off-device host " + hashlib.sha256(salt + host.encode()).hexdigest()[:8]
             )
             path = parts.path if self.on_device else ""
             row.update(method=self.method, target=f"{parts.scheme}://{shown}:{parts.port or ''}{path}")
             row.update(query=bool(parts.query), header_names=sorted({k.lower() for k, _ in self.headers}))
+            row.update(status=self.status)
         elif self.channel == "socket":
             row.update(op=self.op, port=self.port, blocked=self.blocked)
         row.update(body_bytes=len(self.body), canary_in=self.canary_in(canary))
@@ -183,22 +193,22 @@ class Capture:
         with self._lock:
             self.sent.append(item)
 
-    def _record_request(self, request: httpx.Request) -> None:
+    def _record_request(self, request: httpx.Request) -> Sent:
         try:
             body = request.content
         except httpx.RequestNotRead:
             body = request.read()
         host = request.url.host
-        self._add(
-            Sent(
-                "http",
-                is_loopback(host),
-                request.method,
-                str(request.url),
-                list(request.headers.items()),
-                body,
-            )
+        sent = Sent(
+            "http",
+            is_loopback(host),
+            request.method,
+            str(request.url),
+            list(request.headers.items()),
+            body,
         )
+        self._add(sent)
+        return sent
 
     def _socket_guard(self, op: str, sock: socket.socket | None, address: Any) -> None:
         if sock is not None and sock.family == getattr(socket, "AF_UNIX", None):
@@ -225,12 +235,16 @@ class Capture:
         real_sendto, real_getaddrinfo = socket.socket.sendto, socket.getaddrinfo
 
         def handle_request(self, request):
-            cap._record_request(request)
-            return real_sync(self, request)
+            sent = cap._record_request(request)
+            response = real_sync(self, request)
+            sent.status = response.status_code
+            return response
 
         async def handle_async_request(self, request):
-            cap._record_request(request)
-            return await real_async(self, request)
+            sent = cap._record_request(request)
+            response = await real_async(self, request)
+            sent.status = response.status_code
+            return response
 
         def connect(self, address):
             cap._socket_guard("connect", self, address)
@@ -319,6 +333,10 @@ class RelayLine:
         return [Sent("relay_frame", False, body=t.encode("utf-8", "replace")) for t in self.sent]
 
 
+class Stopped(RuntimeError):
+    """The scripted Muse could not go on; the message names no address or document."""
+
+
 class Planner:
     """Muse's side: MCP calls as relay frames, following job ids, approving what waits on the device."""
 
@@ -333,7 +351,7 @@ class Planner:
             f"f-{self._n}", {"jsonrpc": "2.0", "id": self._n, "method": method, "params": params}
         )
         if reply.get("status") != 200:
-            raise RuntimeError(f"{method}: the device answered HTTP {reply.get('status')}")
+            raise Stopped(f"{method}: the device answered HTTP {reply.get('status')}")
         return json.loads(reply["body"])
 
     async def initialize(self) -> None:
@@ -365,7 +383,7 @@ class Planner:
             if not job or status not in ("queued", "running", "waiting"):
                 break
             if time.monotonic() > deadline:
-                raise TimeoutError(f"{name}: the job did not finish in time")
+                raise Stopped(f"{name}: the job did not finish in time")
             if status == "waiting":
                 if not self.approve or approved:
                     break
@@ -387,26 +405,54 @@ class Verdict:
     frames: int
     frame_hits: list[str]
     http_on_device: int
-    http_on_device_with_canary: int
+    http_on_device_with_canary: int  # answered with a 2xx: a refused or failed call read nothing
     off_device: list[str]  # every off-device HTTP request or socket attempt, described
     off_device_hits: list[str]
+    shared: int | None = None  # tool results the device shared; None when not counted
+    error: str | None = None  # why the run stopped early, if it did
 
     def lines(self) -> list[str]:
         out = [
             f"Canary capture: {self.status}",
             f"  canary (invented): {self.canary}",
             f"  relay frames out: {self.frames}, holding the canary: {len(self.frame_hits)}",
-            f"  HTTP requests to models on this device: {self.http_on_device}, holding the canary: {self.http_on_device_with_canary}",
+            f"  HTTP requests to models on this device: {self.http_on_device}, answered and holding the canary: {self.http_on_device_with_canary}",
             f"  HTTP requests and sockets off the device: {len(self.off_device)}, holding the canary: {len(self.off_device_hits)}",
         ]
+        if self.shared is not None:
+            out.append(f"  results the device shared: {self.shared}")
         out += [f"  leak: {h}" for h in self.frame_hits + self.off_device_hits]
         out += [f"  tried to leave: {o}" for o in self.off_device]
         if self.status == "INCONCLUSIVE":
-            out.append("  the canary never reached the device's model, so its absence proves nothing")
+            if self.error:
+                out.append(f"  the run stopped early ({self.error}), so the canary's absence proves nothing")
+            elif not self.http_on_device_with_canary:
+                out.append(
+                    "  the device's model never answered a request holding the canary (is it running,"
+                    " with this device's key?), so its absence proves nothing"
+                )
+            else:
+                out.append("  the device shared no result, so the canary's absence proves nothing")
         return out
 
 
-def check(capture: Capture, line: RelayLine, canary: str) -> Verdict:
+def shared_results(outputs: list[str]) -> int:
+    """How many tool outputs carry a shared result (status "shared"), not a held or failed one."""
+    count = 0
+    for text in outputs:
+        try:
+            body = json.loads(text)
+        except ValueError:
+            continue
+        count += isinstance(body, dict) and body.get("status") == "shared"
+    return count
+
+
+def check(
+    capture: Capture, line: RelayLine, canary: str, *, shared: int | None = None, error: str | None = None
+) -> Verdict:
+    """FAIL on any leak or off-device attempt. PASS needs the device's model to have answered a
+    request holding the canary, at least one shared result when `shared` is counted, and no `error`."""
     frames = line.records()
     frame_hits = [
         f"relay frame {i + 1} {', '.join(w)}" for i, f in enumerate(frames) if (w := f.canary_in(canary))
@@ -419,24 +465,29 @@ def check(capture: Capture, line: RelayLine, canary: str) -> Verdict:
         for s in off
     ]
     off_hits = [f"{s.channel} {s.method or s.op} {', '.join(w)}" for s in off if (w := s.canary_in(canary))]
-    seen = sum(1 for s in on_device if s.canary_in(canary))
+    seen = sum(1 for s in on_device if s.answered and s.canary_in(canary))
     if frame_hits or off:
         status = "FAIL"
-    elif not seen:
+    elif error or not seen or shared == 0:
         status = "INCONCLUSIVE"
     else:
         status = "PASS"
-    return Verdict(status, canary, len(frames), frame_hits, len(on_device), seen, off_desc, off_hits)
+    return Verdict(
+        status, canary, len(frames), frame_hits, len(on_device), seen, off_desc, off_hits, shared, error
+    )
 
 
 def write_log(path: Path, capture: Capture, line: RelayLine, canary: str, verdict: Verdict) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
-    rows = [s.log_row(i + 1, canary) for i, s in enumerate([*capture.sent, *line.records()])]
+    salt = secrets.token_bytes(16)  # never written: off-device host hashes cannot be looked up
+    rows = [s.log_row(i + 1, canary, salt) for i, s in enumerate([*capture.sent, *line.records()])]
     summary = {
         "verdict": verdict.status,
         "canary": canary,
         "frames": verdict.frames,
         "off_device": len(verdict.off_device),
+        "shared": verdict.shared,
+        "error": verdict.error,
     }
     path.write_text("".join(json.dumps(r) + "\n" for r in [summary, *rows]))
     return path
@@ -489,14 +540,23 @@ def run(settings: Any, canary: str, *, block: str = "off_device", steps=STEPS, a
     if not getattr(settings, "device_only", False):
         raise ValueError("the canary capture is for the device-only setup: set DEVICE_ONLY=1")
     line = RelayLine()
+    error: str | None = None
+    outputs: list[str] = []
     with Capture(block=block) as capture:
         services = Services.create(settings, light=False, heavy=False)
         try:
-            outputs = asyncio.run(_drive(services, line, steps, approve))
+            try:
+                outputs = asyncio.run(_drive(services, line, steps, approve))
+            except Exception as exc:  # still checked: whatever was sent before it stopped counts
+                while isinstance(exc, BaseExceptionGroup) and exc.exceptions:  # the connector's task group
+                    exc = exc.exceptions[0]
+                # only this script's own messages are shown; others could name an address
+                error = f"{type(exc).__name__}: {exc}" if isinstance(exc, Stopped) else type(exc).__name__
             settle(services)
         finally:
             services.close()
-    return check(capture, line, canary), capture, line, outputs
+    verdict = check(capture, line, canary, shared=shared_results(outputs), error=error)
+    return verdict, capture, line, outputs
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -520,23 +580,34 @@ def main(argv: list[str] | None = None) -> int:
     from base.config import load_settings
 
     canary = args.canary or make_canary()
+    if not canary.isascii() or not any(c.isalpha() for c in canary):
+        # the relay frames are JSON, which writes other characters as \u escapes the matcher misses
+        p.error("--canary takes a name in ASCII letters")
     with tempfile.TemporaryDirectory(prefix="canary-capture-") as tmp:
         root = Path(tmp) / "workspace"
         plant(root, canary)
         env = dict(os.environ)
-        env.update(
-            BASE_HOME=str(Path(tmp) / "home"), WORKSPACE_ROOT=str(root), LIGHT_SERIAL="", HEAVY_QUEUE="0"
-        )
         if args.checker_url:
             env["CHECKER_URL"] = args.checker_url
         if args.embed_url:
             env["EMBED_URL"] = args.embed_url
         try:
+            device = load_settings(env)
+            if not device.device_only:
+                p.error("the canary capture is for the device-only setup: set DEVICE_ONLY=1")
+            # llama-server takes the key in the real BASE_HOME, which the throwaway home lacks
+            key = device.checker_api_key or ""
+            env.update(
+                BASE_HOME=str(Path(tmp) / "home"),
+                WORKSPACE_ROOT=str(root),
+                LIGHT_SERIAL="",
+                HEAVY_QUEUE="0",
+                CHECKER_API_KEY=key,
+                LLAMA_API_KEY=key,
+            )
             settings = load_settings(env)
         except ValueError as exc:
             p.error(str(exc))
-        if not settings.device_only:
-            p.error("the canary capture is for the device-only setup: set DEVICE_ONLY=1")
         verdict, capture, line, _outputs = run(
             settings, canary, block=args.block, approve=not args.no_approve
         )

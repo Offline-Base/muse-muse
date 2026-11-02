@@ -12,7 +12,7 @@ The code splits Muse's side from the device's at the relay. A scripted Muse send
 
 The device's own model calls on 127.0.0.1 are recorded too, but they stay on the device. The name pass is meant to read raw text, so the canary should show up there, and seeing it there shows the run read the document.
 
-The canary counts as found if the whole name or any one of its words is in a URL, a header name or value, or a body, in any case, as written or URL-decoded. Each waiting result is approved, as a user who taps Share it on everything would.
+The canary counts as found if the whole name or any one of its words of four letters or more is in a URL, a header name or value, or a body, in any case, as written or URL-decoded. Each waiting result is approved, as a user who taps Share it on everything would.
 
 ## The test
 
@@ -21,6 +21,7 @@ The canary counts as found if the whole name or any one of its words is in a URL
 - With today's code, the canary is in none of the relay frames and none of the tool outputs, no request went anywhere but the faked local model, no socket was tried, and respx's own record shows the name pass read the canary. The name went out as a `[Person N]` tag.
 - With the device-only name-shape check turned off (the Oct 30 failure, [eval/reports/device_only_fresh_200_leaks.md](../eval/reports/device_only_fresh_200_leaks.md)), the canary shows up in the relay frames and the check fails.
 - A leak planted by hand, in a URL, a header, a body, a relay frame and a raw socket, is caught in each place.
+- A model that refuses every call (not running, or the wrong key) leaves every result held, so nothing is tested: that run is INCONCLUSIVE, not a pass. So is a run that stops early.
 
 ## The script, for a run with the real models
 
@@ -32,7 +33,7 @@ uv run python -m scripts.canary_capture --log eval/reports/raw/canary_capture.js
 uv run python -m scripts.canary_capture --checker-url http://127.0.0.1:8083/v1 --embed-url http://127.0.0.1:8084/v1 --log canary.jsonl
 ```
 
-It needs `DEVICE_ONLY=1` (from .env or the environment) and refuses to run without it. It plants the canary in a new temporary folder marked `.synthetic` and uses a throwaway BASE_HOME, so the real workspace, tag map and decision log are not touched. `--canary "<name>"` picks the name; the default is a new random one. It prints PASS, FAIL or INCONCLUSIVE (the canary never reached the device's model, so its absence proves nothing) and exits 0, 1 or 2. The log is JSONL: a summary line, then one line per request, socket attempt or frame, with header names but never their values, no off-device address (a short hash instead) and no bodies, only their length and which parts held the canary.
+It needs `DEVICE_ONLY=1` (from .env or the environment) and refuses to run without it. It plants the canary in a new temporary folder marked `.synthetic` and uses a throwaway BASE_HOME, so the real workspace, tag map and decision log are not touched. From the real BASE_HOME it reads only the llama-server key, so the model answers. `--canary "<name>"` picks the name, in ASCII letters (the relay frames are JSON, which writes other letters as escapes); the default is a new random one. It prints PASS, FAIL or INCONCLUSIVE and exits 0, 1 or 2. PASS needs the device's model to have answered a request holding the canary and the device to have shared at least one result. INCONCLUSIVE means one of those did not happen, or the run stopped early, so the canary's absence proves nothing. The log is JSONL: a summary line, then one line per request, socket attempt or frame, with header names but never their values, no off-device address (a short hash, salted for each log, instead) and no bodies, only their length and which parts held the canary.
 
 ## What this does not show
 

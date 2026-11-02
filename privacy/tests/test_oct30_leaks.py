@@ -3,8 +3,8 @@
 eval/reports/device_only_fresh_200_leaks.md has the item-by-item account. Each of the 10 items
 names someone the roster does not know, and LFM3-VL-2B's name pass missed them. The replay gives
 the name pass the worst answer it can give (no names) and runs the real egress in DEVICE_ONLY
-mode: with the name-shape check, nothing leaks; without it, all 10 leak again, so this test would
-have failed on the code of that run.
+mode: with the name-shape check, nothing leaks; with only that check switched off (today's code
+otherwise), all 10 leak again.
 """
 
 from __future__ import annotations

@@ -16,6 +16,7 @@ times. docs/CANARY.md says what this proves and what it does not.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import socket
@@ -25,6 +26,7 @@ import httpx
 import pytest
 import respx
 
+from base import config
 from base.config import load_settings
 from base.egress import Egress
 from scripts import canary_capture as cc
@@ -140,7 +142,32 @@ def test_with_the_name_shape_check_off_the_canary_shows_up_in_the_relay_frames(d
     assert any(holds(f, canary) for f in line.sent)
 
 
-def test_a_planted_leak_is_caught_in_the_url_a_header_the_body_a_frame_and_a_socket():
+def test_a_run_whose_model_never_answers_is_inconclusive_not_a_pass(device, monkeypatch):
+    """A model that refuses every call (not running, or the wrong key) leaves every result held, and
+    a held result holds no canary. That proves nothing, so it must not read as a pass."""
+    settings, canary, _stray, mock = device
+    refused = lambda request: httpx.Response(401, json={"error": {"message": "Invalid API Key"}})  # noqa: E731
+    monkeypatch.setitem(globals(), "echo_model", refused)
+    verdict, _capture, line, _outputs = cc.run(settings, canary, block="all")
+    assert any(canary in c.request.content.decode() for c in mock.calls)  # sent, but never answered
+    assert [f for f in line.sent if holds(f, canary)] == []
+    assert verdict.status == "INCONCLUSIVE", verdict.lines()
+    assert verdict.http_on_device_with_canary == 0 and verdict.shared == 0
+
+
+def test_a_run_that_stops_early_is_inconclusive(device, monkeypatch):
+    settings, canary, _stray, _mock = device
+
+    async def stop(self):
+        raise cc.Stopped("initialize: the device answered HTTP 500")
+
+    monkeypatch.setattr(cc.Planner, "initialize", stop)
+    verdict, _capture, _line, outputs = cc.run(settings, canary, block="all")
+    assert outputs == [] and verdict.status == "INCONCLUSIVE"
+    assert verdict.error == "Stopped: initialize: the device answered HTTP 500"
+
+
+def test_a_planted_leak_is_caught_in_the_url_a_header_the_body_a_frame_and_a_socket(tmp_path):
     canary = cc.make_canary()
     first = canary.split()[0]
     line = cc.RelayLine()
@@ -166,6 +193,10 @@ def test_a_planted_leak_is_caught_in_the_url_a_header_the_body_a_frame_and_a_soc
     assert verdict.frame_hits == ["relay frame 1 body"]
     assert verdict.off_device_hits == ["http POST url, header x-note, body"]
     assert "socket connect (blocked) port 443" in verdict.off_device
+    # The log names no off-device host, not even by a hash anyone could look up.
+    text = cc.write_log(tmp_path / "log.jsonl", capture, line, canary, verdict).read_text()
+    assert "collector.example.org" not in text and "192.0.2.1" not in text
+    assert hashlib.sha256(b"collector.example.org").hexdigest()[:8] not in text
 
 
 def test_a_socket_to_loopback_is_allowed_only_in_off_device_mode():
@@ -192,15 +223,18 @@ def test_the_matcher_takes_any_word_any_case_and_url_encoding():
     assert len({cc.make_canary() for _ in range(20)}) == 20
 
 
+def device_env(monkeypatch, home) -> None:
+    """The environment the script reads, for a laptop in device-only mode with BASE_HOME at `home`."""
+    env = {"DEVICE_ONLY": "1", "CHECKER_URL": CHECKER, "SEARCH_EMBEDDINGS": "0", "BASE_DEVICE": "laptop"}
+    for key, value in {**env, "BASE_HOME": str(home)}.items():
+        monkeypatch.setenv(key, value)
+    for key in ("CHECKER_API_KEY", "LLAMA_API_KEY", "PRIMARY_MODEL", "GLIMMER_BACKEND", "WORKSPACE_ROOT"):
+        monkeypatch.delenv(key, raising=False)
+
+
 def test_the_script_writes_a_log_with_no_header_values_and_exits_0(device, monkeypatch, tmp_path, capsys):
     settings, canary, _stray, _mock = device
-    for key in ("DEVICE_ONLY", "CHECKER_URL", "SEARCH_EMBEDDINGS", "BASE_DEVICE"):
-        monkeypatch.setenv(
-            key,
-            {"DEVICE_ONLY": "1", "CHECKER_URL": CHECKER, "SEARCH_EMBEDDINGS": "0", "BASE_DEVICE": "laptop"}[
-                key
-            ],
-        )
+    device_env(monkeypatch, tmp_path / "real-home")
     monkeypatch.setenv("CHECKER_API_KEY", "local-secret-value")
     log = tmp_path / "canary.jsonl"
     assert cc.main(["--log", str(log), "--canary", canary, "--block", "all"]) == 0
@@ -213,7 +247,33 @@ def test_the_script_writes_a_log_with_no_header_values_and_exits_0(device, monke
     assert "local-secret-value" not in text and "Bearer" not in text  # header names only
 
 
-def test_the_script_refuses_a_setup_that_is_not_device_only(monkeypatch, capsys):
+def test_the_script_takes_the_model_key_from_the_real_home_and_writes_nothing_there(
+    device, monkeypatch, tmp_path, capsys
+):
+    """llama-server reads its key from BASE_HOME/llama_api_key. The script runs in a throwaway home,
+    so without carrying the key over every model call would be refused and nothing tested."""
+    _settings, canary, _stray, mock = device
+    real = tmp_path / "real-home"
+    real.mkdir()
+    (real / config.LLAMA_KEY_FILE).write_text("home-key-value\n")
+    device_env(monkeypatch, real)
+    log = tmp_path / "canary.jsonl"
+    assert cc.main(["--log", str(log), "--canary", canary, "--block", "all"]) == 0
+    assert mock.calls and {c.request.headers.get("authorization") for c in mock.calls} == {
+        "Bearer home-key-value"
+    }
+    assert sorted(p.name for p in real.iterdir()) == [config.LLAMA_KEY_FILE]  # the real home untouched
+    assert "home-key-value" not in log.read_text() + capsys.readouterr().out
+
+
+def test_the_script_refuses_a_canary_json_would_escape(capsys):
+    with pytest.raises(SystemExit):
+        cc.main(["--canary", "Zoë Brontë", "--log", "/dev/null"])
+    assert "ASCII" in capsys.readouterr().err
+
+
+def test_the_script_refuses_a_setup_that_is_not_device_only(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("BASE_HOME", str(tmp_path))  # never the real home's key file
     monkeypatch.setenv("DEVICE_ONLY", "0")
     monkeypatch.setenv("GLIMMER_BACKEND", "openrouter")
     with pytest.raises(SystemExit):
