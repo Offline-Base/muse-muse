@@ -145,6 +145,10 @@ def test_router_reasoning_and_token_budget(tmp_path):
         ({"JETSON_LFM_BASE": "https://gateway.example.org/v1"}, "JETSON_LFM_BASE"),
         ({"JETSON_LFM_API_KEY": "gw-key"}, "JETSON_LFM_API_KEY"),
         ({"JETSON_LFM_MODEL": "hf.co/LiquidAI/LFM3-1.7B-GGUF:Q4_K_M"}, "LFM3-1.7B"),
+        # On OpenRouter GLIMMER_MODEL chooses the model, so an override to another family is refused.
+        ({"GLIMMER_MODEL": "meta-llama/llama-3.3-70b-instruct"}, "GLIMMER_MODEL=meta-llama/llama-3.3-70b-instruct"),
+        ({"GLIMMER_BACKEND": "openrouter", "GLIMMER_MODEL": "liquid/lfm-7b"}, "GLIMMER_MODEL=liquid/lfm-7b"),
+        ({"SPARK_MODEL": "llama-4-maverick"}, "SPARK_MODEL=llama-4-maverick"),
     ],
 )
 def test_non_meta_models_are_refused_with_the_ruling(tmp_path, env, named):
@@ -177,6 +181,14 @@ def test_the_off_values_still_load(tmp_path, env):
     s = load_settings({"BASE_HOME": str(tmp_path), **env})
     assert s.checker_backend == s.primary_model == "glimmer"
     assert not (s.search_embeddings or s.prompt_guard or s.has_jetson_lfm)
+
+
+def test_meta_model_ids_and_a_local_alias_still_load(tmp_path):
+    s = load_settings({"BASE_HOME": str(tmp_path), "GLIMMER_MODEL": "meta/muse-glimmer-30b", "SPARK_MODEL": "muse-spark-1.3"})
+    assert s.answer_model == "meta/muse-glimmer-30b" and s.spark_model == "muse-spark-1.3"
+    # On llama_server GLIMMER_MODEL is only the alias of the local file; the file is GLIMMER_GGUF.
+    s = load_settings({"BASE_HOME": str(tmp_path), "GLIMMER_BACKEND": "llama_server", "GLIMMER_MODEL": "glimmer"})
+    assert s.answer_model == "glimmer"
 
 
 def test_defaults_are_meta_models_only(tmp_path):

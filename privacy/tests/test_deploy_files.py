@@ -266,6 +266,26 @@ def test_the_checker_and_embedder_scripts_refuse_to_start():
         assert r.returncode == 1 and "not a Meta model" in r.stderr and "Nov 2, 2026" in r.stderr, name
 
 
+def test_the_side_models_script_starts_glimmer_only():
+    """Nov 2 ruling: the measuring script used to start LFM3-VL-2B beside Glimmer. It starts one
+    llama-server now, and the environment it prints uses Glimmer as the checker."""
+    text = (REPO / "scripts" / "start_side_models.sh").read_text()
+    code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+    assert code.count("--model ") == 1 and '--model "$GGUF"' in code
+    assert "LFM" not in code and "CHECKER_GGUF" not in code
+    assert "CHECKER_BACKEND=glimmer" in code and "CHECKER_BACKEND=lfm" not in code
+
+
+@pytest.mark.parametrize("module", ["scripts.check_prompt_guard", "scripts.convert_prompt_guard"])
+def test_the_prompt_guard_scripts_refuse_to_run(module):
+    """Nov 2 ruling: Llama Prompt Guard 2 is not a Meta model for this hackathon, and these dev
+    scripts load it without load_settings, so each stops before it reads a model."""
+    import sys
+
+    r = subprocess.run([sys.executable, "-m", module, "--src", "x", "--out", "y"], cwd=REPO, capture_output=True, text=True, timeout=60)
+    assert r.returncode == 1 and "Nov 2, 2026" in r.stderr and "Llama models do not count" in r.stderr
+
+
 @pytest.mark.skipif(not (REPO / ".venv" / "bin" / "python").exists(), reason="needs the uv virtualenv")
 def test_start_refuses_lan_bind_on_laptop(tmp_path):
     r = run_start(tmp_path, BASE_DEVICE="laptop", GLIMMER_BACKEND="openrouter", APPROVAL_HOST="192.0.2.11")

@@ -28,6 +28,12 @@ REPORT = REPO / "eval" / "reports" / "prompt_guard_22m.md"
 
 
 def main() -> int:
+    # Off since the organizers' Nov 2, 2026 ruling: Muse Privacy may call only Meta models, and Llama
+    # models (Prompt Guard 2 among them) do not count. The code stays until the owner decides on it.
+    raise SystemExit(
+        "Llama Prompt Guard 2 is not allowed: the hackathon organizers ruled on Nov 2, 2026 that Muse Privacy "
+        "may call only Meta models, and Llama models do not count. PROMPT_GUARD stays off."
+    )
     ap = argparse.ArgumentParser()
     ap.add_argument("--model-dir", type=Path, default=REPO / "models" / "prompt-guard-2-22m")
     ap.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD)
