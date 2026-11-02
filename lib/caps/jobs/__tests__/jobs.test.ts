@@ -169,7 +169,8 @@ describe("jobs on a database", { skip: canMock ? false : "needs --experimental-t
       fetch: (async (input: string, init: RequestInit) => {
         calls.push(input);
         const token = new Headers(init.headers).get("x-musemuse-job");
-        const read = readJobToken(token, { productId }, new Date());
+        // The cron minted it on the test's clock, 10 minutes from NOW, so read it on that clock, not the wall's.
+        const read = readJobToken(token, { productId }, NOW);
         assert.ok(read, "the cron's call carries a good job token");
         return route(input, init, { runId: read.runId });
       }) as unknown as typeof fetch,
