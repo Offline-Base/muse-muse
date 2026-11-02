@@ -30,7 +30,8 @@ It comes from three deep-research reports the owner ran in a browser: Meta's dir
 2. **Fine-tuning isn't the new part.** Meta documents SFT, LoRA, QLoRA and RL for Glimmer, and points to Unsloth. We tune on Unsloth's 4-bit build, so say so.
    - The claim: one sentence becomes a plan, data, a tune, a blind check against the base model, and a file you keep, plus an app built around it.
 3. **The Jetson result is the honest frontier.** Meta's smallest Glimmer is 16.8 GB. The knowledge run's r30b, cut to 5.75 GB, now runs on a real Jetson Orin Nano 8GB (`jetson-02`, llama.cpp).
-   - Its card reports 5 to 6 tokens a second, poor answers, and loops on 17 of 60 prompts.
+   - On the board: 5 to 6 tokens a second with poor answers. Its card reports loops on 17 of 60 prompts.
+   - On Hussam's 40-receipt bench (PR #62) it gave 0% valid JSON, and the board stopped answering at receipt 23 and needed a power cycle. Bolt on jetson-04 got 88% of fields right and LFM3-VL on jetson-05 82%. So don't film it doing a document task.
    - Show it as "a third the size of Meta's smallest file, and here's what that costs", never as the model doing the reasoning in a demo.
    - r30b is a Derivative of Muse Spark Open (BUILD_LOG, Oct 31, "r30b is a Derivative of Muse Spark Open"). So "Built with Muse Spark Open" goes on screen with it, and its Usage Policy means 18 and over.
 4. **Don't pitch a gap in Meta's lineup.** Meta already has Muse (a personal agent with a Secure VM and audit trail), Muse Code, Glimmer and the cookbook above. Replit and Lovable already turn a sentence into an app.
@@ -45,20 +46,24 @@ None of these is built.
 - **A network capture for Muse Privacy.** Plant a canary string in a document, record every outbound request during a run, and show that the string never goes out. This is stronger than counting leaks with our own checker.
 - **The judge as one signal, not the gate.** Research puts LLM code judges at 17 to 22% false positives. Our build checks run typecheck, build and a smoke test before the judge, so say the judge is one check of four.
 
-## Stale lines found while checking
+## Stale lines, fixed Nov 2 on branch tg-messaging
 
-These belong to the "repo and submission ready" item, which is waiting on the owner.
+- `privacy/README.md` and `privacy/CLAUDE.md` said "solo" and the Build for Your World theme. They now say Ethan and Hussam, Push the Frontier.
+- `privacy/README.md`, `docs/STORY.md`, `docs/OFFLINE.md` and `lib/story/flow.ts` (the `/offline` page) said no Glimmer had run on a Jetson, or that jetson-02 ran LFM3. They now give the r30b run on jetson-02 with its limits.
+- `docs/STORY.md`: the lifted no-company-name rule, and the Oct 30 run with 10 leaks next to the "0 leaks" line.
+- `privacy/docs/PRIOR_WORK.md` lists Meta's "Local agent that asks first" first.
 
-- `privacy/README.md` line 5 says "Built solo" (it's Ethan and Hussam) and "under the theme Build for Your World" (the entry is Push the Frontier). Line 37 quotes that theme too.
-- `privacy/README.md` lines 167 and 182 say Glimmer hasn't run on the Jetson. A different Glimmer file (r30b at 5.75 GB) has now run there; see point 3.
-- `docs/STORY.md` says "No Jetson access yet", and lists "anything ran on a Jetson" under What not to say.
-- `docs/OFFLINE.md` line 512 says jetson-02 runs LFM3-1.7B. It runs r30b now, with the LFM3 setup backed up on the board.
+Still stale, found by Hussam's PR #61 and left for later because they need a new builder snapshot or are Muse Privacy's own copy:
+- `template/.agents/skills/meta-glimmer/SKILL.md` lines 3 and 14, and `lib/prompts/catalog.ts` line 201, still pitch Glimmer for "local, private or offline" use.
+- `privacy/README.md` line 13 and `privacy/docs/OTHER_APPS.md` line 5 say the Claude and ChatGPT apps weren't tried, but `privacy/docs/BUILD_LOG.md` for Oct 31 shows both working.
 
 ## Don't say
 
 - That Meta hasn't built private AI, fine-tuning or local agents.
 - That Muse Privacy solves Meta's local-and-cloud problem.
 - That data never leaves the device. Say how many leaks on how many invented items, and what that tested.
+- "0 leaks on 300 items" alone. An Oct 30 run (`privacy/eval/reports/device_only_fresh_200.md`) had 10 leaks on 200 items, with no cause recorded and no rerun. Give both, or rerun that set first.
+- That fleet or board answers are private. They pass through the product's server, Muse Muse, ngrok and the lead board, and jetson-05's ngrok agent keeps recent request bodies in memory (PR #61).
 - That Glimmer 30B runs well on 8 GB.
 - That one-bit or 4-bit costs nothing.
 - That the whole chain runs end to end. The marks in `docs/STORY.md` decide what's proven.

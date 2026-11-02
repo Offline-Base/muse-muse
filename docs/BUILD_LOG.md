@@ -2375,3 +2375,10 @@ Merged origin/main (#50, #51). The only conflict was this log; both entries kept
   - GAO's 12 of 12.
 - Found: Meta's cookbook (local Glimmer, approve, then Muse Spark, with an egress log) is the closest prior work to Muse Privacy, and privacy/docs/PRIOR_WORK.md doesn't list it.
 - Found stale: privacy/README.md "Built solo" and the Build for Your World theme, Glimmer "not run" on the Jetson in privacy/README.md and docs/STORY.md, and jetson-02's model in docs/OFFLINE.md. Left for the submission-ready item.
+- Follow-up, 10:30, same branch, on the owner's ask that every point be logged or applied and that CLAUDE.md know where to look:
+  - New root `CLAUDE.md`: imports AGENTS.md, has a read-first table and the standing rules.
+  - New `docs/HANDOFF.md`: current state, open PRs (Hussam's #60 to #63 included), what waits on the owner (the five overnight items, keys, terms, limits, Prompt Guard, ngrok), the jetson-02 and jetson-05 changes made through the fleet tools, and gotchas.
+  - Applied the stale lines: privacy README and CLAUDE.md (team, theme), the jetson-02 row in docs/OFFLINE.md, docs/STORY.md (Jetson marks, the lifted name rule, the Oct 30 run with 10 leaks), the `/offline` sentence in `lib/story/flow.ts`, and Meta's cookbook in privacy/docs/PRIOR_WORK.md.
+  - Hussam's #62 changes the Jetson claim: r30b on jetson-02 gave 0% valid JSON on 40 receipts, and the board hung at receipt 23. Every new line says so.
+  - The fleet shows jetson-02 back online at 10:20 with the model loaded.
+  - Tests: story 11 of 11, and Muse Privacy's claims and doc tests 275 of 275. My first wording named the company in STORY's privacy paragraph and failed the test that still enforces the lifted rule, so I reworded it.
