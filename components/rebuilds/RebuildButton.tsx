@@ -34,10 +34,10 @@ export function RebuildButton({ ids, text, confirm }: { ids?: string[]; text: st
         setState("error");
         setMessage(
           res.status === 403 || res.status === 401
-            ? "Only admins can start these builds."
+            ? "Only admins can start rebuilds."
             : res.status === 503
               ? "Building is paused right now."
-              : `Couldn't start the build${data.error ? ` (${data.error})` : ""}.`,
+              : `Couldn't start the rebuild${data.error ? ` (${data.error})` : ""}.`,
         );
         return;
       }
