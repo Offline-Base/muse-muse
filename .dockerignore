@@ -1,0 +1,29 @@
+# Secrets never enter the build context.
+.env*
+!.env.example
+
+# Local state and build output.
+.git
+node_modules
+.next
+.data
+.workflow-data
+.vercel
+*.tsbuildinfo
+
+# The same things .vercelignore keeps out of a deployment: the site doesn't need them to build or run.
+/native
+/privacy
+/docs/spikes
+/docs/log
+/eval
+scripts/dev
+scripts/.tmp*
+template/node_modules
+template/.next
+template/test-results
+template/playwright-report
+
+Dockerfile
+compose.yaml
+.dockerignore

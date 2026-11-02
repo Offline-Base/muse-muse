@@ -1,5 +1,70 @@
 # Muse Muse
 
+**Create your own personal AI, keep shaping it, own it, run it on your hardware.**
+
+| | |
+|---|---|
+| **Domain** | Agents |
+| **Event** | Meta Global AI Developer Hackathon, Startup track |
+| **Entrant** | Offline Base |
+| **Team** | Ethan and Hussam |
+
+That sentence is the aim, not yet the record. Each step below has run on its own, and the diagram marks how. The whole chain has not run as one, and no tuned model from this flow has run on anyone's own hardware. Every number we quote, failures first, is in [eval/](eval/README.md).
+
+```mermaid
+flowchart LR
+  you(["You: an example, some inspo or a note"])
+
+  subgraph cloud["Done once in the cloud"]
+    create["Create<br/>Muse Wonder writes the brief, Muse Code builds in a sandbox, checks and a judge<br/><b>Proven</b>: test builds. A long Muse Wonder build failed"]
+    shape["Keep shaping<br/>Edit, restore, or tune a model on a rented GPU with a blind judge<br/><b>Proven</b> on the test model. Tuning <b>by harness</b>"]
+  end
+
+  own["Own it<br/>source.zip, and a tuned GGUF file<br/><b>Proven</b> on the test model. GGUF <b>by harness</b>, private"]
+  run["Run it on your hardware<br/>A board, a laptop, a phone<br/><b>Simulated</b> board only. <b>Not run</b>: a tuned model on real hardware"]
+
+  subgraph privacy["Muse Privacy: on a laptop today"]
+    muse["Muse plans with tags"]
+    device["Device model does every step that touches documents<br/><b>LFM3-VL-2B today</b>, not Glimmer"]
+    policy["Your policy file decides what leaves<br/><b>Simulated</b> teacher, invented data"]
+  end
+
+  you --> create --> shape --> own --> run
+  shape -->|"answers from its own model: not run yet"| run
+  muse <-->|"tagged results only"| policy
+  policy --- device
+```
+
+**Which device step still uses LFM.** All of them, in the setup this repo ships. With `DEVICE_ONLY=1`, Liquid's LFM3-VL-2B, which isn't a Meta model, does Muse Privacy's name pass, its labels on Muse's requests, and its answers and summaries, while the policy file rather than a model makes the share decision. Tuned Muse Glimmer has not run on a device for this. On a rented A100 it wrote answers and summaries with 0 leaks and scored about the same as LFM (80.5% and 81.0%, against 81.0% and 82.0%), and if it takes over that step, the name pass and request labels stay on LFM. As the labeler, the tightener or the decider it scored far worse (41.0% to 64.0%). See [eval/](eval/README.md#muse-privacy).
+
+**What's simulated.** The board, in every "your own hardware" step. Every teacher and record in Muse Privacy, which has no real users. The fine-tuning results that say harness had a real GPU and judge, on an invented topic, without going through the site's launch path.
+
+Offline Base also makes Base Drive, an offline AI kit on a flash drive, and runs a fleet of Jetson boards. This flow has not run on those boards, and Muse Privacy's Jetson version is designed but has not run on a board. Muse Privacy lives in [privacy/](privacy/README.md).
+
+## Quickstart
+
+```bash
+git clone https://github.com/Offline-Base/muse-muse.git && cd muse-muse
+cp .env.example .env.local      # optional for browsing; every variable is explained in the file
+docker compose up --build       # then open http://localhost:3000
+```
+
+`compose.yaml` runs a production build on PGlite, Postgres in-process, in a Docker volume. Files stay in the same volume, sign-in is off for localhost, and the port is published on 127.0.0.1 only. No secrets go in the image: `.env.local` is read when the container starts, and compose overrides anything in it that would point at production's database or Blob store. There's no Postgres container, because the site uses Neon's HTTP driver, which can't reach a stock Postgres server. To use a Neon database, set `COMPOSE_DATABASE_URL` in your shell. Set `STORY_PAGES=1` in your shell before building to include `/offline`.
+
+The Dockerfile was written without a Docker daemon to test it on, so the image has **not been built or run yet**. What has run nearby: the migrations on an empty PGlite folder, `npx next build` with no database on a laptop, and `npm run dev:local`. `next start` on PGlite has not.
+
+| To do this | You need |
+|---|---|
+| Start the site and browse it | Nothing |
+| Write a brief, or anything else that calls a model | `MODEL_API_KEY`, a Meta Model API key |
+| Build a product | `MODEL_API_KEY`, plus `VERCEL_OIDC_TOKEN` (from `vercel env pull`, good for 12 hours) and `BUILDER_SNAPSHOT_ID` (from `npm run snapshot`), since builds run in Vercel Sandbox |
+| Publish a product to its own link | Not possible from a local run: a product couldn't reach this machine's gateway. Use a Vercel deployment (see [Setup](#setup)) |
+| Train a model | Not from a local run as it stands. Training starts only on production unless `TRAIN_ALLOW_OUTSIDE_PRODUCTION=1`, and a rented GPU has to reach the site to report back. See [docs/TRAINING.md](docs/TRAINING.md) |
+
+Without Docker, `npm install && npm run dev:local` does the same on Node 22 or newer. See [Run it on your machine](#run-it-on-your-machine).
+
+## What Muse Muse is
+
 Give it a muse and Muse makes it. Drop in an example or some inspo, like a photo, a screenshot, a sketch, a short video, a voice memo or a PDF, and add a note if you want. Muse Code builds a working product from it on Meta's models. The platform tests it, records a demo, deploys it to its own link, and makes it usable from the Muse app.
 
 Hackathon codename for the Meta Global AI Developer Hackathon, Startup track. Muse is Meta's brand, so pick your own name before taking this further. See the Name section in [docs/DESIGN.md](docs/DESIGN.md#name).
@@ -262,12 +327,13 @@ npx tsx --test --experimental-test-module-mocks components/train/__tests__/*.tes
 npx tsx --test template/scripts/__tests__/*.test.mjs   # the template's own scripts and theme contrast
 ```
 
-Nothing in the tests calls Meta, Vercel, Lambda or Neon. The fine-tuning runner test also needs `python3`.
+Nothing in the tests calls Meta, Vercel, Lambda or Neon. The fine-tuning runner test also needs `python3`. CI runs the typecheck and these tests on every pull request ([.github/workflows/ci.yml](.github/workflows/ci.yml)).
 
 Muse Privacy has its own setup and tests in `privacy/`: `cd privacy && uv sync --locked && uv run pytest -q`.
 
 ## Docs
 
+- [eval/README.md](eval/README.md) collects every measurement with its source, failures first.
 - [privacy/README.md](privacy/README.md) covers Muse Privacy, the connector that keeps private files on your device. The two
   share no code: neither imports the other, it is left out of the site's deploys, and it adds no migrations.
 - [docs/SUBMISSION.md](docs/SUBMISSION.md) has the submission write-up, the video script and the checklist.

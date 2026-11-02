@@ -2301,6 +2301,18 @@ The owner asked for it after I advised against it. Repo: https://huggingface.co/
 - Spend: device-loop-upload-1, gpu_1x_a10, launched 01:00:32Z, terminate sent about 01:47:30Z, off the list by 01:49:57Z. At most 49.4 minutes at $1.29, about $1.06 by list price, not read from an invoice. Limit $10. Lambda reports its id as terminated. Another session's device-loop-inv-1 was left alone.
 - Not run: the file on a Jetson, a download back from the Hub, the card's serve command on this copy, a judge on the answers, any tests (docs only). The stand-in numbers and the 1 of 5 on stock are from the Nov 1 run, not repeated.
 
+## Nov 1: repo ready for judges, Docker, Quickstart, eval/, CI (branch tg-repo-ready)
+
+- **Added:** `Dockerfile`, `.dockerignore`, `compose.yaml`, a Quickstart and a new opening in README.md (Domain Agents, team Ethan and Hussam, a marked diagram, which device step still uses LFM), `eval/README.md`, `.github/workflows/ci.yml`. `/eval` joined `.vercelignore`, and `.env.example` got a note on `DATABASE_URL` under compose.
+- **Docker not available:** the CLI and compose are installed, the daemon wasn't running, and I didn't start Docker Desktop. **The image has not been built or run.** The README says so. `docker compose config` parsed the file.
+- **Decision:** PGlite only, with no postgres service. `lib/db/client.ts` uses Neon's HTTP driver, which can't reach a stock Postgres server, and a new driver wasn't worth adding unproven this close to the deadline. `COMPOSE_DATABASE_URL` takes a Neon string.
+- **Decision:** compose overrides the database, Blob and VERCEL variables from `.env.local`, so a file from `vercel env pull` can't point a local container at production. The port is on 127.0.0.1 only, because OPEN_ACCESS=admin trusts a localhost Host header.
+- **Found:** `privacy/eval/reports/device_only_fresh_200.md`, Oct 30, shows 10 leaks on `fresh_200` with no cause in the report. eval/README.md lists it. The "0 leaks on 300 items" line holds for `fresh_200_b` and `tasks` on Oct 31 only.
+- **Left as is, for the owner:** `privacy/README.md` and `privacy/CLAUDE.md` still say "solo", against the entrant being a team, and `docs/STORY.md` still says to keep the company name out of the privacy paragraph.
+- **Checks:** the migrations on an empty PGlite folder passed. `lib/__tests__/vercelignore.test.ts` and `components/story/__tests__/story.test.tsx` 15 of 15. eval/ and README links checked by script. Not run here: typecheck, the full tests and `next build`; CI runs the first two on the PR. The Mermaid diagram wasn't rendered locally.
+- **Spend:** $0. No Meta calls, deploys or production changes.
+- **First CI run on PR #53, red, nothing in it from this branch's code (no TypeScript changed):** Typecheck ran out of memory at Node's default 2 GB heap, so it reported no type result; `ci.yml` now gives it 6 GB. Unit tests: 6240 tests, 6143 pass, 5 fail, 81 cancelled. Failing or stopped at load: `flags-off-surface`, `ready-provision`, `no-direct-database` (names `scripts/dev/tune-harness.ts`), `drive-product-route`, `build-steps`, `workflow.scenario` (2), `bundle`, `datasets`. Three of them (`no-direct-database`, `bundle`, `flags-off-surface`) rerun locally on this branch also fail, 30 of 33 pass. Not fixed here: it's outside this task.
+- **Second CI run (41379171424):** Typecheck passes with the 6 GB heap. Unit tests still fail, on the existing tests above. Worktree removed after this; branch kept.
 ## Nov 1: owner's decisions on BUILDS_ON_CONTRIBUTOR, PR #52 updated (branch tg-all-contributor)
 
 Merged origin/main (#50, #51). The only conflict was this log; both entries kept. #51's Fireworks code doesn't name Wonder.

@@ -15,3 +15,5 @@ scripts/.tmp*
 /docs/log
 # Muse Privacy runs on the person's own device and its relay on Cloudflare, so none of it ships with the site.
 /privacy
+# Muse Muse root measurements page: docs only, no site code reads it.
+/eval
