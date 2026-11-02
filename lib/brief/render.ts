@@ -43,6 +43,7 @@ const TARGET_SKILLS: Record<Exclude<TargetId, "web">, string> = {
   vr: ".agents/skills/muse-vr",
   glasses: ".agents/skills/muse-glasses",
   agent: ".agents/skills/muse-agent",
+  edge: ".agents/skills/muse-edge",
 };
 
 /** What each target asks of the build, on top of its skill. */
@@ -73,6 +74,12 @@ const TARGET_RULES: Record<Exclude<TargetId, "web">, string[]> = {
   agent: [
     "One person starts each run and sees its steps and any sources as they arrive, in the parts the skill lists. Never show raw tool output.",
     "See the Agent section below for the task, the tools and the limits.",
+  ],
+  edge: [
+    "Ask for the product's main answer through `respondJsonOrEdge` in `lib/meta/edge.ts`, with a small flat schema, and show its `label` next to every answer, word for word.",
+    "When both sides are down, show its `message` on the page and keep the person's input. Never log an expected fallback with console.error.",
+    "Write `edge-drill.json` naming that route and a simulated body. After verify, the build runs four simulated outage drills against it (cloud refused, cloud hung, both down, a tampered reply), and a failed drill fails the checks.",
+    "Label invented data \"Simulated\". Never say the product works offline, and never call a board answer private or on-device.",
   ],
 };
 

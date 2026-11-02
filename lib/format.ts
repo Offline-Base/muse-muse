@@ -144,6 +144,7 @@ const TARGET_LABELS: Record<TargetId, string> = {
   vr: "VR",
   glasses: "Glasses",
   agent: "Agent",
+  edge: "Edge",
 };
 
 /** What a person calls a target. */

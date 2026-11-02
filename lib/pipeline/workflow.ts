@@ -59,6 +59,7 @@ import {
   setStatusStep,
   spendPausedStep,
   startDeployStep,
+  startEdgeDrillStep,
   startMuseStep,
   startTaskStep,
   startTaskWithEnvStep,
@@ -88,7 +89,7 @@ import { packageProductStep } from "@/lib/pipeline/package-step";
 import { startProveStep } from "@/lib/pipeline/prove-start";
 import { provePlanStep } from "@/lib/pipeline/prove-steps";
 import { chainChecksNeedSession, chainEndLine, chainNext, type ChainPosition } from "@/lib/chain/plan";
-import { capWithinWall, fullChecksReserveMs, fullRoundCap, JUDGE_RESERVE_MS, stepTimeoutMs, type RoundPlan } from "@/lib/pipeline/steps";
+import { capWithinWall, EDGE_DRILL_CAP_MS, fullChecksReserveMs, fullRoundCap, JUDGE_RESERVE_MS, stepTimeoutMs, type RoundPlan } from "@/lib/pipeline/steps";
 import { MUSE_EXIT, REFINE_ROUND_STRIDE, type BuildModel } from "@/lib/sandbox/muse";
 import { TERMINAL_STATUSES, type BuildStatus } from "@/lib/types";
 
@@ -169,6 +170,8 @@ interface Ctx {
   chain?: ChainPosition;
   /** FAST_BUILDS on this build: helper lines in the story, and fix rounds recheck what failed before the full check. */
   fast?: boolean;
+  /** EDGE_ENABLED and the edge target: each verify in the checks is followed by the simulated outage drill. */
+  edge?: boolean;
 }
 
 /** What the build room says when a round that hit its cap goes on to the checks (ENGINE_CHECK_ON_TIMEOUT). */
@@ -320,20 +323,39 @@ async function runTask(
  */
 const LAST_ROUND_VERIFY_ENV = { MUSEMUSE_SCREEN_CHECK: "warn" };
 
-async function runVerify(ctx: Ctx, round: number, lastRound: boolean): Promise<VerifyResult> {
+async function runVerify(ctx: Ctx, round: number, lastRound: boolean, opts: { drill?: boolean } = {}): Promise<VerifyResult> {
   const capMs = capFor(ctx, "verify");
   // A chain's verify has longer than verify.mjs's usual 25 minutes for the requirements, inside the plan's cap.
   const chainEnv = ctx.chain ? { MUSEMUSE_REQUIREMENTS_MS: String(Math.max(60_000, capMs - 5 * 60_000)) } : null;
   const taskEnv = lastRound || chainEnv ? { ...(lastRound ? LAST_ROUND_VERIFY_ENV : {}), ...chainEnv } : undefined;
   const task = await runTask(ctx.sandboxName, "verify", capMs, taskEnv);
   if (task.timedOut) return verifyTimedOutStep({ buildId: ctx.buildId, round, minutes: Math.round(capMs / 60_000) });
+  // An edge build's outage drill runs on what verify just built, and only when verify passed.
+  const edgeDrill = opts.drill && ctx.edge && task.exitCode === 0 ? await runEdgeDrill(ctx) : null;
   return collectVerifyStep({
     buildId: ctx.buildId,
     sandboxName: ctx.sandboxName,
     round,
     exitCode: task.exitCode,
     outputTail: task.outputTail,
+    ...(edgeDrill ? { edgeDrill } : {}),
   });
+}
+
+/** The edge drill (lib/pipeline/edge-build.ts), polled like a task until done or EDGE_DRILL_CAP_MS (then it's killed). */
+async function runEdgeDrill(ctx: Ctx): Promise<{ exitCode: number | null; timedOut: boolean; outputTail: string }> {
+  await emitStep(ctx.buildId, { type: "log", text: "Running the simulated outage drills: cloud refused, cloud hung, both down, tampered reply." });
+  const cmdId = await startEdgeDrillStep(ctx.sandboxName);
+  const startedAt = Date.now();
+  for (let polls = 1; ; polls++) {
+    await sleep(TASK_POLL_MS);
+    const poll = await pollTaskStep(ctx.sandboxName, cmdId);
+    if (poll.done) return { exitCode: poll.exitCode, timedOut: false, outputTail: poll.outputTail };
+    if (pollTimedOut({ startedAt, now: Date.now(), capMs: EDGE_DRILL_CAP_MS, intervalMs: TASK_POLL_MS, polls })) {
+      await killStep(ctx.sandboxName, cmdId);
+      return { exitCode: null, timedOut: true, outputTail: "" };
+    }
+  }
 }
 
 /** The judge's call. A judge that can't run counts as a failed, non-blocking check, so the fix loop handles it. */
@@ -393,7 +415,7 @@ async function checkAndFix(ctx: Ctx, track: Track, kind: "build" | "refine", off
       }
     }
     const scoped = verify !== null;
-    verify ??= await runVerify(ctx, round, kind === "build" && last);
+    verify ??= await runVerify(ctx, round, kind === "build" && last, ctx.edge ? { drill: true } : {});
     if (ctx.fast && !scoped) recheck = verify.recheck ?? [];
     const judged = verify.passed ? await judge(ctx, round, verify.screenshots) : null;
     const passed = verify.passed && judged?.pass === true;
@@ -802,6 +824,7 @@ export async function buildProduct(input: BuildProductInput): Promise<BuildProdu
       ...(brief.plan ? { plan: brief.plan, startedAt } : {}),
       ...(brief.plan?.chain ? { chain: { session: 1, chainStartedAt: startedAt, sessionStartedAt: startedAt, sessionStartUsd: 0 } } : {}),
       ...(brief.fast ? { fast: true } : {}),
+      ...(brief.edge ? { edge: true } : {}),
     };
     const milestones = brief.plan?.milestones ?? [];
 
@@ -897,6 +920,7 @@ export async function refineProduct(input: BuildProductInput): Promise<BuildProd
       model: refine.model,
       roundBase: refine.refineIndex * REFINE_ROUND_STRIDE,
       ...(refine.plan ? { plan: refine.plan, startedAt } : {}),
+      ...(refine.edge ? { edge: true } : {}),
     };
 
     track.stage = "build";

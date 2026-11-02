@@ -59,6 +59,9 @@ let provisioned: Array<Record<string, unknown>> = [];
 let manifestReads = 0;
 let manifestImpl: unknown = null;
 let deployImpl: () => Promise<unknown> = async () => ({});
+/** EDGE_ENABLED: what the drill wrote, and the drills started. */
+let drillJson: string | null = null;
+let drillStarts: string[] = [];
 
 function thenable<T extends object>(q: T, result: () => unknown): T {
   return Object.assign(q, {
@@ -197,6 +200,17 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
         exportTranscript: async () => ({ url: "https://x/transcript.json", highlights: [] }),
         writeDemoSpec: async (sandboxName: string, spec: Record<string, unknown>) => void demoSpecs.push({ sandboxName, spec }),
         finishDemo: async () => demoVideo,
+        collectVerifyResult: async () => ({ summary: { passed: true, steps: [{ name: "build", ok: true }], failureOutput: "" }, screenshots: [] }),
+        readSandboxText: async (_name: string, file: string) => (file.endsWith("test-results/caps/edge-drill.json") ? drillJson : null),
+      },
+    });
+    mock.module(at("../edge-drill-sandbox.ts"), {
+      namedExports: {
+        EDGE_DRILL_RESULTS: "/vercel/app/test-results/caps/edge-drill.json",
+        startEdgeDrill: async (name: string) => {
+          drillStarts.push(name);
+          return { cmdId: "drill-1" };
+        },
       },
     });
     mock.module(at("../../engine/live-check.ts"), {
@@ -1064,6 +1078,80 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       assert.ok(!("capEnv" in provisioned[0]!));
       await reopen();
       assert.ok(!("capEnv" in reopened[0]!));
+    });
+  });
+
+  describe("edge builds (EDGE_ENABLED)", () => {
+    const EDGE_BRIEF = { ...FULL_BRIEF, targets: [{ id: "web", why: "w" }, { id: "edge", why: "Keep answering when the cloud is cut." }] };
+    const provision = (brief: unknown) => {
+      selects = { builds: [[{ id: "b1", kind: "build", productId: "prod-1", brief, inspirationId: "i" }]], inspirations: [[{ note: null, references: [] }]] };
+      return steps.provisionStep({ buildId: "b1", productId: "prod-1", slug: "bird-count", fixtures: [] });
+    };
+    const on = () => {
+      process.env.EDGE_ENABLED = "1";
+      process.env.EDGE_BUILDS = "1";
+    };
+    const results = (pass: boolean[]) =>
+      JSON.stringify({ simulated: true, results: pass.map((p, i) => ({ id: i + 1, name: `d${i + 1}`, pass: p, ms: 100, why: p ? null : "the reply has no plain both-down message" })) });
+    const verifyEvents = () => emitted.filter((e) => e.body.type === "verify").map((e) => e.body.summary as { passed: boolean; steps: Array<{ name: string; ok: boolean }>; failureOutput: string });
+    afterEach(() => {
+      delete process.env.EDGE_ENABLED;
+      delete process.env.EDGE_BUILDS;
+      drillJson = null;
+      drillStarts = [];
+    });
+
+    it("with the flags off, an edge brief gets no Next config and verify's summary is verify's own", async () => {
+      await provision(EDGE_BRIEF);
+      assert.ok(!("extraFiles" in provisioned[0]!));
+      await steps.collectVerifyStep({ buildId: "b1", sandboxName: "sb", round: 0, exitCode: 0, outputTail: "" });
+      assert.deepEqual(verifyEvents()[0], { passed: true, steps: [{ name: "build", ok: true }], failureOutput: "" });
+    });
+
+    it("with the flags on, only an edge brief gets the standalone Next config", async () => {
+      on();
+      await provision(EDGE_BRIEF);
+      const files = provisioned[0]!.extraFiles as Array<{ path: string; content: string }>;
+      assert.match(files.find((f) => f.path === "next.config.ts")!.content, /output: "standalone"/);
+      assert.ok(files.some((f) => f.path === "scripts/edge-drill.mjs"), "the drill kit comes with EDGE_BUILDS");
+      provisioned = [];
+      await provision(FULL_BRIEF);
+      assert.ok(!(provisioned[0]!.extraFiles as Array<{ path: string }>).some((f) => f.path === "next.config.ts"));
+    });
+
+    it("starts the drill on the build's sandbox", async () => {
+      on();
+      assert.equal(await steps.startEdgeDrillStep("sb"), "drill-1");
+      assert.deepEqual(drillStarts, ["sb"]);
+    });
+
+    it("adds a passing drill as four passed steps", async () => {
+      on();
+      drillJson = results([true, true, true, true]);
+      const r = await steps.collectVerifyStep({ buildId: "b1", sandboxName: "sb", round: 0, exitCode: 0, outputTail: "", edgeDrill: { exitCode: 0, timedOut: false, outputTail: "" } });
+      assert.equal(r.passed, true);
+      assert.equal(r.steps.length, 5);
+      assert.ok(r.steps.slice(1).every((x) => x.ok && x.name.startsWith("Simulated outage drill")));
+      assert.equal(verifyEvents()[0]!.passed, true);
+    });
+
+    it("fails the round on a failed drill, in the build room's verify event and the fix round's output", async () => {
+      on();
+      drillJson = results([true, true, false, true]);
+      const r = await steps.collectVerifyStep({ buildId: "b1", sandboxName: "sb", round: 0, exitCode: 0, outputTail: "", edgeDrill: { exitCode: 1, timedOut: false, outputTail: "" } });
+      assert.equal(r.passed, false);
+      assert.deepEqual(r.steps.map((x) => x.ok), [true, true, true, false, true]);
+      const event = verifyEvents()[0]!;
+      assert.equal(event.passed, false);
+      assert.match(event.failureOutput, /Simulated outage drill 3: both down: the reply has no plain both-down message/);
+    });
+
+    it("fails every drill when the drill wrote nothing", async () => {
+      on();
+      const r = await steps.collectVerifyStep({ buildId: "b1", sandboxName: "sb", round: 0, exitCode: 0, outputTail: "", edgeDrill: { exitCode: 2, timedOut: false, outputTail: "edge-drill: No route to ask" } });
+      assert.equal(r.passed, false);
+      assert.deepEqual(r.steps.map((x) => x.ok), [true, false, false, false, false]);
+      assert.match(verifyEvents()[0]!.failureOutput, /No route to ask/);
     });
   });
 
