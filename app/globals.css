@@ -23,9 +23,7 @@
   --device-highlight: rgba(255, 255, 255, 0.8);
   --shadow-showcase: 0 40px 60px -30px rgba(15, 20, 30, 0.45), 0 18px 30px -18px rgba(15, 20, 30, 0.35);
   --shadow-device-drop: rgba(15, 20, 30, 0.22);
-}
 
-:root {
   --bg: #ffffff;
   --surface: #ffffff;
   --surface-2: #f3f4f5;
@@ -249,6 +247,15 @@
 *::before,
 *::after {
   box-sizing: border-box;
+}
+
+/*
+ * The hidden attribute always hides. Without this, any class that sets display (flex, grid, block) beats the browser's
+ * own [hidden] rule, and the element stays on screen. That hid the Make page's plan a screen below a composer that was
+ * meant to be gone (#92). Per-class [hidden] rules aren't needed. until-found keeps the browser's own behavior.
+ */
+[hidden]:not([hidden="until-found"]) {
+  display: none !important;
 }
 
 html {
@@ -596,7 +603,6 @@ pre {
   cursor: pointer;
 }
 
-
 .nav-button.is-current {
   background: var(--nav-active);
   font-weight: 500;
@@ -811,10 +817,6 @@ pre {
   -webkit-backdrop-filter: blur(60px);
   backdrop-filter: blur(60px);
   box-shadow: var(--shadow-pop);
-}
-
-.menu[hidden] {
-  display: none;
 }
 
 .menu-end {
@@ -4391,11 +4393,6 @@ a.dash-card:hover {
   background: var(--chat-bg);
 }
 
-/* MakeChat and TrainComposer hide the box once a plan or a problem shows; without this, display: flex wins and the plan sits a screen below. */
-.play[hidden] {
-  display: none;
-}
-
 .play-main {
   flex: 1;
   min-width: 0;
@@ -6234,10 +6231,6 @@ a.dash-card:hover {
   line-height: 1.55;
 }
 
-.vibe-step-body[hidden] {
-  display: none;
-}
-
 @media (max-width: 559px) {
   .vibe-step-body {
     padding-left: 0;
@@ -6274,10 +6267,6 @@ a.dash-card:hover {
   gap: 10px;
   padding-left: 12px;
   border-left: 2px solid var(--line);
-}
-
-.vibe-opened-no[hidden] {
-  display: none;
 }
 
 .code-block.vibe-code {
@@ -6954,7 +6943,6 @@ div.md.md-plain {
   justify-content: flex-end;
   gap: 8px;
 }
-
 
 /* ---------- Models and Gadgets (/models, /gadgets) ---------- */
 
@@ -8048,13 +8036,6 @@ div.md.md-plain {
   z-index: 15;
   pointer-events: none;
   will-change: transform;
-}
-
-.mascot-climb[hidden],
-.mascot[hidden],
-.mascot video[hidden],
-.mascot-climb video[hidden] {
-  display: none;
 }
 
 .mascot-climb-clip {

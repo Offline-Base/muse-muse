@@ -213,7 +213,8 @@ Everything on the boards goes through the fleet control plane, never SSH from th
 - **Preview deploys:** pass each switch with `-e` and `-b`, and reach the Preview with `vercel curl`.
 - **`.env.local`:** `vercel link` writes a new `.env.local`. Delete it without reading it, then `git checkout .gitignore`. Never `vercel env pull` over `.env.local`.
 - **Blocked deploys:** Vercel refuses to deploy a commit whose author isn't on the Vercel team. Hussam's #56 deploy was blocked, and later main deploys replaced it.
-- **CI:** #65 (merged Nov 2) fixed the unit tests main already failed, so a red check on a PR is now its own. On Windows, line endings add failures in the brief goldens, `privacy-boundary` and the caps flags-off tests. Typecheck passes.
+- **CI:** #65 (merged Nov 2) fixed the unit tests main already failed. Later, #84 broke platform-contrast and #78 broke the tune-flag-off golden; #92 fixes both, so after it a red check on a PR is its own again.
+- **`hidden` always hides:** one global rule in app/globals.css beats any class's `display`. Don't add per-class `[hidden]` rules; `lib/__tests__/hidden-attribute.test.ts` fails a stylesheet that shows a hidden element. On Windows, line endings add failures in the brief goldens, `privacy-boundary` and the caps flags-off tests. Typecheck passes.
 - **Running tests:**
   - Command: `npx tsx --experimental-test-module-mocks --test <files>`, only for the code you touched.
   - The real-route PGlite test is `lib/train/tune/__tests__/open-train.test.ts`.

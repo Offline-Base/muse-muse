@@ -1126,9 +1126,6 @@
   overflow: auto;
 }
 
-.docs-code-body[hidden] {
-  display: none;
-}
 
 .docs-code-body pre {
   min-width: fit-content;
@@ -1470,9 +1467,6 @@
   overflow-y: auto;
 }
 
-.docs-prompt-menu[hidden] {
-  display: none;
-}
 
 .docs-choice {
   margin: 0;
@@ -1604,9 +1598,6 @@
   box-shadow: var(--shadow-pop);
 }
 
-.docs-try[hidden] {
-  display: none;
-}
 
 .docs-try-scroll {
   flex: 1;
@@ -1708,9 +1699,6 @@
   padding: 16px;
 }
 
-.docs-try-panel[hidden] {
-  display: none;
-}
 
 .docs-try-intro {
   margin-bottom: 14px;
@@ -1893,9 +1881,6 @@
   margin-top: 16px;
 }
 
-.docs-toc-panel[hidden] {
-  display: none;
-}
 
 .docs-toc-inline .docs-toc-item a {
   padding: 6px 8px 6px 16px;
@@ -2012,9 +1997,6 @@
   padding-left: 24px;
 }
 
-.docs-nav-children[hidden] {
-  display: none;
-}
 
 .docs-nav-link {
   display: flex;
@@ -2401,9 +2383,6 @@
   color: var(--fg);
 }
 
-.docs-chat[hidden] {
-  display: none;
-}
 
 .docs-chat-head {
   display: flex;
@@ -2485,9 +2464,6 @@
   min-width: 0;
 }
 
-.docs-chat-steps[hidden] {
-  display: none;
-}
 
 .docs-chat-empty {
   display: flex;

@@ -4,10 +4,6 @@
  * only what those don't have is here. Every class is new, so no other page changes. Tokens only (docs/BRAND.md).
  */
 
-/* The composer stays mounted under the room, so Change it finds the note and the files. .play sets display. */
-.play.tune-compose[hidden] {
-  display: none;
-}
 
 /* The line under the box: what a run does, how long and what it can cost. */
 .tune-intro-note {

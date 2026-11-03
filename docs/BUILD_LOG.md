@@ -3060,6 +3060,17 @@ Hussam's goal included a product that Muse Muse builds and that answers from the
 - **Owner report:** on musemuse.dev, sending "Tune a model to hide personal details..." (and earlier the dataset starter) spun, then nothing.
 - **Reproduced on production as a guest:** `/api/make/intent` 200 in about 6 s, then `/api/train/plan` 200 with a full plan about 7 s later. The plan did render, but about 970 px down the page, under a full-height copy of the composer. Screenshot: docs/log/shots/2026-11-02/make-plan-below-fold.png.
 - **Cause:** MakeChat and TrainComposer hide the composer with the `hidden` attribute once a plan or a problem shows, but `.play { display: flex; min-height: 100dvh }` in app/globals.css overrides `hidden`. It's been like this since #55. Every model, dataset or "both" muse, and every error shown in that place, looked like nothing happened.
-- **Fix:** `.play[hidden] { display: none; }`. Checked on the live page by injecting the rule: the hidden box went from 900 px to 0.
-- **Tests:** platform-contrast fails 6 of 9 with "--bg is not defined", the same with and without this change. The other globals.css readers pass.
+- **Fix:**
+  - One global rule in app/globals.css, `[hidden]:not([hidden="until-found"]) { display: none !important; }`, in place of 20 per-class `[hidden]` rules (globals.css, docs.css, chat.css, tune.css and three playground modules). All of them only set `display: none`.
+  - Checked on the live page by injecting the rule: the hidden box went from 900 px to 0.
+  - A sweep of 14 live pages at 1440 px and 390 px found no element that shows despite `hidden` today, so the rule changes nothing else that's visible.
+- **From the code review of the first fix:**
+  - **Toolbar:** How it works, Musings and the build-setup warning now stay above the room while the box is hidden (`.make-room-bar` in make.css). The Build setup panel stays with the box.
+  - **Focus:** focus moves to the room's alert or heading on Send, and back to the note on Change it (MakeChat).
+  - **File drops:** a file dropped while the composer is hidden is refused, not attached to a box no one can see (Composer).
+  - **Regression test:** lib/__tests__/hidden-attribute.test.ts keeps the global rule, and fails any stylesheet that gives a `[hidden]` selector a display other than none.
+- **Two tests main failed, fixed here:**
+  - platform-contrast (6 of 9, "--bg is not defined"): #84 put the device tokens in a second `:root` block above the main one, and the test reads only the first. They're now in the main block.
+  - tune-flag-off (2 of 2): #78's talking Muse changed the build room and plan card render, and #82 changed /fine-tuning. Bisected to those merges, then the golden was rewritten from clean main with `TUNE_GOLDEN_WRITE=1`.
+- **Tests:** 277 of 277 across composer, starters, make-flag-off, components/train, hidden-attribute, platform-contrast, look and feed. Typecheck clean.
 - **Spend:** two plan drafts on production (Contributor, cents). No run started.

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import "@/components/build/plan-card.css";
 import "@/components/make/make.css";
 import "@/components/train/tune.css";
@@ -273,6 +273,25 @@ export function MakeChat({
     setPhase({ at: "compose" });
   }
 
+  // When the box hides or comes back, focus moves with it, so keyboard and screen-reader users aren't left on <body>:
+  // to the room's heading (or its problem) for drafting, plan and problem, and back to the note on Change it.
+  const box = useRef<HTMLDivElement>(null);
+  const room = useRef<HTMLDivElement>(null);
+  const shownAt = half ? "half" : phase.at;
+  const lastShown = useRef(shownAt);
+  useEffect(() => {
+    if (lastShown.current === shownAt) return;
+    lastShown.current = shownAt;
+    if (shownAt === "compose") {
+      box.current?.querySelector("textarea")?.focus();
+      return;
+    }
+    const target = room.current?.querySelector<HTMLElement>("[role=alert]") ?? room.current?.querySelector<HTMLElement>("h1");
+    if (!target) return;
+    target.tabIndex = -1;
+    target.focus();
+  }, [shownAt]);
+
   const plan = phase.at === "plan" ? phase.plan : null;
   const review = ready?.review;
   const above = plan ? (
@@ -359,7 +378,7 @@ export function MakeChat({
 
   return (
     <>
-      <div className="play" hidden={phase.at !== "compose"}>
+      <div className="play" ref={box} hidden={phase.at !== "compose"}>
         <div className="play-main">
           {toolbar}
           <div className="play-intro">
@@ -395,69 +414,73 @@ export function MakeChat({
         {setup}
       </div>
 
-      {half ? (
-        <div className="room chat-split tune-room" data-settled="true">
-          <div className="room-main">
-            <ol className="convo" aria-label="What started">
-              <li className="room-answer make-row">
-                <p role="alert">The model&apos;s run started, but the app didn&apos;t: {half.text}</p>
-                <div className="row-actions">
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    disabled={starting}
-                    onClick={() => {
-                      setStarting(true);
-                      void appThenPair(half.runId, half.href);
-                    }}
-                  >
-                    Try the app again
-                  </button>
-                  <Link className="btn btn-outline" href={half.href}>
-                    Open the model&apos;s run
-                  </Link>
-                </div>
-              </li>
-            </ol>
+      <div className="make-room" ref={room}>
+        {/* The page actions and the build-setup warning stay on screen while the box is hidden. */}
+        {half || phase.at !== "compose" ? <div className="make-room-bar">{toolbar}</div> : null}
+        {half ? (
+          <div className="room chat-split tune-room" data-settled="true">
+            <div className="room-main">
+              <ol className="convo" aria-label="What started">
+                <li className="room-answer make-row">
+                  <p role="alert">The model&apos;s run started, but the app didn&apos;t: {half.text}</p>
+                  <div className="row-actions">
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      disabled={starting}
+                      onClick={() => {
+                        setStarting(true);
+                        void appThenPair(half.runId, half.href);
+                      }}
+                    >
+                      Try the app again
+                    </button>
+                    <Link className="btn btn-outline" href={half.href}>
+                      Open the model&apos;s run
+                    </Link>
+                  </div>
+                </li>
+              </ol>
+            </div>
           </div>
-        </div>
-      ) : phase.at !== "compose" ? (
-        <PlanStep
-          phase={phase}
-          examples={examples}
-          onExamples={setExamples}
-          steps={steps}
-          onSteps={setSteps}
-          autoUpload={intent?.kind === "both" || intent?.kind === "dataset" ? null : (train?.autoUpload ?? null)}
-          startLabel={intent?.kind === "dataset" ? "Write the examples" : "Start"}
-          codeHint={intent?.kind === "dataset" ? "Writing examples costs real money, so starting takes the code." : undefined}
-          upload={upload}
-          onUpload={setUpload}
-          anyBase={train?.anyBase ?? false}
-          fireworks={train?.fireworks ?? false}
-          onFireworks={onFireworks}
-          setOnFireworks={setOnFireworks}
-          base={base}
-          onBase={setBase}
-          ceilings={ceilings}
-          visitor={train?.visitor ?? null}
-          startCode={startCode}
-          onStartCode={setStartCode}
-          starting={starting}
-          startError={startError}
-          onStart={(p) => void start(p)}
-          onChange={backToBox}
-          above={above}
-          below={below}
-          problemActions={
-            appOnly ? (
-              <button type="button" className="btn btn-primary" disabled={starting} onClick={() => void buildJustTheApp()}>
-                Build it as an app
-              </button>
-            ) : null
-          }
-        />
-      ) : null}
+        ) : phase.at !== "compose" ? (
+          <PlanStep
+            phase={phase}
+            examples={examples}
+            onExamples={setExamples}
+            steps={steps}
+            onSteps={setSteps}
+            autoUpload={intent?.kind === "both" || intent?.kind === "dataset" ? null : (train?.autoUpload ?? null)}
+            startLabel={intent?.kind === "dataset" ? "Write the examples" : "Start"}
+            codeHint={intent?.kind === "dataset" ? "Writing examples costs real money, so starting takes the code." : undefined}
+            upload={upload}
+            onUpload={setUpload}
+            anyBase={train?.anyBase ?? false}
+            fireworks={train?.fireworks ?? false}
+            onFireworks={onFireworks}
+            setOnFireworks={setOnFireworks}
+            base={base}
+            onBase={setBase}
+            ceilings={ceilings}
+            visitor={train?.visitor ?? null}
+            startCode={startCode}
+            onStartCode={setStartCode}
+            starting={starting}
+            startError={startError}
+            onStart={(p) => void start(p)}
+            onChange={backToBox}
+            above={above}
+            below={below}
+            problemActions={
+              appOnly ? (
+                <button type="button" className="btn btn-primary" disabled={starting} onClick={() => void buildJustTheApp()}>
+                  Build it as an app
+                </button>
+              ) : null
+            }
+          />
+        ) : null}
+      </div>
     </>
   );
 }

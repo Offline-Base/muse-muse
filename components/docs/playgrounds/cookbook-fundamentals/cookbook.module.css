@@ -12,9 +12,6 @@
   padding-top: 14px;
 }
 
-.tabPanel[hidden] {
-  display: none;
-}
 
 .stack {
   display: flex;

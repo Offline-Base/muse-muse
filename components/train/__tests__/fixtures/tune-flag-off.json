@@ -24,32 +24,32 @@
     "length": 1265
   },
   "build room: running": {
-    "sha256": "f74533b5c8e68122fcf9d46e5300bcd2dff6cd3a148b23515d2b6434f62032f9",
-    "length": 48436
+    "sha256": "a56098cc4a9bd679da934f15403e4f2399067c2703eb700284fb55d87893cefc",
+    "length": 48521
   },
   "build room: failed": {
-    "sha256": "9e3750d13465d53a29a2533524537df24c1b02542b1ee20a8b33390a72ee23db",
-    "length": 17867
+    "sha256": "8a109ef61dbc99149bf1a1db23637d528d51a8f11f9434f37302556e0c070446",
+    "length": 17949
   },
   "build room: finished": {
-    "sha256": "8f5afc0a4b60d454e54280572bfdb96955f940a447fc1dc63263606409051769",
-    "length": 20469
+    "sha256": "477b33e51ed7b15808b59e362c9f5e1b000f579f54d57c5f35c7b16add2dcbb0",
+    "length": 20540
   },
   "plan card: part of it, running, with the brief link": {
-    "sha256": "bb99436f4ceb43d7e758796584c410e62c75e88fcf51a45397a0de2feaff32b4",
-    "length": 2369
+    "sha256": "3fe641b2be38e53b15397dc3b7e2664df3c9cd90e37edab2542506885e808943",
+    "length": 2450
   },
   "plan card: all of it, finished": {
-    "sha256": "8aab1754d21649d7c39aa274945ac838ce7aa1c27a815120c8faae810490ff2d",
-    "length": 1968
+    "sha256": "30f33d4474df2e276111132eefcb99168162be4f155fa14a1e7b8d6dbf34a282",
+    "length": 2039
   },
   "plan card: no one it's for": {
-    "sha256": "6aba934d35ebe97e258733d71c183aa2cd9743b2e0fec0513e552f0e283ce83a",
-    "length": 2312
+    "sha256": "839c103e6ec454e71a9ca19c5d6f057ca3f46df884978d89015c6ccb2b527522",
+    "length": 2545
   },
   "plan card: no steps or tagline": {
-    "sha256": "0c00d11e27392c2e28be9c72d4faa153f6314189e12f1eb3612548dba74e1f2a",
-    "length": 1699
+    "sha256": "d7002227a0a6e86bbfdf2d8bfb790a4a9f2e6b4dff08bfe2afbd04b855f0a643",
+    "length": 1781
   },
   "/fine-tuning: admin": {
     "sha256": "692a54a1880508cc1bf59c30e1cb327886c5d02e40c45df7cc584bb4758fe0a4",

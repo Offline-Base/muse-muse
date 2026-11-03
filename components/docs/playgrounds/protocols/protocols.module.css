@@ -35,9 +35,6 @@
   padding-top: 14px;
 }
 
-.labPanel[hidden] {
-  display: none;
-}
 
 .labIntro {
   margin: 0 0 12px;

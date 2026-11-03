@@ -332,16 +332,20 @@ export function Composer({
   // Drop files anywhere on the page. Without this the browser would navigate away to the dropped file.
   useEffect(() => {
     const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes("Files");
+    // A hidden composer (the Make page's box once a plan shows) takes no files: they'd attach where no one can see them.
+    // The page still refuses the drop, so the browser doesn't open the file instead.
+    const offScreen = () => !textarea.current || textarea.current.getClientRects().length === 0;
     const onEnter = (e: DragEvent) => {
       if (!hasFiles(e)) return;
       e.preventDefault();
+      if (offScreen()) return;
       dragDepth.current++;
       setDragging(true);
     };
     const onOver = (e: DragEvent) => {
       if (!hasFiles(e)) return;
       e.preventDefault();
-      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+      if (e.dataTransfer) e.dataTransfer.dropEffect = offScreen() ? "none" : "copy";
     };
     const onLeave = (e: DragEvent) => {
       if (!hasFiles(e)) return;
@@ -354,7 +358,7 @@ export function Composer({
       e.preventDefault();
       dragDepth.current = 0;
       setDragging(false);
-      if (ignoreHandledDrops && handled) return;
+      if ((ignoreHandledDrops && handled) || offScreen()) return;
       addFiles(Array.from(e.dataTransfer?.files ?? []));
     };
     window.addEventListener("dragenter", onEnter);

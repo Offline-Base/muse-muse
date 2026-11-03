@@ -30,3 +30,17 @@
   font-weight: 600;
   margin-top: 8px;
 }
+
+/* The room after Send (MakeChat): the wrapper only gives focus a place to look, and the bar keeps the page actions on screen. */
+.make-room {
+  display: contents;
+}
+
+.make-room-bar {
+  padding: 12px 24px 0;
+  background: var(--chat-bg);
+}
+
+.make-room-bar .toolbar {
+  margin: 0;
+}

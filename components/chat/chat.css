@@ -252,9 +252,6 @@
   color: var(--fg);
 }
 
-.chat-panel[hidden] {
-  display: none;
-}
 
 /* Up to 1100 px: over the conversation from the right. */
 @media (min-width: 640px) {
