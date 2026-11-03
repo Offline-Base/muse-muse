@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SAM on jetson-04</title>
+<title>SAM 3.1 on a Jetson</title>
 <style>
   :root { --bg:#f7f8fa; --card:#fff; --fg:#1c2b33; --muted:#65676b; --line:#dadde1; --accent:#0064e0; --bad:#c62828; }
   @media (prefers-color-scheme: dark) { :root { --bg:#18191a; --card:#242526; --fg:#e4e6eb; --muted:#b0b3b8; --line:#3e4042; --accent:#2d88ff; --bad:#ff6b6b; } }
@@ -36,12 +36,22 @@
   .stats { display:flex; gap:16px; flex-wrap:wrap; font-size:13px; color:var(--muted); margin-top:10px; }
   .stats b { color:var(--fg); }
   .health { font-size:13px; color:var(--muted); }
+  .seg { display:flex; border:1px solid var(--line); border-radius:999px; overflow:hidden; }
+  .seg button { flex:1; padding:8px 6px; border:0; background:var(--bg); color:var(--fg); font:inherit; font-size:13px; cursor:pointer; }
+  .seg button[aria-pressed=true] { background:var(--accent); color:#fff; font-weight:600; }
+  .seg button:disabled { opacity:.45; cursor:not-allowed; }
+  button.two { width:100%; margin-top:8px; padding:10px; border:1px solid var(--accent); border-radius:999px; background:transparent; color:var(--accent); font:inherit; font-weight:600; cursor:pointer; }
+  button.two:disabled { opacity:.5; cursor:wait; }
+  .pair { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width:820px) { .pair { grid-template-columns:1fr; } }
+  .pane h2 { font-size:15px; margin:0 0 8px; }
+  .note { font-size:12px; color:var(--muted); margin-top:6px; }
 </style>
 </head>
 <body>
 <main>
-  <h1>SAM 3.1 on jetson-04</h1>
-  <p class="sub">Meta's Segment Anything 3.1 running on a Jetson Orin Nano at the office. Your photo is sent through the fleet control plane; nothing else sees it. <span class="health" id="health">Checking the board…</span></p>
+  <h1>SAM 3.1 on a Jetson</h1>
+  <p class="sub">Meta's Segment Anything 3.1 running on a Jetson Orin Nano. Your photo goes only to the board<span id="via"></span>. <span class="health" id="health">Checking the board…</span></p>
   <div class="grid">
     <section class="card">
       <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose a photo">
@@ -52,9 +62,16 @@
       <label for="prompt">What should it find?</label>
       <input type="text" id="prompt" placeholder="for example: wheel, person, cup" value="">
       <div class="chips" id="chips"></div>
+      <label id="wlabel">Weights</label>
+      <div class="seg" role="group" aria-labelledby="wlabel">
+        <button type="button" id="wBase" aria-pressed="true">Meta SAM 3.1</button>
+        <button type="button" id="wTuned" aria-pressed="false" disabled>Tuned: muse</button>
+      </div>
+      <div class="note" id="wnote">The tuned detector learned the word "muse" on a Jetson. Meta's weights don't know that word.</div>
       <label for="thr">Confidence cut-off: <span id="thrv">0.50</span></label>
       <div class="row"><input type="range" id="thr" min="0.1" max="0.9" step="0.05" value="0.5"></div>
       <button class="go" id="go" disabled>Find it</button>
+      <button class="two" id="both" disabled>Before and after: Meta, then tuned</button>
       <div class="status" id="status" aria-live="polite"></div>
     </section>
     <section class="card result" id="result">
@@ -66,15 +83,23 @@
 const COLORS = ["#1877f2","#ff6347","#2ecc71","#f1c40f","#9b59b6","#1abc9c","#e67e22","#ec407a"];
 const $ = (id) => document.getElementById(id);
 let imageB64 = null;
+let weights = "base";
+let tunedName = null;
+function setWeights(w) { weights = w; $("wBase").setAttribute("aria-pressed", w === "base"); $("wTuned").setAttribute("aria-pressed", w !== "base"); }
+$("wBase").onclick = () => setWeights("base");
+$("wTuned").onclick = () => { if (tunedName) setWeights(tunedName); };
 
-["person","wheel","cup","dog","car","face","hand","bottle"].forEach((p) => {
+["muse","plush toy","person","wheel","cup","dog","car","bottle"].forEach((p) => {
   const b = document.createElement("button"); b.className = "chip"; b.type = "button"; b.textContent = p;
   b.onclick = () => { $("prompt").value = p; ready(); }; $("chips").appendChild(b);
 });
 $("thr").oninput = () => { $("thrv").textContent = Number($("thr").value).toFixed(2); };
 $("prompt").oninput = ready;
 $("prompt").onkeydown = (e) => { if (e.key === "Enter" && !$("go").disabled) go(); };
-function ready() { $("go").disabled = !(imageB64 && $("prompt").value.trim()); }
+function ready() {
+  const ok = !!(imageB64 && $("prompt").value.trim());
+  $("go").disabled = !ok; $("both").disabled = !(ok && tunedName);
+}
 
 const drop = $("drop");
 drop.onclick = () => $("file").click();
@@ -101,45 +126,73 @@ function load(file) {
   img.src = URL.createObjectURL(file);
 }
 
-async function go() {
-  $("go").disabled = true;
+async function ask(w) {
+  const r = await fetch("/api/segment", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ image_b64: imageB64, prompt: $("prompt").value.trim(), threshold: Number($("thr").value), tuned: w }) });
+  const d = await r.json();
+  if (!r.ok || d.error) throw new Error(d.error || r.statusText);
+  return d;
+}
+
+async function go(both) {
+  $("go").disabled = true; $("both").disabled = true;
   const st = $("status"); st.className = "status";
-  const parts = Math.ceil(imageB64.length / 15000);
-  st.textContent = `Sending the photo to jetson-04 in ${parts} pieces, then asking SAM…`;
+  st.textContent = both ? "Asking with Meta's weights, then with the tuned ones…" : "Asking SAM on the board…";
   const t0 = performance.now();
   try {
-    const r = await fetch("/api/segment", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ image_b64: imageB64, prompt: $("prompt").value.trim(), threshold: Number($("thr").value) }) });
-    const d = await r.json();
-    if (!r.ok || d.error) throw new Error(d.error || r.statusText);
-    show(d);
+    if (both) {
+      const a = await ask("base");
+      const b = await ask(tunedName);
+      const res = $("result"); res.textContent = "";
+      const pair = document.createElement("div"); pair.className = "pair";
+      pair.appendChild(pane(a, "Meta SAM 3.1 weights")); pair.appendChild(pane(b, `Tuned on a Jetson: ${b.weights}`));
+      res.appendChild(pair);
+    } else {
+      const d = await ask(weights);
+      const res = $("result"); res.textContent = "";
+      res.appendChild(pane(d, d.weights === "base" ? "Meta SAM 3.1 weights" : `Tuned on a Jetson: ${d.weights}`));
+    }
     st.textContent = `Done in ${((performance.now() - t0) / 1000).toFixed(1)} s.`;
   } catch (e) {
     st.className = "status bad"; st.textContent = "Didn't work: " + e.message;
   } finally { ready(); }
 }
-$("go").onclick = go;
+$("go").onclick = () => go(false);
+$("both").onclick = () => go(true);
 
-function show(d) {
-  const res = $("result"); res.textContent = "";
+function pane(d, title) {
+  const box = document.createElement("div"); box.className = "pane";
+  const h = document.createElement("h2"); h.textContent = title; box.appendChild(h);
   const img = document.createElement("img");
-  img.alt = `Photo with ${d.count} match${d.count === 1 ? "" : "es"} for "${d.prompt}" colored in`;
-  img.src = "data:image/jpeg;base64," + d.overlay_jpeg_b64; res.appendChild(img);
+  img.alt = `Photo with ${d.count} match${d.count === 1 ? "" : "es"} for "${d.prompt}" colored in, ${title}`;
+  img.src = "data:image/jpeg;base64," + d.overlay_jpeg_b64; box.appendChild(img);
   const stats = document.createElement("div"); stats.className = "stats";
-  stats.innerHTML = `<span>Found <b>${d.count}</b> “${escapeHtml(d.prompt)}”</span><span>SAM on the board: <b>${(d.ms / 1000).toFixed(1)} s</b></span><span>Upload: <b>${d.upload_s} s</b> (${d.parts} pieces)</span><span>Round trip: <b>${d.total_s} s</b></span>`;
-  res.appendChild(stats);
+  const top = d.objects.length ? Math.max(...d.objects.map((o) => o.score)).toFixed(2) : "none";
+  stats.innerHTML = `<span>Found <b>${d.count}</b> “${escapeHtml(d.prompt)}”</span><span>Best score: <b>${top}</b></span><span>SAM on the board: <b>${(d.ms / 1000).toFixed(1)} s</b></span>` +
+    (d.via === "fleet" ? `<span>Upload: <b>${d.upload_s} s</b> (${d.parts} pieces)</span>` : "") + `<span>Round trip: <b>${d.total_s} s</b></span>`;
+  box.appendChild(stats);
   if (d.objects.length) {
     const t = document.createElement("table");
     t.innerHTML = "<tr><th>#</th><th>Confidence</th><th>Box (x0, y0, x1, y1)</th><th>Area</th></tr>" +
       d.objects.map((o, i) => `<tr><td><span class="sw" style="background:${COLORS[i % COLORS.length]}"></span>${i + 1}</td><td>${o.score.toFixed(2)}</td><td>${o.box.map(Math.round).join(", ")}</td><td>${o.area_px.toLocaleString()} px</td></tr>`).join("");
-    res.appendChild(t);
+    box.appendChild(t);
   }
+  return box;
 }
 function escapeHtml(s) { return s.replace(/[&<>"]/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
 
 fetch("/api/health").then((r) => r.json()).then((d) => {
+  $("via").textContent = d.via === "direct" ? ", straight to its SAM service" : ", through the fleet control plane";
+  const tuned = (d.sam && d.sam.tuned) || [];
+  if (tuned.length) {
+    tunedName = tuned.includes("muse") ? "muse" : tuned[0];
+    $("wTuned").textContent = `Tuned: ${tunedName}`; $("wTuned").disabled = false;
+  } else {
+    $("wnote").textContent = "This board's SAM has no tuned detector loaded, so only Meta's weights are offered.";
+  }
   $("health").textContent = d.sam && d.sam.ok ? `Board ready, SAM using ${d.sam.gpu_mb} MB of GPU memory.` : "Board answered, but SAM isn't ready: " + JSON.stringify(d.sam || d.error);
-}).catch(() => { $("health").textContent = "Couldn't reach the fleet."; });
+  ready();
+}).catch(() => { $("health").textContent = "Couldn't reach the board."; });
 </script>
 </body>
 </html>
