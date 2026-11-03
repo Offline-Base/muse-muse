@@ -545,8 +545,9 @@ describe("the runner", () => {
   const badGadgetZip = (p: OutputProduct) =>
     makeZip(gadgetEntries(p).map((e) => (e.path.includes("/commands.d/") ? { ...e, path: e.path.replace(/commands\.d\/[^/]+$/, "commands.d/system.go.json") } : e)));
 
-  const runIt = async (over: { capUsd?: number; est?: number } = {}) => {
-    const spec = planChecks({ product: { slug: "tip", name: "Tip", tagline: "Tips", liveUrl: base, manifest: liveActions.length ? manifest(liveActions) : m }, origin: base, dir, capUsd: over.capUsd ?? 1.5, estimatedCostPerRunUsd: over.est ?? 0.01, fetchable: true });
+  const runIt = async (over: { capUsd?: number; est?: number; fixturesDir?: string } = {}) => {
+    const planned = planChecks({ product: { slug: "tip", name: "Tip", tagline: "Tips", liveUrl: base, manifest: liveActions.length ? manifest(liveActions) : m }, origin: base, dir, capUsd: over.capUsd ?? 1.5, estimatedCostPerRunUsd: over.est ?? 0.01, fetchable: true });
+    const spec = { ...planned, fixturesDir: over.fixturesDir ?? path.join(dir, "no-fixtures") };
     writeFileSync(path.join(dir, "spec.json"), JSON.stringify(spec));
     await new Promise<void>((resolve, reject) => {
       execFile("node", [path.join(dir, "prove-runner.mjs"), path.join(dir, "spec.json")], { timeout: 60_000 }, (err) => (err ? reject(err) : resolve()));
@@ -592,6 +593,36 @@ describe("the runner", () => {
     // The gadget sent the same input the CLI did, on stdin and through the runner.
     assert.ok(reached.includes(`gadget:go:{"text":"hi"}`), reached.join(" "));
     assert.equal(results.outputs.skill!.facts.downloaded, true);
+  });
+
+  it("swaps a shortened data URL in an example for the product's own sample, and sends a big one from a file", async () => {
+    const photo = { type: "object", required: ["image"], properties: { image: { type: "string", description: "A photo as a data URL." } } };
+    useActions([action({ name: "scan", ...READ_ONLY, input: photo, example: { image: "data:image/jpeg;base64,/9j/4AAQ..." } })]);
+    const fixturesDir = mkdtempSync(path.join(tmpdir(), "muse-prove-fixtures-"));
+    try {
+      // About 300 KB as base64: past one command line's limit, so it has to go in a file.
+      const jpeg = Buffer.alloc(220_000, 7);
+      jpeg.write("\xff\xd8\xff", 0, "latin1");
+      writeFileSync(path.join(fixturesDir, "fridge.jpg"), jpeg);
+      writeFileSync(path.join(fixturesDir, "notes.txt"), "not a photo");
+      const results = await runIt({ fixturesDir });
+      for (const id of ["mcp", "cli", "gadget"] as const) assert.equal(results.outputs[id]!.ok, true, `${id}: ${JSON.stringify(results.outputs[id]!.facts)}`);
+      const sent = `"image":"data:image/jpeg;base64,${jpeg.toString("base64")}"`;
+      for (const caller of ["cli", "gadget"]) assert.ok(bodies.some((b) => b.startsWith(`${caller}:scan:`) && b.includes(sent)), `${caller} sent the sample`);
+      assert.ok(reached.includes("mcp:scan"));
+      assert.match(results.outputs.mcp!.steps.at(-1)!.command, / -d '@[^']*call-\d+\.json' /);
+      assert.match(results.outputs.cli!.steps.at(-1)!.command, /--cli-input-file /);
+    } finally {
+      rmSync(fixturesDir, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves a shortened data URL as it is when there is no sample of that kind", async () => {
+    const photo = { type: "object", required: ["image"], properties: { image: { type: "string" } } };
+    const example = { image: "data:image/png;base64,iVBORw0KGgo..." };
+    useActions([action({ name: "scan", ...READ_ONLY, input: photo, example })]);
+    await runIt();
+    assert.ok(bodies.some((b) => b === `cli:scan:${JSON.stringify(example)}`), bodies.join(" "));
   });
 
   it("fails the gadget pack when a command breaks the SDK's rules, and calls nothing through it", async () => {

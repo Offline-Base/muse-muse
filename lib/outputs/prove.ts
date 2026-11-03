@@ -113,6 +113,8 @@ export interface ProveRunSpec {
   downloads: { cli: string; skill: string; claudePlugin: string; gadget: string } | null;
   /** VERIFY_AGENTS, on an agent product: the runner keeps each call's reply so judgeAgentClaims can read it. */
   agentCheck?: boolean;
+  /** The product's fixtures/ in the copy. The runner swaps a shortened data URL in an example for a sample from here. */
+  fixturesDir?: string;
 }
 
 /** What the manifest says about whether an action changes anything: true when it only reads, undefined when it doesn't say. */

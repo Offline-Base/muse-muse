@@ -3405,3 +3405,16 @@ The organizers ruled on Nov 2 that every model the project calls at runtime must
   - **A made-up look label.** The writer kept "Look:" after turning a start into its own idea ("Look: mission control"), which points the build at a look file that doesn't exist. The writer line now says to drop the label then. Range tests 25 of 25.
   - **Long team links.** relay-board-studio and handbook-proof-checker got `musemuse-<slug>-ethan-6436s-projects.vercel.app` as their live link, because the short alias wasn't on the deployment yet when it was polled. `pollDeploy` now prefers the project's own name alias, then asks the project for its production domain. Both short links already answer 200; the two stored links stay long until those products redeploy.
 - **Started in parallel (agents):** a runtime audit of all 12 apps on desktop and phone; a phone-mode pass on the site; the Jetson work (SAM 3.1, SAM fine-tuning, one-bit Glimmer, connecting boards to builds).
+
+## Nov 3, 2026, 3 AM ET: audit A results, and Prove it on shortened examples
+
+- **Audit A (api, alerts, charts, fridge), desktop and a 390 px phone:** all 4 work end to end on their samples, with no console errors or sideways scroll. The judge passed real defects:
+  - fresh-dot-fridge draws its outline boxes at a tenth of their size (the boxes are 0-1000 units and were divided by 10 again), and credits "Outlined by SAM 3.1" though its one call returns only boxes;
+  - samples too thin for the note: a "long" policy of 349 characters, so the cache line never moves off 0; a "noisy feed" of 9 clean alerts; a chart with no printed total;
+  - parking's "Try the sample" fills but doesn't save, so the next button shows an empty screen;
+  - a user chat bubble at about 1.3:1 contrast, tap targets of 34 to 40 px, a tapped card opening below the screen, a no-confirm "Clear saved run", cost shown twice;
+  - room text cut off after "What changed:", the mascot over the plan card, a plan total that doesn't match its items.
+- **Fix workflow started (wf_2b3cfcce-442):** five units, each in its own worktree and checked by a second agent: phone screen checks (tap targets, contrast), judge and sample rules, template skills (an overlay coordinate helper, selection into view, confirm before clearing, cost once), true model credits, and the room and plan text.
+- **Prove it failed on every output for fresh-dot-fridge** with HTTP 500. Cause: the manifest's example was `data:image/jpeg;base64,/9j/4AAQ...`, a shortened placeholder, so every test call sent a broken image. The same call with the app's own sample photo works (12 s through MCP). Any product with a file input can hit this.
+  - **Fix:** the Prove it runner now swaps a shortened data URL (under 200 characters or ending in "...") for the product's own sample of the same kind from `fixtures/` (smallest file up to 3 MB). Bodies past 32 KB go in a file: `curl -d @file`, the CLI's `--cli-input-file`, and the gadget's stdin, since Linux caps one command-line argument at 128 KB.
+  - Prove and assets tests 63 of 63. Deploy only, no snapshot.

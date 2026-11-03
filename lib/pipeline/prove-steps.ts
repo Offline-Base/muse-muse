@@ -181,7 +181,8 @@ export async function proveOpenStep(input: { buildId: string; runId: string; ori
     });
     // VERIFY_AGENTS: grades the reply of a call the run makes anyway, so it adds no call and no spend.
     const isAgent = env.verifyAgents && (await buildIsAgent(buildId));
-    const spec: ProveRunSpec = isAgent && planned.calls.length ? { ...planned, agentCheck: true } : planned;
+    const withFixtures: ProveRunSpec = { ...planned, fixturesDir: `${PRODUCT_DIR}/fixtures` };
+    const spec: ProveRunSpec = isAgent && planned.calls.length ? { ...withFixtures, agentCheck: true } : withFixtures;
     await sandbox.writeProveFiles(copy, [...proveCheckFiles(spec), ...(spec.downloads ? [] : generatedFilesFor(product, site, PROVE_DIR))]);
     const ctx: ProveCtx = {
       buildId,
