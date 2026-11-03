@@ -15,6 +15,8 @@
 #   EDGE_MODEL       the served model's name, default "edge"
 #   EDGE_BOARD       the label's board name, default "the edge board"
 #   EDGE_MODEL_NAME  the label's model name, default EDGE_MODEL
+#   EDGE_SAM_URL     optional: the board's SAM service, like http://127.0.0.1:8790, for a product that looks at photos
+#   EDGE_SAM_BOARD   optional: the SAM label's board name, default EDGE_BOARD
 #   GATEWAY_URL      optional. Unset means the product never tries the cloud. PRODUCT_TOKEN is never written into the
 #                    kit: set it on the board yourself if GATEWAY_URL is set.
 #   EDGE_PORT        default 3000, the port the product listens on
@@ -27,7 +29,7 @@
 set -euo pipefail
 
 usage() {
-  sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 if [[ $# -lt 1 || "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
@@ -52,6 +54,8 @@ EDGE_MODEL="${EDGE_MODEL:-edge}"
 EDGE_BOARD="${EDGE_BOARD:-the edge board}"
 EDGE_MODEL_NAME="${EDGE_MODEL_NAME:-$EDGE_MODEL}"
 GATEWAY_URL="${GATEWAY_URL:-}"
+EDGE_SAM_URL="${EDGE_SAM_URL:-}"
+EDGE_SAM_BOARD="${EDGE_SAM_BOARD:-}"
 EDGE_PORT="${EDGE_PORT:-3000}"
 EDGE_BIND="${EDGE_BIND:-0.0.0.0}"
 IMAGE="${EDGE_NODE_IMAGE:-node:20-bullseye-slim}"
@@ -61,7 +65,7 @@ mkdir -p "$OUT"
 OUT_ABS="$(cd "$OUT" && pwd)"
 rm -rf "${OUT_ABS:?}/$NAME" "$OUT_ABS/$NAME-linux-arm64.tgz"
 
-for v in "$EDGE_URL" "$EDGE_FIRST" "$EDGE_MODEL" "$EDGE_BOARD" "$EDGE_MODEL_NAME" "$GATEWAY_URL" "$EDGE_PORT" "$EDGE_BIND"; do
+for v in "$EDGE_URL" "$EDGE_FIRST" "$EDGE_MODEL" "$EDGE_BOARD" "$EDGE_MODEL_NAME" "$GATEWAY_URL" "$EDGE_SAM_URL" "$EDGE_SAM_BOARD" "$EDGE_PORT" "$EDGE_BIND"; do
   if [[ "$v" == *[\"\$\`\\]* ]]; then
     echo "build-arm64: a setting has a quote, dollar sign, backtick or backslash in it: $v" >&2
     exit 2
@@ -99,6 +103,8 @@ JS
   printf 'export EDGE_MODEL="${EDGE_MODEL:-%s}"\n' "$EDGE_MODEL"
   printf 'export EDGE_BOARD="${EDGE_BOARD:-%s}"\n' "$EDGE_BOARD"
   printf 'export EDGE_MODEL_NAME="${EDGE_MODEL_NAME:-%s}"\n' "$EDGE_MODEL_NAME"
+  if [[ -n "$EDGE_SAM_URL" ]]; then printf 'export EDGE_SAM_URL="${EDGE_SAM_URL:-%s}"\n' "$EDGE_SAM_URL"; fi
+  if [[ -n "$EDGE_SAM_BOARD" ]]; then printf 'export EDGE_SAM_BOARD="${EDGE_SAM_BOARD:-%s}"\n' "$EDGE_SAM_BOARD"; fi
   if [[ -n "$GATEWAY_URL" ]]; then
     printf 'export GATEWAY_URL="${GATEWAY_URL:-%s}"\n' "$GATEWAY_URL"
     echo '# PRODUCT_TOKEN is never in this kit. Without it the product skips the cloud and asks the board only.'

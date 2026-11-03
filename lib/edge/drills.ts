@@ -1,6 +1,7 @@
 /**
- * The four simulated outage drills (template/scripts/edge-drill.mjs, docs/EDGE_DEMO.md) as people read them: their
- * names, what each one simulated, and how their results come out of a verify summary. Pure and env-free, so the build
+ * The four simulated outage drills, and the four photo drills for a product that looks with Meta SAM 3.1
+ * (template/scripts/edge-drill.mjs, docs/EDGE_DEMO.md), as people read them: their names, what each one simulated, and
+ * how their results come out of a verify summary. Pure and env-free, so the build
  * room, the product page and lib/pipeline/edge-build.ts share one list.
  */
 
@@ -19,6 +20,17 @@ export const EDGE_DRILLS: ReadonlyArray<{ id: number; name: string; simulated: s
   { id: 2, name: "cloud hung", simulated: "The cloud never answered, so after trying it the product had to answer from a simulated board, with its label, within 15 s." },
   { id: 3, name: "both down", simulated: "The cloud and the simulated board were both down, so the product had to reply with its plain both-down message and no server error." },
   { id: 4, name: "tampered reply rejected", simulated: "A simulated board sent a reply with the wrong types, and none of it was allowed into the product's reply." },
+];
+
+/**
+ * The four photo drills (template/scripts/edge-drill.mjs, 12 to 15), run for a product whose edge-drill.json names a
+ * route that looks with Meta SAM 3.1 through segmentOrEdge. A build without that route runs none of them.
+ */
+export const EDGE_SAM_DRILLS: ReadonlyArray<{ id: number; name: string; simulated: string }> = [
+  { id: 12, name: "SAM, cloud refused", simulated: "The cloud refused every connection, so after trying it the product had to look at a simulated photo on a simulated board, with its label." },
+  { id: 13, name: "SAM, cloud hung", simulated: "The cloud never answered, so after trying it the product had to look at a simulated photo on a simulated board, with its label, within 15 s." },
+  { id: 14, name: "SAM, both down", simulated: "The cloud and the simulated board were both down, so the product had to say plainly that it can't see right now, with no label and no server error." },
+  { id: 15, name: "SAM, tampered board reply rejected", simulated: "A simulated board sent a look with the wrong types, and none of it was allowed into the product's reply." },
 ];
 
 /** One drill's result as the build room and the product page show it. */
@@ -57,7 +69,7 @@ export function splitDrillSteps<S extends Step>(steps: readonly S[]): { checks: 
       ok: s.ok,
       ...(typeof s.ms === "number" ? { ms: s.ms } : {}),
       ...(s.detail ? { detail: s.detail } : {}),
-      simulated: EDGE_DRILLS.find((d) => d.id === id)?.simulated ?? "",
+      simulated: [...EDGE_DRILLS, ...EDGE_SAM_DRILLS].find((d) => d.id === id)?.simulated ?? "",
     });
   }
   return { checks: drills.length ? checks : [...steps], drills };

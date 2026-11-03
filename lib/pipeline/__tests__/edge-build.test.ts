@@ -22,6 +22,8 @@ import {
 
 const EDGE = { targets: [{ id: "web" }, { id: "edge" }] };
 const results = (pass: boolean[]) => JSON.stringify({ simulated: true, results: pass.map((p, i) => ({ id: i + 1, name: "x", pass: p, ms: 50, why: p ? null : "nope" })) });
+/** Results by drill id, for runs that include the photo drills (12 to 15). */
+const byId = (pass: Record<number, boolean>) => JSON.stringify({ simulated: true, results: Object.entries(pass).map(([id, p]) => ({ id: Number(id), name: "x", pass: p, ms: 50, why: p ? null : "nope" })) });
 const on = () => {
   process.env.EDGE_ENABLED = "1";
   process.env.EDGE_BUILDS = "1";
@@ -74,6 +76,8 @@ describe("the drill's script and env", () => {
     assert.equal(vars.MUSEMUSE_BASE_URL, `http://127.0.0.1:${EDGE_DRILL_PORT}`);
     assert.equal(vars.EDGE_FIRST, "0");
     assert.ok(!("GATEWAY_URL" in vars) && !("PRODUCT_TOKEN" in vars), "edge-drill.mjs sets these to the blackhole and a dummy");
+    assert.ok(!("EDGE_SAM_URL" in vars), "edge-drill.mjs points it at the fake");
+    assert.equal(vars.EDGE_SAM_MODEL_NAME, "simulated SAM", "a fake board's look never claims to be Meta SAM 3.1");
     assert.deepEqual(EDGE_DRILL_KIT.map((f) => f.path), ["scripts/edge-blackhole.mjs", "scripts/edge-drill.mjs", "scripts/edge-fake.mjs"]);
   });
 });
@@ -102,6 +106,31 @@ describe("the drill as verify steps", () => {
     assert.equal(fails({ exitCode: 0, timedOut: false, outputTail: "", json: "not json" }), 4);
     assert.equal(fails({ exitCode: 1, timedOut: false, outputTail: "", json: results([true, true, true, true]) }), 4);
     assert.equal(fails({ exitCode: 0, timedOut: false, outputTail: "", json: results([true, true, true]) }), 1);
+  });
+
+  it("adds the four photo drills as steps once any of them ran, and holds the run to all eight", () => {
+    const all = { 1: true, 2: true, 3: true, 4: true, 12: true, 13: true, 14: true, 15: true };
+    const s = withEdgeDrill(base, { exitCode: 0, timedOut: false, outputTail: "", json: byId(all) });
+    assert.equal(s.passed, true);
+    assert.deepEqual(s.steps.slice(5).map((x) => x.name), [
+      "Simulated outage drill 12: SAM, cloud refused",
+      "Simulated outage drill 13: SAM, cloud hung",
+      "Simulated outage drill 14: SAM, both down",
+      "Simulated outage drill 15: SAM, tampered board reply rejected",
+    ]);
+    const failed = withEdgeDrill(base, { exitCode: 1, timedOut: false, outputTail: "", json: byId({ ...all, 15: false }) });
+    assert.equal(failed.passed, false);
+    assert.deepEqual(failed.steps.map((x) => x.ok), [true, true, true, true, true, true, true, true, false]);
+    assert.match(failed.failureOutput, /- Simulated outage drill 15: SAM, tampered board reply rejected: nope/);
+    const missing = edgeDrillSteps({ exitCode: 0, timedOut: false, outputTail: "", json: byId({ 1: true, 2: true, 3: true, 4: true, 12: true }) });
+    assert.deepEqual(missing.steps.filter((x) => !x.ok).map((x) => x.name.split(":")[0]), ["Simulated outage drill 13", "Simulated outage drill 14", "Simulated outage drill 15"]);
+  });
+
+  it("a product that only looks is held to the four photo drills, and a run with no results to the four", () => {
+    const s = edgeDrillSteps({ exitCode: 0, timedOut: false, outputTail: "", json: byId({ 12: true, 13: true, 14: true, 15: true }) });
+    assert.deepEqual(s.steps.map((x) => x.name.split(":")[0]), [12, 13, 14, 15].map((id) => `Simulated outage drill ${id}`));
+    assert.ok(s.steps.every((x) => x.ok));
+    assert.equal(edgeDrillSteps({ exitCode: 2, timedOut: false, outputTail: "", json: null }).steps.length, 4);
   });
 
   it("keeps verify's own failure and never passes a failed verify", () => {

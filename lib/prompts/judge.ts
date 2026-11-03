@@ -99,7 +99,7 @@ export const GLASSES_JUDGE_NOTE =
  * so the cloud's label is the product working. The outage drills after verify check the backup itself.
  */
 export const EDGE_JUDGE_NOTE =
-  "This product is built so its main answer comes from a backup model on an edge board when the cloud is cut. In this test the cloud answered. Every model answer carries a small label saying where it was answered, \"Answered in the cloud, <model>\" or \"Answered on <board>, <model>\", and either label is the product working. Fail it when a model answer has no such label, or when the page says it works offline or calls an answer private or on-device.";
+  "This product is built so its main answer comes from a backup model on an edge board when the cloud is cut. In this test the cloud answered. Every model answer carries a small label saying where it was answered, \"Answered in the cloud, <model>\" or \"Answered on <board>, <model>\", and a look at a photo says \"Seen in the cloud by Meta SAM 3.1\" or \"Seen on <board> by Meta SAM 3.1\". Any of these labels is the product working. Fail it when a model answer has no such label, or when the page says it works offline or calls an answer private or on-device.";
 
 /**
  * The person asked for their own look (askedLook): following it instead of the house style is the product working. The

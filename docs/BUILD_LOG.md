@@ -3037,3 +3037,41 @@ Hussam's goal included a product that Muse Muse builds and that answers from the
 - **Found, not fixed (read in code, not run):** an edge brief whose only model isn't Muse Wonder (here `sam-3.1`) gives its product token no `muse-wonder-1.0` (`allowedModelsFor`, `lib/pipeline/logic.ts:118-135`). `respondJsonOrEdge` asks Muse Wonder first, gets 404 `model_not_found` (`lib/gateway/handler.ts:215-226`), and treats a 4xx as the cloud saying no (`template/lib/meta/edge.ts:98-100`). So a hosted product shows "turned this request down" and never asks the board. The drills miss it because the blackhole drops connections instead of answering 404, and the build's code-session token skips the allowlist.
 - **For the owner:** to make "built by Muse, answers on the board" true without a hand-written spec, the template needs a SAM board helper (say `EDGE_SAM_URL` in `lib/meta/edge.ts` and the muse-edge skill, shipped as edge extra files). It also needs SAM drills in `edge-fake.mjs` and `edge-drill.mjs`, and a forwarder so a hosted product can reach the board.
 - **Spend:** $0.061 on the preview. About 20 exec jobs on jetson-04 for the runs, plus read-only checks. Nothing on any board was changed.
+
+## Nov 2, 2026, late ET: edge builds can look with Meta SAM 3.1 on a board, and the 404 model_not_found bug is fixed (branch tg-edge-vision)
+
+The spec was the entry above: its "For the owner" and "Found, not fixed" bullets. Everything stays behind `EDGE_BUILDS` and `EDGE_ENABLED`; with them off, nothing changes. Built and drilled on fakes only: no real build, no board run, no spend.
+
+- **The SAM board helper (`template/lib/meta/edge.ts`).** `segmentOrEdge({ image, prompt, threshold, overlay, request })`:
+  - asks the cloud's `sam-3.1` first, as the meta-sam skill does (streamed, parsed with `@meta-sam/parser`), held to `EDGE_CLOUD_TIMEOUT_MS` (10 s) only when a board waits behind it;
+  - then POSTs `{image_b64, prompt, threshold, overlay}` to `EDGE_SAM_URL` (`/segment` on the board's `sam3` service, `scripts/edge/sam3/server.py`);
+  - checks the board's reply with zod, and checks that it adds up: the count is the number of boxes, each box is inside the photo, the prompt is the one sent, the photo size keeps the sent photo's shape, no score is under the threshold, and a picture is a JPEG;
+  - returns `by` (`"cloud"` or `"board"`), a fixed label ("Seen in the cloud by Meta SAM 3.1", "Seen on <board> by Meta SAM 3.1"), the count and boxes as fractions of the photo. Any error, timeout, non-JSON or reply that doesn't add up is the board being down: "Can't see right now: neither the cloud nor the board could look at this photo. Try again in a minute." Nothing is made up.
+  - A cloud 4xx stays the answer (the board isn't asked around it). A 5xx, a stream that ends early or fails, records the parser can't read, a refused or hung connection, no `GATEWAY_URL`, or a 404 `model_not_found` all go to the board. `EDGE_FIRST=1` flips the order. A photo that isn't a JPEG or PNG, or an empty prompt, asks nobody.
+- **The #87 bug, fixed both ways.**
+  - `allowedModelsFor` (`lib/pipeline/logic.ts`, three lines: an import, the brief type now includes `targets`, one spread) adds `edgeAllowedModels(brief)` from the new `lib/edge/models.ts`: Muse Wonder for an edge brief while both flags are on, nothing otherwise.
+  - `edge.ts` reads a 404 with code `model_not_found` as kind `setup`, not a refusal, so the board answers. Any other 404 is still the cloud saying no.
+- **Muse Code is told.** The muse-edge skill has a `segmentOrEdge` section: the route, data URLs from `resizeImage`, boxes as fractions, the labels, a camera button that needs https or localhost, and `edge-drill.json`'s `sam` entry with `SIMULATED_PHOTO`. The build prompt's Edge section adds three SAM lines only for an edge brief that picks `sam-3.1`. The brief writer's edge guide says SAM 3.1 runs on the board too. A SAM edge brief gets limits that say its look has a backup. The judge's edge note accepts the "Seen" labels.
+- **Drills.**
+  - `edge-fake.mjs` answers `POST /segment` in the board service's shape, in every mode, never logging the photo.
+  - `edge-blackhole.mjs` has a `notfound` mode (the gateway's 404 `model_not_found`).
+  - `edge-drill.mjs` adds drill 11 (cloud model not found, `--all`) and the photo drills 12 to 15 (SAM: cloud refused, cloud hung, both down, tampered board reply rejected) plus 16 (cut-off board reply, `--all`). The photo drills run by default for a product whose `edge-drill.json` names a `sam` route, so edge builds run them too, as steps 12 to 15 in the build's checks (`lib/edge/drills.ts`, `lib/pipeline/edge-build.ts`). A product that only looks runs the photo drills alone.
+  - `scripts/drill/demo-product.ts` has a `POST /api/actions/look` route through `segmentOrEdge`.
+- **Runs (this Mac, loopback, no key):** `npm run drill` 8 of 8 in 22.6 s. `npm run drill:all` 16 of 16.
+- **Tests:**
+  - New: `template/scripts/__tests__/edge-sam.test.mjs` 18 of 18 (the cloud stream carries one record from the real SAM 3.1 fixture), `edge-sam-drill.test.mjs` 12 of 12, `lib/edge/__tests__/models.test.ts` 4 of 4.
+  - Touched: `edge.test.mjs` 16 of 16, `edge-drill.test.mjs` 10 of 10, `edge-drill-scenarios.test.mjs` 15 of 15 (two expectations moved for drill 11), `edge-build.test.ts`, `template-source.test.ts`, `edge-target.test.ts` and `components/build/__tests__/drills.test.tsx` 41 of 41.
+  - Downstream of `allowedModelsFor`, `applyTargets` and the build prompt, flags-off goldens included: 438 of 438. Flags-off goldens unchanged.
+  - Typecheck: clean apart from `lib/sandbox/host/modal.ts` not finding `modal`, which is in package.json but not in the shared node_modules this worktree links. Not touched here.
+- **Builder snapshot:** none needed. `lib/edge/template-source.ts` was regenerated with `scripts/edge/gen-edge-template.ts`, and the same five edge files reach an edge build as extra files. This assumes the snapshot's template has `@meta-sam/parser` 0.1.0, which `template/package.json` pins and the meta-sam skill already uses.
+- **Board kit:** `scripts/edge/build-arm64.sh` passes `EDGE_SAM_URL` and `EDGE_SAM_BOARD` into the kit's `run.sh` (checked with `bash -n` only). docs/EDGE_DEMO.md section 6 is the jetson-04 photo-take kit for Hussam. Section 3's two USB-link addresses were replaced with "check with `ip addr`".
+- **Not proven:**
+  - No real build has used `segmentOrEdge`. Whether Muse Code follows the new skill without a hand-written spec is unknown until one runs.
+  - No board has answered `segmentOrEdge`. The board side is drilled only against the fake, which copies the service's shapes from `server.py`.
+  - The cloud side ran only on a fake stream. Turning its boxes into fractions assumes Meta's box pixels are in the sent photo's size, as the meta-sam skill's box rules say.
+  - `sam3.service` listens only on the board's office address today. The take needs it on loopback too (Hussam's call; section 6, step 2).
+  - Whether SAM 3.1 tells an open door from a shut one is untested.
+  - jetson-04 serves no text model, so any `respondJsonOrEdge` answer shows the both-down message there. The take's product should make the look its main answer.
+  - The laptop camera opens only on https or localhost. Section 6 gives a loopback forwarder.
+  - docs/MESSAGING.md keeps jetson-03, 04 and 05 out of frame, so whether the label may say "jetson-04" is the owner's call.
+- **Spend:** $0. No build, deploy, production setting, board or fleet call.

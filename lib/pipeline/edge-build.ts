@@ -15,7 +15,7 @@ import { freeProductPortsScript } from "@/lib/sandbox/tasks";
 import { q } from "@/lib/sandbox/shell";
 import type { VerifySummary } from "@/lib/types";
 import { EDGE_DRILL_CAP_MS } from "@/lib/pipeline/steps";
-import { EDGE_DRILL_STEP, EDGE_DRILLS } from "@/lib/edge/drills";
+import { EDGE_DRILL_STEP, EDGE_DRILLS, EDGE_SAM_DRILLS } from "@/lib/edge/drills";
 
 /** True for a brief with the edge target while EDGE_ENABLED is on. */
 export function isEdgeBuild(brief: Parameters<typeof briefTargets>[0]): boolean {
@@ -80,6 +80,7 @@ export function edgeDrillEnv(): Record<string, string> {
     EDGE_DRILL_OUT,
     EDGE_BOARD: "a simulated board",
     EDGE_MODEL_NAME: "simulated model",
+    EDGE_SAM_MODEL_NAME: "simulated SAM",
     EDGE_FIRST: "0",
     NEXT_TELEMETRY_DISABLED: "1",
     FORCE_COLOR: "0",
@@ -110,8 +111,16 @@ interface DrillResult {
   why?: string | null;
 }
 
-/** The four drills, by id, so a drill missing from the results still shows as failed. */
-const DRILLS = EDGE_DRILLS;
+/**
+ * The drills a run is held to, by id, so a drill missing from the results still shows as failed: the four, plus the
+ * four photo drills once any of them ran (a product that names a SAM route in edge-drill.json). A product that only
+ * looks at photos runs the photo drills alone. A run with no results is held to the four.
+ */
+function drillsFor(results: DrillResult[] | null): ReadonlyArray<{ id: number; name: string }> {
+  const ran = (list: ReadonlyArray<{ id: number }>) => !!results?.some((r) => list.some((d) => d.id === r.id));
+  const sam = ran(EDGE_SAM_DRILLS);
+  return [...(ran(EDGE_DRILLS) || !sam ? EDGE_DRILLS : []), ...(sam ? EDGE_SAM_DRILLS : [])];
+}
 
 function readResults(json: string | null): DrillResult[] | null {
   if (!json) return null;
@@ -139,7 +148,8 @@ export interface EdgeDrillRun {
  */
 export function edgeDrillSteps(run: EdgeDrillRun): { steps: VerifySummary["steps"]; failureOutput: string } {
   const results = readResults(run.json);
-  const allPassed = !!results && DRILLS.every((d) => results.some((r) => r.id === d.id && r.pass));
+  const drills = drillsFor(results);
+  const allPassed = !!results && drills.every((d) => results.some((r) => r.id === d.id && r.pass));
   const why = run.timedOut
     ? `the drill didn't finish within ${Math.round(EDGE_DRILL_CAP_MS / 60_000)} minutes`
     : !results
@@ -147,7 +157,7 @@ export function edgeDrillSteps(run: EdgeDrillRun): { steps: VerifySummary["steps
       : allPassed && run.exitCode !== 0
         ? `the drill exited ${run.exitCode ?? "unknown"}`
         : null;
-  const steps = DRILLS.map((d) => {
+  const steps = drills.map((d) => {
     const r = results?.find((x) => x.id === d.id);
     const ok = !why && r?.pass === true;
     const detail = why ?? (!r ? "this drill didn't run" : r.pass ? undefined : (r.why ?? "failed"));

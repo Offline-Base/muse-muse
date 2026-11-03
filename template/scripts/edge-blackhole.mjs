@@ -2,11 +2,12 @@
 /**
  * A blackhole that stands in for the Muse Muse gateway during an outage drill: point a product's GATEWAY_URL at it and
  * every cloud call fails the way a cut network does. In refuse and hang modes it never answers a request. In slow and
- * flap modes it answers like the gateway with Simulated JSON built from the request's own schema. It never calls
- * anything.
+ * flap modes it answers like the gateway with Simulated JSON built from the request's own schema. In notfound mode it
+ * answers every request the way the gateway answers a model the product's token doesn't list: 404 model_not_found. It
+ * never calls anything.
  *
  * CLI:
- *   node scripts/edge-blackhole.mjs [--port 18436] [--host 127.0.0.1] [--mode refuse|hang|slow|flap] [--log <file>]
+ *   node scripts/edge-blackhole.mjs [--port 18436] [--host 127.0.0.1] [--mode refuse|hang|slow|flap|notfound] [--log <file>]
  *
  * Env (a flag wins over its env):
  *   EDGE_BLACKHOLE_PORT  default 18436
@@ -19,6 +20,7 @@
  *   hang    accepts each connection and never sends a byte (the caller's own timeout must end it)
  *   slow    answers each request with schema-valid Simulated JSON, after delayMs (default 8000)
  *   flap    answers 503, then schema-valid Simulated JSON, then 503, and so on, starting again at 503 on each setMode
+ *   notfound  answers 404 with the gateway's model_not_found error, at once (the cloud reached, but not set up)
  *
  * Answers carry "connection: close", and every held or kept-alive connection ends when the mode changes, so each
  * drill starts clean.
@@ -37,7 +39,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { chatReply, responsesReply, sampleFromSchema } from "./edge-fake.mjs";
 
-export const BLACKHOLE_MODES = ["refuse", "hang", "slow", "flap"];
+export const BLACKHOLE_MODES = ["refuse", "hang", "slow", "flap", "notfound"];
 export const DEFAULT_BLACKHOLE_PORT = 18436;
 /** How long slow mode waits before it answers, unless setMode says otherwise: inside the 10 s cloud deadline. */
 export const DEFAULT_CLOUD_SLOW_MS = 8_000;
@@ -94,6 +96,10 @@ export function startBlackhole(options = {}) {
         res.writeHead(status, { "content-type": "application/json", connection: "close" });
         res.end(JSON.stringify(json));
       };
+      if (mode === "notfound") {
+        const model = typeof body?.model === "string" ? body.model : "unknown";
+        return send(404, { error: { type: "invalid_request_error", code: "model_not_found", message: `Simulated: the model "${model}" isn't available to this product.`, param: null } });
+      }
       if (mode === "flap" && flapCount++ % 2 === 0) {
         return send(503, { error: { message: "Simulated outage: the gateway is overloaded." } });
       }

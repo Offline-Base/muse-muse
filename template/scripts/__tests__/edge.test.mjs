@@ -99,6 +99,43 @@ test("a cloud that turns the request down (a 4xx) is the answer: the edge is nev
   }
 });
 
+/** The gateway's answer to a model the product's token doesn't list (lib/gateway/handler.ts). */
+const modelNotFound = () =>
+  Response.json(
+    { error: { type: "invalid_request_error", code: "model_not_found", message: 'The model "muse-wonder-1.0" isn\'t available to this product on /v1/responses. Allowed: sam-3.1.', param: null } },
+    { status: 404, headers: { "x-should-retry": "false" } },
+  );
+
+test("a cloud 404 model_not_found is a setup error, not a refusal: the edge answers", async () => {
+  fake({ cloud: modelNotFound, edge: () => chatOk(JSON.stringify(GOOD)) });
+  const res = await ask();
+  assert.equal(res.ok, true);
+  assert.equal(res.by, "edge");
+  assert.equal(res.label, "Answered on jetson-04, Llama 3.2 3B");
+  assert.equal(res.fellBack.kind, "setup");
+  assert.equal(res.fellBack.status, 404);
+  assert.deepEqual(calls.map((c) => c.side), ["cloud", "edge"]);
+});
+
+test("a 404 model_not_found with no edge gives the plain both-down message, never 'turned this request down'", async () => {
+  delete process.env.EDGE_URL;
+  fake({ cloud: modelNotFound });
+  const res = await ask();
+  assert.equal(res.ok, false);
+  assert.equal(res.message, BOTH_DOWN_MESSAGE);
+  assert.equal(res.reasons.cloud.kind, "setup");
+  assert.equal(res.reasons.edge.kind, "not_set");
+});
+
+test("any other 404 is still the cloud saying no", async () => {
+  fake({ cloud: () => Response.json({ error: { message: "no such route", code: "not_found" } }, { status: 404 }), edge: () => chatOk(JSON.stringify(GOOD)) });
+  const res = await ask();
+  assert.equal(res.ok, false);
+  assert.equal(res.message, CLOUD_DECLINED_MESSAGE);
+  assert.equal(res.reasons.cloud.kind, "http");
+  assert.deepEqual(calls.map((c) => c.side), ["cloud"]);
+});
+
 test("a cloud 5xx or 408 still falls back to the edge", async () => {
   for (const status of [408, 502, 503]) {
     fake({ cloud: () => Response.json({ error: { message: "upstream" } }, { status }), edge: () => chatOk(JSON.stringify(GOOD)) });
