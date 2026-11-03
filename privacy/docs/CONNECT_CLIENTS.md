@@ -2,32 +2,32 @@
 
 Every client connects to the same address and links to your device the same way:
 
-- **Connector URL:** `https://muse-privacy-relay.offlinebase.workers.dev/mcp`
+- **Connector URL:** `https://theethancastro--muse-privacy-relay.modal.run/mcp`
 - **Sign-in:** OAuth. The client opens a "Link your device" page; type a pairing code from the device.
 - **Pairing code:** on the device, `uv run python -m base.connector.relay_client pair` (8 characters, one use, 10 minutes). Make a new code for each client.
 - **Before you add or restart a client, the device must be online.** If the device is off when a client starts, the client marks the connector as failed for that session; restart the client once the device is back. On this laptop the LaunchAgent keeps it up (`docs/UPTIME.md`).
 - Results that need your OK wait on the approval page, http://127.0.0.1:8787, on the device.
 
-Status checked on Nov 3, 2026:
+Status on Nov 3, 2026, evening, after the relay moved to Modal (every older link points at a retired address):
 
 | Client | State | Checked how |
 |---|---|---|
-| Claude (claude.ai, Desktop, mobile, Claude Code) | Linked and working | `claude mcp list`: "claude.ai Muse Privacy ... Connected" once the device came up |
-| Codex (CLI, IDE extension, desktop app) | Linked and working | `codex mcp login` with a pairing code, then a real `list_documents` and `get_result` call |
-| Muse Code | Linked and working | `muse mcp login` with a pairing code, then a real `list_documents` call (it waited for an OK on the device, as the router intends) |
-| ChatGPT | Linked on Nov 1 (BUILD_LOG 18:46 and 19:04); shows up in Codex as the ChatGPT app `muse_privacy` | Not re-run today: needs your ChatGPT session |
-| Muse app | Paired on Oct 28 | Not re-run today: needs your Muse session |
+| Codex (CLI, IDE extension, desktop app) | Linked on the Modal relay | `codex mcp login` with a pairing code, then real `list_documents` and `get_result` calls; the link survived two relay restarts |
+| Muse Code | Linked on the Modal relay | `muse mcp login` with a pairing code, then a real `list_documents` call |
+| Claude (claude.ai, Desktop, mobile, Claude Code) | Needs linking again | Remove the old Muse Privacy connector in claude.ai, add the new URL, type a pairing code |
+| ChatGPT | Needs linking again | Remove the old app, add the new URL, type a pairing code |
+| Muse app | Needs linking again | Ask Muse to remove the old custom connector and create one with the new URL |
 
 ## Claude (claude.ai, Desktop, mobile, Claude Code)
 
-Already set up on this account. One connector serves all of them.
+One connector serves all of them. Linked on this account before Nov 3 evening; link it again on the new URL.
 
 To add it on another account: claude.ai, Customize > Connectors > Add custom connector, paste the URL, choose "Use Claude's published identity", Connect, then type a pairing code. Free plans allow one custom connector; on Team and Enterprise an Owner adds it first.
 
 Claude Code on a machine signed in with a different account:
 
 ```sh
-claude mcp add --transport http --scope user muse-privacy https://muse-privacy-relay.offlinebase.workers.dev/mcp
+claude mcp add --transport http --scope user muse-privacy https://theethancastro--muse-privacy-relay.modal.run/mcp
 claude mcp login muse-privacy      # or /mcp inside a session
 ```
 
@@ -36,7 +36,7 @@ claude mcp login muse-privacy      # or /mcp inside a session
 Set up on this Mac (`~/.codex/config.toml`, `[mcp_servers.muse-privacy]`). On another machine:
 
 ```sh
-codex mcp add muse-privacy --url https://muse-privacy-relay.offlinebase.workers.dev/mcp
+codex mcp add muse-privacy --url https://theethancastro--muse-privacy-relay.modal.run/mcp
 codex mcp login muse-privacy
 ```
 
@@ -50,7 +50,7 @@ Set up on this Mac: `~/.config/muse/settings.json` has
 "mcp_servers": {
   "muse-privacy": {
     "transport": "streamable_http",
-    "url": "https://muse-privacy-relay.offlinebase.workers.dev/mcp",
+    "url": "https://theethancastro--muse-privacy-relay.modal.run/mcp",
     "enabled": true,
     "mode": "optional"
   }
@@ -61,7 +61,7 @@ Set up on this Mac: `~/.config/muse/settings.json` has
 
 ## ChatGPT
 
-Linked on Nov 1 through developer mode. To add it again (web only):
+Linked on Nov 1 through developer mode, on an address now retired. To add it again (web only):
 
 1. chatgpt.com/plugins, the plus button, "Add custom MCP server" (older accounts: Settings > Apps & Connectors > Advanced > Developer mode, then Create).
 2. Name: Muse Privacy. URL: the connector URL. Authentication: OAuth, client id and secret left empty.
@@ -72,9 +72,9 @@ ChatGPT asks before write tools (run_private_task, save_on_device, run_dreaming)
 
 ## The Muse app
 
-Paired Oct 28 as a custom connector. Meta does not review custom connectors, so this works today without the platform listing. To add it again, in a Muse chat:
+Paired Oct 28 as a custom connector, on an address now retired. Meta does not review custom connectors, so this works today without the platform listing. To add it again, in a Muse chat:
 
-> Create a custom connector for a remote MCP server, then connect to it. Name: Muse Privacy. Transport: remote streamable HTTP. URL: https://muse-privacy-relay.offlinebase.workers.dev/mcp. Auth: OAuth (the server supports dynamic client registration). Do not ask me for an API key or header.
+> Create a custom connector for a remote MCP server, then connect to it. Name: Muse Privacy. Transport: remote streamable HTTP. URL: https://theethancastro--muse-privacy-relay.modal.run/mcp. Auth: OAuth (the server supports dynamic client registration). Do not ask me for an API key or header.
 
 Tap Connect, then type a pairing code. The listing on Meta's Connector Platform (docs/CONNECTOR_SUBMISSION.md) is what lets other Muse users find it.
 
