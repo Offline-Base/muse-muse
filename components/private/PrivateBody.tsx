@@ -10,7 +10,7 @@ const PATH: Card[] = [
   {
     icon: "doc",
     title: "A separate model reads the files",
-    text: "The documents stay on hardware you own, and Muse never receives the files. In this demo the model is Muse Glimmer 30B in the cloud, on invented files only.",
+    text: "The files stay in a folder on the laptop, and Muse never receives them. In this demo the reader is Muse Glimmer 30B in the cloud, so the invented text it reads goes to OpenRouter. A reader on your own device is the target.",
   },
   { icon: "edit", title: "Names become tags", text: "Exact checks and a name pass turn names and identifiers into tags like [Student A] before anything can leave." },
   {
@@ -76,8 +76,9 @@ export function PrivateBody({ story = false }: { story?: boolean }) {
       />
 
       <p className="pv-note">
-        A connector for Muse, not a hosted service: it runs on hardware you own, and nothing on this site can reach your files. It hasn&apos;t
-        been tried with real users yet, and this page says what has and hasn&apos;t been measured.
+        A connector for Muse, not a hosted service: it runs on your laptop, and nothing on this site can reach your files. In this demo its
+        reader model, Muse Glimmer 30B, runs in the cloud on invented files only. It hasn&apos;t been tried with real users yet, and this page
+        says what has and hasn&apos;t been measured.
       </p>
 
       {story ? <PrivateStory /> : null}
