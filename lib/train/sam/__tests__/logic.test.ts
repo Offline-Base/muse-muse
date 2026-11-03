@@ -24,7 +24,7 @@ import {
   type SamPickCandidate,
 } from "@/lib/train/sam/logic";
 import type { SamPhoto, SamReportIn, SamSettingScore } from "@/lib/train/sam/types";
-import { nov3Report } from "./nov3";
+import { nov3Report, nov3Report as nov3Fixture } from "./nov3";
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
@@ -80,6 +80,8 @@ describe("the verdict", () => {
       assert.match(c, /made up \(Muse Image\) or come from COCO/);
       assert.match(c, /never shows that it tells muse apart from all look-alikes/);
     }
+    assert.match(caveatsFor(nov3Report()).join(" "), /scored 0.5 or more, so it is a lower bound/);
+    assert.doesNotMatch(caveatsFor(nov3Report({ apFrom: 0.05 })).join(" "), /lower bound/);
     assert.deepEqual(finishReport(nov3Report()).caveats, caveatsFor(nov3Report()));
   });
 });
@@ -122,6 +124,13 @@ describe("the table", () => {
 });
 
 describe("the board's report", () => {
+  /** What a board posts: the Nov 3 numbers, scored from 0.05 as /done requires. */
+  const nov3Report = (over: Partial<SamReportIn> = {}) => nov3Fixture({ apFrom: 0.05, ...over });
+  const withTuned = (change: (t: SamSettingScore) => void) => {
+    const r = nov3Report();
+    change(r.settings.tuned_word!);
+    return r;
+  };
   const files = nov3Report().files;
   const img = "https://blob.example/samtune/x/report/c-sbs1.jpg";
   const run: ReportRun = { word: "muse", generic: "plush toy", seed: 20261103, data: "builtin-muse", workerId: "jetson-03", uploads: [files.scores, files.perImage, img] };
@@ -141,6 +150,9 @@ describe("the board's report", () => {
     assert.equal(validateReportIn(nov3Report({ images: [{ ...image, url: "https://evil.example/x.jpg" } as never] }), run).ok, false);
     assert.equal(validateReportIn(nov3Report({ images: [{ ...image, license: "CC BY-NC 2.0" } as never] }), run).ok, false);
     assert.equal(validateReportIn(nov3Report({ images: [{ ...image, credit: null } as never] }), run).ok, false);
+    const unlicensed = { ...image, license: null, credit: null };
+    assert.equal(validateReportIn(nov3Report({ images: [unlicensed as never] }), run).ok, false, "a built-in run's pictures are all COCO photos");
+    assert.equal(validateReportIn(nov3Report({ images: [unlicensed as never] }), { ...run, data: "uploads" }).ok, false, "uploads still need H");
   });
 
   it("refuses a report for another word, a missing \"toy\" column, impossible counts and anything over 64 KB", () => {
@@ -154,6 +166,7 @@ describe("the board's report", () => {
     assert.equal(validateReportIn(nov3Report({ files: { scores: "https://evil.example/s.json", perImage: files.perImage } }), run).ok, false);
     assert.deepEqual(validateReportIn(nov3Report({ timings: { pad: 1, ["x".repeat(10)]: 2 } }), run, 70_000), { ok: false, problem: "report_too_large" });
     assert.equal(validateReportIn(nov3Report(), { ...run, data: "uploads" }).ok, false, "an uploads run needs its own sets and held-out photos");
+    assert.deepEqual(validateReportIn(nov3Fixture(), run), { ok: false, problem: "apFrom" }, "only the hand import may say 0.5");
   });
 });
 

@@ -117,7 +117,7 @@ describe("SAM tune runs", { skip: canMock ? false : "needs --experimental-test-m
     const scores = await store.saveUpload(id, claim.jobToken, "scores.json", "application/json", new TextEncoder().encode("{}"));
     const perImage = await store.saveUpload(id, claim.jobToken, "per_image.json", "application/json", new TextEncoder().encode("{}"));
     assert.ok(scores.ok && perImage.ok);
-    const body = { ...nov3Report({ files: { scores: scores.url, perImage: perImage.url } }), verdict: { code: "better", text: "Tells muse apart from all toys" } };
+    const body = { ...nov3Report({ apFrom: 0.05, files: { scores: scores.url, perImage: perImage.url } }), verdict: { code: "better", text: "Tells muse apart from all toys" } };
     assert.deepEqual(await store.finish(id, wrong, body), { ok: false, status: 404, error: "not_found" });
     assert.equal((await store.getRun(id))!.status, "claimed");
     const done = await store.finish(id, claim.jobToken, body);

@@ -1,6 +1,6 @@
 /**
  * The Nov 3 "muse among toys" numbers (docs/log/bench/2026-11-03/distract/scores.json, docs/BUILD_LOG.md) as a report the
- * board would post. AP there counts boxes from 0.5 (the service's floor); a fresh run counts from 0.05.
+ * report. AP there counts boxes from 0.5 (the service's floor), so apFrom is 0.5; a board run posts 0.05.
  */
 import type { SamReportIn, SamSettingScore } from "@/lib/train/sam/types";
 
@@ -24,7 +24,7 @@ export function nov3Report(over: Partial<SamReportIn> = {}): SamReportIn {
     files: { scores: "https://blob.example/samtune/x/report/a-scores.json", perImage: "https://blob.example/samtune/x/report/b-per_image.json" },
     deltaSha256: "a".repeat(64),
     workerId: "jetson-03",
-    apFrom: 0.05,
+    apFrom: 0.5,
     timings: { training: 1800 },
     ...over,
   };

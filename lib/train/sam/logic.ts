@@ -184,8 +184,12 @@ export function canStop(stage: SamStage | null | undefined): boolean {
 
 export type ReportCheck = { ok: true; report: SamReportIn } | { ok: false; problem: string };
 
-/** Detections count from this score up for AP (the board's pycocotools run). */
+/**
+ * Detections count from this score up for AP (the board's pycocotools run). The board always posts 0.05; only the Nov 3
+ * numbers (the fixture and the fallback import, never /done) counted from 0.5, and their caveats say AP is a lower bound.
+ */
 export const AP_FROM = 0.05;
+export const AP_FROM_NOV3 = 0.5;
 /** Settings every report must carry: the word and generic asked of Meta's weights, Meta's "toy", and the tune's word. */
 export const REQUIRED_SETTINGS: readonly SamSettingId[] = ["meta_word", "meta_generic", "meta_toy", "tuned_word"];
 const SETTING_IDS: readonly SamSettingId[] = ["meta_word", "meta_generic", "meta_toy", "tuned_word", "tuned_generic", "prior_word"];
@@ -287,6 +291,8 @@ export function validateReportIn(body: unknown, run: ReportRun, byteLength?: num
     if (!IMAGE_RULES.includes(raw.rule as SamImageRule)) return bad("images.rule");
     const license = raw.license === null || raw.license === undefined ? null : raw.license;
     if (license !== null && !SHOWN_LICENSES.includes(license as (typeof SHOWN_LICENSES)[number])) return bad("images.license");
+    // Every picture of a built-in Muse run is a COCO photo, so it needs its license; only uploads runs have made-up or own images.
+    if (license === null && run.data === "builtin-muse") return bad("images.license");
     const credit = raw.credit === null || raw.credit === undefined ? null : cleanLine(raw.credit, 200);
     if (raw.credit != null && credit === null) return bad("images.credit");
     if (license !== null && credit === null) return bad("images.credit");
@@ -385,7 +391,7 @@ export function verdictFor(report: Pick<SamReportIn, "settings" | "word" | "gene
 }
 
 /** The caveats every report carries, whatever the verdict. */
-export function caveatsFor(report: Pick<SamReportIn, "settings" | "word" | "setsSource">): string[] {
+export function caveatsFor(report: Pick<SamReportIn, "settings" | "word" | "setsSource" | "apFrom">): string[] {
   const t = report.settings.tuned_word;
   const w = report.word;
   const out = [
@@ -395,6 +401,7 @@ export function caveatsFor(report: Pick<SamReportIn, "settings" | "word" | "sets
     `This never shows that it tells ${w} apart from all look-alikes.`,
   ];
   if (report.setsSource === "nov3") out.push("Scored on the same test photos as the Nov 3 run.");
+  if (report.apFrom !== AP_FROM) out.push(`AP counts only boxes scored ${report.apFrom} or more, so it is a lower bound.`);
   return out;
 }
 
