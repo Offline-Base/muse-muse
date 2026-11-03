@@ -92,6 +92,8 @@ The model's work is the reason the product exists, so make it specific and check
 
 - Every control has a visible label.
 - Focus states are visible, and contrast passes WCAG AA in light and dark mode. Keep text on the token pairs muse-app-ui lists.
+- On a phone every control is at least 44 by 44 px: buttons, fields, selects, checkbox and radio rows, and any link that stands on its own, like a nav link, "Change it" or a title that opens a page. judgeShot fails a smaller one. A small dot, pin or icon keeps its look inside a 44 px box with padding and `background-clip: content-box`, as `button.icon` does. A link inside a sentence is fine. Put nav links in a `<nav>`, which `app/globals.css` sizes.
+- judgeShot also measures each text color against what is behind it, and fails text under 4.5:1 (3:1 from 24 px, or 18.66 px bold). Text over a photo or a gradient is yours to check. When you change a part's background, change its text color with it: the person's chat bubble takes `--bubble-out` and `--on-bubble-out` together, never a new background alone.
 - Results that are images need alt text. Overlays need a text summary too, like "Found 3 birds".
 - Respect `prefers-reduced-motion`.
 

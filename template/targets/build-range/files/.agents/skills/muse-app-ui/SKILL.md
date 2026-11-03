@@ -45,6 +45,7 @@ Set these from the Design direction first, in both color blocks of `app/muse-app
 | `--line` | every hairline: card edges, dividers, table borders, tags |
 | `--fg`, `--fg-2` | primary text; secondary text (tagline, hints, meta, limits) |
 | `--accent`, `--on-accent` | the primary button, selected marks, progress; white on it |
+| `--bubble-out`, `--on-bubble-out` | the person's chat bubble and its text, a pair: set both or neither |
 | `--link` | links, text buttons |
 | `--tinted-bg`, `--tinted-fg` | tinted buttons, pressed filter chips |
 | `--secondary-bg` | secondary buttons, chips, icon buttons, avatars, the segmented track |
@@ -184,10 +185,10 @@ Every token switches with `prefers-color-scheme`. A direction with one fixed sch
 
 ## Accessibility
 
-- With the default tokens, these text pairs pass WCAG AA in both modes. Once you change tokens, **check each text pair yourself: every text color on its ground reaches at least 4.5:1 (3:1 for large text)**: `--fg` and `--fg-2` on `--bg`, `--surface`, `--surface-2`, `--glass` or `--signature-soft`; `--link` on the first three; `--tinted-fg` on `--tinted-bg`; `--signature-ink` on `--signature-soft` or `--surface`; `--fg` on `--segment`; white on `--accent` or `--ai-gradient`; `--on-media` on `--scrim`. Check anything else first. White on the send gradient is for its icon only.
+- With the default tokens, these text pairs pass WCAG AA in both modes. Once you change tokens, **check each text pair yourself: every text color on its ground reaches at least 4.5:1 (3:1 for large text)**: `--fg` and `--fg-2` on `--bg`, `--surface`, `--surface-2`, `--glass` or `--signature-soft`; `--link` on the first three; `--tinted-fg` on `--tinted-bg`; `--signature-ink` on `--signature-soft` or `--surface`; `--fg` on `--segment`; white on `--accent` or `--ai-gradient`; `--on-media` on `--scrim`; `--on-bubble-out` on `--bubble-out`. Check anything else first. White on the send gradient is for its icon only.
 - Every control has a label. FilePicker and Segmented show theirs. The Composer's label is for screen readers, so its placeholder says what to type, in 30 characters or fewer: the box grows to fit its placeholder, and a longer one wraps to a second line on a phone. Icon-only buttons need `aria-label`.
 - Never remove focus outlines, the composer's included. Status is never color alone: pair it with an icon and words (pressed chips and the chosen segment show a check by themselves).
-- Controls stay 44 px tall for fingers, even where the look could go smaller. Icon-only buttons are 40 px circles, the composer's Send included (`reference/tokens.md`, Size). Don't shrink either, and don't grow Send to 44.
+- Controls stay 44 px tall and wide for fingers, even where the look could go smaller. Icon-only buttons and the composer's Send draw a 40 px circle inside a 44 px tap area, with padding and `background-clip: content-box`. Keep the tap area when you restyle them. judgeShot fails a control under 44 px on a phone.
 
 ## Do and don't
 

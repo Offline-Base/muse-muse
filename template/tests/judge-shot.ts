@@ -1,9 +1,9 @@
 // Platform file: don't edit. Take every judge screenshot with judgeShot(page, "02-result").
 // It waits for work in progress to finish, checks the screen for problems a judge marks down (text cut off, a page
 // or a box that scrolls sideways, a long headline, a wrapped choice, bar text that overlaps, em dashes, a button still
-// saying it is working), then saves the full-page screenshot. In the demo video's runs it only waits and gives viewers
-// a beat: verify already took the screenshots and checked the screen at phone size, so a demo never fails on a check
-// that passed there. In a VR product a shot taken inside VR has its own check (tests/xr.ts): the view must keep drawing
+// saying it is working, a control too small to tap on a phone, text too faint to read on its background), then saves
+// the full-page screenshot. In the demo video's runs it only waits and gives viewers a beat: verify already took the
+// screenshots and checked the screen at phone size, so a demo never fails on a check that passed there. In a VR product a shot taken inside VR has its own check (tests/xr.ts): the view must keep drawing
 // and not be blank, and the 2D layout checks don't apply.
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
@@ -29,7 +29,13 @@ export async function judgeShot(page: Page, name: string): Promise<void> {
   await page.waitForTimeout(250);
   const smoke = test.info().project.name === "smoke";
   // MUSEMUSE_SCREEN_CHECK=warn (set by the platform, never by the product) logs problems instead of failing.
-  const problems = smoke ? await page.evaluate(findScreenProblems) : [];
+  const problems = smoke
+    ? [
+        ...(await page.evaluate(findScreenProblems)),
+        ...tapTargetProblems(await page.evaluate(collectTapTargets)),
+        ...contrastProblems(await page.evaluate(collectTextSamples)),
+      ]
+    : [];
   if (problems.length && process.env.MUSEMUSE_SCREEN_CHECK === "warn") {
     console.log(`musemuse screen check, ${name}: ${problems.join(" | ")}`);
   } else {
@@ -287,4 +293,356 @@ export function findScreenProblems(): string[] {
   if (dashes.length) out.push(`Em dashes in the copy (use a comma, colon or period): ${dashes.slice(0, 3).map((d) => `"${d}"`).join(", ")}.`);
 
   return out.slice(0, 10);
+}
+
+// ---------- Tap targets and contrast. The browser gathers what is on screen; the rules after it are plain functions. ----------
+
+/** A control on screen as the tap target check reads it. */
+export type TapSample = {
+  /** Its accessible name, shortened. */
+  name: string;
+  tag: string;
+  width: number;
+  height: number;
+  /** A link set inline inside a sentence, which may be as tall as its line. */
+  inText: boolean;
+  /**
+   * How many controls of its exact size sit packed in rows and columns with it, counting itself: the cells of a board,
+   * a keypad or a calendar. 1 when it isn't in such a grid.
+   */
+  dense: number;
+};
+
+/** The smallest a control may be on a phone, in CSS px, both ways. */
+export const TAP_MIN = 44;
+/** This many same-size controls packed in rows and columns are a board, a keypad or a calendar, whose cells may be smaller. */
+export const DENSE_GRID = 12;
+
+/**
+ * Runs in the browser. Every visible, enabled control, at phone size only: buttons, links, fields, selects, summaries
+ * and ARIA controls. A checkbox, radio or file input counts as the label around it, which is what a finger presses
+ * (Segmented's pills, FilePicker's dropzone, a checkbox row). Empty on a wider screen.
+ */
+export function collectTapTargets(): TapSample[] {
+  if (document.documentElement.clientWidth > 480) return [];
+  const CONTROLS =
+    'button, a[href], select, summary, input:not([type="hidden"]), [role="button"], [role="link"], [role="tab"], [role="switch"], [role="checkbox"], [role="radio"], [role="menuitem"]';
+  const visible = (el: Element) => {
+    const r = el.getBoundingClientRect();
+    return r.width > 2 && r.height > 2 && el.checkVisibility({ visibilityProperty: true, opacityProperty: true });
+  };
+  const clean = (t: string | null | undefined) => (t ?? "").trim().replace(/\s+/g, " ");
+  const nameOf = (el: Element) => {
+    const field = el as HTMLInputElement;
+    const labelledBy = (el.getAttribute("aria-labelledby") ?? "").split(/\s+/).map((id) => document.getElementById(id)?.innerText ?? "");
+    const name =
+      clean(el.getAttribute("aria-label")) ||
+      clean(labelledBy.join(" ")) ||
+      clean((el as HTMLElement).innerText) ||
+      clean([...(field.labels ?? [])].map((l) => l.innerText).join(" ")) ||
+      clean(el.getAttribute("title")) ||
+      clean(el.querySelector("img[alt]")?.getAttribute("alt")) ||
+      clean(field.placeholder) ||
+      clean(field.value);
+    return name.length > 30 ? `${name.slice(0, 30)}...` : name;
+  };
+  // The box a run of text flows in: the nearest ancestor that isn't inline.
+  const blockOf = (start: Element | null) => {
+    let n = start;
+    while (n && n !== document.body && /^(inline|contents)$/.test(getComputedStyle(n).display)) n = n.parentElement;
+    return n;
+  };
+  // A link inside a sentence: shown inline, with words on its lines that belong to no other control. Model text
+  // (.prose) is all sentences.
+  const inRunningText = (el: Element) => {
+    if (!el.matches('a[href], [role="link"]') || getComputedStyle(el).display !== "inline") return false;
+    if (el.closest(".prose")) return true;
+    const block = blockOf(el.parentElement);
+    if (!block) return false;
+    const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const parent = n.parentElement;
+      if (!parent || !/\p{L}{2,}|\p{N}/u.test(n.textContent ?? "") || parent.closest(CONTROLS)) continue;
+      if (blockOf(parent) === block) return true;
+    }
+    return false;
+  };
+  const out: TapSample[] = [];
+  const seen = new Set<Element>();
+  for (const found of document.body.querySelectorAll(CONTROLS)) {
+    if (found.closest('[inert], [aria-hidden="true"]') || found.matches(':disabled, [aria-disabled="true"]')) continue;
+    const label = found.matches('input[type="checkbox"], input[type="radio"], input[type="file"]')
+      ? (found.closest("label") ?? (found as HTMLInputElement).labels?.[0])
+      : null;
+    const el: Element = label ?? found;
+    if (seen.has(el) || !visible(el)) continue;
+    seen.add(el);
+    const r = el.getBoundingClientRect();
+    const sameSize = (other: Element) => {
+      const o = other.getBoundingClientRect();
+      return Math.abs(o.width - r.width) <= 1 && Math.abs(o.height - r.height) <= 1;
+    };
+    // A board: 12 or more controls of this size in its parent or up to two levels above it (a cell may sit in its own
+    // <td> or <div>), lined up in at least 2 rows and 2 columns that fill a lattice, each next to the last. Dots
+    // scattered on a photo and a column of row buttons aren't one.
+    let dense = 1;
+    for (let box = el.parentElement, up = 0; box && box !== document.body && up < 3 && dense === 1; box = box.parentElement, up++) {
+      const cells = [...box.querySelectorAll(CONTROLS)].filter((c) => c === el || (sameSize(c) && visible(c))).map((c) => c.getBoundingClientRect());
+      if (cells.length < 12) continue; // DENSE_GRID, which a page can't reach
+      const packed = (edges: number[], size: number) => {
+        const sorted = [...new Set(edges.map(Math.round))].sort((a, b) => a - b);
+        return sorted.length >= 2 && sorted.every((v, i) => i === 0 || v - sorted[i - 1] <= size + 8) ? sorted.length : 0;
+      };
+      const cols = packed(cells.map((c) => c.left), r.width);
+      const rows = packed(cells.map((c) => c.top), r.height);
+      if (cols && rows && cols * rows <= cells.length * 1.5) dense = cells.length;
+    }
+    out.push({
+      name: nameOf(el),
+      tag: el.tagName.toLowerCase(),
+      width: Math.round(r.width * 10) / 10,
+      height: Math.round(r.height * 10) / 10,
+      inText: inRunningText(el),
+      dense,
+    });
+  }
+  return out;
+}
+
+/** True when a control is under TAP_MIN either way, and isn't a link in a sentence or a cell of a dense grid. */
+export function isSmallTarget(s: TapSample): boolean {
+  if (s.inText || s.dense >= DENSE_GRID) return false;
+  return s.width < TAP_MIN - 0.5 || s.height < TAP_MIN - 0.5;
+}
+
+/** One sentence naming up to 4 controls too small to tap, or nothing. */
+export function tapTargetProblems(samples: TapSample[]): string[] {
+  const small = samples.filter(isSmallTarget);
+  if (!small.length) return [];
+  const listed = small.slice(0, 4).map((s) => `<${s.tag}> "${s.name}" ${Math.round(s.width)}x${Math.round(s.height)}`);
+  const more = small.length > 4 ? ` and ${small.length - 4} more` : "";
+  return [
+    `Too small to tap on a phone (under ${TAP_MIN}x${TAP_MIN} px): ${listed.join(", ")}${more}. Make every button, link that ` +
+      `stands on its own, field and checkbox row at least ${TAP_MIN} px tall and wide. A small icon, dot or pin can keep its ` +
+      `look inside a ${TAP_MIN} px box (padding plus background-clip: content-box). A link inside a sentence is fine ` +
+      "(product-ui, Accessibility).",
+  ];
+}
+
+/** A run of text as the contrast check reads it. Colors are CSS rgb() or rgba() strings. */
+export type TextSample = {
+  text: string;
+  color: string;
+  /** Background colors from the text's own element outward, ending at the first solid one. */
+  layers: string[];
+  /** Font size in CSS px, and weight. */
+  size: number;
+  weight: number;
+  /**
+   * Why the page's colors can't tell what is behind the text, so the check leaves it out: "image" (a background image
+   * or gradient), "media" (over a photo, video, canvas or drawing), "faded" (opacity, a filter or a blend mode),
+   * "floating" (on see-through glass, positioned over something else, or overlapping a positioned fill such as a
+   * hero's overlay), "no-ground" (no solid background at all).
+   */
+  skip?: "image" | "media" | "faded" | "floating" | "no-ground";
+};
+
+/**
+ * Runs in the browser. Every visible element with text of its own: its text color and the backgrounds behind it, up
+ * to the nearest solid one. Text in an SVG, in a disabled control or in a select is left out.
+ */
+export function collectTextSamples(): TextSample[] {
+  const visible = (el: Element) => {
+    const r = el.getBoundingClientRect();
+    return r.width > 2 && r.height > 2 && el.checkVisibility({ visibilityProperty: true, opacityProperty: true });
+  };
+  // Any CSS color (oklch, a named color) as rgba(), read back from a one-pixel canvas. rgb() and rgba() pass as they are.
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 1;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const read = new Map<string, string>();
+  const norm = (css: string) => {
+    if (/^rgba?\(/.test(css) || !ctx) return css;
+    let hit = read.get(css);
+    if (hit === undefined) {
+      ctx.clearRect(0, 0, 1, 1);
+      ctx.fillStyle = "rgba(0, 0, 0, 0)";
+      ctx.fillStyle = css;
+      ctx.fillRect(0, 0, 1, 1);
+      const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+      hit = `rgba(${r}, ${g}, ${b}, ${Math.round((a / 255) * 1000) / 1000})`;
+      read.set(css, hit);
+    }
+    return hit;
+  };
+  // rgb(r, g, b) is solid; rgba(r, g, b, a) and rgb(r g b / a%) carry a fourth number.
+  const alphaOf = (c: string) => {
+    const nums = c.match(/[\d.]+%?/g) ?? [];
+    if (nums.length < 4) return 1;
+    const a = nums[3];
+    return a.endsWith("%") ? parseFloat(a) / 100 : parseFloat(a);
+  };
+  const fades = (s: CSSStyleDeclaration) => Number(s.opacity) < 1 || s.filter !== "none" || s.mixBlendMode !== "normal";
+  // Photos, video, canvases and drawings, at least 40 px each way for a drawing (an icon beside a label isn't one).
+  const media = [...document.querySelectorAll("img, video, canvas, iframe, object, embed, svg")].filter((m) => {
+    if (m.matches("svg") && m.parentElement?.closest("svg")) return false;
+    const r = m.getBoundingClientRect();
+    return visible(m) && (!m.matches("svg") || (r.width >= 40 && r.height >= 40));
+  });
+  // Fills laid over other content: a positioned element with a fill, or a positioned ::before or ::after with a fill
+  // that covers most of its element (a hero's dark overlay). Text they overlap may sit on them, not on its own ground.
+  const painted = (s: CSSStyleDeclaration) => s.backgroundImage !== "none" || alphaOf(norm(s.backgroundColor)) > 0;
+  const positioned = (s: CSSStyleDeclaration) => /^(absolute|fixed)$/.test(s.position);
+  const overlays: { box: Element; pseudo: boolean }[] = [];
+  for (const o of document.body.querySelectorAll("*")) {
+    if (o.closest("svg")) continue;
+    const s = getComputedStyle(o);
+    if (s.display === "none") continue;
+    if (positioned(s) && painted(s) && visible(o)) overlays.push({ box: o, pseudo: false });
+    const r = o.getBoundingClientRect();
+    const cover = ["::before", "::after"].some((at) => {
+      const p = getComputedStyle(o, at);
+      if (/^(none|normal)$/.test(p.content) || !positioned(p) || !painted(p)) return false;
+      return parseFloat(p.width) * parseFloat(p.height) >= 0.5 * r.width * r.height;
+    });
+    if (cover && r.width > 2 && r.height > 2) overlays.push({ box: o, pseudo: true });
+  }
+  const out: TextSample[] = [];
+  for (const el of document.body.querySelectorAll("*")) {
+    if (out.length >= 2000) break;
+    const own = [...el.childNodes].filter((n) => n.nodeType === Node.TEXT_NODE && n.textContent?.trim());
+    if (!own.length || el.closest("svg, script, style, noscript, template, select")) continue;
+    if (el.closest(':disabled, [aria-disabled="true"], label:has(input:disabled)') || !visible(el)) continue;
+    const range = document.createRange();
+    const rects: DOMRect[] = [];
+    for (const n of own) {
+      range.selectNodeContents(n);
+      rects.push(...[...range.getClientRects()].filter((r) => r.width > 0 && r.height > 0));
+    }
+    if (!rects.length) continue;
+    const text = own.map((n) => n.textContent).join(" ").trim().replace(/\s+/g, " ");
+    const style = getComputedStyle(el);
+    const sample: TextSample = {
+      text: text.length > 40 ? `${text.slice(0, 40)}...` : text,
+      color: norm(style.color),
+      layers: [],
+      size: parseFloat(style.fontSize),
+      weight: Number(style.fontWeight) || 400,
+    };
+    let ground: Element | null = null;
+    for (let n: Element | null = el; n; n = n.parentElement) {
+      const s = n === el ? style : getComputedStyle(n);
+      if (fades(s)) {
+        sample.skip = "faded";
+        break;
+      }
+      if (s.display === "contents") continue;
+      if (s.backgroundImage !== "none") {
+        sample.skip = "image";
+        break;
+      }
+      const bg = norm(s.backgroundColor);
+      const a = alphaOf(bg);
+      const glass = a > 0 && a < 1 && (/^(fixed|sticky)$/.test(s.position) || (s.backdropFilter || "none") !== "none");
+      if (glass || (a < 1 && /^(absolute|fixed)$/.test(s.position))) {
+        sample.skip = "floating";
+        break;
+      }
+      if (a > 0) sample.layers.push(bg);
+      if (a >= 1) {
+        ground = n;
+        break;
+      }
+    }
+    if (!sample.skip && !ground) sample.skip = "no-ground";
+    // Fading something above the ground fades the text and its background together, over whatever is behind them.
+    for (let n = ground?.parentElement ?? null; n && !sample.skip; n = n.parentElement) if (fades(getComputedStyle(n))) sample.skip = "faded";
+    // A photo or drawing inside the ground that overlaps the text is behind it.
+    if (!sample.skip && ground) {
+      const page = ground === document.documentElement || ground === document.body;
+      for (const m of media) {
+        if (!page && !ground.contains(m)) continue;
+        const mr = m.getBoundingClientRect();
+        if (rects.some((r) => r.left < mr.right && r.right > mr.left && r.top < mr.bottom && r.bottom > mr.top)) {
+          sample.skip = "media";
+          break;
+        }
+      }
+      // A positioned fill inside the ground that overlaps the text, other than one the text sits in, may be under it.
+      for (const { box, pseudo } of overlays) {
+        if (sample.skip || (!page && !ground.contains(box)) || (!pseudo && box.contains(el))) continue;
+        const or = box.getBoundingClientRect();
+        if (rects.some((r) => r.left < or.right && r.right > or.left && r.top < or.bottom && r.bottom > or.top)) sample.skip = "floating";
+      }
+    }
+    out.push(sample);
+  }
+  return out;
+}
+
+/** [r, g, b, a] from "rgb(1, 2, 3)", "rgba(1, 2, 3, 0.5)" or "rgb(1 2 3 / 50%)", or null when it isn't one of those. */
+export function parseRgb(css: string): [number, number, number, number] | null {
+  const m = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)\s*(?:[,/]\s*([\d.]+)(%?))?\s*\)$/.exec(css.trim());
+  if (!m) return null;
+  const alpha = m[4] === undefined ? 1 : m[5] ? Number(m[4]) / 100 : Number(m[4]);
+  return [Number(m[1]), Number(m[2]), Number(m[3]), Math.min(1, Math.max(0, alpha))];
+}
+
+/** Paints `top`, which may be see-through, over a solid `bottom`. */
+export function paintOver(top: readonly number[], bottom: readonly number[]): number[] {
+  const a = top[3] ?? 1;
+  return [0, 1, 2].map((k) => top[k] * a + bottom[k] * (1 - a)).concat(1);
+}
+
+/** WCAG relative luminance of a solid [r, g, b]. */
+export function luminance(rgb: readonly number[]): number {
+  const channel = (v: number) => {
+    const c = v / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(rgb[0]) + 0.7152 * channel(rgb[1]) + 0.0722 * channel(rgb[2]);
+}
+
+/** WCAG contrast ratio of two solid colors, from 1 to 21. */
+export function contrastRatio(a: readonly number[], b: readonly number[]): number {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+/** WCAG's large text, which needs 3:1 instead of 4.5:1: 24 px, or 18.66 px (14 pt) and bold. */
+export function isLargeText(size: number, weight: number): boolean {
+  return size >= 24 || (size >= 18.66 && weight >= 700);
+}
+
+/** A sample's contrast ratio with what is behind it, or null when the check leaves it out. */
+export function sampleContrast(s: TextSample): number | null {
+  if (s.skip || !s.layers.length) return null;
+  const color = parseRgb(s.color);
+  const layers = s.layers.map(parseRgb);
+  if (!color || color[3] === 0 || layers.some((l) => l === null)) return null;
+  const solid = layers as number[][];
+  if (solid[solid.length - 1][3] < 1) return null;
+  // Paint from the solid ground outward in, then the text over the result.
+  const ground = solid.reduceRight<number[]>((under, layer) => paintOver(layer, under), solid[solid.length - 1]);
+  return contrastRatio(paintOver(color, ground), ground);
+}
+
+/** One sentence naming up to 3 runs of text under WCAG AA on what is behind them, or nothing. */
+export function contrastProblems(samples: TextSample[]): string[] {
+  const bad = new Map<string, string>();
+  for (const s of samples) {
+    const ratio = sampleContrast(s);
+    if (ratio === null || bad.has(s.text)) continue;
+    const need = isLargeText(s.size, s.weight) ? 3 : 4.5;
+    // A hair of slack for colors rounded on their way out of the browser.
+    if (ratio < need - 0.02) bad.set(s.text, `"${s.text}" ${(Math.floor(ratio * 10) / 10).toFixed(1)}:1`);
+  }
+  if (!bad.size) return [];
+  const listed = [...bad.values()];
+  const more = listed.length > 3 ? ` and ${listed.length - 3} more` : "";
+  return [
+    `Text too faint to read on what is behind it: ${listed.slice(0, 3).join(", ")}${more}. Text needs 4.5:1, or 3:1 from 24 px ` +
+      "(18.66 px bold). When you change a part's background, change its text color with it, in light and dark mode: the " +
+      "person's chat bubble takes --bubble-out and --on-bubble-out together, never a new background alone (product-ui, Accessibility).",
+  ];
 }

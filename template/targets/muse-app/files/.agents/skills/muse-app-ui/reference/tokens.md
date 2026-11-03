@@ -59,6 +59,7 @@ Where each value comes from (`sources.md` has the details):
 | `--on-media` | #FFFFFF | #FFFFFF | O | lines and labels drawn over a photo |
 | `--scrim` | black 60% | black 60% | O | dark glass under a label on a photo. The measured 50% leaves white at 4.0:1 over a white photo |
 | `--bubble-in` | #F3F4F5 | #28292B | S | kept for older markup. In this look the answer has no bubble and the person's bubble is `--surface-2` |
+| `--bubble-out`, `--on-bubble-out` | `--surface-2`, `--fg` | same | S | the person's bubble and its text, a pair: set both or neither |
 
 ## Type
 
@@ -93,7 +94,7 @@ Inter is self-hosted from npm (`@fontsource-variable/inter` 5.3.0, OFL), importe
 
 ## Size
 
-Controls stay `--control-height` (44 px) for touch, and icon buttons 40 px (O). The measured page uses 36 px buttons, which is too small for fingers. The composer is 52 px on one line. The column is `--page-width` (720 px).
+Controls stay `--control-height` (44 px) for touch, both ways (O). Icon buttons and Send draw a 40 px circle inside that 44 px tap area. The measured page uses 36 px buttons, which is too small for fingers. The composer is 52 px on one line. The column is `--page-width` (720 px).
 
 ## Elevation
 

@@ -53,6 +53,8 @@
   --signature-ink: #0064d4; /* text on --signature-soft or --surface */
   --scrim: rgba(0, 0, 0, 0.6); /* dark glass under a label on a photo */
   --bubble-in: #f3f4f5;
+  --bubble-out: var(--surface-2); /* the person's bubble is gray, with the page's text color on it */
+  --on-bubble-out: var(--fg);
 
   /* New in this look */
   --glass: rgba(255, 255, 255, 0.76); /* the composer, with a 36 px blur behind it */
@@ -176,18 +178,19 @@ button.tinted { border-radius: var(--pill); padding: 0 18px; }
 /* Chat: the person's words in a gray bubble on the right; the app's or model's answer is plain text, with no bubble. */
 .thread { gap: var(--space-16); }
 .bubble { padding: 9px var(--space-16); font: 400 16px/26px var(--font); }
-.bubble.out { max-width: min(75%, 560px); background: var(--surface-2); color: var(--fg); }
+.bubble.out { max-width: min(75%, 560px); }
 .bubble.out a { color: var(--link); }
 .bubble.in { max-width: 100%; padding-inline: 0; background: none; }
 
-/* The composer: a glass card that floats, a pill on one line. The focus ring stays, for keyboards. */
+/* The composer: a glass card that floats, a pill on one line. The focus ring stays, for keyboards. Send is a 40 px
+   circle drawn inside a 44 px tap area. */
 .composer {
-  min-height: 52px; padding: 6px 6px 6px 20px; border-radius: 32px;
+  min-height: 52px; padding: 4px 4px 4px 20px; border-radius: 32px;
   background: var(--glass); -webkit-backdrop-filter: blur(36px); backdrop-filter: blur(36px); box-shadow: var(--shadow-card);
 }
-.composer textarea { min-height: 40px; font: 400 18px/27px var(--font); }
+.composer textarea { min-height: 44px; padding: 8px 0; font: 400 18px/27px var(--font); }
 .composer .send {
-  width: 40px; height: 40px;
+  padding: 2px;
   background-color: var(--send-from);
   background-image: linear-gradient(90deg, var(--send-from), var(--send-to));
   background-image: linear-gradient(to right in oklab, var(--send-from), var(--send-to));

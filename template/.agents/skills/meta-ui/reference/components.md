@@ -146,7 +146,7 @@ Two to five options of a word or two. It lays them out from their labels: one ro
 - `secondary`: gray, only for utility actions (Reset, a second export, Edit beside model text). A disabled button is a fainter gray with gray text.
 - `tinted`: light blue, for a card's main action that isn't the primary (Add a row) or an empty state's action; `.tinted.ai` with the sparkle for a model action that isn't the primary.
 - `text`: blue text, for quiet actions (Try the sample, Make another), and the app bar's Start over. On a phone an `.actions` row holds at most two filled buttons; a third action is `.text`.
-- `icon`: a 40 px round gray button. Always with `aria-label`.
+- `icon`: a 40 px round gray button inside a 44 px tap area. Always with `aria-label`.
 - Every busy button gets `aria-busy="true"` and a label ending in "…" until the work is done; judgeShot waits for it.
 - To confirm a quick action, change the button's own label for about 2 seconds: `{copied ? <><Icon name="check" /> Copied</> : <><Icon name="copy" /> Copy rows</>}`.
 

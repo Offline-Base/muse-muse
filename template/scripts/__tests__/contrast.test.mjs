@@ -139,6 +139,7 @@ const TEXT = [
   ["--positive", "--surface", "positive text"],
   ["--negative", "--surface", "negative text"],
   ["--fg", "--bubble-in", "incoming bubble"],
+  ["--on-bubble-out", "--bubble-out", "the person's bubble"],
   ["--signature-ink", "--signature-soft", "text in the signature element"],
   ["--signature-ink", "--surface", "signature text on a card"],
   ["--fg", "--signature-soft", "main text in the signature element"],
