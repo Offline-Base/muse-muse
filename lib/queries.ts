@@ -9,6 +9,7 @@ import { env } from "@/lib/env";
 import { newestPerRebuild, parseManifest } from "@/lib/format";
 import { GALLERY_FIRST, HIDDEN_FROM_GALLERY } from "@/lib/gallery/hidden";
 import { VERDICT_LABEL, lessonHref } from "@/lib/learn";
+import { roundPlanTimeLimit } from "@/lib/engine/milestones";
 import { visitorNote } from "@/lib/pipeline/visitor-text";
 import type { Brief, BuildEvent, MuseLogLine, RebuildFit, RebuildTarget } from "@/lib/types";
 import type {
@@ -100,7 +101,7 @@ function toBuildView(b: BuildRow): BuildView {
     error: b.error,
     startedAt: b.startedAt.toISOString(),
     finishedAt: iso(b.finishedAt),
-    timeLimitMinutes: typeof b.roundPlan?.wallMinutes === "number" ? b.roundPlan.wallMinutes : null,
+    timeLimitMinutes: roundPlanTimeLimit(b.roundPlan),
   };
 }
 

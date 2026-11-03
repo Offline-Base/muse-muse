@@ -476,7 +476,8 @@ function planRecord(plan: RoundPlan | undefined): RoundPlanRecord {
   if (!plan) return { capMinutes: Math.round(stepTimeoutMs("build") / 60_000), wallMinutes: Math.round(buildWallMs(undefined) / 60_000), milestones: [] };
   return {
     capMinutes: Math.round(plan.buildMs / 60_000),
-    wallMinutes: Math.round(buildWallMs(plan) / 60_000),
+    // A chain's wall is one session's, not the build's: a chain runs on across sessions, so its room shows no limit.
+    ...(plan.chain ? {} : { wallMinutes: Math.round(buildWallMs(plan) / 60_000) }),
     milestones: plan.milestones.map((m) => ({ title: m.title, state: "planned" })),
     ...(plan.chain ? { chain: { maxHours: Math.round(plan.chain.maxMs / 3_600_000), session: 1 } } : {}),
   };

@@ -7,8 +7,16 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { elapsedText, timeLimitText } from "@/components/build/BuildDetails";
 import { roundTitle } from "@/components/build/steps";
+import { roundPlanTimeLimit } from "@/lib/engine/milestones";
 
 describe("the time limit", () => {
+  it("comes from the round plan's wall, and a chain shows none: its wall is one session's", () => {
+    assert.equal(roundPlanTimeLimit({ wallMinutes: 150 }), 150);
+    assert.equal(roundPlanTimeLimit({ wallMinutes: 90, chain: { maxHours: 6, session: 1 } }), null);
+    assert.equal(roundPlanTimeLimit({}), null);
+    assert.equal(roundPlanTimeLimit(null), null);
+  });
+
   it("says the whole build's limit, and nothing when none was recorded", () => {
     assert.equal(timeLimitText(150), "Up to 150 minutes, start to live");
     assert.equal(timeLimitText(null), null);

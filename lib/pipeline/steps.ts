@@ -211,7 +211,7 @@ export function capWithinWall(input: { capMs: number; startedAt: number; now: nu
 
 /**
  * The deadline a build or a change runs to, from its start: its plan's wall, or PLAIN_BUILD_WALL_MS when it has no plan
- * (or a plan with no wall). A chain's wall is one session's. The build room shows this number (builds.round_plan).
+ * (or a plan with no wall). A chain's wall is one session's, so the build room shows this number for every build but a chain.
  */
 export function buildWallMs(plan?: Pick<RoundPlan, "wallMs"> | null): number {
   return plan?.wallMs ?? PLAIN_BUILD_WALL_MS;
