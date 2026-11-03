@@ -3038,6 +3038,14 @@ Hussam's goal included a product that Muse Muse builds and that answers from the
 - **For the owner:** to make "built by Muse, answers on the board" true without a hand-written spec, the template needs a SAM board helper (say `EDGE_SAM_URL` in `lib/meta/edge.ts` and the muse-edge skill, shipped as edge extra files). It also needs SAM drills in `edge-fake.mjs` and `edge-drill.mjs`, and a forwarder so a hosted product can reach the board.
 - **Spend:** $0.061 on the preview. About 20 exec jobs on jetson-04 for the runs, plus read-only checks. Nothing on any board was changed.
 
+## Nov 2, 2026, 9:35 to 10:23 PM: Muse Privacy rerun and replay on Muse Glimmer (branch tg-privacy-glimmer)
+
+- **Why:** the owner approved rerunning Muse Privacy's eval on Muse Glimmer 30B and re-recording the `/private` replay on it for the video (docs/VIDEO.md shots 8 and 9), with a $2.00 cap and the real result shown, leaks included.
+- **Eval, today's defaults, `fresh_200_b`, 200 invented items:** 0 leaks of names or identifiers (58 approved releases checked too), 71.5% decision accuracy (143 of 200), 101 approval requests, 50 of them needless, 0 unsafe shares, 0 over-refusals. 7 results meant only as summaries went out whole, tagged. Holdout: 75.0% (15 of 20), 0 leaks. Reports: `privacy/eval/reports/glimmer_fresh_200_b_2026-11-02.md`, `glimmer_holdout_2026-11-02.md`.
+- **Replay:** `privacy/scripts/rehearse_scenes.py --cloud` (new) recorded scenes A to E on Glimmer, all passing, 0 of 16 outputs with a private value (`privacy/eval/reports/muse_app/rehearsal_cloud_2026-11-02.md`). Scene F, a privacy toggle, isn't run in cloud mode. `lib/private/replay.ts` copies it, and `/private` shows the replay again, with its tiles and the longer page's numbers on Glimmer only.
+- **Copy:** VIDEO.md shots 8 and 9, STORY.md, SUBMISSION.md, MESSAGING.md, HANDOFF.md, eval/README.md, README.md and privacy/README.md. Details, commands and tests: privacy/docs/BUILD_LOG.md, Nov 2.
+- **Spend:** $0.2669 of OpenRouter. No deploy and no production change; `/private` changes only once this branch is merged and deployed.
+
 ## Nov 2, 2026, late ET: edge builds can look with Meta SAM 3.1 on a board, and the 404 model_not_found bug is fixed (branch tg-edge-vision)
 
 The spec was the entry above: its "For the owner" and "Found, not fixed" bullets. Everything stays behind `EDGE_BUILDS` and `EDGE_ENABLED`; with them off, nothing changes. Built and drilled on fakes only: no real build, no board run, no spend.

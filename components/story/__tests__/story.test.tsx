@@ -81,11 +81,12 @@ describe("docs/STORY.md", () => {
 
   it("keeps the company out of the privacy paragraph and the video's privacy act", () => {
     const paragraph = story.split("## Privacy paragraph")[1]!.split("## Three-minute video")[0]!;
-    // The script moved to docs/VIDEO.md on Nov 2: its Act 2 rows in the timing table, and the Act 2 shots.
+    // The script moved to docs/VIDEO.md on Nov 2, and was rewritten that night: Muse Privacy is shot 5, "A leak is a bad
+    // day too", with one row in the timing table.
     const video = readFileSync("docs/VIDEO.md", "utf8");
-    const rows = video.split("\n").filter((line) => /^\| \d+ \| [^|]+ \| 2 \|/.test(line));
-    const shots = video.split("### Act 2: Muse Privacy")[1]?.split("\n### ")[0] ?? "";
-    assert.ok(paragraph.trim().length > 0 && rows.length > 0 && shots.trim().length > 0, "the privacy paragraph, Act 2 rows and Act 2 shots exist");
+    const rows = video.split("\n").filter((line) => /^\| \d+ \|/.test(line) && /a leak is a bad day too/i.test(line));
+    const shots = video.split("**5. A leak is a bad day too")[1]?.split("\n**6.")[0] ?? "";
+    assert.ok(paragraph.trim().length > 0 && rows.length > 0 && shots.trim().length > 0, "the privacy paragraph, the privacy row and the privacy shot exist");
     assert.ok(!/offline.?base/i.test([paragraph, ...rows, shots].join("\n")));
   });
 
@@ -110,17 +111,29 @@ describe("/private with STORY_PAGES", () => {
     assert.ok(!copy.includes("—"));
   });
 
-  it("shows numbers the reports have", () => {
+  it("shows numbers the reports have, all measured on Muse Glimmer (Nov 2 ruling)", () => {
     const { asks, holdout, grading } = PRIVATE_DETAIL;
-    const matrix = readFileSync(`privacy/eval/reports/${asks.report}`, "utf8");
-    const fresh = matrix.split("## eval/fresh_200_b.jsonl")[1]!.split("\n").find((l) => l.startsWith("| policy_lfm"))!.split("|").map((c) => c.trim());
-    assert.deepEqual([Number(fresh[5]), Number(fresh[6]), Number(fresh[8])], [asks.requests, asks.needless, asks.overRefusals]);
-    const hold = matrix.split("## Holdout")[1]!.split("\n").find((l) => l.startsWith("| policy_lfm"))!.split("|").map((c) => c.trim());
-    assert.equal(hold[2], `${holdout.percent} (${holdout.right}/${holdout.items})`);
-    assert.equal(Number(hold[3]), holdout.leaks);
-    const smoke = readFileSync(`privacy/eval/reports/${grading.report}`, "utf8").split("## Toggles: none")[1]!;
-    assert.ok(smoke.includes(`grading seconds: ${grading.seconds}`));
-    assert.ok(smoke.includes(`feedback files: ${grading.files}`));
+    // The value cell of the first "| metric | value |" row, which is the report's Overall table.
+    const cell = (report: string, metric: string) => report.split("\n").find((l) => l.startsWith(`| ${metric} |`))!.split("|")[2]!.trim();
+    const fresh = readFileSync(`privacy/eval/reports/${asks.report}`, "utf8");
+    assert.match(fresh, /\| Model \| meta\/muse-glimmer-30b \|/);
+    assert.match(fresh, /\| Backend \| openrouter \|/);
+    assert.match(fresh, new RegExp(`\\| Items \\| ${asks.items} \\|`));
+    assert.equal(Number(cell(fresh, "Approval requests")), asks.requests);
+    assert.equal(Number(cell(fresh, "Needless asks (asked where a share was expected)")), asks.needless);
+    assert.equal(Number(cell(fresh, "Over-refusals (refused where a share or an ask was expected)")), asks.overRefusals);
+    // Expected a summary, decided share_tagged: the result went out whole, tagged.
+    const summaries = fresh.split("## Expected and decided")[1]!.split("\n").find((l) => l.startsWith("| share_summary |"))!.split("|").map((c) => c.trim());
+    assert.equal(Number(summaries[2]), asks.wholeSummaries);
+    const hold = readFileSync(`privacy/eval/reports/${holdout.report}`, "utf8");
+    assert.match(hold, /\| Model \| meta\/muse-glimmer-30b \|/);
+    assert.match(hold, /\| Date \| 2026-11-02 /);
+    assert.equal(cell(hold, "Decision accuracy"), `${holdout.percent} (${holdout.right} of ${holdout.items})`);
+    assert.equal(Number(cell(hold, "Leaks")), holdout.leaks);
+    const e2e = readFileSync(`privacy/eval/reports/${grading.report}`, "utf8");
+    assert.ok(e2e.includes("Date: 2026-10-27") && e2e.includes("Backend: openrouter (Glimmer `meta/muse-glimmer-30b`"));
+    assert.ok(e2e.includes(`(${grading.essays} essays graded, files written) | ${grading.seconds} s |`));
+    assert.ok(e2e.includes(`| Feedback files with real names | ${grading.files}, all under`));
   });
 
   it("is the old page without the flag", () => {

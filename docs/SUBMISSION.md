@@ -98,7 +98,7 @@ Paste version A today. Swap in each B line only after its run is logged in BUILD
 >
 > **What is true today.** The cloud-to-edge fallback, the edge target, four outage drills (cloud refused, cloud hung, both down, tampered reply rejected) built to run inside each edge build, the board build script and the drill data (900 training rows, 50 kept aside, 100 sealed) are built and unit-tested, with flags off. None has run in a real build or on a board yet.
 >
-> **What isn't proven.** The chain hasn't run as one, and nothing the one-sentence flow made has run on a board. Muse Privacy is a separate connector, measured only on invented items, with Muse Glimmer 30B in the cloud: an earlier version had 0 leaks of names or identifiers on 100 items (Oct 27). [pending rerun on Glimmer] for today's setup.
+> **What isn't proven.** The chain hasn't run as one, and nothing the one-sentence flow made has run on a board. Muse Privacy is a separate connector, measured only on invented items, with Muse Glimmer 30B in the cloud: on today's setup (Nov 2), 0 leaks of names or identifiers on 200 items, with the router right 71.5% of the time.
 
 B lines (EDGE_PLAN.md, "When each claim may be said"), each replacing the matching "is built so" or "isn't proven" words:
 
@@ -239,7 +239,7 @@ All behind `EDGE_ENABLED` and `EDGE_BUILDS`, off by default. Source: EDGE_PLAN.m
 
 Muse can reach your files through connectors, but what it reads lands in its cloud computer, names and all. Muse Privacy is a connector you run yourself, and its policy file stays with you. Muse plans with tags like [Student A] and never gets the documents. For the submission, Muse Glimmer 30B does every step that touches them, in the cloud through OpenRouter, on invented data only. Glimmer on your own device is the target, not a result. A policy file decides what can leave, and a final check runs on every result before it leaves.
 
-- Today's setup on Glimmer: [pending rerun on Glimmer]. Leaks, decision accuracy, approval requests and the holdout all wait on that run.
+- Today's setup on Glimmer through OpenRouter (Nov 2, `privacy/eval/reports/glimmer_fresh_200_b_2026-11-02.md`): 0 leaks of names or identifiers on 200 invented items, with the 58 releases the simulated teacher approved checked too. Nothing was shared that should have waited or stayed on the device. The router was right 71.5% of the time (143 of 200) and asks too often: 101 approval requests, 50 of them needless. On the holdout, 75.0% (15 of 20) with 0 leaks (`glimmer_holdout_2026-11-02.md`). `fresh_200_b` is a development set, not the sealed one.
 - An earlier version on Glimmer through OpenRouter (Oct 27, `privacy/eval/reports/final.md`): 0 leaks of names or identifiers on 100 invented items, with the router right 76% of the time on those 100 and 75% on the holdout. Cloud numbers on an earlier code state, not today's setup.
 - "Leaks" counts names and identifiers. A summary can still point at someone without naming them.
 - No real users, the sealed test set hasn't been scored, and the attacks are hand-written.
@@ -306,7 +306,7 @@ Source: BUILD_LOG.md and README.md; item 6, STORY.md and `lib/story/flow.ts`; it
 - Any edge build in a real sandbox, any edge drill on a board, and one-bit Glimmer as the edge model on a board.
 - Platform launch of a tune, https callbacks, the sweep and Hugging Face upload from the site. The upload is built and tested against a fake Hub only.
 - A general-capability or safety check on a tune. The blind check covers the task only.
-- Muse Privacy on today's setup with Glimmer (the rerun is pending), with real users, on its sealed test set, on a device, or inside the real Muse app.
+- Muse Privacy with real users, on its sealed test set, on a device, or inside the real Muse app.
 - A finished long build on Muse Wonder.
 
 Source: STORY.md marks; PROVE_RESULTS.md, "Not proven anywhere"; MESSAGING.md, Gaps; EDGE_PLAN.md.

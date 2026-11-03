@@ -27,7 +27,7 @@ The script to film, rewritten Nov 2, 2026, night, from the owner's answers to th
 | 2 | 0:14 to 0:26 | Who it's for | Ethan, on camera | Now |
 | 3 | 0:26 to 0:54 | The build | Ethan | After the hero build (needs the edge-vision PR and the new snapshot) |
 | 4 | 0:54 to 1:06 | The product | Ethan | After the hero build |
-| 5 | 1:06 to 1:26 | A leak is a bad day too | Ethan | After the Muse Privacy rerun and replay on Glimmer |
+| 5 | 1:06 to 1:26 | A leak is a bad day too | Ethan | After PR #98 is deployed with STORY_PAGES on |
 | 6 | 1:26 to 1:38 | Where it ran | Ethan | Now (Dinner Split Helper); better after the cold-room device runs |
 | 7 | 1:38 to 2:14 | Cable out | Hussam | Tue 7 to 9 PM take, after the edge-vision PR |
 | 8 | 2:14 to 2:38 | Under the hood | Ethan | Now, plus the Spark Open card once a product has used it |
@@ -63,8 +63,10 @@ The script to film, rewritten Nov 2, 2026, night, from the owner's answers to th
 **5. A leak is a bad day too (1:06 to 1:26)**
 - On screen: `/private`, before and after, then a few seconds of the replay recorded on Muse Glimmer, then the numbers card.
 - Labels: "Muse Glimmer 30B in the cloud for this demo. Invented data."
-- Say: "A leak is a bad day too. Muse Privacy keeps documents on hardware you own. Muse plans with tags like Student A, Muse Glimmer does the reading, and a last check runs on every result before it leaves. On [N] invented items, it leaked [X]."
-- The card shows the rerun's own numbers, every leak included (owner, Nov 2: show the real count). Never "device-only" or "nothing leaves the device" while Glimmer runs in the cloud.
+- Say: "A leak is a bad day too. Muse Privacy keeps documents on hardware you own. Muse plans with tags like Student A, Muse Glimmer does the reading, and a last check runs on every result before it leaves. On 200 invented items, it leaked nothing."
+- The card, from the Nov 2 rerun (PR #98): "Muse Glimmer 30B in the cloud, through OpenRouter, today's setup, Nov 2: 0 leaks of names or identifiers on 200 invented items. Nothing shared that should have waited or stayed. The router right 71.5% of the time, with 101 approval requests, 50 of them not needed."
+- Film the replay by stepping through it: scene A's grading wait is 125 s and scene E's overnight run 627 s. Scene F (government records) isn't in the cloud recording, so don't show or mention it.
+- Never "device-only" or "nothing leaves the device" while Glimmer runs in the cloud.
 - Source: the Muse Privacy rerun entry in docs/BUILD_LOG.md (PR tg-privacy-glimmer).
 
 **6. Where it ran (1:26 to 1:38)**

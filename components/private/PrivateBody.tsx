@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Icon, type IconName } from "@/components/icons";
 import { PageHeader } from "@/components/ui";
 import { PrivateStory, PrivateStoryNumbers, PrivateStoryHelps } from "@/components/private/PrivateStory";
+import { Replay } from "@/components/private/Replay";
 
 type Card = { icon: IconName; title: string; text: string };
 
@@ -31,10 +32,10 @@ const WHO: string[] = [
 
 const NOT_DONE: string[] = [
   "No real users yet. Every person, essay and record used here is invented, and the teacher's answers are simulated.",
-  "The numbers above are from one Oct 27 run, before later changes to the router. Today's settings haven't been scored on Muse Glimmer, and the sealed test set hasn't been scored, so there's no unseen result yet.",
+  "The numbers above are from one Nov 2 run of today's settings on 200 invented items, a set used while the router was built. The sealed test set hasn't been scored, so there's no unseen result yet.",
   "In this demo Muse Glimmer 30B runs in the cloud, on OpenRouter, so tagged invented text leaves the device, and the privacy toggles, which need every model on the device, are off. Muse Glimmer hasn't been measured on a device for this. That is the target.",
   "Since the Nov 2 ruling that only Meta models may run, scanned page images aren't read, search is keyword search only, asking on the device is off, and the classifier for planted orders is off.",
-  "The recorded replay of the scenes ran on a model that isn't Meta's, before the ruling, so it's off this page until it's recorded again on Muse Glimmer.",
+  "The replay was recorded on Nov 2 with Muse Glimmer 30B in the cloud, on invented records. It leaves out the government-records scene, since the privacy toggles are off in cloud mode.",
   "In the real Muse app it paired, listed its tools and ran one search. The full scenes have only run with a script playing Muse.",
   "Tagging can miss things, such as a name written in lower case that the model also misses, and a summary can point at someone without naming them.",
   "Whatever you type into Muse reaches Meta before the device sees it.",
@@ -44,23 +45,24 @@ const NOT_DONE: string[] = [
 ];
 
 /**
- * The last full Muse Glimmer 30B run on OpenRouter (privacy/eval/reports/final_cloud.md, Oct 27): 100 invented items,
- * first day, no learned rules. Since the Nov 2 ruling (Meta models only) the device-only numbers measured on Liquid's
- * LFM3-VL-2B, the Oct 30 and Oct 31 runs, are not shown: they are not results of this project.
+ * Today's defaults on Muse Glimmer 30B on OpenRouter (privacy/eval/reports/glimmer_fresh_200_b_2026-11-02.md, Nov 2):
+ * the 200 invented items of fresh_200_b, a development set, first day, no learned rules. Since the Nov 2 ruling (Meta
+ * models only) the device-only numbers measured on Liquid's LFM3-VL-2B, the Oct 30 and Oct 31 runs, are not shown: they
+ * are not results of this project.
  */
 export const GLIMMER_RUN = {
-  report: "final_cloud.md",
-  date: "Oct 27",
+  report: "glimmer_fresh_200_b_2026-11-02.md",
+  date: "Nov 2",
   model: "meta/muse-glimmer-30b",
-  items: 100,
-  right: 76,
-  percent: "76.0%",
+  items: 200,
+  right: 143,
+  percent: "71.5%",
   leaks: 0,
   unsafeShares: 0,
-  approvals: 48,
+  approvals: 101,
 } as const;
 
-/** The round before (privacy/eval/reports/final.md, Leaks): one leak on the unseen test, from a guard gap since closed. */
+/** An earlier round on Glimmer (privacy/eval/reports/final.md, Leaks): one leak on the unseen test, from a guard gap since closed. */
 export const EARLIER_ROUND = { report: "final.md", items: 100, leaks: 1 } as const;
 
 /** With `story` (STORY_PAGES), the page opens with what it protects, from whom, and a before and after. */
@@ -79,6 +81,9 @@ export function PrivateBody({ story = false }: { story?: boolean }) {
       </p>
 
       {story ? <PrivateStory /> : null}
+
+      <h2 className="how-heading">See one run</h2>
+      <Replay />
 
       <h2 className="how-heading">What happens to a result</h2>
       <ol className="how">
@@ -106,11 +111,11 @@ export function PrivateBody({ story = false }: { story?: boolean }) {
         </div>
         <div className="pv-tile">
           <dd>
-            {run.leaks} of {run.items}, {EARLIER_ROUND.leaks} in the round before
+            {run.leaks} of {run.items}, {EARLIER_ROUND.leaks} in an earlier round
           </dd>
           <dt>
             results held a name or identifier the checker looks for: {run.leaks} in the {run.date} run, and {EARLIER_ROUND.leaks} on{" "}
-            {EARLIER_ROUND.items} unseen items in the round before, from a gap in the guard that has since been closed
+            {EARLIER_ROUND.items} unseen items in an earlier round in October, from a gap in the guard that has since been closed
           </dt>
         </div>
         <div className="pv-tile">

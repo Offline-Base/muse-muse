@@ -78,13 +78,13 @@ export function PrivateStoryNumbers() {
     <>
       <ul className="pv-list">
         <li>
-          It asks too often: {asks.requests} approval requests on the 200 items, {asks.needless} of them needless, and {asks.overRefusals} results refused that shouldn&apos;t have been.
+          It asks too often: {asks.requests} approval requests on the {asks.items} items, {asks.needless} of them needless, and {asks.overRefusals} results refused that shouldn&apos;t have been. {asks.wholeSummaries} results meant to go out only as a summary went out whole, with names as tags.
         </li>
         <li>
-          On the {holdout.items} holdout items inside the 100 tasks, it agreed {holdout.percent} of the time ({holdout.right} of {holdout.items}), with {holdout.leaks} leaks.
+          On the {holdout.items} holdout items inside the 100 tasks, it agreed {holdout.percent} of the time ({holdout.right} of {holdout.items}), with {holdout.leaks} leaks, on {holdout.date}.
         </li>
         <li>
-          A script playing Muse graded {grading.essays} invented essays on the laptop in {grading.seconds} s and wrote {grading.files} feedback files on the device. That measures the path and the time, not how good the grades are.
+          With Muse Glimmer 30B in the cloud, a script playing Muse had {grading.essays} invented essays graded in {grading.seconds} s on {grading.date}, and {grading.files} feedback files written on the laptop. That measures the path and the time, not how good the grades are.
         </li>
         <li>The attacks are hand-written with a faked model. They show what the code does with the attacks someone thought of, not what an adaptive attacker would find.</li>
       </ul>
