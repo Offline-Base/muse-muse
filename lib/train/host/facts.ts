@@ -3,6 +3,7 @@ import { BASE_MODEL_PARAM, familyOfRepo, isSparkOpenDerivative, LAB_MERGE_BASE, 
 import { COMMIT_RE, REPO_ID_RE } from "@/lib/train/bases";
 import { ADAPTER_RECIPE, adapterProblem, CHAT_MODE, jobMode, trainChannelOf, type DoneMetrics, type TrainJobRow } from "@/lib/train/logic";
 import { evalVerdict } from "@/lib/train/tune/verdict";
+import { fwNames } from "@/lib/train/fireworks/rows";
 import type { HostFacts } from "@/lib/train/host/types";
 
 export const BASE_REVISION_PARAM = "baseRevision";
@@ -56,5 +57,6 @@ export function hostFacts(job: TrainJobRow, metrics: DoneMetrics | null): HostFa
     lambdaProblem: adapterProblem(job, metrics),
     duties: licenseDuties({ params: job.params, metrics }),
     problem: hostProblem(job, sparkOpen, checked),
+    fireworksModel: job.params?.trainer === "fireworks" ? fwNames(job.id).model : null,
   };
 }

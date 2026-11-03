@@ -139,6 +139,17 @@ function model(name: string, fallback: string): string {
   return value;
 }
 
+/** PARTNER_EVALS read as its partners, the automatic one first (env.partnerEvalProviders). Empty when off. */
+function partnerProvidersFromEnv(): Array<"baseten" | "modal" | "fireworks"> {
+  const v = (process.env.PARTNER_EVALS ?? "").trim().toLowerCase();
+  const named = v === "all" ? ["baseten", "modal", "fireworks"] : v.split(",").map((p) => p.trim()).map((p) => (p === "1" || p === "true" || p === "yes" || p === "on" ? "baseten" : p));
+  const known = named.filter((p): p is "baseten" | "modal" | "fireworks" => p === "baseten" || p === "modal" || p === "fireworks");
+  if (!known.length) return [];
+  const out = [...new Set(known)];
+  for (const p of ["baseten", "modal"] as const) if (!out.includes(p)) out.push(p);
+  return out;
+}
+
 export const env = {
   /** The platform's Meta key. Server only. Never sent to products or sandboxes (the firewall injects it). */
   get modelApiKey() {
@@ -1661,13 +1672,27 @@ export const env = {
   /**
    * PARTNER_EVALS: after a tune is judged, host it on a partner's GPU, answer the same held-out prompts there with base
    * and tuned, judge them, record it on the job and tear it down (lib/train/partner). "baseten" or "1" picks Baseten,
-   * "modal" picks Modal. Unset, empty, "0" or anything else: off, and nothing is deployed. Also needs HOST_TUNED, whose
-   * sweep is the backstop that stops anything left running.
+   * "modal" picks Modal, "fireworks" picks Fireworks, for the automatic eval after training. A list ("baseten,fireworks")
+   * picks its first; "all" picks Baseten. Unset, empty, "0" or anything else: off, and nothing is deployed. Also needs
+   * HOST_TUNED, whose sweep is the backstop that stops anything left running.
    */
-  get partnerEvalProvider(): "baseten" | "modal" | null {
-    const v = (process.env.PARTNER_EVALS ?? "").trim().toLowerCase();
-    if (v === "modal") return "modal";
-    return v === "baseten" || v === "1" || v === "true" || v === "yes" || v === "on" ? "baseten" : null;
+  get partnerEvalProvider(): "baseten" | "modal" | "fireworks" | null {
+    return partnerProvidersFromEnv()[0] ?? null;
+  },
+  /**
+   * The partners an admin may pick with PARTNER_EVALS on, the automatic one first. Baseten and Modal whenever it is on;
+   * Fireworks only when it is named or the value is "all", since its account answered 412 on Nov 2. Empty when off.
+   */
+  get partnerEvalProviders(): Array<"baseten" | "modal" | "fireworks"> {
+    return partnerProvidersFromEnv();
+  },
+  /**
+   * PARTNER_EVAL_RUN_MAX_USD: the most one admin's run of several partners may cost in all, at list prices, 16 by default
+   * (two evals at the $8 default). Each partner still gets at most PARTNER_EVAL_MAX_USD, and less when the run has spent
+   * the rest. 0 stops a run of several before its first.
+   */
+  get partnerEvalRunMaxUsd(): number {
+    return dollars("PARTNER_EVAL_RUN_MAX_USD", 16);
   },
   /** PARTNER_EVAL_MAX_USD: the most one partner eval's GPU may cost at the provider's list price, 8 by default. 0 stops them. */
   get partnerEvalMaxUsd(): number {

@@ -4,6 +4,7 @@ import { hostFacts } from "@/lib/train/host/facts";
 import { hostErrorResponse } from "@/lib/train/host/gateway";
 import { modelDeployer } from "@/lib/train/host/who";
 import { loadHostView } from "@/lib/train/host/page";
+import { demoWindowMinutes } from "@/lib/train/host/limits";
 import { deployEndpoint, refreshEndpoint, stopEndpoint } from "@/lib/train/host/service";
 import { HOST_PROVIDERS, type HostProvider } from "@/lib/train/host/types";
 import { getAdapterSource } from "@/lib/train/store";
@@ -41,13 +42,18 @@ export async function POST(req: Request, { params }: Ctx) {
   const { id } = await params;
   const user = await modelDeployer(id);
   if (user instanceof Response) return user;
-  const body = (await req.json().catch(() => null)) as { provider?: unknown } | null;
+  const body = (await req.json().catch(() => null)) as { provider?: unknown; minutes?: unknown } | null;
   const provider = body?.provider;
   if (typeof provider !== "string" || !HOST_PROVIDERS.includes(provider as HostProvider)) return Response.json({ code: "invalid_arguments", error: "Pick Fireworks, Modal, Baseten or Lambda." }, { status: 400 });
   const source = await getAdapterSource(id);
   if (!source) return notFound();
+  // A demo window: a shorter stop time than HOST_TUNED_MAX_MINUTES, never a longer one. Left out, the usual limit.
+  const deps = hostDeps();
+  const minutes = demoWindowMinutes(body?.minutes, deps.limits().maxMinutes);
+  if (minutes === "invalid") return Response.json({ code: "invalid_arguments", error: "minutes is a whole number of minutes, at least 30." }, { status: 400 });
+  const windowed = minutes === null ? deps : { ...deps, limits: () => ({ ...deps.limits(), maxMinutes: minutes }) };
   try {
-    const { ownerToken } = await deployEndpoint({ provider: provider as HostProvider, facts: hostFacts(source.job, source.metrics), callerId: user.id }, hostDeps());
+    const { ownerToken } = await deployEndpoint({ provider: provider as HostProvider, facts: hostFacts(source.job, source.metrics), callerId: user.id }, windowed);
     // The one time this token is sent, so a failed read of the view mustn't lose it. Only its hash is kept.
     return Response.json({ ownerToken, view: await loadHostView(id).catch(() => null) }, { status: 201, headers: { "cache-control": "no-store" } });
   } catch (err) {

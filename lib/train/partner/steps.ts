@@ -13,7 +13,19 @@ import { STOP_WORDS } from "@/lib/train/host/limits";
 import { chatOnEndpoint, deployEndpoint, providerRefusal, refreshEndpoint, stopEndpoint } from "@/lib/train/host/service";
 import { HostError, type HostEndpoint } from "@/lib/train/host/types";
 import { currentPartnerDeps as deps, type PartnerDeps } from "@/lib/train/partner/deps";
-import { PARTNER_LABEL, PARTNER_MAX_ITEMS, PARTNER_MAX_TOKENS, partnerBudget, partnerProblem, readyWindowMinutes, reasonText } from "@/lib/train/partner/logic";
+import {
+  allowedPartners,
+  baseFromJob,
+  fireworksPartnerProblem,
+  PARTNER_LABEL,
+  PARTNER_MAX_ITEMS,
+  PARTNER_MAX_TOKENS,
+  partnerBudget,
+  partnerProblem,
+  readyWindowMinutes,
+  reasonText,
+  runLeftUsd,
+} from "@/lib/train/partner/logic";
 import type { JudgedItem } from "@/lib/train/logic";
 import type { PartnerEvalBody, PartnerProvider } from "@/lib/train/types";
 
@@ -26,6 +38,8 @@ export interface PartnerEvalInput {
   again?: boolean;
   /** Started by the training workflow for every job that succeeded: one that was never a tuned chat model is passed over without a word. */
   auto?: boolean;
+  /** An admin's run of several partners, one after another: what the earlier ones cost, held to PARTNER_EVAL_RUN_MAX_USD. */
+  run?: { spentUsd: number };
 }
 
 export interface PartnerPlan {
@@ -42,6 +56,8 @@ export interface PartnerPlan {
   system: string | null;
   baseRepo: string | null;
   readyMinutes: number;
+  /** The partner answers only the tuned model; the base answers are the job's own (Fireworks). */
+  baseFromJob: boolean;
 }
 
 export type PartnerPlanResult = PartnerPlan | { action: "skip"; reason: string | null };
@@ -66,6 +82,7 @@ export async function partnerPlanStep(input: PartnerEvalInput): Promise<PartnerP
   const s = d.settings();
   if (!s.provider) return { action: "skip", reason: null };
   const provider = input.provider ?? s.provider;
+  const allowed = allowedPartners(s);
   const source = await d.source(input.jobId);
   if (!source) return { action: "skip", reason: "There is no such job." };
   // A quantize, publish or serve job, a decide job or a dry run succeeds too: nothing to evaluate, and nothing on its log.
@@ -74,6 +91,7 @@ export async function partnerPlanStep(input: PartnerEvalInput): Promise<PartnerP
   }
   const all = await d.results(input.jobId);
   const results = all.filter((r) => r.provider === provider);
+  if (!allowed.includes(provider)) return skip(d, input.jobId, provider, `PARTNER_EVALS doesn't include ${PARTNER_LABEL[provider]}, so it wasn't offered.`, all);
   if (!s.hostOn) return skip(d, input.jobId, provider, "HOST_TUNED is off, and partner evals need its 5-minute sweep as the backstop that stops a GPU.", all);
 
   const facts = hostFacts(source.job, source.metrics);
@@ -81,20 +99,31 @@ export async function partnerPlanStep(input: PartnerEvalInput): Promise<PartnerP
   const adapter = host.adapter(provider);
   const indexes = (await d.evalIndexes(input.jobId)).filter((i) => checkSetOf(i) === null).slice(0, PARTNER_MAX_ITEMS);
   const now = d.now();
-  const problem = partnerProblem({ facts, refusal: providerRefusal(facts, adapter), items: indexes.length, results, judgeReady: await d.judgeReady(), again: input.again, now });
+  let refusal = providerRefusal(facts, adapter);
+  // Fireworks: a lab adapter's adapter_config.json must list its target modules. Read (free) before anything is created.
+  if (!refusal && provider === "fireworks" && !facts.fireworksModel && facts.hubRepo && facts.hubCommit) {
+    refusal = fireworksPartnerProblem(facts, await d.adapterConfig(facts.hubRepo, facts.hubCommit));
+  }
+  const problem = partnerProblem({ facts, refusal, items: indexes.length, results, judgeReady: await d.judgeReady(), again: input.again, now });
   if (problem) return skip(d, input.jobId, provider, problem, all);
 
   const price = adapter.price(facts);
-  const budget = partnerBudget(price, s);
-  if (!budget.ok) return skip(d, input.jobId, provider, budget.reason, all);
+  // In a run of several, this one gets at most what the run has left.
+  const left = input.run ? runLeftUsd(s.runMaxUsd, input.run.spentUsd) : Number.POSITIVE_INFINITY;
+  if (input.run && !(left > 0)) return skip(d, input.jobId, provider, "This run of partner evals has used PARTNER_EVAL_RUN_MAX_USD, so it stopped before this one.", all);
+  const budget = partnerBudget(price, { maxUsd: Math.min(s.maxUsd, left), maxMinutes: s.maxMinutes });
+  if (!budget.ok) return skip(d, input.jobId, provider, left < s.maxUsd ? `What this run has left of PARTNER_EVAL_RUN_MAX_USD is too little. ${budget.reason}` : budget.reason, all);
 
   const recorded = judgeModelOf(source.job);
   // A job judged before judge_model was saved: today's judge (JUDGE_MODEL in lib/train/judge.ts is defaultModel()).
   const judgeModel = recorded && recorded !== UNRECORDED_MODEL ? recorded : defaultModel();
   const datasetId = typeof source.job.params?.datasetId === "string" ? source.job.params.datasetId : null;
-  const system = typeof source.metrics?.system === "string" && source.metrics.system.trim() ? source.metrics.system : null;
+  const recordedSystem = typeof source.metrics?.system === "string" && source.metrics.system.trim() ? source.metrics.system : null;
   // Read before "started" is recorded: a retry after a failure here would otherwise find its own "started" and stop.
   const task = datasetId ? await d.datasetTask(datasetId) : null;
+  // A Fireworks run records no done metrics: its system message is the one it trained under, rebuilt from the dataset.
+  const system = recordedSystem ?? (facts.fireworksModel && datasetId ? await d.fireworksSystem(datasetId) : null);
+  const fromJob = baseFromJob(provider);
   const startedAt = now.toISOString();
   await d.record(input.jobId, {
     type: "partner_eval",
@@ -106,6 +135,7 @@ export async function partnerPlanStep(input: PartnerEvalInput): Promise<PartnerP
     maxUsd: budget.maxUsd,
     asked: indexes.length,
     judgeModel,
+    ...(fromJob ? { baseFrom: "job" as const } : {}),
     startedAt,
   });
   return {
@@ -122,6 +152,7 @@ export async function partnerPlanStep(input: PartnerEvalInput): Promise<PartnerP
     system,
     baseRepo: facts.servingBase?.repo ?? null,
     readyMinutes: readyWindowMinutes(budget.minutes),
+    baseFromJob: fromJob,
   };
 }
 partnerPlanStep.maxRetries = 2;
@@ -210,14 +241,19 @@ export async function partnerAnswerStep(input: { jobId: string; endpointId: stri
 }
 partnerAnswerStep.maxRetries = 1;
 
-/** The partner's two answers to one prompt, judged blind by the job's own judge against the reference. Null when it fails. */
-export async function partnerJudgeStep(input: { jobId: string; index: number; base: string; tuned: string; judgeModel: string; task: string | null }): Promise<(JudgedItem & { index: number }) | null> {
+/**
+ * The partner's two answers to one prompt, judged blind by the job's own judge against the reference. A null base is the
+ * job's own recorded base answer (a partner that hosts only the tuned model). Null when it fails or there is none.
+ */
+export async function partnerJudgeStep(input: { jobId: string; index: number; base: string | null; tuned: string; judgeModel: string; task: string | null }): Promise<(JudgedItem & { index: number }) | null> {
   "use step";
   const d = deps();
   const item = await d.evalItem(input.jobId, input.index);
   if (!item) return null;
+  const base = input.base ?? (item.base?.trim() ? item.base : null);
+  if (base === null) return null;
   try {
-    const v = await d.judge({ model: input.judgeModel, task: input.task, index: input.index, prompt: item.prompt, reference: item.reference, base: input.base, tuned: input.tuned });
+    const v = await d.judge({ model: input.judgeModel, task: input.task, index: input.index, prompt: item.prompt, reference: item.reference, base, tuned: input.tuned });
     return { index: input.index, baseScore: v.baseScore, tunedScore: v.tunedScore, better: v.better, costUsd: v.costUsd };
   } catch {
     return null;

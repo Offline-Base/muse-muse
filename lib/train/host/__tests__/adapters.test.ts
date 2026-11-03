@@ -10,6 +10,7 @@ import { lambdaAdapter } from "@/lib/train/host/lambda";
 import { modalAdapter, modalApp } from "@/lib/train/host/modal";
 import { openAiChat } from "@/lib/train/host/openai-chat";
 import { HostError } from "@/lib/train/host/types";
+import { KEPT_ON_FIREWORKS, providerRefusal } from "@/lib/train/host/service";
 import { facts, fakeFetch, ID, JOB, json } from "@/lib/train/host/__tests__/helpers";
 
 const NAME = "mm-host-abc";
@@ -122,6 +123,21 @@ describe("fireworks", () => {
     assert.equal(dep.minReplicaCount, 0);
     assert.equal(dep.maxReplicaCount, 1);
     assert.equal(dep.autoscalingPolicy.scaleToZeroWindow, "300s");
+  });
+  it("hosts a tune trained on Fireworks by deploying its own model, with nothing uploaded, and no other host takes it", async () => {
+    const trained = facts({ sparkOpen: false, hubRepo: null, hubCommit: null, trainChannel: 0, fireworksModel: "mm-m-job1" });
+    const a = adapter(fetch);
+    assert.equal(a.cantServe(trained), null);
+    const f = fakeFetch([["/deployments?deploymentId=mm-host-abc", () => json({})]]);
+    const ref = await adapter(f.fn).deploy(deployInput(trained));
+    assert.deepEqual(ref, { model: "accounts/acct/models/mm-m-job1" });
+    assert.equal(f.calls.length, 1);
+    assert.equal(JSON.parse(String(f.calls[0]!.init?.body)).baseModel, "accounts/acct/models/mm-m-job1");
+    const modal = modalAdapter({ tokenId: () => "t", tokenSecret: () => "s", hfToken: () => undefined, keyFor: () => "k", runner: runner("") });
+    assert.equal(providerRefusal(trained, modal), KEPT_ON_FIREWORKS);
+    const job = { id: "j1", recipe: "glimmer-lora", status: "succeeded", params: { trainer: "fireworks", baseModel: "accounts/fireworks/models/muse-glimmer-30b" }, evalSummary: null, hub: null } as unknown as TrainJobRow;
+    assert.equal(hostFacts(job, null).fireworksModel, "mm-m-j1");
+    assert.equal(hostFacts({ ...job, params: {} } as unknown as TrainJobRow, null).fireworksModel, null);
   });
   it("refuses regex target modules before creating anything", async () => {
     const f = fakeFetch([]);

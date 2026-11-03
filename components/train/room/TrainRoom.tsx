@@ -10,6 +10,7 @@ import { ShowThinking, SourceList, StepList, StepsPanel, TitleChip, UserBubble, 
 import { Icon } from "@/components/icons";
 import { EvalResults } from "@/components/train/EvalResults";
 import { HubCard } from "@/components/train/HubCard";
+import { PartnerEvalPicker } from "@/components/train/PartnerEvalPicker";
 import { AdapterLiveDemo, type JobLiveDemo } from "@/components/train/LiveDemo";
 import { MakeLocalFiles } from "@/components/train/LocalFiles";
 import { SimTuneCard } from "@/components/train/SimTune";
@@ -70,6 +71,8 @@ export interface TrainRoomProps {
   needsCode?: boolean;
   /** MAKE_CHAT_ALL: the simple story on the left (lib/steps-feed/tune.ts), the plan, scores and results on the right. */
   story?: boolean;
+  /** Admins only, PARTNER_EVALS on: pick partners to evaluate on. HOST_TUNED adds a pointer to Run it for hosting alone. */
+  partners?: { hostTuned: boolean } | null;
 }
 
 /**
@@ -79,7 +82,7 @@ export interface TrainRoomProps {
  * the verdict with the eval results, the live demo, the Hugging Face card and Where it runs, or why it stopped. The
  * steps panel lists the stages it reached. Polls GET /api/train/runs/{id} every 5 s while something runs.
  */
-export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverNow, quantTargets = false, needsCode = false, story = false }: TrainRoomProps) {
+export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverNow, quantTargets = false, needsCode = false, story = false, partners = null }: TrainRoomProps) {
   const [view, setView] = useState(initial);
   // A refresh of the page (Start a live demo does one) brings a newer run: take it.
   const [given, setGiven] = useState(initial);
@@ -262,7 +265,8 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
                   sparkOpen={sparkOpen}
                 />
               ) : null}
-              {view.partnerEval ? <PartnerEvalNote view={view.partnerEval} /> : null}
+              {view.partnerEvals?.length ? view.partnerEvals.map((p) => <PartnerEvalNote key={p.provider} view={p} />) : view.partnerEval ? <PartnerEvalNote view={view.partnerEval} /> : null}
+              {job && admin && partners && !needsCode ? <PartnerEvalPicker jobId={job.id} hostTuned={partners.hostTuned} onStarted={refresh} /> : null}
               {job && liveDemo ? <AdapterLiveDemo jobId={job.id} live={liveDemo} serverNow={serverNow} /> : null}
               {job && admin && hub && !onFireworks ? <HubCard job={job} offReason={hub.offReason} maxActive={hub.maxActive} dailyUsd={hub.dailyUsd} /> : null}
               {job && admin && hub && trained ? <MakeLocalFiles jobId={job.id} maxActive={hub.maxActive} dailyUsd={hub.dailyUsd} /> : null}

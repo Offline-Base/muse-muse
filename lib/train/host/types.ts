@@ -43,6 +43,11 @@ export interface HostFacts {
   duties: LicenseDuties;
   /** Why this model can't be hosted at all, or null: it must have passed. */
   problem: string | null;
+  /**
+   * Trained on Fireworks (FIREWORKS_TUNE): the adapter's model id on the platform's Fireworks account, which keeps it.
+   * Only Fireworks can host it, with no upload. Absent or null for an adapter trained in the lab.
+   */
+  fireworksModel?: string | null;
 }
 
 /** What a provider left behind to find its endpoint again. Server only. */

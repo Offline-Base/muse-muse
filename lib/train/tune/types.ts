@@ -155,6 +155,8 @@ export interface TuneRunView {
   costSoFarUsd: number;
   /** PARTNER_EVALS: the newest partner eval of its job ("Evaluated on Baseten"), when one was recorded. */
   partnerEval?: PartnerEvalView;
+  /** One card per partner with anything recorded ("Evaluated on Baseten", "Evaluated on Modal", ...), when there are any. */
+  partnerEvals?: PartnerEvalView[];
   /**
    * The one thing the room offers next: Start training (POST `start`, runs/{id}/start) while the examples are ready
    * and no job trains on them, with the full New job form for admins (`fullForm`); the job's page once there is one.

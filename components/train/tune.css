@@ -175,3 +175,9 @@
 .tune-start-code input {
   max-width: 240px;
 }
+
+.tune-partner-pick {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}

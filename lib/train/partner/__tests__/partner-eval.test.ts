@@ -3,20 +3,28 @@
  * real Baseten adapter, with Baseten's API, the Truss sandbox, the database, the judge and the clock faked. Nothing
  * reaches Baseten, Hugging Face, Meta or a database, and nothing is spent.
  *
+ * Several partners in turn and Fireworks run on the same fakes: Modal is the Baseten adapter under Modal's name, and
+ * Fireworks is the real Fireworks adapter on a faked Fireworks API.
+ *
  *   npx tsx --experimental-test-module-mocks --test lib/train/partner/__tests__/partner-eval.test.ts
  */
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { LAB_BASE_MODEL } from "@/lib/train/base";
 import { basetenAdapter } from "@/lib/train/host/baseten";
+import { fireworksAdapter } from "@/lib/train/host/fireworks";
+import { demoWindowMinutes } from "@/lib/train/host/limits";
+import { KEPT_ON_FIREWORKS } from "@/lib/train/host/service";
+import { env } from "@/lib/env";
 import { chatBody } from "@/lib/train/host/openai-chat";
 import type { HostChatDeps, NewEndpoint } from "@/lib/train/host/service";
 import type { HostAdapter, HostEndpoint } from "@/lib/train/host/types";
 import { json } from "@/lib/train/host/__tests__/helpers";
 import type { PartnerDeps } from "@/lib/train/partner/deps";
-import { partnerBudget, partnerEvalView, latencyOf, partnerProblem, PARTNER_MAX_TOKENS } from "@/lib/train/partner/logic";
+import { partnerBudget, partnerChoice, partnerEvalView, partnerEvalViews, latencyOf, partnerProblem, PARTNER_LABEL, PARTNER_MAX_TOKENS, runEstimateUsd } from "@/lib/train/partner/logic";
+import { partnerOffers } from "@/lib/train/partner/offers";
 import { usePartnerDepsForTests } from "@/lib/train/partner/deps";
-import { runPartnerEval } from "@/lib/train/partner/workflow";
+import { runPartnerEval, runPartnerEvals } from "@/lib/train/partner/workflow";
 import { tuneRunView } from "@/lib/train/tune/view";
 import type { DatasetHead, DoneMetrics, TrainJobRow } from "@/lib/train/logic";
 import type { PartnerEvalBody, TrainEventBody } from "@/lib/train/types";
@@ -25,7 +33,8 @@ const JOB = "aaaaaaaa-0000-4000-8000-0000000000aa";
 const DATASET = "ebad9aad-0000-4000-8000-000000000001";
 const T0 = Date.parse("2026-11-04T03:00:00Z");
 const SYSTEM = "You are a cold-room handoff summarizer.";
-const PROMPTS = [0, 1, 2, 3, 4, 5].map((i) => ({ index: i, prompt: `walk-in note ${i}: 39F, door alarm`, reference: `Checklist ${i}` }));
+const PROMPTS = [0, 1, 2, 3, 4, 5].map((i) => ({ index: i, prompt: `walk-in note ${i}: 39F, door alarm`, reference: `Checklist ${i}`, base: `JOBBASE: note ${i}` }));
+const FW_SYSTEM = "You are a cold-room handoff summarizer (Fireworks).";
 
 function job(over: Partial<TrainJobRow> = {}): TrainJobRow {
   return {
@@ -86,10 +95,25 @@ let deletes: number;
 let deleteOk: boolean;
 let settled: Array<{ id: string; costUsd: number | null }>;
 let waits: number[];
+/** The Fireworks API's calls, "METHOD url", and the deployments' bodies. */
+let fwCalls: string[];
+let fwDeployBodies: Array<{ baseModel: string }>;
+/** The adapter_config.json the Hub gives for Fireworks' check. */
+let hubConfig: { r?: unknown; target_modules?: unknown } | null;
 
 function fetchFake(): typeof fetch {
   return (async (input: string, init?: RequestInit) => {
     const method = init?.method ?? "GET";
+    if (input.startsWith("https://api.fireworks.ai/v1/")) {
+      fwCalls.push(`${method} ${input}`);
+      if (method === "POST" && input.includes("/deployments?deploymentId=")) {
+        fwDeployBodies.push(JSON.parse(String(init?.body)));
+        return json({});
+      }
+      if (method === "GET" && input.includes("/deployments/")) return json({ state: "READY" });
+      if (method === "DELETE") return new Response(null, { status: 200 });
+      throw new Error(`unexpected Fireworks ${method} ${input}`);
+    }
     if (input.includes("/v1/secrets")) return json({ ok: true });
     if (method === "GET" && input.endsWith("/v1/models")) return json({ models: [] });
     if (input.includes("/deployments/production")) {
@@ -105,7 +129,7 @@ function fetchFake(): typeof fetch {
       chats.push({ model: body.model, temperature: body.temperature, maxTokens: body.max_tokens, messages: body.messages });
       const status = chatStatus(chats.length, body.model, body.messages.at(-1)?.content ?? "");
       if (status !== 200) return new Response("busy", { status });
-      const who = body.model === "tuned" ? "TUNED" : "BASE";
+      const who = body.model === "tuned" || body.model.includes("/models/mm-m-") ? "TUNED" : "BASE";
       return json({ choices: [{ message: { content: `${who}: ${body.messages.at(-1)?.content}` }, finish_reason: "stop" }], usage: { prompt_tokens: 10, completion_tokens: 20 } });
     }
     throw new Error(`unexpected ${method} ${input}`);
@@ -127,15 +151,23 @@ function adapter(): HostAdapter {
   });
 }
 
+function fwAdapter(): HostAdapter {
+  const source = { list: async () => [], text: async () => JSON.stringify(hubConfig), stream: async () => new ReadableStream<Uint8Array>() };
+  return fireworksAdapter({ fetch: fetchFake(), apiKey: () => "fw-test-key-not-real", accountId: () => "acct", source, pollMs: 0 });
+}
+
 let ids = 0;
 function host(limits: Record<string, number> = {}): HostChatDeps {
-  const a = adapter();
+  const b = adapter();
+  // Modal here is Baseten's adapter under Modal's name: what is tested is the run in turn, not Modal's own API.
+  const byProvider = (p: string): HostAdapter => (p === "fireworks" ? fwAdapter() : p === "modal" ? { ...b, id: "modal", label: "Modal" } : b);
+  const a = b;
   return {
     on: () => true,
     limits: () => ({ dailyUsd: 25, maxLive: 2, idleMinutes: 15, maxMinutes: 240, ...limits }),
     platformCapUsd: () => 100,
     platformSpend: async () => 0,
-    adapter: () => a,
+    adapter: (p) => byProvider(p),
     adapters: () => [a],
     rows: async () => rows,
     async insert(r: NewEndpoint) {
@@ -165,6 +197,8 @@ const fakeDeps = (): PartnerDeps => ({
   evalIndexes: async () => PROMPTS.map((p) => p.index),
   evalItem: async (_id, index) => PROMPTS.find((p) => p.index === index) ?? null,
   datasetTask: async () => "Summarize a cold-room handoff note as a checklist.",
+  fireworksSystem: async () => FW_SYSTEM,
+  adapterConfig: async () => hubConfig,
   results: async () => events.filter((e): e is PartnerEvalBody => e.type === "partner_eval"),
   record: async (_id, body) => {
     events.push(body);
@@ -210,6 +244,9 @@ beforeEach(() => {
   deleteOk = true;
   settled = [];
   waits = [];
+  fwCalls = [];
+  fwDeployBodies = [];
+  hubConfig = { r: 16, target_modules: ".*proj" };
   usePartnerDepsForTests(fakeDeps());
 });
 afterEach(() => usePartnerDepsForTests(null));
@@ -466,5 +503,181 @@ describe("partner eval pieces", () => {
     const without = tuneRunView({ dataset, written: null, job: theJob, events: [] }, new Date(now), { maxMinutes: 120, maxUsd: 5 });
     assert.equal(without.partnerEval, undefined);
     assert.ok(view.costSoFarUsd > without.costSoFarUsd);
+  });
+});
+
+const FW_JOB_PARAMS = { trainer: "fireworks", baseModel: "accounts/fireworks/models/muse-glimmer-30b", loraRank: 16, datasetId: DATASET };
+const PLAIN_PARAMS = { baseModel: "unsloth/Muse-Glimmer-30B-bnb-4bit", loraRank: 16, datasetId: DATASET, trainChannel: 1 };
+
+describe("partner evals on several partners", () => {
+  it("runs Baseten then Modal in turn, each with its own result card", async () => {
+    settings = { ...settings, providers: ["baseten", "modal"], runMaxUsd: 16 };
+    const out = await runPartnerEvals({ jobId: JOB, provider: "baseten", providers: ["baseten", "modal"] }, clock);
+    assert.equal(out.status, "done");
+    assert.deepEqual(out.results, [
+      { provider: "baseten", status: "done" },
+      { provider: "modal", status: "done" },
+    ]);
+    assert.deepEqual(rows.map((r) => [r.provider, r.status]), [
+      ["baseten", "stopped"],
+      ["modal", "stopped"],
+    ]);
+    // Never two at once: the second was created after the first stopped.
+    assert.ok(rows[1]!.createdAt.getTime() >= rows[0]!.stoppedAt!.getTime());
+    assert.deepEqual(partnerEvents().map((e) => `${e.provider}:${e.status}`), ["baseten:started", "baseten:done", "modal:started", "modal:done"]);
+    const cards = partnerEvalViews(partnerEvents(), (m) => m);
+    assert.deepEqual(cards.map((c) => c.title), ["Evaluated on Baseten", "Evaluated on Modal"]);
+  });
+
+  it("holds a later partner to what the run has left, and says so", async () => {
+    settings = { ...settings, providers: ["baseten", "modal"], runMaxUsd: 3 };
+    const out = await runPartnerEvals({ jobId: JOB, providers: ["baseten", "modal"] }, clock);
+    assert.equal(out.status, "skipped");
+    assert.equal(pushes, 0);
+    assert.ok(partnerEvents().every((e) => e.status === "skipped" && /PARTNER_EVAL_RUN_MAX_USD/.test(e.reason ?? "")));
+  });
+
+  it("an unconfirmed stop ends the run: the next partner isn't started, and the room says why", async () => {
+    settings = { ...settings, providers: ["baseten", "modal"], runMaxUsd: 16 };
+    deleteOk = false;
+    const out = await runPartnerEvals({ jobId: JOB, providers: ["baseten", "modal"] }, clock);
+    assert.deepEqual(out.results.map((r) => r.status), ["done", "skipped"]);
+    assert.equal(rows.length, 1);
+    assert.match(last().reason ?? "", /hasn't confirmed its stop/);
+    assert.equal(partnerEvalViews(partnerEvents(), (m) => m)[1]?.title, "Not evaluated on Modal");
+  });
+
+  it("one partner through the run is exactly the single eval", async () => {
+    const out = await runPartnerEvals({ jobId: JOB }, clock);
+    assert.deepEqual(out.results, [{ provider: "baseten", status: "done" }]);
+  });
+
+  it("an admin's pick: all, a list, one, or the default, and nothing PARTNER_EVALS doesn't include", () => {
+    const allowed = ["baseten", "modal", "fireworks"] as const;
+    assert.deepEqual(partnerChoice({ providers: "all" }, allowed), { ok: true, providers: ["baseten", "modal", "fireworks"] });
+    assert.deepEqual(partnerChoice({ providers: ["modal", "baseten", "modal"] }, allowed), { ok: true, providers: ["baseten", "modal"] });
+    assert.deepEqual(partnerChoice({ provider: "modal" }, allowed), { ok: true, providers: ["modal"] });
+    assert.deepEqual(partnerChoice({}, ["modal", "baseten"]), { ok: true, providers: ["modal"] });
+    assert.equal(partnerChoice({ providers: [] }, allowed).ok, false);
+    assert.equal(partnerChoice({ providers: ["lambda"] }, allowed).ok, false);
+    const fw = partnerChoice({ providers: ["fireworks"] }, ["baseten", "modal"]);
+    assert.ok(!fw.ok && /doesn't include Fireworks/.test(fw.reason));
+    assert.equal(partnerChoice({}, []).ok, false);
+  });
+
+  it("PARTNER_EVALS: off stays off, one name keeps Baseten and Modal, Fireworks only when named or all", () => {
+    const keep = process.env.PARTNER_EVALS;
+    try {
+      const read = (v: string | undefined) => {
+        if (v === undefined) delete process.env.PARTNER_EVALS;
+        else process.env.PARTNER_EVALS = v;
+        return [env.partnerEvalProvider, env.partnerEvalProviders];
+      };
+      assert.deepEqual(read(undefined), [null, []]);
+      assert.deepEqual(read("0"), [null, []]);
+      assert.deepEqual(read("1"), ["baseten", ["baseten", "modal"]]);
+      assert.deepEqual(read("modal"), ["modal", ["modal", "baseten"]]);
+      assert.deepEqual(read("all"), ["baseten", ["baseten", "modal", "fireworks"]]);
+      assert.deepEqual(read("fireworks, baseten"), ["fireworks", ["fireworks", "baseten", "modal"]]);
+    } finally {
+      if (keep === undefined) delete process.env.PARTNER_EVALS;
+      else process.env.PARTNER_EVALS = keep;
+    }
+  });
+});
+
+describe("partner evals on Fireworks", () => {
+  beforeEach(() => {
+    settings = { ...settings, providers: ["baseten", "modal", "fireworks"], runMaxUsd: 16 };
+  });
+
+  it("isn't offered unless PARTNER_EVALS names it", async () => {
+    settings = { ...settings, providers: ["baseten", "modal"] };
+    theJob = job({ params: FW_JOB_PARAMS, hub: null } as Partial<TrainJobRow>);
+    await runPartnerEval({ jobId: JOB, provider: "fireworks" }, clock);
+    assert.match(last().reason ?? "", /PARTNER_EVALS doesn't include Fireworks/);
+    assert.equal(fwCalls.length, 0);
+  });
+
+  it("hosts a tune trained on Fireworks with no upload, answers only the tuned model, and judges it against the job's own base answers", async () => {
+    theJob = job({ params: FW_JOB_PARAMS, hub: null } as Partial<TrainJobRow>);
+    metrics = null;
+    const out = await runPartnerEval({ jobId: JOB, provider: "fireworks" }, clock);
+    assert.equal(out.status, "done");
+    assert.equal(fwDeployBodies.length, 1);
+    assert.equal(fwDeployBodies[0]!.baseModel, `accounts/acct/models/mm-m-${JOB}`);
+    assert.ok(!fwCalls.some((c) => /getUploadEndpoint|POST https:\/\/api\.fireworks\.ai\/v1\/accounts\/acct\/models$/.test(c)), "nothing uploaded");
+    // The trained adapter is never deleted: only the deployment, and a model of the endpoint's own name.
+    assert.ok(!fwCalls.some((c) => c.startsWith("DELETE") && c.includes("/models/mm-m-")));
+    assert.equal(rows[0]?.status, "stopped");
+    assert.equal(chats.length, 6, "the tuned model only");
+    assert.ok(chats.every((c) => c.messages[0]?.content === FW_SYSTEM && c.temperature === 0));
+    assert.ok(judged.every((j) => j.base.startsWith("JOBBASE") && j.tuned.startsWith("TUNED")));
+    const done = last();
+    assert.equal(done.baseFrom, "job");
+    assert.equal(done.latency?.base, null);
+    assert.equal(done.gpu, "H100");
+    const card = partnerEvalView(partnerEvents(), (m) => m)!;
+    assert.equal(card.title, "Evaluated on Fireworks");
+    assert.match(card.words, /base answers are the job's own/);
+  });
+
+  it("refuses an r30b adapter, and a lab adapter whose target modules are a pattern, with a plain reason and nothing created", async () => {
+    await runPartnerEval({ jobId: JOB, provider: "fireworks" }, clock);
+    assert.match(last().reason ?? "", /r30b/);
+    theJob = job({ params: PLAIN_PARAMS } as Partial<TrainJobRow>);
+    await runPartnerEval({ jobId: JOB, provider: "fireworks" }, clock);
+    assert.match(last().reason ?? "", /target modules by a pattern/);
+    assert.equal(fwCalls.length, 0);
+    assert.equal(rows.length, 0);
+  });
+
+  it("a tune trained on Fireworks can't go to Baseten or Modal, and says why", async () => {
+    theJob = job({ params: FW_JOB_PARAMS, hub: null } as Partial<TrainJobRow>);
+    await runPartnerEval({ jobId: JOB, provider: "baseten" }, clock);
+    assert.equal(last().reason, KEPT_ON_FIREWORKS);
+    assert.equal(pushes, 0);
+  });
+
+  it("offers show each partner's most before starting, and Fireworks' reason for a job it can't take", async () => {
+    const offers = (await partnerOffers(JOB, fakeDeps()))!;
+    assert.deepEqual(offers.offers.map((o) => [o.provider, o.available, o.maxUsd]), [
+      ["baseten", true, 6.5],
+      ["modal", true, 6.5],
+      ["fireworks", false, 8],
+    ]);
+    assert.match(offers.offers[2]!.reason ?? "", /r30b/);
+    assert.equal(offers.offers[2]!.label, PARTNER_LABEL.fireworks);
+    assert.equal(runEstimateUsd(offers.offers, offers.runMaxUsd), 13);
+    assert.equal(runEstimateUsd(offers.offers, 10), 10);
+    // Read only: nothing recorded, nothing deployed.
+    assert.equal(events.length, 0);
+    assert.equal(pushes + fwCalls.length, 0);
+
+    theJob = job({ params: FW_JOB_PARAMS, hub: null } as Partial<TrainJobRow>);
+    const fw = (await partnerOffers(JOB, fakeDeps()))!;
+    assert.deepEqual(fw.offers.map((o) => o.available), [false, false, true]);
+    assert.equal(fw.offers[2]!.baseFromJob, true);
+    assert.equal(fw.offers[0]!.reason, KEPT_ON_FIREWORKS);
+  });
+
+  it("the run room shows one card per partner", async () => {
+    settings = { ...settings, providers: ["baseten", "modal"] };
+    await runPartnerEvals({ jobId: JOB, providers: ["baseten", "modal"] }, clock);
+    const dataset = { id: DATASET, title: "Cold-room handoff summarizer", task: "Summarize a cold-room handoff note.", status: "ready", requested: 200, trainCount: 180, evalCount: 20, costUsd: 0.03, error: null, createdBy: null, createdAt: new Date(T0 - 2 * 60 * 60_000), finishedAt: new Date(T0 - 90 * 60_000), workflowRunId: "wrun_1", writerModel: "muse-spark-1.3-contributor" } as unknown as DatasetHead;
+    const view = tuneRunView({ dataset, written: null, job: theJob, events: [], partnerEvals: partnerEvents() }, new Date(now), { maxMinutes: 120, maxUsd: 5 });
+    assert.deepEqual(view.partnerEvals?.map((p) => p.title), ["Evaluated on Baseten", "Evaluated on Modal"]);
+    assert.equal(view.partnerEval?.title, "Evaluated on Modal");
+  });
+});
+
+describe("Run it's demo window", () => {
+  it("is shorter than HOST_TUNED_MAX_MINUTES or the usual limit, never longer, and at least 30 minutes", () => {
+    assert.equal(demoWindowMinutes(undefined, 240), null);
+    assert.equal(demoWindowMinutes(60, 240), 60);
+    assert.equal(demoWindowMinutes(600, 240), 240);
+    assert.equal(demoWindowMinutes(10, 240), "invalid");
+    assert.equal(demoWindowMinutes("60", 240), "invalid");
+    assert.equal(demoWindowMinutes(45.5, 240), "invalid");
   });
 });

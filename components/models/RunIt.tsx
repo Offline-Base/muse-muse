@@ -10,6 +10,8 @@ import type { HostView } from "@/lib/train/host/view";
  * Muse Muse's own routes, so a provider's address and key never reach this page.
  */
 const POLL_MS = 15_000;
+/** Demo windows offered: the stop time, held to HOST_TUNED_MAX_MINUTES by the route. 0: the usual limit. */
+const WINDOWS = [30, 60, 120, 0];
 
 interface Turn {
   role: "user" | "assistant";
@@ -29,6 +31,8 @@ export function RunIt({ modelId, initial }: { modelId: string; initial: HostView
   const [turns, setTurns] = useState<Turn[]>([]);
   const [draft, setDraft] = useState("");
   const [asking, setAsking] = useState(false);
+  const [windowMinutes, setWindowMinutes] = useState(0);
+  const windowId = useId();
   const inputId = useId();
   const route = `/api/models/${modelId}/host`;
   const endpoint = view.endpoint;
@@ -117,16 +121,36 @@ export function RunIt({ modelId, initial }: { modelId: string; initial: HostView
           ) : null}
         </div>
       ) : (
+        <>
+        <p>
+          <label htmlFor={windowId}>Keep it up for </label>
+          <select id={windowId} className="input" value={windowMinutes} onChange={(e) => setWindowMinutes(Number(e.target.value))}>
+            {WINDOWS.filter((m) => m === 0 || m < limits.maxMinutes).map((m) => (
+              <option key={m} value={m}>
+                {m === 0 ? `up to ${limits.maxMinutes} minutes` : `${m} minutes`}
+              </option>
+            ))}
+          </select>{" "}
+          <span className="muted">It stops at that time, or after {limits.idleMinutes} idle minutes, whichever comes first.</span>
+        </p>
         <ul className="link-list">
           {view.choices.map((c) => (
             <li key={c.id}>
-              <button type="button" className="btn" disabled={!c.available || busy !== null} onClick={() => act({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ provider: c.id }) }, c.id)}>
+              <button
+                type="button"
+                className="btn"
+                disabled={!c.available || busy !== null}
+                onClick={() => act({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ provider: c.id, ...(windowMinutes ? { minutes: windowMinutes } : {}) }) }, c.id)}
+              >
                 {busy === c.id ? `Deploying on ${c.label}` : `Deploy on ${c.label}`}
               </button>{" "}
-              <span className="muted">{c.available ? `About ${usd(c.hourlyUsd)} an hour on ${c.gpu}. An estimate.` : `Unavailable: ${c.reason}`}</span>
+              <span className="muted">
+                {c.available ? `About ${usd(c.hourlyUsd)} an hour on ${c.gpu}, at most ${usd((c.hourlyUsd * (windowMinutes || limits.maxMinutes)) / 60)} for this window. An estimate.` : `Unavailable: ${c.reason}`}
+              </span>
             </li>
           ))}
         </ul>
+        </>
       )}
 
       {problem ? (
