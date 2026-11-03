@@ -11,14 +11,17 @@ import { briefToMarkdown, renderBuildPrompt, renderRefinePrompt } from "@/lib/br
 import { newBriefSchemaFor, NewBriefSchemaNoGadget, type Brief } from "@/lib/brief/schema";
 import { strictJsonSchema } from "@/lib/brief/strict-schema";
 import { env } from "@/lib/env";
-import { applyTargets, TARGET_GUIDE, TARGET_LIMITS } from "@/lib/native/targets";
+import { applyTargets, EDGE_SAM_LIMITS, TARGET_GUIDE, TARGET_LIMITS } from "@/lib/native/targets";
 import { briefInstructions } from "@/lib/prompts/brief";
 import { EDGE_JUDGE_NOTE, JUDGE_INSTRUCTIONS, judgeInstructions } from "@/lib/prompts/judge";
 import { BRIEF } from "@/lib/promote/__tests__/fixtures";
 
 const FLAGS = ["EDGE_ENABLED", "EDGE_BUILDS", "NATIVE_TARGETS", "VR_ENABLED", "GLASSES_ENABLED", "AGENTS_ENABLED"];
 const RENDER = { inspoFiles: [], fixtures: [], maxModelSteps: 40 };
+/** BRIEF counts birds with SAM 3.1, so this edge brief looks at photos. */
 const edgeBrief = (): Brief => ({ ...BRIEF, targets: [{ id: "web", why: "Always" }, { id: "edge", why: "Keep answering when the cloud is cut." }] });
+/** The same edge brief answering in text with Muse Wonder, no SAM. */
+const textEdgeBrief = (): Brief => ({ ...edgeBrief(), capabilities: [{ need: "Read the log", model: "muse-wonder-1.0", why: "It reads text" }] });
 const on = () => {
   process.env.EDGE_ENABLED = "1";
   process.env.EDGE_BUILDS = "1";
@@ -61,11 +64,15 @@ describe("the edge target", () => {
 
   it("brings its limits through applyTargets, once each", () => {
     on();
-    const out = applyTargets(edgeBrief(), { enabled: env.enabledTargets });
+    const out = applyTargets(textEdgeBrief(), { enabled: env.enabledTargets });
     assert.deepEqual(out.targets?.map((t) => t.id), ["web", "edge"]);
     for (const l of TARGET_LIMITS.edge!) assert.equal(out.limits.filter((x) => x === l.text).length, 1);
     const again = applyTargets(out, { enabled: env.enabledTargets });
     assert.equal(again.limits.length, out.limits.length);
+    const sam = applyTargets(edgeBrief(), { enabled: env.enabledTargets });
+    for (const l of EDGE_SAM_LIMITS) assert.equal(sam.limits.filter((x) => x === l.text).length, 1, "a brief that looks says its look has a backup too");
+    for (const l of TARGET_LIMITS.edge!) assert.ok(!sam.limits.includes(l.text));
+    assert.equal(applyTargets(sam, { enabled: env.enabledTargets }).limits.length, sam.limits.length);
     assert.deepEqual(applyTargets(edgeBrief(), { enabled: [] }), edgeBrief(), "nothing enabled, nothing changes");
     assert.deepEqual(applyTargets(edgeBrief(), { enabled: ["agent"] }).targets?.map((t) => t.id), ["web"], "edge off, edge dropped");
   });
@@ -100,6 +107,20 @@ describe("the edge target", () => {
     assert.ok(!renderBuildPrompt(BRIEF, RENDER).includes("muse-edge"));
   });
 
+  it("tells a build that looks at photos to use segmentOrEdge and drill its route, and a text-only build nothing of it", () => {
+    on();
+    const prompt = renderBuildPrompt(edgeBrief(), RENDER);
+    assert.match(prompt, /segmentOrEdge/);
+    assert.match(prompt, /EDGE_SAM_URL/);
+    assert.match(prompt, /SIMULATED_PHOTO/);
+    assert.match(prompt, /four more simulated drills/);
+    const text = renderBuildPrompt(textEdgeBrief(), RENDER);
+    assert.match(text, /respondJsonOrEdge/);
+    assert.ok(!/segmentOrEdge|EDGE_SAM_URL|SIMULATED_PHOTO/.test(text));
+    assert.match(TARGET_GUIDE.edge, /SAM 3\.1 runs on the board too: list sam-3\.1/);
+    assert.match(EDGE_JUDGE_NOTE, /Seen on <board> by Meta SAM 3\.1/);
+  });
+
   it("gives the judge one line about labeled answers, only for an edge product", () => {
     on();
     assert.equal(judgeInstructions({ ...BRIEF, targets: undefined }), JUDGE_INSTRUCTIONS);
@@ -108,7 +129,7 @@ describe("the edge target", () => {
 
   it("says nothing a person reads that the messaging rules rule out", () => {
     on();
-    const copy = [TARGET_GUIDE.edge, ...TARGET_LIMITS.edge!.map((l) => l.text), EDGE_JUDGE_NOTE, renderBuildPrompt(edgeBrief(), RENDER)].join("\n");
+    const copy = [TARGET_GUIDE.edge, ...TARGET_LIMITS.edge!.map((l) => l.text), ...EDGE_SAM_LIMITS.map((l) => l.text), EDGE_JUDGE_NOTE, renderBuildPrompt(edgeBrief(), RENDER), renderBuildPrompt(textEdgeBrief(), RENDER)].join("\n");
     assert.ok(!copy.includes("\u2014"), "no em dashes");
     assert.ok(!/attack-proof|stops hacks|food.safe/i.test(copy));
     // "works offline", "private" and "on-device" appear only as what never to say.

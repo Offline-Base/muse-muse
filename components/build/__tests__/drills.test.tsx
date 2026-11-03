@@ -10,7 +10,7 @@ import { before, describe, it, mock } from "node:test";
 import { createElement, type ComponentType } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { DrillGroup } from "@/components/build/DrillGroup";
-import { DRILL_GROUP_TITLE, DRILLS_EARLIER_NOTE, EDGE_DRILLS, latestDrills, splitDrillSteps } from "@/lib/edge/drills";
+import { DRILL_GROUP_TITLE, DRILLS_EARLIER_NOTE, EDGE_DRILLS, EDGE_SAM_DRILLS, latestDrills, splitDrillSteps } from "@/lib/edge/drills";
 import { edgeDrillSteps } from "@/lib/pipeline/edge-build";
 import type { VerifySummary } from "@/lib/types";
 
@@ -54,6 +54,21 @@ describe("splitDrillSteps", () => {
     ]);
     assert.equal(drills[2]!.detail, "the reply has no plain both-down message");
     assert.deepEqual(drills.map((d) => d.simulated), EDGE_DRILLS.map((d) => d.simulated));
+  });
+});
+
+describe("the photo drills", () => {
+  it("come out of verify's steps after the four, each with what it simulated", () => {
+    const results = JSON.stringify({ simulated: true, results: [1, 2, 3, 4, 12, 13, 14, 15].map((id) => ({ id, name: "x", pass: id !== 15, ms: 1000, why: id === 15 ? "part of the tampered board reply reached the page" : null })) });
+    const steps = edgeDrillSteps({ exitCode: 1, timedOut: false, outputTail: "", json: results }).steps;
+    const { checks, drills } = splitDrillSteps([...VERIFY, ...steps]);
+    assert.deepEqual(checks, VERIFY);
+    assert.deepEqual(drills.map((d) => [d.id, d.ok]), [[1, true], [2, true], [3, true], [4, true], [12, true], [13, true], [14, true], [15, false]]);
+    assert.deepEqual(drills.slice(4).map((d) => d.simulated), EDGE_SAM_DRILLS.map((d) => d.simulated));
+    const html = text(renderToStaticMarkup(createElement(DrillGroup, { drills })));
+    assert.match(html, /7 of 8 passed/);
+    assert.match(html, /Drill 15: SAM, tampered board reply rejected/);
+    assert.ok(!html.includes("\u2014"));
   });
 });
 

@@ -14,6 +14,7 @@ import { BOARD_TOOLS_MARKER, DRIVE_TOOLS_MARKER } from "@/lib/caps/hardware/limi
 import { LIVE_CAPTION_MODEL, liveBlock } from "@/lib/caps/live/brief";
 import { FLEET_BRIEF_MODEL, fleetAllowedModels } from "@/lib/caps/fleet/marker";
 import { gpuAllowedModels } from "@/lib/caps/gpu/marker";
+import { edgeAllowedModels } from "@/lib/edge/models";
 import { capMarker } from "@/lib/caps/ids";
 import { env } from "@/lib/env";
 import { AGENT_LONG_MARKER, CONTRIBUTOR_RUNTIME_MARKER, liveTokenDailyBudgetFor } from "@/lib/gateway/policy";
@@ -116,7 +117,7 @@ export function pollTimedOut(input: {
  * gives today's list. A recipe adds the models it always calls, and a long-run recipe adds the long marker, which never
  * brings the agent marker: those products have no catalog tools.
  */
-export function allowedModelsFor(brief: Pick<Brief, "capabilities" | "agent" | "recipes">): string[] {
+export function allowedModelsFor(brief: Pick<Brief, "capabilities" | "agent" | "recipes" | "targets">): string[] {
   const models = brief.capabilities.map((c) => c.model).filter((m) => m !== "muse-glimmer" && m !== FLEET_BRIEF_MODEL);
   const tools = brief.agent ? brief.agent.tools.map((t) => t.id).filter(isToolId).map(toolMarker) : [];
   // Wave 3, unit 7 (docs/CAPABILITIES.md, 13a): captions need the voice model, even if the writer left it out of capabilities.
@@ -131,7 +132,7 @@ export function allowedModelsFor(brief: Pick<Brief, "capabilities" | "agent" | "
   const drive = hardwareBlock(brief)?.driveExport ? [DRIVE_TOOLS_MARKER] : [];
   const recipeModels = pickedRecipes(brief).flatMap((r) => r.models ?? []);
   const long = isLongRunBrief(brief) ? [AGENT_LONG_MARKER] : [];
-  return [...new Set<string>([...models, ...recipeModels, ...live, ...gpu, ...fleet, ...board, ...drive, ...(brief.agent ? [AGENT_MARKER] : []), ...long, ...tools]), ...briefCaps(brief).map(capMarker)];
+  return [...new Set<string>([...models, ...edgeAllowedModels(brief), ...recipeModels, ...live, ...gpu, ...fleet, ...board, ...drive, ...(brief.agent ? [AGENT_MARKER] : []), ...long, ...tools]), ...briefCaps(brief).map(capMarker)];
 }
 
 /**
