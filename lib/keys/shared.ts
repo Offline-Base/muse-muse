@@ -316,7 +316,7 @@ export function sharedKeysPromptSection(grant: SharedGrant | null, when: "build"
     "",
     "- Server code only: read each key from `process.env` at run time, in a route handler or a server action. Never in a client component, never under a `NEXT_PUBLIC_` name, and never in `next.config.ts`.",
     "- Never print, log, return to the browser or write a key's value into any file, test, screenshot, BUILD_NOTES.md or message. A check reads the product's files, `public/` and `.next/static` for the values, and a build with one fails.",
-    "- The model rule in AGENTS.md still holds: every model the product calls is a Meta model. Fireworks, Baseten and Modal are only for Muse Spark Open, which runs there. Never call another company's model on any account.",
+    "- The model rule in AGENTS.md still holds: every model the product calls is a Meta model. Fireworks, Baseten and Modal are only for Muse Spark Open, which runs there. When the brief lists `muse-spark-open`, call it through the gateway as `.agents/skills/meta-spark-open` says, which is metered and capped, and use these accounts only for what that can't do. Never call another company's model on any account.",
     "- The live product is public, so anyone can use what its routes do with these accounts. Keep each route to what the brief needs, and never let a visitor choose what an account does.",
     "",
   ].join("\n");
