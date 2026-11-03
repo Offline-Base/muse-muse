@@ -11,7 +11,7 @@ Muse Privacy, the privacy part of Muse Muse (`privacy/`), is the connector Offli
 
 Live as of Nov 3:
 
-- Connector URL: `https://muse-privacy-relay.theethancastro.workers.dev/mcp` (Cloudflare Worker, version dccdcef8). It still runs on the owner's personal Cloudflare account; moving it to an Offline Base account or domain needs a domain on Cloudflare (offlinebase.com's DNS is on Vercel), and every client links again on the new URL.
+- Connector URL: `https://muse-privacy-relay.offlinebase.workers.dev/mcp`, a Cloudflare Worker on Offline Base's own Cloudflare account (team@offlinebase.com) since Nov 3 evening. Deploy it from `privacy/relay/` with wrangler signed in as that account; put the account's OAuth KV namespace id in place of the placeholder in `wrangler.jsonc` only on the machine you deploy from (never commit it). The earlier address on the owner's personal account is retired.
 - Support: team@offlinebase.com.
 - Standalone repo: https://github.com/Offline-Base/muse-privacy, public since Nov 3.
 
