@@ -36,15 +36,22 @@ Build: a 1280 x 800 simulated screen, a task, and a model that looks and acts un
 
 `helpers/cu-sim.ts` beside this file is a pure simulator with three scenes. It reaches the build at `.agents/skills/recipe-simulated-loops/helpers/`. Copy it to `lib/sim/`. Use `initialState`, `applyAction`, `sceneDone` and `render` (pass `null` for the signup background). Render to a canvas in the browser, and send `canvas.toDataURL("image/png")` with each turn.
 
+**Use the helper's scenes for the cookbook tasks**, not a screen of your own: `mines` for 03/12 (find Mines on a Linux desktop and play the 8 x 8 board), `tictactoe` for 03/13 (play X in a Mac window), and `signup` for a form whose Create account button is a gated submit. Draw a new scene only when the note asks for one.
+
 **The model sees a PNG, whatever draws the screen.** Meta's API refuses `data:image/svg+xml`, so a step that sends an SVG fails in about a second. The Nov 3 audit's simulated desk drew its screen as SVG and sent that, so all 8 of its steps fell back and its model never ran. A screen of your own drawn as SVG shapes and text goes through `svgToPng(svg, { width: 1280, height: 800 })` from `@/lib/client/raster`. A screen built from HTML is drawn on a canvas instead: Safari won't export HTML inside an SVG. The route checks each screenshot with `imageProblem` from the same file and refuses one that fails, with a plain error. If that file isn't in the product, draw on a canvas and send `canvas.toDataURL("image/png")`.
 
 **The computer tool is unproven here.** When our docs demo was built, Muse Wonder answered `400 Unsupported tool type 'computer'`, and it's untested with a product token. So:
 
-1. Make the loop with strict function tools by default, on `muse-wonder-1.0`: `click(x, y)`, `type_text(text)`, `press_key(key)`, `finish(summary)`, with `parallel_tool_calls: false`. Validate with zod, and clamp coordinates to the screen.
+1. Make the loop with strict function tools by default, on `muse-wonder-1.0`: `click(x, y, button)` with `button` `"left"` or `"right"` (Mines flags with a right click), `double_click(x, y)`, `type_text(text)`, `press_key(key)`, `finish(summary)`, with `parallel_tool_calls: false`. Validate with zod, and clamp coordinates to the screen. For the macOS recipe's shape, offer one `computer({ action, x, y, text, keys })` function on a **0 to 1000 grid**, which code maps to 1280 x 800 (`Math.round(x * 1280 / 1000)`), plus `stop(answer)`, as Meta's metacua does.
 2. Return each result as `function_call_output`, then attach the new screenshot in a message with `input_image`.
 3. A build test may try `tools: [{ type: "computer" }]` once. If it works, BUILD_NOTES records it. If it's refused, keep the function tools. Never tell people the native tool was used unless it was.
 4. **Confirm before risky steps.** A click that would submit, buy or delete pauses the run, and shows the action and a Confirm button. If the native tool returns `pending_safety_checks`, show them the same way, and acknowledge only after a click.
 5. **Gates target what the person would plausibly remove.** The scene's sample holds something that is meant to go, like a duplicate note, an empty draft or last week's temp file, and that is what a risky step targets. Mark each item in the scene's data as keep or removable from the task, and have code refuse a delete of a keep item, as a tool result the model reads. Never gate a step that throws away what the task asked to keep: the audit's desk asked to delete a note the person had asked to file, and approving it lost the note. A test asserts that the sample's gated step targets a removable item, that Deny changes nothing, and that Approve removes only that item.
+
+- **Images per call.** Meta's API takes at most 50 images in one request, so send only the newest 3 screenshots; older turns keep a text line of what was seen and done. Every 12 actions, start a fresh chain with a written summary of the screen (the Cua recipe's sub-agent handoff).
+- **Room to think.** Give each turn `max_output_tokens` of at least 2000, since reasoning counts against it. A reply with `status: "incomplete"` pauses the run with an error, never a fallback: the Nov 3 audit's desk asked for 400 and got cut-off replies.
+- **Show what it saw.** The timeline draws each action on the screenshot it was chosen from (a ring and a label with the coordinates), as the recipe's replay does.
+- **An end card.** Every run ends on one: won, lost or drawn, the account created, or "Stopped at the action cap", with the actions taken, tokens and cost.
 
 Stop at 25 actions a run. Check: a scripted model finishes a scene, and a risky step pauses. Limits: this is the simulated scene only, and nothing runs on the visitor's machine.
 Links: https://github.com/meta-models/meta-model-cookbook/tree/main/03_use_cases/12_computer_use and https://github.com/meta-models/meta-model-cookbook/tree/main/03_use_cases/13_macos_cua
@@ -53,7 +60,8 @@ Links: https://github.com/meta-models/meta-model-cookbook/tree/main/03_use_cases
 
 Build: a small buggy Python project bundled with the product, with failing `unittest` tests, and a model loop that fixes it.
 
-- Tools: `read_file`, `write_file`, `run_tests`, `finish`. All act on an in-memory file map.
+- Tools: `read_file`, `write_file`, `run_python(code)` to reproduce the bug first (output cut to 4 KB), `run_tests`, `finish`. All act on an in-memory file map.
+- Write the sample project fresh: a few small standard-library modules, one clear bug report, and 2 to 4 failing tests. The end shows the product's own test result, every step, and the patch as a unified diff to download (the recipe's `pred.patch`).
 - Run Python in the browser with Pyodide, from npm, served by the product itself, not a CDN. The model's code runs only there, in a Web Worker, with a timeout that kills the worker.
 - `write_file` refuses test files. The product runs the tests itself at the end, and that result is what's shown, not the model's claim.
 
@@ -67,6 +75,8 @@ Build: a one-line idea, and a board of cards worked on by four roles: product, b
 - **Each role is its own agent.** On its turn a role makes its own model call, with its own instructions and only its own tools: `comment`, `move_card` to allowed columns, `add_artifact` for its own kind. Code applies only what those tool calls ask, and enforces each limit. One call that drafts the whole board, followed by moves on a timer, is not a team: the Nov 3 audit's relay board made one call, then fired 24 scripted moves, and its roles never spoke.
 - **Roles talk through card comments**, and nothing else passes between them. Each turn's input is the board with its comments, so a role answers what another wrote. The run log shows one model call per role turn, with its tokens.
 - At most 3 turns a role per stretch, and an overall ceiling on cards and comments. Moves happen when a role's call returns, never on a timer.
+- **As Meta's recipe runs it:** the product role starts by asking the person 2 or 3 clarify questions (answer or skip), then writes `brief.md` and `runbook.md` and creates the cards. Cards have parents, and a card opens only when its parents are done. A role may block a card with a question for the person, which pauses that card until answered. The run ends when every card is done or the ceiling is hit, with an end card and each file to download.
+- **Layout.** Columns are at least 220 px wide on desktop, and on a phone the board is one column at a time with tabs, so no card or label is squeezed or clipped. The pause and redirect controls stay in view.
 
 Result: a plan, and a small artifact such as a spec and landing copy. Say "This makes a plan and small files, not a working SaaS." Check: a scripted test where a role tries a forbidden column, and the smoke test's real stretch runs two role turns, each its own call, where the second role's input holds the first role's comment.
 Link: https://github.com/meta-models/meta-model-cookbook/tree/main/03_use_cases/08_multi_agent_orchestration

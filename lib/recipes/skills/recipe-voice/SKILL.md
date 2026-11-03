@@ -89,6 +89,7 @@ Build: on a phone, hold a button and ask, take one photo, get a short answer rea
 - Record with MediaRecorder, convert with `toWav16k`, and call `transcribe`.
 - Send the question and the photo to `muse-wonder-1.0`, and ask for two or three spoken sentences.
 - Speak with the browser's `speechSynthesis`, and always show the text too.
+- One `respondJson` call returns `{ seen, answer }`: the text it read or what it saw, then the answer built only from that. Show both, and speak exactly the `answer` shown. The Nov 3 glasses audit spoke prices that contradicted the sign text on the same screen.
 
 The camera and microphone need HTTPS and a tap to start, so always provide a typed question as a fallback. Don't save photos. Limit: say "This runs in your phone's browser. It doesn't connect to glasses." Real glasses need the glasses target and its flag, and aren't part of this skill.
 Link: https://github.com/meta-models/meta-model-cookbook/tree/main/03_use_cases/03_visionclaw
