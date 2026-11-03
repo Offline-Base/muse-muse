@@ -12,6 +12,8 @@ The owner's words, Oct 31, which this design follows:
 > local network, such as a Jetson Orin Nano. The product chooses the endpoint per call. Records stay on the device that
 > holds them. Only the tagged request goes to the device that runs inference.
 
+**Read this first (Nov 3, branch tg-c-claims).** This design predates the organizers' Nov 2 ruling that every model the project calls at runtime must be Meta's, and that Llama doesn't count (docs/MESSAGING.md, "What the rules say"). Wherever it plans on LFM, Bolt, Llama or the d1 router, that part is out of the project, kept here only as history. What runs on the boards now, and what Muse Muse may say about them, is in section 6, "What the fleet runs today".
+
 Tags used below, as in VIBE_TUNING.md:
 
 - **[V]** verified: in this repo's code, a measured run in its docs, or the fleet tools on Oct 31.
@@ -37,9 +39,13 @@ Tags used below, as in VIBE_TUNING.md:
 - **Honest about the LAN.** `lib/device/client.ts` allows https, or http on loopback only. A paired board gets https with
   a self-signed certificate pinned at pairing. The fleet gateway is plain http on the LAN today, so it is refused unless
   the owner opts in for that endpoint, and then it gets general requests only.
-- **Honest about models.** The 8 GB Jetsons run Liquid's LFM3 and NVIDIA's Nemotron 3.5 Bolt today, not a Meta model.
-  Muse Glimmer at 1 bit (IQ1_S, 6.53 GB) has not been tried on a board and scores 9.0% where Q4_K_M scores 29.5%. A
-  32 or 36 GB Mac runs Glimmer Q4_K_M well, but the owner's laptop must not run Glimmer at all.
+- **Honest about models (updated Nov 3).** What runs on the 8 GB Jetsons for Muse Muse now is Meta's: SAM 3.1 on
+  jetson-04 (1.42 s a look once warm), with a detector tuned on jetson-03 for the word "muse", and Muse Muse's one-bit
+  Muse Glimmer (r30b, IQ1_S, 5.75 GB) on jetson-02 at about 5 tokens a second with short answers that are often wrong
+  (docs/BUILD_LOG.md, "Nov 3, 2026, 2:15 to 4 AM ET: the boards, checked for real"). On Nov 3 neither jetson-03 nor
+  jetson-04 served Bolt (`jetson-llama.service` stopped and disabled since Nov 2 evening; the read found SAM 3.1,
+  `muse-device` and an empty Ollama), and no Muse Muse product calls LFM or Bolt. A 32 or 36 GB Mac runs Glimmer Q4_K_M well, but
+  the owner's laptop must not run Glimmer at all.
 - **Demo slice by Nov 3:** form, note, result, records and action blocks; the same-machine endpoint and the fleet
   gateway; the router, the ledger and the canary test; assembly with constrained JSON; proved with the internet unplugged
   at the router.
@@ -502,6 +508,20 @@ the machine.
 ## 6. Models: what runs where
 
 ### What the fleet runs today
+
+**Nov 3, 2:20 to 4 AM ET [V, docs/BUILD_LOG.md, "Nov 3, 2026, 2:15 to 4 AM ET: the boards, checked for real"].**
+Read through the fleet control plane on jetson-02, 03 and 04 only. `jetson-llama.service` was stopped and disabled on
+all three on Nov 2 evening, and then started again, not enabled, on jetson-02 alone for one-bit Glimmer.
+
+| Board | Runs for Muse Muse now | Measured | What may be said |
+|---|---|---|---|
+| jetson-04 | Meta's SAM 3.1, `sam3.service` (fp16, 1.76 GB), with the tuned "muse" detector (61 MB) loaded beside Meta's weights and used only when a request asks for it | First look 3.27 s, then 1.42 to 1.43 s a look on Meta's 1800 x 1200 truck photo. 1.33 to 1.49 s a look with either weights. The service held 5.9 GB of the board's 7.5 GB | "Meta's SAM 3.1 runs on a Jetson Orin Nano 8GB at 1.42 s a look." Not: a camera feed, video, or offline use until the take is logged. Llama 3.2 1B files sit on this board unused (not a Meta model here) |
+| jetson-03 | The SAM 3.1 tune's files (`/opt/sam3train`), Hussam's `muse-device` and an empty Ollama | Tuned SAM 3.1's detector here: 5 epochs, 30 minutes of training, "muse" from 0 to 38 of 38 held-out made-up images. A median 1.35 s a look | The tune taught SAM 3.1 a name. Meta's SAM 3.1 already finds the same mascot as "plush toy" (38 of 38) |
+| jetson-02 | Muse Muse's one-bit Muse Glimmer 30B (r30b stage b, IQ1_S, 5.75 GB), llama.cpp b11970, `jetson-llama` started, not enabled at boot, under a memory guard; Hussam's `muse-device` | 5.2 to 5.5 tokens a second, load about 98 s, lowest free memory 450 to 530 MB. With Meta's sampling it loops; with temperature 0.2 and the no-thinking template it gives short answers that are often wrong, and it called a 6 C controller and probe gap "ok" | "Runs on a Jetson Orin Nano 8 GB at about 5 tokens a second. Its answers are short and often wrong." Built with Muse Spark Open, 18 and over. Not the edge apps' fallback: that is rules in code plus SAM 3.1 (docs/BUILD_LOG.md, "Nov 3, 2026, 10:05 to 10:30 AM ET") |
+| jetson-05 | Not read on Nov 3, and kept out of experiments | | Muse Muse never calls it. Its models aren't Meta's and aren't part of the project |
+
+The Oct 31 table below is history. Its LFM, Bolt and d1 rows are other companies' models: they were never project
+results, and under the Nov 2 ruling nothing in Muse Muse may call them.
 
 From the fleet tools, Oct 31 [V]: 8 machines enrolled, 3 online.
 
