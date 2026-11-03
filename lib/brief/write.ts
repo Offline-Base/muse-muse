@@ -5,7 +5,7 @@ import { availableRecipes } from "@/lib/recipes/registry";
 import { respondStructured, StructuredOutputError } from "@/lib/brief/structured";
 import { env } from "@/lib/env";
 import { sentBackText } from "@/lib/full/prompts";
-import { nameWhatItCantDo, requirementProblems } from "@/lib/full/requirements";
+import { nameWhatItCantDo, requirementProblems, sampleProblems } from "@/lib/full/requirements";
 import { checkScope, enforceScope } from "@/lib/full/scope";
 import { metaPlatform } from "@/lib/meta/platform";
 import { directionProblems, directionStart, type RecentDirection } from "@/lib/range/direction";
@@ -96,7 +96,7 @@ export async function writeBrief(input: BriefInput): Promise<BriefResult> {
     schemaName: "muse_brief",
     effort: "medium",
     normalize: (raw) => normalizeRawBrief(raw, references, { ...(full ? { fullBuilds: true } : {}), ...(buildRange ? { buildRange: true } : {}) }),
-    check: (brief) => [...briefProblems(brief, references), ...targetProblems(brief, { enabled, requested }), ...(full ? requirementProblems(brief, quotable) : []), ...(buildRange && brief.verdict !== "no" ? directionProblems(brief.direction, { asked: brief.askedLook, recent }) : [])],
+    check: (brief) => [...briefProblems(brief, references), ...targetProblems(brief, { enabled, requested }), ...(full ? requirementProblems(brief, quotable) : []), ...sampleProblems(brief, input.note), ...(buildRange && brief.verdict !== "no" ? directionProblems(brief.direction, { asked: brief.askedLook, recent }) : [])],
   }).catch((err: unknown) => {
     // Keep the transcription spend on the error too, so the caller can record everything.
     if (err instanceof StructuredOutputError) throw new StructuredOutputError(err.message, [...prepared.usage, ...err.usage]);

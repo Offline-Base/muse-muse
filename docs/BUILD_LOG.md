@@ -3405,3 +3405,21 @@ The organizers ruled on Nov 2 that every model the project calls at runtime must
   - **A made-up look label.** The writer kept "Look:" after turning a start into its own idea ("Look: mission control"), which points the build at a look file that doesn't exist. The writer line now says to drop the label then. Range tests 25 of 25.
   - **Long team links.** relay-board-studio and handbook-proof-checker got `musemuse-<slug>-ethan-6436s-projects.vercel.app` as their live link, because the short alias wasn't on the deployment yet when it was polled. `pollDeploy` now prefers the project's own name alias, then asks the project for its production domain. Both short links already answer 200; the two stored links stay long until those products redeploy.
 - **Started in parallel (agents):** a runtime audit of all 12 apps on desktop and phone; a phone-mode pass on the site; the Jetson work (SAM 3.1, SAM fine-tuning, one-bit Glimmer, connecting boards to builds).
+
+## Nov 3, 2026, about 3 AM ET: samples and judge rules that make the note's hard parts provable (branch tg-audit-judge-samples)
+
+From the runtime audit of 4 overnight products (parking, dockline, chart, fridge). Findings 1, 2, 8 and 11: the judge passed all of them. Deploy only, no snapshot needed. Not pushed.
+
+- **Samples too thin.** The parking "long" policy was 349 characters, so "from cache" stayed 0. The dockline "noisy" feed was 9 clean alerts on one line. The chart had no printed total, so the totals check had nothing to check.
+  - The brief writer now says every fixture must exercise every requirement and every word in the note about the input, with examples (long, noisy, wrong total, several speakers). A long text fixture may run 3,000 to 6,000 characters.
+  - New code check `sampleProblems` in lib/full/requirements.ts sends a brief back once when a "long" text sample is under 2,000 characters, a "noisy" one has under 12 lines, or a totals check has no sample with a printed total. The person's own sample is never sent back.
+  - The build prompt's Sample files section says the same for every shipped sample, including sample buttons, and that a counter the brief names must show a real value, with the stable text first so a repeat call can hit the cache.
+- **Sample path broke when clicked as a person would.** "Try the sample" filled but didn't save. Every build prompt now asks the smoke test to load the sample, then press each next button the page offers with no extra clicks, and expect a non-empty result. The full-product skill says the same.
+- **Judge passed what screenshots can't prove.** Outlines at 1/10 scale passed "box outline in the photo", and a cache count stuck at 0 passed.
+  - The screenshot judge now fails an overlay off its objects and a counter or check the sample can't exercise. Both are non-blocking.
+  - On a full build the judge marks such a requirement unmet with evidence starting "Not proven:", and `unmetLines` adds a fix note asking for a sample that exercises it.
+  - Builds that draw over a photo get an overlay line: convert coordinates once, and assert each box sits inside the photo and holds its dot.
+- **Chart explainer compared two regions as a time series.** Briefs that read or explain a chart or table get a "Reading charts and tables" section: name the series and categories first, compare only within a series, treat order as time only when the axis says so.
+- **Goldens:** brief-instructions, build-prompt, judge-instructions (UPDATE_GOLDEN=1, lib/brief/__tests__/flags-off.test.ts) and judge-content.json (UPDATE_GOLDEN=1, lib/caps/__tests__/flags-off-surface.test.ts) regenerated. Each diff is only this change's text.
+- **Tests:** new lib/full/__tests__/samples.test.ts 13 of 13. The brief, full-builds, caps flags-off, pipeline and other prompt tests pass. `tsc --noEmit` clean.
+- **Left for later:** template/AGENTS.md says sample data has "no duplicates", which pushes builds to clean samples. The build prompt now says repeats and a wrong total the brief asks for are the sample doing its job. Changing AGENTS.md itself needs a new builder snapshot.

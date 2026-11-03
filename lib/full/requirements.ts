@@ -171,6 +171,52 @@ export function requirementProblems(brief: { screens: unknown[]; verdict: string
   return problems;
 }
 
+/** A text sample shorter than this isn't "long" (SAMPLE_WRITER_RULE asks for 3,000 to 6,000). */
+export const LONG_SAMPLE_MIN_CHARS = 2000;
+/** A "noisy" text sample with fewer lines than this can't hold repeats, junk and real entries together. */
+export const NOISY_SAMPLE_MIN_LINES = 12;
+
+const LONG_INPUT = /\b(?:long|lengthy)\s+(?:[a-z-]+\s+){0,4}?(policy|policies|document|documents|doc|text|article|report|contract|transcript|essay|paper|thread|email|chapter|story|manual|handbook|agreement|terms|notes|paste)\b/i;
+const NOISY_INPUT = /\b(?:noisy|messy|cluttered|jumbled)\s+(?:[a-z-]+\s+){0,3}?(feed|log|logs|list|stream|inbox|data|export|alerts?|readings|notes|transcript|csv|dump)\b/i;
+const TOTALS_CHECK = /\b(?:check|checks|checking|verify|verifies|confirm|confirms)\b[^.]{0,40}\b(?:totals?|sums?)\b|\b(?:totals?|sums?)\b[^.]{0,20}\b(?:add up|adds up|match|matches)\b/i;
+
+type SampleBrief = {
+  verdict: string;
+  primaryFlow?: string[];
+  fixtures: ReadonlyArray<{ kind: string; description: string; fromUserSample: boolean }>;
+} & WithRequirements;
+
+/**
+ * Code's check that the samples can show what the note asks of its input (audit, Nov 3), before anything is built. Only
+ * what code can measure: a "long" text sample's length, a "noisy" one's lines, and a printed total for a totals check.
+ * A person's own sample is their input and stands as it is, and with no sample written by the writer the build makes
+ * its own, so neither is sent back. Each problem is worth one repair call, and what it leaves is kept.
+ */
+export function sampleProblems(brief: SampleBrief, note: string | null): string[] {
+  if (brief.verdict === "no" || brief.fixtures.some((f) => f.fromUserSample)) return [];
+  const asked = [note ?? "", ...(brief.primaryFlow ?? []), ...briefRequirements(brief).map((r) => r.text)].join("\n");
+  const texts = brief.fixtures.filter((f) => f.kind === "text").map((f) => f.description.trim()).filter(Boolean);
+  const problems: string[] = [];
+  const long = LONG_INPUT.exec(asked);
+  if (long && texts.length) {
+    const most = Math.max(...texts.map((t) => t.length));
+    if (most < LONG_SAMPLE_MIN_CHARS) {
+      problems.push(`fixtures: the request asks for a long ${long[1].toLowerCase()}, but the longest text sample is ${most} characters. Write one of 3,000 to 6,000 characters with several sections, so the test shows the product on a long one.`);
+    }
+  }
+  const noisy = NOISY_INPUT.exec(asked);
+  if (noisy && texts.length) {
+    const lines = Math.max(...texts.map((t) => t.split("\n").filter((l) => l.trim()).length));
+    if (lines < NOISY_SAMPLE_MIN_LINES) {
+      problems.push(`fixtures: the request asks for a noisy ${noisy[1].toLowerCase()}, but the text sample has ${lines} line${lines === 1 ? "" : "s"}. Write at least 15 entries, one per line, with repeats, junk lines and out-of-order times among the real ones.`);
+    }
+  }
+  if (TOTALS_CHECK.test(asked) && brief.fixtures.length && !brief.fixtures.some((f) => /\btotals?\b/i.test(f.description))) {
+    problems.push("fixtures: the request asks to check totals, but no sample prints a total. Give one sample a printed total that doesn't match its rows, so the check has something to find.");
+  }
+  return problems;
+}
+
 const COMMON = new Set("about after again also because been before being build could every first from have into just like make made more most much only other over please should some that their them then there these they thing things this those through time using very want wants what when where which while will with would your really need needs able".split(" "));
 
 /** The longer words of a note that appear nowhere in the plan, matched on their first five letters. */
@@ -236,9 +282,17 @@ export function requirementResults(
   });
 }
 
+/** What the judge's evidence starts with when the screens can't prove a requirement (fullJudgeNote). */
+export const NOT_PROVEN = /^not proven\b/i;
+
+/** The fix that goes with a requirement the sample can't show. */
+export const NOT_PROVEN_FIX = "Ship a sample that exercises it, and have its test assert the value it shows.";
+
 /** The unmet ones as fix notes and for the final message. */
 export function unmetLines(results: RequirementResult[]): string[] {
-  return results.filter((r) => r.state === "unmet").map((r) => `${r.id} is not met: ${r.text}.${r.detail ? ` ${r.detail}` : ""}`);
+  return results
+    .filter((r) => r.state === "unmet")
+    .map((r) => `${r.id} is not met: ${r.text}.${r.detail ? ` ${r.detail}` : ""}${r.detail && NOT_PROVEN.test(r.detail.trim()) ? ` ${NOT_PROVEN_FIX}` : ""}`);
 }
 
 /** The latest checklist in a build's check results, newest last. Before any check every requirement is unchecked. */

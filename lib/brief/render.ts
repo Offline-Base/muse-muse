@@ -333,6 +333,48 @@ function sessionLines(notes: SessionNotes & LookNote, when: Run, complex = false
   return out;
 }
 
+/**
+ * The smoke test walks the sample path as a person would. Audit, Nov 3: "Try the sample" filled the box but didn't
+ * save it, so the next button opened an empty state, and the tests only covered pressing Save first.
+ */
+export const SAMPLE_PATH_LINE =
+  "When the product offers a sample (a Try the sample button, sample photos), the smoke test also walks that path exactly as a person would: load the sample, then press each next button the page offers, in order, with no extra clicks such as Save in between, and expect a non-empty result. If that path lands on an empty state, fix the product, not the test: loading the sample leaves it ready for the next button.";
+
+/**
+ * Every shipped sample shows the brief's hard parts, and every counter it names really moves. Audit, Nov 3: a "long"
+ * policy of 349 characters, so "from cache" stayed 0; a "noisy" feed of 9 clean alerts; a chart with no printed total.
+ */
+export const SAMPLE_LINES = [
+  'Every sample the product ships, in `fixtures/` and behind any sample button, must exercise every requirement and every word in this brief that says what the input is like. A "long" policy is several thousand characters across many sections. A "noisy" feed has one entry per line, with repeats, junk lines and out-of-order times among the real ones. A totals check needs a printed total that doesn\'t match its rows. "Several speakers" means at least three named voices. Repeats, junk and a wrong total that the brief asks for are the sample doing its job, not the bad sample data AGENTS.md warns about. If a sample here is shorter or cleaner than that, make a fuller one in `fixtures/` yourself and ship it as the product\'s sample too. When exact numbers matter, as on a chart, draw the sample in code, such as an SVG rendered to PNG with Playwright, rather than asking for a picture.',
+  "A counter or meter the brief names (cached tokens, tokens used, a totals check) must show a value the sample really produces, and a test asserts it: the cached tokens on a second call with the same long text, a totals check that finds the mismatch. Put the long, stable text first in the prompt and the question last, so a repeat call can hit the cache. If a value still stays at 0, say so on screen next to it and in BUILD_NOTES.md. A counter stuck at 0, or a check with nothing to check, proves nothing.",
+];
+
+/** Overlays line up with what they mark. Audit, Nov 3: boxes in 0 to 1000 units were divided by 10 again and drawn in a corner. */
+export const OVERLAY_LINE =
+  "Overlays: convert the model's coordinates (0 to 1000, or fractions of the photo) to the drawn image's size in one helper, and use it for every dot, box and mask. The smoke test asserts that each box sits inside the photo and holds its own dot or label, from their `boundingBox()`.";
+
+/** How to analyze a chart or a table. Audit, Nov 3: "biggest mover" compared South Q1 with North Q3, as if bar order were time. */
+export const CHART_ANALYSIS_LINES = [
+  "Identify the series and the categories first: what each color, group or line is, and what the labels along the axis are. Have the model return them before any comparison.",
+  "Compare values only within one series. North from Q1 to Q4 is a change. South Q1 against North Q3 is not, and two series at the same category are a comparison, never a move.",
+  "Treat category order as time only when the axis says it is time (dates, months, quarters, years). Otherwise there is no trend, only ranks and gaps.",
+  "Work out sums, totals, differences and the biggest mover in code from the table, and give the model those numbers to explain.",
+];
+
+const CHART_WORDS = /\b(?:charts?|graphs?|spreadsheets?|csv|tables?|bars|axis|axes)\b/i;
+const ANALYSIS_WORDS = /\b(?:reads?|explains?|analy[sz]es?|analysis|compares?|summar\w*|trends?|movers?|changed?|changes|insights?)\b/i;
+
+/** A brief whose product reads or explains a chart or a table: one of its own lines says both. */
+export function analysesCharts(brief: Pick<Brief, "tagline" | "primaryFlow" | "inputs" | "outputs" | "capabilities"> & Partial<Pick<Brief, "requirements">>): boolean {
+  const lines = [brief.tagline, ...brief.primaryFlow, ...brief.inputs.map((i) => i.notes), ...brief.outputs.map((o) => o.notes), ...brief.capabilities.map((c) => c.need), ...briefRequirements(brief).map((r) => r.text)];
+  return lines.some((l) => CHART_WORDS.test(l) && ANALYSIS_WORDS.test(l));
+}
+
+/** A brief that draws over a photo: an overlay output, or SAM 3.1 to find things. */
+function drawsOverlays(brief: Brief): boolean {
+  return brief.outputs.some((o) => o.kind === "overlay") || brief.capabilities.some((c) => c.model === "sam-3.1");
+}
+
 /** What a prompt says about the brief's recipes (recipeNotes in lib/recipes/registry.ts). Nothing with none picked. */
 type RecipeNotes = ReadonlyArray<{ id: string; limit: string }>;
 
@@ -435,6 +477,9 @@ export function renderBuildPrompt(
     ...brief.primaryFlow.map((step, i) => `${i + 1}. ${step}`),
     "",
     `The smoke test's judge screenshots must prove the tagline ("${brief.tagline}"): each feature it or these steps name shown working at least once, and the last step's result finished on the final screen (verify skill, Screenshots for the judge).`,
+    "",
+    SAMPLE_PATH_LINE,
+    ...(drawsOverlays(brief) ? ["", OVERLAY_LINE] : []),
     ...(direction && !full ? ["", RANGE_SHOTS_LINE] : []),
   );
   if (brief.screens.length) {
@@ -468,6 +513,7 @@ export function renderBuildPrompt(
     "",
     bullets(brief.outputs.map((o) => `${o.kind}: ${o.notes}`)),
   );
+  if (analysesCharts(brief)) out.push("", "## Reading charts and tables", "", bullets(CHART_ANALYSIS_LINES));
 
   out.push(
     "",
@@ -560,11 +606,12 @@ export function renderBuildPrompt(
   if (toMake.length) {
     out.push(
       "",
-      "Make these yourself, small, in `fixtures/` (AGENTS.md), and use them in the smoke test:",
+      "Make these yourself in `fixtures/` (AGENTS.md), small but full enough to show what this brief asks of them, and use them in the smoke test:",
       "",
       bullets(toMake.map((f) => `${f.kind}: ${f.description}`)),
     );
   }
+  out.push("", SAMPLE_LINES[0], "", SAMPLE_LINES[1]);
 
   const models = uniqueModels(brief);
   out.push(
