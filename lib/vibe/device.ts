@@ -531,7 +531,7 @@ const MEASURED: ReadonlyArray<{ mac: boolean; device: string; label: string; tps
 export const isGlimmerFile = (file: Pick<LocalFile, "name">) => file.name.startsWith("muse-glimmer-");
 
 function measuredText(p: DeviceProfile, file: Pick<LocalFile, "level" | "name">): string | null {
-  // Only a Glimmer Q4_K_M: a board's Llama 3.2 1B Q4_K_M on a drive (docs/DRIVE_EXPORT.md) mustn't claim Glimmer's speed.
+  // Only a Glimmer Q4_K_M: another model's Q4_K_M on a drive (docs/DRIVE_EXPORT.md) mustn't claim Glimmer's speed.
   if (file.level !== "Q4_K_M" || !isGlimmerFile(file)) return null;
   const m = MEASURED.find((x) => (x.mac ? p.kind === "mac" && p.chip === x.device : isPc(p.kind) && p.gpu?.model === x.device));
   if (!m) return null;

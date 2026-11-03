@@ -73,7 +73,7 @@ export function BasePicker({ value, onChange, disabled = false }: { value: BaseC
             type="text"
             value={pasted}
             maxLength={193}
-            placeholder="unsloth/Llama-3.2-3B-Instruct-bnb-4bit"
+            placeholder="unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit"
             autoComplete="off"
             onChange={(e) => setPasted(e.target.value.trim())}
             disabled={disabled}

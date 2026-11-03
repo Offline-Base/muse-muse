@@ -415,8 +415,8 @@ export const env = {
     return ["1", "true", "yes", "on"].includes((process.env.QUANT_ENABLED ?? "").trim().toLowerCase());
   },
   /**
-   * QUANT_TARGETS: local files for small bases and one-bit Muse Glimmer, and the device targets (lib/train/quant-targets.ts,
-   * docs/TRAINING.md "Device targets"). Off when unset: quantizing stays r30b's three builds, and Llama adapters are refused.
+   * QUANT_TARGETS: local files for one-bit Muse Glimmer, and the device targets (lib/train/quant-targets.ts, docs/TRAINING.md
+   * "Device targets"). Off when unset: quantizing stays r30b's three builds. No small base is offered, since only Meta models run.
    */
   get quantTargets(): boolean {
     return flag("QUANT_TARGETS");
@@ -568,7 +568,7 @@ export const env = {
   },
 
   /**
-   * TUNE_ANY_BASE: admins may fine-tune any allowed Meta base, Llama or Glimmer (docs/TRAINING.md "Any Meta base"). Off:
+   * TUNE_ANY_BASE: admins may fine-tune another Muse Glimmer base (docs/TRAINING.md "Any Meta base"); no other family is allowed. Off:
    * every job trains on r30b, and a base in a request is refused.
    */
   get tuneAnyBase(): boolean {
@@ -1287,7 +1287,7 @@ export const env = {
    * whatever the builder snapshot has, so a live product never breaks when the snapshot changes.
    */
   get servedCaps(): CapId[] {
-    // Unit 8: media is on only with at least one of its parts on (MEDIA_SPEECH and the rest), so MEDIA_ENABLED alone
+    // Unit 8: media is on only with at least one of its parts on (MEDIA_VIDEO and the rest), so MEDIA_ENABLED alone
     // behaves exactly like MEDIA_ENABLED off.
     const partsOn = (c: CapId) => c !== "media" || mediaPartsFromEnv().length > 0;
     return CAP_IDS.filter((c) => CAP_READY[c] && flag(CAP_FLAG[c]) && partsOn(c));
@@ -1436,7 +1436,7 @@ export const env = {
 
   /**
    * The media cap's parts (lib/caps/media), each its own switch on top of MEDIA_ENABLED, which is CAP_FLAG.media, read
-   * through enabledCaps above: MEDIA_SPEECH (speech in the page), MEDIA_VIDEO (video from pictures), MEDIA_MUSIC (MIDI)
+   * through enabledCaps above: MEDIA_VIDEO (video from pictures), MEDIA_MUSIC (MIDI)
    * and MEDIA_SAM_TILING (SAM past 16 objects, and long clips in chunks). The writer offers only the parts that are on.
    */
   get mediaParts(): MediaPartId[] {

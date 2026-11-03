@@ -57,8 +57,6 @@ The license does not cover the items below. Each keeps its own owner and terms.
      not in this repository):
        template/caps/games-phaser/files/public/notices/phaser.txt (Phaser, MIT License)
        template/caps/games-babylon/files/public/notices/babylonjs.txt (Babylon.js, Apache License 2.0)
-       template/caps/media/files/public/notices/media.txt and onnxruntime.txt (SpeechT5 models, MIT License, and
-       ONNX Runtime's third-party notices)
    - privacy/THIRD_PARTY_NOTICES.md lists the models, tools and packages Muse Privacy uses, each under its own license.
 
    npm and Python packages are installed from their own registries and keep their own licenses.

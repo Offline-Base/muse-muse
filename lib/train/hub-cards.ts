@@ -881,46 +881,7 @@ function provenanceSection(f: CardFacts): string {
 }
 
 /** The model repo's README.md: YAML front matter the Hub's validator takes, then the sections in the order above. */
-/**
- * A Llama adapter's card: its license duties first, then the story and the records' result. Short, because the Glimmer
- * card's sections describe that model's template and license.
- */
-function llamaCard(f: CardFacts, duties: ReturnType<typeof licenseDuties>): string {
-  const [, name] = f.modelRepo.split("/");
-  const front = [
-    "---",
-    `base_model: ${f.template.model}`,
-    "base_model_relation: adapter",
-    "library_name: peft",
-    "pipeline_tag: text-generation",
-    "license: other",
-    "license_name: llama-community-license",
-    "license_link: LICENSE",
-    "tags:",
-    ...["lora", "peft", "unsloth", "llama", "built-with-llama", "muse-muse"].map((t) => `- ${t}`),
-    ...(f.datasetPrivate ? [] : ["datasets:", `- ${f.datasetRepo}`]),
-    "---",
-  ];
-  const body = [
-    `# ${name}`,
-    "",
-    `**${duties.line}.** A LoRA adapter for [${f.template.model}](${HUB_SITE}/${f.template.model}), at commit \`${f.revision}\`.`,
-    "",
-    whySection(f),
-    "",
-    "## License",
-    "",
-    `${duties.license} The full texts are in \`LICENSE\` and \`USE_POLICY.md\`.`,
-    "",
-    ...duties.points.map((p) => `- ${p}`),
-    "",
-  ];
-  return noEmDashes([...front, "", ...body].join("\n"));
-}
-
 export function modelCard(f: CardFacts): string {
-  const duties = licenseDuties({ adapterBase: f.template.model });
-  if (duties.line && duties.family !== "glimmer") return llamaCard(f, duties);
   const s = f.summary;
   const derived = cardSparkOpen(f);
   const [, name] = f.modelRepo.split("/");
@@ -1326,6 +1287,9 @@ export function hubJobProblem(job: Pick<TrainJobRow, "recipe" | "status" | "para
   if (jobMode(job.params) === DECIDE_MODE) {
     return "It is a decision model, and publishing one (the adapter alone, with a decision card, never the person's rows) isn't built yet.";
   }
+  // Only Meta models are published (the organizers' Nov 2 ruling: Llama doesn't count). A Llama adapter trained before
+  // the ruling keeps its records and its job page, and never goes to the Hub.
+  if (licenseDuties({ params: job.params }).family !== "glimmer") return "It was tuned on a Llama base, which isn't a Meta model in this hackathon, so it isn't published.";
   if (Number(job.params?.dryRun) >= 1) return "It was a dry run, so its adapter is a stand-in.";
   if (job.status !== "succeeded") return "It didn't succeed, so it has no adapter to publish.";
   const note = unjudgedNote(job.evalSummary);
@@ -1879,58 +1843,6 @@ export function ggufSparkOpen(f: Pick<GgufFacts, "sparkOpen" | "mergeBase" | "ad
   return f.sparkOpen === true || isSparkOpenDerivative({ metrics: { merge_base: f.mergeBase.repo }, adapterBase: f.adapterBase.model });
 }
 
-/** A small base's GGUF card: its license duties first, what was measured, and how to run it. Glimmer's sections don't apply. */
-function smallGgufCard(f: GgufFacts): string {
-  const [, name] = f.repo.split("/");
-  const base = quantBaseOf(f.params)!;
-  const duties = licenseDuties({ adapterBase: base.model });
-  const b = f.builds.find((x) => x.level === "Q4_K_M") ?? f.builds[0]!;
-  const front = [
-    "---",
-    `base_model: ${base.mergeBase}`,
-    "base_model_relation: finetune",
-    "pipeline_tag: text-generation",
-    "license: other",
-    "license_name: llama-community-license",
-    "license_link: LICENSE",
-    "tags:",
-    ...["gguf", "llama.cpp", "llama", "built-with-llama", "muse-muse", "lora-merged"].map((t) => `- ${t}`),
-    ...(f.datasetRepo ? ["datasets:", `- ${f.datasetRepo}`] : []),
-    "---",
-  ];
-  const body = [
-    `# ${name}`,
-    "",
-    `**${duties.line}.** GGUF files of [${f.adapterRepo}](${hubLink(f.adapterRepo, "model")}), a LoRA adapter merged into [${base.mergeBase}](${HUB_SITE}/${base.mergeBase}): ${mdText(taskSentence(f.dataset.task))}.`,
-    "",
-    "## Run it",
-    "",
-    fenced(`llama serve -hf ${f.repo}:${b.level} -c 8192 -np 1`, "sh"),
-    "",
-    "Use this system message exactly, and temperature 0:",
-    "",
-    fenced(clean(ggufSystemLine(f.role, f.params)), "text"),
-    "",
-    "## What was measured",
-    "",
-    "| Build | File | Size | Mean KL divergence from Q8_0 | Top token the same |",
-    "|---|---|---|---|---|",
-    ...f.builds.map((x) => `| ${x.level} | \`${x.name}\` | ${gigabytes(x.bytes)} | ${kl(x.klMean)} | ${x.topTokenPct === null ? "not measured" : `${x.topTokenPct.toFixed(1)}%`} |`),
-    "",
-    `No KL limit applies yet, since no build of this base had been measured before this one. The answer check decides: ${b.level} gave a final answer to ${f.channel.final} of ${f.channel.total} held-out prompts, and the template it renders matched training's.`,
-    "",
-    `Files and SHA-256: ${f.builds.map((x) => `\`${x.name}\` \`${x.sha256}\``).join(", ")}. Made with llama.cpp \`${f.llamacpp.tag}\` on ${f.job.gpuLabel}, ${f.job.gpuMinutes} minutes, ${money(f.job.costUsd)}.`,
-    "",
-    "## License",
-    "",
-    `${duties.license} The full texts are in \`LICENSE\` and \`USE_POLICY.md\`.`,
-    "",
-    ...duties.points.map((p) => `- ${p}`),
-    "",
-  ];
-  return noEmDashes([...front, "", ...body].join("\n"));
-}
-
 /** The one-bit build's honest section: what its own checks found, and what no one has seen yet. Empty when none was asked for. */
 function lowBitSection(f: GgufFacts): string[] {
   if (!f.lowBit) return [];
@@ -1950,7 +1862,6 @@ function lowBitSection(f: GgufFacts): string[] {
 
 /** The GGUF repo's README.md: YAML front matter the Hub's validator takes, then the sections in the design's order. */
 export function ggufCard(f: GgufFacts): string {
-  if (quantBaseOf(f.params)) return smallGgufCard(f);
   const [, name] = f.repo.split("/");
   const english = looksEnglish(f.dataset.title, f.dataset.task);
   const derived = ggufSparkOpen(f);

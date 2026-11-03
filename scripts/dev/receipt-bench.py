@@ -291,7 +291,7 @@ def main():
     a.add_argument("--out")
     s = sub.add_parser("score")
     s.add_argument("--heldout", required=True)
-    s.add_argument("--answers", required=True, help="receipt-eval-board.py's output")
+    s.add_argument("--answers", required=True, help="the answers file, one JSON line per receipt")
     args = parser.parse_args()
     if args.command == "make":
         make(args.out, args.seed, args.train, args.heldout)

@@ -14,8 +14,6 @@ export const MEDIA_LIMITS = {
   videoFramesMax: 120,
   /** The longest side of a made video, in pixels. */
   videoSideMax: 1280,
-  /** Characters read aloud in one speak() call. */
-  speechCharsMax: 600,
   /** Notes in one tune. */
   notesMax: 2000,
   /** SAM calls (tiles) for one photo. */

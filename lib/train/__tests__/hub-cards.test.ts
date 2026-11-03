@@ -788,6 +788,14 @@ describe("the hub state's rules", () => {
     assert.match(cards.hubJobProblem({ ...job, evalSummary: unjudged })!, /wasn't judged \(Judging skipped: MODEL_API_KEY isn't set\)/);
   });
 
+  it("never publishes an adapter tuned on a Llama base (the Nov 2 ruling)", () => {
+    const job = { recipe: "glimmer-lora" as const, status: "succeeded" as const, params: { dryRun: 0 }, terminatedAt: now, evalSummary: summary };
+    const refused = /tuned on a Llama base, which isn't a Meta model/;
+    assert.match(cards.hubJobProblem({ ...job, params: { dryRun: 0, baseModel: "unsloth/Llama-3.2-3B-Instruct-bnb-4bit" } })!, refused);
+    assert.match(cards.hubJobProblem({ ...job, params: { dryRun: 0, baseModel: "meta-llama/Llama-3.2-1B-Instruct" } })!, refused);
+    assert.equal(cards.hubJobProblem({ ...job, params: { dryRun: 0, baseModel: "unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit" } }), null);
+  });
+
   it("reads the why from Publish first (a cleared one too), then the job's param, with no em dash, and the publish param", () => {
     assert.equal(effectiveWhy({ status: "waiting", why: `Saved ${EM_DASH} here.` }, { why: "Param." }), "Saved, here.");
     assert.equal(effectiveWhy({ status: "waiting", why: null }, { why: " Param. " }), "Param.");
