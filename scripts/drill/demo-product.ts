@@ -9,7 +9,13 @@
  *   POST /api/actions/look    {"photo": "<a JPEG or PNG data URL>", "prompt": "open door"}
  *     through segmentOrEdge(), Meta SAM 3.1 in the cloud, else on the board: 200 {count, objects, by, label}, 503
  *     {message} with the helper's plain "Can't see right now" line, or 400 {message} for a photo it can't read
- *   GET  /                    a one-line page, so the drill runner can tell the server is up
+ *   GET  /api/board-status    the template's own board status check (template/lib/meta/board-status.ts), the route
+ *                             template/app/api/board-status/route.ts serves: {connected, line, detail}. ?looks=1 adds
+ *                             the photo board. It asks no model.
+ *   GET  /samples/door-open.jpg  the invented sample photo (scripts/drill/samples/), standing in for a product's
+ *                             public/samples/ file that its "Try the sample" button loads
+ *   GET  /                    a small page with the board status line (data-board-status, like components/BoardStatus.tsx)
+ *   GET  /health              one plain line, so the drill runner can tell the server is up
  *
  * Env, as a product reads it (scripts/drill/run.mjs and template/scripts/edge-drill.mjs set these on loopback):
  *   PORT, GATEWAY_URL, PRODUCT_TOKEN, EDGE_URL, EDGE_SAM_URL, EDGE_BOARD, EDGE_MODEL_NAME, EDGE_SAM_MODEL_NAME,
@@ -23,6 +29,7 @@ import { createServer } from "node:http";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { z } from "zod";
+import { boardStatus } from "../../template/lib/meta/board-status";
 import { respondJsonOrEdge, segmentOrEdge } from "../../template/lib/meta/edge";
 
 /** The drill bench's verdict (scripts/dev/drill-bench.py, FIELDS, STATUSES and CAUSES). */
@@ -46,6 +53,32 @@ export function demoRows(): string {
   }
 }
 
+/** The invented sample photo, a drawing of an open cold-room door. No real place or person. */
+const SAMPLE_PHOTO = new URL("./samples/door-open.jpg", import.meta.url);
+
+/**
+ * The page with the board status line. Like components/BoardStatus.tsx, it starts at "checking" and asks
+ * /api/board-status from the browser, so loading the page asks no model and no board.
+ */
+const PAGE = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Simulated cold room drill product</title></head>
+<body>
+<p>Simulated cold room drill product, invented data. POST /api/actions/status, POST /api/actions/look.</p>
+<div role="status" aria-live="polite" data-board-status="checking"><span id="line">Checking for a board</span></div>
+<img src="/samples/door-open.jpg" alt="Invented sample photo: an open cold-room door" width="320" height="240">
+<script>
+fetch("/api/board-status?looks=1", { cache: "no-store" })
+  .then((r) => r.json())
+  .then((s) => {
+    const el = document.querySelector("[data-board-status]");
+    el.dataset.boardStatus = s.connected ? "connected" : "not-connected";
+    document.getElementById("line").textContent = s.line;
+  })
+  .catch(() => { document.getElementById("line").textContent = "Not connected to a board"; });
+</script>
+</body></html>
+`;
+
 async function readBody(req: import("node:http").IncomingMessage): Promise<Record<string, unknown>> {
   let raw = "";
   for await (const chunk of req) raw += chunk;
@@ -63,9 +96,26 @@ export function startDemoProduct(port: number) {
       res.writeHead(status, { "content-type": "application/json" });
       res.end(JSON.stringify(body));
     };
-    if (req.method === "GET" && (req.url === "/" || req.url === "/health")) {
+    const url = new URL(req.url ?? "/", "http://127.0.0.1");
+    if (req.method === "GET" && url.pathname === "/health") {
       res.writeHead(200, { "content-type": "text/plain" });
       res.end("Simulated cold room drill product. POST /api/actions/status, POST /api/actions/look\n");
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/") {
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.end(PAGE);
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/api/board-status") {
+      const status = await boardStatus({ looks: url.searchParams.get("looks") === "1" });
+      res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+      res.end(JSON.stringify(status));
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/samples/door-open.jpg") {
+      res.writeHead(200, { "content-type": "image/jpeg" });
+      res.end(readFileSync(SAMPLE_PHOTO));
       return;
     }
     if (req.method === "POST" && req.url === "/api/actions/look") {

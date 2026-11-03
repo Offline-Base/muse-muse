@@ -1,7 +1,7 @@
 """A local page for trying SAM 3.1 on jetson-04, through the fleet control plane's jobs API.
 
 Run (the token is a personal fleet token, jpt_..., with operator/admin rights; it stays in this process only):
-  FLEET_TOKEN=jpt_... python3 ui.py
+  FLEET_URL=https://<your-control-plane-host>/admin FLEET_TOKEN=jpt_... python3 ui.py
 then open http://127.0.0.1:8792
 
 The page shrinks the photo in the browser, this server sends it to jetson-04 in 15 KB pieces as fleet exec jobs,
@@ -19,7 +19,8 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-FLEET = os.environ.get("FLEET_URL", "https://creative-linoleum-retake.ngrok-free.dev/admin").rstrip("/")
+# Required, no default: the control plane's address is kept out of the repo. Ask Hussam for it.
+FLEET = os.environ.get("FLEET_URL", "").strip().rstrip("/")
 TOKEN = os.environ.get("FLEET_TOKEN", "")
 NODE = os.environ.get("SAM_NODE", "nd_fe300e68e976228c")  # jetson-04
 CHUNK = 15000
@@ -115,6 +116,8 @@ class H(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    if not FLEET.startswith("https://"):
+        sys.exit("Set FLEET_URL to the control plane's API, like https://<your-control-plane-host>/admin, first.")
     if not TOKEN.startswith("jpt_"):
         sys.exit("Set FLEET_TOKEN to a personal fleet token (jpt_...) first.")
     print("SAM UI on http://127.0.0.1:8792  (fleet: %s, board: %s)" % (FLEET, NODE), flush=True)

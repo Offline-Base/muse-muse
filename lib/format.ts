@@ -134,6 +134,8 @@ const MODEL_LABELS: Record<string, string> = {
   "muse-gadget": "Muse Gadget",
   "jetson-fleet": "Jetson fleet",
   "muse-spark-open": "Muse Spark Open",
+  // Not a model: the sandbox time a Muse Code session bills (lib/caps/code/musecode/handler.ts). Usage lists it as one.
+  "sandbox:code_session": "Muse Code sandbox time",
 };
 
 export function modelLabel(id: string): string {

@@ -35,10 +35,11 @@ A product on Vercel can't reach the office network. Muse Muse's `POST {GATEWAY_U
 
 ```
 cd scripts/edge/sam3
+export FLEET_URL=https://<your-control-plane-host>/admin
 read -s "FLEET_TOKEN?Fleet token: " && export FLEET_TOKEN && python3 ui.py
 ```
 
-The token is a personal fleet token (`jpt_...`) of an admin, because `exec` is admin only. Type it at the prompt; never paste it in a chat or a file. The server keeps it in memory and sends it only to the control plane. The control plane's API lives under `/admin` (`FLEET_URL` defaults to `https://creative-linoleum-retake.ngrok-free.dev/admin`). Limits it works within: an exec command is at most 16,384 characters, and a job's streamed output keeps 256 KB.
+The token is a personal fleet token (`jpt_...`) of an admin, because `exec` is admin only. Type it at the prompt; never paste it in a chat or a file. The server keeps it in memory and sends it only to the control plane. The control plane's API lives under `/admin`. `FLEET_URL` is required and has no default, so the address stays out of the repo; ask Hussam for it. Limits it works within: an exec command is at most 16,384 characters, and a job's streamed output keeps 256 KB.
 
 ## What may be said
 

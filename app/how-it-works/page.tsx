@@ -71,7 +71,8 @@ const STEPS: Step[] = [
       <>
         In the same sandbox: a typecheck, a production build, the app started for real, and a browser test that clicks
         through the main flow on a phone-size screen. Then {modelLabel(defaultModel())} judges screenshots of every screen. Problems go
-        back to the same Muse Code session (resumed with <code>--session-id</code>), for up to 3 fix rounds.
+        back to the same Muse Code session (resumed with <code>--session-id</code>), for up to {env.maxFixRounds} fix rounds,
+        inside the build's time limit.
       </>
     ),
     docs: [
@@ -161,7 +162,7 @@ export default function HowItWorksPage() {
         Muse Code documentation in one place.
       </p>
 
-      <h2 className="how-heading">Five steps, a few minutes</h2>
+      <h2 className="how-heading">Five steps, one sentence to a live app</h2>
       <Steps items={STEPS} />
 
       <h2 className="how-heading">What you get</h2>
@@ -171,7 +172,8 @@ export default function HowItWorksPage() {
 
       <h2 className="how-heading">Good to know</h2>
       <p className="muted">
-        No sign-up and no API keys. Most builds take a few minutes. Apps reach Meta&apos;s models only through Muse
+        No sign-up and no API keys. A build takes from about 30 minutes to two and a half hours, start to live,
+        and the build room shows its limit. Apps reach Meta&apos;s models only through Muse
         Muse, which keeps the keys and caps what each app can spend. See <Link href="/gallery">the gallery</Link> for apps people made,{" "}
         <Link href="/learn">Learn</Link> for Meta&apos;s lessons with what Muse Muse has built for each and a plan to do it better, and{" "}
         <Link href="/usage">Usage</Link> for every Meta token used.

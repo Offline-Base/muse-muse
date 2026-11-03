@@ -32,7 +32,7 @@ import { JobsPanel } from "@/components/jobs/JobsPanel";
 import { AddClip, RemoveClip } from "@/components/product/OwnerClips";
 import { StatusControl } from "@/components/product/StatusControl";
 import { EmptyCard, ExternalLink, NotConnected, StatusPill } from "@/components/ui";
-import { compact, connectorActions, modelLabel, plural, relativeTime, statusLabel, truncate, usd } from "@/lib/format";
+import { briefKeepsWonder, compact, connectorActions, plural, relativeTime, servedModelLabel, statusLabel, truncate, usd } from "@/lib/format";
 import { canActAsOwner } from "@/lib/auth";
 import { canEditProduct } from "@/lib/edit-pass";
 import type { Brief } from "@/lib/brief/schema";
@@ -321,22 +321,27 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
           {muse ? <p>{muse}</p> : <p className="muted">No note was given.</p>}
           {brief?.inspiration.borrow.length || brief?.inspiration.dontCopy.length ? (
             <div className="two-col">
-              <div>
-                <h3>Took from it</h3>
-                <ul>
-                  {brief.inspiration.borrow.map((b) => (
-                    <li key={b}>{b}</li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <h3>Left out</h3>
-                <ul>
-                  {brief.inspiration.dontCopy.map((b) => (
-                    <li key={b}>{b}</li>
-                  ))}
-                </ul>
-              </div>
+              {/* Each column only when it has something: an empty "Left out" heading read as a broken page. */}
+              {brief.inspiration.borrow.length ? (
+                <div>
+                  <h3>Took from it</h3>
+                  <ul>
+                    {brief.inspiration.borrow.map((b) => (
+                      <li key={b}>{b}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {brief.inspiration.dontCopy.length ? (
+                <div>
+                  <h3>Left out</h3>
+                  <ul>
+                    {brief.inspiration.dontCopy.map((b) => (
+                      <li key={b}>{b}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
             </div>
           ) : null}
         </section>
@@ -350,7 +355,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
               <ul className="model-list">
                 {models.map((m) => (
                   <li key={m.id}>
-                    <span className="chip">{modelLabel(m.id)}</span>
+                    <span className="chip">{servedModelLabel(m.id, { keepsWonder: briefKeepsWonder(brief) })}</span>
                     <span className="muted">{m.usedFor}</span>
                   </li>
                 ))}

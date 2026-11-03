@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * `npm run drill`: the eight simulated outage drills (four on the text answer, four on the photo look), with no key, no
- * build, no model and no network past loopback.
- * `npm run drill:all`: those eight and eight more scenarios (template/scripts/edge-drill.mjs lists all 16).
+ * `npm run drill`: the eleven simulated outage drills (four on the text answer, four on the photo look, two on the board
+ * status line, one on the sample photo), with no key, no build, no model and no network past loopback.
+ * `npm run drill:all`: those eleven and eight more scenarios (template/scripts/edge-drill.mjs lists all 19).
  *
  * It runs template/scripts/edge-drill.mjs, which starts the blackhole gateway (edge-blackhole.mjs, standing in for a
  * cloud that can't be reached) and the fake edge server (edge-fake.mjs, standing in for a board's model), then starts
@@ -16,6 +16,12 @@
  *
  *   12. SAM, cloud refused    13. SAM, cloud hung (the same 10 s)    14. SAM, both down    15. SAM, tampered board reply
  *   rejected
+ *
+ * and three on what a person sees, with the fake edge server standing in for the board's health checks:
+ *
+ *   17. board status, board up (GET /api/board-status says "Connected to ...", and the page has the status line)
+ *   18. board status, board down ("Not connected to a board")    19. SAM, sample photo served (/samples/door-open.jpg,
+ *   an invented drawing in scripts/drill/samples/)
  *
  * and with --all:
  *
@@ -73,6 +79,8 @@ async function main() {
     EDGE_DRILL_BODY: "{}",
     EDGE_DRILL_SAM_PATH: "/api/actions/look",
     EDGE_DRILL_SAM_BODY: JSON.stringify({ photo: "SIMULATED_PHOTO", prompt: "open door" }),
+    EDGE_DRILL_SAM_SAMPLE: "/samples/door-open.jpg",
+    EDGE_DRILL_PAGE: "/",
     EDGE_DRILL_OUT: path.join(OUT, "edge-drill.json"),
     EDGE_BOARD: "a simulated board",
     EDGE_MODEL_NAME: "the fake edge server",

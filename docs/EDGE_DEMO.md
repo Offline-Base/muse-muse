@@ -31,7 +31,7 @@ Turning either platform flag on, even on a preview, is the owner's call (O4 in t
 From the repo root, after `npm ci`:
 
 ```bash
-npm run drill          # the eight simulated outage drills (four on the text answer, four on the photo look), about 23 seconds
+npm run drill          # the eleven simulated outage drills (four on the text answer, four on the photo look, two board status, one sample photo), about 25 seconds
 npm run drill-bench    # the cold-room drill bench, made and scored with no model, about 2 seconds (needs python3)
 ```
 
