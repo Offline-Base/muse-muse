@@ -3524,6 +3524,25 @@ pre {
   gap: 12px;
 }
 
+/* Known issues of a shipped build (lib/pipeline/known-issues.ts), in the build room and on the product page. */
+.known-issues {
+  border-left: 3px solid var(--warn);
+  background: var(--warn-soft);
+  border-radius: 8px;
+  padding: 10px 14px;
+  overflow-wrap: anywhere;
+}
+
+.known-issues p {
+  margin: 0 0 4px;
+  color: var(--warn-text);
+}
+
+.known-issues ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
 .ship-link {
   font-size: 18px;
   font-weight: 600;

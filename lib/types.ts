@@ -218,7 +218,8 @@ export type BuildEventBody =
   // Wave 3, unit 2 (docs/CAPABILITIES.md, section 8): a cap's fixed check, a milestone's progress and the live link's check.
   | { type: "caps"; cap: string; check: string; ok: boolean; detail?: string }
   | { type: "milestone"; index: number; of: number; title: string; state: MilestoneState }
-  | { type: "live_check"; ok: boolean; url: string; reason?: string }
+  /** `action`: the live action check called that action once (lib/pipeline/live-action.ts). Without it, the route check. */
+  | { type: "live_check"; ok: boolean; url: string; reason?: string; action?: string }
   /**
    * LOOK_FIRST (docs/LOOK_FIRST.md): where the screens-first stage is. "ready" waits for the owner until `waitUntil`;
    * "changing" applies their note; "wiring" means the look is settled and everything is being wired in.

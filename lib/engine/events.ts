@@ -15,6 +15,7 @@ export function engineEventText(e: EngineEvent): string {
     case "milestone":
       return `Milestone ${e.index} of ${e.of}, ${e.title}: ${MILESTONE_WORDS[e.state] ?? e.state}.`;
     case "live_check":
+      if (e.action) return e.ok ? `The live link's ${e.action} action worked when called once: ${e.url}` : `Known issue on the live link: ${e.reason ?? `${e.action} did not work`}.`;
       return e.ok ? `The live link passed its check: ${e.url}` : `The live link failed its check: ${e.reason ?? "it did not answer"}.`;
   }
 }

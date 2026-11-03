@@ -9,6 +9,7 @@ import { env } from "@/lib/env";
 import { newestPerRebuild, parseManifest } from "@/lib/format";
 import { GALLERY_FIRST, HIDDEN_FROM_GALLERY } from "@/lib/gallery/hidden";
 import { VERDICT_LABEL, lessonHref } from "@/lib/learn";
+import { visitorNote } from "@/lib/pipeline/visitor-text";
 import type { Brief, BuildEvent, MuseLogLine, RebuildFit, RebuildTarget } from "@/lib/types";
 import type {
   BuildSummary,
@@ -514,7 +515,9 @@ export function buildHighlights(events: BuildEvent[], build: BuildView | null): 
     } else if (e.type === "judge") {
       lastJudge = e.verdict;
     } else if (e.type === "log" && e.text.trim() && !ROOM_ONLY_LOG.test(e.text.trim())) {
-      notes.push(e.text.trim());
+      // Visitors read these: no raw tool log, build machine paths or session ids (lib/pipeline/visitor-text.ts).
+      const note = visitorNote(e.text);
+      if (note) notes.push(note);
     }
   }
   for (const l of items.values()) count(l);

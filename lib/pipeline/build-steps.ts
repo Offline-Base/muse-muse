@@ -97,6 +97,7 @@ import {
   type BuildEventBody,
   type BuildStatus,
   type JudgeVerdict,
+  type Manifest,
   type ModelUsage,
   type MuseLogLine,
   type ProductStatus,
@@ -107,6 +108,9 @@ import {
 import { trustOverlayFor, type TrustOverlay } from "@/lib/trust/overlay";
 import { briefTierFor } from "@/lib/trust/tiers";
 import { platformSpendToday, recordUsage, type UsageContext } from "@/lib/usage";
+import { fixtureType, judgeLiveReply, LIVE_ACTION_TIMEOUT_MS, pickLiveCall, placeholderTypes, provedCall, SAMPLE_MAX_BYTES, withSamples, type Sample } from "@/lib/pipeline/live-action";
+import { PRODUCT_DIR } from "@/lib/sandbox/paths";
+import { BUILT_LOG_PREFIX, visitorLines } from "@/lib/pipeline/visitor-text";
 
 /** Muse Code's step budget per run. */
 const MAX_MODEL_STEPS = 200;
@@ -1553,6 +1557,113 @@ export async function liveCheckStep(input: { buildId: string; sandboxName: strin
 }
 liveCheckStep.maxRetries = 1;
 
+/** The product calls made since `since`: every action's model call goes through the gateway, and an agent's tools count too. */
+async function productSpendSinceUsd(productId: string, since: Date): Promise<number> {
+  const [row] = await db()
+    .select({ total: sql<number>`coalesce(sum(${schema.usage.costUsd}), 0)::float8` })
+    .from(schema.usage)
+    .where(and(eq(schema.usage.productId, productId), inArray(schema.usage.source, ["gateway", "tools"]), gte(schema.usage.at, since)));
+  return Number(row?.total ?? 0);
+}
+
+/** The samples the shortened data URLs in the args need, read from the product's fixtures/ in the sandbox. */
+async function liveSamples(sandboxName: string, manifest: Manifest, args: Record<string, unknown>): Promise<Sample[]> {
+  const wanted = placeholderTypes(args);
+  if (!wanted.size) return [];
+  const kinds = new Set([...wanted].map((t) => t.split("/")[0]));
+  const paths = [...new Set((manifest.fixtures ?? []).map((f) => f.path).filter((p) => typeof p === "string" && /^fixtures\/[^\s]+$/.test(p) && !p.includes("..")))];
+  const samples: Sample[] = [];
+  for (const path of paths.slice(0, 12)) {
+    const type = fixtureType(path);
+    if (!type || !kinds.has(type.split("/")[0])) continue;
+    const bytes = await sandbox.readSandboxFile(sandboxName, `${PRODUCT_DIR}/${path}`).catch(() => null);
+    if (bytes && bytes.length <= SAMPLE_MAX_BYTES) samples.push({ path, type, bytes: Buffer.from(bytes) });
+  }
+  return samples;
+}
+
+/**
+ * The live action check (lib/pipeline/live-action.ts): after deploy, calls the product's primary action once on its live
+ * link with its manifest example, and reads the reply. A failure, or a reply that says it used a stand-in for its model,
+ * is a known issue: the build ships as partial and says why. Costs at most one call, charged to the build. Skipped when
+ * there is nothing safe to call, the run is costly, the platform's spending is paused, or this build's Prove it run
+ * already made the same call. No retries, since a retry would call again. Never throws.
+ */
+export async function liveActionStep(input: { buildId: string; productId: string; sandboxName: string; url: string }): Promise<{ ok: boolean; reason?: string }> {
+  "use step";
+  const base = input.url.replace(/\/+$/, "");
+  const note = (text: string) => emit(input.buildId, { type: "log", text }).catch((err) => console.error("[live action] log", err));
+  let verdict: { ok: boolean; reason?: string; inconclusive?: string };
+  let action: string | null = null;
+  try {
+    const manifest = await sandbox.readManifest(input.sandboxName).catch(() => null);
+    const picked = pickLiveCall(manifest, base);
+    if ("skip" in picked) {
+      await note(`The live check called no action: ${picked.skip}.`);
+      return { ok: true };
+    }
+    action = picked.call.name;
+    if ((await platformSpendToday()) >= env.dailySpendCapUsd) {
+      await note("The live check called no action: the platform's spending cap for today has been reached.");
+      return { ok: true };
+    }
+    const proveRows = await db()
+      .select({ payload: schema.buildEvents.payload })
+      .from(schema.buildEvents)
+      .where(and(eq(schema.buildEvents.buildId, input.buildId), inArray(schema.buildEvents.type, ["prove", "deploy"])))
+      .orderBy(asc(schema.buildEvents.id));
+    const proved = provedCall(proveRows.map((r) => r.payload as Record<string, unknown>), action);
+    if (proved) {
+      verdict = proved.ok ? { ok: true } : { ok: false, reason: `${action} failed when Prove it called it` };
+      await note(`The live check didn't call ${action} again: Prove it already called it on this deploy.`);
+    } else {
+      const args = withSamples(picked.call.args, await liveSamples(input.sandboxName, manifest!, picked.call.args)) as Record<string, unknown>;
+      const since = new Date();
+      let status: number | null = null;
+      let body: unknown = null;
+      let timedOut = false;
+      try {
+        const res = await fetch(`${base}/api/actions/${encodeURIComponent(action)}`, {
+          method: "POST",
+          headers: { "content-type": "application/json", accept: "application/json", "user-agent": "MuseMuse-LiveCheck/1" },
+          body: JSON.stringify(args),
+          redirect: "follow",
+          signal: AbortSignal.timeout(LIVE_ACTION_TIMEOUT_MS),
+        });
+        status = res.status;
+        const text = await res.text().catch(() => "");
+        try {
+          body = JSON.parse(text);
+        } catch {
+          body = null;
+        }
+      } catch (err) {
+        const name = (err as { name?: unknown })?.name;
+        timedOut = name === "TimeoutError" || name === "AbortError";
+      }
+      verdict = judgeLiveReply({ action, status, body, timedOut });
+      const spent = await productSpendSinceUsd(input.productId, since).catch(() => 0);
+      if (spent > 0) await addBuildCost(input.buildId, spent, "Live check: one call to the live product");
+    }
+  } catch (err) {
+    verdict = { ok: false, reason: `the live check couldn't run (${String((err as Error)?.message ?? err).slice(0, 120)})` };
+  }
+  if (verdict.inconclusive) await note(`The live check called ${action} once. It neither passed nor failed: ${verdict.inconclusive}.`);
+  const at = new Date().toISOString();
+  try {
+    await db()
+      .update(schema.builds)
+      .set({ liveCheck: { ok: verdict.ok, at, url: base, ...(verdict.reason ? { reason: verdict.reason } : {}) } })
+      .where(eq(schema.builds.id, input.buildId));
+    // A call that neither passed nor failed said so in its own line above, so the room never reads it as a pass.
+    if (!verdict.inconclusive) await emit(input.buildId, { type: "live_check", ok: verdict.ok, url: base, ...(action ? { action } : {}), ...(verdict.reason ? { reason: verdict.reason } : {}) });
+  } catch (err) {
+    console.error("[live action] saving the result", err);
+  }
+  return { ok: verdict.ok, ...(verdict.reason ? { reason: verdict.reason } : {}) };
+}
+liveActionStep.maxRetries = 0;
+
 // ---------- Wave 3, unit 14 (docs/CAPABILITIES.md, section 20): what a cap makes from the live link ----------
 /**
  * After deploy, before register: each enabled cap in CAPS_SHIPPING that the brief has makes what it makes from the live
@@ -1786,8 +1897,10 @@ export async function registerStep(input: {
       buildId: input.buildId,
     });
     transcriptUrl = transcript.url;
-    if (transcript.highlights.length) {
-      await emit(input.buildId, { type: "log", text: `How it was built:\n${transcript.highlights.slice(0, 20).join("\n")}` });
+    // Without the build machine's paths, session ids and raw tool output: the room is public (lib/pipeline/visitor-text.ts).
+    const readable = visitorLines(transcript.highlights).slice(0, 20);
+    if (readable.length) {
+      await emit(input.buildId, { type: "log", text: `${BUILT_LOG_PREFIX}\n${readable.join("\n")}` });
     }
   } catch (err) {
     console.error("[register] transcript", err);

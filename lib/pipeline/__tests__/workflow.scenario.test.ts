@@ -50,6 +50,8 @@ interface Scenario {
   proveStartThrows?: boolean;
   /** What liveCheckStep answers (ENGINE_LIVE_SMOKE). Defaults to a pass. */
   liveCheck?: { ok: boolean; reason?: string };
+  /** What liveActionStep answers (LIVE_ACTION_CHECK, on by default). Defaults to a pass. */
+  liveAction?: { ok: boolean; reason?: string };
   /** Wave 3, unit 14: an enabled cap has a step after deploy (capsShipping in lib/caps/ship.ts). Off by default. */
   capsShipping?: boolean;
   /** The engine's round plan briefStep and loadRefineStep return. */
@@ -300,6 +302,10 @@ const fakeSteps = {
   liveCheckStep: async (input: unknown) => {
     record("liveCheckStep", input);
     return scenario.liveCheck ?? { ok: true };
+  },
+  liveActionStep: async (input: unknown) => {
+    record("liveActionStep", input);
+    return scenario.liveAction ?? { ok: true };
   },
   // Wave 3, unit 14: what a cap makes from the live link.
   capsShipStep: async (input: unknown) => record("capsShipStep", input),
@@ -1267,8 +1273,8 @@ describe("engine (docs/CAPABILITIES.md, section 8)", { skip: canMock ? false : "
       reset({ plan: plan(), verifies: [{ passed: false }, { passed: true }], advance: { previewStep: 50 * MIN, collectVerifyStep: 8 * MIN } });
       assert.deepEqual(await wf.buildProduct({ buildId: "t9" }), { status: "live" });
       const fix = starts().find((r) => r.promptFile === "fix-1.md");
-      // At minute 58: 90 - 58 - 8 (its verify) - 3 (its judge) leaves 21, so the 15-minute cap holds.
-      assert.equal(fix?.capMs, 15 * MIN);
+      // At minute 58: 90 - 58 - 8 (its verify) - 3 (its judge) - 10 (shipping) leaves 11, so the 15-minute cap is cut to 11.
+      assert.equal(fix?.capMs, 11 * MIN);
     } finally {
       Date.now = real;
     }
@@ -1295,6 +1301,70 @@ describe("engine (docs/CAPABILITIES.md, section 8)", { skip: canMock ? false : "
     reset({ publish: false });
     assert.deepEqual(await wf.buildProduct({ buildId: "t9" }), { status: "live" });
     assert.equal(named("liveCheckStep").length, 0);
+  });
+
+  it("calls the primary action once on the live link, and ships as partial with the known issue when it fails (LIVE_ACTION_CHECK)", async () => {
+    flags({});
+    const reason = "decide_next_step answered without its AI model (model: false): An AI model is unavailable right now.";
+    reset({ liveAction: { ok: false, reason } });
+    assert.deepEqual(await wf.buildProduct({ buildId: "t11" }), { status: "partial" });
+    assert.deepEqual(named("liveActionStep").map((c) => c.args[0]), [{ buildId: "t11", productId: "prod-1", sandboxName: "product-shelf-scout", url: "https://musemuse-shelf-scout.vercel.app" }]);
+    assert.equal((named("registerStep")[0]!.args[0] as { status: string }).status, "partial");
+    const end = named("setStatusStep").at(-1)!.args[2] as { message: string };
+    assert.equal(end.message, `Shipped as partial at https://musemuse-shelf-scout.vercel.app. It passed on the build machine, but failed on its live link: ${reason}`);
+    const order = calls.map((c) => c.step);
+    assert.ok(order.indexOf("pollDeployStep") < order.indexOf("liveActionStep") && order.indexOf("liveActionStep") < order.indexOf("registerStep"));
+  });
+
+  it("makes no action call when the route check already failed, when publishing is off, or with LIVE_ACTION_CHECK=0", async () => {
+    flags({ ENGINE_LIVE_SMOKE: "1" });
+    reset({ liveCheck: { ok: false, reason: "the page answered HTTP 500" } });
+    assert.deepEqual(await wf.buildProduct({ buildId: "t12" }), { status: "partial" });
+    assert.equal(named("liveActionStep").length, 0);
+    flags({});
+    reset({ publish: false });
+    assert.deepEqual(await wf.buildProduct({ buildId: "t13" }), { status: "live" });
+    assert.equal(named("liveActionStep").length, 0);
+    process.env.LIVE_ACTION_CHECK = "0";
+    try {
+      reset({});
+      assert.deepEqual(await wf.buildProduct({ buildId: "t14" }), { status: "live" });
+      assert.equal(named("liveActionStep").length, 0);
+    } finally {
+      delete process.env.LIVE_ACTION_CHECK;
+    }
+  });
+
+  it("doesn't start a fix round squeezed under 8 minutes, keeping its checks and shipping inside the wall", async () => {
+    flags({ ENGINE_ROUND_SCALING: "1" });
+    const real = Date.now;
+    clock = real();
+    Date.now = () => clock;
+    try {
+      // At minute 64 after the verify: 90 - 64 - 8 - 3 - 10 leaves 5 minutes, under a fix round's 8.
+      reset({ plan: plan(), verifies: [{ passed: false }, { passed: true }], advance: { previewStep: 56 * MIN, collectVerifyStep: 8 * MIN } });
+      assert.deepEqual(await wf.buildProduct({ buildId: "t15" }), { status: "failed" });
+      assert.deepEqual(starts().map((r) => r.promptFile), ["brief.md"]);
+      assert.ok(logs().includes("The build is near its time limit, so no more fix rounds run."));
+    } finally {
+      Date.now = real;
+    }
+  });
+
+  it("skips the demo recording at the wall, and ships", async () => {
+    flags({ ENGINE_ROUND_SCALING: "1" });
+    const real = Date.now;
+    clock = real();
+    Date.now = () => clock;
+    try {
+      reset({ plan: plan(), verifies: [{ passed: true }], advance: { previewStep: 80 * MIN, collectVerifyStep: 9 * MIN } });
+      assert.deepEqual(await wf.buildProduct({ buildId: "t16" }), { status: "live" });
+      assert.equal(named("demoSpecStep").length, 0);
+      assert.ok(logs().includes("The build is at its time limit, so the demo recording was skipped."));
+      assert.equal(named("registerStep").length, 1);
+    } finally {
+      Date.now = real;
+    }
   });
 
   it("takes exactly today's steps with every engine flag off", async () => {

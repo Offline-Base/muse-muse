@@ -399,11 +399,26 @@ export function CheckBody({ seg, live }: { seg: Extract<Segment, { type: "check"
 
 // ---------- Ship and outcomes ----------
 
-export function ShipBody({ status, liveUrl, slug, unpublished = false }: { status: "live" | "partial"; liveUrl: string | null; slug: string | null; unpublished?: boolean }) {
+export function ShipBody({
+  status,
+  liveUrl,
+  slug,
+  unpublished = false,
+  issues = [],
+}: {
+  status: "live" | "partial";
+  liveUrl: string | null;
+  slug: string | null;
+  unpublished?: boolean;
+  /** Known issues (lib/pipeline/known-issues.ts): the failed judge's mismatches and the live checks that failed. */
+  issues?: string[];
+}) {
   return (
     <div className="ship">
       <p>{unpublished ? (status === "live" ? "It's finished, but not online." : "Finished as partial, but not online.") : status === "live" ? "It's live." : "Shipped as partial."}</p>
-      {status === "partial" ? (
+      {issues.length ? (
+        <KnownIssues issues={issues} />
+      ) : status === "partial" ? (
         <p className="muted">
           The main page works, and some checks still fail for a documented reason. The limits are on the product page.
         </p>
@@ -427,6 +442,23 @@ export function ShipBody({ status, liveUrl, slug, unpublished = false }: { statu
           New muse
         </Link>
       </div>
+    </div>
+  );
+}
+
+/** What a shipped build still gets wrong, in the checks' own words. Never hidden behind a clean "It's live". */
+export function KnownIssues({ issues }: { issues: string[] }) {
+  if (!issues.length) return null;
+  return (
+    <div className="known-issues" role="note" aria-label="Known issues">
+      <p>
+        <strong>Known {issues.length === 1 ? "issue" : "issues"}</strong>
+      </p>
+      <ul>
+        {issues.map((issue) => (
+          <li key={issue}>{issue}</li>
+        ))}
+      </ul>
     </div>
   );
 }
