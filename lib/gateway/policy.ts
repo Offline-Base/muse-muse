@@ -98,6 +98,19 @@ export function keepsWonderUnderSwitch(token: { scope: string; allowedModels: re
   return token.allowedModels.includes("muse-gadget") || token.allowedModels.includes(BOARD_TOOLS_MARKER) || (slug != null && WONDER_DEMO_SLUGS.includes(slug));
 }
 
+/**
+ * POLISH_ENABLED: the allowedModels entry on the build token of a polish round (lib/polish/logic.ts), the owner's Nov 3
+ * exception. Not a model. Its Muse Wonder calls stay on Wonder under BUILDS_ON_CONTRIBUTOR and TEST_MODEL, at Wonder's price,
+ * inside the token's own polish budget. Only reopenStep mints it, and only on a build token: live tokens never carry it, so
+ * the product's own runtime calls are unchanged.
+ */
+export const POLISH_TOKEN_MARKER = "polish:wonder";
+
+/** Whether a token is a polish round's build token, whose Muse Wonder calls stay on Wonder. */
+export function polishKeepsWonder(token: { scope: string; allowedModels: readonly string[] }): boolean {
+  return token.scope === "build" && token.allowedModels.includes(POLISH_TOKEN_MARKER);
+}
+
 /** Audio input is a Muse Wonder ability Contributor doesn't list (catalog/meta-models.json). */
 export function needsWonderInput(json: { input?: unknown }): boolean {
   return JSON.stringify(json.input ?? "").includes('"input_audio"');

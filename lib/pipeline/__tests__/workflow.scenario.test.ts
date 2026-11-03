@@ -70,6 +70,8 @@ interface Scenario {
   edge?: boolean;
   /** The edge drill's exit code, or "hang" for a drill that never finishes. Defaults to 0. */
   drill?: number | "hang";
+  /** POLISH_ENABLED: loadRefineStep says this change is a polish round with these bounds. */
+  polish?: { maxUsd: number; productUsd: number; roundSteps: number; fixSteps: number; fixRounds: number };
 }
 
 /** The fake clock the workflow reads with Date.now while a scenario sets `advance`. */
@@ -264,6 +266,7 @@ const fakeSteps = {
       refineIndex: 1,
       ...(scenario.plan ? { plan: { ...scenario.plan, milestones: [] } } : {}),
       ...(scenario.edge ? { edge: true } : {}),
+      ...(scenario.polish ? { model: "muse-wonder-1.0", freshSession: true, polish: scenario.polish } : {}),
     };
   },
   reopenStep: async (input: unknown) => {
@@ -1591,3 +1594,47 @@ describe("LOOK_FIRST: the screens first, then the wiring (docs/LOOK_FIRST.md)", 
   });
 });
 
+describe("the polish round (POLISH_ENABLED)", () => {
+  const POLISH = { maxUsd: 4, productUsd: 0.8, roundSteps: 26, fixSteps: 14, fixRounds: 1 };
+  const head = { kind: "refine" as const, status: "queued", productId: "prod-1" };
+  const logs = () => named("emitStep").map((c) => c.args[1] as { type: string; text?: string }).filter((e) => e.type === "log").map((e) => e.text ?? "");
+
+  it("runs Muse Code on Wonder with its step cap, says its estimate first, and names Wonder on a pass", async () => {
+    reset({ head, polish: POLISH });
+    assert.deepEqual(await wf.refineProduct({ buildId: "p1" }), { status: "live" });
+    const first = named("startMuseStep")[0]!.args[0] as { model: string; maxModelSteps?: number };
+    assert.equal(first.model, "muse-wonder-1.0");
+    assert.equal(first.maxModelSteps, 26);
+    assert.deepEqual((named("reopenStep")[0]!.args[0] as { polish?: unknown }).polish, { productUsd: 0.8 });
+    assert.match(logs()[0] ?? "", /^Final pass on Muse Wonder: one round of up to 26 model steps/);
+    const final = named("setStatusStep").at(-1)!.args[2] as { message: string };
+    assert.match(final.message, /^UI pass by Muse Wonder\. Live at /);
+  });
+
+  it("gets one fix round at most, capped, and the live product is left alone when it still fails", async () => {
+    reset({ head, polish: POLISH, verifies: [{ passed: false }], chainReads: [{ costUsd: 1 }] });
+    assert.deepEqual(await wf.refineProduct({ buildId: "p2" }), { status: "failed" });
+    const runs = named("startMuseStep").map((c) => c.args[0] as { round: number; maxModelSteps?: number });
+    assert.deepEqual(runs.map((r) => [r.round, r.maxModelSteps]), [[10, 26], [11, 14]]);
+    const fail = named("failStep")[0]!.args[0] as { productId: string | null; message: string };
+    assert.equal(fail.productId, null);
+    assert.match(fail.message, /^The UI pass by Muse Wonder didn't ship, so nothing changed on the live product\. .*live version was kept/);
+    assert.equal(named("startDeployStep").length, 0);
+  });
+
+  it("runs no fix round once the round has spent its budget", async () => {
+    reset({ head, polish: POLISH, verifies: [{ passed: false }], chainReads: [{ costUsd: 4.2 }] });
+    assert.deepEqual(await wf.refineProduct({ buildId: "p3" }), { status: "failed" });
+    assert.equal(named("startMuseStep").length, 1);
+    assert.ok(logs().some((l) => /spent \$4\.20 of its \$4\.00 budget, so no fix round runs/.test(l)));
+  });
+
+  it("leaves every other change as it was: no step cap, no polish words, no budget reads", async () => {
+    reset({ head });
+    assert.deepEqual(await wf.refineProduct({ buildId: "p4" }), { status: "live" });
+    assert.equal((named("startMuseStep")[0]!.args[0] as { maxModelSteps?: number }).maxModelSteps, undefined);
+    assert.equal((named("reopenStep")[0]!.args[0] as { polish?: unknown }).polish, undefined);
+    assert.equal(named("chainReadStep").length, 0);
+    assert.ok(!logs().some((l) => /Muse Wonder/.test(l)));
+  });
+});

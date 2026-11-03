@@ -1023,3 +1023,23 @@ test("a test build's agent runs on the test model, but a live agent is still ref
   const err = await errorOf(await handleGateway(gatewayRequest("responses", spark(), JSON_CT), ["responses"], liveAgent.deps));
   assert.equal(err.code, "model_not_for_agents");
 });
+
+test("POLISH_ENABLED: a polish round's build token keeps Muse Wonder under the switch and TEST_MODEL, metered at its price", async () => {
+  const g = fakeGateway({ fetch: replyFetch, contributorRuntime: true, buildTestModel: TEST_MODEL_NAME, token: { scope: "build" as const, allowedModels: ["muse-wonder-1.0", "polish:wonder"] } });
+  const res = await handleGateway(gatewayRequest("responses", wonderCall(), JSON_CT), ["responses"], g.deps);
+  assert.equal(res.status, 200);
+  await g.settled();
+  assert.equal(sentModel(g), "muse-wonder-1.0");
+  assert.equal(g.usage[0]?.items[0]?.model, "muse-wonder-1.0");
+});
+
+test("POLISH_ENABLED: the marker does nothing on a live token, and a build token without it still runs on Contributor", async () => {
+  const live = fakeGateway({ fetch: replyFetch, contributorRuntime: true, token: { scope: "live" as const, allowedModels: ["muse-wonder-1.0", "runtime:contributor", "polish:wonder"] } });
+  assert.equal((await handleGateway(gatewayRequest("responses", wonderCall(), JSON_CT), ["responses"], live.deps)).status, 200);
+  await live.settled();
+  assert.equal(sentModel(live), TEST_MODEL_NAME);
+  const build = fakeGateway({ fetch: replyFetch, contributorRuntime: true, buildTestModel: TEST_MODEL_NAME, token: { scope: "build" as const, allowedModels: ["muse-wonder-1.0"] } });
+  assert.equal((await handleGateway(gatewayRequest("responses", wonderCall(), JSON_CT), ["responses"], build.deps)).status, 200);
+  await build.settled();
+  assert.equal(sentModel(build), TEST_MODEL_NAME);
+});

@@ -10,6 +10,7 @@ import { groupLog, type LogGroup, type Segment } from "@/components/build/derive
 import { DrillGroup } from "@/components/build/DrillGroup";
 import { splitDrillSteps } from "@/lib/edge/drills";
 import { splitBuildNote } from "@/lib/docs/build-note";
+import { isPolishMessage, POLISH_ROOM_TITLE } from "@/lib/polish/logic";
 import { costItemsOf, planMoney, runCostUsd } from "@/lib/brief/cost";
 import { briefKeepsWonder, compact, duration, modelLabel, plural, servedModelLabel, truncate, usd } from "@/lib/format";
 import type { Brief, Reference } from "@/lib/types";
@@ -45,6 +46,28 @@ export function UserTurn({
   showReferences: boolean;
 }) {
   const refs = showReferences ? (inspiration?.references ?? []) : [];
+  // The polish round (lib/polish/logic.ts): named plainly, with the platform's note folded away.
+  if (isPolishMessage(message)) {
+    return (
+      <li className="turn-user">
+        <h2 className="sr-only">Your muse</h2>
+        <p className="rebuild-tag">
+          <Icon name="sparkle" size={16} />
+          <span>{POLISH_ROOM_TITLE}</span>
+        </p>
+        <UserBubble text="A final UI pass to Meta's look, on Muse Wonder. Every feature stays as it is." attachments={[]} />
+        <details className="bubble-context">
+          <summary>What Muse Code was asked</summary>
+          {message
+            .split("\n")
+            .filter((line) => line.trim())
+            .map((line, i) => (
+              <p key={i}>{line}</p>
+            ))}
+        </details>
+      </li>
+    );
+  }
   const note = message ?? inspiration?.note ?? null;
   const { wish: text, context } = note ? splitBuildNote(note) : { wish: null, context: null };
   return (

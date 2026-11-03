@@ -759,6 +759,17 @@ export const env = {
   get lookFirst(): boolean {
     return flag("LOOK_FIRST");
   },
+  /**
+   * POLISH_ENABLED (owner, Nov 3): POST /api/builds/{id}/polish starts one refinement of a live product with Muse Code on
+   * Muse Wonder, a final UI pass, even under BUILDS_ON_CONTRIBUTOR (lib/polish/logic.ts). Off: the route answers 404.
+   */
+  get polishEnabled(): boolean {
+    return flag("POLISH_ENABLED");
+  },
+  /** POLISH_MAX_USD: the most one polish may spend on Meta, $4 by default. 0 refuses new polishes. */
+  get polishMaxUsd(): number {
+    return dollars("POLISH_MAX_USD", 4);
+  },
   /** LOOK_FIRST: how long the build waits on the screens for a change or a go before it wires them in by itself. */
   get lookWaitMs(): number {
     return Math.min(10 * 60_000, Math.max(15_000, number("LOOK_WAIT_SECONDS", 120) * 1000));

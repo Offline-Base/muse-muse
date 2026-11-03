@@ -31,6 +31,7 @@ import {
   CONTRIBUTOR_RUNTIME_MARKER,
   contributorSwitchRefusal,
   keepsWonderUnderSwitch,
+  polishKeepsWonder,
 } from "@/lib/gateway/policy";
 import { builtInToolCap, noteHeaderValue, rewriteResponsesRequest } from "@/lib/gateway/rewrite";
 import { holdRun, parseRunId, releaseRun, runLimitsFor, settleRun, type RunCounters, type RunHold } from "@/lib/gateway/runs";
@@ -295,7 +296,9 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
 
   // BUILDS_ON_CONTRIBUTOR: the owner's exceptions keep Wonder. Otherwise what Contributor can't serve stops here, before any swap.
   const switchApplies = deps.contributorRuntime === true && model === "muse-wonder-1.0" && parsed.kind === "json";
-  const keepsWonder = switchApplies && token.scope === "live" && keepsWonderUnderSwitch(token, await deps.productSlug?.(token.productId));
+  // POLISH_ENABLED: a polish round's build token keeps Wonder too (polishKeepsWonder), for that one change only.
+  const polishToken = polishKeepsWonder(token);
+  const keepsWonder = switchApplies && (polishToken || (token.scope === "live" && keepsWonderUnderSwitch(token, await deps.productSlug?.(token.productId))));
   if (switchApplies && !keepsWonder && parsed.kind === "json") {
     const refusal = contributorSwitchRefusal(parsed.json, token);
     if (refusal) return gatewayError(403, "invalid_request_error", refusal.code, refusal.message, { retry: false });
@@ -304,7 +307,7 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
   // Test builds only: a build's own product tests run on the cheap model, whatever the product's code asks for. The
   // product still names Muse Wonder, so it runs on Muse Wonder once it's live.
   const testRun = token.scope === "build" && Boolean(deps.buildTestModel);
-  if (testRun && deps.buildTestModel && model === "muse-wonder-1.0" && parsed.kind === "json") {
+  if (testRun && !polishToken && deps.buildTestModel && model === "muse-wonder-1.0" && parsed.kind === "json") {
     parsed = { ...parsed, json: { ...parsed.json, model: deps.buildTestModel }, model: deps.buildTestModel };
     model = deps.buildTestModel;
     rewritten = true;

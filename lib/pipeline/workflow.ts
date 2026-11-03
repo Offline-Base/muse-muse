@@ -7,7 +7,8 @@
  *                  -> outcome -> record (non-fatal) -> deploy -> register -> hibernate -> final status, with the
  *                  plan card's picture (PLAN_ART, non-fatal) made beside everything after the brief
  *   refineProduct: policy check -> reopen sandbox -> refine-<n>.md -> resume the Muse Code session -> same checks
- *                  and shipping, but only a change that passes every check ships
+ *                  and shipping, but only a change that passes every check ships. A polish round (POLISH_ENABLED,
+ *                  lib/polish/logic.ts) is a refinement on Muse Wonder held to step caps, one fix round and a budget
  *
  * The final status is written after hibernate, so a build only turns terminal (and a refinement can only start) once
  * its sandbox and build tokens are cleaned up.
@@ -89,6 +90,7 @@ import {
   type VerifyStepResult,
 } from "@/lib/pipeline/logic";
 import { NO_HELPERS, type HelperCount } from "@/lib/fast/fast";
+import { polishBudgetLine, polishEnding, polishRoomLine, type PolishPlan } from "@/lib/polish/logic";
 import { planArtStep } from "@/lib/pipeline/plan-art-step";
 import { stepsFeedStep } from "@/lib/pipeline/steps-feed-step";
 import { restoreFilesStep, restoreOutcomeStep } from "@/lib/pipeline/restore-steps";
@@ -186,6 +188,8 @@ interface Ctx {
   fast?: boolean;
   /** EDGE_ENABLED and the edge target: each verify in the checks is followed by the simulated outage drill. */
   edge?: boolean;
+  /** The polish round (lib/polish/logic.ts): step caps per run, one fix round at most, and a dollar budget. */
+  polish?: PolishPlan;
 }
 
 /** What the build room says when a round that hit its cap goes on to the checks (ENGINE_CHECK_ON_TIMEOUT). */
@@ -258,7 +262,7 @@ interface MuseRunEnd {
  */
 async function runMuse(
   ctx: Ctx,
-  run: { promptFile: string; images: string[]; round: number; capMs: number; lookOnly?: boolean },
+  run: { promptFile: string; images: string[]; round: number; capMs: number; lookOnly?: boolean; maxModelSteps?: number },
 ): Promise<MuseRunEnd> {
   const round = ctx.roundBase + run.round;
   const cmd = await startMuseStep({
@@ -272,6 +276,7 @@ async function runMuse(
     // A scaled round asks for its own session time (lib/sandbox/builder.ts startMuse). Today's rounds don't pass it.
     ...(ctx.plan ? { capMs: run.capMs } : {}),
     ...(run.lookOnly ? { lookOnly: true } : {}),
+    ...(run.maxModelSteps ? { maxModelSteps: run.maxModelSteps } : {}),
   });
   if (env.steeringEnabled) await museRoundStep(ctx.buildId, round);
   const startedAt = Date.now();
@@ -444,7 +449,9 @@ async function checkAndFix(ctx: Ctx, track: Track, kind: "build" | "refine", off
   // FAST_BUILDS: the requirement tests the last full check failed. Only the full check below can pass a build.
   let recheck: string[] = [];
   // A chain's rounds run past the stride on purpose (docs/CHAINED_BUILDS.md). startMuse keeps an earlier round's log.
-  const rounds = ctx.chain ? maxFixRounds() : Math.min(maxFixRounds(), REFINE_ROUND_STRIDE - 1 - offset);
+  const most = ctx.chain ? maxFixRounds() : Math.min(maxFixRounds(), REFINE_ROUND_STRIDE - 1 - offset);
+  // The polish round: one fix round at most (lib/polish/logic.ts).
+  const rounds = ctx.polish ? Math.min(most, ctx.polish.fixRounds) : most;
   for (let fix = 0; ; ) {
     const round = offset + fix;
     track.stage = "verify";
@@ -485,6 +492,14 @@ async function checkAndFix(ctx: Ctx, track: Track, kind: "build" | "refine", off
       await emitStep(ctx.buildId, { type: "log", text: `The chain reached its $${ctx.plan.chain.totalUsd} spending cap, so no more fix rounds run.` });
       return { passed, steps: verify.steps, fixes: fix, judge: judged };
     }
+    // The polish round's budget holds the same way: no fix round once the round has spent it.
+    if (ctx.polish) {
+      const spent = (await chainReadStep(ctx.buildId)).costUsd;
+      if (spent >= ctx.polish.maxUsd) {
+        await emitStep(ctx.buildId, { type: "log", text: polishBudgetLine(ctx.polish, spent) });
+        return { passed, steps: verify.steps, fixes: fix, judge: judged };
+      }
+    }
 
     fix += 1;
     track.stage = "fix";
@@ -502,7 +517,7 @@ async function checkAndFix(ctx: Ctx, track: Track, kind: "build" | "refine", off
     await assertSpendOk();
     // A fix run that hits its cap is still checked: it may have fixed enough before it was stopped. One its owner
     // stopped is not, and no fix round comes after it.
-    const fixed = await runMuse(ctx, { promptFile: prompt.promptFile, images: prompt.images, round: offset + fix, capMs: fixCap });
+    const fixed = await runMuse(ctx, { promptFile: prompt.promptFile, images: prompt.images, round: offset + fix, capMs: fixCap, ...(ctx.polish ? { maxModelSteps: ctx.polish.fixSteps } : {}) });
     if (fixed.stopped) throw stoppedByOwner(kind);
   }
 }
@@ -1017,6 +1032,7 @@ export async function refineProduct(input: BuildProductInput): Promise<BuildProd
   let productId: string | null = null;
   let sandboxName: string | null = null;
   let ending: Ending;
+  let polish: PolishPlan | null = null;
   try {
     const head = await loadBuildStep(buildId);
     if (TERMINAL_STATUSES.includes(head.status)) return { status: head.status };
@@ -1039,7 +1055,14 @@ export async function refineProduct(input: BuildProductInput): Promise<BuildProd
     const refine = await loadRefineStep(buildId);
     productId = refine.productId;
     sandboxName = refine.sandboxName;
-    const reopened = await reopenStep({ buildId, productId, sandboxName, refineIndex: refine.refineIndex, freshSession: refine.freshSession });
+    const reopened = await reopenStep({
+      buildId,
+      productId,
+      sandboxName,
+      refineIndex: refine.refineIndex,
+      freshSession: refine.freshSession,
+      ...(refine.polish ? { polish: { productUsd: refine.polish.productUsd } } : {}),
+    });
     const ctx: Ctx = {
       buildId,
       productId,
@@ -1051,7 +1074,11 @@ export async function refineProduct(input: BuildProductInput): Promise<BuildProd
       wallMs: buildWallMs(refine.plan),
       ...(refine.plan ? { plan: refine.plan } : {}),
       ...(refine.edge ? { edge: true } : {}),
+      ...(refine.polish ? { polish: refine.polish } : {}),
     };
+    polish = refine.polish ?? null;
+    // The polish round says what it runs on and what it may spend before anything spends.
+    if (refine.polish) await emitStep(buildId, { type: "log", text: polishRoomLine(refine.polish) });
 
     track.stage = "build";
     await setStatusStep(buildId, "building", { step: "build" });
@@ -1062,6 +1089,7 @@ export async function refineProduct(input: BuildProductInput): Promise<BuildProd
       images: reopened.images,
       round: 0,
       capMs: firstCap,
+      ...(refine.polish ? { maxModelSteps: refine.polish.roundSteps } : {}),
     });
     if (built.stopped) throw stoppedByOwner("refine");
     // A change stopped at its cap stops here even with ENGINE_CHECK_ON_TIMEOUT: the judge checks the product's brief,
@@ -1089,6 +1117,8 @@ export async function refineProduct(input: BuildProductInput): Promise<BuildProd
   } catch (err) {
     ending = { status: "failed", message: failureMessage(track.stage, err) };
   }
+  // The polish round's last word names the model that did the pass, or says plainly that nothing changed.
+  if (polish) ending = { ...ending, message: polishEnding(ending.status, ending.message) };
   lastStepsFeed(buildId);
   if (sandboxName) await cleanup({ buildId, productId, sandboxName });
   const proof = await planProof(buildId, ending);

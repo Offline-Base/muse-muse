@@ -19,6 +19,11 @@ const ROOT = path.join(import.meta.dirname, "../..");
 
 /** The owner's approved exception, on branch tg-wonder-loop. These two files may call Wonder, and no others. */
 const WONDER_CHECK = ["lib/wonder/loop.ts", "lib/pipeline/wonder-step.ts"];
+/**
+ * The owner's Nov 3 exception: the polish round (POLISH_ENABLED), one refinement of a live product with Muse Code on Wonder.
+ * Its one pick of the id, POLISH_MODEL. Tested below: only a polish row gets it.
+ */
+const POLISH = ["lib/polish/logic.ts"];
 
 /** Every other file that names the id, and why that isn't a model pick. */
 const NOT_A_PICK: Record<string, string> = {
@@ -147,6 +152,32 @@ describe("with the switch on", () => {
   });
 });
 
+describe("the polish round under the switch", () => {
+  it("moves only its own change to Wonder, in a fresh session, and every other change stays on Contributor", async () => {
+    const { buildTestModel } = await import("@/lib/env");
+    const { refineRoute } = await import("@/lib/pipeline/logic");
+    const { POLISH_MODEL } = await import("@/lib/polish/logic");
+    assert.equal(POLISH_MODEL, WONDER);
+    assert.deepEqual(refineRoute(CONTRIBUTOR, buildTestModel(), POLISH_MODEL), { model: WONDER, freshSession: true });
+    assert.deepEqual(refineRoute(WONDER, buildTestModel(), POLISH_MODEL), { model: WONDER, freshSession: false });
+    assert.deepEqual(refineRoute(CONTRIBUTOR, buildTestModel()), { model: CONTRIBUTOR, freshSession: false });
+    assert.deepEqual(refineRoute(WONDER, buildTestModel()), { model: CONTRIBUTOR, freshSession: true });
+  });
+
+  it("only a build token with the polish marker keeps Wonder; live tokens with it don't", async () => {
+    const { keepsWonderUnderSwitch, polishKeepsWonder, POLISH_TOKEN_MARKER } = await import("@/lib/gateway/policy");
+    assert.equal(polishKeepsWonder({ scope: "build", allowedModels: [WONDER, POLISH_TOKEN_MARKER] }), true);
+    assert.equal(polishKeepsWonder({ scope: "build", allowedModels: [WONDER] }), false);
+    assert.equal(polishKeepsWonder({ scope: "live", allowedModels: [WONDER, POLISH_TOKEN_MARKER] }), false);
+    assert.equal(keepsWonderUnderSwitch({ scope: "build", allowedModels: [WONDER, POLISH_TOKEN_MARKER] }, "x"), false);
+  });
+
+  it("the polish pick is reached only from a polish row (polishOverride in build-steps)", () => {
+    const steps = readFileSync(path.join(ROOT, "lib/pipeline/build-steps.ts"), "utf8");
+    assert.match(steps, /isPolishMessage\(build\.message\) && build\.buildModel === POLISH_MODEL \? POLISH_MODEL : null/);
+  });
+});
+
 describe("results and new builds under the switch", () => {
   it("a result judged on Contributor says its scores don't compare, and one judged on Wonder says nothing", async () => {
     const { judgeComparabilityNote } = await import("@/components/train/format");
@@ -166,7 +197,7 @@ describe("the id in code", () => {
   const naming = files.filter((f) => readFileSync(path.join(ROOT, f), "utf8").includes(WONDER));
 
   it("appears only where this file says why", () => {
-    const unexplained = naming.filter((f) => !NOT_A_PICK[f] && !WONDER_CHECK.includes(f));
+    const unexplained = naming.filter((f) => !NOT_A_PICK[f] && !WONDER_CHECK.includes(f) && !POLISH.includes(f));
     assert.deepEqual(unexplained, [], "A new use of Muse Wonder: route it through defaultModel(), or add why it isn't a model pick");
   });
 

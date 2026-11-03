@@ -22,7 +22,8 @@ import { SPARK_STANDIN, WONDER_SERVED_BY_ENV, wonderServedBy } from "@/lib/meta/
 import { BOARD_TOOLS_MARKER } from "@/lib/caps/hardware/limits";
 import { CREDITS_STEP, creditsInSource, withModelCredits } from "@/lib/verify/model-credits";
 import { addBuildCost, emit, setBuildStatus } from "@/lib/events";
-import { buildTokenBudgetFor } from "@/lib/gateway/policy";
+import { buildTokenBudgetFor, POLISH_TOKEN_MARKER } from "@/lib/gateway/policy";
+import { isPolishMessage, POLISH_MODEL, polishPlan, type PolishPlan } from "@/lib/polish/logic";
 import { mintToken, revokeLiveTokensExcept, revokeTokens } from "@/lib/gateway/tokens";
 import { judgeBuild, type JudgeSample, MAX_CHAIN_SCREENSHOTS, pickScreenshots } from "@/lib/judge";
 import { APP_NAV_COMPONENT, FULL_PRODUCT_SKILL } from "@/lib/full/prompts";
@@ -840,6 +841,8 @@ export async function startMuseStep(input: {
   capMs?: number;
   /** LOOK_FIRST: a screens-only round, which gets no session goal, since the goal is the whole build. */
   lookOnly?: boolean;
+  /** The polish round's step cap for this run (lib/polish/logic.ts). Every other run has MAX_MODEL_STEPS. */
+  maxModelSteps?: number;
 }): Promise<MuseRun> {
   "use step";
   const engine = env.museEngine;
@@ -854,7 +857,7 @@ export async function startMuseStep(input: {
     images: input.images,
     model: input.model,
     round: input.round,
-    maxModelSteps: MAX_MODEL_STEPS,
+    maxModelSteps: input.maxModelSteps ? Math.min(MAX_MODEL_STEPS, input.maxModelSteps) : MAX_MODEL_STEPS,
     engine,
     goal: build?.brief && !input.lookOnly ? goalObjective(build.brief, { ...(fullBuildOf(build.brief) ? { fullBuild: true } : {}), ...(requiredAgentsOf(build.brief) ? { requiredAgents: true } : {}) }) : null,
     ...(buildId ? { buildId } : {}),
@@ -1975,6 +1978,16 @@ export interface RefineContext {
   plan?: RoundPlan;
   /** EDGE_ENABLED and the edge target: verify is followed by the simulated outage drill. */
   edge?: boolean;
+  /** The polish round (lib/polish/logic.ts): Muse Code on Muse Wonder for this change, held to these bounds. */
+  polish?: PolishPlan;
+}
+
+/**
+ * The model override of a polish round: its row's message is a polish note and its build_model was set to Muse Wonder
+ * when the row was made (insertRefineBuild, from POST /api/builds/{id}/polish). Null for every other build.
+ */
+function polishOverride(build: { kind: string; message: string | null; buildModel: string | null }): typeof POLISH_MODEL | null {
+  return build.kind === "refine" && isPolishMessage(build.message) && build.buildModel === POLISH_MODEL ? POLISH_MODEL : null;
 }
 
 /**
@@ -2041,7 +2054,9 @@ export async function loadRefineStep(buildId: string, opts: { restore?: boolean 
     .where(and(eq(schema.builds.productId, product.id), eq(schema.builds.museSessionId, product.museSessionId), ne(schema.builds.id, buildId)))
     .orderBy(desc(schema.builds.startedAt))
     .limit(1);
-  const { model, freshSession } = refineRoute(sessionRow?.buildModel ?? previous?.buildModel, opts.restore ? null : buildTestModel());
+  // The polish round (POLISH_ENABLED) runs this one change on Muse Wonder, switch or not. A retry reads the same row.
+  const override = opts.restore ? null : polishOverride(build);
+  const { model, freshSession } = refineRoute(sessionRow?.buildModel ?? previous?.buildModel, opts.restore ? null : buildTestModel(), override);
   // A retried step keeps the new session it already chose.
   const sessionId = freshSession ? (build.museSessionId && build.museSessionId !== product.museSessionId ? build.museSessionId : newSessionId()) : product.museSessionId;
   // Wave 3, unit 3: the row gets the brief as stored, every cap block kept; the plan uses the working copy (2.4a).
@@ -2072,6 +2087,7 @@ export async function loadRefineStep(buildId: string, opts: { restore?: boolean 
     refineIndex: Math.max(1, Number(n)),
     ...(plan ? { plan } : {}),
     ...(brief && isEdgeBuild(brief) ? { edge: true } : {}),
+    ...(override ? { polish: polishPlan(env.polishMaxUsd, buildTokenBudgetFor()) } : {}),
   };
 }
 
@@ -2098,6 +2114,8 @@ export async function reopenStep(input: {
   sandboxName: string;
   refineIndex: number;
   freshSession?: boolean;
+  /** The polish round: its build token keeps Muse Wonder (POLISH_TOKEN_MARKER) and holds the product's calls to this budget. */
+  polish?: { productUsd: number };
 }): Promise<{ promptFile: string; images: string[] }> {
   "use step";
   const build = await loadBuild(input.buildId);
@@ -2112,8 +2130,8 @@ export async function reopenStep(input: {
   const { token } = await mintToken({
     productId: input.productId,
     scope: "build",
-    allowedModels,
-    dailyBudgetUsd: buildTokenBudgetFor(),
+    allowedModels: input.polish ? [...allowedModels, POLISH_TOKEN_MARKER] : allowedModels,
+    dailyBudgetUsd: input.polish ? Math.min(buildTokenBudgetFor(), input.polish.productUsd) : buildTokenBudgetFor(),
     ttlHours: BUILD_TOKEN_TTL_HOURS,
     ...(caps ? { buildId: input.buildId } : {}),
   });

@@ -9,6 +9,7 @@ import { errorJson, isUuid, readJson, route } from "@/lib/http";
 import { attachRun, insertRefineBuild, markStartFailed } from "@/lib/pipeline/records";
 import { MAX_NOTE_CHARS, validateReferences } from "@/lib/pipeline/references";
 import { refineProduct } from "@/lib/pipeline/workflow";
+import { isPolishMessage } from "@/lib/polish/logic";
 import { checkBuildAllowed } from "@/lib/quota";
 
 type Ctx = { params: Promise<{ buildId: string }> };
@@ -28,6 +29,8 @@ export const POST = route(async (req: Request, { params }: Ctx) => {
   const message = typeof body.message === "string" ? body.message.trim() : "";
   if (!message) return errorJson(400, "Say what to change.");
   if (message.length > MAX_NOTE_CHARS) return errorJson(400, `Keep the message under ${MAX_NOTE_CHARS} characters.`);
+  // Only POST /api/builds/{id}/polish writes the polish note, so a change can't pass as one.
+  if (isPolishMessage(message)) return errorJson(400, "Say what to change in your own words.");
 
   const [build] = await db()
     .select({ productId: schema.builds.productId })

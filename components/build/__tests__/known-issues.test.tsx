@@ -36,4 +36,16 @@ describe("ShipBody's known issues", { skip: canMock ? false : "needs --experimen
     const partial = renderToStaticMarkup(createElement(turns.ShipBody, { status: "partial", liveUrl: null, slug: null }));
     assert.match(partial, /some checks still fail for a documented reason/);
   });
+
+  it("names a polish round plainly and folds the platform's note away; a person's change renders as before", async () => {
+    const { polishNote } = await import("@/lib/polish/logic");
+    const html = renderToStaticMarkup(createElement(turns.UserTurn, { inspiration: null, message: polishNote("Tabs clip."), rebuild: null, showReferences: false }));
+    assert.match(html, /Final pass on Muse Wonder/);
+    assert.match(html, /A final UI pass to Meta&#x27;s look, on Muse Wonder\. Every feature stays as it is\./);
+    assert.match(html, /<details class="bubble-context"><summary>What Muse Code was asked<\/summary>/);
+    assert.match(html, /<p>Tabs clip\.<\/p>/);
+    const plain = renderToStaticMarkup(createElement(turns.UserTurn, { inspiration: null, message: "Add a dark mode", rebuild: null, showReferences: false }));
+    assert.doesNotMatch(plain, /Muse Wonder/);
+    assert.match(plain, /Add a dark mode/);
+  });
 });

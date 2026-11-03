@@ -57,6 +57,8 @@ export async function insertRefineBuild(input: {
   message: string;
   references: Reference[];
   buildId?: string;
+  /** A per-build model override, set only by the polish round (lib/polish/logic.ts). Null leaves loadRefineStep to choose. */
+  buildModel?: string | null;
 }): Promise<{ buildId: string; inspirationId: string } | null> {
   const inspirationId = randomUUID();
   const buildId = input.buildId ?? randomUUID();
@@ -73,9 +75,9 @@ export async function insertRefineBuild(input: {
           where ${notBusy}`,
     ),
     db().execute(
-      sql`insert into builds (id, inspiration_id, user_id, kind, message, rebuild_of, product_id, status, requested_targets)
+      sql`insert into builds (id, inspiration_id, user_id, kind, message, rebuild_of, product_id, status, build_model, requested_targets)
           select ${buildId}::uuid, ${inspirationId}::uuid, ${input.userId}::uuid, 'refine', ${input.message}::text,
-                 ${input.rebuildOf}::text, ${input.productId}::uuid, 'queued',
+                 ${input.rebuildOf}::text, ${input.productId}::uuid, 'queued', ${input.buildModel ?? null}::text,
                  (select original.requested_targets from builds original
                   where original.product_id = ${input.productId}::uuid and original.kind = 'build'
                   order by original.created_at desc limit 1)

@@ -223,8 +223,11 @@ export function refineBuildModel(previous: string | null | undefined): BuildMode
  * moves to Contributor in a new session, since a session's reasoning records belong to its model and can't carry over.
  * The new session has no memory of the product, so its prompt tells it to read the code first.
  */
-export function refineRoute(sessionModel: string | null | undefined, test: string | null): { model: BuildModel; freshSession: boolean } {
+export function refineRoute(sessionModel: string | null | undefined, test: string | null, override: BuildModel | null = null): { model: BuildModel; freshSession: boolean } {
   const model = refineBuildModel(sessionModel);
+  // A per-build override (the polish round, lib/polish/logic.ts) wins over the switch for this one change. A session on
+  // another model can't carry over, so it starts fresh.
+  if (override) return { model: override, freshSession: model !== override };
   if (test !== SPARK_STANDIN || model === SPARK_STANDIN) return { model, freshSession: false };
   return { model: SPARK_STANDIN, freshSession: true };
 }

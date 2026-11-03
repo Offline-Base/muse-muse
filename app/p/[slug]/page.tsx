@@ -43,6 +43,7 @@ import { panelLinkOrigin, publicSiteOrigin } from "@/lib/native/product-view";
 import { briefTargets } from "@/lib/native/targets";
 import { enabledFrameBrief, liveFrameAllow, liveFrameSandbox } from "@/lib/product-frame";
 import { buildHighlights, currentUser, getProductPage, platformOrigin, rebuildRef, safeQuery } from "@/lib/queries";
+import { changeLabel, passedPolish, POLISH_LABEL } from "@/lib/polish/logic";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
@@ -92,6 +93,8 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const rebuild = rebuildRef(product.rebuildOf);
   const highlights = buildHighlights(events, latestBuild);
   const issues = knownIssues(events, product.status);
+  // The polish round (lib/polish/logic.ts): said plainly once one has shipped. Null for every other product.
+  const polished = passedPolish(history);
   // An edge build's simulated outage drills, from the newest round that ran them. Null for every other build.
   const drills = latestDrills(events.flatMap((e) => (e.type === "verify" ? [e.summary] : [])));
   const models: Array<{ id: string; usedFor: string }> = manifest?.models?.length
@@ -443,6 +446,12 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
 
           <section className="panel-section">
             <h2 className="panel-label">How it was built</h2>
+            {polished ? (
+              <p className="small">
+                <Link href={`/b/${polished.id}`}>{POLISH_LABEL}</Link>
+                <span className="muted"> · {relativeTime(polished.startedAt, now)}</span>
+              </p>
+            ) : null}
             {highlights.length ? (
               <ul className="plain-list">
                 {highlights.map((h, i) => (
@@ -478,7 +487,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
                 {history.map((h) => (
                   <li key={h.id}>
                     <Link href={`/b/${h.id}`}>
-                      {h.kind === "refine" ? truncate(h.message ?? "Change", 48) : "First build"}
+                      {h.kind === "refine" ? truncate(changeLabel(h.message, "Change"), 48) : "First build"}
                     </Link>
                     <span className="muted small">
                       {statusLabel(h.status)} · {relativeTime(h.startedAt, now)}

@@ -1019,6 +1019,40 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       writes = [];
       assert.equal(await refineOn(undefined), "muse-spark-1.3-contributor");
     });
+
+    it("POLISH_ENABLED: a polish row runs on Muse Wonder in a fresh session under the switch, with its bounds, and a look-alike doesn't", async () => {
+      const { polishNote } = await import("@/lib/polish/logic");
+      const rows = (row: Record<string, unknown>) => ({
+        builds: [
+          [{ id: "r1", kind: "refine", productId: "prod-1", brief: BRIEF, startedAt: new Date(), ...row }],
+          [{ n: 1 }],
+          [{ buildModel: "muse-spark-1.3-contributor" }],
+          [{ buildModel: "muse-spark-1.3-contributor" }],
+        ],
+        products: [[{ id: "prod-1", name: "Bird Count", tagline: "Count birds", sandboxName: "sb", museSessionId: "sess" }]],
+      });
+      const old = process.env.BUILDS_ON_CONTRIBUTOR;
+      process.env.BUILDS_ON_CONTRIBUTOR = "1";
+      try {
+        selects = rows({ message: polishNote(), buildModel: "muse-wonder-1.0" });
+        const out = await steps.loadRefineStep("r1");
+        assert.equal(out.model, "muse-wonder-1.0");
+        assert.equal(out.freshSession, true);
+        assert.deepEqual(out.polish, { maxUsd: 4, productUsd: 0.8, roundSteps: 26, fixSteps: 14, fixRounds: 1 });
+        assert.equal(writes.find((w) => w.table === "builds")!.values.buildModel, "muse-wonder-1.0");
+        // The note without the row's override, or the override on a person's note: an ordinary change on Contributor.
+        for (const row of [{ message: polishNote(), buildModel: null }, { message: "Dark mode", buildModel: "muse-wonder-1.0" }]) {
+          writes = [];
+          selects = rows(row);
+          const plain = await steps.loadRefineStep("r1");
+          assert.equal(plain.model, "muse-spark-1.3-contributor");
+          assert.equal(plain.polish, undefined);
+        }
+      } finally {
+        if (old === undefined) delete process.env.BUILDS_ON_CONTRIBUTOR;
+        else process.env.BUILDS_ON_CONTRIBUTOR = old;
+      }
+    });
   });
 
   describe("refineCheckStep", () => {
@@ -1145,6 +1179,24 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       assert.match(full, /Stay within the agent capacity the run allows/);
       const plain = await fixPrompt({ MUSE_ENGINE: undefined, MUSE_FULL: undefined });
       assert.doesNotMatch(plain, /get_goal|The build's owner|agent capacity|subagent/);
+    });
+
+    it("POLISH_ENABLED: a polish's build token carries the marker and its budget, and another change's doesn't", async () => {
+      const reopen = (polish?: { productUsd: number }) => {
+        selects = {
+          builds: [[{ id: "r1", kind: "refine", productId: "prod-1", message: "Add a dark mode", inspirationId: "i", brief: { ...BRIEF, capabilities: [{ model: "muse-spark-1.3" }] } }]],
+          inspirations: [[{ note: null, references: [] }]],
+        };
+        return steps.reopenStep({ buildId: "r1", productId: "prod-1", sandboxName: "sb", refineIndex: 2, ...(polish ? { polish } : {}) });
+      };
+      minted.length = 0;
+      await reopen({ productUsd: 0.8 });
+      assert.ok((minted[0]!.allowedModels as string[]).includes("polish:wonder"));
+      assert.equal(minted[0]!.dailyBudgetUsd, 0.8);
+      minted.length = 0;
+      await reopen();
+      assert.ok(!(minted[0]!.allowedModels as string[]).includes("polish:wonder"));
+      assert.equal(minted[0]!.dailyBudgetUsd, 10);
     });
 
     it("tells a change the same, since the product's sandbox keeps the AGENTS.md it was built with", async () => {

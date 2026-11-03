@@ -8,6 +8,7 @@ import { ModelChips, StatusPill } from "@/components/ui";
 import { RAIL, type RailStep, type RailState, type RoomState } from "@/components/build/derive";
 import type { BuildSummary } from "@/components/view-types";
 import { compact, duration, relativeTime, statusLabel, truncate, usd } from "@/lib/format";
+import { changeLabel } from "@/lib/polish/logic";
 
 const RAIL_STATE_LABEL: Record<RailState, string> = {
   pending: "Not started",
@@ -195,7 +196,7 @@ export function BuildDetails(p: BuildDetailsProps) {
                 <Link className="menu-item" href={`/b/${h.id}`} aria-current={h.id === p.buildId ? "page" : undefined}>
                   <span className={`pill-dot dot-${h.status}`} aria-hidden />
                   <span className="menu-item-text">
-                    <span>{h.kind === "refine" ? truncate(h.message ?? "Change", 40) : "First build"}</span>
+                    <span>{h.kind === "refine" ? truncate(changeLabel(h.message, "Change"), 40) : "First build"}</span>
                     <span className="muted small">
                       {statusLabel(h.status)} · {relativeTime(h.startedAt, p.now)}
                     </span>
