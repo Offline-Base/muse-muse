@@ -2637,3 +2637,15 @@ Three branches built in parallel worktrees, each reviewed adversarially, then me
   - Typecheck clean on the combined branch.
   - `lib/edge/template-source.ts` regenerates with no change after the merge.
 - **Spend:** $0.
+
+## Nov 2, 2026, night: the rover on real hardware (Hussam's UNO Q, branch rover-kit)
+
+- **One-go setup, for real:** `setupRover("ArduinoQ-01")` from this branch's code against the real fleet sent the kit in parts through `exec` and ran setup-rover.sh. Every step passed (tools, user, config, groups, packages, files, autostart, app, default app, server, self-test), with the sketch built and loaded by arduino-app-cli and made the default app. Self-test: tools offered, sketch answering ("muse-rover 1"), servos centered, ranges read (front 570 mm, right 465 mm, left clear), both wheels pulsed, photo skipped with no camera attached. Reruns with a changed setting took 82 to 85 s.
+- **Driving through the fleet's device route:** drives answered in about 1 s each once the token was read (about 4 to 5 s for the first call). Chaining 2.5 s drives with `wait: false` gave about 10 s of continuous driving. Every drive ended by itself at its time.
+- **The safety stop fired on its own:** "something is 115 mm ahead, closer than the 150 mm stop distance". It coasted to 68 mm, so about 5 cm of stopping distance at medium speed, which argues for raising `stop_mm` before a demo.
+- **Real-world fixes found:**
+  - The left motor runs reversed on this build, so `invert.left` is true in rover.json. I got this wrong once from a sensor reading, and it took a person watching the wheels to settle.
+  - At full speed the front VL53L0X dropped out for a moment and the rover cut its motors ("the front distance sensor isn't answering"), most likely motor noise on SDA/SCL. For testing, `need_front_sensor` is false on the board, so the 150 mm stop still works while the front sensor answers. It should go back to true once the motor wires are twisted and routed away from the sensor wires, or 104 capacitors are across AO and BO.
+  - The leader lost `ArduinoQ-01.local` once (getent timed out). Restarting avahi-daemon on the UNO Q fixed it. Worth a fallback in the device route if it repeats.
+  - The rover circled because the chassis's swivel caster was stiff and stuck at an angle, not the motors. A single-wheel floor test showed both sides pushing about equally, and lifting the caster made it drive straight.
+- **Not tried:** the camera (it needs a USB-C hub with PD pass-through), the pan-tilt under its own battery, and Wonder or the /device drive pad on a deployment.
