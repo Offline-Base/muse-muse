@@ -3038,6 +3038,15 @@ Hussam's goal included a product that Muse Muse builds and that answers from the
 - **For the owner:** to make "built by Muse, answers on the board" true without a hand-written spec, the template needs a SAM board helper (say `EDGE_SAM_URL` in `lib/meta/edge.ts` and the muse-edge skill, shipped as edge extra files). It also needs SAM drills in `edge-fake.mjs` and `edge-drill.mjs`, and a forwarder so a hosted product can reach the board.
 - **Spend:** $0.061 on the preview. About 20 exec jobs on jetson-04 for the runs, plus read-only checks. Nothing on any board was changed.
 
+## Nov 2, 2026, night: the plan to win, the owner's answers, and the new video script (branch tg-video-v2)
+
+- **Review:** a full read of main against the rubric (Impact 30, Meta tooling 25, technical depth 20, demo 25) and the organizers' Nov 2 note that judges work mainly from the video and the public repo. Findings: the story was spread across six products, the old script leaned on the least-proven claim and said "hasn't run yet" about eight times, the repo was private with a README that opened with what hadn't run, and 8 gallery products looked like the organizers' "skip these" list.
+- **Live site check:** `node scripts/judge-check.mjs`, GETs only: 157 pages opened, all 200; 31 gallery products, all with a working live link. No problems found.
+- **Owner's answers:** two rounds on the plan-to-win page (claude.ai artifact, answers saved there). Summarized in docs/HANDOFF.md, "Owner decisions, Nov 2 night".
+- **Started from it, each on its own branch and PR:** Muse Spark Open on Fireworks for products (tg-spark-open), SAM 3.1 board fallback for edge builds (tg-edge-vision), LICENSE and gallery hiding then a Meta-only tree (tg-public-ready, tg-meta-only-tree), the owner's keys in builds (tg-build-keys), the Muse Privacy rerun on Glimmer (tg-privacy-glimmer).
+- **docs/VIDEO.md rewritten** to the owner's story: Zuckerberg's line, before and after, who it's for, the build, the product, Muse Privacy, where it ran, cable out on jetson-04 with SAM 3.1, under the hood, close. Numbers that don't exist yet are placeholders filled from this log. The old script is at `git show 282c0d87:docs/VIDEO.md`.
+- **Housekeeping:** free disk was 4.5 GB; regenerable code copies in an old scratch folder and an idle `.next` were deleted (5.9 GB free after). Folders holding tuned adapters were kept.
+- Spend $0.
 ## Nov 2, 2026: Modal builder image made, then Modal turned off (owner)
 
 - **Builder image:** `scripts/dev/modal-builder-image.ts` ran once. Setup took 107 s, Muse Code 1.4.14. Image `im-01M6FGSPQRD2PRHRMED38G4MD0`.
