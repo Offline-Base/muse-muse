@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { builtInToolCap, noteHeaderValue, productSafetyIdentifier, rewriteResponsesRequest } from "@/lib/gateway/rewrite";
+import { builtInToolCap, noteHeaderValue, productSafetyIdentifier, rewriteResponsesRequest, STRUCTURED_OUTPUT_MIN_TOKENS } from "@/lib/gateway/rewrite";
 
 const PRODUCT = "00000000-0000-4000-8000-000000000002";
 const token = (scope: "build" | "live", agent = false) => ({
@@ -117,4 +117,39 @@ test("the note header is one printable line, capped, and absent when nothing was
   assert.equal(noteHeaderValue([]), null);
   assert.equal(noteHeaderValue(["a\nb", "café"]), "a b caf");
   assert.equal(noteHeaderValue(["x".repeat(2000)])?.length, 1000);
+});
+
+test("a structured reply gets room to finish: a low max_output_tokens is raised to 4,000, with a note", () => {
+  assert.equal(STRUCTURED_OUTPUT_MIN_TOKENS, 4_000);
+  const schema = { text: { format: { type: "json_schema", name: "file_memo", strict: true, schema: { type: "object" } } } };
+  // The Nov 3 audit's two products: file_memo and prove_item at 900, sim-desk's step at 400.
+  for (const asked of [400, 900, 3_999]) {
+    for (const t of [token("build"), live, token("live", true)]) {
+      const r = rewriteResponsesRequest(wonder({ ...schema, max_output_tokens: asked }), { token: t });
+      assert.equal(r.json.max_output_tokens, 4_000, `${t.scope} ${asked}`);
+      assert.match(r.notes.join(" "), new RegExp(`Set max_output_tokens to 4000 \\(it was ${asked}\\): reasoning counts against it`));
+    }
+  }
+  const jsonObject = rewriteResponsesRequest(wonder({ text: { format: { type: "json_object" } }, max_output_tokens: 600 }), { token: live });
+  assert.equal(jsonObject.json.max_output_tokens, 4_000, "json_object is cut off the same way");
+});
+
+test("the structured floor leaves everything else as it was", () => {
+  const schema = { text: { format: { type: "json_schema", name: "x", schema: { type: "object" } } } };
+  const cases: Array<[string, Record<string, unknown>, unknown]> = [
+    ["plain text keeps a low cap", { max_output_tokens: 300 }, 300],
+    ["text format type text keeps it", { text: { format: { type: "text" } }, max_output_tokens: 300 }, 300],
+    ["a structured call with no cap stays without one", { ...schema }, undefined],
+    ["a structured call at the floor stays", { ...schema, max_output_tokens: 4_000 }, 4_000],
+    ["a structured call above it stays", { ...schema, max_output_tokens: 12_000 }, 12_000],
+    ["a value it can't read is Meta's to refuse", { ...schema, max_output_tokens: "900" }, "900"],
+  ];
+  for (const [name, extra, want] of cases) {
+    const r = rewriteResponsesRequest(wonder(extra), { token: live });
+    assert.equal(r.json.max_output_tokens, want, name);
+    assert.ok(!r.notes.some((n) => n.includes("max_output_tokens")), name);
+  }
+  const input: Record<string, unknown> = wonder({ ...schema, max_output_tokens: 900 });
+  rewriteResponsesRequest(input, { token: live });
+  assert.equal(input.max_output_tokens, 900, "the input object isn't changed");
 });

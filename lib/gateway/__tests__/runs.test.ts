@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { holdRun, parseRunId, releaseRun, RUN_LIMITS, runLimitsFor, settleRun, type RunCounters } from "@/lib/gateway/runs";
+import { holdRun, parseRunId, releaseRun, RUN_LIMITS, runLimitsFor, settleRun, type RunCounters, type RunLimits } from "@/lib/gateway/runs";
 
 const NOW = new Date("2026-10-31T12:34:56.000Z");
 const HOUR = new Date("2026-10-31T12:00:00.000Z");
@@ -26,7 +26,7 @@ function counters() {
   return { deps, value: (key: string, window = HOUR) => values.get(at(key, window)) ?? 0 };
 }
 
-const hold = (deps: RunCounters, opts: { toolCalls?: number; usd?: number | ((toolCalls: number) => number); turns?: number } = {}, limits = RUN_LIMITS.build, now = NOW) =>
+const hold = (deps: RunCounters, opts: { toolCalls?: number; usd?: number | ((toolCalls: number) => number); turns?: number } = {}, limits: RunLimits = RUN_LIMITS.build, now = NOW) =>
   holdRun(deps, { tokenId: "tok", runId: RUN, limits, now, ...opts });
 
 async function messageOf(res: Response) {
@@ -42,11 +42,13 @@ test("parseRunId takes 8 to 64 letters, digits, dashes and underscores", () => {
   }
 });
 
-test("limits: builds 6 turns, 8 calls, $0.40; live agents 10, 12, $0.75; other live tokens none", () => {
+test("limits: builds 6 turns, 8 calls, $0.40; long-run builds 30, 40, $1.50; live agents 10, 12, $0.75; other live tokens none", () => {
   assert.deepEqual(RUN_LIMITS.build, { turns: 6, toolCalls: 8, usd: 0.4 });
+  assert.deepEqual(RUN_LIMITS.longBuild, { turns: 30, toolCalls: 40, usd: 1.5 });
   assert.deepEqual(RUN_LIMITS.liveAgent, { turns: 10, toolCalls: 12, usd: 0.75 });
   assert.equal(runLimitsFor({ scope: "build", allowedModels: [] }), RUN_LIMITS.build);
   assert.equal(runLimitsFor({ scope: "build", allowedModels: ["agent"] }), RUN_LIMITS.build);
+  assert.equal(runLimitsFor({ scope: "build", allowedModels: ["muse-wonder-1.0", "agent-long"] }), RUN_LIMITS.longBuild);
   assert.equal(runLimitsFor({ scope: "live", allowedModels: ["agent"] }), RUN_LIMITS.liveAgent);
   assert.equal(runLimitsFor({ scope: "live", allowedModels: ["muse-wonder-1.0"] }), null);
 });
@@ -71,8 +73,30 @@ test("the run stops at its model turns, in plain words, without a retry", async 
   assert.equal(err.code, "run_limit");
   assert.equal(err.type, "rate_limit_error");
   assert.equal(err.shouldRetry, "false");
-  assert.match(err.message, /limit of 6 model turns/);
+  assert.match(err.message, /reached its cap of 6 model turns/);
+  assert.match(err.message, /cap for one run, not a model error/);
+  assert.match(err.message, /keep the real model call and test fewer turns\. Never swap in a scripted fallback/);
   assert.equal(c.value(KEYS.turns), 6);
+});
+
+test("a long-run build's smoke run fits 30 turns, then stops at its cap", async () => {
+  const c = counters();
+  for (let i = 0; i < 30; i++) assert.ok((await hold(c.deps, {}, RUN_LIMITS.longBuild)).ok, `turn ${i + 1}`);
+  const over = await hold(c.deps, {}, RUN_LIMITS.longBuild);
+  assert.ok(!over.ok);
+  const err = await messageOf(over.response);
+  assert.equal(err.status, 429);
+  assert.equal(err.code, "run_limit");
+  assert.match(err.message, /reached its cap of 30 model turns/);
+  assert.match(err.message, /Never swap in a scripted fallback/);
+});
+
+test("a live run's cap says it isn't a model error, without the build hint", async () => {
+  const c = counters();
+  for (let i = 0; i < RUN_LIMITS.liveAgent.turns; i++) assert.ok((await hold(c.deps, {}, RUN_LIMITS.liveAgent)).ok);
+  const err = await messageOf(((await hold(c.deps, {}, RUN_LIMITS.liveAgent)) as { response: Response }).response);
+  assert.match(err.message, /reached its cap of 10 model turns\. This is the Muse Muse cap for one run, not a model error\. Finish/);
+  assert.doesNotMatch(err.message, /build test/);
 });
 
 test("fewer tool calls left than asked for: holds what's left so the turn can still run", async () => {
@@ -92,7 +116,7 @@ test("no tool calls left: refused, and the turn it took is given back", async ()
   assert.ok(!over.ok);
   const err = await messageOf(over.response);
   assert.equal(err.code, "run_limit");
-  assert.match(err.message, /none of its 8 built-in tool calls left, counting calls still running/);
+  assert.match(err.message, /reached its cap of 8 built-in tool calls, counting calls still running/);
   assert.match(err.message, /Wait for them to finish, send the next turn without built-in tools/);
   assert.equal(c.value(KEYS.turns), 1);
   assert.equal(c.value(KEYS.calls), 8);
@@ -106,7 +130,7 @@ test("over the dollars: refused, and the turn and calls it took are given back",
   assert.ok(!over.ok);
   const err = await messageOf(over.response);
   assert.equal(err.code, "run_limit");
-  assert.match(err.message, /\$0\.40 limit/);
+  assert.match(err.message, /its cap of \$0\.40/);
   assert.equal(c.value(KEYS.turns), 1);
   assert.equal(c.value(KEYS.calls), 0);
   assert.equal(c.value(KEYS.usd), 300_000);
@@ -150,7 +174,7 @@ test("dollars too short for even one tool call: refused, and everything it took 
   assert.ok(!over.ok);
   const err = await messageOf(over.response);
   assert.equal(err.code, "run_limit");
-  assert.match(err.message, /\$0\.40 limit/);
+  assert.match(err.message, /its cap of \$0\.40/);
   assert.match(err.message, /without built-in tools/);
   assert.equal(c.value(KEYS.turns), 1);
   assert.equal(c.value(KEYS.calls), 0);

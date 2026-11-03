@@ -609,10 +609,35 @@ test("run caps: a build's seventh model turn -> 429 run_limit, in plain words", 
   const err = await errorOf(over);
   assert.equal(err.status, 429);
   assert.equal(err.code, "run_limit");
-  assert.match(err.message, /limit of 6 model turns/);
+  assert.match(err.message, /reached its cap of 6 model turns/);
   assert.equal(over.headers.get("x-should-retry"), "false");
   assert.equal(g.upstreamCalls.length, 6);
   assert.equal(g.inFlight.get(SLOT_KEY), 0, "the refused call gave its slot back");
+});
+
+test("run caps: a long-run recipe's build token fits a 30-turn smoke run, a normal build still stops at 6", async () => {
+  const g = fakeGateway({ token: { ...wonderToken, scope: "build", allowedModels: [...wonderToken.allowedModels, "agent-long"] }, fetch: async () => Response.json(usageReply) });
+  for (let i = 0; i < 30; i++) {
+    const res = await handleGateway(gatewayRequest("responses", wonder(), inRun), ["responses"], g.deps);
+    assert.equal(res.status, 200, `turn ${i + 1}`);
+    await res.arrayBuffer();
+    await g.settled();
+  }
+  const err = await errorOf(await handleGateway(gatewayRequest("responses", wonder(), inRun), ["responses"], g.deps));
+  assert.equal(err.code, "run_limit");
+  assert.match(err.message, /reached its cap of 30 model turns\. This is the Muse Muse cap for one run, not a model error\. In a build test, keep the real model call/);
+  assert.equal(g.upstreamCalls.length, 30);
+});
+
+test("a structured call's low max_output_tokens goes out at 4,000, said in the note header", async () => {
+  const g = fakeGateway({ token: wonderToken, fetch: async () => Response.json(usageReply) });
+  const memo = wonder({ max_output_tokens: 900, text: { format: { type: "json_schema", name: "file_memo", strict: true, schema: { type: "object" } } } });
+  const res = await handleGateway(gatewayRequest("responses", memo, JSON_CT), ["responses"], g.deps);
+  assert.equal(res.status, 200);
+  assert.equal(upstreamJson(g).max_output_tokens, 4_000);
+  assert.match(res.headers.get("x-musemuse-note") ?? "", /Set max_output_tokens to 4000 \(it was 900\)/);
+  await res.arrayBuffer();
+  await g.settled();
 });
 
 test("run caps: a live agent runs 10 turns; a different run starts fresh", async () => {
@@ -726,7 +751,7 @@ test("run caps: when the dollars don't cover every search, the call runs with fe
   broke.counters.set(runKeys.usd, 749_000);
   const err = await errorOf(await handleGateway(gatewayRequest("responses", body(), inRun), ["responses"], broke.deps));
   assert.equal(err.code, "run_limit");
-  assert.match(err.message, /\$0\.75 limit/);
+  assert.match(err.message, /its cap of \$0\.75/);
   assert.equal(broke.upstreamCalls.length, 0);
   assert.equal(broke.counters.get(runKeys.calls), 0, "the refused call's calls came back");
 });
@@ -749,7 +774,7 @@ test("run caps: a third call in parallel is told its tool calls are held, not us
   assert.equal(g.counters.get(runKeys.calls), 12, "the first holds 8 and the second holds 4");
   const err = await errorOf(await send());
   assert.equal(err.code, "run_limit");
-  assert.match(err.message, /none of its 12 built-in tool calls left, counting calls still running/);
+  assert.match(err.message, /reached its cap of 12 built-in tool calls, counting calls still running/);
   assert.match(err.message, /Wait for them to finish/);
   finish();
   const replies = await Promise.all([first, second]);
@@ -763,7 +788,7 @@ test("run caps: a call estimated past the run's dollars -> 429 run_limit before 
   const err = await errorOf(await handleGateway(gatewayRequest("responses", wonder({ max_output_tokens: 32_000 }), inRun), ["responses"], g.deps));
   assert.equal(err.status, 429);
   assert.equal(err.code, "run_limit");
-  assert.match(err.message, /\$0\.40 limit/);
+  assert.match(err.message, /its cap of \$0\.40/);
   assert.equal(g.reservations.size, 0);
   assert.equal(g.upstreamCalls.length, 0);
 });

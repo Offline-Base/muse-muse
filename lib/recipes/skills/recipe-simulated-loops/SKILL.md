@@ -12,7 +12,7 @@ These products run a real model loop against a simulated world, and say so on th
 A route lasts at most 300 seconds, and one run needs many turns, so:
 
 - **Stretches.** The page drives the run with repeated POSTs. Each one starts no new model call after about 200 seconds, so a slow call still ends before the route's limit, then returns.
-- **Run id.** Send one `x-musemuse-run-id` header, with a fresh id per run, on every model call, so the gateway counts the whole run together. It stops a long run at 80 turns, 120 tool calls or $15. Set lower ceilings in your own code, and handle a refusal as a saved pause, never a crash.
+- **Run id.** Send one `x-musemuse-run-id` header, with a fresh id per run, on every model call, so the gateway counts the whole run together. It stops a long run at 80 turns, 120 tool calls or $15, and a build's test run at 30 turns, 40 tool calls or $1.50, so the smoke test can run one real run on the sample to its end. Set lower ceilings in your own code, and handle a refusal as a saved pause, never a crash.
 - **Sealed record.** State goes to the browser as a sealed record: AES-256-GCM with `node:crypto`, using a key hashed from `gatewayEnv().apiKey` and a fixed label. The server opens and checks it on every stretch, and refuses anything altered. Never send the key to the browser. If a record won't open, say the run can't resume and offer a new one.
 - **Saving.** Keep the latest record in localStorage, with a download button. Closing the tab pauses the run, and the page says so, along with the fact that the record stays in this browser.
 - **Replay first.** Open on a sample replay made at build time, so no visitor spends money just by looking. A Start button begins a real run, and its estimated cost sits beside it.

@@ -9,7 +9,8 @@ import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
  * calls are capped, which makes the estimate's search count a ceiling. Every request gets a safety identifier hashed
  * with the product's id, so Meta can act on one person, and one product's users never share an id with another's.
  * Tokens with the agent marker can't run on Contributor: Meta may train on that tier, and agents read other people's
- * pages. web_search itself stays open to every product. Only its calls are capped.
+ * pages. web_search itself stays open to every product. Only its calls are capped. A structured reply gets room to finish
+ * (raiseStructuredOutputFloor).
  */
 
 export interface RewriteToken {
@@ -69,6 +70,32 @@ function clampBuiltInToolCalls(json: Record<string, unknown>, cap: number, who: 
   return true;
 }
 
+/**
+ * The fewest output tokens a structured (json_schema or json_object) Responses call goes out with. Muse models reason,
+ * and reasoning counts against max_output_tokens (Meta's reasoning docs), so a low cap cuts the JSON off: Meta answers
+ * 200 with status "incomplete", and the product gets JSON that never parses. The Nov 3 audit found that behind
+ * fable-case-ledger's file_memo and prove_item 502s (900 tokens, full-size record) and sim-desk's scripted fallback
+ * (400 tokens). Cut-off JSON is never usable, so raising the cap costs more only on a reply that would have been
+ * thrown away. Meta's video docs ask for at least 4,000 on a reasoning model too.
+ */
+export const STRUCTURED_OUTPUT_MIN_TOKENS = 4_000;
+
+function wantsStructuredReply(json: Record<string, unknown>): boolean {
+  const format = (json.text as { format?: { type?: unknown } } | undefined)?.format;
+  return format?.type === "json_schema" || format?.type === "json_object";
+}
+
+/** Raises a structured call's max_output_tokens to STRUCTURED_OUTPUT_MIN_TOKENS. A missing cap stays missing. */
+function raiseStructuredOutputFloor(json: Record<string, unknown>, notes: string[]): boolean {
+  const value = json.max_output_tokens;
+  if (typeof value !== "number" || !Number.isFinite(value) || value >= STRUCTURED_OUTPUT_MIN_TOKENS || !wantsStructuredReply(json)) return false;
+  json.max_output_tokens = STRUCTURED_OUTPUT_MIN_TOKENS;
+  notes.push(
+    `Set max_output_tokens to ${STRUCTURED_OUTPUT_MIN_TOKENS} (it was ${shown(value)}): reasoning counts against it, and a structured reply cut short is JSON that never parses.`,
+  );
+  return true;
+}
+
 function nonEmpty(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
 }
@@ -104,6 +131,7 @@ export function rewriteResponsesRequest(
   const json = { ...input };
   const notes: string[] = [];
   clampBuiltInToolCalls(json, builtInToolCap(token), whoFor(token), notes);
+  raiseStructuredOutputFloor(json, notes);
   // The deprecated `user` names the person too when safety_identifier doesn't. Meta prefers safety_identifier, so
   // sending both is fine (protocols/responses, "Safety identifiers").
   const subject = nonEmpty(json.safety_identifier) ?? nonEmpty(json.user) ?? visitorKey ?? "anon";

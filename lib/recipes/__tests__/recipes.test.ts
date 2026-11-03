@@ -84,9 +84,10 @@ describe("recipes", () => {
     assert.ok(!allowed("recipe-image").includes("muse-image-1.0"), "flag off: a stored pick adds nothing");
   });
 
-  it("run limits: a build token keeps build limits, and long comes before agent", () => {
+  it("run limits: a long-run build gets the bounded long build limits, and long comes before agent", () => {
     const limits = (scope: string, allowedModels: string[]) => runLimitsFor({ scope, allowedModels });
-    assert.equal(limits("build", ["agent-long", "agent"]), RUN_LIMITS.build);
+    assert.equal(limits("build", ["agent-long", "agent"]), RUN_LIMITS.longBuild);
+    assert.equal(limits("build", ["agent"]), RUN_LIMITS.build);
     assert.equal(limits("live", ["agent-long", "agent"]), RUN_LIMITS.longAgent);
     assert.equal(limits("live", ["agent-long"]), RUN_LIMITS.longAgent);
     assert.equal(limits("live", ["agent"]), RUN_LIMITS.liveAgent);

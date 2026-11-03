@@ -9,6 +9,9 @@ import { hasAgentMarker, hasLongAgentMarker } from "@/lib/gateway/policy";
  *
  * The header is cooperative: a request without it isn't part of a run. Live tokens without the agent marker have no
  * run caps at all, so today's products behave as they did.
+ *
+ * A long-run recipe's build token (it carries the agent-long marker, so only under AGENT_LONG_RUNS) gets longBuild: room
+ * for one real run of the loop to its end in the smoke test, where 6 turns let a build test only a toy step.
  */
 
 export interface RunLimits {
@@ -19,6 +22,8 @@ export interface RunLimits {
 
 export const RUN_LIMITS = {
   build: { turns: 6, toolCalls: 8, usd: 0.4 },
+  /** A long-run recipe's build (AGENT_LONG_RUNS): bounded, but enough for one real stretch or a whole short loop. */
+  longBuild: { turns: 30, toolCalls: 40, usd: 1.5 },
   liveAgent: { turns: 10, toolCalls: 12, usd: 0.75 },
   /**
    * A long-run recipe's product (AGENT_LONG_RUNS). These reset with RUN_WINDOW_MS like the others, so a run past an hour
@@ -40,7 +45,7 @@ export function parseRunId(header: string | null): string | null {
 
 /** This token's run caps, or null when it has none. */
 export function runLimitsFor(token: { scope: string; allowedModels: readonly string[] }): RunLimits | null {
-  if (token.scope === "build") return RUN_LIMITS.build;
+  if (token.scope === "build") return hasLongAgentMarker(token.allowedModels) ? RUN_LIMITS.longBuild : RUN_LIMITS.build;
   if (hasLongAgentMarker(token.allowedModels)) return RUN_LIMITS.longAgent;
   return hasAgentMarker(token.allowedModels) ? RUN_LIMITS.liveAgent : null;
 }
@@ -75,6 +80,16 @@ function runWindow(now: Date): Date {
   return new Date(Math.floor(now.getTime() / RUN_WINDOW_MS) * RUN_WINDOW_MS);
 }
 
+/** Said in every run_limit body, so a builder or a product doesn't read the stop as the model failing. */
+const CAP_NOT_MODEL = "This is the Muse Muse cap for one run, not a model error.";
+
+/** A build's tests read the body too. A cap they hit should shorten the test, never replace the model. */
+const BUILD_HINT = "In a build test, keep the real model call and test fewer turns. Never swap in a scripted fallback.";
+
+function capNote(limits: RunLimits): string {
+  return limits === RUN_LIMITS.build || limits === RUN_LIMITS.longBuild ? `${CAP_NOT_MODEL} ${BUILD_HINT}` : CAP_NOT_MODEL;
+}
+
 function runLimit(message: string): Response {
   return gatewayError(429, "rate_limit_error", "run_limit", message, { retry: false });
 }
@@ -104,7 +119,7 @@ export async function holdRun(
   const turns = opts.turns ?? 1;
   if (turns > 0) {
     if ((await deps.reserveCounter(hold.turnsKey, window, turns, limits.turns)) === null) {
-      return { ok: false, reason: "turns", response: runLimit(`This run reached its limit of ${limits.turns} model turns. Finish with what it has, or start a new run.`) };
+      return { ok: false, reason: "turns", response: runLimit(`This run reached its cap of ${limits.turns} model turns. ${capNote(limits)} Finish with what it has, or start a new run.`) };
     }
     hold.turns = turns;
   }
@@ -122,7 +137,7 @@ export async function holdRun(
         ok: false,
         reason: "tool_calls",
         response: runLimit(
-          `This run has none of its ${limits.toolCalls} built-in tool calls left, counting calls still running. Wait for them to finish, send the next turn without built-in tools, or start a new run.`,
+          `This run reached its cap of ${limits.toolCalls} built-in tool calls, counting calls still running. ${capNote(limits)} Wait for them to finish, send the next turn without built-in tools, or start a new run.`,
         ),
       };
     }
@@ -140,7 +155,7 @@ export async function holdRun(
         ok: false,
         reason: "usd",
         response: runLimit(
-          `This call could take this run past its $${limits.usd.toFixed(2)} limit. Ask for fewer output tokens, send it without built-in tools, finish with what it has, or start a new run.`,
+          `This call could take this run past its cap of $${limits.usd.toFixed(2)}. ${capNote(limits)} Ask for fewer output tokens, send it without built-in tools, finish with what it has, or start a new run.`,
         ),
       };
     }
