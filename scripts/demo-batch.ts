@@ -6,6 +6,7 @@
  *   npm run demo-batch -- --dry             print the notes, start nothing
  *   npm run demo-batch -- --url=<site>      another deployment
  *   npm run demo-batch -- legal games       only the named ones
+ *   npm run demo-batch -- --set=targets     one build per target: phone, desktop, vr, glasses, agent, edge
  * Uses AUTOMATION_SECRET from .env.local, acting as the first ADMIN_EMAILS user (no daily build limit), the same way
  * scripts/rebuild-all.ts does. The secret is sent only as the Authorization header and never printed.
  * Writes the build links to .data/demo-batch-<time>.json.
@@ -14,7 +15,9 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { env } from "@/lib/env";
 import { CASE_AGENT_SAMPLE_NOTE } from "@/lib/recipes/registry";
 
-const DEMO_NOTES: ReadonlyArray<{ id: string; recipe: string; note: string }> = [
+type DemoNote = { id: string; recipe: string; note: string; targets?: readonly string[] };
+
+const DEMO_NOTES: readonly DemoNote[] = [
   { id: "legal", recipe: "recipe-case-agent", note: CASE_AGENT_SAMPLE_NOTE },
   {
     id: "api",
@@ -73,6 +76,46 @@ const DEMO_NOTES: ReadonlyArray<{ id: string; recipe: string; note: string }> = 
   },
 ];
 
+/** `--set=targets`: one build per place a product can run besides the web (NATIVE_TARGETS and friends on the site). */
+const TARGET_NOTES: readonly DemoNote[] = [
+  {
+    id: "phone",
+    recipe: "target phone",
+    targets: ["phone"],
+    note: "Build a shared grocery list for a made-up family of four that feels made for a phone: add items by typing or by snapping a photo of a shelf, it sorts them by store aisle, and checks them off with a tap while shopping.",
+  },
+  {
+    id: "desktop",
+    recipe: "target desktop",
+    targets: ["desktop"],
+    note: "Build a desktop app for a made-up bakery that turns pasted daily sales notes into a tidy weekly summary with the best sellers, slow days and a reorder list, and exports it as a PDF.",
+  },
+  {
+    id: "vr",
+    recipe: "target vr",
+    targets: ["vr"],
+    note: "Build a VR gallery for Meta Quest: walk through a small made-up museum of paper lanterns, point at a lantern to hear and read its story, and leave a note on your favorite.",
+  },
+  {
+    id: "glasses",
+    recipe: "target glasses",
+    targets: ["glasses"],
+    note: "Build a Meta glasses helper for a made-up farmers market: look at a stall sign and it reads out what's in season there today and the prices, hands free, with a phone fallback.",
+  },
+  {
+    id: "agent",
+    recipe: "target agent",
+    targets: ["agent"],
+    note: "Build a weekend trip agent: for a made-up couple visiting Austin on a budget, it searches the web, compares three plans with sources, and drafts a day-by-day itinerary they can edit.",
+  },
+  {
+    id: "edge",
+    recipe: "target edge",
+    targets: ["edge"],
+    note: "Build a cold-room watcher for a made-up restaurant's walk-in fridge that keeps working on the office board when the cloud is down: it logs temperatures, flags readings out of range, and checks a photo of the door to see if it was left open.",
+  },
+];
+
 function arg(name: string): string | undefined {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
   return hit?.slice(name.length + 3);
@@ -82,8 +125,9 @@ async function main(): Promise<void> {
   const dry = process.argv.includes("--dry");
   const site = (arg("url") ?? "https://musemuse.dev").replace(/\/$/, "");
   const only = process.argv.slice(2).filter((a) => !a.startsWith("--"));
-  const notes = only.length ? DEMO_NOTES.filter((n) => only.includes(n.id)) : DEMO_NOTES;
-  if (!notes.length) throw new Error(`None of ${only.join(", ")} is a demo id. Ids: ${DEMO_NOTES.map((n) => n.id).join(", ")}`);
+  const set = arg("set") === "targets" ? TARGET_NOTES : DEMO_NOTES;
+  const notes = only.length ? set.filter((n) => only.includes(n.id)) : set;
+  if (!notes.length) throw new Error(`None of ${only.join(", ")} is a demo id. Ids: ${set.map((n) => n.id).join(", ")}`);
   if (dry) {
     for (const n of notes) console.log(`${n.id} (${n.recipe})\n  ${n.note}\n`);
     return;
@@ -94,7 +138,7 @@ async function main(): Promise<void> {
     const res = await fetch(`${site}/api/inspirations`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${env.automationSecret}` },
-      body: JSON.stringify({ note: n.note, references: [] }),
+      body: JSON.stringify({ note: n.note, references: [], ...(n.targets ? { targets: n.targets } : {}) }),
     });
     const body = (await res.json().catch(() => ({}))) as { buildId?: string; error?: string };
     if (res.ok && body.buildId) {
