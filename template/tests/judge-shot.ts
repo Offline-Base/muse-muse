@@ -4,9 +4,12 @@
 // saying it is working, a control too small to tap on a phone, text too faint to read on its background), then saves
 // the full-page screenshot. In the demo video's runs it only waits and gives viewers a beat: verify already took the
 // screenshots and checked the screen at phone size, so a demo never fails on a check that passed there. In a VR product a shot taken inside VR has its own check (tests/xr.ts): the view must keep drawing
-// and not be blank, and the 2D layout checks don't apply.
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { expect, test, type Page } from "@playwright/test";
+// and not be blank, and the 2D layout checks don't apply. In the smoke run it also records what every /api/actions/*
+// route answered on this page (test-results/actions/responses.jsonl), and any photo, audio or video saved in the page's
+// storage, for verify's fallback and storage checks (scripts/smoke-report.mjs).
+import { appendFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { expect, test, type Page, type Request, type Response as PwResponse } from "@playwright/test";
 
 /** The demo video's runs: Playwright's own video (demo) and Demo Studio's recorder (studio). */
 const DEMO_PROJECTS = new Set(["demo", "studio"]);
@@ -20,6 +23,7 @@ export async function judgeShot(page: Page, name: string): Promise<void> {
     await page.waitForTimeout(600);
     return;
   }
+  const actions = test.info().project.name === "smoke" ? await watchActions(page) : null;
   if (isVRProduct()) {
     // Only a VR product loads the headset's helpers, so every other product's test runs just as it did.
     const { inVRSession, xrJudgeShot } = await import("./xr");
@@ -47,9 +51,12 @@ export async function judgeShot(page: Page, name: string): Promise<void> {
   const { resultTop, pageHeight } = smoke ? await page.evaluate(measurePage) : { resultTop: null, pageHeight: null };
   // verify prints notes without failing.
   const notes = smoke && name.startsWith("01-") && hasSamples() ? await page.evaluate(findMissingSample) : [];
+  const storedMedia = smoke ? await page.evaluate(findStoredMedia).catch(() => []) : [];
+  // Answers still being read are written before verify looks.
+  if (actions) await Promise.all([...actions]);
   mkdirSync("test-results/judge", { recursive: true });
   await page.screenshot({ path: `test-results/judge/${name}.png`, fullPage: true });
-  writeFileSync(`test-results/judge/${name}.checked`, `${JSON.stringify({ problems, errorsAndEmpty, resultTop, pageHeight, notes })}\n`);
+  writeFileSync(`test-results/judge/${name}.checked`, `${JSON.stringify({ problems, errorsAndEmpty, resultTop, pageHeight, notes, storedMedia })}\n`);
 }
 
 /** True when musemuse.target.json lists vr. A product without that file is a web product. */
@@ -645,4 +652,112 @@ export function contrastProblems(samples: TextSample[]): string[] {
       "(18.66 px bold). When you change a part's background, change its text color with it, in light and dark mode: the " +
       "person's chat bubble takes --bubble-out and --on-bubble-out together, never a new background alone (product-ui, Accessibility).",
   ];
+}
+
+// ---------- What the actions answered, and media in storage. verify reads both (scripts/smoke-report.mjs) ----------
+
+/** Where the smoke run's action answers go, one JSON line each. verify clears test-results/actions before the run. */
+export const ACTION_LOG = "test-results/actions/responses.jsonl";
+/** The top-level fields that mark an answer that didn't come from the model. */
+export const FALLBACK_FIELDS = ["model", "fallback", "estimate", "error"] as const;
+
+const watchedPages = new WeakMap<Page, Set<Promise<void>>>();
+const recordedRequests = new WeakSet<Request>();
+
+/** The action's name when the URL is this product's /api/actions/<name>, else null. */
+export function actionNameOf(url: string): string | null {
+  try {
+    return /^\/api\/actions\/([a-z][a-z0-9_]*)\/?$/.exec(new URL(url).pathname)?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The fallback fields of a JSON answer, as they came: booleans, null and numbers as is, strings cut to 200 characters,
+ * anything else as its type. Empty for an answer that isn't an object.
+ */
+export function fallbackFields(body: unknown): Record<string, unknown> {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return {};
+  const out: Record<string, unknown> = {};
+  for (const key of FALLBACK_FIELDS) {
+    if (!(key in body)) continue;
+    const v = (body as Record<string, unknown>)[key];
+    out[key] = typeof v === "string" ? v.slice(0, 200) : v === null || typeof v === "boolean" || typeof v === "number" ? v : typeof v;
+  }
+  return out;
+}
+
+/**
+ * Starts recording this page's action answers, once per page, and picks up the ones it answered before the first
+ * judgeShot (page.requests() keeps the last 100). Returns the reads still in flight.
+ */
+async function watchActions(page: Page): Promise<Set<Promise<void>>> {
+  const known = watchedPages.get(page);
+  if (known) return known;
+  const pending = new Set<Promise<void>>();
+  watchedPages.set(page, pending);
+  const file = path.basename(test.info().file);
+  const record = (response: PwResponse) => {
+    const req = response.request();
+    const action = actionNameOf(response.url());
+    if (!action || recordedRequests.has(req)) return;
+    recordedRequests.add(req);
+    const read = recordAction(response, action, file).catch(() => {});
+    pending.add(read);
+    void read.finally(() => pending.delete(read));
+  };
+  page.on("response", record);
+  try {
+    for (const req of await page.requests()) {
+      if (!actionNameOf(req.url()) || recordedRequests.has(req)) continue;
+      // One still in flight is the listener's to record once it answers.
+      const res = await Promise.race([req.response(), new Promise<null>((r) => setTimeout(() => r(null), 1500))]);
+      if (res) record(res);
+    }
+  } catch {
+    // An older Playwright without page.requests() records from the first judgeShot on.
+  }
+  return pending;
+}
+
+async function recordAction(response: PwResponse, action: string, file: string): Promise<void> {
+  const type = response.headers()["content-type"] ?? "";
+  let fields: Record<string, unknown> = {};
+  if (/json/i.test(type)) {
+    try {
+      fields = fallbackFields(await response.json());
+    } catch {
+      fields = {};
+    }
+  }
+  const line = { t: Date.now(), project: "smoke", file, action, method: response.request().method(), status: response.status(), json: /json/i.test(type), fields };
+  mkdirSync(path.dirname(ACTION_LOG), { recursive: true });
+  appendFileSync(ACTION_LOG, `${JSON.stringify(line)}\n`);
+}
+
+/**
+ * Runs in the browser. Each localStorage or sessionStorage key whose value holds a photo, audio or video as a data URL
+ * or a long base64 run, in a value at least 100,000 characters long (small icons are fine). Storage holds about 5 MB per site, so a few of
+ * these fill it and the next setItem throws.
+ */
+export function findStoredMedia(): Array<{ storage: string; key: string; chars: number }> {
+  const out: Array<{ storage: string; key: string; chars: number }> = [];
+  // Inline, since the browser runs this function on its own.
+  const MIN = 100_000;
+  for (const [label, store] of [["localStorage", window.localStorage], ["sessionStorage", window.sessionStorage]] as const) {
+    let size = 0;
+    try {
+      size = store.length;
+    } catch {
+      continue;
+    }
+    for (let i = 0; i < size; i++) {
+      const key = store.key(i);
+      const value = key === null ? null : store.getItem(key);
+      if (!key || !value || value.length < MIN) continue;
+      if (/data:(?:image|audio|video)\/[\w.+-]+;base64,/i.test(value) || /[A-Za-z0-9+/]{100000}/.test(value)) out.push({ storage: label, key: key.slice(0, 80), chars: value.length });
+    }
+  }
+  return out.slice(0, 5);
 }

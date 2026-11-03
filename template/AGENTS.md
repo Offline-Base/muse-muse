@@ -46,7 +46,11 @@ The inspo shows what to make. It is not material to copy.
   - `.agents/skills/muse-gadget` covers a physical board's camera and microphone, only when the brief lists `muse-gadget`.
   - `.agents/skills/muse-vr` covers VR on Meta Quest, only when the brief says it runs there.
 - Use only the models the brief lists. The gateway rejects others.
-- Handle model errors in the UI with a plain message and what to try next.
+- Handle model errors in the UI with a plain message and what to try next. In each action route, catch around the model call and `return modelErrorResponse(err, "action_name")` from `@/lib/meta/errors`: it logs why (a timeout, a run or rate limit, a refused input, a reply in the wrong shape, a server error) and answers with an error status and `{ error, cause }`. Show `error` in a `role="alert"` with a retry.
+- The main model action never has a local substitute. When the model fails, say so with an error, never a scripted or estimated answer under a 200. Never answer 200 with `"model": false`, `"fallback": true`, `"estimate": true` or an `"error"` next to a result. verify records every `/api/actions/*` answer in the smoke run and fails any of those on the built-in sample.
+- A secondary helper (a tip, a title, a narration beside the main result) may fall back to fixed copy only if the screen says so plainly, the main result never depends on it, and its JSON says `"fallback": true`. On the built-in sample it must still reach the model.
+- Images go to a model as PNG, JPEG, WebP or GIF only. Draw anything else, like an SVG or a scene, to a `<canvas>` and send `canvas.toDataURL("image/png")`. `imagePart` throws on any other data URL.
+- Import `lib/meta/` only in route handlers and server actions (`text.ts` and `parts.ts` are plain helpers and fine anywhere). verify fails a `"use client"` file that reaches a `lib/meta/` module that calls the model, or the `openai` package, directly or through your own files. Keep zod schemas the page shares in a file that imports only zod.
 
 ## The product
 
@@ -57,6 +61,7 @@ The inspo shows what to make. It is not material to copy.
 - Show each limit in the brief that a user would run into, once, next to the thing it limits.
 - Every input needs a label. Every async action needs loading, error and empty states. Phones are the first screen size to test.
 - Don't store personal data unless the brief says to. Uploaded files stay in memory for the request.
+- Keep photos, audio and video in IndexedDB or in memory, never in localStorage or sessionStorage: they hold about 5 MB per site and throw when full. Save only text and ids there, inside a try/catch. verify fails a `setItem` of a data URL or base64 media, and a page that has media in storage after the smoke run.
 
 ## Product copy
 
