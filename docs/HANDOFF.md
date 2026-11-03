@@ -11,6 +11,7 @@ Change a line here when its fact changes. History goes in docs/BUILD_LOG.md.
   - The chain run (to-do 2) is on hold until it's re-costed on the default Glimmer base.
   - O5's Hugging Face repo will hold a Glimmer file, not `Llama-3.2-3B-ColdRoom-Watch-GGUF`.
   - The edge board model, Muse Privacy's device model (LFM3-VL-2B), #67's Llama 3.2 1B on jetson-04, Bolt on jetson-03 and 04, and Prompt Guard on jetson-05 all need a Meta model or must stay off in the demo.
+- **Edge direction: SAM 3.1 on the boards (owner, Nov 2, about 8 PM ET).** Meta's SAM 3.1 runs as `sam3.service` on jetson-04 (`192.168.12.144:8790`, office network) and a laptop page calls it through the fleet (`scripts/edge/sam3/`, README there). The owner said this is the direction. docs/EDGE_PLAN.md, "Direction: SAM 3.1 on the boards", has what runs, what doesn't and what may be said.
 - **Merged Nov 2 afternoon:** #67 (3:31 PM ET), #63, #68 (the edge track, 3:40 PM, deployed at `ee493e69`) and #69 (Learn, 4:07 PM). The tg-edge rows in the tables below are now on main.
 - **Production** ran main at PR #59 (`12a362a1`) as of midday, with the Make chat on (`MAKE_CHAT_ALL`). Vercel blocked the deploys of #60, #61 and #62 because Hussam's commits aren't from a Vercel team member (checked Nov 2 from GitHub's commit statuses). #66, authored by Ethan, merged at 2:09 PM ET and should deploy all of main, theirs included; check its deploy on Vercel, since this file hasn't.
 - **Deadline:** due Nov 4, 9 PM ET, and Ethan submits by noon ET. Whoever is awake switches judges to Muse Wonder on Nov 4.
@@ -184,6 +185,12 @@ Steps for each are in docs/EDGE_PLAN.md, "Hussam's asks". Under the Nov 2 ruling
 - What's there: a venv, `server.py` for 127.0.0.1:8770, and `prompt-guard.service`, which is disabled, starts only once `22M/config.json` exists, and is capped at 900 MB of memory.
 - This broke the fleet's "keep jetson-05 out of experiments" rule, and the owner was told.
 - To remove it, delete `/opt/prompt-guard` and the unit.
+
+**Later Nov 2 (evening, ET), owner's go-ahead in chat.**
+- jetson-02, 03, 04: `jetson-llama.service` stopped and disabled, so no model loads at boot. Bolt deleted on 03 and 04, Gemma's vision file on 04. Hussam's Llama 3.2 1B files on 04 were kept. jetson-02 still holds the Glimmer one-bit file.
+- jetson-03 and 02: a separate session is setting up on-board LoRA training of Glimmer one-bit (Tether's QVAC llama.cpp fork, in `/opt/glimmer-train` on 03; file shares on 02's ports 8799 and 8800). Its own log covers it.
+- jetson-04: SAM 3.1 (above). It is kept out of training while SAM runs.
+- jetson-05: Prompt Guard removed (`/opt/prompt-guard` and its unit; it wasn't running). Hussam stopped LFM3-VL there at 5:58 PM ET. A different session is moving the control plane to the Raspberry Pi (`decision-tree`); the fleet was briefly unreachable at 6:35 PM ET.
 
 Everything on the boards goes through the fleet control plane, never SSH from the laptop.
 
