@@ -3722,3 +3722,12 @@ The owner asked to make sure, on the office Orin Nano boards, that Meta's SAM 3.
 - `edge.test.mjs` had one stale assertion expecting a Llama label where the test sets a Glimmer one. Fixed.
 
 **Fleet changes left in place** (all logged in docs/HANDOFF.md, "Fleet changes made Nov 3"): jetson-02 `jetson-llama` started, not enabled, plus `glimmer-guard` (transient); jetson-04 `sam3.service` restarted once at 3:28 AM ET with the tuned detector beside Meta's (drop-in `tuned.conf`; old server kept as `server.py.nov2`); jetson-03 the new tune files above.
+
+## Nov 3, 2026: whole-build time and honest round counts (audit issues 7 and 8; branch tg-r3-build-time)
+
+- **What the "60-minute cap" was:** `capMinutes: 60` in `builds.round_plan` is the first round's cap. VR (89 min) and agent (100 min) were full builds, so their real limit was `FULL_BUILD_WALL_MINUTES` (150), and both ended inside it. The room showed no limit at all. A build with no round plan had no deadline: with `MAX_FIX_ROUNDS` at 4 it could run about 3 hours.
+- **Now:** every new build and change runs to a deadline: the plan's wall, or 120 minutes (`PLAIN_BUILD_WALL_MS`) with no plan. Fix rounds, the first round and the demo recording are cut or skipped so they finish inside it. An edge build's outage drill (5 min) now counts in the reserve after each check. Full builds keep 150. Round caps sent to Muse Code are unchanged for builds with no plan.
+- **The room shows the real limit:** `round_plan.wallMinutes` (also written for builds and changes with no plan), shown as "Up to 150 minutes, start to live" in Build details and "12 m of up to 150 min" while it runs. Builds from before this have no `wallMinutes`, so they show no limit. Promote bundles accept the new key.
+- **Milestone states:** a passing check now settles every earlier milestone still marked failed, since each check covers the ones before it. The agent build's plan would have shown milestone 1 passed after its final 8 of 8.
+- **Fix rounds:** the product page and the room counted every Muse Code round past the first, so milestone rounds read as fix rounds ("2 fix rounds" with `fixRounds` 0). Both now count the workflow's "fixing" statuses (and the build row's `fixRounds`). Room rounds are titled by what they were for: "Muse Code built milestone 2", "Fix round 1".
+- **Tests:** workflow scenario (8 new), build-steps scenario, logic, ship-rules, build highlights, bundle, derive, steps, render, refine, round-time (new), product page. Typecheck clean. Not pushed. No template change, so no snapshot needed.

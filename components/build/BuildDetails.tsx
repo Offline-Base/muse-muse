@@ -26,6 +26,8 @@ export interface BuildDetailsProps {
   sessionId: string | null;
   maxFixRounds: number;
   elapsedMs: number;
+  /** The whole build's time limit in minutes (builds.round_plan.wallMinutes), or null when it wasn't recorded. */
+  timeLimitMinutes?: number | null;
   tokens: { input: number; cached: number; output: number };
   liveUrl: string | null;
   demoUrl: string | null;
@@ -36,6 +38,19 @@ export interface BuildDetailsProps {
   buildId: string;
   history: BuildSummary[];
   now: number;
+}
+
+/**
+ * The whole build's time limit as the room says it: "Up to 150 minutes, start to live". Null when none was recorded, so
+ * an older build never shows a limit it didn't run under.
+ */
+export function timeLimitText(minutes: number | null | undefined): string | null {
+  return typeof minutes === "number" && minutes > 0 ? `Up to ${minutes} minutes, start to live` : null;
+}
+
+/** The elapsed time in the room's running line, with the limit beside it while the build runs: "12 m of up to 150 min". */
+export function elapsedText(elapsedMs: number, minutes: number | null | undefined, terminal: boolean): string {
+  return !terminal && typeof minutes === "number" && minutes > 0 ? `${duration(elapsedMs)} of up to ${minutes} min` : duration(elapsedMs);
 }
 
 /**
@@ -62,6 +77,12 @@ export function BuildDetails(p: BuildDetailsProps) {
           <dt>Elapsed</dt>
           <dd>{duration(p.elapsedMs)}</dd>
         </div>
+        {timeLimitText(p.timeLimitMinutes) ? (
+          <div>
+            <dt>Time limit</dt>
+            <dd>{timeLimitText(p.timeLimitMinutes)}</dd>
+          </div>
+        ) : null}
         <div>
           <dt>Cost</dt>
           <dd>{usd(room.costUsd)} est.</dd>

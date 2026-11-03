@@ -59,6 +59,12 @@ export function stepTimeoutMs(name: StepName): number {
 
 /** The longest a build may take from its start, across every Muse Code round, verify and fix, when the engine scales. */
 export const MAX_BUILD_WALL_MS = 90 * MIN;
+/**
+ * The whole-build deadline, start to live, for a build with no round plan (no engine flag gives one). Before Nov 3 such a
+ * build had no deadline: with MAX_FIX_ROUNDS at 4 it could run about 3 hours, into the sweep. A first round that uses all
+ * of its 60 minutes still leaves room for one fix round, its checks and shipping.
+ */
+export const PLAIN_BUILD_WALL_MS = 120 * MIN;
 /** A Muse Code round shorter than this isn't worth starting near the wall: the checks need the time instead. */
 export const MIN_ROUND_MS = 5 * MIN;
 /** Time kept for the judge after a verify, when a round is fitted inside the wall. */
@@ -201,6 +207,14 @@ export function capWithinWall(input: { capMs: number; startedAt: number; now: nu
   const left = input.startedAt + input.wallMs - input.now - (input.reserveMs ?? 0);
   if (left < Math.max(MIN_ROUND_MS, input.minMs ?? 0)) return null;
   return Math.min(input.capMs, left);
+}
+
+/**
+ * The deadline a build or a change runs to, from its start: its plan's wall, or PLAIN_BUILD_WALL_MS when it has no plan
+ * (or a plan with no wall). A chain's wall is one session's. The build room shows this number (builds.round_plan).
+ */
+export function buildWallMs(plan?: Pick<RoundPlan, "wallMs"> | null): number {
+  return plan?.wallMs ?? PLAIN_BUILD_WALL_MS;
 }
 
 /** Time left before the wall, or null when the build has none. */

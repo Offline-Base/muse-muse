@@ -24,6 +24,8 @@ export interface BuildView {
   error: string | null;
   startedAt: string;
   finishedAt: string | null;
+  /** The whole build's time limit, start to live, in minutes (builds.round_plan.wallMinutes). Null when it wasn't recorded. */
+  timeLimitMinutes?: number | null;
 }
 
 export interface ProductView {

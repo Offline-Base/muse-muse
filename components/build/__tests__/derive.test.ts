@@ -521,3 +521,46 @@ describe("what a round ended on", () => {
     assert.equal(noDanglingColon("A list:\n- one"), "A list:\n- one");
   });
 });
+
+describe("fix rounds and what each round was for", () => {
+  const status = (st: "building" | "fixing" | "verifying", message?: string): BuildEventBody => ({ type: "status", status: st, ...(message ? { message } : {}) });
+
+  it("counts only fix rounds, never milestone rounds (the phone build showed 2 fix rounds with none)", () => {
+    const room = deriveRoom(
+      build,
+      events(
+        status("building"),
+        muse([{ kind: "say", text: "Milestone 1 done." }], 0),
+        status("verifying", "Checking milestone 1 of 3"),
+        status("building", "Milestone 2 of 3"),
+        muse([{ kind: "say", text: "Milestone 2 done." }], 1),
+        status("building", "Milestone 3 of 3"),
+        muse([{ kind: "say", text: "Milestone 3 done." }], 2),
+      ),
+    );
+    assert.equal(room.fixRounds, 0);
+    const stages = room.segments.flatMap((s) => (s.type === "muse" ? [s.stage] : []));
+    assert.deepEqual(stages, [{ kind: "build" }, { kind: "milestone", n: 2 }, { kind: "milestone", n: 3 }]);
+  });
+
+  it("numbers fix rounds by their own count after milestones, and counts them while the build row is behind", () => {
+    const room = deriveRoom(
+      build,
+      events(
+        status("building"),
+        muse([{ kind: "say", text: "Built." }], 0),
+        status("building", "Milestone 2 of 2"),
+        muse([{ kind: "say", text: "Built more." }], 1),
+        status("fixing", "Fix round 1 of 4"),
+        muse([{ kind: "say", text: "Fixed." }], 2),
+      ),
+    );
+    assert.equal(room.fixRounds, 1);
+    const last = room.segments.filter((s) => s.type === "muse").at(-1);
+    assert.deepEqual(last?.type === "muse" ? last.stage : null, { kind: "fix", n: 1 });
+  });
+
+  it("keeps the build row's count when it is ahead", () => {
+    assert.equal(deriveRoom({ ...build, fixRounds: 2, status: "live" }, events(status("building"), muse([{ kind: "say", text: "Built." }], 0))).fixRounds, 2);
+  });
+});

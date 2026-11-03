@@ -10,7 +10,7 @@ import { Icon } from "@/components/icons";
 import { Menu } from "@/components/Menu";
 import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { BuildSummary, BuildView, InspirationView, ProductView, RebuildRef } from "@/components/view-types";
-import { BuildDetails } from "@/components/build/BuildDetails";
+import { BuildDetails, elapsedText } from "@/components/build/BuildDetails";
 import { OwnModelRow, type OwnModelOffer } from "@/components/build/OwnModelRow";
 import { deriveRoom, railStates, refineSpot } from "@/components/build/derive";
 import { PlanCard, planCardState, preloadPlanArt } from "@/components/build/PlanCard";
@@ -476,6 +476,7 @@ export function BuildRoom(props: BuildRoomProps) {
                   sessionId={build.museSessionId}
                   maxFixRounds={props.maxFixRounds}
                   elapsedMs={elapsed}
+                  timeLimitMinutes={build.timeLimitMinutes ?? null}
                   tokens={props.tokens}
                   liveUrl={liveUrl}
                   demoUrl={demoUrl}
@@ -518,7 +519,7 @@ export function BuildRoom(props: BuildRoomProps) {
                     <WorkingStep title={feed.unpublished && shipped ? "Finished, not online" : statusLabel(room.status)} state={room.status === "failed" || room.status === "refused" ? "failed" : "done"} />
                   )}
                   <p className="room-working-meta">
-                    {duration(elapsed)} · {usd(room.costUsd)} est.
+                    {elapsedText(elapsed, build.timeLimitMinutes, room.terminal)} · {usd(room.costUsd)} est.
                     {conn === "reconnecting" ? " · reconnecting to the live log" : ""}
                     {panelToggle}
                   </p>
@@ -619,6 +620,7 @@ export function BuildRoom(props: BuildRoomProps) {
                 sessionId={build.museSessionId}
                 maxFixRounds={props.maxFixRounds}
                 elapsedMs={elapsed}
+                timeLimitMinutes={build.timeLimitMinutes ?? null}
                 tokens={props.tokens}
                 liveUrl={liveUrl}
                 demoUrl={demoUrl}
@@ -663,7 +665,7 @@ export function BuildRoom(props: BuildRoomProps) {
                 ))}
               </WorkingStep>
               <p className="room-working-meta">
-                {duration(elapsed)} · {usd(room.costUsd)} est.
+                {elapsedText(elapsed, build.timeLimitMinutes, room.terminal)} · {usd(room.costUsd)} est.
                 {conn === "reconnecting" ? " · reconnecting to the live log" : ""}
                 <StepsToggle open={panelOpen} onClick={() => (panelOpen ? closePanel() : showSteps(null, true))} />
               </p>

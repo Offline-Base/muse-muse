@@ -82,6 +82,7 @@ import {
   failureMessage,
   pollTimedOut,
   pollLimit,
+  settleMilestones,
   SPEND_PAUSED_MESSAGE,
   type JudgeCall,
   type Outcome,
@@ -95,7 +96,7 @@ import { packageProductStep } from "@/lib/pipeline/package-step";
 import { startProveStep } from "@/lib/pipeline/prove-start";
 import { provePlanStep } from "@/lib/pipeline/prove-steps";
 import { chainChecksNeedSession, chainEndLine, chainNext, type ChainPosition } from "@/lib/chain/plan";
-import { afterFixReserveMs, capWithinWall, EDGE_DRILL_CAP_MS, fullChecksReserveMs, fullRoundCap, JUDGE_RESERVE_MS, MIN_FIX_ROUND_MS, MIN_RECORD_MS, stepTimeoutMs, wallLeftMs, type RoundPlan } from "@/lib/pipeline/steps";
+import { afterFixReserveMs, buildWallMs, capWithinWall, EDGE_DRILL_CAP_MS, fullChecksReserveMs, fullRoundCap, JUDGE_RESERVE_MS, MIN_FIX_ROUND_MS, MIN_RECORD_MS, MIN_ROUND_MS, stepTimeoutMs, wallLeftMs, type RoundPlan } from "@/lib/pipeline/steps";
 import { MUSE_EXIT, REFINE_ROUND_STRIDE, type BuildModel } from "@/lib/sandbox/muse";
 import { TERMINAL_STATUSES, type BuildStatus } from "@/lib/types";
 
@@ -167,11 +168,18 @@ interface Ctx {
   roundBase: number;
   /**
    * The engine's round plan (docs/CAPABILITIES.md, section 8), set only when ENGINE_ROUND_SCALING or milestones are on.
-   * Without it every round runs on today's caps (STEPS) and no wall applies.
+   * Without it every round runs on today's caps (STEPS), inside PLAIN_BUILD_WALL_MS (wallMs below).
    */
   plan?: RoundPlan;
-  /** When the workflow started, for the plan's wall. In a chain, when this session started. */
+  /** When the workflow started, for the wall. In a chain, when this session started. */
   startedAt?: number;
+  /**
+   * The whole build's deadline from startedAt (buildWallMs): the plan's wall, or PLAIN_BUILD_WALL_MS without a plan. No
+   * round, fix round or recording starts that can't finish inside it. Unset for a restore, which runs no rounds.
+   */
+  wallMs?: number;
+  /** Milestones whose own check failed and that no later check has passed yet (1-based). */
+  failedMilestones?: number[];
   /** CHAINED_BUILDS: where the chain is. */
   chain?: ChainPosition;
   /** FAST_BUILDS on this build: helper lines in the story, and fix rounds recheck what failed before the full check. */
@@ -191,14 +199,40 @@ function capFor(ctx: Ctx, kind: "build" | "fix" | "verify"): number {
   return kind === "build" ? plan.buildMs : kind === "fix" ? plan.fixMs : plan.verifyMs;
 }
 
-/** A round's cap inside the plan's wall, or null when too little is left. Today's cap when there is no plan. */
+/** A round's cap inside the build's wall, or null when too little is left. The cap as it is when the build has no wall. */
 function capInWall(ctx: Ctx, capMs: number, reserveMs: number, minMs?: number): number | null {
-  return capWithinWall({ capMs, startedAt: ctx.startedAt ?? Date.now(), now: Date.now(), wallMs: ctx.plan?.wallMs ?? null, reserveMs, ...(minMs ? { minMs } : {}) });
+  return capWithinWall({ capMs, startedAt: ctx.startedAt ?? Date.now(), now: Date.now(), wallMs: ctx.wallMs ?? null, reserveMs, ...(minMs ? { minMs } : {}) });
+}
+
+/** The longest one check can take: the verify cap, plus the outage drill after it on an edge build. */
+function checksMs(ctx: Ctx): number {
+  return capFor(ctx, "verify") + (ctx.edge ? EDGE_DRILL_CAP_MS : 0);
 }
 
 /** A fix round's cap inside the wall, keeping its own checks and shipping behind it, or null when it gets less than MIN_FIX_ROUND_MS. */
 function fixCapInWall(ctx: Ctx, extraReserveMs = 0): number | null {
-  return capInWall(ctx, capFor(ctx, "fix"), extraReserveMs + afterFixReserveMs({ verifyMs: capFor(ctx, "verify") }), MIN_FIX_ROUND_MS);
+  return capInWall(ctx, capFor(ctx, "fix"), extraReserveMs + afterFixReserveMs({ verifyMs: checksMs(ctx) }), MIN_FIX_ROUND_MS);
+}
+
+/**
+ * The first round's cap. A full build's milestone share of the wall (fullRoundCap); a chain's own cap; otherwise the
+ * build cap, cut so one check and shipping still fit inside the wall. A round is never given less than MIN_ROUND_MS.
+ */
+function firstRoundCap(ctx: Ctx, milestones: number): number {
+  const plan = ctx.plan;
+  if (plan?.chain) return capFor(ctx, "build");
+  if (plan?.full) return fullRoundCap({ plan: { ...plan, verifyMs: checksMs(ctx) }, startedAt: ctx.startedAt ?? Date.now(), now: Date.now(), milestonesLeft: Math.max(1, milestones) }) ?? MIN_ROUND_MS;
+  return capInWall(ctx, capFor(ctx, "build"), afterFixReserveMs({ verifyMs: checksMs(ctx) })) ?? MIN_ROUND_MS;
+}
+
+/**
+ * Writes what a milestone check settled: the milestone checked, and on a pass every earlier one that had failed, since
+ * each check covers the milestones before it (settleMilestones).
+ */
+async function settleMilestoneStates(ctx: Ctx, list: Array<{ title: string }>, checked: number, passed: boolean): Promise<void> {
+  const settled = settleMilestones({ failed: ctx.failedMilestones ?? [], checked, passed });
+  ctx.failedMilestones = settled.failed;
+  for (const m of settled.states) await milestoneStep(ctx.buildId, { index: m.index, of: list.length, title: list[m.index - 1]!.title, state: m.state });
 }
 
 async function assertSpendOk(): Promise<void> {
@@ -419,7 +453,7 @@ async function checkAndFix(ctx: Ctx, track: Track, kind: "build" | "refine", off
     // Room for this verify and its judge, a fix round, and the verify and judge after it.
     // A full build's verify cap grows with its requirements and is rarely reached, so it keeps room for one verify and judge after the fix.
     // A fix round that couldn't get MIN_FIX_ROUND_MS, with its own checks and shipping still fitting after it, isn't planned.
-    const roomForFix = !ctx.plan || fixCapInWall(ctx, ctx.plan.full ? 0 : verifyMs + JUDGE_RESERVE_MS) !== null;
+    const roomForFix = fixCapInWall(ctx, ctx.plan?.full ? 0 : checksMs(ctx) + JUDGE_RESERVE_MS) !== null;
     const last = fix >= rounds || !roomForFix;
     let verify: VerifyResult | null = null;
     if (recheck.length && !last) {
@@ -439,7 +473,7 @@ async function checkAndFix(ctx: Ctx, track: Track, kind: "build" | "refine", off
     nudgeStepsFeed(ctx.buildId);
     if (passed || fix >= rounds) return { passed, steps: verify.steps, fixes: fix, judge: judged };
     // The verify and judge above may have used the margin: a fix round that no longer fits before the wall, with its
-    // own verify and judge after it, isn't started. Without a plan this is today's fix cap.
+    // own verify and judge after it, isn't started. Without a plan the wall is PLAIN_BUILD_WALL_MS.
     const fixCap = roomForFix ? fixCapInWall(ctx) : null;
     if (fixCap === null) {
       await emitStep(ctx.buildId, { type: "log", text: "The build is near its time limit, so no more fix rounds run." });
@@ -528,14 +562,14 @@ async function runLook(ctx: Ctx, images: string[]): Promise<{ wireRound: number;
  */
 async function runMilestones(ctx: Ctx, track: Track, list: Array<{ title: string }>): Promise<number> {
   const of = list.length;
-  const verifyMs = capFor(ctx, "verify");
+  const verifyMs = checksMs(ctx);
   for (let n = 2; n <= of; n++) {
     track.stage = "verify";
     await setStatusStep(ctx.buildId, "verifying", { step: "verify", message: `Checking milestone ${n - 1} of ${of}` });
     const verify = await runVerify(ctx, n - 2, false);
-    await milestoneStep(ctx.buildId, { index: n - 1, of, title: list[n - 2]!.title, state: verify.passed ? "passed" : "failed" });
+    await settleMilestoneStates(ctx, list, n - 1, verify.passed);
     const cap = ctx.plan?.full
-      ? fullRoundCap({ plan: ctx.plan, startedAt: ctx.startedAt ?? Date.now(), now: Date.now(), milestonesLeft: of - n + 1 })
+      ? fullRoundCap({ plan: { ...ctx.plan, verifyMs }, startedAt: ctx.startedAt ?? Date.now(), now: Date.now(), milestonesLeft: of - n + 1 })
       : capInWall(ctx, capFor(ctx, "build"), fullChecksReserveMs({ verifyMs, fixMs: capFor(ctx, "fix") }));
     if (cap === null) {
       for (let k = n; k <= of; k++) await milestoneStep(ctx.buildId, { index: k, of, title: list[k - 1]!.title, state: "skipped" });
@@ -585,7 +619,7 @@ async function runChain(ctx: Ctx, track: Track, list: Array<{ title: string }>):
     track.stage = "verify";
     await setStatusStep(ctx.buildId, "verifying", { step: "verify", message: `Checking milestone ${n - 1} of ${of}` });
     const verify = await runVerify(ctx, n - 2, false);
-    await milestoneStep(ctx.buildId, { index: n - 1, of, title: list[n - 2]!.title, state: verify.passed ? "passed" : "failed" });
+    await settleMilestoneStates(ctx, list, n - 1, verify.passed);
     let read = await chainReadStep(ctx.buildId);
     if (read.stopRequested) throw stoppedByOwner("build");
     let next = chainNext({ limits, position: ctx.chain!, costUsd: read.costUsd, verifyMs: plan.verifyMs, now: Date.now() });
@@ -635,7 +669,7 @@ async function ship(
   let demoVideoUrl: string | null = null;
   let demoPosterUrl: string | null = null;
   // A walled build near its wall doesn't start the demo recording: the product ships without a new video, on time.
-  const left = ctx.plan ? wallLeftMs({ startedAt: ctx.startedAt ?? Date.now(), now: Date.now(), wallMs: ctx.plan.wallMs }) : null;
+  const left = ctx.wallMs !== undefined ? wallLeftMs({ startedAt: ctx.startedAt ?? Date.now(), now: Date.now(), wallMs: ctx.wallMs }) : null;
   const noTimeToRecord = !product.restoredFrom && left !== null && left < MIN_RECORD_MS;
   if (noTimeToRecord) await emitStep(ctx.buildId, { type: "log", text: "The build is at its time limit, so the demo recording was skipped." });
   // A restore ships code that already shipped, and keeps the demo it has.
@@ -651,7 +685,8 @@ async function ship(
       title: product.name,
       tagline: product.tagline,
     });
-    const demo = await runTask(ctx.sandboxName, "demo", stepTimeoutMs("record"));
+    // Inside the wall: a recording that would run past it is stopped there.
+    const demo = await runTask(ctx.sandboxName, "demo", left === null ? stepTimeoutMs("record") : Math.min(stepTimeoutMs("record"), left));
     if (demo.timedOut) {
       await emitStep(ctx.buildId, { type: "log", text: "The demo recording ran too long and was skipped." });
     } else {
@@ -899,7 +934,9 @@ export async function buildProduct(input: BuildProductInput): Promise<BuildProdu
       sessionId: box.sessionId,
       model: brief.model,
       roundBase: 0,
-      ...(brief.plan ? { plan: brief.plan, startedAt } : {}),
+      startedAt,
+      wallMs: buildWallMs(brief.plan),
+      ...(brief.plan ? { plan: brief.plan } : {}),
       ...(brief.plan?.chain ? { chain: { session: 1, chainStartedAt: startedAt, sessionStartedAt: startedAt, sessionStartUsd: 0 } } : {}),
       ...(brief.fast ? { fast: true } : {}),
       ...(brief.edge ? { edge: true } : {}),
@@ -922,7 +959,7 @@ export async function buildProduct(input: BuildProductInput): Promise<BuildProdu
       await setStatusStep(buildId, "building", { step: "build", message: "Wiring everything into your screens" });
       await assertSpendOk();
     }
-    const firstCap = (ctx.plan?.full && !ctx.chain ? fullRoundCap({ plan: ctx.plan, startedAt, now: Date.now(), milestonesLeft: Math.max(1, milestones.length) }) : null) ?? capFor(ctx, "build");
+    const firstCap = firstRoundCap(ctx, milestones.length);
     const built = await runMuse(ctx, { promptFile: firstPrompt, images: firstImages, round: firstRound, capMs: firstCap });
     if (built.stopped) throw stoppedByOwner("build");
     if (built.timedOut) {
@@ -943,9 +980,9 @@ export async function buildProduct(input: BuildProductInput): Promise<BuildProdu
 
     const checks = await checkAndFix(ctx, track, "build", offset);
     if (milestones.length > 1) {
-      // The last milestone that ran is decided by the checks and fix rounds after it.
-      const ran = offset + 1;
-      await milestoneStep(buildId, { index: ran, of: milestones.length, title: milestones[ran - 1]!.title, state: checks.passed ? "passed" : "failed" });
+      // The last milestone that ran is decided by the checks and fix rounds after it. A pass there settles any earlier
+      // milestone still shown as failed, since the final checks cover every milestone.
+      await settleMilestoneStates(ctx, milestones, offset + 1, checks.passed);
     }
     track.stage = "verify";
     ending = await finish(
@@ -1009,14 +1046,16 @@ export async function refineProduct(input: BuildProductInput): Promise<BuildProd
       sessionId: refine.sessionId,
       model: refine.model,
       roundBase: refine.refineIndex * REFINE_ROUND_STRIDE,
-      ...(refine.plan ? { plan: refine.plan, startedAt } : {}),
+      startedAt,
+      wallMs: buildWallMs(refine.plan),
+      ...(refine.plan ? { plan: refine.plan } : {}),
       ...(refine.edge ? { edge: true } : {}),
     };
 
     track.stage = "build";
     await setStatusStep(buildId, "building", { step: "build" });
     await assertSpendOk();
-    const firstCap = capFor(ctx, "build");
+    const firstCap = firstRoundCap(ctx, 0);
     const built = await runMuse(ctx, {
       promptFile: reopened.promptFile,
       images: reopened.images,

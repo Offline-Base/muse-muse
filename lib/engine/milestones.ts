@@ -25,6 +25,11 @@ export type MilestoneState = "planned" | "building" | "passed" | "failed" | "ski
 export interface RoundPlanRecord {
   capMinutes: number;
   milestones: Array<{ title: string; state: MilestoneState }>;
+  /**
+   * The whole build's time limit, start to live, in minutes: the plan's wall, or the plain build's (buildWallMs). A chain's
+   * is one session's. The build room shows it. Missing on builds from before Nov 3, which the room then shows no limit for.
+   */
+  wallMinutes?: number;
   /** CHAINED_BUILDS: how long the sweep gives this build, and the session it's on. */
   chain?: { maxHours: number; session: number };
 }

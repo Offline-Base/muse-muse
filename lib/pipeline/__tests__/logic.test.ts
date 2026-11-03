@@ -12,6 +12,7 @@ import {
   pollLimit,
   pollTimedOut,
   refineBuildModel,
+  settleMilestones,
   SLUG_MAX,
   slugWithSuffix,
 } from "@/lib/pipeline/logic";
@@ -180,5 +181,24 @@ describe("failureMessage", () => {
     const msg = failureMessage("build", new Error("upstream \u2014 timed out"));
     assert.ok(!msg.includes("\u2014"));
     assert.equal(msg, "The build step failed: upstream, timed out");
+  });
+});
+
+describe("settleMilestones", () => {
+  it("marks a failed check, and keeps the list of milestones still failed", () => {
+    assert.deepEqual(settleMilestones({ failed: [], checked: 1, passed: false }), { states: [{ index: 1, state: "failed" }], failed: [1] });
+    assert.deepEqual(settleMilestones({ failed: [1], checked: 2, passed: false }), { states: [{ index: 2, state: "failed" }], failed: [1, 2] });
+  });
+
+  it("settles every earlier failed milestone when a later check passes, since it covers them", () => {
+    assert.deepEqual(settleMilestones({ failed: [1, 2], checked: 3, passed: true }), {
+      states: [{ index: 1, state: "passed" }, { index: 2, state: "passed" }, { index: 3, state: "passed" }],
+      failed: [],
+    });
+  });
+
+  it("never settles a milestone after the one checked, and counts a repeat once", () => {
+    assert.deepEqual(settleMilestones({ failed: [2, 2], checked: 1, passed: true }), { states: [{ index: 1, state: "passed" }], failed: [2] });
+    assert.deepEqual(settleMilestones({ failed: [1], checked: 1, passed: false }), { states: [{ index: 1, state: "failed" }], failed: [1] });
   });
 });

@@ -100,6 +100,7 @@ function toBuildView(b: BuildRow): BuildView {
     error: b.error,
     startedAt: b.startedAt.toISOString(),
     finishedAt: iso(b.finishedAt),
+    timeLimitMinutes: typeof b.roundPlan?.wallMinutes === "number" ? b.roundPlan.wallMinutes : null,
   };
 }
 
@@ -488,7 +489,9 @@ export function buildHighlights(events: BuildEvent[], build: BuildView | null): 
   let lastJudge: { pass: boolean; reasons: string[] } | null = null;
   let lastVerifyPassed: boolean | null = null;
   const notes: string[] = [];
-  const seenRounds = new Set<number>();
+  // Fix rounds, one per "fixing" status the workflow set ("Fix round n of m"). Milestone and look rounds are Muse Code
+  // rounds too, but not fix rounds: counting every round past the first showed "2 fix rounds" for a build with none.
+  const fixStatuses = new Set<string>();
   // A session bridge line comes again under its item id whenever it changes, as a tool call that runs across polls
   // does. Each item counts once, as its last version, the way the build room shows it.
   const items = new Map<string, MuseLogLine>();
@@ -503,8 +506,9 @@ export function buildHighlights(events: BuildEvent[], build: BuildView | null): 
   };
 
   for (const e of events) {
-    if (e.type === "muse") {
-      seenRounds.add(e.round);
+    if (e.type === "status") {
+      if (e.status === "fixing") fixStatuses.add(e.message ?? `#${e.id}`);
+    } else if (e.type === "muse") {
       for (const l of e.lines as MuseLogLine[]) {
         if (l.itemId === undefined) count(l);
         else items.set(`${e.round}:${l.itemId}`, l);
@@ -521,7 +525,7 @@ export function buildHighlights(events: BuildEvent[], build: BuildView | null): 
     }
   }
   for (const l of items.values()) count(l);
-  rounds = Math.max(0, seenRounds.size - 1);
+  rounds = Math.max(build?.fixRounds ?? 0, fixStatuses.size);
 
   if (tools || edits) {
     out.push(

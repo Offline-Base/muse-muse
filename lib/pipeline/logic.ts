@@ -90,6 +90,24 @@ export function decideOutcome(input: {
   return PARTIAL_REQUIRED_STEPS.every(ok) ? "partial" : "failed";
 }
 
+/**
+ * Milestone states after a check (1-based milestone numbers). The milestone just checked takes the result. A pass also
+ * settles every earlier milestone still marked failed, since each check covers every milestone before it: on Nov 3 an
+ * agent build's plan kept milestone 1 as "failed" after its final check passed 8 of 8. Returns the states to write and
+ * the milestones still failed after this check.
+ */
+export function settleMilestones(input: { failed: readonly number[]; checked: number; passed: boolean }): {
+  states: Array<{ index: number; state: "passed" | "failed" }>;
+  failed: number[];
+} {
+  if (!input.passed) return { states: [{ index: input.checked, state: "failed" }], failed: [...new Set([...input.failed, input.checked])].sort((a, b) => a - b) };
+  const earlier = [...new Set(input.failed)].filter((n) => n < input.checked).sort((a, b) => a - b);
+  return {
+    states: [...earlier.map((index) => ({ index, state: "passed" as const })), { index: input.checked, state: "passed" }],
+    failed: [...new Set(input.failed)].filter((n) => n > input.checked).sort((a, b) => a - b),
+  };
+}
+
 /** How many polls fit in a time cap. At least one, so a tiny cap still checks once. */
 export function pollLimit(capMs: number, intervalMs: number): number {
   return Math.max(1, Math.ceil(capMs / intervalMs));

@@ -350,13 +350,17 @@ function requestedTargets(v: unknown, field: string): TargetId[] {
 const MILESTONE_STATES: readonly MilestoneState[] = ["planned", "building", "passed", "failed", "skipped"];
 
 function roundPlan(v: unknown, field: string): RoundPlanRecord {
-  const o = fields(v, field, ["capMinutes", "milestones"] as const);
+  const o = fields(v, field, ["capMinutes", "milestones"] as const, ["wallMinutes"]);
   const milestones = list(o.milestones, `${field}.milestones`, MILESTONES_MAX).map((m, i) => {
     const item = fields(m, `${field}.milestones[${i}]`, ["title", "state"] as const);
     if (!MILESTONE_STATES.includes(item.state as MilestoneState)) fail(`${field}.milestones[${i}].state`, `${field}.milestones[${i}].state isn't a milestone state.`);
     return { title: text(item.title, `${field}.milestones[${i}].title`, 60, 1), state: item.state as MilestoneState };
   });
-  return { capMinutes: wholeNumber(o.capMinutes, `${field}.capMinutes`, 90), milestones };
+  return {
+    capMinutes: wholeNumber(o.capMinutes, `${field}.capMinutes`, 90),
+    ...(o.wallMinutes === undefined ? {} : { wallMinutes: wholeNumber(o.wallMinutes, `${field}.wallMinutes`, 180) }),
+    milestones,
+  };
 }
 
 function product(v: unknown): ImportProduct {

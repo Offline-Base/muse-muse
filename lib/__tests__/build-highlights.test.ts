@@ -79,4 +79,13 @@ describe("buildHighlights", () => {
       "Fixtures could not be prepared. Muse Code will make its own.",
     ]);
   });
+
+  it("counts fix rounds from the workflow's fixing statuses, never milestone rounds", () => {
+    const say = (round: number): BuildEventBody => ({ type: "muse", round, lines: [{ kind: "say", text: "Done." }] });
+    const verify: BuildEventBody = { type: "verify", round: 2, summary: { passed: true, steps: [] }, screenshots: [] } as never;
+    // Three milestone rounds and no fix round: the aisle build said "after 2 fix rounds" with fixRounds 0.
+    assert.ok(buildHighlights(events(say(0), say(1), say(2), verify), null).includes("npm run verify passed on the first try."));
+    const fixed = events(say(0), say(1), { type: "status", status: "fixing", step: "fix", message: "Fix round 1 of 4" }, say(2), verify);
+    assert.ok(buildHighlights(fixed, null).includes("npm run verify passed after 1 fix round."));
+  });
 });
