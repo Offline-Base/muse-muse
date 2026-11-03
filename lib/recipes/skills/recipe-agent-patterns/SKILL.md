@@ -40,6 +40,9 @@ Build: a main conversation, with a side panel to ask something without adding it
 - Hold the main thread's latest response id on the page. A side chat's first turn passes that id as `previous_response_id`, and later side turns chain from the side chat's own id.
 - The main thread's id never moves because of a side turn. That one rule is the whole feature, so test it.
 - Pass `store: true`, and if an old id is refused, resend a short summary of the main thread and say that the side chat restarted.
+- Instructions don't carry over with `previous_response_id`, so send the side chat's own instructions on every side turn.
+- The sample main thread has real work in it: at least 4 turns on a made-up task with numbers the side chat can ask about. Show the main thread's response id and turn count beside the side panel, unchanged by side turns.
+- End screen: back on the main thread, a "Did we discuss this here?" check asks the main thread about the side chat's topic, and its answer shows it never saw it.
 
 Limit: this is a web pattern, not the Muse Code `/side` command. How long Meta keeps a response id is unconfirmed.
 Link: https://github.com/meta-models/meta-model-cookbook/tree/main/04_muse_code/10_side_chats
