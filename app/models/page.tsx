@@ -92,9 +92,6 @@ export default async function ModelsPage() {
           <h2 id="where-title">Where they run</h2>
         </div>
         <WhereTheyRun />
-        <p className="muted">
-          <Link href="/open-weights">What fine-tuning did on open weights</Link>: the method, the cost, the wins, the losses and every answer.
-        </p>
       </section>
     </ModelsFilter>
   );

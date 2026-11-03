@@ -99,8 +99,8 @@ const RESULTS: Card[] = [
   { icon: "video", title: "A demo video", text: "A short recording of the app doing its job, ready to share." },
   {
     icon: "plug",
-    title: "Use it from the Muse app",
-    text: "Each app becomes a connector, so the Muse app and other AI tools can use it for you.",
+    title: "Use it from other AI tools",
+    text: "Each app becomes an MCP connector, so AI tools that take connectors can use it for you.",
   },
   { icon: "edit", title: "Keep improving it", text: "Ask for changes in the build room and it builds a new version." },
 ];
@@ -157,7 +157,7 @@ export default function HowItWorksPage() {
       />
 
       <p className="muted">
-        Every method below is written up in the <Link href="/docs">Muse Muse docs</Link>, Meta&apos;s Model API and
+        Every method below is written up in the <Link href="/docs">Model API docs</Link>, Meta&apos;s Model API and
         Muse Code documentation in one place.
       </p>
 

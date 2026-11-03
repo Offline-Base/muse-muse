@@ -39,7 +39,7 @@ export const HOUSE_BOARDS: readonly HouseBoard[] = [
     name: "Jetson Orin Nano 8 GB",
     count: 6,
     role: "Board server",
-    text: "Runs muse-device, which gives a product the board's camera and microphone. It can also fine-tune a small model on its own GPU.",
+    text: "Runs muse-device, which gives a product the board's camera and microphone.",
     image: "/muse/muse-jetson.jpg",
   },
   {

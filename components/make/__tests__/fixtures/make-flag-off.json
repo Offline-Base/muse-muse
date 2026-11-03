@@ -1,11 +1,11 @@
 {
   "make page: signed out": {
-    "sha256": "153fcf24194d0f85f9ff52a9ef4752abc834b3f04ab5b62113da17313744d3ad",
-    "length": 7953
+    "sha256": "36504f400251bfefbc010268380ce4d9f3e7c93ba2206c79e20596b59717f69f",
+    "length": 7914
   },
   "make page: signed in": {
-    "sha256": "a1a5644b7ccbe377eeeecc8067029912bc1cabb403c299ef61d51f7adf31651c",
-    "length": 7966
+    "sha256": "a2c0452c372f7cfbddc61f2c92e7396a2b6c36cec77b7970033418e0fa412f26",
+    "length": 7927
   },
   "run room: writing": {
     "sha256": "69c07b81b753c7440d985b6fdb837673e8dd317069acf8d23d3df89aaaa4a07a",

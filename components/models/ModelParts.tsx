@@ -165,7 +165,7 @@ export function TunedModelCards({ models }: { models: TunedModelView[] }) {
 const PLACES: Array<{ icon: IconName; title: string; text: string }> = [
   { icon: "link", title: "Meta's Model API", text: "The hosted models run on Meta's servers. Muse Muse calls them over the API." },
   { icon: "tune", title: "A rented GPU", text: "The lab tunes Glimmer and runs its live demos on Lambda GPUs, shut down after each job." },
-  { icon: "monitor", title: "On a device", text: "A tuned model with public GGUF files runs on your own computer, offline." },
+  { icon: "monitor", title: "On a device", text: "A tuned model with public GGUF files can run on a computer with enough memory. Each model's page says what was measured." },
 ];
 
 /** Where each kind of model runs, one short line each. */
