@@ -29,28 +29,30 @@ export function canvasToPng(canvas: HTMLCanvasElement): string {
 /**
  * Draws an SVG string on a canvas of the given size and returns it as a PNG data URL. The SVG must hold everything it
  * shows: images inside it as data URLs, and fonts the page already loaded, since an SVG drawn as an image can't fetch.
+ * Draw with SVG shapes and text. HTML inside a `<foreignObject>` works in Chrome but Safari refuses to export it, so a
+ * screen built from HTML is drawn on a canvas instead.
  */
 export async function svgToPng(svg: string, size: { width: number; height: number }, background = "#ffffff"): Promise<string> {
-  const blob = new Blob([svg], { type: "image/svg+xml" });
-  const url = URL.createObjectURL(blob);
+  // A data URL, not a blob URL: Chrome marks a canvas unreadable after drawing a blob-URL SVG that holds a foreignObject.
+  const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  const img = new Image();
+  img.decoding = "async";
+  await new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve();
+    img.onerror = () => reject(new Error("The screen couldn't be drawn as a picture."));
+    img.src = url;
+  });
+  const canvas = document.createElement("canvas");
+  canvas.width = size.width;
+  canvas.height = size.height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("This browser can't draw the screen.");
+  ctx.fillStyle = background;
+  ctx.fillRect(0, 0, size.width, size.height);
+  ctx.drawImage(img, 0, 0, size.width, size.height);
   try {
-    const img = new Image();
-    img.decoding = "async";
-    await new Promise<void>((resolve, reject) => {
-      img.onload = () => resolve();
-      img.onerror = () => reject(new Error("The screen couldn't be drawn as a picture."));
-      img.src = url;
-    });
-    const canvas = document.createElement("canvas");
-    canvas.width = size.width;
-    canvas.height = size.height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("This browser can't draw the screen.");
-    ctx.fillStyle = background;
-    ctx.fillRect(0, 0, size.width, size.height);
-    ctx.drawImage(img, 0, 0, size.width, size.height);
     return canvasToPng(canvas);
-  } finally {
-    URL.revokeObjectURL(url);
+  } catch {
+    throw new Error("This browser won't turn the screen into a picture. Draw it on a canvas instead of as HTML in an SVG.");
   }
 }

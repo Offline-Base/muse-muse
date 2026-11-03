@@ -47,7 +47,7 @@ export function Tabs<T extends string>(props: {
               role="tab"
               id={ids(t.id).tab}
               aria-selected={selected}
-              aria-controls={ids(t.id).panel}
+              aria-controls={selected && props.children !== undefined ? ids(t.id).panel : undefined}
               tabIndex={selected ? 0 : -1}
               onClick={() => props.onChange(t.id)}
             >

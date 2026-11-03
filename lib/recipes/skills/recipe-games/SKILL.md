@@ -43,7 +43,7 @@ In the Playwright smoke test:
 1. Start the game, and take a screenshot. Assert that the canvas isn't blank, by sampling pixels.
 2. Hold a key: `keyboard.down("ArrowUp")`, wait, `keyboard.up("ArrowUp")`. Assert that the player moved, through a small `window.__game` read-only state object.
 3. Force a collision or wait for one, and assert that the ending screen appears. Press restart, and assert that the state is reset.
-4. **Idle until the level ends.** Start a level and press nothing. Wait for `window.__game.status` to leave `"playing"` within `levelEndsWithin` plus a few seconds (`expect.poll`), then assert that the end screen and its Retry button are visible. A level that never ends fails here. Keep the first level under about a minute at its slowest speed, so this stays short.
+4. **Idle until the level ends.** Start a level and press nothing. Wait for `window.__game.status` to leave `"playing"` within `levelEndsWithin` plus a few seconds (`expect.poll` with that `timeout`, and `test.setTimeout` above it), then assert that the end screen and its Retry button are visible. A level that never ends fails here. Keep the first level under about a minute at its slowest speed, so this stays short. Put this step in its own spec, `tests/level-end.spec.ts`, so the demo recorded from the smoke test doesn't sit through a minute of idling.
 5. **On a phone.** At 390 x 844 with `hasTouch`, start a level without scrolling, and assert that every touch control is inside the viewport (`toBeInViewport({ ratio: 1 })`) and over the canvas. Hold one with `control.hover()`, `page.mouse.down()`, a wait and `page.mouse.up()`, which send real pointer events, and assert the player moved.
 6. Fail on any console error.
 

@@ -243,3 +243,38 @@ describe("the media store in a real browser, in Chromium", { skip: browserProble
     }
   });
 });
+
+describe("svgToPng in a real browser, in Chromium", { skip: browserProblem ?? false }, () => {
+  test("an SVG screen, shapes or HTML in a foreignObject, comes back as a PNG that passes imageProblem", async () => {
+    const { transform } = await import("esbuild");
+    const { code } = await transform(readFileSync(path.join(TEMPLATE, "lib/client/raster.ts"), "utf8"), { loader: "ts", format: "esm" });
+    const page = await browser.newPage();
+    try {
+      await page.route("http://raster.test/**", (route) =>
+        route.fulfill({ contentType: route.request().url().endsWith(".js") ? "text/javascript" : "text/html", body: route.request().url().endsWith(".js") ? code : "<!doctype html><title>t</title>" }),
+      );
+      await page.goto("http://raster.test/");
+      const result = await page.evaluate(async () => {
+        const { svgToPng, imageProblem } = await import("http://raster.test/raster.js");
+        const shapes = '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800"><rect x="10" y="10" width="300" height="200" fill="red"/><text x="20" y="50" font-size="30">Inbox</text></svg>';
+        const html = '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml" style="font:30px sans-serif">Notes</div></foreignObject></svg>';
+        const out = [];
+        for (const svg of [shapes, html]) {
+          try {
+            const png = await svgToPng(svg, { width: 1280, height: 800 });
+            out.push({ head: png.slice(0, 22), problem: imageProblem(png) });
+          } catch (err) {
+            out.push({ error: String(err) });
+          }
+        }
+        return out;
+      });
+      assert.deepEqual(result, [
+        { head: "data:image/png;base64,", problem: null },
+        { head: "data:image/png;base64,", problem: null },
+      ]);
+    } finally {
+      await page.close();
+    }
+  });
+});
