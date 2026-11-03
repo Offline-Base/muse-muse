@@ -89,6 +89,7 @@ Link: https://github.com/meta-models/meta-model-cookbook/tree/main/03_use_cases/
 Build: a labeled **Simulated local agent** works on a task, and asks to consult a remote model. The gate is real.
 
 - The simulated agent is a scripted or rule-based step list on the page. Never present it as Muse Glimmer running here.
+- Its steps are the one scripted part allowed here, an exception to No scripted stand-in: label each **Simulated step**, never as a model reply, and every answer after Approve is a real `muse-wonder-1.0` call.
 - Before anything is sent, show the exact text and its size in bytes, with Approve and Deny. Denying sends nothing, and the agent continues without it.
 - Only an approved request reaches the server, and the server sends exactly the text approved, checked against a hash from the page.
 - An **egress ledger** lists each request: time, bytes, approved or denied, and the reply's size. Add a timeout, so no answer counts as denied.
