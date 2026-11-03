@@ -295,7 +295,7 @@ export const USAGE = [
   "npm run demo-batch -- [--dry] [--url=<site>] [--set=<set>] [ids...]",
   "  --dry             print the notes, start nothing",
   "  --url=<site>      another deployment (default https://www.musemuse.dev)",
-  "  (no --set)        one build per recipe, plus the legal case agent",
+  "  (no --set)        the first batch: 12 recipe builds, the legal case agent among them",
   "  --set=targets     one build per target: phone, desktop, vr, glasses, agent, edge",
   "  --set=showcase    the video's showcase builds: allapis, classgame and tutor",
   "  --set=cookbook    one build per app-build recipe in Meta's cookbook, ids are the recipe slugs",
