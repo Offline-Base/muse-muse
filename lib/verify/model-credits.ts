@@ -97,12 +97,18 @@ export function creditsInSource(files: readonly SourceFile[]): ModelCredit[] {
   return out;
 }
 
-/** Screens and the code they use. Never tests, fixtures, skills or the chip's own definition. */
+/**
+ * Screens and the code they use. Never tests, fixtures, skills or the chip's own definition, and never the platform's
+ * own helpers in lib/meta/ and lib/platform/. Those come from the builder snapshot, not the product's writer: the
+ * snapshot made before this check has askGlimmer's old "Answered by Muse Wonder" note in lib/meta/glimmer.ts, which
+ * would fail every product under the switch until a new snapshot, and refinements of older products for good.
+ */
 export function isUiSource(file: string): boolean {
   const f = file.replace(/\\/g, "/").replace(/^\.\//, "");
   if (!/^(app|components|lib|src)\//.test(f)) return false;
   if (!/\.(tsx|jsx|ts|js|mdx)$/.test(f)) return false;
   if (/(^|\/)(__tests__|tests|node_modules|\.next)\//.test(f) || /\.(test|spec)\.[a-z]+$/.test(f)) return false;
+  if (/^(src\/)?lib\/(meta|platform)\//.test(f)) return false;
   return f !== "components/ModelChip.tsx";
 }
 

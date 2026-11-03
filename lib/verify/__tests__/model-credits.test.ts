@@ -90,9 +90,16 @@ describe("finding credits", () => {
     assert.equal(isUiSource("app/page.tsx"), true);
     assert.equal(isUiSource("components/Result.tsx"), true);
     assert.equal(isUiSource("lib/labels.ts"), true);
-    for (const f of ["tests/smoke.spec.ts", "app/__tests__/x.test.tsx", "components/x.test.tsx", "fixtures/a.ts", ".agents/skills/x/SKILL.md", "components/ModelChip.tsx", "app/globals.css"]) {
+    for (const f of ["tests/smoke.spec.ts", "app/__tests__/x.test.tsx", "components/x.test.tsx", "fixtures/a.ts", ".agents/skills/x/SKILL.md", "components/ModelChip.tsx", "app/globals.css", "lib/meta/glimmer.ts", "lib/platform/sam-boxes.ts"]) {
       assert.equal(isUiSource(f), false, f);
     }
+  });
+
+  it("never reads the platform's own helpers, so a product from the snapshot before this check passes", () => {
+    // template/lib/meta/glimmer.ts as the Nov 1 builder snapshot has it, in every product made from that snapshot.
+    const old = `return { text, by: "wonder", note: own ? "Answered by Muse Wonder while this app's own model is off." : "Answered by Muse Wonder while Muse Glimmer is off." };`;
+    assert.deepEqual(creditsInSource([{ file: "lib/meta/glimmer.ts", text: old }]), []);
+    assert.deepEqual(withModelCredits(PASSED, creditsInSource([{ file: "lib/meta/glimmer.ts", text: old }]), SWITCH), PASSED);
   });
 });
 
