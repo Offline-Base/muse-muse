@@ -237,6 +237,8 @@ export function newBriefSchemaFor(opts: {
   fullBuilds?: boolean;
   /** BUILD_RANGE: requires a direction, and raises the flow and screen limits unless fullBuilds has already. */
   buildRange?: boolean;
+  /** META_UI_ONLY: BUILD_RANGE still raises the limits, but asks for no direction, since every product is on meta-ui. */
+  metaUiOnly?: boolean;
   /** FLEET_PRODUCTS: the writer may also pick jetson-fleet. */
   fleet?: boolean;
   /** SPARK_OPEN_PRODUCTS: the writer may also pick muse-spark-open, after jetson-fleet when both are on. */
@@ -263,7 +265,7 @@ export function newBriefSchemaFor(opts: {
     extra.screens = z.array(z.object({ name: z.string(), purpose: z.string() })).max(FULL_LIMITS.screens);
   }
   if (opts.buildRange) {
-    extra.direction = DirectionSchema;
+    if (!opts.metaUiOnly) extra.direction = DirectionSchema;
     if (!opts.fullBuilds) {
       extra.primaryFlow = z.array(z.string().min(1)).min(1).max(RANGE_LIMITS.primaryFlow);
       extra.screens = z.array(z.object({ name: z.string(), purpose: z.string() })).max(RANGE_LIMITS.screens);

@@ -132,12 +132,14 @@ export function askedLookJudgeNote(asked: string): string {
  */
 export function judgeInstructions(
   brief: Pick<Brief, "targets" | "agent" | "askedLook"> & Partial<Brief>,
-  opts: { museAppLook?: boolean; buildRange?: boolean; verifyAgents?: boolean; fullBuilds?: boolean; samples?: boolean } = {},
+  opts: { museAppLook?: boolean; buildRange?: boolean; verifyAgents?: boolean; fullBuilds?: boolean; samples?: boolean; metaUiOnly?: boolean } = {},
 ): string {
   const targets = briefTargets(brief);
-  const asked = askedLookOf(brief, opts);
+  // META_UI_ONLY (owner, Nov 3): every product is judged against the meta-ui house style alone, even with BUILD_RANGE.
+  const look = opts.metaUiOnly ? { museAppLook: false } : opts;
+  const asked = askedLookOf(brief, look);
   // BUILD_RANGE (docs/BUILD_RANGE.md): a product with a direction is judged against it. One without keeps the house styles.
-  const direction = opts.buildRange ? (brief.direction ?? null) : null;
+  const direction = opts.buildRange && !opts.metaUiOnly ? (brief.direction ?? null) : null;
   const notes = [
     ...(direction ? [rangeJudgeNote(direction)] : []),
     ...(asked ? [askedLookJudgeNote(asked)] : []),
@@ -149,7 +151,7 @@ export function judgeInstructions(
     ...(targets.includes("edge") && env.edgeEnabled ? [EDGE_JUDGE_NOTE, EDGE_BOARD_STATUS_JUDGE_NOTE] : []),
     ...(opts.samples ? [SAMPLES_JUDGE_NOTE] : []),
   ];
-  const base = direction ? withHouseStyle(JUDGE_INSTRUCTIONS, RANGE_HOUSE_STYLE) : opts.museAppLook ? withHouseStyle(JUDGE_INSTRUCTIONS, BOTH_HOUSE_STYLES) : JUDGE_INSTRUCTIONS;
+  const base = direction ? withHouseStyle(JUDGE_INSTRUCTIONS, RANGE_HOUSE_STYLE) : look.museAppLook ? withHouseStyle(JUDGE_INSTRUCTIONS, BOTH_HOUSE_STYLES) : JUDGE_INSTRUCTIONS;
   const text = notes.length ? `${base}\n\n${notes.join("\n\n")}` : base;
   // ---------- Wave 3, unit 2 (docs/CAPABILITIES.md, 2.6): each cap's note after the glasses note, empty with no cap blocks ----------
   const required = opts.fullBuilds ? buildableRequirements(brief) : [];

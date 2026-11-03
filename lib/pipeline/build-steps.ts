@@ -252,15 +252,27 @@ function sessionNotes(): { goalSet: boolean; ownerNotes: boolean; noteReplies: b
 
 /**
  * MUSE_APP_LOOK (docs/BRAND.md): a new build gets the muse-app look at provision, and the build, fix and change prompts
- * name it. Off, every prompt and sandbox is as it was.
+ * name it. META_UI_ONLY turns that off and has the fix and change prompts keep each product's own look. Off, every
+ * prompt and sandbox is as it was.
  */
-function lookNote(): { museAppLook: boolean } {
-  return { museAppLook: env.museAppLook };
+function lookNote(): { museAppLook: boolean; metaUiOnly?: boolean } {
+  return { museAppLook: env.museAppLook, ...(env.metaUiOnly ? { metaUiOnly: true } : {}) };
 }
 
-/** BUILD_RANGE (docs/BUILD_RANGE.md): a brief written with it has a direction. Nothing for any other brief, or with it off. */
+/**
+ * BUILD_RANGE (docs/BUILD_RANGE.md): a brief written with it has a direction. Nothing for any other brief, or with it off.
+ * With META_UI_ONLY no brief gets a direction, so its depth, agents and limits reach any brief while BUILD_RANGE is on.
+ */
 function rangeNote(brief: Brief | null | undefined): { buildRange?: boolean } {
-  return env.buildRange && brief?.direction ? { buildRange: true } : {};
+  return env.buildRange && (brief?.direction || env.metaUiOnly) ? { buildRange: true } : {};
+}
+
+/**
+ * The build-range overlay at provision. It lies over the muse-app look and swaps its rules for the brief's direction,
+ * so META_UI_ONLY, which has neither, leaves it out.
+ */
+function rangeOverlayNote(brief: Brief): { buildRange?: boolean } {
+  return env.metaUiOnly ? {} : rangeNote(brief);
 }
 
 /** FAST_BUILDS: a brief marked fast when it was written. Nothing with the flag off, whatever the stored brief holds. */
@@ -529,7 +541,8 @@ export async function briefStep(buildId: string): Promise<BriefSummary> {
     rebuildOf: rebuildTargetFor(build.rebuildOf),
     requestedTargets: build.requestedTargets,
     ...(builder ? { builder } : {}),
-    ...(env.buildRange ? { range: { seed: buildId, recent: await recentDirections() } } : {}),
+    // META_UI_ONLY: no direction to differ from, so no read.
+    ...(env.buildRange ? { range: { seed: buildId, recent: env.metaUiOnly ? [] : await recentDirections() } } : {}),
   }).catch(async (err: unknown) => {
     // A brief that failed both attempts still cost something. Record it before the step retries.
     if (err instanceof StructuredOutputError) await chargeBrief(buildId, err.usage);
@@ -758,7 +771,7 @@ export async function provisionStep(input: {
     buildToken: token,
     gatewayUrl: env.gatewayUrl,
     ...look,
-    ...rangeNote(brief),
+    ...rangeOverlayNote(brief),
     ...(env.fastBuilds ? { warm: true } : {}),
     ...extraFilesFor(brief),
     targets: briefTargets(brief),

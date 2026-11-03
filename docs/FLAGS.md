@@ -32,11 +32,11 @@ Then push to main, or press Redeploy on the latest Production deployment. After 
 
 The script reads the names Production has. It adds each "turn on now" switch that is missing, with the value 1. It leaves switches that are already present alone, since their values can't be read safely. Add `--rewrite` to reset those to 1 as well (it removes each one, then adds it again). It changes nothing else. It never touches a "turn on after setup" or "leave off" switch.
 
-Counts: 47 to turn on now (36 already present, 11 new), 33 rows to turn on after their setup, 28 rows (31 names) to leave off.
+Counts: 48 to turn on now (36 already present, 12 new), 33 rows to turn on after their setup, 28 rows (31 names) to leave off.
 
 ## 1. Turn on now
 
-### New: the script adds these 11
+### New: the script adds these 12
 
 | Flag | What it does | Needs | Risk |
 |---|---|---|---|
@@ -51,6 +51,7 @@ Counts: 47 to turn on now (36 already present, 11 new), 33 rows to turn on after
 | `TUNE_GENERAL_CHECKS` | A glimmer-lora chat tune also answers 20 general and 20 safety prompts, judged blind, shown apart from the task score. | Nothing. | Up to 40 more judged items a tune on a Meta judge, plus a little GPU time, including visitor runs under the start code and the `TRAIN_*` caps. |
 | `CODE_BROWSE` | `/browse` opens one page a product's owner typed, in a sandbox that reaches only that host, and returns text and a screenshot. | `CODE_ENABLED` and `BUILDER_SNAPSHOT_ID`, both set. Reaches only new builds with the code block. | Vercel Sandbox time, $2 a day for the whole platform (`CODE_BROWSE_DAILY_USD`). Owners and build tests only, never visitors. Guests don't get the code cap while `TRUST_SIGNED_IN_CAPS` is on. |
 | `HARDWARE_GADGET_OWNER_CHECK` | A live product token reaches only the board its owner linked. | Tell Hussam, since gadgets are his. | It only narrows access. `DEVICE_MCP_URL` isn't set, so gadget products already answer offline. Required before `DEVICE_MCP_URL` ever reaches Production. |
+| `META_UI_ONLY` | Every new product uses our meta-ui skill (gray page, flat white cards, Meta blue, Inter and Montserrat), whatever `MUSE_APP_LOOK`, `BUILDS_ON_CONTRIBUTOR` or `BUILD_RANGE` say. No muse-app overlay, no design direction, and the judge expects the meta-ui house style. `BUILD_RANGE` keeps its depth, limits, subagents and workflows. A fix or change keeps an older product's look from its own files. Owner, Nov 3. | Nothing. meta-ui is the template's own look, so no new snapshot. | Builds already running keep the look they started with. With `BUILD_RANGE` on, builds skip the build-range overlay, so the smoke report keeps the template's limits on the last screenshot (result within 1,000 px of the top, page at most 4,000 px tall) instead of 2,400 and 12,000. |
 
 ### Already present: keep these 36
 
@@ -60,7 +61,7 @@ The script leaves these alone. Each one's value can't be read from here, so chec
 |---|---|---|---|
 | `AGENTS_ENABLED` | The brief writer may pick the agent target, with the agent kit. | Builder snapshot with the agent kit. | Low. Personal accounts stay off. |
 | `AGENT_LONG_RUNS` | The two long recipes may be picked, and their products get $25 a day (`AGENT_LONG_DAILY_USD`) instead of $10. | `RECIPES_ENABLED`. | Visitors of one long-run product can spend up to $25 a day of Meta money on it, inside the daily cap. Set `AGENT_LONG_DAILY_USD` to 10 before the Wonder flip. |
-| `BUILD_RANGE` | Each brief picks its own design direction, products go deeper, and complex builds use subagents. It also forces `MUSE_APP_LOOK` and `MUSE_FULL` on. | Builder snapshot with the build-range overlay. | Builds run longer and cost a bit more, inside the build budget. |
+| `BUILD_RANGE` | Each brief picks its own design direction, products go deeper, and complex builds use subagents. It also forces `MUSE_APP_LOOK` and `MUSE_FULL` on. With `META_UI_ONLY` on, the direction and the muse-app look are dropped and the rest stays. | Builder snapshot with the build-range overlay. | Builds run longer and cost a bit more, inside the build budget. |
 | `CODE_ENABLED` | Pyodide and QuickJS in the browser for products with the code block. `/exec` and `/browse` need it. | Nothing. | The code cap is for signed-in builders only. |
 | `DATA_ENABLED` | Products with a data block save rows through `/data`. | Nothing. Passed a real Preview build. | Signed-in builders only. |
 | `EDGE_BUILDS` | Edge builds get lib/meta/edge.ts, the muse-edge skill and the outage drill kit. | `EDGE_ENABLED`. Owner decision D3, Nov 2. | A product's `EDGE_URL` must name a Meta model (one-bit Glimmer or SAM 3.1). docs/EDGE_DEMO.md still shows a Llama 3.2 3B example: keep demos on Glimmer or SAM. |
@@ -74,7 +75,7 @@ The script leaves these alone. Each one's value can't be read from here, so chec
 | `GUEST_EDITS` | The browser that made a guest build can refine it. | Nothing. | Refinements count against the shared guest quota. |
 | `HOST_TUNED` | An admin can host a tuned model on Baseten, Modal, Fireworks or Lambda from its page. | Provider keys, `HOST_HF_TOKEN`, `HOST_TUNED_DAILY_USD`. | Admin-only GPU spend, capped per day, stopped after 15 idle minutes. The runbook removes it after the partner evals. |
 | `MAKE_CHAT_ALL` | The Make page's box starts a product, a tuned model or both. | `TUNE_COMPOSER`. | None beyond existing limits. |
-| `MUSE_APP_LOOK` | New builds get the muse-app look and its UI skill. | Builder snapshot with the muse-app overlay. | None. |
+| `MUSE_APP_LOOK` | New builds get the muse-app look and its UI skill. `META_UI_ONLY` overrides it. | Builder snapshot with the muse-app overlay. | None. |
 | `MUSE_CODE_ENABLED` | Products may run Muse Code sessions for their owner, $1 and 15 minutes at most each. | `CODE_ENABLED` and the musecode overlay. | Owners only. Builder-only cap, so guests don't get it. |
 | `MUSE_FULL` | Every Muse Code run gets the platform's settings, hooks and build MCP server, and steering. | Nothing. | None. |
 | `OPEN_TRAIN` | Anyone can start a tune through the describe and folder flows, under the start code and visitor limits. | `TUNE_START_CODE` and the `TRAIN_*` caps, all set. | Visitor GPU spend, held by the start code. Keep the code out of public copy. |

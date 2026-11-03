@@ -736,8 +736,20 @@ export const env = {
    * it was. Turn it on only after the builder snapshot has the overlay: the live site can't add it.
    */
   get museAppLook(): boolean {
+    // META_UI_ONLY (owner, Nov 3) wins over all three: every new build is on meta-ui.
+    if (flag("META_UI_ONLY")) return false;
     // Builds on Contributor always get the look (BUILDS_ON_CONTRIBUTOR, the owner's Nov 1 decision).
     return flag("MUSE_APP_LOOK") || contributorBuildsOn() || flag("BUILD_RANGE");
+  },
+  /**
+   * META_UI_ONLY (owner, Nov 3): every new product uses the meta-ui skill (template/.agents/skills/meta-ui: a gray page,
+   * flat white cards, Meta blue, Inter and Montserrat), whatever MUSE_APP_LOOK, BUILDS_ON_CONTRIBUTOR or BUILD_RANGE say.
+   * museAppLook is false, so no build gets the muse-app overlay, and BUILD_RANGE's design direction is gone from the brief
+   * writer, the build prompt, the fix prompt and the judge. BUILD_RANGE's depth, limits, subagents and workflows stay. A
+   * fix or change keeps an older product's look from its own files (app/muse-app.css). Off, everything is as it was.
+   */
+  get metaUiOnly(): boolean {
+    return flag("META_UI_ONLY");
   },
   /**
    * BUILD_RANGE (docs/BUILD_RANGE.md): every brief picks its own design direction, the kit's look rules become defaults,

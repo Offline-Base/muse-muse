@@ -16,7 +16,7 @@
 set -u
 
 FLAGS_NOW=(
-  # New on Nov 3 (docs/FLAGS.md, "New: the script adds these 11")
+  # New on Nov 3 (docs/FLAGS.md, "New: the script adds these 12")
   STEER_CHAT
   BUILD_ROOM_STEPS
   ENGINE_EXACT_LOGIC
@@ -28,6 +28,8 @@ FLAGS_NOW=(
   TUNE_GENERAL_CHECKS
   CODE_BROWSE
   HARDWARE_GADGET_OWNER_CHECK
+  # Added Nov 3, afternoon (owner: every product on the meta-ui skill)
+  META_UI_ONLY
   # Already present on Nov 3 (docs/FLAGS.md, "Already present: keep these 36")
   AGENTS_ENABLED
   AGENT_LONG_RUNS

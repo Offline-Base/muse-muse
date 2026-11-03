@@ -152,7 +152,7 @@ export async function judgeBuild(input: JudgeInput): Promise<{ verdict: JudgeRes
   if (required.length) {
     const result = await respondStructured({
       model: env.judgeModel,
-      instructions: judgeInstructions(input.brief, { museAppLook: env.museAppLook, fullBuilds: true, ...(env.buildRange ? { buildRange: true } : {}), ...(env.verifyAgents ? { verifyAgents: true } : {}), ...samplesOpt(input) }),
+      instructions: judgeInstructions(input.brief, { museAppLook: env.museAppLook, fullBuilds: true, ...(env.buildRange ? { buildRange: true } : {}), ...(env.metaUiOnly ? { metaUiOnly: true } : {}), ...(env.verifyAgents ? { verifyAgents: true } : {}), ...samplesOpt(input) }),
       content,
       sources,
       schema: FullVerdictSchema,
@@ -165,7 +165,7 @@ export async function judgeBuild(input: JudgeInput): Promise<{ verdict: JudgeRes
   }
   const result = await respondStructured({
     model: env.judgeModel,
-    instructions: judgeInstructions(input.brief, { museAppLook: env.museAppLook, ...(env.buildRange ? { buildRange: true } : {}), ...(env.verifyAgents ? { verifyAgents: true } : {}), ...samplesOpt(input) }),
+    instructions: judgeInstructions(input.brief, { museAppLook: env.museAppLook, ...(env.buildRange ? { buildRange: true } : {}), ...(env.metaUiOnly ? { metaUiOnly: true } : {}), ...(env.verifyAgents ? { verifyAgents: true } : {}), ...samplesOpt(input) }),
     content,
     sources,
     schema: VerdictSchema,

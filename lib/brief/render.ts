@@ -237,13 +237,26 @@ interface LookNote {
   museAppLook?: boolean;
   /** BUILD_RANGE (docs/BUILD_RANGE.md): the brief's direction drives the look, and a complex build must use its agents. */
   buildRange?: boolean;
+  /**
+   * META_UI_ONLY (owner, Nov 3): every new product on meta-ui. BUILD_RANGE keeps its depth, agents and limits on any brief,
+   * but its direction never sets the look, and a fix or change keeps the look the product's own files have.
+   */
+  metaUiOnly?: boolean;
   /** FAST_BUILDS on a complex build: the run's agent capacity, for How you must work. */
   fastCapacity?: number;
 }
 
-/** The direction this prompt follows: BUILD_RANGE on, a brief that has one and isn't refused. */
+/**
+ * Whether BUILD_RANGE's depth, agents and limits reach this prompt: the flag on, a brief that isn't refused, and its
+ * direction. With META_UI_ONLY no new brief has a direction, so any brief.
+ */
+function rangeOn(brief: Brief, note: LookNote): boolean {
+  return note.buildRange === true && brief.verdict !== "no" && (note.metaUiOnly === true || brief.direction != null);
+}
+
+/** The direction this prompt follows for the look: BUILD_RANGE on, a brief that has one and isn't refused, never with META_UI_ONLY. */
 function rangeDirection(brief: Brief, note: LookNote): NonNullable<Brief["direction"]> | null {
-  return note.buildRange && brief.verdict !== "no" ? (brief.direction ?? null) : null;
+  return rangeOn(brief, note) && !note.metaUiOnly ? (brief.direction ?? null) : null;
 }
 
 /** The skill a build prompt sends Muse Code to for the look. */
@@ -275,7 +288,8 @@ function lookLine(brief: Brief, note: LookNote): string {
 
 /** The fix and change prompts' look line, up to its last sentence. */
 function keepLookLine(note: LookNote): string {
-  return note.museAppLook
+  // META_UI_ONLY: a product from before it may have the muse-app look, so its own files decide, as with MUSE_APP_LOOK.
+  return note.museAppLook || note.metaUiOnly
     ? "- Keep the product's current look: the tokens and parts in `app/globals.css`, with `app/muse-app.css` and `.agents/skills/muse-app-ui` when the product has them, or else `.agents/skills/meta-ui` if it exists."
     : "- Keep the product's current look: the tokens and parts in `app/globals.css`, and `.agents/skills/meta-ui` if it exists.";
 }
@@ -457,9 +471,11 @@ export function renderBuildPrompt(
     LookNote,
 ): string {
   const full = opts.fullBuild === true && briefRequirements(brief).length > 0;
+  // range: BUILD_RANGE's depth, agents and limits. direction: its look, which META_UI_ONLY leaves out.
+  const range = rangeOn(brief, opts);
   const direction = rangeDirection(brief, opts);
   const fastLines = opts.fastCapacity !== undefined && brief.complexity === "complex" ? fastAgentLines(opts.fastCapacity) : null;
-  const requiredAgents = fastLines !== null || (direction !== null && brief.complexity === "complex");
+  const requiredAgents = fastLines !== null || (range && brief.complexity === "complex");
   const out: string[] = [];
   out.push(
     "# Build this product",
@@ -474,7 +490,7 @@ export function renderBuildPrompt(
     ...(full ? [FULL_DONE_LINE] : []),
     "",
     "Then stop.",
-    ...(direction ? RANGE_DEPTH_LINES : []),
+    ...(range ? RANGE_DEPTH_LINES : []),
     ...(fastLines ?? (requiredAgents ? RANGE_AGENT_LINES : [])),
   );
   if (full && brief.verdict !== "no") out.push(...fullBuildLines(briefRequirements(brief), fullMilestones(brief), targetCheckedRequirements(brief).map((c) => ({ id: c.requirement.id, how: TARGET_CHECK_HOW[c.kind] }))), ...(brief.chained === true ? CHAIN_BUILD_LINES : []));
@@ -508,7 +524,7 @@ export function renderBuildPrompt(
     "",
     "## Primary flow",
     "",
-    full ? FULL_FLOW_LINE : direction ? RANGE_FLOW_LINE : "Build this first and make it work end to end with the files in `fixtures/`. Extra screens come after that, if at all.",
+    full ? FULL_FLOW_LINE : range ? RANGE_FLOW_LINE : "Build this first and make it work end to end with the files in `fixtures/`. Extra screens come after that, if at all.",
     "",
     ...brief.primaryFlow.map((step, i) => `${i + 1}. ${step}`),
     "",
@@ -518,7 +534,7 @@ export function renderBuildPrompt(
     ...(hasGate(brief) ? ["", GATE_LINE] : []),
     ...(isGame(brief, opts.recipes) ? ["", GAME_END_LINE] : []),
     ...(drawsOverlays(brief) ? ["", OVERLAY_LINE] : []),
-    ...(direction && !full ? ["", RANGE_SHOTS_LINE] : []),
+    ...(range && !full ? ["", RANGE_SHOTS_LINE] : []),
   );
   if (brief.screens.length) {
     out.push("", "## Screens", "", bullets(brief.screens.map((s) => `**${s.name}**: ${s.purpose}`)));
@@ -580,7 +596,7 @@ export function renderBuildPrompt(
       ? "Put this number in `musemuse.json` as `estimatedCostPerRunUsd`. Keep all the tests to at most 3 agent runs, each with `maxTurns` 3 or 4."
       : full
         ? FULL_COST_LINE
-        : direction
+        : range
           ? RANGE_COST_LINE
           : "Put this number in `musemuse.json` as `estimatedCostPerRunUsd`, and keep the smoke test under 5 model calls.",
   );
@@ -659,7 +675,7 @@ export function renderBuildPrompt(
     "",
     "## Budget",
     "",
-    `Stay under ${opts.maxModelSteps} steps. ${direction ? RANGE_SIMPLER_LINE : "If an approach fails twice, pick a simpler one and write the limit in BUILD_NOTES.md."}`,
+    `Stay under ${opts.maxModelSteps} steps. ${range ? RANGE_SIMPLER_LINE : "If an approach fails twice, pick a simpler one and write the limit in BUILD_NOTES.md."}`,
     models.includes("muse-wonder-1.0")
       ? contributorBuildsOn() ? CONTRIBUTOR_PRODUCT_LINE : "Muse Wonder is in preview and bills its reasoning as output, so even a short answer spends a few hundred output tokens."
       : "",
@@ -715,7 +731,7 @@ export function renderFixPrompt(
     "- Don't delete, skip, weaken or loosen tests to make them pass, and don't mock or stub Meta calls. Fix the product instead.",
     "- If a model call fails, check the request against the skill for that model before changing anything else.",
     "- Keep the primary flow from brief.md working, and keep the footer.",
-    `${keepLookLine(input)} ${input.buildRange ? RANGE_FIX_LOOK : "Fix what the judge saw with those, not with new colors, fonts or styles."}`,
+    `${keepLookLine(input)} ${input.buildRange && !input.metaUiOnly ? RANGE_FIX_LOOK : "Fix what the judge saw with those, not with new colors, fonts or styles."}`,
     "- When you're done, run `npm run verify` again until it exits 0, and update BUILD_NOTES.md.",
     ...(input.buildRange ? [`- ${RANGE_FIX_AGENT_LINE}`] : []),
     ...sessionLines(input, "fix").map((line) => `- ${line}`),

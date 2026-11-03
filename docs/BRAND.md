@@ -458,6 +458,16 @@ retinting `--bg` would retint the docs. To keep their look:
 
 ## Products
 
+### The look today: meta-ui for every product (`META_UI_ONLY`, owner, Nov 3)
+
+The owner's call: every product uses our meta-ui skill (`template/.agents/skills/meta-ui`: a gray page, flat white
+cards, Meta blue, Inter and Montserrat). With `META_UI_ONLY` on, `env.museAppLook` is false whatever `MUSE_APP_LOOK`,
+`BUILDS_ON_CONTRIBUTOR` or `BUILD_RANGE` say, so no build gets the muse-app overlay or `withLookColors`, and the writer,
+build prompt and judge name meta-ui. `BUILD_RANGE` loses only its look: no direction in the brief or its schema, no
+build-range overlay, the plain meta-ui house style in the judge. Its depth, limits, subagents and workflows stay. A fix
+or change goes by the product's own files: `app/muse-app.css` there means an older muse-app product, which keeps
+muse-app-ui, and otherwise meta-ui. The muse-app look below stays in the tree for those older products.
+
 ### What's there
 
 - `template/.agents/skills/meta-ui` and `product-ui`, `template/app/globals.css` and `template/AGENTS.md` set today's
