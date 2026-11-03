@@ -751,3 +751,10 @@ are never stored or used.
 - The GGUFs aren't in S3 (only stage1-ckpt's IQ1_S is): the cache filesystem holds them. The upload link here is too
   slow; decide whether they need to be in S3 before the cache filesystem is deleted.
 - The tuned GGUFs were never tried with the mmproj (vision); only base Q4_K_M was (one image).
+
+
+## Nov 3, 2026: SAM 3.1 "muse" tune, tested among other plush toys; SAM tuning added to Muse Muse
+
+- Test (jetson-04, through sam3.service, $0): 30 COCO val2017 teddy-bear photos without Muse (set A) and the same 30 with one held-out Muse pasted in (set B), 4 prompts each. Tuned "muse": Muse AP 0.77 (Meta "plush toy" 0.47, "toy" 0.50, Meta "muse" 0.00); ranks Muse first in 22 of 30 (plush toy 14, toy 20); boxes Muse and nothing else in 8 of 30 (Meta 0); fires on 22 of 30 photos without Muse (plush toy 30). It adds a name and ranks Muse first more often, but still boxes other plush toys, since it trained only on photos with no other toys. Files: docs/log/bench/2026-11-03/distract/ (scores.json, per_image.json, three side-by-sides, report.html local only); boards: jetson-03 /opt/sam3train/runs/nov3-distract/, jetson-04 /tmp/sam-distract/. Verified by a second agent (20 fresh looks match). MESSAGING.md has the narrow claim and its caveat.
+- Next step proposed, not run: retune on jetson-03 with the training bears as "not Muse" negatives (the trainer keeps empty-annotation images; about 45 min, $0).
+- Muse Muse now has SAM tuning behind SAM_TUNE (off): pull worker on jetson-03 trains and scores, posts a before-and-after report (Meta new word, Meta generic word, Meta "toy", tuned new word; held-out, look-alikes, side-by-sides). Merged c28b65c9 and 99207423; migration 0033_sam_tune. Not yet installed on any board: needs Hussam (see docs/HANDOFF.md, Now).

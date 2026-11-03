@@ -4632,3 +4632,9 @@ The board side of "Teach SAM 3.1 a new object" (plan Design A): a pull worker on
 - Owner: a simple screen for the demo video on the Boox (Android e-ink, has a browser) in front of the Jetson Orin Nanos: what runs on each board, its power draw and more. Built as GET /fleet/display (app/fleet/display/route.ts, lib/fleet/display.ts): plain HTML with no site chrome and no JavaScript, black on white, large type, hairline cards, `<meta http-equiv="refresh" content="60">`. Header: boards online, total power, tokens today. Per board: name, power in W, what it runs, CPU, GPU, temperature, memory; offline boards dashed.
 - Data from the fleet control plane, read on the server: /api/public/stats (no token, totals) and /api/nodes (FLEET_VIEWER_TOKEN, a viewer-role jpt_ token, read only; never sent to the tablet). Without the token the page shows totals only and says why. The agent reports only Ollama, Docker and itself as services, so "what runs" comes from a board's `role` label in the control plane, else DEFAULT_ROLES (jetson-04 SAM 3.1, jetson-03 SAM tuning, jetson-02 one-bit Glimmer), plus loaded models and live tokens per second.
 - Settings: FLEET_VIEWER_TOKEN (owner makes a viewer token in the control plane and sets it), FLEET_DISPLAY_URL (default https://www.offlinebase.com/admin), FLEET_DISPLAY_CODE (optional ?k= gate). Tests: lib/fleet/__tests__/display.test.ts, 3 of 3, made-up boards. Preview rendered at 1404 x 1872.
+
+
+## Nov 3, about 4:05 PM ET: pause for the laptop
+
+- The owner shut the laptop. Every worktree used today was checked clean and pushed (merge-polish, s-merge, w-applook, w-skillset, w-polish, w-batch, f-flags). docs/HANDOFF.md "Now" has what keeps running, what paused, the resume commands and the owner to-dos; docs/KNOWLEDGE_RUN_LOG.md has the SAM test and the SAM tuning feature.
+- At the pause: width run 6 polishing, 19 not started (log 3:53 PM); 7 polish passes in flight on the server.
