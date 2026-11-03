@@ -103,7 +103,9 @@ it ends, done or not. A restart mid-run stops its units and tells the site.
 
 **Not yet checked on the board** (write against these, then check on the first run):
 - The trainer's progress line format: `worker.py` reads `[epoch][ i/n]` and sends the raw line too.
-- Whether the pinned loader keeps images with no boxes (the template's `include_negatives` slot is off unless
-  `SAM_TUNE_EMPTY_NEGATIVES=1`). The pasted composites work either way.
+- Checked read-only on jetson-03 (U5, Nov 3): the pinned loader keeps images with no boxes as negatives
+  (`coco_json_loaders.py:52-58`, `include_negatives` defaults true), so `SAM_TUNE_EMPTY_NEGATIVES=1` is safe to turn on.
+  It stays off by default; the pasted composites work either way. `num_images` must stay null or at least the image count,
+  since `limit_ids` shuffles and cuts to it.
 - That `systemd-run --wait` with `StandardOutput=append:` behaves on the board's systemd 255 as on desktop Ubuntu.
 - How many val2017 teddy photos pass the license filter (`fetch_coco_bears.py` prints it).

@@ -4591,3 +4591,11 @@ The board side of "Teach SAM 3.1 a new object" (plan Design A): a pull worker on
   - The every-third held-out split is still the placeholder.
   - The grids aren't mounted in U3's room yet.
 - **Tests:** label, distractors and uploads, 34 of 34. `npx tsc --noEmit -p .` is clean. $0 spent.
+
+### 2026-11-03: SAM tune integration (U7, branch tg-sam-merge, not pushed)
+- **Merged** onto origin/main d4e7a27b, in order: tg-sam-core 3da25050, tg-sam-routes 1ddca153, tg-sam-ui 9d9490ca, tg-sam-worker 52099828, tg-sam-uploads f49bdd94. The earlier pre-review merge on this branch is kept as local branch `tg-sam-merge-prereview` (35e0aa47) and is not used.
+- **Conflicts:** only `docs/BUILD_LOG.md`, both sides kept. Code merged cleanly. U1's `logic.ts`, `store.ts`, `types.ts`, `worker-auth.ts`, `env.ts` and `schema.ts` are byte-identical to tg-sam-core, and no shim is left (`u1-shim.ts` gone, no stub store). Migration 0033 is still the next free number on main.
+- **Tests:** SAM suites (logic, store, worker-auth, label, distractors, uploads, routes, sam-report, sam-flag-off) plus migrations, 113 of 113. env-workflow-bundle and storage, 8 of 8. Worker `unittest`, 23 of 23. `npx tsc --noEmit -p .` clean. No "use step"/"use workflow" file touched.
+- **Doc:** tune README now records U5's read-only finding that the pinned loader keeps images with no boxes.
+- **Still open:** the every-third held-out split for uploads, U6's grids not mounted in the room, the trainer's progress-line format, the unit sandbox and the Neon claim lock on a first real run. jetson-03 has 479 MB free disk, so the base streams from jetson-04 (share31.service) unless disk is freed.
+- $0 spent, no board touched, nothing pushed.
