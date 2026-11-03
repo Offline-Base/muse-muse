@@ -29,7 +29,7 @@ The smoke test's judge screenshots must prove the tagline ("Count the birds in a
 
 When the product offers a sample (a Try the sample button, sample photos), the smoke test also walks that path exactly as a person would: load the sample, then press each next button the page offers, in order, with no extra clicks such as Save in between, and expect a non-empty result. If that path lands on an empty state, fix the product, not the test: loading the sample leaves it ready for the next button.
 
-Overlays: convert the model's coordinates (0 to 1000, or fractions of the photo) to the drawn image's size in one helper, and use it for every dot, box and mask. The smoke test asserts that each box sits inside the photo and holds its own dot or label, from their `boundingBox()`.
+Overlays: convert the model's coordinates (0 to 1000, or fractions of the photo) to the drawn image's size in one helper, and use it for every dot, box and mask. The smoke test asserts that each box sits inside the photo, within a few pixels, and lines up with its own dot or label (the dot inside the box, the label touching it), from their `boundingBox()`.
 
 ## Meta models
 

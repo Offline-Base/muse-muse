@@ -176,9 +176,11 @@ export const LONG_SAMPLE_MIN_CHARS = 2000;
 /** A "noisy" text sample with fewer lines than this can't hold repeats, junk and real entries together. */
 export const NOISY_SAMPLE_MIN_LINES = 12;
 
-const LONG_INPUT = /\b(?:long|lengthy)\s+(?:[a-z-]+\s+){0,4}?(policy|policies|document|documents|doc|text|article|report|contract|transcript|essay|paper|thread|email|chapter|story|manual|handbook|agreement|terms|notes|paste)\b/i;
+// Not "how long", "as long as", "week-long", "a long time" or "long story short": those say nothing about the input.
+const LONG_INPUT = /(?<![-\w])(?<!\b(?:how|as|so|too)\s+)(?:long|lengthy)\s+(?!(?:as|time|times|while|story|ago|way|term|run|enough)\b)(?:[a-z-]+\s+){0,4}?(policy|policies|document|documents|doc|text|article|report|contract|transcript|essay|paper|thread|email|chapter|story|manual|handbook|agreement|terms|notes|paste)\b/i;
 const NOISY_INPUT = /\b(?:noisy|messy|cluttered|jumbled)\s+(?:[a-z-]+\s+){0,3}?(feed|log|logs|list|stream|inbox|data|export|alerts?|readings|notes|transcript|csv|dump)\b/i;
-const TOTALS_CHECK = /\b(?:check|checks|checking|verify|verifies|confirm|confirms)\b[^.]{0,40}\b(?:totals?|sums?)\b|\b(?:totals?|sums?)\b[^.]{0,20}\b(?:add up|adds up|match|matches)\b/i;
+// A check that a total is right ("checks that the totals add up", "verify the total"), not a total worked out ("check the total calories").
+const TOTALS_CHECK = /\b(?:totals?|sums?)\b[^.,;]{0,20}?\b(?:add up|adds up|match|matches|is right|are right|is correct|are correct|is wrong|are wrong)\b|\b(?:check|checks|checking|verify|verifies|verifying|confirm|confirms)\s+(?:that\s+|whether\s+|if\s+)?(?:the\s+|its\s+|their\s+|each\s+|every\s+|all\s+)?(?:printed\s+|stated\s+|listed\s+)?(?:totals?|sums?)\b(?=\s*(?:[.,;:!?)]|$)|\s+(?:against|on)\b)/i;
 
 type SampleBrief = {
   verdict: string;
@@ -201,14 +203,14 @@ export function sampleProblems(brief: SampleBrief, note: string | null): string[
   if (long && texts.length) {
     const most = Math.max(...texts.map((t) => t.length));
     if (most < LONG_SAMPLE_MIN_CHARS) {
-      problems.push(`fixtures: the request asks for a long ${long[1].toLowerCase()}, but the longest text sample is ${most} characters. Write one of 3,000 to 6,000 characters with several sections, so the test shows the product on a long one.`);
+      problems.push(`fixtures: the request asks for "${long[0].toLowerCase()}", but the longest text sample is ${most} characters. Write one of 3,000 to 6,000 characters with several sections, so the test shows the product on a long one.`);
     }
   }
   const noisy = NOISY_INPUT.exec(asked);
   if (noisy && texts.length) {
     const lines = Math.max(...texts.map((t) => t.split("\n").filter((l) => l.trim()).length));
     if (lines < NOISY_SAMPLE_MIN_LINES) {
-      problems.push(`fixtures: the request asks for a noisy ${noisy[1].toLowerCase()}, but the text sample has ${lines} line${lines === 1 ? "" : "s"}. Write at least 15 entries, one per line, with repeats, junk lines and out-of-order times among the real ones.`);
+      problems.push(`fixtures: the request asks for "${noisy[0].toLowerCase()}", but the text sample has ${lines} line${lines === 1 ? "" : "s"}. Write at least 15 entries, one per line, with repeats, junk lines and out-of-order times among the real ones.`);
     }
   }
   if (TOTALS_CHECK.test(asked) && brief.fixtures.length && !brief.fixtures.some((f) => /\btotals?\b/i.test(f.description))) {

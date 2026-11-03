@@ -131,7 +131,7 @@ test("R3: edit a saved trip", async ({ page }) => {
 - Test what the requirement promises, with real assertions on what appears. A test that only loads a page proves nothing, and the judge reads the screens too.
 - When the product offers a sample, one test loads it exactly as a person would: Try the sample, then each next button the page offers, in order, with no extra clicks such as Save in between, and it expects a non-empty result. A path that lands on an empty state is a bug in the product, not in the test.
 - A requirement that names a counter, meter or check (cached tokens, tokens used, a totals check) needs a sample that moves it, and its test asserts the real value: cached tokens on a second call with the same long text, a printed total that doesn't match its rows. A value that is always 0, or "nothing to check", leaves it not proven.
-- A requirement that names an outline, mask or box asserts in its test that each one sits inside the image and holds its own dot or label, from their \`boundingBox()\`.
+- A requirement that names an outline, mask or box asserts in its test that each one sits inside the image, within a few pixels, and lines up with its own dot or label (the dot inside the box, the label touching it), from their \`boundingBox()\`.
 
 ## Screenshots
 

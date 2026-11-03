@@ -351,7 +351,7 @@ export const SAMPLE_LINES = [
 
 /** Overlays line up with what they mark. Audit, Nov 3: boxes in 0 to 1000 units were divided by 10 again and drawn in a corner. */
 export const OVERLAY_LINE =
-  "Overlays: convert the model's coordinates (0 to 1000, or fractions of the photo) to the drawn image's size in one helper, and use it for every dot, box and mask. The smoke test asserts that each box sits inside the photo and holds its own dot or label, from their `boundingBox()`.";
+  "Overlays: convert the model's coordinates (0 to 1000, or fractions of the photo) to the drawn image's size in one helper, and use it for every dot, box and mask. The smoke test asserts that each box sits inside the photo, within a few pixels, and lines up with its own dot or label (the dot inside the box, the label touching it), from their `boundingBox()`.";
 
 /** How to analyze a chart or a table. Audit, Nov 3: "biggest mover" compared South Q1 with North Q3, as if bar order were time. */
 export const CHART_ANALYSIS_LINES = [

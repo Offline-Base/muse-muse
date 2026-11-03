@@ -28,7 +28,7 @@ const NINE_ALERTS = Array.from({ length: 9 }, (_, i) => `L${i + 1} dock ${i} tem
 describe("the samples code sends back", () => {
   it("a long policy of 349 characters, but not one of 4,000", () => {
     const [problem] = sampleProblems(brief([text(SHORT_POLICY)]), PARKING);
-    assert.match(problem, /long policy, but the longest text sample is 349 characters/);
+    assert.match(problem, /asks for "long made-up city parking policy", but the longest text sample is 349 characters/);
     assert.deepEqual(sampleProblems(brief([text("Section. ".repeat(450))]), PARKING), []);
   });
   it("reads the ask from the requirements when the note can't be quoted", () => {
@@ -36,7 +36,7 @@ describe("the samples code sends back", () => {
   });
   it("a noisy feed of 9 alerts on one line, but not 15 lines", () => {
     const [problem] = sampleProblems(brief([text(NINE_ALERTS)]), DOCKLINE);
-    assert.match(problem, /noisy feed, but the text sample has 1 line\./);
+    assert.match(problem, /asks for "noisy feed", but the text sample has 1 line\./);
     const fifteen = Array.from({ length: 15 }, (_, i) => `09:${String(i).padStart(2, "0")} dock 2 temp high`).join("\n");
     assert.deepEqual(sampleProblems(brief([text(fifteen)]), DOCKLINE), []);
   });
@@ -44,6 +44,20 @@ describe("the samples code sends back", () => {
     const [problem] = sampleProblems(brief([image("A bar chart of quarterly sales for two regions.")]), CHART);
     assert.match(problem, /check totals, but no sample prints a total/);
     assert.deepEqual(sampleProblems(brief([image("A bar chart of sales for two regions with a printed total of 300 that doesn't match its bars.")]), CHART), []);
+  });
+  it("leaves alone notes where long or total says nothing about the input", () => {
+    const short = brief([text("Short."), image("A receipt photo.")]);
+    for (const note of [
+      "Tell me how long the email will take to read.",
+      "A week-long trip notes planner.",
+      "It takes a long time to read the text, so summarize it.",
+      "Long story short, I want a tool that reads my report.",
+      "A recipe app: paste a recipe and check the total calories.",
+      "A budget app that checks my total spend against a limit.",
+      "Compare prices and check which total is cheapest.",
+    ]) assert.deepEqual(sampleProblems(short, note), [], note);
+    assert.equal(sampleProblems(short, "A receipt scanner that checks the total matches the items.").length, 1);
+    assert.equal(sampleProblems(short, "Read the invoice and verify the total.").length, 1);
   });
   it("leaves alone what isn't asked, the person's own sample, a refusal and a build with no samples", () => {
     assert.deepEqual(sampleProblems(brief([text("Short.")]), "Tell me how long it takes to bake bread."), []);
@@ -86,7 +100,7 @@ describe("the writer and the build prompt", () => {
   it("the full-product skill tests the sample path, real counters and boxes on their objects", () => {
     assert.match(FULL_PRODUCT_SKILL, /Try the sample, then each next button the page offers, in order, with no extra clicks/);
     assert.match(FULL_PRODUCT_SKILL, /always 0, or "nothing to check", leaves it not proven/);
-    assert.match(FULL_PRODUCT_SKILL, /sits inside the image and holds its own dot or label/);
+    assert.match(FULL_PRODUCT_SKILL, /sits inside the image, within a few pixels, and lines up with its own dot or label/);
     assert.ok(!FULL_PRODUCT_SKILL.includes("\u2014"));
   });
 });
