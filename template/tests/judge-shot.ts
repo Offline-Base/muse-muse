@@ -306,13 +306,16 @@ export type TapSample = {
   height: number;
   /** A link set inline inside a sentence, which may be as tall as its line. */
   inText: boolean;
-  /** How many controls of its exact size share its parent, counting itself: the cells of a board or a keypad. */
+  /**
+   * How many controls of its exact size sit packed in rows and columns with it, counting itself: the cells of a board,
+   * a keypad or a calendar. 1 when it isn't in such a grid.
+   */
   dense: number;
 };
 
 /** The smallest a control may be on a phone, in CSS px, both ways. */
 export const TAP_MIN = 44;
-/** A parent holding this many same-size controls is a board, a keypad or a calendar, whose cells may be smaller. */
+/** This many same-size controls packed in rows and columns are a board, a keypad or a calendar, whose cells may be smaller. */
 export const DENSE_GRID = 12;
 
 /**
@@ -379,14 +382,28 @@ export function collectTapTargets(): TapSample[] {
       const o = other.getBoundingClientRect();
       return Math.abs(o.width - r.width) <= 1 && Math.abs(o.height - r.height) <= 1;
     };
-    const parent = el.parentElement;
+    // A board: 12 or more controls of this size in its parent or up to two levels above it (a cell may sit in its own
+    // <td> or <div>), lined up in at least 2 rows and 2 columns that fill a lattice, each next to the last. Dots
+    // scattered on a photo and a column of row buttons aren't one.
+    let dense = 1;
+    for (let box = el.parentElement, up = 0; box && box !== document.body && up < 3 && dense === 1; box = box.parentElement, up++) {
+      const cells = [...box.querySelectorAll(CONTROLS)].filter((c) => c === el || (sameSize(c) && visible(c))).map((c) => c.getBoundingClientRect());
+      if (cells.length < 12) continue; // DENSE_GRID, which a page can't reach
+      const packed = (edges: number[], size: number) => {
+        const sorted = [...new Set(edges.map(Math.round))].sort((a, b) => a - b);
+        return sorted.length >= 2 && sorted.every((v, i) => i === 0 || v - sorted[i - 1] <= size + 8) ? sorted.length : 0;
+      };
+      const cols = packed(cells.map((c) => c.left), r.width);
+      const rows = packed(cells.map((c) => c.top), r.height);
+      if (cols && rows && cols * rows <= cells.length * 1.5) dense = cells.length;
+    }
     out.push({
       name: nameOf(el),
       tag: el.tagName.toLowerCase(),
       width: Math.round(r.width * 10) / 10,
       height: Math.round(r.height * 10) / 10,
       inText: inRunningText(el),
-      dense: parent ? [...parent.children].filter((c) => (c === el || c.matches(CONTROLS)) && sameSize(c)).length : 1,
+      dense,
     });
   }
   return out;
@@ -424,7 +441,8 @@ export type TextSample = {
   /**
    * Why the page's colors can't tell what is behind the text, so the check leaves it out: "image" (a background image
    * or gradient), "media" (over a photo, video, canvas or drawing), "faded" (opacity, a filter or a blend mode),
-   * "floating" (on see-through glass, or positioned over something else), "no-ground" (no solid background at all).
+   * "floating" (on see-through glass, positioned over something else, or overlapping a positioned fill such as a
+   * hero's overlay), "no-ground" (no solid background at all).
    */
   skip?: "image" | "media" | "faded" | "floating" | "no-ground";
 };
@@ -471,6 +489,24 @@ export function collectTextSamples(): TextSample[] {
     const r = m.getBoundingClientRect();
     return visible(m) && (!m.matches("svg") || (r.width >= 40 && r.height >= 40));
   });
+  // Fills laid over other content: a positioned element with a fill, or a positioned ::before or ::after with a fill
+  // that covers most of its element (a hero's dark overlay). Text they overlap may sit on them, not on its own ground.
+  const painted = (s: CSSStyleDeclaration) => s.backgroundImage !== "none" || alphaOf(norm(s.backgroundColor)) > 0;
+  const positioned = (s: CSSStyleDeclaration) => /^(absolute|fixed)$/.test(s.position);
+  const overlays: { box: Element; pseudo: boolean }[] = [];
+  for (const o of document.body.querySelectorAll("*")) {
+    if (o.closest("svg")) continue;
+    const s = getComputedStyle(o);
+    if (s.display === "none") continue;
+    if (positioned(s) && painted(s) && visible(o)) overlays.push({ box: o, pseudo: false });
+    const r = o.getBoundingClientRect();
+    const cover = ["::before", "::after"].some((at) => {
+      const p = getComputedStyle(o, at);
+      if (/^(none|normal)$/.test(p.content) || !positioned(p) || !painted(p)) return false;
+      return parseFloat(p.width) * parseFloat(p.height) >= 0.5 * r.width * r.height;
+    });
+    if (cover && r.width > 2 && r.height > 2) overlays.push({ box: o, pseudo: true });
+  }
   const out: TextSample[] = [];
   for (const el of document.body.querySelectorAll("*")) {
     if (out.length >= 2000) break;
@@ -531,6 +567,12 @@ export function collectTextSamples(): TextSample[] {
           sample.skip = "media";
           break;
         }
+      }
+      // A positioned fill inside the ground that overlaps the text, other than one the text sits in, may be under it.
+      for (const { box, pseudo } of overlays) {
+        if (sample.skip || (!page && !ground.contains(box)) || (!pseudo && box.contains(el))) continue;
+        const or = box.getBoundingClientRect();
+        if (rects.some((r) => r.left < or.right && r.right > or.left && r.top < or.bottom && r.bottom > or.top)) sample.skip = "floating";
       }
     }
     out.push(sample);

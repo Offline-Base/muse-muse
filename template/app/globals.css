@@ -248,10 +248,13 @@ hr { border: 0; border-top: 1px solid var(--line); margin: var(--space-16) 0; }
 }
 .appbar-name { min-width: 0; font: 700 20px/24px var(--font-display); letter-spacing: -0.01em; color: var(--fg); text-decoration: none; overflow-wrap: anywhere; }
 /* Links that stand on their own are full controls for a finger: the name as a link home, every link in a <nav>, and a
-   link that is a part of its own in a stack, row, card or row of actions, like "Download the files". */
+   link that is a part of its own in a stack, row, card or row of actions, like "Download the files". A link that wraps
+   blocks (a heading and a line, like a whole card) keeps its own layout. */
 a.appbar-name { display: inline-flex; align-items: center; min-height: var(--control-height); min-width: var(--control-height); }
 :where(nav a, [role="tablist"] a) { display: inline-flex; align-items: center; justify-content: center; min-height: var(--control-height); min-width: var(--control-height); padding-inline: var(--space-8); }
-:where(.stack, .row, .card, .actions) > a { display: inline-flex; align-items: center; justify-self: start; min-height: var(--control-height); min-width: var(--control-height); }
+:where(:is(.stack, .row, .card, .actions) > a:not(:has(:is(div, p, h1, h2, h3, h4, h5, h6, ul, ol, dl, table, figure, img, picture, video, section, article, header, footer)))) {
+  display: inline-flex; align-items: center; justify-self: start; min-height: var(--control-height); min-width: var(--control-height);
+}
 a.appbar-name:hover { text-decoration: none; }
 .appbar-action { display: flex; flex: none; align-items: center; gap: var(--space-8); }
 @media (max-width: 479px) {
@@ -300,8 +303,10 @@ select {
   background-repeat: no-repeat;
 }
 input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; accent-color: var(--accent); }
-/* A checkbox or radio is pressed through its label, so the label row is a full control tall. */
-:where(label:has(> input[type="checkbox"], > input[type="radio"])) { display: flex; align-items: center; gap: 10px; min-height: var(--control-height); }
+/* A checkbox or radio is pressed through its label, so the label row is a full control tall. A label with a link in
+   its sentence ("I agree to the terms") stays one line of text, with room above and below. */
+:where(label:has(> input[type="checkbox"], > input[type="radio"]):not(:has(a))) { display: flex; align-items: center; gap: 10px; min-height: var(--control-height); }
+:where(label:has(> input[type="checkbox"], > input[type="radio"]):has(a)) { display: block; min-height: var(--control-height); padding-block: 10px; }
 input[type="range"] { width: 100%; height: var(--control-height); accent-color: var(--accent); }
 progress { width: 100%; height: 6px; border: 0; border-radius: var(--pill); overflow: hidden; appearance: none; background: var(--progress-track); accent-color: var(--accent); }
 progress::-webkit-progress-bar { background: var(--progress-track); }
@@ -331,8 +336,8 @@ button.tinted:hover:not(:disabled) { background-color: var(--tinted-hover-bg); }
 button.secondary:active:not(:disabled) { background-image: linear-gradient(var(--press), var(--press)); }
 :is(button.primary, button.secondary, button.tinted, button.icon):active:not(:disabled, [aria-busy="true"]) { transform: scale(0.975); }
 button.text {
-  display: inline-flex; align-items: center; gap: 6px; min-height: var(--control-height); padding: 0 var(--space-4);
-  border: 0; background: none; font: var(--type-label); color: var(--link); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: var(--control-height); min-width: var(--control-height);
+  padding: 0 var(--space-4); border: 0; background: none; font: var(--type-label); color: var(--link); cursor: pointer;
 }
 button.text:hover:not(:disabled) { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
 /* A 40 px circle in a 44 px tap area: the fill stops at the content box. */

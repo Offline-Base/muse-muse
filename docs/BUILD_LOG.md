@@ -3417,3 +3417,10 @@ The organizers ruled on Nov 2 that every model the project calls at runtime must
 - **Template fixes so its own parts pass:** icon buttons and Send keep their 40 px and 36 px circles inside a 44 px tap area (`background-clip: content-box`); filter chips draw 36 px in 44; segmented pills, checkbox rows, range inputs, the rows' remove column and the gallery caption are 44 px; the name link, `<nav>` links and links standing alone in a stack, row, card or actions row are 44 px tall. The person's bubble now takes `--bubble-out` and `--on-bubble-out`, a pair, and the muse-app look sets the pair instead of restyling the rule. The skills (product-ui, verify, meta-ui, muse-app-ui and the build-range copies) say so.
 - **Finding 13 (`net::ERR_ABORTED` on streams):** no change. verify's console step listens only to `console.error` and page errors, not failed requests.
 - **Needs a new builder snapshot** (template changed). Not pushed.
+- **Review fixes (same branch):**
+  - `button.text` is now 44 px wide at least, so a short "Edit" or "Undo" passes the new check. Before, the template's own text button failed it (36x44).
+  - A link wrapping blocks (a heading and a line, like a whole card) in a `.stack`, `.row`, `.card` or `.actions` keeps its layout. The 44 px rule had turned it into a flex row, with the heading and the line side by side.
+  - A checkbox label with a link in its sentence ("I agree to the terms") stays one line of text, 44 px tall. The flex rule had split the link off as its own control, and the check then failed it.
+  - A board counts only when its same-size cells fill rows and columns, and the cells may sit in their own `<td>` or `<div>`. A 9 by 9 board in a table had failed; 12 or more dots scattered on a photo had passed.
+  - The contrast check now leaves out text that overlaps a positioned fill (a hero's `::before` overlay, an absolute dark layer). Light text on those had been measured against the page and failed.
+  - screen-checks.test.mjs has 2 more Chromium tests for these, and the template screen now holds a short text button and a checkbox label with a link.

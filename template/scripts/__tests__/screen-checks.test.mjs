@@ -189,6 +189,7 @@ const TEMPLATE_SCREEN = `
       <div class="field"><label for="s">Size</label><select id="s"><option>Small</option><option>Large</option></select></div>
     </div>
     <label><input type="checkbox" checked> Include tax in the total</label>
+    <label><input type="checkbox"> I agree to the <a href="/terms">terms</a></label>
     <input type="range" aria-label="Tip" min="0" max="30" value="15">
     <div class="chips"><button class="chip" aria-pressed="true">Food</button><button class="chip" aria-pressed="false">Drinks</button>
       <span class="chip">Saved</span><span class="chip positive">${icon}Paid</span><span class="chip negative">Late</span><span class="tag">Beta</span></div>
@@ -201,7 +202,7 @@ const TEMPLATE_SCREEN = `
     <div class="error" role="alert"><strong>Couldn't read that receipt.</strong> Try a sharper photo.</div>
     <ul class="limits"><li>Up to 20 items</li></ul>
     <div class="actions"><button class="primary">Read it</button><button class="secondary">Edit</button><button class="tinted">Explain</button>
-      <button class="icon" aria-label="Search">${icon}</button><button class="primary" disabled>Save</button></div>
+      <button class="icon" aria-label="Search">${icon}</button><button class="primary" disabled>Save</button><button class="text">Undo</button></div>
     <div class="stack"><p class="hint">Files changed: 2</p><a href="/files.zip" download>Download the files</a></div>
   </section>
   <section class="card ai" data-result>
@@ -291,6 +292,7 @@ describe("the template's own parts pass both checks, in Chromium", { skip: brows
         for (const name of ["Receipt Reader", "Download the files", "Send", "Remove item 1", "Food", "Indoor", "Include tax in the total", "History", "Tip"]) assert.ok(names.includes(name), `${name} not measured: ${names.join(", ")}`);
         assert.ok(targets.find((t) => t.name === "a Meta developer video")?.inText, "the footer's credit sits in a sentence");
         assert.ok(targets.find((t) => t.name === "line 1")?.inText, "model text is prose");
+        assert.ok(targets.find((t) => t.name === "terms")?.inText, "a link in a checkbox's sentence stays in its sentence");
         const send = targets.find((t) => t.name === "Send");
         assert.deepEqual([send.width, send.height], [44, 44]);
         const read = samples.filter((s) => !s.skip).map((s) => s.text);
@@ -310,6 +312,38 @@ describe("the audit's defects fail, and the noise around them doesn't, in Chromi
     assert.equal(contrast.length, 1);
     assert.match(contrast[0], /^Text too faint to read on what is behind it: "Which dock runs hottest\?" 1\.\d:1\. /);
     assert.doesNotMatch(contrast[0], /gradient|photo|Hidden/);
+  });
+
+  test("a board in a table is left alone, while scattered dots and a column of row buttons are caught", async () => {
+    const cells = Array.from({ length: 9 }, (_, r) => `<tr>${Array.from({ length: 9 }, (_, c) => `<td><button aria-label="Cell ${r * 9 + c + 1}">${c + 1}</button></td>`).join("")}</tr>`).join("");
+    const dots = Array.from({ length: 14 }, (_, i) => `<button class="d" style="left: ${(i * 53) % 300}px; top: ${(i * 37) % 180}px" aria-label="Dot ${i + 1}">${i + 1}</button>`).join("");
+    const rows = Array.from({ length: 13 }, (_, i) => `<li style="display: flex; justify-content: space-between; align-items: center; min-height: 48px"><span>Row ${i + 1}</span><button class="x" aria-label="Delete ${i + 1}">x</button></li>`).join("");
+    const { tap } = await check(`<style>
+      .board td { padding: 0; } .board button { width: 38px; height: 38px; border: 0; }
+      .pic { position: relative; height: 220px; } .d { position: absolute; width: 30px; height: 30px; border: 0; }
+      .x { width: 40px; height: 40px; border: 0; }
+    </style><main class="stack"><table class="board">${cells}</table><div class="pic">${dots}</div><ul>${rows}</ul></main>`);
+    assert.equal(tap.length, 1);
+    assert.match(tap[0], /"Dot 1" 30x30, .* and 23 more\./);
+    assert.doesNotMatch(tap[0], /Cell/);
+  });
+
+  test("text on a hero's overlay or on a positioned dark layer is left alone, and a card-wide link keeps its layout", async () => {
+    const { contrast, targets } = await check(`<style>
+      .hero { position: relative; padding: 40px 16px; } .hero::before { content: ""; position: absolute; inset: 0; background: #102030; }
+      .hero h2 { position: relative; color: #fff; }
+      .layered { position: relative; padding: 24px; } .layered .shade { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.8); }
+      .layered p { position: relative; color: #fff; }
+    </style><main class="stack">
+      <div class="hero"><h2>Plan your trip</h2></div>
+      <div class="layered"><div class="shade"></div><p>Over a dark layer</p></div>
+      <p style="color: #ccc">Really faint text here</p>
+      <a href="/item/1"><h3>Item one</h3><p>Its description runs here.</p></a>
+    </main>`);
+    assert.equal(contrast.length, 1);
+    assert.match(contrast[0], /"Really faint text here"/);
+    const card = targets.find((t) => t.name.startsWith("Item one"));
+    assert.ok(card.height > 60, `the link's heading and line stay stacked (${card.width}x${card.height})`);
   });
 
   test("a product that moves the bubble through its token pair passes", async () => {
