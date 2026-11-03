@@ -416,6 +416,26 @@ describe("the room", () => {
     assert.match(html, /<aside id="room-steps-panel" class="chat-panel" aria-label="Steps and sources" hidden="">/);
   });
 
+  // Nov 3, simplify-ui: Muse Code's own words read like a build log, so a first visit sees the status, the checklist and
+  // the product, and opens the words on purpose.
+  it("folds what Muse Code said at the end of each round, under the outcome, and keeps answers to notes open", () => {
+    const shipped = page("finished");
+    assert.match(shipped, /<details class="say-fold"><summary class="chat-thinking"><span class="chat-thinking-label">Muse Code&#x27;s notes<svg[^>]*>.*?<\/summary><[a-z]+ class="[^"]*\bsay\b[^"]*">.*?Feeder Count is ready\./s);
+    assert.ok(shipped.indexOf("It&#x27;s live.") < shipped.indexOf("Muse Code&#x27;s notes"), "the outcome first");
+    assert.doesNotMatch(shipped, /<details open/);
+    const failed = page("failed");
+    assert.equal(failed.split('<details class="say-fold">').length - 1, 2, "both rounds' words folded");
+    assert.match(failed, /<details class="say-fold">.*?The upload page and the count route are in\./s);
+    const muse = (round: number, lines: object[]) => ({ type: "muse", round, lines });
+    const evs = [muse(0, [{ kind: "say", itemId: "m1", text: "Milestone 2 is built.\nAbout your note: The header is darker now." }, { kind: "done", ok: true, text: "Done. Milestone 2 is built." }])].map((b, i) => ({
+      ...b,
+      id: i + 1,
+      at: new Date(Date.parse("2026-11-03T05:00:00.000Z") + i * 1000).toISOString(),
+    })) as unknown as BuildEvent[];
+    const reply = page("failed", { events: evs });
+    assert.match(reply, /<li class="room-answer"><[a-z]+ class="[^"]*\bsay\b[^"]*">(?:(?!<details).)*?About your note: The header is darker now\./s, "a note's answer stays open");
+  });
+
   it("says plainly that a failed build didn't ship", () => {
     const html = page("failed");
     noEmDash(html);

@@ -3840,3 +3840,33 @@ Five units, each checked by a second agent, which fixed real problems in all fiv
 - **Shared code:** new scripts/automation.ts (flags, the origin, the authorized POST, refusals, the results file), used by demo-batch and demo-tunes. `runHref` moved to lib/train/writer.ts and is re-exported from start.ts.
 - **Refusals saved:** the file keeps the server's error code, message or refusal text, and retryAfterSeconds.
 - **Tests:** new scripts/__tests__/automation.test.ts, and a plan-route test for `writerModel` and the early `dataset_only_off`. Train routes, open-train, tune and GPU suites 308 of 308; typecheck clean.
+
+## Nov 3, 2026, about 11 AM ET: a simpler first minute for judges (branch tg-p-simplify-ui, not merged)
+
+Walked the live site as a guest in headless Chromium at 1440x900 and 390x844 (intro skipped; every non-GET request blocked, so nothing started): Make, /gallery, /p/handbook-proof-checker, its build room /b/6f98efc0-78fa-4977-88d8-e7e1942680fa, /learn, /fine-tuning and /docs. Read the readiness audit's site findings too. Nothing was spent.
+
+**What a first-time judge doesn't need:**
+
+| Where | What | Done here |
+|---|---|---|
+| Build room | Each finished round prints Muse Code's raw last message in the conversation ("Done. Milestone 1 done. `npm run verify` exits 0 ... manifest valid", "Details ... are in BUILD_NOTES.md"), and the shipped answer does the same above "It's live". On a phone it is most of the first screen | Yes: folded under "Muse Code's notes", like Show thinking. Answers to an owner's note stay open. The shipped answer now sits under "It's live" and its links |
+| /learn | 24 of 30 cards are plans with nothing built, each with a plan block, a cost line, "Nothing is spent until the owner says so." and "Not checked yet" lines. 11,264 px tall on desktop, 26,910 on a phone | Yes: the "Not built yet" section is folded under its heading ("Show 24 lessons"), each card's plan is folded under "The plan to redo it", and the owner line shows to admins only. Built lessons and "Demos Meta doesn't have yet" stay open |
+| Product page, Get it | Six tabs: MCP, CLI, Skill, Claude, ChatGPT, Muse gadget. Claude and ChatGPT need an account, the gadget needs a device | Yes: Claude, ChatGPT and Muse gadget wait behind "More ways to use it (3)". They show from the start when the page opens on one of them, or when there is nothing else |
+| Product page, The muse | "Took from it" and "Left out" headings show over empty lists (audit finding) | Yes: each heading shows only over a list with something in it |
+| Make, desktop | "Musings" twice: the sidebar and the pill top right | Yes: the pill shows only on a phone, where the sidebar is a menu |
+| /learn summary | "Every plan is marked planned until it runs, and its cost is an estimate." | Shortened to "Plans are marked planned until they run, and costs are estimates." |
+| /fine-tuning | A 90-word intro paragraph, "r30b" in the score column, a "Built with Muse Spark Open" chip | No: "r30b" is pinned by many train tests, and the Spark Open and intro wording belong to the claims work. Worth a pass |
+| Product page | "Open" twice (top bar and the URL bar), and the "What was checked" list is long | No: the check list is the honesty story. Left as is |
+| Build room | Two "Show thinking" rows on a two-round build | No: each opens its own round |
+| Make | "Add a folder of data for a model" sits between the starters and Build setup | No: already a closed disclosure |
+| /docs | Meta's docs mirror | No: it keeps its own look (docs/BRAND.md) |
+
+**Changed:** components/build/BuildRoom.tsx (`SayFold`), components/product/GetItTabs.tsx and GetItPanel.tsx (`GET_IT_MORE`), components/product/get-it.css, components/learn/LearnView.tsx, app/p/[slug]/page.tsx (the inspo headings only), app/page.tsx (the Musings pill), app/globals.css (`.say-fold`, `.section-fold`, `.lesson-plan`, `.toolbar-phone-only`). Nothing is removed: every fold opens in place, and every tab is one tap away. Phone tap areas stay 44 px (the fold rows reuse Show thinking's phone rule; the section fold and More button are 44 px tall on a phone). No new colors or sizes: the folds reuse the Show thinking row and the link button.
+
+**Checked:** on a local server with the room fixtures (scripts/dev/room-fixtures.ts, one product given a made-up manifest so Get it shows), both sizes, light mode: no sideways scroll; /learn went from 10,409 to 2,069 px tall on desktop and 25,282 to 3,706 on a phone with the same data; "More ways to use it" opens the three tabs. The local run needed a temporary `turbopack.root` because node_modules is a symlink in this worktree; it is not committed.
+
+**Shots** in docs/log/shots/2026-11-03/: `before-*` (the live site), `before-local-*` and `after-*` (the same local fixtures before and after).
+
+**Tests:** get-it (9, one new, two updated: Claude, ChatGPT and the gadget wait behind the button; the page regex now expects the edge slot, which main already had, so it failed on main), learn (19, one new), steps (35, one new: round notes and the shipped answer folded, a note's answer open). render, plan-card, own-model, steps-feed-room, known-issues and product-page pass. plan-art-flag-off's golden hashes already fail on main without this change (the running room changed earlier) and still do. Typecheck clean.
+
+**Not done:** not pushed, not deployed. A live check after the deploy is still to do.

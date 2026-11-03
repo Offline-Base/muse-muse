@@ -239,6 +239,17 @@ describe("pages", { skip: canMock ? false : "needs --experimental-test-module-mo
     assert.match(html, /id="lesson-whatsapp-multimodal-chatbot"/);
   });
 
+  // Nov 3, simplify-ui: what was built comes first; plans and the lessons with nothing built yet wait behind folds, and
+  // the owner's spending rule is for admins only.
+  it("folds the lessons with nothing built yet and each plan, and keeps owner-only words from visitors", () => {
+    const html = render(joinRebuilds([], []), false, false);
+    assert.match(html, /<details class="section-fold"><summary class="section-head"><h2 id="learn-not-built">Not built yet<\/h2><span class="section-fold-show">Show 24 lessons<\/span>/);
+    assert.doesNotMatch(html, /<details[^>]*><summary[^>]*><h2 id="learn-partly">/, "what was built stays open");
+    assert.match(cardOf(html, "whatsapp-multimodal-chatbot"), /<details class="fold lesson-plan"><summary>The plan to redo it<\/summary><p class="small"><span class="pill pill-building">Planned<\/span>/);
+    assert.doesNotMatch(html, /until the owner says so/);
+    assert.match(render(joinRebuilds([], []), true), /Nothing is spent until the owner says so\./, "admins still see it");
+  });
+
   it("shows a partly-there product with its demo, and hides the one judged wrong", () => {
     const html = render(
       joinRebuilds(

@@ -137,15 +137,19 @@ function LessonCard({
           <Today lesson={lesson} card={card} state={state} />
         </div>
         {plan ? (
-          <div>
+          // The plan is a next step, not something that ran, so it waits behind its own fold.
+          <details className="fold lesson-plan">
+            <summary>The plan to redo it</summary>
             <p className="small">
               <span className="pill pill-building">Planned</span> <strong>{plan.title}.</strong> {plan.plan}
             </p>
             <ModelChips models={plan.models} label="Models in the plan" />
             <p className="pcard-meta">{plan.tune ? `Tune: ${plan.tune}.` : "No fine-tune: the lesson has none."}</p>
-            <p className="pcard-meta">Estimated cost to redo: {plan.estimate}. Nothing is spent until the owner says so.</p>
+            <p className="pcard-meta">
+              Estimated cost to redo: {plan.estimate}.{admin ? " Nothing is spent until the owner says so." : ""}
+            </p>
             {plan.unverified?.length ? <p className="pcard-meta">Not checked yet: {plan.unverified.join("; ")}.</p> : null}
-          </div>
+          </details>
         ) : null}
         {admin ? (
           <RebuildButton
@@ -254,7 +258,7 @@ export function LearnView({ lessons, data, connected, admin, source, checkedOn }
           <strong>{plural(lessons.length, "lesson")}</strong>: {countLine}
         </p>
         <p className="muted small">
-          No version teaches its lesson fully yet. Every plan is marked planned until it runs, and its cost is an estimate.
+          No version teaches its lesson fully yet. Plans are marked planned until they run, and costs are estimates.
           {connected.ok && t.totalCostUsd
             ? ` Builds so far took ${shortDuration(t.totalMs)} for ${usd(t.totalCostUsd)} est., counting every attempt and fix round.`
             : ""}
@@ -264,16 +268,32 @@ export function LearnView({ lessons, data, connected, admin, source, checkedOn }
       {LESSON_STATES.map((state) => {
         const group = rows.filter((r) => r.state === state);
         if (!group.length) return null;
+        const head = <h2 id={`learn-${state}`}>{LESSON_SECTION_TITLE[state]}</h2>;
+        const cards = (
+          <div className="grid-cards">
+            {group.map((r) => (
+              <LessonCard key={r.lesson.id} lesson={r.lesson} card={r.card} state={r.state} admin={admin} />
+            ))}
+          </div>
+        );
         return (
           <section key={state} aria-labelledby={`learn-${state}`} className="section">
-            <div className="section-head">
-              <h2 id={`learn-${state}`}>{LESSON_SECTION_TITLE[state]}</h2>
-            </div>
-            <div className="grid-cards">
-              {group.map((r) => (
-                <LessonCard key={r.lesson.id} lesson={r.lesson} card={r.card} state={r.state} admin={admin} />
-              ))}
-            </div>
+            {state === "not-built" ? (
+              // Lessons with nothing built yet are plans only: folded, so what has been built comes first.
+              <details className="section-fold">
+                <summary className="section-head">
+                  {head}
+                  <span className="section-fold-show">Show {plural(group.length, "lesson")}</span>
+                  <span className="section-fold-hide">Hide</span>
+                </summary>
+                {cards}
+              </details>
+            ) : (
+              <>
+                <div className="section-head">{head}</div>
+                {cards}
+              </>
+            )}
           </section>
         );
       })}

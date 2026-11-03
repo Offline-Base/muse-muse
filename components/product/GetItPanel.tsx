@@ -26,6 +26,9 @@ const LABELS: Record<GetItSlotId, string> = {
   extension: "Extension",
 };
 
+/** Tabs that need another account or a device to try, behind "More ways to use it" until opened (GetItTabs). */
+export const GET_IT_MORE: readonly GetItSlotId[] = ["claude_plugin", "chatgpt", "gadget"];
+
 export const GET_IT_SLOTS: readonly GetItSlotId[] = [...TARGETS, ...PRODUCT_OUTPUTS, ...RUNTIME_OUTPUTS, ...CAP_OUTPUTS];
 
 /** What each unit fills for a product. A slot with nothing to show stays out of the panel: give it null. */
@@ -47,7 +50,7 @@ export function GetItPanel({ slots, initial }: { slots: GetItSlots; initial?: Ge
   return (
     <section className="card section-card" aria-labelledby="get-it-title">
       <h2 id="get-it-title">Get it</h2>
-      {filled.length === 1 ? filled[0]!.content : <GetItTabs slots={filled} initial={initial} />}
+      {filled.length === 1 ? filled[0]!.content : <GetItTabs slots={filled} initial={initial} more={GET_IT_MORE} />}
     </section>
   );
 }

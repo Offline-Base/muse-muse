@@ -125,7 +125,8 @@ export default async function Home() {
           <Icon name="book" />
           <span>How it works</span>
         </Link>
-        <Link className="btn" href="/builds">
+        {/* The sidebar has Musings too, so this one shows only on a phone, where the sidebar is a menu. */}
+        <Link className="btn toolbar-phone-only" href="/builds">
           <Icon name="history" />
           <span>Musings</span>
         </Link>

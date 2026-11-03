@@ -413,8 +413,8 @@ export function BuildRoom(props: BuildRoomProps) {
   ) : null;
   const answerRow = shipped ? (
     <li className="room-answer">
-      {answer ? <MarkdownText className="say" text={answer} /> : null}
       <ShipBody status={room.status as "live" | "partial"} liveUrl={liveUrl} slug={slug} unpublished={feed?.unpublished} issues={issues} />
+      {answer ? <SayFold text={answer} /> : null}
       <p className="room-meta">{[duration(elapsed), tokensText(props.tokens), `${usd(room.costUsd)} est.`].filter(Boolean).join(" · ")}</p>
     </li>
   ) : null;
@@ -759,6 +759,25 @@ export function StepsToggle({ open, onClick, label = "steps" }: { open: boolean;
   );
 }
 
+/**
+ * What Muse Code said at the end of a round, folded. Its own words are a build log (commands, requirement ids, file
+ * names), so a first-time visitor sees the status lines, the checklist and the product first, and opens this on
+ * purpose. Answers to the owner's notes stay open: someone asked for them.
+ */
+export function SayFold({ text }: { text: string }) {
+  return (
+    <details className="say-fold">
+      <summary className="chat-thinking">
+        <span className="chat-thinking-label">
+          Muse Code&apos;s notes
+          <Icon name="chevronRight" size={20} className="chat-thinking-chevron" />
+        </span>
+      </summary>
+      <MarkdownText className="say" text={text} />
+    </details>
+  );
+}
+
 /** Copies the product's link, and confirms with a check for a moment. */
 function ShareButton({ url }: { url: string }) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
@@ -822,7 +841,7 @@ function ConvoRow({
     case "say":
       return (
         <li className="room-answer">
-          <MarkdownText className="say" text={item.text} />
+          {item.reply ? <MarkdownText className="say" text={item.text} /> : <SayFold text={item.text} />}
         </li>
       );
     case "step":

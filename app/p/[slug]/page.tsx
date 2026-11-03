@@ -321,22 +321,27 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
           {muse ? <p>{muse}</p> : <p className="muted">No note was given.</p>}
           {brief?.inspiration.borrow.length || brief?.inspiration.dontCopy.length ? (
             <div className="two-col">
-              <div>
-                <h3>Took from it</h3>
-                <ul>
-                  {brief.inspiration.borrow.map((b) => (
-                    <li key={b}>{b}</li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <h3>Left out</h3>
-                <ul>
-                  {brief.inspiration.dontCopy.map((b) => (
-                    <li key={b}>{b}</li>
-                  ))}
-                </ul>
-              </div>
+              {/* A heading only over a list with something in it. */}
+              {brief.inspiration.borrow.length ? (
+                <div>
+                  <h3>Took from it</h3>
+                  <ul>
+                    {brief.inspiration.borrow.map((b) => (
+                      <li key={b}>{b}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {brief.inspiration.dontCopy.length ? (
+                <div>
+                  <h3>Left out</h3>
+                  <ul>
+                    {brief.inspiration.dontCopy.map((b) => (
+                      <li key={b}>{b}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
             </div>
           ) : null}
         </section>
