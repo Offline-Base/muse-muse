@@ -36,7 +36,8 @@ export function PartnerEvalPicker({ jobId, hostTuned = false, onStarted }: { job
 
   if (!offers || !offers.offers.length) return null;
   const chosen = offers.offers.filter((o) => picked.includes(o.provider) && o.available);
-  const most = runEstimateUsd(chosen, offers.runMaxUsd);
+  // One partner runs without the run's total (the route starts it as a single eval), so its own most is the honest figure.
+  const most = chosen.length === 1 ? (chosen[0]!.maxUsd ?? 0) : runEstimateUsd(chosen, offers.runMaxUsd);
 
   async function start() {
     if (!chosen.length || busy) return;

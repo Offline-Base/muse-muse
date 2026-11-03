@@ -4091,3 +4091,9 @@ Cost (list prices, the code's estimates, not checked against the bills):
 - Publish job: at most $1. Judging 40 pairs on Contributor: about $0.02.
 - At most about $13.30 in all, under `PARTNER_EVAL_RUN_MAX_USD` ($16 for the GPUs) and `HOST_TUNED_DAILY_USD` ($25).
 - For a filmed demo without an eval afterwards: Run it on https://www.musemuse.dev/models/83ae46c8-4e57-4086-866c-da69a39a20d0 with a 30-minute window costs at most $3.25 on Baseten or $2.43 on Modal, and stops by itself.
+
+## Nov 3, 2026, about 1:15 PM ET: review of tg-e-partner-hosts (not pushed)
+
+- **Checked:** the diff against origin/main (5e68c428). `npx workflow transform -m workflow` on partner/workflow.ts keeps only `@/lib/train/partner/logic` and `@/lib/train/partner/steps`; steps.ts keeps no imports; no other step or workflow file imports a touched module. Flags off: both routes still answer 404 first, the run page passes no `partners`, and the automatic start still names no partner, so it takes the first one in `PARTNER_EVALS`. Run it's window is stored once as the row's `stopsAt` and only shortens it. A Fireworks-trained tune's stop deletes `mm-host-...` only, never `mm-m-{job}`. Run it stays admin only unless `HOST_TUNED_OPEN`.
+- **Fixed:** with one partner picked, the run room's button showed the run's total cap applied to it, though the route starts one partner as a single eval with no run total. When `PARTNER_EVAL_RUN_MAX_USD` is below `PARTNER_EVAL_MAX_USD` the button understated the most it could cost. It now shows that partner's own most.
+- **Tests:** partner-eval, host adapters, service, limits, try and tune view 175 of 175; tune room 34 of 34; typecheck clean. tune-flag-off.test.tsx fails 2 build room snapshots with the same hash (b85e6d72) on the main checkout as here, so that failure was already there and isn't from this branch. Spend $0.
