@@ -4465,3 +4465,13 @@ The owner asked whether the "muse" tune of SAM 3.1 (run `muse31`, the 61 MB delt
 - Live, from the standalone repo, earlier today: relay deployed (dccdcef8; a scripted read-only link saw 5 read tools and a write was refused at the relay), site deployed (connector, privacy and terms pages answer). Claude, Codex and Muse Code each made a real tool call through it.
 - Pointer page: docs/CONNECTOR_PLATFORM.md. Open: moving the relay to Offline Base (needs a domain on Cloudflare), whether to build a Muse Muse platform connector, and the form submission itself (owner).
 
+
+## Nov 3, 2:35 PM ET: check of all work
+
+- Session restart at about 2 PM stopped both polish runs and the SAM build workflow; the restarted workflow's agents first had file writes refused. Relaunched (SAM build run wf_433e11eb-fa8, agents continue in their worktrees); polish runs now run detached (nohup) so a session end doesn't stop them.
+- The platform's change check refused 33 look polishes: the note said "the Meta AI app look" and "something Meta would feature" (read as cloning Meta's brand). a28e0d01 rewords it around the muse-app skill and its properties, names no Meta product, and a test guards it. Refused polishes changed nothing live.
+- Polish restarted fresh at 2:06 PM (.data/polish-2026-11-03T19-06-34-934Z.json for new builds, budget $300; 19-06-36-952Z for older gallery apps, budget $180). At 2:31 PM: 13 shipped, 6 failed their checks (live kept), 12 polishing; no refusals. The fresh files don't carry the earlier refinement ids, so their ledgers undercount about $40 of earlier passes.
+- Spot check: science-teams-showdown after its pass is on the muse-app look (white page, hairline card, Inter) and passes the desktop and phone audit. Its tabs render as plain underlined links, a small leftover.
+- Builds (2:31 PM): showcase 2 of 3 live (allapis rebuilding); skills 0 of 16 live yet; cookbook 25 live, 3 partial, 2 failed, rest building; older gallery 37 live.
+- Production a28e0d01 plus 1229b042 (privacy, another session) is Ready; judge-check: no problems; /, /gallery, /fine-tuning, /offline, /how-it-works answer 200.
+- SAM tuning build: all six units committed (core 6, routes 8, UI 10, worker 2, uploads 9 commits); board facts and recovered trainer files in ~/mm-wt/s-prep-out; integration branch tg-sam-merge in progress.
