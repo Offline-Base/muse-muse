@@ -5,7 +5,6 @@
 // platform's check (scripts/caps/media.mjs) reads its bytes too:
 //   expectVideoPlays  the <video> has a duration over 0 and plays; the file is saved as video.mp4 (or .webm)
 //   expectMidi        the downloaded MIDI file starts with MThd and has notes; saved as tune.mid
-//   expectSpeech      speak() made audio, with the open model or the browser's own voice
 //   expectTiles       the last findAll ran on more than one tile and merged its boxes
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -169,40 +168,7 @@ export async function expectMidi(page: Page, opts: MidiOptions): Promise<void> {
   if (!ok) throw new Error(detail);
 }
 
-export interface SpeechOptions {
-  /** The button that reads aloud. */
-  click: Target;
-  shot?: string;
-  /** The first use downloads the model, so this is long by default. */
-  timeoutMs?: number;
-}
-
-type Record_ = { speech?: { by: string; durationMs: number; samples: number; at: number }; tiles?: { tiles: number; rawBoxes: number; boxes: number; saturated: number; capped: boolean; at: number } };
-
-/** Clicking `click` reads aloud: speak() finished with audio from the model or the browser's own voice. */
-export async function expectSpeech(page: Page, opts: SpeechOptions): Promise<void> {
-  const before = Date.now() - 1000;
-  await locate(page, opts.click).click();
-  const got = await page
-    .waitForFunction((since) => {
-      const s = (window as unknown as { __musemuseMedia?: Record_ }).__musemuseMedia?.speech;
-      return s && s.at >= since ? s : null;
-    }, before, { timeout: opts.timeoutMs ?? 180_000 })
-    .then((h) => h.jsonValue() as Promise<NonNullable<Record_["speech"]>>)
-    .catch(() => null);
-  if (!got) return fail("speech", "Reading aloud never finished: speak() from lib/platform/speech.ts didn't answer.");
-  const ok = (got.by === "model" && got.samples > 0) || (got.by === "browser" && got.durationMs > 0);
-  const detail = ok
-    ? got.by === "model"
-      ? `The open model read ${(got.durationMs / 1000).toFixed(1)} seconds aloud`
-      : `The browser's own voice read it aloud (${(got.durationMs / 1000).toFixed(1)} seconds)`
-    : got.by === "none"
-      ? "Neither the open model nor a browser voice could read it here"
-      : "Reading aloud made no sound";
-  if (opts.shot) await judgeShot(page, opts.shot);
-  recordCapCheck(CAP, { id: "speech", ok, detail: `${detail} [by=${got.by}]`, ...(opts.shot ? { shot: opts.shot } : {}) });
-  if (!ok) throw new Error(detail);
-}
+type Record_ = { tiles?: { tiles: number; rawBoxes: number; boxes: number; saturated: number; capped: boolean; at: number } };
 
 export interface TilesOptions {
   shot?: string;
