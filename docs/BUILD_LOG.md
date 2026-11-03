@@ -3139,7 +3139,7 @@ The owner's first extra (HANDOFF, "Owner decisions, Nov 2 night"), aimed at the 
 - **To turn it on:** add `BASETEN_API_KEY` to Production (and Preview to try it there first), set `SPARK_OPEN_PRODUCTS=1`, optionally `SPARK_OPEN_PROVIDER`, and redeploy. Then run `npm run snapshot` from a checkout with this merged, and commit `lib/sandbox/snapshots.json` with the new `BUILDER_SNAPSHOT_ID`, so the writer offers it.
 - **Spend:** one Baseten call, $0.0007 at the stand-in price.
 
-## Nov 2, 2026, late night ET: the owner's shared accounts for builds (branch tg-build-keys)
+## Nov 2, 2026, late night ET: the owner's shared accounts for builds (PR #95, branch tg-build-keys)
 
 The owner asked that builds, and the products they make, can use the owner's own service accounts. Their decisions: builds by anyone signed in with the builder code (not guests), the real value in the build's environment, every product built that way keeps the keys, and the services are Vercel, AWS (a new limited user, never root), Lambda, Hugging Face, the Jetson fleet (an inference `jik_` key), Composio, and Fireworks, Baseten and Modal for Muse Spark Open. Built in `tg-build-keys` from main at `282c0d87`, with the guardrails below. Nothing ran on a real build, and no key, spend or deploy was used.
 
