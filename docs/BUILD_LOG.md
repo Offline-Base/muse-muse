@@ -4417,6 +4417,22 @@ The owner asked whether the "muse" tune of SAM 3.1 (run `muse31`, the 61 MB delt
 - **Left on jetson-04:** `/tmp/sam-distract/verify/` (20 KB: chk.py, chk2.py, spot.py, spot.json). Nothing else written, nothing deleted, `sam3.service` only asked and still active.
 - **Docs changed:** the median best other box now says how it counts photos with no other box, and the "so" paragraph and MESSAGING.md line now give Meta's "toy" too (20 of 30 first), so the 22 against 14 isn't read as the whole gap.
 
+## Nov 3, 2026, evening: SAM tune U6, the person's own photos, hosted SAM 3.1 boxes and Muse Image look-alikes (branch tg-sam-uploads, not pushed)
+
+The stretch unit of the SAM 3.1 tuning plan (U6): a run on the person's own object instead of the built-in Muse set. All of it is behind `SAM_TUNE` (off): with the flag off every route here answers 404 and no page changes, since the two grids are not mounted anywhere yet. No model call, build or deploy was made. Spend: $0.
+
+**What it adds**
+- **`POST /api/train/sam/[id]/photos`:** one base64 photo a request (JPEG, PNG or WebP, at most 1024 px and 400 KB, the size read from the file's own header), saved with `putFile` under `samtune/<id>/photos/` or `samtune/<id>/lookalikes/` (`kind: "lookalike"` adds the person's own look-alike, source `own`). Every third goes in the held-out set (a placeholder until U1's `splitBySeed`). Draft runs on `uploads` only; 60 photos and 24 look-alikes at most, held in the one UPDATE that appends, so 70 at once still give 60 (tested).
+- **`POST [id]/label`:** first boxes from hosted SAM 3.1 (`samRequest`, parsed by `lib/docs/media/sam.ts`, boxes only, masks dropped), asked the run's everyday word, 6 photos a request. **`PATCH [id]/label`:** the person's own box or skip, from the review grid. $0.0025 a look.
+- **`POST [id]/distractors`:** up to 4 Muse Image look-alikes a request ($0.01 each), drawn after one of the person's training photos (images/edits) or from the prompt alone when none has a box yet (images/generations), search and shell off, as plan art does. **`PATCH`** keeps or drops one.
+- **Caps, before every paid call** (`lib/train/sam/spend.ts`): the platform's `DAILY_SPEND_CAP_USD`, then `SAM_TUNE_DAILY_USD` (the `sam-tune-usd` counter U2's Start shares), then the run's own cap (its max_usd, never above `SAM_TUNE_MAX_USD`), each reserved with `reserveCounter` so two requests can't both pass, and settled with `adjustCounter` to what the call cost. A refusal sends nothing (402 when nothing was done). Usage goes in `usage` as platform spend and in the run's cost_usd. A failed or refused call costs nothing; one still out when its time box ran out stays counted, since Meta may bill it.
+- **`components/train/sam/SamReviewGrid.tsx` and `SamDistractorGrid.tsx`:** add photos (shrunk on the page first), find boxes, drag to redraw a box, skip; make, add, keep or drop look-alikes. Not mounted: U3's room should render them for an `uploads` run in draft.
+
+**Shims (same rule as U2):** `lib/train/sam/u1-shim.ts` stands in for U1's `env.samTune`, `env.samTuneDailyUsd`, `env.samTuneMaxUsd`, `schema.samTuneRuns` (the columns U6 uses, named as U1's 0033 names them) and the `"samtune"` StoredPrefix. On merge: point the readers at U1's names and delete the shim. `lib/train/sam/types.ts` is the plan's shared contract plus the spend-counter helpers, identical to the copies in tg-sam-core and tg-sam-routes.
+
+**Tests** (`npx tsx --experimental-test-module-mocks --test lib/train/sam/__tests__/{label,distractors,uploads}.test.ts`, 34 pass; `npx tsc --noEmit -p .` clean): a fake Meta client; every cap refuses before any call, a cap part way stops the batch, the day cap is shared across runs, the counters hold exactly what was spent, failed calls give their hold back; on PGlite, the list caps under a race, patches by url keep order and stop once a run starts, and every U6 route 404s with the flag off.
+
+**Not confirmed:** no hosted SAM 3.1 or Muse Image call was made, so the request shapes are checked against Meta's offline docs and the existing `samRequest` and plan-art code only. Two label requests at once on one run could look at the same photos twice (still inside the caps). The board side (U4) has to read `source: "own"` and `"muse-image"` look-alikes and the person's boxes from the claim.
 ## Nov 3, 2026, evening: META_UI_ONLY and look meta are the Meta AI app look, muse-app-ui (branch tg-w-applook, not pushed)
 
 - **Why (owner correction, decisive):** every product must have the look of the Meta AI app (meta.ai): white page, hairline cards, regular-weight Inter, one blue for actions, purple gradient only for AI, floating composer, left sidebar where it fits. In this repo that is the muse-app overlay and its muse-app-ui skill, not the older meta-ui skill (gray page, Montserrat), and not a per-brief design direction, which made products cream and green. The afternoon's META_UI_ONLY (meta-ui for new builds) and look "meta" (moves products to meta-ui) were both the wrong look.
@@ -4563,3 +4579,15 @@ The board side of "Teach SAM 3.1 a new object" (plan Design A): a pull worker on
 - **Board rule, only write /opt/sam3train:** the `systemd-run` units that train and score don't inherit sam-tune-worker.service's sandbox, so they ran unsandboxed as root. They now get `ProtectSystem=strict`, `ReadWritePaths=/opt/sam3train`, `ProtectHome=read-only`, `PrivateTmp=yes` and `NoNewPrivileges=yes`, and their caches go under `/opt/sam3train/samtune/cache-home/`. `SAM_TUNE_UNIT_SANDBOX=0` turns that sandbox off, if the first board run shows a write it blocks. Nothing references `sam3.service`.
 - **Cross-check:** the report the full-run test posts was run through U1's real `validateReportIn` and passes. The test stub's counts were fixed so found is at least top and only, as `summarize` always gives.
 - **Tests:** `python3 -I -m unittest discover scripts/edge/sam3/tune/tests`, 23 of 23. No TS touched. $0 spent, no board touched.
+### 2026-11-03: SAM tune review on tg-sam-uploads: merged tg-sam-core, U1 shim gone
+
+- **Merged tg-sam-core** (3da25050). Deleted `lib/train/sam/u1-shim.ts`; nothing in it conflicted with U1.
+  - The three routes read `env.samTune`.
+  - `uploads-deps` reads `env.samTuneDailyUsd` and `env.samTuneMaxUsd`.
+  - Photos and look-alikes are stored under the real `"samtune"` prefix.
+  - `uploads-store` writes U1's `schema.samTuneRuns`.
+- **Checked:** every paid call is held against the platform cap, `SAM_TUNE_DAILY_USD` and the run's cap before it is sent. These use the same counter key and units as U2's Start (`SAM_TUNE_DAY_KEY`, micro-dollars), so the day cap is counted once.
+- **Left for the integrator:**
+  - The every-third held-out split is still the placeholder.
+  - The grids aren't mounted in U3's room yet.
+- **Tests:** label, distractors and uploads, 34 of 34. `npx tsc --noEmit -p .` is clean. $0 spent.
