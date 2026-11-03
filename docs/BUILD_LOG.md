@@ -3075,3 +3075,21 @@ The spec was the entry above: its "For the owner" and "Found, not fixed" bullets
   - The laptop camera opens only on https or localhost. Section 6 gives a loopback forwarder.
   - docs/MESSAGING.md keeps jetson-03, 04 and 05 out of frame, so whether the label may say "jetson-04" is the owner's call.
 - **Spend:** $0. No build, deploy, production setting, board or fleet call.
+
+## Nov 2, 2026, night: can SAM 3.1 tell an open door from a shut one? (cloud, two made-up photos)
+
+PR #96's open question: if no prompt separates an open door from a shut one, the take can only show SAM finding a door.
+- **Photos:** two Muse Image (muse-image-1.0) photos of the same kind of white mini fridge on an office desk, one with the door open and three drink cans inside, one shut. Made for this test only; one shows a real drink brand, so neither goes in the video.
+- **Calls:** Meta's API, `sam-3.1`, streaming, `include_confidence`, each photo at 1024 px. Boxes counted from the stream's box records.
+
+| Prompt | Open fridge | Shut fridge |
+|---|---|---|
+| "open door" | 1 (0.89) | 0 |
+| "door" | 1 (0.92) | 1 (0.72) |
+| "shelf" | 3 (0.78 to 0.90) | 3 (0.57 to 0.77), office shelves behind |
+| "can" | 3 (0.92 to 0.93) | 0 |
+
+- **So:** "open door" separates them, and "can" (what's inside showing) agrees. "door" and "shelf" don't. Each call took 0.8 to 2.2 s in the cloud.
+- **For the take (docs/EDGE_DEMO.md):** a mini fridge with a few plain items inside. Decide "door open" in code when "open door" finds at least one box over the threshold, and show the "can" boxes as the second sign.
+- **Not proven:** the board's own SAM 3.1 (fp16 on jetson-04) on these prompts, real camera frames, lighting, and any prop other than a mini fridge. Two made-up photos are not an accuracy figure.
+- Spend: 2 images and 8 SAM calls, under $0.25.

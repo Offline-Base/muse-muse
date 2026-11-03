@@ -199,3 +199,7 @@ It needs Docker Desktop and the internet once, and about 2 GB of disk for the im
 9. **Report:** free memory before and during, the first and warm look times, the prompts tried and what each found with the door open and shut, the label as shown, and anything that failed. It goes in docs/BUILD_LOG.md.
 
 What may be said after it: only what the take showed, by docs/MESSAGING.md and docs/EDGE_PLAN.md ("When each claim may be said"). Until it is logged, "is built so".
+
+## The door prompts (tested Nov 2, cloud, two made-up photos)
+
+On a mini fridge, SAM 3.1 found "open door" only when the door was open (1 box at 0.89, none when shut), and "can" only when the items inside showed (3 boxes, none when shut). "door" and "shelf" matched both. So use a mini fridge with a few plain items inside (no brand labels in frame), ask "open door" for the answer and "can" or the item's name as the second sign, and warm up both on the real prop before the take. docs/BUILD_LOG.md has the table.
