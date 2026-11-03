@@ -29,13 +29,14 @@ const files = (slug: string, name: string) => ({ video: `/devices/${slug}/${name
 export const DEVICE_RUNS: Readonly<Record<string, readonly DeviceRun[]>> = {
   // docs/BUILD_LOG.md, "Nov 2, night: the device demos tap through the app": every device opened
   // https://musemuse-dinner-split-helper.vercel.app/, split the $120 example (4 people) and the $86.50 example
-  // (3 people), and Muse Spark 1.3 answered $35.40 and $34.60 each. Files from s3 lab/checks/demo-1102/ and Device Farm
-  // run 3abcc4b7.
+  // (3 people), and the model answered $35.40 and $34.60 each. Files from s3 lab/checks/demo-1102/ and Device Farm
+  // run 3abcc4b7. The product asks for muse-spark-1.3, which the gateway has never served since Oct 29 (e21beb51): it
+  // runs those calls on Spark 1.3 Contributor (lib/gateway/handler.ts, RETIRED_SPARK), so that's the model named here.
   "dinner-split-helper": [
-    { device: "mac", name: "Mac", place: "AWS device lab, macOS 26.7", detail: "Chromium 141 clicked through two bills, and Muse Spark 1.3 split them: $35.40 and $34.60 each", simulated: false, ranOn: "2026-11-02", ...files("dinner-split-helper", "mac"), source: "docs/BUILD_LOG.md, lab demo-1102" },
-    { device: "windows", name: "Windows PC", place: "AWS device lab, Windows Server 2022", detail: "Chromium 141 clicked through two bills, and Muse Spark 1.3 split them: $35.40 and $34.60 each", simulated: false, ranOn: "2026-11-02", ...files("dinner-split-helper", "windows"), source: "docs/BUILD_LOG.md, lab demo-1102" },
-    { device: "android", name: "Samsung Galaxy S25", place: "AWS Device Farm, Android 16", detail: "Tapped through two bills in the Muse Muse lab app, and Muse Spark 1.3 split them: $35.40 and $34.60 each", simulated: false, ranOn: "2026-11-02", ...files("dinner-split-helper", "galaxy-s25"), source: "docs/BUILD_LOG.md, Device Farm run 3abcc4b7" },
-    { device: "iphone", name: "iPhone 15 Pro size", place: "Safari's engine (WebKit 26) on the lab Mac", detail: "Tapped through two bills, and Muse Spark 1.3 split them: $35.40 and $34.60 each", simulated: true, ranOn: "2026-11-02", ...files("dinner-split-helper", "iphone"), source: "docs/BUILD_LOG.md, lab demo-1102" },
+    { device: "mac", name: "Mac", place: "AWS device lab, macOS 26.7", detail: "Chromium 141 clicked through two bills, and Muse Spark 1.3 Contributor split them: $35.40 and $34.60 each", simulated: false, ranOn: "2026-11-02", ...files("dinner-split-helper", "mac"), source: "docs/BUILD_LOG.md, lab demo-1102" },
+    { device: "windows", name: "Windows PC", place: "AWS device lab, Windows Server 2022", detail: "Chromium 141 clicked through two bills, and Muse Spark 1.3 Contributor split them: $35.40 and $34.60 each", simulated: false, ranOn: "2026-11-02", ...files("dinner-split-helper", "windows"), source: "docs/BUILD_LOG.md, lab demo-1102" },
+    { device: "android", name: "Samsung Galaxy S25", place: "AWS Device Farm, Android 16", detail: "Tapped through two bills in the Muse Muse lab app, and Muse Spark 1.3 Contributor split them: $35.40 and $34.60 each", simulated: false, ranOn: "2026-11-02", ...files("dinner-split-helper", "galaxy-s25"), source: "docs/BUILD_LOG.md, Device Farm run 3abcc4b7" },
+    { device: "iphone", name: "iPhone 15 Pro size", place: "Safari's engine (WebKit 26) on the lab Mac", detail: "Tapped through two bills, and Muse Spark 1.3 Contributor split them: $35.40 and $34.60 each", simulated: true, ranOn: "2026-11-02", ...files("dinner-split-helper", "iphone"), source: "docs/BUILD_LOG.md, lab demo-1102" },
   ],
 };
 
