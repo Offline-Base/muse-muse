@@ -174,7 +174,10 @@ describe("the polish round under the switch", () => {
 
   it("the polish pick is reached only from a polish row (polishOverride in build-steps)", () => {
     const steps = readFileSync(path.join(ROOT, "lib/pipeline/build-steps.ts"), "utf8");
-    assert.match(steps, /isPolishMessage\(build\.message\) && build\.buildModel === POLISH_MODEL \? POLISH_MODEL : null/);
+    // Wonder only for a refine row whose message is a polish note and whose build_model was preset to Wonder; the quick
+    // Contributor pass returns Contributor, never Wonder.
+    assert.match(steps, /if \(build\.kind !== "refine" \|\| !isPolishMessage\(build\.message\)\) return null;\n  if \(build\.buildModel === POLISH_MODEL\) return POLISH_MODEL;/);
+    assert.match(steps, /build\.buildModel === POLISH_CONTRIBUTOR_MODEL && isContributorPolish\(build\.message\) \? POLISH_CONTRIBUTOR_MODEL : null/);
   });
 });
 

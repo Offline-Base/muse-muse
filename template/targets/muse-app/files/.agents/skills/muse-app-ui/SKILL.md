@@ -15,7 +15,7 @@ Every product should look like it belongs beside the Muse Muse app: a white page
 4. **Regular weight carries it.** One family, Inter. `h1` is 400, `h2` and `h3` are 600, labels and buttons 500, body 400. Never 700, never a second font.
 5. **Only layers float.** The composer, menus, dialogs and toasts have shadows. Nothing else does.
 6. **One signature element, and it holds real content.** The surface the result sits on, never art on its own.
-7. **Phone first.** Design at 390 px, then let it widen to the 720 px column.
+7. **Phone first, then use the width.** Design at 390 px in one column. At 1024 px and wider, let the page grow to about 1200 px with the input and the result side by side (the result pane sticky), never one tall narrow column.
 
 ## Which pattern
 

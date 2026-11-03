@@ -10,7 +10,7 @@ import { groupLog, type LogGroup, type Segment } from "@/components/build/derive
 import { DrillGroup } from "@/components/build/DrillGroup";
 import { splitDrillSteps } from "@/lib/edge/drills";
 import { splitBuildNote } from "@/lib/docs/build-note";
-import { isPolishMessage, POLISH_ROOM_TITLE } from "@/lib/polish/logic";
+import { isContributorPolish, isPolishMessage, polishRoomTitleFor } from "@/lib/polish/logic";
 import { costItemsOf, planMoney, runCostUsd } from "@/lib/brief/cost";
 import { briefKeepsWonder, compact, duration, modelLabel, plural, servedModelLabel, truncate, usd } from "@/lib/format";
 import type { Brief, Reference } from "@/lib/types";
@@ -53,9 +53,9 @@ export function UserTurn({
         <h2 className="sr-only">Your muse</h2>
         <p className="rebuild-tag">
           <Icon name="sparkle" size={16} />
-          <span>{POLISH_ROOM_TITLE}</span>
+          <span>{polishRoomTitleFor(message)}</span>
         </p>
-        <UserBubble text="A final UI pass to Meta's look, on Muse Wonder. Every feature stays as it is." attachments={[]} />
+        <UserBubble text={isContributorPolish(message) ? "A quick UI pass on Muse Spark 1.3 Contributor. Every feature stays as it is." : "A final UI pass to Meta's look, on Muse Wonder. Every feature stays as it is."} attachments={[]} />
         <details className="bubble-context">
           <summary>What Muse Code was asked</summary>
           {message

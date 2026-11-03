@@ -43,7 +43,7 @@ import { panelLinkOrigin, publicSiteOrigin } from "@/lib/native/product-view";
 import { briefTargets } from "@/lib/native/targets";
 import { enabledFrameBrief, liveFrameAllow, liveFrameSandbox } from "@/lib/product-frame";
 import { buildHighlights, currentUser, getProductPage, platformOrigin, rebuildRef, safeQuery } from "@/lib/queries";
-import { changeLabel, passedPolish, POLISH_LABEL } from "@/lib/polish/logic";
+import { changeLabel, passedPolish, polishLabelFor } from "@/lib/polish/logic";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
@@ -448,7 +448,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             <h2 className="panel-label">How it was built</h2>
             {polished ? (
               <p className="small">
-                <Link href={`/b/${polished.id}`}>{POLISH_LABEL}</Link>
+                <Link href={`/b/${polished.id}`}>{polishLabelFor(polished.message)}</Link>
                 <span className="muted"> · {relativeTime(polished.startedAt, now)}</span>
               </p>
             ) : null}

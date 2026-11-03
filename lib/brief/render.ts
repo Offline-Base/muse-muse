@@ -1,4 +1,5 @@
 import { targetLabel } from "@/lib/format";
+import { DESKTOP_LAYOUT } from "@/lib/polish/logic";
 import { buildTokenBudgetFor } from "@/lib/gateway/policy";
 import { RUN_LIMITS } from "@/lib/gateway/runs";
 import { costSentence } from "@/lib/brief/cost";
@@ -305,7 +306,7 @@ function lookLine(brief: Brief, note: LookNote): string {
       "Anything the ask doesn't mention stays as the skill has it. The inspo's mood shows only in the copy, the samples and any images the product makes.",
     ].join(" ");
   }
-  return `${note.museAppLook ? "The look always comes from the muse-app-ui skill and its tokens in `app/muse-app.css`." : "The look always comes from the meta-ui skill, in Meta blue."} The inspo's mood shows only in the copy, the samples and any images the product makes, never as decoration, colors or fonts.`;
+  return `${note.museAppLook ? "The look always comes from the muse-app-ui skill and its tokens in `app/muse-app.css`." : "The look always comes from the meta-ui skill, in Meta blue."} The inspo's mood shows only in the copy, the samples and any images the product makes, never as decoration, colors or fonts. Phones stack into one column at 390 px. ${DESKTOP_LAYOUT}`;
 }
 
 /** The fix and change prompts' look line, up to its last sentence. */

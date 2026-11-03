@@ -7,7 +7,7 @@ import { buildTokenBudgetFor } from "@/lib/gateway/policy";
 import { errorJson, isUuid, route } from "@/lib/http";
 import { attachRun, insertRefineBuild, markStartFailed } from "@/lib/pipeline/records";
 import { refineProduct } from "@/lib/pipeline/workflow";
-import { POLISH_HEADER } from "@/lib/polish/logic";
+import { POLISH_HEADER_PREFIX } from "@/lib/polish/logic";
 import { startPolish } from "@/lib/polish/start";
 import { checkBuildAllowed } from "@/lib/quota";
 
@@ -67,7 +67,7 @@ export const POST = route(async (req: Request, { params }: Ctx) => {
         const [row] = await db()
           .select({ buildId: schema.builds.id, status: schema.builds.status, message: schema.builds.message })
           .from(schema.builds)
-          .where(and(eq(schema.builds.productId, productId), eq(schema.builds.kind, "refine"), sql`starts_with(${schema.builds.message}, ${POLISH_HEADER})`))
+          .where(and(eq(schema.builds.productId, productId), eq(schema.builds.kind, "refine"), sql`starts_with(${schema.builds.message}, ${POLISH_HEADER_PREFIX})`))
           .orderBy(desc(schema.builds.startedAt))
           .limit(1);
         return row ?? null;

@@ -190,6 +190,10 @@ export interface PolishPass {
   look?: PolishBatchLook;
   /** Polish a product that already had a polish (the route's again: true). */
   again?: boolean;
+  /** --model: "contributor" or "wonder"; the route's default when absent (Wonder for a UI pass, Contributor for width). */
+  model?: "contributor" | "wonder";
+  /** --scope=width: change only the desktop layout. */
+  scope?: "width";
 }
 
 /** --look's value: "meta" or nothing. Anything else is an error, as the route would refuse it with a 400. */
@@ -201,7 +205,7 @@ export function polishLookArg(raw: string | undefined): PolishBatchLook | undefi
 
 /** The body of POST /api/builds/<id>/polish: focus when there is some, look and again: true when this pass asks. */
 export function polishBody(focus: string | null | undefined, pass: PolishPass = {}): Record<string, unknown> {
-  return { ...(focus ? { focus } : {}), ...(pass.look ? { look: pass.look } : {}), ...(pass.again ? { again: true } : {}) };
+  return { ...(focus ? { focus } : {}), ...(pass.look ? { look: pass.look } : {}), ...(pass.again ? { again: true } : {}), ...(pass.model ? { model: pass.model } : {}), ...(pass.scope ? { scope: pass.scope } : {}) };
 }
 
 export type PolishAnswer =

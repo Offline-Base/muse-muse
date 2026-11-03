@@ -20,7 +20,7 @@ describe("the polish note", () => {
   it("names both looks, /taste, the phone checks, no new features or fake data, and the full verify", () => {
     const note = polishNote();
     assert.ok(note.startsWith(POLISH_HEADER));
-    for (const want of ["muse-app-ui", "meta-ui", "/taste", "44 by 44", "contrast", "cut off", "into view", "Tab bars", "no new features", "no fake or sample data", "npm run verify", "screenshot judge"]) {
+    for (const want of ["muse-app-ui", "meta-ui", "/taste", "44 by 44", "contrast", "cut off", "into view", "tab and bottom bars", "1024 px and wider", "no new features", "no fake or sample data", "npm run verify", "screenshot judge"]) {
       assert.ok(note.includes(want), want);
     }
     assert.ok(!note.includes(EM_DASH));
@@ -53,7 +53,7 @@ describe("the polish note with look meta", () => {
     assert.match(POLISH_META_STEP, /the muse-app look, \.agents\/skills\/muse-app-ui/);
     for (const want of [
       `${OVERLAYS_DIR}/${MUSE_APP_OVERLAY}/files`,
-      "isn't in this sandbox",
+      "No such folder in this sandbox",
       ".agents/skills/muse-app-ui/reference/tokens.md",
       `"${RANGE_COMMIT}"`,
       ".agents/skills/design-looks",
@@ -200,7 +200,7 @@ describe("POST /api/builds/{id}/polish", () => {
     const { deps: d, calls } = deps();
     const res = await startPolish(d, BUILD, { focus: "Buttons are 36 px tall." });
     assert.equal(res.status, 201);
-    assert.deepEqual(res.body, { buildId: "polish-1", model: "muse-wonder-1.0", maxUsd: 4, roundSteps: 26, fixRounds: 1 });
+    assert.deepEqual(res.body, { buildId: "polish-1", model: "muse-wonder-1.0", maxUsd: 4, roundSteps: 26, fixRounds: 1, scope: "full" });
     const inserted = calls.insert[0] as { message: string; buildModel: string; productId: string };
     assert.equal(inserted.buildModel, "muse-wonder-1.0");
     assert.equal(inserted.productId, "prod-1");
@@ -374,5 +374,44 @@ describe("the no-worse gate (owner's rule, Nov 3)", async () => {
     assert.ok(told.includes(polishJudgeNote(["R3"])));
     assert.match(polishJudgeNote(["R3"]), /already failed R3 before this pass\. Report it in requirements as the screens show, but don't fail the product for it alone/);
     assert.ok(!text(judgeContent(input).content).includes("UI pass on a live product"));
+  });
+});
+
+describe("the quick passes on Contributor (owner, Nov 3)", () => {
+  it("a width pass changes only the desktop layout, runs on Contributor by default, and is named for it", async () => {
+    const { polishRequest } = await import("@/lib/polish/start");
+    const { isContributorPolish, polishLabelFor, POLISH_WIDTH_STEP, DESKTOP_LAYOUT, POLISH_HEADER_CONTRIBUTOR } = await import("@/lib/polish/logic");
+    const r = polishRequest({ scope: "width" });
+    assert.ok(!("error" in r));
+    if ("error" in r) return;
+    assert.equal(r.model, "contributor");
+    assert.equal(r.scope, "width");
+    assert.ok(r.message.startsWith(POLISH_HEADER_CONTRIBUTOR));
+    assert.ok(r.message.includes(`${POLISH_WIDTH_STEP} ${DESKTOP_LAYOUT}`));
+    assert.match(r.message, /Change nothing else: keep the look/);
+    assert.equal(isPolishMessage(r.message), true);
+    assert.equal(isContributorPolish(r.message), true);
+    assert.equal(polishLabelFor(r.message), "UI pass by Muse Spark 1.3 Contributor");
+    assert.doesNotMatch(r.message, /Meta AI|Meta would|Meta featur/);
+    assert.ok(!r.message.includes(String.fromCharCode(0x2014)));
+    // The UI pass stays on Wonder unless asked, and now carries the desktop layout rule.
+    const ui = polishRequest({ look: "meta" });
+    assert.ok(!("error" in ui) && ui.model === "wonder" && ui.message.startsWith(POLISH_HEADER) && ui.message.includes(DESKTOP_LAYOUT));
+    if (!("error" in ui)) assert.ok(ui.message.length < MAX_NOTE_CHARS, String(ui.message.length));
+    assert.ok("error" in polishRequest({ scope: "width", look: "meta" }));
+    assert.ok("error" in polishRequest({ scope: "tall" }));
+    assert.ok("error" in polishRequest({ model: "gpt" }));
+  });
+
+  it("a Contributor plan is capped at $2 and gets many more steps, and its fix round uses its own step cost", () => {
+    const plan = polishPlan(8, 10, "contributor");
+    assert.equal(plan.maxUsd, 2);
+    assert.equal(plan.model, "contributor");
+    assert.ok(plan.roundSteps > 100, String(plan.roundSteps));
+    assert.ok(polishFixSteps(plan, 0.2) > 50);
+    assert.match(polishRoomLine(plan), /^Quick pass on Muse Spark 1\.3 Contributor:/);
+    assert.match(polishEnding("live", "Live.", "contributor"), /^UI pass by Muse Spark 1\.3 Contributor\./);
+    // Wonder plans are as before.
+    assert.equal(polishPlan(8, 10).model, undefined);
   });
 });

@@ -2,7 +2,7 @@
  * Starting a polish round (POST /api/builds/{buildId}/polish, lib/polish/logic.ts). Plain module: the route passes the real
  * database, quota and workflow start, and tests pass fakes, so nothing here spends or reaches Neon on its own.
  */
-import { isMetaLookPolish, POLISH_LOOKS, POLISH_MAX_FOCUS_CHARS, POLISH_MIN_USD, POLISH_MODEL, polishNote, polishPlan, type PolishLook } from "@/lib/polish/logic";
+import { isMetaLookPolish, POLISH_LOOKS, POLISH_MAX_FOCUS_CHARS, POLISH_MIN_USD, POLISH_CONTRIBUTOR_MODEL, POLISH_MODEL, polishNote, polishPlan, POLISH_SCOPES, type PolishLook, type PolishModelName, type PolishScope } from "@/lib/polish/logic";
 import { TERMINAL_STATUSES, type BuildStatus } from "@/lib/types";
 
 export interface PolishProduct {
@@ -44,14 +44,20 @@ const reply = (status: number, body: Record<string, unknown>): PolishReply => ({
  * The polish note from the caller's body: the fixed note, plus `focus` when sent, and with `look: "meta"` the step that
  * puts the product on the Meta AI app look, muse-app-ui. An error string when the body is wrong.
  */
-export function polishRequest(body: Record<string, unknown>): { message: string; again: boolean; look?: PolishLook } | { error: string } {
+export function polishRequest(body: Record<string, unknown>): { message: string; again: boolean; look?: PolishLook; model: PolishModelName; scope: PolishScope } | { error: string } {
   if (body.focus !== undefined && body.focus !== null && typeof body.focus !== "string") return { error: "focus must be text." };
   const focus = typeof body.focus === "string" ? body.focus.trim() : "";
   if (focus.length > POLISH_MAX_FOCUS_CHARS) return { error: `Keep focus under ${POLISH_MAX_FOCUS_CHARS} characters.` };
   if (body.again !== undefined && typeof body.again !== "boolean") return { error: "again must be true or false." };
   if (body.look !== undefined && !(POLISH_LOOKS as readonly unknown[]).includes(body.look)) return { error: `look must be "meta" or left out.` };
+  if (body.model !== undefined && body.model !== "contributor" && body.model !== "wonder") return { error: `model must be "contributor", "wonder" or left out.` };
+  if (body.scope !== undefined && !(POLISH_SCOPES as readonly unknown[]).includes(body.scope)) return { error: `scope must be "full", "width" or left out.` };
+  const scope: PolishScope = body.scope === "width" ? "width" : "full";
+  if (scope === "width" && body.look !== undefined) return { error: "A width pass keeps the look: leave look out." };
   const look = body.look as PolishLook | undefined;
-  return { message: polishNote(focus || null, look ?? null), again: body.again === true, ...(look ? { look } : {}) };
+  // A width pass runs on Contributor unless the caller asks for Wonder; the UI pass stays on Wonder unless asked.
+  const model: PolishModelName = body.model === "contributor" || (scope === "width" && body.model !== "wonder") ? "contributor" : "wonder";
+  return { message: polishNote(focus || null, look ?? null, model, scope), again: body.again === true, ...(look ? { look } : {}), model, scope };
 }
 
 /**
@@ -86,7 +92,7 @@ export async function startPolish(deps: PolishDeps, buildId: string, body: Recor
   const allowed = await deps.allowed();
   if (!allowed.ok) return reply(allowed.status, { error: allowed.error });
 
-  const inserted = await deps.insert({ productId: product.id, rebuildOf: product.rebuildOf, message: request.message, buildModel: POLISH_MODEL });
+  const inserted = await deps.insert({ productId: product.id, rebuildOf: product.rebuildOf, message: request.message, buildModel: request.model === "contributor" ? POLISH_CONTRIBUTOR_MODEL : POLISH_MODEL });
   if (!inserted) return reply(409, { error: "busy" });
   let runId: string;
   try {
@@ -96,6 +102,6 @@ export async function startPolish(deps: PolishDeps, buildId: string, body: Recor
     return reply(500, { error: "start_failed" });
   }
   await deps.attachRun(inserted.buildId, runId).catch((err: unknown) => console.error("[polish] attachRun", err));
-  const plan = polishPlan(deps.maxUsd, deps.buildTokenUsd);
-  return reply(201, { buildId: inserted.buildId, model: POLISH_MODEL, maxUsd: plan.maxUsd, roundSteps: plan.roundSteps, fixRounds: plan.fixRounds, ...(request.look ? { look: request.look } : {}) });
+  const plan = polishPlan(deps.maxUsd, deps.buildTokenUsd, request.model);
+  return reply(201, { buildId: inserted.buildId, model: request.model === "contributor" ? POLISH_CONTRIBUTOR_MODEL : POLISH_MODEL, maxUsd: plan.maxUsd, roundSteps: plan.roundSteps, fixRounds: plan.fixRounds, ...(request.look ? { look: request.look } : {}), scope: request.scope });
 }

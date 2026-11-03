@@ -1,0 +1,34 @@
+<!doctype html><html><head><meta charset="utf-8"><title>SAM 3.1 tuned on a Jetson: Muse among other toys</title>
+<style>
+:root{--blue:#0866ff}
+body{margin:0;font-family:Inter,-apple-system,system-ui,sans-serif;background:#fff;color:#1c1e21}
+main{max-width:1100px;margin:0 auto;padding:40px 24px 80px}
+h1{font-size:28px;font-weight:600;margin:0 0 6px}
+.sub{color:#65676b;margin:0 0 28px}
+.card{border:1px solid #e4e6eb;border-radius:16px;padding:20px;margin:0 0 24px}
+table{border-collapse:collapse;width:100%;font-size:16px}
+th,td{padding:12px 14px;text-align:left;border-bottom:1px solid #e4e6eb}
+th{font-weight:600;color:#65676b;font-size:14px}
+td.n{font-variant-numeric:tabular-nums}
+td.win{color:var(--blue);font-weight:600}
+.chip{display:inline-block;background:linear-gradient(90deg,#0866ff,#a033ff);color:#fff;border-radius:999px;padding:3px 10px;font-size:12px;margin-left:8px}
+img{width:100%;border-radius:12px;border:1px solid #e4e6eb;margin:10px 0 4px}
+.note{color:#65676b;font-size:14px;line-height:1.5}
+</style></head><body><main>
+<h1>SAM 3.1, tuned on a Jetson <span class="chip">AI</span></h1>
+<p class="sub">Finding the Muse mascot among other plush toys. 30 photos with Muse pasted among teddy bears, plus the same 30 without Muse. Run on jetson-04, about 1.4 s a look. Nov 3, 2026.</p>
+<div class="card"><table>
+<tr><th></th><th>Meta SAM 3.1, "plush toy"</th><th>Tuned on jetson-03, "muse"</th></tr>
+<tr><td>Finds Muse</td><td class="n">30 of 30</td><td class="n">29 of 30</td></tr>
+<tr><td>Ranks Muse as the top match</td><td class="n">14 of 30</td><td class="n win">22 of 30</td></tr>
+<tr><td>Boxes Muse and nothing else</td><td class="n">0</td><td class="n win">8 of 30</td></tr>
+<tr><td>Fires on photos with no Muse</td><td class="n">30 of 30</td><td class="n win">22 of 30</td></tr>
+<tr><td>Accuracy at finding Muse (AP)</td><td class="n">0.47</td><td class="n win">0.77</td></tr>
+</table>
+<p class="note">Meta's weights asked for "muse" find nothing (0 of 30), since the word is new to them. The tune ranks Muse first more often, but still boxes other teddy bears, because it was trained only on photos where Muse was the only toy. Next step: retune with these bear photos as "not Muse" examples.</p></div>
+<div class="card"><h2 style="font-size:18px;margin:0">Side by side: Meta "plush toy" (left) and tuned "muse" (right)</h2>
+<img src="file:///Users/ethancastro/mm-wt/merge-polish/docs/log/bench/2026-11-03/distract/sbs1_coco249129_plushtoy_vs_tuned_muse.jpg" alt="Meta plush toy boxes 8 toys; tuned muse boxes Muse at 0.98 and 2 bears">
+<img src="file:///Users/ethancastro/mm-wt/merge-polish/docs/log/bench/2026-11-03/distract/sbs2_coco20553_plushtoy_vs_tuned_muse.jpg" alt="Second scene">
+<img src="file:///Users/ethancastro/mm-wt/merge-polish/docs/log/bench/2026-11-03/distract/sbs3_coco113403_plushtoy_vs_tuned_muse.jpg" alt="Third scene">
+<p class="note">Photos: COCO val2017 (Flickr, CC BY 2.0), one held-out Muse pasted in each. Private benchmark. Scores and per-photo results: scores.json and per_image.json in this folder.</p></div>
+</main></body></html>

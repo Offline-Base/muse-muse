@@ -1086,7 +1086,7 @@ export async function refineProduct(input: BuildProductInput): Promise<BuildProd
       sandboxName,
       refineIndex: refine.refineIndex,
       freshSession: refine.freshSession,
-      ...(refine.polish ? { polish: { productUsd: refine.polish.productUsd } } : {}),
+      ...(refine.polish ? { polish: { productUsd: refine.polish.productUsd, ...(refine.polish.model === "contributor" ? { contributor: true } : {}) } } : {}),
     });
     const ctx: Ctx = {
       buildId,
@@ -1147,7 +1147,7 @@ export async function refineProduct(input: BuildProductInput): Promise<BuildProd
     ending = { status: "failed", message: failureMessage(track.stage, err) };
   }
   // The polish round's last word names the model that did the pass, or says plainly that nothing changed.
-  if (polish) ending = { ...ending, message: polishEnding(ending.status, ending.message) };
+  if (polish) ending = { ...ending, message: polishEnding(ending.status, ending.message, polish.model ?? "wonder") };
   lastStepsFeed(buildId);
   if (sandboxName) await cleanup({ buildId, productId, sandboxName });
   const proof = await planProof(buildId, ending);

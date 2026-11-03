@@ -23,7 +23,7 @@ import { BOARD_TOOLS_MARKER } from "@/lib/caps/hardware/limits";
 import { CREDITS_STEP, creditsInSource, withModelCredits } from "@/lib/verify/model-credits";
 import { addBuildCost, emit, setBuildStatus } from "@/lib/events";
 import { buildTokenBudgetFor, POLISH_TOKEN_MARKER } from "@/lib/gateway/policy";
-import { isLookPolish, isPolishMessage, metaLookShipped, POLISH_HEADER, POLISH_MODEL, polishBaseline, polishFixLines, polishPlan, withoutKnownFailing, type PolishBaseline, type PolishPlan } from "@/lib/polish/logic";
+import { isContributorPolish, isLookPolish, isPolishMessage, metaLookShipped, POLISH_CONTRIBUTOR_MODEL, POLISH_HEADER_PREFIX, POLISH_MODEL, polishBaseline, polishFixLines, polishPlan, withoutKnownFailing, type PolishBaseline, type PolishPlan } from "@/lib/polish/logic";
 import { mintToken, revokeLiveTokensExcept, revokeTokens } from "@/lib/gateway/tokens";
 import { judgeBuild, type JudgeSample, MAX_CHAIN_SCREENSHOTS, pickScreenshots } from "@/lib/judge";
 import { APP_NAV_COMPONENT, FULL_PRODUCT_SKILL } from "@/lib/full/prompts";
@@ -272,7 +272,7 @@ async function metaLookNote(build: { kind: string; message: string | null; produ
   const polishes = await db()
     .select({ kind: schema.builds.kind, message: schema.builds.message, status: schema.builds.status })
     .from(schema.builds)
-    .where(and(eq(schema.builds.productId, build.productId), eq(schema.builds.kind, "refine"), sql`starts_with(${schema.builds.message}, ${POLISH_HEADER})`));
+    .where(and(eq(schema.builds.productId, build.productId), eq(schema.builds.kind, "refine"), sql`starts_with(${schema.builds.message}, ${POLISH_HEADER_PREFIX})`));
   return metaLookShipped(polishes) ? { metaLook: true } : {};
 }
 
@@ -2048,8 +2048,11 @@ async function liveRequirementRecord(latestBuildId: string | null): Promise<Arra
  * The model override of a polish round: its row's message is a polish note and its build_model was set to Muse Wonder
  * when the row was made (insertRefineBuild, from POST /api/builds/{id}/polish). Null for every other build.
  */
-function polishOverride(build: { kind: string; message: string | null; buildModel: string | null }): typeof POLISH_MODEL | null {
-  return build.kind === "refine" && isPolishMessage(build.message) && build.buildModel === POLISH_MODEL ? POLISH_MODEL : null;
+function polishOverride(build: { kind: string; message: string | null; buildModel: string | null }): typeof POLISH_MODEL | typeof POLISH_CONTRIBUTOR_MODEL | null {
+  if (build.kind !== "refine" || !isPolishMessage(build.message)) return null;
+  if (build.buildModel === POLISH_MODEL) return POLISH_MODEL;
+  // The quick pass (owner, Nov 3): the same round on Contributor, with its own step plan and no Wonder marker.
+  return build.buildModel === POLISH_CONTRIBUTOR_MODEL && isContributorPolish(build.message) ? POLISH_CONTRIBUTOR_MODEL : null;
 }
 
 /**
@@ -2149,7 +2152,7 @@ export async function loadRefineStep(buildId: string, opts: { restore?: boolean 
     refineIndex: Math.max(1, Number(n)),
     ...(plan ? { plan } : {}),
     ...(brief && isEdgeBuild(brief) ? { edge: true } : {}),
-    ...(override ? { polish: polishPlan(env.polishMaxUsd, buildTokenBudgetFor()) } : {}),
+    ...(override ? { polish: polishPlan(env.polishMaxUsd, buildTokenBudgetFor(), override === POLISH_CONTRIBUTOR_MODEL ? "contributor" : "wonder") } : {}),
     // Read before this polish can ship, so it is always the version it would replace.
     ...(override && fullBuildOf(brief) ? { polishBaseline: polishBaseline(await liveRequirementRecord(product.latestBuildId)) } : {}),
   };
@@ -2179,7 +2182,7 @@ export async function reopenStep(input: {
   refineIndex: number;
   freshSession?: boolean;
   /** The polish round: its build token keeps Muse Wonder (POLISH_TOKEN_MARKER) and holds the product's calls to this budget. */
-  polish?: { productUsd: number };
+  polish?: { productUsd: number; contributor?: boolean };
 }): Promise<{ promptFile: string; images: string[] }> {
   "use step";
   const build = await loadBuild(input.buildId);
@@ -2194,7 +2197,7 @@ export async function reopenStep(input: {
   const { token } = await mintToken({
     productId: input.productId,
     scope: "build",
-    allowedModels: input.polish ? [...allowedModels, POLISH_TOKEN_MARKER] : allowedModels,
+    allowedModels: input.polish && !input.polish.contributor ? [...allowedModels, POLISH_TOKEN_MARKER] : allowedModels,
     dailyBudgetUsd: input.polish ? Math.min(buildTokenBudgetFor(), input.polish.productUsd) : buildTokenBudgetFor(),
     ttlHours: BUILD_TOKEN_TTL_HOURS,
     ...(caps ? { buildId: input.buildId } : {}),

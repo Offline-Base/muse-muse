@@ -213,7 +213,12 @@ async function main(): Promise<void> {
   if (resume && !existsSync(resume)) throw new Error(`--resume=${resume} doesn't exist.`);
   const resumed = resume ? (((JSON.parse(readFileSync(resume, "utf8")) as { items?: PolishItem[] }).items ?? []) as PolishItem[]) : [];
   const look = polishLookArg(arg("look"));
-  const pass: PolishPass = { ...(look ? { look } : {}), ...(process.argv.includes("--again") ? { again: true } : {}) };
+  const model = arg("model");
+  if (model !== undefined && model !== "contributor" && model !== "wonder") throw new Error(`--model=${model}: use contributor or wonder.`);
+  const scope = arg("scope");
+  if (scope !== undefined && scope !== "width") throw new Error(`--scope=${scope}: only width, or leave it out for the UI pass.`);
+  if (scope && look) throw new Error("--scope=width keeps each product's look: leave --look out.");
+  const pass: PolishPass = { ...(look ? { look } : {}), ...(process.argv.includes("--again") ? { again: true } : {}), ...(model ? { model } : {}), ...(scope ? { scope } : {}) };
   const secret = env.automationSecret;
   if (!dry && !secret) throw new Error("AUTOMATION_SECRET isn't in .env.local. It must match the one on Vercel Production.");
 

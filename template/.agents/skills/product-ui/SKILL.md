@@ -33,7 +33,7 @@ Every part below is a class in `app/globals.css` or a component in `components/`
 
 ## Layout
 
-- Build for phones first (about 390 px wide), then let it widen to the 720 px column.
+- Build for phones first (about 390 px wide): one column. On a computer (1024 px and wider) use the width, not one tall column: the page up to about 1200 px, the input and the result side by side in two panes with the result pane sticky, short empty states, and the result above the fold at 1280 x 720.
 - The app bar shows the product's name from the brief, and the hero's `h1` and tagline follow meta-ui's first screen. No eyebrow label above the `h1`, and no model chips or cost before there is a result.
 - Lead the first screen with the main flow: input, then action, then result. It doesn't limit the product to one flow: every other flow and screen the brief lists gets its own place, one tap away.
 - When a result arrives, scroll it into view and move focus to its heading: `resultRef.current?.scrollIntoView({ block: "start" })`. The demo video is 1280 x 720, so a result below the fold is a result nobody sees.

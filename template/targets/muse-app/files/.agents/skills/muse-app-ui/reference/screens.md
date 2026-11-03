@@ -2,7 +2,7 @@
 
 Five screen patterns, built only from the parts in `components.md`. Pick the one that matches what the person does, not what the inspo looks like. Most products are a tool, a form or a gallery: a chat layout on a product that answers once makes people type when one button would do.
 
-Every pattern keeps the same frame: `<AppBar>`, then `<main className="stack">` in the 720 px column, then the footer from app/layout.tsx. Every one is built at 390 px first and checked in dark mode.
+Every pattern keeps the same frame: `<AppBar>`, then `<main className="stack">`, then the footer from app/layout.tsx. On phones that is one column; at 1024 px and wider the page grows to about 1200 px with the input and the result side by side (the result pane sticky), never one tall narrow column. Every one is built at 390 px first and checked in dark mode.
 
 ## Tool: one input, one result
 

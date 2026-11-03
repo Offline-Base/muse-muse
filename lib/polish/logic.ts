@@ -23,6 +23,22 @@ export const POLISH_LABEL = "UI pass by Muse Wonder";
 /** The room's name for the round while it runs, with its estimate. */
 export const POLISH_ROOM_TITLE = "Final pass on Muse Wonder";
 
+/**
+ * The quick pass on Muse Spark 1.3 Contributor (owner, Nov 3, 3:40 PM: "do a quick pass with muse spark 1.3 contributor"):
+ * the same note and gates, the cheap model, more steps, and named plainly everywhere it shows.
+ */
+export const POLISH_CONTRIBUTOR_MODEL = "muse-spark-1.3-contributor" as const;
+export const POLISH_HEADER_CONTRIBUTOR = "Final UI pass by Muse Spark 1.3 Contributor.";
+export const POLISH_LABEL_CONTRIBUTOR = "UI pass by Muse Spark 1.3 Contributor";
+export const POLISH_ROOM_TITLE_CONTRIBUTOR = "Quick pass on Muse Spark 1.3 Contributor";
+/** What both headers start with, for a database prefix match. */
+export const POLISH_HEADER_PREFIX = "Final UI pass by Muse ";
+/** An estimate of one Contributor step ($0.10 a million input, $0.002 cached, $0.20 output): well under a cent. */
+export const POLISH_CONTRIBUTOR_STEP_USD = 0.004;
+/** The most a Contributor pass may spend, whatever POLISH_MAX_USD says. */
+export const POLISH_CONTRIBUTOR_MAX_USD = 2;
+export type PolishModelName = "wonder" | "contributor";
+
 /** One round, plus at most this many fix rounds. */
 export const POLISH_MAX_FIX_ROUNDS = 1;
 
@@ -62,33 +78,55 @@ export interface PolishPlan {
   /** Muse Code's step cap for its one fix round. */
   fixSteps: number;
   fixRounds: number;
+  /** The model's estimated cost of one step; the Wonder estimate when absent (plans saved before Nov 3, 3:40 PM). */
+  stepUsd?: number;
+  /** Which model runs the pass; Wonder when absent. */
+  model?: PolishModelName;
 }
 
 function cents(usd: number): number {
   return Math.round(usd * 100) / 100;
 }
 
-function stepsFor(usd: number): number {
-  return Math.min(MAX_STEPS, Math.max(MIN_STEPS, Math.floor(usd / POLISH_STEP_USD + 1e-9)));
+function stepsFor(usd: number, stepUsd = POLISH_STEP_USD): number {
+  return Math.min(MAX_STEPS, Math.max(MIN_STEPS, Math.floor(usd / stepUsd + 1e-9)));
 }
 
 /** The bounds of one polish from POLISH_MAX_USD and the platform's build token budget. */
-export function polishPlan(maxUsd: number, buildTokenUsd: number): PolishPlan {
-  const most = Number.isFinite(maxUsd) && maxUsd > 0 ? maxUsd : 0;
+export function polishPlan(maxUsd: number, buildTokenUsd: number, model: PolishModelName = "wonder"): PolishPlan {
+  const asked = Number.isFinite(maxUsd) && maxUsd > 0 ? maxUsd : 0;
+  const most = model === "contributor" ? Math.min(asked, POLISH_CONTRIBUTOR_MAX_USD) : asked;
+  const stepUsd = model === "contributor" ? POLISH_CONTRIBUTOR_STEP_USD : POLISH_STEP_USD;
   const productUsd = cents(Math.max(0, Math.min(buildTokenUsd, most * PRODUCT_SHARE)));
   const engineUsd = Math.max(0, most - productUsd);
   return {
     maxUsd: cents(most),
     productUsd,
-    roundSteps: stepsFor(engineUsd * ROUND_SHARE),
-    fixSteps: stepsFor(engineUsd * (1 - ROUND_SHARE)),
+    roundSteps: stepsFor(engineUsd * ROUND_SHARE, stepUsd),
+    fixSteps: stepsFor(engineUsd * (1 - ROUND_SHARE), stepUsd),
     fixRounds: POLISH_MAX_FIX_ROUNDS,
+    ...(model === "contributor" ? { stepUsd, model } : {}),
   };
 }
 
 /** Whether a build's message is a polish note. */
 export function isPolishMessage(message: string | null | undefined): message is string {
-  return typeof message === "string" && message.startsWith(POLISH_HEADER);
+  return typeof message === "string" && (message.startsWith(POLISH_HEADER) || message.startsWith(POLISH_HEADER_CONTRIBUTOR));
+}
+
+/** Whether a polish note is for the quick pass on Contributor. */
+export function isContributorPolish(message: string | null | undefined): boolean {
+  return typeof message === "string" && message.startsWith(POLISH_HEADER_CONTRIBUTOR);
+}
+
+/** What a passed polish is called, by the model that ran it. */
+export function polishLabelFor(message: string | null | undefined): string {
+  return isContributorPolish(message) ? POLISH_LABEL_CONTRIBUTOR : POLISH_LABEL;
+}
+
+/** The room's title for a polish turn, by the model that runs it. */
+export function polishRoomTitleFor(message: string | null | undefined): string {
+  return isContributorPolish(message) ? POLISH_ROOM_TITLE_CONTRIBUTOR : POLISH_ROOM_TITLE;
 }
 
 /**
@@ -125,14 +163,22 @@ const APP_LOOK_FILES = `${OVERLAYS_DIR}/${MUSE_APP_OVERLAY}/files`;
 const META_LOOK_STEP = [
   `${POLISH_META_STEP} This round changes the look on purpose, so it overrides any line that says to keep the current look or follow a Design direction. The look: a white page, hairline cards, regular-weight Inter, one blue for actions, a purple gradient only on what a model made, a floating composer, and a left sidebar where the product has room for one.`,
   `   - The look's own files are in ${APP_LOOK_FILES} (read-only). Put its .agents/skills/muse-app-ui, .agents/skills/product-ui and .agents/skills/meta-ui in place of the product's: D=${APP_LOOK_FILES}; for s in muse-app-ui product-ui meta-ui; do [ -d $D/.agents/skills/$s ] && rm -rf .agents/skills/$s && cp -R $D/.agents/skills/$s .agents/skills/; done. If ${LOOK_CSS} is missing, copy it from $D too. Then chmod -R u+w .agents/skills ${LOOK_CSS}: copies are read-only.`,
-  `   - If that folder isn't in this sandbox: keep .agents/skills/muse-app-ui if the product has it, and keep or write ${LOOK_CSS} with every token in .agents/skills/muse-app-ui/reference/tokens.md, light and dark, as that table gives them. If the skill is missing too, keep the current look, say so at the top of BUILD_NOTES.md, and go on to step 2.`,
-  `   - Remove every design direction. ${LOOK_CSS} must hold the look's own values (diff it with $D/${LOOK_CSS}, or check it against the tokens table): take out every color, font, shadow, radius or token that differs. Map a token only the product's CSS defines to the nearest one in ${LOOK_CSS}, and take out the colors, fonts and decoration a direction added in the product's own CSS. Delete .agents/skills/design-looks and any font package a direction added. If the commit "${RANGE_COMMIT}" is there, git show --stat on it lists what it wrote.`,
-  `   - In app/layout.tsx, import @fontsource-variable/inter/opsz.css and then ./muse-app.css after ./globals.css, drop @fontsource-variable/montserrat and any other font, and use #181819 as the dark theme color. Keep the product's title and the rest.`,
+  `   - No such folder in this sandbox: keep the skill and write ${LOOK_CSS} from .agents/skills/muse-app-ui/reference/tokens.md, light and dark. No skill either: keep the current look and say so at the top of BUILD_NOTES.md.`,
+  `   - Remove every design direction. ${LOOK_CSS} must hold the look's own values (diff it with $D/${LOOK_CSS}, or check it against the tokens table): take out every color, font, shadow, radius or token that differs. Map tokens only the product defines to the nearest look token, and drop colors, fonts and decoration a direction added. Delete .agents/skills/design-looks and any font package a direction added. If the commit "${RANGE_COMMIT}" is there, git show --stat on it lists what it wrote.`,
+  `   - In app/layout.tsx, import @fontsource-variable/inter/opsz.css and then ./muse-app.css after ./globals.css, drop @fontsource-variable/montserrat and any other font, dark theme color #181819; keep the rest.`,
   "   - If app/manifest.ts or lib/native/app-icon.tsx is there, use background_color #ffffff, theme_color #ffffff and an icon on #0064d4.",
-  `   - In AGENTS.md, take the look, font and skill lines from the copy in that folder, and keep every other line. Point every mention of meta-ui, design-looks or a Design direction in AGENTS.md, BUILD_NOTES.md and code comments at muse-app-ui. Leave brief.md as it is: its Design direction no longer sets the look.`,
+  `   - In AGENTS.md take the look, font and skill lines from that folder's copy and keep the rest. Point every mention of meta-ui, design-looks or a Design direction in AGENTS.md, BUILD_NOTES.md and comments at muse-app-ui; leave brief.md as it is.`,
   `   - Put "${APP_LOOK_NOTE}" at the top of BUILD_NOTES.md, then commit: git add -A && git commit -qm "${APP_LOOK_COMMIT}".`,
   "   Then follow .agents/skills/muse-app-ui and .agents/skills/product-ui on every screen, and run Muse Code's /taste skill on every screen as the last pass. Where /taste and muse-app-ui disagree, muse-app-ui wins.",
 ].join("\n");
+
+/**
+ * The desktop layout rule (owner, Nov 3, 3:30 PM: "all the builds are really vertical"). The look skills say "phone first,
+ * then widen to the 720 px column", so on a computer every product was one tall narrow column. Shared with the build
+ * prompt (lib/brief/render.ts lookLine).
+ */
+export const DESKTOP_LAYOUT =
+  "At 1024 px and wider use the width, not one tall column: the page up to about 1200 px, the input and the result side by side in two panes with the result pane sticky, short empty states, and the result above the fold at 1280 x 720. This overrides any skill line about a 720 px column.";
 
 /** Step 1 of a polish note that keeps the product's look. */
 const KEEP_LOOK_STEP =
@@ -142,18 +188,41 @@ const KEEP_LOOK_STEP =
  * The polish note Muse Code gets, with the caller's focus (audit findings, say) at the end. With look "meta", step 1
  * puts the product on the Meta AI app look, muse-app-ui; without it, the note keeps whichever look the product has.
  */
-export function polishNote(focus?: string | null, look?: PolishLook | null): string {
+export function polishNote(focus?: string | null, look?: PolishLook | null, model: PolishModelName = "wonder", scope: PolishScope = "full"): string {
   const extra = focus?.trim();
+  if (scope === "width") return widthNote(extra, model);
   return [
-    `${POLISH_HEADER} This is a polish round on a live product: make it look and read finished and polished, without changing what it does.`,
+    `${model === "contributor" ? POLISH_HEADER_CONTRIBUTOR : POLISH_HEADER} This is a polish round on a live product: make it look and read finished and polished, without changing what it does.`,
     "",
     look === "meta" ? META_LOOK_STEP : KEEP_LOOK_STEP,
-    "2. Phones first, at 390 px and 360 px wide. Every tap target at least 44 by 44 px. Text, icons and borders at WCAG AA contrast. Nothing cut off, clipped or scrolling sideways. A result scrolls into view when it arrives. Tab bars and bottom bars fit every label without clipping.",
+    `2. Phones and computers. At 390 and 360 px: one column, every tap target at least 44 by 44 px. ${DESKTOP_LAYOUT} Everywhere: WCAG AA contrast, nothing cut off or scrolling sideways, a result scrolls into view when it arrives, tab and bottom bars fit every label.`,
     "3. Clear copy. Short, plain labels. Buttons say what they do. Empty, loading and error states say what happened and what to do next.",
     "4. Consistent spacing and type. One spacing scale and one type scale, from the look skill's tokens, never one-off values.",
     "5. Keep every feature and every flow working as it does now. Add no new features and no new screens. Add no fake or sample data, and keep every real model call.",
     "6. Run the full verify (npm run verify) before you finish and fix what it finds. The platform runs the full verify and the screenshot judge again after you, and the live version is replaced only when both pass.",
     ...(extra ? ["", "Also fix these findings from an audit of this product:", extra] : []),
+  ].join("\n");
+}
+
+/**
+ * What a pass changes: "full" is the UI pass (look, copy, spacing; Muse Wonder by default); "width" changes only the
+ * desktop layout (owner, Nov 3: "just for the width, it should be contributor"), so the cheap model can do it safely.
+ */
+export const POLISH_SCOPES = ["full", "width"] as const;
+export type PolishScope = (typeof POLISH_SCOPES)[number];
+
+/** The step a width pass starts with, so it can be told apart. */
+export const POLISH_WIDTH_STEP = "1. Desktop layout only.";
+
+function widthNote(extra: string | undefined, model: PolishModelName): string {
+  return [
+    `${model === "contributor" ? POLISH_HEADER_CONTRIBUTOR : POLISH_HEADER} This is a layout pass on a live product: change only how it uses a wide screen, nothing else.`,
+    "",
+    `${POLISH_WIDTH_STEP} ${DESKTOP_LAYOUT}`,
+    "2. Phones stay exactly as they are: one column at 390 and 360 px. Check both widths in the browser.",
+    "3. Change nothing else: keep the look, colors, fonts, copy, features, flows and every real model call as they are. Use the product's existing CSS classes and tokens, and add only the layout rules a two-pane page needs.",
+    "4. Run the full verify (npm run verify) before you finish and fix what it finds. The platform runs it and the screenshot judge again, and the live version is replaced only when both pass.",
+    ...(extra ? ["", "Also:", extra] : []),
   ].join("\n");
 }
 
@@ -182,7 +251,7 @@ export function metaLookShipped(history: ReadonlyArray<{ kind: string; message: 
 
 /** The room's estimate, said when the round starts. */
 export function polishRoomLine(plan: PolishPlan): string {
-  return `${POLISH_ROOM_TITLE}: one round of up to ${plan.roundSteps} model steps and at most ${plan.fixRounds} fix round of up to ${plan.fixSteps}, estimated at no more than $${plan.maxUsd.toFixed(2)} in Meta credits, $${plan.productUsd.toFixed(2)} of it for the product's own test calls.`;
+  return `${plan.model === "contributor" ? POLISH_ROOM_TITLE_CONTRIBUTOR : POLISH_ROOM_TITLE}: one round of up to ${plan.roundSteps} model steps and at most ${plan.fixRounds} fix round of up to ${plan.fixSteps}, estimated at no more than $${plan.maxUsd.toFixed(2)} in Meta credits, $${plan.productUsd.toFixed(2)} of it for the product's own test calls.`;
 }
 
 /**
@@ -192,24 +261,25 @@ export function polishRoomLine(plan: PolishPlan): string {
  */
 export function polishFixSteps(plan: PolishPlan, spentUsd: number): number {
   const left = plan.maxUsd - (Number.isFinite(spentUsd) ? Math.max(0, spentUsd) : plan.maxUsd) - plan.productUsd;
-  const steps = Math.min(plan.fixSteps, Math.floor(left / POLISH_STEP_USD + 1e-9));
+  const steps = Math.min(plan.fixSteps, Math.floor(left / (plan.stepUsd ?? POLISH_STEP_USD) + 1e-9));
   return steps >= MIN_FIX_STEPS ? steps : 0;
 }
 
 /** What the room says when a fix round would go past the budget. */
 export function polishBudgetLine(plan: PolishPlan, spentUsd: number): string {
-  return `${POLISH_ROOM_TITLE} has spent $${spentUsd.toFixed(2)} of its $${plan.maxUsd.toFixed(2)} budget, and a fix round wouldn't fit in what's left, so none runs.`;
+  return `${plan.model === "contributor" ? POLISH_ROOM_TITLE_CONTRIBUTOR : POLISH_ROOM_TITLE} has spent $${spentUsd.toFixed(2)} of its $${plan.maxUsd.toFixed(2)} budget, and a fix round wouldn't fit in what's left, so none runs.`;
 }
 
 /** The final word on a polish: plain about which model did the pass, and that a failure changed nothing on the product. */
-export function polishEnding(status: string, message: string): string {
-  if (status === "failed") return `The ${POLISH_LABEL} didn't ship, so nothing changed on the live product. ${message}`;
-  return `${POLISH_LABEL}. ${message}`;
+export function polishEnding(status: string, message: string, model: PolishModelName = "wonder"): string {
+  const label = model === "contributor" ? POLISH_LABEL_CONTRIBUTOR : POLISH_LABEL;
+  if (status === "failed") return `The ${label} didn't ship, so nothing changed on the live product. ${message}`;
+  return `${label}. ${message}`;
 }
 
 /** A row in a product's versions list: the polish label, or the change's own words. */
 export function changeLabel(message: string | null | undefined, fallback: string): string {
-  return isPolishMessage(message) ? POLISH_LABEL : (message ?? fallback);
+  return isPolishMessage(message) ? polishLabelFor(message) : (message ?? fallback);
 }
 
 /** The newest polish that shipped, from a product's builds, for the product page. */
