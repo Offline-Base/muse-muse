@@ -319,10 +319,17 @@ const MAX_BOARD_REPLY_CHARS = 8 * 1024 * 1024;
  *   EDGE_SAM_TIMEOUT_MS  the longest one board answer may take (default 30000; the first after a restart takes 7 to 14 s)
  *
  * EDGE_CLOUD_TIMEOUT_MS and EDGE_FIRST work as they do for respondJsonOrEdge.
+ *
+ * A hosted product has no EDGE_SAM_URL: the board is on an office network it can't reach. With EDGE_SAM_URL unset and
+ * GATEWAY_URL set, the board side is Muse Muse's {GATEWAY_URL}/fleet/v1/segment, with PRODUCT_TOKEN as the bearer, which takes
+ * the photo to the office Jetson's `sam3` service through the fleet control plane and answers in that service's shape. It's
+ * slower (10 to 25 s), so its timeout is 60 s unless EDGE_SAM_TIMEOUT_MS says otherwise, and its label names "an office
+ * Jetson" unless EDGE_SAM_BOARD names it. While Muse Muse has that route off it answers 404, which is the board being down.
+ * EDGE_SAM_VIA_GATEWAY=0 turns this off.
  */
-export function samBoard(): { url: string; apiKey: string | null; board: string; modelName: string } | null {
+export function samBoard(): { url: string; apiKey: string | null; board: string; modelName: string; viaGateway?: boolean } | null {
   const raw = process.env.EDGE_SAM_URL?.trim().replace(/\/+$/, "");
-  if (!raw) return null;
+  if (!raw) return samViaGateway();
   let url: URL;
   try {
     url = new URL(/\/segment$/.test(raw) ? raw : `${raw}/segment`);
@@ -337,6 +344,30 @@ export function samBoard(): { url: string; apiKey: string | null; board: string;
     modelName: process.env.EDGE_SAM_MODEL_NAME?.trim() || SAM_NAME,
   };
 }
+
+/** The board side for a hosted product: Muse Muse's fleet route (see samBoard). Null without GATEWAY_URL. */
+function samViaGateway(): { url: string; apiKey: string | null; board: string; modelName: string; viaGateway: true } | null {
+  if (process.env.EDGE_SAM_VIA_GATEWAY?.trim() === "0") return null;
+  const gateway = process.env.GATEWAY_URL?.trim().replace(/\/+$/, "");
+  if (!gateway) return null;
+  let url: URL;
+  try {
+    url = new URL(`${gateway}/fleet/v1/segment`);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+  return {
+    url: url.href,
+    apiKey: process.env.PRODUCT_TOKEN?.trim() || null,
+    board: process.env.EDGE_SAM_BOARD?.trim() || "an office Jetson",
+    modelName: process.env.EDGE_SAM_MODEL_NAME?.trim() || SAM_NAME,
+    viaGateway: true,
+  };
+}
+
+/** How long the gateway's way to the office board may take by default: the photo goes up in pieces through the control plane. */
+const DEFAULT_SAM_GATEWAY_TIMEOUT_MS = 60_000;
 
 /** The cloud look's label. */
 export function samCloudLabel(): string {
@@ -429,7 +460,8 @@ export async function segmentOrEdge(opts: SegmentOrEdgeOptions): Promise<SamAnsw
   for (const side of order) {
     try {
       if (side === "cloud") {
-        const deadline = board && order[0] === "cloud" ? cloudTimeoutMs() : null;
+        // The gateway's way to the office board only stands in when the cloud fails, so the cloud keeps its own pace there.
+        const deadline = board && !board.viaGateway && order[0] === "cloud" ? cloudTimeoutMs() : null;
         const seen = await seeInCloud(opts, photo, prompt, threshold, deadline);
         return { ok: true, by: "cloud", label: samCloudLabel(), prompt, ...seen, fellBack: reasons.board ?? null };
       }
@@ -586,7 +618,7 @@ const BoardReply = z.object({
 });
 
 async function seeOnBoard(board: NonNullable<ReturnType<typeof samBoard>>, photo: Photo, prompt: string, threshold: number, overlay: boolean): Promise<Seen> {
-  const timeout = ms("EDGE_SAM_TIMEOUT_MS", DEFAULT_SAM_TIMEOUT_MS);
+  const timeout = ms("EDGE_SAM_TIMEOUT_MS", board.viaGateway ? DEFAULT_SAM_GATEWAY_TIMEOUT_MS : DEFAULT_SAM_TIMEOUT_MS);
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(), timeout);
   let text: string;

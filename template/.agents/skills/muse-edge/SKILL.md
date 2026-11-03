@@ -93,7 +93,7 @@ Anything a person reads in the product or BUILD_NOTES.md:
 | `EDGE_BOARD`, `EDGE_MODEL_NAME` | The names in the label. |
 | `EDGE_FIRST` | `1` asks the board first. |
 | `EDGE_TIMEOUT_MS`, `EDGE_CLOUD_TIMEOUT_MS` | How long each side gets. Defaults 60000 and 10000. |
-| `EDGE_SAM_URL` | The board's SAM service, like `http://127.0.0.1:8790`. Unset means no board look. |
+| `EDGE_SAM_URL` | The board's SAM service, like `http://127.0.0.1:8790`. Unset on a hosted product (with `GATEWAY_URL` set), the board look goes through Muse Muse's `{GATEWAY_URL}/fleet/v1/segment` to an office Jetson, slower (10 to 25 s), and only when the cloud fails or `EDGE_FIRST=1`; Muse Muse answers 404 while that route is off, which reads as the board being down. Write nothing for it: `segmentOrEdge` already does it. |
 | `EDGE_SAM_BOARD`, `EDGE_SAM_MODEL_NAME` | The names in the SAM label. Default `EDGE_BOARD` (else "the board") and "Meta SAM 3.1". |
 | `EDGE_SAM_TIMEOUT_MS` | How long the board's look gets. Default 30000. |
 | `EDGE_SAM_API_KEY` | Only when something in front of the service asks for a token. |

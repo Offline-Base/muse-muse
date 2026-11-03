@@ -76,7 +76,9 @@ function fake({ cloud = refused, board = refused }) {
     const url = String(input instanceof Request ? input.url : input);
     const raw = init?.body ?? (input instanceof Request ? await input.clone().text() : null);
     const body = raw ? JSON.parse(String(raw)) : null;
-    const side = url.startsWith(GATEWAY) ? "cloud" : url.startsWith(BOARD) ? "board" : "other";
+    // Muse Muse's own way to the office board is under the gateway's address too, and is the board side.
+    const side = url.startsWith(`${GATEWAY}/fleet/v1/segment`) ? "board" : url.startsWith(GATEWAY) ? "cloud" : url.startsWith(BOARD) ? "board" : "other";
+    if (side === "board") calls.headers = init?.headers;
     calls.push({ side, url, body });
     return (side === "cloud" ? cloud : board)(init, body);
   };
@@ -299,10 +301,38 @@ describe("the SAM board's settings and labels", () => {
     assert.equal(samBoard().url, "http://127.0.0.1:8790/segment");
     process.env.EDGE_SAM_URL = "http://127.0.0.1:8790/segment";
     assert.equal(samBoard().url, "http://127.0.0.1:8790/segment");
-    for (const bad of ["ftp://127.0.0.1/", "not a url", ""]) {
+    for (const bad of ["ftp://127.0.0.1/", "not a url"]) {
       process.env.EDGE_SAM_URL = bad;
       assert.equal(samBoard(), null, bad);
     }
+  });
+
+  test("a hosted product (no EDGE_SAM_URL, a GATEWAY_URL) looks on the office board through Muse Muse's fleet route", async () => {
+    delete process.env.EDGE_SAM_URL;
+    delete process.env.EDGE_SAM_BOARD;
+    delete process.env.EDGE_SAM_TIMEOUT_MS;
+    const board = samBoard();
+    assert.equal(board.url, `${GATEWAY}/fleet/v1/segment`);
+    assert.equal(board.apiKey, "tok_made_up", "the product's own token is the bearer");
+    assert.equal(board.viaGateway, true);
+    assert.equal(samBoardLabel(board), "Seen on an office Jetson by Meta SAM 3.1");
+    process.env.EDGE_SAM_BOARD = "jetson-0X";
+    assert.equal(samBoardLabel(samBoard()), "Seen on jetson-0X by Meta SAM 3.1");
+    fake({ cloud: () => new Response("down", { status: 503 }), board: boardOk });
+    const res = await look();
+    assert.equal(res.by, "board");
+    assert.equal(calls[0].side, "cloud");
+    assert.equal(calls.at(-1).side, "board");
+    assert.equal(new Headers(calls.headers).get("authorization"), "Bearer tok_made_up");
+    fake({ cloud: () => new Response("down", { status: 503 }), board: () => Response.json({ error: { code: "unknown_endpoint" } }, { status: 404 }) });
+    const off = await look();
+    assert.equal(off.ok, false, "while Muse Muse has the route off, the board is down, and nothing is made up");
+    assert.equal(off.reasons.board.kind, "http");
+    process.env.EDGE_SAM_VIA_GATEWAY = "0";
+    assert.equal(samBoard(), null);
+    delete process.env.EDGE_SAM_VIA_GATEWAY;
+    delete process.env.GATEWAY_URL;
+    assert.equal(samBoard(), null, "no gateway, no board");
   });
 
   test("an EDGE_SAM_URL that isn't a URL is named as such, and the cloud still looks", async () => {

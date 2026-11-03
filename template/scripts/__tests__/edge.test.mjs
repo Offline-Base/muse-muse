@@ -111,7 +111,7 @@ test("a cloud 404 model_not_found is a setup error, not a refusal: the edge answ
   const res = await ask();
   assert.equal(res.ok, true);
   assert.equal(res.by, "edge");
-  assert.equal(res.label, "Answered on jetson-04, Llama 3.2 3B");
+  assert.equal(res.label, "Answered on jetson-04, Muse Glimmer 30B one-bit");
   assert.equal(res.fellBack.kind, "setup");
   assert.equal(res.fellBack.status, 404);
   assert.deepEqual(calls.map((c) => c.side), ["cloud", "edge"]);

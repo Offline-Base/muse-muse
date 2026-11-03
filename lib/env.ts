@@ -1581,6 +1581,14 @@ export const env = {
   get fleetAllProducts(): boolean {
     return flag("FLEET_ALL_PRODUCTS");
   },
+  /**
+   * FLEET_SAM: a hosted product's segmentOrEdge can reach Meta SAM 3.1 on an office Jetson at {GATEWAY_URL}/fleet/v1/segment
+   * (lib/caps/fleet/sam.ts), through the control plane with BOARD_FLEET_URL, BOARD_FLEET_TOKEN and FLEET_SAM_NODE. Off: that
+   * route answers 404 and touches nothing.
+   */
+  get fleetSam(): boolean {
+    return flag("FLEET_SAM");
+  },
 
   // ---------- Muse Spark Open for products (lib/gateway/spark-open.ts) ----------
 
