@@ -8,6 +8,7 @@ import { deleteRateLimitsBefore } from "@/lib/gateway/store";
 import { revokeExpiredBuildTokens } from "@/lib/gateway/tokens";
 import { failStaleBuilds } from "@/lib/pipeline/sweep";
 import { revokeDisabledProductConnections } from "@/lib/tools/deps";
+import { deleteSamTuneUploads, SAM_UPLOAD_KEEP_MS } from "@/lib/train/sam/cleanup";
 import { deleteOlderThan } from "@/lib/storage";
 
 // Hourly (vercel.json): expire product uploads and judge screenshots, prune rate-limit windows, revoke expired
@@ -24,7 +25,7 @@ export async function GET(req: Request) {
   if (!cronAuthorized(req.headers.get("authorization"), env.cronSecret)) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
-  const [platform, docs, caps] = await Promise.all([
+  const [platform, docs, caps, samtune] = await Promise.all([
     runCleanup({
       deleteBlobsOlderThan: deleteOlderThan,
       deleteRateLimitsBefore,
@@ -35,9 +36,19 @@ export async function GET(req: Request) {
     cleanupDocsObjects(docsCleanupDeps()),
     // Wave 3 caps' sweeps (docs/CAPABILITIES.md, 2.9). Null, and left out of the answer, until a cap registers one.
     sweepCaps().catch((err: unknown) => ({ ok: false, removed: 0, failed: [String(err)] })),
+    // SAM_TUNE: a run's own photos and look-alikes go after 7 days; its report/ files stay. Left out with the flag off.
+    env.samTune ? samTuneSweep() : null,
   ]);
-  const results = { ...platform, ...docs, ...(caps ? { caps } : {}) };
+  const results = { ...platform, ...docs, ...(caps ? { caps } : {}), ...(samtune ? { samtune } : {}) };
   const ok = Object.values(results).every((r) => r.ok);
   if (!ok) console.error("[cron/cleanup] some tasks failed:", results);
   return Response.json({ ok, results }, { status: ok ? 200 : 500 });
+}
+
+async function samTuneSweep(): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
+  try {
+    return { ok: true, count: await deleteSamTuneUploads(new Date(Date.now() - SAM_UPLOAD_KEEP_MS)) };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }
