@@ -3047,3 +3047,10 @@ Hussam's goal included a product that Muse Muse builds and that answers from the
 - **docs/VIDEO.md rewritten** to the owner's story: Zuckerberg's line, before and after, who it's for, the build, the product, Muse Privacy, where it ran, cable out on jetson-04 with SAM 3.1, under the hood, close. Numbers that don't exist yet are placeholders filled from this log. The old script is at `git show 282c0d87:docs/VIDEO.md`.
 - **Housekeeping:** free disk was 4.5 GB; regenerable code copies in an old scratch folder and an idle `.next` were deleted (5.9 GB free after). Folders holding tuned adapters were kept.
 - Spend $0.
+## Nov 2, 2026: Modal builder image made, then Modal turned off (owner)
+
+- **Builder image:** `scripts/dev/modal-builder-image.ts` ran once. Setup took 107 s, Muse Code 1.4.14. Image `im-01M6FGSPQRD2PRHRMED38G4MD0`.
+- **Preview test blocked:** Previews are protected, and a Modal sandbox can't add the Protection Bypass secret, so Muse Code on Modal can't reach a Preview's `/api/sandbox-meta` route (docs/MODAL_HOST.md, gap 4). Turning protection off was ruled out, since Previews act as admin.
+- **Owner decision:** "turn off the modal stuff for now". Removed from Vercel: `SANDBOX_HOST` (Preview) and `MODAL_BUILDER_IMAGE_ID` (Preview and Production). Left as they were: the two Modal token settings on Preview, added a day earlier for other work. Every build runs on Vercel Sandbox. The code from #83 stays, off by default.
+- **Not proven:** no Muse Code build has run on Modal. The SUBMISSION.md sentence ("smoke-tested on Modal with no full build there yet") stays accurate.
+- **Spend:** the image build, a few cents on Modal (not checked against the bill).
