@@ -194,20 +194,31 @@ export async function judgeStep(jobId: string, index: number, task: string | nul
   const item = await fromDb(() => getEvalItem(jobId, index));
   if (!item) return null;
 
-  const baseFirst = index % 2 === 0;
+  const v = await judgePair({ model: JUDGE_MODEL, task, index, prompt: item.prompt, reference: item.reference, base: item.base, tuned: item.tuned });
+  await fromDb(() => recordEvent(jobId, { type: "judgement", index, baseScore: v.baseScore, tunedScore: v.tunedScore, better: v.better, note: v.note }));
+  return { baseScore: v.baseScore, tunedScore: v.tunedScore, better: v.better, costUsd: v.costUsd };
+}
+
+/**
+ * One blind verdict on a base and a tuned answer, with what it cost, its usage recorded. Not a step: judgeStep uses it,
+ * and so does the partner eval (lib/train/partner), with the job's own judge so the two compare. The index decides the
+ * order, base first on even ones, as for a job's own items.
+ */
+export async function judgePair(input: { model: string; task: string | null; index: number; prompt: string; reference: string; base: string; tuned: string }): Promise<JudgedItem & { note: string }> {
+  const baseFirst = input.index % 2 === 0;
   let result: StructuredResult<Verdict>;
   try {
     result = await respondStructured({
-      model: JUDGE_MODEL,
+      model: input.model,
       instructions: JUDGE_INSTRUCTIONS,
       content: [
         textPart(
           judgeRequest({
-            task,
-            prompt: item.prompt,
-            reference: item.reference,
-            a: baseFirst ? item.base : item.tuned,
-            b: baseFirst ? item.tuned : item.base,
+            task: input.task,
+            prompt: input.prompt,
+            reference: input.reference,
+            a: baseFirst ? input.base : input.tuned,
+            b: baseFirst ? input.tuned : input.base,
           }),
         ),
       ],
@@ -230,9 +241,7 @@ export async function judgeStep(jobId: string, index: number, task: string | nul
   const baseScore = judgeScore(baseFirst ? v.scoreA : v.scoreB);
   const tunedScore = judgeScore(baseFirst ? v.scoreB : v.scoreA);
   const said = v.better === "tie" ? "tie" : (v.better === "A") === baseFirst ? "base" : "tuned";
-  const better = betterOf(baseScore, tunedScore, said);
-  await fromDb(() => recordEvent(jobId, { type: "judgement", index, baseScore, tunedScore, better, note: v.note }));
-  return { baseScore, tunedScore, better, costUsd: usd(result.usage) };
+  return { baseScore, tunedScore, better: betterOf(baseScore, tunedScore, said), costUsd: usd(result.usage), note: v.note };
 }
 judgeStep.maxRetries = 2;
 

@@ -13,7 +13,9 @@ import { examplesProblem } from "@/lib/train/tune/settings";
 import { checkText, endedText, freshHeartbeat, isCheckCode, isWaitReason, NO_MARKS, waitText, type RunMarks } from "@/lib/train/tune/marks";
 import { evalVerdict } from "@/lib/train/tune/verdict";
 import type { RunVerdict, TuneHoldReason, TuneRunView, TuneSettings, TuneStage } from "@/lib/train/tune/types";
-import type { DatasetView, TrainEventView, TrainJobView } from "@/lib/train/types";
+import type { DatasetView, PartnerEvalBody, TrainEventView, TrainJobView } from "@/lib/train/types";
+import { modelLabel } from "@/lib/format";
+import { partnerEvalView } from "@/lib/train/partner/logic";
 
 // The examples check's counts live with the settings (no components/ import), for the tuneRun workflow's steps.
 export { examplesProblem, TUNE_MIN_EVAL, TUNE_MIN_TRAIN } from "@/lib/train/tune/settings";
@@ -124,6 +126,8 @@ export interface RunRows {
   events: TrainEventView[];
   /** What the run keeps in rate_limits (readRunMarks): its steps, heartbeat, ending and stop. None when left out. */
   marks?: RunMarks;
+  /** Its job's partner evals, oldest first (PARTNER_EVALS, listPartnerEvals). None when left out. */
+  partnerEvals?: PartnerEvalBody[];
 }
 
 /** POST this to start training a run whose examples are ready (app/api/train/runs/[id]/start). */
@@ -151,6 +155,10 @@ export function tuneRunView(rows: RunRows, now: Date, ceilings: { maxMinutes: nu
     : chosen;
   const onFireworks = marks.trainer === "fireworks" || job?.params?.trainer === "fireworks";
   const judgeCost = job?.evalSummary?.judgeCostUsd ?? 0;
+  const partners = job ? (rows.partnerEvals ?? []) : [];
+  const partnerEval = partnerEvalView(partners, modelLabel);
+  // Every partner eval that ended: its GPU by the clock, and its judging.
+  const partnerCost = partners.reduce((sum, p) => sum + (p.status === "started" ? 0 : (Number(p.costUsd) || 0) + (Number(p.judgeCostUsd) || 0)), 0);
   return {
     id: dataset.id,
     ...(onFireworks ? { trainer: "fireworks" as const } : {}),
@@ -167,7 +175,8 @@ export function tuneRunView(rows: RunRows, now: Date, ceilings: { maxMinutes: nu
     ...(marks.datasetOnly ? { datasetOnly: true } : {}),
     hold,
     problem,
-    costSoFarUsd: Math.round((dataset.costUsd + (job?.costUsd ?? 0) + (Number(judgeCost) || 0)) * 1e6) / 1e6,
+    costSoFarUsd: Math.round((dataset.costUsd + (job?.costUsd ?? 0) + (Number(judgeCost) || 0) + partnerCost) * 1e6) / 1e6,
+    ...(partnerEval ? { partnerEval } : {}),
     next: job
       ? { kind: "job", href: `/fine-tuning/${job.id}` }
       : stage === "waiting"

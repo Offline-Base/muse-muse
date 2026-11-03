@@ -69,6 +69,8 @@ export interface HostChatInput {
   variant?: "tuned" | "base";
   /** What vLLM on Modal calls the base: the repo it was started with. Read from the job on the server, never from a request. */
   baseRepo?: string | null;
+  /** Temperature 0, as the lab's eval answers (do_sample=False), so a partner eval compares with the job's own. Left out, Glimmer samples as usual. */
+  greedy?: boolean;
 }
 
 export type HostChatReply = Omit<GlimmerChatReply, "ms">;

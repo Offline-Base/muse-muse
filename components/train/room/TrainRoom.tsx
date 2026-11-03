@@ -19,6 +19,7 @@ import { GLIMMER_NAME, R30B_NAME } from "@/components/train/results";
 import { planViewFromRun, roleTitle } from "@/components/train/room/plan";
 import { tuneArt, tuneCurrentStep, tuneRunning, tuneSteps, tuneStepsEnd } from "@/components/train/room/steps";
 import { WhereItRuns } from "@/components/train/room/WhereItRuns";
+import type { PartnerEvalView } from "@/lib/train/partner/logic";
 import { usd } from "@/lib/format";
 import { isSparkOpenDerivative } from "@/lib/train/base";
 import { tuneFeed } from "@/lib/steps-feed/tune";
@@ -261,6 +262,7 @@ export function TrainRoom({ initial, admin, liveDemo = null, hub = null, serverN
                   sparkOpen={sparkOpen}
                 />
               ) : null}
+              {view.partnerEval ? <PartnerEvalNote view={view.partnerEval} /> : null}
               {job && liveDemo ? <AdapterLiveDemo jobId={job.id} live={liveDemo} serverNow={serverNow} /> : null}
               {job && admin && hub && !onFireworks ? <HubCard job={job} offReason={hub.offReason} maxActive={hub.maxActive} dailyUsd={hub.dailyUsd} /> : null}
               {job && admin && hub && trained ? <MakeLocalFiles jobId={job.id} maxActive={hub.maxActive} dailyUsd={hub.dailyUsd} /> : null}
@@ -502,5 +504,19 @@ function JobLink({ href, running = false }: { href: string; running?: boolean })
       {running ? "The GPU's log, its limits and Stop are on " : "The GPU's log and the job's settings are on "}
       <Link href={href}>the job&apos;s page</Link>.
     </p>
+  );
+}
+
+/** PARTNER_EVALS: the job's newest partner eval, "Evaluated on Baseten" with its scores, latency and cost, or why not. */
+function PartnerEvalNote({ view }: { view: PartnerEvalView }) {
+  const icon = view.status === "done" ? "checkCircle" : view.status === "started" ? "info" : "alertCircle";
+  return (
+    <div className="tune-partner-eval" data-status={view.status}>
+      <p className="tune-verdict">
+        <Icon name={icon} size={18} />
+        <span>{view.title}</span>
+      </p>
+      <p className="muted">{view.words}</p>
+    </div>
   );
 }

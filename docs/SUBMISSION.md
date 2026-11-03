@@ -186,6 +186,7 @@ The grant is perpetual, irrevocable, worldwide and royalty-free, and covers "the
 ### Lines left out, and why
 
 - An "Open Weights prize" naming Glimmer or Spark Open: no such prize is on the public pages. Find its source before saying it anywhere.
+- A partner prize for hosting a tuned model on a partner's inference and evaluating it there. The owner says one is tied to this (Nov 3). Its source is unconfirmed on the public pages: on Nov 3 the event page names Baseten, Modal and Fireworks only as giving $100 in credits each, and the rules page names no partner prize. Find its source before saying it anywhere. Until a partner eval has run and is logged in BUILD_LOG.md, don't say a tuned model was evaluated on a partner either (docs/TRAINING.md, "Evaluate on a partner").
 - "Works offline", "private" or "on-device" for board answers, "stops hacks", "attack-proof", and anything about surviving a power loss (MESSAGING.md, "Don't say").
 - The DC substation outage as an attack. Pepco: "no indication of foul play".
 - PR #67's on-board tune: it tuned Llama, which isn't a Meta model here, so it is out of the submission. Don't say anything in the project was tuned on a board.

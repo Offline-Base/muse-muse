@@ -6,7 +6,7 @@
 import { and, asc, eq, or } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
 import { EVALS_MAX } from "@/lib/train/logic";
-import { datasetProgress, getDataset } from "@/lib/train/store";
+import { datasetProgress, getDataset, listPartnerEvals } from "@/lib/train/store";
 import { latestTuneJob, readRunMarks } from "@/lib/train/tune/run-store";
 import type { TuneRunView } from "@/lib/train/tune/types";
 import { tuneRunView } from "@/lib/train/tune/view";
@@ -58,6 +58,6 @@ export async function loadTuneRun(id: string, now: Date, ceilings: { maxMinutes:
     latestTuneJob(id),
     readRunMarks(id, now),
   ]);
-  const events = job ? await tuneEvalEvents(job.id) : [];
-  return tuneRunView({ dataset, written, job, events, marks }, now, ceilings);
+  const [events, partnerEvals] = job ? await Promise.all([tuneEvalEvents(job.id), listPartnerEvals(job.id)]) : [[], []];
+  return tuneRunView({ dataset, written, job, events, marks, partnerEvals }, now, ceilings);
 }

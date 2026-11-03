@@ -1,5 +1,6 @@
 import type { IconName } from "@/components/icons";
 import { bytes, dayLabel, elapsedMs, groupThousands, modelLabel, plural, truncate, usd, type Tone } from "@/lib/format";
+import { partnerEvalView } from "@/lib/train/partner/logic";
 import { tokenCost } from "@/lib/meta/pricing";
 import { defaultModel, SPARK_STANDIN } from "@/lib/meta/spark";
 import { BUILD_LEVELS as ALL_BUILD_LEVELS, LOW_BIT_LEVEL, type BuildLevel, type LocalFiles } from "@/lib/train/local-files";
@@ -657,6 +658,11 @@ export function eventLine(body: TrainEventBody, jobId?: string): EventLine {
         text: `${plural(items.length, `${body.part === "dev" ? "dev" : "test"} item`)} scored, ${tuned ? "base and tuned" : "base only"}.`,
       };
     }
+    case "partner_eval": {
+      const view = partnerEvalView([body], modelLabel);
+      const tone = body.status === "done" ? "ok" : body.status === "failed" ? "bad" : body.status === "skipped" ? "warn" : undefined;
+      return { icon: "chart", lead: view?.title ?? "Partner eval", text: view?.words ?? "", tone };
+    }
     case "judgement":
       return {
         icon: "check",
@@ -775,7 +781,7 @@ export function keepEvents(events: TrainEventView[], max: number): { kept: Train
 function isEvalEvent(e: TrainEventView): boolean {
   const type = e.payload?.type ?? e.type;
   // A decide job's scores are kept too: at most 80 events, and the job page counts them.
-  return type === "eval" || type === "judgement" || type === "decide";
+  return type === "eval" || type === "judgement" || type === "decide" || type === "partner_eval";
 }
 
 // ---------- Datasets ----------
