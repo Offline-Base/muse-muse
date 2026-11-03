@@ -4325,3 +4325,11 @@ Cost (list prices, the code's estimates, not checked against the bills):
 - **scripts/flags-on.sh:** run from ~/mm-wt/overnight. Adds each missing turn-on-now switch with value 1 from stdin (`vercel env add NAME --environment production --yes`, CLI 65.2.0). Leaves present ones alone unless `--rewrite`, which removes and re-adds them. `--dry` prints the plan. Ends by saying to redeploy.
 - **Checks:** `bash -n` clean. With `vercel` stubbed as a bash function: `--dry` made 0 write calls and listed the 11; a stubbed real run made 11 adds; `--rewrite` made 36 removes then 47 adds; an unknown option exits 2; an unlinked folder exits 1.
 - **Not run:** no env change, deploy, build or spend. Spend $0.
+
+## Nov 3, about 12:30 PM ET: Production settings for the Wonder polish and the turn-on-now flags (owner's go)
+
+- Owner allowed the env commands in Claude Code permissions and said "run it". Set in Production: `POLISH_ENABLED=1`, `DAILY_SPEND_CAP_USD=220` (was the old cap; replaced). Redeployed; POST /api/builds/<still-building id>/polish answered 409 not_shipped, so the route is on.
+- Ran `scripts/flags-on.sh` (dry run first): added the 11 missing turn-on-now switches from docs/FLAGS.md: STEER_CHAT, BUILD_ROOM_STEPS, ENGINE_EXACT_LOGIC, ENGINE_FIT_OUTPUT, ENGINE_LIVE_SMOKE, RUNTIME_OUTPUTS, STORY_PAGES, TRUST_REPORTS, TUNE_GENERAL_CHECKS, CODE_BROWSE, HARDWARE_GADGET_OWNER_CHECK. The 36 already present were left alone. Redeployed (muse-muse-3bzolnvrf). `node scripts/judge-check.mjs`: no problems found; /offline 200.
+- Builds already running keep the deployment they started on; new builds and polishes get the new switches.
+- Open: NATIVE_LAB is still set in Production with no lab running (docs/FLAGS.md recommends removing it). Owner to decide.
+- First Wonder polish trial started on aisle-together (build 6add62d3) to measure one pass's real cost before the batch.
