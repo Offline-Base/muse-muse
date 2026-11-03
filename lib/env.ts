@@ -438,6 +438,29 @@ export const env = {
   get boardLoop(): boolean {
     return flag("BOARD_LOOP");
   },
+  /**
+   * SAM_TUNE: teach SAM 3.1 a new object on the office board (lib/train/sam/, the /fine-tuning card and room, the worker
+   * routes under /api/train/sam/worker/). Off when unset: every SAM tune route is a 404 and no page changes.
+   */
+  get samTune(): boolean {
+    return flag("SAM_TUNE");
+  },
+  /**
+   * SAM_WORKER_TOKEN_SHA256: the sha256 (64 hex) of the office board's worker secret. The plain secret stays on the board.
+   * Null when unset or not 64 hex, and then no worker call is accepted.
+   */
+  get samWorkerTokenSha256(): string | null {
+    const value = optional("SAM_WORKER_TOKEN_SHA256")?.toLowerCase() ?? null;
+    return value && /^[0-9a-f]{64}$/.test(value) ? value : null;
+  },
+  /** SAM_TUNE_DAILY_USD: what SAM tune runs may spend on Meta (labels, look-alikes) in one UTC day. "0" spends nothing. */
+  get samTuneDailyUsd(): number {
+    return dollars("SAM_TUNE_DAILY_USD", 5);
+  },
+  /** SAM_TUNE_MAX_USD: what one SAM tune run may spend on Meta. "0" spends nothing. */
+  get samTuneMaxUsd(): number {
+    return dollars("SAM_TUNE_MAX_USD", 1);
+  },
   /** Which board the loop reaches: "simulated" (the default), "fleet" or "device". */
   get boardLoopTarget(): "simulated" | "fleet" | "device" {
     const target = process.env.BOARD_LOOP_TARGET?.trim();

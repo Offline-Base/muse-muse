@@ -1,0 +1,139 @@
+{
+  "source": "Nov 3, 2026, made by hand from docs/log/bench/2026-11-03/distract/scores.json and the BUILD_LOG table (about 1 to 1:20 PM ET): jetson-04's sam3 service, Meta's weights against the muse31 tune, AP from boxes at 0.5 or more. The top-box and median figures are from the board's raw.json as logged. deltaSha256 is only the 8-hex prefix logged; image URLs are placeholders for the three laptop-drawn side by sides beside scores.json. Verdict and caveats were written by lib/train/sam/logic.ts finishReport.",
+  "runId": "5a3e0000-0000-4000-8000-000000001103",
+  "report": {
+    "version": 1,
+    "word": "muse",
+    "generic": "plush toy",
+    "seed": 20261103,
+    "setsSource": "nov3",
+    "settings": {
+      "meta_word": {
+        "B": {
+          "n": 30,
+          "found": 0,
+          "top": 0,
+          "only": 0,
+          "otherBoxes": 0,
+          "ap": 0,
+          "ap50": 0
+        },
+        "A": {
+          "n": 30,
+          "firedPhotos": 0,
+          "boxes": 0
+        },
+        "medianScore": null,
+        "medianBestOther": null
+      },
+      "meta_generic": {
+        "B": {
+          "n": 30,
+          "found": 30,
+          "top": 14,
+          "only": 0,
+          "otherBoxes": 73,
+          "ap": 0.466,
+          "ap50": 0.468
+        },
+        "A": {
+          "n": 30,
+          "firedPhotos": 30,
+          "boxes": 76
+        },
+        "medianScore": 0.957,
+        "medianBestOther": 0.953
+      },
+      "meta_toy": {
+        "B": {
+          "n": 30,
+          "found": 30,
+          "top": 20,
+          "only": 0,
+          "otherBoxes": 82,
+          "ap": 0.498,
+          "ap50": 0.499
+        },
+        "A": {
+          "n": 30,
+          "firedPhotos": 29,
+          "boxes": 71
+        },
+        "medianScore": null,
+        "medianBestOther": null
+      },
+      "tuned_word": {
+        "B": {
+          "n": 30,
+          "found": 29,
+          "top": 22,
+          "only": 8,
+          "otherBoxes": 30,
+          "ap": 0.773,
+          "ap50": 0.778
+        },
+        "A": {
+          "n": 30,
+          "firedPhotos": 22,
+          "boxes": 38
+        },
+        "medianScore": 0.988,
+        "medianBestOther": 0.836
+      }
+    },
+    "truck": {
+      "meta": {
+        "truck": 1,
+        "wheel": 4
+      },
+      "tuned": {
+        "truck": 1,
+        "wheel": 4
+      }
+    },
+    "images": [
+      {
+        "url": "https://example.public.blob.vercel-storage.com/samtune/5a3e0000-0000-4000-8000-000000001103/report/sbs1_coco249129.jpg",
+        "rule": "tuned_top",
+        "caption": "The tune asked \"muse\" ranks muse as its top match. Left: Meta's SAM 3.1 asked \"plush toy\".",
+        "credit": "Photo: COCO val2017 249129 (Flickr), CC BY 2.0. One held-out Muse pasted in.",
+        "license": "CC BY 2.0"
+      },
+      {
+        "url": "https://example.public.blob.vercel-storage.com/samtune/5a3e0000-0000-4000-8000-000000001103/report/sbs2_coco20553.jpg",
+        "rule": "tuned_top",
+        "caption": "The tune asked \"muse\" ranks muse as its top match. Left: Meta's SAM 3.1 asked \"plush toy\".",
+        "credit": "Photo: COCO val2017 20553 (Flickr), CC BY 2.0. One held-out Muse pasted in.",
+        "license": "CC BY 2.0"
+      },
+      {
+        "url": "https://example.public.blob.vercel-storage.com/samtune/5a3e0000-0000-4000-8000-000000001103/report/sbs3_coco113403.jpg",
+        "rule": "tuned_top",
+        "caption": "The tune asked \"muse\" ranks muse as its top match. Left: Meta's SAM 3.1 asked \"plush toy\".",
+        "credit": "Photo: COCO val2017 113403 (Flickr), CC BY 2.0. One held-out Muse pasted in.",
+        "license": "CC BY 2.0"
+      }
+    ],
+    "files": {
+      "scores": "https://example.public.blob.vercel-storage.com/samtune/5a3e0000-0000-4000-8000-000000001103/report/scores.json",
+      "perImage": "https://example.public.blob.vercel-storage.com/samtune/5a3e0000-0000-4000-8000-000000001103/report/per_image.json"
+    },
+    "deltaSha256": "737e8506",
+    "workerId": "jetson-04",
+    "apFrom": 0.5,
+    "timings": {
+      "total_s": 337
+    },
+    "verdict": {
+      "code": "mixed",
+      "text": "Mixed. Against Meta's SAM 3.1 asked \"toy\", the tune asked \"muse\" has AP 0.77 against 0.50, ranks muse as the top match in 22 of 30 photos against 20, and fires on 22 of 30 photos with no muse against 29."
+    },
+    "caveats": [
+      "A small test: 30 photos with muse pasted in and 30 photos without it.",
+      "The muse cutouts were pasted into the photos, not photographed together.",
+      "The look-alikes are made up (Muse Image) or come from COCO.",
+      "This never shows that it tells muse apart from all look-alikes.",
+      "Scored on the same test photos as the Nov 3 run."
+    ]
+  }
+}
