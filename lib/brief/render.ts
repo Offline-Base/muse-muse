@@ -367,6 +367,41 @@ export function analysesCharts(brief: Pick<Brief, "tagline" | "primaryFlow" | "i
   return lines.some((l) => CHART_WORDS.test(l) && ANALYSIS_WORDS.test(l));
 }
 
+/**
+ * Follow-up actions keep their context. Audit, Nov 3: a redirect sent only the agent and the note, with no idea or
+ * board, and came back with a card about another product.
+ */
+export const FOLLOW_UP_LINE =
+  "Follow-up actions (redirect a run, resume it, explain or redo one item) send the run id or the record they act on, and the route reads the rest from it: the idea, the board, the item and what came before. Never send only the new note, or the output drifts off topic. The smoke test checks that a follow-up's output is about the same thing as the run it came from.";
+
+/** What the model returns reaches the screen. Audit, Nov 3: the model named the speakers, and the name fields stayed empty. */
+export const PREFILL_LINE =
+  "When a model returns a value for a field the UI lets the person fill in (speaker names, a title, tags), pre-fill that field with it, still editable. Never drop a field the model returned that the screen has a place for.";
+
+/** The final screen comes after every gate. Audit, Nov 3: the judge saw the screen before an approval, not what the approval did. */
+export const GATE_LINE =
+  "When the flow reaches an approval gate or a pause (approve, answer, sign off, resume), the smoke test resolves each one as a person would, waits for what follows, and takes the final judge screenshot only after the last one. A shot of the gate itself may come before it. What happens after an approval must fit what the person asked for.";
+
+/** A level ends without the player's help. Audit, Nov 3: a missed quota left the boat drifting forever on "playing". */
+export const GAME_END_LINE =
+  "Every level ends on its own, by time, distance or lives, even when the player does nothing. The smoke test also idles with no input until the level ends, then asserts the end screen and takes a judge screenshot of it.";
+
+const GATE_WORDS = /\b(?:approv\w*|pause[sd]?|pausing|resum(?:e|es|ed|ing)|sign(?:s|ed)? off|sign-off|gates?|checkpoints?)\b/i;
+const GAME_WORDS = /\b(?:games?|arcade|platformer)\b/i;
+
+/** A brief whose flow stops for the person: an approval, a pause, a sign-off. */
+function hasGate(brief: Brief): boolean {
+  const lines = [brief.tagline, ...brief.primaryFlow, ...brief.actions.map((a) => a.description), ...briefRequirements(brief).map((r) => r.text)];
+  return lines.some((l) => GATE_WORDS.test(l));
+}
+
+/** A game: the games recipe, an engine block, or the word in its name, tagline or flow. */
+function isGame(brief: Brief, recipes: RecipeNotes | undefined): boolean {
+  if (recipes?.some((r) => r.id === "recipe-games")) return true;
+  if ((brief as { games?: unknown }).games) return true;
+  return [brief.name, brief.tagline, ...brief.primaryFlow].some((l) => GAME_WORDS.test(l));
+}
+
 /** A brief that draws over a photo: an overlay output, or SAM 3.1 to find things. */
 function drawsOverlays(brief: Brief): boolean {
   return brief.outputs.some((o) => o.kind === "overlay") || brief.capabilities.some((c) => c.model === "sam-3.1");
@@ -476,6 +511,8 @@ export function renderBuildPrompt(
     `The smoke test's judge screenshots must prove the tagline ("${brief.tagline}"): each feature it or these steps name shown working at least once, and the last step's result finished on the final screen (verify skill, Screenshots for the judge).`,
     "",
     SAMPLE_PATH_LINE,
+    ...(hasGate(brief) ? ["", GATE_LINE] : []),
+    ...(isGame(brief, opts.recipes) ? ["", GAME_END_LINE] : []),
     ...(drawsOverlays(brief) ? ["", OVERLAY_LINE] : []),
     ...(direction && !full ? ["", RANGE_SHOTS_LINE] : []),
   );
@@ -509,6 +546,8 @@ export function renderBuildPrompt(
     "## Outputs",
     "",
     bullets(brief.outputs.map((o) => `${o.kind}: ${o.notes}`)),
+    "",
+    PREFILL_LINE,
   );
   if (analysesCharts(brief)) out.push("", "## Reading charts and tables", "", bullets(CHART_ANALYSIS_LINES));
 
@@ -519,6 +558,7 @@ export function renderBuildPrompt(
     "Serve each one as `POST /api/actions/<name>` with JSON in and JSON out. List it in `musemuse.json` with input and output JSON schemas and an example input, and have the UI call the same route.",
     "",
     bullets(brief.actions.map((a) => `\`${a.name}\`: ${a.description}`), "None listed. Expose the primary flow's main step as one action."),
+    ...(brief.actions.length > 1 ? ["", FOLLOW_UP_LINE] : []),
   );
 
   out.push(

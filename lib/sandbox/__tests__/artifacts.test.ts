@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
-import { demoFilterGraph, demoNoteFor, demoRunPassed, demoVideoProblem, parseStudioSummary, VR_DEMO_NOTE } from "@/lib/sandbox/artifacts";
+import { demoFilterGraph, demoNoteFor, demoRunPassed, demoVideoProblem, parseStudioSummary, pickSampleFiles, VR_DEMO_NOTE } from "@/lib/sandbox/artifacts";
 
 /** A Playwright JSON report with one spec per entry: [project, status of each try, in order]. */
 function report(tests: Array<[string, ...string[]]>): string {
@@ -109,5 +109,30 @@ describe("a VR product's video says it was simulated", () => {
     assert.match(rec, /drawtext=[^,]*textfile=\/x\/note\.txt:expansion=none[^,]*:box=1/);
     assert.ok(!/enable=/.test(rec.match(/drawtext=[^,]*note\.txt[^,]*/)![0]), "not limited to part of the video");
     assert.ok(!graph().includes("note.txt"));
+  });
+});
+
+describe("pickSampleFiles: the product's samples the judge sees", () => {
+  it("takes shipped samples first, then fixtures, one per name, at most two, and leaves out SVG, icons and other files", () => {
+    const found = [
+      "./fixtures/puppy.mp4",
+      "./fixtures/notes.txt",
+      "./public/samples/puppy.mp4",
+      "./public/icon.png",
+      "./public/logo.svg",
+      "./public/samples/chart.svg",
+      "./fixtures/dog-photo.jpg",
+      "./fixtures/third.webp",
+      "",
+    ];
+    assert.deepEqual(pickSampleFiles(found), [
+      { path: "public/samples/puppy.mp4", kind: "video" },
+      { path: "fixtures/dog-photo.jpg", kind: "image" },
+    ]);
+  });
+
+  it("finds a sample shipped under public/ by its name, and nothing when there are none", () => {
+    assert.deepEqual(pickSampleFiles(["public/sample-room.webp", "public/og.png"], 2), [{ path: "public/sample-room.webp", kind: "image" }]);
+    assert.deepEqual(pickSampleFiles(["public/og.png", "fixtures/../secret.png"]), []);
   });
 });

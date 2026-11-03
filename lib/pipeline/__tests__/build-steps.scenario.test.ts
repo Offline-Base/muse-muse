@@ -41,7 +41,9 @@ let fixShots: Array<{ fix: number; urls: string[] }> = [];
 let fixShotsError: Error | null = null;
 let productFiles: Array<{ path: string; content: string }> = [];
 let revoked: unknown[][] = [];
-let judgeInputs: Array<{ brief: unknown; references: Array<{ fileName: string }> }> = [];
+let judgeInputs: Array<{ brief: unknown; references: Array<{ fileName: string }>; samples?: unknown[] }> = [];
+/** What collectJudgeSamples finds in the sandbox, or the error it throws. */
+let judgeSamples: unknown[] | Error = [];
 let judgeImpl: () => Promise<unknown> = async () => ({ verdict: {}, usage: [] });
 let checkInputs: unknown[] = [];
 let checkImpl: () => Promise<unknown> = async () => ({ refusal: null, usage: [] });
@@ -220,6 +222,10 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
         finishDemo: async () => demoVideo,
         collectVerifyResult: async () => ({ summary: verifySummary ?? { passed: true, steps: [{ name: "build", ok: true }], failureOutput: "" }, screenshots: [] }),
         scanModelCredits: async () => creditFiles,
+        collectJudgeSamples: async () => {
+          if (judgeSamples instanceof Error) throw judgeSamples;
+          return judgeSamples;
+        },
         readSandboxText: async (_name: string, file: string) => (file.endsWith("test-results/caps/edge-drill.json") ? drillJson : null),
       },
     });
@@ -359,6 +365,19 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       );
       assert.deepEqual(recorded, [[USAGE]]);
       assert.equal(emitted[0]!.body.type, "judge");
+    });
+
+    it("shows the judge the product's own samples from its sandbox, and judges without them when they can't be read", async () => {
+      const sample = { url: "https://blob/screens/b1/r0/sample-1.jpg", fileName: "public/samples/puppy.mp4", kind: "video" };
+      judgeImpl = async () => ({ verdict: { pass: true, blocking: false, reasons: ["Fine."], mismatches: [] }, usage: [] });
+      for (const [found, expected] of [[[sample], [sample]], [new Error("sandbox gone"), undefined]] as const) {
+        judgeInputs = [];
+        judgeSamples = found as unknown[] | Error;
+        selects = { builds: [[{ ...refineRow, kind: "build", brief: BRIEF, sandboxName: "sb" }]], inspirations: [[{ references: [] }]] };
+        await steps.judgeStep({ buildId: "b1", productId: "prod-1", round: 0, screenshots: [] });
+        assert.deepEqual(judgeInputs[0]!.samples, expected);
+      }
+      judgeSamples = [];
     });
 
     it("records what a judge call that failed both attempts spent, then rethrows", async () => {

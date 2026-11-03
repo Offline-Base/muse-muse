@@ -371,3 +371,38 @@ export function demoFilterGraph(opts: {
   ].join(",");
   return `${card};\n${rec};\n[card][rec]concat=n=2:v=1:a=0,format=yuv420p[v]`;
 }
+
+/** Image files the judge can be shown as they are. SVG is left out: Meta's models refuse it. */
+const SAMPLE_IMAGE = /\.(png|jpe?g|webp|gif)$/i;
+/** Video files the judge sees one frame of. */
+const SAMPLE_VIDEO = /\.(mp4|webm|mov|m4v)$/i;
+/** A file under public/ is a sample only when its path says so, so icons and logos stay out. */
+const PUBLIC_SAMPLE = /^public\/(?:.*\/)?[^/]*(?:sample|example|demo)/i;
+
+export interface SampleFile {
+  /** The path inside the product, such as public/samples/puppy.mp4. */
+  path: string;
+  kind: "image" | "video";
+}
+
+/**
+ * Which of the product's files the judge sees as its samples, from `find` paths relative to the product: what the
+ * product ships under public/ first (what a person sees behind Try the sample), then fixtures/, one per file name, at
+ * most `most`. A sample shipped in both places counts once.
+ */
+export function pickSampleFiles(paths: string[], most = 2): SampleFile[] {
+  const clean = paths.map((p) => p.trim().replace(/^\.\//, "")).filter((p) => p && !p.includes(".."));
+  const shipped = clean.filter((p) => PUBLIC_SAMPLE.test(p)).sort();
+  const fixtures = clean.filter((p) => p.startsWith("fixtures/")).sort();
+  const seen = new Set<string>();
+  const out: SampleFile[] = [];
+  for (const path of [...shipped, ...fixtures]) {
+    const kind = SAMPLE_IMAGE.test(path) ? "image" : SAMPLE_VIDEO.test(path) ? "video" : null;
+    const name = path.split("/").pop()!.toLowerCase();
+    if (!kind || seen.has(name)) continue;
+    seen.add(name);
+    out.push({ path, kind });
+    if (out.length >= most) break;
+  }
+  return out;
+}

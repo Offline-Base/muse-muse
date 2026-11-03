@@ -45,6 +45,8 @@ Use only these. The gateway rejects any other model. Call them through the helpe
 
 - overlay: Boxes
 
+When a model returns a value for a field the UI lets the person fill in (speaker names, a title, tags), pre-fill that field with it, still editable. Never drop a field the model returned that the screen has a place for.
+
 ## Actions
 
 Serve each one as `POST /api/actions/<name>` with JSON in and JSON out. List it in `musemuse.json` with input and output JSON schemas and an example input, and have the UI call the same route.

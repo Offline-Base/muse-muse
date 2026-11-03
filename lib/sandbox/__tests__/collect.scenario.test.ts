@@ -15,11 +15,19 @@ const SUMMARY = JSON.stringify({ musemuse_verify: 1, passed: true, steps: [{ nam
 let pngs: string[] = [];
 /** What `grep -l '"xr":true' *.checked` prints in the judge folder. */
 let vrChecked: string[] = [];
+/** What `find fixtures public` prints in the product, and the ffmpeg frame commands run. */
+let productFiles: string[] = [];
+let framed: string[] = [];
+let frameExit = 0;
 
 const fakeSandbox = {
   runCommand: async (opts: { args: string[] }) => {
     const script = opts.args[1] ?? "";
-    const stdout = script.includes("verify.out") ? Buffer.from(`${SUMMARY}\n`).toString("base64") : script.includes("ls -1") ? pngs.join("\n") : script.includes("grep -l") ? vrChecked.join("\n") : "";
+    if (script.includes("ffmpeg")) {
+      framed.push(script);
+      return { exitCode: frameExit, stdout: async () => "", stderr: async () => "" };
+    }
+    const stdout = script.includes("verify.out") ? Buffer.from(`${SUMMARY}\n`).toString("base64") : script.includes("find fixtures public") ? productFiles.join("\n") : script.includes("ls -1") ? pngs.join("\n") : script.includes("grep -l") ? vrChecked.join("\n") : "";
     return { exitCode: 0, stdout: async () => stdout, stderr: async () => "" };
   },
 };
@@ -66,5 +74,28 @@ describe("collectVerifyResult", { skip: canMock ? false : "needs --experimental-
       screenshots.map((s) => s.url.split("/").pop()),
       ["01-step.png", "05-step.png", "06-step.png", "07-step.png", "08-step.png", "09-step.png", "10-step.png", "11-step.png"],
     );
+  });
+});
+
+describe("collectJudgeSamples", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
+  const collect = () => builder.collectJudgeSamples({ sandboxName: "sb", buildId: "b", round: 1, skipUpload: true });
+
+  it("sends a sample image as it is, and one frame of a sample video", async () => {
+    productFiles = ["public/samples/puppy.mp4", "fixtures/room.jpg", "public/favicon.png"];
+    framed = [];
+    const samples = await collect();
+    assert.deepEqual(samples, [
+      { url: "sandbox://sb/vercel/musemuse/run/judge-sample-1.jpg", fileName: "public/samples/puppy.mp4", kind: "video" },
+      { url: "sandbox://sb/vercel/app/fixtures/room.jpg", fileName: "fixtures/room.jpg", kind: "image" },
+    ]);
+    assert.equal(framed.length, 1);
+    assert.match(framed[0]!, /ffmpeg .*'\/vercel\/app\/public\/samples\/puppy\.mp4'.*thumbnail/);
+  });
+
+  it("leaves out a video ffmpeg can't frame", async () => {
+    productFiles = ["fixtures/broken.mp4"];
+    frameExit = 1;
+    assert.deepEqual(await collect(), []);
+    frameExit = 0;
   });
 });
