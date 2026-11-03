@@ -20,6 +20,7 @@
     "snapshot": "tsx --env-file-if-exists=.env.local scripts/make-builder-snapshot.ts",
     "rebuild-all": "tsx --env-file-if-exists=.env.local scripts/rebuild-all.ts",
     "demo-batch": "tsx --env-file-if-exists=.env.local scripts/demo-batch.ts",
+    "demo-tunes": "tsx --env-file-if-exists=.env.local scripts/demo-tunes.ts",
     "knowledge:corpus": "tsx scripts/knowledge/build-corpus.ts --articles 3000",
     "knowledge:dataset": "tsx --env-file-if-exists=.env.local scripts/knowledge/make-dataset.ts",
     "knowledge:status": "tsx scripts/knowledge/control.ts status",
