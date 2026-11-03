@@ -127,7 +127,7 @@ Meta-models-only lines, added Nov 2 evening from the Meta-models audit:
 - Bolt, LFM or Llama numbers as project results, including the Llama harness tune (6.67 to 2.55, 95 to 5), the 2.02 GB Llama file, and the receipt-bench numbers for Bolt and LFM.
 - "Nothing leaves the device", "device-only" or "on the device" for Muse Privacy while its submitted path is Muse Glimmer in the cloud. Say Glimmer runs in the cloud on invented data, and that device Glimmer is the target.
 - That one-bit Glimmer reads documents reliably on 8 GB. Don't film it on a document task unless the schema gate passed.
-- That anything was tuned on a board. PR #67 tuned Llama on jetson-04, which isn't a Meta model, and an 8 GB board can't tune Glimmer.
+- That anything was tuned on a board, except Meta SAM 3.1's detector learning the word "muse" on jetson-03 (Nov 3; say it only as docs/EDGE_PLAN.md words it, and never that it sees better than Meta's weights). PR #67 tuned Llama on jetson-04, which isn't a Meta model, and an 8 GB board can't tune Glimmer.
 - That the d1 router, System One, combos or the fleet console's assistant are part of Muse Muse. Muse Muse never calls them.
 - Keep the fleet console and jetson-03, 04 and 05 out of frame, along with the Claude and ChatGPT connector labels. Show only the Muse app connector.
 
