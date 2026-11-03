@@ -92,6 +92,17 @@ describe("composer", () => {
     assert.match(html, /<span>VR<\/span>/);
     assert.doesNotMatch(html, /<span>Desktop<\/span>|<span>Glasses<\/span>|<span>Agent<\/span>/, "only what is on");
   });
+
+  it("says plainly in the picker when phone and desktop wait on the packager, even with nothing else on", async () => {
+    camera = false;
+    const { targetPickerNote } = await import("@/lib/native/readiness");
+    const note = targetPickerNote(["phone", "desktop"]);
+    const html = render({ mode: "new", signedIn: true, layout: "playground", targetOptions: [], targetNote: note });
+    assert.match(html, /target-pill/);
+    assert.match(html, /<p class="target-menu-note muted small">Only the web app and its phone home-screen install are available\. Phone and desktop apps aren&#x27;t made here/);
+    assert.doesNotMatch(html, /<span>Phone<\/span>|<span>Desktop<\/span>/, "neither is offered");
+    assert.doesNotMatch(render({ mode: "new", signedIn: true, layout: "playground", targetOptions: ["vr"], targetNote: null }), /target-menu-note/);
+  });
 });
 
 describe("the target pill's text", () => {

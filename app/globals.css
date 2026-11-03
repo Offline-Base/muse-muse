@@ -8562,3 +8562,11 @@ div.md.md-plain {
     min-height: 36px;
   }
 }
+
+/* The target picker's plain line when phone or desktop waits on the app packager (lib/native/readiness.ts). */
+.target-menu-note {
+  margin: 6px 0 4px;
+  padding: 0 14px 0 40px;
+  max-width: 340px;
+  line-height: 1.4;
+}

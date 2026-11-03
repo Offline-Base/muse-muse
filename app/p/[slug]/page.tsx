@@ -35,7 +35,7 @@ import { canEditProduct } from "@/lib/edit-pass";
 import type { Brief } from "@/lib/brief/schema";
 import { env } from "@/lib/env";
 import { downloadCounts, readProductNative } from "@/lib/native/queries";
-import { panelLinkOrigin } from "@/lib/native/product-view";
+import { panelLinkOrigin, publicSiteOrigin } from "@/lib/native/product-view";
 import { briefTargets } from "@/lib/native/targets";
 import { enabledFrameBrief, liveFrameAllow, liveFrameSandbox } from "@/lib/product-frame";
 import { buildHighlights, currentUser, getProductPage, platformOrigin, rebuildRef, safeQuery } from "@/lib/queries";
@@ -49,12 +49,14 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
  * The panel's slots for a shipped product. Reading them must never take the page down: the rest of the page works without
  * them, so a failure here only leaves the panel out.
  */
-async function getItSlots({ productId, brief, ...ctx }: Omit<Parameters<typeof nativeSlots>[1], "enabled" | "downloads" | "onQuest"> & { productId: string; brief: Brief | null }) {
+async function getItSlots({ productId, brief, ...ctx }: Omit<Parameters<typeof nativeSlots>[1], "enabled" | "downloads" | "onQuest" | "packagerMissing"> & { productId: string; brief: Brief | null }) {
   try {
     const view = await readProductNative(productId, briefTargets(brief));
     const downloads = ctx.isOwner ? await downloadCounts(view.packages.map((p) => p.artifactId)) : undefined;
     const onQuest = ((await headers()).get("user-agent") ?? "").includes("OculusBrowser");
-    const slots = nativeSlots(view, { ...ctx, enabled: env.enabledTargets, downloads, onQuest });
+    // Phone and desktop switched on but with no packager still get their tab, which says plainly that no app was made.
+    const enabled = [...env.enabledTargets, ...env.waitingNativeTargets];
+    const slots = nativeSlots(view, { ...ctx, enabled, downloads, onQuest, packagerMissing: !env.packagerSnapshotId });
     return { slots, clips: view.clips, initial: onQuest && slots.vr ? ("vr" as const) : undefined };
   } catch (err) {
     console.error("[product page] couldn't read its apps:", err instanceof Error ? err.message : err);
@@ -76,7 +78,8 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   if (!result.data) notFound();
 
   const { product, latestBuild, brief, inspiration, history, events, runs } = result.data;
-  const origin = await platformOrigin();
+  // Links people copy and type use the public site (www.musemuse.dev on production), not PLATFORM_URL's vercel.app address.
+  const origin = publicSiteOrigin(await platformOrigin());
   const connectorUrl = `${origin}/api/mcp/${product.slug}`;
   const manifest = product.manifest;
   const shipped = product.status === "live" || product.status === "partial";

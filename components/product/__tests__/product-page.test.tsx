@@ -16,7 +16,7 @@ import { buildProductNativeView } from "@/lib/native/product-view";
 const canMock = typeof (mock as { module?: unknown }).module === "function";
 const at = (rel: string) => new URL(rel, import.meta.url).href;
 
-const FLAGS = ["NATIVE_TARGETS", "VR_ENABLED", "GLASSES_ENABLED", "AGENTS_ENABLED", "VERCEL_ENV", "VERCEL_URL", "VERCEL_BRANCH_URL"] as const;
+const FLAGS = ["NATIVE_TARGETS", "PACKAGER_SNAPSHOT_ID", "PUBLIC_SITE_URL", "VR_ENABLED", "GLASSES_ENABLED", "AGENTS_ENABLED", "VERCEL_ENV", "VERCEL_URL", "VERCEL_BRANCH_URL"] as const;
 const saved = Object.fromEntries(FLAGS.map((k) => [k, process.env[k]]));
 const PLATFORM = "https://muse-muse.example";
 
@@ -150,14 +150,27 @@ describe("the product page", { skip: canMock ? false : "needs --experimental-tes
   });
 
   describe("the panel's links", () => {
-    it("point at the platform on production", async () => {
+    it("point at the public site on production, not the platform's own address", async () => {
       briefTargets = ["web", "vr"];
       process.env.VR_ENABLED = "1";
       process.env.VERCEL_ENV = "production";
       process.env.VERCEL_URL = "muse-muse-abc.vercel.app";
       const html = await render();
-      assert.match(html, /muse-muse\.example\/q\/demo/);
+      assert.match(html, /www\.musemuse\.dev\/q\/demo/);
+      assert.match(html, /www\.musemuse\.dev\/vr/);
+      assert.match(html, /https:\/\/www\.musemuse\.dev\/api\/mcp\/demo/, "the connector too");
       assert.doesNotMatch(html, /abc\.vercel\.app/);
+      assert.doesNotMatch(html, /muse-muse\.example\/(q|vr|api\/mcp)/);
+      process.env.PUBLIC_SITE_URL = "https://site.example";
+      assert.match(await render(), /https:\/\/site\.example\/api\/mcp\/demo/);
+    });
+
+    it("say plainly that no app was made when phone is on with no packager", async () => {
+      briefTargets = ["web", "phone"];
+      process.env.NATIVE_TARGETS = "phone";
+      const html = await render();
+      assert.match(html, /Not made for this build: the app packager isn&#x27;t set up on this site\./);
+      assert.doesNotMatch(html, /ready yet/);
     });
 
     it("point at the preview itself on a preview, and the connector stays as it is", async () => {

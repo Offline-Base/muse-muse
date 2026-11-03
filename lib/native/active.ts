@@ -26,6 +26,8 @@ export async function nativeActive(buildId: string, now = Date.now()): Promise<b
       .limit(10);
     if (runs.some((r) => r.status === "planned" || r.status === "running")) return true;
     if (runs.length) return false;
+    // Only the packager starts a run at ship. Without its snapshot none is coming, so the stream needn't wait for one.
+    if (!env.packagerSnapshotId) return false;
     const [build] = await d
       .select({ brief: schema.builds.brief, productId: schema.builds.productId, finishedAt: schema.builds.finishedAt })
       .from(schema.builds)

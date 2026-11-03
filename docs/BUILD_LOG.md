@@ -3722,3 +3722,15 @@ The owner asked to make sure, on the office Orin Nano boards, that Meta's SAM 3.
 - `edge.test.mjs` had one stale assertion expecting a Llama label where the test sets a Glimmer one. Fixed.
 
 **Fleet changes left in place** (all logged in docs/HANDOFF.md, "Fleet changes made Nov 3"): jetson-02 `jetson-llama` started, not enabled, plus `glimmer-guard` (transient); jetson-04 `sam3.service` restarted once at 3:28 AM ET with the tuned detector beside Meta's (drop-in `tuned.conf`; old server kept as `server.py.nov2`); jetson-03 the new tune files above.
+
+## Nov 3, 2026: the native lane, honest now and ready to turn on (unit native-honest, branch tg-r3-native-honest)
+
+From the Nov 3 target audit, issues 1, 9 and 12.
+
+- **Found why no app was made:** `PACKAGER_SNAPSHOT_ID` isn't set in Production, so `ship()` skipped `packageProductStep` and said nothing. `lib/native/shells.json`'s null links don't block: the packager uses the snapshot's own copy. The Oct 31 snapshot `snap_VcblDXLuhpigJ8ZeukmR38j2PupJ` still names the current templates, and the packager code hasn't changed since it was made.
+- **Phone and desktop are offered only with the packager:** `env.enabledTargets` takes NATIVE_TARGETS through `offeredNativeTargets` (`lib/native/readiness.ts`): the snapshot and a template for the target. The brief writer, the composer's pill and the routes follow it. Switched on but waiting, the picker says "Only the web app and its phone home-screen install are available...". NATIVE_TARGETS empty: no change.
+- **The room and the panel say it plainly:** a brief that still asks for apps with no packager gets one `native` "skipped" line ("The Android, Mac and Windows apps weren't made", with the reason). The Get it panel says "Not made for this build: the app packager isn't set up on this site." The stream no longer waits 90 s for a run that can't start. The owner's Expo Go code is hidden until the shell update is published.
+- **Links:** the product page's connector, MCP, Quest and download links use `publicSiteOrigin`: `PUBLIC_SITE_URL`, else `https://www.musemuse.dev` on production (musemuse.dev answers 308 to it). Previews and local runs are unchanged. `PLATFORM_URL` and the gateway are untouched.
+- **New:** docs/NATIVE_READY.md (the owner's ordered steps, with commands checked against the scripts), `scripts/backfill-live-urls.ts` (dry run by default; moves a long team-scoped link to the short alias only when both answer 200 from the same `dpl_` deployment), and `POST /api/admin/native/package` now also takes the AUTOMATION_SECRET bearer, so the owner can package one product by hand.
+- **Ran:** the tests for touched code (readiness, live-alias, package-step, native-slots, product-view, product-page, composer, targets, queries, requested-targets, brief targets, workflow scenario, shell-links), all pass; `tsc` clean.
+- **Not run:** any EAS build, sandbox, packager, upload, backfill or deployment. Nothing was packaged.

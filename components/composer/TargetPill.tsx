@@ -67,6 +67,7 @@ export function TargetPill({
   onChange,
   disabled,
   make,
+  note,
 }: {
   /** MAKE_CHAT_ALL: what to make, above where it runs. Without it, this is only where it runs. */
   make?: { value: MakeWant; onChange: (next: MakeWant) => void };
@@ -75,11 +76,14 @@ export function TargetPill({
   picked: readonly TargetId[];
   onChange: (next: TargetId[]) => void;
   disabled?: boolean;
+  /** A plain line under the list: phone and desktop are switched on but can't be made here yet (targetPickerNote). */
+  note?: string | null;
 }) {
   const want = make?.value ?? "auto";
   const text = want === "auto" || want === "app" ? (want === "app" && !picked.length ? "App" : targetPillText(picked)) : WANT_WORDS[want].title;
-  const showWhere = wantHasApp(want) && (!make || options.length > 0);
+  const showWhere = wantHasApp(want) && (!make || options.length > 0 || Boolean(note));
   const where = (
+    <>
 <ul className="menu-list target-menu-list">
         {options.length ? (
           <li>
@@ -99,6 +103,8 @@ export function TargetPill({
           </li>
         ))}
       </ul>
+      {note ? <p className="target-menu-note muted small">{note}</p> : null}
+    </>
   );
   return (
     <Menu text={text} label={`${make ? "What to make and where it runs" : "Where it runs"}: ${text}`} textIsLabel={false} align="end" buttonClassName="composer-pill target-pill" disabled={disabled}>

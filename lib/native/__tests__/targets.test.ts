@@ -84,7 +84,7 @@ describe("applyTargets", () => {
 
 describe("the target flags", () => {
   const withEnv = (vars: Record<string, string>, read: () => void) => {
-    const names = ["NATIVE_TARGETS", "VR_ENABLED", "GLASSES_ENABLED", "AGENTS_ENABLED", ...Object.keys(vars)];
+    const names = ["NATIVE_TARGETS", "PACKAGER_SNAPSHOT_ID", "VR_ENABLED", "GLASSES_ENABLED", "AGENTS_ENABLED", ...Object.keys(vars)];
     const saved = Object.fromEntries(names.map((n) => [n, process.env[n]]));
     for (const n of names) delete process.env[n];
     Object.assign(process.env, vars);
@@ -122,10 +122,26 @@ describe("the target flags", () => {
   });
 
   it("enabledTargets puts each switch's target in TARGETS order, and never web", () => {
-    withEnv({ NATIVE_TARGETS: "desktop", AGENTS_ENABLED: "1", GLASSES_ENABLED: "1" }, () => {
+    withEnv({ NATIVE_TARGETS: "desktop", PACKAGER_SNAPSHOT_ID: "snap_test", AGENTS_ENABLED: "1", GLASSES_ENABLED: "1" }, () => {
       assert.deepEqual(env.enabledTargets, ["desktop", "glasses", "agent"]);
     });
     withEnv({ NATIVE_TARGETS: "vr" }, () => assert.deepEqual(env.enabledTargets, [], "vr has its own switch"));
+  });
+
+  it("offers phone and desktop only once the packager is set up, and says which wait", () => {
+    withEnv({ NATIVE_TARGETS: "phone,desktop", GLASSES_ENABLED: "1" }, () => {
+      assert.deepEqual(env.nativeTargets, ["phone", "desktop"], "still switched on");
+      assert.deepEqual(env.enabledTargets, ["glasses"], "but not offered to the writer or the composer");
+      assert.deepEqual(env.waitingNativeTargets, ["phone", "desktop"]);
+    });
+    withEnv({ NATIVE_TARGETS: "phone,desktop", PACKAGER_SNAPSHOT_ID: "snap_test" }, () => {
+      assert.deepEqual(env.enabledTargets, ["phone", "desktop"]);
+      assert.deepEqual(env.waitingNativeTargets, []);
+    });
+    withEnv({ PACKAGER_SNAPSHOT_ID: "snap_test" }, () => {
+      assert.deepEqual(env.enabledTargets, [], "the snapshot alone switches nothing on");
+      assert.deepEqual(env.waitingNativeTargets, []);
+    });
   });
 
   it("the spend settings have the plan's defaults, and 0 means none", () => {

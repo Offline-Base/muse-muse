@@ -10,6 +10,8 @@ import { mediaPartsFromEnv, type MediaPartId } from "@/lib/caps/media/parts";
 import { capOverlaysNeeded } from "@/lib/caps/overlays";
 import { databaseChoice, isPreview, previewHasOwnDatabase } from "@/lib/db/url";
 import { DRIVE_CARD_TERMS_VERSION, DRIVE_TERMS_DEFAULT_VERSION } from "@/lib/drive/terms";
+import { offeredNativeTargets, waitingNativeTargets, type PackagerSetup } from "@/lib/native/readiness";
+import { currentShells } from "@/lib/native/shells";
 import { parseNativeTargets } from "@/lib/native/targets";
 import type { MuseEngine } from "@/lib/sandbox/bridge-protocol";
 import { agentCapacity } from "@/lib/sandbox/agent-capacity";
@@ -778,6 +780,21 @@ export const env = {
   get nativeTargets(): TargetId[] {
     return parseNativeTargets(process.env.NATIVE_TARGETS);
   },
+  /** What the packager has here: PACKAGER_SNAPSHOT_ID and the shell templates in lib/native/shells.json. */
+  get packagerSetup(): PackagerSetup {
+    return { snapshotId: env.packagerSnapshotId, release: currentShells() };
+  },
+  /**
+   * The NATIVE_TARGETS a brief and the composer may offer: only those the packager can make here (lib/native/readiness.ts).
+   * Phone and desktop are switched on and offered only once PACKAGER_SNAPSHOT_ID is set (docs/NATIVE_READY.md).
+   */
+  get offeredNativeTargets(): TargetId[] {
+    return offeredNativeTargets(env.nativeTargets, env.packagerSetup);
+  },
+  /** The NATIVE_TARGETS that are switched on but can't be made here yet. The target picker and the Get it panel say so. */
+  get waitingNativeTargets(): TargetId[] {
+    return waitingNativeTargets(env.nativeTargets, env.packagerSetup);
+  },
   /** VR_ENABLED: the brief writer may pick vr. Turn it on only after the builder snapshot has the VR overlay. */
   get vrEnabled(): boolean {
     return flag("VR_ENABLED");
@@ -802,9 +819,12 @@ export const env = {
   get agentLongDailyUsd(): number {
     return number("AGENT_LONG_DAILY_USD", 25);
   },
-  /** The targets a new brief may add to web, in TARGETS order. Empty means every brief is web only, as it is today. */
+  /**
+   * The targets a new brief may add to web, in TARGETS order. Empty means every brief is web only, as it is today. Phone and
+   * desktop count only when the packager can make them (offeredNativeTargets).
+   */
   get enabledTargets(): TargetId[] {
-    const native = env.nativeTargets;
+    const native = env.offeredNativeTargets;
     return TARGETS.filter(
       (t) =>
         native.includes(t) ||

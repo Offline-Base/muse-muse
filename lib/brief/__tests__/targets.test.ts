@@ -22,7 +22,7 @@ import type { RebuildTarget } from "@/lib/types";
 const canMock = typeof (mock as { module?: unknown }).module === "function";
 const at = (rel: string) => new URL(rel, import.meta.url).href;
 const GOLDEN = join(import.meta.dirname, "golden");
-const FLAGS = ["NATIVE_TARGETS", "VR_ENABLED", "GLASSES_ENABLED", "AGENTS_ENABLED", "COMPOSIO_PERSONAL_ENABLED", "GADGETS_ENABLED"];
+const FLAGS = ["NATIVE_TARGETS", "PACKAGER_SNAPSHOT_ID", "VR_ENABLED", "GLASSES_ENABLED", "AGENTS_ENABLED", "COMPOSIO_PERSONAL_ENABLED", "GADGETS_ENABLED"];
 const RENDER = { inspoFiles: [], fixtures: [], maxModelSteps: 40 };
 const web = { id: "web" as const, why: "Always" };
 const on = (targets: Brief["targets"]): Brief => ({ ...BRIEF, targets });
@@ -72,6 +72,7 @@ describe("writeBrief", { skip: canMock ? false : "needs --experimental-test-modu
 
   it("with a flag on, asks for targets, limited to web and that flag, and settles the answer", async () => {
     process.env.NATIVE_TARGETS = "phone";
+    process.env.PACKAGER_SNAPSHOT_ID = "snap_test";
     replies = [on([{ id: "phone", why: "Used on the go" }])];
     const { brief } = await writeBrief({ note: "A habit tracker for my phone.", references: [] });
     const schema = sent[0]?.text.format.schema as { required: string[]; properties: { targets: { items: { properties: { id: { enum: string[] } } } } } };
@@ -84,6 +85,7 @@ describe("writeBrief", { skip: canMock ? false : "needs --experimental-test-modu
 
   it("passes the person's picks on, and they win over the writer's", async () => {
     process.env.NATIVE_TARGETS = "phone,desktop";
+    process.env.PACKAGER_SNAPSHOT_ID = "snap_test";
     replies = [on([web, { id: "phone", why: "On the go" }])];
     const { brief } = await writeBrief({ note: "A timer.", references: [], requestedTargets: ["web", "desktop"] });
     assert.match(requestText(), /Where the person picked for it to run: web \(Web\), desktop \(Desktop\)\. Use exactly these plus web\./);
@@ -93,6 +95,7 @@ describe("writeBrief", { skip: canMock ? false : "needs --experimental-test-modu
 
   it("forgets a pick whose flag went off, and never lets the writer pick one", async () => {
     process.env.NATIVE_TARGETS = "phone";
+    process.env.PACKAGER_SNAPSHOT_ID = "snap_test";
     replies = [on([web])];
     const { brief } = await writeBrief({ note: "A timer.", references: [], requestedTargets: ["vr"] });
     assert.doesNotMatch(requestText(), /picked/);
@@ -111,6 +114,7 @@ describe("writeBrief", { skip: canMock ? false : "needs --experimental-test-modu
 
   it("a refused brief stays web only", async () => {
     process.env.NATIVE_TARGETS = "phone";
+    process.env.PACKAGER_SNAPSHOT_ID = "snap_test";
     replies = [{ ...on([web, { id: "phone", why: "x" }]), verdict: "no", refusal: "It clones a real app." }];
     const { brief } = await writeBrief({ note: "Clone an app.", references: [], requestedTargets: ["phone"] });
     assert.deepEqual(brief.targets?.map((t) => t.id), ["web"]);
@@ -142,6 +146,7 @@ describe("the writer's instructions", () => {
   it("leave the catalog alone for targets other than agent, so its cache has one entry for them", () => {
     const off = catalogSummary();
     process.env.NATIVE_TARGETS = "phone,desktop";
+    process.env.PACKAGER_SNAPSHOT_ID = "snap_test";
     process.env.VR_ENABLED = "1";
     process.env.GLASSES_ENABLED = "1";
     assert.equal(catalogSummary(), off);

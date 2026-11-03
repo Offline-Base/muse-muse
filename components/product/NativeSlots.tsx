@@ -9,6 +9,7 @@ import type { TargetId } from "@/lib/brief/schema";
 import { plural } from "@/lib/format";
 import { liveFrameAllow, liveFrameSandbox } from "@/lib/product-frame";
 import { downloadablePackage, safeHttpUrl, type NativeCheckState, type NativeCheckView, type NativePackageView, type ProductNativeView } from "@/lib/native/product-view";
+import { PACKAGER_MISSING } from "@/lib/native/readiness";
 import { SHELL_UPDATE_PUBLISHED, appLink, expoGoLink } from "@/lib/native/shell-links";
 import type { NativeDownload } from "@/lib/native/types";
 
@@ -30,6 +31,8 @@ export interface NativeSlotContext {
   enabled: readonly TargetId[];
   /** How many times each package was downloaded, for its owner. */
   downloads?: ReadonlyMap<string, number>;
+  /** No packager on this site (PACKAGER_SNAPSHOT_ID unset), so an app that isn't made isn't on its way either. */
+  packagerMissing?: boolean;
 }
 
 const STATE_WORDS: Record<NativeCheckState, string> = {
@@ -171,7 +174,10 @@ function DownloadButton({ view, download, ctx }: { view: ProductNativeView; down
       </p>
     );
   }
-  if (!pack) return <p className="getit-note">{view.working ? `${words.subject} is being made.` : `${words.subject} isn't ready yet.`}</p>;
+  if (!pack) {
+    const why = view.working ? `${words.subject} is being made.` : ctx.packagerMissing ? `Not made for this build: ${PACKAGER_MISSING}.` : `${words.subject} isn't ready yet.`;
+    return <p className="getit-note">{why}</p>;
+  }
   if (!downloadablePackage(view, download)) {
     return (
       <p className="getit-note">
@@ -241,13 +247,14 @@ function PhonePanel({ view, ctx }: { view: ProductNativeView; ctx: NativeSlotCon
           {ctx.isOwner ? (
             <div className="getit-owner">
               <h4>Only you can see this</h4>
-              <div className="getit-with-qr">
-                <div>
+              {SHELL_UPDATE_PUBLISHED ? (
+                <div className="getit-with-qr">
                   <p className="getit-note">Open it in the phone shell with Expo Go. Scan this with your iPhone&apos;s camera.</p>
-                  {SHELL_UPDATE_PUBLISHED ? null : <p className="getit-note">The shell&apos;s update isn&apos;t published yet, so this won&apos;t open until it is.</p>}
+                  <Scan value={expoGoLink(ctx.slug)} label="Open in Expo Go" note="Open in Expo Go." />
                 </div>
-                <Scan value={expoGoLink(ctx.slug)} label="Open in Expo Go" note="Open in Expo Go." />
-              </div>
+              ) : (
+                <p className="getit-note">The Expo Go code shows here once the phone shell&apos;s update is published. It wouldn&apos;t open before that.</p>
+              )}
             </div>
           ) : null}
         </section>

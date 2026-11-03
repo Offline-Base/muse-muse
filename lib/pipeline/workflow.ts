@@ -763,8 +763,9 @@ async function ship(
     demoPosterUrl,
     status: outcome,
   });
-  // Phone and desktop downloads, from the live link. With no packager snapshot the workflow runs no extra step.
-  if (env.packagerSnapshotId) await packageProductStep({ buildId: ctx.buildId, productId: ctx.productId, liveUrl });
+  // Phone and desktop downloads, from the live link. With no packager snapshot and NATIVE_TARGETS empty the workflow runs
+  // no extra step. With NATIVE_TARGETS set and no snapshot, the step only says in the room that no app was made, and why.
+  if (env.packagerSnapshotId || env.nativeTargets.length) await packageProductStep({ buildId: ctx.buildId, productId: ctx.productId, liveUrl });
   return { liveUrl, outcome, liveFailure };
 }
 
