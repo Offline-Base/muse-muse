@@ -5,7 +5,7 @@
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { COVER_REACH, MASCOT_EVENT, MASCOT_KEY, climbStep, coverPoints, readMascotOn, setMascotOn, walkStep } from "@/lib/mascot";
+import { CONTROL_SELECTOR, COVER_REACH, MASCOT_EVENT, MASCOT_KEY, climbStep, coverPoints, readMascotOn, setMascotOn, walkStep } from "@/lib/mascot";
 
 describe("the walk", () => {
   const bounds = { left: 264, right: 1200 };
@@ -77,6 +77,9 @@ describe("never covering a control on a phone", () => {
     for (const [x, y] of coverPoints({ left: 340, top: 800, right: 395, bottom: 872 }, view)) {
       assert.ok(x >= 0 && x <= view.width && y >= 0 && y <= view.height);
     }
+  });
+  it("counts an embedded product and a video's controls as controls, since their buttons are out of the page's sight", () => {
+    for (const part of ["iframe", "video[controls]", "button", "a[href]", "textarea"]) assert.ok(CONTROL_SELECTOR.split(",").includes(part), part);
   });
   it("has nothing to test when the figure is off screen", () => {
     assert.deepEqual(coverPoints({ left: 500, top: 772, right: 555, bottom: 844 }, view), []);

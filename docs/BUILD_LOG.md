@@ -3472,3 +3472,15 @@ Before: `docs/log/shots/2026-11-03/phone-before-*.png`.
 
 Not changed and worth a look: the "How it was built" notes on those product pages print a raw tool log, sandbox paths
 included.
+
+**After the deploy (61f9e43e, dpl_9zz9ha4SgxjZeJ9jGA3hFwuUHcq7):** the same audit on the live site, both sizes, light
+and dark: no sideways scroll or widened page on any audited page, nothing under a showing Muse, and the 55-link sweep at
+360 found no page wider than the window. It also found three more, fixed in the follow-up commit:
+
+- Muse still walked over a product's live preview on its page: an iframe, whose own fields the page can't see. An iframe
+  and a video with controls now count as controls.
+- With search open, /gallery's Products row put the size button 12 px past a 360 px window (it did before too): the
+  search field is 34vw on a phone, not 40vw.
+- /gallery's search, filter and size buttons (32 px) and the build room's "Show thinking" (32 px) get 44 px tall tap areas.
+
+After: `docs/log/shots/2026-11-03/phone-after-*.png`.

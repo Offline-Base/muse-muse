@@ -664,4 +664,15 @@ a.chat-source-title:hover {
   .chat-tab {
     line-height: 36px;
   }
+
+  /* "Show thinking" keeps its look; a 44 px tall tap area reaches into the space around it. */
+  .chat-thinking {
+    position: relative;
+  }
+
+  .chat-thinking::after {
+    content: "";
+    position: absolute;
+    inset: -6px 0;
+  }
 }

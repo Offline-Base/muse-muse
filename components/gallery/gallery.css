@@ -36,3 +36,12 @@
 .gx-dock textarea { flex: 1; min-width: 0; min-height: 36px; max-height: 120px; padding: 7px 0; border: 0; outline: 0; background: transparent; color: var(--fg); font: inherit; font-size: 15px; resize: none; }
 .gx-dock-send { display: grid; flex: 0 0 auto; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 50%; background: var(--fg); color: var(--surface); cursor: pointer; }
 .gx-dock-send:disabled { opacity: 0.35; cursor: default; }
+
+/* On a phone the search, filter and size buttons get a 44 px tall, 36 px wide tap area: the row has no room to spread
+   them out once search is open, so the areas stop where the next button starts. */
+@media (max-width: 759.98px) {
+  .gx-tools .icon-btn-plain { position: relative; }
+  .gx-tools .icon-btn-plain::after { content: ""; position: absolute; inset: -6px -2px; }
+  /* At 40vw the open search pushed the last button 12 px past a 360 px window. */
+  .gx-tools input { width: min(200px, 34vw); }
+}

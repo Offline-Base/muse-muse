@@ -73,9 +73,12 @@ export function walkStep(
 /** Below this width the page is the phone view (globals.css uses the same 760 px line). */
 export const PHONE_MAX = 759;
 
-/** What counts as a control Muse mustn't cover on a phone: anything a finger can tap. */
+/**
+ * What counts as a control Muse mustn't cover on a phone: anything a finger can tap, and an embedded product or a video
+ * with controls, whose own buttons the page can't see into.
+ */
 export const CONTROL_SELECTOR =
-  'a[href],button,input,select,textarea,summary,label,[role="button"],[role="tab"],[role="link"],[role="menuitem"],[role="switch"],[role="checkbox"],[role="radio"],[tabindex]:not([tabindex="-1"])';
+  'a[href],button,input,select,textarea,summary,label,iframe,video[controls],[role="button"],[role="tab"],[role="link"],[role="menuitem"],[role="switch"],[role="checkbox"],[role="radio"],[tabindex]:not([tabindex="-1"])';
 
 /** How far past the figure its close button reaches (24 px button, 14 px above, a 44 px tap area), so that's checked too. */
 export const COVER_REACH = { side: 10, top: 24 };
