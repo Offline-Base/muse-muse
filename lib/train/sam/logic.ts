@@ -207,7 +207,7 @@ const unitOrNull = (v: unknown): v is number | null => v === null || isUnit(v);
 /** A plain line from the board: no control characters, no em dash, at most `max` characters. */
 function cleanLine(v: unknown, max: number): string | null {
   if (typeof v !== "string") return null;
-  const s = v.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/—/g, ", ").replace(/\s+/g, " ").trim();
+  const s = v.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\u2014/g, ", ").replace(/\s+/g, " ").trim();
   return s.length > 0 && s.length <= max ? s : null;
 }
 

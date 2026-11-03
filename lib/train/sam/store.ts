@@ -49,7 +49,7 @@ function isUniqueClash(err: unknown): boolean {
 /** A board line for the room: no control characters, at most `max` characters. */
 function line(v: unknown, max: number): string | undefined {
   if (typeof v !== "string") return undefined;
-  const s = v.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/—/g, ", ").replace(/\s+/g, " ").trim().slice(0, max);
+  const s = v.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\u2014/g, ", ").replace(/\s+/g, " ").trim().slice(0, max);
   return s || undefined;
 }
 
