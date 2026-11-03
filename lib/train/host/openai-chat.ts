@@ -12,6 +12,12 @@ export const WAKE_RETRY_SECONDS = 30;
 export type Fetcher = typeof fetch;
 
 export function chatBody(model: string, input: HostChatInput): Record<string, unknown> {
+  const body = sampledBody(model, input);
+  // vLLM reads temperature 0 as greedy; top_p and top_k then change nothing.
+  return input.greedy ? { ...body, temperature: 0 } : body;
+}
+
+function sampledBody(model: string, input: HostChatInput): Record<string, unknown> {
   const glimmer = input.family === "glimmer";
   const finalOnly = glimmer && input.trainChannel === 0;
   // Reasoning needs the headroom, and comes first unless the prompt opened the final channel.

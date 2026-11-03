@@ -1658,6 +1658,26 @@ export const env = {
     return number("HOST_TUNED_MAX_MINUTES", 240);
   },
 
+  /**
+   * PARTNER_EVALS: after a tune is judged, host it on a partner's GPU, answer the same held-out prompts there with base
+   * and tuned, judge them, record it on the job and tear it down (lib/train/partner). "baseten" or "1" picks Baseten,
+   * "modal" picks Modal. Unset, empty, "0" or anything else: off, and nothing is deployed. Also needs HOST_TUNED, whose
+   * sweep is the backstop that stops anything left running.
+   */
+  get partnerEvalProvider(): "baseten" | "modal" | null {
+    const v = (process.env.PARTNER_EVALS ?? "").trim().toLowerCase();
+    if (v === "modal") return "modal";
+    return v === "baseten" || v === "1" || v === "true" || v === "yes" || v === "on" ? "baseten" : null;
+  },
+  /** PARTNER_EVAL_MAX_USD: the most one partner eval's GPU may cost at the provider's list price, 8 by default. 0 stops them. */
+  get partnerEvalMaxUsd(): number {
+    return dollars("PARTNER_EVAL_MAX_USD", 8);
+  },
+  /** PARTNER_EVAL_MAX_MINUTES: the longest one partner eval's endpoint may run, start to stop, 60 by default. */
+  get partnerEvalMaxMinutes(): number {
+    return number("PARTNER_EVAL_MAX_MINUTES", 60);
+  },
+
   /** TRY_TUNED: anyone may chat with a tuned model on its public page, and wake it within the limits below. Also needs HOST_TUNED. */
   get tryTuned(): boolean {
     return flag("TRY_TUNED");

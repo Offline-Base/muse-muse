@@ -43,6 +43,7 @@ import {
   type EvalSummary,
   type HubState,
   type LiveDemoView,
+  type PartnerEvalBody,
   type RecipeId,
   type TrainArtifact,
   type TrainCallback,
@@ -1442,6 +1443,18 @@ const RESULT_EVENTS_MAX = EVALS_MAX * 4;
  * A judged job's eval items and judgements, oldest first. Nothing else from its log (no log text, errors, instance or
  * artifact events), and nothing at all for a job without results.
  */
+/** The job's partner evals (PARTNER_EVALS, lib/train/partner), oldest first, the newest 20. */
+export async function listPartnerEvals(jobId: string): Promise<PartnerEvalBody[]> {
+  if (!isUuid(jobId)) return [];
+  const rows = await db()
+    .select({ payload: events.payload })
+    .from(events)
+    .where(and(eq(events.jobId, jobId), eq(events.type, "partner_eval")))
+    .orderBy(desc(events.id))
+    .limit(20);
+  return rows.map((r) => r.payload).filter((p): p is PartnerEvalBody => p?.type === "partner_eval").reverse();
+}
+
 export async function listResultEvents(jobId: string): Promise<TrainEventView[]> {
   if (!isUuid(jobId)) return [];
   const judged = db().select({ id: jobs.id }).from(jobs).where(and(eq(jobs.id, jobId), hasResults()));

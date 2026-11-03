@@ -152,7 +152,65 @@ export type TrainEventBody =
   | { type: "instance"; instanceId: string; instanceType: string; region: string; ip?: string | null }
   | { type: "terminated"; reason: string }
   /** The judge's verdict on one eval item (the job's judgeModel), scored 1 to 10 against the reference answer. */
-  | { type: "judgement"; index: number; baseScore: number; tunedScore: number; better: "base" | "tuned" | "tie"; note: string };
+  | { type: "judgement"; index: number; baseScore: number; tunedScore: number; better: "base" | "tuned" | "tie"; note: string }
+  /** The same held-out prompts answered on a partner's GPU and judged there (PARTNER_EVALS, lib/train/partner). Never a callback. */
+  | PartnerEvalBody;
+
+/** The partners a tuned model is evaluated on (PARTNER_EVALS). */
+export type PartnerProvider = "baseten" | "modal";
+
+/** Milliseconds one answer took, seen from the platform: the network to the partner included. */
+export interface PartnerLatency {
+  answers: number;
+  medianMs: number;
+  p90Ms: number;
+}
+
+/** One held-out prompt as the partner's base and tuned answered it, judged. No answer text: the job's own eval items have the prompts. */
+export interface PartnerEvalScore {
+  index: number;
+  baseScore: number;
+  tunedScore: number;
+  better: "base" | "tuned" | "tie";
+}
+
+/**
+ * A partner eval of one tuned job, as its job's log keeps it. "started" when it begins, then one of "done" (judged on the
+ * partner), "failed" (it started and didn't finish: reason says why, and costUsd what the GPU cost) or "skipped" (nothing
+ * was deployed: reason says why). No URL, key, endpoint name or provider reply is ever in it.
+ */
+export interface PartnerEvalBody {
+  type: "partner_eval";
+  provider: PartnerProvider;
+  status: "started" | "done" | "failed" | "skipped";
+  reason?: string;
+  /** The GPU and its list price per hour, as the platform estimates it for the limits. */
+  gpu?: string;
+  hourlyUsd?: number;
+  /** The most it was allowed: minutes before the endpoint's stop time, and that time's cost at the list price. */
+  minutes?: number;
+  maxUsd?: number;
+  asked?: number;
+  items?: number;
+  tunedWins?: number;
+  baseWins?: number;
+  ties?: number;
+  avgBaseScore?: number;
+  avgTunedScore?: number;
+  judgeModel?: string;
+  judgeCostUsd?: number;
+  latency?: { base: PartnerLatency | null; tuned: PartnerLatency | null };
+  /** From the deploy call to the endpoint first answering ready. */
+  coldStartSeconds?: number | null;
+  /** The GPU's cost: what the provider reported, else the clock at the list price for the whole time it existed (an upper bound). */
+  costUsd?: number | null;
+  costSource?: "provider" | "clock";
+  /** False when the stop couldn't be confirmed: the 5-minute hosting sweep keeps trying. */
+  stopped?: boolean;
+  scores?: PartnerEvalScore[];
+  startedAt?: string;
+  endedAt?: string;
+}
 
 /** A GPU type a recipe can run on, in order of preference. */
 export interface GpuChoice {

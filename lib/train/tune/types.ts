@@ -3,6 +3,7 @@
  * Start. The run is a dataset row, so the room is keyed by the dataset's id and the training job is found by its
  * params.datasetId (lib/train/tune/store.ts). No migration. Pure types, shared by the routes, the pages and the tests.
  */
+import type { PartnerEvalView } from "@/lib/train/partner/logic";
 import type { EvalRow } from "@/components/train/format";
 import type { DatasetView, TrainJobView } from "@/lib/train/types";
 
@@ -152,6 +153,8 @@ export interface TuneRunView {
   problem: string | null;
   /** What Meta and the GPU have charged so far: the examples, the GPU and the scoring. */
   costSoFarUsd: number;
+  /** PARTNER_EVALS: the newest partner eval of its job ("Evaluated on Baseten"), when one was recorded. */
+  partnerEval?: PartnerEvalView;
   /**
    * The one thing the room offers next: Start training (POST `start`, runs/{id}/start) while the examples are ready
    * and no job trains on them, with the full New job form for admins (`fullForm`); the job's page once there is one.

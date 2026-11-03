@@ -61,6 +61,9 @@ interface Scenario {
 const POLL_MS = 30_000;
 let scenario: Scenario = {};
 let calls: Call[] = [];
+/** Jobs a partner eval was started for (lib/train/partner/start.ts), kept apart from calls so order() is as it was. */
+let partnerStarts: string[] = [];
+let partnerStartThrows = false;
 let checksRun = 0;
 let clock = 0;
 
@@ -202,6 +205,8 @@ function reset(next: Scenario) {
   judging = 0;
   judgingPeak = 0;
   clock = Date.UTC(2026, 9, 27, 12, 0, 0);
+  partnerStarts = [];
+  partnerStartThrows = false;
 }
 
 const terminated = (): Ending => named("terminateStep")[0]!.args[1] as Ending;
@@ -212,6 +217,14 @@ describe("training workflow orchestration", { skip: canMock ? false : "needs --e
     mock.module(new URL("../judge.ts", import.meta.url).href, { namedExports: fakeJudge });
     mock.module(new URL("../hub-steps.ts", import.meta.url).href, { namedExports: fakeHub });
     mock.module(new URL("../decide-steps.ts", import.meta.url).href, { namedExports: fakeDecide });
+    mock.module(new URL("../partner/start.ts", import.meta.url).href, {
+      namedExports: {
+        startPartnerEvalStep: async (jobId: string) => {
+          partnerStarts.push(`${jobId}@${calls.filter((c) => c.step === "hubPlanStep").length}`);
+          if (partnerStartThrows) throw new Error("workflow runtime down");
+        },
+      },
+    });
     mock.module("workflow", {
       namedExports: {
         sleep: async (ms: number) => {
@@ -539,6 +552,27 @@ describe("training workflow orchestration", { skip: canMock ? false : "needs --e
       reset({ hubPlan: { action: "publish", jobId: "c2", claim: "claim-c2" } });
       await wf.publishToHub({ jobId: "c2" });
       assert.equal(named("scoreDecisionStep").length, 0, "an admin's Publish scores nothing");
+    });
+  });
+
+  describe("partner evals (PARTNER_EVALS)", () => {
+    const done = (): Check => ({ action: "terminate", status: "succeeded", reason: "The job finished." });
+
+    it("starts one for a chat job that succeeded, after publishing, and a start that throws changes nothing", async () => {
+      reset({ checks: [done()], evals: [0, 1] });
+      assert.deepEqual(await wf.trainJob({ jobId: "p1" }), { status: "succeeded" });
+      assert.deepEqual(partnerStarts, ["p1@1"], "once, after the hub plan step");
+      reset({ checks: [done()], evals: [0] });
+      partnerStartThrows = true;
+      assert.deepEqual(await wf.trainJob({ jobId: "p2" }), { status: "succeeded" });
+    });
+
+    it("never for a job that failed or was stopped, or a decide job", async () => {
+      reset({ checks: [{ action: "terminate", status: "failed", reason: "Reached the 30-minute limit." }], evals: [0] });
+      await wf.trainJob({ jobId: "p3" });
+      reset({ checks: [done()] });
+      await wf.trainJob({ jobId: "p4", mode: "decide" });
+      assert.deepEqual(partnerStarts, []);
     });
   });
 

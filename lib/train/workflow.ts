@@ -11,6 +11,8 @@
  *             -> publish to the Hugging Face Hub: a judged glimmer-lora job whose adapter files are on the Hub, the
  *                adapter job a glimmer-publish job uploaded for once that job succeeded, or a glimmer-quantize job's
  *                own GGUF repo once it succeeded
+ *             -> with PARTNER_EVALS on, start a partner eval of a chat job that succeeded (lib/train/partner): a
+ *                workflow of its own, which only adds a "partner_eval" event to this job's log
  *   publishToHub: the same publishing, when an admin presses Publish (app/api/train/jobs/[id]/publish)
  *
  * Lambda bills until an instance is terminated, so terminate runs in a finally block: after a normal ending, a
@@ -42,6 +44,7 @@ import {
   hubStoryStep,
 } from "@/lib/train/hub-steps";
 import { judgePlanStep, judgeStep, saveEvalSummaryStep } from "@/lib/train/judge";
+import { startPartnerEvalStep } from "@/lib/train/partner/start";
 import { DECIDE_MODE, POLL_MS, type JobMode, type JudgedChecks, type JudgedItem } from "@/lib/train/logic";
 import { abandonStep, checkStep, launchStep, saveLaunchStep, terminateStep, type TrainEnding } from "@/lib/train/steps";
 import type { TrainCheck, TrainStatus } from "@/lib/train/types";
@@ -246,6 +249,8 @@ export async function trainJob(input: TrainJobInput): Promise<TrainJobResult> {
   if (input.mode === DECIDE_MODE) await scoreDecisions(jobId);
   else if (status === "succeeded") await judge(jobId);
   await publish(jobId, status);
+  // PARTNER_EVALS only: its own workflow, after the job's result is saved, so it can never change or hold it up.
+  if (status === "succeeded" && input.mode !== DECIDE_MODE) await startPartnerEvalStep(jobId).catch(() => undefined);
   return { status };
 }
 

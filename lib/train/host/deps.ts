@@ -2,7 +2,7 @@
  * The real deps: env keys, the store, the Lab's launch. Reaches lib/train/launch and its workflow, so only the routes import
  * this, never a build's steps. Keys are read per call, inside the adapters' closures, and never returned.
  */
-import { createHmac, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { capProduct, capToken } from "@/lib/caps/store";
 import { env } from "@/lib/env";
 import { adjustCounter, counterValue, hitRateLimits, reserveCounter, reserveSpend, settleSpend } from "@/lib/gateway/store";
@@ -14,6 +14,7 @@ import { sandboxRunner } from "@/lib/train/host/cli-runner";
 import { fireworksAdapter } from "@/lib/train/host/fireworks";
 import type { HostedGatewayDeps } from "@/lib/train/host/gateway";
 import { hubAdapterSource } from "@/lib/train/host/hf-files";
+import { hostKeyFor } from "@/lib/train/host/keys";
 import { LAMBDA_JOB_TITLE, lambdaAdapter } from "@/lib/train/host/lambda";
 import { modalAdapter } from "@/lib/train/host/modal";
 import { hostByModel, hostByOwnerTokenHash, hostRows, insertHostEndpoint, patchHostEndpoint, productOwnsModel, touchHostEndpoint } from "@/lib/train/host/store";
@@ -29,11 +30,6 @@ import { isTrainTerminal, TRAIN_TERMINAL, type TrainStatus } from "@/lib/train/t
 import { platformSpendToday, recordUsage } from "@/lib/usage";
 
 const key = (name: string) => () => process.env[name]?.trim() || undefined;
-
-/** The key vLLM checks on Modal for one endpoint. Derived, so it is never stored. */
-function hostKeyFor(endpointId: string): string {
-  return createHmac("sha256", env.sessionSecret).update(`host-endpoint:${endpointId}`).digest("hex");
-}
 
 export function hostAdapters(): HostAdapter[] {
   // This one is handed to the providers, so a read-only HOST_HF_TOKEN is better than the platform's write token.
