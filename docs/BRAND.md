@@ -343,6 +343,7 @@ Muse Muse's own character, from the owner's videos (Nov 2). Not a Meta mark. Bui
 - **Layering:** fixed at z-index 15, under docks (20), menus (40) and dialogs. Only the figure itself takes the pointer; the page around it stays clickable. The videos are hidden from screen readers, and it's hidden in print.
 - **Close:** pointing at it stops it and shows a round X just above its head ("Hide Muse"; always shown on touch screens, and reachable with Tab). The X hides it, saves that in this browser and shows a note for 5 s: "Muse is hidden. Bring him back in Settings, under Muse on screen."
 - **Choice:** Settings, General, "Muse on screen" (on by default, kept in this browser). With reduced motion it stands still in the corner.
+- **Beside a plan:** it stays off while a plan card is on the page (`components/build/plan-card.css`). The card already shows Muse, and the walker covered the plan's text (Nov 3 audit). So a build room, the Make page once it shows a plan, and the fine-tune room have no walker.
 
 ### Segmented tabs (`.chat-tabs`, `.tabs`, `.range`, `.segmented`), M
 

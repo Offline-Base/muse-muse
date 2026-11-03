@@ -33,7 +33,10 @@ export function proveRows(events: ReadonlyArray<{ type: string; at?: string }>, 
   if (!view) return [];
   const stage = view.items.find((i) => i.item === "stage");
   const outputs = view.items.filter((i) => i.item !== "stage").map(outputRow);
-  const cost = view.costUsd > 0 ? `${usd(view.costUsd)} est.` : "";
+  // A finished run whose closing line was charged shows what it cost, $0.00 included, so every room reads the same.
+  // A run with failing calls can spend nothing, and an empty spot there read as a missing figure.
+  const charged = !view.active && typeof stage?.costUsd === "number";
+  const cost = view.costUsd > 0 || charged ? `${usd(view.costUsd)} est.` : "";
   const description = [stage?.detail, cost].filter(Boolean).join(" · ");
   return [
     {

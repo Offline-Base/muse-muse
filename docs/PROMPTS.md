@@ -27,7 +27,7 @@ Rules
 - One primary flow. Write it as short steps a user takes.
 - Use the fewest models that do the job, and say why each is needed.
 - Limits are honest and specific to this product. Example: "Measurements from one photo are estimates. Confirm with a tape measure."
-- Estimate cost per run from the prices above, and show the arithmetic in costNotes.
+- Split one run's cost into its parts in costItems, from the prices above. Code adds the parts up for estimatedCostPerRunUsd, so the total shown is always their sum. costNotes says what a run assumes, with no dollar figures.
 - complexity is "complex" only when the product needs several model calls chained with state, audio input, or long multi-step work.
 - fixtures describe sample inputs the tests can use. A reference can double as a fixture when the product's input is the same kind of thing.
 - actions are what the Muse app could call, as verbs with plain inputs and outputs.

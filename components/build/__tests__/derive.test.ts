@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
-import { deriveRoom, groupLog, sessionOf, upsertLine, type Segment } from "@/components/build/derive";
+import { closingWords, deriveRoom, doneEchoes, groupLog, noDanglingColon, sessionOf, upsertLine, type Segment } from "@/components/build/derive";
 import type { BuildView } from "@/components/view-types";
 import type { BridgeLogRecord } from "@/lib/sandbox/bridge-protocol";
 import { condenseBridgeLines, emptyBridgeState } from "@/lib/sandbox/msp-log";
@@ -487,5 +487,37 @@ describe("a log line just before a round", () => {
   it("leaves a line during a round in that round, unmarked", () => {
     const room = deriveRoom(build, bodies([{ type: "muse", round: 0, lines: [] }, { type: "log", text: "A build note." }]));
     assert.deepEqual(room.segments[1]!.notes.map((n) => [n.text, n.leading]), [["How the round runs.", true], ["A build note.", undefined]]);
+  });
+});
+
+describe("what a round ended on", () => {
+  const LIST = "Milestone 3 is built. What changed:\n\n- **R7**: empty states.\n- **R8**: a sticky nav.";
+
+  it("finds the message a cut done line starts, with or without the log's Done prefix", () => {
+    assert.equal(doneEchoes("Done. Milestone 3 is built. What changed:", ["Earlier words.", LIST]), LIST);
+    assert.equal(doneEchoes("Done. All set.\n", ["Done. All set."]), "Done. All set.");
+    assert.equal(doneEchoes(`Done. ${"x".repeat(238)}…`, [`${"x".repeat(300)}\nmore`]), `${"x".repeat(300)}\nmore`);
+    assert.equal(doneEchoes("Done. Something else.", [LIST]), null);
+    assert.equal(doneEchoes("", [LIST]), null);
+    // A bare "Done" is a round with no message, not the start of an earlier one.
+    assert.equal(doneEchoes("Done", ["Done with the header, now the list."]), null);
+    assert.equal(doneEchoes("Done.", ["Done."]), "Done.");
+  });
+
+  it("gives the whole message, list and all, for the done line that cut it", () => {
+    assert.equal(closingWords("Done. Milestone 3 is built. What changed:", [LIST]), `Done. ${LIST}`);
+    assert.equal(closingWords("Done. Milestone 1 is done.", []), "Done. Milestone 1 is done.");
+    assert.equal(closingWords(null, ["  Last words.  "]), "Last words.");
+    assert.equal(closingWords(null, []), undefined);
+  });
+
+  it("never ends on a dangling colon", () => {
+    assert.equal(noDanglingColon("Done. Milestone 3 is built. What changed:"), "Done. Milestone 3 is built.");
+    assert.equal(noDanglingColon("Done. Milestone 3 is built. **What changed:**"), "Done. Milestone 3 is built.");
+    assert.equal(noDanglingColon("Done. Fix round 1 complete. Both issues are fixed and proven by screenshots I inspected:"), "Done. Fix round 1 complete. Both issues are fixed and proven by screenshots I inspected.");
+    assert.equal(noDanglingColon("What changed:"), "What changed.");
+    assert.equal(noDanglingColon("Built it.\n\nWhat changed:"), "Built it.");
+    assert.equal(noDanglingColon("Note: the time is 10:30"), "Note: the time is 10:30");
+    assert.equal(noDanglingColon("A list:\n- one"), "A list:\n- one");
   });
 });

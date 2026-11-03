@@ -325,6 +325,41 @@ describe("the conversation", () => {
     assert.equal(steps.shareLink({ liveUrl: "https://a.example", origin: "https://m.example", buildId: "b1" }), "https://a.example");
     assert.equal(steps.shareLink({ liveUrl: null, origin: "https://m.example", buildId: "b1" }), "https://m.example/b/b1");
   });
+
+  // The Nov 3 audit: the fridge and parking rooms ended rounds on "What changed:" and "...screenshots I inspected:".
+  it("shows a round's whole last message, list and all, and never a dangling colon", () => {
+    const said = "Milestone 3 is built. What changed:\n\n- **R7**: empty and error states.\n- **R8**: a sticky nav.";
+    const muse = (round: number, lines: object[]) => ({ type: "muse", round, lines });
+    const evs = [
+      muse(0, [{ kind: "say", itemId: "m1", text: said }, { kind: "done", ok: true, text: "Done. Milestone 3 is built. What changed:" }]),
+      muse(1, [{ kind: "done", ok: true, text: "Done. Fix round 1 complete. Both judge issues are fixed and proven by screenshots I inspected:" }]),
+      muse(2, [{ kind: "done", ok: true, text: "Done. Milestone 4 is built. What changed:" }]),
+    ].map((b, i) => ({ ...b, id: i + 1, at: new Date(Date.parse("2026-11-03T05:00:00.000Z") + i * 1000).toISOString() })) as unknown as BuildEvent[];
+    const items = steps.conversationItems(roomOf("failed", evs));
+    assert.deepEqual(items.flatMap((i) => (i.type === "say" ? [i.text] : [])), [
+      `Done. ${said}`,
+      "Done. Fix round 1 complete. Both judge issues are fixed and proven by screenshots I inspected.",
+      "Done. Milestone 4 is built.",
+    ]);
+    // The steps panel shows the message once, not again as a cut "Done." line.
+    const html = render(StepList, { steps: steps.roomSteps({ room: roomOf("failed", evs), rail: derive.railStates(roomOf("failed", evs), "build"), isRefine: false }), end: null });
+    assert.equal(html.split("What changed").length - 1, 1);
+  });
+
+  it("leaves a note's answer out of the round's last message, since it shows as its own reply", () => {
+    const said = "Milestone 2 is built.\nAbout your note: The header is darker now.\n\n- **R4**: a darker header.";
+    const muse = (round: number, lines: object[]) => ({ type: "muse", round, lines });
+    const evs = [muse(0, [{ kind: "say", itemId: "m1", text: said }, { kind: "done", ok: true, text: "Done. Milestone 2 is built." }])].map((b, i) => ({
+      ...b,
+      id: i + 1,
+      at: new Date(Date.parse("2026-11-03T05:00:00.000Z") + i * 1000).toISOString(),
+    })) as unknown as BuildEvent[];
+    const items = steps.conversationItems(roomOf("failed", evs));
+    assert.deepEqual(
+      items.flatMap((i) => (i.type === "say" ? [i.text] : [])),
+      ["About your note: The header is darker now.", "Done. Milestone 2 is built.\n\n- **R4**: a darker header."],
+    );
+  });
 });
 
 describe("the room", () => {

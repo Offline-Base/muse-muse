@@ -44,6 +44,28 @@ export type TargetId = (typeof TARGETS)[number];
 
 const MediaKind = z.enum(["text", "image", "video", "audio", "pdf"]);
 
+/** Most parts one run's cost is split into. */
+export const COST_ITEMS_MAX = 8;
+/** The longest name of a part of a run's cost. */
+export const COST_ITEM_WHAT_MAX = 160;
+
+/**
+ * One part of what one run of the primary flow costs, in dollars, such as one call or the web searches. The writer
+ * gives the parts, and code adds them up for estimatedCostPerRunUsd (normalizeRawBrief), so the total on screen is
+ * always the sum of the parts beside it (Nov 3 audit: a plan's parts came to $0.02 under "Total about $0.12").
+ */
+export const CostItemSchema = z.object({
+  what: z.string().min(1).max(COST_ITEM_WHAT_MAX),
+  usd: z.number().nonnegative(),
+});
+export type CostItem = z.infer<typeof CostItemSchema>;
+
+/**
+ * The writer's costItems. Strict output makes it required for the model (strictJsonSchema), and it is optional here only
+ * so a brief written before it still parses. Empty or missing leaves the writer's own total, as before costItems.
+ */
+const costItemsField = () => z.array(CostItemSchema).max(COST_ITEMS_MAX).optional();
+
 /** The fields of every brief. New briefs and stored briefs differ only in what is added to these below. */
 const BriefFields = z.object({
   verdict: z.enum(["yes", "partly", "no"]),
@@ -126,6 +148,8 @@ const agentFields = (toolIds: z.ZodType<string>) =>
  * can leave the catalog after a brief was stored; the writer's schema below limits them.
  */
 export const BriefSchema = BriefFields.extend({
+  /** Optional and nullable, so briefs stored before it still parse. Those show their own total and notes as they were. */
+  costItems: z.array(CostItemSchema).max(COST_ITEMS_MAX).nullable().optional(),
   // A brief written with FLEET_PRODUCTS or SPARK_OPEN_PRODUCTS on must still parse after it goes off.
   capabilities: z.array(z.object({ need: z.string(), model: z.enum([...PRODUCT_MODELS, FLEET_BRIEF_MODEL, SPARK_OPEN_BRIEF_MODEL]), why: z.string() })).min(1),
   targets: targetPicks(TARGETS).optional(),
@@ -179,6 +203,7 @@ export const NewBriefSchema = BriefFields.extend({
   capabilities: z
     .array(z.object({ need: z.string(), model: z.enum(NEW_PRODUCT_MODELS), why: z.string() }))
     .min(1),
+  costItems: costItemsField(),
 });
 
 const NEW_PRODUCT_MODELS_NO_GADGET = NEW_PRODUCT_MODELS.filter((m) => m !== "muse-gadget") as unknown as typeof NEW_PRODUCT_MODELS;
@@ -188,6 +213,7 @@ export const NewBriefSchemaNoGadget = BriefFields.extend({
   capabilities: z
     .array(z.object({ need: z.string(), model: z.enum(NEW_PRODUCT_MODELS_NO_GADGET), why: z.string() }))
     .min(1),
+  costItems: costItemsField(),
 });
 
 /**

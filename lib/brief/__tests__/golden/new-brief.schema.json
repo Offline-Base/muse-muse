@@ -293,6 +293,32 @@
         ],
         "additionalProperties": false
       }
+    },
+    "costItems": {
+      "maxItems": 8,
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "object",
+        "properties": {
+          "what": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "usd": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "what",
+          "usd"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "required": [
@@ -313,7 +339,8 @@
     "estimatedCostPerRunUsd",
     "costNotes",
     "fixtures",
-    "actions"
+    "actions",
+    "costItems"
   ],
   "additionalProperties": false
 }

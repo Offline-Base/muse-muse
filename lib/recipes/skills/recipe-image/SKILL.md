@@ -41,7 +41,7 @@ Consistency comes from making references first.
 3. Keep every id on the page. To redo a panel, chain from the id before it, not from the bad one.
 4. If an id is refused, attach the anchors again as `input_image`.
 
-Render one panel at a time with visible progress, since each takes about 15 seconds. Count about $0.10 or more per series, and put that in `costNotes`. Limit: small details can still drift, and lettering is best done in code over the image.
+Render one panel at a time with visible progress, since each takes about 15 seconds. Count about $0.10 or more per series, and put that in `costItems`. Limit: small details can still drift, and lettering is best done in code over the image.
 Link: https://github.com/meta-models/meta-model-cookbook/tree/main/05_muse_image/03_anchored_generation
 
 ## 05/04 Editing with reasoning

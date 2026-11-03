@@ -322,6 +322,23 @@ describe("the full plan", () => {
     assert.match(some, /<div class="two-col"><div><h4>Leaves out<\/h4>/, "one column of the inspo can stand alone");
   });
 
+  // Nov 3 audit: the parking plan's parts came to about $0.02 under "Total about $0.12".
+  it("gives the cost per run as the sum of the parts it lists, so the numbers on screen agree", () => {
+    const html = card({
+      estimatedCostPerRunUsd: 0.12,
+      costNotes: "Assumes one summary and one fact check.",
+      costItems: [
+        { what: "Summary call, 10k in and 600 out", usd: 0.0011 },
+        { what: "Fact check, 4 web searches.", usd: 0.01 },
+        { what: "Fact check agent tokens", usd: 0.005 },
+      ],
+    });
+    assert.match(html, /<strong>Cost per run:<\/strong> about \$0\.0161 \(est\.\), from these parts: <\/p>/);
+    assert.match(html, /<ul><li>Summary call, 10k in and 600 out: \$0\.0011<\/li><li>Fact check, 4 web searches: \$0\.01<\/li><li>Fact check agent tokens: \$0\.005<\/li><\/ul>/);
+    assert.match(html, /<p class="muted">Assumes one summary and one fact check\.<\/p>/);
+    assert.doesNotMatch(html, /\$0\.12/);
+  });
+
   it("has no link to the brief, which is all in the card now", () => {
     assert.doesNotMatch(card(), /Read the full brief|room-steps-link|<button/);
   });
@@ -441,6 +458,10 @@ describe("the card's look", () => {
     assert.match(src, /className=\{a === art && !own && !talking \? "is-on" : undefined\}/);
     assert.match(src, /className=\{own && !talking \? "is-on" : undefined\}[\s\S]*?onLoad=\{\(\) => setOwnLoaded\(true\)\}/);
     assert.match(css(), /\.plan-card-stack > img \{[^}]*position: absolute;[^}]*object-fit: cover;/, "every picture fills the one box");
+  });
+
+  it("keeps the walking Muse off the page while the card shows, so it never covers the plan's text", () => {
+    assert.match(css(), /:root:has\(\.plan-card\) \.mascot,\s*:root:has\(\.plan-card\) \.mascot-climb \{\s*display: none;\s*\}/);
   });
 
   it("keeps the picture's box the same size, wrapped or not, so nothing jumps", () => {
