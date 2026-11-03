@@ -8,6 +8,7 @@ import { OwnerNotices } from "@/components/jobs/OwnerNotices";
 import { NotConnected } from "@/components/ui";
 import { env } from "@/lib/env";
 import { compact, groupThousands, usd } from "@/lib/format";
+import { galleryOrder } from "@/lib/gallery/hidden";
 import {
   getUsage,
   listShippedProducts,
@@ -37,9 +38,10 @@ export default async function DashboardPage({
     platformOrigin(),
   ]);
   const shipped = products.ok ? products.data : [];
-  // A connector only answers for a published product (lib/mcp/store.ts), so unpublished ones aren't offered.
+  // A connector only answers for a published product (lib/mcp/store.ts), so unpublished ones aren't offered. The
+  // three to try follow the gallery: no hidden product, its first ones first (lib/gallery/hidden.ts).
   const published = shipped.filter((p) => p.liveUrl);
-  const connect = published.slice(0, 3).map((p) => ({
+  const connect = galleryOrder(published).slice(0, 3).map((p) => ({
     slug: p.slug,
     name: p.name,
     connectorUrl: `${origin}/api/mcp/${p.slug}`,

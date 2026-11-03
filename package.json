@@ -2,6 +2,7 @@
   "name": "muse-muse",
   "version": "0.0.1",
   "private": true,
+  "license": "Apache-2.0",
   "description": "Give it an example or inspo and Muse makes it: a working product built by Muse Code on Meta's models.",
   "type": "module",
   "scripts": {

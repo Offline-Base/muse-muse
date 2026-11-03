@@ -147,7 +147,7 @@ export default async function Home() {
     );
   }
   // Hand-picked live products to try on the spot. A failed read only leaves the row out.
-  const shipped = await safeQuery(() => listShippedProducts(FEATURED_SLUGS.length, { published: true, slugs: FEATURED_SLUGS }));
+  const shipped = await safeQuery(() => listShippedProducts(FEATURED_SLUGS.length, { published: true, slugs: FEATURED_SLUGS, gallery: true }));
   const featured = shipped.ok ? pickFeatured(shipped.data) : [];
   return (
     <div className="play">

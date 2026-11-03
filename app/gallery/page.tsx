@@ -12,8 +12,9 @@ export const metadata: Metadata = { title: "Gallery" };
 
 export default async function Gallery() {
   await connection();
-  // Only products with a live link: one built where publishing was off has only a "Not published" page to open.
-  const result = await safeQuery(() => listShippedProducts(60, { published: true }));
+  // Only products with a live link: one built where publishing was off has only a "Not published" page to open. The
+  // gallery's hidden products are left out and its first ones lead (lib/gallery/hidden.ts).
+  const result = await safeQuery(() => listShippedProducts(60, { published: true, gallery: true }));
   return (
     <div className="page gx-page">
       <h1 className="sr-only">Gallery</h1>
