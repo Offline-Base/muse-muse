@@ -40,12 +40,15 @@ export function waitingNativeTargets(switchedOn: readonly TargetId[], setup: Pac
 
 /**
  * The target picker's line while phone or desktop is switched on but can't be made. Null when nothing waits, so with
- * NATIVE_TARGETS empty the picker is exactly as it was.
+ * NATIVE_TARGETS empty the picker is exactly as it was. `offered` is what the picker does list beside web (VR, glasses and
+ * so on): with any of those on, "only the web app" wouldn't be true, so the line says just what isn't made.
  */
-export function targetPickerNote(waiting: readonly TargetId[]): string | null {
+export function targetPickerNote(waiting: readonly TargetId[], offered: readonly TargetId[] = []): string | null {
   if (!waiting.length) return null;
   const apps = waiting.includes("phone") && waiting.includes("desktop") ? "Phone and desktop apps" : waiting.includes("phone") ? "Phone apps" : "Desktop apps";
-  return `Only the web app and its phone home-screen install are available. ${apps} aren't made here, because ${PACKAGER_MISSING}.`;
+  const why = `${apps} aren't made here, because ${PACKAGER_MISSING}.`;
+  if (offered.length) return `${why} A phone can still add the web app to its home screen.`;
+  return `Only the web app and its phone home-screen install are available. ${why}`;
 }
 
 const LABELS: Record<ShellTemplateKind, string> = { android: "Android", mac: "Mac", windows: "Windows" };

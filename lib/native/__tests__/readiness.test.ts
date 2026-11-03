@@ -52,6 +52,12 @@ describe("what's offered and what waits", () => {
     assert.match(targetPickerNote(["desktop"]) ?? "", /Desktop apps aren't made here/);
     assert.doesNotMatch(targetPickerNote(["phone"]) ?? "", /—/);
   });
+
+  it("doesn't say only the web app is there when the picker lists VR, glasses or others", () => {
+    const note = targetPickerNote(["phone", "desktop"], ["vr", "glasses"]) ?? "";
+    assert.doesNotMatch(note, /Only the web app/);
+    assert.equal(note, "Phone and desktop apps aren't made here, because the app packager isn't set up on this site. A phone can still add the web app to its home screen.");
+  });
 });
 
 describe("packagingSkippedEvent", () => {

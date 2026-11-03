@@ -20,6 +20,8 @@ What this branch changed, so the site is honest until the steps below are done:
 - Phone and desktop in `NATIVE_TARGETS` are offered to the brief writer and the composer only when the packager can make them
   (`env.offeredNativeTargets`, `lib/native/readiness.ts`). Until then the target picker says: "Only the web app and its phone
   home-screen install are available. Phone and desktop apps aren't made here, because the app packager isn't set up on this site."
+  With VR, glasses, agent or edge also on, it drops the "Only the web app" sentence and says a phone can still add the web app
+  to its home screen.
 - A build whose brief still asks for apps (a refinement of an older product) gets one "skipped" line in the build room with that reason.
 - The Get it panel says "Not made for this build: the app packager isn't set up on this site." in place of "isn't ready yet".
 - The panel's Quest, MCP and connector links use the public site (`https://www.musemuse.dev`, or `PUBLIC_SITE_URL`), not
@@ -78,7 +80,7 @@ free plan's 15 builds per platform this month. A paid build isn't possible on th
 ```sh
 cd native/shell-mobile
 npm install
-export EXPO_TOKEN="$(grep -E '^EXPO_TOKEN=' ../../.env.local | cut -d= -f2-)"   # read, never printed
+export EXPO_TOKEN="$(grep -E '^EXPO_TOKEN=' ../../.env.local | cut -d= -f2- | tr -d '"\r')"   # read, never printed; strips quotes
 # The production shell. This is the one the packager patches into every product's APK.
 EAS_NO_VCS=1 npx eas-cli@latest build --profile production-android --platform android --non-interactive --no-wait
 # Only for the device lab (NATIVE_LAB). Not needed for downloads.
@@ -141,7 +143,7 @@ about the packager.
 The route waits for the packager, about 1 to 2 minutes.
 
 ```sh
-AUTOMATION_SECRET="$(grep -E '^AUTOMATION_SECRET=' .env.local | cut -d= -f2-)"
+AUTOMATION_SECRET="$(grep -E '^AUTOMATION_SECRET=' .env.local | cut -d= -f2- | tr -d '"\r')"   # strips quotes, as vercel env pull writes them
 curl -sS -X POST https://www.musemuse.dev/api/admin/native/package \
   -H "authorization: Bearer $AUTOMATION_SECRET" -H "content-type: application/json" \
   -d '{"buildId":"6add62d3-43f5-4be3-a5ff-280d207f7375"}'
@@ -176,7 +178,8 @@ npx tsx --env-file-if-exists=.env.local scripts/backfill-live-urls.ts --apply   
 ```
 
 It moves a product from `musemuse-<slug>-<team>.vercel.app` to `musemuse-<slug>.vercel.app` only when both answer 200 and name
-the same deployment. The audit found crumb-ledger-weekly's.
+the same deployment. The audit found crumb-ledger-weekly's. It works on the database `DATABASE_URL` names, so run it with
+production's. If the dry run ends "0 long links of 0 vercel.app links", it is looking at another database.
 
 ## Total
 

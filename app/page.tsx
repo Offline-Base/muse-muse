@@ -140,7 +140,7 @@ export default async function Home() {
         signedIn={Boolean(user)}
         starters={STARTERS}
         targetOptions={env.enabledTargets}
-        targetNote={targetPickerNote(env.waitingNativeTargets)}
+        targetNote={targetPickerNote(env.waitingNativeTargets, env.enabledTargets)}
         contributorNotice={contributorBuildsOn()}
         train={makeTrainProps(user)}
         toolbar={toolbar}
@@ -159,7 +159,7 @@ export default async function Home() {
         <div className="play-intro" id="make">
           <h1>{"What’s your muse?"}</h1>
         </div>
-        <Composer mode="new" signedIn={Boolean(user)} starters={STARTERS} layout="playground" targetOptions={env.enabledTargets} targetNote={targetPickerNote(env.waitingNativeTargets)} contributorNotice={contributorBuildsOn()} />
+        <Composer mode="new" signedIn={Boolean(user)} starters={STARTERS} layout="playground" targetOptions={env.enabledTargets} targetNote={targetPickerNote(env.waitingNativeTargets, env.enabledTargets)} contributorNotice={contributorBuildsOn()} />
       </div>
       <SetupPanel
         facts={{ buildModel: env.buildModel, judgeModel: env.judgeModel, maxFixRounds: env.maxFixRounds, publishOff: env.publishOffReason }}
