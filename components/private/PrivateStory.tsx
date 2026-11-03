@@ -37,7 +37,7 @@ export function PrivateStory() {
         </div>
         <div className="pv-compare-card">
           <h3 className="how-title">After: Muse Privacy</h3>
-          <p className="muted">Muse plans the job. A model on your device reads and grades the essays, and Muse gets only what your rules let out.</p>
+          <p className="muted">Muse plans the job. A separate reader model reads and grades the essays (in this demo, Muse Glimmer 30B in the cloud, on invented essays), and Muse gets only what your rules let out.</p>
           <pre>{`[Student A] scored 3 of 4 on evidence.
 Feedback saved on your device.`}</pre>
           <p className="muted">The feedback files with real names stay with you. Muse never needs to know who [Student A] is.</p>

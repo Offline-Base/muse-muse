@@ -2909,4 +2909,25 @@ The owner asked for a simpler sidebar using "muse" and "musing" for the creative
 - **Token:** the owner pasted a fleet token in the chat. It was not used or repeated, and the owner was asked to revoke it and type a new one only at the page server's hidden prompt.
 - **Also tonight (same chat):** `jetson-llama` stopped and disabled on jetson-02, 03, 04; Bolt and Gemma files deleted on 03 and 04. The on-board Glimmer training setup on 02 and 03 is another session's.
 - **Not done:** the jetson-05 forwarder, a camera feed, video tracking, any product using SAM, any public claim. Spend $0.
+- **Nov 2, night: judging cleanup (owner: "focus on cleaning up and simplifying what we have for judging").** From a read-only review of every route a judge can reach.
+  - Copy that claimed more than runs today:
+    - the Jetson card on /gadgets no longer says it fine-tunes a model on its own GPU (only Llama trained on a board);
+    - /private says a separate reader model reads the files (Muse Glimmer 30B in the cloud in this demo), not "a model on your device";
+    - /models says tuned GGUF files "can run on a computer with enough memory", not "offline".
+  - The Protect starters no longer promise edge or offline behavior that builds can't do with `EDGE_BUILDS` off:
+    - "Don't trust one sensor";
+    - "Hide private details first";
+    - "Outage plan for a small shop".
+  - The voice-memo starter became "Meeting notes to private to-dos", since audio input is refused on Contributor until the Nov 4 flip.
+  - One name per place:
+    - the home toolbar's History button says Musings;
+    - the docs sidebar's home row is "Muse Muse" and goes to /, not "Dashboard" with an external arrow;
+    - how-it-works says "Model API docs", and "Use it from other AI tools" instead of the Muse app (to-do 16 isn't logged).
+  - The /models link to /open-weights is hidden until DATA_RIGHTS Q2 is answered; the route stays.
+  - Kept, as the owner's sidebar spec asked: the Meta demos tab and Usage > Overview.
+  - Tests main already failed, fixed:
+    - plan-card's three raw colors moved to `--bad` and `--chat-segment`;
+    - the plan-art snapshot was refreshed after #76 and #78, with the flag-on render still the same.
+  - Still failing on main and untouched: models-page "shows accuracy for a decide-kind tuned model" (the tuned list doesn't render in that test).
+  - Tests: the edited pages 304 pass, with the same one failure main has. Make snapshot (only the two Make page entries changed) and starters 13 of 13. plan-card and plan-art 39 of 39. Typecheck clean.
 
