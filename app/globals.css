@@ -1350,6 +1350,43 @@ pre {
   line-height: 25px;
 }
 
+/* A section folded under its own heading (/learn's lessons with nothing built yet). */
+.section-fold > summary {
+  list-style: none;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.section-fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.section-fold-show,
+.section-fold-hide {
+  color: var(--accent-text);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.section-fold-hide,
+.section-fold[open] .section-fold-show {
+  display: none;
+}
+
+.section-fold[open] .section-fold-hide {
+  display: inline;
+}
+
+.section-fold[open] > summary {
+  margin-bottom: 14px;
+}
+
+.lesson-plan > p,
+.lesson-plan > div {
+  margin-top: 6px;
+}
+
 .section-card {
   display: flex;
   flex-direction: column;
@@ -2116,6 +2153,13 @@ pre {
   margin: 0 0 20px;
 }
 
+/* A toolbar link the sidebar already has (home's Musings): shown only while the sidebar is a menu. */
+@media (min-width: 760px) {
+  .toolbar .toolbar-phone-only {
+    display: none;
+  }
+}
+
 .mobile-status {
   display: flex;
   align-items: center;
@@ -2517,6 +2561,24 @@ pre {
 .room-answer .say {
   color: var(--fg);
   font-style: normal;
+}
+
+/* Muse Code's own words at the end of a round, folded under a row that looks like Show thinking (BuildRoom SayFold). */
+.say-fold > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.say-fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.say-fold[open] > summary {
+  margin-bottom: 12px;
+}
+
+.say-fold[open] .chat-thinking-chevron {
+  transform: rotate(90deg);
 }
 
 .room-meta {

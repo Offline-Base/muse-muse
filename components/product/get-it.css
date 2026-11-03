@@ -478,3 +478,16 @@
 .open-app {
   max-width: 520px;
 }
+
+/* "More ways to use it": the tabs that need another account or a device wait behind it (GetItTabs). */
+.getit-more {
+  align-self: flex-start;
+  margin-top: 8px;
+  min-height: 32px;
+}
+
+@media (max-width: 759.98px) {
+  .getit-more {
+    min-height: 44px;
+  }
+}

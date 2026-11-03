@@ -3858,3 +3858,34 @@ From the readiness audit's gaps 10, 11 and 12 and its "should do" list. No spend
 - **Tests:** lib/gallery hidden, featured and shipped, scripts judge-check, lib format and no-wonder, 46 of 46. `npm run drill` 11 of 11. Root typecheck clean.
 
 **Review of tg-p-demos (Nov 3, about 11 AM ET).** A second agent reviewed the branch. Gallery, drill, ngrok scrub, how-it-works and the "Left out" fix hold up: touched unit tests 46 of 46, `npm run drill` 11 of 11 again, `git grep` finds no ngrok host, and all 12 named slugs answer 200 on production. One fix: the product page's Models panel would have said "Spark 1.3 Contributor, in place of Muse Wonder" on voice-memo-tasks, which is in the gallery and stays on Muse Wonder under the switch (`WONDER_DEMO_SLUGS`). The panel now checks that list too, as the gateway does. Still open for the owner: room-restyle-studio, second in the gallery, shows "Didn't pass: MCP server" and "CLI: didn't work" (restyle_room answered 502 on Nov 3) beside "10 of 10 checked and working". Its web app works (the Nov 3 audit ran an edit).
+## Nov 3, 2026, about 11 AM ET: a simpler first minute for judges (branch tg-p-simplify-ui, not merged)
+
+Walked the live site as a guest in headless Chromium at 1440x900 and 390x844 (intro skipped; every non-GET request blocked, so nothing started): Make, /gallery, /p/handbook-proof-checker, its build room /b/6f98efc0-78fa-4977-88d8-e7e1942680fa, /learn, /fine-tuning and /docs. Read the readiness audit's site findings too. Nothing was spent.
+
+**What a first-time judge doesn't need:**
+
+| Where | What | Done here |
+|---|---|---|
+| Build room | Each finished round prints Muse Code's raw last message in the conversation ("Done. Milestone 1 done. `npm run verify` exits 0 ... manifest valid", "Details ... are in BUILD_NOTES.md"), and the shipped answer does the same above "It's live". On a phone it is most of the first screen | Yes: folded under "Muse Code's notes", like Show thinking. Answers to an owner's note stay open. The shipped answer now sits under "It's live" and its links |
+| /learn | 24 of 30 cards are plans with nothing built, each with a plan block, a cost line, "Nothing is spent until the owner says so." and "Not checked yet" lines. 11,264 px tall on desktop, 26,910 on a phone | Yes: the "Not built yet" section is folded under its heading ("Show 24 lessons"), each card's plan is folded under "The plan to redo it", and the owner line shows to admins only. Built lessons and "Demos Meta doesn't have yet" stay open |
+| Product page, Get it | Six tabs: MCP, CLI, Skill, Claude, ChatGPT, Muse gadget. Claude and ChatGPT need an account, the gadget needs a device | Yes: Claude and ChatGPT wait behind "More ways to use it (2)". They show from the start when the page opens on one of them, or when there is nothing else. Muse gadget stays out front after review (below) |
+| Product page, The muse | "Took from it" and "Left out" headings show over empty lists (audit finding) | Yes: each heading shows only over a list with something in it |
+| Make, desktop | "Musings" twice: the sidebar and the pill top right | Yes: the pill shows only on a phone, where the sidebar is a menu |
+| /learn summary | "Every plan is marked planned until it runs, and its cost is an estimate." | Shortened to "Plans are marked planned until they run, and costs are estimates." |
+| /fine-tuning | A 90-word intro paragraph, "r30b" in the score column, a "Built with Muse Spark Open" chip | No: "r30b" is pinned by many train tests, and the Spark Open and intro wording belong to the claims work. Worth a pass |
+| Product page | "Open" twice (top bar and the URL bar), and the "What was checked" list is long | No: the check list is the honesty story. Left as is |
+| Build room | Two "Show thinking" rows on a two-round build | No: each opens its own round |
+| Make | "Add a folder of data for a model" sits between the starters and Build setup | No: already a closed disclosure |
+| /docs | Meta's docs mirror | No: it keeps its own look (docs/BRAND.md) |
+
+**Changed:** components/build/BuildRoom.tsx (`SayFold`), components/product/GetItTabs.tsx and GetItPanel.tsx (`GET_IT_MORE`), components/product/get-it.css, components/learn/LearnView.tsx, app/p/[slug]/page.tsx (the inspo headings only), app/page.tsx (the Musings pill), app/globals.css (`.say-fold`, `.section-fold`, `.lesson-plan`, `.toolbar-phone-only`). Nothing is removed: every fold opens in place, and every tab is one tap away. Phone tap areas stay 44 px (the fold rows reuse Show thinking's phone rule; the section fold and More button are 44 px tall on a phone). No new colors or sizes: the folds reuse the Show thinking row and the link button.
+
+**Checked:** on a local server with the room fixtures (scripts/dev/room-fixtures.ts, one product given a made-up manifest so Get it shows), both sizes, light mode: no sideways scroll; /learn went from 10,409 to 2,069 px tall on desktop and 25,282 to 3,706 on a phone with the same data; "More ways to use it" opens the three tabs. The local run needed a temporary `turbopack.root` because node_modules is a symlink in this worktree; it is not committed.
+
+**Shots** in docs/log/shots/2026-11-03/: `before-*` (the live site), `before-local-*` and `after-*` (the same local fixtures before and after).
+
+**Tests:** get-it (9, one new, two updated: Claude, ChatGPT and the gadget wait behind the button; the page regex now expects the edge slot, which main already had, so it failed on main), learn (19, one new), steps (35, one new: round notes and the shipped answer folded, a note's answer open). render, plan-card, own-model, steps-feed-room, known-issues and product-page pass. plan-art-flag-off's golden hashes already fail on main without this change (the running room changed earlier) and still do. Typecheck clean.
+
+**Not done:** not pushed, not deployed. A live check after the deploy is still to do.
+
+**Review (same branch, Nov 3):** two fixes. (1) The Muse gadget tab is back out front. It is built on Meta's Gadget SDK, so it counts toward "Use of Meta AI tooling", and only Claude and ChatGPT (another company's account) wait behind the button. The after-* shots of Get it were taken before this fix and still show "(3)". (2) A build room's "How it measures up" link and a product page's "See it on Learn" point at /learn#lesson-..., and a lesson with nothing built yet now sits in a closed fold, so the link landed nowhere. New components/learn/OpenOnHash.tsx opens the folds around the linked card and scrolls to it, on load and on a hash change. Checked: get-it, learn, steps, render, steps-feed-room, own-model, plan-card, product-page, native-slots, edge-slot, output-panels, runtime-output-panels and known-issues, 179 of 179; typecheck clean. plan-art-flag-off fails the same way on origin/main (checked in a clean main checkout). The hash fold-open is built so; it has no browser test.
