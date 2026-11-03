@@ -130,20 +130,24 @@ export function finalShotProblems(fileNames, read) {
 /** Where judgeShot() records what each /api/actions/* route answered in the smoke run, one JSON line per answer. */
 export const ACTION_LOG = "test-results/actions/responses.jsonl";
 
-/** The fallback marks on one recorded answer's fields, as short phrases. Empty when it came from the model. */
-export function fallbackMarks(fields) {
+/**
+ * The fallback marks on one recorded answer's fields, as short phrases. Empty when it came from the model. A product
+ * route outside /api/actions/ (`route` true) counts only the three flags, not an "error" string.
+ */
+export function fallbackMarks(fields, { route = false } = {}) {
   const f = fields && typeof fields === "object" ? fields : {};
   const marks = [];
   if (f.model === false) marks.push('"model": false');
   if (f.fallback === true) marks.push('"fallback": true');
   if (f.estimate === true) marks.push('"estimate": true');
-  if (typeof f.error === "string" && f.error.trim()) marks.push(`"error": "${f.error.trim().slice(0, 120)}"`);
+  if (!route && typeof f.error === "string" && f.error.trim()) marks.push(`"error": "${f.error.trim().slice(0, 120)}"`);
   return marks;
 }
 
 /**
  * Actions that answered the smoke run's built-in sample with a fallback instead of the model: a 2xx JSON answer with
- * "model": false, "fallback": true, "estimate": true, or an "error" string next to the result. On the sample the model
+ * "model": false, "fallback": true, "estimate": true, or an "error" string next to the result. The product's other
+ * /api/ routes (recorded as "/api/<path>") count only for the three flags. On the sample the model
  * works, so a fallback there means the model call failed and the page hid it. One line per action, then what to do.
  * Takes the text of ACTION_LOG, or null when there is none. Only the smoke project's answers from `since` (ms) on count.
  */
@@ -159,7 +163,7 @@ export function actionFallbackProblems(logText, { since = 0, project = "smoke" }
     if (!rec || rec.project !== project || Number(rec.t) < since || typeof rec.action !== "string") continue;
     const entry = byAction.get(rec.action) ?? { calls: 0, fell: 0, marks: [] };
     entry.calls += 1;
-    const marks = Number(rec.status) >= 200 && Number(rec.status) < 300 ? fallbackMarks(rec.fields) : [];
+    const marks = Number(rec.status) >= 200 && Number(rec.status) < 300 ? fallbackMarks(rec.fields, { route: rec.action.startsWith("/") }) : [];
     if (marks.length) {
       entry.fell += 1;
       if (!entry.marks.length) entry.marks = marks;
@@ -171,7 +175,7 @@ export function actionFallbackProblems(logText, { since = 0, project = "smoke" }
   return [
     ...bad.map(
       ([action, e]) =>
-        `The ${action} action answered ${e.fell} of ${e.calls} call(s) in the smoke run with a fallback, not the model: ${e.marks.join(", ")}.`,
+        `The ${action.startsWith("/") ? `${action} route` : `${action} action`} answered ${e.fell} of ${e.calls} call(s) in the smoke run with a fallback, not the model: ${e.marks.join(", ")}.`,
     ),
     "On the built-in sample the model must answer every action. Find why the model call failed (the error above and the " +
       "server log's [model] lines say why: an image type Meta can't read, a timeout, a run limit) and fix that. The main " +

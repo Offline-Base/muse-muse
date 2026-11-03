@@ -12,7 +12,7 @@ import OpenAI from "openai";
 import { z } from "zod";
 import { modelErrorResponse, modelFailure } from "../../lib/meta/errors";
 import { RespondJsonError } from "../../lib/meta/json";
-import { checkImageUrl, imagePart } from "../../lib/meta/parts";
+import { checkImageUrl, checkImageUrls, imagePart } from "../../lib/meta/parts";
 import { actionFallbackProblems, fallbackMarks, storedMediaProblems } from "../smoke-report.mjs";
 
 const TEMPLATE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -41,6 +41,22 @@ describe("image inputs", () => {
     assert.throws(() => imagePart("data:image/heic;base64,AAAA"), /image\/heic/);
     assert.throws(() => imagePart("data:,hello"), /text\/plain/);
     assert.throws(() => imagePart("https://x.test/desk.svg?v=2"), /SVG file/);
+  });
+
+  test("hand-built input_image parts get the same check (respondJson runs it on its input), and it reads as refused", () => {
+    const svg = "data:image/svg+xml,%3Csvg%2F%3E";
+    const input = [{ role: "user", content: [{ type: "input_text", text: "next step?" }, { type: "input_image", image_url: svg }] }];
+    let thrown;
+    try {
+      checkImageUrls(input);
+    } catch (err) {
+      thrown = err;
+    }
+    assert.match(String(thrown?.message), /toDataURL\("image\/png"\)/);
+    const f = modelFailure(thrown);
+    assert.deepEqual([f.cause, f.status, f.code], ["refused", 422, "image_type"]);
+    checkImageUrls([{ role: "user", content: [{ type: "input_image", image_url: PNG }] }, { role: "user", content: "text" }]);
+    checkImageUrls("just text");
   });
 });
 
@@ -110,6 +126,13 @@ describe("verify's fallback check", () => {
     assert.match(problems[1], /track_pet action answered 1 of 2 .*"estimate": true/);
   });
 
+  test("a product route outside /api/actions/ fails on the three flags, not on an error string (the game's /api/rules)", () => {
+    const log = [line({ action: "/api/rules", method: "GET", fields: { fallback: true } }), line({ action: "/api/status", fields: { error: "No saved game yet." } })].join("\n");
+    const problems = actionFallbackProblems(log);
+    assert.equal(problems.length, 2);
+    assert.match(problems[0], /^The \/api\/rules route answered 1 of 1 .*"fallback": true/);
+  });
+
   test("passes real answers, error statuses, empty or null errors, other projects and older runs", () => {
     const log = [
       line({ fields: { model: true, error: null } }),
@@ -130,6 +153,9 @@ describe("verify's fallback check", () => {
     assert.equal(J.actionNameOf("http://localhost:3100/api/actions/file_memo/"), "file_memo");
     for (const url of ["http://localhost:3100/api/upload", "http://localhost:3100/api/actions/", "http://localhost:3100/_next/static/a.js", "nope"]) assert.equal(J.actionNameOf(url), null);
     assert.deepEqual(J.fallbackFields({ model: false, error: "x".repeat(500), estimate: { low: 1 }, plan: [1, 2] }), { model: false, error: "x".repeat(200), estimate: "object" });
+    assert.equal(J.apiRouteOf("http://localhost:3100/api/actions/file_memo"), "file_memo");
+    assert.equal(J.apiRouteOf("http://localhost:3100/api/rules/"), "/api/rules");
+    for (const url of ["http://localhost:3100/api/upload", "http://localhost:3100/api/musemuse/health", "http://localhost:3100/api/actions/", "http://localhost:3100/api", "http://localhost:3100/rules"]) assert.equal(J.apiRouteOf(url), null);
     assert.deepEqual(J.fallbackFields([1]), {});
     assert.deepEqual(J.fallbackFields(null), {});
   });

@@ -70,6 +70,9 @@ export function modelFailure(err: unknown): ModelFailure {
   if (err instanceof ContentFilterFinishReasonError) {
     return make("refused", "The model declined to answer this. Try different wording or another file.");
   }
+  if (codeOf(err) === "image_type") {
+    return make("refused", "The model can't read this image type. Use a PNG, JPEG, WebP or GIF image.", { code: "image_type" });
+  }
   if (err instanceof OpenAI.APIConnectionError) {
     return make("upstream", "Couldn't reach the model. Try again in a moment.");
   }

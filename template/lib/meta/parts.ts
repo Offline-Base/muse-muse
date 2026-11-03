@@ -6,6 +6,15 @@ export type MediaUrl = string | { url: string };
 /** The image types Meta's models read. Anything else (SVG, HEIC, BMP, TIFF) is refused, so a call fails in a second. */
 export const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"] as const;
 
+/** An image Meta's models can't read. `code` is "image_type", so modelFailure() calls it refused (422). */
+export class ImageTypeError extends Error {
+  readonly code = "image_type";
+  constructor(message: string) {
+    super(message);
+    this.name = "ImageTypeError";
+  }
+}
+
 /**
  * Throws when an image URL is one Meta refuses: a data URL of another type, or a link to an .svg file. Says what to send
  * instead. Returns the URL unchanged otherwise.
@@ -16,12 +25,25 @@ export function checkImageUrl(url: string): string {
   const allowed = (IMAGE_TYPES as readonly string[]).includes(type === "image/jpg" ? "image/jpeg" : (type ?? ""));
   const svgLink = !data && /^https?:\/\/[^?#]+\.svgz?(?:[?#]|$)/i.test(url);
   if ((data && !allowed) || svgLink) {
-    throw new Error(
+    throw new ImageTypeError(
       `An image for the model is ${data ? `a ${type} data URL` : "a link to an SVG file"}. Meta's models read only PNG, JPEG, WebP or GIF, ` +
         'so the call would fail. Draw it to a <canvas> in the browser and send canvas.toDataURL("image/png") (or resizeImage for a photo).',
     );
   }
   return url;
+}
+
+/** Runs checkImageUrl on every input_image part in Responses API input items. Throws on the first one Meta refuses. */
+export function checkImageUrls(input: unknown): void {
+  if (!Array.isArray(input)) return;
+  for (const item of input) {
+    const content = (item as { content?: unknown } | null)?.content;
+    if (!Array.isArray(content)) continue;
+    for (const part of content) {
+      const p = part as { type?: unknown; image_url?: unknown } | null;
+      if (p?.type === "input_image" && typeof p.image_url === "string") checkImageUrl(p.image_url);
+    }
+  }
 }
 
 /**

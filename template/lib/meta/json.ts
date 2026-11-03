@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import type { Response, ResponseInput } from "openai/resources/responses/responses";
 import { z } from "zod";
 import { metaClient, testModelFor, type RequestLike } from "./client";
+import { checkImageUrls } from "./parts";
 import { plainDeep } from "./text";
 
 export type JsonReasoningEffort = "minimal" | "low" | "medium" | "high";
@@ -73,6 +74,8 @@ export async function respondJson<T>(opts: RespondJsonOptions<T>): Promise<T> {
 
   const modes: Mode[] = strict.ok ? ["strict", "loose", "instructions"] : ["loose", "instructions"];
   let mode = 0;
+  // An image part built by hand, not with imagePart(), gets the same check: an SVG throws here, not after a refused call.
+  if (typeof opts.input !== "string") checkImageUrls(opts.input);
   let input: ResponseInput = typeof opts.input === "string" ? [{ role: "user", content: opts.input }] : (opts.input as ResponseInput);
   let lastIssues = "";
   let lastRaw = "";

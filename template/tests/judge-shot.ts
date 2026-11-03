@@ -4,7 +4,7 @@
 // saying it is working, a control too small to tap on a phone, text too faint to read on its background), then saves
 // the full-page screenshot. In the demo video's runs it only waits and gives viewers a beat: verify already took the
 // screenshots and checked the screen at phone size, so a demo never fails on a check that passed there. In a VR product a shot taken inside VR has its own check (tests/xr.ts): the view must keep drawing
-// and not be blank, and the 2D layout checks don't apply. In the smoke run it also records what every /api/actions/*
+// and not be blank, and the 2D layout checks don't apply. In the smoke run it also records what every /api/actions/* (and the product's other /api/*)
 // route answered on this page (test-results/actions/responses.jsonl), and any photo, audio or video saved in the page's
 // storage, for verify's fallback and storage checks (scripts/smoke-report.mjs).
 import { appendFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -53,7 +53,7 @@ export async function judgeShot(page: Page, name: string): Promise<void> {
   const notes = smoke && name.startsWith("01-") && hasSamples() ? await page.evaluate(findMissingSample) : [];
   const storedMedia = smoke ? await page.evaluate(findStoredMedia).catch(() => []) : [];
   // Answers still being read are written before verify looks.
-  if (actions) await Promise.all([...actions]);
+  if (actions) await Promise.race([Promise.all([...actions]), new Promise<void>((r) => setTimeout(r, 10_000).unref())]);
   mkdirSync("test-results/judge", { recursive: true });
   await page.screenshot({ path: `test-results/judge/${name}.png`, fullPage: true });
   writeFileSync(`test-results/judge/${name}.checked`, `${JSON.stringify({ problems, errorsAndEmpty, resultTop, pageHeight, notes, storedMedia })}\n`);
@@ -674,6 +674,23 @@ export function actionNameOf(url: string): string | null {
 }
 
 /**
+ * What to record for a URL: the action's name for /api/actions/<name>, the path ("/api/rules") for another route of the
+ * product's own under /api/, or null. The platform's /api/musemuse/* routes and /api/upload are left out. A product
+ * route outside /api/actions/ is checked only for "model": false, "fallback": true and "estimate": true (smoke-report).
+ */
+export function apiRouteOf(url: string): string | null {
+  const action = actionNameOf(url);
+  if (action) return action;
+  try {
+    const p = new URL(url).pathname.replace(/\/+$/, "");
+    if (!/^\/api\/[\w\-/.]+$/.test(p) || /^\/api\/(?:musemuse|upload|actions)(?:\/|$)/.test(p)) return null;
+    return p;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The fallback fields of a JSON answer, as they came: booleans, null and numbers as is, strings cut to 200 characters,
  * anything else as its type. Empty for an answer that isn't an object.
  */
@@ -700,8 +717,8 @@ async function watchActions(page: Page): Promise<Set<Promise<void>>> {
   const file = path.basename(test.info().file);
   const record = (response: PwResponse) => {
     const req = response.request();
-    const action = actionNameOf(response.url());
-    if (!action || recordedRequests.has(req)) return;
+    const action = apiRouteOf(response.url());
+    if (!action || recordedRequests.has(req) || !sameOrigin(page, response.url())) return;
     recordedRequests.add(req);
     const read = recordAction(response, action, file).catch(() => {});
     pending.add(read);
@@ -710,7 +727,7 @@ async function watchActions(page: Page): Promise<Set<Promise<void>>> {
   page.on("response", record);
   try {
     for (const req of await page.requests()) {
-      if (!actionNameOf(req.url()) || recordedRequests.has(req)) continue;
+      if (!apiRouteOf(req.url()) || recordedRequests.has(req)) continue;
       // One still in flight is the listener's to record once it answers.
       const res = await Promise.race([req.response(), new Promise<null>((r) => setTimeout(() => r(null), 1500))]);
       if (res) record(res);
@@ -721,17 +738,28 @@ async function watchActions(page: Page): Promise<Set<Promise<void>>> {
   return pending;
 }
 
+/** True when the URL is on the page's own origin, so another site's /api/ is never recorded. */
+function sameOrigin(page: Page, url: string): boolean {
+  try {
+    return new URL(url).origin === new URL(page.url()).origin;
+  } catch {
+    return false;
+  }
+}
+
 async function recordAction(response: PwResponse, action: string, file: string): Promise<void> {
   const type = response.headers()["content-type"] ?? "";
+  // Plain JSON only: an NDJSON or event stream may run for minutes, and judgeShot waits for these reads.
+  const json = /^application\/(?:[\w.-]+\+)?json\b/i.test(type.trim());
   let fields: Record<string, unknown> = {};
-  if (/json/i.test(type)) {
+  if (json) {
     try {
       fields = fallbackFields(await response.json());
     } catch {
       fields = {};
     }
   }
-  const line = { t: Date.now(), project: "smoke", file, action, method: response.request().method(), status: response.status(), json: /json/i.test(type), fields };
+  const line = { t: Date.now(), project: "smoke", file, action, method: response.request().method(), status: response.status(), json, fields };
   mkdirSync(path.dirname(ACTION_LOG), { recursive: true });
   appendFileSync(ACTION_LOG, `${JSON.stringify(line)}\n`);
 }
