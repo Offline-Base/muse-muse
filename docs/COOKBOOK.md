@@ -21,7 +21,7 @@ npm run demo-batch -- --set=cookbook
 
 It starts 50 builds on https://www.musemuse.dev as the first admin (no daily build limit) and writes every build link to `.data/demo-batch-<time>.json`. Fill the Build id column below from that file. One recipe or a few: `npm run demo-batch -- --set=cookbook prompt-caching side-chats`.
 
-**Cost, an estimate:** overnight builds on Muse Spark 1.3 Contributor were $0.17 to $0.40 each in Meta credits, so about **$8.50 to $20** for the 50. The ceiling is $1.80 a build, $90 in all. Builds whose tests call Muse Image, SAM or Voice (the 9 media recipes) lean to the top of the range. Vercel Sandbox minutes come on top: 30 to 150 minutes a build, about 25 to 125 Sandbox hours in all. The four long simulated-loop products (sandboxed-execution, multi-agent-orchestration, computer-use, computer-use-macos) cost dollars per run once someone presses Start, not during the build beyond their smoke tests. The platform's daily spend cap (`DAILY_SPEND_CAP_USD`, $100 default) holds the whole set at the estimate; at the ceiling it would take most of a day's cap, so a build refused for the cap can be rerun by id the next day.
+**Cost, an estimate:** overnight builds on Muse Spark 1.3 Contributor were $0.17 to $0.40 each in Meta credits, so about **$8.50 to $20** for the 50. $1.80 is the most one build has cost so far (the README's local batch), so $90 for the 50 is a high guess, not a limit: the hard limit per build is its build token's $10 test budget (`buildTokenBudgetUsd`), and the daily cap below. Builds whose tests call Muse Image, SAM or Voice (the 9 media recipes) lean to the top of the range. Vercel Sandbox minutes come on top: 30 to 150 minutes a build, about 25 to 125 Sandbox hours in all. The four long simulated-loop products (sandboxed-execution, multi-agent-orchestration, computer-use, computer-use-macos) cost dollars per run once someone presses Start, not during the build beyond their smoke tests. The platform's daily spend cap (`DAILY_SPEND_CAP_USD`, $100 default) counts all platform spend that UTC day, reservations included, not only this set. The set fits under it at the estimate; at $1.80 a build it would take most of a day's cap, and once the cap is reached new builds are refused (503 paused), so a refused build can be rerun by id the next day.
 
 **Time:** the script posts the 50 notes one after another in a minute or two, then the laptop can close. Each build takes about 30 minutes to the 150-minute wall, and they run on Vercel side by side, so the set is built so to finish in about 2.5 hours if Vercel starts them all at once. The team's limit on Sandboxes running at once hasn't been checked; if builds queue, it takes longer. Start it by about 6 AM ET Nov 4 to leave time to look at the products before the noon submission.
 
@@ -34,7 +34,7 @@ Recipe ids are in lib/recipes/registry.ts; docs demos are `cookbook/<slug>` in l
 | Recipe | Path | Covered by | Buildable today | Build id |
 |---|---|---|---|---|
 | quickstart-chat-completions | app build | recipe-api 01/01, template meta-chat skill, docs demo | yes | |
-| streaming-responses | app build | recipe-api 01/02 with helpers/stream.ts, docs demo; live parking-policy-reader streams | yes | |
+| streaming-responses | app build | recipe-api 01/02 with helpers/stream.ts, docs demo; live parking-policy-reader streams | after deploy | |
 | tool-function-calling | app build | recipe-api 01/03, docs demo | yes | |
 | structured-output | app build | template respondJson, recipe-api 01/04, docs demo; live dockline-triage-copilot | yes | |
 | prompt-caching | app build | recipe-api 01/05 with helpers/usage.ts and context.ts, docs demo; parking-policy-reader read 0 cached (prefix too short) | after deploy | |
@@ -42,7 +42,7 @@ Recipe ids are in lib/recipes/registry.ts; docs demos are `cookbook/<slug>` in l
 | vision-input | app build | template meta-reasoning skill, recipe-api 01/07, docs demo; live chart-check-deck, fresh-dot-fridge | yes | |
 | long-context | app build | recipe-api 01/08 with helpers/context.ts, docs demo | after deploy | |
 | error-handling-retry | app build | recipe-api 01/09 with helpers/retry.ts, template errors.ts, docs demo | after deploy | |
-| search-grounding | app build | recipe-api 01/10 with helpers/footnotes.ts, docs demo; live parking-policy-reader, austin-budget-weekender | yes | |
+| search-grounding | app build | recipe-api 01/10 with helpers/footnotes.ts, docs demo; live parking-policy-reader, austin-budget-weekender | after deploy | |
 
 ### Agent patterns (recipe-agent-patterns)
 
@@ -67,7 +67,7 @@ Recipe ids are in lib/recipes/registry.ts; docs demos are `cookbook/<slug>` in l
 | browser-verified-web-design | app build | recipe-visual-reports 03/05 (the build's own screenshot verify is the browser loop), docs demo | yes | |
 | iterative-game-dev | app build | recipe-games 03/06, docs demo; lantern-canal-drift hidden after a soft-lock. Note reused from DEMO_NOTES `games` | after deploy | |
 | sandboxed-execution | app build (long run, stand-in) | recipe-simulated-loops 03/07 (Pyodide in a Web Worker, not Docker), docs demo | after deploy | |
-| multi-agent-orchestration | app build (long run) | recipe-simulated-loops 03/08, docs demo; live relay-board-studio. Note reused from DEMO_NOTES `studio` | after deploy | |
+| multi-agent-orchestration | app build (long run) | recipe-simulated-loops 03/08, docs demo; live relay-board-studio (its four agents were scripted, Nov 3 audit). Note reused from DEMO_NOTES `studio` | after deploy | |
 | one-shot-game-dev | app build | recipe-games 03/09, docs demo | after deploy | |
 | perception-grounding | app build | recipe-visual-reports 03/10, docs demo; fresh-dot-fridge hidden (box scale). Note reused from DEMO_NOTES `fridge` | after deploy | |
 | computer-use | app build (long run, simulated screen) | recipe-simulated-loops 03/12 with helpers/cu-sim.ts, docs demo; sim-desk-agent-demo hidden. Note reused from DEMO_NOTES `computer-use` | after deploy | |
