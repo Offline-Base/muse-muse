@@ -1,5 +1,6 @@
 import type OpenAI from "openai";
 import { metaClient, type RequestLike } from "./client";
+import { checkImageUrl } from "./parts";
 import { plain } from "./text";
 
 /**
@@ -57,6 +58,8 @@ export interface SparkOpenAnswer {
 }
 
 function params(options: SparkOpenOptions) {
+  // An SVG or other image type Meta's models don't read throws here, with what to send instead.
+  for (const m of options.messages) if (Array.isArray(m.content)) for (const part of m.content) if (part.type === "image_url") checkImageUrl(part.image_url.url);
   const messages: OpenAI.ChatCompletionMessageParam[] = [
     ...(options.instructions ? [{ role: "system" as const, content: options.instructions }] : []),
     ...options.messages,

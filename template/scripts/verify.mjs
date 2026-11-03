@@ -6,7 +6,9 @@
 // top and a page that isn't too long, for a glasses product a photo taken through the fake glasses, and for a VR product
 // a screenshot from inside VR that isn't blank; see scripts/smoke-report.mjs), manifest (musemuse.json valid against
 // musemuse.schema.json, action routes and fixtures exist, and no model package in package.json or requirements.txt: every
-// model the product calls is a Meta model through the gateway, see modelPackageProblems). A product with platform services (musemuse.caps.json) also
+// model the product calls is a Meta model through the gateway, see modelPackageProblems; no media saved in localStorage
+// and no client component that reaches the model client, see storageMediaProblems and clientModelImportProblems). The smoke
+// step also fails an action that answered the built-in sample with a fallback (actionFallbackProblems in smoke-report.mjs). A product with platform services (musemuse.caps.json) also
 // gets a caps step after smoke: the platform's caps check runs each cap's fixed checks against what the smoke test
 // recorded and what the gateway saw.
 // Exits 0 only when every step passes. The LAST line of stdout is always one JSON summary for the platform:
@@ -16,7 +18,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:f
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { browserLaunchOptions, finalShotProblems, glassesGateProblems, judgeShotNotes, judgeShotProblems, onlyRequirementTestsFailed, readCapsFile, readRequirementsFile, requirementResults, smokeReportProblems, verifyStepNames, xrGateProblems } from "./smoke-report.mjs";
+import { ACTION_LOG, actionFallbackProblems, browserLaunchOptions, finalShotProblems, glassesGateProblems, judgeShotNotes, judgeShotProblems, onlyRequirementTestsFailed, readCapsFile, readRequirementsFile, requirementResults, smokeReportProblems, storedMediaProblems, verifyStepNames, xrGateProblems } from "./smoke-report.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BIN = (name) => path.join(ROOT, "node_modules", ".bin", name);
@@ -216,6 +218,7 @@ async function main() {
   rmSync(path.join(ROOT, "test-results", "judge"), { recursive: true, force: true });
   mkdirSync(path.join(ROOT, "test-results", "judge"), { recursive: true });
   if (CAPS) rmSync(path.join(ROOT, "test-results", "caps"), { recursive: true, force: true });
+  rmSync(path.join(ROOT, path.dirname(ACTION_LOG)), { recursive: true, force: true });
 
   const typecheckOk = await step("typecheck", async () => {
     const gen = await run(BIN("next"), ["typegen"], { timeoutMs: 120_000 });
@@ -292,7 +295,14 @@ async function main() {
           ...glassesGateProblems(readText, { since: smokeStarted }),
           ...xrGateProblems(readText, shots, read),
         ];
-        const finalScreen = finalShotProblems(shots, read);
+        // An action that answered the sample with a fallback hid a model call that failed. Never only a warning.
+        const fallbacks = actionFallbackProblems(readText(ACTION_LOG), { since: smokeStarted });
+        if (fallbacks.length) {
+          problems.push(...fallbacks);
+          const modelLines = stripAnsi(serverLog).split("\n").filter((l) => l.includes("[model]") || /\b(?:APIError|BadRequestError|RateLimitError)\b/.test(l));
+          if (modelLines.length) problems.push(`Server log, model lines:\n${modelLines.slice(-8).join("\n")}`);
+        }
+        const finalScreen = [...finalShotProblems(shots, read), ...storedMediaProblems(shots, read)];
         // MUSEMUSE_SCREEN_CHECK=warn (set by the platform, never by the product) logs them instead, as judgeShot does.
         if (process.env.MUSEMUSE_SCREEN_CHECK === "warn") for (const p of finalScreen) log(`musemuse screen check: ${p}`);
         else problems.push(...finalScreen);
@@ -431,6 +441,8 @@ async function checkManifest() {
     if (fixture?.path && !existsSync(path.join(ROOT, fixture.path))) problems.push(`fixture ${fixture.path} does not exist`);
   }
   problems.push(...modelPackageProblems(readRootText));
+  const sources = readSources();
+  problems.push(...storageMediaProblems(sources), ...clientModelImportProblems(sources));
   return problems.length
     ? { ok: false, detail: `${problems.length} problem(s): ${problems[0]}`, output: problems.join("\n") }
     : { ok: true, detail: `valid, ${manifest.actions.length} action(s), ${manifest.fixtures.length} fixture(s)` };
@@ -496,6 +508,167 @@ export function modelPackageProblems(readText) {
       const name = (/^[A-Za-z0-9][A-Za-z0-9._-]*/.exec(line)?.[0] ?? "").toLowerCase().replace(/[_.]/g, "-");
       if (name && matchesList(name, MODEL_PYPI_PACKAGES)) out.push(`requirements.txt pulls in ${name}, which ${reason}`);
     }
+  }
+  return out;
+}
+
+// ---------- Source checks: cheap, static and narrow, run with the manifest ----------
+
+/** Folders under the product that are never its own app code. */
+const NOT_SOURCE = new Set(["node_modules", ".next", ".git", "test-results", "playwright-report", "tests", "scripts", "targets", "caps", "inspo", "fixtures", "public", ".agents"]);
+const SOURCE_EXT = /\.(?:tsx?|jsx?|mjs)$/;
+
+/** The product's own source files, as [{ path, text }] with paths relative to the product and "/" between parts. */
+function readSources() {
+  const out = [];
+  const walk = (dir, rel) => {
+    let entries = [];
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const relPath = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) {
+        if (!NOT_SOURCE.has(e.name) && !e.name.startsWith(".")) walk(path.join(dir, e.name), relPath);
+      } else if (SOURCE_EXT.test(e.name) && !e.name.endsWith(".d.ts") && !/\.config\.[cm]?[jt]s$/.test(e.name)) {
+        try {
+          const text = readFileSync(path.join(dir, e.name), "utf8");
+          if (text.length < 1_000_000) out.push({ path: relPath, text });
+        } catch {
+          // unreadable: nothing to check
+        }
+      }
+    }
+  };
+  walk(ROOT, "");
+  return out;
+}
+
+/** The text between a call's parentheses, from just after "(" at `open`, or what is there within 2,000 characters. */
+function callArgs(text, open) {
+  let depth = 1;
+  for (let i = open; i < Math.min(text.length, open + 2000); i++) {
+    const c = text[i];
+    if (c === "(") depth++;
+    else if (c === ")" && --depth === 0) return text.slice(open, i);
+  }
+  return text.slice(open, open + 2000);
+}
+
+/** Words in a setItem call's arguments that mean the value is a photo, audio or video as text. */
+const MEDIA_VALUE = /data:(?:image|audio|video)\/|toDataURL\s*\(|readAsDataURL|blobToDataUrl|toDataUrl\s*\(|\bb64_json\b|base64|data_?url/i;
+
+/**
+ * localStorage or sessionStorage setItem calls whose value reads as a data URL or base64 media. Both hold about 5 MB per
+ * site, so a few photos fill them and the next save throws. One line per file, or none. `sources` is [{ path, text }].
+ */
+export function storageMediaProblems(sources) {
+  const out = [];
+  for (const { path: file, text } of sources) {
+    const hits = [];
+    for (const m of text.matchAll(/\b(localStorage|sessionStorage)\s*\.\s*setItem\s*\(/g)) {
+      const args = callArgs(text, m.index + m[0].length);
+      if (MEDIA_VALUE.test(args)) hits.push(`${m[1]}.setItem(${oneLine(args, 60)})`);
+    }
+    if (hits.length) {
+      out.push(
+        `${file} saves media in browser storage: ${hits.slice(0, 2).join("; ")}. localStorage and sessionStorage hold about ` +
+          "5 MB per site, so a few photos or recordings fill them and the next save throws. Keep media in IndexedDB (or in " +
+          "memory), and save only text and ids in localStorage, inside a try/catch.",
+      );
+    }
+  }
+  return out;
+}
+
+/** Imports in a file: { spec, typeOnly }, side-effect and dynamic imports included. Comments are left out. */
+export function importsOf(text) {
+  const code = text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const out = [];
+  for (const m of code.matchAll(/\b(?:import|export)\s+(type\s+)?([\w$*{}\s,]*?)\s*from\s*["']([^"'\n]+)["']/g)) {
+    const clause = m[2].trim();
+    const braces = /^\{([^}]*)\}$/.exec(clause)?.[1];
+    const names = braces?.split(",").map((x) => x.trim()).filter(Boolean) ?? [];
+    out.push({ spec: m[3], typeOnly: Boolean(m[1]) || (names.length > 0 && names.every((x) => /^type\s/.test(x))) });
+  }
+  for (const m of code.matchAll(/\bimport\s*["']([^"'\n]+)["']/g)) out.push({ spec: m[1], typeOnly: false });
+  for (const m of code.matchAll(/\bimport\s*\(\s*["']([^"'\n]+)["']\s*\)/g)) out.push({ spec: m[1], typeOnly: false });
+  return out;
+}
+
+/** A local import's file among `paths`, or null for a package. "@/x" is the product's root (tsconfig paths). */
+function resolveImport(from, spec, paths) {
+  let base;
+  if (spec.startsWith("@/")) base = spec.slice(2);
+  else if (spec.startsWith(".")) base = path.posix.normalize(path.posix.join(path.posix.dirname(from), spec));
+  else return null;
+  const tries = [base, ...[".ts", ".tsx", ".js", ".jsx", ".mjs"].map((x) => base + x), ...["ts", "tsx", "js", "jsx"].map((x) => `${base}/index.${x}`)];
+  return tries.find((t) => paths.has(t)) ?? null;
+}
+
+const USE_CLIENT = /^(?:\s|\/\/[^\n]*\n|\/\*[\s\S]*?\*\/)*["']use client["']/;
+const isPackage = (spec, name) => spec === name || spec.startsWith(`${name}/`);
+
+/**
+ * Client components that reach the template's server-only model modules: a "use client" file, or a file it imports,
+ * that imports a lib/meta module which calls the model (it imports openai, reads process.env, or imports such a module),
+ * or the openai package itself. That puts the SDK in the browser bundle and code that needs the server's env in the page.
+ * Type-only imports are fine. One line per client file, or none. `sources` is [{ path, text }].
+ */
+export function clientModelImportProblems(sources) {
+  const byPath = new Map(sources.map((s) => [s.path, s]));
+  const paths = new Set(byPath.keys());
+  const imports = new Map(sources.map((s) => [s.path, importsOf(s.text).filter((i) => !i.typeOnly)]));
+  // lib/meta modules that call the model, directly or through another one.
+  const serverOnly = new Set();
+  const meta = sources.filter((s) => s.path.startsWith("lib/meta/"));
+  for (const s of meta) {
+    if (/\bprocess\.env\b/.test(s.text) || imports.get(s.path).some((i) => isPackage(i.spec, "openai") || i.spec.startsWith("node:"))) serverOnly.add(s.path);
+  }
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const s of meta) {
+      if (serverOnly.has(s.path)) continue;
+      if (imports.get(s.path).some((i) => serverOnly.has(resolveImport(s.path, i.spec, paths)))) {
+        serverOnly.add(s.path);
+        grew = true;
+      }
+    }
+  }
+  const out = [];
+  for (const entry of sources.filter((s) => USE_CLIENT.test(s.text))) {
+    // Breadth first, so the path named is the shortest.
+    const via = new Map([[entry.path, null]]);
+    const queue = [entry.path];
+    let found = null;
+    while (queue.length && !found) {
+      const file = queue.shift();
+      for (const i of imports.get(file) ?? []) {
+        if (isPackage(i.spec, "openai")) {
+          found = { file, target: "the openai package" };
+          break;
+        }
+        const target = resolveImport(file, i.spec, paths);
+        if (!target || via.has(target)) continue;
+        via.set(target, file);
+        if (serverOnly.has(target)) {
+          found = { file: target, target };
+          break;
+        }
+        queue.push(target);
+      }
+    }
+    if (!found) continue;
+    const chain = [];
+    for (let f = found.target === "the openai package" ? found.file : via.get(found.target); f && f !== entry.path; f = via.get(f)) chain.unshift(f);
+    out.push(
+      `${entry.path} is a client component ("use client") and imports ${found.target}${chain.length ? ` (through ${chain.join(", ")})` : ""}. ` +
+        "That ships the model client to the browser, where the gateway's env doesn't exist. Call the model only in a route " +
+        "under app/api/ or a server action, and fetch it from the page. Keep zod schemas the page shares in a file that " +
+        "imports only zod.",
+    );
   }
   return out;
 }
