@@ -13,7 +13,7 @@ import { isHostNotFound, onModal, sandboxHost, type HostSandbox as Sandbox } fro
 import { mintSandboxMetaToken, modalMuseSettings } from "@/lib/sandbox/host/meta-proxy";
 import { noEmDashes } from "@/lib/brief/normalize";
 import { buildTestModel, env } from "@/lib/env";
-import { SPARK_STANDIN } from "@/lib/meta/spark";
+import { SPARK_STANDIN, WONDER_SERVED_BY_ENV } from "@/lib/meta/spark";
 import { buildMcpToken } from "@/lib/mcp/build-token";
 import { fetchBytes, putFile } from "@/lib/storage";
 import type { Manifest, ModelUsage, MuseLogLine, Reference, Screenshot, VerifySummary } from "@/lib/types";
@@ -98,6 +98,7 @@ import { localHardwareOverlay, usesLocalHardwareOverlay } from "@/lib/sandbox/lo
 import { builderNetworkPolicy, placeholderKey, publicHost, SNAPSHOT_POLICY } from "@/lib/sandbox/policy";
 import { q, readBytes, sh, tailText, writeRunner } from "@/lib/sandbox/shell";
 import { parseScanOutput, SHARED_SCAN_SCRIPT } from "@/lib/keys/scan";
+import { CREDIT_SCAN_SCRIPT, parseCreditScan, type SourceFile } from "@/lib/verify/model-credits";
 import { redactShared, redactSharedBytes, redactSharedValue, sharedEnvText, sharedKeysOn, sharedNeedles, stripSharedEnvScript, type SharedGrant, type SharedLeak } from "@/lib/keys/shared";
 import { applyLookScript, applyRangeScript, LOOK_CSS, MUSE_APP_OVERLAY, OVERLAYS_DIR, RANGE_OVERLAY, withLookColors } from "@/lib/sandbox/look";
 import {
@@ -359,8 +360,10 @@ function envLocal(sandboxName: string, gatewayUrl: string, token: string): strin
   const direct = productsCallMetaDirectly();
   const [url, key] = direct ? ["https://api.meta.ai", sandboxPlaceholder(sandboxName)] : [gatewayUrl, token];
   const test = direct ? buildTestModel() : null;
-  // A build's own test runs are on Contributor, so its screens show the notice a live product on it shows.
-  const notice = buildTestModel() ? "MUSE_CONTRIBUTOR_NOTICE=1\n" : "";
+  // A build's own test runs are on Contributor, so its screens show the notice a live product on it shows, and its
+  // ModelChips name the model that really serves its Muse Wonder calls (template/components/ModelChip.tsx).
+  const served = buildTestModel();
+  const notice = served ? `MUSE_CONTRIBUTOR_NOTICE=1\n${WONDER_SERVED_BY_ENV}=${served}\n` : "";
   return `# Written by the Muse Muse platform for this build. Never commit this file.\nGATEWAY_URL=${url}\nPRODUCT_TOKEN=${key}\n${test ? `TEST_MODEL=${test}\n` : ""}${notice}`;
 }
 
@@ -2066,6 +2069,18 @@ async function finishLegacyDemo(
 
 // ---------------------------------------------------------------------------------------------------------------
 // Reading results
+
+/**
+ * The model-credits check (lib/verify/model-credits.ts): the product's UI source files that may credit a model. Null
+ * when the scan couldn't run, so the check adds nothing.
+ */
+export async function scanModelCredits(sandboxName: string): Promise<SourceFile[] | null> {
+  const sandbox = await openSandbox(sandboxName);
+  const script = `${RUN_DIR}/credit-scan.cjs`;
+  await sandbox.writeFiles([{ path: script, content: CREDIT_SCAN_SCRIPT }]);
+  const res = await sh(sandbox, `node ${[script, PRODUCT_DIR].map(q).join(" ")}`, { allowFail: true, timeoutMs: MIN });
+  return parseCreditScan(res.stdout);
+}
 
 /** Reads and parses musemuse.json. Null when it's missing or not JSON. */
 export async function readManifest(sandboxName: string): Promise<Manifest | null> {

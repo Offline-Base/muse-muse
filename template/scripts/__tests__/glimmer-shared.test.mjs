@@ -83,6 +83,14 @@ test("no Glimmer at all answers with Muse Wonder", async () => {
   assert.equal(got.note, "Answered by Muse Wonder while Muse Glimmer is off.");
 });
 
+test("the fallback note names the model that really serves Muse Wonder's calls", async () => {
+  process.env.NEXT_PUBLIC_MUSE_WONDER_SERVED_BY = "muse-spark-1.3-contributor";
+  fake(() => wonder);
+  const got = await askGlimmer({ messages: [{ role: "user", content: "hi" }] });
+  assert.equal(got.note, "Answered by Muse Spark 1.3 Contributor while Muse Glimmer is off.");
+  assert.equal(calls.at(-1).body.model, "muse-wonder-1.0", "the call still names Muse Wonder, which the gateway serves");
+});
+
 test("an empty answer (a reply cut off mid-thought) falls back too", async () => {
   process.env.GLIMMER_SHARED = "1";
   fake((url) => (url.includes("/glimmer/") ? chat("") : wonder));

@@ -2,7 +2,26 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
-import { connectorActions, newestPerRebuild, parseManifest, safeNext } from "@/lib/format";
+import { briefKeepsWonder, connectorActions, newestPerRebuild, parseManifest, safeNext, servedModelLabel } from "@/lib/format";
+
+describe("servedModelLabel", () => {
+  it("names Contributor for Muse Wonder under the switch, since the gateway serves it there", () => {
+    assert.equal(servedModelLabel("muse-wonder-1.0", { switchOn: true }), "Spark 1.3 Contributor, in place of Muse Wonder");
+    assert.equal(servedModelLabel("sam-3.1", { switchOn: true }), "SAM 3.1");
+  });
+
+  it("keeps Muse Wonder with the switch off, and for a gadget or board product, whose live calls stay on it", () => {
+    assert.equal(servedModelLabel("muse-wonder-1.0", { switchOn: false }), "Muse Wonder");
+    assert.equal(servedModelLabel("muse-wonder-1.0", { switchOn: true, keepsWonder: true }), "Muse Wonder");
+  });
+
+  it("tells a gadget or board brief from the rest", () => {
+    assert.equal(briefKeepsWonder({ capabilities: [{ model: "muse-wonder-1.0" }, { model: "muse-gadget" }] }), true);
+    assert.equal(briefKeepsWonder({ capabilities: [{ model: "muse-wonder-1.0" }], hardware: { boardTools: true } } as never), true);
+    assert.equal(briefKeepsWonder({ capabilities: [{ model: "muse-wonder-1.0" }] }), false);
+    assert.equal(briefKeepsWonder(null), false);
+  });
+});
 
 describe("safeNext", () => {
   it("keeps same-site paths with their query and hash", () => {

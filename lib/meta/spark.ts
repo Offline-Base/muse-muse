@@ -22,5 +22,18 @@ export function defaultModel(): "muse-wonder-1.0" | typeof SPARK_STANDIN {
   return contributorSwitchOn() ? SPARK_STANDIN : "muse-wonder-1.0";
 }
 
+/**
+ * The public build-time env the platform sets on a product whose Muse Wonder calls the gateway serves on another model:
+ * in a build's .env.local while its tests run on Contributor, and on a live product published under the switch. Its value
+ * is the model id that really runs. template/components/ModelChip.tsx reads it, so a chip naming muse-wonder-1.0 says
+ * which model really made the result. Not a secret.
+ */
+export const WONDER_SERVED_BY_ENV = "NEXT_PUBLIC_MUSE_WONDER_SERVED_BY";
+
+/** WONDER_SERVED_BY_ENV's value: Contributor for a product whose Wonder calls run on it, else the Wonder id itself. Names, never routes. */
+export function wonderServedBy(onContributor: boolean): string {
+  return onContributor ? SPARK_STANDIN : "muse-wonder-1.0";
+}
+
 /** Told to whoever writes a product under the switch. Its code keeps the id, which the gateway serves on Contributor. */
-export const CONTRIBUTOR_PRODUCT_LINE = `Muse Muse runs on ${SPARK_STANDIN} for now. Keep naming muse-wonder-1.0 in the product's code and brief: the gateway serves those calls on ${SPARK_STANDIN}, at its price. Never say Muse Wonder on the product's screens, in a ModelChip, a privacy line or a note: say "an AI model". Audio input is off, so transcribe speech first with muse-voice-transcribe-1.0.`;
+export const CONTRIBUTOR_PRODUCT_LINE = `Muse Muse runs on ${SPARK_STANDIN} for now. Keep naming muse-wonder-1.0 in the product's code and brief: the gateway serves those calls on ${SPARK_STANDIN}, at its price. Credit it only with <ModelChip model="muse-wonder-1.0" />, which names the model that really runs. Never write Muse Wonder on the product's screens, in a privacy line or a note: say "an AI model". Audio input is off, so transcribe speech first with muse-voice-transcribe-1.0.`;

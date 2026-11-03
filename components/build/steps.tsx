@@ -5,7 +5,7 @@ import { GoalCard, Thinking, TodoList, statusWords, steerMeta } from "@/componen
 import { BriefBody, CheckBody, VERIFY_LABEL, groupSummary, museUsageText, segmentMeta } from "@/components/build/turns";
 import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { InspirationView } from "@/components/view-types";
-import { modelLabel, plural, truncate } from "@/lib/format";
+import { briefKeepsWonder, plural, servedModelLabel, truncate } from "@/lib/format";
 import { NOTE_REPLY_PREFIX } from "@/lib/pipeline/control";
 import type { BuildStatus, MuseLineDetail, MuseLogLine } from "@/lib/types";
 
@@ -416,7 +416,7 @@ export function roomSources(input: { room: RoomState; inspiration: InspirationVi
   }
   for (const id of models) {
     const need = room.brief?.capabilities.find((c) => c.model === id)?.need;
-    add({ id: `model:${id}`, title: modelLabel(id), detail: need ? `${id} · ${need}` : id, kind: "model" });
+    add({ id: `model:${id}`, title: servedModelLabel(id, { keepsWonder: briefKeepsWonder(room.brief) }), detail: need ? `${id} · ${need}` : id, kind: "model" });
   }
   for (const seg of room.segments) {
     if (seg.type !== "muse") continue;

@@ -334,6 +334,8 @@ async function runVerify(ctx: Ctx, round: number, lastRound: boolean, opts: { dr
   // A chain's verify has longer than verify.mjs's usual 25 minutes for the requirements, inside the plan's cap.
   const chainEnv = ctx.chain ? { MUSEMUSE_REQUIREMENTS_MS: String(Math.max(60_000, capMs - 5 * 60_000)) } : null;
   const taskEnv = lastRound || chainEnv ? { ...(lastRound ? LAST_ROUND_VERIFY_ENV : {}), ...chainEnv } : undefined;
+  // The model-credits check reads the gateway's record of this verify's calls from here on.
+  const verifyStartedAt = Date.now();
   const task = await runTask(ctx.sandboxName, "verify", capMs, taskEnv);
   if (task.timedOut) return verifyTimedOutStep({ buildId: ctx.buildId, round, minutes: Math.round(capMs / 60_000) });
   // An edge build's outage drill runs on what verify just built, and only when verify passed.
@@ -345,6 +347,8 @@ async function runVerify(ctx: Ctx, round: number, lastRound: boolean, opts: { dr
     exitCode: task.exitCode,
     outputTail: task.outputTail,
     ...(edgeDrill ? { edgeDrill } : {}),
+    verifyStartedAt,
+    ...(lastRound ? { lastRound } : {}),
   });
 }
 

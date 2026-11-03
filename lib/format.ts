@@ -1,5 +1,6 @@
 import type { TargetId } from "@/lib/brief/schema";
 import type { BuildStatus, Manifest, ProductStatus } from "@/lib/types";
+import { contributorSwitchOn, SPARK_STANDIN } from "@/lib/meta/spark";
 
 /**
  * Display helpers shared by server pages and client components. Pure functions only: no server imports, no
@@ -137,6 +138,24 @@ const MODEL_LABELS: Record<string, string> = {
 
 export function modelLabel(id: string): string {
   return MODEL_LABELS[id] ?? id;
+}
+
+/**
+ * What a plan or a build room calls a model the product asks for: the one that really runs. Under BUILDS_ON_CONTRIBUTOR
+ * the gateway serves a product's muse-wonder-1.0 calls on Spark 1.3 Contributor, so the plan says so. `keepsWonder` is
+ * a gadget or board product, whose live calls stay on Muse Wonder (keepsWonderUnderSwitch in lib/gateway/policy.ts).
+ * Routing never reads this: it only names what the gateway does.
+ */
+export function servedModelLabel(id: string, opts: { keepsWonder?: boolean; switchOn?: boolean } = {}): string {
+  const on = opts.switchOn ?? contributorSwitchOn();
+  if (id === "muse-wonder-1.0" && on && !opts.keepsWonder) return `${modelLabel(SPARK_STANDIN)}, in place of Muse Wonder`;
+  return modelLabel(id);
+}
+
+/** True for a brief whose live product keeps Muse Wonder under the switch: a gadget, or the board's tools. */
+export function briefKeepsWonder(brief: { capabilities: ReadonlyArray<{ model: string }> } | null | undefined): boolean {
+  if (!brief) return false;
+  return brief.capabilities.some((c) => c.model === "muse-gadget") || (brief as { hardware?: { boardTools?: unknown } }).hardware?.boardTools === true;
 }
 
 const TARGET_LABELS: Record<TargetId, string> = {
