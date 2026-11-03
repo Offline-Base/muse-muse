@@ -259,6 +259,18 @@ function rangeDirection(brief: Brief, note: LookNote): NonNullable<Brief["direct
   return rangeOn(brief, note) && !note.metaUiOnly ? (brief.direction ?? null) : null;
 }
 
+/** What RANGE_AGENT_LINES' per-screen workflow compares each screen with, when the brief has a Design direction. */
+const RANGE_AGENT_DIRECTION = "brief.md and the Design direction";
+
+/**
+ * RANGE_AGENT_LINES for a brief with no Design direction (META_UI_ONLY): the per-screen workflow compares each screen with
+ * brief.md and the look's skill instead of a section brief.md doesn't have.
+ */
+function rangeAgentLinesFor(skill: string): string[] {
+  if (RANGE_AGENT_LINES.filter((l) => l.includes(RANGE_AGENT_DIRECTION)).length !== 1) throw new Error("RANGE_AGENT_LINES changed: update rangeAgentLinesFor in lib/brief/render.ts.");
+  return RANGE_AGENT_LINES.map((l) => l.replace(RANGE_AGENT_DIRECTION, `brief.md and the ${skill} skill`));
+}
+
 /** The skill a build prompt sends Muse Code to for the look. */
 function lookSkill(note: LookNote): string {
   return note.museAppLook ? "muse-app-ui" : "meta-ui";
@@ -491,7 +503,7 @@ export function renderBuildPrompt(
     "",
     "Then stop.",
     ...(range ? RANGE_DEPTH_LINES : []),
-    ...(fastLines ?? (requiredAgents ? RANGE_AGENT_LINES : [])),
+    ...(fastLines ?? (requiredAgents ? (direction ? RANGE_AGENT_LINES : rangeAgentLinesFor(lookSkill(opts))) : [])),
   );
   if (full && brief.verdict !== "no") out.push(...fullBuildLines(briefRequirements(brief), fullMilestones(brief), targetCheckedRequirements(brief).map((c) => ({ id: c.requirement.id, how: TARGET_CHECK_HOW[c.kind] }))), ...(brief.chained === true ? CHAIN_BUILD_LINES : []));
   // ---------- Wave 3, unit 2: milestones (empty for a brief without them) ----------

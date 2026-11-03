@@ -264,7 +264,7 @@ function lookNote(): { museAppLook: boolean; metaUiOnly?: boolean } {
  * With META_UI_ONLY no brief gets a direction, so its depth, agents and limits reach any brief while BUILD_RANGE is on.
  */
 function rangeNote(brief: Brief | null | undefined): { buildRange?: boolean } {
-  return env.buildRange && (brief?.direction || env.metaUiOnly) ? { buildRange: true } : {};
+  return env.buildRange && brief && (brief.direction || env.metaUiOnly) ? { buildRange: true } : {};
 }
 
 /**
@@ -1306,7 +1306,10 @@ export async function judgeStep(input: {
   const targetFacts = requirementTests !== undefined && targetCheckedRequirements(brief).length ? await targetFactsFor(brief, build, input.round, input.buildId) : null;
   const ownerNotes = env.steerChat ? await sentNotes(input.buildId) : [];
   const samples = await judgeSamplesFor(build.sandboxName, input.buildId, input.round);
+  // META_UI_ONLY: the product's own files say which look it has, as in its fix and change prompts. Unreadable is meta-ui.
+  const productHasMuseAppLook = env.metaUiOnly && build.sandboxName ? Boolean(await sandbox.readSandboxFile(build.sandboxName, `${PRODUCT_DIR}/app/muse-app.css`).catch(() => null)) : false;
   const result = await judgeBuild({
+    ...(productHasMuseAppLook ? { productHasMuseAppLook } : {}),
     ...(samples.length ? { samples } : {}),
     ...(requirementTests !== undefined ? { requirementTests } : {}),
     ...(ownerNotes.length ? { ownerNotes } : {}),

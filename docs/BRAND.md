@@ -464,7 +464,7 @@ The owner's call: every product uses our meta-ui skill (`template/.agents/skills
 cards, Meta blue, Inter and Montserrat). With `META_UI_ONLY` on, `env.museAppLook` is false whatever `MUSE_APP_LOOK`,
 `BUILDS_ON_CONTRIBUTOR` or `BUILD_RANGE` say, so no build gets the muse-app overlay or `withLookColors`, and the writer,
 build prompt and judge name meta-ui. `BUILD_RANGE` loses only its look: no direction in the brief or its schema, no
-build-range overlay, the plain meta-ui house style in the judge. Its depth, limits, subagents and workflows stay. A fix
+build-range overlay, the plain meta-ui house style in the judge for new products (one whose sandbox has `app/muse-app.css` keeps both house styles). Its depth, limits, subagents and workflows stay. A fix
 or change goes by the product's own files: `app/muse-app.css` there means an older muse-app product, which keeps
 muse-app-ui, and otherwise meta-ui. The muse-app look below stays in the tree for those older products.
 

@@ -88,6 +88,11 @@ export interface JudgeInput {
    * the requirements only a target can prove. Left out, each of those stays not proven, never met.
    */
   targetFacts?: TargetFacts | null;
+  /**
+   * META_UI_ONLY: the product's own files have the muse-app look (app/muse-app.css), so it is an older muse-app product
+   * or a build that started before the flag, and the judge keeps both house styles for it. Ignored with the flag off.
+   */
+  productHasMuseAppLook?: boolean;
 }
 
 export interface JudgeSample {
@@ -152,7 +157,7 @@ export async function judgeBuild(input: JudgeInput): Promise<{ verdict: JudgeRes
   if (required.length) {
     const result = await respondStructured({
       model: env.judgeModel,
-      instructions: judgeInstructions(input.brief, { museAppLook: env.museAppLook, fullBuilds: true, ...(env.buildRange ? { buildRange: true } : {}), ...(env.metaUiOnly ? { metaUiOnly: true } : {}), ...(env.verifyAgents ? { verifyAgents: true } : {}), ...samplesOpt(input) }),
+      instructions: judgeInstructions(input.brief, { museAppLook: env.museAppLook, fullBuilds: true, ...(env.buildRange ? { buildRange: true } : {}), ...(env.metaUiOnly ? { metaUiOnly: true, productHasMuseAppLook: input.productHasMuseAppLook === true } : {}), ...(env.verifyAgents ? { verifyAgents: true } : {}), ...samplesOpt(input) }),
       content,
       sources,
       schema: FullVerdictSchema,
@@ -165,7 +170,7 @@ export async function judgeBuild(input: JudgeInput): Promise<{ verdict: JudgeRes
   }
   const result = await respondStructured({
     model: env.judgeModel,
-    instructions: judgeInstructions(input.brief, { museAppLook: env.museAppLook, ...(env.buildRange ? { buildRange: true } : {}), ...(env.metaUiOnly ? { metaUiOnly: true } : {}), ...(env.verifyAgents ? { verifyAgents: true } : {}), ...samplesOpt(input) }),
+    instructions: judgeInstructions(input.brief, { museAppLook: env.museAppLook, ...(env.buildRange ? { buildRange: true } : {}), ...(env.metaUiOnly ? { metaUiOnly: true, productHasMuseAppLook: input.productHasMuseAppLook === true } : {}), ...(env.verifyAgents ? { verifyAgents: true } : {}), ...samplesOpt(input) }),
     content,
     sources,
     schema: VerdictSchema,

@@ -132,11 +132,13 @@ export function askedLookJudgeNote(asked: string): string {
  */
 export function judgeInstructions(
   brief: Pick<Brief, "targets" | "agent" | "askedLook"> & Partial<Brief>,
-  opts: { museAppLook?: boolean; buildRange?: boolean; verifyAgents?: boolean; fullBuilds?: boolean; samples?: boolean; metaUiOnly?: boolean } = {},
+  opts: { museAppLook?: boolean; buildRange?: boolean; verifyAgents?: boolean; fullBuilds?: boolean; samples?: boolean; metaUiOnly?: boolean; productHasMuseAppLook?: boolean } = {},
 ): string {
   const targets = briefTargets(brief);
-  // META_UI_ONLY (owner, Nov 3): every product is judged against the meta-ui house style alone, even with BUILD_RANGE.
-  const look = opts.metaUiOnly ? { museAppLook: false } : opts;
+  // META_UI_ONLY (owner, Nov 3): every new product is judged against the meta-ui house style alone, even with BUILD_RANGE.
+  // An older product whose own files have the muse-app look (app/muse-app.css) keeps both house styles, as its fix and
+  // change prompts keep that look: judged on meta-ui alone, its Meta-assistant layout could read as copying a real product.
+  const look = opts.metaUiOnly ? { museAppLook: opts.productHasMuseAppLook === true } : opts;
   const asked = askedLookOf(brief, look);
   // BUILD_RANGE (docs/BUILD_RANGE.md): a product with a direction is judged against it. One without keeps the house styles.
   const direction = opts.buildRange && !opts.metaUiOnly ? (brief.direction ?? null) : null;

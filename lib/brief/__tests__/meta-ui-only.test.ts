@@ -138,6 +138,14 @@ describe("the judge with META_UI_ONLY", () => {
     assert.equal(judgeInstructions({ ...BRIEF, askedLook: "Dark with neon green." }, { museAppLook: true, metaUiOnly: true }), JUDGE_INSTRUCTIONS);
   });
 
+  it("keeps both house styles for a product whose own files have the muse-app look", () => {
+    const text = judgeInstructions({ ...BRIEF, askedLook: "Dark with neon green." }, { museAppLook: false, buildRange: true, metaUiOnly: true, productHasMuseAppLook: true });
+    assert.match(text, /one of two Meta-inspired house styles/);
+    assert.match(text, /Dark with neon green\./);
+    assert.doesNotMatch(text, /on craft and on fit to this direction/);
+    assert.equal(judgeInstructions(WITH, { museAppLook: false, buildRange: true, metaUiOnly: true, productHasMuseAppLook: true }), judgeInstructions(BRIEF, { museAppLook: true }));
+  });
+
   it("off, BUILD_RANGE and MUSE_APP_LOOK still widen it", () => {
     assert.match(judgeInstructions(WITH, { museAppLook: true, buildRange: true }), /on craft and on fit to this direction/);
     assert.match(judgeInstructions(BRIEF, { museAppLook: true }), /one of two Meta-inspired house styles/);
@@ -162,6 +170,13 @@ describe("the build prompt with META_UI_ONLY and BUILD_RANGE", () => {
     const text = renderBuildPrompt({ ...BRIEF, complexity: "complex" }, { ...OPTS, ...NOTE, playbook: true });
     assert.match(text, /## How you must work\n\nThis build is complex, so these steps are required/);
     assert.match(text, /which subagents and workflows ran/);
+    assert.match(text, /a read-only child per screen, comparing it with brief\.md and the meta-ui skill\./);
+    assert.doesNotMatch(text, /Design direction|muse-app/);
+  });
+
+  it("off, a complex build with a direction still checks against it", () => {
+    const text = renderBuildPrompt({ ...WITH, complexity: "complex" }, { ...OPTS, museAppLook: true, buildRange: true, playbook: true });
+    assert.match(text, /comparing it with brief\.md and the Design direction\./);
   });
 
   it("a refused brief gets none of it", () => {
