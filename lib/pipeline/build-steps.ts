@@ -18,6 +18,9 @@ import { StructuredOutputError } from "@/lib/brief/structured";
 import { prepareFixtures, writeBrief, type PreparedFixture } from "@/lib/brief/write";
 import { db, schema } from "@/lib/db/client";
 import { buildTestModel, contributorBuildsOn, env } from "@/lib/env";
+import { SPARK_STANDIN, WONDER_SERVED_BY_ENV, wonderServedBy } from "@/lib/meta/spark";
+import { BOARD_TOOLS_MARKER } from "@/lib/caps/hardware/limits";
+import { CREDITS_STEP, creditsInSource, withModelCredits } from "@/lib/verify/model-credits";
 import { addBuildCost, emit, setBuildStatus } from "@/lib/events";
 import { buildTokenBudgetFor } from "@/lib/gateway/policy";
 import { mintToken, revokeLiveTokensExcept, revokeTokens } from "@/lib/gateway/tokens";
@@ -1057,14 +1060,21 @@ export async function collectVerifyStep(input: {
   outputTail: string;
   /** The edge drill's run (startEdgeDrillStep). Only an edge build has one. */
   edgeDrill?: Omit<EdgeDrillRun, "json">;
+  /** When the workflow started this verify (ms), for the gateway's record of its calls. Unset: since the build started. */
+  verifyStartedAt?: number;
+  /** A new build's last round, whose credit problems are warnings (like the screen checks). */
+  lastRound?: boolean;
 }): Promise<VerifyResult> {
   "use step";
-  const { edgeDrill, ...verify } = input;
+  const { edgeDrill } = input;
+  const verify = { buildId: input.buildId, sandboxName: input.sandboxName, round: input.round, exitCode: input.exitCode, outputTail: input.outputTail };
   const collected = await sandbox.collectVerifyResult({ ...verify, ...(env.fullBuilds ? { maxScreenshots: MAX_CHAIN_SCREENSHOTS + 2 } : {}) });
   const screenshots = collected.screenshots;
   const drilled = edgeDrill ? withEdgeDrill(collected.summary, { ...edgeDrill, json: await sandbox.readSandboxText(input.sandboxName, EDGE_DRILL_RESULTS) }) : collected.summary;
   // BUILD_SHARED_KEYS: a build with the owner's keys gets a keys step, which fails when a value is in its files.
-  const summary = await withSharedKeysCheck(input.buildId, input.sandboxName, drilled);
+  const keyed = await withSharedKeysCheck(input.buildId, input.sandboxName, drilled);
+  // Every model the product's screens credit must have been called during this verify (lib/verify/model-credits.ts).
+  const summary = await withModelCreditsCheck(input, keyed);
   await emit(input.buildId, { type: "verify", round: input.round, summary, screenshots });
   // A product with platform services: each fixed check as its own line in the build room (docs/CAPABILITIES.md, 2.8).
   for (const c of summary.caps ?? []) {
@@ -1092,6 +1102,55 @@ async function withSharedKeysCheck(buildId: string, sandboxName: string, summary
   const leaks = await sandbox.scanSharedKeys(sandboxName, shared).catch(() => null);
   if (leaks === null) console.warn(`[build keys] the keys check couldn't run on build ${buildId}. The deploy checks again.`);
   return withSharedKeyScan(summary, leaks, sharedLeakLines(leaks ?? []));
+}
+
+/** Slack on the verify's start, for the workflow clock and the sandbox's. */
+const CREDITS_WINDOW_SLACK_MS = 60_000;
+
+/**
+ * The model-credits check (lib/verify/model-credits.ts): verify's summary with a credits step, when the smoke run passed
+ * and the product's screens credit a model the gateway's record can speak for. Adds nothing when the product calls Meta
+ * directly (a local run, no gateway record), when the scan or the record can't be read, or when nothing is credited.
+ */
+async function withModelCreditsCheck(input: { buildId: string; sandboxName: string; verifyStartedAt?: number; lastRound?: boolean }, summary: VerifySummary): Promise<VerifySummary> {
+  if (!summary.steps.some((s) => s.name === "smoke" && s.ok) || publicHost(env.platformUrl) === null) return summary;
+  try {
+    const files = await sandbox.scanModelCredits(input.sandboxName);
+    const credits = files ? creditsInSource(files) : [];
+    if (!credits.length) return summary;
+    const build = await loadBuild(input.buildId);
+    if (!build.productId) return summary;
+    const since = input.verifyStartedAt ? new Date(input.verifyStartedAt - CREDITS_WINDOW_SLACK_MS) : build.startedAt;
+    const called = await buildModelsCalledSince(build.productId, since);
+    const wonderServedBy = contributorBuildsOn() && !keepsWonderLive(build.brief) ? SPARK_STANDIN : null;
+    const checked = withModelCredits(summary, credits, { called, wonderServedBy }, { warn: input.lastRound === true });
+    if (input.lastRound) {
+      const warned = checked.steps.find((s) => s.name === CREDITS_STEP && s.detail?.startsWith("warning: "));
+      if (warned?.detail) await emit(input.buildId, { type: "log", text: `Model credits: ${warned.detail.slice("warning: ".length)}` });
+    }
+    return checked;
+  } catch (err) {
+    console.warn(`[credits] the model-credits check couldn't run on build ${input.buildId}: ${String(err)}`);
+    return summary;
+  }
+}
+
+/** The models the gateway served for this product's build tokens since `since`, as recorded (after any swap). */
+async function buildModelsCalledSince(productId: string, since: Date | null): Promise<string[]> {
+  const usage = schema.usage;
+  const tokens = schema.gatewayTokens;
+  const rows = await db()
+    .selectDistinct({ model: usage.model })
+    .from(usage)
+    .innerJoin(tokens, eq(usage.tokenId, tokens.id))
+    .where(and(eq(usage.source, "gateway"), eq(usage.productId, productId), eq(tokens.scope, "build"), ...(since ? [gte(usage.at, since)] : [])));
+  return rows.map((r) => r.model).filter((m): m is string => typeof m === "string" && m.length > 0);
+}
+
+/** A live gadget or board product keeps Muse Wonder under the switch (keepsWonderUnderSwitch in lib/gateway/policy.ts). */
+function keepsWonderLive(brief: Brief | null): boolean {
+  if (!brief) return false;
+  return allowedModelsFor(brief).some((m) => m === "muse-gadget" || m === BOARD_TOOLS_MARKER);
 }
 
 /** A prompt with the shared accounts' section last. The same prompt without a grant. */
@@ -1615,7 +1674,8 @@ export async function startDeployStep(input: {
     sandboxName: input.sandboxName,
     slug: product.slug,
     productName: product.name,
-    env: { GATEWAY_URL: env.gatewayUrl, PRODUCT_TOKEN: live.token, ...(flagOn ? { MUSE_CONTRIBUTOR_NOTICE: runtime.length ? "1" : "0" } : {}), ...(brief ? capDeployEnv(brief, live.token) : {}) },
+    // Under the switch the ModelChips name the model that really serves the product's Muse Wonder calls (WONDER_SERVED_BY_ENV).
+    env: { GATEWAY_URL: env.gatewayUrl, PRODUCT_TOKEN: live.token, ...(flagOn ? { MUSE_CONTRIBUTOR_NOTICE: runtime.length ? "1" : "0", [WONDER_SERVED_BY_ENV]: wonderServedBy(runtime.length > 0) } : {}), ...(brief ? capDeployEnv(brief, live.token) : {}) },
     projectId: product.vercelProjectId,
     onFiles: (files) => captureVersion({ buildId: input.buildId, productId: input.productId, files, restoredFrom: input.restoredFrom ?? null }),
     // Every deploy: a shared key's value in any file stops it, whatever the flag says (a no-op while none is set). With

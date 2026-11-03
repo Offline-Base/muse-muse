@@ -10,7 +10,7 @@ import { groupLog, type LogGroup, type Segment } from "@/components/build/derive
 import { DrillGroup } from "@/components/build/DrillGroup";
 import { splitDrillSteps } from "@/lib/edge/drills";
 import { splitBuildNote } from "@/lib/docs/build-note";
-import { compact, duration, modelLabel, plural, truncate, usd } from "@/lib/format";
+import { briefKeepsWonder, compact, duration, plural, servedModelLabel, truncate, usd } from "@/lib/format";
 import type { Brief, Reference } from "@/lib/types";
 
 /** The building blocks of the build room's conversation column. */
@@ -221,7 +221,7 @@ export function BriefBody({ brief, title = true }: { brief: Brief; title?: boole
                     {brief.capabilities.map((c, i) => (
                       <tr key={`${c.model}-${i}`}>
                         <td>
-                          <strong>{modelLabel(c.model)}</strong>
+                          <strong>{servedModelLabel(c.model, { keepsWonder: briefKeepsWonder(brief) })}</strong>
                         </td>
                         <td>{c.need}</td>
                         <td>{c.why}</td>

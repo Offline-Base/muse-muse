@@ -43,6 +43,11 @@ const GLIMMER_TIMEOUT_MS = 170_000;
 const TEST_HEADER = "x-musemuse-glimmer-test";
 const WONDER = "muse-wonder-1.0";
 
+/** The model that really answers a muse-wonder-1.0 call: the platform names a stand-in in NEXT_PUBLIC_MUSE_WONDER_SERVED_BY, like ModelChip. */
+function wonderName(): string {
+  return process.env.NEXT_PUBLIC_MUSE_WONDER_SERVED_BY === "muse-spark-1.3-contributor" ? "Muse Spark 1.3 Contributor" : "Muse Wonder";
+}
+
 function testHeaders(from?: RequestLike | null): Record<string, string> {
   if (!from) return {};
   const headers = "get" in from && typeof from.get === "function" ? from : (from as { headers: { get(name: string): string | null } }).headers;
@@ -79,6 +84,6 @@ export async function askGlimmer(input: { messages: GlimmerMessage[]; own?: bool
   return {
     text: res.output_text,
     by: "wonder",
-    note: own ? "Answered by Muse Wonder while this app's own model is off." : "Answered by Muse Wonder while Muse Glimmer is off.",
+    note: own ? `Answered by ${wonderName()} while this app's own model is off.` : `Answered by ${wonderName()} while Muse Glimmer is off.`,
   };
 }

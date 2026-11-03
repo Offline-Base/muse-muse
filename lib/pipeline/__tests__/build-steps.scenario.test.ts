@@ -62,6 +62,9 @@ let deployImpl: () => Promise<unknown> = async () => ({});
 /** EDGE_ENABLED: what the drill wrote, and the drills started. */
 let drillJson: string | null = null;
 let drillStarts: string[] = [];
+/** The model-credits check: verify's own summary, and the UI files the credit scan sends back. */
+let verifySummary: { passed: boolean; steps: Array<{ name: string; ok: boolean }>; failureOutput: string } | null = null;
+let creditFiles: Array<{ file: string; text: string }> | null = null;
 
 function thenable<T extends object>(q: T, result: () => unknown): T {
   return Object.assign(q, {
@@ -76,6 +79,21 @@ const fakeDb = () => ({
     let table = "";
     const q: Record<string, unknown> = {};
     for (const m of ["orderBy", "limit"]) q[m] = () => q;
+    q.from = (t: never) => {
+      table = getTableName(t);
+      return q;
+    };
+    q.where = (where: SQL | undefined) => {
+      wheres.push({ table, where });
+      return q;
+    };
+    return thenable(q, () => selects[table]?.shift() ?? []);
+  },
+  // The model-credits check's read of the gateway's record: usage joined to the build's tokens, served from selects.usage.
+  selectDistinct: () => {
+    let table = "";
+    const q: Record<string, unknown> = {};
+    q.innerJoin = () => q;
     q.from = (t: never) => {
       table = getTableName(t);
       return q;
@@ -200,7 +218,8 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
         exportTranscript: async () => ({ url: "https://x/transcript.json", highlights: [] }),
         writeDemoSpec: async (sandboxName: string, spec: Record<string, unknown>) => void demoSpecs.push({ sandboxName, spec }),
         finishDemo: async () => demoVideo,
-        collectVerifyResult: async () => ({ summary: { passed: true, steps: [{ name: "build", ok: true }], failureOutput: "" }, screenshots: [] }),
+        collectVerifyResult: async () => ({ summary: verifySummary ?? { passed: true, steps: [{ name: "build", ok: true }], failureOutput: "" }, screenshots: [] }),
+        scanModelCredits: async () => creditFiles,
         readSandboxText: async (_name: string, file: string) => (file.endsWith("test-results/caps/edge-drill.json") ? drillJson : null),
       },
     });
@@ -254,6 +273,68 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
     provisioned = [];
     manifestReads = 0;
     manifestImpl = null;
+    verifySummary = null;
+    creditFiles = null;
+  });
+
+  describe("collectVerifyStep's model-credits check", () => {
+    const SMOKED = { passed: true, steps: [{ name: "smoke", ok: true }], failureOutput: "" };
+    const FRIDGE = [{ file: "app/page.tsx", text: `<div className="card-head"><h2>Your fridge</h2><ModelChip model="sam-3.1" verb="Outlined" /></div>` }];
+    const build = { id: "b1", kind: "build", productId: "prod-1", brief: FULL_BRIEF, inspirationId: "i", startedAt: new Date("2026-11-03T05:00:00Z") };
+    const collect = (extra: Record<string, unknown> = {}) =>
+      steps.collectVerifyStep({ buildId: "b1", sandboxName: "sb", round: 0, exitCode: 0, outputTail: "", verifyStartedAt: Date.parse("2026-11-03T06:00:00Z"), ...extra });
+    const verified = () => emitted.filter((e) => e.body.type === "verify").map((e) => e.body.summary as { passed: boolean; steps: Array<{ name: string; ok: boolean; detail?: string }>; failureOutput: string })[0]!;
+    let saved: string | undefined;
+    before(() => {
+      saved = process.env.PLATFORM_URL;
+      process.env.PLATFORM_URL = "https://platform.example";
+    });
+    after(() => (saved === undefined ? delete process.env.PLATFORM_URL : (process.env.PLATFORM_URL = saved)));
+
+    it("fails the audit's fridge: a SAM 3.1 chip when this verify only called the vision model", async () => {
+      verifySummary = SMOKED;
+      creditFiles = FRIDGE;
+      selects = { builds: [[build]], usage: [[{ model: "muse-spark-1.3-contributor" }]] };
+      const out = await collect();
+      assert.equal(out.passed, false);
+      assert.deepEqual(out.steps.at(-1), { name: "model credits", ok: false });
+      assert.match(verified().failureOutput, /app\/page\.tsx \(<ModelChip model="sam-3\.1">\) credits sam-3\.1, but this check's smoke run never called sam-3\.1/);
+      const read = wheres.find((w) => w.table === "usage");
+      const sql = new PgDialect().sqlToQuery(read!.where!);
+      assert.match(sql.sql, /"usage"\."source" = \$1/);
+      assert.match(sql.sql, /"gateway_tokens"\."scope" = \$3/);
+      assert.ok(sql.params.includes("build") && sql.params.includes("prod-1"));
+      assert.ok(sql.params.some((p) => String(p).startsWith("2026-11-03T05:59:00")), "reads only this verify's calls, with a minute of slack");
+    });
+
+    it("passes when the gateway saw the credited model, and only warns on a new build's last round", async () => {
+      verifySummary = SMOKED;
+      creditFiles = FRIDGE;
+      selects = { builds: [[build]], usage: [[{ model: "sam-3.1" }, { model: "muse-spark-1.3-contributor" }]] };
+      assert.equal((await collect()).passed, true);
+      emitted = [];
+      selects = { builds: [[build]], usage: [[{ model: "muse-spark-1.3-contributor" }]] };
+      const last = await collect({ lastRound: true });
+      assert.equal(last.passed, true);
+      assert.match(verified().steps.at(-1)?.detail ?? "", /^warning: /);
+      assert.ok(emitted.some((e) => e.body.type === "log" && String(e.body.text).startsWith("Model credits: app/page.tsx")));
+    });
+
+    it("adds nothing when smoke didn't pass, nothing is credited, or the product calls Meta directly", async () => {
+      creditFiles = FRIDGE;
+      verifySummary = { passed: false, steps: [{ name: "smoke", ok: false }], failureOutput: "smoke failed" };
+      assert.deepEqual((await collect()).steps, [{ name: "smoke", ok: false }]);
+      verifySummary = SMOKED;
+      creditFiles = [{ file: "app/page.tsx", text: "<p>No credit here.</p>" }];
+      assert.deepEqual((await collect()).steps, [{ name: "smoke", ok: true }]);
+      creditFiles = FRIDGE;
+      process.env.PLATFORM_URL = "http://localhost:3000";
+      try {
+        assert.deepEqual((await collect()).steps, [{ name: "smoke", ok: true }]);
+      } finally {
+        process.env.PLATFORM_URL = "https://platform.example";
+      }
+    });
   });
 
   describe("judgeStep on a refinement", () => {

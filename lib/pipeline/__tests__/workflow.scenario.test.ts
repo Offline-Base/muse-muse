@@ -674,6 +674,10 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
       named("startTaskStep").filter((c) => c.args[1] === "verify").map((c) => c.args[2]),
       [undefined, undefined, undefined, { MUSEMUSE_SCREEN_CHECK: "warn" }],
     );
+    // The model-credits check gets each verify's start, and only the last round warns instead of failing.
+    const collected = named("collectVerifyStep").map((c) => c.args[0] as { verifyStartedAt?: number; lastRound?: boolean });
+    assert.ok(collected.every((c) => typeof c.verifyStartedAt === "number"));
+    assert.deepEqual(collected.map((c) => c.lastRound === true), [false, false, false, true]);
     assert.equal((named("registerStep")[0]!.args[0] as { status: string }).status, "partial");
     assert.equal(statuses().at(-1), "partial");
   });

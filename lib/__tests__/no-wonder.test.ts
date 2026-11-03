@@ -27,6 +27,7 @@ const NOT_A_PICK: Record<string, string> = {
   "lib/meta/pricing.ts": "its price",
   "lib/edge/template-source.ts": "a generated copy of template/lib/meta/edge.ts, written into edge builds: a product's own default id and its label, which the gateway swaps under the switch",
   "lib/format.ts": "its display name",
+  "lib/verify/model-credits.ts": "reads a product's credits and the gateway's record of what it called; never picks a model",
   "lib/types.ts": "the type of model ids",
   "lib/brief/schema.ts": "the id a brief may list; the gateway serves it on Contributor",
   "lib/brief/render.ts": "the skill table, and whether a brief lists the id",

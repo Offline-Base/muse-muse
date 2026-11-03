@@ -647,6 +647,8 @@ describe("product sandboxes", { skip: canMock ? false : "needs --experimental-te
       const gateway = await envFile({ PLATFORM_URL: "https://musemuse.example", BUILDS_ON_CONTRIBUTOR: "1", VERCEL_ENV: "production" });
       assert.doesNotMatch(gateway, /TEST_MODEL/);
       assert.match(gateway, /^MUSE_CONTRIBUTOR_NOTICE=1$/m);
+      // The product's ModelChips name the model that really serves its Muse Wonder calls.
+      assert.match(gateway, new RegExp(`^NEXT_PUBLIC_MUSE_WONDER_SERVED_BY=${CONTRIBUTOR}$`, "m"));
     });
 
     it("leaves it out when TEST_MODEL is unset, names another model, or the platform is production", async () => {
