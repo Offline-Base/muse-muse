@@ -155,7 +155,10 @@ export function SamRoom({ initial, serverNow }: { initial: SamRunView; serverNow
         setError(typeof data.message === "string" ? data.message : `That didn't work (${typeof data.error === "string" ? data.error : res.status}).`);
         return;
       }
+      // Ask for the run again either way: an answer without the view must not leave a started run looking like a
+      // draft, since the room only polls while the run can change.
       if (isRun(data.run, id)) setView(data.run);
+      else await refresh();
       setNow(Date.now());
     } catch {
       setError("Couldn't reach the server. Try again.");

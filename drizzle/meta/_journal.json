@@ -225,6 +225,13 @@
       "when": 1793568011538,
       "tag": "0032_connected_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1793731738116,
+      "tag": "0033_sam_tune",
+      "breakpoints": true
     }
   ]
 }

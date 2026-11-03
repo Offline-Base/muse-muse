@@ -21,9 +21,11 @@ export default async function SamTunePage({ params }: { params: Promise<{ id: st
   const { id } = await params;
   if (!isUuid(id)) notFound();
   const viewer = await pageViewer();
-  const view = await getRunView(id);
+  const admin = Boolean(viewer?.isAdmin);
+  // Only an admin's view carries the run's photos and look-alikes.
+  const view = await getRunView(id, { full: admin });
   if (!view) notFound();
-  if (viewer?.isAdmin) {
+  if (admin) {
     return (
       <div className="page sam-page">
         <SamRoom initial={view} serverNow={Date.now()} />

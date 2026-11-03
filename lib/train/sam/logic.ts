@@ -196,6 +196,11 @@ const SETTING_IDS: readonly SamSettingId[] = ["meta_word", "meta_generic", "meta
 const IMAGE_RULES: readonly SamImageRule[] = ["tuned_top", "generic_top", "tuned_false_fire"];
 /** The only licenses a COCO photo may be shown under (with its credit). Made-up and the person's own images carry none. */
 export const SHOWN_LICENSES = ["CC BY 2.0", "CC BY-SA 2.0"] as const;
+/** COCO's own names for the two shown licenses (instances_val2017.json "licenses"), read as the short form. */
+const COCO_LICENSE_NAMES: Record<string, (typeof SHOWN_LICENSES)[number]> = {
+  "Attribution License": "CC BY 2.0",
+  "Attribution-ShareAlike License": "CC BY-SA 2.0",
+};
 const MAX_IMAGES = 6;
 const HEX64 = /^[0-9a-f]{64}$/;
 
@@ -289,11 +294,12 @@ export function validateReportIn(body: unknown, run: ReportRun, byteLength?: num
   for (const raw of body.images) {
     if (!isObj(raw) || typeof raw.url !== "string" || !uploads.has(raw.url)) return bad("images.url");
     if (!IMAGE_RULES.includes(raw.rule as SamImageRule)) return bad("images.rule");
-    const license = raw.license === null || raw.license === undefined ? null : raw.license;
+    // COCO names its licenses "Attribution License" and "Attribution-ShareAlike License"; the report keeps the short form.
+    const license = raw.license === null || raw.license === undefined ? null : typeof raw.license === "string" ? (COCO_LICENSE_NAMES[raw.license] ?? raw.license) : raw.license;
     if (license !== null && !SHOWN_LICENSES.includes(license as (typeof SHOWN_LICENSES)[number])) return bad("images.license");
     // Every picture of a built-in Muse run is a COCO photo, so it needs its license; only uploads runs have made-up or own images.
     if (license === null && run.data === "builtin-muse") return bad("images.license");
-    const credit = raw.credit === null || raw.credit === undefined ? null : cleanLine(raw.credit, 200);
+    const credit = raw.credit === null || raw.credit === undefined ? null : cleanLine(raw.credit, 300);
     if (raw.credit != null && credit === null) return bad("images.credit");
     if (license !== null && credit === null) return bad("images.credit");
     images.push({ url: raw.url, rule: raw.rule as SamImageRule, caption: imageCaption(raw.rule as SamImageRule, run.word, run.generic), credit, license: license as string | null });
@@ -397,7 +403,9 @@ export function caveatsFor(report: Pick<SamReportIn, "settings" | "word" | "sets
   const out = [
     t ? `A small test: ${t.B.n} photos with ${w} pasted in and ${t.A.n} photos without it.` : `A small test.`,
     `The ${w} cutouts were pasted into the photos, not photographed together.`,
-    "The look-alikes are made up (Muse Image) or come from COCO.",
+    report.setsSource === "run"
+      ? "The look-alikes are your own photos or made up (Muse Image)."
+      : "The look-alikes are made up (Muse Image) or come from COCO.",
     `This never shows that it tells ${w} apart from all look-alikes.`,
   ];
   if (report.setsSource === "nov3") out.push("Scored on the same test photos as the Nov 3 run.");
