@@ -1,6 +1,6 @@
 ---
 name: recipe-games
-description: Use for a 3D browser game built with three.js, such as a racer or a lane-crossing arcade game, built in one structured pass or with play-testing rounds.
+description: Use for a 3D browser game built with three.js, such as a kart racer on a loop or a lane-crossing arcade game, built in one structured pass or with play-testing rounds.
 ---
 
 # 3D games with three.js
@@ -25,6 +25,12 @@ Keep game state out of React. Use one `requestAnimationFrame` loop, stop it on u
 Every ending shows an end screen over the game with the result (cleared or not, the score, why it ended) and a Retry button that resets every list and puts the focus on it. Expose `window.__game` as a read-only state object with at least `status` (`"ready"`, `"playing"`, `"cleared"` or `"failed"`), `score`, the player's position and `levelEndsWithin`, the most seconds the level can last with no input (its length over its slowest speed, or its timer).
 
 Show a WebGL error only when creating the renderer fails, never as a line that is always on screen.
+
+**Endless games end too.** A lane-crossing game or a runner has no track end, so a run also ends when the player stops making progress: no forward move for 8 seconds brings a hawk or a wave, as the classic lane-crossing games do, or a run timer runs out. `levelEndsWithin` is that limit.
+
+**Lane-crossing rules** (Meta's one-shot recipe): forward is negative Z and the score is the farthest row; collision is by world position on both X and Z, never by grid row alone; a log carries the player with its drift, so X isn't snapped back to the grid, and sliding off a log or carrying past the screen edge ends the run; trains flash a warning, then cross fast; lanes spawn ahead and are removed behind.
+
+**Racers on a loop:** count laps by progress through checkpoints in order, so reversing over the line never counts, and end the race at its lap count or its timer, whichever comes first.
 
 ## 03/06 Iterative game
 
