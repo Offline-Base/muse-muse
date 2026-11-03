@@ -3239,3 +3239,25 @@ The organizers ruled on Nov 2 that every model the project calls at runtime must
   - `onnxruntime` and `tokenizers` in `privacy/pyproject.toml`: removing them needs a `uv lock` with the network.
   - The browser's own voice for text to speech (owner question 9).
 - **Tests:** template media and `lib/caps/media` 40 of 40 (the Chromium half skips: `template/node_modules` isn't installed here). `lib/train` hub-cards, gguf-cards, bases and decide-mode 102 of 102; the Hub, GGUF and workflow flows 83 of 83. The edge test and drive logic 39 of 39. The hardware, gadget-connect and vibe device tests 166 of 166. `privacy/`: egress, observe, deploy files, config, claims, plug-in, notices, services, flow and approvals 382 passed, plus regions, no-egress, connector, device-only and attacks 482 passed and 14 known xfails. One failure in each `privacy/` run is the shared venv's: `test_notices_list_every_python_dependency_at_its_installed_version` finds no `onnxruntime` in `~/muse-privacy/.venv`, which this branch doesn't change. `ruff check` on `privacy/` passes. Typecheck clean except the `modal` package missing from the shared `node_modules` (#83), as on tg-public-ready.
+
+
+## Nov 2, 2026, 10:14 PM ET: the first real edge build that looks with SAM 3.1 (preview of tg-edge-vision)
+
+- **Preview:** tg-edge-vision at `814a07ce`, deployed as muse-muse-law6vu29s (`dpl_J317FDwdxJfi81MDJeQvKMozJ95N`) with `--env`/`--build-env` only. Switches as in M7: EDGE_BUILDS and EDGE_ENABLED on, PREVIEW_USE_MAIN_DB, OPEN_ACCESS=admin, TEST_MODEL=muse-spark-1.3-contributor, and FULL_BUILDS, BUILDS_ON_CONTRIBUTOR, MUSE_APP_LOOK and BUILD_RANGE at 0. No project setting changed.
+- **Note:** a door watcher for a small walk-in cold room. A photo of the door goes in, and the answer is Door open or Door shut, decided in code from SAM 3.1: "open door" decides it, and "can" is shown as the second sign. It should keep answering from SAM on the office board when the cloud is down. Targets `["edge"]`, made-up photos.
+- **Build da8b23c4, product cold-door-watch:** about 11 minutes from brief to live, 0 fix rounds, $0.054.
+  - **Muse Code used the new helper on its own:** `app/api/actions/check_door_status/route.ts` calls `segmentOrEdge`, and `edge-drill.json` holds `{"sam": {"path": "/api/actions/check_door_status", ...}}`.
+  - **The manifest's action** returns `status`, `answer` ("Door open" or "Door shut"), the open-door and can counts and boxes, `by` ("cloud" or "board") and the fixed `label`.
+  - **Both fixtures are made up:** an open steel walk-in door with plain cans, and a closed one, with no logos.
+- **SAM drills in the build's own checks, all passed:**
+  - 12, cloud refused (137 ms);
+  - 13, cloud hung (10.0 s);
+  - 14, both down (16 ms);
+  - 15, tampered board reply rejected (21 ms).
+  - The judge passed it.
+- **Not proven yet:**
+  - the board's own SAM answering this product;
+  - a real camera frame;
+  - the open and shut call on the real prop;
+  - this product on jetson-04 with the uplink out (Hussam, Tuesday, docs/EDGE_DEMO.md section 6).
+- **Next:** download version 1's source (`/p/cold-door-watch/code/source.zip?v=1`, 904 KB) for Hussam's board kit.
