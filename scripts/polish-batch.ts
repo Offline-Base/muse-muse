@@ -13,7 +13,7 @@
  *   --poll=60             seconds between rounds
  *   --focus-file=<path>   an audit file from scripts/audit-batch.ts (or {buildId or slug: text}); each failing product's
  *                         focus text goes with its polish
- *   --look=meta           switch each product to the Meta UI look (sent as look: "meta"); left out, each keeps its look.
+ *   --look=meta           put each product on the Meta AI app look, muse-app-ui (sent as look: "meta"); left out, each keeps its look.
  *                         A product already polished in another look is refused (add --again); a polish the route says
  *                         is already meta is followed, never run twice
  *   --again               polish products that already had a polish (sent as again: true). A 409 already_polished is
@@ -116,6 +116,13 @@ export interface StartOutcome {
   pauseUntil?: Date;
 }
 
+/** Records the look an item's polish has. Look "meta" is the Meta AI app look now (appLook), never the older meta-ui. */
+function setLook(item: PolishItem, look: NonNullable<PolishPass["look"]>): void {
+  item.look = look;
+  if (look === "meta") item.appLook = true;
+  else delete item.appLook;
+}
+
 /** Applies one polish answer to its item, for this pass (--look, --again). */
 export function applyAnswer(item: PolishItem, res: PostResult, site: string, now: Date, pass: PolishPass = {}): StartOutcome {
   const a = parsePolishAnswer(res.status, res.json, site, { again: pass.again, own: item.refineIds, ...(pass.look ? { look: pass.look } : {}) });
@@ -131,7 +138,7 @@ export function applyAnswer(item: PolishItem, res: PostResult, site: string, now
     item.attempts -= 1;
     item.state = "polishing";
     item.refineIds = [...new Set([...item.refineIds, ...a.refineIds])];
-    if (a.look) item.look = a.look;
+    if (a.look) setLook(item, a.look);
     item.notBefore = undefined;
     item.note = `${a.reason}: following the product's polish ${a.refineIds[0]}`;
     return {};
@@ -139,8 +146,11 @@ export function applyAnswer(item: PolishItem, res: PostResult, site: string, now
   if (a.kind === "started") {
     item.state = "polishing";
     item.startedAt = now.toISOString();
-    if (pass.look) item.look = pass.look;
-    else delete item.look;
+    if (pass.look) setLook(item, pass.look);
+    else {
+      delete item.look;
+      delete item.appLook;
+    }
     item.refineIds = [...new Set([...item.refineIds, ...a.refineIds])];
     if (a.maxUsd !== undefined) item.maxUsd = a.maxUsd;
     item.notBefore = undefined;

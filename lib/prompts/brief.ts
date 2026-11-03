@@ -84,6 +84,19 @@ const MUSE_APP_LOOK_LINES = [
   "- askedLook is null unless the person's own words (the note, or what they say in a voice memo) ask for a look: colors, fonts, a theme such as dark or playful, or their own brand's colors. Then it is that ask in one or two plain sentences, as specific as they were. A screenshot or photo alone is not an ask, and neither is a mood you read from the references. Never put a real product's or company's exact look, name or logo in askedLook: that goes in dontCopy, and askedLook keeps only the general style (\"dark with neon green\", not \"looks like Spotify\").",
 ].join("\n");
 
+/** The asked-look clause in MUSE_APP_LOOK_LINES' borrow line, which APP_LOOK_ONLY_LINE leaves out. */
+const ASKED_LOOK_CLAUSE = "so unless askedLook says otherwise the mood";
+
+/**
+ * META_UI_ONLY (owner, Nov 3, evening): the muse-app look's borrow line with no asked-look part, since every product has
+ * the Meta AI app look and the schema has no askedLook.
+ */
+export const APP_LOOK_ONLY_LINE = (() => {
+  const [borrow] = MUSE_APP_LOOK_LINES.split("\n");
+  if (borrow.split(ASKED_LOOK_CLAUSE).length !== 2) throw new Error("The muse-app borrow line changed: update APP_LOOK_ONLY_LINE in lib/prompts/brief.ts.");
+  return borrow.replace(ASKED_LOOK_CLAUSE, "so the mood");
+})();
+
 /**
  * Wave 3, unit 1 (docs/CAPABILITIES.md, section 7): who is building, from briefTierFor in lib/trust/tiers.ts. Left out,
  * as it is while TRUST_SIGNED_IN_CAPS is off, the instructions are today's.
@@ -100,8 +113,8 @@ export interface BriefWriterOptions {
   /** BUILD_RANGE (docs/BUILD_RANGE.md): pick a design direction from this starting idea, unlike these recent ones. */
   range?: { start: string; recent: readonly RecentDirection[] };
   /**
-   * META_UI_ONLY (owner, Nov 3): the meta-ui borrow line, with no design direction and no hex colors, even with range.
-   * Range's flow, screens, capabilities, complexity and actions lines stay.
+   * META_UI_ONLY (owner, Nov 3, evening): the muse-app look's borrow line with no askedLook (APP_LOOK_ONLY_LINE), and no
+   * design direction or hex colors, even with range. Range's flow, screens, capabilities, complexity and actions lines stay.
    */
   metaUiOnly?: boolean;
 }
@@ -116,7 +129,7 @@ function rangeLookLines(): string {
 export function briefInstructions(opts: BriefWriterOptions = {}): string {
   const caps = opts.caps ?? env.enabledCaps;
   const range = opts.range;
-  // The parts of BUILD_RANGE that set the look. META_UI_ONLY keeps every product on meta-ui, so it drops only these.
+  // The parts of BUILD_RANGE that set the look. META_UI_ONLY keeps every product on muse-app-ui, so it drops only these.
   const rangeLook = range && !opts.metaUiOnly ? range : null;
   const text = `You turn someone's muse into a product brief for Muse Muse.
 
@@ -132,7 +145,7 @@ Reading the inspo
 - inspiration.references has exactly one entry per reference, in order. index is the reference number minus 1 (Reference 1 has index 0). kind is the kind in its label.
 - describes says what the reference shows in enough detail that someone who can't see it could build from your words: layout, sections, controls, flow, mood, and the content that matters to the job (what is in the photo, how many, where). Describe colors as roles (a dark header, a warm accent), not hex values. For a voice memo, say what the speaker asks for. For a PDF, give its structure and the content the product needs.
 - inspiration.summary is one or two sentences on what the person gave and what they want.
-${rangeLook ? rangeLookLines() : opts.museAppLook && !opts.metaUiOnly ? MUSE_APP_LOOK_LINES : META_LOOK_LINE}
+${rangeLook ? rangeLookLines() : opts.metaUiOnly ? APP_LOOK_ONLY_LINE : opts.museAppLook ? MUSE_APP_LOOK_LINES : META_LOOK_LINE}
 - dontCopy lists what it must leave out: names, logos, characters, copyrighted text, artwork or photos, and the exact look of a real product. If a reference is a screenshot of a real app or site, the product gets its own name and design. A reference that is the person's own sample input (see fixtures) is what the product works on, so don't list it in dontCopy.
 
 Deciding

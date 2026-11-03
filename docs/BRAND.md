@@ -458,15 +458,30 @@ retinting `--bg` would retint the docs. To keep their look:
 
 ## Products
 
-### The look today: meta-ui for every product (`META_UI_ONLY`, owner, Nov 3)
+### The look today: the Meta AI app look for every product (`META_UI_ONLY`, owner, Nov 3, corrected that evening)
 
-The owner's call: every product uses our meta-ui skill (`template/.agents/skills/meta-ui`: a gray page, flat white
-cards, Meta blue, Inter and Montserrat). With `META_UI_ONLY` on, `env.museAppLook` is false whatever `MUSE_APP_LOOK`,
-`BUILDS_ON_CONTRIBUTOR` or `BUILD_RANGE` say, so no build gets the muse-app overlay or `withLookColors`, and the writer,
-build prompt and judge name meta-ui. `BUILD_RANGE` loses only its look: no direction in the brief or its schema, no
-build-range overlay, the plain meta-ui house style in the judge for new products (one whose sandbox has `app/muse-app.css` keeps both house styles). Its depth, limits, subagents and workflows stay. A fix
-or change goes by the product's own files: `app/muse-app.css` there means an older muse-app product, which keeps
-muse-app-ui, and otherwise meta-ui. The muse-app look below stays in the tree for those older products.
+The owner's call, decisive: every product has the look of the Meta AI app (meta.ai): a white page, hairline cards,
+regular-weight Inter, one blue for actions, a purple gradient only for AI, a floating composer, and a left sidebar where
+it fits. In this repo that is the muse-app overlay (`template/targets/muse-app`, `lib/sandbox/look.ts`) and its
+muse-app-ui skill, with the tokens in `app/muse-app.css`. It is not the older meta-ui skill (gray page, Montserrat), and
+not a design direction picked per brief (BUILD_RANGE's direction, an asked look, the build-range overlay with
+design-looks), which is what made some products cream and green.
+
+With `META_UI_ONLY` on (the name is from the flag's first version, which set meta-ui; production has it set),
+`env.museAppLook` is true whatever `MUSE_APP_LOOK`, `BUILDS_ON_CONTRIBUTOR` or `BUILD_RANGE` say: the overlay at
+provision and in warmSandbox, `withLookColors`, and the writer, build prompt and render name muse-app-ui. Nothing of a
+direction or an asked look is left: the writer's borrow line is the muse-app one without the askedLook part, the schema
+has no `direction` or `askedLook`, no build-range overlay, no Design direction section, and the judge gets the house
+styles (`BOTH_HOUSE_STYLES`, never `RANGE_HOUSE_STYLE`) with no direction or asked look in the brief it reads.
+`BUILD_RANGE`'s depth, limits, subagents and workflows stay. A fix or change goes by the product's own files:
+`app/muse-app.css` there means muse-app-ui, and otherwise meta-ui, so an older product isn't restyled by a fix.
+
+To move a live product onto the look, polish it with `look: "meta"` (`npm run polish-batch -- ... --look=meta --again`):
+step 1 of its note keeps `app/muse-app.css` and strips every direction override, or copies the overlay in from the
+sandbox's read-only `/vercel/musemuse/targets/muse-app/files` (from the skill's tokens table if a sandbox is too old to
+have it), points AGENTS.md at muse-app-ui, and commits "Look: Meta AI app", after which the build-range skill files no
+longer come back before each check. The judge and later fixes and changes then read no direction for that product.
+Products polished to meta-ui on the afternoon of Nov 3 are polished again by the same command.
 
 ### What's there
 

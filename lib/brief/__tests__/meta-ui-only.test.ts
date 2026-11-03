@@ -1,13 +1,12 @@
 /**
- * META_UI_ONLY (owner, Nov 3, docs/BRAND.md): every new product on the meta-ui skill, whatever MUSE_APP_LOOK,
- * BUILDS_ON_CONTRIBUTOR or BUILD_RANGE say. BUILD_RANGE keeps its depth, limits and agents, and loses only its look. A fix
- * or change keeps the look the product's own files have. Off, everything is as it was (flags-off.test.ts, range.test.ts).
+ * META_UI_ONLY (owner, Nov 3, corrected that evening, docs/BRAND.md): every new product has the Meta AI app look, the
+ * muse-app overlay and its muse-app-ui skill, whatever MUSE_APP_LOOK, BUILDS_ON_CONTRIBUTOR or BUILD_RANGE say, with no
+ * design direction and no asked look anywhere. BUILD_RANGE keeps its depth, limits and agents. A fix or change keeps the
+ * look the product's own files have. Off, everything is as it was (flags-off.test.ts, range.test.ts, muse-app-look.test.ts).
  *
  *   npx tsx --experimental-test-module-mocks --test lib/brief/__tests__/meta-ui-only.test.ts
  */
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { renderBuildPrompt, renderFixPrompt, renderRefinePrompt } from "@/lib/brief/render";
 import type { Brief } from "@/lib/brief/schema";
@@ -15,14 +14,11 @@ import { newBriefSchemaFor } from "@/lib/brief/schema";
 import { strictJsonSchema } from "@/lib/brief/strict-schema";
 import { env } from "@/lib/env";
 import { BRIEF } from "@/lib/promote/__tests__/fixtures";
-import { briefInstructions } from "@/lib/prompts/brief";
+import { APP_LOOK_ONLY_LINE, briefInstructions } from "@/lib/prompts/brief";
 import { JUDGE_INSTRUCTIONS, judgeInstructions } from "@/lib/prompts/judge";
 import { DIRECTION_STARTS, type Direction } from "@/lib/range/direction";
-import { flagsOffSurface } from "./flags-off-surface";
 
 const NAMES = ["META_UI_ONLY", "MUSE_APP_LOOK", "BUILDS_ON_CONTRIBUTOR", "BUILD_RANGE", "MUSE_FULL"] as const;
-const GOLDEN = join(import.meta.dirname, "golden");
-const golden = (name: string) => readFileSync(join(GOLDEN, name), "utf8");
 
 const DIRECTION: Direction = {
   summary: "A printed almanac for bird watchers, warm and dense.",
@@ -36,11 +32,14 @@ const DIRECTION: Direction = {
   motion: "Rows fade in.",
   imagery: "Engraving-style drawings.",
 };
-const WITH: Brief = { ...BRIEF, direction: DIRECTION };
+const ASKED = "Dark with neon green.";
+const WITH: Brief = { ...BRIEF, direction: DIRECTION, askedLook: ASKED };
 const RANGE = { start: DIRECTION_STARTS[0], recent: [] };
 const OPTS = { inspoFiles: [], fixtures: [], maxModelSteps: 40 };
 /** What build-steps.ts lookNote() and rangeNote() give the prompts with META_UI_ONLY and BUILD_RANGE on. */
-const NOTE = { museAppLook: false, metaUiOnly: true, buildRange: true };
+const NOTE = { museAppLook: true, metaUiOnly: true, buildRange: true };
+/** The same with BUILD_RANGE off. */
+const APP = { museAppLook: true, metaUiOnly: true };
 
 const saved: Record<string, string | undefined> = {};
 beforeEach(() => {
@@ -69,17 +68,19 @@ describe("META_UI_ONLY in lib/env.ts", () => {
     }
   });
 
-  it("turns the muse-app look off whatever MUSE_APP_LOOK, BUILDS_ON_CONTRIBUTOR or BUILD_RANGE say", () => {
+  it("turns the muse-app look on by itself, and keeps it on whatever MUSE_APP_LOOK, BUILDS_ON_CONTRIBUTOR or BUILD_RANGE say", () => {
+    assert.equal(env.museAppLook, false);
+    process.env.META_UI_ONLY = "1";
+    assert.equal(env.museAppLook, true, "alone");
     for (const name of ["MUSE_APP_LOOK", "BUILDS_ON_CONTRIBUTOR", "BUILD_RANGE"] as const) {
-      process.env[name] = "1";
-      assert.equal(env.museAppLook, true, `${name} alone`);
-      process.env.META_UI_ONLY = "1";
-      assert.equal(env.museAppLook, false, `${name} with META_UI_ONLY`);
-      delete process.env.META_UI_ONLY;
+      for (const value of ["1", "0"]) {
+        process.env[name] = value;
+        assert.equal(env.museAppLook, true, `${name}=${value}`);
+      }
       delete process.env[name];
     }
-    Object.assign(process.env, { MUSE_APP_LOOK: "1", BUILDS_ON_CONTRIBUTOR: "1", BUILD_RANGE: "1", META_UI_ONLY: "1" });
-    assert.equal(env.museAppLook, false);
+    delete process.env.META_UI_ONLY;
+    assert.equal(env.museAppLook, false, "off again");
   });
 
   it("leaves BUILD_RANGE's other settings on", () => {
@@ -87,22 +88,27 @@ describe("META_UI_ONLY in lib/env.ts", () => {
     assert.equal(env.buildRange, true);
     assert.equal(env.museFull, true);
   });
-
-  it("with MUSE_APP_LOOK and BUILD_RANGE on, the writer, the build prompt and the judge are the meta-ui goldens", () => {
-    // BUILDS_ON_CONTRIBUTOR also rewrites the model catalog, which isn't the look, so it stays out of this one.
-    Object.assign(process.env, { MUSE_APP_LOOK: "1", BUILD_RANGE: "1", META_UI_ONLY: "1" });
-    const surface = flagsOffSurface();
-    for (const name of ["brief-instructions.txt", "build-prompt.txt", "judge-instructions.txt", "new-brief.schema.json", "brief.md"]) {
-      assert.equal(surface[name], golden(name), name);
-    }
-  });
 });
 
 describe("the brief writer with META_UI_ONLY", () => {
-  it("uses the meta-ui borrow line and picks no direction, even with BUILD_RANGE", () => {
-    const text = briefInstructions({ museAppLook: false, range: RANGE, metaUiOnly: true });
-    assert.match(text, /^- borrow .*Meta blue, Inter and Montserrat type, white cards/m);
-    assert.doesNotMatch(text, /Design direction|direction is this product's own look|askedLook|approximate hex value|The mood may show in colors/);
+  it("uses the muse-app borrow line with no asked-look part, and nothing else changes", () => {
+    const text = briefInstructions(APP);
+    const muse = briefInstructions({ museAppLook: true });
+    assert.ok(text.includes(`\n${APP_LOOK_ONLY_LINE}\n`));
+    assert.match(APP_LOOK_ONLY_LINE, /^- borrow .*Muse Muse's own app look \(a white page, hairline cards, regular-weight Inter, one blue for actions, a purple gradient only on what a model made\), so the mood carries over only/);
+    assert.doesNotMatch(text, /askedLook|Montserrat|Design direction/);
+    // The muse-app writer less its askedLook line and clause, byte for byte.
+    const lines = muse.split("\n");
+    const asked = lines.findIndex((l) => l.startsWith("- askedLook is null unless"));
+    assert.ok(asked > 0);
+    lines.splice(asked, 1);
+    assert.equal(text, lines.join("\n").replace("so unless askedLook says otherwise the mood", "so the mood"));
+  });
+
+  it("with BUILD_RANGE picks no direction and no hex colors, and keeps its other lines", () => {
+    const text = briefInstructions({ ...APP, range: RANGE });
+    assert.ok(text.includes(`\n${APP_LOOK_ONLY_LINE}\n`));
+    assert.doesNotMatch(text, /Design direction|direction is this product's own look|askedLook|approximate hex value|The mood may show in colors|Meta blue/);
     assert.ok(!text.includes(DIRECTION_STARTS[0]));
     assert.match(text, /Describe colors as roles \(a dark header, a warm accent\), not hex values\./);
     // BUILD_RANGE's other lines stay: more screens, every model that helps.
@@ -110,12 +116,10 @@ describe("the brief writer with META_UI_ONLY", () => {
     assert.match(text, /Use every listed model that makes this product clearly better/);
   });
 
-  it("is the meta-ui writer exactly without BUILD_RANGE, even if the muse-app look were asked for", () => {
-    assert.equal(briefInstructions({ museAppLook: true, metaUiOnly: true }), briefInstructions());
-  });
-
   it("asks for no direction or askedLook, and keeps BUILD_RANGE's limits", () => {
-    const schema = newBriefSchemaFor({ gadgets: false, targets: [], museAppLook: false, buildRange: true, metaUiOnly: true });
+    const plain = (strictJsonSchema(newBriefSchemaFor({ gadgets: false, targets: [] })) as { properties: object }).properties;
+    assert.deepEqual((strictJsonSchema(newBriefSchemaFor({ gadgets: false, targets: [], ...APP })) as { properties: object }).properties, plain);
+    const schema = newBriefSchemaFor({ gadgets: false, targets: [], museAppLook: true, buildRange: true, metaUiOnly: true });
     const props = (strictJsonSchema(schema) as { properties: object }).properties;
     assert.ok(!("direction" in props));
     assert.ok(!("askedLook" in props));
@@ -124,41 +128,46 @@ describe("the brief writer with META_UI_ONLY", () => {
     assert.equal(schema.safeParse({ ...BRIEF, screens: [...screens, { name: "x", purpose: "p" }] }).success, false);
   });
 
-  it("off, BUILD_RANGE still asks for a direction", () => {
+  it("off, the muse-app look still asks for askedLook, and BUILD_RANGE for a direction", () => {
+    assert.ok("askedLook" in (strictJsonSchema(newBriefSchemaFor({ gadgets: false, targets: [], museAppLook: true })) as { properties: object }).properties);
     const schema = newBriefSchemaFor({ gadgets: false, targets: [], museAppLook: true, buildRange: true });
     assert.ok((strictJsonSchema(schema) as { required: string[] }).required.includes("direction"));
     assert.match(briefInstructions({ museAppLook: true, range: RANGE }), /Design direction/);
+    assert.match(briefInstructions({ museAppLook: true }), /askedLook is null unless/);
   });
 });
 
 describe("the judge with META_UI_ONLY", () => {
-  it("gets the plain meta-ui house style, even with BUILD_RANGE and a direction", () => {
-    assert.equal(judgeInstructions(WITH, { museAppLook: true, buildRange: true, metaUiOnly: true }), JUDGE_INSTRUCTIONS);
-    assert.equal(judgeInstructions(BRIEF, { museAppLook: true, metaUiOnly: true }), JUDGE_INSTRUCTIONS);
-    assert.equal(judgeInstructions({ ...BRIEF, askedLook: "Dark with neon green." }, { museAppLook: true, metaUiOnly: true }), JUDGE_INSTRUCTIONS);
+  const BOTH = judgeInstructions(BRIEF, { museAppLook: true });
+
+  it("gets the muse-app house style (both house styles), with no direction or asked look, even with BUILD_RANGE", () => {
+    assert.match(BOTH, /one of two Meta-inspired house styles/);
+    assert.equal(judgeInstructions(WITH, { museAppLook: true, buildRange: true, metaUiOnly: true }), BOTH);
+    assert.equal(judgeInstructions(WITH, { museAppLook: true, metaUiOnly: true }), BOTH);
+    assert.doesNotMatch(BOTH, /on craft and on fit to this direction|Dark with neon green/);
   });
 
-  it("keeps both house styles for a product whose own files have the muse-app look", () => {
-    const text = judgeInstructions({ ...BRIEF, askedLook: "Dark with neon green." }, { museAppLook: false, buildRange: true, metaUiOnly: true, productHasMuseAppLook: true });
-    assert.match(text, /one of two Meta-inspired house styles/);
-    assert.match(text, /Dark with neon green\./);
-    assert.doesNotMatch(text, /on craft and on fit to this direction/);
-    assert.equal(judgeInstructions(WITH, { museAppLook: false, buildRange: true, metaUiOnly: true, productHasMuseAppLook: true }), judgeInstructions(BRIEF, { museAppLook: true }));
-  });
-
-  it("off, BUILD_RANGE and MUSE_APP_LOOK still widen it", () => {
+  it("off, BUILD_RANGE and an asked look still widen it, and the meta-ui judge is as it was", () => {
     assert.match(judgeInstructions(WITH, { museAppLook: true, buildRange: true }), /on craft and on fit to this direction/);
-    assert.match(judgeInstructions(BRIEF, { museAppLook: true }), /one of two Meta-inspired house styles/);
+    assert.match(judgeInstructions(WITH, { museAppLook: true }), /Dark with neon green/);
+    assert.equal(judgeInstructions(BRIEF), JUDGE_INSTRUCTIONS);
   });
 });
 
-describe("the build prompt with META_UI_ONLY and BUILD_RANGE", () => {
-  it("sends the build to meta-ui, with BUILD_RANGE's depth and no direction", () => {
+describe("the build prompt with META_UI_ONLY", () => {
+  it("is the muse-app build prompt, with no asked look", () => {
+    assert.equal(renderBuildPrompt(BRIEF, { ...OPTS, ...APP }), renderBuildPrompt(BRIEF, { ...OPTS, museAppLook: true }));
+    const asked = renderBuildPrompt({ ...BRIEF, askedLook: ASKED }, { ...OPTS, ...APP });
+    assert.equal(asked, renderBuildPrompt(BRIEF, { ...OPTS, museAppLook: true }));
+    assert.match(renderBuildPrompt({ ...BRIEF, askedLook: ASKED }, { ...OPTS, museAppLook: true }), /Dark with neon green/, "off, the ask is followed");
+  });
+
+  it("with BUILD_RANGE sends the build to muse-app-ui, with its depth and no direction", () => {
     for (const brief of [BRIEF, WITH]) {
       const text = renderBuildPrompt(brief, { ...OPTS, ...NOTE });
-      assert.match(text, /read `\.agents\/skills\/meta-ui` for the look/);
-      assert.match(text, /^The look always comes from the meta-ui skill, in Meta blue\. The inspo's mood shows only in the copy/m);
-      assert.doesNotMatch(text, /muse-app|Design direction|The inspo's mood may show in colors/);
+      assert.match(text, /read `\.agents\/skills\/muse-app-ui` for the look/);
+      assert.match(text, /^The look always comes from the muse-app-ui skill and its tokens in `app\/muse-app\.css`\. The inspo's mood shows only in the copy/m);
+      assert.doesNotMatch(text, /meta-ui|Meta blue|Design direction|design-looks|The inspo's mood may show in colors|Dark with neon green/);
       assert.match(text, /## Depth/);
       assert.match(text, /Then build every other screen/);
       assert.match(text, /really fails three times/);
@@ -166,12 +175,12 @@ describe("the build prompt with META_UI_ONLY and BUILD_RANGE", () => {
     }
   });
 
-  it("a complex build must still use agents", () => {
-    const text = renderBuildPrompt({ ...BRIEF, complexity: "complex" }, { ...OPTS, ...NOTE, playbook: true });
+  it("a complex build must still use agents, checking each screen against muse-app-ui", () => {
+    const text = renderBuildPrompt({ ...WITH, complexity: "complex" }, { ...OPTS, ...NOTE, playbook: true });
     assert.match(text, /## How you must work\n\nThis build is complex, so these steps are required/);
     assert.match(text, /which subagents and workflows ran/);
-    assert.match(text, /a read-only child per screen, comparing it with brief\.md and the meta-ui skill\./);
-    assert.doesNotMatch(text, /Design direction|muse-app/);
+    assert.match(text, /a read-only child per screen, comparing it with brief\.md and the muse-app-ui skill\./);
+    assert.doesNotMatch(text, /Design direction|meta-ui/);
   });
 
   it("off, a complex build with a direction still checks against it", () => {
@@ -191,14 +200,15 @@ describe("the build prompt with META_UI_ONLY and BUILD_RANGE", () => {
 describe("fixes and changes with META_UI_ONLY", () => {
   const KEEP = /- Keep the product's current look: the tokens and parts in `app\/globals\.css`, with `app\/muse-app\.css` and `\.agents\/skills\/muse-app-ui` when the product has them, or else `\.agents\/skills\/meta-ui` if it exists\./;
 
-  it("keep the look the product's own files have", () => {
+  it("keep the look the product's own files have, with no Design direction", () => {
     const fix = renderFixPrompt({ verify: null, judge: null, round: 1, ...NOTE });
-    const refine = renderRefinePrompt({ message: "Add a dark theme.", newReferences: [], museAppLook: false, metaUiOnly: true });
+    const refine = renderRefinePrompt({ message: "Add a dark theme.", newReferences: [], ...APP });
     for (const text of [fix, refine]) assert.match(text, KEEP);
     assert.match(fix, /if it exists\. Fix what the judge saw with those, not with new colors, fonts or styles\.\n/);
     assert.doesNotMatch(fix, /Keep the Design direction/);
     assert.match(fix, /subagent with worktree isolation/, "BUILD_RANGE's agents stay");
     assert.match(refine, /if it exists\. Don't restyle what the request doesn't change\.\n/);
+    assert.equal(renderFixPrompt({ verify: null, judge: null, round: 1, ...APP }), renderFixPrompt({ verify: null, judge: null, round: 1, museAppLook: true }));
   });
 
   it("off, they are as they were", () => {

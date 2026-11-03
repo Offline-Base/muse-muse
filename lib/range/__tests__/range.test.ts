@@ -15,7 +15,7 @@ import { BRIEF } from "@/lib/promote/__tests__/fixtures";
 import { briefInstructions } from "@/lib/prompts/brief";
 import { JUDGE_INSTRUCTIONS, judgeInstructions } from "@/lib/prompts/judge";
 import { contrast, DIRECTION_STARTS, directionProblems, directionStart, type Direction, isDefaultLook, recentFrom } from "@/lib/range/direction";
-import { applyRangeScript, RANGE_OVERLAY, restoreRangeFilesScript } from "@/lib/sandbox/look";
+import { APP_LOOK_COMMIT, applyRangeScript, RANGE_OVERLAY, restoreRangeFilesScript } from "@/lib/sandbox/look";
 
 const DIRECTION: Direction = {
   summary: "A printed almanac for bird watchers, warm and dense.",
@@ -254,6 +254,18 @@ describe("the build-range overlay", () => {
     assert.equal(run(restoreRangeFilesScript(targets)).status, 0);
     assert.match(readFileSync(path.join(dir, "scripts/smoke-report.mjs"), "utf8"), /RESULT_TOP_MAX = 2400/);
     assert.equal(run(applyRangeScript(targets)).status, 0, "a retry does nothing");
+
+    // A look polish put the product on the Meta AI app look and committed it: the wider limits still come back, the
+    // direction's skill files and design-looks don't.
+    rmSync(path.join(dir, ".agents/skills/design-looks"), { recursive: true, force: true });
+    writeFileSync(path.join(dir, ".agents/skills/muse-app-ui/SKILL.md"), "the muse-app look's own skill");
+    git("add", "-A");
+    git("commit", "-qm", APP_LOOK_COMMIT);
+    writeFileSync(path.join(dir, "scripts/smoke-report.mjs"), "base");
+    assert.equal(run(restoreRangeFilesScript(targets)).status, 0);
+    assert.match(readFileSync(path.join(dir, "scripts/smoke-report.mjs"), "utf8"), /RESULT_TOP_MAX = 2400/);
+    assert.equal(readFileSync(path.join(dir, ".agents/skills/muse-app-ui/SKILL.md"), "utf8"), "the muse-app look's own skill");
+    assert.equal(existsSync(path.join(dir, ".agents/skills/design-looks")), false);
     rmSync(dir, { recursive: true, force: true });
   });
 

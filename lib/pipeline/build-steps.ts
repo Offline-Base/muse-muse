@@ -23,7 +23,7 @@ import { BOARD_TOOLS_MARKER } from "@/lib/caps/hardware/limits";
 import { CREDITS_STEP, creditsInSource, withModelCredits } from "@/lib/verify/model-credits";
 import { addBuildCost, emit, setBuildStatus } from "@/lib/events";
 import { buildTokenBudgetFor, POLISH_TOKEN_MARKER } from "@/lib/gateway/policy";
-import { isMetaLookPolish, isPolishMessage, metaLookShipped, POLISH_HEADER, POLISH_MODEL, polishBaseline, polishFixLines, polishPlan, withoutKnownFailing, type PolishBaseline, type PolishPlan } from "@/lib/polish/logic";
+import { isLookPolish, isPolishMessage, metaLookShipped, POLISH_HEADER, POLISH_MODEL, polishBaseline, polishFixLines, polishPlan, withoutKnownFailing, type PolishBaseline, type PolishPlan } from "@/lib/polish/logic";
 import { mintToken, revokeLiveTokensExcept, revokeTokens } from "@/lib/gateway/tokens";
 import { judgeBuild, type JudgeSample, MAX_CHAIN_SCREENSHOTS, pickScreenshots } from "@/lib/judge";
 import { APP_NAV_COMPONENT, FULL_PRODUCT_SKILL } from "@/lib/full/prompts";
@@ -252,21 +252,22 @@ function sessionNotes(): { goalSet: boolean; ownerNotes: boolean; noteReplies: b
 
 /**
  * MUSE_APP_LOOK (docs/BRAND.md): a new build gets the muse-app look at provision, and the build, fix and change prompts
- * name it. META_UI_ONLY turns that off and has the fix and change prompts keep each product's own look. Off, every
- * prompt and sandbox is as it was.
+ * name it. META_UI_ONLY turns it on for every build (the Meta AI app look, muse-app-ui) with no design direction or
+ * asked look, and has the fix and change prompts keep each product's own look. Off, every prompt and sandbox is as it was.
  */
 function lookNote(): { museAppLook: boolean; metaUiOnly?: boolean } {
   return { museAppLook: env.museAppLook, ...(env.metaUiOnly ? { metaUiOnly: true } : {}) };
 }
 
 /**
- * A polish with look "meta" (lib/polish/logic.ts) switched the product to the Meta UI look: this build is that polish,
- * or one shipped on the product earlier. The judge and the fix and change prompts then treat the product as meta-ui, so
- * neither its brief's Design direction nor the muse-app look pulls it back. Nothing for any other build.
+ * A polish with look "meta" (lib/polish/logic.ts) put the product on the Meta AI app look, muse-app-ui (or, one from the
+ * afternoon of Nov 3, on meta-ui): this build is that polish, or one shipped on the product earlier. The judge and the
+ * fix and change prompts then keep the look the product's files have, with no Design direction or asked look, so the
+ * brief's direction never pulls it back. Nothing for any other build.
  */
 async function metaLookNote(build: { kind: string; message: string | null; productId: string | null }): Promise<{ metaLook?: true }> {
   if (build.kind !== "refine") return {};
-  if (isMetaLookPolish(build.message)) return { metaLook: true };
+  if (isLookPolish(build.message)) return { metaLook: true };
   if (!build.productId) return {};
   const polishes = await db()
     .select({ kind: schema.builds.kind, message: schema.builds.message, status: schema.builds.status })
@@ -285,7 +286,7 @@ function rangeNote(brief: Brief | null | undefined): { buildRange?: boolean } {
 
 /**
  * The build-range overlay at provision. It lies over the muse-app look and swaps its rules for the brief's direction,
- * so META_UI_ONLY, which has neither, leaves it out.
+ * so META_UI_ONLY, which keeps the muse-app look's own rules and has no direction, leaves it out.
  */
 function rangeOverlayNote(brief: Brief): { buildRange?: boolean } {
   return env.metaUiOnly ? {} : rangeNote(brief);
@@ -1324,13 +1325,10 @@ export async function judgeStep(input: {
   const targetFacts = requirementTests !== undefined && targetCheckedRequirements(brief).length ? await targetFactsFor(brief, build, input.round, input.buildId) : null;
   const ownerNotes = env.steerChat ? await sentNotes(input.buildId) : [];
   const samples = await judgeSamplesFor(build.sandboxName, input.buildId, input.round);
-  // META_UI_ONLY: the product's own files say which look it has, as in its fix and change prompts. Unreadable is meta-ui.
-  const productHasMuseAppLook = env.metaUiOnly && build.sandboxName ? Boolean(await sandbox.readSandboxFile(build.sandboxName, `${PRODUCT_DIR}/app/muse-app.css`).catch(() => null)) : false;
   const knownFailing = requirementTests !== undefined && input.knownFailing?.length ? input.knownFailing : null;
   const meta = await metaLookNote(build);
   const result = await judgeBuild({
     ...meta,
-    ...(productHasMuseAppLook ? { productHasMuseAppLook } : {}),
     ...(samples.length ? { samples } : {}),
     ...(knownFailing ? { knownFailing } : {}),
     ...(requirementTests !== undefined ? { requirementTests } : {}),

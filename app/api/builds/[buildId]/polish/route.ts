@@ -18,11 +18,11 @@ const MAX_BODY_BYTES = 16 * 1024;
 /**
  * POST {focus?, again?, look?} -> 201 {buildId, model, maxUsd, roundSteps, fixRounds, look?}: the polish round
  * (lib/polish/logic.ts), one refinement of the live product this build made, with Muse Code on Muse Wonder and the fixed
- * polish note, plus `focus` (audit findings, say). `look: "meta"` switches the product to the Meta UI look (any other
+ * polish note, plus `focus` (audit findings, say). `look: "meta"` puts the product on the Meta AI app look, muse-app-ui (any other
  * value is a 400); left out, the product keeps its look. Admins, or a script with the AUTOMATION_SECRET bearer. 404
  * while POLISH_ENABLED is off or for an unknown build, 409 not_shipped, busy (another build of the product runs) or
- * already_polished (send again: true to run another; either one says look "meta" when the polish it names switched the
- * product to the Meta UI look), 503 polish_budget_off with POLISH_MAX_USD at 0, and checkBuildAllowed's refusals
+ * already_polished (send again: true to run another; either one says look "meta" when the polish it names put the
+ * product on the Meta AI app look), 503 polish_budget_off with POLISH_MAX_USD at 0, and checkBuildAllowed's refusals
  * (paused, no_storage).
  */
 export const POST = route(async (req: Request, { params }: Ctx) => {

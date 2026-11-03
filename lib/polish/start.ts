@@ -22,7 +22,8 @@ export interface PolishDeps {
   findProduct(productId: string): Promise<PolishProduct | null>;
   /**
    * The product's newest polish build, whatever its status, or null when it has had none. With its message, a 409 that
-   * names it says look "meta" when it switched the product to the Meta UI look, so a script can tell it from another.
+   * names it says look "meta" when it put the product on the Meta AI app look, so a script can tell it from another. One
+   * from the afternoon of Nov 3, which moved the product to meta-ui, doesn't say it, so --look=meta --again redoes it.
    */
   lastPolish(productId: string): Promise<{ buildId: string; status: string; message?: string | null } | null>;
   /** The same checks a new build or change gets (checkBuildAllowed): storage, setup, the spend pause, trust. */
@@ -41,7 +42,7 @@ const reply = (status: number, body: Record<string, unknown>): PolishReply => ({
 
 /**
  * The polish note from the caller's body: the fixed note, plus `focus` when sent, and with `look: "meta"` the step that
- * switches the product to the Meta UI look. An error string when the body is wrong.
+ * puts the product on the Meta AI app look, muse-app-ui. An error string when the body is wrong.
  */
 export function polishRequest(body: Record<string, unknown>): { message: string; again: boolean; look?: PolishLook } | { error: string } {
   if (body.focus !== undefined && body.focus !== null && typeof body.focus !== "string") return { error: "focus must be text." };

@@ -18,6 +18,12 @@ export const OVERLAYS_DIR = TARGETS_DIR;
 /** The commit applyLookScript makes in the product. A product with it was set up with the muse-app look. */
 export const LOOK_COMMIT = "Look: muse-app";
 
+/**
+ * The commit a look "meta" polish asks Muse Code to make once the product is on the Meta AI app look (lib/polish/logic.ts).
+ * In a product with it, restoreRangeFilesScript no longer puts the build-range skill files back.
+ */
+export const APP_LOOK_COMMIT = "Look: Meta AI app";
+
 /** The look's tokens in the product, from the overlay. A product with it has the look. */
 export const LOOK_CSS = "app/muse-app.css";
 
@@ -108,15 +114,19 @@ export function applyRangeScript(dir: string = OVERLAYS_DIR): string {
 
 /**
  * Before every verify and demo, after the look's and the template's own restores, in a product with RANGE_COMMIT: puts its
- * platform files back, so its skill's rules and its wider final-screen limits outlast those restores. Nothing, and no
- * output, in any other product, so a flag-off product runs what it always ran.
+ * platform files back, so its skill's rules and its wider final-screen limits outlast those restores. Once a look polish
+ * has put the product on the Meta AI app look (APP_LOOK_COMMIT), only the files outside .agents/skills come back (the
+ * wider limits), so the direction's skill rules and design-looks stay out. Nothing, and no output, in any other product,
+ * so a flag-off product runs what it always ran.
  */
 export function restoreRangeFilesScript(dir: string = OVERLAYS_DIR): string {
   const overlay = `${dir}/${RANGE_OVERLAY}`;
   const list = `for(const p of JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")))console.log(p)`;
   return [
     `if [ -f ${q(`${overlay}/platform-files.json`)} ] && [ -n "$(git log --format=%s --grep=${q(`^${RANGE_COMMIT}$`)} -1 2>/dev/null)" ]; then`,
+    `  applook="$(git log --format=%s --grep=${q(`^${APP_LOOK_COMMIT}$`)} -1 2>/dev/null)"`,
     `  node -e ${q(list)} ${q(`${overlay}/platform-files.json`)} | while IFS= read -r p; do`,
+    `    case "$p" in .agents/skills/*) if [ -n "$applook" ]; then continue; fi ;; esac`,
     `    rm -f -- "$p"`,
     `    mkdir -p -- "$(dirname -- "$p")"`,
     `    cp -- ${q(`${overlay}/files`)}/"$p" "$p" && chmod u+w "./$p" || echo "musemuse: couldn't restore $p" >&2`,

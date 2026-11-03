@@ -124,8 +124,11 @@ describe("with MUSE_APP_LOOK on", () => {
   });
 });
 
-/** A polish with look "meta" (lib/polish/logic.ts) moved the product to meta-ui: nothing may pull it back. */
-describe("after a polish switched the product to the Meta UI look", () => {
+/**
+ * A polish with look "meta" (lib/polish/logic.ts) put the product on the Meta AI app look, muse-app-ui (or, one from the
+ * afternoon of Nov 3, on meta-ui): no direction or asked look may pull it back.
+ */
+describe("after a look polish (look meta)", () => {
   const direction: Direction = {
     summary: "A printed almanac for bird watchers, warm and dense.",
     scheme: "light",
@@ -140,22 +143,29 @@ describe("after a polish switched the product to the Meta UI look", () => {
   };
   const ranged: Brief = { ...BRIEF, direction, askedLook: "Pink and gold, like a birthday card." };
 
-  it("fix and change prompts keep meta-ui only, never muse-app or a Design direction", () => {
-    const fix = renderFixPrompt({ verify: null, judge: null, round: 1, museAppLook: true, buildRange: true, metaLook: true });
-    const refine = renderRefinePrompt({ message: "Add a dark theme.", newReferences: [], museAppLook: true, metaLook: true });
-    for (const text of [fix, refine]) {
-      assert.ok(text.includes("- Keep the product's current look, the Meta UI look: the tokens and parts in `app/globals.css` and `.agents/skills/meta-ui`."));
-      assert.ok(!text.includes("muse-app"));
+  const KEEP =
+    "- Keep the product's current look: the tokens and parts in `app/globals.css`, with `app/muse-app.css` and `.agents/skills/muse-app-ui` (the Meta AI app look) when the product has them, or else `.agents/skills/meta-ui`. No Design direction sets it: leave any Design direction in brief.md and `.agents/skills/design-looks` out of the look.";
+
+  it("fix and change prompts keep the product's files' look, muse-app-ui after this pass, and never a Design direction", () => {
+    for (const museAppLook of [true, false]) {
+      const fix = renderFixPrompt({ verify: null, judge: null, round: 1, museAppLook, buildRange: true, metaLook: true });
+      const refine = renderRefinePrompt({ message: "Add a dark theme.", newReferences: [], museAppLook, metaLook: true });
+      for (const text of [fix, refine]) assert.ok(text.includes(KEEP), String(museAppLook));
+      assert.ok(!fix.includes(RANGE_FIX_LOOK));
+      assert.ok(fix.includes(`${KEEP} Fix what the judge saw with those, not with new colors, fonts or styles.\n`));
+      assert.ok(refine.includes(`${KEEP} Don't restyle what the request doesn't change.\n`));
     }
-    assert.ok(!fix.includes(RANGE_FIX_LOOK));
-    assert.match(fix, /`\.agents\/skills\/meta-ui`\. Fix what the judge saw with those, not with new colors, fonts or styles\.\n/);
     // Without it, a range product's fix still keeps its direction.
     assert.ok(renderFixPrompt({ verify: null, judge: null, round: 1, museAppLook: true, buildRange: true }).includes(RANGE_FIX_LOOK));
   });
 
-  it("the judge expects the Meta house style alone and reads no direction or asked look", () => {
-    assert.equal(judgeInstructions(ranged, { museAppLook: true, buildRange: true, metaLook: true }), JUDGE_INSTRUCTIONS);
-    assert.notEqual(judgeInstructions(ranged, { museAppLook: true, buildRange: true }), JUDGE_INSTRUCTIONS);
+  it("the judge expects the house styles, muse-app's among them, and reads no direction or asked look", () => {
+    const both = judgeInstructions(BRIEF, { museAppLook: true });
+    assert.match(both, /one of two Meta-inspired house styles/);
+    assert.equal(judgeInstructions(ranged, { museAppLook: true, buildRange: true, metaLook: true }), both);
+    // With the muse-app look off too: a product a look polish put on muse-app-ui is never judged on meta-ui alone.
+    assert.equal(judgeInstructions(ranged, { museAppLook: false, metaLook: true }), both);
+    assert.notEqual(judgeInstructions(ranged, { museAppLook: true, buildRange: true }), both);
     const brief = metaLookBrief(ranged);
     assert.equal("direction" in brief || "askedLook" in brief, false);
     const text = judgeContent({ brief, references: [], screenshots: [] }).content.map((c) => ("text" in c ? c.text : "")).join("\n");

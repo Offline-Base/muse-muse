@@ -132,18 +132,17 @@ export function askedLookJudgeNote(asked: string): string {
  */
 export function judgeInstructions(
   brief: Pick<Brief, "targets" | "agent" | "askedLook"> & Partial<Brief>,
-  opts: { museAppLook?: boolean; buildRange?: boolean; verifyAgents?: boolean; fullBuilds?: boolean; samples?: boolean; metaUiOnly?: boolean; productHasMuseAppLook?: boolean; metaLook?: boolean } = {},
+  opts: { museAppLook?: boolean; buildRange?: boolean; verifyAgents?: boolean; fullBuilds?: boolean; samples?: boolean; metaUiOnly?: boolean; metaLook?: boolean } = {},
 ): string {
   const targets = briefTargets(brief);
-  // META_UI_ONLY (owner, Nov 3): every new product is judged against the meta-ui house style alone, even with BUILD_RANGE.
-  // An older product whose own files have the muse-app look (app/muse-app.css) keeps both house styles, as its fix and
-  // change prompts keep that look: judged on meta-ui alone, its Meta-assistant layout could read as copying a real product.
-  // metaLook: a polish switched this product to the Meta UI look (lib/polish/logic.ts isMetaLookPolish), so it is judged
-  // against meta-ui's house style alone, never its brief's direction or asked look, which no longer set its look.
-  const look = opts.metaUiOnly ? { museAppLook: opts.productHasMuseAppLook === true } : opts;
-  const asked = opts.metaLook ? null : askedLookOf(brief, look);
+  // META_UI_ONLY (owner, Nov 3, evening): every new product has the Meta AI app look, muse-app-ui, so the judge expects
+  // the muse-app house style. It keeps both house styles, since a change can reach an older product on meta-ui, and
+  // never a Design direction or an asked look. metaLook: a look polish set this product's look on purpose
+  // (lib/polish/logic.ts isLookPolish), the Meta AI app look or, from the afternoon of Nov 3, meta-ui, so the same holds.
+  const houseOnly = opts.metaUiOnly === true || opts.metaLook === true;
+  const asked = houseOnly ? null : askedLookOf(brief, opts);
   // BUILD_RANGE (docs/BUILD_RANGE.md): a product with a direction is judged against it. One without keeps the house styles.
-  const direction = opts.buildRange && !opts.metaUiOnly && !opts.metaLook ? (brief.direction ?? null) : null;
+  const direction = opts.buildRange && !houseOnly ? (brief.direction ?? null) : null;
   const notes = [
     ...(direction ? [rangeJudgeNote(direction)] : []),
     ...(asked ? [askedLookJudgeNote(asked)] : []),
@@ -155,7 +154,7 @@ export function judgeInstructions(
     ...(targets.includes("edge") && env.edgeEnabled ? [EDGE_JUDGE_NOTE, EDGE_BOARD_STATUS_JUDGE_NOTE] : []),
     ...(opts.samples ? [SAMPLES_JUDGE_NOTE] : []),
   ];
-  const base = direction ? withHouseStyle(JUDGE_INSTRUCTIONS, RANGE_HOUSE_STYLE) : look.museAppLook && !opts.metaLook ? withHouseStyle(JUDGE_INSTRUCTIONS, BOTH_HOUSE_STYLES) : JUDGE_INSTRUCTIONS;
+  const base = direction ? withHouseStyle(JUDGE_INSTRUCTIONS, RANGE_HOUSE_STYLE) : opts.museAppLook || houseOnly ? withHouseStyle(JUDGE_INSTRUCTIONS, BOTH_HOUSE_STYLES) : JUDGE_INSTRUCTIONS;
   const text = notes.length ? `${base}\n\n${notes.join("\n\n")}` : base;
   // ---------- Wave 3, unit 2 (docs/CAPABILITIES.md, 2.6): each cap's note after the glasses note, empty with no cap blocks ----------
   const required = opts.fullBuilds ? buildableRequirements(brief) : [];
