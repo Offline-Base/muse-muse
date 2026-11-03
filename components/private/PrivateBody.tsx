@@ -8,7 +8,7 @@ type Card = { icon: IconName; title: string; text: string };
 const PATH: Card[] = [
   {
     icon: "doc",
-    title: "Your device reads the files",
+    title: "A separate model reads the files",
     text: "The documents stay on hardware you own, and Muse never receives the files. In this demo the model is Muse Glimmer 30B in the cloud, on invented files only.",
   },
   { icon: "edit", title: "Names become tags", text: "Exact checks and a name pass turn names and identifiers into tags like [Student A] before anything can leave." },
@@ -70,7 +70,7 @@ export function PrivateBody({ story = false }: { story?: boolean }) {
     <div className="page how-page">
       <PageHeader
         title="Muse Privacy"
-        subtitle="Muse Muse builds the product. Muse Privacy is how it touches your private files: your device reads them, and Muse gets tags."
+        subtitle="Muse Muse builds the product. Muse Privacy is how it touches your private files: a separate reader model sees them, and Muse gets tags."
       />
 
       <p className="pv-note">

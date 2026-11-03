@@ -433,7 +433,7 @@
 }
 
 .steps-feed-step[data-tone="bad"]::before {
-  background: var(--danger, #c62828);
+  background: var(--bad);
 }
 
 .steps-feed-step[data-running="true"] {
@@ -444,7 +444,7 @@
   margin: 4px 0 8px;
   padding: 10px 14px;
   border-radius: 16px;
-  background: var(--chat-segment, #f2f4f6);
+  background: var(--chat-segment);
   font-size: 14px;
   line-height: 20px;
 }
@@ -532,5 +532,5 @@
 
 .plan-checklist li[data-state="bad"] .plan-checklist-mark {
   border: 0;
-  color: #c0392b;
+  color: var(--bad);
 }

@@ -2914,3 +2914,37 @@ The owner asked for a simpler sidebar using "muse" and "musing" for the creative
 - **Not ported (still Vercel Sandbox):** the native packager, caps code sessions, the extension ship step, the edge drill sandbox, restore steps, publishing, quota, the train CLI runner, and the dev scripts. Dry runs refuse on Modal.
 - **Not proven:** no Muse Code build has run on Modal, the Modal builder image hasn't been made, and the proxy hasn't carried a real Muse Code call.
 - **Tests:** the new host tests (meta-proxy, modal host, builder on Modal) 25 of 25. The touched builder, setup, shell, caps and trust tests: 235 of 236; the one failure (`builder-muse`, "starts the session bridge on serve", expects reasoning effort high on a fix round) is from #79's medium fix rounds and fails the same way without this change. Typecheck clean.
+
+## Nov 2, 2026, evening ET: SAM 3.1 on jetson-04, and the owner picks it as the edge direction
+
+- **Decision (owner, about 8 PM ET):** after the page worked, "make sure it's noted that this is the direction we'll go". Edge work goes toward Meta's SAM 3.1 on the boards. docs/EDGE_PLAN.md and docs/HANDOFF.md say so.
+- **Why jetson-04, not jetson-05:** the owner asked for jetson-05 without taking it down. PyTorch with NVIDIA's CUDA 13 libraries is about 5 GB and jetson-05 had 6.1 GB free while it still runs the control plane, the d1 router and `muse-device`. A first install there was stopped at about 1 GB and removed; free space went back to 6.1 GB and nothing running was touched. Prompt Guard was deleted there on the owner's say-so (890 MB; it wasn't running).
+- **The weights:** downloaded on the laptop with the owner's approved Hugging Face account (`OfflineBase`), straight into memory, every fp32 tensor halved (874M parameters, 3.5 GB to 1.76 GB, sha256 `959c6801...`). The laptop and the boards are on different networks, so the file went to jetson-04 through a short-lived Cloudflare quick tunnel the owner opened (Claude Code's safety check blocks Claude from opening one), with a random path and no directory listing. The checksum matched on the board.
+- **On jetson-04:** PyTorch 2.14.1+cu130 in `/opt/sam3/venv`, Meta's `sam3` at `f1647e8d`, plus `einops`, `pycocotools`, `psutil` (missing from its dependencies). `sam3.service`, on at boot, `MemoryMax=6G`, killed first if memory runs out. PyTorch warns it has no published kernels for the Orin's compute 8.7; it compiles at first use and every result was right.
+- **Measured on Meta's `truck.jpg`:** load 45 to 54 s; 3.4 GB GPU at rest, 3.9 GB peak. "truck": 1 at 0.87 (13.8 s cold, then 1.4 s). Through the service: "wheel" 4 at 0.87 to 0.95 (6.8 s first), "truck" 1 at 0.87 (2.6 s), "person" 0, right (1.3 s).
+- **The page (`scripts/edge/sam3/`):** a laptop page sends a 640 px photo as fleet exec jobs of 15 KB (the command limit is 16,384 characters), then `ask.py` on the board calls the service and returns the tinted picture (about 60 KB, under the 256 KB streamed-output cap). The first try failed with 404 because the control plane's API is under `/admin`; fixed. Then the owner: "it works perfectly". About 10 to 20 s a round trip.
+- **Token:** the owner pasted a fleet token in the chat. It was not used or repeated, and the owner was asked to revoke it and type a new one only at the page server's hidden prompt.
+- **Also tonight (same chat):** `jetson-llama` stopped and disabled on jetson-02, 03, 04; Bolt and Gemma files deleted on 03 and 04. The on-board Glimmer training setup on 02 and 03 is another session's.
+- **Not done:** the jetson-05 forwarder, a camera feed, video tracking, any product using SAM, any public claim. Spend $0.
+- **Nov 2, night: judging cleanup (owner: "focus on cleaning up and simplifying what we have for judging").** From a read-only review of every route a judge can reach.
+  - Copy that claimed more than runs today:
+    - the Jetson card on /gadgets no longer says it fine-tunes a model on its own GPU (only Llama trained on a board);
+    - /private says a separate reader model reads the files (Muse Glimmer 30B in the cloud in this demo), not "a model on your device";
+    - /models says tuned GGUF files "can run on a computer with enough memory", not "offline".
+  - The Protect starters no longer promise edge or offline behavior that builds can't do with `EDGE_BUILDS` off:
+    - "Don't trust one sensor";
+    - "Hide private details first";
+    - "Outage plan for a small shop".
+  - The voice-memo starter became "Meeting notes to private to-dos", since audio input is refused on Contributor until the Nov 4 flip.
+  - One name per place:
+    - the home toolbar's History button says Musings;
+    - the docs sidebar's home row is "Muse Muse" and goes to /, not "Dashboard" with an external arrow;
+    - how-it-works says "Model API docs", and "Use it from other AI tools" instead of the Muse app (to-do 16 isn't logged).
+  - The /models link to /open-weights is hidden until DATA_RIGHTS Q2 is answered; the route stays.
+  - Kept, as the owner's sidebar spec asked: the Meta demos tab and Usage > Overview.
+  - Tests main already failed, fixed:
+    - plan-card's three raw colors moved to `--bad` and `--chat-segment`;
+    - the plan-art snapshot was refreshed after #76 and #78, with the flag-on render still the same.
+  - Still failing on main and untouched: models-page "shows accuracy for a decide-kind tuned model" (the tuned list doesn't render in that test).
+  - Tests: the edited pages 304 pass, with the same one failure main has. Make snapshot (only the two Make page entries changed) and starters 13 of 13. plan-card and plan-art 39 of 39. Typecheck clean.
+

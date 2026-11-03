@@ -1,30 +1,30 @@
 {
   "build room: running": {
-    "sha256": "d094e8a072ea92b58a945091225e630596853fe6e9699abd7beb68ae062e66f7",
-    "length": 48245
+    "sha256": "a56098cc4a9bd679da934f15403e4f2399067c2703eb700284fb55d87893cefc",
+    "length": 48521
   },
   "build room: failed": {
-    "sha256": "b8eb6561c0a32a8fb1c438b3976496b1245bdf0c71e80ea72f7b4e81f3806308",
-    "length": 17660
+    "sha256": "8a109ef61dbc99149bf1a1db23637d528d51a8f11f9434f37302556e0c070446",
+    "length": 17949
   },
   "build room: finished": {
-    "sha256": "780783497a04712e0698291810144c029e9f22edc53d3609d3b666053119f436",
-    "length": 20324
+    "sha256": "9630efb5f2b4532f3c3e5f46036c3042dd9d1fa53630ef1cb843b2d5f68c8619",
+    "length": 20598
   },
   "plan card: part of it, presenting, running": {
-    "sha256": "08e8787e89c8647383327c6c0c5032bd54f88f3fe30a8b593ddbf7ccb48c6791",
-    "length": 2160
+    "sha256": "b90b7e29169aa5c5bcb1b2e07173b8d22ca64638a33c826e07625d8d8417193e",
+    "length": 2600
   },
   "plan card: part of it, building, running": {
-    "sha256": "01c95fd193413b297fd22d94644dcf2a155cf48417f2b4fb8fb2e04033815181",
-    "length": 2162
+    "sha256": "3fe641b2be38e53b15397dc3b7e2664df3c9cd90e37edab2542506885e808943",
+    "length": 2450
   },
   "plan card: all of it, the pair, finished": {
-    "sha256": "70e65a9679776f394ae636c678605838c3669f95ffe20029bbd63a8052019e6a",
-    "length": 1808
+    "sha256": "30f33d4474df2e276111132eefcb99168162be4f155fa14a1e7b8d6dbf34a282",
+    "length": 2039
   },
   "plan card: no one it's for, no steps or tagline": {
-    "sha256": "9eb29b94602586d5a2bdabf83565e96de1a4feb6575ed640acfd7e5079e298fa",
-    "length": 1566
+    "sha256": "14fe81180a2b11deeeee13fc8d666b8b202072a6969656d1ac196852f26a71eb",
+    "length": 1726
   }
 }

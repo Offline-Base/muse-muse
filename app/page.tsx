@@ -65,7 +65,7 @@ const STARTERS: StarterTab[] = [
       { icon: "clipboard", label: "Write a training dataset", note: "Write a dataset of made-up spreadsheet questions with worked answers, ready for tuning a small model later." },
       { icon: "chart", label: "Test if AI judges catch bugs", note: "Build a tool that plants known bugs in small web apps, asks an AI reviewer to pass or fail each one, and charts how often broken software gets through." },
       { icon: "rocket", label: "Run a research agent", note: "Build an agent that takes a question, searches the web in steps, cites every claim, and says what it couldn't confirm." },
-      { icon: "mic", label: "Voice memo to private notes", note: "Turn a voice memo into notes and to-dos, with names and numbers hidden before anything is saved." },
+      { icon: "clipboard", label: "Meeting notes to private to-dos", note: "Turn made-up meeting notes I paste into to-dos, with names and numbers hidden before anything is saved." },
     ],
   },
   {
@@ -101,12 +101,12 @@ const STARTERS: StarterTab[] = [
     label: "Protect",
     kind: "ideas",
     ideas: [
-      { icon: "chip", label: "Watcher that keeps working offline", note: "Build a watcher for a simulated cold room that reads a made-up controller, an independent probe and the door, warns when the two temperatures disagree, and keeps answering on an edge board when the cloud is cut." },
+      { icon: "chip", label: "Don't trust one sensor", note: "Build a watcher for a simulated cold room that reads a made-up controller, an independent probe and the door, warns when the two temperatures disagree or a setting is pushed far past its range, and says what to check first." },
       { icon: "alert", label: "Spot a changed setting", note: "Build a tool that reads made-up equipment logs, flags settings changed at odd hours or pushed far past their usual range, and says which change to check first." },
       { icon: "monitor", label: "Check my connected devices", note: "Build a page that reads a made-up list of a small shop's connected devices, flags old firmware and default passwords, and ranks which to take offline first." },
       { icon: "shield", label: "Is this email a scam?", note: "Build a tool where I paste a made-up email and it lists the warning signs, rates the risk and explains why, without ever opening a link." },
-      { icon: "doc", label: "Private search on my device", note: "Build an app that searches my made-up documents and hides names, emails and account numbers before any text leaves the device." },
-      { icon: "clipboard", label: "Plan for when the cloud is down", note: "Build a checklist app for a small shop's plan when the internet or cloud is out, that keeps working offline once it has loaded." },
+      { icon: "doc", label: "Hide private details first", note: "Build an app where I paste made-up documents and it hides names, emails and account numbers in code before any text is sent to a model." },
+      { icon: "clipboard", label: "Outage plan for a small shop", note: "Build a plan for a made-up small shop for when the power or internet goes out: who to call, what to check first, and a checklist I can print." },
     ],
   },
   { id: "photos", label: "From a photo", kind: "photos", examples: PHOTO_EXAMPLES },
@@ -126,7 +126,7 @@ export default async function Home() {
         </Link>
         <Link className="btn" href="/builds">
           <Icon name="history" />
-          <span>History</span>
+          <span>Musings</span>
         </Link>
       </div>
       <BuildSetupBanner code={setupBlock} />
