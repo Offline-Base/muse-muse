@@ -80,7 +80,7 @@ export function partnerDeps(): PartnerDeps {
       return (await spendPaused()) ? "The platform's daily spend cap is reached, so the answers couldn't be judged." : null;
     },
     // Imported when used: the training workflow imports this chain, and its tests stand in their own judge module.
-    judge: async (input) => (await import("@/lib/train/judge")).judgePair(input),
+    judge: async (input) => (await import("@/lib/train/judge-pair")).judgePair(input),
     host(limits) {
       return {
         on: () => env.hostTuned,
@@ -107,4 +107,18 @@ export function partnerDeps(): PartnerDeps {
     now: () => new Date(),
     clock: () => performance.now(),
   };
+}
+
+// Kept here, not in steps.ts: a workflow bundle keeps a steps file's module-level code, and a hook there pulled this
+// file (and node:crypto) into the partner workflow, which failed the production build on Nov 3.
+let testDeps: PartnerDeps | null = null;
+
+/** Tests only: fakes in place of the database, the providers and the judge. */
+export function usePartnerDepsForTests(deps: PartnerDeps | null): void {
+  testDeps = deps;
+}
+
+/** The deps a step uses: the test fakes when set, else the real ones. Call it inside a step body only. */
+export function currentPartnerDeps(): PartnerDeps {
+  return testDeps ?? partnerDeps();
 }

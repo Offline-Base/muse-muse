@@ -12,17 +12,11 @@ import { hostFacts } from "@/lib/train/host/facts";
 import { STOP_WORDS } from "@/lib/train/host/limits";
 import { chatOnEndpoint, deployEndpoint, providerRefusal, refreshEndpoint, stopEndpoint } from "@/lib/train/host/service";
 import { HostError, type HostEndpoint } from "@/lib/train/host/types";
-import { partnerDeps, type PartnerDeps } from "@/lib/train/partner/deps";
+import { currentPartnerDeps as deps, type PartnerDeps } from "@/lib/train/partner/deps";
 import { PARTNER_LABEL, PARTNER_MAX_ITEMS, PARTNER_MAX_TOKENS, partnerBudget, partnerProblem, readyWindowMinutes, reasonText } from "@/lib/train/partner/logic";
 import type { JudgedItem } from "@/lib/train/logic";
 import type { PartnerEvalBody, PartnerProvider } from "@/lib/train/types";
 
-let testDeps: PartnerDeps | null = null;
-/** Tests only: fakes in place of the database, the providers and the judge. */
-export function usePartnerDepsForTests(deps: PartnerDeps | null): void {
-  testDeps = deps;
-}
-const deps = (): PartnerDeps => testDeps ?? partnerDeps();
 
 export interface PartnerEvalInput {
   jobId: string;

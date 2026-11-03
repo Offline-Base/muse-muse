@@ -15,7 +15,7 @@ import type { HostAdapter, HostEndpoint } from "@/lib/train/host/types";
 import { json } from "@/lib/train/host/__tests__/helpers";
 import type { PartnerDeps } from "@/lib/train/partner/deps";
 import { partnerBudget, partnerEvalView, latencyOf, partnerProblem, PARTNER_MAX_TOKENS } from "@/lib/train/partner/logic";
-import { usePartnerDepsForTests } from "@/lib/train/partner/steps";
+import { usePartnerDepsForTests } from "@/lib/train/partner/deps";
 import { runPartnerEval } from "@/lib/train/partner/workflow";
 import { tuneRunView } from "@/lib/train/tune/view";
 import type { DatasetHead, DoneMetrics, TrainJobRow } from "@/lib/train/logic";
