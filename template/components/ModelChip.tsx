@@ -7,6 +7,7 @@ const MODEL_NAMES = {
   "muse-voice-transcribe-1.0": "Muse Voice",
   "muse-glimmer": "Muse Glimmer",
   "jetson-fleet": "Jetson fleet",
+  "muse-spark-open": "Muse Spark Open",
 } as const;
 
 export type MuseModel = keyof typeof MODEL_NAMES;

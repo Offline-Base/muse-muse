@@ -4,6 +4,7 @@ import type { CapId } from "@/lib/caps/ids";
 import { MilestonesSchema } from "@/lib/engine/milestones";
 import { ChainRequirementsSchema, FULL_LIMITS, RequirementsSchema, requirementsMax, ScopeRecordSchema } from "@/lib/full/requirements";
 import { DirectionSchema, RANGE_LIMITS } from "@/lib/range/direction";
+import { SPARK_OPEN_MODEL } from "@/lib/meta/spark-open";
 import { PERSONAL_TOOL_IDS, PUBLIC_TOOL_IDS } from "@/lib/tools/ids";
 
 /**
@@ -25,6 +26,13 @@ export const PRODUCT_MODELS = [
  * writer's schemas stay as they are: a stored brief may hold it, and the writer may pick it only with FLEET_PRODUCTS on.
  */
 export const FLEET_BRIEF_MODEL = "jetson-fleet";
+
+/**
+ * Muse Spark Open, Meta's open-weight model on a hosted provider, through the gateway's /v1/chat/completions
+ * (SPARK_OPEN_PRODUCTS, lib/gateway/spark-open.ts). Not in PRODUCT_MODELS either, for the same reason as jetson-fleet: a stored
+ * brief may hold it, and the writer may pick it only with the flag on.
+ */
+export const SPARK_OPEN_BRIEF_MODEL = SPARK_OPEN_MODEL;
 
 /**
  * Where a product runs (docs/NATIVE.md). Every product is a web product, so "web" is always in; a brief adds the others,
@@ -118,8 +126,8 @@ const agentFields = (toolIds: z.ZodType<string>) =>
  * can leave the catalog after a brief was stored; the writer's schema below limits them.
  */
 export const BriefSchema = BriefFields.extend({
-  // A brief written with FLEET_PRODUCTS on must still parse after it goes off.
-  capabilities: z.array(z.object({ need: z.string(), model: z.enum([...PRODUCT_MODELS, FLEET_BRIEF_MODEL]), why: z.string() })).min(1),
+  // A brief written with FLEET_PRODUCTS or SPARK_OPEN_PRODUCTS on must still parse after it goes off.
+  capabilities: z.array(z.object({ need: z.string(), model: z.enum([...PRODUCT_MODELS, FLEET_BRIEF_MODEL, SPARK_OPEN_BRIEF_MODEL]), why: z.string() })).min(1),
   targets: targetPicks(TARGETS).optional(),
   agent: agentFields(z.string().min(1)).nullable().optional(),
   /**
@@ -205,6 +213,8 @@ export function newBriefSchemaFor(opts: {
   buildRange?: boolean;
   /** FLEET_PRODUCTS: the writer may also pick jetson-fleet. */
   fleet?: boolean;
+  /** SPARK_OPEN_PRODUCTS: the writer may also pick muse-spark-open, after jetson-fleet when both are on. */
+  sparkOpen?: boolean;
 }): z.ZodType<Brief> {
   const base = opts.gadgets ? NewBriefSchema : NewBriefSchemaNoGadget;
   const look = opts.museAppLook ? { askedLook: z.string().max(ASKED_LOOK_MAX).nullable() } : {};
@@ -216,8 +226,8 @@ export function newBriefSchemaFor(opts: {
     if (block) extra[cap] = block.nullable();
   }
   if (opts.milestones) extra.milestones = MilestonesSchema.nullable();
-  if (opts.fleet) {
-    const models = [...(opts.gadgets ? NEW_PRODUCT_MODELS : NEW_PRODUCT_MODELS_NO_GADGET), FLEET_BRIEF_MODEL] as [string, ...string[]];
+  if (opts.fleet || opts.sparkOpen) {
+    const models = [...(opts.gadgets ? NEW_PRODUCT_MODELS : NEW_PRODUCT_MODELS_NO_GADGET), ...(opts.fleet ? [FLEET_BRIEF_MODEL] : []), ...(opts.sparkOpen ? [SPARK_OPEN_BRIEF_MODEL] : [])] as [string, ...string[]];
     extra.capabilities = z.array(z.object({ need: z.string(), model: z.enum(models), why: z.string() })).min(1);
   }
   if (opts.recipes?.length) extra.recipes = z.array(z.enum(opts.recipes as [string, ...string[]])).max(MAX_RECIPES).nullable();
@@ -245,4 +255,4 @@ export function newBriefSchemaFor(opts: {
   return base.extend({ ...shape, ...look, ...extra }) as unknown as z.ZodType<Brief>;
 }
 
-export type ProductModelId = (typeof PRODUCT_MODELS)[number] | typeof FLEET_BRIEF_MODEL;
+export type ProductModelId = (typeof PRODUCT_MODELS)[number] | typeof FLEET_BRIEF_MODEL | typeof SPARK_OPEN_BRIEF_MODEL;
