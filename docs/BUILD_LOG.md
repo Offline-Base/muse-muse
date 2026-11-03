@@ -4057,3 +4057,17 @@ Asked: can the video show Muse Spark Open starting on a GPU we run and writing t
 - **Tests on the merged tree:** private-page, train render, format, device runs and the Spark take script, 69 of 69 pass. `demo-batch --set=showcase --dry` prints the one allapis note (743 characters).
 - **Not done:** no push, no deploy, no spend. The run of show for the video (which shot comes from which segment, the checklist and the go or no-go times) was returned to the workflow, not written to the repo.
 - **Live check, 10:50 AM ET (15:50 UTC), signed out:** production doesn't show 16cd84e8 yet. /gallery still lists fresh-dot-fridge and wag-sticker-studio, the handbook page's Models chip says Muse Wonder and has no "More ways to use it", and Dinner Split's captions say "Muse Spark 1.3 split them". Check the production deploy of main before filming anything from the product pages.
+
+## Nov 3, 2026, about 12:45 PM ET: one owner runbook for today and the Nov 4 switch (branch tg-e-runbook, not pushed)
+
+- **What:** docs/OWNER_RUNBOOK.md, every owner step from now to the submission in order, with times and costs: the builder snapshot, native packaging and the aisle-together repackage, the guest cap, `STORY_PAGES` and the daily cap, partner hosting and the public Hugging Face page, clearing run ebad9aad's auto-publish mark, the builds (hero, cookbook set, four rebuilds), the fleet vars on and off around filming, the Spark Open take, going public, the code freeze and the Muse Wonder switch and back. Ends with a spend table that fits $100 and what to drop first.
+- **Checked in the code, not guessed:**
+  - The guest daily build cap is `MAX_BUILDS_PER_USER_PER_DAY` (lib/quota.ts, read on every check; all guests share one account, so 25 is everyone's total).
+  - `WONDER_DEMO_SLUGS` is a constant in lib/gateway/policy.ts, not env, and `TEST_MODEL` does nothing on Production (`testModel()`), so the Wonder switch is `BUILDS_ON_CONTRIBUTOR` alone, plus checking the four model names fall back to `muse-wonder-1.0`.
+  - Run ebad9aad's auto-publish choice has no control on a finished run: it is a `rate_limits` row (`tune-settings:<run>:auto-publish`). With `HF_PUBLIC` unset, a deliberate Publish of an unmarked run goes public and auto uploads stay private (`hubFinishStep`), so the runbook clears the row with one SQL line and leaves `HF_PUBLIC` unset. The dataset repo stays private either way (Contributor wrote it).
+  - Partner evals take only `baseten` or `modal`; Fireworks is out for r30b. Hosting plans are held under `DAILY_SPEND_CAP_USD` minus today's spend and under `HOST_TUNED_DAILY_USD` (set to 13 in the runbook).
+  - `npm run demo-batch` with no ids already includes the four rebuilds (computer-use, stickers, games, fridge), so the runbook says to run one or the other, not both.
+  - `spark_endpoint.py deploy` keeps an existing stop schedule, so the runbook runs `delete` first and checks `deleteAtUtc`. Recommended cap `--hours 1`, $41.43 at the script's price.
+  - jetson-04's node id `nd_fe300e68e976228c` checked online through the fleet's read-only `list_nodes`.
+- **Spend table, ceilings:** Meta $20 a UTC day for two days, Hub publish $1, Baseten $7.04, Modal $5.25, Spark take $41.43, Vercel about $5: $99.72. Expected about $57 to $79. Drop order: Modal, the phone build, the 8 non-rebuild cookbook builds, the Spark take, then the Nov 4 cap.
+- **Not run:** nothing. No build, snapshot, GPU, deploy, env change or Hub write. Spend $0. No code touched, so no tests ran.
