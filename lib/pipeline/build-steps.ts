@@ -53,7 +53,7 @@ import {
 } from "@/lib/pipeline/logic";
 import { modelLabel } from "@/lib/format";
 import { builderTier, tierMayUseBuilderCaps } from "@/lib/trust/tiers";
-import { chainRoundPlan, fullRoundPlan, roundPlanFor, stepRetries, type RoundPlan } from "@/lib/pipeline/steps";
+import { buildWallMs, chainRoundPlan, fullRoundPlan, roundPlanFor, stepRetries, stepTimeoutMs, type RoundPlan } from "@/lib/pipeline/steps";
 import { CHAIN_FROM_REQUIREMENTS, CHAIN_STATE_FILE, chainSessionBudgetUsd, chainSessionPreface, chainStateFile, type ChainLimits } from "@/lib/chain/plan";
 import { isPowerChild } from "@/lib/caps/platform/child";
 // ---------- Wave 3, unit 2 (docs/CAPABILITIES.md, section 8) ----------
@@ -469,10 +469,16 @@ function fullBuildOf(brief: Brief | null | undefined): boolean {
   return env.fullBuilds && buildableRequirements(brief).length > 0;
 }
 
-/** builds.round_plan for a plan: the first round's minutes and each milestone, planned. */
-function planRecord(plan: RoundPlan): RoundPlanRecord {
+/**
+ * builds.round_plan for a plan: the first round's minutes, the whole build's time limit and each milestone, planned. A
+ * build with no plan gets one too, with today's first-round cap and the plain wall, so the room shows its real limit.
+ */
+function planRecord(plan: RoundPlan | undefined): RoundPlanRecord {
+  if (!plan) return { capMinutes: Math.round(stepTimeoutMs("build") / 60_000), wallMinutes: Math.round(buildWallMs(undefined) / 60_000), milestones: [] };
   return {
     capMinutes: Math.round(plan.buildMs / 60_000),
+    // A chain's wall is one session's, not the build's: a chain runs on across sessions, so its room shows no limit.
+    ...(plan.chain ? {} : { wallMinutes: Math.round(buildWallMs(plan) / 60_000) }),
     milestones: plan.milestones.map((m) => ({ title: m.title, state: "planned" })),
     ...(plan.chain ? { chain: { maxHours: Math.round(plan.chain.maxMs / 3_600_000), session: 1 } } : {}),
   };
@@ -535,7 +541,7 @@ export async function briefStep(buildId: string): Promise<BriefSummary> {
   const summary = summarize(result.brief);
   await db()
     .update(schema.builds)
-    .set({ brief: result.brief, buildModel: summary.model, ...(summary.plan ? { roundPlan: planRecord(summary.plan) } : {}) })
+    .set({ brief: result.brief, buildModel: summary.model, ...(summary.verdict !== "no" ? { roundPlan: planRecord(summary.plan) } : {}) })
     .where(eq(schema.builds.id, buildId));
   for (const t of result.transcripts) {
     await emit(buildId, { type: "log", text: `Voice memo ${t.index + 1}: ${t.text}` });
@@ -2041,6 +2047,7 @@ export async function loadRefineStep(buildId: string, opts: { restore?: boolean 
   // Wave 3, unit 3: the row gets the brief as stored, every cap block kept; the plan uses the working copy (2.4a).
   const stored = build.storedBrief ?? (await latestBrief(product.id));
   const brief = stored ? capsForBuild(stored, { kind: "refine" }).brief : null;
+  const plan = brief ? enginePlan(brief, "refine") : undefined;
   await db()
     .update(schema.builds)
     .set({
@@ -2050,9 +2057,10 @@ export async function loadRefineStep(buildId: string, opts: { restore?: boolean 
       ...(stored ? { brief: stored } : {}),
       // A change's tests see the same tool samples as the first build's.
       ...(previous?.toolFixtures ? { toolFixtures: previous.toolFixtures } : {}),
+      // A change runs to a wall too, and its room shows it. A restore runs no rounds.
+      ...(opts.restore ? {} : { roundPlan: planRecord(plan) }),
     })
     .where(eq(schema.builds.id, buildId));
-  const plan = brief ? enginePlan(brief, "refine") : undefined;
   return {
     productId: product.id,
     name: product.name,

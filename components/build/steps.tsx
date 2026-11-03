@@ -215,10 +215,20 @@ function roundDescription(seg: MuseSegment): string {
     .join(" · ");
 }
 
+/**
+ * A round's title, by what it was for (its stage): the build or a change, milestone n, or fix round n. Only a round
+ * whose events never said what it was for falls back to its round number as a fix round.
+ */
+export function roundTitle(seg: Pick<MuseSegment, "round" | "stage">, opts: { live: boolean; failed: boolean; isRefine: boolean }): string {
+  const stage = seg.stage ?? (seg.round === 0 ? { kind: "build" as const } : { kind: "fix" as const, n: seg.round });
+  if (stage.kind === "fix") return opts.live ? `Fix round ${stage.n} is working` : opts.failed ? `Fix round ${stage.n} didn't finish` : `Fix round ${stage.n}`;
+  if (stage.kind === "milestone") return opts.live ? `Muse Code is building milestone ${stage.n}` : opts.failed ? `Milestone ${stage.n} didn't finish` : `Muse Code built milestone ${stage.n}`;
+  return opts.live ? "Muse Code is working" : opts.failed ? "Muse Code didn't finish" : opts.isRefine ? "Muse Code made the change" : "Muse Code built it";
+}
+
 function roundRow(seg: MuseSegment, opts: { live: boolean; failed: boolean; isRefine: boolean; newest: boolean }): StepItem {
   const { live, failed } = opts;
-  const ended = seg.round === 0 ? (opts.isRefine ? "Muse Code made the change" : "Muse Code built it") : `Fix round ${seg.round}`;
-  const title = live ? (seg.round === 0 ? "Muse Code is working" : `Fix round ${seg.round} is working`) : failed ? (seg.round === 0 ? "Muse Code didn't finish" : `Fix round ${seg.round} didn't finish`) : ended;
+  const title = roundTitle(seg, opts);
   const session = seg.session;
   const agents = opts.newest && session?.agents.length ? [{ id: `${seg.key}/agents`, title: "Agents", state: "done" as const, children: session.agents.map((n) => agentRow(n, live)) }] : [];
   const log = logRows(seg, live, agents.length > 0);

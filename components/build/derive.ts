@@ -86,6 +86,8 @@ export type Segment =
       lines: MuseLogLine[];
       /** What the session bridge showed of this round. Null for a `muse exec` round, which shows none of it. */
       session: SessionModel | null;
+      /** What the round was for, from the status before it. Missing when no status said. */
+      stage?: RoundStage;
     })
   | (SegmentBase & {
       type: "check";
@@ -99,6 +101,12 @@ export type Segment =
   | (SegmentBase & { type: "deploy"; url: string });
 
 type CheckSegment = Extract<Segment, { type: "check" }>;
+
+/** What a Muse Code round was for: the build (or a change, or the look), milestone n, or fix round n. */
+export type RoundStage = { kind: "build" } | { kind: "milestone"; n: number } | { kind: "fix"; n: number };
+
+/** The workflow's status message for a milestone round: "Milestone 2 of 3", or "Milestone 2 of 3, session 2" in a chain. */
+const MILESTONE_STATUS = /^Milestone (\d+) of \d+/;
 type MuseSegment = Extract<Segment, { type: "muse" }>;
 type Delivery = NonNullable<MuseLineDetail["delivery"]>;
 
@@ -191,6 +199,10 @@ export function deriveRoom(build: BuildView, events: BuildEvent[]): RoomState {
   // with the turn that comes next, not with the one before.
   let awaitingRound = false;
   const carried: Note[] = [];
+  // Fix rounds: one per "fixing" status ("Fix round n of m"). Milestone and look rounds aren't fix rounds.
+  const fixStatuses = new Set<string>();
+  // What the next new round is for, from the last building or fixing status.
+  let nextStage: RoundStage = { kind: "build" };
 
   // A turn starts at the later of the last status change and the previous turn's end. ISO strings sort by time.
   const startFor = (at: string): string => {
@@ -235,6 +247,7 @@ export function deriveRoom(build: BuildView, events: BuildEvent[]): RoomState {
     round,
     lines: [] as MuseLogLine[],
     session: null,
+    stage: nextStage,
   });
   /** Per muse round: itemId -> where its line is, so an update replaces it. */
   const slots = new Map<string, Map<string, number>>();
@@ -255,6 +268,15 @@ export function deriveRoom(build: BuildView, events: BuildEvent[]): RoomState {
         if (rail && !isTerminalStatus(e.status)) lastRail = rail;
         lastStatusAt = e.at;
         if (e.status === "building" || e.status === "fixing") awaitingRound = true;
+        if (e.status === "fixing") {
+          fixStatuses.add(e.message ?? `#${e.id}`);
+          nextStage = { kind: "fix", n: fixStatuses.size };
+        } else if (e.status === "building") {
+          const milestone = MILESTONE_STATUS.exec(e.message ?? "");
+          // A plain "building" status with no message keeps a milestone named just before it.
+          if (milestone) nextStage = { kind: "milestone", n: Number(milestone[1]) };
+          else if (e.message || nextStage.kind === "fix") nextStage = { kind: "build" };
+        }
         if (e.message) {
           lastStatusMessage = e.message;
           note({ id: e.id, kind: "status", text: e.message, at: e.at });
@@ -368,7 +390,6 @@ export function deriveRoom(build: BuildView, events: BuildEvent[]): RoomState {
   // The build row is the source of truth once it is terminal, even if the stream missed the last status event.
   if (isTerminalStatus(build.status) && !isTerminalStatus(status)) status = build.status;
 
-  const fixFromRounds = segments.filter((s) => s.type === "muse" && s.round > 0).length;
   const last = events[events.length - 1];
   return {
     status,
@@ -383,7 +404,9 @@ export function deriveRoom(build: BuildView, events: BuildEvent[]): RoomState {
     recordingPosterUrl,
     planArtUrl,
     costUsd,
-    fixRounds: Math.max(build.fixRounds, build.kind === "refine" ? Math.max(0, fixFromRounds) : fixFromRounds),
+    // The build row's count, or the fixing statuses seen so far while the row is behind. Never every round past the
+    // first: a milestone build showed "2 fix rounds" with none.
+    fixRounds: Math.max(build.fixRounds, fixStatuses.size),
     lastRail,
     lastEventId: last?.id ?? 0,
     lastEventAt: last?.at ?? null,

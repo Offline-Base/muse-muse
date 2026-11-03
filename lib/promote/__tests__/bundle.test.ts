@@ -246,6 +246,8 @@ describe("what the engine adds to a bundle (0019_engine)", () => {
     assert.deepEqual(parseOk(b).builds[0]!.roundPlan, b.builds[0].roundPlan);
     b.builds[0].roundPlan = { capMinutes: 35, milestones: [{ title: "A", state: "exploded" }] };
     assert.equal(parseImportBundle(b).ok, false);
+    b.builds[0].roundPlan = { capMinutes: 60, wallMinutes: 150, milestones: [] };
+    assert.deepEqual(parseOk(b).builds[0]!.roundPlan, { capMinutes: 60, wallMinutes: 150, milestones: [] }, "the whole build's time limit travels with it");
     b.builds[0].roundPlan = { capMinutes: 35, milestones: [], extra: 1 };
     assert.equal(parseImportBundle(b).ok, false, "unknown keys are refused");
   });

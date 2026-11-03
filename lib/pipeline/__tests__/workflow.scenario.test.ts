@@ -1211,7 +1211,8 @@ describe("engine (docs/CAPABILITIES.md, section 8)", { skip: canMock ? false : "
     assert.deepEqual(named("judgeStep").map((c) => (c.args[0] as { round: number }).round), [3]);
     assert.deepEqual(named("writeFixPromptStep").map((c) => c.args[0]), [{ buildId: "t4", sandboxName: "product-shelf-scout", fix: 1, verifiedRound: 2 }]);
     const states = named("milestoneStep").map((c) => { const m = c.args[1] as { index: number; state: string }; return `${m.index}:${m.state}`; });
-    assert.deepEqual(states, ["1:building", "1:failed", "2:building", "2:passed", "3:building", "3:passed"]);
+    // Milestone 2's check passed, and it covers milestone 1 too, so milestone 1 no longer shows as failed.
+    assert.deepEqual(states, ["1:building", "1:failed", "2:building", "1:passed", "2:passed", "3:building", "3:passed"]);
     assert.ok(statuses().includes("verifying"));
   });
 
@@ -1365,6 +1366,93 @@ describe("engine (docs/CAPABILITIES.md, section 8)", { skip: canMock ? false : "
     } finally {
       Date.now = real;
     }
+  });
+
+  it("settles a milestone that failed its own check once the final checks pass (the agent build of Nov 3)", async () => {
+    flags({});
+    const milestones = [{ title: "R1 to R4" }, { title: "R5 to R8" }];
+    reset({ plan: plan({ full: true, buildMs: 60 * MIN, wallMs: 150 * MIN, verifyMs: 12 * MIN, milestones }), verifies: [{ passed: false }, { passed: false }, { passed: true }] });
+    assert.deepEqual(await wf.buildProduct({ buildId: "m1" }), { status: "live" });
+    const states = named("milestoneStep").map((c) => { const m = c.args[1] as { index: number; state: string }; return `${m.index}:${m.state}`; });
+    assert.deepEqual(states, ["1:building", "1:failed", "2:building", "1:passed", "2:passed"]);
+  });
+
+  it("keeps a failed milestone failed when the final checks fail too", async () => {
+    flags({});
+    const milestones = [{ title: "R1 to R4" }, { title: "R5 to R8" }];
+    reset({ plan: plan({ full: true, buildMs: 60 * MIN, wallMs: 150 * MIN, verifyMs: 12 * MIN, milestones }), verifies: [{ passed: false }] });
+    assert.deepEqual(await wf.buildProduct({ buildId: "m2" }), { status: "failed" });
+    const states = named("milestoneStep").map((c) => { const m = c.args[1] as { index: number; state: string }; return `${m.index}:${m.state}`; });
+    assert.deepEqual(states, ["1:building", "1:failed", "2:building", "2:failed"]);
+  });
+
+  describe("the whole-build deadline", () => {
+    const withClock = async (fn: () => Promise<void>) => {
+      const real = Date.now;
+      clock = real();
+      Date.now = () => clock;
+      try {
+        await fn();
+      } finally {
+        Date.now = real;
+      }
+    };
+
+    it("holds a build with no plan to 120 minutes: no fix round starts that can't finish inside it", () =>
+      withClock(async () => {
+        flags({});
+        // At minute 100 after the check: 120 - 100 - 8 (its verify) - 3 (its judge) - 10 (shipping) leaves under 8.
+        reset({ verifies: [{ passed: false }, { passed: true }], advance: { previewStep: 92 * MIN, collectVerifyStep: 8 * MIN } });
+        assert.deepEqual(await wf.buildProduct({ buildId: "w1" }), { status: "failed" });
+        assert.deepEqual(starts().map((r) => r.promptFile), ["brief.md"]);
+        assert.ok(logs().includes("The build is near its time limit, so no more fix rounds run."));
+        // No plan, so the rounds still ask for no session time of their own.
+        assert.ok(starts().every((r) => !("capMs" in r)));
+      }));
+
+    it("cuts a fix round of a build with no plan to what's left before its deadline", () =>
+      withClock(async () => {
+        flags({});
+        // At minute 88: 120 - 88 - 8 - 3 - 10 leaves 11, under the 12-minute fix cap.
+        reset({ musePollsByRun: [2, Infinity], verifies: [{ passed: false }, { passed: true }], advance: { previewStep: 80 * MIN, collectVerifyStep: 8 * MIN } });
+        await wf.buildProduct({ buildId: "w2" });
+        assert.ok(logs().includes("Muse Code was stopped after 11 minutes."));
+      }));
+
+    it("holds a change with no plan to the same deadline", () =>
+      withClock(async () => {
+        flags({});
+        reset({ head: { kind: "refine", status: "queued", productId: "prod-1" }, verifies: [{ passed: false }, { passed: true }], advance: { previewStep: 92 * MIN, collectVerifyStep: 8 * MIN } });
+        assert.deepEqual(await wf.refineProduct({ buildId: "w3" }), { status: "failed" });
+        assert.equal(named("writeFixPromptStep").length, 0);
+      }));
+
+    it("cuts a scaled first round so one check and shipping still fit in the wall", async () => {
+      flags({ ENGINE_ROUND_SCALING: "1" });
+      reset({ plan: plan({ buildMs: 90 * MIN }), verifies: [{ passed: true }] });
+      assert.deepEqual(await wf.buildProduct({ buildId: "w4" }), { status: "live" });
+      // 90 - 8 (verify) - 3 (judge) - 10 (shipping) = 69.
+      assert.equal(starts()[0]!.capMs, 69 * MIN);
+    });
+
+    it("keeps an edge build's outage drill inside the reserve for a fix round", () =>
+      withClock(async () => {
+        flags({ ENGINE_ROUND_SCALING: "1" });
+        // At minute 58: 90 - 58 - 8 (verify) - 5 (drill) - 3 (judge) - 10 (shipping) leaves 6, under a fix round's 8.
+        reset({ plan: plan(), edge: true, verifies: [{ passed: false }, { passed: true }], advance: { previewStep: 50 * MIN, collectVerifyStep: 8 * MIN } });
+        assert.deepEqual(await wf.buildProduct({ buildId: "w5" }), { status: "failed" });
+        assert.equal(named("writeFixPromptStep").length, 0);
+      }));
+
+    it("stops a demo recording at the wall instead of the record step's 9 minutes", () =>
+      withClock(async () => {
+        flags({ ENGINE_ROUND_SCALING: "1" });
+        // At minute 85 the recording gets the 5 minutes left.
+        reset({ plan: plan(), verifies: [{ passed: true }], demoTimeout: true, advance: { previewStep: 77 * MIN, collectVerifyStep: 8 * MIN } });
+        assert.deepEqual(await wf.buildProduct({ buildId: "w6" }), { status: "live" });
+        const demoPolls = named("pollTaskStep").filter((c) => String(c.args[1]).startsWith("demo")).length;
+        assert.equal(demoPolls, 30, "5 minutes of 10-second polls");
+      }));
   });
 
   it("takes exactly today's steps with every engine flag off", async () => {

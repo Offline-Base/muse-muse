@@ -948,6 +948,32 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       const update = writes.find((w) => w.table === "builds")!;
       assert.equal(update.values.brief, BRIEF);
       assert.equal(update.values.sandboxName, "sb");
+      // With no engine flag the change has no plan, and its room shows the plain build's real time limit.
+      assert.deepEqual(update.values.roundPlan, { capMinutes: 60, wallMinutes: 120, milestones: [] });
+    });
+
+    it("records a scaled change's wall as its time limit, and none for a restore", async () => {
+      const full = (await import("@/lib/promote/__tests__/fixtures")).BRIEF;
+      const rows = () => ({
+        builds: [
+          [{ id: "r1", kind: "refine", productId: "prod-1", brief: full, startedAt: new Date() }],
+          [{ n: 1 }],
+          [{ buildModel: "muse-wonder-1.0" }],
+        ],
+        products: [[{ id: "prod-1", name: "Bird Count", tagline: "Count birds", sandboxName: "sb", museSessionId: "sess" }]],
+      });
+      process.env.ENGINE_ROUND_SCALING = "1";
+      try {
+        selects = rows();
+        await steps.loadRefineStep("r1");
+        assert.equal((writes.find((w) => w.table === "builds")!.values.roundPlan as { wallMinutes: number }).wallMinutes, 90);
+        writes = [];
+        selects = rows();
+        await steps.loadRefineStep("r1", { restore: true });
+        assert.ok(!("roundPlan" in writes.find((w) => w.table === "builds")!.values));
+      } finally {
+        delete process.env.ENGINE_ROUND_SCALING;
+      }
     });
 
     /** Runs loadRefineStep for a product whose first build recorded `buildModel` (no row at all when undefined). */
