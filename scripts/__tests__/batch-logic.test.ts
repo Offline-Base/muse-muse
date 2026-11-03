@@ -17,8 +17,11 @@ import {
   parseBuildStatus,
   parsePolishAnswer,
   planStarts,
+  polishBody,
+  polishLookArg,
   queueDone,
   refineIdsFrom,
+  resumedItem,
   type BuildView,
   type PolishItem,
 } from "../batch/logic";
@@ -280,6 +283,134 @@ describe("polish queue", () => {
     reads.length = 0;
     await readRound(items, builds, cache, fetch, 200, now);
     assert.deepEqual(reads, [id(1)], "the next round reads only what can still change");
+  });
+});
+
+describe("a pass with --look=meta and --again", () => {
+  const META = { look: "meta" as const, again: true };
+  it("sends look and again in the body only when asked, with the focus", () => {
+    assert.deepEqual(polishBody("Tabs clip.", META), { focus: "Tabs clip.", look: "meta", again: true });
+    assert.deepEqual(polishBody(null, { look: "meta" }), { look: "meta" });
+    assert.deepEqual(polishBody(undefined, { again: true }), { again: true });
+    assert.deepEqual(polishBody("x"), { focus: "x" });
+    assert.deepEqual(polishBody(""), {});
+    assert.equal(polishLookArg("meta"), "meta");
+    assert.equal(polishLookArg(undefined), undefined);
+    assert.throws(() => polishLookArg("muse-app"), /--look=muse-app isn't a look/);
+  });
+  it("never adopts an earlier polish with --again: already_polished is refused, a running one is waited out", () => {
+    assert.equal(parsePolishAnswer(409, { error: "already_polished", buildId: id(7) }, SITE, { again: true }).kind, "refused");
+    assert.deepEqual(parsePolishAnswer(409, { error: "busy", buildId: id(8) }, SITE, { again: true }).kind, "wait");
+    // This pass's own polish is still followed.
+    assert.deepEqual(parsePolishAnswer(409, { error: "busy", buildId: id(8) }, SITE, { again: true, own: [id(8)] }), { kind: "adopt", refineIds: [id(8)], reason: "busy" });
+    // Without --again nothing changes.
+    assert.equal(parsePolishAnswer(409, { error: "already_polished", buildId: id(7) }, SITE).kind, "adopt");
+
+    const old = item(1, "ready");
+    assert.deepEqual(applyAnswer(old, { status: 409, json: { error: "already_polished", buildId: id(7) } }, SITE, now, META), {});
+    assert.equal(old.state, "refused");
+    assert.deepEqual(old.refineIds, []);
+    assert.match(old.note ?? "", /again: true was sent/);
+
+    const running = item(2, "ready");
+    for (let k = 0; k < MAX_ATTEMPTS + 2; k++) applyAnswer(running, { status: 409, json: { error: "busy", buildId: id(8) } }, SITE, now, META);
+    assert.equal(running.state, "ready", "waiting out an earlier polish never uses up the tries");
+    assert.equal(running.attempts, 0);
+    assert.equal(running.notBefore, "2026-11-03T18:05:00.000Z");
+
+    const started = item(3, "ready");
+    applyAnswer(started, { status: 201, json: { buildId: id(31), look: "meta" } }, SITE, now, META);
+    assert.equal(started.state, "polishing");
+    assert.equal(started.look, "meta");
+    const plain = item(4, "ready", { look: "meta" });
+    applyAnswer(plain, { status: 201, json: { buildId: id(41) } }, SITE, now);
+    assert.equal(plain.look, undefined);
+  });
+  it("resumes: polishes again what an earlier pass did in another look, never twice in the same pass", () => {
+    const resumed = [
+      item(1, "polished", { refineIds: [id(11)] }),
+      item(2, "polished", { refineIds: [id(21)], look: "meta" }),
+      item(3, "polishing", { refineIds: [id(31)] }),
+      item(4, "skipped"),
+      item(5, "refused", { note: "already_polished" }),
+    ];
+    const builds = [1, 2, 3, 4, 5].map((n) => ({ label: `b${n}`, buildId: id(n) }));
+    const items = initialItems(builds, resumed, META);
+    assert.deepEqual(items.map((i) => [i.state, i.refineIds, i.earlierRefineIds ?? []]), [
+      ["waiting", [], [id(11)]],
+      ["polished", [id(21)], []],
+      ["waiting", [], [id(31)]],
+      ["skipped", [], []],
+      ["waiting", [], []],
+    ]);
+    // Without --again, or resumed into the same pass, nothing is polished twice.
+    assert.deepEqual(initialItems(builds, resumed, { look: "meta" }).map((i) => i.state), ["polished", "polished", "polishing", "skipped", "refused"]);
+    assert.deepEqual(initialItems(builds, resumed).map((i) => i.state), ["polished", "polished", "polishing", "skipped", "refused"]);
+    assert.equal(resumedItem(items[0], META).state, "waiting");
+    // The earlier polishes stay in the ledger.
+    assert.deepEqual(refineIdsFrom([{ items }]).get(id(1)), [id(11)]);
+  });
+  it("follows a polish the route says is already meta, and refuses a product polished in another look without --again", () => {
+    const META_ONLY = { look: "meta" as const };
+    // In this pass's look: followed, with --again or without, so a start whose answer was lost never runs twice.
+    for (const opts of [{ ...META, own: [] }, META_ONLY]) {
+      assert.deepEqual(parsePolishAnswer(409, { error: "busy", buildId: id(8), look: "meta" }, SITE, opts), { kind: "adopt", refineIds: [id(8)], reason: "busy", look: "meta" });
+    }
+    assert.equal(parsePolishAnswer(409, { error: "already_polished", buildId: id(7), look: "meta" }, SITE, META_ONLY).kind, "adopt");
+    // In another look, without --again: never followed as if it were this pass.
+    const refused = parsePolishAnswer(409, { error: "already_polished", buildId: id(7) }, SITE, META_ONLY);
+    assert.equal(refused.kind, "refused");
+    assert.match(refused.kind === "refused" ? refused.reason : "", /Run with --again/);
+    assert.equal(parsePolishAnswer(409, { error: "busy", buildId: id(8) }, SITE, META_ONLY).kind, "wait");
+    // A keep-look pass and an --again pass with no look are as before.
+    assert.equal(parsePolishAnswer(409, { error: "already_polished", buildId: id(7), look: "meta" }, SITE).kind, "adopt");
+    assert.equal(parsePolishAnswer(409, { error: "busy", buildId: id(8), look: "meta" }, SITE, { again: true }).kind, "wait");
+
+    const followed = item(1, "ready");
+    applyAnswer(followed, { status: 409, json: { error: "busy", buildId: id(8), look: "meta" } }, SITE, now, META);
+    assert.equal(followed.state, "polishing");
+    assert.equal(followed.look, "meta");
+    assert.deepEqual(followed.refineIds, [id(8)]);
+    assert.equal(followed.attempts, 0);
+  });
+  it("tries a refused build again on resume with --again, whatever its look", () => {
+    const refused = item(5, "refused", { note: "409 already_polished although again: true was sent" });
+    assert.equal(resumedItem(refused, { again: true }).state, "waiting");
+    assert.equal(resumedItem(refused, { again: true, look: "meta" }).state, "waiting");
+    assert.equal(resumedItem(refused, {}).state, "refused");
+    assert.equal(resumedItem(item(6, "polish_failed", { refineIds: [id(61)] }), { again: true }).state, "polish_failed");
+  });
+  it("holds a reserve for an earlier pass's polish that still runs, and isn't done until it ends", async () => {
+    const answers = new Map<string, BuildView>([
+      [id(1), view(1, { status: "live" })],
+      [id(11), { ...view(11, { kind: "refine", status: "building", cost: 1 }), buildId: id(11) }],
+    ]);
+    const builds = [{ label: "a", buildId: id(1) }];
+    const items = initialItems(builds, [item(1, "polishing", { refineIds: [id(11)] })], META);
+    const fetch = async (b: string) => answers.get(b) ?? { error: "not_found" as const };
+    await readRound(items, builds, new Map(), fetch, 200, now);
+    assert.equal(items[0].state, "ready");
+    assert.equal(items[0].earlierInFlight, true);
+    const others = [items[0], item(2, "ready"), item(3, "ready")];
+    // $10 budget, $1 spent, $4 reserve: the earlier polish holds $4, so one more start fits, not two.
+    const move = planStarts(others, { concurrency: 8, budgetUsd: 10, reserveUsd: 4, spentUsd: 1, now });
+    assert.equal(move.start.length, 1);
+    assert.equal(move.held, "budget");
+    assert.equal(queueDone(others, move), false);
+    const after = [{ ...items[0], earlierInFlight: undefined, state: "refused" as const }, item(2, "ready")];
+    assert.equal(queueDone(after, { start: [], inFlight: 0, held: "budget" }), true);
+  });
+  it("counts an earlier pass's polish in the round's ledger", async () => {
+    const answers = new Map<string, BuildView>([
+      [id(1), view(1, { status: "live", cost: 0.3 })],
+      [id(11), { ...view(11, { kind: "refine", status: "live", cost: 2 }), buildId: id(11) }],
+    ]);
+    const builds = [{ label: "a", buildId: id(1) }];
+    const items = initialItems(builds, [item(1, "polished", { refineIds: [id(11)] })], META);
+    const fetch = async (b: string) => answers.get(b) ?? { error: "not_found" as const };
+    const l = await readRound(items, builds, new Map(), fetch, 200, now);
+    assert.equal(items[0].state, "ready", "its earlier polish doesn't make it polished");
+    assert.equal(l.spentUsd, 2.3);
   });
 });
 

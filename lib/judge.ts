@@ -99,6 +99,17 @@ export interface JudgeInput {
    * still reports them, but its own call doesn't fail the product for them alone. None adds nothing.
    */
   knownFailing?: string[];
+  /**
+   * A polish switched this product to the Meta UI look (lib/polish/logic.ts isMetaLookPolish): judge it against meta-ui's
+   * house style, with the brief's Design direction and asked look left out, since neither sets its look any more.
+   */
+  metaLook?: boolean;
+}
+
+/** The brief the judge reads for a product on the Meta UI look: no Design direction and no asked look. */
+export function metaLookBrief(brief: Brief): Brief {
+  const { direction: _direction, askedLook: _asked, ...rest } = brief;
+  return rest;
 }
 
 export interface JudgeSample {
@@ -147,7 +158,8 @@ export function withRequirements(
  * `ownPass` is the judge model's own call, before code failed it for an unmet requirement (withRequirements), for the
  * polish round's no-worse gate. Every other caller reads only the verdict.
  */
-export async function judgeBuild(input: JudgeInput): Promise<{ verdict: JudgeResult; usage: ModelUsage[]; costUsd: number; ownPass: boolean }> {
+export async function judgeBuild(given: JudgeInput): Promise<{ verdict: JudgeResult; usage: ModelUsage[]; costUsd: number; ownPass: boolean }> {
+  const input = given.metaLook ? { ...given, brief: metaLookBrief(given.brief) } : given;
   if (!input.screenshots.length) {
     // Nothing cleared the product's look, so this can't ship as partial.
     return {
@@ -168,7 +180,7 @@ export async function judgeBuild(input: JudgeInput): Promise<{ verdict: JudgeRes
   if (required.length) {
     const result = await respondStructured({
       model: env.judgeModel,
-      instructions: judgeInstructions(input.brief, { museAppLook: env.museAppLook, fullBuilds: true, ...(env.buildRange ? { buildRange: true } : {}), ...(env.metaUiOnly ? { metaUiOnly: true, productHasMuseAppLook: input.productHasMuseAppLook === true } : {}), ...(env.verifyAgents ? { verifyAgents: true } : {}), ...samplesOpt(input) }),
+      instructions: judgeInstructions(input.brief, { museAppLook: env.museAppLook, fullBuilds: true, ...(env.buildRange ? { buildRange: true } : {}), ...(env.metaUiOnly ? { metaUiOnly: true, productHasMuseAppLook: input.productHasMuseAppLook === true } : {}), ...(env.verifyAgents ? { verifyAgents: true } : {}), ...samplesOpt(input), ...(input.metaLook ? { metaLook: true } : {}) }),
       content,
       sources,
       schema: FullVerdictSchema,
@@ -181,7 +193,7 @@ export async function judgeBuild(input: JudgeInput): Promise<{ verdict: JudgeRes
   }
   const result = await respondStructured({
     model: env.judgeModel,
-    instructions: judgeInstructions(input.brief, { museAppLook: env.museAppLook, ...(env.buildRange ? { buildRange: true } : {}), ...(env.metaUiOnly ? { metaUiOnly: true, productHasMuseAppLook: input.productHasMuseAppLook === true } : {}), ...(env.verifyAgents ? { verifyAgents: true } : {}), ...samplesOpt(input) }),
+    instructions: judgeInstructions(input.brief, { museAppLook: env.museAppLook, ...(env.buildRange ? { buildRange: true } : {}), ...(env.metaUiOnly ? { metaUiOnly: true, productHasMuseAppLook: input.productHasMuseAppLook === true } : {}), ...(env.verifyAgents ? { verifyAgents: true } : {}), ...samplesOpt(input), ...(input.metaLook ? { metaLook: true } : {}) }),
     content,
     sources,
     schema: VerdictSchema,

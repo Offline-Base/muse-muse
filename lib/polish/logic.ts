@@ -90,13 +90,49 @@ export function isPolishMessage(message: string | null | undefined): message is 
   return typeof message === "string" && message.startsWith(POLISH_HEADER);
 }
 
-/** The polish note Muse Code gets, with the caller's focus (audit findings, say) at the end. */
-export function polishNote(focus?: string | null): string {
+/** The looks a polish may switch a product to (POST /api/builds/{id}/polish body `look`). Absent keeps the product's look. */
+export const POLISH_LOOKS = ["meta"] as const;
+export type PolishLook = (typeof POLISH_LOOKS)[number];
+
+/**
+ * Step 1 of a polish note with look "meta" starts with this. isMetaLookPolish finds it, so the judge and later fix and
+ * change prompts treat the product as meta-ui once such a polish ships (lib/pipeline/build-steps.ts metaLookNote).
+ */
+export const POLISH_META_STEP = "1. The look: switch this product to the Meta UI look.";
+
+/**
+ * Step 1 with look "meta" (owner, Nov 3: every Meta demo and cookbook build uses the Meta UI look). It names what the
+ * muse-app overlay wrote (template/targets/muse-app/files, lib/sandbox/look.ts) so Muse Code can undo exactly that, and
+ * what the platform puts back before every check (the overlays' platform-files.json), so it doesn't fight them.
+ */
+const META_LOOK_STEP = [
+  `${POLISH_META_STEP} This round changes the look on purpose, so it overrides any line that says to keep the current look. Remove the muse-app look completely and bring back the template's meta-ui look. A product with no app/muse-app.css and no \"Look: muse-app\" commit has it already: keep it.`,
+  "   - Delete app/muse-app.css and every import of or reference to it. Any token only it defined becomes the nearest meta-ui token in app/globals.css.",
+  "   - The commit \"Look: muse-app\" (and \"Look: build range\" after it, when there) wrote AGENTS.md, app/layout.tsx, app/page.tsx, .agents/skills/meta-ui/SKILL.md, .agents/skills/meta-ui/reference/*.md and .agents/skills/product-ui/SKILL.md. Find it with git log --grep='^Look: muse-app$' --format=%h -1, then see the template's version of a file with git show <commit>^:<path>.",
+  "   - Put back .agents/skills/meta-ui and .agents/skills/product-ui as they were before it: git checkout <commit>^ -- .agents/skills/meta-ui .agents/skills/product-ui.",
+  "   - In AGENTS.md, take back the template's look, font and skill lines, and keep every other line.",
+  "   - In app/layout.tsx, import @fontsource-variable/inter and @fontsource-variable/montserrat as the template does, drop the muse-app.css import and any font the look added, and use the template's dark theme color. Keep the product's title and the rest.",
+  "   - If app/manifest.ts or lib/native/app-icon.tsx is there, use Meta's colors again: background_color #f0f2f5, theme_color #0866ff and an icon on #0866ff.",
+  "   - Remove the colors, fonts, shadows and decoration a design direction added in the product's own CSS. Every screen uses the meta-ui tokens: a gray page, flat white cards, Meta blue for actions, Inter text under Montserrat headings, and the blue-to-violet gradient only where a model did the work.",
+  "   - Point every mention of muse-app-ui, muse-app.css, design-looks or a Design direction in AGENTS.md, BUILD_NOTES.md and code comments at meta-ui. Leave .agents/skills/muse-app-ui and .agents/skills/design-looks in place, since the platform puts them back before each check, but let nothing point at them. Leave brief.md as it is: its Design direction no longer sets the look.",
+  "   - Put \"Look: Meta UI (.agents/skills/meta-ui)\" at the top of BUILD_NOTES.md, so later changes keep it.",
+  "   Then follow .agents/skills/meta-ui and .agents/skills/product-ui on every screen, and run Muse Code's /taste skill on every screen as the last pass. Where /taste and meta-ui disagree, meta-ui wins.",
+].join("\n");
+
+/** Step 1 of a polish note that keeps the product's look. */
+const KEEP_LOOK_STEP =
+  "1. The look. If app/muse-app.css is in the product, it has the muse-app look: follow .agents/skills/muse-app-ui. Otherwise follow .agents/skills/meta-ui. Read .agents/skills/product-ui too. Then run Muse Code's /taste skill on every screen as the last pass. Where /taste and the look skill disagree, the look skill wins.";
+
+/**
+ * The polish note Muse Code gets, with the caller's focus (audit findings, say) at the end. With look "meta", step 1
+ * switches the product to the Meta UI look; without it, the note keeps whichever look the product has.
+ */
+export function polishNote(focus?: string | null, look?: PolishLook | null): string {
   const extra = focus?.trim();
   return [
     `${POLISH_HEADER} This is a polish round on a live product: make it look and read like something Meta would feature on its own site, without changing what it does.`,
     "",
-    "1. The look. If app/muse-app.css is in the product, it has the muse-app look: follow .agents/skills/muse-app-ui. Otherwise follow .agents/skills/meta-ui. Read .agents/skills/product-ui too. Then run Muse Code's /taste skill on every screen as the last pass. Where /taste and the look skill disagree, the look skill wins.",
+    look === "meta" ? META_LOOK_STEP : KEEP_LOOK_STEP,
     "2. Phones first, at 390 px and 360 px wide. Every tap target at least 44 by 44 px. Text, icons and borders at WCAG AA contrast. Nothing cut off, clipped or scrolling sideways. A result scrolls into view when it arrives. Tab bars and bottom bars fit every label without clipping.",
     "3. Clear copy. Short, plain labels. Buttons say what they do. Empty, loading and error states say what happened and what to do next.",
     "4. Consistent spacing and type. One spacing scale and one type scale, from the look skill's tokens, never one-off values.",
@@ -104,6 +140,16 @@ export function polishNote(focus?: string | null): string {
     "6. Run the full verify (npm run verify) before you finish and fix what it finds. The platform runs the full verify and the screenshot judge again after you, and the live version is replaced only when both pass.",
     ...(extra ? ["", "Also fix these findings from an audit of this product:", extra] : []),
   ].join("\n");
+}
+
+/** Whether a build's message is a polish note that switches the product to the Meta UI look. */
+export function isMetaLookPolish(message: string | null | undefined): message is string {
+  return isPolishMessage(message) && message.includes(`\n${POLISH_META_STEP}`);
+}
+
+/** Whether a polish that switched a product to the Meta UI look has shipped, from the product's builds. */
+export function metaLookShipped(history: ReadonlyArray<{ kind: string; message: string | null; status: string }>): boolean {
+  return history.some((h) => h.kind === "refine" && isMetaLookPolish(h.message) && (h.status === "live" || h.status === "partial"));
 }
 
 /** The room's estimate, said when the round starts. */

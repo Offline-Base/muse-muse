@@ -15,6 +15,7 @@ import { getTableName, type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import * as realSchema from "@/lib/db/schema";
 import { goalObjective, renderRefinePrompt } from "@/lib/brief/render";
+import { polishNote } from "@/lib/polish/logic";
 import { StructuredOutputError } from "@/lib/brief/structured";
 import type { Brief, ModelUsage } from "@/lib/types";
 import { z } from "zod";
@@ -410,6 +411,21 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       assert.equal(emitted[0]!.body.type, "judge");
     });
 
+    it("judges a polish with look meta, and later changes to its product, on the Meta UI look", async () => {
+      const meta = polishNote(null, "meta");
+      const judgeWith = async (row: Record<string, unknown>, polishes: Array<Record<string, unknown>>) => {
+        judgeInputs = [];
+        selects = { builds: [[{ ...refineRow, brief: BRIEF, ...row }], polishes], inspirations: [[{ references: [] }], [{ references: [] }]], products: [[{ id: "prod-1", inspirationId: "insp-original" }]] };
+        judgeImpl = async () => ({ verdict: { pass: true, blocking: false, reasons: [], mismatches: [] }, usage: [] });
+        await steps.judgeStep({ buildId: "r1", productId: "prod-1", round: 0, screenshots: [] });
+        return (judgeInputs[0] as { metaLook?: boolean }).metaLook;
+      };
+      assert.equal(await judgeWith({ message: meta }, []), true);
+      assert.equal(await judgeWith({ message: "Add a dark mode" }, [{ kind: "refine", message: meta, status: "live" }]), true);
+      assert.equal(await judgeWith({ message: "Add a dark mode" }, [{ kind: "refine", message: meta, status: "failed" }]), undefined);
+      assert.equal(await judgeWith({ kind: "build", message: null }, []), undefined);
+    });
+
     it("shows the judge the product's own samples from its sandbox, and judges without them when they can't be read", async () => {
       const sample = { url: "https://blob/screens/b1/r0/sample-1.jpg", fileName: "public/samples/puppy.mp4", kind: "video" };
       judgeImpl = async () => ({ verdict: { pass: true, blocking: false, reasons: ["Fine."], mismatches: [] }, usage: [] });
@@ -619,9 +635,25 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       payload: { type: "verify", round: 0, summary: { passed, steps: [], failureOutput: "" }, screenshots: shots },
     });
     const verdict = { pass: false, blocking: false, reasons: ["The result is cut off."], mismatches: ["No total."] };
+    const FIXING = { id: "b1", kind: "build", brief: null, message: null, productId: "prod-1", capsDropped: null };
+
+    it("keeps the Meta UI look in a polish with look meta, and in a later change once one shipped", async () => {
+      const meta = polishNote(null, "meta");
+      selects = { builds: [[{ ...FIXING, kind: "refine", message: meta }]], build_events: [[verifyEvent(false)]] };
+      await steps.writeFixPromptStep({ buildId: "b1", sandboxName: "sb", fix: 1, verifiedRound: 0 });
+      assert.match(productFiles[0]!.content, /- Keep the product's current look, the Meta UI look: /);
+      productFiles = [];
+      selects = { builds: [[{ ...FIXING, kind: "refine", message: "Add a dark theme." }], [{ kind: "refine", message: meta, status: "live" }]], build_events: [[verifyEvent(false)]] };
+      await steps.writeFixPromptStep({ buildId: "b1", sandboxName: "sb", fix: 1, verifiedRound: 0 });
+      assert.match(productFiles[0]!.content, /the Meta UI look: /);
+      productFiles = [];
+      selects = { builds: [[{ ...FIXING, kind: "refine", message: "Add a dark theme." }], [{ kind: "refine", message: polishNote(), status: "live" }]], build_events: [[verifyEvent(false)]] };
+      await steps.writeFixPromptStep({ buildId: "b1", sandboxName: "sb", fix: 1, verifiedRound: 0 });
+      assert.doesNotMatch(productFiles[0]!.content, /the Meta UI look/);
+    });
 
     it("copies in the screenshots the judge saw and names them in fix-<n>.md", async () => {
-      selects = { build_events: [[{ payload: { type: "judge", round: 0, verdict } }, verifyEvent(true)]] };
+      selects = { builds: [[FIXING]], build_events: [[{ payload: { type: "judge", round: 0, verdict } }, verifyEvent(true)]] };
       const out = await steps.writeFixPromptStep({ buildId: "b1", sandboxName: "sb", fix: 1, verifiedRound: 0 });
       assert.deepEqual(fixShots, [{ fix: 1, urls: ["https://blob/r0/01.png", "https://blob/r0/03.png", "https://blob/r0/04.png", "https://blob/r0/05.png"] }]);
       assert.deepEqual(out, {
@@ -634,7 +666,7 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
     });
 
     it("attaches nothing when verify failed, so the judge never ran", async () => {
-      selects = { build_events: [[verifyEvent(false)]] };
+      selects = { builds: [[FIXING]], build_events: [[verifyEvent(false)]] };
       const out = await steps.writeFixPromptStep({ buildId: "b1", sandboxName: "sb", fix: 2, verifiedRound: 0 });
       assert.deepEqual(out, { promptFile: "fix-2.md", images: [] });
       assert.equal(fixShots.length, 0);
@@ -643,7 +675,7 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
 
     it("still writes fix-<n>.md, attaching nothing, when the screenshots can't be copied", async () => {
       fixShotsError = new Error("writeFiles failed");
-      selects = { build_events: [[{ payload: { type: "judge", round: 0, verdict } }, verifyEvent(true)]] };
+      selects = { builds: [[FIXING]], build_events: [[{ payload: { type: "judge", round: 0, verdict } }, verifyEvent(true)]] };
       const out = await steps.writeFixPromptStep({ buildId: "b1", sandboxName: "sb", fix: 3, verifiedRound: 0 });
       assert.equal(fixShots.length, 1);
       assert.deepEqual(out, { promptFile: "fix-3.md", images: [] });
@@ -653,7 +685,7 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
     });
     it("POLISH_ENABLED: a polish's fix round drops what already failed on the live version from the judge's notes and says to leave it", async () => {
       const failed = { ...verdict, mismatches: ["R2 is not met: Thing 2. Its test failed.", "R4 is not met: Thing 4. Its test failed.", "The header is clipped at 360 px."] };
-      selects = { build_events: [[{ payload: { type: "judge", round: 0, verdict: failed } }, verifyEvent(true)]] };
+      selects = { builds: [[FIXING]], build_events: [[{ payload: { type: "judge", round: 0, verdict: failed } }, verifyEvent(true)]] };
       await steps.writeFixPromptStep({ buildId: "b1", sandboxName: "sb", fix: 1, verifiedRound: 0, knownFailing: ["R2"] });
       const text = productFiles[0]!.content;
       assert.doesNotMatch(text, /R2 is not met/);
@@ -663,7 +695,7 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       assert.ok(!text.includes("\u2014"));
       // Without it, the fix round is written as before.
       productFiles = [];
-      selects = { build_events: [[{ payload: { type: "judge", round: 0, verdict: failed } }, verifyEvent(true)]] };
+      selects = { builds: [[FIXING]], build_events: [[{ payload: { type: "judge", round: 0, verdict: failed } }, verifyEvent(true)]] };
       await steps.writeFixPromptStep({ buildId: "b1", sandboxName: "sb", fix: 1, verifiedRound: 0 });
       assert.match(productFiles[0]!.content, /R2 is not met/);
       assert.doesNotMatch(productFiles[0]!.content, /Already failing/);
@@ -1247,7 +1279,7 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
     };
     const fixPrompt = (vars: Record<string, string | undefined>) =>
       promptWith(vars, () => {
-        selects = { build_events: [[{ payload: { type: "verify", round: 0, summary: { passed: false, steps: [], failureOutput: "boom" }, screenshots: [] } }]] };
+        selects = { builds: [[{ id: "b1", kind: "build", brief: null, message: null, productId: "prod-1", capsDropped: null }]], build_events: [[{ payload: { type: "verify", round: 0, summary: { passed: false, steps: [], failureOutput: "boom" }, screenshots: [] } }]] };
         return steps.writeFixPromptStep({ buildId: "b1", sandboxName: "sb", fix: 1, verifiedRound: 0 });
       });
     const changePrompt = (vars: Record<string, string | undefined>) =>

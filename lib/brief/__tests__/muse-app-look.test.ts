@@ -11,7 +11,10 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import { renderBuildPrompt, renderFixPrompt, renderRefinePrompt } from "@/lib/brief/render";
 import type { Brief } from "@/lib/brief/schema";
 import { env } from "@/lib/env";
+import { judgeContent, metaLookBrief } from "@/lib/judge";
 import { judgeInstructions, JUDGE_INSTRUCTIONS } from "@/lib/prompts/judge";
+import type { Direction } from "@/lib/range/direction";
+import { RANGE_FIX_LOOK } from "@/lib/range/prompts";
 import { BRIEF } from "@/lib/promote/__tests__/fixtures";
 import { flagsOffSurface } from "./flags-off-surface";
 
@@ -118,5 +121,44 @@ describe("with MUSE_APP_LOOK on", () => {
     const refine = renderRefinePrompt({ message: "Add a dark theme.", newReferences: [], brief, museAppLook: true });
     assert.match(refine, /or else `\.agents\/skills\/meta-ui` if it exists\. Don't restyle what the request doesn't change\.\n- This product also runs on: /);
     assert.match(refine, /`\.agents\/skills\/muse-vr`/);
+  });
+});
+
+/** A polish with look "meta" (lib/polish/logic.ts) moved the product to meta-ui: nothing may pull it back. */
+describe("after a polish switched the product to the Meta UI look", () => {
+  const direction: Direction = {
+    summary: "A printed almanac for bird watchers, warm and dense.",
+    scheme: "light",
+    palette: { background: "#f4ecd8", surface: "#fbf6e9", text: "#2a2118", mutedText: "#5c4e3c", accent: "#8c2f1b", onAccent: "#ffffff", secondary: "#3e6b57" },
+    displayFont: { package: "@fontsource-variable/fraunces", family: "Fraunces Variable" },
+    bodyFont: { package: "@fontsource/source-serif-4", family: "Source Serif 4" },
+    density: "Tight, like a printed table.",
+    layout: "One column, sections split by rules rather than cards.",
+    shape: "Square corners.",
+    motion: "Rows fade in.",
+    imagery: "Engraving-style drawings.",
+  };
+  const ranged: Brief = { ...BRIEF, direction, askedLook: "Pink and gold, like a birthday card." };
+
+  it("fix and change prompts keep meta-ui only, never muse-app or a Design direction", () => {
+    const fix = renderFixPrompt({ verify: null, judge: null, round: 1, museAppLook: true, buildRange: true, metaLook: true });
+    const refine = renderRefinePrompt({ message: "Add a dark theme.", newReferences: [], museAppLook: true, metaLook: true });
+    for (const text of [fix, refine]) {
+      assert.ok(text.includes("- Keep the product's current look, the Meta UI look: the tokens and parts in `app/globals.css` and `.agents/skills/meta-ui`."));
+      assert.ok(!text.includes("muse-app"));
+    }
+    assert.ok(!fix.includes(RANGE_FIX_LOOK));
+    assert.match(fix, /`\.agents\/skills\/meta-ui`\. Fix what the judge saw with those, not with new colors, fonts or styles\.\n/);
+    // Without it, a range product's fix still keeps its direction.
+    assert.ok(renderFixPrompt({ verify: null, judge: null, round: 1, museAppLook: true, buildRange: true }).includes(RANGE_FIX_LOOK));
+  });
+
+  it("the judge expects the Meta house style alone and reads no direction or asked look", () => {
+    assert.equal(judgeInstructions(ranged, { museAppLook: true, buildRange: true, metaLook: true }), JUDGE_INSTRUCTIONS);
+    assert.notEqual(judgeInstructions(ranged, { museAppLook: true, buildRange: true }), JUDGE_INSTRUCTIONS);
+    const brief = metaLookBrief(ranged);
+    assert.equal("direction" in brief || "askedLook" in brief, false);
+    const text = judgeContent({ brief, references: [], screenshots: [] }).content.map((c) => ("text" in c ? c.text : "")).join("\n");
+    assert.ok(!text.includes("Design direction") && !text.includes("The look they asked for"));
   });
 });

@@ -235,6 +235,11 @@ interface SessionNotes {
  */
 interface LookNote {
   museAppLook?: boolean;
+  /**
+   * A polish with look "meta" switched this product to meta-ui (lib/polish/logic.ts isMetaLookPolish), or is doing so
+   * now. The fix and change prompts then name meta-ui only, and a fix keeps the Meta look rather than a Design direction.
+   */
+  metaLook?: boolean;
   /** BUILD_RANGE (docs/BUILD_RANGE.md): the brief's direction drives the look, and a complex build must use its agents. */
   buildRange?: boolean;
   /**
@@ -301,6 +306,7 @@ function lookLine(brief: Brief, note: LookNote): string {
 /** The fix and change prompts' look line, up to its last sentence. */
 function keepLookLine(note: LookNote): string {
   // META_UI_ONLY: a product from before it may have the muse-app look, so its own files decide, as with MUSE_APP_LOOK.
+  if (note.metaLook) return "- Keep the product's current look, the Meta UI look: the tokens and parts in `app/globals.css` and `.agents/skills/meta-ui`.";
   return note.museAppLook || note.metaUiOnly
     ? "- Keep the product's current look: the tokens and parts in `app/globals.css`, with `app/muse-app.css` and `.agents/skills/muse-app-ui` when the product has them, or else `.agents/skills/meta-ui` if it exists."
     : "- Keep the product's current look: the tokens and parts in `app/globals.css`, and `.agents/skills/meta-ui` if it exists.";
@@ -743,7 +749,7 @@ export function renderFixPrompt(
     "- Don't delete, skip, weaken or loosen tests to make them pass, and don't mock or stub Meta calls. Fix the product instead.",
     "- If a model call fails, check the request against the skill for that model before changing anything else.",
     "- Keep the primary flow from brief.md working, and keep the footer.",
-    `${keepLookLine(input)} ${input.buildRange && !input.metaUiOnly ? RANGE_FIX_LOOK : "Fix what the judge saw with those, not with new colors, fonts or styles."}`,
+    `${keepLookLine(input)} ${input.buildRange && !input.metaUiOnly && !input.metaLook ? RANGE_FIX_LOOK : "Fix what the judge saw with those, not with new colors, fonts or styles."}`,
     "- When you're done, run `npm run verify` again until it exits 0, and update BUILD_NOTES.md.",
     ...(input.buildRange ? [`- ${RANGE_FIX_AGENT_LINE}`] : []),
     ...sessionLines(input, "fix").map((line) => `- ${line}`),
