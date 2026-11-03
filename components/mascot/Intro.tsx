@@ -10,8 +10,9 @@ const WHITE_MS = 450;
 /**
  * The first-open intro (lib/intro.ts has which clip, when, and how to try both). Full screen, muted (browsers block
  * sound on autoplay anyway). It never blocks: "Skip intro" is focused from the start, Escape skips, and a clip that
- * can't play closes it. At its end the clip washes out to white (its own last frames are a white stage), then the
- * page fades in, so no ghost of the big Muse shows over the page; then the walking Muse comes in from the right.
+ * can't play closes it. A see-through clip plays over the real page and fades out at its end; an opaque one washes
+ * out to white first (its own last frames are a white stage), so no ghost of the big Muse shows over the page. Then the
+ * walking Muse comes in from the right.
  */
 export function Intro() {
   const path = usePathname();
@@ -50,8 +51,12 @@ export function Intro() {
   return kind ? <Clip key={kind} kind={kind} onDone={close} /> : null;
 }
 
+const isSafari = () => /^((?!chrome|chromium|android|crios|fxios|edg).)*safari/i.test(navigator.userAgent);
+
 function Clip({ kind, onDone }: { kind: IntroKind; onDone: () => void }) {
-  const { name, fadeAt } = INTRO_CLIPS[kind];
+  const { name, fadeAt, seeThrough } = INTRO_CLIPS[kind];
+  // Safari draws only the HEVC file's alpha, Chrome and Firefox only the VP9 one's, so a see-through clip picks by browser.
+  const [safari] = useState(() => typeof navigator !== "undefined" && isSafari());
   const skip = useRef<HTMLButtonElement>(null);
   const video = useRef<HTMLVideoElement>(null);
   const [white, setWhite] = useState(false);
@@ -71,7 +76,7 @@ function Clip({ kind, onDone }: { kind: IntroKind; onDone: () => void }) {
 
   return (
     <div
-      className={`intro-curtain${white ? " is-white" : ""}${leaving ? " is-leaving" : ""}`}
+      className={`intro-curtain${seeThrough ? " is-see-through" : ""}${white ? " is-white" : ""}${leaving ? " is-leaving" : ""}`}
       role="dialog"
       aria-label="Welcome to Muse Muse"
       onTransitionEnd={(e) => e.target === e.currentTarget && leaving && onDone()}
@@ -85,13 +90,25 @@ function Clip({ kind, onDone }: { kind: IntroKind; onDone: () => void }) {
         poster={`/muse/${name}.jpg`}
         aria-hidden
         onTimeUpdate={(e) => {
-          if (!white && e.currentTarget.currentTime >= fadeAt) setWhite(true);
+          if (e.currentTarget.currentTime < fadeAt) return;
+          if (seeThrough) setLeaving(true);
+          else if (!white) setWhite(true);
         }}
-        onEnded={() => setWhite(true)}
+        onEnded={() => (seeThrough ? setLeaving(true) : setWhite(true))}
         onError={onDone}
       >
-        <source src={`/muse/${name}.webm`} type="video/webm" />
-        <source src={`/muse/${name}.mp4`} type="video/mp4" />
+        {seeThrough ? (
+          safari ? (
+            <source src={`/muse/${name}-hevc.mov`} type='video/mp4; codecs="hvc1"' />
+          ) : (
+            <source src={`/muse/${name}.webm`} type="video/webm" />
+          )
+        ) : (
+          <>
+            <source src={`/muse/${name}.webm`} type="video/webm" />
+            <source src={`/muse/${name}.mp4`} type="video/mp4" />
+          </>
+        )}
       </video>
       <button ref={skip} type="button" className="btn intro-skip" onClick={onDone}>
         Skip intro
