@@ -312,6 +312,8 @@ function reset(next: Scenario) {
   if (next.steering) process.env.MUSE_ENGINE = "serve";
   else delete process.env.MUSE_ENGINE;
   delete process.env.MUSE_FULL;
+  // These scenarios walk the fix loop with 3 fix rounds, set here since the default is 2 (Nov 2).
+  process.env.MAX_FIX_ROUNDS = "3";
 }
 
 describe("build workflow orchestration", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
@@ -1190,10 +1192,10 @@ describe("engine (docs/CAPABILITIES.md, section 8)", { skip: canMock ? false : "
 
   it("keeps milestones plus fix rounds under the refinement stride", async () => {
     flags({ ENGINE_MILESTONES: "1" });
-    process.env.MAX_FIX_ROUNDS = "9";
     try {
       const milestones = [{ title: "One" }, { title: "Two" }, { title: "Three" }];
       reset({ plan: plan({ milestones, wallMs: 10_000 * MIN }), verifies: [{ passed: true }, { passed: true }, { passed: false }] });
+      process.env.MAX_FIX_ROUNDS = "9";
       assert.deepEqual(await wf.buildProduct({ buildId: "t5" }), { status: "failed" });
       const rounds = starts().map((r) => r.round);
       assert.equal(Math.max(...rounds), 9, "the last fix round is round 9, under REFINE_ROUND_STRIDE (10)");

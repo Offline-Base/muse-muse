@@ -58,6 +58,10 @@ export function gatewayEnv(): { baseURL: string; apiKey: string } {
 export function metaClient(request?: RequestLike | null): OpenAI {
   return new OpenAI({
     ...gatewayEnv(),
+    // A stalled call fails in 90 s with one retry, instead of the SDK's 10 minutes and two, so a hang can't hold a page or
+    // a test for long. A long agent run sets its own limits.
+    timeout: 90_000,
+    maxRetries: 1,
     defaultHeaders: clientIpHeaders(request),
     ...(isTestBuild() ? { fetch: testModelFetch } : {}),
   });

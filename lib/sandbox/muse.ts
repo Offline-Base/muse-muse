@@ -25,6 +25,14 @@ export const DEFAULT_MAX_MODEL_STEPS = 200;
 /** A build's reasoning effort on both engines. */
 export const DEFAULT_REASONING_EFFORT: ReasoningEffort = "high";
 
+/**
+ * A round's effort: high for a build's or a change's first round, medium for the fix rounds after it (round numbers
+ * that aren't a multiple of REFINE_ROUND_STRIDE), which fix what the checks named and don't need to plan again.
+ */
+export function effortForRound(round: number): ReasoningEffort {
+  return round % REFINE_ROUND_STRIDE === 0 ? DEFAULT_REASONING_EFFORT : "medium";
+}
+
 /** What a run uses when the caller doesn't choose. Muse Wonder is the build default (lib/env.ts). */
 const EXEC_DEFAULTS = { reasoningEffort: DEFAULT_REASONING_EFFORT, maxModelSteps: DEFAULT_MAX_MODEL_STEPS } as const;
 
