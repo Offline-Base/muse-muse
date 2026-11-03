@@ -4,6 +4,28 @@
  */
 
 :root {
+  /* Device stage (components/product/DeviceStage.tsx): drawn devices look the same in either theme. */
+  --device-alu-1: #e9eaee;
+  --device-alu-2: #c9ccd3;
+  --device-alu-3: #a9adb5;
+  --device-alu-edge: #8d9199;
+  --device-bezel: #0b0b0d;
+  --device-glass: #050506;
+  --device-graphite-1: #4a4c52;
+  --device-graphite-2: #2f3135;
+  --device-graphite-3: #1f2023;
+  --device-android: #2b2d31;
+  --device-android-edge: #46494f;
+  --device-iphone: #d9dade;
+  --device-iphone-edge: #b5b7bd;
+  --device-camera: #000000;
+  --device-shine: rgba(255, 255, 255, 0.07);
+  --device-highlight: rgba(255, 255, 255, 0.8);
+  --shadow-showcase: 0 40px 60px -30px rgba(15, 20, 30, 0.45), 0 18px 30px -18px rgba(15, 20, 30, 0.35);
+  --shadow-device-drop: rgba(15, 20, 30, 0.22);
+}
+
+:root {
   --bg: #ffffff;
   --surface: #ffffff;
   --surface-2: #f3f4f5;
@@ -8104,6 +8126,251 @@ div.md.md-plain {
   .mascot,
   .mascot-climb,
   .mascot-note {
+    display: none;
+  }
+}
+
+/* ---------- Device stage (components/product/DeviceStage.tsx, docs/BRAND.md "Device stage") ---------- */
+.device-stage {
+  gap: 24px;
+}
+
+.device-stage-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.device-stage-row {
+  display: grid;
+  gap: 32px 28px;
+  align-items: end;
+  container-type: inline-size;
+}
+
+.device-stage-computers {
+  grid-template-columns: 1fr;
+}
+
+.device-stage-phones {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.device-stage-phones > .device {
+  flex: 1 1 130px;
+  max-width: 200px;
+}
+
+@media (min-width: 720px) {
+  .device-stage-computers {
+    grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  }
+}
+
+.device {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  margin: 0;
+}
+
+.device figcaption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  max-width: 36ch;
+  text-align: center;
+}
+
+.device-screen {
+  position: relative;
+  overflow: hidden;
+  background: var(--device-glass);
+}
+
+.device-screen video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+}
+
+.device-screen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(115deg, var(--device-shine) 0%, transparent 38%);
+}
+
+/* Laptops: a lid with a thin black bezel, a hinge and a base. Mac is silver with a notch; Windows is graphite. */
+.device-laptop {
+  width: 100%;
+  filter: drop-shadow(0 24px 24px var(--shadow-device-drop));
+}
+
+.device-lid {
+  position: relative;
+  width: 86%;
+  margin: 0 auto;
+  padding: 1.6% 1.6% 2.2%;
+  border-radius: 18px 18px 6px 6px;
+  background: linear-gradient(180deg, var(--device-alu-edge), var(--device-alu-3) 1px, var(--device-bezel) 2px);
+}
+
+.device-lid .device-screen {
+  aspect-ratio: 16 / 10;
+  border-radius: 6px;
+}
+
+.device-mac .device-lid::before {
+  content: "";
+  position: absolute;
+  top: 0.7%;
+  left: 50%;
+  z-index: 2;
+  width: 9%;
+  height: 2.2%;
+  transform: translateX(-50%);
+  border-radius: 0 0 8px 8px;
+  background: var(--device-bezel);
+}
+
+.device-hinge {
+  width: 86%;
+  height: 8px;
+  margin: 0 auto;
+  border-radius: 0 0 3px 3px;
+  background: linear-gradient(180deg, var(--device-graphite-3), var(--device-alu-edge));
+}
+
+.device-base {
+  position: relative;
+  height: 16px;
+  border-radius: 0 0 18px 18px / 0 0 14px 14px;
+  background: linear-gradient(180deg, var(--device-alu-1), var(--device-alu-2) 55%, var(--device-alu-3));
+  box-shadow: inset 0 1px 0 var(--device-highlight);
+}
+
+.device-base::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 14%;
+  height: 6px;
+  transform: translateX(-50%);
+  border-radius: 0 0 10px 10px;
+  background: linear-gradient(180deg, var(--device-alu-3), var(--device-alu-2));
+}
+
+.device-windows .device-lid {
+  padding: 1.4% 1.4% 2.6%;
+  border-radius: 12px 12px 4px 4px;
+  background: linear-gradient(180deg, var(--device-graphite-1), var(--device-graphite-2) 1px, var(--device-bezel) 2px);
+}
+
+.device-windows .device-lid .device-screen {
+  aspect-ratio: 1280 / 740;
+  border-radius: 2px;
+}
+
+.device-windows .device-hinge {
+  background: linear-gradient(180deg, var(--device-graphite-3), var(--device-graphite-2));
+}
+
+.device-windows .device-base {
+  background: linear-gradient(180deg, var(--device-graphite-1), var(--device-graphite-2) 55%, var(--device-graphite-3));
+  box-shadow: none;
+}
+
+.device-windows .device-base::before {
+  background: linear-gradient(180deg, var(--device-graphite-3), var(--device-graphite-2));
+}
+
+/* Phones: Android is a flat dark frame with a punch-hole camera; iPhone is a light frame (its own clip shows the island). */
+.device-phone {
+  position: relative;
+  width: 100%;
+  max-width: 200px;
+  padding: 8px;
+  border-radius: 34px;
+  background: var(--device-android);
+  box-shadow: inset 0 0 0 2px var(--device-android-edge), var(--shadow-showcase);
+}
+
+.device-phone .device-screen {
+  aspect-ratio: 9 / 19.5;
+  border-radius: 27px;
+}
+
+.device-android .device-screen::before {
+  content: "";
+  position: absolute;
+  top: 9px;
+  left: 50%;
+  z-index: 2;
+  width: 9px;
+  height: 9px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: var(--device-camera);
+}
+
+.device-iphone .device-phone {
+  border-radius: 38px;
+  background: var(--device-iphone);
+  box-shadow: inset 0 0 0 2px var(--device-iphone-edge), inset 0 0 0 8px var(--device-bezel), var(--shadow-showcase);
+}
+
+.device-iphone .device-screen {
+  border-radius: 30px;
+}
+
+.device-btn {
+  position: absolute;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--device-android-edge);
+}
+
+.device-btn-vol {
+  top: 17%;
+  right: -3px;
+  height: 56px;
+}
+
+.device-btn-power {
+  top: 31%;
+  right: -3px;
+  height: 42px;
+}
+
+.device-iphone .device-btn {
+  background: var(--device-iphone-edge);
+}
+
+.device-iphone .device-btn-vol {
+  right: auto;
+  left: -3px;
+  border-radius: 2px 0 0 2px;
+}
+
+.device-stage-note {
+  margin: 0;
+  text-align: center;
+}
+
+@media print {
+  .device-stage video {
     display: none;
   }
 }

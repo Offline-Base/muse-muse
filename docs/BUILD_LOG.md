@@ -2947,4 +2947,17 @@ The owner asked for a simpler sidebar using "muse" and "musing" for the creative
     - the plan-art snapshot was refreshed after #76 and #78, with the flag-on render still the same.
   - Still failing on main and untouched: models-page "shows accuracy for a decide-kind tuned model" (the tuned list doesn't render in that test).
   - Tests: the edited pages 304 pass, with the same one failure main has. Make snapshot (only the two Make page entries changed) and starters 13 of 13. plan-card and plan-art 39 of 39. Typecheck clean.
+- **Nov 2, night: "Where it ran", the device stage (owner: "a template of an actual MacBook and the screen has the test of the Device Farm in it", then "ensure this is well done in the actual demo").**
+  - The Nov 1 recordings came from S3 after the owner signed in to AWS (`lab/checks/direct-1101-2047/`): Mac, Windows, the iPhone simulator, and Device Farm's real Galaxy S25 (run c00593cf).
+  - Each was cropped from the lab's composed frame to just the screen, and encoded as H.264 MP4 with a poster into `public/devices/dinner-split-helper/` (808 KB for all four).
+  - `components/product/DeviceStage.tsx` draws each device in CSS with its recording on the screen and the run's facts under it, with a green "Real" or amber "Simulated" pill.
+  - It sits on `/p/<slug>` under the live preview. The gallery card adds "Ran on 4 devices".
+  - Data comes from `DEVICE_RUNS` (`lib/devices/runs.ts`), checked against this log, plus owner clips that name a device. A product with no runs shows nothing new.
+  - docs/VIDEO.md gets shot 5b for it, with what not to say: no APK install claim, and the iPhone is a simulator.
+  - Checked on a local seeded copy at 1440 px in light and dark, and at 390 px:
+    - all four clips play;
+    - no sideways scroll;
+    - no page errors.
+  - The phone row first stacked at 390 px (a grid sizes auto-fit columns at their maximum), and was fixed with a wrapping flex row.
+  - Tests: lib/devices 5 of 5. Product page, card and clip tests 460 pass, with the one models-page failure main already has. Typecheck clean. Spend $0.
 

@@ -10,6 +10,8 @@ import "@/components/product/get-it.css";
 import { CheckedPanel } from "@/components/product/CheckedPanel";
 import { checksFailed, RequirementsChecklist, type CheckOutcome } from "@/components/build/RequirementsChecklist";
 import { DrillGroup } from "@/components/build/DrillGroup";
+import { DeviceStage } from "@/components/product/DeviceStage";
+import { stageDevices } from "@/lib/devices/runs";
 import { DRILL_GROUP_TITLE, DRILLS_EARLIER_NOTE, latestDrills } from "@/lib/edge/drills";
 import { latestChecklist } from "@/lib/full/requirements";
 import { GetItPanel } from "@/components/product/GetItPanel";
@@ -103,6 +105,8 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
       // Wave 3, unit 13: a product with board tools needs the same way in. Null with HARDWARE_BOARD_TOOLS off.
       hardwareOwnerLink({ isOwner, liveUrl: product.liveUrl, slug: product.slug, status: product.status, brief, served: env.servedCaps.includes("hardware") }))
     : null;
+  // Where it ran: the devices it was recorded on, each playing its recording (docs/BRAND.md, "Device stage"). None, no stage.
+  const deviceRuns = shipped ? stageDevices(product.slug, native.clips) : [];
   const canAddClips = shipped && isOwner && env.enabledTargets.length > 0 && briefTargets(brief).some((t) => t !== "web");
 
   return (
@@ -214,6 +218,8 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             <p>It goes live here once it passes its checks.</p>
           </EmptyCard>
         )}
+
+        {deviceRuns.length ? <DeviceStage runs={deviceRuns} productName={product.name} /> : null}
 
         {shipped ? (
           <GetItPanel slots={{ ...native.slots, ...(env.productOutputs ? productOutputSlots({ product, origin, events, now }) : {}), ...(env.runtimeOutputs ? runtimeOutputSlots({ product, origin, isOwner }) : {}), ...(env.enabledCaps.includes("extension") ? extensionSlots({ product, origin, brief, ready: extensionReady }) : {}) }} initial={native.initial} />

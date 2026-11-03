@@ -96,6 +96,13 @@ Narration is about 400 words, about 140 a minute. Read it aloud once with a time
 - With the chain run: end on the app answering from its tuned model, and drop the last sentence only if docs/STORY.md marks that step proven.
 - Source: docs/STORY.md, "An app built for it" and "Checks", Proven; "That app answering with its tuned model", Not run yet.
 
+**5b. Where it ran (about 6 s, taken from shot 5's time)** [film once the device stage PR is live]
+
+- On screen: `/p/dinner-split-helper` on the live site, scrolled to "Where it ran". A Mac and a Windows PC, a Samsung Galaxy S25 and an iPhone, each playing the recording made on that device.
+- Say: "And it doesn't just run in a browser. The same app opened on a Mac and a Windows PC in our device lab, and on a real Galaxy S25 through AWS Device Farm."
+- Source: docs/BUILD_LOG.md, "Nov 1, 20:47Z to 21:20Z All five kinds on the real boxes, and Device Farm" (lab run direct-1101-2047, Device Farm run c00593cf).
+- Don't say the app was installed from its own APK: the Galaxy run opened the lab app shell by its deep link. Don't call the iPhone real: it's the simulator, and the page says so.
+
 **6. The marks on `/offline` (1:22 to 1:32)** [film now]
 
 - On screen: `/offline`, the step list with each mark.
