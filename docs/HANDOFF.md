@@ -52,6 +52,12 @@ Since Nov 2 night (owner): no PRs for our own work. Fetch the latest main, test 
 
 ## Waiting on the owner
 
+**Overnight, Nov 3 (audits and two fix rounds, docs/BUILD_LOG.md from "Nov 3, 2026, 3 AM ET"):**
+- **A new builder snapshot** (`npm run snapshot` in a linked worktree with .env.local, then commit lib/sandbox/snapshots.json). The template parts of both fix rounds reach builds only after it: phone tap and contrast checks, fallback recording, image and storage lints, model error causes, presigned uploads, ConfirmButton, UsageStrip, media-store, Tabs, overlay helper, ModelChip label.
+- **Rebuild after the snapshot:** sim-desk-agent-demo (draws SVG, so its model never ran), wag-sticker-studio (old upload client, placeholder clip), lantern-canal-drift (soft-lock), fresh-dot-fridge (boxes at a tenth of their size). fable-case-ledger's memo already works live after the gateway's output floor.
+- **Optional:** a Blob read-write token in Production (`BLOB_READ_WRITE_TOKEN`) would make uploads work in products built before the presigned change without rebuilding them.
+- **New default to know:** `LIVE_ACTION_CHECK` is on. Every ship makes one real call to the product on its live link and shows a failure or fallback as a known issue. Set it to 0 to hold it back.
+
 In order. To-do 2 has to finish by Nov 3 afternoon (Tue 3 PM for the edge tune), or the video uses its fallbacks. To-dos 4 to 7 and "Going public" must be done before the repo goes public. Times are estimates.
 
 1. **Pick the demo story.** Mostly settled Nov 2: O1 and O6 are yes, so the recommended script plus its edge act in docs/VIDEO.md ("Proposed revision: the edge act") is the plan. About 5 minutes left, Ethan and Hussam: confirm it, then take "DRAFT" off docs/VIDEO.md.
