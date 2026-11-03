@@ -6,6 +6,7 @@ import { capsJudgeNotes } from "@/lib/caps/judge";
 import { env } from "@/lib/env";
 import { fullJudgeNote } from "@/lib/full/prompts";
 import { buildableRequirements } from "@/lib/full/requirements";
+import { targetCheckedRequirements } from "@/lib/full/target-checks";
 import { briefTargets, isOwnerToolsOnly } from "@/lib/native/targets";
 import { RANGE_HOUSE_STYLE, rangeJudgeNote } from "@/lib/range/prompts";
 import { PERSONAL_TOOL_IDS } from "@/lib/tools/ids";
@@ -26,7 +27,7 @@ Fail it if any of these are true:
 - Text is cut off, overlapping or unreadable. Check the right edge of every card, table and button: a header, label or link cut short (like "Conf" or "Edi") counts.
 - The page talks about how it was made instead of what it does for the user: "rebuild", "the video", "the brief", "the reference", "sample file", or what it does not copy. A single "Idea from a Meta developer video" credit line is fine.
 - Raw markdown (#, **, backticks), raw JSON, raw ids used as labels (claim-0, item-3, a long string of letters and digits), or a model's internal notes (an image prompt, a summary meant for the next step) are shown to the user as text.
-- Figures, dates or names on screen disagree with each other or with the input shown: the same total or date given two ways, a total that isn't the sum of its rows, a caption that counts more bars or items than are drawn, a count that disagrees with the items shown ("Decided issues (4)" while 2 are still open), an explanation that compares two different series (two regions, two products) as if one changed over time.
+- Figures, dates or names on screen disagree with each other or with the input shown: the same total or date given two ways, a total that isn't the sum of its rows, a caption that counts more bars or items than are drawn, a count that disagrees with the items shown ("Decided issues (4)" while 2 are still open), an explanation that compares two different series (two regions, two products) as if one changed over time, a spoken answer, summary or recap that gives an item a different price, count or amount than the same screen shows for it (the sign's text says pears $3, the answer says pears $5).
 - Two statements on screen contradict each other: "Your recording is sent to an AI model" beside "Recordings never leave your browser", or a blocked answer that also says it is backed by the source.
 - Model text shows its seams: bracket tags like [Momentum], a label repeated inside its value (Week 2: Week 2), numbers run together (913 for weeks 9 to 13), a wrong plural ("All 1 claims", "1 items"), or a recap or summary that only repeats the input's own words.
 
@@ -97,14 +98,14 @@ export const VR_JUDGE_NOTE =
 
 /** The test has no glasses, so a sample in the product's own flow is it working. */
 export const GLASSES_JUDGE_NOTE =
-  "The glasses were simulated with sample photos and a sample spoken question, so a sample photo under 'What your glasses saw' is the product working.";
+  "The glasses were simulated with sample photos and a sample spoken question, so a sample photo under 'What your glasses saw' is the product working. The answer the glasses speak is shown on the phone. Compare it with what the product read from the photo on the same screen: a price, count or name in the spoken answer or its list that differs from the read text is a defect, since it is what the wearer hears.";
 
 /**
  * An edge product (docs/EDGE_DEMO.md) labels every model answer with where it was answered. In the test the cloud answers,
  * so the cloud's label is the product working. The outage drills after verify check the backup itself.
  */
 export const EDGE_JUDGE_NOTE =
-  "This product is built so its main answer comes from a backup model on an edge board when the cloud is cut. In this test the cloud answered. Every model answer carries a small label saying where it was answered, \"Answered in the cloud, <model>\" or \"Answered on <board>, <model>\", and a look at a photo says \"Seen in the cloud by Meta SAM 3.1\" or \"Seen on <board> by Meta SAM 3.1\". Any of these labels is the product working. Fail it when a model answer has no such label, or when the page says it works offline or calls an answer private or on-device.";
+  "This product is built so its main answer comes from a backup model on an edge board when the cloud is cut. In this test the cloud answered. Every model answer carries a small label saying where it was answered, \"Answered in the cloud, <model>\" or \"Answered on <board>, <model>\", and a look at a photo says \"Seen in the cloud by Meta SAM 3.1\" or \"Seen on <board> by Meta SAM 3.1\". Any of these labels is the product working. Fail it when a model answer has no such label, or when the page says it works offline or calls an answer private or on-device. An answer labeled in the cloud never shows the board backup working, so it proves nothing the brief says about the board, the backup or answering when the cloud is cut. A screen, tab or section titled as the board, a board preview, a backup or offline mode that shows an answer labeled \"Answered in the cloud\" or \"Seen in the cloud\" is a defect: say in mismatches that it must show a board's answer or say plainly that no board is connected.";
 
 /**
  * The product's own samples, as the judge sees them (judgeContent). Audit, Nov 3: a pet sticker app shipped a "puppy"
@@ -151,7 +152,9 @@ export function judgeInstructions(
   const text = notes.length ? `${base}\n\n${notes.join("\n\n")}` : base;
   // ---------- Wave 3, unit 2 (docs/CAPABILITIES.md, 2.6): each cap's note after the glasses note, empty with no cap blocks ----------
   const required = opts.fullBuilds ? buildableRequirements(brief) : [];
-  return text + capsJudgeNotes(brief) + (required.length ? `\n\n${fullJudgeNote(required)}` : "");
+  // The ones only a target can prove are named apart: code decides them, never a screenshot (lib/full/target-checks.ts).
+  const byTarget = required.length ? targetCheckedRequirements(brief).map((c) => c.requirement) : [];
+  return text + capsJudgeNotes(brief) + (required.length ? `\n\n${fullJudgeNote(required, byTarget)}` : "");
   // ---------- end Wave 3, unit 2 ----------
 }
 

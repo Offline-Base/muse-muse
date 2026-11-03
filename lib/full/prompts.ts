@@ -45,7 +45,7 @@ export function sentBackText(problems: string[]): string {
 const line = (r: Requirement) => `- **${r.id}**: ${r.text}${r.savesData ? " (saves data: its test must reload and see it)" : ""}${r.kind === "asked" && r.words.trim() ? ` They said: "${r.words.trim()}"` : ""}`;
 
 /** The build prompt's Requirements section, right after Done means. */
-export function fullBuildLines(requirements: Requirement[], milestones: Array<{ title: string; doneMeans: string }>): string[] {
+export function fullBuildLines(requirements: Requirement[], milestones: Array<{ title: string; doneMeans: string }>, byTarget: Array<{ id: string; how: string }> = []): string[] {
   const build = requirements.filter((r) => r.canDo);
   const cant = requirements.filter((r) => !r.canDo);
   const out = [
@@ -56,6 +56,9 @@ export function fullBuildLines(requirements: Requirement[], milestones: Array<{ 
     "",
     ...build.map(line),
   ];
+  if (byTarget.length) {
+    out.push("", "A screenshot can't prove these, so the platform checks them from the target instead. Each still needs its own test:", "", ...byTarget.map((t) => `- **${t.id}**: ${t.how}`));
+  }
   if (cant.length) out.push("", "These can't be done, and the person has been told. Show each once, in plain words, where they would look for it:", "", ...cant.map((r) => `- **${r.id}**: ${r.text}. ${r.cantDoWhy ?? ""}`.trimEnd()));
   if (milestones.length > 1) {
     out.push(
@@ -175,15 +178,29 @@ export function AppNav({ items }: { items: Array<{ href: string; label: string }
 }
 `;
 
-/** The judge's rules for a brief with requirements, after its other notes. */
-export function fullJudgeNote(requirements: Requirement[]): string {
+/**
+ * The judge's rules for a brief with requirements, after its other notes. `byTarget` are the ones only a target can
+ * prove (lib/full/target-checks.ts): code decides them, so they are named apart and the judge reports nothing on them.
+ */
+export function fullJudgeNote(requirements: Requirement[], byTarget: Requirement[] = []): string {
+  const theirs = new Set(byTarget.map((r) => r.id));
+  const targetLines = byTarget.length
+    ? [
+        "",
+        "Checked by code from the target, not by you:",
+        ...byTarget.map((r) => `- ${r.id}: ${r.text}`),
+        "",
+        "A web screenshot can't prove these: an app package, a board's answer, a spoken question that was transcribed, a headset or glasses session. Don't put them in requirements in your reply, and don't pass or fail the product for them. A screen that claims one of them falsely is still a defect under the rules above.",
+      ]
+    : [];
   return [
     "This product must do every requirement below, not only its primary flow. Screenshots are named for the requirement they show (r03 shows R3). The earlier rule about the final screen applies only to the last screenshot: an empty state or an error shown in a requirement's own screenshot is correct when that requirement asks for it.",
     "",
     "Requirements:",
-    ...requirements.filter((r) => r.canDo).map((r) => `- ${r.id}: ${r.text}`),
+    ...requirements.filter((r) => r.canDo && !theirs.has(r.id)).map((r) => `- ${r.id}: ${r.text}`),
+    ...targetLines,
     "",
-    "- requirements in your reply has one entry for each id above. met is true only when a screenshot shows it working. evidence says what you saw in one short sentence, or what is missing. Never mark one met because the brief says it or the test passed: you judge what the screens show.",
+    `- requirements in your reply has one entry for each id ${byTarget.length ? "under Requirements" : "above"}. met is true only when a screenshot shows it working. evidence says what you saw in one short sentence, or what is missing. Never mark one met because the brief says it or the test passed: you judge what the screens show.`,
     "- A screenshot proves only what it shows. An outline, mask or box a requirement names must sit on the thing it marks and line up with its dot or label. Boxes crammed into a corner, or shrunk or shifted off their objects, leave it unmet.",
     '- A counter, meter or check a requirement names (cache hits, tokens, a totals check) that shows only a value the sample can\'t make meaningful, such as 0 from the cache on every call or "nothing to check", is not proven. Set met to false, start evidence with "Not proven:", and say what sample would exercise it.',
     "- A word a requirement uses about its input (a long policy, a noisy feed, several speakers) holds only when the sample on screen is that. A policy of a few short lines is not long, and a handful of clean alerts is not a noisy feed.",

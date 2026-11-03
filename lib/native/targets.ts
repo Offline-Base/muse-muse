@@ -5,6 +5,7 @@
 import { MAX_AGENT_STEPS, TARGETS, type Brief, type TargetId } from "@/lib/brief/schema";
 import { isToolId, PERSONAL_TOOL_IDS, toolLabel } from "@/lib/tools/ids";
 import { contributorSwitchOn } from "@/lib/meta/spark";
+import { briefRequirements } from "@/lib/full/requirements";
 
 /**
  * What every product comes with, made from musemuse.json. These are not targets: a person who asks for a Claude or
@@ -127,10 +128,14 @@ export const TARGET_LIMITS: Partial<Record<TargetId, Array<{ text: string; said:
  * The edge limits for a brief that looks with SAM 3.1: there the photo's look has a backup on the board too (segmentOrEdge
  * in template/lib/meta/edge.ts), so the first line says so instead of putting every image behind the cloud.
  */
-export const EDGE_SAM_LIMITS: Array<{ text: string; said: RegExp }> = [
+export const EDGE_SAM_LIMITS: Array<{ text: string; said: RegExp; replaces?: RegExp }> = [
   {
     text: "Only the main answer and Meta SAM 3.1's look at a photo have a backup on the edge board. Saved data, files, connections, other images and voice go through Muse Muse, so they stop when the cloud is cut.",
     said: /only (the|its) main answer|stop when the cloud is (cut|down)/i,
+    // Target audit, Nov 3: the writer's "images stop when the cloud is cut" matched `said`, so the brief kept it beside
+    // "a look at a photo has a board backup". A writer's line about what has a backup, or that photos need the cloud,
+    // gives way to this one.
+    replaces: /only (the|its) main( [a-z]+)? answer|stops? when the cloud is (cut|down)|\b(images?|photos?|pictures?)\b[^.]*\b(stop|stops|need|needs|go through|goes through)\b[^.]*\b(cloud|network|internet|muse muse)\b/i,
   },
   { text: "A backup answer is labeled with the board, and a look at a photo with the board and Meta SAM 3.1.", said: /labeled with the board|answered on|seen on/i },
 ];
@@ -142,6 +147,41 @@ const OWNER_LIMIT = /only (this app's |the product's |the product |the )?owner/i
 
 function withLimit(limits: string[], text: string, said: RegExp): string[] {
   return limits.some((l) => said.test(l)) ? limits : [...limits, text];
+}
+
+/** The limits with every line `replaces` matches given way to `text`, once, where the first of them was. Else `text` last. */
+function withReplacedLimit(limits: string[], text: string, replaces: RegExp): string[] {
+  const out: string[] = [];
+  let placed = false;
+  for (const l of limits) {
+    if (l !== text && !replaces.test(l)) out.push(l);
+    else if (!placed) {
+      out.push(text);
+      placed = true;
+    }
+  }
+  return placed ? out : [...out, text];
+}
+
+/** True for a brief whose wearer asks a question out loud: an audio input, or a question, a voice or a microphone named. */
+const VOICE_QUESTION = /\b(voice|spoken question|asks?|asking|asked|questions?|microphone|mic)\b/i;
+
+export function takesVoiceQuestion(brief: Brief): boolean {
+  if (brief.inputs.some((i) => i.kind === "audio")) return true;
+  const lines = [brief.tagline, ...brief.primaryFlow, ...brief.inputs.map((i) => i.notes), ...brief.actions.map((a) => a.description), ...briefRequirements(brief).map((r) => r.text)];
+  return lines.some((l) => VOICE_QUESTION.test(l));
+}
+
+const TRANSCRIBE = "muse-voice-transcribe-1.0" as const;
+
+/**
+ * What a glasses brief that takes a spoken question needs: Muse Voice Transcribe in its models, so the gateway serves it
+ * (target audit, Nov 3: the gateway refused it, and the product threw the recording away for a typed question).
+ */
+function withGlassesFacts(brief: Brief): Brief {
+  if (brief.capabilities.some((c) => c.model === TRANSCRIBE) || !takesVoiceQuestion(brief)) return brief;
+  const voice = { need: "Turn the wearer's spoken question into text", model: TRANSCRIBE, why: "The glasses' microphone hears the question, and Muse Voice Transcribe turns it into text." };
+  return { ...brief, capabilities: [...brief.capabilities, voice] };
 }
 
 const isPersonal = (id: string) => (PERSONAL_TOOL_IDS as readonly string[]).includes(id);
@@ -196,8 +236,12 @@ export function applyTargets(brief: Brief, opts: { enabled: readonly TargetId[];
   const picks = opts.requested?.length ? opts.requested : [...written.keys()];
   const ids = briefTargets({ targets: picks.filter((id) => allowed.has(id)).map((id) => ({ id })) });
   let out: Brief = { ...withoutAgent, targets: ids.map((id) => ({ id, why: written.get(id) ?? (id === "web" ? WEB_WHY : PICKED_WHY) })) };
-  for (const id of ids) for (const { text, said } of (id === "edge" && picksSam(out) ? EDGE_SAM_LIMITS : TARGET_LIMITS[id]) ?? []) out = { ...out, limits: withLimit(out.limits, text, said) };
+  for (const id of ids) {
+    const limits: Array<{ text: string; said: RegExp; replaces?: RegExp }> = (id === "edge" && picksSam(out) ? EDGE_SAM_LIMITS : TARGET_LIMITS[id]) ?? [];
+    for (const { text, said, replaces } of limits) out = { ...out, limits: replaces ? withReplacedLimit(out.limits, text, replaces) : withLimit(out.limits, text, said) };
+  }
   if (ids.includes("agent")) out = withAgentFacts(out, settleAgent(brief, opts.personalTools ?? false));
+  if (ids.includes("glasses")) out = withGlassesFacts(out);
   return out;
 }
 

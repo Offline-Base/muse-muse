@@ -7,6 +7,7 @@ import { respondStructured } from "@/lib/brief/structured";
 import { env } from "@/lib/env";
 import { requirementTestsText } from "@/lib/full/prompts";
 import { buildableRequirements, briefRequirements, requirementResults, type RequirementTest, unmetLines } from "@/lib/full/requirements";
+import { judgeReadRequirements, targetCheckResults, type TargetFacts } from "@/lib/full/target-checks";
 import { judgeInstructions } from "@/lib/prompts/judge";
 import { redactShared } from "@/lib/keys/shared";
 import type { JudgeVerdict, ModelUsage, Reference, Screenshot } from "@/lib/types";
@@ -82,6 +83,11 @@ export interface JudgeInput {
    * the judge fails a sample that doesn't show the product's subject. None adds nothing.
    */
   samples?: JudgeSample[];
+  /**
+   * What the pipeline saw of the targets on this round (drills, the gateway's record, the smoke test's session). Decides
+   * the requirements only a target can prove. Left out, each of those stays not proven, never met.
+   */
+  targetFacts?: TargetFacts | null;
 }
 
 export interface JudgeSample {
@@ -104,15 +110,17 @@ export function ownerNotesText(notes: string[]): string {
 /**
  * Applies the verdict on each requirement, decided in code: an unmet one fails the product and goes first in the fix
  * notes, whatever the model decided overall. Its blocking call stands, so an unmet requirement alone can ship as partial
- * once the fix rounds are spent, and never as live.
+ * once the fix rounds are spent, and never as live. A requirement only a target can prove is decided from `facts`,
+ * never from the judge's read.
  */
 export function withRequirements(
   verdict: JudgeResult,
   brief: Brief,
   tests: RequirementTest[] | null | undefined,
   reads: Array<{ id: string; met: boolean; evidence: string }>,
+  facts?: TargetFacts | null,
 ): JudgeResult {
-  const results = requirementResults(briefRequirements(brief), tests, reads);
+  const results = requirementResults(briefRequirements(brief), tests, reads, targetCheckResults(brief, facts));
   const unmet = unmetLines(results);
   if (!unmet.length) return { ...verdict, requirements: results };
   return {
@@ -153,7 +161,7 @@ export async function judgeBuild(input: JudgeInput): Promise<{ verdict: JudgeRes
       normalize: (raw) => cleanStrings(raw),
     });
     const costUsd = Math.round(result.usage.reduce((s, u) => s + u.costUsd, 0) * 1e6) / 1e6;
-    return { verdict: withRequirements(toJudgeResult(result.data), input.brief, input.requirementTests, result.data.requirements), usage: result.usage, costUsd };
+    return { verdict: withRequirements(toJudgeResult(result.data), input.brief, input.requirementTests, result.data.requirements, input.targetFacts), usage: result.usage, costUsd };
   }
   const result = await respondStructured({
     model: env.judgeModel,
@@ -225,7 +233,9 @@ export function judgeContent(input: JudgeInput): { content: ContentPart[]; sourc
   if (input.ownerNotes?.length) content.push(textPart(ownerNotesText(input.ownerNotes)));
   if (input.capsProof) content.push(textPart(input.capsProof));
   const required = input.requirementTests !== undefined ? buildableRequirements(input.brief) : [];
-  if (required.length) content.push(textPart(requirementTestsText(input.requirementTests, required)));
+  // The requirements only a target can prove aren't the judge's, so their tests aren't shown to it either.
+  const read = required.length ? judgeReadRequirements(input.brief) : [];
+  if (read.length) content.push(textPart(requirementTestsText(input.requirementTests, read)));
   const shots = pickScreenshots(input.screenshots, required.length ? Math.max(MAX_FULL_SCREENSHOTS, Math.min(MAX_CHAIN_SCREENSHOTS, required.length + 2)) : MAX_SCREENSHOTS);
   content.push(textPart(`Screenshots, in order (${shots.length}${shots.length < input.screenshots.length ? ` of ${input.screenshots.length}` : ""}):`));
   shots.forEach((shot, i) => {
