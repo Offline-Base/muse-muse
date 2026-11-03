@@ -5,6 +5,8 @@ import { ChatLink } from "@/components/chat/ChatLink";
 import type { StepItem, StepKind, StepMedia, StepsEnd } from "@/components/chat/types";
 import { WorkingIcon } from "@/components/chat/WorkingIcon";
 import { Icon, type IconName } from "@/components/icons";
+import { AgentMuse } from "@/components/mascot/AgentMuse";
+import { subRole } from "@/lib/mascot";
 
 const END: Record<StepsEnd, { label: string; icon: IconName }> = {
   done: { label: "Done", icon: "checkCircle" },
@@ -19,12 +21,13 @@ const END: Record<StepsEnd, { label: string; icon: IconName }> = {
  * working icon's subagent variant in place of the dot, and a step still running shows it turning. The thread ends in
  * "Done", "Stopped" or "Didn't finish" once the list is finished. A surface with more to show can give a row a body, and
  * fold a long run of children under the row's title; those render only while the fold is open. Each row carries its id as data-step, so a surface can scroll to it.
+ * With `muse` (the build room), each agent row still running gets a little sub-agent Muse at its right.
  */
-export function StepList({ steps, end, label = "Steps" }: { steps: readonly StepItem[]; end?: StepsEnd; label?: string }) {
+export function StepList({ steps, end, label = "Steps", muse = false }: { steps: readonly StepItem[]; end?: StepsEnd; label?: string; muse?: boolean }) {
   return (
     <ol className="chat-steplist" aria-label={label}>
-      {steps.map((step) => (
-        <StepRow key={step.id} step={step} />
+      {steps.map((step, i) => (
+        <StepRow key={step.id} step={step} muse={muse} index={i} />
       ))}
       {end ? (
         <li className={`chat-steplist-end is-${end}`}>
@@ -38,14 +41,15 @@ export function StepList({ steps, end, label = "Steps" }: { steps: readonly Step
   );
 }
 
-function StepRow({ step, parentKind }: { step: StepItem; parentKind?: StepKind }) {
+function StepRow({ step, parentKind, muse = false, index = 0 }: { step: StepItem; parentKind?: StepKind; muse?: boolean; index?: number }) {
   const [foldOpen, setFoldOpen] = useState(false);
   const avatar = step.kind === "subagent" || step.kind === "workflow" || parentKind === "workflow";
+  const showMuse = muse && avatar && step.state === "running";
   const media = ([] as readonly StepMedia[]).concat(step.media ?? []);
   const children = step.children?.length ? (
     <ol className="chat-steplist-children">
-      {step.children.map((child) => (
-        <StepRow key={child.id} step={child} parentKind={step.kind ?? "step"} />
+      {step.children.map((child, i) => (
+        <StepRow key={child.id} step={child} parentKind={step.kind ?? "step"} muse={muse} index={i} />
       ))}
     </ol>
   ) : null;
@@ -57,7 +61,8 @@ function StepRow({ step, parentKind }: { step: StepItem; parentKind?: StepKind }
     </>
   );
   return (
-    <li data-step={step.id} className={`chat-steplist-row is-${step.state}${parentKind ? " is-nested" : ""}`}>
+    <li data-step={step.id} className={`chat-steplist-row is-${step.state}${parentKind ? " is-nested" : ""}${showMuse ? " has-muse" : ""}`}>
+      {showMuse ? <AgentMuse role={subRole(index)} height={20} className="chat-steplist-muse" /> : null}
       <span className="chat-steplist-marker">
         {step.state === "running" || avatar ? (
           <WorkingIcon state={step.state === "running" ? "working" : "still"} variant="subagent" />

@@ -3001,3 +3001,47 @@ The owner asked for a simpler sidebar using "muse" and "musing" for the creative
   setting on a light system swaps it, the icon serves as SVG (200), no page errors.
 - Not done: no Apple touch icon (the files are 120 px; a sharp 180 px one needs a bigger source).
 
+## Nov 2, 2026, about 10:40 PM ET: Muse as the build's orchestrator and sub-agents, and Muse mode (branch tg-muse-agents, on tg-sidebar)
+
+- Owner: "Review the 3 latest videos. Edit them to remove the background, I want them to be used as muse little assets
+  for orchestrator agent and sub agents in the coding process. For now theyll be super small on the right, but I do want
+  to add a muse ui mode where itll be a lot of muse mascots."
+- The clips (Downloads, Nov 2, 10:07 to 10:08 PM): "Orchestrator Muse Agent video", "sub agent muse looking top left",
+  "Sub agent muse looking top right". Each 896 x 1008, 24 fps, 6 s, Muse on plain white.
+- Measured: the white is 240 to 255 and neutral (red minus blue 0 to 6), with a faint floor shadow near 245; his fur is
+  warm (red minus blue 20 to 30). Frame 97 of both sub-agent clips has a slightly tinted background (a flaw in the
+  generated video), and in one the waving arm briefly leaves the frame.
+- `scripts/dev/mascot/key_white.py` keys the white: bright neutral areas that touch the edge, plus enclosed ones as
+  bright as open white; feathered over about 2 px with the white taken back out of the edge; the floor shadow kept only
+  right around his feet (so the tinted frame doesn't flicker) as a faint black.
+- `scripts/dev/mascot/agents.sh` crops all three to one shared box (868 x 840 from 24,96), 248 x 240 out, and loops them:
+  both sub-agent clips end where they start; the orchestrator ends mid-point, so it stops at frame 114, the closest to
+  its first. Output in `public/muse/agent-{orchestrator,sub-left,sub-right}{.webm,-hevc.mov,.png}`: WebM 58 to 103 KB,
+  HEVC 116 to 191 KB. Checked decoded over dark and white: no fringe, no stray shadow
+  (docs/log/shots/2026-11-02/muse-agent-clips.jpg).
+- UI:
+  - `components/mascot/AgentMuse.tsx`: one agent clip, with the file picked per browser, a still when done or under
+    reduced motion, plus `useMuseMode`.
+  - Small, by default: `WorkingStep` takes `muse` (the build room's working step shows the orchestrator at 26 px,
+    running sub-agents at 22 px, and no tools), and `StepList` takes `muse` (the steps panel's running agent rows get
+    20 px sub-agents at the right). `currentStep` now marks which running children are agents.
+  - Muse mode: `lib/mascot.ts` (`MUSE_MODE_KEY`, off by default), a Settings row, and a "Muse mode" link in the build
+    room. `museCrew(room)` (components/build/steps.tsx) lists every agent of the live round, newest 12, without
+    tools. `components/mascot/MuseCrew.tsx` draws the lead at 120 px with what it last said, and each agent at 72 px
+    with its task and state.
+  - docs/BRAND.md has the rules.
+- Checked on the local preview with the running-build fixture (scripts/dev/room-fixtures.ts, loaded into `.data/ui`):
+  - light and dark at 1440 px: 3 small Muses in the conversation (orchestrator, helper, smoke test; "Install the
+    packages" is a tool and gets none), 3 in the steps panel;
+  - Muse mode on from the build room's link: a crew of 4 (2 working, 2 done) under the lead, saved in the browser;
+  - 390 px: crew wraps, no sideways scroll;
+  - reduced motion: 0 videos, 6 stills;
+  - no page errors.
+  - Shots: docs/log/shots/2026-11-02/muse-agents-small.png, muse-agents-panel.png, muse-mode-crew-light.png,
+    muse-mode-crew-dark.png.
+- Tests: mascot and steps 39 of 39 (new: Muse mode's switch, subRole, museCrew, the agent flag on currentStep). Touched
+  components 138: 136 passed, then 138 after one snapshot refresh. The plan-art golden pins the running room's exact
+  HTML, which now has the Muses and the link, so its "running" entry was rewritten (`PLAN_ART_GOLDEN_WRITE=1`); the
+  finished and failed rooms are byte for byte as before. Typecheck clean.
+- Not done: Safari not tried (the HEVC files are built the same way as the walk's). No real build has run with it yet.
+

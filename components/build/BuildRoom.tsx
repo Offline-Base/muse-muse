@@ -19,7 +19,10 @@ import { latestChecklist } from "@/lib/full/requirements";
 import { QuestionCard, SteerNote } from "@/components/build/session";
 import { appsLine, nativeRows } from "@/components/build/apps";
 import { proveRows } from "@/components/build/prove-rows";
-import { conversationItems, currentStep, finalWords, roomSources, roomSteps, shareLink, stepsEnd, type ConvoItem } from "@/components/build/steps";
+import { conversationItems, currentStep, finalWords, museCrew, roomSources, roomSteps, shareLink, stepsEnd, type ConvoItem } from "@/components/build/steps";
+import { useMuseMode } from "@/components/mascot/AgentMuse";
+import { MuseCrew } from "@/components/mascot/MuseCrew";
+import { subRole } from "@/lib/mascot";
 import { SteerBox } from "@/components/build/SteerBox";
 import { LookCard } from "@/components/build/LookCard";
 import { lookState } from "@/components/build/look";
@@ -366,6 +369,10 @@ export function BuildRoom(props: BuildRoomProps) {
 
   const answer = useMemo(() => finalWords(room), [room]);
   const current = useMemo(() => currentStep(room), [room]);
+  // Muse mode: the agents as a crew of Muses under the working step. Off by default; tiny Muses show either way.
+  const [museMode, setMuseMode] = useMuseMode();
+  const crew = useMemo(() => (museMode ? museCrew(room) : null), [museMode, room]);
+  const museToggle = current ? <MuseModeToggle on={museMode} onChange={setMuseMode} /> : null;
   const plan = useMemo(() => planCardState(room), [room]);
   preloadPlanArt(room.status, isRefineBuild, room.planArtUrl);
   // The clock only matters to a Prove it run, so a build without one doesn't redraw its list each tick.
@@ -376,7 +383,7 @@ export function BuildRoom(props: BuildRoomProps) {
     if (!panelOpen) return null;
     const targets = [...nativeRows(nativeRuns, { live: nativeLive, slug: product?.slug ?? null }), ...proveSteps];
     const live = nativeLive || proveStep?.state === "running";
-    return <StepList steps={roomSteps({ room, rail, isRefine: isRefineBuild, targets })} end={live ? undefined : stepsEnd(room)} />;
+    return <StepList steps={roomSteps({ room, rail, isRefine: isRefineBuild, targets })} end={live ? undefined : stepsEnd(room)} muse />;
   }, [panelOpen, room, rail, isRefineBuild, nativeRuns, nativeLive, product?.slug, proveSteps, proveStep?.state]);
   const panelSources = useMemo(() => {
     if (!panelOpen) return null;
@@ -511,15 +518,17 @@ export function BuildRoom(props: BuildRoomProps) {
                 <UserTurn inspiration={props.inspiration} message={isRefineBuild ? build.message : null} rebuild={props.rebuild} showReferences={showRefs} />
                 <li className="room-working">
                   {current ? (
-                    <WorkingStep title={current.title} />
+                    <WorkingStep title={current.title} muse={museMode ? undefined : "orchestrator"} />
                   ) : (
                     <WorkingStep title={feed.unpublished && shipped ? "Finished, not online" : statusLabel(room.status)} state={room.status === "failed" || room.status === "refused" ? "failed" : "done"} />
                   )}
                   <p className="room-working-meta">
                     {duration(elapsed)} · {usd(room.costUsd)} est.
                     {conn === "reconnecting" ? " · reconnecting to the live log" : ""}
+                    {museToggle}
                     {panelToggle}
                   </p>
+                  {current && crew ? <MuseCrew lead={current.description ?? current.title} agents={crew} /> : null}
                 </li>
                 <li>
                   <PlanChecklist list={buildChecklist(room.status, events, "Making your product", feed.unpublished)} />
@@ -655,16 +664,19 @@ export function BuildRoom(props: BuildRoomProps) {
 
           {current ? (
             <li className="room-working">
-              <WorkingStep title={current.title} description={current.description}>
-                {current.children.map((c) => (
-                  <WorkingStep key={c.id} nested title={c.title} />
-                ))}
+              <WorkingStep title={current.title} description={current.description} muse={museMode ? undefined : "orchestrator"}>
+                {/* In Muse mode the crew below shows the agents, so the rows here go. */}
+                {museMode
+                  ? null
+                  : current.children.map((c, i) => <WorkingStep key={c.id} nested title={c.title} muse={c.agent ? subRole(i) : undefined} />)}
               </WorkingStep>
               <p className="room-working-meta">
                 {duration(elapsed)} · {usd(room.costUsd)} est.
                 {conn === "reconnecting" ? " · reconnecting to the live log" : ""}
+                {museToggle}
                 <StepsToggle open={panelOpen} onClick={() => (panelOpen ? closePanel() : showSteps(null, true))} />
               </p>
+              {crew ? <MuseCrew lead={current.description ?? current.title} agents={crew} /> : null}
             </li>
           ) : null}
 
@@ -746,6 +758,15 @@ export function BuildRoom(props: BuildRoomProps) {
 }
 
 /** Opens and closes the steps panel from the running step. It stays on the page, so the panel can give focus back to it. */
+/** Muse mode's switch in the build room (the same setting as Settings, General, "Muse mode"). */
+function MuseModeToggle({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
+  return (
+    <button type="button" className="link-btn room-muse-mode" aria-pressed={on} onClick={() => onChange(!on)}>
+      Muse mode
+    </button>
+  );
+}
+
 export function StepsToggle({ open, onClick, label = "steps" }: { open: boolean; onClick: () => void; label?: string }) {
   return (
     <button type="button" className="link-btn room-steps-link" aria-expanded={open} aria-controls={PANEL_ID} onClick={onClick}>

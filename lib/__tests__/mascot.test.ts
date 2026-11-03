@@ -1,11 +1,11 @@
 /**
- * Muse, the mascot (lib/mascot.ts): the walk and climb steps it moves by, and the on or off switch in Settings.
+ * Muse, the mascot (lib/mascot.ts): the walk and climb steps it moves by, the on or off switch in Settings, and Muse mode.
  *
  *   npx tsx --test lib/__tests__/mascot.test.ts
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { MASCOT_EVENT, MASCOT_KEY, climbStep, readMascotOn, setMascotOn, walkStep } from "@/lib/mascot";
+import { MASCOT_EVENT, MASCOT_KEY, MUSE_MODE_EVENT, MUSE_MODE_KEY, climbStep, readMascotOn, readMuseMode, setMascotOn, setMuseMode, subRole, walkStep } from "@/lib/mascot";
 
 describe("the walk", () => {
   const bounds = { left: 264, right: 1200 };
@@ -58,5 +58,42 @@ describe("the switch", () => {
       },
     };
     assert.equal(readMascotOn(), true);
+  });
+});
+
+describe("Muse mode", () => {
+  it("is off until switched on, says so to the page, and stays off when storage is blocked", () => {
+    const store = new Map<string, string>();
+    const heard: unknown[] = [];
+    Object.assign(globalThis, {
+      localStorage: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v), removeItem: (k: string) => void store.delete(k) },
+      window: { dispatchEvent: (e: CustomEvent) => heard.push([e.type, e.detail]) },
+      CustomEvent: class<T> {
+        constructor(public type: string, init?: { detail?: T }) {
+          this.detail = init?.detail;
+        }
+        detail: T | undefined;
+      },
+    });
+    assert.equal(readMuseMode(), false);
+    setMuseMode(true);
+    assert.equal(store.get(MUSE_MODE_KEY), "on");
+    assert.equal(readMuseMode(), true);
+    setMuseMode(false);
+    assert.equal(store.has(MUSE_MODE_KEY), false);
+    assert.deepEqual(heard, [
+      [MUSE_MODE_EVENT, { on: true }],
+      [MUSE_MODE_EVENT, { on: false }],
+    ]);
+    (globalThis as { localStorage: unknown }).localStorage = {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+    };
+    assert.equal(readMuseMode(), false);
+  });
+
+  it("turns sub-agents each way in turn", () => {
+    assert.deepEqual([0, 1, 2, 3].map(subRole), ["sub-left", "sub-right", "sub-left", "sub-right"]);
   });
 });

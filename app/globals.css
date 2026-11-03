@@ -2500,6 +2500,127 @@ pre {
   font-variant-numeric: tabular-nums;
 }
 
+/* The agent clips (components/mascot/AgentMuse.tsx): never take the pointer; the page around them stays clickable. */
+.agent-muse {
+  display: block;
+  flex: none;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Muse mode's switch beside "Show steps": a quiet link, pressed while it's on. */
+.room-muse-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--chat-muted);
+  font-size: 13px;
+}
+
+.room-muse-mode[aria-pressed="true"] {
+  color: var(--fg);
+  font-weight: 500;
+}
+
+/* Muse mode (components/mascot/MuseCrew.tsx): the lead large on the left, its helpers as a wrapping crew. */
+.muse-crew {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-left: 32px;
+  padding: 16px;
+  border-radius: 20px;
+  background: var(--surface-2);
+  animation: chat-fade-in 150ms ease-out;
+}
+
+.muse-crew-lead {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.muse-crew-lead-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.muse-crew-name {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.muse-crew-lead .muse-crew-task {
+  font-size: 14px;
+  line-height: 20px;
+  -webkit-line-clamp: 3;
+}
+
+.muse-crew-tally,
+.muse-crew-empty {
+  color: var(--chat-muted);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.muse-crew-team {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 12px 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.muse-crew-agent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  text-align: center;
+}
+
+.muse-crew-task {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+
+.muse-crew-state {
+  color: var(--chat-muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.muse-crew-agent.is-done .agent-muse {
+  opacity: 0.6;
+}
+
+.muse-crew-agent.is-failed .muse-crew-state {
+  color: var(--bad);
+}
+
+@media (max-width: 640px) {
+  .muse-crew {
+    margin-left: 0;
+  }
+
+  .muse-crew-lead .agent-muse {
+    width: 83px;
+    height: 80px;
+  }
+}
+
 .room-steps-link {
   display: inline-flex;
   align-items: center;

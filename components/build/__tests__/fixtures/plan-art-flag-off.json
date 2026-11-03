@@ -1,7 +1,7 @@
 {
   "build room: running": {
-    "sha256": "a56098cc4a9bd679da934f15403e4f2399067c2703eb700284fb55d87893cefc",
-    "length": 48521
+    "sha256": "4e3f46b695f87ddbe417b0fb844f010a7cd05493e932c879f6e17b27ed9519c4",
+    "length": 49856
   },
   "build room: failed": {
     "sha256": "8a109ef61dbc99149bf1a1db23637d528d51a8f11f9434f37302556e0c070446",
