@@ -9,7 +9,7 @@
 const PRODUCT_DIR = "/vercel/app/";
 
 /** An absolute path on a build or dev machine. Product paths are made relative before this runs. */
-const MACHINE_PATH = /(?:^|(?<=[\s`'"(=:]))\/(?:vercel|tmp|private|var|root|home|Users|opt|srv|mnt|workspace|run|proc|etc)(?:\/[^\s`'")\],;]*)?/g;
+const MACHINE_PATH = /(?:^|(?<=[\s`'"(=:]))\/(?:vercel|tmp|private|var|root|home|Users|opt|srv|mnt|workspace|run|proc|etc)(?=[\/\s`'")\],;.:]|$)(?:\/[^\s`'")\],;]*)?/g;
 
 /** A uuid, such as a Muse Code session or tool output id. */
 const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;

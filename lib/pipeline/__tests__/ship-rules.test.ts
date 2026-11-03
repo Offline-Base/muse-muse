@@ -39,6 +39,13 @@ describe("the live action check's reply rules", () => {
     }
     assert.equal(judge(200, { ledger: [], model: false }).inconclusive, "decide_next_step said it used no AI model for this call");
   });
+
+  it("reads a 401, 403 or 404 in the product's own JSON as its answer to the sample, and the host's page as a failure", () => {
+    for (const status of [401, 403, 404, 409]) assert.equal(judge(status, { error: "No case with that id." }).ok, true, `HTTP ${status} in JSON`);
+    assert.equal(judge(404, null).reason, "decide_next_step answered HTTP 404", "no such route");
+    assert.equal(judge(401, null).ok, false, "a locked link");
+    assert.equal(judge(405, { error: "Method not allowed" }).ok, false);
+  });
 });
 
 describe("the live action check's call and samples", () => {
@@ -141,6 +148,8 @@ describe("what visitors read about a build", () => {
   it("takes out sandbox and machine paths, session ids and raw tool noise, and keeps readable lines", () => {
     assert.equal(scrubMachineText("Saved /vercel/app/fixtures/sample-1.txt for 01a19fda-2f91-7801-af60-9c4a872edba7"), "Saved fixtures/sample-1.txt for");
     assert.equal(scrubMachineText("Wrote /tmp/muse/x.json and /Users/someone/a.txt"), "Wrote a file on the build machine and a file on the build machine");
+    assert.equal(scrubMachineText("See the /runs page and /variables list"), "See the /runs page and /variables list", "only whole machine folder names");
+    assert.equal(scrubMachineText("Ran in /tmp."), "Ran in a file on the build machine.");
     assert.deepEqual(
       visitorLines([
         "Read text file `/vercel/.local/share/muse/sessions/2026/11/03/01a19fda-2f91-7801-af60-9c4a872edba7/tool-outputs/x/subagent-1-subagent_result.txt`.",

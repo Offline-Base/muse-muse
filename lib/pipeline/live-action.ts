@@ -9,8 +9,9 @@
  * - Shortened files: a manifest example often shortens a file to "data:image/png;base64,AAA". Like Prove's runner, the
  *   check swaps such a value for the product's own sample of the same kind from fixtures/, the file its tests use.
  * - What fails it: an HTTP error other than a refused input, no answer in time, or a reply that says it is a stand-in
- *   (fallback: true, estimate: true), carries an error, or says model: false with an error. A refused sample (400, 413,
- *   422), a busy product (429) or a bare model: false says nothing sure about the product, so it neither passes nor fails.
+ *   (fallback: true, estimate: true), carries an error, or says model: false with an error. A refused sample (400, 409,
+ *   413, 422, or a 401, 403 or 404 in the product's own JSON), a busy product (429) or a bare model: false says nothing
+ *   sure about the product, so it neither passes nor fails. A 404 or 401 page from the host (no route, a locked link) fails.
  */
 import { planChecks } from "@/lib/outputs/prove";
 import type { Manifest } from "@/lib/types";
@@ -117,7 +118,12 @@ export interface LiveActionVerdict {
 }
 
 /** What a product answers when the sample input is wrong or it is busy, and not when it is broken. */
-const NOT_ABOUT_THE_PRODUCT = [400, 413, 422, 429];
+const NOT_ABOUT_THE_PRODUCT = [400, 409, 413, 422, 429];
+/**
+ * Said in the product's own JSON, these are its answer to the sample: a made-up id it doesn't hold (404), or a sign-in it
+ * asks for (401, 403). Said as a page instead, they come from the host: no such route, or the link is locked.
+ */
+const PRODUCT_ANSWERS_IN_JSON = [401, 403, 404];
 
 const quote = (text: string, max = 160) => {
   const flat = text.replace(/\s+/g, " ").trim();
@@ -143,7 +149,7 @@ export function judgeLiveReply(input: { action: string; status: number | null; b
   if (status === null) return { ok: false, reason: `${action} couldn't be reached` };
   const obj = body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : null;
   const error = obj ? errorText(obj.error) : null;
-  if (NOT_ABOUT_THE_PRODUCT.includes(status)) {
+  if (NOT_ABOUT_THE_PRODUCT.includes(status) || (obj && PRODUCT_ANSWERS_IN_JSON.includes(status))) {
     return { ok: true, inconclusive: status === 429 ? `${action} was busy (HTTP 429)` : `${action} refused the sample input (HTTP ${status})` };
   }
   if (status < 200 || status >= 300) return { ok: false, reason: `${action} answered HTTP ${status}${error ? `: ${quote(error)}` : ""}` };
