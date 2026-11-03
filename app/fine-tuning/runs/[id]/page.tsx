@@ -79,6 +79,7 @@ export default async function TuneRunPage({ params }: { params: Promise<{ id: st
         serverNow={now.getTime()}
         quantTargets={env.quantTargets}
         story={makeChatAllOn()}
+        partners={env.partnerEvalProvider ? { hostTuned: env.hostTuned } : null}
       />
       {loops ? <TuneLoopCard datasetId={result.data.run.id} loops={loops.map((l) => ({ id: l.id, running: !l.ended, startedAt: l.spec.startedAt }))} /> : null}
     </>

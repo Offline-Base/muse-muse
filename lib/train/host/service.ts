@@ -50,7 +50,11 @@ export function endpointName(id: string): string {
 
 const isServing = (e: HostEndpoint) => e.status === "starting" || e.status === "live";
 
+/** Said by every host but Fireworks for an adapter trained on Fireworks, which keeps it. */
+export const KEPT_ON_FIREWORKS = "This adapter trained on Fireworks and is kept there, so only Fireworks can host it.";
+
 function refusal(facts: HostFacts, adapter: HostAdapter): string | null {
+  if (facts.fireworksModel && adapter.id !== "fireworks") return KEPT_ON_FIREWORKS;
   const missing = adapter.missingKeys();
   if (missing.length) return `${adapter.label} isn't set up here: ${missing.join(" and ")} ${missing.length === 1 ? "isn't" : "aren't"} set.`;
   return adapter.cantServe(facts);

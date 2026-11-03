@@ -22,6 +22,16 @@ export const START_TIMEOUT_MINUTES = 45;
  */
 export const DEPLOY_WINDOW_MINUTES = 6;
 
+/**
+ * Run it's demo window: the stop time asked for, held to `maxMinutes` (HOST_TUNED_MAX_MINUTES), so it can only be
+ * shorter. Null: none asked, so the usual limit. "invalid": not a whole number, or under MIN_RUN_MINUTES.
+ */
+export function demoWindowMinutes(asked: unknown, maxMinutes: number): number | null | "invalid" {
+  if (asked === undefined || asked === null) return null;
+  if (typeof asked !== "number" || !Number.isInteger(asked) || asked < MIN_RUN_MINUTES) return "invalid";
+  return Math.min(asked, maxMinutes);
+}
+
 const isOpen = (e: Pick<HostEndpoint, "status">) => HOST_OPEN.includes(e.status);
 const startOfDay = (now: Date) => {
   const d = new Date(now);

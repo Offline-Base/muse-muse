@@ -7,12 +7,12 @@
  */
 import { openAiChat, type Fetcher } from "@/lib/train/host/openai-chat";
 import type { AdapterSource } from "@/lib/train/host/hf-files";
+import { FIREWORKS_MAX_RANK, FIREWORKS_MIN_RANK, fireworksConfigProblem } from "@/lib/train/host/fireworks-config";
 import { HostError, type HostAdapter, type HostFacts } from "@/lib/train/host/types";
 
 const API = "https://api.fireworks.ai/v1";
 const INFERENCE = "https://api.fireworks.ai/inference/v1";
-export const FIREWORKS_MIN_RANK = 4;
-export const FIREWORKS_MAX_RANK = 64;
+export { FIREWORKS_MAX_RANK, FIREWORKS_MIN_RANK, fireworksConfigProblem };
 /** Dedicated deployments only, H100 at $8 an hour (fireworks.ai/pricing). The real shape isn't known until the first test. */
 export const FIREWORKS_HOURLY_USD = 8;
 const SCALE_TO_ZERO_WINDOW = "300s";
@@ -49,6 +49,8 @@ export function fireworksAdapter(deps: { fetch?: Fetcher; apiKey: () => string |
     missingKeys: () => [...(deps.apiKey() ? [] : ["FIREWORKS_API_KEY"]), ...(deps.accountId() ? [] : ["FIREWORKS_ACCOUNT_ID"])],
     cantServe(f) {
       if (f.family !== "glimmer") return LLAMA_HOST_REFUSAL;
+      // Trained on Fireworks: the adapter is already on the account, on Fireworks' own Glimmer 30B, with its chat template.
+      if (f.fireworksModel) return null;
       if (f.sparkOpen) return "Fireworks documents adapters only on its own bases, and has no copy of the 2026 Glimmer (r30b) this model trained on.";
       if (!fireworksBase(f)) return "Fireworks has no matching base for this model.";
       if (f.family === "glimmer" && f.trainChannel === 0) return "This model answers on a final channel the prompt must open, and a Fireworks deployment can't be given that template.";
@@ -58,16 +60,28 @@ export function fireworksAdapter(deps: { fetch?: Fetcher; apiKey: () => string |
     },
     price: () => ({ hourlyUsd: FIREWORKS_HOURLY_USD, gpu: "H100" }),
     async deploy({ name, facts }) {
+      if (facts.fireworksModel) {
+        // Nothing is uploaded: a deployment of the trained adapter itself. The stop deletes only this deployment and a
+        // model named `name`, which doesn't exist here, so the trained adapter is never deleted.
+        const model = `accounts/${account()}/models/${facts.fireworksModel}`;
+        await need(
+          "the deployment",
+          await call(`/deployments?deploymentId=${name}`, {
+            method: "POST",
+            body: JSON.stringify({ baseModel: model, deploymentShape: "default", minReplicaCount: 0, maxReplicaCount: 1, autoscalingPolicy: { scaleToZeroWindow: SCALE_TO_ZERO_WINDOW } }),
+          }),
+        );
+        return { model };
+      }
       const base = fireworksBase(facts);
       if (!base || !facts.hubRepo || !facts.hubCommit) throw new HostError(409, "cant_serve", "Fireworks can't serve this model.");
       const repo = facts.hubRepo;
       const commit = facts.hubCommit;
-      const config = JSON.parse(await deps.source.text(repo, commit, "adapter_config.json")) as { r?: unknown; target_modules?: unknown };
+      const config = JSON.parse(await deps.source.text(repo, commit, "adapter_config.json")) as { r?: unknown; target_modules?: string[] };
       // Fireworks describes a list of module names. A regex string is what Glimmer training saves, and it isn't documented as accepted.
-      if (!Array.isArray(config.target_modules)) throw new HostError(409, "cant_serve", "This adapter names its target modules by a pattern, which Fireworks doesn't document accepting.");
+      const refused = fireworksConfigProblem(config);
+      if (refused) throw new HostError(409, "cant_serve", refused);
       const r = Number(config.r);
-      if (!(r >= FIREWORKS_MIN_RANK && r <= FIREWORKS_MAX_RANK)) throw new HostError(409, "cant_serve", `Fireworks takes adapters of rank ${FIREWORKS_MIN_RANK} to ${FIREWORKS_MAX_RANK}.`);
-      if (config.target_modules.includes("embed_tokens")) throw new HostError(409, "cant_serve", "Fireworks doesn't take an adapter that changes embed_tokens.");
       const files = (await deps.source.list(repo)).filter((f) => ADAPTER_FILES.has(f.path));
       await need(
         "the model",

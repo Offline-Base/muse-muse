@@ -15,7 +15,7 @@ import { evalVerdict } from "@/lib/train/tune/verdict";
 import type { RunVerdict, TuneHoldReason, TuneRunView, TuneSettings, TuneStage } from "@/lib/train/tune/types";
 import type { DatasetView, PartnerEvalBody, TrainEventView, TrainJobView } from "@/lib/train/types";
 import { modelLabel } from "@/lib/format";
-import { partnerEvalView } from "@/lib/train/partner/logic";
+import { partnerEvalView, partnerEvalViews } from "@/lib/train/partner/logic";
 
 // The examples check's counts live with the settings (no components/ import), for the tuneRun workflow's steps.
 export { examplesProblem, TUNE_MIN_EVAL, TUNE_MIN_TRAIN } from "@/lib/train/tune/settings";
@@ -157,6 +157,7 @@ export function tuneRunView(rows: RunRows, now: Date, ceilings: { maxMinutes: nu
   const judgeCost = job?.evalSummary?.judgeCostUsd ?? 0;
   const partners = job ? (rows.partnerEvals ?? []) : [];
   const partnerEval = partnerEvalView(partners, modelLabel, now);
+  const partnerCards = partnerEvalViews(partners, modelLabel, now);
   // Every partner eval that ended: its GPU by the clock, and its judging.
   const partnerCost = partners.reduce((sum, p) => sum + (p.status === "started" ? 0 : (Number(p.costUsd) || 0) + (Number(p.judgeCostUsd) || 0)), 0);
   return {
@@ -177,6 +178,7 @@ export function tuneRunView(rows: RunRows, now: Date, ceilings: { maxMinutes: nu
     problem,
     costSoFarUsd: Math.round((dataset.costUsd + (job?.costUsd ?? 0) + (Number(judgeCost) || 0) + partnerCost) * 1e6) / 1e6,
     ...(partnerEval ? { partnerEval } : {}),
+    ...(partnerCards.length ? { partnerEvals: partnerCards } : {}),
     next: job
       ? { kind: "job", href: `/fine-tuning/${job.id}` }
       : stage === "waiting"

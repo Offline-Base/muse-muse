@@ -1,6 +1,6 @@
 /**
- * The real deps of a partner eval: env, the store, the judge, and the hosting code's service with only the two partners'
- * adapters. Not lib/train/host/deps.ts: that one reaches lib/train/launch for Lambda, which imports the training
+ * The real deps of a partner eval: env, the store, the judge, and the hosting code's service with only the partners'
+ * adapters (Baseten, Modal, Fireworks). Not lib/train/host/deps.ts: that one reaches lib/train/launch for Lambda, which imports the training
  * workflow that starts this one. Keys are read per call inside the adapters, never returned. Server only.
  */
 import { randomUUID } from "node:crypto";
@@ -10,6 +10,9 @@ import { hashToken } from "@/lib/gateway/tokens";
 import { spendPaused } from "@/lib/quota";
 import { basetenAdapter } from "@/lib/train/host/baseten";
 import { sandboxRunner } from "@/lib/train/host/cli-runner";
+import { fireworksAdapter } from "@/lib/train/host/fireworks";
+import { hubAdapterSource } from "@/lib/train/host/hf-files";
+import { studentSystem } from "@/lib/train/hub-cards";
 import { hostKeyFor } from "@/lib/train/host/keys";
 import { modalAdapter } from "@/lib/train/host/modal";
 import type { HostChatDeps } from "@/lib/train/host/service";
@@ -18,7 +21,7 @@ import type { HostAdapter, HostProvider } from "@/lib/train/host/types";
 import type { HostLimits } from "@/lib/train/host/limits";
 import type { PartnerSettings } from "@/lib/train/partner/logic";
 import { getAdapterSource, getDataset, getEvalItem, listEvalIndexes, listPartnerEvals, recordEvent } from "@/lib/train/store";
-import type { DoneMetrics, JudgedItem, TrainJobRow } from "@/lib/train/logic";
+import { datasetSystemPrompt, type DoneMetrics, type JudgedItem, type TrainJobRow } from "@/lib/train/logic";
 import type { PartnerEvalBody, TrainEventBody } from "@/lib/train/types";
 import { platformSpendToday } from "@/lib/usage";
 
@@ -26,8 +29,13 @@ export interface PartnerDeps {
   settings(): PartnerSettings;
   source(jobId: string): Promise<{ job: TrainJobRow; metrics: DoneMetrics | null } | null>;
   evalIndexes(jobId: string): Promise<number[]>;
-  evalItem(jobId: string, index: number): Promise<{ prompt: string; reference: string } | null>;
+  /** One held-out prompt, its reference, and the base answer the job itself recorded for it. */
+  evalItem(jobId: string, index: number): Promise<{ prompt: string; reference: string; base?: string } | null>;
   datasetTask(datasetId: string): Promise<string | null>;
+  /** A Fireworks run's system message, rebuilt from its dataset as fwCreateStep trained it. Null when it can't be. */
+  fireworksSystem(datasetId: string): Promise<string | null>;
+  /** The adapter's adapter_config.json from the Hub (a free read), or null when it can't be read. For Fireworks' checks. */
+  adapterConfig(repo: string, commit: string): Promise<{ r?: unknown; target_modules?: unknown } | null>;
   results(jobId: string): Promise<PartnerEvalBody[]>;
   record(jobId: string, body: TrainEventBody): Promise<void>;
   /** Why the judge can't run now (no key, the platform's spend cap), or null. Checked before anything is deployed. */
@@ -48,6 +56,7 @@ function partnerAdapters(): HostAdapter[] {
   return [
     basetenAdapter({ apiKey: key("BASETEN_API_KEY"), hfToken, runner: sandboxRunner }),
     modalAdapter({ tokenId: key("MODAL_TOKEN_ID"), tokenSecret: key("MODAL_TOKEN_SECRET"), hfToken, keyFor: hostKeyFor, runner: sandboxRunner }),
+    fireworksAdapter({ apiKey: key("FIREWORKS_API_KEY"), accountId: key("FIREWORKS_ACCOUNT_ID"), source: hubAdapterSource }),
   ];
 }
 
@@ -63,15 +72,34 @@ async function takeDeployLock(now: Date): Promise<boolean> {
 export function partnerDeps(): PartnerDeps {
   const adapters = partnerAdapters();
   return {
-    settings: () => ({ provider: env.partnerEvalProvider, hostOn: env.hostTuned, maxUsd: env.partnerEvalMaxUsd, maxMinutes: env.partnerEvalMaxMinutes }),
+    settings: () => ({
+      provider: env.partnerEvalProvider,
+      providers: env.partnerEvalProviders,
+      hostOn: env.hostTuned,
+      maxUsd: env.partnerEvalMaxUsd,
+      maxMinutes: env.partnerEvalMaxMinutes,
+      runMaxUsd: env.partnerEvalRunMaxUsd,
+    }),
     source: getAdapterSource,
     evalIndexes: listEvalIndexes,
     async evalItem(jobId, index) {
       const item = await getEvalItem(jobId, index);
-      return item ? { prompt: item.prompt, reference: item.reference } : null;
+      return item ? { prompt: item.prompt, reference: item.reference, base: item.base } : null;
     },
     async datasetTask(datasetId) {
       return (await getDataset(datasetId))?.task ?? null;
+    },
+    async fireworksSystem(datasetId) {
+      const dataset = await getDataset(datasetId);
+      return dataset ? studentSystem(dataset.title, datasetSystemPrompt(dataset.task)) : null;
+    },
+    async adapterConfig(repo, commit) {
+      try {
+        const parsed = JSON.parse(await hubAdapterSource.text(repo, commit, "adapter_config.json")) as unknown;
+        return parsed && typeof parsed === "object" ? (parsed as { r?: unknown; target_modules?: unknown }) : null;
+      } catch {
+        return null;
+      }
     },
     results: listPartnerEvals,
     record: recordEvent,
@@ -89,7 +117,7 @@ export function partnerDeps(): PartnerDeps {
         platformSpend: platformSpendToday,
         adapter(provider: HostProvider) {
           const found = adapters.find((a) => a.id === provider);
-          if (!found) throw new Error("Partner evals run only on Baseten or Modal.");
+          if (!found) throw new Error("Partner evals run only on Baseten, Modal or Fireworks.");
           return found;
         },
         adapters: () => adapters,

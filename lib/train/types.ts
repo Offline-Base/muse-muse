@@ -156,8 +156,11 @@ export type TrainEventBody =
   /** The same held-out prompts answered on a partner's GPU and judged there (PARTNER_EVALS, lib/train/partner). Never a callback. */
   | PartnerEvalBody;
 
-/** The partners a tuned model is evaluated on (PARTNER_EVALS). */
-export type PartnerProvider = "baseten" | "modal";
+/**
+ * The partners a tuned model is evaluated on (PARTNER_EVALS). Fireworks only for a tune it can serve
+ * (lib/train/partner/logic.ts, fireworksPartnerProblem), and only when PARTNER_EVALS names it or says "all".
+ */
+export type PartnerProvider = "baseten" | "modal" | "fireworks";
 
 /** Milliseconds one answer took, seen from the platform: the network to the partner included. */
 export interface PartnerLatency {
@@ -208,6 +211,11 @@ export interface PartnerEvalBody {
   /** False when the stop couldn't be confirmed: the 5-minute hosting sweep keeps trying. */
   stopped?: boolean;
   scores?: PartnerEvalScore[];
+  /**
+   * Where the base answers came from. "job": the job's own recorded ones, since the partner hosts only the tuned model
+   * (Fireworks). Left out: the partner answered both on the same GPU.
+   */
+  baseFrom?: "job";
   startedAt?: string;
   endedAt?: string;
 }
