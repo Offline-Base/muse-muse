@@ -30,6 +30,7 @@ The inspo shows what to make. It is not material to copy.
 
 ## Calling Meta models
 
+- Every model the product calls must be a Meta model through the gateway, using the helpers in `lib/meta/`: no other provider's API and no model package (transformers.js, ONNX runtimes, tesseract.js, TensorFlow, MediaPipe, Whisper ports), or verify fails.
 - Call Meta only through the helpers in `lib/meta/`. They go through the Muse Muse gateway using `GATEWAY_URL` and `PRODUCT_TOKEN`, which are already set in `.env.local`. Only the app server (`next start`, `next dev`) reads that file. The tests never see those values, so never read them in a test or guard a test on them: tests reach Meta through the app's own pages and routes. Never print, edit or copy `.env.local`.
 - Pass the incoming request to every helper that calls Meta: `metaClient(request)`, `respondJson({ ..., request })`, `transcribeFile({ ..., request })`. In a server action, pass `await headers()` from `next/headers`. That sends the visitor's IP to the gateway, which limits each person separately, so one visitor can't use up the product's daily budget for everyone.
 - Never call `api.meta.ai` directly. Never put a key, token or gateway URL in client code. Never log tokens.

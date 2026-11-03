@@ -7,6 +7,8 @@ description: Use for every screen of this Muse Muse product. The UI kit: tokens 
 
 **The Design direction in brief.md decides how this product looks.** This skill supplies the parts, states, accessibility and contrast. Everything below about colors, fonts, weights, shadows, column width, card use and screen patterns is a default: use it where the direction says nothing, and override it wherever the direction says otherwise. No two Muse Muse products should look alike. The product is the person's own, with its own name. This skill is the kit and the patterns; product-ui is layout, inputs, states and model output. Open `reference/screens.md` to pick the pattern for this product, `reference/components.md` for the markup of a part, and `reference/tokens.md` only to look up a value.
 
+When the direction's summary starts with `Look: <name>`, `.agents/skills/design-looks/looks/<name>.md` fills in what the direction leaves out.
+
 ## Defaults, unless the direction says otherwise
 
 1. **The direction's ground.** Set `--bg` and `--surface` from its palette. With no word on it: a plain page, and a card edged by a 1 px hairline. Shadows, thick rules, color blocks and full-bleed sections are all fine when the direction calls for them.

@@ -3301,3 +3301,20 @@ The organizers ruled on Nov 2 that every model the project calls at runtime must
 - **Reaches builds with the next builder snapshot.** It's a template file, and no platform prompt changed. Not yet seen in a real build: whether this Muse Code version ships `taste`, and whether a non-interactive build invokes it.
 - **Owner decision:** Wonder stays off for now. `BUILDS_ON_CONTRIBUTOR` stays on, and docs/HANDOFF.md says so.
 - **Tests:** template-source and range, 30 of 30. Spend $0.
+
+## Nov 2, 2026, late night: eight design looks for BUILD_RANGE, `/taste` in both overlays, and the Meta-only rule in the overlay AGENTS.md files
+
+- **Owner ask:** pull in design style files he likes as skills. He collected nine third-party DESIGN.md files, each extracted from a real company's site, in ~/Downloads/Design Skills.
+- **Decision:** those files aren't copied into the repo. They have no stated license, the repo is going public, and each one describes a real brand's look, which the build rules already forbid copying. They were read only as references. Eight original looks were written from what makes each style work, with our own names, wording, colors and @fontsource pairings, and no brand named anywhere.
+- **Where they live:** `template/targets/build-range/files/.agents/skills/design-looks/` (SKILL.md plus `looks/<name>.md`): typeset, notebook, journal, research-desk, ledger, voltage, classroom and showcase.
+  - **Each file:** palette for light (and dark where it fits), type pairing, the shared parts restyled, motion, and do's and don'ts.
+  - **Checks:** every palette passes the direction checker's 4.5 contrast pairs (checked with `contrast()` in lib/range/direction.ts), and all 20 font packages they name exist on npm (checked with `npm view`).
+  - **Restore list:** the looks are in the overlay's platform-files.json, so a build can't rewrite them.
+- **Wiring (BUILD_RANGE only):**
+  - **Starting ideas:** `DIRECTION_STARTS` gains eight "Look: <name>." ideas, so 20 in all, spread by build id.
+  - **The writer:** told to begin the summary with "Look: <name>." when it keeps one.
+  - **The build:** the overlay's product-ui and muse-app-ui open the look's file then. The direction's palette and fonts still win.
+- **`/taste` reaches every look:** the build-range product-ui got the line, with the direction as the brand. The muse-app overlay's product-ui is derived from the template's, so it was regenerated (`UPDATE_OVERLAY=1`). cf3c7636 had left it out of step, and its test would have failed.
+- **Found and fixed:** the Meta-only line #74 added to template/AGENTS.md ("every model the product calls must be a Meta model through the gateway") never reached either overlay's AGENTS.md. Products built with `MUSE_APP_LOOK` or `BUILD_RANGE` didn't get the rule. The muse-app copy was regenerated, and the build-range copy got the line by hand.
+- **Needs:** the next builder snapshot. The looks only show up when `BUILD_RANGE` is on; its value on Production wasn't read.
+- **Tests:** range, look, look scenario and flags-off pass 55 of 55; muse-app overlay 19 of 19; typecheck clean. Spend $0.

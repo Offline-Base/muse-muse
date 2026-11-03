@@ -1,5 +1,14 @@
 [
   ".agents/skills/muse-app-ui/SKILL.md",
   ".agents/skills/muse-app-ui/reference/screens.md",
-  "scripts/smoke-report.mjs"
+  "scripts/smoke-report.mjs",
+  ".agents/skills/design-looks/SKILL.md",
+  ".agents/skills/design-looks/looks/classroom.md",
+  ".agents/skills/design-looks/looks/journal.md",
+  ".agents/skills/design-looks/looks/ledger.md",
+  ".agents/skills/design-looks/looks/notebook.md",
+  ".agents/skills/design-looks/looks/research-desk.md",
+  ".agents/skills/design-looks/looks/showcase.md",
+  ".agents/skills/design-looks/looks/typeset.md",
+  ".agents/skills/design-looks/looks/voltage.md"
 ]

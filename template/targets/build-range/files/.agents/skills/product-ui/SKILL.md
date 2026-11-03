@@ -10,7 +10,9 @@ description: Use for every screen of a Muse Muse product, together with muse-app
 - The Design direction in `brief.md` sets how every screen looks. Set the tokens in `app/muse-app.css` from it, use the parts in `.agents/skills/muse-app-ui`, and add your own CSS. Light and dark mode come from the tokens.
 - Signature elements and decoration follow the direction, and never reuse inspo artwork.
 - Never use Meta logos, wordmarks or marks, or the Meta name as branding. Keep `components/Footer.tsx`. It says "Built with Muse Muse. Not an official Meta product."
+- If the Design direction's summary starts with `Look: <name>`, read `.agents/skills/design-looks/looks/<name>.md` before you design: it holds that look's parts, spacing, motion and do's and don'ts. The direction's palette and fonts still win.
 - Take layout ideas and mood from `inspo/`, and let the mood show in colors, fonts and decoration. Never reuse a logo, name or artwork from it.
+- Before you call a screen done, use Muse Code's built-in `taste` skill (`/taste`) on it as a last pass: its checklist strips the defaults that make a UI look machine-made, such as a centered hero with a headline and two buttons, three identical feature cards, a stack of decorative gradients, and the same large radius on everything. The Design direction is the brand, and `taste` defers to a stated brand, so where they disagree the direction wins. If `taste` isn't installed, check the screen against that list yourself.
 
 ## Patterns
 

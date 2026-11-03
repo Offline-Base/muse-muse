@@ -68,6 +68,15 @@ export const DIRECTION_STARTS = [
   "gallery wall: a neutral ground that lets images lead, an elegant small display face, a full-bleed media grid",
   "sunlit market: warm yellows, corals and teals, a bouncy display serif, a dense board of tiles",
   "technical drawing: a blueprint or graph-paper ground, a narrow sans, thin lines, wide tables on desktop",
+  // The design-looks skill (template/targets/build-range/files/.agents/skills/design-looks) holds each of these in full.
+  "Look: typeset. A terminal printed on paper: monochrome ink on near-white, hairline borders, a light geometric sans with mono labels",
+  "Look: notebook. A warm paper notebook: soft hairline cards, one blue action, pastel panels used like sticky notes",
+  "Look: journal. A literary journal: cream paper, light tightly tracked display type, a serif for prose, sharp corners, one ember color for links",
+  "Look: research-desk. A calm research desk: parchment, a roomy sans, one teal, the main input as the centerpiece, sources shown inline",
+  "Look: ledger. A finance ledger: black and white pages, big plain numbers, one highlighter color only where action happens",
+  "Look: voltage. Deep forest green and electric lime: heavy display type, pills everywhere, sections that flip dark",
+  "Look: classroom. A storybook classroom: chubby rounded type, thick outlines, sticker-like buttons, one green for correct",
+  "Look: showcase. A white gallery: the product's output huge in the middle, quiet type around it, big rounded frames",
 ] as const;
 
 /** The same seed gets the same starting point, and different seeds spread out over the list. */
