@@ -3390,3 +3390,18 @@ The organizers ruled on Nov 2 that every model the project calls at runtime must
   - studio (recipe-simulated-loops): https://musemuse.dev/b/7571cee5-faba-40c5-b860-1889e45d2126
   - verified (recipe-verified-agent): https://musemuse.dev/b/6f98efc0-78fa-4977-88d8-e7e1942680fa
 - **Next:** check every room and live app in the morning, log status, time and cost, and fix or rebuild what didn't fully land.
+
+## Nov 3, 2026, 2 to 3 AM ET: overnight batch results, and the first round of harness fixes
+
+- **Overnight batch (12 notes, started 12:19 AM):**
+  - 11 live by 2 AM: api, alerts, charts, fridge, games, image, voice, stickers, computer-use, studio, verified. Each passed its judge (round 1 to 4), has a demo video, and all 11 links answer 200.
+  - Times 33 to 92 minutes, costs $0.17 to $0.30 each on Contributor.
+  - Deep mode was on: each brief had a design direction, 7 to 14 requirements and milestones, so `BUILD_RANGE` and `FULL_BUILDS` are on in Production. Two used one of the new looks (voltage) or its label.
+  - Prove it ran every output (CLI, Claude plugin, skill, gadget) on video. One gadget run failed on fresh-dot-fridge.
+  - The legal case agent (fable-case-ledger) is still building: milestone 1 passed, milestone 2 failed, and it's in round 2's verify.
+- **Batch 2 started at 2:21 AM:** one build per target (phone, desktop, vr, glasses, agent, edge) via `npm run demo-batch -- --set=targets`, plus `npm run demo-tunes` (new): a dataset-only run and a full Glimmer tune on made-up cold-room handoff notes.
+- **Harness fixes (deploy only, no snapshot needed):**
+  - **Snoozing ended rounds.** Muse Code ended its turn with "Snoozed until the run lands" 6 times in the legal build and once in room-restyle-studio, which ends the round and loses what it waited for. lib/engine/prompts.ts `engineBudgetLines` now says: never end the turn to wait for background work, wait inside it with a long `yield_time_ms` or `subagent_wait`, and don't use `snooze_reminder`. Engine and flags-off tests 38 of 38.
+  - **A made-up look label.** The writer kept "Look:" after turning a start into its own idea ("Look: mission control"), which points the build at a look file that doesn't exist. The writer line now says to drop the label then. Range tests 25 of 25.
+  - **Long team links.** relay-board-studio and handbook-proof-checker got `musemuse-<slug>-ethan-6436s-projects.vercel.app` as their live link, because the short alias wasn't on the deployment yet when it was polled. `pollDeploy` now prefers the project's own name alias, then asks the project for its production domain. Both short links already answer 200; the two stored links stay long until those products redeploy.
+- **Started in parallel (agents):** a runtime audit of all 12 apps on desktop and phone; a phone-mode pass on the site; the Jetson work (SAM 3.1, SAM fine-tuning, one-bit Glimmer, connecting boards to builds).

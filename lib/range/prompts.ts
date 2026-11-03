@@ -35,7 +35,7 @@ export function rangeWriterSection(start: string, recent: readonly RecentDirecti
     "- displayFont and bodyFont are a type pairing from npm: package is @fontsource/<name> or @fontsource-variable/<name>, family is its CSS font-family name. They may be one face when it can carry both jobs. Prefer a face with character over Inter, and use only packages you are sure exist.",
     "- density says how much fits on a screen. layout says how pages are arranged on a phone and on a wide desktop: columns, panes, boards, a full-bleed grid, sections without cards. shape covers corners, lines and shadows. motion says what moves and how. imagery says what pictures, patterns, charts or drawn shapes the product uses, made with Muse Image or drawn in code.",
     `- Start from this idea and bend it as far as the product needs, or leave it when the inspo clearly points elsewhere: ${start}.`,
-    ...(start.startsWith("Look: ") ? [`- If you keep this look, begin summary with "${start.slice(0, start.indexOf(".") + 1)}" so the build opens that look's file, and take the palette and fonts it describes unless the product needs others.`] : []),
+    ...(start.startsWith("Look: ") ? [`- If you keep this look, begin summary with "${start.slice(0, start.indexOf(".") + 1)}" so the build opens that look's file, and take the palette and fonts it describes unless the product needs others. If you turn it into a different look, don't start summary with "Look:" at all, since the build only has files for the named looks.`] : []),
     "- When askedLook is set, the direction follows it. Never name a real product or company in the direction, and never aim for a real product's exact look.",
   ];
   if (recent.length) {

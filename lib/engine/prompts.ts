@@ -47,6 +47,8 @@ export function engineBudgetLines(on: boolean): string[] {
   return [
     "Run `npm run verify` once, when the round's work is done. The platform runs it again after you stop. Before that, check with `npx tsc --noEmit` and run only the tests you just wrote (`npx playwright test -g \"R3\"`).",
     "When the product makes something that must pass a check (a solvable level, valid code), test one generated item for real and the rest with fixtures.",
+    // Nov 3 audit: builds ended rounds with "Snoozed until the run lands" (6 times in one build), losing the round.
+    "Never end your turn to wait for something running in the background: ending it ends this round, and what you were waiting for is lost. Wait inside the turn instead: give `bash` a long `yield_time_ms` (up to 300000) for verify and test runs, and use `subagent_wait` for helpers. Don't use `snooze_reminder` to pause.",
   ];
 }
 

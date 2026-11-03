@@ -172,7 +172,8 @@ describe("milestone prompts", () => {
     assert.match(big, /Run `npm run verify` once, when the round's work is done\. The platform runs it again after you stop\./);
     assert.match(big, /npx playwright test -g \\"R3\\"|npx playwright test -g "R3"/);
     assert.match(big, /test one generated item for real and the rest with fixtures/);
-    assert.ok(big.trimEnd().endsWith("the rest with fixtures."));
+    assert.match(big, /Never end your turn to wait for something running in the background/);
+    assert.ok(big.trimEnd().endsWith("Don't use `snooze_reminder` to pause."));
   });
 
   it("milestone-<n>.md carries the last check's failures, and nothing extra when it passed", () => {

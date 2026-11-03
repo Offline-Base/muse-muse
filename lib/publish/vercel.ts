@@ -416,7 +416,10 @@ export async function pollDeploy(deploymentId: string): Promise<DeployPoll> {
   const raw = (d.readyState ?? "QUEUED").toUpperCase() as DeployPoll["state"];
   const state: DeployPoll["state"] = STATES.has(raw) ? raw : "BUILDING";
   const aliases = (d.alias ?? []).filter((a) => a.endsWith(".vercel.app")).sort((a, b) => a.length - b.length);
-  const url = aliases[0] ? `https://${aliases[0]}` : d.projectId ? await productionUrl(d.projectId, d.name) : `https://${d.url}`;
+  // The project's own name alias when it's there. Otherwise ask the project for its production domain: just after a deploy
+  // the alias list can hold only the long team-scoped one (musemuse-x-<team>.vercel.app), which made two Nov 3 links long.
+  const own = aliases.find((a) => a === `${d.name}.vercel.app`);
+  const url = own ? `https://${own}` : d.projectId ? await productionUrl(d.projectId, d.name) : aliases[0] ? `https://${aliases[0]}` : `https://${d.url}`;
   if (state !== "ERROR" && state !== "CANCELED") return { state, url };
   const log = state === "ERROR" ? await buildLogTail(deploymentId) : "";
   const base = d.errorMessage || d.errorCode || (state === "CANCELED" ? "The deployment was canceled" : "The deployment failed");
