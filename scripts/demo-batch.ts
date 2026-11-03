@@ -7,7 +7,8 @@
  *   npm run demo-batch -- --url=<site>      another deployment
  *   npm run demo-batch -- legal games       only the named ones
  *   npm run demo-batch -- --set=targets     one build per target: phone, desktop, vr, glasses, agent, edge
- *   npm run demo-batch -- --set=showcase    the one build that calls every Meta API a product can use today (allapis)
+ *   npm run demo-batch -- --set=showcase    the video's showcase builds: allapis, classgame and tutor (three builds)
+ *   npm run demo-batch -- --set=showcase allapis   only the one that calls every Meta API a product can use today
  *   npm run demo-batch -- --set=cookbook    one build per app-build recipe in Meta's cookbook, ids are the recipe slugs (docs/COOKBOOK.md)
  * Uses AUTOMATION_SECRET from .env.local, acting as the first ADMIN_EMAILS user (no daily build limit), the same way
  * scripts/rebuild-all.ts does. The secret is sent only as the Authorization header and never printed.
@@ -120,18 +121,31 @@ const TARGET_NOTES: readonly DemoNote[] = [
 ];
 
 /**
- * `--set=showcase`: one product that calls every Meta API a product token can use under BUILDS_ON_CONTRIBUTOR (Nov 3): text
+ * `--set=showcase`: the builds the video's stories need (docs/RUN_OF_SHOW.md). `allapis` is one product that calls every Meta API a product token can use under BUILDS_ON_CONTRIBUTOR (Nov 3): text
  * and vision (muse-wonder-1.0, served on Spark 1.3 Contributor), SAM 3.1 on a photo, Muse Voice Transcribe, Meta's web_search
  * tool and Muse Image edits. It leaves out what the live gateway doesn't serve products today: Muse Spark Open
  * (SPARK_OPEN_PRODUCTS off), Muse Glimmer (GPU_GLIMMER_SHARED off, and a GPU window is spend), SAM on a Jetson (FLEET_SAM off)
  * and audio input to Muse Wonder (refused under the switch). Start it only after a new builder snapshot: the overlay helper
  * that places SAM's boxes isn't in snap_Cqia07XnMGqyaCFRgcrjDZDMGohX.
+ * `classgame` and `tutor` are the teacher stories: a class game from a lesson topic, and a tutor that asks guiding questions
+ * instead of giving answers. Both use a made-up class and made-up students, and each ends on one finished task a viewer
+ * can recognize in a few seconds of film. Name one id to start only that build.
  */
 const SHOWCASE_NOTES: readonly DemoNote[] = [
   {
     id: "allapis",
     recipe: "image, voice and api recipes",
     note: 'Build a yard sale lister for a made-up family clearing out their garage. I upload one photo of a table of things for sale, or tap Try the sample: it names each item it sees, and SAM 3.1 outlines each one on the photo. I record or upload a short voice note about the items, like "the lamp works, the chair has a scratch", and it transcribes it and adds each detail to the right item. For each item it searches the web for what similar used items sell for, and shows a price range with source links. I pick one item and Muse Image makes a clean listing photo of it on a plain white background, labeled as made by AI. Then it gives me a ready-to-post listing for each item to copy. It ships with a made-up sample photo and a sample voice note.',
+  },
+  {
+    id: "classgame",
+    recipe: "teacher story: class game",
+    note: "Build a class review game for a made-up 7th grade science teacher. They type a lesson topic, like the water cycle, and it writes ten questions at that grade level with an answer key they can edit before class. Then it runs the questions as a team game on the classroom screen: two to four teams with made-up names, a timer for each question, big buttons, points on a scoreboard, and at the end a recap of the questions each team missed. It ships with a sample lesson on the water cycle so it works with one tap.",
+  },
+  {
+    id: "tutor",
+    recipe: "teacher story: tutor",
+    note: "Build a math tutor for a made-up 8th grade class that never gives the answer. A student types a problem, like solving 3x + 5 = 20, and it asks one guiding question at a time, checks each step the student writes, and gives a small hint when they are stuck. It only confirms the answer once the student reaches it. If the student asks for the answer, it says it will help them get there and gives a hint instead. The teacher picks the topic and sees a summary of where made-up students got stuck. It ships with three sample problems.",
   },
 ];
 
