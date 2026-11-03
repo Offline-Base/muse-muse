@@ -4475,6 +4475,13 @@ The owner asked whether the "muse" tune of SAM 3.1 (run `muse31`, the 61 MB delt
 - Builds (2:31 PM): showcase 2 of 3 live (allapis rebuilding); skills 0 of 16 live yet; cookbook 25 live, 3 partial, 2 failed, rest building; older gallery 37 live.
 - Production a28e0d01 plus 1229b042 (privacy, another session) is Ready; judge-check: no problems; /, /gallery, /fine-tuning, /offline, /how-it-works answer 200.
 - SAM tuning build: all six units committed (core 6, routes 8, UI 10, worker 2, uploads 9 commits); board facts and recovered trainer files in ~/mm-wt/s-prep-out; integration branch tg-sam-merge in progress.
+## Nov 3, about 2 PM ET: SAM tune U2, the API routes (branch tg-sam-routes, not pushed)
+
+- **What:** the SAM_TUNE routes from the SAM tune plan (section 3 contracts). Admin (requireAdminOrAutomation): `POST /api/train/sam` (create a draft, `builtin-muse` or `uploads`, maxUsd held to SAM_TUNE_MAX_USD), `GET /api/train/sam/[id]` (admins get the whole view; a signed-out visitor gets only a shown, finished run's report and total cost, with no photos, look-alikes, worker name, caps or stage, and a 404 otherwise), `[id]/start` (draft only, upload runs need their photo, held-out and look-alike counts, then the run cap and SAM_TUNE_DAILY_USD reserved under the shared `sam-tune-usd` counter and given back if queueing fails), `[id]/stop`, `[id]/shown`. Worker (worker secret, plus the run's jobToken on the id routes): `worker/next`, `worker/[id]/progress`, `worker/[id]/upload` (400 KB a file, 10 a run, .jpg must be JPEG bytes and .json must parse, token in `X-Job-Token`), `worker/[id]/done`, `worker/[id]/fail`. The cleanup cron deletes samtune/ uploads older than 7 days and keeps every `report/` file, only with the flag on.
+- **Server-side guards on /done:** the report may link only this run's own `samtune/<id>/report/` uploads on the public Blob host; its word and generic word have to be the run's; every picture needs a showable license (CC BY or CC BY-SA) and a credit, and a built-in run's pictures always need one; the board's captions are replaced by the server's own. The verdict and caveats are left to U1's store (`finish`).
+- **Flag off:** every route answers 404 `not_found` before any auth or store call; no page changed.
+- **Shims for U1 (tg-sam-core, not merged yet):** `lib/train/sam/store.ts` (signatures only, every function throws), `lib/train/sam/logic.ts` (wordProblem, genericProblem, planFor, validateReportIn) and `lib/train/sam/worker-auth.ts` (requireWorker real, requireRunToken refuses all). Take U1's files on merge. U2 also needs `queueRun(id)` (draft to queued) from the store, which is not in the plan's list. `lib/train/sam/types.ts` and the `lib/env.ts` getters are the same as U1's.
+- **Tests:** app/api/train/sam/__tests__/routes.test.ts, 12 of 12 (store, auth, worker auth and counters faked). `npx tsc --noEmit -p .` clean. $0 spent, nothing deployed.
 ## Nov 3, 2026, evening: review of the six SAM tune units, before any merge (branches tg-sam-*, not pushed, $0)
 
 Every unit stopped partway when a file write was refused, so this reviewed the work that was there, committed it on each branch as work in progress, and fixed what crossed units. Nothing ran on a board and nothing was spent.
@@ -4507,3 +4514,16 @@ The table, rules, store and worker gate for teaching SAM 3.1 a new object on the
 - **Caveats:** a run on the person's own photos says "The look-alikes are your own photos or made up (Muse Image)." It no longer says they come from COCO. The Nov 3 and built-in caveats are unchanged.
 - **createRun:** takes an optional `maxUsd`, held to `SAM_TUNE_MAX_USD`, for U2's create route.
 - **Tests:** logic, worker-auth and store, 25 of 25. `npx tsc --noEmit -p .` is clean. $0 spent.
+
+### 2026-11-03: SAM tune review on tg-sam-routes: merged tg-sam-core, routes on U1's real store
+
+- **Merged tg-sam-core** (3da25050) and dropped U2's shims of `store.ts`, `logic.ts` and `worker-auth.ts`, taking U1's files. The routes are now typechecked against U1's real signatures.
+- **Contract fixes:**
+  - create reads `createRun`'s `{ok, run | problem}`.
+  - progress, upload, done and fail pass the job token to the store.
+  - upload reads `saveUpload`'s `{ok, url | status}` and the header name from `JOB_TOKEN_HEADER` (`x-job-token`, what worker.py sends).
+  - Start, Stop and Show answer with the run's view. U1 returns a boolean or a status, and the room couldn't use that.
+- **Admin view:** admins get the full view (`getRunView(id, {full: true})`), so Start can see a run's photos. Before, every uploads run read as "not ready". Signed-out visitors still get only `publicRun`.
+- **Start:** the run cap compares the larger of the plan's estimate and what the run has already spent.
+- **done:** the route checks the size and that every link is one of this run's uploads. Then it hands the body to U1's `finish`, which validates it against the run (word, seed, board, counts, licenses), writes the captions, verdict and caveats, and marks the run done. U2's own looser license list and caption rewrite are removed, so there is one rule.
+- **Tests:** routes.test.ts fakes the store with U1's signatures, and its `finish` runs U1's real `validateReportIn` and `finishReport`. 12 of 12 pass. `npx tsc --noEmit -p .` is clean. $0 spent.
