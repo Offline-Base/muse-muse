@@ -1834,4 +1834,19 @@ export const env = {
   get hardwareBoardKey(): string | null {
     return optional("HARDWARE_BOARD_KEY");
   },
+
+  // ---------- The e-ink fleet display (owner, Nov 3: a Boox in front of the Jetsons, /fleet/display) ----------
+
+  /** FLEET_DISPLAY_URL: the control plane's base, ending in /admin. Default offlinebase.com's public address. */
+  get fleetDisplayUrl(): string {
+    return (optional("FLEET_DISPLAY_URL") ?? "https://www.offlinebase.com/admin").replace(/\/+$/, "");
+  },
+  /** FLEET_VIEWER_TOKEN: a viewer-role jpt_ token (read only). Unset: the display shows fleet totals only. */
+  get fleetViewerToken(): string | null {
+    return optional("FLEET_VIEWER_TOKEN");
+  },
+  /** FLEET_DISPLAY_CODE: when set, /fleet/display needs ?k=<it>. Unset: the page is open (it shows no secrets). */
+  get fleetDisplayCode(): string | null {
+    return optional("FLEET_DISPLAY_CODE");
+  },
 };
