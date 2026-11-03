@@ -177,12 +177,18 @@ export interface PartnerEvalView {
 
 const secs = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
 
-/** The newest partner eval that says something: done or failed outrank a started one only when they came after it. */
-export function partnerEvalView(results: PartnerEvalBody[], judgeLabel: (id: string) => string): PartnerEvalView | null {
+/**
+ * The newest partner eval that says something: done or failed outrank a started one only when they came after it. With
+ * `now`, a "started" older than PARTNER_STALE_MS is a run that died, and is said so, not "Evaluating".
+ */
+export function partnerEvalView(results: PartnerEvalBody[], judgeLabel: (id: string) => string, now?: Date): PartnerEvalView | null {
   const last = [...results].reverse().find((r) => r.status !== "skipped") ?? results[results.length - 1];
   if (!last) return null;
   const label = PARTNER_LABEL[last.provider] ?? last.provider;
   const base = { provider: last.provider, label, status: last.status, costUsd: last.costUsd ?? null, at: last.endedAt ?? last.startedAt ?? null };
+  if (last.status === "started" && now && now.getTime() - Date.parse(last.startedAt ?? "") >= PARTNER_STALE_MS) {
+    return { ...base, status: "failed", title: `Evaluation on ${label} didn't finish`, words: `It stopped without recording a result. The hosting sweep stops its ${last.gpu ?? "GPU"} at its stop time.` };
+  }
   if (last.status === "started") {
     return { ...base, title: `Evaluating on ${label}`, words: `The same held-out prompts are being answered on a ${last.gpu ?? "GPU"} at ${label}, by the model it started from and the tuned one. It stops itself within ${last.minutes ?? "its"} minutes, at most ${money(last.maxUsd ?? 0)}.` };
   }

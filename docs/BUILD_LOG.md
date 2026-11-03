@@ -3881,3 +3881,13 @@ Cost estimate (list prices, not checked against Baseten's bill):
 - The glimmer-publish job: at most $1, likely a few dimes.
 - Judging 20 pairs on Contributor: about $0.01 (the job's own judging cost $0.005).
 - If Modal is picked instead (`PARTNER_EVALS=modal`, with `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET` on Production): at most $4.85 for 60 minutes, but its first deploy may not fit the 4-minute sandbox.
+
+## Nov 3, 2026, about 11 AM ET: review of partner evals (branch tg-p-partner-evals, not merged)
+
+- **Read:** the whole diff against origin/main, the hosting service and limits it calls, `hostFacts` (r30b counts as a Spark Open derivative, so its pinned 16-bit base `c06e38cc` is the serving base), and the docs. The evidence lines (Baseten's HTTP 200 on Nov 2, its 32,731 rows, Fireworks' 412, the $6.50 and $4.85 estimates) match the earlier log and the code. No em dashes. Flags off: the route answers 404, the new training step returns at once, and the room has no partner card.
+- **Fixed, three:**
+  - The plan step read the dataset's task after recording "started". A failure there, retried, found its own "started" and skipped as "already running", and the room said "Evaluating on Baseten" with nothing running. The task is now read first.
+  - The training workflow starts a partner eval for every job that succeeds. With the flag on, quantize, publish and serve jobs, decide jobs and dry runs each got a "Not evaluated on Baseten" line on their log. The automatic start now passes them over without a word; an admin's start still says why.
+  - A "started" with no ending (a workflow that died) showed "Evaluating" in the room forever. Past 3 hours the room now says it didn't finish and that the sweep stops the GPU at its stop time.
+- **Left, noted for the owner:** with `PARTNER_EVALS` on, every tuned chat job that passes and is published starts a paid deploy on its own, a visitor's included, up to `HOST_TUNED_DAILY_USD` ($25 by default, about three evals a day). So turn the flag off right after the one try, as step 7 says. A deploy that meets the hosting code's per-minute lock (another endpoint started that minute) ends as "failed" without a retry; start it again by hand.
+- **Tests:** partner-eval 19 of 19 (3 new), training workflow scenario 33 of 33, tune view, tune store, format, tune room and judge 122 of 122. Typecheck clean. Spend $0.

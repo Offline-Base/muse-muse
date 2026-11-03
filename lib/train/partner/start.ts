@@ -11,7 +11,7 @@ export async function startPartnerEvalStep(jobId: string): Promise<void> {
   "use step";
   if (!env.partnerEvalProvider) return;
   try {
-    await start(partnerEvalJob, [{ jobId }]);
+    await start(partnerEvalJob, [{ jobId, auto: true }]);
   } catch (err) {
     console.error("[partner-eval] start", err instanceof Error ? err.name : "error");
   }

@@ -6,7 +6,7 @@
  */
 import { judgeModelOf, UNRECORDED_MODEL } from "@/lib/train/models";
 import { defaultModel } from "@/lib/meta/spark";
-import { EVAL_TEXT_MAX } from "@/lib/train/logic";
+import { ADAPTER_RECIPE, CHAT_MODE, EVAL_TEXT_MAX, jobMode } from "@/lib/train/logic";
 import { checkSetOf } from "@/lib/train/general-checks";
 import { hostFacts } from "@/lib/train/host/facts";
 import { STOP_WORDS } from "@/lib/train/host/limits";
@@ -30,6 +30,8 @@ export interface PartnerEvalInput {
   provider?: PartnerProvider;
   /** An admin's start: run a finished one again. */
   again?: boolean;
+  /** Started by the training workflow for every job that succeeded: one that was never a tuned chat model is passed over without a word. */
+  auto?: boolean;
 }
 
 export interface PartnerPlan {
@@ -72,6 +74,10 @@ export async function partnerPlanStep(input: PartnerEvalInput): Promise<PartnerP
   const provider = input.provider ?? s.provider;
   const source = await d.source(input.jobId);
   if (!source) return { action: "skip", reason: "There is no such job." };
+  // A quantize, publish or serve job, a decide job or a dry run succeeds too: nothing to evaluate, and nothing on its log.
+  if (input.auto && (source.job.recipe !== ADAPTER_RECIPE || jobMode(source.job.params) !== CHAT_MODE || Number(source.job.params?.dryRun) >= 1)) {
+    return { action: "skip", reason: null };
+  }
   const all = await d.results(input.jobId);
   const results = all.filter((r) => r.provider === provider);
   if (!s.hostOn) return skip(d, input.jobId, provider, "HOST_TUNED is off, and partner evals need its 5-minute sweep as the backstop that stops a GPU.", all);
@@ -93,6 +99,8 @@ export async function partnerPlanStep(input: PartnerEvalInput): Promise<PartnerP
   const judgeModel = recorded && recorded !== UNRECORDED_MODEL ? recorded : defaultModel();
   const datasetId = typeof source.job.params?.datasetId === "string" ? source.job.params.datasetId : null;
   const system = typeof source.metrics?.system === "string" && source.metrics.system.trim() ? source.metrics.system : null;
+  // Read before "started" is recorded: a retry after a failure here would otherwise find its own "started" and stop.
+  const task = datasetId ? await d.datasetTask(datasetId) : null;
   const startedAt = now.toISOString();
   await d.record(input.jobId, {
     type: "partner_eval",
@@ -115,7 +123,7 @@ export async function partnerPlanStep(input: PartnerEvalInput): Promise<PartnerP
     hourlyUsd: price.hourlyUsd,
     gpu: price.gpu,
     indexes,
-    task: datasetId ? await d.datasetTask(datasetId) : null,
+    task,
     judgeModel,
     system,
     baseRepo: facts.servingBase?.repo ?? null,

@@ -156,7 +156,7 @@ export function tuneRunView(rows: RunRows, now: Date, ceilings: { maxMinutes: nu
   const onFireworks = marks.trainer === "fireworks" || job?.params?.trainer === "fireworks";
   const judgeCost = job?.evalSummary?.judgeCostUsd ?? 0;
   const partners = job ? (rows.partnerEvals ?? []) : [];
-  const partnerEval = partnerEvalView(partners, modelLabel);
+  const partnerEval = partnerEvalView(partners, modelLabel, now);
   // Every partner eval that ended: its GPU by the clock, and its judging.
   const partnerCost = partners.reduce((sum, p) => sum + (p.status === "started" ? 0 : (Number(p.costUsd) || 0) + (Number(p.judgeCostUsd) || 0)), 0);
   return {

@@ -327,6 +327,40 @@ describe("a partner eval on Baseten", () => {
     assert.equal(last().status, "done");
   });
 
+  it("started by the training workflow, passes over a job that was never a tuned chat model without a word", async () => {
+    for (const over of [{ recipe: "glimmer-quantize" }, { params: { baseModel: LAB_BASE_MODEL, datasetId: DATASET, mode: "decide" } }, { params: { baseModel: LAB_BASE_MODEL, datasetId: DATASET, dryRun: 1 } }]) {
+      theJob = job(over as Partial<TrainJobRow>);
+      assert.equal((await runPartnerEval({ jobId: JOB, auto: true }, clock)).status, "skipped");
+    }
+    assert.equal(events.length, 0);
+    assert.equal(pushes, 0);
+    // An admin's start of the same job says why.
+    await runPartnerEval({ jobId: JOB }, clock);
+    assert.equal(last().status, "skipped");
+  });
+
+  it("a plan that fails after its checks, and is retried, never leaves its own started in the way", async () => {
+    let fails = 1;
+    usePartnerDepsForTests({
+      ...fakeDeps(),
+      async datasetTask() {
+        if (fails-- > 0) throw new Error("db blip");
+        return "Summarize a cold-room handoff note as a checklist.";
+      },
+    });
+    await assert.rejects(runPartnerEval({ jobId: JOB }, clock));
+    assert.equal(partnerEvents().length, 0, "nothing recorded before the task was read");
+    assert.equal((await runPartnerEval({ jobId: JOB }, clock)).status, "done");
+  });
+
+  it("the room calls a started one with no ending after 3 hours unfinished, not running", () => {
+    const started: PartnerEvalBody = { type: "partner_eval", provider: "baseten", status: "started", gpu: "H100", minutes: 60, maxUsd: 6.5, startedAt: new Date(T0).toISOString() };
+    assert.equal(partnerEvalView([started], (m) => m, new Date(T0 + 60_000))?.title, "Evaluating on Baseten");
+    const stale = partnerEvalView([started], (m) => m, new Date(T0 + 4 * 60 * 60_000));
+    assert.equal(stale?.title, "Evaluation on Baseten didn't finish");
+    assert.equal(stale?.status, "failed");
+  });
+
   it("a failed deploy records why, leaves nothing running, and judges nothing", async () => {
     pushFails = true;
     const out = await runPartnerEval({ jobId: JOB }, clock);
