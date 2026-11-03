@@ -66,7 +66,7 @@ Read every field defensively: `turns` can be absent, and `speaker` comes only wi
 
 ## 06/01 Transcripts
 
-Build: a recording becomes a transcript, with speakers and times when it's `DIARIZATION`. Speakers come as anonymous labels, such as "A" and "B", so let the person rename them. Keywords nudge the model but don't guarantee a word. Check: a test with a stubbed reply using turns, and one using none, which shows a plain block of text. The test fixture is made with `espeak-ng`, as in `meta-voice`. Limit: two voices in espeak may not separate, so test the speaker display with a stub. One real call goes in BUILD_NOTES.
+Build: a recording becomes a transcript, with speakers and times when it's `DIARIZATION`. Speakers come as anonymous labels, such as "A" and "B", so let the person rename them. When a later model call suggests who each speaker is (a name said in the talk), put that name in the speaker's name field as its starting value, marked as a suggestion, and never leave the field empty while the suggestion goes unused. Keywords nudge the model but don't guarantee a word. Check: a test with a stubbed reply using turns, and one using none, which shows a plain block of text. The test fixture is made with `espeak-ng`, as in `meta-voice`. Limit: two voices in espeak may not separate, so test the speaker display with a stub. One real call goes in BUILD_NOTES.
 Link: https://github.com/meta-models/meta-model-cookbook/tree/main/06_muse_voice/01_voice_api_fundamentals
 
 ## 06/02 Voice chess on the page (labeled stand-in)

@@ -16,6 +16,20 @@ Read `meta-sam` first for prompts, parsing and limits. The links are for people 
 - **Formats:** MP4 or MOV only, so don't record clips with MediaRecorder.
 - **Frame accuracy:** seeking a `<video>` in the browser is only roughly accurate. `@meta-sam/video` and `@meta-sam/react` are frame-accurate. Add them only if they resolve from npm, and read each one's LICENSE in `node_modules` first. Otherwise seek with `requestVideoFrameCallback`, and say in BUILD_NOTES that overlays can be a frame off.
 
+## The sample clip
+
+The sample is the product's first impression and the smoke test's input, so it shows the real subject. **Never ship a placeholder**: no flat background with a colored block, no test pattern, no shapes standing in for an animal or a person. The Nov 3 audit's sticker studio shipped a 4.5 KB "puppy" clip of an orange block, so SAM had nothing to find.
+
+1. Start from a still of the subject. The brief's image fixture in `fixtures/` is a Muse Image picture of it, like a dog on grass, made by the platform. If there is none, and the brief's references hold a clip of the subject, use that clip as the sample instead and skip step 2.
+2. Make a 6 second MP4 from the still with ffmpeg (installed), a slow pan and zoom over it:
+   `ffmpeg -y -i fixtures/<still>.jpg -vf "scale=2560:-2,crop=2560:1440,zoompan=z='1+0.2*on/179':x='(iw-iw/zoom)*on/179':y='(ih-ih/zoom)/2':d=180:s=1280x720:fps=30,scale=out_range=tv,format=yuv420p" -c:v libx264 -movflags +faststart public/samples/<name>.mp4`
+   Look at three of its frames before you go on (`ffmpeg -i <clip> -vf "select='not(mod(n\,60))',tile=3x1" -frames:v 1 /tmp/strip.png`): the subject is in every one.
+3. Ship the same clip as `fixtures/<name>.mp4` for the smoke test and behind Try the sample. Say in BUILD_NOTES.md that it is a made-up still with a camera move.
+
+If there is no still and no clip, say so in BUILD_NOTES.md and in the verdict, and leave the sample out rather than ship a fake one.
+
+**SAM checks the sample in the smoke test.** The test runs the product's real tracking on the sample clip, through its own route, and asserts SAM found the subject: one track with a mask on most frames, each mask between about 2% and 80% of the frame. Never fake a result: when SAM finds nothing or the call fails, say so in an `.error` with `role="alert"` and offer Retry. Never draw an estimated box or a drifting outline instead, and never cut stickers from one.
+
 ## Helpers
 
 `helpers/` beside this file holds pure TypeScript files with no imports. They reach the build at `.agents/skills/recipe-sam-media/helpers/`. Copy the ones you need into `lib/media/`, and don't edit them unless a test shows a bug.
