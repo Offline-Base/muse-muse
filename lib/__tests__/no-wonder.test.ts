@@ -45,6 +45,7 @@ const NOT_A_PICK: Record<string, string> = {
   "lib/prompts/brief.ts": "the id a brief lists",
   "lib/native/targets.ts": "the id a brief lists",
   "lib/edge/models.ts": "the id an edge product's token may name for its cloud call, served by the gateway's swap",
+  "scripts/demo-batch.ts": "a comment on the showcase note naming the id its product calls, served on Contributor by the gateway's swap",
   "lib/recipes/registry.ts": "ids a recipe's token may name, served by the gateway's swap",
   "lib/caps/gpu/marker.ts": "the id a Glimmer product's token may name, served by the gateway's swap",
   "lib/caps/code/musecode/handler.ts": "sessionModelFor's flag-off answer",

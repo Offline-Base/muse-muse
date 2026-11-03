@@ -4175,3 +4175,17 @@ A second agent read the branch against the log. Text only, no spend. Fixed:
 - **"Each defect became a code check"** was stronger than the log: the audit fixes are checks, judge rules and skill rules, and most reach builds only with the new builder snapshot. Now "the defects became new checks and rules in the harness".
 - **"SAM 3.1 ... the board model the edge apps use":** no edge app has looked with it on a board in an outage; one product counted with it on jetson-04 from a laptop on Nov 2. Now "built to use", with that run named.
 - **VIDEO shot 8's card** credited Contributor with "every build in this video", but shot 6 shows Dinner Split Helper, built before `BUILDS_ON_CONTRIBUTOR` existed. The card now names this app only.
+
+## Nov 3, 2026, 12:45 PM ET: cookbook build-out and claim fixes merged (workflow wf_460248e5-c51)
+
+- **Cookbook:** every recipe on Meta's cookbook (60 mirrored pages: 51 recipes and 9 section index pages) is mapped in docs/COOKBOOK.md.
+  - 50 recipes are app builds with one note each, in `npm run demo-batch -- --set=cookbook`. Section agents filled skill gaps in lib/recipes/skills and added recipe-open-weights; the registry is regenerated (12 recipes).
+  - contained-execution stays a docs demo only: it needs an OS sandbox on the person's own machine.
+  - Seven DEMO_NOTES were replaced with the sections' better notes (alerts, charts, fridge, games, computer-use, studio, stickers), so the rebuild command builds the fixed notes.
+  - Nothing has been built yet. Estimate $8.50 to $20 on Contributor for the set; each build token is held to its own $10 test budget.
+- **Claims (tg-c-claims), reviewed:**
+  - README top block, SUBMISSION, MESSAGING and OFFLINE.md now match the evidence. "All 18 passed our judge" became the true count (fable-case-ledger is partial), costs are for the 17 logged builds, and the edge SAM line names its one real run.
+  - In VIDEO.md I kept the full Muse Privacy beat from the readiness work over the claims branch's one-line version, since the owner chose a full beat.
+- **Fixed on main:** lib/__tests__/no-wonder.test.ts failed since the run-of-show merge (a comment in scripts/demo-batch.ts names the Wonder id). Added to the list of explained uses.
+- **Checks:** no step or workflow file changed in this merge, so no workflow bundle can change. Recipes, scripts, no-wonder and pipeline logic tests pass, 101 plus 11. Typecheck clean. `--set=cookbook --dry` lists 50 notes.
+- **Builder snapshot made by the owner:** snap_9heVjeRgxcye4EkOwb8DgxVjkj7H at 11:17 AM ET from 5e68c428, set as BUILDER_SNAPSHOT_ID in Production. The recipe skills from this merge reach builds on deploy and don't need a new snapshot.
