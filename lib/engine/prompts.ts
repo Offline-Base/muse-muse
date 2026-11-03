@@ -45,7 +45,7 @@ export function milestoneBuildLines(brief: { milestones?: Milestone[] | null }):
 export function engineBudgetLines(on: boolean): string[] {
   if (!on) return [];
   return [
-    "Run `npm run verify` at most twice in a round. The platform runs it again after you stop.",
+    "Run `npm run verify` once, when the round's work is done. The platform runs it again after you stop. Before that, check with `npx tsc --noEmit` and run only the tests you just wrote (`npx playwright test -g \"R3\"`).",
     "When the product makes something that must pass a check (a solvable level, valid code), test one generated item for real and the rest with fixtures.",
   ];
 }

@@ -1,4 +1,4 @@
-import type { Sandbox } from "@vercel/sandbox";
+import type { HostSandbox as Sandbox } from "@/lib/sandbox/host/types";
 import { RUN_DIR } from "@/lib/sandbox/paths";
 
 /** Quotes one word for bash. */

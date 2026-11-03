@@ -2800,6 +2800,19 @@ The owner asked for a simpler sidebar using "muse" and "musing" for the creative
 - **Build c067aea2, product cold-room-sentinel-3:** the cold-room sentence with targets ["edge"], on Contributor. The brief picked web and edge. Typecheck, build, start, console, smoke and manifest passed, then all four simulated outage drills (cloud refused, cloud hung, both down, tampered reply rejected), and the judge passed it. Live with 0 fix rounds, $0.054. Muse Muse wrote the fallback itself: `app/api/actions/check_cold_room` calls `respondJsonOrEdge` with a zod schema and returns `by` and a label.
 - **Run on this laptop:** source.zip for v1 (210 KB) built with `next build`, started with no GATEWAY_URL (the cloud cut) and EDGE_URL at the fleet with the `jik_` key and muse-glimmer-2026-iq1s-io-lowest. It answered 503 "Neither the cloud model nor the backup model answered", because the fleet had no board serving Glimmer: another session stopped and disabled jetson-llama on jetson-02 and jetson-04 at 18:05 to move the Glimmer file to jetson-03. Not retried; the boards were left as that session left them.
 - **Not proven yet:** a real answer from a board model through this product. Ready to run once Glimmer is served again.
+- **Nov 2, evening: a Protect starter tab (owner: people should be able to build things that are secure, run on the edge and protect their privacy, overlapping with Offline Base).**
+  - `app/page.tsx` gets a fifth starter tab, Protect, with six ideas, all on made-up data:
+    - a watcher that keeps working offline (the simulated cold room, the edge track's scenario);
+    - spot a changed setting in equipment logs;
+    - check a small shop's connected devices for old firmware and default passwords;
+    - is this email a scam;
+    - private search on my device;
+    - a plan for when the cloud is down.
+  - The wording follows docs/MESSAGING.md: no food-safety advice, nothing about real freezers, nothing claims to stop an attack.
+  - The edge idea only becomes an edge build when `EDGE_BUILDS` and `EDGE_ENABLED` are on. Both are off in production, so on the live site it builds as a normal web product today.
+  - Make snapshot regenerated: the two Make page entries change with the new tab. "run room: ready" was already failing on main before this change, and is refreshed here too.
+  - starters and make-flag-off: 13 of 13. Typecheck clean.
+
 - **Nov 2, evening: the Meta-only units, combined on top of Hussam's #71 (branch tg-meta-only).**
   - #71 conflicted with main in two files. Fixed on its own branch:
     - `docs/BUILD_LOG.md`: kept both sides;
@@ -2839,3 +2852,138 @@ The owner asked for a simpler sidebar using "muse" and "musing" for the creative
   - Found by looking and fixed: white floor patches at his feet (floor darker than 238 near shadows), white specks where his fur reflects on the floor (slightly warm floor allowed), and thin grey outlines on the floor in dark (the stage mask's feathered edge crossing the floor; the floor no longer uses it).
   - Solid until the curtain parts (frames 90 to 104 of 145, it opens at 3.9 s). VP9 with alpha 676 KB, HEVC with alpha 748 KB. The "shades" output was re-keyed with the refactored script and matches the old frames exactly (largest pixel difference 0).
   - Checked in Chromium, light and dark: plays from `/`, the page shows through once it opens, closes itself at 5.8 s, the walking Muse comes in at x 1178; plus the edge checks (reduced motion with `?intro=shirt` closes and leaves the page clickable, no intro on a first visit with reduced motion, focus back after Escape, phone, a video that can't load closes at once). No page errors. Intro tests 5 of 5, typecheck clean. Safari not tried.
+
+- **Nov 2, evening: why the "Cited Steps Agent" build took 33 minutes, and the fix (owner: "why do the builds take so long", "figure out ways to speed that up").**
+  - Read from its build room: the plan, the shared core, the screens and the tests took about 15 minutes, with helper agents writing in parallel.
+  - The other 15 or so went to one loop. The product followed the verified-agent design: receipts for reading a source, recording evidence and reviewing a draft before submitting. That needs at least four model turns per answer.
+  - It was a web research product, so no source text was held in code, and a build's run stops at 6 turns. Its live probes kept ending in `no_answer`.
+  - Muse Code redesigned five times, each with another real Muse Wonder run (a minute or more each, plus retries), while deep research in the agent kit already does exactly what the muse asked: narrow searches, numbered citations, what wasn't found.
+  - Changes (no code paths change):
+    - `lib/recipes/registry.ts`: the brief writer's rule now says the verified-agent recipe is never for research on the web, even with citations and a "couldn't confirm" list. Its one-line catalog text says so too.
+    - `recipe-verified-agent/SKILL.md`: opens with "Not for web research", and counts the turns (at least four per answer, `maxTurns: 6` in a build, read `stopped` before redesigning).
+    - `muse-agent/SKILL.md`: a "Pick the shortest path" section. Web research means `deepResearchResponse` with the couldn't-confirm part asked for in `instructions`, never a home-made planner, citation checker or submit protocol. Probe the route by hand at most twice.
+  - Regenerated `lib/recipes/generated.json`.
+  - The recipe and registry changes ship with the site. The muse-agent skill lives in the builder snapshot (`template/targets/agent`), so it reaches production builds only after `npm run snapshot`.
+  - Tests: recipes and registry 333 of 333, agent option 26 of 26, the template's agent run 119 of 119. Typecheck clean.
+- **Nov 2, night: read-only audit of how products get built, checked and kept safe (owner: "truly audit ... ensure there are no leaks, don't run any tests").**
+  - Four read-only reviews of main at 588c5920: build speed, build checks, secret and data leaks, spend and abuse. No tests, builds or network calls were run, and no env files were opened.
+  - Top findings re-read in code before reporting:
+    - a judge outage counts as not passed but not blocking, so the last round can ship as partial (lib/pipeline/workflow.ts:362, logic.ts:87);
+    - `musemuse.requirements.json` isn't in PLATFORM_FILES, so the building agent can edit the list it's checked against (lib/sandbox/paths.ts:24);
+    - the "verify at most twice a round" line reaches only big builds (lib/pipeline/build-steps.ts:470);
+    - the Meta key placeholder sits in Muse Code's env, and the firewall swaps in the real key for any request carrying it, so the agent's own shell calls likely bypass metering (lib/sandbox/muse.ts:146, policy.ts:132);
+    - the build quota is count-then-insert with no lock (app/api/inspirations/route.ts:42);
+    - the Muse Code transcript is a public Blob linked on every product page, whatever the source setting (lib/sandbox/builder.ts:2103, app/p/[slug]/page.tsx:423);
+    - under guest mode /builds lists every guest's muses, since all guests are one user (app/builds/page.tsx:30).
+  - Found sound: no platform keys in sandboxes or products, no committed secrets, admin-only paid work, fail-closed daily cap on DB errors, Lambda sweeps, atomic counters.
+  - Full ranked lists and the fix order were reported to the owner. Nothing was changed by the audit.
+- **Nov 2, night: faster builds that analyze less (owner: "make sure builds are fast and not over analyzed", yes to the speed items, no to the spend and check-hardening items).**
+  - One full verify a round, for every build: brief.md always carries the verify budget, now "Run `npm run verify` once, when the round's work is done", with `tsc` and only the new tests before that. The platform's own verify still decides (lib/pipeline/build-steps.ts, lib/engine/prompts.ts). Each extra full verify is 5 to 12 minutes.
+  - Fix rounds: 2 by default instead of 3 (`MAX_FIX_ROUNDS`, lib/env.ts).
+  - Fix rounds run at medium reasoning effort; the first round of a build or a change stays at high (`effortForRound`, lib/sandbox/muse.ts).
+  - At most 15 requirements a build (`BUILD_REQUIREMENTS_MAX`, lib/full/requirements.ts). Stored briefs of up to 60 still parse. The writer is told the limit and may join asks that are one thing on one screen. From about 15, a full verify ran past the platform's verify cap.
+  - The requirement test example now asserts something, so first tries pass the judge more often.
+  - Products' model client: 90 s timeout and 1 retry, instead of the SDK's 10 minutes and 2 (template/lib/meta/client.ts).
+  - The muse-agent skill: no hand probes ("the requirement test is the probe"), one shared agent run across tests if possible, and `maxSubQuestions` of 2 or fewer.
+  - Left off: the partial recheck (FAST_BUILDS). It only skips a full verify when a fix round fails again, so it saves little with 2 fix rounds.
+  - The template and skill changes reach production builds only after `npm run snapshot`; the rest ships with the site.
+  - Tests for the touched code: 257 pass. The 3 that fail (plan-art-flag-off twice, plan-card's raw colors) fail the same way on main before this change; plan-card's raw colors came in with #59. Brief writer and full-build tests 148 of 148, template agent overlay 119 of 119. Typecheck clean. The workflow scenarios pin `MAX_FIX_ROUNDS=3`, since they walk the loop itself.
+- **Nov 2, evening: Muse talks beside the plan, with a speech bubble (owner: show the talking video when the plan is made, with a text bubble, like the screenshot).**
+  - From the owner's clip (`generated_video (2).mp4`, 10 s, 960 x 960): cropped to the card's 564 x 640 box on the same white the pictures use, H.264 with no sound, 192 KB (`public/muse/muse-talk.mp4`), its first frame as the poster.
+  - It loops as it is: a search over every start and end pair found the clip's own last frame closest to its first (mean difference 0.32, under a normal frame step of 0.73).
+  - `components/build/PlanCard.tsx`:
+    - while the plan is new (the presenting state), the card plays the clip in place of the presenting picture, in the same box and crossfade;
+    - a build's own picture still wins;
+    - the fine-tune room's card is unchanged;
+    - it plays only while shown, and stays on its first frame with reduced motion.
+  - A speech bubble beside him, above the plan's name, says one line by state (`planSays`):
+    - new: "Here's my plan! I'm getting set up to build it.";
+    - building: "I'm building it now. Follow along in the steps.";
+    - live: "It's live! Open it and give it a try.";
+    - didn't ship: "This one didn't ship, but the plan still stands."
+  - Rendered with sample data in light and dark and looked at (docs/log/shots/2026-11-02/plan-talk-*.png). Two fixes from looking: the bubble slid under the floated picture in the wide card (now its own block), and the tail smudged in dark (now a clean point).
+  - Tests: plan-card 36 of 37 and tune-room pass. The one failure, raw colors in plan-card.css, was already on main (#59) and isn't from this change. Typecheck clean.
+- **Later, same branch: Muse talks with no background, then fades to the plan's picture after 8 s (owner: "remove the off white background", "slowly transition it to the generated image ... after 8 seconds").**
+  - `scripts/dev/mascot/talk.sh` keys the clip's flat off-white (about 250, neutral) the way walk.sh does: warm fur stays solid, neutral light greys go fully transparent.
+  - Encoded at 424 x 480, twice the card's widest picture: transparent VP9 WebM (400 KB) for Chrome and Firefox, HEVC with alpha (760 KB) for Safari, picked in the browser, with a transparent PNG poster. The white-background MP4 is gone.
+  - `PlanCard.tsx`: on a plan that's new when the card opens, Muse talks for 8 s (`TALK_MS`). Then the card fades over 1.6 s (`TALK_FADE_MS`, slower than a state swap) to the picture it would show otherwise: the build's own generated picture once it's in, else the stock one. He keeps moving through the fade, then stops.
+  - Checked on the local seeded site in Chromium, light and dark:
+    - talking at 2 s, with no picture shown;
+    - fading at about 9 s, still moving;
+    - the picture fully in at 11 s, with the clip hidden and paused;
+    - no page errors.
+  - Screenshots: docs/log/shots/2026-11-02/plan-talk-fade-*.png.
+  - Not yet seen in Safari.
+  - plan-card tests updated for the talk-first order: 70 of 71 with tune-room. The one failure is main's own (#59). Typecheck clean.
+- **Nov 2, night: Look first, behind `LOOK_FIRST` (owner: "build the UI first then wire everything in and still be able to modify the UI").**
+  - A build makes its screens first: sample data, no model calls, `tsc` only, at most 12 minutes, and no session goal on the serve engine.
+  - The preview then shows them, and the build room card "Your screens are ready" gives the person who started the build two answers: change the look (policy-checked, at most 2 changes, 6 minutes each), or "Looks good, wire it up".
+  - With no answer, it wires in by itself after `LOOK_WAIT_SECONDS` (120 by default). Then a wiring run builds the rest of brief.md on the same screens, and the checks and fix rounds run as before.
+  - Milestone and chain builds skip it.
+  - docs/LOOK_FIRST.md has the details. The prompts are written at run time, so no new snapshot is needed.
+  - Not run in a real build yet.
+  - Tests: the three workflow scenarios (a change then a go, no answer, flag off) and the look state and prompt tests, 79 of 79 with the workflow file; the build room and step tests 212 pass. The 3 failures are the same ones main already has (plan-art-flag-off twice, plan-card's raw colors from #59). Typecheck clean.
+
+
+## Nov 2, 2026, 20:30: Modal as a second build host, behind SANDBOX_HOST (branch tg-modal)
+
+- **Owner decision, Nov 2:** builds keep running in Vercel Sandbox by default, and Modal is added as a second host before the Nov 4 submission. `SANDBOX_HOST=modal` turns it on. Unset, the builder makes the same @vercel/sandbox calls as before.
+- **Built:**
+  - `lib/sandbox/host/`: a small host interface, the Vercel host (it hands back the SDK's own Sandbox) and the Modal host on Modal's JS SDK (npm `modal` 0.11.1, added to package.json and kept out of the bundle like Composio).
+  - `lib/sandbox/builder.ts` moved onto it. On Modal, Muse Code's endpoint is the platform's new Meta proxy (`app/api/sandbox-meta/v1/[...path]`, `app/muse-code/models`, `lib/sandbox/host/meta-proxy.ts`), with telemetry off and a 3-hour token for that sandbox as its key. The proxy forwards only `BROKERED_META_ROUTES` with the real key from server env, and answers 404 unless the flag is on. The real key never enters a Modal sandbox.
+  - Egress on Modal is a domain allowlist made from the same policy, without its header rules and without api.meta.ai.
+  - `scripts/dev/modal-smoke.ts` (the live check) and `scripts/dev/modal-builder-image.ts` (the builder image; built, not run).
+  - docs/MODAL_HOST.md: how to turn it on, the env names, the builder image, and the security gaps.
+- **Live smoke test on Modal, 18 of 18 passed (final run about 20:27, 6.8 s):** create a named sandbox, write and read a file, a missing file reads as null, run a command (Linux x86_64, Node 22, root), egress with a one-domain allowlist (example.com answered 200; api.meta.ai and 1.1.1.1 got no connection), a detached Node server on port 3000 fetched from the laptop through the tunnel, a detached command's exit code (7), kill (143), stop with a published filesystem image, resume by name with the file, tags and egress back, delete. No Muse Code, no Meta key. Afterwards the app had 0 running sandboxes.
+- **Found on the way and fixed:** a terminated Modal sandbox can't be asked for its tags (so state goes in a file inside the image, and the image is published by name); a lookup right after terminate still saw it running (terminate now waits); `images.delete` leaves the published name resolving (a resume from it is now "not found"); Modal's `cpu` counts physical cores (4 vCPUs is `cpu: 2`).
+- **Spend:** six short sandboxes on Modal over the smoke runs and two debugging checks, each under a minute at 1 core or less. Estimated under $0.02 from Modal's per-second rates; not checked against the Modal bill.
+- **Not ported (still Vercel Sandbox):** the native packager, caps code sessions, the extension ship step, the edge drill sandbox, restore steps, publishing, quota, the train CLI runner, and the dev scripts. Dry runs refuse on Modal.
+- **Not proven:** no Muse Code build has run on Modal, the Modal builder image hasn't been made, and the proxy hasn't carried a real Muse Code call.
+- **Tests:** the new host tests (meta-proxy, modal host, builder on Modal) 25 of 25. The touched builder, setup, shell, caps and trust tests: 235 of 236; the one failure (`builder-muse`, "starts the session bridge on serve", expects reasoning effort high on a fix round) is from #79's medium fix rounds and fails the same way without this change. Typecheck clean.
+
+## Nov 2, 2026, evening ET: SAM 3.1 on jetson-04, and the owner picks it as the edge direction
+
+- **Decision (owner, about 8 PM ET):** after the page worked, "make sure it's noted that this is the direction we'll go". Edge work goes toward Meta's SAM 3.1 on the boards. docs/EDGE_PLAN.md and docs/HANDOFF.md say so.
+- **Why jetson-04, not jetson-05:** the owner asked for jetson-05 without taking it down. PyTorch with NVIDIA's CUDA 13 libraries is about 5 GB and jetson-05 had 6.1 GB free while it still runs the control plane, the d1 router and `muse-device`. A first install there was stopped at about 1 GB and removed; free space went back to 6.1 GB and nothing running was touched. Prompt Guard was deleted there on the owner's say-so (890 MB; it wasn't running).
+- **The weights:** downloaded on the laptop with the owner's approved Hugging Face account (`OfflineBase`), straight into memory, every fp32 tensor halved (874M parameters, 3.5 GB to 1.76 GB, sha256 `959c6801...`). The laptop and the boards are on different networks, so the file went to jetson-04 through a short-lived Cloudflare quick tunnel the owner opened (Claude Code's safety check blocks Claude from opening one), with a random path and no directory listing. The checksum matched on the board.
+- **On jetson-04:** PyTorch 2.14.1+cu130 in `/opt/sam3/venv`, Meta's `sam3` at `f1647e8d`, plus `einops`, `pycocotools`, `psutil` (missing from its dependencies). `sam3.service`, on at boot, `MemoryMax=6G`, killed first if memory runs out. PyTorch warns it has no published kernels for the Orin's compute 8.7; it compiles at first use and every result was right.
+- **Measured on Meta's `truck.jpg`:** load 45 to 54 s; 3.4 GB GPU at rest, 3.9 GB peak. "truck": 1 at 0.87 (13.8 s cold, then 1.4 s). Through the service: "wheel" 4 at 0.87 to 0.95 (6.8 s first), "truck" 1 at 0.87 (2.6 s), "person" 0, right (1.3 s).
+- **The page (`scripts/edge/sam3/`):** a laptop page sends a 640 px photo as fleet exec jobs of 15 KB (the command limit is 16,384 characters), then `ask.py` on the board calls the service and returns the tinted picture (about 60 KB, under the 256 KB streamed-output cap). The first try failed with 404 because the control plane's API is under `/admin`; fixed. Then the owner: "it works perfectly". About 10 to 20 s a round trip.
+- **Token:** the owner pasted a fleet token in the chat. It was not used or repeated, and the owner was asked to revoke it and type a new one only at the page server's hidden prompt.
+- **Also tonight (same chat):** `jetson-llama` stopped and disabled on jetson-02, 03, 04; Bolt and Gemma files deleted on 03 and 04. The on-board Glimmer training setup on 02 and 03 is another session's.
+- **Not done:** the jetson-05 forwarder, a camera feed, video tracking, any product using SAM, any public claim. Spend $0.
+- **Nov 2, night: judging cleanup (owner: "focus on cleaning up and simplifying what we have for judging").** From a read-only review of every route a judge can reach.
+  - Copy that claimed more than runs today:
+    - the Jetson card on /gadgets no longer says it fine-tunes a model on its own GPU (only Llama trained on a board);
+    - /private says a separate reader model reads the files (Muse Glimmer 30B in the cloud in this demo), not "a model on your device";
+    - /models says tuned GGUF files "can run on a computer with enough memory", not "offline".
+  - The Protect starters no longer promise edge or offline behavior that builds can't do with `EDGE_BUILDS` off:
+    - "Don't trust one sensor";
+    - "Hide private details first";
+    - "Outage plan for a small shop".
+  - The voice-memo starter became "Meeting notes to private to-dos", since audio input is refused on Contributor until the Nov 4 flip.
+  - One name per place:
+    - the home toolbar's History button says Musings;
+    - the docs sidebar's home row is "Muse Muse" and goes to /, not "Dashboard" with an external arrow;
+    - how-it-works says "Model API docs", and "Use it from other AI tools" instead of the Muse app (to-do 16 isn't logged).
+  - The /models link to /open-weights is hidden until DATA_RIGHTS Q2 is answered; the route stays.
+  - Kept, as the owner's sidebar spec asked: the Meta demos tab and Usage > Overview.
+  - Tests main already failed, fixed:
+    - plan-card's three raw colors moved to `--bad` and `--chat-segment`;
+    - the plan-art snapshot was refreshed after #76 and #78, with the flag-on render still the same.
+  - Still failing on main and untouched: models-page "shows accuracy for a decide-kind tuned model" (the tuned list doesn't render in that test).
+  - Tests: the edited pages 304 pass, with the same one failure main has. Make snapshot (only the two Make page entries changed) and starters 13 of 13. plan-card and plan-art 39 of 39. Typecheck clean.
+- **Nov 2, night: "Where it ran", the device stage (owner: "a template of an actual MacBook and the screen has the test of the Device Farm in it", then "ensure this is well done in the actual demo").**
+  - The Nov 1 recordings came from S3 after the owner signed in to AWS (`lab/checks/direct-1101-2047/`): Mac, Windows, the iPhone simulator, and Device Farm's real Galaxy S25 (run c00593cf).
+  - Each was cropped from the lab's composed frame to just the screen, and encoded as H.264 MP4 with a poster into `public/devices/dinner-split-helper/` (808 KB for all four).
+  - `components/product/DeviceStage.tsx` draws each device in CSS with its recording on the screen and the run's facts under it, with a green "Real" or amber "Simulated" pill.
+  - It sits on `/p/<slug>` under the live preview. The gallery card adds "Ran on 4 devices".
+  - Data comes from `DEVICE_RUNS` (`lib/devices/runs.ts`), checked against this log, plus owner clips that name a device. A product with no runs shows nothing new.
+  - docs/VIDEO.md gets shot 5b for it, with what not to say: no APK install claim, and the iPhone is a simulator.
+  - Checked on a local seeded copy at 1440 px in light and dark, and at 390 px:
+    - all four clips play;
+    - no sideways scroll;
+    - no page errors.
+  - The phone row first stacked at 390 px (a grid sizes auto-fit columns at their maximum), and was fixed with a wrapping flex row.
+  - Tests: lib/devices 5 of 5. Product page, card and clip tests 460 pass, with the one models-page failure main already has. Typecheck clean. Spend $0.
+

@@ -256,7 +256,7 @@ Source: MESSAGING.md, quantization row (Checked) and point 3; STORY.md, device-f
 
 ### Under all of it: the build platform
 
-Muse Code runs headless in a Vercel Sandbox microVM and writes a Next.js app from a template. The checks run, and failures go back to the same Muse Code session with the judge's screenshots, up to three rounds. Apps reach Meta only through a metered gateway, each with its own scoped, budgeted token, and the sandbox firewall adds the Meta key only on Muse Code's own routes. Every app gets a demo video cut from its own passing test, with model waits sped up and labeled. Source: README.md and BUILD_LOG.md.
+Muse Code runs headless in a Vercel Sandbox microVM and writes a Next.js app from a template. The checks run, and failures go back to the same Muse Code session with the judge's screenshots, up to three rounds. Apps reach Meta only through a metered gateway, each with its own scoped, budgeted token, and the sandbox firewall adds the Meta key only on Muse Code's own routes. Every app gets a demo video cut from its own passing test, with model waits sped up and labeled. Builds run in Vercel Sandbox; Modal is added as a second host behind a flag, smoke-tested on Modal with no full build there yet. Source: README.md, BUILD_LOG.md and MODAL_HOST.md.
 
 ### How it uses Meta's models
 

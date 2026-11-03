@@ -5,6 +5,10 @@ description: Use for an agent whose answer someone will act on. Code checks each
 
 # Verified agent
 
+**Not for web research.** The checks need text the product's own code holds: an upload, a paste, the product's data or bundled files. Pages seen only through web search can't be checked by code. If the brief's sources come from the web, stop and use deep research from `muse-agent` (`deepResearchResponse`): it splits the question into narrow searches, cites every claim and says what it couldn't find.
+
+**Count the turns before building.** One answer takes at least four turns: read the sources, record the evidence, review the draft, submit. A build's run stops at 6 turns, so give the run `maxTurns: 6` and keep each answer to a few claims. If a probe stops short, read its `stopped` reason first; don't redesign the receipts.
+
 Use this on top of `muse-agent` and `lib/agent/run.ts`, for an agent whose answer a person will rely on. Read `.agents/skills/muse-agent/SKILL.md` first. Don't edit `lib/agent/`. Product code names `muse-wonder-1.0` and nothing else.
 
 Hard-coded details about one subject are not allowed: checks work on any source and any item.

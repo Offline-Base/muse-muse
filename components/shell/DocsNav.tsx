@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
-import { ArrowUpRightIcon, ChevronDownIcon, ExternalIcon, HomeIcon, SearchIcon } from "@/components/docs/page/icons";
+import { ChevronDownIcon, ExternalIcon, HomeIcon, SearchIcon } from "@/components/docs/page/icons";
 import { openDocsSearch, preloadDocsSearch } from "@/components/docs/page/search-events";
 import type { LocalNavGroup, LocalNavLink, LocalNavSection } from "@/lib/docs/pages";
 
@@ -61,7 +61,7 @@ function NavGroup({ group, pathname, onNavigate }: { group: LocalNavGroup; pathn
 }
 
 /**
- * The sidebar on /docs/*, like dev.meta.ai's docs sidebar: a Search box (also Cmd/Ctrl+K), a Dashboard row back to
+ * The sidebar on /docs/*, like dev.meta.ai's docs sidebar: a Search box (also Cmd/Ctrl+K), a Muse Muse row back to
  * the platform, then the mirrored sections with uppercase titles. `nav` comes from docsNav() on the server.
  */
 export function DocsNav({ nav, onNavigate }: { nav: LocalNavSection[]; onNavigate?: () => void }) {
@@ -97,10 +97,9 @@ export function DocsNav({ nav, onNavigate }: { nav: LocalNavSection[]; onNavigat
           <SearchIcon size={18} />
           <span>Search</span>
         </button>
-        <Link href="/dashboard" className="docs-nav-link docs-nav-home" onClick={onNavigate}>
+        <Link href="/" className="docs-nav-link docs-nav-home" onClick={onNavigate}>
           <HomeIcon size={22} />
-          <span className="docs-nav-label">Dashboard</span>
-          <ArrowUpRightIcon size={20} className="docs-nav-ext" />
+          <span className="docs-nav-label">Muse Muse</span>
         </Link>
       </div>
       <nav className="docs-nav-scroll" aria-label="Docs" ref={scroller}>

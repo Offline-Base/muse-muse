@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SAM on jetson-04</title>
+<style>
+  :root { --bg:#f7f8fa; --card:#fff; --fg:#1c2b33; --muted:#65676b; --line:#dadde1; --accent:#0064e0; --bad:#c62828; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#18191a; --card:#242526; --fg:#e4e6eb; --muted:#b0b3b8; --line:#3e4042; --accent:#2d88ff; --bad:#ff6b6b; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { max-width:1100px; margin:0 auto; padding:24px 16px 48px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .sub { color:var(--muted); margin:0 0 20px; }
+  .grid { display:grid; grid-template-columns:340px 1fr; gap:20px; }
+  @media (max-width:820px) { .grid { grid-template-columns:1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; }
+  .drop { border:2px dashed var(--line); border-radius:12px; padding:18px; text-align:center; cursor:pointer; color:var(--muted); }
+  .drop.on { border-color:var(--accent); color:var(--accent); }
+  .drop img { max-width:100%; max-height:180px; border-radius:8px; display:block; margin:0 auto 8px; }
+  label { display:block; font-weight:600; margin:14px 0 6px; }
+  input[type=text] { width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--bg); color:var(--fg); font:inherit; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .chip { border:1px solid var(--line); background:var(--bg); color:var(--fg); border-radius:999px; padding:4px 10px; font:inherit; font-size:13px; cursor:pointer; }
+  .row { display:flex; align-items:center; gap:10px; }
+  input[type=range] { flex:1; }
+  button.go { width:100%; margin-top:16px; padding:11px; border:0; border-radius:999px; background:var(--accent); color:#fff; font:inherit; font-weight:600; cursor:pointer; }
+  button.go:disabled { opacity:.5; cursor:wait; }
+  .status { margin-top:12px; font-size:13px; color:var(--muted); min-height:1.4em; }
+  .status.bad { color:var(--bad); }
+  .result img { width:100%; border-radius:12px; display:block; background:var(--bg); }
+  .empty { color:var(--muted); text-align:center; padding:80px 12px; }
+  table { width:100%; border-collapse:collapse; margin-top:12px; font-size:13px; }
+  td, th { text-align:left; padding:6px 4px; border-top:1px solid var(--line); }
+  .sw { display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:6px; vertical-align:middle; }
+  .stats { display:flex; gap:16px; flex-wrap:wrap; font-size:13px; color:var(--muted); margin-top:10px; }
+  .stats b { color:var(--fg); }
+  .health { font-size:13px; color:var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>SAM 3.1 on jetson-04</h1>
+  <p class="sub">Meta's Segment Anything 3.1 running on a Jetson Orin Nano at the office. Your photo is sent through the fleet control plane; nothing else sees it. <span class="health" id="health">Checking the board…</span></p>
+  <div class="grid">
+    <section class="card">
+      <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose a photo">
+        <img id="preview" alt="" hidden>
+        <div id="dropText">Drop a photo here, or click to choose one</div>
+      </div>
+      <input type="file" id="file" accept="image/*" hidden>
+      <label for="prompt">What should it find?</label>
+      <input type="text" id="prompt" placeholder="for example: wheel, person, cup" value="">
+      <div class="chips" id="chips"></div>
+      <label for="thr">Confidence cut-off: <span id="thrv">0.50</span></label>
+      <div class="row"><input type="range" id="thr" min="0.1" max="0.9" step="0.05" value="0.5"></div>
+      <button class="go" id="go" disabled>Find it</button>
+      <div class="status" id="status" aria-live="polite"></div>
+    </section>
+    <section class="card result" id="result">
+      <div class="empty" id="empty">The result shows here: the photo with each match colored in.</div>
+    </section>
+  </div>
+</main>
+<script>
+const COLORS = ["#1877f2","#ff6347","#2ecc71","#f1c40f","#9b59b6","#1abc9c","#e67e22","#ec407a"];
+const $ = (id) => document.getElementById(id);
+let imageB64 = null;
+
+["person","wheel","cup","dog","car","face","hand","bottle"].forEach((p) => {
+  const b = document.createElement("button"); b.className = "chip"; b.type = "button"; b.textContent = p;
+  b.onclick = () => { $("prompt").value = p; ready(); }; $("chips").appendChild(b);
+});
+$("thr").oninput = () => { $("thrv").textContent = Number($("thr").value).toFixed(2); };
+$("prompt").oninput = ready;
+$("prompt").onkeydown = (e) => { if (e.key === "Enter" && !$("go").disabled) go(); };
+function ready() { $("go").disabled = !(imageB64 && $("prompt").value.trim()); }
+
+const drop = $("drop");
+drop.onclick = () => $("file").click();
+drop.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("file").click(); } };
+drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("on"); };
+drop.ondragleave = () => drop.classList.remove("on");
+drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("on"); if (e.dataTransfer.files[0]) load(e.dataTransfer.files[0]); };
+$("file").onchange = () => { if ($("file").files[0]) load($("file").files[0]); };
+
+// Shrinks the photo to 640 px on its long side, so it goes up in a few small pieces.
+function load(file) {
+  const img = new Image();
+  img.onload = () => {
+    const s = Math.min(1, 640 / Math.max(img.width, img.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    const url = c.toDataURL("image/jpeg", 0.8);
+    imageB64 = url.split(",")[1];
+    $("preview").src = url; $("preview").hidden = false;
+    $("dropText").textContent = `${c.width} × ${c.height}, ${Math.round(imageB64.length * 0.75 / 1024)} KB. Click to change.`;
+    ready();
+  };
+  img.src = URL.createObjectURL(file);
+}
+
+async function go() {
+  $("go").disabled = true;
+  const st = $("status"); st.className = "status";
+  const parts = Math.ceil(imageB64.length / 15000);
+  st.textContent = `Sending the photo to jetson-04 in ${parts} pieces, then asking SAM…`;
+  const t0 = performance.now();
+  try {
+    const r = await fetch("/api/segment", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image_b64: imageB64, prompt: $("prompt").value.trim(), threshold: Number($("thr").value) }) });
+    const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || r.statusText);
+    show(d);
+    st.textContent = `Done in ${((performance.now() - t0) / 1000).toFixed(1)} s.`;
+  } catch (e) {
+    st.className = "status bad"; st.textContent = "Didn't work: " + e.message;
+  } finally { ready(); }
+}
+$("go").onclick = go;
+
+function show(d) {
+  const res = $("result"); res.textContent = "";
+  const img = document.createElement("img");
+  img.alt = `Photo with ${d.count} match${d.count === 1 ? "" : "es"} for "${d.prompt}" colored in`;
+  img.src = "data:image/jpeg;base64," + d.overlay_jpeg_b64; res.appendChild(img);
+  const stats = document.createElement("div"); stats.className = "stats";
+  stats.innerHTML = `<span>Found <b>${d.count}</b> “${escapeHtml(d.prompt)}”</span><span>SAM on the board: <b>${(d.ms / 1000).toFixed(1)} s</b></span><span>Upload: <b>${d.upload_s} s</b> (${d.parts} pieces)</span><span>Round trip: <b>${d.total_s} s</b></span>`;
+  res.appendChild(stats);
+  if (d.objects.length) {
+    const t = document.createElement("table");
+    t.innerHTML = "<tr><th>#</th><th>Confidence</th><th>Box (x0, y0, x1, y1)</th><th>Area</th></tr>" +
+      d.objects.map((o, i) => `<tr><td><span class="sw" style="background:${COLORS[i % COLORS.length]}"></span>${i + 1}</td><td>${o.score.toFixed(2)}</td><td>${o.box.map(Math.round).join(", ")}</td><td>${o.area_px.toLocaleString()} px</td></tr>`).join("");
+    res.appendChild(t);
+  }
+}
+function escapeHtml(s) { return s.replace(/[&<>"]/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
+
+fetch("/api/health").then((r) => r.json()).then((d) => {
+  $("health").textContent = d.sam && d.sam.ok ? `Board ready, SAM using ${d.sam.gpu_mb} MB of GPU memory.` : "Board answered, but SAM isn't ready: " + JSON.stringify(d.sam || d.error);
+}).catch(() => { $("health").textContent = "Couldn't reach the fleet."; });
+</script>
+</body>
+</html>

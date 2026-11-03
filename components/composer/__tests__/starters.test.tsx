@@ -88,11 +88,11 @@ describe("the composer with starters", () => {
 
 describe("the Make page's starters", () => {
   const page = readFileSync(path.join(ROOT, "app/page.tsx"), "utf8");
-  it("has four tabs, three of six ideas and five photos that exist", () => {
+  it("has five tabs, four of six ideas and five photos that exist", () => {
     assert.match(page, /starters=\{STARTERS\} layout="playground"/);
     const tabs = [...page.matchAll(/\{\s*id: "(\w+)",\s*label: "([^"]+)",\s*kind: "(ideas|photos)"/g)].map((m) => m[2]);
-    assert.deepEqual(tabs, ["Discover", "Tune a model", "Agents and tools", "From a photo"]);
-    assert.equal(page.match(/\{ icon: "/g)?.length, 18);
+    assert.deepEqual(tabs, ["Discover", "Tune a model", "Agents and tools", "Protect", "From a photo"]);
+    assert.equal(page.match(/\{ icon: "/g)?.length, 24);
     const photos = [...page.matchAll(/image: "(\/examples\/[a-z]+\.jpg)"/g)].map((m) => m[1]!);
     assert.equal(photos.length, 5);
     for (const p of photos) assert.ok(existsSync(path.join(ROOT, "public", p)), p);

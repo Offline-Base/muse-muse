@@ -228,6 +228,21 @@ export const env = {
     return process.env.BUILDER_SNAPSHOT_ID || undefined;
   },
   /**
+   * Where Muse Code builds run (docs/MODAL_HOST.md): "vercel" (Vercel Sandbox, the default) or "modal", only when
+   * SANDBOX_HOST is "modal" in any case. Anything else, or nothing, is Vercel.
+   */
+  get sandboxHost(): "vercel" | "modal" {
+    return (process.env.SANDBOX_HOST ?? "").trim().toLowerCase() === "modal" ? "modal" : "vercel";
+  },
+  /** SANDBOX_HOST=modal: the Modal app the build sandboxes live under. Made on first use. */
+  get modalAppName() {
+    return process.env.MODAL_APP_NAME?.trim() || "musemuse-builds";
+  },
+  /** SANDBOX_HOST=modal: the builder image (a filesystem snapshot's image id, scripts/dev/modal-builder-image.ts). */
+  get modalBuilderImageId() {
+    return process.env.MODAL_BUILDER_IMAGE_ID?.trim() || undefined;
+  },
+  /**
    * Public origin of this platform, with no trailing slash. Products and build sandboxes reach the gateway here. A
    * preview with a database of its own (lib/db/url.ts, previewHasOwnDatabase) is its own platform, at its branch URL
    * or else its deployment URL: its builds and gateway tokens live only in that database, so production's gateway
@@ -289,7 +304,7 @@ export const env = {
     return number("MAX_BUILDS_PER_USER_PER_DAY", 3);
   },
   get maxFixRounds() {
-    return number("MAX_FIX_ROUNDS", 3);
+    return number("MAX_FIX_ROUNDS", 2);
   },
   /**
    * MUSE_ENGINE: "serve" runs each Muse Code round through the session bridge over `muse serve`; anything else, unset
@@ -721,6 +736,18 @@ export const env = {
   },
   get buildRange(): boolean {
     return flag("BUILD_RANGE");
+  },
+  /**
+   * LOOK_FIRST (docs/LOOK_FIRST.md): a build makes its screens first, with sample data and no model calls, shows them in
+   * the preview, and waits a short while for the owner to change the look or say go before it wires everything in.
+   * Builds with milestones or a chain skip it. Off by default.
+   */
+  get lookFirst(): boolean {
+    return flag("LOOK_FIRST");
+  },
+  /** LOOK_FIRST: how long the build waits on the screens for a change or a go before it wires them in by itself. */
+  get lookWaitMs(): number {
+    return Math.min(10 * 60_000, Math.max(15_000, number("LOOK_WAIT_SECONDS", 120) * 1000));
   },
   /**
    * PLAN_ART: once a new build's brief is written, one Muse Image edit of the owner's mascot (public/muse/muse-present.jpg)

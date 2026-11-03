@@ -16,10 +16,16 @@ export const FULL_MILESTONES_MAX = 6;
 export const CHAIN_MILESTONES_MAX = 40;
 export const CHAIN_REQUIREMENTS_MAX = 200;
 
+/**
+ * The most requirements one build takes (Nov 2): every one gets its own test in verify, and from about 15 a full verify
+ * runs past the platform's verify cap. The schema still reads stored briefs of up to FULL_LIMITS.requirements.
+ */
+export const BUILD_REQUIREMENTS_MAX = 15;
+
 /** The most requirements a brief may have here. Read as lib/env.ts reads a flag, since only zod may be imported. */
 export function requirementsMax(): number {
   const on = (name: string) => ["1", "true", "yes", "on"].includes((process.env[name] ?? "").trim().toLowerCase());
-  return on("CHAINED_BUILDS") && on("FULL_BUILDS") ? CHAIN_REQUIREMENTS_MAX : FULL_LIMITS.requirements;
+  return on("CHAINED_BUILDS") && on("FULL_BUILDS") ? CHAIN_REQUIREMENTS_MAX : BUILD_REQUIREMENTS_MAX;
 }
 
 export const RequirementSchema = z.object({

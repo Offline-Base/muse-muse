@@ -166,10 +166,11 @@ describe("milestone prompts", () => {
     assert.ok(!("milestones" in (normalizeRawBrief({ ...BRIEF }, []) as object)), "a brief with no milestones gets none added");
   });
 
-  it("brief.md's budget says to verify at most twice a round only for big builds", () => {
-    assert.ok(!renderBuildPrompt(BRIEF, render).includes("at most twice in a round"));
+  it("brief.md's budget says to run the full verify once a round, and to check only new tests before that", () => {
+    assert.ok(!renderBuildPrompt(BRIEF, render).includes("Run `npm run verify` once"), "the line comes with verifyBudget, which every build now sets");
     const big = renderBuildPrompt(BRIEF, { ...render, verifyBudget: true });
-    assert.match(big, /Run `npm run verify` at most twice in a round\. The platform runs it again after you stop\./);
+    assert.match(big, /Run `npm run verify` once, when the round's work is done\. The platform runs it again after you stop\./);
+    assert.match(big, /npx playwright test -g \\"R3\\"|npx playwright test -g "R3"/);
     assert.match(big, /test one generated item for real and the rest with fixtures/);
     assert.ok(big.trimEnd().endsWith("the rest with fixtures."));
   });

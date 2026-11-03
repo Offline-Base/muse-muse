@@ -9,7 +9,8 @@ import {
   type MuseCommandEnvelope,
   type MuseEngine,
 } from "@/lib/sandbox/bridge-protocol";
-import { APIError, Sandbox } from "@vercel/sandbox";
+import { isHostNotFound, onModal, sandboxHost, type HostSandbox as Sandbox } from "@/lib/sandbox/host";
+import { mintSandboxMetaToken, modalMuseSettings } from "@/lib/sandbox/host/meta-proxy";
 import { noEmDashes } from "@/lib/brief/normalize";
 import { buildTestModel, env } from "@/lib/env";
 import { SPARK_STANDIN } from "@/lib/meta/spark";
@@ -45,7 +46,7 @@ import {
   backgroundModelSetting,
   type BuildModel,
   DEFAULT_MAX_MODEL_STEPS,
-  DEFAULT_REASONING_EFFORT,
+  effortForRound,
   isSessionId,
   museEnv,
   museExecArgs,
@@ -152,6 +153,8 @@ export { PRODUCT_DIR };
 const MIN = 60_000;
 /** Session length for product sandboxes. Pro allows up to 24 hours; long work extends it with extendTimeout. */
 const SANDBOX_TIMEOUT_MS = 60 * MIN;
+/** SANDBOX_HOST=modal: how long a run's Meta proxy token works. A Modal sandbox lives at most 3 hours (host/index.ts). */
+const MODAL_META_TOKEN_MS = 3 * 60 * MIN;
 
 /**
  * The settings a round adds. A test build has its reminders off, and a key given twice refuses the run, so the off
@@ -264,6 +267,35 @@ function sandboxPlaceholder(sandboxName: string): string {
 }
 
 /**
+ * What the Muse Code runner exports as META_API_KEY. On Vercel, the firewall's placeholder. On Modal (SANDBOX_HOST=modal),
+ * a token for the platform's Meta proxy (lib/sandbox/host/meta-proxy.ts) that ends with the sandbox's longest life.
+ */
+function museKey(sandboxName: string): string {
+  if (!onModal()) return sandboxPlaceholder(sandboxName);
+  return mintSandboxMetaToken(env.modelApiKey, sandboxName, Date.now() + MODAL_META_TOKEN_MS);
+}
+
+/** Settings every Muse Code run adds on Modal: its endpoint is the platform's Meta proxy, and telemetry is off. None on Vercel. */
+function hostMuseSettings(): string[] {
+  return onModal() ? modalMuseSettings(env.platformUrl) : [];
+}
+
+/** The image or snapshot a build sandbox starts from, on the host builds run on. */
+function builderSnapshotId(): string | undefined {
+  return onModal() ? env.modalBuilderImageId : env.builderSnapshotId;
+}
+
+/**
+ * Modal can't broker a key at the network, so a build there needs to reach the platform's proxy and gateway. Throws on a
+ * local run, where the platform is this machine.
+ */
+function requireModalPlatform(): void {
+  if (onModal() && publicHost(env.platformUrl) === null) {
+    throw new Error("SANDBOX_HOST=modal needs a public PLATFORM_URL: a Modal sandbox reaches Meta only through the platform's proxy.");
+  }
+}
+
+/**
  * True on a local run (`npm run dev:local`), where PLATFORM_URL is localhost: the sandbox can't reach the gateway, so
  * the product calls Meta directly with the brokered placeholder key instead (policy.ts directProducts).
  */
@@ -285,12 +317,12 @@ function lockedPolicy(sandboxName: string, capHosts: readonly string[] = []) {
 }
 
 function isNotFound(err: unknown): boolean {
-  return err instanceof APIError && err.response.status === 404;
+  return isHostNotFound(err);
 }
 
 /** Gets a product sandbox with a running session, resuming it from its last snapshot when it was stopped. */
 async function openSandbox(name: string): Promise<Sandbox> {
-  return Sandbox.get({ name, resume: true });
+  return sandboxHost().get({ name, resume: true });
 }
 
 function sessionStatus(sandbox: Sandbox): string | null {
@@ -667,10 +699,11 @@ export function warmSandboxName(productId: string): string {
  * look in place. provisionSandbox finds it by name and does the rest. Only with a snapshot, so nothing is installed here.
  */
 export async function warmSandbox(buildId: string, museAppLook: boolean): Promise<void> {
-  const snapshotId = env.builderSnapshotId;
+  requireModalPlatform();
+  const snapshotId = builderSnapshotId();
   if (!snapshotId) return;
   const name = warmSandboxName(buildId);
-  const sandbox = await Sandbox.getOrCreate({ ...sandboxOptions(name, {}), source: { type: "snapshot", snapshotId }, networkPolicy: lockedPolicy(name) });
+  const sandbox = await sandboxHost().getOrCreate({ ...sandboxOptions(name, {}), source: { type: "snapshot", snapshotId }, networkPolicy: lockedPolicy(name) });
   if (museAppLook) await applyLook(sandbox);
 }
 
@@ -683,12 +716,13 @@ export async function warmSandbox(buildId: string, museAppLook: boolean): Promis
  * Idempotent: a retry reuses the existing sandbox and rewrites the same files.
  */
 export async function provisionSandbox(input: ProvisionInput): Promise<{ sandboxName: string }> {
+  requireModalPlatform();
   const name = input.warm ? warmSandboxName(input.productId) : sandboxNameFor(input.slug, input.productId);
-  const snapshotId = env.builderSnapshotId;
+  const snapshotId = builderSnapshotId();
   const common = sandboxOptions(name, { slug: input.slug.slice(0, 60), product: input.productId });
   const sandbox = snapshotId
-    ? await Sandbox.getOrCreate({ ...common, source: { type: "snapshot", snapshotId }, networkPolicy: lockedPolicy(name) })
-    : await Sandbox.getOrCreate({ ...common, networkPolicy: SNAPSHOT_POLICY });
+    ? await sandboxHost().getOrCreate({ ...common, source: { type: "snapshot", snapshotId }, networkPolicy: lockedPolicy(name) })
+    : await sandboxHost().getOrCreate({ ...common, networkPolicy: SNAPSHOT_POLICY });
   await claimSandbox(sandbox, name, input.productId);
 
   const ready = await sandbox.readFileToBuffer({ path: BUILDER_MARKER }).catch(() => null);
@@ -765,6 +799,7 @@ export async function reopenSandbox(input: {
   /** True for a product with caps: the caps check's record of the gateway gets this change's token. */
   caps?: boolean;
 }): Promise<void> {
+  requireModalPlatform();
   const sandbox = await openSandbox(input.sandboxName);
   await claimSandbox(sandbox, input.sandboxName, input.productId);
   await sandbox.update({ networkPolicy: lockedPolicy(input.sandboxName, input.capHosts) });
@@ -794,9 +829,11 @@ export async function reopenSandbox(input: {
  * Delete the copy with deleteDryRunCopy.
  */
 export async function forkForDryRun(sandboxName: string): Promise<{ sandboxName: string }> {
+  // A dry run's product calls Meta directly with a brokered placeholder, which needs Vercel's firewall.
+  if (onModal()) throw new Error("Dry runs need Vercel Sandbox's firewall, so they don't run with SANDBOX_HOST=modal.");
   const name = `${DRY_RUN_PREFIX}${Date.now().toString(36)}-${sandboxName}`.slice(0, 60).replace(/-+$/, "");
   const placeholder = sandboxPlaceholder(name);
-  const fork = await Sandbox.fork({
+  const fork = await sandboxHost().fork({
     sourceSandbox: sandboxName,
     name,
     persistent: false,
@@ -820,7 +857,7 @@ export async function forkForDryRun(sandboxName: string): Promise<{ sandboxName:
 export async function deleteDryRunCopy(sandboxName: string): Promise<void> {
   if (!sandboxName.startsWith(DRY_RUN_PREFIX)) throw new Error(`${sandboxName} is not a dry run's copy, so it was not deleted`);
   try {
-    await (await Sandbox.get({ name: sandboxName })).delete();
+    await (await sandboxHost().get({ name: sandboxName })).delete();
   } catch (err) {
     if (!isNotFound(err)) throw err;
   }
@@ -834,7 +871,7 @@ export async function deleteDryRunCopy(sandboxName: string): Promise<void> {
  */
 export async function forkForProve(sandboxName: string, hosts: { liveHost: string; platformHost: string | null }): Promise<{ sandboxName: string }> {
   const name = `${PROVE_PREFIX}${Date.now().toString(36)}-${sandboxName}`.slice(0, 60).replace(/-+$/, "");
-  await Sandbox.fork({
+  await sandboxHost().fork({
     sourceSandbox: sandboxName,
     name,
     persistent: false,
@@ -856,7 +893,7 @@ export async function forkForProve(sandboxName: string, hosts: { liveHost: strin
 export async function deleteProveCopy(sandboxName: string): Promise<void> {
   if (!sandboxName.startsWith(PROVE_PREFIX)) throw new Error(`${sandboxName} is not a Prove it copy, so it was not deleted`);
   try {
-    await (await Sandbox.get({ name: sandboxName })).delete();
+    await (await sandboxHost().get({ name: sandboxName })).delete();
   } catch (err) {
     if (!isNotFound(err)) throw err;
   }
@@ -911,14 +948,14 @@ export async function startSkillTest(input: { sandboxName: string; cwd: string; 
   await makeDirs(sandbox, [LOG_DIR, RUN_DIR, `${RUN_DIR}/by-id`]);
   const tag = "prove-skill";
   const logPath = `${LOG_DIR}/${tag}.jsonl`;
-  const args = museExecArgs({ promptFile: "prompt.md", sessionId: input.sessionId, model: input.model, reasoningEffort: "low", maxModelSteps: input.maxModelSteps });
+  const args = [...museExecArgs({ promptFile: "prompt.md", sessionId: input.sessionId, model: input.model, reasoningEffort: "low", maxModelSteps: input.maxModelSteps }), ...hostMuseSettings().flatMap((s) => ["--config", s])];
   const command = `muse exec --model ${input.model} --reasoning-effort low --max-model-steps ${input.maxModelSteps} --prompt-file prompt.md`;
   const running = await runningCommand(sandbox, tag);
   if (running) return { cmdId: running, logPath, command };
   const script = await writeRunner(sandbox, {
     name: tag,
     cwd: input.cwd,
-    env: museEnv(sandboxPlaceholder(input.sandboxName)),
+    env: museEnv(museKey(input.sandboxName)),
     argv: ["muse", ...args],
     prelude: [optionalFlagsPrelude(SKILL_TEST_FLAGS), optionalConfigPrelude([...(input.model === SPARK_STANDIN ? [remindersOffSetting()] : []), backgroundModelSetting(input.model)], CHECKED_MUSE_VERSION), "true"].join("\n"),
     stdoutPath: logPath,
@@ -1103,7 +1140,7 @@ function buildMcpTokenFor(input: StartMuseInput): string | null {
 
 /** Env for a Muse Code runner: the brokered placeholder key, and the build MCP token when there is one. */
 function runnerEnv(run: MuseRunSpec): Record<string, string> {
-  return { ...museEnv(sandboxPlaceholder(run.sandboxName)), ...(run.token ? { [BUILD_MCP_TOKEN_ENV]: run.token } : {}) };
+  return { ...museEnv(museKey(run.sandboxName)), ...(run.token ? { [BUILD_MCP_TOKEN_ENV]: run.token } : {}) };
 }
 
 /**
@@ -1195,7 +1232,7 @@ export async function startMuse(input: StartMuseInput): Promise<MuseStart> {
 /** Starts `muse exec --json` detached, writing JSONL to the round's log. */
 async function startExec(sandbox: Sandbox, run: MuseRunSpec): Promise<{ cmdId: string; logPath: string }> {
   const logPath = `${LOG_DIR}/${run.tag}.jsonl`;
-  const argv = ["muse", ...museExecArgs({ promptFile: run.promptFile, sessionId: run.sessionId, model: run.model, maxModelSteps: run.maxModelSteps })];
+  const argv = ["muse", ...museExecArgs({ promptFile: run.promptFile, sessionId: run.sessionId, model: run.model, reasoningEffort: effortForRound(run.round), maxModelSteps: run.maxModelSteps }), ...hostMuseSettings().flatMap((s) => ["--config", s])];
   const prelude = [
     // Keep an earlier run's log under another name (a refinement can reuse round numbers) for the transcript highlights.
     `[ -s ${q(logPath)} ] && mv ${q(logPath)} ${q(`${LOG_DIR}/${run.tag}`)}.$(date +%s).jsonl`,
@@ -1303,12 +1340,12 @@ async function startBridge(sandbox: Sandbox, run: MuseRunSpec): Promise<{ cmdId:
     workspace: PRODUCT_DIR,
     sessionId: run.sessionId,
     model: run.model,
-    reasoningEffort: DEFAULT_REASONING_EFFORT,
+    reasoningEffort: effortForRound(run.round),
     promptFile: `${PRODUCT_DIR}/${run.promptFile}`,
     images: run.images.map((img) => `${PRODUCT_DIR}/${img}`),
     goal: run.goal?.trim() || null,
     // Every round turns web search off, as exec's --disable-web-tools does; MUSE_FULL adds its own settings.
-    settings: [...SERVE_SETTINGS, ...roundSettings(run.full, run.model), backgroundModelSetting(run.model)],
+    settings: [...SERVE_SETTINGS, ...roundSettings(run.full, run.model), backgroundModelSetting(run.model), ...hostMuseSettings()],
     disableRequestUserInput: true,
     logPath: paths.log,
     mailboxDir: paths.mailbox,
@@ -1381,7 +1418,7 @@ export async function sendMuseCommand(input: {
   const body = JSON.stringify(input.envelope);
   if (Buffer.byteLength(body) > MAX_COMMAND_BYTES) throw new Error("That command is too long to send.");
   const round = Math.max(0, Math.floor(input.round));
-  const sandbox = await Sandbox.get({ name: input.sandboxName });
+  const sandbox = await sandboxHost().get({ name: input.sandboxName });
   if (sessionStatus(sandbox) !== "running") throw new Error("The build's sandbox isn't running, so the command wasn't sent.");
   const engine = input.engine ?? (await roundEngine(sandbox, round));
   const command = input.envelope.command;
@@ -1620,7 +1657,7 @@ async function pollBridge(
 
 /** Stops a running command, for timeouts. Sends SIGTERM to its process group, then SIGKILL if it lingers. */
 export async function killCommand(sandboxName: string, cmdId: string): Promise<void> {
-  const sandbox = await Sandbox.get({ name: sandboxName });
+  const sandbox = await sandboxHost().get({ name: sandboxName });
   if (sessionStatus(sandbox) !== "running") return; // The VM is stopped, so nothing is running.
   let cmd;
   try {
@@ -1658,7 +1695,7 @@ export async function startPreview(sandboxName: string): Promise<{ url: string }
   const sandbox = await openSandbox(sandboxName);
   await ensureTime(sandbox, POLL_WORK_MS);
   const status = await localStatus(sandbox, 3000);
-  if (previewAnswered(status)) return { url: sandbox.domain(3000) };
+  if (previewAnswered(status)) return { url: await sandbox.domain(3000) };
   // Nothing answers yet. Start next dev, unless an earlier attempt's is still starting up.
   if (status === "000" && !(await runningCommand(sandbox, "dev"))) {
     const logPath = `${LOG_DIR}/dev.log`;
@@ -1673,7 +1710,7 @@ export async function startPreview(sandboxName: string): Promise<{ url: string }
     const what = last === "000" ? `did not answer within ${PREVIEW_WAIT_S} s` : `answered ${last}`;
     throw new Error(`The preview on port 3000 ${what}. Dev server log:\n${log}`);
   }
-  return { url: sandbox.domain(3000) };
+  return { url: await sandbox.domain(3000) };
 }
 
 export type { SandboxTask };
@@ -2114,7 +2151,7 @@ export async function saveChainState(sandboxName: string, stateFile: string, con
 export async function hibernate(sandboxName: string): Promise<void> {
   let sandbox: Sandbox;
   try {
-    sandbox = await Sandbox.get({ name: sandboxName });
+    sandbox = await sandboxHost().get({ name: sandboxName });
   } catch (err) {
     if (isNotFound(err)) return;
     throw err;

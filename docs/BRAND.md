@@ -297,6 +297,40 @@ From meta.ai's Settings window, captured by Ethan on Nov 2 in both themes (S). U
 - **Close:** a 40 px circle in the top right corner, `--settings-close` (white, dark `#3d3d3e`) with `--shadow-chip`. Escape and a backdrop click close it too, and focus goes back to the button that opened it.
 - **Phones:** one column, the sections as a row of pills over the cards.
 
+### First-open intro (`components/mascot/Intro.tsx`, `lib/intro.ts`, `public/muse/intro-*`)
+
+The owner's clips, Nov 2. The default is `shirt`: Muse in an Offline Base T-shirt in front of a pale grey curtain waves, puts on sunglasses, throws the curtain open and walks off right (6 s). Its white stage is cut out of every frame (`scripts/dev/mascot/key_stage.py`), so the curtain opens onto the real page in either theme, with a faint real shadow at his feet. `shades` (a cream curtain) is cut out the same way; `curtain` (a blue curtain, 9.4 s) is full frame and washes out to white before fading.
+
+- **When:** the first visit to `/` in a browser, never with reduced motion. `?intro=shirt`, `shades`, `curtain` or `off` on any page overrides that, for trying them.
+- **Never in the way:** "Skip intro" is focused from the start, Escape skips, it closes itself if the clip can't play, after 15 s at most, and even when there is no fade to wait for. Focus goes back to what had it. Muted.
+- **Hand-off:** the walking Muse hides while it plays, then comes in from the right, where the clip's Muse walked off.
+- **Files:** VP9 with alpha for Chrome and Firefox, HEVC with alpha for Safari (picked by browser), about 0.7 MB each, plus a first-frame poster. Rebuilt from the owner's videos by `scripts/dev/mascot/intro.sh`.
+
+### Device stage (`components/product/DeviceStage.tsx`, `lib/devices/runs.ts`)
+
+"Where it ran" on a product page: each device the product was recorded on, drawn as that device, with the recording playing on its screen. Owner request, Nov 2: a template of an actual MacBook with the test inside its screen.
+
+- **Devices:**
+  - a silver laptop with a notch (Mac);
+  - a graphite laptop (Windows);
+  - a dark Android phone with a punch-hole camera;
+  - a light iPhone, whose own clip shows the island.
+  - All are drawings in CSS, with no makers' logos. Colors are `--device-*` tokens on `:root`, the same in both themes, plus `--shadow-showcase`.
+- **What's on each screen:** only a recording made on that device, cropped to the screen. Each caption gives:
+  - the device;
+  - where it ran;
+  - what was measured;
+  - the day;
+  - a pill: green "Real machine" or "Real phone", amber "Simulated". The pill is always in words.
+- **Where the runs come from:**
+  - `DEVICE_RUNS` in `lib/devices/runs.ts`, each entry checked against docs/BUILD_LOG.md, with its files in `public/devices/<slug>/` as H.264 MP4 plus a poster;
+  - an owner clip that sets `device`;
+  - platform native artifacts, once those flags are on.
+  - A product with none shows no stage.
+- **Layout:** computers side by side from 720 px, phones in a wrapping row that grows each from 130 to 200 px, computers before phones.
+- **Motion:** clips play muted, only while on screen, never with reduced motion, and one Pause button stops them all.
+- **Gallery:** a product with runs adds "Ran on N devices" to its card's meta line.
+
 ### Muse, the mascot (`components/mascot/Mascot.tsx`, `public/muse/muse-*`)
 
 Muse Muse's own character, from the owner's videos (Nov 2). Not a Meta mark. Built so far: the walk along the bottom and the climb up the right side. Following the cursor and walkthroughs come with their own assets.

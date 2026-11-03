@@ -9,6 +9,16 @@ A normal web product whose main action is a run: Muse Wonder works in steps, the
 
 `lib/agent/`, `lib/platform/` and `app/api/musemuse/` are platform files. Use them, don't edit them. The parts in `components/agent/` are yours to restyle.
 
+## Pick the shortest path
+
+Most agent products need one helper from `lib/agent/`, not a loop of your own. Decide before writing code:
+
+- **Research on the web** (a question in, a cited answer out, with what couldn't be confirmed): `deepResearchResponse`, below, with `<AgentRun agent={agent} numberedSources />`. Ask for the "couldn't confirm" part in `instructions`, like "End with a Could not confirm list of claims the findings don't back." Don't write your own planner, search loop, citation checker or submit protocol: deep research already plans narrow searches, cites by number and says what wasn't found.
+- **Steps with the brief's tools** (look things up, then act): `agentResponse` with `tools`.
+- **Checking quotes against text the product holds**: the `recipe-verified-agent` recipe, only when the brief names it.
+
+Don't probe the route by hand: the requirement test is the probe. Each run is a real run on Muse Wonder and takes a minute or more. If a run stops short, read its `stopped` reason and change `limits` or the instructions; don't rebuild the design around one run.
+
 ## The route
 
 One route per run, on the server. `export const maxDuration = 300` is what lets it run for minutes.
@@ -202,7 +212,7 @@ The gateway answers builds differently, so tests are the same every run:
 
 ## Tests
 
-**At most 3 agent runs across all tests, each with `maxTurns` of 3 or 4.** This replaces verify's "5 model calls" for this product. An agent run is many model calls, and each one spends the build's budget. Share one run between checks. Don't start a run per assertion. A deep research run counts as one run, and takes no `maxTurns`. In a build, use `maxSubQuestions` of 3 or fewer.
+**One agent run across all tests if you can, at most 3, each with `maxTurns` of 3 or 4.** Start it once in a shared setup and check every requirement against it. This replaces verify's "5 model calls" for this product. An agent run is many model calls, and each one spends the build's budget. Share one run between checks. Don't start a run per assertion. A deep research run counts as one run, and takes no `maxTurns`. Keep `maxSubQuestions` at 2 or fewer: each one is another live search, run one after another, in every test run.
 
 - Assert structure: a finished step, the answer card, and a source link when the agent looks things up on the web. An agent whose tools all work on the owner's accounts (Gmail, Calendar, Slack) has no web sources, so don't assert a link there. Sample results change from build to build, so never assert their words.
 - Wait for the card: `await expect(page.locator("[data-result]")).toBeVisible({ timeout: 180_000 })`, and give that test `test.setTimeout(240_000)`.

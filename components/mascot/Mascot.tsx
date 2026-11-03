@@ -186,7 +186,7 @@ export function Mascot() {
       }
     };
 
-    // When an intro ends, Muse has just walked off its stage to the right (both clips end so): come back in from there.
+    // When an intro ends, Muse has just walked off its stage to the right (every clip ends so): come back in from there.
     const onIntroDone = (e: Event) => {
       if (!(e as CustomEvent<{ kind?: string }>).detail?.kind) return;
       mode = "walk";

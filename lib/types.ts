@@ -219,6 +219,13 @@ export type BuildEventBody =
   | { type: "caps"; cap: string; check: string; ok: boolean; detail?: string }
   | { type: "milestone"; index: number; of: number; title: string; state: MilestoneState }
   | { type: "live_check"; ok: boolean; url: string; reason?: string }
+  /**
+   * LOOK_FIRST (docs/LOOK_FIRST.md): where the screens-first stage is. "ready" waits for the owner until `waitUntil`;
+   * "changing" applies their note; "wiring" means the look is settled and everything is being wired in.
+   */
+  | { type: "look"; state: "building" | "ready" | "changing" | "wiring"; round: number; waitUntil?: string; text?: string; why?: "approved" | "waited" | "changes_used" }
+  /** LOOK_FIRST: the owner's answer to the screens, from POST /api/builds/{id}/look. */
+  | { type: "look_reply"; action: "approve" | "change"; text?: string }
   | { type: "error"; message: string };
 
 /** A stored event as the SSE route sends it. `id` is the SSE event id. */
@@ -379,6 +386,9 @@ export function condenseProveEvents(events: ReadonlyArray<{ type: string; at?: s
   };
 }
 
+/** The device a clip was recorded on, for the frame DeviceStage draws around it (components/product/DeviceStage.tsx). */
+export type DeviceKind = "mac" | "windows" | "android" | "iphone";
+
 /** A clip of a product on a real device that its owner uploaded (products.extra_clips). */
 export interface ProductClip {
   url: string;
@@ -386,6 +396,8 @@ export interface ProductClip {
   /** Says honestly what it shows, such as "Filmed on a Meta Quest 3". */
   caption: string;
   addedAt: string;
+  /** The device it was recorded on, so the product page shows it inside that device. Unset clips show unframed. */
+  device?: DeviceKind;
 }
 
 /** Mirrors template/musemuse.schema.json. */
