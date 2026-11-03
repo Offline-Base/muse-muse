@@ -3037,3 +3037,23 @@ Hussam's goal included a product that Muse Muse builds and that answers from the
 - **Found, not fixed (read in code, not run):** an edge brief whose only model isn't Muse Wonder (here `sam-3.1`) gives its product token no `muse-wonder-1.0` (`allowedModelsFor`, `lib/pipeline/logic.ts:118-135`). `respondJsonOrEdge` asks Muse Wonder first, gets 404 `model_not_found` (`lib/gateway/handler.ts:215-226`), and treats a 4xx as the cloud saying no (`template/lib/meta/edge.ts:98-100`). So a hosted product shows "turned this request down" and never asks the board. The drills miss it because the blackhole drops connections instead of answering 404, and the build's code-session token skips the allowlist.
 - **For the owner:** to make "built by Muse, answers on the board" true without a hand-written spec, the template needs a SAM board helper (say `EDGE_SAM_URL` in `lib/meta/edge.ts` and the muse-edge skill, shipped as edge extra files). It also needs SAM drills in `edge-fake.mjs` and `edge-drill.mjs`, and a forwarder so a hosted product can reach the board.
 - **Spend:** $0.061 on the preview. About 20 exec jobs on jetson-04 for the runs, plus read-only checks. Nothing on any board was changed.
+
+## Nov 2, 2026, night: Muse Code runs on Muse Spark Open (branch tg-musecode-open)
+
+The owner asked for Muse Code driven by Muse Spark Open through a custom endpoint. It ran on this laptop.
+- **How Muse Code reaches another endpoint (read in its help and Meta's docs, then run):**
+  - `muse exec` has `--base-url` and `--api-key-stdin`. A `--base-url` flag alone is refused: "Meta bearer withheld: base_url is off the sanctioned front door". The base URL has to be set in the settings file's `endpoint_transport` with `auth = "bearer"`. That run used a throwaway HOME, never the owner's `~/.config/muse/settings.json`.
+  - Muse Code first asks `GET /muse-code/models` for a catalog (Meta's lives at `https://api.meta.ai/muse-code/models`), then posts to `/responses`.
+  - Partners don't serve the catalog, so `scripts/open/muse-code-relay.mjs` answers that one request with a single Spark Open entry and forwards everything else to the partner's `/v1` API unchanged.
+- **Fireworks: blocked.** The account behind `FIREWORKS_API_KEY` answers every request with HTTP 412, "Account ... is suspended, possibly due to reaching the monthly spending limit or failure to pay past invoices". Production holds the same key, so anything on Fireworks fails until the owner fixes billing at fireworks.ai/account/billing.
+- **Baseten: worked.**
+  - Model id `meta-models/muse-spark-open` answers. `meta-models/muse-spark-open-1026`, the id from the hackathon guide, returns 404 for this account.
+  - `muse exec --model meta-models/muse-spark-open --max-model-steps 3 --json --yolo "Create a file named hello.txt that contains exactly the word hi, then stop."` exited 0 and wrote `hello.txt` containing `hi`.
+  - The relay saw 6 POSTs to `/responses`, all 200: the agent's steps plus its observers.
+  - Usage reported: 57,418 input and 342 output tokens on the main step. Cost: Baseten credit, not yet read from Baseten's dashboard; estimated under $0.20.
+- **Also found:** the `MODEL_API_KEY` in `~/muse-muse/.env.local` is invalid (401 `invalid_api_key`), while the one in `~/muse-muse-builds/.env.local` works. Scripts that read the first file can't reach Meta's API.
+- **Not done yet:**
+  - a Muse Muse build with Muse Code on Spark Open (builds run in Vercel Sandbox, whose firewall swaps only Meta's key, so this needs a platform-side relay with the partner key);
+  - any real task bigger than one file;
+  - Spark Open's tool-call quality over a long run.
+- **Claim allowed now:** "Muse Code, Meta's coding agent, ran a task on Muse Spark Open served by Baseten." Not yet: that Muse Muse builds apps with it.
