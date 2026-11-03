@@ -462,7 +462,14 @@ function checkLine(seg: CheckSegment): ConvoItem | null {
 function roundWords(seg: MuseSegment): string | undefined {
   const { groups, summary } = groupLog(seg.lines);
   const says = groups.flatMap((g) => (g.type === "say" ? [g.text] : []));
-  return closingWords(summary.finalText, says);
+  const text = closingWords(summary.finalText, says);
+  // The last message repeats each note's answer, which the conversation already shows as its own reply (noteReplies).
+  const kept = text
+    ?.split("\n")
+    .filter((line) => !noteReplies(line.replace(/^done\.\s+/i, "")).length)
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n");
+  return (kept && noDanglingColon(kept.trim())) || undefined;
 }
 
 /** A shipped build's answer, which reads under what it made: what its last round said. */

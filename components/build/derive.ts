@@ -844,10 +844,13 @@ const DONE_PREFIX = /^done\.\s+/i;
 export function doneEchoes(done: string, says: readonly string[]): string | null {
   const line = done.trim();
   if (!line) return null;
+  // A bare "Done" is the log's own word for a round that ended with no message, so it starts nothing.
+  const bare = /^done\.?$/i.test(line);
   for (let i = says.length - 1; i >= 0; i--) {
     const said = says[i]!.trim();
     if (!said) continue;
     if (said === line) return said;
+    if (bare) continue;
     // The prefix is the log's own unless the message itself starts with "Done".
     const head = (/^done\b/i.test(said) ? line : line.replace(DONE_PREFIX, "")).replace(/…$/, "").trimEnd();
     if (head && said.startsWith(head)) return said;

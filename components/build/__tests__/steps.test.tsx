@@ -345,6 +345,21 @@ describe("the conversation", () => {
     const html = render(StepList, { steps: steps.roomSteps({ room: roomOf("failed", evs), rail: derive.railStates(roomOf("failed", evs), "build"), isRefine: false }), end: null });
     assert.equal(html.split("What changed").length - 1, 1);
   });
+
+  it("leaves a note's answer out of the round's last message, since it shows as its own reply", () => {
+    const said = "Milestone 2 is built.\nAbout your note: The header is darker now.\n\n- **R4**: a darker header.";
+    const muse = (round: number, lines: object[]) => ({ type: "muse", round, lines });
+    const evs = [muse(0, [{ kind: "say", itemId: "m1", text: said }, { kind: "done", ok: true, text: "Done. Milestone 2 is built." }])].map((b, i) => ({
+      ...b,
+      id: i + 1,
+      at: new Date(Date.parse("2026-11-03T05:00:00.000Z") + i * 1000).toISOString(),
+    })) as unknown as BuildEvent[];
+    const items = steps.conversationItems(roomOf("failed", evs));
+    assert.deepEqual(
+      items.flatMap((i) => (i.type === "say" ? [i.text] : [])),
+      ["About your note: The header is darker now.", "Done. Milestone 2 is built.\n\n- **R4**: a darker header."],
+    );
+  });
 });
 
 describe("the room", () => {

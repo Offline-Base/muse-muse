@@ -499,6 +499,9 @@ describe("what a round ended on", () => {
     assert.equal(doneEchoes(`Done. ${"x".repeat(238)}…`, [`${"x".repeat(300)}\nmore`]), `${"x".repeat(300)}\nmore`);
     assert.equal(doneEchoes("Done. Something else.", [LIST]), null);
     assert.equal(doneEchoes("", [LIST]), null);
+    // A bare "Done" is a round with no message, not the start of an earlier one.
+    assert.equal(doneEchoes("Done", ["Done with the header, now the list."]), null);
+    assert.equal(doneEchoes("Done.", ["Done."]), "Done.");
   });
 
   it("gives the whole message, list and all, for the done line that cut it", () => {

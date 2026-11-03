@@ -100,7 +100,8 @@ export function normalizeRawBrief(raw: unknown, references: Reference[], opts: {
   // The total is the sum of the parts, worked out here, never the writer's own arithmetic (Nov 3 audit: parts of
   // about $0.02 under "Total about $0.12"). The parts carry the dollars, so a figure left in the notes goes.
   if (Array.isArray(b.costItems)) {
-    const items = asArray(b.costItems).slice(0, COST_ITEMS_MAX);
+    // A part with no name can't be shown, so it goes rather than failing the whole plan.
+    const items = asArray(b.costItems).filter((i) => typeof i.what !== "string" || i.what.trim()).slice(0, COST_ITEMS_MAX);
     for (const i of items) {
       if (typeof i.what === "string") i.what = clamp(i.what, COST_ITEM_WHAT_MAX);
       if (typeof i.usd === "number" && Number.isFinite(i.usd)) i.usd = Math.max(0, Math.round(i.usd * 1_000_000) / 1_000_000);

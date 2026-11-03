@@ -58,6 +58,9 @@ describe("a plan's cost per run", () => {
     assert.equal(brief.costItems!.length, 8);
     assert.ok(brief.costItems!.every((c) => c.what.length <= 160 && c.usd === 0));
     assert.equal(brief.estimatedCostPerRunUsd, 0);
+    const unnamed = NewBriefSchema.parse(normalizeRawBrief({ ...BRIEF, costItems: [{ what: "", usd: 0.5 }, { what: "Vision call", usd: 0.0025 }] }, [])) as Brief;
+    assert.deepEqual(unnamed.costItems, [{ what: "Vision call", usd: 0.0025 }]);
+    assert.equal(unnamed.estimatedCostPerRunUsd, 0.0025);
   });
 
   it("shows small parts to a hundredth of a cent", () => {
