@@ -2851,4 +2851,15 @@ The owner asked for a simpler sidebar using "muse" and "musing" for the creative
     - under guest mode /builds lists every guest's muses, since all guests are one user (app/builds/page.tsx:30).
   - Found sound: no platform keys in sandboxes or products, no committed secrets, admin-only paid work, fail-closed daily cap on DB errors, Lambda sweeps, atomic counters.
   - Full ranked lists and the fix order were reported to the owner. Nothing was changed by the audit.
+- **Nov 2, night: faster builds that analyze less (owner: "make sure builds are fast and not over analyzed", yes to the speed items, no to the spend and check-hardening items).**
+  - One full verify a round, for every build: brief.md always carries the verify budget, now "Run `npm run verify` once, when the round's work is done", with `tsc` and only the new tests before that. The platform's own verify still decides (lib/pipeline/build-steps.ts, lib/engine/prompts.ts). Each extra full verify is 5 to 12 minutes.
+  - Fix rounds: 2 by default instead of 3 (`MAX_FIX_ROUNDS`, lib/env.ts).
+  - Fix rounds run at medium reasoning effort; the first round of a build or a change stays at high (`effortForRound`, lib/sandbox/muse.ts).
+  - At most 15 requirements a build (`BUILD_REQUIREMENTS_MAX`, lib/full/requirements.ts). Stored briefs of up to 60 still parse. The writer is told the limit and may join asks that are one thing on one screen. From about 15, a full verify ran past the platform's verify cap.
+  - The requirement test example now asserts something, so first tries pass the judge more often.
+  - Products' model client: 90 s timeout and 1 retry, instead of the SDK's 10 minutes and 2 (template/lib/meta/client.ts).
+  - The muse-agent skill: no hand probes ("the requirement test is the probe"), one shared agent run across tests if possible, and `maxSubQuestions` of 2 or fewer.
+  - Left off: the partial recheck (FAST_BUILDS). It only skips a full verify when a fix round fails again, so it saves little with 2 fix rounds.
+  - The template and skill changes reach production builds only after `npm run snapshot`; the rest ships with the site.
+  - Tests for the touched code: 257 pass. The 3 that fail (plan-art-flag-off twice, plan-card's raw colors) fail the same way on main before this change; plan-card's raw colors came in with #59. Brief writer and full-build tests 148 of 148, template agent overlay 119 of 119. Typecheck clean. The workflow scenarios pin `MAX_FIX_ROUNDS=3`, since they walk the loop itself.
 

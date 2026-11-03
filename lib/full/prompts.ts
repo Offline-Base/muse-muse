@@ -1,5 +1,5 @@
 import type { Requirement } from "@/lib/full/requirements";
-import { FULL_LIMITS } from "@/lib/full/requirements";
+import { BUILD_REQUIREMENTS_MAX, FULL_LIMITS } from "@/lib/full/requirements";
 
 /**
  * FULL_BUILDS' prompt text (docs/FULL_BUILDS.md). Pure, and only read with the flag on, so with it off every prompt is
@@ -27,11 +27,12 @@ export const FULL_WRITER_SECTION = `
 Requirements
 Build the whole product the person asked for. Never shrink a request to fit a small template, one page or one flow. A big request gets a big brief.
 - requirements is a numbered list of everything the finished product must do, in the order it should be built, with the main path first. Each one is a single thing a person could try and see working.
-- Go through the person's note and references line by line. Every feature, screen, workflow, role, list, report and setting they mention gets its own requirement with kind "asked", and words holds their exact words for it, copied from the note. Never merge two asks into one, and never leave one out because it seems hard or secondary.
+- Go through the person's note and references line by line. Every feature, screen, workflow, role, list, report and setting they mention gets its own requirement with kind "asked", and words holds their exact words for it, copied from the note. Don't merge two asks into one unless the list would pass the limit below, and never leave one out because it seems hard or secondary.
 - Then add what a complete product needs for that request, with kind "needed" and empty words: how the person moves between screens when there is more than one, real saved data, editing and deleting what was saved, what they see before anything exists (the empty state), and what they see when something fails (the error state).
 - savesData is true when the requirement saves something the person expects to find again. Say in its text that it is still there after a reload.
 - canDo is false only when Muse Muse truly can't do that part with what the instructions above offer. cantDoWhy then tells the person why in one plain sentence, and says the closest thing the product will do, which gets its own requirement. A part you can do in a simpler way (saved in this browser rather than an account, for example) stays canDo true, with the simpler way in its text. canDo false never hides an ask: it is shown to the person before the build starts.
-- verdict is "partly" when any requirement has canDo false.`;
+- verdict is "partly" when any requirement has canDo false.
+- Keep the list to ${BUILD_REQUIREMENTS_MAX} or fewer, since each one is built and tested in this build. The person's own asks come first. When there are more, join asks that are one thing on one screen into one requirement, keeping both asks' words in its text, and add "needed" ones only as room allows, the empty and error states first.`;
 
 /** What the person's words come with, in the rewrite after the check sends a brief back. */
 export function sentBackText(problems: string[]): string {
@@ -119,6 +120,7 @@ Before any code, write the plan in BUILD_NOTES.md: every route, the data each on
 test("R3: edit a saved trip", async ({ page }) => {
   await page.goto("/trips");
   // Do what a person would do, end to end, starting from an empty browser.
+  await expect(page.getByRole("heading", { name: "Lisbon in May" })).toBeVisible();
   await judgeShot(page, "10-r03-edited-trip");
 });
 \`\`\`

@@ -1575,7 +1575,7 @@ describe("the overlay", () => {
   test("the skill keeps the test budget and says web search is Meta's own", () => {
     const skill = readFileSync(path.join(FILES, ".agents/skills/muse-agent/SKILL.md"), "utf8");
     assert.match(skill, /^---\nname: muse-agent\n/);
-    assert.match(skill, /At most 3 agent runs across all tests/);
+    assert.match(skill, /One agent run across all tests if you can, at most 3/);
     assert.match(skill, /Meta's `web_search`, the only general search/);
     assert.match(skill, /maxDuration = 300/);
     assert.match(skill, /A deep research run counts as one run/);

@@ -289,7 +289,7 @@ export const env = {
     return number("MAX_BUILDS_PER_USER_PER_DAY", 3);
   },
   get maxFixRounds() {
-    return number("MAX_FIX_ROUNDS", 3);
+    return number("MAX_FIX_ROUNDS", 2);
   },
   /**
    * MUSE_ENGINE: "serve" runs each Muse Code round through the session bridge over `muse serve`; anything else, unset

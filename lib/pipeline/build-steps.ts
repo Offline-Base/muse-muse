@@ -466,9 +466,12 @@ function planRecord(plan: RoundPlan): RoundPlanRecord {
   };
 }
 
-/** brief.md says to verify at most twice a round for big builds: caps, milestones, or either round flag on. */
-function verifyBudgetFor(brief: Brief): boolean {
-  return briefCaps(brief).length > 0 || (env.engineMilestones && briefMilestones(brief).length > 0) || env.engineRoundScaling || env.engineCheckOnTimeout || fullBuildOf(brief);
+/**
+ * brief.md's verify budget, for every build (Nov 2): one full verify a round, since the platform runs it again after the
+ * round. A full verify is a production build plus every test with real model calls, 5 to 12 minutes.
+ */
+function verifyBudgetFor(_brief: Brief): boolean {
+  return true;
 }
 
 /**

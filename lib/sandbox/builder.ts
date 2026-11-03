@@ -45,7 +45,7 @@ import {
   backgroundModelSetting,
   type BuildModel,
   DEFAULT_MAX_MODEL_STEPS,
-  DEFAULT_REASONING_EFFORT,
+  effortForRound,
   isSessionId,
   museEnv,
   museExecArgs,
@@ -1195,7 +1195,7 @@ export async function startMuse(input: StartMuseInput): Promise<MuseStart> {
 /** Starts `muse exec --json` detached, writing JSONL to the round's log. */
 async function startExec(sandbox: Sandbox, run: MuseRunSpec): Promise<{ cmdId: string; logPath: string }> {
   const logPath = `${LOG_DIR}/${run.tag}.jsonl`;
-  const argv = ["muse", ...museExecArgs({ promptFile: run.promptFile, sessionId: run.sessionId, model: run.model, maxModelSteps: run.maxModelSteps })];
+  const argv = ["muse", ...museExecArgs({ promptFile: run.promptFile, sessionId: run.sessionId, model: run.model, reasoningEffort: effortForRound(run.round), maxModelSteps: run.maxModelSteps })];
   const prelude = [
     // Keep an earlier run's log under another name (a refinement can reuse round numbers) for the transcript highlights.
     `[ -s ${q(logPath)} ] && mv ${q(logPath)} ${q(`${LOG_DIR}/${run.tag}`)}.$(date +%s).jsonl`,
@@ -1303,7 +1303,7 @@ async function startBridge(sandbox: Sandbox, run: MuseRunSpec): Promise<{ cmdId:
     workspace: PRODUCT_DIR,
     sessionId: run.sessionId,
     model: run.model,
-    reasoningEffort: DEFAULT_REASONING_EFFORT,
+    reasoningEffort: effortForRound(run.round),
     promptFile: `${PRODUCT_DIR}/${run.promptFile}`,
     images: run.images.map((img) => `${PRODUCT_DIR}/${img}`),
     goal: run.goal?.trim() || null,
