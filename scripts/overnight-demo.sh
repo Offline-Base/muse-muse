@@ -39,14 +39,14 @@ else
 fi
 
 echo "== 3. Commit the snapshot record and deploy"
-BEFORE=$(curl -s "$SITE" | grep -o 'dpl_[A-Za-z0-9]*' | head -1 || true)
+BEFORE=$(curl -sL "$SITE" | grep -o 'dpl_[A-Za-z0-9]*' | head -1 || true)
 git add lib/sandbox/snapshots.json
 git commit -qm "Builder snapshot $SNAP: /taste, design looks, recipe models, Meta skill guidance"
 git push -q origin HEAD:main
 echo "Pushed. Waiting for Production to deploy (usually 1 to 3 minutes)..."
 for _ in $(seq 1 45); do
   sleep 20
-  NOW=$(curl -s "$SITE" | grep -o 'dpl_[A-Za-z0-9]*' | head -1 || true)
+  NOW=$(curl -sL "$SITE" | grep -o 'dpl_[A-Za-z0-9]*' | head -1 || true)
   if [ -n "$NOW" ] && [ "$NOW" != "$BEFORE" ]; then echo "Deployed ($NOW)."; break; fi
 done
 [ "${NOW:-}" != "$BEFORE" ] || { echo "The deploy didn't show up in 15 minutes. Check Vercel, then run: npm run demo-batch"; exit 1; }
