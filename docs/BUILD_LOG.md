@@ -4457,3 +4457,11 @@ The owner asked whether the "muse" tune of SAM 3.1 (run `muse31`, the 61 MB delt
 - Started after ef8e2cfc deployed: `--set=skills` (16 of 17; skill-muse-native refused, phone target needs NATIVE_TARGETS and PACKAGER_SNAPSHOT_ID), showcase allapis again, and the 20 failed cookbook builds again (.data/demo-batch-2026-11-03T18-58-*.json in this worktree).
 - Polish restarted on the Meta AI app look: new builds (7 batch files, budget $300 for builds and polishes, 8 at once) and older gallery apps (budget $170 including their $40.92 sunk build cost, 6 at once).
 - SAM test, distractor set: report page at docs/log/bench/2026-11-03/distract/report.html (local only). SAM tuning inside Muse Muse is being built behind SAM_TUNE (plan: boards train via a pull worker on jetson-03; needs Hussam's OK for the worker service).
+
+## Nov 3, 2026, afternoon ET: Muse Privacy connector work brought into privacy/ (branch tg-privacy-connector)
+
+- Owner asked for the Muse Connector Platform work to live in Muse Muse too, under Offline Base, and for Offline-Base/muse-privacy to go public. Done: that repo is public (secrets scan of its history: only a private test address 10.0.0.5 and an uncommitted Cloudflare id), and its main now carries the connector work.
+- Ported into `privacy/` from Offline-Base/muse-privacy (commits 32350f5, 3c14a01, a35d99d, 66e0c3b, applied with `git apply --directory=privacy`; privacy's own BUILD_LOG left alone): read-only links and review codes in the relay, the Mcp-Method and Mcp-Name headers forwarded, `relay_client pair --review`, the connector, privacy and terms pages and the 512 px icon, docs/CONNECTOR_SUBMISSION.md and docs/CONNECT_CLIENTS.md. Tests: relay 70 of 70 and tsc clean; `tests/test_relay_client.py` 40 of 40.
+- Live, from the standalone repo, earlier today: relay deployed (dccdcef8; a scripted read-only link saw 5 read tools and a write was refused at the relay), site deployed (connector, privacy and terms pages answer). Claude, Codex and Muse Code each made a real tool call through it.
+- Pointer page: docs/CONNECTOR_PLATFORM.md. Open: moving the relay to Offline Base (needs a domain on Cloudflare), whether to build a Muse Muse platform connector, and the form submission itself (owner).
+
