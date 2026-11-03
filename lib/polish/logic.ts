@@ -103,7 +103,7 @@ export type PolishLook = (typeof POLISH_LOOKS)[number];
  * change prompts keep the product on muse-app-ui with no Design direction once such a polish ships
  * (lib/pipeline/build-steps.ts metaLookNote).
  */
-export const POLISH_META_STEP = "1. The look: put this product on the Meta AI app look, muse-app-ui.";
+export const POLISH_META_STEP = "1. The look: put this product on the muse-app look, .agents/skills/muse-app-ui.";
 
 /**
  * Step 1 of a look "meta" polish from the afternoon of Nov 3, which moved products to meta-ui. Kept only to tell those
@@ -145,7 +145,7 @@ const KEEP_LOOK_STEP =
 export function polishNote(focus?: string | null, look?: PolishLook | null): string {
   const extra = focus?.trim();
   return [
-    `${POLISH_HEADER} This is a polish round on a live product: make it look and read like something Meta would feature on its own site, without changing what it does.`,
+    `${POLISH_HEADER} This is a polish round on a live product: make it look and read finished and polished, without changing what it does.`,
     "",
     look === "meta" ? META_LOOK_STEP : KEEP_LOOK_STEP,
     "2. Phones first, at 390 px and 360 px wide. Every tap target at least 44 by 44 px. Text, icons and borders at WCAG AA contrast. Nothing cut off, clipped or scrolling sideways. A result scrolls into view when it arrives. Tab bars and bottom bars fit every label without clipping.",

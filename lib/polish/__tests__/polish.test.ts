@@ -42,13 +42,15 @@ describe("the polish note with look meta", () => {
   /** The step-1 note from the afternoon of Nov 3, as polishes that moved products to meta-ui stored it (its first line). */
   const OLD_META_UI = `${POLISH_HEADER} This is a polish round on a live product.\n\n${POLISH_META_UI_STEP} This round changes the look on purpose.\n2. Phones first.`;
 
-  it("puts the product on the Meta AI app look, muse-app-ui, and is still a polish note with the same header", () => {
+  it("puts the product on the muse-app look (muse-app-ui), names no Meta product, and is still a polish note with the same header", () => {
     const note = polishNote(null, "meta");
     assert.ok(note.startsWith(POLISH_HEADER));
+    // The platform's own change check refused notes that named Meta's app or "Meta would feature" (Nov 3, 2 PM).
+    for (const n of [note, polishNote(null), polishNote("fix the header", "meta")]) assert.doesNotMatch(n, /Meta AI|Meta would|Meta featur|Meta's own/);
     assert.equal(isPolishMessage(note), true);
     assert.equal(isMetaLookPolish(note), true);
     assert.ok(note.includes(`\n${POLISH_META_STEP} `));
-    assert.match(POLISH_META_STEP, /the Meta AI app look, muse-app-ui/);
+    assert.match(POLISH_META_STEP, /the muse-app look, \.agents\/skills\/muse-app-ui/);
     for (const want of [
       `${OVERLAYS_DIR}/${MUSE_APP_OVERLAY}/files`,
       "isn't in this sandbox",

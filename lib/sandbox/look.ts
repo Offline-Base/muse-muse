@@ -22,13 +22,13 @@ export const LOOK_COMMIT = "Look: muse-app";
  * The commit a look "meta" polish asks Muse Code to make once the product is on the Meta AI app look (lib/polish/logic.ts).
  * In a product with it, restoreRangeFilesScript no longer puts the build-range skill files back.
  */
-export const APP_LOOK_COMMIT = "Look: Meta AI app";
+export const APP_LOOK_COMMIT = "Look: muse-app, polished";
 
 /**
  * The line a look "meta" polish puts at the top of BUILD_NOTES.md. restoreRangeFilesScript reads it too (in the first
  * five lines), so a polish whose APP_LOOK_COMMIT Muse Code didn't make still keeps the build-range skill files out.
  */
-export const APP_LOOK_NOTE = "Look: Meta AI app (.agents/skills/muse-app-ui)";
+export const APP_LOOK_NOTE = "Look: muse-app, polished (.agents/skills/muse-app-ui)";
 
 /** The look's tokens in the product, from the overlay. A product with it has the look. */
 export const LOOK_CSS = "app/muse-app.css";

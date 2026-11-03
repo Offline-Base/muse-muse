@@ -109,7 +109,7 @@ export function focusText(a: Pick<ProductAudit, "name" | "slug" | "problems" | "
     `An automated audit opened ${a.name ?? a.slug ?? "the product"} on desktop at 1440x900 and on a phone at 390x844 and ${how}.`,
     `It found: ${found}.`,
     `Fix each one so that Try the sample, then the main button, finishes on both sizes with a real answer from the model (no fallback, estimate or canned text), no console errors or failed calls, no sideways scroll, every control at least ${TAP_MIN} px to tap on a phone, and no text cut off.`,
-    "Use the tokens and components of the look skill step 1 names (muse-app-ui, the Meta AI app look, once the product has app/muse-app.css), and change nothing that already works.",
+    "Use the tokens and components of the look skill step 1 names (muse-app-ui, once the product has app/muse-app.css), and change nothing that already works.",
   ].join(" ");
 }
 
