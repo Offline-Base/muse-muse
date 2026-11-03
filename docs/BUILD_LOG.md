@@ -4017,3 +4017,12 @@ From the readiness audit's "Must fix to win" items 7, 14, 15 and 17 and its stor
   - README.md opens with the line, a video slot, "Proven on Nov 3" and three keyless commands (`npm run dev:local`, `npm run drill`, `npm run drill-bench`); www.musemuse.dev replaces muse-muse.vercel.app; the judge table says a brief and a build both need Vercel Sandbox credentials (`no_sandbox`, lib/quota.ts); fix rounds read from `MAX_FIX_ROUNDS`.
   - docs/OFFLINE.md no longer says the boards run LFM and Bolt. It says what runs now (SAM 3.1 on jetson-04, the tune on jetson-03, one-bit Glimmer on jetson-02) and marks its LFM, Bolt, Llama and d1 design as pre-ruling history.
 - **For the owner:** approve or edit these lines before merge; pick field 4's version after the take; settle Q1 to Q3 to keep or cut the [data rights] lines.
+
+## Nov 3, 2026, about 1 PM ET: review of the claim fixes (branch tg-c-claims, not merged)
+
+A second agent read the branch against the log. Text only, no spend. Fixed:
+- **"All 18 passed our judge" was false.** The legal case agent (fable-case-ledger) is still marked partial with its memo error listed as a known issue (entry "Nov 3, 2026, 10:30 AM ET: demos in check for judges"). README, SUBMISSION (field 6 and Results) and MESSAGING now say 17 passed and the 18th shipped as partial.
+- **"$0.17 to $0.40 each" for 18 builds:** the overnight entry logs costs for 11 of the 12 notes (the legal agent was still building) and the target audit for the 6 targets, so 17 costs are logged. The copy says "most" or "for the 17 whose cost is logged", and the video line is "most for under forty cents".
+- **"Each defect became a code check"** was stronger than the log: the audit fixes are checks, judge rules and skill rules, and most reach builds only with the new builder snapshot. Now "the defects became new checks and rules in the harness".
+- **"SAM 3.1 ... the board model the edge apps use":** no edge app has looked with it on a board in an outage; one product counted with it on jetson-04 from a laptop on Nov 2. Now "built to use", with that run named.
+- **VIDEO shot 8's card** credited Contributor with "every build in this video", but shot 6 shows Dinner Split Helper, built before `BUILDS_ON_CONTRIBUTOR` existed. The card now names this app only.

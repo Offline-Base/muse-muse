@@ -91,11 +91,11 @@ The script to film, rewritten Nov 2, 2026, night, from the owner's answers to th
 **8. Under the hood (1:58 to 2:33)**
 - On screen: one card per model, with its number.
   - Muse Code: "wrote every app, on our starter template".
-  - Muse Spark 1.3 Contributor: "planned, built with Muse Code and judged every build in this video". Check the hero build's log entry first: if it ran on Muse Wonder, credit Wonder on this card instead. Muse Wonder gets a card only if a logged build in the video ran on it.
+  - Muse Spark 1.3 Contributor: "planned, built with Muse Code and judged this app" (the hero build only: Dinner Split Helper in shot 6 predates `BUILDS_ON_CONTRIBUTOR`, so never say "every build in this video"). Check the hero build's log entry first: if it ran on Muse Wonder, credit Wonder on this card instead. Muse Wonder gets a card only if a logged build in the video ran on it.
   - SAM 3.1: "1.42 s a look on a Jetson Orin Nano 8GB. Tuned on a board to find a new word, 'muse': 0 to 38 of 38 held-out made-up images. Meta's SAM 3.1 already finds the same mascot as 'plush toy'."
-  - Then "18 apps built overnight on the test model, $0.17 to $0.40 each" and "[N] apps live".
+  - Then "18 apps built overnight on the test model, most for $0.17 to $0.40" and "[N] apps live". (17 costs are logged; the legal case agent's isn't.)
   - Only if DATA_RIGHTS.md Q2 is yes: Muse Glimmer 30B: "tuned by the site for a cold room in 32 minutes for $1.75. Beat the model it started from on 19 of 20 held-out prompts, judged blind by Muse Spark 1.3 Contributor. Built with Muse Spark Open. 18 and over."
-- Say: "Muse Code wrote the app on Muse Spark 1.3 Contributor, which also planned and judged it. SAM 3.1 sees in the cloud and on the board, and we taught it a new word on the same kind of board. Overnight, Muse Muse built 18 apps for under forty cents each. [N] are live today."
+- Say: "Muse Code wrote the app on Muse Spark 1.3 Contributor, which also planned and judged it. SAM 3.1 sees in the cloud and on the board, and we taught it a new word on the same kind of board. Overnight, Muse Muse built 18 apps, most for under forty cents. [N] are live today."
 - If Q2 is yes, swap the overnight sentence for: "And the site tuned Muse Glimmer for this cold room: it beat the model it started from on 19 of 20 held-out prompts, for a dollar seventy-five."
 - [N] from the gallery count on recording day.
 - Sources: SAM on jetson-04, the SAM tune and its "plush toy" baseline: docs/BUILD_LOG.md, "Nov 3, 2026, 2:15 to 4 AM ET: the boards, checked for real". The 18 builds: "Nov 3, 2026, 2 to 3 AM ET: overnight batch results" ($0.17 to $0.30, 12 notes) and "Nov 3, 2026, 5:30 AM ET: target audit" ($0.27 to $0.40, 6 targets). The tune: job 83ae46c8's public page and docs/BUILD_LOG.md, "Nov 3, 2026, about 10:30 AM ET: partner evals" (19 of 20, 8.4 vs 4.8), with the run's cost logged in "Nov 3, 2026, about noon ET: claim fixes".
