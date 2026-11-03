@@ -39,6 +39,11 @@ export async function POST(request: Request) {
 - Images: put `{ type: "image_url", image_url: { url } }` parts beside `{ type: "text", text }` in a user message. Use a data URL from `toDataUrl`, or an `uploadMedia` URL for big files.
 - JSON: pass `json: true`, then parse the text with a zod schema and handle a reply that doesn't parse. Don't use `respondJson` for it: that helper is for the Responses endpoint.
 - `maxTokens` (default 2000) counts its reasoning too. With too few, the reasoning uses them all and the helper throws. Keep `reasoning: "low"` unless a step really needs more: more reasoning is slower and costs more.
+- low suits sorting, extraction and short tool loops; medium suits general agent work; high suits multi-step reasoning. Without the helper, the model's own default is xhigh, its longest.
+- The model's template opens the system block with Meta's own lines (a helpful-assistant line, a knowledge cutoff of 2026-01-04 and today's date), then INSTRUCTIONS. Don't promise facts from after the cutoff.
+- It pays most attention to the start of the system prompt, so put the rules that must always hold first in INSTRUCTIONS. Never write "Reasoning strength" there: that line overrides the `reasoning` option.
+- Don't describe tools in INSTRUCTIONS. Pass them as `tools`, and the template adds them. It can ask for several tools in one reply: answer every call with its own `tool` message, in the order of the calls, before the next request.
+- It reads parts in the order you send them, so put each image right next to the text about it. Leave temperature and top_p unset: Meta's defaults are 1.0 and 1.0.
 - An answer can take half a minute or more to start. Show that it's working, and set `export const maxDuration = 120` on the route.
 - Don't call `metaClient().responses` with this model, and never call a provider or any other host yourself. The gateway answers only `/v1/chat/completions` for it.
 
@@ -58,7 +63,7 @@ Never say a person wrote an answer, and never imply Meta made the product.
 
 ## Limits
 
-- Text and images in, text out. It has no web search, and takes no audio, video or PDFs: use the brief's other models for those.
+- Text and images in here, text out. The model itself also reads audio and video, but this gateway takes only text and image parts, and it has no web search: use the brief's other models for audio, video and PDFs.
 - One reply per call. Function tools work; built-in tools don't.
 - The gateway meters every call against the product's daily budget, like the other models, so write no limits of your own and hold no key.
 - For people 18 and over only. Don't build it into a product for children or for students under 18, and say so in BUILD_NOTES.md if the brief asks for one.

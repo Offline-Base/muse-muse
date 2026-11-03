@@ -3318,3 +3318,36 @@ The organizers ruled on Nov 2 that every model the project calls at runtime must
 - **Found and fixed:** the Meta-only line #74 added to template/AGENTS.md ("every model the product calls must be a Meta model through the gateway") never reached either overlay's AGENTS.md. Products built with `MUSE_APP_LOOK` or `BUILD_RANGE` didn't get the rule. The muse-app copy was regenerated, and the build-range copy got the line by hand.
 - **Needs:** the next builder snapshot. The looks only show up when `BUILD_RANGE` is on; its value on Production wasn't read.
 - **Tests:** range, look, look scenario and flags-off pass 55 of 55; muse-app overlay 19 of 19; typecheck clean. Spend $0.
+
+## Nov 2, 2026, late night: Meta's Glimmer and Spark Open guidance in the template skills, and where the tuning pipeline differs from Meta
+
+- **Owner ask:** make sure builds have the fine-tuning knowledge from Meta's docs. A read-only comparison of Meta's Glimmer and Spark Open pages (post-training, prompting, quantization, deploy, settings) against the template skills and lib/train. Key lines were rechecked by hand: muse-glimmer/prompting.md 91-110 and 204-216, post-training.md 245-250.
+- **Skills updated (template; reach builds with the next snapshot):**
+  - **meta-glimmer:** a new section for calling a `GLIMMER_URL` endpoint:
+    - Meta's sampling (temperature 1.0, top_p 0.95, top_k 64, never greedy);
+    - `reasoning_strength` in `chat_template_kwargs`, not `reasoning_effort`;
+    - reasoning uses up `max_tokens` (empty content, finish "length");
+    - where the reasoning comes back;
+    - never stop on `<|eom|>`;
+    - one tool call per turn;
+    - images need the vision projector;
+    - how to write the system prompt.
+  - **meta-glimmer, hosted section:** text only, about 4,096 tokens, and an own model only for its one task.
+  - **meta-spark-open:**
+    - what each reasoning level suits, and that the default is xhigh;
+    - Meta's system lines and the 2026-01-04 cutoff;
+    - rules first, and never "Reasoning strength" in INSTRUCTIONS;
+    - tools passed as `tools`, with parallel calls answered in order;
+    - each image placed next to its text.
+  - **meta-spark-open, limits line corrected:** the model reads audio and video, and it's our gateway that takes only text and images.
+  - **meta-reasoning:** Glimmer and Spark Open don't take `minimal` or `none`.
+  - **Not added:** a separate tuning skill. Builds don't choose training settings; the platform does.
+- **Where the pipeline differs from Meta (not changed; owner decisions):**
+  1. **The answer's recipient is never trained.** `RESPONSE_PART` masks `to=user`, so every adapter needs `tuned.jinja` or `--chat-template`, and Fireworks can't host them. Meta's Spark SFT cookbook trains it; that this carries over to Glimmer is inferred.
+  2. **Evals and local files decode greedily, and the model card says "Use temperature 0".** That covers the lab eval, `/generate`, the quantize answer check, and the Ollama params and Modelfile. Meta says never greedy, so scores are measured differently from how products call the model.
+  3. **Fixed 120 steps.** That's about 27 epochs on a 20-row set; Meta says 2 to 5 epochs.
+  4. **`lora_alpha` equals the rank.** Meta uses twice the rank.
+  5. **The vLLM host path** sends no `reasoning_strength` and lacks Meta's tool parser and generation-config flags.
+  6. **The RL recipe** uses learning rate 5e-5 with no KL penalty, and starts from base. Meta uses 1e-6 to 3e-6, a KL penalty of 0.01 to 0.1, and an SFT start.
+  7. **Dataset minimum is 20.** Meta suggests 500 or more for meaningful adaptation.
+- **Tests:** gpu flag, reach claims, spark-open flag and template-source pass 55 of 55; muse-app overlay 19 of 19. Spend $0.

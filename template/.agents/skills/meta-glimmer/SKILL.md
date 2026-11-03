@@ -27,6 +27,19 @@ if (local) {
 
 If `GLIMMER_URL` isn't set, use Muse Wonder and say in the UI and in BUILD_NOTES.md that the Glimmer mode needs a Glimmer endpoint.
 
+## Calling a `GLIMMER_URL` endpoint yourself
+
+These come from Meta's Muse Glimmer docs (prompting and deploy guides).
+
+- Send `temperature: 1.0`, `top_p: 0.95` and `top_k: 64` together on every request. Never send `temperature: 0`: Meta says greedy decoding gives flat, repeating or looping answers.
+- Glimmer always reasons before it answers, and that can't be turned off. Set how much with `chat_template_kwargs: { reasoning_strength: "low" }` (low, medium, high or xhigh; the default is high). Don't use `reasoning_effort`, which llama.cpp ignores. Use low for interactive replies.
+- Reasoning counts against `max_tokens`. If it uses them all, `content` comes back empty with `finish_reason: "length"`. Treat an empty answer as a reason to raise `max_tokens` or lower the strength, never as an answer, and stream long calls so they don't time out.
+- The reasoning comes back in `message.reasoning` or `message.reasoning_content`, not in `content`. Never show it as the answer.
+- Never put `<|eom|>` in `stop`. It ends a message, not the turn, so stopping there cuts off tool calls and answers.
+- Pass tools as OpenAI-style `tools`; the server returns `tool_calls`. Glimmer makes one tool call per turn, so send each result back before it can make the next.
+- Images go in `image_url` parts placed before the question, and work only when the server loaded Glimmer's vision projector.
+- Put the system prompt first. Name the task exactly and say the format, length and tone up front. Don't explain to it how it works.
+
 <!-- Wave 3, unit 11: the hosted Glimmer -->
 ## When the build prompt says "Hosted Muse Glimmer"
 
@@ -46,6 +59,8 @@ const { text, by, note } = await askGlimmer({
 - It throws only when the request itself is wrong (a 400). Fix those.
 - A Glimmer answer can take over a minute, so show progress and set `export const maxDuration = 300` on the route.
 - In a build the gateway sends sample replies with `simulated: true`. Assert that a reply shows, never what it says.
+- The hosted endpoint takes text only: no images, no tools and no streaming. Keep a request under about 4,096 tokens.
+- A product's own tuned model (`own: true`) was trained for one task. Use it only for that task, and use base Glimmer or Muse Wonder for anything else.
 - Muse Glimmer's license and usage policy pass down to this product, so no use the policy bars.
 - To test a closed window, have the smoke test call `page.setExtraHTTPHeaders({ "x-musemuse-glimmer-test": "closed" })`. The product must still answer and show the note.
 <!-- End wave 3, unit 11 -->

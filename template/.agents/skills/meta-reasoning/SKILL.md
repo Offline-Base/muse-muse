@@ -122,6 +122,8 @@ Vercel Blob URLs from `uploadMedia` work. Some sites (Wikimedia, for one) refuse
 
 `reasoning: { effort }` accepts `minimal`, `low`, `medium` and `high`, not `none`. Use `low` for interactive replies. Even trivial answers use 150 to 400 reasoning tokens at `low`.
 
+These effort names are for the Meta Model API's models. Muse Glimmer takes `reasoning_strength` and Muse Spark Open takes `reasoning_effort`, each low, medium, high or xhigh, and neither accepts `minimal` or `none`.
+
 ## Errors
 
 | Status | Meaning | What to do |
