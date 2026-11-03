@@ -19,6 +19,7 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bridge_client  # noqa: E402
+import rover_config  # noqa: E402
 
 TOKEN_FILE = os.path.expanduser("~/.muse-device/token")
 ROVER_TOOLS = ("drive", "stop", "look", "ranges", "rover_status")
@@ -84,7 +85,7 @@ def wheel_check(board, side, before):
     return f"no encoder ticks while the {side} wheel was driven: check that it turned, and its encoder's power and signal wire", moved
 
 
-def run(board):
+def run(board, encoders=True):
     """Every check, as ok or why not, and what was measured."""
     checks, seen = {}, {}
     try:
@@ -131,7 +132,11 @@ def run(board):
     for side in ("left", "right"):
         ok, text, _ = board.tool("rover_status")
         before = (json.loads(text).get("ticks") or {}) if ok else {}
-        checks[f"{side}_wheel"], seen[f"{side}_ticks"] = wheel_check(board, side, before)
+        if encoders:
+            checks[f"{side}_wheel"], seen[f"{side}_ticks"] = wheel_check(board, side, before)
+        else:
+            ok, text, _ = board.tool("drive", left=WHEEL_SPEED if side == "left" else 0, right=WHEEL_SPEED if side == "right" else 0, ms=WHEEL_MS)
+            checks[f"{side}_wheel"] = "ok, pulsed: there is no encoder to count it, so check by eye that it turned" if ok else text
         time.sleep(0.3)
     board.tool("stop")
 
@@ -168,7 +173,8 @@ def main(argv):
         checks, seen = {"server": "this board has no readable ~/.muse-device/token, so its server can't be called"}, {}
     else:
         try:
-            checks, seen = run(Board(options.port, token))
+            config = rover_config.read_config(os.path.expanduser("~/.muse-device/rover.json")) or {}
+            checks, seen = run(Board(options.port, token), encoders=config.get("encoders", True) is True)
         except (OSError, ValueError, KeyError, RuntimeError) as err:
             checks, seen = {"self_test": f"stopped partway: {err}"}, {}
     print(json.dumps({"ok": passed(checks), "checks": checks, "seen": seen}))

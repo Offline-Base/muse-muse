@@ -265,9 +265,13 @@ int main() {
   ticks_left = 0;
   rpc_drive(-100, 0, 200);
   run_ms(20);
+#if ROVER_ENCODERS
   on_tick_left();
   on_tick_left();
   check(rpc_ticks().text == "{\"left\":-2,\"right\":0}", "ticks count down going back", rpc_ticks().text);
+#else
+  check(rpc_ticks().text == "{\"left\":0,\"right\":0}", "with encoders off, ticks stay at zero", rpc_ticks().text);
+#endif
 
   run_ms(2000);
   pulses.clear();

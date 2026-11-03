@@ -30,6 +30,9 @@ DEFAULT = {
     "stop_mm": 150,
     # With the front sensor gone, nothing would stop the rover driving forward into something, so it refuses to.
     "need_front_sensor": True,
+    # The DIYables 2WD chassis has slotted discs on its motors but no sensor to read them, so encoders are off unless one is
+    # fitted to enc_left and enc_right.
+    "encoders": False,
     # A motor wired the other way round, or a servo mounted facing the other way.
     "invert": {"left": False, "right": False, "pan": False, "tilt": False},
     "pan_deg": [-90, 90],
@@ -73,6 +76,8 @@ def check(config):
         raise ConfigError(f"stop_mm must be a whole number of millimetres from {STOP_MM[0]} to {STOP_MM[1]}.")
     if not isinstance(config.get("need_front_sensor"), bool):
         raise ConfigError("need_front_sensor must be true or false.")
+    if not isinstance(config.get("encoders"), bool):
+        raise ConfigError("encoders must be true or false.")
     invert = config.get("invert")
     if not isinstance(invert, dict) or set(invert) != set(DEFAULT["invert"]) or not all(isinstance(v, bool) for v in invert.values()):
         raise ConfigError("invert must say true or false for each of left, right, pan and tilt.")
@@ -133,6 +138,7 @@ def render_header(config):
         f"#define ROVER_STOP_MM {config['stop_mm']}",
         f"#define ROVER_MAX_DRIVE_MS {MAX_DRIVE_MS}",
         f"#define ROVER_NEED_FRONT {int(config['need_front_sensor'])}",
+        f"#define ROVER_ENCODERS {int(config['encoders'])}",
         f"#define ROVER_LEFT_INVERT {int(flags['left'])}",
         f"#define ROVER_RIGHT_INVERT {int(flags['right'])}",
         f"#define ROVER_PAN_INVERT {int(flags['pan'])}",

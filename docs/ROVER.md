@@ -20,7 +20,7 @@ hardware" at the end lists everything only the board can prove.
 | Part | Count | Job |
 | --- | --- | --- |
 | Arduino UNO Q (Debian 13 on its Qualcomm side, an STM32U585 running Zephyr) | 1 | Linux runs `muse-device/server.py`; the microcontroller runs the sketch that drives everything |
-| DIYables 2WD chassis, two DC gear motors with Hall encoders | 1 | Wheels. Channel A of each encoder counts; B is left unconnected |
+| DIYables 2WD chassis, two DC gear motors, its own 4xAA holder with a switch | 1 | Wheels and the motor battery. The motors come with their red and black wires attached, so nothing on the chassis needs soldering. The "encoders" are slotted discs with no sensor to read them, so `encoders` is false in rover.json |
 | TB6612FNG dual motor driver | 1 | Channel A the left motor, B the right |
 | 4xAA battery pack, 6 V | 2 | One for the motors, one for the servos |
 | SG90 servo on a mini pan-tilt mount | 2 | Pan and tilt for the camera |
@@ -49,8 +49,8 @@ The board's logic is 3.3 V: nothing on these pins may see 5 V or a battery.
 | TB6612FNG | every GND | GND | common ground |
 | TB6612FNG | AO1, AO2 | none | the left motor's two leads |
 | TB6612FNG | BO1, BO2 | none | the right motor's two leads |
-| Left encoder | A | D2 | VCC to 3.3V, GND common |
-| Right encoder | A | D3 | VCC to 3.3V, GND common |
+| Left encoder, only if an optical sensor is fitted | A | D2 | VCC to 3.3V, GND common. Off by default |
+| Right encoder, only if an optical sensor is fitted | A | D3 | VCC to 3.3V, GND common. Off by default |
 | Both encoders | B | not connected | |
 | Pan servo (SG90) | signal (orange) | D9 | red to the servo pack +, brown to common ground |
 | Tilt servo (SG90) | signal (orange) | D10 | red to the servo pack +, brown to common ground |

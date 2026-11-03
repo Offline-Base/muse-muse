@@ -100,8 +100,10 @@ static volatile int guard_stop = GUARD_NONE;
 static volatile int32_t ticks_left = 0, ticks_right = 0;
 static volatile int8_t dir_left = 1, dir_right = 1;
 
+#if ROVER_ENCODERS
 static void on_tick_left() { ticks_left += dir_left; }
 static void on_tick_right() { ticks_right += dir_right; }
+#endif
 
 // ---- Motors: a TB6612FNG, channel A left and B right ----------------------------------------------------------------
 
@@ -579,10 +581,12 @@ void setup() {
   digitalWrite(ROVER_PIN_SERVO_TILT, LOW);
   servo_until = millis() + ROVER_SERVO_HOLD_MS;
 
+#if ROVER_ENCODERS
   pinMode(ROVER_PIN_ENC_LEFT, INPUT_PULLUP);
   pinMode(ROVER_PIN_ENC_RIGHT, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(ROVER_PIN_ENC_LEFT), on_tick_left, RISING);
   attachInterrupt(digitalPinToInterrupt(ROVER_PIN_ENC_RIGHT), on_tick_right, RISING);
+#endif
 
   // All three in reset, then up one at a time, each moved off 0x29 before the next wakes.
   for (int i = 0; i < SENSORS; i++) hold_in_reset(i);
