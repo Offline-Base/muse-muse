@@ -3649,3 +3649,76 @@ Five units, each built in its own ~/mm-wt worktree and checked by a second agent
 - **Tests:** round 2 touched tests 339 of 339; brief, full and gateway suites 509 of 509 after the clock fix; pipeline, engine and outputs suites 499 of 499; typecheck clean.
 - **Needs a new builder snapshot:** the template parts (verify recording and lints, lib/meta errors and image checks, AGENTS.md, media-store, raster, Tabs, CSS, product-ui). The gateway floor, caps, judge, recipes, live check and shipping rules are live on deploy.
 - **Checked live after the deploy (3:44 AM ET):** fable-case-ledger's `file_memo` with the full made-up 4-item record, which failed 3 of 3 times before, now answers 200 in 14.5 s with a real memo. The gateway's output floor fixed it without a rebuild. sim-desk-agent-demo still needs a rebuild (its page draws SVG), and so does wag-sticker-studio (old upload client).
+
+
+## Nov 3, 2026, 2:15 to 4 AM ET: the boards, checked for real: SAM 3.1, a SAM tune on a board, one-bit Glimmer, and a way for hosted products (branch tg-boards-nov3)
+
+The owner asked to make sure, on the office Orin Nano boards, that Meta's SAM 3.1 runs, that SAM can be tuned and the result runs on a board, that the one-bit Muse Glimmer runs, and that Muse Muse products can call them. Meta models only. Everything went through the fleet control plane (MCP `run_command`), on jetson-02, 03 and 04 only. Nothing was deleted on a board, no board was rebooted, and no power mode changed. Spend: $0 (no Lambda; the tune ran on jetson-03).
+
+**What was on the boards at 2:20 AM**
+
+| Board | Disk free | RAM in use | Running | Model files |
+|---|---|---|---|---|
+| jetson-02 | 191 MB | 1.7 of 7.5 GB | agent, `muse-device` (8765), Ollama (empty) | `/opt/jetson-gguf/models/muse-glimmer-stage-b-r30b-iq1s-io-lowest.gguf` (5.75 GB, sha256 `dc755be7...`), llama.cpp b11574 and b11970; `/home/jetson-02/train` (6.2 GB: a venv and Qwen3.5 0.8B, not Meta, Hussam's) |
+| jetson-03 | 569 MB | 1.7 GB | agent, `muse-device`, Ollama (empty) | `/opt/sam3train` (7.8 GB): another session's SAM 3 tune from Nov 3, 12:10 to 12:45 AM ET (run `muse1`, checkpoint 349 MB with optimizer state) |
+| jetson-04 | 2.5 GB | 6.5 GB | `sam3.service` (192.168.12.144:8790), agent, `muse-device` | SAM 3.1 fp16 (1.76 GB); Llama 3.2 1B Q8 and its receipt adapter (1.34 GB, not used) |
+
+`jetson-llama.service` was stopped and disabled on all three (Nov 2 evening).
+
+**1. SAM 3.1 on jetson-04: runs.** `curl`-style calls on the board to `/segment` with Meta's `truck.jpg` (1800 x 1200): first 3.27 s, then 1.42 to 1.43 s each. "truck" 1, "wheel" 4, "tire" 4, "window" 6, "person" 0. The service's process held 5.9 GB (unified memory, GPU included); the board had 0.9 GB available. Also run: the exact commands the new hosted route sends (one piece and `ask.py`, a 200 x 150 render), through the control plane: `SAMRESULT` came back with the service's shape in 5.6 s ("tree" 0 on a low-poly tree).
+
+**2. One-bit Muse Glimmer on jetson-02: runs, slowly, with weak answers.**
+- The file is Muse Muse's knowledge-run tune of Muse Glimmer 30B (r30b stage b), IQ1_S with lowest-bit embedding and output, not Meta's own file. Served with llama.cpp b11970, `-ngl 999 -c 4096 -np 1 -b 256 -ub 256 --cache-ram 0`, under a memory guard that kills the server below 300 MB available (`/run/glimmer-test/guard.sh`, gone at reboot).
+- Load: about 98 s. Lowest available memory: 450 to 530 MB, with `muse-device` running. Speed: 5.2 to 5.5 tokens a second on the GPU (1.1 a second when the CUDA libraries weren't on the path and it fell back to the CPU, my first try), prompt 28 to 47 tokens a second, time to first token 1.1 to 2.7 s through the fleet.
+- **Meta's settings** (temperature 1.0, top_p 0.95, top_k 64, `reasoning_strength` low through `chat_template_kwargs`, the template in the file, no stop on `<|eom|>`, max_tokens 1536): "What is 17 * 23?" thought in a loop for all 1536 tokens (285 s) and the server answered HTTP 500 "does not match the expected peg-native format". `--reasoning-budget 256` didn't stop the loop either (500 again at 286 s).
+- **The knowledge run's no-thinking template** (`tuned-reasoning-off.jinja`, `--reasoning-format none`, stop on `<|eot|>` and `<|end_of_text|>`, never `<|eom|>`), still temperature 1.0: "17 * 23" ran 1536 tokens of `* * *` (finish length); the haiku was "* * * / * * * / I don't know Haiku."; the cold-room JSON came back with a missing brace and `"status": "ok"`.
+- **The same template at temperature 0.2 with repeat penalty 1.1** (the Nov 2 drop-in's settings, not Meta's): three short answers, 5.2 to 5.3 tokens a second.
+
+| Prompt | Answer | Tokens | Wall |
+|---|---|---|---|
+| What is 17 * 23? Answer with the number only. | "I don't know what you're asking for. The answer is 17 * 23 = 391." (right) | 21 | 5.9 s |
+| Write a haiku about a small computer board answering questions in an office at night. | "A small computer board / Answering questions in the office / At night" plus a note that it has 5 syllables a line (it doesn't) | 44 | 9.1 s |
+| (invented) controller 3 C, probe 9 C, door shut: JSON status and reason | `{"status": "ok", "reason": "the controller says 3 C, an independent probe says 9 C, the door is closed."}` (valid JSON, wrong call: a 6 C disagreement should be an alert) | 32 | 7.3 s |
+
+- Through the control plane's own gateway (MCP `ask_fleet_model`, pinned to jetson-02), the path a product's fleet route takes: "In one sentence, what is a Jetson Orin Nano?" gave a fluent sentence that calls it x86 (it's Arm), 1.1 s to first token, 5.5 tokens a second. The cold-room question again: valid JSON, "ok", the same wrong call.
+- **Left running:** `jetson-llama.service` started (its existing Nov 2 drop-in: the template above, temperature 0.2, `-n 128`), **not enabled**, so it stops at the next reboot as the Nov 2 decision wants. The guard watches it. The fleet lists `muse-glimmer-2026-iq1s-io-lowest` on jetson-02 again.
+- **Honest to say:** "Muse Muse's one-bit tune of Muse Glimmer 30B runs on a Jetson Orin Nano 8 GB at about 5 tokens a second. Its answers are short and often wrong." Not: that it reasons, that it judges the cold room, or anything with Meta's recommended sampling, which loops.
+
+**3. A SAM tune on a board: done, on jetson-03, and the tuned file runs on jetson-04.**
+- What was tuned: the detector of Meta's SAM (transformer encoder and decoder, geometry encoder, scoring heads: 30.4M of 838M parameters), with the vision and language encoders frozen in bf16. Meta's own trainer (`sam3/train/train.py`), Roboflow 100-shot recipe, 5 epochs, batch 1, lr scale 0.1, at 1008 px. The task: a new word, "muse", for the Muse mascot (a small cream plush figure), from the other session's made-up set (160 training images, 50 held-out from a video it never trained on; 38 of the 50 show Muse, 12 don't).
+- The other session's SAM 3 run (`muse1`) had no baseline, and was SAM 3, not 3.1. So both were scored, and SAM 3.1 was tuned the same way, on the same 50 held-out images (`scripts/edge/sam3/tune/evalmuse.py`; detections over 0.05 for AP, counts at 0.5; the "small" set pastes each held-out Muse, cut out by its own mask at 30% size, onto one of the 12 held-out images without Muse):
+
+| Model, prompt | Held-out 50: box AP | AP50 | Found at 0.5 (of 38) | Wrong boxes | Right about Muse there or not (of 50) | "Small" set AP | Truck photo: "truck", "wheel" |
+|---|---|---|---|---|---|---|---|
+| SAM 3, Meta's weights, "muse" | 0.000 | 0.000 | 0 | 0 | 12 | 0.000 | 1 (0.86), 4 |
+| SAM 3, tuned (`muse1`), "muse" | 1.000 | 1.000 | 38 | 0 | 50 | 1.000 | 1 (0.99), 4 |
+| SAM 3.1, Meta's weights, "muse" | 0.000 | 0.000 | 0 | 0 | 12 | 0.000 | 1 (0.87), 4 |
+| SAM 3.1, Meta's weights, "plush toy" | 1.000 | 1.000 | 38 | 0 | 50 | 1.000 | |
+| SAM 3.1, Meta's weights, "toy" | 1.000 | 1.000 | 38 | 0 | 50 | 1.000 (37 of 38 found) | |
+| **SAM 3.1, tuned on jetson-03 (`muse31`), "muse"** | **1.000** | **1.000** | **38** | **0** | **50** | **0.996** | 1 (0.99), 4 |
+
+- **So, honestly:** the tune taught SAM 3.1 a name. Meta's SAM 3.1 already finds the mascot perfectly on this set when asked for a "plush toy" or a "toy", so on these images the tune adds a word, not accuracy. What it would add, telling Muse apart from other plush toys, wasn't tested: the held-out images have no other toys. Nothing was forgotten on the one photo checked (the truck's score went up, 0.87 to 0.99; 4 wheels both ways).
+- **The run (SAM 3.1):** 11 minutes to load SAM 3.1 over the office Wi-Fi, then 30 minutes for 5 epochs (about 2.1 s a step, 800 steps; loss from 498 at the first step to an epoch average of 4.4), then the trainer's own check on the 50 held-out images: AP 1.0. The process held about 5.2 GB of the board's 7.5 GB (unified memory). Each look on jetson-03 took a median 1.35 s. Scores: docs/log/bench/2026-11-03/.
+- **On jetson-04, the tuned file in the running service** (`"tuned": "muse"`, 3 held-out images and the truck photo, through `ask_muse.py` on the board):
+
+| Image, prompt | Meta's weights | Tuned (`muse`) |
+|---|---|---|
+| Muse image 1, "muse" | 0 | 1 (0.996) |
+| Muse image 2, "muse" | 0 | 1 (0.992) |
+| Image without Muse, "muse" | 0 | 0 |
+| Muse image 1, "plush toy" | 1 (0.977) | 1 (0.992) |
+| Truck, "truck" | 1 (0.867) | 1 (0.992) |
+| Truck, "wheel" | 4 | 4 |
+
+  1.33 to 1.49 s a look either way; switching between the two weights costs nothing measurable, and Meta's answers were the same before and after the switch. The first look after the restart took 14.6 s (PyTorch compiling for the Orin, as before).
+
+- **Not proven:** the test images are composites like the training ones (Muse cut out and pasted on plain backgrounds), so near-perfect scores on them say little about real photos. The "small" set is made from the same held-out images. "muse" is a word Meta's SAM never learned, so a 0 before is expected; the plain-words baseline is the fairer one. No real camera frame and no other object class were tried beyond the truck photo.
+- **Disk:** the tune wrote only new files: `/opt/sam3train/lib31/` (3 small scripts), `runs/muse31/` (the 61 MB fp16 delta, logs), `runs/nov3/` (scores) and a config, `configs/muse/muse31.yaml`. Its own checkpoint saving was swapped for the 61 MB delta, since the trainer's 349 MB checkpoint wouldn't fit. SAM 3.1's weights came over the office LAN from jetson-04, tensor by tensor (`share.py`, a temporary, token-guarded, LAN-only unit, stopped after the tune), at about 3.4 MB/s.
+
+**4. Products calling the boards.**
+- **Text (one-bit Glimmer):** the route exists since #63: `POST {GATEWAY_URL}/fleet/v1/chat/completions` (`lib/caps/fleet/handler.ts`), behind `FLEET_PRODUCTS`, with `FLEET_PRODUCTS_URL`, a `jik_` key in `FLEET_PRODUCTS_KEY` and `FLEET_PRODUCTS_MODEL=muse-glimmer-2026-iq1s-io-lowest`. The control plane's half of it ran tonight (above). None of those four is set on any Vercel environment, the `jik_` key is Hussam's H2, and builds learn the helper only from a builder snapshot with the `fleet` overlay. Limits to know: the route waits 100 s, so at 5 tokens a second an answer over about 450 tokens times out; with the drop-in's `-n 128` that can't happen.
+- **SAM 3.1, new, behind `FLEET_SAM` (off):** `POST {GATEWAY_URL}/fleet/v1/segment` (`lib/caps/fleet/sam.ts`). A product's live token that may use `sam-3.1`, made by an admin (or any signed-in builder with `FLEET_ALL_PRODUCTS`), sends `{image_b64, prompt, threshold, overlay}`; the server sends the photo to the SAM board in 15,000-character pieces as control-plane exec jobs, runs `/opt/sam3/ask.py` there and returns the service's own answer. Build tokens get 503, so builds and drills never reach the board. One look at a time, 40 a product a day, 200 in all, 4 a minute per visitor; every command is built from checked parts (base64, a hex id, a number, a prompt of letters, digits and `.,'-`). `segmentOrEdge` in the template now uses it when `EDGE_SAM_URL` is unset and `GATEWAY_URL` is set (label "Seen on an office Jetson by Meta SAM 3.1", 60 s). It goes to edge builds through the edge extra files, with no new snapshot. While the flag is off the route answers 404, which a product reads as the board being down, exactly as before.
+- **Ran:** 18 new route tests and 1 new template test on fakes; the edge, drill and fleet tests 190 of 190; typecheck clean. The board half (the same commands) ran on jetson-04 through the control plane. **Not run:** the route on a deployment, since `BOARD_FLEET_URL` and `BOARD_FLEET_TOKEN` are only on Preview for the `fleet-integration` branch and not on Production.
+- `edge.test.mjs` had one stale assertion expecting a Llama label where the test sets a Glimmer one. Fixed.
+
+**Fleet changes left in place** (all logged in docs/HANDOFF.md, "Fleet changes made Nov 3"): jetson-02 `jetson-llama` started, not enabled, plus `glimmer-guard` (transient); jetson-04 `sam3.service` restarted once at 3:28 AM ET with the tuned detector beside Meta's (drop-in `tuned.conf`; old server kept as `server.py.nov2`); jetson-03 the new tune files above.

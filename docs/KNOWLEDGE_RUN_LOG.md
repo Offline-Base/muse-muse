@@ -677,6 +677,14 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   hardware other than the laptop. Muse Privacy applied the serving notes on its main at 2c84b1d (unit tests only).
 - About 2:40 PM: Muse Muse General session will squash-merge PR #3 on the owner's instruction, leaving the Lambda addresses,
   key path and notes in. Later pushes to knowledge won't reach main without a new PR.
+- Nov 3, 2:25 to 3:05 AM ET (Muse Muse boards session, docs/BUILD_LOG.md, Nov 3): stage-b r30b IQ1_S with lowest-bit
+  embedding and output (`muse-glimmer-stage-b-r30b-iq1s-io-lowest.gguf`, 5.75 GB, sha256 dc755be7...) served on jetson-02
+  with llama.cpp b11970, all layers on the GPU, -c 4096: about 98 s to load, 450 to 530 MB of RAM left, 5.2 to 5.5 tokens a
+  second. With Meta's sampling (temperature 1.0, top_p 0.95, top_k 64, reasoning_strength low) and the file's own template
+  it loops in its thinking to max_tokens and llama-server returns 500 (peg-native format); --reasoning-budget 256 didn't
+  stop it. tuned-reasoning-off.jinja at temperature 1.0 gives `* * *` loops; at temperature 0.2, repeat penalty 1.1, three
+  short answers (17 * 23 = 391 right, a weak haiku, valid JSON with the wrong call). No training, no new file. jetson-llama
+  started (not enabled) with the Nov 2 drop-in.
 
 ## Problems and fixes
 

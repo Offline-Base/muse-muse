@@ -13,6 +13,7 @@ Change a line here when its fact changes. History goes in docs/BUILD_LOG.md.
   - The edge board model, Muse Privacy's device model (LFM3-VL-2B), #67's Llama 3.2 1B on jetson-04, Bolt on jetson-03 and 04, and Prompt Guard on jetson-05 all need a Meta model or must stay off in the demo.
 - **Edge direction: SAM 3.1 on the boards (owner, Nov 2, about 8 PM ET).** Meta's SAM 3.1 runs as `sam3.service` on jetson-04 (`192.168.12.144:8790`, office network) and a laptop page calls it through the fleet (`scripts/edge/sam3/`, README there). The owner said this is the direction. docs/EDGE_PLAN.md, "Direction: SAM 3.1 on the boards", has what runs, what doesn't and what may be said.
   - Branch `tg-edge-vision` (Nov 2, late, a PR, not merged) adds `segmentOrEdge` so an edge build can look with SAM on the board, four photo drills, and the fix for the 404 `model_not_found` bug #87 found. The jetson-04 photo-take kit for Hussam is docs/EDGE_DEMO.md, section 6. Nothing of it has run on a board or in a real build.
+  - **Nov 3, early morning (docs/BUILD_LOG.md, Nov 3):** SAM 3.1 checked on jetson-04 (1.4 s a prompt). SAM 3.1 was tuned on jetson-03 for a new word, "muse" (the mascot), and the tuned file runs inside jetson-04's `sam3.service` when a request says `"tuned": "muse"`. One-bit Glimmer runs on jetson-02 at about 5 tokens a second with weak answers. Hosted products can reach SAM on jetson-04 through `{GATEWAY_URL}/fleet/v1/segment` once the owner turns on `FLEET_SAM` (to-do 17).
 - **Merged Nov 2 afternoon:** #67 (3:31 PM ET), #63, #68 (the edge track, 3:40 PM, deployed at `ee493e69`) and #69 (Learn, 4:07 PM). The tg-edge rows in the tables below are now on main.
 - **Production** ran main at PR #59 (`12a362a1`) as of midday, with the Make chat on (`MAKE_CHAT_ALL`). Vercel blocked the deploys of #60, #61 and #62 because Hussam's commits aren't from a Vercel team member (checked Nov 2 from GitHub's commit statuses). #66, authored by Ethan, merged at 2:09 PM ET and should deploy all of main, theirs included; check its deploy on Vercel, since this file hasn't.
 - **Deadline:** due Nov 4, 9 PM ET, and Ethan submits by noon ET. Whoever is awake switches judges to Muse Wonder on Nov 4.
@@ -120,6 +121,15 @@ In order. To-do 2 has to finish by Nov 3 afternoon (Tue 3 PM for the edge tune),
     - Run 3 prompts that use each. Record what worked and what didn't, with a screenshot, in docs/BUILD_LOG.md.
     - Until that's logged, don't say Muse Muse products work in the Muse app.
 
+17. **Let hosted products call the boards (Nov 3).** About 10 minutes, owner, in `~/muse-muse`. Each `vercel env add` asks for the value; type it at the prompt, never in a chat or a file. Nothing here unsets anything.
+    - SAM 3.1 on jetson-04 for products (`FLEET_SAM`, lib/caps/fleet/sam.ts):
+      - `vercel env add BOARD_FLEET_URL production`: the control plane's https address ending in `/admin` (the value Preview's fleet-integration branch has). It also turns on the admin-only fleet card on /device and Wonder's read-only fleet tools in production.
+      - `vercel env add BOARD_FLEET_TOKEN production`: an admin's `jpt_` token (exec is admin only). Best a dedicated one Hussam makes for this, so it can be revoked alone.
+      - `vercel env add FLEET_SAM_NODE production`: `nd_fe300e68e976228c` (jetson-04).
+      - `vercel env add FLEET_SAM production`: `1`.
+      - Then redeploy production (the next push to main does it). Check: an admin-owned edge product that looks with SAM, with `EDGE_FIRST=1` on that product's own Vercel project so the board goes first, shows "Seen on an office Jetson by Meta SAM 3.1". Products built before this deploy have the old `lib/meta/edge.ts`; a new edge build gets the new one. Each look spends about 10 to 25 of ngrok's 20,000 monthly requests.
+    - One-bit Glimmer on jetson-02 for products (`FLEET_PRODUCTS`, since #63): `FLEET_PRODUCTS=1`, `FLEET_PRODUCTS_URL` (the same `/admin` address), `FLEET_PRODUCTS_KEY` (a `jik_` key from Hussam with `cloud_daily_limit` 0, H2) and `FLEET_PRODUCTS_MODEL=muse-glimmer-2026-iq1s-io-lowest`, each with `vercel env add <NAME> production`, plus a builder snapshot made from main so new builds get the helper. The board side ran Nov 3 through the control plane. Its answers are weak (docs/BUILD_LOG.md, Nov 3), so decide whether a judge should see them. `jetson-llama` on jetson-02 is started but not enabled: after a reboot, start it again through the fleet (`systemctl start jetson-llama`).
+
 Also waiting, from the Nov 2 audit. None is approved or started, except that item 5's docs (SUBMISSION.md and the shot list) are drafted on tg-submission-kit.
 - Hero tune: a longer Glimmer tune for redaction and private spreadsheet analysis, scored on the sealed test against base. Up to $300 of GPU. Was blocked on the rotated Lambda key, which is now in place; still not approved.
 - "Own it" proof: download a real product and run it outside Muse Muse from its own instructions. $1 of Contributor.
@@ -145,7 +155,7 @@ Nov 2 night, from the audit's fix plan. Yes or no each. Until answered, agents t
 7. If the Muse Privacy swap misses Tue 6 PM, cut Muse Privacy from the video and submission and take `privacy/` off the public branch?
 8. Delete, rather than just flag off, the Llama, LFM, SpeechT5, EmbeddingGemma and Prompt Guard code before the repo goes public? **Answered yes (owner, Nov 2 night).** Done in part on branch tg-meta-only-tree (see "Meta-only tree" below); git history still shows it, which the owner accepted.
 9. Drop read-aloud entirely, including the browser's own speech fallback?
-10. Unset `BOARD_FLEET_URL` and `BOARD_FLEET_TOKEN` on production for judging, on top of the model allowlist?
+10. Unset `BOARD_FLEET_URL` and `BOARD_FLEET_TOKEN` on production for judging, on top of the model allowlist? (Checked Nov 3: neither is set on production; both are on Preview for the `fleet-integration` branch only. The owner's Nov 3 rule: never unset them. To-do 17 adds them to production.)
 11. Hussam deletes the Llama files on jetson-04 and Prompt Guard on jetson-05?
 12. Send Cerebral Valley a one-line check that Glimmer on OpenRouter and a no-model fallback are fine?
 
@@ -227,6 +237,18 @@ Steps for each are in docs/EDGE_PLAN.md, "Hussam's asks". Under the Nov 2 ruling
 - jetson-03 and 02: a separate session is setting up on-board LoRA training of Glimmer one-bit (Tether's QVAC llama.cpp fork, in `/opt/glimmer-train` on 03; file shares on 02's ports 8799 and 8800). Its own log covers it.
 - jetson-04: SAM 3.1 (above). It is kept out of training while SAM runs.
 - jetson-05: Prompt Guard removed (`/opt/prompt-guard` and its unit; it wasn't running). Hussam stopped LFM3-VL there at 5:58 PM ET. A different session is moving the control plane to the Raspberry Pi (`decision-tree`); the fleet was briefly unreachable at 6:35 PM ET.
+
+## Fleet changes made Nov 3 (early morning ET), through the fleet control plane
+
+Details and numbers: docs/BUILD_LOG.md, Nov 3. Nothing was deleted on a board, no board was rebooted, and no power mode changed.
+- **jetson-02:** `jetson-llama.service` started with its existing Glimmer drop-in (`glimmer.conf`), **not enabled**, so it's gone after a reboot. `glimmer-guard` (a transient unit, `/run/glimmer-test/guard.sh`) kills it if available memory falls under 300 MB. Test notes and answers in `/run/glimmer-test/` (RAM, gone at reboot). Disk is still 191 MB free.
+- **jetson-03:** new files only, about 70 MB: `/opt/sam3train/lib31/`, `/opt/sam3train/runs/muse31/` (the tuned SAM 3.1 delta, `muse31_delta_fp16.pt`, 61 MB), `/opt/sam3train/runs/nov3/` (scores), `/opt/sam3train/run_nov3.sh`, `configs/muse/muse31.yaml` in the sam3 clone.
+- **jetson-04:** `sam3.service` restarted at 3:28 AM ET (about 1 minute down, 57 s to load) with the Nov 3 `server.py` (the Nov 2 one kept as `/opt/sam3/server.py.nov2`) and a drop-in, `/etc/systemd/system/sam3.service.d/tuned.conf`, that adds `--tuned muse=/opt/sam3/model/muse31_delta_fp16.pt` (61 MB, sha256 `737e8506...`). Meta's weights stay the default; GPU memory at rest went from 3,425 to 3,525 MB. Undo steps are in the drop-in. Also new: `/opt/sam3/muse-heldout/` (3 held-out images and `ask_muse.py`, 170 KB). It still listens only on the office address. The temporary SAM 3.1 tensor share (`sam31-share`, port 8797) was stopped after the tune.
+
+**Disk candidates for Hussam to delete (his call; nothing was deleted):**
+- jetson-02 (191 MB free): `/home/jetson-02/train/venv` (4.4 GB) and `/home/jetson-02/train/models` (1.7 GB, Qwen3.5 0.8B, not Meta), `/home/jetson-02/models/Qwen3.5-0.8B-Q4_K_M.gguf` (508 MB, not Meta), the four 13 MB adapters beside it, and `/opt/jetson-gguf/b11574` (182 MB; jetson-llama runs b11970). `sudo rm -rf <path>`; the journal is 125 MB (`sudo journalctl --vacuum-size=50M`).
+- jetson-03 (about 500 MB free): `/var/backups/ollama-embeddinggemma2` (2.1 GB, an EmbeddingGemma backup, not Meta), `/opt/jetson-gguf/b11574` (868 MB, nothing runs it there), `/opt/sam3train/runs/muse1/checkpoints/checkpoint.pt` (349 MB: SAM 3 `muse1` with its optimizer state; its scores are logged), journal 590 MB.
+- jetson-04 (about 2.4 GB free): `/opt/jetson-gguf/models/Llama-3.2-1B-Instruct-Q8_0.gguf` and `...-receipts-lora.gguf` (1.34 GB, Llama, owner question 11), journal 418 MB.
 
 Everything on the boards goes through the fleet control plane, never SSH from the laptop.
 
