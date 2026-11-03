@@ -34,6 +34,7 @@ let toolFixtureCalls = 0;
 let toolFixturesImpl: () => Promise<unknown> = async () => ({ fixtures: { SAMPLE: [{ a: 1 }] }, usage: [] });
 
 let inspirations: (req: Request) => Promise<Response>;
+let automationCalls = 0;
 let rebuilds: (req: Request) => Promise<Response>;
 let steps: typeof import("../build-steps");
 let records: typeof import("../records");
@@ -74,7 +75,9 @@ describe("requested targets", { skip: canMock ? false : "needs --experimental-te
     mock.module(at("../../db/client.ts"), { namedExports: { db: () => testDb, schema: realSchema } });
     const realAuth = (await import(at("../../auth.ts"))) as typeof import("../../auth");
     const viewer = { id: userId, email: "maker@example.com", isAdmin: true };
-    mock.module(at("../../auth.ts"), { namedExports: { ...realAuth, requireUser: async () => viewer, requireAdminOrAutomation: async () => viewer } });
+    mock.module(at("../../auth.ts"), {
+      namedExports: { ...realAuth, requireUser: async () => viewer, requireAdminOrAutomation: async () => (automationCalls++, viewer) },
+    });
     const realQuota = (await import(at("../../quota.ts"))) as typeof import("../../quota");
     mock.module(at("../../quota.ts"), { namedExports: { ...realQuota, checkBuildAllowed: async () => ({ ok: true }), buildSetupRefusal: () => null, spendPaused: async () => false } });
     mock.module("workflow/api", {
@@ -159,6 +162,22 @@ describe("requested targets", { skip: canMock ? false : "needs --experimental-te
       const a = await inspirations(post("/api/inspirations", { note: "A timer.", references: [] }));
       const b = await inspirations(post("/api/inspirations", { note: "A timer.", references: [], targets: [] }));
       for (const res of [a, b]) assert.equal((await buildRow(((await res.json()) as { buildId: string }).buildId)).requestedTargets, null);
+    });
+
+    it("a Bearer header goes through the admin automation check, and a plain request doesn't", async () => {
+      const before = automationCalls;
+      const plain = await inspirations(post("/api/inspirations", { note: "A timer.", references: [] }));
+      assert.equal(plain.status, 201);
+      assert.equal(automationCalls, before);
+      const scripted = await inspirations(
+        new Request("http://localhost/api/inspirations", {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: "Bearer test-secret" },
+          body: JSON.stringify({ note: "A timer.", references: [] }),
+        }),
+      );
+      assert.equal(scripted.status, 201);
+      assert.equal(automationCalls, before + 1);
     });
 
     it("refuses a target whose flag is off, before anything starts", async () => {

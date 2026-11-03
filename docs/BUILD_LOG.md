@@ -3351,3 +3351,18 @@ The organizers ruled on Nov 2 that every model the project calls at runtime must
   6. **The RL recipe** uses learning rate 5e-5 with no KL penalty, and starts from base. Meta uses 1e-6 to 3e-6, a KL penalty of 0.01 to 0.1, and an SFT start.
   7. **Dataset minimum is 20.** Meta suggests 500 or more for meaningful adaptation.
 - **Tests:** gpu flag, reach claims, spark-open flag and template-source pass 55 of 55; muse-app overlay 19 of 19. Spend $0.
+
+## Nov 3, 2026, after midnight: an overnight batch of demo builds, startable in one command
+
+- **Owner ask:** start all the builds and let them finish with the laptop closed. Builds run on Vercel (Workflow plus Sandbox), so they do. Starting them needs an admin, since guests share one daily limit with judges.
+- **`POST /api/inspirations`** now accepts `Authorization: Bearer <AUTOMATION_SECRET>` and acts as the first admin, as `/api/rebuilds` already did. Without the header nothing changes. A test was added in lib/pipeline/__tests__/requested-targets.test.ts; 17 of 17 pass.
+- **`npm run demo-batch` (scripts/demo-batch.ts):** 12 notes on made-up data, one or two per recipe plus the legal case agent. It starts them and exits, and writes the links to `.data/demo-batch-<time>.json`. `--dry` prints the notes.
+- **`scripts/overnight-demo.sh`, for the owner in ~/muse-muse:**
+  1. turns on `RECIPES_ENABLED`, `AGENTS_ENABLED`, `VERIFY_AGENTS` and `AGENT_LONG_RUNS` in Production;
+  2. makes the snapshot and sets `BUILDER_SNAPSHOT_ID` on Production and Preview;
+  3. makes an `AUTOMATION_SECRET` only if `.env.local` has none;
+  4. commits snapshots.json, pushes, and waits for the deploy;
+  5. starts the batch.
+  The flags are in the owner's script because production flag writes from the agent were denied, rightly.
+- **Wonder stays off:** `BUILDS_ON_CONTRIBUTOR` isn't touched.
+- **Not covered:** Meta's 30 lessons (their prep code isn't written) and the Muse Code session recipes (`TRUST_SIGNED_IN_CAPS` is the owner's call).

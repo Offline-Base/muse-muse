@@ -1,5 +1,5 @@
 import { start } from "workflow/api";
-import { requireUser } from "@/lib/auth";
+import { requireAdminOrAutomation, requireUser } from "@/lib/auth";
 import { grantEditPass } from "@/lib/edit-pass";
 import { env } from "@/lib/env";
 import { errorJson, readJson, route } from "@/lib/http";
@@ -16,9 +16,11 @@ import { checkBuildAllowed } from "@/lib/quota";
  * ignored. 400 bad input or a target whose flag is off, 401 signed out, 403 rebuildOf from someone who isn't an admin (showcase rebuilds are admin-only, as
  * in /api/rebuilds), 429 {error: "daily_limit" | "shared_limit"}, 503 {error: "paused"} (daily spend cap) or
  * {error: "no_storage"} (neither BLOB_READ_WRITE_TOKEN nor BLOB_STORE_ID is set).
+ * With "Authorization: Bearer <AUTOMATION_SECRET>" it acts as the first admin (scripts/demo-batch.ts), as /api/rebuilds
+ * does; a wrong secret is 403. Without the header nothing changes.
  */
 export const POST = route(async (req: Request) => {
-  const user = await requireUser();
+  const user = req.headers.get("authorization")?.startsWith("Bearer ") ? await requireAdminOrAutomation(req) : await requireUser();
   const body = await readJson(req);
 
   const note = validateNote(body.note);
