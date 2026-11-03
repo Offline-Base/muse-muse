@@ -228,6 +228,21 @@ export const env = {
     return process.env.BUILDER_SNAPSHOT_ID || undefined;
   },
   /**
+   * Where Muse Code builds run (docs/MODAL_HOST.md): "vercel" (Vercel Sandbox, the default) or "modal", only when
+   * SANDBOX_HOST is "modal" in any case. Anything else, or nothing, is Vercel.
+   */
+  get sandboxHost(): "vercel" | "modal" {
+    return (process.env.SANDBOX_HOST ?? "").trim().toLowerCase() === "modal" ? "modal" : "vercel";
+  },
+  /** SANDBOX_HOST=modal: the Modal app the build sandboxes live under. Made on first use. */
+  get modalAppName() {
+    return process.env.MODAL_APP_NAME?.trim() || "musemuse-builds";
+  },
+  /** SANDBOX_HOST=modal: the builder image (a filesystem snapshot's image id, scripts/dev/modal-builder-image.ts). */
+  get modalBuilderImageId() {
+    return process.env.MODAL_BUILDER_IMAGE_ID?.trim() || undefined;
+  },
+  /**
    * Public origin of this platform, with no trailing slash. Products and build sandboxes reach the gateway here. A
    * preview with a database of its own (lib/db/url.ts, previewHasOwnDatabase) is its own platform, at its branch URL
    * or else its deployment URL: its builds and gateway tokens live only in that database, so production's gateway

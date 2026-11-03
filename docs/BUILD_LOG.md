@@ -2898,6 +2898,23 @@ The owner asked for a simpler sidebar using "muse" and "musing" for the creative
   - Not run in a real build yet.
   - Tests: the three workflow scenarios (a change then a go, no answer, flag off) and the look state and prompt tests, 79 of 79 with the workflow file; the build room and step tests 212 pass. The 3 failures are the same ones main already has (plan-art-flag-off twice, plan-card's raw colors from #59). Typecheck clean.
 
+
+## Nov 2, 2026, 20:30: Modal as a second build host, behind SANDBOX_HOST (branch tg-modal)
+
+- **Owner decision, Nov 2:** builds keep running in Vercel Sandbox by default, and Modal is added as a second host before the Nov 4 submission. `SANDBOX_HOST=modal` turns it on. Unset, the builder makes the same @vercel/sandbox calls as before.
+- **Built:**
+  - `lib/sandbox/host/`: a small host interface, the Vercel host (it hands back the SDK's own Sandbox) and the Modal host on Modal's JS SDK (npm `modal` 0.11.1, added to package.json and kept out of the bundle like Composio).
+  - `lib/sandbox/builder.ts` moved onto it. On Modal, Muse Code's endpoint is the platform's new Meta proxy (`app/api/sandbox-meta/v1/[...path]`, `app/muse-code/models`, `lib/sandbox/host/meta-proxy.ts`), with telemetry off and a 3-hour token for that sandbox as its key. The proxy forwards only `BROKERED_META_ROUTES` with the real key from server env, and answers 404 unless the flag is on. The real key never enters a Modal sandbox.
+  - Egress on Modal is a domain allowlist made from the same policy, without its header rules and without api.meta.ai.
+  - `scripts/dev/modal-smoke.ts` (the live check) and `scripts/dev/modal-builder-image.ts` (the builder image; built, not run).
+  - docs/MODAL_HOST.md: how to turn it on, the env names, the builder image, and the security gaps.
+- **Live smoke test on Modal, 18 of 18 passed (final run about 20:27, 6.8 s):** create a named sandbox, write and read a file, a missing file reads as null, run a command (Linux x86_64, Node 22, root), egress with a one-domain allowlist (example.com answered 200; api.meta.ai and 1.1.1.1 got no connection), a detached Node server on port 3000 fetched from the laptop through the tunnel, a detached command's exit code (7), kill (143), stop with a published filesystem image, resume by name with the file, tags and egress back, delete. No Muse Code, no Meta key. Afterwards the app had 0 running sandboxes.
+- **Found on the way and fixed:** a terminated Modal sandbox can't be asked for its tags (so state goes in a file inside the image, and the image is published by name); a lookup right after terminate still saw it running (terminate now waits); `images.delete` leaves the published name resolving (a resume from it is now "not found"); Modal's `cpu` counts physical cores (4 vCPUs is `cpu: 2`).
+- **Spend:** six short sandboxes on Modal over the smoke runs and two debugging checks, each under a minute at 1 core or less. Estimated under $0.02 from Modal's per-second rates; not checked against the Modal bill.
+- **Not ported (still Vercel Sandbox):** the native packager, caps code sessions, the extension ship step, the edge drill sandbox, restore steps, publishing, quota, the train CLI runner, and the dev scripts. Dry runs refuse on Modal.
+- **Not proven:** no Muse Code build has run on Modal, the Modal builder image hasn't been made, and the proxy hasn't carried a real Muse Code call.
+- **Tests:** the new host tests (meta-proxy, modal host, builder on Modal) 25 of 25. The touched builder, setup, shell, caps and trust tests: 235 of 236; the one failure (`builder-muse`, "starts the session bridge on serve", expects reasoning effort high on a fix round) is from #79's medium fix rounds and fails the same way without this change. Typecheck clean.
+
 ## Nov 2, 2026, evening ET: SAM 3.1 on jetson-04, and the owner picks it as the edge direction
 
 - **Decision (owner, about 8 PM ET):** after the page worked, "make sure it's noted that this is the direction we'll go". Edge work goes toward Meta's SAM 3.1 on the boards. docs/EDGE_PLAN.md and docs/HANDOFF.md say so.
