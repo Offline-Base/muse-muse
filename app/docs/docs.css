@@ -2608,3 +2608,18 @@
     display: none;
   }
 }
+
+/* On a phone a code block's Copy and Run get a 44 px tall tap area, invisible, so the block's look doesn't change. */
+@media (max-width: 759.98px) {
+  .docs-copy-btn,
+  .docs-run-btn {
+    position: relative;
+  }
+
+  .docs-copy-btn::after,
+  .docs-run-btn::after {
+    content: "";
+    position: absolute;
+    inset: -10px -3px;
+  }
+}

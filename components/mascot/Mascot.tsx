@@ -5,10 +5,13 @@ import { Icon } from "@/components/icons";
 import { INTRO_DONE_EVENT } from "@/lib/intro";
 import {
   CLIMB_SPEED_PER_HEIGHT,
+  CONTROL_SELECTOR,
   MASCOT_EVENT,
+  PHONE_MAX,
   WALK_FRAME,
   WALK_SPEED_PER_HEIGHT,
   climbStep,
+  coverPoints,
   readMascotOn,
   setMascotOn,
   walkStep,
@@ -37,7 +40,9 @@ function sources(): Record<Clip, { src: string; type: string }> {
  * sidebar), stopping now and then. On the desktop view it sometimes climbs the right edge of the window, hangs there a
  * moment and climbs back down, then walks off the other way. Off in Settings, it's gone; with reduced motion it stands
  * still in the corner. It never takes a click or covers a control: it sits under docks, menus and dialogs, and pointer
- * events pass through. Following the cursor and walkthroughs come with their own assets.
+ * events pass through. On a phone taps go through him, and he fades out whenever a control is under him or his close
+ * button, and back in once he's walked clear (coverPoints in lib/mascot.ts). Following the cursor and walkthroughs come
+ * with their own assets.
  */
 export function Mascot() {
   const [on, setOn] = useState(false);
@@ -75,6 +80,27 @@ export function Mascot() {
       window.removeEventListener("storage", onPref);
     };
   }, []);
+
+  // On a phone: fades out while a control is under him, so he never covers one. Checked a few times a second, so it
+  // follows the walk and the page's scroll; a fixed dock above him counts too, which only hides what was hidden anyway.
+  useEffect(() => {
+    const walk = walker.current;
+    if (!on || !walk) return;
+    const check = () => {
+      if (window.innerWidth > PHONE_MAX || walk.hidden) {
+        walk.removeAttribute("data-covering");
+        return;
+      }
+      const covering = coverPoints(walk.getBoundingClientRect(), { width: window.innerWidth, height: window.innerHeight }).some(([x, y]) => {
+        const top = document.elementsFromPoint(x, y).find((el) => !walk.contains(el));
+        return Boolean(top?.closest(CONTROL_SELECTOR));
+      });
+      walk.toggleAttribute("data-covering", covering);
+    };
+    check();
+    const timer = setInterval(check, 200);
+    return () => clearInterval(timer);
+  }, [on, src]);
 
   useEffect(() => {
     const walk = walker.current;

@@ -5,7 +5,7 @@
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { MASCOT_EVENT, MASCOT_KEY, climbStep, readMascotOn, setMascotOn, walkStep } from "@/lib/mascot";
+import { COVER_REACH, MASCOT_EVENT, MASCOT_KEY, climbStep, coverPoints, readMascotOn, setMascotOn, walkStep } from "@/lib/mascot";
 
 describe("the walk", () => {
   const bounds = { left: 264, right: 1200 };
@@ -58,5 +58,27 @@ describe("the switch", () => {
       },
     };
     assert.equal(readMascotOn(), true);
+  });
+});
+
+describe("never covering a control on a phone", () => {
+  const view = { width: 390, height: 844 };
+  it("tests a grid over the figure and its close button's reach", () => {
+    const pts = coverPoints({ left: 100, top: 772, right: 155, bottom: 844 }, view);
+    assert.equal(pts.length, 16);
+    const xs = pts.map(([x]) => x);
+    const ys = pts.map(([, y]) => y);
+    assert.ok(Math.min(...xs) > 100 - COVER_REACH.side && Math.max(...xs) < 155 + COVER_REACH.side);
+    assert.ok(Math.min(...ys) > 772 - COVER_REACH.top && Math.max(...ys) < 844);
+    assert.ok(Math.min(...xs) < 100, "reaches past the figure's left edge");
+    assert.ok(Math.min(...ys) < 772, "reaches up to the close button");
+  });
+  it("keeps every point inside the window", () => {
+    for (const [x, y] of coverPoints({ left: 340, top: 800, right: 395, bottom: 872 }, view)) {
+      assert.ok(x >= 0 && x <= view.width && y >= 0 && y <= view.height);
+    }
+  });
+  it("has nothing to test when the figure is off screen", () => {
+    assert.deepEqual(coverPoints({ left: 500, top: 772, right: 555, bottom: 844 }, view), []);
   });
 });

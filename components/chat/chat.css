@@ -654,3 +654,14 @@ a.chat-source-title:hover {
     animation: none;
   }
 }
+
+/* On a phone the segments are 36 px tall, for fingers (a tab clips its own overflow, so no invisible tap area here). */
+@media (max-width: 759.98px) {
+  .chat-tabs {
+    height: 44px;
+  }
+
+  .chat-tab {
+    line-height: 36px;
+  }
+}

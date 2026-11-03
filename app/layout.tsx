@@ -22,6 +22,9 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // On Android Chrome the keyboard shrinks the page instead of covering it, so a composer docked at the bottom (the
+  // gallery's, the build room's) stays in sight above the keys. iOS keeps its own behavior.
+  interactiveWidget: "resizes-content",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#ffffff" },
     { media: "(prefers-color-scheme: dark)", color: "#181819" },

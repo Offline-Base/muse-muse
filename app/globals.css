@@ -1451,6 +1451,8 @@ pre {
   padding-left: 14px;
   font-size: 14px;
   color: var(--fg-2);
+  /* A long path or URL in a build's notes wraps instead of widening a phone's page. */
+  overflow-wrap: anywhere;
 }
 
 .plain-list li::before {
@@ -8112,6 +8114,33 @@ div.md.md-plain {
   }
 }
 
+/* On a phone Muse never covers a control: taps go through him, and he fades out while a control is under him or his
+   close button (Mascot.tsx sets data-covering). The close button keeps a 44 px tap area. */
+@media (max-width: 759.98px) {
+  .mascot {
+    pointer-events: none;
+    transition: opacity 160ms ease;
+  }
+
+  .mascot .mascot-close {
+    pointer-events: auto;
+  }
+
+  .mascot-close::after {
+    content: "";
+    position: absolute;
+    inset: -10px;
+  }
+
+  .mascot[data-covering] {
+    opacity: 0;
+  }
+
+  .mascot[data-covering] .mascot-close {
+    visibility: hidden;
+  }
+}
+
 .mascot-note {
   position: fixed;
   left: 50%;
@@ -8450,5 +8479,67 @@ div.md.md-plain {
 @media print {
   .device-stage video {
     display: none;
+  }
+}
+
+/* ---------- Touch on a phone ---------- */
+/* The desktop view keeps the live page's 32 to 36 px controls (docs/BRAND.md). On a phone the small ones get a 44 px tap
+   area: an invisible ::after past their edges, so nothing moves or changes look. In the composer the buttons sit 12 px
+   apart, so their areas meet without overlapping. The starter pills, which scroll in their own row, grow to 44 px
+   instead, and a section's tabs to 36 px in a 44 px track. */
+@media (max-width: 759.98px) {
+  .topbar .icon-btn-plain,
+  .sheet-head .icon-btn-plain,
+  .account .icon-btn-plain,
+  .composer-tool,
+  .composer-voice .voice-input-btn,
+  .send-btn,
+  .composer-pill,
+  .setup-toggle,
+  .make-folder > summary,
+  .segmented a {
+    position: relative;
+  }
+
+  .topbar .icon-btn-plain::after,
+  .sheet-head .icon-btn-plain::after,
+  .account .icon-btn-plain::after,
+  .composer-tool::after,
+  .composer-voice .voice-input-btn::after,
+  .send-btn::after,
+  .composer-pill::after,
+  .setup-toggle::after {
+    content: "";
+    position: absolute;
+    inset: -6px;
+  }
+
+  .make-folder > summary::after {
+    content: "";
+    position: absolute;
+    inset: -12px 0;
+  }
+
+  /* The track's own 4 px: tapping it picks the tab it surrounds. */
+  .segmented a::after {
+    content: "";
+    position: absolute;
+    inset: -4px 0;
+  }
+
+  .starter-pill {
+    min-height: 44px;
+  }
+
+  .segmented {
+    min-height: 44px;
+  }
+
+  .segmented a {
+    min-height: 36px;
+  }
+
+  .btn-sm {
+    min-height: 36px;
   }
 }

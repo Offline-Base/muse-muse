@@ -3426,3 +3426,49 @@ The organizers ruled on Nov 2 that every model the project calls at runtime must
 - **Fix:** the gateway's `/uploads` now also takes `blob.generate-presigned-url`. It runs the same checks (a live product's token, the ticket rate limits, `uploads/` pathnames), then signs a delegation for that one pathname with the same types, size and lifetime, using whichever Blob credential is set, the way inspo uploads already do. The template's `uploadMedia` now calls `uploadPresigned`, multipart from 8 MB, and its `/api/upload` route forwards the new event. Client-token requests still answer 503 without a read-write token.
   - New tests in lib/gateway/__tests__/uploads.test.ts (6 of 6), plus the inspo, cleanup, runtime outputs and client-ip tests. Typecheck clean.
   - **Takes effect:** the gateway part deploys now. New builds need a new builder snapshot. Products built before it (wag-sticker-studio among them) keep the old client until they're rebuilt or refined, or until the owner adds a read-write token.
+## Nov 3, 2026, 2:50 AM ET: phone audit of the live site, and fixes
+
+The owner asked that phone mode be optimized, since judges may open musemuse.dev on a phone. Audited the live site as a
+guest in headless Chromium at 390x844 and 360x780 (touch, 3x), light and dark: Make (starter tabs and cards, composer,
+the menu next to Send, a note through to the plan card without Start), /gallery, two product pages, a build room,
+/builds, /learn, /gadgets, /models, /fine-tuning, /how-it-works, /docs and /docs/quickstart, /private, the menu sheet,
+Settings, the intro and the walking Muse. Then swept all 54 product, build and docs links from /gallery and /builds at 360.
+
+**Found:**
+
+| Where | Size | Issue | Fixed |
+|---|---|---|---|
+| 12 product pages, among them /p/parking-policy-reader, dockline-triage-copilot (529 px), room-restyle-studio (497 px) | 360 and 390 | The page zoomed out: a long sandbox path in the "How it was built" notes didn't wrap, so the layout viewport grew to 369 to 529 px | Yes: `.plain-list li` wraps anywhere |
+| Every page | both | The walking Muse sat on top of controls and took their taps: starter cards, the docs Ask AI button, /learn links, /private scene buttons, the plan card's Ask | Yes: on a phone taps go through him, and he fades out while any control is under him or his close button |
+| Top bar menu button, sheet close, account menu | both | 32x32 | Yes: 44 px tap area |
+| Composer +, mic, Send, the Auto pill | both | 32 px tall | Yes: 44 px tap area, look unchanged |
+| Starter tabs | both | 40 px | Yes: 44 px |
+| Section tabs (Gallery and Meta demos, Fine-tuning and Models, Gadgets and Muse Privacy) | both | 28 px | Yes: 36 px tabs in a 44 px track, 44 px tap area |
+| Product page Get it tabs (MCP, CLI, ...) | both | 28 px | Partly: 36 px |
+| Models page buttons (`.btn-sm`) | both | 32 px | Partly: 36 px |
+| Build setup, "Add a folder of data for a model" | both | 32 and 20 px | Yes: 44 px tap area |
+| Docs code Copy and Run | both | 24 px | Yes: 44 px tall tap area |
+| Muse's close button | both | 24 px | Yes: 44 px tap area |
+| Composer docked at the bottom when the keyboard opens | Android | By default Android Chrome lays the keyboard over the page, so a fixed dock (the gallery's) can sit under it | Is built so: `interactiveWidget: "resizes-content"` makes Android Chrome shrink the page instead. Not tried on a real phone; iOS keeps its own behavior |
+| /devices | both | 404 | Not a phone bug: Devices in the menu links to /gadgets |
+| 36 px buttons (`.btn`, private scene buttons, filled icon buttons) | both | Under 44 | No: the brand's measured size (docs/BRAND.md) |
+| Inline text links in lists (/learn, /how-it-works, docs) | both | 20 to 24 px tall | No: inline links, exempt |
+| Concept tag 11 px, inline code 11.9 px | both | Under 12 px | No: a tag and code, not body text |
+
+No page had a sideways scroll from an element (tables and tab rows already scroll in their own box). Modals (Settings,
+the menu sheet, the target menu) fit at both sizes. The plan card, the intro's Skip button and the device stage fit.
+
+**Changed:** `app/globals.css` (a phone-only touch block, the mascot's phone rules, the list wrap), `components/chat/chat.css`
+and `app/docs/docs.css` (phone-only), `components/mascot/Mascot.tsx` and `lib/mascot.ts` (`coverPoints`, tested in
+`lib/__tests__/mascot.test.ts`), `app/layout.tsx` (viewport). Desktop is untouched: every rule sits under
+`max-width: 759.98px` and the mascot check runs only below 760 px.
+
+**Checked:** on `npm run dev:local` at both sizes, light and dark: no sideways scroll, the new tap areas hit their
+buttons, and over 12 samples a page Muse was never shown over a control (he shows over text and open space, and on
+/gallery stays under the dock). The list fix, injected on the live site, cleared all 12 product pages. Tests: mascot
+passes; platform-contrast (6) and models-page (1) fail the same on main without this change. Typecheck clean.
+
+Before: `docs/log/shots/2026-11-03/phone-before-*.png`.
+
+Not changed and worth a look: the "How it was built" notes on those product pages print a raw tool log, sandbox paths
+included.

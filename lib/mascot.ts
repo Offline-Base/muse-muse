@@ -69,3 +69,33 @@ export function walkStep(
   }
   return { x, dir, turned };
 }
+
+/** Below this width the page is the phone view (globals.css uses the same 760 px line). */
+export const PHONE_MAX = 759;
+
+/** What counts as a control Muse mustn't cover on a phone: anything a finger can tap. */
+export const CONTROL_SELECTOR =
+  'a[href],button,input,select,textarea,summary,label,[role="button"],[role="tab"],[role="link"],[role="menuitem"],[role="switch"],[role="checkbox"],[role="radio"],[tabindex]:not([tabindex="-1"])';
+
+/** How far past the figure its close button reaches (24 px button, 14 px above, a 44 px tap area), so that's checked too. */
+export const COVER_REACH = { side: 10, top: 24 };
+
+/**
+ * The points to test under Muse on a phone: a grid over the figure and its close button's reach, kept inside the
+ * window. If any of them lands on a control, he fades out until he's walked clear. Pure, so it's tested without a browser.
+ */
+export function coverPoints(
+  box: { left: number; top: number; right: number; bottom: number },
+  view: { width: number; height: number },
+  grid = 4,
+): Array<[number, number]> {
+  const left = Math.max(0, box.left - COVER_REACH.side);
+  const right = Math.min(view.width, box.right + COVER_REACH.side);
+  const top = Math.max(0, box.top - COVER_REACH.top);
+  const bottom = Math.min(view.height, box.bottom);
+  if (right <= left || bottom <= top) return [];
+  const points: Array<[number, number]> = [];
+  for (let i = 0; i < grid; i++)
+    for (let j = 0; j < grid; j++) points.push([left + ((right - left) * (i + 0.5)) / grid, top + ((bottom - top) * (j + 0.5)) / grid]);
+  return points;
+}
