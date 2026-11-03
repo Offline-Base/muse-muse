@@ -2,7 +2,7 @@
  * Starting a polish round (POST /api/builds/{buildId}/polish, lib/polish/logic.ts). Plain module: the route passes the real
  * database, quota and workflow start, and tests pass fakes, so nothing here spends or reaches Neon on its own.
  */
-import { POLISH_MAX_FOCUS_CHARS, POLISH_MIN_USD, POLISH_MODEL, polishNote, polishPlan } from "@/lib/polish/logic";
+import { POLISH_LOOKS, POLISH_MAX_FOCUS_CHARS, POLISH_MIN_USD, POLISH_MODEL, polishNote, polishPlan, type PolishLook } from "@/lib/polish/logic";
 import { TERMINAL_STATUSES, type BuildStatus } from "@/lib/types";
 
 export interface PolishProduct {
@@ -36,13 +36,18 @@ export type PolishReply = { status: number; body: Record<string, unknown> };
 
 const reply = (status: number, body: Record<string, unknown>): PolishReply => ({ status, body });
 
-/** The polish note from the caller's body: the fixed note, plus `focus` when sent. An error string when the body is wrong. */
-export function polishRequest(body: Record<string, unknown>): { message: string; again: boolean } | { error: string } {
+/**
+ * The polish note from the caller's body: the fixed note, plus `focus` when sent, and with `look: "meta"` the step that
+ * switches the product to the Meta UI look. An error string when the body is wrong.
+ */
+export function polishRequest(body: Record<string, unknown>): { message: string; again: boolean; look?: PolishLook } | { error: string } {
   if (body.focus !== undefined && body.focus !== null && typeof body.focus !== "string") return { error: "focus must be text." };
   const focus = typeof body.focus === "string" ? body.focus.trim() : "";
   if (focus.length > POLISH_MAX_FOCUS_CHARS) return { error: `Keep focus under ${POLISH_MAX_FOCUS_CHARS} characters.` };
   if (body.again !== undefined && typeof body.again !== "boolean") return { error: "again must be true or false." };
-  return { message: polishNote(focus || null), again: body.again === true };
+  if (body.look !== undefined && !(POLISH_LOOKS as readonly unknown[]).includes(body.look)) return { error: `look must be "meta" or left out.` };
+  const look = body.look as PolishLook | undefined;
+  return { message: polishNote(focus || null, look ?? null), again: body.again === true, ...(look ? { look } : {}) };
 }
 
 /**
@@ -87,5 +92,5 @@ export async function startPolish(deps: PolishDeps, buildId: string, body: Recor
   }
   await deps.attachRun(inserted.buildId, runId).catch((err: unknown) => console.error("[polish] attachRun", err));
   const plan = polishPlan(deps.maxUsd, deps.buildTokenUsd);
-  return reply(201, { buildId: inserted.buildId, model: POLISH_MODEL, maxUsd: plan.maxUsd, roundSteps: plan.roundSteps, fixRounds: plan.fixRounds });
+  return reply(201, { buildId: inserted.buildId, model: POLISH_MODEL, maxUsd: plan.maxUsd, roundSteps: plan.roundSteps, fixRounds: plan.fixRounds, ...(request.look ? { look: request.look } : {}) });
 }

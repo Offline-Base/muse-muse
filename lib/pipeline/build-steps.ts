@@ -23,7 +23,7 @@ import { BOARD_TOOLS_MARKER } from "@/lib/caps/hardware/limits";
 import { CREDITS_STEP, creditsInSource, withModelCredits } from "@/lib/verify/model-credits";
 import { addBuildCost, emit, setBuildStatus } from "@/lib/events";
 import { buildTokenBudgetFor, POLISH_TOKEN_MARKER } from "@/lib/gateway/policy";
-import { isPolishMessage, POLISH_MODEL, polishPlan, type PolishPlan } from "@/lib/polish/logic";
+import { isMetaLookPolish, isPolishMessage, metaLookShipped, POLISH_HEADER, POLISH_MODEL, polishPlan, type PolishPlan } from "@/lib/polish/logic";
 import { mintToken, revokeLiveTokensExcept, revokeTokens } from "@/lib/gateway/tokens";
 import { judgeBuild, type JudgeSample, MAX_CHAIN_SCREENSHOTS, pickScreenshots } from "@/lib/judge";
 import { APP_NAV_COMPONENT, FULL_PRODUCT_SKILL } from "@/lib/full/prompts";
@@ -256,6 +256,22 @@ function sessionNotes(): { goalSet: boolean; ownerNotes: boolean; noteReplies: b
  */
 function lookNote(): { museAppLook: boolean } {
   return { museAppLook: env.museAppLook };
+}
+
+/**
+ * A polish with look "meta" (lib/polish/logic.ts) switched the product to the Meta UI look: this build is that polish,
+ * or one shipped on the product earlier. The judge and the fix and change prompts then treat the product as meta-ui, so
+ * neither its brief's Design direction nor the muse-app look pulls it back. Nothing for any other build.
+ */
+async function metaLookNote(build: { kind: string; message: string | null; productId: string | null }): Promise<{ metaLook?: true }> {
+  if (build.kind !== "refine") return {};
+  if (isMetaLookPolish(build.message)) return { metaLook: true };
+  if (!build.productId) return {};
+  const polishes = await db()
+    .select({ kind: schema.builds.kind, message: schema.builds.message, status: schema.builds.status })
+    .from(schema.builds)
+    .where(and(eq(schema.builds.productId, build.productId), eq(schema.builds.kind, "refine"), sql`starts_with(${schema.builds.message}, ${POLISH_HEADER})`));
+  return metaLookShipped(polishes) ? { metaLook: true } : {};
 }
 
 /** BUILD_RANGE (docs/BUILD_RANGE.md): a brief written with it has a direction. Nothing for any other brief, or with it off. */
@@ -1293,7 +1309,9 @@ export async function judgeStep(input: {
   const targetFacts = requirementTests !== undefined && targetCheckedRequirements(brief).length ? await targetFactsFor(brief, build, input.round, input.buildId) : null;
   const ownerNotes = env.steerChat ? await sentNotes(input.buildId) : [];
   const samples = await judgeSamplesFor(build.sandboxName, input.buildId, input.round);
+  const meta = await metaLookNote(build);
   const result = await judgeBuild({
+    ...meta,
     ...(samples.length ? { samples } : {}),
     ...(requirementTests !== undefined ? { requirementTests } : {}),
     ...(ownerNotes.length ? { ownerNotes } : {}),
@@ -1389,16 +1407,17 @@ export async function writeFixPromptStep(input: {
       })
     : [];
   const promptFile = `fix-${input.fix}.md`;
-  const range = env.buildRange ? rangeNote((await loadBuild(input.buildId)).brief) : {};
+  const fixing = await loadBuild(input.buildId);
+  const range = env.buildRange ? rangeNote(fixing.brief) : {};
+  const meta = await metaLookNote(fixing);
   // FULL_BUILDS: from the first fix round on, verify holds every requirement, including any from a milestone that was skipped.
   if (env.fullBuilds) {
-    const fixing = await loadBuild(input.buildId);
     if (fixing.kind === "build" && fullBuildOf(fixing.brief)) await sandbox.writeProductFile(input.sandboxName, "musemuse.requirements.json", requirementsFile(fixing.brief!));
   }
   await sandbox.writeProductFile(
     input.sandboxName,
     promptFile,
-    renderFixPrompt({ verify, judge, round: input.fix, screenshots: images, ...sessionNotes(), ...lookNote(), ...range, ...(judge?.requirements?.length ? { fullBuild: true } : {}) }),
+    renderFixPrompt({ verify, judge, round: input.fix, screenshots: images, ...sessionNotes(), ...lookNote(), ...range, ...meta, ...(judge?.requirements?.length ? { fullBuild: true } : {}) }),
   );
   return { promptFile, images };
 }
@@ -2165,6 +2184,7 @@ export async function reopenStep(input: {
     recipes: recipeNotes(brief),
     ...sessionNotes(),
     ...lookNote(),
+    ...(await metaLookNote(build)),
   }), shared, "change");
   const promptFile = `refine-${input.refineIndex}.md`;
   await sandbox.writeProductFile(input.sandboxName, promptFile, prompt);

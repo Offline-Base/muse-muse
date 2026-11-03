@@ -13,7 +13,11 @@
  *   --poll=60             seconds between rounds
  *   --focus-file=<path>   an audit file from scripts/audit-batch.ts (or {buildId or slug: text}); each failing product's
  *                         focus text goes with its polish
- *   --resume=<path>       carry on from an earlier polish file (keeps what started, never polishes a build twice)
+ *   --look=meta           switch each product to the Meta UI look (sent as look: "meta"); left out, each keeps its look
+ *   --again               polish products that already had a polish (sent as again: true). A 409 already_polished is
+ *                         then never followed as if it were this pass, and an earlier polish still running is waited out
+ *   --resume=<path>       carry on from an earlier polish file (keeps what started, never polishes a build twice in the
+ *                         same pass; with --again, a build the file polished in another look is polished again)
  *   --max-hours=8         stop polling after this long (resume later)
  *   --url=<site>          another deployment
  * Uses AUTOMATION_SECRET from .env.local (scripts/automation.ts), sent only as the Authorization header and never printed.
@@ -31,12 +35,16 @@ import {
   nextState,
   parsePolishAnswer,
   planStarts,
+  polishBody,
+  polishLookArg,
   queueDone,
+  resumedItem,
   stateCounts,
   type BatchBuild,
   type BuildView,
   type Ledger,
   type PolishItem,
+  type PolishPass,
 } from "./batch/logic";
 import { budgetArg, collectLedger, readBatchArgs, siteFetcher, type StatusFetcher } from "./spend-ledger";
 
@@ -55,13 +63,16 @@ function num(name: string, fallback: number, min = 0): number {
   return n;
 }
 
-/** The items for these builds, carrying over what a resumed file recorded for the same build ids. */
-export function initialItems(builds: readonly BatchBuild[], resumed: readonly PolishItem[] = []): PolishItem[] {
+/**
+ * The items for these builds, carrying over what a resumed file recorded for the same build ids (resumedItem: with
+ * --again, a build polished in another look starts over).
+ */
+export function initialItems(builds: readonly BatchBuild[], resumed: readonly PolishItem[] = [], pass: PolishPass = {}): PolishItem[] {
   const prior = new Map(resumed.map((i) => [i.buildId, i]));
   return builds.map((b) => {
     const p = prior.get(b.buildId);
     // A ready item from an earlier run is read again; anything that started stays started.
-    return p ? { ...p, label: b.label, state: p.state === "ready" ? "waiting" : p.state } : { label: b.label, buildId: b.buildId, state: "waiting", refineIds: [], attempts: 0 };
+    return p ? { ...resumedItem(p, pass), label: b.label } : { label: b.label, buildId: b.buildId, state: "waiting", refineIds: [], attempts: 0 };
   });
 }
 
@@ -70,7 +81,7 @@ export async function readRound(items: PolishItem[], builds: readonly BatchBuild
   const toRead = new Set<string>();
   for (const i of items) {
     if (LIVE_STATES.has(i.state) || !cache.has(i.buildId)) toRead.add(i.buildId);
-    for (const r of i.refineIds) {
+    for (const r of [...(i.earlierRefineIds ?? []), ...i.refineIds]) {
       const seen = cache.get(r);
       if (!seen || !("terminal" in seen) || !seen.terminal) toRead.add(r);
     }
@@ -89,7 +100,7 @@ export async function readRound(items: PolishItem[], builds: readonly BatchBuild
     } else if (b && i.state === "error") i.note = `build: ${b.error}`;
     if (i.refineIds.length) i.refineStatus = Object.fromEntries(i.refineIds.map((r) => { const v = cache.get(r); return [r, v && "status" in v ? v.status : "unread"]; }));
   }
-  const refineIds = new Map(items.map((i) => [i.buildId, i.refineIds]));
+  const refineIds = new Map(items.map((i) => [i.buildId, [...(i.earlierRefineIds ?? []), ...i.refineIds]]));
   return collectLedger(builds, refineIds, fetch, budgetUsd, cache);
 }
 
@@ -100,10 +111,16 @@ export interface StartOutcome {
   pauseUntil?: Date;
 }
 
-/** Applies one polish answer to its item. */
-export function applyAnswer(item: PolishItem, res: PostResult, site: string, now: Date): StartOutcome {
-  const a = parsePolishAnswer(res.status, res.json, site);
+/** Applies one polish answer to its item, for this pass (--look, --again). */
+export function applyAnswer(item: PolishItem, res: PostResult, site: string, now: Date, pass: PolishPass = {}): StartOutcome {
+  const a = parsePolishAnswer(res.status, res.json, site, { again: pass.again, own: item.refineIds });
   item.attempts += 1;
+  if (a.kind === "wait") {
+    item.attempts -= 1;
+    item.notBefore = new Date(now.getTime() + a.afterSeconds * 1000).toISOString();
+    item.note = a.reason;
+    return {};
+  }
   if (a.kind === "adopt") {
     // The product's polish is already running or done (another run, or a start whose answer was lost): follow it.
     item.attempts -= 1;
@@ -116,6 +133,8 @@ export function applyAnswer(item: PolishItem, res: PostResult, site: string, now
   if (a.kind === "started") {
     item.state = "polishing";
     item.startedAt = now.toISOString();
+    if (pass.look) item.look = pass.look;
+    else delete item.look;
     item.refineIds = [...new Set([...item.refineIds, ...a.refineIds])];
     if (a.maxUsd !== undefined) item.maxUsd = a.maxUsd;
     item.notBefore = undefined;
@@ -177,19 +196,22 @@ async function main(): Promise<void> {
   const resume = arg("resume");
   if (resume && !existsSync(resume)) throw new Error(`--resume=${resume} doesn't exist.`);
   const resumed = resume ? (((JSON.parse(readFileSync(resume, "utf8")) as { items?: PolishItem[] }).items ?? []) as PolishItem[]) : [];
+  const look = polishLookArg(arg("look"));
+  const pass: PolishPass = { ...(look ? { look } : {}), ...(process.argv.includes("--again") ? { again: true } : {}) };
   const secret = env.automationSecret;
   if (!dry && !secret) throw new Error("AUTOMATION_SECRET isn't in .env.local. It must match the one on Vercel Production.");
 
-  const items = initialItems(builds, resumed);
+  const items = initialItems(builds, resumed, pass);
   const cache = new Map<string, BuildView | { error: string }>();
   const fetch = siteFetcher(site);
   const file = dry ? null : saver(resume);
   const startedAt = new Date().toISOString();
   let ledger: Ledger | null = null;
-  const save = () => file?.save({ site, budgetUsd, reserveUsd, concurrency, startedAt, updatedAt: new Date().toISOString(), spentUsd: ledger?.spentUsd, remainingUsd: ledger?.remainingUsd, items });
+  const save = () => file?.save({ site, budgetUsd, reserveUsd, concurrency, ...pass, startedAt, updatedAt: new Date().toISOString(), spentUsd: ledger?.spentUsd, remainingUsd: ledger?.remainingUsd, items });
   let pausedUntil: Date | undefined;
 
   if (focusPath) console.log(`Focus text for ${new Set([...focus.values()]).size} product(s) from ${focusPath}.`);
+  if (pass.look || pass.again) console.log(`Each polish is sent with${pass.look ? ` look: "${pass.look}"` : ""}${pass.look && pass.again ? " and" : ""}${pass.again ? " again: true" : ""}.`);
   for (;;) {
     const now = new Date();
     ledger = await readRound(items, builds, cache, fetch, budgetUsd, now);
@@ -209,10 +231,10 @@ async function main(): Promise<void> {
 
     for (const item of move.start) {
       const text = focusFor(focus, item);
-      const res = await postJson(site, `/api/builds/${item.buildId}/polish`, text ? { focus: text } : {}, secret!).catch(
+      const res = await postJson(site, `/api/builds/${item.buildId}/polish`, polishBody(text, pass), secret!).catch(
         (err: unknown): PostResult => ({ status: 0, json: { error: "network", message: err instanceof Error ? err.message : String(err) } }),
       );
-      const out = applyAnswer(item, res, site, new Date());
+      const out = applyAnswer(item, res, site, new Date(), pass);
       save();
       if (out.stop) {
         console.error(`\n${out.stop.message}`);

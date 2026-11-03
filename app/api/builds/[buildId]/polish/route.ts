@@ -16,9 +16,10 @@ type Ctx = { params: Promise<{ buildId: string }> };
 const MAX_BODY_BYTES = 16 * 1024;
 
 /**
- * POST {focus?, again?} -> 201 {buildId, model, maxUsd, roundSteps, fixRounds}: the polish round (lib/polish/logic.ts), one
- * refinement of the live product this build made, with Muse Code on Muse Wonder and the fixed polish note, plus `focus`
- * (audit findings, say). Admins, or a script with the AUTOMATION_SECRET bearer. 404 while POLISH_ENABLED is off or for an
+ * POST {focus?, again?, look?} -> 201 {buildId, model, maxUsd, roundSteps, fixRounds, look?}: the polish round
+ * (lib/polish/logic.ts), one refinement of the live product this build made, with Muse Code on Muse Wonder and the fixed
+ * polish note, plus `focus` (audit findings, say). `look: "meta"` switches the product to the Meta UI look (any other
+ * value is a 400); left out, the product keeps its look. Admins, or a script with the AUTOMATION_SECRET bearer. 404 while POLISH_ENABLED is off or for an
  * unknown build, 409 not_shipped, busy (another build of the product runs) or already_polished (send again: true to run
  * another), 503 polish_budget_off with POLISH_MAX_USD at 0, and checkBuildAllowed's refusals (paused, no_storage).
  */

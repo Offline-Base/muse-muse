@@ -169,7 +169,9 @@ export function refineIdsFrom(files: readonly unknown[]): Map<string, string[]> 
     for (const it of items as Array<Record<string, unknown>>) {
       if (!isUuid(it?.buildId) || !Array.isArray(it.refineIds)) continue;
       const list = out.get(it.buildId) ?? [];
-      for (const id of it.refineIds) if (isUuid(id) && !list.includes(id)) list.push(id);
+      // A build polished again (--again) keeps its earlier polishes in earlierRefineIds: they cost money too.
+      const earlier = Array.isArray(it.earlierRefineIds) ? it.earlierRefineIds : [];
+      for (const id of [...earlier, ...it.refineIds]) if (isUuid(id) && !list.includes(id)) list.push(id);
       out.set(it.buildId, list);
     }
   }
@@ -179,10 +181,35 @@ export function refineIdsFrom(files: readonly unknown[]): Map<string, string[]> 
 // ---------------------------------------------------------------------------------------------------------------------
 // Polish: the answer, and the queue
 
+/** The look a polish may switch a product to (lib/polish/logic.ts POLISH_LOOKS). */
+export const POLISH_BATCH_LOOKS = ["meta"] as const;
+export type PolishBatchLook = (typeof POLISH_BATCH_LOOKS)[number];
+
+/** What one run of the polish queue asks for: --look=meta and --again (scripts/polish-batch.ts). */
+export interface PolishPass {
+  look?: PolishBatchLook;
+  /** Polish a product that already had a polish (the route's again: true). */
+  again?: boolean;
+}
+
+/** --look's value: "meta" or nothing. Anything else is an error, as the route would refuse it with a 400. */
+export function polishLookArg(raw: string | undefined): PolishBatchLook | undefined {
+  if (raw === undefined) return undefined;
+  if ((POLISH_BATCH_LOOKS as readonly string[]).includes(raw)) return raw as PolishBatchLook;
+  throw new Error(`--look=${raw} isn't a look the polish route takes. Use --look=meta, or leave it out to keep each product's look.`);
+}
+
+/** The body of POST /api/builds/<id>/polish: focus when there is some, look and again: true when this pass asks. */
+export function polishBody(focus: string | null | undefined, pass: PolishPass = {}): Record<string, unknown> {
+  return { ...(focus ? { focus } : {}), ...(pass.look ? { look: pass.look } : {}), ...(pass.again ? { again: true } : {}) };
+}
+
 export type PolishAnswer =
   | { kind: "started"; refineIds: string[]; maxUsd?: number }
   /** A 409 that names the product's polish already running or done: follow that one, start nothing. */
   | { kind: "adopt"; refineIds: string[]; reason: string }
+  /** --again: the product's earlier polish still runs. Try again after it, without counting a try. */
+  | { kind: "wait"; reason: string; afterSeconds: number }
   | { kind: "route_missing"; message: string }
   | { kind: "retry"; reason: string; afterSeconds: number }
   | { kind: "fatal"; reason: string }
@@ -196,8 +223,15 @@ export type PolishAnswer =
  * Other 409s (busy with another build, not shipped yet), 429 and 503 come back later; 503 polish_budget_off
  * (POLISH_MAX_USD at 0) and 401 or 403 (a wrong key) stop the run, since every other build would hit them too.
  */
-export function parsePolishAnswer(status: number, json: Record<string, unknown>, site: string): PolishAnswer {
+export function parsePolishAnswer(status: number, json: Record<string, unknown>, site: string, opts: { again?: boolean; own?: readonly string[] } = {}): PolishAnswer {
   const reason = String(json.message ?? json.error ?? `status ${status}`);
+  // --again: an earlier polish of the product is never followed in place of this pass. Only one this run started is.
+  if (opts.again && status === 409 && isUuid(json.buildId) && !(opts.own ?? []).includes(json.buildId)) {
+    if (json.error === "already_polished") {
+      return { kind: "refused", reason: `409 already_polished although again: true was sent: ${site} has a polish route from before again. Deploy the current one, then run this again with --resume=<this file>.` };
+    }
+    return { kind: "wait", reason: `409 ${reason}: the product's earlier polish ${json.buildId} still runs, so this one starts after it`, afterSeconds: 300 };
+  }
   if (status >= 200 && status < 300) {
     const ids = new Set<string>();
     for (const key of ["buildId", "refineBuildId", "polishBuildId"]) if (isUuid(json[key])) ids.add(json[key] as string);
@@ -252,6 +286,29 @@ export interface PolishItem {
   /** Don't try this one again before this time (a 409 or a retry after). */
   notBefore?: string;
   note?: string;
+  /** The look this item's polish was started with (--look), absent for one that kept the product's look. */
+  look?: PolishBatchLook;
+  /** --again: the polishes an earlier pass started on this build, kept for the ledger and never followed. */
+  earlierRefineIds?: string[];
+}
+
+/**
+ * A resumed item for this pass. With --again, a build an earlier pass polished in another look (or one the route
+ * refused) starts over as waiting, its earlier polishes kept in earlierRefineIds. Anything this same pass started, or
+ * any run without --again, is kept as it is, so a resumed file never polishes a build twice in the same pass.
+ */
+export function resumedItem(prior: PolishItem, pass: PolishPass = {}): PolishItem {
+  const started = ["polishing", "polished", "polish_failed", "refused"].includes(prior.state);
+  if (!pass.again || !started || (prior.look ?? null) === (pass.look ?? null)) return { ...prior, state: prior.state === "ready" ? "waiting" : prior.state };
+  return {
+    label: prior.label,
+    buildId: prior.buildId,
+    state: "waiting",
+    refineIds: [],
+    attempts: 0,
+    earlierRefineIds: [...new Set([...(prior.earlierRefineIds ?? []), ...prior.refineIds])],
+    note: `${prior.state}${prior.look ? ` with look ${prior.look}` : ""} before; polishing again${pass.look ? ` with look ${pass.look}` : ""}`,
+  };
 }
 
 /** The item's state from its build's view and its refinements' views. Never moves a started polish back to ready. */
