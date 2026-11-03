@@ -3366,3 +3366,27 @@ The organizers ruled on Nov 2 that every model the project calls at runtime must
   The flags are in the owner's script because production flag writes from the agent were denied, rightly.
 - **Wonder stays off:** `BUILDS_ON_CONTRIBUTOR` isn't touched.
 - **Not covered:** Meta's 30 lessons (their prep code isn't written) and the Muse Code session recipes (`TRUST_SIGNED_IN_CAPS` is the owner's call).
+
+## Nov 3, 2026, 12:19 AM ET: the overnight demo batch started, 12 of 12
+
+- **Started by:** the owner with `npm run demo-batch` from ~/mm-wt/overnight, as admin through the automation key.
+- **Settings at start:**
+  - snapshot `snap_Cqia07XnMGqyaCFRgcrjDZDMGohX` (cde5325b);
+  - `MAX_FIX_ROUNDS` 4 (set 20 minutes before);
+  - `RECIPES_ENABLED`, `AGENTS_ENABLED`, `VERIFY_AGENTS` and `AGENT_LONG_RUNS` set to 1 that night;
+  - `BUILDS_ON_CONTRIBUTOR` untouched, so Wonder is off.
+- **Not known:** `BUILD_RANGE`, `FULL_BUILDS`, `MUSE_FULL`, `PROVE_IT` and the `ENGINE_*` switches were last set the day before, and the CLI doesn't show values. Each build's brief and room shows whether a design direction, milestones or full requirements were used.
+- **Builds:**
+  - legal (recipe-case-agent): https://musemuse.dev/b/e4680748-adbf-4385-9ea0-71938e8260f5
+  - api (recipe-api): https://musemuse.dev/b/f0fc2683-bc9f-4943-8f0a-905fc89d3de3
+  - alerts (recipe-agent-patterns): https://musemuse.dev/b/3da16ecd-757a-4552-b0bf-9a14181982cd
+  - charts (recipe-visual-reports): https://musemuse.dev/b/cb1bbd76-fe3f-4170-a86c-0f9205d0534e
+  - fridge (recipe-visual-reports): https://musemuse.dev/b/d5167ddc-82d9-43d9-b4ee-f592ffcc33e6
+  - games (recipe-games): https://musemuse.dev/b/8de7943e-7a8b-4163-9654-db64daeaa291
+  - image (recipe-image): https://musemuse.dev/b/aa97205f-6f5c-49bc-ab80-6485a48380b3
+  - voice (recipe-voice): https://musemuse.dev/b/c956821a-cc65-48d2-8e88-43a7f7d6a547
+  - stickers (recipe-sam-media): https://musemuse.dev/b/200845b0-14f0-4ba5-a1b4-8ef6e4c97afc
+  - computer-use (recipe-simulated-loops): https://musemuse.dev/b/6e424473-5876-4fc9-92cf-8e14638e11f1
+  - studio (recipe-simulated-loops): https://musemuse.dev/b/7571cee5-faba-40c5-b860-1889e45d2126
+  - verified (recipe-verified-agent): https://musemuse.dev/b/6f98efc0-78fa-4977-88d8-e7e1942680fa
+- **Next:** check every room and live app in the morning, log status, time and cost, and fix or rebuild what didn't fully land.
