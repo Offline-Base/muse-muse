@@ -21,8 +21,13 @@ test("?intro= picks one on any page, even after it was seen; off turns it off", 
   assert.equal(pickIntro({ ...base, param: "nope" }), INTRO_DEFAULT);
 });
 
+test("every kind has its clip", async () => {
+  const { INTRO_CLIPS, INTRO_KINDS } = await import("@/lib/intro");
+  assert.deepEqual(Object.keys(INTRO_CLIPS).sort(), [...INTRO_KINDS].sort());
+});
+
 test("isIntroKind", () => {
-  assert.ok(isIntroKind("curtain") && isIntroKind("shades"));
+  assert.ok(isIntroKind("curtain") && isIntroKind("shades") && isIntroKind("shirt"));
   assert.ok(!isIntroKind("hello"));
   assert.ok(!isIntroKind("Curtain") && !isIntroKind(undefined));
 });
