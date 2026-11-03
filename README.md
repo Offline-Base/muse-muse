@@ -1,6 +1,28 @@
 # Muse Muse
 
-**Create your own personal AI, keep shaping it, own it, run it on your hardware.**
+**Your own AI, on your own hardware, ready for any scenario.** Muse Muse turns one sentence into a working app on Meta's models, checks it before it ships, and is built so the app keeps answering on a Jetson when the cloud is cut.
+
+**Video:** [the 3-minute demo, link added at submission]. **Live:** https://www.musemuse.dev, open to browse with no sign-in. Not an official Meta product.
+
+### Proven on Nov 3
+
+Each line is logged in [docs/BUILD_LOG.md](docs/BUILD_LOG.md) under the entry named.
+
+- **Meta's SAM 3.1 on a Jetson Orin Nano 8GB: 1.42 s a look** once warm, on Meta's sample photo ("Nov 3, 2026, 2:15 to 4 AM ET: the boards, checked for real").
+- **SAM 3.1 tuned on a board:** its detector learned a new word, "muse" (our mascot), on jetson-03, from 0 to 38 of 38 held-out made-up images. Meta's SAM 3.1 already finds the same mascot as "plush toy", so the tune adds a name, not accuracy (same entry).
+- **An edge build passed all 8 simulated outage drills** (cloud refused, cloud hung, both down, tampered reply, for its text answer and its SAM look) in its own build sandbox, against a simulated board ("Nov 3, 2026, about noon ET: claim fixes").
+- **18 apps built overnight** on Muse Spark 1.3 Contributor with made-up data, for $0.17 to $0.40 each. A hands-on audit found 7 that work, 9 with gaps and 2 broken, though all 18 passed our judge ("Nov 3, 2026, 2 to 3 AM ET" and "Nov 3, 2026, 5:30 AM ET: target audit").
+- **Glimmer weights, separate from the app:** a one-bit Muse Glimmer file we publish on Hugging Face ran on a Galaxy S25 at 1.94 tokens a second on Nov 1, and runs on a Jetson at about 5 tokens a second with weak answers ("Nov 3, 2026, 10:05 to 10:30 AM ET"). No app calls them.
+
+Not proven yet: an app answering on a board with its uplink pulled (the take is planned for Nov 3, night), and the whole chain from a sentence to an app answering with its own tuned model.
+
+### Three commands, no keys
+
+```bash
+npm ci && npm run dev:local   # the site on http://localhost:3000; a local run starts empty
+npm run drill                 # 11 simulated outage drills on loopback, about 25 s, no model
+npm run drill-bench           # remakes and scores the simulated cold-room set, about 2 s (needs python3)
+```
 
 | | |
 |---|---|
@@ -9,7 +31,7 @@
 | **Entrant** | Offline Base |
 | **Team** | Ethan and Hussam |
 
-That sentence is the aim, not yet the record. Each step below has run on its own, and the diagram marks how. The whole chain has not run as one, and no tuned model from this flow has run on anyone's own hardware. Every number we quote, failures first, is in [eval/](eval/README.md).
+The opening line is the aim, not yet the record. Each step below has run on its own, and the diagram marks how. The whole chain has not run as one, and no tuned model from this flow has run on anyone's own hardware. Every number we quote, failures first, is in [eval/](eval/README.md).
 
 ```mermaid
 flowchart LR
@@ -21,7 +43,7 @@ flowchart LR
   end
 
   own["Own it<br/>source.zip, and a tuned GGUF file<br/><b>Proven</b> on the test model. GGUF <b>by harness</b>, private"]
-  run["Run it on your hardware<br/>A board, a laptop, a phone<br/><b>Simulated</b> board only. <b>Not run</b>: a tuned model on real hardware"]
+  run["Run it on your hardware<br/>A board, a laptop, a phone<br/><b>Run</b>: Meta's SAM 3.1 on a Jetson. <b>Simulated</b>: the board in the outage drills. <b>Not run</b>: an app with its uplink pulled, a tuned model on real hardware"]
 
   subgraph privacy["Muse Privacy: invented data only"]
     muse["Muse plans with tags"]
@@ -37,9 +59,9 @@ flowchart LR
 
 **Which model does Muse Privacy's steps.** Muse Glimmer 30B, for the submission. The organizers ruled on Nov 2 that every model the project calls at runtime must be Meta's, so Muse Privacy's name pass, its labels on Muse's requests, and its answers and summaries go to Muse Glimmer 30B in the cloud through OpenRouter, on invented data only, and Glimmer is also the privacy router, deciding each result under floors from the policy file that it can't loosen. Glimmer on a device is the target, not a result: it has not run on a device for this. On this setup, on Nov 2: 0 leaks of names or identifiers on 200 invented items, nothing shared that should have waited or stayed, and the router right 71.5% of the time, with 101 approval requests, 50 of them needless ([report](privacy/eval/reports/glimmer_fresh_200_b_2026-11-02.md)). Earlier Glimmer runs: through OpenRouter on Oct 27, 0 leaks of names or identifiers on 100 invented items; tuned, on a rented A100, it wrote answers and summaries with 0 leaks (80.5% and 81.0%), but as the labeler, the tightener or the decider it scored far worse (41.0% to 64.0%). See [eval/](eval/README.md#muse-privacy) and [privacy/README.md](privacy/README.md).
 
-**What's simulated.** The board, in every "your own hardware" step. Every teacher and record in Muse Privacy, which has no real users. The fine-tuning results that say harness had a real GPU and judge, on an invented topic, without going through the site's launch path.
+**What's simulated.** The board in the outage drills, which run in each build's sandbox against a fake board and a blocked cloud. Every cold-room reading. Every teacher and record in Muse Privacy, which has no real users. The fine-tuning results that say harness had a real GPU and judge, on an invented topic, without going through the site's launch path.
 
-Offline Base also makes Base Drive, an offline AI kit on a flash drive, and runs a fleet of Jetson boards. This flow has not run on those boards, and Muse Privacy's Jetson version is designed but has not run on a board. Muse Privacy lives in [privacy/](privacy/README.md).
+Offline Base also makes Base Drive, an offline AI kit on a flash drive, and runs a fleet of Jetson boards. Meta's SAM 3.1 runs on one of them (jetson-04) and was tuned on another (jetson-03), and on Nov 2 a product Muse Muse built counted with SAM 3.1 on jetson-04 from a laptop (docs/BUILD_LOG.md, "Nov 2, 2026, 9 PM ET"). No app has kept answering on a board with its uplink pulled yet, and Muse Privacy's Jetson version is designed but has not run on a board. Muse Privacy lives in [privacy/](privacy/README.md).
 
 ## Quickstart
 
@@ -50,17 +72,17 @@ git clone https://github.com/Offline-Base/muse-muse.git && cd muse-muse
 npm ci && cp .env.example .env.local && npm run dev:local   # then open http://localhost:3000
 ```
 
-`npm run dev:local` sets up a local database (PGlite in `.data/pglite`), keeps files in `.data/files` and turns sign-in off for localhost. It needs no keys. **A local run starts empty:** the Gallery, Models and Fine-tuning pages say "Nothing shipped yet" and "No results yet". The judged results and the shipped products are on the live site, https://muse-muse.vercel.app, which anyone can browse with no sign-in.
+`npm run dev:local` sets up a local database (PGlite in `.data/pglite`), keeps files in `.data/files` and turns sign-in off for localhost. It needs no keys. **A local run starts empty:** the Gallery, Models and Fine-tuning pages say "Nothing shipped yet" and "No results yet". The judged results and the shipped products are on the live site, https://www.musemuse.dev, which anyone can browse with no sign-in.
 
 ### Judge path
 
 | Goal | What it needs | Command | Time and cost |
 |---|---|---|---|
-| Open the site | Nothing | https://muse-muse.vercel.app | None |
+| Open the site | Nothing | https://www.musemuse.dev | None |
 | Run the tests | Nothing. Muse Privacy's tests also need [uv](https://docs.astral.sh/uv/) (`brew install uv`) | See [Tests](#tests) | About 3 minutes for the Node tests, and about 3 for Muse Privacy's. No spend |
 | Run the outage drills | Nothing | `npm run drill` | About 25 seconds for the eleven drills, all on loopback. No key, no model, no spend |
 | Score the drill bench | `python3` | `npm run drill-bench` | About 2 seconds. No model |
-| Make one product | A Meta Model API key in `MODEL_API_KEY`, and a free Vercel account for Vercel Sandbox (below) | Make page, after `npm run dev:local` | 3 to 9 minutes and about $0.30 to $1.80 in Meta credits per build in our local batch, which used a warm snapshot (a first build without `BUILDER_SNAPSHOT_ID` takes longer), plus Sandbox minutes on your Vercel account |
+| Make one product | Both: a Meta Model API key in `MODEL_API_KEY` **and** a free Vercel account linked for Vercel Sandbox (below). A Meta key alone can't build anything | Make page, after `npm run dev:local` | 3 to 9 minutes and about $0.30 to $1.80 in Meta credits per build in our Oct 27 local batch, which used a warm snapshot (a first build without `BUILDER_SNAPSHOT_ID` takes longer). Full builds on the live site with today's checks took 33 to 100 minutes on Nov 3. Plus Sandbox minutes on your Vercel account |
 
 To make a product, put your Meta key in `MODEL_API_KEY` in `.env.local`, then give Vercel Sandbox its credentials. Muse Code runs only in a Sandbox microVM, so there is no build without them:
 
@@ -78,7 +100,7 @@ Pull into its own file as above: a plain `vercel env pull` writes over `.env.loc
 | To do this | You need |
 |---|---|
 | Start the site and browse it | Nothing |
-| Write a brief, or anything else that calls a model | `MODEL_API_KEY`, a Meta Model API key |
+| Write a brief | The same as a build: `MODEL_API_KEY` and Vercel Sandbox credentials. A brief is a build's first step, and without Sandbox credentials the Make page refuses it with `no_sandbox` before any paid call (`buildSetupRefusal` in `lib/quota.ts`) |
 | Build a product | `MODEL_API_KEY`, plus Vercel Sandbox credentials: `VERCEL_OIDC_TOKEN` (from `npx vercel link` and `npx vercel env pull .env.vercel.local`, good for 12 hours; see the [Judge path](#judge-path)). `BUILDER_SNAPSHOT_ID` (from `npm run snapshot`) is optional locally and makes builds start faster |
 | Publish a product to its own link | Not possible from a local run: a product couldn't reach this machine's gateway. Use a Vercel deployment (see [Setup](#setup)) |
 | Train a model | Not from a local run as it stands. Training starts only on production unless `TRAIN_ALLOW_OUTSIDE_PRODUCTION=1`, and a rented GPU has to reach the site to report back. See [docs/TRAINING.md](docs/TRAINING.md) |
@@ -101,7 +123,7 @@ Give it a muse and Muse makes it. Drop in an example or some inspo, like a photo
 
 Hackathon codename for the Meta Global AI Developer Hackathon, Startup track. Muse is Meta's brand, so pick your own name before taking this further. See the Name section in [docs/DESIGN.md](docs/DESIGN.md#name).
 
-**Live:** https://muse-muse.vercel.app. Anyone can browse it with no sign-in. The submission write-up, video script and checklist are in [docs/SUBMISSION.md](docs/SUBMISSION.md).
+**Live:** https://www.musemuse.dev. Anyone can browse it with no sign-in. The submission write-up, video script and checklist are in [docs/SUBMISSION.md](docs/SUBMISSION.md).
 
 ## Status
 
@@ -125,7 +147,7 @@ Everything else in this repo, and its whole git history, was written from Oct 26
 2. **Brief.** The brief model reads every reference (Muse Wonder 1.0, or Spark 1.3 Contributor while `BUILDS_ON_CONTRIBUTOR` is on, as on the live site for now; `env.briefModel` in `lib/env.ts`): images, video and PDFs directly, and voice memos after Muse Voice Transcribe 1.0 turns them into text. It writes a structured brief: the product, who it's for, the main flow, the Meta models it needs and why, honest limits, cost per use, and what it takes from the inspo and what it leaves out. It can also refuse.
 3. **Build.** Muse Code runs headless in a Vercel Sandbox microVM, one per product, started from a warm snapshot. It writes a Next.js product from `template/`, guided by the template's `AGENTS.md`, one skill per Meta model and a manifest it must fill in. Muse Code runs on the build model: Spark 1.3 Contributor while `BUILDS_ON_CONTRIBUTOR` is on, as it is on the live site for now, and Muse Wonder 1.0 with it off (`env.buildModel` in `lib/env.ts`). Every product shares a Meta-family look: Facebook's design tokens in light and dark, Inter and Montserrat, and parts such as an app bar, segmented choices, list rows, a composer and an AI result card, which the template's `meta-ui` skill teaches from public research ([docs/META_DESIGN_RESEARCH.md](docs/META_DESIGN_RESEARCH.md)). The build room shows the live log and a live preview.
 4. **Check.** `npm run verify` runs typecheck and `next build`, starts the server and checks for console errors. Then come the Playwright smoke test Muse Code wrote, with real model calls, and a screen check that fails on sideways scroll, clipped text or a loading state left on screen. Last, the judge model (the same rule: Wonder, or Contributor while `BUILDS_ON_CONTRIBUTOR` is on) judges the screenshots against the brief and the inspo.
-5. **Fix rounds.** A failure resumes the same Muse Code session with the errors and up to four of the judge's screenshots. Three rounds at most. A product that still fails ships as partial only when every mechanical check passed. Otherwise the build ends as failed, with Muse Code's notes.
+5. **Fix rounds.** A failure resumes the same Muse Code session with the errors and up to four of the judge's screenshots, for up to `MAX_FIX_ROUNDS` rounds (2 by default in `lib/env.ts`, 4 on the live site since Nov 3). A product that still fails ships as partial only when every mechanical check passed. Otherwise the build ends as failed, with Muse Code's notes.
 6. **Demo video.** Demo Studio reruns the smoke test with a recorder that tracks every action, change on screen and wait, then edits it into a 1920×1080 MP4 and a poster: an intro card with the product's models, the app in a browser window with its live URL, a cursor and a camera that zooms in on typing and results, model waits sped up with a badge that says by how much, and captions below the window. See [docs/DEMO_STUDIO.md](docs/DEMO_STUDIO.md). The redacted Muse Code transcript is saved for the product page.
 7. **Deploy.** The platform, never the sandbox, publishes the source as its own Vercel project, `musemuse-<slug>`. The product calls Meta only through this platform's gateway, with a product token scoped to its models and endpoints, a daily budget and rate limits.
 8. **Connector.** The actions in the product's `musemuse.json` become MCP tools at `/api/mcp/<slug>`. Add that URL to the Muse app as a custom connector, or to Claude Code as an MCP server.
@@ -180,7 +202,7 @@ By default both models train and answer under a one-line role prompt, such as "Y
 
 Jobs are admin only. The Lambda key never leaves the platform. Each instance gets a one-time job token, and only its hash is stored. Three things terminate a GPU: the job's workflow, the instance's own done callback and a sweep every 5 minutes. A job won't launch unless the sweep ran in the last 15 minutes. Each job has a time limit and a dollar limit, one GPU runs at a time, and a daily cap covers all jobs.
 
-Results are public and read-only at [/fine-tuning](https://muse-muse.vercel.app/fine-tuning): each judged job with its wins, average scores, GPU time and cost, and every held-out prompt with the writer model's reference, the base answer, the tuned answer and the verdict. The full spec is [docs/TRAINING.md](docs/TRAINING.md).
+Results are public and read-only at [/fine-tuning](https://www.musemuse.dev/fine-tuning): each judged job with its wins, average scores, GPU time and cost, and every held-out prompt with the writer model's reference, the base answer, the tuned answer and the verdict. The full spec is [docs/TRAINING.md](docs/TRAINING.md).
 
 | Run | GPU | Time | Cost | Result |
 |---|---|---|---|---|

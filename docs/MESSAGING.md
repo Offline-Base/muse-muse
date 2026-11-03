@@ -50,6 +50,20 @@ For the edge track (docs/EDGE_PLAN.md). Each page below was opened on Nov 2, 202
 | Llama 3.2's "lightweight, text-only models (1B and 3B) that fit onto edge and mobile devices" | Meta AI blog, "Llama 3.2: Revolutionizing edge AI and vision with open, customizable models", Sep 25, 2024 | Checked: https://ai.meta.com/blog/llama-3-2-connect-2024-vision-edge-mobile-devices/ (first Takeaways bullet). **Retired Nov 2:** the organizers ruled that Llama does not count as a Meta model in this hackathon (see the rules section below) | Don't use. The edge model must be a Meta model, such as Glimmer |
 | Muse is out on iOS and Android, with Invite Codes, Muse for Mac, and Canada | A thread from the @Muse account on X, Nov 2, pasted by Ethan | Not checked on a Meta page. Look it up on a Meta page (meta.com or about.fb.com) before saying it | Point 4: Meta's own Muse now reaches phones and the Mac. Muse Muse products are web apps plus connectors, so test one connector in the Muse app on Mac before saying it works there (docs/HANDOFF.md) |
 
+## Proven lines, Nov 3
+
+Each was run and logged. Say it in these words or narrower, with its caveat.
+
+| Line | Evidence | Caveat that goes with it |
+|---|---|---|
+| Meta's SAM 3.1 runs on a Jetson Orin Nano 8GB at 1.42 s a look | docs/BUILD_LOG.md, "Nov 3, 2026, 2:15 to 4 AM ET: the boards, checked for real" (first look 3.27 s, then 1.42 to 1.43 s, Meta's 1800 x 1200 truck photo, jetson-04) | Once warm, on Meta's sample photo. Not a camera feed or video |
+| SAM 3.1's detector was tuned on an 8 GB board to find a new word, "muse": 0 to 38 of 38 held-out made-up images | Same entry, the jetson-03 table | Meta's SAM 3.1 already finds the mascot as "plush toy" (38 of 38). The held-out images are composites with no other toys |
+| An edge build passed all 8 simulated outage drills in its own build sandbox | cold-room-watcher-2's product page (www.musemuse.dev/p/cold-room-watcher-2, "All 8 outage drills passed"), logged in docs/BUILD_LOG.md, "Nov 3, 2026, about noon ET: claim fixes" | Against a simulated board and a blocked cloud, not a real board. That product is hidden from the gallery: its tagline says it answers on the office board while its page says "Not connected to a board" |
+| 18 apps built overnight on the test model, $0.17 to $0.40 each | docs/BUILD_LOG.md, "Nov 3, 2026, 2 to 3 AM ET" and "Nov 3, 2026, 5:30 AM ET: target audit" | Always with the hands-on audit: 7 work, 9 have gaps, 2 broken (the list is in the claim-fixes entry; three of the 7 were called "works, with gaps"). The audit was agents using each app, not a person, so say "hands-on audit", not "by hand" |
+| A tune launched from the site itself: 19 of 20 held-out prompts, one H100, 32 minutes, $1.75 | Job 83ae46c8's public page; docs/BUILD_LOG.md, "Nov 3, 2026, about 10:30 AM ET: partner evals" | Only once DATA_RIGHTS.md Q1 to Q3 allow it (Contributor wrote its rows; its base is r30b). Judged by Spark 1.3 Contributor; doesn't compare with Wonder-judged runs |
+| One-bit Glimmer ran on a Galaxy S25 at 1.94 tokens a second, Nov 1 | docs/GLIMMER_DEVICES.md; docs/BUILD_LOG.md, "Nov 3, 2026, 10:05 to 10:30 AM ET" | 3 of 3 simple questions, adb shell, not an app. Hugging Face weights, separate from the apps |
+| `npm run drill` passes 11 of 11 with no key | docs/BUILD_LOG.md, "Nov 3, 2026, 10:30 AM ET: demos in check for judges" | On loopback with a fake model and a fake SAM service |
+
 ## What the rules say about the submission
 
 Read Nov 2 in the Official Rules (https://cerebralvalley.ai/e/meta-ai-developer-hackathon/waiver) and on the event page.
@@ -74,7 +88,9 @@ Read Nov 2 in the Official Rules (https://cerebralvalley.ai/e/meta-ai-developer-
    - The claim: one sentence becomes a plan, data, a tune, a blind check against the base model, and a file you keep, plus an app built around it.
 3. **The Jetson result is the honest frontier.** Meta's smallest Glimmer is 16.8 GB. The knowledge run's r30b, cut to 5.75 GB, now runs on a real Jetson Orin Nano 8GB (`jetson-02`, llama.cpp).
    - On the board: 5 to 6 tokens a second with poor answers. Its card reports loops on 17 of 60 prompts.
-   - On Hussam's 40-receipt bench (PR #62), run without a JSON schema, it gave 0% valid JSON, and the board stopped answering at receipt 23 and needed a power cycle. So don't film it doing a document task unless Hussam's $0 schema gate on jetson-02 has passed (valid JSON on 10 of 10 receipts with a JSON schema, no hang, readable verdicts). That gate hasn't run. If it fails, the board fallback is fixed code (thresholds plus the probe-disagreement rule, no model). The same bench ran other companies' models on other boards; those numbers aren't project results and stay out of public copy.
+   - On Hussam's 40-receipt bench (PR #62), run without a JSON schema, it gave 0% valid JSON, and the board stopped answering at receipt 23 and needed a power cycle. So don't film it doing a document task. Nov 3: with a `json_schema` it always gave valid JSON, but called the cold-room reading wrong in every setup tried, so the board fallback is fixed code (thresholds plus the probe-disagreement rule, no model), and the edge apps don't use Glimmer (BUILD_LOG, "Nov 3, 2026, 10:05 to 10:30 AM ET"). The same bench ran other companies' models on other boards; those numbers aren't project results and stay out of public copy.
+   - Nov 1, found Nov 3: a 6.53 GB one-bit r30b file ran on a Galaxy S25 (12 GB, CPU) in AWS Device Farm at 1.94 tokens a second, 3 of 3 simple questions, from adb shell, not an app (docs/GLIMMER_DEVICES.md).
+   - These are Hugging Face weights from the knowledge run. Keep them apart from the app story: no Muse Muse app calls them, and nothing the one-sentence flow made has run on a board.
    - Show it as "a third the size of Meta's smallest file, and here's what that costs", never as the model doing the reasoning in a demo.
    - r30b is a Derivative of Muse Spark Open (BUILD_LOG, Oct 31, "r30b is a Derivative of Muse Spark Open"). So "Built with Muse Spark Open" goes on screen with it, and its Usage Policy means 18 and over.
 4. **Don't pitch a gap in Meta's lineup.** Meta already has Muse (a personal agent with a Secure VM and audit trail), Muse Code, Glimmer and the cookbook above. Replit and Lovable already turn a sentence into an app.
@@ -127,9 +143,15 @@ Meta-models-only lines, added Nov 2 evening from the Meta-models audit:
 - Bolt, LFM or Llama numbers as project results, including the Llama harness tune (6.67 to 2.55, 95 to 5), the 2.02 GB Llama file, and the receipt-bench numbers for Bolt and LFM.
 - "Nothing leaves the device", "device-only" or "on the device" for Muse Privacy while its submitted path is Muse Glimmer in the cloud. Say Glimmer runs in the cloud on invented data, and that device Glimmer is the target.
 - That one-bit Glimmer reads documents reliably on 8 GB. Don't film it on a document task unless the schema gate passed.
-- That anything was tuned on a board, except Meta SAM 3.1's detector learning the word "muse" on jetson-03 (Nov 3; say it only as docs/EDGE_PLAN.md words it, and never that it sees better than Meta's weights). PR #67 tuned Llama on jetson-04, which isn't a Meta model, and an 8 GB board can't tune Glimmer.
+- That Llama or Glimmer was tuned on a board. PR #67 tuned Llama on jetson-04, which isn't a Meta model, and an 8 GB board can't tune Glimmer. Meta SAM 3.1's detector learning the word "muse" on jetson-03 (Nov 3) may be said, as docs/EDGE_PLAN.md words it: "muse" went from 0 to 38 of 38 held-out made-up images, and Meta's SAM 3.1 already finds the same mascot as "plush toy", so the tune adds a name, not accuracy. Never say it sees better than Meta's weights.
 - That the d1 router, System One, combos or the fleet console's assistant are part of Muse Muse. Muse Muse never calls them.
 - Keep the fleet console and jetson-03, 04 and 05 out of frame, along with the Claude and ChatGPT connector labels. Show only the Muse app connector.
+
+Edge lines, added Nov 3 (branch tg-c-claims):
+- That the edge app falls back to one-bit Glimmer, or that a model judges the cold room on the board. The board fallback is rules in code plus SAM 3.1 (BUILD_LOG, "Nov 3, 2026, 10:05 to 10:30 AM ET").
+- That Muse Privacy "keeps documents on hardware you own". It runs in the cloud on invented data.
+- That Muse Wonder planned, built or judged a product, unless that build's log entry shows it ran on Wonder. Builds on the live site run on Muse Spark 1.3 Contributor while `BUILDS_ON_CONTRIBUTOR` is on (docs/HANDOFF.md, "Wonder stays off").
+- That Muse Spark Open runs inside apps through Fireworks. Fireworks' account answered 412 on Nov 2, and no logged product call has used Spark Open.
 
 Edge lines, added Nov 2 (docs/EDGE_PLAN.md):
 - That AI "stops hacks", or that anything is "attack-proof".

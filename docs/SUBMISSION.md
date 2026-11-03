@@ -4,15 +4,18 @@ Rewritten Nov 2, 2026, on branch tg-submission-fields (from `e4beadc1`, main plu
 
 Meta Global AI Developer Hackathon. Startup track ("Judged on technical execution and whether it holds up in production"). Due Wed Nov 4, 2026, 9 PM ET; Ethan submits by noon ET.
 
+**Revised Nov 3, about noon ET, on branch tg-c-claims, as a draft for the owner to approve before merge.** From the readiness audit's claim fixes (items 7, 14, 15 and 17, and its story recommendation): Contributor is credited where it ran, Muse Privacy is said as cloud and invented data, the edge fallback is rules in code plus SAM 3.1 on the board (not one-bit Glimmer), Nov 3's proven results are added, the Hugging Face weights are kept apart from the app, and field 4 and the opening problem line have two versions, one per theme. The evidence for each new line is in docs/BUILD_LOG.md, "Nov 3, 2026, about noon ET: claim fixes".
+
 Every answer below names its source. A claim is allowed only if a Checked row in [MESSAGING.md](MESSAGING.md), a mark in [STORY.md](STORY.md) or a logged run in [BUILD_LOG.md](BUILD_LOG.md) allows it. Anything that hasn't run says "is built so". Answers that must change later carry one of these tags:
 
 - **[after the chain run]**: change it once the approved chain run (O2 in [EDGE_PLAN.md](EDGE_PLAN.md)) is logged in BUILD_LOG.
-- **[after the board take]**: change it once the board runs (M10, M11, M12 in EDGE_PLAN.md) are logged.
+- **[after the board take]**: change it once tonight's board take (VIDEO.md, shot 7) is logged in BUILD_LOG.
 - **[owner]**: only Ethan or Hussam can answer it.
+- **[data rights]**: feature it only once the owner settles DATA_RIGHTS.md Q1 to Q3 for that model (its table "What each answer changes, by model"). Cut the line if the answer is no.
 
 ## What the organizers said
 
-**Meta models only (Discord, Nov 2, 3:57 PM; MESSAGING.md, "What the rules say").** Llama does not count as a Meta model here, and every model the project calls at runtime must be Meta's, helpers included. So no answer below credits Llama, LFM, Bolt or any other non-Meta model with project work, and their numbers are not project results. The edge model is built to be Muse Glimmer one-bit, and Muse Privacy runs Muse Glimmer in the cloud on invented data.
+**Meta models only (Discord, Nov 2, 3:57 PM; MESSAGING.md, "What the rules say").** Llama does not count as a Meta model here, and every model the project calls at runtime must be Meta's, helpers included. So no answer below credits Llama, LFM, Bolt or any other non-Meta model with project work, and their numbers are not project results. The edge app's board fallback is rules in code plus Meta's SAM 3.1 on the board, not one-bit Glimmer: one-bit Glimmer runs on jetson-02 but called a 6 C controller and probe gap "ok" in every setup tried, "so the edge fallback stays rules in code" (BUILD_LOG.md, "Nov 3, 2026, 10:05 to 10:30 AM ET"). Muse Privacy runs Muse Glimmer in the cloud on invented data.
 
 Nov 2, from the organizers:
 
@@ -26,9 +29,9 @@ What that means for us:
    - The first Quickstart command is Docker, and the README itself says the image "has not been built or run yet".
    - With no keys, `npm ci && npm run dev:local` opens the site (every page returned 200, but a local run starts empty), and the Node and Muse Privacy test suites pass.
    - To make one product, a judge needs a Meta key (`MODEL_API_KEY`) **and** a Vercel account linked for Vercel Sandbox. With only a Meta key, the build pays for a brief and then fails at provisioning. `BUILDER_SNAPSHOT_ID` is optional locally (a slower first build).
-   - The edge drills are now in the repo (`template/scripts/edge-drill.mjs`) and run with no keys against a fake edge server; the README doesn't mention them yet. Each test file's header has its command, for example `npx tsx --test template/scripts/__tests__/edge-drill.test.mjs`.
-   - Fixing the README is a separate unit. Until it lands, don't write in any field that a judge can build a product with only a Meta key.
-4. **The live site is optional.** It stays up as a bonus: https://muse-muse.vercel.app
+   - The edge drills run with no keys against a fake edge server: `npm run drill` passed 11 of 11 on Nov 3 (BUILD_LOG.md, "Nov 3, 2026, 10:30 AM ET: demos in check for judges"), and the README's Judge path lists it.
+   - Never write in any field that a judge can build a product, or write a brief, with only a Meta key: a brief is a build's first step, and without Sandbox credentials it is refused with `no_sandbox` (`buildSetupRefusal` in lib/quota.ts).
+4. **The live site is optional.** It stays up as a bonus: https://www.musemuse.dev
 
 ## Two headlines
 
@@ -36,7 +39,7 @@ Both go in the description and the video, side by side.
 
 **The frontier.** Muse Muse is built so one sentence becomes a tuned model you keep, inside an app built for it, with marks that show what was proven. (STORY.md, the frontier claim. "Is built so" until the chain has run as one.)
 
-**The edge, and defending infrastructure.** Muse Muse is built so the app it makes can keep answering on a Jetson when the cloud is cut, and flag a controller reading that disagrees with an independent probe. Our scenario is a simulated cold room. (EDGE_PLAN.md, "When each claim may be said"; MESSAGING.md, "Edge facts, Nov 2".)
+**The edge, and defending infrastructure.** Muse Muse is built so the app it makes can keep answering on a Jetson when the cloud is cut, flag a controller reading that disagrees with an independent probe by a rule in code, and keep watching the door with Meta's SAM 3.1 on the board. Our scenario is a simulated cold room. What has run: SAM 3.1 on a Jetson Orin Nano 8GB at 1.42 s a look, a SAM 3.1 tune on the same kind of board, and an edge build that passed all 8 simulated outage drills in its own build sandbox (BUILD_LOG.md, Nov 3 entries). The unplug itself is "is built so" until the board take is logged. (EDGE_PLAN.md, "When each claim may be said"; MESSAGING.md, "Edge facts, Nov 2".)
 
 The why, in our words: infrastructure has to be ready for any scenario, including the day the cloud is out of reach or a controller can't be trusted. Never say the app stops hacks, is attack-proof, works offline in general, or answers privately or on-device.
 
@@ -63,11 +66,31 @@ Source: CLAUDE.md ("Offline Base's entry"). "Muse Muse" is the project's codenam
 
 Source: the event page; README.md.
 
-### 4. Which problem statement did you build towards?
+### 4. Which problem statement did you build towards?  [owner] [after the board take]
+
+Two versions. The owner picks one tonight, and the opening problem line ("The problem", below) and the video's shot 2 follow the same pick.
+
+**Version 1, Push the Frontier.** Use it if tonight's board take works (the app keeps answering on jetson-04 with the uplink out, or the backup: the app on the laptop with Wi-Fi off and SAM 3.1 on the board).
 
 > Push the Frontier
 
-Why: the pages never say "problem statement". The rules' Impact line asks "whether it fits one of the problem statements", and the only candidates are the two themes. Both headlines land on Push the Frontier's own words: "Give a machine a new capability" (a sentence becomes a tuned model on a small board) and "unlock a better way to understand and control a physical system ... when these models meet the real world" (the cold-room watcher). Build for Your World fits only Muse Privacy. Source: MESSAGING.md, the Push the Frontier row (Checked).
+Opening problem line for this version:
+
+> Your own AI, on your own hardware, ready for any scenario. Shops, clinics and schools run equipment on the internet with no engineering team, and this fall suspected hacks shut down supermarket freezers across Europe. Muse Muse turns one sentence into an app on Meta's models that watches that equipment, and keeps watching with Meta's SAM 3.1 on a Jetson when the cloud is cut.
+
+(The last clause is "is built so" until the take is logged; then it may be said as run. Freezer line: MESSAGING.md, "Edge facts, Nov 2", Bloomberg row, Checked.)
+
+**Version 2, Build for Your World.** Use it if the take fails or the owner prefers the builder story.
+
+> Build for Your World
+
+Opening problem line for this version (the owner's words, Nov 3):
+
+> People know their jobs, but getting custom software built takes engineering resources they often don't have. Muse Muse turns a sentence or photo into a working app they can use and keep improving.
+
+(Evidence that it does this: 18 apps built overnight on Nov 3 from notes with made-up data, 7 of which a hands-on audit found working, 9 with gaps and 2 broken; Results, below. "Keep improving": a refinement resumes the same Muse Code session and ships again only if its checks pass; README.md, "What it does".)
+
+Why version 1 was the default: the pages never say "problem statement". The rules' Impact line asks "whether it fits one of the problem statements", and the only candidates are the two themes. Both headlines land on Push the Frontier's own words: "Give a machine a new capability" (a sentence becomes a tuned model on a small board) and "unlock a better way to understand and control a physical system ... when these models meet the real world" (the cold-room watcher). On Nov 2 we judged that Build for Your World fit only Muse Privacy; the owner's Nov 3 line above makes the builder story itself the fit. Source: MESSAGING.md, the Push the Frontier row (Checked).
 
 ### 5. Most Viral: X post link  [owner] [after the board take]
 
@@ -75,67 +98,70 @@ Why: the pages never say "problem statement". The rules' Impact line asks "wheth
 
 - **What it is.** The public pages name a "most viral project award" only inside the Bonus Prizes clause (up to $50,000 in all, announced on or about Nov 10). There are no published rules on what counts, no tags or handles, and no deadline for the post. The rules say a project enters "one (1) track only", so this reads as a bonus award, not a second track. Ask on Discord if the form makes it look like one.
 - **The post has to exist before Ethan submits** (Wed noon ET), since its link goes in the form.
-- **The video.** The 60-second cut in [VIDEO.md](VIDEO.md), "The 60-second X cut": shot 1 (or its fallback), E2 if the tune ran, E3a (cables out), then shot 12's URL card, with the same labels and lower third. If the take (M12) hasn't happened, E3a falls back down the ladder in EDGE_PLAN.md: at level 4, shot 10 plus a "Simulated outage" card.
+- **The video.** The 60-second cut in [VIDEO.md](VIDEO.md), "The X posts": shot 0, shot 3 sped up, shot 4, shot 7 (cable out) and shot 9's card, with the same labels. If the take hasn't happened, use shot 7's backup or post the teaser without the unplug.
 - **Post text, before the take:**
 
-  > One sentence becomes a tuned model you keep, and an app built for it. We built Muse Muse for Meta's AI Developer Hackathon. Its edge act: a simulated cold-room watcher that is built so it keeps answering on a Jetson when the cloud is cut. Code: https://github.com/Offline-Base/muse-muse
+  > Your own AI, on your own hardware, ready for any scenario. We built Muse Muse for Meta's AI Developer Hackathon: one sentence becomes a working app on Meta's models. Its edge act: a simulated cold-room watcher that is built so it keeps answering on a Jetson when the cloud is cut, with Meta's SAM 3.1 on the board. Code: https://github.com/Offline-Base/muse-muse
 
 - **Post text, after the take** (N and X from that take only):
 
-  > One sentence becomes a cold-room watcher. Muse Muse built it on Meta's cloud models, and this app kept answering on one Jetson with its network unplugged, N of 5 drills, X tokens a second. Simulated cold room, real board, real unplug. Code: https://github.com/Offline-Base/muse-muse
+  > One sentence becomes a cold-room watcher. Muse Muse built it on Meta's models, and with the uplink pulled it kept answering on one Jetson while Meta's SAM 3.1 on the board saw the door open in X seconds. Simulated cold room, real board, real unplug. Code: https://github.com/Offline-Base/muse-muse
+
+  (X from the take only. The old "N of 5 drills, X tokens a second" line assumed a Glimmer text fallback on the board, which is cut.)
 
 - Check the post against every line of MESSAGING.md "Don't say", the edge lines included. No news logos or footage; the rights grant (section "Before you tick the rights box") covers the post too.
 
-### 6. Project Description  [after the chain run] [after the board take]
+### 6. Project Description  [after the chain run] [after the board take] [data rights]
 
-Paste version A today. Swap in each B line only after its run is logged in BUILD_LOG.md.
+Paste version A today. Swap in each B line only after its run is logged in BUILD_LOG.md. If field 4 is Build for Your World, replace the first paragraph's first sentence with that version's opening problem line.
 
-> Muse Muse is built so one sentence becomes a tuned model you keep, inside an app built for it, with marks that show what was proven.
+> **Your own AI, on your own hardware, ready for any scenario.** Muse Muse turns one sentence into a working app on Meta's models. Muse Code, Meta's coding agent, writes each app headless in a Vercel Sandbox microVM on our starter template, and the platform runs typecheck, build, a smoke test, simulated outage drills and a screenshot judge on it, with up to four fix rounds. Overnight on Nov 3 it built 18 apps from notes with made-up data on Muse Spark 1.3 Contributor, for $0.17 to $0.40 each, most in 33 to 100 minutes. A hands-on audit of all 18 found 7 that work, 9 with gaps and 2 broken, though every one had passed our judge, so each defect became a code check.
 >
-> **The frontier.** Meta now offers frontier cloud models and open models for local use. Muse Muse explores whether one person can move between them, shape the result, and leave with something they control. Muse Code writes each app headless in a Vercel Sandbox microVM, and the platform runs typecheck, build, a smoke test and a screenshot judge on it, with up to three fix rounds. Muse Glimmer 30B, tuned on a rented A100 in 42 minutes for $1.39, beat base Glimmer on all 40 held-out prompts in a blind check judged by Muse Spark 1.3, 8.88 to 1.95. On a test harness with made-up data, the real quantize recipe cut a tuned Glimmer to a 6.53 GB one-bit file. By hand, a one-bit Muse Glimmer (5.75 GB, about a third the size of Meta's smallest 16.8 GB file) runs on a Jetson Orin Nano 8GB, at 5 to 6 tokens a second with weak answers. Built with Muse Spark Open.
+> **The edge, and defending infrastructure.** Building for any scenario includes the day the cloud is out of reach or a controller can't be trusted. On Nov 2, supermarkets across Europe reported suspected freezer hacks, and the Pentagon is treating freezer failures at at least six commissaries as a suspected cyberattack. Muse Muse is built so a sentence like "watch this cold room" becomes an app that reads a controller, an independent probe, the door, defrost and power, flags a controller that disagrees with the probe by a rule in code, and keeps watching the door with Meta's SAM 3.1 on a Jetson when the cloud fails. What has run: SAM 3.1 on a Jetson Orin Nano 8GB, 1.42 s a look once warm; SAM 3.1's detector tuned on the same kind of board to find a new word, "muse" (our mascot), from 0 to 38 of 38 held-out made-up images, though Meta's SAM 3.1 already finds it as "plush toy", so the tune adds a name, not accuracy; and an edge build that passed all 8 simulated outage drills (cloud refused, cloud hung, both down, tampered reply, for its text answer and its SAM look) in its own build sandbox. The cold room and its readings are simulated.
 >
-> **The edge, and defending infrastructure.** Building for any scenario includes the day the cloud is out of reach or a controller can't be trusted. On Nov 2, supermarkets across Europe reported suspected freezer hacks, and the Pentagon is treating freezer failures at at least six commissaries as a suspected cyberattack. Muse Muse is built so a sentence like "watch this cold room" becomes an app that reads a controller, an independent probe, the door, defrost and power, flags a reading that disagrees with the probe, and falls back from Meta's cloud models to Muse Glimmer, cut to one bit, on a Jetson when the cloud fails. The cold room and its readings are simulated.
+> **Models you keep.** Separately from the apps, we publish Muse Glimmer weights on Hugging Face. A one-bit file of our 2026-knowledge Glimmer (5.75 GB, about a third the size of Meta's smallest 16.8 GB file) runs on a Jetson Orin Nano 8GB at about 5 tokens a second with short answers that are often wrong, and a 6.53 GB one-bit file ran on a Galaxy S25 at 1.94 tokens a second (AWS Device Farm, Nov 1, 3 of 3 simple questions). Built with Muse Spark Open. The apps don't call these files: their board fallback is rules in code plus SAM 3.1.
 >
-> **What is true today.** The cloud-to-edge fallback, the edge target, four outage drills (cloud refused, cloud hung, both down, tampered reply rejected) built to run inside each edge build, the board build script and the drill data (900 training rows, 50 kept aside, 100 sealed) are built and unit-tested, with flags off. None has run in a real build or on a board yet.
->
-> **What isn't proven.** The chain hasn't run as one, and nothing the one-sentence flow made has run on a board. Muse Privacy is a separate connector, measured only on invented items, with Muse Glimmer 30B in the cloud: on today's setup (Nov 2), 0 leaks of names or identifiers on 200 items, with the router right 71.5% of the time.
+> **What isn't proven.** The chain from a sentence to an app answering with its own tuned model hasn't run as one, and no app has yet kept answering on a board with its uplink pulled. Muse Privacy is a separate connector, measured only on invented items, with Muse Glimmer 30B in the cloud: on Nov 2, 0 leaks of names or identifiers on 200 items, with the router right 71.5% of the time.
+
+Optional tune sentence, after "Models you keep." [data rights]: "On Nov 3 the site itself tuned Muse Glimmer for a cold-room handoff task on one H100 in 32 minutes for $1.75, and the tune beat the model it started from on 19 of 20 held-out prompts (8.4 to 4.8), judged blind by Muse Spark 1.3 Contributor." Its rows were written by Contributor and its base is r30b, so it needs Q1 to Q3. The Oct lab result (A100, 42 minutes, $1.39, 40 of 40, 8.88 to 1.95, judged by Muse Spark 1.3) needs Q2, since Muse Spark 1.3 wrote its rows.
 
 B lines (EDGE_PLAN.md, "When each claim may be said"), each replacing the matching "is built so" or "isn't proven" words:
 
-- After the chain run (O2): the frontier paragraph's harness numbers become the chain run's own, and "The chain hasn't run as one" comes out. Use STORY.md's marks as they stand after the run.
-- After one real edge build has run its drills (M7 with M5): "Every edge build runs four simulated outage drills before it ships."
-- After M8 (planned only if Hussam's schema gate on jetson-02 passes and the owner approves the spend): "Tuned on the scenario's invented data, Muse Glimmer 30B one-bit (IQ1_S) scored [X] against base [Y] on 100 sealed held-out items, scored by code." If tuned didn't beat base, say both numbers.
-- After M10 or M11: "On jetson-02, Muse Glimmer 30B one-bit (IQ1_S) scored [X] on 100 invented held-out items, at [N] tokens a second." Add "tuned" only once a tuned run is logged. If the gate fails, the board fallback is fixed code (thresholds plus the probe-disagreement rule, no model): say that, and give no model score for the board.
-- After M12: "This app kept answering on one Jetson with its network unplugged, [N] of 5 drills, [X] tokens a second." Then STORY.md's "On your own hardware" mark may move up, and "nothing the one-sentence flow made has run on a board" comes out.
+- After the chain run (O2): add the chain run's own numbers, and "The chain ... hasn't run as one" comes out. Use STORY.md's marks as they stand after the run.
+- After the board take: "With the uplink pulled, this app kept answering on one Jetson, and SAM 3.1 on the board saw the door open in [X] seconds." Then STORY.md's "On your own hardware" mark may move up, and "no app has yet kept answering on a board" comes out. If the take used the backup, say "the app kept answering on the laptop with Wi-Fi off, and SAM 3.1 on a Jetson saw the door over a cable in [X] seconds".
 
-Sources: SUBMISSION "One line" (STORY.md); MESSAGING.md point 4 and rows 16 and 23; STORY.md marks; MESSAGING.md "Edge facts, Nov 2" (Bloomberg's "suspected", Reuters' "at least six commissaries"); EDGE_PLAN.md unit status; commits `a4e191b1`, `e81e6f66`, `193a1c30`, `5c679d87`. Muse Privacy gets one line here so both headlines fit; its full write-up is under "Muse Privacy, in full" below. The "0 leaks on 300" and "Oct 30: 10 leaks on 200" numbers were measured with LFM3-VL-2B, which isn't a Meta model, so they are out of the submission. Muse Privacy's numbers come only from runs on Glimmer.
+Sources, by paragraph:
+- First: the 18 builds, BUILD_LOG.md "Nov 3, 2026, 2 to 3 AM ET: overnight batch results" (12 notes, $0.17 to $0.30, 33 to 92 minutes) and "Nov 3, 2026, 5:30 AM ET: target audit" (6 targets, $0.27 to $0.40, 46 to 100 minutes); the 7, 9 and 2 tally, BUILD_LOG.md "Nov 3, 2026, about noon ET: claim fixes"; four fix rounds, `MAX_FIX_ROUNDS` 4 ("Nov 3, 2026, 12:19 AM ET").
+- Second: MESSAGING.md "Edge facts, Nov 2" (Bloomberg's "suspected", Reuters' "at least six commissaries"); SAM 3.1 and the tune, BUILD_LOG.md "Nov 3, 2026, 2:15 to 4 AM ET: the boards, checked for real"; rules in code, "Nov 3, 2026, 10:05 to 10:30 AM ET"; the 8 drills, cold-room-watcher-2's product page, logged in "Nov 3, 2026, about noon ET: claim fixes".
+- Third: the Jetson file, BUILD_LOG.md "Nov 3, 2026, 2:15 to 4 AM ET" and MESSAGING.md point 3; the Galaxy S25, docs/GLIMMER_DEVICES.md and BUILD_LOG.md "Nov 3, 2026, 10:05 to 10:30 AM ET"; Meta's 16.8 GB, MESSAGING.md, quantization row.
+- Fourth: STORY.md marks; the Muse Privacy rerun, BUILD_LOG.md "Nov 2, 2026, 9:35 to 10:23 PM". Muse Privacy gets one line here; its full write-up is under "Muse Privacy, in full" below. The "0 leaks on 300" and "Oct 30: 10 leaks on 200" numbers were measured with LFM3-VL-2B, which isn't a Meta model, so they are out of the submission. Muse Privacy's numbers come only from runs on Glimmer.
 
 ### 7. Public GitHub Repository  [owner]
 
 > https://github.com/Offline-Base/muse-muse
 
-- **Still private.** Make it public before submitting, by the plan in HANDOFF.md, "Going public": a fresh public repo with history rewritten by `git filter-repo`. The owner runs the commands.
+- **Still private.** Make it public before submitting by flipping the current repo in place (owner decision, HANDOFF.md, "Owner decisions, Nov 2 night"): a private backup copy, delete the backup refs and stale branches, Hussam changes the ngrok domain first, then flip and check signed out. The owner runs the commands.
 - Before that, owner to-dos 4 to 7 in HANDOFF.md (LICENSE, ngrok domain and GPU machines, data rights, Hugging Face visibility).
-- Merge the edge track (`tg-edge`) first, or the edge lines have no code behind them in the public repo.
+- The edge track is on main (#68, merged Nov 2, 3:40 PM ET; HANDOFF.md).
 - Judges may run it with their own keys, so fix the README gaps above first.
 
 ### 8. 3-Minute Demo Video  [owner] [after the chain run] [after the board take]
 
 > PLACEHOLDER: the YouTube link
 
-The cut with the edge act runs about 2:54 (VIDEO.md, "Proposed revision: the edge act", now approved). Every edge shot says "Simulated" somewhere on screen.
+The cut runs about 2:45 (VIDEO.md, revised Nov 3: about 300 words of narration at 140 a minute). Every edge shot says "Simulated" somewhere on screen.
 
 ### 9. Describe your use of Meta products
 
-> **Muse Wonder 1.0** writes briefs, builds, fix rounds and judging. **Muse Spark 1.3 Contributor** is the test model for builds with made-up data. **Muse Spark 1.3** wrote the lab's first dataset and judged the lab runs. **Muse Code** writes every app headless (`muse exec --json`, `--session-id` for fix rounds, `--image` for screenshots, `muse export --redacted` for each app's build story). **Muse Glimmer 30B** was QLoRA-tuned on rented GPUs, judged blind against base and cut to one-bit files, one of which runs on a Jetson. One-bit Glimmer is the edge model the cold-room watcher is built to fall back to, and Glimmer 30B does Muse Privacy's steps on invented data, in the cloud. **Muse Spark Open** wrote training data, so that Glimmer (r30b) is a Derivative of it. **Muse Image 1.0, SAM 3.1 and Muse Voice Transcribe 1.0** run inside apps. The **Meta Model API** (`responses`, `images/generations`, `images/edits`, `files`, `asr/transcribe`) is reached only through a metered gateway, and generated code never sees the key. **Meta's docs:** the blind check follows the post-training guide's held-out comparison.
+> **Muse Spark 1.3 Contributor** runs the live site's builds: it writes the briefs, drives Muse Code through the builds and fix rounds, and judges the screenshots. All 18 apps built on Nov 3 ran on it, with made-up data. **Muse Code** writes every app headless on our starter template (`muse exec --json`, `--session-id` for fix rounds, `--image` for screenshots, `muse export --redacted` for each app's build story). **Muse Wonder 1.0** is the platform's default when the Contributor switch is off. **SAM 3.1** runs inside apps in the cloud, and on a Jetson Orin Nano 8GB at 1.42 s a look; its detector was tuned on the same kind of board to find a new word. **Muse Image 1.0 and Muse Voice Transcribe 1.0** run inside apps. **Muse Glimmer 30B** does Muse Privacy's steps on invented data, in the cloud. It is also QLoRA-tuned on rented GPUs, judged blind against the model it started from, and cut to one-bit files we publish on Hugging Face, which run on a Jetson and a Galaxy S25. **Muse Spark Open** wrote training data, so that Glimmer (r30b) is a Derivative of it. The **Meta Model API** (`responses`, `images/generations`, `images/edits`, `files`, `asr/transcribe`) is reached only through a metered gateway, and generated code never sees the key. **Meta's docs:** the blind check follows the post-training guide's held-out comparison.
 
-Source: the model table under "How it uses Meta's models" below; EDGE_PLAN.md for Glimmer's edge role. Before submitting, check whether production is on Wonder or Contributor (HANDOFF.md, to-do 9). [after the chain run]: add what the chain run used.
+Source: the model table under "How it uses Meta's models" below. Contributor: HANDOFF.md, "Wonder stays off" (`BUILDS_ON_CONTRIBUTOR` on), and the Nov 3 batch entries in BUILD_LOG.md ("Times 33 to 92 minutes, costs $0.17 to $0.30 each on Contributor"). SAM on the board and its tune: BUILD_LOG.md, "Nov 3, 2026, 2:15 to 4 AM ET". The Galaxy S25: docs/GLIMMER_DEVICES.md. If production is switched to Wonder before judging, or the hero build runs on Wonder, add that here (HANDOFF.md, to-do 9). [after the chain run]: add what the chain run used.
 
 ### 10. Why are Meta's models important to your solution?
 
-> The project works only because Meta offers both ends. The cloud models (Muse Wonder, Muse Code) do the heavy work once: planning, writing the app, judging. The open model (Muse Glimmer) is what comes out, a file you keep. Meta's Glimmer docs put it as "you own the weights, the runtime, and the data". For infrastructure that has to keep working when the cloud doesn't, that matters: Meta's smallest Glimmer file is 16.8 GB, we cut one to 5.75 GB so it fits an 8 GB Jetson, slowly, and the app is built to fall back to it there. One vendor's models on both sides means one prompt style, one tool-call shape and one set of licenses, from the sentence to the board.
+> The project works only because Meta offers both ends. The cloud models (Muse Wonder, Muse Code) do the heavy work once: planning, writing the app, judging. The open model (Muse Glimmer) is what comes out, a file you keep. Meta's Glimmer docs put it as "you own the weights, the runtime, and the data". For infrastructure that has to keep working when the cloud doesn't, that matters: Meta's SAM 3.1 runs on an 8 GB Jetson at about 1.4 s a look, so the app is built to keep watching from the board when the cloud is cut, with its decisions in code. And Meta's smallest Glimmer file is 16.8 GB; we cut one to 5.75 GB so it fits the same board, slowly and with weak answers, which is why the app doesn't lean on it. One vendor's models on both sides means one prompt style, one tool-call shape and one set of licenses, from the sentence to the board.
 
-Source: MESSAGING.md rows 13, 16 and 23; STORY.md, alignment paragraph. The last sentence is our framing, not a measured claim; cut it if you prefer.
+Source: MESSAGING.md rows 13, 16 and 23; STORY.md, alignment paragraph; BUILD_LOG.md, "Nov 3, 2026, 2:15 to 4 AM ET" (SAM 1.42 s, Glimmer about 5 tokens a second, often wrong) and "Nov 3, 2026, 10:05 to 10:30 AM ET" (rules in code). The last sentence is our framing, not a measured claim; cut it if you prefer.
 
 ### 11. Partner feedback: Fireworks, Modal, Baseten
 
@@ -163,9 +189,9 @@ An opinion. Supporting facts: the scoped per-app tokens and the gateway worked a
 - **Biggest obstacle:**
   > Running Muse Code with nobody watching. Its launcher tries to self-update from a blocked host and may start a device sign-in, its own sandbox can't run in a microVM, and 15 bundled skills fought our template. Also, `run.usage` counts only the main agent, while reminder agents were 31% to 43% of real spend.
 - **How Meta's models compared:**
-  > Tuned Glimmer won 40 of 40 against base in the cloud. On an 8 GB Jetson, one-bit Glimmer answers short chats at 5 to 6 tokens a second, but gave no valid JSON on 40 invented receipts without a schema, and the board hung at receipt 23. Glimmer is the right size in the cloud, and not yet reliable on 8 GB.
+  > SAM 3.1 is the Meta model that works on an 8 GB Jetson today: about 1.4 s a look, and its detector can be tuned on the board itself. One-bit Glimmer answers short chats there at about 5 tokens a second, and on a Galaxy S25 at 1.94, but its answers are often wrong: with Meta's recommended sampling it loops, and it called a 6 C controller and probe gap "ok" in every setup we tried. Glimmer is the right size in the cloud, and not yet reliable on 8 GB.
 
-  Source: STORY.md; MESSAGING.md point 3. [after the board take]: add the one-bit Glimmer board numbers from M10 or M11, only once logged.
+  Source: BUILD_LOG.md, "Nov 3, 2026, 2:15 to 4 AM ET" and "Nov 3, 2026, 10:05 to 10:30 AM ET"; docs/GLIMMER_DEVICES.md; MESSAGING.md point 3. The old first sentence ("Tuned Glimmer won 40 of 40") is [data rights], Q2.
 - **What matters most when choosing:** [owner]. Suggested: a license we can ship, weights we own, and cost we can see per call.
 - **What makes switching hardest:**
   > Chat templates and output channels. Our first Glimmer eval lost 28 to 11 because answers stayed on the reasoning channel, and hosts differ on whether they take a template.
@@ -189,7 +215,7 @@ The grant is perpetual, irrevocable, worldwide and royalty-free, and covers "the
 - A partner prize for hosting a tuned model on a partner's inference and evaluating it there. The owner says one is tied to this (Nov 3). Its source is unconfirmed on the public pages: on Nov 3 the event page names Baseten, Modal and Fireworks only as giving $100 in credits each, and the rules page names no partner prize. Find its source before saying it anywhere. Until a partner eval has run and is logged in BUILD_LOG.md, don't say a tuned model was evaluated on a partner either (docs/TRAINING.md, "Evaluate on a partner").
 - "Works offline", "private" or "on-device" for board answers, "stops hacks", "attack-proof", and anything about surviving a power loss (MESSAGING.md, "Don't say").
 - The DC substation outage as an attack. Pepco: "no indication of foul play".
-- PR #67's on-board tune: it tuned Llama, which isn't a Meta model here, so it is out of the submission. Don't say anything in the project was tuned on a board.
+- PR #67's on-board tune: it tuned Llama, which isn't a Meta model here, so it is out of the submission. Never say Llama or Glimmer was tuned on a board. The one board tune we may say is Meta SAM 3.1's detector learning the word "muse" on jetson-03 (Nov 3), with the "plush toy" caveat (MESSAGING.md, Meta-models-only lines).
 - Bolt, LFM or Llama numbers as project results, and "device-only" or "nothing leaves the device" for Muse Privacy while its submitted path is cloud Glimmer (MESSAGING.md, "Don't say").
 
 ## Reference for the answers
@@ -200,6 +226,10 @@ The longer write-up the fields draw on. Same rules: if a mark changes, change th
 
 > "People are starting to be able to manifest ideas themselves without having to raise money or build large teams."
 > Mark Zuckerberg, "The Future is for Everyone", Aug 10, 2026
+
+The opening problem line follows field 4's pick:
+- **Push the Frontier:** "Your own AI, on your own hardware, ready for any scenario. Shops, clinics and schools run equipment on the internet with no engineering team, and this fall suspected hacks shut down supermarket freezers across Europe."
+- **Build for Your World:** "People know their jobs, but getting custom software built takes engineering resources they often don't have. Muse Muse turns a sentence or photo into a working app they can use and keep improving."
 
 Meta now offers frontier cloud models and open models for local use. Muse Muse explores whether one person can move between them, shape the result, and leave with something they control. Going from a sentence to a model that's yours still takes data, a GPU, a fair test against the base model, a file small enough for a device, and an app around it.
 
@@ -212,10 +242,10 @@ Source: MESSAGING.md, all Checked.
 | Step | Mark | What ran |
 |---|---|---|
 | One sentence to a plan and data | Proven, by harness | 900 rows to train on and 100 kept aside, for an invented hobby, $0.22. The one-box page hasn't started a real run |
-| A tuned model on a rented GPU | Proven, by harness | The lab's own flow tuned Muse Glimmer 30B on an A100 in 42 minutes for $1.39. A test harness also tuned the 2026-knowledge Glimmer on the invented hobby, 120 steps on an H100 |
-| A blind check against base | Proven, by harness | Muse Spark 1.3 judged the lab's tuned Glimmer blind against base on 40 held-out prompts: tuned won all 40, 8.88 to 1.95. The task only, not general skill |
-| A file small enough for a device | Proven, by harness | The real quantize recipe, made-up data: a tuned Glimmer became a 6.53 GB one-bit file |
-| On your own hardware | Simulated | A simulated board only, for this flow [after the board take] |
+| A tuned model on a rented GPU | Proven | The lab's own flow tuned Muse Glimmer 30B on an A100 in 42 minutes for $1.39. On Nov 3 the live site's own launch path (`POST /api/train/plan`, then `POST /api/train/runs`, from scripts/demo-tunes.ts) tuned the 2026-knowledge Glimmer for a cold-room handoff task on one H100 in 32 minutes for $1.75 (job 83ae46c8) [data rights] |
+| A blind check against base | Proven | Muse Spark 1.3 judged the lab's tuned Glimmer blind against base on 40 held-out prompts: tuned won all 40, 8.88 to 1.95. Spark 1.3 Contributor judged job 83ae46c8: 19 of 20, 8.4 to 4.8. The task only, not general skill [data rights] |
+| A file small enough for a device | Proven, by harness | The real quantize recipe, made-up data: a tuned Glimmer became a 6.53 GB one-bit file [data rights] |
+| On your own hardware | Simulated, for this flow | Nothing the one-sentence flow tuned has run on a board. Separately, Meta's SAM 3.1 runs on a Jetson, and one-bit Glimmer weights run on a Jetson and a Galaxy S25 ("On a Jetson", below) [after the board take] |
 | An app built for it | Proven | Test builds on the test model with made-up data, on a local site with no live link |
 | That app answering with its tuned model | Not run yet | Planned behind a flag. Products answer on Muse Wonder until their model passes and is served |
 | Checks showing what was proven | Proven | Typecheck, build, a smoke test Muse Code wrote, and a judge reading screenshots. The judge is one check of four |
@@ -224,17 +254,20 @@ The steps haven't run as one chain yet. Source: STORY.md.
 
 ### The edge track [after the board take]
 
-| Piece | State on `e4beadc1` |
+| Piece | State on Nov 3 |
 |---|---|
-| Cloud-to-edge fallback (`template/lib/meta/edge.ts`) | Built, unit-tested. The cloud first with a 10 s limit, then an OpenAI-compatible edge server, checked against a schema. A cloud that turns a request down is the answer; the board isn't asked around it |
-| Outage drills (`template/scripts/edge-fake.mjs`, `edge-blackhole.mjs`, `edge-drill.mjs`) | Built, unit-tested on loopback with a fake model: cloud refused, cloud hung, both down, tampered reply rejected |
-| Edge target and a drill inside every edge build | Built, unit-tested with the sandbox faked. Not run in a real build |
+| Cloud-to-edge fallback (`template/lib/meta/edge.ts`) | Built, unit-tested. The cloud first with a 10 s limit, then the board, checked against a schema. A cloud that turns a request down is the answer; the board isn't asked around it |
+| SAM 3.1's board fallback (`segmentOrEdge` in the same file) | Built, and ran in real builds: cold-door-watch (Nov 2) passed its 4 SAM drills in its build sandbox, and cold-room-watcher-2 (Nov 3) passed all 8 drills, 4 text and 4 SAM, against a simulated board (BUILD_LOG.md, "Nov 2, 2026, 10:14 PM ET" and "Nov 3, 2026, about noon ET: claim fixes") |
+| The keyless judge drill (`npm run drill`) | Ran, 11 of 11 on loopback (BUILD_LOG.md, "Nov 3, 2026, 10:30 AM ET: demos in check for judges") |
+| Edge target and a drill inside every edge build | On in production since Nov 2 night (`EDGE_BUILDS`, `EDGE_ENABLED`; BUILD_LOG.md, "merged #98 and #99") |
+| SAM 3.1 on jetson-04 | Runs: first look 3.27 s, then 1.42 to 1.43 s a look on Meta's 1800 x 1200 truck photo (BUILD_LOG.md, "Nov 3, 2026, 2:15 to 4 AM ET") |
+| SAM 3.1 tuned on jetson-03 | Ran: the word "muse" from 0 to 38 of 38 on 50 held-out made-up images, no wrong boxes, the truck photo unchanged. Meta's SAM 3.1 already finds the same mascot as "plush toy" or "toy", so on these images the tune adds a name, not accuracy. The tuned file runs beside Meta's weights on jetson-04 (same entry) |
+| The board's text fallback | Rules in code (the probe-disagreement rule and thresholds), no model. One-bit Glimmer runs on jetson-02 but was wrong on the cold-room reading in every setup tried (BUILD_LOG.md, "Nov 3, 2026, 10:05 to 10:30 AM ET") |
 | Board build (`scripts/edge/build-arm64.sh`, `docs/EDGE_DEMO.md`) | Built. Syntax-checked only; the Docker build hasn't run |
 | Drill data (`scripts/dev/drill-bench.py`) | Built. Simulated cold-room windows written by code from a fixed seed: 900 training rows, 50 kept aside, 100 sealed held-out, scored per field by code, with a rule that a controller that disagrees with the probe by more than 3.0 C is never trusted |
-| Muse Glimmer 30B one-bit (IQ1_S) as the edge model on jetson-02 | Not run. Hussam's $0 schema gate comes first. A cold-room tune of Glimmer is planned only if it passes. If it fails, the board fallback is fixed code (thresholds plus the probe-disagreement rule, no model) |
-| The cut on camera | Not run |
+| An app on a board with its uplink pulled | Not run. Tonight's take (VIDEO.md, shot 7) |
 
-All behind `EDGE_ENABLED` and `EDGE_BUILDS`, off by default. Source: EDGE_PLAN.md, EDGE_DEMO.md.
+Source: EDGE_PLAN.md, EDGE_DEMO.md and the BUILD_LOG.md entries named in each row.
 
 ### Muse Privacy, in full
 
@@ -251,25 +284,28 @@ Source: STORY.md, privacy paragraph; MESSAGING.md, Checked rows and point 1.
 
 ### On a Jetson
 
-Meta's smallest Glimmer files are 16.8 GB and 19.7 GB. By hand, the knowledge run's Glimmer (r30b), cut to one-bit size (IQ1_S, 5.75 GB), runs on a real Jetson Orin Nano 8GB, about a third the size of Meta's smallest file. Here's the cost: 5 to 6 tokens a second with weak answers. On 40 invented receipts it gave no valid JSON, and the board stopped answering at receipt 23. r30b is a Derivative of Muse Spark Open: Built with Muse Spark Open, 18 and over. Nothing the one-sentence flow made has run on a board.
+**Meta's SAM 3.1** runs on jetson-04, a Jetson Orin Nano 8GB, at 1.42 s a look once warm, and its detector was tuned on jetson-03 to find a new word (the edge track table above). This is the board model the edge apps use.
 
-Source: MESSAGING.md, quantization row (Checked) and point 3; STORY.md, device-file row.
+**Muse Glimmer weights, separate from the apps.** These are files we publish on Hugging Face from the knowledge run, not anything the one-sentence flow made, and no app calls them. Meta's smallest Glimmer files are 16.8 GB and 19.7 GB. By hand, the knowledge run's Glimmer (r30b), cut to one-bit size (IQ1_S, 5.75 GB), runs on a real Jetson Orin Nano 8GB, about a third the size of Meta's smallest file. Here's the cost: about 5 tokens a second, with short answers that are often wrong, and with Meta's recommended sampling it loops. On 40 invented receipts it gave no valid JSON, and the board stopped answering at receipt 23. A 6.53 GB one-bit r30b file ran on a Galaxy S25 (12 GB, CPU) in AWS Device Farm on Nov 1 at 1.94 tokens a second, 3 of 3 simple questions right, from adb shell, not an app. r30b is a Derivative of Muse Spark Open: Built with Muse Spark Open, 18 and over. [data rights]
+
+Source: BUILD_LOG.md, "Nov 3, 2026, 2:15 to 4 AM ET" and "Nov 3, 2026, 10:05 to 10:30 AM ET"; docs/GLIMMER_DEVICES.md; MESSAGING.md, quantization row (Checked) and point 3; STORY.md, device-file row.
 
 ### Under all of it: the build platform
 
-Muse Code runs headless in a Vercel Sandbox microVM and writes a Next.js app from a template. The checks run, and failures go back to the same Muse Code session with the judge's screenshots, up to three rounds. Apps reach Meta only through a metered gateway, each with its own scoped, budgeted token, and the sandbox firewall adds the Meta key only on Muse Code's own routes. Every app gets a demo video cut from its own passing test, with model waits sped up and labeled. Builds run in Vercel Sandbox; Modal is added as a second host behind a flag, smoke-tested on Modal with no full build there yet. Source: README.md, BUILD_LOG.md and MODAL_HOST.md.
+Muse Code runs headless in a Vercel Sandbox microVM and writes a Next.js app from a template. The checks run, and failures go back to the same Muse Code session with the judge's screenshots, up to `MAX_FIX_ROUNDS` rounds (4 in production since Nov 3). Apps reach Meta only through a metered gateway, each with its own scoped, budgeted token, and the sandbox firewall adds the Meta key only on Muse Code's own routes. Every app gets a demo video cut from its own passing test, with model waits sped up and labeled. Builds run in Vercel Sandbox; Modal is added as a second host behind a flag, smoke-tested on Modal with no full build there yet. Source: README.md, BUILD_LOG.md and MODAL_HOST.md.
 
 ### How it uses Meta's models
 
 | Model or tool | Where |
 |---|---|
-| **Muse Wonder 1.0** | The default for briefs, builds, fix rounds, judging and products when `BUILDS_ON_CONTRIBUTOR` is off. Check production before submitting: the site runs on Contributor until someone flips it (docs/JUDGING_WEEK.md) |
-| **Muse Spark 1.3 Contributor** | The live site's model while `BUILDS_ON_CONTRIBUTOR` is on, and the test model for test builds with made-up data. Meta may train on contributor prompts, so products on it show a notice |
+| **Muse Spark 1.3 Contributor** | The live site's model while `BUILDS_ON_CONTRIBUTOR` is on, as it is now (owner, Nov 2: Wonder stays off): briefs, builds, fix rounds and judging. All 18 Nov 3 builds ran on it. Also the test model for test builds with made-up data. Meta may train on contributor prompts, so products on it show a notice |
+| **Muse Wonder 1.0** | The default for briefs, builds, fix rounds, judging and products when `BUILDS_ON_CONTRIBUTOR` is off. A few gallery products stay on it under the switch (`WONDER_DEMO_SLUGS`). Check production before submitting (docs/JUDGING_WEEK.md) |
 | **Muse Spark 1.3** | Wrote the lab's first dataset (400 examples for $1.51) and judged both lab runs. Not used since Oct 29 |
 | **Muse Code** | Writes every app headless: `muse exec --json` with hardened flags, `--session-id` to resume for fix rounds, `--image` for screenshots, and `muse export --redacted` for each app's "How it was built" |
-| **Muse Glimmer 30B** | The tuned student: QLoRA on rented GPUs, judged blind against base, quantized to one-bit files. Its knowledge-run version runs on a Jetson, and one-bit Glimmer is the edge model the cold-room watcher is built to fall back to. It also does Muse Privacy's steps, in the cloud on invented data |
+| **Muse Glimmer 30B** | The tuned student: QLoRA on rented GPUs, judged blind against base, quantized to one-bit files published on Hugging Face. Its knowledge-run version runs on a Jetson and a Galaxy S25, apart from the apps. It also does Muse Privacy's steps, in the cloud on invented data |
 | **Muse Spark Open** | r30b is a Derivative of it |
-| **Muse Image 1.0, SAM 3.1, Muse Voice Transcribe 1.0** | Inside apps: making and editing images, finding and outlining things in photos and video, and speech to text |
+| **SAM 3.1** | Inside apps, in the cloud through the gateway, and on jetson-04 as the edge apps' board look (1.42 s a look). Its detector was tuned on jetson-03 |
+| **Muse Image 1.0, Muse Voice Transcribe 1.0** | Inside apps: making and editing images, and speech to text |
 | **Meta Model API** | `responses`, `images/generations`, `images/edits`, `files` and `asr/transcribe`, which apps reach only through the gateway |
 | **Meta's docs** | The post-training guide's check against base on a held-out set, which the blind check follows (its general-benchmark half isn't built yet). The quantization docs for the 16.8 GB size. The cookbook's "Local agent that asks first", the closest Meta pattern to Muse Privacy |
 
@@ -281,17 +317,25 @@ Muse Code runs headless in a Vercel Sandbox microVM and writes a Next.js app fro
 4. **A fair blind check.** The first real Glimmer run lost 28 to 11. The cause was an eval bug: training put every answer on Glimmer's final channel, but the eval let the model choose, and the tuned answers never left the reasoning channel. After the fix, tuned won 40 of 40.
 5. **GPUs that bill by the hour.** Three things terminate every instance: the job's workflow, the instance's done callback, and a sweep every 5 minutes. Jobs won't launch unless the sweep ran in the last 15 minutes.
 6. **One-bit files that still answer.** One-bit size costs a lot: tuned Glimmer at IQ1_S answered 8.1% of new-knowledge probes, against 29.9% at Q4_K_M. A KL limit leaves out a file that drifts too far from its source.
-7. **A fallback that doesn't route around a refusal.** The edge fallback is built to answer only when the cloud can't be reached or sent a reply that doesn't match its schema. A cloud that turned a request down (a refusal, a budget limit) is the answer, so the board isn't asked around it. And a cloud drill fails if the product never tried the cloud first, so a product can't pass the outage drills by skipping the cloud. Both are unit-tested, not run in a real build.
+7. **A fallback that doesn't route around a refusal.** The edge fallback is built to answer only when the cloud can't be reached or sent a reply that doesn't match its schema. A cloud that turned a request down (a refusal, a budget limit) is the answer, so the board isn't asked around it. And a cloud drill fails if the product never tried the cloud first, so a product can't pass the outage drills by skipping the cloud. Both are unit-tested, and the drills have run inside real edge builds (cold-room-watcher-2, 8 of 8, Nov 3).
 
 Source: BUILD_LOG.md and README.md; item 6, STORY.md and `lib/story/flow.ts`; item 7, commit `5c679d87` and EDGE_DEMO.md.
 
 ### Results
 
+**On Nov 3** (BUILD_LOG.md, the Nov 3 entries named below)
+
+- **18 live builds overnight** on Muse Spark 1.3 Contributor with made-up data: 12 notes started at 12:19 AM ($0.17 to $0.30 each) and 6 target builds at 2:21 AM ($0.27 to $0.40 each), most in 33 to 100 minutes. Every one passed its judge. A hands-on runtime audit of all 18, on desktop and a 390 px phone, found **7 that work, 9 with gaps and 2 broken** (the list is in "Nov 3, 2026, about noon ET: claim fixes"; three of the 7 were called "works, with gaps", so the stricter count is 4, 12 and 2). Each defect became a code check, the 6 broken or self-contradicting apps are hidden from the gallery until rebuilt, and 4 rebuilds wait on a new builder snapshot ("Nov 3, 2026, 10:30 AM ET: demos in check for judges").
+- **SAM 3.1 on a Jetson:** 1.42 s a look on jetson-04 once warm. **SAM 3.1 tuned on a board:** "muse" from 0 to 38 of 38 held-out made-up images on jetson-03, with Meta's weights already at 38 of 38 for "plush toy" ("Nov 3, 2026, 2:15 to 4 AM ET").
+- **An edge build passed all 8 simulated outage drills** in its build sandbox (cold-room-watcher-2), and `npm run drill` passes 11 of 11 with no key.
+- **A tune launched from the site itself** (job 83ae46c8): one H100, 32 minutes, $1.75, 19 of 20 held-out prompts against the model it started from, judged by Spark 1.3 Contributor. [data rights]
+- **One-bit Glimmer on a Galaxy S25**, Nov 1: 1.94 tokens a second, 3 of 3 simple questions (docs/GLIMMER_DEVICES.md). Weights, not an app.
+
 **Tuning and files** (STORY.md and `lib/story/flow.ts`)
 
-- Muse Glimmer 30B, the lab's own flow: A100, 42 minutes, $1.39. Tuned won all 40 held-out prompts, 8.88 against 1.95, judged by Muse Spark 1.3. Results are public and read-only at `/fine-tuning`.
+- Muse Glimmer 30B, the lab's own flow: A100, 42 minutes, $1.39. Tuned won all 40 held-out prompts, 8.88 against 1.95, judged by Muse Spark 1.3. Results are public and read-only at `/fine-tuning`. [data rights], Q2: Muse Spark 1.3 wrote its rows.
 - A Nov 1 Glimmer run through the harness also won 40 of 40, 7.93 against 2.5 (PROVE_RESULTS.md). Hold this one until the owner settles the training-data question (docs/DATA_RIGHTS.md): its rows were written by Muse Spark 1.3 Contributor.
-- Quantized, made-up data: a 6.53 GB one-bit Glimmer file.
+- Quantized, made-up data: a 6.53 GB one-bit Glimmer file. [data rights]: STORY.md doesn't name which tune's rows it used, and the readiness audit counts it with the Q2 lines, so check before featuring it.
 
 **Builds** (README.md, BUILD_LOG.md, PROVE_RESULTS.md)
 
@@ -303,9 +347,9 @@ Source: BUILD_LOG.md and README.md; item 6, STORY.md and `lib/story/flow.ts`; it
 ### What isn't proven yet [after the chain run] [after the board take]
 
 - The chain as one run, from a sentence to an app answering with its own tuned model.
-- Anything the one-sentence flow made, running on a real board. Its board step is simulated.
-- Any edge build in a real sandbox, any edge drill on a board, and one-bit Glimmer as the edge model on a board.
-- Platform launch of a tune, https callbacks, the sweep and Hugging Face upload from the site. The upload is built and tested against a fake Hub only.
+- Anything the one-sentence flow made, running on a real board with its uplink pulled. The drills so far ran in build sandboxes against a simulated board.
+- Hugging Face upload from the site. The upload is built and tested against a fake Hub only. (A tune launched from the site ran once, Nov 3, job 83ae46c8, with publishing off.)
+- A tuned SAM that sees better than Meta's weights. The tune taught a name; the held-out images are composites with no other toys.
 - A general-capability or safety check on a tune. The blind check covers the task only.
 - Muse Privacy with real users, on its sealed test set, on a device, or inside the real Muse app.
 - A finished long build on Muse Wonder.
@@ -333,16 +377,19 @@ Before kickoff there was only a scaffold, committed exactly as received in `e3ba
 - [x] **Outside quotes checked** on their primary sources (MESSAGING.md, Nov 2), edge facts included.
 - [x] **Video script and shot list**, with the edge act (VIDEO.md; O1 and O6 yes).
 - [x] **Every form field drafted** (this file).
-- [x] **Edge track code**, built and unit-tested, flags off (`e4beadc1`).
+- [x] **Edge track code**, merged (#68, Nov 2) and on in production (`EDGE_BUILDS`, `EDGE_ENABLED`, Nov 2 night).
+- [x] **Keyless judge drill**, 11 of 11 (Nov 3).
+- [x] **Claims pass on VIDEO, SUBMISSION, MESSAGING, README and OFFLINE** (Nov 3, tg-c-claims), waiting on the owner's approval.
 - [x] **Lambda key rotated** (Nov 2).
 
 ### Left (steps in docs/HANDOFF.md)
 
 - [ ] Add Ethan to Team Members, and confirm Hussam's surname.
 - [ ] Fix the README's setup gaps, since judges may run the repo with their own keys.
-- [ ] Merge the edge track, then make the repo public by the plan in HANDOFF.md, "Going public".
+- [ ] Make the repo public by flipping it in place (HANDOFF.md, "Owner decisions, Nov 2 night").
 - [ ] Pick a LICENSE; settle DATA_RIGHTS.md Q1 to Q3; Hugging Face visibility.
-- [ ] The chain run (O2) and the board runs (M10 to M12), then swap the tagged answers.
+- [ ] The board take (VIDEO.md, shot 7), then swap the [after the board take] answers. Pick field 4's version.
+- [ ] Settle DATA_RIGHTS.md Q1 to Q3, then keep or cut every [data rights] line.
 - [ ] Production settings for judging: Contributor or Wonder, and the daily spend cap. Turn on `STORY_PAGES` before recording.
 - [ ] Record and upload the video; post the 60-second cut on X before Wed noon ET.
 - [ ] Fill in the form from this file, field by field.
