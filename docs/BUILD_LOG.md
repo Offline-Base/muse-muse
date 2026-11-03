@@ -3090,3 +3090,12 @@ Getting the repo ready to go public for judging. No model run, no build, no depl
 - **Owner decision:** "turn off the modal stuff for now". Removed from Vercel: `SANDBOX_HOST` (Preview) and `MODAL_BUILDER_IMAGE_ID` (Preview and Production). Left as they were: the two Modal token settings on Preview, added a day earlier for other work. Every build runs on Vercel Sandbox. The code from #83 stays, off by default.
 - **Not proven:** no Muse Code build has run on Modal. The SUBMISSION.md sentence ("smoke-tested on Modal with no full build there yet") stays accurate.
 - **Spend:** the image build, a few cents on Modal (not checked against the bill).
+
+## Nov 2, 2026, night: "send, it loads, then nothing" on the Make page (branch tg-play-hidden)
+
+- **Owner report:** on musemuse.dev, sending "Tune a model to hide personal details..." (and earlier the dataset starter) spun, then nothing.
+- **Reproduced on production as a guest:** `/api/make/intent` 200 in about 6 s, then `/api/train/plan` 200 with a full plan about 7 s later. The plan did render, but about 970 px down the page, under a full-height copy of the composer. Screenshot: docs/log/shots/2026-11-02/make-plan-below-fold.png.
+- **Cause:** MakeChat and TrainComposer hide the composer with the `hidden` attribute once a plan or a problem shows, but `.play { display: flex; min-height: 100dvh }` in app/globals.css overrides `hidden`. It's been like this since #55. Every model, dataset or "both" muse, and every error shown in that place, looked like nothing happened.
+- **Fix:** `.play[hidden] { display: none; }`. Checked on the live page by injecting the rule: the hidden box went from 900 px to 0.
+- **Tests:** platform-contrast fails 6 of 9 with "--bg is not defined", the same with and without this change. The other globals.css readers pass.
+- **Spend:** two plan drafts on production (Contributor, cents). No run started.
