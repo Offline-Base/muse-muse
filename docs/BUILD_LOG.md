@@ -3261,3 +3261,18 @@ The organizers ruled on Nov 2 that every model the project calls at runtime must
   - the open and shut call on the real prop;
   - this product on jetson-04 with the uplink out (Hussam, Tuesday, docs/EDGE_DEMO.md section 6).
 - **Next:** download version 1's source (`/p/cold-door-watch/code/source.zip?v=1`, 904 KB) for Hussam's board kit.
+
+## Nov 2, 2026, night: merged #98 and #99; no more PRs for our own work; edge builds and the $100 cap on in production
+
+- **Merged:** #98 (Muse Privacy on Glimmer: 0 leaks on 200 invented items, replay re-recorded) and #99 (the preview edge build that looked with SAM 3.1 and passed its four SAM drills). #91 was already merged by the owner.
+- **Rule change (owner: "stop opening prs and just merge and check latest always"):** our own work goes straight to main after fetching the latest and testing what changed. CLAUDE.md and docs/HANDOFF.md say so (2a975c98). Hussam's PRs stay his. Nothing on GitHub had blocked merging: main has no branch protection, and the repo rule was the only gate.
+- **Production env, as the owner decided on the plan-to-win form:**
+  - `EDGE_BUILDS=1` and `EDGE_ENABLED=1` (D3: on after one preview check, which passed in #99);
+  - `DAILY_SPEND_CAP_USD=100` (D1).
+  - They take effect with this push's deploy.
+- **Not changed:**
+  - `BUILDS_ON_CONTRIBUTOR`, since the flip to Wonder is for Nov 4;
+  - `SPARK_OPEN_PRODUCTS`, which waits on the owner adding `BASETEN_API_KEY`;
+  - `BUILD_SHARED_KEYS`, which waits on the owner's dedicated keys;
+  - `STORY_PAGES`, until `/offline` and `/private` are checked before filming;
+  - `LOOK_FIRST`, until a test build passes on the new snapshot.
