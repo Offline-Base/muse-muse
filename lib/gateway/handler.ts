@@ -259,6 +259,7 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
       );
     }
   }
+
   const notes: string[] = [];
   // ---------- SPARK_OPEN_PRODUCTS (lib/gateway/spark-open.ts): the provider's body, before any limit is counted. Never reached
   // with the flag off ----------

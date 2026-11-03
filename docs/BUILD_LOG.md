@@ -3099,3 +3099,42 @@ Getting the repo ready to go public for judging. No model run, no build, no depl
 - **Fix:** `.play[hidden] { display: none; }`. Checked on the live page by injecting the rule: the hidden box went from 900 px to 0.
 - **Tests:** platform-contrast fails 6 of 9 with "--bg is not defined", the same with and without this change. The other globals.css readers pass.
 - **Spend:** two plan drafts on production (Contributor, cents). No run started.
+
+## Nov 2, 2026, 10 PM ET: Muse Spark Open for products, behind `SPARK_OPEN_PRODUCTS` (branch tg-spark-open)
+
+The owner's first extra (HANDOFF, "Owner decisions, Nov 2 night"), aimed at the "Best Build on Meta Open Weights" bonus. Off by default.
+
+- **What it does:** a product whose brief lists `muse-spark-open` calls `{GATEWAY_URL}/v1/chat/completions` with its own token. `handleGateway` runs the call through the same allowlist, rate limits, in-flight slots, run caps, jobs, daily budget, platform cap, reservation and meter as a Meta call. Then it forwards the call to the provider `SPARK_OPEN_PROVIDER` names (`baseten` when unset, or `fireworks`) with the platform's key for it (`BASETEN_API_KEY` or `FIREWORKS_API_KEY`). The product never sees that key.
+- **What the gateway changes in a call:** the model id (to the provider's), `max_tokens` (always set, at most 32,000, so the estimate is a ceiling with the reasoning included) and `stream_options.include_usage` on a stream. It drops `user`, `safety_identifier`, `metadata` and `store`. It refuses `n` over 1, tools other than function tools, parts other than text and images, and unknown fields, since a service tier or `best_of` could change the bill. The reply passes through untouched, with `x-musemuse-served-on` naming the provider for the product's label.
+- **Decision, design:** reuse `handleGateway` rather than a route of its own like the fleet's, so the budget, cap and meter are the same code. Every edit there checks for the new endpoint, which exists only while `deps.sparkOpen` is set. Chat Completions both ways, since both providers serve it, so nothing is translated to or from Responses.
+- **Decision, provider (the lead, Nov 2 evening):** Fireworks' account behind `FIREWORKS_API_KEY` is suspended (HTTP 412, "possibly due to reaching the monthly spending limit or failure to pay past invoices"), and production uses the same key. Baseten answered, so it is the default.
+- **Prices:**
+  - Fireworks: $1.25 in, $0.15 cached and $4.25 out per million tokens, its Standard list price (docs/knowledge-research/claim-check-2026-10-30.md, F4).
+  - Baseten: its price isn't in the repo, so `lib/meta/spark-open.ts` uses a conservative stand-in, $2.50 in and $8.50 out with no cached discount (twice Fireworks'). An estimate that errs high only makes a budget refuse sooner. Replace it once someone reads Baseten's model page.
+- **Brief and build:**
+  - The brief writer may pick it only with the flag on and a builder snapshot that lists the new `spark-open` overlay (`template/caps/spark-open`, a marker like `fleet`'s).
+  - The catalog line names the provider and its price, and says to pick it for Meta's open-weight model or for a text step with no search, audio, video or PDFs. It says never to pick it for children or students under 18.
+  - The build prompt gets a "Muse Spark Open" section and the skill path. The judge gets a note that the credit line isn't Meta's marks. The privacy facts list it with Meta's models and name Baseten and Fireworks.
+  - The self-host kit says it doesn't answer there. `ModelChip` and the manifest schema know it.
+- **Template (needs a new snapshot to reach builds):** `lib/meta/spark-open.ts` has `askSparkOpen` and `sparkOpenStream`: 2,000 max tokens, reasoning low, a 115 s timeout and no retry. The label is "Muse Spark Open, on Baseten", from the gateway's header. The credit, word for word, is "Built with Muse Spark Open. For people 18 and over only.". The skill is `.agents/skills/meta-spark-open/SKILL.md`.
+- **Tokens:** `allowedModelsFor` (`lib/pipeline/logic.ts`) needed no edit, since a brief's capability models already pass through to the token.
+  - A build's smoke tests use the build token from the product's `.env.local`, and it can call the model. It is never swapped for `TEST_MODEL`, which swaps only Muse Wonder.
+  - A Muse Code session's token (`code_session`) is refused (`session_scope`), since it is pinned to `/v1/responses` and its one model on purpose.
+- **Smoke call: one real call, on Baseten, 9:55 PM ET.**
+  - Command: `SPARK_OPEN_PROVIDER=baseten node --env-file=~/muse-muse/.env.local --import tsx scripts/spark-open-smoke.ts --yes`. It runs through `handleGateway` with an in-memory token, budget and meter, so nothing touched the database.
+  - Reply: HTTP 200, `text/event-stream`, `x-musemuse-served-on: Baseten`, 9 chunks. The answer was "ready", with 111 characters of reasoning in `reasoning_content`.
+  - Latency: 33 s to the first byte (maybe a cold start, from one call), 39 s for the whole reply.
+  - Usage: Baseten accepted `include_usage` and sent a final usage chunk: 152 prompt tokens and 37 completion tokens, 26 of them reasoning. Metered at $0.000695 at the stand-in price.
+  - What it changed: the estimate now adds 200 input tokens for the chat template (a 27-character question billed 152), and the helper and skill allow for a slow first byte.
+- **Tests run, all passing:**
+  - New: `lib/gateway/__tests__/spark-open.test.ts` 22 of 22, `lib/prompts/__tests__/spark-open-flag.test.ts` 21 of 21, `template/scripts/__tests__/spark-open.test.mjs` 9 of 9.
+  - Existing, for the files touched: the gateway's handler, extract, fit-output, live, caps-off and runs tests, 154 passing and 8 skipped (they call the live API without `MODEL_API_KEY`). Then the flags-off goldens (unchanged), the fleet and GPU flag tests, no-wonder, the trust overlay, format, the caps manifest and flags-off, and the brief, gadget-option and agent-option tests, 146 of 146.
+  - Typecheck: clean apart from `lib/sandbox/host/modal.ts` not finding the `modal` package, which the shared `node_modules` in `~/mm-wt/messaging` doesn't have installed. The template helper typechecks on its own.
+- **Not proven:**
+  - No build has used it. The template's helper and skill reach builds only through a new builder snapshot.
+  - Production hasn't served it: `BASETEN_API_KEY` isn't on Production yet.
+  - The Fireworks path hasn't run against Fireworks, since the account is suspended.
+  - Not known yet: Baseten's real price, its usual latency, and whether image input, JSON mode and function tools work through this path.
+  - A local run (no public `PLATFORM_URL`) sends product calls straight to Meta's API, which doesn't serve this model.
+- **To turn it on:** add `BASETEN_API_KEY` to Production (and Preview to try it there first), set `SPARK_OPEN_PRODUCTS=1`, optionally `SPARK_OPEN_PROVIDER`, and redeploy. Then run `npm run snapshot` from a checkout with this merged, and commit `lib/sandbox/snapshots.json` with the new `BUILDER_SNAPSHOT_ID`, so the writer offers it.
+- **Spend:** one Baseten call, $0.0007 at the stand-in price.
