@@ -3542,3 +3542,15 @@ From the runtime audit of the overnight products (finding 12 and the room notes)
   - A board counts only when its same-size cells fill rows and columns, and the cells may sit in their own `<td>` or `<div>`. A 9 by 9 board in a table had failed; 12 or more dots scattered on a photo had passed.
   - The contrast check now leaves out text that overlaps a positioned fill (a hero's `::before` overlay, an absolute dark layer). Light text on those had been measured against the page and failed.
   - screen-checks.test.mjs has 2 more Chromium tests for these, and the template screen now holds a short text button and a checkbox label with a link.
+
+## Nov 3, 2026, 4:30 AM ET: audit A fixes merged (workflow wf_2b3cfcce-442)
+
+Five units, each built in its own worktree and then checked by a second agent, which found and fixed real problems in all five. Merged to main together.
+- **Phone screen checks (judgeShot):** tap targets under 44 x 44 px and text under 4.5:1 contrast (3:1 large) now fail a phone screenshot, with sentence links, dense boards, photos and gradients left out. The 1.3:1 chat bubble came from a product restyling the bubble without its text color; the template now has a `--bubble-out` / `--on-bubble-out` pair. The template's own parts pass in light and dark, both looks. The reviewer fixed false hits (short text buttons, table boards, positioned overlays) and two layout-breaking CSS rules.
+- **Judge and samples:** samples must show every adjective in the note (long, noisy, a wrong total); a code check sends a thin sample back to the writer; overlays must sit on what they mark; a counter the sample can't move marks its requirement "not proven"; analysis compares within a series only. The reviewer narrowed the "long" and "totals check" matchers that hit ordinary notes.
+- **Template skills:** a shared overlay helper (0-1000, 0-1 and px boxes to image or SVG space, with `overlayProblems`), selections scroll into view, a `ConfirmButton` for clear and delete, one `UsageStrip` for cost per page. The reviewer fixed the confirm dialog focusing the destructive button first.
+- **True model credits:** a platform check compares the models a product credits in its UI with the gateway's usage for that build, and sends a fix note for a credit that was never called. While Contributor stands in for Wonder, the chip and plan name the model that runs. The reviewer stopped it flagging the old snapshot's own Glimmer line.
+- **Room and plan:** the room shows the whole closing message, not just the text up to "What changed:"; the plan's run total is now the code's sum of its parts; the mascot steps aside from plan cards.
+- **Also:** `lib/__tests__/no-wonder.test.ts` failed on main since #96 (`lib/edge/models.ts` names Wonder as a token's allowed id). Added to the test's list of explained uses.
+- **Tests:** the 18 touched test files, 461 pass, plus no-wonder 11 of 11; typecheck clean.
+- **Needs a new builder snapshot** for the template parts (judgeShot checks, CSS, skills, ConfirmButton, UsageStrip, overlay helper, ModelChip label). The platform parts (judge, samples check, credits check, room, plan) are live on deploy.
