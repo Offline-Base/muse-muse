@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
 import { limitCeilings } from "@/app/api/train/shared";
 import { TrainComposer } from "@/components/train/compose/TrainComposer";
+import { SamNewCard } from "@/components/train/sam/SamNewCard";
 import { env } from "@/lib/env";
 import { makeChatAllOn } from "@/lib/make/switch";
 import { visitorJobCeilings, visitorLimits } from "@/lib/train/public/limits";
@@ -46,5 +47,13 @@ export default async function NewFineTunePage({ searchParams }: { searchParams?:
   const asked = (await searchParams)?.[FROM_BUILD_PARAM];
   const build = env.tuneFromBuilds && typeof asked === "string" ? await buildForTune(asked).catch(() => null) : null;
   const fromBuild = build?.offers ? { id: build.buildId, name: build.productName } : null;
-  return <TrainComposer fireworks={env.fireworksTune} defaultExamples={env.tuneDefaultExamples} ceilings={limitCeilings()} fromBuild={fromBuild} folder={env.tuneFolder} anyBase={env.tuneAnyBase} autoUpload={env.tuneAutoPublish && !env.hubOffReason ? (env.hfPublicSet && env.hfPublic ? "public" : "private") : null} />;
+  const composer = <TrainComposer fireworks={env.fireworksTune} defaultExamples={env.tuneDefaultExamples} ceilings={limitCeilings()} fromBuild={fromBuild} folder={env.tuneFolder} anyBase={env.tuneAnyBase} autoUpload={env.tuneAutoPublish && !env.hubOffReason ? (env.hfPublicSet && env.hfPublic ? "public" : "private") : null} />;
+  // SAM_TUNE: "Teach SAM 3.1 a new object" after the composer, admins only. Off, the page is exactly as it was.
+  if (!env.samTune) return composer;
+  return (
+    <>
+      {composer}
+      <SamNewCard maxUsd={env.samTuneMaxUsd} />
+    </>
+  );
 }

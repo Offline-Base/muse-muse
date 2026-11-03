@@ -1,0 +1,275 @@
+/*
+ * Teaching SAM 3.1 a new object (SAM_TUNE): the room and the report at /fine-tuning/sam/{id}
+ * (components/train/sam/SamRoom.tsx, SamReport.tsx). The Meta AI app look, as the Nov 3 report.html and the site have
+ * it: a white page, hairline cards, regular-weight Inter, one blue (#0866ff) for the winners and the actions, and the
+ * purple gradient only on what AI made. Imported only by app/fine-tuning/sam/layout.tsx, so no other page changes.
+ * Every class starts sam-.
+ */
+
+.sam-page {
+  --sam-blue: #0866ff;
+  --sam-blue-hover: #0759e0;
+  --sam-line: #e4e6eb;
+  --sam-ink: #1c1e21;
+  --sam-muted: #65676b;
+  --sam-ai: linear-gradient(90deg, var(--work-from, #6547f5), var(--work-to, #c15af7));
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px 16px 80px;
+  color: var(--sam-ink);
+  font-family: Inter, -apple-system, system-ui, sans-serif;
+  font-weight: 400;
+}
+
+.sam-title {
+  margin: 0 0 6px;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 32px;
+}
+
+.sam-sub,
+.sam-note {
+  margin: 0;
+  color: var(--sam-muted);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.sam-sub {
+  margin-bottom: 20px;
+}
+
+.sam-ai {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--sam-ai);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  vertical-align: middle;
+}
+
+.sam-card {
+  margin: 0 0 16px;
+  padding: 16px;
+  border: 1px solid var(--sam-line);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.sam-card-title {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 22px;
+}
+
+.sam-verdict-label {
+  margin: 0 0 4px;
+  color: var(--sam-muted);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.sam-verdict-text {
+  margin: 0;
+  font-size: 18px;
+  line-height: 26px;
+}
+
+.sam-table-wrap {
+  overflow-x: auto;
+}
+
+.sam-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+
+.sam-table th,
+.sam-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--sam-line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.sam-table thead th {
+  color: var(--sam-muted);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.sam-table thead th span {
+  display: block;
+  color: var(--sam-ink);
+}
+
+.sam-table tbody th {
+  font-weight: 400;
+}
+
+.sam-table td {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sam-table td.is-best {
+  color: var(--sam-blue);
+  font-weight: 600;
+}
+
+.sam-table .sam-tuned {
+  background: #f7f8fa;
+}
+
+.sam-note {
+  margin-top: 12px;
+}
+
+.sam-sbs {
+  margin: 0 0 16px;
+}
+
+.sam-sbs img {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0 0 6px;
+  border: 1px solid var(--sam-line);
+  border-radius: 12px;
+}
+
+.sam-sbs figcaption {
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.sam-credit {
+  display: block;
+  color: var(--sam-muted);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.sam-caveats {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.sam-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 14px;
+}
+
+.sam-links a,
+.sam-link {
+  color: var(--sam-blue);
+  text-decoration: none;
+}
+
+.sam-links a:hover,
+.sam-link:hover {
+  text-decoration: underline;
+}
+
+.sam-board {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.sam-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--sam-muted);
+}
+
+.sam-board.is-ready .sam-dot {
+  background: #31a24c;
+}
+
+.sam-queue {
+  margin: 6px 0 0;
+  color: var(--sam-muted);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.sam-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+.sam-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--sam-blue);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.sam-btn:hover:not(:disabled) {
+  background: var(--sam-blue-hover);
+}
+
+.sam-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.sam-btn.is-quiet {
+  background: #f0f2f5;
+  color: var(--sam-ink);
+}
+
+.sam-btn.is-quiet:hover:not(:disabled) {
+  background: #e4e6eb;
+}
+
+.sam-error {
+  margin: 0 0 16px;
+  color: #c01f37;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+@media (min-width: 760px) {
+  .sam-page {
+    padding: 40px 24px 80px;
+  }
+
+  .sam-title {
+    font-size: 28px;
+    line-height: 36px;
+  }
+
+  .sam-card {
+    padding: 20px;
+  }
+}
