@@ -26,20 +26,20 @@ describe("GetItPanel", () => {
   });
 
   it("names the gadget tab Muse gadget", () => {
-    const html = renderToString(createElement(GetItPanel, { slots: { mcp: "MCP steps", gadget: "Gadget steps" }, initial: "gadget" })).replace(/<!-- -->/g, "");
+    const html = render({ mcp: "MCP steps", gadget: "Gadget steps" });
     const tabs = [...html.matchAll(/role="tab"[^>]*>([^<]+)</g)].map((m) => m[1]);
     assert.deepEqual(tabs, ["MCP", "Muse gadget"]);
   });
 
-  // Nov 3, simplify-ui: a judge's first look shows the ways anyone can try; Claude, ChatGPT and the gadget need another
-  // account or a device, so they wait behind one button.
-  it("keeps the tabs that need another account or a device behind More ways to use it", () => {
-    assert.deepEqual([...GET_IT_MORE], ["claude_plugin", "chatgpt", "gadget"]);
+  // Nov 3, simplify-ui: a judge's first look shows the ways anyone can try; Claude and ChatGPT need another company's
+  // account, so they wait behind one button. The gadget tab (Meta's Gadget SDK) stays out front.
+  it("keeps the tabs that need another company's account behind More ways to use it", () => {
+    assert.deepEqual([...GET_IT_MORE], ["claude_plugin", "chatgpt"]);
     const html = render({ mcp: "MCP steps", cli: "CLI steps", claude_plugin: "Plugin steps", chatgpt: "ChatGPT steps", gadget: "Gadget steps" });
     const tabs = [...html.matchAll(/role="tab"[^>]*>([^<]+)</g)].map((m) => m[1]);
-    assert.deepEqual(tabs, ["MCP", "CLI"]);
-    assert.match(html, /<button type="button" class="link-btn getit-more" aria-expanded="false">More ways to use it \(3\)<\/button>/);
-    assert.equal((html.match(/role="tabpanel"/g) ?? []).length, 2, "no panel for a tab that isn't shown");
+    assert.deepEqual(tabs, ["MCP", "CLI", "Muse gadget"]);
+    assert.match(html, /<button type="button" class="link-btn getit-more" aria-expanded="false">More ways to use it \(2\)<\/button>/);
+    assert.equal((html.match(/role="tabpanel"/g) ?? []).length, 3, "no panel for a tab that isn't shown");
     // Opening on one of them shows them all from the start.
     const open = renderToString(createElement(GetItPanel, { slots: { mcp: "MCP steps", chatgpt: "ChatGPT steps" }, initial: "chatgpt" })).replace(/<!-- -->/g, "");
     assert.deepEqual([...open.matchAll(/role="tab"[^>]*>([^<]+)</g)].map((m) => m[1]), ["MCP", "ChatGPT"]);

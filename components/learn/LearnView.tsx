@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Icon } from "@/components/icons";
+import { OpenOnHash } from "@/components/learn/OpenOnHash";
 import { RebuildButton } from "@/components/rebuilds/RebuildButton";
 import { ExternalLink, ModelChips, NotConnected, PageHeader, StatusPill } from "@/components/ui";
 import type { RebuildCardView } from "@/components/view-types";
@@ -287,6 +288,7 @@ export function LearnView({ lessons, data, connected, admin, source, checkedOn }
                   <span className="section-fold-hide">Hide</span>
                 </summary>
                 {cards}
+                <OpenOnHash />
               </details>
             ) : (
               <>

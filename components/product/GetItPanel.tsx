@@ -26,8 +26,11 @@ const LABELS: Record<GetItSlotId, string> = {
   extension: "Extension",
 };
 
-/** Tabs that need another account or a device to try, behind "More ways to use it" until opened (GetItTabs). */
-export const GET_IT_MORE: readonly GetItSlotId[] = ["claude_plugin", "chatgpt", "gadget"];
+/**
+ * Tabs that need another company's account to try, behind "More ways to use it" until opened (GetItTabs). The Muse
+ * gadget tab stays out front: it is built on Meta's Gadget SDK.
+ */
+export const GET_IT_MORE: readonly GetItSlotId[] = ["claude_plugin", "chatgpt"];
 
 export const GET_IT_SLOTS: readonly GetItSlotId[] = [...TARGETS, ...PRODUCT_OUTPUTS, ...RUNTIME_OUTPUTS, ...CAP_OUTPUTS];
 
