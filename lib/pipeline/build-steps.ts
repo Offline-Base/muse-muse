@@ -69,6 +69,7 @@ import { runCapsShipStep } from "@/lib/caps/ship-run";
 import { liveCheck } from "@/lib/engine/live-check";
 import { briefMilestones, type MilestoneState, type RoundPlanRecord } from "@/lib/engine/milestones";
 import { renderMilestonePrompt } from "@/lib/engine/prompts";
+import { LOOK_PROMPT_FILES, renderLookChangePrompt, renderLookPrompt, renderWirePrompt } from "@/lib/engine/look";
 // ---------- end Wave 3, unit 2 ----------
 // ---------- Wave 3, unit 3: cap readiness (docs/CAPABILITIES.md, 2.4a) ----------
 import { capDropLine, capsForBuild, readCapDrops, withoutCaps, type CapDrop } from "@/lib/caps/ready";
@@ -815,6 +816,8 @@ export async function startMuseStep(input: {
   buildId?: string;
   /** A scaled round's cap (ENGINE_ROUND_SCALING), so the sandbox keeps enough session time for it. */
   capMs?: number;
+  /** LOOK_FIRST: a screens-only round, which gets no session goal, since the goal is the whole build. */
+  lookOnly?: boolean;
 }): Promise<MuseRun> {
   "use step";
   const engine = env.museEngine;
@@ -831,7 +834,7 @@ export async function startMuseStep(input: {
     round: input.round,
     maxModelSteps: MAX_MODEL_STEPS,
     engine,
-    goal: build?.brief ? goalObjective(build.brief, { ...(fullBuildOf(build.brief) ? { fullBuild: true } : {}), ...(requiredAgentsOf(build.brief) ? { requiredAgents: true } : {}) }) : null,
+    goal: build?.brief && !input.lookOnly ? goalObjective(build.brief, { ...(fullBuildOf(build.brief) ? { fullBuild: true } : {}), ...(requiredAgentsOf(build.brief) ? { requiredAgents: true } : {}) }) : null,
     ...(buildId ? { buildId } : {}),
     ...(input.capMs ? { capMs: input.capMs } : {}),
   });
@@ -1265,6 +1268,48 @@ writeFixPromptStep.maxRetries = 2;
  * Writes milestone-<index>.md from the brief's milestone and the strict verify that ran after the one before (read back
  * from the build's events), into the product. The workflow resumes the same session with it.
  */
+/**
+ * LOOK_FIRST (docs/LOOK_FIRST.md): writes the look, look-change or wiring prompt into the product folder and returns its
+ * file name for runMuse.
+ */
+export async function writeLookPromptStep(input: {
+  sandboxName: string;
+  kind: "look" | "change" | "wire";
+  note?: string;
+  changed?: boolean;
+}): Promise<{ promptFile: string }> {
+  "use step";
+  const promptFile = LOOK_PROMPT_FILES[input.kind];
+  const text = input.kind === "look" ? renderLookPrompt() : input.kind === "change" ? renderLookChangePrompt(input.note ?? "") : renderWirePrompt(input.changed === true);
+  await sandbox.writeProductFile(input.sandboxName, promptFile, text);
+  return { promptFile };
+}
+
+/** LOOK_FIRST: the owner's first answer to the screens sent after event `afterId`, or null while there is none. */
+export async function lookReplyStep(input: { buildId: string; afterId: number }): Promise<{ id: number; action: "approve" | "change"; text: string | null } | null> {
+  "use step";
+  const [row] = await db()
+    .select({ id: schema.buildEvents.id, payload: schema.buildEvents.payload })
+    .from(schema.buildEvents)
+    .where(and(eq(schema.buildEvents.buildId, input.buildId), eq(schema.buildEvents.type, "look_reply"), sql`${schema.buildEvents.id} > ${input.afterId}`))
+    .orderBy(asc(schema.buildEvents.id))
+    .limit(1);
+  if (!row || row.payload.type !== "look_reply") return null;
+  return { id: row.id, action: row.payload.action, text: row.payload.text?.trim() || null };
+}
+
+/** LOOK_FIRST: the newest event id of this build, so a reply is only read when it came after the screens were shown. */
+export async function lastEventIdStep(buildId: string): Promise<number> {
+  "use step";
+  const [row] = await db()
+    .select({ id: schema.buildEvents.id })
+    .from(schema.buildEvents)
+    .where(eq(schema.buildEvents.buildId, buildId))
+    .orderBy(desc(schema.buildEvents.id))
+    .limit(1);
+  return row?.id ?? 0;
+}
+
 export async function writeMilestonePromptStep(input: {
   buildId: string;
   sandboxName: string;

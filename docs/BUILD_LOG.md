@@ -2889,4 +2889,12 @@ The owner asked for a simpler sidebar using "muse" and "musing" for the creative
   - Screenshots: docs/log/shots/2026-11-02/plan-talk-fade-*.png.
   - Not yet seen in Safari.
   - plan-card tests updated for the talk-first order: 70 of 71 with tune-room. The one failure is main's own (#59). Typecheck clean.
+- **Nov 2, night: Look first, behind `LOOK_FIRST` (owner: "build the UI first then wire everything in and still be able to modify the UI").**
+  - A build makes its screens first: sample data, no model calls, `tsc` only, at most 12 minutes, and no session goal on the serve engine.
+  - The preview then shows them, and the build room card "Your screens are ready" gives the person who started the build two answers: change the look (policy-checked, at most 2 changes, 6 minutes each), or "Looks good, wire it up".
+  - With no answer, it wires in by itself after `LOOK_WAIT_SECONDS` (120 by default). Then a wiring run builds the rest of brief.md on the same screens, and the checks and fix rounds run as before.
+  - Milestone and chain builds skip it.
+  - docs/LOOK_FIRST.md has the details. The prompts are written at run time, so no new snapshot is needed.
+  - Not run in a real build yet.
+  - Tests: the three workflow scenarios (a change then a go, no answer, flag off) and the look state and prompt tests, 79 of 79 with the workflow file; the build room and step tests 212 pass. The 3 failures are the same ones main already has (plan-art-flag-off twice, plan-card's raw colors from #59). Typecheck clean.
 

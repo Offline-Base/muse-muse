@@ -91,6 +91,7 @@ export default async function BuildRoomPage({
       canRefine={canRefine}
       editsByPass={editsByPassOnly(user, data.product?.ownerId ?? null, canRefine)}
       canSteer={canSteer}
+      canLook={env.lookFirst && canRefine}
       signedIn={Boolean(user)}
       origin={origin}
       serverNow={Date.now()}
