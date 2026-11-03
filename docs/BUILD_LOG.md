@@ -4252,3 +4252,12 @@ Cost (list prices, the code's estimates, not checked against the bills):
   - jetson-04's node id `nd_fe300e68e976228c` checked online through the fleet's read-only `list_nodes`.
 - **Spend table, ceilings:** Meta $20 a UTC day for two days, Hub publish $1, Baseten $7.04, Modal $5.25, Spark take $41.43, Vercel about $5: $99.72. Expected about $57 to $79. Drop order: Modal, the phone build, the 8 non-rebuild cookbook builds, the Spark take, then the Nov 4 cap.
 - **Not run:** nothing. No build, snapshot, GPU, deploy, env change or Hub write. Spend $0. No code touched, so no tests ran.
+
+## Nov 3, 2026, 1:30 PM ET: owner direction build-out merged; tune golden refreshed
+
+- Merged tg-e-partner-hosts (pick Baseten, Modal or Fireworks per job, or all, one after another under PARTNER_EVAL_RUN_MAX_USD; Fireworks only for tunes it can serve; Run it hosting windows of 30, 60, 120 or 240 minutes; reviewed and fixed), tg-e-stories-script (docs/RUN_OF_SHOW.md with the owner's stories, a 3:00 script with both founders on camera, both theme closes; showcase set now allapis, classgame and tutor) and tg-e-runbook (docs/OWNER_RUNBOOK.md, every production setting in order, the Wonder switch and a spend table).
+- tg-e-unoq (Muse Muse building a rover lesson app that drives the UNO Q through the fleet, stop latched in code) stays off main: it builds on Hussam's rover-kit PR #80, so it goes to a Preview only.
+- Owner pushed the builder snapshot commit (783ce55e, snap_9heVjeRgxcye4EkOwb8DgxVjkj7H).
+- components/train/__tests__/fixtures/tune-flag-off.json: the build room render it pins changed with this morning's deliberate room changes (the same render hash the plan-art golden was refreshed to). Regenerated with TUNE_GOLDEN_WRITE=1; flag off and on still render the same.
+- Tests: partner, host, scripts, no-wonder and train component suites pass; typecheck clean; partner and train workflow bundles keep only pure imports.
+- Owner decision, Nov 3 afternoon: $200 Meta API budget for all builds, a final Muse Wonder UI pass at the end of each build, every product fully working and good enough for Meta to feature.
