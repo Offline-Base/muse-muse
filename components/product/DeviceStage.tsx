@@ -53,8 +53,8 @@ export function DeviceStage({ runs, productName }: { runs: readonly DeviceRun[];
         <div>
           <h2 id={`${id}-title`}>Where it ran</h2>
           <p className="muted">
-            {productName}, opened and checked on {runs.length} {runs.length === 1 ? "device" : "devices"}
-            {real && real < runs.length ? `, ${real} of them real hardware` : ""}. Each screen plays what was recorded on that device.
+            {productName}, used on {runs.length} {runs.length === 1 ? "device" : "devices"}
+            {real && real < runs.length ? `, ${real} of them real hardware` : ""}. Each screen plays the run recorded on that device.
           </p>
         </div>
         {!still ? (

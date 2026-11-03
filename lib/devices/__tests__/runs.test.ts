@@ -22,7 +22,7 @@ describe("stageDevices", () => {
   it("labels the simulator as simulated and the lab boxes and Device Farm phone as real", () => {
     const runs = DEVICE_RUNS["dinner-split-helper"]!;
     assert.deepEqual(runs.filter((r) => r.simulated).map((r) => r.device), ["iphone"]);
-    assert.ok(runs.find((r) => r.place === "AWS Device Farm" && r.name === "Samsung Galaxy S25" && !r.simulated));
+    assert.ok(runs.find((r) => r.place.startsWith("AWS Device Farm") && r.name === "Samsung Galaxy S25" && !r.simulated));
   });
 });
 
@@ -42,7 +42,7 @@ describe("the recorded runs", () => {
   });
 
   it("names the day short", () => {
-    assert.equal(ranOnLabel("2026-11-01"), "Nov 1");
+    assert.equal(ranOnLabel("2026-11-02"), "Nov 2");
     assert.equal(ranOnLabel("not a date"), "");
   });
 });
