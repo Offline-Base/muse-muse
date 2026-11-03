@@ -3722,3 +3722,20 @@ The owner asked to make sure, on the office Orin Nano boards, that Meta's SAM 3.
 - `edge.test.mjs` had one stale assertion expecting a Llama label where the test sets a Glimmer one. Fixed.
 
 **Fleet changes left in place** (all logged in docs/HANDOFF.md, "Fleet changes made Nov 3"): jetson-02 `jetson-llama` started, not enabled, plus `glimmer-guard` (transient); jetson-04 `sam3.service` restarted once at 3:28 AM ET with the tuned detector beside Meta's (drop-in `tuned.conf`; old server kept as `server.py.nov2`); jetson-03 the new tune files above.
+
+## Nov 3, 2026, 5:30 AM ET: target audit (batch 2, one build per target)
+
+All six went live, each $0.27 to $0.40, in 46 to 100 minutes. Every room marked every requirement as working, including target ones that weren't met.
+- **Native lane never ran.** Phone and desktop builds have no "native" events, no APK, no Mac or Windows zip and no Expo Go QR. `packageProductStep` runs only with `PACKAGER_SNAPSHOT_ID`, `lib/native/shells.json` has no shell URLs, and `SHELL_UPDATE_PUBLISHED` is false. The Get it panel says "isn't ready yet".
+- **vr (paper-lantern-museum):** works. IWER's simulated Quest 3 draws the hall, and `/q/<slug>` redirects to the app. No real headset tried.
+- **phone (aisle-together):** typed adds work. The sample shelf photo is fetched from `/fixtures/`, which 404s in production, so the photo flow can't be tried.
+- **desktop (crumb-ledger-weekly):** the web app works (totals agree, real PDF). "Desktop app shell" passed on a web header.
+- **glasses (market-day-reader):** the web fallback and the bridge (with an injected stand-in) work. The voice question is thrown away (no transcribe model in the brief), and the spoken prices contradicted the sign it read.
+- **edge (cold-room-watcher-2):** the cloud answer is right, but "Board Mode" is a cloud call, no board was involved, and the door-check sample 404s. FLEET_SAM landed after this build.
+- **agent (austin-budget-weekender):** 1 of 2 runs succeeded with 3 real searches and sourced plans. The other failed at `submit_answer` and showed the raw tool name.
+- **Fix round 3 started (workflow wf_8db1483a-66c):**
+  - an honest native lane, plus docs/NATIVE_READY.md with the owner's steps to turn it on;
+  - target requirements proven by the target, not a web stand-in;
+  - samples served from public/, and agent submit retries;
+  - honest edge board status;
+  - whole-build time and fix-round counts.
