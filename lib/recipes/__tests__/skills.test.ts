@@ -35,6 +35,27 @@ describe("recipe skills", () => {
     assert.match(text, /Don't send `tool_choice`/);
   });
 
+  it("keeps the Nov 3 audit's fixes: levels that end, real samples, PNG screens, real agent turns, full-size final steps", () => {
+    const read = (id: string) => readFileSync(join(ROOT, id, "SKILL.md"), "utf8");
+    const games = read("recipe-games");
+    assert.match(games, /Every level ends on its own/);
+    assert.match(games, /Idle until the level ends/);
+    assert.match(games, /laid over the canvas/);
+    const sam = read("recipe-sam-media");
+    assert.match(sam, /Never ship a placeholder/);
+    assert.match(sam, /zoompan/);
+    assert.match(sam, /SAM checks the sample in the smoke test/);
+    const loops = read("recipe-simulated-loops");
+    assert.match(loops, /svgToPng/);
+    assert.match(loops, /No scripted stand-in/);
+    assert.match(loops, /makes its own model call/);
+    assert.match(loops, /plausibly remove/);
+    assert.doesNotMatch(loops, /record in localStorage/);
+    const legal = read("recipe-case-agent");
+    assert.match(legal, /sample-before-memo/);
+    assert.match(legal, /only the pages it needs/);
+  });
+
   it("helpers import nothing, so they work when copied into a product", () => {
     for (const id of skills) {
       const dir = join(ROOT, id, "helpers");

@@ -76,6 +76,10 @@ One call per turn. Every check runs on the server, in the tool. A refusal is a n
 
 Withheld documents don't exist in any tool's view until the person releases them, and each release sets `released_at`.
 
+**Send each call only the pages it needs.** A call that checks or proves one item gets that item's cited pages (and the page before and after, for context), never the whole file. A memo check gets the memo's claims and the facts they cite, with their quotes, not every document. Test the request size for the biggest item. The Nov 3 audit's case product resent all 6 pages on every proof call, and its proofs and memo failed with 502s on the full record.
+
+**Failures say what failed.** A route that calls the model sets `export const maxDuration = 300` and returns a cause the page can show (timed out, refused, budget used up), never a bare 502. An item whose call failed shows as failed, with Retry, never as stuck waiting on evidence, and the copy never blames the person's connection for a server error.
+
 ### Stops
 
 A tool can return a status of `waiting_on_person` or `waiting_on_signoff`. The loop then stops with no further model call, and the page shows the card for it.
@@ -115,6 +119,7 @@ The memo is a demo's output, not legal work. Its card, the sign-off card and any
 - `lib/case/scripted.ts` is a fake model that plays a fixed sequence of tool calls. It throws unless `process.env.CASE_SCRIPTED === "1"` and `process.env.VERCEL` is unset. No route can select it. It is for the tool checks below and for the sample replay, and it never replaces the real call in the smoke test.
 - `tests/case.spec.ts` sets `CASE_SCRIPTED` itself, imports `lib/case/` directly and runs the real tools, proving: a made-up quote is refused; feedback never reveals an item; a flagged document can't be cited; `ask_attorney` stops the loop with no model call; release makes the document visible; resume from the sealed blob goes on; a changed blob is refused; sign-off finishes the run. Don't use the `server-only` package in anything it imports. It also checks that `lib/case/sample-replay.json` matches the scripted run, and rewrites it when `UPDATE_SAMPLE=1`.
 - `tests/smoke.spec.ts` takes one real Step through: one real turn through the route, then asserts a new row with tokens shows on the timeline. A build's run stops at 6 turns or $0.40, and all its tests share $10, so never run a full case in a test. For the final judge screenshot, play the sample replay to its signed memo.
+- **The final step runs on full-size data.** `POST /api/case/run` with `{ start: "sample-before-memo" }` makes the server seal the record from `lib/case/sample-replay.json` as it stood just before its `file_memo` turn, with every checklist item, fact and quote it holds (no scripted model runs), and runs one wrap up stretch from there. The smoke test calls it once and asserts the memo check came back within the route's time: filed, or a refusal the agent can read, never an error. A toy payload with one item proves nothing: the audit's memo passed with one item and failed 3 of 3 times on the real 4-item record. The route accepts that start only for the sample record, which the server holds itself.
 - `tests/actions.spec.ts` spends as little as it can: use a refused input or the sample where an action allows it.
 
 In BUILD_NOTES.md, say that the case is new fiction, the run's cost is an estimate until someone measures it, and what you cut.

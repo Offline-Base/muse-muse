@@ -14,9 +14,17 @@ A route lasts at most 300 seconds, and one run needs many turns, so:
 - **Stretches.** The page drives the run with repeated POSTs. Each one starts no new model call after about 200 seconds, so a slow call still ends before the route's limit, then returns.
 - **Run id.** Send one `x-musemuse-run-id` header, with a fresh id per run, on every model call, so the gateway counts the whole run together. It stops a long run at 80 turns, 120 tool calls or $15. Set lower ceilings in your own code, and handle a refusal as a saved pause, never a crash.
 - **Sealed record.** State goes to the browser as a sealed record: AES-256-GCM with `node:crypto`, using a key hashed from `gatewayEnv().apiKey` and a fixed label. The server opens and checks it on every stretch, and refuses anything altered. Never send the key to the browser. If a record won't open, say the run can't resume and offer a new one.
-- **Saving.** Keep the latest record in localStorage, with a download button. Closing the tab pauses the run, and the page says so, along with the fact that the record stays in this browser.
+- **Saving.** Keep the latest record in IndexedDB with `mediaStore` from `@/lib/client/media-store` (product-ui, Saving), never in localStorage, with a download button. Closing the tab pauses the run, and the page says so, along with the fact that the record stays in this browser.
 - **Replay first.** Open on a sample replay made at build time, so no visitor spends money just by looking. A Start button begins a real run, and its estimated cost sits beside it.
 - **Budget.** A long recipe has its own daily budget. When it runs out, pause with a plain message.
+
+## The model does every agent turn
+
+The world is simulated; the agent is not. Every agent step is a real model call that sees the current state and picks the action.
+
+- **No scripted stand-in.** When a model call fails, pause the run with an `.error` (`role="alert"`) that says the step didn't run, and a Retry button. Never go on with a scripted or "local" plan, and never fill a turn with a canned move or narration. The only scripted runs are the sample replay, labeled as one, and the test's scripted model.
+- **Follow-ups carry the run.** A redirect, a note to one agent or a resume sends the run's record (the task or idea, and the board or screen state), never only the note, so the reply stays on the run's topic.
+- **The smoke test proves it.** Its one real stretch asserts that each step it ran came back from the model (a reply with tokens on the timeline), not an error or a fallback flag.
 
 ## Label every simulation
 
@@ -28,12 +36,15 @@ Build: a 1280 x 800 simulated screen, a task, and a model that looks and acts un
 
 `helpers/cu-sim.ts` beside this file is a pure simulator with three scenes. It reaches the build at `.agents/skills/recipe-simulated-loops/helpers/`. Copy it to `lib/sim/`. Use `initialState`, `applyAction`, `sceneDone` and `render` (pass `null` for the signup background). Render to a canvas in the browser, and send `canvas.toDataURL("image/png")` with each turn.
 
+**The model sees a PNG, whatever draws the screen.** Meta's API refuses `data:image/svg+xml`, so a step that sends an SVG fails in about a second. The Nov 3 audit's simulated desk drew its screen as SVG and sent that, so all 8 of its steps fell back and its model never ran. A screen of your own, drawn as SVG or HTML, goes through `svgToPng(svg, { width: 1280, height: 800 })` from `@/lib/client/raster`, or is drawn on a canvas. The route checks each screenshot with `imageProblem` from the same file and refuses one that fails, with a plain error. If that file isn't in the product, draw on a canvas and send `canvas.toDataURL("image/png")`.
+
 **The computer tool is unproven here.** When our docs demo was built, Muse Wonder answered `400 Unsupported tool type 'computer'`, and it's untested with a product token. So:
 
 1. Make the loop with strict function tools by default, on `muse-wonder-1.0`: `click(x, y)`, `type_text(text)`, `press_key(key)`, `finish(summary)`, with `parallel_tool_calls: false`. Validate with zod, and clamp coordinates to the screen.
 2. Return each result as `function_call_output`, then attach the new screenshot in a message with `input_image`.
 3. A build test may try `tools: [{ type: "computer" }]` once. If it works, BUILD_NOTES records it. If it's refused, keep the function tools. Never tell people the native tool was used unless it was.
 4. **Confirm before risky steps.** A click that would submit, buy or delete pauses the run, and shows the action and a Confirm button. If the native tool returns `pending_safety_checks`, show them the same way, and acknowledge only after a click.
+5. **Gates target what the person would plausibly remove.** The scene's sample holds something that is meant to go, like a duplicate note, an empty draft or last week's temp file, and that is what a risky step targets. Mark each item in the scene's data as keep or removable from the task, and have code refuse a delete of a keep item, as a tool result the model reads. Never gate a step that throws away what the task asked to keep: the audit's desk asked to delete a note the person had asked to file, and approving it lost the note. A test asserts that the sample's gated step targets a removable item, that Deny changes nothing, and that Approve removes only that item.
 
 Stop at 25 actions a run. Check: a scripted model finishes a scene, and a risky step pauses. Limits: this is the simulated scene only, and nothing runs on the visitor's machine.
 Links: https://github.com/meta-models/meta-model-cookbook/tree/main/03_use_cases/12_computer_use and https://github.com/meta-models/meta-model-cookbook/tree/main/03_use_cases/13_macos_cua
@@ -53,11 +64,11 @@ Link: https://github.com/meta-models/meta-model-cookbook/tree/main/03_use_cases/
 
 Build: a one-line idea, and a board of cards worked on by four roles: product, backend, frontend, writer.
 
-- Each role gets a short run, with tools limited by role: `comment`, `move_card` to allowed columns, `add_artifact` for its own kind. Code enforces each limit.
-- Roles talk through card comments, and nothing else passes between them. Each run's input is the board.
-- At most 3 turns a role per stretch, and an overall ceiling on cards and comments.
+- **Each role is its own agent.** On its turn a role makes its own model call, with its own instructions and only its own tools: `comment`, `move_card` to allowed columns, `add_artifact` for its own kind. Code applies only what those tool calls ask, and enforces each limit. One call that drafts the whole board, followed by moves on a timer, is not a team: the Nov 3 audit's relay board made one call, then fired 24 scripted moves, and its roles never spoke.
+- **Roles talk through card comments**, and nothing else passes between them. Each turn's input is the board with its comments, so a role answers what another wrote. The run log shows one model call per role turn, with its tokens.
+- At most 3 turns a role per stretch, and an overall ceiling on cards and comments. Moves happen when a role's call returns, never on a timer.
 
-Result: a plan, and a small artifact such as a spec and landing copy. Say "This makes a plan and small files, not a working SaaS." Check: a scripted test where a role tries a forbidden column.
+Result: a plan, and a small artifact such as a spec and landing copy. Say "This makes a plan and small files, not a working SaaS." Check: a scripted test where a role tries a forbidden column, and the smoke test's real stretch runs two role turns, each its own call, where the second role's input holds the first role's comment.
 Link: https://github.com/meta-models/meta-model-cookbook/tree/main/03_use_cases/08_multi_agent_orchestration
 
 ## 03/14 Simulated robot arm

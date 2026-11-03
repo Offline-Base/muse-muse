@@ -447,6 +447,24 @@ button.chip[aria-pressed="true"]::before {
   .segmented[data-wide="row"] label { justify-content: center; padding-left: 12px; text-align: center; white-space: nowrap; }
 }
 
+/* Tabs (components/Tabs, or a <nav className="tab-bar"> of links with aria-current="page"): views of one screen. They wrap
+   to a second row on a phone, so every tab shows; they never scroll or run off the screen. The current one is marked by
+   its color and a bar under it, never by color alone. */
+.tab-bar { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); border-bottom: 1px solid var(--line); }
+.tab-bar > :is(button, a) {
+  position: relative; display: inline-flex; flex: 0 1 auto; align-items: center; justify-content: center; max-width: 100%;
+  min-height: var(--control-height); min-width: var(--control-height); padding: 0 var(--space-12); border: 0; border-radius: var(--radius) var(--radius) 0 0;
+  background: none; color: var(--fg-2); font: var(--type-label); text-align: center; text-decoration: none; cursor: pointer;
+}
+.tab-bar > :is(button, a):hover { background-color: var(--hover); text-decoration: none; }
+.tab-bar > :is([aria-selected="true"], [aria-current="page"]) { color: var(--tinted-fg); }
+.tab-bar > :is([aria-selected="true"], [aria-current="page"])::after {
+  content: ""; position: absolute; left: var(--space-8); right: var(--space-8); bottom: 0; height: 3px; border-radius: 3px 3px 0 0; background: var(--accent);
+}
+.tab-bar > :is(button, a):focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.tab-panel { display: grid; gap: var(--space-16); }
+.tab-panel:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; border-radius: var(--radius); }
+
 /* Tables scroll inside their own box, never the page. On phones keep them to about 3 columns. */
 .table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
 .table-wrap table { width: 100%; border-collapse: collapse; font: 400 15px/20px var(--font); }

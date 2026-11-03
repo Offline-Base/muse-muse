@@ -72,6 +72,11 @@ describe("recipes", () => {
     assert.equal(liveDailyBudgetFor(BRIEF), liveDailyBudgetFor({ ...BRIEF, recipes: null }));
   });
 
+  it("with the SAM media recipe, the writer asks for a real photo of the subject to make the sample clip from", () => {
+    process.env.RECIPES_ENABLED = "1";
+    assert.match(recipesWriterRules([]), /With recipe-sam-media, .*image fixture .*a dog standing on grass.*Never a drawing, a test pattern or shapes\./);
+  });
+
   it("a media recipe allows its own model even when the writer left it out of capabilities", () => {
     process.env.RECIPES_ENABLED = "1";
     const allowed = (id: string) => allowedModelsFor({ ...BRIEF, recipes: [id] });

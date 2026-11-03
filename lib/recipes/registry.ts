@@ -177,6 +177,11 @@ export function recipesWriterRules(caps: readonly CapId[]): string {
       `- A long recipe (${available.filter((r) => r.longRun).map((r) => r.id).join(", ")}) is the exception to one run costing cents: it has its own daily budget, and costItems count its turns honestly, in dollars. complexity is "complex". Don't add the agent target for one: it writes its own loop.`,
     );
   }
+  if (available.some((r) => r.id === "recipe-sam-media")) {
+    lines.push(
+      "- With recipe-sam-media, unless the person gave their own clip, fixtures include one image fixture (fromUserSample false): a realistic photo of the subject the product tracks, whole and clearly in frame, like a dog standing on grass. The build turns it into the sample clip. Never a drawing, a test pattern or shapes.",
+    );
+  }
   if (available.some((r) => r.id === "recipe-case-agent")) {
     lines.push(
       "- With recipe-case-agent, capabilities list muse-wonder-1.0 and sam-3.1, and fixtures include two image fixtures: one made-up name signed by hand in dark ink on plain white paper, and the same name signed in a visibly different hand. Neither shows a real name, firm or seal.",
