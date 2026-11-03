@@ -1,0 +1,14 @@
+diff --git a/sam3/train/trainer.py b/sam3/train/trainer.py
+index ecfa0b4..3bb68bb 100644
+--- a/sam3/train/trainer.py
++++ b/sam3/train/trainer.py
+@@ -315,6 +315,9 @@ class Trainer:
+             find_unused_parameters=distributed_conf.find_unused_parameters,
+             gradient_as_bucket_view=distributed_conf.gradient_as_bucket_view,
+             static_graph=distributed_conf.static_graph,
++            # Offline Base (Jetson, one GPU): skip the initial weight broadcast, which copies the whole model and ran an
++            # 8 GB board out of memory. With one process there is nothing to sync.
++            init_sync=torch.distributed.get_world_size() > 1,
+         )
+         if distributed_conf.comms_dtype is not None:  # noqa
+             from torch.distributed.algorithms import ddp_comm_hooks

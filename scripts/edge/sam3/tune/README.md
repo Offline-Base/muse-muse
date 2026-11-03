@@ -46,3 +46,64 @@ On the Nov 3 set, the tune can't beat Meta's weights: "plush toy" already finds 
 - **What would count as a gain:** the tune's "muse" keeps recall near Meta's "plush toy" while boxing far fewer look-alikes. Meta's "plush toy" should box every toy, so its precision on Muse falls with each look-alike; that drop is the gap a tune could close.
 - **Cost:** $0 on jetson-03 (about 60 looks per setting, 3 settings, about 5 minutes) plus the time to make the images. If the tune boxes look-alikes as Muse too, the honest result is that it learned "plush toy" under a new name. Then retrain with the look-alikes as negatives in the training set.
 - Also rescore the tune with "plush toy" and "toy" (the Nov 3 scoring asked those only of Meta's weights), so we know the new word didn't cost the old ones.
+
+## The tune worker (built Nov 3 to 4, not yet run on a board)
+
+Is built so: an admin starts "Teach SAM 3.1 a new object" on /fine-tuning/new (behind `SAM_TUNE`, off by default), and
+jetson-03 does the rest with no fleet token in production: it polls the site, trains, scores and posts numbers. The
+site writes the verdict and the caveats (lib/train/sam/logic.ts), so the board can't post an approving sentence.
+
+| File | What it does |
+|---|---|
+| `worker.py` | The loop (standard library only): polls `POST /api/train/sam/worker/next` every 20 s, claims a run, then build sets, score Meta, train, score the tune, draw, upload, `/done`. Posts `/progress` at each stage and every 30 s inside one (that also extends the 10-minute lease); Stop is honoured between stages and inside one (the unit is stopped) |
+| `tunelib.py` | The pure parts, tested on the laptop: IoU and the found, top, only and other-box counts, the column summary, the paste rule, the split by seed, the pick rule, the license filter, the guards, the host allowlist |
+| `build_sets.py` | The run's training data and test sets (its docstring has the rules) |
+| `score_sets.py` | `evalmuse.py` for the report's settings: `meta_word`, `meta_generic`, `meta_toy`, then `prior_word` (the Nov 3 muse31 tune, on built-in runs), `tuned_word`, `tuned_generic`, plus the truck check. pycocotools AP over detections from 0.05; counts at 0.5 |
+| `sbs_draw.py` | Up to three side-by-sides, the everyday word on the left and the tuned word on the right, tinted masks and scores |
+| `fetch_coco_bears.py` | One-time prep: the training teddy-bear photos (val2017, outside the 30 test photos, licenses 4, 5, 7 and 8) |
+| `configs/sam_tune.yaml.tmpl` | The trainer config, made from the recovered `muse31.yaml` |
+| `sam-tune-worker.service` | The worker as a unit on jetson-03 (root for systemd-run; `MemoryMax=1G` for itself) |
+| `share31.service` | jetson-04's share.py as a unit, only if jetson-03 has no room for its own base copy; ends after 24 h, won't start after Nov 7 |
+| `tests/` | `python3 -I -m unittest discover scripts/edge/sam3/tune/tests`: no torch, no board |
+| `recovered/` | The Nov 3 scripts and config copied off jetson-03 (its README) |
+
+**One run, built-in Muse** (the only data until uploads land). The test sets are the Nov 3 sets on jetson-03
+(`/opt/sam3train/runs/nov3-distract/A` and `B`), the same 30 photos as the pasted table. Training: the 160 Muse training
+images, plus each training bear photo twice with a training Muse pasted in and the bears left unlabeled, so the tune
+sees toys it should leave out. Meta's three columns are cached on the board after the first run (same photos, same
+weights), so later runs load SAM 3.1 twice, not three times.
+
+**Guards.** No claim below 5.5 GB free memory or 300 MB free disk, or while any `/opt/glimmer-train` process runs; it
+then doesn't poll at all, so the room shows the board's last poll growing old. Photos come only from the site's own host
+and the public Blob host, over https, and no redirect may leave them. The word and the everyday word are checked again
+on the board. The trainer and both scorers run as `sam-tune-<run id>-<step>` units with `MemoryMax=6G`. A transient unit
+doesn't inherit the worker service's sandbox, so each gets its own: `ProtectSystem=strict` with
+`ReadWritePaths=/opt/sam3train`, home folders read-only, a private `/tmp`, and torch, Triton, CUDA and matplotlib caches
+under `/opt/sam3train/samtune/cache-home/`. Nothing the worker starts writes outside `/opt/sam3train`, and nothing it runs
+touches `sam3.service`. `SAM_TUNE_UNIT_SANDBOX=0` in the env file drops the unit sandbox, only if a first run shows a
+write it blocks (look for "Read-only file system" in `runs/<id>/<step>.log`). At most 2 run
+deltas are kept in `/opt/sam3train/samtune/deltas/` (61 MB each) besides muse31's; a run's photos are deleted as soon as
+it ends, done or not. A restart mid-run stops its units and tells the site.
+
+**Board layout.**
+- `/opt/sam3train/lib31/`: these files (fetched at a pinned commit, sha256 checked).
+- `/opt/sam3train/samtune/`: `runs/<id>/` (logs and small json), `deltas/`, `cache/` (Meta's columns), `coco_bears/`, and
+  `current.json` (the run in hand, mode 600).
+- `/etc/sam-tune-worker.env`: `MM_URL`, `WORKER_ID`, `SAM_WORKER_TOKEN`.
+- The base: `/opt/sam3train/model/sam3.1_multiplex_fp16.pt` when there is room (sam31load.py reads it first), else
+  `/run/sam31share.url`.
+
+**Setup, from an owner session through the fleet only, with Hussam's OK** (plan section 5):
+1. Fetch the files above into `/opt/sam3train/lib31/` from `raw.githubusercontent.com/Offline-Base/muse-muse/<commit>/scripts/edge/sam3/tune/...` and check each sha256.
+2. `/opt/sam3train/venv/bin/python /opt/sam3train/lib31/fetch_coco_bears.py` once (a few MB from images.cocodataset.org).
+3. Make the secret on the board, `umask 077`, `openssl rand -hex 32`, into `/etc/sam-tune-worker.env` with
+   `MM_URL=https://www.musemuse.dev` and `WORKER_ID=jetson-03`; print only its sha256 for `SAM_WORKER_TOKEN_SHA256`.
+4. Copy `sam-tune-worker.service` to `/etc/systemd/system/`, `systemctl daemon-reload`, `systemctl enable --now sam-tune-worker`.
+5. Kill switch: `systemctl stop sam-tune-worker`.
+
+**Not yet checked on the board** (write against these, then check on the first run):
+- The trainer's progress line format: `worker.py` reads `[epoch][ i/n]` and sends the raw line too.
+- Whether the pinned loader keeps images with no boxes (the template's `include_negatives` slot is off unless
+  `SAM_TUNE_EMPTY_NEGATIVES=1`). The pasted composites work either way.
+- That `systemd-run --wait` with `StandardOutput=append:` behaves on the board's systemd 255 as on desktop Ubuntu.
+- How many val2017 teddy photos pass the license filter (`fetch_coco_bears.py` prints it).

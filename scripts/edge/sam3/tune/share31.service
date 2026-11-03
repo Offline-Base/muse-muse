@@ -1,0 +1,15 @@
+# jetson-04: share.py as a unit, only if jetson-03 has no room for its own copy of SAM 3.1's fp16 base (1.76 GB) and
+# Hussam agrees. Office network only (share.py binds 192.168.12.144), read-only, token-guarded. Ends itself after 24 h
+# (RuntimeMaxSec) and won't start after Nov 7, 2026 (ExecStartPre). Never restarts sam3.service.
+# Before starting: mkdir -p /run/sam31share && head -c 12 /dev/urandom | od -An -tx1 | tr -d ' \n' > /run/sam31share/token
+# and copy share.py to /run/sam31share/share.py. jetson-03 reads http://192.168.12.144:8797/<token> from /run/sam31share.url.
+[Unit]
+Description=SAM 3.1 detector share for jetson-03's tune runs (office network, until Nov 7)
+
+[Service]
+Type=simple
+ExecStartPre=/bin/sh -c 'test "$(date +%%s)" -lt 1794027600'
+ExecStart=/opt/sam3/venv/bin/python /run/sam31share/share.py
+RuntimeMaxSec=86400
+MemoryMax=1500M
+Restart=no
