@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ProductCardView } from "@/components/view-types";
 import { FEATURED, FEATURED_SLUGS, pickFeatured } from "@/lib/gallery/featured";
+import { HIDDEN_FROM_GALLERY } from "@/lib/gallery/hidden";
 
 const card = (slug: string, over: Partial<ProductCardView> = {}): ProductCardView => ({
   slug,
@@ -37,5 +38,10 @@ describe("featured products", () => {
     assert.deepEqual(picked.map((p) => p.slug), [a, d]);
     assert.equal(picked[0]!.tryThis, FEATURED[0]!.tryThis);
     assert.deepEqual(pickFeatured([]), []);
+  });
+
+  it("never feature a product hidden from the gallery", () => {
+    for (const slug of FEATURED_SLUGS) assert.ok(!HIDDEN_FROM_GALLERY.includes(slug), slug);
+    assert.deepEqual(pickFeatured(HIDDEN_FROM_GALLERY.map((slug) => card(slug))), []);
   });
 });

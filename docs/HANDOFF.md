@@ -21,6 +21,18 @@ Change a line here when its fact changes. History goes in docs/BUILD_LOG.md.
 - **Edge track (Nov 2):** a simulated cold-room watcher that is built so it keeps answering on a Jetson when the cloud is cut. The owner wants it as a headline beside frontier: defending infrastructure and being ready for any scenario. On `e4beadc1` (branch tg-edge, not merged to main) M1 to M6, M13 and M14's `MEASURED` half are built and unit-tested; nothing has run in a real build or on a board. The owner answered O1 to O8 (below). Units, Hussam's asks H1 to H5, the clock and when each claim may be said: docs/EDGE_PLAN.md. All flags off.
 - **Modal as a second build host (Nov 2, branch tg-modal):** behind `SANDBOX_HOST=modal`, off by default, so builds stay on Vercel Sandbox. The Modal host passed a live smoke test; no Muse Code build has run on Modal and its builder image isn't made yet. To turn it on, the env names, and the security gaps: docs/MODAL_HOST.md.
 
+## Owner decisions, Nov 2 night (plan-to-win form)
+
+From the owner's answers to the plan-to-win form (rounds 1 and 2). These override older lines below where they disagree.
+- **Story:** "Your own AI, on your own hardware, ready for any scenario." For shops, clinics and schools with equipment online and no engineering team, and anyone with an idea and no team. The video opens with Zuckerberg's line. The script is docs/VIDEO.md (rewritten on tg-video-v2).
+- **The unplug shot:** the cold-room app Muse Muse built keeps running on jetson-04, and SAM 3.1 on the board keeps watching the door (PR tg-edge-vision). Hussam narrates it and picks the prop.
+- **Muse Privacy stays in the video** (about 20 s, "a leak is a bad day too"), after its rerun on Glimmer, showing the real leak count (PR tg-privacy-glimmer). The tuned Glimmer 40 of 40 is shown.
+- **Extras wanted, in this order if time runs short:** Muse Spark Open on Fireworks as a model products can use (PR tg-spark-open), the site hosted on jetson-03, Muse Code driven by Spark Open through a custom endpoint, Muse Code running builds on a Jetson, a one-bit Glimmer chat clip on jetson-02.
+- **Repo:** flip the current repo public (not a fresh rewrite): a private backup copy first, non-Meta model code removed from main's tree (PR tg-public-ready, then tg-meta-only-tree), backup refs and stale branches deleted, Hussam changes the ngrok domain. Personal emails in history are fine. License Apache-2.0. Meta's docs stay at /docs; the owner says a Meta organizer allowed it (who and when still to be written in NOTICE).
+- **Judging week:** judges on Muse Wonder with `DAILY_SPEND_CAP_USD` 100. The 8 gallery products that look like the organizers' "skip these" list are hidden, not deleted. Edge builds on in production after one preview check; Look first on after one test build passes on the new snapshot.
+- **Keys in builds (PR tg-build-keys):** builds by anyone signed in with the builder code get the owner's service keys as real env values, and their products keep them. Built from dedicated `BUILD_SHARED_*` keys the owner creates, with leak checks and a kill switch (docs/BUILD_KEYS.md). Services: Vercel, AWS (limited user), Lambda, Hugging Face, fleet `jik_`, Composio, Fireworks, Baseten, Modal.
+- **Spend cap for this push:** $25. X: a teaser Tuesday night, the 60-second cut Wednesday morning.
+
 ## Open PRs, Nov 2 evening
 
 Nobody but the owner or Hussam merges. Hussam's PRs all say "Don't merge until told". Merged since the morning: #59, #60, #61, #62, #64, #65 (it fixed the unit tests main already failed) and #66 (set up for judging with no spend, 2:09 PM ET).
@@ -48,10 +60,9 @@ In order. To-do 2 has to finish by Nov 3 afternoon (Tue 3 PM for the edge tune),
    - Send changes to the lead, or edit it yourself and bump `TERMS_VERSION` (signed-in builders are asked to accept a new version).
    - Turn it on: `printf '1' | vercel env add TRUST_LEGAL_PAGES production --force --scope "$VERCEL_SCOPE" && vercel redeploy https://muse-muse.vercel.app --scope "$VERCEL_SCOPE"`. Env changes need a new deployment.
    - Check `/privacy` and `/terms` signed out. With the flag off, both pages call `notFound()`, which is today's `/privacy` 404. The flag also gives new products their own privacy and terms pages.
-4. **Pick a LICENSE.** About 10 minutes to choose; the lead adds the file in a PR.
-   - The repo has none. The Official Rules allow open source "provided applicable open source licenses are followed", and the entrant keeps ownership while granting the organizers a license to use the submission (docs/MESSAGING.md, "What the rules say").
-   - Choices: MIT, Apache-2.0 (adds a patent grant), or no license, which leaves a public repo readable but not reusable.
-   - Whatever you pick, say what it doesn't cover: `content/meta-docs/` is Meta's text, `privacy/` comes from another repo, and model files carry their own terms (Muse Glimmer's, and Muse Spark Open's for r30b, a Derivative of it).
+4. **LICENSE: Apache-2.0, picked by the owner; the files are on branch tg-public-ready (Nov 2 night).** About 5 minutes left.
+   - `LICENSE` (Apache License 2.0, "Copyright 2026 Offline Base"), `NOTICE`, and `"license": "Apache-2.0"` in package.json. `NOTICE` says what the license doesn't cover: `content/meta-docs/`, model files (Glimmer's terms, the Muse Model License for Muse Spark Open and its Derivatives), Meta's names and marks, and the third-party files in `app/fonts/`, `public/` and `template/`.
+   - Fill the two placeholders in `NOTICE` before the flip: `[owner: who said so, and when]` (the Meta organizer who allowed the `content/meta-docs/` copy) and `[owner: how they were made, and their terms]` (the mascot in `public/muse/`).
 5. **Change the fleet's ngrok domain, and confirm the rented GPU machines are terminated.** About 40 minutes, with Hussam. Both addresses stay in git history unless the rewrite in "Going public" runs, so do this either way.
    - ngrok: make a new domain in the ngrok dashboard. Hussam points jetson-05's tunnel at it through the fleet control plane. In the same restart, turn off the agent's request-body retention (PR #61). Set `BOARD_FLEET_URL` on production to the new domain and redeploy. Check `/device` signed out, then delete the old domain.
    - AWS: in the console for the knowledge run's account, check EC2 instances in us-east-1 and every other region used, plus SageMaker training jobs, endpoints and notebooks. Terminate anything still running. Delete storage nobody needs, because it bills too.
@@ -101,7 +112,7 @@ In order. To-do 2 has to finish by Nov 3 afternoon (Tue 3 PM for the edge tune),
 Also waiting, from the Nov 2 audit. None is approved or started, except that item 5's docs (SUBMISSION.md and the shot list) are drafted on tg-submission-kit.
 - Hero tune: a longer Glimmer tune for redaction and private spreadsheet analysis, scored on the sealed test against base. Up to $300 of GPU. Was blocked on the rotated Lambda key, which is now in place; still not approved.
 - "Own it" proof: download a real product and run it outside Muse Muse from its own instructions. $1 of Contributor.
-- Judge path cleanup: recover the stranded tg-judges commit from 21:58, hide test products in the gallery without deleting them, and sort out the `/privacy` 404 (see to-do 3).
+- Judge path cleanup: recover the stranded tg-judges commit from 21:58, hide test products in the gallery without deleting them, and sort out the `/privacy` 404 (see to-do 3). Started on tg-public-ready: 8 products that look like the organizers' overdone list are hidden from the gallery lists (`lib/gallery/hidden.ts`), and dinner-split-helper goes first. Other test products are still listed.
 - A real browser pass on the Make flows, plus building the six Discover starters. $5 of Contributor.
 - Repo and submission ready: the CI failures, Docker, and the README's setup gaps from the Nov 2 clean-clone test (docs/SUBMISSION.md, "What the organizers said"). The secret scan of history ran Nov 2 (see "Going public").
 
@@ -207,7 +218,8 @@ Everything on the boards goes through the fleet control plane, never SSH from th
   - The real-route PGlite test is `lib/train/tune/__tests__/open-train.test.ts`.
   - Regenerate goldens with `TUNE_GOLDEN_WRITE=1` or `MAKE_GOLDEN_WRITE=1`, from a clean tree.
 - **Not in CI:** `.tsx` tests outside `components/train/` don't run in CI. `components/models/__tests__/models-page.test.tsx` fails one case on main ("shows accuracy for a decide-kind tuned model", the 78 of 78 line is missing) and nobody has fixed it yet.
-- **Judge-path checker:** `node scripts/judge-check.mjs` walks the live site with GETs only and writes a report. Rerun it after each deploy.
+- **Judge-path checker:** `node scripts/judge-check.mjs` walks the live site with GETs only and writes a report. Rerun it after each deploy. It also opens each product on `HIDDEN_FROM_GALLERY` by its own page and flags one that shows in the gallery.
+- **Hiding a product from the gallery:** add its slug to `HIDDEN_FROM_GALLERY` in `lib/gallery/hidden.ts`. It leaves the Gallery, the Make page's featured row, the dashboard's connector picks and `/vr`, and keeps its page, live link and connector. `GALLERY_FIRST` in the same file puts products first. `/gadgets` (Hussam's) still lists every gadget product. A hidden product drops out on the next deploy; nothing in the database changes.
 - **Company name:** the story tests still keep it out of the privacy paragraph and `/private`, though the owner lifted that rule on Nov 1.
 - **ngrok's free plan** allows 20,000 requests a month across the fleet.
 - **This laptop:**

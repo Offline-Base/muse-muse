@@ -10,6 +10,9 @@
 // docs/SUBMISSION.md. It flags: a page that isn't a 200 (or redirects to an error), a link on a 200 page that points
 // at a 404, a card or product page showing "Live" and "Not published" together, a gallery product whose published
 // link fails, and "0 leaks" shown without a count of items. It spends nothing and writes nothing.
+// Products hidden from the gallery (HIDDEN_FROM_GALLERY in lib/gallery/hidden.ts, read here as text) are opened by
+// their own page, since nothing in the gallery links to them: their page and published link must still work, and a
+// gallery card for one is a problem.
 // The test (scripts/__tests__/judge-check.test.mjs) uses a fake fetch. It isn't in CI because the real run needs the
 // network.
 
@@ -19,6 +22,7 @@ import path from "node:path";
 
 export const SITE = "https://muse-muse.vercel.app";
 export const DOC_FILES = ["README.md", "docs/SUBMISSION.md"];
+export const HIDDEN_FILE = "lib/gallery/hidden.ts";
 const USER_AGENT = "muse-muse-judge-check/1 (plain GET, scripts/judge-check.mjs)";
 const MAX_HOPS = 5;
 
@@ -121,6 +125,13 @@ export function zeroLeaksWithoutCount(text) {
   return out;
 }
 
+/** The slugs on HIDDEN_FROM_GALLERY in lib/gallery/hidden.ts, read from its source text (this script runs on plain node). */
+export function hiddenSlugsFromSource(source) {
+  const list = source.match(/HIDDEN_FROM_GALLERY\b[^=]*=\s*\[([\s\S]*?)\]/)?.[1];
+  if (list === undefined) return null;
+  return [...list.replace(/\/\/[^\n]*/g, "").matchAll(/["']([a-z0-9-]{1,80})["']/g)].map((m) => m[1]);
+}
+
 /** muse-muse.vercel.app links in a markdown file. */
 export function docLinks(markdown, site = SITE) {
   const host = new URL(site).host.replace(/\./g, "\\.");
@@ -145,7 +156,8 @@ const sleepDefault = (ms) => new Promise((r) => setTimeout(r, ms));
 /**
  * Run the walk. Everything that touches the network goes through `fetch`, so the test can pass a fake.
  * @param {{ fetch?: typeof fetch, site?: string, docs?: {name: string, text: string}[], delayMs?: number,
- *   maxRequests?: number, sleep?: (ms: number) => Promise<void>, log?: (s: string) => void, timeoutMs?: number }} opts
+ *   maxRequests?: number, sleep?: (ms: number) => Promise<void>, log?: (s: string) => void, timeoutMs?: number,
+ *   hidden?: string[] }} opts `hidden`: slugs kept out of the gallery, whose pages are opened directly.
  */
 export async function judgeCheck(opts = {}) {
   const fetchFn = opts.fetch ?? globalThis.fetch;
@@ -204,6 +216,7 @@ export async function judgeCheck(opts = {}) {
   const skipped = { api: new Set(), handler: new Set(), external: new Set() };
   const galleryProducts = new Map(); // key -> { href, name }
   const products = new Map(); // product page key -> { link, linkResult }
+  const hiddenKeys = (opts.hidden ?? []).map((slug) => pageKey(`${site}/p/${slug}`));
 
   function enqueue(href, tier, from) {
     const key = pageKey(href);
@@ -225,6 +238,7 @@ export async function judgeCheck(opts = {}) {
 
   enqueue(site + "/", 0);
   enqueue(site + "/gallery", 0);
+  for (const key of hiddenKeys) enqueue(key, 2, "the hidden list");
   const docUrls = [];
   for (const doc of opts.docs ?? []) {
     for (const href of docLinks(doc.text, site)) {
@@ -324,9 +338,8 @@ export async function judgeCheck(opts = {}) {
   }
   for (const b of broken.values()) problem("link to a 404", b.from, `links to ${b.to} (${b.status})`);
 
-  // Gallery products and their published links.
-  const galleryRows = [];
-  for (const [key] of galleryProducts) {
+  // Gallery products, and the hidden ones, with their published links.
+  function productRow(key) {
     const page = results.get(key);
     const p = products.get(key);
     const row = { key, name: p?.name ?? new URL(key).pathname, pageStatus: page ? (page.status || page.error) : "not opened", link: p?.link ?? null, linkStatus: null };
@@ -340,8 +353,15 @@ export async function judgeCheck(opts = {}) {
         else if (lr.hops.length && ERROR_PATH.test(new URL(lr.finalUrl).pathname)) problem("published link fails", key, `${p.link} redirects to ${lr.finalUrl}`);
       }
     } else if (page?.status === 200) row.linkStatus = "no published link on the page";
-    galleryRows.push(row);
+    return row;
   }
+  const hiddenSet = new Set(hiddenKeys);
+  const galleryRows = [];
+  for (const [key] of galleryProducts) {
+    if (hiddenSet.has(key)) problem("hidden product in the gallery", site + "/gallery", `links to ${new URL(key).pathname}, which is on the hidden list`);
+    galleryRows.push(productRow(key));
+  }
+  const hiddenRows = hiddenKeys.filter((key) => !galleryProducts.has(key)).map((key) => productRow(key));
 
   const notOpened = [...queued.values()].filter((q) => !results.has(q.href));
   const docRows = docUrls.map((d) => {
@@ -358,6 +378,7 @@ export async function judgeCheck(opts = {}) {
     notes,
     pages: [...results.entries()].map(([key, r]) => ({ key, status: r.status, error: r.error, finalUrl: r.finalUrl, hops: r.hops.length })),
     galleryRows,
+    hiddenRows,
     docRows,
     notOpened: notOpened.map((q) => q.href),
     skipped: { api: [...skipped.api], handler: [...skipped.handler], external: skipped.external.size },
@@ -384,6 +405,10 @@ export function renderReport(r, { when = new Date() } = {}) {
   const withLink = r.galleryRows.filter((g) => g.link);
   const linkOk = withLink.filter((g) => g.linkStatus?.startsWith("200"));
   lines.push(`- Gallery products: ${r.galleryRows.length}. ${withLink.length} have a published link on their page, ${linkOk.length} of those returned 200. ${r.galleryRows.length - withLink.length} have no published link.`);
+  if (r.hiddenRows?.length) {
+    const hiddenOk = r.hiddenRows.filter((g) => g.pageStatus === 200);
+    lines.push(`- Hidden from the gallery: ${r.hiddenRows.length}, opened by their own page. ${hiddenOk.length} pages returned 200.`);
+  }
   lines.push(`- Links from README.md and docs/SUBMISSION.md: ${r.docRows.length}.`);
   lines.push("");
   if (r.problems.length) {
@@ -400,6 +425,16 @@ export function renderReport(r, { when = new Date() } = {}) {
   lines.push("|---|---|---|---|");
   for (const g of r.galleryRows) lines.push(`| ${cell(g.name)} | ${cell(show(g.key))} (${cell(g.pageStatus)}) | ${cell(g.link ?? "none")} | ${cell(g.linkStatus ?? "")} |`);
   lines.push("");
+  if (r.hiddenRows?.length) {
+    lines.push("## Hidden from the gallery");
+    lines.push("");
+    lines.push("Kept out of the gallery lists on purpose (lib/gallery/hidden.ts). Each page and published link should still work.");
+    lines.push("");
+    lines.push("| Product | Page | Published link | Link status |");
+    lines.push("|---|---|---|---|");
+    for (const g of r.hiddenRows) lines.push(`| ${cell(g.name)} | ${cell(show(g.key))} (${cell(g.pageStatus)}) | ${cell(g.link ?? "none")} | ${cell(g.linkStatus ?? "")} |`);
+    lines.push("");
+  }
   lines.push("## Links in the docs");
   lines.push("");
   lines.push("| File | Link | Status |");
@@ -412,7 +447,7 @@ export function renderReport(r, { when = new Date() } = {}) {
   lines.push("|---|---|");
   for (const p of r.pages.filter((p) => !/^\/p\/[^/]+$/.test(new URL(p.key).pathname))) lines.push(`| ${cell(show(p.key))} | ${cell(p.status || p.error)}${p.hops ? ` (redirected to ${cell(show(p.finalUrl))})` : ""} |`);
   lines.push("");
-  lines.push("Product pages are listed under Gallery products.");
+  lines.push("Product pages are listed under Gallery products and Hidden from the gallery.");
   lines.push("");
   lines.push("## Not checked");
   lines.push("");
@@ -444,7 +479,14 @@ async function main(argv) {
       process.stderr.write(`(couldn't read ${name}, its links are skipped)\n`);
     }
   }
-  const result = await judgeCheck({ site, docs, log: (s) => process.stderr.write(s + "\n") });
+  let hidden = [];
+  try {
+    hidden = hiddenSlugsFromSource(await readFile(path.join(root, HIDDEN_FILE), "utf8")) ?? [];
+    if (!hidden.length) process.stderr.write(`(no hidden slugs found in ${HIDDEN_FILE})\n`);
+  } catch {
+    process.stderr.write(`(couldn't read ${HIDDEN_FILE}, hidden products aren't checked)\n`);
+  }
+  const result = await judgeCheck({ site, docs, hidden, log: (s) => process.stderr.write(s + "\n") });
   process.stdout.write(renderReport(result));
   return result.problems.length ? 1 : 0;
 }

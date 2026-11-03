@@ -3057,3 +3057,36 @@ The owner asked for Muse Code driven by Muse Spark Open through a custom endpoin
   - any real task bigger than one file;
   - Spark Open's tool-call quality over a long run.
 - **Claim allowed now:** "Muse Code, Meta's coding agent, ran a task on Muse Spark Open served by Baseten." Not yet: that Muse Muse builds apps with it.
+
+## Nov 2, 2026, night: a license, and 8 products hidden from the gallery (branch tg-public-ready)
+
+Getting the repo ready to go public for judging. No model run, no build, no deploy, no spend.
+
+- **License (owner's choice: Apache-2.0).**
+  - `LICENSE` is the Apache License 2.0 text, byte for byte the copy already in `lib/train/licenses/LICENSE`, with the appendix's copyright line filled in as "Copyright 2026 Offline Base".
+  - `NOTICE` says what the license doesn't cover: `content/meta-docs/` (Meta's text, kept with a Meta organizer's permission, with a placeholder for the owner to name who and when), model files and weights (Muse Glimmer's terms and Usage Policy, the Muse Model License for Muse Spark Open and its Derivatives with "Built with Muse Spark Open" and 18 and over, SAM 3.1's SAM License, and Model API outputs under Meta's Terms), Meta's names and marks (not an official Meta product), and the third-party files found in the tree.
+  - Third-party files found by a search of `app/fonts/`, `public/` and `template/` for fonts, models, media and license files: Inter (SIL OFL 1.1) twice, the WebXR Input Profiles controller models (MIT, Amazon) under the VR target, and the public-domain Alice text. The template also ships notice files for Phaser, Babylon.js, SpeechT5 and ONNX Runtime, which products install from npm or download. The mascot in `public/muse/` came from the owner, so `NOTICE` has a second placeholder for how it was made.
+  - `"license": "Apache-2.0"` in package.json (and the lockfile's root entry, as npm writes it), with `private` kept. One line under the README's Status. `privacy/THIRD_PARTY_NOTICES.md` no longer says Muse Privacy has no license.
+- **Hidden from the gallery, not deleted.** gym-snap-coach, marathon-plan-keeper, rate-change-tutor, class-capture-notes, start-here-chat, everyday-helper-chat, parking-lot-counter and object-count-studio look like the organizers' list of overdone projects (sports coaches, education chatbots, plain chatbots, simple image analyzers).
+  - One list, `HIDDEN_FROM_GALLERY` in `lib/gallery/hidden.ts`, plus `GALLERY_FIRST` (`["dinner-split-helper"]`, the product with the "Where it ran" device stage).
+  - `listShippedProducts` takes `gallery: true`: it leaves the hidden slugs out and puts the first ones first in SQL, both before the limit, so dinner-split-helper leads even when it's older than the 60 newest.
+  - Honored by the Gallery, the Make page's featured row (parking-lot-counter was one of its five, so it has four now, and `pickFeatured` skips any hidden slug), the dashboard's three connectors to try, and `/vr`. Left alone: `/gadgets`, which is Hussam's. There is no "more like this" list anywhere in the app, so nothing else needed it.
+  - Product pages, live links and connectors don't read the list, so they keep working.
+  - `scripts/judge-check.mjs` never assumed every product is in the gallery (it finds products by the gallery's links). It now reads the hidden slugs from `lib/gallery/hidden.ts` as text, opens each one's page directly, checks its published link, and flags a gallery card for a hidden product. Not run against the live site: production hasn't deployed this branch.
+- **Tests:** lib/gallery (hidden, featured, shipped on PGlite) and scripts/__tests__/judge-check, 20 of 20. Also lib/native queries, the Make page's flag-off test and lib/trust reports, 31 of 31. Typecheck clean except `lib/sandbox/host/modal.ts`, whose `modal` package isn't in the shared `node_modules` this worktree links to (from #83, not this branch).
+## Nov 2, 2026, night: the plan to win, the owner's answers, and the new video script (branch tg-video-v2)
+
+- **Review:** a full read of main against the rubric (Impact 30, Meta tooling 25, technical depth 20, demo 25) and the organizers' Nov 2 note that judges work mainly from the video and the public repo. Findings: the story was spread across six products, the old script leaned on the least-proven claim and said "hasn't run yet" about eight times, the repo was private with a README that opened with what hadn't run, and 8 gallery products looked like the organizers' "skip these" list.
+- **Live site check:** `node scripts/judge-check.mjs`, GETs only: 157 pages opened, all 200; 31 gallery products, all with a working live link. No problems found.
+- **Owner's answers:** two rounds on the plan-to-win page (claude.ai artifact, answers saved there). Summarized in docs/HANDOFF.md, "Owner decisions, Nov 2 night".
+- **Started from it, each on its own branch and PR:** Muse Spark Open on Fireworks for products (tg-spark-open), SAM 3.1 board fallback for edge builds (tg-edge-vision), LICENSE and gallery hiding then a Meta-only tree (tg-public-ready, tg-meta-only-tree), the owner's keys in builds (tg-build-keys), the Muse Privacy rerun on Glimmer (tg-privacy-glimmer).
+- **docs/VIDEO.md rewritten** to the owner's story: Zuckerberg's line, before and after, who it's for, the build, the product, Muse Privacy, where it ran, cable out on jetson-04 with SAM 3.1, under the hood, close. Numbers that don't exist yet are placeholders filled from this log. The old script is at `git show 282c0d87:docs/VIDEO.md`.
+- **Housekeeping:** free disk was 4.5 GB; regenerable code copies in an old scratch folder and an idle `.next` were deleted (5.9 GB free after). Folders holding tuned adapters were kept.
+- Spend $0.
+## Nov 2, 2026: Modal builder image made, then Modal turned off (owner)
+
+- **Builder image:** `scripts/dev/modal-builder-image.ts` ran once. Setup took 107 s, Muse Code 1.4.14. Image `im-01M6FGSPQRD2PRHRMED38G4MD0`.
+- **Preview test blocked:** Previews are protected, and a Modal sandbox can't add the Protection Bypass secret, so Muse Code on Modal can't reach a Preview's `/api/sandbox-meta` route (docs/MODAL_HOST.md, gap 4). Turning protection off was ruled out, since Previews act as admin.
+- **Owner decision:** "turn off the modal stuff for now". Removed from Vercel: `SANDBOX_HOST` (Preview) and `MODAL_BUILDER_IMAGE_ID` (Preview and Production). Left as they were: the two Modal token settings on Preview, added a day earlier for other work. Every build runs on Vercel Sandbox. The code from #83 stays, off by default.
+- **Not proven:** no Muse Code build has run on Modal. The SUBMISSION.md sentence ("smoke-tested on Modal with no full build there yet") stays accurate.
+- **Spend:** the image build, a few cents on Modal (not checked against the bill).
