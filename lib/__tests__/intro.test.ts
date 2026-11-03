@@ -15,13 +15,14 @@ test("seen, another page, or reduced motion: no intro", () => {
 });
 
 test("?intro= picks one on any page, even after it was seen; off turns it off", () => {
-  assert.equal(pickIntro({ ...base, param: "hello", path: "/gallery", seen: true }), "hello");
+  assert.equal(pickIntro({ ...base, param: "shades", path: "/gallery", seen: true }), "shades");
   assert.equal(pickIntro({ ...base, param: "curtain", seen: true, reducedMotion: true }), "curtain");
   assert.equal(pickIntro({ ...base, param: "off" }), null);
   assert.equal(pickIntro({ ...base, param: "nope" }), INTRO_DEFAULT);
 });
 
 test("isIntroKind", () => {
-  assert.ok(isIntroKind("curtain") && isIntroKind("hello"));
+  assert.ok(isIntroKind("curtain") && isIntroKind("shades"));
+  assert.ok(!isIntroKind("hello"));
   assert.ok(!isIntroKind("Curtain") && !isIntroKind(undefined));
 });

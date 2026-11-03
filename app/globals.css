@@ -8084,54 +8084,6 @@ div.md.md-plain {
   outline-offset: 2px;
 }
 
-.intro-hello {
-  width: min(440px, calc(100vw - 32px));
-  padding: 8px 28px 28px;
-  border: 0;
-  border-radius: 32px;
-  background: var(--surface);
-  color: var(--fg);
-  text-align: center;
-  box-shadow: var(--shadow-float);
-}
-
-.intro-hello::backdrop {
-  background: var(--scrim);
-  backdrop-filter: blur(12px);
-}
-
-.intro-hello-figure {
-  display: flex;
-  justify-content: center;
-  margin-top: 8px;
-}
-
-/* The clip is 458 x 400; shown at 240 px tall, so the card never clips its arms. */
-.intro-hello-video {
-  display: block;
-  height: 240px;
-  width: auto;
-  max-width: 100%;
-  object-fit: contain;
-}
-
-.intro-hello h2 {
-  margin: 4px 0 8px;
-  font-size: 24px;
-  font-weight: 600;
-}
-
-.intro-hello p {
-  margin: 0 0 20px;
-  color: var(--muted);
-}
-
-.intro-hello-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .intro-curtain,
   .intro-curtain::after {
@@ -8143,8 +8095,7 @@ div.md.md-plain {
   .mascot,
   .mascot-climb,
   .mascot-note,
-  .intro-curtain,
-  .intro-hello {
+  .intro-curtain {
     display: none;
   }
 }
