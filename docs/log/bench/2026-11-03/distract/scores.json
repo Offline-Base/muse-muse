@@ -1,0 +1,157 @@
+{
+ "what": "Muse among other toys: SAM 3.1 on jetson-04's sam3 service, Meta weights vs the tuned 'muse' detector",
+ "date": "2026-11-03",
+ "board": "jetson-04",
+ "sets": {
+  "A": "30 COCO val2017 teddy-bear photos, no Muse",
+  "B": "the same 30 photos, one held-out Muse pasted in, touching no bear box; the Muse box is the only positive"
+ },
+ "note": "the service keeps only detections at 0.5 or more, so AP uses those (a lower bound on AP over 0.05)",
+ "results": {
+  "meta:muse": {
+   "A": {
+    "images": 30,
+    "looks": 0,
+    "median_s_service": 1.35,
+    "median_s_wall": 1.36,
+    "images_with_a_box@0.5": 0,
+    "boxes@0.5": 0,
+    "boxes_not_muse@0.5": 0,
+    "of_those_on_coco_bears": 0,
+    "coco_bears_boxed@0.5": "0 of 63"
+   },
+   "B": {
+    "images": 30,
+    "looks": 0,
+    "median_s_service": 1.35,
+    "median_s_wall": 1.36,
+    "images_with_a_box@0.5": 0,
+    "boxes@0.5": 0,
+    "boxes_not_muse@0.5": 0,
+    "of_those_on_coco_bears": 0,
+    "coco_bears_boxed@0.5": "0 of 63",
+    "muse_AP": 0.0,
+    "muse_AP50": 0.0,
+    "muse_found@0.5": 0,
+    "picked_muse_and_only_muse": 0
+   }
+  },
+  "meta:plush toy": {
+   "A": {
+    "images": 30,
+    "looks": 0,
+    "median_s_service": 1.35,
+    "median_s_wall": 1.37,
+    "images_with_a_box@0.5": 30,
+    "boxes@0.5": 76,
+    "boxes_not_muse@0.5": 76,
+    "of_those_on_coco_bears": 59,
+    "coco_bears_boxed@0.5": "58 of 63"
+   },
+   "B": {
+    "images": 30,
+    "looks": 0,
+    "median_s_service": 1.35,
+    "median_s_wall": 1.36,
+    "images_with_a_box@0.5": 30,
+    "boxes@0.5": 103,
+    "boxes_not_muse@0.5": 73,
+    "of_those_on_coco_bears": 60,
+    "coco_bears_boxed@0.5": "59 of 63",
+    "muse_AP": 0.466,
+    "muse_AP50": 0.468,
+    "muse_found@0.5": 30,
+    "picked_muse_and_only_muse": 0
+   }
+  },
+  "meta:toy": {
+   "A": {
+    "images": 30,
+    "looks": 0,
+    "median_s_service": 1.36,
+    "median_s_wall": 1.37,
+    "images_with_a_box@0.5": 29,
+    "boxes@0.5": 71,
+    "boxes_not_muse@0.5": 71,
+    "of_those_on_coco_bears": 56,
+    "coco_bears_boxed@0.5": "55 of 63"
+   },
+   "B": {
+    "images": 30,
+    "looks": 0,
+    "median_s_service": 1.35,
+    "median_s_wall": 1.36,
+    "images_with_a_box@0.5": 30,
+    "boxes@0.5": 112,
+    "boxes_not_muse@0.5": 82,
+    "of_those_on_coco_bears": 58,
+    "coco_bears_boxed@0.5": "57 of 63",
+    "muse_AP": 0.498,
+    "muse_AP50": 0.499,
+    "muse_found@0.5": 30,
+    "picked_muse_and_only_muse": 0
+   }
+  },
+  "tuned:muse": {
+   "A": {
+    "images": 30,
+    "looks": 0,
+    "median_s_service": 1.35,
+    "median_s_wall": 1.37,
+    "images_with_a_box@0.5": 22,
+    "boxes@0.5": 38,
+    "boxes_not_muse@0.5": 38,
+    "of_those_on_coco_bears": 36,
+    "coco_bears_boxed@0.5": "34 of 63"
+   },
+   "B": {
+    "images": 30,
+    "looks": 0,
+    "median_s_service": 1.35,
+    "median_s_wall": 1.36,
+    "images_with_a_box@0.5": 29,
+    "boxes@0.5": 59,
+    "boxes_not_muse@0.5": 30,
+    "of_those_on_coco_bears": 28,
+    "coco_bears_boxed@0.5": "28 of 63",
+    "muse_AP": 0.773,
+    "muse_AP50": 0.778,
+    "muse_found@0.5": 29,
+    "picked_muse_and_only_muse": 8
+   }
+  }
+ },
+ "truck": {
+  "meta:truck": {
+   "count@0.5": 1,
+   "scores": [
+    0.867
+   ]
+  },
+  "meta:wheel": {
+   "count@0.5": 4,
+   "scores": [
+    0.945,
+    0.941,
+    0.898,
+    0.871
+   ]
+  },
+  "tuned:truck": {
+   "count@0.5": 1,
+   "scores": [
+    0.992
+   ]
+  },
+  "tuned:wheel": {
+   "count@0.5": 4,
+   "scores": [
+    0.969,
+    0.965,
+    0.875,
+    0.863
+   ]
+  }
+ },
+ "total_s": 337
+}
